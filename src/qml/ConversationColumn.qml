@@ -27,6 +27,7 @@ Item {
     property string currentConversation: ""
     property bool findActive: false
     property bool composerEnabled: true
+    property bool fileHostOffered: false
     property var slashCommands: null
     property var activeMessages: null
     property var consoleLines: null
@@ -50,6 +51,13 @@ Item {
     signal composerKeyPressed(var event)
     signal slashHitHovered(int index)
     signal slashHitActivated(int index)
+    signal filePicked(string path)
+    signal filesDropped(var urls)
+
+    function openFilePick() {
+        if (column.fileHostOffered && !column.findActive)
+            filePick.open();
+    }
 
     Item {
         id: conversationHeader
@@ -343,7 +351,9 @@ Item {
         radius: column.style.scaledSize(10)
         color: column.style.panelColor
         border.width: 1
-        border.color: composer.activeFocus ? column.style.accentColor : column.style.dividerColor
+        border.color: fileDrop.containsDrag
+            ? column.style.accentColor
+            : (composer.activeFocus ? column.style.accentColor : column.style.dividerColor)
 
         TextField {
             id: composer
@@ -355,7 +365,7 @@ Item {
                     ? "Command for " + column.statusTitle.replace(" Status", "")
                     : "Write a message to " + column.currentConversation)
             anchors.left: parent.left
-            anchors.right: sendButton.left
+            anchors.right: filePick.left
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             anchors.leftMargin: column.style.scaledSize(8)
@@ -383,6 +393,19 @@ Item {
             Keys.priority: Keys.BeforeItem
             Keys.onPressed: function(event) {
                 column.composerKeyPressed(event);
+            }
+        }
+
+        FilePickButton {
+            id: filePick
+            style: column.style
+            visible: column.fileHostOffered && !column.findActive
+            width: visible ? implicitWidth : 0
+            anchors.right: sendButton.left
+            anchors.rightMargin: visible ? column.style.scaledSize(8) : 0
+            anchors.verticalCenter: parent.verticalCenter
+            onPicked: function(path) {
+                column.filePicked(path);
             }
         }
 
@@ -424,6 +447,16 @@ Item {
                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                 onClicked: column.sendRequested()
             }
+        }
+    }
+
+    DropArea {
+        id: fileDrop
+        anchors.fill: parent
+        enabled: column.fileHostOffered && !column.findActive
+        onDropped: function(drop) {
+            if (drop.hasUrls)
+                column.filesDropped(drop.urls);
         }
     }
 

@@ -2113,6 +2113,32 @@ ApplicationWindow {
         return true;
     }
 
+    function isPasteChord(event) {
+        var mods = composerKeyModifiers(event);
+        if (event.key === Qt.Key_V) {
+            if (mods === Qt.ControlModifier)
+                return true;
+            return (Qt.platform.os === "osx" || Qt.platform.os === "macos")
+                && mods === Qt.MetaModifier;
+        }
+        return event.key === Qt.Key_Insert && mods === Qt.ShiftModifier;
+    }
+
+    function insertFileLink(url) {
+        if (findActive || !isAllowedHttpUrl(url) || !conversation.composer)
+            return;
+        var field = conversation.composer;
+        var text = field.text;
+        var pos = field.cursorPosition;
+        var piece = url;
+        if (pos > 0 && text.charAt(pos - 1) !== " ")
+            piece = " " + piece;
+        if (pos < text.length && text.charAt(pos) !== " ")
+            piece = piece + " ";
+        field.insert(pos, piece);
+        field.forceActiveFocus();
+    }
+
     function isCopyChord(event) {
         if (event.key !== Qt.Key_C)
             return false;
@@ -2303,6 +2329,13 @@ ApplicationWindow {
         if (handleComposerSidebarShortcut(event)) {
             event.accepted = true;
             return;
+        }
+
+        if (!findActive && isPasteChord(event) && irc && irc.fileHost.length > 0) {
+            if (irc.uploadClipboard()) {
+                event.accepted = true;
+                return;
+            }
         }
 
         // TextInput claims Ctrl+Home / Ctrl+End as start/end of document,
@@ -2499,6 +2532,20 @@ ApplicationWindow {
         onActivated: {
             sidebarNetworkFocusId = "";
             conversation.composer.forceActiveFocus();
+        }
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Shift+U"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen && !win.findActive
+        onActivated: conversation.openFilePick()
+    }
+
+    Connections {
+        target: win.irc
+        function onFileLinkReady(url) {
+            win.insertFileLink(url);
         }
     }
 
@@ -3284,6 +3331,7 @@ ApplicationWindow {
             readMarkerSync: win.irc
             findActive: win.findActive
             composerEnabled: !win.connectionOverlayVisible
+            fileHostOffered: win.irc && win.irc.fileHost.length > 0
             slashCommands: win.slashCommands
             activeMessages: win.activeMessages
             consoleLines: win.networkConsole ? win.networkConsole.lines : null
@@ -3443,6 +3491,14 @@ ApplicationWindow {
             }
             onComposerKeyPressed: function(event) {
                 win.handleComposerKey(event);
+            }
+            onFilePicked: function(path) {
+                if (win.irc)
+                    win.irc.uploadLocalFile(path);
+            }
+            onFilesDropped: function(urls) {
+                if (win.irc)
+                    win.irc.uploadDroppedUrls(urls);
             }
             onSlashHitHovered: function(index) {
                 win.handleSlashHitHovered(index);

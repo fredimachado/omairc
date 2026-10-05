@@ -34,6 +34,8 @@ HEADERS += \
     ../../src/irc/irctypingpublisher.h \
     ../../src/irc/ircpresence.h \
     ../../src/irc/irctcp.h \
+    ../../src/irc/ircfilelink.h \
+    ../../src/irc/ircfilehost.h \
     ../../src/irc/ircignore.h \
     ../../src/irc/ircmonitor.h \
     ../../src/irc/ircmute.h \
@@ -136,6 +138,8 @@ SOURCES += \
     ../../src/irc/networklogmodel.cpp \
     ../../src/irc/irccommand.cpp \
     ../../src/irc/ircavatarurl.cpp \
+    ../../src/irc/ircfilelink.cpp \
+    ../../src/irc/ircfilehost.cpp \
     ../../src/irc/ircchannelmode.cpp \
     ../../src/irc/ircchannelname.cpp \
     ../../src/irc/ircjointarget.cpp \

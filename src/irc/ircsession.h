@@ -137,6 +137,10 @@ public:
     QString host() const;
     quint16 port() const;
     bool tlsEnabled() const;
+    // The account and secret a file upload may reuse. The secret must not
+    // be logged or placed in a status line.
+    QString fileHostAccount() const;
+    QString fileHostSecret() const;
     QString nick() const;
     QString channelTypes() const;
     State state() const;

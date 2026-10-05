@@ -251,6 +251,8 @@ func (m *Model) handleOverlayKey(key string, msg tea.KeyPressMsg) (tea.Model, te
 		return m.handleChannelListKey(key, msg)
 	case m.jump.open:
 		return m.handleJumpKey(key, msg)
+	case m.file.open:
+		return m.handleFilePickKey(key, msg)
 	}
 	return m, nil
 }

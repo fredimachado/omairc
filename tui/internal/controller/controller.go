@@ -90,6 +90,11 @@ type Controller struct {
 	// OnMentionArrived is called for each mention the reducer hands up. It is
 	// nil-able; Phase 9 wires the inbox and notifications.
 	OnMentionArrived func(author, body, networkID, target, msgid string)
+	// OnFileLink is called from the upload goroutine when a file upload
+	// finishes. It must not touch the controller. The shell turns it into a
+	// message on the Update goroutine. Nil-able.
+	OnFileLink     func(url, message string)
+	fileUploadBusy bool
 	// OnInboxChanged fires when the session waiting list changes: an arrival
 	// was appended, or a row was consumed/dismissed/purged. It is the UI's
 	// re-render wake-up. It is nil-able.

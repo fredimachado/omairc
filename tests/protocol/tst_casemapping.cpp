@@ -28,6 +28,7 @@ private slots:
     void prefixChangesConsumeNonPrefixParameters();
     void parsesDraftIconFromIsupport();
     void draftIconRemovalClearsAdvertisedUrl();
+    void parsesFileHostFromIsupport();
 };
 
 void CaseMappingTest::normalizesAdvertisedMappings()
@@ -351,6 +352,71 @@ void CaseMappingTest::draftIconRemovalClearsAdvertisedUrl()
              QStringLiteral("qaohv"));
     QCOMPARE(QString::fromStdString(std::string(features.iconUrl())),
              QStringLiteral("https://example.org/icon.svg"));
+}
+
+void CaseMappingTest::parsesFileHostFromIsupport()
+{
+    IrcServerFeatures empty;
+    QVERIFY(empty.fileHost(true).empty());
+    QVERIFY(empty.fileHost(false).empty());
+
+    IrcServerFeatures https;
+    https.applyToken("soju.im/FILEHOST=https://uploads.example/upload");
+    QCOMPARE(QString::fromStdString(https.fileHost(true)),
+             QStringLiteral("https://uploads.example/upload"));
+    QCOMPARE(QString::fromStdString(https.fileHost(false)),
+             QStringLiteral("https://uploads.example/upload"));
+
+    IrcServerFeatures http;
+    http.applyToken("soju.im/FILEHOST=http://uploads.example/upload");
+    QVERIFY(http.fileHost(true).empty());
+    QCOMPARE(QString::fromStdString(http.fileHost(false)),
+             QStringLiteral("http://uploads.example/upload"));
+
+    IrcServerFeatures listed;
+    listed.applyToken(
+        "draft/FILEHOST=http://plain.example/up\\x20https://safe.example/up");
+    QCOMPARE(QString::fromStdString(listed.fileHost(true)),
+             QStringLiteral("https://safe.example/up"));
+    QCOMPARE(QString::fromStdString(listed.fileHost(false)),
+             QStringLiteral("https://safe.example/up"));
+
+    IrcServerFeatures replaced;
+    replaced.applyToken("soju.im/FILEHOST=https://uploads.example/upload");
+    replaced.applyToken("soju.im/FILEHOST=ftp://files.example/up");
+    QVERIFY(replaced.fileHost(false).empty());
+
+    IrcServerFeatures icon;
+    icon.applyToken("ICON=https://example.org/x.png");
+    icon.applyToken("draft/ICON=https://example.org/icon.svg");
+    QVERIFY(icon.fileHost(true).empty());
+    QCOMPARE(QString::fromStdString(std::string(icon.iconUrl())),
+             QStringLiteral("https://example.org/icon.svg"));
+
+    IrcServerFeatures removed;
+    removed.applyToken("soju.im/FILEHOST=https://uploads.example/upload");
+    removed.applyToken("-soju.im/FILEHOST");
+    QVERIFY(removed.fileHost(false).empty());
+    removed.applyToken("draft/FILEHOST=https://uploads.example/upload");
+    removed.applyToken("-draft/FILEHOST");
+    QVERIFY(removed.fileHost(false).empty());
+
+    IrcServerFeatures kept;
+    kept.applyToken("soju.im/FILEHOST=https://uploads.example/upload");
+    kept.applyToken("-FILEHOST");
+    kept.applyToken("-ICON");
+    kept.applyToken("CHANTYPES=#");
+    QCOMPARE(QString::fromStdString(kept.fileHost(true)),
+             QStringLiteral("https://uploads.example/upload"));
+
+    IrcServerFeatures userinfo;
+    userinfo.applyToken("soju.im/FILEHOST=https://user:pw@uploads.example/upload");
+    QVERIFY(userinfo.fileHost(false).empty());
+
+    IrcServerFeatures cleared;
+    cleared.applyToken("soju.im/FILEHOST=https://uploads.example/upload");
+    cleared.applyToken("soju.im/FILEHOST=");
+    QVERIFY(cleared.fileHost(false).empty());
 }
 
 int runCaseMappingTests(int argc, char **argv)

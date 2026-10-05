@@ -473,6 +473,20 @@ func (s *Session) Name() string { return s.config.resolvedName() }
 // Host returns the configured host.
 func (s *Session) Host() string { return s.config.Host }
 
+// UploadCredential returns the account, secret, host, and TLS state used to
+// authenticate a file upload. The account is the SASL account or the
+// configured nick, never the live nick. The secret is the NickServ password
+// when set, otherwise the server password.
+func (s *Session) UploadCredential() (user, secret, host string, encrypted bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user = s.config.SASLAccountName()
+	secret = s.config.saslSecret()
+	host = s.config.Host
+	encrypted = s.tlsEnabled
+	return
+}
+
 // Port returns the active port, which may differ from the configured port
 // after an STS upgrade or a cached STS policy.
 func (s *Session) Port() uint16 {

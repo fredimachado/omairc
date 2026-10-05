@@ -25,13 +25,14 @@
 #include "messagelistmodel.h"
 
 #include <cstddef>
-
+#include <QByteArray>
 #include <QHash>
 #include <QObject>
 #include <QSet>
 #include <QStringList>
 #include <QVariant>
 #include <QTimer>
+#include <QVariant>
 #include <QVariantMap>
 #include <QVector>
 
@@ -42,6 +43,8 @@
 #include <variant>
 
 struct IrcViewNotify;
+
+class IrcFileUploader;
 
 class IrcController : public QObject
 {
@@ -60,6 +63,7 @@ class IrcController : public QObject
     Q_PROPERTY(bool canCloseSelection READ canCloseSelection NOTIFY selectionChanged)
     Q_PROPERTY(int peopleCount READ peopleCount NOTIFY selectionChanged)
     Q_PROPERTY(QString connectionStatus READ connectionStatus NOTIFY statusChanged)
+    Q_PROPERTY(QString fileHost READ fileHost NOTIFY fileHostChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY statusChanged)
     Q_PROPERTY(int conversationEpoch READ conversationEpoch NOTIFY conversationStateChanged)
     Q_PROPERTY(int peerMetadataEpoch READ peerMetadataEpoch NOTIFY peerMetadataChanged)
@@ -167,6 +171,9 @@ public:
     Q_INVOKABLE int composerByteBudget() const;
     Q_INVOKABLE int composerByteBudgetFor(const QString& draft) const;
     Q_INVOKABLE QString clampUtf8Prefix(const QString& text, int maxBytes) const;
+    Q_INVOKABLE bool uploadClipboard();
+    Q_INVOKABLE void uploadLocalFile(const QString& path);
+    Q_INVOKABLE void uploadDroppedUrls(const QVariantList& urls);
     Q_INVOKABLE bool requestOlderTranscriptHistory();
     Q_INVOKABLE bool transcriptHistoryPendingForSelection() const;
     Q_INVOKABLE void noteTranscriptFollowsEnd();
@@ -281,6 +288,8 @@ signals:
 
     void capabilitiesChanged();
     void serverFeaturesChanged();
+    void fileHostChanged();
+    void fileLinkReady(const QString& url);
     void typingChanged();
     void reopenDirectMessagesChanged();
     void loadPeerAvatarsChanged();
@@ -392,6 +401,13 @@ private:
                                      const QString& wireTarget);
     QString readMarkerOutboundKey(const QString& networkId,
                                   const QString& normalizedTarget) const;
+    QString fileHost() const;
+    void enqueueLocalFile(const QString& path);
+    void enqueueUploadBytes(const QByteArray& body, const QString& fileName,
+                            const QString& contentType);
+    void noteFileUploadFailure(const QString& message);
+    bool fillUploadTarget(QString *endpoint, QString *user, QString *secret,
+                          QString *serverHost, bool *serverEncrypted) const;
 
     struct ReadMarkerOutbound
     {
@@ -457,4 +473,5 @@ private:
     QSet<QString> m_appliedProfileAvatars;
     ProfileAvatarUrlPersist m_profileAvatarUrlPersist;
     ProfileAvatarUrlLookup m_profileAvatarUrlLookup;
+    IrcFileUploader *m_uploads = nullptr;
 };

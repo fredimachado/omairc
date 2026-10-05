@@ -11654,4 +11654,11 @@ TestCase {
         window.close();
         restoreNamedConnection();
     }
+
+    function test_filePickHiddenWithoutFileHost() {
+        openSeededAppWindow();
+        var button = findChild(appWindow, "filePickButton");
+        verify(button !== null, "file pick button should exist");
+        compare(button.visible, false);
+    }
 }

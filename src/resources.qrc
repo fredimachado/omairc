@@ -37,6 +37,7 @@
         <file alias="qml/ConversationHeaderActions.qml">qml/ConversationHeaderActions.qml</file>
         <file alias="qml/ServerJoinField.qml">qml/ServerJoinField.qml</file>
         <file alias="qml/ConversationColumn.qml">qml/ConversationColumn.qml</file>
+        <file alias="qml/FilePickButton.qml">qml/FilePickButton.qml</file>
         <file alias="qml/MembersColumn.qml">qml/MembersColumn.qml</file>
         <file alias="fonts/iAWriterMonoS-Regular.ttf">../fonts/iAWriterMonoS-Regular.ttf</file>
         <file alias="fonts/iAWriterMonoS-Bold.ttf">../fonts/iAWriterMonoS-Bold.ttf</file>

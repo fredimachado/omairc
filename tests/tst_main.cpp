@@ -5,6 +5,7 @@
 int runProtocolTests(int argc, char **argv);
 int runCaseMappingTests(int argc, char **argv);
 int runChannelNameTests(int argc, char **argv);
+int runFileHostTests(int argc, char **argv);
 int runCorpusTests(int argc, char **argv);
 int runTransportTests(int argc, char **argv);
 int runCapabilityTests(int argc, char **argv);
@@ -59,6 +60,7 @@ int main(int argc, char **argv)
     const int protocolStatus = runProtocolTests(argc, argv);
     const int caseMappingStatus = runCaseMappingTests(argc, argv);
     const int channelNameStatus = runChannelNameTests(argc, argv);
+    const int fileHostStatus = runFileHostTests(argc, argv);
     const int corpusStatus = runCorpusTests(argc, argv);
     const int transportStatus = runTransportTests(argc, argv);
     const int capabilityStatus = runCapabilityTests(argc, argv);
@@ -100,6 +102,7 @@ int main(int argc, char **argv)
         protocolStatus,
         caseMappingStatus,
         channelNameStatus,
+        fileHostStatus,
         corpusStatus,
         transportStatus,
         capabilityStatus,

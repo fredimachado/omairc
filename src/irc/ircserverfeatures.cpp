@@ -21,6 +21,109 @@ std::uint32_t bitFor(char letter)
     return std::uint32_t{1} << (letter - 'a');
 }
 
+int hexValue(char character)
+{
+    if (character >= '0' && character <= '9')
+        return character - '0';
+    if (character >= 'a' && character <= 'f')
+        return character - 'a' + 10;
+    if (character >= 'A' && character <= 'F')
+        return character - 'A' + 10;
+    return -1;
+}
+
+// ISUPPORT encodes a space inside one token as \x20. Decode that and \\
+// before splitting a file-host list. Any other backslash stays literal.
+std::string unescapeIsupportValue(std::string_view value)
+{
+    std::string decoded;
+    decoded.reserve(value.size());
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        if (value[index] != '\\' || index + 1 >= value.size()) {
+            decoded.push_back(value[index]);
+            continue;
+        }
+        const char next = value[index + 1];
+        if (next == '\\') {
+            decoded.push_back('\\');
+            ++index;
+            continue;
+        }
+        if (next == 'x' && index + 3 < value.size()) {
+            const int high = hexValue(value[index + 2]);
+            const int low = hexValue(value[index + 3]);
+            if (high >= 0 && low >= 0) {
+                decoded.push_back(static_cast<char>((high << 4) | low));
+                index += 3;
+                continue;
+            }
+        }
+        decoded.push_back(value[index]);
+    }
+    return decoded;
+}
+
+bool schemeIs(std::string_view uri, std::string_view scheme)
+{
+    if (uri.size() < scheme.size())
+        return false;
+    for (std::size_t index = 0; index < scheme.size(); ++index) {
+        if (asciiLower(uri[index]) != scheme[index])
+            return false;
+    }
+    return true;
+}
+
+// A usable upload URI is http or https, has a host, and carries no userinfo
+// and no control characters. The stored text keeps the server's spelling.
+bool usableFileHostUri(std::string_view uri)
+{
+    if (uri.empty())
+        return false;
+    for (unsigned char character : uri) {
+        if (character <= 0x20 || character >= 0x7F)
+            return false;
+    }
+    std::string_view rest;
+    if (schemeIs(uri, "https://"))
+        rest = uri.substr(8);
+    else if (schemeIs(uri, "http://"))
+        rest = uri.substr(7);
+    else
+        return false;
+    if (rest.empty())
+        return false;
+    const std::size_t slash = rest.find('/');
+    const std::string_view authority = slash == std::string_view::npos
+        ? rest
+        : rest.substr(0, slash);
+    if (authority.empty() || authority.find('@') != std::string_view::npos)
+        return false;
+    const std::size_t hostEnd = authority.find(':');
+    const std::string_view host = hostEnd == std::string_view::npos
+        ? authority
+        : authority.substr(0, hostEnd);
+    return !host.empty();
+}
+
+std::vector<std::string> parseFileHostList(std::string_view value)
+{
+    const std::string decoded = unescapeIsupportValue(value);
+    std::vector<std::string> hosts;
+    std::size_t start = 0;
+    for (std::size_t index = 0; index <= decoded.size(); ++index) {
+        if (index != decoded.size() && decoded[index] != ' ' && decoded[index] != '\t')
+            continue;
+        if (index > start) {
+            const std::string_view token(decoded.data() + start, index - start);
+            if (usableFileHostUri(token))
+                hosts.emplace_back(token);
+        }
+        start = index + 1;
+    }
+    return hosts;
+}
+
 bool splitChanModes(std::string_view value, std::array<std::string_view, 4>& parts)
 {
     std::size_t count = 0;
@@ -90,6 +193,8 @@ void IrcServerFeatures::applyToken(std::string_view token)
         const std::string_view name = rest.substr(0, separator);
         if (name == "draft/ICON")
             m_iconUrl.clear();
+        if (name == "soju.im/FILEHOST" || name == "draft/FILEHOST")
+            m_fileHosts.clear();
         if (name == "MONITOR") {
             m_monitorAdvertised = false;
             m_monitorLimit.reset();
@@ -188,7 +293,11 @@ void IrcServerFeatures::applyToken(std::string_view token)
     if (name == "draft/ICON") {
         if (!value.empty())
             m_iconUrl.assign(value);
+        return;
     }
+
+    if (name == "soju.im/FILEHOST" || name == "draft/FILEHOST")
+        m_fileHosts = parseFileHostList(value);
 }
 
 void IrcServerFeatures::applyTokens(const std::vector<std::string>& tokens)
@@ -270,6 +379,20 @@ std::string_view IrcServerFeatures::chanModesD() const noexcept
 std::string_view IrcServerFeatures::iconUrl() const noexcept
 {
     return m_iconUrl;
+}
+
+std::string IrcServerFeatures::fileHost(bool encrypted) const
+{
+    std::string cleartext;
+    for (const std::string& uri : m_fileHosts) {
+        if (schemeIs(uri, "https://"))
+            return uri;
+        if (cleartext.empty() && schemeIs(uri, "http://"))
+            cleartext = uri;
+    }
+    if (encrypted)
+        return {};
+    return cleartext;
 }
 
 char IrcServerFeatures::letterForSymbol(char symbol) const
