@@ -310,7 +310,7 @@ func (m *Model) walk(delta int) {
 // jumpToNextUnread: rows hidden under a collapsed network still count, and
 // landing on one expands that network. When nothing is unread, Alt+A opens
 // Status for the selected conversation's network. When Status is already
-// open, it opens that Status network. Header focus stays where it is.
+// open, it opens that Status network.
 func (m *Model) jumpUnread() {
 	if m.ctrl == nil {
 		return
@@ -372,9 +372,8 @@ func (m *Model) markAllRead() {
 }
 
 // openCurrentNetworkStatus opens Status for the selected conversation's
-// network. When Status is already open, it opens that Status network. Header
-// focus stays where it is. It mirrors the empty-unread landing in
-// OmaircWindow.qml's jumpToNextUnread.
+// network. When Status is already open, it opens that Status network. It
+// mirrors the empty-unread landing in OmaircWindow.qml's jumpToNextUnread.
 func (m *Model) openCurrentNetworkStatus() {
 	if m.ctrl == nil {
 		return
