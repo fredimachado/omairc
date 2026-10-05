@@ -5,6 +5,13 @@ import (
 	"time"
 )
 
+func TestCtcpVersionReplyNamesTheTui(t *testing.T) {
+	const want = "omairc-tui https://omairc.app"
+	if got := CtcpVersionReplyText(); got != want {
+		t.Fatalf("VERSION reply = %q, want %q", got, want)
+	}
+}
+
 func TestParsesAndFormatsCtcp(t *testing.T) {
 	version, ok := ParseCtcpRequest("\x01VERSION\x01")
 	if !ok {
