@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -316,6 +317,15 @@ func TestPidAlive(t *testing.T) {
 	}
 	if pidAlive(0) || pidAlive(-1) {
 		t.Fatalf("pidAlive of a non-positive pid should be false")
+	}
+	if runtime.GOOS == "windows" {
+		// A Windows pid is a multiple of four. An odd value is never a
+		// process. A just-exited pid can be recycled before the next
+		// statement, so it is not a stable negative.
+		if pidAlive(1) || pidAlive(3) {
+			t.Fatal("pidAlive of an impossible Windows pid should be false")
+		}
+		return
 	}
 	cmd := exec.Command("true")
 	if err := cmd.Start(); err != nil {
