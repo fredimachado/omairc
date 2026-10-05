@@ -5321,20 +5321,17 @@ TestCase {
         tryCompare(item("jumpFilter"), "text", "#omarchy");
         var model = item("jumpModel");
         compare(model.count, 2);
-        // The OFTC topic also contains "#omarchy", so that row ranks above
-        // the name-only omarchy channel. Both rows still carry the network.
+        // The OFTC topic also contains "#omarchy". That detail hit must not
+        // reorder the two name matches, so the sidebar-first row stays first.
         compare(model.get(0).name, "#omarchy");
-        compare(model.get(0).networkId, seed.oftcNetworkId);
+        compare(model.get(0).networkId, seed.omarchyNetworkId);
         compare(model.get(0).label,
-                "#omarchy · " + networkDisplayName(seed.oftcNetworkId));
-        compare(model.get(1).name, "#omarchy");
-        compare(model.get(1).networkId, seed.omarchyNetworkId);
-        compare(model.get(1).label,
                 "#omarchy · " + networkDisplayName(seed.omarchyNetworkId));
+        compare(model.get(1).name, "#omarchy");
+        compare(model.get(1).networkId, seed.oftcNetworkId);
+        compare(model.get(1).label,
+                "#omarchy · " + networkDisplayName(seed.oftcNetworkId));
         compare(appWindow.jumpSelectedIndex, 0);
-
-        keyClick(Qt.Key_Down);
-        compare(appWindow.jumpSelectedIndex, 1);
 
         keyClick(Qt.Key_Return);
         tryCompare(sheet, "opened", false);
@@ -5344,6 +5341,50 @@ TestCase {
         compare(appWindow.title,
                 "#omarchy · " + networkDisplayName(seed.omarchyNetworkId) + " - Omairc");
         tryCompare(item("messageComposer"), "activeFocus", true);
+    }
+
+    function test_ctrlKCapsAfterRank() {
+        openSeededAppWindow();
+        var sheet = openJumpSheet();
+        var first = item("jumpModel").get(0);
+        var firstKind = first.kind;
+        var firstName = first.name;
+        var firstNetwork = first.networkId;
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+
+        // Joined channels sort by name, so a joined #c00 becomes the first
+        // sidebar row. Parting after the self join keeps the channel and
+        // parks it after the channels that were already joined. #zzcap is
+        // then past the 20-row cap until a name match pulls it forward.
+        var wire = "";
+        for (var index = 0; index < 20; ++index) {
+            var suffix = index < 10 ? "0" + index : String(index);
+            var channel = "#c" + suffix;
+            wire += ":fred!u@h JOIN :" + channel + "\r\n";
+            wire += ":server 332 fred " + channel + " :zzcap notes\r\n";
+            wire += ":fred!u@h PART " + channel + "\r\n";
+        }
+        wire += ":fred!u@h JOIN :#zzcap\r\n";
+        wire += ":fred!u@h PART #zzcap\r\n";
+        seed.injectOmarchy(wire);
+
+        sheet = openJumpSheet();
+        var model = item("jumpModel");
+        compare(model.count, 20);
+        compare(model.get(0).kind, firstKind);
+        compare(model.get(0).name, firstName);
+        compare(model.get(0).networkId, firstNetwork);
+
+        item("jumpFilter").clear();
+        typeText("zzcap");
+        tryCompare(item("jumpFilter"), "text", "zzcap");
+        model = item("jumpModel");
+        compare(model.count, 20);
+        compare(model.get(0).name, "#zzcap");
+        compare(model.get(0).networkId, seed.omarchyNetworkId);
+        for (var row = 0; row < model.count; ++row)
+            verify(model.get(row).name !== "#c19");
     }
 
     function test_ctrlKIsNoOpWhenConnectIsVisible() {

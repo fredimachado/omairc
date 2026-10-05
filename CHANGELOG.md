@@ -20,8 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Ctrl+K jump matches a channel topic and a person's real name, in both
-  clients. Name matches stay above those, the list stays at most 20 rows, and
-  a shared name still shows its network.
+  clients. Name matches stay above those, sidebar order holds inside each
+  group, the list stays at most 20 rows, and a shared name still shows its
+  network.
 - Join, part, quit, and nick lines fold together. A leave followed at once by the same nick rejoining is omitted, and a nick chain keeps the final name. `/pref joins` shows every line or hides these lines, including history playback.
 - The terminal client supports IRC read markers (`draft/read-marker`, and
   `soju.im/read` when that is the only token offered): a server marker clears

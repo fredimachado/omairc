@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/fredimachado/omairc/tui/internal/irc"
@@ -21,13 +22,13 @@ func TestJumpMatchesTopicAboveNameAndKeepsNetwork(t *testing.T) {
 
 	m.jump.input.SetValue("#omarchy")
 	entries = m.jumpEntries()
-	// The OFTC topic also contains "#omarchy", so that row ranks above the
-	// name-only omarchy channel. Both rows still carry the network.
+	// The OFTC topic also contains "#omarchy". That detail hit must not
+	// reorder the two name matches, so the sidebar-first row stays first.
 	if len(entries) != 2 ||
-		entries[0].target != "#omarchy" || entries[0].networkID != "oftc" ||
-		entries[1].target != "#omarchy" || entries[1].networkID != "omarchy" ||
+		entries[0].target != "#omarchy" || entries[0].networkID != "omarchy" ||
+		entries[1].target != "#omarchy" || entries[1].networkID != "oftc" ||
 		entries[0].label == "#omarchy" || entries[1].label == "#omarchy" {
-		t.Fatalf("#omarchy entries = %+v, want oftc then omarchy, each with its network", entries)
+		t.Fatalf("#omarchy entries = %+v, want omarchy then oftc, each with its network", entries)
 	}
 
 	m.jump.input.SetValue("build")
@@ -65,5 +66,50 @@ func TestJumpMatchesTopicAboveNameAndKeepsNetwork(t *testing.T) {
 	m.jump.input.SetValue("unknown")
 	if entries = m.jumpEntries(); len(entries) != 0 {
 		t.Fatalf("placeholder real name matched: %+v", entries)
+	}
+}
+
+func TestJumpCapsAfterRank(t *testing.T) {
+	m := seededModel(t)
+	m.openJump()
+	before := m.jumpEntries()
+	if len(before) == 0 {
+		t.Fatal("jump entries are empty before the extra channels")
+	}
+	first := before[0]
+	m.closeJump()
+
+	nick := m.ctrl.CurrentNick()
+	if nick == "" {
+		t.Fatal("demo nick is empty")
+	}
+	// Joined channels sort by name, so a joined #c00 becomes the first
+	// sidebar row. Parting after the self join keeps the channel and parks
+	// it after the channels that were already joined. #zzcap is then past
+	// the 20-row cap until a name match pulls it forward.
+	for index := 0; index < 20; index++ {
+		channel := fmt.Sprintf("#c%02d", index)
+		m.ctrl.Apply(irc.JoinEvent{NetworkID: "omarchy", Channel: channel, Nick: nick})
+		m.ctrl.Apply(irc.TopicEvent{NetworkID: "omarchy", Channel: channel, Topic: "zzcap notes"})
+		m.ctrl.Apply(irc.PartEvent{NetworkID: "omarchy", Channel: channel, Nick: nick})
+	}
+	m.ctrl.Apply(irc.JoinEvent{NetworkID: "omarchy", Channel: "#zzcap", Nick: nick})
+	m.ctrl.Apply(irc.PartEvent{NetworkID: "omarchy", Channel: "#zzcap", Nick: nick})
+
+	m.openJump()
+	entries := m.jumpEntries()
+	if len(entries) != 20 || entries[0] != first {
+		t.Fatalf("empty jump = %+v, want 20 rows starting at %+v", entries, first)
+	}
+
+	m.jump.input.SetValue("zzcap")
+	entries = m.jumpEntries()
+	if len(entries) != 20 || entries[0].target != "#zzcap" || entries[0].networkID != "omarchy" {
+		t.Fatalf("zzcap entries = %+v, want 20 rows with #zzcap first", entries)
+	}
+	for _, entry := range entries {
+		if entry.target == "#c19" {
+			t.Fatalf("#c19 survived the cap: %+v", entries)
+		}
 	}
 }

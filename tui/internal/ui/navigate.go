@@ -86,8 +86,9 @@ func (m *Model) closeJump() {
 // jumpEntries builds the filtered overlay rows: every network's conversations
 // in sidebar order, then that network's Status row, matching
 // OmaircWindow.qml's refreshJumpMatches. A channel also matches its topic and
-// a direct message matches a meaningful real name. Name matches rank first.
-// The list stays short.
+// a direct message matches a meaningful real name. Name matches stay above
+// detail-only matches, and sidebar order holds inside each group. The list
+// stays short.
 func (m *Model) jumpEntries() []jumpEntry {
 	if m.ctrl == nil {
 		return nil
@@ -147,9 +148,13 @@ func (m *Model) jumpEntries() []jumpEntry {
 		})
 		order++
 	}
+	// A name hit scores 2 or 3. A detail-only hit scores 1. The extra point
+	// for a topic or real name must not reorder two name matches.
 	sort.SliceStable(rows, func(left, right int) bool {
-		if rows[left].score != rows[right].score {
-			return rows[left].score > rows[right].score
+		leftName := rows[left].score >= 2
+		rightName := rows[right].score >= 2
+		if leftName != rightName {
+			return leftName
 		}
 		return rows[left].order < rows[right].order
 	})

@@ -13,13 +13,15 @@
 
 #include <optional>
 
-// Ctrl+K keeps at most this many rows. Name matches rank above a topic or
-// real-name match, and a tie keeps sidebar order.
+// Ctrl+K keeps at most this many rows. Name hits stay above detail-only
+// hits, and sidebar order holds inside each group.
 inline constexpr int ircJumpResultLimit = 20;
 
-// ircJumpScore ranks one jump row. A name hit is 2 and a topic or real-name
-// hit is 1, so both is 3. An empty query scores 0, which the caller includes.
-// A non-empty query with no hit also scores 0, which the caller skips.
+// ircJumpScore scores one jump row. A name hit is 2 and a topic or real-name
+// hit is 1, so both is 3. Callers keep every name hit above every detail-only
+// hit and keep sidebar order inside each group. An empty query scores 0,
+// which the caller includes. A non-empty query with no hit also scores 0,
+// which the caller skips.
 inline int ircJumpScore(const QString& query, const QString& name, const QString& detail)
 {
     const QString folded = query.trimmed().toLower();

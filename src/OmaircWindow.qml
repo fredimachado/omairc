@@ -1004,9 +1004,13 @@ ApplicationWindow {
                     order: order++
                 });
         }
+        // A name hit is 2 or 3. A detail-only hit is 1. The extra point for a
+        // topic or real name must not reorder two name matches.
         candidates.sort(function(left, right) {
-            if (left.score !== right.score)
-                return right.score - left.score;
+            var leftName = left.score >= 2 ? 1 : 0;
+            var rightName = right.score >= 2 ? 1 : 0;
+            if (leftName !== rightName)
+                return rightName - leftName;
             return left.order - right.order;
         });
         if (candidates.length > limit)
