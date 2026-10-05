@@ -180,9 +180,10 @@ void FileHostTest::uploadPostsTheFileAndResolvesLocation()
     QCOMPARE(ready.at(0).at(0).toString(),
              QStringLiteral("http://127.0.0.1:%1/upload/hoh5eFThae4e.txt")
                  .arg(server.serverPort()));
-    QVERIFY(caught.captured.contains("Authorization: Basic c2V1bmdoeWU6bm8="));
-    QVERIFY(caught.captured.contains("Content-Type: text/plain"));
-    QVERIFY(caught.captured.contains("Content-Disposition: attachment; filename=\"note.txt\""));
+    // Qt writes header names in lowercase.
+    QVERIFY(caught.captured.contains("authorization: Basic c2V1bmdoeWU6bm8="));
+    QVERIFY(caught.captured.contains("content-type: text/plain"));
+    QVERIFY(caught.captured.contains("content-disposition: attachment; filename=\"note.txt\""));
     QVERIFY(caught.captured.contains("hello file"));
 }
 
