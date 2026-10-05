@@ -520,7 +520,7 @@ std::optional<IrcHistoryEvent> IrcEventTranslator::translateHistory(
     const IrcServerFeatures& features,
     const IrcHistoryBatch& batch)
 {
-    if (batch.target.isEmpty())
+    if (batch.kind == IrcHistoryKind::ChatHistoryTargets || batch.target.isEmpty())
         return std::nullopt;
     const IrcConversationKey conversation = key(networkId, batch.target, features);
     // Channel batches already key off the channel. CHATHISTORY keeps the

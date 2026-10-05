@@ -572,9 +572,27 @@ func (c *Controller) MessageReceived(networkID string, message irc.Message) {
 }
 
 // HistoryBatchReceived replays one history batch into the reducer. A bouncer
-// playback batch is trimmed against the registration stamp first. It mirrors
-// IrcController::handleHistoryBatch (src/irc/irccontroller.cpp:2273-2285).
+// playback batch is trimmed against the registration stamp first. A TARGETS
+// answer discovers directs instead of splicing lines. It mirrors
+// IrcController::handleHistoryBatch (src/irc/irccontroller.cpp:2373-2405).
 func (c *Controller) HistoryBatchReceived(networkID string, batch irc.HistoryBatch) {
+	if batch.Kind == irc.HistoryTargets {
+		s := c.manager.Find(networkID)
+		features := c.reducer.ServerFeatures(networkID)
+		created := c.playback.NoteDiscoveredTargets(
+			s,
+			batch.Targets,
+			c.currentNicks[networkID],
+			c.openDirects.Listed(networkID, features.CaseMapping()),
+			func(target string) bool {
+				return c.persistableDirectTarget(networkID, target)
+			},
+		)
+		if created > 0 {
+			c.reloadModels()
+		}
+		return
+	}
 	features := c.reducer.ServerFeatures(networkID)
 	event, ok := irc.TranslateHistory(networkID, c.currentNicks[networkID], features, batch, c.now())
 	if !ok {
@@ -1555,6 +1573,22 @@ func (c *Controller) AddSession(config session.SessionConfig, transport session.
 		return nil, err
 	}
 	c.currentNicks[config.NetworkID] = config.Nick
+	networkID := config.NetworkID
+	s.SetChatHistoryResume(func(target string) (time.Time, bool) {
+		if when, ok := c.playback.ResumeTime(networkID, target); ok {
+			return when, true
+		}
+		// Registered is delivered after the read that carried 001 is released.
+		// A self-JOIN in that same read runs first. The store still holds the
+		// previous connection's stamps, which is the snapshot that delivery
+		// is about to take. Once the snapshot exists, a missing target stays
+		// missing so a live line cannot move this connection's AFTER bound.
+		if c.playback.snapshotTaken(networkID) {
+			return time.Time{}, false
+		}
+		features := c.reducer.ServerFeatures(networkID)
+		return c.playbackTimes.Noted(networkID, target, features.CaseMapping())
+	})
 	s.SetHandler(c)
 	c.hydrateMutes(config.NetworkID)
 	c.syncHighlightWords(config.NetworkID)
@@ -1936,8 +1970,9 @@ func (c *Controller) noteSelfAuthoredDirect(networkID, author, target string) {
 }
 
 // noteOpenDirectsMotd restores the network's open directs once, at MOTD end,
-// then releases held query playback and asks the bouncer for buffers. It
-// mirrors IrcController::noteOpenDirectsMotd (src/irc/irccontroller.cpp:1595-1612).
+// then releases held query playback, asks the bouncer for buffers, and catches
+// up with CHATHISTORY from the last place reached. It mirrors
+// IrcController::noteOpenDirectsMotd (src/irc/irccontroller.cpp:1676-1696).
 func (c *Controller) noteOpenDirectsMotd(networkID string) {
 	if networkID == "" || c.openDirectsMotdSeen[networkID] {
 		return
@@ -1953,6 +1988,7 @@ func (c *Controller) noteOpenDirectsMotd(networkID string) {
 	}
 	if s := c.manager.Find(networkID); s != nil {
 		c.requestZncPlayback(s)
+		c.requestChatHistoryCatchUp(s)
 	}
 }
 
@@ -2006,6 +2042,28 @@ func (c *Controller) requestZncPlayback(s *session.Session) {
 		func(target string) bool {
 			return c.persistableDirectTarget(networkID, target)
 		})
+}
+
+// requestChatHistoryCatchUp fills lines that arrived while away when the
+// server offers chathistory. It mirrors IrcController::requestChatHistoryCatchUp.
+func (c *Controller) requestChatHistoryCatchUp(s *session.Session) {
+	if s == nil {
+		return
+	}
+	networkID := s.NetworkID()
+	caps := c.capabilities[networkID]
+	chatHistory := caps.Contains(irc.CapabilityChatHistory) && caps.Contains(irc.CapabilityBatch)
+	features := c.reducer.ServerFeatures(networkID)
+	c.playback.RequestCatchUp(
+		s,
+		chatHistory,
+		c.openDirectsMotdSeen[networkID],
+		c.openDirects.Listed(networkID, features.CaseMapping()),
+		func(target string) bool {
+			return c.persistableDirectTarget(networkID, target)
+		},
+		c.now(),
+	)
 }
 
 // requestChannelPlayback retries one joined channel's PLAY. It mirrors

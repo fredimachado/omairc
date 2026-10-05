@@ -109,6 +109,8 @@ const (
 	HistoryChat HistoryKind = iota
 	// HistoryBouncerPlayback is a bouncer playback batch.
 	HistoryBouncerPlayback
+	// HistoryTargets is a CHATHISTORY TARGETS answer: names, not lines.
+	HistoryTargets
 )
 
 // WelcomeEvent reports 001: the network is registered and the current nick is

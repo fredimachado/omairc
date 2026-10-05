@@ -485,6 +485,11 @@ private slots:
     void nestedBatchesDoNotFailTheSession();
     void unknownBatchTypeAndCloseStayRegistered();
     void selfJoinRequestsChatHistoryOnceUntilPart();
+    void selfJoinResumesChatHistoryAfter();
+    void emptyChatHistoryAfterStillPagesUp();
+    void failedChatHistoryAfterStillPagesUp();
+    void chatHistoryTargetsNamesTheBatch();
+    void failedChatHistoryTargetsCanBeAskedAgain();
     void selfJoinWithBarePrefixRequestsChatHistory();
     void selfJoinWithoutChatHistorySendsNothing();
     void selfJoinWithoutBatchDoesNotRequestChatHistory();
@@ -4334,6 +4339,147 @@ void SessionTest::selfJoinRequestsChatHistoryOnceUntilPart()
                           ":omairc!u@h JOIN :#omarchy\r\n"));
     QCOMPARE(fixture.transport->writtenFrames().last(),
              QByteArrayLiteral("CHATHISTORY LATEST #omarchy * 100\r\n"));
+}
+
+void SessionTest::selfJoinResumesChatHistoryAfter()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    const QDateTime when = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
+    QVERIFY(when.isValid());
+    fixture.session->setChatHistoryResume(
+        [when](const QString&) -> std::optional<QDateTime> { return when; });
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral(
+                 "CHATHISTORY AFTER #omarchy timestamp=2024-03-09T16:00:00.620Z 100\r\n"));
+    QVERIFY(!fixture.transport->writtenFrames().contains(
+        QByteArrayLiteral("CHATHISTORY LATEST #omarchy * 100\r\n")));
+}
+
+void SessionTest::emptyChatHistoryAfterStillPagesUp()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    const QDateTime when = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
+    QVERIFY(when.isValid());
+    fixture.session->setChatHistoryResume(
+        [when](const QString&) -> std::optional<QDateTime> { return when; });
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":irc.host BATCH +empty chathistory #omarchy\r\n"
+                          ":irc.host BATCH -empty\r\n"));
+    QVERIFY(fixture.session->requestOlderHistory(
+        QStringLiteral("#omarchy"), QStringLiteral("old"), std::nullopt));
+    QVERIFY(fixture.transport->writtenFrames().contains(
+        QByteArrayLiteral("CHATHISTORY BEFORE #omarchy msgid=old 100\r\n")));
+}
+
+void SessionTest::failedChatHistoryAfterStillPagesUp()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    const QDateTime when = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
+    QVERIFY(when.isValid());
+    fixture.session->setChatHistoryResume(
+        [when](const QString&) -> std::optional<QDateTime> { return when; });
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server FAIL CHATHISTORY INVALID_TARGET AFTER #omarchy :no\r\n"));
+    QVERIFY(fixture.session->requestOlderHistory(
+        QStringLiteral("#omarchy"), QStringLiteral("old"), std::nullopt));
+    QVERIFY(fixture.transport->writtenFrames().contains(
+        QByteArrayLiteral("CHATHISTORY BEFORE #omarchy msgid=old 100\r\n")));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+}
+
+void SessionTest::chatHistoryTargetsNamesTheBatch()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    const QDateTime from = QDateTime::fromString(
+        QStringLiteral("2024-03-09T15:59:59.620Z"), Qt::ISODateWithMs);
+    const QDateTime until = QDateTime::fromString(
+        QStringLiteral("2026-10-04T12:00:10.000Z"), Qt::ISODateWithMs);
+    QVERIFY(from.isValid());
+    QVERIFY(until.isValid());
+    QVERIFY(fixture.session->requestHistoryTargets(from, until));
+    QVERIFY(fixture.transport->writtenFrames().contains(QByteArrayLiteral(
+        "CHATHISTORY TARGETS timestamp=2024-03-09T15:59:59.620Z "
+        "timestamp=2026-10-04T12:00:10.000Z 100\r\n")));
+
+    QList<IrcHistoryBatch> batches;
+    QObject::connect(fixture.session, &IrcSession::historyBatchReceived, fixture.session,
+                     [&](const QString&, const IrcHistoryBatch& batch) {
+        batches.append(batch);
+    });
+    fixture.transport->injectBytes(QByteArrayLiteral(
+        ":irc.host BATCH +t draft/chathistory-targets\r\n"
+        "@batch=t :irc.host CHATHISTORY TARGETS lena 2024-03-09T16:00:00.620Z\r\n"
+        "@batch=t :irc.host CHATHISTORY TARGETS alice timestamp=2024-03-09T16:00:01.000Z\r\n"
+        ":irc.host BATCH -t\r\n"));
+    QCOMPARE(batches.size(), 1);
+    QCOMPARE(batches.front().kind, IrcHistoryKind::ChatHistoryTargets);
+    QCOMPARE(int(batches.front().targets.size()), 2);
+    QCOMPARE(batches.front().targets[0].name, QStringLiteral("lena"));
+    QCOMPARE(batches.front().targets[0].latest,
+             QDateTime::fromString(QStringLiteral("2024-03-09T16:00:00.620Z"),
+                                   Qt::ISODateWithMs));
+    QCOMPARE(batches.front().targets[1].name, QStringLiteral("alice"));
+    QCOMPARE(batches.front().lines.size(), std::size_t(0));
+}
+
+void SessionTest::failedChatHistoryTargetsCanBeAskedAgain()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    const QDateTime from = QDateTime::fromString(
+        QStringLiteral("2024-03-09T15:59:59.620Z"), Qt::ISODateWithMs);
+    const QDateTime until = QDateTime::fromString(
+        QStringLiteral("2026-10-04T12:00:10.000Z"), Qt::ISODateWithMs);
+    QVERIFY(fixture.session->requestHistoryTargets(from, until));
+    fixture.transport->injectBytes(QByteArrayLiteral(
+        ":server FAIL CHATHISTORY MESSAGE_ERROR TARGETS :no\r\n"));
+    QVERIFY(fixture.session->requestHistoryTargets(from, until));
+    int count = 0;
+    const QByteArray needle = QByteArrayLiteral("CHATHISTORY TARGETS ");
+    for (const QByteArray& frame : fixture.transport->writtenFrames()) {
+        if (frame.contains(needle))
+            ++count;
+    }
+    QCOMPARE(count, 2);
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
 }
 
 void SessionTest::selfJoinWithBarePrefixRequestsChatHistory()

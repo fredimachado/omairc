@@ -386,6 +386,17 @@ func (r *EventReducer) SetConversationLog(log ConversationLog) {
 	r.log = log
 }
 
+// HasStoredTranscript reports whether the transcript log already holds a line
+// for target. A closed query keeps that file after the sidebar row is gone.
+// It mirrors IrcEventReducer::hasStoredTranscript.
+func (r *EventReducer) HasStoredTranscript(networkID, target string) bool {
+	if r.log == nil || networkID == "" || target == "" {
+		return false
+	}
+	features := r.ServerFeatures(networkID)
+	return len(r.log.ReadTail(networkID, target, features.CaseMapping(), 1)) > 0
+}
+
 // Apply folds one translated event into the store. The now argument is the
 // caller's clock, used only where the C++ core would read the wall clock. It
 // mirrors IrcEventReducer::apply plus the injected clock.

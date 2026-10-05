@@ -294,6 +294,7 @@ private:
     // Packs the capability, MOTD-seen, and open-direct lookups the
     // coordinator takes as arguments at the call.
     void requestZncPlayback(IrcSession *session);
+    void requestChatHistoryCatchUp(IrcSession *session);
     void requestZncChannelPlayback(IrcSession *session, const QString& channel);
     void reloadModels();
     IrcCommandOutcome dispatch(const IrcCommand& command,

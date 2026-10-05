@@ -157,6 +157,7 @@ type ReachabilitySource interface {
 
 const (
 	kHistoryLimit         = 100
+	kHistoryAfterPageCap  = 10
 	kHistoryBufferCeiling = 256
 	kMaxOpenBatches       = 16
 	kMaxIgnoredBatches    = 32
@@ -198,6 +199,14 @@ const (
 
 // openBatch is the Go shape of IrcSession::OpenBatch
 // (src/irc/ircsession.h:328-336).
+type historyRequestKind int
+
+const (
+	historyRequestLatest historyRequestKind = iota
+	historyRequestBefore
+	historyRequestAfter
+)
+
 type openBatch struct {
 	batchType    string
 	parent       string
@@ -207,6 +216,14 @@ type openBatch struct {
 	collected    irc.HistoryBatch
 	generation   int
 	requestLabel string
+	// historyEnded is draft/chathistory-end on the opening BATCH.
+	historyEnded bool
+	// historyRequestKind is the CHATHISTORY subcommand this batch answers,
+	// captured when the batch opens. hasHistoryRequest is false for a batch
+	// that was not a request we were waiting on. Latest is the zero value, so
+	// the bool is what distinguishes "we asked" from "no request".
+	historyRequestKind historyRequestKind
+	hasHistoryRequest  bool
 }
 
 // sessionAction is one deferred unit of work. It either delivers a handler
@@ -246,13 +263,18 @@ type Session struct {
 
 	framer irc.Framer
 
-	openBatches          map[string]*openBatch
-	ignoredBatches       map[string]struct{}
-	historyGeneration    map[string]int
-	historyAsked         map[string]struct{}
-	historyPending       map[string]int
-	historyPendingBefore map[string]bool
-	historyExhausted     map[string]struct{}
+	openBatches           map[string]*openBatch
+	ignoredBatches        map[string]struct{}
+	historyGeneration     map[string]int
+	historyAsked          map[string]struct{}
+	historyPending        map[string]int
+	historyPendingBefore  map[string]bool
+	historyPendingKind    map[string]historyRequestKind
+	historyExhausted      map[string]struct{}
+	historyAfterPages     map[string]int
+	historyAfterCursor    map[string]time.Time
+	historyTargetsPending bool
+	historyResume         func(target string) (time.Time, bool)
 
 	readMarkerPending  map[string]readMarkerQueue
 	readMarkerInFlight map[string]time.Time
@@ -336,7 +358,10 @@ func NewSession(config SessionConfig, transport Transport, clock Clock) *Session
 		historyAsked:         map[string]struct{}{},
 		historyPending:       map[string]int{},
 		historyPendingBefore: map[string]bool{},
+		historyPendingKind:   map[string]historyRequestKind{},
 		historyExhausted:     map[string]struct{}{},
+		historyAfterPages:    map[string]int{},
+		historyAfterCursor:   map[string]time.Time{},
 		pendingLabels:        map[string]time.Time{},
 		ctcpReplyClock:       map[string]time.Time{},
 		scram:                NewSASLScram(),
@@ -506,6 +531,45 @@ func (s *Session) RequestOlderHistory(target, msgid string, timestamp time.Time)
 	var ok bool
 	s.locked(func() {
 		ok = s.requestOlderHistoryLocked(target, msgid, timestamp)
+	})
+	return ok
+}
+
+// SetChatHistoryResume installs the registration-snapshot lookup a self-JOIN
+// uses as the CHATHISTORY AFTER bound. A nil resume, or a zero time, keeps
+// LATEST. It mirrors IrcSession::setChatHistoryResume.
+func (s *Session) SetChatHistoryResume(resume func(target string) (time.Time, bool)) {
+	s.mu.Lock()
+	s.historyResume = resume
+	s.mu.Unlock()
+}
+
+// RequestHistoryAfter asks for lines strictly after after. It mirrors
+// IrcSession::requestHistoryAfter.
+func (s *Session) RequestHistoryAfter(target string, after time.Time) bool {
+	var ok bool
+	s.locked(func() {
+		ok = s.requestHistoryAfterLocked(target, after)
+	})
+	return ok
+}
+
+// RequestHistoryLatest asks for the newest page of target. It mirrors
+// IrcSession::requestHistoryLatest.
+func (s *Session) RequestHistoryLatest(target string) bool {
+	var ok bool
+	s.locked(func() {
+		ok = s.requestHistoryLatestLocked(target)
+	})
+	return ok
+}
+
+// RequestHistoryTargets asks which targets have messages between from and
+// until. It mirrors IrcSession::requestHistoryTargets.
+func (s *Session) RequestHistoryTargets(from, until time.Time) bool {
+	var ok bool
+	s.locked(func() {
+		ok = s.requestHistoryTargetsLocked(from, until)
 	})
 	return ok
 }
@@ -1919,8 +1983,9 @@ func (s *Session) handleBatchLocked(message irc.Message) {
 		// A history batch that answers a request we are still waiting on, or a
 		// labeled-response batch whose opening @label is still pending, is never
 		// crowded out. Everything else shares the open-batch budget.
-		solicited := hasKind && kind == irc.HistoryChat &&
-			s.answersPendingHistoryLocked(parameter(message, 2))
+		solicitedTargets := hasKind && kind == irc.HistoryTargets && s.historyTargetsPending
+		solicited := solicitedTargets || (hasKind && kind == irc.HistoryChat &&
+			s.answersPendingHistoryLocked(parameter(message, 2)))
 		pendingLabeledResponse := labeledResponse && s.hasPendingRequestLabelLocked(carriedLabel)
 		overOpenCap := !solicited && !pendingLabeledResponse &&
 			len(s.openBatches) >= kMaxOpenBatches
@@ -1931,6 +1996,9 @@ func (s *Session) handleBatchLocked(message irc.Message) {
 			s.ignoreBatchLocked(reference)
 			if hasKind && kind == irc.HistoryChat {
 				s.clearHistoryPendingLocked(parameter(message, 2))
+			}
+			if hasKind && kind == irc.HistoryTargets {
+				s.historyTargetsPending = false
 			}
 			return
 		}
@@ -1956,8 +2024,17 @@ func (s *Session) handleBatchLocked(message irc.Message) {
 			if hasKind {
 				frame.kind = kind
 			}
+			frame.historyEnded = tagPresent(message, "draft/chathistory-end")
 			frame.collected.Target = parameter(message, 2)
 			frame.generation = s.historyGenerationLocked(frame.collected.Target)
+			if hasKind && kind == irc.HistoryChat &&
+				s.answersPendingHistoryLocked(frame.collected.Target) {
+				folded := s.foldChannelLocked(frame.collected.Target)
+				if requestKind, ok := s.historyPendingKind[folded]; ok {
+					frame.historyRequestKind = requestKind
+					frame.hasHistoryRequest = true
+				}
+			}
 		}
 		s.openBatches[reference] = frame
 		return
@@ -1993,13 +2070,26 @@ func (s *Session) closeBatchLocked(reference string) {
 	if frame.requestLabel != "" {
 		s.finishRequestLabelLocked(frame.requestLabel)
 	}
+	if frame.replayRoot == reference && frame.hasKind && frame.kind == irc.HistoryTargets {
+		s.historyTargetsPending = false
+		batch := irc.HistoryBatch{
+			Kind:    irc.HistoryTargets,
+			Targets: historyTargetsFrom(frame.collected.Lines),
+		}
+		networkID := s.config.NetworkID
+		s.emit(func(handler Handler) { handler.HistoryBatchReceived(networkID, batch) })
+		return
+	}
 	if frame.replayRoot == reference && frame.collected.Target != "" {
 		currentMembership := frame.generation == s.historyGenerationLocked(frame.collected.Target)
-		if currentMembership && frame.hasKind && frame.kind == irc.HistoryChat {
-			folded := s.foldChannelLocked(frame.collected.Target)
-			solicited := s.answersPendingHistoryLocked(frame.collected.Target)
+		folded := s.foldChannelLocked(frame.collected.Target)
+		after := frame.hasHistoryRequest && frame.historyRequestKind == historyRequestAfter
+		if currentMembership && frame.hasKind && frame.kind == irc.HistoryChat && frame.hasHistoryRequest {
 			delete(s.historyPending, folded)
-			if solicited && len(frame.collected.Lines) == 0 {
+			delete(s.historyPendingKind, folded)
+			// An empty AFTER means nothing new arrived. It is not the end of
+			// the older page, so scrolling up must still send BEFORE.
+			if len(frame.collected.Lines) == 0 && !after {
 				s.historyExhausted[folded] = struct{}{}
 			}
 		}
@@ -2011,9 +2101,12 @@ func (s *Session) closeBatchLocked(reference string) {
 		}
 		batch := frame.collected
 		if frame.hasKind && frame.kind == irc.HistoryChat {
-			folded := s.foldChannelLocked(frame.collected.Target)
-			batch.OlderPage = s.historyPendingBefore[folded]
+			batch.OlderPage = frame.hasHistoryRequest &&
+				frame.historyRequestKind == historyRequestBefore
 			delete(s.historyPendingBefore, folded)
+			if currentMembership && after {
+				s.maybeChainHistoryAfterLocked(frame.collected.Target, batch, frame.historyEnded)
+			}
 		}
 		if frame.hasKind && frame.kind == irc.HistoryBouncerPlayback {
 			batch.Kind = irc.HistoryBouncerPlayback
@@ -2061,6 +2154,8 @@ func replayKindFor(batchType string) (irc.HistoryKind, bool) {
 	switch strings.ToLower(batchType) {
 	case "chathistory", "draft/chathistory":
 		return irc.HistoryChat, true
+	case "draft/chathistory-targets":
+		return irc.HistoryTargets, true
 	case "znc.in/playback":
 		return irc.HistoryBouncerPlayback, true
 	}
@@ -2075,7 +2170,10 @@ func (s *Session) replayEnabledLocked(kind irc.HistoryKind) bool {
 	if !enabled.Contains(irc.CapabilityBatch) {
 		return false
 	}
-	return kind != irc.HistoryChat || enabled.Contains(irc.CapabilityChatHistory)
+	if kind == irc.HistoryBouncerPlayback {
+		return true
+	}
+	return enabled.Contains(irc.CapabilityChatHistory)
 }
 
 func (s *Session) ignoreBatchLocked(reference string) {
@@ -2102,9 +2200,104 @@ func (s *Session) requestChannelHistoryLocked(channel string) {
 	if _, asked := s.historyAsked[key]; asked {
 		return
 	}
+	if s.historyResume != nil {
+		if when, ok := s.historyResume(channel); ok && !when.IsZero() {
+			if s.requestHistoryAfterLocked(channel, when) {
+				return
+			}
+		}
+	}
+	s.requestHistoryLatestLocked(channel)
+}
+
+func (s *Session) requestHistoryLatestLocked(target string) bool {
+	if target == "" || !s.replayEnabledLocked(irc.HistoryChat) {
+		return false
+	}
+	key := s.foldChannelLocked(target)
+	if _, asked := s.historyAsked[key]; asked {
+		return false
+	}
+	if s.historyInflightLocked(target) {
+		return false
+	}
 	s.historyAsked[key] = struct{}{}
-	s.historyPending[key] = s.historyGenerationLocked(channel)
-	s.sendCommandLocked(fmt.Sprintf("CHATHISTORY LATEST %s * %d", channel, s.historyLimit), "")
+	s.historyPending[key] = s.historyGenerationLocked(target)
+	s.historyPendingKind[key] = historyRequestLatest
+	return s.sendCommandLocked(fmt.Sprintf("CHATHISTORY LATEST %s * %d", target, s.historyLimit), "")
+}
+
+func (s *Session) requestHistoryAfterLocked(target string, after time.Time) bool {
+	if target == "" || after.IsZero() || !s.replayEnabledLocked(irc.HistoryChat) {
+		return false
+	}
+	if s.historyInflightLocked(target) {
+		return false
+	}
+	key := s.foldChannelLocked(target)
+	s.historyAsked[key] = struct{}{}
+	s.historyAfterPages[key] = 1
+	s.historyAfterCursor[key] = after.UTC()
+	return s.sendHistoryAfterLocked(target, after)
+}
+
+func (s *Session) sendHistoryAfterLocked(target string, after time.Time) bool {
+	key := s.foldChannelLocked(target)
+	s.historyPending[key] = s.historyGenerationLocked(target)
+	s.historyPendingKind[key] = historyRequestAfter
+	return s.sendCommandLocked(fmt.Sprintf("CHATHISTORY AFTER %s timestamp=%s %d",
+		target, formatChatHistoryTimestamp(after), s.historyLimit), "")
+}
+
+func (s *Session) maybeChainHistoryAfterLocked(target string, batch irc.HistoryBatch, historyEnded bool) {
+	if target == "" || historyEnded {
+		return
+	}
+	key := s.foldChannelLocked(target)
+	pages := s.historyAfterPages[key]
+	if pages == 0 {
+		pages = 1
+	}
+	if pages >= kHistoryAfterPageCap || len(batch.Lines) < s.historyLimit {
+		return
+	}
+	var newest time.Time
+	found := false
+	for _, line := range batch.Lines {
+		when, ok := irc.ServerTimeOf(line)
+		if !ok {
+			continue
+		}
+		if !found || when.After(newest) {
+			newest = when
+			found = true
+		}
+	}
+	if !found {
+		return
+	}
+	cursor := s.historyAfterCursor[key]
+	if !cursor.IsZero() && !newest.After(cursor) {
+		return
+	}
+	s.historyAfterPages[key] = pages + 1
+	s.historyAfterCursor[key] = newest.UTC()
+	s.sendHistoryAfterLocked(target, newest)
+}
+
+func (s *Session) requestHistoryTargetsLocked(from, until time.Time) bool {
+	if !s.replayEnabledLocked(irc.HistoryChat) || s.historyTargetsPending {
+		return false
+	}
+	if from.IsZero() || until.IsZero() || !until.After(from) {
+		return false
+	}
+	if !s.sendCommandLocked(fmt.Sprintf("CHATHISTORY TARGETS timestamp=%s timestamp=%s %d",
+		formatChatHistoryTimestamp(from), formatChatHistoryTimestamp(until), s.historyLimit), "") {
+		return false
+	}
+	s.historyTargetsPending = true
+	return true
 }
 
 func (s *Session) requestOlderHistoryLocked(target, msgid string, timestamp time.Time) bool {
@@ -2133,9 +2326,11 @@ func (s *Session) requestOlderHistoryLocked(target, msgid string, timestamp time
 	}
 	s.historyPending[key] = s.historyGenerationLocked(target)
 	s.historyPendingBefore[key] = true
+	s.historyPendingKind[key] = historyRequestBefore
 	if !s.sendCommandLocked(fmt.Sprintf("CHATHISTORY BEFORE %s %s %d", target, cursor, s.historyLimit), "") {
 		delete(s.historyPending, key)
 		delete(s.historyPendingBefore, key)
+		delete(s.historyPendingKind, key)
 		return false
 	}
 	return true
@@ -2150,7 +2345,10 @@ func (s *Session) forgetChannelHistoryLocked(channel string) {
 	delete(s.historyAsked, folded)
 	delete(s.historyPending, folded)
 	delete(s.historyPendingBefore, folded)
+	delete(s.historyPendingKind, folded)
 	delete(s.historyExhausted, folded)
+	delete(s.historyAfterPages, folded)
+	delete(s.historyAfterCursor, folded)
 	s.dropHistoryBatchesLocked(channel)
 }
 
@@ -2184,6 +2382,7 @@ func (s *Session) bumpHistoryGenerationLocked(channel string) {
 	s.historyGeneration[folded] = s.historyGenerationLocked(channel) + 1
 	delete(s.historyPending, folded)
 	delete(s.historyPendingBefore, folded)
+	delete(s.historyPendingKind, folded)
 }
 
 func (s *Session) historyInflightLocked(target string) bool {
@@ -2218,6 +2417,7 @@ func (s *Session) clearHistoryPendingLocked(channel string) {
 	folded := s.foldChannelLocked(channel)
 	delete(s.historyPending, folded)
 	delete(s.historyPendingBefore, folded)
+	delete(s.historyPendingKind, folded)
 }
 
 func (s *Session) answersPendingHistoryLocked(channel string) bool {
@@ -2263,6 +2463,10 @@ func (s *Session) abandonHistoryRequestsLocked() {
 	}
 	s.historyPending = map[string]int{}
 	s.historyPendingBefore = map[string]bool{}
+	s.historyPendingKind = map[string]historyRequestKind{}
+	s.historyTargetsPending = false
+	s.historyAfterPages = map[string]int{}
+	s.historyAfterCursor = map[string]time.Time{}
 }
 
 func (s *Session) isHistoryBatchLocked(batchType, parent string) bool {
@@ -2286,6 +2490,10 @@ func (s *Session) handleChatHistoryFailLocked(message irc.Message) {
 	if len(message.Params) < 4 {
 		return
 	}
+	if strings.EqualFold(parameter(message, 2), "TARGETS") {
+		s.historyTargetsPending = false
+		return
+	}
 	// FAIL CHATHISTORY <code> <subcommand> [<target>] [<context>] :description.
 	// The target's position moves with the code, so look for the request this
 	// answers instead of indexing. The trailing description is skipped so a
@@ -2297,9 +2505,13 @@ func (s *Session) handleChatHistoryFailLocked(message irc.Message) {
 		}
 		folded := s.foldChannelLocked(channel)
 		before := s.historyPendingBefore[folded]
+		after := s.historyPendingKind[folded] == historyRequestAfter
 		delete(s.historyPending, folded)
 		delete(s.historyPendingBefore, folded)
-		s.historyExhausted[folded] = struct{}{}
+		delete(s.historyPendingKind, folded)
+		if !after {
+			s.historyExhausted[folded] = struct{}{}
+		}
 		networkID := s.config.NetworkID
 		s.emit(func(handler Handler) {
 			handler.ChatHistoryRequestFinished(networkID, channel, true, before)
@@ -2678,7 +2890,11 @@ func (s *Session) resetForConnectionLocked() {
 	s.historyAsked = map[string]struct{}{}
 	s.historyPending = map[string]int{}
 	s.historyPendingBefore = map[string]bool{}
+	s.historyPendingKind = map[string]historyRequestKind{}
 	s.historyExhausted = map[string]struct{}{}
+	s.historyTargetsPending = false
+	s.historyAfterPages = map[string]int{}
+	s.historyAfterCursor = map[string]time.Time{}
 	s.historyGeneration = map[string]int{}
 	s.historyLimit = kHistoryLimit
 	s.features = irc.NewServerFeatures()
@@ -2822,6 +3038,60 @@ func tagValue(message irc.Message, name string) string {
 		}
 	}
 	return ""
+}
+
+// tagPresent reports whether name is on the message. draft/chathistory-end
+// carries no value, so tagValue would miss it. It mirrors tagPresent.
+func tagPresent(message irc.Message, name string) bool {
+	for _, tag := range message.Tags {
+		if tag.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func parseHistoryTargetTime(raw string) (time.Time, bool) {
+	raw = strings.TrimPrefix(raw, "timestamp=")
+	if raw == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{
+		"2006-01-02T15:04:05.000Z",
+		time.RFC3339Nano,
+		time.RFC3339,
+	} {
+		parsed, err := time.Parse(layout, raw)
+		if err != nil {
+			continue
+		}
+		return parsed.UTC(), true
+	}
+	return time.Time{}, false
+}
+
+// historyTargetsFrom reads CHATHISTORY TARGETS rows out of a
+// draft/chathistory-targets batch. It mirrors historyTargetsFrom.
+func historyTargetsFrom(lines []irc.Message) []irc.HistoryTarget {
+	var targets []irc.HistoryTarget
+	for _, line := range lines {
+		if !strings.EqualFold(line.Command, "CHATHISTORY") {
+			continue
+		}
+		if !strings.EqualFold(parameter(line, 0), "TARGETS") {
+			continue
+		}
+		name := parameter(line, 1)
+		if name == "" {
+			continue
+		}
+		row := irc.HistoryTarget{Name: name}
+		if latest, ok := parseHistoryTargetTime(parameter(line, 2)); ok {
+			row.Latest = latest
+		}
+		targets = append(targets, row)
+	}
+	return targets
 }
 
 func parameterIndex(message irc.Message, value string) int {

@@ -32,6 +32,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   asks first, and only then joins. The name is recognized from the network's
   advertised `CHANTYPES`.
 - Join, part, quit, and nick lines fold together. A leave followed at once by the same nick rejoining is omitted, and a nick chain keeps the final name. `/pref joins` shows every line or hides these lines, including history playback.
+- The terminal client catches up on lines that arrived while it was away when
+  the server offers chathistory. Open conversations resume with `CHATHISTORY
+  AFTER`, and a direct message that was never opened is discovered and filled.
+  A closed conversation stays closed. A server without chathistory keeps the
+  playback it already had.
+- The desktop client catches up on lines that arrived while it was away when
+  the server offers chathistory. Open conversations resume with `CHATHISTORY
+  AFTER`, and a direct message that was never opened is discovered and filled.
+  A closed conversation stays closed. A server without chathistory keeps the
+  playback it already had.
 - The terminal client marks every conversation read with `Alt+Shift+A`. Sidebar
   badges clear, and that background title clears with them. `Alt+A` still
   prefers a mention, then ordinary unread. When nothing is unread, it opens

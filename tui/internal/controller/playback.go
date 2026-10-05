@@ -36,6 +36,18 @@ type PlaybackCoordinator struct {
 	// session.SendRaw; tests substitute a recorder. It stays unexported so the
 	// public API does not widen.
 	sendZnc func(s *session.Session, target, from string) bool
+	// catchUpSent is the CHATHISTORY catch-up already sent this connection.
+	// targets means the TARGETS query went out, or there was no last place to
+	// ask from. asked is each direct AFTER or LATEST, so a later TARGETS reply
+	// does not ask twice.
+	catchUpSent map[string]catchUpSent
+}
+
+// catchUpSent is the catch-up book for one connection. It mirrors
+// IrcPlaybackCoordinator::CatchUpSent.
+type catchUpSent struct {
+	targets bool
+	asked   map[string]bool
 }
 
 // zncPlaybackSent is the PLAY book for one connection. all is `PLAY * 0` on a
@@ -64,6 +76,7 @@ func NewPlaybackCoordinator(times *storage.PlaybackTimeStore, reducer *irc.Event
 		sendZnc: func(s *session.Session, target, from string) bool {
 			return s.SendRaw("ZNC *playback PLAY " + target + " " + from)
 		},
+		catchUpSent: map[string]catchUpSent{},
 	}
 }
 
@@ -83,6 +96,7 @@ func (p *PlaybackCoordinator) OnLeftRegistration(networkID string) {
 	delete(p.playbackSnapshot, networkID)
 	delete(p.zncAutojoin, networkID)
 	delete(p.zncJoinedChannels, networkID)
+	delete(p.catchUpSent, networkID)
 }
 
 // DropSnapshot clears only the registration snapshot: forgetting a network
@@ -397,6 +411,199 @@ func (p *PlaybackCoordinator) RequestChannelPlayback(s *session.Session, channel
 		return
 	}
 	p.markTarget(networkID, p.reducer.ConversationKey(networkID, channel).NormalizedTarget)
+}
+
+// ResumeTime returns the registration snapshot for one target. A self-JOIN
+// uses it as the CHATHISTORY AFTER bound. The second result is false when
+// this connection has no stamp for target. It mirrors resumeTime.
+func (p *PlaybackCoordinator) ResumeTime(networkID, target string) (time.Time, bool) {
+	return p.playbackSnapshotTime(networkID, target)
+}
+
+// snapshotTaken reports whether numeric 001 has stored this connection's
+// snapshot. A self-JOIN in the same read as 001 can run before that delivery.
+func (p *PlaybackCoordinator) snapshotTaken(networkID string) bool {
+	_, ok := p.playbackSnapshot[networkID]
+	return ok
+}
+
+// RequestCatchUp sends CHATHISTORY AFTER for directs left open, then
+// CHATHISTORY TARGETS from the last place reached. A server without
+// chathistory is a no-op so ZNC PLAY stays the playback it already has. It
+// mirrors requestCatchUp.
+func (p *PlaybackCoordinator) RequestCatchUp(s *session.Session, chatHistory, motdSeen bool,
+	restoredDirects []string, persistableDirect func(target string) bool, now time.Time) {
+	if s == nil || s.State() != session.StateRegistered {
+		return
+	}
+	if !motdSeen || !chatHistory {
+		return
+	}
+	networkID := s.NetworkID()
+	if p.catchUpSent[networkID].targets {
+		return
+	}
+	for _, nick := range restoredDirects {
+		if !persistableDirect(nick) {
+			continue
+		}
+		key := p.reducer.ConversationKey(networkID, nick)
+		if p.reducer.Find(key) == nil {
+			continue
+		}
+		if p.catchUpAsked(networkID, key.NormalizedTarget) {
+			continue
+		}
+		var sent bool
+		if when, ok := p.playbackSnapshotTime(networkID, nick); ok {
+			sent = s.RequestHistoryAfter(nick, when)
+		} else {
+			sent = s.RequestHistoryLatest(nick)
+		}
+		if !sent {
+			return
+		}
+		p.markCatchUp(networkID, key.NormalizedTarget)
+	}
+	newest, hasNewest := p.newestSnapshot(networkID)
+	if !hasNewest || now.IsZero() {
+		p.markCatchUpTargets(networkID)
+		return
+	}
+	// BETWEEN is exclusive at both ends. One second of slop keeps a message
+	// whose stored millisecond was truncated. Ten seconds past now covers
+	// clock skew on the upper end.
+	lower := newest.UTC().Add(-time.Second)
+	upper := now.UTC().Add(10 * time.Second)
+	if !upper.After(lower) || !s.RequestHistoryTargets(lower, upper) {
+		p.markCatchUpTargets(networkID)
+		return
+	}
+	p.markCatchUpTargets(networkID)
+}
+
+// NoteDiscoveredTargets opens a direct the server named that this client has
+// never reached. A closed query, a channel, and the bouncer stay closed. It
+// returns how many queries this call inserted. It mirrors
+// noteDiscoveredTargets.
+func (p *PlaybackCoordinator) NoteDiscoveredTargets(s *session.Session, targets []irc.HistoryTarget,
+	currentNick string, restoredDirects []string, persistableDirect func(target string) bool) int {
+	if s == nil || s.State() != session.StateRegistered {
+		return 0
+	}
+	networkID := s.NetworkID()
+	features := p.reducer.ServerFeatures(networkID)
+	mapping := features.CaseMapping()
+	newest, hasNewest := p.newestSnapshot(networkID)
+	created := 0
+	for _, row := range targets {
+		name := row.Name
+		if name == "" || features.IsChannel(name) {
+			continue
+		}
+		// BouncerServ ends in "serv". *status is not a person.
+		if !irc.NickIsRoutable(name) || irc.TargetLooksLikeService(name, features) {
+			continue
+		}
+		if currentNick != "" && mapping.Equals(name, currentNick) {
+			continue
+		}
+		key := p.reducer.ConversationKey(networkID, name)
+		if p.catchUpAsked(networkID, key.NormalizedTarget) {
+			continue
+		}
+		openNow := p.reducer.Find(key) != nil
+		restored := listContains(restoredDirects, name, mapping)
+		_, stamped := p.playbackSnapshotTime(networkID, name)
+		reached := stamped || p.reducer.HasStoredTranscript(networkID, name)
+		// Closed: the user reached it, and it is not open now.
+		if !openNow && !restored && reached {
+			continue
+		}
+		if !openNow && !restored {
+			if !persistableDirect(name) || !hasNewest {
+				continue
+			}
+			conversation := p.reducer.EnsureConversation(key, name, irc.CauseInboundOther)
+			if conversation == nil {
+				continue
+			}
+			if !s.RequestHistoryAfter(name, newest.UTC().Add(-time.Second)) {
+				if len(conversation.Messages) == 0 {
+					p.reducer.DropDirectMessage(key)
+				}
+				continue
+			}
+			p.markCatchUp(networkID, key.NormalizedTarget)
+			created++
+			continue
+		}
+		if !openNow {
+			continue
+		}
+		var sent bool
+		if when, ok := p.playbackSnapshotTime(networkID, name); ok {
+			sent = s.RequestHistoryAfter(name, when)
+		} else {
+			sent = s.RequestHistoryLatest(name)
+		}
+		if !sent {
+			continue
+		}
+		p.markCatchUp(networkID, key.NormalizedTarget)
+	}
+	return created
+}
+
+func (p *PlaybackCoordinator) newestSnapshot(networkID string) (time.Time, bool) {
+	rows, ok := p.playbackSnapshot[networkID]
+	if !ok {
+		return time.Time{}, false
+	}
+	var newest time.Time
+	found := false
+	for _, row := range rows {
+		if row.When.IsZero() {
+			continue
+		}
+		if !found || row.When.After(newest) {
+			newest = row.When
+			found = true
+		}
+	}
+	return newest, found
+}
+
+func (p *PlaybackCoordinator) catchUpAsked(networkID, normalizedTarget string) bool {
+	sent, ok := p.catchUpSent[networkID]
+	if !ok {
+		return false
+	}
+	return sent.asked[normalizedTarget]
+}
+
+func (p *PlaybackCoordinator) markCatchUp(networkID, normalizedTarget string) {
+	sent := p.catchUpSent[networkID]
+	if sent.asked == nil {
+		sent.asked = map[string]bool{}
+	}
+	sent.asked[normalizedTarget] = true
+	p.catchUpSent[networkID] = sent
+}
+
+func (p *PlaybackCoordinator) markCatchUpTargets(networkID string) {
+	sent := p.catchUpSent[networkID]
+	sent.targets = true
+	p.catchUpSent[networkID] = sent
+}
+
+func listContains(rows []string, target string, mapping irc.CaseMapping) bool {
+	for _, row := range rows {
+		if mapping.Equals(row, target) {
+			return true
+		}
+	}
+	return false
 }
 
 // markAll records that PLAY * 0 opened every target for the network.

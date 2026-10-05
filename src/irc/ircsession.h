@@ -146,6 +146,14 @@ public:
     bool requestOlderHistory(const QString& target,
                              const QString& oldestMsgid,
                              const std::optional<QDateTime>& oldestServerTime);
+    // Resume time for one target, taken at registration. A valid time makes
+    // the next self-JOIN ask CHATHISTORY AFTER instead of LATEST.
+    using ChatHistoryResume =
+        std::function<std::optional<QDateTime>(const QString& target)>;
+    void setChatHistoryResume(ChatHistoryResume resume);
+    bool requestHistoryAfter(const QString& target, const QDateTime& after);
+    bool requestHistoryLatest(const QString& target);
+    bool requestHistoryTargets(const QDateTime& from, const QDateTime& until);
     bool historyPendingForTarget(const QString& target) const;
     void markHistoryExhausted(const QString& target);
     QStringList autojoinChannels() const;
@@ -232,6 +240,9 @@ private:
     bool captureInBatch(const IrcMessage &message);
     void closeBatch(const QString& reference);
     void requestChannelHistory(const QString& channel);
+    bool sendHistoryAfter(const QString& target, const QDateTime& after);
+    void maybeChainHistoryAfter(const QString& target, const IrcHistoryBatch& batch,
+                                bool historyEnded);
     void forgetChannelHistory(const QString& channel);
     void dropHistoryBatches(const QString& channel);
     void bumpHistoryGeneration(const QString& channel);
@@ -250,13 +261,15 @@ private:
     QString readMarkerCommand() const;
 
     enum class ReplayKind {
-        ChatHistory,      // an answer to a CHATHISTORY we sent
-        BouncerPlayback,  // volunteered by the bouncer on attach
+        ChatHistory,         // an answer to a CHATHISTORY we sent
+        BouncerPlayback,     // volunteered by the bouncer on attach
+        ChatHistoryTargets,  // CHATHISTORY TARGETS names, not lines
     };
 
     enum class HistoryRequestKind {
         Latest,
         Before,
+        After,
     };
 
     static std::optional<ReplayKind> replayKindFor(const QString& batchType) noexcept;
@@ -355,6 +368,8 @@ private:
         int generation = 0;
         QString requestLabel;
         std::optional<HistoryRequestKind> historyRequestKind;
+        // draft/chathistory-end on the opening BATCH: no further page.
+        bool historyEnded = false;
     };
     QHash<QString, OpenBatch> m_openBatches;
     QSet<QString> m_ignoredBatches;
@@ -363,6 +378,11 @@ private:
     QHash<QString, int> m_historyPending;
     QHash<QString, HistoryRequestKind> m_historyPendingKind;
     QSet<QString> m_historyExhausted;
+    ChatHistoryResume m_historyResume;
+    bool m_targetsPending = false;
+    QHash<QString, int> m_historyAfterPages;
+    QHash<QString, QDateTime> m_historyAfterCursor;
+    static constexpr int kHistoryAfterPageCap = 10;
     IrcCaseMapping m_caseMapping{IrcCaseMapping::Kind::Rfc1459};
     static constexpr int kHistoryLimit = 100;
     int m_historyLimit = kHistoryLimit;
