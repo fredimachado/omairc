@@ -326,6 +326,9 @@ func TestSessionRegistrationRefusalFailsVisibly(t *testing.T) {
 	if got := fixture.handler.errors[0].message; got != "Erroneous nickname" {
 		t.Fatalf("error = %q, want the server sentence", got)
 	}
+	if got := fixture.handler.textFor("432"); got != "omairc Erroneous nickname" {
+		t.Fatalf("status = %q, want the nick and the sentence", got)
+	}
 	if len(fixture.handler.reconnects) != 0 {
 		t.Fatalf("reconnects = %d, want 0", len(fixture.handler.reconnects))
 	}
@@ -354,23 +357,36 @@ func TestSessionRegistrationRefusalWithoutSentenceKeepsNumeric(t *testing.T) {
 // TestSessionRegistrationRefusalWithoutColonKeepsNumeric ports
 // SessionTest::registrationRefusalWithoutColonKeepsNumeric.
 func TestSessionRegistrationRefusalWithoutColonKeepsNumeric(t *testing.T) {
-	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
-	fixture.connectTLS()
-	fixture.inject(":server 432 * omairc\r\n")
-	if got := fixture.session.State(); got != StateFailed {
-		t.Fatalf("state = %v, want Failed", got)
+	lines := []string{
+		":server 432 * omairc\r\n",
+		":server 432 * omairc :\r\n",
+		":server 432 * omairc :IDENTIFY hunter2\r\n",
 	}
-	if len(fixture.handler.errors) != 1 {
-		t.Fatalf("errors = %d, want 1", len(fixture.handler.errors))
-	}
-	if got := fixture.handler.errors[0].message; got != "IRC registration was refused (432)" {
-		t.Fatalf("error = %q, want the numeric fallback", got)
-	}
-	if strings.Contains(fixture.handler.errors[0].message, "omairc") {
-		t.Fatal("the nick must not stand in for a missing sentence")
-	}
-	if got := fixture.handler.textFor("432"); got != "432" {
-		t.Fatalf("status = %q, want the numeric", got)
+	for _, line := range lines {
+		t.Run(line, func(t *testing.T) {
+			fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+			fixture.connectTLS()
+			fixture.inject(line)
+			if got := fixture.session.State(); got != StateFailed {
+				t.Fatalf("state = %v, want Failed", got)
+			}
+			if len(fixture.handler.errors) != 1 {
+				t.Fatalf("errors = %d, want 1", len(fixture.handler.errors))
+			}
+			if got := fixture.handler.errors[0].message; got != "IRC registration was refused (432)" {
+				t.Fatalf("error = %q, want the numeric fallback", got)
+			}
+			if strings.Contains(fixture.handler.errors[0].message, "omairc") ||
+				strings.Contains(fixture.handler.errors[0].message, "hunter2") {
+				t.Fatal("the nick or secret must not stand in for a missing sentence")
+			}
+			if got := fixture.handler.textFor("432"); got != "432" {
+				t.Fatalf("status = %q, want the numeric", got)
+			}
+			if fixture.handler.anyFieldContains("hunter2") {
+				t.Fatal("Status stored the secret sentence")
+			}
+		})
 	}
 }
 
@@ -388,6 +404,9 @@ func TestSessionRegistrationRefusalKeepsOneWordSentence(t *testing.T) {
 	}
 	if got := fixture.handler.errors[0].message; got != "Unavailable" {
 		t.Fatalf("error = %q, want the one-word sentence", got)
+	}
+	if got := fixture.handler.textFor("432"); got != "omairc Unavailable" {
+		t.Fatalf("status = %q, want the nick and the sentence", got)
 	}
 }
 
@@ -428,8 +447,8 @@ func TestSessionRegistrationRefusalDropsSecretSentence(t *testing.T) {
 				if statusText != "432" {
 					t.Fatalf("status = %q, want the numeric", statusText)
 				}
-			} else if !strings.Contains(statusText, "PASS ***") {
-				t.Fatalf("status = %q, want the masked preview", statusText)
+			} else if statusText != "omairc PASS ***" {
+				t.Fatalf("status = %q, want the nick and the masked preview", statusText)
 			}
 		})
 	}
@@ -460,6 +479,9 @@ func TestSessionNickInUseBeforeWelcomeRetriesThenRegisters(t *testing.T) {
 	}
 	if got := fixture.session.Nick(); got != "omairc_" {
 		t.Fatalf("nick = %q, want omairc_", got)
+	}
+	if got := fixture.handler.textFor("433"); got != "omairc Nickname in use" {
+		t.Fatalf("status = %q, want the nick and the sentence", got)
 	}
 
 	fixture.inject(":server 433 * omairc_ :Nickname in use\r\n")
@@ -546,8 +568,8 @@ func TestSessionNickInUseAfterWelcomeKeepsSession(t *testing.T) {
 	if got := fixture.handler.messages[0].Command; got != "433" {
 		t.Fatalf("last command = %q, want 433", got)
 	}
-	if !fixture.handler.anyFieldContains("Nickname is already in use") {
-		t.Fatal("a 433 after welcome stays a normal status line")
+	if got := fixture.handler.textFor("433"); got != "othernick Nickname is already in use" {
+		t.Fatalf("status = %q, want a normal 433 line", got)
 	}
 	if fixture.handler.anyFieldContains("IRC registration was refused") {
 		t.Fatal("a 433 after welcome must not use the registration fallback")

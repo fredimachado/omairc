@@ -1627,6 +1627,7 @@ void SessionTest::registrationRefusalFailsVisibly()
 {
     Fixture fixture;
     QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    StatusCollector status(fixture.session);
     fixture.connectTls();
     fixture.transport->injectBytes(
         QByteArrayLiteral(":server 432 * omairc :Erroneous nickname\r\n"));
@@ -1636,6 +1637,8 @@ void SessionTest::registrationRefusalFailsVisibly()
     QCOMPARE(qvariant_cast<IrcSession::ErrorKind>(errors.at(0).at(1)),
              IrcSession::ErrorKind::Registration);
     QCOMPARE(errors.at(0).at(2).toString(), QStringLiteral("Erroneous nickname"));
+    QCOMPARE(status.textFor(QStringLiteral("432")),
+             QStringLiteral("omairc Erroneous nickname"));
     QVERIFY(fixture.timer->delays.isEmpty());
     QVERIFY(!fixture.timer->active);
 }
@@ -1657,24 +1660,34 @@ void SessionTest::registrationRefusalWithoutSentenceKeepsNumeric()
 
 void SessionTest::registrationRefusalWithoutColonKeepsNumeric()
 {
-    Fixture fixture;
-    QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
-    StatusCollector status(fixture.session);
-    fixture.connectTls();
-    fixture.transport->injectBytes(QByteArrayLiteral(":server 432 * omairc\r\n"));
+    const QByteArrayList lines = {
+        QByteArrayLiteral(":server 432 * omairc\r\n"),
+        QByteArrayLiteral(":server 432 * omairc :\r\n"),
+        QByteArrayLiteral(":server 432 * omairc :IDENTIFY hunter2\r\n"),
+    };
+    for (const QByteArray &line : lines) {
+        Fixture fixture;
+        QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+        StatusCollector status(fixture.session);
+        fixture.connectTls();
+        fixture.transport->injectBytes(line);
 
-    QCOMPARE(fixture.session->state(), IrcSession::State::Failed);
-    QCOMPARE(errors.size(), 1);
-    QCOMPARE(errors.at(0).at(2).toString(),
-             QStringLiteral("IRC registration was refused (432)"));
-    QVERIFY(!errors.at(0).at(2).toString().contains(QStringLiteral("omairc")));
-    QCOMPARE(status.textFor(QStringLiteral("432")), QStringLiteral("432"));
+        QCOMPARE(fixture.session->state(), IrcSession::State::Failed);
+        QCOMPARE(errors.size(), 1);
+        QCOMPARE(errors.at(0).at(2).toString(),
+                 QStringLiteral("IRC registration was refused (432)"));
+        QVERIFY(!errors.at(0).at(2).toString().contains(QStringLiteral("omairc")));
+        QVERIFY(!errors.at(0).at(2).toString().contains(QStringLiteral("hunter2")));
+        QCOMPARE(status.textFor(QStringLiteral("432")), QStringLiteral("432"));
+        QVERIFY(!status.anyFieldContains(QStringLiteral("hunter2")));
+    }
 }
 
 void SessionTest::registrationRefusalKeepsOneWordSentence()
 {
     Fixture fixture;
     QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    StatusCollector status(fixture.session);
     fixture.connectTls();
     fixture.transport->injectBytes(
         QByteArrayLiteral(":server 432 * omairc :Unavailable\r\n"));
@@ -1682,6 +1695,8 @@ void SessionTest::registrationRefusalKeepsOneWordSentence()
     QCOMPARE(fixture.session->state(), IrcSession::State::Failed);
     QCOMPARE(errors.size(), 1);
     QCOMPARE(errors.at(0).at(2).toString(), QStringLiteral("Unavailable"));
+    QCOMPARE(status.textFor(QStringLiteral("432")),
+             QStringLiteral("omairc Unavailable"));
 }
 
 void SessionTest::registrationRefusalDropsSecretSentence()
@@ -1713,13 +1728,14 @@ void SessionTest::registrationRefusalDropsSecretSentence()
         if (sentence == QLatin1String("IDENTIFY hunter2"))
             QCOMPARE(statusText, QStringLiteral("432"));
         else
-            QVERIFY(statusText.contains(QStringLiteral("PASS ***")));
+            QCOMPARE(statusText, QStringLiteral("omairc PASS ***"));
     }
 }
 
 void SessionTest::nickInUseBeforeWelcomeRetriesThenRegisters()
 {
     Fixture fixture;
+    StatusCollector status(fixture.session);
     QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
     fixture.connectTls();
     fixture.transport->injectBytes(
@@ -1734,6 +1750,8 @@ void SessionTest::nickInUseBeforeWelcomeRetriesThenRegisters()
     QCOMPARE(fixture.transport->writtenFrames().last(),
              QByteArrayLiteral("NICK omairc_\r\n"));
     QCOMPARE(fixture.session->nick(), QStringLiteral("omairc_"));
+    QCOMPARE(status.textFor(QStringLiteral("433")),
+             QStringLiteral("omairc Nickname in use"));
 
     fixture.transport->injectBytes(
         QByteArrayLiteral(":server 433 * omairc_ :Nickname in use\r\n"));
@@ -1801,7 +1819,8 @@ void SessionTest::nickInUseAfterWelcomeKeepsSession()
     QCOMPARE(errors.size(), 0);
     QCOMPARE(received, 1);
     QCOMPARE(lastCommand, QStringLiteral("433"));
-    QVERIFY(status.anyFieldContains(QStringLiteral("Nickname is already in use")));
+    QCOMPARE(status.textFor(QStringLiteral("433")),
+             QStringLiteral("othernick Nickname is already in use"));
     QVERIFY(!status.anyFieldContains(QStringLiteral("IRC registration was refused")));
 }
 
