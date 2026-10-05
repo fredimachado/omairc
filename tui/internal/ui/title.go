@@ -65,14 +65,14 @@ func attentionTitle(author, body, place string) string {
 	return lead + " - Omairc"
 }
 
-// collapseTitleSpace drops C0 controls and DEL (ESC, BEL, newlines) and folds
+// collapseTitleSpace drops C0, C1, and DEL (ESC, BEL, newlines) and folds
 // the gap into one space. It matches TitleMark.qml's collapse. IRC formatting
 // is stripped before this runs.
 func collapseTitleSpace(text string) string {
 	var out strings.Builder
 	pendingSpace := false
 	for _, r := range text {
-		if r <= 0x20 || r == 0x7f {
+		if r <= 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
 			if out.Len() > 0 {
 				pendingSpace = true
 			}

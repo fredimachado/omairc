@@ -3955,6 +3955,17 @@ TestCase {
         tryCompare(appWindow, "currentConversation", "#ricing");
         compare(appWindow.title, "#ricing - Omairc");
 
+        appWindow.noteUnfocusedTitle(false, "alice", "hey \x02fred\x07",
+                                     seed.omarchyNetworkId, "#ricing");
+        compare(appWindow.title, ricingMark);
+        appWindow.openNetworkStatus(seed.omarchyNetworkId);
+        tryCompare(appWindow, "consoleVisible", true);
+        compare(appWindow.title, ricingMark);
+        appWindow.selectConversation("#ricing", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#ricing");
+        tryCompare(appWindow, "consoleVisible", false);
+        compare(appWindow.title, "#ricing - Omairc");
+
         appWindow.noteUnfocusedTitle(false, "dax", "hello\nthere",
                                      seed.omarchyNetworkId, "dax");
         compare(appWindow.title, "dax: hello there - Omairc");
@@ -3965,8 +3976,53 @@ TestCase {
                 "alice: hey fred · #omarchy · "
                 + networkDisplayName(seed.omarchyNetworkId) + " - Omairc");
 
+        appWindow.noteUnfocusedTitle(false, "alice", "hey\u009cfred",
+                                     seed.omarchyNetworkId, "#ricing");
+        compare(appWindow.title, "alice: hey fred · #ricing - Omairc");
+
         appWindow.windowFocusGained();
         compare(appWindow.title, "#ricing - Omairc");
+    }
+
+    function test_mutedArrivalLeavesTitle() {
+        openSeededAppWindow();
+        appWindow.arrivalWindowActive = false;
+        var plain = appWindow.title;
+        verify(appWindow.irc.sendMessage("/mute #ricing"));
+        var ricing = namedItem(liveConversation("#ricing"));
+        tryCompare(ricing, "muted", true);
+
+        injectOmarchyChat("alice", "#ricing", "hey \x02fred");
+        compare(appWindow.title, plain);
+
+        appWindow.selectConversation("#ricing", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#ricing");
+        verify(rowForBody(item("messageList").model, "hey \x02fred") >= 0);
+
+        injectOmarchyChat("alice", "#desktop", "hey \x02fred");
+        compare(appWindow.title, "alice: hey fred · #desktop - Omairc");
+
+        injectOmarchyChat("dax", "fred", "hello there");
+        compare(appWindow.title, "dax: hello there - Omairc");
+    }
+
+    function test_unfocusedStatusAndInviteLeaveTitle() {
+        openSeededAppWindow();
+        appWindow.arrivalWindowActive = false;
+        injectOmarchyChat("alice", "#ricing", "hey \x02fred");
+        var ricingMark = "alice: hey fred · #ricing - Omairc";
+        compare(appWindow.title, ricingMark);
+
+        appWindow.openNetworkStatus(seed.omarchyNetworkId);
+        tryCompare(appWindow, "consoleVisible", true);
+        compare(appWindow.title, ricingMark);
+
+        appWindow.selectConversation("#desktop", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        compare(appWindow.title, ricingMark);
+
+        seed.injectOmarchy(":alice!u@h INVITE fred :#lab\r\n");
+        compare(appWindow.title, ricingMark);
     }
 
     function test_focusedArrivalLeavesTitle() {

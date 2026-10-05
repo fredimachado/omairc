@@ -27,8 +27,12 @@ ApplicationWindow {
     minimumWidth: 760
     minimumHeight: 540
     visible: true
-    title: titleMark.shown.length > 0
-           ? titleMark.shown
+    // arrivalWindowActive follows focus. A test can assign false while the
+    // offscreen window stays active, so a live mention takes the unfocused path.
+    property bool arrivalWindowActive: active
+    title: titleMark.target.length > 0
+           ? titleMark.format(titleMark.author, titleMark.plainBody,
+                              titlePlace(titleMark.networkId, titleMark.target))
            : (consoleVisible ? statusTitleText() : conversationTitleText())
     onActiveChanged: {
         if (active) {
@@ -108,6 +112,11 @@ ApplicationWindow {
         ? (networkConsole.open || irc.selectedTarget.length === 0)
         : false
     onConsoleVisibleChanged: {
+        // Opening Status keeps the mark. Closing it, including a return to the
+        // conversation that was already selected, drops the mark when that
+        // conversation is the one the title names.
+        if (!consoleVisible && irc)
+            titleMark.clearIfOpened(irc.focusedNetworkId, irc.selectedTarget);
         clearTranscriptSelection();
         resetNickComplete();
         if (!abandonFind() && !suppressComposerStash)
@@ -240,17 +249,21 @@ ApplicationWindow {
         return style.presenceMarkColor(kind);
     }
 
-    function focusedNetworkDisplayName() {
+    function networkDisplayNameFor(networkId) {
         var count = modelRowCount(connection ? connection.networks : null);
         for (var row = 0; row < count; ++row) {
             var item = networkAt(row);
-            if (item && item.networkId === currentNetworkId)
+            if (item && item.networkId === networkId)
                 return item.displayName || "";
         }
         if (connection && connection.displayName
-                && connection.selectedNetworkId === currentNetworkId)
+                && connection.selectedNetworkId === networkId)
             return connection.displayName;
         return "";
+    }
+
+    function focusedNetworkDisplayName() {
+        return networkDisplayNameFor(currentNetworkId);
     }
 
     function duplicateTargetName(name) {
@@ -277,15 +290,7 @@ ApplicationWindow {
     }
 
     function titlePlace(networkId, target) {
-        var networkName = "";
-        var count = modelRowCount(connection ? connection.networks : null);
-        for (var row = 0; row < count; ++row) {
-            var item = networkAt(row);
-            if (item && item.networkId === networkId) {
-                networkName = item.displayName || "";
-                break;
-            }
-        }
+        var networkName = networkDisplayNameFor(networkId);
         if (duplicateTargetName(target) && networkName.length > 0)
             return target + " · " + networkName;
         return target || "";
@@ -293,8 +298,7 @@ ApplicationWindow {
 
     function noteUnfocusedTitle(windowActive, author, body, networkId, target) {
         titleMark.note(windowActive, author, plainIrcText(body),
-                       networkId || "", target || "",
-                       titlePlace(networkId || "", target || ""));
+                       networkId || "", target || "");
     }
 
     function statusTitleText() {
@@ -2940,11 +2944,11 @@ ApplicationWindow {
         target: win.irc
         ignoreUnknownSignals: true
         function onMentionArrived(author, body, networkId, target, msgid) {
-            win.notifyMentionIfUnfocused(win.active, author, body, networkId, target, msgid);
-            win.noteUnfocusedTitle(win.active, author, body, networkId, target);
+            win.notifyMentionIfUnfocused(win.arrivalWindowActive, author, body, networkId, target, msgid);
+            win.noteUnfocusedTitle(win.arrivalWindowActive, author, body, networkId, target);
         }
         function onMonitorArrived(author, body, networkId, target) {
-            win.notifyMentionIfUnfocused(win.active, author, body, networkId, "", "");
+            win.notifyMentionIfUnfocused(win.arrivalWindowActive, author, body, networkId, "", "");
         }
     }
 

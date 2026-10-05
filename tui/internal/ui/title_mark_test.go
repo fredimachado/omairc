@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -18,6 +19,9 @@ func TestAttentionTitleCollapsesFormatting(t *testing.T) {
 	}
 	if got := collapseTitleSpace("hey \x07fred\nthere"); got != "hey fred there" {
 		t.Fatalf("collapse = %q", got)
+	}
+	if got := collapseTitleSpace("hey\u009cfred"); got != "hey fred" {
+		t.Fatalf("c1 = %q", got)
 	}
 }
 
@@ -73,6 +77,22 @@ func TestUnfocusedMentionMarksWindowTitle(t *testing.T) {
 		t.Fatalf("opened title = %q, want the conversation", got)
 	}
 
+	// Already on #ricing. Status keeps the mark; returning to #ricing clears
+	// it even though the conversation id did not change.
+	d.InjectOmarchy([]byte(":alice!u@h PRIVMSG #ricing :hey \x02fred\x07\r\n"))
+	deliver()
+	if got := m.View().WindowTitle; got != ricing {
+		t.Fatalf("remark title = %q, want %q", got, ricing)
+	}
+	m.switchSelection(func() { m.ctrl.OpenStatus("omarchy") })
+	if got := m.View().WindowTitle; got != ricing {
+		t.Fatalf("Status must keep the mark, title = %q", got)
+	}
+	m.switchSelection(func() { m.ctrl.SelectConversation("omarchy", "#ricing") })
+	if got := m.View().WindowTitle; got != "#ricing - Omairc" {
+		t.Fatalf("return from Status = %q, want the conversation", got)
+	}
+
 	d.InjectOmarchy([]byte(":dax!u@h PRIVMSG fred :hello\r\n"))
 	deliver()
 	if got := m.View().WindowTitle; got != "dax: hello - Omairc" {
@@ -113,5 +133,22 @@ func TestUnfocusedMentionMarksWindowTitle(t *testing.T) {
 	}
 	if got := m.View().WindowTitle; got != quiet {
 		t.Fatalf("muted title = %q, want %q", got, quiet)
+	}
+	m.switchSelection(func() { m.ctrl.SelectConversation("omarchy", "#desktop") })
+	foundMuted := false
+	for _, row := range m.ctrl.Messages() {
+		if strings.Contains(row.Body, "hey \x02fred") {
+			foundMuted = true
+			break
+		}
+	}
+	if !foundMuted {
+		t.Fatal("muted #desktop transcript is missing the mention line")
+	}
+	held := m.View().WindowTitle
+	d.InjectOmarchy([]byte(":alice!u@h PRIVMSG #omarchy :hello everyone\r\n"))
+	deliver()
+	if got := m.View().WindowTitle; got != held {
+		t.Fatalf("plain chat title = %q, want %q", got, held)
 	}
 }
