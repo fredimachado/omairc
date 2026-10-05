@@ -57,6 +57,7 @@ type ServerFeatures struct {
 	prefixSymbols     string
 	nickLength        int
 	nickLengthSet     bool
+	lineLength        int
 	monitorAdvertised bool
 	monitorLimit      int
 	monitorLimitSet   bool
@@ -72,6 +73,7 @@ type ServerFeatures struct {
 // constructor: PREFIX (qaohv)~&@%+, CHANTYPES #&, CHANMODES b,k,l,imnpst.
 func NewServerFeatures() ServerFeatures {
 	features := ServerFeatures{
+		lineLength:   MaxClassicFrameBytes,
 		channelTypes: "#&",
 		prefixPairs: []prefixPair{
 			{'q', '~'},
@@ -111,6 +113,9 @@ func (f *ServerFeatures) ApplyToken(token string) {
 			f.monitorLimit = 0
 			f.monitorLimitSet = false
 		}
+		if name == "LINELEN" {
+			f.lineLength = MaxClassicFrameBytes
+		}
 		return
 	}
 
@@ -146,6 +151,10 @@ func (f *ServerFeatures) ApplyToken(token string) {
 		if length, ok := parsePositiveDecimal(value); ok && length > 0 {
 			f.nickLength = length
 			f.nickLengthSet = true
+		}
+	case "LINELEN":
+		if length, ok := parsePositiveDecimal(value); ok && length > 0 {
+			f.lineLength = length
 		}
 	case "MONITOR":
 		if value == "" {
@@ -225,6 +234,16 @@ func (f *ServerFeatures) IsChannel(target string) bool {
 // NickLength returns the advertised NICKLEN, and whether it was advertised.
 func (f *ServerFeatures) NickLength() (int, bool) {
 	return f.nickLength, f.nickLengthSet
+}
+
+// LineLength returns the client-to-server line length in octets, CRLF
+// included and tags excluded. The default is 512. A positive LINELEN
+// replaces it, and -LINELEN restores 512.
+func (f ServerFeatures) LineLength() int {
+	if f.lineLength <= 0 {
+		return MaxClassicFrameBytes
+	}
+	return f.lineLength
 }
 
 // MonitorAdvertised reports whether MONITOR is available.

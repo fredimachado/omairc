@@ -24,6 +24,8 @@
 #include "memberlistmodel.h"
 #include "messagelistmodel.h"
 
+#include <cstddef>
+
 #include <QHash>
 #include <QObject>
 #include <QSet>
@@ -100,6 +102,7 @@ public:
     QString selectedTarget() const;
     QString selectedConversationId() const;
     QString focusedNetworkId() const;
+    std::size_t focusedFrameBytes() const;
     QString topic() const;
     bool isChannel() const;
     int peopleCount() const;
@@ -146,6 +149,8 @@ public:
     Q_INVOKABLE void closeDirectMessage();
     Q_INVOKABLE bool sendMessage(const QString& text);
     Q_INVOKABLE int composerByteBudget() const;
+    Q_INVOKABLE int composerByteBudgetFor(const QString& draft) const;
+    Q_INVOKABLE QString clampUtf8Prefix(const QString& text, int maxBytes) const;
     Q_INVOKABLE bool requestOlderTranscriptHistory();
     Q_INVOKABLE bool transcriptHistoryPendingForSelection() const;
     Q_INVOKABLE void noteTranscriptFollowsEnd();

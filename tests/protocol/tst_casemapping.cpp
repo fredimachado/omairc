@@ -90,6 +90,16 @@ void CaseMappingTest::parsesServerFeatures()
     QVERIFY(features.isChannel("&local"));
     QVERIFY(!features.isChannel("#channel"));
     QCOMPARE(features.nickLength(), std::optional<std::size_t>(31));
+    QCOMPARE(features.lineLength(), std::size_t(512));
+    features.applyToken("LINELEN=0");
+    features.applyToken("LINELEN=nope");
+    QCOMPARE(features.lineLength(), std::size_t(512));
+    features.applyToken("LINELEN=2048");
+    QCOMPARE(features.lineLength(), std::size_t(2048));
+    features.applyToken("-LINELEN");
+    QCOMPARE(features.lineLength(), std::size_t(512));
+    features.applyToken("LINELEN=300");
+    QCOMPARE(features.lineLength(), std::size_t(300));
     features.applyToken("MONITOR=100");
     QVERIFY(features.monitorAdvertised());
     QCOMPARE(features.monitorLimit(), std::optional<std::size_t>(100));

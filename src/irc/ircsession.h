@@ -19,6 +19,7 @@
 #include "ircsaslscram.h"
 #include "ircpresence.h"
 #include "irccasemapping.h"
+#include "ircserverfeatures.h"
 #include "ircframer.h"
 #include "irchistorybatch.h"
 #include "ircmessage.h"
@@ -396,6 +397,7 @@ private:
     bool m_capabilityNegotiationEnded = false;
     bool m_capabilityListSeen = false;
     QString m_channelTypes;
+    IrcServerFeatures m_serverFeatures;
     int m_reconnectAttempt = 0;
     quint32 m_reportedRetryErrors = 0;
 };

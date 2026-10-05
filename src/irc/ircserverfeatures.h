@@ -79,6 +79,9 @@ public:
     std::string_view channelTypes() const noexcept;
     bool isChannel(std::string_view target) const noexcept;
     std::optional<std::size_t> nickLength() const noexcept;
+    // Client-to-server line length in octets, CRLF included, tags excluded.
+    // The constructor default is 512. A positive LINELEN replaces it.
+    std::size_t lineLength() const noexcept { return m_lineLength; }
     bool monitorAdvertised() const noexcept;
     std::optional<std::size_t> monitorLimit() const noexcept;
     std::string_view prefixModes() const noexcept;
@@ -118,6 +121,7 @@ private:
     std::string m_prefixModes;
     std::string m_prefixSymbols;
     std::optional<std::size_t> m_nickLength;
+    std::size_t m_lineLength = 512;
     bool m_monitorAdvertised = false;
     std::optional<std::size_t> m_monitorLimit;
     std::string m_chanModesA;

@@ -254,7 +254,7 @@ func (k footerKeyMap) contextBindings() []key.Binding {
 	default:
 		return []key.Binding{
 			binding([]string{"enter", "return"}, "Enter", "send"),
-			binding([]string{"tab"}, "Tab", "complete nick"),
+			binding([]string{"tab"}, "Tab / Shift+Tab", "complete nick or channel"),
 			binding([]string{"ctrl+k"}, "Ctrl+K", "jump"),
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
 	"charm.land/lipgloss/v2"
 
 	"github.com/fredimachado/omairc/tui/internal/version"
@@ -95,7 +96,7 @@ func (m *Model) footerView() string {
 	// Copy the help model so a render never mutates the shell state.
 	h := m.help
 	h.SetWidth(available)
-	right := h.View(footerKeyMap{m: m})
+	right := shortHelpKeepingTail(h, footerKeyMap{m: m}.ShortHelp())
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right) - reserved
 	if gap < 1 {
 		gap = 1
@@ -105,4 +106,84 @@ func (m *Model) footerView() string {
 		line += " " + version
 	}
 	return truncateLine(line, m.width)
+}
+
+// shortHelpKeepingTail renders the footer's short help and keeps the last
+// binding on screen. bubbles/help drops items from the end, and that last
+// binding is the Ctrl+/ shortcuts toggle. A longer completion hint would hide
+// it. When the row is too narrow for every chord, earlier hints ellipsize and
+// the toggle stays.
+func shortHelpKeepingTail(h help.Model, bindings []key.Binding) string {
+	enabled := make([]key.Binding, 0, len(bindings))
+	for _, binding := range bindings {
+		if binding.Enabled() {
+			enabled = append(enabled, binding)
+		}
+	}
+	if len(enabled) == 0 {
+		return ""
+	}
+	stock := h.ShortHelpView(enabled)
+	if h.Width() <= 0 || len(enabled) == 1 || strings.Contains(stock, enabled[len(enabled)-1].Help().Key) {
+		return stock
+	}
+
+	sep := h.Styles.ShortSeparator.Inline(true).Render(h.ShortSeparator)
+	tail := renderHelpItem(h, enabled[len(enabled)-1])
+	tailWidth := lipgloss.Width(tail)
+	if tailWidth > h.Width() {
+		return stock
+	}
+	sepWidth := lipgloss.Width(sep)
+	prefixBudget := h.Width() - tailWidth - sepWidth
+	if prefixBudget < 0 {
+		return tail
+	}
+
+	prefix := enabled[:len(enabled)-1]
+	kept, all := fitHelpPrefix(h, prefix, prefixBudget, sep)
+	ellipsis := ""
+	if !all {
+		ellipsis = " " + h.Styles.Ellipsis.Inline(true).Render(h.Ellipsis)
+		kept, _ = fitHelpPrefix(h, prefix, prefixBudget-lipgloss.Width(ellipsis), sep)
+	}
+	if len(kept) == 0 {
+		return tail
+	}
+	return joinHelpItems(h, kept, sep) + ellipsis + sep + tail
+}
+
+func renderHelpItem(h help.Model, binding key.Binding) string {
+	helpText := binding.Help()
+	return h.Styles.ShortKey.Inline(true).Render(helpText.Key) + " " +
+		h.Styles.ShortDesc.Inline(true).Render(helpText.Desc)
+}
+
+func fitHelpPrefix(h help.Model, prefix []key.Binding, budget int, sep string) ([]key.Binding, bool) {
+	sepWidth := lipgloss.Width(sep)
+	used := 0
+	kept := make([]key.Binding, 0, len(prefix))
+	for _, binding := range prefix {
+		extra := lipgloss.Width(renderHelpItem(h, binding))
+		if len(kept) > 0 {
+			extra += sepWidth
+		}
+		if used+extra > budget {
+			return kept, false
+		}
+		used += extra
+		kept = append(kept, binding)
+	}
+	return kept, true
+}
+
+func joinHelpItems(h help.Model, bindings []key.Binding, sep string) string {
+	var b strings.Builder
+	for i, binding := range bindings {
+		if i > 0 {
+			b.WriteString(sep)
+		}
+		b.WriteString(renderHelpItem(h, binding))
+	}
+	return b.String()
 }

@@ -266,4 +266,74 @@ func TestComposerByteBudgetMatchesOneFrame(t *testing.T) {
 	if split := SplitTrailingParam(prefix, body+"b", ""); len(split) < 2 {
 		t.Fatalf("one extra byte stayed in %d chunk(s)", len(split))
 	}
+
+	if got := ComposerByteBudget("", 300); got != 298 {
+		t.Fatalf("LINELEN 300 status = %d, want 298", got)
+	}
+	if got := ComposerByteBudget("#omarchy", 300); got != 280 {
+		t.Fatalf("LINELEN 300 #omarchy = %d, want 280", got)
+	}
+	smallPrefix := "PRIVMSG #omarchy :"
+	if split := SplitTrailingParam(smallPrefix, strings.Repeat("a", 281), "", 300); len(split) < 2 {
+		t.Fatal("281 bytes at LINELEN 300 must split")
+	}
+	if _, err := Line(strings.Repeat("A", 510), 300); err == nil {
+		t.Fatal("510 status bytes must be rejected at LINELEN 300")
+	}
+	if got := ComposerByteBudget("", 2048); got != 2046 {
+		t.Fatalf("LINELEN 2048 status = %d, want 2046", got)
+	}
+	if got := ComposerByteBudget("#omarchy", 2048); got != 2028 {
+		t.Fatalf("LINELEN 2048 #omarchy = %d, want 2028", got)
+	}
+	if _, err := Line(strings.Repeat("A", 2000), 2048); err != nil {
+		t.Fatalf("2000 status bytes must fit in LINELEN 2048: %v", err)
+	}
+}
+
+func TestClampUtf8PrefixKeepsWholeScalars(t *testing.T) {
+	if got := ClampUtf8Prefix("abcd", 3); got != "abc" {
+		t.Fatalf("1-byte clamp = %q, want abc", got)
+	}
+	acute := "é"
+	if got := ClampUtf8Prefix("a"+acute, 2); got != "a" {
+		t.Fatalf("2-byte drop = %q, want a", got)
+	}
+	if got := ClampUtf8Prefix("a"+acute, 3); got != "a"+acute {
+		t.Fatalf("2-byte keep = %q", got)
+	}
+	euro := "€"
+	if got := ClampUtf8Prefix("a"+euro, 3); got != "a" {
+		t.Fatalf("3-byte drop = %q, want a", got)
+	}
+	if got := ClampUtf8Prefix("a"+euro, 4); got != "a"+euro {
+		t.Fatalf("3-byte keep = %q", got)
+	}
+	grin := "😀"
+	if got := ClampUtf8Prefix("a"+grin, 4); got != "a" {
+		t.Fatalf("4-byte drop = %q, want a", got)
+	}
+	if got := ClampUtf8Prefix("a"+grin, 5); got != "a"+grin {
+		t.Fatalf("4-byte keep = %q", got)
+	}
+}
+
+func TestFilledActionFitsOneFrame(t *testing.T) {
+	target := "#omarchy"
+	budget := ActionComposerByteBudget(target)
+	if budget != 487 {
+		t.Fatalf("action budget = %d, want 487", budget)
+	}
+	body := strings.Repeat("a", budget-4)
+	prefix := "PRIVMSG " + target + " :\x01ACTION "
+	one := SplitTrailingParam(prefix, body, "\x01")
+	if len(one) != 1 {
+		t.Fatalf("filled /me chunks = %d, want 1", len(one))
+	}
+	if got := len(prefix) + len(body) + 1 + 2; got != MaxClassicFrameBytes {
+		t.Fatalf("filled /me frame = %d, want %d", got, MaxClassicFrameBytes)
+	}
+	if split := SplitTrailingParam(prefix, body+"b", "\x01"); len(split) < 2 {
+		t.Fatal("one byte past a filled /me must split")
+	}
 }

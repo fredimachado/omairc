@@ -1403,11 +1403,33 @@ bool IrcController::sendMessage(const QString& text)
     return report(dispatch(command, IrcComposerSurface::Conversation), command);
 }
 
+std::size_t IrcController::focusedFrameBytes() const
+{
+    const QString id = focusedNetworkId();
+    if (id.isEmpty())
+        return IrcProtocol::maxClassicFrameBytes;
+    return serverFeatures(id).lineLength();
+}
+
 int IrcController::composerByteBudget() const
 {
+    return composerByteBudgetFor({});
+}
+
+int IrcController::composerByteBudgetFor(const QString& draft) const
+{
+    const std::size_t frame = focusedFrameBytes();
     if (m_console.isOpen() || selectedTarget().isEmpty())
-        return IrcCommandBuilder::composerByteBudget({});
-    return IrcCommandBuilder::composerByteBudget(utf8(selectedTarget()));
+        return IrcCommandBuilder::composerByteBudget({}, frame);
+    return IrcCommandBuilder::composerByteBudgetForDraft(
+        utf8(selectedTarget()), utf8(draft), frame);
+}
+
+QString IrcController::clampUtf8Prefix(const QString& text, int maxBytes) const
+{
+    const std::string clamped = IrcCommandBuilder::clampUtf8Prefix(
+        utf8(text), maxBytes);
+    return QString::fromUtf8(clamped.data(), qsizetype(clamped.size()));
 }
 
 bool IrcController::requestOlderTranscriptHistory()

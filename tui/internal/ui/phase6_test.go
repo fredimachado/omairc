@@ -425,6 +425,71 @@ func TestComposerPasteStopsAtSendLimit(t *testing.T) {
 	}
 }
 
+func TestComposerPasteHonorsAdvertisedLineLength(t *testing.T) {
+	ctrl := controller.New()
+	d := demo.New()
+	if !d.Attach(ctrl, true) {
+		t.Fatal("demo Attach failed")
+	}
+	m := New(ctrl, nil)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 118, Height: 30})
+	m = updated.(*Model)
+	notified := false
+	ctrl.OnViewChanged = func() { notified = true }
+
+	paste := func(text string) {
+		t.Helper()
+		m.composer.SetValue("")
+		m.composer.CursorEnd()
+		updated, _ := m.Update(tea.PasteMsg{Content: text})
+		m = updated.(*Model)
+	}
+	paste(strings.Repeat("a", 400))
+	if got := m.composer.Value(); len(got) != 400 {
+		t.Fatalf("draft before LINELEN = %d, want 400", len(got))
+	}
+	d.InjectOmarchy([]byte(":server 005 fred LINELEN=300 :are supported by this server\r\n"))
+	if !notified {
+		t.Fatal("LINELEN must publish a view change")
+	}
+	updated, _ = m.Update(NotifyMsg{})
+	m = updated.(*Model)
+	if got := m.composer.Value(); got != strings.Repeat("a", 280) {
+		t.Fatalf("reclamp length = %d, want 280", len(got))
+	}
+	paste(strings.Repeat("a", 800))
+	if got := m.composer.Value(); got != strings.Repeat("a", 280) {
+		t.Fatalf("LINELEN 300 paste = %d, want 280", len(got))
+	}
+
+	m = press(t, m, tea.KeyPressMsg{Code: '`', Mod: tea.ModCtrl})
+	if !m.ctrl.ConsoleOpen() {
+		t.Fatal("Ctrl+` must open Status")
+	}
+	if got := m.ctrl.ComposerByteBudget(); got != 298 {
+		t.Fatalf("LINELEN 300 status budget = %d, want 298", got)
+	}
+	paste(strings.Repeat("c", 700))
+	if got := m.composer.Value(); got != strings.Repeat("c", 298) {
+		t.Fatalf("LINELEN 300 status paste = %d, want 298", len(got))
+	}
+}
+
+func TestFilledMeStopsAtOneFrame(t *testing.T) {
+	m := seededModel(t)
+	if got := m.ctrl.ComposerByteBudgetFor("/me "); got != 487 {
+		t.Fatalf("action budget = %d, want 487", got)
+	}
+	m.composer.SetValue("")
+	m.composer.CursorEnd()
+	updated, _ := m.Update(tea.PasteMsg{Content: "/me " + strings.Repeat("a", 800)})
+	m = updated.(*Model)
+	want := "/me " + strings.Repeat("a", 483)
+	if got := m.composer.Value(); got != want {
+		t.Fatalf("filled /me length = %d, want %d", len(got), len(want))
+	}
+}
+
 func TestTabCompletionResetsOnOtherKeys(t *testing.T) {
 	m := seededModel(t)
 	m.ctrl.SelectConversation("omarchy", "#ricing")
@@ -621,6 +686,9 @@ func TestFooterUsesHelpKeyMap(t *testing.T) {
 	}
 	if !strings.Contains(view, "Ctrl+/") {
 		t.Fatalf("footer help must end with the Ctrl+/ binding:\n%s", view)
+	}
+	if !strings.Contains(view, "Tab / Shift+Tab") || !strings.Contains(view, "complete nick or channel") {
+		t.Fatalf("footer help must match the shortcuts sheet:\n%s", view)
 	}
 }
 

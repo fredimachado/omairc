@@ -35,9 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it opens that Status network.
 - Tab completes channel names as well as nicks, and Shift+Tab cycles those
   matches backward, in both clients. The first token of a message still gets
-  a colon. The composer stops at one classic 512-byte frame, including a
-  paste: 510 bytes on Status, and the PRIVMSG body that fits for the open
-  conversation. An advertised line length does not raise that ceiling.
+  a colon. The composer stops at the focused network's LINELEN, including a
+  paste. That length is client-to-server octets with CRLF included and tags
+  excluded. An absent token means a classic 512-byte frame (510 bytes on
+  Status, and the PRIVMSG body that fits for the open conversation). A larger
+  token raises the cap. A smaller token lowers it. `/me ` counts the CTCP
+  ACTION wrapper, so a filled action still fits in one frame.
 
 - The terminal client supports IRC read markers (`draft/read-marker`, and
   `soju.im/read` when that is the only token offered): a server marker clears

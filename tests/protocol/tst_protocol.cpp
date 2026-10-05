@@ -100,6 +100,8 @@ private slots:
     void rejectsOutboundInjection();
     void enforcesOutboundBoundary();
     void composerStopsAtOneFrame();
+    void clampsUtf8PrefixOnScalarWidth();
+    void filledActionFitsOneFrame();
     void splitsOutboundChatOnWordBoundary();
     void splitsOutboundChatHardWhenTokenExceedsFrame();
     void privmsgUsesIrcv3TimeTag();
@@ -486,6 +488,49 @@ void ProtocolTest::composerStopsAtOneFrame()
     QCOMPARE(prefix.size() + body.size() + 2, IrcProtocol::maxClassicFrameBytes);
 
     const auto split = IrcCommandBuilder::splitTrailingParam(prefix, body + "b");
+    QVERIFY(split.size() > 1);
+
+    QCOMPARE(IrcCommandBuilder::composerByteBudget({}, 300), 298);
+    QCOMPARE(IrcCommandBuilder::composerByteBudget("#omarchy", 300), 280);
+    const std::string smallPrefix = "PRIVMSG #omarchy :";
+    const std::string smallBody(281, 'a');
+    QVERIFY(IrcCommandBuilder::splitTrailingParam(smallPrefix, smallBody, {}, 300).size() > 1);
+    QVERIFY(!IrcCommandBuilder::line(std::string(510, 'A'), 300));
+
+    QCOMPARE(IrcCommandBuilder::composerByteBudget({}, 2048), 2046);
+    QCOMPARE(IrcCommandBuilder::composerByteBudget("#omarchy", 2048), 2028);
+    QVERIFY(IrcCommandBuilder::line(std::string(2000, 'A'), 2048));
+}
+
+void ProtocolTest::clampsUtf8PrefixOnScalarWidth()
+{
+    QCOMPARE(IrcCommandBuilder::clampUtf8Prefix("abcd", 3), std::string("abc"));
+
+    const std::string acute = "\xC3\xA9";
+    QCOMPARE(IrcCommandBuilder::clampUtf8Prefix("a" + acute, 2), std::string("a"));
+    QCOMPARE(IrcCommandBuilder::clampUtf8Prefix("a" + acute, 3), "a" + acute);
+
+    const std::string euro = "\xE2\x82\xAC";
+    QCOMPARE(IrcCommandBuilder::clampUtf8Prefix("a" + euro, 3), std::string("a"));
+    QCOMPARE(IrcCommandBuilder::clampUtf8Prefix("a" + euro, 4), "a" + euro);
+
+    const std::string grin = "\xF0\x9F\x98\x80";
+    QCOMPARE(IrcCommandBuilder::clampUtf8Prefix("a" + grin, 4), std::string("a"));
+    QCOMPARE(IrcCommandBuilder::clampUtf8Prefix("a" + grin, 5), "a" + grin);
+}
+
+void ProtocolTest::filledActionFitsOneFrame()
+{
+    const std::string target = "#omarchy";
+    const int budget = IrcCommandBuilder::actionComposerByteBudget(target);
+    QCOMPARE(budget, 487);
+    const std::string body(static_cast<std::size_t>(budget - 4), 'a');
+    const std::string prefix = std::string("PRIVMSG ") + target + " :\x01ACTION ";
+    const auto one = IrcCommandBuilder::splitTrailingParam(prefix, body, "\x01");
+    QCOMPARE(one.size(), std::size_t(1));
+    QCOMPARE(prefix.size() + body.size() + 1 + 2, IrcProtocol::maxClassicFrameBytes);
+
+    const auto split = IrcCommandBuilder::splitTrailingParam(prefix, body + "b", "\x01");
     QVERIFY(split.size() > 1);
 }
 

@@ -1888,46 +1888,19 @@ ApplicationWindow {
         return irc.composerByteBudget();
     }
 
-    // Keep a prefix whose UTF-8 encoding fits in maxBytes. QML strings are
-    // UTF-16, and a surrogate pair is one 4-byte UTF-8 scalar.
-    function clampUtf8Prefix(text, maxBytes) {
-        if (!text || maxBytes <= 0)
-            return "";
-        var bytes = 0;
-        var index = 0;
-        while (index < text.length) {
-            var code = text.charCodeAt(index);
-            var units = 1;
-            var need = 1;
-            if (code < 0x80) {
-                need = 1;
-            } else if (code < 0x800) {
-                need = 2;
-            } else if (code >= 0xD800 && code <= 0xDBFF
-                    && index + 1 < text.length) {
-                var next = text.charCodeAt(index + 1);
-                if (next >= 0xDC00 && next <= 0xDFFF) {
-                    need = 4;
-                    units = 2;
-                } else {
-                    need = 3;
-                }
-            } else {
-                need = 3;
-            }
-            if (bytes + need > maxBytes)
-                break;
-            bytes += need;
-            index += units;
-        }
-        return text.substring(0, index);
+    function composerByteBudgetFor(text) {
+        if (!irc || !irc.composerByteBudget)
+            return -1;
+        if (irc.composerByteBudgetFor)
+            return irc.composerByteBudgetFor(text);
+        return irc.composerByteBudget();
     }
 
     function clampComposerToSendLimit(text) {
-        var budget = composerByteBudget();
-        if (budget < 0)
+        var budget = composerByteBudgetFor(text);
+        if (budget < 0 || !irc || !irc.clampUtf8Prefix)
             return false;
-        var clamped = clampUtf8Prefix(text, budget);
+        var clamped = irc.clampUtf8Prefix(text, budget);
         if (clamped === text)
             return false;
         var cursor = conversation.composer.cursorPosition;
@@ -3053,6 +3026,11 @@ ApplicationWindow {
         }
         function onMonitorArrived(author, body, networkId, target) {
             win.notifyMentionIfUnfocused(win.arrivalWindowActive, author, body, networkId, "", "");
+        }
+        function onServerFeaturesChanged() {
+            if (win.findActive || !win.conversation || !win.conversation.composer)
+                return;
+            win.clampComposerToSendLimit(win.conversation.composer.text);
         }
     }
 

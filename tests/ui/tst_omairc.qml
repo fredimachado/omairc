@@ -1869,6 +1869,42 @@ TestCase {
         compare(composer.text, repeatText("c", 510));
     }
 
+    function test_composerHonorsAdvertisedLineLength() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        compare(appWindow.currentConversation, "#omarchy");
+
+        composer.text = repeatText("a", 400);
+        compare(composer.text.length, 400);
+        seed.injectOmarchy(":server 005 fred LINELEN=300 :are supported by this server\r\n");
+        compare(appWindow.irc.composerByteBudget(), 280);
+        compare(composer.text.length, 280);
+        compare(composer.text, repeatText("a", 280));
+
+        composer.text = repeatText("a", 800);
+        compare(composer.text.length, 280);
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        compare(appWindow.irc.composerByteBudget(), 298);
+        composer.text = repeatText("c", 700);
+        compare(composer.text.length, 298);
+        compare(composer.text, repeatText("c", 298));
+    }
+
+    function test_composerActionFitsOneFrame() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        compare(appWindow.irc.composerByteBudgetFor("/me "), 487);
+        composer.text = "/me " + repeatText("a", 800);
+        compare(composer.text.length, 487);
+        compare(composer.text, "/me " + repeatText("a", 483));
+    }
+
     function test_composerHistoryRecallsSentLines() {
         openSeededAppWindow();
         var composer = item("messageComposer");

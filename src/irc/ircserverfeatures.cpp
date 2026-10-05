@@ -1,5 +1,7 @@
 #include "ircserverfeatures.h"
 
+#include "ircmessage.h"
+
 #include <array>
 #include <charconv>
 
@@ -42,6 +44,7 @@ IrcServerFeatures::IrcServerFeatures()
     , m_chanModesB("k")
     , m_chanModesC("l")
     , m_chanModesD("imnpst")
+    , m_lineLength(IrcProtocol::maxClassicFrameBytes)
 {
     rebuildPrefixDumps();
 }
@@ -91,6 +94,8 @@ void IrcServerFeatures::applyToken(std::string_view token)
             m_monitorAdvertised = false;
             m_monitorLimit.reset();
         }
+        if (name == "LINELEN")
+            m_lineLength = IrcProtocol::maxClassicFrameBytes;
         return;
     }
 
@@ -150,6 +155,16 @@ void IrcServerFeatures::applyToken(std::string_view token)
         const auto result = std::from_chars(begin, end, length);
         if (result.ec == std::errc() && result.ptr == end && length > 0)
             m_nickLength = length;
+        return;
+    }
+
+    if (name == "LINELEN") {
+        std::size_t length = 0;
+        const char *begin = value.data();
+        const char *end = begin + value.size();
+        const auto result = std::from_chars(begin, end, length);
+        if (result.ec == std::errc() && result.ptr == end && length > 0)
+            m_lineLength = length;
         return;
     }
 

@@ -59,6 +59,26 @@ func TestParsesServerFeatures(t *testing.T) {
 	if length, ok := features.NickLength(); !ok || length != 31 {
 		t.Fatalf("nick length = %d, %v, want 31, true", length, ok)
 	}
+	if got := features.LineLength(); got != MaxClassicFrameBytes {
+		t.Fatalf("line length = %d, want %d", got, MaxClassicFrameBytes)
+	}
+	features.ApplyToken("LINELEN=0")
+	features.ApplyToken("LINELEN=nope")
+	if got := features.LineLength(); got != MaxClassicFrameBytes {
+		t.Fatalf("ignored LINELEN = %d, want %d", got, MaxClassicFrameBytes)
+	}
+	features.ApplyToken("LINELEN=2048")
+	if got := features.LineLength(); got != 2048 {
+		t.Fatalf("line length = %d, want 2048", got)
+	}
+	features.ApplyToken("-LINELEN")
+	if got := features.LineLength(); got != MaxClassicFrameBytes {
+		t.Fatalf("line length after removal = %d, want %d", got, MaxClassicFrameBytes)
+	}
+	features.ApplyToken("LINELEN=300")
+	if got := features.LineLength(); got != 300 {
+		t.Fatalf("line length = %d, want 300", got)
+	}
 	features.ApplyToken("MONITOR=100")
 	if !features.MonitorAdvertised() {
 		t.Fatal("MONITOR must be advertised")

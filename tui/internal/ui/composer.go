@@ -3,7 +3,6 @@ package ui
 import (
 	"sort"
 	"strings"
-	"unicode/utf8"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -359,39 +358,20 @@ func (m *Model) nickMatchesForPrefix(prefix string) []string {
 	return matches
 }
 
-// clampUtf8Prefix keeps the longest prefix whose UTF-8 encoding fits in
-// maxBytes, stopping before a rune that would cross the limit.
-func clampUtf8Prefix(text string, maxBytes int) string {
-	if maxBytes <= 0 || text == "" {
-		return ""
-	}
-	if len(text) <= maxBytes {
-		return text
-	}
-	end := 0
-	for end < len(text) {
-		_, size := utf8.DecodeRuneInString(text[end:])
-		if size <= 0 || end+size > maxBytes {
-			break
-		}
-		end += size
-	}
-	return text[:end]
-}
-
 // clampComposer stops the composer at the current surface's send budget,
-// including a paste. Find reuses the field and is not a send, so a query is
-// left alone. It mirrors OmaircWindow.qml's clampComposerToSendLimit.
+// including a paste. A `/me` draft uses the expanded ACTION cap. Find reuses
+// the field and is not a send, so a query is left alone. It mirrors
+// OmaircWindow.qml's clampComposerToSendLimit.
 func (m *Model) clampComposer() {
 	if m == nil || m.ctrl == nil || m.find.active {
 		return
 	}
-	budget := m.ctrl.ComposerByteBudget()
+	value := m.composer.Value()
+	budget := m.ctrl.ComposerByteBudgetFor(value)
 	if m.composer.CharLimit != budget {
 		m.composer.CharLimit = budget
 	}
-	value := m.composer.Value()
-	clamped := clampUtf8Prefix(value, budget)
+	clamped := m.ctrl.ClampUtf8Prefix(value, budget)
 	if clamped == value {
 		return
 	}

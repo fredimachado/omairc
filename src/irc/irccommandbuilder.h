@@ -20,18 +20,35 @@ class IrcCommandBuilder
 public:
     static constexpr std::size_t kMaxFrameBytes = IrcProtocol::maxClassicFrameBytes;
 
-    static IrcBuildResult line(std::string_view command);
+    // frameBytes includes CRLF. Callers pass the network's LINELEN, or omit
+    // it to keep the classic 512-byte frame used before ISUPPORT.
+    static IrcBuildResult line(std::string_view command,
+                               std::size_t frameBytes = kMaxFrameBytes);
 
-    // Bytes the composer may hold so one send stays inside a classic frame.
-    // An empty target is Status: a raw line, excluding CRLF (510). Any other
+    // Bytes the composer may hold so one send stays inside frameBytes.
+    // An empty target is Status: a raw line, excluding CRLF. Any other
     // target is the PRIVMSG trailing body that fits with that target
-    // (`PRIVMSG <target> :<body>\r\n`). A larger advertised LINELEN does not
-    // raise this ceiling; outbound sends still use kMaxFrameBytes.
-    static int composerByteBudget(std::string_view target);
+    // (`PRIVMSG <target> :<body>\r\n`). Tags are not subtracted.
+    static int composerByteBudget(std::string_view target,
+                                  std::size_t frameBytes = kMaxFrameBytes);
 
-    static std::vector<std::string> splitTrailingParam(std::string_view prefix,
-                                                       std::string_view body,
-                                                       std::string_view suffix = {});
+    // A `/me` draft is sent as CTCP ACTION. The wrapper is 9 bytes beyond a
+    // PRIVMSG (`\x01ACTION ` and `\x01`), and the 4-byte `/me ` counts here.
+    static int actionComposerByteBudget(std::string_view target,
+                                        std::size_t frameBytes = kMaxFrameBytes);
+    static int composerByteBudgetForDraft(std::string_view target,
+                                          std::string_view draft,
+                                          std::size_t frameBytes = kMaxFrameBytes);
+
+    // Longest UTF-8 prefix of text whose encoding fits in maxBytes. A 1, 2,
+    // 3, or 4-byte scalar is kept whole or dropped.
+    static std::string clampUtf8Prefix(std::string_view text, int maxBytes);
+
+    static std::vector<std::string> splitTrailingParam(
+        std::string_view prefix,
+        std::string_view body,
+        std::string_view suffix = {},
+        std::size_t frameBytes = kMaxFrameBytes);
     static IrcBuildResult nick(std::string_view nickname);
     static IrcBuildResult user(std::string_view username, std::string_view realname);
     static IrcBuildResult pass(std::string_view password);
