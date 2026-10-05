@@ -17,6 +17,7 @@
 #include "ircopendirect.h"
 #include "ircplaybackcoordinator.h"
 #include "ircplaybacktime.h"
+#include "ircscrollplace.h"
 #include "ircreplyrouter.h"
 #include "ircsessionmanager.h"
 #include "ircstatusconsole.h"
@@ -141,6 +142,13 @@ public:
     void setLoadPeerAvatars(bool enabled);
     bool openConversationsAtUnread() const;
     void setOpenConversationsAtUnread(bool enabled);
+    // Remember the selected conversation's viewport. anchorRow is the first
+    // visible visual row when followEnd is false. Status is not a conversation
+    // and is left alone.
+    Q_INVOKABLE void rememberScrollPlace(bool followEnd, int anchorRow);
+    // known/follow/row for the selected conversation. row is the visual index
+    // of the saved line, or -1 when that line is not in the loaded transcript.
+    Q_INVOKABLE QVariantMap currentScrollPlace() const;
     void persistProfileAvatarUrl(const QString& networkId, const QString& url);
     IrcStatusConsole *console();
     QAbstractItemModel *inbox();
@@ -434,6 +442,7 @@ private:
     IrcMuteStore m_mutes;
     IrcOpenDirectStore m_openDirects;
     IrcPlaybackTimeStore m_playbackTimes;
+    IrcScrollPlaceStore m_scrollPlaces;
     IrcPlaybackCoordinator m_playback;
     IrcReplyRouter m_replies;
     IrcMonitorCoordinator m_monitorCoord;

@@ -77,8 +77,10 @@ func TestDetachedArrivalArmsMarker(t *testing.T) {
 // only reason to jump is the "New messages" mark.
 func TestJumpWithMarkGoesToEnd(t *testing.T) {
 	m, d := unreadDemoModel(t)
-	m = plantOmarchyUnread(t, m, d)
-	m = press(t, m, altKey(tea.KeyUp))
+	fillDesktopUnread(d)
+	m.switchSelection(func() {
+		m.ctrl.SelectConversation("omarchy", "#desktop")
+	})
 	if m.transcriptFollowEnd {
 		t.Fatal("precondition: the conversation must have landed on the mark")
 	}

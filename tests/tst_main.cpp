@@ -20,6 +20,7 @@ int runIgnoreTests(int argc, char **argv);
 int runMonitorTests(int argc, char **argv);
 int runMuteTests(int argc, char **argv);
 int runOpenDirectTests(int argc, char **argv);
+int runScrollPlaceTests(int argc, char **argv);
 int runHighlightTests(int argc, char **argv);
 int runAutoawayTests(int argc, char **argv);
 int runPrefTests(int argc, char **argv);
@@ -75,6 +76,7 @@ int main(int argc, char **argv)
     const int monitorStatus = runMonitorTests(argc, argv);
     const int muteStatus = runMuteTests(argc, argv);
     const int openDirectStatus = runOpenDirectTests(argc, argv);
+    const int scrollPlaceStatus = runScrollPlaceTests(argc, argv);
     const int highlightStatus = runHighlightTests(argc, argv);
     const int autoawayStatus = runAutoawayTests(argc, argv);
     const int prefStatus = runPrefTests(argc, argv);
@@ -117,6 +119,7 @@ int main(int argc, char **argv)
         monitorStatus,
         muteStatus,
         openDirectStatus,
+        scrollPlaceStatus,
         highlightStatus,
         autoawayStatus,
         prefStatus,

@@ -2,6 +2,7 @@
 //
 // It is the Go counterpart of the Qt files that persist state outside of a
 // live session: IrcProfileStore, IrcOpenDirectStore, IrcPlaybackTimeStore,
+// IrcScrollPlaceStore,
 // IrcConversationLog, and the QSettings-backed preferences. Both clients share
 // one QSettings INI file (ConfigPath), so this package must read and write the
 // same bytes QSettings does: nested groups written as a top-level [section]
@@ -17,7 +18,7 @@
 // persistence sits below the session and the view.
 //
 // Later phase-11 files build on this foundation: profilestore.go,
-// opendirect.go, playbacktime.go, conversationlog.go, credentialstore.go,
+// opendirect.go, playbacktime.go, scrollplace.go, conversationlog.go, credentialstore.go,
 // secretservice.go, secretservice_darwin.go, and secretservice_other.go. The
 // platform and INI
 // foundation here is what they share, so it deliberately carries no

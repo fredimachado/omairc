@@ -84,7 +84,7 @@ func TestLeavingConversationClearsHistoryPageCapTail(t *testing.T) {
 	m.ctrl.Reducer().MarkHistoryPageCapTail(key)
 	previousID := m.selectedConversationID()
 	m.ctrl.SelectConversation("omarchy", "#desktop")
-	m.afterSelectionChange(previousID)
+	m.afterSelectionChange(previousID, false)
 	conversation := m.ctrl.Reducer().Find(key)
 	if conversation == nil {
 		t.Fatal("omarchy channel must still exist")

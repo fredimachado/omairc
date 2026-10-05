@@ -113,9 +113,11 @@ func (m *Model) activateChannelList() {
 	if m.ctrl == nil {
 		return
 	}
-	previousID := m.selectedConversationID()
+	previousID, wasConsole := m.beginTranscriptSwitch()
 	if m.ctrl.JoinChannelListRow(index) {
-		m.afterSelectionChange(previousID)
+		m.afterSelectionChange(previousID, wasConsole)
+	} else {
+		m.suspendScrollMemory = false
 	}
 }
 

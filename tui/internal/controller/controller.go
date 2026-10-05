@@ -61,6 +61,7 @@ type Controller struct {
 	ephemeral           bool
 	openDirects         *storage.OpenDirectStore
 	playbackTimes       *storage.PlaybackTimeStore
+	scrollPlaces        *storage.ScrollPlaceStore
 	playback            *PlaybackCoordinator
 	openDirectsMotdSeen map[string]bool
 
@@ -156,6 +157,8 @@ func New() *Controller {
 	c.openDirects.SetEphemeral(true)
 	c.playbackTimes = storage.NewPlaybackTimeStore()
 	c.playbackTimes.SetEphemeral(true)
+	c.scrollPlaces = storage.NewScrollPlaceStore()
+	c.scrollPlaces.SetEphemeral(true)
 	c.playback = NewPlaybackCoordinator(c.playbackTimes, c.reducer)
 	// New starts ephemeral, like the Qt constructor before the shell opts in
 	// (src/irc/irccontroller.cpp:400-411): no transcript log until asked.
@@ -221,6 +224,7 @@ func (c *Controller) SetEphemeral(ephemeral bool) {
 	}
 	c.openDirects.SetEphemeral(ephemeral)
 	c.playbackTimes.SetEphemeral(ephemeral)
+	c.scrollPlaces.SetEphemeral(ephemeral)
 	c.autoaway.SetEphemeral(ephemeral)
 }
 
@@ -774,6 +778,7 @@ func (c *Controller) Apply(event irc.Event) {
 		c.openDirects.Rekey(nick.NetworkID, nick.OldNick, nick.NewNick, mapping)
 		c.openDirects.RekeyDismissed(nick.NetworkID, nick.OldNick, nick.NewNick, mapping)
 		c.playbackTimes.Rekey(nick.NetworkID, nick.OldNick, nick.NewNick, mapping)
+		c.scrollPlaces.Rekey(nick.NetworkID, nick.OldNick, nick.NewNick, mapping)
 		c.playback.Rekey(nick.NetworkID, nick.OldNick, nick.NewNick)
 	} else if message, ok := messageEventOf(event); ok {
 		c.noteSelfAuthoredDirect(message.Conversation.NetworkID, message.Author, message.Target)
@@ -1790,6 +1795,7 @@ func (c *Controller) ForgetNetworkState(networkID string) {
 	delete(c.openDirectsMotdSeen, networkID)
 	c.openDirects.Forget(networkID)
 	c.playbackTimes.Forget(networkID)
+	c.scrollPlaces.Forget(networkID)
 	c.playback.DropSnapshot(networkID)
 	c.channelLists.Forget(networkID)
 	c.inbox.PurgeNetwork(networkID)

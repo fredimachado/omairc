@@ -72,7 +72,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Status, and the PRIVMSG body that fits for the open conversation). A larger
   token raises the cap. A smaller token lowers it. `/me ` counts the CTCP
   ACTION wrapper, so a filled action still fits in one frame.
-
+- The desktop client remembers each conversation's scroll position. Switching
+  away and back, and restarting, lands on the same line. The end stays pinned
+  only when the reader was already there.
+- The terminal client remembers each conversation's scroll position. Switching
+  away and back, and restarting, lands on the same line. The end stays pinned
+  only when the reader was already there.
 - The terminal client supports IRC read markers (`draft/read-marker`, and
   `soju.im/read` when that is the only token offered): a server marker clears
   unread another client already read, and Omairc publishes a marker when this

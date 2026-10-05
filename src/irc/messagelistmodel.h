@@ -46,6 +46,10 @@ public:
     QHash<int, QByteArray> roleNames() const override;
     Q_INVOKABLE QString field(int row, const QString& name) const;
     Q_INVOKABLE int unreadMarkRow() const;
+    // Visual rows include date separators and the unread mark. A store row
+    // maps to one transcript message; the other rows return -1.
+    int storeIndexAt(int visualRow) const;
+    int visualRowForStoreIndex(int storeIndex) const;
 
     void reload();
     void notifyMentioned();

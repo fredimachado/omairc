@@ -61,11 +61,25 @@ func (m *Model) activateNotifiedConversation(networkID, target, msgid string) {
 		return
 	}
 	m.sidebarNetworkFocusID = ""
+	previousID := m.selectedConversationID()
 	m.switchSelection(func() {
 		m.ctrl.RevealConversation(networkID, target)
 	})
-	if row := m.msgidRow(msgid); row >= 0 {
-		m.revealTranscriptRow(row)
+	// The notification's own landing wins over a saved scroll place: the
+	// msgid when it resolves, otherwise the open-at-unread mark.
+	if m.ctrl != nil && !m.ctrl.ConsoleOpen() {
+		same := previousID != "" && previousID == m.ctrl.SelectedConversationID()
+		if !same {
+			if row := m.msgidRow(msgid); row >= 0 {
+				m.revealTranscriptRow(row)
+				m.rememberOpenTranscript()
+			} else if m.ctrl.OpenAtUnread() {
+				m.setTranscriptFollowEnd(true)
+				m.transcriptScroll = 0
+				m.placeTranscriptAfterSelect()
+				m.rememberOpenTranscript()
+			}
+		}
 	}
 	_ = m.composer.Focus()
 }

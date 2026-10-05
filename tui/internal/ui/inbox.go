@@ -60,6 +60,46 @@ func (m *Model) inboxEntries() []string {
 	return entries
 }
 
+// activateInboxSelection consumes the highlighted row and lands like the Qt
+// sheet: a mention, highlight, or direct keeps its own destination (the unread
+// mark, or the msgid when open-at-unread is off) instead of a saved scroll
+// place. The conversation being left is remembered first.
+func (m *Model) activateInboxSelection() {
+	if m.ctrl == nil {
+		return
+	}
+	items := m.ctrl.InboxItems()
+	index := m.inbox.selected
+	if index < 0 || index >= len(items) {
+		return
+	}
+	item := items[index]
+	previousID, wasConsole := m.beginTranscriptSwitch()
+	m.saveDraft()
+	m.ctrl.ActivateInboxItem(index)
+	m.loadDraft()
+	m.afterSelectionChange(previousID, wasConsole)
+	if m.ctrl.ConsoleOpen() {
+		return
+	}
+	same := previousID != "" && previousID == m.ctrl.SelectedConversationID()
+	scrollKind := item.Kind == "mention" || item.Kind == "highlight" || item.Kind == "direct"
+	if !scrollKind || same {
+		return
+	}
+	if m.ctrl.OpenAtUnread() {
+		m.setTranscriptFollowEnd(true)
+		m.transcriptScroll = 0
+		m.placeTranscriptAfterSelect()
+		m.rememberOpenTranscript()
+		return
+	}
+	if row := m.msgidRow(item.MsgID); row >= 0 {
+		m.revealTranscriptRow(row)
+		m.rememberOpenTranscript()
+	}
+}
+
 // dismissInboxRow drops one waiting row and keeps the highlight on the same
 // logical row: a dismissal above the selection shifts it up. It mirrors
 // inboxDismissAboveSelectionKeepsHighlight.
@@ -125,9 +165,7 @@ func (m *Model) handleInboxKey(key string, _ tea.KeyPressMsg) (tea.Model, tea.Cm
 		m.moveInbox(1)
 		return m, nil
 	case "enter", "return":
-		if m.ctrl != nil {
-			m.ctrl.ActivateInboxItem(m.inbox.selected)
-		}
+		m.activateInboxSelection()
 		m.closeInbox()
 		return m, nil
 	case "delete":

@@ -70,6 +70,7 @@ HEADERS += \
     ../src/irc/ircmute.h \
     ../src/irc/ircopendirect.h \
     ../src/irc/ircplaybacktime.h \
+    ../src/irc/ircscrollplace.h \
     ../src/irc/ircreplyrouter.h \
     ../src/irc/ircmonitorcoordinator.h \
     ../src/irc/irccommanddispatcher.h \
@@ -169,6 +170,7 @@ SOURCES += \
     ../src/irc/ircmute.cpp \
     ../src/irc/ircopendirect.cpp \
     ../src/irc/ircplaybacktime.cpp \
+    ../src/irc/ircscrollplace.cpp \
     ../src/irc/ircreplyrouter.cpp \
     ../src/irc/ircmonitorcoordinator.cpp \
     ../src/irc/irccommanddispatcher.cpp \
@@ -230,6 +232,7 @@ SOURCES += \
     session/tst_monitor.cpp \
     session/tst_mute.cpp \
     session/tst_opendirect.cpp \
+    session/tst_scrollplace.cpp \
     session/tst_highlight.cpp \
     session/tst_autoaway.cpp \
     session/tst_pref.cpp \

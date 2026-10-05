@@ -40,6 +40,10 @@ ListView {
     property int prependSavedCount: 0
     property real previousContentHeight: 0
     property var readMarkerSync: null
+    // Window supplies the selected conversation's saved place, or null.
+    // {known, follow, row} matches IrcController.currentScrollPlace.
+    property var rememberedPlace: null
+    signal viewportSettled()
 
     boundsBehavior: Flickable.StopAtBounds
     clip: true
@@ -151,6 +155,26 @@ ListView {
             rememberDetachedViewportSequence();
         }
         syncReadMarkerViewport();
+        viewportSettled();
+    }
+
+    function applyRememberedPlace() {
+        if (typeof rememberedPlace !== "function")
+            return false;
+        var place = rememberedPlace();
+        if (!place || place.known !== true)
+            return false;
+        if (place.follow === true) {
+            pinToEnd();
+            return true;
+        }
+        if (place.row >= 0) {
+            pinToUnread(place.row);
+            return true;
+        }
+        // The line is not loaded yet. Stay put so a later page can land
+        // on it, and do not fall through to the end.
+        return true;
     }
 
     function cancelDeferredPin() {
@@ -371,7 +395,8 @@ ListView {
 
     onModelChanged: {
         refreshUnreadMarkRow();
-        pinToEnd();
+        if (!applyRememberedPlace())
+            pinToEnd();
     }
 
     onMovementEnded: adoptViewport()
@@ -461,7 +486,8 @@ ListView {
 
     Component.onCompleted: {
         refreshUnreadMarkRow();
-        pinToEnd();
+        if (!applyRememberedPlace())
+            pinToEnd();
     }
 
     ScrollBar.vertical: ScrollBar {

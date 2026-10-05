@@ -256,6 +256,26 @@ QHash<int, QByteArray> MessageListModel::roleNames() const
     return staticRoleNames();
 }
 
+int MessageListModel::storeIndexAt(int visualRow) const
+{
+    if (visualRow < 0 || visualRow >= int(m_view.size()))
+        return -1;
+    const VisualRow& row = m_view[size_t(visualRow)];
+    if (row.type != VisualRow::Type::Store)
+        return -1;
+    return row.storeIndex;
+}
+
+int MessageListModel::visualRowForStoreIndex(int storeIndex) const
+{
+    for (int index = 0; index < int(m_view.size()); ++index) {
+        const VisualRow& row = m_view[size_t(index)];
+        if (row.type == VisualRow::Type::Store && row.storeIndex == storeIndex)
+            return index;
+    }
+    return -1;
+}
+
 QString MessageListModel::field(int row, const QString& name) const
 {
     static const QHash<QString, int> roles = [] {
