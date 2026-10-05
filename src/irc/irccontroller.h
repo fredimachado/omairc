@@ -28,6 +28,7 @@
 #include <QObject>
 #include <QSet>
 #include <QStringList>
+#include <QVariant>
 #include <QTimer>
 #include <QVariantMap>
 #include <QVector>
@@ -134,6 +135,10 @@ public:
     Q_INVOKABLE void dismissInboxItem(int row);
     const IrcServerFeatures &serverFeatures(const QString &networkId) const;
     Q_INVOKABLE QString networkIconUrl(const QString &networkId) const;
+    Q_INVOKABLE QString channelNameAt(const QString& text, int index) const;
+    Q_INVOKABLE QVariantList channelNameSpans(const QString& text) const;
+    Q_INVOKABLE bool hasConversation(const QString& networkId,
+                                     const QString& target) const;
 
     Q_INVOKABLE bool start(const QString& networkId);
     Q_INVOKABLE void selectConversation(const QString& networkId,

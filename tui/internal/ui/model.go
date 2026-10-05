@@ -156,6 +156,7 @@ type Model struct {
 	memberIndex          int
 	shortcutsOpen        bool
 	aboutOpen            bool
+	channelPrompt        channelPromptState
 	nick                 nickJumpState
 	link                 linkState
 	inbox                inboxState
@@ -520,6 +521,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}
+	if m.channelPrompt.open {
+		return m, nil
+	}
 	if m.connectVisible() {
 		var cmd tea.Cmd
 		m.sheet.input, cmd = m.sheet.input.Update(msg)
@@ -547,6 +551,9 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// About is an informational modal that can sit on top of the Connect
 	// sheet. While it is open every other chord is blocked; Escape, Enter, or
 	// Space dismiss it (see handleAboutKey).
+	if m.channelPrompt.open {
+		return m.handleChannelPromptKey(key)
+	}
 	if m.aboutOpen {
 		return m.handleAboutKey(key)
 	}
@@ -638,7 +645,7 @@ func (m *Model) sendComposer() {
 
 // refocusComposer restores composer focus after a chord when no modal is open.
 func (m *Model) refocusComposer() {
-	if m.connectVisible() || m.overlaysVisible() || m.shortcutsOpen || m.aboutOpen {
+	if m.connectVisible() || m.overlaysVisible() || m.shortcutsOpen || m.aboutOpen || m.channelPrompt.open {
 		return
 	}
 	_ = m.composer.Focus()
@@ -835,6 +842,8 @@ func (m *Model) composerRow() int {
 // they are checked first.
 func (m *Model) overlayCard() (string, bool) {
 	switch {
+	case m.channelPrompt.open:
+		return m.channelPromptCard(m.width), true
 	case m.aboutOpen:
 		return m.aboutCard(m.width), true
 	case m.shortcutsOpen:

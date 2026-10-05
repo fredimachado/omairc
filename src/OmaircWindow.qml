@@ -105,6 +105,8 @@ ApplicationWindow {
         || nickSheet.opened
         || channelListSheet.opened
         || aboutSheet.opened
+        || channelOpenSheet.opened
+    property string pendingChannelName: ""
     readonly property var networkConsole: irc
         ? (irc.statusConsole ? irc.statusConsole : irc.console)
         : null
@@ -494,6 +496,37 @@ ApplicationWindow {
         return networkConsole.submit("/join " + channel);
     }
 
+    function channelNameAt(text, index) {
+        if (!text || index < 0 || index >= text.length || !irc)
+            return "";
+        if (httpUrlAt(text, index).length > 0)
+            return "";
+        var name = irc.channelNameAt(text, index);
+        return name ? name : "";
+    }
+
+    function openChannelName(channel) {
+        if (!channel || !irc || win.connectionOverlayVisible)
+            return false;
+        var networkId = irc.focusedNetworkId;
+        if (irc.hasConversation(networkId, channel)) {
+            selectConversation(channel, networkId);
+            return true;
+        }
+        pendingChannelName = channel;
+        channelOpenSheet.open();
+        return true;
+    }
+
+    function confirmOpenChannel() {
+        var channel = pendingChannelName;
+        pendingChannelName = "";
+        channelOpenSheet.close();
+        if (!channel || !networkConsole)
+            return false;
+        return networkConsole.submit("/join " + channel);
+    }
+
     function trimHttpUrlMatch(raw) {
         var end = raw.length;
         while (end > 0) {
@@ -592,7 +625,8 @@ ApplicationWindow {
             || inboxSheet.opened
             || nickSheet.opened
             || aboutSheet.opened
-            || channelListSheet.opened;
+            || channelListSheet.opened
+            || channelOpenSheet.opened;
     }
 
     function activateVersionControl() {
@@ -1083,6 +1117,29 @@ ApplicationWindow {
         }
     }
 
+    function appendChannelNamesFromText(text, row, query) {
+        if (!text || !irc)
+            return;
+        var spans = irc.channelNameSpans(text);
+        if (!spans)
+            return;
+        for (var i = spans.length - 1; i >= 0; --i) {
+            var name = spans[i].name;
+            if (!name)
+                continue;
+            if (httpUrlAt(text, spans[i].start).length > 0)
+                continue;
+            if (query.length > 0 && name.toLowerCase().indexOf(query) === -1)
+                continue;
+            linkModel.append({
+                kind: "channel",
+                value: name,
+                label: name,
+                row: row
+            });
+        }
+    }
+
     function refreshLinkMatches() {
         var query = linkSheet.linkFilter ? linkSheet.linkFilter.text.trim().toLowerCase() : "";
         linkModel.clear();
@@ -1090,6 +1147,11 @@ ApplicationWindow {
         if (!list || !list.model)
             return;
         var model = list.model;
+        if (!consoleVisible) {
+            var topic = plainIrcText(currentTopic);
+            appendLinkUrlsFromText(topic, -1, query);
+            appendChannelNamesFromText(topic, -1, query);
+        }
         var count = transcriptRowCount(model);
         for (var row = count - 1; row >= 0; --row) {
             if (!consoleVisible) {
@@ -1098,6 +1160,7 @@ ApplicationWindow {
                     continue;
                 var body = plainIrcText(transcriptField(model, row, "body"));
                 appendLinkUrlsFromText(body, row, query);
+                appendChannelNamesFromText(body, row, query);
             } else {
                 var label = transcriptField(model, row, "label");
                 var text = plainIrcText(transcriptField(model, row, "text"));
@@ -1128,6 +1191,8 @@ ApplicationWindow {
         if (index < 0 || index >= linkModel.count)
             return;
         var entry = linkModel.get(index);
+        if (entry.row < 0)
+            return;
         var list = consoleVisible ? conversation.consoleList : conversation.messageList;
         if (!list)
             return;
@@ -1317,11 +1382,15 @@ ApplicationWindow {
         if (linkSelectedIndex < 0 || linkSelectedIndex >= linkModel.count)
             return;
         var target = linkModel.get(linkSelectedIndex);
+        var kind = target.kind;
+        var value = target.value;
         linkSheet.close();
-        if (target.kind === "invite")
-            joinInviteChannel(target.value);
+        if (kind === "invite")
+            joinInviteChannel(value);
+        else if (kind === "channel")
+            openChannelName(value);
         else
-            openAllowedUrl(target.value);
+            openAllowedUrl(value);
     }
 
     function dismissInboxSelection(index) {
@@ -2315,6 +2384,7 @@ ApplicationWindow {
             && !nickSheet.opened
             && !aboutSheet.opened
             && !channelListSheet.opened
+            && !channelOpenSheet.opened
         onActivated: {
             if (jumpSheet.opened)
                 jumpSheet.close();
@@ -2333,6 +2403,7 @@ ApplicationWindow {
             && !nickSheet.opened
             && !aboutSheet.opened
             && !channelListSheet.opened
+            && !channelOpenSheet.opened
             || linkSheet.opened
         onActivated: {
             if (linkSheet.opened)
@@ -2351,6 +2422,7 @@ ApplicationWindow {
             && !linkSheet.opened
             && !nickSheet.opened
             && !aboutSheet.opened
+            && !channelOpenSheet.opened
         onActivated: {
             if (inboxSheet.opened)
                 inboxSheet.close();
@@ -2736,6 +2808,8 @@ ApplicationWindow {
                 return true;
             if (aboutSheet.opened || aboutSheetEscapeGuard)
                 return true;
+            if (channelOpenSheet.opened)
+                return true;
             if (jumpSheet.opened || linkSheet.opened || inboxSheet.opened || nickSheet.opened
                     || channelListSheet.opened || pickerEscapeGuard)
                 return true;
@@ -2762,6 +2836,10 @@ ApplicationWindow {
             if (aboutSheet.opened || aboutSheetEscapeGuard) {
                 aboutSheet.close();
                 aboutSheetEscapeGuard = false;
+                return;
+            }
+            if (channelOpenSheet.opened) {
+                channelOpenSheet.close();
                 return;
             }
             if (jumpSheet.opened || linkSheet.opened || inboxSheet.opened || nickSheet.opened
@@ -3035,6 +3113,10 @@ ApplicationWindow {
                 return win.currentConversation;
             }
             topicText: win.plainIrcText(win.currentTopic)
+            httpUrlAt: function(text, index) { return win.httpUrlAt(text, index) }
+            channelNameAt: function(text, index) { return win.channelNameAt(text, index) }
+            openAllowedUrl: function(url) { return win.openAllowedUrl(url) }
+            openChannelName: function(channel) { return win.openChannelName(channel) }
             statusTitle: win.statusTitleText()
             statusSubtitle: win.irc
                 ? (win.irc.lastError.length > 0
@@ -3079,6 +3161,8 @@ ApplicationWindow {
                 inviteChannelAt: function(text, index) { return win.inviteChannelAt(text, index) }
                 openAllowedUrl: function(url) { return win.openAllowedUrl(url) }
                 joinInviteChannel: function(channel) { return win.joinInviteChannel(channel) }
+                channelNameAt: function(text, index) { return win.channelNameAt(text, index) }
+                openChannelName: function(channel) { return win.openChannelName(channel) }
                 onDirectMessageRequested: function(nick) { win.openDirectMessage(nick) }
                 onTranscriptSelectionChanged: function(edit) {
                     win.noteTranscriptSelection(edit);
@@ -3416,6 +3500,10 @@ ApplicationWindow {
         onClosed: {
             Qt.callLater(function() {
                 win.pickerEscapeGuard = false;
+                if (channelOpenSheet.opened) {
+                    channelOpenSheet.forceActiveFocus();
+                    return;
+                }
                 conversation.composer.forceActiveFocus();
             });
         }
@@ -3426,6 +3514,23 @@ ApplicationWindow {
             win.refreshLinkMatches();
             win.revealLinkMatch(win.linkSelectedIndex);
         }
+    }
+
+    ChannelOpenSheet {
+        id: channelOpenSheet
+        objectName: "channelOpenSheet"
+        style: win.style
+        x: Math.round((win.width - width) / 2)
+        y: Math.round((win.height - height) / 2)
+        channel: win.pendingChannelName
+        onClosed: {
+            win.pendingChannelName = "";
+            Qt.callLater(function() {
+                if (!channelOpenSheet.opened)
+                    conversation.composer.forceActiveFocus();
+            });
+        }
+        onConfirmRequested: win.confirmOpenChannel()
     }
 
     InboxSheet {

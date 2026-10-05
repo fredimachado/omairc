@@ -4457,6 +4457,131 @@ TestCase {
         tryCompare(appWindow, "consoleVisible", false);
     }
 
+    function test_channelNameUsesAdvertisedTypes() {
+        openSeededAppWindow();
+        compare(appWindow.channelNameAt("see #desktop now", 4), "#desktop");
+        compare(appWindow.channelNameAt("see #Desktop now", 4), "#Desktop");
+        compare(appWindow.channelNameAt("see &local now", 4), "");
+        compare(appWindow.channelNameAt("foo#desktop", 3), "");
+        compare(appWindow.channelNameAt("https://example.com/#desktop", 20), "");
+        compare(appWindow.channelNameAt("(#desktop).", 1), "#desktop");
+        compare(appWindow.channelNameAt("(#desktop).", 10), "");
+        compare(appWindow.channelNameAt("try #foo,#bar", 4), "#foo");
+        compare(appWindow.channelNameAt("try #foo,#bar", 9), "#bar");
+    }
+
+    function clickTextHit(body, needle) {
+        var start = body.text.indexOf(needle);
+        verify(start >= 0, "Missing " + needle + " in " + body.text);
+        var rect = body.positionToRectangle(start + 1);
+        var hit = findChild(body, "urlHit");
+        verify(hit !== null, "Could not find urlHit");
+        mouseClick(hit, rect.x + Math.max(1, rect.width / 2),
+                   rect.y + Math.max(1, rect.height / 2));
+    }
+
+    function clickTopic(needle) {
+        var topic = item("conversationTopic");
+        verify(topic.text.indexOf(needle) >= 0, "Topic missing " + needle);
+        var hit = findChild(topic.parent, "topicHit");
+        verify(hit !== null, "Could not find topicHit");
+        var metrics = Qt.createQmlObject("import QtQuick; FontMetrics {}", topic);
+        metrics.font = topic.font;
+        var start = topic.text.indexOf(needle);
+        var x = metrics.advanceWidth(topic.text.substring(0, start))
+            + metrics.advanceWidth("0") / 2;
+        metrics.destroy();
+        mouseClick(hit, x, topic.height / 2);
+    }
+
+    function test_channelNameInMessageSwitchesOrAsks() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        var previousCount = list.model.rowCount();
+        injectOmarchyChat("anna", "#omarchy", "see #Desktop please");
+        waitForRowCount(list, previousCount + 1);
+        list.positionViewAtIndex(previousCount, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+        var row = list.itemAtIndex(previousCount);
+        var body = findChild(row, "messageBody");
+        verify(body !== null && body.visible, "Could not find channel messageBody");
+
+        var framesBefore = seed.omarchyFrameCount();
+        clickTextHit(body, "#Desktop");
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        compare(item("channelOpenSheet").opened, false);
+        verify(!seed.omarchyWroteFrom(framesBefore, "JOIN "));
+
+        appWindow.selectConversation("#omarchy", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        previousCount = list.model.rowCount();
+        injectOmarchyChat("anna", "#omarchy", "see #brand-new please");
+        waitForRowCount(list, previousCount + 1);
+        list.positionViewAtIndex(previousCount, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+        row = list.itemAtIndex(previousCount);
+        body = findChild(row, "messageBody");
+        framesBefore = seed.omarchyFrameCount();
+        clickTextHit(body, "#brand-new");
+        tryCompare(item("channelOpenSheet"), "opened", true);
+        compare(item("channelOpenPrompt").text, "Open #brand-new?");
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(!seed.omarchyWroteFrom(framesBefore, "JOIN #brand-new"));
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(item("channelOpenSheet"), "opened", false);
+        tryCompare(appWindow, "pendingChannelName", "");
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(!seed.omarchyWroteFrom(framesBefore, "JOIN #brand-new"));
+
+        clickTextHit(body, "#brand-new");
+        tryCompare(item("channelOpenSheet"), "opened", true);
+        keyClick(Qt.Key_Return);
+        tryCompare(item("channelOpenSheet"), "opened", false);
+        verify(seed.omarchyWroteFrom(framesBefore, "JOIN #brand-new"));
+        tryCompare(appWindow, "currentConversation", "#brand-new");
+    }
+
+    function test_channelNameInTopicAndLinkSheet() {
+        openSeededAppWindow();
+        seed.injectOmarchy(":anna!u@h TOPIC #omarchy :talk in #desktop or #brand-new\r\n");
+        tryCompare(item("conversationTopic"), "text", "talk in #desktop or #brand-new");
+
+        var framesBefore = seed.omarchyFrameCount();
+        clickTopic("#desktop");
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        compare(item("channelOpenSheet").opened, false);
+        verify(!seed.omarchyWroteFrom(framesBefore, "JOIN "));
+
+        appWindow.selectConversation("#omarchy", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        framesBefore = seed.omarchyFrameCount();
+        clickTopic("#brand-new");
+        tryCompare(item("channelOpenSheet"), "opened", true);
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(!seed.omarchyWroteFrom(framesBefore, "JOIN #brand-new"));
+        keyClick(Qt.Key_Escape);
+        tryCompare(item("channelOpenSheet"), "opened", false);
+
+        var sheet = openLinkSheet();
+        var labels = linkModelLabels();
+        verify(labels.indexOf("#brand-new") >= 0, "Link sheet missing #brand-new: " + labels.join(" | "));
+        verify(labels.indexOf("#desktop") >= 0, "Link sheet missing #desktop: " + labels.join(" | "));
+        var brand = linkModelKinds();
+        var brandAt = labels.indexOf("#brand-new");
+        compare(brand[brandAt], "channel");
+        appWindow.linkSelectedIndex = brandAt;
+        framesBefore = seed.omarchyFrameCount();
+        keyClick(Qt.Key_Return);
+        tryCompare(sheet, "opened", false);
+        tryCompare(item("channelOpenSheet"), "opened", true);
+        verify(!seed.omarchyWroteFrom(framesBefore, "JOIN #brand-new"));
+        keyClick(Qt.Key_Return);
+        tryCompare(item("channelOpenSheet"), "opened", false);
+        verify(seed.omarchyWroteFrom(framesBefore, "JOIN #brand-new"));
+        tryCompare(appWindow, "currentConversation", "#brand-new");
+    }
+
     function test_inboxSheetTogglesWithShortcut() {
         openSeededAppWindow();
         var sheet = item("inboxSheet");
@@ -5881,10 +6006,10 @@ TestCase {
         waitForBody(list, "read https://en.wikipedia.org/wiki/IRC_(protocol)");
 
         var sheet = openLinkSheet();
-        compare(linkModelKinds().join(" "), "url");
+        compare(linkModelKinds().join(" "), "url channel");
         compare(linkModelLabels().join(" | "),
-                "https://en.wikipedia.org/wiki/IRC_(protocol)");
-        compare(item("linkModel").count, 1);
+                "https://en.wikipedia.org/wiki/IRC_(protocol) | #not-invite");
+        compare(item("linkModel").count, 2);
 
         appWindow.lastOpenedUrl = "";
         var framesBefore = seed.omarchyFrameCount();

@@ -11,6 +11,10 @@ Item {
     property int currentPeopleCount: 0
     property string headerTitle: ""
     property string topicText: ""
+    property var httpUrlAt: null
+    property var channelNameAt: null
+    property var openAllowedUrl: null
+    property var openChannelName: null
     property string statusTitle: ""
     property string statusSubtitle: ""
     property string currentConversation: ""
@@ -62,15 +66,14 @@ Item {
                 font.pixelSize: column.style.scaledSize(17)
             }
 
-            Text {
-                objectName: "conversationTopic"
+            TopicLine {
                 width: parent.width
+                style: column.style
                 text: column.topicText
-                textFormat: Text.PlainText
-                color: column.style.mutedColor
-                elide: Text.ElideRight
-                font.family: "iA Writer Mono S"
-                font.pixelSize: column.style.scaledSize(11)
+                httpUrlAt: column.httpUrlAt
+                channelNameAt: column.channelNameAt
+                openAllowedUrl: column.openAllowedUrl
+                openChannelName: column.openChannelName
             }
         }
 

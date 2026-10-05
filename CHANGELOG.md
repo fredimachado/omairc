@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with IRC formatting stripped. A muted conversation stays quiet. Focusing the
   window, or opening that conversation, clears it. The terminal client puts
   the same text in the title it already sets.
+- A channel name in a message or a topic opens inside the client. A buffer
+  that is already open switches to it. A channel that is not already a row
+  asks first, and only then joins. The name is recognized from the network's
+  advertised `CHANTYPES`.
 - Join, part, quit, and nick lines fold together. A leave followed at once by the same nick rejoining is omitted, and a nick chain keeps the final name. `/pref joins` shows every line or hides these lines, including history playback.
 - The terminal client marks every conversation read with `Alt+Shift+A`. Sidebar
   badges clear, and that background title clears with them. `Alt+A` still

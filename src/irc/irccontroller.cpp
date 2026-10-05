@@ -16,6 +16,7 @@
 #include "ircprefixnick.h"
 #include "ircpresence.h"
 #include "ircservicenick.h"
+#include "ircchannelname.h"
 #include "ircjointarget.h"
 #include "ircviewnotify.h"
 #include "irctcp.h"
@@ -1158,6 +1159,42 @@ QString IrcController::networkIconUrl(const QString &networkId) const
 {
     return QString::fromStdString(
         std::string(m_reducer.serverFeatures(networkId).iconUrl()));
+}
+
+QString IrcController::channelNameAt(const QString& text, int index) const
+{
+    const QString networkId = focusedNetworkId();
+    if (networkId.isEmpty())
+        return {};
+    return ircChannelNameAt(text, index, m_reducer.serverFeatures(networkId));
+}
+
+QVariantList IrcController::channelNameSpans(const QString& text) const
+{
+    QVariantList rows;
+    const QString networkId = focusedNetworkId();
+    if (networkId.isEmpty() || text.isEmpty())
+        return rows;
+    const QVector<IrcChannelNameSpan> spans =
+        ircChannelNameSpans(text, m_reducer.serverFeatures(networkId));
+    rows.reserve(spans.size());
+    for (const IrcChannelNameSpan& span : spans) {
+        QVariantMap row;
+        row.insert(QStringLiteral("start"), span.start);
+        row.insert(QStringLiteral("end"), span.end);
+        row.insert(QStringLiteral("name"), span.name);
+        rows.append(row);
+    }
+    return rows;
+}
+
+bool IrcController::hasConversation(const QString& networkId,
+                                    const QString& target) const
+{
+    if (networkId.isEmpty() || target.isEmpty())
+        return false;
+    const IrcConversationKey key = m_reducer.conversationKey(networkId, target);
+    return m_reducer.find(key) != nullptr;
 }
 
 bool IrcController::start(const QString& networkId)

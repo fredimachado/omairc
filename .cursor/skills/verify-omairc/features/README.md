@@ -61,3 +61,4 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Mention notify](./mention-notify.md) covers the desktop notification for an unfocused mention or direct message.
 - [Title mention](./title-mention.md) covers the window title for an unfocused mention or direct message.
 - [Open links](./open-links.md) covers clicking allowlisted `http`/`https` URLs in transcripts and Status.
+- [Open a channel name](./open-channel-name.md) covers a channel name in a message or a topic. An open buffer switches. A missing buffer asks before it joins.
