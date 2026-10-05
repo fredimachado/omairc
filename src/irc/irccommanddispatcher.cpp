@@ -94,6 +94,14 @@ IrcCommandOutcome IrcCommandDispatcher::dispatch(const IrcCommand& command,
         IrcSession *session = m_host.selectedSession();
         if (!session || !m_host.selected())
             return IrcCommandOutcome::WrongScope;
+        if (const IrcConversationState *conversation =
+                m_reducer.find(*m_host.selected())) {
+            if (conversation->isChannel()) {
+                const IrcChannelState *channel = conversation->channel();
+                if (!channel || !channel->joined)
+                    return IrcCommandOutcome::Refused;
+            }
+        }
         const bool sent = session->sendAction(m_host.selectedTarget(),
                                               command.argument);
         if (sent) {
@@ -233,9 +241,13 @@ IrcCommandOutcome IrcCommandDispatcher::dispatch(const IrcCommand& command,
         for (const IrcJoinTarget& target : *targets) {
             const bool wrote = active->join(target);
             if (wrote) {
-                m_cancelledPendingJoins.erase(
+                const IrcConversationKey key =
                     m_reducer.conversationKey(active->networkId(),
-                                              target.channel()));
+                                              target.channel());
+                m_cancelledPendingJoins.erase(key);
+                // Each target must be allowed back. openJoinedChannel clears
+                // only the last name, which is the one that stays selected.
+                m_reducer.clearClosed(key);
             }
             sent = wrote && sent;
         }
@@ -264,8 +276,9 @@ IrcCommandOutcome IrcCommandDispatcher::dispatch(const IrcCommand& command,
             // joined, so a channel you have already left does not 442.
             // An in-flight join is cancelled so its echo cannot rejoin.
             if (state->joined) {
-                m_host.markChannelLeft(active->networkId(), channel);
                 sent = active->part(channel);
+                if (sent)
+                    m_host.markChannelLeft(active->networkId(), channel);
             } else {
                 m_cancelledPendingJoins.insert(key);
                 sent = true;

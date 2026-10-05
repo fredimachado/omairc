@@ -18,6 +18,12 @@ func (c *Controller) RequestOlderTranscriptHistory() bool {
 	if conversation == nil || len(conversation.Messages) == 0 {
 		return false
 	}
+	if conversation.IsChannel() {
+		channel := conversation.Channel()
+		if channel == nil || !channel.Joined {
+			return false
+		}
+	}
 	msgid, timestamp, ok := oldestHistoryCursor(conversation.Messages)
 	if !ok {
 		return false

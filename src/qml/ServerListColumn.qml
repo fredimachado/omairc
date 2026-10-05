@@ -112,6 +112,7 @@ Rectangle {
                     // the real spacing.
                     property int rowEpoch: column.irc ? column.irc.conversationEpoch : 0
                     property bool repositioning: false
+                    property bool repositionAgain: false
                     function rowsNeedPlace() {
                         for (var i = 0; i < children.length; ++i) {
                             var child = children[i];
@@ -121,13 +122,22 @@ Rectangle {
                         return false;
                     }
                     function repositionRows() {
-                        if (repositioning || !rowsNeedPlace())
+                        if (!rowsNeedPlace())
                             return;
+                        if (repositioning) {
+                            repositionAgain = true;
+                            return;
+                        }
                         repositioning = true;
+                        repositionAgain = false;
                         spacing = 1;
                         Qt.callLater(function() {
                             spacing = 0;
                             repositioning = false;
+                            if (repositionAgain || rowsNeedPlace()) {
+                                repositionAgain = false;
+                                repositionRows();
+                            }
                         });
                     }
                     onRowEpochChanged: Qt.callLater(repositionRows)

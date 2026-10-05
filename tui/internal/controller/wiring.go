@@ -390,10 +390,25 @@ func (c *Controller) report(outcome irc.CommandOutcome, command irc.Command,
 	if outcome == irc.OutcomeSent {
 		c.setLastError(networkID, "")
 	} else {
-		c.setLastError(networkID, irc.CommandOutcomeText(outcome, command))
+		c.setLastError(networkID, c.outcomeError(outcome, command))
 	}
 	c.notifyStatusChanged()
 	return outcome == irc.OutcomeSent
+}
+
+// outcomeError is the subtitle for a refused command. Chat on a channel you
+// have left names that state; every other refusal keeps the shared outcome text.
+func (c *Controller) outcomeError(outcome irc.CommandOutcome, command irc.Command) string {
+	chat := command.Verb == irc.VerbSay || command.Verb == irc.VerbAction
+	if chat && c.selected != nil {
+		if conversation := c.reducer.Find(*c.selected); conversation != nil && conversation.IsChannel() {
+			channel := conversation.Channel()
+			if channel == nil || !channel.Joined {
+				return "You have left this channel"
+			}
+		}
+	}
+	return irc.CommandOutcomeText(outcome, command)
 }
 
 func (c *Controller) errorNetworkID(surface irc.ComposerSurface) string {

@@ -144,8 +144,8 @@ func (d *DemoServer) startNetwork(c *controller.Controller, networkID, nick stri
 }
 
 // hookAutoEcho returns the frameWritten handler: answer ping, list, ctcp, away,
-// metadata, and monitor in order, then echo PRIVMSG and NOTICE back to the
-// client. Because tryAnswerMonitor uses a non-nil empty slice for a handled
+// metadata, and monitor in order, then echo JOIN, PRIVMSG, and NOTICE back to
+// the client. Because tryAnswerMonitor uses a non-nil empty slice for a handled
 // no-op, the ladder tests `reply != nil`, not `len(reply) > 0`. It mirrors
 // IrcDemoServer::hookAutoEcho.
 func (d *DemoServer) hookAutoEcho(networkID, nick string, online []string) func([]byte) {
@@ -175,9 +175,31 @@ func (d *DemoServer) hookAutoEcho(networkID, nick string, online []string) func(
 			d.inject(networkID, reply)
 			return
 		}
+		if bytes.HasPrefix(frame, []byte("JOIN ")) {
+			d.injectSelfJoin(networkID, nick, frame)
+		}
 		if bytes.HasPrefix(frame, []byte("PRIVMSG ")) || bytes.HasPrefix(frame, []byte("NOTICE ")) {
 			d.inject(networkID, injectClientEcho(nick, frame))
 		}
+	}
+}
+
+// injectSelfJoin echoes one self JOIN per channel in an outbound JOIN frame.
+// The line is the same form joinLine already writes for the seed transcript.
+func (d *DemoServer) injectSelfJoin(networkID, nick string, frame []byte) {
+	rest := bytes.TrimRight(frame[len("JOIN "):], "\r\n")
+	if len(rest) == 0 {
+		return
+	}
+	channelField := rest
+	if space := bytes.IndexByte(rest, ' '); space >= 0 {
+		channelField = rest[:space]
+	}
+	for _, raw := range bytes.Split(channelField, []byte(",")) {
+		if len(raw) == 0 {
+			continue
+		}
+		d.inject(networkID, joinLine(nick, string(raw), ""))
 	}
 }
 

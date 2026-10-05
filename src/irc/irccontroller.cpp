@@ -977,9 +977,13 @@ bool IrcController::joinListedChannel(const QString& channel)
         return false;
     const IrcConversationKey key =
         m_reducer.conversationKey(networkId, target->channel());
-    if (m_reducer.find(key)) {
-        selectConversation(networkId, target->channel());
-        return true;
+    if (const IrcConversationState *existing = m_reducer.find(key)) {
+        const IrcChannelState *channel = existing->channel();
+        // A row you have left still needs JOIN. Focus only a channel you are in.
+        if (existing->isChannel() && channel && channel->joined) {
+            selectConversation(networkId, target->channel());
+            return true;
+        }
     }
     const bool wrote = session->join(*target);
     if (wrote) {
@@ -1436,8 +1440,13 @@ void IrcController::closeConversationRow(const QString& networkId, const QString
     const IrcChannelState *channel = conversation->channel();
     if (channel && channel->joined) {
         if (IrcSession *session = m_sessions.findSession(networkId)) {
-            if (session->state() == IrcSession::State::Registered)
-                session->part(display);
+            if (session->state() == IrcSession::State::Registered) {
+                // A PART the session cannot build must not close the row.
+                // An unregistered session still drops it; the next welcome
+                // may restore the channel through autojoin.
+                if (!session->part(display))
+                    return;
+            }
         }
     } else {
         m_commands.noteCancelled(key);
@@ -2359,9 +2368,22 @@ bool IrcController::report(IrcCommandOutcome outcome, const IrcCommand& command)
     const QString networkId = errorNetworkId(
         m_console.isOpen() ? IrcComposerSurface::Status
                            : IrcComposerSurface::Conversation);
-    setLastError(networkId, outcome == IrcCommandOutcome::Sent
-        ? QString{}
-        : ircCommandOutcomeText(outcome, command));
+    QString text;
+    if (outcome != IrcCommandOutcome::Sent) {
+        const bool chat = command.verb == IrcCommand::Verb::Say
+            || command.verb == IrcCommand::Verb::Action;
+        const IrcConversationState *conversation =
+            m_selected ? m_reducer.find(*m_selected) : nullptr;
+        const IrcChannelState *channel =
+            conversation ? conversation->channel() : nullptr;
+        if (chat && conversation && conversation->isChannel()
+                && (!channel || !channel->joined)) {
+            text = QStringLiteral("You have left this channel");
+        } else {
+            text = ircCommandOutcomeText(outcome, command);
+        }
+    }
+    setLastError(networkId, text);
     emit statusChanged();
     return outcome == IrcCommandOutcome::Sent;
 }

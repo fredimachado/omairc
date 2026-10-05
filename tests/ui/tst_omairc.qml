@@ -9948,15 +9948,23 @@ TestCase {
         var desktop = null;
         tryVerify(function() {
             desktop = findNamed(liveConversation("#desktop"));
-            return desktop !== null && desktop.y > 0;
+            var column = desktop ? desktop.parent : null;
+            return desktop !== null && desktop.y > 0
+                && column && column.spacing === 0;
         });
-        mouseClick(desktop, desktop.width / 2, desktop.height / 2, Qt.MiddleButton);
+        var point = desktop.mapToItem(appWindow.contentItem,
+                                       desktop.width / 2, desktop.height / 2);
+        mouseClick(appWindow.contentItem, point.x, point.y, Qt.MiddleButton);
         tryVerify(function() {
             return findNamed(liveConversation("#desktop")) === null;
         });
         compare(appWindow.currentConversation, "#omarchy");
 
+        var framesBeforeJoin = seed.omarchyFrameCount();
         mouseClick(item("headerJoinButton"));
+        tryVerify(function() {
+            return seed.omarchyWroteFrom(framesBeforeJoin, "JOIN #omarchy");
+        });
         seed.injectOmarchy(":fred!u@h JOIN :#omarchy\r\n");
         tryCompare(appWindow, "currentChannelJoined", true);
         compare(item("headerLeaveButton").visible, true);

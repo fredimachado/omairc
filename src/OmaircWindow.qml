@@ -2545,6 +2545,7 @@ ApplicationWindow {
         sequence: "Ctrl+Shift+K"
         context: Qt.ApplicationShortcut
         enabled: currentConversationIsChannel
+            && currentChannelJoined
             && !consoleVisible
             && !win.connectionOverlayVisible
             && !win.shortcutOverlayOpen

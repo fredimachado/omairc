@@ -149,6 +149,16 @@ func TestControllerRequestOlderTranscriptHistoryUsesOldestRow(t *testing.T) {
 	if last != want {
 		t.Fatalf("last frame = %q, want %q", last, want)
 	}
+	if !c.SendMessage("/part") {
+		t.Fatalf("part: %s", c.LastError())
+	}
+	afterPart := len(transport.WrittenFrames())
+	if c.RequestOlderTranscriptHistory() {
+		t.Fatal("a channel you have left must not page history")
+	}
+	if len(transport.WrittenFrames()) != afterPart {
+		t.Fatal("left channel wrote a history frame")
+	}
 }
 
 func TestRequestOlderTranscriptHistoryArmsTailCapBeforeSend(t *testing.T) {

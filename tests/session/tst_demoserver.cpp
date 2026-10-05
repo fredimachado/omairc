@@ -14,6 +14,7 @@ private slots:
     void answersClientPing();
     void answersMonitorAdd();
     void answersList();
+    void rejoinEchoesSelfJoin();
     void seedsServiceAccounts();
     void seedsSelfAvatars();
     void skipsRedundantAccountTag();
@@ -143,6 +144,21 @@ void DemoServerTest::answersList()
     QCOMPARE(model->rowCount(), 1);
     QCOMPARE(model->field(0, QStringLiteral("channel")).toString(),
              QStringLiteral("#linux"));
+}
+
+void DemoServerTest::rejoinEchoesSelfJoin()
+{
+    IrcController controller;
+    IrcDemoServer demo;
+    QVERIFY(demo.attach(controller, true));
+    controller.selectConversation(IrcDemoServer::omarchyNetworkId(),
+                                  QStringLiteral("#omarchy"));
+    QVERIFY(controller.channelJoined());
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/part")));
+    QVERIFY(!controller.channelJoined());
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #omarchy")));
+    QVERIFY(controller.channelJoined());
 }
 
 int runDemoServerTests(int argc, char **argv)

@@ -300,6 +300,26 @@ func TestSeedsParityWorld(t *testing.T) {
 	}
 }
 
+func TestRejoinEchoesSelfJoin(t *testing.T) {
+	c, _ := attachController(t, true)
+	c.SelectConversation("omarchy", "#omarchy")
+	if !c.ChannelJoined() {
+		t.Fatal("seeded #omarchy should start joined")
+	}
+	if !c.SendMessage("/part") {
+		t.Fatalf("part: %s", c.LastError())
+	}
+	if c.ChannelJoined() {
+		t.Fatal("part should leave the channel")
+	}
+	if !c.SendMessage("/join #omarchy") {
+		t.Fatalf("join: %s", c.LastError())
+	}
+	if !c.ChannelJoined() {
+		t.Fatal("demo JOIN echo should rejoin without a hand-injected line")
+	}
+}
+
 func TestEchoLastPrivmsg(t *testing.T) {
 	c, d := attachController(t, true)
 	c.SelectConversation("omarchy", "#omarchy")

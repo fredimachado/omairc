@@ -63,10 +63,10 @@ type InboxSnapshot struct {
 	Label     string
 }
 
-// Conversations returns the sidebar rows in sidebar order: joined channels,
-// then parted channels, then direct messages, grouped by the controller's
-// network order. The slice is the cached snapshot Publish last rebuilt; callers
-// must not mutate it.
+// Conversations returns the sidebar rows in sidebar order: channels, then
+// direct messages, grouped by the controller's network order. A channel you
+// have left stays among the channels. The slice is the cached snapshot Publish
+// last rebuilt; callers must not mutate it.
 func (c *Controller) Conversations() []ConversationSnapshot {
 	return c.conversations
 }

@@ -1225,7 +1225,10 @@ func TestLeaveKeepsRowCloseDropsAndCatchupStaysClosed(t *testing.T) {
 	c, clock := newController(t)
 	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
 	registerNetwork(t, transport, "omairc")
-	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n:omairc!u@h JOIN :#lab\r\n")
+	inject(t, transport, ":omairc!u@h JOIN :#desktop\r\n"+
+		":omairc!u@h JOIN :#help\r\n"+
+		":omairc!u@h JOIN :#omarchy\r\n"+
+		":omairc!u@h JOIN :#ricing\r\n")
 	c.SelectConversation("libera", "#omarchy")
 	if !c.ChannelJoined() {
 		t.Fatal("selected channel should start joined")
@@ -1244,12 +1247,27 @@ func TestLeaveKeepsRowCloseDropsAndCatchupStaysClosed(t *testing.T) {
 	if c.SelectedTarget() != "#omarchy" || c.ChannelJoined() {
 		t.Fatalf("after part target=%q joined=%v", c.SelectedTarget(), c.ChannelJoined())
 	}
+	if got := channelOrder(c); got != "#desktop #help #omarchy #ricing" {
+		t.Fatalf("sidebar order = %q, want #desktop #help #omarchy #ricing", got)
+	}
 	framesBefore := len(transport.WrittenFrames())
 	if c.SendMessage("hello") {
 		t.Fatal("plain chat on a left channel must be refused")
 	}
+	if c.LastError() != "You have left this channel" {
+		t.Fatalf("plain chat error = %q", c.LastError())
+	}
 	if len(transport.WrittenFrames()) != framesBefore {
 		t.Fatal("refused chat wrote a frame")
+	}
+	if c.SendMessage("/me waves") {
+		t.Fatal("/me on a left channel must be refused")
+	}
+	if c.LastError() != "You have left this channel" {
+		t.Fatalf("/me error = %q", c.LastError())
+	}
+	if len(transport.WrittenFrames()) != framesBefore {
+		t.Fatal("/me wrote a frame")
 	}
 
 	if !c.SendMessage("/close") {
@@ -1268,5 +1286,60 @@ func TestLeaveKeepsRowCloseDropsAndCatchupStaysClosed(t *testing.T) {
 	}
 	if c.reducer.Find(key) == nil {
 		t.Fatal("/join did not reopen the closed channel")
+	}
+}
+
+func channelOrder(c *Controller) string {
+	names := make([]string, 0, len(c.Conversations()))
+	for _, row := range c.Conversations() {
+		if row.Direct {
+			continue
+		}
+		names = append(names, row.Conversation)
+	}
+	return strings.Join(names, " ")
+}
+
+// TestJoinClearsClosedOnEveryTarget ports a comma-separated /join after both
+// channels were closed. Each successful JOIN clears that channel, so both
+// self-JOIN echoes can create a joined row. Selection stays on the last name.
+func TestJoinClearsClosedOnEveryTarget(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	registerNetwork(t, transport, "omairc")
+	inject(t, transport, ":omairc!u@h JOIN :#keep\r\n"+
+		":omairc!u@h JOIN :#alpha\r\n"+
+		":omairc!u@h JOIN :#beta\r\n")
+
+	c.SelectConversation("libera", "#alpha")
+	if !c.SendMessage("/part") || !c.SendMessage("/close") {
+		t.Fatalf("close #alpha: %q", c.LastError())
+	}
+	c.SelectConversation("libera", "#beta")
+	if !c.SendMessage("/part") || !c.SendMessage("/close") {
+		t.Fatalf("close #beta: %q", c.LastError())
+	}
+	alpha := c.reducer.ConversationKey("libera", "#alpha")
+	beta := c.reducer.ConversationKey("libera", "#beta")
+	if c.reducer.Find(alpha) != nil || c.reducer.Find(beta) != nil {
+		t.Fatal("closed channels should be gone")
+	}
+	c.SelectConversation("libera", "#keep")
+	if !c.SendMessage("/join #alpha,#beta") {
+		t.Fatalf("join outcome error %q", c.LastError())
+	}
+	if !writtenFramesContain(transport, "JOIN #alpha\r\n") || !writtenFramesContain(transport, "JOIN #beta\r\n") {
+		t.Fatal("comma join did not write both JOIN frames")
+	}
+	inject(t, transport, ":omairc!u@h JOIN :#alpha\r\n:omairc!u@h JOIN :#beta\r\n")
+	if c.reducer.Find(alpha) == nil || c.reducer.Find(beta) == nil {
+		t.Fatal("self JOIN did not restore both rows")
+	}
+	if c.SelectedTarget() != "#beta" || !c.ChannelJoined() {
+		t.Fatalf("last target = %q joined=%v", c.SelectedTarget(), c.ChannelJoined())
+	}
+	c.SelectConversation("libera", "#alpha")
+	if !c.ChannelJoined() {
+		t.Fatal("#alpha stayed unjoined after its self JOIN")
 	}
 }

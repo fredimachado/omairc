@@ -160,8 +160,15 @@ func (d *CommandDispatcher) Dispatch(command irc.Command, surface irc.ComposerSu
 
 	if command.Verb == irc.VerbAction {
 		active := d.host.SelectedSession()
-		if _, ok := d.host.SelectedKey(); active == nil || !ok {
+		key, ok := d.host.SelectedKey()
+		if active == nil || !ok {
 			return irc.OutcomeWrongScope
+		}
+		if conversation := d.reducer.Find(key); conversation != nil && conversation.IsChannel() {
+			channel := conversation.Channel()
+			if channel == nil || !channel.Joined {
+				return irc.OutcomeRefused
+			}
 		}
 		target := d.host.SelectedTarget()
 		sent := active.SendAction(target, command.Argument)
@@ -364,7 +371,11 @@ func (d *CommandDispatcher) dispatchJoin(active *session.Session, command irc.Co
 	for _, target := range targets {
 		wrote := active.Join(target)
 		if wrote {
-			delete(d.cancelled, d.reducer.ConversationKey(active.NetworkID(), target.Channel()))
+			key := d.reducer.ConversationKey(active.NetworkID(), target.Channel())
+			delete(d.cancelled, key)
+			// Each target must be allowed back. OpenJoinedChannel clears only
+			// the last name, which is the one that stays selected.
+			d.reducer.ClearClosed(key)
 		}
 		sent = wrote && sent
 	}
@@ -406,8 +417,11 @@ func (d *CommandDispatcher) dispatchPart(
 	// cancelled so its echo cannot rejoin.
 	if conversation != nil && conversation.Channel() != nil {
 		if conversation.Channel().Joined {
+			if !active.Part(channel) {
+				return false, irc.OutcomeRefused, true
+			}
 			d.host.MarkChannelLeft(active.NetworkID(), channel)
-			return active.Part(channel), irc.OutcomeSent, false
+			return true, irc.OutcomeSent, false
 		}
 		d.NoteCancelled(key)
 		return true, irc.OutcomeSent, false
