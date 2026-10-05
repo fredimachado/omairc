@@ -525,7 +525,8 @@ void ProtocolTest::filledActionFitsOneFrame()
     const int budget = IrcCommandBuilder::actionComposerByteBudget(target);
     QCOMPARE(budget, 487);
     const std::string body(static_cast<std::size_t>(budget - 4), 'a');
-    const std::string prefix = std::string("PRIVMSG ") + target + " :\x01ACTION ";
+    // The hex escape ends at the quote. `\x01ACTION` would swallow A and C.
+    const std::string prefix = std::string("PRIVMSG ") + target + " :\x01" "ACTION ";
     const auto one = IrcCommandBuilder::splitTrailingParam(prefix, body, "\x01");
     QCOMPARE(one.size(), std::size_t(1));
     QCOMPARE(prefix.size() + body.size() + 1 + 2, IrcProtocol::maxClassicFrameBytes);
