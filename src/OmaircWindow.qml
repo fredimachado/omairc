@@ -3028,9 +3028,10 @@ ApplicationWindow {
             win.notifyMentionIfUnfocused(win.arrivalWindowActive, author, body, networkId, "", "");
         }
         function onServerFeaturesChanged() {
-            if (win.findActive || !win.conversation || !win.conversation.composer)
+            // conversation is a document id, not a property of the window.
+            if (win.findActive || !conversation || !conversation.composer)
                 return;
-            win.clampComposerToSendLimit(win.conversation.composer.text);
+            win.clampComposerToSendLimit(conversation.composer.text);
         }
     }
 
