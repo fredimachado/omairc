@@ -2208,6 +2208,14 @@ ApplicationWindow {
             return;
         }
 
+        // A real Shift+Tab is Shift press, Backtab, Shift release. The release
+        // is not an edit. Resetting here drops the match list, and the caret
+        // is already past the inserted space, so the next chord has an empty
+        // token and sticks.
+        if (event.key === Qt.Key_Shift || event.key === Qt.Key_Control
+                || event.key === Qt.Key_Alt || event.key === Qt.Key_Meta)
+            return;
+
         resetNickComplete();
 
         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {

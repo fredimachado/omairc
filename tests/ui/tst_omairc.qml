@@ -1797,9 +1797,11 @@ TestCase {
         keyClick(Qt.Key_Backtab);
 
         compare(composer.text, "sol: ");
+        keyClick(Qt.Key_Shift);
         keyClick(Qt.Key_Backtab);
         compare(composer.text, "sam: ");
-        keyClick(Qt.Key_Tab);
+        keyClick(Qt.Key_Shift);
+        keyClick(Qt.Key_Backtab);
         compare(composer.text, "sol: ");
         verify(composer.activeFocus);
     }
