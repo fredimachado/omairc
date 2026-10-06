@@ -12,7 +12,7 @@ on:
       - 'tui/**'
   push:
     branches:
-      - master
+      - main
     paths-ignore:
       - '**/*.md'
       - 'LICENSE'
@@ -38,11 +38,11 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Require master or a phase branch as the pull request base
+      - name: Require main or a phase branch as the pull request base
         run: |
           case "${{ github.base_ref }}" in
-            master|tui-phase-*) ;;
-            *) echo "This pull request targets ${{ github.base_ref }}, not master or a tui-phase branch." >&2; exit 1 ;;
+            main|tui-phase-*) ;;
+            *) echo "This pull request targets ${{ github.base_ref }}, not main or a tui-phase branch." >&2; exit 1 ;;
           esac
 
   test:

@@ -23,7 +23,7 @@ on:
       - 'LICENSE'
   push:
     branches:
-      - master
+      - main
     tags:
       - 'v*'
     paths:
@@ -601,7 +601,7 @@ jobs:
       - name: Skip zip artifacts
         if: github.event_name != 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/v')
         run: |
-          echo "Pull requests and master skip zip artifacts."
+          echo "Pull requests and main skip zip artifacts."
           echo "Run this workflow with workflow_dispatch to package both architecture zips."
 
       - name: Download architecture zips
@@ -663,7 +663,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: master
+          ref: main
           fetch-depth: 0
 
       - name: Download architecture zips
@@ -715,7 +715,7 @@ jobs:
           attempt=1
           max_attempts=5
           while [ "$attempt" -le "$max_attempts" ]; do
-            if push_out=$(git push origin HEAD:master 2>&1); then
+            if push_out=$(git push origin HEAD:main 2>&1); then
               printf '%s\n' "$push_out"
               echo "Pushed cask bump for v$tag"
               exit 0
@@ -724,21 +724,21 @@ jobs:
             case "$push_out" in
               *non-fast-forward*|*rejected*) ;;
               *)
-                echo "git push failed for a reason other than a master race" >&2
+                echo "git push failed for a reason other than a main race" >&2
                 exit 1
                 ;;
             esac
             echo "Push was not a fast-forward; fetch and rebase (attempt $attempt/$max_attempts)"
-            git fetch origin master
-            if git rebase origin/master; then
+            git fetch origin main
+            if git rebase origin/main; then
               attempt=$((attempt + 1))
               continue
             fi
-            echo "Rebase conflict; re-apply the generated bump on origin/master"
+            echo "Rebase conflict; re-apply the generated bump on origin/main"
             git rebase --abort
-            git reset --hard origin/master
+            git reset --hard origin/main
             if ! commit_cask_bump; then
-              echo "Casks/omairc.rb already matches $tag on origin/master"
+              echo "Casks/omairc.rb already matches $tag on origin/main"
               exit 0
             fi
             attempt=$((attempt + 1))

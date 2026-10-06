@@ -30,7 +30,7 @@ A simple IRC client for Omarchy, built with Qt Quick and C++. The same binary is
 On Omarchy or another Arch-based system:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/fredimachado/omairc/master/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/fredimachado/omairc/main/install.sh | sh
 ```
 
 That adds the `[omairc]` pacman repository and installs the latest release. Re-running upgrades. Read [`install.sh`](install.sh) first if you prefer. The same script is a release asset:
@@ -52,7 +52,7 @@ The terminal client, `omairc-tui`, ships as a separate static binary on the same
 On Linux or macOS, without a package manager:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/fredimachado/omairc/master/install-tui.sh | sh
+curl -fsSL https://raw.githubusercontent.com/fredimachado/omairc/main/install-tui.sh | sh
 ```
 
 That resolves the latest release, downloads the static binary for your OS and architecture, checks its version, and installs it to `~/.local/bin`. Re-running upgrades. Read [`install-tui.sh`](install-tui.sh) first if you prefer. The same script is a release asset:

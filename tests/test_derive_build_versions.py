@@ -64,9 +64,9 @@ class DeriveBuildVersionsTest(unittest.TestCase):
             },
         )
 
-    def test_master_snapshot(self) -> None:
+    def test_main_snapshot(self) -> None:
         proc = run_derive(
-            git_ref="refs/heads/master",
+            git_ref="refs/heads/main",
             sha="abcdef1234567890abcdef1234567890abcdef12",
             run_number=237,
             run_attempt=1,
@@ -74,8 +74,8 @@ class DeriveBuildVersionsTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         values = json.loads(proc.stdout)
         self.assertEqual(values["release"], "1.0.7")
-        self.assertEqual(values["display"], "1.0.7+master.gabcdef1")
-        self.assertEqual(values["artifact"], "1.0.7-master.gabcdef1.a1")
+        self.assertEqual(values["display"], "1.0.7+main.gabcdef1")
+        self.assertEqual(values["artifact"], "1.0.7-main.gabcdef1.a1")
         self.assertEqual(values["arch_pkgrel"], "0.237")
 
     def test_pull_request_snapshot(self) -> None:
@@ -91,7 +91,7 @@ class DeriveBuildVersionsTest(unittest.TestCase):
         self.assertEqual(values["artifact"], "1.0.7-pr235.gabcdef1.a1")
         self.assertEqual(values["arch_pkgrel"], "1")
 
-    def test_non_master_branch_snapshot(self) -> None:
+    def test_non_main_branch_snapshot(self) -> None:
         proc = run_derive(
             git_ref="refs/heads/cursor/master-snapshot-versions-df37",
             sha="abcdef1",
@@ -113,7 +113,7 @@ class DeriveBuildVersionsTest(unittest.TestCase):
     def test_rerun_changes_only_artifact(self) -> None:
         first = json.loads(
             run_derive(
-                git_ref="refs/heads/master",
+                git_ref="refs/heads/main",
                 sha="abcdef1",
                 run_number=42,
                 run_attempt=1,
@@ -121,7 +121,7 @@ class DeriveBuildVersionsTest(unittest.TestCase):
         )
         second = json.loads(
             run_derive(
-                git_ref="refs/heads/master",
+                git_ref="refs/heads/main",
                 sha="abcdef1",
                 run_number=42,
                 run_attempt=3,
@@ -129,19 +129,19 @@ class DeriveBuildVersionsTest(unittest.TestCase):
         )
         self.assertEqual(first["display"], second["display"])
         self.assertNotEqual(first["artifact"], second["artifact"])
-        self.assertEqual(second["artifact"], "1.0.7-master.gabcdef1.a3")
+        self.assertEqual(second["artifact"], "1.0.7-main.gabcdef1.a3")
 
     def test_arch_snapshot_ordering(self) -> None:
         release = "1.0.7"
         early = self.module.derive(
-            git_ref="refs/heads/master",
+            git_ref="refs/heads/main",
             sha="abcdef1",
             run_number=1,
             run_attempt=1,
             canonical_version=release,
         )
         late = self.module.derive(
-            git_ref="refs/heads/master",
+            git_ref="refs/heads/main",
             sha="abcdef1",
             run_number=237,
             run_attempt=1,
@@ -167,7 +167,7 @@ class DeriveBuildVersionsTest(unittest.TestCase):
 
     def test_malformed_sha(self) -> None:
         proc = run_derive(
-            git_ref="refs/heads/master",
+            git_ref="refs/heads/main",
             sha="not-a-sha",
             run_number=1,
             run_attempt=1,

@@ -16,7 +16,7 @@ Usage: install.sh
 
 Installs the latest omairc release from its pacman repository.
 
-    curl -fsSL https://raw.githubusercontent.com/fredimachado/omairc/master/install.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/fredimachado/omairc/main/install.sh | sh
 
 Run it as your regular user; sudo is used where it is needed.
 EOF

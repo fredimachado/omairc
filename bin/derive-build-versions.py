@@ -60,8 +60,8 @@ def sanitize_channel(name: str) -> str:
 
 
 def snapshot_channel(git_ref: str) -> str:
-    if git_ref == "refs/heads/master":
-        return "master"
+    if git_ref == "refs/heads/main":
+        return "main"
     pull_match = PULL_REQUEST_REF_RE.fullmatch(git_ref)
     if pull_match:
         return f"pr{pull_match.group(1)}"
@@ -150,7 +150,7 @@ def derive(
         release = canonical_version
         display = f"{release}+{channel}.g{digest}"
         artifact = f"{release}-{channel}.g{digest}.a{run_attempt}"
-        arch_pkgrel = f"0.{run_number}" if channel == "master" else "1"
+        arch_pkgrel = f"0.{run_number}" if channel == "main" else "1"
 
     validate_field("release", release, ARTIFACT_SAFE_RE)
     validate_field("display", display, DISPLAY_SAFE_RE)

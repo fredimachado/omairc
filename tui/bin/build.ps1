@@ -5,7 +5,7 @@
 #
 # Usage (from anywhere):
 #   .\tui\bin\build.ps1
-#   $env:OMAIRC_BUILD_VERSION = '1.0.4+master.gdeadbeef'; .\tui\bin\build.ps1
+#   $env:OMAIRC_BUILD_VERSION = '1.0.4+main.gdeadbeef'; .\tui\bin\build.ps1
 
 $ErrorActionPreference = 'Stop'
 

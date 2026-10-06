@@ -76,7 +76,7 @@ test "$got" = "omairc $VERSION" || {
 BUILD_OVERRIDE_DIR="$ROOT/build-version-override"
 rm -rf "$BUILD_OVERRIDE_DIR"
 mkdir -p "$BUILD_OVERRIDE_DIR"
-OVERRIDE_VERSION="${VERSION}+master.gdeadbeef"
+OVERRIDE_VERSION="${VERSION}+main.gdeadbeef"
 cd "$BUILD_OVERRIDE_DIR"
 "$QMAKE" "OMAIRC_BUILD_VERSION=$OVERRIDE_VERSION" "$ROOT/omairc.pro"
 make -j"$JOBS"

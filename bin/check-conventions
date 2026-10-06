@@ -341,7 +341,7 @@ def check_version_source():
 
 
 # A version-looking string literal: major.minor with an optional patch and an
-# optional letter or -/+ suffix (1.0.4, 1.0.4alpha, 1.0.4+master.g1). The
+# optional letter or -/+ suffix (1.0.4, 1.0.4alpha, 1.0.4+main.g1). The
 # trailing negative lookahead rejects a further dotted group so an IP address
 # like 127.0.0.1 is not mistaken for a version.
 GO_VERSION_STRING = (
@@ -843,7 +843,7 @@ def check_ci_package_triggers():
             if package_if not in header:
                 problems.append(
                     f"{relative}: {name} must package only on workflow_dispatch "
-                    "and v* tags; pull requests and master skip artifacts")
+                    "and v* tags; pull requests and main skip artifacts")
 
     portable = _named_step_header(macos_text, "Portable tests")
     if not portable:
@@ -863,11 +863,11 @@ def check_ci_package_triggers():
     elif "workflow_dispatch" not in skip or "refs/tags/v" not in skip:
         problems.append(
             ".github/workflows/macos.yml: Skip zip artifacts must no-op on "
-            "pull requests and master, not only pull requests")
+            "pull requests and main, not only pull requests")
 
-    if re.search(r"(?m)^  push:\n    branches:\n      - master\b", release_text):
+    if re.search(r"(?m)^  push:\n    branches:\n      - main\b", release_text):
         problems.append(
-            ".github/workflows/release-package.yml: do not package on master "
+            ".github/workflows/release-package.yml: do not package on main "
             "pushes; keep v* tags and workflow_dispatch")
 
     tui = ROOT / ".github" / "workflows" / "tui.yml"
@@ -884,7 +884,7 @@ def check_ci_package_triggers():
             if package_if not in header:
                 problems.append(
                     f".github/workflows/tui.yml: {name} must package only on "
-                    "workflow_dispatch and v* tags; pull requests and master "
+                    "workflow_dispatch and v* tags; pull requests and main "
                     "skip artifacts")
         if "package-macos" in tui_text:
             problems.append(
@@ -907,12 +907,12 @@ def check_ci_package_triggers():
             problems.append(
                 ".github/workflows/tui.yml: version tags must run "
                 "bin/bump-homebrew-tui and bin/bump-scoop-tui")
-        if "git fetch origin master" not in tui_text \
-                or "git rebase origin/master" not in tui_text \
+        if "git fetch origin main" not in tui_text \
+                or "git rebase origin/main" not in tui_text \
                 or "max_attempts=5" not in tui_text:
             problems.append(
                 ".github/workflows/tui.yml: manifest bump must fetch and "
-                "rebase onto origin/master, retrying a raced push")
+                "rebase onto origin/main, retrying a raced push")
         if "packaging/tui/PKGBUILD" not in tui_text or "makepkg" not in tui_text:
             problems.append(
                 ".github/workflows/tui.yml: dry-build packaging/tui/PKGBUILD "
@@ -1124,7 +1124,7 @@ def check_tui_install_script():
     if re.search(r"(?m)(?:^|\s)sudo(?:\s|$)", text):
         problems.append(
             "install-tui.sh: must not require sudo; install under $HOME")
-    if "raw.githubusercontent.com/fredimachado/omairc/master/install-tui.sh" \
+    if "raw.githubusercontent.com/fredimachado/omairc/main/install-tui.sh" \
             not in text:
         problems.append("install-tui.sh: usage must show the curl one-liner")
     for relative in ("README.md", "tui/README.md"):
@@ -1173,10 +1173,10 @@ def check_tui_release_assets():
             problems.append(
                 ".github/workflows/release-package.yml: filter and upload "
                 "install-tui.sh beside install.sh")
-        if re.search(r"(?m)^  push:\n    branches:\n      - master\b", text):
+        if re.search(r"(?m)^  push:\n    branches:\n      - main\b", text):
             problems.append(
                 ".github/workflows/release-package.yml: do not package on "
-                "master pushes")
+                "main pushes")
 
     formula = ROOT / "Formula" / "omairc-tui.rb"
     if not formula.is_file():
@@ -1368,15 +1368,15 @@ def check_homebrew_cask():
         problems.append(
             ".github/workflows/macos.yml: Homebrew cask bump must wait for "
             "both architecture zips")
-    if "git fetch origin master" not in workflow_text \
-            or "git rebase origin/master" not in workflow_text:
+    if "git fetch origin main" not in workflow_text \
+            or "git rebase origin/main" not in workflow_text:
         problems.append(
             ".github/workflows/macos.yml: cask bump must fetch and rebase "
-            "onto origin/master when the push is not a fast-forward")
+            "onto origin/main when the push is not a fast-forward")
     if "max_attempts=5" not in workflow_text:
         problems.append(
             ".github/workflows/macos.yml: cask bump must retry a raced "
-            "master push instead of leaving the cask on the prior version")
+            "main push instead of leaving the cask on the prior version")
     if re.search(r"\*fetch first\*", workflow_text):
         problems.append(
             ".github/workflows/macos.yml: do not use *fetch first* as a "

@@ -171,10 +171,10 @@ this order:
 4. A sentence in `AGENTS.md` is the last place, and only for judgment the
    three layers cannot encode.
 
-Pick a GitHub issue, branch off `master`, run `bin/test`, and open the
-pull request against `master`. Also run `bin/test-san` when the change
+Pick a GitHub issue, branch off `main`, run `bin/test`, and open the
+pull request against `main`. Also run `bin/test-san` when the change
 touches sanitizers, and `bin/test-live` when it touches real IRCd
-behavior. CI rejects a pull request whose base is not `master`. No new
+behavior. CI rejects a pull request whose base is not `main`. No new
 bot, workflow, or notification sink.
 
 ## Release versioning
@@ -201,7 +201,7 @@ release. Version tags trigger release packaging, the Homebrew cask bump,
 and the omairc-tui formula and Scoop manifest bumps. Do not hand-edit
 `Casks/omairc.rb`, `Formula/omairc-tui.rb`, or `bucket/omairc-tui.json`
 for a normal release. If a tagged commit needs a follow-up fix before
-artifacts ship, commit on `master`, delete and recreate both tags on the
+artifacts ship, commit on `main`, delete and recreate both tags on the
 new tip, and `git push origin vX.Y.Z --force` (and the same for
 `tui/vX.Y.Z`).
 
@@ -211,7 +211,7 @@ new tip, and `git push origin vX.Y.Z --force` (and the same for
 checks CLI help and version, runs the C++ suite, and runs the offscreen QML
 tests. CI runs `bin/test`, `bin/test-san`, and `bin/test-live` on every pull
 request that touches anything outside `tui/**`, and rejects a pull request
-whose base is not `master`. A pull request whose whole diff is TUI-only is
+whose base is not `main`. A pull request whose whole diff is TUI-only is
 gated by the TUI workflow alone: `test.yml` ignores `tui/**`, and `tui/bin/test`
 runs the shared `bin/check-conventions` so the TUI checks still hold. Paths are
 filtered over the whole pull-request diff, so a pull request that also changes
@@ -321,7 +321,7 @@ with `maxim-lobanov/setup-xcode` (encoded on the matrix) rather than a
 best-effort `xcode-select` fallback. CI asserts the Mach-O contains
 `arm64` or `x86_64` to match the `macos-arm64` / `macos-x64` artifact
 name. Pull requests compile, smoke, and (on Apple Silicon) run portable
-tests; they do not zip or upload artifacts. `master` is the same for
+tests; they do not zip or upload artifacts. `main` is the same for
 packaging. Version tags and `workflow_dispatch` package both zips, and tags
 attach both to the GitHub release. Intel pull requests skip the portable test
 rebuild. Build QtKeychain against the same Qt prefix with Apple
@@ -346,7 +346,7 @@ bundle `qt.conf`) so `omairc connections` works from a terminal, and `zap` of
 `~/Library/Preferences/omairc` plus `~/Library/Preferences/State/omairc`
 (Qt `GenericConfigLocation` / `GenericStateLocation` on macOS). Version tags
 rewrite `version` and both `sha256`s through `bin/bump-homebrew-cask` after
-both zips land. The bump job fetches and rebases onto `origin/master` when
+both zips land. The bump job fetches and rebases onto `origin/main` when
 that push is not a fast-forward; a conflict re-applies the generated cask
 on the new tip instead of leaving the tap on the prior version. Do not cask a Homebrew-Qt `bin/build-macos` tree. Do not
 install the cask from a raw GitHub URL. Uninstall leaves config; `--zap` is

@@ -373,7 +373,7 @@ commit and toolchain produce byte-identical archives.
 
 ## CI and review
 
-- Base every pull request on `master`, or on another `tui-phase-*` branch when
+- Base every pull request on `main`, or on another `tui-phase-*` branch when
   stacking phases in order; CI rejects any other base.
 - Run `tui/bin/test` (conventions, vet, tests, build, CLI contract) and the
   root `bin/test` before opening a pull request. `tui/bin/test` is also wired
@@ -381,11 +381,11 @@ commit and toolchain produce byte-identical archives.
 - `.github/workflows/tui.yml` is the Linux gate. On `v*` tags and
   `workflow_dispatch` it cross-compiles static archives with
   `tui/bin/package` and uploads them onto the GitHub Release that
-  `release-package.yml` creates. Pull requests and master merges do not
+  `release-package.yml` creates. Pull requests and main merges do not
   upload archives, but the ubuntu leg of the `tui` matrix cross-compiles the
   five release targets on every run, so a broken cross-build fails the pull
   request instead of the tag. The same workflow dry-builds
-  `packaging/tui/PKGBUILD` in an Arch container on pull requests, master,
+  `packaging/tui/PKGBUILD` in an Arch container on pull requests, main,
   and dispatch, so a PKGBUILD regression fails the pull request instead of
   the tag job that also creates the release. Do not add a notification
   sink, a new workflow, or a bot.

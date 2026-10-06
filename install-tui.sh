@@ -20,7 +20,7 @@ Usage: install-tui.sh
 
 Installs the latest omairc-tui release for Linux or macOS.
 
-    curl -fsSL https://raw.githubusercontent.com/fredimachado/omairc/master/install-tui.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/fredimachado/omairc/main/install-tui.sh | sh
 
 Windows is not supported here; use Scoop or the release zip.
 

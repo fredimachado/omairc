@@ -19,7 +19,7 @@ on:
       - 'LICENSE'
   push:
     branches:
-      - master
+      - main
     tags:
       - 'v*'
     paths:

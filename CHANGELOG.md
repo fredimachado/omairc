@@ -433,7 +433,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already in the rail), `Ctrl+N` adds a network and focuses Name, and
   `Ctrl+Shift+Delete` arms then removes the selected network. `Ctrl+Enter`
   applies the selected network from Preferences as well.
-- Pull-request and `master` CI no longer package or upload Windows/macOS
+- Pull-request and `main` CI no longer package or upload Windows/macOS
   installers, zips, or the Arch snapshot. Use a manual workflow run when you
   need those artifacts; version tags still package and publish. Intel macOS
   pull requests skip the portable test rebuild (Linux and Apple Silicon still
@@ -560,7 +560,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - A native Windows build. `bin\build.bat` and `bin\build.ps1` produce a portable tree next to `omairc.exe`. CI uploads that tree as an artifact; each version tag also publishes `omairc-*-windows-x64.zip` on the GitHub release. Portal text scale, desktop notifications, and the Omarchy theme watch stay Linux-only.
-- `install.sh` adds the omairc pacman repository from the latest GitHub release and installs the package. Safe to re-run. Served from master and as a release asset for a version-pinned URL.
+- `install.sh` adds the omairc pacman repository from the latest GitHub release and installs the package. Safe to re-run. Served from main and as a release asset for a version-pinned URL.
 
 ### Changed
 

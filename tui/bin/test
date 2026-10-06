@@ -79,7 +79,7 @@ for token in --version --help --demo-server; do
 done
 
 # OMAIRC_BUILD_VERSION must override version.pri, matching the Qt contract.
-OVERRIDE_VERSION="${VERSION}+master.gdeadbeef"
+OVERRIDE_VERSION="${VERSION}+main.gdeadbeef"
 OMAIRC_BUILD_VERSION="$OVERRIDE_VERSION" "$TUI/bin/build"
 override_got="$("$BIN" --version)"
 test "$override_got" = "omairc-tui $OVERRIDE_VERSION" || {

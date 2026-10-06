@@ -11,7 +11,7 @@ The Go terminal client. Same behavior, chords, and window title as the Qt app.
 On Linux or macOS, without a package manager:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/fredimachado/omairc/master/install-tui.sh | sh
+curl -fsSL https://raw.githubusercontent.com/fredimachado/omairc/main/install-tui.sh | sh
 ```
 
 That resolves the latest release, downloads the static binary for your OS and architecture, checks its version, and installs it to `~/.local/bin`. Re-running upgrades. `install-tui.sh` is also attached to each release.
