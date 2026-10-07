@@ -17,7 +17,7 @@ func TestStatusToggleDoesNotPublishReadMarker(t *testing.T) {
 	ctrl := controller.New()
 	ctrl.SetClock(clock)
 	transport := session.NewLoopbackTransport()
-	config := session.DefaultSessionConfig("libera", "irc.example", "irc.example", "fred")
+	config := session.DefaultSessionConfig("freenode", "irc.example", "irc.example", "fred")
 	config.TLSEnabled = true
 	config.ReconnectEnabled = false
 	if _, err := ctrl.AddSession(config, transport, clock); err != nil {
@@ -26,8 +26,8 @@ func TestStatusToggleDoesNotPublishReadMarker(t *testing.T) {
 	m := New(ctrl, nil)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 118, Height: 30})
 	m = updated.(*Model)
-	if !ctrl.Start("libera") {
-		t.Fatal("Start(libera) = false")
+	if !ctrl.Start("freenode") {
+		t.Fatal("Start(freenode) = false")
 	}
 	transport.CompleteConnect()
 	transport.InjectBytes([]byte(":server CAP fred LS :draft/read-marker multi-prefix\r\n" +
@@ -36,7 +36,7 @@ func TestStatusToggleDoesNotPublishReadMarker(t *testing.T) {
 		":fred!u@h JOIN :#omarchy\r\n" +
 		":server 353 fred = #omarchy :@fred anna\r\n" +
 		":server 366 fred #omarchy :End of NAMES\r\n"))
-	key := ctrl.Reducer().ConversationKey("libera", "#omarchy")
+	key := ctrl.Reducer().ConversationKey("freenode", "#omarchy")
 	if ctrl.SelectedTarget() != "#omarchy" {
 		t.Fatalf("SelectedTarget = %q, want #omarchy", ctrl.SelectedTarget())
 	}

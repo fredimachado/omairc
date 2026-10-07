@@ -1001,7 +1001,7 @@ void SessionTest::saslPlainExactChunkBoundaryRequiresPlus()
 void SessionTest::saslAccountAuthenticatesAsTheBouncerName()
 {
     IrcSessionConfig saslConfig = config();
-    saslConfig.saslAccount = QStringLiteral("joe/libera");
+    saslConfig.saslAccount = QStringLiteral("joe/freenode");
     saslConfig.password = QStringLiteral("secret");
     Fixture fixture(saslConfig);
 
@@ -1012,7 +1012,7 @@ void SessionTest::saslAccountAuthenticatesAsTheBouncerName()
                           "AUTHENTICATE +\r\n"));
 
     QCOMPARE(decodedSaslPayload(fixture.transport->writtenFrames().last()),
-             QByteArray("joe/libera\0joe/libera\0secret", 28));
+             QByteArray("joe/freenode\0joe/freenode\0secret", 32));
     QCOMPARE(fixture.session->nick(), QStringLiteral("omairc"));
 }
 
@@ -2600,7 +2600,7 @@ void SessionTest::statusKeepListOmitsProtocolDump()
 void SessionTest::incomingCapMyinfoAndLusersFormatting()
 {
     const QList<IrcStatusEntry> fourParam = IrcStatusEntry::incomingAll(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":server 004 omairc demo.omairc OmaircDemo iw abc"));
     QCOMPARE(fourParam.size(), 4);
     QCOMPARE(fourParam.at(0).label(), QStringLiteral("004"));
@@ -2610,14 +2610,14 @@ void SessionTest::incomingCapMyinfoAndLusersFormatting()
     QCOMPARE(fourParam.at(3).text(), QStringLiteral("Channel modes: abc"));
 
     const QList<IrcStatusEntry> fiveParam = IrcStatusEntry::incomingAll(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":server 004 omairc demo.omairc OmaircDemo iw abc ABC"));
     QCOMPARE(fiveParam.size(), 5);
     QCOMPARE(fiveParam.at(4).text(),
              QStringLiteral("Parametric channel modes: ABC"));
 
     const IrcStatusEntry capLs = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":server CAP omairc LS :batch chathistory echo-message"));
     QCOMPARE(capLs.label(), QStringLiteral("CAP"));
     QCOMPARE(capLs.text(),
@@ -2625,30 +2625,30 @@ void SessionTest::incomingCapMyinfoAndLusersFormatting()
     QCOMPARE(capLs.severity(), IrcLogSeverity::Info);
 
     const IrcStatusEntry capAck = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":server CAP omairc ACK :batch chathistory"));
     QCOMPARE(capAck.text(), QStringLiteral("Acknowledged: batch | chathistory"));
 
     const IrcStatusEntry capNickCollision = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":server CAP ACK LS :batch"));
     QCOMPARE(capNickCollision.label(), QStringLiteral("CAP"));
     QCOMPARE(capNickCollision.text(), QStringLiteral("Server supports: batch"));
 
     const IrcStatusEntry capLsContinuation = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":server CAP * LS * :cap-one cap-two"));
     QCOMPARE(capLsContinuation.text(),
              QStringLiteral("Server supports: cap-one | cap-two"));
 
     const IrcStatusEntry lusers252 = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":server 252 omairc 1 :IRC Operators online"));
     QCOMPARE(lusers252.label(), QStringLiteral("252"));
     QCOMPARE(lusers252.text(), QStringLiteral("1 IRC Operators online"));
 
     const IrcStatusEntry lusers265 = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":server 265 omairc 10 20 :Current local users 10, max 20"));
     QCOMPARE(lusers265.label(), QStringLiteral("265"));
     QCOMPARE(lusers265.text(), QStringLiteral("Current local users 10, max 20"));
@@ -2686,7 +2686,7 @@ void SessionTest::outgoingCapReqKeptCapEndDropped()
     QVERIFY(!ircStatusKeepsOutgoing(QByteArrayLiteral("CAP LS 302\r\n")));
 
     const IrcStatusEntry capReq = IrcStatusEntry::outgoing(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         QByteArrayLiteral("CAP REQ :multi-prefix chghost\r\n"));
     QCOMPARE(capReq.label(), QStringLiteral("CAP"));
     QCOMPARE(capReq.text(),
@@ -2940,7 +2940,7 @@ void SessionTest::automaticIdentifyDoesNotAppearInStatusAsSecret()
 void SessionTest::saslAccountNeverAppearsInStatusEntries()
 {
     IrcSessionConfig saslConfig = config();
-    saslConfig.saslAccount = QStringLiteral("joe/libera");
+    saslConfig.saslAccount = QStringLiteral("joe/freenode");
     saslConfig.password = QStringLiteral("hunter2");
     Fixture fixture(saslConfig);
     StatusCollector status(fixture.session);
@@ -2956,9 +2956,9 @@ void SessionTest::saslAccountNeverAppearsInStatusEntries()
     QVERIFY(!status.anyFieldContains(QStringLiteral("AUTHENTICATE")));
     QVERIFY(status.hasLabel(QStringLiteral("903")));
     QVERIFY(!status.anyFieldContains(QStringLiteral("hunter2")));
-    QVERIFY(!status.anyFieldContains(QStringLiteral("joe/libera")));
+    QVERIFY(!status.anyFieldContains(QStringLiteral("joe/freenode")));
     QVERIFY(!status.anyFieldContains(QString::fromUtf8(
-        QByteArray("joe/libera\0joe/libera\0hunter2", 29).toBase64())));
+        QByteArray("joe/freenode\0joe/freenode\0hunter2", 33).toBase64())));
 }
 
 void SessionTest::keyedJoinIsRedactedInStatusEntries()
@@ -3269,12 +3269,12 @@ void SessionTest::negotiatedChannelTypesClassifyDollarTargets()
 void SessionTest::serviceRepliesStayReadable()
 {
     const IrcStatusEntry notice = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":NickServ!NickServ@services NOTICE me :Please identify"));
     QCOMPARE(notice.text(), QStringLiteral("-NickServ- Please identify"));
 
     const IrcStatusEntry privmsg = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":NickServ!NickServ@services PRIVMSG me :This nickname is registered."));
     QCOMPARE(privmsg.text(), QStringLiteral("This nickname is registered."));
 }
@@ -3282,13 +3282,13 @@ void SessionTest::serviceRepliesStayReadable()
 void SessionTest::incomingInviteNamesNickAndChannel()
 {
     const IrcStatusEntry invite = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":alice!u@h INVITE omairc :#lab"));
     QCOMPARE(invite.label(), QStringLiteral("INVITE"));
     QCOMPARE(invite.text(), QStringLiteral("alice invited you to #lab"));
 
     const IrcStatusEntry bare = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse("INVITE omairc :#lab"));
     QCOMPARE(bare.text(), QStringLiteral("omairc #lab"));
 }
@@ -3297,7 +3297,7 @@ void SessionTest::incomingInviteDoesNotTranslateToEvents()
 {
     const IrcServerFeatures features;
     QVERIFY(IrcEventTranslator::translate(
-                QStringLiteral("libera"),
+                QStringLiteral("freenode"),
                 QStringLiteral("omairc"),
                 features,
                 mustParse(":alice!u@h INVITE omairc :#lab"))
@@ -3307,38 +3307,38 @@ void SessionTest::incomingInviteDoesNotTranslateToEvents()
 void SessionTest::selfEchoToServiceIsRedacted()
 {
     const IrcStatusEntry echo = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":me!u@h PRIVMSG nickserv :identify my_nick s3cret"));
     QCOMPARE(echo.text(), QStringLiteral("IDENTIFY ***"));
     QVERIFY(!echo.text().contains(QStringLiteral("s3cret")));
 
     const IrcStatusEntry servNick = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":myserv!u@h PRIVMSG nickserv :identify my_nick s3cret"));
     QCOMPARE(servNick.text(), QStringLiteral("IDENTIFY ***"));
     QVERIFY(!servNick.text().contains(QStringLiteral("s3cret")));
 
     const IrcStatusEntry middles = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":me!u@h PRIVMSG nickserv IDENTIFY my_nick s3cret"));
     QCOMPARE(middles.text(), QStringLiteral("IDENTIFY ***"));
     QVERIFY(!middles.text().contains(QStringLiteral("s3cret")));
 
     const IrcStatusEntry ctcp = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":me!u@h PRIVMSG nickserv :\x01IDENTIFY my_nick s3cret\x01"));
     QCOMPARE(ctcp.text(), QStringLiteral("IDENTIFY ***"));
     QVERIFY(!ctcp.text().contains(QStringLiteral("s3cret")));
     QCOMPARE(ctcp.label(), QStringLiteral("PRIVMSG"));
 
     const IrcStatusEntry setPassword = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":me!u@h PRIVMSG nickserv :set password s3cret"));
     QCOMPARE(setPassword.text(), QStringLiteral("SET PASSWORD ***"));
     QVERIFY(!setPassword.text().contains(QStringLiteral("s3cret")));
 
     const IrcStatusEntry setEmail = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":me!u@h PRIVMSG nickserv :set email user@example.net"));
     QCOMPARE(setEmail.text(), QStringLiteral("set email user@example.net"));
 }
@@ -3738,45 +3738,45 @@ void SessionTest::whoisWritesDoubledNick()
 void SessionTest::whoisStatusLinesFormatKnownNumerics()
 {
     const IrcStatusEntry user = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":irc 311 omairc lena ~lena user/host * :Lena"));
     QCOMPARE(user.label(), QStringLiteral("whois"));
     QCOMPARE(user.text(), QStringLiteral("lena is ~lena@user/host (Lena)"));
     QCOMPARE(user.severity(), IrcLogSeverity::Info);
 
     const IrcStatusEntry channels = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":irc 319 omairc lena :#omarchy #desktop"));
     QCOMPARE(channels.label(), QStringLiteral("whois"));
     QCOMPARE(channels.text(), QStringLiteral("lena is on #omarchy #desktop"));
 
     const IrcStatusEntry server = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
-        mustParse(":irc 312 omairc lena copper.libera.chat :London, UK"));
+        QStringLiteral("freenode"),
+        mustParse(":irc 312 omairc lena chat.freenode.net :IRC network"));
     QCOMPARE(server.label(), QStringLiteral("whois"));
     QCOMPARE(server.text(),
-             QStringLiteral("lena using copper.libera.chat (London, UK)"));
+             QStringLiteral("lena using chat.freenode.net (IRC network)"));
 
     const IrcStatusEntry away = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":irc 301 omairc lena :gone fishing"));
     QCOMPARE(away.label(), QStringLiteral("whois"));
     QCOMPARE(away.text(), QStringLiteral("lena is away: gone fishing"));
 
     const IrcStatusEntry idle = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":irc 317 omairc lena 84 :seconds idle"));
     QCOMPARE(idle.label(), QStringLiteral("whois"));
     QCOMPARE(idle.text(), QStringLiteral("lena idle 84s"));
 
     const IrcStatusEntry idleSignon = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":irc 317 omairc lena 84 1700000000 :seconds idle"));
     QCOMPARE(idleSignon.label(), QStringLiteral("whois"));
     QCOMPARE(idleSignon.text(), QStringLiteral("lena idle 84s, signon 1700000000"));
 
     const IrcStatusEntry end = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":irc 318 omairc lena :End of /WHOIS list."));
     QCOMPARE(end.label(), QStringLiteral("whois"));
     QCOMPARE(end.text(), QStringLiteral("End of WHOIS for lena"));
@@ -3784,32 +3784,32 @@ void SessionTest::whoisStatusLinesFormatKnownNumerics()
     QCOMPARE(end.whoisLine()->progress(), IrcWhoisLine::Progress::Terminal);
 
     const IrcStatusEntry account = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":irc 330 omairc lena pinkieval :is logged in as"));
     QCOMPARE(account.label(), QStringLiteral("whois"));
     QCOMPARE(account.text(), QStringLiteral("lena is logged in as pinkieval"));
 
     const IrcStatusEntry secure = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":irc 671 omairc lena :is using a secure connection"));
     QCOMPARE(secure.label(), QStringLiteral("whois"));
     QCOMPARE(secure.text(),
              QStringLiteral("lena is using a secure connection"));
 
     const IrcStatusEntry unknown = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":irc 335 omairc lena :bot"));
     QCOMPARE(unknown.label(), QStringLiteral("335"));
     QCOMPARE(unknown.text(), QStringLiteral("lena bot"));
 
     const IrcStatusEntry shortUser = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":irc 311 omairc lena"));
     QCOMPARE(shortUser.label(), QStringLiteral("311"));
     QCOMPARE(shortUser.text(), QStringLiteral("lena"));
 
     const IrcStatusEntry missing = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":irc 401 omairc lena :No such nick/channel"));
     QCOMPARE(missing.label(), QStringLiteral("401"));
     QCOMPARE(missing.text(), QStringLiteral("No such nick: lena"));
@@ -3818,7 +3818,7 @@ void SessionTest::whoisStatusLinesFormatKnownNumerics()
     QCOMPARE(missing.whoisLine()->progress(), IrcWhoisLine::Progress::Failed);
 
     const IrcStatusEntry welcome = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":server 001 omairc :Welcome"));
     QCOMPARE(welcome.label(), QStringLiteral("001"));
     QCOMPARE(welcome.text(), QStringLiteral("Welcome"));
@@ -3827,39 +3827,39 @@ void SessionTest::whoisStatusLinesFormatKnownNumerics()
 void SessionTest::incomingNoticeStatusLinesWrapSpeaker()
 {
     const IrcStatusEntry nickserv = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":NickServ!NickServ@services NOTICE omairc :Please identify"));
     QCOMPARE(nickserv.label(), QStringLiteral("NOTICE"));
     QCOMPARE(nickserv.text(), QStringLiteral("-NickServ- Please identify"));
 
     const IrcStatusEntry auth = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse("NOTICE AUTH :*** Looking up your hostname..."));
     QCOMPARE(auth.label(), QStringLiteral("NOTICE"));
     QCOMPARE(auth.text(), QStringLiteral("-AUTH- *** Looking up your hostname..."));
 
     const IrcStatusEntry server = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
-        mustParse(":copper.libera.chat NOTICE * :*** Found your hostname"));
+        QStringLiteral("freenode"),
+        mustParse(":chat.freenode.net NOTICE * :*** Found your hostname"));
     QCOMPARE(server.label(), QStringLiteral("NOTICE"));
     QCOMPARE(server.text(),
-             QStringLiteral("-copper.libera.chat- *** Found your hostname"));
+             QStringLiteral("-chat.freenode.net- *** Found your hostname"));
 
     const IrcStatusEntry channel = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":alice!u@h NOTICE #omarchy :heads up"));
     QCOMPARE(channel.label(), QStringLiteral("NOTICE"));
     QCOMPARE(channel.text(), QStringLiteral("-alice- heads up"));
 
     const IrcStatusEntry bare = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse("NOTICE * :hello"));
     QCOMPARE(bare.label(), QStringLiteral("NOTICE"));
     QCOMPARE(bare.text(), QStringLiteral("hello"));
     QVERIFY(!bare.text().startsWith(QStringLiteral("-- ")));
 
     const IrcStatusEntry oneParam = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse("NOTICE AUTH"));
     QCOMPARE(oneParam.label(), QStringLiteral("NOTICE"));
     QCOMPARE(oneParam.text(), QStringLiteral("-AUTH- "));
@@ -3869,7 +3869,7 @@ void SessionTest::incomingNoticeStatusLinesWrapSpeaker()
 void SessionTest::incomingCtcpNoticeStatusLines()
 {
     const IrcStatusEntry version = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":lena!u@h NOTICE omairc :\x01VERSION Omairc 0.4.0\x01"));
     QCOMPARE(version.label(), QStringLiteral("CTCP"));
     QCOMPARE(version.text(), QStringLiteral("VERSION reply from lena: Omairc 0.4.0"));
@@ -3881,7 +3881,7 @@ void SessionTest::incomingCtcpNoticeStatusLines()
     const std::string pingLine =
         QStringLiteral(":lena!u@h NOTICE omairc :\x01PING %1\x01").arg(sent).toStdString();
     const IrcStatusEntry ping = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(pingLine));
     QCOMPARE(ping.label(), QStringLiteral("CTCP"));
     QVERIFY(ping.text().startsWith(QStringLiteral("PING reply from lena: ")));
@@ -3890,7 +3890,7 @@ void SessionTest::incomingCtcpNoticeStatusLines()
     QCOMPARE(ping.ctcpReply()->command(), QStringLiteral("PING"));
 
     const IrcStatusEntry time = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":lena!u@h NOTICE omairc :\x01"
                   "TIME Tue, 15 Sep 2026 12:00:00 +0000\x01"));
     QCOMPARE(time.label(), QStringLiteral("CTCP"));
@@ -3898,7 +3898,7 @@ void SessionTest::incomingCtcpNoticeStatusLines()
              QStringLiteral("TIME reply from lena: Tue, 15 Sep 2026 12:00:00 +0000"));
 
     const IrcStatusEntry action = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse(":lena!u@h NOTICE omairc :\x01"
                   "ACTION waves\x01"));
     QCOMPARE(action.label(), QStringLiteral("NOTICE"));
@@ -3909,13 +3909,13 @@ void SessionTest::incomingNoticeDoesNotTranslateToEvents()
 {
     const IrcServerFeatures features;
     QVERIFY(IrcEventTranslator::translate(
-                QStringLiteral("libera"),
+                QStringLiteral("freenode"),
                 QStringLiteral("omairc"),
                 features,
                 mustParse(":NickServ!NickServ@services NOTICE omairc :Please identify"))
                 .empty());
     QVERIFY(IrcEventTranslator::translate(
-                QStringLiteral("libera"),
+                QStringLiteral("freenode"),
                 QStringLiteral("omairc"),
                 features,
                 mustParse(":alice!u@h NOTICE #omarchy :heads up"))
@@ -3926,17 +3926,17 @@ void SessionTest::incomingNickservPrivmsgDoesNotTranslateToEvents()
 {
     const IrcServerFeatures features;
     QVERIFY(IrcEventTranslator::translate(
-                QStringLiteral("libera"),
+                QStringLiteral("freenode"),
                 QStringLiteral("omairc"),
                 features,
                 mustParse(":NickServ!NickServ@services PRIVMSG omairc "
                           ":This nickname is registered."))
                 .empty());
     QVERIFY(IrcEventTranslator::translate(
-                QStringLiteral("libera"),
+                QStringLiteral("freenode"),
                 QStringLiteral("omairc"),
                 features,
-                mustParse(":ChanServ!ChanServ@services.libera.chat PRIVMSG omairc "
+                mustParse(":ChanServ!ChanServ@services PRIVMSG omairc "
                           ":[#omarchy] You are not on that channel."))
                 .empty());
 }
@@ -3944,7 +3944,7 @@ void SessionTest::incomingNickservPrivmsgDoesNotTranslateToEvents()
 void SessionTest::incomingStandardRepliesShowDescriptionOnStatus()
 {
     const IrcStatusEntry fail = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse("FAIL * NEED_REGISTRATION :You need to be registered to continue"));
     QCOMPARE(fail.label(), QStringLiteral("FAIL"));
     QCOMPARE(fail.text(), QStringLiteral("You need to be registered to continue"));
@@ -3952,21 +3952,21 @@ void SessionTest::incomingStandardRepliesShowDescriptionOnStatus()
     QCOMPARE(fail.source(), IrcLogSource::Server);
 
     const IrcStatusEntry failWithContext = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse("FAIL ACC REG_INVALID_CALLBACK REGISTER :Email address is not valid"));
     QCOMPARE(failWithContext.label(), QStringLiteral("FAIL"));
     QCOMPARE(failWithContext.text(), QStringLiteral("Email address is not valid"));
     QCOMPARE(failWithContext.severity(), IrcLogSeverity::Alert);
 
     const IrcStatusEntry warn = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse("WARN REHASH CERTS_EXPIRED :Certificate has expired"));
     QCOMPARE(warn.label(), QStringLiteral("WARN"));
     QCOMPARE(warn.text(), QStringLiteral("Certificate has expired"));
     QCOMPARE(warn.severity(), IrcLogSeverity::Info);
 
     const IrcStatusEntry note = IrcStatusEntry::incoming(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         mustParse("NOTE * OPER_MESSAGE :Registering new accounts has been disabled"));
     QCOMPARE(note.label(), QStringLiteral("NOTE"));
     QCOMPARE(note.text(), QStringLiteral("Registering new accounts has been disabled"));
@@ -3977,19 +3977,19 @@ void SessionTest::incomingStandardRepliesDoNotTranslateToEvents()
 {
     const IrcServerFeatures features;
     QVERIFY(IrcEventTranslator::translate(
-                QStringLiteral("libera"),
+                QStringLiteral("freenode"),
                 QStringLiteral("omairc"),
                 features,
                 mustParse("FAIL * NEED_REGISTRATION :You need to be registered to continue"))
                 .empty());
     QVERIFY(IrcEventTranslator::translate(
-                QStringLiteral("libera"),
+                QStringLiteral("freenode"),
                 QStringLiteral("omairc"),
                 features,
                 mustParse("WARN REHASH CERTS_EXPIRED :Certificate has expired"))
                 .empty());
     QVERIFY(IrcEventTranslator::translate(
-                QStringLiteral("libera"),
+                QStringLiteral("freenode"),
                 QStringLiteral("omairc"),
                 features,
                 mustParse("NOTE * OPER_MESSAGE :Registering new accounts has been disabled"))
@@ -4032,7 +4032,7 @@ void SessionTest::incomingActionTranslatesToActionEvent()
 {
     const IrcServerFeatures features;
     const std::vector<IrcEvent> events = IrcEventTranslator::translate(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         QStringLiteral("omairc"),
         features,
         mustParse(":MetaNova!u@h PRIVMSG #omarchy :\x01"
@@ -4052,7 +4052,7 @@ void SessionTest::latin1PrivmsgBodyIsEAcuteAndNextLineTranslates()
     std::string latin1 = ":alice!u@h PRIVMSG #omarchy :";
     latin1.push_back('\xe9');
     const std::vector<IrcEvent> first = IrcEventTranslator::translate(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         QStringLiteral("omairc"),
         features,
         mustParse(latin1));
@@ -4063,7 +4063,7 @@ void SessionTest::latin1PrivmsgBodyIsEAcuteAndNextLineTranslates()
     QVERIFY(!latin1Message->body.contains(QChar(0xFFFD)));
 
     const std::vector<IrcEvent> utf8 = IrcEventTranslator::translate(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         QStringLiteral("omairc"),
         features,
         mustParse(":alice!u@h PRIVMSG #omarchy :\xc3\xa9"));
@@ -4073,7 +4073,7 @@ void SessionTest::latin1PrivmsgBodyIsEAcuteAndNextLineTranslates()
     QCOMPARE(utf8Message->body, QString(QChar(0x00E9)));
 
     const std::vector<IrcEvent> following = IrcEventTranslator::translate(
-        QStringLiteral("libera"),
+        QStringLiteral("freenode"),
         QStringLiteral("omairc"),
         features,
         mustParse(":bob!u@h PRIVMSG #omarchy :ok"));

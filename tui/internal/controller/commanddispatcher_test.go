@@ -266,8 +266,8 @@ func newCommandFixture() *commandFixture {
 	highlights := NewHighlightStore()
 	features := irc.NewServerFeatures()
 	host := &commandFakeHost{
-		networkID:          "libera",
-		statusNetworkID:    "libera",
+		networkID:          "freenode",
+		statusNetworkID:    "freenode",
 		delegatedResult:    irc.OutcomeSent,
 		sendSelectedResult: irc.OutcomeSent,
 		clearSurfaceResult: irc.OutcomeSent,
@@ -380,21 +380,21 @@ func TestCommandDispatcherQuery(t *testing.T) {
 	outcome := fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbQuery, Argument: "Lena"}, irc.SurfaceConversation)
 	commandRequireOutcome(t, outcome, irc.OutcomeSent, "query")
 
-	key := fixture.reducer.ConversationKey("libera", "Lena")
+	key := fixture.reducer.ConversationKey("freenode", "Lena")
 	inserted := fixture.reducer.Find(key)
 	if inserted == nil || inserted.Target != "Lena" {
 		t.Fatalf("conversation not inserted for %v", key)
 	}
-	if len(fixture.host.remembered) != 1 || fixture.host.remembered[0] != commandPair("libera", "Lena") {
+	if len(fixture.host.remembered) != 1 || fixture.host.remembered[0] != commandPair("freenode", "Lena") {
 		t.Fatalf("remembered = %q", fixture.host.remembered)
 	}
-	if len(fixture.host.selectedConvs) != 1 || fixture.host.selectedConvs[0] != commandPair("libera", "Lena") {
+	if len(fixture.host.selectedConvs) != 1 || fixture.host.selectedConvs[0] != commandPair("freenode", "Lena") {
 		t.Fatalf("selectConversation = %q", fixture.host.selectedConvs)
 	}
 
 	// Text with a registered session sends into the opened conversation.
-	active, _ := commandRegisteredSession(t, "libera")
-	fixture.host.sessionByNetwork["libera"] = active
+	active, _ := commandRegisteredSession(t, "freenode")
+	fixture.host.sessionByNetwork["freenode"] = active
 	outcome = fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbQuery, Argument: "lena hello"}, irc.SurfaceConversation)
 	commandRequireOutcome(t, outcome, irc.OutcomeSent, "query with text")
 	if len(fixture.host.sentMessages) != 1 || fixture.host.sentMessages[0] != "hello" {
@@ -414,13 +414,13 @@ func TestCommandDispatcherQuery(t *testing.T) {
 
 func TestCommandDispatcherQuietSend(t *testing.T) {
 	fixture := newCommandFixture()
-	active, transport := commandRegisteredSession(t, "libera")
-	fixture.host.sessionByNetwork["libera"] = active
+	active, transport := commandRegisteredSession(t, "freenode")
+	fixture.host.sessionByNetwork["freenode"] = active
 
 	outcome := fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbMsg, Argument: "lena hello there"}, irc.SurfaceConversation)
 	commandRequireOutcome(t, outcome, irc.OutcomeSent, "msg")
 	commandWrote(t, transport, "PRIVMSG lena :hello there\r\n")
-	if len(fixture.host.nickDeliveries) != 1 || fixture.host.nickDeliveries[0] != commandPair("libera", "lena") {
+	if len(fixture.host.nickDeliveries) != 1 || fixture.host.nickDeliveries[0] != commandPair("freenode", "lena") {
 		t.Fatalf("nick deliveries = %q", fixture.host.nickDeliveries)
 	}
 	if len(fixture.host.echoPresentWires) != 1 || fixture.host.echoPresentWires[0] != QuietWirePrivmsg {
@@ -446,8 +446,8 @@ func TestCommandDispatcherQuietSend(t *testing.T) {
 
 func TestCommandDispatcherServiceMsg(t *testing.T) {
 	fixture := newCommandFixture()
-	active, transport := commandRegisteredSession(t, "libera")
-	fixture.host.sessionByNetwork["libera"] = active
+	active, transport := commandRegisteredSession(t, "freenode")
+	fixture.host.sessionByNetwork["freenode"] = active
 
 	cases := []struct {
 		verb irc.Verb
@@ -471,10 +471,10 @@ func TestCommandDispatcherServiceMsg(t *testing.T) {
 
 func TestCommandDispatcherJoin(t *testing.T) {
 	fixture := newCommandFixture()
-	active, transport := commandRegisteredSession(t, "libera")
+	active, transport := commandRegisteredSession(t, "freenode")
 	fixture.host.sessionForSurface = active
 
-	cancelledKey := fixture.reducer.ConversationKey("libera", "#help")
+	cancelledKey := fixture.reducer.ConversationKey("freenode", "#help")
 	fixture.dispatcher.NoteCancelled(cancelledKey)
 	outcome := fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbJoin, Argument: "#help"}, irc.SurfaceConversation)
 	commandRequireOutcome(t, outcome, irc.OutcomeSent, "join")
@@ -495,12 +495,12 @@ func TestCommandDispatcherJoin(t *testing.T) {
 
 func TestCommandDispatcherPart(t *testing.T) {
 	fixture := newCommandFixture()
-	active, transport := commandRegisteredSession(t, "libera")
+	active, transport := commandRegisteredSession(t, "freenode")
 	fixture.host.sessionForSurface = active
 
 	// An unjoined channel stays in the sidebar, records a cancellation, and
 	// never writes PART.
-	channelKey := fixture.reducer.ConversationKey("libera", "#room")
+	channelKey := fixture.reducer.ConversationKey("freenode", "#room")
 	fixture.reducer.EnsureConversation(channelKey, "#room", irc.CauseChannelState)
 	framesBefore := len(commandFrames(transport))
 	outcome := fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbPart, Argument: "#room"}, irc.SurfaceConversation)
@@ -524,13 +524,13 @@ func TestCommandDispatcherPart(t *testing.T) {
 	commandWrote(t, transport, "PART #other\r\n")
 
 	// A joined channel is marked left and parted, and the row is not dismissed.
-	fixture.reducer.Apply(irc.WelcomeEvent{NetworkID: "libera", CurrentNick: "me"}, time.Time{})
-	fixture.reducer.Apply(irc.JoinEvent{NetworkID: "libera", Channel: "#joined", Nick: "me"}, time.Time{})
+	fixture.reducer.Apply(irc.WelcomeEvent{NetworkID: "freenode", CurrentNick: "me"}, time.Time{})
+	fixture.reducer.Apply(irc.JoinEvent{NetworkID: "freenode", Channel: "#joined", Nick: "me"}, time.Time{})
 	outcome = fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbPart, Argument: "#joined"}, irc.SurfaceConversation)
 	commandRequireOutcome(t, outcome, irc.OutcomeSent, "part joined")
 	commandWrote(t, transport, "PART #joined\r\n")
-	if len(fixture.host.markLeft) != 1 || fixture.host.markLeft[0] != commandPair("libera", "#joined") {
-		t.Fatalf("mark left = %q, want libera/#joined", fixture.host.markLeft)
+	if len(fixture.host.markLeft) != 1 || fixture.host.markLeft[0] != commandPair("freenode", "#joined") {
+		t.Fatalf("mark left = %q, want freenode/#joined", fixture.host.markLeft)
 	}
 	if fixture.host.dismissCalls != 0 {
 		t.Fatalf("joined part dismissed the row")
@@ -542,13 +542,13 @@ func TestCommandDispatcherPart(t *testing.T) {
 
 func TestCommandDispatcherKickInvite(t *testing.T) {
 	fixture := newCommandFixture()
-	active, transport := commandRegisteredSession(t, "libera")
+	active, transport := commandRegisteredSession(t, "freenode")
 	fixture.host.sessionForSurface = active
 
 	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbKick, Argument: "#room bob spam"}, irc.SurfaceConversation), irc.OutcomeSent, "kick")
 	commandWrote(t, transport, "KICK #room bob :spam\r\n")
 
-	fixture.host.selectedKey = fixture.reducer.ConversationKey("libera", "#room")
+	fixture.host.selectedKey = fixture.reducer.ConversationKey("freenode", "#room")
 	fixture.host.hasSelectedKey = true
 	fixture.host.selectedIsChannel = true
 	fixture.host.selectedTarget = "#room"
@@ -563,10 +563,10 @@ func TestCommandDispatcherKickInvite(t *testing.T) {
 
 func TestCommandDispatcherMode(t *testing.T) {
 	fixture := newCommandFixture()
-	active, transport := commandRegisteredSession(t, "libera")
-	fixture.host.sessionByNetwork["libera"] = active
+	active, transport := commandRegisteredSession(t, "freenode")
+	fixture.host.sessionByNetwork["freenode"] = active
 
-	fixture.host.selectedKey = fixture.reducer.ConversationKey("libera", "#room")
+	fixture.host.selectedKey = fixture.reducer.ConversationKey("freenode", "#room")
 	fixture.host.hasSelectedKey = true
 	fixture.host.selectedIsChannel = true
 	fixture.host.selectedTarget = "#room"
@@ -590,10 +590,10 @@ func TestCommandDispatcherMode(t *testing.T) {
 
 func TestCommandDispatcherTopicAwayBack(t *testing.T) {
 	fixture := newCommandFixture()
-	active, transport := commandRegisteredSession(t, "libera")
+	active, transport := commandRegisteredSession(t, "freenode")
 	fixture.host.sessionForSurface = active
 	fixture.host.selectedSession = active
-	fixture.host.selectedKey = fixture.reducer.ConversationKey("libera", "#room")
+	fixture.host.selectedKey = fixture.reducer.ConversationKey("freenode", "#room")
 	fixture.host.hasSelectedKey = true
 	fixture.host.selectedIsChannel = true
 	fixture.host.selectedTarget = "#room"
@@ -604,7 +604,7 @@ func TestCommandDispatcherTopicAwayBack(t *testing.T) {
 
 	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbAway, Argument: "brb"}, irc.SurfaceConversation), irc.OutcomeSent, "away")
 	commandWrote(t, transport, "AWAY :brb\r\n")
-	if len(fixture.host.manualAway) != 1 || fixture.host.manualAway[0] != "libera" {
+	if len(fixture.host.manualAway) != 1 || fixture.host.manualAway[0] != "freenode" {
 		t.Fatalf("manual away = %q", fixture.host.manualAway)
 	}
 	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbAway}, irc.SurfaceConversation), irc.OutcomeSent, "away clear")
@@ -620,9 +620,9 @@ func TestCommandDispatcherTopicAwayBack(t *testing.T) {
 
 func TestCommandDispatcherRawListNick(t *testing.T) {
 	fixture := newCommandFixture()
-	active, transport := commandRegisteredSession(t, "libera")
+	active, transport := commandRegisteredSession(t, "freenode")
 	fixture.host.sessionForSurface = active
-	fixture.host.sessionByNetwork["libera"] = active
+	fixture.host.sessionByNetwork["freenode"] = active
 
 	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbRaw, Argument: "PRIVMSG #room :hi"}, irc.SurfaceConversation), irc.OutcomeSent, "raw")
 	commandWrote(t, transport, "PRIVMSG #room :hi\r\n")
@@ -638,7 +638,7 @@ func TestCommandDispatcherRawListNick(t *testing.T) {
 
 func TestCommandDispatcherIgnore(t *testing.T) {
 	fixture := newCommandFixture()
-	active, _ := commandRegisteredSession(t, "libera")
+	active, _ := commandRegisteredSession(t, "freenode")
 	fixture.host.sessionForSurface = active
 
 	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbIgnored}, irc.SurfaceConversation), irc.OutcomeSent, "ignored empty")
@@ -647,7 +647,7 @@ func TestCommandDispatcherIgnore(t *testing.T) {
 	fixture.host.statusTexts = nil
 	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbIgnore, Argument: "Lena"}, irc.SurfaceConversation), irc.OutcomeSent, "ignore")
 	commandRequireText(t, fixture.host.statusTexts[0], "Ignoring Lena", "ignore text")
-	if !fixture.ignores.Contains("libera", "lena", fixture.host.mapping) {
+	if !fixture.ignores.Contains("freenode", "lena", fixture.host.mapping) {
 		t.Fatalf("ignore store missing lena")
 	}
 
@@ -674,9 +674,9 @@ func TestCommandDispatcherIgnore(t *testing.T) {
 
 func TestCommandDispatcherMute(t *testing.T) {
 	fixture := newCommandFixture()
-	active, _ := commandRegisteredSession(t, "libera")
+	active, _ := commandRegisteredSession(t, "freenode")
 	fixture.host.sessionForSurface = active
-	fixture.host.selectedKey = fixture.reducer.ConversationKey("libera", "#room")
+	fixture.host.selectedKey = fixture.reducer.ConversationKey("freenode", "#room")
 	fixture.host.hasSelectedKey = true
 	fixture.host.selectedTarget = "#room"
 
@@ -717,7 +717,7 @@ func TestCommandDispatcherMute(t *testing.T) {
 
 func TestCommandDispatcherHighlight(t *testing.T) {
 	fixture := newCommandFixture()
-	active, _ := commandRegisteredSession(t, "libera")
+	active, _ := commandRegisteredSession(t, "freenode")
 	fixture.host.sessionForSurface = active
 
 	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbHighlights}, irc.SurfaceConversation), irc.OutcomeSent, "highlights empty")
@@ -726,7 +726,7 @@ func TestCommandDispatcherHighlight(t *testing.T) {
 	fixture.host.statusTexts = nil
 	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbHighlight, Argument: "Alice"}, irc.SurfaceConversation), irc.OutcomeSent, "highlight")
 	commandRequireText(t, fixture.host.statusTexts[0], "Highlighting Alice", "highlight text")
-	if len(fixture.host.syncHighlights) != 1 || fixture.host.syncHighlights[0] != "libera" {
+	if len(fixture.host.syncHighlights) != 1 || fixture.host.syncHighlights[0] != "freenode" {
 		t.Fatalf("sync highlights = %q", fixture.host.syncHighlights)
 	}
 
@@ -771,7 +771,7 @@ func TestCommandDispatcherPref(t *testing.T) {
 	commandRequireText(t, fixture.host.statusTexts[0], irc.PrefUsage(), "pref usage text")
 
 	// On a conversation the feedback lands in the transcript.
-	fixture.host.selectedKey = fixture.reducer.ConversationKey("libera", "lena")
+	fixture.host.selectedKey = fixture.reducer.ConversationKey("freenode", "lena")
 	fixture.host.hasSelectedKey = true
 	fixture.host.statusTexts = nil
 	fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbPref}, irc.SurfaceConversation)
@@ -796,7 +796,7 @@ func TestCommandDispatcherHelp(t *testing.T) {
 		t.Fatalf("help text shape = %q", fixture.host.statusTexts[0])
 	}
 
-	fixture.host.selectedKey = fixture.reducer.ConversationKey("libera", "#room")
+	fixture.host.selectedKey = fixture.reducer.ConversationKey("freenode", "#room")
 	fixture.host.hasSelectedKey = true
 	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbHelp}, irc.SurfaceConversation), irc.OutcomeSent, "help conversation")
 	if len(fixture.host.whoisEvents) != 1 || fixture.host.whoisEvents[0].FormattedBody != want {
@@ -860,14 +860,14 @@ func TestCommandDispatcherWireLifecycle(t *testing.T) {
 
 	// A live but unregistered session refuses every non-quit verb.
 	transport := session.NewLoopbackTransport()
-	config := session.DefaultSessionConfig("libera", "libera", "irc.example.test", "me")
+	config := session.DefaultSessionConfig("freenode", "freenode", "irc.example.test", "me")
 	connecting := session.NewSession(config, transport, session.NewFakeClock(time.Unix(0, 0)))
 	connecting.Start()
 	fixture.host.sessionForSurface = connecting
 	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbNick, Argument: "x"}, irc.SurfaceConversation), irc.OutcomeNotConnected, "unregistered session")
 
 	// An unsupported wire verb on a registered session.
-	active, _ := commandRegisteredSession(t, "libera")
+	active, _ := commandRegisteredSession(t, "freenode")
 	fixture.host.sessionForSurface = active
 	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbDeop}, irc.SurfaceConversation), irc.OutcomeWrongScope, "deop without channel")
 }
@@ -876,7 +876,7 @@ func TestCommandDispatcherCancelled(t *testing.T) {
 	fixture := newCommandFixture()
 	dispatcher := fixture.dispatcher
 
-	key := irc.ConversationKey{NetworkID: "libera", NormalizedTarget: "#room"}
+	key := irc.ConversationKey{NetworkID: "freenode", NormalizedTarget: "#room"}
 	other := irc.ConversationKey{NetworkID: "oftc", NormalizedTarget: "#room"}
 
 	dispatcher.NoteCancelled(key)
@@ -893,9 +893,9 @@ func TestCommandDispatcherCancelled(t *testing.T) {
 
 	dispatcher.NoteCancelled(key)
 	dispatcher.NoteCancelled(other)
-	dispatcher.ForgetNetwork("libera")
+	dispatcher.ForgetNetwork("freenode")
 	if dispatcher.TakeCancelledSelfJoin(key) {
-		t.Fatalf("ForgetNetwork did not clear libera")
+		t.Fatalf("ForgetNetwork did not clear freenode")
 	}
 	if !dispatcher.TakeCancelledSelfJoin(other) {
 		t.Fatalf("ForgetNetwork cleared the wrong network")

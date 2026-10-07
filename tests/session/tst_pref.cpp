@@ -19,7 +19,7 @@
 
 namespace
 {
-IrcSessionConfig config(const QString& networkId = QStringLiteral("libera"))
+IrcSessionConfig config(const QString& networkId = QStringLiteral("freenode"))
 {
     IrcSessionConfig value;
     value.networkId = networkId;
@@ -45,7 +45,7 @@ FakeIrcTransport *joinNetwork(IrcController& controller)
     auto *transport = new FakeIrcTransport;
     if (!controller.addSession(config(), transport))
         return nullptr;
-    if (!controller.start(QStringLiteral("libera")))
+    if (!controller.start(QStringLiteral("freenode")))
         return nullptr;
     welcome(transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
@@ -259,7 +259,7 @@ void PrefTest::queryAndSetFromConversation()
     IrcController controller;
     auto *transport = joinNetwork(controller);
     QVERIFY(transport);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
 
@@ -307,7 +307,7 @@ void PrefTest::statusEchoesWithoutTouchingTheTranscript()
     IrcController controller;
     auto *transport = joinNetwork(controller);
     QVERIFY(transport);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     const int before = whoisCount(messages);

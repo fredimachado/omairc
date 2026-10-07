@@ -25,7 +25,7 @@
 
 namespace
 {
-const QString network = QStringLiteral("libera");
+const QString network = QStringLiteral("freenode");
 const QDateTime t0 =
     QDateTime::fromString(QStringLiteral("2026-09-04T12:00:00Z"), Qt::ISODate);
 

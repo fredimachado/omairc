@@ -21,7 +21,7 @@ Send a message lets a user add a local line to the current mock transcript from 
 
 Preconditions:
 
-- Seeded conversation UI is showing. Use `control-omairc launch --demo-server`. When Xvfb tools are missing, `qml-suite` (seeded `IrcController`) is the fallback and is not compiled-window proof. A default compiled launch is titled `irc.libera.chat Status`.
+- Seeded conversation UI is showing. Use `control-omairc launch --demo-server`. When Xvfb tools are missing, `qml-suite` (seeded `IrcController`) is the fallback and is not compiled-window proof. A default compiled launch is titled `chat.freenode.net Status`.
 - For the desktop recipe below, jump to `#desktop` first. Run `control-omairc jump --query "#desktop"` then `control-omairc wait-title --exact "#desktop - Omairc"`. `launch --demo-server` starts on `#omarchy · irc.example · fred - Omairc`.
 - No prior verify line `Hello from verify` is already in this session's `#desktop` transcript.
 - `run send-message` skips `launch` when `doctor` is already healthy and `demo=yes`. It does not reset the member panel. `click-send` aims at the SEND button while that panel is open. A hidden panel makes the click miss, and the draft stays in the composer. Run `cleanup` before `run` when reusing a dirty instance.

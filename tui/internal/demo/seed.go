@@ -316,7 +316,7 @@ func oftcWorld() SeedNetwork {
 		Nick:     "rio",
 		MarkRead: true,
 		Lines: []SeedLine{
-			chat("rio", "Ping me on OFTC, not Libera.", "11:40"),
+			chat("rio", "Ping me on OFTC, not Freenode.", "11:40"),
 		},
 	}
 

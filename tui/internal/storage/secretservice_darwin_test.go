@@ -43,9 +43,9 @@ func TestKeychainBackendReadWriteRemove(t *testing.T) {
 	}
 
 	keyName := CredentialKeyName(CredentialKey{
-		NetworkID: "libera",
+		NetworkID: "freenode",
 		Username:  "alice",
-		Host:      "irc.libera.chat",
+		Host:      "chat.freenode.net",
 	})
 
 	if got := backend.read(keyName); got.State != CredentialMissing {
@@ -76,7 +76,7 @@ func TestKeychainBackendUnavailableWithoutSecurity(t *testing.T) {
 			return nil, 0, exec.ErrNotFound
 		},
 	}
-	keyName := CredentialKeyName(CredentialKey{NetworkID: "libera"})
+	keyName := CredentialKeyName(CredentialKey{NetworkID: "freenode"})
 
 	for name, got := range map[string]CredentialResult{
 		"read":   backend.read(keyName),

@@ -59,10 +59,10 @@ func TestFirstRunConnectSheet(t *testing.T) {
 	m, _ := sizedModel(t, conn)
 
 	view := m.View()
-	if view.WindowTitle != "irc.libera.chat Status" {
-		t.Fatalf("first-run title = %q, want %q", view.WindowTitle, "irc.libera.chat Status")
+	if view.WindowTitle != "chat.freenode.net Status" {
+		t.Fatalf("first-run title = %q, want %q", view.WindowTitle, "chat.freenode.net Status")
 	}
-	for _, wanted := range []string{"Connect", "irc.libera.chat", "Nick is required", "Apply"} {
+	for _, wanted := range []string{"Connect", "chat.freenode.net", "Nick is required", "Apply"} {
 		if !strings.Contains(view.Content, wanted) {
 			t.Fatalf("first-run sheet missing %q:\n%s", wanted, view.Content)
 		}
@@ -74,7 +74,7 @@ func TestFirstRunConnectSheet(t *testing.T) {
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	if m.View().WindowTitle != "irc.libera.chat Status" {
+	if m.View().WindowTitle != "chat.freenode.net Status" {
 		t.Fatalf("after the focus walk title = %q, want it unchanged", m.View().WindowTitle)
 	}
 	if !strings.Contains(m.View().Content, "Nick is required") {
@@ -224,7 +224,7 @@ func TestAutoJoinShowsTheChannelNotStatus(t *testing.T) {
 	ctrl := controller.New()
 	ctrl.SetClock(clock)
 	transport := session.NewLoopbackTransport()
-	config := session.DefaultSessionConfig("libera", "irc.example", "irc.example", "fred")
+	config := session.DefaultSessionConfig("freenode", "irc.example", "irc.example", "fred")
 	config.TLSEnabled = true
 	config.ReconnectEnabled = false
 	if _, err := ctrl.AddSession(config, transport, clock); err != nil {
@@ -233,8 +233,8 @@ func TestAutoJoinShowsTheChannelNotStatus(t *testing.T) {
 	m := New(ctrl, nil)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 118, Height: 30})
 	m = updated.(*Model)
-	if !ctrl.Start("libera") {
-		t.Fatal("Start(libera) = false")
+	if !ctrl.Start("freenode") {
+		t.Fatal("Start(freenode) = false")
 	}
 	transport.CompleteConnect()
 	transport.InjectBytes([]byte(":server CAP fred LS :multi-prefix\r\n" +
@@ -242,7 +242,7 @@ func TestAutoJoinShowsTheChannelNotStatus(t *testing.T) {
 		":server 005 fred CHANTYPES=# PREFIX=(ov)@+ :are supported by this server\r\n"))
 
 	// Apply opened Status for the freshly applied profile.
-	ctrl.OpenStatus("libera")
+	ctrl.OpenStatus("freenode")
 	if !ctrl.ConsoleOpen() {
 		t.Fatal("ConsoleOpen = false on Status after Apply")
 	}

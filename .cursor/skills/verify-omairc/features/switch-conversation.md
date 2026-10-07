@@ -22,7 +22,7 @@ Switch conversation lets a user leave the current mock chat and open another cha
 Preconditions:
 
 - Seeded conversation UI is showing (`#omarchy · irc.example · fred - Omairc`, sidebar includes `#desktop` and `anna`). Use `control-omairc launch --demo-server`. When Xvfb tools are missing, `qml-suite` (seeded `IrcController`) is the fallback and is not compiled-window proof.
-- `control-omairc launch` without `--demo-server` is first-run Connect titled `irc.libera.chat Status`. Do not start this recipe there.
+- `control-omairc launch` without `--demo-server` is first-run Connect titled `chat.freenode.net Status`. Do not start this recipe there.
 - For a desktop instance titled `#omarchy · irc.example · fred - Omairc`, `control-omairc doctor` must report `demo=yes`, the disposable XDG directory, and the default-sized window.
 
 ```desktop-recipe

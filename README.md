@@ -7,7 +7,7 @@ A simple IRC client for Omarchy, built with Qt Quick and C++. The same binary is
 ## Features
 
 - Several networks in one window. Each keeps its own channels, direct messages, nick, and Status console.
-- Connect sheet on first launch. Libera Chat, TLS on, autojoin `#omarchy`. NickServ uses SASL PLAIN when the server offers it, otherwise `IDENTIFY`.
+- Connect sheet on first launch. Freenode, TLS on, autojoin `#omarchy`. NickServ uses SASL PLAIN when the server offers it, otherwise `IDENTIFY`.
 - Member list and people count on channels. Click a nick to open a direct message. `Ctrl+W` closes it.
 - Avatars, a status line, and a bot mark when the network supports them.
 - Keyboard first. `Ctrl+/` lists the shortcuts.

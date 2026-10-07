@@ -22,7 +22,7 @@
 
 namespace
 {
-IrcSessionConfig sessionConfig(const QString& networkId = QStringLiteral("libera"),
+IrcSessionConfig sessionConfig(const QString& networkId = QStringLiteral("freenode"),
                                const QString& nick = QStringLiteral("fred"))
 {
     IrcSessionConfig value;
@@ -202,18 +202,18 @@ void HighlightTest::controllerHighlightsInboundAndKeepsChannelText()
     auto *transport = new FakeIrcTransport;
     IrcSession *session = controller.addSession(sessionConfig(), transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
     transport->injectBytes(
         QByteArrayLiteral(":fred!u@h JOIN :#omarchy\r\n"
                           ":fred!u@h JOIN :#other\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/highlight omairc")));
     QVERIFY(logContains(controller.console()->lines(),
                         QStringLiteral("Highlighting omairc")));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#other"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#other"));
     QSignalSpy spy(&controller, &IrcController::mentionArrived);
     transport->injectBytes(
         QByteArrayLiteral(":Alice!u@h PRIVMSG #omarchy :please review omairc\r\n"));
@@ -221,7 +221,7 @@ void HighlightTest::controllerHighlightsInboundAndKeepsChannelText()
     QCOMPARE(spy.count(), 1);
     QCOMPARE(spy.at(0).at(0).toString(), QStringLiteral("Alice"));
     QCOMPARE(spy.at(0).at(1).toString(), QStringLiteral("please review omairc"));
-    QVERIFY(controller.mentionFor(QStringLiteral("libera")));
+    QVERIFY(controller.mentionFor(QStringLiteral("freenode")));
 
     auto *conversations =
         qobject_cast<QAbstractItemModel *>(controller.conversations());
@@ -236,36 +236,36 @@ void HighlightTest::controllerHighlightsInboundAndKeepsChannelText()
                                 ConversationListModel::MentionRole)
                 .toBool());
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QVERIFY(messagesContain(messages, QStringLiteral("please review omairc")));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#other"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#other"));
     transport->injectBytes(
         QByteArrayLiteral(":Alice!u@h PRIVMSG #omarchy :please review omaircd\r\n"));
     QCOMPARE(spy.count(), 1);
-    QVERIFY(!controller.mentionFor(QStringLiteral("libera")));
+    QVERIFY(!controller.mentionFor(QStringLiteral("freenode")));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(messagesContain(messages, QStringLiteral("please review omaircd")));
 
     QVERIFY(IrcHighlightStore().contains(
-        QStringLiteral("libera"), QStringLiteral("omairc"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("omairc"), IrcCaseMapping()));
 
     IrcController restarted;
     auto *again = new FakeIrcTransport;
     QVERIFY(restarted.addSession(sessionConfig(), again));
-    QVERIFY(restarted.start(QStringLiteral("libera")));
+    QVERIFY(restarted.start(QStringLiteral("freenode")));
     welcome(again);
     again->injectBytes(QByteArrayLiteral(":fred!u@h JOIN :#omarchy\r\n"
                                         ":fred!u@h JOIN :#other\r\n"));
-    restarted.selectConversation(QStringLiteral("libera"), QStringLiteral("#other"));
+    restarted.selectConversation(QStringLiteral("freenode"), QStringLiteral("#other"));
     QSignalSpy restartSpy(&restarted, &IrcController::mentionArrived);
     again->injectBytes(
         QByteArrayLiteral(":Alice!u@h PRIVMSG #omarchy :please review omairc\r\n"));
     QCOMPARE(restartSpy.count(), 1);
-    QVERIFY(restarted.mentionFor(QStringLiteral("libera")));
+    QVERIFY(restarted.mentionFor(QStringLiteral("freenode")));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/unhighlight omairc")));
     QVERIFY(logContains(controller.console()->lines(),
@@ -274,14 +274,14 @@ void HighlightTest::controllerHighlightsInboundAndKeepsChannelText()
     QVERIFY(logContains(controller.console()->lines(),
                         QStringLiteral("No highlight words")));
     QVERIFY(!IrcHighlightStore().contains(
-        QStringLiteral("libera"), QStringLiteral("omairc"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("omairc"), IrcCaseMapping()));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#other"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#other"));
     QSignalSpy nickSpy(&controller, &IrcController::mentionArrived);
     transport->injectBytes(
         QByteArrayLiteral(":Alice!u@h PRIVMSG #omarchy :fred: ping\r\n"));
     QCOMPARE(nickSpy.count(), 1);
-    QVERIFY(controller.mentionFor(QStringLiteral("libera")));
+    QVERIFY(controller.mentionFor(QStringLiteral("freenode")));
 }
 
 void HighlightTest::controllerForgetsWithTheNetwork()
@@ -289,15 +289,15 @@ void HighlightTest::controllerForgetsWithTheNetwork()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
     QVERIFY(controller.console()->submit(QStringLiteral("/highlight omairc")));
     QVERIFY(IrcHighlightStore().contains(
-        QStringLiteral("libera"), QStringLiteral("omairc"), IrcCaseMapping()));
-    controller.forgetNetworkState(QStringLiteral("libera"));
+        QStringLiteral("freenode"), QStringLiteral("omairc"), IrcCaseMapping()));
+    controller.forgetNetworkState(QStringLiteral("freenode"));
     QVERIFY(!IrcHighlightStore().contains(
-        QStringLiteral("libera"), QStringLiteral("omairc"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("omairc"), IrcCaseMapping()));
 }
 
 void HighlightTest::discardSessionKeepsTheList()
@@ -305,28 +305,28 @@ void HighlightTest::discardSessionKeepsTheList()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
     QVERIFY(controller.console()->submit(QStringLiteral("/highlight omairc")));
     QVERIFY(IrcHighlightStore().contains(
-        QStringLiteral("libera"), QStringLiteral("omairc"), IrcCaseMapping()));
-    QVERIFY(controller.discardSession(QStringLiteral("libera")));
+        QStringLiteral("freenode"), QStringLiteral("omairc"), IrcCaseMapping()));
+    QVERIFY(controller.discardSession(QStringLiteral("freenode")));
     QVERIFY(IrcHighlightStore().contains(
-        QStringLiteral("libera"), QStringLiteral("omairc"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("omairc"), IrcCaseMapping()));
 
     auto *again = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), again));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(again);
     again->injectBytes(QByteArrayLiteral(":fred!u@h JOIN :#omarchy\r\n"
                                         ":fred!u@h JOIN :#other\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#other"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#other"));
     QSignalSpy spy(&controller, &IrcController::mentionArrived);
     again->injectBytes(
         QByteArrayLiteral(":Alice!u@h PRIVMSG #omarchy :please review omairc\r\n"));
     QCOMPARE(spy.count(), 1);
-    QVERIFY(controller.mentionFor(QStringLiteral("libera")));
+    QVERIFY(controller.mentionFor(QStringLiteral("freenode")));
 }
 
 void HighlightTest::nickChangeKeepsTheList()
@@ -334,23 +334,23 @@ void HighlightTest::nickChangeKeepsTheList()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
     transport->injectBytes(
         QByteArrayLiteral(":fred!u@h JOIN :#omarchy\r\n"
                           ":fred!u@h JOIN :#other\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("/highlight omairc")));
     transport->injectBytes(QByteArrayLiteral(":fred!u@h NICK :fred2\r\n"));
     QVERIFY(IrcHighlightStore().contains(
-        QStringLiteral("libera"), QStringLiteral("omairc"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("omairc"), IrcCaseMapping()));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#other"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#other"));
     QSignalSpy spy(&controller, &IrcController::mentionArrived);
     transport->injectBytes(
         QByteArrayLiteral(":Alice!u@h PRIVMSG #omarchy :please review omairc\r\n"));
     QCOMPARE(spy.count(), 1);
-    QVERIFY(controller.mentionFor(QStringLiteral("libera")));
+    QVERIFY(controller.mentionFor(QStringLiteral("freenode")));
 }
 
 void HighlightTest::refusesEmptyAndExtraTokens()
@@ -358,26 +358,26 @@ void HighlightTest::refusesEmptyAndExtraTokens()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     transport->injectBytes(QByteArrayLiteral(":fred!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(!controller.sendMessage(QStringLiteral("/highlight")));
     QVERIFY(!controller.sendMessage(QStringLiteral("/highlight   ")));
     QVERIFY(!controller.sendMessage(QStringLiteral("/highlight omairc extra")));
     QVERIFY(!controller.sendMessage(QStringLiteral("/highlights extra")));
     QVERIFY(!IrcHighlightStore().contains(
-        QStringLiteral("libera"), QStringLiteral("omairc"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("omairc"), IrcCaseMapping()));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/highlight omairc.example.net")));
     QVERIFY(controller.sendMessage(QStringLiteral("/highlight #omarchy")));
     QVERIFY(IrcHighlightStore().contains(
-        QStringLiteral("libera"), QStringLiteral("omairc.example.net"),
+        QStringLiteral("freenode"), QStringLiteral("omairc.example.net"),
         IrcCaseMapping()));
     QVERIFY(IrcHighlightStore().contains(
-        QStringLiteral("libera"), QStringLiteral("#omarchy"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("#omarchy"), IrcCaseMapping()));
 }
 
 void HighlightTest::offlineHighlightIsNotConnected()
@@ -387,13 +387,13 @@ void HighlightTest::offlineHighlightIsNotConnected()
     QCOMPARE(controller.lastError(),
              QStringLiteral("Select a connected conversation first"));
     QVERIFY(!IrcHighlightStore().contains(
-        QStringLiteral("libera"), QStringLiteral("omairc"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("omairc"), IrcCaseMapping()));
 
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
     QVERIFY(controller.console()->submit(QStringLiteral("/highlight omairc")));
     QVERIFY(logContains(controller.console()->lines(), QStringLiteral("Not connected")));
     QVERIFY(!IrcHighlightStore().contains(
-        QStringLiteral("libera"), QStringLiteral("omairc"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("omairc"), IrcCaseMapping()));
 }
 
 int runHighlightTests(int argc, char **argv)

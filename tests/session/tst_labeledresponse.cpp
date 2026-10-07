@@ -181,11 +181,11 @@ IrcSession *registerLabeledController(IrcController& controller,
                                      FakeIrcTransport *transport,
                                      FakeReconnectTimer *labelTimer = nullptr)
 {
-    IrcSession *session = controller.addSession(sessionConfig(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(sessionConfig(QStringLiteral("freenode")),
                                                 transport, nullptr, labelTimer);
     if (!session)
         return nullptr;
-    if (!controller.start(QStringLiteral("libera")))
+    if (!controller.start(QStringLiteral("freenode")))
         return nullptr;
     transport->completeConnect();
     transport->injectBytes(
@@ -196,7 +196,7 @@ IrcSession *registerLabeledController(IrcController& controller,
                           ":omairc!u@h JOIN :#help\r\n"));
     if (!session->capabilities().contains(IrcCapability::LabeledResponse))
         return nullptr;
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     return session;
 }
 }
@@ -428,11 +428,11 @@ void LabeledResponseTest::ackCompletesWaiterWithoutTranscript()
     QVERIFY(controller.sendMessage(QStringLiteral("/whois lena")));
     const QString label = requestLabelOf(transport->writtenFrames().last());
     QVERIFY(!label.isEmpty());
-    QCOMPARE(controller.session(QStringLiteral("libera"))->pendingRequestLabelCount(), 1);
+    QCOMPARE(controller.session(QStringLiteral("freenode"))->pendingRequestLabelCount(), 1);
 
     transport->injectBytes(
         QByteArray("@label=" + label.toUtf8() + " :irc.example ACK\r\n"));
-    QCOMPARE(controller.session(QStringLiteral("libera"))->pendingRequestLabelCount(), 0);
+    QCOMPARE(controller.session(QStringLiteral("freenode"))->pendingRequestLabelCount(), 0);
 
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
@@ -495,11 +495,11 @@ void LabeledResponseTest::unlabeledCtcpReplyAfterAckCopiesIntoAskingTranscript()
     const QString label = requestLabelOf(transport->writtenFrames().last());
     QVERIFY(!label.isEmpty());
     QVERIFY(commandOf(transport->writtenFrames().last()).startsWith("PRIVMSG lena :"));
-    QCOMPARE(controller.session(QStringLiteral("libera"))->pendingRequestLabelCount(), 1);
+    QCOMPARE(controller.session(QStringLiteral("freenode"))->pendingRequestLabelCount(), 1);
 
     transport->injectBytes(
         QByteArray("@label=" + label.toUtf8() + " :irc.example ACK\r\n"));
-    QCOMPARE(controller.session(QStringLiteral("libera"))->pendingRequestLabelCount(), 0);
+    QCOMPARE(controller.session(QStringLiteral("freenode"))->pendingRequestLabelCount(), 0);
 
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
@@ -552,7 +552,7 @@ void LabeledResponseTest::labeledCtcp401CopiesIntoAskingTranscript()
     QVERIFY(!label.isEmpty());
     QVERIFY(commandOf(transport->writtenFrames().last())
                 .startsWith("PRIVMSG missingnick :"));
-    QCOMPARE(controller.session(QStringLiteral("libera"))->pendingRequestLabelCount(), 1);
+    QCOMPARE(controller.session(QStringLiteral("freenode"))->pendingRequestLabelCount(), 1);
 
     transport->injectBytes(
         QByteArray("@label=" + label.toUtf8()
@@ -563,7 +563,7 @@ void LabeledResponseTest::labeledCtcp401CopiesIntoAskingTranscript()
     QVERIFY(hasWhoisBody(messages, QStringLiteral("No such nick: missingnick")));
     QVERIFY(logContains(controller.console()->lines(),
                         QStringLiteral("No such nick: missingnick")));
-    QCOMPARE(controller.session(QStringLiteral("libera"))->pendingRequestLabelCount(), 0);
+    QCOMPARE(controller.session(QStringLiteral("freenode"))->pendingRequestLabelCount(), 0);
 
     const QStringList after401 = selectedBodies(messages);
     transport->injectBytes(
@@ -576,7 +576,7 @@ void LabeledResponseTest::unsolicitedLabeledResponseBatchesShareTheOpenBatchBudg
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(registerLabeledController(controller, transport));
-    IrcSession *session = controller.session(QStringLiteral("libera"));
+    IrcSession *session = controller.session(QStringLiteral("freenode"));
     QVERIFY(session);
     QCOMPARE(session->openBatchCount(), 0);
 
@@ -695,7 +695,7 @@ void LabeledResponseTest::timeoutDropsElapsedWatchWithoutStealingNewer()
     auto *transport = new FakeIrcTransport;
     auto *labelTimer = new FakeReconnectTimer;
     QVERIFY(registerLabeledController(controller, transport, labelTimer));
-    IrcSession *session = controller.session(QStringLiteral("libera"));
+    IrcSession *session = controller.session(QStringLiteral("freenode"));
     QVERIFY(session);
     qint64 now = 0;
     session->setMonotonicClock([&now]() { return now; });
@@ -706,7 +706,7 @@ void LabeledResponseTest::timeoutDropsElapsedWatchWithoutStealingNewer()
     QCOMPARE(labelTimer->delays, QList<int>({45000}));
 
     now = 10000;
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#help"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#help"));
     QVERIFY(controller.sendMessage(QStringLiteral("/whois mira")));
     const QString second = requestLabelOf(transport->writtenFrames().last());
     QVERIFY(!second.isEmpty());
@@ -725,9 +725,9 @@ void LabeledResponseTest::timeoutDropsElapsedWatchWithoutStealingNewer()
                    + " :irc 318 omairc lena :End of /WHOIS list.\r\n"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("End of WHOIS for lena")));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#help"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#help"));
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("End of WHOIS for lena")));
 
     transport->injectBytes(
@@ -744,7 +744,7 @@ void LabeledResponseTest::timeoutDropsElapsedWatchWithoutStealingNewer()
                      ":irc.example BATCH -b\r\n"));
     QVERIFY(hasWhoisBody(messages, QStringLiteral("mira is ~m@h (FromHelp)")));
     QVERIFY(hasWhoisBody(messages, QStringLiteral("End of WHOIS for mira")));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("FromHelp")));
 }
 
@@ -769,7 +769,7 @@ void LabeledResponseTest::twoLabeledWhoisForSameNickStayIndependent()
 
     QVERIFY(controller.sendMessage(QStringLiteral("/whois mira")));
     const QString first = requestLabelOf(transport->writtenFrames().last());
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#help"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#help"));
     QVERIFY(controller.sendMessage(QStringLiteral("/whois mira")));
     const QString second = requestLabelOf(transport->writtenFrames().last());
     QVERIFY(first != second);
@@ -783,9 +783,9 @@ void LabeledResponseTest::twoLabeledWhoisForSameNickStayIndependent()
 
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(hasWhoisBody(messages, QStringLiteral("mira is ~m@h (FromOmarchy)")));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#help"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#help"));
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("FromOmarchy")));
 
     transport->injectBytes(
@@ -795,7 +795,7 @@ void LabeledResponseTest::twoLabeledWhoisForSameNickStayIndependent()
                      "@batch=b :irc 318 omairc mira :End of /WHOIS list.\r\n"
                      ":irc.example BATCH -b\r\n"));
     QVERIFY(hasWhoisBody(messages, QStringLiteral("mira is ~m@h (FromHelp)")));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("FromHelp")));
 }
 

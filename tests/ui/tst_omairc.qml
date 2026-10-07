@@ -44,7 +44,7 @@ TestCase {
         id: setupNetworks
         ListElement {
             networkId: "setup-id"
-            displayName: "irc.libera.chat"
+            displayName: "chat.freenode.net"
             stored: false
             selected: true
             iconColor: 1
@@ -56,8 +56,8 @@ TestCase {
     ListModel {
         id: namedNetworks
         ListElement {
-            networkId: "libera"
-            displayName: "irc.libera.chat"
+            networkId: "freenode"
+            displayName: "chat.freenode.net"
             stored: true
             selected: true
             iconColor: 1
@@ -69,8 +69,8 @@ TestCase {
     QtObject {
         id: fakeConnection
 
-        property string host: "irc.libera.chat"
-        property string name: "irc.libera.chat"
+        property string host: "chat.freenode.net"
+        property string name: "chat.freenode.net"
         property int port: 6697
         property bool tlsEnabled: true
         property bool connectOnStartup: false
@@ -89,7 +89,7 @@ TestCase {
         property bool canForgetNickServ: false
         property string problem: "Nick is required"
         property bool dirty: true
-        property string displayName: "irc.libera.chat"
+        property string displayName: "chat.freenode.net"
         property bool setupRequired: true
         property bool focusPassword: false
         property bool focusNickServ: false
@@ -252,8 +252,8 @@ TestCase {
             unread: 0
             mention: false
             direct: false
-            networkId: "libera"
-            conversationId: "libera\n#omarchy"
+            networkId: "freenode"
+            conversationId: "freenode\n#omarchy"
             conversationName: "#omarchy"
             typing: false
             presence: ""
@@ -265,8 +265,8 @@ TestCase {
             unread: 0
             mention: false
             direct: true
-            networkId: "libera"
-            conversationId: "libera\nanna"
+            networkId: "freenode"
+            conversationId: "freenode\nanna"
             conversationName: "anna"
             typing: true
             presence: "online"
@@ -287,7 +287,7 @@ TestCase {
         ListElement {
             time: "12:00:02"
             label: "001"
-            text: "Welcome to Libera"
+            text: "Welcome to Freenode"
             source: "server"
             severity: "info"
         }
@@ -299,7 +299,7 @@ TestCase {
         property var lines: liveConsoleLines
         property bool open: false
         property int alerts: 0
-        property string networkId: "libera"
+        property string networkId: "freenode"
 
         function submit(input) {
             return input.length > 0;
@@ -324,7 +324,7 @@ TestCase {
         property string currentNick: "live-nick"
         property bool selfAway: false
         property string selectedTarget: "#omarchy"
-        property string selectedNetworkId: "libera"
+        property string selectedNetworkId: "freenode"
         property string topic: "A cozy corner for Omarchy users and builders."
         property bool isChannel: true
         property bool channelJoined: true
@@ -344,7 +344,7 @@ TestCase {
         property var messages: liveMessages
         property var members: liveMembers
         property var statusConsole: liveConsole
-        property string selectedConversationId: "libera\n#omarchy"
+        property string selectedConversationId: "freenode\n#omarchy"
         property string focusedNetworkId: liveConsole.open ? liveConsole.networkId : selectedNetworkId
 
         function connectionStatusFor(networkId) {
@@ -413,7 +413,7 @@ TestCase {
         id: emptyNickIrc
 
         property string selectedTarget: "#omarchy"
-        property string selectedNetworkId: "libera"
+        property string selectedNetworkId: "freenode"
         property string topic: ""
         property bool isChannel: true
         property bool channelJoined: true
@@ -509,7 +509,7 @@ TestCase {
         property string currentNick: "live-nick"
         property bool selfAway: false
         property string selectedTarget: "#omarchy"
-        property string selectedNetworkId: "libera"
+        property string selectedNetworkId: "freenode"
         property string topic: "A cozy corner for Omarchy users and builders."
         property bool isChannel: true
         property bool channelJoined: true
@@ -582,7 +582,7 @@ TestCase {
         property string currentNick: "live-nick"
         property bool selfAway: false
         property string selectedTarget: "#omarchy"
-        property string selectedNetworkId: "libera"
+        property string selectedNetworkId: "freenode"
         property string topic: "A cozy corner for Omarchy users and builders."
         property bool isChannel: true
         property bool channelJoined: true
@@ -652,8 +652,8 @@ TestCase {
     QtObject {
         id: namedConnection
 
-        property string host: "irc.libera.chat"
-        property string name: "irc.libera.chat"
+        property string host: "chat.freenode.net"
+        property string name: "chat.freenode.net"
         property int port: 6697
         property bool tlsEnabled: true
         property string nick: "sheet-nick"
@@ -665,11 +665,11 @@ TestCase {
         property bool passwordSet: false
         property string problem: ""
         property bool dirty: false
-        property string displayName: "irc.libera.chat"
+        property string displayName: "chat.freenode.net"
         property bool setupRequired: false
         property bool focusPassword: false
         property var networks: namedNetworks
-        property string selectedNetworkId: "libera"
+        property string selectedNetworkId: "freenode"
         property bool canAdd: true
         property bool canRemove: true
         property bool canDisconnect: false
@@ -877,7 +877,7 @@ TestCase {
         gatedIrc.currentNick = "live-nick";
         gatedIrc.selfAway = false;
         gatedIrc.selectedTarget = "#omarchy";
-        gatedIrc.selectedNetworkId = "libera";
+        gatedIrc.selectedNetworkId = "freenode";
         gatedIrc.topic = "A cozy corner for Omarchy users and builders.";
         gatedIrc.isChannel = true;
         gatedIrc.peopleCount = 1;
@@ -923,7 +923,7 @@ TestCase {
     function cleanup() {
         destroyAppWindowAndSeed();
         liveConsole.open = false;
-        liveConsole.networkId = "libera";
+        liveConsole.networkId = "freenode";
         resetGatedIrc();
     }
 
@@ -1102,18 +1102,18 @@ TestCase {
     function restoreNamedConnection() {
         namedNetworks.clear();
         namedNetworks.append({
-            networkId: "libera",
-            displayName: "irc.libera.chat",
+            networkId: "freenode",
+            displayName: "chat.freenode.net",
             stored: true,
             selected: true,
             iconColor: 1,
             iconUrl: "",
             collapsed: false
         });
-        namedConnection.selectedNetworkId = "libera";
-        namedConnection.displayName = "irc.libera.chat";
-        namedConnection.host = "irc.libera.chat";
-        namedConnection.name = "irc.libera.chat";
+        namedConnection.selectedNetworkId = "freenode";
+        namedConnection.displayName = "chat.freenode.net";
+        namedConnection.host = "chat.freenode.net";
+        namedConnection.name = "chat.freenode.net";
         namedConnection.nick = "sheet-nick";
         namedConnection.passwordSetCalls = 0;
         namedConnection.lastPassword = "";
@@ -6701,8 +6701,8 @@ TestCase {
 
     function test_connectionSheetFirstRunIgnoresSidebarClicks() {
         liveIrc.selectedTarget = "#omarchy";
-        liveIrc.selectedNetworkId = "libera";
-        liveIrc.selectedConversationId = "libera\n#omarchy";
+        liveIrc.selectedNetworkId = "freenode";
+        liveIrc.selectedConversationId = "freenode\n#omarchy";
         liveIrc.isChannel = true;
         liveConsole.open = false;
         var window = createTemporaryObject(setupWindowComponent, null);
@@ -6729,7 +6729,7 @@ TestCase {
         verify(sheet.visible);
         window.close();
         liveIrc.selectedTarget = "#omarchy";
-        liveIrc.selectedConversationId = "libera\n#omarchy";
+        liveIrc.selectedConversationId = "freenode\n#omarchy";
         liveIrc.isChannel = true;
         liveConsole.open = false;
     }
@@ -6862,7 +6862,7 @@ TestCase {
         // focus sat somewhere without its own handler. It is now one
         // window-level action that works from every stop in the sheet.
         var targets = [
-            "networkChoice-libera",
+            "networkChoice-freenode",
             "connectionShortcutsHint",
             "connectionSheetTab-connection",
             "connectionSheetTab-preferences",
@@ -7075,8 +7075,8 @@ TestCase {
         verify(host !== null, "Could not find connectionHost");
         host.forceActiveFocus();
         tryCompare(host, "activeFocus", true);
-        compare(host.text, "irc.libera.chat");
-        compare(namedConnection.selectedNetworkId, "libera");
+        compare(host.text, "chat.freenode.net");
+        compare(namedConnection.selectedNetworkId, "freenode");
         compare(namedConnection.nick, "sheet-nick");
 
         function rowIsVisible(row) {
@@ -7094,8 +7094,8 @@ TestCase {
 
         keyClick(Qt.Key_Left, Qt.AltModifier);
         wait(0);
-        compare(namedConnection.selectedNetworkId, "libera");
-        compare(host.text, "irc.libera.chat");
+        compare(namedConnection.selectedNetworkId, "freenode");
+        compare(host.text, "chat.freenode.net");
         tryCompare(host, "activeFocus", true);
         compare(focusObjectName(window), "connectionHost");
 
@@ -7146,8 +7146,8 @@ TestCase {
             reached = focusObjectName(window).indexOf("networkChoice-") === 0;
         }
         verify(reached, "Tab should reach a network row");
-        compare(focusObjectName(window), "networkChoice-libera");
-        compare(namedConnection.selectedNetworkId, "libera");
+        compare(focusObjectName(window), "networkChoice-freenode");
+        compare(namedConnection.selectedNetworkId, "freenode");
 
         keyClick(Qt.Key_Right, Qt.AltModifier);
         wait(0);
@@ -7161,8 +7161,8 @@ TestCase {
         tryCompare(addButton, "activeFocus", true);
         keyClick(Qt.Key_Left, Qt.AltModifier);
         wait(0);
-        compare(namedConnection.selectedNetworkId, "libera");
-        compare(focusObjectName(window), "networkChoice-libera");
+        compare(namedConnection.selectedNetworkId, "freenode");
+        compare(focusObjectName(window), "networkChoice-freenode");
         compare(addButton.activeFocus, false);
 
         window.close();
@@ -7212,9 +7212,9 @@ TestCase {
         keyClick(Qt.Key_Return);
         compare(namedConnection.discardCalls, 1);
         compare(namedNetworks.count, 2);
-        compare(namedConnection.selectedNetworkId, "libera");
-        compare(findChild(window, "connectionHost").text, "irc.libera.chat");
-        compare(findChild(window, "connectionName").text, "irc.libera.chat");
+        compare(namedConnection.selectedNetworkId, "freenode");
+        compare(findChild(window, "connectionHost").text, "chat.freenode.net");
+        compare(findChild(window, "connectionName").text, "chat.freenode.net");
         compare(namedConnection.nick, "sheet-nick");
         verify(sheet.visible);
 
@@ -7245,21 +7245,21 @@ TestCase {
         tryCompare(sheet, "visible", true);
         waitForRendering(window.contentItem);
         compare(namedNetworks.count, 2);
-        compare(namedConnection.selectedNetworkId, "libera");
+        compare(namedConnection.selectedNetworkId, "freenode");
         namedConnection.applyCalls = 0;
 
         keyClick(Qt.Key_Delete, Qt.ControlModifier | Qt.ShiftModifier);
         wait(0);
         compare(window.connectionRemoveArmed, true);
         compare(namedNetworks.count, 2);
-        compare(namedConnection.selectedNetworkId, "libera");
+        compare(namedConnection.selectedNetworkId, "freenode");
         compare(namedConnection.applyCalls, 0);
         verify(sheet.visible);
 
         keyClick(Qt.Key_Escape);
         tryCompare(sheet, "visible", false);
         compare(namedNetworks.count, 2);
-        compare(namedConnection.selectedNetworkId, "libera");
+        compare(namedConnection.selectedNetworkId, "freenode");
         compare(namedConnection.applyCalls, 0);
 
         keyClick(Qt.Key_Comma, Qt.ControlModifier);
@@ -7308,22 +7308,22 @@ TestCase {
         host.forceActiveFocus();
         tryCompare(host, "activeFocus", true);
         compare(window.connectionSheetTab, "connection");
-        compare(namedConnection.selectedNetworkId, "libera");
+        compare(namedConnection.selectedNetworkId, "freenode");
 
         keyClick(Qt.Key_Right);
         wait(0);
         tryCompare(host, "activeFocus", true);
         compare(focusObjectName(window), "connectionHost");
         compare(window.connectionSheetTab, "connection");
-        compare(namedConnection.selectedNetworkId, "libera");
+        compare(namedConnection.selectedNetworkId, "freenode");
 
         keyClick(Qt.Key_Left);
         wait(0);
         tryCompare(host, "activeFocus", true);
         compare(focusObjectName(window), "connectionHost");
         compare(window.connectionSheetTab, "connection");
-        compare(namedConnection.selectedNetworkId, "libera");
-        compare(host.text, "irc.libera.chat");
+        compare(namedConnection.selectedNetworkId, "freenode");
+        compare(host.text, "chat.freenode.net");
 
         window.close();
         restoreNamedConnection();
@@ -7375,8 +7375,8 @@ TestCase {
             var sheet = findChild(window, "connectionSheet");
             verify(sheet !== null, "Could not find connectionSheet");
             verify(sheet.visible);
-            compare(findChild(window, "connectionHost").text, "irc.libera.chat");
-            compare(findChild(window, "connectionName").text, "irc.libera.chat");
+            compare(findChild(window, "connectionHost").text, "chat.freenode.net");
+            compare(findChild(window, "connectionName").text, "chat.freenode.net");
             compare(findChild(window, "connectionNick").text, "");
             compare(findChild(window, "connectionAutojoin").text, "#omarchy");
             compare(findChild(window, "connectionConnectOnStartup").checked, false);
@@ -8012,10 +8012,10 @@ TestCase {
         waitForRendering(window.contentItem);
 
         var rail = findChild(window, "networkChoiceRepeater");
-        var libera = repeaterItemByName(rail, "networkChoice-libera");
-        verify(libera !== null, "Could not find networkChoice-libera");
-        libera.forceActiveFocus();
-        tryCompare(libera, "activeFocus", true);
+        var freenode = repeaterItemByName(rail, "networkChoice-freenode");
+        verify(freenode !== null, "Could not find networkChoice-freenode");
+        freenode.forceActiveFocus();
+        tryCompare(freenode, "activeFocus", true);
 
         keyClick(Qt.Key_Down);
         wait(0);
@@ -8031,7 +8031,7 @@ TestCase {
 
         keyClick(Qt.Key_Home);
         wait(0);
-        compare(focusObjectName(window), "networkChoice-libera");
+        compare(focusObjectName(window), "networkChoice-freenode");
 
         keyClick(Qt.Key_End);
         wait(0);
@@ -8044,10 +8044,10 @@ TestCase {
 
         // Selecting with Enter still works from the keyboard.
         namedConnection.applyCalls = 0;
-        libera.forceActiveFocus();
+        freenode.forceActiveFocus();
         keyClick(Qt.Key_Return);
         compare(namedConnection.applyCalls, 0);
-        compare(namedConnection.selectedNetworkId, "libera");
+        compare(namedConnection.selectedNetworkId, "freenode");
         window.close();
         restoreNamedConnection();
     }
@@ -8079,7 +8079,7 @@ TestCase {
 
         var rail = findChild(window, "networkChoiceRepeater");
         var scroll = findChild(window, "networkChoiceScroll");
-        var first = repeaterItemByName(rail, "networkChoice-libera");
+        var first = repeaterItemByName(rail, "networkChoice-freenode");
         var last = repeaterItemByName(rail, "networkChoice-probe-15");
 
         function rowIsVisible(row) {
@@ -8397,8 +8397,8 @@ TestCase {
         tryCompare(sheet, "visible", true);
 
         var row = repeaterItemByName(findChild(window, "networkChoiceRepeater"),
-                                     "networkChoice-libera");
-        verify(row !== null, "Could not find networkChoice-libera");
+                                     "networkChoice-freenode");
+        verify(row !== null, "Could not find networkChoice-freenode");
         row.forceActiveFocus();
         tryCompare(row, "activeFocus", true);
         keyClick(Qt.Key_Return);
@@ -8429,8 +8429,8 @@ TestCase {
         tryCompare(sheet, "visible", true);
 
         var row = repeaterItemByName(findChild(window, "networkChoiceRepeater"),
-                                     "networkChoice-libera");
-        verify(row !== null, "Could not find networkChoice-libera");
+                                     "networkChoice-freenode");
+        verify(row !== null, "Could not find networkChoice-freenode");
         row.forceActiveFocus();
         tryCompare(row, "activeFocus", true);
         keyClick(Qt.Key_Return, Qt.ControlModifier);
@@ -8502,11 +8502,11 @@ TestCase {
         verify(name !== null, "Could not find connectionName");
         tryCompare(name, "activeFocus", true);
         compare(focusObjectName(window), "connectionName");
-        compare(namedConnection.selectedNetworkId, "libera");
+        compare(namedConnection.selectedNetworkId, "freenode");
 
         keyClick(Qt.Key_Return, Qt.ControlModifier);
         compare(namedConnection.applyCalls, 1);
-        compare(namedConnection.selectedNetworkId, "libera");
+        compare(namedConnection.selectedNetworkId, "freenode");
         compare(sheet.visible, false);
         window.close();
         restoreNamedConnection();
@@ -8548,10 +8548,10 @@ TestCase {
         mouseClick(discardButton);
         compare(namedConnection.discardCalls, 1);
         compare(namedNetworks.count, 2);
-        compare(namedConnection.selectedNetworkId, "libera");
-        compare(namedConnection.host, "irc.libera.chat");
-        compare(findChild(window, "connectionHost").text, "irc.libera.chat");
-        compare(findChild(window, "connectionName").text, "irc.libera.chat");
+        compare(namedConnection.selectedNetworkId, "freenode");
+        compare(namedConnection.host, "chat.freenode.net");
+        compare(findChild(window, "connectionHost").text, "chat.freenode.net");
+        compare(findChild(window, "connectionName").text, "chat.freenode.net");
         compare(namedConnection.nick, "sheet-nick");
 
         mouseClick(addButton);
@@ -8561,8 +8561,8 @@ TestCase {
         keyClick(Qt.Key_Return);
         compare(namedConnection.discardCalls, 2);
         compare(namedNetworks.count, 2);
-        compare(namedConnection.selectedNetworkId, "libera");
-        compare(findChild(window, "connectionHost").text, "irc.libera.chat");
+        compare(namedConnection.selectedNetworkId, "freenode");
+        compare(findChild(window, "connectionHost").text, "chat.freenode.net");
         verify(sheet.visible);
         window.close();
         restoreNamedConnection();
@@ -8668,7 +8668,7 @@ TestCase {
         compare(window.sidebarConversationRows().length, 0);
         compare(findChild(window, "liveNetworkRepeater").count, 0);
         compare(findChild(window, "conversation-#omarchy"), null);
-        compare(findChild(window, "conversation-libera-#omarchy"), null);
+        compare(findChild(window, "conversation-freenode-#omarchy"), null);
         window.close();
     }
 
@@ -8681,7 +8681,7 @@ TestCase {
         compare(window.sidebarConversationRows().length, 0);
         compare(findChild(window, "liveNetworkRepeater").count, 0);
         compare(findChild(window, "conversation-#omarchy"), null);
-        compare(findChild(window, "conversation-libera-#omarchy"), null);
+        compare(findChild(window, "conversation-freenode-#omarchy"), null);
         window.close();
     }
 
@@ -8699,13 +8699,13 @@ TestCase {
         compare(rows[0].direct, false);
         compare(rows[1].conversationName, "anna");
         compare(rows[1].direct, true);
-        compare(window.sectionHasDirects("libera"), true);
+        compare(window.sectionHasDirects("freenode"), true);
         compare(window.sectionHasDirects("oftc"), false);
 
         var sections = window.sidebarNetworkSections();
         compare(sections.length, 1);
         compare(typeof sections[0].headerItem, "undefined");
-        compare(sections[0].networkId, "libera");
+        compare(sections[0].networkId, "freenode");
         window.close();
     }
 
@@ -8716,9 +8716,9 @@ TestCase {
         waitForRendering(window.contentItem);
 
         compare(window.currentConversation, "#omarchy");
-        var channel = findNamedIn(window, "conversation-libera-#omarchy");
+        var channel = findNamedIn(window, "conversation-freenode-#omarchy");
         verify(channel !== null, "Live #omarchy row should render under Channels");
-        compare(channel.networkId, "libera");
+        compare(channel.networkId, "freenode");
         compare(channel.direct, false);
         verify(liveDirectNames(window).indexOf("#omarchy") === -1,
                "#omarchy must stay out of Direct Messages");
@@ -8728,7 +8728,7 @@ TestCase {
         mouseClick(channel);
 
         tryCompare(window, "currentConversation", "#omarchy");
-        compare(liveIrc.selectedNetworkId, "libera");
+        compare(liveIrc.selectedNetworkId, "freenode");
         compare(window.currentConversationIsChannel, true);
         window.close();
     }
@@ -8750,7 +8750,7 @@ TestCase {
         verify(row !== null, "The live DM row should be rendered");
         compare(row.conversationName, "anna");
         tryCompare(row, "visible", true);
-        var dots = findChild(row, "conversation-typing-libera-anna");
+        var dots = findChild(row, "conversation-typing-freenode-anna");
         verify(dots !== null, "The live DM typing indicator should exist");
         tryCompare(dots, "visible", true);
         window.close();
@@ -8771,7 +8771,7 @@ TestCase {
         var row = dms.itemAt(1);
         verify(row !== null, "The live DM row should be rendered");
         compare(row.conversationName, "anna");
-        var dot = findChild(row, "conversation-presence-libera-anna");
+        var dot = findChild(row, "conversation-presence-freenode-anna");
         verify(dot !== null, "The DM presence dot should be rendered");
         compare(dot.visible, true);
         verify(Qt.colorEqual(dot.color, "#69b978"));
@@ -8936,11 +8936,11 @@ TestCase {
         verify(window !== null, "The mock network window should load");
         tryCompare(window, "visible", true);
         waitForRendering(window.contentItem);
-        var photo = findNamedIn(window, "networkIconPhoto-libera");
+        var photo = findNamedIn(window, "networkIconPhoto-freenode");
         verify(photo !== null, "mock network icon photo should exist");
         compare(photo.status === Image.Ready, false);
         compare(photo.visible, false);
-        var initial = findNamedIn(window, "networkIconInitial-libera");
+        var initial = findNamedIn(window, "networkIconInitial-freenode");
         verify(initial !== null, "mock network icon initial should exist");
         compare(initial.visible, true);
         window.close();
@@ -9610,12 +9610,12 @@ TestCase {
         verify(liveDirectNames(window).indexOf("AUTH") === -1,
                "AUTH must not appear under Direct Messages");
 
-        var header = findNamedIn(window, "networkHeaderButton-libera");
-        verify(header !== null, "Could not find networkHeaderButton-libera");
+        var header = findNamedIn(window, "networkHeaderButton-freenode");
+        verify(header !== null, "Could not find networkHeaderButton-freenode");
         mouseClick(header);
 
         tryCompare(window, "consoleVisible", true);
-        compare(window.title, "irc.libera.chat Status");
+        compare(window.title, "chat.freenode.net Status");
         var list = findChild(window, "consoleList");
         verify(list !== null, "Could not find consoleList");
         verify(list.visible);
@@ -11208,8 +11208,8 @@ TestCase {
             compare(window.sidebarNetworkSections().length, 3);
             var rows = window.sidebarConversationRows();
             compare(rows.length, 4);
-            compare(rows[0].conversationId, "libera\n#omarchy");
-            compare(rows[1].conversationId, "libera\nanna");
+            compare(rows[0].conversationId, "freenode\n#omarchy");
+            compare(rows[1].conversationId, "freenode\nanna");
             compare(rows[2].conversationId, "oftc\n#build");
             compare(rows[3].conversationId, "tilde\n#town");
 
@@ -11236,21 +11236,21 @@ TestCase {
             window.stepConversation(-1);
 
             tryCompare(window, "currentConversation", "anna");
-            compare(window.currentConversationId, "libera\nanna");
+            compare(window.currentConversationId, "freenode\nanna");
             compare(window.connection.isNetworkCollapsed("oftc"), true);
 
             window.close();
         } finally {
             while (liveConversations.count > 2)
                 liveConversations.remove(liveConversations.count - 1);
-            liveIrc.selectedNetworkId = "libera";
+            liveIrc.selectedNetworkId = "freenode";
             liveIrc.selectedTarget = "#omarchy";
-            liveIrc.selectedConversationId = "libera\n#omarchy";
+            liveIrc.selectedConversationId = "freenode\n#omarchy";
             liveIrc.isChannel = true;
             liveIrc.topic = "A cozy corner for Omarchy users and builders.";
             liveIrc.peopleCount = 1;
             liveConsole.open = false;
-            liveConsole.networkId = "libera";
+            liveConsole.networkId = "freenode";
             restoreNamedConnection();
         }
     }
@@ -11436,14 +11436,14 @@ TestCase {
         } finally {
             if (liveConversations.count > 2)
                 liveConversations.remove(liveConversations.count - 1);
-            liveIrc.selectedNetworkId = "libera";
+            liveIrc.selectedNetworkId = "freenode";
             liveIrc.selectedTarget = "#omarchy";
-            liveIrc.selectedConversationId = "libera\n#omarchy";
+            liveIrc.selectedConversationId = "freenode\n#omarchy";
             liveIrc.isChannel = true;
             liveIrc.topic = "A cozy corner for Omarchy users and builders.";
             liveIrc.peopleCount = 1;
             liveConsole.open = false;
-            liveConsole.networkId = "libera";
+            liveConsole.networkId = "freenode";
             restoreNamedConnection();
         }
     }
@@ -11493,11 +11493,11 @@ TestCase {
             } catch (error) {
                 fail("Failed to save screenshot 'connection-sheet-rail': " + error);
             }
-            var liberaChoice = repeaterItemByName(choices, "networkChoice-libera");
-            verify(liberaChoice !== null, "Could not find networkChoice-libera");
-            compare(liberaChoice.displayName, "irc.libera.chat");
-            mouseClick(liberaChoice);
-            compare(namedConnection.selectedNetworkId, "libera");
+            var freenodeChoice = repeaterItemByName(choices, "networkChoice-freenode");
+            verify(freenodeChoice !== null, "Could not find networkChoice-freenode");
+            compare(freenodeChoice.displayName, "chat.freenode.net");
+            mouseClick(freenodeChoice);
+            compare(namedConnection.selectedNetworkId, "freenode");
 
             mouseClick(removeButton);
             compare(window.connectionRemoveArmed, true);
@@ -11577,7 +11577,7 @@ TestCase {
                                             "networkChoice-oftc");
         verify(oftcChoice !== null, "Could not find networkChoice-oftc");
         mouseClick(oftcChoice);
-        compare(namedConnection.selectedNetworkId, "libera");
+        compare(namedConnection.selectedNetworkId, "freenode");
         compare(password.text, "sec");
         compare(window.connectionPasswordEdited, true);
 
@@ -11654,8 +11654,8 @@ TestCase {
         tryCompare(window, "visible", true);
         waitForRendering(window.contentItem);
 
-        var mark = findNamedIn(window, "networkUnreadMark-libera");
-        verify(mark !== null, "Could not find networkUnreadMark-libera");
+        var mark = findNamedIn(window, "networkUnreadMark-freenode");
+        verify(mark !== null, "Could not find networkUnreadMark-freenode");
         compare(mark.visible, false);
 
         liveIrc.unreadSink[0] = 4;
@@ -11795,13 +11795,13 @@ TestCase {
         tryCompare(window, "visible", true);
         waitForRendering(window.contentItem);
         keyClick(Qt.Key_Comma, Qt.ControlModifier);
-        var libera = repeaterItemByName(findChild(window, "networkChoiceRepeater"),
-                                        "networkChoice-libera");
+        var freenode = repeaterItemByName(findChild(window, "networkChoiceRepeater"),
+                                        "networkChoice-freenode");
         var oftc = repeaterItemByName(findChild(window, "networkChoiceRepeater"),
                                       "networkChoice-oftc");
-        verify(libera !== null, "Could not find networkChoice-libera");
+        verify(freenode !== null, "Could not find networkChoice-freenode");
         verify(oftc !== null, "Could not find networkChoice-oftc");
-        compare(libera.Accessible.role, Accessible.Button);
+        compare(freenode.Accessible.role, Accessible.Button);
         compare(oftc.Accessible.role, Accessible.Button);
         oftc.forceActiveFocus();
         tryCompare(oftc, "activeFocus", true);

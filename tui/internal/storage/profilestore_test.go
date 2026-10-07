@@ -50,9 +50,9 @@ func TestProfileStoreRoundTrip(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	want := Profile{
-		NetworkID:        "libera",
-		Name:             "Libera Chat",
-		Host:             "irc.libera.chat",
+		NetworkID:        "freenode",
+		Name:             "Freenode",
+		Host:             "chat.freenode.net",
 		Port:             7000,
 		TLSEnabled:       true,
 		ConnectOnStartup: true,
@@ -62,7 +62,7 @@ func TestProfileStoreRoundTrip(t *testing.T) {
 		Username:         "fredi",
 		Realname:         "Fredi Machado",
 		Account:          "fredi",
-		BouncerNetwork:   "libera",
+		BouncerNetwork:   "freenode",
 		AutojoinChannels: []string{"#a", "#b"},
 		AutojoinKeys:     map[string]string{"#a": "key-a", "#b": "key-b"},
 		IconColor:        3,
@@ -163,15 +163,15 @@ func TestProfileStoreRemove(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	store := NewProfileStore()
-	if status := store.Save(Profile{NetworkID: "libera", Host: "irc.libera.chat"}); status != StatusWritten {
-		t.Fatalf("Save(libera) = %v, want StatusWritten", status)
+	if status := store.Save(Profile{NetworkID: "freenode", Host: "chat.freenode.net"}); status != StatusWritten {
+		t.Fatalf("Save(freenode) = %v, want StatusWritten", status)
 	}
 	if status := store.Save(Profile{NetworkID: "oftc", Host: "irc.oftc.net"}); status != StatusWritten {
 		t.Fatalf("Save(oftc) = %v, want StatusWritten", status)
 	}
 
-	if status := store.Remove("libera"); status != StatusWritten {
-		t.Fatalf("Remove(libera) = %v, want StatusWritten", status)
+	if status := store.Remove("freenode"); status != StatusWritten {
+		t.Fatalf("Remove(freenode) = %v, want StatusWritten", status)
 	}
 	got := store.Profiles()
 	if len(got) != 1 || got[0].NetworkID != "oftc" {
@@ -189,7 +189,7 @@ func TestProfileStoreRemove(t *testing.T) {
 func TestProfileStoreRemoveMissingFile(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	if status := NewProfileStore().Remove("libera"); status != StatusAbsent {
+	if status := NewProfileStore().Remove("freenode"); status != StatusAbsent {
 		t.Errorf("Remove on missing file = %v, want StatusAbsent", status)
 	}
 	if _, err := os.Stat(ConfigPath()); !os.IsNotExist(err) {
@@ -200,10 +200,10 @@ func TestProfileStoreRemoveMissingFile(t *testing.T) {
 func TestProfileStoreFailClosedMalformed(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	path := profileStoreWriteIni(t,
-		"[networks]\nlibera\\host=irc.libera.chat\nnot a key line\n")
+		"[networks]\nfreenode\\host=chat.freenode.net\nnot a key line\n")
 	before := profileStoreReadFile(t, path)
 
-	status := NewProfileStore().Save(Profile{NetworkID: "libera", Host: "irc.libera.chat"})
+	status := NewProfileStore().Save(Profile{NetworkID: "freenode", Host: "chat.freenode.net"})
 	if status != StatusFormatError {
 		t.Fatalf("Save on malformed file = %v, want StatusFormatError", status)
 	}
@@ -217,13 +217,13 @@ func TestProfileStoreFailClosedReadOnly(t *testing.T) {
 		t.Skip("running as root: permission bits are not enforced")
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	path := profileStoreWriteIni(t, "[networks]\nlibera\\host=irc.libera.chat\n")
+	path := profileStoreWriteIni(t, "[networks]\nfreenode\\host=chat.freenode.net\n")
 	if err := os.Chmod(path, 0o444); err != nil {
 		t.Fatalf("Chmod(%q): %v", path, err)
 	}
 	before := profileStoreReadFile(t, path)
 
-	status := NewProfileStore().Save(Profile{NetworkID: "libera", Host: "other.example.org"})
+	status := NewProfileStore().Save(Profile{NetworkID: "freenode", Host: "other.example.org"})
 	if status != StatusAccessError {
 		t.Fatalf("Save on read-only file = %v, want StatusAccessError", status)
 	}
@@ -266,8 +266,8 @@ func TestProfileStoreAutojoinKeyOrder(t *testing.T) {
 
 	store := NewProfileStore()
 	profile := Profile{
-		NetworkID:        "libera",
-		Host:             "irc.libera.chat",
+		NetworkID:        "freenode",
+		Host:             "chat.freenode.net",
 		AutojoinChannels: []string{"#z", "#a", "#m"},
 		AutojoinKeys:     map[string]string{"#z": "kz", "#a": "ka", "#m": "km"},
 	}
@@ -277,11 +277,11 @@ func TestProfileStoreAutojoinKeyOrder(t *testing.T) {
 
 	raw := string(profileStoreReadFile(t, ConfigPath()))
 	channels := profileStoreLineContaining(t, raw, "autojoinKeyChannels")
-	if want := `libera\autojoinKeyChannels=#a, #m, #z`; channels != want {
+	if want := `freenode\autojoinKeyChannels=#a, #m, #z`; channels != want {
 		t.Errorf("channels line = %q, want %q", channels, want)
 	}
 	values := profileStoreLineContaining(t, raw, "autojoinKeyValues")
-	if want := `libera\autojoinKeyValues=ka, km, kz`; values != want {
+	if want := `freenode\autojoinKeyValues=ka, km, kz`; values != want {
 		t.Errorf("values line = %q, want %q", values, want)
 	}
 }

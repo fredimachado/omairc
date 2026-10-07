@@ -23,11 +23,11 @@ Preconditions:
 
 ```desktop-recipe
 launch
-wait-title --exact "irc.libera.chat Status"
+wait-title --exact "chat.freenode.net Status"
 screenshot --feature identity-footer --name first-run-empty
 ```
 
-- **First-run fallback.** After `control-omairc launch`, run `control-omairc wait-title --exact "irc.libera.chat Status"` then `control-omairc screenshot --feature identity-footer --name first-run-empty`. The footer nick is empty (the initials chip shows `?`) and the line under it is `offline`. There is no `fred` fallback. The app version is still on the right. Connect stays open on top of that footer.
+- **First-run fallback.** After `control-omairc launch`, run `control-omairc wait-title --exact "chat.freenode.net Status"` then `control-omairc screenshot --feature identity-footer --name first-run-empty`. The footer nick is empty (the initials chip shows `?`) and the line under it is `offline`. There is no `fred` fallback. The app version is still on the right. Connect stays open on top of that footer.
 - **Offscreen suite.** When proving the seeded and live labels, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` asserts `selfNickLabel` is `fred` on the seeded window and `live-nick` on the live fixture. The seeded `selfPresenceLabel` is `available` and `selfPresenceDot` is `#69b978`. A live fixture with `selfAway` true and `hasAwayPresence` false shows `away` and `#d6a552` while `connectionStatus` is `Connected`. A live fixture with `connectionStatus` `Offline` shows `offline` and the muted mark. `selfVersionLabel` is the non-empty app version on the seeded window. `qml-suite` copies the `#desktop` grab to `test-artifacts/verify/identity-footer/mock-fred.png`. That image must show `fred` / `available` and the version on the right of the sidebar footer. This is not compiled-window proof.
 
 ## Gotchas

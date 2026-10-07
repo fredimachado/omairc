@@ -23,7 +23,7 @@ Status is the network's server window. It shows handshake traffic, errors, notic
 
 Preconditions:
 
-- A default compiled launch (`control-omairc launch`) is titled `irc.libera.chat Status` with Connect on top of Status (`Offline`, no handshake). Finish Connect before looking for handshake lines on that window. That launch is not this fence. One fence cannot also `launch --demo-server`.
+- A default compiled launch (`control-omairc launch`) is titled `chat.freenode.net Status` with Connect on top of Status (`Offline`, no handshake). Finish Connect before looking for handshake lines on that window. That launch is not this fence. One fence cannot also `launch --demo-server`.
 - `control-omairc launch --demo-server` starts on `#omarchy · irc.example · fred - Omairc` with no Connect overlay. The sidebar subtitle is `Connected`. Open Status with `Ctrl+``. Demo Status already includes `-AUTH- *** Looking up your hostname...`. The omarchy network's display name clashes with OFTC, so the Status title is `irc.example · fred Status`.
 - After Connect, the window title and center header are `{displayName} Status`. Conversation titles stay `{conversation} - Omairc`, or `{conversation} · {displayName} - Omairc` when two conversations share a name.
 
@@ -39,7 +39,7 @@ wait-title --exact "#omarchy · irc.example · fred - Omairc"
 
 - **Open Status.** Press `Ctrl+``. Run `control-omairc status` then `control-omairc wait-title --exact "irc.example · fred Status"`. The people control is gone. The list shows server lines including `-AUTH- *** Looking up your hostname...`. There is no `AUTH` row under DIRECT MESSAGES. Capture it with `control-omairc screenshot --feature status-console --name after-open`.
 - **Escape.** Press Escape. Run `control-omairc key --key Escape` then `control-omairc wait-title --exact "#omarchy · irc.example · fred - Omairc"`. Status closes and the last conversation returns.
-- **First-run Status.** After `control-omairc launch` (no `--demo-server`), the title is `irc.libera.chat Status`. Connect sits on top of Status, the subtitle is `Offline`, and there are no handshake lines. `status` does not close Status while nothing is selected. That path is not this fence.
+- **First-run Status.** After `control-omairc launch` (no `--demo-server`), the title is `chat.freenode.net Status`. Connect sits on top of Status, the subtitle is `Offline`, and there are no handshake lines. `status` does not close Status while nothing is selected. That path is not this fence.
 - **Mouse path.** `control-omairc click-network` opens Status from the network name. `control-omairc click-edit` opens Connect from the small edit control. There is no chord for those pixels. They are not this recipe. The recipe uses `status`.
 - **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` clicks `networkHeaderButton` on the live fixture, asserts `-AUTH- *** Looking up your hostname...` in `consoleList`, and keeps AUTH out of DIRECT MESSAGES. The suite writes `test-artifacts/status-console.png`. This is not compiled-window proof.
 

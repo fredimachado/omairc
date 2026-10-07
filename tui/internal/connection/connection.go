@@ -98,7 +98,7 @@ type Connection struct {
 }
 
 // New builds a connection over ctrl. With no stored profiles the draft is the
-// suggested Libera profile and selectedNetworkId points at it. Seed persisted
+// suggested Freenode profile and selectedNetworkId points at it. Seed persisted
 // profiles with SetProfileStore or SetStoredProfiles.
 func New(ctrl *controller.Controller, factory TransportFactory) *Connection {
 	connection := &Connection{

@@ -457,7 +457,7 @@ class ControllerTest : public QObject
 private slots:
     void init();
     void reducesTrafficAndRoutesOutboundByNetwork();
-    void liberaConnectCreatesChannelNotAuthDirect();
+    void freenodeConnectCreatesChannelNotAuthDirect();
     void incomingNoticeStaysOnStatus();
     void statusKeepListLeavesTranscriptIntact();
     void incomingActionUsesActionKindAndStripsCtcp();
@@ -781,28 +781,28 @@ void ControllerTest::reducesTrafficAndRoutesOutboundByNetwork()
             != QByteArrayLiteral("PRIVMSG #chan :second\r\n"));
 }
 
-void ControllerTest::liberaConnectCreatesChannelNotAuthDirect()
+void ControllerTest::freenodeConnectCreatesChannelNotAuthDirect()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    IrcSessionConfig sessionConfig = config(QStringLiteral("freenode"));
     sessionConfig.autojoinChannels = {QStringLiteral("#omarchy")};
     IrcSession *session = controller.addSession(sessionConfig, transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral("NOTICE AUTH :*** Looking up your hostname...\r\n"
                           "NOTICE AUTH :*** Checking Ident\r\n"
                           "NOTICE AUTH :*** No Ident response\r\n"
                           "NOTICE AUTH :*** Found your hostname\r\n"
-                          ":copper.libera.chat CAP omairc LS :multi-prefix\r\n"
-                          ":copper.libera.chat 001 omairc :Welcome\r\n"
-                          ":copper.libera.chat 005 omairc CHANTYPES=# PREFIX=(ov)@+ "
-                          "NETWORK=Libera.Chat :are supported by this server\r\n"
+                          ":chat.freenode.net CAP omairc LS :multi-prefix\r\n"
+                          ":chat.freenode.net 001 omairc :Welcome\r\n"
+                          ":chat.freenode.net 005 omairc CHANTYPES=# PREFIX=(ov)@+ "
+                          "NETWORK=Freenode :are supported by this server\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"
-                          ":copper.libera.chat 353 omairc = #omarchy :@omairc\r\n"
-                          ":copper.libera.chat 366 omairc #omarchy :End of NAMES\r\n"));
+                          ":chat.freenode.net 353 omairc = #omarchy :@omairc\r\n"
+                          ":chat.freenode.net 366 omairc #omarchy :End of NAMES\r\n"));
 
     auto *conversations =
         qobject_cast<QAbstractItemModel *>(controller.conversations());
@@ -812,9 +812,9 @@ void ControllerTest::liberaConnectCreatesChannelNotAuthDirect()
              QStringLiteral("#omarchy"));
     QCOMPARE(roleAt(conversations, 0, ConversationListModel::DirectRole), false);
     QCOMPARE(roleAt(conversations, 0, ConversationListModel::NetworkIdRole),
-             QStringLiteral("libera"));
+             QStringLiteral("freenode"));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
     QVERIFY(controller.isChannel());
 
@@ -834,11 +834,11 @@ void ControllerTest::incomingNoticeStaysOnStatus()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    IrcSessionConfig sessionConfig = config(QStringLiteral("freenode"));
     sessionConfig.autojoinChannels = {QStringLiteral("#omarchy")};
     IrcSession *session = controller.addSession(sessionConfig, transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral("NOTICE AUTH :*** Looking up your hostname...\r\n"
@@ -864,7 +864,7 @@ void ControllerTest::incomingNoticeStaysOnStatus()
     QVERIFY(logContains(lines, QStringLiteral("-AUTH-")));
     QVERIFY(logContains(lines, QStringLiteral("-bot- heads up")));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     for (int row = 0; row < messages->rowCount(); ++row) {
@@ -878,11 +878,11 @@ void ControllerTest::statusKeepListLeavesTranscriptIntact()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    IrcSessionConfig sessionConfig = config(QStringLiteral("freenode"));
     sessionConfig.autojoinChannels = {};
     IrcSession *session = controller.addSession(sessionConfig, transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(
@@ -925,7 +925,7 @@ void ControllerTest::statusKeepListLeavesTranscriptIntact()
     QVERIFY(!logContains(lines, QStringLiteral("hello there")));
     QVERIFY(!logContains(lines, QStringLiteral("older replay")));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("hello there")));
@@ -940,11 +940,11 @@ void ControllerTest::incomingActionUsesActionKindAndStripsCtcp()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    IrcSessionConfig sessionConfig = config(QStringLiteral("freenode"));
     sessionConfig.autojoinChannels = {QStringLiteral("#omarchy")};
     IrcSession *session = controller.addSession(sessionConfig, transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -958,7 +958,7 @@ void ControllerTest::incomingActionUsesActionKindAndStripsCtcp()
         QByteArray(":MetaNova!u@h PRIVMSG #omarchy :\x01"
                    "ACTION feeds jvaztap\x01\r\n"));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QVERIFY(messages->rowCount() > 0);
@@ -975,10 +975,10 @@ void ControllerTest::emptyNetworkIdDoesNotSwitch()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -994,10 +994,10 @@ void ControllerTest::presenceCapabilitiesGateAwayAndStatus()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :away-notify batch draft/metadata-2\r\n"
@@ -1008,7 +1008,7 @@ void ControllerTest::presenceCapabilitiesGateAwayAndStatus()
                           ":omairc!u@h JOIN :#omarchy\r\n"
                           ":server 353 omairc = #omarchy :@omairc +Alice Bob\r\n"
                           ":server 366 omairc #omarchy :End of NAMES\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(controller.hasAwayPresence());
     QVERIFY(controller.hasMemberStatus());
 
@@ -1028,7 +1028,7 @@ void ControllerTest::presenceCapabilitiesGateAwayAndStatus()
     QCOMPARE(roleAt(members, 1, MemberListModel::StatusRole),
              QStringLiteral("writing docs"));
 
-    const QVariantMap alice = controller.peerMetadata(QStringLiteral("libera"),
+    const QVariantMap alice = controller.peerMetadata(QStringLiteral("freenode"),
                                                       QStringLiteral("Alice"));
     QCOMPARE(alice.value(QStringLiteral("status")).toString(),
              QStringLiteral("writing docs"));
@@ -1061,10 +1061,10 @@ void ControllerTest::peerMetadataEpochBumpsOnInboundMetadata()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch draft/metadata-2\r\n"
@@ -1081,7 +1081,7 @@ void ControllerTest::peerMetadataEpochBumpsOnInboundMetadata()
         QByteArrayLiteral(":server 761 omairc Alice bot * :PacketBot\r\n"));
     QCOMPARE(controller.peerMetadataEpoch(), 1);
     QCOMPARE(spy.count(), 1);
-    QCOMPARE(controller.peerMetadata(QStringLiteral("libera"), QStringLiteral("Alice"))
+    QCOMPARE(controller.peerMetadata(QStringLiteral("freenode"), QStringLiteral("Alice"))
                  .value(QStringLiteral("bot"))
                  .toBool(),
              true);
@@ -1091,10 +1091,10 @@ void ControllerTest::defaultPrefixPaintsLabelNotNick()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -1102,7 +1102,7 @@ void ControllerTest::defaultPrefixPaintsLabelNotNick()
                           ":omairc!u@h JOIN :#omarchy\r\n"
                           ":server 353 omairc = #omarchy :~owner @+Alice +Bob @\r\n"
                           ":server 366 omairc #omarchy :End of NAMES\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
     QCOMPARE(members->rowCount(), 3);
@@ -1127,16 +1127,16 @@ void ControllerTest::channelCloseSlashIsWrongScope()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("hello")));
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("PRIVMSG #omarchy :hello\r\n"));
@@ -1155,10 +1155,10 @@ void ControllerTest::partDefaultsToSelectedChannel()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     QVERIFY(!controller.sendMessage(QStringLiteral("/part")));
     QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
@@ -1168,7 +1168,7 @@ void ControllerTest::partDefaultsToSelectedChannel()
                           ":omairc!u@h JOIN :#help\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"
                           ":omairc!u@h JOIN :#ricing\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *conversations =
         qobject_cast<QAbstractItemModel *>(controller.conversations());
     QVERIFY(conversations);
@@ -1206,7 +1206,7 @@ void ControllerTest::partDefaultsToSelectedChannel()
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("PART #desktop\r\n"));
 
-    controller.closeConversationRow(QStringLiteral("libera"),
+    controller.closeConversationRow(QStringLiteral("freenode"),
                                     QStringLiteral("#omarchy"));
     QVERIFY(rowForTarget(conversations, QStringLiteral("#omarchy")) < 0);
     transport->injectBytes(
@@ -1219,13 +1219,13 @@ void ControllerTest::failedJoin448PartDismissesWithoutPart()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/join #bad")));
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #bad\r\n"));
@@ -1260,13 +1260,13 @@ void ControllerTest::failedInviteJoinPartDismissesWithoutPart()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     transport->injectBytes(QByteArrayLiteral(":alice!u@h INVITE omairc :#lab\r\n"));
     QVERIFY(controller.sendMessage(QStringLiteral("/join")));
@@ -1304,15 +1304,15 @@ void ControllerTest::joinedPartSendsAndKeepsSelected()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(
         QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
                           ":omairc!u@h JOIN :#lab\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *conversations =
         qobject_cast<QAbstractItemModel *>(controller.conversations());
     QVERIFY(conversations);
@@ -1332,13 +1332,13 @@ void ControllerTest::joinListedChannelRejoinsLeftRow()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(controller.channelJoined());
     QVERIFY(controller.sendMessage(QStringLiteral("/list")));
 
@@ -1360,10 +1360,10 @@ void ControllerTest::joinClearsClosedOnEveryTarget()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(
         QByteArrayLiteral(":omairc!u@h JOIN :#keep\r\n"
@@ -1373,15 +1373,15 @@ void ControllerTest::joinClearsClosedOnEveryTarget()
         qobject_cast<QAbstractItemModel *>(controller.conversations());
     QVERIFY(conversations);
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#alpha"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#alpha"));
     QVERIFY(controller.sendMessage(QStringLiteral("/part")));
     QVERIFY(controller.sendMessage(QStringLiteral("/close")));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#beta"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#beta"));
     QVERIFY(controller.sendMessage(QStringLiteral("/part")));
     QVERIFY(controller.sendMessage(QStringLiteral("/close")));
     QVERIFY(rowForTarget(conversations, QStringLiteral("#alpha")) < 0);
     QVERIFY(rowForTarget(conversations, QStringLiteral("#beta")) < 0);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#keep"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#keep"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/join #alpha,#beta")));
     QVERIFY(framesContain(transport->writtenFrames(), QByteArrayLiteral("JOIN #alpha\r\n")));
@@ -1393,14 +1393,14 @@ void ControllerTest::joinClearsClosedOnEveryTarget()
     QVERIFY(rowForTarget(conversations, QStringLiteral("#beta")) >= 0);
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#beta"));
     QVERIFY(controller.channelJoined());
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#alpha"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#alpha"));
     QVERIFY(controller.channelJoined());
 }
 
 void ControllerTest::reopenedDirectIsRememberedAcrossRestart()
 {
     const IrcCaseMapping mapping;
-    const QString network = QStringLiteral("libera");
+    const QString network = QStringLiteral("freenode");
     const auto listed = [&](const QString& target) {
         return IrcOpenDirectStore().listed(network, mapping).contains(target);
     };
@@ -1492,7 +1492,7 @@ void ControllerTest::reopenedDirectIsRememberedAcrossRestart()
 void ControllerTest::unsolicitedSelfJoinKeepsClosedChannel()
 {
     const IrcCaseMapping mapping;
-    const QString network = QStringLiteral("libera");
+    const QString network = QStringLiteral("freenode");
     const auto closed = [&](const QString& target) {
         return IrcClosedConversationStore().contains(network, target, mapping);
     };
@@ -1573,13 +1573,13 @@ void ControllerTest::partMissingChannelStillSends()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *conversations =
         qobject_cast<QAbstractItemModel *>(controller.conversations());
     QVERIFY(conversations);
@@ -1596,18 +1596,18 @@ void ControllerTest::partNonSelectedUnjoinedDropsWithoutPart()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/join #ghost")));
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #ghost\r\n"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#ghost"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
     auto *conversations =
         qobject_cast<QAbstractItemModel *>(controller.conversations());
@@ -1622,7 +1622,7 @@ void ControllerTest::partNonSelectedUnjoinedDropsWithoutPart()
     QVERIFY(rowForTarget(conversations, QStringLiteral("#omarchy")) >= 0);
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#ghost"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#ghost"));
     QVERIFY(controller.sendMessage(QStringLiteral("/close")));
     QVERIFY(rowForTarget(conversations, QStringLiteral("#ghost")) < 0);
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
@@ -1632,20 +1632,20 @@ void ControllerTest::partUnjoinedDropsMute()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/join #ghost")));
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #ghost\r\n"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#ghost"));
     QVERIFY(controller.sendMessage(QStringLiteral("/mute")));
     QVERIFY(IrcMuteStore().contains(
-        QStringLiteral("libera"), QStringLiteral("#ghost"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("#ghost"), IrcCaseMapping()));
     auto *conversations =
         qobject_cast<QAbstractItemModel *>(controller.conversations());
     QVERIFY(conversations);
@@ -1659,12 +1659,12 @@ void ControllerTest::partUnjoinedDropsMute()
     QVERIFY(!framesContain(transport->writtenFrames(), QByteArrayLiteral("PART")));
     QVERIFY(rowForTarget(conversations, QStringLiteral("#ghost")) >= 0);
     QVERIFY(IrcMuteStore().contains(
-        QStringLiteral("libera"), QStringLiteral("#ghost"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("#ghost"), IrcCaseMapping()));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/close")));
     QVERIFY(rowForTarget(conversations, QStringLiteral("#ghost")) < 0);
     QVERIFY(!IrcMuteStore().contains(
-        QStringLiteral("libera"), QStringLiteral("#ghost"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("#ghost"), IrcCaseMapping()));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/join #ghost")));
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #ghost\r\n"));
@@ -1673,20 +1673,20 @@ void ControllerTest::partUnjoinedDropsMute()
     QVERIFY(rejoined >= 0);
     QCOMPARE(roleAt(conversations, rejoined, ConversationListModel::MutedRole), false);
     QVERIFY(!IrcMuteStore().contains(
-        QStringLiteral("libera"), QStringLiteral("#ghost"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("#ghost"), IrcCaseMapping()));
 }
 
 void ControllerTest::partUnjoinedDelayedJoinSendsPart()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/join #lab")));
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #lab\r\n"));
@@ -1712,13 +1712,13 @@ void ControllerTest::rejoinClearsCancelledPendingJoin()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/join #lab")));
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #lab\r\n"));
@@ -1747,18 +1747,18 @@ void ControllerTest::partNonSelectedUnjoinedDelayedJoinKeepsSelection()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/join #lab")));
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #lab\r\n"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#lab"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
     auto *conversations =
         qobject_cast<QAbstractItemModel *>(controller.conversations());
@@ -1778,7 +1778,7 @@ void ControllerTest::partNonSelectedUnjoinedDelayedJoinKeepsSelection()
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("PART #lab\r\n"));
     QVERIFY(rowForTarget(conversations, QStringLiteral("#lab")) >= 0);
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#lab"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#lab"));
     QVERIFY(!controller.channelJoined());
 }
 
@@ -1786,15 +1786,15 @@ void ControllerTest::partFromDirectIsWrongScope()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(
         QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
                           ":lena!u@h PRIVMSG omairc :hi\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
     const int framesBefore = transport->writtenFrames().size();
 
     QVERIFY(!controller.sendMessage(QStringLiteral("/part")));
@@ -1811,10 +1811,10 @@ void ControllerTest::kickDefaultsToSelectedChannel()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     QVERIFY(!controller.sendMessage(QStringLiteral("/kick")));
     QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
@@ -1822,7 +1822,7 @@ void ControllerTest::kickDefaultsToSelectedChannel()
     QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
 
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(!controller.sendMessage(QStringLiteral("/kick")));
     QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
@@ -1846,15 +1846,15 @@ void ControllerTest::kickFromDirectIsWrongScope()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(
         QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
                           ":lena!u@h PRIVMSG omairc :hi\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
     const int framesBefore = transport->writtenFrames().size();
 
     QVERIFY(!controller.sendMessage(QStringLiteral("/kick")));
@@ -1877,13 +1877,13 @@ void ControllerTest::incomingInviteStaysOnStatusWithoutConversation()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     transport->injectBytes(QByteArrayLiteral(":alice!u@h INVITE omairc :#lab\r\n"));
 
@@ -1908,13 +1908,13 @@ void ControllerTest::emptyJoinAcceptsLatestInvite()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(!controller.sendMessage(QStringLiteral("/join")));
     QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
@@ -1945,14 +1945,14 @@ void ControllerTest::emptyJoinFromStatusUsesPendingInvite()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
-    controller.openStatus(QStringLiteral("libera"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
+    controller.openStatus(QStringLiteral("freenode"));
 
     transport->injectBytes(QByteArrayLiteral(":alice!u@h INVITE omairc :#lab\r\n"));
     QVERIFY(controller.console()->submit(QStringLiteral("/join")));
@@ -1968,13 +1968,13 @@ void ControllerTest::joinOtherDoesNotConsumePendingInvite()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     transport->injectBytes(QByteArrayLiteral(":alice!u@h INVITE omairc :#lab\r\n"));
     QVERIFY(controller.sendMessage(QStringLiteral("/join #other")));
@@ -1994,13 +1994,13 @@ void ControllerTest::joinOpensLastNamedChannel()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/join #alpha,#beta,#gamma")));
     QCOMPARE(transport->writtenFrames().mid(transport->writtenFrames().size() - 3),
@@ -2030,13 +2030,13 @@ void ControllerTest::failedInviteJoinKeepsPending()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     transport->injectBytes(QByteArrayLiteral(":alice!u@h INVITE omairc :#lab\r\n"));
     QVERIFY(controller.sendMessage(QStringLiteral("/join")));
@@ -2058,19 +2058,19 @@ void ControllerTest::sessionDropClearsPendingInvite()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     transport->injectBytes(QByteArrayLiteral(":alice!u@h INVITE omairc :#lab\r\n"));
     transport->remoteClose();
     QCOMPARE(session->state(), IrcSession::State::Failed);
 
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     QVERIFY(!controller.sendMessage(QStringLiteral("/join")));
     QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
@@ -2081,10 +2081,10 @@ void ControllerTest::inviteDefaultsToSelectedChannel()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     QVERIFY(!controller.sendMessage(QStringLiteral("/invite")));
     QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
@@ -2092,7 +2092,7 @@ void ControllerTest::inviteDefaultsToSelectedChannel()
     QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
 
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(!controller.sendMessage(QStringLiteral("/invite")));
     QCOMPARE(controller.lastError(), QStringLiteral("Invite applies to channels"));
@@ -2115,15 +2115,15 @@ void ControllerTest::inviteFromDirectAndStatusNeedsChannel()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(
         QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
                           ":lena!u@h PRIVMSG omairc :hi\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
     const int framesBefore = transport->writtenFrames().size();
 
     QVERIFY(!controller.sendMessage(QStringLiteral("/invite")));
@@ -2137,7 +2137,7 @@ void ControllerTest::inviteFromDirectAndStatusNeedsChannel()
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("INVITE bob #lab\r\n"));
 
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
     QVERIFY(controller.console()->submit(QStringLiteral("/invite bob")));
     QVERIFY(logContains(controller.console()->lines(),
                         QStringLiteral("Invite applies to channels")));
@@ -2174,13 +2174,13 @@ void ControllerTest::statusPartDefaultsToSelectedChannel()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.console()->submit(QStringLiteral("/part")));
     QCOMPARE(transport->writtenFrames().last(),
@@ -2259,15 +2259,15 @@ void ControllerTest::topicFromDirectIsWrongScope()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(
         QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
                           ":lena!u@h PRIVMSG omairc :hi\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
     const int framesBefore = transport->writtenFrames().size();
 
     QVERIFY(!controller.sendMessage(QStringLiteral("/topic hello")));
@@ -2280,13 +2280,13 @@ void ControllerTest::emptyTopicDoesNotWrite()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     const int framesBefore = transport->writtenFrames().size();
 
     QVERIFY(controller.sendMessage(QStringLiteral("/topic")));
@@ -2298,10 +2298,10 @@ void ControllerTest::closeDirectMessageDropsAndSelectsNeighbor()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -2326,7 +2326,7 @@ void ControllerTest::closeDirectMessageDropsAndSelectsNeighbor()
              QStringLiteral("zed"));
     QVERIFY(rowForTarget(conversations, QStringLiteral("#desktop")) >= 0);
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
     const int framesBeforeClose = transport->writtenFrames().size();
     QVERIFY(controller.sendMessage(QStringLiteral("/close")));
     QCOMPARE(controller.lastError(), QString());
@@ -2344,7 +2344,7 @@ void ControllerTest::closeDirectMessageDropsAndSelectsNeighbor()
     QVERIFY(rowForTarget(conversations, QStringLiteral("#omarchy")) >= 0);
     QVERIFY(rowForTarget(conversations, QStringLiteral("#desktop")) >= 0);
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#desktop"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#desktop"));
     QVERIFY(controller.sendMessage(QStringLiteral("/close")));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
     QVERIFY(rowForTarget(conversations, QStringLiteral("#desktop")) < 0);
@@ -2355,16 +2355,16 @@ void ControllerTest::closeDirectMessageInvokableOnChannelIsSilent()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(!controller.sendMessage(QStringLiteral("/nope")));
     const QString errorBefore = controller.lastError();
     QCOMPARE(errorBefore, QStringLiteral("Unknown command: /nope"));
@@ -2378,10 +2378,10 @@ void ControllerTest::closeDirectMessageWhileDisconnected()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -2465,10 +2465,10 @@ void ControllerTest::selfAwayFollowsNumericsAndUnawaysAfterChat()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -2490,7 +2490,7 @@ void ControllerTest::selfAwayFollowsNumericsAndUnawaysAfterChat()
                           ":server 353 omairc = #omarchy :@omairc\r\n"
                           ":server 366 omairc #omarchy :End of NAMES\r\n"
                           ":server 352 omairc #omarchy u h server omairc G :0 real\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(!controller.selfAway());
 
     transport->injectBytes(
@@ -2529,10 +2529,10 @@ void ControllerTest::selfAwayRefreshesOurOwnMemberRow()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :away-notify\r\n"
@@ -2543,7 +2543,7 @@ void ControllerTest::selfAwayRefreshesOurOwnMemberRow()
                           ":omairc!u@h JOIN :#omarchy\r\n"
                           ":server 353 omairc = #omarchy :@omairc +Alice\r\n"
                           ":server 366 omairc #omarchy :End of NAMES\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
     QVERIFY(members);
@@ -2654,17 +2654,17 @@ void ControllerTest::closeLastDirectKeepsSelfAway()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":server 306 omairc :You have been marked as being away\r\n"
                           ":zed!u@h PRIVMSG omairc :later\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("zed"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("zed"));
     QVERIFY(controller.selfAway());
     QVERIFY(controller.sendMessage(QStringLiteral("/close")));
     QCOMPARE(controller.selectedTarget(), QString());
@@ -2675,16 +2675,16 @@ void ControllerTest::queryOpensDirectWithoutPrivmsg()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/query lena")));
@@ -2697,16 +2697,16 @@ void ControllerTest::queryAliceCreatesDirectRowWithoutPrivmsg()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/query alice")));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("alice"));
@@ -2729,16 +2729,16 @@ void ControllerTest::queryWithTextSendsPrivmsg()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/query lena hello")));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("lena"));
@@ -2760,16 +2760,16 @@ void ControllerTest::queryChannelAndEmptyAreRefused()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     const int framesBefore = transport->writtenFrames().size();
 
     QVERIFY(!controller.sendMessage(QStringLiteral("/query #omarchy")));
@@ -2787,16 +2787,16 @@ void ControllerTest::noticeSendsWithoutSelecting()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/notice lena later")));
     QCOMPARE(transport->writtenFrames().last(),
@@ -2814,24 +2814,24 @@ void ControllerTest::noticeEchoesExistingDirect()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"
                           ":lena!u@h PRIVMSG omairc :hi\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/notice lena later")));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("NOTICE lena :later\r\n"));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QVERIFY(messages->rowCount() > 0);
@@ -2845,16 +2845,16 @@ void ControllerTest::noticeEchoesSelectedChannel()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/notice #omarchy heads up")));
     QCOMPARE(transport->writtenFrames().last(),
@@ -2874,16 +2874,16 @@ void ControllerTest::noticeMissingTokensAreRefused()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     const int framesBefore = transport->writtenFrames().size();
 
     QVERIFY(!controller.sendMessage(QStringLiteral("/notice")));
@@ -2903,16 +2903,16 @@ void ControllerTest::statusNoticeStaysOpen()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     IrcStatusConsole *console = controller.console();
     console->setOpen(true);
@@ -2927,16 +2927,16 @@ void ControllerTest::statusNoticeMissingBodyStaysOpen()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     IrcStatusConsole *console = controller.console();
     console->setOpen(true);
@@ -2953,16 +2953,16 @@ void ControllerTest::disconnectedNoticeIsNotConnected()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     transport->remoteClose();
     QVERIFY(session->state() != IrcSession::State::Registered);
     const int framesBefore = transport->writtenFrames().size();
@@ -2979,17 +2979,17 @@ void ControllerTest::noticeDoesNotUnaway()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"
                           ":server 306 omairc :You have been marked as being away\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(controller.selfAway());
     const int awayBefore = transport->writtenFrames().count(QByteArrayLiteral("AWAY\r\n"));
 
@@ -3005,16 +3005,16 @@ void ControllerTest::msgSendsWithoutSelecting()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
@@ -3040,24 +3040,24 @@ void ControllerTest::msgEchoesExistingDirect()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"
                           ":lena!u@h PRIVMSG omairc :hi\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/msg lena later")));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("PRIVMSG lena :later\r\n"));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QVERIFY(messages->rowCount() > 0);
@@ -3071,17 +3071,17 @@ void ControllerTest::msgDoesNotFocusExistingDirect()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"
                           ":lena!u@h PRIVMSG omairc :hi\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/msg lena later")));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
@@ -3091,16 +3091,16 @@ void ControllerTest::msgEchoesSelectedGhostQuery()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/query lena")));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("lena"));
@@ -3123,16 +3123,16 @@ void ControllerTest::msgMissingTokensAreRefused()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     const int framesBefore = transport->writtenFrames().size();
 
     QVERIFY(!controller.sendMessage(QStringLiteral("/msg")));
@@ -3152,16 +3152,16 @@ void ControllerTest::msgChannelIsRefused()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     const int framesBefore = transport->writtenFrames().size();
 
     QVERIFY(!controller.sendMessage(QStringLiteral("/msg #omarchy hello")));
@@ -3176,16 +3176,16 @@ void ControllerTest::statusMsgStaysOpen()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     IrcStatusConsole *console = controller.console();
     console->setOpen(true);
@@ -3200,16 +3200,16 @@ void ControllerTest::disconnectedMsgIsNotConnected()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     transport->remoteClose();
     QVERIFY(session->state() != IrcSession::State::Registered);
     const int framesBefore = transport->writtenFrames().size();
@@ -3226,17 +3226,17 @@ void ControllerTest::msgClearsAway()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"
                           ":server 306 omairc :You have been marked as being away\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(controller.selfAway());
     const int awayBefore = transport->writtenFrames().count(QByteArrayLiteral("AWAY\r\n"));
 
@@ -3253,16 +3253,16 @@ void ControllerTest::awayWaitsForNumericThenChatUnaways()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(!controller.selfAway());
 
     QVERIFY(controller.sendMessage(QStringLiteral("/away lunch")));
@@ -3292,16 +3292,16 @@ void ControllerTest::statusQueryClosesStatus()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     IrcStatusConsole *console = controller.console();
     console->setOpen(true);
@@ -3315,16 +3315,16 @@ void ControllerTest::statusQueryChannelStaysOpen()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     IrcStatusConsole *console = controller.console();
     console->setOpen(true);
@@ -3338,16 +3338,16 @@ void ControllerTest::statusSubmitLastAcceptedFollowsOutcome()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     IrcStatusConsole *console = controller.console();
     QVERIFY(console->lastSubmitAccepted());
@@ -3362,23 +3362,23 @@ void ControllerTest::disconnectedQuerySelectsBareNotText()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     transport->remoteClose();
     QVERIFY(session->state() != IrcSession::State::Registered);
 
     QVERIFY(controller.sendMessage(QStringLiteral("/query lena")));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("lena"));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
     QVERIFY(!controller.sendMessage(QStringLiteral("/query lena hello")));
     QCOMPARE(controller.lastError(), QStringLiteral("Not connected"));
@@ -3396,16 +3396,16 @@ void ControllerTest::conversationClearWipesMessages()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("hello")));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     auto *conversations =
@@ -3433,16 +3433,16 @@ void ControllerTest::ghostClearIsSent()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     controller.openDirectMessage(QStringLiteral("ghost"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("ghost"));
     auto *conversations =
@@ -3460,16 +3460,16 @@ void ControllerTest::statusClearLeavesConversationMessages()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("hello")));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     const int conversationRows = messages->rowCount();
@@ -3487,10 +3487,10 @@ void ControllerTest::selectedPrivmsgInsertsMessageRow()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -3531,10 +3531,10 @@ void ControllerTest::largeChannelJoinDoesNotResetModelsPerNick()
     constexpr int perLine = 20;
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :away-notify\r\n"
@@ -3598,10 +3598,10 @@ void ControllerTest::isupportBurstDoesNotResetModels()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -3645,7 +3645,7 @@ void ControllerTest::isupportBurstDoesNotResetModels()
     QVERIFY(!controller.isChannel());
 
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :$odd\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("$odd"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("$odd"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("$odd"));
     QVERIFY(controller.isChannel());
 }
@@ -3654,10 +3654,10 @@ void ControllerTest::otherChannelNamesDoesNotSnapshotJoiningMembers()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :away-notify\r\n"
@@ -3708,10 +3708,10 @@ void ControllerTest::namesBurstFlushesTypingClearedByChat()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :message-tags\r\n"
@@ -3741,10 +3741,10 @@ void ControllerTest::chatDuringNamesUpdatesMessagesWithoutMemberReset()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :away-notify\r\n"
@@ -3792,10 +3792,10 @@ void ControllerTest::incomingNickRetargetsSelectedDirect()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -3804,7 +3804,7 @@ void ControllerTest::incomingNickRetargetsSelectedDirect()
                           ":server 353 omairc = #omarchy :omairc Alice\r\n"
                           ":server 366 omairc #omarchy :End of NAMES\r\n"
                           ":Alice!u@h PRIVMSG omairc :hi\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("Alice"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("Alice"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("Alice"));
     QCOMPARE(controller.currentNick(), QStringLiteral("omairc"));
 
@@ -3822,7 +3822,7 @@ void ControllerTest::incomingNickRetargetsSelectedDirect()
     QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::BodyRole),
              QStringLiteral("Alice is now Alicia"));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
     QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alicia"));
     QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::BodyRole),
@@ -3831,7 +3831,7 @@ void ControllerTest::incomingNickRetargetsSelectedDirect()
     QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
              QStringLiteral("omairc joined"));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("Alicia"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("Alicia"));
     QVERIFY(controller.sendMessage(QStringLiteral("hello")));
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("PRIVMSG Alicia :hello\r\n"));
@@ -3845,10 +3845,10 @@ void ControllerTest::incomingNickCaseOnlyRetargetsDirect()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -3871,11 +3871,11 @@ void ControllerTest::welcomeAssignedNickRoutesDirectMessages()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    IrcSessionConfig sessionConfig = config(QStringLiteral("freenode"));
     sessionConfig.nick = QStringLiteral("omairc-very-long-name");
     IrcSession *session = controller.addSession(sessionConfig, transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc-very-long-name LS :multi-prefix\r\n"
@@ -3897,11 +3897,11 @@ void ControllerTest::echoIfPresentUsesAssignedNick()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    IrcSessionConfig sessionConfig = config(QStringLiteral("freenode"));
     sessionConfig.nick = QStringLiteral("omairc-very-long-name");
     IrcSession *session = controller.addSession(sessionConfig, transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc-very-long-name LS :multi-prefix\r\n"
@@ -3909,13 +3909,13 @@ void ControllerTest::echoIfPresentUsesAssignedNick()
                           ":omairc-truncated!u@h JOIN :#omarchy\r\n"
                           ":lena!u@h PRIVMSG omairc-truncated :hi\r\n"));
     QCOMPARE(session->nick(), QStringLiteral("omairc-truncated"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/msg lena later")));
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("PRIVMSG lena :later\r\n"));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QVERIFY(messages->rowCount() > 0);
@@ -3929,10 +3929,10 @@ void ControllerTest::echoMessageAckSkipsLocalPrivmsg()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :echo-message\r\n"
@@ -3971,10 +3971,10 @@ void ControllerTest::echoMessageAbsentStillEchoesLocally()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :echo-message\r\n"
@@ -4000,10 +4000,10 @@ void ControllerTest::echoMessageAckSkipsMsgEcho()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :echo-message\r\n"
@@ -4012,11 +4012,11 @@ void ControllerTest::echoMessageAckSkipsMsgEcho()
                           ":omairc!u@h JOIN :#omarchy\r\n"
                           ":lena!u@h PRIVMSG omairc :hi\r\n"));
     QVERIFY(session->capabilities().contains(IrcCapability::EchoMessage));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
     const int rowsBeforeMsg = messages->rowCount();
 
     QVERIFY(controller.sendMessage(QStringLiteral("/msg lena later")));
@@ -4035,16 +4035,16 @@ void ControllerTest::longMeAndNoticeSplitAcrossFrames()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     const QString first(400, QLatin1Char('a'));
     const QString second(200, QLatin1Char('b'));
@@ -4087,16 +4087,16 @@ void ControllerTest::longTopicStillRefuses()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     const int before = transport->writtenFrames().size();
     QVERIFY(!controller.sendMessage(QStringLiteral("/topic ")
@@ -4111,10 +4111,10 @@ void ControllerTest::echoMessageLongPrivmsgShowsEachChunkOnce()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :echo-message\r\n"
@@ -4153,10 +4153,10 @@ void ControllerTest::msgEchoDoesNotOpenMissingDirect()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :echo-message\r\n"
@@ -4164,7 +4164,7 @@ void ControllerTest::msgEchoDoesNotOpenMissingDirect()
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
     QVERIFY(session->capabilities().contains(IrcCapability::EchoMessage));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/msg lena hello")));
     QCOMPARE(transport->writtenFrames().last(),
@@ -4192,10 +4192,10 @@ void ControllerTest::incomingNickservPrivmsgDoesNotOpenDirect()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -4217,10 +4217,10 @@ void ControllerTest::bouncerAttachOpensOnlyPeerAuthoredDirects()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch echo-message\r\n"
@@ -4262,7 +4262,7 @@ void ControllerTest::bouncerAttachOpensOnlyPeerAuthoredDirects()
         QByteArrayLiteral(":rio!u@h PRIVMSG omairc :live hello\r\n"));
     QVERIFY(rowForTarget(conversations, QStringLiteral("rio")) >= 0);
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("dana"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("dana"));
     auto *danaMessages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QCOMPARE(selectedBodies(danaMessages),
              QStringList({QStringLiteral("morning"),
@@ -4279,7 +4279,7 @@ void ControllerTest::bouncerAttachOpensOnlyPeerAuthoredDirects()
             "@batch=c :lena!u@h PRIVMSG #omarchy :yesterday\r\n"
             "@batch=c :***!znc@znc.in PRIVMSG #omarchy :Playback Complete.\r\n"
             ":znc.in BATCH -c\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *roomMessages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QCOMPARE(selectedBodies(roomMessages),
              QStringList({QStringLiteral("yesterday"),
@@ -4290,9 +4290,9 @@ void ControllerTest::bouncerAttachOpensOnlyPeerAuthoredDirects()
     QCOMPARE(rowForTarget(conversations, QStringLiteral("lena")), -1);
     QVERIFY(rowForTarget(conversations, QStringLiteral("dana")) >= 0);
     const IrcCaseMapping mapping;
-    QVERIFY(IrcOpenDirectStore().listed(QStringLiteral("libera"), mapping)
+    QVERIFY(IrcOpenDirectStore().listed(QStringLiteral("freenode"), mapping)
                 .contains(QStringLiteral("dana")));
-    QVERIFY(!IrcOpenDirectStore().listed(QStringLiteral("libera"), mapping)
+    QVERIFY(!IrcOpenDirectStore().listed(QStringLiteral("freenode"), mapping)
                  .contains(QStringLiteral("lena")));
 }
 
@@ -4305,8 +4305,8 @@ void ControllerTest::keptSelfReplayRemembersOpenQuery()
     {
         IrcController controller;
         auto *transport = new FakeIrcTransport;
-        QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-        QVERIFY(controller.start(QStringLiteral("libera")));
+        QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+        QVERIFY(controller.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(caps);
         transport->injectBytes(QByteArrayLiteral(
@@ -4317,16 +4317,16 @@ void ControllerTest::keptSelfReplayRemembersOpenQuery()
             qobject_cast<QAbstractItemModel *>(controller.conversations());
         QVERIFY(conversations);
         QVERIFY(rowForTarget(conversations, QStringLiteral("lena")) >= 0);
-        QVERIFY(!IrcOpenDirectStore().listed(QStringLiteral("libera"), mapping)
+        QVERIFY(!IrcOpenDirectStore().listed(QStringLiteral("freenode"), mapping)
                      .contains(QStringLiteral("lena")));
 
         transport->injectBytes(QByteArrayLiteral(
             ":znc.in BATCH +q znc.in/playback lena\r\n"
             "@batch=q;time=2024-03-09T16:00:00.620Z :omairc!u@h PRIVMSG lena :pong\r\n"
             ":znc.in BATCH -q\r\n"));
-        QVERIFY(IrcOpenDirectStore().listed(QStringLiteral("libera"), mapping)
+        QVERIFY(IrcOpenDirectStore().listed(QStringLiteral("freenode"), mapping)
                     .contains(QStringLiteral("lena")));
-        controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+        controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
         auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
         QVERIFY(messages);
         const int pong = bodyRow(messages, QStringLiteral("pong"));
@@ -4337,8 +4337,8 @@ void ControllerTest::keptSelfReplayRemembersOpenQuery()
 
     IrcController again;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(again.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(again.start(QStringLiteral("libera")));
+    QVERIFY(again.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(again.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(caps);
     transport->injectBytes(QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
@@ -4349,7 +4349,7 @@ void ControllerTest::keptSelfReplayRemembersOpenQuery()
 
     transport->injectBytes(QByteArrayLiteral(":server 376 omairc :End of MOTD\r\n"));
     QVERIFY(rowForTarget(conversations, QStringLiteral("lena")) >= 0);
-    QVERIFY(IrcOpenDirectStore().listed(QStringLiteral("libera"), mapping)
+    QVERIFY(IrcOpenDirectStore().listed(QStringLiteral("freenode"), mapping)
                 .contains(QStringLiteral("lena")));
 }
 
@@ -4357,10 +4357,10 @@ void ControllerTest::bouncerQueryReplayDirectAppearsInConversationModel()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch\r\n"
@@ -4391,10 +4391,10 @@ void ControllerTest::pseudoClientPrivmsgOpensNoConversation()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -4415,10 +4415,10 @@ void ControllerTest::zncQuietSendDoesNotOpenDirect()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :echo-message\r\n"
@@ -4426,7 +4426,7 @@ void ControllerTest::zncQuietSendDoesNotOpenDirect()
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
     QVERIFY(session->capabilities().contains(IrcCapability::EchoMessage));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     IrcStatusConsole *console = controller.console();
     console->setOpen(true);
@@ -4451,10 +4451,10 @@ void ControllerTest::pseudoClientReplayBatchOpensNoConversation()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch echo-message\r\n"
@@ -4468,7 +4468,7 @@ void ControllerTest::pseudoClientReplayBatchOpensNoConversation()
     transport->injectBytes(
         QByteArrayLiteral(":znc.in BATCH +s znc.in/playback *status\r\n"
                           "@batch=s :omairc!u@h PRIVMSG *status :listnetworks\r\n"
-                          "@batch=s :*status!znc@znc.in PRIVMSG omairc :Network: libera\r\n"
+                          "@batch=s :*status!znc@znc.in PRIVMSG omairc :Network: freenode\r\n"
                           ":znc.in BATCH -s\r\n"));
 
     auto *conversations =
@@ -4477,17 +4477,17 @@ void ControllerTest::pseudoClientReplayBatchOpensNoConversation()
     QCOMPARE(rowForTarget(conversations, QStringLiteral("*status")), -1);
     QCOMPARE(conversations->rowCount(), 0);
     QVERIFY(logContains(controller.console()->lines(),
-                        QStringLiteral("Network: libera")));
+                        QStringLiteral("Network: freenode")));
 }
 
 void ControllerTest::routableNicksOpenDirectsAndPseudoClientsDoNot()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -4524,10 +4524,10 @@ void ControllerTest::conversationCreateMatrix()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :echo-message\r\n"
@@ -4535,7 +4535,7 @@ void ControllerTest::conversationCreateMatrix()
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
     QVERIFY(session->capabilities().contains(IrcCapability::EchoMessage));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     auto *conversations =
         qobject_cast<QAbstractItemModel *>(controller.conversations());
@@ -4576,10 +4576,10 @@ void ControllerTest::statusMsgNickservIdentifyDoesNotOpenDirect()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :echo-message\r\n"
@@ -4587,7 +4587,7 @@ void ControllerTest::statusMsgNickservIdentifyDoesNotOpenDirect()
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
     QVERIFY(session->capabilities().contains(IrcCapability::EchoMessage));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     IrcStatusConsole *console = controller.console();
     console->setOpen(true);
@@ -4612,7 +4612,7 @@ void ControllerTest::statusMsgNickservIdentifyDoesNotOpenDirect()
     QCOMPARE(rowForTarget(conversations, QStringLiteral("NickServ")), -1);
     QCOMPARE(rowForTarget(conversations, QStringLiteral("nickserv")), -1);
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("s3cret")));
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("identify my_nick")));
@@ -4624,10 +4624,10 @@ void ControllerTest::nsIdentifyDoesNotOpenDirectOrLeakSecret()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :echo-message\r\n"
@@ -4635,7 +4635,7 @@ void ControllerTest::nsIdentifyDoesNotOpenDirectOrLeakSecret()
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
     QVERIFY(session->capabilities().contains(IrcCapability::EchoMessage));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     IrcStatusConsole *console = controller.console();
     console->setOpen(true);
@@ -4670,13 +4670,13 @@ void ControllerTest::nsIdentifyDoesNotOpenDirectOrLeakSecret()
 
 void ControllerTest::automaticIdentifyDoesNotOpenNickServDirect()
 {
-    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    IrcSessionConfig sessionConfig = config(QStringLiteral("freenode"));
     sessionConfig.nickServPassword = QStringLiteral("nick-secret");
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     IrcSession *session = controller.addSession(sessionConfig, transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :echo-message\r\n"
@@ -4700,10 +4700,10 @@ void ControllerTest::mentionArrivedOnSelectedBuffer()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -4738,10 +4738,10 @@ void ControllerTest::mentionArrivedOnDirectMessageWithoutNick()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -4772,10 +4772,10 @@ void ControllerTest::mentionArrivedCarriesNetworkTargetAndMsgid()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -4789,7 +4789,7 @@ void ControllerTest::mentionArrivedCarriesNetworkTargetAndMsgid()
     QCOMPARE(spy.count(), 1);
     QCOMPARE(spy.at(0).at(0).toString(), QStringLiteral("Alice"));
     QCOMPARE(spy.at(0).at(1).toString(), QStringLiteral("omairc: ping"));
-    QCOMPARE(spy.at(0).at(2).toString(), QStringLiteral("libera"));
+    QCOMPARE(spy.at(0).at(2).toString(), QStringLiteral("freenode"));
     QCOMPARE(spy.at(0).at(3).toString(), QStringLiteral("#omarchy"));
     QCOMPARE(spy.at(0).at(4).toString(), QStringLiteral("mid-1"));
 
@@ -4798,7 +4798,7 @@ void ControllerTest::mentionArrivedCarriesNetworkTargetAndMsgid()
     QCOMPARE(spy.count(), 2);
     QCOMPARE(spy.at(1).at(0).toString(), QStringLiteral("Alice"));
     QCOMPARE(spy.at(1).at(1).toString(), QStringLiteral("hello"));
-    QCOMPARE(spy.at(1).at(2).toString(), QStringLiteral("libera"));
+    QCOMPARE(spy.at(1).at(2).toString(), QStringLiteral("freenode"));
     QCOMPARE(spy.at(1).at(3).toString(), QStringLiteral("Alice"));
     QCOMPARE(spy.at(1).at(4).toString(), QStringLiteral("dm-7"));
 }
@@ -4808,19 +4808,19 @@ void ControllerTest::revealConversationSelectsExistingAndRecreatesClosedDirect()
     IrcController controller;
     auto *transportA = new FakeIrcTransport;
     auto *transportB = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transportA));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transportA));
     QVERIFY(controller.addSession(config(QStringLiteral("oftc")), transportB));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     QVERIFY(controller.start(QStringLiteral("oftc")));
-    registerSession(controller.session(QStringLiteral("libera")), transportA);
+    registerSession(controller.session(QStringLiteral("freenode")), transportA);
     registerSession(controller.session(QStringLiteral("oftc")), transportB);
     transportA->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
     transportB->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
     controller.selectConversation(QStringLiteral("oftc"), QStringLiteral("#lab"));
     QCOMPARE(controller.selectedNetworkId(), QStringLiteral("oftc"));
 
-    controller.revealConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
-    QCOMPARE(controller.selectedNetworkId(), QStringLiteral("libera"));
+    controller.revealConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
+    QCOMPARE(controller.selectedNetworkId(), QStringLiteral("freenode"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
 
     transportA->injectBytes(
@@ -4830,19 +4830,19 @@ void ControllerTest::revealConversationSelectsExistingAndRecreatesClosedDirect()
     QVERIFY(conversations);
     QVERIFY(rowForTarget(conversations, QStringLiteral("Alice")) >= 0);
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("Alice"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("Alice"));
     controller.closeDirectMessage();
     QVERIFY(rowForTarget(conversations, QStringLiteral("Alice")) < 0);
 
     controller.selectConversation(QStringLiteral("oftc"), QStringLiteral("#lab"));
     QCOMPARE(controller.selectedNetworkId(), QStringLiteral("oftc"));
-    controller.revealConversation(QStringLiteral("libera"), QStringLiteral("Alice"));
-    QCOMPARE(controller.selectedNetworkId(), QStringLiteral("libera"));
+    controller.revealConversation(QStringLiteral("freenode"), QStringLiteral("Alice"));
+    QCOMPARE(controller.selectedNetworkId(), QStringLiteral("freenode"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("Alice"));
     QVERIFY(rowForTarget(conversations, QStringLiteral("Alice")) >= 0);
 
     const QString stillAlice = controller.selectedTarget();
-    controller.revealConversation(QStringLiteral("libera"), QStringLiteral("#missing"));
+    controller.revealConversation(QStringLiteral("freenode"), QStringLiteral("#missing"));
     QCOMPARE(controller.selectedTarget(), stillAlice);
     QCOMPARE(rowForTarget(conversations, QStringLiteral("#missing")), -1);
 }
@@ -4851,10 +4851,10 @@ void ControllerTest::chghostLeavesMemberNickAndRanks()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :chghost\r\n"
@@ -4934,16 +4934,16 @@ void ControllerTest::startingBackgroundNetworkDoesNotStealStatus()
 void ControllerTest::quitWhileReconnecting()
 {
     IrcController controller;
-    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    IrcSessionConfig sessionConfig = config(QStringLiteral("freenode"));
     sessionConfig.reconnectEnabled = true;
     auto *transport = new FakeIrcTransport;
     auto *timer = new FakeReconnectTimer;
     IrcSession *session = controller.addSession(sessionConfig, transport, timer);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     registerSession(session, transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     transport->remoteClose();
     QCOMPARE(session->state(), IrcSession::State::Reconnecting);
@@ -5003,16 +5003,16 @@ void ControllerTest::quitAliasIdlesFocusedNetwork()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
     registerSession(session, transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/quit")));
     QCOMPARE(session->state(), IrcSession::State::Idle);
-    QCOMPARE(controller.session(QStringLiteral("libera")), session);
+    QCOMPARE(controller.session(QStringLiteral("freenode")), session);
     QCOMPARE(controller.conversations()->rowCount(), 1);
     QVERIFY(framesContain(transport->writtenFrames(), QByteArrayLiteral("QUIT")));
 }
@@ -5021,19 +5021,19 @@ void ControllerTest::disconnectWhileIdleIsRefused()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
     registerSession(session, transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("/disconnect")));
     QCOMPARE(session->state(), IrcSession::State::Idle);
 
     QVERIFY(!controller.sendMessage(QStringLiteral("/disconnect")));
     QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
     QCOMPARE(session->state(), IrcSession::State::Idle);
-    QCOMPARE(controller.session(QStringLiteral("libera")), session);
+    QCOMPARE(controller.session(QStringLiteral("freenode")), session);
 }
 
 void ControllerTest::statusJoinUsesConsoleNetwork()
@@ -5149,7 +5149,7 @@ void ControllerTest::networkIconUrlComesFromIsupport()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    const QString networkId = QStringLiteral("libera");
+    const QString networkId = QStringLiteral("freenode");
     IrcSession *session = controller.addSession(config(networkId), transport);
     QVERIFY(session);
     registerSession(session, transport);
@@ -5175,7 +5175,7 @@ void ControllerTest::networkIconUrlComesFromIsupport()
 void ControllerTest::networkIconUrlClearsWhenReconnectOmitsDraftIcon()
 {
     IrcController controller;
-    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    IrcSessionConfig sessionConfig = config(QStringLiteral("freenode"));
     sessionConfig.reconnectEnabled = true;
     auto *transport = new FakeIrcTransport;
     auto *timer = new FakeReconnectTimer;
@@ -5187,7 +5187,7 @@ void ControllerTest::networkIconUrlClearsWhenReconnectOmitsDraftIcon()
         QByteArrayLiteral(":server 005 omairc draft/ICON=https://example.org/icon.svg "
                           "CHANTYPES=# PREFIX=(ov)@+ "
                           ":are supported by this server\r\n"));
-    QCOMPARE(controller.networkIconUrl(QStringLiteral("libera")),
+    QCOMPARE(controller.networkIconUrl(QStringLiteral("freenode")),
              QStringLiteral("https://example.org/icon.svg"));
 
     transport->remoteClose();
@@ -5199,13 +5199,13 @@ void ControllerTest::networkIconUrlClearsWhenReconnectOmitsDraftIcon()
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"));
     QCOMPARE(session->state(), IrcSession::State::Registered);
-    QCOMPARE(controller.networkIconUrl(QStringLiteral("libera")), QString());
+    QCOMPARE(controller.networkIconUrl(QStringLiteral("freenode")), QString());
 
     transport->injectBytes(
         QByteArrayLiteral(":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ "
                           "CASEMAPPING=rfc1459 "
                           ":are supported by this server\r\n"));
-    QCOMPARE(controller.networkIconUrl(QStringLiteral("libera")), QString());
+    QCOMPARE(controller.networkIconUrl(QStringLiteral("freenode")), QString());
 }
 
 void ControllerTest::forgetNetworkDropsGhostRowsAndLog()
@@ -5245,8 +5245,8 @@ void ControllerTest::reselectingConversationPreservesProjectionAndUnreadMark()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    registerSession(controller.session(QStringLiteral("libera")), transport);
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    registerSession(controller.session(QStringLiteral("freenode")), transport);
     transport->injectBytes(
         QByteArrayLiteral(":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ :supported\r\n"
                           ":omairc!u@h JOIN :#room\r\n"
@@ -5268,34 +5268,34 @@ void ControllerTest::reselectingConversationPreservesProjectionAndUnreadMark()
     QVERIFY(members);
     const int unreadMarkRow = messages->unreadMarkRow();
     QVERIFY(unreadMarkRow >= 0);
-    QCOMPARE(controller.unreadCountFor(QStringLiteral("libera")), 0);
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("freenode")), 0);
     QSignalSpy conversationResets(conversations, &QAbstractItemModel::modelReset);
     QSignalSpy messageResets(messages, &QAbstractItemModel::modelReset);
     QSignalSpy memberResets(members, &QAbstractItemModel::modelReset);
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#room"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#room"));
 
     QCOMPARE(conversationResets.size(), 0);
     QCOMPARE(messageResets.size(), 0);
     QCOMPARE(memberResets.size(), 0);
-    QCOMPARE(controller.selectedNetworkId(), QStringLiteral("libera"));
+    QCOMPARE(controller.selectedNetworkId(), QStringLiteral("freenode"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#room"));
-    QCOMPARE(controller.selectedConversationId(), QStringLiteral("libera\n#room"));
+    QCOMPARE(controller.selectedConversationId(), QStringLiteral("freenode\n#room"));
     QCOMPARE(controller.topic(), QStringLiteral("Room topic"));
     QCOMPARE(controller.peopleCount(), 2);
     QCOMPARE(members->rowCount(), 2);
     QVERIFY(selectedBodies(messages).contains(QStringLiteral("first line")));
     QVERIFY(selectedBodies(messages).contains(QStringLiteral("unread line")));
     QCOMPARE(messages->unreadMarkRow(), unreadMarkRow);
-    QCOMPARE(controller.unreadCountFor(QStringLiteral("libera")), 0);
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("freenode")), 0);
 }
 
 void ControllerTest::forgettingSelectedNetworkClearsSelectionProjection()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    registerSession(controller.session(QStringLiteral("libera")), transport);
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    registerSession(controller.session(QStringLiteral("freenode")), transport);
     transport->injectBytes(
         QByteArrayLiteral(":omairc!u@h JOIN :#room\r\n"
                           ":server 353 omairc = #room :omairc Alice\r\n"
@@ -5304,7 +5304,7 @@ void ControllerTest::forgettingSelectedNetworkClearsSelectionProjection()
                           ":Alice!u@h PRIVMSG #room :last line\r\n"));
     QVERIFY(!controller.selectedConversationId().isEmpty());
 
-    controller.forgetNetworkState(QStringLiteral("libera"));
+    controller.forgetNetworkState(QStringLiteral("freenode"));
 
     QCOMPARE(controller.selectedNetworkId(), QString());
     QCOMPARE(controller.selectedTarget(), QString());
@@ -5313,7 +5313,7 @@ void ControllerTest::forgettingSelectedNetworkClearsSelectionProjection()
     QCOMPARE(controller.peopleCount(), 0);
     QCOMPARE(controller.messages()->rowCount(), 0);
     QCOMPARE(controller.members()->rowCount(), 0);
-    QCOMPARE(controller.unreadCountFor(QStringLiteral("libera")), 0);
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("freenode")), 0);
 }
 
 void ControllerTest::statusAndCrossNetworkSelectionKeepProjectionConsistent()
@@ -5409,10 +5409,10 @@ void ControllerTest::backgroundPlaybackBumpsUnreadAndMention()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch\r\n"
@@ -5420,7 +5420,7 @@ void ControllerTest::backgroundPlaybackBumpsUnreadAndMention()
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"
                           ":omairc!u@h JOIN :#lab\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     auto *conversations =
         qobject_cast<QAbstractItemModel *>(controller.conversations());
@@ -5429,7 +5429,7 @@ void ControllerTest::backgroundPlaybackBumpsUnreadAndMention()
     QVERIFY(lab >= 0);
     QCOMPARE(roleAt(conversations, lab, ConversationListModel::UnreadRole).toInt(),
              0);
-    QVERIFY(!controller.mentionFor(QStringLiteral("libera")));
+    QVERIFY(!controller.mentionFor(QStringLiteral("freenode")));
 
     transport->injectBytes(
         QByteArrayLiteral(
@@ -5443,18 +5443,18 @@ void ControllerTest::backgroundPlaybackBumpsUnreadAndMention()
     QCOMPARE(roleAt(conversations, lab, ConversationListModel::UnreadRole).toInt(),
              2);
     QVERIFY(roleAt(conversations, lab, ConversationListModel::MentionRole).toBool());
-    QVERIFY(controller.mentionFor(QStringLiteral("libera")));
-    QCOMPARE(controller.unreadCountFor(QStringLiteral("libera")), 2);
+    QVERIFY(controller.mentionFor(QStringLiteral("freenode")));
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("freenode")), 2);
 
     transport->injectBytes(
         QByteArrayLiteral(":rio!u@h PRIVMSG #lab :live now\r\n"));
     QCOMPARE(roleAt(conversations, lab, ConversationListModel::UnreadRole).toInt(),
              3);
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#lab"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#lab"));
     QCOMPARE(roleAt(conversations, lab, ConversationListModel::UnreadRole).toInt(),
              0);
-    QVERIFY(!controller.mentionFor(QStringLiteral("libera")));
+    QVERIFY(!controller.mentionFor(QStringLiteral("freenode")));
 
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
@@ -5478,8 +5478,8 @@ void ControllerTest::focusedChannelPlaybackPlantsUnreadMark()
     {
         IrcController controller;
         auto *transport = new FakeIrcTransport;
-        QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-        QVERIFY(controller.start(QStringLiteral("libera")));
+        QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+        QVERIFY(controller.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(
             QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -5490,8 +5490,8 @@ void ControllerTest::focusedChannelPlaybackPlantsUnreadMark()
 
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch\r\n"
@@ -5542,17 +5542,17 @@ void ControllerTest::chatHistoryBatchShowsBodyAndTime()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
                           ":server CAP omairc ACK :batch chathistory\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     transport->injectBytes(
         QByteArrayLiteral(
@@ -5574,7 +5574,7 @@ void ControllerTest::chatHistoryBatchShowsBodyAndTime()
              QStringLiteral("replay"));
     QCOMPARE(roleAt(messages, joined, MessageListModel::BodyRole),
              QStringLiteral("omairc joined"));
-    QCOMPARE(controller.unreadCountFor(QStringLiteral("libera")), 0);
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("freenode")), 0);
 }
 
 void ControllerTest::chatHistoryAndLiveTimeUseLocalWallClock()
@@ -5582,17 +5582,17 @@ void ControllerTest::chatHistoryAndLiveTimeUseLocalWallClock()
     const ScopedTimeZone brisbane("Australia/Brisbane");
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
                           ":server CAP omairc ACK :batch chathistory\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     transport->injectBytes(
         QByteArrayLiteral(
@@ -5624,16 +5624,16 @@ void ControllerTest::whoisFromChannelCopiesStatusLinesAsEvents()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                  transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/whois lena")));
     QCOMPARE(transport->writtenFrames().last(),
@@ -5663,13 +5663,13 @@ void ControllerTest::whoisFromChannelIncludesStoredMetadata()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                  transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(aliceMetadataWelcome());
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/whois Alice")));
     QCOMPARE(transport->writtenFrames().last(),
@@ -5703,26 +5703,26 @@ void ControllerTest::statusWhoisIncludesStoredMetadataNotTranscript()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                  transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(aliceMetadataWelcome());
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     const QStringList before = selectedBodies(messages);
 
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
     QVERIFY(controller.console()->submit(QStringLiteral("/whois Alice")));
 
     transport->injectBytes(
         QByteArrayLiteral(":irc 311 omairc Alice ~alice user/host * :Alice\r\n"
                           ":irc 318 omairc Alice :End of /WHOIS list.\r\n"));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QCOMPARE(selectedBodies(messages), before);
     QVERIFY(!selectedBodiesContain(messages,
                                    QStringLiteral("Alice is ~alice@user/host (Alice)")));
@@ -5750,13 +5750,13 @@ void ControllerTest::failedWhoisDoesNotEmitStoredMetadata()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                  transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(aliceMetadataWelcome());
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/whois Alice")));
     transport->injectBytes(
@@ -5775,20 +5775,20 @@ void ControllerTest::whoisInterleavesByAskingBuffer()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                  transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"
                           ":omairc!u@h JOIN :#help\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("/whois Lena")));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#help"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#help"));
     QVERIFY(controller.sendMessage(QStringLiteral("/whois sam")));
 
     transport->injectBytes(
@@ -5799,14 +5799,14 @@ void ControllerTest::whoisInterleavesByAskingBuffer()
 
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
-    QCOMPARE(controller.unreadCountFor(QStringLiteral("libera")), 0);
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("freenode")), 0);
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(hasWhoisBody(messages, QStringLiteral("lena is ~l@h (Lena)")));
     QVERIFY(hasWhoisBody(messages, QStringLiteral("End of WHOIS for lena")));
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("sam")));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#help"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#help"));
     QVERIFY(hasWhoisBody(messages, QStringLiteral("sam is ~s@h (Sam)")));
     QVERIFY(hasWhoisBody(messages, QStringLiteral("End of WHOIS for sam")));
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("lena")));
@@ -5822,30 +5822,30 @@ void ControllerTest::statusWhoisSupersedesConversationWatch()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                  transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("/whois lena")));
 
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     const QStringList before = selectedBodies(messages);
 
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
     QVERIFY(controller.console()->submit(QStringLiteral("/whois lena")));
 
     transport->injectBytes(
         QByteArrayLiteral(":irc 311 omairc lena ~lena user/host * :Lena\r\n"
                           ":irc 318 omairc lena :End of /WHOIS list.\r\n"));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QCOMPARE(selectedBodies(messages), before);
     QVERIFY(!selectedBodiesContain(messages,
                                    QStringLiteral("lena is ~lena@user/host (Lena)")));
@@ -5860,10 +5860,10 @@ void ControllerTest::unsolicitedWhoisStaysOnStatus()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                  transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :away-notify\r\n"
@@ -5872,7 +5872,7 @@ void ControllerTest::unsolicitedWhoisStaysOnStatus()
                           ":omairc!u@h JOIN :#omarchy\r\n"
                           ":server 353 omairc = #omarchy :@omairc Alice\r\n"
                           ":server 366 omairc #omarchy :End of NAMES\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
@@ -5905,16 +5905,16 @@ void ControllerTest::emptyChannelWhoisNamesANick()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                  transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     const int before = transport->writtenFrames().size();
     QVERIFY(!controller.sendMessage(QStringLiteral("/whois")));
@@ -5928,17 +5928,17 @@ void ControllerTest::emptyDirectWhoisDefaultsAndRoutes()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                  transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"
                           ":lena!u@h PRIVMSG omairc :hi\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/whois")));
     QCOMPARE(transport->writtenFrames().last(),
@@ -5960,16 +5960,16 @@ void ControllerTest::terminalWhoisClearsWatch()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                  transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
 
@@ -6011,16 +6011,16 @@ void ControllerTest::failedPrivmsgDoesNotStealWhoisWatch()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                  transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
 
@@ -6048,16 +6048,16 @@ void ControllerTest::whoisFailureBeforeDeliveryDoesNotStealWatch()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                  transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
 
@@ -6080,10 +6080,10 @@ void ControllerTest::closedDirectWhoisDoesNotResurrect()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                  transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -6095,7 +6095,7 @@ void ControllerTest::closedDirectWhoisDoesNotResurrect()
     QVERIFY(conversations);
     QVERIFY(rowForTarget(conversations, QStringLiteral("lena")) >= 0);
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
     QVERIFY(controller.sendMessage(QStringLiteral("/whois")));
     controller.closeDirectMessage();
     QVERIFY(rowForTarget(conversations, QStringLiteral("lena")) < 0);
@@ -6107,7 +6107,7 @@ void ControllerTest::closedDirectWhoisDoesNotResurrect()
 
     QCOMPARE(conversations->rowCount(), rows);
     QVERIFY(rowForTarget(conversations, QStringLiteral("lena")) < 0);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QVERIFY(!selectedBodiesContain(messages,
@@ -6118,16 +6118,16 @@ void ControllerTest::whoisEventDoesNotCollapseWithJoin()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                  transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("/whois lena")));
     transport->injectBytes(
         QByteArrayLiteral(":irc 311 omairc lena ~lena user/host * :Lena\r\n"
@@ -6148,16 +6148,16 @@ void ControllerTest::ctcpFromChannelCopiesReplyAsWhoisEvent()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                  transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/version lena")));
     QCOMPARE(transport->writtenFrames().last(),
@@ -6219,16 +6219,16 @@ void ControllerTest::ctcpReplyDuringSendCopiesIntoAskingTranscript()
 
     IrcController controller;
     auto *transport = new ImmediateCtcpTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                  transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/version lena")));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
@@ -6243,26 +6243,26 @@ void ControllerTest::statusCtcpStaysOnStatus()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                  transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     const QStringList before = selectedBodies(messages);
 
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
     QVERIFY(controller.console()->submit(QStringLiteral("/version lena")));
     transport->injectBytes(
         QByteArray(":lena!u@h NOTICE omairc :\x01VERSION Omairc 0.4.0\x01\r\n"));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QCOMPARE(selectedBodies(messages), before);
     QVERIFY(!selectedBodiesContain(messages,
                                    QStringLiteral("VERSION reply from lena: Omairc 0.4.0")));
@@ -6274,16 +6274,16 @@ void ControllerTest::emptyChannelCtcpNamesANick()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                  transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     const int before = transport->writtenFrames().size();
     QVERIFY(!controller.sendMessage(QStringLiteral("/ping")));
     QCOMPARE(controller.lastError(), QStringLiteral("Name a nick"));
@@ -6294,17 +6294,17 @@ void ControllerTest::emptyDirectCtcpDefaultsAndRoutes()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                  transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"
                           ":lena!u@h PRIVMSG omairc :hi\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
     QVERIFY(controller.sendMessage(QStringLiteral("/version")));
     QCOMPARE(transport->writtenFrames().last(),
              QByteArray("PRIVMSG lena :\x01" "VERSION\x01\r\n"));
@@ -6320,16 +6320,16 @@ void ControllerTest::unsolicitedCtcpReplyStaysOnStatus()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                  transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     const QStringList before = selectedBodies(messages);
@@ -6358,24 +6358,24 @@ void ControllerTest::transcriptPersistsAndReloadsMuted()
     IrcConversationLog paths(root);
     const IrcCaseMapping mapping;
     const QString channelPath =
-        paths.pathFor(QStringLiteral("libera"), QStringLiteral("#omarchy"), mapping);
+        paths.pathFor(QStringLiteral("freenode"), QStringLiteral("#omarchy"), mapping);
     const QString directPath =
-        paths.pathFor(QStringLiteral("libera"), QStringLiteral("alice"), mapping);
+        paths.pathFor(QStringLiteral("freenode"), QStringLiteral("alice"), mapping);
 
     {
         IrcController controller;
         auto *transport = new FakeIrcTransport;
-        IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+        IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                     transport);
         QVERIFY(session);
-        QVERIFY(controller.start(QStringLiteral("libera")));
+        QVERIFY(controller.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(
             QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                               ":server 001 omairc :Welcome\r\n"
                               ":omairc!u@h JOIN :#omarchy\r\n"
                               "@msgid=chan-1 :alice!u@h PRIVMSG #omarchy :hello channel\r\n"));
-        controller.selectConversation(QStringLiteral("libera"),
+        controller.selectConversation(QStringLiteral("freenode"),
                                       QStringLiteral("#omarchy"));
         QVERIFY(controller.sendMessage(QStringLiteral("own line")));
         controller.openDirectMessage(QStringLiteral("alice"));
@@ -6408,17 +6408,17 @@ void ControllerTest::transcriptPersistsAndReloadsMuted()
     IrcController reloaded;
     auto *transport = new FakeIrcTransport;
     QSignalSpy mentions(&reloaded, &IrcController::mentionArrived);
-    IrcSession *session = reloaded.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = reloaded.addSession(config(QStringLiteral("freenode")),
                                               transport);
     QVERIFY(session);
-    QVERIFY(reloaded.start(QStringLiteral("libera")));
+    QVERIFY(reloaded.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"
                           "@msgid=chan-1 :alice!u@h PRIVMSG #omarchy :hello channel\r\n"));
-    reloaded.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    reloaded.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(reloaded.messages());
     QVERIFY(messages);
     const int hello = bodyRow(messages, QStringLiteral("hello channel"));
@@ -6457,8 +6457,8 @@ void ControllerTest::transcriptHydrateDoesNotNotify()
     {
         IrcController controller;
         auto *transport = new FakeIrcTransport;
-        QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-        QVERIFY(controller.start(QStringLiteral("libera")));
+        QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+        QVERIFY(controller.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(
             QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -6471,8 +6471,8 @@ void ControllerTest::transcriptHydrateDoesNotNotify()
     IrcController reloaded;
     auto *transport = new FakeIrcTransport;
     QSignalSpy mentions(&reloaded, &IrcController::mentionArrived);
-    QVERIFY(reloaded.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(reloaded.start(QStringLiteral("libera")));
+    QVERIFY(reloaded.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(reloaded.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -6487,7 +6487,7 @@ void ControllerTest::transcriptHydrateDoesNotNotify()
     QCOMPARE(roleAt(conversations, lab, ConversationListModel::UnreadRole).toInt(),
              0);
     QVERIFY(!roleAt(conversations, lab, ConversationListModel::MentionRole).toBool());
-    reloaded.selectConversation(QStringLiteral("libera"), QStringLiteral("#lab"));
+    reloaded.selectConversation(QStringLiteral("freenode"), QStringLiteral("#lab"));
     auto *messages = qobject_cast<QAbstractItemModel *>(reloaded.messages());
     const int ping = bodyRow(messages, QStringLiteral("omairc: ping"));
     QVERIFY(ping >= 0);
@@ -6505,16 +6505,16 @@ void ControllerTest::transcriptSkipsSecretsAndKeepsSessionOnWriteError()
 
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("visible chat")));
     QVERIFY(controller.sendMessage(QStringLiteral("IDENTIFY hunter2")));
     QVERIFY(controller.sendMessage(QStringLiteral("/raw PASS s3cret")));
@@ -6538,15 +6538,15 @@ void ControllerTest::transcriptSkipsSecretsAndKeepsSessionOnWriteError()
     IrcController doomed;
     auto *badTransport = new FakeIrcTransport;
     IrcSession *badSession =
-        doomed.addSession(config(QStringLiteral("libera")), badTransport);
+        doomed.addSession(config(QStringLiteral("freenode")), badTransport);
     QVERIFY(badSession);
-    QVERIFY(doomed.start(QStringLiteral("libera")));
+    QVERIFY(doomed.start(QStringLiteral("freenode")));
     badTransport->completeConnect();
     badTransport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    doomed.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    doomed.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(doomed.sendMessage(QStringLiteral("still live")));
     QCOMPARE(badSession->state(), IrcSession::State::Registered);
     auto *messages = qobject_cast<QAbstractItemModel *>(doomed.messages());
@@ -6562,18 +6562,18 @@ void ControllerTest::transcriptClearLeavesFile()
     IrcConversationLog paths(root);
     const IrcCaseMapping mapping;
     const QString channelPath =
-        paths.pathFor(QStringLiteral("libera"), QStringLiteral("#omarchy"), mapping);
+        paths.pathFor(QStringLiteral("freenode"), QStringLiteral("#omarchy"), mapping);
 
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("keep me")));
     QVERIFY(jsonlBodies(channelPath).contains(QStringLiteral("keep me")));
     QVERIFY(controller.sendMessage(QStringLiteral("/clear")));
@@ -6583,14 +6583,14 @@ void ControllerTest::transcriptClearLeavesFile()
 
     IrcController missing;
     auto *emptyTransport = new FakeIrcTransport;
-    QVERIFY(missing.addSession(config(QStringLiteral("libera")), emptyTransport));
-    QVERIFY(missing.start(QStringLiteral("libera")));
+    QVERIFY(missing.addSession(config(QStringLiteral("freenode")), emptyTransport));
+    QVERIFY(missing.start(QStringLiteral("freenode")));
     emptyTransport->completeConnect();
     emptyTransport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#fresh\r\n"));
-    missing.selectConversation(QStringLiteral("libera"), QStringLiteral("#fresh"));
+    missing.selectConversation(QStringLiteral("freenode"), QStringLiteral("#fresh"));
     auto *fresh = qobject_cast<QAbstractItemModel *>(missing.messages());
     QCOMPARE(selectedBodies(fresh), QStringList{QStringLiteral("omairc joined")});
 }
@@ -6617,13 +6617,13 @@ void ControllerTest::zncPlaybackPlayUsesStoredServerTime()
 
     {
         IrcController controller;
-        IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+        IrcSessionConfig sessionConfig = config(QStringLiteral("freenode"));
         sessionConfig.reconnectEnabled = true;
         auto *transport = new FakeIrcTransport;
         auto *timer = new FakeReconnectTimer;
         IrcSession *session = controller.addSession(sessionConfig, transport, timer);
         QVERIFY(session);
-        QVERIFY(controller.start(QStringLiteral("libera")));
+        QVERIFY(controller.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(
             QByteArrayLiteral(":server CAP omairc LS :batch znc.in/playback\r\n"
@@ -6687,8 +6687,8 @@ void ControllerTest::zncPlaybackPlayUsesStoredServerTime()
 
     IrcController again;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(again.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(again.start(QStringLiteral("libera")));
+    QVERIFY(again.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(again.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch znc.in/playback\r\n"
@@ -6742,8 +6742,8 @@ void ControllerTest::zncPlaybackPlaysUnstampedAutojoinAndLaterJoin()
     {
         IrcController controller;
         auto *transport = new FakeIrcTransport;
-        QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-        QVERIFY(controller.start(QStringLiteral("libera")));
+        QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+        QVERIFY(controller.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(caps);
         transport->injectBytes(QByteArrayLiteral(
@@ -6756,13 +6756,13 @@ void ControllerTest::zncPlaybackPlaysUnstampedAutojoinAndLaterJoin()
     }
 
     {
-        IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+        IrcSessionConfig sessionConfig = config(QStringLiteral("freenode"));
         sessionConfig.autojoinChannels = {QStringLiteral("#omarchy"),
                                           QStringLiteral("#quiet")};
         IrcController controller;
         auto *transport = new FakeIrcTransport;
         QVERIFY(controller.addSession(sessionConfig, transport));
-        QVERIFY(controller.start(QStringLiteral("libera")));
+        QVERIFY(controller.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(caps);
         transport->injectBytes(QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
@@ -6817,8 +6817,8 @@ void ControllerTest::zncPlaybackPlaysUnstampedAutojoinAndLaterJoin()
 
     IrcController early;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(early.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(early.start(QStringLiteral("libera")));
+    QVERIFY(early.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(early.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(caps);
     transport->injectBytes(QByteArrayLiteral(
@@ -6852,8 +6852,8 @@ void ControllerTest::zncPlaybackJoinRetriesUntilBatchIsKept()
 
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(caps);
     transport->injectBytes(QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
@@ -6925,12 +6925,12 @@ void ControllerTest::zncPlaybackEmptyStoreWithAutojoinPlaysWildcard()
     const QByteArray playChannel =
         QByteArrayLiteral("ZNC *playback PLAY #omarchy 0\r\n");
 
-    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    IrcSessionConfig sessionConfig = config(QStringLiteral("freenode"));
     sessionConfig.autojoinChannels = {QStringLiteral("#omarchy")};
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig, transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(caps);
     transport->injectBytes(QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
@@ -6981,8 +6981,8 @@ void ControllerTest::zncPlaybackRestoredDirectWithoutStamp()
     {
         IrcController seeder;
         auto *transport = new FakeIrcTransport;
-        QVERIFY(seeder.addSession(config(QStringLiteral("libera")), transport));
-        QVERIFY(seeder.start(QStringLiteral("libera")));
+        QVERIFY(seeder.addSession(config(QStringLiteral("freenode")), transport));
+        QVERIFY(seeder.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(QByteArrayLiteral(
             ":server CAP omairc LS :multi-prefix\r\n"
@@ -6990,17 +6990,17 @@ void ControllerTest::zncPlaybackRestoredDirectWithoutStamp()
             "@time=2024-03-09T16:00:00.620Z :alice!u@h PRIVMSG #omarchy :room\r\n"));
     }
     QCOMPARE(ircPlaybackPlayStamp(
-                 IrcPlaybackTimeStore().noted(QStringLiteral("libera"),
+                 IrcPlaybackTimeStore().noted(QStringLiteral("freenode"),
                                               QStringLiteral("#omarchy"),
                                               mapping)),
              QStringLiteral("1710000000.620"));
-    QVERIFY(IrcOpenDirectStore().listed(QStringLiteral("libera"), mapping).isEmpty());
+    QVERIFY(IrcOpenDirectStore().listed(QStringLiteral("freenode"), mapping).isEmpty());
 
     {
         IrcController controller;
         auto *transport = new FakeIrcTransport;
-        QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-        QVERIFY(controller.start(QStringLiteral("libera")));
+        QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+        QVERIFY(controller.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(caps);
         transport->injectBytes(QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
@@ -7019,13 +7019,13 @@ void ControllerTest::zncPlaybackRestoredDirectWithoutStamp()
         QCOMPARE(rowForTarget(conversations, QStringLiteral("lena")), -1);
     }
 
-    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("libera"),
+    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("freenode"),
                                      QStringLiteral("lena"),
                                      mapping));
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(caps);
     transport->injectBytes(QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
@@ -7070,8 +7070,8 @@ void ControllerTest::playbackBatchOverCeilingKeepsNewestLines()
 
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server CAP omairc LS :batch znc.in/playback\r\n"
@@ -7091,7 +7091,7 @@ void ControllerTest::playbackBatchOverCeilingKeepsNewestLines()
     batch += QByteArrayLiteral(":znc.in BATCH -pb\r\n");
     transport->injectBytes(batch);
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     const QStringList bodies = messageBodies(messages);
@@ -7109,7 +7109,7 @@ void ControllerTest::playbackBatchOverCeilingKeepsNewestLines()
     const IrcCaseMapping mapping;
     const QString newestStamp = ircPlaybackPlayStamp(newestAt);
     QCOMPARE(ircPlaybackPlayStamp(
-                 IrcPlaybackTimeStore().noted(QStringLiteral("libera"),
+                 IrcPlaybackTimeStore().noted(QStringLiteral("freenode"),
                                               QStringLiteral("#omarchy"),
                                               mapping)),
              newestStamp);
@@ -7122,7 +7122,7 @@ void ControllerTest::playbackBatchOverCeilingKeepsNewestLines()
         + QByteArrayLiteral("Z :lena!u@h PRIVMSG #omarchy :live-middle\r\n"));
     QVERIFY(messageBodies(messages).contains(QStringLiteral("live-middle")));
     QCOMPARE(ircPlaybackPlayStamp(
-                 IrcPlaybackTimeStore().noted(QStringLiteral("libera"),
+                 IrcPlaybackTimeStore().noted(QStringLiteral("freenode"),
                                               QStringLiteral("#omarchy"),
                                               mapping)),
              newestStamp);
@@ -7138,8 +7138,8 @@ void ControllerTest::queryPlaybackPeerBatchFollowsHeldSelfLines()
 
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server CAP omairc LS :batch znc.in/playback\r\n"
@@ -7166,7 +7166,7 @@ void ControllerTest::queryPlaybackPeerBatchFollowsHeldSelfLines()
         ":znc.in BATCH -peer\r\n"));
     const int opened = rowForTarget(conversations, QStringLiteral("lena"));
     QVERIFY(opened >= 0);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QCOMPARE(messageBodies(messages),
@@ -7191,7 +7191,7 @@ void ControllerTest::queryPlaybackPeerBatchFollowsHeldSelfLines()
                           QStringLiteral("from-peer")}));
     QCOMPARE(frameCount(transport->writtenFrames(), playLena), 0);
     QCOMPARE(frameCount(transport->writtenFrames(), playZero), 1);
-    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("libera")));
+    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("freenode")));
     QCOMPARE(rowForTarget(conversations, QStringLiteral("*playback")), -1);
     QCOMPARE(rowForTarget(conversations, QStringLiteral("*status")), -1);
     QVERIFY(!framesContain(transport->writtenFrames(),
@@ -7226,8 +7226,8 @@ void ControllerTest::queryPlaybackKeepsLinesFromPreviousNick()
     {
         IrcController controller;
         auto *transport = new FakeIrcTransport;
-        QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-        QVERIFY(controller.start(QStringLiteral("libera")));
+        QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+        QVERIFY(controller.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(caps);
         transport->injectBytes(QByteArrayLiteral(
@@ -7243,7 +7243,7 @@ void ControllerTest::queryPlaybackKeepsLinesFromPreviousNick()
         QCOMPARE(rowForTarget(conversations, QStringLiteral("stranger")), -1);
         QCOMPARE(rowForTarget(conversations, QStringLiteral("oldnick")), -1);
 
-        controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+        controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
         auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
         QVERIFY(messages);
         QCOMPARE(selectedBodies(messages),
@@ -7268,22 +7268,22 @@ void ControllerTest::queryPlaybackKeepsLinesFromPreviousNick()
                               QStringLiteral("after")}));
 
         QCOMPARE(ircPlaybackPlayStamp(
-                     IrcPlaybackTimeStore().noted(QStringLiteral("libera"),
+                     IrcPlaybackTimeStore().noted(QStringLiteral("freenode"),
                                                   QStringLiteral("lena"),
                                                   mapping)),
                  afterStamp);
         QCOMPARE(ircPlaybackPlayStamp(
-                     IrcPlaybackTimeStore().newest(QStringLiteral("libera"))),
+                     IrcPlaybackTimeStore().newest(QStringLiteral("freenode"))),
                  afterStamp);
         QVERIFY(afterStamp != channelStamp);
     }
 
-    IrcPlaybackTimeStore().forget(QStringLiteral("libera"));
+    IrcPlaybackTimeStore().forget(QStringLiteral("freenode"));
 
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(caps);
     transport->injectBytes(QByteArrayLiteral(
@@ -7291,7 +7291,7 @@ void ControllerTest::queryPlaybackKeepsLinesFromPreviousNick()
         ":server 376 omairc :End of MOTD\r\n"));
     transport->injectBytes(previousNickPlaybackBatch(false));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QCOMPARE(selectedBodies(messages),
@@ -7305,12 +7305,12 @@ void ControllerTest::queryPlaybackKeepsLinesFromPreviousNick()
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("channel")));
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("elsewhere")));
     QCOMPARE(ircPlaybackPlayStamp(
-                 IrcPlaybackTimeStore().noted(QStringLiteral("libera"),
+                 IrcPlaybackTimeStore().noted(QStringLiteral("freenode"),
                                               QStringLiteral("lena"),
                                               mapping)),
              mineStamp);
     QCOMPARE(ircPlaybackPlayStamp(
-                 IrcPlaybackTimeStore().newest(QStringLiteral("libera"))),
+                 IrcPlaybackTimeStore().newest(QStringLiteral("freenode"))),
              mineStamp);
 }
 
@@ -7322,11 +7322,11 @@ void ControllerTest::queryPlaybackPreviousNickEchoIsOwnLine()
         ":server CAP omairc LS :batch znc.in/playback\r\n"
         ":server CAP omairc ACK :batch znc.in/playback\r\n");
     const auto forgetStores = [&]() {
-        IrcPlaybackTimeStore().forget(QStringLiteral("libera"));
-        IrcOpenDirectStore().forget(QStringLiteral("libera"));
+        IrcPlaybackTimeStore().forget(QStringLiteral("freenode"));
+        IrcOpenDirectStore().forget(QStringLiteral("freenode"));
     };
     const auto lenaStamp = [&]() {
-        return IrcPlaybackTimeStore().noted(QStringLiteral("libera"),
+        return IrcPlaybackTimeStore().noted(QStringLiteral("freenode"),
                                             QStringLiteral("lena"),
                                             mapping);
     };
@@ -7334,8 +7334,8 @@ void ControllerTest::queryPlaybackPreviousNickEchoIsOwnLine()
     {
         IrcController controller;
         auto *transport = new FakeIrcTransport;
-        QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-        QVERIFY(controller.start(QStringLiteral("libera")));
+        QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+        QVERIFY(controller.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(caps);
         transport->injectBytes(QByteArrayLiteral(
@@ -7353,10 +7353,10 @@ void ControllerTest::queryPlaybackPreviousNickEchoIsOwnLine()
 
         transport->injectBytes(QByteArrayLiteral(":server 376 omairc :End of MOTD\r\n"));
         QCOMPARE(rowForTarget(conversations, QStringLiteral("lena")), -1);
-        QVERIFY(!IrcOpenDirectStore().listed(QStringLiteral("libera"), mapping)
+        QVERIFY(!IrcOpenDirectStore().listed(QStringLiteral("freenode"), mapping)
                      .contains(QStringLiteral("lena")));
         QVERIFY(!lenaStamp());
-        QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("libera")));
+        QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("freenode")));
     }
 
     forgetStores();
@@ -7364,8 +7364,8 @@ void ControllerTest::queryPlaybackPreviousNickEchoIsOwnLine()
     {
         IrcController controller;
         auto *transport = new FakeIrcTransport;
-        QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-        QVERIFY(controller.start(QStringLiteral("libera")));
+        QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+        QVERIFY(controller.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(caps);
         transport->injectBytes(QByteArrayLiteral(
@@ -7387,22 +7387,22 @@ void ControllerTest::queryPlaybackPreviousNickEchoIsOwnLine()
 
         transport->injectBytes(QByteArrayLiteral(":server 376 omairc :End of MOTD\r\n"));
         QCOMPARE(rowForTarget(conversations, QStringLiteral("lena")), -1);
-        QVERIFY(!IrcOpenDirectStore().listed(QStringLiteral("libera"), mapping)
+        QVERIFY(!IrcOpenDirectStore().listed(QStringLiteral("freenode"), mapping)
                      .contains(QStringLiteral("lena")));
         QVERIFY(!lenaStamp());
-        QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("libera")));
+        QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("freenode")));
     }
 
     forgetStores();
 
-    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("libera"),
+    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("freenode"),
                                      QStringLiteral("lena"),
                                      mapping));
     {
         IrcController controller;
         auto *transport = new FakeIrcTransport;
-        QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-        QVERIFY(controller.start(QStringLiteral("libera")));
+        QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+        QVERIFY(controller.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(caps);
         transport->injectBytes(QByteArrayLiteral(
@@ -7416,7 +7416,7 @@ void ControllerTest::queryPlaybackPreviousNickEchoIsOwnLine()
         QVERIFY(restored >= 0);
         QCOMPARE(roleAt(conversations, restored, ConversationListModel::UnreadRole).toInt(),
                  0);
-        controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+        controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
 
         transport->injectBytes(QByteArrayLiteral(
             ":znc.in BATCH +q znc.in/playback lena\r\n"
@@ -7447,7 +7447,7 @@ void ControllerTest::queryPlaybackPreviousNickEchoIsOwnLine()
         QCOMPARE(roleAt(messages, later, MessageListModel::OriginRole),
                  QStringLiteral("replay"));
         QCOMPARE(ircPlaybackPlayStamp(lenaStamp()), laterStamp);
-        QVERIFY(IrcOpenDirectStore().listed(QStringLiteral("libera"), mapping)
+        QVERIFY(IrcOpenDirectStore().listed(QStringLiteral("freenode"), mapping)
                     .contains(QStringLiteral("lena")));
     }
 
@@ -7456,8 +7456,8 @@ void ControllerTest::queryPlaybackPreviousNickEchoIsOwnLine()
     {
         IrcController controller;
         auto *transport = new FakeIrcTransport;
-        QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-        QVERIFY(controller.start(QStringLiteral("libera")));
+        QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+        QVERIFY(controller.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(caps);
         transport->injectBytes(QByteArrayLiteral(
@@ -7471,7 +7471,7 @@ void ControllerTest::queryPlaybackPreviousNickEchoIsOwnLine()
             qobject_cast<QAbstractItemModel *>(controller.conversations());
         QVERIFY(conversations);
         QVERIFY(rowForTarget(conversations, QStringLiteral("lena")) >= 0);
-        controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+        controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
         auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
         QVERIFY(messages);
         QCOMPARE(selectedBodies(messages), QStringList({QStringLiteral("before")}));
@@ -7486,10 +7486,10 @@ void ControllerTest::networkWithoutPlaybackCapDoesNotPlay()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")),
                                                 transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
@@ -7507,7 +7507,7 @@ void ControllerTest::networkWithoutPlaybackCapDoesNotPlay()
     QVERIFY(!framesContain(transport->writtenFrames(),
                            QByteArrayLiteral("*playback PLAY")));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QCOMPARE(selectedBodies(messages).count(QStringLiteral("yesterday")), 1);
@@ -7522,15 +7522,15 @@ void ControllerTest::chatHistoryAfterFillsLinesFromWhileAway()
     const QDateTime when = QDateTime::fromString(
         QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
     QVERIFY(when.isValid());
-    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("freenode"),
                                         QStringLiteral("#omarchy"), when, mapping));
-    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("freenode"),
                                         QStringLiteral("lena"), when, mapping));
-    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("freenode"),
                                         QStringLiteral("ghost"), when, mapping));
-    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("libera"),
+    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("freenode"),
                                      QStringLiteral("lena"), mapping));
-    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("libera"),
+    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("freenode"),
                                      QStringLiteral("bob"), mapping));
     QTemporaryDir transcripts;
     QVERIFY(transcripts.isValid());
@@ -7540,13 +7540,13 @@ void ControllerTest::chatHistoryAfterFillsLinesFromWhileAway()
     kept.author = QStringLiteral("someone");
     kept.kind = QStringLiteral("message");
     kept.body = QStringLiteral("kept");
-    QVERIFY(log.append(QStringLiteral("libera"), QStringLiteral("filed"), mapping, kept));
+    QVERIFY(log.append(QStringLiteral("freenode"), QStringLiteral("filed"), mapping, kept));
 
     IrcController controller;
     controller.setTranscriptRoot(transcripts.path());
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server CAP omairc LS :batch chathistory\r\n"
@@ -7576,7 +7576,7 @@ void ControllerTest::chatHistoryAfterFillsLinesFromWhileAway()
     QCOMPARE(rowForTarget(conversations, QStringLiteral("ghost")), -1);
     QCOMPARE(rowForTarget(conversations, QStringLiteral("filed")), -1);
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     controller.openDirectMessage(QStringLiteral("gone"));
     controller.closeDirectMessage();
 
@@ -7622,7 +7622,7 @@ void ControllerTest::chatHistoryAfterFillsLinesFromWhileAway()
                  afterTargets, QByteArrayLiteral(
                      "CHATHISTORY AFTER alice timestamp=2024-03-09T15:59:59.620Z 100\r\n")),
              1);
-    const QStringList open = IrcOpenDirectStore().listed(QStringLiteral("libera"), mapping);
+    const QStringList open = IrcOpenDirectStore().listed(QStringLiteral("freenode"), mapping);
     QVERIFY(!open.contains(QStringLiteral("alice")));
     QVERIFY(!open.contains(QStringLiteral("ghost")));
     QVERIFY(!open.contains(QStringLiteral("filed")));
@@ -7636,13 +7636,13 @@ void ControllerTest::chatHistoryAfterFillsLinesFromWhileAway()
         "@batch=away;time=2024-03-09T16:00:01.000Z;msgid=away :alice!u@h PRIVMSG omairc :while away\r\n"
         ":irc.host BATCH -away\r\n"));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QVERIFY(selectedBodies(messages).contains(QStringLiteral("seen")));
     QVERIFY(selectedBodies(messages).contains(QStringLiteral("gap")));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("alice"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("alice"));
     messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QVERIFY(selectedBodies(messages).contains(QStringLiteral("while away")));
@@ -7654,11 +7654,11 @@ void ControllerTest::catchUpContinuesWhenOneDirectCannotSend()
     const QDateTime when = QDateTime::fromString(
         QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
     QVERIFY(when.isValid());
-    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("freenode"),
                                         QStringLiteral("#omarchy"), when, mapping));
-    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("libera"),
+    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("freenode"),
                                      QStringLiteral("lena"), mapping));
-    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("libera"),
+    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("freenode"),
                                      QStringLiteral("bob"), mapping));
     IrcController controller;
     controller.setCatchUpClock([] {
@@ -7666,9 +7666,9 @@ void ControllerTest::catchUpContinuesWhenOneDirectCannotSend()
                                      Qt::ISODateWithMs);
     });
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")), transport);
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")), transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server CAP omairc LS :batch chathistory\r\n"
@@ -7687,12 +7687,12 @@ void ControllerTest::catchUpRetriesTargetsOnce()
     const IrcCaseMapping mapping;
     const QDateTime when = QDateTime::fromString(
         QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
-    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("freenode"),
                                         QStringLiteral("#omarchy"), when, mapping));
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server CAP omairc LS :batch chathistory\r\n"
@@ -7720,7 +7720,7 @@ void ControllerTest::catchUpClockBehindUsesFarFuture()
     const QDateTime when = QDateTime::fromString(
         QStringLiteral("2026-10-04T12:00:00.000Z"), Qt::ISODateWithMs);
     QVERIFY(when.isValid());
-    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("freenode"),
                                         QStringLiteral("#omarchy"), when, mapping));
     IrcController controller;
     controller.setCatchUpClock([] {
@@ -7728,8 +7728,8 @@ void ControllerTest::catchUpClockBehindUsesFarFuture()
                                      Qt::ISODateWithMs);
     });
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server CAP omairc LS :batch chathistory\r\n"
@@ -7745,7 +7745,7 @@ void ControllerTest::catchUpTargetsPagesUntilEnd()
     const IrcCaseMapping mapping;
     const QDateTime when = QDateTime::fromString(
         QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
-    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("freenode"),
                                         QStringLiteral("#omarchy"), when, mapping));
     IrcController controller;
     controller.setCatchUpClock([] {
@@ -7753,8 +7753,8 @@ void ControllerTest::catchUpTargetsPagesUntilEnd()
                                      Qt::ISODateWithMs);
     });
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server CAP omairc LS :batch chathistory\r\n"
@@ -7790,7 +7790,7 @@ void ControllerTest::catchUpTargetsEndTagSendsNoFollowUp()
     const IrcCaseMapping mapping;
     const QDateTime when = QDateTime::fromString(
         QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
-    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("freenode"),
                                         QStringLiteral("#omarchy"), when, mapping));
     IrcController controller;
     controller.setCatchUpClock([] {
@@ -7798,8 +7798,8 @@ void ControllerTest::catchUpTargetsEndTagSendsNoFollowUp()
                                      Qt::ISODateWithMs);
     });
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server CAP omairc LS :batch chathistory\r\n"
@@ -7822,14 +7822,14 @@ void ControllerTest::discoveredEmptyAfterDropsQuery()
     const IrcCaseMapping mapping;
     const QDateTime when = QDateTime::fromString(
         QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
-    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("freenode"),
                                         QStringLiteral("#omarchy"), when, mapping));
-    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("libera"),
+    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("freenode"),
                                      QStringLiteral("lena"), mapping));
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server CAP omairc LS :batch chathistory\r\n"
@@ -7855,12 +7855,12 @@ void ControllerTest::discoveredFailAfterDropsQuery()
     const IrcCaseMapping mapping;
     const QDateTime when = QDateTime::fromString(
         QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
-    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("freenode"),
                                         QStringLiteral("#omarchy"), when, mapping));
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server CAP omairc LS :batch chathistory\r\n"
@@ -7883,7 +7883,7 @@ void ControllerTest::catchUpReconnectAsksStampedGhostNotDismissed()
     const QDateTime when = QDateTime::fromString(
         QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
     QVERIFY(when.isValid());
-    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("freenode"),
                                         QStringLiteral("ghost"), when, mapping));
     IrcController controller;
     controller.setCatchUpClock([] {
@@ -7891,9 +7891,9 @@ void ControllerTest::catchUpReconnectAsksStampedGhostNotDismissed()
                                      Qt::ISODateWithMs);
     });
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")), transport);
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")), transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server CAP omairc LS :batch chathistory\r\n"
@@ -7901,7 +7901,7 @@ void ControllerTest::catchUpReconnectAsksStampedGhostNotDismissed()
         ":server 001 omairc :Welcome\r\n"
         ":server 376 omairc :End of MOTD\r\n"
         ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     controller.openDirectMessage(QStringLiteral("gone"));
     controller.closeDirectMessage();
     transport->injectBytes(QByteArrayLiteral(
@@ -7923,7 +7923,7 @@ void ControllerTest::catchUpReconnectAsksStampedGhostNotDismissed()
         ":irc.host BATCH -g\r\n"));
     transport->remoteClose();
     QCOMPARE(session->state(), IrcSession::State::Failed);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server CAP omairc LS :batch chathistory\r\n"
@@ -7950,7 +7950,7 @@ void ControllerTest::catchUpTargetsLargerThanLimitStillPages()
     const IrcCaseMapping mapping;
     const QDateTime when = QDateTime::fromString(
         QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
-    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("freenode"),
                                         QStringLiteral("#omarchy"), when, mapping));
     IrcController controller;
     controller.setCatchUpClock([] {
@@ -7958,8 +7958,8 @@ void ControllerTest::catchUpTargetsLargerThanLimitStillPages()
                                      Qt::ISODateWithMs);
     });
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server CAP omairc LS :batch chathistory\r\n"
@@ -8002,8 +8002,8 @@ void ControllerTest::catchUpTargetsLargerThanLimitStillPages()
                                      Qt::ISODateWithMs);
     });
     auto *endedTransport = new FakeIrcTransport;
-    QVERIFY(ended.addSession(config(QStringLiteral("libera")), endedTransport));
-    QVERIFY(ended.start(QStringLiteral("libera")));
+    QVERIFY(ended.addSession(config(QStringLiteral("freenode")), endedTransport));
+    QVERIFY(ended.start(QStringLiteral("freenode")));
     endedTransport->completeConnect();
     endedTransport->injectBytes(QByteArrayLiteral(
         ":server CAP omairc LS :batch chathistory\r\n"
@@ -8026,13 +8026,13 @@ void ControllerTest::zncPlaybackWithoutChatHistoryDoesNotCatchUp()
     const QDateTime when = QDateTime::fromString(
         QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
     QVERIFY(when.isValid());
-    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("freenode"),
                                         QStringLiteral("#omarchy"), when, mapping));
 
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server CAP omairc LS :batch znc.in/playback\r\n"
@@ -8049,8 +8049,8 @@ void ControllerTest::zncPlaybackLateCapPlaysOnce()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch\r\n"
@@ -8094,8 +8094,8 @@ void ControllerTest::engagedQueryPlaybackPlaysAfterRestore()
     {
         IrcController controller;
         auto *transport = new FakeIrcTransport;
-        QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-        QVERIFY(controller.start(QStringLiteral("libera")));
+        QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+        QVERIFY(controller.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(caps);
         transport->injectBytes(QByteArrayLiteral(
@@ -8110,17 +8110,17 @@ void ControllerTest::engagedQueryPlaybackPlaysAfterRestore()
             qobject_cast<QAbstractItemModel *>(controller.conversations());
         QVERIFY(conversations);
         QVERIFY(rowForTarget(conversations, QStringLiteral("lena")) >= 0);
-        QVERIFY(IrcOpenDirectStore().listed(QStringLiteral("libera"), mapping)
+        QVERIFY(IrcOpenDirectStore().listed(QStringLiteral("freenode"), mapping)
                     .contains(QStringLiteral("lena")));
         QCOMPARE(ircPlaybackPlayStamp(
-                     IrcPlaybackTimeStore().newest(QStringLiteral("libera"))),
+                     IrcPlaybackTimeStore().newest(QStringLiteral("freenode"))),
                  QStringLiteral("1710000000.620"));
     }
 
     IrcController again;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(again.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(again.start(QStringLiteral("libera")));
+    QVERIFY(again.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(again.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(caps);
     transport->injectBytes(QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
@@ -8146,7 +8146,7 @@ void ControllerTest::engagedQueryPlaybackPlaysAfterRestore()
     const int row = rowForTarget(conversations, QStringLiteral("lena"));
     QVERIFY(row >= 0);
     QCOMPARE(roleAt(conversations, row, ConversationListModel::UnreadRole).toInt(), 0);
-    again.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    again.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
     auto *messages = qobject_cast<QAbstractItemModel *>(again.messages());
     QVERIFY(messages);
     const int later = bodyRow(messages, QStringLiteral("later"));
@@ -8154,14 +8154,14 @@ void ControllerTest::engagedQueryPlaybackPlaysAfterRestore()
     QCOMPARE(roleAt(messages, later, MessageListModel::OriginRole),
              QStringLiteral("replay"));
     QCOMPARE(ircPlaybackPlayStamp(
-                 IrcPlaybackTimeStore().newest(QStringLiteral("libera"))),
+                 IrcPlaybackTimeStore().newest(QStringLiteral("freenode"))),
              QStringLiteral("1710000001.500"));
 }
 
 void ControllerTest::selfOnlyStoredQueryPlaybackLandsAfterMotd()
 {
     const IrcCaseMapping mapping;
-    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("libera"),
+    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("freenode"),
                                      QStringLiteral("lena"),
                                      mapping));
     const QByteArray playHeld =
@@ -8171,8 +8171,8 @@ void ControllerTest::selfOnlyStoredQueryPlaybackLandsAfterMotd()
 
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server CAP omairc LS :batch znc.in/playback\r\n"
@@ -8186,7 +8186,7 @@ void ControllerTest::selfOnlyStoredQueryPlaybackLandsAfterMotd()
         qobject_cast<QAbstractItemModel *>(controller.conversations());
     QVERIFY(conversations);
     QCOMPARE(rowForTarget(conversations, QStringLiteral("lena")), -1);
-    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("libera")));
+    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("freenode")));
     QVERIFY(!framesContain(transport->writtenFrames(),
                            QByteArrayLiteral("*playback PLAY")));
 
@@ -8194,14 +8194,14 @@ void ControllerTest::selfOnlyStoredQueryPlaybackLandsAfterMotd()
     const int row = rowForTarget(conversations, QStringLiteral("lena"));
     QVERIFY(row >= 0);
     QCOMPARE(roleAt(conversations, row, ConversationListModel::UnreadRole).toInt(), 0);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     const int held = bodyRow(messages, QStringLiteral("held"));
     QVERIFY(held >= 0);
     QCOMPARE(roleAt(messages, held, MessageListModel::OriginRole),
              QStringLiteral("replay"));
-    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("libera")));
+    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("freenode")));
     QCOMPARE(frameCount(transport->writtenFrames(), playHeld), 0);
     QCOMPARE(frameCount(transport->writtenFrames(), playZero), 1);
 }
@@ -8213,8 +8213,8 @@ void ControllerTest::selfOnlyUnstoredQueryPlaybackDoesNotAdvanceClock()
     const IrcCaseMapping mapping;
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server CAP omairc LS :batch znc.in/playback\r\n"
@@ -8228,13 +8228,13 @@ void ControllerTest::selfOnlyUnstoredQueryPlaybackDoesNotAdvanceClock()
         qobject_cast<QAbstractItemModel *>(controller.conversations());
     QVERIFY(conversations);
     QCOMPARE(rowForTarget(conversations, QStringLiteral("ghost")), -1);
-    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("libera")));
+    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("freenode")));
 
     transport->injectBytes(
         QByteArrayLiteral(":server 422 omairc :MOTD File is missing\r\n"));
     QCOMPARE(rowForTarget(conversations, QStringLiteral("ghost")), -1);
-    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("libera")));
-    QVERIFY(!IrcOpenDirectStore().listed(QStringLiteral("libera"), mapping)
+    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("freenode")));
+    QVERIFY(!IrcOpenDirectStore().listed(QStringLiteral("freenode"), mapping)
                  .contains(QStringLiteral("ghost")));
     QCOMPARE(frameCount(transport->writtenFrames(), playZero), 1);
 
@@ -8243,7 +8243,7 @@ void ControllerTest::selfOnlyUnstoredQueryPlaybackDoesNotAdvanceClock()
         "@batch=q2;time=2024-03-09T16:00:04.000Z :omairc!u@h PRIVMSG ghost :still alone\r\n"
         ":znc.in BATCH -q2\r\n"));
     QCOMPARE(rowForTarget(conversations, QStringLiteral("ghost")), -1);
-    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("libera")));
+    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("freenode")));
     QCOMPARE(frameCount(transport->writtenFrames(), playZero), 1);
 }
 
@@ -8256,13 +8256,13 @@ void ControllerTest::playbackReplaySkipsLinesAlreadyInTheTranscript()
     IrcConversationLog paths(root);
     const IrcCaseMapping mapping;
     const QString labPath =
-        paths.pathFor(QStringLiteral("libera"), QStringLiteral("#lab"), mapping);
+        paths.pathFor(QStringLiteral("freenode"), QStringLiteral("#lab"), mapping);
 
     {
         IrcController controller;
         auto *transport = new FakeIrcTransport;
-        QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-        QVERIFY(controller.start(QStringLiteral("libera")));
+        QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+        QVERIFY(controller.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(
             QByteArrayLiteral(":server CAP omairc LS :batch\r\n"
@@ -8295,7 +8295,7 @@ void ControllerTest::playbackReplaySkipsLinesAlreadyInTheTranscript()
 
         QCOMPARE(roleAt(conversations, lab, ConversationListModel::UnreadRole).toInt(),
                  3);
-        controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#lab"));
+        controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#lab"));
         auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
         QVERIFY(messages);
         const QStringList bodies = selectedBodies(messages);
@@ -8312,8 +8312,8 @@ void ControllerTest::playbackReplaySkipsLinesAlreadyInTheTranscript()
 
     IrcController restarted;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(restarted.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(restarted.start(QStringLiteral("libera")));
+    QVERIFY(restarted.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(restarted.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch\r\n"
@@ -8334,7 +8334,7 @@ void ControllerTest::playbackReplaySkipsLinesAlreadyInTheTranscript()
     const int lab = rowForTarget(conversations, QStringLiteral("#lab"));
     QVERIFY(lab >= 0);
     QCOMPARE(roleAt(conversations, lab, ConversationListModel::UnreadRole).toInt(), 1);
-    restarted.selectConversation(QStringLiteral("libera"), QStringLiteral("#lab"));
+    restarted.selectConversation(QStringLiteral("freenode"), QStringLiteral("#lab"));
     auto *messages = qobject_cast<QAbstractItemModel *>(restarted.messages());
     QVERIFY(messages);
     const QStringList bodies = selectedBodies(messages);
@@ -8351,8 +8351,8 @@ void ControllerTest::preJoinChannelPlaybackSplicesAboveSelfJoin()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch znc.in/playback\r\n"
@@ -8378,7 +8378,7 @@ void ControllerTest::preJoinChannelPlaybackSplicesAboveSelfJoin()
         qobject_cast<QAbstractItemModel *>(controller.conversations());
     QVERIFY(conversations);
     QCOMPARE(rowForTarget(conversations, QStringLiteral("#omarchy")), -1);
-    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("libera")));
+    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("freenode")));
 
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
     const int row = rowForTarget(conversations, QStringLiteral("#omarchy"));
@@ -8386,7 +8386,7 @@ void ControllerTest::preJoinChannelPlaybackSplicesAboveSelfJoin()
     QCOMPARE(roleAt(conversations, row, ConversationListModel::UnreadRole).toInt(),
              0);
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     const QStringList chat = messageBodies(messages);
@@ -8403,7 +8403,7 @@ void ControllerTest::preJoinChannelPlaybackSplicesAboveSelfJoin()
     QCOMPARE(roleAt(messages, joinRow, MessageListModel::OriginRole),
              QStringLiteral("live"));
     QCOMPARE(ircPlaybackPlayStamp(
-                 IrcPlaybackTimeStore().newest(QStringLiteral("libera"))),
+                 IrcPlaybackTimeStore().newest(QStringLiteral("freenode"))),
              QStringLiteral("1710000000.620"));
 }
 
@@ -8411,8 +8411,8 @@ void ControllerTest::heldPlaybackBatchesSpliceInOrder()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server CAP omairc LS :batch znc.in/playback\r\n"
@@ -8440,7 +8440,7 @@ void ControllerTest::heldPlaybackBatchesSpliceInOrder()
     QCOMPARE(rowForTarget(conversations, QStringLiteral("#omarchy")), -1);
 
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QCOMPARE(transcriptBodies(messages),
@@ -8467,13 +8467,13 @@ void ControllerTest::preJoinChannelPlaybackWithoutJoinDoesNotAdvanceClock()
         QByteArrayLiteral("ZNC *playback PLAY * 1710000001.500\r\n");
 
     {
-        IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+        IrcSessionConfig sessionConfig = config(QStringLiteral("freenode"));
         sessionConfig.reconnectEnabled = true;
         IrcController controller;
         auto *transport = new FakeIrcTransport;
         auto *timer = new FakeReconnectTimer;
         QVERIFY(controller.addSession(sessionConfig, transport, timer));
-        QVERIFY(controller.start(QStringLiteral("libera")));
+        QVERIFY(controller.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(
             QByteArrayLiteral(":server CAP omairc LS :batch znc.in/playback\r\n"
@@ -8488,11 +8488,11 @@ void ControllerTest::preJoinChannelPlaybackWithoutJoinDoesNotAdvanceClock()
             qobject_cast<QAbstractItemModel *>(controller.conversations());
         QVERIFY(conversations);
         QCOMPARE(rowForTarget(conversations, QStringLiteral("#ghost")), -1);
-        QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("libera")));
+        QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("freenode")));
         transport->injectBytes(
             QByteArrayLiteral(":server 376 omairc :End of MOTD\r\n"));
         QCOMPARE(frameCount(transport->writtenFrames(), playZero), 1);
-        QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("libera")));
+        QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("freenode")));
 
         transport->remoteClose();
         QVERIFY(timer->active);
@@ -8509,22 +8509,22 @@ void ControllerTest::preJoinChannelPlaybackWithoutJoinDoesNotAdvanceClock()
         QCOMPARE(frameCount(transport->writtenFrames(), playDropped), 0);
 
         transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#ghost\r\n"));
-        controller.selectConversation(QStringLiteral("libera"),
+        controller.selectConversation(QStringLiteral("freenode"),
                                       QStringLiteral("#ghost"));
         auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
         QVERIFY(messages);
         QCOMPARE(selectedBodies(messages),
                  QStringList{QStringLiteral("omairc joined")});
-        QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("libera")));
+        QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("freenode")));
     }
 
-    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    IrcSessionConfig sessionConfig = config(QStringLiteral("freenode"));
     sessionConfig.reconnectEnabled = true;
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     auto *timer = new FakeReconnectTimer;
     QVERIFY(controller.addSession(sessionConfig, transport, timer));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch znc.in/playback\r\n"
@@ -8546,7 +8546,7 @@ void ControllerTest::preJoinChannelPlaybackWithoutJoinDoesNotAdvanceClock()
     QVERIFY(conversations);
     QCOMPARE(rowForTarget(conversations, QStringLiteral("#ghost")), -1);
     QCOMPARE(ircPlaybackPlayStamp(
-                 IrcPlaybackTimeStore().newest(QStringLiteral("libera"))),
+                 IrcPlaybackTimeStore().newest(QStringLiteral("freenode"))),
              QStringLiteral("1710000000.620"));
 
     transport->remoteClose();
@@ -8569,8 +8569,8 @@ void ControllerTest::preJoinPlaybackLeavesAnchorForChatHistory()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch chathistory znc.in/playback\r\n"
@@ -8596,7 +8596,7 @@ void ControllerTest::preJoinPlaybackLeavesAnchorForChatHistory()
         transport->writtenFrames(),
         QByteArrayLiteral("CHATHISTORY LATEST #omarchy * 100\r\n")));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QCOMPARE(messageBodies(messages),
@@ -8618,13 +8618,13 @@ void ControllerTest::preJoinPlaybackLeavesAnchorForChatHistory()
 
 void ControllerTest::openChannelPlaybackBeforeRejoinSplicesAboveNewJoin()
 {
-    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    IrcSessionConfig sessionConfig = config(QStringLiteral("freenode"));
     sessionConfig.reconnectEnabled = true;
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     auto *timer = new FakeReconnectTimer;
     QVERIFY(controller.addSession(sessionConfig, transport, timer));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch znc.in/playback\r\n"
@@ -8650,7 +8650,7 @@ void ControllerTest::openChannelPlaybackBeforeRejoinSplicesAboveNewJoin()
                           ":lena!u@h PRIVMSG #omarchy :while away\r\n"
                           ":znc.in BATCH -pb\r\n"));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QCOMPARE(selectedBodies(messages),
@@ -8705,13 +8705,13 @@ void ControllerTest::joinedChannelPlaybackSplicesAfterAnchorIsGone()
         QByteArrayLiteral("ZNC *playback PLAY * ")
         + clearedStamp.toUtf8() + QByteArrayLiteral("\r\n");
 
-    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    IrcSessionConfig sessionConfig = config(QStringLiteral("freenode"));
     sessionConfig.reconnectEnabled = true;
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     auto *timer = new FakeReconnectTimer;
     QVERIFY(controller.addSession(sessionConfig, transport, timer));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch chathistory znc.in/playback\r\n"
@@ -8728,7 +8728,7 @@ void ControllerTest::joinedChannelPlaybackSplicesAfterAnchorIsGone()
                           ":lena!u@h PRIVMSG #omarchy :after anchor\r\n"
                           ":znc.in BATCH -pb\r\n"));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *anchored = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(anchored);
     QCOMPARE(transcriptBodies(anchored),
@@ -8747,7 +8747,7 @@ void ControllerTest::joinedChannelPlaybackSplicesAfterAnchorIsGone()
              QStringLiteral("replay"));
 
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#cleared\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#cleared"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#cleared"));
     QVERIFY(controller.sendMessage(QStringLiteral("/clear")));
     auto *cleared = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(cleared);
@@ -8763,7 +8763,7 @@ void ControllerTest::joinedChannelPlaybackSplicesAfterAnchorIsGone()
                     MessageListModel::OriginRole),
              QStringLiteral("replay"));
     QCOMPARE(ircPlaybackPlayStamp(
-                 IrcPlaybackTimeStore().newest(QStringLiteral("libera"))),
+                 IrcPlaybackTimeStore().newest(QStringLiteral("freenode"))),
              clearedStamp);
     QCOMPARE(ircPlaybackPlayStamp(historyAt), QStringLiteral("1710000000.620"));
     QCOMPARE(ircPlaybackPlayStamp(anchoredAt), QStringLiteral("1710000001.500"));
@@ -8805,8 +8805,8 @@ void ControllerTest::selfEchoWithoutConversationDoesNotAdvancePlaybackClock()
 
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch echo-message server-time\r\n"
@@ -8825,18 +8825,18 @@ void ControllerTest::selfEchoWithoutConversationDoesNotAdvancePlaybackClock()
     QCOMPARE(rowForTarget(conversations, QStringLiteral("#ghost")), -1);
     QCOMPARE(rowForTarget(conversations, QStringLiteral("dana")), -1);
     QCOMPARE(ircPlaybackPlayStamp(
-                 IrcPlaybackTimeStore().newest(QStringLiteral("libera"))),
+                 IrcPlaybackTimeStore().newest(QStringLiteral("freenode"))),
              ircPlaybackPlayStamp(peerAt));
 
     transport->injectBytes(QByteArrayLiteral(
         ":omairc!u@h JOIN :#omarchy\r\n"
         "@time=2024-03-09T16:00:01.500Z :omairc!u@h PRIVMSG #omarchy :kept echo\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("kept echo")));
     QCOMPARE(ircPlaybackPlayStamp(
-                 IrcPlaybackTimeStore().newest(QStringLiteral("libera"))),
+                 IrcPlaybackTimeStore().newest(QStringLiteral("freenode"))),
              ircPlaybackPlayStamp(keptAt));
     QCOMPARE(ircPlaybackPlayStamp(peerAt), QStringLiteral("1710000000.620"));
     QCOMPARE(ircPlaybackPlayStamp(keptAt), QStringLiteral("1710000001.500"));
@@ -8846,8 +8846,8 @@ void ControllerTest::emptyChatHistoryLeavesAnchorForPlayback()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch chathistory znc.in/playback\r\n"
@@ -8872,7 +8872,7 @@ void ControllerTest::emptyChatHistoryLeavesAnchorForPlayback()
                           ":lena!u@h PRIVMSG #deduped :from deduped\r\n"
                           ":znc.in BATCH -pd\r\n"));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#empty"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#empty"));
     auto *empty = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(empty);
     QCOMPARE(transcriptBodies(empty),
@@ -8887,7 +8887,7 @@ void ControllerTest::emptyChatHistoryLeavesAnchorForPlayback()
     QCOMPARE(roleAt(empty, emptyJoin, MessageListModel::OriginRole),
              QStringLiteral("live"));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#deduped"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#deduped"));
     auto *deduped = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(deduped);
     QCOMPARE(transcriptBodies(deduped),
@@ -8913,8 +8913,8 @@ void ControllerTest::ephemeralControllerSkipsPlaybackSettings()
         IrcController controller;
         controller.setEphemeral(true);
         auto *transport = new FakeIrcTransport;
-        QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-        QVERIFY(controller.start(QStringLiteral("libera")));
+        QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+        QVERIFY(controller.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(
             QByteArrayLiteral(":server CAP omairc LS :batch znc.in/playback\r\n"
@@ -8939,12 +8939,12 @@ void ControllerTest::ephemeralControllerSkipsPlaybackSettings()
         QVERIFY(!QString::fromUtf8(file.readAll()).contains(
             QLatin1String("playbackTimes")));
     }
-    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("libera")));
+    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("freenode")));
 
     IrcController again;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(again.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(again.start(QStringLiteral("libera")));
+    QVERIFY(again.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(again.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch znc.in/playback\r\n"
@@ -8980,33 +8980,33 @@ void ControllerTest::playbackTimeStoreRoundTripsNewestAndRekey()
 
     {
         IrcPlaybackTimeStore store;
-        QVERIFY(store.note(QStringLiteral("libera"), QStringLiteral("#omarchy"),
+        QVERIFY(store.note(QStringLiteral("freenode"), QStringLiteral("#omarchy"),
                            room, mapping));
-        QVERIFY(!store.note(QStringLiteral("libera"), QStringLiteral("#Omarchy"),
+        QVERIFY(!store.note(QStringLiteral("freenode"), QStringLiteral("#Omarchy"),
                             room, mapping));
-        QVERIFY(!store.note(QStringLiteral("libera"), QStringLiteral("#omarchy"),
+        QVERIFY(!store.note(QStringLiteral("freenode"), QStringLiteral("#omarchy"),
                             older, mapping));
-        QVERIFY(store.note(QStringLiteral("libera"), QStringLiteral("Lena"),
+        QVERIFY(store.note(QStringLiteral("freenode"), QStringLiteral("Lena"),
                            later, mapping));
-        QVERIFY(!store.note(QStringLiteral("libera"), QStringLiteral("lena"),
+        QVERIFY(!store.note(QStringLiteral("freenode"), QStringLiteral("lena"),
                             later, mapping));
         QVERIFY(store.note(QStringLiteral("keep"), QStringLiteral("#lab"),
                            room, mapping));
-        QCOMPARE(ircPlaybackPlayStamp(store.newest(QStringLiteral("libera"))),
+        QCOMPARE(ircPlaybackPlayStamp(store.newest(QStringLiteral("freenode"))),
                  QStringLiteral("1710000001.500"));
-        QVERIFY(store.rekey(QStringLiteral("libera"), QStringLiteral("lena"),
+        QVERIFY(store.rekey(QStringLiteral("freenode"), QStringLiteral("lena"),
                             QStringLiteral("Helena"), mapping));
-        QCOMPARE(ircPlaybackPlayStamp(store.newest(QStringLiteral("libera"))),
+        QCOMPARE(ircPlaybackPlayStamp(store.newest(QStringLiteral("freenode"))),
                  QStringLiteral("1710000001.500"));
-        store.forget(QStringLiteral("libera"));
-        QVERIFY(!store.newest(QStringLiteral("libera")));
+        store.forget(QStringLiteral("freenode"));
+        QVERIFY(!store.newest(QStringLiteral("freenode")));
         QCOMPARE(ircPlaybackPlayStamp(store.newest(QStringLiteral("keep"))),
                  QStringLiteral("1710000000.620"));
     }
 
     {
         IrcPlaybackTimeStore reloaded;
-        QVERIFY(!reloaded.newest(QStringLiteral("libera")));
+        QVERIFY(!reloaded.newest(QStringLiteral("freenode")));
         QCOMPARE(ircPlaybackPlayStamp(reloaded.newest(QStringLiteral("keep"))),
                  QStringLiteral("1710000000.620"));
         QSettings settings;
@@ -9021,12 +9021,12 @@ void ControllerTest::playbackTimeStoreRoundTripsNewestAndRekey()
     {
         IrcPlaybackTimeStore ephemeral;
         ephemeral.setEphemeral(true);
-        QVERIFY(ephemeral.note(QStringLiteral("libera"), QStringLiteral("#omarchy"),
+        QVERIFY(ephemeral.note(QStringLiteral("freenode"), QStringLiteral("#omarchy"),
                                room, mapping));
-        QCOMPARE(ircPlaybackPlayStamp(ephemeral.newest(QStringLiteral("libera"))),
+        QCOMPARE(ircPlaybackPlayStamp(ephemeral.newest(QStringLiteral("freenode"))),
                  QStringLiteral("1710000000.620"));
     }
-    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("libera")));
+    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("freenode")));
     QCOMPARE(ircPlaybackPlayStamp(
                  IrcPlaybackTimeStore().newest(QStringLiteral("keep"))),
              QStringLiteral("1710000000.620"));
@@ -9036,8 +9036,8 @@ void ControllerTest::forgetNetworkDropsPlaybackTimes()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -9045,10 +9045,10 @@ void ControllerTest::forgetNetworkDropsPlaybackTimes()
                           "@time=2024-03-09T16:00:00.620Z :lena!u@h PRIVMSG #omarchy "
                           ":room\r\n"));
     QCOMPARE(ircPlaybackPlayStamp(
-                 IrcPlaybackTimeStore().newest(QStringLiteral("libera"))),
+                 IrcPlaybackTimeStore().newest(QStringLiteral("freenode"))),
              QStringLiteral("1710000000.620"));
-    controller.forgetNetworkState(QStringLiteral("libera"));
-    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("libera")));
+    controller.forgetNetworkState(QStringLiteral("freenode"));
+    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("freenode")));
 }
 
 void ControllerTest::zncPlaybackBeforeFirstPlayUsesEmptySnapshot()
@@ -9075,15 +9075,15 @@ void ControllerTest::zncPlaybackBeforeFirstPlayUsesEmptySnapshot()
     const QByteArray playChannelZero =
         QByteArrayLiteral("ZNC *playback PLAY #omarchy 0\r\n");
     const auto roomStamp = [&]() {
-        return IrcPlaybackTimeStore().noted(QStringLiteral("libera"),
+        return IrcPlaybackTimeStore().noted(QStringLiteral("freenode"),
                                             QStringLiteral("#omarchy"),
                                             mapping);
     };
 
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server CAP omairc LS :batch znc.in/playback\r\n"
@@ -9094,7 +9094,7 @@ void ControllerTest::zncPlaybackBeforeFirstPlayUsesEmptySnapshot()
     QVERIFY(!framesContain(transport->writtenFrames(),
                            QByteArrayLiteral("*playback PLAY")));
     QVERIFY(!roomStamp());
-    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("libera")));
+    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("freenode")));
 
     transport->injectBytes(QByteArrayLiteral(":server 376 omairc :End of MOTD\r\n"));
     QCOMPARE(frameCount(transport->writtenFrames(), playZero), 1);
@@ -9135,7 +9135,7 @@ void ControllerTest::zncPlaybackBeforeFirstPlayKeepsSavedStamp()
     QVERIFY(liveStamp != savedStamp);
     QVERIFY(laterStamp != liveStamp);
     const IrcCaseMapping mapping;
-    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("freenode"),
                                         QStringLiteral("#omarchy"),
                                         savedAt,
                                         mapping));
@@ -9152,15 +9152,15 @@ void ControllerTest::zncPlaybackBeforeFirstPlayKeepsSavedStamp()
         QByteArrayLiteral("ZNC *playback PLAY * 0\r\n");
     const auto roomStamp = [&]() {
         return ircPlaybackPlayStamp(
-            IrcPlaybackTimeStore().noted(QStringLiteral("libera"),
+            IrcPlaybackTimeStore().noted(QStringLiteral("freenode"),
                                          QStringLiteral("#omarchy"),
                                          mapping));
     };
 
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server CAP omairc LS :batch znc.in/playback\r\n"
@@ -9218,26 +9218,26 @@ void ControllerTest::zncPlaybackDiscoversUnknownOfflineDirect()
     {
         IrcController seeder;
         auto *transport = new FakeIrcTransport;
-        QVERIFY(seeder.addSession(config(QStringLiteral("libera")), transport));
-        QVERIFY(seeder.start(QStringLiteral("libera")));
+        QVERIFY(seeder.addSession(config(QStringLiteral("freenode")), transport));
+        QVERIFY(seeder.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(QByteArrayLiteral(
             ":server 001 omairc :Welcome\r\n"
             "@time=2024-03-09T16:00:00.620Z :lena!u@h PRIVMSG #omarchy :room\r\n"));
     }
     QCOMPARE(ircPlaybackPlayStamp(
-                 IrcPlaybackTimeStore().noted(QStringLiteral("libera"),
+                 IrcPlaybackTimeStore().noted(QStringLiteral("freenode"),
                                               QStringLiteral("#omarchy"),
                                               mapping)),
              roomStamp);
-    QVERIFY(!IrcPlaybackTimeStore().noted(QStringLiteral("libera"),
+    QVERIFY(!IrcPlaybackTimeStore().noted(QStringLiteral("freenode"),
                                           QStringLiteral("alice"),
                                           mapping));
 
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(caps);
     transport->injectBytes(QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
@@ -9262,19 +9262,19 @@ void ControllerTest::zncPlaybackDiscoversUnknownOfflineDirect()
         ":znc.in BATCH -a\r\n"));
     const int aliceRow = rowForTarget(conversations, QStringLiteral("alice"));
     QVERIFY(aliceRow >= 0);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("alice"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("alice"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QCOMPARE(selectedBodies(messages), QStringList({QStringLiteral("offline")}));
     QCOMPARE(roleAt(messages, 0, MessageListModel::OriginRole),
              QStringLiteral("replay"));
     QCOMPARE(ircPlaybackPlayStamp(
-                 IrcPlaybackTimeStore().noted(QStringLiteral("libera"),
+                 IrcPlaybackTimeStore().noted(QStringLiteral("freenode"),
                                               QStringLiteral("#omarchy"),
                                               mapping)),
              roomStamp);
     QCOMPARE(ircPlaybackPlayStamp(
-                 IrcPlaybackTimeStore().noted(QStringLiteral("libera"),
+                 IrcPlaybackTimeStore().noted(QStringLiteral("freenode"),
                                               QStringLiteral("alice"),
                                               mapping)),
              aliceStamp);
@@ -9282,7 +9282,7 @@ void ControllerTest::zncPlaybackDiscoversUnknownOfflineDirect()
     transport->injectBytes(QByteArrayLiteral(
         "@time=2024-03-09T16:00:02.000Z :alice!u@h PRIVMSG omairc :live\r\n"));
     QCOMPARE(ircPlaybackPlayStamp(
-                 IrcPlaybackTimeStore().noted(QStringLiteral("libera"),
+                 IrcPlaybackTimeStore().noted(QStringLiteral("freenode"),
                                               QStringLiteral("alice"),
                                               mapping)),
              liveStamp);
@@ -9312,27 +9312,27 @@ void ControllerTest::zncPlaybackWildcardSkipsStampedClearedDirect()
     {
         IrcController seeder;
         auto *transport = new FakeIrcTransport;
-        QVERIFY(seeder.addSession(config(QStringLiteral("libera")), transport));
-        QVERIFY(seeder.start(QStringLiteral("libera")));
+        QVERIFY(seeder.addSession(config(QStringLiteral("freenode")), transport));
+        QVERIFY(seeder.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(QByteArrayLiteral(
             ":server 001 omairc :Welcome\r\n"
             "@time=2024-03-09T16:00:01.500Z :lena!u@h PRIVMSG omairc :read me\r\n"));
     }
     QCOMPARE(ircPlaybackPlayStamp(
-                 IrcPlaybackTimeStore().noted(QStringLiteral("libera"),
+                 IrcPlaybackTimeStore().noted(QStringLiteral("freenode"),
                                               QStringLiteral("lena"),
                                               mapping)),
              lenaStamp);
 
-    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    IrcSessionConfig sessionConfig = config(QStringLiteral("freenode"));
     sessionConfig.reconnectEnabled = true;
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     auto *timer = new FakeReconnectTimer;
     IrcSession *session = controller.addSession(sessionConfig, transport, timer);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server 001 omairc :Welcome\r\n"
@@ -9348,13 +9348,13 @@ void ControllerTest::zncPlaybackWildcardSkipsStampedClearedDirect()
     QVERIFY(conversations);
     const int lenaRow = rowForTarget(conversations, QStringLiteral("lena"));
     QVERIFY(lenaRow >= 0);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QCOMPARE(selectedBodies(messages), QStringList({QStringLiteral("read me")}));
     QVERIFY(controller.sendMessage(QStringLiteral("/clear")));
     QCOMPARE(messages->rowCount(), 0);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QCOMPARE(rowForTarget(conversations, QStringLiteral("lena")), lenaRow);
 
     transport->remoteClose();
@@ -9391,7 +9391,7 @@ void ControllerTest::zncPlaybackWildcardSkipsStampedClearedDirect()
     QVERIFY(aliceRow >= 0);
     QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::UnreadRole).toInt(),
              1);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("alice"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("alice"));
     const int aliceSelected = rowForTarget(conversations, QStringLiteral("alice"));
     QVERIFY(aliceSelected >= 0);
     messages = qobject_cast<QAbstractItemModel *>(controller.messages());
@@ -9401,7 +9401,7 @@ void ControllerTest::zncPlaybackWildcardSkipsStampedClearedDirect()
                     ConversationListModel::UnreadRole).toInt(),
              0);
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
     const int lenaSelected = rowForTarget(conversations, QStringLiteral("lena"));
     QVERIFY(lenaSelected >= 0);
     messages = qobject_cast<QAbstractItemModel *>(controller.messages());
@@ -9435,21 +9435,21 @@ void ControllerTest::zncPlaybackKeepsDistinctMsgidAtSharedMillisecond()
                           ":alice!u@h PRIVMSG omairc :seen\r\n"
                           ":znc.in BATCH -b\r\n");
 
-    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    IrcSessionConfig sessionConfig = config(QStringLiteral("freenode"));
     sessionConfig.reconnectEnabled = true;
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     auto *timer = new FakeReconnectTimer;
     IrcSession *session = controller.addSession(sessionConfig, transport, timer);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server 001 omairc :Welcome\r\n"
         "@time=2024-03-09T16:00:01.500Z;msgid=message-a "
         ":alice!u@h PRIVMSG omairc :seen\r\n"));
     QCOMPARE(ircPlaybackPlayStamp(
-                 IrcPlaybackTimeStore().noted(QStringLiteral("libera"),
+                 IrcPlaybackTimeStore().noted(QStringLiteral("freenode"),
                                               QStringLiteral("alice"),
                                               mapping)),
              stamp);
@@ -9470,7 +9470,7 @@ void ControllerTest::zncPlaybackKeepsDistinctMsgidAtSharedMillisecond()
     QCOMPARE(frameCount(transport->writtenFrames(), playZero), 1);
 
     transport->injectBytes(playback);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("alice"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("alice"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QCOMPARE(messages->rowCount(), 2);
@@ -9518,26 +9518,26 @@ void ControllerTest::zncPlaybackKeepsDistinctMsgidAfterColdStart()
     {
         IrcController seeder;
         auto *transport = new FakeIrcTransport;
-        QVERIFY(seeder.addSession(config(QStringLiteral("libera")), transport));
-        QVERIFY(seeder.start(QStringLiteral("libera")));
+        QVERIFY(seeder.addSession(config(QStringLiteral("freenode")), transport));
+        QVERIFY(seeder.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(QByteArrayLiteral(
             ":server 001 omairc :Welcome\r\n"
             "@time=2024-03-09T16:00:01.500Z;msgid=message-a "
             ":alice!u@h PRIVMSG omairc :seen\r\n"));
         QCOMPARE(ircPlaybackPlayStamp(
-                     IrcPlaybackTimeStore().noted(QStringLiteral("libera"),
+                     IrcPlaybackTimeStore().noted(QStringLiteral("freenode"),
                                                   QStringLiteral("alice"),
                                                   mapping)),
                  stamp);
-        QVERIFY(!IrcOpenDirectStore().listed(QStringLiteral("libera"), mapping)
+        QVERIFY(!IrcOpenDirectStore().listed(QStringLiteral("freenode"), mapping)
                      .contains(QStringLiteral("alice")));
     }
 
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(caps);
     transport->injectBytes(QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
@@ -9552,7 +9552,7 @@ void ControllerTest::zncPlaybackKeepsDistinctMsgidAfterColdStart()
         qobject_cast<QAbstractItemModel *>(controller.conversations());
     QVERIFY(conversations);
     QCOMPARE(rowForTarget(conversations, QStringLiteral("alice")), -1);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     transport->injectBytes(QByteArrayLiteral(
         ":znc.in BATCH +b znc.in/playback alice\r\n"
@@ -9566,7 +9566,7 @@ void ControllerTest::zncPlaybackKeepsDistinctMsgidAfterColdStart()
     QVERIFY(aliceRow >= 0);
     QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::UnreadRole).toInt(),
              1);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("alice"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("alice"));
     const int aliceSelected = rowForTarget(conversations, QStringLiteral("alice"));
     QVERIFY(aliceSelected >= 0);
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
@@ -9611,14 +9611,14 @@ void ControllerTest::zncPlaybackDuplicateMsgidDoesNotReopenDirect()
                           ":znc.in BATCH -old\r\n");
 
     {
-        IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+        IrcSessionConfig sessionConfig = config(QStringLiteral("freenode"));
         sessionConfig.reconnectEnabled = true;
         IrcController controller;
         auto *transport = new FakeIrcTransport;
         auto *timer = new FakeReconnectTimer;
         IrcSession *session = controller.addSession(sessionConfig, transport, timer);
         QVERIFY(session);
-        QVERIFY(controller.start(QStringLiteral("libera")));
+        QVERIFY(controller.start(QStringLiteral("freenode")));
         transport->completeConnect();
         transport->injectBytes(QByteArrayLiteral(
             ":server 001 omairc :Welcome\r\n"
@@ -9626,7 +9626,7 @@ void ControllerTest::zncPlaybackDuplicateMsgidDoesNotReopenDirect()
             "@time=2024-03-09T16:00:01.500Z;msgid=message-a "
             ":alice!u@h PRIVMSG omairc :seen\r\n"));
         QCOMPARE(ircPlaybackPlayStamp(
-                     IrcPlaybackTimeStore().noted(QStringLiteral("libera"),
+                     IrcPlaybackTimeStore().noted(QStringLiteral("freenode"),
                                                   QStringLiteral("alice"),
                                                   mapping)),
                  stamp);
@@ -9635,10 +9635,10 @@ void ControllerTest::zncPlaybackDuplicateMsgidDoesNotReopenDirect()
             qobject_cast<QAbstractItemModel *>(controller.conversations());
         QVERIFY(conversations);
         QVERIFY(rowForTarget(conversations, QStringLiteral("alice")) >= 0);
-        controller.selectConversation(QStringLiteral("libera"), QStringLiteral("alice"));
+        controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("alice"));
         QVERIFY(controller.sendMessage(QStringLiteral("/close")));
         QCOMPARE(rowForTarget(conversations, QStringLiteral("alice")), -1);
-        QVERIFY(!IrcOpenDirectStore().listed(QStringLiteral("libera"), mapping)
+        QVERIFY(!IrcOpenDirectStore().listed(QStringLiteral("freenode"), mapping)
                      .contains(QStringLiteral("alice")));
 
         transport->remoteClose();
@@ -9661,8 +9661,8 @@ void ControllerTest::zncPlaybackDuplicateMsgidDoesNotReopenDirect()
 
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(caps);
     transport->injectBytes(QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
@@ -9674,7 +9674,7 @@ void ControllerTest::zncPlaybackDuplicateMsgidDoesNotReopenDirect()
     auto *conversations =
         qobject_cast<QAbstractItemModel *>(controller.conversations());
     QVERIFY(conversations);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     transport->injectBytes(onlySeen);
     QCOMPARE(rowForTarget(conversations, QStringLiteral("alice")), -1);
 
@@ -9689,7 +9689,7 @@ void ControllerTest::zncPlaybackDuplicateMsgidDoesNotReopenDirect()
     QVERIFY(aliceRow >= 0);
     QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::UnreadRole).toInt(),
              1);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("alice"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("alice"));
     const int aliceSelected = rowForTarget(conversations, QStringLiteral("alice"));
     QVERIFY(aliceSelected >= 0);
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
@@ -9709,8 +9709,8 @@ void ControllerTest::channelPlaybackPreviousNickDoesNotBumpUnread()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(QByteArrayLiteral(
         ":server CAP omairc LS :batch\r\n"
@@ -9732,15 +9732,15 @@ void ControllerTest::channelPlaybackPreviousNickDoesNotBumpUnread()
     QCOMPARE(roleAt(conversations, room, ConversationListModel::UnreadRole).toInt(),
              1);
     QVERIFY(roleAt(conversations, room, ConversationListModel::MentionRole).toBool());
-    QCOMPARE(controller.unreadCountFor(QStringLiteral("libera")), 1);
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("freenode")), 1);
 
     transport->injectBytes(QByteArrayLiteral(
         ":oldnick!u@h PRIVMSG #omarchy :omairc: live\r\n"));
     QCOMPARE(roleAt(conversations, room, ConversationListModel::UnreadRole).toInt(),
              2);
-    QCOMPARE(controller.unreadCountFor(QStringLiteral("libera")), 2);
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("freenode")), 2);
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     const int mine = bodyRow(messages, QStringLiteral("omairc: mine"));
@@ -9767,9 +9767,9 @@ void ControllerTest::chatHistoryBeforePageMutedWithoutUnread()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(QStringLiteral("libera")), transport);
+    IrcSession *session = controller.addSession(config(QStringLiteral("freenode")), transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
@@ -9779,10 +9779,10 @@ void ControllerTest::chatHistoryBeforePageMutedWithoutUnread()
                           ":irc.host BATCH +hx chathistory #omarchy\r\n"
                           "@batch=hx;msgid=live-1 :alice!u@h PRIVMSG #omarchy :seen\r\n"
                           ":irc.host BATCH -hx\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
-    const int unreadBefore = controller.unreadCountFor(QStringLiteral("libera"));
+    const int unreadBefore = controller.unreadCountFor(QStringLiteral("freenode"));
     QVERIFY(controller.requestOlderTranscriptHistory());
     QVERIFY(framesContain(transport->writtenFrames(),
                           QByteArrayLiteral("CHATHISTORY BEFORE #omarchy msgid=live-1 100\r\n")));
@@ -9795,15 +9795,15 @@ void ControllerTest::chatHistoryBeforePageMutedWithoutUnread()
             > bodyRow(messages, QStringLiteral("older")));
     QCOMPARE(roleAt(messages, 0, MessageListModel::OriginRole),
              QStringLiteral("replay"));
-    QCOMPARE(controller.unreadCountFor(QStringLiteral("libera")), unreadBefore);
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("freenode")), unreadBefore);
 }
 
 void ControllerTest::chatHistoryBeforeDedupesMsgid()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
@@ -9813,7 +9813,7 @@ void ControllerTest::chatHistoryBeforeDedupesMsgid()
                           ":irc.host BATCH +hx chathistory #omarchy\r\n"
                           "@batch=hx;msgid=live-1 :alice!u@h PRIVMSG #omarchy :seen\r\n"
                           ":irc.host BATCH -hx\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QVERIFY(controller.requestOlderTranscriptHistory());
@@ -9830,13 +9830,13 @@ void ControllerTest::chatHistoryBeforeNoCapIsNoOp()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     const int before = transport->writtenFrames().size();
     QVERIFY(!controller.requestOlderTranscriptHistory());
     QCOMPARE(transport->writtenFrames().size(), before);
@@ -9846,8 +9846,8 @@ void ControllerTest::chatHistoryBeforePrependsAboveAnchorLine()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
@@ -9858,7 +9858,7 @@ void ControllerTest::chatHistoryBeforePrependsAboveAnchorLine()
                           "@batch=hx;msgid=anchor :alice!u@h PRIVMSG #omarchy :join replay\r\n"
                           ":irc.host BATCH -hx\r\n"
                           "@msgid=live-1 :bob!u@h PRIVMSG #omarchy :live line\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     const int anchorRow = bodyRow(messages, QStringLiteral("join replay"));
@@ -9881,8 +9881,8 @@ void ControllerTest::chatHistoryBeforeLateDisarmKeepsLiveTail()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
-    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.addSession(config(QStringLiteral("freenode")), transport));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
@@ -9901,7 +9901,7 @@ void ControllerTest::chatHistoryBeforeLateDisarmKeepsLiveTail()
     }
     transport->injectBytes(
         QByteArrayLiteral("@msgid=live-tail :alice!u@h PRIVMSG #omarchy :live tail\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QVERIFY(controller.requestOlderTranscriptHistory());

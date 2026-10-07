@@ -21,7 +21,7 @@ Toggle members lets a user hide or show the channel member list from the header 
 Preconditions:
 
 - Seeded conversation UI is showing (`#omarchy · irc.example · fred - Omairc`, members visible). Use `control-omairc launch --demo-server`. When Xvfb tools are missing, `qml-suite` (seeded `IrcController`) is the fallback and is not compiled-window proof.
-- `control-omairc launch` without `--demo-server` is first-run Connect titled `irc.libera.chat Status`. Do not start this recipe there.
+- `control-omairc launch` without `--demo-server` is first-run Connect titled `chat.freenode.net Status`. Do not start this recipe there.
 - For a desktop instance, the window is the isolated 1180x760 default, so the panel can appear (`width >= 980`).
 
 ```desktop-recipe

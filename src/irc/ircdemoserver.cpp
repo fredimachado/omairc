@@ -694,7 +694,7 @@ SeedNetwork oftcWorld()
     rio.markRead = true;
     rio.lines = {
         chat(QStringLiteral("rio"),
-             QStringLiteral("Ping me on OFTC, not Libera."),
+             QStringLiteral("Ping me on OFTC, not Freenode."),
              QStringLiteral("11:40")),
     };
 

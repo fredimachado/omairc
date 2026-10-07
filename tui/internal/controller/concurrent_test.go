@@ -14,7 +14,7 @@ import (
 // line (MessageReceived -> Apply) that writes those same maps.
 func TestSelectDuringInboundPresenceDoesNotRace(t *testing.T) {
 	c, _ := newController(t)
-	const network = "libera"
+	const network = "freenode"
 	names := make([]irc.Name, 64)
 	for i := range names {
 		names[i] = irc.Name{Nick: fmt.Sprintf("user%d", i)}

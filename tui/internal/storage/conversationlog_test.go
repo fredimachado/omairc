@@ -129,23 +129,23 @@ func TestConversationLogPathForPreservesTargetCase(t *testing.T) {
 	log := NewConversationLog(root)
 	mapping := irc.CaseMapping{}
 
-	upper := log.PathFor("libera", "#Omarchy", mapping)
-	want := filepath.Join(root, irc.OmaircStorageSegment("libera"), irc.OmaircWireStorageSegment("#Omarchy"))
+	upper := log.PathFor("freenode", "#Omarchy", mapping)
+	want := filepath.Join(root, irc.OmaircStorageSegment("freenode"), irc.OmaircWireStorageSegment("#Omarchy"))
 	if upper != want {
 		t.Fatalf("PathFor = %q, want %q", upper, want)
 	}
-	if filepath.Base(filepath.Dir(upper)) != irc.OmaircStorageSegment("libera") {
-		t.Errorf("network dir = %q, want OmaircStorageSegment(libera)", filepath.Base(filepath.Dir(upper)))
+	if filepath.Base(filepath.Dir(upper)) != irc.OmaircStorageSegment("freenode") {
+		t.Errorf("network dir = %q, want OmaircStorageSegment(freenode)", filepath.Base(filepath.Dir(upper)))
 	}
 	if filepath.Base(upper) != irc.OmaircWireStorageSegment("#Omarchy") {
 		t.Errorf("file = %q, want OmaircWireStorageSegment(#Omarchy)", filepath.Base(upper))
 	}
 
-	lower := log.PathFor("libera", "#omarchy", mapping)
+	lower := log.PathFor("freenode", "#omarchy", mapping)
 	if upper == lower {
 		t.Error("PathFor case-mapped the target; it must preserve the wire case")
 	}
-	mapped := filepath.Join(root, irc.OmaircStorageSegment("libera"), irc.OmaircTargetSegment("#Omarchy", mapping))
+	mapped := filepath.Join(root, irc.OmaircStorageSegment("freenode"), irc.OmaircTargetSegment("#Omarchy", mapping))
 	if upper == mapped {
 		t.Error("PathFor used the case-mapped target segment")
 	}
@@ -153,14 +153,14 @@ func TestConversationLogPathForPreservesTargetCase(t *testing.T) {
 
 func TestConversationLogMigratesLegacyTranscriptPaths(t *testing.T) {
 	root := t.TempDir()
-	legacyDir := filepath.Join(root, irc.LegacyStorageSegment("Libera"))
+	legacyDir := filepath.Join(root, irc.LegacyStorageSegment("Freenode"))
 	legacyFile := filepath.Join(legacyDir, irc.LegacyStorageSegment("#a/b"))
 	conversationLogTestWrite(t, legacyFile, "legacy\n")
 
 	log := NewConversationLog(root)
 	mapping := irc.CaseMapping{}
-	path := log.PathFor("Libera", "#a/b", mapping)
-	want := filepath.Join(root, irc.OmaircStorageSegment("Libera"), irc.OmaircWireStorageSegment("#a/b"))
+	path := log.PathFor("Freenode", "#a/b", mapping)
+	want := filepath.Join(root, irc.OmaircStorageSegment("Freenode"), irc.OmaircWireStorageSegment("#a/b"))
 	if path != want {
 		t.Fatalf("PathFor = %q, want %q", path, want)
 	}
@@ -174,23 +174,23 @@ func TestConversationLogMigratesLegacyTranscriptPaths(t *testing.T) {
 		t.Errorf("legacy network dir %q still exists", legacyDir)
 	}
 
-	if again := log.PathFor("Libera", "#a/b", mapping); again != want {
+	if again := log.PathFor("Freenode", "#a/b", mapping); again != want {
 		t.Errorf("second PathFor = %q, want %q (migration must be idempotent)", again, want)
 	}
 }
 
 func TestConversationLogDoesNotOverwriteExistingTranscriptDuringMigration(t *testing.T) {
 	root := t.TempDir()
-	legacyDir := filepath.Join(root, irc.LegacyStorageSegment("Libera"))
+	legacyDir := filepath.Join(root, irc.LegacyStorageSegment("Freenode"))
 	legacyFile := filepath.Join(legacyDir, irc.LegacyStorageSegment("#a/b"))
 	conversationLogTestWrite(t, legacyFile, "legacy\n")
 
-	newPath := filepath.Join(root, irc.OmaircStorageSegment("Libera"), irc.OmaircWireStorageSegment("#a/b"))
+	newPath := filepath.Join(root, irc.OmaircStorageSegment("Freenode"), irc.OmaircWireStorageSegment("#a/b"))
 	conversationLogTestWrite(t, newPath, "newer\n")
 
 	log := NewConversationLog(root)
 	mapping := irc.CaseMapping{}
-	if path := log.PathFor("Libera", "#a/b", mapping); path != newPath {
+	if path := log.PathFor("Freenode", "#a/b", mapping); path != newPath {
 		t.Fatalf("PathFor = %q, want %q", path, newPath)
 	}
 	if !conversationLogTestExists(legacyFile) {
@@ -203,7 +203,7 @@ func TestConversationLogDoesNotOverwriteExistingTranscriptDuringMigration(t *tes
 	if string(contents) != "newer\n" {
 		t.Fatalf("new file = %q, want %q (must not be overwritten)", contents, "newer\n")
 	}
-	if again := log.PathFor("Libera", "#a/b", mapping); again != newPath {
+	if again := log.PathFor("Freenode", "#a/b", mapping); again != newPath {
 		t.Errorf("second PathFor = %q, want %q", again, newPath)
 	}
 }

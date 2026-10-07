@@ -30,10 +30,10 @@ func countTagmsg(transport *session.LoopbackTransport) int {
 func selectChannelWithTags(t *testing.T) (*Controller, *session.FakeClock, *session.LoopbackTransport) {
 	t.Helper()
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc", "message-tags")
 	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n")
-	c.SelectConversation("libera", "#omarchy")
+	c.SelectConversation("freenode", "#omarchy")
 	if !c.HasTyping() {
 		t.Fatal("HasTyping = false after message-tags")
 	}
@@ -120,7 +120,7 @@ func TestNotifyComposerTextWithdrawsOnSelectionChange(t *testing.T) {
 		t.Fatalf("typingTarget = %q, want #omarchy", c.typingTarget)
 	}
 	clock.Advance(time.Duration(irc.TypingSendIntervalMs) * time.Millisecond)
-	c.SelectConversation("libera", "#desktop")
+	c.SelectConversation("freenode", "#desktop")
 	if got := lastWrittenFrame(t, transport); got != "@+typing=done TAGMSG #omarchy\r\n" {
 		t.Fatalf("last frame = %q, want the previous target's done", got)
 	}
@@ -133,10 +133,10 @@ func TestNotifyComposerTextWithdrawsOnSelectionChange(t *testing.T) {
 // message-tags never publishes, and the Status console never publishes.
 func TestNotifyComposerTextRequiresMessageTags(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc")
 	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n")
-	c.SelectConversation("libera", "#omarchy")
+	c.SelectConversation("freenode", "#omarchy")
 	if c.HasTyping() {
 		t.Fatal("HasTyping = true without message-tags")
 	}

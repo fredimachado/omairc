@@ -22,7 +22,7 @@
 
 namespace
 {
-IrcSessionConfig config(const QString& networkId = QStringLiteral("libera"))
+IrcSessionConfig config(const QString& networkId = QStringLiteral("freenode"))
 {
     IrcSessionConfig value;
     value.networkId = networkId;
@@ -411,9 +411,9 @@ void AutoawayTest::enableDisablePersistsAndQueries()
 {
     {
         IrcController controller;
-        auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+        auto *transport = joinNetwork(controller, QStringLiteral("freenode"));
         QVERIFY(transport);
-        controller.selectConversation(QStringLiteral("libera"),
+        controller.selectConversation(QStringLiteral("freenode"),
                                       QStringLiteral("#omarchy"));
         auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
         QVERIFY(messages);
@@ -431,9 +431,9 @@ void AutoawayTest::enableDisablePersistsAndQueries()
 
     {
         IrcController reloaded;
-        auto *transport = joinNetwork(reloaded, QStringLiteral("libera"));
+        auto *transport = joinNetwork(reloaded, QStringLiteral("freenode"));
         QVERIFY(transport);
-        reloaded.selectConversation(QStringLiteral("libera"),
+        reloaded.selectConversation(QStringLiteral("freenode"),
                                     QStringLiteral("#omarchy"));
         auto *messages = qobject_cast<QAbstractItemModel *>(reloaded.messages());
         QVERIFY(messages);
@@ -446,9 +446,9 @@ void AutoawayTest::enableDisablePersistsAndQueries()
 void AutoawayTest::oneShotDoesNotOverwriteDefault()
 {
     IrcController controller;
-    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    auto *transport = joinNetwork(controller, QStringLiteral("freenode"));
     QVERIFY(transport);
-    controller.selectConversation(QStringLiteral("libera"),
+    controller.selectConversation(QStringLiteral("freenode"),
                                   QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
@@ -493,9 +493,9 @@ void AutoawayTest::oneShotDoesNotOverwriteDefault()
 void AutoawayTest::bareTextRefusedDoesNotWriteAway()
 {
     IrcController controller;
-    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    auto *transport = joinNetwork(controller, QStringLiteral("freenode"));
     QVERIFY(transport);
-    controller.selectConversation(QStringLiteral("libera"),
+    controller.selectConversation(QStringLiteral("freenode"),
                                   QStringLiteral("#omarchy"));
     const int before = transport->writtenFrames().size();
     QVERIFY(controller.sendMessage(QStringLiteral("/autoaway Sleeping")));
@@ -542,9 +542,9 @@ void AutoawayTest::tripAwaysAllRegisteredNetworksOnce()
 void AutoawayTest::activityDuringGraceCancelsAway()
 {
     IrcController controller;
-    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    auto *transport = joinNetwork(controller, QStringLiteral("freenode"));
     QVERIFY(transport);
-    controller.selectConversation(QStringLiteral("libera"),
+    controller.selectConversation(QStringLiteral("freenode"),
                                   QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
     const int before = transport->writtenFrames().size();
@@ -653,9 +653,9 @@ void AutoawayTest::sendToTargetClearsAutoAway()
 void AutoawayTest::incomingPrivmsgDoesNotClearAutoAway()
 {
     IrcController controller;
-    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    auto *transport = joinNetwork(controller, QStringLiteral("freenode"));
     QVERIFY(transport);
-    controller.selectConversation(QStringLiteral("libera"),
+    controller.selectConversation(QStringLiteral("freenode"),
                                   QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
     controller.fireAutoawayIdleForTest();
@@ -676,9 +676,9 @@ void AutoawayTest::incomingPrivmsgDoesNotClearAutoAway()
 void AutoawayTest::restoreOnAfterOff()
 {
     IrcController controller;
-    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    auto *transport = joinNetwork(controller, QStringLiteral("freenode"));
     QVERIFY(transport);
-    controller.selectConversation(QStringLiteral("libera"),
+    controller.selectConversation(QStringLiteral("freenode"),
                                   QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
@@ -701,9 +701,9 @@ void AutoawayTest::restoreOnAfterOff()
 void AutoawayTest::emptyAwayClearsProvenanceSoAutoTripMarks()
 {
     IrcController controller;
-    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    auto *transport = joinNetwork(controller, QStringLiteral("freenode"));
     QVERIFY(transport);
-    controller.selectConversation(QStringLiteral("libera"),
+    controller.selectConversation(QStringLiteral("freenode"),
                                   QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
     QVERIFY(controller.sendMessage(QStringLiteral("/away lunch")));
@@ -733,9 +733,9 @@ void AutoawayTest::loadBelowFloorTimeoutDisables()
     }
 
     IrcController controller;
-    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    auto *transport = joinNetwork(controller, QStringLiteral("freenode"));
     QVERIFY(transport);
-    controller.selectConversation(QStringLiteral("libera"),
+    controller.selectConversation(QStringLiteral("freenode"),
                                   QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
@@ -757,9 +757,9 @@ void AutoawayTest::loadBelowFloorTimeoutDisables()
 void AutoawayTest::reasonChangeWhileTrippedRewritesAway()
 {
     IrcController controller;
-    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    auto *transport = joinNetwork(controller, QStringLiteral("freenode"));
     QVERIFY(transport);
-    controller.selectConversation(QStringLiteral("libera"),
+    controller.selectConversation(QStringLiteral("freenode"),
                                   QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("/autoaway reason AFK")));
     QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
@@ -846,9 +846,9 @@ void AutoawayTest::reconnectDropsManualAwaySoAutoTripMarks()
 void AutoawayTest::activityAfterEmptyTripClearsOneShot()
 {
     IrcController controller;
-    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    auto *transport = joinNetwork(controller, QStringLiteral("freenode"));
     QVERIFY(transport);
-    controller.selectConversation(QStringLiteral("libera"),
+    controller.selectConversation(QStringLiteral("freenode"),
                                   QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("/autoaway reason AFK")));
     QVERIFY(controller.sendMessage(
@@ -861,7 +861,7 @@ void AutoawayTest::activityAfterEmptyTripClearsOneShot()
     QCOMPARE(awayFrameCount(transport->writtenFrames(), afterClose), 0);
 
     controller.noteLocalActivity();
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     const int beforeWelcome = transport->writtenFrames().size();
     welcome(transport);
     QCOMPARE(awayFrameCount(transport->writtenFrames(), beforeWelcome), 0);
@@ -878,9 +878,9 @@ void AutoawayTest::activityAfterEmptyTripClearsOneShot()
 void AutoawayTest::wheelClearsAutoAway()
 {
     IrcController controller;
-    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    auto *transport = joinNetwork(controller, QStringLiteral("freenode"));
     QVERIFY(transport);
-    controller.selectConversation(QStringLiteral("libera"),
+    controller.selectConversation(QStringLiteral("freenode"),
                                   QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
     controller.fireAutoawayIdleForTest();
@@ -898,9 +898,9 @@ void AutoawayTest::wheelClearsAutoAway()
 void AutoawayTest::composerNotifyDoesNotClearAutoAway()
 {
     IrcController controller;
-    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    auto *transport = joinNetwork(controller, QStringLiteral("freenode"));
     QVERIFY(transport);
-    controller.selectConversation(QStringLiteral("libera"),
+    controller.selectConversation(QStringLiteral("freenode"),
                                   QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
     controller.fireAutoawayIdleForTest();
@@ -915,7 +915,7 @@ void AutoawayTest::composerNotifyDoesNotClearAutoAway()
     QVERIFY(controller.selfAway());
 
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#linux\r\n"));
-    controller.selectConversation(QStringLiteral("libera"),
+    controller.selectConversation(QStringLiteral("freenode"),
                                   QStringLiteral("#linux"));
     QCOMPARE(transport->writtenFrames().size(), afterAway);
     QVERIFY(controller.selfAway());
@@ -924,9 +924,9 @@ void AutoawayTest::composerNotifyDoesNotClearAutoAway()
 void AutoawayTest::disableBeforeTripDropsOneShot()
 {
     IrcController controller;
-    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    auto *transport = joinNetwork(controller, QStringLiteral("freenode"));
     QVERIFY(transport);
-    controller.selectConversation(QStringLiteral("libera"),
+    controller.selectConversation(QStringLiteral("freenode"),
                                   QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
@@ -976,18 +976,18 @@ void AutoawayTest::tripLogsStatusOnAllNetworks()
 void AutoawayTest::activityLogsClearedStatus()
 {
     IrcController controller;
-    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    auto *transport = joinNetwork(controller, QStringLiteral("freenode"));
     QVERIFY(transport);
     IrcStatusConsole *console = controller.console();
     QVERIFY(console);
-    controller.selectConversation(QStringLiteral("libera"),
+    controller.selectConversation(QStringLiteral("freenode"),
                                   QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
     controller.fireAutoawayIdleForTest();
     controller.fireAutoawayGraceForTest();
     injectNowAway(transport);
     QVERIFY(controller.selfAway());
-    console->setNetwork(QStringLiteral("libera"));
+    console->setNetwork(QStringLiteral("freenode"));
     QVERIFY(logContains(console->lines(),
                         QStringLiteral("Auto-away triggered.")));
 
@@ -1094,9 +1094,9 @@ void AutoawayTest::activityOnDisconnectedNetworkDoesNotLogClearedStatus()
 void AutoawayTest::idleTimerUsesMillisecondInterval()
 {
     IrcController controller;
-    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    auto *transport = joinNetwork(controller, QStringLiteral("freenode"));
     QVERIFY(transport);
-    controller.selectConversation(QStringLiteral("libera"),
+    controller.selectConversation(QStringLiteral("freenode"),
                                   QStringLiteral("#omarchy"));
     QVERIFY(!controller.autoawayIdleIsActiveForTest());
 

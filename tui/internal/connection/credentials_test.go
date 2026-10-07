@@ -67,7 +67,7 @@ func TestApplyWritesEditedPasswordWithCredentialKey(t *testing.T) {
 		t.Fatal("Apply() = false")
 	}
 	id := conn.SelectedNetworkID()
-	want := storage.CredentialKey{NetworkID: id, Username: "user", Host: "irc.libera.chat"}
+	want := storage.CredentialKey{NetworkID: id, Username: "user", Host: "chat.freenode.net"}
 	if len(fake.writes) != 1 || fake.writes[0] != want {
 		t.Fatalf("writes = %+v, want [%+v]", fake.writes, want)
 	}
@@ -93,7 +93,7 @@ func TestApplyWritesEditedNickServWithPurpose(t *testing.T) {
 		t.Fatal("Apply() = false")
 	}
 	id := conn.SelectedNetworkID()
-	want := storage.CredentialKey{NetworkID: id, Username: "omairc", Host: "irc.libera.chat", Purpose: "nickserv"}
+	want := storage.CredentialKey{NetworkID: id, Username: "omairc", Host: "chat.freenode.net", Purpose: "nickserv"}
 	if len(fake.writes) != 1 || fake.writes[0] != want {
 		t.Fatalf("writes = %+v, want [%+v]", fake.writes, want)
 	}
@@ -112,7 +112,7 @@ func TestApplyRemovesClearedPassword(t *testing.T) {
 		t.Fatal("first Apply() = false")
 	}
 	id := conn.SelectedNetworkID()
-	key := storage.CredentialKey{NetworkID: id, Username: "omairc", Host: "irc.libera.chat"}
+	key := storage.CredentialKey{NetworkID: id, Username: "omairc", Host: "chat.freenode.net"}
 
 	// With a stored secret present the empty value is accepted and clears it.
 	conn.SetPassword("")

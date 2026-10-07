@@ -19,12 +19,12 @@ import (
 func phase7Setup(t *testing.T) (*Controller, *session.LoopbackTransport) {
 	t.Helper()
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc", "draft/metadata-2", "batch", "echo-message")
 	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n"+
 		":server 353 omairc = #omarchy :@omairc dax\r\n"+
 		":server 366 omairc #omarchy :End of NAMES\r\n")
-	c.SelectConversation("libera", "#omarchy")
+	c.SelectConversation("freenode", "#omarchy")
 	return c, transport
 }
 
@@ -71,7 +71,7 @@ func TestPhase7QueryOpensDirect(t *testing.T) {
 	if got := c.SelectedTarget(); got != "dax" {
 		t.Fatalf("SelectedTarget = %q, want dax", got)
 	}
-	if !hasConversation(c, "libera", "dax") {
+	if !hasConversation(c, "freenode", "dax") {
 		t.Fatalf("no direct row for dax: %v", conversationTargets(c))
 	}
 	if c.IsChannel() {
@@ -192,15 +192,15 @@ func TestPhase7IgnoreOutcomeOnStatus(t *testing.T) {
 	if !c.SendMessage("/ignore dax") {
 		t.Fatalf("SendMessage(/ignore dax) = false")
 	}
-	if !phase7ConsoleContains(c, "libera", "Ignoring dax") {
-		t.Fatalf("Status console = %v, want Ignoring dax", c.ConsoleText("libera"))
+	if !phase7ConsoleContains(c, "freenode", "Ignoring dax") {
+		t.Fatalf("Status console = %v, want Ignoring dax", c.ConsoleText("freenode"))
 	}
 
 	if !c.SendMessage("/ignored") {
 		t.Fatalf("SendMessage(/ignored) = false")
 	}
-	if !phase7ConsoleContains(c, "libera", "Ignoring: dax") {
-		t.Fatalf("Status console = %v, want Ignoring: dax", c.ConsoleText("libera"))
+	if !phase7ConsoleContains(c, "freenode", "Ignoring: dax") {
+		t.Fatalf("Status console = %v, want Ignoring: dax", c.ConsoleText("freenode"))
 	}
 }
 
@@ -212,7 +212,7 @@ func TestPhase7PrefOnStatus(t *testing.T) {
 	if !c.ConsoleSubmit("/pref") {
 		t.Fatalf("ConsoleSubmit(/pref) = false")
 	}
-	text := strings.Join(c.ConsoleText("libera"), "\n")
+	text := strings.Join(c.ConsoleText("freenode"), "\n")
 	for _, label := range []string{
 		"Reopen direct messages on startup",
 		"Show peer avatars",

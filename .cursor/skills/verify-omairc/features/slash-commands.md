@@ -22,7 +22,7 @@ Preconditions:
 
 - Seeded dispatch needs `control-omairc launch --demo-server`. When Xvfb tools are missing, `qml-suite` (seeded `IrcController`) is the fallback and is not compiled-window proof.
 - Live network dispatch needs a completed Connect and a registered session. Do not Apply on the compiled first-run window for this proof. Do not inject IRC frames.
-- `control-omairc launch` without `--demo-server` is first-run Connect titled `irc.libera.chat Status`. That window has no session.
+- `control-omairc launch` without `--demo-server` is first-run Connect titled `chat.freenode.net Status`. That window has no session.
 - The composer must be empty. `send` appends to a leftover draft.
 
 ```desktop-recipe
@@ -39,7 +39,7 @@ screenshot --feature slash-commands --name close-stays
 - **`/join` opens the last channel.** On a fresh demo, run `control-omairc send --text "/join #help"` then `control-omairc wait-title --exact "#help - Omairc"`. The composer is empty. Capture it with `control-omairc screenshot --feature slash-commands --name after-join`.
 - **Channel `/close` refuses while you are in it.** On `#help`, run `control-omairc send --text "/close"` then `control-omairc wait-title --exact "#help - Omairc"`. The title stays `#help - Omairc`. The composer still holds `/close`. DIRECT MESSAGES still has `anna` and `dax`. Capture it with `control-omairc screenshot --feature slash-commands --name close-stays`. `/part` keeps that row. `/close` after the part drops it.
 - **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `test_typedCloseStaysChatLine` is the refused `/close` path. `test_typedQueryOpensDirectAndClearsComposer` is the successful `/query` path. `test_joinOpensChannelAndConsumesComposer` is the successful `/join` path. `test_listOpensOverlayAndJoins` and `test_listUsesPerNetworkCache` are `/list`. This is not compiled-window proof. There is no compiled-window screenshot for a real-network catalog.
-- **Live catalog.** Do not claim `/away`, `/whois`, `/topic`, `/query`, `/msg`, `/notice`, `/part`, `/kick`, `/ignore`, or the monitor and mute verbs on first-run Connect. It is `verified-unreachable` until a session has completed Connect. The attempted compiled route is `control-omairc launch` (title `irc.libera.chat Status`, Apply would start a real network). This recipe does not Apply.
+- **Live catalog.** Do not claim `/away`, `/whois`, `/topic`, `/query`, `/msg`, `/notice`, `/part`, `/kick`, `/ignore`, or the monitor and mute verbs on first-run Connect. It is `verified-unreachable` until a session has completed Connect. The attempted compiled route is `control-omairc launch` (title `chat.freenode.net Status`, Apply would start a real network). This recipe does not Apply.
 
 ## Gotchas
 

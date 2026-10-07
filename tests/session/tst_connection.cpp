@@ -539,9 +539,9 @@ void ConnectionTest::setupRequiredUntilCompleteProfileIsSaved()
     IrcController controller;
     IrcConnection connection(controller, capturingFactory(), credentialStore());
     QVERIFY(connection.setupRequired());
-    QCOMPARE(connection.host(), QStringLiteral("irc.libera.chat"));
-    QCOMPARE(connection.name(), QStringLiteral("irc.libera.chat"));
-    QCOMPARE(connection.displayName(), QStringLiteral("irc.libera.chat"));
+    QCOMPARE(connection.host(), QStringLiteral("chat.freenode.net"));
+    QCOMPARE(connection.name(), QStringLiteral("chat.freenode.net"));
+    QCOMPARE(connection.displayName(), QStringLiteral("chat.freenode.net"));
     QVERIFY(!connection.activate());
     QCOMPARE(m_transports.size(), 0);
 
@@ -811,14 +811,14 @@ void ConnectionTest::discardOnFirstRunRestoresSuggested()
     IrcController controller;
     IrcConnection connection(controller, capturingFactory(), credentialStore());
     QVERIFY(connection.setupRequired());
-    QCOMPARE(connection.host(), QStringLiteral("irc.libera.chat"));
-    QCOMPARE(connection.name(), QStringLiteral("irc.libera.chat"));
+    QCOMPARE(connection.host(), QStringLiteral("chat.freenode.net"));
+    QCOMPARE(connection.name(), QStringLiteral("chat.freenode.net"));
     connection.setHost(QStringLiteral("irc.changed"));
     connection.setName(QStringLiteral("Changed"));
     connection.setAutojoin(QString());
     connection.discard();
-    QCOMPARE(connection.host(), QStringLiteral("irc.libera.chat"));
-    QCOMPARE(connection.name(), QStringLiteral("irc.libera.chat"));
+    QCOMPARE(connection.host(), QStringLiteral("chat.freenode.net"));
+    QCOMPARE(connection.name(), QStringLiteral("chat.freenode.net"));
     QCOMPARE(connection.autojoin(), QStringLiteral("#omarchy"));
     QVERIFY(connection.setupRequired());
 }
@@ -1881,7 +1881,7 @@ void ConnectionTest::accountAndBouncerNetworkLoginAsOneName()
     IrcConnection connection(controller, capturingFactory(), credentialStore());
     fillCompleteDraft(connection);
     connection.setAccount(QStringLiteral("joe"));
-    connection.setBouncerNetwork(QStringLiteral("libera"));
+    connection.setBouncerNetwork(QStringLiteral("freenode"));
     connection.setPassword(QStringLiteral("super-secret"));
     QVERIFY(connection.apply());
     QCOMPARE(m_transports.size(), 1);
@@ -1892,12 +1892,12 @@ void ConnectionTest::accountAndBouncerNetworkLoginAsOneName()
                           ":server CAP omairc ACK :sasl\r\n"
                           "AUTHENTICATE +\r\n"));
     QCOMPARE(decodedSaslPayload(m_transports.last()->writtenFrames().last()),
-             QByteArray("joe/libera\0joe/libera\0super-secret", 34));
+             QByteArray("joe/freenode\0joe/freenode\0super-secret", 38));
 
     const IrcNetworkProfile stored = IrcProfileStore().profiles().first();
     QCOMPARE(stored.account, QStringLiteral("joe"));
-    QCOMPARE(stored.bouncerNetwork, QStringLiteral("libera"));
-    QCOMPARE(stored.saslAccount(), QStringLiteral("joe/libera"));
+    QCOMPARE(stored.bouncerNetwork, QStringLiteral("freenode"));
+    QCOMPARE(stored.saslAccount(), QStringLiteral("joe/freenode"));
 
     QSettings settings;
     QVERIFY(!settings.allKeys().isEmpty());
@@ -2520,7 +2520,7 @@ void ConnectionTest::activateStartupStartsEveryMarkedProfile()
         connection.setConnectOnStartup(true);
         QVERIFY(connection.apply());
         QVERIFY(connection.add());
-        fillCompleteDraft(connection, QStringLiteral("irc.libera.chat"));
+        fillCompleteDraft(connection, QStringLiteral("chat.freenode.net"));
         connection.setNick(QStringLiteral("leaf"));
         connection.setConnectOnStartup(false);
         QVERIFY(connection.apply());

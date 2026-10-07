@@ -53,8 +53,8 @@ func TestFreshConnectionRequiresSetup(t *testing.T) {
 	if !conn.SetupRequired() {
 		t.Fatal("SetupRequired() = false, want true with no stored profiles")
 	}
-	if got := conn.DisplayName(); got != "irc.libera.chat" {
-		t.Fatalf("DisplayName() = %q, want irc.libera.chat", got)
+	if got := conn.DisplayName(); got != "chat.freenode.net" {
+		t.Fatalf("DisplayName() = %q, want chat.freenode.net", got)
 	}
 	if got := conn.Problem(); got != "Nick is required" {
 		t.Fatalf("Problem() = %q, want %q", got, "Nick is required")
@@ -83,7 +83,7 @@ func TestApplyStoresProfileAndStartsSession(t *testing.T) {
 		t.Fatalf("transports = %d, want 1", len(factory.transports))
 	}
 	transport := factory.transports[0]
-	if got := transport.ConnectedHost(); got != "irc.libera.chat" {
+	if got := transport.ConnectedHost(); got != "chat.freenode.net" {
 		t.Fatalf("ConnectedHost() = %q", got)
 	}
 	if got := transport.ConnectedPort(); got != 6697 {
@@ -109,7 +109,7 @@ func TestApplyStoresProfileAndStartsSession(t *testing.T) {
 	if len(rows) != 1 || !rows[0].Stored || !rows[0].Selected {
 		t.Fatalf("Networks() = %+v, want one stored selected row", rows)
 	}
-	if rows[0].DisplayName != "irc.libera.chat" {
+	if rows[0].DisplayName != "chat.freenode.net" {
 		t.Fatalf("row display = %q", rows[0].DisplayName)
 	}
 

@@ -22,7 +22,7 @@
 
 namespace
 {
-IrcSessionConfig sessionConfig(const QString& networkId = QStringLiteral("libera"))
+IrcSessionConfig sessionConfig(const QString& networkId = QStringLiteral("freenode"))
 {
     IrcSessionConfig value;
     value.networkId = networkId;
@@ -219,17 +219,17 @@ void MuteTest::muteCurrentStopsMentionAndKeepsChat()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/mute")));
     QVERIFY(logContains(controller.console()->lines(), QStringLiteral("Muted #omarchy")));
 
     transport->injectBytes(
         QByteArrayLiteral(":omairc!u@h JOIN :#desktop\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#desktop"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#desktop"));
 
     QSignalSpy spy(&controller, &IrcController::mentionArrived);
     transport->injectBytes(
@@ -249,7 +249,7 @@ void MuteTest::muteCurrentStopsMentionAndKeepsChat()
                     ConversationListModel::UnreadRole),
              1);
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QVERIFY(messagesContain(messages, QStringLiteral("omairc: ping")));
@@ -263,10 +263,10 @@ void MuteTest::mutedDirectMessageDoesNotNotify()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/mute lena")));
     QVERIFY(logContains(controller.console()->lines(), QStringLiteral("Muted lena")));
@@ -289,7 +289,7 @@ void MuteTest::mutedDirectMessageDoesNotNotify()
                     ConversationListModel::UnreadRole),
              1);
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QVERIFY(messagesContain(messages, QStringLiteral("hello")));
@@ -300,10 +300,10 @@ void MuteTest::unmuteRestoresMention()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("/mute")));
     QVERIFY(controller.sendMessage(QStringLiteral("/unmute")));
     QVERIFY(logContains(controller.console()->lines(),
@@ -311,7 +311,7 @@ void MuteTest::unmuteRestoresMention()
 
     transport->injectBytes(
         QByteArrayLiteral(":omairc!u@h JOIN :#desktop\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#desktop"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#desktop"));
 
     QSignalSpy spy(&controller, &IrcController::mentionArrived);
     transport->injectBytes(
@@ -335,15 +335,15 @@ void MuteTest::openingDoesNotUnmute()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("/mute")));
     transport->injectBytes(
         QByteArrayLiteral(":omairc!u@h JOIN :#desktop\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#desktop"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#desktop"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     auto *conversations =
         qobject_cast<QAbstractItemModel *>(controller.conversations());
@@ -352,7 +352,7 @@ void MuteTest::openingDoesNotUnmute()
                     ConversationListModel::MutedRole),
              true);
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#desktop"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#desktop"));
     QSignalSpy spy(&controller, &IrcController::mentionArrived);
     transport->injectBytes(
         QByteArrayLiteral(":Alice!u@h PRIVMSG #omarchy :omairc: still\r\n"));
@@ -368,26 +368,26 @@ void MuteTest::persistSurvivesRestart()
         IrcController controller;
         auto *transport = new FakeIrcTransport;
         QVERIFY(controller.addSession(sessionConfig(), transport));
-        QVERIFY(controller.start(QStringLiteral("libera")));
+        QVERIFY(controller.start(QStringLiteral("freenode")));
         welcome(transport);
         transport->injectBytes(
             QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-        controller.selectConversation(QStringLiteral("libera"),
+        controller.selectConversation(QStringLiteral("freenode"),
                                       QStringLiteral("#omarchy"));
         QVERIFY(controller.sendMessage(QStringLiteral("/mute")));
     }
 
     QVERIFY(IrcMuteStore().contains(
-        QStringLiteral("libera"), QStringLiteral("#omarchy"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("#omarchy"), IrcCaseMapping()));
 
     IrcController again;
     auto *transport = new FakeIrcTransport;
     QVERIFY(again.addSession(sessionConfig(), transport));
-    QVERIFY(again.start(QStringLiteral("libera")));
+    QVERIFY(again.start(QStringLiteral("freenode")));
     welcome(transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
                                              ":omairc!u@h JOIN :#desktop\r\n"));
-    again.selectConversation(QStringLiteral("libera"), QStringLiteral("#desktop"));
+    again.selectConversation(QStringLiteral("freenode"), QStringLiteral("#desktop"));
 
     QSignalSpy spy(&again, &IrcController::mentionArrived);
     transport->injectBytes(
@@ -410,17 +410,17 @@ void MuteTest::closeDropsMute()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
                                              ":lena!u@h PRIVMSG omairc :hi\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
     QVERIFY(controller.sendMessage(QStringLiteral("/mute")));
     QVERIFY(IrcMuteStore().contains(
-        QStringLiteral("libera"), QStringLiteral("lena"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("lena"), IrcCaseMapping()));
     QVERIFY(controller.sendMessage(QStringLiteral("/close")));
     QVERIFY(!IrcMuteStore().contains(
-        QStringLiteral("libera"), QStringLiteral("lena"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("lena"), IrcCaseMapping()));
 
     QSignalSpy spy(&controller, &IrcController::mentionArrived);
     transport->injectBytes(
@@ -433,15 +433,15 @@ void MuteTest::forgetsWithTheNetwork()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
     QVERIFY(controller.console()->submit(QStringLiteral("/mute #omarchy")));
     QVERIFY(IrcMuteStore().contains(
-        QStringLiteral("libera"), QStringLiteral("#omarchy"), IrcCaseMapping()));
-    controller.forgetNetworkState(QStringLiteral("libera"));
+        QStringLiteral("freenode"), QStringLiteral("#omarchy"), IrcCaseMapping()));
+    controller.forgetNetworkState(QStringLiteral("freenode"));
     QVERIFY(!IrcMuteStore().contains(
-        QStringLiteral("libera"), QStringLiteral("#omarchy"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("#omarchy"), IrcCaseMapping()));
 }
 
 void MuteTest::discardSessionKeepsTheList()
@@ -449,15 +449,15 @@ void MuteTest::discardSessionKeepsTheList()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
     QVERIFY(controller.console()->submit(QStringLiteral("/mute #omarchy")));
     QVERIFY(IrcMuteStore().contains(
-        QStringLiteral("libera"), QStringLiteral("#omarchy"), IrcCaseMapping()));
-    QVERIFY(controller.discardSession(QStringLiteral("libera")));
+        QStringLiteral("freenode"), QStringLiteral("#omarchy"), IrcCaseMapping()));
+    QVERIFY(controller.discardSession(QStringLiteral("freenode")));
     QVERIFY(IrcMuteStore().contains(
-        QStringLiteral("libera"), QStringLiteral("#omarchy"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("#omarchy"), IrcCaseMapping()));
 }
 
 void MuteTest::statusMuteWithoutTargetIsRefused()
@@ -465,16 +465,16 @@ void MuteTest::statusMuteWithoutTargetIsRefused()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
-    controller.openStatus(QStringLiteral("libera"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
+    controller.openStatus(QStringLiteral("freenode"));
     QVERIFY(controller.console()->submit(QStringLiteral("/mute")));
     QVERIFY(logContains(controller.console()->lines(),
                         QStringLiteral("Mute applies to conversations")));
     QVERIFY(!IrcMuteStore().contains(
-        QStringLiteral("libera"), QStringLiteral("#omarchy"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("#omarchy"), IrcCaseMapping()));
 }
 
 void MuteTest::listsMutedTargets()
@@ -482,10 +482,10 @@ void MuteTest::listsMutedTargets()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("/muted")));
     QVERIFY(logContains(controller.console()->lines(),
                         QStringLiteral("Not muting anything")));
@@ -508,13 +508,13 @@ void MuteTest::nonMutedStillNotifies()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
                                              ":omairc!u@h JOIN :#desktop\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("/mute")));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QSignalSpy spy(&controller, &IrcController::mentionArrived);
     transport->injectBytes(
@@ -527,10 +527,10 @@ void MuteTest::ignoreStillHidesPrivateTraffic()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("/ignore lena")));
     QVERIFY(controller.sendMessage(QStringLiteral("/mute #omarchy")));
     transport->injectBytes(
@@ -541,7 +541,7 @@ void MuteTest::ignoreStillHidesPrivateTraffic()
         qobject_cast<QAbstractItemModel *>(controller.conversations());
     QVERIFY(conversations);
     QCOMPARE(rowForTarget(conversations, QStringLiteral("lena")), -1);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     QVERIFY(messagesContain(messages, QStringLiteral("still here")));
@@ -552,10 +552,10 @@ void MuteTest::refusesBadTargets()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(!controller.sendMessage(QStringLiteral("/mute lena extra")));
     QVERIFY(!controller.sendMessage(QStringLiteral("/mute lena!u@h")));
@@ -570,13 +570,13 @@ void MuteTest::offlineMuteIsNotConnected()
     QCOMPARE(controller.lastError(),
              QStringLiteral("Mute applies to conversations"));
     QVERIFY(!IrcMuteStore().contains(
-        QStringLiteral("libera"), QStringLiteral("#omarchy"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("#omarchy"), IrcCaseMapping()));
 
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
     QVERIFY(controller.console()->submit(QStringLiteral("/mute #omarchy")));
     QVERIFY(logContains(controller.console()->lines(), QStringLiteral("Not connected")));
     QVERIFY(!IrcMuteStore().contains(
-        QStringLiteral("libera"), QStringLiteral("#omarchy"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("#omarchy"), IrcCaseMapping()));
 }
 
 int runMuteTests(int argc, char **argv)

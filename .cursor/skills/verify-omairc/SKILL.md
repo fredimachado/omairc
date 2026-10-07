@@ -26,7 +26,7 @@ Prefer a private X server and the compiled binary when `Xvfb`, `xauth`, `xdotool
 .cursor/skills/verify-omairc/control-omairc launch --demo-server
 ```
 
-Ready when stdout includes a title ending in ` - Omairc` or ` Status`, and `doctor` exits 0. Default launch is `{displayName} Status` (often `irc.libera.chat Status`) with the connection sheet. `--demo-server` is `#omarchy · irc.example · fred - Omairc` with the seeded sidebar. After a live conversation exists the title is `{conversation} - Omairc`, or `{conversation} · {displayName} - Omairc` when two conversations share a name. Status itself uses `{displayName} Status` or `Status`.
+Ready when stdout includes a title ending in ` - Omairc` or ` Status`, and `doctor` exits 0. Default launch is `{displayName} Status` (often `chat.freenode.net Status`) with the connection sheet. `--demo-server` is `#omarchy · irc.example · fred - Omairc` with the seeded sidebar. After a live conversation exists the title is `{conversation} - Omairc`, or `{conversation} · {displayName} - Omairc` when two conversations share a name. Status itself uses `{displayName} Status` or `Status`.
 
 This launch:
 

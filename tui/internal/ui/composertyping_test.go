@@ -33,19 +33,19 @@ func TestComposerKeystrokePublishesTyping(t *testing.T) {
 	ctrl := controller.New()
 	ctrl.SetClock(clock)
 	transport := session.NewLoopbackTransport()
-	config := session.DefaultSessionConfig("libera", "libera", "irc.example", "omairc")
+	config := session.DefaultSessionConfig("freenode", "freenode", "irc.example", "omairc")
 	if _, err := ctrl.AddSession(config, transport, clock); err != nil {
 		t.Fatalf("AddSession: %v", err)
 	}
-	if !ctrl.Start("libera") {
-		t.Fatal("Start(libera) = false")
+	if !ctrl.Start("freenode") {
+		t.Fatal("Start(freenode) = false")
 	}
 	transport.CompleteConnect()
 	transport.InjectBytes([]byte(":server CAP omairc LS :message-tags\r\n" +
 		":server CAP omairc ACK :message-tags\r\n" +
 		":server 001 omairc :Welcome\r\n" +
 		":omairc!u@h JOIN :#omarchy\r\n"))
-	ctrl.SelectConversation("libera", "#omarchy")
+	ctrl.SelectConversation("freenode", "#omarchy")
 
 	m := New(ctrl, nil)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 118, Height: 30})

@@ -26,7 +26,7 @@ Title mention is the window title Omairc shows when a mention or a direct messag
 Preconditions:
 
 - Live `title-unfocused` needs a completed Connect, a registered session, and an unfocused window. Do not Apply on the compiled first-run window for this proof.
-- `control-omairc launch` without `--demo-server` is first-run Connect titled `irc.libera.chat Status`. That window has no session and no mentions.
+- `control-omairc launch` without `--demo-server` is first-run Connect titled `chat.freenode.net Status`. That window has no session and no mentions.
 - `--demo-server` has no new inbound mentions after launch. There is no compiled-window title recipe there.
 
 - **No compiled-window recipe.** `control-omairc run title-mention` fails closed. This file has no `desktop-recipe` fence. Do not add an empty fence or a `qml-suite` fence.

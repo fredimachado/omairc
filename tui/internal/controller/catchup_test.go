@@ -51,7 +51,7 @@ func TestChatHistoryAfterFillsLinesFromWhileAway(t *testing.T) {
 	c.SetClock(clock)
 	transport := session.NewLoopbackTransport()
 	config := session.SessionConfig{
-		NetworkID:  "libera",
+		NetworkID:  "freenode",
 		Host:       "irc.example",
 		Port:       6697,
 		TLSEnabled: true,
@@ -64,14 +64,14 @@ func TestChatHistoryAfterFillsLinesFromWhileAway(t *testing.T) {
 		t.Fatal(err)
 	}
 	when := time.Date(2024, 3, 9, 16, 0, 0, 620000000, time.UTC)
-	features := c.reducer.ServerFeatures("libera")
+	features := c.reducer.ServerFeatures("freenode")
 	mapping := features.CaseMapping()
-	if !c.playbackTimes.Note("libera", "#omarchy", when, mapping) ||
-		!c.playbackTimes.Note("libera", "lena", when, mapping) ||
-		!c.playbackTimes.Note("libera", "ghost", when, mapping) {
+	if !c.playbackTimes.Note("freenode", "#omarchy", when, mapping) ||
+		!c.playbackTimes.Note("freenode", "lena", when, mapping) ||
+		!c.playbackTimes.Note("freenode", "ghost", when, mapping) {
 		t.Fatal("Note")
 	}
-	if !c.openDirects.Add("libera", "lena", mapping) || !c.openDirects.Add("libera", "bob", mapping) {
+	if !c.openDirects.Add("freenode", "lena", mapping) || !c.openDirects.Add("freenode", "bob", mapping) {
 		t.Fatal("Add open direct")
 	}
 	c.reducer.SetConversationLog(closedQueryLog{})
@@ -108,14 +108,14 @@ func TestChatHistoryAfterFillsLinesFromWhileAway(t *testing.T) {
 	if byteFramesContain(frames, "*playback PLAY") {
 		t.Fatal("chathistory server sent ZNC PLAY")
 	}
-	if !hasConversation(c, "libera", "lena") || !hasConversation(c, "libera", "bob") {
+	if !hasConversation(c, "freenode", "lena") || !hasConversation(c, "freenode", "bob") {
 		t.Fatalf("open directs = %v", conversationTargets(c))
 	}
-	if hasConversation(c, "libera", "ghost") || hasConversation(c, "libera", "filed") {
+	if hasConversation(c, "freenode", "ghost") || hasConversation(c, "freenode", "filed") {
 		t.Fatal("unstored direct is open before TARGETS")
 	}
 
-	c.SelectConversation("libera", "#omarchy")
+	c.SelectConversation("freenode", "#omarchy")
 	if !c.OpenDirectMessage("gone") || !c.CloseDirectMessage() {
 		t.Fatal("close gone")
 	}
@@ -133,12 +133,12 @@ func TestChatHistoryAfterFillsLinesFromWhileAway(t *testing.T) {
 			":irc.host BATCH -t\r\n"))
 
 	for _, opened := range []string{"alice", "ghost", "filed"} {
-		if !hasConversation(c, "libera", opened) {
+		if !hasConversation(c, "freenode", opened) {
 			t.Fatalf("%s missing: %v", opened, conversationTargets(c))
 		}
 	}
 	for _, closed := range []string{"gone", "BouncerServ", "#parted"} {
-		if hasConversation(c, "libera", closed) {
+		if hasConversation(c, "freenode", closed) {
 			t.Fatalf("%s was opened", closed)
 		}
 	}
@@ -159,7 +159,7 @@ func TestChatHistoryAfterFillsLinesFromWhileAway(t *testing.T) {
 	if byteFrameCount(after, "CHATHISTORY AFTER alice timestamp=2024-03-09T15:59:59.620Z 100\r\n") != 1 {
 		t.Fatal("never-opened direct AFTER missing")
 	}
-	listed := c.openDirects.Listed("libera", mapping)
+	listed := c.openDirects.Listed("freenode", mapping)
 	for _, nick := range listed {
 		if mapping.Equals(nick, "alice") || mapping.Equals(nick, "ghost") || mapping.Equals(nick, "filed") {
 			t.Fatalf("discovered direct was persisted: %v", listed)
@@ -174,12 +174,12 @@ func TestChatHistoryAfterFillsLinesFromWhileAway(t *testing.T) {
 			":irc.host BATCH +away chathistory alice\r\n" +
 			"@batch=away;time=2024-03-09T16:00:01.000Z;msgid=away :alice!u@h PRIVMSG omairc :while away\r\n" +
 			":irc.host BATCH -away\r\n"))
-	c.SelectConversation("libera", "#omarchy")
+	c.SelectConversation("freenode", "#omarchy")
 	bodies := messageBodies(c)
 	if !stringListContains(bodies, "seen") || !stringListContains(bodies, "gap") {
 		t.Fatalf("channel bodies = %v", bodies)
 	}
-	c.SelectConversation("libera", "alice")
+	c.SelectConversation("freenode", "alice")
 	if !stringListContains(messageBodies(c), "while away") {
 		t.Fatalf("alice bodies = %v", messageBodies(c))
 	}
@@ -191,7 +191,7 @@ func TestZncPlaybackWithoutChatHistoryDoesNotCatchUp(t *testing.T) {
 	c.SetClock(clock)
 	transport := session.NewLoopbackTransport()
 	config := session.SessionConfig{
-		NetworkID:  "libera",
+		NetworkID:  "freenode",
 		Host:       "irc.example",
 		Port:       6697,
 		TLSEnabled: true,
@@ -204,9 +204,9 @@ func TestZncPlaybackWithoutChatHistoryDoesNotCatchUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	when := time.Date(2024, 3, 9, 16, 0, 0, 620000000, time.UTC)
-	features := c.reducer.ServerFeatures("libera")
+	features := c.reducer.ServerFeatures("freenode")
 	mapping := features.CaseMapping()
-	if !c.playbackTimes.Note("libera", "#omarchy", when, mapping) {
+	if !c.playbackTimes.Note("freenode", "#omarchy", when, mapping) {
 		t.Fatal("Note")
 	}
 	s.Start()
@@ -232,7 +232,7 @@ func TestCatchUpReconnectAsksStampedGhostNotDismissed(t *testing.T) {
 	c.SetClock(clock)
 	transport := session.NewLoopbackTransport()
 	config := session.SessionConfig{
-		NetworkID:  "libera",
+		NetworkID:  "freenode",
 		Host:       "irc.example",
 		Port:       6697,
 		TLSEnabled: true,
@@ -245,8 +245,8 @@ func TestCatchUpReconnectAsksStampedGhostNotDismissed(t *testing.T) {
 		t.Fatal(err)
 	}
 	when := time.Date(2024, 3, 9, 16, 0, 0, 620000000, time.UTC)
-	features := c.reducer.ServerFeatures("libera")
-	if !c.playbackTimes.Note("libera", "ghost", when, features.CaseMapping()) {
+	features := c.reducer.ServerFeatures("freenode")
+	if !c.playbackTimes.Note("freenode", "ghost", when, features.CaseMapping()) {
 		t.Fatal("Note")
 	}
 	s.Start()
@@ -257,7 +257,7 @@ func TestCatchUpReconnectAsksStampedGhostNotDismissed(t *testing.T) {
 			":server 001 omairc :Welcome\r\n" +
 			":server 376 omairc :End of MOTD\r\n" +
 			":omairc!u@h JOIN :#omarchy\r\n"))
-	c.SelectConversation("libera", "#omarchy")
+	c.SelectConversation("freenode", "#omarchy")
 	if !c.OpenDirectMessage("gone") || !c.CloseDirectMessage() {
 		t.Fatal("close gone")
 	}
@@ -303,7 +303,7 @@ func TestCatchUpReconnectAsksStampedGhostNotDismissed(t *testing.T) {
 func connectChathistory(t *testing.T, c *Controller, transport *session.LoopbackTransport, beforeMotd string) *session.Session {
 	t.Helper()
 	config := session.SessionConfig{
-		NetworkID:  "libera",
+		NetworkID:  "freenode",
 		Host:       "irc.example",
 		Port:       6697,
 		TLSEnabled: true,
@@ -330,12 +330,12 @@ func TestCatchUpContinuesWhenOneDirectCannotSend(t *testing.T) {
 	c.SetClock(session.NewFakeClock(time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)))
 	transport := session.NewLoopbackTransport()
 	when := time.Date(2024, 3, 9, 16, 0, 0, 620000000, time.UTC)
-	features := c.reducer.ServerFeatures("libera")
+	features := c.reducer.ServerFeatures("freenode")
 	mapping := features.CaseMapping()
-	if !c.playbackTimes.Note("libera", "#omarchy", when, mapping) {
+	if !c.playbackTimes.Note("freenode", "#omarchy", when, mapping) {
 		t.Fatal("Note")
 	}
-	if !c.openDirects.Add("libera", "lena", mapping) || !c.openDirects.Add("libera", "bob", mapping) {
+	if !c.openDirects.Add("freenode", "lena", mapping) || !c.openDirects.Add("freenode", "bob", mapping) {
 		t.Fatal("Add")
 	}
 	s := connectChathistory(t, c, transport, "")
@@ -360,8 +360,8 @@ func TestCatchUpRetriesTargetsOnce(t *testing.T) {
 	c.SetClock(session.NewFakeClock(time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)))
 	transport := session.NewLoopbackTransport()
 	when := time.Date(2024, 3, 9, 16, 0, 0, 620000000, time.UTC)
-	features := c.reducer.ServerFeatures("libera")
-	if !c.playbackTimes.Note("libera", "#omarchy", when, features.CaseMapping()) {
+	features := c.reducer.ServerFeatures("freenode")
+	if !c.playbackTimes.Note("freenode", "#omarchy", when, features.CaseMapping()) {
 		t.Fatal("Note")
 	}
 	connectChathistory(t, c, transport, ":server 376 omairc :End of MOTD\r\n")
@@ -383,8 +383,8 @@ func TestCatchUpClockBehindUsesFarFuture(t *testing.T) {
 	c.SetClock(session.NewFakeClock(time.Date(2026, 10, 4, 11, 59, 30, 0, time.UTC)))
 	transport := session.NewLoopbackTransport()
 	when := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
-	features := c.reducer.ServerFeatures("libera")
-	if !c.playbackTimes.Note("libera", "#omarchy", when, features.CaseMapping()) {
+	features := c.reducer.ServerFeatures("freenode")
+	if !c.playbackTimes.Note("freenode", "#omarchy", when, features.CaseMapping()) {
 		t.Fatal("Note")
 	}
 	connectChathistory(t, c, transport, ":server 376 omairc :End of MOTD\r\n")
@@ -398,8 +398,8 @@ func TestCatchUpTargetsPagesUntilEnd(t *testing.T) {
 	c.SetClock(session.NewFakeClock(time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)))
 	transport := session.NewLoopbackTransport()
 	when := time.Date(2024, 3, 9, 16, 0, 0, 620000000, time.UTC)
-	features := c.reducer.ServerFeatures("libera")
-	if !c.playbackTimes.Note("libera", "#omarchy", when, features.CaseMapping()) {
+	features := c.reducer.ServerFeatures("freenode")
+	if !c.playbackTimes.Note("freenode", "#omarchy", when, features.CaseMapping()) {
 		t.Fatal("Note")
 	}
 	connectChathistory(t, c, transport,
@@ -433,8 +433,8 @@ func TestCatchUpTargetsEndTagSendsNoFollowUp(t *testing.T) {
 	c.SetClock(session.NewFakeClock(time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)))
 	transport := session.NewLoopbackTransport()
 	when := time.Date(2024, 3, 9, 16, 0, 0, 620000000, time.UTC)
-	features := c.reducer.ServerFeatures("libera")
-	if !c.playbackTimes.Note("libera", "#omarchy", when, features.CaseMapping()) {
+	features := c.reducer.ServerFeatures("freenode")
+	if !c.playbackTimes.Note("freenode", "#omarchy", when, features.CaseMapping()) {
 		t.Fatal("Note")
 	}
 	connectChathistory(t, c, transport,
@@ -457,8 +457,8 @@ func TestCatchUpTargetsLargerThanLimitStillPages(t *testing.T) {
 	c.SetClock(session.NewFakeClock(time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)))
 	transport := session.NewLoopbackTransport()
 	when := time.Date(2024, 3, 9, 16, 0, 0, 620000000, time.UTC)
-	features := c.reducer.ServerFeatures("libera")
-	if !c.playbackTimes.Note("libera", "#omarchy", when, features.CaseMapping()) {
+	features := c.reducer.ServerFeatures("freenode")
+	if !c.playbackTimes.Note("freenode", "#omarchy", when, features.CaseMapping()) {
 		t.Fatal("Note")
 	}
 	connectChathistory(t, c, transport,
@@ -496,8 +496,8 @@ func TestCatchUpTargetsLargerThanLimitStillPages(t *testing.T) {
 	ended := New()
 	ended.SetClock(session.NewFakeClock(time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)))
 	endedTransport := session.NewLoopbackTransport()
-	endedFeatures := ended.reducer.ServerFeatures("libera")
-	if !ended.playbackTimes.Note("libera", "#omarchy", when, endedFeatures.CaseMapping()) {
+	endedFeatures := ended.reducer.ServerFeatures("freenode")
+	if !ended.playbackTimes.Note("freenode", "#omarchy", when, endedFeatures.CaseMapping()) {
 		t.Fatal("Note")
 	}
 	connectChathistory(t, ended, endedTransport,
@@ -518,9 +518,9 @@ func TestDiscoveredEmptyAfterDropsQuery(t *testing.T) {
 	c.SetClock(session.NewFakeClock(time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)))
 	transport := session.NewLoopbackTransport()
 	when := time.Date(2024, 3, 9, 16, 0, 0, 620000000, time.UTC)
-	features := c.reducer.ServerFeatures("libera")
+	features := c.reducer.ServerFeatures("freenode")
 	mapping := features.CaseMapping()
-	if !c.playbackTimes.Note("libera", "#omarchy", when, mapping) || !c.openDirects.Add("libera", "lena", mapping) {
+	if !c.playbackTimes.Note("freenode", "#omarchy", when, mapping) || !c.openDirects.Add("freenode", "lena", mapping) {
 		t.Fatal("setup")
 	}
 	connectChathistory(t, c, transport, ":server 376 omairc :End of MOTD\r\n")
@@ -528,7 +528,7 @@ func TestDiscoveredEmptyAfterDropsQuery(t *testing.T) {
 		":irc.host BATCH +t draft/chathistory-targets\r\n" +
 			"@batch=t :irc.host CHATHISTORY TARGETS nobody 2024-03-09T16:00:01.000Z\r\n" +
 			":irc.host BATCH -t\r\n"))
-	if !hasConversation(c, "libera", "nobody") {
+	if !hasConversation(c, "freenode", "nobody") {
 		t.Fatal("TARGETS did not open nobody")
 	}
 	transport.InjectBytes([]byte(
@@ -536,10 +536,10 @@ func TestDiscoveredEmptyAfterDropsQuery(t *testing.T) {
 			":irc.host BATCH -n\r\n" +
 			":irc.host BATCH +l chathistory lena\r\n" +
 			":irc.host BATCH -l\r\n"))
-	if hasConversation(c, "libera", "nobody") {
+	if hasConversation(c, "freenode", "nobody") {
 		t.Fatal("empty discovered query stayed open")
 	}
-	if !hasConversation(c, "libera", "lena") {
+	if !hasConversation(c, "freenode", "lena") {
 		t.Fatal("empty AFTER dropped an open direct")
 	}
 }
@@ -549,8 +549,8 @@ func TestDiscoveredFailAfterDropsQuery(t *testing.T) {
 	c.SetClock(session.NewFakeClock(time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)))
 	transport := session.NewLoopbackTransport()
 	when := time.Date(2024, 3, 9, 16, 0, 0, 620000000, time.UTC)
-	features := c.reducer.ServerFeatures("libera")
-	if !c.playbackTimes.Note("libera", "#omarchy", when, features.CaseMapping()) {
+	features := c.reducer.ServerFeatures("freenode")
+	if !c.playbackTimes.Note("freenode", "#omarchy", when, features.CaseMapping()) {
 		t.Fatal("Note")
 	}
 	connectChathistory(t, c, transport, ":server 376 omairc :End of MOTD\r\n")
@@ -559,7 +559,7 @@ func TestDiscoveredFailAfterDropsQuery(t *testing.T) {
 			"@batch=t :irc.host CHATHISTORY TARGETS nobody 2024-03-09T16:00:01.000Z\r\n" +
 			":irc.host BATCH -t\r\n"))
 	transport.InjectBytes([]byte(":server FAIL CHATHISTORY MESSAGE_ERROR AFTER nobody :no\r\n"))
-	if hasConversation(c, "libera", "nobody") {
+	if hasConversation(c, "freenode", "nobody") {
 		t.Fatal("failed discovered query stayed open")
 	}
 }

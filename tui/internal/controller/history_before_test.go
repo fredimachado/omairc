@@ -13,7 +13,7 @@ func TestControllerOlderHistoryMutedAndUnreadNeutral(t *testing.T) {
 	transport := session.NewLoopbackTransport()
 	clock := session.NewFakeClock(time.Unix(0, 0))
 	config := session.SessionConfig{
-		NetworkID: "libera",
+		NetworkID: "freenode",
 		Host:      "irc.example",
 		Port:      6697,
 		TLSEnabled: true,
@@ -36,9 +36,9 @@ func TestControllerOlderHistoryMutedAndUnreadNeutral(t *testing.T) {
 			":irc.host BATCH +hx chathistory #omarchy\r\n" +
 			"@batch=hx;time=2011-10-19T16:40:51.620Z;msgid=live :alice!u@h PRIVMSG #omarchy :live\r\n" +
 			":irc.host BATCH -hx\r\n"))
-	c.SelectConversation("libera", "#omarchy")
+	c.SelectConversation("freenode", "#omarchy")
 	c.Publish(irc.ViewNotify{Messages: true, Conversations: true})
-	beforeUnread := c.UnreadCountFor("libera")
+	beforeUnread := c.UnreadCountFor("freenode")
 	if !c.RequestOlderTranscriptHistory() {
 		t.Fatal("RequestOlderTranscriptHistory must succeed")
 	}
@@ -59,8 +59,8 @@ func TestControllerOlderHistoryMutedAndUnreadNeutral(t *testing.T) {
 	if !found {
 		t.Fatalf("messages = %+v, want backlog row", c.Messages())
 	}
-	if c.UnreadCountFor("libera") != beforeUnread {
-		t.Fatalf("unread = %d, want unchanged %d", c.UnreadCountFor("libera"), beforeUnread)
+	if c.UnreadCountFor("freenode") != beforeUnread {
+		t.Fatalf("unread = %d, want unchanged %d", c.UnreadCountFor("freenode"), beforeUnread)
 	}
 }
 
@@ -69,7 +69,7 @@ func TestControllerDuplicateMsgidNotInserted(t *testing.T) {
 	transport := session.NewLoopbackTransport()
 	clock := session.NewFakeClock(time.Unix(0, 0))
 	config := session.SessionConfig{
-		NetworkID: "libera",
+		NetworkID: "freenode",
 		Host:      "irc.example",
 		Port:      6697,
 		TLSEnabled: true,
@@ -92,7 +92,7 @@ func TestControllerDuplicateMsgidNotInserted(t *testing.T) {
 			":irc.host BATCH +hx chathistory #omarchy\r\n" +
 			"@batch=hx;msgid=same :alice!u@h PRIVMSG #omarchy :once\r\n" +
 			":irc.host BATCH -hx\r\n"))
-	c.SelectConversation("libera", "#omarchy")
+	c.SelectConversation("freenode", "#omarchy")
 	c.Publish(irc.ViewNotify{Messages: true})
 	transport.InjectBytes([]byte(
 		":irc.host BATCH +dup chathistory #omarchy\r\n" +
@@ -115,7 +115,7 @@ func TestControllerRequestOlderTranscriptHistoryUsesOldestRow(t *testing.T) {
 	transport := session.NewLoopbackTransport()
 	clock := session.NewFakeClock(time.Unix(0, 0))
 	config := session.SessionConfig{
-		NetworkID: "libera",
+		NetworkID: "freenode",
 		Host:      "irc.example",
 		Port:      6697,
 		TLSEnabled: true,
@@ -138,7 +138,7 @@ func TestControllerRequestOlderTranscriptHistoryUsesOldestRow(t *testing.T) {
 			":irc.host BATCH +hx chathistory #omarchy\r\n" +
 			"@batch=hx;msgid=anchor :alice!u@h PRIVMSG #omarchy :first\r\n" +
 			":irc.host BATCH -hx\r\n"))
-	c.SelectConversation("libera", "#omarchy")
+	c.SelectConversation("freenode", "#omarchy")
 	c.Publish(irc.ViewNotify{Messages: true})
 	if !c.RequestOlderTranscriptHistory() {
 		t.Fatal("RequestOlderTranscriptHistory must succeed")
@@ -166,7 +166,7 @@ func TestRequestOlderTranscriptHistoryArmsTailCapBeforeSend(t *testing.T) {
 	transport := session.NewLoopbackTransport()
 	clock := session.NewFakeClock(time.Unix(0, 0))
 	config := session.SessionConfig{
-		NetworkID:  "libera",
+		NetworkID:  "freenode",
 		Host:       "irc.example",
 		Port:       6697,
 		TLSEnabled: true,
@@ -189,9 +189,9 @@ func TestRequestOlderTranscriptHistoryArmsTailCapBeforeSend(t *testing.T) {
 			":irc.host BATCH +hx chathistory #omarchy\r\n" +
 			"@batch=hx;msgid=anchor :alice!u@h PRIVMSG #omarchy :first\r\n" +
 			":irc.host BATCH -hx\r\n"))
-	c.SelectConversation("libera", "#omarchy")
+	c.SelectConversation("freenode", "#omarchy")
 	c.Publish(irc.ViewNotify{Messages: true})
-	key := c.Reducer().ConversationKey("libera", "#omarchy")
+	key := c.Reducer().ConversationKey("freenode", "#omarchy")
 	if !c.RequestOlderTranscriptHistory() {
 		t.Fatal("RequestOlderTranscriptHistory must succeed")
 	}
@@ -206,7 +206,7 @@ func TestRequestOlderTranscriptHistoryKeepsTailCapWhenBeforeInflight(t *testing.
 	transport := session.NewLoopbackTransport()
 	clock := session.NewFakeClock(time.Unix(0, 0))
 	config := session.SessionConfig{
-		NetworkID:  "libera",
+		NetworkID:  "freenode",
 		Host:       "irc.example",
 		Port:       6697,
 		TLSEnabled: true,
@@ -229,9 +229,9 @@ func TestRequestOlderTranscriptHistoryKeepsTailCapWhenBeforeInflight(t *testing.
 			":irc.host BATCH +hx chathistory #omarchy\r\n" +
 			"@batch=hx;msgid=anchor :alice!u@h PRIVMSG #omarchy :first\r\n" +
 			":irc.host BATCH -hx\r\n"))
-	c.SelectConversation("libera", "#omarchy")
+	c.SelectConversation("freenode", "#omarchy")
 	c.Publish(irc.ViewNotify{Messages: true})
-	key := c.Reducer().ConversationKey("libera", "#omarchy")
+	key := c.Reducer().ConversationKey("freenode", "#omarchy")
 	if !c.RequestOlderTranscriptHistory() {
 		t.Fatal("first BEFORE must succeed")
 	}
@@ -249,7 +249,7 @@ func TestRequestOlderTranscriptHistoryClearsTailCapWhenRefused(t *testing.T) {
 	transport := session.NewLoopbackTransport()
 	clock := session.NewFakeClock(time.Unix(0, 0))
 	config := session.SessionConfig{
-		NetworkID:  "libera",
+		NetworkID:  "freenode",
 		Host:       "irc.example",
 		Port:       6697,
 		TLSEnabled: true,
@@ -272,9 +272,9 @@ func TestRequestOlderTranscriptHistoryClearsTailCapWhenRefused(t *testing.T) {
 			":irc.host BATCH +hx chathistory #omarchy\r\n" +
 			"@batch=hx;msgid=anchor :alice!u@h PRIVMSG #omarchy :first\r\n" +
 			":irc.host BATCH -hx\r\n"))
-	c.SelectConversation("libera", "#omarchy")
+	c.SelectConversation("freenode", "#omarchy")
 	c.Publish(irc.ViewNotify{Messages: true})
-	key := c.Reducer().ConversationKey("libera", "#omarchy")
+	key := c.Reducer().ConversationKey("freenode", "#omarchy")
 	if !c.RequestOlderTranscriptHistory() {
 		t.Fatal("first BEFORE must succeed")
 	}

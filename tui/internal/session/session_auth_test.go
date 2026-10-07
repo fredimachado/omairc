@@ -178,7 +178,7 @@ func TestSessionSaslPlainExactChunkBoundaryRequiresPlus(t *testing.T) {
 // SessionTest::saslAccountAuthenticatesAsTheBouncerName.
 func TestSessionSaslAccountAuthenticatesAsTheBouncerName(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
-	config.SASLAccount = "joe/libera"
+	config.SASLAccount = "joe/freenode"
 	config.Password = "secret"
 	fixture := newSessionFixture(t, config)
 
@@ -187,8 +187,8 @@ func TestSessionSaslAccountAuthenticatesAsTheBouncerName(t *testing.T) {
 		":server CAP omairc ACK :sasl\r\n" +
 		"AUTHENTICATE +\r\n")
 
-	if got := string(decodeAuthenticatePayload(t, fixture.lastFrame())); got != "joe/libera\x00joe/libera\x00secret" {
-		t.Fatalf("SASL payload = %q, want joe/libera\\0joe/libera\\0secret", got)
+	if got := string(decodeAuthenticatePayload(t, fixture.lastFrame())); got != "joe/freenode\x00joe/freenode\x00secret" {
+		t.Fatalf("SASL payload = %q, want joe/freenode\\0joe/freenode\\0secret", got)
 	}
 	if got := fixture.session.Nick(); got != "omairc" {
 		t.Fatalf("nick = %q, want omairc", got)

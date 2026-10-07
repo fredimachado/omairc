@@ -51,7 +51,7 @@ namespace
 IrcSessionConfig fixtureConfig()
 {
     IrcSessionConfig value;
-    value.networkId = QStringLiteral("libera");
+    value.networkId = QStringLiteral("freenode");
     value.host = QStringLiteral("irc.example");
     value.tlsEnabled = true;
     value.nick = QStringLiteral("omairc");
@@ -88,10 +88,10 @@ public:
     }
 };
 
-bool writeLiberaProfile()
+bool writeFreenodeProfile()
 {
     IrcNetworkProfile profile;
-    profile.networkId = QStringLiteral("libera");
+    profile.networkId = QStringLiteral("freenode");
     profile.host = QStringLiteral("irc.example");
     profile.port = 6697;
     profile.tlsEnabled = true;
@@ -568,13 +568,13 @@ void LiveUiTest::consecutiveSameAuthorMinuteGroupsThroughIrcEvent()
     Backend backend;
     IrcSlashSession slash;
     IrcController controller;
-    QVERIFY(writeLiberaProfile());
+    QVERIFY(writeFreenodeProfile());
     MissingCredentialStore credentials;
     IrcConnection connection(controller, credentials);
     auto *transport = new FakeIrcTransport;
     IrcSession *session = controller.addSession(fixtureConfig(), transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -584,7 +584,7 @@ void LiveUiTest::consecutiveSameAuthorMinuteGroupsThroughIrcEvent()
                           ":omairc!u@h JOIN :#omarchy\r\n"
                           ":server 353 omairc = #omarchy :omairc anna rio\r\n"
                           ":server 366 omairc #omarchy :End of NAMES\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
 
     QQmlApplicationEngine engine;
@@ -603,7 +603,7 @@ void LiveUiTest::consecutiveSameAuthorMinuteGroupsThroughIrcEvent()
     QVERIFY(QTest::qWaitForWindowExposed(window));
     window->setWidth(1180);
     window->setHeight(760);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QCoreApplication::processEvents();
 
     QVERIFY(waitUntil([&] {
@@ -670,13 +670,13 @@ void LiveUiTest::memberJoinPartModeUpdatesWithoutReset()
     Backend backend;
     IrcSlashSession slash;
     IrcController controller;
-    QVERIFY(writeLiberaProfile());
+    QVERIFY(writeFreenodeProfile());
     MissingCredentialStore credentials;
     IrcConnection connection(controller, credentials);
     auto *transport = new FakeIrcTransport;
     IrcSession *session = controller.addSession(fixtureConfig(), transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -686,7 +686,7 @@ void LiveUiTest::memberJoinPartModeUpdatesWithoutReset()
                           ":omairc!u@h JOIN :#omarchy\r\n"
                           ":server 353 omairc = #omarchy :omairc anna rio\r\n"
                           ":server 366 omairc #omarchy :End of NAMES\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QQmlApplicationEngine engine;
     QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/OmaircWindow.qml")));
@@ -704,7 +704,7 @@ void LiveUiTest::memberJoinPartModeUpdatesWithoutReset()
     QVERIFY(QTest::qWaitForWindowExposed(window));
     window->setWidth(1180);
     window->setHeight(760);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QCoreApplication::processEvents();
 
     QVERIFY(waitUntil([&] {
@@ -781,13 +781,13 @@ void LiveUiTest::replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent()
     Backend backend;
     IrcSlashSession slash;
     IrcController controller;
-    QVERIFY(writeLiberaProfile());
+    QVERIFY(writeFreenodeProfile());
     MissingCredentialStore credentials;
     IrcConnection connection(controller, credentials);
     auto *transport = new FakeIrcTransport;
     IrcSession *session = controller.addSession(fixtureConfig(), transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
@@ -798,7 +798,7 @@ void LiveUiTest::replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent()
                           ":omairc!u@h JOIN :#omarchy\r\n"
                           ":server 353 omairc = #omarchy :omairc anna\r\n"
                           ":server 366 omairc #omarchy :End of NAMES\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QQmlApplicationEngine engine;
     QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/OmaircWindow.qml")));
@@ -816,7 +816,7 @@ void LiveUiTest::replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent()
     QVERIFY(QTest::qWaitForWindowExposed(window));
     window->setWidth(1180);
     window->setHeight(760);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QCoreApplication::processEvents();
 
     QVERIFY(waitUntil([&] {
@@ -877,13 +877,13 @@ void LiveUiTest::bouncerQueryReplayRendersDirectMessageInSidebar()
     Backend backend;
     IrcSlashSession slash;
     IrcController controller;
-    QVERIFY(writeLiberaProfile());
+    QVERIFY(writeFreenodeProfile());
     MissingCredentialStore credentials;
     IrcConnection connection(controller, credentials);
     auto *transport = new FakeIrcTransport;
     IrcSession *session = controller.addSession(fixtureConfig(), transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :batch echo-message\r\n"
@@ -894,7 +894,7 @@ void LiveUiTest::bouncerQueryReplayRendersDirectMessageInSidebar()
                           ":omairc!u@h JOIN :#omarchy\r\n"
                           ":server 353 omairc = #omarchy :omairc anna\r\n"
                           ":server 366 omairc #omarchy :End of NAMES\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QQmlApplicationEngine engine;
     QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/OmaircWindow.qml")));
@@ -935,7 +935,7 @@ void LiveUiTest::bouncerQueryReplayRendersDirectMessageInSidebar()
                 }),
              qPrintable(visibleDirectRowLabels(window).join(QLatin1Char('|'))));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("dana"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("dana"));
     QVERIFY2(waitUntil([&] {
                     return chromeIndex(collectTranscriptChrome(window),
                                        QStringLiteral("morning")) >= 0;
@@ -969,13 +969,13 @@ void LiveUiTest::ctrlFFindsLiveTranscriptAndStatus()
     Backend backend;
     IrcSlashSession slash;
     IrcController controller;
-    QVERIFY(writeLiberaProfile());
+    QVERIFY(writeFreenodeProfile());
     MissingCredentialStore credentials;
     IrcConnection connection(controller, credentials);
     auto *transport = new FakeIrcTransport;
     IrcSession *session = controller.addSession(fixtureConfig(), transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -989,7 +989,7 @@ void LiveUiTest::ctrlFFindsLiveTranscriptAndStatus()
                           ":uniqnick!u@h PRIVMSG #omarchy :no nick in this line\r\n"
                           ":anna!u@h PRIVMSG #omarchy :later filler\r\n"
                           ":server 404 omairc #omarchy :status body without the numeric\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QQmlApplicationEngine engine;
     QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/OmaircWindow.qml")));
@@ -1007,7 +1007,7 @@ void LiveUiTest::ctrlFFindsLiveTranscriptAndStatus()
     QVERIFY(QTest::qWaitForWindowExposed(window));
     window->setWidth(1180);
     window->setHeight(760);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QCoreApplication::processEvents();
 
     QVERIFY(waitUntil([&] {
@@ -1073,7 +1073,7 @@ void LiveUiTest::ctrlFFindsLiveTranscriptAndStatus()
     QVERIFY(waitUntil([&] { return !window->property("findActive").toBool(); }));
     QCOMPARE(composer->property("text").toString(), QStringLiteral("keep-draft"));
 
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
     QVERIFY(waitUntil([&] {
         QQuickItem *console = window->findChild<QQuickItem *>(QStringLiteral("consoleList"));
         return window->property("consoleVisible").toBool() && console && console->isVisible();
