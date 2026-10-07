@@ -32,7 +32,7 @@ Unknown `--network`: `"Unknown network id '<id>'."`
 ## `connections`
 
 ```json
-{"ok":true,"connections":[{"id":"…","name":"Libera","host":"irc.libera.chat","port":6697,"tls":true,"nick":"fred","state":"Connected","selected":true}]}
+{"ok":true,"connections":[{"id":"…","name":"Freenode","host":"chat.freenode.net","port":6697,"tls":true,"nick":"fred","state":"Connected","selected":true}]}
 ```
 
 `name` is the Connect-sheet label. When it is empty, the row uses `host`.

@@ -13,13 +13,13 @@ func TestCredentialKeyName(t *testing.T) {
 	}{
 		{
 			name: "plain",
-			key:  CredentialKey{NetworkID: "libera", Username: "alice", Host: "irc.libera.chat"},
-			want: "omairc/v1/6:libera/5:alice/15:irc.libera.chat",
+			key:  CredentialKey{NetworkID: "freenode", Username: "alice", Host: "chat.freenode.net"},
+			want: "omairc/v1/8:freenode/5:alice/17:chat.freenode.net",
 		},
 		{
 			name: "purpose",
-			key:  CredentialKey{NetworkID: "libera", Username: "alice", Host: "irc.libera.chat", Purpose: "sasl"},
-			want: "omairc/v1/6:libera/5:alice/15:irc.libera.chat/4:sasl",
+			key:  CredentialKey{NetworkID: "freenode", Username: "alice", Host: "chat.freenode.net", Purpose: "sasl"},
+			want: "omairc/v1/8:freenode/5:alice/17:chat.freenode.net/4:sasl",
 		},
 		{
 			name: "empty fields",
@@ -73,7 +73,7 @@ func (b *credentialTestBackend) remove(keyName string) CredentialResult {
 }
 
 func TestCredentialStoreRoutesThroughBackend(t *testing.T) {
-	key := CredentialKey{NetworkID: "libera", Username: "alice", Host: "irc.libera.chat", Purpose: "sasl"}
+	key := CredentialKey{NetworkID: "freenode", Username: "alice", Host: "chat.freenode.net", Purpose: "sasl"}
 	backend := &credentialTestBackend{result: CredentialResult{State: CredentialMissing}}
 	store := &credentialStore{backend: backend}
 
@@ -107,7 +107,7 @@ func TestCredentialStoreRoutesThroughBackend(t *testing.T) {
 func TestCredentialStoreUnavailableStateIsNotAnError(t *testing.T) {
 	backend := &credentialTestBackend{result: CredentialResult{State: CredentialUnavailable}}
 	store := &credentialStore{backend: backend}
-	key := CredentialKey{NetworkID: "libera", Username: "alice", Host: "irc.libera.chat"}
+	key := CredentialKey{NetworkID: "freenode", Username: "alice", Host: "chat.freenode.net"}
 
 	for name, got := range map[string]CredentialResult{
 		"read":   store.Read(key),
@@ -136,7 +136,7 @@ func TestNewCredentialStoreUnavailableWithoutSessionBus(t *testing.T) {
 	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "")
 	t.Setenv("DISPLAY", "")
 
-	key := CredentialKey{NetworkID: "libera", Username: "alice", Host: "irc.libera.chat"}
+	key := CredentialKey{NetworkID: "freenode", Username: "alice", Host: "chat.freenode.net"}
 	result := NewCredentialStore().Read(key)
 	if result.State != CredentialUnavailable {
 		t.Skipf("a secret service answered %v without a cleared session bus; skipping", result.State)

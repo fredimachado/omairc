@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Use this for anything that doesn't fit a bug or feature template.
-        Live conversation is fine too: [#omarchy](https://web.libera.chat/#omarchy) and [#omairc](https://web.libera.chat/#omairc) on Libera.
+        Live conversation is fine too: [#omarchy](https://webchat.freenode.net/) and [#omairc](https://webchat.freenode.net/) on Freenode.
   - type: textarea
     id: feedback
     attributes:

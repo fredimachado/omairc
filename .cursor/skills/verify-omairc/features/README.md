@@ -45,7 +45,7 @@ Keep implementation details out of the map. Name only user paths, stable handles
 
 ## Features
 
-- [Connect](./connect.md) covers the first-run Connect sheet, Libera defaults, and the nick-required state.
+- [Connect](./connect.md) covers the first-run Connect sheet, Freenode defaults, and the nick-required state.
 - [Switch conversation](./switch-conversation.md) covers sidebar channels, seeded direct messages, topic, people count, and message history.
 - [Send a message](./send-message.md) covers composer focus, Enter, SEND, empty input, and `/me` actions.
 - [File link](./file-link.md) covers inserting an ordinary web link when a server offers a file host.

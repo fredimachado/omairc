@@ -23,25 +23,25 @@ func TestRestoreOpenDirectsAfterMotd(t *testing.T) {
 
 	store := storage.NewOpenDirectStore()
 	c.SetOpenDirectStore(store)
-	features := c.reducer.ServerFeatures("libera")
+	features := c.reducer.ServerFeatures("freenode")
 	mapping := features.CaseMapping()
-	store.Add("libera", "alice", mapping)
-	store.Add("libera", "#chan", mapping)
-	store.Add("libera", "NickServ", mapping)
+	store.Add("freenode", "alice", mapping)
+	store.Add("freenode", "#chan", mapping)
+	store.Add("freenode", "NickServ", mapping)
 
-	c.MessageReceived("libera", irc.Message{Command: "376", Params: []string{"omairc", "End of MOTD"}})
+	c.MessageReceived("freenode", irc.Message{Command: "376", Params: []string{"omairc", "End of MOTD"}})
 
-	if !hasConversationKey(c, "libera", "alice") {
+	if !hasConversationKey(c, "freenode", "alice") {
 		t.Fatalf("alice was not restored; conversations = %v", conversationTargets(c))
 	}
-	if hasConversationKey(c, "libera", "#chan") {
+	if hasConversationKey(c, "freenode", "#chan") {
 		t.Fatalf("channel restored as a direct")
 	}
-	if hasConversationKey(c, "libera", "NickServ") {
+	if hasConversationKey(c, "freenode", "NickServ") {
 		t.Fatalf("service restored as a direct")
 	}
 	// The prune drops the non-persistable entries from the store too.
-	for _, target := range store.Targets("libera") {
+	for _, target := range store.Targets("freenode") {
 		if target != "alice" {
 			t.Fatalf("store kept %q after prune", target)
 		}
@@ -58,17 +58,17 @@ func TestRestoreOpenDirectsRespectsReopenToggle(t *testing.T) {
 
 	store := storage.NewOpenDirectStore()
 	c.SetOpenDirectStore(store)
-	features := c.reducer.ServerFeatures("libera")
+	features := c.reducer.ServerFeatures("freenode")
 	mapping := features.CaseMapping()
-	store.Add("libera", "alice", mapping)
+	store.Add("freenode", "alice", mapping)
 
-	c.MessageReceived("libera", irc.Message{Command: "376", Params: []string{"omairc", "End of MOTD"}})
+	c.MessageReceived("freenode", irc.Message{Command: "376", Params: []string{"omairc", "End of MOTD"}})
 
-	if hasConversationKey(c, "libera", "alice") {
+	if hasConversationKey(c, "freenode", "alice") {
 		t.Fatalf("restore ran while reopen directs is off")
 	}
-	if len(store.Targets("libera")) != 1 {
-		t.Fatalf("store changed while reopen directs is off: %v", store.Targets("libera"))
+	if len(store.Targets("freenode")) != 1 {
+		t.Fatalf("store changed while reopen directs is off: %v", store.Targets("freenode"))
 	}
 }
 
@@ -81,17 +81,17 @@ func TestRestoreOpenDirectsSkipsExistingConversation(t *testing.T) {
 
 	store := storage.NewOpenDirectStore()
 	c.SetOpenDirectStore(store)
-	features := c.reducer.ServerFeatures("libera")
+	features := c.reducer.ServerFeatures("freenode")
 	mapping := features.CaseMapping()
-	store.Add("libera", "alice", mapping)
+	store.Add("freenode", "alice", mapping)
 
 	// alice already exists, so the restore must not create a duplicate or
 	// change the existing transcript.
-	key := c.reducer.ConversationKey("libera", "alice")
+	key := c.reducer.ConversationKey("freenode", "alice")
 	c.reducer.EnsureConversation(key, "alice", irc.CauseUserOpen)
 	before := len(c.reducer.Conversations())
 
-	c.MessageReceived("libera", irc.Message{Command: "376", Params: []string{"omairc", "End of MOTD"}})
+	c.MessageReceived("freenode", irc.Message{Command: "376", Params: []string{"omairc", "End of MOTD"}})
 
 	if got := len(c.reducer.Conversations()); got != before {
 		t.Fatalf("conversation count = %d, want %d", got, before)
@@ -104,16 +104,16 @@ func TestRememberAndForgetOpenDirect(t *testing.T) {
 	store.SetEphemeral(true)
 	c.SetOpenDirectStore(store)
 
-	c.rememberOpenDirect("libera", "alice")
-	c.rememberOpenDirect("libera", "#chan")
-	c.rememberOpenDirect("libera", "NickServ")
+	c.rememberOpenDirect("freenode", "alice")
+	c.rememberOpenDirect("freenode", "#chan")
+	c.rememberOpenDirect("freenode", "NickServ")
 
-	if got := store.Targets("libera"); len(got) != 1 || got[0] != "alice" {
+	if got := store.Targets("freenode"); len(got) != 1 || got[0] != "alice" {
 		t.Fatalf("Targets = %v, want [alice]", got)
 	}
 
-	c.forgetOpenDirect("libera", "alice")
-	if got := store.Targets("libera"); len(got) != 0 {
+	c.forgetOpenDirect("freenode", "alice")
+	if got := store.Targets("freenode"); len(got) != 0 {
 		t.Fatalf("Targets after forget = %v, want empty", got)
 	}
 }

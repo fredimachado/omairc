@@ -24,7 +24,7 @@ Member presence is what each channel member row shows besides the nick: a presen
 Preconditions:
 
 - Seeded conversation UI is showing (`#omarchy · irc.example · fred - Omairc`, members visible). Use `control-omairc launch --demo-server`. When Xvfb tools are missing, `qml-suite` (seeded `IrcController`) is the fallback and is not compiled-window proof.
-- `control-omairc launch` without `--demo-server` is first-run Connect titled `irc.libera.chat Status` with no member list. Do not start this recipe there.
+- `control-omairc launch` without `--demo-server` is first-run Connect titled `chat.freenode.net Status` with no member list. Do not start this recipe there.
 - The compiled demo already paints presence dots, away dimming, status lines, and PREFIX glyphs on `#omarchy`. Capability gating and a real handshake are not this fence.
 
 ```desktop-recipe

@@ -11,7 +11,7 @@ func TestNetworkDisplayName(t *testing.T) {
 	configs := []session.SessionConfig{
 		session.DefaultSessionConfig("omarchy", "", "irc.example", "fred"),
 		session.DefaultSessionConfig("oftc", "", "irc.example", "oak"),
-		session.DefaultSessionConfig("libera", "Libera", "irc.libera.chat", "fred"),
+		session.DefaultSessionConfig("freenode", "Freenode", "chat.freenode.net", "fred"),
 	}
 	for _, config := range configs {
 		transport := session.NewLoopbackTransport()
@@ -26,8 +26,8 @@ func TestNetworkDisplayName(t *testing.T) {
 	if got := c.NetworkDisplayName("oftc"); got != "irc.example · oak" {
 		t.Fatalf("NetworkDisplayName(oftc) = %q, want %q", got, "irc.example · oak")
 	}
-	if got := c.NetworkDisplayName("libera"); got != "Libera" {
-		t.Fatalf("NetworkDisplayName(libera) = %q, want %q", got, "Libera")
+	if got := c.NetworkDisplayName("freenode"); got != "Freenode" {
+		t.Fatalf("NetworkDisplayName(freenode) = %q, want %q", got, "Freenode")
 	}
 	if got := c.NetworkDisplayName("nope"); got != "" {
 		t.Fatalf("NetworkDisplayName(nope) = %q, want empty", got)

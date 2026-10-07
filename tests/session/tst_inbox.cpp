@@ -20,7 +20,7 @@
 
 namespace
 {
-const QString networkA = QStringLiteral("libera");
+const QString networkA = QStringLiteral("freenode");
 const QDateTime timestamp =
     QDateTime::fromString(QStringLiteral("2026-09-04T00:00:00Z"), Qt::ISODate);
 

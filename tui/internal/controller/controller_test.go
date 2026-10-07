@@ -234,16 +234,16 @@ func TestReducesTrafficAndRoutesOutboundByNetwork(t *testing.T) {
 
 func TestConversationCreateMatrix(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc", "echo-message")
 	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n")
-	if !c.Session("libera").Capabilities().Contains(irc.CapabilityEchoMessage) {
+	if !c.Session("freenode").Capabilities().Contains(irc.CapabilityEchoMessage) {
 		t.Fatalf("echo-message not acked")
 	}
-	c.SelectConversation("libera", "#omarchy")
+	c.SelectConversation("freenode", "#omarchy")
 
 	// QuietSend writes the frame but never invents a conversation.
-	if !c.SendToTarget("libera", "lena", "hello") {
+	if !c.SendToTarget("freenode", "lena", "hello") {
 		t.Fatalf("SendToTarget = false")
 	}
 	if got := lastWrittenFrame(t, transport); got != "PRIVMSG lena :hello\r\n" {
@@ -252,7 +252,7 @@ func TestConversationCreateMatrix(t *testing.T) {
 	if c.SelectedTarget() != "#omarchy" {
 		t.Fatalf("SelectedTarget = %q after QuietSend", c.SelectedTarget())
 	}
-	if hasConversation(c, "libera", "lena") {
+	if hasConversation(c, "freenode", "lena") {
 		t.Fatalf("QuietSend invented lena: %v", conversationTargets(c))
 	}
 
@@ -261,22 +261,22 @@ func TestConversationCreateMatrix(t *testing.T) {
 	if c.SelectedTarget() != "#omarchy" {
 		t.Fatalf("SelectedTarget = %q after self-authored line", c.SelectedTarget())
 	}
-	if hasConversation(c, "libera", "lena") {
+	if hasConversation(c, "freenode", "lena") {
 		t.Fatalf("InboundSelf invented lena: %v", conversationTargets(c))
 	}
 
 	// A service direct never invents, and still reaches the Status console.
 	inject(t, transport, ":NickServ!NickServ@services PRIVMSG omairc :This nickname is registered.\r\n")
-	if hasConversation(c, "libera", "NickServ") || hasConversation(c, "libera", "nickserv") {
+	if hasConversation(c, "freenode", "NickServ") || hasConversation(c, "freenode", "nickserv") {
 		t.Fatalf("service direct invented: %v", conversationTargets(c))
 	}
-	if !consoleContains(c, "libera", "This nickname is registered.") {
+	if !consoleContains(c, "freenode", "This nickname is registered.") {
 		t.Fatalf("Status console missing the NickServ line")
 	}
 
 	// An inbound human direct invents without stealing the selection.
 	inject(t, transport, ":alice!u@h PRIVMSG omairc :hi\r\n")
-	if !hasConversation(c, "libera", "alice") {
+	if !hasConversation(c, "freenode", "alice") {
 		t.Fatalf("InboundOther did not invent alice: %v", conversationTargets(c))
 	}
 	if c.SelectedTarget() != "#omarchy" {
@@ -291,7 +291,7 @@ func TestConversationCreateMatrix(t *testing.T) {
 	if c.SelectedTarget() != "bob" {
 		t.Fatalf("SelectedTarget = %q after OpenDirectMessage", c.SelectedTarget())
 	}
-	if !hasConversation(c, "libera", "bob") {
+	if !hasConversation(c, "freenode", "bob") {
 		t.Fatalf("UserOpen did not invent bob: %v", conversationTargets(c))
 	}
 	if len(transport.WrittenFrames()) != framesBefore {
@@ -306,7 +306,7 @@ func TestConversationCreateMatrix(t *testing.T) {
 
 func TestSelectedPrivmsgInsertsMessageRow(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc")
 	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n"+
 		":server 353 omairc = #omarchy :omairc Alice\r\n"+
@@ -346,7 +346,7 @@ func TestSelectedPrivmsgInsertsMessageRow(t *testing.T) {
 
 func TestIsupportBurstDoesNotResetModels(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc")
 	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n"+
 		":server 353 omairc = #omarchy :omairc Alice\r\n"+
@@ -402,7 +402,7 @@ func TestIsupportBurstDoesNotResetModels(t *testing.T) {
 	}
 
 	inject(t, transport, ":omairc!u@h JOIN :$odd\r\n")
-	c.SelectConversation("libera", "$odd")
+	c.SelectConversation("freenode", "$odd")
 	if c.SelectedTarget() != "$odd" {
 		t.Fatalf("SelectedTarget = %q", c.SelectedTarget())
 	}
@@ -438,13 +438,13 @@ func memberSnapshotEqual(left, right MemberSnapshot) bool {
 
 func TestIncomingNickRetargetsSelectedDirect(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc")
 	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n"+
 		":server 353 omairc = #omarchy :omairc Alice\r\n"+
 		":server 366 omairc #omarchy :End of NAMES\r\n"+
 		":Alice!u@h PRIVMSG omairc :hi\r\n")
-	c.SelectConversation("libera", "Alice")
+	c.SelectConversation("freenode", "Alice")
 	if c.SelectedTarget() != "Alice" {
 		t.Fatalf("SelectedTarget = %q", c.SelectedTarget())
 	}
@@ -456,10 +456,10 @@ func TestIncomingNickRetargetsSelectedDirect(t *testing.T) {
 	if c.SelectedTarget() != "Alicia" {
 		t.Fatalf("SelectedTarget = %q, want Alicia", c.SelectedTarget())
 	}
-	if hasConversation(c, "libera", "Alice") {
+	if hasConversation(c, "freenode", "Alice") {
 		t.Fatalf("old Alice row survived: %v", conversationTargets(c))
 	}
-	if !hasConversation(c, "libera", "Alicia") {
+	if !hasConversation(c, "freenode", "Alicia") {
 		t.Fatalf("Alicia row missing: %v", conversationTargets(c))
 	}
 	if len(c.Messages()) != 2 {
@@ -470,7 +470,7 @@ func TestIncomingNickRetargetsSelectedDirect(t *testing.T) {
 		t.Fatalf("nick event row = %+v", last)
 	}
 
-	c.SelectConversation("libera", "#omarchy")
+	c.SelectConversation("freenode", "#omarchy")
 	if c.Members()[0].Nick != "Alicia" {
 		t.Fatalf("channel member = %+v", c.Members()[0])
 	}
@@ -479,7 +479,7 @@ func TestIncomingNickRetargetsSelectedDirect(t *testing.T) {
 		t.Fatalf("channel Messages = %+v", c.Messages())
 	}
 
-	c.SelectConversation("libera", "Alicia")
+	c.SelectConversation("freenode", "Alicia")
 	if !c.SendMessage("hello") {
 		t.Fatalf("SendMessage = false")
 	}
@@ -488,8 +488,8 @@ func TestIncomingNickRetargetsSelectedDirect(t *testing.T) {
 	}
 
 	inject(t, transport, ":omairc!u@h NICK :fred\r\n")
-	if c.Session("libera").Nick() != "fred" {
-		t.Fatalf("session nick = %q", c.Session("libera").Nick())
+	if c.Session("freenode").Nick() != "fred" {
+		t.Fatalf("session nick = %q", c.Session("freenode").Nick())
 	}
 	if c.CurrentNick() != "fred" {
 		t.Fatalf("CurrentNick = %q", c.CurrentNick())
@@ -500,7 +500,7 @@ func TestIncomingNickRetargetsSelectedDirect(t *testing.T) {
 
 func TestIncomingNickCaseOnlyRetargetsDirect(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc")
 	inject(t, transport, ":Alice!u@h PRIVMSG omairc :hi\r\n")
 	if c.SelectedTarget() != "Alice" {
@@ -511,7 +511,7 @@ func TestIncomingNickCaseOnlyRetargetsDirect(t *testing.T) {
 	if c.SelectedTarget() != "ALICE" {
 		t.Fatalf("SelectedTarget = %q, want ALICE", c.SelectedTarget())
 	}
-	if !hasConversation(c, "libera", "ALICE") {
+	if !hasConversation(c, "freenode", "ALICE") {
 		t.Fatalf("ALICE row missing: %v", conversationTargets(c))
 	}
 	if !c.SendMessage("hello") {
@@ -526,14 +526,14 @@ func TestIncomingNickCaseOnlyRetargetsDirect(t *testing.T) {
 
 func TestWelcomeAssignedNickRoutesDirectMessages(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc-very-long-name"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc-very-long-name"))
 	inject(t, transport, ":server CAP omairc-very-long-name LS :multi-prefix\r\n"+
 		":server 001 omairc-truncated :Welcome\r\n"+
 		":Alice!u@h PRIVMSG omairc-truncated :hi\r\n"+
 		":Bob!u@h PRIVMSG omairc-very-long-name :nope\r\n")
 
-	if c.Session("libera").Nick() != "omairc-truncated" {
-		t.Fatalf("session nick = %q", c.Session("libera").Nick())
+	if c.Session("freenode").Nick() != "omairc-truncated" {
+		t.Fatalf("session nick = %q", c.Session("freenode").Nick())
 	}
 	if c.CurrentNick() != "omairc-truncated" {
 		t.Fatalf("CurrentNick = %q", c.CurrentNick())
@@ -541,10 +541,10 @@ func TestWelcomeAssignedNickRoutesDirectMessages(t *testing.T) {
 	if c.SelectedTarget() != "Alice" {
 		t.Fatalf("SelectedTarget = %q", c.SelectedTarget())
 	}
-	if !hasConversation(c, "libera", "Alice") {
+	if !hasConversation(c, "freenode", "Alice") {
 		t.Fatalf("Alice row missing: %v", conversationTargets(c))
 	}
-	if hasConversation(c, "libera", "Bob") {
+	if hasConversation(c, "freenode", "Bob") {
 		t.Fatalf("Bob row invented for a stale nick: %v", conversationTargets(c))
 	}
 }
@@ -553,12 +553,12 @@ func TestWelcomeAssignedNickRoutesDirectMessages(t *testing.T) {
 
 func TestEchoMessageAckSkipsLocalPrivmsg(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc", "echo-message")
 	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n"+
 		":server 353 omairc = #omarchy :omairc Alice\r\n"+
 		":server 366 omairc #omarchy :End of NAMES\r\n")
-	if !c.Session("libera").Capabilities().Contains(irc.CapabilityEchoMessage) {
+	if !c.Session("freenode").Capabilities().Contains(irc.CapabilityEchoMessage) {
 		t.Fatalf("echo-message not acked")
 	}
 	rowsAfterJoin := len(c.Messages())
@@ -589,13 +589,13 @@ func TestEchoMessageAckSkipsLocalPrivmsg(t *testing.T) {
 
 func TestEchoMessageAbsentStillEchoesLocally(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	inject(t, transport, ":server CAP omairc LS :echo-message\r\n"+
 		":server 001 omairc :Welcome\r\n"+
 		":omairc!u@h JOIN :#omarchy\r\n"+
 		":server 353 omairc = #omarchy :omairc Alice\r\n"+
 		":server 366 omairc #omarchy :End of NAMES\r\n")
-	if c.Session("libera").Capabilities().Contains(irc.CapabilityEchoMessage) {
+	if c.Session("freenode").Capabilities().Contains(irc.CapabilityEchoMessage) {
 		t.Fatalf("echo-message enabled without an ACK")
 	}
 	rowsAfterJoin := len(c.Messages())
@@ -615,20 +615,20 @@ func TestEchoMessageAbsentStillEchoesLocally(t *testing.T) {
 
 func TestEchoMessageAckSkipsSendToTargetEcho(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc", "echo-message")
 	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n"+
 		":lena!u@h PRIVMSG omairc :hi\r\n")
-	if !c.Session("libera").Capabilities().Contains(irc.CapabilityEchoMessage) {
+	if !c.Session("freenode").Capabilities().Contains(irc.CapabilityEchoMessage) {
 		t.Fatalf("echo-message not acked")
 	}
-	c.SelectConversation("libera", "#omarchy")
-	c.SelectConversation("libera", "lena")
+	c.SelectConversation("freenode", "#omarchy")
+	c.SelectConversation("freenode", "lena")
 	rowsBeforeMsg := len(c.Messages())
 
 	// The C++ slot drove /msg; SendToTarget is the same QuietSend + echoIfPresent
 	// seam without the Phase 7 slash layer.
-	if !c.SendToTarget("libera", "lena", "later") {
+	if !c.SendToTarget("freenode", "lena", "later") {
 		t.Fatalf("SendToTarget = false")
 	}
 	if got := lastWrittenFrame(t, transport); got != "PRIVMSG lena :later\r\n" {
@@ -651,12 +651,12 @@ func TestEchoMessageAckSkipsSendToTargetEcho(t *testing.T) {
 
 func TestEchoMessageLongPrivmsgShowsEachChunkOnce(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc", "echo-message")
 	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n"+
 		":server 353 omairc = #omarchy :omairc Alice\r\n"+
 		":server 366 omairc #omarchy :End of NAMES\r\n")
-	if !c.Session("libera").Capabilities().Contains(irc.CapabilityEchoMessage) {
+	if !c.Session("freenode").Capabilities().Contains(irc.CapabilityEchoMessage) {
 		t.Fatalf("echo-message not acked")
 	}
 	rowsAfterJoin := len(c.Messages())
@@ -688,11 +688,11 @@ func TestEchoMessageLongPrivmsgShowsEachChunkOnce(t *testing.T) {
 
 func TestLongMeAndNoticeSplitAcrossFrames(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc")
 	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n")
-	c.SelectConversation("libera", "#omarchy")
-	s := c.Session("libera")
+	c.SelectConversation("freenode", "#omarchy")
+	s := c.Session("freenode")
 
 	first := strings.Repeat("a", 400)
 	second := strings.Repeat("b", 200)
@@ -751,15 +751,15 @@ func assertSplitFrame(t *testing.T, frame []byte) {
 
 func TestIncomingNickservPrivmsgDoesNotOpenDirect(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc")
 	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n"+
 		":NickServ!NickServ@services PRIVMSG omairc :This nickname is registered.\r\n")
 
-	if hasConversation(c, "libera", "NickServ") || hasConversation(c, "libera", "nickserv") {
+	if hasConversation(c, "freenode", "NickServ") || hasConversation(c, "freenode", "nickserv") {
 		t.Fatalf("NickServ direct invented: %v", conversationTargets(c))
 	}
-	if !consoleContains(c, "libera", "This nickname is registered.") {
+	if !consoleContains(c, "freenode", "This nickname is registered.") {
 		t.Fatalf("Status console missing the NickServ line")
 	}
 }
@@ -768,16 +768,16 @@ func TestIncomingNickservPrivmsgDoesNotOpenDirect(t *testing.T) {
 
 func TestQuietSendDoesNotOpenDirect(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc", "echo-message")
 	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n")
-	if !c.Session("libera").Capabilities().Contains(irc.CapabilityEchoMessage) {
+	if !c.Session("freenode").Capabilities().Contains(irc.CapabilityEchoMessage) {
 		t.Fatalf("echo-message not acked")
 	}
-	c.SelectConversation("libera", "#omarchy")
+	c.SelectConversation("freenode", "#omarchy")
 
 	// The C++ slot drove /znc; SendToTarget is the same QuietSend seam.
-	if !c.SendToTarget("libera", "*status", "ListMods") {
+	if !c.SendToTarget("freenode", "*status", "ListMods") {
 		t.Fatalf("SendToTarget = false")
 	}
 	if got := lastWrittenFrame(t, transport); got != "PRIVMSG *status :ListMods\r\n" {
@@ -789,13 +789,13 @@ func TestQuietSendDoesNotOpenDirect(t *testing.T) {
 
 	inject(t, transport, ":omairc!u@h PRIVMSG *status :ListMods\r\n"+
 		":*status!znc@znc.in PRIVMSG omairc :Modules: playback\r\n")
-	if hasConversation(c, "libera", "*status") {
+	if hasConversation(c, "freenode", "*status") {
 		t.Fatalf("*status direct invented: %v", conversationTargets(c))
 	}
 	if c.SelectedTarget() != "#omarchy" {
 		t.Fatalf("SelectedTarget = %q", c.SelectedTarget())
 	}
-	if !consoleContains(c, "libera", "Modules: playback") {
+	if !consoleContains(c, "freenode", "Modules: playback") {
 		t.Fatalf("Status console missing the *status reply")
 	}
 }
@@ -804,17 +804,17 @@ func TestQuietSendDoesNotOpenDirect(t *testing.T) {
 
 func TestStatusMsgNickservIdentifyDoesNotOpenDirect(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc", "echo-message")
 	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n")
-	if !c.Session("libera").Capabilities().Contains(irc.CapabilityEchoMessage) {
+	if !c.Session("freenode").Capabilities().Contains(irc.CapabilityEchoMessage) {
 		t.Fatalf("echo-message not acked")
 	}
-	c.SelectConversation("libera", "#omarchy")
+	c.SelectConversation("freenode", "#omarchy")
 
 	// The C++ slot drove /msg nickserv identify through the console;
 	// SendToTarget is the same QuietSend path without the slash layer.
-	if !c.SendToTarget("libera", "nickserv", "identify my_nick s3cret") {
+	if !c.SendToTarget("freenode", "nickserv", "identify my_nick s3cret") {
 		t.Fatalf("SendToTarget = false")
 	}
 	if got := lastWrittenFrame(t, transport); got != "PRIVMSG nickserv :identify my_nick s3cret\r\n" {
@@ -830,7 +830,7 @@ func TestStatusMsgNickservIdentifyDoesNotOpenDirect(t *testing.T) {
 	if c.SelectedTarget() != "#omarchy" {
 		t.Fatalf("SelectedTarget = %q after the reply", c.SelectedTarget())
 	}
-	if hasConversation(c, "libera", "NickServ") || hasConversation(c, "libera", "nickserv") {
+	if hasConversation(c, "freenode", "NickServ") || hasConversation(c, "freenode", "nickserv") {
 		t.Fatalf("NickServ direct invented: %v", conversationTargets(c))
 	}
 	for _, body := range messageBodies(c) {
@@ -844,21 +844,21 @@ func TestStatusMsgNickservIdentifyDoesNotOpenDirect(t *testing.T) {
 
 func TestConversationClearWipesMessages(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc")
 	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n")
-	c.SelectConversation("libera", "#omarchy")
+	c.SelectConversation("freenode", "#omarchy")
 	if !c.SendMessage("hello") {
 		t.Fatalf("SendMessage = false")
 	}
-	if len(c.Messages()) == 0 || !hasConversation(c, "libera", "#omarchy") {
+	if len(c.Messages()) == 0 || !hasConversation(c, "freenode", "#omarchy") {
 		t.Fatalf("precondition failed: messages=%d rows=%v", len(c.Messages()), conversationTargets(c))
 	}
 	framesBefore := len(transport.WrittenFrames())
 
 	// The C++ slot drove /clear; the Phase 2 equivalent is the reducer's
 	// ClearMessages followed by a republish. Nothing is sent on the wire.
-	key := c.Reducer().ConversationKey("libera", "#omarchy")
+	key := c.Reducer().ConversationKey("freenode", "#omarchy")
 	c.Reducer().ClearMessages(key)
 	c.Publish(irc.ViewNotify{Messages: true, Conversations: true})
 
@@ -868,7 +868,7 @@ func TestConversationClearWipesMessages(t *testing.T) {
 	if len(c.Messages()) != 0 {
 		t.Fatalf("Messages = %+v, want empty", c.Messages())
 	}
-	if !hasConversation(c, "libera", "#omarchy") {
+	if !hasConversation(c, "freenode", "#omarchy") {
 		t.Fatalf("channel row dropped: %v", conversationTargets(c))
 	}
 	if c.SelectedTarget() != "#omarchy" {
@@ -928,25 +928,25 @@ func TestTwoSessionsStartTogether(t *testing.T) {
 
 func TestQuitWhileReconnecting(t *testing.T) {
 	c, clock := newController(t)
-	config := baseConfig("libera", "omairc")
+	config := baseConfig("freenode", "omairc")
 	config.ReconnectEnabled = true
 	transport := addAndStart(t, c, clock, config)
 	registerNetwork(t, transport, "omairc")
 	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n")
-	c.SelectConversation("libera", "#omarchy")
+	c.SelectConversation("freenode", "#omarchy")
 
 	transport.RemoteClose()
-	if c.Session("libera").State() != session.StateReconnecting {
-		t.Fatalf("state = %v, want Reconnecting", c.Session("libera").State())
+	if c.Session("freenode").State() != session.StateReconnecting {
+		t.Fatalf("state = %v, want Reconnecting", c.Session("freenode").State())
 	}
 	if clock.Pending() == 0 {
 		t.Fatalf("reconnect timer not armed")
 	}
 
 	// The C++ slot drove /quit; Phase 7 wires that command to Session.Stop.
-	c.Session("libera").Stop()
-	if c.Session("libera").State() != session.StateIdle {
-		t.Fatalf("state = %v, want Idle", c.Session("libera").State())
+	c.Session("freenode").Stop()
+	if c.Session("freenode").State() != session.StateIdle {
+		t.Fatalf("state = %v, want Idle", c.Session("freenode").State())
 	}
 	if clock.Pending() != 0 {
 		t.Fatalf("timers still pending after Stop: %d", clock.Pending())
@@ -1089,11 +1089,11 @@ func TestSelectConversationRefreshesSidebarUnread(t *testing.T) {
 // panel follow the joined channel while the transcript stays on Status.
 func TestFirstConversationClaimsOffStatus(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc")
 
 	// Apply opens Status for the freshly registered session.
-	c.OpenStatus("libera")
+	c.OpenStatus("freenode")
 	if !c.ConsoleOpen() {
 		t.Fatal("ConsoleOpen = false on Status after Apply")
 	}
@@ -1179,16 +1179,16 @@ func TestExplicitSelectionStillClosesConsole(t *testing.T) {
 // must repaint for the hint to show.
 func TestTypingEventRefreshesSidebarTyping(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc")
 	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n")
 	// The peer's line opens the direct message the typing hint belongs to.
 	inject(t, transport, ":lena!u@h PRIVMSG omairc :hey\r\n")
-	c.SelectConversation("libera", "lena")
+	c.SelectConversation("freenode", "lena")
 
 	typingFor := func(target string) (bool, bool) {
 		for _, row := range c.Conversations() {
-			if row.NetworkID == "libera" && row.Conversation == target {
+			if row.NetworkID == "freenode" && row.Conversation == target {
 				return row.Typing, true
 			}
 		}
@@ -1211,10 +1211,10 @@ func TestTypingEventRefreshesSidebarTyping(t *testing.T) {
 // OnViewChanged for any non-empty notify. A no-op publish must not.
 func TestOnViewChangedFiresForViewSurfaces(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc")
 	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n")
-	c.SelectConversation("libera", "#omarchy")
+	c.SelectConversation("freenode", "#omarchy")
 
 	woken := 0
 	c.OnViewChanged = func() { woken++ }
@@ -1235,13 +1235,13 @@ func TestOnViewChangedFiresForViewSurfaces(t *testing.T) {
 // a later JOIN or PRIVMSG does not bring a closed channel back.
 func TestLeaveKeepsRowCloseDropsAndCatchupStaysClosed(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc")
 	inject(t, transport, ":omairc!u@h JOIN :#desktop\r\n"+
 		":omairc!u@h JOIN :#help\r\n"+
 		":omairc!u@h JOIN :#omarchy\r\n"+
 		":omairc!u@h JOIN :#ricing\r\n")
-	c.SelectConversation("libera", "#omarchy")
+	c.SelectConversation("freenode", "#omarchy")
 	if !c.ChannelJoined() {
 		t.Fatal("selected channel should start joined")
 	}
@@ -1252,7 +1252,7 @@ func TestLeaveKeepsRowCloseDropsAndCatchupStaysClosed(t *testing.T) {
 	if got := lastWrittenFrame(t, transport); got != "PART #omarchy\r\n" {
 		t.Fatalf("last frame = %q, want PART", got)
 	}
-	key := c.reducer.ConversationKey("libera", "#omarchy")
+	key := c.reducer.ConversationKey("freenode", "#omarchy")
 	if c.reducer.Find(key) == nil {
 		t.Fatal("/part dropped the row")
 	}
@@ -1317,26 +1317,26 @@ func channelOrder(c *Controller) string {
 // self-JOIN echoes can create a joined row. Selection stays on the last name.
 func TestJoinClearsClosedOnEveryTarget(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc")
 	inject(t, transport, ":omairc!u@h JOIN :#keep\r\n"+
 		":omairc!u@h JOIN :#alpha\r\n"+
 		":omairc!u@h JOIN :#beta\r\n")
 
-	c.SelectConversation("libera", "#alpha")
+	c.SelectConversation("freenode", "#alpha")
 	if !c.SendMessage("/part") || !c.SendMessage("/close") {
 		t.Fatalf("close #alpha: %q", c.LastError())
 	}
-	c.SelectConversation("libera", "#beta")
+	c.SelectConversation("freenode", "#beta")
 	if !c.SendMessage("/part") || !c.SendMessage("/close") {
 		t.Fatalf("close #beta: %q", c.LastError())
 	}
-	alpha := c.reducer.ConversationKey("libera", "#alpha")
-	beta := c.reducer.ConversationKey("libera", "#beta")
+	alpha := c.reducer.ConversationKey("freenode", "#alpha")
+	beta := c.reducer.ConversationKey("freenode", "#beta")
 	if c.reducer.Find(alpha) != nil || c.reducer.Find(beta) != nil {
 		t.Fatal("closed channels should be gone")
 	}
-	c.SelectConversation("libera", "#keep")
+	c.SelectConversation("freenode", "#keep")
 	if !c.SendMessage("/join #alpha,#beta") {
 		t.Fatalf("join outcome error %q", c.LastError())
 	}
@@ -1350,7 +1350,7 @@ func TestJoinClearsClosedOnEveryTarget(t *testing.T) {
 	if c.SelectedTarget() != "#beta" || !c.ChannelJoined() {
 		t.Fatalf("last target = %q joined=%v", c.SelectedTarget(), c.ChannelJoined())
 	}
-	c.SelectConversation("libera", "#alpha")
+	c.SelectConversation("freenode", "#alpha")
 	if !c.ChannelJoined() {
 		t.Fatal("#alpha stayed unjoined after its self JOIN")
 	}
@@ -1360,10 +1360,10 @@ func TestJoinClearsClosedOnEveryTarget(t *testing.T) {
 // facts) repaints the member snapshot a single time.
 func TestWhoReplyRebuildsMemberSnapshotOnce(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc", "away-notify")
 	inject(t, transport, ":omairc!u@h JOIN :#room\r\n:Alice!a@h JOIN :#room\r\n")
-	c.SelectConversation("libera", "#room")
+	c.SelectConversation("freenode", "#room")
 
 	before := append([]MemberSnapshot(nil), c.Members()...)
 	rebuilds := 0

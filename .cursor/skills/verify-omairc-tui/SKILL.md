@@ -29,7 +29,7 @@ that owns the PTY; every later verb talks to that daemon.
 
 A plain `launch` (no `--demo-server`) runs a no-argument `omairc-tui`, which
 starts on the Connect sheet over an empty controller and is titled
-`irc.libera.chat Status`. `launch --demo-server` skips Connect and shows the
+`chat.freenode.net Status`. `launch --demo-server` skips Connect and shows the
 seeded sidebar. The PTY defaults to `118x30` (columns x rows) to match the Qt
 window's character budget. `--size WxH` overrides it.
 
@@ -77,7 +77,7 @@ Contract:
   two conversations share a name across networks.
 - Status is `{displayName} Status`, or `Status` when no connection is bound.
   On a plain `launch` (first-run Connect, no live session) it falls back to
-  the sheet's draft display name, so it is `irc.libera.chat Status`.
+  the sheet's draft display name, so it is `chat.freenode.net Status`.
 - On the seeded demo, both networks resolve to host `irc.example`, so their
   display names are `irc.example · fred` and `irc.example · oak`. `#omarchy`
   exists on both networks, so its title carries the display name; `#ricing`
@@ -114,7 +114,7 @@ Verb table:
 
 | Verb | Meaning |
 |---|---|
-| `launch [--demo-server] [--size 118x30]` | Start the detached PTY daemon and the shell. A plain `launch` starts on the Connect sheet (`irc.libera.chat Status`); `--demo-server` seeds the two-network world. `--size` is columns x rows; default `118x30`. |
+| `launch [--demo-server] [--size 118x30]` | Start the detached PTY daemon and the shell. A plain `launch` starts on the Connect sheet (`chat.freenode.net Status`); `--demo-server` seeds the two-network world. `--size` is columns x rows; default `118x30`. |
 | `doctor` | Print `ok omairc-tui` plus `binary=`, `pid=`, `title=`, `size=`, `demo=`. |
 | `title` | Print the current OSC 2 title. |
 | `text` | Print the reconstructed grid text (the rows actually on screen). |

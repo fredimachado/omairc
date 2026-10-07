@@ -31,30 +31,30 @@ func newPlaybackFixture() (*PlaybackCoordinator, *storage.PlaybackTimeStore, *ir
 
 func TestPlaybackOnRegisteredSnapshot(t *testing.T) {
 	p, times, reducer := newPlaybackFixture()
-	features := reducer.ServerFeatures("libera")
+	features := reducer.ServerFeatures("freenode")
 	when := time.Date(2026, 9, 26, 9, 0, 0, 0, time.UTC)
-	if !times.Note("libera", "#chan", when, features.CaseMapping()) {
+	if !times.Note("freenode", "#chan", when, features.CaseMapping()) {
 		t.Fatalf("Note = false")
 	}
 
-	p.OnRegistered("libera", []string{"#auto"})
-	rows := p.playbackSnapshot["libera"]
+	p.OnRegistered("freenode", []string{"#auto"})
+	rows := p.playbackSnapshot["freenode"]
 	if len(rows) != 1 || rows[0].Target != "#chan" || !rows[0].When.Equal(when) {
 		t.Fatalf("snapshot = %+v, want [#chan @ %v]", rows, when)
 	}
-	if got := p.zncAutojoin["libera"]; len(got) != 1 || got[0] != "#auto" {
+	if got := p.zncAutojoin["freenode"]; len(got) != 1 || got[0] != "#auto" {
 		t.Fatalf("autojoin = %v, want [#auto]", got)
 	}
 
-	p.OnLeftRegistration("libera")
-	if _, ok := p.playbackSnapshot["libera"]; ok {
+	p.OnLeftRegistration("freenode")
+	if _, ok := p.playbackSnapshot["freenode"]; ok {
 		t.Fatalf("OnLeftRegistration kept the snapshot")
 	}
 }
 
 func TestPlaybackNoteClockNoticesNewerServerTime(t *testing.T) {
 	p, times, reducer := newPlaybackFixture()
-	features := reducer.ServerFeatures("libera")
+	features := reducer.ServerFeatures("freenode")
 	mapping := features.CaseMapping()
 	when := time.Date(2026, 9, 26, 9, 0, 0, 0, time.UTC)
 
@@ -64,23 +64,23 @@ func TestPlaybackNoteClockNoticesNewerServerTime(t *testing.T) {
 		Params:  []string{"omairc", "hi"},
 		Tags:    []irc.Tag{{Name: "time", Value: stringPtr(when.Format(time.RFC3339Nano))}},
 	}
-	p.NotePlaybackClock("libera", message, "omairc", false)
-	if got, ok := times.Noted("libera", "alice", mapping); !ok || !got.Equal(when) {
+	p.NotePlaybackClock("freenode", message, "omairc", false)
+	if got, ok := times.Noted("freenode", "alice", mapping); !ok || !got.Equal(when) {
 		t.Fatalf("Noted = %v (ok=%v), want %v", got, ok, when)
 	}
 
 	// An older line must not move the exclusive PLAY bound.
 	older := when.Add(-time.Hour)
 	message.Tags = []irc.Tag{{Name: "time", Value: stringPtr(older.Format(time.RFC3339Nano))}}
-	p.NotePlaybackClock("libera", message, "omairc", false)
-	if got, _ := times.Noted("libera", "alice", mapping); !got.Equal(when) {
+	p.NotePlaybackClock("freenode", message, "omairc", false)
+	if got, _ := times.Noted("freenode", "alice", mapping); !got.Equal(when) {
 		t.Fatalf("older line moved the clock to %v", got)
 	}
 }
 
 func TestPlaybackNoteClockIgnoresUnknownSelfQuery(t *testing.T) {
 	p, times, reducer := newPlaybackFixture()
-	features := reducer.ServerFeatures("libera")
+	features := reducer.ServerFeatures("freenode")
 	mapping := features.CaseMapping()
 	when := time.Date(2026, 9, 26, 9, 0, 0, 0, time.UTC)
 
@@ -90,8 +90,8 @@ func TestPlaybackNoteClockIgnoresUnknownSelfQuery(t *testing.T) {
 		Params:  []string{"alice", "hi"},
 		Tags:    []irc.Tag{{Name: "time", Value: stringPtr(when.Format(time.RFC3339Nano))}},
 	}
-	p.NotePlaybackClock("libera", message, "omairc", false)
-	if _, ok := times.Noted("libera", "alice", mapping); ok {
+	p.NotePlaybackClock("freenode", message, "omairc", false)
+	if _, ok := times.Noted("freenode", "alice", mapping); ok {
 		t.Fatalf("a self line whose query does not exist moved the clock")
 	}
 }
@@ -117,51 +117,51 @@ func keepHistoryLine(reducer *irc.EventReducer, networkID, target, msgid string,
 
 func TestPlaybackNoteKeptReplayRequiresCoverage(t *testing.T) {
 	p, times, reducer := newPlaybackFixture()
-	features := reducer.ServerFeatures("libera")
+	features := reducer.ServerFeatures("freenode")
 	mapping := features.CaseMapping()
 	when := time.Date(2026, 9, 26, 9, 0, 0, 0, time.UTC)
-	keepHistoryLine(reducer, "libera", "alice", "m1", when)
+	keepHistoryLine(reducer, "freenode", "alice", "m1", when)
 
 	// znc.in/playback is negotiated but no PLAY line was sent yet, so the
 	// replay is not covered and must not move the clock.
 	p.NoteKeptReplay(func(string) bool { return true })
-	if _, ok := times.Noted("libera", "alice", mapping); ok {
+	if _, ok := times.Noted("freenode", "alice", mapping); ok {
 		t.Fatalf("an uncovered kept replay moved the clock")
 	}
 }
 
 func TestPlaybackNoteKeptReplayNotesWhenUncapped(t *testing.T) {
 	p, times, reducer := newPlaybackFixture()
-	features := reducer.ServerFeatures("libera")
+	features := reducer.ServerFeatures("freenode")
 	mapping := features.CaseMapping()
 	when := time.Date(2026, 9, 26, 9, 0, 0, 0, time.UTC)
-	keepHistoryLine(reducer, "libera", "alice", "m1", when)
+	keepHistoryLine(reducer, "freenode", "alice", "m1", when)
 
 	p.NoteKeptReplay(func(string) bool { return false })
-	if got, ok := times.Noted("libera", "alice", mapping); !ok || !got.Equal(when) {
+	if got, ok := times.Noted("freenode", "alice", mapping); !ok || !got.Equal(when) {
 		t.Fatalf("Noted = %v (ok=%v), want %v", got, ok, when)
 	}
 }
 
 func TestPlaybackRekeyMovesSnapshot(t *testing.T) {
 	p, _, reducer := newPlaybackFixture()
-	features := reducer.ServerFeatures("libera")
+	features := reducer.ServerFeatures("freenode")
 	mapping := features.CaseMapping()
 	when := time.Date(2026, 9, 26, 9, 0, 0, 0, time.UTC)
-	if !p.times.Note("libera", "Alice", when, mapping) {
+	if !p.times.Note("freenode", "Alice", when, mapping) {
 		t.Fatalf("Note = false")
 	}
-	p.OnRegistered("libera", nil)
+	p.OnRegistered("freenode", nil)
 
-	p.Rekey("libera", "Alice", "Alicia")
-	rows := p.playbackSnapshot["libera"]
+	p.Rekey("freenode", "Alice", "Alicia")
+	rows := p.playbackSnapshot["freenode"]
 	if len(rows) != 1 || rows[0].Target != "Alicia" || !rows[0].When.Equal(when) {
 		t.Fatalf("after rekey = %+v", rows)
 	}
 
 	// A case-only rekey rewrites the spelling in place.
-	p.Rekey("libera", "Alicia", "ALICIA")
-	rows = p.playbackSnapshot["libera"]
+	p.Rekey("freenode", "Alicia", "ALICIA")
+	rows = p.playbackSnapshot["freenode"]
 	if len(rows) != 1 || rows[0].Target != "ALICIA" {
 		t.Fatalf("after case rekey = %+v", rows)
 	}
@@ -169,13 +169,13 @@ func TestPlaybackRekeyMovesSnapshot(t *testing.T) {
 
 func TestPlaybackTrimBouncerBatchBoundaries(t *testing.T) {
 	p, _, reducer := newPlaybackFixture()
-	features := reducer.ServerFeatures("libera")
+	features := reducer.ServerFeatures("freenode")
 	when := time.Date(2026, 9, 26, 10, 0, 0, 0, time.UTC)
-	if !p.times.Note("libera", "#chan", when, features.CaseMapping()) {
+	if !p.times.Note("freenode", "#chan", when, features.CaseMapping()) {
 		t.Fatalf("Note = false")
 	}
-	p.OnRegistered("libera", nil)
-	p.zncPlaybackSent["libera"] = zncPlaybackSent{queries: true}
+	p.OnRegistered("freenode", nil)
+	p.zncPlaybackSent["freenode"] = zncPlaybackSent{queries: true}
 
 	older := when.Add(-time.Millisecond)
 	newer := when.Add(time.Millisecond)
@@ -191,7 +191,7 @@ func TestPlaybackTrimBouncerBatchBoundaries(t *testing.T) {
 			{Body: "zerotime", ServerTime: &zero},
 		},
 	}
-	p.TrimBouncerBatch("libera", &event)
+	p.TrimBouncerBatch("freenode", &event)
 
 	bodies := make([]string, 0, len(event.Lines))
 	for _, line := range event.Lines {
@@ -205,14 +205,14 @@ func TestPlaybackTrimBouncerBatchBoundaries(t *testing.T) {
 
 func TestPlaybackRequestEmptySnapshotSendsPlayAll(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc", "znc.in/playback")
-	s := c.Session("libera")
+	s := c.Session("freenode")
 
 	var sent []string
 	c.playback = NewPlaybackCoordinator(c.playbackTimes, c.reducer)
 	c.playback.sendZnc = recordZnc(&sent)
-	c.playback.OnRegistered("libera", nil)
+	c.playback.OnRegistered("freenode", nil)
 	c.playback.Request(s, true, true, nil, func(string) bool { return true })
 
 	if !slices.Equal(sent, []string{"* 0"}) {
@@ -222,20 +222,20 @@ func TestPlaybackRequestEmptySnapshotSendsPlayAll(t *testing.T) {
 
 func TestPlaybackRequestSnapshotSendsPerTarget(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc", "znc.in/playback")
-	s := c.Session("libera")
+	s := c.Session("freenode")
 
 	when := time.Date(2026, 9, 26, 9, 0, 0, 0, time.UTC)
-	features := c.reducer.ServerFeatures("libera")
-	if !c.playbackTimes.Note("libera", "#chan", when, features.CaseMapping()) {
+	features := c.reducer.ServerFeatures("freenode")
+	if !c.playbackTimes.Note("freenode", "#chan", when, features.CaseMapping()) {
 		t.Fatalf("Note = false")
 	}
 
 	var sent []string
 	c.playback = NewPlaybackCoordinator(c.playbackTimes, c.reducer)
 	c.playback.sendZnc = recordZnc(&sent)
-	c.playback.OnRegistered("libera", nil)
+	c.playback.OnRegistered("freenode", nil)
 	c.playback.Request(s, true, true, nil, func(string) bool { return true })
 
 	want := []string{
@@ -249,14 +249,14 @@ func TestPlaybackRequestSnapshotSendsPerTarget(t *testing.T) {
 
 func TestPlaybackRequestGuards(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc", "znc.in/playback")
-	s := c.Session("libera")
+	s := c.Session("freenode")
 
 	var sent []string
 	c.playback = NewPlaybackCoordinator(c.playbackTimes, c.reducer)
 	c.playback.sendZnc = recordZnc(&sent)
-	c.playback.OnRegistered("libera", nil)
+	c.playback.OnRegistered("freenode", nil)
 
 	c.playback.Request(s, true, false, nil, func(string) bool { return true })
 	c.playback.Request(s, false, true, nil, func(string) bool { return true })
@@ -272,9 +272,9 @@ func TestPlaybackRequestGuards(t *testing.T) {
 
 func TestPlaybackDefaultSendWritesRawLine(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc", "znc.in/playback")
-	s := c.Session("libera")
+	s := c.Session("freenode")
 
 	p := NewPlaybackCoordinator(c.playbackTimes, c.reducer)
 	if !p.sendZnc(s, "#chan", "0") {
@@ -287,10 +287,10 @@ func TestPlaybackDefaultSendWritesRawLine(t *testing.T) {
 
 func TestPlaybackRequestChannelPlaybackSends(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc", "znc.in/playback")
 	inject(t, transport, ":omairc!u@h JOIN :#chan\r\n")
-	s := c.Session("libera")
+	s := c.Session("freenode")
 
 	var sent []string
 	c.playback.sendZnc = recordZnc(&sent)
@@ -303,13 +303,13 @@ func TestPlaybackRequestChannelPlaybackSends(t *testing.T) {
 
 func TestPlaybackRequestChannelPlaybackRefusesAfterKeptBatch(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc", "znc.in/playback")
 	inject(t, transport, ":omairc!u@h JOIN :#chan\r\n")
-	s := c.Session("libera")
+	s := c.Session("freenode")
 
 	when := time.Date(2026, 9, 26, 9, 0, 0, 0, time.UTC)
-	key := c.reducer.ConversationKey("libera", "#chan")
+	key := c.reducer.ConversationKey("freenode", "#chan")
 	serverTime := when
 	c.reducer.Apply(irc.HistoryEvent{
 		Conversation: key,
@@ -324,7 +324,7 @@ func TestPlaybackRequestChannelPlaybackRefusesAfterKeptBatch(t *testing.T) {
 			ServerTime: &serverTime,
 		}},
 	}, when)
-	if !c.reducer.PlaybackBatchKept("libera", "#chan") {
+	if !c.reducer.PlaybackBatchKept("freenode", "#chan") {
 		t.Fatalf("precondition: playback batch not kept")
 	}
 
@@ -338,9 +338,9 @@ func TestPlaybackRequestChannelPlaybackRefusesAfterKeptBatch(t *testing.T) {
 
 func TestPlaybackRequestChannelPlaybackGuards(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc", "znc.in/playback")
-	s := c.Session("libera")
+	s := c.Session("freenode")
 
 	var sent []string
 	c.playback.sendZnc = recordZnc(&sent)

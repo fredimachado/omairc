@@ -174,19 +174,19 @@ func TestPersistenceCallbacksForwardAvatarAndAutojoin(t *testing.T) {
 	c := New()
 
 	// Nil callbacks stay a no-op, and the in-memory avatar store still updates.
-	ctrlHost{c: c}.PersistAvatarURL("libera", "https://example.test/a.png")
-	if got := c.avatars.URLForNetwork("libera"); got != "https://example.test/a.png" {
+	ctrlHost{c: c}.PersistAvatarURL("freenode", "https://example.test/a.png")
+	if got := c.avatars.URLForNetwork("freenode"); got != "https://example.test/a.png" {
 		t.Fatalf("avatars.URLForNetwork = %q, want the persisted url", got)
 	}
-	c.AutojoinChannelsChanged("libera", []string{"#go"}, map[string]string{"#go": "secret"})
+	c.AutojoinChannelsChanged("freenode", []string{"#go"}, map[string]string{"#go": "secret"})
 
 	var avatarNetwork, avatarURL string
 	c.OnAvatarURLChanged = func(networkID, url string) {
 		avatarNetwork, avatarURL = networkID, url
 	}
-	ctrlHost{c: c}.PersistAvatarURL("libera", "https://example.test/b.png")
-	if avatarNetwork != "libera" || avatarURL != "https://example.test/b.png" {
-		t.Fatalf("OnAvatarURLChanged = (%q, %q), want (libera, ...b.png)", avatarNetwork, avatarURL)
+	ctrlHost{c: c}.PersistAvatarURL("freenode", "https://example.test/b.png")
+	if avatarNetwork != "freenode" || avatarURL != "https://example.test/b.png" {
+		t.Fatalf("OnAvatarURLChanged = (%q, %q), want (freenode, ...b.png)", avatarNetwork, avatarURL)
 	}
 
 	var autojoinNetwork string
@@ -195,9 +195,9 @@ func TestPersistenceCallbacksForwardAvatarAndAutojoin(t *testing.T) {
 	c.OnAutojoinChanged = func(networkID string, channels []string, keys map[string]string) {
 		autojoinNetwork, autojoinChannels, autojoinKeys = networkID, channels, keys
 	}
-	c.AutojoinChannelsChanged("libera", []string{"#go"}, map[string]string{"#go": "secret"})
-	if autojoinNetwork != "libera" {
-		t.Fatalf("OnAutojoinChanged network = %q, want libera", autojoinNetwork)
+	c.AutojoinChannelsChanged("freenode", []string{"#go"}, map[string]string{"#go": "secret"})
+	if autojoinNetwork != "freenode" {
+		t.Fatalf("OnAutojoinChanged network = %q, want freenode", autojoinNetwork)
 	}
 	if !slices.Equal(autojoinChannels, []string{"#go"}) {
 		t.Fatalf("OnAutojoinChanged channels = %v, want [#go]", autojoinChannels)

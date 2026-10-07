@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Thanks for filing a bug. Fill in what you can — incomplete reports are still useful.
-        For a quick chat first, try [#omarchy](https://web.libera.chat/#omarchy) or [#omairc](https://web.libera.chat/#omairc) on Libera.
+        For a quick chat first, try [#omarchy](https://webchat.freenode.net/) or [#omairc](https://webchat.freenode.net/) on Freenode.
   - type: textarea
     id: what-happened
     attributes:

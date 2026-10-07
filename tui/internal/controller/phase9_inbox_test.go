@@ -12,15 +12,15 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
-// inboxMentionSetup registers libera, joins #chan and selects it, leaving the
+// inboxMentionSetup registers freenode, joins #chan and selects it, leaving the
 // mention target channel unselected so a chat line plants an inbox arrival.
 func inboxMentionSetup(t *testing.T) (*Controller, *session.LoopbackTransport) {
 	t.Helper()
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc", "message-tags")
 	inject(t, transport, ":omairc!u@h JOIN :#chan\r\n")
-	c.SelectConversation("libera", "#chan")
+	c.SelectConversation("freenode", "#chan")
 	return c, transport
 }
 
@@ -66,7 +66,7 @@ func TestInboxConsumedOnSelect(t *testing.T) {
 		t.Fatalf("InboxCount before select = %d, want 1", got)
 	}
 
-	c.SelectConversation("libera", "#lab")
+	c.SelectConversation("freenode", "#lab")
 	if got := c.InboxCount(); got != 0 {
 		t.Fatalf("InboxCount after select = %d, want 0", got)
 	}
@@ -74,11 +74,11 @@ func TestInboxConsumedOnSelect(t *testing.T) {
 
 func TestInboxDismissAndActivate(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc", "message-tags")
 	// The first self-join is auto-selected; #two and #three stay unselected.
 	inject(t, transport, ":omairc!u@h JOIN :#one\r\n")
-	c.SelectConversation("libera", "#one")
+	c.SelectConversation("freenode", "#one")
 
 	inject(t, transport, ":omairc!u@h JOIN :#two\r\n"+
 		":omairc!u@h JOIN :#three\r\n"+
@@ -121,10 +121,10 @@ func TestInboxDismissAndActivate(t *testing.T) {
 
 func TestInboxInviteAppendActivateJoins(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc")
 	inject(t, transport, ":omairc!u@h JOIN :#chan\r\n")
-	c.SelectConversation("libera", "#chan")
+	c.SelectConversation("freenode", "#chan")
 
 	inject(t, transport, ":alice!u@h INVITE omairc :#invited\r\n")
 	if got := c.InboxCount(); got != 1 {
@@ -145,7 +145,7 @@ func TestInboxInviteAppendActivateJoins(t *testing.T) {
 	if !writtenFramesContain(transport, "JOIN #invited") {
 		t.Fatalf("no JOIN #invited frame: %v", transport.WrittenFrames())
 	}
-	if !hasConversation(c, "libera", "#invited") {
+	if !hasConversation(c, "freenode", "#invited") {
 		t.Fatalf("#invited not revealed: %v", conversationTargets(c))
 	}
 	if c.SelectedTarget() != "#invited" {
@@ -158,10 +158,10 @@ func TestInboxInviteAppendActivateJoins(t *testing.T) {
 
 func TestInboxInviteConsumedOnSelfJoin(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc")
 	inject(t, transport, ":omairc!u@h JOIN :#chan\r\n")
-	c.SelectConversation("libera", "#chan")
+	c.SelectConversation("freenode", "#chan")
 
 	inject(t, transport, ":alice!u@h INVITE omairc :#invited\r\n")
 	if got := c.InboxCount(); got != 1 {
@@ -176,11 +176,11 @@ func TestInboxInviteConsumedOnSelfJoin(t *testing.T) {
 
 func TestInboxMonitorOnlineAppendsAndConsumes(t *testing.T) {
 	c, clock := newController(t)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc", "draft/monitor")
 	inject(t, transport, ":server 005 omairc CHANTYPES=# MONITOR=10 :are supported by this server\r\n")
 	inject(t, transport, ":omairc!u@h JOIN :#chan\r\n")
-	c.SelectConversation("libera", "#chan")
+	c.SelectConversation("freenode", "#chan")
 
 	if !c.SendMessage("/monitor dax") {
 		t.Fatalf("/monitor dax = false")
@@ -206,7 +206,7 @@ func TestInboxMonitorOnlineAppendsAndConsumes(t *testing.T) {
 		t.Fatalf("Actor = %q, want dax", row.Actor)
 	}
 
-	c.RevealConversation("libera", "dax")
+	c.RevealConversation("freenode", "dax")
 	if got := c.InboxCount(); got != 0 {
 		t.Fatalf("InboxCount after reveal = %d, want 0", got)
 	}
@@ -226,7 +226,7 @@ func TestInboxPurgesNetworkOnForget(t *testing.T) {
 
 	changed := 0
 	c.OnInboxChanged = func() { changed++ }
-	c.ForgetNetworkState("libera")
+	c.ForgetNetworkState("freenode")
 
 	if got := c.InboxCount(); got != 0 {
 		t.Fatalf("InboxCount after forget = %d, want 0", got)

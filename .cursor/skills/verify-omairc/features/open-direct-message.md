@@ -25,7 +25,7 @@ Open a direct message lets a user click another person in a channel member list 
 Preconditions:
 
 - Seeded conversation UI is showing (`#omarchy · irc.example · fred - Omairc`, members visible, no `mira` sidebar row). Use `control-omairc launch --demo-server`. When Xvfb tools are missing, `qml-suite` (seeded `IrcController`) is the fallback and is not compiled-window proof.
-- `control-omairc launch` without `--demo-server` is first-run Connect titled `irc.libera.chat Status`. Do not start this recipe there.
+- `control-omairc launch` without `--demo-server` is first-run Connect titled `chat.freenode.net Status`. Do not start this recipe there.
 - For a desktop instance, this launch has not already created a `mira` sidebar row. `nick-jump` does not need the member panel.
 
 ```desktop-recipe

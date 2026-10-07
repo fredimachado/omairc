@@ -57,7 +57,7 @@ void StoragePathTest::encodesReservedCharacters()
     QCOMPARE(omaircStorageSegment(QStringLiteral("#omarchy")),
              QStringLiteral("#omarchy"));
     QCOMPARE(omaircStorageSegment(QStringLiteral("alice")), QStringLiteral("alice"));
-    QCOMPARE(omaircStorageSegment(QStringLiteral("libera")), QStringLiteral("libera"));
+    QCOMPARE(omaircStorageSegment(QStringLiteral("freenode")), QStringLiteral("freenode"));
     QCOMPARE(omaircStorageSegment(QStringLiteral("net-1")), QStringLiteral("net-1"));
     QCOMPARE(omaircStorageSegment(QStringLiteral("#a|b")),
              QStringLiteral("#a%7cb"));
@@ -187,7 +187,7 @@ void StoragePathTest::migratesLegacyTranscriptPaths()
     QVERIFY(QDir().mkpath(root));
 
     const QString legacyNetworkDir =
-        QDir(root).filePath(legacyStorageSegment(QStringLiteral("Libera")));
+        QDir(root).filePath(legacyStorageSegment(QStringLiteral("Freenode")));
     QVERIFY(QDir().mkpath(legacyNetworkDir));
     const QString legacyFile =
         QDir(legacyNetworkDir).filePath(legacyStorageSegment(QStringLiteral("#a|b")));
@@ -200,12 +200,12 @@ void StoragePathTest::migratesLegacyTranscriptPaths()
     IrcConversationLog log(root);
     const IrcCaseMapping mapping;
     const QString path =
-        log.pathFor(QStringLiteral("Libera"), QStringLiteral("#a|b"), mapping);
-    QCOMPARE(path, QDir(QDir(root).filePath(omaircStorageSegment(QStringLiteral("Libera"))))
+        log.pathFor(QStringLiteral("Freenode"), QStringLiteral("#a|b"), mapping);
+    QCOMPARE(path, QDir(QDir(root).filePath(omaircStorageSegment(QStringLiteral("Freenode"))))
                         .filePath(omaircWireStorageSegment(QStringLiteral("#a|b"))));
     QVERIFY(QFile::exists(path));
     QVERIFY(!QFile::exists(legacyFile));
-    QVERIFY(!QDir(root).exists(legacyStorageSegment(QStringLiteral("Libera"))));
+    QVERIFY(!QDir(root).exists(legacyStorageSegment(QStringLiteral("Freenode"))));
 }
 
 void StoragePathTest::migratesLegacyTranscriptWhenNewNetworkDirExists()
@@ -216,7 +216,7 @@ void StoragePathTest::migratesLegacyTranscriptWhenNewNetworkDirExists()
     QVERIFY(QDir().mkpath(root));
 
     const QString legacyNetworkDir =
-        QDir(root).filePath(legacyStorageSegment(QStringLiteral("Libera")));
+        QDir(root).filePath(legacyStorageSegment(QStringLiteral("Freenode")));
     QVERIFY(QDir().mkpath(legacyNetworkDir));
     const QString legacyFile =
         QDir(legacyNetworkDir).filePath(legacyStorageSegment(QStringLiteral("#a|b")));
@@ -227,13 +227,13 @@ void StoragePathTest::migratesLegacyTranscriptWhenNewNetworkDirExists()
     }
 
     const QString newNetworkDir =
-        QDir(root).filePath(omaircStorageSegment(QStringLiteral("Libera")));
+        QDir(root).filePath(omaircStorageSegment(QStringLiteral("Freenode")));
     QVERIFY(QDir().mkpath(newNetworkDir));
 
     IrcConversationLog log(root);
     const IrcCaseMapping mapping;
     const QString path =
-        log.pathFor(QStringLiteral("Libera"), QStringLiteral("#a|b"), mapping);
+        log.pathFor(QStringLiteral("Freenode"), QStringLiteral("#a|b"), mapping);
     QCOMPARE(path, QDir(newNetworkDir).filePath(
                         omaircWireStorageSegment(QStringLiteral("#a|b"))));
     QVERIFY(QFile::exists(path));
@@ -250,10 +250,10 @@ void StoragePathTest::transcriptPathPreservesNormalizedTarget()
     IrcConversationLog log(root);
     const IrcCaseMapping rfc1459;
     const QString path =
-        log.pathFor(QStringLiteral("libera"), QStringLiteral("#Omarchy"), rfc1459);
+        log.pathFor(QStringLiteral("freenode"), QStringLiteral("#Omarchy"), rfc1459);
     const QString expectedSegment =
         omaircWireStorageSegment(QStringLiteral("#Omarchy"));
-    QCOMPARE(path, QDir(QDir(root).filePath(omaircStorageSegment(QStringLiteral("libera"))))
+    QCOMPARE(path, QDir(QDir(root).filePath(omaircStorageSegment(QStringLiteral("freenode"))))
                         .filePath(expectedSegment));
     QVERIFY(expectedSegment != omaircTargetSegment(QStringLiteral("#Omarchy"), rfc1459));
 }
@@ -266,7 +266,7 @@ void StoragePathTest::retriesLegacyTranscriptMigrationAfterRenameFailure()
     QVERIFY(QDir().mkpath(root));
 
     const QString legacyNetworkDir =
-        QDir(root).filePath(legacyStorageSegment(QStringLiteral("Libera")));
+        QDir(root).filePath(legacyStorageSegment(QStringLiteral("Freenode")));
     QVERIFY(QDir().mkpath(legacyNetworkDir));
     const QString legacyFile =
         QDir(legacyNetworkDir).filePath(legacyStorageSegment(QStringLiteral("#a|b")));
@@ -277,25 +277,25 @@ void StoragePathTest::retriesLegacyTranscriptMigrationAfterRenameFailure()
     }
 
     const QString newPath =
-        QDir(QDir(root).filePath(omaircStorageSegment(QStringLiteral("Libera"))))
+        QDir(QDir(root).filePath(omaircStorageSegment(QStringLiteral("Freenode"))))
             .filePath(omaircWireStorageSegment(QStringLiteral("#a|b")));
     QVERIFY(QDir().mkpath(newPath));
 
     IrcConversationLog log(root);
     const IrcCaseMapping mapping;
     const QString path =
-        log.pathFor(QStringLiteral("Libera"), QStringLiteral("#a|b"), mapping);
+        log.pathFor(QStringLiteral("Freenode"), QStringLiteral("#a|b"), mapping);
     QCOMPARE(path, newPath);
     QVERIFY(QFile::exists(legacyFile));
 
     const QString secondPath =
-        log.pathFor(QStringLiteral("Libera"), QStringLiteral("#a|b"), mapping);
+        log.pathFor(QStringLiteral("Freenode"), QStringLiteral("#a|b"), mapping);
     QCOMPARE(secondPath, newPath);
     QVERIFY(QFile::exists(legacyFile));
 
     QVERIFY(QDir(newPath).removeRecursively());
     const QString migratedPath =
-        log.pathFor(QStringLiteral("Libera"), QStringLiteral("#a|b"), mapping);
+        log.pathFor(QStringLiteral("Freenode"), QStringLiteral("#a|b"), mapping);
     QCOMPARE(migratedPath, newPath);
     QVERIFY(QFile::exists(migratedPath));
     QVERIFY(!QFile::exists(legacyFile));
@@ -595,7 +595,7 @@ void StoragePathTest::doesNotOverwriteExistingTranscriptDuringMigration()
     QVERIFY(QDir().mkpath(root));
 
     const QString legacyNetworkDir =
-        QDir(root).filePath(legacyStorageSegment(QStringLiteral("Libera")));
+        QDir(root).filePath(legacyStorageSegment(QStringLiteral("Freenode")));
     QVERIFY(QDir().mkpath(legacyNetworkDir));
     const QString legacyFile =
         QDir(legacyNetworkDir).filePath(legacyStorageSegment(QStringLiteral("#a|b")));
@@ -606,7 +606,7 @@ void StoragePathTest::doesNotOverwriteExistingTranscriptDuringMigration()
     }
 
     const QString newPath =
-        QDir(QDir(root).filePath(omaircStorageSegment(QStringLiteral("Libera"))))
+        QDir(QDir(root).filePath(omaircStorageSegment(QStringLiteral("Freenode"))))
             .filePath(omaircWireStorageSegment(QStringLiteral("#a|b")));
     QVERIFY(QDir().mkpath(QFileInfo(newPath).absolutePath()));
     {
@@ -618,7 +618,7 @@ void StoragePathTest::doesNotOverwriteExistingTranscriptDuringMigration()
     IrcConversationLog log(root);
     const IrcCaseMapping mapping;
     const QString path =
-        log.pathFor(QStringLiteral("Libera"), QStringLiteral("#a|b"), mapping);
+        log.pathFor(QStringLiteral("Freenode"), QStringLiteral("#a|b"), mapping);
     QCOMPARE(path, newPath);
     QVERIFY(QFile::exists(legacyFile));
 
@@ -635,13 +635,13 @@ void StoragePathTest::migratesTranscriptFilesWithoutRenamingSharedNetworkDir()
     QVERIFY(QDir().mkpath(root));
 
     const QString legacyNetworkDir =
-        QDir(root).filePath(legacyStorageSegment(QStringLiteral("Libera")));
+        QDir(root).filePath(legacyStorageSegment(QStringLiteral("Freenode")));
     QVERIFY(QDir().mkpath(legacyNetworkDir));
     const QString sharedNetworkDir =
-        QDir(root).filePath(omaircStorageSegment(QStringLiteral("libera")));
+        QDir(root).filePath(omaircStorageSegment(QStringLiteral("freenode")));
     if (!storageDirSegmentsShareLocation(
-            QDir(root), legacyStorageSegment(QStringLiteral("Libera")),
-            omaircStorageSegment(QStringLiteral("libera")))) {
+            QDir(root), legacyStorageSegment(QStringLiteral("Freenode")),
+            omaircStorageSegment(QStringLiteral("freenode")))) {
         QVERIFY(QFile::link(legacyNetworkDir, sharedNetworkDir));
     }
 
@@ -657,16 +657,16 @@ void StoragePathTest::migratesTranscriptFilesWithoutRenamingSharedNetworkDir()
     IrcConversationLog log(root);
     const IrcCaseMapping mapping;
     const QString path =
-        log.pathFor(QStringLiteral("libera"), target, mapping);
+        log.pathFor(QStringLiteral("freenode"), target, mapping);
     const QString expectedPath =
         QDir(sharedNetworkDir).filePath(omaircWireStorageSegment(target));
     QCOMPARE(path, expectedPath);
     QVERIFY(QFile::exists(path));
     QVERIFY(!QFile::exists(legacyFile));
-    QVERIFY(QDir(root).exists(legacyStorageSegment(QStringLiteral("Libera"))));
+    QVERIFY(QDir(root).exists(legacyStorageSegment(QStringLiteral("Freenode"))));
     QVERIFY(storageDirSegmentsShareLocation(QDir(root),
-                                            legacyStorageSegment(QStringLiteral("Libera")),
-                                            omaircStorageSegment(QStringLiteral("libera"))));
+                                            legacyStorageSegment(QStringLiteral("Freenode")),
+                                            omaircStorageSegment(QStringLiteral("freenode"))));
 }
 
 void StoragePathTest::conversationLogPrependPreservesReadTailOrder()

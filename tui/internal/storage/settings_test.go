@@ -125,7 +125,7 @@ func TestSettingsStringListRoundTrip(t *testing.T) {
 	s := OpenSettings(path)
 	s.SetStringList("lists", "autojoin", []string{"#a", "#b"})
 	s.SetStringList("lists", "commas", []string{"a,b", `c"d`})
-	s.SetStringList("lists", "single", []string{"libera"})
+	s.SetStringList("lists", "single", []string{"freenode"})
 	s.SetStringList("lists", "empty", nil)
 	s.SetValue("lists", "emptyString", "")
 	if status := s.Sync(); status != StatusWritten {
@@ -139,7 +139,7 @@ func TestSettingsStringListRoundTrip(t *testing.T) {
 	}{
 		{"autojoin", []string{"#a", "#b"}},
 		{"commas", []string{"a,b", `c"d`}},
-		{"single", []string{"libera"}},
+		{"single", []string{"freenode"}},
 		{"empty", []string{}},
 		{"emptyString", []string{}},
 	}
@@ -162,7 +162,7 @@ func TestSettingsNestedGroups(t *testing.T) {
 
 	path := tempSettingsPath(t)
 	s := OpenSettings(path)
-	s.SetValue("networks/abc", "host", "irc.libera.chat")
+	s.SetValue("networks/abc", "host", "chat.freenode.net")
 	s.SetValue("networks/abc", "port", "6697")
 	s.SetValue("networks/abc/deep", "host", "irc.deep.net")
 	s.SetValue("networks/def", "host", "irc.oftc.net")
@@ -186,7 +186,7 @@ func TestSettingsNestedGroups(t *testing.T) {
 	if got := s.Value("networks/abc", "port"); got != "" {
 		t.Errorf("Value after RemoveKey = %q, want empty", got)
 	}
-	if got := s.Value("networks/abc", "host"); got != "irc.libera.chat" {
+	if got := s.Value("networks/abc", "host"); got != "chat.freenode.net" {
 		t.Errorf("sibling key after RemoveKey = %q, want preserved", got)
 	}
 
@@ -282,17 +282,17 @@ func TestSettingsReadsQSettingsFixture(t *testing.T) {
 	fixtures := map[string]string{
 		// QSettings' canonical layout: top-level section + escaped key path.
 		"canonical": "[networks]\n" +
-			`abc\host=irc.libera.chat` + "\n" +
+			`abc\host=chat.freenode.net` + "\n" +
 			`abc\port=6697` + "\n" +
 			`abc\tls=true` + "\n" +
 			"abc\\autojoin=#a, #b\n" +
 			`abc\playback="[{\"target\":\"a,b\",\"ms\":\"1\"}]"` + "\n" +
-			"\n[preferences]\ndirects=true\nnetworkOrder=libera\n",
+			"\n[preferences]\ndirects=true\nnetworkOrder=freenode\n",
 		// A hand-written nested section QSettings also accepts.
 		"nested-section": "[networks/abc]\n" +
-			"host=irc.libera.chat\nport=6697\ntls=true\nautojoin=#a, #b\n" +
+			"host=chat.freenode.net\nport=6697\ntls=true\nautojoin=#a, #b\n" +
 			"playback=\"[{\\\"target\\\":\\\"a,b\\\",\\\"ms\\\":\\\"1\\\"}]\"\n" +
-			"\n[preferences]\ndirects=true\nnetworkOrder=libera\n",
+			"\n[preferences]\ndirects=true\nnetworkOrder=freenode\n",
 	}
 
 	for name, fixture := range fixtures {
@@ -309,7 +309,7 @@ func TestSettingsReadsQSettingsFixture(t *testing.T) {
 			}
 
 			s := OpenSettings(path)
-			if got := s.Value("networks/abc", "host"); got != "irc.libera.chat" {
+			if got := s.Value("networks/abc", "host"); got != "chat.freenode.net" {
 				t.Errorf("host = %q", got)
 			}
 			if got := s.Uint("networks/abc", "port", 0); got != 6697 {
@@ -327,7 +327,7 @@ func TestSettingsReadsQSettingsFixture(t *testing.T) {
 			if !s.Bool("preferences", "directs", false) {
 				t.Error("preferences/directs = false, want true")
 			}
-			if got := s.StringList("preferences", "networkOrder"); !equalStrings(got, []string{"libera"}) {
+			if got := s.StringList("preferences", "networkOrder"); !equalStrings(got, []string{"freenode"}) {
 				t.Errorf("networkOrder = %#v", got)
 			}
 			if got := s.ChildGroups(""); !equalStrings(got, []string{"networks", "preferences"}) {
@@ -433,7 +433,7 @@ func TestSyncRefusesReadOnlyFile(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	original := []byte("[networks]\nabc\\host=irc.libera.chat\n")
+	original := []byte("[networks]\nabc\\host=chat.freenode.net\n")
 	if err := os.WriteFile(path, original, 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}

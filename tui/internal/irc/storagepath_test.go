@@ -12,7 +12,7 @@ func TestEncodesReservedCharacters(t *testing.T) {
 	}{
 		{"#omarchy", "#omarchy"},
 		{"alice", "alice"},
-		{"libera", "libera"},
+		{"freenode", "freenode"},
 		{"net-1", "net-1"},
 		{"#a|b", "#a%7cb"},
 	}

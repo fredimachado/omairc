@@ -31,7 +31,7 @@ IrcMessage mustParse(std::string_view line)
     return *parsed.value;
 }
 
-IrcSessionConfig sessionConfig(const QString& networkId = QStringLiteral("libera"))
+IrcSessionConfig sessionConfig(const QString& networkId = QStringLiteral("freenode"))
 {
     IrcSessionConfig value;
     value.networkId = networkId;
@@ -253,11 +253,11 @@ void IgnoreTest::controllerMutesPrivateTrafficAndListsOnStatus()
     auto *transport = new FakeIrcTransport;
     IrcSession *session = controller.addSession(sessionConfig(), transport);
     QVERIFY(session);
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
     transport->injectBytes(
         QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/ignore lena")));
     QVERIFY(logContains(controller.console()->lines(), QStringLiteral("Ignoring lena")));
@@ -288,7 +288,7 @@ void IgnoreTest::controllerMutesPrivateTrafficAndListsOnStatus()
     QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
     QVERIFY(!framesContain(transport->writtenFrames(),
                            QByteArrayLiteral("NOTICE lena :")));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
     bool sawChannel = false;
@@ -320,15 +320,15 @@ void IgnoreTest::controllerForgetsWithTheNetwork()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
     QVERIFY(controller.console()->submit(QStringLiteral("/ignore lena")));
     QVERIFY(IrcIgnoreStore().contains(
-        QStringLiteral("libera"), QStringLiteral("lena"), IrcCaseMapping()));
-    controller.forgetNetworkState(QStringLiteral("libera"));
+        QStringLiteral("freenode"), QStringLiteral("lena"), IrcCaseMapping()));
+    controller.forgetNetworkState(QStringLiteral("freenode"));
     QVERIFY(!IrcIgnoreStore().contains(
-        QStringLiteral("libera"), QStringLiteral("lena"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("lena"), IrcCaseMapping()));
 }
 
 void IgnoreTest::discardSessionKeepsTheList()
@@ -336,19 +336,19 @@ void IgnoreTest::discardSessionKeepsTheList()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
     QVERIFY(controller.console()->submit(QStringLiteral("/ignore lena")));
     QVERIFY(IrcIgnoreStore().contains(
-        QStringLiteral("libera"), QStringLiteral("lena"), IrcCaseMapping()));
-    QVERIFY(controller.discardSession(QStringLiteral("libera")));
+        QStringLiteral("freenode"), QStringLiteral("lena"), IrcCaseMapping()));
+    QVERIFY(controller.discardSession(QStringLiteral("freenode")));
     QVERIFY(IrcIgnoreStore().contains(
-        QStringLiteral("libera"), QStringLiteral("lena"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("lena"), IrcCaseMapping()));
 
     auto *again = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), again));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(again);
     again->injectBytes(QByteArrayLiteral(":lena!u@h PRIVMSG omairc :secret\r\n"));
     auto *conversations =
@@ -362,11 +362,11 @@ void IgnoreTest::refusesBadNicks()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
 
     QVERIFY(!controller.sendMessage(QStringLiteral("/ignore")));
     QVERIFY(!controller.sendMessage(QStringLiteral("/ignore #omarchy")));
@@ -383,19 +383,19 @@ void IgnoreTest::offlineIgnoreIsNotConnected()
     QCOMPARE(controller.lastError(),
              QStringLiteral("Select a connected conversation first"));
     QVERIFY(!IrcIgnoreStore().contains(
-        QStringLiteral("libera"), QStringLiteral("lena"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("lena"), IrcCaseMapping()));
 
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
     QVERIFY(controller.console()->submit(QStringLiteral("/ignore lena")));
     QVERIFY(logContains(controller.console()->lines(), QStringLiteral("Not connected")));
     QVERIFY(!IrcIgnoreStore().contains(
-        QStringLiteral("libera"), QStringLiteral("lena"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("lena"), IrcCaseMapping()));
 
-    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
     QVERIFY(!controller.sendMessage(QStringLiteral("/ignore lena")));
     QCOMPARE(controller.lastError(), QStringLiteral("Not connected"));
     QVERIFY(!IrcIgnoreStore().contains(
-        QStringLiteral("libera"), QStringLiteral("lena"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("lena"), IrcCaseMapping()));
 }
 
 int runIgnoreTests(int argc, char **argv)

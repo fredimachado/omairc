@@ -58,7 +58,7 @@ Keyboard is the window chord map: walk conversations, walk network headers, coll
 Preconditions:
 
 - Conversation walk, unread jump, nick complete, history, member focus, `Ctrl+W` close, network collapse/reorder, and the sheet's Escape-vs-Status behavior need the seeded UI (`control-omairc launch --demo-server`). When Xvfb tools are missing, `qml-suite` (seeded `IrcController`) is the fallback and is not compiled-window proof. The demo has two networks (omarchy, then oftc).
-- A default compiled window is titled `irc.libera.chat Status` with Connect. `Ctrl+/` still opens the sheet on that window. `Alt+Down` has nowhere to walk until a conversation exists. That launch is not this fence.
+- A default compiled window is titled `chat.freenode.net Status` with Connect. `Ctrl+/` still opens the sheet on that window. `Alt+Down` has nowhere to walk until a conversation exists. That launch is not this fence.
 - `Ctrl+,` opens Connect on `--demo-server` because a connection is bound. The offscreen suite also covers it with `test_openConnectSheetWithShortcut`. That suite is not compiled-window proof.
 - `unread` on a fresh demo lands on `#ricing`. A later `unread` does not. This fence needs `cleanup` before `run` when the demo is not fresh.
 

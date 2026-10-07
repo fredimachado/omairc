@@ -68,8 +68,8 @@ func TestTitleSeededCases(t *testing.T) {
 func TestTitleFirstRunUsesConnectionDisplayName(t *testing.T) {
 	ctrl := controller.New()
 	conn := connection.New(ctrl, nil)
-	if got := Title(ctrl, conn); got != "irc.libera.chat Status" {
-		t.Fatalf("Title(first run) = %q, want %q", got, "irc.libera.chat Status")
+	if got := Title(ctrl, conn); got != "chat.freenode.net Status" {
+		t.Fatalf("Title(first run) = %q, want %q", got, "chat.freenode.net Status")
 	}
 }
 

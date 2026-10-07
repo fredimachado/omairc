@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Ideas are welcome. Say what you want and why — we can figure out the shape later.
-        Informal brainstorming also fits [#omarchy](https://web.libera.chat/#omarchy) or [#omairc](https://web.libera.chat/#omairc) on Libera.
+        Informal brainstorming also fits [#omarchy](https://webchat.freenode.net/) or [#omairc](https://webchat.freenode.net/) on Freenode.
   - type: textarea
     id: idea
     attributes:

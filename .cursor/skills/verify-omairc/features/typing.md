@@ -20,7 +20,7 @@ The mirror image is outbound: editing the composer in a conversation on a networ
 Preconditions:
 
 - Seeded conversation UI is showing (`#omarchy · irc.example · fred - Omairc`, members visible). Use `control-omairc launch --demo-server`. When Xvfb tools are missing, `qml-suite` (seeded `IrcController`) is the fallback and is not compiled-window proof.
-- `control-omairc launch` without `--demo-server` is first-run Connect titled `irc.libera.chat Status` with no member list. Do not start this recipe there.
+- `control-omairc launch` without `--demo-server` is first-run Connect titled `chat.freenode.net Status` with no member list. Do not start this recipe there.
 - Live `typing-caps` needs a completed Connect and `message-tags`. That is not this recipe. Do not inject typing frames.
 
 ```desktop-recipe
@@ -47,4 +47,4 @@ screenshot --feature typing --name dm-overlay
 - Presence dots, away dimming, and status lines are member-presence. This feature is only the ellipsis.
 - The identity footer does not follow typing. Live away chrome is identity-footer.
 - Mock typing is only `anna`, and only on `#omarchy` or the `anna` DM. `#desktop` has no typing overlay.
-- Do not claim live typing on first-run Connect. It is `verified-unreachable` until a session has completed Connect and received `message-tags`. The attempted compiled route is `control-omairc launch` (title `irc.libera.chat Status`, no members).
+- Do not claim live typing on first-run Connect. It is `verified-unreachable` until a session has completed Connect and received `message-tags`. The attempted compiled route is `control-omairc launch` (title `chat.freenode.net Status`, no members).

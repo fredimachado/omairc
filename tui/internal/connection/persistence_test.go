@@ -15,8 +15,8 @@ import (
 func fullProfile() NetworkProfile {
 	return NetworkProfile{
 		NetworkID:        "net-round-trip",
-		Name:             "libera",
-		Host:             "irc.libera.chat",
+		Name:             "freenode",
+		Host:             "chat.freenode.net",
 		Port:             7000,
 		TLSEnabled:       true,
 		ConnectOnStartup: true,

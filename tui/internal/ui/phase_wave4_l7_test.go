@@ -49,7 +49,7 @@ func TestConnectSheetKeepsItsObservables(t *testing.T) {
 	view := ansiPattern.ReplaceAllString(m.View().Content, "")
 	for _, wanted := range []string{
 		"Connect", "Connection", "Preferences", "NETWORKS",
-		"irc.libera.chat", "6697", "Nick is required", "Discard", "Apply",
+		"chat.freenode.net", "6697", "Nick is required", "Discard", "Apply",
 	} {
 		if !strings.Contains(view, wanted) {
 			t.Fatalf("first-run sheet missing %q:\n%s", wanted, view)

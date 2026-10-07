@@ -9,8 +9,8 @@ import (
 // at a time.
 func validProfile() NetworkProfile {
 	profile := CreateProfile()
-	profile.Name = "libera"
-	profile.Host = "irc.libera.chat"
+	profile.Name = "freenode"
+	profile.Host = "chat.freenode.net"
 	profile.Port = 6697
 	profile.TLSEnabled = true
 	profile.Nick = "omairc"
@@ -109,8 +109,8 @@ func TestParseAutojoin(t *testing.T) {
 
 func TestNormalizedTrimsPrefixesAndRetainsKeys(t *testing.T) {
 	profile := NetworkProfile{
-		Name:             "  libera  ",
-		Host:             " irc.libera.chat ",
+		Name:             "  freenode  ",
+		Host:             " chat.freenode.net ",
 		Nick:             " omairc ",
 		Username:         " user ",
 		Realname:         " Real Name ",
@@ -120,7 +120,7 @@ func TestNormalizedTrimsPrefixesAndRetainsKeys(t *testing.T) {
 		AutojoinKeys:     map[string]string{"#OMARCHY": "one-key", "#three": "gone"},
 	}
 	got := profile.Normalized()
-	if got.Name != "libera" || got.Host != "irc.libera.chat" || got.Nick != "omairc" {
+	if got.Name != "freenode" || got.Host != "chat.freenode.net" || got.Nick != "omairc" {
 		t.Fatalf("trimmed fields = %+v", got)
 	}
 	if got.Username != "user" || got.Realname != "Real Name" || got.Account != "acct" || got.BouncerNetwork != "net" {
@@ -152,7 +152,7 @@ func TestSuggestedProfileDefaults(t *testing.T) {
 	if profile.NetworkID == "" {
 		t.Fatal("NetworkID is empty")
 	}
-	if profile.Host != "irc.libera.chat" {
+	if profile.Host != "chat.freenode.net" {
 		t.Fatalf("Host = %q", profile.Host)
 	}
 	if profile.Name != profile.Host {
@@ -194,8 +194,8 @@ func TestSASLAccount(t *testing.T) {
 	}{
 		{"falls back to nick", NetworkProfile{Nick: "omairc"}, "omairc"},
 		{"prefers account", NetworkProfile{Nick: "omairc", Account: "acct"}, "acct"},
-		{"bouncer with account", NetworkProfile{Nick: "omairc", Account: "acct", BouncerNetwork: "libera"}, "acct/libera"},
-		{"bouncer with nick", NetworkProfile{Nick: "omairc", BouncerNetwork: "libera"}, "omairc/libera"},
+		{"bouncer with account", NetworkProfile{Nick: "omairc", Account: "acct", BouncerNetwork: "freenode"}, "acct/freenode"},
+		{"bouncer with nick", NetworkProfile{Nick: "omairc", BouncerNetwork: "freenode"}, "omairc/freenode"},
 		{"trims", NetworkProfile{Nick: " omairc ", Account: " acct ", BouncerNetwork: " net "}, "acct/net"},
 	}
 	for _, test := range tests {
@@ -208,8 +208,8 @@ func TestSASLAccount(t *testing.T) {
 }
 
 func TestResolvedName(t *testing.T) {
-	if got := ResolvedName("  libera ", "irc.example"); got != "libera" {
-		t.Fatalf("ResolvedName = %q, want libera", got)
+	if got := ResolvedName("  freenode ", "irc.example"); got != "freenode" {
+		t.Fatalf("ResolvedName = %q, want freenode", got)
 	}
 	if got := ResolvedName("   ", " irc.example "); got != "irc.example" {
 		t.Fatalf("ResolvedName = %q, want irc.example", got)

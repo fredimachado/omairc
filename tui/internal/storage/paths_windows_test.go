@@ -69,7 +69,7 @@ func TestTranscriptRootHonoursXDGStateHome(t *testing.T) {
 }
 
 func TestWindowsCredentialTarget(t *testing.T) {
-	key := "omairc/v1/6:libera/5:alice/15:irc.libera.chat"
+	key := "omairc/v1/8:freenode/5:alice/17:chat.freenode.net"
 	want := key + "@omairc"
 	if got := windowsCredentialTarget(key); got != want {
 		t.Fatalf("windowsCredentialTarget = %q, want %q", got, want)

@@ -23,7 +23,7 @@
 
 namespace
 {
-IrcSessionConfig sessionConfig(const QString& networkId = QStringLiteral("libera"))
+IrcSessionConfig sessionConfig(const QString& networkId = QStringLiteral("freenode"))
 {
     IrcSessionConfig value;
     value.networkId = networkId;
@@ -245,9 +245,9 @@ void MonitorTest::controllerAddsRemovesAndLists()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcomeMonitor(transport);
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
 
     QSignalSpy spy(&controller, &IrcController::monitorArrived);
     QVERIFY(controller.console()->submit(QStringLiteral("/monitor alice")));
@@ -256,7 +256,7 @@ void MonitorTest::controllerAddsRemovesAndLists()
     QVERIFY(framesContain(transport->writtenFrames(),
                           QByteArrayLiteral("MONITOR + alice")));
     QVERIFY(IrcMonitorStore().contains(
-        QStringLiteral("libera"), QStringLiteral("alice"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("alice"), IrcCaseMapping()));
 
     transport->injectBytes(
         QByteArrayLiteral(":server 730 * :alice!u@h\r\n"));
@@ -290,9 +290,9 @@ void MonitorTest::unsupportedNetworkDoesNotSend()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcome(transport);
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
 
     const int before = transport->writtenFrames().size();
     QVERIFY(controller.console()->submit(QStringLiteral("/monitor alice")));
@@ -302,7 +302,7 @@ void MonitorTest::unsupportedNetworkDoesNotSend()
                            QByteArrayLiteral("MONITOR")));
     QCOMPARE(transport->writtenFrames().size(), before);
     QVERIFY(!IrcMonitorStore().contains(
-        QStringLiteral("libera"), QStringLiteral("alice"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("alice"), IrcCaseMapping()));
 }
 
 void MonitorTest::clientRefusesWhenFullAndExplains734()
@@ -310,9 +310,9 @@ void MonitorTest::clientRefusesWhenFullAndExplains734()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcomeMonitor(transport, QByteArrayLiteral("MONITOR=1"));
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
 
     QVERIFY(controller.console()->submit(QStringLiteral("/monitor alice")));
     QVERIFY(framesContain(transport->writtenFrames(),
@@ -324,14 +324,14 @@ void MonitorTest::clientRefusesWhenFullAndExplains734()
                         QStringLiteral("Monitor list is full (1)")));
     QCOMPARE(transport->writtenFrames().size(), afterAlice);
     QVERIFY(!IrcMonitorStore().contains(
-        QStringLiteral("libera"), QStringLiteral("bob"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("bob"), IrcCaseMapping()));
 
     transport->injectBytes(
         QByteArrayLiteral(":server 734 omairc 1 alice :Monitor list is full.\r\n"));
     QVERIFY(logContains(controller.console()->lines(),
                         QStringLiteral("Monitor list is full (1): alice")));
     QVERIFY(!IrcMonitorStore().contains(
-        QStringLiteral("libera"), QStringLiteral("alice"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("alice"), IrcCaseMapping()));
 }
 
 void MonitorTest::hydrationDoesNotNotifyLaterEdgesDo()
@@ -339,9 +339,9 @@ void MonitorTest::hydrationDoesNotNotifyLaterEdgesDo()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcomeMonitor(transport);
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
 
     QSignalSpy spy(&controller, &IrcController::monitorArrived);
     QVERIFY(controller.console()->submit(QStringLiteral("/monitor alice")));
@@ -355,7 +355,7 @@ void MonitorTest::hydrationDoesNotNotifyLaterEdgesDo()
     QCOMPARE(spy.count(), 1);
     QCOMPARE(spy.at(0).at(0).toString(), QStringLiteral("alice"));
     QCOMPARE(spy.at(0).at(1).toString(), QStringLiteral("is offline"));
-    QCOMPARE(spy.at(0).at(2).toString(), QStringLiteral("libera"));
+    QCOMPARE(spy.at(0).at(2).toString(), QStringLiteral("freenode"));
     QCOMPARE(spy.at(0).at(3).toString(), QStringLiteral("alice"));
     QVERIFY(logContains(controller.console()->lines(),
                         QStringLiteral("alice is offline")));
@@ -373,9 +373,9 @@ void MonitorTest::mutedNickSkipsDesktopNotify()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcomeMonitor(transport);
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
 
     QVERIFY(controller.console()->submit(QStringLiteral("/monitor alice")));
     QVERIFY(controller.console()->submit(QStringLiteral("/mute alice")));
@@ -394,9 +394,9 @@ void MonitorTest::reconnectResubscribesWithoutDuplicateNotify()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcomeMonitor(transport);
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
 
     QSignalSpy spy(&controller, &IrcController::monitorArrived);
     QVERIFY(controller.console()->submit(QStringLiteral("/monitor alice")));
@@ -404,13 +404,13 @@ void MonitorTest::reconnectResubscribesWithoutDuplicateNotify()
         QByteArrayLiteral(":server 730 omairc :alice!u@h\r\n"));
     QCOMPARE(spy.count(), 0);
 
-    QVERIFY(controller.discardSession(QStringLiteral("libera")));
+    QVERIFY(controller.discardSession(QStringLiteral("freenode")));
     QVERIFY(IrcMonitorStore().contains(
-        QStringLiteral("libera"), QStringLiteral("alice"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("alice"), IrcCaseMapping()));
 
     auto *again = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), again));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcomeMonitor(again);
     QVERIFY(framesContain(again->writtenFrames(),
                           QByteArrayLiteral("MONITOR + alice")));
@@ -426,15 +426,15 @@ void MonitorTest::controllerForgetsWithTheNetwork()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcomeMonitor(transport);
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
     QVERIFY(controller.console()->submit(QStringLiteral("/monitor alice")));
     QVERIFY(IrcMonitorStore().contains(
-        QStringLiteral("libera"), QStringLiteral("alice"), IrcCaseMapping()));
-    controller.forgetNetworkState(QStringLiteral("libera"));
+        QStringLiteral("freenode"), QStringLiteral("alice"), IrcCaseMapping()));
+    controller.forgetNetworkState(QStringLiteral("freenode"));
     QVERIFY(!IrcMonitorStore().contains(
-        QStringLiteral("libera"), QStringLiteral("alice"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("alice"), IrcCaseMapping()));
 }
 
 void MonitorTest::refusesBadNicks()
@@ -442,9 +442,9 @@ void MonitorTest::refusesBadNicks()
     IrcController controller;
     auto *transport = new FakeIrcTransport;
     QVERIFY(controller.addSession(sessionConfig(), transport));
-    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("freenode")));
     welcomeMonitor(transport);
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
 
     QVERIFY(controller.console()->submit(QStringLiteral("/monitor")));
     QVERIFY(!controller.console()->lastSubmitAccepted());
@@ -469,13 +469,13 @@ void MonitorTest::offlineMonitorIsNotConnected()
     QCOMPARE(controller.lastError(),
              QStringLiteral("Select a connected conversation first"));
     QVERIFY(!IrcMonitorStore().contains(
-        QStringLiteral("libera"), QStringLiteral("alice"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("alice"), IrcCaseMapping()));
 
-    controller.openStatus(QStringLiteral("libera"));
+    controller.openStatus(QStringLiteral("freenode"));
     QVERIFY(controller.console()->submit(QStringLiteral("/monitor alice")));
     QVERIFY(logContains(controller.console()->lines(), QStringLiteral("Not connected")));
     QVERIFY(!IrcMonitorStore().contains(
-        QStringLiteral("libera"), QStringLiteral("alice"), IrcCaseMapping()));
+        QStringLiteral("freenode"), QStringLiteral("alice"), IrcCaseMapping()));
 }
 
 int runMonitorTests(int argc, char **argv)

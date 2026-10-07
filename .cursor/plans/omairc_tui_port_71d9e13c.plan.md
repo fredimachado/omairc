@@ -170,7 +170,7 @@ Exit criteria: `omairc-tui --demo-server` renders the seeded sidebar, `--version
 
 Port `connect.md` and `switch-conversation.md`:
 
-- Connect sheet: first-run overlay, Libera defaults, `Nick is required` + muted Apply, tab order, `Ctrl+Enter` apply, Preferences tab (reopen DMs, open-at-unread), Add/Remove/Forget network, Disconnect-on-live.
+- Connect sheet: first-run overlay, Freenode defaults, `Nick is required` + muted Apply, tab order, `Ctrl+Enter` apply, Preferences tab (reopen DMs, open-at-unread), Add/Remove/Forget network, Disconnect-on-live.
 - Conversation list + switching (topic, people count, message history updated together), Status console, send/receive, draft-per-conversation.
 
 Exit criteria: `connect.md` and `switch-conversation.md` fences pass.

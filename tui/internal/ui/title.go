@@ -146,7 +146,7 @@ func (m *Model) windowTitle() string {
 // statusTitleText mirrors OmaircWindow.qml's statusTitleText. When no session
 // is bound yet (first run, before Connect applies) it falls back to the
 // connection's draft display name, so a default launch is titled
-// "irc.libera.chat Status".
+// "chat.freenode.net Status".
 func statusTitleText(ctrl *controller.Controller, conn *connection.Connection) string {
 	if networkName := focusedNetworkDisplayName(ctrl, conn); networkName != "" {
 		return networkName + " Status"

@@ -10,9 +10,9 @@ import (
 )
 
 func directListed(c *Controller, target string) bool {
-	features := c.reducer.ServerFeatures("libera")
+	features := c.reducer.ServerFeatures("freenode")
 	mapping := features.CaseMapping()
-	for _, listed := range c.openDirects.Listed("libera", mapping) {
+	for _, listed := range c.openDirects.Listed("freenode", mapping) {
 		if mapping.Equals(listed, target) {
 			return true
 		}
@@ -21,14 +21,14 @@ func directListed(c *Controller, target string) bool {
 }
 
 func closedHas(c *Controller, target string) bool {
-	features := c.reducer.ServerFeatures("libera")
+	features := c.reducer.ServerFeatures("freenode")
 	mapping := features.CaseMapping()
-	return c.closed.Contains("libera", target, mapping)
+	return c.closed.Contains("freenode", target, mapping)
 }
 
 func applyNotice(c *Controller, nick, body string) {
 	c.Apply(irc.NoticeEvent{
-		Conversation: c.reducer.ConversationKey("libera", nick),
+		Conversation: c.reducer.ConversationKey("freenode", nick),
 		Author:       nick,
 		Body:         body,
 		Timestamp:    time.Date(2026, 9, 26, 9, 0, 0, 0, time.UTC),
@@ -50,7 +50,7 @@ func TestReopenedDirectIsRememberedAcrossRestart(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	c, clock := newController(t)
 	c.SetEphemeral(false)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc")
 	inject(t, transport, ":lena!u@h PRIVMSG omairc :hi\r\n"+
 		":rio!u@h PRIVMSG omairc :\x01ACTION waves\x01\r\n"+
@@ -58,7 +58,7 @@ func TestReopenedDirectIsRememberedAcrossRestart(t *testing.T) {
 	applyNotice(c, "nia", "psst")
 
 	for _, nick := range []string{"lena", "nia", "rio", "kai"} {
-		if !hasConversation(c, "libera", nick) {
+		if !hasConversation(c, "freenode", nick) {
 			t.Fatalf("%s was not opened", nick)
 		}
 		if directListed(c, nick) {
@@ -66,11 +66,11 @@ func TestReopenedDirectIsRememberedAcrossRestart(t *testing.T) {
 		}
 	}
 	for _, nick := range []string{"lena", "nia", "rio"} {
-		c.SelectConversation("libera", nick)
+		c.SelectConversation("freenode", nick)
 		if !c.CloseDirectMessage() {
 			t.Fatalf("CloseDirectMessage(%s) = false", nick)
 		}
-		if hasConversation(c, "libera", nick) {
+		if hasConversation(c, "freenode", nick) {
 			t.Fatalf("%s stayed after close", nick)
 		}
 		if !closedHas(c, nick) {
@@ -82,7 +82,7 @@ func TestReopenedDirectIsRememberedAcrossRestart(t *testing.T) {
 		":rio!u@h PRIVMSG omairc :\x01ACTION waves again\x01\r\n")
 	applyNotice(c, "nia", "again")
 	for _, nick := range []string{"lena", "nia", "rio"} {
-		if !hasConversation(c, "libera", nick) {
+		if !hasConversation(c, "freenode", nick) {
 			t.Fatalf("live line did not reopen %s", nick)
 		}
 		if closedHas(c, nick) {
@@ -98,20 +98,20 @@ func TestReopenedDirectIsRememberedAcrossRestart(t *testing.T) {
 
 	again, againClock := newController(t)
 	again.SetEphemeral(false)
-	againTransport := addAndStart(t, again, againClock, baseConfig("libera", "omairc"))
+	againTransport := addAndStart(t, again, againClock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, againTransport, "omairc")
 	for _, nick := range []string{"lena", "nia", "rio", "kai"} {
-		if hasConversation(again, "libera", nick) {
+		if hasConversation(again, "freenode", nick) {
 			t.Fatalf("%s existed before MOTD", nick)
 		}
 	}
 	inject(t, againTransport, ":server 376 omairc :End of MOTD\r\n")
 	for _, nick := range []string{"lena", "nia", "rio"} {
-		if !hasConversation(again, "libera", nick) {
+		if !hasConversation(again, "freenode", nick) {
 			t.Fatalf("restart dropped %s", nick)
 		}
 	}
-	if hasConversation(again, "libera", "kai") {
+	if hasConversation(again, "freenode", "kai") {
 		t.Fatal("restart restored a query that was never closed or answered")
 	}
 }
@@ -120,20 +120,20 @@ func TestUnsolicitedSelfJoinKeepsClosedChannel(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	c, clock := newController(t)
 	c.SetEphemeral(false)
-	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, transport, "omairc")
 	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n"+
 		":omairc!u@h JOIN :#lab\r\n"+
 		":omairc!u@h JOIN :#desk\r\n")
 	for _, channel := range []string{"#lab", "#desk"} {
-		c.SelectConversation("libera", channel)
+		c.SelectConversation("freenode", channel)
 		if !c.SendMessage("/part") {
 			t.Fatalf("/part %s = false", channel)
 		}
 		if !c.SendMessage("/close") {
 			t.Fatalf("/close %s = false", channel)
 		}
-		if hasConversation(c, "libera", channel) {
+		if hasConversation(c, "freenode", channel) {
 			t.Fatalf("%s stayed after close", channel)
 		}
 		if !closedHas(c, channel) {
@@ -148,18 +148,18 @@ func TestUnsolicitedSelfJoinKeepsClosedChannel(t *testing.T) {
 		":server 353 omairc = #lab :omairc\r\n"+
 		":server 366 omairc #lab :End of NAMES\r\n"+
 		":lena!u@h PRIVMSG #lab :still\r\n")
-	if hasConversation(c, "libera", "#lab") {
+	if hasConversation(c, "freenode", "#lab") {
 		t.Fatal("an unsolicited join brought #lab back")
 	}
 	if !closedHas(c, "#lab") {
 		t.Fatal("the unsolicited join forgot the close")
 	}
 
-	c.SelectConversation("libera", "#omarchy")
+	c.SelectConversation("freenode", "#omarchy")
 	if !c.SendMessage("/join #desk,#gamma") {
 		t.Fatal("SendMessage(/join #desk,#gamma) = false")
 	}
-	if !hasConversation(c, "libera", "#gamma") {
+	if !hasConversation(c, "freenode", "#gamma") {
 		t.Fatal("the last join target was not opened")
 	}
 	if closedHas(c, "#desk") {
@@ -171,7 +171,7 @@ func TestUnsolicitedSelfJoinKeepsClosedChannel(t *testing.T) {
 	inject(t, transport, ":omairc!u@h JOIN :#desk\r\n"+
 		":server 353 omairc = #desk :omairc\r\n"+
 		":server 366 omairc #desk :End of NAMES\r\n")
-	if !hasConversation(c, "libera", "#desk") {
+	if !hasConversation(c, "freenode", "#desk") {
 		t.Fatal("an explicit join did not open #desk")
 	}
 	if closedHas(c, "#desk") {
@@ -183,13 +183,13 @@ func TestUnsolicitedSelfJoinKeepsClosedChannel(t *testing.T) {
 
 	again, againClock := newController(t)
 	again.SetEphemeral(false)
-	againTransport := addAndStart(t, again, againClock, baseConfig("libera", "omairc"))
+	againTransport := addAndStart(t, again, againClock, baseConfig("freenode", "omairc"))
 	registerNetwork(t, againTransport, "omairc")
 	inject(t, againTransport, ":omairc!u@h JOIN :#lab\r\n"+
 		":server 353 omairc = #lab :omairc\r\n"+
 		":server 366 omairc #lab :End of NAMES\r\n"+
 		":lena!u@h PRIVMSG #lab :still\r\n")
-	if hasConversation(again, "libera", "#lab") {
+	if hasConversation(again, "freenode", "#lab") {
 		t.Fatal("restart join brought #lab back")
 	}
 	if !closedHas(again, "#lab") {
@@ -198,9 +198,9 @@ func TestUnsolicitedSelfJoinKeepsClosedChannel(t *testing.T) {
 	if writtenFramesContain(againTransport, "PART #lab") {
 		t.Fatal("restart join wrote PART")
 	}
-	again.OpenStatus("libera")
+	again.OpenStatus("freenode")
 	again.ConsoleSubmit("/join #lab")
-	if !hasConversation(again, "libera", "#lab") {
+	if !hasConversation(again, "freenode", "#lab") {
 		t.Fatal("an explicit join did not open #lab")
 	}
 	if closedHas(again, "#lab") {

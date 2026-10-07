@@ -85,11 +85,11 @@ func CreateProfile() NetworkProfile {
 	}
 }
 
-// SuggestedProfile returns the first-run Libera profile, mirroring
+// SuggestedProfile returns the first-run Freenode profile, mirroring
 // IrcNetworkProfile::suggested.
 func SuggestedProfile() NetworkProfile {
 	profile := CreateProfile()
-	profile.Host = "irc.libera.chat"
+	profile.Host = "chat.freenode.net"
 	profile.Name = profile.Host
 	profile.Port = 6697
 	profile.TLSEnabled = true

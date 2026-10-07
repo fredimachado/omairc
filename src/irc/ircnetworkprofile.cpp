@@ -119,7 +119,7 @@ IrcNetworkProfile IrcNetworkProfile::create()
 IrcNetworkProfile IrcNetworkProfile::suggested()
 {
     IrcNetworkProfile profile = create();
-    profile.host = QStringLiteral("irc.libera.chat");
+    profile.host = QStringLiteral("chat.freenode.net");
     profile.name = profile.host;
     profile.port = 6697;
     profile.tlsEnabled = true;
