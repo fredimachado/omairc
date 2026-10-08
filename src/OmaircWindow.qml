@@ -27,9 +27,11 @@ ApplicationWindow {
     minimumWidth: 760
     minimumHeight: 540
     visible: true
-    // arrivalWindowActive follows focus. A test can assign false while the
-    // offscreen window stays active, so a live mention takes the unfocused path.
-    property bool arrivalWindowActive: active
+    // arrivalWindowActive follows focus and visibility. Minimized and hidden
+    // count as away even when Window.active stays true. A test can assign
+    // false while the offscreen window stays active, so a live mention takes
+    // the unfocused path.
+    property bool arrivalWindowActive: active && !transcriptSuspended
     title: titleMark.target.length > 0
            ? titleMark.format(titleMark.author, titleMark.plainBody,
                               titlePlace(titleMark.networkId, titleMark.target))
@@ -37,6 +39,9 @@ ApplicationWindow {
     onActiveChanged: {
         if (active) {
             Qt.callLater(focusConnectionSheetStart);
+            // Active can flip back on before visibility leaves Minimized
+            // or Hidden. windowFocusGained stays away until the window
+            // is shown.
             windowFocusGained();
         } else {
             windowFocusLost();
@@ -946,20 +951,34 @@ ApplicationWindow {
             list.adoptViewport(false);
     }
 
-    // While the window is unfocused, new chat in the open channel or DM is
-    // treated as unread: the "New messages" mark plants on the first line and,
-    // when focus returns, the transcript lands on that mark instead of the
-    // bottom. Status keeps following the end.
+    // While the window is unfocused or minimized, new chat in the open
+    // channel or DM is treated as unread: the "New messages" mark plants on
+    // the first line and, when the window is shown again, the transcript
+    // lands on that mark instead of the bottom. Status keeps following the
+    // end. Minimize is separate from focus: the window can stay active.
     function windowFocusLost() {
         if (irc && typeof irc.setWindowActive === "function")
             irc.setWindowActive(false);
     }
 
     function windowFocusGained() {
+        // A focus report while minimized or hidden must not consume the
+        // backlog. The visibility handler clears the suspension and calls
+        // here again once the window is shown.
+        if (transcriptSuspended)
+            return;
         titleMark.clear();
         if (irc && typeof irc.setWindowActive === "function")
             irc.setWindowActive(true);
         Qt.callLater(pinTranscriptOnFocusReturn);
+    }
+
+    // Leaves the minimized or hidden suspension. A restore that is not yet
+    // the active window keeps catch-up off until focus actually returns.
+    function finishTranscriptSuspension(windowActive) {
+        transcriptSuspended = false;
+        if (windowActive)
+            windowFocusGained();
     }
 
     function pinTranscriptOnFocusReturn() {
@@ -4001,6 +4020,10 @@ ApplicationWindow {
 
     property rect normalGeometry: Qt.rect(x, y, width, height)
     property bool wasMaximized: false
+    // Minimize can leave Window.active true. Catch-up follows visibility
+    // until the window is shown again, so a burst while minimized still
+    // plants the New messages mark.
+    property bool transcriptSuspended: false
 
     function trackNormalGeometry() {
         if (visibility === Window.Windowed)
@@ -4017,6 +4040,16 @@ ApplicationWindow {
             wasMaximized = true;
         else if (visibility === Window.Windowed)
             wasMaximized = false;
+
+        var suspended = visibility === Window.Minimized || visibility === Window.Hidden;
+        if (suspended) {
+            transcriptSuspended = true;
+            windowFocusLost();
+            return;
+        }
+        if (!transcriptSuspended)
+            return;
+        finishTranscriptSuspension(active);
     }
 
     Component.onCompleted: {
