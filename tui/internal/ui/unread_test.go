@@ -190,6 +190,85 @@ func TestStatusFollowsEndWithMark(t *testing.T) {
 	}
 }
 
+// awayLines is a burst large enough that the first new line cannot share a
+// page with the newest one on the short unreadDemoModel viewport.
+const awayBurst = 30
+
+func injectAwayLines(d *demo.DemoServer, target, prefix string) {
+	for index := 0; index < awayBurst; index++ {
+		minute := fmt.Sprintf("%02d", index%60)
+		line := fmt.Sprintf(
+			"@msgid=%s-%d;time=2026-09-12T11:%s:00.000Z :anna!u@h PRIVMSG %s :%s %d\r\n",
+			prefix, index, minute, target, prefix, index)
+		d.InjectOmarchy([]byte(line))
+	}
+}
+
+// focusReturnWhileFollowing leaves the transcript pinned to the end, blurs,
+// lets a burst arrive, then focuses again. It mirrors a reader who was caught
+// up, left the window, and came back.
+func focusReturnWhileFollowing(t *testing.T, m *Model, d *demo.DemoServer, target, prefix string) *Model {
+	t.Helper()
+	if !m.transcriptFollowEnd {
+		m.jumpTranscript(true)
+	}
+	if !m.transcriptFollowEnd {
+		t.Fatal("precondition: the transcript must be pinned to the end")
+	}
+	m = updateMsg(t, m, tea.BlurMsg{})
+	injectAwayLines(d, target, prefix)
+	// The running shell hears the burst as a view notify before focus returns.
+	m = updateMsg(t, m, NotifyMsg{})
+	if !m.transcriptFollowEnd {
+		t.Fatal("an unfocused burst must keep a caught-up transcript at the end until focus returns")
+	}
+	return updateMsg(t, m, tea.FocusMsg{})
+}
+
+func assertFocusReturnLeavesTheEnd(t *testing.T, m *Model, prefix string) {
+	t.Helper()
+	if m.transcriptFollowEnd {
+		t.Fatal("focus return must leave follow-the-end and land on the New messages mark")
+	}
+	content := m.View().Content
+	if !strings.Contains(content, "New messages") {
+		t.Fatalf("focus return must show the New messages boundary:\n%s", content)
+	}
+	newest := fmt.Sprintf("%s %d", prefix, awayBurst-1)
+	if strings.Contains(content, newest) {
+		t.Fatalf("focus return must not stay on the newest line %q:\n%s", newest, content)
+	}
+	oldest := prefix + " 0"
+	if !strings.Contains(content, oldest) {
+		t.Fatalf("focus return must show the first line that arrived while away %q:\n%s", oldest, content)
+	}
+}
+
+// TestFocusRegainFromFollowEndLandsOnMark proves a caught-up channel does not
+// stay pinned to the bottom when focus returns after an unfocused burst.
+func TestFocusRegainFromFollowEndLandsOnMark(t *testing.T) {
+	m, d := unreadDemoModel(t)
+	if got := m.ctrl.SelectedTarget(); got != "#omarchy" {
+		t.Fatalf("selection = %q, want #omarchy", got)
+	}
+	m = focusReturnWhileFollowing(t, m, d, "#omarchy", "channel-away")
+	assertFocusReturnLeavesTheEnd(t, m, "channel-away")
+}
+
+// TestFocusRegainFromFollowEndLandsOnDirectMark is the same catch-up for a
+// direct message that was pinned to the bottom.
+func TestFocusRegainFromFollowEndLandsOnDirectMark(t *testing.T) {
+	m, d := unreadDemoModel(t)
+	m.switchSelection(func() {
+		m.ctrl.SelectConversation("omarchy", "anna")
+	})
+	if got := m.ctrl.SelectedTarget(); got != "anna" {
+		t.Fatalf("selection = %q, want anna", got)
+	}
+	m = focusReturnWhileFollowing(t, m, d, "fred", "dm-away")
+	assertFocusReturnLeavesTheEnd(t, m, "dm-away")
+}
+
 // TestFocusRegainLandsOnMark proves a focus regain pins the transcript to the
 // mark, mirroring pinTranscriptOnFocusReturn.
 func TestFocusRegainLandsOnMark(t *testing.T) {
