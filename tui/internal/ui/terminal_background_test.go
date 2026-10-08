@@ -24,20 +24,16 @@ func TestViewLeavesTerminalColorsUnset(t *testing.T) {
 	}
 }
 
-// TestSeededRenderHasNoWindowBackgroundOnEmptyRows parses the demo frame and
-// rejects a theme-background fill on visually empty lines. Deliberate surfaces
-// (topic band, badges, selection, mention wash, composer frame, overlay shadow)
-// carry other fills and are not empty rows.
-func TestSeededRenderHasNoWindowBackgroundOnEmptyRows(t *testing.T) {
+// TestSeededRenderHasNoThemeBackgroundFill parses the demo frame and rejects
+// Colors.Background as an SGR background on any row. A page-wide lipgloss fill
+// would paint every line while deliberate surfaces (topic band, badges,
+// selection, mention wash, composer frame, overlay shadow) use other colors.
+func TestSeededRenderHasNoThemeBackgroundFill(t *testing.T) {
 	m := seededModel(t)
 	windowBG := backgroundParams(m.styles.Colors.Background)
 	for index, raw := range strings.Split(m.View().Content, "\n") {
-		plain := ansiPattern.ReplaceAllString(raw, "")
-		if strings.TrimSpace(plain) != "" {
-			continue
-		}
 		if strings.Contains(raw, windowBG) {
-			t.Fatalf("line %d is empty but carries the theme window background:\n%s", index, raw)
+			t.Fatalf("line %d carries the theme window background (page fill must stay terminal-native):\n%s", index, raw)
 		}
 	}
 }
