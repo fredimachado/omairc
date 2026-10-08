@@ -956,10 +956,11 @@ ApplicationWindow {
             list.adoptViewport(false);
     }
 
-    // While the window is unfocused, new chat in the open channel or DM is
-    // treated as unread: the "New messages" mark plants on the first line and,
-    // when focus returns, the transcript lands on that mark instead of the
-    // bottom. Status keeps following the end.
+    // While the window is unfocused or minimized, new chat in the open
+    // channel or DM is treated as unread: the "New messages" mark plants on
+    // the first line and, when the window is shown again, the transcript
+    // lands on that mark instead of the bottom. Status keeps following the
+    // end. Minimize is separate from focus: the window can stay active.
     function windowFocusLost() {
         if (irc && typeof irc.setWindowActive === "function")
             irc.setWindowActive(false);
@@ -4013,6 +4014,10 @@ ApplicationWindow {
 
     property rect normalGeometry: Qt.rect(x, y, width, height)
     property bool wasMaximized: false
+    // Minimize can leave Window.active true. Catch-up follows visibility
+    // until the window is shown again, so a burst while minimized still
+    // plants the New messages mark.
+    property bool transcriptSuspended: false
 
     function trackNormalGeometry() {
         if (visibility === Window.Windowed)
@@ -4029,6 +4034,18 @@ ApplicationWindow {
             wasMaximized = true;
         else if (visibility === Window.Windowed)
             wasMaximized = false;
+
+        var suspended = visibility === Window.Minimized || visibility === Window.Hidden;
+        if (suspended) {
+            transcriptSuspended = true;
+            windowFocusLost();
+            return;
+        }
+        if (!transcriptSuspended)
+            return;
+        transcriptSuspended = false;
+        if (active)
+            windowFocusGained();
     }
 
     Component.onCompleted: {
