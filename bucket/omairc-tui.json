@@ -1,12 +1,12 @@
 {
-    "version": "1.10.0",
+    "version": "1.10.1",
     "description": "Keyboard-first IRC client for the terminal",
     "homepage": "https://github.com/fredimachado/omairc",
     "license": "MIT",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/fredimachado/omairc/releases/download/v1.10.0/omairc-tui-1.10.0-windows-amd64.zip",
-            "hash": "5b0b6f4a138ee80b761ea578a087830d245ef9d084f4f04d607244acec4a549b"
+            "url": "https://github.com/fredimachado/omairc/releases/download/v1.10.1/omairc-tui-1.10.1-windows-amd64.zip",
+            "hash": "69df95782b37f329834d2d3dee8380839ded60fa7295fa8b614aee917ca9a9b7"
         }
     },
     "bin": "omairc-tui.exe",
