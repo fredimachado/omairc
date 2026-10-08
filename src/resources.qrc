@@ -35,7 +35,6 @@
         <file alias="qml/NickSheet.qml">qml/NickSheet.qml</file>
         <file alias="qml/ServerListColumn.qml">qml/ServerListColumn.qml</file>
         <file alias="qml/ConversationHeaderActions.qml">qml/ConversationHeaderActions.qml</file>
-        <file alias="qml/ServerJoinField.qml">qml/ServerJoinField.qml</file>
         <file alias="qml/ConversationColumn.qml">qml/ConversationColumn.qml</file>
         <file alias="qml/FilePickButton.qml">qml/FilePickButton.qml</file>
         <file alias="qml/MembersColumn.qml">qml/MembersColumn.qml</file>

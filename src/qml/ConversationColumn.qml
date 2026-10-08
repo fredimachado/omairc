@@ -10,7 +10,6 @@ Item {
     property bool currentConversationIsChannel: false
     property bool channelJoined: false
     property bool canCloseSelection: false
-    property bool serverJoinEnabled: false
     property bool membersVisible: true
     property int currentPeopleCount: 0
     property string headerTitle: ""
@@ -47,7 +46,6 @@ Item {
     signal leaveRequested()
     signal joinRequested()
     signal closeRequested()
-    signal serverJoinRequested(string channel)
     signal sendRequested()
     signal composerTextEdited(string text)
     signal composerKeyPressed(var event)
@@ -258,8 +256,8 @@ Item {
         Column {
             anchors.left: parent.left
             anchors.leftMargin: column.style.scaledSize(24)
-            anchors.right: serverJoin.visible ? serverJoin.left : parent.right
-            anchors.rightMargin: column.style.scaledSize(serverJoin.visible ? 18 : 24)
+            anchors.right: parent.right
+            anchors.rightMargin: column.style.scaledSize(24)
             anchors.verticalCenter: parent.verticalCenter
             spacing: column.style.scaledSize(3)
 
@@ -281,17 +279,6 @@ Item {
                 font.family: "iA Writer Mono S"
                 font.pixelSize: column.style.scaledSize(11)
             }
-        }
-
-        ServerJoinField {
-            id: serverJoin
-            style: column.style
-            joinEnabled: column.serverJoinEnabled
-            visible: column.serverJoinEnabled
-            anchors.right: parent.right
-            anchors.rightMargin: column.style.scaledSize(19)
-            anchors.verticalCenter: parent.verticalCenter
-            onSubmitted: function(channel) { column.serverJoinRequested(channel) }
         }
 
         Rectangle {

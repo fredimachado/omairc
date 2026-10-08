@@ -805,16 +805,6 @@ ApplicationWindow {
         });
     }
 
-    function joinNewChannel(channel) {
-        if (!irc)
-            return;
-        if (!irc.joinNewChannel(channel))
-            return;
-        Qt.callLater(function() {
-            conversation.composer.forceActiveFocus();
-        });
-    }
-
     function closeConversationRow(networkId, target) {
         if (!irc)
             return;
@@ -3428,7 +3418,6 @@ ApplicationWindow {
             currentConversationIsChannel: win.currentConversationIsChannel
             channelJoined: win.currentChannelJoined
             canCloseSelection: win.canCloseSelection
-            serverJoinEnabled: win.irc !== null
             membersVisible: win.membersVisible
             currentPeopleCount: win.currentPeopleCount
             headerTitle: {
@@ -3614,7 +3603,6 @@ ApplicationWindow {
             onLeaveRequested: win.leaveSelectedChannel()
             onJoinRequested: win.joinSelectedChannel()
             onCloseRequested: win.closeDirectMessage()
-            onServerJoinRequested: function(channel) { win.joinNewChannel(channel) }
             onSendRequested: win.sendMessage()
             onComposerTextEdited: function(text) {
                 win.handleComposerText(text);
