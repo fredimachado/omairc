@@ -37,6 +37,9 @@ ApplicationWindow {
     onActiveChanged: {
         if (active) {
             Qt.callLater(focusConnectionSheetStart);
+            // Active can flip back on before visibility leaves Minimized
+            // or Hidden. windowFocusGained stays away until the window
+            // is shown.
             windowFocusGained();
         } else {
             windowFocusLost();
@@ -967,10 +970,23 @@ ApplicationWindow {
     }
 
     function windowFocusGained() {
+        // A focus report while minimized or hidden must not consume the
+        // backlog. The visibility handler clears the suspension and calls
+        // here again once the window is shown.
+        if (transcriptSuspended)
+            return;
         titleMark.clear();
         if (irc && typeof irc.setWindowActive === "function")
             irc.setWindowActive(true);
         Qt.callLater(pinTranscriptOnFocusReturn);
+    }
+
+    // Leaves the minimized or hidden suspension. A restore that is not yet
+    // the active window keeps catch-up off until focus actually returns.
+    function finishTranscriptSuspension(windowActive) {
+        transcriptSuspended = false;
+        if (windowActive)
+            windowFocusGained();
     }
 
     function pinTranscriptOnFocusReturn() {
@@ -4043,9 +4059,7 @@ ApplicationWindow {
         }
         if (!transcriptSuspended)
             return;
-        transcriptSuspended = false;
-        if (active)
-            windowFocusGained();
+        finishTranscriptSuspension(active);
     }
 
     Component.onCompleted: {

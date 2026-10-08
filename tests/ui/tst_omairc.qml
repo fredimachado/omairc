@@ -3495,12 +3495,14 @@ TestCase {
     // A minimized window can stay Window.active. Catch-up has to follow
     // visibility, or the burst is treated as read and the restore stays
     // pinned to the newest line.
-    function expectMinimizedBurstLandsOnMark(list, nick, target, token) {
+    function expectMinimizedBurstLandsOnMark(list, nick, target, token, suspendedVisibility) {
+        if (suspendedVisibility === undefined)
+            suspendedVisibility = Window.Minimized;
         rememberFollowEnd(list);
         verify(appWindow.active);
-        appWindow.visibility = Window.Minimized;
-        tryCompare(appWindow, "visibility", Window.Minimized);
-        verify(appWindow.active, "Minimize must be able to leave the window active");
+        appWindow.visibility = suspendedVisibility;
+        tryCompare(appWindow, "visibility", suspendedVisibility);
+        verify(appWindow.active, "Hiding the window must be able to leave it active");
         injectOmarchyChat(nick, target, token + "-first");
         var index = 0;
         for (index = 0; index < 28; ++index) {
@@ -3552,6 +3554,99 @@ TestCase {
         wait(0);
         verify(list.contentHeight > list.height);
         expectMinimizedBurstLandsOnMark(list, "anna", "fred", "dm-min");
+    }
+
+    function test_hiddenWindowFollowEndLandsOnMark() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        fillTranscriptUntilScrollable(list);
+        expectMinimizedBurstLandsOnMark(list, "anna", "#omarchy", "channel-hide",
+                                        Window.Hidden);
+    }
+
+    // Window.active is read-only here, so a focus report while still
+    // minimized is the same call onActiveChanged makes.
+    function test_focusWhileMinimizedDoesNotConsumeUnread() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        fillTranscriptUntilScrollable(list);
+        rememberFollowEnd(list);
+        appWindow.visibility = Window.Minimized;
+        tryCompare(appWindow, "visibility", Window.Minimized);
+        verify(appWindow.active);
+        appWindow.windowFocusGained();
+
+        injectOmarchyChat("anna", "#omarchy", "focus-min-first");
+        var index = 0;
+        for (index = 0; index < 28; ++index) {
+            var minute = index < 10 ? "0" + index : "" + index;
+            injectOmarchyChat("anna", "#omarchy", "focus-min filler " + index,
+                              "11:" + minute);
+        }
+        waitForBody(list, "focus-min-first");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        var first = rowForBody(list.model, "focus-min-first");
+        var markRow = list.model.unreadMarkRow();
+        verify(markRow >= 0, "Focus while minimized must not consume the backlog");
+        compare(markRow, first - 1);
+        var row = namedItem(liveConversation("#omarchy"));
+        verify(row.unread > 0);
+        var unread = row.unread;
+        appWindow.windowFocusGained();
+        compare(row.unread, unread);
+
+        appWindow.visibility = Window.Windowed;
+        tryCompare(appWindow, "visibility", Window.Windowed);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryVerify(function() {
+            return firstVisibleIndex(list) === markRow;
+        }, 1000, "Showing the window should land on the mark the early focus left alone");
+        verify(!transcriptPinned(list));
+    }
+
+    // Restore can report Windowed before the window is active again.
+    // Offscreen Window.active stays true, so the test drives that branch
+    // through finishTranscriptSuspension(false).
+    function test_restoreWhileInactiveKeepsCatchUpOff() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        fillTranscriptUntilScrollable(list);
+        rememberFollowEnd(list);
+        appWindow.visibility = Window.Minimized;
+        tryCompare(appWindow, "visibility", Window.Minimized);
+        injectOmarchyChat("anna", "#omarchy", "restore-away-first");
+        var index = 0;
+        for (index = 0; index < 28; ++index) {
+            var minute = index < 10 ? "0" + index : "" + index;
+            injectOmarchyChat("anna", "#omarchy", "restore-away filler " + index,
+                              "11:" + minute);
+        }
+        waitForBody(list, "restore-away-first");
+        wait(0);
+        var first = rowForBody(list.model, "restore-away-first");
+        var markRow = list.model.unreadMarkRow();
+        verify(markRow >= 0);
+        compare(markRow, first - 1);
+        var row = namedItem(liveConversation("#omarchy"));
+        var unread = row.unread;
+        verify(unread > 0);
+
+        appWindow.finishTranscriptSuspension(false);
+        injectOmarchyChat("anna", "#omarchy", "restore-away-later", "11:40");
+        waitForBody(list, "restore-away-later");
+        tryCompare(row, "unread", unread + 1);
+
+        appWindow.visibility = Window.Windowed;
+        tryCompare(appWindow, "visibility", Window.Windowed);
+        appWindow.windowFocusGained();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryVerify(function() {
+            return firstVisibleIndex(list) === markRow;
+        }, 1000, "A later focus should land on the mark from the minimized burst");
+        verify(!transcriptPinned(list));
     }
 
     function test_unreadMarkShowsScrollDownUntilBottom() {
