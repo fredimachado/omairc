@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -158,7 +159,8 @@ func padBeforeEllipsis(out, line string, width int, ellipsisIdx int) (string, in
 }
 
 func hasResetBareEllipsisAt(prefix string) bool {
-	return strings.HasSuffix(prefix, "\x1b[0m") || strings.HasSuffix(prefix, "\x1b[m")
+	seq, ok := trailingSGREscape(prefix)
+	return ok && sgrSequenceResets(seq)
 }
 
 func endsWithResetBareEllipsis(s string) bool {
@@ -171,14 +173,11 @@ func endsWithResetBareEllipsis(s string) bool {
 
 func trimTrailingSGRReset(s string) string {
 	for {
-		switch {
-		case strings.HasSuffix(s, "\x1b[0m"):
-			s = strings.TrimSuffix(s, "\x1b[0m")
-		case strings.HasSuffix(s, "\x1b[m"):
-			s = strings.TrimSuffix(s, "\x1b[m")
-		default:
+		seq, ok := trailingSGREscape(s)
+		if !ok || !sgrSequenceResets(seq) {
 			return s
 		}
+		s = s[:len(s)-len(seq)]
 	}
 }
 
@@ -230,6 +229,9 @@ func activeSGRReplay(s string) string {
 			if sgrSequenceResets(seq) {
 				replay.Reset()
 			} else {
+				if sgrSequenceClearsThenSets(seq) {
+					replay.Reset()
+				}
 				replay.WriteString(seq)
 			}
 			i = end + 1
@@ -255,17 +257,107 @@ func activeSGRReplay(s string) string {
 	return replay.String()
 }
 
+func trailingSGREscape(s string) (string, bool) {
+	if !strings.HasSuffix(s, "m") {
+		return "", false
+	}
+	idx := strings.LastIndex(s, "\x1b[")
+	if idx < 0 {
+		return "", false
+	}
+	seq := s[idx:]
+	if len(seq) < 3 || seq[len(seq)-1] != 'm' {
+		return "", false
+	}
+	return seq, true
+}
+
 func sgrSequenceResets(seq string) bool {
 	if len(seq) < 3 || seq[0] != '\x1b' || seq[1] != '[' || seq[len(seq)-1] != 'm' {
 		return false
 	}
-	body := seq[2 : len(seq)-1]
-	if body == "" || body == "0" {
-		return true
+	return sgrBodyResetOnly(seq[2 : len(seq)-1])
+}
+
+// sgrBodyResetOnly reports whether every SGR parameter is empty or numeric zero.
+func sgrBodyResetOnly(body string) bool {
+	parts := strings.Split(body, ";")
+	i := 0
+	for i < len(parts) {
+		p := parts[i]
+		if p == "" {
+			i++
+			continue
+		}
+		n, err := strconv.Atoi(p)
+		if err != nil || n != 0 {
+			return false
+		}
+		i++
 	}
-	for _, part := range strings.Split(body, ";") {
-		if part == "0" {
-			return true
+	return true
+}
+
+// sgrSequenceClearsThenSets is true when a top-level 0 appears before later
+// attributes in the same sequence (for example 0;31 or 0;101).
+func sgrSequenceClearsThenSets(seq string) bool {
+	if len(seq) < 3 || seq[0] != '\x1b' || seq[1] != '[' || seq[len(seq)-1] != 'm' {
+		return false
+	}
+	body := seq[2 : len(seq)-1]
+	parts := strings.Split(body, ";")
+	i := 0
+	sawReset := false
+	for i < len(parts) {
+		p := parts[i]
+		if p == "" {
+			i++
+			continue
+		}
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			if sawReset {
+				return true
+			}
+			i++
+			continue
+		}
+		switch n {
+		case 0:
+			sawReset = true
+			i++
+		case 38, 48, 58:
+			if sawReset {
+				return true
+			}
+			if i+1 >= len(parts) {
+				i++
+				continue
+			}
+			mode, err := strconv.Atoi(parts[i+1])
+			if err != nil {
+				i++
+				continue
+			}
+			switch mode {
+			case 5:
+				i += 3
+				continue
+			case 2:
+				if i+4 >= len(parts) {
+					i = len(parts)
+					continue
+				}
+				i += 5
+				continue
+			default:
+				i++
+			}
+		default:
+			if sawReset {
+				return true
+			}
+			i++
 		}
 	}
 	return false

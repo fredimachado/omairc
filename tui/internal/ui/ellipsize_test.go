@@ -91,6 +91,77 @@ func TestEllipsizeStyledKeepsEllipsisInStyle(t *testing.T) {
 	if strings.HasSuffix(got[:ellipsis], "\x1b[0m") {
 		t.Fatalf("ellipsis sits after reset: %q", got)
 	}
+
+	prefixStyled := lipgloss.NewStyle().Foreground(lipgloss.Color("#ff0000")).Render("Red") + "longer text"
+	got = ellipsizeLine(prefixStyled, 4)
+	if endsWithResetBareEllipsis(got) {
+		t.Fatalf("lipgloss prefix+plain tail left bare ellipsis after reset: %q", got)
+	}
+	if lipgloss.Width(got) != 4 {
+		t.Fatalf("width %d, want 4: %q", lipgloss.Width(got), got)
+	}
+	ellipsis = strings.LastIndex(got, ellipsisRune)
+	if ellipsis < 0 {
+		t.Fatalf("missing ellipsis: %q", got)
+	}
+	if !strings.Contains(got[:ellipsis], "38;2;") {
+		t.Fatalf("ellipsis not in active truecolor SGR: %q", got)
+	}
+	if strings.HasSuffix(got[:ellipsis], "\x1b[m") || strings.HasSuffix(got[:ellipsis], "\x1b[0m") {
+		t.Fatalf("ellipsis sits after reset: %q", got)
+	}
+
+	truecolor := "\x1b[38;2;255;0;0mRed\x1b[0mlonger text"
+	got = ellipsizeLine(truecolor, 4)
+	if endsWithResetBareEllipsis(got) {
+		t.Fatalf("truecolor SGR left bare ellipsis after reset: %q", got)
+	}
+	if lipgloss.Width(got) != 4 {
+		t.Fatalf("width %d, want 4: %q", lipgloss.Width(got), got)
+	}
+	ellipsis = strings.LastIndex(got, ellipsisRune)
+	if !strings.Contains(got[:ellipsis], "\x1b[38;2;255;0;0m") {
+		t.Fatalf("ellipsis not in truecolor SGR, want \\x1b[38;2;255;0;0m before …: %q", got)
+	}
+
+	resetThenBright := "\x1b[0;101mRed\x1b[0mLONGER TEXT\x1b[0m"
+	got = ellipsizeLine(resetThenBright, 4)
+	if endsWithResetBareEllipsis(got) {
+		t.Fatalf("0;101 SGR left bare ellipsis after reset: %q", got)
+	}
+	if lipgloss.Width(got) != 4 {
+		t.Fatalf("width %d, want 4: %q", lipgloss.Width(got), got)
+	}
+	ellipsis = strings.LastIndex(got, ellipsisRune)
+	if !strings.Contains(got[:ellipsis], "\x1b[0;101m") && !strings.Contains(got[:ellipsis], "\x1b[101m") {
+		t.Fatalf("ellipsis not inside 0;101 bright background SGR: %q", got)
+	}
+
+	for _, reset := range []string{"\x1b[00m", "\x1b[0;m", "\x1b[0;0m"} {
+		line := "\x1b[31mRed" + reset + "longer"
+		got = ellipsizeLine(line, 4)
+		if endsWithResetBareEllipsis(got) {
+			t.Fatalf("reset spelling %q left bare ellipsis: %q", reset, got)
+		}
+		if lipgloss.Width(got) != 4 {
+			t.Fatalf("reset %q width %d, want 4: %q", reset, lipgloss.Width(got), got)
+		}
+		ellipsis = strings.LastIndex(got, ellipsisRune)
+		if !strings.HasSuffix(got[:ellipsis], "\x1b[31m") {
+			t.Fatalf("reset %q: ellipsis not in active SGR: %q", reset, got)
+		}
+	}
+
+	blackFG := lipgloss.NewStyle().Foreground(lipgloss.Color("#000000")).Render("Red") + "longer text"
+	got = ellipsizeLine(blackFG, 4)
+	if endsWithResetBareEllipsis(got) {
+		t.Fatalf("black foreground left bare ellipsis after reset: %q", got)
+	}
+	blueBG := lipgloss.NewStyle().Background(lipgloss.Color("#0000ff")).Render("Red") + "longer text"
+	got = ellipsizeLine(blueBG, 4)
+	if endsWithResetBareEllipsis(got) {
+		t.Fatalf("blue background left bare ellipsis after reset: %q", got)
+	}
 }
 
 func TestEllipsizeWideGlyphDoesNotSplit(t *testing.T) {
