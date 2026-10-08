@@ -109,7 +109,8 @@ func TestShortcutsSheetRendersKeycaps(t *testing.T) {
 	m := seededModel(t)
 	m.openShortcuts()
 	card := m.shortcutsCard(m.width)
-	plain := ansiPattern.ReplaceAllString(card, "")
+	inner := m.shortcutsInnerWidth()
+	plain := shortcutsPlainFold(strings.Join(m.shortcutsCardBody(inner), "\n"))
 
 	for _, group := range shortcutGroups {
 		if !strings.Contains(plain, group.title) {

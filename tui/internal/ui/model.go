@@ -164,6 +164,7 @@ type Model struct {
 	memberFocus      bool
 	memberIndex      int
 	shortcutsOpen    bool
+	shortcutsScroll  int
 	aboutOpen        bool
 	channelPrompt    channelPromptState
 	nick             nickJumpState
@@ -601,6 +602,10 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.shortcutsOpen {
 		if key == "ctrl+/" || key == "esc" || key == "escape" {
 			m.closeShortcuts()
+			return m, nil
+		}
+		if m.handleShortcutsScrollKey(key) {
+			return m, nil
 		}
 		return m, nil
 	}
