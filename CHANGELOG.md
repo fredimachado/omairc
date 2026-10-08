@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The terminal client keeps the terminal's own background and foreground, so a
+  translucent terminal stays translucent instead of painting a solid theme color
+  behind the UI.
+
 ## [1.10.1] - 2026-10-08
 
 ### Changed

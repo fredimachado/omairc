@@ -718,10 +718,11 @@ func (m *Model) View() tea.View {
 	// ctrl+j. Request escape-coded keys so shift chords (nick jump, server
 	// list, inbox, …) and Connect Apply stay distinct on Windows Terminal.
 	v.KeyboardEnhancements.ReportAllKeysAsEscapeCodes = true
-	// Paint the terminal from the live palette so the surface behind the
-	// columns matches the theme instead of the terminal default.
-	v.BackgroundColor = m.styles.Colors.Background
-	v.ForegroundColor = m.styles.Colors.Foreground
+	// Leave BackgroundColor and ForegroundColor unset so Bubble Tea does not
+	// emit OSC 11/10. Omarchy terminals are often translucent; a solid OSC
+	// background turns that off, and setting foreground would reset the
+	// terminal default the same way. Deliberate surfaces still paint through
+	// lipgloss in the rendered content.
 	// Place the composer's real terminal cursor at its frame row. The row is
 	// the shell's, because the footer sits below the composer; composerCursor
 	// returns nil while the composer is blurred (an overlay or modal owns the

@@ -693,7 +693,7 @@ func TestFooterUsesHelpKeyMap(t *testing.T) {
 }
 
 // TestThemeChangedRebuildsStyles covers the live-theme hop: a ThemeChangedMsg
-// swaps the palette, and View paints the new background and foreground.
+// swaps the palette for lipgloss surfaces, while View leaves OSC 10/11 unset.
 func TestThemeChangedRebuildsStyles(t *testing.T) {
 	m := seededModel(t)
 	colors := theme.Derive(theme.Spec{Mode: theme.ModeLight})
@@ -708,9 +708,17 @@ func TestThemeChangedRebuildsStyles(t *testing.T) {
 	if got := theme.Hex(m.styles.Colors.Background); got != theme.Hex(colors.Background) {
 		t.Fatalf("background = %s, want %s", got, theme.Hex(colors.Background))
 	}
+	if got := theme.Hex(m.styles.TopicBar.GetBackground()); got != theme.Hex(buildStyles(colors).TopicBar.GetBackground()) {
+		t.Fatalf("TopicBar background did not rebuild with the theme")
+	}
 	view := m.View()
-	if view.BackgroundColor != colors.Background {
-		t.Fatalf("View.BackgroundColor did not follow the theme")
+	// Omarchy shares palette with the terminal, but setting foreground would
+	// still reset the default via OSC 10 the same way background resets OSC 11.
+	if view.BackgroundColor != nil {
+		t.Fatalf("BackgroundColor = %v, want unset after theme change", view.BackgroundColor)
+	}
+	if view.ForegroundColor != nil {
+		t.Fatalf("ForegroundColor = %v, want unset after theme change", view.ForegroundColor)
 	}
 }
 
