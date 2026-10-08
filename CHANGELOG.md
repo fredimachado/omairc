@@ -60,8 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it again. A direct message someone else writes after it was closed stays
   open across a restart. A join you did not ask for does not bring a closed
   channel back. The desktop header offers Leave, Join, and Close. Middle-click
-  closes a sidebar row. The server buffer can join a channel that is not
-  already open.
+  closes a sidebar row.
 - The terminal client keeps the same row: `/part` leaves without dropping it,
   `/join` brings it back, and `/close` drops a channel you have left. A direct
   message someone else writes after it was closed stays open across a restart.
@@ -105,6 +104,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The desktop Status header no longer has a channel field or a Join button.
+  Joining still uses `/join` (including from Status), `/list`, an invite, or
+  the channel header's Join after a part.
 - The terminal client's CTCP `VERSION` reply names the client:
   `omairc-tui https://omairc.app`. The desktop client answers
   `https://omairc.app`. Neither reply includes the build number.

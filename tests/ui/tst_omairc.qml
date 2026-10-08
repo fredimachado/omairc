@@ -10480,23 +10480,6 @@ TestCase {
         tryVerify(function() {
             return findNamed(liveConversation("#omarchy")) === null;
         });
-
-        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
-        tryCompare(appWindow, "consoleVisible", true);
-        var joinField = item("serverJoinField");
-        mouseClick(joinField);
-        typeText("#ricing");
-        mouseClick(item("serverJoinButton"));
-        tryCompare(seed.irc, "lastError", "Already open");
-        compare(appWindow.consoleVisible, true);
-        verify(namedItem(liveConversation("#ricing")) !== null);
-
-        mouseClick(joinField);
-        typeText("#leaveprobe");
-        mouseClick(item("serverJoinButton"));
-        tryCompare(appWindow, "currentConversation", "#leaveprobe");
-        compare(appWindow.consoleVisible, false);
-        verify(namedItem(liveConversation("#leaveprobe")) !== null);
     }
 
     function test_typedQueryOpensDirectAndClearsComposer() {
