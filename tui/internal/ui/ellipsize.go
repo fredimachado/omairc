@@ -1,11 +1,11 @@
 package ui
 
 import (
-	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/ansi/parser"
 )
 
 const ellipsisRune = "…"
@@ -22,38 +22,143 @@ func ellipsizeLine(line string, width int) string {
 		return line
 	}
 
-	out := ansi.Truncate(line, width, ellipsisRune)
-	out = repairBareEllipsis(line, out, width)
+	out, ellipsisIdx := truncateWithEllipsis(line, width, ellipsisRune)
+	out, ellipsisIdx = repairBareEllipsis(line, out, width, ellipsisIdx)
 	for lipgloss.Width(out) < width {
-		out = padBeforeEllipsis(out, line, width)
+		prev := lipgloss.Width(out)
+		out, ellipsisIdx = padBeforeEllipsis(out, line, width, ellipsisIdx)
+		if lipgloss.Width(out) <= prev {
+			break
+		}
 	}
 	return out
 }
 
-func repairBareEllipsis(line, out string, width int) string {
-	if !endsWithResetBareEllipsis(out) {
-		return out
+func truncateWithEllipsis(s string, width int, tail string) (string, int) {
+	if ansi.StringWidth(s) <= width {
+		return s, -1
 	}
-	style := styleSequenceBeforeCell(line, width-1)
-	if style == "" {
-		return out
+
+	tw := ansi.StringWidth(tail)
+	contentWidth := width - tw
+	if contentWidth < 0 {
+		return "", -1
 	}
-	out = strings.TrimSuffix(out, ellipsisRune)
-	out = trimTrailingSGRReset(out)
-	return out + style + ellipsisRune
+
+	var cluster string
+	var buf strings.Builder
+	curWidth := 0
+	ignoring := false
+	pstate := parser.GroundState
+	ellipsisIdx := -1
+	i := 0
+
+	for i < len(s) {
+		state, action := parser.Table.Transition(pstate, s[i])
+		if state == parser.Utf8State {
+			var w int
+			cluster, w = ansi.FirstGraphemeCluster(s[i:], ansi.GraphemeWidth)
+			i += len(cluster)
+			curWidth += w
+
+			if ignoring {
+				continue
+			}
+
+			if curWidth > contentWidth && !ignoring {
+				ignoring = true
+				ellipsisIdx = buf.Len()
+				buf.WriteString(tail)
+			}
+
+			if curWidth > contentWidth {
+				continue
+			}
+
+			buf.WriteString(cluster)
+			pstate = parser.GroundState
+			continue
+		}
+
+		switch action {
+		case parser.PrintAction:
+			if curWidth >= contentWidth && !ignoring {
+				ignoring = true
+				ellipsisIdx = buf.Len()
+				buf.WriteString(tail)
+			}
+
+			if ignoring {
+				i++
+				continue
+			}
+
+			curWidth++
+			fallthrough
+		case parser.ExecuteAction:
+			if ignoring {
+				i++
+				continue
+			}
+			fallthrough
+		default:
+			buf.WriteByte(s[i])
+			i++
+		}
+
+		pstate = state
+
+		if curWidth > contentWidth && !ignoring {
+			ignoring = true
+			ellipsisIdx = buf.Len()
+			buf.WriteString(tail)
+		}
+	}
+
+	return buf.String(), ellipsisIdx
 }
 
-func padBeforeEllipsis(out, line string, width int) string {
-	idx := strings.LastIndex(out, ellipsisRune)
-	if idx < 0 {
-		return out
+func repairBareEllipsis(line, out string, width int, ellipsisIdx int) (string, int) {
+	if ellipsisIdx < 0 || ellipsisIdx+len(ellipsisRune) > len(out) {
+		return out, ellipsisIdx
 	}
-	prefix := out[:idx]
+	if out[ellipsisIdx:ellipsisIdx+len(ellipsisRune)] != ellipsisRune {
+		return out, ellipsisIdx
+	}
+	prefix := out[:ellipsisIdx]
+	if !hasResetBareEllipsisAt(prefix) {
+		return out, ellipsisIdx
+	}
+	style := activeSGRReplay(cellPrefix(line, width-1))
+	if style == "" {
+		return out, ellipsisIdx
+	}
+	prefix = trimTrailingSGRReset(prefix)
+	suffix := out[ellipsisIdx+len(ellipsisRune):]
+	out = prefix + style + ellipsisRune + suffix
+	ellipsisIdx = len(prefix) + len(style)
+	return out, ellipsisIdx
+}
+
+func padBeforeEllipsis(out, line string, width int, ellipsisIdx int) (string, int) {
+	if ellipsisIdx < 0 || ellipsisIdx+len(ellipsisRune) > len(out) {
+		return out, ellipsisIdx
+	}
+	if out[ellipsisIdx:ellipsisIdx+len(ellipsisRune)] != ellipsisRune {
+		return out, ellipsisIdx
+	}
+	prefix := out[:ellipsisIdx]
 	style := ""
 	if !prefixHasOpenStyle(prefix) {
-		style = styleSequenceBeforeCell(line, width-1)
+		style = activeSGRReplay(cellPrefix(line, width-1))
 	}
-	return prefix + style + " " + out[idx:]
+	out = prefix + style + " " + out[ellipsisIdx:]
+	ellipsisIdx = len(prefix) + len(style) + 1
+	return out, ellipsisIdx
+}
+
+func hasResetBareEllipsisAt(prefix string) bool {
+	return strings.HasSuffix(prefix, "\x1b[0m") || strings.HasSuffix(prefix, "\x1b[m")
 }
 
 func endsWithResetBareEllipsis(s string) bool {
@@ -61,8 +166,7 @@ func endsWithResetBareEllipsis(s string) bool {
 	if idx < 0 {
 		return false
 	}
-	before := s[:idx]
-	return strings.HasSuffix(before, "\x1b[0m") || strings.HasSuffix(before, "\x1b[m")
+	return hasResetBareEllipsisAt(s[:idx])
 }
 
 func trimTrailingSGRReset(s string) string {
@@ -79,20 +183,7 @@ func trimTrailingSGRReset(s string) string {
 }
 
 func prefixHasOpenStyle(prefix string) bool {
-	st := styleAfterSequences(prefix)
-	return len(st) > 0
-}
-
-func styleSequenceBeforeCell(s string, budget int) string {
-	if budget <= 0 {
-		return ""
-	}
-	st := styleAfterSequences(cellPrefix(s, budget))
-	seq := st.String()
-	if seq == ansi.ResetStyle {
-		return ""
-	}
-	return seq
+	return activeSGRReplay(prefix) != ""
 }
 
 func cellPrefix(s string, budget int) string {
@@ -119,152 +210,63 @@ func cellPrefix(s string, budget int) string {
 	return s[:length]
 }
 
-func styleAfterSequences(s string) ansi.Style {
-	var st ansi.Style
+// activeSGRReplay returns the original SGR bytes active after parsing s,
+// replaying each non-reset sequence in order instead of re-encoding attributes.
+func activeSGRReplay(s string) string {
+	var replay strings.Builder
 	for i := 0; i < len(s); {
 		if s[i] != '\x1b' || i+1 >= len(s) {
 			i++
 			continue
 		}
-		if s[i+1] != '[' {
+		switch s[i+1] {
+		case '[':
+			end := strings.IndexByte(s[i+2:], 'm')
+			if end < 0 {
+				return replay.String()
+			}
+			end += i + 2
+			seq := s[i : end+1]
+			if sgrSequenceResets(seq) {
+				replay.Reset()
+			} else {
+				replay.WriteString(seq)
+			}
+			i = end + 1
+		case ']':
+			// OSC: skip without touching SGR replay.
+			j := i + 2
+			for j < len(s) {
+				if s[j] == '\x1b' && j+1 < len(s) && s[j+1] == '\\' {
+					j += 2
+					break
+				}
+				if s[j] == '\x07' {
+					j++
+					break
+				}
+				j++
+			}
+			i = j
+		default:
 			i++
-			continue
 		}
-		end := strings.IndexByte(s[i+2:], 'm')
-		if end < 0 {
-			break
-		}
-		end += i + 2
-		st = applySGREscape(st, s[i:end+1])
-		i = end + 1
 	}
-	return st
+	return replay.String()
 }
 
-func applySGREscape(st ansi.Style, seq string) ansi.Style {
+func sgrSequenceResets(seq string) bool {
 	if len(seq) < 3 || seq[0] != '\x1b' || seq[1] != '[' || seq[len(seq)-1] != 'm' {
-		return st
+		return false
 	}
 	body := seq[2 : len(seq)-1]
-	if body == "" {
-		return ansi.NewStyle()
+	if body == "" || body == "0" {
+		return true
 	}
-	parts := strings.Split(body, ";")
-	for index := 0; index < len(parts); index++ {
-		code, err := strconv.Atoi(parts[index])
-		if err != nil {
-			continue
-		}
-		switch code {
-		case 0:
-			st = ansi.NewStyle()
-		case 1:
-			st = st.Bold()
-		case 2:
-			st = st.Faint()
-		case 3:
-			st = st.Italic(true)
-		case 4:
-			st = st.Underline(true)
-		case 7:
-			st = st.Reverse(true)
-		case 9:
-			st = st.Strikethrough(true)
-		case 22:
-			st = st.Normal()
-		case 23:
-			st = st.NoItalic()
-		case 24:
-			st = st.NoUnderline()
-		case 27:
-			st = st.NoReverse()
-		case 29:
-			st = st.NoStrikethrough()
-		case 30:
-			st = st.ForegroundColor(ansi.Black)
-		case 31:
-			st = st.ForegroundColor(ansi.Red)
-		case 32:
-			st = st.ForegroundColor(ansi.Green)
-		case 33:
-			st = st.ForegroundColor(ansi.Yellow)
-		case 34:
-			st = st.ForegroundColor(ansi.Blue)
-		case 35:
-			st = st.ForegroundColor(ansi.Magenta)
-		case 36:
-			st = st.ForegroundColor(ansi.Cyan)
-		case 37:
-			st = st.ForegroundColor(ansi.White)
-		case 38:
-			if index+2 < len(parts) && parts[index+1] == "5" {
-				n, err := strconv.Atoi(parts[index+2])
-				if err == nil {
-					st = st.ForegroundColor(ansi.ExtendedColor(n))
-				}
-				index += 2
-			} else if index+4 < len(parts) && parts[index+1] == "2" {
-				r, errR := strconv.Atoi(parts[index+2])
-				g, errG := strconv.Atoi(parts[index+3])
-				b, errB := strconv.Atoi(parts[index+4])
-				if errR == nil && errG == nil && errB == nil {
-					st = st.ForegroundColor(ansi.TrueColor(uint32(r)<<16 | uint32(g)<<8 | uint32(b)))
-				}
-				index += 4
-			}
-		case 39:
-			st = st.DefaultForegroundColor()
-		case 40:
-			st = st.BackgroundColor(ansi.Black)
-		case 41:
-			st = st.BackgroundColor(ansi.Red)
-		case 42:
-			st = st.BackgroundColor(ansi.Green)
-		case 43:
-			st = st.BackgroundColor(ansi.Yellow)
-		case 44:
-			st = st.BackgroundColor(ansi.Blue)
-		case 45:
-			st = st.BackgroundColor(ansi.Magenta)
-		case 46:
-			st = st.BackgroundColor(ansi.Cyan)
-		case 47:
-			st = st.BackgroundColor(ansi.White)
-		case 48:
-			if index+2 < len(parts) && parts[index+1] == "5" {
-				n, err := strconv.Atoi(parts[index+2])
-				if err == nil {
-					st = st.BackgroundColor(ansi.ExtendedColor(n))
-				}
-				index += 2
-			} else if index+4 < len(parts) && parts[index+1] == "2" {
-				r, errR := strconv.Atoi(parts[index+2])
-				g, errG := strconv.Atoi(parts[index+3])
-				b, errB := strconv.Atoi(parts[index+4])
-				if errR == nil && errG == nil && errB == nil {
-					st = st.BackgroundColor(ansi.TrueColor(uint32(r)<<16 | uint32(g)<<8 | uint32(b)))
-				}
-				index += 4
-			}
-		case 49:
-			st = st.DefaultBackgroundColor()
-		case 90:
-			st = st.ForegroundColor(ansi.BrightBlack)
-		case 91:
-			st = st.ForegroundColor(ansi.BrightRed)
-		case 92:
-			st = st.ForegroundColor(ansi.BrightGreen)
-		case 93:
-			st = st.ForegroundColor(ansi.BrightYellow)
-		case 94:
-			st = st.ForegroundColor(ansi.BrightBlue)
-		case 95:
-			st = st.ForegroundColor(ansi.BrightMagenta)
-		case 96:
-			st = st.ForegroundColor(ansi.BrightCyan)
-		case 97:
-			st = st.ForegroundColor(ansi.BrightWhite)
+	for _, part := range strings.Split(body, ";") {
+		if part == "0" {
+			return true
 		}
 	}
-	return st
+	return false
 }

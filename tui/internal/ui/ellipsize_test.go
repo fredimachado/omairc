@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"charm.land/lipgloss/v2"
 )
@@ -52,6 +53,44 @@ func TestEllipsizeStyledKeepsEllipsisInStyle(t *testing.T) {
 	if lipgloss.Width(got) != 4 {
 		t.Fatalf("width %d, want 4: %q", lipgloss.Width(got), got)
 	}
+	ellipsis := strings.LastIndex(got, ellipsisRune)
+	if ellipsis < 0 {
+		t.Fatalf("missing ellipsis: %q", got)
+	}
+	if !strings.HasSuffix(got[:ellipsis], "\x1b[31m") {
+		t.Fatalf("ellipsis not in active SGR, want suffix \\x1b[31m before …: %q", got)
+	}
+	if strings.Count(got, ellipsisRune) != 1 {
+		t.Fatalf("want one visible ellipsis, got %q", got)
+	}
+
+	twoSpan := "\x1b[31mRed\x1b[0m\x1b[32mGreener text\x1b[0m"
+	got = ellipsizeLine(twoSpan, 4)
+	if endsWithResetBareEllipsis(got) {
+		t.Fatalf("two-span line left bare ellipsis after reset: %q", got)
+	}
+	if lipgloss.Width(got) != 4 {
+		t.Fatalf("width %d, want 4: %q", lipgloss.Width(got), got)
+	}
+	if strings.Count(got, ellipsisRune) != 1 {
+		t.Fatalf("want one visible ellipsis, got %q", got)
+	}
+
+	brightBG := "\x1b[101mRed\x1b[0mLONGER TEXT\x1b[0m"
+	got = ellipsizeLine(brightBG, 4)
+	if endsWithResetBareEllipsis(got) {
+		t.Fatalf("bright background left bare ellipsis after reset: %q", got)
+	}
+	if lipgloss.Width(got) != 4 {
+		t.Fatalf("width %d, want 4: %q", lipgloss.Width(got), got)
+	}
+	ellipsis = strings.LastIndex(got, ellipsisRune)
+	if !strings.Contains(got[:ellipsis], "\x1b[101m") {
+		t.Fatalf("ellipsis not inside bright background SGR: %q", got)
+	}
+	if strings.HasSuffix(got[:ellipsis], "\x1b[0m") {
+		t.Fatalf("ellipsis sits after reset: %q", got)
+	}
 }
 
 func TestEllipsizeWideGlyphDoesNotSplit(t *testing.T) {
@@ -67,6 +106,30 @@ func TestEllipsizeWideGlyphDoesNotSplit(t *testing.T) {
 	}
 	if !strings.HasSuffix(plain, ellipsisRune) {
 		t.Fatalf("missing ellipsis: %q", plain)
+	}
+}
+
+func TestEllipsizeOSCWithEllipsisInURLDoesNotHang(t *testing.T) {
+	const width = 4
+	line := "中文nick" + "\x1b]8;;https://example.com/trail…more\x1b\\"
+	done := make(chan string, 1)
+	go func() {
+		done <- ellipsizeLine(line, width)
+	}()
+	select {
+	case got := <-done:
+		if lipgloss.Width(got) != width {
+			t.Fatalf("width %d, want %d: %q", lipgloss.Width(got), width, got)
+		}
+		visible := got
+		if idx := strings.Index(visible, "\x1b]"); idx >= 0 {
+			visible = visible[:idx]
+		}
+		if strings.Count(visible, ellipsisRune) != 1 {
+			t.Fatalf("want one visible ellipsis before copied escapes, got %q", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("ellipsizeLine hung on OSC URL containing an ellipsis rune")
 	}
 }
 
