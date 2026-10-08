@@ -56,6 +56,25 @@ func TestConversationLogPrependPreservesOrderOnDisk(t *testing.T) {
 	}
 }
 
+func TestConversationLogReadTailDropsTerminalEscapes(t *testing.T) {
+	root := t.TempDir()
+	log := NewConversationLog(root)
+	mapping := irc.CaseMapping{}
+	conversationLogTestWrite(t, log.PathFor("net", "#room", mapping),
+		`{"author":"ev\u001b[1mil","body":"\u001b]8;;https://evil.example\u0007click\u001b]8;;\u0007 \u009b2J \u0002bold\u0002","kind":"message","timestamp":"2026-09-04T00:00:00.000Z"}`+"\n")
+
+	lines := log.ReadTail("net", "#room", mapping, 10)
+	if len(lines) != 1 {
+		t.Fatalf("ReadTail returned %d lines, want 1", len(lines))
+	}
+	if got, want := lines[0].Author, "ev[1mil"; got != want {
+		t.Errorf("author = %q, want %q", got, want)
+	}
+	if got, want := lines[0].Body, "]8;;https://evil.exampleclick]8;; 2J \x02bold\x02"; got != want {
+		t.Errorf("body = %q, want %q", got, want)
+	}
+}
+
 func TestConversationLogAppendReadTailRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	log := NewConversationLog(root)

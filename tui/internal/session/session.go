@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/fredimachado/omairc/tui/internal/irc"
+	"github.com/fredimachado/omairc/tui/internal/termtext"
 )
 
 // This file is the Go port of IrcSession in src/irc/ircsession.{h,cpp}: the
@@ -1261,6 +1262,14 @@ func (s *Session) handleBytesLocked(bytes []byte) {
 			break
 		}
 		parsed, err := irc.Parse(frame)
+		if err == nil {
+			// Validate the frame as received so a stripped byte cannot turn a
+			// line Qt rejects into an accepted one, then deliver the copy that
+			// cannot steer the terminal.
+			if safe := termtext.Sanitize(frame); safe != frame {
+				parsed, err = irc.Parse(safe)
+			}
+		}
 		if err != nil {
 			s.emitProtocolError("message", err, frame, len(frame))
 			continue

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/fredimachado/omairc/tui/internal/irc"
+	"github.com/fredimachado/omairc/tui/internal/termtext"
 )
 
 // ConversationLog persists and reads back conversation transcripts, one JSONL
@@ -186,9 +187,9 @@ func conversationLogParseLine(raw []byte) (irc.TranscriptLine, bool) {
 		return irc.TranscriptLine{}, false
 	}
 	line := irc.TranscriptLine{
-		Author: record.Author,
+		Author: termtext.Sanitize(record.Author),
 		Kind:   record.Kind,
-		Body:   record.Body,
+		Body:   termtext.Sanitize(record.Body),
 		MsgID:  record.MsgID,
 	}
 	if record.Timestamp != "" {

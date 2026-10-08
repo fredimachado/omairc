@@ -40,6 +40,9 @@ When the two disagree about the shared contract, the root file wins.
   half-block raster), `internal/openurl/` (the OS URL-handler seam),
   `internal/gate/` (the PTY parity driver: VT grid, OSC title capture, key
   writer, screenshot), `internal/crashlog/` (the durable crash record),
+  `internal/termtext/` (drops ESC, DEL, C1, and unused C0 from every inbound
+  frame before `irc.Parse` and from every history line read from disk, so a
+  remote line cannot inject SGR or OSC 8 into the terminal),
   `internal/version/` (injected build version), and
   `bin/` (gate scripts, plus `bin/writezip` — the Windows zip writer that
   `bin/package` calls).
