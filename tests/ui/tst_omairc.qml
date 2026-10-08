@@ -3649,6 +3649,26 @@ TestCase {
         verify(!transcriptPinned(list));
     }
 
+    function test_minimizedActiveWindowNotifiesMention() {
+        openSeededAppWindow();
+        appWindow.lastNotification = null;
+        verify(appWindow.arrivalWindowActive);
+        appWindow.visibility = Window.Minimized;
+        tryCompare(appWindow, "visibility", Window.Minimized);
+        verify(appWindow.active);
+        compare(appWindow.arrivalWindowActive, false);
+
+        injectOmarchyChat("alice", "#ricing", "hey \x02fred");
+        compare(appWindow.title, "alice: hey fred · #ricing - Omairc");
+        compare(appWindow.lastNotification.author, "alice");
+        compare(appWindow.lastNotification.body, "hey fred");
+
+        injectOmarchyChat("dax", "fred", "hello there");
+        compare(appWindow.title, "dax: hello there - Omairc");
+        compare(appWindow.lastNotification.author, "dax");
+        compare(appWindow.lastNotification.body, "hello there");
+    }
+
     function test_unreadMarkShowsScrollDownUntilBottom() {
         openSeededAppWindow();
         var list = item("messageList");

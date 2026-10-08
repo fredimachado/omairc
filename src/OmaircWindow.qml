@@ -27,9 +27,11 @@ ApplicationWindow {
     minimumWidth: 760
     minimumHeight: 540
     visible: true
-    // arrivalWindowActive follows focus. A test can assign false while the
-    // offscreen window stays active, so a live mention takes the unfocused path.
-    property bool arrivalWindowActive: active
+    // arrivalWindowActive follows focus and visibility. Minimized and hidden
+    // count as away even when Window.active stays true. A test can assign
+    // false while the offscreen window stays active, so a live mention takes
+    // the unfocused path.
+    property bool arrivalWindowActive: active && !transcriptSuspended
     title: titleMark.target.length > 0
            ? titleMark.format(titleMark.author, titleMark.plainBody,
                               titlePlace(titleMark.networkId, titleMark.target))
