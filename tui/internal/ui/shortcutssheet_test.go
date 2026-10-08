@@ -1,11 +1,15 @@
 package ui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
+
+var shortcutsScrollRangePattern = regexp.MustCompile(`\d+-\d+ of \d+`)
 
 func shortcutActions() []string {
 	var actions []string
@@ -17,18 +21,30 @@ func shortcutActions() []string {
 	return actions
 }
 
-func shortcutsCardPlain(m *Model) string {
-	return ansiPattern.ReplaceAllString(m.shortcutsCard(m.width), "")
+func shortcutsViewPlain(m *Model) string {
+	return ansiPattern.ReplaceAllString(m.View().Content, "")
 }
 
-func shortcutsCardClosedBottom(card string) bool {
-	plain := strings.TrimRight(ansiPattern.ReplaceAllString(card, ""), "\n")
-	return strings.HasSuffix(plain, "╯")
+func shortcutsViewLines(m *Model) []string {
+	return strings.Split(strings.TrimRight(shortcutsViewPlain(m), "\n"), "\n")
 }
 
-func visibleShortcutActions(m *Model) map[string]bool {
-	inner := m.shortcutsInnerWidth()
-	plain := shortcutsPlainFold(strings.Join(m.shortcutsCardBody(inner), "\n"))
+func shortcutsViewClosedBottom(m *Model) bool {
+	lines := shortcutsViewLines(m)
+	limit := m.bodyHeight()
+	if limit > len(lines) {
+		limit = len(lines)
+	}
+	for index := 0; index < limit; index++ {
+		if strings.HasSuffix(strings.TrimRight(lines[index], " "), "╯") {
+			return true
+		}
+	}
+	return false
+}
+
+func visibleShortcutActionsInView(m *Model) map[string]bool {
+	plain := shortcutsPlainFold(shortcutsViewPlain(m))
 	seen := make(map[string]bool)
 	for _, action := range shortcutActions() {
 		if strings.Contains(plain, action) {
@@ -38,16 +54,32 @@ func visibleShortcutActions(m *Model) map[string]bool {
 	return seen
 }
 
-func allShortcutActionsReachable(m *Model) bool {
+func shortcutsViewScrollHint(m *Model) string {
+	plain := shortcutsViewPlain(m)
+	for _, line := range strings.Split(plain, "\n") {
+		if strings.Contains(line, "↓ more") {
+			return "↓ more"
+		}
+		if strings.Contains(line, "↑ more") {
+			return "↑ more"
+		}
+		if match := shortcutsScrollRangePattern.FindString(line); match != "" {
+			return match
+		}
+	}
+	return ""
+}
+
+func allShortcutActionsReachableInView(m *Model) bool {
 	inner := m.shortcutsInnerWidth()
 	total, visible, maxOffset := m.shortcutsScrollBounds(inner)
 	if total <= visible {
-		return len(visibleShortcutActions(m)) == len(shortcutActions())
+		return len(visibleShortcutActionsInView(m)) == len(shortcutActions())
 	}
 	seen := make(map[string]bool)
 	for offset := 0; offset <= maxOffset; offset++ {
 		m.shortcutsScroll = offset
-		for action, ok := range visibleShortcutActions(m) {
+		for action, ok := range visibleShortcutActionsInView(m) {
 			if ok {
 				seen[action] = true
 			}
@@ -59,55 +91,73 @@ func allShortcutActionsReachable(m *Model) bool {
 func TestShortcutsSheetFitsDefaultSize(t *testing.T) {
 	m := resizeModel(t, seededModel(t), 118, 30)
 	m.openShortcuts()
-	card := m.shortcutsCard(m.width)
-	if !shortcutsCardClosedBottom(card) {
-		t.Fatalf("shortcuts card must close its bottom border:\n%s", card)
+	if m.shortcutsScroll != 0 {
+		t.Fatalf("shortcuts scroll = %d, want 0 at 118x30", m.shortcutsScroll)
 	}
-	seen := visibleShortcutActions(m)
+	if lipgloss.Height(m.View().Content) != m.height {
+		t.Fatalf("view height = %d, want terminal height %d", lipgloss.Height(m.View().Content), m.height)
+	}
+	if !shortcutsViewClosedBottom(m) {
+		t.Fatalf("shortcuts sheet must close its bottom border in View() at 118x30:\n%s", shortcutsViewPlain(m))
+	}
+	seen := visibleShortcutActionsInView(m)
 	for _, action := range shortcutActions() {
 		if !seen[action] {
-			t.Fatalf("shortcuts sheet missing action %q at 118x30:\n%s", action, shortcutsCardPlain(m))
+			t.Fatalf("shortcuts sheet missing action %q in View() at 118x30:\n%s", action, shortcutsViewPlain(m))
 		}
+	}
+	inner := m.shortcutsInnerWidth()
+	total, visible, maxOffset := m.shortcutsScrollBounds(inner)
+	if maxOffset != 0 || total != visible {
+		t.Fatalf("118x30 shortcuts scroll bounds = total %d visible %d max %d, want no scrolling", total, visible, maxOffset)
 	}
 }
 
 func TestShortcutsSheetScrollsShortTerminal(t *testing.T) {
 	m := resizeModel(t, seededModel(t), 80, 24)
 	m.openShortcuts()
-	card := m.shortcutsCard(m.width)
-	if !shortcutsCardClosedBottom(card) {
-		t.Fatalf("shortcuts card must close its bottom border at 80x24:\n%s", card)
+	if lipgloss.Height(m.View().Content) != m.height {
+		t.Fatalf("view height = %d, want terminal height %d", lipgloss.Height(m.View().Content), m.height)
 	}
-	if !allShortcutActionsReachable(m) {
+	if !shortcutsViewClosedBottom(m) {
+		t.Fatalf("shortcuts sheet must close its bottom border in View() at 80x24:\n%s", shortcutsViewPlain(m))
+	}
+	if !allShortcutActionsReachableInView(m) {
 		t.Fatalf("not every shortcut action is reachable by scrolling at 80x24")
 	}
 
-	m.shortcutsScroll = 0
-	hintTop := shortcutsCardPlain(m)
-	if !strings.Contains(hintTop, "↓ more") {
-		t.Fatalf("top scroll hint = %q, want ↓ more", hintTop)
+	inner := m.shortcutsInnerWidth()
+	total, visible, maxOffset := m.shortcutsScrollBounds(inner)
+	if total != 48 || visible != 18 || maxOffset != 30 {
+		t.Fatalf("80x24 scroll bounds = total %d visible %d max %d, want 48/18/30", total, visible, maxOffset)
 	}
 
-	inner := m.shortcutsInnerWidth()
-	_, visible, maxOffset := m.shortcutsScrollBounds(inner)
-	m.shortcutsScroll = maxOffset / 2
-	if maxOffset/2 == 0 && maxOffset > 0 {
-		m.shortcutsScroll = 1
+	m.shortcutsScroll = 0
+	if hint := shortcutsViewScrollHint(m); hint != "↓ more" {
+		t.Fatalf("top scroll hint = %q, want ↓ more", hint)
 	}
-	hintMiddle := shortcutsCardPlain(m)
-	if !strings.Contains(hintMiddle, " of ") {
-		t.Fatalf("middle scroll hint missing range:\n%s", hintMiddle)
+
+	m, _ = pressCmd(t, m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+	if m.shortcutsScroll != visible {
+		t.Fatalf("PgDown scroll = %d, want %d", m.shortcutsScroll, visible)
+	}
+	if hint := shortcutsViewScrollHint(m); hint != "19-36 of 48" {
+		t.Fatalf("middle scroll hint = %q, want 19-36 of 48", hint)
+	}
+	if !shortcutsViewClosedBottom(m) {
+		t.Fatalf("shortcuts bottom border must stay visible after PgDown:\n%s", shortcutsViewPlain(m))
 	}
 
 	m.shortcutsScroll = maxOffset
-	hintEnd := shortcutsCardPlain(m)
-	if !strings.Contains(hintEnd, "↑ more") {
-		t.Fatalf("end scroll hint = %q, want ↑ more", hintEnd)
+	if hint := shortcutsViewScrollHint(m); hint != "↑ more" {
+		t.Fatalf("end scroll hint = %q, want ↑ more", hint)
 	}
-	if !strings.Contains(hintEnd, "quit") {
-		t.Fatalf("scrolled sheet must show quit at the end:\n%s", hintEnd)
+	if !strings.Contains(shortcutsViewPlain(m), "quit") {
+		t.Fatalf("scrolled sheet must show quit at the end:\n%s", shortcutsViewPlain(m))
 	}
-	_ = visible
+	if !shortcutsViewClosedBottom(m) {
+		t.Fatalf("shortcuts bottom border must stay visible at end scroll:\n%s", shortcutsViewPlain(m))
+	}
 }
 
 func TestShortcutsSheetScrollKeys(t *testing.T) {
