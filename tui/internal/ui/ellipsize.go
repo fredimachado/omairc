@@ -41,11 +41,12 @@ func ellipsizeLine(line string, width int) string {
 }
 
 func truncateWithEllipsis(s string, width int, tail string) (string, int) {
-	// A newline inside an OSC stays inside the sequence for ansi.StringWidth,
-	// but lipgloss.Width splits on it and counts the rest of the payload as
-	// cells. Drop those newlines before measuring so a URL tail cannot
-	// consume the budget or skip the ellipsis.
-	s = stripNewlinesInOSC(s)
+	// lipgloss.Width splits on \n before it parses escapes. A newline inside
+	// CSI, DCS, OSC, SOS, PM, or APC stays inside the sequence for
+	// ansi.StringWidth, then becomes visible cells on the next line. Drop
+	// those newlines and measure the joined string. A ground-state newline
+	// is a real line break and stays.
+	s = stripNewlinesInSequences(s)
 	if ansi.StringWidth(s) <= width && lipgloss.Width(s) <= width {
 		return s, -1
 	}
@@ -65,6 +66,12 @@ func truncateWithEllipsis(s string, width int, tail string) (string, int) {
 
 	for i < len(s) {
 		state, action := parser.Table.Transition(pstate, s[i])
+		// Same join as stripNewlinesInSequences. Leave pstate unchanged so
+		// the rest of the sequence is parsed as if the newline was never there.
+		if s[i] == '\n' && sequenceHidesNewline(pstate) {
+			i++
+			continue
+		}
 		// PrintAction is an ASCII lead. ansi.StringWidth still measures the
 		// whole grapheme (digit + variation selector, keycap, …), so consume
 		// that cluster here or the line lands wider than the budget.
@@ -100,13 +107,6 @@ func truncateWithEllipsis(s string, width int, tail string) (string, int) {
 			}
 			fallthrough
 		default:
-			// A raw newline in an OSC payload is what makes lipgloss count
-			// the rest of the URL as cells. Keep the sequence, drop the break.
-			if s[i] == '\n' && pstate == parser.OscStringState {
-				i++
-				pstate = state
-				continue
-			}
 			buf.WriteByte(s[i])
 			i++
 		}
@@ -117,10 +117,10 @@ func truncateWithEllipsis(s string, width int, tail string) (string, int) {
 	return buf.String(), ellipsisIdx
 }
 
-// stripNewlinesInOSC removes raw newlines that sit inside an OSC payload.
-// Terminating BEL and ST bytes stay. Newlines outside an OSC stay, so a real
-// line break still pads on the ellipsis line.
-func stripNewlinesInOSC(s string) string {
+// stripNewlinesInSequences removes raw newlines that sit inside CSI, DCS,
+// OSC, SOS, PM, or APC. Terminating bytes stay. A ground-state newline stays,
+// so a real line break still pads on the ellipsis line.
+func stripNewlinesInSequences(s string) string {
 	if strings.IndexByte(s, '\n') < 0 {
 		return s
 	}
@@ -129,19 +129,32 @@ func stripNewlinesInOSC(s string) string {
 	pstate := parser.GroundState
 	dropped := false
 	for i := 0; i < len(s); i++ {
-		state, _ := parser.Table.Transition(pstate, s[i])
-		if s[i] == '\n' && pstate == parser.OscStringState {
+		if s[i] == '\n' && sequenceHidesNewline(pstate) {
 			dropped = true
-			pstate = state
 			continue
 		}
 		buf.WriteByte(s[i])
+		state, _ := parser.Table.Transition(pstate, s[i])
 		pstate = state
 	}
 	if !dropped {
 		return s
 	}
 	return buf.String()
+}
+
+// sequenceHidesNewline reports whether the parser is inside a sequence whose
+// raw newline lipgloss would treat as a line break. Escape and ground are
+// not included: a newline there is either not yet a sequence or a real break.
+func sequenceHidesNewline(state parser.State) bool {
+	switch state {
+	case parser.CsiEntryState, parser.CsiParamState, parser.CsiIntermediateState,
+		parser.DcsEntryState, parser.DcsParamState, parser.DcsIntermediateState, parser.DcsStringState,
+		parser.OscStringState, parser.SosStringState, parser.PmStringState, parser.ApcStringState:
+		return true
+	default:
+		return false
+	}
 }
 
 func repairBareEllipsis(out string, ellipsisIdx int) (string, int) {
@@ -152,44 +165,112 @@ func repairBareEllipsis(out string, ellipsisIdx int) (string, int) {
 		return out, ellipsisIdx
 	}
 	prefix := out[:ellipsisIdx]
-	if activeSGRReplay(prefix) != "" {
-		return out, ellipsisIdx
-	}
-	// The cut can fall on a wide grapheme that follows a reset. Replay the
-	// kept cells after that reset is removed; cellPrefix still had room for
-	// the reset and would report an empty style. An empty open/reset span
-	// has no visible cells and stays bare. A zero-width tail after the reset
-	// (OSC, joiner, variation selector) stays in place so it is not glued
-	// back onto the previous cell; the style is reopened in front of the ellipsis.
-	trimmed := trimTrailingSGRReset(prefix)
-	if ansi.StringWidth(trimmed) == 0 {
-		return out, ellipsisIdx
-	}
-	style := activeSGRReplay(trimmed)
 	suffix := out[ellipsisIdx+len(ellipsisRune):]
-	if style != "" {
-		out = trimmed + style + ellipsisRune + suffix
-		ellipsisIdx = len(trimmed) + len(style)
+	// The marker takes the style of the last positive-width kept grapheme.
+	// A trailing SGR run after that grapheme belongs to the discarded tail;
+	// leaving it in front wraps the marker (and any pad space) in the tail
+	// style. A prefix with no positive-width cell stays as it is, so an empty
+	// open/reset span stays bare and a style that only wraps a dropped glyph
+	// still colors the marker.
+	head, tail := splitTrailingZeroWidth(prefix)
+	if ansi.StringWidth(head) == 0 {
 		return out, ellipsisIdx
 	}
-	style = activeStyleBeforeTrail(prefix)
-	if style == "" {
+	// Only a trailing SGR run moves. A reset that still has a zero-width tail
+	// after it (OSC, joiner, variation selector) stays, so that tail is not
+	// glued back onto the previous cell. The last-cell style is reopened in
+	// front of the marker either way.
+	body, trailing := splitTrailingSGR(tail)
+	style := activeSGRReplay(head)
+	if trailing == "" && activeSGRReplay(head+body) == style {
 		return out, ellipsisIdx
 	}
-	out = prefix + style + ellipsisRune + suffix
-	ellipsisIdx = len(prefix) + len(style)
-	return out, ellipsisIdx
+	var b strings.Builder
+	b.Grow(len(head) + len(body) + len(style) + len(ellipsisRune) + len(trailing) + len(suffix))
+	b.WriteString(head)
+	b.WriteString(body)
+	b.WriteString(style)
+	ellipsisIdx = b.Len()
+	b.WriteString(ellipsisRune)
+	b.WriteString(trailing)
+	b.WriteString(suffix)
+	return b.String(), ellipsisIdx
 }
 
-// activeStyleBeforeTrail is the SGR active on the last visible cells of
-// prefix. Trailing resets and other zero-width tails are not part of that style.
-func activeStyleBeforeTrail(prefix string) string {
-	kept, _ := splitTrailingZeroWidth(prefix)
-	kept = trimTrailingSGRReset(kept)
-	if ansi.StringWidth(kept) == 0 {
-		return ""
+// splitTrailingSGR returns tail without its trailing SGR run, and that run.
+// tail starts in ground, just after the last positive-width grapheme.
+func splitTrailingSGR(tail string) (body, trailing string) {
+	type span struct {
+		start, end int
+		sgr        bool
 	}
-	return activeSGRReplay(kept)
+	var spans []span
+	pstate := parser.GroundState
+	for i := 0; i < len(tail); {
+		if n := sgrLenAt(tail, i, pstate); n > 0 {
+			spans = append(spans, span{i, i + n, true})
+			i += n
+			pstate = parser.GroundState
+			continue
+		}
+		start := i
+		state, action := parser.Table.Transition(pstate, tail[i])
+		if action == parser.PrintAction || state == parser.Utf8State {
+			cluster, _ := ansi.FirstGraphemeCluster(tail[i:], ansi.GraphemeWidth)
+			if len(cluster) == 0 {
+				i++
+				pstate = parser.GroundState
+			} else {
+				i += len(cluster)
+				pstate = parser.GroundState
+			}
+		} else {
+			i++
+			pstate = state
+		}
+		if len(spans) > 0 && !spans[len(spans)-1].sgr {
+			spans[len(spans)-1].end = i
+			continue
+		}
+		spans = append(spans, span{start, i, false})
+	}
+	end := len(spans)
+	for end > 0 && spans[end-1].sgr {
+		end--
+	}
+	if end == len(spans) {
+		return tail, ""
+	}
+	cut := spans[end].start
+	return tail[:cut], tail[cut:]
+}
+
+// sgrLenAt returns the byte length of an SGR sequence starting at s[i], or 0
+// when that position is not a CSI sequence whose final byte is 'm'.
+func sgrLenAt(s string, i int, pstate parser.State) int {
+	if pstate != parser.GroundState || i >= len(s) || s[i] != '\x1b' {
+		return 0
+	}
+	if i+1 >= len(s) || s[i+1] != '[' {
+		return 0
+	}
+	st := parser.CsiEntryState
+	for j := i + 2; j < len(s); j++ {
+		next, action := parser.Table.Transition(st, s[j])
+		if action == parser.DispatchAction {
+			if s[j] == 'm' {
+				return j - i + 1
+			}
+			return 0
+		}
+		switch next {
+		case parser.CsiEntryState, parser.CsiParamState, parser.CsiIntermediateState:
+			st = next
+		default:
+			return 0
+		}
+	}
+	return 0
 }
 
 // splitTrailingZeroWidth returns the prefix through the last positive-width
@@ -283,16 +364,6 @@ func endsWithResetBareEllipsis(s string) bool {
 		return false
 	}
 	return hasResetBareEllipsisAt(s[:idx])
-}
-
-func trimTrailingSGRReset(s string) string {
-	for {
-		seq, ok := trailingSGREscape(s)
-		if !ok || !sgrSequenceResets(seq) {
-			return s
-		}
-		s = s[:len(s)-len(seq)]
-	}
 }
 
 func prefixHasOpenStyle(prefix string) bool {

@@ -446,6 +446,141 @@ func TestEllipsizeOSCNewlineStaysOnBudget(t *testing.T) {
 	}
 }
 
+func TestEllipsizeControlNewlineStaysOnBudget(t *testing.T) {
+	cases := []struct {
+		name  string
+		line  string
+		width int
+		want  string
+	}{
+		{"torn CSI", "\x1b[31\nmHELLO", 5, "\x1b[31mHELLO"},
+		{"torn truecolor", "\x1b[38;2;255\n;0;0mHELLO", 5, "\x1b[38;2;255;0;0mHELLO"},
+		{"torn truecolor width one", "\x1b[38;2;255\n;0;0mHELLO", 1, "\x1b[38;2;255;0;0m…"},
+		{"DCS payload", "\x1bPpayload\nhelloworld\x1b\\", 5, "\x1bPpayloadhelloworld\x1b\\"},
+		{"DCS then text", "hi\x1bPpay\nload\x1b\\XXXX", 4, "hi\x1bPpayload\x1b\\X…"},
+		{"SOS then text", "\x1bXpay\nload\x1b\\XXXX", 3, "\x1bXpayload\x1b\\XX…"},
+		{"PM then text", "\x1b^pay\nload\x1b\\XXXX", 3, "\x1b^payload\x1b\\XX…"},
+		{"APC then text", "\x1b_pay\nload\x1b\\XXXX", 3, "\x1b_payload\x1b\\XX…"},
+		{"SOS payload", "\x1bXpayload\nhelloworld\x1b\\", 5, "\x1bXpayloadhelloworld\x1b\\"},
+		{"PM payload", "\x1b^payload\nhelloworld\x1b\\", 5, "\x1b^payloadhelloworld\x1b\\"},
+		{"APC payload", "\x1b_payload\nhelloworld\x1b\\", 5, "\x1b_payloadhelloworld\x1b\\"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ellipsizeLine(tc.line, tc.width)
+			if got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+			if strings.Contains(got, "\n") {
+				t.Fatalf("newline inside a sequence leaked: %q", got)
+			}
+			if lipgloss.Width(got) > tc.width {
+				t.Fatalf("width %d wider than budget %d: %q", lipgloss.Width(got), tc.width, got)
+			}
+			if strings.Count(got, ellipsisRune) > 0 && lipgloss.Width(got) != tc.width {
+				t.Fatalf("ellipsis width %d, want %d: %q", lipgloss.Width(got), tc.width, got)
+			}
+		})
+	}
+
+	// A ground-state break still pads on the ellipsis line.
+	got := ellipsizeLine("abc\ndefghijkl", 4)
+	if got != "abc\n   …" {
+		t.Fatalf("ground newline: got %q, want %q", got, "abc\n   …")
+	}
+	if lipgloss.Width(got) != 4 || !strings.Contains(got, "\n") {
+		t.Fatalf("ground newline width or break: width %d %q", lipgloss.Width(got), got)
+	}
+}
+
+func TestEllipsizeTailSGRDoesNotStyleEllipsis(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+		want string
+		// kept is the SGR of the last positive-width cell, immediately before
+		// the ellipsis (pad spaces trimmed). tail is SGR that must sit after it.
+		kept string
+		tail string
+	}{
+		{
+			name: "reset then green",
+			line: "\x1b[31mRed\x1b[0m\x1b[32mGreener text\x1b[0m",
+			want: "\x1b[31mRed\x1b[31m…\x1b[0m\x1b[32m\x1b[0m",
+			kept: "\x1b[31m",
+			tail: "\x1b[32m",
+		},
+		{
+			name: "green without reset",
+			line: "\x1b[31mRed\x1b[32mGreener text",
+			want: "\x1b[31mRed\x1b[31m…\x1b[32m",
+			kept: "\x1b[31m",
+			tail: "\x1b[32m",
+		},
+		{
+			name: "bold off",
+			line: "\x1b[1;31mRed\x1b[22mlonger text",
+			want: "\x1b[1;31mRed\x1b[1;31m…\x1b[22m",
+			kept: "\x1b[1;31m",
+			tail: "\x1b[22m",
+		},
+		{
+			name: "underline off",
+			line: "\x1b[4;31mRed\x1b[24mlonger",
+			want: "\x1b[4;31mRed\x1b[4;31m…\x1b[24m",
+			kept: "\x1b[4;31m",
+			tail: "\x1b[24m",
+		},
+		{
+			name: "foreground off",
+			line: "\x1b[31;1mRed\x1b[39mlonger",
+			want: "\x1b[31;1mRed\x1b[31;1m…\x1b[39m",
+			kept: "\x1b[31;1m",
+			tail: "\x1b[39m",
+		},
+		{
+			name: "wide glyph pad",
+			line: "\x1b[31mAB\x1b[32m文nick",
+			want: "\x1b[31mAB\x1b[31m …\x1b[32m",
+			kept: "\x1b[31m",
+			tail: "\x1b[32m",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ellipsizeLine(tc.line, 4)
+			if got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+			if lipgloss.Width(got) != 4 {
+				t.Fatalf("width %d, want 4: %q", lipgloss.Width(got), got)
+			}
+			if strings.Count(got, ellipsisRune) != 1 {
+				t.Fatalf("want one ellipsis, got %q", got)
+			}
+			ellipsis := strings.LastIndex(got, ellipsisRune)
+			before := strings.TrimRight(got[:ellipsis], " ")
+			if !strings.HasSuffix(before, tc.kept) {
+				t.Fatalf("ellipsis not inside kept SGR %q: %q", tc.kept, got)
+			}
+			if strings.Contains(got[:ellipsis], tc.tail) {
+				t.Fatalf("tail SGR %q wraps the ellipsis: %q", tc.tail, got)
+			}
+			if strings.LastIndex(got, tc.tail) < ellipsis {
+				t.Fatalf("tail SGR %q not after the ellipsis: %q", tc.tail, got)
+			}
+			if tc.name == "wide glyph pad" {
+				if strings.Contains(got, "文") {
+					t.Fatalf("wide glyph split or kept past the budget: %q", got)
+				}
+				if got[ellipsis-1] != ' ' {
+					t.Fatalf("pad space not inside kept SGR: %q", got)
+				}
+			}
+		})
+	}
+}
+
 func TestEllipsizeNonPositiveWidthEmpty(t *testing.T) {
 	line := "anything"
 	if got := ellipsizeLine(line, 0); got != "" {
