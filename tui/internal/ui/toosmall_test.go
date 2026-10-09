@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -48,6 +49,13 @@ func TestTerminalTooSmallNotice(t *testing.T) {
 					t.Fatalf("row %d width = %d, want %d", index, got, tc.width)
 				}
 			}
+			for _, substr := range []string{fmtSize(tc.width, tc.height), fmt.Sprintf("Minimum %dx%d", minW, minH)} {
+				line := noticeLineContaining(lines, substr)
+				if line == "" {
+					t.Fatalf("missing centered line for %q", substr)
+				}
+				assertLineCentered(t, line, tc.width, substr)
+			}
 			if view.WindowTitle != Title(m.ctrl, nil) {
 				t.Fatalf("WindowTitle = %q, want normal title %q", view.WindowTitle, Title(m.ctrl, nil))
 			}
@@ -60,6 +68,51 @@ func TestTerminalTooSmallNotice(t *testing.T) {
 
 func fmtSize(width, height int) string {
 	return fmt.Sprintf("%dx%d", width, height)
+}
+
+func noticeLineContaining(lines []string, substr string) string {
+	for _, line := range lines {
+		plain := ansiPattern.ReplaceAllString(line, "")
+		if strings.Contains(plain, substr) {
+			return line
+		}
+	}
+	return ""
+}
+
+func leadingDisplaySpaces(line string) int {
+	plain := ansiPattern.ReplaceAllString(line, "")
+	n := 0
+	for _, r := range plain {
+		if r != ' ' {
+			break
+		}
+		n++
+	}
+	return n
+}
+
+func centerSplitLeft(gap int) int {
+	split := int(math.Round(float64(gap) * 0.5))
+	return gap - split
+}
+
+func assertLineCentered(t *testing.T, line string, width int, label string) {
+	t.Helper()
+	plain := strings.TrimSpace(ansiPattern.ReplaceAllString(line, ""))
+	contentW := lipgloss.Width(plain)
+	if contentW >= width {
+		t.Fatalf("%q line is %d cells wide, expected shorter than %d", label, contentW, width)
+	}
+	gap := width - contentW
+	wantLeft := centerSplitLeft(gap)
+	gotLeft := leadingDisplaySpaces(line)
+	if gotLeft != wantLeft {
+		t.Fatalf("%q leading spaces = %d, want %d (center split for gap %d):\n%s", label, gotLeft, wantLeft, gap, plain)
+	}
+	if gotLeft == 0 {
+		t.Fatalf("%q is flush left, want centered:\n%s", label, plain)
+	}
 }
 
 func TestTerminalAtMinimumShowsShell(t *testing.T) {

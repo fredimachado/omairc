@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -85,8 +86,13 @@ func padLineToWidth(line string, width int) string {
 		return ""
 	}
 	line = truncateLine(line, width)
-	if got := lipgloss.Width(line); got < width {
-		line += strings.Repeat(" ", width-got)
+	got := lipgloss.Width(line)
+	if got < width {
+		gap := width - got
+		split := int(math.Round(float64(gap) * float64(lipgloss.Center)))
+		left := gap - split
+		right := gap - left
+		line = strings.Repeat(" ", left) + line + strings.Repeat(" ", right)
 	}
 	return line
 }
