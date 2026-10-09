@@ -44,6 +44,9 @@ func (m *Model) terminalTooSmall() bool {
 func (m *Model) terminalTooSmallView() string {
 	width := m.width
 	height := m.height
+	if width <= 0 || height <= 0 {
+		return ""
+	}
 	lines := []string{
 		m.styles.Empty.Render("Terminal too small"),
 		m.styles.Empty.Render(fmt.Sprintf("%dx%d", width, height)),
@@ -51,5 +54,39 @@ func (m *Model) terminalTooSmallView() string {
 	}
 	block := strings.Join(lines, "\n")
 	placed := lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, block)
-	return fitBlock(placed, width, height)
+	return fitNoticeBlock(placed, width, height)
+}
+
+// fitNoticeBlock sizes the too-small notice to exactly width cells by height
+// lines. lipgloss.Place skips horizontal padding when a line is at least as
+// wide as the terminal, so every row is padded or truncated here instead of
+// using fitBlock's 1x1 floor on a non-positive size.
+func fitNoticeBlock(content string, width, height int) string {
+	if width <= 0 || height <= 0 {
+		return ""
+	}
+	raw := strings.Split(content, "\n")
+	if len(raw) > height {
+		raw = raw[:height]
+	}
+	blank := strings.Repeat(" ", width)
+	out := make([]string, 0, height)
+	for _, line := range raw {
+		out = append(out, padLineToWidth(line, width))
+	}
+	for len(out) < height {
+		out = append(out, blank)
+	}
+	return strings.Join(out, "\n")
+}
+
+func padLineToWidth(line string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	line = truncateLine(line, width)
+	if got := lipgloss.Width(line); got < width {
+		line += strings.Repeat(" ", width-got)
+	}
+	return line
 }

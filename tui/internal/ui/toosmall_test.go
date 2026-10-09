@@ -18,6 +18,7 @@ func TestTerminalTooSmallNotice(t *testing.T) {
 	}{
 		{"30x8", 30, 8},
 		{"under floor", minW - 1, minH - 1},
+		{"18x8", 18, 8},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
