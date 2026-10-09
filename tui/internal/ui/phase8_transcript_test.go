@@ -635,14 +635,54 @@ func TestPhase8TranscriptChannelHeaderWithoutTopic(t *testing.T) {
 }
 
 // TestPhase8TranscriptChannelHeaderDuplicateTarget proves a channel that exists
-// on more than one network disambiguates with the focused network display name.
+// on more than one network disambiguates with the focused network display name,
+// matching the window title band.
 func TestPhase8TranscriptChannelHeaderDuplicateTarget(t *testing.T) {
 	m := seededModel(t)
 	m.ctrl.SelectConversation("oftc", "#omarchy")
-	networkName := m.sidebarNetworkDisplayName("oftc")
-	want := "#omarchy · " + networkName
-	plain := ansiPattern.ReplaceAllString(m.transcriptHeader()[0], "")
-	if !strings.Contains(plain, want) {
+	want := strings.TrimSuffix(conversationTitleText(m.ctrl, m.conn), " - Omairc")
+	plain := strings.TrimSpace(ansiPattern.ReplaceAllString(m.transcriptHeader()[0], ""))
+	if plain != want {
 		t.Fatalf("duplicate header = %q, want %q", plain, want)
+	}
+}
+
+// TestStatusOpenTranscriptHeaderSkipsConversationChrome proves opening Status
+// with no refusal sentence keeps the channel and direct-message title bands off
+// the pane. The previous selection stays live for the window title, but the
+// Status header is only the topic caption (or nothing).
+func TestStatusOpenTranscriptHeaderSkipsConversationChrome(t *testing.T) {
+	m := seededModel(t)
+	channel := m.ctrl.SelectedTarget()
+	if m.ctrl.LastError() != "" {
+		t.Fatalf("precondition: LastError = %q, want empty", m.ctrl.LastError())
+	}
+	m.toggleStatus()
+	if !m.ctrl.ConsoleOpen() {
+		t.Fatal("Status must be the open pane")
+	}
+	plain := ansiPattern.ReplaceAllString(strings.Join(m.transcriptHeader(), "\n"), "")
+	if strings.Contains(plain, channel) {
+		t.Fatalf("Status header pins the channel name: %q", plain)
+	}
+	if want := "A cozy corner for Omarchy users and builders."; !strings.Contains(plain, want) {
+		t.Fatalf("Status header = %q, want the channel topic %q", plain, want)
+	}
+
+	m = openPhase8AnnaDirect(t, seededModel(t))
+	if m.ctrl.LastError() != "" {
+		t.Fatalf("precondition: LastError = %q, want empty", m.ctrl.LastError())
+	}
+	m.toggleStatus()
+	header := m.transcriptHeader()
+	if len(header) > 2 {
+		t.Fatalf("Status header = %d rows, want at most the topic band and blank", len(header))
+	}
+	plain = ansiPattern.ReplaceAllString(strings.Join(header, "\n"), "")
+	if strings.Contains(plain, "Anna Vale") {
+		t.Fatalf("Status header shows the direct-message peer band: %q", plain)
+	}
+	if strings.Contains(header[0], m.styles.MemberPresenceOnline.Render("●")) {
+		t.Fatalf("Status header shows the direct-message presence row: %q", header[0])
 	}
 }

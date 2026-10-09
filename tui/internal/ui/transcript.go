@@ -184,7 +184,13 @@ func (m *Model) transcriptHeader() []string {
 		if reason := m.ctrl.LastError(); reason != "" {
 			return []string{m.topicHeaderLine(reason), ""}
 		}
-	} else if header, ok := m.ctrl.SelectedPeerHeader(); ok {
+		topic := strings.TrimSpace(m.ctrl.PlainIrcText(m.ctrl.Topic()))
+		if topic == "" && m.unseenMarker() == "" {
+			return nil
+		}
+		return []string{m.topicHeaderLine(m.ctrl.Topic()), ""}
+	}
+	if header, ok := m.ctrl.SelectedPeerHeader(); ok {
 		// A direct message replaces the topic caption with the peer's
 		// presence, nick, labels, and real name.
 		return m.queryTranscriptHeader(header)
@@ -215,7 +221,7 @@ func (m *Model) channelTranscriptHeader() []string {
 func (m *Model) channelHeaderTitle(name string) string {
 	label := name
 	if m.ctrl != nil {
-		label = m.jumpConversationLabel(name, m.sidebarNetworkDisplayName(m.ctrl.FocusedNetworkID()))
+		label = m.jumpConversationLabel(name, focusedNetworkDisplayName(m.ctrl, m.conn))
 	}
 	return m.styles.Topic.Bold(true).Render(label)
 }
