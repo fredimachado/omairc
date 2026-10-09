@@ -185,6 +185,21 @@ var footerShortcutBinding = key.NewBinding(
 	key.WithHelp("Ctrl+/", "shortcuts"),
 )
 
+// footerBindingSteps returns progressively shorter help labels for one footer
+// chord. The fullest label is first; the last step still comes from this chord
+// map, never from hand-written footer strings.
+func footerBindingSteps(full key.Binding) []key.Binding {
+	helpText := full.Help()
+	switch helpText.Key {
+	case "Tab / Shift+Tab":
+		return []key.Binding{
+			full,
+			binding([]string{"tab"}, "Tab", "complete"),
+		}
+	}
+	return []key.Binding{full}
+}
+
 // footerKeyMap is the bubbles/help KeyMap behind the footer's right side. It
 // mirrors the chords in chordTable and dispatchChord so the footer can never
 // drift into a parallel hand-written hint string. ShortHelp is contextual: it

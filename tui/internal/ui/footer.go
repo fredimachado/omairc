@@ -15,6 +15,15 @@ import (
 // is room.
 const footerHeight = 1
 
+type footerStatusLevel int
+
+const (
+	footerStatusFull footerStatusLevel = 0
+	footerStatusEllipsisNetwork footerStatusLevel = 1
+	footerStatusStateOnly footerStatusLevel = 2
+	footerStatusMarkOnly footerStatusLevel = 3
+)
+
 // helpStyles maps the theme-driven shell palette onto the bubbles/help view so
 // the footer's hint reads like the rest of the interface instead of the
 // library defaults.
@@ -47,6 +56,10 @@ func (m *Model) footerVisible() bool {
 // network is disconnected (a steady dot once connected), the connection state,
 // and the focused network's display name.
 func (m *Model) footerStatusView() string {
+	return m.footerStatusAt(footerStatusFull, 0)
+}
+
+func (m *Model) footerStatusAt(level footerStatusLevel, textBudget int) string {
 	state := "Offline"
 	network := ""
 	if m.ctrl != nil {
@@ -61,11 +74,21 @@ func (m *Model) footerStatusView() string {
 	if state == "Connected" {
 		mark = m.styles.StatusOK.Render("●")
 	}
+	if level == footerStatusMarkOnly {
+		return mark
+	}
 	text := state
-	if network != "" {
+	if level <= footerStatusEllipsisNetwork && network != "" {
 		text += " · " + network
 	}
-	return mark + " " + m.styles.Footer.Render(text)
+	styled := m.styles.Footer.Render(text)
+	if level == footerStatusEllipsisNetwork && textBudget > 0 {
+		room := textBudget - lipgloss.Width(mark) - 1
+		if room > 0 {
+			styled = ellipsizeLine(styled, room)
+		}
+	}
+	return mark + " " + styled
 }
 
 // footerView lays the status line on the left and the contextual help on the
@@ -73,39 +96,230 @@ func (m *Model) footerStatusView() string {
 // help at the far right. The help is rendered from footerKeyMap, so the hint set
 // is the chord map, never a hand-written string.
 func (m *Model) footerView() string {
-	left := m.footerStatusView()
-	// The build version sits at the bottom right, after the shortcut list. It is
-	// dropped only when the status line and two gutters already fill the row, so
-	// it is never rendered cut in half on a narrow terminal.
-	label := m.styles.FooterHint.Render(version.Value)
-	version := ""
-	if m.width-lipgloss.Width(left)-2 >= lipgloss.Width(label) {
-		version = label
+	width := m.width
+	if width <= 0 {
+		return ""
 	}
-	// The help gets whatever is left once the status, the version, and the
-	// separating space are reserved, so the help model can never crowd the
-	// version off the right edge.
-	reserved := lipgloss.Width(version)
-	if version != "" {
-		reserved++ // the space between the shortcut list and the version
-	}
-	available := m.width - lipgloss.Width(left) - 1 - reserved
-	if available < 0 {
-		available = 0
-	}
-	// Copy the help model so a render never mutates the shell state.
 	h := m.help
-	h.SetWidth(available)
-	right := shortHelpKeepingTail(h, footerKeyMap{m: m}.ShortHelp())
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right) - reserved
+	bindings := footerEnabledBindings(footerKeyMap{m: m}.ShortHelp())
+	versionLabel := m.styles.FooterHint.Render(version.Value)
+
+	tryAssemble := func(versionOn bool, status footerStatusLevel, degrade bool) (string, bool) {
+		return m.assembleFooterLine(h, bindings, versionLabel, versionOn, status, width, degrade)
+	}
+	if line, ok := tryAssemble(true, footerStatusFull, false); ok {
+		return line
+	}
+	if line, ok := tryAssemble(false, footerStatusFull, false); ok {
+		return line
+	}
+	if line, ok := tryAssemble(true, footerStatusFull, true); ok {
+		return line
+	}
+	if line, ok := tryAssemble(false, footerStatusFull, true); ok {
+		return line
+	}
+	for statusLevel := footerStatusEllipsisNetwork; statusLevel <= footerStatusMarkOnly; statusLevel++ {
+		if line, ok := tryAssemble(false, statusLevel, false); ok {
+			return line
+		}
+		if line, ok := tryAssemble(false, statusLevel, true); ok {
+			return line
+		}
+	}
+	left := m.footerStatusAt(footerStatusMarkOnly, 0)
+	right := fitFooterHelp(h, bindings, width-lipgloss.Width(left))
+	if line, ok := padFooterLine(left, right, "", width); ok {
+		return line
+	}
+	return truncateLine(left+right, width)
+}
+
+func footerEnabledBindings(bindings []key.Binding) []key.Binding {
+	enabled := make([]key.Binding, 0, len(bindings))
+	for _, binding := range bindings {
+		if binding.Enabled() {
+			enabled = append(enabled, binding)
+		}
+	}
+	return enabled
+}
+
+func padFooterLine(left, right, versionPart string, width int) (string, bool) {
+	gap := width - lipgloss.Width(left) - lipgloss.Width(right) - lipgloss.Width(versionPart)
 	if gap < 1 {
-		gap = 1
+		return "", false
 	}
-	line := left + strings.Repeat(" ", gap) + right
-	if version != "" {
-		line += " " + version
+	line := left + strings.Repeat(" ", gap) + right + versionPart
+	if lipgloss.Width(line) != width {
+		return "", false
 	}
-	return truncateLine(line, m.width)
+	return line, true
+}
+
+func (m *Model) assembleFooterLine(
+	h help.Model,
+	bindings []key.Binding,
+	versionLabel string,
+	versionOn bool,
+	statusLevel footerStatusLevel,
+	width int,
+	allowHintDegrade bool,
+) (string, bool) {
+	tailKey := renderHelpKey(h, footerShortcutBinding)
+	minRight := lipgloss.Width(tailKey)
+	versionReserve := 0
+	if versionOn {
+		versionReserve = lipgloss.Width(versionLabel) + 1
+	}
+	textBudget := width - 1 - minRight - versionReserve
+	if textBudget < 1 {
+		textBudget = 1
+	}
+	left := m.footerStatusAt(statusLevel, textBudget)
+	leftW := lipgloss.Width(left)
+
+	rightBudget := width - leftW - 1 - versionReserve
+	if rightBudget < lipgloss.Width(tailKey) {
+		return "", false
+	}
+	right := renderFooterHelpFull(h, bindings, rightBudget)
+	if right == "" {
+		if !allowHintDegrade {
+			return "", false
+		}
+		right = fitFooterHelp(h, bindings, rightBudget)
+		if right == "" {
+			return "", false
+		}
+	}
+
+	versionPart := ""
+	if versionOn {
+		if leftW+1+lipgloss.Width(right)+1+lipgloss.Width(versionLabel) > width {
+			return "", false
+		}
+		versionPart = " " + versionLabel
+	}
+	return padFooterLine(left, right, versionPart, width)
+}
+
+func renderFooterHelpFull(h help.Model, bindings []key.Binding, budget int) string {
+	if len(bindings) == 0 || budget <= 0 {
+		return ""
+	}
+	tail := bindings[len(bindings)-1]
+	prefix := bindings[:len(bindings)-1]
+	tailFull := renderHelpItem(h, tail)
+	sep := h.Styles.ShortSeparator.Inline(true).Render(h.ShortSeparator)
+	sepWidth := lipgloss.Width(sep)
+	steps := make([]int, len(prefix))
+	tailW := lipgloss.Width(tailFull)
+	if tailW > budget {
+		return ""
+	}
+	prefixBudget := budget - tailW
+	if len(prefix) > 0 {
+		prefixBudget -= sepWidth
+	}
+	if prefixBudget < 0 {
+		if len(prefix) == 0 {
+			return tailFull
+		}
+		return ""
+	}
+	candidate := tailFull
+	if len(prefix) > 0 {
+		candidate = joinHelpWithSteps(h, prefix, steps, sep) + sep + tailFull
+	}
+	if lipgloss.Width(candidate) <= budget {
+		return candidate
+	}
+	return ""
+}
+
+// fitFooterHelp renders contextual help within budget, keeping the Ctrl+/
+// shortcuts tail whole or, when necessary, the Ctrl+/ key alone.
+func fitFooterHelp(h help.Model, bindings []key.Binding, budget int) string {
+	if len(bindings) == 0 || budget <= 0 {
+		return ""
+	}
+	tail := bindings[len(bindings)-1]
+	prefix := bindings[:len(bindings)-1]
+	tailFull := renderHelpItem(h, tail)
+	tailKey := renderHelpKey(h, tail)
+	sep := h.Styles.ShortSeparator.Inline(true).Render(h.ShortSeparator)
+	sepWidth := lipgloss.Width(sep)
+
+	tryTail := func(tailRender string) string {
+		tailW := lipgloss.Width(tailRender)
+		if tailW > budget {
+			return ""
+		}
+		prefixBudget := budget - tailW
+		if len(prefix) > 0 {
+			prefixBudget -= sepWidth
+		}
+		if prefixBudget < 0 {
+			if len(prefix) == 0 {
+				return tailRender
+			}
+			return ""
+		}
+		for drop := 0; drop <= len(prefix); drop++ {
+			kept := prefix[:len(prefix)-drop]
+			for _, shortLast := range []bool{false, true} {
+				if shortLast && len(kept) == 0 {
+					continue
+				}
+				steps := make([]int, len(kept))
+				if shortLast {
+					last := len(kept) - 1
+					if len(footerBindingSteps(kept[last])) < 2 {
+						continue
+					}
+					steps[last] = 1
+				}
+				right := tailRender
+				if len(kept) > 0 {
+					right = joinHelpWithSteps(h, kept, steps, sep) + sep + tailRender
+				}
+				if lipgloss.Width(right) <= budget {
+					return right
+				}
+			}
+		}
+		return ""
+	}
+	if got := tryTail(tailFull); got != "" {
+		return got
+	}
+	if got := tryTail(tailKey); got != "" {
+		return got
+	}
+	if lipgloss.Width(tailKey) <= budget {
+		return tailKey
+	}
+	return tailKey
+}
+
+func joinHelpWithSteps(h help.Model, bindings []key.Binding, steps []int, sep string) string {
+	if len(bindings) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i, binding := range bindings {
+		if i > 0 {
+			b.WriteString(sep)
+		}
+		variants := footerBindingSteps(binding)
+		step := steps[i]
+		if step >= len(variants) {
+			step = len(variants) - 1
+		}
+		b.WriteString(renderHelpItem(h, variants[step]))
+	}
+	return b.String()
 }
 
 // shortHelpKeepingTail renders the footer's short help and keeps the last
@@ -114,49 +328,21 @@ func (m *Model) footerView() string {
 // it. When the row is too narrow for every chord, earlier hints ellipsize and
 // the toggle stays.
 func shortHelpKeepingTail(h help.Model, bindings []key.Binding) string {
-	enabled := make([]key.Binding, 0, len(bindings))
-	for _, binding := range bindings {
-		if binding.Enabled() {
-			enabled = append(enabled, binding)
-		}
-	}
+	enabled := footerEnabledBindings(bindings)
 	if len(enabled) == 0 {
 		return ""
 	}
-	stock := h.ShortHelpView(enabled)
-	if h.Width() <= 0 || len(enabled) == 1 || strings.Contains(stock, enabled[len(enabled)-1].Help().Key) {
-		return stock
-	}
-
-	sep := h.Styles.ShortSeparator.Inline(true).Render(h.ShortSeparator)
-	tail := renderHelpItem(h, enabled[len(enabled)-1])
-	tailWidth := lipgloss.Width(tail)
-	if tailWidth > h.Width() {
-		return stock
-	}
-	sepWidth := lipgloss.Width(sep)
-	prefixBudget := h.Width() - tailWidth - sepWidth
-	if prefixBudget < 0 {
-		return tail
-	}
-
-	prefix := enabled[:len(enabled)-1]
-	kept, all := fitHelpPrefix(h, prefix, prefixBudget, sep)
-	ellipsis := ""
-	if !all {
-		ellipsis = " " + h.Styles.Ellipsis.Inline(true).Render(h.Ellipsis)
-		kept, _ = fitHelpPrefix(h, prefix, prefixBudget-lipgloss.Width(ellipsis), sep)
-	}
-	if len(kept) == 0 {
-		return tail
-	}
-	return joinHelpItems(h, kept, sep) + ellipsis + sep + tail
+	return fitFooterHelp(h, enabled, h.Width())
 }
 
 func renderHelpItem(h help.Model, binding key.Binding) string {
 	helpText := binding.Help()
 	return h.Styles.ShortKey.Inline(true).Render(helpText.Key) + " " +
 		h.Styles.ShortDesc.Inline(true).Render(helpText.Desc)
+}
+
+func renderHelpKey(h help.Model, binding key.Binding) string {
+	return h.Styles.ShortKey.Inline(true).Render(binding.Help().Key)
 }
 
 func fitHelpPrefix(h help.Model, prefix []key.Binding, budget int, sep string) ([]key.Binding, bool) {
