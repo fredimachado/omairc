@@ -157,6 +157,8 @@ version the moment its package is first imported — never earlier, because
 - `charm.land/bubbletea/v2` v2.0.9 — imported in Phase 4.
 - `charm.land/lipgloss/v2` v2.0.3 — imported in Phase 4.
 - `charm.land/bubbles/v2` v2.1.0 — imported in Phase 4.
+- `github.com/charmbracelet/x/ansi` v0.11.7 — imported by the ellipsis fit in
+  `internal/ui`.
 - `github.com/creack/pty` v1.1.24 — imported in Phase 4 by `internal/gate`
   for Unix PTYs (`pty_unix.go`).
 - `github.com/aymanbagabas/go-pty` v0.2.3 — imported by `internal/gate`

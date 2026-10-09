@@ -59,6 +59,11 @@ func (m *Model) membersView(width, height int) string {
 	lines := make([]string, 0, len(heading)+rowsHeight)
 	lines = append(lines, heading...)
 	lines = append(lines, fitLines(rows[start:end], rowsHeight, false)...)
+	for index, line := range lines {
+		if width > 0 && lipgloss.Width(line) > width {
+			lines[index] = ellipsizeLine(line, width)
+		}
+	}
 	return renderColumn(m.styles.Conversation, width, lines)
 }
 
@@ -110,7 +115,8 @@ func (m *Model) toggleMembers() {
 // when the network advertises member status, a muted status subline indented
 // under the label. It mirrors the Row plus the status Text in
 // MembersColumn.qml:184-250. Each sub-line is its own entry so
-// renderColumn/truncateLine keep them from wrapping.
+// renderColumn keeps them from wrapping. membersView ellipsizes a line that
+// is wider than the column before that hard cut.
 func (m *Model) memberRow(index int, member controller.MemberSnapshot) []string {
 	label := member.Label
 	if label == "" {

@@ -12,6 +12,9 @@ import (
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+
+	"github.com/fredimachado/omairc/tui/internal/controller"
 )
 
 // phase8MemberIndex returns the member list index for nick, or fails the test.
@@ -389,6 +392,54 @@ func TestMemberFocusShowsIdentityTooltip(t *testing.T) {
 		if !panelHasFact(lena, want) {
 			t.Fatalf("lena panel missing %q:\n%s", want, lena)
 		}
+	}
+}
+
+// TestMemberStatusEllipsizesAt118 pins a status that is wider than the member
+// column even when the window is 118 columns. The column is a fixed width, so
+// the status ends with … and no row grows past it.
+func TestMemberStatusEllipsizesAt118(t *testing.T) {
+	m := seededModel(t)
+	if m.width != 118 {
+		t.Fatalf("seeded width = %d, want 118", m.width)
+	}
+	inner := framedInnerWidth(m, membersWidth)
+	panel := m.membersView(inner, 40)
+	for _, row := range strings.Split(panel, "\n") {
+		if got := lipgloss.Width(row); got != inner {
+			t.Fatalf("member row width %d, want %d:\n%s", got, inner, panel)
+		}
+	}
+	plain := ansiPattern.ReplaceAllString(panel, "")
+	if strings.Contains(plain, "building Omairc") {
+		t.Fatalf("fred's status was not ellipsized:\n%s", plain)
+	}
+	if !strings.Contains(plain, "building") || !strings.Contains(plain, "…") {
+		t.Fatalf("fred's status missing an ellipsis:\n%s", plain)
+	}
+}
+
+// TestCJKNickDoesNotOverflow pins a wide nick on a sidebar row: the row stays
+// the column width, the nick is not split, and the cut is an ellipsis.
+func TestCJKNickDoesNotOverflow(t *testing.T) {
+	m := seededModel(t)
+	const width = 10
+	row := m.conversationRowWidth(controller.ConversationSnapshot{
+		Conversation: "文文文文文文",
+		Presence:     "online",
+	}, width)
+	if got := lipgloss.Width(row); got != width {
+		t.Fatalf("CJK nick row width %d, want %d: %q", got, width, row)
+	}
+	plain := ansiPattern.ReplaceAllString(row, "")
+	if strings.Contains(plain, "文文文文文文") {
+		t.Fatalf("CJK nick was not ellipsized: %q", plain)
+	}
+	if !strings.Contains(plain, "…") {
+		t.Fatalf("CJK nick missing ellipsis: %q", plain)
+	}
+	if strings.Contains(plain, "文文文文文") {
+		t.Fatalf("CJK nick overflowed or split: %q", plain)
 	}
 }
 

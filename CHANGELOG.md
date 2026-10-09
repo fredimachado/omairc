@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The terminal shortcuts sheet lays groups in columns and scrolls on a short
   terminal so the bottom border stays visible.
+- The terminal client shows `…` when a label does not fit, instead of cutting the word.
 
 ### Changed
 

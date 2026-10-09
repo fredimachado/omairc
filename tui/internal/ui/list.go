@@ -165,15 +165,31 @@ func (m *Model) channelListCardBody(inner int) []string {
 	if snapshot.Mask != "" {
 		title += " · " + snapshot.Mask
 	}
-	header := m.styles.SheetTitle.Render(title) + "  " + m.list.input.View()
-	lines := []string{truncateLine(header, inner)}
+	titleRendered := m.styles.SheetTitle.Render(title)
+	input := m.list.input.View()
+	const gap = "  "
+	header := titleRendered + gap + input
+	if lipgloss.Width(header) > inner {
+		// The filter is an input view, so it stays a hard cut. The title is the
+		// label and takes an ellipsis when the row cannot hold both.
+		titleBudget := inner - lipgloss.Width(gap) - lipgloss.Width(input)
+		if titleBudget < 1 {
+			header = truncateLine(input, inner)
+		} else {
+			header = ellipsizeLine(titleRendered, titleBudget) + gap + input
+			if lipgloss.Width(header) > inner {
+				header = truncateLine(header, inner)
+			}
+		}
+	}
+	lines := []string{header}
 	switch {
 	case snapshot.Loading:
-		lines = append(lines, m.styles.Empty.Render("Loading..."))
+		lines = append(lines, ellipsizeLine(m.styles.Empty.Render("Loading..."), inner))
 	case snapshot.Error != "":
-		lines = append(lines, m.styles.StatusErr.Render(snapshot.Error))
+		lines = append(lines, ellipsizeLine(m.styles.StatusErr.Render(snapshot.Error), inner))
 	case len(snapshot.Rows) == 0:
-		lines = append(lines, m.styles.Empty.Render("No matches"))
+		lines = append(lines, ellipsizeLine(m.styles.Empty.Render("No matches"), inner))
 	default:
 		lines = append(lines, m.channelListTableLines(snapshot.Rows, inner)...)
 	}

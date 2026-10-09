@@ -112,6 +112,9 @@ func (m *Model) aboutLines(inner int) []string {
 		rule,
 		m.styles.MutedLine.Render(aboutCopyright),
 	)
+	for index := range lines {
+		lines[index] = ellipsizeLine(lines[index], inner)
+	}
 	return lines
 }
 
@@ -125,7 +128,7 @@ func (m *Model) aboutOKLine(inner int) string {
 	if pad := (inner - lipgloss.Width(line)) / 2; pad > 0 {
 		line = strings.Repeat(" ", pad) + line
 	}
-	return truncateLine(line, inner)
+	return ellipsizeLine(line, inner)
 }
 
 // wrapStyled word-wraps text to width and returns the styled lines. lipgloss

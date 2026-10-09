@@ -843,7 +843,14 @@ func (m *Model) overlayToggleRow(inner int, selected bool, label string) string 
 		rowStyle = m.styles.JumpSelected.Background(fill)
 	}
 	prefix := barStyle.Render(bar) + chipStyle.Render(chip) + rowStyle.Render(" ")
-	line := prefix + rowStyle.Render(truncateLine(label, inner-lipgloss.Width(prefix)))
+	budget := inner - lipgloss.Width(prefix)
+	if budget < 0 {
+		budget = 0
+	}
+	line := prefix + rowStyle.Render(ellipsizeLine(label, budget))
+	if inner > 0 && lipgloss.Width(line) > inner {
+		line = ellipsizeLine(line, inner)
+	}
 	if pad := inner - lipgloss.Width(line); pad > 0 {
 		line += rowStyle.Render(strings.Repeat(" ", pad))
 	}
