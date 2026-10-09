@@ -618,6 +618,147 @@ func TestEllipsizeWidthOne(t *testing.T) {
 	}
 }
 
+func TestEllipsizeJoinedSequenceFitsWithoutEllipsis(t *testing.T) {
+	cases := []struct {
+		name      string
+		line      string
+		width     int
+		want      string
+		wantWidth int
+	}{
+		{
+			name:      "torn CSI",
+			line:      "\x1b[31\nmHELLO",
+			width:     6,
+			want:      "\x1b[31mHELLO",
+			wantWidth: 5,
+		},
+		{
+			name:      "torn DCS",
+			line:      "\x1bPpayload\nhelloworld\x1b\\",
+			width:     10,
+			want:      "\x1bPpayloadhelloworld\x1b\\",
+			wantWidth: 0,
+		},
+		{
+			name:      "ground break and torn OSC",
+			line:      "ab\ncd\x1b]8;;u\nWXYZ\x1b\\z",
+			width:     3,
+			want:      "ab\ncd\x1b]8;;uWXYZ\x1b\\z",
+			wantWidth: 3,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ellipsizeLine(tc.line, tc.width)
+			if got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+			if strings.Contains(got, ellipsisRune) {
+				t.Fatalf("fitting joined line grew an ellipsis: %q", got)
+			}
+			if lipgloss.Width(got) != tc.wantWidth {
+				t.Fatalf("width %d, want %d: %q", lipgloss.Width(got), tc.wantWidth, got)
+			}
+		})
+	}
+}
+
+func TestEllipsizeTailSGRBeforeZeroWidthResets(t *testing.T) {
+	cases := []struct {
+		name      string
+		line      string
+		want      string
+		wantStyle string
+	}{
+		{
+			name:      "green OSC before wide glyph",
+			line:      "AB\x1b[32m\x1b]8;;https://example.com\x1b\\文nick",
+			want:      "AB\x1b[32m\x1b]8;;https://example.com\x1b\\\x1b[0m…",
+			wantStyle: "",
+		},
+		{
+			name:      "underline before ZWSP",
+			line:      "\x1b[31mAB\x1b[4m\u200b文nick",
+			want:      "\x1b[31mAB\x1b[4m\u200b\x1b[0m\x1b[31m…",
+			wantStyle: "\x1b[31m",
+		},
+		{
+			name:      "bold before ZWSP",
+			line:      "\x1b[31mAB\x1b[1m\u200b文nick",
+			want:      "\x1b[31mAB\x1b[1m\u200b\x1b[0m\x1b[31m…",
+			wantStyle: "\x1b[31m",
+		},
+		{
+			name:      "background before ZWSP",
+			line:      "\x1b[31mAB\x1b[45m\u200b文nick",
+			want:      "\x1b[31mAB\x1b[45m\u200b\x1b[0m\x1b[31m…",
+			wantStyle: "\x1b[31m",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ellipsizeLine(tc.line, 3)
+			if got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+			if lipgloss.Width(got) != 3 {
+				t.Fatalf("width %d, want 3: %q", lipgloss.Width(got), got)
+			}
+			if strings.Count(got, ellipsisRune) != 1 {
+				t.Fatalf("want one ellipsis, got %q", got)
+			}
+			if strings.Contains(got, "文") {
+				t.Fatalf("wide glyph kept past the budget: %q", got)
+			}
+			ellipsis := strings.LastIndex(got, ellipsisRune)
+			if activeSGRReplay(got[:ellipsis]) != tc.wantStyle {
+				t.Fatalf("ellipsis SGR %q, want %q: %q", activeSGRReplay(got[:ellipsis]), tc.wantStyle, got)
+			}
+			if tc.name == "green OSC before wide glyph" && !strings.Contains(got, "https://example.com") {
+				t.Fatalf("OSC URL dropped: %q", got)
+			}
+		})
+	}
+}
+
+func TestEllipsizeNonSGRFinalDoesNotSwallowM(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+		want string
+	}{
+		{
+			name: "EL then printable m",
+			line: "\x1b[0Kmo\x1b[32mr\x1b[0mlonger text",
+			want: "\x1b[0Kmo…\x1b[32m\x1b[0m",
+		},
+		{
+			name: "CUU then printable m",
+			line: "A\x1b[1Am\x1b[0mlongertext",
+			want: "A\x1b[1Am…\x1b[0m",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ellipsizeLine(tc.line, 3)
+			if got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+			if lipgloss.Width(got) != 3 {
+				t.Fatalf("width %d, want 3: %q", lipgloss.Width(got), got)
+			}
+			if strings.Count(got, ellipsisRune) != 1 {
+				t.Fatalf("want one ellipsis, got %q", got)
+			}
+			ellipsis := strings.LastIndex(got, ellipsisRune)
+			if activeSGRReplay(got[:ellipsis]) != "" {
+				t.Fatalf("ellipsis picked up a swallowed CSI: %q", got)
+			}
+		})
+	}
+}
+
 // ansiStripForTest drops escape sequences for readable assertions.
 func ansiStripForTest(s string) string {
 	var b strings.Builder

@@ -19,6 +19,11 @@ func ellipsizeLine(line string, width int) string {
 	if width <= 0 {
 		return ""
 	}
+	// lipgloss.Width splits on newlines before it parses escapes, so a newline
+	// inside CSI, DCS, OSC, SOS, PM, or APC inflates the measurement. Join
+	// those first. ansi.StringWidth sums every ground-state line, so the fit
+	// check is lipgloss.Width of the joined string only.
+	line = stripNewlinesInSequences(line)
 	if lipgloss.Width(line) <= width {
 		return line
 	}
@@ -41,13 +46,12 @@ func ellipsizeLine(line string, width int) string {
 }
 
 func truncateWithEllipsis(s string, width int, tail string) (string, int) {
-	// lipgloss.Width splits on \n before it parses escapes. A newline inside
-	// CSI, DCS, OSC, SOS, PM, or APC stays inside the sequence for
-	// ansi.StringWidth, then becomes visible cells on the next line. Drop
-	// those newlines and measure the joined string. A ground-state newline
-	// is a real line break and stays.
+	// Join newlines that sit inside a sequence, then fit on lipgloss.Width
+	// (the widest line). ansi.StringWidth sums every ground-state line, so a
+	// wrapped row whose widest line already fits would still look too long.
+	// A ground-state newline is a real line break and stays.
 	s = stripNewlinesInSequences(s)
-	if ansi.StringWidth(s) <= width && lipgloss.Width(s) <= width {
+	if lipgloss.Width(s) <= width {
 		return s, -1
 	}
 
@@ -176,19 +180,28 @@ func repairBareEllipsis(out string, ellipsisIdx int) (string, int) {
 	if ansi.StringWidth(head) == 0 {
 		return out, ellipsisIdx
 	}
-	// Only a trailing SGR run moves. A reset that still has a zero-width tail
-	// after it (OSC, joiner, variation selector) stays, so that tail is not
-	// glued back onto the previous cell. The last-cell style is reopened in
-	// front of the marker either way.
+	// Only a trailing SGR run moves past the marker. An SGR that is followed
+	// by a zero-width sequence (OSC, joiner, variation selector, ZWSP) stays
+	// in front, so that tail is not glued back onto the previous cell. When
+	// the SGR left in front differs from the last kept cell, write a reset
+	// and then that cell's replay immediately before the marker. An empty
+	// replay still writes the reset, so a tail color, underline, bold, or
+	// background cannot stick to the ellipsis.
 	body, trailing := splitTrailingSGR(tail)
 	style := activeSGRReplay(head)
-	if trailing == "" && activeSGRReplay(head+body) == style {
+	opened := activeSGRReplay(head + body)
+	if trailing == "" && opened == style {
 		return out, ellipsisIdx
 	}
+	reset := ""
+	if opened != style {
+		reset = "\x1b[0m"
+	}
 	var b strings.Builder
-	b.Grow(len(head) + len(body) + len(style) + len(ellipsisRune) + len(trailing) + len(suffix))
+	b.Grow(len(head) + len(body) + len(reset) + len(style) + len(ellipsisRune) + len(trailing) + len(suffix))
 	b.WriteString(head)
 	b.WriteString(body)
+	b.WriteString(reset)
 	b.WriteString(style)
 	ellipsisIdx = b.Len()
 	b.WriteString(ellipsisRune)
@@ -396,21 +409,15 @@ func cellPrefix(s string, budget int) string {
 
 // activeSGRReplay returns the original SGR bytes active after parsing s,
 // replaying each non-reset sequence in order instead of re-encoding attributes.
+// A CSI sequence is recorded only when its final byte is 'm' (sgrLenAt). Any
+// other final, such as EL or CUU, is skipped so a following printable 'm' is
+// not swallowed into the replay.
 func activeSGRReplay(s string) string {
 	var replay strings.Builder
+	pstate := parser.GroundState
 	for i := 0; i < len(s); {
-		if s[i] != '\x1b' || i+1 >= len(s) {
-			i++
-			continue
-		}
-		switch s[i+1] {
-		case '[':
-			end := strings.IndexByte(s[i+2:], 'm')
-			if end < 0 {
-				return replay.String()
-			}
-			end += i + 2
-			seq := s[i : end+1]
+		if n := sgrLenAt(s, i, pstate); n > 0 {
+			seq := s[i : i+n]
 			if sgrSequenceResets(seq) {
 				replay.Reset()
 			} else {
@@ -419,25 +426,13 @@ func activeSGRReplay(s string) string {
 				}
 				replay.WriteString(seq)
 			}
-			i = end + 1
-		case ']':
-			// OSC: skip without touching SGR replay.
-			j := i + 2
-			for j < len(s) {
-				if s[j] == '\x1b' && j+1 < len(s) && s[j+1] == '\\' {
-					j += 2
-					break
-				}
-				if s[j] == '\x07' {
-					j++
-					break
-				}
-				j++
-			}
-			i = j
-		default:
-			i++
+			i += n
+			pstate = parser.GroundState
+			continue
 		}
+		state, _ := parser.Table.Transition(pstate, s[i])
+		pstate = state
+		i++
 	}
 	return replay.String()
 }
