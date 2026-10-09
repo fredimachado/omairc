@@ -105,7 +105,7 @@ func TestSideColumnsRunBesideTheComposer(t *testing.T) {
 	if got := lipgloss.Height(m.framedColumn(m.sidebarView, sidebarWidth(m.width), m.bodyHeight(), false)); got != want {
 		t.Fatalf("framed sidebar = %d rows, want the %d-row body", got, want)
 	}
-	if got := lipgloss.Height(m.framedColumn(m.membersView, membersWidth, m.bodyHeight(), false)); got != want {
+	if got := lipgloss.Height(m.framedColumn(m.membersView, m.membersColumnWidth(), m.bodyHeight(), false)); got != want {
 		t.Fatalf("framed member panel = %d rows, want the %d-row body", got, want)
 	}
 

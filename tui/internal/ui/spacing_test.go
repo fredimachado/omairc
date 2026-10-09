@@ -174,10 +174,11 @@ func TestTranscriptHeaderStaysPinned(t *testing.T) {
 	}
 }
 
-// TestTopicBandEllipsizesAt80 pins the channel topic at an 80-column window.
-// The band stays the transcript width and ends with … instead of a cut word.
-func TestTopicBandEllipsizesAt80(t *testing.T) {
-	m := resizeModel(t, seededModel(t), 80, 30)
+// TestTopicBandEllipsizesWhenNarrow pins the channel topic when the transcript
+// band is narrower than the topic. The band stays the transcript width and ends
+// with … instead of a cut word.
+func TestTopicBandEllipsizesWhenNarrow(t *testing.T) {
+	m := resizeModel(t, seededModel(t), 44, 30)
 	header := m.transcriptHeader()
 	if len(header) == 0 {
 		t.Fatal("a channel transcript must have a topic band")

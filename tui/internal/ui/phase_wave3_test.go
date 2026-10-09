@@ -149,9 +149,10 @@ func TestOverlayCardTopIsAnchoredAgainstContent(t *testing.T) {
 // double rule nor a double inset.
 func TestMemberPanelHasSingleInnerRule(t *testing.T) {
 	m := seededModel(t)
-	framed := m.framedColumn(m.membersView, membersWidth, m.bodyHeight(), false)
-	if got := lipgloss.Width(framed); got != membersWidth {
-		t.Fatalf("framed member panel width = %d, want the invariant outer width %d", got, membersWidth)
+	membersOuter := m.membersColumnWidth()
+	framed := m.framedColumn(m.membersView, membersOuter, m.bodyHeight(), false)
+	if got := lipgloss.Width(framed); got != membersOuter {
+		t.Fatalf("framed member panel width = %d, want the layout outer width %d", got, membersOuter)
 	}
 	rules := 0
 	for _, line := range strings.Split(ansiPattern.ReplaceAllString(framed, ""), "\n") {
@@ -160,8 +161,8 @@ func TestMemberPanelHasSingleInnerRule(t *testing.T) {
 			continue
 		}
 		rules++
-		if got := lipgloss.Width(inner); got != membersWidth-2 {
-			t.Fatalf("member heading rule width = %d, want the inner width %d", got, membersWidth-2)
+		if got := lipgloss.Width(inner); got != membersOuter-2 {
+			t.Fatalf("member heading rule width = %d, want the inner width %d", got, membersOuter-2)
 		}
 	}
 	if rules != 1 {

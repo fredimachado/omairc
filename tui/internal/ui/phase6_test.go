@@ -650,17 +650,19 @@ func TestSideColumnOuterWidthsAreInvariant(t *testing.T) {
 	m := seededModel(t)
 	height := m.bodyHeight()
 
-	sidebar := m.framedColumn(m.sidebarView, sidebarWidth(m.width), height, false)
-	if got := lipgloss.Width(sidebar); got != sidebarWidth(m.width) {
-		t.Fatalf("framed sidebar width = %d, want %d", got, sidebarWidth(m.width))
+	sidebarOuter := m.sidebarColumnWidth()
+	sidebar := m.framedColumn(m.sidebarView, sidebarOuter, height, false)
+	if got := lipgloss.Width(sidebar); got != sidebarOuter {
+		t.Fatalf("framed sidebar width = %d, want %d", got, sidebarOuter)
 	}
 	if got := lipgloss.Height(sidebar); got != height {
 		t.Fatalf("framed sidebar height = %d, want %d", got, height)
 	}
 
-	members := m.framedColumn(m.membersView, membersWidth, height, false)
-	if got := lipgloss.Width(members); got != membersWidth {
-		t.Fatalf("framed members width = %d, want %d", got, membersWidth)
+	membersOuter := m.membersColumnWidth()
+	members := m.framedColumn(m.membersView, membersOuter, height, false)
+	if got := lipgloss.Width(members); got != membersOuter {
+		t.Fatalf("framed members width = %d, want %d", got, membersOuter)
 	}
 	// The transcript stays unframed, so its content width is unchanged by the
 	// surrounding cards.

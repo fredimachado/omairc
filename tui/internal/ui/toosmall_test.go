@@ -117,12 +117,13 @@ func assertLineCentered(t *testing.T, line string, width int, label string) {
 
 func TestTerminalAtMinimumShowsShell(t *testing.T) {
 	m := resizeModel(t, seededModel(t), TerminalMinWidth(), TerminalMinHeight())
+	m.serverListVisible = false
 	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
 	if strings.Contains(plain, "Terminal too small") {
 		t.Fatalf("minimum size must render the shell:\n%s", plain)
 	}
-	if !strings.Contains(plain, "#omarchy") {
-		t.Fatalf("shell missing seeded channel at minimum:\n%s", plain)
+	if !strings.Contains(plain, "sold.") {
+		t.Fatalf("shell missing seeded transcript at minimum:\n%s", plain)
 	}
 }
 
