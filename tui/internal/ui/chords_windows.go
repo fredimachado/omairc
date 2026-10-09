@@ -2,6 +2,23 @@
 
 package ui
 
+import tea "charm.land/bubbletea/v2"
+
+// keyboardEnhancements is the kitty keyboard mode Omairc asks for on Windows.
+//
+// ConPTY collapses ctrl+shift+letter to ctrl+letter and Ctrl+Enter to ctrl+j,
+// so request escape-coded keys to keep the shift chords (nick jump, server
+// list, inbox, …) and Connect Apply distinct on Windows Terminal. Report
+// alternate keys as well, so a terminal that supports it delivers the shifted
+// codepoint for shift+<symbol> instead of the unshifted key plus a modifier.
+// The ctrl+j aliases in this file cover the collapse where it still happens.
+func keyboardEnhancements() tea.KeyboardEnhancements {
+	return tea.KeyboardEnhancements{
+		ReportAllKeysAsEscapeCodes: true,
+		ReportAlternateKeys:        true,
+	}
+}
+
 // nickJumpChordKey maps ConPTY's collapsed Ctrl+Shift+K encoding onto ctrl+shift+k.
 // Connect still owns bare ctrl+j for Apply; handleKey never calls this while
 // the sheet is open.

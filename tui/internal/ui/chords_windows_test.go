@@ -12,6 +12,16 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
+func TestWindowsKeyboardEnhancementsReportAllKeys(t *testing.T) {
+	got := keyboardEnhancements()
+	if !got.ReportAllKeysAsEscapeCodes {
+		t.Fatal("Windows must keep report-all-keys for the ConPTY ctrl+shift / Ctrl+Enter collapse")
+	}
+	if !got.ReportAlternateKeys {
+		t.Fatal("Windows should also request alternate keys so shifted symbols type where supported")
+	}
+}
+
 func TestNormalizeChordKeyWindowsAliases(t *testing.T) {
 	cases := map[string]string{
 		"ctrl+_":              "ctrl+/",

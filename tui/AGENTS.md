@@ -283,9 +283,16 @@ of encoding as `CSI 96;5u`; the TUI receives nothing. Work around it with a WT
 `Ctrl+Space` workaround for the same NUL drop):
 `{ "command": { "action": "sendInput", "input": "\u001b[96;5u" }, "keys": "ctrl+`" }`.
 `nickJumpChordKey` rewires ConPTY's
-collapsed `ctrl+j` encoding to nick jump outside Connect. The shell requests
-`ReportAllKeysAsEscapeCodes` so shift chords disambiguate when the terminal
-supports it. Phase 6 adds the `nick-jump`
+collapsed `ctrl+j` encoding to nick jump outside Connect. Keyboard modes are
+platform-scoped through `keyboardEnhancements()` in `chords_other.go` /
+`chords_windows.go`. Windows keeps `ReportAllKeysAsEscapeCodes` (plus
+`ReportAlternateKeys`) for the ConPTY collapse. Unix asks for nothing beyond
+Bubble Tea's always-on disambiguation: requesting report-all-keys without
+alternate or associated text makes a kitty terminal encode `shift+3` as the
+unshifted `3` plus a shift modifier, so `/join #omarchy` types `/join
+3omarchy`; the same gap drops AltGr, dead-key, and IME text. Basic
+disambiguation already reports every Omairc chord as CSI-u, so the terminal is
+left to send the characters the user typed. Phase 6 adds the `nick-jump`
 verb and the CSI-u bytes for `ctrl+shift+s`, `ctrl+shift+p`, `ctrl+shift+k`,
 `ctrl+shift+a`, `ctrl+shift+o`, and `ctrl+shift+m`, the xterm modifier forms
 `alt+shift+Left`/`Right`/`Up`/`Down` and `ctrl+alt+shift+Left`/`Right`, and
