@@ -48,14 +48,14 @@ func openPhase8AnnaDirect(t *testing.T, m *Model) *Model {
 }
 
 // TestPhase8TranscriptChannelHeaderHasNoPeopleCount proves the channel header
-// carries the topic only: the member count belongs to the member column's
-// "ONLINE - N" heading, so the transcript header must not repeat it. The band
-// still spans the transcript column, and the count still renders once, in the
-// member panel.
+// carries the channel name and topic, not the member count: the count belongs to
+// the member column's "ONLINE - N" heading. The band still spans the transcript
+// column, and the count still renders once, in the member panel.
 func TestPhase8TranscriptChannelHeaderHasNoPeopleCount(t *testing.T) {
 	m := seededModel(t)
+	channel := m.ctrl.SelectedTarget()
 	if !m.ctrl.IsChannel() {
-		t.Fatalf("seeded selection target = %q, want a channel", m.ctrl.SelectedTarget())
+		t.Fatalf("seeded selection target = %q, want a channel", channel)
 	}
 	if got := m.ctrl.PeopleCount(); got != 12 {
 		t.Fatalf("PeopleCount = %d, want 12", got)
@@ -65,23 +65,25 @@ func TestPhase8TranscriptChannelHeaderHasNoPeopleCount(t *testing.T) {
 	}
 
 	lines, headerCount := m.transcriptLines()
-	if headerCount < 1 {
-		t.Fatal("a channel transcript must have a topic header")
+	if headerCount < 2 {
+		t.Fatal("a channel transcript must have a name band, topic band, and blank")
 	}
-	header := lines[0]
-	plain := ansiPattern.ReplaceAllString(header, "")
-	if !strings.Contains(plain, "A cozy corner for Omarchy users and builders.") {
-		t.Fatalf("channel header = %q, want the seeded topic", plain)
+	titlePlain := ansiPattern.ReplaceAllString(lines[0], "")
+	if !strings.Contains(titlePlain, channel) {
+		t.Fatalf("channel title = %q, want the selected target %q", titlePlain, channel)
+	}
+	headerPlain := ansiPattern.ReplaceAllString(strings.Join(lines[:headerCount], "\n"), "")
+	if !strings.Contains(headerPlain, "A cozy corner for Omarchy users and builders.") {
+		t.Fatalf("channel header = %q, want the seeded topic", headerPlain)
 	}
 	for _, unwanted := range []string{"PEOPLE", "(12)"} {
-		if strings.Contains(plain, unwanted) {
-			t.Fatalf("channel header = %q, must not carry %q", plain, unwanted)
+		if strings.Contains(headerPlain, unwanted) {
+			t.Fatalf("channel header = %q, must not carry %q", headerPlain, unwanted)
 		}
 	}
-	// The band still spans the column: dropping the count leaves the topic's
-	// title strip intact.
-	if got, want := lipgloss.Width(header), m.transcriptWidth(); got != want {
-		t.Fatalf("channel header width = %d, want the full %d-cell band", got, want)
+	// The band still spans the column.
+	if got, want := lipgloss.Width(lines[0]), m.transcriptWidth(); got != want {
+		t.Fatalf("channel title width = %d, want the full %d-cell band", got, want)
 	}
 
 	// The count survives in exactly one place: the member column's heading.
@@ -504,11 +506,11 @@ func TestPhase8TranscriptChannelHasNoTypingFooter(t *testing.T) {
 	}
 }
 
-// TestTranscriptHeaderCarriesTheTopicBand pins the header's read as a title: the
-// topic row is a band spanning the transcript column, so the caption and the
-// count sit on a surface instead of looking like one more transcript line. The
-// band stays clear of the page (or it is invisible) and of the chip's raised fill
-// (or the count disappears into it), and the blank separator row stays unfilled.
+// TestTranscriptHeaderCarriesTheTopicBand pins the header's read as a title: each
+// header row is a band spanning the transcript column, so the caption sits on a
+// surface instead of looking like one more transcript line. The band stays clear
+// of the page (or it is invisible) and of the chip's raised fill (or the count
+// disappears into it), and the blank separator row stays unfilled.
 func TestTranscriptHeaderCarriesTheTopicBand(t *testing.T) {
 	m := seededModel(t)
 	band := backgroundParams(m.styles.TopicBar.GetBackground())
@@ -523,34 +525,38 @@ func TestTranscriptHeaderCarriesTheTopicBand(t *testing.T) {
 	}
 
 	header := m.transcriptHeader()
-	if len(header) < 2 {
-		t.Fatalf("channel header = %d rows, want the band plus its blank separator", len(header))
+	if len(header) < 3 {
+		t.Fatalf("channel header = %d rows, want the name band, topic band, and blank", len(header))
 	}
-	line := header[0]
-	if got, want := lipgloss.Width(line), m.transcriptWidth(); got != want {
-		t.Fatalf("band width = %d, want it to span the %d-cell transcript column", got, want)
+	for index, line := range header[:2] {
+		if got, want := lipgloss.Width(line), m.transcriptWidth(); got != want {
+			t.Fatalf("band %d width = %d, want it to span the %d-cell transcript column", index, got, want)
+		}
+		if !strings.Contains(line, band) {
+			t.Fatalf("header row %d carries no band background %q:\n%q", index, band, line)
+		}
+		// The band starts at the row's first cell.
+		firstSGR := line
+		if at := strings.Index(line, "m"); at >= 0 {
+			firstSGR = line[:at]
+		}
+		if !strings.Contains(firstSGR, band) {
+			t.Fatalf("header row %d does not open with the band:\n%q", index, line)
+		}
 	}
-	if !strings.Contains(line, band) {
-		t.Fatalf("header row carries no band background %q:\n%q", band, line)
+	titlePlain := ansiPattern.ReplaceAllString(header[0], "")
+	if !strings.Contains(titlePlain, m.ctrl.SelectedTarget()) {
+		t.Fatalf("name band missing the channel: %q", titlePlain)
 	}
-	// The band starts at the row's first cell: the topic is not rendered on the
-	// page with the fill starting somewhere later.
-	firstSGR := line
-	if at := strings.Index(line, "m"); at >= 0 {
-		firstSGR = line[:at]
+	topicPlain := ansiPattern.ReplaceAllString(header[1], "")
+	if !strings.Contains(topicPlain, "A cozy corner for Omarchy users and builders.") {
+		t.Fatalf("topic band missing the caption: %q", topicPlain)
 	}
-	if !strings.Contains(firstSGR, band) {
-		t.Fatalf("header row does not open with the band:\n%q", line)
+	if strings.Contains(topicPlain, "PEOPLE") {
+		t.Fatalf("topic band must not carry the member count: %q", topicPlain)
 	}
-	plain := ansiPattern.ReplaceAllString(line, "")
-	if !strings.Contains(plain, "A cozy corner for Omarchy users and builders.") {
-		t.Fatalf("band row missing the topic caption: %q", plain)
-	}
-	if strings.Contains(plain, "PEOPLE") {
-		t.Fatalf("band row must carry the topic only, not the member count: %q", plain)
-	}
-	if header[1] != "" {
-		t.Fatalf("the row under the band must stay blank and unfilled: %q", header[1])
+	if header[2] != "" {
+		t.Fatalf("the row under the bands must stay blank and unfilled: %q", header[2])
 	}
 }
 
@@ -571,22 +577,72 @@ func TestPhase8TranscriptHeaderTailKeepsItsGutter(t *testing.T) {
 	}
 
 	header := m.transcriptHeader()
-	if len(header) == 0 {
-		t.Fatal("the seeded channel must have a topic header")
+	if len(header) < 2 {
+		t.Fatal("the seeded channel must have a name band and a topic band")
 	}
-	line := header[0]
+	line := header[1]
 	if got, want := lipgloss.Width(line), m.transcriptWidth(); got != want {
 		t.Fatalf("header band width = %d, want the full %d-cell column", got, want)
 	}
 	plain := []rune(ansiPattern.ReplaceAllString(line, ""))
 	if !strings.Contains(string(plain), "↓ new") {
-		t.Fatalf("header = %q, want the armed tail marker", string(plain))
+		t.Fatalf("topic band = %q, want the armed tail marker", string(plain))
 	}
 	if len(plain) < headerTailGutter {
-		t.Fatalf("header = %q, too narrow for the %d-cell gutter", string(plain), headerTailGutter)
+		t.Fatalf("topic band = %q, too narrow for the %d-cell gutter", string(plain), headerTailGutter)
 	}
 	if trailing := string(plain[len(plain)-headerTailGutter:]); strings.TrimSpace(trailing) != "" {
-		t.Fatalf("header = %q, want the tail to end %d gutter cells short of the column edge",
+		t.Fatalf("topic band = %q, want the tail to end %d gutter cells short of the column edge",
 			string(plain), headerTailGutter)
+	}
+}
+
+// TestPhase8TranscriptChannelHeaderSurvivesSidebarHide proves the channel name
+// stays in the pinned header when the server list is collapsed.
+func TestPhase8TranscriptChannelHeaderSurvivesSidebarHide(t *testing.T) {
+	m := seededModel(t)
+	channel := m.ctrl.SelectedTarget()
+	m = press(t, m, ctrlShiftKey('s'))
+	if m.serverListVisible {
+		t.Fatal("Ctrl+Shift+S must hide the sidebar")
+	}
+	plain := ansiPattern.ReplaceAllString(strings.Join(m.transcriptHeader(), "\n"), "")
+	if !strings.Contains(plain, channel) {
+		t.Fatalf("header with sidebar hidden = %q, want %q", plain, channel)
+	}
+}
+
+// TestPhase8TranscriptChannelHeaderWithoutTopic proves a topic-less channel
+// still shows its name in the pinned header.
+func TestPhase8TranscriptChannelHeaderWithoutTopic(t *testing.T) {
+	m := seededModel(t)
+	channel := m.ctrl.SelectedTarget()
+	m.ctrl.Apply(irc.TopicEvent{NetworkID: "omarchy", Channel: channel, Topic: ""})
+	if topic := strings.TrimSpace(m.ctrl.PlainIrcText(m.ctrl.Topic())); topic != "" {
+		t.Fatalf("Topic() = %q, want empty after clearing", topic)
+	}
+	header := m.transcriptHeader()
+	if len(header) != 2 {
+		t.Fatalf("header = %d rows, want the name band and blank", len(header))
+	}
+	plain := ansiPattern.ReplaceAllString(header[0], "")
+	if !strings.Contains(plain, channel) {
+		t.Fatalf("title band = %q, want %q", plain, channel)
+	}
+	if strings.Contains(plain, "A cozy corner") {
+		t.Fatalf("title band still shows the old topic: %q", plain)
+	}
+}
+
+// TestPhase8TranscriptChannelHeaderDuplicateTarget proves a channel that exists
+// on more than one network disambiguates with the focused network display name.
+func TestPhase8TranscriptChannelHeaderDuplicateTarget(t *testing.T) {
+	m := seededModel(t)
+	m.ctrl.SelectConversation("oftc", "#omarchy")
+	networkName := m.sidebarNetworkDisplayName("oftc")
+	want := "#omarchy · " + networkName
+	plain := ansiPattern.ReplaceAllString(m.transcriptHeader()[0], "")
+	if !strings.Contains(plain, want) {
+		t.Fatalf("duplicate header = %q, want %q", plain, want)
 	}
 }

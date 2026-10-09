@@ -159,7 +159,8 @@ func TestTranscriptHeaderStaysPinned(t *testing.T) {
 	if !m.transcriptFollowEnd {
 		t.Fatal("the seeded view starts pinned to the tail")
 	}
-	for _, want := range []string{"A cozy corner for Omarchy users and builders."} {
+	channel := m.ctrl.SelectedTarget()
+	for _, want := range []string{channel, "A cozy corner for Omarchy users and builders."} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("pinned header missing %q:\n%s", want, content)
 		}
@@ -169,8 +170,8 @@ func TestTranscriptHeaderStaysPinned(t *testing.T) {
 	}
 	// The header is the column's first rendered row, above every message.
 	firstRow := strings.SplitN(content, "\n", 2)[0]
-	if !strings.Contains(firstRow, "A cozy corner for Omarchy users and builders.") {
-		t.Fatalf("first rendered row is not the topic header: %q", firstRow)
+	if !strings.Contains(firstRow, channel) {
+		t.Fatalf("first rendered row is not the channel title: %q", firstRow)
 	}
 }
 
@@ -182,10 +183,13 @@ func TestTopicBandEllipsizesAt80(t *testing.T) {
 	if len(header) == 0 {
 		t.Fatal("a channel transcript must have a topic band")
 	}
-	if got, want := lipgloss.Width(header[0]), m.transcriptWidth(); got != want {
+	if len(header) < 2 {
+		t.Fatal("a channel transcript must have a name band and a topic band")
+	}
+	if got, want := lipgloss.Width(header[1]), m.transcriptWidth(); got != want {
 		t.Fatalf("topic band width %d, want %d", got, want)
 	}
-	plain := plainLine(header[0])
+	plain := plainLine(header[1])
 	const topic = "A cozy corner for Omarchy users and builders."
 	if lipgloss.Width(topic) <= m.transcriptWidth() {
 		t.Fatalf("seeded topic fits the %d-cell band; the proof needs an overflow", m.transcriptWidth())

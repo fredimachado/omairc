@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The terminal transcript header shows the channel name, and the topic when the
+  channel has one, so the buffer stays identifiable when the server list is
+  hidden.
 - The terminal client shows a calm notice instead of a broken layout when the
   terminal is below the minimum size.
 
