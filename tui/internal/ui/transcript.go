@@ -141,7 +141,7 @@ func (m *Model) transcriptRowTotal() int {
 	return len(m.ctrl.Messages())
 }
 
-// transcriptView renders the selected conversation: its pinned topic header,
+// transcriptView renders the selected conversation: its pinned header,
 // then either the Status console lines when the console is open or the live
 // transcript. The header stays put while the rows scroll, mirroring
 // ConversationColumn.qml's fixed conversationHeader above its scrolling
@@ -172,9 +172,8 @@ func (m *Model) transcriptView(height int) string {
 	return renderColumn(m.styles.Conversation, m.transcriptWidth(), lines)
 }
 
-// transcriptHeader renders the pinned header block: the topic line plus its
-// trailing blank, or nothing when the conversation has neither a topic nor an
-// armed jump hint. It stays put while the rows scroll under it.
+// transcriptHeader renders the pinned header block and its trailing blank. It
+// stays put while the rows scroll under it.
 func (m *Model) transcriptHeader() []string {
 	if m.ctrl == nil {
 		return nil
@@ -185,16 +184,46 @@ func (m *Model) transcriptHeader() []string {
 		if reason := m.ctrl.LastError(); reason != "" {
 			return []string{m.topicHeaderLine(reason), ""}
 		}
-	} else if header, ok := m.ctrl.SelectedPeerHeader(); ok {
+		topic := strings.TrimSpace(m.ctrl.PlainIrcText(m.ctrl.Topic()))
+		if topic == "" && m.unseenMarker() == "" {
+			return nil
+		}
+		return []string{m.topicHeaderLine(m.ctrl.Topic()), ""}
+	}
+	if header, ok := m.ctrl.SelectedPeerHeader(); ok {
 		// A direct message replaces the topic caption with the peer's
 		// presence, nick, labels, and real name.
 		return m.queryTranscriptHeader(header)
 	}
-	topic := m.ctrl.Topic()
-	if topic == "" && m.unseenMarker() == "" {
+	return m.channelTranscriptHeader()
+}
+
+// channelTranscriptHeader is the channel header: the channel name on the first
+// band, the plain topic on the second when one is set, then a blank separator.
+// The unseen marker rides the last content line, matching queryTranscriptHeader.
+func (m *Model) channelTranscriptHeader() []string {
+	name := m.ctrl.SelectedTarget()
+	if name == "" {
 		return nil
 	}
-	return []string{m.topicHeaderLine(topic), ""}
+	topic := strings.TrimSpace(m.ctrl.PlainIrcText(m.ctrl.Topic()))
+	lines := []string{m.headerBand(m.channelHeaderTitle(name), topic == "")}
+	if topic != "" {
+		lines = append(lines, m.topicHeaderLine(topic))
+	}
+	lines = append(lines, "")
+	return lines
+}
+
+// channelHeaderTitle renders the channel name in the same bold weight as a
+// direct-message nick. A target that exists on more than one network carries
+// the focused network display name, matching conversationTitleText.
+func (m *Model) channelHeaderTitle(name string) string {
+	label := name
+	if m.ctrl != nil {
+		label = m.jumpConversationLabel(name, focusedNetworkDisplayName(m.ctrl, m.conn))
+	}
+	return m.styles.Topic.Bold(true).Render(label)
 }
 
 // queryTranscriptHeader is the direct-message header: a presence dot, the
@@ -253,8 +282,8 @@ func (m *Model) transcriptArea() transcriptRows {
 }
 
 // transcriptLines builds the transcript's rendered lines and the count of
-// header lines (the topic block) that precede the message/console rows. Find
-// and copy index into the rows, not the header.
+// header lines that precede the message/console rows. Find and copy index into
+// the rows, not the header.
 func (m *Model) transcriptLines() ([]string, int) {
 	header := m.transcriptHeader()
 	area := m.transcriptArea()
@@ -269,14 +298,11 @@ func (m *Model) transcriptLines() ([]string, int) {
 // a surface rather than a banner.
 const topicBarTint = 0.20
 
-// topicHeaderLine renders the conversation's header as a full-width band: the
-// topic caption on the left and, right-aligned, the "↓ new" jump marker while a
-// jump is armed. The band spans transcriptWidth(), so the tail ends
-// headerTailGutter cells short of the member column that follows instead of
-// touching it. A long topic is truncated so the tail stays visible.
-//
-// The member count is deliberately not repeated here: a channel's count belongs
-// to the member column's "ONLINE - N" heading, so the header stays the topic.
+// topicHeaderLine renders one topic band: the plain topic on the left and,
+// right-aligned, the "↓ new" jump marker while a jump is armed. The band spans
+// transcriptWidth(), so the tail ends headerTailGutter cells short of the member
+// column that follows instead of touching it. A long topic is truncated so the
+// tail stays visible.
 func (m *Model) topicHeaderLine(topic string) string {
 	return m.headerBand(m.styles.Topic.Render(topic), true)
 }
