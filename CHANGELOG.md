@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.2] - 2026-10-09
+
 ### Added
 
 - The terminal transcript header shows the channel name, and the topic when the
@@ -17,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- On Unix, `Shift+3` types `#` again. The terminal client no longer asks those
+  terminals to report every key as an escape code, which turned `#` into `3`
+  and dropped AltGr, dead keys, and composed input. Windows still requests that
+  mode, plus alternate keys, so shift chords stay distinct.
+- The terminal client drops escape and other unused control characters from
+  incoming text and from saved history, so a remote message cannot restyle the
+  transcript or plant a link whose label hides its target.
 - The terminal client gives the transcript a minimum width and shrinks or hides
   the member column on a medium terminal.
 - The terminal footer keeps the `Ctrl+/ shortcuts` hint whole on narrow widths,
@@ -754,7 +763,8 @@ First public release: a simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.10.1...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.10.2...HEAD
+[1.10.2]: https://github.com/fredimachado/omairc/compare/v1.10.1...v1.10.2
 [1.10.1]: https://github.com/fredimachado/omairc/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/fredimachado/omairc/compare/v1.0.7...v1.10.0
 [1.0.7]: https://github.com/fredimachado/omairc/compare/v1.0.6...v1.0.7
