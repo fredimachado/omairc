@@ -109,19 +109,22 @@ func TestShortcutsSheetRendersKeycaps(t *testing.T) {
 	m := seededModel(t)
 	m.openShortcuts()
 	card := m.shortcutsCard(m.width)
-	plain := ansiPattern.ReplaceAllString(card, "")
+	layout := m.shortcutsLayout(m.shortcutsInnerWidth())
 
-	for _, group := range shortcutGroups {
-		if !strings.Contains(plain, group.title) {
-			t.Fatalf("shortcuts sheet missing group %q:\n%s", group.title, plain)
-		}
-		for _, row := range group.rows {
-			keys := displayShortcutKeys(row.keys)
-			if !strings.Contains(plain, keys) {
-				t.Fatalf("shortcuts sheet missing keys %q:\n%s", keys, plain)
+	for _, column := range layout.columns {
+		plain := shortcutsPlainFold(shortcutsStripAnsi(strings.Join(column.lines, "\n")))
+		for _, group := range column.groups {
+			if !strings.Contains(plain, group.title) {
+				t.Fatalf("shortcuts sheet missing group %q:\n%s", group.title, plain)
 			}
-			if !strings.Contains(plain, row.action) {
-				t.Fatalf("shortcuts sheet missing action %q:\n%s", row.action, plain)
+			for _, row := range group.rows {
+				keys := displayShortcutKeys(row.keys)
+				if !strings.Contains(plain, keys) {
+					t.Fatalf("shortcuts sheet missing keys %q:\n%s", keys, plain)
+				}
+				if !strings.Contains(plain, row.action) {
+					t.Fatalf("shortcuts sheet missing action %q:\n%s", row.action, plain)
+				}
 			}
 		}
 	}

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The terminal shortcuts sheet lays groups in columns and scrolls on a short
+  terminal so the bottom border stays visible.
+
 ### Changed
 
 - The terminal client keeps the terminal's own background and foreground, so a

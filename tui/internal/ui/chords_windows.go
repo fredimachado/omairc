@@ -45,22 +45,9 @@ func normalizeChordKey(key string) string {
 	return key
 }
 
-// windowsShortcutKeyLabels adds WT-safe aliases beside the shared chords.
-var windowsShortcutKeyLabels = map[string]string{
-	"Alt+Down / Alt+Up":                 "Alt+Down / Alt+Up / Ctrl+Alt+Down / Up",
-	"Alt+Left / Alt+Right":              "Alt+Left / Alt+Right / Ctrl+Alt+Left / Right",
-	"Alt+Shift+Left / Right":            "Alt+Shift+Left / Right / Ctrl+Shift+Left / Right",
-	"Alt+Shift+Up / Down":               "Alt+Shift+Up / Down / Ctrl+Alt+Shift+Up / Down",
-	"Ctrl+,":   "Ctrl+, / Ctrl+]",
-	"Ctrl+Tab": "Ctrl+Tab / Ctrl+PgDn",
-}
-
 // displayShortcutKeys returns the shortcuts-sheet label for one chord row.
 func displayShortcutKeys(keys string) string {
-	if label, ok := windowsShortcutKeyLabels[keys]; ok {
-		return label
-	}
-	return keys
+	return ExpandShortcutKeyLabels(keys)
 }
 
 // displayShortcutAction returns the shortcuts-sheet action text for one row.
