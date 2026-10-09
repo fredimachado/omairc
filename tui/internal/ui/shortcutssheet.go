@@ -187,10 +187,10 @@ func (m *Model) shortcutsScrollBounds(inner int) (total, visible, maxOffset int)
 	if visible < 1 {
 		visible = 1
 	}
-	maxOffset = total - visible
-	if maxOffset < 0 {
-		maxOffset = 0
+	if total <= visible {
+		return total, total, 0
 	}
+	maxOffset = total - visible
 	return total, visible, maxOffset
 }
 
@@ -211,8 +211,13 @@ func (m *Model) shortcutsCardBody(inner int) []string {
 		lines = append(lines, body...)
 		return lines
 	}
-	total, visible, _ := m.shortcutsScrollBounds(inner)
-	offset := clampInt(m.shortcutsScroll, 0, total-visible)
+	total, visible, maxOffset := m.shortcutsScrollBounds(inner)
+	if total <= visible {
+		lines := []string{title}
+		lines = append(lines, body...)
+		return lines
+	}
+	offset := clampInt(m.shortcutsScroll, 0, maxOffset)
 	hint := m.shortcutsScrollHint(offset, total, visible)
 	lines := []string{title}
 	lines = append(lines, body[offset:offset+visible]...)
@@ -239,7 +244,7 @@ func (m *Model) shortcutsScrollHint(offset, total, visible int) string {
 // shortcutsSheetBody lays out every group from shortcutGroups, flowing into
 // multiple columns when the card is wide enough.
 func (m *Model) shortcutsSheetBody(inner int) []string {
-	single := m.shortcutsGroupsLines(inner, shortcutGroups, true, false)
+	single := m.shortcutsGroupsLines(inner, shortcutGroups, true, true)
 	budget := m.overlayCardRowBudget() - shortcutsHeaderRows
 	if len(single) <= budget {
 		return single
@@ -319,11 +324,21 @@ func (m *Model) shortcutsRowLines(colInner, labelWidth, actionWidth int, row sho
 	).Help()
 	chip := clipShortcutLine(m.styles.Keycap.Render(" "+help.Key+" "), labelWidth)
 	keyColumn := lipgloss.NewStyle().Width(labelWidth).Render(chip)
-	actionText := actionStyle.Render(displayShortcutAction(help.Desc))
-	line := keyColumn + strings.Repeat(" ", shortcutsMenuGutter) + clipShortcutLine(actionText, actionWidth)
-	lines := []string{clipShortcutLine(line, colInner)}
-	if wrapActions && lipgloss.Width(actionText) > actionWidth {
-		lines = append(lines, clipShortcutLine(actionText, colInner))
+	plainAction := displayShortcutAction(help.Desc)
+	actionIndent := labelWidth + shortcutsMenuGutter
+	var actionLines []string
+	if wrapActions {
+		actionLines = shortcutsWrapPlainAction(plainAction, actionWidth)
+	} else {
+		actionLines = []string{plainAction}
+	}
+	firstAction := actionStyle.Render(actionLines[0])
+	line := keyColumn + strings.Repeat(" ", shortcutsMenuGutter) + clipShortcutLine(firstAction, actionWidth)
+	lines := []string{line}
+	for index := 1; index < len(actionLines); index++ {
+		continuation := actionStyle.Render(actionLines[index])
+		contLine := strings.Repeat(" ", actionIndent) + clipShortcutLine(continuation, colInner-actionIndent)
+		lines = append(lines, clipShortcutLine(contLine, colInner))
 	}
 	return lines
 }
@@ -363,13 +378,13 @@ func (m *Model) balanceShortcutGroups(groups []shortcutGroup, columns, inner int
 		if len(body) > m.overlayCardRowBudget()-shortcutsHeaderRows {
 			continue
 		}
-		if len(body) < bestHeight {
+		if len(body) < bestHeight || (len(body) == bestHeight && (best == nil || assignmentColumnOrderLess(assignment, best))) {
 			bestHeight = len(body)
 			best = assignment
 		}
 	}
 	if best != nil {
-		return best
+		return sortShortcutAssignmentColumns(best)
 	}
 	// No partition fits the row budget; keep groups whole in one scrollable column.
 	return [][]shortcutGroup{groups}
@@ -411,6 +426,75 @@ func cloneShortcutAssignment(stack [][]shortcutGroup) [][]shortcutGroup {
 	return out
 }
 
+func shortcutGroupIndex(group shortcutGroup) int {
+	for index, candidate := range shortcutGroups {
+		if candidate.title == group.title {
+			return index
+		}
+	}
+	return len(shortcutGroups)
+}
+
+func assignmentColumnOrderKey(assignment [][]shortcutGroup) []int {
+	keys := make([]int, len(assignment))
+	for index, column := range assignment {
+		if len(column) == 0 {
+			keys[index] = len(shortcutGroups)
+			continue
+		}
+		keys[index] = shortcutGroupIndex(column[0])
+	}
+	return keys
+}
+
+func assignmentColumnOrderLess(left, right [][]shortcutGroup) bool {
+	leftKey := assignmentColumnOrderKey(left)
+	rightKey := assignmentColumnOrderKey(right)
+	for index := 0; index < len(leftKey) && index < len(rightKey); index++ {
+		if leftKey[index] != rightKey[index] {
+			return leftKey[index] < rightKey[index]
+		}
+	}
+	return len(leftKey) < len(rightKey)
+}
+
+func sortShortcutAssignmentColumns(assignment [][]shortcutGroup) [][]shortcutGroup {
+	if len(assignment) < 2 {
+		return assignment
+	}
+	indexed := make([]struct {
+		key    int
+		column []shortcutGroup
+	}, len(assignment))
+	for index, column := range assignment {
+		key := len(shortcutGroups)
+		if len(column) > 0 {
+			key = shortcutGroupIndex(column[0])
+		}
+		indexed[index] = struct {
+			key    int
+			column []shortcutGroup
+		}{key: key, column: column}
+	}
+	for left := 1; left < len(indexed); left++ {
+		pivot := indexed[left]
+		right := left
+		for scan := left - 1; scan >= 0; scan-- {
+			if indexed[scan].key <= pivot.key {
+				break
+			}
+			indexed[scan+1] = indexed[scan]
+			right = scan
+		}
+		indexed[right] = pivot
+	}
+	out := make([][]shortcutGroup, len(indexed))
+	for index, entry := range indexed {
+		out[index] = entry.column
+	}
+	return out
+}
+
 // shortcutsAssignmentFits reports whether an assignment lays out within inner
 // after column widths are fitted and joined.
 func (m *Model) shortcutsAssignmentFits(inner int, assignment [][]shortcutGroup) bool {
@@ -434,7 +518,7 @@ func (m *Model) shortcutsAssignmentBody(inner int, assignment [][]shortcutGroup)
 
 // shortcutsBodyShowsAllActions reports whether every action label appears in body.
 func (m *Model) shortcutsBodyShowsAllActions(body []string) bool {
-	plain := shortcutsPlainFold(strings.Join(body, "\n"))
+	plain := shortcutsPlainFold(shortcutsStripAnsi(strings.Join(body, "\n")))
 	for _, group := range shortcutGroups {
 		for _, row := range group.rows {
 			if !strings.Contains(plain, row.action) {
@@ -658,9 +742,74 @@ func clipShortcutLine(line string, width int) string {
 	return ansi.Truncate(line, width, "")
 }
 
+// shortcutsWrapPlainAction breaks one action label across lines at spaces when
+// possible. Each line fits within width terminal cells.
+func shortcutsWrapPlainAction(plain string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	if lipgloss.Width(plain) <= width {
+		return []string{plain}
+	}
+	words := strings.Fields(plain)
+	if len(words) == 0 {
+		return []string{clipPlainWidth(plain, width)}
+	}
+	var lines []string
+	var current strings.Builder
+	for _, word := range words {
+		candidate := word
+		if current.Len() > 0 {
+			candidate = current.String() + " " + word
+		}
+		if lipgloss.Width(candidate) <= width {
+			current.Reset()
+			current.WriteString(candidate)
+			continue
+		}
+		if current.Len() > 0 {
+			lines = append(lines, current.String())
+			current.Reset()
+		}
+		for lipgloss.Width(word) > width {
+			segment := clipPlainWidth(word, width)
+			lines = append(lines, segment)
+			word = strings.TrimPrefix(word, segment)
+		}
+		current.WriteString(word)
+	}
+	if current.Len() > 0 {
+		lines = append(lines, current.String())
+	}
+	return lines
+}
+
+func clipPlainWidth(text string, width int) string {
+	if width < 1 {
+		return ""
+	}
+	var out strings.Builder
+	cells := 0
+	for _, runeValue := range text {
+		runeWidth := lipgloss.Width(string(runeValue))
+		if cells+runeWidth > width {
+			break
+		}
+		out.WriteRune(runeValue)
+		cells += runeWidth
+	}
+	return out.String()
+}
+
 var shortcutsPlainSpace = regexp.MustCompile(`\s+`)
 
 // shortcutsPlainFold collapses whitespace so wrapped labels still match.
 func shortcutsPlainFold(plain string) string {
 	return shortcutsPlainSpace.ReplaceAllString(plain, " ")
+}
+
+var shortcutsAnsiPattern = regexp.MustCompile("\x1b\\[[0-9;]*m")
+
+func shortcutsStripAnsi(text string) string {
+	return shortcutsAnsiPattern.ReplaceAllString(text, "")
 }

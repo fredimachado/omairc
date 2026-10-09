@@ -1092,8 +1092,11 @@ func windowCardRows(rows []string, headerRows, footerRows, focusRow, budget int)
 	return out
 }
 
-// clampInt clamps value to [low, high]. A high below low yields low.
+// clampInt clamps value to [low, high]. A high below low clamps to low.
 func clampInt(value, low, high int) int {
+	if high < low {
+		high = low
+	}
 	if value < low {
 		return low
 	}

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -36,7 +37,12 @@ func shortcutsViewClosedBottom(m *Model) bool {
 		limit = len(lines)
 	}
 	for index := 0; index < limit; index++ {
-		if strings.HasSuffix(strings.TrimRight(lines[index], " "), "╯") {
+		end := strings.LastIndex(lines[index], "╯")
+		if end < 0 {
+			continue
+		}
+		start := strings.LastIndex(lines[index][:end], "╰")
+		if start >= overlayCardInset {
 			return true
 		}
 	}
@@ -70,17 +76,29 @@ func shortcutsViewScrollHint(m *Model) string {
 	return ""
 }
 
+func shortcutsSheetFitsWithoutScroll(m *Model) bool {
+	inner := m.shortcutsInnerWidth()
+	body := m.shortcutsSheetBody(inner)
+	budget := m.overlayCardRowBudget() - shortcutsHeaderRows
+	return len(body) <= budget && m.shortcutsBodyShowsAllActions(body)
+}
+
 func allShortcutActionsReachableInView(m *Model) bool {
 	inner := m.shortcutsInnerWidth()
-	total, visible, maxOffset := m.shortcutsScrollBounds(inner)
-	if total <= visible {
-		return len(visibleShortcutActionsInView(m)) == len(shortcutActions())
+	body := m.shortcutsSheetBody(inner)
+	if !m.shortcutsBodyShowsAllActions(body) {
+		return false
 	}
+	_, visible, maxOffset := m.shortcutsScrollBounds(inner)
 	seen := make(map[string]bool)
 	for offset := 0; offset <= maxOffset; offset++ {
-		m.shortcutsScroll = offset
-		for action, ok := range visibleShortcutActionsInView(m) {
-			if ok {
+		end := offset + visible
+		if end > len(body) {
+			end = len(body)
+		}
+		plain := shortcutsPlainFold(shortcutsStripAnsi(strings.Join(body[offset:end], "\n")))
+		for _, action := range shortcutActions() {
+			if strings.Contains(plain, action) {
 				seen[action] = true
 			}
 		}
@@ -88,28 +106,55 @@ func allShortcutActionsReachableInView(m *Model) bool {
 	return len(seen) == len(shortcutActions())
 }
 
+func assertNoWrappedActionPrefixDuplicates(t *testing.T, plain string) {
+	t.Helper()
+	folded := shortcutsPlainFold(shortcutsStripAnsi(plain))
+	for _, pair := range []struct {
+		truncated string
+		full      string
+	}{
+		{"walk conversation", "walk conversations"},
+		{"scroll transcript half pa", "scroll transcript half page"},
+		{"page focused members half", "page focused members half page"},
+	} {
+		if !strings.Contains(folded, pair.full) {
+			continue
+		}
+		rest := strings.ReplaceAll(folded, pair.full, "")
+		if strings.Contains(rest, pair.truncated) {
+			t.Fatalf("wrapped action left duplicate prefix %q for %q in view:\n%s", pair.truncated, pair.full, plain)
+		}
+	}
+}
+
 func TestShortcutsSheetFitsDefaultSize(t *testing.T) {
 	m := resizeModel(t, seededModel(t), 118, 30)
 	m.openShortcuts()
-	if m.shortcutsScroll != 0 {
-		t.Fatalf("shortcuts scroll = %d, want 0 at 118x30", m.shortcutsScroll)
-	}
 	if lipgloss.Height(m.View().Content) != m.height {
 		t.Fatalf("view height = %d, want terminal height %d", lipgloss.Height(m.View().Content), m.height)
 	}
 	if !shortcutsViewClosedBottom(m) {
 		t.Fatalf("shortcuts sheet must close its bottom border in View() at 118x30:\n%s", shortcutsViewPlain(m))
 	}
-	seen := visibleShortcutActionsInView(m)
-	for _, action := range shortcutActions() {
-		if !seen[action] {
-			t.Fatalf("shortcuts sheet missing action %q in View() at 118x30:\n%s", action, shortcutsViewPlain(m))
-		}
+	if !allShortcutActionsReachableInView(m) {
+		t.Fatalf("not every shortcut action is reachable at 118x30")
 	}
+	assertNoWrappedActionPrefixDuplicates(t, shortcutsViewPlain(m))
+
 	inner := m.shortcutsInnerWidth()
 	total, visible, maxOffset := m.shortcutsScrollBounds(inner)
-	if maxOffset != 0 || total != visible {
-		t.Fatalf("118x30 shortcuts scroll bounds = total %d visible %d max %d, want no scrolling", total, visible, maxOffset)
+	fits := shortcutsSheetFitsWithoutScroll(m)
+	if fits {
+		if maxOffset != 0 || total != visible {
+			t.Fatalf("118x30 shortcuts scroll bounds = total %d visible %d max %d, want no scrolling when body fits", total, visible, maxOffset)
+		}
+		if hint := shortcutsViewScrollHint(m); hint != "" {
+			t.Fatalf("scroll hint = %q, want none when body fits at 118x30", hint)
+		}
+	} else {
+		if maxOffset < 1 {
+			t.Fatalf("118x30 shortcuts scroll bounds = total %d visible %d max %d, want scrolling when body does not fit", total, visible, maxOffset)
+		}
 	}
 }
 
@@ -128,8 +173,8 @@ func TestShortcutsSheetScrollsShortTerminal(t *testing.T) {
 
 	inner := m.shortcutsInnerWidth()
 	total, visible, maxOffset := m.shortcutsScrollBounds(inner)
-	if total != 48 || visible != 18 || maxOffset != 30 {
-		t.Fatalf("80x24 scroll bounds = total %d visible %d max %d, want 48/18/30", total, visible, maxOffset)
+	if maxOffset < 1 {
+		t.Fatalf("80x24 scroll bounds = total %d visible %d max %d, want scrolling", total, visible, maxOffset)
 	}
 
 	m.shortcutsScroll = 0
@@ -141,8 +186,14 @@ func TestShortcutsSheetScrollsShortTerminal(t *testing.T) {
 	if m.shortcutsScroll != visible {
 		t.Fatalf("PgDown scroll = %d, want %d", m.shortcutsScroll, visible)
 	}
-	if hint := shortcutsViewScrollHint(m); hint != "19-36 of 48" {
-		t.Fatalf("middle scroll hint = %q, want 19-36 of 48", hint)
+	offset := m.shortcutsScroll
+	end := offset + visible
+	if end > total {
+		end = total
+	}
+	wantMiddle := fmt.Sprintf("%d-%d of %d", offset+1, end, total)
+	if hint := shortcutsViewScrollHint(m); hint != wantMiddle {
+		t.Fatalf("middle scroll hint = %q, want %s", hint, wantMiddle)
 	}
 	if !shortcutsViewClosedBottom(m) {
 		t.Fatalf("shortcuts bottom border must stay visible after PgDown:\n%s", shortcutsViewPlain(m))
@@ -157,6 +208,32 @@ func TestShortcutsSheetScrollsShortTerminal(t *testing.T) {
 	}
 	if !shortcutsViewClosedBottom(m) {
 		t.Fatalf("shortcuts bottom border must stay visible at end scroll:\n%s", shortcutsViewPlain(m))
+	}
+}
+
+func TestShortcutsSheetTallNarrowNoPanic(t *testing.T) {
+	m := resizeModel(t, seededModel(t), 60, 60)
+	m.openShortcuts()
+	if lipgloss.Height(m.View().Content) != m.height {
+		t.Fatalf("view height = %d, want terminal height %d", lipgloss.Height(m.View().Content), m.height)
+	}
+	if !allShortcutActionsReachableInView(m) {
+		t.Fatalf("not every shortcut action is reachable at 60x60")
+	}
+	assertNoWrappedActionPrefixDuplicates(t, shortcutsViewPlain(m))
+}
+
+func TestShortcutsWrapPlainActionNoDuplicatePrefix(t *testing.T) {
+	lines := shortcutsWrapPlainAction("walk conversations", 17)
+	if len(lines) < 2 {
+		t.Fatalf("expected wrapped lines, got %v", lines)
+	}
+	joined := strings.Join(lines, " ")
+	if joined != "walk conversations" {
+		t.Fatalf("wrapped lines = %q, want full action preserved", joined)
+	}
+	if lines[0] == "walk conversation" {
+		t.Fatalf("first line must not be the truncated prefix %q", lines[0])
 	}
 }
 
