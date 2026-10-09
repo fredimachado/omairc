@@ -24,7 +24,8 @@ func ellipsizeLine(line string, width int) string {
 	}
 
 	out, ellipsisIdx := truncateWithEllipsis(line, width, ellipsisRune)
-	out, ellipsisIdx = repairBareEllipsis(line, out, width, ellipsisIdx)
+	out, ellipsisIdx = repairBareEllipsis(out, ellipsisIdx)
+	out, ellipsisIdx = dropExtraVisibleEllipses(out, ellipsisIdx)
 	for lipgloss.Width(out) < width {
 		prev := lipgloss.Width(out)
 		out, ellipsisIdx = padBeforeEllipsis(out, line, width, ellipsisIdx)
@@ -46,7 +47,6 @@ func truncateWithEllipsis(s string, width int, tail string) (string, int) {
 		return "", -1
 	}
 
-	var cluster string
 	var buf strings.Builder
 	curWidth := 0
 	ignoring := false
@@ -56,46 +56,34 @@ func truncateWithEllipsis(s string, width int, tail string) (string, int) {
 
 	for i < len(s) {
 		state, action := parser.Table.Transition(pstate, s[i])
-		if state == parser.Utf8State {
-			var w int
-			cluster, w = ansi.FirstGraphemeCluster(s[i:], ansi.GraphemeWidth)
-			i += len(cluster)
-			curWidth += w
-
-			if ignoring {
+		// PrintAction is an ASCII lead. ansi.StringWidth still measures the
+		// whole grapheme (digit + variation selector, keycap, …), so consume
+		// that cluster here or the line lands wider than the budget.
+		if action == parser.PrintAction || state == parser.Utf8State {
+			cluster, w := ansi.FirstGraphemeCluster(s[i:], ansi.GraphemeWidth)
+			if len(cluster) == 0 {
+				i++
+				pstate = parser.GroundState
 				continue
 			}
-
-			if curWidth > contentWidth && !ignoring {
+			if !ignoring && curWidth+w > contentWidth {
 				ignoring = true
 				ellipsisIdx = buf.Len()
 				buf.WriteString(tail)
 			}
-
-			if curWidth > contentWidth {
+			if ignoring {
+				i += len(cluster)
+				pstate = parser.GroundState
 				continue
 			}
-
 			buf.WriteString(cluster)
+			curWidth += w
+			i += len(cluster)
 			pstate = parser.GroundState
 			continue
 		}
 
 		switch action {
-		case parser.PrintAction:
-			if curWidth >= contentWidth && !ignoring {
-				ignoring = true
-				ellipsisIdx = buf.Len()
-				buf.WriteString(tail)
-			}
-
-			if ignoring {
-				i++
-				continue
-			}
-
-			curWidth++
-			fallthrough
 		case parser.ExecuteAction:
 			if ignoring {
 				i++
@@ -108,18 +96,12 @@ func truncateWithEllipsis(s string, width int, tail string) (string, int) {
 		}
 
 		pstate = state
-
-		if curWidth > contentWidth && !ignoring {
-			ignoring = true
-			ellipsisIdx = buf.Len()
-			buf.WriteString(tail)
-		}
 	}
 
 	return buf.String(), ellipsisIdx
 }
 
-func repairBareEllipsis(line, out string, width int, ellipsisIdx int) (string, int) {
+func repairBareEllipsis(out string, ellipsisIdx int) (string, int) {
 	if ellipsisIdx < 0 || ellipsisIdx+len(ellipsisRune) > len(out) {
 		return out, ellipsisIdx
 	}
@@ -127,18 +109,107 @@ func repairBareEllipsis(line, out string, width int, ellipsisIdx int) (string, i
 		return out, ellipsisIdx
 	}
 	prefix := out[:ellipsisIdx]
-	if !hasResetBareEllipsisAt(prefix) {
+	if activeSGRReplay(prefix) != "" {
 		return out, ellipsisIdx
 	}
-	style := activeSGRReplay(cellPrefix(line, width-1))
+	// The cut can fall on a wide grapheme that follows a reset. Replay the
+	// kept cells after that reset is removed; cellPrefix still had room for
+	// the reset and would report an empty style. An empty open/reset span
+	// has no visible cells and stays bare. A zero-width tail after the reset
+	// (OSC, joiner, variation selector) stays in place so it is not glued
+	// back onto the previous cell; the style is reopened in front of the ellipsis.
+	trimmed := trimTrailingSGRReset(prefix)
+	if ansi.StringWidth(trimmed) == 0 {
+		return out, ellipsisIdx
+	}
+	style := activeSGRReplay(trimmed)
+	suffix := out[ellipsisIdx+len(ellipsisRune):]
+	if style != "" {
+		out = trimmed + style + ellipsisRune + suffix
+		ellipsisIdx = len(trimmed) + len(style)
+		return out, ellipsisIdx
+	}
+	style = activeStyleBeforeTrail(prefix)
 	if style == "" {
 		return out, ellipsisIdx
 	}
-	prefix = trimTrailingSGRReset(prefix)
-	suffix := out[ellipsisIdx+len(ellipsisRune):]
 	out = prefix + style + ellipsisRune + suffix
 	ellipsisIdx = len(prefix) + len(style)
 	return out, ellipsisIdx
+}
+
+// activeStyleBeforeTrail is the SGR active on the last visible cells of
+// prefix. Trailing resets and other zero-width tails are not part of that style.
+func activeStyleBeforeTrail(prefix string) string {
+	kept, _ := splitTrailingZeroWidth(prefix)
+	kept = trimTrailingSGRReset(kept)
+	if ansi.StringWidth(kept) == 0 {
+		return ""
+	}
+	return activeSGRReplay(kept)
+}
+
+// splitTrailingZeroWidth returns the prefix through the last positive-width
+// grapheme and the zero-width tail after it.
+func splitTrailingZeroWidth(s string) (head, tail string) {
+	pstate := parser.GroundState
+	last := 0
+	for i := 0; i < len(s); {
+		state, action := parser.Table.Transition(pstate, s[i])
+		if action == parser.PrintAction || state == parser.Utf8State {
+			cluster, w := ansi.FirstGraphemeCluster(s[i:], ansi.GraphemeWidth)
+			if len(cluster) == 0 {
+				break
+			}
+			i += len(cluster)
+			if w > 0 {
+				last = i
+			}
+			pstate = parser.GroundState
+			continue
+		}
+		i++
+		pstate = state
+	}
+	return s[:last], s[last:]
+}
+
+// dropExtraVisibleEllipses keeps the truncation marker and removes any other
+// visible U+2026. An ellipsis inside an OSC payload is not visible and stays.
+func dropExtraVisibleEllipses(s string, ellipsisIdx int) (string, int) {
+	if ellipsisIdx < 0 {
+		return s, ellipsisIdx
+	}
+	type span struct{ start, end int }
+	var extra []span
+	pstate := parser.GroundState
+	for i := 0; i < len(s); {
+		state, action := parser.Table.Transition(pstate, s[i])
+		if action == parser.PrintAction || state == parser.Utf8State {
+			cluster, _ := ansi.FirstGraphemeCluster(s[i:], ansi.GraphemeWidth)
+			if len(cluster) == 0 {
+				break
+			}
+			// A variation selector can make U+2026 its own wide cluster. Drop that
+			// whole cluster; keeping only the base rune would split it.
+			if strings.Contains(cluster, ellipsisRune) && i != ellipsisIdx {
+				extra = append(extra, span{i, i + len(cluster)})
+			}
+			i += len(cluster)
+			pstate = parser.GroundState
+			continue
+		}
+		i++
+		pstate = state
+	}
+	for k := len(extra) - 1; k >= 0; k-- {
+		sp := extra[k]
+		s = s[:sp.start] + s[sp.end:]
+		if ellipsisIdx > sp.start {
+			ellipsisIdx -= sp.end - sp.start
+		}
+	}
+	return s, ellipsisIdx
 }
 
 func padBeforeEllipsis(out, line string, width int, ellipsisIdx int) (string, int) {

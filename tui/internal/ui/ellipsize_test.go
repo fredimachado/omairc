@@ -164,6 +164,143 @@ func TestEllipsizeStyledKeepsEllipsisInStyle(t *testing.T) {
 	}
 }
 
+func TestEllipsizeWideGraphemeAfterResetKeepsStyle(t *testing.T) {
+	line := lipgloss.NewStyle().Foreground(lipgloss.Color("#ff0000")).Render("AB") + "😀hello"
+	got := ellipsizeLine(line, 4)
+	if lipgloss.Width(got) != 4 {
+		t.Fatalf("width %d, want 4: %q", lipgloss.Width(got), got)
+	}
+	if strings.Count(got, ellipsisRune) != 1 {
+		t.Fatalf("want one visible ellipsis, got %q", got)
+	}
+	ellipsis := strings.LastIndex(got, ellipsisRune)
+	before := strings.TrimRight(got[:ellipsis], " ")
+	if !strings.HasSuffix(before, "\x1b[38;2;255;0;0m") {
+		t.Fatalf("ellipsis not inside truecolor SGR: %q", got)
+	}
+	if strings.HasSuffix(before, "\x1b[m") || strings.HasSuffix(before, "\x1b[0m") {
+		t.Fatalf("ellipsis sits after reset: %q", got)
+	}
+
+	empty := "\x1b[38;2;255;0;0m\x1b[m😀hello"
+	got = ellipsizeLine(empty, 2)
+	if lipgloss.Width(got) != 2 {
+		t.Fatalf("empty span width %d, want 2: %q", lipgloss.Width(got), got)
+	}
+	if strings.Count(got, ellipsisRune) != 1 {
+		t.Fatalf("empty span want one ellipsis, got %q", got)
+	}
+	if strings.Count(got, "\x1b[38;2;255;0;0m") != 1 {
+		t.Fatalf("empty span reopened truecolor: %q", got)
+	}
+	ellipsis = strings.LastIndex(got, ellipsisRune)
+	before = strings.TrimRight(got[:ellipsis], " ")
+	if !strings.HasSuffix(before, "\x1b[m") && !strings.HasSuffix(before, "\x1b[0m") {
+		t.Fatalf("empty span should stay bare: %q", got)
+	}
+}
+
+func TestEllipsizeZeroWidthTailAfterResetKeepsStyle(t *testing.T) {
+	osc := "\x1b[38;2;255;0;0mAB\x1b[m\x1b]8;;https://example.com/trail…more\x1b\\😀hello"
+	done := make(chan string, 1)
+	go func() {
+		done <- ellipsizeLine(osc, 4)
+	}()
+	var got string
+	select {
+	case got = <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("ellipsizeLine hung on a reset followed by an OSC URL")
+	}
+	if lipgloss.Width(got) != 4 {
+		t.Fatalf("OSC tail width %d, want 4: %q", lipgloss.Width(got), got)
+	}
+	if !strings.Contains(got, "https://example.com/trail…more") {
+		t.Fatalf("OSC URL dropped: %q", got)
+	}
+	ellipsis := strings.LastIndex(got, ellipsisRune)
+	before := strings.TrimRight(got[:ellipsis], " ")
+	if !strings.HasSuffix(before, "\x1b[38;2;255;0;0m") {
+		t.Fatalf("OSC tail left ellipsis outside truecolor: %q", got)
+	}
+
+	zwsp := "\x1b[31mAB\x1b[0m\u200b😀hello"
+	got = ellipsizeLine(zwsp, 4)
+	if lipgloss.Width(got) != 4 {
+		t.Fatalf("ZWSP tail width %d, want 4: %q", lipgloss.Width(got), got)
+	}
+	if strings.Count(got, ellipsisRune) != 1 {
+		t.Fatalf("ZWSP tail want one ellipsis, got %q", got)
+	}
+	ellipsis = strings.LastIndex(got, ellipsisRune)
+	before = strings.TrimRight(got[:ellipsis], " ")
+	if !strings.HasSuffix(before, "\x1b[31m") {
+		t.Fatalf("ZWSP tail left ellipsis outside SGR: %q", got)
+	}
+
+	vs := lipgloss.NewStyle().Foreground(lipgloss.Color("#ff0000")).Render("1") + "\uFE0FXXXX"
+	got = ellipsizeLine(vs, 2)
+	if lipgloss.Width(got) != 2 {
+		t.Fatalf("variation selector width %d, want 2: %q", lipgloss.Width(got), got)
+	}
+	if strings.Count(got, ellipsisRune) != 1 {
+		t.Fatalf("variation selector want one ellipsis, got %q", got)
+	}
+	if !strings.Contains(got, "\uFE0F") {
+		t.Fatalf("variation selector dropped: %q", got)
+	}
+	ellipsis = strings.LastIndex(got, ellipsisRune)
+	before = strings.TrimRight(got[:ellipsis], " ")
+	if !strings.HasSuffix(before, "\x1b[38;2;255;0;0m") {
+		t.Fatalf("variation selector left ellipsis outside truecolor: %q", got)
+	}
+}
+
+func TestEllipsizeSourceEllipsisStaysSingle(t *testing.T) {
+	got := ellipsizeLine("…hello", 2)
+	if lipgloss.Width(got) != 2 {
+		t.Fatalf("width %d, want 2: %q", lipgloss.Width(got), got)
+	}
+	if strings.Count(got, ellipsisRune) != 1 || !strings.HasSuffix(got, ellipsisRune) {
+		t.Fatalf("want one trailing ellipsis, got %q", got)
+	}
+
+	got = ellipsizeLine("a…bXXXX", 4)
+	if lipgloss.Width(got) != 4 {
+		t.Fatalf("width %d, want 4: %q", lipgloss.Width(got), got)
+	}
+	if strings.Count(got, ellipsisRune) != 1 || !strings.HasSuffix(got, ellipsisRune) {
+		t.Fatalf("want one trailing ellipsis, got %q", got)
+	}
+
+	got = ellipsizeLine("hello…world", 7)
+	if lipgloss.Width(got) != 7 {
+		t.Fatalf("width %d, want 7: %q", lipgloss.Width(got), got)
+	}
+	if strings.Count(got, ellipsisRune) != 1 || !strings.HasSuffix(got, ellipsisRune) {
+		t.Fatalf("want one trailing ellipsis, got %q", got)
+	}
+
+	if got := ellipsizeLine("…hi", 3); got != "…hi" {
+		t.Fatalf("fitting ellipsis changed: %q", got)
+	}
+
+	if got := ellipsizeLine("…\uFE0F", 2); got != "…\uFE0F" {
+		t.Fatalf("fitting VS ellipsis changed: %q", got)
+	}
+
+	got = ellipsizeLine("…\uFE0Fhello", 3)
+	if lipgloss.Width(got) != 3 {
+		t.Fatalf("VS ellipsis width %d, want 3: %q", lipgloss.Width(got), got)
+	}
+	if strings.Count(got, ellipsisRune) != 1 || !strings.HasSuffix(got, ellipsisRune) {
+		t.Fatalf("VS ellipsis want one trailing marker, got %q", got)
+	}
+	if strings.Contains(got, "\uFE0F") {
+		t.Fatalf("VS ellipsis cluster split or kept: %q", got)
+	}
+}
+
 func TestEllipsizeWideGlyphDoesNotSplit(t *testing.T) {
 	const width = 4
 	line := "中文nick"
@@ -177,6 +314,47 @@ func TestEllipsizeWideGlyphDoesNotSplit(t *testing.T) {
 	}
 	if !strings.HasSuffix(plain, ellipsisRune) {
 		t.Fatalf("missing ellipsis: %q", plain)
+	}
+}
+
+func TestEllipsizeASCIILeadWideClusterStaysInBudget(t *testing.T) {
+	for _, lead := range []string{"1\uFE0F", "1️⃣", "#\uFE0F\u20E3"} {
+		line := lead + "XXXX"
+		got := ellipsizeLine(line, 2)
+		if lipgloss.Width(got) != 2 {
+			t.Fatalf("%q width %d, want 2: %q", line, lipgloss.Width(got), got)
+		}
+		if strings.Count(got, ellipsisRune) != 1 {
+			t.Fatalf("%q want one ellipsis, got %q", line, got)
+		}
+		if strings.Contains(got, lead) || strings.Contains(got, lead[:1]) {
+			t.Fatalf("%q split wide cluster: %q", line, got)
+		}
+		if got := ellipsizeLine(lead, 2); got != lead {
+			t.Fatalf("fitting cluster changed: got %q want %q", got, lead)
+		}
+	}
+
+	got := ellipsizeLine("1\uFE0FXXXX", 3)
+	if lipgloss.Width(got) != 3 {
+		t.Fatalf("fitting VS width %d, want 3: %q", lipgloss.Width(got), got)
+	}
+	if strings.Count(got, ellipsisRune) != 1 {
+		t.Fatalf("fitting VS want one ellipsis, got %q", got)
+	}
+	if !strings.Contains(got, "1\uFE0F") || strings.Contains(got, "X") {
+		t.Fatalf("fitting VS cluster not kept whole: %q", got)
+	}
+
+	got = ellipsizeLine("1️⃣XXXX", 3)
+	if lipgloss.Width(got) != 3 {
+		t.Fatalf("fitting keycap width %d, want 3: %q", lipgloss.Width(got), got)
+	}
+	if strings.Count(got, ellipsisRune) != 1 {
+		t.Fatalf("fitting keycap want one ellipsis, got %q", got)
+	}
+	if !strings.Contains(got, "1️⃣") || strings.Contains(got, "X") {
+		t.Fatalf("fitting keycap not kept whole: %q", got)
 	}
 }
 
