@@ -104,35 +104,89 @@ func (m *Model) footerView() string {
 	bindings := footerEnabledBindings(footerKeyMap{m: m}.ShortHelp())
 	versionLabel := m.styles.FooterHint.Render(version.Value)
 
-	tryAssemble := func(versionOn bool, status footerStatusLevel, degrade bool) (string, bool) {
-		return m.assembleFooterLine(h, bindings, versionLabel, versionOn, status, width, degrade)
+	assemble := func(versionOn bool, status footerStatusLevel, right string) (string, bool) {
+		return m.assembleFooterLine(versionLabel, versionOn, status, right, width)
 	}
-	if line, ok := tryAssemble(true, footerStatusFull, false); ok {
-		return line
-	}
-	if line, ok := tryAssemble(false, footerStatusFull, false); ok {
-		return line
-	}
-	if line, ok := tryAssemble(true, footerStatusFull, true); ok {
-		return line
-	}
-	if line, ok := tryAssemble(false, footerStatusFull, true); ok {
-		return line
-	}
-	for statusLevel := footerStatusEllipsisNetwork; statusLevel <= footerStatusMarkOnly; statusLevel++ {
-		if line, ok := tryAssemble(false, statusLevel, false); ok {
-			return line
+
+	rightBudgetFor := func(versionOn bool, status footerStatusLevel) int {
+		versionW := 0
+		if versionOn {
+			versionW = 1 + lipgloss.Width(versionLabel)
 		}
-		if line, ok := tryAssemble(false, statusLevel, true); ok {
-			return line
+		minLeft := lipgloss.Width(m.footerStatusAt(footerStatusMarkOnly, 0))
+		switch status {
+		case footerStatusFull:
+			minLeft = lipgloss.Width(m.footerStatusAt(footerStatusFull, 0))
+		case footerStatusEllipsisNetwork:
+			minLeft = lipgloss.Width(m.footerStatusAt(footerStatusStateOnly, 0))
+		case footerStatusStateOnly:
+			minLeft = lipgloss.Width(m.footerStatusAt(footerStatusStateOnly, 0))
 		}
+		budget := width - versionW - minLeft - 1
+		if budget < 1 {
+			return 1
+		}
+		return budget
 	}
+
+	tryHelpSpend := func(versionOn bool, statusLimit footerStatusLevel) (string, bool) {
+		prefix := bindings[:len(bindings)-1]
+		dropStart := 0
+		dropEnd := len(prefix)
+		shortModes := []bool{false, true}
+		statusStart := footerStatusFull
+		if versionOn {
+			dropEnd = 0
+			shortModes = []bool{false}
+		}
+		for drop := dropStart; drop <= dropEnd; drop++ {
+			for _, shortLast := range shortModes {
+				if shortLast {
+					kept := prefix[:len(prefix)-drop]
+					if len(kept) == 0 || len(footerBindingSteps(kept[len(kept)-1])) < 2 {
+						continue
+					}
+				}
+				for status := statusStart; status <= statusLimit; status++ {
+					budget := rightBudgetFor(versionOn, status)
+					right := renderFooterHelpDropped(h, bindings, drop, shortLast, budget)
+					if right == "" {
+						continue
+					}
+					if line, ok := assemble(versionOn, status, right); ok {
+						if !versionOn && drop == 0 && !shortLast && width > 80 {
+							if withVersion, ok := assemble(true, status, right); ok {
+								return withVersion, true
+							}
+						}
+						return line, true
+					}
+				}
+			}
+		}
+		return "", false
+	}
+
+	if line, ok := tryHelpSpend(true, footerStatusFull); ok {
+		return line
+	}
+	if line, ok := tryHelpSpend(false, footerStatusMarkOnly); ok {
+		return line
+	}
+
 	left := m.footerStatusAt(footerStatusMarkOnly, 0)
-	right := fitFooterHelp(h, bindings, width-lipgloss.Width(left))
-	if line, ok := padFooterLine(left, right, "", width); ok {
+	keyBudget := width - lipgloss.Width(left) - 1
+	key := renderHelpKey(h, bindings[len(bindings)-1])
+	if lipgloss.Width(key) > keyBudget {
+		key = truncateLine(key, keyBudget)
+	}
+	if line, ok := assemble(false, footerStatusMarkOnly, key); ok {
 		return line
 	}
-	return truncateLine(left+right, width)
+	if line, ok := padFooterLine(left, key, "", width); ok {
+		return line
+	}
+	return truncateLine(left+key, width)
 }
 
 func footerEnabledBindings(bindings []key.Binding) []key.Binding {
@@ -158,88 +212,73 @@ func padFooterLine(left, right, versionPart string, width int) (string, bool) {
 }
 
 func (m *Model) assembleFooterLine(
-	h help.Model,
-	bindings []key.Binding,
 	versionLabel string,
 	versionOn bool,
 	statusLevel footerStatusLevel,
+	right string,
 	width int,
-	allowHintDegrade bool,
 ) (string, bool) {
-	tailKey := renderHelpKey(h, footerShortcutBinding)
-	minRight := lipgloss.Width(tailKey)
-	versionReserve := 0
-	if versionOn {
-		versionReserve = lipgloss.Width(versionLabel) + 1
-	}
-	textBudget := width - 1 - minRight - versionReserve
-	if textBudget < 1 {
-		textBudget = 1
-	}
-	left := m.footerStatusAt(statusLevel, textBudget)
-	leftW := lipgloss.Width(left)
-
-	rightBudget := width - leftW - 1 - versionReserve
-	if rightBudget < lipgloss.Width(tailKey) {
+	if right == "" {
 		return "", false
 	}
-	right := renderFooterHelpFull(h, bindings, rightBudget)
-	if right == "" {
-		if !allowHintDegrade {
-			return "", false
-		}
-		right = fitFooterHelp(h, bindings, rightBudget)
-		if right == "" {
-			return "", false
-		}
-	}
-
 	versionPart := ""
+	versionW := 0
 	if versionOn {
-		if leftW+1+lipgloss.Width(right)+1+lipgloss.Width(versionLabel) > width {
+		versionPart = " " + versionLabel
+		versionW = lipgloss.Width(versionPart)
+	}
+	rightW := lipgloss.Width(right)
+	textBudget := width - versionW - rightW - 1
+	if textBudget < 1 {
+		return "", false
+	}
+	var left string
+	if statusLevel == footerStatusEllipsisNetwork {
+		left = m.footerStatusAt(statusLevel, textBudget)
+	} else {
+		left = m.footerStatusAt(statusLevel, 0)
+		if lipgloss.Width(left) > textBudget {
 			return "", false
 		}
-		versionPart = " " + versionLabel
 	}
 	return padFooterLine(left, right, versionPart, width)
 }
 
-func renderFooterHelpFull(h help.Model, bindings []key.Binding, budget int) string {
+func renderFooterHelpDropped(h help.Model, bindings []key.Binding, drop int, shortLast bool, budget int) string {
 	if len(bindings) == 0 || budget <= 0 {
 		return ""
 	}
 	tail := bindings[len(bindings)-1]
 	prefix := bindings[:len(bindings)-1]
+	if drop > len(prefix) {
+		return ""
+	}
+	kept := prefix[:len(prefix)-drop]
 	tailFull := renderHelpItem(h, tail)
+	if lipgloss.Width(tailFull) > budget {
+		return ""
+	}
 	sep := h.Styles.ShortSeparator.Inline(true).Render(h.ShortSeparator)
-	sepWidth := lipgloss.Width(sep)
-	steps := make([]int, len(prefix))
-	tailW := lipgloss.Width(tailFull)
-	if tailW > budget {
-		return ""
+	steps := make([]int, len(kept))
+	if shortLast && len(kept) > 0 {
+		steps[len(kept)-1] = 1
 	}
-	prefixBudget := budget - tailW
-	if len(prefix) > 0 {
-		prefixBudget -= sepWidth
+	right := tailFull
+	if len(kept) > 0 {
+		right = joinHelpWithSteps(h, kept, steps, sep) + sep + tailFull
 	}
-	if prefixBudget < 0 {
-		if len(prefix) == 0 {
-			return tailFull
-		}
-		return ""
-	}
-	candidate := tailFull
-	if len(prefix) > 0 {
-		candidate = joinHelpWithSteps(h, prefix, steps, sep) + sep + tailFull
-	}
-	if lipgloss.Width(candidate) <= budget {
-		return candidate
+	if lipgloss.Width(right) <= budget {
+		return right
 	}
 	return ""
 }
 
+func renderFooterHelpFull(h help.Model, bindings []key.Binding, budget int) string {
+	return renderFooterHelpDropped(h, bindings, 0, false, budget)
+}
+
 // fitFooterHelp renders contextual help within budget, keeping the Ctrl+/
-// shortcuts tail whole or, when necessary, the Ctrl+/ key alone.
+// shortcuts tail whole and dropping or shortening earlier hints from the end.
 func fitFooterHelp(h help.Model, bindings []key.Binding, budget int) string {
 	if len(bindings) == 0 || budget <= 0 {
 		return ""
@@ -247,60 +286,36 @@ func fitFooterHelp(h help.Model, bindings []key.Binding, budget int) string {
 	tail := bindings[len(bindings)-1]
 	prefix := bindings[:len(bindings)-1]
 	tailFull := renderHelpItem(h, tail)
-	tailKey := renderHelpKey(h, tail)
 	sep := h.Styles.ShortSeparator.Inline(true).Render(h.ShortSeparator)
-	sepWidth := lipgloss.Width(sep)
 
-	tryTail := func(tailRender string) string {
-		tailW := lipgloss.Width(tailRender)
-		if tailW > budget {
-			return ""
-		}
-		prefixBudget := budget - tailW
-		if len(prefix) > 0 {
-			prefixBudget -= sepWidth
-		}
-		if prefixBudget < 0 {
-			if len(prefix) == 0 {
-				return tailRender
-			}
-			return ""
-		}
-		for drop := 0; drop <= len(prefix); drop++ {
-			kept := prefix[:len(prefix)-drop]
-			for _, shortLast := range []bool{false, true} {
-				if shortLast && len(kept) == 0 {
-					continue
-				}
-				steps := make([]int, len(kept))
-				if shortLast {
-					last := len(kept) - 1
-					if len(footerBindingSteps(kept[last])) < 2 {
-						continue
-					}
-					steps[last] = 1
-				}
-				right := tailRender
-				if len(kept) > 0 {
-					right = joinHelpWithSteps(h, kept, steps, sep) + sep + tailRender
-				}
-				if lipgloss.Width(right) <= budget {
-					return right
-				}
-			}
-		}
+	tailW := lipgloss.Width(tailFull)
+	if tailW > budget {
 		return ""
 	}
-	if got := tryTail(tailFull); got != "" {
-		return got
+	for drop := 0; drop <= len(prefix); drop++ {
+		kept := prefix[:len(prefix)-drop]
+		for _, shortLast := range []bool{false, true} {
+			if shortLast && len(kept) == 0 {
+				continue
+			}
+			steps := make([]int, len(kept))
+			if shortLast {
+				last := len(kept) - 1
+				if len(footerBindingSteps(kept[last])) < 2 {
+					continue
+				}
+				steps[last] = 1
+			}
+			right := tailFull
+			if len(kept) > 0 {
+				right = joinHelpWithSteps(h, kept, steps, sep) + sep + tailFull
+			}
+			if lipgloss.Width(right) <= budget {
+				return right
+			}
+		}
 	}
-	if got := tryTail(tailKey); got != "" {
-		return got
-	}
-	if lipgloss.Width(tailKey) <= budget {
-		return tailKey
-	}
-	return tailKey
+	return ""
 }
 
 func joinHelpWithSteps(h help.Model, bindings []key.Binding, steps []int, sep string) string {
