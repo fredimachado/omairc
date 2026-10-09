@@ -76,34 +76,108 @@ func shortcutsViewScrollHint(m *Model) string {
 	return ""
 }
 
-func shortcutsSheetFitsWithoutScroll(m *Model) bool {
+// balancedShortcutPartitionFits reports whether some whole-group two-column
+// partition renders every action inside the row budget. Each column is judged
+// on its own lines, so a wrapped label is not split by the other column.
+func balancedShortcutPartitionFits(m *Model) bool {
 	inner := m.shortcutsInnerWidth()
-	body := m.shortcutsSheetBody(inner)
 	budget := m.overlayCardRowBudget() - shortcutsHeaderRows
-	return len(body) <= budget && m.shortcutsBodyShowsAllActions(body)
+	if shortcutsColumnCount(inner, 1) != 2 {
+		layout := m.shortcutsLayout(inner)
+		return len(layout.columns) > 1 && len(layout.body) <= budget && shortcutsBodyShowsAllActions(layout.columns)
+	}
+	available := inner - shortcutsColumnGap
+	for _, assignment := range collectShortcutAssignments(shortcutGroups, 2) {
+		ordered := sortShortcutAssignmentColumns(assignment)
+		mins := []int{
+			shortcutsStackMinInnerWrap(ordered[0]),
+			shortcutsStackMinInnerWrap(ordered[1]),
+		}
+		if mins[0] > available-mins[1] {
+			continue
+		}
+		for left := mins[0]; left <= available-mins[1]; left++ {
+			widths := []int{left, available - left}
+			fitsWidth := true
+			stacks := make([][]string, len(ordered))
+			for index, groups := range ordered {
+				stacks[index] = m.shortcutsGroupsLines(widths[index], groups, false, true)
+				plain := shortcutsPlainFold(shortcutsStripAnsi(strings.Join(stacks[index], "\n")))
+				for _, group := range groups {
+					for _, row := range group.rows {
+						if !strings.Contains(plain, displayShortcutAction(row.action)) {
+							fitsWidth = false
+						}
+					}
+				}
+			}
+			if !fitsWidth {
+				continue
+			}
+			body := joinShortcutColumns(stacks, widths, shortcutsColumnGap, inner)
+			if len(body) <= budget {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func allShortcutActionsReachableInView(m *Model) bool {
 	inner := m.shortcutsInnerWidth()
-	body := m.shortcutsSheetBody(inner)
-	if !m.shortcutsBodyShowsAllActions(body) {
+	layout := m.shortcutsLayout(inner)
+	if !shortcutsBodyShowsAllActions(layout.columns) {
 		return false
 	}
 	_, visible, maxOffset := m.shortcutsScrollBounds(inner)
 	seen := make(map[string]bool)
 	for offset := 0; offset <= maxOffset; offset++ {
-		end := offset + visible
-		if end > len(body) {
-			end = len(body)
-		}
-		plain := shortcutsPlainFold(shortcutsStripAnsi(strings.Join(body[offset:end], "\n")))
-		for _, action := range shortcutActions() {
-			if strings.Contains(plain, action) {
-				seen[action] = true
+		for _, column := range layout.columns {
+			start := offset
+			if start > len(column.lines) {
+				start = len(column.lines)
+			}
+			end := offset + visible
+			if end > len(column.lines) {
+				end = len(column.lines)
+			}
+			plain := shortcutsPlainFold(shortcutsStripAnsi(strings.Join(column.lines[start:end], "\n")))
+			for _, group := range column.groups {
+				for _, row := range group.rows {
+					if strings.Contains(plain, row.action) {
+						seen[row.action] = true
+					}
+				}
 			}
 		}
 	}
 	return len(seen) == len(shortcutActions())
+}
+
+// viewShowsEveryShortcutAction reports whether scroll 0 paints every action.
+// Column lines are matched in the view so a wrapped label still counts when
+// the other column sits between its lines. quit is required in the plain view.
+func viewShowsEveryShortcutAction(m *Model) bool {
+	plain := shortcutsViewPlain(m)
+	if !strings.Contains(plain, "quit") {
+		return false
+	}
+	layout := m.shortcutsLayout(m.shortcutsInnerWidth())
+	if !shortcutsBodyShowsAllActions(layout.columns) {
+		return false
+	}
+	for _, column := range layout.columns {
+		for _, line := range column.lines {
+			text := strings.TrimSpace(shortcutsStripAnsi(line))
+			if text == "" {
+				continue
+			}
+			if !strings.Contains(plain, text) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func assertNoWrappedActionPrefixDuplicates(t *testing.T, plain string) {
@@ -136,24 +210,29 @@ func TestShortcutsSheetFitsDefaultSize(t *testing.T) {
 	if !shortcutsViewClosedBottom(m) {
 		t.Fatalf("shortcuts sheet must close its bottom border in View() at 118x30:\n%s", shortcutsViewPlain(m))
 	}
-	if !allShortcutActionsReachableInView(m) {
-		t.Fatalf("not every shortcut action is reachable at 118x30")
+	layout := m.shortcutsLayout(m.shortcutsInnerWidth())
+	for _, column := range layout.columns {
+		assertNoWrappedActionPrefixDuplicates(t, strings.Join(column.lines, "\n"))
 	}
-	assertNoWrappedActionPrefixDuplicates(t, shortcutsViewPlain(m))
 
 	inner := m.shortcutsInnerWidth()
 	total, visible, maxOffset := m.shortcutsScrollBounds(inner)
-	fits := shortcutsSheetFitsWithoutScroll(m)
-	if fits {
-		if maxOffset != 0 || total != visible {
-			t.Fatalf("118x30 shortcuts scroll bounds = total %d visible %d max %d, want no scrolling when body fits", total, visible, maxOffset)
+	if balancedShortcutPartitionFits(m) {
+		if m.shortcutsScroll != 0 || maxOffset != 0 || total != visible {
+			t.Fatalf("118x30 shortcuts scroll = %d bounds total %d visible %d max %d, want scroll 0 when a balanced partition fits", m.shortcutsScroll, total, visible, maxOffset)
+		}
+		if !viewShowsEveryShortcutAction(m) {
+			t.Fatalf("View() at scroll 0 is missing a shortcut action, including quit:\n%s", shortcutsViewPlain(m))
 		}
 		if hint := shortcutsViewScrollHint(m); hint != "" {
-			t.Fatalf("scroll hint = %q, want none when body fits at 118x30", hint)
+			t.Fatalf("scroll hint = %q, want none when a balanced partition fits at 118x30", hint)
 		}
 	} else {
 		if maxOffset < 1 {
-			t.Fatalf("118x30 shortcuts scroll bounds = total %d visible %d max %d, want scrolling when body does not fit", total, visible, maxOffset)
+			t.Fatalf("118x30 shortcuts scroll bounds = total %d visible %d max %d, want scrolling when no balanced partition fits", total, visible, maxOffset)
+		}
+		if !allShortcutActionsReachableInView(m) {
+			t.Fatalf("not every shortcut action is reachable at 118x30")
 		}
 	}
 }
