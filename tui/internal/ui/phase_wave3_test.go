@@ -43,7 +43,7 @@ func TestComposerCursorRowMatchesFrame(t *testing.T) {
 	// A slash-completion menu floats over the body instead of stacking above the
 	// composer, so it no longer crowds out the footer; the composer keeps its
 	// row above the footer and the grid stays exactly the window height.
-	short := resizeModel(t, seededModel(t), defaultWidth, minHeight)
+	short := resizeModel(t, seededModel(t), defaultWidth, TerminalMinHeight())
 	short.slash.probe = controller.SlashProbe{Open: true, Needle: "/", Hits: []controller.SlashHit{
 		{Label: "/a", Usage: "one"},
 		{Label: "/b", Usage: "two"},
@@ -61,10 +61,12 @@ func TestComposerCursorRowMatchesFrame(t *testing.T) {
 		t.Fatalf("cramped frame = %d rows, want the %d-row window", got, want)
 	}
 
-	// The tiny-terminal path renders only the composer, so its row is 0.
-	tiny := resizeModel(t, seededModel(t), minWidth-1, minHeight-1)
-	if got := tiny.View().Cursor; got == nil || got.Position.Y != 0 {
-		t.Fatalf("tiny-terminal cursor = %v, want row 0", got)
+	tiny := resizeModel(t, seededModel(t), TerminalMinWidth()-1, TerminalMinHeight()-1)
+	if tiny.View().Cursor != nil {
+		t.Fatal("too-small notice must hide the composer cursor")
+	}
+	if !strings.Contains(ansiPattern.ReplaceAllString(tiny.View().Content, ""), "Terminal too small") {
+		t.Fatal("below-minimum size must show the too-small notice")
 	}
 }
 

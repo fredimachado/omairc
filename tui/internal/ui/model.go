@@ -738,7 +738,11 @@ func (m *Model) View() tea.View {
 	// returns nil while the composer is blurred (an overlay or modal owns the
 	// keys), so the cursor never floats over a sheet. cursorRow keeps that
 	// row inside the terminal when the layout math would land past the last line.
-	v.Cursor = m.composerCursor(m.cursorRow())
+	if m.terminalTooSmall() {
+		v.Cursor = nil
+	} else {
+		v.Cursor = m.composerCursor(m.cursorRow())
+	}
 	return v
 }
 
@@ -766,8 +770,8 @@ func (m *Model) render() string {
 	if m == nil || m.ctrl == nil {
 		return "Omairc"
 	}
-	if m.width < minWidth || m.height < minHeight {
-		return m.composerView()
+	if m.terminalTooSmall() {
+		return m.terminalTooSmallView()
 	}
 	bodyHeight := m.bodyHeight()
 
@@ -900,7 +904,7 @@ func (m *Model) transcriptRowsHeight() int {
 // so it adds no rows. The tiny-terminal path renders only the bare single-row
 // composer, so its row is 0.
 func (m *Model) composerRow() int {
-	if m == nil || m.width < minWidth || m.height < minHeight {
+	if m == nil || m.terminalTooSmall() {
 		return 0
 	}
 	return m.transcriptHeight() + composerFrameRows
@@ -1273,7 +1277,7 @@ func (m *Model) transcriptLeft() int {
 // real cursor by it. composerView indents by composerInset instead, because it
 // renders inside the column rather than at the frame edge.
 func (m *Model) composerLeft() int {
-	if m.width < minWidth || m.height < minHeight {
+	if m.terminalTooSmall() {
 		return composerInset
 	}
 	return m.transcriptLeft() + composerInset
@@ -1286,7 +1290,7 @@ func (m *Model) composerLeft() int {
 // window-based width.
 func (m *Model) composerWidth() int {
 	width := m.width - 2*composerInset
-	if m.width >= minWidth && m.height >= minHeight {
+	if !m.terminalTooSmall() {
 		width = m.transcriptWidth() - 2*composerInset
 	}
 	if width < 1 {
@@ -1299,7 +1303,7 @@ func (m *Model) composerWidth() int {
 // left edge, so the menu opens over the transcript column and never covers the
 // sidebar or blanks it while it is open.
 func (m *Model) slashMenuLeft() int {
-	if m.width < minWidth || m.height < minHeight {
+	if m.terminalTooSmall() {
 		return 0
 	}
 	return m.composerLeft()

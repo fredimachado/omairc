@@ -196,7 +196,7 @@ func TestSlashMenuDropsFrameWhenCramped(t *testing.T) {
 // every hit shows only what fits above the composer block and one body row,
 // instead of overflowing the frame and scrolling its top off-screen.
 func TestSlashMenuCapsRowsToTheGrid(t *testing.T) {
-	m := resizeModel(t, seededModel(t), defaultWidth, minHeight)
+	m := resizeModel(t, seededModel(t), defaultWidth, TerminalMinHeight())
 	hits := make([]controller.SlashHit, 0, 12)
 	for _, label := range []string{"/a", "/b", "/c", "/d", "/e", "/f"} {
 		hits = append(hits, controller.SlashHit{Label: label, Usage: "usage"})

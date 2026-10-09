@@ -1,0 +1,129 @@
+package ui
+
+import (
+	"fmt"
+	"strings"
+	"testing"
+
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+)
+
+func TestTerminalTooSmallNotice(t *testing.T) {
+	minW, minH := TerminalMinWidth(), TerminalMinHeight()
+	cases := []struct {
+		name   string
+		width  int
+		height int
+	}{
+		{"30x8", 30, 8},
+		{"under floor", minW - 1, minH - 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := resizeModel(t, seededModel(t), tc.width, tc.height)
+			view := m.View()
+			plain := ansiPattern.ReplaceAllString(view.Content, "")
+			for _, want := range []string{
+				"Terminal too small",
+				fmtSize(tc.width, tc.height),
+				fmt.Sprintf("Minimum %dx%d", minW, minH),
+			} {
+				if !strings.Contains(plain, want) {
+					t.Fatalf("notice missing %q:\n%s", want, plain)
+				}
+			}
+			for _, absent := range []string{"irc.example · fred", "Shortcuts"} {
+				if strings.Contains(plain, absent) {
+					t.Fatalf("shell chrome %q in notice frame:\n%s", absent, plain)
+				}
+			}
+			lines := strings.Split(view.Content, "\n")
+			if len(lines) != tc.height {
+				t.Fatalf("frame height = %d, want %d", len(lines), tc.height)
+			}
+			for index, line := range lines {
+				if got := lipgloss.Width(line); got != tc.width {
+					t.Fatalf("row %d width = %d, want %d", index, got, tc.width)
+				}
+			}
+			if view.WindowTitle != Title(m.ctrl, nil) {
+				t.Fatalf("WindowTitle = %q, want normal title %q", view.WindowTitle, Title(m.ctrl, nil))
+			}
+			if view.Cursor != nil {
+				t.Fatalf("Cursor = %v, want nil on the notice", view.Cursor)
+			}
+		})
+	}
+}
+
+func fmtSize(width, height int) string {
+	return fmt.Sprintf("%dx%d", width, height)
+}
+
+func TestTerminalAtMinimumShowsShell(t *testing.T) {
+	m := resizeModel(t, seededModel(t), TerminalMinWidth(), TerminalMinHeight())
+	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
+	if strings.Contains(plain, "Terminal too small") {
+		t.Fatalf("minimum size must render the shell:\n%s", plain)
+	}
+	if !strings.Contains(plain, "#omarchy") {
+		t.Fatalf("shell missing seeded channel at minimum:\n%s", plain)
+	}
+}
+
+func TestTerminalAboveMinimumShowsShell(t *testing.T) {
+	m := seededModel(t)
+	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
+	if strings.Contains(plain, "Terminal too small") {
+		t.Fatalf("default size must render the shell:\n%s", plain)
+	}
+}
+
+func TestTerminalResizeBelowAndBackRestoresFrame(t *testing.T) {
+	m := seededModel(t)
+	m.composer.SetValue("draft stays")
+	m.transcriptScroll = 3
+	before := m.ctrl.SelectedConversationID()
+	m.openJump()
+	beforeView := m.View().Content
+
+	shrunk := resizeModel(t, m, 30, 8)
+	if shrunk.composer.Value() != "draft stays" {
+		t.Fatalf("draft after shrink = %q, want draft stays", shrunk.composer.Value())
+	}
+	if shrunk.transcriptScroll != 3 {
+		t.Fatalf("scroll after shrink = %d, want 3", shrunk.transcriptScroll)
+	}
+	if !shrunk.jump.open {
+		t.Fatal("jump overlay must stay open in state while the notice shows")
+	}
+
+	restored := resizeModel(t, shrunk, 118, 30)
+	if restored.composer.Value() != "draft stays" {
+		t.Fatalf("draft after restore = %q, want draft stays", restored.composer.Value())
+	}
+	if restored.transcriptScroll != 3 {
+		t.Fatalf("scroll after restore = %d, want 3", restored.transcriptScroll)
+	}
+	if restored.ctrl.SelectedConversationID() != before {
+		t.Fatalf("conversation after restore = %q, want %q", restored.ctrl.SelectedConversationID(), before)
+	}
+	if !restored.jump.open {
+		t.Fatal("jump overlay must return after growing past the minimum")
+	}
+	if restored.View().Content != beforeView {
+		t.Fatalf("restored frame differs from before shrink")
+	}
+}
+
+func TestCtrlQAtTooSmallSizeQuits(t *testing.T) {
+	m := resizeModel(t, seededModel(t), 30, 8)
+	_, cmd := m.Update(ctrlKey('q'))
+	if cmd == nil {
+		t.Fatal("ctrl+q cmd = nil, want a quit command")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatalf("ctrl+q message = %T, want tea.QuitMsg", cmd())
+	}
+}

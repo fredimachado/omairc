@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The terminal client shows a calm notice instead of a broken layout when the
+  terminal is below the minimum size.
+
 ### Fixed
 
 - The terminal footer keeps the `Ctrl+/ shortcuts` hint whole on narrow widths,

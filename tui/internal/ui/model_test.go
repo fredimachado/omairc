@@ -65,8 +65,9 @@ func TestEmptyViewAtTinySizeDoesNotPanic(t *testing.T) {
 	m := New(controller.New(), nil)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 10, Height: 4})
 	m = updated.(*Model)
-	if content := m.View().Content; content == "" {
-		t.Fatal("View content empty at tiny size")
+	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
+	if !strings.Contains(plain, "Minimum 20") || !strings.Contains(plain, "10x4") {
+		t.Fatalf("tiny size must show the notice, got:\n%s", plain)
 	}
 }
 
