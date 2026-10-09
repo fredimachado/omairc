@@ -15,8 +15,9 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/theme"
 )
 
-// Layout constants. The column widths are proportional with clamps, so a
-// narrow window shrinks the transcript before it drops a column.
+// Layout constants. The transcript keeps a readable minimum; the sidebar keeps
+// its width/4 clamp when visible; the member column prefers membersWidth and
+// shrinks to membersMinWidth before it auto-hides.
 const (
 	defaultWidth  = 80
 	defaultHeight = 24
@@ -25,8 +26,11 @@ const (
 
 	sidebarMinWidth = 16
 	sidebarMaxWidth = 30
+
+	transcriptMinWidth = 45
+
 	membersWidth    = 22
-	membersMinTotal = 72
+	membersMinWidth = 12
 )
 
 // NotifyMsg tells the shell a controller callback fired and it should
@@ -775,15 +779,16 @@ func (m *Model) render() string {
 	}
 	bodyHeight := m.bodyHeight()
 
+	sidebarW, _, membersW := m.columnLayout()
 	columns := make([]string, 0, 3)
-	if m.serverListVisible {
+	if sidebarW > 0 {
 		columns = append(columns, m.framedColumn(
-			m.sidebarView, sidebarWidth(m.width), bodyHeight, m.sidebarNetworkFocusID != ""))
+			m.sidebarView, sidebarW, bodyHeight, m.sidebarNetworkFocusID != ""))
 	}
 	columns = append(columns, m.transcriptColumn(bodyHeight))
-	if m.membersVisible() {
+	if membersW > 0 {
 		columns = append(columns, m.framedColumn(
-			m.membersView, membersWidth, bodyHeight, m.memberFocus))
+			m.membersView, membersW, bodyHeight, m.memberFocus))
 	}
 	body := lipgloss.JoinHorizontal(lipgloss.Top, columns...)
 
@@ -808,7 +813,7 @@ func (m *Model) render() string {
 
 // framedColumn wraps one side column in a rounded card. outerWidth and
 // outerHeight are the invariant outer sizes the layout arithmetic assumes
-// (sidebarWidth() / membersWidth and bodyHeight); the border consumes its
+// (sidebarWidth() / membersColumnWidth() and bodyHeight); the border consumes its
 // frame, so the leaf renderer receives the remainder and produces inner lines
 // only. That keeps the transcript, which stays unframed, on the same grid.
 func (m *Model) framedColumn(render func(width, height int) string, outerWidth, outerHeight int, focused bool) string {
@@ -1213,18 +1218,38 @@ func fitBlock(content string, width, height int) string {
 	return strings.Join(out, "\n")
 }
 
-// membersVisible reports whether the member column fits and applies. It is
-// shown only for channels, matching the Qt panel, and Ctrl+Shift+M can hide it
-// for good. The toggle is window-level, so it survives channel switches and is
-// moot on a direct message. Status hides it too: Qt's MembersColumn gates on
-// !consoleVisible, and a selection retained under the Status console (for
-// example after connecting a second network) left the channel's panel beside
-// the console transcript.
-func (m *Model) membersVisible() bool {
+// membersWanted reports whether the member column would show if the window had
+// room. Ctrl+Shift+M sets membersHidden; auto-hide from a narrow terminal does
+// not. Direct messages, Status, and unjoined channels never want the column.
+func (m *Model) membersWanted() bool {
 	if m.ctrl == nil || !m.ctrl.IsChannel() || !m.ctrl.ChannelJoined() || m.ctrl.ConsoleOpen() {
 		return false
 	}
-	return m.width >= membersMinTotal && !m.membersHidden
+	return !m.membersHidden
+}
+
+// membersVisible reports whether the member column is on screen: wanted and
+// allocated a non-zero width. Auto-hide leaves membersHidden false so the
+// column can return when the terminal grows.
+func (m *Model) membersVisible() bool {
+	if !m.membersWanted() {
+		return false
+	}
+	_, _, members := m.columnLayout()
+	return members > 0
+}
+
+// membersColumnWidth is the framed member column's outer width, or zero when
+// hidden.
+func (m *Model) membersColumnWidth() int {
+	_, _, members := m.columnLayout()
+	return members
+}
+
+// sidebarColumnWidth is the framed sidebar's outer width, or zero when hidden.
+func (m *Model) sidebarColumnWidth() int {
+	sidebar, _, _ := m.columnLayout()
+	return sidebar
 }
 
 // sidebarWidth clamps the sidebar's share of the window.
@@ -1239,19 +1264,72 @@ func sidebarWidth(width int) int {
 	return value
 }
 
-// transcriptWidth is whatever the visible columns leave behind.
-func (m *Model) transcriptWidth() int {
+// columnLayout splits the window width across sidebar, transcript, and member
+// columns. Allocation order: transcript minimum, sidebar clamp, then members
+// (preferred width, shrink to membersMinWidth, else auto-hide). When the window
+// is narrower than transcriptMinWidth plus the visible sidebar's clamp, the
+// sidebar may shrink below sidebarMinWidth so the columns still sum to the
+// window width without panicking.
+func (m *Model) columnLayout() (sidebar, transcript, members int) {
 	width := m.width
-	if m.serverListVisible {
-		width -= sidebarWidth(m.width)
-	}
-	if m.membersVisible() {
-		width -= membersWidth
-	}
 	if width < 1 {
 		width = 1
 	}
-	return width
+
+	wantSidebar := m.serverListVisible
+	wantMembers := m.membersWanted()
+
+	sidebar = 0
+	if wantSidebar {
+		sidebar = sidebarWidth(width)
+	}
+	members = 0
+	if wantMembers {
+		members = membersWidth
+	}
+
+	transcript = width - sidebar - members
+	if transcript >= transcriptMinWidth {
+		return sidebar, transcript, members
+	}
+
+	transcript = transcriptMinWidth
+	if transcript > width {
+		transcript = width
+	}
+	remaining := width - transcript
+
+	if wantSidebar {
+		sidebar = sidebarWidth(width)
+		if sidebar > remaining {
+			sidebar = remaining
+		}
+		remaining -= sidebar
+	}
+
+	if wantMembers && remaining >= membersMinWidth {
+		members = membersWidth
+		if members > remaining {
+			members = remaining
+		}
+		if members < membersMinWidth {
+			members = 0
+		}
+	} else {
+		members = 0
+	}
+
+	transcript = width - sidebar - members
+	if transcript < 1 {
+		transcript = 1
+	}
+	return sidebar, transcript, members
+}
+
+// transcriptWidth is the unframed transcript column width from columnLayout.
+func (m *Model) transcriptWidth() int {
+	_, transcript, _ := m.columnLayout()
+	return transcript
 }
 
 // composerInset is the blank cell margin the composer box leaves inside the
@@ -1266,10 +1344,8 @@ const composerInset = 1
 // when that rail is visible, else the window edge. The floating slash menu and
 // the composer cursor offset read it.
 func (m *Model) transcriptLeft() int {
-	if m.serverListVisible {
-		return sidebarWidth(m.width)
-	}
-	return 0
+	sidebar, _, _ := m.columnLayout()
+	return sidebar
 }
 
 // composerLeft is the composer field's absolute left cell in the frame: the

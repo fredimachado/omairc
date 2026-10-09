@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The terminal client gives the transcript a minimum width and shrinks or hides
+  the member column on a medium terminal.
 - The terminal footer keeps the `Ctrl+/ shortcuts` hint whole on narrow widths,
   drops the version label first, shortens status before hints, and pads the row
   to the window width instead of truncating it.
