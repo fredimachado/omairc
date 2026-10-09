@@ -382,6 +382,70 @@ func TestEllipsizeOSCWithEllipsisInURLDoesNotHang(t *testing.T) {
 	}
 }
 
+func TestEllipsizeNewlinePaddingReachesBudget(t *testing.T) {
+	cases := []struct {
+		line  string
+		width int
+		want  string
+	}{
+		{"abc\ndefghijkl", 4, "abc\n   …"},
+		{"abc\ndefghijkl", 5, "abc\nd   …"},
+		{"中\n文nick", 4, "中\n   …"},
+	}
+	for _, tc := range cases {
+		got := ellipsizeLine(tc.line, tc.width)
+		if got != tc.want {
+			t.Fatalf("ellipsizeLine(%q, %d) = %q, want %q", tc.line, tc.width, got, tc.want)
+		}
+		if lipgloss.Width(got) != tc.width {
+			t.Fatalf("ellipsizeLine(%q, %d) width %d, want %d: %q", tc.line, tc.width, lipgloss.Width(got), tc.width, got)
+		}
+		if strings.Count(got, ellipsisRune) != 1 {
+			t.Fatalf("ellipsizeLine(%q, %d) want one ellipsis, got %q", tc.line, tc.width, got)
+		}
+	}
+}
+
+func TestEllipsizeOSCNewlineStaysOnBudget(t *testing.T) {
+	line := "\x1b]8;;https://ex.com/a\nb\x1b\\helloworld"
+	got := ellipsizeLine(line, 10)
+	want := "\x1b]8;;https://ex.com/ab\x1b\\helloworld"
+	if got != want {
+		t.Fatalf("width 10: got %q, want %q", got, want)
+	}
+	if lipgloss.Width(got) != 10 {
+		t.Fatalf("width 10: lipgloss.Width %d, want 10: %q", lipgloss.Width(got), got)
+	}
+	if strings.Contains(got, "\n") || strings.Contains(got, ellipsisRune) {
+		t.Fatalf("width 10: newline or ellipsis leaked: %q", got)
+	}
+
+	got = ellipsizeLine(line, 1)
+	want = "\x1b]8;;https://ex.com/ab\x1b\\…"
+	if got != want {
+		t.Fatalf("width 1: got %q, want %q", got, want)
+	}
+	if lipgloss.Width(got) != 1 {
+		t.Fatalf("width 1: lipgloss.Width %d, want 1: %q", lipgloss.Width(got), got)
+	}
+	if strings.Count(got, ellipsisRune) != 1 || strings.Contains(got, "\n") {
+		t.Fatalf("width 1: want one ellipsis and no newline, got %q", got)
+	}
+
+	line = "ab\x1b]8;;u\nrl\x1b\\cdefghij"
+	got = ellipsizeLine(line, 1)
+	want = "…\x1b]8;;url\x1b\\"
+	if got != want {
+		t.Fatalf("embedded OSC width 1: got %q, want %q", got, want)
+	}
+	if lipgloss.Width(got) != 1 {
+		t.Fatalf("embedded OSC width 1: lipgloss.Width %d, want 1: %q", lipgloss.Width(got), got)
+	}
+	if strings.Count(got, ellipsisRune) != 1 || strings.Contains(got, "\n") {
+		t.Fatalf("embedded OSC width 1: want one ellipsis and no newline, got %q", got)
+	}
+}
+
 func TestEllipsizeNonPositiveWidthEmpty(t *testing.T) {
 	line := "anything"
 	if got := ellipsizeLine(line, 0); got != "" {

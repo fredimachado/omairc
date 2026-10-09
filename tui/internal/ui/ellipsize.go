@@ -26,18 +26,27 @@ func ellipsizeLine(line string, width int) string {
 	out, ellipsisIdx := truncateWithEllipsis(line, width, ellipsisRune)
 	out, ellipsisIdx = repairBareEllipsis(out, ellipsisIdx)
 	out, ellipsisIdx = dropExtraVisibleEllipses(out, ellipsisIdx)
-	for lipgloss.Width(out) < width {
-		prev := lipgloss.Width(out)
-		out, ellipsisIdx = padBeforeEllipsis(out, line, width, ellipsisIdx)
-		if lipgloss.Width(out) <= prev {
+	// lipgloss.Width is the widest line. A space on the ellipsis line can
+	// leave that max unchanged while the line is still short of the budget,
+	// so keep padding until the max matches. Cap the loop by the budget: a
+	// space that never adds a cell must not hang.
+	for n := 0; n < width && lipgloss.Width(out) < width; n++ {
+		next, nextIdx := padBeforeEllipsis(out, line, width, ellipsisIdx)
+		if next == out {
 			break
 		}
+		out, ellipsisIdx = next, nextIdx
 	}
 	return out
 }
 
 func truncateWithEllipsis(s string, width int, tail string) (string, int) {
-	if ansi.StringWidth(s) <= width {
+	// A newline inside an OSC stays inside the sequence for ansi.StringWidth,
+	// but lipgloss.Width splits on it and counts the rest of the payload as
+	// cells. Drop those newlines before measuring so a URL tail cannot
+	// consume the budget or skip the ellipsis.
+	s = stripNewlinesInOSC(s)
+	if ansi.StringWidth(s) <= width && lipgloss.Width(s) <= width {
 		return s, -1
 	}
 
@@ -91,6 +100,13 @@ func truncateWithEllipsis(s string, width int, tail string) (string, int) {
 			}
 			fallthrough
 		default:
+			// A raw newline in an OSC payload is what makes lipgloss count
+			// the rest of the URL as cells. Keep the sequence, drop the break.
+			if s[i] == '\n' && pstate == parser.OscStringState {
+				i++
+				pstate = state
+				continue
+			}
 			buf.WriteByte(s[i])
 			i++
 		}
@@ -99,6 +115,33 @@ func truncateWithEllipsis(s string, width int, tail string) (string, int) {
 	}
 
 	return buf.String(), ellipsisIdx
+}
+
+// stripNewlinesInOSC removes raw newlines that sit inside an OSC payload.
+// Terminating BEL and ST bytes stay. Newlines outside an OSC stay, so a real
+// line break still pads on the ellipsis line.
+func stripNewlinesInOSC(s string) string {
+	if strings.IndexByte(s, '\n') < 0 {
+		return s
+	}
+	var buf strings.Builder
+	buf.Grow(len(s))
+	pstate := parser.GroundState
+	dropped := false
+	for i := 0; i < len(s); i++ {
+		state, _ := parser.Table.Transition(pstate, s[i])
+		if s[i] == '\n' && pstate == parser.OscStringState {
+			dropped = true
+			pstate = state
+			continue
+		}
+		buf.WriteByte(s[i])
+		pstate = state
+	}
+	if !dropped {
+		return s
+	}
+	return buf.String()
 }
 
 func repairBareEllipsis(out string, ellipsisIdx int) (string, int) {
