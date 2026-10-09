@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -76,17 +77,23 @@ func shortcutsViewScrollHint(m *Model) string {
 	return ""
 }
 
-// balancedShortcutPartitionFits reports whether some whole-group two-column
-// partition renders every action inside the row budget. Each column is judged
-// on its own lines, so a wrapped label is not split by the other column.
-func balancedShortcutPartitionFits(m *Model) bool {
-	inner := m.shortcutsInnerWidth()
-	budget := m.overlayCardRowBudget() - shortcutsHeaderRows
-	if shortcutsColumnCount(inner, 1) != 2 {
-		layout := m.shortcutsLayout(inner)
-		return len(layout.columns) > 1 && len(layout.body) <= budget && shortcutsBodyShowsAllActions(layout.columns)
+func shortcutGroupTitles(groups []shortcutGroup) string {
+	titles := make([]string, len(groups))
+	for index, group := range groups {
+		titles[index] = group.title
 	}
+	return strings.Join(titles, "+")
+}
+
+// twoColumnPartitionFits reports whether some whole-group two-column partition
+// shows every action inside the row budget. Heights are wrap counts, matching
+// the layout search, so a wrapped label is judged inside its own column.
+func twoColumnPartitionFits(inner, bodyBudget int) bool {
 	available := inner - shortcutsColumnGap
+	if available < 2 {
+		return false
+	}
+	measure := newShortcutMeasure()
 	for _, assignment := range collectShortcutAssignments(shortcutGroups, 2) {
 		ordered := sortShortcutAssignmentColumns(assignment)
 		mins := []int{
@@ -97,30 +104,26 @@ func balancedShortcutPartitionFits(m *Model) bool {
 			continue
 		}
 		for left := mins[0]; left <= available-mins[1]; left++ {
-			widths := []int{left, available - left}
-			fitsWidth := true
-			stacks := make([][]string, len(ordered))
-			for index, groups := range ordered {
-				stacks[index] = m.shortcutsGroupsLines(widths[index], groups, false, true)
-				plain := shortcutsPlainFold(shortcutsStripAnsi(strings.Join(stacks[index], "\n")))
-				for _, group := range groups {
-					for _, row := range group.rows {
-						if !strings.Contains(plain, displayShortcutAction(row.action)) {
-							fitsWidth = false
-						}
-					}
-				}
-			}
-			if !fitsWidth {
-				continue
-			}
-			body := joinShortcutColumns(stacks, widths, shortcutsColumnGap, inner)
-			if len(body) <= budget {
+			height, ok := measure.stack(ordered, []int{left, available - left})
+			if ok && height <= bodyBudget {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// balancedShortcutPartitionFits reports whether the sheet's own layout keeps
+// more than one column inside the row budget. At the two-column width it asks
+// the wrap-count search directly, so a one-column fallback cannot hide a fit.
+func balancedShortcutPartitionFits(m *Model) bool {
+	inner := m.shortcutsInnerWidth()
+	budget := m.overlayCardRowBudget() - shortcutsHeaderRows
+	if shortcutsColumnCount(inner, 1) == 2 {
+		return twoColumnPartitionFits(inner, budget)
+	}
+	layout := m.shortcutsLayout(inner)
+	return len(layout.columns) > 1 && len(layout.body) <= budget && shortcutsBodyShowsAllActions(layout.columns)
 }
 
 func allShortcutActionsReachableInView(m *Model) bool {
@@ -215,26 +218,125 @@ func TestShortcutsSheetFitsDefaultSize(t *testing.T) {
 		assertNoWrappedActionPrefixDuplicates(t, strings.Join(column.lines, "\n"))
 	}
 
-	inner := m.shortcutsInnerWidth()
-	total, visible, maxOffset := m.shortcutsScrollBounds(inner)
-	if balancedShortcutPartitionFits(m) {
-		if m.shortcutsScroll != 0 || maxOffset != 0 || total != visible {
-			t.Fatalf("118x30 shortcuts scroll = %d bounds total %d visible %d max %d, want scroll 0 when a balanced partition fits", m.shortcutsScroll, total, visible, maxOffset)
+	if runtime.GOOS == "windows" {
+		inner := m.shortcutsInnerWidth()
+		total, visible, maxOffset := m.shortcutsScrollBounds(inner)
+		if balancedShortcutPartitionFits(m) {
+			if m.shortcutsScroll != 0 || maxOffset != 0 || total != visible {
+				t.Fatalf("118x30 shortcuts scroll = %d bounds total %d visible %d max %d, want scroll 0 when a balanced partition fits", m.shortcutsScroll, total, visible, maxOffset)
+			}
+			if !viewShowsEveryShortcutAction(m) {
+				t.Fatalf("View() at scroll 0 is missing a shortcut action, including quit:\n%s", shortcutsViewPlain(m))
+			}
+			if hint := shortcutsViewScrollHint(m); hint != "" {
+				t.Fatalf("scroll hint = %q, want none when a balanced partition fits at 118x30", hint)
+			}
+		} else {
+			if maxOffset < 1 {
+				t.Fatalf("118x30 shortcuts scroll bounds = total %d visible %d max %d, want scrolling when no balanced partition fits", total, visible, maxOffset)
+			}
+			if !allShortcutActionsReachableInView(m) {
+				t.Fatalf("not every shortcut action is reachable at 118x30")
+			}
 		}
-		if !viewShowsEveryShortcutAction(m) {
-			t.Fatalf("View() at scroll 0 is missing a shortcut action, including quit:\n%s", shortcutsViewPlain(m))
-		}
-		if hint := shortcutsViewScrollHint(m); hint != "" {
-			t.Fatalf("scroll hint = %q, want none when a balanced partition fits at 118x30", hint)
-		}
-	} else {
-		if maxOffset < 1 {
-			t.Fatalf("118x30 shortcuts scroll bounds = total %d visible %d max %d, want scrolling when no balanced partition fits", total, visible, maxOffset)
-		}
-		if !allShortcutActionsReachableInView(m) {
-			t.Fatalf("not every shortcut action is reachable at 118x30")
-		}
+		return
 	}
+
+	inner := m.shortcutsInnerWidth()
+	layout = m.shortcutsLayout(inner)
+	if len(layout.columns) != 2 {
+		t.Fatalf("118x30 columns = %d, want 2", len(layout.columns))
+	}
+	if got := shortcutGroupTitles(layout.columns[0].groups); got != "MOVE+JUMP+CONNECT" {
+		t.Fatalf("left column = %s, want MOVE+JUMP+CONNECT", got)
+	}
+	if got := shortcutGroupTitles(layout.columns[1].groups); got != "WRITE+WINDOW" {
+		t.Fatalf("right column = %s, want WRITE+WINDOW", got)
+	}
+	if len(layout.widths) != 2 || layout.widths[0] != 48 || layout.widths[1] != 60 {
+		t.Fatalf("column widths = %v, want [48 60]", layout.widths)
+	}
+	budget := m.overlayCardRowBudget() - shortcutsHeaderRows
+	if len(layout.body) != 25 || len(layout.body) > budget {
+		t.Fatalf("body lines = %d, budget %d, want 25 lines that fit", len(layout.body), budget)
+	}
+	total, visible, maxOffset := m.shortcutsScrollBounds(inner)
+	if m.shortcutsScroll != 0 || maxOffset != 0 || total != visible {
+		t.Fatalf("118x30 shortcuts scroll = %d bounds total %d visible %d max %d, want no scroll", m.shortcutsScroll, total, visible, maxOffset)
+	}
+	if !strings.Contains(shortcutsViewPlain(m), "quit") {
+		t.Fatalf("quit missing from View() at scroll 0:\n%s", shortcutsViewPlain(m))
+	}
+	if !viewShowsEveryShortcutAction(m) {
+		t.Fatalf("View() at scroll 0 is missing a shortcut action, including quit:\n%s", shortcutsViewPlain(m))
+	}
+	if hint := shortcutsViewScrollHint(m); hint != "" {
+		t.Fatalf("scroll hint = %q, want none at 118x30", hint)
+	}
+}
+
+func TestShortcutsSheetWideFallsBackToTwoColumns(t *testing.T) {
+	m := resizeModel(t, seededModel(t), 148, 30)
+	m.openShortcuts()
+	inner := m.shortcutsInnerWidth()
+	if got := shortcutsColumnCount(inner, 0); got < 3 {
+		t.Fatalf("column count at inner %d = %d, want at least 3", inner, got)
+	}
+	budget := m.overlayCardRowBudget() - shortcutsHeaderRows
+	if !twoColumnPartitionFits(inner, budget) {
+		if runtime.GOOS != "windows" {
+			t.Fatal("a two-column partition should fit at 148x30")
+		}
+		return
+	}
+	layout := m.shortcutsLayout(inner)
+	_, _, maxOffset := m.shortcutsScrollBounds(inner)
+	if len(layout.columns) < 2 || maxOffset != 0 {
+		t.Fatalf("148x30 columns = %d maxOffset = %d, want a fitting multi-column layout and no scroll", len(layout.columns), maxOffset)
+	}
+	if len(layout.body) > budget {
+		t.Fatalf("148x30 body lines = %d, budget %d", len(layout.body), budget)
+	}
+}
+
+func TestShortcutsSheetScrollClampsBeforeStep(t *testing.T) {
+	up, _, maxOffset := shortcutsScrolledThenResized(t)
+	up, _ = pressCmd(t, up, tea.KeyPressMsg{Code: tea.KeyUp})
+	if up.shortcutsScroll != maxOffset-1 {
+		t.Fatalf("Up scroll = %d, want %d after clamping to %d", up.shortcutsScroll, maxOffset-1, maxOffset)
+	}
+
+	pg, page, maxOffset := shortcutsScrolledThenResized(t)
+	pg, _ = pressCmd(t, pg, tea.KeyPressMsg{Code: tea.KeyPgUp})
+	want := maxOffset - page
+	if want < 0 {
+		want = 0
+	}
+	if pg.shortcutsScroll != want {
+		t.Fatalf("PgUp scroll = %d, want %d after clamping to %d then stepping %d", pg.shortcutsScroll, want, maxOffset, page)
+	}
+}
+
+// shortcutsScrolledThenResized scrolls to the end of a short sheet, then grows
+// the terminal so the stored offset is past the new maximum.
+func shortcutsScrolledThenResized(t *testing.T) (m *Model, visible, maxOffset int) {
+	t.Helper()
+	m = resizeModel(t, seededModel(t), 80, 24)
+	m.openShortcuts()
+	m, _ = pressCmd(t, m, tea.KeyPressMsg{Code: tea.KeyEnd})
+	stale := m.shortcutsScroll
+	if stale < 1 {
+		t.Fatalf("80x24 end scroll = %d, want a scrolled sheet", stale)
+	}
+	m = resizeModel(t, m, 80, 30)
+	if m.shortcutsScroll != stale {
+		t.Fatalf("resize stored scroll = %d, want the stale offset %d", m.shortcutsScroll, stale)
+	}
+	_, visible, maxOffset = m.shortcutsScrollBounds(m.shortcutsInnerWidth())
+	if maxOffset < 1 || maxOffset >= stale {
+		t.Fatalf("resized maxOffset = %d, stale %d, want a smaller positive maximum", maxOffset, stale)
+	}
+	return m, visible, maxOffset
 }
 
 func TestShortcutsSheetScrollsShortTerminal(t *testing.T) {

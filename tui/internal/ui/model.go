@@ -165,16 +165,20 @@ type Model struct {
 	memberIndex      int
 	shortcutsOpen    bool
 	shortcutsScroll  int
-	aboutOpen        bool
-	channelPrompt    channelPromptState
-	nick             nickJumpState
-	link             linkState
-	file             filePickState
-	fileQueue        []queuedFile
-	fileActive       *queuedFile
-	inbox            inboxState
-	slash            slashSession
-	list             channelListState
+	// shortcutsLayoutCache is the last shortcuts sheet layout. shortcutGroups
+	// never changes, so a repeat View at the same inner width and row budget
+	// reuses it. applyStyles drops it because the lines embed palette colors.
+	shortcutsLayoutCache shortcutsLayoutCache
+	aboutOpen            bool
+	channelPrompt        channelPromptState
+	nick                 nickJumpState
+	link                 linkState
+	file                 filePickState
+	fileQueue            []queuedFile
+	fileActive           *queuedFile
+	inbox                inboxState
+	slash                slashSession
+	list                 channelListState
 
 	// Phase 9 desktop-notification state. notifier is the nil-able desktop
 	// seam (mirroring backend.notifyDesktop); windowActive mirrors win.active;
@@ -321,6 +325,7 @@ func (m *Model) applyStyles(styles Styles) {
 	m.spinner.Style = styles.StatusWarn
 	m.typingSpinner.Style = styles.MemberTyping
 	m.restyleOverlayInputs()
+	m.shortcutsLayoutCache = shortcutsLayoutCache{}
 }
 
 // restyleOverlayInputs re-applies the shared input style set to the overlay

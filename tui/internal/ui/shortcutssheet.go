@@ -138,15 +138,19 @@ func (m *Model) handleShortcutsScrollKey(key string) bool {
 	if page < 1 {
 		page = 1
 	}
+	// A resize can leave the stored offset past the new maximum. The drawing
+	// path clamps for display only, so clamp before the step or the first
+	// Up / PgUp moves from the stale value.
+	current := clampInt(m.shortcutsScroll, 0, maxOffset)
 	switch key {
 	case "up":
-		m.shortcutsScroll--
+		m.shortcutsScroll = current - 1
 	case "down":
-		m.shortcutsScroll++
+		m.shortcutsScroll = current + 1
 	case "pgup":
-		m.shortcutsScroll -= page
+		m.shortcutsScroll = current - page
 	case "pgdown":
-		m.shortcutsScroll += page
+		m.shortcutsScroll = current + page
 	case "home":
 		m.shortcutsScroll = 0
 	case "end":
@@ -249,44 +253,88 @@ type shortcutRenderedColumn struct {
 }
 
 // shortcutsLayout is the sheet body plus the columns that produced it.
+// widths are the fitted inner width of each column, without the gutter.
 type shortcutsLayout struct {
 	body    []string
 	columns []shortcutRenderedColumn
+	widths  []int
+}
+
+// shortcutsLayoutCache is keyed by the content width and the overlay row
+// budget. shortcutGroups is a fixed table, so those two inputs decide the
+// layout until the palette changes.
+type shortcutsLayoutCache struct {
+	valid  bool
+	inner  int
+	budget int
+	layout shortcutsLayout
 }
 
 // shortcutsLayout lays groups out in columns when a partition fits the row
-// budget. Action presence is judged on each column before the columns are joined.
+// budget. The search measures wrap counts; lipgloss renders only the layout
+// that is kept. Repeat calls at the same size reuse shortcutsLayoutCache.
 func (m *Model) shortcutsLayout(inner int) shortcutsLayout {
-	singleLines := m.shortcutsGroupsLines(inner, shortcutGroups, true, true)
-	single := shortcutsLayout{
-		body: singleLines,
+	budget := m.overlayCardRowBudget()
+	if m.shortcutsLayoutCache.valid && m.shortcutsLayoutCache.inner == inner && m.shortcutsLayoutCache.budget == budget {
+		return m.shortcutsLayoutCache.layout
+	}
+	layout := m.computeShortcutsLayout(inner, budget)
+	m.shortcutsLayoutCache = shortcutsLayoutCache{
+		valid:  true,
+		inner:  inner,
+		budget: budget,
+		layout: layout,
+	}
+	return layout
+}
+
+// computeShortcutsLayout searches column counts from the width's preferred
+// count down to two and keeps the first count whose shortest whole-group
+// partition fits the row budget. One column is the fallback when none do,
+// including when the single column already fits without scrolling.
+func (m *Model) computeShortcutsLayout(inner, rowBudget int) shortcutsLayout {
+	measure := newShortcutMeasure()
+	bodyBudget := rowBudget - shortcutsHeaderRows
+	single := measure.column(shortcutGroups, inner, true)
+	if single.ok && single.lines <= bodyBudget {
+		layout := m.renderSingleColumnShortcuts(inner)
+		if len(layout.body) <= bodyBudget && shortcutsBodyShowsAllActions(layout.columns) {
+			return layout
+		}
+	}
+	count := shortcutsColumnCount(inner, single.lines)
+	for columns := count; columns >= 2; columns-- {
+		assignment, widths := m.balanceShortcutGroups(shortcutGroups, columns, inner, bodyBudget, measure)
+		if len(assignment) < 2 || !shortcutWidthsFit(widths, inner) {
+			continue
+		}
+		rendered := m.renderShortcutColumns(assignment, widths)
+		if !shortcutsBodyShowsAllActions(rendered) {
+			continue
+		}
+		body := joinRenderedShortcutColumns(rendered, widths, inner)
+		if len(body) <= bodyBudget {
+			return shortcutsLayout{
+				body:    body,
+				columns: rendered,
+				widths:  append([]int(nil), widths...),
+			}
+		}
+	}
+	return m.renderSingleColumnShortcuts(inner)
+}
+
+// renderSingleColumnShortcuts renders every group in one scrolling column.
+func (m *Model) renderSingleColumnShortcuts(inner int) shortcutsLayout {
+	lines := m.shortcutsGroupsLines(inner, shortcutGroups, true, true)
+	return shortcutsLayout{
+		body:   lines,
+		widths: []int{inner},
 		columns: []shortcutRenderedColumn{{
 			groups: shortcutGroups,
-			lines:  singleLines,
+			lines:  lines,
 		}},
 	}
-	budget := m.overlayCardRowBudget() - shortcutsHeaderRows
-	if len(singleLines) <= budget && shortcutsBodyShowsAllActions(single.columns) {
-		return single
-	}
-	count := shortcutsColumnCount(inner, len(singleLines))
-	if count <= 1 {
-		return single
-	}
-	assignment := m.balanceShortcutGroups(shortcutGroups, count, inner)
-	if len(assignment) < 2 {
-		return single
-	}
-	widths := m.fitShortcutColumnWidths(assignment, inner)
-	rendered := m.renderShortcutColumns(assignment, widths)
-	if !shortcutsBodyShowsAllActions(rendered) {
-		return single
-	}
-	body := joinRenderedShortcutColumns(rendered, widths, inner)
-	if len(body) <= budget {
-		return shortcutsLayout{body: body, columns: rendered}
-	}
-	return single
 }
 
 // shortcutsSheetBody lays out every group from shortcutGroups, flowing into
@@ -412,38 +460,39 @@ func shortcutGroupLineCount(group shortcutGroup) int {
 // balanceShortcutGroups assigns whole groups to columns. It keeps the partition
 // with the shortest joined height that still shows every action. When heights
 // tie, the grouping whose groups follow source order wins, and columns are
-// ordered by their first group's place in shortcutGroups.
-func (m *Model) balanceShortcutGroups(groups []shortcutGroup, columns, inner int) [][]shortcutGroup {
+// ordered by their first group's place in shortcutGroups. Heights come from
+// wrap counts. The returned widths are the split that produced that height.
+// A nil assignment means no partition of this column count fits bodyBudget.
+func (m *Model) balanceShortcutGroups(groups []shortcutGroup, columns, inner, bodyBudget int, measure *shortcutMeasure) ([][]shortcutGroup, []int) {
 	if len(groups) == 0 {
-		return balanceShortcutGroupsGreedy(groups, columns)
+		return balanceShortcutGroupsGreedy(groups, columns), nil
+	}
+	if measure == nil {
+		measure = newShortcutMeasure()
 	}
 	bestHeight := int(^uint(0) >> 1)
 	var best [][]shortcutGroup
-	budget := m.overlayCardRowBudget() - shortcutsHeaderRows
+	var bestWidths []int
 	for _, assignment := range collectShortcutAssignments(groups, columns) {
 		ordered := sortShortcutAssignmentColumns(assignment)
-		widths := m.fitShortcutColumnWidths(ordered, inner)
+		widths := m.fitShortcutColumnWidths(ordered, inner, measure)
 		if !shortcutWidthsFit(widths, inner) {
 			continue
 		}
-		rendered := m.renderShortcutColumns(ordered, widths)
-		if !shortcutsBodyShowsAllActions(rendered) {
+		height, ok := measure.stack(ordered, widths)
+		if !ok || height > bodyBudget {
 			continue
 		}
-		body := joinRenderedShortcutColumns(rendered, widths, inner)
-		if len(body) > budget {
-			continue
-		}
-		if len(body) < bestHeight || (len(body) == bestHeight && (best == nil || shortcutAssignmentSourceLess(ordered, best))) {
-			bestHeight = len(body)
+		if height < bestHeight || (height == bestHeight && (best == nil || shortcutAssignmentSourceLess(ordered, best))) {
+			bestHeight = height
 			best = ordered
+			bestWidths = append([]int(nil), widths...)
 		}
 	}
 	if best != nil {
-		return best
+		return best, bestWidths
 	}
-	// No partition fits the row budget; keep groups whole in one scrollable column.
-	return [][]shortcutGroup{groups}
+	return nil, nil
 }
 
 // collectShortcutAssignments returns every way to place groups into columns.
@@ -665,7 +714,7 @@ func shortcutsStackMinInnerWrap(groups []shortcutGroup) int {
 
 // fitShortcutColumnWidths sizes each column from its groups. Widths plus gaps
 // never exceed inner; for two columns it picks the split with the shortest stack.
-func (m *Model) fitShortcutColumnWidths(assignment [][]shortcutGroup, inner int) []int {
+func (m *Model) fitShortcutColumnWidths(assignment [][]shortcutGroup, inner int, measure *shortcutMeasure) []int {
 	mins := make([]int, len(assignment))
 	for index, groups := range assignment {
 		mins[index] = shortcutsStackMinInnerWrap(groups)
@@ -679,7 +728,7 @@ func (m *Model) fitShortcutColumnWidths(assignment [][]shortcutGroup, inner int)
 		available = len(mins)
 	}
 	if len(mins) == 2 {
-		return m.fitTwoShortcutColumnWidths(assignment, mins, available)
+		return m.fitTwoShortcutColumnWidths(assignment, mins, available, measure)
 	}
 	widths := append([]int(nil), mins...)
 	preferred := 0
@@ -701,28 +750,147 @@ func (m *Model) fitShortcutColumnWidths(assignment [][]shortcutGroup, inner int)
 }
 
 // fitTwoShortcutColumnWidths searches every legal split for the shortest join
-// that still shows every action in its own column. A split that clips an
-// action is skipped. There is no unvalidated fallback width.
-func (m *Model) fitTwoShortcutColumnWidths(assignment [][]shortcutGroup, mins []int, available int) []int {
+// that still shows every action in its own column. Row height is the wrap
+// count, so the search does not render. A split that clips an action is
+// skipped. There is no unvalidated fallback width. The narrowest left width
+// wins when several splits share that height.
+func (m *Model) fitTwoShortcutColumnWidths(assignment [][]shortcutGroup, mins []int, available int, measure *shortcutMeasure) []int {
 	if len(assignment) != 2 || len(mins) != 2 || mins[0] > available-mins[1] {
 		return nil
 	}
+	if measure == nil {
+		measure = newShortcutMeasure()
+	}
 	bestHeight := int(^uint(0) >> 1)
-	var best []int
+	var best [2]int
+	found := false
 	for left := mins[0]; left <= available-mins[1]; left++ {
-		right := available - left
-		widths := []int{left, right}
-		rendered := m.renderShortcutColumns(assignment, widths)
-		if !shortcutsBodyShowsAllActions(rendered) {
+		widths := [2]int{left, available - left}
+		height, ok := measure.stack(assignment, widths[:])
+		if !ok || height >= bestHeight {
 			continue
 		}
-		body := joinRenderedShortcutColumns(rendered, widths, available+shortcutsColumnGap)
-		if len(body) < bestHeight {
-			bestHeight = len(body)
-			best = append([]int(nil), widths...)
+		bestHeight = height
+		best = widths
+		found = true
+	}
+	if !found {
+		return nil
+	}
+	return []int{best[0], best[1]}
+}
+
+// shortcutMeasureKey identifies one source-ordered column at one inner width.
+// Groups stay in shortcutGroups order, so the bitmask is the column's groups.
+type shortcutMeasureKey struct {
+	mask         int
+	width        int
+	blankBetween bool
+}
+
+// shortcutMeasuredColumn is the line count of one column and whether every
+// action in that column survives wrapping.
+type shortcutMeasuredColumn struct {
+	lines int
+	ok    bool
+}
+
+// shortcutMeasure caches wrap-count heights. The shortcuts table is fixed, so
+// a column's height at a width does not change for the life of the search.
+type shortcutMeasure struct {
+	cache map[shortcutMeasureKey]shortcutMeasuredColumn
+}
+
+func newShortcutMeasure() *shortcutMeasure {
+	return &shortcutMeasure{cache: make(map[shortcutMeasureKey]shortcutMeasuredColumn)}
+}
+
+func shortcutGroupsMask(groups []shortcutGroup) int {
+	mask := 0
+	for _, group := range groups {
+		index := shortcutGroupIndex(group)
+		if index < 31 {
+			mask |= 1 << index
 		}
 	}
-	return best
+	return mask
+}
+
+// column returns the rendered line count of groups at width. blankBetween
+// inserts the single-column spacer row. ok reports that each action is still
+// present after wrapping, judged on the column's plain text the same way
+// shortcutsBodyShowsAllActions reads a rendered column.
+func (s *shortcutMeasure) column(groups []shortcutGroup, width int, blankBetween bool) shortcutMeasuredColumn {
+	if width < 1 {
+		width = 1
+	}
+	key := shortcutMeasureKey{mask: shortcutGroupsMask(groups), width: width, blankBetween: blankBetween}
+	if measured, ok := s.cache[key]; ok {
+		return measured
+	}
+	measured := measureShortcutColumn(groups, width, blankBetween)
+	s.cache[key] = measured
+	return measured
+}
+
+// stack is the joined height of columns at widths: the tallest column. ok is
+// false when any column loses an action to wrapping.
+func (s *shortcutMeasure) stack(columns [][]shortcutGroup, widths []int) (int, bool) {
+	if len(columns) == 0 || len(columns) != len(widths) {
+		return 0, false
+	}
+	height := 0
+	for index, groups := range columns {
+		measured := s.column(groups, widths[index], false)
+		if !measured.ok {
+			return 0, false
+		}
+		if measured.lines > height {
+			height = measured.lines
+		}
+	}
+	return height, true
+}
+
+// measureShortcutColumn counts wrapped rows without styling them. The plain
+// text includes every key and action so a longer label can still satisfy a
+// shorter one, matching a rendered column's folded text.
+func measureShortcutColumn(groups []shortcutGroup, width int, blankBetween bool) shortcutMeasuredColumn {
+	measured := shortcutMeasuredColumn{ok: true}
+	if len(groups) == 0 {
+		return measured
+	}
+	var plain strings.Builder
+	for index, group := range groups {
+		if blankBetween && index > 0 {
+			measured.lines++
+			plain.WriteByte('\n')
+		}
+		measured.lines++
+		plain.WriteString(group.title)
+		plain.WriteByte('\n')
+		_, actionWidth := shortcutsKeyActionWidths(width, group.rows)
+		for _, row := range group.rows {
+			parts := shortcutsWrapPlainAction(displayShortcutAction(row.action), actionWidth)
+			measured.lines += len(parts)
+			plain.WriteString(displayShortcutKeys(row.keys))
+			plain.WriteByte('\n')
+			for _, part := range parts {
+				plain.WriteString(part)
+				plain.WriteByte('\n')
+			}
+		}
+	}
+	folded := shortcutsPlainFold(plain.String())
+	for _, group := range groups {
+		for _, row := range group.rows {
+			if !strings.Contains(folded, displayShortcutAction(row.action)) {
+				measured.ok = false
+				return measured
+			}
+		}
+	}
+	return measured
 }
 
 // scaleShortcutColumnWidths shrinks preferred widths proportionally to available.
