@@ -7,6 +7,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // This file is the Connect sheet: the first-run overlay, the Connection and
@@ -623,12 +624,13 @@ func (m *Model) connectCardBody(inner int) []string {
 
 // connectCardContent builds the sheet's rows and records where the focused stop
 // renders, so connectCardBody can scroll it into view. inner is the content
-// width inside the border; every line is truncated to inner cells, because the
-// shared frame in model.go owns the border and the outer width.
+// width inside the border; every human-readable line is ellipsized to inner
+// cells, because the shared frame in model.go owns the border and the outer
+// width.
 func (m *Model) connectCardContent(inner int) connectCardContent {
 	content := connectCardContent{focusRow: -1}
 	add := func(line string) {
-		content.lines = append(content.lines, truncateLine(line, inner))
+		content.lines = append(content.lines, ellipsizeLine(line, inner))
 	}
 	markFocus := func(stop connectStop) {
 		if m.stopFocused(stop) {
@@ -686,16 +688,16 @@ func (m *Model) connectCardContent(inner int) connectCardContent {
 	// problem, muted, on both tabs. IrcConnection carries the same two
 	// sentences to the Qt sheet; an empty value renders nothing.
 	if status := m.conn.PersistenceStatus(); status != "" {
-		add(m.styles.MutedLine.Render(truncateLine(status, inner)))
+		add(m.styles.MutedLine.Render(status))
 	}
 	if status := m.conn.CredentialStatus(); status != "" {
-		add(m.styles.MutedLine.Render(truncateLine(status, inner)))
+		add(m.styles.MutedLine.Render(status))
 	}
 
 	// The validation problem is the first pinned footer row, so a scrolled
 	// sheet never hides why Apply is unavailable. It is present on both tabs.
 	if problem := m.conn.Problem(); problem != "" {
-		add(m.styles.StatusErr.Render(truncateLine("✗ "+problem, inner)))
+		add(m.styles.StatusErr.Render("✗ " + problem))
 	} else {
 		add("")
 	}
@@ -705,7 +707,7 @@ func (m *Model) connectCardContent(inner int) connectCardContent {
 		if m.footerFocused() {
 			content.focusRow = len(content.lines)
 		}
-		add(truncateLine(m.connectFooterLine(), inner))
+		add(m.connectFooterLine())
 		content.footerRows = 2
 	}
 	return content
@@ -766,18 +768,28 @@ func (m *Model) connectFieldLine(field connectField, inner int) string {
 		labelStyle = m.styles.SheetFieldActive.Foreground(m.styles.Colors.Accent)
 	}
 	label := labelStyle.Render(fmt.Sprintf("%-21s", connectFieldLabels[field]))
+	var value string
 	switch field {
 	case fieldTLS:
-		return truncateLine(label+" "+m.connectChip(m.conn.TLSEnabled()), inner)
+		value = m.connectChip(m.conn.TLSEnabled())
 	case fieldConnectOnStartup:
-		return truncateLine(label+" "+m.connectChip(m.conn.ConnectOnStartup()), inner)
+		value = m.connectChip(m.conn.ConnectOnStartup())
+	default:
+		boxStyle := m.styles.SheetField
+		if focused {
+			boxStyle = m.styles.SheetFieldActive.Foreground(m.styles.Colors.Accent)
+		}
+		value = boxStyle.Render("[" + m.fieldDisplayValue(stop) + "]")
 	}
-	boxStyle := m.styles.SheetField
-	if focused {
-		boxStyle = m.styles.SheetFieldActive.Foreground(m.styles.Colors.Accent)
+	line := label + " " + value
+	if inner > 0 && lipgloss.Width(line) > inner {
+		budget := inner - lipgloss.Width(label) - 1
+		if budget < 1 {
+			return ellipsizeLine(line, inner)
+		}
+		line = label + " " + ellipsizeLine(value, budget)
 	}
-	box := boxStyle.Render("[" + m.fieldDisplayValue(stop) + "]")
-	return truncateLine(label+" "+box, inner)
+	return line
 }
 
 // preferencesLines renders the Preferences-tab toggles.

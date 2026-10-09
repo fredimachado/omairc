@@ -74,7 +74,7 @@ func (m *Model) channelPromptCard(width int) string {
 func (m *Model) channelPromptCardBody(inner int) []string {
 	lines := m.overlaySheetHeader(inner, "Open channel", 0)
 	question := "Open " + m.channelPrompt.name + "?"
-	lines = append(lines, truncateLine(m.styles.SheetRow.Render(question), inner))
-	lines = append(lines, truncateLine(m.styles.MutedLine.Render("Enter opens it. Escape cancels."), inner))
+	lines = append(lines, ellipsizeLine(m.styles.SheetRow.Render(question), inner))
+	lines = append(lines, ellipsizeLine(m.styles.MutedLine.Render("Enter opens it. Escape cancels."), inner))
 	return lines
 }

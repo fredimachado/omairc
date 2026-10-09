@@ -106,11 +106,11 @@ func (m *Model) sidebarView(width, height int) string {
 		}
 		name := m.sidebarNetworkDisplayName(networkID)
 		headerStart := len(roster)
-		roster = append(roster, m.networkHeader(name, networkID))
+		roster = append(roster, m.networkHeader(name, networkID, width))
 		// A refused nick or registration ERROR is that network's status line,
 		// the same slot as NetworkSection.qml's liveStatus.
 		if reason := m.ctrl.LastErrorFor(networkID); reason != "" {
-			roster = append(roster, m.styles.MutedLine.Render(reason))
+			roster = append(roster, ellipsizeLine(m.styles.MutedLine.Render(reason), width))
 		}
 		headerSpans[networkID] = [2]int{headerStart, len(roster)}
 		if m.ctrl.IsNetworkCollapsed(networkID) {
@@ -263,6 +263,14 @@ func (m *Model) identityFooterLines(width int) []string {
 	}
 	statusLine := strings.Repeat(" ", indent) + strings.Join(statusSegments, " ")
 
+	if width > 0 {
+		if lipgloss.Width(nickLine) > width {
+			nickLine = ellipsizeLine(nickLine, width)
+		}
+		if lipgloss.Width(statusLine) > width {
+			statusLine = ellipsizeLine(statusLine, width)
+		}
+	}
 	return []string{nickLine, statusLine}
 }
 
@@ -278,9 +286,9 @@ func (m *Model) sidebarDivider(width int) string {
 }
 
 // networkHeader names a network and carries its collapse chevron, mention pill,
-// and unread total pill. The display name is rendered verbatim; the focused
-// header uses the focus style.
-func (m *Model) networkHeader(name, networkID string) string {
+// and unread total pill. A name that does not fit the column ends with an
+// ellipsis; the focused header uses the focus style.
+func (m *Model) networkHeader(name, networkID string, width int) string {
 	chevron := "▾"
 	if m.ctrl.IsNetworkCollapsed(networkID) {
 		chevron = "▸"
@@ -295,6 +303,9 @@ func (m *Model) networkHeader(name, networkID string) string {
 	}
 	if unread := m.ctrl.UnreadCountFor(networkID); unread > 0 {
 		header += " " + m.badge(m.styles.BadgeUnread, strconv.Itoa(unread))
+	}
+	if width > 0 && lipgloss.Width(header) > width {
+		header = ellipsizeLine(header, width)
 	}
 	return header
 }
@@ -322,9 +333,13 @@ func (m *Model) sidebarGroup(label string, rows []controller.ConversationSnapsho
 }
 
 // sectionHeader renders an uppercase group label followed by a subtle rule that
-// reaches the column width, so the roster reads as titled sections.
+// reaches the column width, so the roster reads as titled sections. A label
+// wider than the column ends with an ellipsis instead of a chopped word.
 func (m *Model) sectionHeader(label string, width int) string {
 	header := m.styles.SectionHeader.Render(label)
+	if width > 0 && lipgloss.Width(header) > width {
+		return ellipsizeLine(header, width)
+	}
 	rule := width - lipgloss.Width(header) - 1
 	if rule <= 0 {
 		return header
@@ -423,6 +438,9 @@ func (m *Model) conversationRowWidth(row controller.ConversationSnapshot, width 
 
 	rendered := line.String()
 	if width > 0 {
+		if lipgloss.Width(rendered) > width {
+			rendered = ellipsizeLine(rendered, width)
+		}
 		if pad := width - lipgloss.Width(rendered); pad > 0 {
 			rendered += rowStyle.Render(strings.Repeat(" ", pad))
 		}

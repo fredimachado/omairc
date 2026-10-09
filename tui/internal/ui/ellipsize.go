@@ -13,8 +13,9 @@ const ellipsisRune = "…"
 
 // ellipsizeLine fits one rendered line to width display cells, ending with a
 // single-cell ellipsis when the source is longer. ANSI sequences are preserved
-// and never split; wide graphemes are never cut. truncateLine hard-cuts without
-// an ellipsis and stays the choice for existing call sites.
+// and never split; wide graphemes are never cut. The ellipsis keeps the style
+// of the last kept cell. truncateLine hard-cuts without an ellipsis and stays
+// the choice for rules, padding, and width-budgeted input chrome.
 func ellipsizeLine(line string, width int) string {
 	if width <= 0 {
 		return ""
@@ -29,14 +30,17 @@ func ellipsizeLine(line string, width int) string {
 	}
 
 	out, ellipsisIdx := truncateWithEllipsis(line, width, ellipsisRune)
-	out, ellipsisIdx = repairBareEllipsis(out, ellipsisIdx)
+	// Drop a visible ellipsis that belongs to the discarded tail before repair
+	// reads the style in front of the marker. Repairing first would treat that
+	// tail ellipsis as the last kept cell and paint the marker with its style.
 	out, ellipsisIdx = dropExtraVisibleEllipses(out, ellipsisIdx)
+	out, ellipsisIdx = repairBareEllipsis(out, ellipsisIdx)
 	// lipgloss.Width is the widest line. A space on the ellipsis line can
 	// leave that max unchanged while the line is still short of the budget,
 	// so keep padding until the max matches. Cap the loop by the budget: a
 	// space that never adds a cell must not hang.
 	for n := 0; n < width && lipgloss.Width(out) < width; n++ {
-		next, nextIdx := padBeforeEllipsis(out, line, width, ellipsisIdx)
+		next, nextIdx := padBeforeEllipsis(out, ellipsisIdx)
 		if next == out {
 			break
 		}
@@ -69,10 +73,11 @@ func truncateWithEllipsis(s string, width int, tail string) (string, int) {
 	i := 0
 
 	for i < len(s) {
-		state, action := parser.Table.Transition(pstate, s[i])
+		b := s[i]
+		state, action := parser.Table.Transition(pstate, b)
 		// Same join as stripNewlinesInSequences. Leave pstate unchanged so
 		// the rest of the sequence is parsed as if the newline was never there.
-		if s[i] == '\n' && sequenceHidesNewline(pstate) {
+		if b == '\n' && sequenceHidesNewline(pstate) {
 			i++
 			continue
 		}
@@ -107,15 +112,16 @@ func truncateWithEllipsis(s string, width int, tail string) (string, int) {
 		case parser.ExecuteAction:
 			if ignoring {
 				i++
+				pstate = parserStateAfterByte(b, pstate)
 				continue
 			}
 			fallthrough
 		default:
-			buf.WriteByte(s[i])
+			buf.WriteByte(b)
 			i++
 		}
 
-		pstate = state
+		pstate = parserStateAfterByte(b, state)
 	}
 
 	return buf.String(), ellipsisIdx
@@ -145,6 +151,18 @@ func stripNewlinesInSequences(s string) string {
 		return s
 	}
 	return buf.String()
+}
+
+// parserStateAfterByte is the VT state after consuming b. lipgloss.Width
+// splits on newlines and reparses each line from ground, so a newline kept
+// in Escape or EscapeIntermediate must not leave the walker there. A newline
+// already in ground stays in ground. A newline hidden inside CSI, DCS, OSC,
+// SOS, PM, or APC is not passed here: that join leaves the sequence state.
+func parserStateAfterByte(b byte, state parser.State) parser.State {
+	if b == '\n' {
+		return parser.GroundState
+	}
+	return state
 }
 
 // sequenceHidesNewline reports whether the parser is inside a sequence whose
@@ -227,7 +245,8 @@ func splitTrailingSGR(tail string) (body, trailing string) {
 			continue
 		}
 		start := i
-		state, action := parser.Table.Transition(pstate, tail[i])
+		b := tail[i]
+		state, action := parser.Table.Transition(pstate, b)
 		if action == parser.PrintAction || state == parser.Utf8State {
 			cluster, _ := ansi.FirstGraphemeCluster(tail[i:], ansi.GraphemeWidth)
 			if len(cluster) == 0 {
@@ -239,7 +258,7 @@ func splitTrailingSGR(tail string) (body, trailing string) {
 			}
 		} else {
 			i++
-			pstate = state
+			pstate = parserStateAfterByte(b, state)
 		}
 		if len(spans) > 0 && !spans[len(spans)-1].sgr {
 			spans[len(spans)-1].end = i
@@ -292,7 +311,8 @@ func splitTrailingZeroWidth(s string) (head, tail string) {
 	pstate := parser.GroundState
 	last := 0
 	for i := 0; i < len(s); {
-		state, action := parser.Table.Transition(pstate, s[i])
+		b := s[i]
+		state, action := parser.Table.Transition(pstate, b)
 		if action == parser.PrintAction || state == parser.Utf8State {
 			cluster, w := ansi.FirstGraphemeCluster(s[i:], ansi.GraphemeWidth)
 			if len(cluster) == 0 {
@@ -306,7 +326,7 @@ func splitTrailingZeroWidth(s string) (head, tail string) {
 			continue
 		}
 		i++
-		pstate = state
+		pstate = parserStateAfterByte(b, state)
 	}
 	return s[:last], s[last:]
 }
@@ -321,7 +341,8 @@ func dropExtraVisibleEllipses(s string, ellipsisIdx int) (string, int) {
 	var extra []span
 	pstate := parser.GroundState
 	for i := 0; i < len(s); {
-		state, action := parser.Table.Transition(pstate, s[i])
+		b := s[i]
+		state, action := parser.Table.Transition(pstate, b)
 		if action == parser.PrintAction || state == parser.Utf8State {
 			cluster, _ := ansi.FirstGraphemeCluster(s[i:], ansi.GraphemeWidth)
 			if len(cluster) == 0 {
@@ -337,7 +358,7 @@ func dropExtraVisibleEllipses(s string, ellipsisIdx int) (string, int) {
 			continue
 		}
 		i++
-		pstate = state
+		pstate = parserStateAfterByte(b, state)
 	}
 	for k := len(extra) - 1; k >= 0; k-- {
 		sp := extra[k]
@@ -349,21 +370,19 @@ func dropExtraVisibleEllipses(s string, ellipsisIdx int) (string, int) {
 	return s, ellipsisIdx
 }
 
-func padBeforeEllipsis(out, line string, width int, ellipsisIdx int) (string, int) {
+// padBeforeEllipsis inserts one space at the repaired marker. The marker
+// already carries the last kept cell's style, so the space inherits it. Style
+// is not taken from the source cell that was dropped: that cell's SGR belongs
+// to the glyph that did not fit.
+func padBeforeEllipsis(out string, ellipsisIdx int) (string, int) {
 	if ellipsisIdx < 0 || ellipsisIdx+len(ellipsisRune) > len(out) {
 		return out, ellipsisIdx
 	}
 	if out[ellipsisIdx:ellipsisIdx+len(ellipsisRune)] != ellipsisRune {
 		return out, ellipsisIdx
 	}
-	prefix := out[:ellipsisIdx]
-	style := ""
-	if !prefixHasOpenStyle(prefix) {
-		style = activeSGRReplay(cellPrefix(line, width-1))
-	}
-	out = prefix + style + " " + out[ellipsisIdx:]
-	ellipsisIdx = len(prefix) + len(style) + 1
-	return out, ellipsisIdx
+	out = out[:ellipsisIdx] + " " + out[ellipsisIdx:]
+	return out, ellipsisIdx + 1
 }
 
 func hasResetBareEllipsisAt(prefix string) bool {
@@ -377,34 +396,6 @@ func endsWithResetBareEllipsis(s string) bool {
 		return false
 	}
 	return hasResetBareEllipsisAt(s[:idx])
-}
-
-func prefixHasOpenStyle(prefix string) bool {
-	return activeSGRReplay(prefix) != ""
-}
-
-func cellPrefix(s string, budget int) string {
-	if budget <= 0 {
-		return ""
-	}
-	p := ansi.NewParser()
-	var (
-		state  byte
-		used   int
-		length int
-	)
-	for length < len(s) && used < budget {
-		_, w, n, newState := ansi.GraphemeWidth.DecodeSequenceInString(s[length:], state, p)
-		state = newState
-		if w > 0 {
-			if used+w > budget {
-				break
-			}
-			used += w
-		}
-		length += n
-	}
-	return s[:length]
 }
 
 // activeSGRReplay returns the original SGR bytes active after parsing s,
@@ -430,8 +421,9 @@ func activeSGRReplay(s string) string {
 			pstate = parser.GroundState
 			continue
 		}
-		state, _ := parser.Table.Transition(pstate, s[i])
-		pstate = state
+		b := s[i]
+		state, _ := parser.Table.Transition(pstate, b)
+		pstate = parserStateAfterByte(b, state)
 		i++
 	}
 	return replay.String()

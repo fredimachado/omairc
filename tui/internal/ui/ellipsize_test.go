@@ -759,6 +759,158 @@ func TestEllipsizeNonSGRFinalDoesNotSwallowM(t *testing.T) {
 	}
 }
 
+func TestEllipsizePadDoesNotTakeStyleFromDroppedGlyph(t *testing.T) {
+	cases := []struct {
+		name  string
+		line  string
+		width int
+		want  string
+	}{
+		{
+			name:  "wide glyph after plain cell",
+			line:  "A\x1b[32m文nick",
+			width: 3,
+			want:  "A …\x1b[32m",
+		},
+		{
+			name:  "zero width between reset and wide glyph",
+			line:  "AB\x1b[32m\u200b文nick",
+			width: 4,
+			want:  "AB\x1b[32m\u200b\x1b[0m …",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assertEllipsisMatchesLastCell(t, tc.line, tc.width, tc.want)
+		})
+	}
+}
+
+func TestEllipsizeDropsSourceEllipsisBeforeRepair(t *testing.T) {
+	cases := []struct {
+		name  string
+		line  string
+		width int
+		want  string
+	}{
+		{
+			name:  "green ellipsis after red cell",
+			line:  "\x1b[31mA\x1b[32m…XXXX",
+			width: 3,
+			want:  "\x1b[31mA\x1b[31m …\x1b[32m",
+		},
+		{
+			name:  "underline ellipsis after red cells",
+			line:  "\x1b[31mAB\x1b[4m…XXXX",
+			width: 4,
+			want:  "\x1b[31mAB\x1b[31m …\x1b[4m",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assertEllipsisMatchesLastCell(t, tc.line, tc.width, tc.want)
+		})
+	}
+}
+
+func TestEllipsizeEscapeNewlineReturnsToGround(t *testing.T) {
+	cases := []struct {
+		name  string
+		line  string
+		width int
+		want  string
+	}{
+		{
+			name:  "newline in escape before torn CSI",
+			line:  "\x1b\n[31\nmHELLO WORLD",
+			width: 12,
+			want:  "\x1b\n[31mHELLO W…",
+		},
+		{
+			name:  "newline in escape",
+			line:  "\x1b\nHELLO WORLD",
+			width: 1,
+			want:  "\x1b\n…",
+		},
+		{
+			name:  "newline in escape intermediate",
+			line:  "\x1b(\nBHELLO WORLD",
+			width: 1,
+			want:  "\x1b(\n…",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assertEllipsisMatchesLastCell(t, tc.line, tc.width, tc.want)
+			if !strings.Contains(ellipsizeLine(tc.line, tc.width), "\n") {
+				t.Fatal("kept newline was dropped")
+			}
+		})
+	}
+
+	got := ellipsizeLine("abc\ndefghijkl", 4)
+	if got != "abc\n   …" {
+		t.Fatalf("ground newline: got %q, want %q", got, "abc\n   …")
+	}
+	if lipgloss.Width(got) != 4 || !strings.Contains(got, "\n") {
+		t.Fatalf("ground newline width or break: width %d %q", lipgloss.Width(got), got)
+	}
+}
+
+// assertEllipsisMatchesLastCell checks the budget, the bytes, and that the
+// ellipsis carries the style of the last positive-width cell that was kept.
+func assertEllipsisMatchesLastCell(t *testing.T, line string, width int, want string) {
+	t.Helper()
+	got := ellipsizeLine(line, width)
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if lipgloss.Width(got) != width {
+		t.Fatalf("width %d, want %d: %q", lipgloss.Width(got), width, got)
+	}
+	ellipsis := strings.LastIndex(got, ellipsisRune)
+	if ellipsis < 0 {
+		t.Fatalf("missing ellipsis: %q", got)
+	}
+	if strings.Count(got, ellipsisRune) != 1 {
+		t.Fatalf("want one ellipsis, got %q", got)
+	}
+	kept := strings.TrimRight(got[:ellipsis], " ")
+	head, _ := splitTrailingZeroWidth(kept)
+	if gotStyle, wantStyle := compactSGRReplay(got[:ellipsis]), compactSGRReplay(head); gotStyle != wantStyle {
+		t.Fatalf("ellipsis style %q, last kept cell %q: %q", gotStyle, wantStyle, got)
+	}
+}
+
+// compactSGRReplay is the open SGR on s with a repeated sequence collapsed, so
+// a repair that writes the kept color again still matches the last cell.
+func compactSGRReplay(s string) string {
+	replay := activeSGRReplay(s)
+	var b strings.Builder
+	prev := ""
+	for i := 0; i < len(replay); {
+		if replay[i] != '\x1b' {
+			b.WriteByte(replay[i])
+			i++
+			continue
+		}
+		j := i + 1
+		for j < len(replay) && replay[j] != 'm' {
+			j++
+		}
+		if j < len(replay) {
+			j++
+		}
+		seq := replay[i:j]
+		if seq != prev {
+			b.WriteString(seq)
+			prev = seq
+		}
+		i = j
+	}
+	return b.String()
+}
+
 // ansiStripForTest drops escape sequences for readable assertions.
 func ansiStripForTest(s string) string {
 	var b strings.Builder

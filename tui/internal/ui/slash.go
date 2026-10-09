@@ -251,7 +251,7 @@ func (m *Model) slashLines() []string {
 		if index == m.slash.selected {
 			style = selected
 		}
-		text := truncateLine(hit.Label+strings.Repeat(" ", slashMenuGap)+hit.Usage, width)
+		text := ellipsizeLine(hit.Label+strings.Repeat(" ", slashMenuGap)+hit.Usage, width)
 		lines = append(lines, style.Width(width).Render(text))
 	}
 	// The frame costs a top and bottom row. Drop it when the body cannot hold

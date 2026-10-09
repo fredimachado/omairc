@@ -88,7 +88,7 @@ func (m *Model) transcriptRowArea() transcriptRows {
 			if m.findMatchAt(index) {
 				style = m.styles.FindMatch
 			}
-			area.append(style.Render(text))
+			area.append(m.clipTranscriptLine(style.Render(text)))
 		}
 		return area
 	}
@@ -119,7 +119,7 @@ func (m *Model) unreadMarkLine() string {
 	label := m.styles.UnreadMark.Render("New messages")
 	remaining := width - lipgloss.Width(label) - 2
 	if remaining < 2 {
-		return truncateLine(label, width)
+		return ellipsizeLine(label, width)
 	}
 	left := remaining / 2
 	right := remaining - left
@@ -302,7 +302,7 @@ func (m *Model) headerBand(content string, withMarker bool) string {
 				if maxTopic < 0 {
 					maxTopic = 0
 				}
-				content = truncateLine(content, maxTopic)
+				content = ellipsizeLine(content, maxTopic)
 				gap = available - lipgloss.Width(content) - lipgloss.Width(marker)
 				if gap < 0 {
 					gap = 0
@@ -312,7 +312,7 @@ func (m *Model) headerBand(content string, withMarker bool) string {
 			return m.styles.TopicBar.Width(width).Render(content)
 		}
 	}
-	content = truncateLine(content, width)
+	content = ellipsizeLine(content, width)
 	// The band is the block's own background, so it covers the caption, the gap,
 	// and the padding out to the column edge rather than stopping at the text.
 	return m.styles.TopicBar.Width(width).Render(content)
@@ -967,16 +967,16 @@ func (m *Model) messageRow(index int, message controller.MessageSnapshot) string
 // time/nick column and a wrapped body.
 func (m *Model) messageRowAt(messages []controller.MessageSnapshot, index int, message controller.MessageSnapshot, nickWidth int) string {
 	if m.findMatchAt(index) {
-		return m.styles.FindMatch.Render(m.transcriptLine(message))
+		return m.clipTranscriptLine(m.styles.FindMatch.Render(m.transcriptLine(message)))
 	}
 	switch message.Kind {
 	case "action":
 		// "* nick body": an italic, muted action shape with the nick still
 		// carrying its palette color.
-		return m.styles.Action.Render("* ") +
+		return m.clipTranscriptLine(m.styles.Action.Render("* ") +
 			m.nickStyle(message.Author).Render(message.Author) +
 			m.styles.Action.Render(" ") +
-			m.renderMessageBody(message.Body, m.styles.Action)
+			m.renderMessageBody(message.Body, m.styles.Action))
 	case "event":
 		// A dim, centered server event, mirroring MessageRow.qml's centered
 		// messageEvent.
@@ -984,10 +984,10 @@ func (m *Model) messageRowAt(messages []controller.MessageSnapshot, index int, m
 	case "notice":
 		// "-nick- body": the notice marker stays muted while the nick keeps its
 		// palette color.
-		return m.styles.Notice.Render("-") +
+		return m.clipTranscriptLine(m.styles.Notice.Render("-") +
 			m.nickStyle(message.Author).Render(message.Author) +
 			m.styles.Notice.Render("- ") +
-			m.renderMessageBody(message.Body, m.styles.Notice)
+			m.renderMessageBody(message.Body, m.styles.Notice))
 	}
 	var previous *controller.MessageSnapshot
 	if index > 0 && index-1 < len(messages) {
@@ -1016,14 +1016,32 @@ func (m *Model) mentionWash() lipgloss.Style {
 }
 
 // eventRow centers a dim server event within the transcript column. A body
-// wider than the column is left to renderColumn's truncation.
+// wider than the column ends with an ellipsis.
 func (m *Model) eventRow(body string) string {
 	text := m.renderMessageBody(body, m.styles.Event)
-	pad := (m.transcriptWidth() - lipgloss.Width(text)) / 2
+	width := m.transcriptWidth()
+	if width > 0 && lipgloss.Width(text) > width {
+		return ellipsizeLine(text, width)
+	}
+	pad := (width - lipgloss.Width(text)) / 2
 	if pad < 1 {
 		return text
 	}
 	return strings.Repeat(" ", pad) + text
+}
+
+// clipTranscriptLine ellipsizes one physical transcript line that does not fit
+// the column. A line that already fits, or a block that still contains a
+// newline, is left alone so wrapped chat rows keep their breaks.
+func (m *Model) clipTranscriptLine(line string) string {
+	if strings.Contains(line, "\n") {
+		return line
+	}
+	width := m.transcriptWidth()
+	if width > 0 && lipgloss.Width(line) > width {
+		return ellipsizeLine(line, width)
+	}
+	return line
 }
 
 // mentionRow renders a highlighted message as a full-width wash band: the same

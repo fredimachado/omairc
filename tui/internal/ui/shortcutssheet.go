@@ -218,7 +218,7 @@ func sheetShortcutKeys(keys string) string {
 // action in the right column, under a per-group header. inner is the content
 // width inside the border.
 func (m *Model) shortcutsCardBody(inner int) []string {
-	title := truncateLine(m.styles.SheetTitle.Render("Shortcuts"), inner)
+	title := ellipsizeLine(m.styles.SheetTitle.Render("Shortcuts"), inner)
 	layout := m.shortcutsLayout(inner)
 	budget := m.overlayCardRowBudget()
 	if len(layout.body) <= budget-shortcutsHeaderRows && shortcutsBodyShowsAllActions(layout.columns) {
@@ -236,7 +236,7 @@ func (m *Model) shortcutsCardBody(inner int) []string {
 	hint := m.shortcutsScrollHint(offset, total, visible)
 	lines := []string{title}
 	lines = append(lines, layout.body[offset:offset+visible]...)
-	lines = append(lines, truncateLine(hint, inner))
+	lines = append(lines, ellipsizeLine(hint, inner))
 	return lines
 }
 
@@ -386,7 +386,7 @@ func (m *Model) shortcutsGroupsLines(colInner int, groups []shortcutGroup, blank
 		if blankBetween && index > 0 {
 			lines = append(lines, "")
 		}
-		lines = append(lines, truncateLine(m.styles.SectionHeader.Render(group.title), colInner))
+		lines = append(lines, ellipsizeLine(m.styles.SectionHeader.Render(group.title), colInner))
 		labelWidth, actionWidth := shortcutsKeyActionWidths(colInner, group.rows)
 		for _, row := range group.rows {
 			lines = append(lines, m.shortcutsRowLines(colInner, labelWidth, actionWidth, row, wrapActions)...)
@@ -479,12 +479,12 @@ func (m *Model) shortcutsRowLines(colInner, labelWidth, actionWidth int, row sho
 	} else {
 		actionLines = []string{plainAction}
 	}
-	firstAction := actionStyle.Render(actionLines[0])
-	line := keyColumn + strings.Repeat(" ", shortcutsMenuGutter) + clipShortcutLine(firstAction, actionWidth)
+	firstAction := ellipsizeLine(actionStyle.Render(actionLines[0]), actionWidth)
+	line := keyColumn + strings.Repeat(" ", shortcutsMenuGutter) + firstAction
 	lines := []string{line}
 	for index := 1; index < len(actionLines); index++ {
-		continuation := actionStyle.Render(actionLines[index])
-		contLine := strings.Repeat(" ", actionIndent) + clipShortcutLine(continuation, colInner-actionIndent)
+		continuation := ellipsizeLine(actionStyle.Render(actionLines[index]), colInner-actionIndent)
+		contLine := strings.Repeat(" ", actionIndent) + continuation
 		lines = append(lines, clipShortcutLine(contLine, colInner))
 	}
 	return lines
@@ -506,7 +506,7 @@ func (m *Model) shortcutsStackedRowLines(colInner, labelWidth int, plainAction, 
 		actionLines = []string{plainAction}
 	}
 	for _, part := range actionLines {
-		lines = append(lines, clipShortcutLine(actionStyle.Render(part), colInner))
+		lines = append(lines, ellipsizeLine(actionStyle.Render(part), colInner))
 	}
 	return lines
 }

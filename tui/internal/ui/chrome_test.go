@@ -464,6 +464,45 @@ func TestComposerCursorSitsInTheField(t *testing.T) {
 	}
 }
 
+// framedInnerWidth is the content width framedColumn passes to a side column.
+func framedInnerWidth(m *Model, outer int) int {
+	frameX, _ := m.styles.Panel.GetFrameSize()
+	inner := outer - frameX
+	if inner < 1 {
+		return outer
+	}
+	return inner
+}
+
+// TestSidebarNetworkHeaderEllipsizes pins the roster header at the widths where
+// the seeded network name does not fit: the row ends with … and stays the
+// column width, at an 80-column window and a 50-column window.
+func TestSidebarNetworkHeaderEllipsizes(t *testing.T) {
+	for _, window := range []int{80, 50} {
+		m := resizeModel(t, seededModel(t), window, 30)
+		inner := framedInnerWidth(m, sidebarWidth(window))
+		rendered := m.sidebarView(inner, m.bodyHeight())
+		rows := strings.Split(rendered, "\n")
+		for _, row := range rows {
+			if got := lipgloss.Width(row); got != inner {
+				t.Fatalf("window %d sidebar row width %d, want %d:\n%s", window, got, inner, rendered)
+			}
+		}
+		header := plainLine(rows[0])
+		name := m.sidebarNetworkDisplayName("omarchy")
+		full := "▾ " + name
+		if lipgloss.Width(full) <= inner {
+			t.Fatalf("window %d header %q fits %d cells; the proof needs an overflow", window, full, inner)
+		}
+		if !strings.HasSuffix(header, "…") {
+			t.Fatalf("window %d header %q does not end with an ellipsis", window, header)
+		}
+		if strings.Contains(header, name) {
+			t.Fatalf("window %d header kept the full name %q: %q", window, name, header)
+		}
+	}
+}
+
 // TestSidebarSeparatesNetworks pins the roster rule: a divider line sits above
 // every network after the first and directly under the previous section, while
 // the first network keeps the header at the top of the column.

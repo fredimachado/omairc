@@ -174,6 +174,64 @@ func TestTranscriptHeaderStaysPinned(t *testing.T) {
 	}
 }
 
+// TestTopicBandEllipsizesAt80 pins the channel topic at an 80-column window.
+// The band stays the transcript width and ends with … instead of a cut word.
+func TestTopicBandEllipsizesAt80(t *testing.T) {
+	m := resizeModel(t, seededModel(t), 80, 30)
+	header := m.transcriptHeader()
+	if len(header) == 0 {
+		t.Fatal("a channel transcript must have a topic band")
+	}
+	if got, want := lipgloss.Width(header[0]), m.transcriptWidth(); got != want {
+		t.Fatalf("topic band width %d, want %d", got, want)
+	}
+	plain := plainLine(header[0])
+	const topic = "A cozy corner for Omarchy users and builders."
+	if lipgloss.Width(topic) <= m.transcriptWidth() {
+		t.Fatalf("seeded topic fits the %d-cell band; the proof needs an overflow", m.transcriptWidth())
+	}
+	if !strings.HasSuffix(strings.TrimRight(plain, " "), "…") && !strings.Contains(plain, "…") {
+		t.Fatalf("topic band %q does not show an ellipsis", plain)
+	}
+	if strings.Contains(plain, topic) {
+		t.Fatalf("topic band kept the full sentence: %q", plain)
+	}
+}
+
+// TestSidebarSectionHeaderEllipsizesAt50 pins DIRECT MESSAGES at a 50-column
+// window. The old hard cut dropped the last letter and left DIRECT MESSAGE.
+func TestSidebarSectionHeaderEllipsizesAt50(t *testing.T) {
+	m := resizeModel(t, seededModel(t), 50, 30)
+	inner := framedInnerWidth(m, sidebarWidth(50))
+	rendered := m.sidebarView(inner, m.bodyHeight())
+	rows := strings.Split(rendered, "\n")
+	for _, row := range rows {
+		if got := lipgloss.Width(row); got != inner {
+			t.Fatalf("sidebar row width %d, want %d:\n%s", got, inner, rendered)
+		}
+	}
+	var heading string
+	for _, row := range rows {
+		plain := plainLine(row)
+		if strings.Contains(plain, "DIRECT") {
+			heading = plain
+			break
+		}
+	}
+	if heading == "" {
+		t.Fatalf("no direct-message heading:\n%s", rendered)
+	}
+	if strings.Contains(heading, "DIRECT MESSAGES") {
+		t.Fatalf("heading kept the full label in %d cells: %q", inner, heading)
+	}
+	if heading == "DIRECT MESSAGE" || strings.HasPrefix(heading, "DIRECT MESSAGE ") {
+		t.Fatalf("heading is a hard cut: %q", heading)
+	}
+	if !strings.Contains(heading, "…") {
+		t.Fatalf("heading %q does not show an ellipsis", heading)
+	}
+}
+
 // TestSidebarGroupsHaveABlankRow pins the sidebar rhythm: a blank row separates
 // the CHANNELS and DIRECT MESSAGES groups, and a blank row precedes the rule
 // that separates two networks.
