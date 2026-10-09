@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The terminal footer keeps the `Ctrl+/ shortcuts` hint whole on narrow widths,
+  drops the version label first, shortens status before hints, and pads the row
+  to the window width instead of truncating it.
 - The terminal shortcuts sheet lays groups in columns and scrolls on a short
   terminal so the bottom border stays visible.
 - The terminal client shows `…` when a label does not fit, instead of cutting the word.
