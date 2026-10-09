@@ -392,6 +392,28 @@ func TestShortcutsSheetScrollsShortTerminal(t *testing.T) {
 	}
 }
 
+func withWindowsShortcutKeyLabels(t *testing.T, fn func()) {
+	t.Helper()
+	prev := shortcutSheetKeyLabels
+	shortcutSheetKeyLabels = ExpandShortcutKeyLabels
+	t.Cleanup(func() { shortcutSheetKeyLabels = prev })
+	fn()
+}
+
+func TestShortcutsSheetTallNarrowWindowsLabels(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("covered by TestShortcutsSheetTallNarrowNoPanic on Windows")
+	}
+	withWindowsShortcutKeyLabels(t, func() {
+		m := resizeModel(t, seededModel(t), 60, 60)
+		m.openShortcuts()
+		if !allShortcutActionsReachableInView(m) {
+			t.Fatalf("not every shortcut action is reachable at 60x60 with Windows key labels")
+		}
+		assertNoWrappedActionPrefixDuplicates(t, shortcutsViewPlain(m))
+	})
+}
+
 func TestShortcutsSheetTallNarrowNoPanic(t *testing.T) {
 	m := resizeModel(t, seededModel(t), 60, 60)
 	m.openShortcuts()

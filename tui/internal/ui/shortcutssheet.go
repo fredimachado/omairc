@@ -202,6 +202,17 @@ func (m *Model) shortcutsScrollBounds(inner int) (total, visible, maxOffset int)
 // action column.
 const shortcutsMenuGutter = 2
 
+// shortcutSheetKeyLabels overrides sheetShortcutKeys in tests. Production uses
+// displayShortcutKeys from the platform chords file.
+var shortcutSheetKeyLabels func(string) string
+
+func sheetShortcutKeys(keys string) string {
+	if shortcutSheetKeyLabels != nil {
+		return shortcutSheetKeyLabels(keys)
+	}
+	return displayShortcutKeys(keys)
+}
+
 // shortcutsCardBody is the sheet's content, before the shared frame. Every chord
 // is a key.Binding whose Help drives a keycap chip in the left column with the
 // action in the right column, under a per-group header. inner is the content
@@ -389,7 +400,7 @@ func (m *Model) shortcutsGroupsLines(colInner int, groups []shortcutGroup, blank
 func shortcutsKeyActionWidths(colInner int, rows []shortcutRow) (labelWidth, actionWidth int) {
 	keyText := 0
 	for _, candidate := range rows {
-		if width := lipgloss.Width(displayShortcutKeys(candidate.keys)); width > keyText {
+		if width := lipgloss.Width(sheetShortcutKeys(candidate.keys)); width > keyText {
 			keyText = width
 		}
 	}
@@ -411,18 +422,56 @@ func shortcutsKeyActionWidths(colInner int, rows []shortcutRow) (labelWidth, act
 	return labelWidth, actionWidth
 }
 
+// shortcutKeycapInnerWidth is the plain-text budget inside a keycap chip.
+func shortcutKeycapInnerWidth(labelWidth int) int {
+	width := labelWidth - 2
+	if width < 1 {
+		width = 1
+	}
+	return width
+}
+
+// shortcutKeyLabelNeedsStack reports whether the key label must sit above the
+// action so the action column is not squeezed off the row.
+func shortcutKeyLabelNeedsStack(labelWidth int, keysLabel string) bool {
+	return lipgloss.Width(keysLabel)+2 > labelWidth
+}
+
+// shortcutActionWrapPreservesLabel reports whether wrapping an action at
+// actionWidth still leaves the full label in folded plain text.
+func shortcutActionWrapPreservesLabel(plainAction string, actionWidth int) bool {
+	if lipgloss.Width(plainAction) <= actionWidth {
+		return true
+	}
+	parts := shortcutsWrapPlainAction(plainAction, actionWidth)
+	folded := shortcutsPlainFold(strings.Join(parts, " "))
+	return strings.Contains(folded, plainAction)
+}
+
+// shortcutRowNeedsStackedLayout reports whether a chord row must render with
+// the key label above a full-width action block.
+func shortcutRowNeedsStackedLayout(labelWidth, actionWidth int, keysLabel, plainAction string) bool {
+	if shortcutKeyLabelNeedsStack(labelWidth, keysLabel) {
+		return true
+	}
+	return !shortcutActionWrapPreservesLabel(plainAction, actionWidth)
+}
+
 // shortcutsRowLines renders one chord row at colInner width. When wrapActions is
 // true, a long action continues on the next line so the full label stays visible.
 func (m *Model) shortcutsRowLines(colInner, labelWidth, actionWidth int, row shortcutRow, wrapActions bool) []string {
 	actionStyle := lipgloss.NewStyle().Foreground(m.styles.Colors.TextMuted)
-	keysLabel := displayShortcutKeys(row.keys)
+	keysLabel := sheetShortcutKeys(row.keys)
+	plainAction := displayShortcutAction(row.action)
+	if shortcutRowNeedsStackedLayout(labelWidth, actionWidth, keysLabel, plainAction) {
+		return m.shortcutsStackedRowLines(colInner, labelWidth, plainAction, keysLabel, wrapActions, actionStyle)
+	}
 	help := key.NewBinding(
 		key.WithKeys(keysLabel),
 		key.WithHelp(keysLabel, row.action),
 	).Help()
 	chip := clipShortcutLine(m.styles.Keycap.Render(" "+help.Key+" "), labelWidth)
 	keyColumn := lipgloss.NewStyle().Width(labelWidth).Render(chip)
-	plainAction := displayShortcutAction(help.Desc)
 	actionIndent := labelWidth + shortcutsMenuGutter
 	var actionLines []string
 	if wrapActions {
@@ -437,6 +486,27 @@ func (m *Model) shortcutsRowLines(colInner, labelWidth, actionWidth int, row sho
 		continuation := actionStyle.Render(actionLines[index])
 		contLine := strings.Repeat(" ", actionIndent) + clipShortcutLine(continuation, colInner-actionIndent)
 		lines = append(lines, clipShortcutLine(contLine, colInner))
+	}
+	return lines
+}
+
+// shortcutsStackedRowLines renders a wide key label on its own lines, then the
+// action across the full column width so narrow terminals still scroll to it.
+func (m *Model) shortcutsStackedRowLines(colInner, labelWidth int, plainAction, keysLabel string, wrapActions bool, actionStyle lipgloss.Style) []string {
+	keyParts := shortcutsWrapPlainAction(keysLabel, shortcutKeycapInnerWidth(labelWidth))
+	var lines []string
+	for _, part := range keyParts {
+		chip := clipShortcutLine(m.styles.Keycap.Render(" "+part+" "), colInner)
+		lines = append(lines, chip)
+	}
+	var actionLines []string
+	if wrapActions {
+		actionLines = shortcutsWrapPlainAction(plainAction, colInner)
+	} else {
+		actionLines = []string{plainAction}
+	}
+	for _, part := range actionLines {
+		lines = append(lines, clipShortcutLine(actionStyle.Render(part), colInner))
 	}
 	return lines
 }
@@ -682,7 +752,7 @@ func (m *Model) shortcutsStackMinInner(groups []shortcutGroup) int {
 	need := shortcutsMinColumnInner
 	for _, group := range groups {
 		for _, row := range group.rows {
-			keys := lipgloss.Width(displayShortcutKeys(row.keys))
+			keys := lipgloss.Width(sheetShortcutKeys(row.keys))
 			action := lipgloss.Width(displayShortcutAction(row.action))
 			rowNeed := keys + 2 + shortcutsMenuGutter + action
 			if rowNeed > need {
@@ -700,7 +770,7 @@ func shortcutsStackMinInnerWrap(groups []shortcutGroup) int {
 	keyText := 0
 	for _, group := range groups {
 		for _, row := range group.rows {
-			if width := lipgloss.Width(displayShortcutKeys(row.keys)); width > keyText {
+			if width := lipgloss.Width(sheetShortcutKeys(row.keys)); width > keyText {
 				keyText = width
 			}
 		}
@@ -869,11 +939,28 @@ func measureShortcutColumn(groups []shortcutGroup, width int, blankBetween bool)
 		measured.lines++
 		plain.WriteString(group.title)
 		plain.WriteByte('\n')
-		_, actionWidth := shortcutsKeyActionWidths(width, group.rows)
+		labelWidth, actionWidth := shortcutsKeyActionWidths(width, group.rows)
 		for _, row := range group.rows {
-			parts := shortcutsWrapPlainAction(displayShortcutAction(row.action), actionWidth)
+			keysLabel := sheetShortcutKeys(row.keys)
+			plainAction := displayShortcutAction(row.action)
+			if shortcutRowNeedsStackedLayout(labelWidth, actionWidth, keysLabel, plainAction) {
+				keyParts := shortcutsWrapPlainAction(keysLabel, shortcutKeycapInnerWidth(labelWidth))
+				measured.lines += len(keyParts)
+				for _, part := range keyParts {
+					plain.WriteString(part)
+					plain.WriteByte('\n')
+				}
+				parts := shortcutsWrapPlainAction(plainAction, width)
+				measured.lines += len(parts)
+				for _, part := range parts {
+					plain.WriteString(part)
+					plain.WriteByte('\n')
+				}
+				continue
+			}
+			parts := shortcutsWrapPlainAction(plainAction, actionWidth)
 			measured.lines += len(parts)
-			plain.WriteString(displayShortcutKeys(row.keys))
+			plain.WriteString(keysLabel)
 			plain.WriteByte('\n')
 			for _, part := range parts {
 				plain.WriteString(part)
