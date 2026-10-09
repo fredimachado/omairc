@@ -63,7 +63,7 @@ func (m *Model) composerView() string {
 	if m == nil {
 		return ""
 	}
-	if m.width < minWidth || m.height < minHeight {
+	if m.terminalTooSmall() {
 		return m.styles.Composer.Inline(true).MaxWidth(m.width).Render(m.composer.View())
 	}
 	inner := m.composerInteriorWidth()
@@ -132,7 +132,7 @@ func (m *Model) composerCursor(row int) *tea.Cursor {
 	// cursor moves with the column's left edge, its inset, and the border. A
 	// terminal too small for the columns renders the bare full-width field at
 	// the left edge and needs no offset.
-	if m.width >= minWidth && m.height >= minHeight {
+	if !m.terminalTooSmall() {
 		cursor.Position.X += m.composerTextLeft()
 	}
 	return cursor
