@@ -728,10 +728,10 @@ func (m *Model) View() tea.View {
 	// Focus reporting drives FocusMsg/BlurMsg, which the shell needs to decide
 	// whether an arrival earns a desktop notification (win.active in the QML).
 	v.ReportFocus = true
-	// ConPTY collapses ctrl+shift+letter to ctrl+letter and Ctrl+Enter to
-	// ctrl+j. Request escape-coded keys so shift chords (nick jump, server
-	// list, inbox, …) and Connect Apply stay distinct on Windows Terminal.
-	v.KeyboardEnhancements.ReportAllKeysAsEscapeCodes = true
+	// Platform-scoped keyboard modes: see keyboardEnhancements. Unix asks for
+	// nothing beyond the always-on disambiguation, so the terminal keeps
+	// sending the characters the user typed (shift+3 is "#", not "3").
+	v.KeyboardEnhancements = keyboardEnhancements()
 	// Leave BackgroundColor and ForegroundColor unset so Bubble Tea does not
 	// emit OSC 11/10. Omarchy terminals are often translucent; a solid OSC
 	// background turns that off, and setting foreground would reset the
