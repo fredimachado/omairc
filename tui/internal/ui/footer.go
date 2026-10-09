@@ -82,10 +82,19 @@ func (m *Model) footerStatusAt(level footerStatusLevel, textBudget int) string {
 		text += " · " + network
 	}
 	styled := m.styles.Footer.Render(text)
-	if level == footerStatusEllipsisNetwork && textBudget > 0 {
+	if level == footerStatusEllipsisNetwork && network != "" && textBudget > 0 {
 		room := textBudget - lipgloss.Width(mark) - 1
-		if room > 0 {
-			styled = ellipsizeLine(styled, room)
+		stateStyled := m.styles.Footer.Render(state)
+		sep := " · "
+		sepW := lipgloss.Width(sep)
+		ellipsisW := lipgloss.Width("…")
+		if room < lipgloss.Width(stateStyled)+sepW+ellipsisW {
+			return mark + " " + styled
+		}
+		networkBudget := room - lipgloss.Width(stateStyled) - sepW
+		if networkBudget > 0 {
+			networkStyled := ellipsizeLine(m.styles.Footer.Render(network), networkBudget)
+			styled = stateStyled + sep + networkStyled
 		}
 	}
 	return mark + " " + styled
@@ -154,11 +163,6 @@ func (m *Model) footerView() string {
 						continue
 					}
 					if line, ok := assemble(versionOn, status, right); ok {
-						if !versionOn && drop == 0 && !shortLast && width > 80 {
-							if withVersion, ok := assemble(true, status, right); ok {
-								return withVersion, true
-							}
-						}
 						return line, true
 					}
 				}
@@ -237,9 +241,9 @@ func (m *Model) assembleFooterLine(
 		left = m.footerStatusAt(statusLevel, textBudget)
 	} else {
 		left = m.footerStatusAt(statusLevel, 0)
-		if lipgloss.Width(left) > textBudget {
-			return "", false
-		}
+	}
+	if lipgloss.Width(left) > textBudget {
+		return "", false
 	}
 	return padFooterLine(left, right, versionPart, width)
 }

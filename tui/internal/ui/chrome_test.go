@@ -291,7 +291,7 @@ func TestComposerFrameTracksFocus(t *testing.T) {
 // trails the shortcut list at the far right of the shell footer, flush to the
 // window edge, and it is gone from the sidebar identity footer.
 func TestFooterVersionSitsAfterTheShortcuts(t *testing.T) {
-	m := seededModel(t)
+	m := resizeModel(t, seededModel(t), 130, 30)
 	rows := strings.Split(m.render(), "\n")
 	footer := ansiPattern.ReplaceAllString(rows[len(rows)-1], "")
 

@@ -20,7 +20,7 @@ func TestFooterFitsNarrowWidths(t *testing.T) {
 	}
 
 	for _, ctx := range contexts {
-		for _, width := range []int{40, 50, 60, 80, 118} {
+		for _, width := range []int{40, 41, 50, 60, 80, 118} {
 			m := seededModel(t)
 			ctx.prep(m)
 			m = resizeModel(t, m, width, 30)
@@ -62,10 +62,22 @@ func TestFooterFitsNarrowWidths(t *testing.T) {
 						t.Fatalf("%s width %d: composer footer must drop the version:\n%s", ctx.name, width, plain)
 					}
 				}
+			case 41:
+				if ctx.name == "composer" {
+					if !strings.Contains(plain, "Connected") {
+						t.Fatalf("%s width %d: composer footer must keep Connected:\n%s", ctx.name, width, plain)
+					}
+				}
 			case 118:
 				if ctx.name == "composer" {
+					if !strings.Contains(plain, "Connected") {
+						t.Fatalf("%s width %d: composer footer must keep Connected:\n%s", ctx.name, width, plain)
+					}
 					if !strings.Contains(plain, "Ctrl+K") || !strings.Contains(plain, "jump") {
 						t.Fatalf("%s width %d: composer footer must keep Ctrl+K jump:\n%s", ctx.name, width, plain)
+					}
+					if hasVersion {
+						t.Fatalf("%s width %d: composer footer must drop the version:\n%s", ctx.name, width, plain)
 					}
 				}
 			}
