@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.3] - 2026-10-13
+
+### Fixed
+
+- Linux pacman packages are built against Omarchy's Qt stack (currently 6.11.x)
+  from Arch Linux Archive, not rolling Arch's newest Qt. The 1.10.2 package
+  linked against Qt 6.12 and failed to start on Omarchy until Qt caught up.
+  Release CI now pins Qt during `makepkg` and rejects binaries that need
+  newer `Qt_6.*` symbol versions than Omarchy ships.
+
 ## [1.10.2] - 2026-10-09
 
 ### Added
@@ -763,7 +773,8 @@ First public release: a simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.10.2...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.10.3...HEAD
+[1.10.3]: https://github.com/fredimachado/omairc/compare/v1.10.2...v1.10.3
 [1.10.2]: https://github.com/fredimachado/omairc/compare/v1.10.1...v1.10.2
 [1.10.1]: https://github.com/fredimachado/omairc/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/fredimachado/omairc/compare/v1.0.7...v1.10.0

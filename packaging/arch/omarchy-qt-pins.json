@@ -1,0 +1,29 @@
+{
+  "comment": "Qt stack Omarchy stable ships. Bump when Omarchy moves qt6-* (see omarchy-pkgs rebuilt_against).",
+  "archive_base": "https://archive.archlinux.org/packages",
+  "max_qt_symbol_minor": 11,
+  "install_order": [
+    "qt6-shadertools",
+    "qt6-base",
+    "qt6-svg",
+    "qt6-wayland",
+    "qt6-declarative",
+    "qtkeychain-qt6"
+  ],
+  "packages": {
+    "qt6-shadertools": "6.11.2-1",
+    "qt6-base": "6.11.2-3",
+    "qt6-svg": "6.11.2-1",
+    "qt6-wayland": "6.11.2-1",
+    "qt6-declarative": "6.11.2-1",
+    "qtkeychain-qt6": "0.17.0-1"
+  },
+  "hold_in_pacman": [
+    "qt6-shadertools",
+    "qt6-base",
+    "qt6-svg",
+    "qt6-wayland",
+    "qt6-declarative",
+    "qtkeychain-qt6"
+  ]
+}

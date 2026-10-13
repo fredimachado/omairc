@@ -23,6 +23,9 @@ on:
       - 'install-tui.sh'
       - 'tui/**'
       - 'packaging/tui/**'
+      - 'packaging/arch/**'
+      - 'bin/arch-install-omarchy-qt-pins.py'
+      - 'bin/verify-omarchy-qt-binary.py'
   workflow_dispatch:
 
 concurrency:
@@ -48,11 +51,19 @@ jobs:
         run: |
           pacman-key --init
           pacman-key --populate archlinux
-          pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel git github-cli sudo
+          # Sync only: a full upgrade pulls Qt newer than Omarchy ships.
+          pacman -Sy --noconfirm
+          pacman -S --noconfirm base-devel git github-cli sudo python
 
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install Omarchy Qt pins
+        run: |
+          set -euo pipefail
+          python3 bin/arch-install-omarchy-qt-pins.py self-test
+          python3 bin/arch-install-omarchy-qt-pins.py install
+          python3 bin/arch-install-omarchy-qt-pins.py hold-pacman
 
       - name: Create build user
         run: |
@@ -126,6 +137,7 @@ jobs:
           rm -rf "$tmp"
           want="omairc $OMAIRC_DISPLAY_VERSION"
           test "$got" = "$want"
+          python3 bin/verify-omarchy-qt-binary.py "$tmp/usr/bin/omairc"
           if [[ "$GITHUB_REF" == refs/heads/main ]]; then
             case "$PKG_BASE" in
               omairc-${OMAIRC_VERSION}-${OMAIRC_ARCH_PKGREL}-x86_64.pkg.tar.zst) ;;

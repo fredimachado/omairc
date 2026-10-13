@@ -9,18 +9,18 @@ url='https://github.com/fredimachado/omairc'
 license=('MIT' 'LGPL-3.0-or-later' 'OFL-1.1')
 options=(!debug)
 depends=(
-  'qt6-base'
-  'qt6-declarative'
-  'qt6-svg'
-  'qt6-wayland'
+  'qt6-base>=6.11'
+  'qt6-declarative>=6.11'
+  'qt6-svg>=6.11'
+  'qt6-wayland>=6.11'
   'qtkeychain-qt6'
   'xdg-desktop-portal'
 )
 makedepends=(
-  'qt6-base'
-  'qt6-declarative'
-  'qt6-svg'
-  'qt6-wayland'
+  'qt6-base>=6.11'
+  'qt6-declarative>=6.11'
+  'qt6-svg>=6.11'
+  'qt6-wayland>=6.11'
   'qtkeychain-qt6'
   'base-devel'
 )
