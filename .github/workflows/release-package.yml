@@ -134,10 +134,10 @@ jobs:
           tmp=$(mktemp -d)
           tar -xf "$PKG" -C "$tmp" usr/bin/omairc
           got=$("$tmp/usr/bin/omairc" --version)
-          rm -rf "$tmp"
           want="omairc $OMAIRC_DISPLAY_VERSION"
           test "$got" = "$want"
           python3 bin/verify-omarchy-qt-binary.py "$tmp/usr/bin/omairc"
+          rm -rf "$tmp"
           if [[ "$GITHUB_REF" == refs/heads/main ]]; then
             case "$PKG_BASE" in
               omairc-${OMAIRC_VERSION}-${OMAIRC_ARCH_PKGREL}-x86_64.pkg.tar.zst) ;;
