@@ -7,12 +7,12 @@ class OmaircTui < Formula
   on_macos do
     on_arm do
       url "https://github.com/fredimachado/omairc/releases/download/v#{version}/omairc-tui-#{version}-darwin-arm64.tar.gz"
-      sha256 "ef189d6085d034470342432970e2c3b5aded828c76626656f8b4a483077777a6"
+      sha256 "9fff354ea706b72b246092e1de17609f57f9af03cb7e6799dcb14edc984674af"
     end
 
     on_intel do
       url "https://github.com/fredimachado/omairc/releases/download/v#{version}/omairc-tui-#{version}-darwin-amd64.tar.gz"
-      sha256 "3555acaf32f1670929fc23291890d66a82a3c83848bcbf488af6d3865a3f07d7"
+      sha256 "bb3a47956157fea3186f829c6ead47eba72268d66725fb99e6017a82516b9cb7"
     end
   end
 

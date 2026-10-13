@@ -6,7 +6,7 @@
     "architecture": {
         "64bit": {
             "url": "https://github.com/fredimachado/omairc/releases/download/v1.10.3/omairc-tui-1.10.3-windows-amd64.zip",
-            "hash": "518192120534c264ec93aa487e605f3efe4a3e6dbe9c70f2e97641af6ca52edb"
+            "hash": "b926c05e4f5c40f72edb06c723e0f1179037422ba69c79b604317493eea5bcb8"
         }
     },
     "bin": "omairc-tui.exe",
