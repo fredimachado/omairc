@@ -51,8 +51,20 @@ ListView {
     spacing: 0
     // Slack above a short transcript, so the newest row sits on the bottom.
     // BottomToTop would invert model order and every indexAt path.
-    topMargin: Math.max(0, height - contentHeight)
+    // Applied by syncAnchoredMargin(). A live binding on contentHeight
+    // re-enters while rows are realized and can settle a few pixels short.
+    property bool syncingMargin: false
     highlightFollowsCurrentItem: false
+
+    function syncAnchoredMargin() {
+        if (syncingMargin)
+            return;
+        syncingMargin = true;
+        var slack = Math.max(0, height - contentHeight);
+        if (Math.abs(topMargin - slack) > 0.5)
+            topMargin = slack;
+        syncingMargin = false;
+    }
 
     function topContentY() {
         return originY - topMargin;
@@ -420,6 +432,7 @@ ListView {
     onMovementEnded: adoptViewport(true)
     onFlickEnded: adoptViewport(true)
     onContentHeightChanged: {
+        syncAnchoredMargin();
         var wasAtEnd = previousContentHeight <= height
             || contentY + height >= originY + previousContentHeight - 2;
         if (stick === stickFollowing && wasAtEnd)
@@ -427,6 +440,7 @@ ListView {
         previousContentHeight = contentHeight;
     }
     onHeightChanged: {
+        syncAnchoredMargin();
         if (stick === stickFollowing)
             stickToEnd();
         else
@@ -505,6 +519,7 @@ ListView {
     }
 
     Component.onCompleted: {
+        syncAnchoredMargin();
         refreshUnreadMarkRow();
         if (!applyRememberedPlace())
             pinToEnd();

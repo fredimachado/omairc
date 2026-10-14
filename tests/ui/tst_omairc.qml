@@ -2911,11 +2911,7 @@ TestCase {
     }
 
     function assertTranscriptRestsOnBottom(list) {
-        tryVerify(function() {
-            return list.count > 0
-                && list.itemAtIndex(0) !== null
-                && list.itemAtIndex(list.count - 1) !== null;
-        });
+        settleTranscript(list);
         var first = rowEdgesInList(list, 0);
         verify(first.top > 0,
             "A short transcript should leave empty space above the oldest row");
@@ -2956,6 +2952,8 @@ TestCase {
         // The seeded buffer is a few dozen lines. Give it a viewport taller
         // than that buffer so the short-console case is the one under test.
         appWindow.height = 1200;
+        settleTranscript(status);
+        wait(50);
         settleTranscript(status);
         verify(status.count > 0, "Status should have a few lines");
         verify(status.contentHeight <= status.height,
