@@ -10473,9 +10473,13 @@ TestCase {
         tryCompare(appWindow, "currentChannelJoined", true);
         compare(item("headerLeaveButton").visible, true);
         compare(item("peopleButton").visible, true);
+        // Leave and Close are width 0 until the row lays them out. Qt 6.12
+        // offscreen delivery misses a click until that button has rendered.
+        waitForRendering(item("headerLeaveButton"));
 
         mouseClick(item("headerLeaveButton"));
         tryCompare(appWindow, "currentChannelJoined", false);
+        waitForRendering(item("headerCloseButton"));
         mouseClick(item("headerCloseButton"));
         tryVerify(function() {
             return findNamed(liveConversation("#omarchy")) === null;

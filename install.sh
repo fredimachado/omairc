@@ -1,10 +1,13 @@
 #!/usr/bin/env sh
 set -eu
 
-# Installs Omairc on Arch-based systems (Omarchy, Arch Linux, Manjaro,
-# EndeavourOS, ...). Adds the omairc pacman repository pointing at the latest
-# GitHub release, then installs it. Safe to re-run: the repository is only
-# added once, and later runs upgrade to the newest release.
+# Installs Omairc from the GitHub releases pacman repository on Arch-based
+# systems (Arch Linux, Manjaro, EndeavourOS, and Omarchy stable or rc).
+# Safe to re-run: the repository is only added once, and later runs upgrade
+# to the newest release.
+#
+# Omarchy edge already publishes the official package:
+#   omarchy pkg add omairc
 
 REPO_NAME=omairc
 REPO_URL="https://github.com/fredimachado/omairc/releases/latest/download"
@@ -14,7 +17,8 @@ usage() {
   cat <<'EOF'
 Usage: install.sh
 
-Installs the latest omairc release from its pacman repository.
+Installs the latest omairc release from its GitHub releases pacman repository.
+Omarchy edge installs the official package with `omarchy pkg add omairc`.
 
     curl -fsSL https://raw.githubusercontent.com/fredimachado/omairc/main/install.sh | sh
 
