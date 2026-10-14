@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Upload tests accept the canonical HTTP header names Qt 6.12 writes, and
+  the lowercase names from Qt 6.11 and earlier.
+- The channel Leave and Close clicks in the UI tests wait until those
+  buttons have rendered. Qt 6.12 offscreen delivery misses a click on a
+  button that was just shown again from width 0.
+
 ## [1.10.3] - 2026-10-13
 
 ### Fixed
