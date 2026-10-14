@@ -49,10 +49,28 @@ ListView {
     boundsBehavior: Flickable.StopAtBounds
     clip: true
     spacing: 0
+    // Slack above a short transcript, so the newest row sits on the bottom.
+    // BottomToTop would invert model order and every indexAt path.
+    topMargin: Math.max(0, height - contentHeight)
     highlightFollowsCurrentItem: false
 
+    function topContentY() {
+        return originY - topMargin;
+    }
+
     function endContentY() {
-        return originY + Math.max(0, contentHeight - height);
+        return topContentY() + Math.max(0, topMargin + contentHeight + bottomMargin - height);
+    }
+
+    function viewportAtTop() {
+        return contentY <= topContentY() + 2;
+    }
+
+    function firstRenderedIndex() {
+        var x = Math.max(1, width / 2);
+        var y = Math.max(contentY, originY);
+        var index = indexAt(x, y + 1);
+        return index >= 0 ? index : indexAt(x, y + 8);
     }
 
     function refreshUnreadMarkRow() {
@@ -106,9 +124,7 @@ ListView {
     function rememberDetachedViewportSequence() {
         if (!model || typeof model.field !== "function")
             return;
-        var index = indexAt(Math.max(1, width / 2), contentY + 1);
-        if (index < 0)
-            index = indexAt(Math.max(1, width / 2), contentY + 8);
+        var index = firstRenderedIndex();
         if (index < 0)
             return;
         detachedViewportOffset = count - index;
@@ -264,9 +280,7 @@ ListView {
         if (restoreAnchorSequence >= 0 || restoreOffset >= 0)
             return;
 
-        var index = indexAt(Math.max(1, width / 2), contentY + 1);
-        if (index < 0)
-            index = indexAt(Math.max(1, width / 2), contentY + 8);
+        var index = firstRenderedIndex();
         if (index < 0)
             return;
         restoreOffset = count - index;
@@ -418,6 +432,8 @@ ListView {
         else
             adoptViewport(false);
     }
+    // The margin can update after onContentHeightChanged has already read it.
+    onTopMarginChanged: if (stick === stickFollowing) stickToEnd()
 
     Connections {
         target: list.model

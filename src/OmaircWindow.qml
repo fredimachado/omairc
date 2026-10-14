@@ -2333,7 +2333,7 @@ ApplicationWindow {
         if (fraction === undefined)
             fraction = 0.8;
 
-        var first = transcriptIndexAt(list, list.contentY + 1);
+        var first = list.firstRenderedIndex();
         var last = transcriptIndexAt(list, list.contentY + Math.max(1, list.height - 1));
         if (first < 0)
             first = 0;
@@ -2342,7 +2342,7 @@ ApplicationWindow {
         if (last < first)
             last = first;
 
-        if (direction < 0 && !consoleVisible && first === 0 && list.contentY <= 2) {
+        if (direction < 0 && !consoleVisible && first === 0 && list.viewportAtTop()) {
             list.snapshotAnchor();
             if (irc.requestOlderTranscriptHistory()) {
                 list.stick = list.stickDetached;

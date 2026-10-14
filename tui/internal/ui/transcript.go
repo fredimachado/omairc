@@ -165,7 +165,7 @@ func (m *Model) transcriptView(height int) string {
 	if end > len(body) {
 		end = len(body)
 	}
-	rows := fitLines(body[start:end], viewport, false)
+	rows := padAbove(body[start:end], viewport)
 	lines := make([]string, 0, height)
 	lines = append(lines, header...)
 	lines = append(lines, rows...)
