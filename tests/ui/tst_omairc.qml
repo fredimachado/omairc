@@ -2896,6 +2896,156 @@ TestCase {
         verify(item("messageComposer").activeFocus);
     }
 
+    function settleTranscript(list) {
+        waitForRendering(list);
+        wait(0);
+    }
+
+    function rowEdgesInList(list, index) {
+        var row = list.itemAtIndex(index);
+        verify(row !== null, "Row " + index + " should be instantiated");
+        return {
+            top: row.mapToItem(list, 0, 0).y,
+            bottom: row.mapToItem(list, 0, row.height).y
+        };
+    }
+
+    function assertTranscriptRestsOnBottom(list) {
+        settleTranscript(list);
+        var first = rowEdgesInList(list, 0);
+        verify(first.top > 0,
+            "A short transcript should leave empty space above the oldest row");
+        fuzzyCompare(contentBottom(list), list.height, 1,
+            "The newest row should sit on the bottom of the transcript");
+    }
+
+    // The typing footer is part of the content and sits under the last
+    // message, so a direct message rests on that footer rather than the row.
+    function contentBottom(list) {
+        var footer = list.footerItem;
+        if (footer && footer.visible && footer.height > 0)
+            return footer.mapToItem(list, 0, footer.height).y;
+        return rowEdgesInList(list, list.count - 1).bottom;
+    }
+
+    function rowIsInView(list, index) {
+        var row = list.itemAtIndex(index);
+        if (!row)
+            return false;
+        var top = row.mapToItem(list, 0, 0).y;
+        var bottom = row.mapToItem(list, 0, row.height).y;
+        return bottom > 1 && top < list.height - 1;
+    }
+
+    function test_shortTranscriptSitsAtBottom() {
+        openSeededAppWindow();
+        mouseClick(namedItem(liveConversation("#help")));
+        tryCompare(appWindow, "currentConversation", "#help");
+        var list = item("messageList");
+        settleTranscript(list);
+        verify(list.contentHeight <= list.height, "#help should be shorter than the transcript");
+        assertTranscriptRestsOnBottom(list);
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        var status = item("consoleList");
+        // The seeded buffer is a few dozen lines. Give it a viewport taller
+        // than that buffer so the short-console case is the one under test.
+        appWindow.height = 1200;
+        settleTranscript(status);
+        wait(50);
+        settleTranscript(status);
+        verify(status.count > 0, "Status should have a few lines");
+        verify(status.contentHeight <= status.height,
+            "Status should be shorter than the transcript");
+        assertTranscriptRestsOnBottom(status);
+    }
+
+    function test_shortTranscriptGrowsUpward() {
+        var list = createTemporaryObject(shortTranscriptComponent, testCase);
+        verify(list !== null);
+        settleTranscript(list);
+        assertTranscriptRestsOnBottom(list);
+        var previousTop = rowEdgesInList(list, 0).top;
+        var guard = 0;
+        while (list.contentHeight <= list.height) {
+            verify(guard < 40, "A short list should overflow within 40 rows");
+            list.rows.append({ body: "row " + guard });
+            guard += 1;
+            settleTranscript(list);
+            var last = rowEdgesInList(list, list.count - 1);
+            fuzzyCompare(last.bottom, list.height, 1,
+                "Appending should keep the newest row on the bottom");
+            if (list.contentHeight <= list.height) {
+                var firstTop = rowEdgesInList(list, 0).top;
+                verify(firstTop < previousTop,
+                    "A short transcript should grow upward");
+                previousTop = firstTop;
+            }
+        }
+        compare(list.topMargin, 0);
+        verify(transcriptPinned(list));
+        waitForScrollbarThumb(list, true);
+    }
+
+    function test_shortTranscriptResizeKeepsBottom() {
+        var list = createTemporaryObject(shortTranscriptComponent, testCase);
+        verify(list !== null);
+        list.rows.append({ body: "second" });
+        list.rows.append({ body: "third" });
+        settleTranscript(list);
+        assertTranscriptRestsOnBottom(list);
+
+        list.height = 240;
+        settleTranscript(list);
+        verify(list.contentHeight < list.height);
+        assertTranscriptRestsOnBottom(list);
+
+        list.height = 520;
+        settleTranscript(list);
+        verify(list.contentHeight < list.height);
+        assertTranscriptRestsOnBottom(list);
+    }
+
+    function test_shortTranscriptPageUpAnchorsHistory() {
+        openSeededAppWindow();
+        mouseClick(namedItem(liveConversation("anna")));
+        tryCompare(appWindow, "currentConversation", "anna");
+        var list = item("messageList");
+        settleTranscript(list);
+        verify(list.contentHeight <= list.height, "anna should be a short transcript");
+        assertTranscriptRestsOnBottom(list);
+        var firstBody = field(list.model, 0, "body");
+        verify(firstBody.length > 0);
+
+        var capStart = seed.omarchyFrameCount();
+        seed.injectOmarchy(":server CAP fred NEW :chathistory\r\n");
+        tryVerify(function() {
+            return seed.omarchyWroteFrom(capStart, "CAP REQ")
+                && seed.omarchyWroteFrom(capStart, "chathistory");
+        });
+        seed.injectOmarchy(":server CAP fred ACK :chathistory\r\n");
+        wait(0);
+
+        mouseClick(item("messageComposer"));
+        var framesBefore = seed.omarchyFrameCount();
+        keyClick(Qt.Key_PageUp);
+        settleTranscript(list);
+        tryVerify(function() {
+            return seed.omarchyWroteFrom(framesBefore, "CHATHISTORY BEFORE");
+        }, 1000, "Page Up on a short transcript should request older history");
+
+        prependLiveReplay(list, 40);
+        settleTranscript(list);
+        verify(list.contentHeight > list.height,
+            "The replay should overflow so only the anchor keeps the old row in view");
+        var anchored = rowForBody(list.model, firstBody);
+        verify(anchored >= 0, "The row that was first should still be loaded");
+        tryVerify(function() {
+            return rowIsInView(list, anchored);
+        }, 1000, "The row that was first should stay in view after history");
+    }
+
     function transcriptPinned(list) {
         return list.count === 0
             || list.contentHeight <= list.height

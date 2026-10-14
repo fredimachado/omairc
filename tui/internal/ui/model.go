@@ -1385,6 +1385,28 @@ func (m *Model) slashMenuLeft() int {
 	return m.composerLeft()
 }
 
+// padAbove fills a short block from the top so its last line sits on the
+// bottom edge. A block longer than limit keeps its last limit lines. Short
+// transcripts and Status rest on the composer; a full window is unchanged.
+func padAbove(lines []string, limit int) []string {
+	if limit < 0 {
+		limit = 0
+	}
+	if len(lines) > limit {
+		lines = lines[len(lines)-limit:]
+	}
+	pad := limit - len(lines)
+	if pad < 0 {
+		pad = 0
+	}
+	out := make([]string, 0, limit)
+	for index := 0; index < pad; index++ {
+		out = append(out, "")
+	}
+	out = append(out, lines...)
+	return out
+}
+
 // fitLines clamps lines to limit, keeping the tail (the newest transcript
 // rows) or the head (the top of a list), then pads with blanks so every column
 // is exactly limit lines tall.
