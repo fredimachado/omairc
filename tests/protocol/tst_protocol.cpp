@@ -118,6 +118,7 @@ private slots:
     void ignores766WithoutNamedKey();
     void ignoresUnknownAndChannelMetadata();
     void metadataStatusDoesNotImplyAway();
+    void chghostParsesWithoutEvent();
     void translates448BadChanName();
     void stillTranslates473JoinFailure();
     void translates479And520JoinFailures();
@@ -838,6 +839,23 @@ void ProtocolTest::metadataStatusDoesNotImplyAway()
     QCOMPARE(events.size(), std::size_t(1));
     QVERIFY(std::get_if<IrcMemberMetadataEvent>(&events.front()));
     QVERIFY(!std::get_if<IrcAwayEvent>(&events.front()));
+}
+
+void ProtocolTest::chghostParsesWithoutEvent()
+{
+    const auto parsed = IrcParser::parse(":Alice!olduser@oldhost CHGHOST newuser newhost");
+    QVERIFY(parsed);
+    QCOMPARE(text(parsed.value->command), QStringLiteral("CHGHOST"));
+    QCOMPARE(parsed.value->parameters.size(), std::size_t(2));
+    QCOMPARE(text(parsed.value->parameters[0]), QStringLiteral("newuser"));
+    QCOMPARE(text(parsed.value->parameters[1]), QStringLiteral("newhost"));
+
+    const std::vector<IrcEvent> events = translateLine(
+        ":Alice!olduser@oldhost CHGHOST newuser newhost");
+    QVERIFY(events.empty());
+
+    const std::vector<IrcEvent> malformed = translateLine(":Alice CHGHOST");
+    QVERIFY(malformed.empty());
 }
 
 void ProtocolTest::translates448BadChanName()
