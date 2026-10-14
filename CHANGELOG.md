@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   buttons have rendered. Qt 6.12 offscreen delivery misses a click on a
   button that was just shown again from width 0.
 
+### Changed
+
+- The Arch package depends on `hicolor-icon-theme`, matching the official
+  Omarchy package.
+- Omarchy edge installs with `omarchy pkg add omairc`. The GitHub releases
+  repository remains the install path for Omarchy stable, Omarchy rc, and
+  other Arch-based systems.
+
 ## [1.10.3] - 2026-10-13
 
 ### Fixed

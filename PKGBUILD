@@ -9,6 +9,7 @@ url='https://github.com/fredimachado/omairc'
 license=('MIT' 'LGPL-3.0-or-later' 'OFL-1.1')
 options=(!debug)
 depends=(
+  'hicolor-icon-theme'
   'qt6-base>=6.11'
   'qt6-declarative>=6.11'
   'qt6-svg>=6.11'

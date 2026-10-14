@@ -27,25 +27,31 @@ A simple IRC client for Omarchy, built with Qt Quick and C++. The same binary is
 
 ## Install
 
-On Omarchy or another Arch-based system:
+On Omarchy edge:
+
+```sh
+omarchy pkg add omairc
+```
+
+That installs the official Omarchy package. It is published on the edge channel, built against that channel's Qt. Upgrades come with the usual Omarchy package updates.
+
+On Omarchy stable, Omarchy rc, and other Arch-based systems:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/fredimachado/omairc/main/install.sh | sh
 ```
 
-That adds the `[omairc]` pacman repository and installs the latest release. Re-running upgrades. Read [`install.sh`](install.sh) first if you prefer. The same script is a release asset:
+That adds the `[omairc]` pacman repository from the latest GitHub release and installs it. Re-running upgrades. Read [`install.sh`](install.sh) first if you prefer. The same script is a release asset:
 
 ```sh
 curl -fsSL https://github.com/fredimachado/omairc/releases/latest/download/install.sh | sh
 ```
 
-Later upgrades:
+Later upgrades from that repository:
 
 ```sh
 sudo pacman -Sy omairc
 ```
-
-On Omarchy you can also run `omarchy pkg add omairc`.
 
 The terminal client, `omairc-tui`, ships as a separate static binary on the same GitHub release as the Qt app; `install.sh` still installs the Qt client only. The installs below need a release that carries `omairc-tui` assets, so check the [latest release](https://github.com/fredimachado/omairc/releases/latest) first.
 
@@ -105,7 +111,7 @@ Or install a [release package](https://github.com/fredimachado/omairc/releases/l
 sudo pacman -U omairc-<version>-1-x86_64.pkg.tar.zst
 ```
 
-Depends on `qt6-base`, `qt6-declarative`, `qt6-svg`, `qt6-wayland`, `qtkeychain-qt6`, and `xdg-desktop-portal`.
+Depends on `hicolor-icon-theme`, `qt6-base`, `qt6-declarative`, `qt6-svg`, `qt6-wayland`, `qtkeychain-qt6`, and `xdg-desktop-portal`.
 
 Packagers stage with qmake `INSTALL_ROOT`:
 
