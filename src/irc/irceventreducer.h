@@ -296,6 +296,11 @@ public:
 
     const Store& conversations() const noexcept;
     const IrcConversationState *find(const IrcConversationKey& key) const noexcept;
+    // Display name of a joined channel when sender is a known member.
+    // Empty when the buffer is missing, not joined, or the sender is absent.
+    QString joinedMemberChannel(const QString& networkId,
+                                const QString& channel,
+                                const QString& sender) const;
 
     std::optional<IrcMemberView> memberView(const IrcConversationKey& key,
                                             const QString& normalizedNick) const;

@@ -1,6 +1,7 @@
 package irc
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -414,8 +415,24 @@ func TestTranslatesHistoryChannelBatchKeepsOnlyChat(t *testing.T) {
 	requireString(t, "body", event.Lines[1].Body, "from history")
 }
 
+func roomMemberLookup() JoinedMemberChannel {
+	return func(channel, sender string) (string, bool) {
+		if !strings.EqualFold(sender, "bot") || !strings.EqualFold(channel, "#room") {
+			return "", false
+		}
+		return "#room", true
+	}
+}
+
+func translateJoined(t *testing.T, line string, joined JoinedMemberChannel) []Event {
+	t.Helper()
+	message := mustParse(t, line)
+	return Translate(networkA, "omairc", NewServerFeatures(), message, reducerTimestamp, joined)
+}
+
 func TestChannelContextPrivateLineIsOnlyVisibleToYou(t *testing.T) {
-	marked := translateLine(t, "@+draft/channel-context=#room :bot!u@h PRIVMSG omairc :just you")
+	joined := roomMemberLookup()
+	marked := translateJoined(t, "@+draft/channel-context=#room :bot!u@h PRIVMSG omairc :just you", joined)
 	requireInt(t, "marked events", len(marked), 1)
 	message, ok := marked[0].(MessageEvent)
 	requireTrue(t, "marked message", ok)
@@ -424,32 +441,34 @@ func TestChannelContextPrivateLineIsOnlyVisibleToYou(t *testing.T) {
 	requireString(t, "marked body", message.Body, "just you")
 	requireTrue(t, "marked only you", message.OnlyVisibleToYou)
 
-	unprefixed := translateLine(t, "@draft/channel-context=#room :bot!u@h PRIVMSG omairc :also you")
+	unprefixed := translateJoined(t, "@draft/channel-context=#room :bot!u@h PRIVMSG omairc :also you", joined)
 	requireInt(t, "unprefixed events", len(unprefixed), 1)
 	unprefixedMessage := unprefixed[0].(MessageEvent)
 	requireTrue(t, "unprefixed only you", unprefixedMessage.OnlyVisibleToYou)
 
-	ordinary := translateLine(t, ":alice!u@h PRIVMSG #room :everyone")
+	spelled := translateJoined(t, "@+draft/channel-context=#Room :bot!u@h PRIVMSG omairc :canonical", joined)
+	requireInt(t, "spelled events", len(spelled), 1)
+	spelledMessage := spelled[0].(MessageEvent)
+	requireString(t, "canonical target", spelledMessage.Target, "#room")
+	requireTrue(t, "canonical only you", spelledMessage.OnlyVisibleToYou)
+
+	ordinary := translateJoined(t, ":alice!u@h PRIVMSG #room :everyone", joined)
 	requireInt(t, "ordinary events", len(ordinary), 1)
 	ordinaryMessage := ordinary[0].(MessageEvent)
 	requireString(t, "ordinary conversation", ordinaryMessage.Conversation.NormalizedTarget, "#room")
 	requireFalse(t, "ordinary only you", ordinaryMessage.OnlyVisibleToYou)
 
-	taggedChannel := translateLine(t, "@+draft/channel-context=#room :alice!u@h PRIVMSG #room :still public")
+	taggedChannel := translateJoined(t, "@+draft/channel-context=#room :alice!u@h PRIVMSG #room :still public", joined)
 	requireInt(t, "tagged channel events", len(taggedChannel), 1)
 	requireFalse(t, "tagged channel only you", taggedChannel[0].(MessageEvent).OnlyVisibleToYou)
 
-	status := translateLine(t, ":op!u@h PRIVMSG @#room :ops")
-	requireInt(t, "status events", len(status), 1)
-	statusMessage := status[0].(MessageEvent)
-	requireString(t, "status conversation", statusMessage.Conversation.NormalizedTarget, "#room")
-	requireString(t, "status target", statusMessage.Target, "#room")
-	requireFalse(t, "status only you", statusMessage.OnlyVisibleToYou)
-	requireFalse(t, "status stays off Status", StatusKeepsIncoming(mustParse(t, ":op!u@h PRIVMSG @#room :ops"), "omairc", ""))
+	status := translateJoined(t, ":op!u@h PRIVMSG @#room :ops", joined)
+	requireInt(t, "status events", len(status), 0)
+	requireTrue(t, "status stays on Status", StatusKeepsIncoming(mustParse(t, ":op!u@h PRIVMSG @#room :ops"), "omairc", ""))
 	requireFalse(t, "private delivery stays off Status", StatusKeepsIncoming(
 		mustParse(t, "@+draft/channel-context=#room :bot!u@h PRIVMSG omairc :just you"), "omairc", ""))
 
-	notice := translateLine(t, "@+draft/channel-context=#room :bot!u@h NOTICE omairc :heads up")
+	notice := translateJoined(t, "@+draft/channel-context=#room :bot!u@h NOTICE omairc :heads up", joined)
 	requireInt(t, "notice events", len(notice), 1)
 	noticeEvent, ok := notice[0].(NoticeEvent)
 	requireTrue(t, "notice event", ok)
@@ -464,15 +483,76 @@ func TestChannelContextPrivateLineIsOnlyVisibleToYou(t *testing.T) {
 		Lines: []Message{
 			mustParse(t, "@+draft/channel-context=#room :bot!u@h PRIVMSG omairc :replayed"),
 			mustParse(t, ":alice!u@h PRIVMSG #room :public replay"),
+			mustParse(t, "@+draft/channel-context=#room :bot!u@h NOTICE omairc :notice replay"),
 			mustParse(t, ":op!u@h PRIVMSG @#room :ops replay"),
 		},
 	}
-	history, ok := TranslateHistory(networkA, "omairc", NewServerFeatures(), batch, reducerTimestamp)
+	history, ok := TranslateHistory(networkA, "omairc", NewServerFeatures(), batch, reducerTimestamp, joined)
 	requireTrue(t, "history", ok)
-	requireInt(t, "history lines", len(history.Lines), 3)
+	requireInt(t, "history lines", len(history.Lines), 2)
 	requireTrue(t, "replay marked", history.Lines[0].OnlyVisibleToYou)
 	requireInt(t, "replay kind", int(history.Lines[0].Kind), int(MessageKindChat))
 	requireString(t, "replay body", history.Lines[0].Body, "replayed")
 	requireFalse(t, "public replay", history.Lines[1].OnlyVisibleToYou)
-	requireFalse(t, "ops replay", history.Lines[2].OnlyVisibleToYou)
+	requireString(t, "public body", history.Lines[1].Body, "public replay")
+}
+
+func TestChannelContextStaysADirectMessageWhenUntrusted(t *testing.T) {
+	accept := func(channel, _ string) (string, bool) { return channel, true }
+	expectDirect := func(t *testing.T, events []Event, sender, body string) {
+		t.Helper()
+		requireInt(t, body+" events", len(events), 1)
+		message, ok := events[0].(MessageEvent)
+		requireTrue(t, body+" message", ok)
+		requireString(t, body+" author", message.Author, sender)
+		requireString(t, body+" body", message.Body, body)
+		requireString(t, body+" conversation", message.Conversation.NormalizedTarget, strings.ToLower(sender))
+		requireString(t, body+" target", message.Target, sender)
+		requireFalse(t, body+" only you", message.OnlyVisibleToYou)
+	}
+
+	expectDirect(t, translateJoined(t, "@+draft/channel-context=#room :eve!u@h PRIVMSG omairc :unjoined", nil), "eve", "unjoined")
+	expectDirect(t, translateJoined(t, "@+draft/channel-context=#room :eve!u@h PRIVMSG omairc :not a member", roomMemberLookup()), "eve", "not a member")
+	overlong := "@+draft/channel-context=#" + strings.Repeat("x", 60) + " :eve!u@h PRIVMSG omairc :overlong"
+	expectDirect(t, translateJoined(t, overlong, accept), "eve", "overlong")
+	expectDirect(t, translateJoined(t, "@+draft/channel-context=#a,#b :eve!u@h PRIVMSG omairc :comma", accept), "eve", "comma")
+	expectDirect(t, translateJoined(t, "@+draft/channel-context=#my\\sroom :eve!u@h PRIVMSG omairc :space", accept), "eve", "space")
+	expectDirect(t, translateJoined(t, "@+draft/channel-context=#room\x01x :eve!u@h PRIVMSG omairc :control", accept), "eve", "control")
+	expectDirect(t, translateJoined(t, "@+draft/channel-context=omairc :eve!u@h PRIVMSG omairc :own nick", accept), "eve", "own nick")
+
+	action := translateJoined(t, "@+draft/channel-context=#room :eve!u@h PRIVMSG omairc :\x01ACTION waves\x01", nil)
+	requireInt(t, "action events", len(action), 1)
+	actionEvent, ok := action[0].(ActionEvent)
+	requireTrue(t, "action event", ok)
+	requireString(t, "action conversation", actionEvent.Conversation.NormalizedTarget, "eve")
+	requireString(t, "action body", actionEvent.Body, "waves")
+	requireFalse(t, "action only you", actionEvent.OnlyVisibleToYou)
+	if events := translateJoined(t, "@+draft/channel-context=#room :eve!u@h NOTICE omairc :heads up", nil); len(events) != 0 {
+		t.Fatalf("unjoined NOTICE produced %d events, want 0", len(events))
+	}
+
+	history, ok := TranslateHistory(networkA, "omairc", NewServerFeatures(), HistoryBatch{
+		Target: "alice",
+		Lines: []Message{
+			mustParse(t, "@+draft/channel-context=#room :alice!u@h PRIVMSG omairc :kept in query"),
+		},
+	}, reducerTimestamp, accept)
+	requireTrue(t, "query history", ok)
+	requireString(t, "query target", history.Conversation.NormalizedTarget, "alice")
+	requireInt(t, "query lines", len(history.Lines), 1)
+	requireString(t, "query body", history.Lines[0].Body, "kept in query")
+	requireInt(t, "query kind", int(history.Lines[0].Kind), int(MessageKindChat))
+	requireFalse(t, "query only you", history.Lines[0].OnlyVisibleToYou)
+
+	unjoined, ok := TranslateHistory(networkA, "omairc", NewServerFeatures(), HistoryBatch{
+		Target: "#room",
+		Lines: []Message{
+			mustParse(t, "@+draft/channel-context=#room :bot!u@h PRIVMSG omairc :dropped"),
+			mustParse(t, ":alice!u@h PRIVMSG #room :public only"),
+		},
+	}, reducerTimestamp)
+	requireTrue(t, "channel history", ok)
+	requireInt(t, "channel lines", len(unjoined.Lines), 1)
+	requireString(t, "public only", unjoined.Lines[0].Body, "public only")
+	requireFalse(t, "public only flag", unjoined.Lines[0].OnlyVisibleToYou)
 }

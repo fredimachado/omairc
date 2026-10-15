@@ -58,4 +58,17 @@ func TestOnlyVisibleToYouMarker(t *testing.T) {
 	if !strings.Contains(actionPlain, onlyVisibleToYouLabel) || !strings.Contains(actionPlain, "waves") {
 		t.Fatalf("action row = %q, want the marker under the action", actionPlain)
 	}
+
+	m.find.active = true
+	m.find.index = 0
+	findAction := ansiPattern.ReplaceAllString(m.messageRow(0, action), "")
+	findLines := strings.Split(findAction, "\n")
+	if len(findLines) != 2 || !strings.HasPrefix(findLines[1], "  "+onlyVisibleToYouLabel) {
+		t.Fatalf("find action = %q, want the marker indented like the action", findAction)
+	}
+	findChat := ansiPattern.ReplaceAllString(m.messageRow(0, marked), "")
+	chatLines := strings.Split(findChat, "\n")
+	if len(chatLines) != 2 || !strings.HasPrefix(chatLines[1], " ") {
+		t.Fatalf("find chat = %q, want the marker indented under the body", findChat)
+	}
 }

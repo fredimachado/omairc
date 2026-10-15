@@ -236,6 +236,7 @@ Item {
         objectName: "onlyVisibleToYou"
         visible: messageDelegate.onlyVisibleToYou && messageDelegate.isChat
         text: "only visible to you"
+        Accessible.name: "only visible to you"
         color: messageDelegate.style.mutedColor
         font.family: "iA Writer Mono S"
         font.pixelSize: messageDelegate.style.scaledSize(9)

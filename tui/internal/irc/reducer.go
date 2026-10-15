@@ -788,6 +788,27 @@ func (r *EventReducer) Find(key ConversationKey) *ConversationState {
 	return r.findMutable(key)
 }
 
+// JoinedMemberChannel returns the display name of a joined channel when sender
+// is a known member. ok is false when the buffer is missing, not joined, or
+// the sender is absent. It mirrors IrcEventReducer::joinedMemberChannel.
+func (r *EventReducer) JoinedMemberChannel(networkID, channel, sender string) (string, bool) {
+	if networkID == "" || channel == "" || sender == "" {
+		return "", false
+	}
+	conversation := r.Find(r.ConversationKey(networkID, channel))
+	if conversation == nil || conversation.channel == nil || !conversation.channel.Joined {
+		return "", false
+	}
+	normalized := r.normalize(networkID, sender)
+	if normalized == "" {
+		return "", false
+	}
+	if _, ok := conversation.channel.Members[normalized]; !ok {
+		return "", false
+	}
+	return conversation.Target, true
+}
+
 // MemberView joins a channel member with the network presence facts, or reports
 // false when the key is not a channel or the nick is not a member. It mirrors
 // IrcEventReducer::memberView.
@@ -1803,11 +1824,8 @@ func (r *EventReducer) spliceHistory(conversation *ConversationState, event Hist
 			continue
 		}
 		kind := KindMessage
-		switch line.Kind {
-		case MessageKindEmote:
+		if line.Kind == MessageKindEmote {
 			kind = KindAction
-		case MessageKindNotice:
-			kind = KindNotice
 		}
 		if sequence, ok := matchedSequence(func(message ReducedMessage) bool {
 			if !line.MsgID.IsEmpty() && !message.MsgID.IsEmpty() && message.MsgID != line.MsgID {

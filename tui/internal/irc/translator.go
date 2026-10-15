@@ -4,7 +4,18 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
+
+// channelContextLimit is the classic channel-name length (RFC 2811). A longer
+// tag is not a channel key.
+const channelContextLimit = 50
+
+// JoinedMemberChannel returns the display name of a joined channel when sender
+// is a member of it. A nil func, or ok false, leaves the line on the
+// direct-message path. It mirrors IrcJoinedMemberChannel.
+type JoinedMemberChannel func(channel, sender string) (canonical string, ok bool)
 
 // HistoryTarget is one name from CHATHISTORY TARGETS. Latest is the server's
 // time of that target's newest stored message, when the reply included one.
@@ -79,50 +90,66 @@ func ConversationFor(networkID, target string, message Message, currentNick stri
 	return ConversationKey{}, false
 }
 
+// channelContextText reports whether value is one channel name: a CHANTYPES
+// prefix, no comma, space, colon, or control character, and no longer than
+// channelContextLimit.
+func channelContextText(value string, features ServerFeatures) bool {
+	if utf8.RuneCountInString(value) < 2 || utf8.RuneCountInString(value) > channelContextLimit || !features.IsChannel(value) {
+		return false
+	}
+	for _, character := range value {
+		if character < 0x20 || character == 0x7F || unicode.IsSpace(character) || character == ',' || character == ':' {
+			return false
+		}
+	}
+	return true
+}
+
 // channelContextChannel reads +draft/channel-context or draft/channel-context
-// when the value is a channel name.
+// when the value is a single channel name.
 func channelContextChannel(message Message, features ServerFeatures) (string, bool) {
 	for _, name := range []string{"+draft/channel-context", "draft/channel-context"} {
 		value, ok := ircTagValue(message, name)
-		if !ok {
+		if !ok || !channelContextText(value, features) {
 			continue
 		}
-		channel := strings.TrimSpace(value)
-		if features.IsChannel(channel) {
-			return channel, true
-		}
+		return value, true
 	}
 	return "", false
 }
 
-// channelBufferDelivery is a nick-targeted line that still belongs in a
-// channel buffer. A status prefix such as @#room is that channel for the
-// rank. A channel-context tag on a message addressed to the current nick is
-// a private delivery shown in that channel.
+// channelBufferDelivery is a nick-targeted line that belongs in a joined
+// channel buffer, shown under that buffer's own name.
 type channelBufferDelivery struct {
 	channel          string
 	onlyVisibleToYou bool
 }
 
-func nickTargetedChannelDelivery(wireTarget string, message Message, currentNick string, features ServerFeatures) (channelBufferDelivery, bool) {
-	if channel, ok := features.StatusMessageChannel(wireTarget); ok {
-		return channelBufferDelivery{channel: channel}, true
-	}
+func nickTargetedChannelDelivery(wireTarget string, message Message, currentNick string, features ServerFeatures, joined JoinedMemberChannel) (channelBufferDelivery, bool) {
 	context, ok := channelContextChannel(message, features)
 	if !ok || features.IsChannel(wireTarget) || !ircSame(features, wireTarget, currentNick) {
 		return channelBufferDelivery{}, false
 	}
-	if ircAuthor(message) == "" {
+	sender := ircAuthor(message)
+	if sender == "" || ircSame(features, context, currentNick) || joined == nil {
 		return channelBufferDelivery{}, false
 	}
-	return channelBufferDelivery{channel: context, onlyVisibleToYou: true}, true
+	canonical, ok := joined(context, sender)
+	if !ok || canonical == "" || !features.IsChannel(canonical) {
+		return channelBufferDelivery{}, false
+	}
+	return channelBufferDelivery{channel: canonical, onlyVisibleToYou: true}, true
 }
 
 // Translate turns one inbound IRC message into the events the reducer
 // consumes. now is the wall-clock fallback when the IRCv3 time tag is missing
 // or unparseable; it replaces QDateTime::currentDateTimeUtc(). It mirrors
 // IrcEventTranslator::translate.
-func Translate(networkID, currentNick string, features ServerFeatures, message Message, now time.Time) []Event {
+func Translate(networkID, currentNick string, features ServerFeatures, message Message, now time.Time, joined ...JoinedMemberChannel) []Event {
+	var lookup JoinedMemberChannel
+	if len(joined) > 0 {
+		lookup = joined[0]
+	}
 	var events []Event
 	command := uppercaseASCII(message.Command)
 	sender := ircAuthor(message)
@@ -141,7 +168,7 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 		if len(message.Params) >= 2 {
 			body := ircParameter(message, 1)
 			if _, ctcp := ParseCtcpRequest(body); !ctcp {
-				if delivery, ok := nickTargetedChannelDelivery(ircParameter(message, 0), message, currentNick, features); ok {
+				if delivery, ok := nickTargetedChannelDelivery(ircParameter(message, 0), message, currentNick, features, lookup); ok {
 					events = append(events, NoticeEvent{
 						Conversation:     ircKey(networkID, delivery.channel, features),
 						Author:           sender,
@@ -172,7 +199,7 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 		if action {
 			actionBody = body[len(actionPrefix) : len(body)-1]
 		}
-		if delivery, ok := nickTargetedChannelDelivery(wireTarget, message, currentNick, features); ok {
+		if delivery, ok := nickTargetedChannelDelivery(wireTarget, message, currentNick, features, lookup); ok {
 			conversation := ircKey(networkID, delivery.channel, features)
 			if action {
 				events = append(events, ActionEvent{
@@ -423,14 +450,21 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 
 // TranslateHistory replays a batch of raw lines into one HistoryEvent. It
 // mirrors IrcEventTranslator::translateHistory.
-func TranslateHistory(networkID, currentNick string, features ServerFeatures, batch HistoryBatch, now time.Time) (HistoryEvent, bool) {
+func TranslateHistory(networkID, currentNick string, features ServerFeatures, batch HistoryBatch, now time.Time, joined ...JoinedMemberChannel) (HistoryEvent, bool) {
 	if batch.Kind == HistoryTargets || batch.Target == "" {
 		return HistoryEvent{}, false
 	}
 	conversation := ircKey(networkID, batch.Target, features)
 	// Channel batches already key off the channel. CHATHISTORY keeps the
 	// live nick check; only a bouncer query needs the previous-nick rule.
-	bouncerQuery := batch.Kind == HistoryBouncerPlayback && !features.IsChannel(batch.Target)
+	// A query batch never relocates: a channel-context line stays in that
+	// query. Relocation is only for a channel batch whose buffer we joined.
+	channelBatch := features.IsChannel(batch.Target)
+	var historyLookup JoinedMemberChannel
+	if channelBatch && len(joined) > 0 {
+		historyLookup = joined[0]
+	}
+	bouncerQuery := batch.Kind == HistoryBouncerPlayback && !channelBatch
 	event := HistoryEvent{
 		Conversation: conversation,
 		Target:       batch.Target,
@@ -440,7 +474,7 @@ func TranslateHistory(networkID, currentNick string, features ServerFeatures, ba
 	for _, line := range batch.Lines {
 		serverTime := ircServerTimeOf(line)
 		kept := false
-		translated := Translate(networkID, currentNick, features, line, now)
+		translated := Translate(networkID, currentNick, features, line, now, historyLookup)
 		for _, translatedEvent := range translated {
 			switch value := translatedEvent.(type) {
 			case MessageEvent:
@@ -452,20 +486,6 @@ func TranslateHistory(networkID, currentNick string, features ServerFeatures, ba
 					Body:             value.Body,
 					Timestamp:        value.Timestamp,
 					Kind:             MessageKindChat,
-					MsgID:            value.MsgID,
-					ServerTime:       serverTime,
-					OnlyVisibleToYou: value.OnlyVisibleToYou,
-				})
-				kept = true
-			case NoticeEvent:
-				if value.Conversation != conversation {
-					continue
-				}
-				event.Lines = append(event.Lines, ReplayLine{
-					Author:           value.Author,
-					Body:             value.Body,
-					Timestamp:        value.Timestamp,
-					Kind:             MessageKindNotice,
 					MsgID:            value.MsgID,
 					ServerTime:       serverTime,
 					OnlyVisibleToYou: value.OnlyVisibleToYou,

@@ -843,6 +843,27 @@ const IrcConversationState *IrcEventReducer::find(
     return found == m_conversations.end() ? nullptr : &found->second;
 }
 
+QString IrcEventReducer::joinedMemberChannel(const QString& networkId,
+                                             const QString& channel,
+                                             const QString& sender) const
+{
+    if (networkId.isEmpty() || channel.isEmpty() || sender.isEmpty())
+        return {};
+    const IrcConversationState *conversation =
+        find(conversationKey(networkId, channel));
+    if (!conversation)
+        return {};
+    const IrcChannelState *state = conversation->channel();
+    if (!state || !state->joined)
+        return {};
+    const QString normalizedSender = normalize(networkId, sender);
+    if (normalizedSender.isEmpty()
+        || state->members.find(normalizedSender) == state->members.end()) {
+        return {};
+    }
+    return conversation->target;
+}
+
 std::optional<IrcMemberView> IrcEventReducer::memberView(
     const IrcConversationKey& key, const QString& normalizedNick) const
 {
@@ -2221,9 +2242,7 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
         }
         const IrcMessageKind kind = line.kind == IrcMessageKindTag::Emote
             ? IrcMessageKind::Action
-            : line.kind == IrcMessageKindTag::Notice
-                ? IrcMessageKind::Notice
-                : IrcMessageKind::Message;
+            : IrcMessageKind::Message;
         if (const std::optional<qint64> sequence = matchedSequence(
                 [&](const IrcReducedMessage& message) {
                     if (!line.msgid.isEmpty() && !message.msgid.isEmpty()

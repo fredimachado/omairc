@@ -100,8 +100,6 @@ const (
 	MessageKindEmote
 	// MessageKindEvent is a join, part, quit, or nick line.
 	MessageKindEvent
-	// MessageKindNotice is a NOTICE line kept in a replay batch.
-	MessageKindNotice
 )
 
 // HistoryKind identifies which reply produced a replay batch. It mirrors

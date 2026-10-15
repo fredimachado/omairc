@@ -991,6 +991,26 @@ func (m *Model) chatRow(message controller.MessageSnapshot, grouped bool, nickWi
 	return m.appendOnlyYou(row, continuation, message)
 }
 
+// onlyYouPrefix aligns the marker with the row it hangs under. Action and
+// notice rows use the same two-space indent as their body. A chat row uses
+// the byline continuation, including when find paints the row.
+func (m *Model) onlyYouPrefix(messages []controller.MessageSnapshot, index int, message controller.MessageSnapshot, nickWidth int) string {
+	switch message.Kind {
+	case "action", "notice":
+		return "  "
+	case "event":
+		return ""
+	}
+	var previous *controller.MessageSnapshot
+	if index > 0 && index-1 < len(messages) {
+		previous = &messages[index-1]
+	}
+	_, continuation := m.chatByline(message.Author, message.Time,
+		continuesChatGroup(previous, message), nickWidth,
+		bylineStyle{clock: m.styles.Time, nick: m.nickStyle(message.Author), rule: m.styles.MutedLine})
+	return continuation
+}
+
 // appendOnlyYou hangs the muted marker under a row whose delivery was private.
 // prefix aligns it with the body column; a row without a column passes "".
 func (m *Model) appendOnlyYou(row, prefix string, message controller.MessageSnapshot) string {
@@ -1037,7 +1057,7 @@ func (m *Model) messageRowAt(messages []controller.MessageSnapshot, index int, m
 	if m.findMatchAt(index) {
 		return m.appendOnlyYou(
 			m.clipTranscriptLine(m.styles.FindMatch.Render(m.transcriptLine(message))),
-			"", message)
+			m.onlyYouPrefix(messages, index, message, nickWidth), message)
 	}
 	switch message.Kind {
 	case "action":

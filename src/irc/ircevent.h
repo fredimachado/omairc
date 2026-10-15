@@ -59,7 +59,6 @@ enum class IrcMessageKindTag {
     Chat,
     Emote,
     Event,
-    Notice,
 };
 
 struct IrcWelcomeEvent

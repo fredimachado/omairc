@@ -484,6 +484,7 @@ private slots:
     void inboundFailDoesNotFailTheSession();
     void incomingActionTranslatesToActionEvent();
     void channelContextPrivateLineIsOnlyVisibleToYou();
+    void channelContextStaysADirectMessageWhenUntrusted();
     void latin1PrivmsgBodyIsEAcuteAndNextLineTranslates();
     void incomingCtcpRequestsAreNotConversationEvents();
     void answersCtcpRequests();
@@ -4051,12 +4052,21 @@ void SessionTest::incomingActionTranslatesToActionEvent()
 void SessionTest::channelContextPrivateLineIsOnlyVisibleToYou()
 {
     const IrcServerFeatures features;
+    const IrcJoinedMemberChannel joined =
+        [](const QString& channel, const QString& sender) {
+            if (sender.compare(QLatin1String("bot"), Qt::CaseInsensitive) != 0)
+                return QString{};
+            if (channel.compare(QLatin1String("#room"), Qt::CaseInsensitive) != 0)
+                return QString{};
+            return QStringLiteral("#room");
+        };
     const auto translate = [&](std::string_view line) {
         return IrcEventTranslator::translate(
             QStringLiteral("freenode"),
             QStringLiteral("omairc"),
             features,
-            mustParse(line));
+            mustParse(line),
+            joined);
     };
 
     const std::vector<IrcEvent> marked = translate(
@@ -4076,6 +4086,14 @@ void SessionTest::channelContextPrivateLineIsOnlyVisibleToYou()
     QVERIFY(unprefixedMessage);
     QVERIFY(unprefixedMessage->onlyVisibleToYou);
 
+    const std::vector<IrcEvent> spelled = translate(
+        "@+draft/channel-context=#Room :bot!u@h PRIVMSG omairc :canonical");
+    QCOMPARE(spelled.size(), std::size_t(1));
+    const auto *spelledMessage = std::get_if<IrcMessageEvent>(&spelled.front());
+    QVERIFY(spelledMessage);
+    QCOMPARE(spelledMessage->target, QStringLiteral("#room"));
+    QVERIFY(spelledMessage->onlyVisibleToYou);
+
     const std::vector<IrcEvent> ordinary = translate(
         ":alice!u@h PRIVMSG #room :everyone");
     QCOMPARE(ordinary.size(), std::size_t(1));
@@ -4091,15 +4109,8 @@ void SessionTest::channelContextPrivateLineIsOnlyVisibleToYou()
     QVERIFY(taggedChannelMessage);
     QVERIFY(!taggedChannelMessage->onlyVisibleToYou);
 
-    const std::vector<IrcEvent> status = translate(
-        ":op!u@h PRIVMSG @#room :ops");
-    QCOMPARE(status.size(), std::size_t(1));
-    const auto *statusMessage = std::get_if<IrcMessageEvent>(&status.front());
-    QVERIFY(statusMessage);
-    QCOMPARE(statusMessage->conversation.normalizedTarget, QStringLiteral("#room"));
-    QCOMPARE(statusMessage->target, QStringLiteral("#room"));
-    QVERIFY(!statusMessage->onlyVisibleToYou);
-    QVERIFY(!ircStatusKeepsIncoming(
+    QVERIFY(translate(":op!u@h PRIVMSG @#room :ops").empty());
+    QVERIFY(ircStatusKeepsIncoming(
         mustParse(":op!u@h PRIVMSG @#room :ops"),
         QStringLiteral("omairc"),
         {}));
@@ -4123,17 +4134,119 @@ void SessionTest::channelContextPrivateLineIsOnlyVisibleToYou()
     batch.lines.push_back(mustParse(
         "@+draft/channel-context=#room :bot!u@h PRIVMSG omairc :replayed"));
     batch.lines.push_back(mustParse(":alice!u@h PRIVMSG #room :public replay"));
+    batch.lines.push_back(mustParse(
+        "@+draft/channel-context=#room :bot!u@h NOTICE omairc :notice replay"));
     batch.lines.push_back(mustParse(":op!u@h PRIVMSG @#room :ops replay"));
     const std::optional<IrcHistoryEvent> history = IrcEventTranslator::translateHistory(
-        QStringLiteral("freenode"), QStringLiteral("omairc"), features, batch);
+        QStringLiteral("freenode"), QStringLiteral("omairc"), features, batch, joined);
     QVERIFY(history);
-    QCOMPARE(history->lines.size(), std::size_t(3));
+    QCOMPARE(history->lines.size(), std::size_t(2));
     QVERIFY(history->lines[0].onlyVisibleToYou);
     QCOMPARE(history->lines[0].kind, IrcMessageKindTag::Chat);
     QCOMPARE(history->lines[0].body, QStringLiteral("replayed"));
     QVERIFY(!history->lines[1].onlyVisibleToYou);
-    QVERIFY(!history->lines[2].onlyVisibleToYou);
-    QCOMPARE(history->lines[2].kind, IrcMessageKindTag::Chat);
+    QCOMPARE(history->lines[1].body, QStringLiteral("public replay"));
+}
+
+void SessionTest::channelContextStaysADirectMessageWhenUntrusted()
+{
+    const IrcServerFeatures features;
+    const IrcJoinedMemberChannel accept =
+        [](const QString& channel, const QString&) { return channel; };
+    const auto translate = [&](std::string_view line,
+                               const IrcJoinedMemberChannel& joined) {
+        return IrcEventTranslator::translate(
+            QStringLiteral("freenode"),
+            QStringLiteral("omairc"),
+            features,
+            mustParse(line),
+            joined);
+    };
+    const auto expectDirect = [](const std::vector<IrcEvent>& events,
+                                 const QString& sender,
+                                 const QString& body) {
+        if (events.size() != 1)
+            return false;
+        const auto *message = std::get_if<IrcMessageEvent>(&events.front());
+        if (!message || message->author != sender || message->body != body)
+            return false;
+        if (message->conversation.normalizedTarget != sender.toLower())
+            return false;
+        return message->target == sender && !message->onlyVisibleToYou;
+    };
+
+    QVERIFY(expectDirect(translate(
+        "@+draft/channel-context=#room :eve!u@h PRIVMSG omairc :unjoined", {}),
+        QStringLiteral("eve"), QStringLiteral("unjoined")));
+    QVERIFY(expectDirect(translate(
+        "@+draft/channel-context=#room :eve!u@h PRIVMSG omairc :not a member",
+        [](const QString& channel, const QString& sender) {
+            if (channel == QLatin1String("#room") && sender == QLatin1String("bot"))
+                return QStringLiteral("#room");
+            return QString{};
+        }),
+        QStringLiteral("eve"), QStringLiteral("not a member")));
+
+    const QByteArray overlong =
+        QByteArray("@+draft/channel-context=#") + QByteArray(60, 'x')
+        + QByteArray(" :eve!u@h PRIVMSG omairc :overlong");
+    QVERIFY(expectDirect(translate(std::string_view(overlong.constData(),
+                                                    std::size_t(overlong.size())),
+                                   accept),
+                         QStringLiteral("eve"), QStringLiteral("overlong")));
+    QVERIFY(expectDirect(translate(
+        "@+draft/channel-context=#a,#b :eve!u@h PRIVMSG omairc :comma", accept),
+        QStringLiteral("eve"), QStringLiteral("comma")));
+    QVERIFY(expectDirect(translate(
+        "@+draft/channel-context=#my\\sroom :eve!u@h PRIVMSG omairc :space", accept),
+        QStringLiteral("eve"), QStringLiteral("space")));
+    std::string control = "@+draft/channel-context=#room";
+    control.push_back('\x01');
+    control += "x :eve!u@h PRIVMSG omairc :control";
+    QVERIFY(expectDirect(translate(control, accept),
+                         QStringLiteral("eve"), QStringLiteral("control")));
+    QVERIFY(expectDirect(translate(
+        "@+draft/channel-context=omairc :eve!u@h PRIVMSG omairc :own nick", accept),
+        QStringLiteral("eve"), QStringLiteral("own nick")));
+
+    const std::vector<IrcEvent> action = translate(
+        "@+draft/channel-context=#room :eve!u@h PRIVMSG omairc :\x01"
+        "ACTION waves\x01",
+        {});
+    QCOMPARE(action.size(), std::size_t(1));
+    const auto *actionEvent = std::get_if<IrcActionEvent>(&action.front());
+    QVERIFY(actionEvent);
+    QCOMPARE(actionEvent->conversation.normalizedTarget, QStringLiteral("eve"));
+    QCOMPARE(actionEvent->body, QStringLiteral("waves"));
+    QVERIFY(!actionEvent->onlyVisibleToYou);
+    QVERIFY(translate(
+        "@+draft/channel-context=#room :eve!u@h NOTICE omairc :heads up", {}).empty());
+
+    IrcHistoryBatch query;
+    query.target = QStringLiteral("alice");
+    query.lines.push_back(mustParse(
+        "@+draft/channel-context=#room :alice!u@h PRIVMSG omairc :kept in query"));
+    const std::optional<IrcHistoryEvent> history = IrcEventTranslator::translateHistory(
+        QStringLiteral("freenode"), QStringLiteral("omairc"), features, query, accept);
+    QVERIFY(history);
+    QCOMPARE(history->conversation.normalizedTarget, QStringLiteral("alice"));
+    QCOMPARE(history->lines.size(), std::size_t(1));
+    QCOMPARE(history->lines[0].body, QStringLiteral("kept in query"));
+    QCOMPARE(history->lines[0].kind, IrcMessageKindTag::Chat);
+    QVERIFY(!history->lines[0].onlyVisibleToYou);
+
+    IrcHistoryBatch channel;
+    channel.target = QStringLiteral("#room");
+    channel.lines.push_back(mustParse(
+        "@+draft/channel-context=#room :bot!u@h PRIVMSG omairc :dropped"));
+    channel.lines.push_back(mustParse(":alice!u@h PRIVMSG #room :public only"));
+    const std::optional<IrcHistoryEvent> unjoined =
+        IrcEventTranslator::translateHistory(
+            QStringLiteral("freenode"), QStringLiteral("omairc"), features, channel);
+    QVERIFY(unjoined);
+    QCOMPARE(unjoined->lines.size(), std::size_t(1));
+    QCOMPARE(unjoined->lines[0].body, QStringLiteral("public only"));
+    QVERIFY(!unjoined->lines[0].onlyVisibleToYou);
 }
 
 void SessionTest::latin1PrivmsgBodyIsEAcuteAndNextLineTranslates()

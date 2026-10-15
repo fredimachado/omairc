@@ -12346,29 +12346,23 @@ TestCase {
         compare(field(list.model, rowForBody(list.model, "ordinary room line"),
                       "onlyVisibleToYou"), "false");
 
-        seed.injectOmarchy("@time=2026-09-12T12:11:00.000Z :op!u@h PRIVMSG @#omarchy :ops status line\r\n");
-        huntBody(list, "ops status line");
-        var statusRow = renderedRowWithBody("ops status line");
-        compare(findChild(statusRow, "onlyVisibleToYou").visible, false);
-        compare(field(list.model, rowForBody(list.model, "ops status line"),
-                      "onlyVisibleToYou"), "false");
-
-        seed.injectOmarchy("@time=2026-09-12T12:12:00.000Z;+draft/channel-context=#omarchy :bot!u@h PRIVMSG fred :private channel line\r\n");
+        seed.injectOmarchy("@time=2026-09-12T12:12:00.000Z;+draft/channel-context=#omarchy :anna!u@h PRIVMSG fred :private channel line\r\n");
         huntBody(list, "private channel line");
         var marked = renderedRowWithBody("private channel line");
         var label = findChild(marked, "onlyVisibleToYou");
         verify(label !== null, "The private channel line should carry the marker");
         compare(label.visible, true);
         compare(label.text, "only visible to you");
+        compare(label.Accessible.name, "only visible to you");
         compare(findChild(marked, "messageBody").text, "private channel line");
         compare(field(list.model, rowForBody(list.model, "private channel line"),
                       "onlyVisibleToYou"), "true");
 
         // The demo negotiates batch, so a playback batch is replayed into the
         // channel. A chathistory batch needs that capability, which the demo
-        // does not advertise.
+        // does not advertise. anna is already a member of #omarchy.
         seed.injectOmarchy(":irc.host BATCH +onlyyou znc.in/playback #omarchy\r\n"
-            + "@batch=onlyyou;time=2026-09-12T12:13:00.000Z;+draft/channel-context=#omarchy :bot!u@h PRIVMSG fred :replayed private line\r\n"
+            + "@batch=onlyyou;time=2026-09-12T12:13:00.000Z;+draft/channel-context=#omarchy :anna!u@h PRIVMSG fred :replayed private line\r\n"
             + ":irc.host BATCH -onlyyou\r\n");
         huntBody(list, "replayed private line");
         var replay = renderedRowWithBody("replayed private line");

@@ -78,9 +78,6 @@ public:
     void markCaseMappingKnown() noexcept;
     std::string_view channelTypes() const noexcept;
     bool isChannel(std::string_view target) const noexcept;
-    // Channel named by a status-prefixed target such as @#room. Empty when
-    // target is a normal channel, a nick, or not a prefix plus a channel.
-    std::optional<std::string> statusMessageChannel(std::string_view target) const;
     std::optional<std::size_t> nickLength() const noexcept;
     // Client-to-server line length in octets, CRLF included, tags excluded.
     // The constructor default is 512. A positive LINELEN replaces it.

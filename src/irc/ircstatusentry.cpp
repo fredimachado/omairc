@@ -755,8 +755,7 @@ bool keepsIncomingPrivmsg(const IrcMessage& message,
     // Channel chat belongs in the channel transcript. Ergo replays join/quit
     // history as HistServ PRIVMSG to the channel; the service-nick rule below
     // would otherwise flood Status with that replay.
-    if (features.isChannel(utf8(target))
-        || features.statusMessageChannel(utf8(target)))
+    if (features.isChannel(utf8(target)))
         return false;
     const QString sender = message.prefix && !message.prefix->nick.empty()
         ? ircWireText(message.prefix->nick)
