@@ -93,9 +93,9 @@ func (c *Controller) Messages() []MessageSnapshot {
 // UnreadMarkRow reports the transcript row the "New messages" boundary sits
 // above: the index into Messages() of the message whose sequence equals the
 // conversation's unread mark. It returns -1 when there is no mark, or when the
-// mark is on the first row, which has nothing above it to separate from. It
-// mirrors MessageListModel::unreadMarkRow, whose buildView only inserts the
-// boundary when a preceding row exists.
+// mark is on the first row and that row has no date rule above it. A leading
+// date gives the boundary something to separate from, matching
+// MessageListModel::buildView's !view.empty() guard.
 func (c *Controller) UnreadMarkRow() int {
 	if c.selected == nil {
 		return -1
@@ -104,11 +104,15 @@ func (c *Controller) UnreadMarkRow() int {
 	if conversation == nil || conversation.UnreadMark == nil {
 		return -1
 	}
+	labels := c.DateSeparators()
 	for index, message := range conversation.Messages {
 		if message.Sequence != *conversation.UnreadMark {
 			continue
 		}
-		if index <= 0 || index >= len(c.messages) {
+		if index < 0 || index >= len(c.messages) {
+			return -1
+		}
+		if index == 0 && (len(labels) == 0 || labels[0] == "") {
 			return -1
 		}
 		return index

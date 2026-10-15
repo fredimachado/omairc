@@ -93,16 +93,25 @@ func (m *Model) transcriptRowArea() transcriptRows {
 	}
 	markRow := m.ctrl.UnreadMarkRow()
 	messages := m.ctrl.Messages()
+	dates := m.ctrl.DateSeparators()
 	// The nick column is one width for the whole transcript, so it is measured
 	// once per render rather than per row.
 	nickWidth := nickColumnWidth(messages)
 	for index, message := range messages {
 		block := m.messageRowAt(messages, index, message, nickWidth)
-		// The "New messages" boundary sits above the first unread row, attached
-		// to that row's block so the rendered row count still matches the
-		// message count find and copy index by.
+		// A date rule and the "New messages" boundary sit above the row they
+		// belong to, attached to that row's block so the rendered row count
+		// still matches the message count find and copy index by. The date is
+		// above the boundary, matching MessageListModel::buildView.
+		var prefix string
+		if index < len(dates) && dates[index] != "" {
+			prefix += m.eventRow(dates[index]) + "\n"
+		}
 		if index == markRow {
-			block = m.unreadMarkLine() + "\n" + block
+			prefix += m.unreadMarkLine() + "\n"
+		}
+		if prefix != "" {
+			block = prefix + block
 		}
 		area.append(block)
 	}
@@ -912,15 +921,28 @@ func groupableChatRow(message controller.MessageSnapshot) bool {
 	return isChatRow(message) && message.Kind != "whois"
 }
 
+// sameTranscriptDay reports whether two display clocks fall on one calendar
+// day. A date rule between them is not a message row, so grouping has to
+// notice the day itself or the nick would blank under the rule.
+func sameTranscriptDay(a, b time.Time) bool {
+	ay, am, ad := a.Date()
+	by, bm, bd := b.Date()
+	return ay == by && am == bm && ad == bd
+}
+
 // continuesChatGroup reports whether message continues previous as one group:
-// the same nick in the same minute from the same origin. It mirrors
-// continuesMessageGroup in OmaircWindow.qml. The later rows of a group blank
+// the same nick in the same minute of the same day from the same origin. It
+// mirrors continuesMessageGroup in OmaircWindow.qml, whose previous visual
+// row is the date rule when the day changes. The later rows of a group blank
 // the timestamp and nick so the run reads as one block.
 func continuesChatGroup(previous *controller.MessageSnapshot, message controller.MessageSnapshot) bool {
 	if !groupableChatRow(message) || previous == nil || !groupableChatRow(*previous) {
 		return false
 	}
 	if message.Author == "" || previous.Author == "" || message.Origin != previous.Origin {
+		return false
+	}
+	if !sameTranscriptDay(message.Time, previous.Time) {
 		return false
 	}
 	return message.Author == previous.Author &&

@@ -2180,6 +2180,16 @@ TestCase {
         });
     }
 
+    function firstMessageBody(model) {
+        var row = 0;
+        for (; row < model.rowCount(); ++row) {
+            var time = field(model, row, "time");
+            if (time && String(time).length > 0)
+                return field(model, row, "body");
+        }
+        return "";
+    }
+
     function rowForBody(model, body) {
         var row = 0;
         for (; row < model.rowCount(); ++row) {
@@ -3015,7 +3025,7 @@ TestCase {
         settleTranscript(list);
         verify(list.contentHeight <= list.height, "anna should be a short transcript");
         assertTranscriptRestsOnBottom(list);
-        var firstBody = field(list.model, 0, "body");
+        var firstBody = firstMessageBody(list.model);
         verify(firstBody.length > 0);
 
         var capStart = seed.omarchyFrameCount();
@@ -3040,10 +3050,10 @@ TestCase {
         verify(list.contentHeight > list.height,
             "The replay should overflow so only the anchor keeps the old row in view");
         var anchored = rowForBody(list.model, firstBody);
-        verify(anchored >= 0, "The row that was first should still be loaded");
+        verify(anchored >= 0, "The first message should still be loaded");
         tryVerify(function() {
             return rowIsInView(list, anchored);
-        }, 1000, "The row that was first should stay in view after history");
+        }, 1000, "The first message should stay in view after history");
     }
 
     function transcriptPinned(list) {
@@ -4235,7 +4245,9 @@ TestCase {
         }
         bytes += ":znc.in BATCH -pb\r\n";
         seed.injectOmarchy(bytes);
-        waitForRowCount(list, start + count + 1);
+        tryVerify(function() {
+            return list.model.rowCount() >= start + count;
+        });
     }
 
     function test_historySpliceKeepsTheReaderOnTheSameMessage() {

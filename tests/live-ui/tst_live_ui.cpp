@@ -944,7 +944,7 @@ void LiveUiTest::bouncerQueryReplayRendersDirectMessageInSidebar()
 
     const QVector<TranscriptRowChrome> rows = collectTranscriptChrome(window);
     const int replayAt = chromeIndex(rows, QStringLiteral("morning"));
-    QCOMPARE(replayAt, 0);
+    QVERIFY(replayAt > 0);
     const QColor muted = window->property("mutedColor").value<QColor>();
     QCOMPARE(rows.at(replayAt).bodyColor, muted);
     QVERIFY2(saveFixtureShot(window, QStringLiteral("live-ui-bouncer-direct")),

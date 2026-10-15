@@ -63,10 +63,17 @@ std::vector<MessageListModel::VisualRow> MessageListModel::buildView(
     view.reserve(conversation->messages.size() + 8);
     std::optional<QDate> previous;
     const std::optional<qint64> unreadMark = conversation->unreadMark;
+    // The first day is labeled only when it is not today, so a backlog that
+    // never crosses midnight still says which day it is. A later day is
+    // labeled whenever it differs, including today after an older day.
+    // Rebuilding the view on a history splice moves or drops that top rule.
+    const QDate today = QDate::currentDate();
     for (int i = 0; i < int(conversation->messages.size()); ++i) {
         const std::optional<QDate> date =
             assignedDate(conversation->messages[size_t(i)], previous);
-        if (date && previous && *date != *previous)
+        const bool dayChange = date && previous && *date != *previous;
+        const bool leadingBacklog = date && !previous && *date != today;
+        if (dayChange || leadingBacklog)
             view.push_back({VisualRow::Type::DateSeparator, 0, *date});
         if (unreadMark && conversation->messages[size_t(i)].sequence == *unreadMark
             && !view.empty())
