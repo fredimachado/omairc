@@ -4238,6 +4238,15 @@ TestCase {
             Qt.locale().dateFormat(Locale.ShortFormat));
     }
 
+    // MessageListModel prints the local wall clock of the server timestamp.
+    function transcriptClock(iso) {
+        var date = new Date(iso);
+        var hours = date.getHours();
+        var minutes = date.getMinutes();
+        return (hours < 10 ? "0" : "") + hours + ":"
+            + (minutes < 10 ? "0" : "") + minutes;
+    }
+
     function prependLiveReplay(list, count, addedRules) {
         var start = list.model.rowCount();
         var target = appWindow.currentConversation;
@@ -4435,7 +4444,8 @@ TestCase {
                 && field(list.model, 0, "kind") === "event"
                 && field(list.model, 0, "body") === transcriptShortDate(2026, 9, 12);
         });
-        compare(field(list.model, 1, "time"), "12:00");
+        compare(field(list.model, 1, "time"),
+                transcriptClock("2026-09-12T12:00:00.000Z"));
 
         list.pinToEnd();
         waitForRendering(appWindow.contentItem);
