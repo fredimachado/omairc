@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"image"
+	"image/color"
 	"image/png"
 	"io"
 	"os"
@@ -33,6 +34,12 @@ const (
 	// Terminals that support the protocol answer immediately; anything else
 	// falls back to the half-block raster.
 	ProbeTimeout = 150 * time.Millisecond
+
+	// graphicsMaxEdge is the longest edge of a PNG sent to the terminal.
+	// The sidebar glyph is two columns by one row. 32 px covers that box on
+	// a hi-dpi cell. The cached image stays at its decoded size for the
+	// half-block raster; only the Kitty payload is scaled.
+	graphicsMaxEdge = 32
 )
 
 // graphicsOp is one transmit or delete waiting to be written outside the view.
@@ -278,16 +285,23 @@ func responseSettled(buf []byte) bool {
 	return semi >= 0 && msg[semi+1:] != "OK"
 }
 
+// cachedGraphics is one decoded avatar waiting to be scaled and transmitted.
+type cachedGraphics struct {
+	key string
+	img image.Image
+}
+
 // EnableGraphics turns on transmit/delete tracking. Call it only after
 // ProbeGraphics reports support, and before fetches complete, so each cached
-// image is transmitted once.
+// image is transmitted once. PNGs for images already in the cache are scaled
+// and encoded after the lock is released.
 func (s *Store) EnableGraphics() {
 	if s == nil {
 		return
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.graphics {
+	if s.closed || s.graphics {
+		s.mu.Unlock()
 		return
 	}
 	s.graphics = true
@@ -295,10 +309,35 @@ func (s *Store) EnableGraphics() {
 		s.nextImage = 1
 	}
 	s.ensureGraphicsMapsLocked()
+	pending := make([]cachedGraphics, 0, len(s.order))
 	for _, key := range s.order {
-		if img, ok := s.images[key]; ok {
-			s.noteGraphicsLocked(key, img)
+		img, ok := s.images[key]
+		if !ok {
+			continue
 		}
+		pending = append(pending, cachedGraphics{key: key, img: img})
+	}
+	s.mu.Unlock()
+
+	encoded := make([][]byte, len(pending))
+	for i, item := range pending {
+		encoded[i] = encodeScaledPNG(item.img)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || !s.graphics {
+		return
+	}
+	for i, item := range pending {
+		current, ok := s.images[item.key]
+		if !ok || current != item.img {
+			continue
+		}
+		if _, has := s.imageIDs[item.key]; has {
+			continue
+		}
+		s.noteGraphicsLocked(item.key, encoded[i])
 	}
 }
 
@@ -440,7 +479,7 @@ func (s *Store) ensureGraphicsMapsLocked() {
 	}
 }
 
-func (s *Store) noteGraphicsLocked(key string, img image.Image) {
+func (s *Store) noteGraphicsLocked(key string, pngBytes []byte) {
 	if !s.graphics {
 		return
 	}
@@ -449,8 +488,7 @@ func (s *Store) noteGraphicsLocked(key string, img image.Image) {
 		s.queueDeleteLocked(id)
 		delete(s.imageIDs, key)
 	}
-	pngBytes, ok := encodePNG(img)
-	if !ok {
+	if len(pngBytes) == 0 {
 		return
 	}
 	id := s.allocIDLocked()
@@ -511,6 +549,101 @@ func (s *Store) idLiveLocked(id uint32) bool {
 		}
 	}
 	return false
+}
+
+// encodeScaledPNG scales img to graphicsMaxEdge and PNG-encodes it. Callers
+// run it without holding Store.mu. A nil or empty image produces no bytes.
+func encodeScaledPNG(img image.Image) []byte {
+	if img == nil {
+		return nil
+	}
+	pngBytes, ok := encodePNG(scaleForGraphics(img))
+	if !ok {
+		return nil
+	}
+	return pngBytes
+}
+
+// scaleForGraphics shrinks img so its longest edge is graphicsMaxEdge.
+// An image that already fits is returned as-is, so a small avatar is not
+// enlarged.
+func scaleForGraphics(img image.Image) image.Image {
+	if img == nil {
+		return nil
+	}
+	bounds := img.Bounds()
+	width, height := bounds.Dx(), bounds.Dy()
+	if width <= 0 || height <= 0 {
+		return nil
+	}
+	dstW, dstH := fitGraphicsEdge(width, height, graphicsMaxEdge)
+	if dstW == width && dstH == height {
+		return img
+	}
+	return scaleBox(img, dstW, dstH)
+}
+
+// fitGraphicsEdge returns the largest size that preserves aspect ratio and
+// stays within maxEdge on both sides.
+func fitGraphicsEdge(width, height, maxEdge int) (int, int) {
+	if width <= maxEdge && height <= maxEdge {
+		return width, height
+	}
+	if width >= height {
+		dstH := int(int64(height) * int64(maxEdge) / int64(width))
+		if dstH < 1 {
+			dstH = 1
+		}
+		return maxEdge, dstH
+	}
+	dstW := int(int64(width) * int64(maxEdge) / int64(height))
+	if dstW < 1 {
+		dstW = 1
+	}
+	return dstW, maxEdge
+}
+
+// scaleBox averages source rectangles into a dstW by dstH NRGBA image.
+func scaleBox(src image.Image, dstW, dstH int) *image.NRGBA {
+	dst := image.NewNRGBA(image.Rect(0, 0, dstW, dstH))
+	bounds := src.Bounds()
+	width, height := bounds.Dx(), bounds.Dy()
+	for y := 0; y < dstH; y++ {
+		minY := bounds.Min.Y + y*height/dstH
+		maxY := bounds.Min.Y + (y+1)*height/dstH
+		if maxY <= minY {
+			maxY = minY + 1
+		}
+		for x := 0; x < dstW; x++ {
+			minX := bounds.Min.X + x*width/dstW
+			maxX := bounds.Min.X + (x+1)*width/dstW
+			if maxX <= minX {
+				maxX = minX + 1
+			}
+			var totalR, totalG, totalB, totalA int64
+			var count int
+			for py := minY; py < maxY; py++ {
+				for px := minX; px < maxX; px++ {
+					c := color.NRGBAModel.Convert(src.At(px, py)).(color.NRGBA)
+					totalR += int64(c.R)
+					totalG += int64(c.G)
+					totalB += int64(c.B)
+					totalA += int64(c.A)
+					count++
+				}
+			}
+			if count == 0 {
+				continue
+			}
+			dst.SetNRGBA(x, y, color.NRGBA{
+				R: uint8(totalR / int64(count)),
+				G: uint8(totalG / int64(count)),
+				B: uint8(totalB / int64(count)),
+				A: uint8(totalA / int64(count)),
+			})
+		}
+	}
+	return dst
 }
 
 func encodePNG(img image.Image) ([]byte, bool) {

@@ -9,7 +9,8 @@
 // strings and the shell decides where to place them. It never imports
 // lipgloss. It never starts a fetch from Block or Placeholder; Ensure is the
 // only path that touches the network. Graphics escapes are built from cached
-// image bytes, never from text that arrived on the IRC connection.
+// image bytes, never from text that arrived on the IRC connection. The Kitty
+// PNG is scaled and encoded before the store lock is taken.
 package avatar
 
 import (
@@ -196,13 +197,15 @@ func (s *Store) fetch(ctx context.Context, rawURL string, resolved *url.URL,
 		s.forget(key)
 		return
 	}
+	if !s.commit(key, img) {
+		return
+	}
 
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
 		return
 	}
-	s.rememberLocked(key, img)
 	delete(s.pending, key)
 	delete(s.cancels, key)
 	s.callbacks.Add(1)
@@ -233,12 +236,43 @@ func cacheKey(resolved *url.URL) string {
 // remember inserts img under key and moves key to the newest position,
 // evicting the oldest entries past the cap. It is the in-package test seam.
 func (s *Store) remember(key string, img image.Image) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.rememberLocked(key, img)
+	s.commit(key, img)
 }
 
-func (s *Store) rememberLocked(key string, img image.Image) {
+// commit stores img. When graphics are enabled, the avatar is scaled and
+// PNG-encoded before s.mu is taken; the lock only publishes the result.
+// It reports false when the store is closed.
+func (s *Store) commit(key string, img image.Image) bool {
+	for {
+		s.mu.Lock()
+		if s.closed {
+			s.mu.Unlock()
+			return false
+		}
+		enabled := s.graphics
+		s.mu.Unlock()
+
+		var pngBytes []byte
+		if enabled {
+			pngBytes = encodeScaledPNG(img)
+		}
+
+		s.mu.Lock()
+		if s.closed {
+			s.mu.Unlock()
+			return false
+		}
+		if s.graphics != enabled {
+			s.mu.Unlock()
+			continue
+		}
+		s.rememberLocked(key, img, pngBytes)
+		s.mu.Unlock()
+		return true
+	}
+}
+
+func (s *Store) rememberLocked(key string, img image.Image, pngBytes []byte) {
 	s.order = removeKey(s.order, key)
 	s.order = append(s.order, key)
 	s.images[key] = img
@@ -252,7 +286,7 @@ func (s *Store) rememberLocked(key string, img image.Image) {
 	for _, oldest := range evicted {
 		s.dropGraphicsLocked(oldest)
 	}
-	s.noteGraphicsLocked(key, img)
+	s.noteGraphicsLocked(key, pngBytes)
 }
 
 // removeKey returns keys without the first occurrence of key.

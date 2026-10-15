@@ -268,6 +268,173 @@ func TestGraphicsEvictionDeletesTheOldestImage(t *testing.T) {
 	}
 }
 
+// graphicsMaxPNGBytes is the ceiling for one avatar transmit. A 32 px RGBA
+// PNG is a few kilobytes; a 1024 px encode of the same pixels is not.
+const graphicsMaxPNGBytes = 16 * 1024
+
+func TestGraphicsTransmitCapsLargeAvatars(t *testing.T) {
+	cases := []struct {
+		name       string
+		width      int
+		height     int
+		wantWidth  int
+		wantHeight int
+	}{
+		{name: "decoded budget", width: 1024, height: 1024, wantWidth: graphicsMaxEdge, wantHeight: graphicsMaxEdge},
+		{name: "wide", width: 200, height: 10, wantWidth: graphicsMaxEdge, wantHeight: 1},
+		{name: "already small", width: 2, height: 2, wantWidth: 2, wantHeight: 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pngBytes := transmittedPNG(t, noisyNRGBA(tc.width, tc.height))
+			if len(pngBytes) == 0 || len(pngBytes) > graphicsMaxPNGBytes {
+				t.Fatalf("transmitted PNG is %d bytes, want 1..%d", len(pngBytes), graphicsMaxPNGBytes)
+			}
+			cfg, _, err := image.DecodeConfig(bytes.NewReader(pngBytes))
+			if err != nil {
+				t.Fatalf("decode transmitted png: %v", err)
+			}
+			if cfg.Width != tc.wantWidth || cfg.Height != tc.wantHeight {
+				t.Fatalf("transmitted size = %dx%d, want %dx%d", cfg.Width, cfg.Height, tc.wantWidth, tc.wantHeight)
+			}
+		})
+	}
+}
+
+func TestGraphicsEncodeStaysOutsideTheStoreLock(t *testing.T) {
+	const raw = "https://cdn.example/mira.png"
+	cases := []struct {
+		name string
+		run  func(store *Store, img image.Image)
+	}{
+		{
+			name: "remember",
+			run: func(store *Store, img image.Image) {
+				store.EnableGraphics()
+				store.remember("k", img)
+			},
+		},
+		{
+			name: "enable",
+			run: func(store *Store, img image.Image) {
+				store.remember("k", img)
+				store.EnableGraphics()
+			},
+		},
+	}
+	if _, ok := irc.ResolvedAvatarURL(raw, irc.AvatarFetchPixelSize(22)); !ok {
+		t.Fatal("fixture URL is not safe")
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := New(true, nil)
+			t.Cleanup(store.Close)
+			assertEncodeOutsideLock(t, store, func(img image.Image) {
+				tc.run(store, img)
+			})
+		})
+	}
+}
+
+func noisyNRGBA(width, height int) *image.NRGBA {
+	img := image.NewNRGBA(image.Rect(0, 0, width, height))
+	for i := 0; i < len(img.Pix); i += 4 {
+		img.Pix[i] = uint8(i)
+		img.Pix[i+1] = uint8(i >> 8)
+		img.Pix[i+2] = uint8(i >> 16)
+		img.Pix[i+3] = 255
+	}
+	return img
+}
+
+func transmittedPNG(t *testing.T, img image.Image) []byte {
+	t.Helper()
+	store := New(true, nil)
+	t.Cleanup(store.Close)
+	store.EnableGraphics()
+	store.remember("big", img)
+	parts := parseAPCs(t, store.DrainEscapes(2, 1))
+	var encoded strings.Builder
+	for _, part := range parts {
+		if strings.Contains(part.control, "a=t") || strings.HasPrefix(part.control, "m=") {
+			encoded.WriteString(part.payload)
+		}
+	}
+	decoded, err := base64.StdEncoding.DecodeString(encoded.String())
+	if err != nil {
+		t.Fatalf("decode transmit payload: %v", err)
+	}
+	return decoded
+}
+
+// lockProbeImage reports whether At runs while the store lock is held. PNG
+// encoding reads pixels through At, so a stall here is a stall inside the
+// encode.
+type lockProbeImage struct {
+	image.Image
+	store   *Store
+	tb      testing.TB
+	once    sync.Once
+	started chan struct{}
+	release <-chan struct{}
+}
+
+func (p *lockProbeImage) At(x, y int) color.Color {
+	if !p.store.mu.TryLock() {
+		p.tb.Errorf("graphics PNG encode ran while the store lock was held")
+	} else {
+		p.store.mu.Unlock()
+	}
+	p.once.Do(func() { close(p.started) })
+	<-p.release
+	return p.Image.At(x, y)
+}
+
+func assertEncodeOutsideLock(t *testing.T, store *Store, encode func(image.Image)) {
+	t.Helper()
+	started := make(chan struct{})
+	releaseCh := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseCh) }) }
+	probe := &lockProbeImage{
+		Image:   noisyNRGBA(8, 8),
+		store:   store,
+		tb:      t,
+		started: started,
+		release: releaseCh,
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		encode(probe)
+	}()
+	defer func() {
+		release()
+		<-done
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("graphics encode did not start")
+	}
+
+	const raw = "https://cdn.example/mira.png"
+	rendered := make(chan struct{})
+	go func() {
+		defer close(rendered)
+		store.lookup("k")
+		store.Block(raw, 22, 2)
+		store.Placeholder(raw, 22, 2)
+	}()
+	select {
+	case <-rendered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Block, Placeholder, or lookup blocked during PNG encode")
+	}
+}
+
 type apcPart struct {
 	control string
 	payload string
