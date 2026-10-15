@@ -131,6 +131,67 @@ int MessageListModel::visualPrefixToRemove(const std::vector<VisualRow>& view,
     return removed;
 }
 
+MessageListModel::TrimSpan MessageListModel::visualTrimSpan(
+    const std::vector<VisualRow>& view,
+    int storeRemoved,
+    const QDate& today)
+{
+    if (storeRemoved <= 0)
+        return {};
+
+    // The leading rule stays when this trim removes some, but not all, of
+    // that day's messages. The separator's own following store is the line
+    // being trimmed, so a prefix walk would drop the rule with it and the
+    // reload would reset on every later line.
+    const bool leadingRule = !view.empty()
+        && view.front().type == VisualRow::Type::DateSeparator
+        && view.front().date.isValid()
+        && view.front().date != today;
+    if (leadingRule) {
+        int last = 0;
+        int seen = 0;
+        bool dayEnded = false;
+        for (int i = 1; i < int(view.size()) && seen < storeRemoved; ++i) {
+            const VisualRow& row = view[size_t(i)];
+            if (row.type == VisualRow::Type::DateSeparator) {
+                dayEnded = true;
+                break;
+            }
+            if (row.type == VisualRow::Type::Store) {
+                if (row.storeIndex >= storeRemoved)
+                    break;
+                last = i;
+                ++seen;
+                continue;
+            }
+            int following = -1;
+            for (int j = i + 1; j < int(view.size()); ++j) {
+                if (view[size_t(j)].type == VisualRow::Type::Store) {
+                    following = view[size_t(j)].storeIndex;
+                    break;
+                }
+            }
+            if (following < 0 || following >= storeRemoved)
+                break;
+            last = i;
+        }
+        int after = last + 1;
+        while (after < int(view.size())
+               && view[size_t(after)].type == VisualRow::Type::UnreadMark)
+            ++after;
+        const bool dayContinues = !dayEnded && seen == storeRemoved
+            && after < int(view.size())
+            && view[size_t(after)].type == VisualRow::Type::Store;
+        if (dayContinues && last >= 1)
+            return {1, last};
+    }
+
+    const int removed = visualPrefixToRemove(view, storeRemoved, today);
+    if (removed <= 0)
+        return {};
+    return {0, removed - 1};
+}
+
 bool MessageListModel::sameLeadingDate(const std::vector<VisualRow>& current,
                                        int firstKept,
                                        const std::vector<VisualRow>& next)
@@ -380,21 +441,23 @@ void MessageListModel::reload()
         && (!m_selected || *m_selected == *m_loaded)
         && spliceEpoch == m_spliceEpoch
         && unreadMark == m_unreadMark;
-    int visualRemoved = 0;
+    TrimSpan span;
     if (sameConversation) {
         int storeRemoved = trimmed - m_trimmed;
         if (storeRemoved < 0)
             storeRemoved = 0;
-        visualRemoved = visualPrefixToRemove(m_view, storeRemoved, today);
+        span = visualTrimSpan(m_view, storeRemoved, today);
     }
-    // A tail insert leaves row 0 in place. Midnight can add or drop the
-    // leading rule there, so that case resets instead of pretending the
-    // new rows were appended.
-    if (sameConversation && sameLeadingDate(m_view, visualRemoved, next)) {
-        if (visualRemoved > 0) {
-            beginRemoveRows(QModelIndex(), 0, visualRemoved - 1);
-            m_view.erase(m_view.begin(),
-                         m_view.begin() + visualRemoved);
+    // A partial trim of the leading day keeps that rule at row 0. A prefix
+    // trim compares the first row that remains. Midnight can add or drop
+    // the rule, and that still resets instead of pretending the new rows
+    // were appended.
+    const int leadingRow = span.first > 0 ? 0 : span.last + 1;
+    if (sameConversation && sameLeadingDate(m_view, leadingRow, next)) {
+        if (!span.empty()) {
+            beginRemoveRows(QModelIndex(), span.first, span.last);
+            m_view.erase(m_view.begin() + span.first,
+                         m_view.begin() + span.last + 1);
             const int keep = int(m_view.size());
             for (int i = 0; i < keep && i < int(next.size()); ++i)
                 m_view[size_t(i)] = next[size_t(i)];

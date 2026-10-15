@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   moves it so a date is not shown twice. On that first message the unread
   mark sits under the leading date rule. That placement is intended, and
   the terminal client draws it the same way.
+- A channel already at the history cap, whose oldest day is not today, keeps
+  that date rule when a new line arrives. Only the trimmed lines are removed,
+  so a reader who has scrolled up stays put. The transcript still rebuilds
+  when the oldest day itself changes.
 - Upload tests accept the canonical HTTP header names Qt 6.12 writes, and
   the lowercase names from Qt 6.11 and earlier.
 - The channel Leave and Close clicks in the UI tests wait until those

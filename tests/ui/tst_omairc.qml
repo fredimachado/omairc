@@ -4287,6 +4287,76 @@ TestCase {
         saveScreenshot("history-splice-anchor");
     }
 
+    function test_cappedTrimKeepsDetachedPlace() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        var target = appWindow.currentConversation;
+        compare(target, "#omarchy");
+
+        var bytes = "";
+        var index = 0;
+        for (index = 0; index < 2000; ++index) {
+            bytes += "@time=2026-09-12T12:00:00.000Z :anna!u@h PRIVMSG "
+                + target + " :capped fill " + index + "\r\n";
+        }
+        seed.injectOmarchy(bytes);
+        tryVerify(function() {
+            return list.model.rowCount() === 2001
+                && field(list.model, 0, "kind") === "event"
+                && field(list.model, 0, "body") === transcriptShortDate(2026, 9, 12);
+        });
+        compare(field(list.model, 1, "time"), "12:00");
+
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        seed.injectOmarchy("@time=2026-09-12T12:01:00.000Z :anna!u@h PRIVMSG "
+            + target + " :capped while pinned\r\n");
+        waitForBody(list, "capped while pinned");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryVerify(function() {
+            return transcriptPinned(list);
+        });
+        compare(list.stick, list.stickFollowing);
+        compare(field(list.model, list.model.rowCount() - 1, "body"),
+                "capped while pinned");
+
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        tryCompare(list, "stick", list.stickDetached);
+        var anchorBody = anchoredTranscriptBody(list);
+        verify(anchorBody.length > 0, "Page Up should leave a message in view");
+        var probe = Qt.createQmlObject("import QtQuick; QtObject { property int resets: 0; property int removes: 0; property int removeFirst: -1; property int removeLast: -1 }", testCase);
+        var conn = Qt.createQmlObject("import QtQuick; Connections { ignoreUnknownSignals: true; property var probe: null; function onModelReset() { probe.resets = probe.resets + 1 } function onRowsRemoved(parent, first, last) { probe.removes = probe.removes + 1; probe.removeFirst = first; probe.removeLast = last } }", testCase);
+        conn.probe = probe;
+        conn.target = list.model;
+
+        seed.injectOmarchy("@time=2026-09-12T12:02:00.000Z :anna!u@h PRIVMSG "
+            + target + " :capped arrival one\r\n");
+        waitForBody(list, "capped arrival one");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        compare(probe.resets, 0);
+        compare(probe.removes, 1);
+        compare(probe.removeFirst, 1);
+        compare(probe.removeLast, 1);
+        compare(field(list.model, 0, "kind"), "event");
+        compare(field(list.model, 0, "body"), transcriptShortDate(2026, 9, 12));
+        compare(anchoredTranscriptBody(list), anchorBody);
+        compare(list.stick, list.stickDetached);
+        compare(field(list.model, list.firstUnseenIndex, "body"), "capped arrival one");
+
+        seed.injectOmarchy("@time=2026-09-12T12:03:00.000Z :anna!u@h PRIVMSG "
+            + target + " :capped arrival two\r\n");
+        waitForBody(list, "capped arrival two");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        compare(anchoredTranscriptBody(list), anchorBody);
+        compare(list.stick, list.stickDetached);
+        compare(field(list.model, list.firstUnseenIndex, "body"), "capped arrival one");
+        compare(field(list.model, list.model.rowCount() - 1, "body"), "capped arrival two");
+    }
+
     function test_historySpliceMovesTheUnseenMarkerWithItsRow() {
         openSeededAppWindow();
         var list = item("messageList");

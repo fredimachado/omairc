@@ -205,6 +205,7 @@ private slots:
     void reloadTrimKeepsOlderHeadDaySeparator();
     void reloadTrimKeepsTopUnreadUnderLeadingDate();
     void reloadTrimAcrossDayRemovesLeadingSeparator();
+    void reloadTrimWithinLeadingDayDoesNotReset();
     void unreadMarkPlantsOnFirstUnselectedChat();
     void unreadMarkSkippedForSelfAndSelected();
     void unreadMarkPlantsOnSelectedChatWhileWindowInactive();
@@ -2045,6 +2046,77 @@ void ModelTest::reloadTrimAcrossDayRemovesLeadingSeparator()
     QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole), QStringLiteral("0"));
     QCOMPARE(roleAt(messages, 1999, MessageListModel::BodyRole),
              QStringLiteral("capped"));
+}
+
+void ModelTest::reloadTrimWithinLeadingDayDoesNotReset()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.markSelected(room);
+    const QDate yesterday = QDate::currentDate().addDays(-1);
+    for (int i = 0; i < 2000; ++i) {
+        reducer.apply(IrcMessageEvent{
+            room, QStringLiteral("Alice"), QString::number(i), atLocal(yesterday),
+            QStringLiteral("#room")});
+    }
+    messages.select(room);
+    QCOMPARE(messages.rowCount(), 2001);
+    assertDateRow(messages, 0, QStringLiteral("Yesterday"));
+    QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole), QStringLiteral("0"));
+    QCOMPARE(roleAt(messages, 2, MessageListModel::BodyRole), QStringLiteral("1"));
+    const QVariant keptSequence =
+        roleAt(messages, 2, MessageListModel::SequenceRole);
+    QVERIFY(keptSequence.isValid());
+    QCOMPARE(messages.unreadMarkRow(), -1);
+
+    QSignalSpy resets(&messages, &QAbstractItemModel::modelReset);
+    QSignalSpy removes(&messages, &QAbstractItemModel::rowsRemoved);
+    QSignalSpy inserts(&messages, &QAbstractItemModel::rowsInserted);
+    QSignalSpy changes(&messages, &QAbstractItemModel::dataChanged);
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("capped"),
+        atLocal(yesterday), QStringLiteral("#room")});
+    messages.reload();
+
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(removes.size(), 1);
+    QCOMPARE(removes.at(0).at(1).toInt(), 1);
+    QCOMPARE(removes.at(0).at(2).toInt(), 1);
+    QCOMPARE(inserts.size(), 1);
+    QCOMPARE(inserts.at(0).at(1).toInt(), 2000);
+    QCOMPARE(inserts.at(0).at(2).toInt(), 2000);
+    QVERIFY2(dataChangedCoversAllRoles(changes, 0, 1999),
+             "trimming inside the leading day must dataChanged the rewritten stores");
+    QCOMPARE(messages.rowCount(), 2001);
+    assertDateRow(messages, 0, QStringLiteral("Yesterday"));
+    QCOMPARE(countBodies(messages, QStringLiteral("Yesterday")), 1);
+    QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole), QStringLiteral("1"));
+    QCOMPARE(roleAt(messages, 1, MessageListModel::SequenceRole), keptSequence);
+    QCOMPARE(roleAt(messages, 2000, MessageListModel::BodyRole),
+             QStringLiteral("capped"));
+
+    resets.clear();
+    removes.clear();
+    inserts.clear();
+    changes.clear();
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("capped-again"),
+        atLocal(yesterday), QStringLiteral("#room")});
+    messages.reload();
+
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(removes.size(), 1);
+    QCOMPARE(removes.at(0).at(1).toInt(), 1);
+    QCOMPARE(removes.at(0).at(2).toInt(), 1);
+    QCOMPARE(messages.rowCount(), 2001);
+    assertDateRow(messages, 0, QStringLiteral("Yesterday"));
+    QCOMPARE(countBodies(messages, QStringLiteral("Yesterday")), 1);
+    QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole), QStringLiteral("2"));
+    QCOMPARE(roleAt(messages, 2000, MessageListModel::BodyRole),
+             QStringLiteral("capped-again"));
 }
 
 void ModelTest::unreadMarkPlantsOnFirstUnselectedChat()

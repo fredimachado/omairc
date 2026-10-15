@@ -72,9 +72,20 @@ private:
 
     static std::vector<VisualRow> buildView(const IrcConversationState *conversation,
                                             const QDate& today);
+    // Inclusive. last < first means the trim removes no visual rows.
+    // A prefix trim starts at 0. A trim that stops inside the leading
+    // non-today day starts at 1 so that date rule stays at row 0.
+    struct TrimSpan {
+        int first = 0;
+        int last = -1;
+        bool empty() const { return last < first; }
+    };
     static int visualPrefixToRemove(const std::vector<VisualRow>& view,
                                     int storeRemoved,
                                     const QDate& today);
+    static TrimSpan visualTrimSpan(const std::vector<VisualRow>& view,
+                                   int storeRemoved,
+                                   const QDate& today);
     // The row at firstKept, and next's first row, are the same leading date
     // rule: both absent, or both separators for one calendar day.
     static bool sameLeadingDate(const std::vector<VisualRow>& current,

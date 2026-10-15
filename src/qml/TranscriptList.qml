@@ -38,6 +38,11 @@ ListView {
     property int resetSavedCount: 0
     property bool prependPending: false
     property int prependSavedCount: 0
+    // Rows removed strictly above the unseen marker. A cap trim keeps the
+    // leading date rule and drops the lines under it, so this is not a
+    // prefix. noteGrowth and rowsRemoved both see the count change; the
+    // first one consumes this and the other must not move the marker again.
+    property int removedAboveUnseen: 0
     property real previousContentHeight: 0
     property var readMarkerSync: null
     // Window supplies the selected conversation's saved place, or null.
@@ -220,10 +225,30 @@ ListView {
         });
     }
 
+    function settleRemovedAboveUnseen() {
+        var removed = removedAboveUnseen;
+        removedAboveUnseen = 0;
+        if (removed <= 0 || firstUnseenIndex < 0)
+            return;
+        if (firstUnseenSequence >= 0)
+            syncFirstUnseenIndex();
+        else {
+            firstUnseenIndex -= removed;
+            if (firstUnseenIndex < 0)
+                firstUnseenIndex = -1;
+        }
+    }
+
     function noteGrowth(previousCount, newCount) {
         if (newCount < previousCount) {
             if (newCount <= 0) {
+                removedAboveUnseen = 0;
                 pinToEnd();
+                return;
+            }
+            if (removedAboveUnseen > 0) {
+                settleRemovedAboveUnseen();
+                trackedCount = newCount;
                 return;
             }
             if (firstUnseenIndex >= newCount) {
@@ -489,9 +514,29 @@ ListView {
                     list.prependPending = false;
                     list.restoreAnchor();
                 });
-            } else {
-                list.noteGrowth(list.trackedCount, list.count);
+                return;
             }
+            // A history-cap trim drops a leading line and appends the new
+            // one, so the list count does not change and noteGrowth never
+            // sees an arrival. The inserted range still ends at the tail.
+            var modelCount = list.modelRowCount();
+            if (last === modelCount - 1 && list.trackedCount >= modelCount) {
+                list.trackedCount = modelCount;
+                if (list.stick === list.stickFollowing) {
+                    list.stickToEnd();
+                    Qt.callLater(function() {
+                        if (list.stick === list.stickFollowing)
+                            list.stickToEnd();
+                    });
+                    return;
+                }
+                if (list.firstUnseenIndex < 0)
+                    list.firstUnseenIndex = first;
+                list.firstUnseenSequence = list.rowSequence(list.firstUnseenIndex);
+                list.detachedArrival();
+                return;
+            }
+            list.noteGrowth(list.trackedCount, list.count);
         }
         function onDataChanged(topLeft, bottomRight) {
             // The typing footer reads the last row through
@@ -502,10 +547,22 @@ ListView {
             if (bottomRight.row >= list.count - 1)
                 list.rowRevision += 1;
         }
+        function onRowsAboutToBeRemoved(parent, first, last) {
+            list.removedAboveUnseen = 0;
+            if (list.stick !== list.stickDetached || list.firstUnseenIndex < 0)
+                return;
+            if (last < list.firstUnseenIndex)
+                list.removedAboveUnseen = last - first + 1;
+        }
         function onRowsRemoved(parent, first, last) {
+            if (list.removedAboveUnseen > 0) {
+                list.settleRemovedAboveUnseen();
+                return;
+            }
             if (first !== 0
                     || list.stick !== list.stickDetached
-                    || list.firstUnseenIndex < 0) {
+                    || list.firstUnseenIndex < 0
+                    || last < list.firstUnseenIndex) {
                 return;
             }
             if (list.firstUnseenSequence >= 0)
