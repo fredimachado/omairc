@@ -176,6 +176,51 @@ func TestReadGraphicsSupportReplyAndTimeout(t *testing.T) {
 	}
 }
 
+func TestPlaceholderFallbackDecision(t *testing.T) {
+	t.Run("wezterm env", func(t *testing.T) {
+		t.Setenv("TERM_PROGRAM", "WezTerm")
+		term := &scriptTerminal{reply: []byte("\x1b_Gi=4294967295;OK\x1b\\")}
+		if ReadGraphicsSupport(term, term, 50*time.Millisecond) {
+			t.Fatal("TERM_PROGRAM=WezTerm enabled placeholders")
+		}
+	})
+
+	t.Run("wezterm xtversion", func(t *testing.T) {
+		t.Setenv("TERM_PROGRAM", "")
+		term := &scriptTerminal{reply: []byte(
+			"\x1bP>|WezTerm 20240203-110809-5046fc22\x1b\\\x1b_Gi=4294967295;OK\x1b\\",
+		)}
+		if ReadGraphicsSupport(term, term, 50*time.Millisecond) {
+			t.Fatal("WezTerm XTVERSION enabled placeholders")
+		}
+		if !strings.Contains(term.written.String(), "\x1b[>q") || !strings.Contains(term.written.String(), "a=q") {
+			t.Fatalf("probe = %q, want XTVERSION and a=q", term.written.String())
+		}
+	})
+
+	t.Run("kitty", func(t *testing.T) {
+		t.Setenv("TERM_PROGRAM", "kitty")
+		term := &scriptTerminal{reply: []byte(
+			"\x1bP>|kitty(0.32.2)\x1b\\\x1b_Gi=4294967295;OK\x1b\\",
+		)}
+		if !ReadGraphicsSupport(term, term, 50*time.Millisecond) {
+			t.Fatal("Kitty XTVERSION did not enable placeholders")
+		}
+	})
+
+	t.Run("no reply", func(t *testing.T) {
+		t.Setenv("TERM_PROGRAM", "")
+		silent := &scriptTerminal{}
+		started := time.Now()
+		if ReadGraphicsSupport(silent, silent, 40*time.Millisecond) {
+			t.Fatal("no reply enabled placeholders")
+		}
+		if time.Since(started) > 500*time.Millisecond {
+			t.Fatalf("no reply waited %s", time.Since(started))
+		}
+	})
+}
+
 func TestProbeGraphicsNonTerminal(t *testing.T) {
 	if term.IsTerminal(os.Stdin.Fd()) {
 		t.Skip("stdin is a terminal")
@@ -365,6 +410,37 @@ func transmittedPNG(t *testing.T, img image.Image) []byte {
 		t.Fatalf("decode transmit payload: %v", err)
 	}
 	return decoded
+}
+
+func TestTransmitPNGKeepsAlpha(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 2, 2))
+	img.SetNRGBA(0, 0, color.NRGBA{R: 10, G: 20, B: 30, A: 128})
+	img.SetNRGBA(1, 0, color.NRGBA{R: 1, G: 2, B: 3, A: 0})
+	img.SetNRGBA(0, 1, color.NRGBA{R: 255, A: 255})
+	img.SetNRGBA(1, 1, color.NRGBA{G: 255, A: 64})
+
+	pngBytes := transmittedPNG(t, img)
+	// IHDR color type sits after the 8-byte signature, the length, "IHDR",
+	// width, height, and bit depth.
+	if len(pngBytes) < 26 || pngBytes[25] != 6 {
+		got := 0
+		if len(pngBytes) >= 26 {
+			got = int(pngBytes[25])
+		}
+		t.Fatalf("PNG color type = %d, want 6 (RGBA)", got)
+	}
+	decoded, _, err := image.Decode(bytes.NewReader(pngBytes))
+	if err != nil {
+		t.Fatalf("decode transmitted png: %v", err)
+	}
+	clear := color.NRGBAModel.Convert(decoded.At(1, 0)).(color.NRGBA)
+	if clear.A != 0 {
+		t.Fatalf("transparent pixel alpha = %d, want 0", clear.A)
+	}
+	partial := color.NRGBAModel.Convert(decoded.At(0, 0)).(color.NRGBA)
+	if partial.A != 128 || partial.R != 10 || partial.G != 20 || partial.B != 30 {
+		t.Fatalf("partial pixel = %+v, want R=10 G=20 B=30 A=128", partial)
+	}
 }
 
 // lockProbeImage reports whether At runs while the store lock is held. PNG

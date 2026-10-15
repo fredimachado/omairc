@@ -175,8 +175,12 @@ func splitBase64(payload string, size int) []string {
 // when the descriptor is not a terminal, the probe cannot be written, or the
 // reply does not arrive before timeout. The wait polls the descriptor: a PTY
 // rejects SetReadDeadline, and a blocked read would steal later input.
-// Support is never inferred from TERM.
+// Support is never inferred from TERM. WezTerm is a separate opt-out:
+// it answers a=q and does not draw Unicode placeholders.
 func ProbeGraphics(in, out *os.File, timeout time.Duration) bool {
+	if !placeholdersAllowed() {
+		return false
+	}
 	if in == nil || out == nil {
 		return false
 	}
@@ -203,6 +207,9 @@ func ReadGraphicsSupport(w io.Writer, r interface {
 	io.Reader
 	SetReadDeadline(time.Time) error
 }, timeout time.Duration) bool {
+	if !placeholdersAllowed() {
+		return false
+	}
 	if w == nil || r == nil || timeout <= 0 {
 		return false
 	}
@@ -211,7 +218,7 @@ func ReadGraphicsSupport(w io.Writer, r interface {
 		return false
 	}
 	defer func() { _ = r.SetReadDeadline(time.Time{}) }()
-	if _, err := io.WriteString(w, QueryEscape()); err != nil {
+	if _, err := io.WriteString(w, probeQueries()); err != nil {
 		return false
 	}
 	buf := make([]byte, 0, 512)
@@ -230,9 +237,42 @@ func ReadGraphicsSupport(w io.Writer, r interface {
 	}
 }
 
+// probeQueries is the startup write: XTVERSION, then the graphics query.
+// One write keeps both replies inside the existing probe timeout. XTVERSION
+// goes first so a terminal that answers in order has identified itself
+// before the graphics OK is complete.
+func probeQueries() string {
+	return "\x1b[>q" + QueryEscape()
+}
+
+// placeholdersAllowed reports whether Unicode placeholders may be used.
+// WezTerm answers the Kitty a=q query but does not draw U=1 placements, so
+// the avatar cells would be blank. Its default environment sets
+// TERM_PROGRAM=WezTerm. An XTVERSION reply is the same signal when that
+// variable is absent. Either one keeps the half-block raster.
+func placeholdersAllowed() bool {
+	return !wezTermProgram(os.Getenv("TERM_PROGRAM"))
+}
+
+func wezTermProgram(program string) bool {
+	return strings.EqualFold(strings.TrimSpace(program), "WezTerm")
+}
+
+// xtversionWezTerm reports whether buf holds WezTerm's XTVERSION reply.
+// CSI > q is answered with DCS > | WezTerm <version> ST. Seeing that name is
+// enough; the graphics OK can sit in the same buffer and still must not
+// enable placeholders.
+func xtversionWezTerm(buf []byte) bool {
+	return strings.Contains(string(buf), "\x1bP>|WezTerm")
+}
+
 // absorbGraphics reports whether buf ends the probe and whether the terminal
 // accepted graphics. stop is false while the reply is still incomplete.
+// A WezTerm XTVERSION refuses placeholders even when a=q is OK.
 func absorbGraphics(buf []byte) (stop, ok bool) {
+	if xtversionWezTerm(buf) {
+		return true, false
+	}
 	if replyOK(buf) {
 		return true, true
 	}
@@ -646,6 +686,8 @@ func scaleBox(src image.Image, dstW, dstH int) *image.NRGBA {
 	return dst
 }
 
+// encodePNG writes img as PNG. A translucent image stays RGBA, so the
+// terminal can keep the avatar's transparency. An opaque image may be RGB.
 func encodePNG(img image.Image) ([]byte, bool) {
 	if img == nil {
 		return nil, false

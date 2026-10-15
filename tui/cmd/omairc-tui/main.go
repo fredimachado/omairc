@@ -156,9 +156,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	model.SetThemeWatcher(watcher)
 
 	// Peer avatars need 24-bit color for the half-block raster. Kitty graphics
-	// is a separate probe: a positive a=q reply, never a TERM guess. The store
-	// exists when either path is available. A row with no cached image stays
-	// on the nick identicon.
+	// is a separate probe: a positive a=q reply, never a TERM guess. WezTerm
+	// answers that probe and stays on the half-block raster, because it does
+	// not draw Unicode placeholders. The store exists when either path is
+	// available. A row with no cached image stays on the nick identicon.
 	graphics := avatar.ProbeGraphics(os.Stdin, os.Stdout, avatar.ProbeTimeout)
 	if avatar.TruecolorSupported() || graphics {
 		avatars := avatar.New(avatar.TruecolorSupported(), func(string) {

@@ -325,7 +325,9 @@ direct-message avatar glyph: an identicon by default, a half-block
 truecolor raster when `internal/avatar` has the peer image cached and the
 terminal advertises 24-bit color, or a Kitty Unicode placeholder in that
 same two-cell box when a startup `a=q` probe gets an OK reply. The probe
-never trusts `TERM`. Transmit and delete escapes go out through `tea.Raw`;
+never trusts `TERM`. WezTerm answers that probe and stays on the half-block
+raster, because it does not draw Unicode placeholders. Transmit and delete
+escapes go out through `tea.Raw`;
 quit deletes the images this process transmitted.
 Phase 11 adds `internal/storage` (the QSettings-compatible INI store, the XDG
 paths, the profile store, the open-direct and playback-time stores, the on-disk

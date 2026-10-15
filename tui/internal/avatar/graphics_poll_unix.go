@@ -19,7 +19,7 @@ func readProbeReply(w io.Writer, in *os.File, timeout time.Duration) bool {
 		return false
 	}
 	deadline := time.Now().Add(timeout)
-	if _, err := io.WriteString(w, QueryEscape()); err != nil {
+	if _, err := io.WriteString(w, probeQueries()); err != nil {
 		return false
 	}
 	buf := make([]byte, 0, 512)
