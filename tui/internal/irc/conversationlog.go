@@ -5,11 +5,12 @@ import "time"
 // TranscriptLine is one persisted transcript entry. It mirrors
 // IrcTranscriptLine.
 type TranscriptLine struct {
-	Timestamp time.Time
-	Author    string
-	Kind      string
-	Body      string
-	MsgID     string
+	Timestamp        time.Time
+	Author           string
+	Kind             string
+	Body             string
+	MsgID            string
+	OnlyVisibleToYou bool
 }
 
 // ConversationLog persists and reads back conversation transcripts, one file

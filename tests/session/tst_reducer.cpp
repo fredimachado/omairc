@@ -89,9 +89,12 @@ IrcReplayLine replayLine(const QString& author,
 void applyWire(IrcEventReducer& reducer, std::string_view line)
 {
     const IrcMessage message = mustParse(line);
+    const auto joined = [&reducer](const QString& channel, const QString& sender) {
+        return reducer.joinedMemberChannel(networkA, channel, sender);
+    };
     for (const IrcEvent& event : IrcEventTranslator::translate(
              networkA, QStringLiteral("omairc"),
-             reducer.serverFeatures(networkA), message)) {
+             reducer.serverFeatures(networkA), message, joined)) {
         reducer.apply(event);
     }
 }
@@ -168,6 +171,8 @@ private slots:
     void loneMembershipLineKeepsTodayWording();
     void forgetNetworkLeavesTheOtherNetwork();
     void historySplicesAboveSelfJoin();
+    void onlyVisibleToYouSurvivesHistoryAndHydrate();
+    void channelContextDirectMessageSurvivesWhenUntrusted();
     void historyMarksUnreadLikeLiveWhenUnselected();
     void historyReplayPlantsUnreadMarkLikeLive();
     void replayWhileUnfocusedDoesNotPlantUnreadMarkOnSelected();
@@ -2047,6 +2052,193 @@ void ReducerTest::historySplicesAboveSelfJoin()
     QCOMPARE(conversation->messages[1].body, QStringLiteral("omairc joined"));
     QCOMPARE(conversation->messages[1].origin, IrcOrigin::Live);
     QVERIFY(!conversation->messages[1].collapsible);
+}
+
+void ReducerTest::onlyVisibleToYouSurvivesHistoryAndHydrate()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("bot")});
+    applyWire(reducer,
+              "@+draft/channel-context=#Room :bot!u@h PRIVMSG omairc :just you");
+    applyWire(reducer, ":alice!u@h PRIVMSG #room :everyone");
+
+    const IrcConversationState *room = roomOf(reducer);
+    QVERIFY(room);
+    QCOMPARE(room->target, QStringLiteral("#room"));
+    const auto findBody = [&](const QString& body) -> const IrcReducedMessage * {
+        for (const IrcReducedMessage& message : room->messages) {
+            if (message.body == body)
+                return &message;
+        }
+        return nullptr;
+    };
+    const IrcReducedMessage *marked = findBody(QStringLiteral("just you"));
+    QVERIFY(marked);
+    QVERIFY(marked->onlyVisibleToYou);
+    QCOMPARE(marked->kind, IrcMessageKind::Message);
+    QVERIFY(!reducer.find(reducer.conversationKey(networkA, QStringLiteral("bot"))));
+    const IrcReducedMessage *ordinary = findBody(QStringLiteral("everyone"));
+    QVERIFY(ordinary);
+    QVERIFY(!ordinary->onlyVisibleToYou);
+
+    const auto joined = [&reducer](const QString& channel, const QString& sender) {
+        return reducer.joinedMemberChannel(networkA, channel, sender);
+    };
+    IrcHistoryBatch batch;
+    batch.target = QStringLiteral("#room");
+    batch.lines.push_back(mustParse(
+        "@msgid=replay-only;+draft/channel-context=#room :bot!u@h PRIVMSG omairc :replayed"));
+    batch.lines.push_back(mustParse(
+        "@msgid=replay-public :alice!u@h PRIVMSG #room :public replay"));
+    const std::optional<IrcHistoryEvent> history = IrcEventTranslator::translateHistory(
+        networkA, QStringLiteral("omairc"), reducer.serverFeatures(networkA),
+        batch, joined);
+    QVERIFY(history);
+    reducer.apply(*history);
+    room = roomOf(reducer);
+    QVERIFY(room);
+    const auto findAgain = [&](const QString& body) -> const IrcReducedMessage * {
+        for (const IrcReducedMessage& message : room->messages) {
+            if (message.body == body)
+                return &message;
+        }
+        return nullptr;
+    };
+    const IrcReducedMessage *replayed = findAgain(QStringLiteral("replayed"));
+    QVERIFY(replayed);
+    QVERIFY(replayed->onlyVisibleToYou);
+    QCOMPARE(replayed->origin, IrcOrigin::Replay);
+    QVERIFY(!findAgain(QStringLiteral("public replay"))->onlyVisibleToYou);
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    IrcConversationLog log(dir.path());
+    const IrcConversationKey logged =
+        IrcEventReducer().conversationKey(networkA, QStringLiteral("#room"));
+    {
+        IrcEventReducer first;
+        first.setConversationLog(&log);
+        welcome(first, networkA);
+        first.apply(IrcJoinEvent{
+            networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+        first.apply(IrcJoinEvent{
+            networkA, QStringLiteral("#room"), QStringLiteral("bot")});
+        applyWire(first,
+                  "@msgid=stored-only;+draft/channel-context=#room "
+                  ":bot!u@h PRIVMSG omairc :stored");
+    }
+    IrcEventReducer again;
+    again.setConversationLog(&log);
+    welcome(again, networkA);
+    again.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    const IrcConversationState *hydrated = again.find(logged);
+    QVERIFY(hydrated);
+    const auto stored = std::find_if(
+        hydrated->messages.begin(), hydrated->messages.end(),
+        [](const IrcReducedMessage& message) {
+            return message.body == QStringLiteral("stored");
+        });
+    QVERIFY(stored != hydrated->messages.end());
+    QVERIFY(stored->onlyVisibleToYou);
+    QCOMPARE(stored->origin, IrcOrigin::Replay);
+}
+
+void ReducerTest::channelContextDirectMessageSurvivesWhenUntrusted()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("alice")});
+
+    applyWire(reducer,
+              "@+draft/channel-context=#room :eve!u@h PRIVMSG omairc :stranger");
+    const IrcConversationKey eve =
+        reducer.conversationKey(networkA, QStringLiteral("eve"));
+    const IrcConversationState *direct = reducer.find(eve);
+    QVERIFY(direct);
+    QCOMPARE(direct->unread, 1);
+    QCOMPARE(direct->messages.back().body, QStringLiteral("stranger"));
+    QVERIFY(!direct->messages.back().onlyVisibleToYou);
+    const std::optional<IrcMentionArrival> stranger = reducer.takeMentionArrival();
+    QVERIFY(stranger);
+    QCOMPARE(stranger->author, QStringLiteral("eve"));
+    QCOMPARE(stranger->target, QStringLiteral("eve"));
+    QCOMPARE(stranger->body, QStringLiteral("stranger"));
+    QVERIFY(!roomOf(reducer)
+            || roomOf(reducer)->messages.back().body != QStringLiteral("stranger"));
+
+    applyWire(reducer,
+              "@+draft/channel-context=#secret :alice!u@h PRIVMSG omairc :elsewhere");
+    const IrcConversationKey alice =
+        reducer.conversationKey(networkA, QStringLiteral("alice"));
+    const IrcConversationState *aliceDirect = reducer.find(alice);
+    QVERIFY(aliceDirect);
+    QCOMPARE(aliceDirect->messages.back().body, QStringLiteral("elsewhere"));
+    QVERIFY(!aliceDirect->messages.back().onlyVisibleToYou);
+    QCOMPARE(aliceDirect->unread, 1);
+    const std::optional<IrcMentionArrival> elsewhere = reducer.takeMentionArrival();
+    QVERIFY(elsewhere);
+    QCOMPARE(elsewhere->author, QStringLiteral("alice"));
+    QCOMPARE(elsewhere->body, QStringLiteral("elsewhere"));
+    QVERIFY(!reducer.find(reducer.conversationKey(networkA, QStringLiteral("#secret"))));
+
+    applyWire(reducer,
+              "@+draft/channel-context=#a,#b :eve!u@h PRIVMSG omairc :comma");
+    direct = reducer.find(eve);
+    QVERIFY(direct);
+    QCOMPARE(direct->messages.back().body, QStringLiteral("comma"));
+    QVERIFY(!direct->messages.back().onlyVisibleToYou);
+    QVERIFY(reducer.takeMentionArrival());
+
+    const auto joined = [&reducer](const QString& channel, const QString& sender) {
+        return reducer.joinedMemberChannel(networkA, channel, sender);
+    };
+    IrcHistoryBatch query;
+    query.target = QStringLiteral("alice");
+    query.lines.push_back(mustParse(
+        "@+draft/channel-context=#room :alice!u@h PRIVMSG omairc :kept in query"));
+    const std::optional<IrcHistoryEvent> history = IrcEventTranslator::translateHistory(
+        networkA, QStringLiteral("omairc"), reducer.serverFeatures(networkA),
+        query, joined);
+    QVERIFY(history);
+    QCOMPARE(history->lines.size(), std::size_t(1));
+    QVERIFY(!history->lines[0].onlyVisibleToYou);
+    reducer.apply(*history);
+    aliceDirect = reducer.find(alice);
+    QVERIFY(aliceDirect);
+    bool kept = false;
+    for (const IrcReducedMessage& message : aliceDirect->messages) {
+        if (message.body == QStringLiteral("kept in query")) {
+            kept = true;
+            QVERIFY(!message.onlyVisibleToYou);
+        }
+    }
+    QVERIFY(kept);
+
+    reducer.apply(IrcPartEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc"), QString{}});
+    applyWire(reducer,
+              "@+draft/channel-context=#room :alice!u@h PRIVMSG omairc :after part");
+    aliceDirect = reducer.find(alice);
+    QVERIFY(aliceDirect);
+    QCOMPARE(aliceDirect->messages.back().body, QStringLiteral("after part"));
+    QVERIFY(!aliceDirect->messages.back().onlyVisibleToYou);
+    const std::optional<IrcMentionArrival> parted = reducer.takeMentionArrival();
+    QVERIFY(parted);
+    QCOMPARE(parted->body, QStringLiteral("after part"));
+    const IrcConversationState *room = roomOf(reducer);
+    QVERIFY(room);
+    QVERIFY(!room->channel()->joined);
+    for (const IrcReducedMessage& message : room->messages) {
+        QVERIFY(message.body != QStringLiteral("after part"));
+    }
 }
 
 void ReducerTest::historyMarksUnreadLikeLiveWhenUnselected()

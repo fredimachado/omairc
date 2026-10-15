@@ -52,7 +52,9 @@ func mustParse(t *testing.T, line string) Message {
 func applyWire(t *testing.T, reducer *EventReducer, line string) {
 	t.Helper()
 	message := mustParse(t, line)
-	for _, event := range Translate(networkA, "omairc", reducer.ServerFeatures(networkA), message, reducerTimestamp) {
+	for _, event := range Translate(networkA, "omairc", reducer.ServerFeatures(networkA), message, reducerTimestamp, func(channel, sender string) (string, bool) {
+		return reducer.JoinedMemberChannel(networkA, channel, sender)
+	}) {
 		reducer.Apply(event, reducerTimestamp)
 	}
 }
@@ -2029,4 +2031,145 @@ func TestAccountChangeRefreshesMemberRowAndTranscript(t *testing.T) {
 	requireString(t, "nick", notify.Nick, "alice")
 	requireTrue(t, "messages", notify.Messages)
 	requireFalse(t, "conversations", notify.Conversations)
+}
+
+func messageByBody(t *testing.T, messages []ReducedMessage, body string) ReducedMessage {
+	t.Helper()
+	for _, message := range messages {
+		if message.Body == body {
+			return message
+		}
+	}
+	t.Fatalf("missing body %q", body)
+	return ReducedMessage{}
+}
+
+func TestOnlyVisibleToYouSurvivesHistoryAndHydrate(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "bot"}, reducerTimestamp)
+	applyWire(t, reducer, "@+draft/channel-context=#Room :bot!u@h PRIVMSG omairc :just you")
+	applyWire(t, reducer, ":alice!u@h PRIVMSG #room :everyone")
+
+	room := reducer.ConversationKey(networkA, "#room")
+	conversation := stateOf(t, reducer, room)
+	requireString(t, "buffer name", conversation.Target, "#room")
+	marked := messageByBody(t, conversation.Messages, "just you")
+	requireTrue(t, "live only you", marked.OnlyVisibleToYou)
+	requireInt(t, "live kind", int(marked.Kind), int(KindMessage))
+	requireInt(t, "live origin", int(marked.Origin), int(OriginLive))
+	requireFalse(t, "no direct for the private delivery", reducer.Find(reducer.ConversationKey(networkA, "bot")) != nil)
+	requireFalse(t, "ordinary", messageByBody(t, conversation.Messages, "everyone").OnlyVisibleToYou)
+
+	history, ok := TranslateHistory(networkA, "omairc", NewServerFeatures(), HistoryBatch{
+		Target: "#room",
+		Lines: []Message{
+			mustParse(t, "@msgid=replay-only;+draft/channel-context=#room :bot!u@h PRIVMSG omairc :replayed"),
+			mustParse(t, "@msgid=replay-public :alice!u@h PRIVMSG #room :public replay"),
+		},
+	}, reducerTimestamp, func(channel, sender string) (string, bool) {
+		return reducer.JoinedMemberChannel(networkA, channel, sender)
+	})
+	requireTrue(t, "history", ok)
+	reducer.Apply(history, reducerTimestamp)
+	conversation = stateOf(t, reducer, room)
+	replayed := messageByBody(t, conversation.Messages, "replayed")
+	requireTrue(t, "replay only you", replayed.OnlyVisibleToYou)
+	requireInt(t, "replay origin", int(replayed.Origin), int(OriginReplay))
+	requireFalse(t, "public replay", messageByBody(t, conversation.Messages, "public replay").OnlyVisibleToYou)
+
+	log := &recordingConversationLog{}
+	first := NewEventReducer()
+	first.SetConversationLog(log)
+	welcome(first, networkA)
+	first.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	first.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "bot"}, reducerTimestamp)
+	applyWire(t, first, "@msgid=stored-only;+draft/channel-context=#room :bot!u@h PRIVMSG omairc :stored")
+	again := NewEventReducer()
+	again.SetConversationLog(log)
+	welcome(again, networkA)
+	again.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	hydrated := messageByBody(t, stateOf(t, again, room).Messages, "stored")
+	requireTrue(t, "hydrated only you", hydrated.OnlyVisibleToYou)
+	requireInt(t, "hydrated origin", int(hydrated.Origin), int(OriginReplay))
+}
+
+func TestChannelContextDirectMessageSurvivesWhenUntrusted(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "alice"}, reducerTimestamp)
+
+	applyWire(t, reducer, "@+draft/channel-context=#room :eve!u@h PRIVMSG omairc :stranger")
+	eve := reducer.ConversationKey(networkA, "eve")
+	direct := stateOf(t, reducer, eve)
+	requireInt(t, "stranger unread", direct.Unread, 1)
+	requireString(t, "stranger body", direct.Messages[len(direct.Messages)-1].Body, "stranger")
+	requireFalse(t, "stranger flag", direct.Messages[len(direct.Messages)-1].OnlyVisibleToYou)
+	stranger, ok := reducer.TakeMentionArrival()
+	requireTrue(t, "stranger mention", ok)
+	requireString(t, "stranger author", stranger.Author, "eve")
+	requireString(t, "stranger target", stranger.Target, "eve")
+	requireString(t, "stranger mention body", stranger.Body, "stranger")
+	room := stateOf(t, reducer, reducer.ConversationKey(networkA, "#room"))
+	requireFalse(t, "stranger stays out of the channel", room.Messages[len(room.Messages)-1].Body == "stranger")
+
+	applyWire(t, reducer, "@+draft/channel-context=#secret :alice!u@h PRIVMSG omairc :elsewhere")
+	alice := reducer.ConversationKey(networkA, "alice")
+	aliceDirect := stateOf(t, reducer, alice)
+	requireString(t, "elsewhere body", aliceDirect.Messages[len(aliceDirect.Messages)-1].Body, "elsewhere")
+	requireFalse(t, "elsewhere flag", aliceDirect.Messages[len(aliceDirect.Messages)-1].OnlyVisibleToYou)
+	requireInt(t, "elsewhere unread", aliceDirect.Unread, 1)
+	elsewhere, ok := reducer.TakeMentionArrival()
+	requireTrue(t, "elsewhere mention", ok)
+	requireString(t, "elsewhere author", elsewhere.Author, "alice")
+	requireString(t, "elsewhere mention body", elsewhere.Body, "elsewhere")
+	requireFalse(t, "no secret channel", reducer.Find(reducer.ConversationKey(networkA, "#secret")) != nil)
+
+	applyWire(t, reducer, "@+draft/channel-context=#a,#b :eve!u@h PRIVMSG omairc :comma")
+	direct = stateOf(t, reducer, eve)
+	requireString(t, "comma body", direct.Messages[len(direct.Messages)-1].Body, "comma")
+	requireFalse(t, "comma flag", direct.Messages[len(direct.Messages)-1].OnlyVisibleToYou)
+	if _, ok := reducer.TakeMentionArrival(); !ok {
+		t.Fatal("comma fallback must notify")
+	}
+
+	history, ok := TranslateHistory(networkA, "omairc", NewServerFeatures(), HistoryBatch{
+		Target: "alice",
+		Lines: []Message{
+			mustParse(t, "@+draft/channel-context=#room :alice!u@h PRIVMSG omairc :kept in query"),
+		},
+	}, reducerTimestamp, func(channel, sender string) (string, bool) {
+		return reducer.JoinedMemberChannel(networkA, channel, sender)
+	})
+	requireTrue(t, "query history", ok)
+	requireInt(t, "query lines", len(history.Lines), 1)
+	requireFalse(t, "query flag", history.Lines[0].OnlyVisibleToYou)
+	reducer.Apply(history, reducerTimestamp)
+	aliceDirect = stateOf(t, reducer, alice)
+	kept := false
+	for _, message := range aliceDirect.Messages {
+		if message.Body == "kept in query" {
+			kept = true
+			requireFalse(t, "kept flag", message.OnlyVisibleToYou)
+		}
+	}
+	requireTrue(t, "query kept the line", kept)
+
+	reducer.Apply(PartEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	applyWire(t, reducer, "@+draft/channel-context=#room :alice!u@h PRIVMSG omairc :after part")
+	aliceDirect = stateOf(t, reducer, alice)
+	requireString(t, "after part body", aliceDirect.Messages[len(aliceDirect.Messages)-1].Body, "after part")
+	requireFalse(t, "after part flag", aliceDirect.Messages[len(aliceDirect.Messages)-1].OnlyVisibleToYou)
+	parted, ok := reducer.TakeMentionArrival()
+	requireTrue(t, "after part mention", ok)
+	requireString(t, "after part mention body", parted.Body, "after part")
+	room = stateOf(t, reducer, reducer.ConversationKey(networkA, "#room"))
+	requireFalse(t, "left the channel", room.Channel().Joined)
+	for _, message := range room.Messages {
+		if message.Body == "after part" {
+			t.Fatal("parted channel kept the private line")
+		}
+	}
 }

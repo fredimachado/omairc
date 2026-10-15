@@ -44,6 +44,10 @@ Item {
         ? String(model.authorAccount) : ""
     // Wash: nick or /highlight hit. Not the sidebar `mention` badge.
     readonly property bool mentioned: !!(model && model.mentioned)
+    // A channel row whose IRC target was this nick, not the channel.
+    readonly property bool onlyVisibleToYou: !!(model && model.onlyVisibleToYou)
+    readonly property int onlyYouExtra: (onlyVisibleToYou && isChat)
+        ? onlyYouLabel.implicitHeight + style.scaledSize(2) : 0
     // The view is null only outside a TranscriptList. Width, grouping,
     // and the whois stack margin all read that list, not a captured column.
     readonly property var transcriptView: ListView.view
@@ -67,7 +71,7 @@ Item {
                 ? unreadMark.implicitHeight
                 : (kind === "whois"
                     ? messageWhois.implicitHeight
-                    : messageBody.implicitHeight)))
+                    : messageBody.implicitHeight + messageDelegate.onlyYouExtra)))
 
     MentionWash {
         style: messageDelegate.style
@@ -225,5 +229,22 @@ Item {
             channelNameAt: function(text, at) { return messageDelegate.channelNameAt(text, at) }
             openChannelName: function(channel) { return messageDelegate.openChannelName(channel) }
         }
+    }
+
+    Text {
+        id: onlyYouLabel
+        objectName: "onlyVisibleToYou"
+        visible: messageDelegate.onlyVisibleToYou && messageDelegate.isChat
+        text: "only visible to you"
+        Accessible.name: "only visible to you"
+        color: messageDelegate.style.mutedColor
+        font.family: "iA Writer Mono S"
+        font.pixelSize: messageDelegate.style.scaledSize(9)
+        anchors.left: messageBody.left
+        anchors.top: messageBody.top
+        anchors.topMargin: visible
+            ? messageBody.contentHeight + messageDelegate.style.scaledSize(2)
+            : 0
+        height: visible ? implicitHeight : 0
     }
 }

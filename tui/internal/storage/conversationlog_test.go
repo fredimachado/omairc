@@ -327,6 +327,42 @@ func TestConversationLogWritesFlattenedJSONL(t *testing.T) {
 	}
 }
 
+func TestConversationLogOnlyVisibleToYouRoundTrip(t *testing.T) {
+	log := NewConversationLog(t.TempDir())
+	mapping := irc.CaseMapping{}
+	if !log.Append("net", "#room", mapping, irc.TranscriptLine{
+		Kind: "message", Author: "bot", Body: "just you", OnlyVisibleToYou: true,
+	}) {
+		t.Fatal("append marked line")
+	}
+	if !log.Append("net", "#room", mapping, irc.TranscriptLine{
+		Kind: "message", Author: "alice", Body: "everyone",
+	}) {
+		t.Fatal("append ordinary line")
+	}
+	lines := log.ReadTail("net", "#room", mapping, 10)
+	if len(lines) != 2 {
+		t.Fatalf("ReadTail returned %d lines, want 2", len(lines))
+	}
+	if !lines[0].OnlyVisibleToYou || lines[0].Body != "just you" {
+		t.Fatalf("marked line = %+v", lines[0])
+	}
+	if lines[1].OnlyVisibleToYou || lines[1].Body != "everyone" {
+		t.Fatalf("ordinary line = %+v", lines[1])
+	}
+	raw, err := os.ReadFile(log.PathFor("net", "#room", mapping))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if !strings.Contains(text, `"onlyVisibleToYou":true`) {
+		t.Fatalf("log = %q, want the marker field on the private line", text)
+	}
+	if strings.Count(text, "onlyVisibleToYou") != 1 {
+		t.Fatalf("log = %q, want the field omitted on the ordinary line", text)
+	}
+}
+
 func TestConversationLogUsesTranscriptRootOverride(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("OMAIRC_TRANSCRIPT_ROOT", root)

@@ -267,6 +267,8 @@ void ModelTest::roleNamesMatchQml()
              QByteArray("authorAccount"));
     QCOMPARE(messages.roleNames()[MessageListModel::MentionedRole],
              QByteArray("mentioned"));
+    QCOMPARE(messages.roleNames()[MessageListModel::OnlyVisibleToYouRole],
+             QByteArray("onlyVisibleToYou"));
 
     QCOMPARE(members.roleNames()[MemberListModel::NickRole], QByteArray("nick"));
     QCOMPARE(members.roleNames()[MemberListModel::LabelRole], QByteArray("label"));

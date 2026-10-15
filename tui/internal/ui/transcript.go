@@ -1100,6 +1100,10 @@ const (
 // message body: a space, the rule, and a space.
 const transcriptSeparator = " │ "
 
+// onlyVisibleToYouLabel marks a channel line whose IRC target was this nick.
+// It stays out of transcriptLine, so find does not treat the marker as body.
+const onlyVisibleToYouLabel = "only visible to you"
+
 // isChatRow reports whether a message renders with the time/nick column and a
 // wrapped body. The action, notice, and event shapes keep their own single-line
 // chrome.
@@ -1201,7 +1205,37 @@ func (m *Model) chatRow(message controller.MessageSnapshot, grouped bool, nickWi
 	first, continuation := m.chatByline(message.Author, message.Time, grouped, nickWidth,
 		bylineStyle{clock: m.styles.Time, nick: m.nickStyle(message.Author), rule: m.styles.MutedLine})
 	body := m.renderMessageBody(message.Body, lipgloss.NewStyle())
-	return joinWrappedBody(first, continuation, body, m.transcriptWidth())
+	row := joinWrappedBody(first, continuation, body, m.transcriptWidth())
+	return m.appendOnlyYou(row, continuation, message)
+}
+
+// onlyYouPrefix aligns the marker with the row it hangs under. Action and
+// notice rows use the same two-space indent as their body. A chat row uses
+// the byline continuation, including when find paints the row.
+func (m *Model) onlyYouPrefix(messages []controller.MessageSnapshot, index int, message controller.MessageSnapshot, nickWidth int) string {
+	switch message.Kind {
+	case "action", "notice":
+		return "  "
+	case "event":
+		return ""
+	}
+	var previous *controller.MessageSnapshot
+	if index > 0 && index-1 < len(messages) {
+		previous = &messages[index-1]
+	}
+	_, continuation := m.chatByline(message.Author, message.Time,
+		continuesChatGroup(previous, message), nickWidth,
+		bylineStyle{clock: m.styles.Time, nick: m.nickStyle(message.Author), rule: m.styles.MutedLine})
+	return continuation
+}
+
+// appendOnlyYou hangs the muted marker under a row whose delivery was private.
+// prefix aligns it with the body column; a row without a column passes "".
+func (m *Model) appendOnlyYou(row, prefix string, message controller.MessageSnapshot) string {
+	if !message.OnlyVisibleToYou {
+		return row
+	}
+	return row + "\n" + prefix + m.styles.Event.Render(onlyVisibleToYouLabel)
 }
 
 // joinWrappedBody hangs a wrapped body off a byline: the first wrapped line
@@ -1239,16 +1273,18 @@ func (m *Model) messageRow(index int, message controller.MessageSnapshot) string
 // time/nick column and a wrapped body.
 func (m *Model) messageRowAt(messages []controller.MessageSnapshot, index int, message controller.MessageSnapshot, nickWidth int) string {
 	if m.findMatchAt(index) {
-		return m.clipTranscriptLine(m.styles.FindMatch.Render(m.transcriptLine(message)))
+		return m.appendOnlyYou(
+			m.clipTranscriptLine(m.styles.FindMatch.Render(m.transcriptLine(message))),
+			m.onlyYouPrefix(messages, index, message, nickWidth), message)
 	}
 	switch message.Kind {
 	case "action":
 		// "* nick body": an italic, muted action shape with the nick still
 		// carrying its palette color.
-		return m.clipTranscriptLine(m.styles.Action.Render("* ") +
-			m.nickStyle(message.Author).Render(message.Author) +
-			m.styles.Action.Render(" ") +
-			m.renderMessageBody(message.Body, m.styles.Action))
+		return m.appendOnlyYou(m.clipTranscriptLine(m.styles.Action.Render("* ")+
+			m.nickStyle(message.Author).Render(message.Author)+
+			m.styles.Action.Render(" ")+
+			m.renderMessageBody(message.Body, m.styles.Action)), "  ", message)
 	case "event":
 		// A dim, centered server event, mirroring MessageRow.qml's centered
 		// messageEvent.
@@ -1256,10 +1292,10 @@ func (m *Model) messageRowAt(messages []controller.MessageSnapshot, index int, m
 	case "notice":
 		// "-nick- body": the notice marker stays muted while the nick keeps its
 		// palette color.
-		return m.clipTranscriptLine(m.styles.Notice.Render("-") +
-			m.nickStyle(message.Author).Render(message.Author) +
-			m.styles.Notice.Render("- ") +
-			m.renderMessageBody(message.Body, m.styles.Notice))
+		return m.appendOnlyYou(m.clipTranscriptLine(m.styles.Notice.Render("-")+
+			m.nickStyle(message.Author).Render(message.Author)+
+			m.styles.Notice.Render("- ")+
+			m.renderMessageBody(message.Body, m.styles.Notice)), "  ", message)
 	}
 	var previous *controller.MessageSnapshot
 	if index > 0 && index-1 < len(messages) {
@@ -1333,6 +1369,9 @@ func (m *Model) mentionRow(message controller.MessageSnapshot, grouped bool, nic
 	width := m.transcriptWidth()
 	// Every wrapped line is padded to the column so the band never stops short.
 	lines := strings.Split(joinWrappedBody(first, continuation, body, width), "\n")
+	if message.OnlyVisibleToYou {
+		lines = append(lines, continuation+wash.Foreground(colors.TextDim).Render(onlyVisibleToYouLabel))
+	}
 	for index, line := range lines {
 		if pad := width - lipgloss.Width(line); pad > 0 {
 			lines[index] = line + wash.Render(strings.Repeat(" ", pad))

@@ -757,7 +757,8 @@ void IrcEventReducer::hydrateFromLog(IrcConversationState& conversation)
             conversation.messageIds.insert(msgid);
         admitMessage(conversation,
                      {line.author, line.body, line.timestamp, *kind, false,
-                      IrcOrigin::Replay, msgid});
+                      IrcOrigin::Replay, msgid, 0, std::nullopt,
+                      line.onlyVisibleToYou});
     }
     capMessages(conversation);
 }
@@ -773,7 +774,7 @@ void IrcEventReducer::persistMessage(const IrcConversationState& conversation,
     m_log->append(conversation.key.networkId, conversation.key.normalizedTarget,
                   serverFeatures(conversation.key.networkId).caseMapping(),
                   {message.timestamp, message.author, kind, message.body,
-                   message.msgid.value});
+                   message.msgid.value, message.onlyVisibleToYou});
 }
 
 void IrcEventReducer::persistPrependedMessages(
@@ -791,7 +792,7 @@ void IrcEventReducer::persistPrependedMessages(
         if (kind.isEmpty())
             continue;
         lines.push_back({message.timestamp, message.author, kind, message.body,
-                         message.msgid.value});
+                         message.msgid.value, message.onlyVisibleToYou});
     }
     if (lines.empty())
         return;
@@ -840,6 +841,27 @@ const IrcConversationState *IrcEventReducer::find(
 {
     const auto found = m_conversations.find(key);
     return found == m_conversations.end() ? nullptr : &found->second;
+}
+
+QString IrcEventReducer::joinedMemberChannel(const QString& networkId,
+                                             const QString& channel,
+                                             const QString& sender) const
+{
+    if (networkId.isEmpty() || channel.isEmpty() || sender.isEmpty())
+        return {};
+    const IrcConversationState *conversation =
+        find(conversationKey(networkId, channel));
+    if (!conversation)
+        return {};
+    const IrcChannelState *state = conversation->channel();
+    if (!state || !state->joined)
+        return {};
+    const QString normalizedSender = normalize(networkId, sender);
+    if (normalizedSender.isEmpty()
+        || state->members.find(normalizedSender) == state->members.end()) {
+        return {};
+    }
+    return conversation->target;
 }
 
 std::optional<IrcMemberView> IrcEventReducer::memberView(
@@ -1197,7 +1219,8 @@ void IrcEventReducer::appendChat(const IrcConversationKey& key,
                                  const QDateTime& timestamp,
                                  IrcMessageKind kind,
                                  const IrcMsgId& msgid,
-                                 const std::optional<QDateTime>& serverTime)
+                                 const std::optional<QDateTime>& serverTime,
+                                 bool onlyVisibleToYou)
 {
     const bool self = isSelf(key.networkId, author);
     IrcConversationState *conversation = ensureConversation(
@@ -1213,7 +1236,7 @@ void IrcEventReducer::appendChat(const IrcConversationKey& key,
         conversation->messageIds.insert(msgid);
     admitMessage(*conversation,
                  {author, body, timestamp, kind, false, IrcOrigin::Live, msgid,
-                  0, serverTime});
+                  0, serverTime, onlyVisibleToYou});
     persistMessage(*conversation, conversation->messages.back());
     capMessages(*conversation);
     clearTyping(*conversation, normalize(key.networkId, author));
@@ -1601,7 +1624,7 @@ void IrcEventReducer::reduce(const IrcMessageEvent& event)
     appendChat(event.conversation, displayTarget(event.conversation, event.target),
                event.author, event.body,
                event.timestamp, IrcMessageKind::Message, event.msgid,
-               event.serverTime);
+               event.serverTime, event.onlyVisibleToYou);
 }
 
 void IrcEventReducer::reduce(const IrcNoticeEvent& event)
@@ -1609,7 +1632,7 @@ void IrcEventReducer::reduce(const IrcNoticeEvent& event)
     appendChat(event.conversation, displayTarget(event.conversation, event.target),
                event.author, event.body,
                event.timestamp, IrcMessageKind::Notice, event.msgid,
-               event.serverTime);
+               event.serverTime, event.onlyVisibleToYou);
 }
 
 void IrcEventReducer::reduce(const IrcActionEvent& event)
@@ -1617,7 +1640,7 @@ void IrcEventReducer::reduce(const IrcActionEvent& event)
     appendChat(event.conversation, displayTarget(event.conversation, event.target),
                event.author, event.body,
                event.timestamp, IrcMessageKind::Action, event.msgid,
-               event.serverTime);
+               event.serverTime, event.onlyVisibleToYou);
 }
 
 void IrcEventReducer::reduce(const IrcJoinEvent& event)
@@ -2234,7 +2257,8 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
         if (!line.msgid.isEmpty())
             conversation.messageIds.insert(line.msgid);
         run.push_back({line.author, line.body, line.timestamp, kind, false,
-                       IrcOrigin::Replay, line.msgid, 0, line.serverTime});
+                       IrcOrigin::Replay, line.msgid, 0, line.serverTime,
+                       line.onlyVisibleToYou});
         run.back().sequence = conversation.nextSequence++;
         if (line.serverTime && line.serverTime->isValid())
             run.back().serverTime = *line.serverTime;

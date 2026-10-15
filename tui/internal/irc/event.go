@@ -126,39 +126,42 @@ func (WelcomeEvent) eventKind() EventKind { return EventWelcome }
 
 // MessageEvent is a delivered PRIVMSG.
 type MessageEvent struct {
-	Conversation ConversationKey
-	Author       string
-	Body         string
-	Timestamp    time.Time
-	ServerTime   *time.Time
-	Target       string
-	MsgID        MsgID
+	Conversation     ConversationKey
+	Author           string
+	Body             string
+	Timestamp        time.Time
+	ServerTime       *time.Time
+	Target           string
+	MsgID            MsgID
+	OnlyVisibleToYou bool
 }
 
 func (MessageEvent) eventKind() EventKind { return EventMessage }
 
 // NoticeEvent is a delivered NOTICE.
 type NoticeEvent struct {
-	Conversation ConversationKey
-	Author       string
-	Body         string
-	Timestamp    time.Time
-	ServerTime   *time.Time
-	Target       string
-	MsgID        MsgID
+	Conversation     ConversationKey
+	Author           string
+	Body             string
+	Timestamp        time.Time
+	ServerTime       *time.Time
+	Target           string
+	MsgID            MsgID
+	OnlyVisibleToYou bool
 }
 
 func (NoticeEvent) eventKind() EventKind { return EventNotice }
 
 // ActionEvent is a CTCP ACTION message.
 type ActionEvent struct {
-	Conversation ConversationKey
-	Author       string
-	Body         string
-	Timestamp    time.Time
-	ServerTime   *time.Time
-	Target       string
-	MsgID        MsgID
+	Conversation     ConversationKey
+	Author           string
+	Body             string
+	Timestamp        time.Time
+	ServerTime       *time.Time
+	Target           string
+	MsgID            MsgID
+	OnlyVisibleToYou bool
 }
 
 func (ActionEvent) eventKind() EventKind { return EventAction }
@@ -309,12 +312,13 @@ func (TypingEvent) eventKind() EventKind { return EventTyping }
 // missing or unparseable, and that fallback must not advance the bouncer PLAY
 // clock.
 type ReplayLine struct {
-	Author     string
-	Body       string
-	Timestamp  time.Time
-	Kind       MessageKindTag
-	MsgID      MsgID
-	ServerTime *time.Time
+	Author           string
+	Body             string
+	Timestamp        time.Time
+	Kind             MessageKindTag
+	MsgID            MsgID
+	ServerTime       *time.Time
+	OnlyVisibleToYou bool
 }
 
 // HistoryEvent is one completed replay batch.

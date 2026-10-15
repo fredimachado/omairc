@@ -18,6 +18,7 @@ struct IrcTranscriptLine
     QString kind;
     QString body;
     QString msgid;
+    bool onlyVisibleToYou = false;
 };
 
 class IrcConversationLog

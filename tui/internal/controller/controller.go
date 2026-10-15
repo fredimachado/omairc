@@ -640,7 +640,11 @@ func (c *Controller) HistoryBatchReceived(networkID string, batch irc.HistoryBat
 		c.dropEmptyDiscoveredDirect(networkID, batch.Target)
 	}
 	features := c.reducer.ServerFeatures(networkID)
-	event, ok := irc.TranslateHistory(networkID, c.currentNicks[networkID], features, batch, c.now())
+	historyNick := c.currentNicks[networkID]
+	event, ok := irc.TranslateHistory(networkID, historyNick, features, batch, c.now(),
+		func(channel, sender string) (string, bool) {
+			return c.reducer.JoinedMemberChannel(networkID, channel, sender)
+		})
 	if !ok {
 		return
 	}
@@ -2039,7 +2043,10 @@ func (c *Controller) handleMessage(networkID string, message irc.Message) {
 
 	features := c.reducer.ServerFeatures(networkID)
 	currentNick := c.currentNicks[networkID]
-	events := irc.Translate(networkID, currentNick, features, message, c.now())
+	events := irc.Translate(networkID, currentNick, features, message, c.now(),
+		func(channel, sender string) (string, bool) {
+			return c.reducer.JoinedMemberChannel(networkID, channel, sender)
+		})
 	for index, event := range events {
 		if nick, ok := event.(irc.NickEvent); ok {
 			if features.CaseMapping().Equals(nick.OldNick, currentNick) {

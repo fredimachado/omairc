@@ -12600,4 +12600,66 @@ TestCase {
         compare(appWindow.connection.name, name);
         compare(nameField.text, name);
     }
+
+    function huntBody(list, body) {
+        var spins = 0;
+        while (rowForBody(list.model, body) < 0 && spins < 20) {
+            wait(250);
+            spins = spins + 1;
+        }
+        if (rowForBody(list.model, body) < 0) {
+            var bodies = [];
+            var row = 0;
+            for (; row < list.model.rowCount(); ++row) {
+                var text = field(list.model, row, "body");
+                if (text)
+                    bodies.push(text);
+            }
+            fail("missing '" + body + "' nick=" + appWindow.irc.currentNick
+                + " rows=" + list.model.rowCount()
+                + " bodies=" + bodies.join(" || "));
+        }
+    }
+
+    function test_channelLineOnlyVisibleToYou() {
+        openSeededAppWindow();
+        selectOmarchy();
+        var list = item("messageList");
+
+        injectOmarchyChat("alice", "#omarchy", "ordinary room line", "12:10");
+        huntBody(list, "ordinary room line");
+        var ordinary = renderedRowWithBody("ordinary room line");
+        compare(findChild(ordinary, "onlyVisibleToYou").visible, false);
+        compare(field(list.model, rowForBody(list.model, "ordinary room line"),
+                      "onlyVisibleToYou"), "false");
+
+        seed.injectOmarchy("@time=2026-09-12T12:12:00.000Z;+draft/channel-context=#omarchy :anna!u@h PRIVMSG fred :private channel line\r\n");
+        huntBody(list, "private channel line");
+        var marked = renderedRowWithBody("private channel line");
+        var label = findChild(marked, "onlyVisibleToYou");
+        verify(label !== null, "The private channel line should carry the marker");
+        compare(label.visible, true);
+        compare(label.text, "only visible to you");
+        compare(label.Accessible.name, "only visible to you");
+        compare(findChild(marked, "messageBody").text, "private channel line");
+        compare(field(list.model, rowForBody(list.model, "private channel line"),
+                      "onlyVisibleToYou"), "true");
+
+        // The demo negotiates batch, so a playback batch is replayed into the
+        // channel. A chathistory batch needs that capability, which the demo
+        // does not advertise. anna is already a member of #omarchy.
+        seed.injectOmarchy(":irc.host BATCH +onlyyou znc.in/playback #omarchy\r\n"
+            + "@batch=onlyyou;time=2026-09-12T12:13:00.000Z;+draft/channel-context=#omarchy :anna!u@h PRIVMSG fred :replayed private line\r\n"
+            + ":irc.host BATCH -onlyyou\r\n");
+        huntBody(list, "replayed private line");
+        var replay = renderedRowWithBody("replayed private line");
+        var replayLabel = findChild(replay, "onlyVisibleToYou");
+        compare(replayLabel.visible, true);
+        compare(replayLabel.text, "only visible to you");
+        compare(field(list.model, rowForBody(list.model, "replayed private line"),
+                      "onlyVisibleToYou"), "true");
+        compare(field(list.model, rowForBody(list.model, "replayed private line"),
+                      "origin"), "replay");
+        saveScreenshot("only-visible-to-you");
+    }
 }

@@ -121,6 +121,71 @@ std::optional<QString> presentTagValue(const IrcMessage& message, const char *na
     return std::nullopt;
 }
 
+// Classic channel-name length (RFC 2811). A longer tag is not a channel key.
+constexpr int kChannelContextLimit = 50;
+
+// A channel named by +draft/channel-context or draft/channel-context.
+// The value must be one channel name: a CHANTYPES prefix, no comma, space,
+// colon, or control character, and no longer than kChannelContextLimit.
+std::optional<QString> channelContextChannel(const IrcMessage& message,
+                                            const IrcServerFeatures& features)
+{
+    const char *names[] = {
+        "+draft/channel-context",
+        "draft/channel-context",
+    };
+    for (const char *name : names) {
+        const std::optional<QString> value = tagValue(message, name);
+        if (!value)
+            continue;
+        const QString& channel = *value;
+        if (channel.size() < 2 || channel.size() > kChannelContextLimit)
+            continue;
+        if (!features.isChannel(utf8(channel)))
+            continue;
+        bool rejected = false;
+        for (const QChar character : channel) {
+            const char16_t code = character.unicode();
+            if (code < 0x20 || code == 0x7F || character.isSpace()
+                || character == QLatin1Char(',') || character == QLatin1Char(':')) {
+                rejected = true;
+                break;
+            }
+        }
+        if (!rejected)
+            return channel;
+    }
+    return std::nullopt;
+}
+
+// A nick-targeted line that belongs in a channel buffer the client has joined,
+// shown under that buffer's own name. The tag text is never the display name.
+struct ChannelBufferDelivery
+{
+    QString channel;
+    bool onlyVisibleToYou = false;
+};
+
+std::optional<ChannelBufferDelivery> nickTargetedChannelDelivery(
+    const QString& wireTarget,
+    const IrcMessage& message,
+    const QString& currentNick,
+    const IrcServerFeatures& features,
+    const IrcJoinedMemberChannel& joinedMemberChannel)
+{
+    const std::optional<QString> context = channelContextChannel(message, features);
+    if (!context || features.isChannel(utf8(wireTarget)))
+        return std::nullopt;
+    if (!same(wireTarget, currentNick, features) || author(message).isEmpty())
+        return std::nullopt;
+    if (same(*context, currentNick, features) || !joinedMemberChannel)
+        return std::nullopt;
+    const QString canonical = joinedMemberChannel(*context, author(message));
+    if (canonical.isEmpty() || !features.isChannel(utf8(canonical)))
+        return std::nullopt;
+    return ChannelBufferDelivery{canonical, true};
+}
+
 std::optional<QDateTime> serverTimeOf(const IrcMessage& message)
 {
     const std::optional<QString> raw = tagValue(message, "time");
@@ -370,7 +435,8 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
     const QString& networkId,
     const QString& currentNick,
     const IrcServerFeatures& features,
-    const IrcMessage& message)
+    const IrcMessage& message,
+    const IrcJoinedMemberChannel& joinedMemberChannel)
 {
     std::vector<IrcEvent> events;
     const QString command = ircWireText(message.command).toUpper();
@@ -385,33 +451,67 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
             events.emplace_back(IrcAccountEvent{networkId, sender, *account});
     }
 
-    if (command == QStringLiteral("NOTICE"))
+    if (command == QStringLiteral("NOTICE")) {
+        if (message.parameters.size() >= 2) {
+            const QString body = parameter(message, 1);
+            if (!parseCtcpRequest(body)) {
+                if (const auto delivery = nickTargetedChannelDelivery(
+                        parameter(message, 0), message, currentNick, features,
+                        joinedMemberChannel)) {
+                    const IrcMsgId msgid{tagValue(message, "msgid").value_or(QString{})};
+                    events.emplace_back(IrcNoticeEvent{
+                        key(networkId, delivery->channel, features), sender, body,
+                        timestamp, delivery->channel, msgid, serverTime,
+                        delivery->onlyVisibleToYou});
+                }
+            }
+        }
         return events;
+    }
 
     if (command == QStringLiteral("PRIVMSG") && message.parameters.size() >= 2) {
         const QString wireTarget = parameter(message, 0);
-        const std::optional<IrcConversationKey> conversation = ircConversationFor(
-            networkId, wireTarget, message, currentNick, features);
-        if (!conversation)
-            return events;
         const QString body = parameter(message, 1);
         const auto ctcp = parseCtcpRequest(body);
         if (ctcp && ctcp->command != QStringLiteral("ACTION"))
             return events;
-        const QString displayTarget = features.isChannel(utf8(wireTarget))
-            ? wireTarget
-            : (same(sender, currentNick, features) ? wireTarget : sender);
         const IrcMsgId msgid{tagValue(message, "msgid").value_or(QString{})};
         const QString actionPrefix = QChar(1) + QStringLiteral("ACTION ");
-        if (body.startsWith(actionPrefix) && body.endsWith(QChar(1))) {
-            events.emplace_back(IrcActionEvent{
-                *conversation, sender,
-                body.mid(actionPrefix.size(), body.size() - actionPrefix.size() - 1),
-                timestamp, displayTarget, msgid, serverTime});
+        const bool action = body.startsWith(actionPrefix) && body.endsWith(QChar(1));
+        const QString actionBody = action
+            ? body.mid(actionPrefix.size(), body.size() - actionPrefix.size() - 1)
+            : QString{};
+        if (const auto delivery = nickTargetedChannelDelivery(
+                wireTarget, message, currentNick, features,
+                joinedMemberChannel)) {
+            const IrcConversationKey conversation =
+                key(networkId, delivery->channel, features);
+            if (action) {
+                events.emplace_back(IrcActionEvent{
+                    conversation, sender, actionBody, timestamp, delivery->channel,
+                    msgid, serverTime, delivery->onlyVisibleToYou});
+            } else {
+                events.emplace_back(IrcMessageEvent{
+                    conversation, sender, body, timestamp, delivery->channel, msgid,
+                    serverTime, delivery->onlyVisibleToYou});
+            }
         } else {
-            events.emplace_back(IrcMessageEvent{
-                *conversation, sender, body, timestamp, displayTarget, msgid,
-                serverTime});
+            const std::optional<IrcConversationKey> conversation = ircConversationFor(
+                networkId, wireTarget, message, currentNick, features);
+            if (!conversation)
+                return events;
+            const QString displayTarget = features.isChannel(utf8(wireTarget))
+                ? wireTarget
+                : (same(sender, currentNick, features) ? wireTarget : sender);
+            if (action) {
+                events.emplace_back(IrcActionEvent{
+                    *conversation, sender, actionBody, timestamp, displayTarget,
+                    msgid, serverTime, false});
+            } else {
+                events.emplace_back(IrcMessageEvent{
+                    *conversation, sender, body, timestamp, displayTarget, msgid,
+                    serverTime, false});
+            }
         }
     } else if (command == QStringLiteral("TAGMSG") && !message.parameters.empty()) {
         const std::optional<QString> value = tagValue(message, "+typing");
@@ -558,15 +658,21 @@ std::optional<IrcHistoryEvent> IrcEventTranslator::translateHistory(
     const QString& networkId,
     const QString& currentNick,
     const IrcServerFeatures& features,
-    const IrcHistoryBatch& batch)
+    const IrcHistoryBatch& batch,
+    const IrcJoinedMemberChannel& joinedMemberChannel)
 {
     if (batch.kind == IrcHistoryKind::ChatHistoryTargets || batch.target.isEmpty())
         return std::nullopt;
     const IrcConversationKey conversation = key(networkId, batch.target, features);
     // Channel batches already key off the channel. CHATHISTORY keeps the
     // live nick check; only a bouncer query needs the previous-nick rule.
+    // A query batch never relocates: a channel-context line stays in that
+    // query. Relocation is only for a channel batch whose buffer we joined.
+    const bool channelBatch = features.isChannel(utf8(batch.target));
+    const IrcJoinedMemberChannel historyLookup =
+        channelBatch ? joinedMemberChannel : IrcJoinedMemberChannel{};
     const bool bouncerQuery = batch.kind == IrcHistoryKind::BouncerPlayback
-        && !features.isChannel(utf8(batch.target));
+        && !channelBatch;
     IrcHistoryEvent event{conversation, batch.target, {}, batch.kind};
     event.prependAtHead = batch.olderPage;
     event.lines.reserve(batch.lines.size());
@@ -574,21 +680,21 @@ std::optional<IrcHistoryEvent> IrcEventTranslator::translateHistory(
         const std::optional<QDateTime> serverTime = serverTimeOf(line);
         bool kept = false;
         const std::vector<IrcEvent> translated =
-            translate(networkId, currentNick, features, line);
+            translate(networkId, currentNick, features, line, historyLookup);
         for (const IrcEvent& translatedEvent : translated) {
             if (const auto *message = std::get_if<IrcMessageEvent>(&translatedEvent)) {
                 if (message->conversation != conversation)
                     continue;
                 event.lines.push_back({message->author, message->body, message->timestamp,
                                        IrcMessageKindTag::Chat, message->msgid,
-                                       serverTime});
+                                       serverTime, message->onlyVisibleToYou});
                 kept = true;
             } else if (const auto *action = std::get_if<IrcActionEvent>(&translatedEvent)) {
                 if (action->conversation != conversation)
                     continue;
                 event.lines.push_back({action->author, action->body, action->timestamp,
                                        IrcMessageKindTag::Emote, action->msgid,
-                                       serverTime});
+                                       serverTime, action->onlyVisibleToYou});
                 kept = true;
             }
         }

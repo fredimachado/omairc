@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A channel line delivered only to you is marked "only visible to you" in the
+  desktop and terminal clients. The mark is used when you have joined that
+  channel and the sender is in it. A normal channel line stays unmarked.
 - The terminal client wheel-scrolls and clicks rows when started with `--mouse`
   or `OMAIRC_TUI_MOUSE=1`. The pointer path stays off by default, so the
   terminal keeps its own text selection.

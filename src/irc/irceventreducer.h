@@ -42,6 +42,8 @@ struct IrcReducedMessage
     // Parsed IRCv3 time tag only. timestamp may be wall clock when the tag
     // was missing; do not send that value as CHATHISTORY timestamp=.
     std::optional<QDateTime> serverTime;
+    // Shown in a channel, delivered to this nick rather than the channel.
+    bool onlyVisibleToYou = false;
 };
 
 struct IrcMemberState
@@ -294,6 +296,11 @@ public:
 
     const Store& conversations() const noexcept;
     const IrcConversationState *find(const IrcConversationKey& key) const noexcept;
+    // Display name of a joined channel when sender is a known member.
+    // Empty when the buffer is missing, not joined, or the sender is absent.
+    QString joinedMemberChannel(const QString& networkId,
+                                const QString& channel,
+                                const QString& sender) const;
 
     std::optional<IrcMemberView> memberView(const IrcConversationKey& key,
                                             const QString& normalizedNick) const;
@@ -344,7 +351,8 @@ private:
                     const QDateTime& timestamp,
                     IrcMessageKind kind,
                     const IrcMsgId& msgid,
-                    const std::optional<QDateTime>& serverTime = std::nullopt);
+                    const std::optional<QDateTime>& serverTime = std::nullopt,
+                    bool onlyVisibleToYou = false);
     void noteChatArrival(IrcConversationState& conversation,
                          const IrcConversationKey& key,
                          const QString& author,

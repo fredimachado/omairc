@@ -2926,8 +2926,12 @@ void IrcController::handleMessage(const QString& networkId,
 
     const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
     const QString currentNick = m_currentNicks.value(networkId);
-    const std::vector<IrcEvent> events =
-        IrcEventTranslator::translate(networkId, currentNick, features, message);
+    const auto joinedMemberChannel =
+        [this, networkId](const QString& channel, const QString& sender) {
+            return m_reducer.joinedMemberChannel(networkId, channel, sender);
+        };
+    const std::vector<IrcEvent> events = IrcEventTranslator::translate(
+        networkId, currentNick, features, message, joinedMemberChannel);
     for (size_t index = 0; index < events.size(); ++index) {
         const IrcEvent& event = events[index];
         if (const auto *nick = std::get_if<IrcNickEvent>(&event)) {
@@ -3010,9 +3014,14 @@ void IrcController::handleHistoryBatch(const QString& networkId,
     }
     if (batch.afterRequest && batch.lines.empty())
         dropEmptyDiscoveredDirect(networkId, batch.target);
+    const QString historyNick = m_currentNicks.value(networkId);
+    const auto joinedMemberChannel =
+        [this, networkId](const QString& channel, const QString& sender) {
+            return m_reducer.joinedMemberChannel(networkId, channel, sender);
+        };
     std::optional<IrcHistoryEvent> event = IrcEventTranslator::translateHistory(
-        networkId, m_currentNicks.value(networkId),
-        m_reducer.serverFeatures(networkId), batch);
+        networkId, historyNick, m_reducer.serverFeatures(networkId), batch,
+        joinedMemberChannel);
     if (!event)
         return;
     if (event->kind == IrcHistoryKind::BouncerPlayback) {

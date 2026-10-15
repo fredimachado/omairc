@@ -29,14 +29,15 @@ type ConversationSnapshot struct {
 // fields mirror the roles MessageListModel exposes (src/irc/messagelistmodel.h)
 // minus the visual-only rows, which are a view concern.
 type MessageSnapshot struct {
-	Author    string
-	Time      time.Time
-	Body      string
-	Kind      string
-	Origin    string
-	MsgID     string
-	Sequence  int64
-	Mentioned bool
+	Author           string
+	Time             time.Time
+	Body             string
+	Kind             string
+	Origin           string
+	MsgID            string
+	Sequence         int64
+	Mentioned        bool
+	OnlyVisibleToYou bool
 }
 
 // MemberSnapshot is one member-panel row of the selected channel. The fields
@@ -209,14 +210,15 @@ func (c *Controller) rebuildMessages() {
 	location := c.displayLocation()
 	for _, message := range conversation.Messages {
 		rows = append(rows, MessageSnapshot{
-			Author:    message.Author,
-			Time:      message.Timestamp.In(location),
-			Body:      message.Body,
-			Kind:      messageKindName(message.Kind),
-			Origin:    originName(message.Origin),
-			MsgID:     message.MsgID.Value,
-			Sequence:  message.Sequence,
-			Mentioned: c.reducer.IsTranscriptHighlight(conversation.Key.NetworkID, message.Author, message.Kind, message.Body),
+			Author:           message.Author,
+			Time:             message.Timestamp.In(location),
+			Body:             message.Body,
+			Kind:             messageKindName(message.Kind),
+			Origin:           originName(message.Origin),
+			MsgID:            message.MsgID.Value,
+			Sequence:         message.Sequence,
+			Mentioned:        c.reducer.IsTranscriptHighlight(conversation.Key.NetworkID, message.Author, message.Kind, message.Body),
+			OnlyVisibleToYou: message.OnlyVisibleToYou,
 		})
 	}
 	c.messages = rows

@@ -76,6 +76,8 @@ struct IrcMessageEvent
     QString target;
     IrcMsgId msgid{};
     std::optional<QDateTime> serverTime;
+    // The line is in a channel buffer, but the IRC target was this nick.
+    bool onlyVisibleToYou = false;
 };
 
 struct IrcNoticeEvent
@@ -87,6 +89,7 @@ struct IrcNoticeEvent
     QString target;
     IrcMsgId msgid{};
     std::optional<QDateTime> serverTime;
+    bool onlyVisibleToYou = false;
 };
 
 struct IrcActionEvent
@@ -98,6 +101,7 @@ struct IrcActionEvent
     QString target;
     IrcMsgId msgid{};
     std::optional<QDateTime> serverTime;
+    bool onlyVisibleToYou = false;
 };
 
 struct IrcJoinEvent
@@ -227,6 +231,7 @@ struct IrcReplayLine
     // when the tag is missing or unparseable, and that fallback must not
     // advance the bouncer PLAY clock.
     std::optional<QDateTime> serverTime;
+    bool onlyVisibleToYou = false;
 };
 
 struct IrcHistoryEvent
