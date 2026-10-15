@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"image"
-	"image/color"
 	"image/png"
 	"io"
 	"os"
@@ -641,49 +640,6 @@ func fitGraphicsEdge(width, height, maxEdge int) (int, int) {
 		dstW = 1
 	}
 	return dstW, maxEdge
-}
-
-// scaleBox averages source rectangles into a dstW by dstH NRGBA image.
-func scaleBox(src image.Image, dstW, dstH int) *image.NRGBA {
-	dst := image.NewNRGBA(image.Rect(0, 0, dstW, dstH))
-	bounds := src.Bounds()
-	width, height := bounds.Dx(), bounds.Dy()
-	for y := 0; y < dstH; y++ {
-		minY := bounds.Min.Y + y*height/dstH
-		maxY := bounds.Min.Y + (y+1)*height/dstH
-		if maxY <= minY {
-			maxY = minY + 1
-		}
-		for x := 0; x < dstW; x++ {
-			minX := bounds.Min.X + x*width/dstW
-			maxX := bounds.Min.X + (x+1)*width/dstW
-			if maxX <= minX {
-				maxX = minX + 1
-			}
-			var totalR, totalG, totalB, totalA int64
-			var count int
-			for py := minY; py < maxY; py++ {
-				for px := minX; px < maxX; px++ {
-					c := color.NRGBAModel.Convert(src.At(px, py)).(color.NRGBA)
-					totalR += int64(c.R)
-					totalG += int64(c.G)
-					totalB += int64(c.B)
-					totalA += int64(c.A)
-					count++
-				}
-			}
-			if count == 0 {
-				continue
-			}
-			dst.SetNRGBA(x, y, color.NRGBA{
-				R: uint8(totalR / int64(count)),
-				G: uint8(totalG / int64(count)),
-				B: uint8(totalB / int64(count)),
-				A: uint8(totalA / int64(count)),
-			})
-		}
-	}
-	return dst
 }
 
 // encodePNG writes img as PNG. A translucent image stays RGBA, so the
