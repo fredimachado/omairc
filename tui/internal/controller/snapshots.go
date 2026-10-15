@@ -104,7 +104,6 @@ func (c *Controller) UnreadMarkRow() int {
 	if conversation == nil || conversation.UnreadMark == nil {
 		return -1
 	}
-	labels := c.DateSeparators()
 	for index, message := range conversation.Messages {
 		if message.Sequence != *conversation.UnreadMark {
 			continue
@@ -112,7 +111,7 @@ func (c *Controller) UnreadMarkRow() int {
 		if index < 0 || index >= len(c.messages) {
 			return -1
 		}
-		if index == 0 && (len(labels) == 0 || labels[0] == "") {
+		if index == 0 && !c.leadingBacklog() {
 			return -1
 		}
 		return index

@@ -2,6 +2,30 @@ package controller
 
 import "time"
 
+func (c *Controller) transcriptToday() time.Time {
+	today := c.now()
+	if today.IsZero() {
+		today = time.Now()
+	}
+	return today.In(c.displayLocation())
+}
+
+// leadingBacklog reports whether the first selected message opens a day that
+// is not today. UnreadMarkRow only needs that: a leading date gives the
+// boundary a row to sit under. It does not scan DateSeparators, which the
+// view already computes for the whole transcript.
+func (c *Controller) leadingBacklog() bool {
+	if len(c.messages) == 0 {
+		return false
+	}
+	today := c.transcriptToday()
+	date, ok := assignedDisplayDate(c.messages[0], time.Time{}, false, today)
+	if !ok {
+		return false
+	}
+	return !sameCalendarDay(date, today)
+}
+
 // DateSeparators returns one label per selected message. An empty string means
 // no date rule sits above that row. The first day is labeled only when it is
 // not today; a later day is labeled whenever it differs, including today after
@@ -13,11 +37,7 @@ func (c *Controller) DateSeparators() []string {
 	if len(c.messages) == 0 {
 		return labels
 	}
-	today := c.now()
-	if today.IsZero() {
-		today = time.Now()
-	}
-	today = today.In(c.displayLocation())
+	today := c.transcriptToday()
 	var previous time.Time
 	hasPrevious := false
 	for index, message := range c.messages {

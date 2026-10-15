@@ -9,6 +9,8 @@
 #include <QTimeZone>
 #include <QVariantMap>
 
+#include <time.h>
+
 #include "conversationlistmodel.h"
 #include "irceventreducer.h"
 #include "ircnetworklog.h"
@@ -20,6 +22,31 @@
 
 namespace
 {
+class ScopedTimeZone
+{
+public:
+    explicit ScopedTimeZone(const char *zone)
+        : m_hadTz(qEnvironmentVariableIsSet("TZ"))
+        , m_previous(qgetenv("TZ"))
+    {
+        qputenv("TZ", zone);
+        tzset();
+    }
+
+    ~ScopedTimeZone()
+    {
+        if (m_hadTz)
+            qputenv("TZ", m_previous);
+        else
+            qunsetenv("TZ");
+        tzset();
+    }
+
+private:
+    bool m_hadTz;
+    QByteArray m_previous;
+};
+
 const QString networkA = QStringLiteral("network-a");
 const QString networkB = QStringLiteral("network-b");
 const QDateTime timestamp = QDateTime::currentDateTimeUtc();
@@ -113,6 +140,22 @@ void assertDateRow(const MessageListModel& messages, int row, const QString& lab
     QCOMPARE(roleAt(messages, row, MessageListModel::TimeRole), QString());
     QCOMPARE(roleAt(messages, row, MessageListModel::AuthorRole), QString());
 }
+
+bool dataChangedCoversAllRoles(const QSignalSpy& changes, int top, int bottom)
+{
+    for (int i = 0; i < changes.size(); ++i) {
+        if (changes.at(i).size() < 3)
+            continue;
+        const QList<int> roles = changes.at(i).at(2).value<QList<int>>();
+        if (!roles.isEmpty())
+            continue;
+        const int first = changes.at(i).at(0).toModelIndex().row();
+        const int last = changes.at(i).at(1).toModelIndex().row();
+        if (first <= top && last >= bottom)
+            return true;
+    }
+    return false;
+}
 }
 
 class ModelTest : public QObject
@@ -158,6 +201,9 @@ private slots:
     void dateSeparatorOmitsLabelWhenFirstDayIsToday();
     void dateSeparatorMovesWhenOlderHistoryPrepended();
     void dateSeparatorFollowsLocalMidnightAndZone();
+    void reloadAfterMidnightResetsWhenLeadingRuleAppears();
+    void reloadTrimKeepsOlderHeadDaySeparator();
+    void reloadTrimKeepsTopUnreadUnderLeadingDate();
     void reloadTrimAcrossDayRemovesLeadingSeparator();
     void unreadMarkPlantsOnFirstUnselectedChat();
     void unreadMarkSkippedForSelfAndSelected();
@@ -1757,8 +1803,11 @@ void ModelTest::dateSeparatorFollowsLocalMidnightAndZone()
     QCOMPARE(roleAt(messages, 3, MessageListModel::TimeRole),
              QStringLiteral("00:00"));
 
-    // Two UTC instants an hour apart can fall on one local day or two. The
-    // labels follow toLocalTime(), whichever zone this process is in.
+    // 23:30 UTC and an hour later are both 15 January in New York (EST,
+    // UTC-5): 18:30 and 19:30. UTC itself splits them onto the 16th, so a
+    // CI runner in UTC would not exercise the local day. The labels follow
+    // the forced zone.
+    const ScopedTimeZone newYork("America/New_York");
     IrcEventReducer zoned;
     MessageListModel zonedMessages(zoned);
     welcome(zoned, networkA);
@@ -1775,40 +1824,181 @@ void ModelTest::dateSeparatorFollowsLocalMidnightAndZone()
         secondUtc, QStringLiteral("#zone")});
     zonedMessages.select(zonedRoom);
 
-    const QDate firstLocal = firstUtc.toLocalTime().date();
-    const QDate secondLocal = secondUtc.toLocalTime().date();
-    const int firstRow = rowForBody(zonedMessages, QStringLiteral("utc-first"));
-    const int secondRow = rowForBody(zonedMessages, QStringLiteral("utc-second"));
-    QVERIFY(firstRow >= 0);
-    QVERIFY(secondRow > firstRow);
-    QCOMPARE(roleAt(zonedMessages, firstRow, MessageListModel::TimeRole),
-             firstUtc.toLocalTime().toString(QStringLiteral("HH:mm")));
-    QCOMPARE(roleAt(zonedMessages, secondRow, MessageListModel::TimeRole),
-             secondUtc.toLocalTime().toString(QStringLiteral("HH:mm")));
-    if (firstLocal == secondLocal) {
-        const int dateRows = firstLocal == today ? 0 : 1;
-        QCOMPARE(zonedMessages.rowCount(), 2 + dateRows);
-        if (dateRows == 1) {
-            assertDateRow(zonedMessages, 0, expectedDateLabel(firstLocal));
-            QCOMPARE(countBodies(zonedMessages, expectedDateLabel(firstLocal)), 1);
-        }
-        return;
-    }
-    int row = 0;
-    if (firstLocal != today) {
-        assertDateRow(zonedMessages, row, expectedDateLabel(firstLocal));
-        QCOMPARE(countBodies(zonedMessages, expectedDateLabel(firstLocal)), 1);
-        ++row;
-    }
-    QCOMPARE(roleAt(zonedMessages, row, MessageListModel::BodyRole),
+    const QDate localDay(2026, 1, 15);
+    QCOMPARE(firstUtc.toLocalTime().date(), localDay);
+    QCOMPARE(secondUtc.toLocalTime().date(), localDay);
+    QCOMPARE(firstUtc.toLocalTime().toString(QStringLiteral("HH:mm")),
+             QStringLiteral("18:30"));
+    QCOMPARE(secondUtc.toLocalTime().toString(QStringLiteral("HH:mm")),
+             QStringLiteral("19:30"));
+    QCOMPARE(zonedMessages.rowCount(), 3);
+    assertDateRow(zonedMessages, 0, expectedDateLabel(localDay));
+    QCOMPARE(countBodies(zonedMessages, expectedDateLabel(localDay)), 1);
+    QCOMPARE(roleAt(zonedMessages, 1, MessageListModel::BodyRole),
              QStringLiteral("utc-first"));
-    ++row;
-    assertDateRow(zonedMessages, row, expectedDateLabel(secondLocal));
-    QCOMPARE(countBodies(zonedMessages, expectedDateLabel(secondLocal)), 1);
-    ++row;
-    QCOMPARE(roleAt(zonedMessages, row, MessageListModel::BodyRole),
+    QCOMPARE(roleAt(zonedMessages, 1, MessageListModel::TimeRole),
+             QStringLiteral("18:30"));
+    QCOMPARE(roleAt(zonedMessages, 2, MessageListModel::BodyRole),
              QStringLiteral("utc-second"));
-    QCOMPARE(zonedMessages.rowCount(), row + 1);
+    QCOMPARE(roleAt(zonedMessages, 2, MessageListModel::TimeRole),
+             QStringLiteral("19:30"));
+}
+
+void ModelTest::reloadAfterMidnightResetsWhenLeadingRuleAppears()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.markSelected(room);
+    const QDate firstDay(2026, 4, 2);
+    messages.setTranscriptTodayForTest(firstDay);
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("before-midnight"),
+        atLocal(firstDay, QTime(23, 50)), QStringLiteral("#room")});
+    messages.select(room);
+    QCOMPARE(messages.rowCount(), 1);
+    QCOMPARE(roleAt(messages, 0, MessageListModel::KindRole),
+             QStringLiteral("message"));
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
+             QStringLiteral("before-midnight"));
+
+    messages.setTranscriptTodayForTest(firstDay.addDays(1));
+    QSignalSpy resets(&messages, &QAbstractItemModel::modelReset);
+    QSignalSpy inserts(&messages, &QAbstractItemModel::rowsInserted);
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("after-midnight"),
+        atLocal(firstDay.addDays(1), QTime(0, 5)), QStringLiteral("#room")});
+    messages.reload();
+
+    QCOMPARE(inserts.size(), 0);
+    QCOMPARE(resets.size(), 1);
+    QCOMPARE(messages.rowCount(), 4);
+    assertDateRow(messages, 0, QStringLiteral("Yesterday"));
+    QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole),
+             QStringLiteral("before-midnight"));
+    assertDateRow(messages, 2, QStringLiteral("Today"));
+    QCOMPARE(roleAt(messages, 3, MessageListModel::BodyRole),
+             QStringLiteral("after-midnight"));
+    QCOMPARE(countBodies(messages, QStringLiteral("Yesterday")), 1);
+    QCOMPARE(countBodies(messages, QStringLiteral("Today")), 1);
+}
+
+void ModelTest::reloadTrimKeepsOlderHeadDaySeparator()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.markSelected(room);
+    const QDate today = QDate::currentDate();
+    const QDate older = today.addDays(-2);
+    const QDate yesterday = today.addDays(-1);
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("older-head"),
+        atLocal(older), QStringLiteral("#room")});
+    for (int i = 0; i < 1999; ++i) {
+        reducer.apply(IrcMessageEvent{
+            room, QStringLiteral("Alice"), QString::number(i), atLocal(yesterday),
+            QStringLiteral("#room")});
+    }
+    messages.select(room);
+    QCOMPARE(messages.rowCount(), 2002);
+    assertDateRow(messages, 0, expectedDateLabel(older));
+    QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole),
+             QStringLiteral("older-head"));
+    assertDateRow(messages, 2, QStringLiteral("Yesterday"));
+    QCOMPARE(messages.unreadMarkRow(), -1);
+
+    QSignalSpy resets(&messages, &QAbstractItemModel::modelReset);
+    QSignalSpy removes(&messages, &QAbstractItemModel::rowsRemoved);
+    QSignalSpy inserts(&messages, &QAbstractItemModel::rowsInserted);
+    QSignalSpy changes(&messages, &QAbstractItemModel::dataChanged);
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("capped"),
+        atLocal(yesterday), QStringLiteral("#room")});
+    messages.reload();
+
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(removes.size(), 1);
+    QCOMPARE(removes.at(0).at(1).toInt(), 0);
+    QCOMPARE(removes.at(0).at(2).toInt(), 1);
+    QCOMPARE(inserts.size(), 1);
+    QCOMPARE(inserts.at(0).at(1).toInt(), 2000);
+    QCOMPARE(inserts.at(0).at(2).toInt(), 2000);
+    QVERIFY2(dataChangedCoversAllRoles(changes, 0, 1999),
+             "trimming must dataChanged the rows the copy rewrote");
+    QCOMPARE(messages.rowCount(), 2001);
+    assertDateRow(messages, 0, QStringLiteral("Yesterday"));
+    QCOMPARE(countBodies(messages, QStringLiteral("Yesterday")), 1);
+    QCOMPARE(countBodies(messages, expectedDateLabel(older)), 0);
+    QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole), QStringLiteral("0"));
+    QCOMPARE(roleAt(messages, 2000, MessageListModel::BodyRole),
+             QStringLiteral("capped"));
+}
+
+void ModelTest::reloadTrimKeepsTopUnreadUnderLeadingDate()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.markSelected(room);
+    const QDate today = QDate::currentDate();
+    const QDate older = today.addDays(-2);
+    const QDate yesterday = today.addDays(-1);
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("trimmed-head"),
+        atLocal(older), QStringLiteral("#room")});
+    reducer.clearSelection();
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("marked"),
+        atLocal(yesterday), QStringLiteral("#room")});
+    for (int i = 0; i < 1998; ++i) {
+        reducer.apply(IrcMessageEvent{
+            room, QStringLiteral("Alice"), QString::number(i), atLocal(yesterday),
+            QStringLiteral("#room")});
+    }
+    messages.select(room);
+    QCOMPARE(messages.rowCount(), 2003);
+    assertDateRow(messages, 0, expectedDateLabel(older));
+    QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole),
+             QStringLiteral("trimmed-head"));
+    assertDateRow(messages, 2, QStringLiteral("Yesterday"));
+    assertUnreadMarkRow(messages, 3);
+    QCOMPARE(roleAt(messages, 4, MessageListModel::BodyRole),
+             QStringLiteral("marked"));
+
+    QSignalSpy resets(&messages, &QAbstractItemModel::modelReset);
+    QSignalSpy removes(&messages, &QAbstractItemModel::rowsRemoved);
+    QSignalSpy inserts(&messages, &QAbstractItemModel::rowsInserted);
+    QSignalSpy changes(&messages, &QAbstractItemModel::dataChanged);
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("capped"),
+        atLocal(yesterday), QStringLiteral("#room")});
+    messages.reload();
+
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(removes.size(), 1);
+    QCOMPARE(removes.at(0).at(1).toInt(), 0);
+    QCOMPARE(removes.at(0).at(2).toInt(), 1);
+    QCOMPARE(inserts.size(), 1);
+    QCOMPARE(inserts.at(0).at(1).toInt(), 2001);
+    QCOMPARE(inserts.at(0).at(2).toInt(), 2001);
+    QVERIFY2(dataChangedCoversAllRoles(changes, 0, 2000),
+             "trimming must dataChanged the unread row and the rewritten stores");
+    QCOMPARE(messages.rowCount(), 2002);
+    assertDateRow(messages, 0, QStringLiteral("Yesterday"));
+    assertUnreadMarkRow(messages, 1);
+    QCOMPARE(roleAt(messages, 2, MessageListModel::BodyRole),
+             QStringLiteral("marked"));
+    QCOMPARE(countBodies(messages, QStringLiteral("Yesterday")), 1);
+    QCOMPARE(countBodies(messages, expectedDateLabel(older)), 0);
+    QCOMPARE(roleAt(messages, 2001, MessageListModel::BodyRole),
+             QStringLiteral("capped"));
 }
 
 void ModelTest::reloadTrimAcrossDayRemovesLeadingSeparator()

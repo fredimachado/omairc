@@ -2428,7 +2428,7 @@ TestCase {
 
         list.revealRow(0);
         var resetGeneration = list.pinGeneration;
-        prependLiveReplay(list, 1);
+        prependLiveReplay(list, 1, 3);
         verify(list.pinGeneration > resetGeneration,
                "A history-splice reset should cancel deferred reveal cleanup");
         wait(0);
@@ -3045,7 +3045,7 @@ TestCase {
             return seed.omarchyWroteFrom(framesBefore, "CHATHISTORY BEFORE");
         }, 1000, "Page Up on a short transcript should request older history");
 
-        prependLiveReplay(list, 40);
+        prependLiveReplay(list, 40, 1);
         settleTranscript(list);
         verify(list.contentHeight > list.height,
             "The replay should overflow so only the anchor keeps the old row in view");
@@ -4233,7 +4233,12 @@ TestCase {
         saveScreenshot("replay-live-ungrouped");
     }
 
-    function prependLiveReplay(list, count) {
+    function transcriptShortDate(year, month, day) {
+        return Qt.formatDate(new Date(year, month - 1, day),
+            Qt.locale().dateFormat(Locale.ShortFormat));
+    }
+
+    function prependLiveReplay(list, count, addedRules) {
         var start = list.model.rowCount();
         var target = appWindow.currentConversation;
         var bytes = ":znc.in BATCH +pb znc.in/playback " + target + "\r\n";
@@ -4246,8 +4251,20 @@ TestCase {
         bytes += ":znc.in BATCH -pb\r\n";
         seed.injectOmarchy(bytes);
         tryVerify(function() {
-            return list.model.rowCount() >= start + count;
+            return list.model.rowCount() === start + count + addedRules;
         });
+        // Playback on a channel splices above the join, so the batch's
+        // 9/11 rule leads and an unread mark sits under it. A direct
+        // message appends, so that same rule is the row above the batch.
+        var replayed = rowForBody(list.model, "replayed 0");
+        verify(replayed > 0);
+        var rule = replayed - 1;
+        if (field(list.model, rule, "kind") === "unread")
+            rule = rule - 1;
+        compare(field(list.model, rule, "kind"), "event");
+        compare(field(list.model, rule, "time"), "");
+        compare(field(list.model, rule, "body"), transcriptShortDate(2026, 9, 11));
+        compare(field(list.model, replayed, "body"), "replayed 0");
     }
 
     function test_historySpliceKeepsTheReaderOnTheSameMessage() {
@@ -4262,7 +4279,7 @@ TestCase {
 
         var visible = firstVisibleIndex(list);
         var anchorBody = field(list.model, visible, "body");
-        prependLiveReplay(list, 9);
+        prependLiveReplay(list, 9, 3);
         waitForRendering(appWindow.contentItem);
         wait(0);
 
@@ -4288,7 +4305,7 @@ TestCase {
                 parseInt(field(list.model, previousCount, "sequence"), 10));
         var unseenBody = field(list.model, list.firstUnseenIndex, "body");
 
-        prependLiveReplay(list, 9);
+        prependLiveReplay(list, 9, 3);
         waitForRendering(appWindow.contentItem);
         wait(0);
         compare(field(list.model, list.firstUnseenIndex, "body"), unseenBody);

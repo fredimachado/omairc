@@ -1,6 +1,8 @@
 #include <QAbstractItemModel>
 #include <QCoreApplication>
+#include <QDate>
 #include <QDateTime>
+#include <QLocale>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
@@ -5564,8 +5566,17 @@ void ControllerTest::chatHistoryBatchShowsBodyAndTime()
     QVERIFY(messages);
     const int older = bodyRow(messages, QStringLiteral("older"));
     const int joined = bodyRow(messages, QStringLiteral("omairc joined"));
-    QVERIFY(older > 0);
-    QVERIFY(joined > older);
+    const QString replayDate = QLocale().toString(QDate(2011, 10, 19),
+                                                  QLocale::ShortFormat);
+    QCOMPARE(roleAt(messages, 0, MessageListModel::KindRole),
+             QStringLiteral("event"));
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole), replayDate);
+    QCOMPARE(roleAt(messages, 1, MessageListModel::KindRole),
+             QStringLiteral("unread"));
+    QCOMPARE(older, 2);
+    QCOMPARE(roleAt(messages, 3, MessageListModel::BodyRole),
+             QStringLiteral("Today"));
+    QCOMPARE(joined, 4);
     const QDateTime replayed = QDateTime::fromString(
         QStringLiteral("2011-10-19T16:40:51.620Z"), Qt::ISODateWithMs);
     QCOMPARE(roleAt(messages, older, MessageListModel::TimeRole),

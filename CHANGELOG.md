@@ -17,7 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Transcripts label the first day when it is not today, in the desktop and
   terminal clients. The mark matches a day change, and loading older history
-  moves it so a date is not shown twice.
+  moves it so a date is not shown twice. On that first message the unread
+  mark sits under the leading date rule. That placement is intended, and
+  the terminal client draws it the same way.
 - Upload tests accept the canonical HTTP header names Qt 6.12 writes, and
   the lowercase names from Qt 6.11 and earlier.
 - The channel Leave and Close clicks in the UI tests wait until those
