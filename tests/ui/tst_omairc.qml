@@ -2767,6 +2767,47 @@ TestCase {
         verify(composer.activeFocus);
     }
 
+    function test_findOnTheLastScreenKeepsFollowing() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        var list = item("messageList");
+        fillTranscriptUntilScrollable(list);
+        appendLiveMessages(list, 1, "bottom-screen-zx9");
+        appendLiveMessages(list, 2, "tail-pad-zx9");
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        tryCompare(list, "pinning", false);
+        verify(transcriptPinned(list));
+        compare(list.stick, list.stickFollowing);
+
+        var matchRow = rowForBody(list.model, "bottom-screen-zx9 0");
+        verify(matchRow > firstVisibleIndex(list),
+               "the match should sit on the last screen");
+        verify(matchRow < list.model.rowCount() - 1,
+               "the match should not be the last row");
+
+        mouseClick(composer);
+        keyClick(Qt.Key_F, Qt.ControlModifier);
+        tryCompare(appWindow, "findActive", true);
+        typeText("bottom-screen-zx9");
+        tryCompare(appWindow, "findIndex", matchRow);
+        tryCompare(list, "pinning", false);
+        compare(list.stick, list.stickFollowing);
+        verify(transcriptPinned(list));
+        compare(list.firstUnseenIndex, -1);
+        compare(item("messageUnseenJump").visible, false);
+
+        appendLiveMessages(list, 1, "after-find-follow");
+        compare(list.stick, list.stickFollowing);
+        compare(list.firstUnseenIndex, -1);
+        compare(item("messageUnseenJump").visible, false);
+        tryVerify(function() {
+            return list.contentY >= list.endContentY() - 2;
+        }, 1000, "A line after a last-screen find should follow");
+        compare(field(list.model, list.model.rowCount() - 1, "body"),
+                "after-find-follow 0");
+    }
+
     function test_ctrlHomeEndJumpsStatus() {
         openSeededAppWindow();
         var composer = item("messageComposer");
@@ -2921,13 +2962,14 @@ TestCase {
     }
 
     function assertTranscriptRestsOnBottom(list) {
-        tryVerify(function() {
-            settleTranscript(list);
-            var first = list.itemAtIndex(0);
-            if (!first || first.mapToItem(list, 0, 0).y <= 0)
-                return false;
-            return Math.abs(contentBottom(list) - list.height) <= 1;
-        }, 2000, "The newest row should sit on the bottom of the transcript");
+        settleTranscript(list);
+        list.syncAnchoredMargin();
+        settleTranscript(list);
+        var first = rowEdgesInList(list, 0);
+        verify(first.top > 0,
+            "A short transcript should leave empty space above the oldest row");
+        fuzzyCompare(contentBottom(list), list.height, 1,
+            "The newest row should sit on the bottom of the transcript");
     }
 
     // The typing footer is part of the content and sits under the last
@@ -12496,12 +12538,14 @@ TestCase {
         offerFileHost(catcher);
         var column = findChild(appWindow, "conversationColumn");
         verify(column !== null, "conversation column should exist");
+        var link = Qt.createQmlObject("import QtQuick; QtObject { property int ready: 0 }", testCase);
+        var linkConn = Qt.createQmlObject("import QtQuick; Connections { ignoreUnknownSignals: true; property var probe: null; function onFileLinkReady(url, draftKey) { probe.ready = probe.ready + 1 } }", testCase);
+        linkConn.probe = link;
+        linkConn.target = appWindow.irc;
         column.acceptDroppedUrls([Qt.resolvedUrl("../../version.pri")]);
-        tryCompare(catcher, "uploads", 1, 15000);
+        tryCompare(link, "ready", 1, 15000);
         var composer = findChild(appWindow, "messageComposer");
-        tryVerify(function() {
-            return composer.text.indexOf("/files/note.txt") >= 0;
-        }, 5000, composer.text);
+        verify(composer.text.indexOf("/files/note.txt") >= 0, composer.text);
         verify(!seed.omarchyWroteFrom(start, "PRIVMSG"));
         catcher.destroy();
     }

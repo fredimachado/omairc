@@ -480,10 +480,11 @@ ListView {
                 return;
             positionViewAtIndex(index, ListView.Beginning);
             pinning = false;
-            // atYEnd can still be true on the turn after a jump to an
-            // earlier row. Following again would undo Ctrl+Home.
-            if (index < modelRowCount() - 1 && contentHeight > height
-                    && viewportPinned()) {
+            // atYEnd can still be true after a jump away from the bottom.
+            // contentY is the position that moved. Ctrl+Home leaves it
+            // above the end, so that jump stays detached. A find or link
+            // on the last screen clamps to the end and should follow.
+            if (contentY < endContentY() - 2) {
                 stick = stickDetached;
                 rememberDetachedViewportSequence();
                 syncReadMarkerViewport();
