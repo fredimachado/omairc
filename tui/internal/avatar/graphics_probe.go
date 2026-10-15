@@ -15,13 +15,16 @@ import (
 const deviceAttributesQuery = "\x1b[c"
 
 // probeResult is what one graphics probe learned. replay is keystrokes typed
-// while the probe was reading. dropAPC arms a filter that discards one later
-// Kitty reply so a late OK never becomes keystrokes. partial is the start of
-// a response sequence the probe already consumed and the filter must finish.
+// while the probe was reading. dropLate is set only when the wait ends on the
+// timeout without a DA1, and arms a filter for one late graphics reply, DA1,
+// or XTVERSION. partial is the start of one of those sequences the probe
+// already consumed and the filter must finish.
 type probeResult struct {
 	supported bool
 	replay    []byte
-	dropAPC   bool
+	dropLate  bool
+	sawAPC    bool
+	sawXT     bool
 	partial   []byte
 }
 
@@ -30,6 +33,8 @@ type probeScan struct {
 	keys       []byte
 	hold       []byte
 	sawAPC     bool
+	sawDA1     bool
+	sawXT      bool
 	graphicsOK bool
 	wezterm    bool
 }
@@ -83,6 +88,7 @@ func (s *probeScan) feed(chunk []byte) bool {
 			}
 			msg := s.hold[:n]
 			s.hold = s.hold[n:]
+			s.sawXT = true
 			if xtversionWezTerm(msg) {
 				s.wezterm = true
 			}
@@ -97,6 +103,7 @@ func (s *probeScan) feed(chunk []byte) bool {
 				continue
 			}
 			if final == 'c' {
+				s.sawDA1 = true
 				s.hold = s.hold[n:]
 				return true
 			}
@@ -116,13 +123,19 @@ func (s *probeScan) feed(chunk []byte) bool {
 	}
 }
 
-func (s *probeScan) finish() probeResult {
+// finish builds the probe result. timedOut is set when the wait ended because
+// DA1 did not arrive. The late filter is armed only on that path. A DA1 answer
+// means the graphics reply is already in hand or is not coming, so the filter
+// stays off and later Esc keys are ordinary input.
+func (s *probeScan) finish(timedOut bool) probeResult {
 	res := probeResult{
 		supported: s.graphicsOK && !s.wezterm,
 		replay:    append([]byte(nil), s.keys...),
-		dropAPC:   !s.sawAPC,
+		dropLate:  timedOut && !s.sawDA1,
+		sawAPC:    s.sawAPC,
+		sawXT:     s.sawXT,
 	}
-	if isResponsePrefix(s.hold) {
+	if res.dropLate && isResponsePrefix(s.hold) {
 		res.partial = append([]byte(nil), s.hold...)
 		return res
 	}
@@ -216,29 +229,28 @@ func readProbeDeadline(w io.Writer, r interface {
 	for {
 		n, err := r.Read(tmp)
 		if n > 0 && scan.feed(tmp[:n]) {
-			return scan.finish()
+			return scan.finish(false)
 		}
 		if err != nil || !time.Now().Before(deadline) {
-			return scan.finish()
+			return scan.finish(true)
 		}
 	}
 }
 
 func (r probeResult) wrap(in *os.File) io.Reader {
-	if in == nil || (len(r.replay) == 0 && !r.dropAPC && len(r.partial) == 0) {
+	if in == nil || (len(r.replay) == 0 && !r.dropLate && len(r.partial) == 0) {
 		return nil
 	}
 	filter := &probeFilter{pending: append([]byte(nil), r.replay...)}
+	if r.dropLate {
+		filter.late.dropAPC = !r.sawAPC && !bytes.HasPrefix(r.partial, []byte("\x1b_"))
+		filter.late.dropDA1 = true
+		filter.late.dropXT = !r.sawXT && !bytes.HasPrefix(r.partial, []byte("\x1bP"))
+	}
 	if len(r.partial) > 0 {
 		filter.late.seed(r.partial)
 	}
-	if r.dropAPC && !bytes.HasPrefix(r.partial, []byte("\x1b_")) {
-		filter.late.dropNextAPC = true
-	}
-	if len(r.replay) > 0 {
-		return &bufferedProbeInput{f: in, probeFilter: filter}
-	}
-	return &syncedProbeInput{File: in, probeFilter: filter}
+	return &bufferedProbeInput{f: in, probeFilter: filter}
 }
 
 // probeFilter keeps keystrokes that arrived during the probe and drops one
@@ -275,23 +287,9 @@ func (f *probeFilter) read(file *os.File, p []byte) (int, error) {
 	}
 }
 
-// syncedProbeInput is a terminal file. Bubble Tea puts it in raw mode and
-// cancels reads through its descriptor. Close leaves the real stdin open.
-type syncedProbeInput struct {
-	*os.File
-	*probeFilter
-}
-
-func (s *syncedProbeInput) Read(p []byte) (int, error) {
-	return s.probeFilter.read(s.File, p)
-}
-
-func (s *syncedProbeInput) Close() error { return nil }
-
-// bufferedProbeInput serves replayed keystrokes before the descriptor. It
-// stays a terminal file so raw mode still applies. It does not expose Name,
-// because a cancel reader that waits on the descriptor would hold those
-// keystrokes until the next byte arrived.
+// bufferedProbeInput serves replayed keystrokes before the descriptor and
+// drops a late probe reply. Name and Fd keep it a cancellable terminal file
+// so Bubble Tea can interrupt a blocked read. Close leaves the real stdin open.
 type bufferedProbeInput struct {
 	f *os.File
 	*probeFilter
@@ -305,56 +303,89 @@ func (b *bufferedProbeInput) Write(p []byte) (int, error) { return b.f.Write(p) 
 
 func (b *bufferedProbeInput) Fd() uintptr { return b.f.Fd() }
 
+func (b *bufferedProbeInput) Name() string { return b.f.Name() }
+
 func (b *bufferedProbeInput) Close() error { return nil }
 
 const (
 	lateGround = iota
-	lateEsc
-	lateDrop
+	lateAPC
+	lateDCS
+	lateCSI
 )
 
-// lateFilter drops one graphics APC (ESC _ G ... ST) and any response
-// sequence the probe already started. Other bytes, including ESC sequences
-// that are not that reply, pass through.
+// lateFilter drops one graphics APC, one DA1, and one XTVERSION that arrive
+// after a probe timeout. A lone ESC at the end of a read is returned in that
+// read, so Esc is not held until the next key.
 type lateFilter struct {
-	dropNextAPC bool
-	state       int
-	buf         []byte
+	dropAPC bool
+	dropDA1 bool
+	dropXT  bool
+	state   int
+	buf     []byte
+}
+
+func (f *lateFilter) armed() bool {
+	return f.dropAPC || f.dropDA1 || f.dropXT || f.state != lateGround
 }
 
 func (f *lateFilter) seed(partial []byte) {
 	f.buf = append([]byte(nil), partial...)
-	f.state = lateDrop
+	switch {
+	case bytes.HasPrefix(partial, []byte("\x1b_")):
+		f.state = lateAPC
+		f.dropAPC = false
+	case bytes.HasPrefix(partial, []byte("\x1bP")):
+		f.state = lateDCS
+		f.dropXT = false
+	default:
+		f.buf = nil
+		f.state = lateGround
+	}
 }
 
 func (f *lateFilter) push(in []byte) []byte {
-	if f.state == lateGround && (!f.dropNextAPC || bytes.IndexByte(in, 0x1b) < 0) {
+	if f.state == lateGround && !f.armed() {
+		return in
+	}
+	if f.state == lateGround && bytes.IndexByte(in, 0x1b) < 0 {
 		return in
 	}
 	out := make([]byte, 0, len(in))
-	for _, b := range in {
+	for i := 0; i < len(in); i++ {
+		b := in[i]
 		switch f.state {
 		case lateGround:
-			if b == 0x1b && f.dropNextAPC {
-				f.buf = append(f.buf[:0], b)
-				f.state = lateEsc
+			if b != 0x1b || i+1 >= len(in) {
+				// A trailing ESC is delivered with this read. Holding it
+				// would glue it to the next key and turn Esc into Alt.
+				out = append(out, b)
 				continue
 			}
-			out = append(out, b)
-		case lateEsc:
-			f.buf = append(f.buf, b)
-			if b == '_' {
-				f.state = lateDrop
-				continue
+			next := in[i+1]
+			switch {
+			case next == '_' && f.dropAPC:
+				f.buf = append(f.buf[:0], b, next)
+				f.state = lateAPC
+				i++
+			case next == 'P' && f.dropXT:
+				f.buf = append(f.buf[:0], b, next)
+				f.state = lateDCS
+				i++
+			case next == '[' && f.dropDA1:
+				f.buf = append(f.buf[:0], b, next)
+				f.state = lateCSI
+				i++
+			default:
+				out = append(out, b)
 			}
-			out = append(out, f.buf...)
-			f.buf = f.buf[:0]
-			f.state = lateGround
-		case lateDrop:
+		case lateAPC, lateDCS:
 			f.buf = append(f.buf, b)
 			if len(f.buf) >= 2 && f.buf[len(f.buf)-2] == 0x1b && f.buf[len(f.buf)-1] == '\\' {
-				if bytes.HasPrefix(f.buf, []byte("\x1b_")) {
-					f.dropNextAPC = false
+				if f.state == lateAPC {
+					f.dropAPC = false
+				} else {
+					f.dropXT = false
 				}
 				f.buf = f.buf[:0]
 				f.state = lateGround
@@ -364,7 +395,25 @@ func (f *lateFilter) push(in []byte) []byte {
 				out = append(out, f.buf...)
 				f.buf = f.buf[:0]
 				f.state = lateGround
-				f.dropNextAPC = false
+				f.dropAPC = false
+				f.dropXT = false
+			}
+		case lateCSI:
+			f.buf = append(f.buf, b)
+			if b >= 0x40 && b <= 0x7e {
+				if b == 'c' {
+					f.dropDA1 = false
+				} else {
+					out = append(out, f.buf...)
+				}
+				f.buf = f.buf[:0]
+				f.state = lateGround
+				continue
+			}
+			if b < 0x20 || b > 0x3f {
+				out = append(out, f.buf...)
+				f.buf = f.buf[:0]
+				f.state = lateGround
 			}
 		}
 	}

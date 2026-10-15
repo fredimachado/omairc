@@ -28,16 +28,16 @@ func readProbeReply(w io.Writer, in *os.File, timeout time.Duration) (bool, io.R
 	for {
 		ready, err := pollReadable(fd, deadline)
 		if err != nil || !ready {
-			res := scan.finish()
+			res := scan.finish(true)
 			return res.supported, res.wrap(in)
 		}
 		n, err := in.Read(tmp)
 		if n > 0 && scan.feed(tmp[:n]) {
-			res := scan.finish()
+			res := scan.finish(false)
 			return res.supported, res.wrap(in)
 		}
 		if err != nil || !time.Now().Before(deadline) {
-			res := scan.finish()
+			res := scan.finish(true)
 			return res.supported, res.wrap(in)
 		}
 	}

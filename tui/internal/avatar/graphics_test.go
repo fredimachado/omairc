@@ -14,6 +14,7 @@ import (
 
 	"github.com/charmbracelet/x/term"
 	"github.com/fredimachado/omairc/tui/internal/irc"
+	"github.com/muesli/cancelreader"
 )
 
 func TestTransmitChunksQuietly(t *testing.T) {
@@ -200,6 +201,35 @@ func TestProbeStopsAtDA1(t *testing.T) {
 		if !strings.Contains(term.written.String(), "a=q") || !strings.Contains(term.written.String(), "\x1b[c") {
 			t.Fatalf("probe = %q, want a=q and DA1", term.written.String())
 		}
+		if got.dropLate {
+			t.Fatal("filter armed after DA1")
+		}
+		if got.wrap(os.Stdout) != nil {
+			t.Fatal("DA1-only probe installed a late-reply filter")
+		}
+	})
+
+	t.Run("esc after da1", func(t *testing.T) {
+		term := &scriptTerminal{reply: []byte("\x1b[?1;2c\x1b")}
+		got := readProbeDeadline(term, term, 400*time.Millisecond)
+		if got.dropLate {
+			t.Fatal("filter armed after DA1")
+		}
+		if string(got.replay) != "\x1b" {
+			t.Fatalf("replay = %q, want Esc", got.replay)
+		}
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.Close()
+		defer w.Close()
+		input := got.wrap(r)
+		buf := make([]byte, 4)
+		n, err := input.Read(buf)
+		if err != nil || string(buf[:n]) != "\x1b" {
+			t.Fatalf("Esc Read = %q %v", buf[:n], err)
+		}
 	})
 
 	t.Run("kitty and da1", func(t *testing.T) {
@@ -212,8 +242,8 @@ func TestProbeStopsAtDA1(t *testing.T) {
 		if waited := time.Since(started); waited > 100*time.Millisecond {
 			t.Fatalf("Kitty OK plus DA1 waited %s", waited)
 		}
-		if got.dropAPC {
-			t.Fatal("a consumed Kitty reply would be swallowed later")
+		if got.dropLate {
+			t.Fatal("filter armed after DA1")
 		}
 	})
 
@@ -263,17 +293,25 @@ func TestLateKittyReplyIsSwallowed(t *testing.T) {
 	if got.supported {
 		t.Fatal("timeout enabled graphics")
 	}
-	if !got.dropAPC {
+	if !got.dropLate {
 		t.Fatal("timeout left a late Kitty reply on the input stream")
 	}
 
-	filter := &lateFilter{dropNextAPC: true}
+	filter := &lateFilter{dropAPC: true, dropDA1: true, dropXT: true}
 	kept := filter.push([]byte("xy\x1b_Gi=4294967295;OK\x1b\\Z\x1b[A"))
 	if string(kept) != "xyZ\x1b[A" {
 		t.Fatalf("filtered = %q, want keys without the graphics reply", kept)
 	}
-	if filter.dropNextAPC {
-		t.Fatal("filter stayed armed after the reply")
+	if filter.dropAPC {
+		t.Fatal("graphics reply was not consumed")
+	}
+	esc := filter.push([]byte{0x1b})
+	if string(esc) != "\x1b" || filter.state != lateGround || len(filter.buf) != 0 {
+		t.Fatalf("lone Esc = %q state %d buf %q", esc, filter.state, filter.buf)
+	}
+	next := filter.push([]byte{'q'})
+	if string(next) != "q" {
+		t.Fatalf("key after Esc = %q, want q", next)
 	}
 
 	r, w, err := os.Pipe()
@@ -282,7 +320,10 @@ func TestLateKittyReplyIsSwallowed(t *testing.T) {
 	}
 	defer r.Close()
 	defer w.Close()
-	input := probeResult{replay: []byte("hi"), dropAPC: true}.wrap(r)
+	input := probeResult{replay: []byte("hi"), dropLate: true}.wrap(r)
+	if _, ok := input.(*bufferedProbeInput); !ok {
+		t.Fatalf("replay input = %T, want *bufferedProbeInput", input)
+	}
 	buf := make([]byte, 8)
 	n, err := input.Read(buf)
 	if err != nil || string(buf[:n]) != "hi" {
@@ -294,6 +335,59 @@ func TestLateKittyReplyIsSwallowed(t *testing.T) {
 	n, err = input.Read(buf)
 	if err != nil || string(buf[:n]) != "!" {
 		t.Fatalf("late reply Read = %q %v, want !", buf[:n], err)
+	}
+	if err := r.SetReadDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write([]byte{0x1b}); err != nil {
+		t.Fatal(err)
+	}
+	n, err = input.Read(buf)
+	if err != nil || string(buf[:n]) != "\x1b" {
+		t.Fatalf("armed filter Esc = %q %v", buf[:n], err)
+	}
+}
+
+func TestLateDA1AndXTVERSIONAreSwallowed(t *testing.T) {
+	filter := &lateFilter{dropAPC: true, dropDA1: true, dropXT: true}
+	kept := filter.push([]byte("\x1b[?1;2c\x1bP>|WezTerm 20240203\x1b\\go\x1b[A"))
+	if string(kept) != "go\x1b[A" {
+		t.Fatalf("filtered = %q, want go and the arrow", kept)
+	}
+	if filter.dropDA1 || filter.dropXT {
+		t.Fatal("late DA1 or XTVERSION was not consumed")
+	}
+	again := filter.push([]byte("\x1b[?6c"))
+	if string(again) != "\x1b[?6c" {
+		t.Fatalf("second DA1 = %q, want it kept", again)
+	}
+}
+
+func TestBufferedProbeInputIsCancellable(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	input := probeResult{replay: []byte("k")}.wrap(r)
+	named, ok := input.(interface {
+		Name() string
+		Fd() uintptr
+	})
+	if !ok {
+		t.Fatal("replay input has no Name")
+	}
+	if named.Name() != r.Name() || named.Fd() != r.Fd() {
+		t.Fatalf("Name/Fd = %q %d, want %q %d", named.Name(), named.Fd(), r.Name(), r.Fd())
+	}
+	cr, err := cancelreader.NewReader(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cr.Close()
+	if !cr.Cancel() {
+		t.Fatal("replay input is not a cancellable file")
 	}
 }
 
