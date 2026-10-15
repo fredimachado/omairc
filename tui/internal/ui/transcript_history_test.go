@@ -1,12 +1,16 @@
 package ui
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/fredimachado/omairc/tui/internal/controller"
 	"github.com/fredimachado/omairc/tui/internal/irc"
+	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
 func TestSnapshotTranscriptAnchorRecordsTopRowSequence(t *testing.T) {
@@ -38,6 +42,123 @@ func TestNewModelAnchorInactive(t *testing.T) {
 	m := seededModel(t)
 	if m.transcriptAnchorSequence != -1 {
 		t.Fatalf("transcriptAnchorSequence = %d, want -1", m.transcriptAnchorSequence)
+	}
+}
+
+func scrollableYesterday(t *testing.T) (*Model, irc.ConversationKey, time.Time) {
+	t.Helper()
+	ctrl := controller.New()
+	ctrl.SetClock(session.NewFakeClock(time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)))
+	ctrl.Apply(irc.WelcomeEvent{NetworkID: "net", CurrentNick: "omairc"})
+	ctrl.SelectConversation("net", "#room")
+	key := ctrl.Reducer().ConversationKey("net", "#room")
+	day := time.Date(2026, 9, 25, 15, 0, 0, 0, time.UTC)
+	ctrl.Apply(irc.MessageEvent{
+		Conversation: key,
+		Author:       "alice",
+		Body:         "kept",
+		Timestamp:    day,
+		Target:       "#room",
+	})
+	for index := 0; index < 40; index++ {
+		ctrl.Apply(irc.MessageEvent{
+			Conversation: key,
+			Author:       "alice",
+			Body:         fmt.Sprintf("pad %d", index),
+			Timestamp:    day.Add(time.Duration(index+1) * time.Minute),
+			Target:       "#room",
+		})
+	}
+	m := resizeModel(t, New(ctrl, nil), 80, 30)
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyHome, Mod: tea.ModCtrl})
+	if m.transcriptFollowEnd {
+		t.Fatal("Ctrl+Home must leave follow-the-end")
+	}
+	return m, key, day
+}
+
+func screenLineContaining(m *Model, body string) int {
+	area := m.transcriptArea()
+	height := m.transcriptRowsHeight()
+	start, end := m.transcriptWindow(len(area.lines), height)
+	for index := start; index < end; index++ {
+		if strings.Contains(plainText(area.lines[index]), body) {
+			return index - start
+		}
+	}
+	return -1
+}
+
+func prependOlder(m *Model, key irc.ConversationKey, body string, at time.Time, id string) {
+	m.snapshotTranscriptAnchor()
+	m.ctrl.Apply(irc.HistoryEvent{
+		Conversation: key,
+		Target:       "#room",
+		Kind:         irc.HistoryChat,
+		OlderPage:    true,
+		Lines: []irc.ReplayLine{{
+			Author:    "bob",
+			Body:      body,
+			Timestamp: at,
+			MsgID:     irc.MsgID{Value: id},
+		}},
+	})
+	m.ctrl.Publish(irc.ViewNotify{Messages: true})
+	m.noteTranscriptGrowth()
+}
+
+func TestSameDayOlderPageKeepsAnchorTextLine(t *testing.T) {
+	m, key, day := scrollableYesterday(t)
+	if labels := m.ctrl.DateSeparators(); len(labels) == 0 || labels[0] != "Yesterday" {
+		t.Fatalf("leading label = %q, want Yesterday", labels)
+	}
+	before := screenLineContaining(m, "kept")
+	if before < 1 {
+		t.Fatalf("kept screen line = %d, want it below the leading rule", before)
+	}
+	prependOlder(m, key, "older same day", day.Add(-time.Hour), "same-day")
+	if got := screenLineContaining(m, "kept"); got != before {
+		t.Fatalf("kept screen line = %d, want %d after the top rule moved", got, before)
+	}
+	labels := m.ctrl.DateSeparators()
+	kept := -1
+	for index, message := range m.ctrl.Messages() {
+		if message.Body == "kept" {
+			kept = index
+			break
+		}
+	}
+	if kept <= 0 || kept >= len(labels) || labels[kept] != "" {
+		t.Fatalf("kept row %d labels %q, want the rule on the older line", kept, labels)
+	}
+	if labels[0] != "Yesterday" {
+		t.Fatalf("leading label = %q, want one Yesterday", labels[0])
+	}
+}
+
+func TestOlderDayPrependKeepsAnchorTextLine(t *testing.T) {
+	m, key, day := scrollableYesterday(t)
+	before := screenLineContaining(m, "kept")
+	if before < 1 {
+		t.Fatalf("kept screen line = %d, want it below the leading rule", before)
+	}
+	prependOlder(m, key, "from the day before", day.Add(-24*time.Hour), "older-day")
+	if got := screenLineContaining(m, "kept"); got != before {
+		t.Fatalf("kept screen line = %d, want %d after the head day changed", got, before)
+	}
+	labels := m.ctrl.DateSeparators()
+	kept := -1
+	for index, message := range m.ctrl.Messages() {
+		if message.Body == "kept" {
+			kept = index
+			break
+		}
+	}
+	if kept <= 0 || kept >= len(labels) || labels[kept] != "Yesterday" {
+		t.Fatalf("kept row %d labels %q, want Yesterday still on that message", kept, labels)
+	}
+	if labels[0] == "Yesterday" || labels[0] == "" {
+		t.Fatalf("leading label = %q, want the older day", labels[0])
 	}
 }
 

@@ -528,8 +528,27 @@ func (m *Model) setTranscriptFollowEnd(follow bool) {
 
 func (m *Model) clearTranscriptAnchor() {
 	m.transcriptAnchorSequence = -1
+	m.transcriptAnchorTextLead = 0
 	m.transcriptAnchorSpliceEpoch = -1
 	m.firstUnseenSequenceAtAnchor = -1
+}
+
+// transcriptPrefixLines is the date rule and unread mark drawn above a
+// message. Each is one line, in the same order as transcriptRowArea, so the
+// message text starts this many lines after the block.
+func (m *Model) transcriptPrefixLines(row int) int {
+	if m.ctrl == nil || row < 0 {
+		return 0
+	}
+	lines := 0
+	dates := m.ctrl.DateSeparators()
+	if row < len(dates) && dates[row] != "" {
+		lines++
+	}
+	if row == m.ctrl.UnreadMarkRow() {
+		lines++
+	}
+	return lines
 }
 
 func (m *Model) snapshotTranscriptAnchor() {
@@ -543,20 +562,23 @@ func (m *Model) snapshotTranscriptAnchor() {
 		return
 	}
 	row := 0
+	textLead := 0
 	if !m.transcriptFollowEnd {
 		area := m.transcriptArea()
 		n := len(area.lines)
 		height := m.transcriptRowsHeight()
+		start := 0
+		if height >= 1 && n > 0 {
+			start, _ = m.transcriptWindow(n, height)
+		}
 		if height >= 1 && n > height {
-			offset := m.transcriptScroll
-			start := n - height - offset
-			if start < 0 {
-				start = 0
-			}
 			row = area.rowAt(start)
 			if row < 0 {
 				row = 0
 			}
+		}
+		if row >= 0 && row < area.count() {
+			textLead = area.line(row) + m.transcriptPrefixLines(row) - start
 		}
 	}
 	if row >= len(messages) {
@@ -564,6 +586,7 @@ func (m *Model) snapshotTranscriptAnchor() {
 		return
 	}
 	m.transcriptAnchorSequence = messages[row].Sequence
+	m.transcriptAnchorTextLead = textLead
 	m.transcriptAnchorSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
 	if m.firstUnseenRow >= 0 && m.firstUnseenRow < len(messages) {
 		m.firstUnseenSequenceAtAnchor = messages[m.firstUnseenRow].Sequence
@@ -581,11 +604,12 @@ func (m *Model) restoreTranscriptAnchor() {
 		return
 	}
 	sequence := m.transcriptAnchorSequence
+	lead := m.transcriptAnchorTextLead
 	m.clearTranscriptAnchor()
 	messages := m.ctrl.Messages()
 	for index, message := range messages {
 		if message.Sequence == sequence {
-			m.pinTranscriptToRow(index)
+			m.pinTranscriptToText(index, lead)
 			return
 		}
 	}
@@ -669,6 +693,16 @@ func (m *Model) revealTranscriptRow(row int) {
 // TranscriptList.pinToUnread: a row that cannot fill a viewport, or an
 // out-of-range row, falls back to following the end.
 func (m *Model) pinTranscriptToRow(row int) {
+	m.pinTranscriptToText(row, m.transcriptPrefixLines(row))
+}
+
+// pinTranscriptToText scrolls so the message text stays lead lines below the
+// viewport start. lead is the chrome that was above that text when the reader
+// stopped: a date rule removed from this row, or inserted above the view,
+// changes where the text line sits, and subtracting the saved lead keeps the
+// text on the same screen line. A lead equal to the row's current prefix puts
+// the block itself at the top, which is what pinTranscriptToRow asks for.
+func (m *Model) pinTranscriptToText(row int, lead int) {
 	if m.ctrl == nil {
 		return
 	}
@@ -687,7 +721,8 @@ func (m *Model) pinTranscriptToRow(row int) {
 		m.noteViewportSettled()
 		return
 	}
-	start := area.line(row)
+	textLine := area.line(row) + m.transcriptPrefixLines(row)
+	start := textLine - lead
 	if start < 0 {
 		start = 0
 	}

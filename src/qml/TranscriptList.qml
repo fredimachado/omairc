@@ -30,8 +30,14 @@ ListView {
     property int rowRevision: 0
     property int restoreOffset: -1
     property int restoreAnchorSequence: -1
+    // How far the anchored message sits below the viewport top. A date rule
+    // or unread mark above it is part of this distance, so a prepend that
+    // moves or drops that chrome can put the same line back on the same pixel.
+    property real restoreAnchorPixel: 0
     property int detachedViewportSequence: -1
     property int detachedViewportOffset: -1
+    property real detachedViewportPixel: 0
+    property bool detachedViewportPixelValid: false
     property var onPinnedToEnd: null
     property int pinGeneration: 0
     property bool resetPending: false
@@ -145,11 +151,18 @@ ListView {
         if (index < 0)
             return;
         detachedViewportOffset = count - index;
+        detachedViewportPixel = 0;
+        detachedViewportPixelValid = false;
         var total = modelRowCount();
         for (var row = index; row < total; ++row) {
             var seqText = model.field(row, "sequence");
             if (seqText !== undefined && seqText !== null && seqText !== "") {
                 detachedViewportSequence = parseInt(seqText, 10);
+                var item = itemAtIndex(row);
+                if (item) {
+                    detachedViewportPixel = item.mapToItem(list, 0, 0).y;
+                    detachedViewportPixelValid = true;
+                }
                 return;
             }
         }
@@ -161,6 +174,8 @@ ListView {
         firstUnseenSequence = -1;
         detachedViewportSequence = -1;
         detachedViewportOffset = -1;
+        detachedViewportPixel = 0;
+        detachedViewportPixelValid = false;
         pinning = true;
         trackedCount = count;
         stickToEnd();
@@ -307,43 +322,94 @@ ListView {
         return count;
     }
 
-    function snapshotAnchor() {
+    function measuredAnchorPixel(sequence) {
+        if (sequence < 0)
+            return Number.NaN;
+        var total = modelRowCount();
+        for (var row = 0; row < total; ++row) {
+            if (rowSequence(row) !== sequence)
+                continue;
+            var item = itemAtIndex(row);
+            if (!item)
+                return Number.NaN;
+            return item.mapToItem(list, 0, 0).y;
+        }
+        return Number.NaN;
+    }
+
+    // measure is false while the model is resetting: ListView has already
+    // released delegates, so item positions are not the reader's viewport.
+    function snapshotAnchor(measure) {
         restoreAnchorSequence = -1;
         restoreOffset = -1;
+        restoreAnchorPixel = 0;
         if (detachedViewportSequence >= 0)
             restoreAnchorSequence = detachedViewportSequence;
         if (detachedViewportOffset >= 0)
             restoreOffset = detachedViewportOffset;
-        if (restoreAnchorSequence >= 0 || restoreOffset >= 0)
-            return;
-
-        var index = firstRenderedIndex();
-        if (index < 0)
-            return;
-        restoreOffset = count - index;
-        if (!model || typeof model.field !== "function")
-            return;
-        var total = modelRowCount();
-        for (var row = index; row < total; ++row) {
-            var seqText = model.field(row, "sequence");
-            if (seqText !== undefined && seqText !== null && seqText !== "") {
-                restoreAnchorSequence = parseInt(seqText, 10);
-                detachedViewportSequence = restoreAnchorSequence;
+        if (restoreAnchorSequence < 0 && restoreOffset < 0) {
+            var index = firstRenderedIndex();
+            if (index < 0)
+                return;
+            restoreOffset = count - index;
+            if (model && typeof model.field === "function") {
+                var total = modelRowCount();
+                for (var row = index; row < total; ++row) {
+                    var sequence = rowSequence(row);
+                    if (sequence >= 0) {
+                        restoreAnchorSequence = sequence;
+                        detachedViewportSequence = sequence;
+                        break;
+                    }
+                }
+            }
+        }
+        if (measure !== false) {
+            var measured = measuredAnchorPixel(restoreAnchorSequence);
+            if (!isNaN(measured)) {
+                restoreAnchorPixel = measured;
+                detachedViewportPixel = measured;
+                detachedViewportPixelValid = true;
                 return;
             }
         }
+        if (detachedViewportPixelValid)
+            restoreAnchorPixel = detachedViewportPixel;
     }
 
     function clearAnchorSnapshot() {
         restoreAnchorSequence = -1;
         restoreOffset = -1;
+        restoreAnchorPixel = 0;
+    }
+
+    function placeAnchor(row, pixel) {
+        if (row < 0)
+            return;
+        positionViewAtIndex(row, ListView.Beginning);
+        if (Math.abs(pixel) < 0.5)
+            return;
+        var item = itemAtIndex(row);
+        if (!item)
+            return;
+        var visual = item.mapToItem(list, 0, 0).y;
+        var next = contentY + (visual - pixel);
+        var low = topContentY();
+        var high = endContentY();
+        if (next < low)
+            next = low;
+        if (next > high)
+            next = high;
+        contentY = next;
     }
 
     function restoreAnchor() {
         var sequence = restoreAnchorSequence;
         var offset = restoreOffset;
+        var pixel = restoreAnchorPixel;
         restoreAnchorSequence = -1;
         restoreOffset = -1;
+        restoreAnchorPixel = 0;
         if (stick === stickFollowing) {
             pinToEnd();
             return;
@@ -368,13 +434,11 @@ ListView {
             if (targetRow < 0 || targetRow >= total)
                 targetRow = -1;
         }
-        if (targetRow >= 0)
-            positionViewAtIndex(targetRow, ListView.Beginning);
+        placeAnchor(targetRow, pixel);
         Qt.callLater(function() {
             if (generation !== pinGeneration)
                 return;
-            if (targetRow >= 0)
-                positionViewAtIndex(targetRow, ListView.Beginning);
+            placeAnchor(targetRow, pixel);
             pinning = false;
         });
     }
@@ -482,7 +546,7 @@ ListView {
             list.resetPending = true;
             list.resetSavedCount = list.count;
             if (list.stick === list.stickDetached)
-                list.snapshotAnchor();
+                list.snapshotAnchor(false);
         }
         function onModelReset() {
             list.rowRevision += 1;

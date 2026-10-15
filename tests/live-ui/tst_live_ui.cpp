@@ -24,6 +24,7 @@
 #include <QColor>
 #include <QCoreApplication>
 #include <QDate>
+#include <QDateTime>
 #include <QLocale>
 #include <QDebug>
 #include <QDir>
@@ -946,7 +947,10 @@ void LiveUiTest::bouncerQueryReplayRendersDirectMessageInSidebar()
 
     const QVector<TranscriptRowChrome> rows = collectTranscriptChrome(window);
     const int replayAt = chromeIndex(rows, QStringLiteral("morning"));
-    const QString replayDate = QLocale().toString(QDate(2026, 9, 10),
+    const QDateTime replayed = QDateTime::fromString(
+        QStringLiteral("2026-09-10T11:12:00.000Z"), Qt::ISODateWithMs);
+    QVERIFY(replayed.isValid());
+    const QString replayDate = QLocale().toString(replayed.toLocalTime().date(),
                                                   QLocale::ShortFormat);
     QCOMPARE(rows.at(0).body, replayDate);
     QVERIFY(!rows.at(0).avatarVisible);

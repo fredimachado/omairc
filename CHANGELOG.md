@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that date rule when a new line arrives. Only the trimmed lines are removed,
   so a reader who has scrolled up stays put. The transcript still rebuilds
   when the oldest day itself changes.
+- Loading an older page keeps the line you were reading in place. A date
+  rule that appears or disappears above that line no longer shifts the
+  desktop transcript, or the terminal transcript when that rule moves onto
+  the older lines.
 - Upload tests accept the canonical HTTP header names Qt 6.12 writes, and
   the lowercase names from Qt 6.11 and earlier.
 - The channel Leave and Close clicks in the UI tests wait until those

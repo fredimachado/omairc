@@ -4267,6 +4267,136 @@ TestCase {
         compare(field(list.model, replayed, "body"), "replayed 0");
     }
 
+    function jumpTranscriptToTop(list) {
+        keyClick(Qt.Key_Home, Qt.ControlModifier);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryCompare(list, "stick", list.stickDetached);
+        tryVerify(function() {
+            return !list.pinning && list.viewportAtTop();
+        });
+        compare(firstVisibleIndex(list), 0);
+    }
+
+    function firstAnchoredMessageRow(model) {
+        var row = 0;
+        for (; row < model.rowCount(); ++row) {
+            var kind = field(model, row, "kind");
+            if (kind === "message" || kind === "action" || kind === "notice")
+                return row;
+        }
+        return -1;
+    }
+
+    function rowViewportY(list, row) {
+        var delegate = list.itemAtIndex(row);
+        if (!delegate)
+            return Number.NaN;
+        return delegate.mapToItem(list, 0, 0).y;
+    }
+
+    function prependChatHistory(list, count, stamp, idPrefix, bodyPrefix) {
+        var target = appWindow.currentConversation;
+        var wireTarget = target.charAt(0) === "#" ? target : "fred";
+        var bytes = ":server BATCH +hx chathistory " + target + "\r\n";
+        var index = 0;
+        for (; index < count; ++index) {
+            bytes += "@batch=hx;time=" + stamp + ";msgid=" + idPrefix + "-"
+                + index + " :anna!u@h PRIVMSG " + wireTarget + " :" + bodyPrefix
+                + " " + index + "\r\n";
+        }
+        bytes += ":server BATCH -hx\r\n";
+        seed.injectOmarchy(bytes);
+        waitForBody(list, bodyPrefix + " 0");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+    }
+
+    function requestOlderAtTop(list) {
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryVerify(function() {
+            return seed.irc.transcriptHistoryPendingForSelection();
+        }, 1000, "Page Up at the top should ask for older history");
+        compare(list.stick, list.stickDetached);
+    }
+
+    function expectAnchorViewportY(list, body, expected) {
+        tryVerify(function() {
+            var row = rowForBody(list.model, body);
+            if (row < 0)
+                return false;
+            var y = rowViewportY(list, row);
+            return !isNaN(y) && Math.abs(y - expected) <= 2;
+        }, 2000, "anchor '" + body + "' should stay at y " + expected);
+    }
+
+    function enableChatHistory() {
+        var capStart = seed.omarchyFrameCount();
+        seed.injectOmarchy(":server CAP fred NEW :chathistory\r\n");
+        tryVerify(function() {
+            return seed.omarchyWroteFrom(capStart, "CAP REQ")
+                && seed.omarchyWroteFrom(capStart, "chathistory");
+        });
+        seed.injectOmarchy(":server CAP fred ACK :chathistory\r\n");
+        wait(0);
+    }
+
+    function test_historyPrependKeepsAnchorMessageY() {
+        openSeededAppWindow();
+        mouseClick(namedItem(liveConversation("anna")));
+        tryCompare(appWindow, "currentConversation", "anna");
+        enableChatHistory();
+        var list = item("messageList");
+        var start = list.model.rowCount();
+        var index = 0;
+        for (; index < 24; ++index) {
+            var minute = index < 10 ? "0" + index : "" + index;
+            injectOmarchyChat("anna", "fred", "scroll line " + index, "11:" + minute);
+        }
+        waitForRowCount(list, start + 24);
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(list.contentHeight > list.height);
+        jumpTranscriptToTop(list);
+
+        var anchorRow = firstAnchoredMessageRow(list.model);
+        verify(anchorRow > 0, "a leading rule should sit above the first message");
+        compare(field(list.model, 0, "kind"), "event");
+        compare(field(list.model, 0, "body"), transcriptShortDate(2026, 9, 12));
+        var anchorBody = field(list.model, anchorRow, "body");
+        var anchorY = rowViewportY(list, anchorRow);
+        verify(anchorY > 20,
+               "the anchor should sit below the leading rule, y=" + anchorY);
+
+        requestOlderAtTop(list);
+        prependChatHistory(list, 4, "2026-09-10T09:00:00.000Z",
+                           "head-day", "head day");
+        expectAnchorViewportY(list, anchorBody, anchorY);
+        compare(field(list.model, 0, "kind"), "event");
+        compare(field(list.model, 0, "body"), transcriptShortDate(2026, 9, 10));
+
+        jumpTranscriptToTop(list);
+        var sameRow = firstAnchoredMessageRow(list.model);
+        verify(sameRow > 0, "the new head day should still lead with a rule");
+        var sameBody = field(list.model, sameRow, "body");
+        var sameY = rowViewportY(list, sameRow);
+        verify(sameY > 20,
+               "the same-day anchor should sit below the leading rule, y=" + sameY);
+        compare(field(list.model, 0, "body"), transcriptShortDate(2026, 9, 10));
+
+        requestOlderAtTop(list);
+        prependChatHistory(list, 4, "2026-09-10T08:00:00.000Z",
+                           "same-day", "same day");
+        expectAnchorViewportY(list, sameBody, sameY);
+        var kept = rowForBody(list.model, sameBody);
+        verify(kept > 1, "same-day lines should land above the anchor");
+        verify(field(list.model, kept - 1, "kind") !== "event",
+               "the leading rule should have moved off the anchored message");
+    }
+
     function test_historySpliceKeepsTheReaderOnTheSameMessage() {
         openSeededAppWindow();
         var list = item("messageList");

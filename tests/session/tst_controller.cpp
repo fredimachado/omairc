@@ -5566,7 +5566,10 @@ void ControllerTest::chatHistoryBatchShowsBodyAndTime()
     QVERIFY(messages);
     const int older = bodyRow(messages, QStringLiteral("older"));
     const int joined = bodyRow(messages, QStringLiteral("omairc joined"));
-    const QString replayDate = QLocale().toString(QDate(2011, 10, 19),
+    const QDateTime replayed = QDateTime::fromString(
+        QStringLiteral("2011-10-19T16:40:51.620Z"), Qt::ISODateWithMs);
+    QVERIFY(replayed.isValid());
+    const QString replayDate = QLocale().toString(replayed.toLocalTime().date(),
                                                   QLocale::ShortFormat);
     QCOMPARE(roleAt(messages, 0, MessageListModel::KindRole),
              QStringLiteral("event"));
@@ -5577,8 +5580,6 @@ void ControllerTest::chatHistoryBatchShowsBodyAndTime()
     QCOMPARE(roleAt(messages, 3, MessageListModel::BodyRole),
              QStringLiteral("Today"));
     QCOMPARE(joined, 4);
-    const QDateTime replayed = QDateTime::fromString(
-        QStringLiteral("2011-10-19T16:40:51.620Z"), Qt::ISODateWithMs);
     QCOMPARE(roleAt(messages, older, MessageListModel::TimeRole),
              replayed.toLocalTime().toString(QStringLiteral("HH:mm")));
     QCOMPARE(roleAt(messages, older, MessageListModel::OriginRole),
