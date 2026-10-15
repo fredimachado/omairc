@@ -224,11 +224,12 @@ func TestAltUKeepsMarkerWhileUnseenRowsRemainBelow(t *testing.T) {
 	}
 }
 
-// TestAltUAdvancesOnePageWhenTheUnseenTailOutlastsTwoViewports proves a second
-// Alt+U moves on through a long run instead of jumping to the end. The tail
-// is more than two viewports, so the press after the first landing still has
-// unseen rows below and must stay detached with ↓ new.
-func TestAltUAdvancesOnePageWhenTheUnseenTailOutlastsTwoViewports(t *testing.T) {
+// TestAltUStepsToTheNextRowThatIsNotFullyVisible proves a second Alt+U steps
+// to the first row that is not fully on screen, instead of jumping to the end
+// or paging by a fixed line count. The tail is more than two viewports, so
+// that next row still leaves unseen rows below and the view stays detached
+// with ↓ new.
+func TestAltUStepsToTheNextRowThatIsNotFullyVisible(t *testing.T) {
 	m, d := unseenDemoModel(t)
 	m = resizeModel(t, m, 180, 30)
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
@@ -260,6 +261,11 @@ func TestAltUAdvancesOnePageWhenTheUnseenTailOutlastsTwoViewports(t *testing.T) 
 	if !strings.Contains(plain, "↓ new") {
 		t.Fatalf("↓ new must stay after the first landing:\n%s", plain)
 	}
+	continuation := m.firstRowBelowViewport()
+	if continuation < 0 {
+		t.Fatal("the first landing must leave a row that is not fully visible")
+	}
+	wantBody := m.ctrl.Messages()[continuation].Body
 	top := m.firstVisibleMessageRow()
 
 	m = press(t, m, altKey('u'))
@@ -270,6 +276,12 @@ func TestAltUAdvancesOnePageWhenTheUnseenTailOutlastsTwoViewports(t *testing.T) 
 		t.Fatal("the second Alt+U must not clamp onto the end")
 	}
 	next := m.firstVisibleMessageRow()
+	if next != continuation {
+		t.Fatalf("second landing top = %d, want the row that was not fully visible (%d)", next, continuation)
+	}
+	if got := m.ctrl.Messages()[next].Body; got != wantBody {
+		t.Fatalf("second landing body = %q, want %q", got, wantBody)
+	}
 	if next <= top {
 		t.Fatalf("second landing top = %d, want it past %d", next, top)
 	}
@@ -399,6 +411,259 @@ func TestArrivalWhileFollowingEndDoesNotArm(t *testing.T) {
 	}
 	if m.jumpArmed() {
 		t.Fatal("following the end must not arm the jump")
+	}
+}
+
+// detachAndLandOnLongUnseen pages up, appends more than two viewports of
+// one-line rows, and presses Alt+U once. It returns the model and the row
+// where the unseen run continues.
+func detachAndLandOnLongUnseen(t *testing.T) (*Model, int) {
+	t.Helper()
+	m, d := unseenDemoModel(t)
+	m = resizeModel(t, m, 180, 30)
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
+	if m.transcriptFollowEnd {
+		t.Fatal("Page Up must leave follow-the-end")
+	}
+	extra := m.transcriptRowsHeight()*2 + 8
+	if extra < 40 {
+		extra = 40
+	}
+	for i := 0; i < extra; i++ {
+		d.InjectOmarchy([]byte(fmt.Sprintf(
+			"@msgid=cont-%d :nora!u@h PRIVMSG #omarchy :cont %d\r\n", i, i)))
+	}
+	m = updateMsg(t, m, NotifyMsg{})
+	m = press(t, m, altKey('u'))
+	if m.transcriptFollowEnd || m.transcriptScroll == 0 {
+		t.Fatal("the first Alt+U must stay detached")
+	}
+	continuation := m.firstRowBelowViewport()
+	if continuation < 0 {
+		t.Fatal("a long tail must leave a row that is not fully visible")
+	}
+	if m.unseenResumeRow != continuation {
+		t.Fatalf("resume = %d, want the continuation row %d", m.unseenResumeRow, continuation)
+	}
+	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
+	if !strings.Contains(plain, "↓ new") {
+		t.Fatal("↓ new must show while the continuation row is not fully visible")
+	}
+	return m, continuation
+}
+
+// TestAltUAfterCtrlHomeReturnsToTheUnseenRun proves Ctrl+Home hides ↓ new over
+// history already read and the next Alt+U returns to the unseen run instead of
+// walking that history from the top.
+func TestAltUAfterCtrlHomeReturnsToTheUnseenRun(t *testing.T) {
+	m, continuation := detachAndLandOnLongUnseen(t)
+	body := m.ctrl.Messages()[continuation].Body
+
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyHome, Mod: tea.ModCtrl})
+	if m.transcriptFollowEnd {
+		t.Fatal("Ctrl+Home must leave follow-the-end")
+	}
+	if m.firstVisibleMessageRow() >= continuation {
+		t.Fatalf("Ctrl+Home top = %d, want it above the continuation %d", m.firstVisibleMessageRow(), continuation)
+	}
+	if m.unseenResumeRow != continuation {
+		t.Fatalf("resume = %d, want it kept at %d", m.unseenResumeRow, continuation)
+	}
+	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
+	if strings.Contains(plain, "↓ new") {
+		t.Fatalf("↓ new must hide over history already read:\n%s", plain)
+	}
+
+	m = press(t, m, altKey('u'))
+	if got := m.ctrl.Messages()[m.firstVisibleMessageRow()].Body; got != body {
+		t.Fatalf("top body = %q, want the unseen continuation %q", got, body)
+	}
+	plain = ansiPattern.ReplaceAllString(m.View().Content, "")
+	if !strings.Contains(plain, "↓ new") {
+		t.Fatal("↓ new must return once the continuation row is the first row not fully visible")
+	}
+}
+
+// TestAltUAfterPageUpReturnsToTheUnseenRun proves Page Up hides ↓ new and the
+// next Alt+U returns to the unseen run instead of stepping through the page
+// the reader just moved into.
+func TestAltUAfterPageUpReturnsToTheUnseenRun(t *testing.T) {
+	m, continuation := detachAndLandOnLongUnseen(t)
+	body := m.ctrl.Messages()[continuation].Body
+
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
+	if m.transcriptFollowEnd {
+		t.Fatal("Page Up must leave follow-the-end")
+	}
+	if m.firstVisibleMessageRow() >= continuation {
+		t.Fatalf("Page Up top = %d, want it above the continuation %d", m.firstVisibleMessageRow(), continuation)
+	}
+	if m.unseenResumeRow != continuation {
+		t.Fatalf("resume = %d, want it kept at %d", m.unseenResumeRow, continuation)
+	}
+	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
+	if strings.Contains(plain, "↓ new") {
+		t.Fatalf("↓ new must hide over history already read:\n%s", plain)
+	}
+
+	m = press(t, m, altKey('u'))
+	if got := m.ctrl.Messages()[m.firstVisibleMessageRow()].Body; got != body {
+		t.Fatalf("top body = %q, want the unseen continuation %q", got, body)
+	}
+}
+
+// TestTypingFooterBelowTheViewDoesNotArmUnseenMarker proves ↓ new stays hidden
+// when the only lines below the viewport are the direct-message typing footer.
+func TestTypingFooterBelowTheViewDoesNotArmUnseenMarker(t *testing.T) {
+	m, d := unseenDemoModel(t)
+	m.switchSelection(func() {
+		m.ctrl.SelectConversation("omarchy", "anna")
+	})
+	for i := 0; i < 40; i++ {
+		d.InjectOmarchy([]byte(fmt.Sprintf(
+			"@msgid=dm-pad-%d :anna!u@h PRIVMSG fred :dm pad %d\r\n", i, i)))
+	}
+	m = updateMsg(t, m, NotifyMsg{})
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
+	if m.transcriptFollowEnd {
+		t.Fatal("Page Up must leave follow-the-end")
+	}
+	for i := 0; i < 35; i++ {
+		d.InjectOmarchy([]byte(fmt.Sprintf(
+			"@msgid=dm-tail-%d :anna!u@h PRIVMSG fred :dm tail %d\r\n", i, i)))
+	}
+	// Each of anna's lines clears her typing hint. Put it back so the footer
+	// is the only thing that can sit below a viewport full of message rows.
+	d.InjectOmarchy([]byte("@+typing=active :anna!u@h TAGMSG fred\r\n"))
+	m = updateMsg(t, m, NotifyMsg{})
+	m = press(t, m, altKey('u'))
+	if m.unseenResumeRow < 0 {
+		t.Fatal("Alt+U through a long direct-message tail must arm the catch-up")
+	}
+	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
+	if !strings.Contains(plain, "↓ new") {
+		t.Fatal("↓ new must show while an unseen message row remains below")
+	}
+
+	area := m.transcriptArea()
+	height := m.transcriptRowsHeight()
+	messageEnd := area.end()
+	footer := len(area.lines) - messageEnd
+	if footer < 1 {
+		t.Fatal("the anna direct message must render a typing footer")
+	}
+	if messageEnd <= height {
+		t.Fatalf("message lines = %d, viewport = %d, want the footer to be able to sit below a full viewport", messageEnd, height)
+	}
+	// Place the viewport by hand. Page Down would follow the end once the last
+	// message row arrives, which hides the footer-only case this test locks.
+	// Assigning the fields leaves the catch-up index in place, so a sticky
+	// flag would still paint ↓ new.
+	m.transcriptFollowEnd = false
+	m.transcriptScroll = len(area.lines) - messageEnd
+	if m.transcriptScroll <= 0 {
+		t.Fatalf("scroll = %d, want the footer lines below the viewport", m.transcriptScroll)
+	}
+	if got := m.firstRowBelowViewport(); got >= 0 {
+		t.Fatalf("first row below = %d, want none when only the typing footer is hidden", got)
+	}
+	plain = ansiPattern.ReplaceAllString(m.View().Content, "")
+	if m.jumpArmed() || strings.Contains(plain, "↓ new") {
+		t.Fatalf("↓ new must hide when only the typing footer is below the view:\n%s", plain)
+	}
+}
+
+// TestBufferSwitchDropsUnseenCatchUp proves leaving a conversation clears the
+// catch-up, and returning does not bring ↓ new or the Alt+U walk back.
+func TestBufferSwitchDropsUnseenCatchUp(t *testing.T) {
+	m, _ := detachAndLandOnLongUnseen(t)
+	if m.unseenResumeRow < 0 {
+		t.Fatal("precondition: the catch-up must be armed")
+	}
+
+	m.switchSelection(func() {
+		m.ctrl.SelectConversation("omarchy", "#desktop")
+	})
+	if m.unseenResumeRow != -1 {
+		t.Fatalf("unseenResumeRow = %d, want cleared on a buffer switch", m.unseenResumeRow)
+	}
+
+	m.switchSelection(func() {
+		m.ctrl.SelectConversation("omarchy", "#omarchy")
+	})
+	if m.unseenResumeRow != -1 {
+		t.Fatalf("unseenResumeRow = %d, want the catch-up to stay dropped", m.unseenResumeRow)
+	}
+	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
+	if strings.Contains(plain, "↓ new") {
+		t.Fatalf("↓ new must stay off after the catch-up was dropped:\n%s", plain)
+	}
+	top := m.firstVisibleMessageRow()
+	m = press(t, m, altKey('u'))
+	if got := m.firstVisibleMessageRow(); got != top {
+		t.Fatalf("top = %d, want unchanged %d: Alt+U must not walk a dropped catch-up", got, top)
+	}
+	if m.unseenResumeRow != -1 {
+		t.Fatalf("unseenResumeRow = %d, want it to stay clear", m.unseenResumeRow)
+	}
+}
+
+// TestAltUStepsPastAWrappedRowTallerThanTheViewport proves a wrapped row that
+// is taller than the viewport does not trap Alt+U. The press that lands on it
+// arms the following message, and the next press moves there.
+func TestAltUStepsPastAWrappedRowTallerThanTheViewport(t *testing.T) {
+	m, d := unseenDemoModel(t)
+	m = resizeModel(t, m, 100, 30)
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
+	if m.transcriptFollowEnd {
+		t.Fatal("Page Up must leave follow-the-end")
+	}
+	tall := strings.TrimRight(strings.Repeat("word ", 400), " ")
+	d.InjectOmarchy([]byte("@msgid=wrap-lead :nora!u@h PRIVMSG #omarchy :lead\r\n"))
+	d.InjectOmarchy([]byte("@msgid=wrap-tall :nora!u@h PRIVMSG #omarchy :" + tall + "\r\n"))
+	d.InjectOmarchy([]byte("@msgid=wrap-trailer :nora!u@h PRIVMSG #omarchy :trailer\r\n"))
+	pad := m.transcriptRowsHeight() + 4
+	for i := 0; i < pad; i++ {
+		d.InjectOmarchy([]byte(fmt.Sprintf(
+			"@msgid=wrap-after-%d :nora!u@h PRIVMSG #omarchy :after %d\r\n", i, i)))
+	}
+	m = updateMsg(t, m, NotifyMsg{})
+
+	m = press(t, m, altKey('u'))
+	if got := m.ctrl.Messages()[m.firstVisibleMessageRow()].Body; got != "lead" {
+		t.Fatalf("top body = %q, want the first unseen row", got)
+	}
+	tallIndex := m.firstRowBelowViewport()
+	if tallIndex < 0 {
+		t.Fatal("the wrapped row must be the first row that is not fully visible")
+	}
+	if got := m.ctrl.Messages()[tallIndex].Body; got != tall {
+		t.Fatalf("continuation = %q, want the wrapped row", got)
+	}
+	area := m.transcriptArea()
+	if tallIndex >= len(area.heights) || area.heights[tallIndex] <= m.transcriptRowsHeight() {
+		height := 0
+		if tallIndex >= 0 && tallIndex < len(area.heights) {
+			height = area.heights[tallIndex]
+		}
+		t.Fatalf("wrapped row height = %d, want it taller than the viewport %d", height, m.transcriptRowsHeight())
+	}
+
+	m = press(t, m, altKey('u'))
+	if got := m.firstVisibleMessageRow(); got != tallIndex {
+		t.Fatalf("top = %d, want the wrapped row %d", got, tallIndex)
+	}
+	if m.unseenResumeRow != tallIndex+1 {
+		t.Fatalf("resume = %d, want the row after the wrapped one (%d)", m.unseenResumeRow, tallIndex+1)
+	}
+
+	m = press(t, m, altKey('u'))
+	if got := m.firstVisibleMessageRow(); got != tallIndex+1 {
+		t.Fatalf("top = %d, want the row after the wrapped one (%d), not another pass over the tall row", got, tallIndex+1)
+	}
+	if got := m.ctrl.Messages()[m.firstVisibleMessageRow()].Body; got != "trailer" {
+		t.Fatalf("top body = %q, want trailer", got)
 	}
 }
 

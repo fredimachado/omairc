@@ -182,10 +182,20 @@ type Model struct {
 	// TranscriptList's firstUnseenIndex and trackedCount.
 	firstUnseenRow  int
 	transcriptCount int
-	// unseenTail stays set after Alt+U pins that row and lines still sit below
-	// the viewport. ↓ new stays armed, and the next Alt+U advances one page
-	// toward the end. Following the end clears it.
-	unseenTail bool
+	// unseenResumeRow is the message row where an Alt+U catch-up continues, or
+	// -1 when no catch-up is active. ↓ new is armed only while that row is the
+	// first one not fully on screen. Scrolling into history already read keeps
+	// the index and hides the marker; the next Alt+U returns to the row.
+	// unseenResumeSequenceAtAnchor shifts it across a prepend. Following the
+	// end, or switching buffers, clears both.
+	unseenResumeRow              int
+	unseenResumeSequenceAtAnchor int64
+	// withinResumeArmCheck stops the catch-up arming check from recursing.
+	// Measuring the continuation row renders the header, and the header asks
+	// whether the marker is armed. The nested check reports disarmed. On a
+	// channel or direct message the marker shares an existing header line, so
+	// the height used for that measurement still matches.
+	withinResumeArmCheck bool
 	// transcriptLineCount is the rendered line count of transcriptArea(),
 	// including the typing footer. A detached append adds the increase to
 	// transcriptScroll so the top line stays put.
@@ -274,31 +284,33 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 	styles := defaultStyles()
 	composer := newComposerInput(styles)
 	m := &Model{
-		ctrl:                        ctrl,
-		conn:                        conn,
-		width:                       defaultWidth,
-		height:                      defaultHeight,
-		focus:                       focusComposer,
-		composer:                    composer,
-		help:                        help.New(),
-		spinner:                     spinner.New(spinner.WithSpinner(spinner.MiniDot)),
-		typingSpinner:               spinner.New(spinner.WithSpinner(spinner.Points)),
-		sheet:                       newConnectSheetState(),
-		jump:                        newJumpState(),
-		nick:                        newNickJumpState(),
-		link:                        newLinkState(),
-		file:                        newFilePickState(),
-		inbox:                       newInboxState(),
-		list:                        newChannelListState(),
-		serverListVisible:           true,
-		transcriptFollowEnd:         true,
-		transcriptCursor:            -1,
-		transcriptAnchorSequence:    -1,
-		transcriptAnchorSpliceEpoch: -1,
-		firstUnseenSequenceAtAnchor: -1,
-		firstUnseenRow:              -1,
-		composerHistoryIndex:        -1,
-		drafts:                      make(map[string]string),
+		ctrl:                         ctrl,
+		conn:                         conn,
+		width:                        defaultWidth,
+		height:                       defaultHeight,
+		focus:                        focusComposer,
+		composer:                     composer,
+		help:                         help.New(),
+		spinner:                      spinner.New(spinner.WithSpinner(spinner.MiniDot)),
+		typingSpinner:                spinner.New(spinner.WithSpinner(spinner.Points)),
+		sheet:                        newConnectSheetState(),
+		jump:                         newJumpState(),
+		nick:                         newNickJumpState(),
+		link:                         newLinkState(),
+		file:                         newFilePickState(),
+		inbox:                        newInboxState(),
+		list:                         newChannelListState(),
+		serverListVisible:            true,
+		transcriptFollowEnd:          true,
+		transcriptCursor:             -1,
+		transcriptAnchorSequence:     -1,
+		transcriptAnchorSpliceEpoch:  -1,
+		firstUnseenSequenceAtAnchor:  -1,
+		firstUnseenRow:               -1,
+		unseenResumeRow:              -1,
+		unseenResumeSequenceAtAnchor: -1,
+		composerHistoryIndex:         -1,
+		drafts:                       make(map[string]string),
 		// The terminal starts focused until a Blur arrives, mirroring
 		// OmaircWindow.qml's win.active default.
 		windowActive: true,
