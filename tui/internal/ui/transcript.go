@@ -93,16 +93,25 @@ func (m *Model) transcriptRowArea() transcriptRows {
 	}
 	markRow := m.ctrl.UnreadMarkRow()
 	messages := m.ctrl.Messages()
+	dates := m.ctrl.DateSeparators()
 	// The nick column is one width for the whole transcript, so it is measured
 	// once per render rather than per row.
 	nickWidth := nickColumnWidth(messages)
 	for index, message := range messages {
 		block := m.messageRowAt(messages, index, message, nickWidth)
-		// The "New messages" boundary sits above the first unread row, attached
-		// to that row's block so the rendered row count still matches the
-		// message count find and copy index by.
+		// A date rule and the "New messages" boundary sit above the row they
+		// belong to, attached to that row's block so the rendered row count
+		// still matches the message count find and copy index by. The date is
+		// above the boundary, matching MessageListModel::buildView.
+		var prefix string
+		if index < len(dates) && dates[index] != "" {
+			prefix += m.eventRow(dates[index]) + "\n"
+		}
 		if index == markRow {
-			block = m.unreadMarkLine() + "\n" + block
+			prefix += m.unreadMarkLine() + "\n"
+		}
+		if prefix != "" {
+			block = prefix + block
 		}
 		area.append(block)
 	}
@@ -522,9 +531,28 @@ func (m *Model) setTranscriptFollowEnd(follow bool) {
 
 func (m *Model) clearTranscriptAnchor() {
 	m.transcriptAnchorSequence = -1
+	m.transcriptAnchorTextLead = 0
 	m.transcriptAnchorSpliceEpoch = -1
 	m.firstUnseenSequenceAtAnchor = -1
 	m.unseenResumeSequenceAtAnchor = -1
+}
+
+// transcriptPrefixLines is the date rule and unread mark drawn above a
+// message. Each is one line, in the same order as transcriptRowArea, so the
+// message text starts this many lines after the block.
+func (m *Model) transcriptPrefixLines(row int) int {
+	if m.ctrl == nil || row < 0 {
+		return 0
+	}
+	lines := 0
+	dates := m.ctrl.DateSeparators()
+	if row < len(dates) && dates[row] != "" {
+		lines++
+	}
+	if row == m.ctrl.UnreadMarkRow() {
+		lines++
+	}
+	return lines
 }
 
 func (m *Model) snapshotTranscriptAnchor() {
@@ -538,20 +566,23 @@ func (m *Model) snapshotTranscriptAnchor() {
 		return
 	}
 	row := 0
+	textLead := 0
 	if !m.transcriptFollowEnd {
 		area := m.transcriptArea()
 		n := len(area.lines)
 		height := m.transcriptRowsHeight()
+		start := 0
+		if height >= 1 && n > 0 {
+			start, _ = m.transcriptWindow(n, height)
+		}
 		if height >= 1 && n > height {
-			offset := m.transcriptScroll
-			start := n - height - offset
-			if start < 0 {
-				start = 0
-			}
 			row = area.rowAt(start)
 			if row < 0 {
 				row = 0
 			}
+		}
+		if row >= 0 && row < area.count() {
+			textLead = area.line(row) + m.transcriptPrefixLines(row) - start
 		}
 	}
 	if row >= len(messages) {
@@ -559,6 +590,7 @@ func (m *Model) snapshotTranscriptAnchor() {
 		return
 	}
 	m.transcriptAnchorSequence = messages[row].Sequence
+	m.transcriptAnchorTextLead = textLead
 	m.transcriptAnchorSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
 	if m.firstUnseenRow >= 0 && m.firstUnseenRow < len(messages) {
 		m.firstUnseenSequenceAtAnchor = messages[m.firstUnseenRow].Sequence
@@ -581,11 +613,12 @@ func (m *Model) restoreTranscriptAnchor() {
 		return
 	}
 	sequence := m.transcriptAnchorSequence
+	lead := m.transcriptAnchorTextLead
 	m.clearTranscriptAnchor()
 	messages := m.ctrl.Messages()
 	for index, message := range messages {
 		if message.Sequence == sequence {
-			m.pinTranscriptToRow(index)
+			m.pinTranscriptToText(index, lead)
 			return
 		}
 	}
@@ -669,6 +702,16 @@ func (m *Model) revealTranscriptRow(row int) {
 // TranscriptList.pinToUnread: a row that cannot fill a viewport, or an
 // out-of-range row, falls back to following the end.
 func (m *Model) pinTranscriptToRow(row int) {
+	m.pinTranscriptToText(row, m.transcriptPrefixLines(row))
+}
+
+// pinTranscriptToText scrolls so the message text stays lead lines below the
+// viewport start. lead is the chrome that was above that text when the reader
+// stopped: a date rule removed from this row, or inserted above the view,
+// changes where the text line sits, and subtracting the saved lead keeps the
+// text on the same screen line. A lead equal to the row's current prefix puts
+// the block itself at the top, which is what pinTranscriptToRow asks for.
+func (m *Model) pinTranscriptToText(row int, lead int) {
 	if m.ctrl == nil {
 		return
 	}
@@ -687,7 +730,8 @@ func (m *Model) pinTranscriptToRow(row int) {
 		m.noteViewportSettled()
 		return
 	}
-	start := area.line(row)
+	textLine := area.line(row) + m.transcriptPrefixLines(row)
+	start := textLine - lead
 	if start < 0 {
 		start = 0
 	}
@@ -802,11 +846,13 @@ func (m *Model) syncTranscriptLineCount() {
 
 // jumpArmed reports whether a jump-to-newest affordance applies: the reader is
 // scrolled up and either rows arrived below them, the Alt+U catch-up row is
-// the first row that is not fully on screen, or the transcript carries a
-// "New messages" mark. It mirrors TranscriptList.jumpArmed with canScrollDown
-// standing in for !transcriptFollowEnd. A catch-up index that sits further
-// down than the current viewport does not arm the marker: the reader is in
-// history already read, and only another Alt+U returns to that row.
+// the first row that is not fully on screen, or a "New messages" mark still
+// has a message row below the viewport. It mirrors TranscriptList.jumpArmed
+// with canScrollDown standing in for !transcriptFollowEnd. A catch-up index
+// that sits further down than the current viewport does not arm the marker:
+// the reader is in history already read, and only another Alt+U returns to
+// that row. A leading date can put the boundary on the first row; once every
+// message row is on screen, the typing footer is not a reason to keep ↓ new.
 func (m *Model) jumpArmed() bool {
 	if m.ctrl == nil || m.transcriptFollowEnd {
 		return false
@@ -817,10 +863,18 @@ func (m *Model) jumpArmed() bool {
 	if m.unseenResumeArmed() {
 		return true
 	}
-	if m.ctrl.ConsoleOpen() {
+	if m.ctrl.ConsoleOpen() || m.ctrl.UnreadMarkRow() < 0 {
 		return false
 	}
-	return m.ctrl.UnreadMarkRow() >= 0
+	// transcriptRowsHeight renders the header, which asks jumpArmed again.
+	// The marker shares an existing header line, so the nested check can
+	// report this boundary disarmed without changing the measured height.
+	if m.withinResumeArmCheck {
+		return false
+	}
+	m.withinResumeArmCheck = true
+	defer func() { m.withinResumeArmCheck = false }()
+	return m.firstRowBelowViewport() >= 0
 }
 
 // unseenResumeArmed reports whether ↓ new should offer the catch-up row. The
@@ -1063,15 +1117,28 @@ func groupableChatRow(message controller.MessageSnapshot) bool {
 	return isChatRow(message) && message.Kind != "whois"
 }
 
+// sameTranscriptDay reports whether two display clocks fall on one calendar
+// day. A date rule between them is not a message row, so grouping has to
+// notice the day itself or the nick would blank under the rule.
+func sameTranscriptDay(a, b time.Time) bool {
+	ay, am, ad := a.Date()
+	by, bm, bd := b.Date()
+	return ay == by && am == bm && ad == bd
+}
+
 // continuesChatGroup reports whether message continues previous as one group:
-// the same nick in the same minute from the same origin. It mirrors
-// continuesMessageGroup in OmaircWindow.qml. The later rows of a group blank
+// the same nick in the same minute of the same day from the same origin. It
+// mirrors continuesMessageGroup in OmaircWindow.qml, whose previous visual
+// row is the date rule when the day changes. The later rows of a group blank
 // the timestamp and nick so the run reads as one block.
 func continuesChatGroup(previous *controller.MessageSnapshot, message controller.MessageSnapshot) bool {
 	if !groupableChatRow(message) || previous == nil || !groupableChatRow(*previous) {
 		return false
 	}
 	if message.Author == "" || previous.Author == "" || message.Origin != previous.Origin {
+		return false
+	}
+	if !sameTranscriptDay(message.Time, previous.Time) {
 		return false
 	}
 	return message.Author == previous.Author &&

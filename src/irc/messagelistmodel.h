@@ -56,6 +56,11 @@ public:
     void setSelected(const IrcConversationKey& key);
     void select(const IrcConversationKey& key);
     void clearSelection();
+#ifdef OMAIRC_TEST
+    // Date rules and their Today / Yesterday labels use this day instead of
+    // the wall clock. Production reload still reads QDate::currentDate().
+    void setTranscriptTodayForTest(const QDate& day);
+#endif
 
 private:
     struct VisualRow {
@@ -65,9 +70,29 @@ private:
         QDate date;
     };
 
-    static std::vector<VisualRow> buildView(const IrcConversationState *conversation);
-    static int visualPrefixToRemove(const std::vector<VisualRow>& view, int storeRemoved);
+    static std::vector<VisualRow> buildView(const IrcConversationState *conversation,
+                                            const QDate& today);
+    // Inclusive. last < first means the trim removes no visual rows.
+    // A prefix trim starts at 0. A trim that stops inside the leading
+    // non-today day starts at 1 so that date rule stays at row 0.
+    struct TrimSpan {
+        int first = 0;
+        int last = -1;
+        bool empty() const { return last < first; }
+    };
+    static int visualPrefixToRemove(const std::vector<VisualRow>& view,
+                                    int storeRemoved,
+                                    const QDate& today);
+    static TrimSpan visualTrimSpan(const std::vector<VisualRow>& view,
+                                   int storeRemoved,
+                                   const QDate& today);
+    // The row at firstKept, and next's first row, are the same leading date
+    // rule: both absent, or both separators for one calendar day.
+    static bool sameLeadingDate(const std::vector<VisualRow>& current,
+                                int firstKept,
+                                const std::vector<VisualRow>& next);
     void notifySeparatorRows();
+    QDate transcriptToday() const;
 
     IrcEventReducer& m_reducer;
     std::optional<IrcConversationKey> m_selected;
@@ -76,4 +101,7 @@ private:
     int m_trimmed = 0;
     int m_spliceEpoch = 0;
     std::optional<qint64> m_unreadMark;
+#ifdef OMAIRC_TEST
+    std::optional<QDate> m_transcriptToday;
+#endif
 };

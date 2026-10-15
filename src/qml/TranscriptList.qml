@@ -30,14 +30,25 @@ ListView {
     property int rowRevision: 0
     property int restoreOffset: -1
     property int restoreAnchorSequence: -1
+    // How far the anchored message sits below the viewport top. A date rule
+    // or unread mark above it is part of this distance, so a prepend that
+    // moves or drops that chrome can put the same line back on the same pixel.
+    property real restoreAnchorPixel: 0
     property int detachedViewportSequence: -1
     property int detachedViewportOffset: -1
+    property real detachedViewportPixel: 0
+    property bool detachedViewportPixelValid: false
     property var onPinnedToEnd: null
     property int pinGeneration: 0
     property bool resetPending: false
     property int resetSavedCount: 0
     property bool prependPending: false
     property int prependSavedCount: 0
+    // Rows removed strictly above the unseen marker. A cap trim keeps the
+    // leading date rule and drops the lines under it, so this is not a
+    // prefix. noteGrowth and rowsRemoved both see the count change; the
+    // first one consumes this and the other must not move the marker again.
+    property int removedAboveUnseen: 0
     property real previousContentHeight: 0
     property var readMarkerSync: null
     // Window supplies the selected conversation's saved place, or null.
@@ -140,11 +151,18 @@ ListView {
         if (index < 0)
             return;
         detachedViewportOffset = count - index;
+        detachedViewportPixel = 0;
+        detachedViewportPixelValid = false;
         var total = modelRowCount();
         for (var row = index; row < total; ++row) {
             var seqText = model.field(row, "sequence");
             if (seqText !== undefined && seqText !== null && seqText !== "") {
                 detachedViewportSequence = parseInt(seqText, 10);
+                var item = itemAtIndex(row);
+                if (item) {
+                    detachedViewportPixel = item.mapToItem(list, 0, 0).y;
+                    detachedViewportPixelValid = true;
+                }
                 return;
             }
         }
@@ -156,6 +174,8 @@ ListView {
         firstUnseenSequence = -1;
         detachedViewportSequence = -1;
         detachedViewportOffset = -1;
+        detachedViewportPixel = 0;
+        detachedViewportPixelValid = false;
         pinning = true;
         trackedCount = count;
         stickToEnd();
@@ -220,10 +240,30 @@ ListView {
         });
     }
 
+    function settleRemovedAboveUnseen() {
+        var removed = removedAboveUnseen;
+        removedAboveUnseen = 0;
+        if (removed <= 0 || firstUnseenIndex < 0)
+            return;
+        if (firstUnseenSequence >= 0)
+            syncFirstUnseenIndex();
+        else {
+            firstUnseenIndex -= removed;
+            if (firstUnseenIndex < 0)
+                firstUnseenIndex = -1;
+        }
+    }
+
     function noteGrowth(previousCount, newCount) {
         if (newCount < previousCount) {
             if (newCount <= 0) {
+                removedAboveUnseen = 0;
                 pinToEnd();
+                return;
+            }
+            if (removedAboveUnseen > 0) {
+                settleRemovedAboveUnseen();
+                trackedCount = newCount;
                 return;
             }
             if (firstUnseenIndex >= newCount) {
@@ -282,43 +322,94 @@ ListView {
         return count;
     }
 
-    function snapshotAnchor() {
+    function measuredAnchorPixel(sequence) {
+        if (sequence < 0)
+            return Number.NaN;
+        var total = modelRowCount();
+        for (var row = 0; row < total; ++row) {
+            if (rowSequence(row) !== sequence)
+                continue;
+            var item = itemAtIndex(row);
+            if (!item)
+                return Number.NaN;
+            return item.mapToItem(list, 0, 0).y;
+        }
+        return Number.NaN;
+    }
+
+    // measure is false while the model is resetting: ListView has already
+    // released delegates, so item positions are not the reader's viewport.
+    function snapshotAnchor(measure) {
         restoreAnchorSequence = -1;
         restoreOffset = -1;
+        restoreAnchorPixel = 0;
         if (detachedViewportSequence >= 0)
             restoreAnchorSequence = detachedViewportSequence;
         if (detachedViewportOffset >= 0)
             restoreOffset = detachedViewportOffset;
-        if (restoreAnchorSequence >= 0 || restoreOffset >= 0)
-            return;
-
-        var index = firstRenderedIndex();
-        if (index < 0)
-            return;
-        restoreOffset = count - index;
-        if (!model || typeof model.field !== "function")
-            return;
-        var total = modelRowCount();
-        for (var row = index; row < total; ++row) {
-            var seqText = model.field(row, "sequence");
-            if (seqText !== undefined && seqText !== null && seqText !== "") {
-                restoreAnchorSequence = parseInt(seqText, 10);
-                detachedViewportSequence = restoreAnchorSequence;
+        if (restoreAnchorSequence < 0 && restoreOffset < 0) {
+            var index = firstRenderedIndex();
+            if (index < 0)
+                return;
+            restoreOffset = count - index;
+            if (model && typeof model.field === "function") {
+                var total = modelRowCount();
+                for (var row = index; row < total; ++row) {
+                    var sequence = rowSequence(row);
+                    if (sequence >= 0) {
+                        restoreAnchorSequence = sequence;
+                        detachedViewportSequence = sequence;
+                        break;
+                    }
+                }
+            }
+        }
+        if (measure !== false) {
+            var measured = measuredAnchorPixel(restoreAnchorSequence);
+            if (!isNaN(measured)) {
+                restoreAnchorPixel = measured;
+                detachedViewportPixel = measured;
+                detachedViewportPixelValid = true;
                 return;
             }
         }
+        if (detachedViewportPixelValid)
+            restoreAnchorPixel = detachedViewportPixel;
     }
 
     function clearAnchorSnapshot() {
         restoreAnchorSequence = -1;
         restoreOffset = -1;
+        restoreAnchorPixel = 0;
+    }
+
+    function placeAnchor(row, pixel) {
+        if (row < 0)
+            return;
+        positionViewAtIndex(row, ListView.Beginning);
+        if (Math.abs(pixel) < 0.5)
+            return;
+        var item = itemAtIndex(row);
+        if (!item)
+            return;
+        var visual = item.mapToItem(list, 0, 0).y;
+        var next = contentY + (visual - pixel);
+        var low = topContentY();
+        var high = endContentY();
+        if (next < low)
+            next = low;
+        if (next > high)
+            next = high;
+        contentY = next;
     }
 
     function restoreAnchor() {
         var sequence = restoreAnchorSequence;
         var offset = restoreOffset;
+        var pixel = restoreAnchorPixel;
         restoreAnchorSequence = -1;
         restoreOffset = -1;
+        restoreAnchorPixel = 0;
         if (stick === stickFollowing) {
             pinToEnd();
             return;
@@ -343,13 +434,11 @@ ListView {
             if (targetRow < 0 || targetRow >= total)
                 targetRow = -1;
         }
-        if (targetRow >= 0)
-            positionViewAtIndex(targetRow, ListView.Beginning);
+        placeAnchor(targetRow, pixel);
         Qt.callLater(function() {
             if (generation !== pinGeneration)
                 return;
-            if (targetRow >= 0)
-                positionViewAtIndex(targetRow, ListView.Beginning);
+            placeAnchor(targetRow, pixel);
             pinning = false;
         });
     }
@@ -389,7 +478,19 @@ ListView {
         Qt.callLater(function() {
             if (generation !== pinGeneration)
                 return;
+            positionViewAtIndex(index, ListView.Beginning);
             pinning = false;
+            // atYEnd can still be true after a jump away from the bottom.
+            // contentY is the position that moved. Ctrl+Home leaves it
+            // above the end, so that jump stays detached. A find or link
+            // on the last screen clamps to the end and should follow.
+            if (contentY < endContentY() - 2) {
+                stick = stickDetached;
+                rememberDetachedViewportSequence();
+                syncReadMarkerViewport();
+                viewportSettled();
+                return;
+            }
             adoptViewport(false);
         });
     }
@@ -457,7 +558,7 @@ ListView {
             list.resetPending = true;
             list.resetSavedCount = list.count;
             if (list.stick === list.stickDetached)
-                list.snapshotAnchor();
+                list.snapshotAnchor(false);
         }
         function onModelReset() {
             list.rowRevision += 1;
@@ -489,9 +590,29 @@ ListView {
                     list.prependPending = false;
                     list.restoreAnchor();
                 });
-            } else {
-                list.noteGrowth(list.trackedCount, list.count);
+                return;
             }
+            // A history-cap trim drops a leading line and appends the new
+            // one, so the list count does not change and noteGrowth never
+            // sees an arrival. The inserted range still ends at the tail.
+            var modelCount = list.modelRowCount();
+            if (last === modelCount - 1 && list.trackedCount >= modelCount) {
+                list.trackedCount = modelCount;
+                if (list.stick === list.stickFollowing) {
+                    list.stickToEnd();
+                    Qt.callLater(function() {
+                        if (list.stick === list.stickFollowing)
+                            list.stickToEnd();
+                    });
+                    return;
+                }
+                if (list.firstUnseenIndex < 0)
+                    list.firstUnseenIndex = first;
+                list.firstUnseenSequence = list.rowSequence(list.firstUnseenIndex);
+                list.detachedArrival();
+                return;
+            }
+            list.noteGrowth(list.trackedCount, list.count);
         }
         function onDataChanged(topLeft, bottomRight) {
             // The typing footer reads the last row through
@@ -502,10 +623,22 @@ ListView {
             if (bottomRight.row >= list.count - 1)
                 list.rowRevision += 1;
         }
+        function onRowsAboutToBeRemoved(parent, first, last) {
+            list.removedAboveUnseen = 0;
+            if (list.stick !== list.stickDetached || list.firstUnseenIndex < 0)
+                return;
+            if (last < list.firstUnseenIndex)
+                list.removedAboveUnseen = last - first + 1;
+        }
         function onRowsRemoved(parent, first, last) {
+            if (list.removedAboveUnseen > 0) {
+                list.settleRemovedAboveUnseen();
+                return;
+            }
             if (first !== 0
                     || list.stick !== list.stickDetached
-                    || list.firstUnseenIndex < 0) {
+                    || list.firstUnseenIndex < 0
+                    || last < list.firstUnseenIndex) {
                 return;
             }
             if (list.firstUnseenSequence >= 0)

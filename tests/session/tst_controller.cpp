@@ -1,6 +1,8 @@
 #include <QAbstractItemModel>
 #include <QCoreApplication>
+#include <QDate>
 #include <QDateTime>
+#include <QLocale>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
@@ -5564,10 +5566,20 @@ void ControllerTest::chatHistoryBatchShowsBodyAndTime()
     QVERIFY(messages);
     const int older = bodyRow(messages, QStringLiteral("older"));
     const int joined = bodyRow(messages, QStringLiteral("omairc joined"));
-    QCOMPARE(older, 0);
-    QVERIFY(joined > older);
     const QDateTime replayed = QDateTime::fromString(
         QStringLiteral("2011-10-19T16:40:51.620Z"), Qt::ISODateWithMs);
+    QVERIFY(replayed.isValid());
+    const QString replayDate = QLocale().toString(replayed.toLocalTime().date(),
+                                                  QLocale::ShortFormat);
+    QCOMPARE(roleAt(messages, 0, MessageListModel::KindRole),
+             QStringLiteral("event"));
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole), replayDate);
+    QCOMPARE(roleAt(messages, 1, MessageListModel::KindRole),
+             QStringLiteral("unread"));
+    QCOMPARE(older, 2);
+    QCOMPARE(roleAt(messages, 3, MessageListModel::BodyRole),
+             QStringLiteral("Today"));
+    QCOMPARE(joined, 4);
     QCOMPARE(roleAt(messages, older, MessageListModel::TimeRole),
              replayed.toLocalTime().toString(QStringLiteral("HH:mm")));
     QCOMPARE(roleAt(messages, older, MessageListModel::OriginRole),
@@ -7246,15 +7258,18 @@ void ControllerTest::queryPlaybackKeepsLinesFromPreviousNick()
         controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
         auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
         QVERIFY(messages);
-        QCOMPARE(selectedBodies(messages),
-                 QStringList({QStringLiteral("before"),
-                              QStringLiteral("mine"),
-                              QStringLiteral("after")}));
+        const QStringList played{QStringLiteral("before"),
+                                 QStringLiteral("mine"),
+                                 QStringLiteral("after")};
+        QCOMPARE(messageBodies(messages), played);
         const QStringList authors{QStringLiteral("lena"),
                                   QStringLiteral("oldnick"),
                                   QStringLiteral("lena")};
-        for (int row = 0; row < authors.size(); ++row) {
-            QCOMPARE(roleAt(messages, row, MessageListModel::AuthorRole), authors.at(row));
+        for (int index = 0; index < authors.size(); ++index) {
+            const int row = bodyRow(messages, played.at(index));
+            QVERIFY(row > 0);
+            QCOMPARE(roleAt(messages, row, MessageListModel::AuthorRole),
+                     authors.at(index));
             QCOMPARE(roleAt(messages, row, MessageListModel::OriginRole),
                      QStringLiteral("replay"));
         }
@@ -7262,10 +7277,7 @@ void ControllerTest::queryPlaybackKeepsLinesFromPreviousNick()
         transport->injectBytes(QByteArrayLiteral(
             ":lena!u@h PRIVMSG oldnick :live-before\r\n"
             ":oldnick!u@h PRIVMSG lena :live-mine\r\n"));
-        QCOMPARE(selectedBodies(messages),
-                 QStringList({QStringLiteral("before"),
-                              QStringLiteral("mine"),
-                              QStringLiteral("after")}));
+        QCOMPARE(messageBodies(messages), played);
 
         QCOMPARE(ircPlaybackPlayStamp(
                      IrcPlaybackTimeStore().noted(QStringLiteral("freenode"),
@@ -7294,14 +7306,21 @@ void ControllerTest::queryPlaybackKeepsLinesFromPreviousNick()
     controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
-    QCOMPARE(selectedBodies(messages),
+    QCOMPARE(messageBodies(messages),
              QStringList({QStringLiteral("before"),
                           QStringLiteral("mine")}));
-    QCOMPARE(roleAt(messages, 0, MessageListModel::AuthorRole), QStringLiteral("lena"));
-    QCOMPARE(roleAt(messages, 1, MessageListModel::AuthorRole),
+    const int beforeRow = bodyRow(messages, QStringLiteral("before"));
+    const int mineRow = bodyRow(messages, QStringLiteral("mine"));
+    QVERIFY(beforeRow > 0);
+    QVERIFY(mineRow > beforeRow);
+    QCOMPARE(roleAt(messages, beforeRow, MessageListModel::AuthorRole),
+             QStringLiteral("lena"));
+    QCOMPARE(roleAt(messages, mineRow, MessageListModel::AuthorRole),
              QStringLiteral("oldnick"));
-    QCOMPARE(roleAt(messages, 0, MessageListModel::OriginRole), QStringLiteral("replay"));
-    QCOMPARE(roleAt(messages, 1, MessageListModel::OriginRole), QStringLiteral("replay"));
+    QCOMPARE(roleAt(messages, beforeRow, MessageListModel::OriginRole),
+             QStringLiteral("replay"));
+    QCOMPARE(roleAt(messages, mineRow, MessageListModel::OriginRole),
+             QStringLiteral("replay"));
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("channel")));
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("elsewhere")));
     QCOMPARE(ircPlaybackPlayStamp(
@@ -7474,10 +7493,12 @@ void ControllerTest::queryPlaybackPreviousNickEchoIsOwnLine()
         controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
         auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
         QVERIFY(messages);
-        QCOMPARE(selectedBodies(messages), QStringList({QStringLiteral("before")}));
-        QCOMPARE(roleAt(messages, 0, MessageListModel::AuthorRole),
+        QCOMPARE(messageBodies(messages), QStringList({QStringLiteral("before")}));
+        const int beforeRow = bodyRow(messages, QStringLiteral("before"));
+        QVERIFY(beforeRow > 0);
+        QCOMPARE(roleAt(messages, beforeRow, MessageListModel::AuthorRole),
                  QStringLiteral("lena"));
-        QCOMPARE(roleAt(messages, 0, MessageListModel::OriginRole),
+        QCOMPARE(roleAt(messages, beforeRow, MessageListModel::OriginRole),
                  QStringLiteral("replay"));
     }
 }
@@ -8757,7 +8778,7 @@ void ControllerTest::joinedChannelPlaybackSplicesAfterAnchorIsGone()
         "@batch=pc;time=2024-03-09T16:00:04.000Z "
         ":lena!u@h PRIVMSG #cleared :after clear\r\n"
         ":znc.in BATCH -pc\r\n"));
-    QCOMPARE(selectedBodies(cleared),
+    QCOMPARE(messageBodies(cleared),
              QStringList{QStringLiteral("after clear")});
     QCOMPARE(roleAt(cleared, bodyRow(cleared, QStringLiteral("after clear")),
                     MessageListModel::OriginRole),
@@ -9265,8 +9286,10 @@ void ControllerTest::zncPlaybackDiscoversUnknownOfflineDirect()
     controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("alice"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
-    QCOMPARE(selectedBodies(messages), QStringList({QStringLiteral("offline")}));
-    QCOMPARE(roleAt(messages, 0, MessageListModel::OriginRole),
+    QCOMPARE(messageBodies(messages), QStringList({QStringLiteral("offline")}));
+    const int offline = bodyRow(messages, QStringLiteral("offline"));
+    QVERIFY(offline > 0);
+    QCOMPARE(roleAt(messages, offline, MessageListModel::OriginRole),
              QStringLiteral("replay"));
     QCOMPARE(ircPlaybackPlayStamp(
                  IrcPlaybackTimeStore().noted(QStringLiteral("freenode"),
@@ -9351,7 +9374,7 @@ void ControllerTest::zncPlaybackWildcardSkipsStampedClearedDirect()
     controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("lena"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
-    QCOMPARE(selectedBodies(messages), QStringList({QStringLiteral("read me")}));
+    QCOMPARE(messageBodies(messages), QStringList({QStringLiteral("read me")}));
     QVERIFY(controller.sendMessage(QStringLiteral("/clear")));
     QCOMPARE(messages->rowCount(), 0);
     controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("#omarchy"));
@@ -9396,7 +9419,7 @@ void ControllerTest::zncPlaybackWildcardSkipsStampedClearedDirect()
     QVERIFY(aliceSelected >= 0);
     messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
-    QCOMPARE(selectedBodies(messages), QStringList({QStringLiteral("offline")}));
+    QCOMPARE(messageBodies(messages), QStringList({QStringLiteral("offline")}));
     QCOMPARE(roleAt(conversations, aliceSelected,
                     ConversationListModel::UnreadRole).toInt(),
              0);
@@ -9406,7 +9429,7 @@ void ControllerTest::zncPlaybackWildcardSkipsStampedClearedDirect()
     QVERIFY(lenaSelected >= 0);
     messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
-    QCOMPARE(selectedBodies(messages), QStringList({QStringLiteral("still here")}));
+    QCOMPARE(messageBodies(messages), QStringList({QStringLiteral("still here")}));
     QCOMPARE(roleAt(conversations, lenaSelected,
                     ConversationListModel::UnreadRole).toInt(),
              0);
@@ -9473,11 +9496,11 @@ void ControllerTest::zncPlaybackKeepsDistinctMsgidAtSharedMillisecond()
     controller.selectConversation(QStringLiteral("freenode"), QStringLiteral("alice"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
-    QCOMPARE(messages->rowCount(), 2);
+    QCOMPARE(messages->rowCount(), 4);
     const int seen = bodyRow(messages, QStringLiteral("seen"));
     const int unseen = bodyRow(messages, QStringLiteral("unseen"));
-    QCOMPARE(seen, 0);
-    QCOMPARE(unseen, 1);
+    QVERIFY(seen > 0);
+    QCOMPARE(unseen, seen + 1);
     QCOMPARE(roleAt(messages, seen, MessageListModel::OriginRole),
              QStringLiteral("live"));
     QCOMPARE(roleAt(messages, unseen, MessageListModel::OriginRole),
@@ -9490,9 +9513,10 @@ void ControllerTest::zncPlaybackKeepsDistinctMsgidAtSharedMillisecond()
         "@batch=again;time=2024-03-09T16:00:01.500Z;msgid=message-a "
         ":alice!u@h PRIVMSG omairc :seen\r\n"
         ":znc.in BATCH -again\r\n"));
-    QCOMPARE(messages->rowCount(), 2);
-    QCOMPARE(bodyRow(messages, QStringLiteral("seen")), 0);
-    QCOMPARE(bodyRow(messages, QStringLiteral("unseen")), 1);
+    QCOMPARE(messages->rowCount(), 4);
+    const int seenAgain = bodyRow(messages, QStringLiteral("seen"));
+    QVERIFY(seenAgain > 0);
+    QCOMPARE(bodyRow(messages, QStringLiteral("unseen")), seenAgain + 1);
 }
 
 void ControllerTest::zncPlaybackKeepsDistinctMsgidAfterColdStart()
@@ -9571,12 +9595,8 @@ void ControllerTest::zncPlaybackKeepsDistinctMsgidAfterColdStart()
     QVERIFY(aliceSelected >= 0);
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
-    QStringList bodies;
-    for (const QString& body : selectedBodies(messages)) {
-        if (!body.isEmpty())
-            bodies.append(body);
-    }
-    QCOMPARE(bodies, QStringList({QStringLiteral("seen"), QStringLiteral("unseen")}));
+    QCOMPARE(messageBodies(messages),
+             QStringList({QStringLiteral("seen"), QStringLiteral("unseen")}));
     QCOMPARE(roleAt(messages, bodyRow(messages, QStringLiteral("unseen")),
                     MessageListModel::OriginRole),
              QStringLiteral("replay"));
@@ -9694,12 +9714,8 @@ void ControllerTest::zncPlaybackDuplicateMsgidDoesNotReopenDirect()
     QVERIFY(aliceSelected >= 0);
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
-    QStringList bodies;
-    for (const QString& body : selectedBodies(messages)) {
-        if (!body.isEmpty())
-            bodies.append(body);
-    }
-    QCOMPARE(bodies, QStringList({QStringLiteral("seen"), QStringLiteral("unseen")}));
+    QCOMPARE(messageBodies(messages),
+             QStringList({QStringLiteral("seen"), QStringLiteral("unseen")}));
     QCOMPARE(roleAt(conversations, aliceSelected,
                     ConversationListModel::UnreadRole).toInt(),
              0);

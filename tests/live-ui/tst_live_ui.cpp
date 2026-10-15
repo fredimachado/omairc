@@ -23,6 +23,9 @@
 
 #include <QColor>
 #include <QCoreApplication>
+#include <QDate>
+#include <QDateTime>
+#include <QLocale>
 #include <QDebug>
 #include <QDir>
 #include <QFileInfo>
@@ -944,7 +947,16 @@ void LiveUiTest::bouncerQueryReplayRendersDirectMessageInSidebar()
 
     const QVector<TranscriptRowChrome> rows = collectTranscriptChrome(window);
     const int replayAt = chromeIndex(rows, QStringLiteral("morning"));
-    QCOMPARE(replayAt, 0);
+    const QDateTime replayed = QDateTime::fromString(
+        QStringLiteral("2026-09-10T11:12:00.000Z"), Qt::ISODateWithMs);
+    QVERIFY(replayed.isValid());
+    const QString replayDate = QLocale().toString(replayed.toLocalTime().date(),
+                                                  QLocale::ShortFormat);
+    QCOMPARE(rows.at(0).body, replayDate);
+    QVERIFY(!rows.at(0).avatarVisible);
+    QCOMPARE(rows.at(1).body, QString());
+    QVERIFY(!rows.at(1).avatarVisible);
+    QCOMPARE(replayAt, 2);
     const QColor muted = window->property("mutedColor").value<QColor>();
     QCOMPARE(rows.at(replayAt).bodyColor, muted);
     QVERIFY2(saveFixtureShot(window, QStringLiteral("live-ui-bouncer-direct")),

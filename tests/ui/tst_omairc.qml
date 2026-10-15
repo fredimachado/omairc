@@ -2180,6 +2180,16 @@ TestCase {
         });
     }
 
+    function firstMessageBody(model) {
+        var row = 0;
+        for (; row < model.rowCount(); ++row) {
+            var time = field(model, row, "time");
+            if (time && String(time).length > 0)
+                return field(model, row, "body");
+        }
+        return "";
+    }
+
     function rowForBody(model, body) {
         var row = 0;
         for (; row < model.rowCount(); ++row) {
@@ -2418,7 +2428,7 @@ TestCase {
 
         list.revealRow(0);
         var resetGeneration = list.pinGeneration;
-        prependLiveReplay(list, 1);
+        prependLiveReplay(list, 1, 3);
         verify(list.pinGeneration > resetGeneration,
                "A history-splice reset should cancel deferred reveal cleanup");
         wait(0);
@@ -2757,6 +2767,47 @@ TestCase {
         verify(composer.activeFocus);
     }
 
+    function test_findOnTheLastScreenKeepsFollowing() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        var list = item("messageList");
+        fillTranscriptUntilScrollable(list);
+        appendLiveMessages(list, 1, "bottom-screen-zx9");
+        appendLiveMessages(list, 2, "tail-pad-zx9");
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        tryCompare(list, "pinning", false);
+        verify(transcriptPinned(list));
+        compare(list.stick, list.stickFollowing);
+
+        var matchRow = rowForBody(list.model, "bottom-screen-zx9 0");
+        verify(matchRow > firstVisibleIndex(list),
+               "the match should sit on the last screen");
+        verify(matchRow < list.model.rowCount() - 1,
+               "the match should not be the last row");
+
+        mouseClick(composer);
+        keyClick(Qt.Key_F, Qt.ControlModifier);
+        tryCompare(appWindow, "findActive", true);
+        typeText("bottom-screen-zx9");
+        tryCompare(appWindow, "findIndex", matchRow);
+        tryCompare(list, "pinning", false);
+        compare(list.stick, list.stickFollowing);
+        verify(transcriptPinned(list));
+        compare(list.firstUnseenIndex, -1);
+        compare(item("messageUnseenJump").visible, false);
+
+        appendLiveMessages(list, 1, "after-find-follow");
+        compare(list.stick, list.stickFollowing);
+        compare(list.firstUnseenIndex, -1);
+        compare(item("messageUnseenJump").visible, false);
+        tryVerify(function() {
+            return list.contentY >= list.endContentY() - 2;
+        }, 1000, "A line after a last-screen find should follow");
+        compare(field(list.model, list.model.rowCount() - 1, "body"),
+                "after-find-follow 0");
+    }
+
     function test_ctrlHomeEndJumpsStatus() {
         openSeededAppWindow();
         var composer = item("messageComposer");
@@ -2912,6 +2963,8 @@ TestCase {
 
     function assertTranscriptRestsOnBottom(list) {
         settleTranscript(list);
+        list.syncAnchoredMargin();
+        settleTranscript(list);
         var first = rowEdgesInList(list, 0);
         verify(first.top > 0,
             "A short transcript should leave empty space above the oldest row");
@@ -3015,7 +3068,7 @@ TestCase {
         settleTranscript(list);
         verify(list.contentHeight <= list.height, "anna should be a short transcript");
         assertTranscriptRestsOnBottom(list);
-        var firstBody = field(list.model, 0, "body");
+        var firstBody = firstMessageBody(list.model);
         verify(firstBody.length > 0);
 
         var capStart = seed.omarchyFrameCount();
@@ -3035,15 +3088,15 @@ TestCase {
             return seed.omarchyWroteFrom(framesBefore, "CHATHISTORY BEFORE");
         }, 1000, "Page Up on a short transcript should request older history");
 
-        prependLiveReplay(list, 40);
+        prependLiveReplay(list, 40, 1);
         settleTranscript(list);
         verify(list.contentHeight > list.height,
             "The replay should overflow so only the anchor keeps the old row in view");
         var anchored = rowForBody(list.model, firstBody);
-        verify(anchored >= 0, "The row that was first should still be loaded");
+        verify(anchored >= 0, "The first message should still be loaded");
         tryVerify(function() {
             return rowIsInView(list, anchored);
-        }, 1000, "The row that was first should stay in view after history");
+        }, 1000, "The first message should stay in view after history");
     }
 
     function transcriptPinned(list) {
@@ -4223,7 +4276,21 @@ TestCase {
         saveScreenshot("replay-live-ungrouped");
     }
 
-    function prependLiveReplay(list, count) {
+    function transcriptShortDate(year, month, day) {
+        return Qt.formatDate(new Date(year, month - 1, day),
+            Qt.locale().dateFormat(Locale.ShortFormat));
+    }
+
+    // MessageListModel prints the local wall clock of the server timestamp.
+    function transcriptClock(iso) {
+        var date = new Date(iso);
+        var hours = date.getHours();
+        var minutes = date.getMinutes();
+        return (hours < 10 ? "0" : "") + hours + ":"
+            + (minutes < 10 ? "0" : "") + minutes;
+    }
+
+    function prependLiveReplay(list, count, addedRules) {
         var start = list.model.rowCount();
         var target = appWindow.currentConversation;
         var bytes = ":znc.in BATCH +pb znc.in/playback " + target + "\r\n";
@@ -4235,7 +4302,152 @@ TestCase {
         }
         bytes += ":znc.in BATCH -pb\r\n";
         seed.injectOmarchy(bytes);
-        waitForRowCount(list, start + count + 1);
+        tryVerify(function() {
+            return list.model.rowCount() === start + count + addedRules;
+        });
+        // Playback on a channel splices above the join, so the batch's
+        // 9/11 rule leads and an unread mark sits under it. A direct
+        // message appends, so that same rule is the row above the batch.
+        var replayed = rowForBody(list.model, "replayed 0");
+        verify(replayed > 0);
+        var rule = replayed - 1;
+        if (field(list.model, rule, "kind") === "unread")
+            rule = rule - 1;
+        compare(field(list.model, rule, "kind"), "event");
+        compare(field(list.model, rule, "time"), "");
+        compare(field(list.model, rule, "body"), transcriptShortDate(2026, 9, 11));
+        compare(field(list.model, replayed, "body"), "replayed 0");
+    }
+
+    function jumpTranscriptToTop(list) {
+        tryCompare(list, "pinning", false);
+        clickCtrlHome();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryCompare(list, "stick", list.stickDetached);
+        tryVerify(function() {
+            return !list.pinning && list.viewportAtTop();
+        });
+        compare(firstVisibleIndex(list), 0);
+    }
+
+    function firstAnchoredMessageRow(model) {
+        var row = 0;
+        for (; row < model.rowCount(); ++row) {
+            var kind = field(model, row, "kind");
+            if (kind === "message" || kind === "action" || kind === "notice")
+                return row;
+        }
+        return -1;
+    }
+
+    function rowViewportY(list, row) {
+        var delegate = list.itemAtIndex(row);
+        if (!delegate)
+            return Number.NaN;
+        return delegate.mapToItem(list, 0, 0).y;
+    }
+
+    function prependChatHistory(list, count, stamp, idPrefix, bodyPrefix) {
+        var target = appWindow.currentConversation;
+        var wireTarget = target.charAt(0) === "#" ? target : "fred";
+        var bytes = ":server BATCH +hx chathistory " + target + "\r\n";
+        var index = 0;
+        for (; index < count; ++index) {
+            bytes += "@batch=hx;time=" + stamp + ";msgid=" + idPrefix + "-"
+                + index + " :anna!u@h PRIVMSG " + wireTarget + " :" + bodyPrefix
+                + " " + index + "\r\n";
+        }
+        bytes += ":server BATCH -hx\r\n";
+        seed.injectOmarchy(bytes);
+        waitForBody(list, bodyPrefix + " 0");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+    }
+
+    function requestOlderAtTop(list) {
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryVerify(function() {
+            return seed.irc.transcriptHistoryPendingForSelection();
+        }, 1000, "Page Up at the top should ask for older history");
+        compare(list.stick, list.stickDetached);
+    }
+
+    function expectAnchorViewportY(list, body, expected) {
+        tryVerify(function() {
+            var row = rowForBody(list.model, body);
+            if (row < 0)
+                return false;
+            var y = rowViewportY(list, row);
+            return !isNaN(y) && Math.abs(y - expected) <= 2;
+        }, 2000, "anchor '" + body + "' should stay at y " + expected);
+    }
+
+    function enableChatHistory() {
+        var capStart = seed.omarchyFrameCount();
+        seed.injectOmarchy(":server CAP fred NEW :chathistory\r\n");
+        tryVerify(function() {
+            return seed.omarchyWroteFrom(capStart, "CAP REQ")
+                && seed.omarchyWroteFrom(capStart, "chathistory");
+        });
+        seed.injectOmarchy(":server CAP fred ACK :chathistory\r\n");
+        wait(0);
+    }
+
+    function test_historyPrependKeepsAnchorMessageY() {
+        openSeededAppWindow();
+        mouseClick(namedItem(liveConversation("anna")));
+        tryCompare(appWindow, "currentConversation", "anna");
+        enableChatHistory();
+        var list = item("messageList");
+        var start = list.model.rowCount();
+        var index = 0;
+        for (; index < 24; ++index) {
+            var minute = index < 10 ? "0" + index : "" + index;
+            injectOmarchyChat("anna", "fred", "scroll line " + index, "11:" + minute);
+        }
+        waitForRowCount(list, start + 24);
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(list.contentHeight > list.height);
+        jumpTranscriptToTop(list);
+
+        var anchorRow = firstAnchoredMessageRow(list.model);
+        verify(anchorRow > 0, "a leading rule should sit above the first message");
+        compare(field(list.model, 0, "kind"), "event");
+        compare(field(list.model, 0, "body"), transcriptShortDate(2026, 9, 12));
+        var anchorBody = field(list.model, anchorRow, "body");
+        var anchorY = rowViewportY(list, anchorRow);
+        verify(anchorY > 20,
+               "the anchor should sit below the leading rule, y=" + anchorY);
+
+        requestOlderAtTop(list);
+        prependChatHistory(list, 4, "2026-09-10T09:00:00.000Z",
+                           "head-day", "head day");
+        expectAnchorViewportY(list, anchorBody, anchorY);
+        compare(field(list.model, 0, "kind"), "event");
+        compare(field(list.model, 0, "body"), transcriptShortDate(2026, 9, 10));
+
+        jumpTranscriptToTop(list);
+        var sameRow = firstAnchoredMessageRow(list.model);
+        verify(sameRow > 0, "the new head day should still lead with a rule");
+        var sameBody = field(list.model, sameRow, "body");
+        var sameY = rowViewportY(list, sameRow);
+        verify(sameY > 20,
+               "the same-day anchor should sit below the leading rule, y=" + sameY);
+        compare(field(list.model, 0, "body"), transcriptShortDate(2026, 9, 10));
+
+        requestOlderAtTop(list);
+        prependChatHistory(list, 4, "2026-09-10T08:00:00.000Z",
+                           "same-day", "same day");
+        expectAnchorViewportY(list, sameBody, sameY);
+        var kept = rowForBody(list.model, sameBody);
+        verify(kept > 1, "same-day lines should land above the anchor");
+        verify(field(list.model, kept - 1, "kind") !== "event",
+               "the leading rule should have moved off the anchored message");
     }
 
     function test_historySpliceKeepsTheReaderOnTheSameMessage() {
@@ -4250,12 +4462,83 @@ TestCase {
 
         var visible = firstVisibleIndex(list);
         var anchorBody = field(list.model, visible, "body");
-        prependLiveReplay(list, 9);
+        prependLiveReplay(list, 9, 3);
         waitForRendering(appWindow.contentItem);
         wait(0);
 
         compare(field(list.model, firstVisibleIndex(list), "body"), anchorBody);
         saveScreenshot("history-splice-anchor");
+    }
+
+    function test_cappedTrimKeepsDetachedPlace() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        var target = appWindow.currentConversation;
+        compare(target, "#omarchy");
+
+        var bytes = "";
+        var index = 0;
+        for (index = 0; index < 2000; ++index) {
+            bytes += "@time=2026-09-12T12:00:00.000Z :anna!u@h PRIVMSG "
+                + target + " :capped fill " + index + "\r\n";
+        }
+        seed.injectOmarchy(bytes);
+        tryVerify(function() {
+            return list.model.rowCount() === 2001
+                && field(list.model, 0, "kind") === "event"
+                && field(list.model, 0, "body") === transcriptShortDate(2026, 9, 12);
+        });
+        compare(field(list.model, 1, "time"),
+                transcriptClock("2026-09-12T12:00:00.000Z"));
+
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        seed.injectOmarchy("@time=2026-09-12T12:01:00.000Z :anna!u@h PRIVMSG "
+            + target + " :capped while pinned\r\n");
+        waitForBody(list, "capped while pinned");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryVerify(function() {
+            return transcriptPinned(list);
+        });
+        compare(list.stick, list.stickFollowing);
+        compare(field(list.model, list.model.rowCount() - 1, "body"),
+                "capped while pinned");
+
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        tryCompare(list, "stick", list.stickDetached);
+        var anchorBody = anchoredTranscriptBody(list);
+        verify(anchorBody.length > 0, "Page Up should leave a message in view");
+        var probe = Qt.createQmlObject("import QtQuick; QtObject { property int resets: 0; property int removes: 0; property int removeFirst: -1; property int removeLast: -1 }", testCase);
+        var conn = Qt.createQmlObject("import QtQuick; Connections { ignoreUnknownSignals: true; property var probe: null; function onModelReset() { probe.resets = probe.resets + 1 } function onRowsRemoved(parent, first, last) { probe.removes = probe.removes + 1; probe.removeFirst = first; probe.removeLast = last } }", testCase);
+        conn.probe = probe;
+        conn.target = list.model;
+
+        seed.injectOmarchy("@time=2026-09-12T12:02:00.000Z :anna!u@h PRIVMSG "
+            + target + " :capped arrival one\r\n");
+        waitForBody(list, "capped arrival one");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        compare(probe.resets, 0);
+        compare(probe.removes, 1);
+        compare(probe.removeFirst, 1);
+        compare(probe.removeLast, 1);
+        compare(field(list.model, 0, "kind"), "event");
+        compare(field(list.model, 0, "body"), transcriptShortDate(2026, 9, 12));
+        compare(anchoredTranscriptBody(list), anchorBody);
+        compare(list.stick, list.stickDetached);
+        compare(field(list.model, list.firstUnseenIndex, "body"), "capped arrival one");
+
+        seed.injectOmarchy("@time=2026-09-12T12:03:00.000Z :anna!u@h PRIVMSG "
+            + target + " :capped arrival two\r\n");
+        waitForBody(list, "capped arrival two");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        compare(anchoredTranscriptBody(list), anchorBody);
+        compare(list.stick, list.stickDetached);
+        compare(field(list.model, list.firstUnseenIndex, "body"), "capped arrival one");
+        compare(field(list.model, list.model.rowCount() - 1, "body"), "capped arrival two");
     }
 
     function test_historySpliceMovesTheUnseenMarkerWithItsRow() {
@@ -4276,7 +4559,7 @@ TestCase {
                 parseInt(field(list.model, previousCount, "sequence"), 10));
         var unseenBody = field(list.model, list.firstUnseenIndex, "body");
 
-        prependLiveReplay(list, 9);
+        prependLiveReplay(list, 9, 3);
         waitForRendering(appWindow.contentItem);
         wait(0);
         compare(field(list.model, list.firstUnseenIndex, "body"), unseenBody);
@@ -12255,8 +12538,12 @@ TestCase {
         offerFileHost(catcher);
         var column = findChild(appWindow, "conversationColumn");
         verify(column !== null, "conversation column should exist");
+        var link = Qt.createQmlObject("import QtQuick; QtObject { property int ready: 0 }", testCase);
+        var linkConn = Qt.createQmlObject("import QtQuick; Connections { ignoreUnknownSignals: true; property var probe: null; function onFileLinkReady(url, draftKey) { probe.ready = probe.ready + 1 } }", testCase);
+        linkConn.probe = link;
+        linkConn.target = appWindow.irc;
         column.acceptDroppedUrls([Qt.resolvedUrl("../../version.pri")]);
-        tryCompare(catcher, "uploads", 1, 15000);
+        tryCompare(link, "ready", 1, 15000);
         var composer = findChild(appWindow, "messageComposer");
         verify(composer.text.indexOf("/files/note.txt") >= 0, composer.text);
         verify(!seed.omarchyWroteFrom(start, "PRIVMSG"));

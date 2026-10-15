@@ -170,6 +170,12 @@ type Model struct {
 	// transcriptAnchorSequence names the top visible row to pin after a
 	// CHATHISTORY prepend, or -1 when inactive.
 	transcriptAnchorSequence int64
+	// transcriptAnchorTextLead is how many rendered lines the anchored
+	// message's text sits below the viewport start. A date rule or unread
+	// mark above that text makes it positive. Restore subtracts it from the
+	// text line so chrome added or removed above the view does not shift the
+	// text.
+	transcriptAnchorTextLead int
 	// transcriptAnchorSpliceEpoch is the splice generation when the anchor was
 	// armed; restore runs only after the epoch advances.
 	transcriptAnchorSpliceEpoch int

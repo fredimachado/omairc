@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Transcripts label the first day when it is not today, in the desktop and
+  terminal clients. The mark matches a day change, and loading older history
+  moves it so a date is not shown twice. On that first message the unread
+  mark sits under the leading date rule. That placement is intended, and
+  the terminal client draws it the same way.
+- A channel already at the history cap, whose oldest day is not today, keeps
+  that date rule when a new line arrives. Only the trimmed lines are removed,
+  so a reader who has scrolled up stays put. The transcript still rebuilds
+  when the oldest day itself changes.
+- Loading an older page keeps the line you were reading in place. A date
+  rule that appears or disappears above that line no longer shifts the
+  desktop transcript, or the terminal transcript when that rule moves onto
+  the older lines.
 - The terminal client's `Alt+U` keeps `↓ new` while the next unseen row is
   not fully visible. Another press steps to that row, and the view follows
   the end once that landing reaches it. Scrolling back into history already

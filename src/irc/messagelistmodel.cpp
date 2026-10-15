@@ -34,18 +34,18 @@ QString displayTime(const IrcReducedMessage& message)
 }
 
 std::optional<QDate> assignedDate(const IrcReducedMessage& message,
-                                  const std::optional<QDate>& previous)
+                                  const std::optional<QDate>& previous,
+                                  const QDate& today)
 {
     if (message.timestamp.isValid())
         return message.timestamp.toLocalTime().date();
     if (message.origin == IrcOrigin::Live)
-        return QDate::currentDate();
+        return today;
     return previous;
 }
 
-QString dateLabel(const QDate& date)
+QString dateLabel(const QDate& date, const QDate& today)
 {
-    const QDate today = QDate::currentDate();
     if (date == today)
         return QStringLiteral("Today");
     if (date == today.addDays(-1))
@@ -55,7 +55,8 @@ QString dateLabel(const QDate& date)
 }
 
 std::vector<MessageListModel::VisualRow> MessageListModel::buildView(
-    const IrcConversationState *conversation)
+    const IrcConversationState *conversation,
+    const QDate& today)
 {
     std::vector<VisualRow> view;
     if (!conversation)
@@ -63,10 +64,16 @@ std::vector<MessageListModel::VisualRow> MessageListModel::buildView(
     view.reserve(conversation->messages.size() + 8);
     std::optional<QDate> previous;
     const std::optional<qint64> unreadMark = conversation->unreadMark;
+    // The first day is labeled only when it is not today, so a backlog that
+    // never crosses midnight still says which day it is. A later day is
+    // labeled whenever it differs, including today after an older day.
+    // Rebuilding the view on a history splice moves or drops that top rule.
     for (int i = 0; i < int(conversation->messages.size()); ++i) {
         const std::optional<QDate> date =
-            assignedDate(conversation->messages[size_t(i)], previous);
-        if (date && previous && *date != *previous)
+            assignedDate(conversation->messages[size_t(i)], previous, today);
+        const bool dayChange = date && previous && *date != *previous;
+        const bool leadingBacklog = date && !previous && *date != today;
+        if (dayChange || leadingBacklog)
             view.push_back({VisualRow::Type::DateSeparator, 0, *date});
         if (unreadMark && conversation->messages[size_t(i)].sequence == *unreadMark
             && !view.empty())
@@ -79,7 +86,8 @@ std::vector<MessageListModel::VisualRow> MessageListModel::buildView(
 }
 
 int MessageListModel::visualPrefixToRemove(const std::vector<VisualRow>& view,
-                                           int storeRemoved)
+                                           int storeRemoved,
+                                           const QDate& today)
 {
     if (storeRemoved <= 0)
         return 0;
@@ -101,13 +109,104 @@ int MessageListModel::visualPrefixToRemove(const std::vector<VisualRow>& view,
             }
         }
         const bool trimmedWithPrefix = following >= 0 && following < storeRemoved;
+        if (trimmedWithPrefix) {
+            ++removed;
+            continue;
+        }
+        // The next store row survives. A non-today separator above it is the
+        // leading backlog rule and stays. A Today separator would no longer
+        // be a rule, and an unread mark above that row would then sit at
+        // row 0, which buildView does not draw.
         const bool wouldLeadRemaining = following == storeRemoved;
-        if (trimmedWithPrefix || wouldLeadRemaining)
+        const bool keptLeadingDate =
+            row.type == VisualRow::Type::DateSeparator && row.date.isValid()
+            && row.date != today;
+        if (wouldLeadRemaining && keptLeadingDate)
+            break;
+        if (wouldLeadRemaining)
             ++removed;
         else
             break;
     }
     return removed;
+}
+
+MessageListModel::TrimSpan MessageListModel::visualTrimSpan(
+    const std::vector<VisualRow>& view,
+    int storeRemoved,
+    const QDate& today)
+{
+    if (storeRemoved <= 0)
+        return {};
+
+    // The leading rule stays when this trim removes some, but not all, of
+    // that day's messages. The separator's own following store is the line
+    // being trimmed, so a prefix walk would drop the rule with it and the
+    // reload would reset on every later line.
+    const bool leadingRule = !view.empty()
+        && view.front().type == VisualRow::Type::DateSeparator
+        && view.front().date.isValid()
+        && view.front().date != today;
+    if (leadingRule) {
+        int last = 0;
+        int seen = 0;
+        bool dayEnded = false;
+        for (int i = 1; i < int(view.size()) && seen < storeRemoved; ++i) {
+            const VisualRow& row = view[size_t(i)];
+            if (row.type == VisualRow::Type::DateSeparator) {
+                dayEnded = true;
+                break;
+            }
+            if (row.type == VisualRow::Type::Store) {
+                if (row.storeIndex >= storeRemoved)
+                    break;
+                last = i;
+                ++seen;
+                continue;
+            }
+            int following = -1;
+            for (int j = i + 1; j < int(view.size()); ++j) {
+                if (view[size_t(j)].type == VisualRow::Type::Store) {
+                    following = view[size_t(j)].storeIndex;
+                    break;
+                }
+            }
+            if (following < 0 || following >= storeRemoved)
+                break;
+            last = i;
+        }
+        int after = last + 1;
+        while (after < int(view.size())
+               && view[size_t(after)].type == VisualRow::Type::UnreadMark)
+            ++after;
+        const bool dayContinues = !dayEnded && seen == storeRemoved
+            && after < int(view.size())
+            && view[size_t(after)].type == VisualRow::Type::Store;
+        if (dayContinues && last >= 1)
+            return {1, last};
+    }
+
+    const int removed = visualPrefixToRemove(view, storeRemoved, today);
+    if (removed <= 0)
+        return {};
+    return {0, removed - 1};
+}
+
+bool MessageListModel::sameLeadingDate(const std::vector<VisualRow>& current,
+                                       int firstKept,
+                                       const std::vector<VisualRow>& next)
+{
+    const bool currentLeads = firstKept >= 0 && firstKept < int(current.size())
+        && current[size_t(firstKept)].type == VisualRow::Type::DateSeparator
+        && current[size_t(firstKept)].date.isValid();
+    const bool nextLeads = !next.empty()
+        && next.front().type == VisualRow::Type::DateSeparator
+        && next.front().date.isValid();
+    if (currentLeads != nextLeads)
+        return false;
+    if (!currentLeads)
+        return true;
+    return current[size_t(firstKept)].date == next.front().date;
 }
 
 MessageListModel::MessageListModel(IrcEventReducer& reducer, QObject *parent)
@@ -139,7 +238,7 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
         case TimeRole:
             return QString();
         case BodyRole:
-            return dateLabel(row.date);
+            return dateLabel(row.date, transcriptToday());
         case KindRole:
             return QStringLiteral("event");
         case NetworkIdRole:
@@ -311,11 +410,28 @@ void MessageListModel::notifySeparatorRows()
     }
 }
 
+QDate MessageListModel::transcriptToday() const
+{
+#ifdef OMAIRC_TEST
+    if (m_transcriptToday)
+        return *m_transcriptToday;
+#endif
+    return QDate::currentDate();
+}
+
+#ifdef OMAIRC_TEST
+void MessageListModel::setTranscriptTodayForTest(const QDate& day)
+{
+    m_transcriptToday = day;
+}
+#endif
+
 void MessageListModel::reload()
 {
     const IrcConversationState *conversation =
         m_selected ? m_reducer.find(*m_selected) : nullptr;
-    std::vector<VisualRow> next = buildView(conversation);
+    const QDate today = transcriptToday();
+    std::vector<VisualRow> next = buildView(conversation, today);
     const int trimmed = conversation ? conversation->trimmed : 0;
     const int spliceEpoch = conversation ? conversation->spliceEpoch : 0;
     const std::optional<qint64> unreadMark =
@@ -325,21 +441,34 @@ void MessageListModel::reload()
         && (!m_selected || *m_selected == *m_loaded)
         && spliceEpoch == m_spliceEpoch
         && unreadMark == m_unreadMark;
+    TrimSpan span;
     if (sameConversation) {
         int storeRemoved = trimmed - m_trimmed;
         if (storeRemoved < 0)
             storeRemoved = 0;
-        const int visualRemoved = visualPrefixToRemove(m_view, storeRemoved);
-        if (visualRemoved > 0) {
-            beginRemoveRows(QModelIndex(), 0, visualRemoved - 1);
-            m_view.erase(m_view.begin(),
-                         m_view.begin() + visualRemoved);
+        span = visualTrimSpan(m_view, storeRemoved, today);
+    }
+    // A partial trim of the leading day keeps that rule at row 0. A prefix
+    // trim compares the first row that remains. Midnight can add or drop
+    // the rule, and that still resets instead of pretending the new rows
+    // were appended.
+    const int leadingRow = span.first > 0 ? 0 : span.last + 1;
+    if (sameConversation && sameLeadingDate(m_view, leadingRow, next)) {
+        if (!span.empty()) {
+            beginRemoveRows(QModelIndex(), span.first, span.last);
+            m_view.erase(m_view.begin() + span.first,
+                         m_view.begin() + span.last + 1);
             const int keep = int(m_view.size());
             for (int i = 0; i < keep && i < int(next.size()); ++i)
                 m_view[size_t(i)] = next[size_t(i)];
             m_trimmed = trimmed;
             m_unreadMark = unreadMark;
             endRemoveRows();
+            // The copy rewrites store indexes the remove did not announce.
+            // Skip it when the next branch resets or dataChanged the range.
+            if (keep > 0 && int(next.size()) > keep) {
+                emit dataChanged(index(0, 0), index(keep - 1, 0));
+            }
         }
         if (int(next.size()) > int(m_view.size())) {
             beginInsertRows(QModelIndex(), int(m_view.size()),

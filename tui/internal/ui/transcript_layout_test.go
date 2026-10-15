@@ -151,6 +151,8 @@ func TestContinuesChatGroup(t *testing.T) {
 			controller.MessageSnapshot{Author: "bob", Kind: "message", Time: at, Origin: "live"}, false},
 		{"different minute", live,
 			controller.MessageSnapshot{Author: "anna", Kind: "message", Time: at.Add(time.Minute), Origin: "live"}, false},
+		{"next calendar day", live,
+			controller.MessageSnapshot{Author: "anna", Kind: "message", Time: at.Add(24 * time.Hour), Origin: "live"}, false},
 		{"different origin", live,
 			controller.MessageSnapshot{Author: "anna", Kind: "message", Time: at, Origin: "replay"}, false},
 		{"action above", controller.MessageSnapshot{Author: "anna", Kind: "action", Time: at, Origin: "live"},
