@@ -28,7 +28,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/version"
 )
 
-const usage = `usage: omairc-tui [--version] [--help] [--demo-server]
+const usage = `usage: omairc-tui [--version] [--help] [--demo-server] [--mouse]
 
 Omairc terminal client.
 
@@ -36,6 +36,11 @@ Flags:
   --version      print the omairc-tui version and exit
   --help         print this help and exit
   --demo-server  seed the in-process demo world and run the shell
+  --mouse        wheel-scroll and click rows (or set OMAIRC_TUI_MOUSE=1)
+
+Mouse reporting is off unless --mouse or OMAIRC_TUI_MOUSE is set, so the
+terminal keeps its own text selection. Accepted environment values are
+1, true, yes, and on. This is not a /pref toggle.
 
 Without --demo-server the shell loads the stored profiles and preferences,
 applies a live IRC session once a network profile is complete, and connects
@@ -49,6 +54,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	helpRequested := false
 	versionRequested := false
 	demoServer := false
+	mouseFlag := false
 
 	for _, arg := range args {
 		switch arg {
@@ -58,6 +64,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 			versionRequested = true
 		case "--demo-server":
 			demoServer = true
+		case "--mouse":
+			mouseFlag = true
 		default:
 			fmt.Fprintf(stderr, "omairc-tui: unknown argument %q\n", arg)
 			fmt.Fprintln(stderr, usage)
@@ -134,6 +142,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// callback would deadlock the event loop the moment a navigation chord
 	// rebuilt a snapshot. Coalesce the wake-ups onto one dispatcher instead.
 	model := ui.New(c, conn)
+	model.SetMouseEnabled(ui.MouseOptIn(mouseFlag, os.Getenv("OMAIRC_TUI_MOUSE")))
 	p := tea.NewProgram(model)
 
 	// The live Omarchy theme watcher. SetThemeWatcher adopts the current

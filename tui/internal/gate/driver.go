@@ -55,6 +55,12 @@ type Request struct {
 	Text    string `json:"text,omitempty"`
 	Feature string `json:"feature,omitempty"`
 	Name    string `json:"name,omitempty"`
+	// X and Y are 0-based cells for click and wheel. Zero is a real column
+	// and row, so callers must not treat a missing field as "unset" for those
+	// verbs.
+	X  int  `json:"x,omitempty"`
+	Y  int  `json:"y,omitempty"`
+	Up bool `json:"up,omitempty"`
 }
 
 // Response is the single reply per request. OK=false carries Error.
@@ -251,7 +257,9 @@ func Serve(opts ServeOptions) error {
 
 	d := &daemon{opts: opts, screen: NewScreen(opts.Cols, opts.Rows), listener: listener, quitCh: make(chan struct{}), lastOut: time.Now()}
 
-	args := []string{}
+	// The parity driver opts into the pointer path so click and wheel can
+	// write SGR reports the child will honor. The product default stays off.
+	args := []string{"--mouse"}
 	if opts.Demo {
 		args = append(args, "--demo-server")
 	}
@@ -368,6 +376,10 @@ func (d *daemon) respond(req Request) Response {
 		}
 		d.waitRedraw(after)
 		return Response{OK: true}
+	case "click":
+		return d.writeMouse(clickSequence(req.X, req.Y))
+	case "wheel":
+		return d.writeMouse(wheelSequence(req.X, req.Y, req.Up))
 	case "type":
 		after := time.Now()
 		if _, err := d.proc.Write([]byte(req.Text)); err != nil {
@@ -392,6 +404,15 @@ func (d *daemon) respond(req Request) Response {
 	default:
 		return failure(fmt.Errorf("unknown verb %q", req.Verb))
 	}
+}
+
+func (d *daemon) writeMouse(b []byte) Response {
+	after := time.Now()
+	if _, err := d.proc.Write(b); err != nil {
+		return failure(err)
+	}
+	d.waitRedraw(after)
+	return Response{OK: true}
 }
 
 func (d *daemon) title() string {
@@ -553,6 +574,14 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdWaitTitle(rest, stdout)
 	case "key":
 		err = cmdKey(rest)
+	case "click":
+		err = cmdClick(rest)
+	case "wheel":
+		err = cmdWheel(rest)
+	case "click-conversation":
+		err = cmdClickConversation(rest)
+	case "click-member":
+		err = cmdClickMember(rest)
 	case "type":
 		err = cmdType(rest)
 	case "send":
@@ -597,7 +626,9 @@ const usage = `usage: control-omairc-tui <verb> [options]
 
 PTY driver for the compiled omairc-tui terminal client. It launches the
 binary in a virtual terminal, reconstructs the screen and OSC title, and
-replays the same desktop-recipe fences as control-omairc (minus mouse verbs).
+replays the same desktop-recipe fences as control-omairc. click and wheel
+write SGR mouse reports; the driven shell is launched with --mouse. Qt-only
+click-* targets are rejected with a reason instead of being faked.
 
 Verbs:
   launch [--demo-server] [--size 118x30] [--binary PATH]
@@ -608,6 +639,11 @@ Verbs:
   wait-title --exact TEXT [--timeout 10s]
                                    block until the title matches exactly
   key --key NAME                   send one chord (e.g. ctrl+q, alt+Down)
+  click --x COL --y ROW            left-click one cell (SGR press and release)
+  wheel --x COL --y ROW --up|--down
+                                   one wheel notch at a cell
+  click-conversation --name NAME   click that sidebar row
+  click-member --name NICK         click that member-column row
   type --text TEXT                 send raw text, no Enter
   send --text TEXT                 send text then Enter
   walk --down|--up [--times N]     Alt+Down / Alt+Up N times
@@ -906,6 +942,172 @@ func cmdKey(args []string) error {
 	}
 	_, err := newClient().do(Request{Verb: "key", Key: name})
 	return err
+}
+
+func cmdClick(args []string) error {
+	x, y, err := parseCellPoint("click", args)
+	if err != nil {
+		return err
+	}
+	_, err = newClient().do(Request{Verb: "click", X: x, Y: y})
+	return err
+}
+
+func cmdWheel(args []string) error {
+	x, y, up, err := parseWheelPoint(args)
+	if err != nil {
+		return err
+	}
+	_, err = newClient().do(Request{Verb: "wheel", X: x, Y: y, Up: up})
+	return err
+}
+
+func cmdClickConversation(args []string) error {
+	name, err := nameArg("click-conversation", args)
+	if err != nil {
+		return err
+	}
+	return clickNamedColumn("sidebar", name, false)
+}
+
+func cmdClickMember(args []string) error {
+	name, err := nameArg("click-member", args)
+	if err != nil {
+		return err
+	}
+	return clickNamedColumn("member", name, true)
+}
+
+// clickNamedColumn reads the grid and writes one SGR click on the named row.
+// sidebar searches the left column; member searches the right column and keeps
+// the rightmost match so a transcript mention of the same nick is ignored.
+func clickNamedColumn(column, name string, rightmost bool) error {
+	c := newClient()
+	status, err := c.do(Request{Verb: "status"})
+	if err != nil {
+		return err
+	}
+	cols, _, err := parseSize(status.Size)
+	if err != nil {
+		return err
+	}
+	grid, err := c.do(Request{Verb: "text"})
+	if err != nil {
+		return err
+	}
+	sidebarX1, membersX0, membersX1 := aimedColumns(cols)
+	x0, x1 := 0, sidebarX1
+	if column == "member" {
+		x0, x1 = membersX0, membersX1
+	}
+	x, y, ok := findInColumns(grid.Lines, name, x0, x1, rightmost)
+	if !ok {
+		return fmt.Errorf("%s row %q is not on screen in columns %d-%d", column, name, x0, x1)
+	}
+	_, err = c.do(Request{Verb: "click", X: x, Y: y})
+	return err
+}
+
+// parseCellPoint reads --x and --y. Zero is a real cell, so a missing flag is
+// an error rather than a click at the origin.
+func parseCellPoint(verb string, args []string) (x, y int, err error) {
+	sawX, sawY := false, false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--x", "--y":
+			flag := args[i]
+			if i+1 >= len(args) {
+				return 0, 0, fmt.Errorf("%s %s needs a cell", verb, flag)
+			}
+			i++
+			value, convErr := strconv.Atoi(args[i])
+			if convErr != nil || value < 0 {
+				return 0, 0, fmt.Errorf("%s %s: %q is not a cell", verb, flag, args[i])
+			}
+			if flag == "--x" {
+				if sawX {
+					return 0, 0, fmt.Errorf("%s: repeated --x", verb)
+				}
+				sawX = true
+				x = value
+			} else {
+				if sawY {
+					return 0, 0, fmt.Errorf("%s: repeated --y", verb)
+				}
+				sawY = true
+				y = value
+			}
+		default:
+			return 0, 0, fmt.Errorf("unknown %s argument %q", verb, args[i])
+		}
+	}
+	if !sawX || !sawY {
+		return 0, 0, fmt.Errorf("%s requires --x and --y", verb)
+	}
+	return x, y, nil
+}
+
+func parseWheelPoint(args []string) (x, y int, up bool, err error) {
+	sawX, sawY, sawDir := false, false, false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--x", "--y":
+			flag := args[i]
+			if i+1 >= len(args) {
+				return 0, 0, false, fmt.Errorf("wheel %s needs a cell", flag)
+			}
+			i++
+			value, convErr := strconv.Atoi(args[i])
+			if convErr != nil || value < 0 {
+				return 0, 0, false, fmt.Errorf("wheel %s: %q is not a cell", flag, args[i])
+			}
+			if flag == "--x" {
+				if sawX {
+					return 0, 0, false, errors.New("wheel: repeated --x")
+				}
+				sawX = true
+				x = value
+			} else {
+				if sawY {
+					return 0, 0, false, errors.New("wheel: repeated --y")
+				}
+				sawY = true
+				y = value
+			}
+		case "--up", "--down":
+			if sawDir {
+				return 0, 0, false, errors.New("wheel accepts only one of --up or --down")
+			}
+			sawDir = true
+			up = args[i] == "--up"
+		default:
+			return 0, 0, false, fmt.Errorf("unknown wheel argument %q", args[i])
+		}
+	}
+	if !sawX || !sawY || !sawDir {
+		return 0, 0, false, errors.New("wheel requires --x, --y, and --up or --down")
+	}
+	return x, y, up, nil
+}
+
+func nameArg(verb string, args []string) (string, error) {
+	name := ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--name":
+			if i+1 >= len(args) {
+				return "", fmt.Errorf("%s --name needs a name", verb)
+			}
+			i++
+			name = args[i]
+		default:
+			return "", fmt.Errorf("unknown %s argument %q", verb, args[i])
+		}
+	}
+	if name == "" {
+		return "", fmt.Errorf("%s requires --name", verb)
+	}
+	return name, nil
 }
 
 // textArg extracts a required --text value.
@@ -1334,8 +1536,10 @@ func cmdRun(args []string, stdout, stderr io.Writer) error {
 		if len(tokens) == 0 {
 			continue
 		}
-		// The gate is keyboard-first: reject input the PTY cannot deliver
-		// before any command runs, naming the offending verb.
+		// Reject input this driver cannot deliver before any command runs,
+		// naming the offending verb. click, wheel, click-conversation, and
+		// click-member are the pointer verbs. Other click-* targets are Qt
+		// chrome with no TUI equivalent.
 		if err := rejectRecipeVerb(tokens[0]); err != nil {
 			return fmt.Errorf("%s recipe in %s: %w", feature, path, err)
 		}
@@ -1371,6 +1575,14 @@ func runRecipeLine(tokens []string, stdout, stderr io.Writer, launchedByRun *boo
 		return cmdWaitTitle(tokens[1:], stdout)
 	case "key":
 		return cmdKey(tokens[1:])
+	case "click":
+		return cmdClick(tokens[1:])
+	case "wheel":
+		return cmdWheel(tokens[1:])
+	case "click-conversation":
+		return cmdClickConversation(tokens[1:])
+	case "click-member":
+		return cmdClickMember(tokens[1:])
 	case "type":
 		return cmdType(tokens[1:])
 	case "send":
@@ -1429,15 +1641,20 @@ func runRecipeLaunch(args []string, stdout, stderr io.Writer, launchedByRun *boo
 	return nil
 }
 
-// rejectRecipeVerb names the verbs the TUI driver cannot run. The Qt driver
-// is pixel-based; this one is keyboard-only.
+// rejectRecipeVerb names the verbs the TUI driver cannot run. click, wheel,
+// click-conversation, and click-member write SGR reports. The remaining
+// click-* verbs aim Qt chrome (the version label, the SEND button, the people
+// toggle, the network edit control) and are rejected instead of being faked
+// as a key.
 func rejectRecipeVerb(verb string) error {
-	if strings.HasPrefix(verb, "click-") {
-		return fmt.Errorf("recipe verb %q is mouse input; the TUI driver is keyboard-first", verb)
-	}
 	switch verb {
+	case "click", "wheel", "click-conversation", "click-member":
+		return nil
 	case "qml-suite", "doctor-qml":
 		return fmt.Errorf("recipe verb %q is the offscreen QML suite, not compiled-window proof", verb)
+	}
+	if strings.HasPrefix(verb, "click-") {
+		return fmt.Errorf("recipe verb %q is a Qt-only pointer target; the TUI has no equivalent control to click", verb)
 	}
 	return nil
 }

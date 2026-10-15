@@ -38,6 +38,7 @@ type jumpState struct {
 	open     bool
 	input    textinput.Model
 	selected int
+	scroll   int
 }
 
 // Overlay filter chrome. Every filter sheet shares one prompt glyph, so the
@@ -67,6 +68,7 @@ func (m *Model) openJump() {
 	m.jump.open = true
 	m.jump.input = newTextInput(m.styles, jumpPlaceholder, overlayFilterPrompt)
 	m.jump.selected = 0
+	m.jump.scroll = 0
 	m.jump.input.SetWidth(m.overlayInputWidth())
 	m.composer.Blur()
 	_ = m.jump.input.Focus()
@@ -189,6 +191,7 @@ func (m *Model) moveJump(delta int) {
 		return
 	}
 	m.jump.selected = ((m.jump.selected+delta)%len(entries) + len(entries)) % len(entries)
+	m.revealList(&m.jump.scroll, m.jump.selected, len(entries), 1)
 }
 
 // activateJump opens the highlighted entry and dismisses the overlay. Landing
@@ -234,6 +237,7 @@ func (m *Model) handleJumpKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.C
 	var cmd tea.Cmd
 	m.jump.input, cmd = m.jump.input.Update(msg)
 	m.jump.selected = 0
+	m.jump.scroll = 0
 	return m, cmd
 }
 
@@ -563,6 +567,7 @@ func (m *Model) focusMembers() {
 	// was hidden)".
 	m.membersHidden = false
 	m.memberFocus = true
+	m.memberScrollPinned = false
 	m.clampMemberIndex()
 }
 
@@ -597,6 +602,8 @@ func (m *Model) switchSelection(apply func()) {
 		m.leaveFind()
 	}
 	m.sidebarNetworkFocusID = ""
+	m.sidebarScrollPinned = false
+	m.memberScrollPinned = false
 	previousID, wasConsole := m.beginTranscriptSwitch()
 	m.saveDraft()
 	apply()
@@ -787,13 +794,24 @@ func (m *Model) jumpCard(width int) string {
 // jumpCardBody is the jump overlay's content, before the shared frame. inner is
 // the content width inside the border.
 func (m *Model) jumpCardBody(inner int) []string {
+	return overlayTexts(m.jumpOverlayLines(inner))
+}
+
+// jumpOverlayLines is the jump card body. The filter is not a row. Each
+// following line is one jump entry. A list that fits the card is unchanged;
+// a longer list windows from jump.scroll, the same offset a click reads.
+func (m *Model) jumpOverlayLines(inner int) []overlayLine {
 	entries := m.jumpEntries()
-	lines := []string{truncateLine(m.jump.input.View(), inner)}
+	lines := []overlayLine{{text: truncateLine(m.jump.input.View(), inner), row: -1}}
 	if len(entries) == 0 {
-		return append(lines, m.overlaySheetEmpty("No matches"))
+		return append(lines, overlayLine{text: m.overlaySheetEmpty("No matches"), row: -1})
 	}
-	for index, entry := range entries {
-		lines = append(lines, m.overlayToggleRow(inner, index == m.jump.selected, entry.label))
+	start, end := listWindow(len(entries), m.jump.scroll, m.overlayRowBudget(1))
+	for index := start; index < end; index++ {
+		lines = append(lines, overlayLine{
+			text: m.overlayToggleRow(inner, index == m.jump.selected, entries[index].label),
+			row:  index,
+		})
 	}
 	return lines
 }

@@ -113,6 +113,11 @@ type Model struct {
 	// WindowSizeMsg, because Init is reserved for StartupMsg).
 	themeWatcher *theme.Watcher
 	themeArmed   bool
+	// mouseEnabled is the opt-in pointer path. The zero value leaves the
+	// terminal's text selection alone: View asks for cell motion only while
+	// this is set. --mouse and OMAIRC_TUI_MOUSE turn it on. There is no /pref
+	// toggle, because those toggles are shared with the Qt client.
+	mouseEnabled bool
 
 	// connectOpen reopens the sheet after a profile exists. On first run the
 	// sheet is visible because the connection still requires setup.
@@ -125,6 +130,16 @@ type Model struct {
 	// property; the controller owns the network collapse/reorder facts.
 	sidebarNetworkFocusID string
 	serverListVisible     bool
+	// sidebarScroll is the roster line at the top of the sidebar window.
+	// sidebarScrollPinned is set by the wheel; a selection change clears it so
+	// the focused header or the selected conversation is revealed again.
+	sidebarScroll       int
+	sidebarScrollPinned bool
+	// sidebarWindow* is the window sidebarVisibleSlots last produced. The wheel
+	// steps from it, so the scroll uses the same start and page as the draw.
+	sidebarWindowLine int
+	sidebarWindowPage int
+	sidebarWindowMax  int
 	// membersHidden is the window-level Ctrl+Shift+M state. It survives
 	// channel switches and is moot on a direct message; membersVisible() also
 	// requires the column to fit and the target to be a channel.
@@ -167,6 +182,15 @@ type Model struct {
 	lastComposerText string
 	memberFocus      bool
 	memberIndex      int
+	// memberScroll is the member-line offset at the top of the panel.
+	// memberScrollPinned is set by the wheel; keyboard member motion and a
+	// conversation change clear it so the focused row leads again.
+	memberScroll       int
+	memberScrollPinned bool
+	// memberWindow* is the window memberVisibleSlots last produced.
+	memberWindowLine int
+	memberWindowPage int
+	memberWindowMax  int
 	shortcutsOpen    bool
 	shortcutsScroll  int
 	// shortcutsLayoutCache is the last shortcuts sheet layout. shortcutGroups
@@ -562,6 +586,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
+	case tea.MouseClickMsg:
+		if m.mouseEnabled {
+			m.handleMouseClick(msg.X, msg.Y, msg.Button)
+		}
+		return m, nil
+	case tea.MouseWheelMsg:
+		if m.mouseEnabled {
+			m.handleMouseWheel(msg.X, msg.Y, msg.Button)
+		}
+		return m, nil
+	case tea.MouseReleaseMsg, tea.MouseMotionMsg:
+		// Press carries the click. Motion is reported because cell-motion mode
+		// includes drags; neither one changes selection.
+		return m, nil
 	}
 	if m.channelPrompt.open {
 		return m, nil
@@ -732,6 +770,12 @@ func (m *Model) View() tea.View {
 	// nothing beyond the always-on disambiguation, so the terminal keeps
 	// sending the characters the user typed (shift+3 is "#", not "3").
 	v.KeyboardEnhancements = keyboardEnhancements()
+	// Cell motion is the pointer path. Leave MouseMode at its zero value
+	// (MouseModeNone) unless the user opted in, so the terminal is not asked
+	// to capture clicks and the user's text selection keeps working.
+	if m.mouseEnabled {
+		v.MouseMode = tea.MouseModeCellMotion
+	}
 	// Leave BackgroundColor and ForegroundColor unset so Bubble Tea does not
 	// emit OSC 11/10. Omarchy terminals are often translucent; a solid OSC
 	// background turns that off, and setting foreground would reset the
@@ -1154,13 +1198,10 @@ func (m *Model) compositeOverlay(body, card string) string {
 
 	cardWidth := lipgloss.Width(card)
 	cardHeight := lipgloss.Height(card)
-	x := (width - cardWidth) / 2
-	if x < 0 {
-		x = 0
-	}
 	// Anchor the top edge; do not derive it from cardHeight. Centering on the
 	// card's own height made a shorter list drag the whole card down the body.
-	y := overlayCardTopInset
+	// overlayOrigin is the same placement hit-testing uses.
+	x, y := overlayOrigin(width, cardWidth)
 
 	shadow := m.shadowBlock(cardWidth, cardHeight)
 	rendered := lipgloss.NewCompositor(

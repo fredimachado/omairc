@@ -14,6 +14,7 @@ import (
 type inboxState struct {
 	open     bool
 	selected int
+	scroll   int
 }
 
 func newInboxState() inboxState { return inboxState{} }
@@ -33,6 +34,7 @@ func (m *Model) toggleInbox() {
 	m.closeAllOverlays()
 	m.inbox.open = true
 	m.inbox.selected = 0
+	m.inbox.scroll = 0
 	m.composer.Blur()
 }
 
@@ -162,6 +164,7 @@ func (m *Model) moveInbox(delta int) {
 		return
 	}
 	m.inbox.selected = ((m.inbox.selected+delta)%count + count) % count
+	m.revealList(&m.inbox.scroll, m.inbox.selected, count, 0)
 }
 
 // handleInboxKey folds one key while the sheet is open. Ctrl+Shift+A toggles
@@ -208,13 +211,23 @@ func (m *Model) inboxCard(width int) string {
 // inboxCardBody is the inbox sheet's content, before the shared frame. inner is
 // the content width inside the border.
 func (m *Model) inboxCardBody(inner int) []string {
+	return overlayTexts(m.inboxOverlayLines(inner))
+}
+
+// inboxOverlayLines is the inbox card body. There is no filter line, so the
+// first content line is a row.
+func (m *Model) inboxOverlayLines(inner int) []overlayLine {
 	entries := m.inboxEntries()
 	if len(entries) == 0 {
-		return []string{m.overlaySheetEmpty("No mentions")}
+		return []overlayLine{{text: m.overlaySheetEmpty("No mentions"), row: -1}}
 	}
-	lines := make([]string, 0, len(entries))
-	for index, entry := range entries {
-		lines = append(lines, m.overlayToggleRow(inner, index == m.inbox.selected, entry))
+	start, end := listWindow(len(entries), m.inbox.scroll, m.overlayRowBudget(0))
+	lines := make([]overlayLine, 0, end-start)
+	for index := start; index < end; index++ {
+		lines = append(lines, overlayLine{
+			text: m.overlayToggleRow(inner, index == m.inbox.selected, entries[index]),
+			row:  index,
+		})
 	}
 	return lines
 }

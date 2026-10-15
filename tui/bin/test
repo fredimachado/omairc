@@ -71,7 +71,7 @@ if is_json_object "$HELP_OUTPUT"; then
   echo "omairc-tui --help must not print JSON." >&2
   exit 1
 fi
-for token in --version --help --demo-server; do
+for token in --version --help --demo-server --mouse; do
   printf '%s\n' "$HELP_OUTPUT" | grep -Fq -- "$token" || {
     echo "omairc-tui --help must mention $token" >&2
     exit 1

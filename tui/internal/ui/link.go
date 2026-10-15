@@ -17,6 +17,7 @@ type linkState struct {
 	open     bool
 	input    textinput.Model
 	selected int
+	scroll   int
 }
 
 const linkPlaceholder = "Filter links"
@@ -43,6 +44,7 @@ func (m *Model) toggleLink() {
 	m.link.open = true
 	m.link.input = newTextInput(m.styles, linkPlaceholder, overlayFilterPrompt)
 	m.link.selected = 0
+	m.link.scroll = 0
 	m.link.input.SetWidth(m.overlayInputWidth())
 	m.composer.Blur()
 	_ = m.link.input.Focus()
@@ -73,6 +75,7 @@ func (m *Model) moveLink(delta int) {
 		return
 	}
 	m.link.selected = ((m.link.selected+delta)%len(matches) + len(matches)) % len(matches)
+	m.revealList(&m.link.scroll, m.link.selected, len(matches), 1)
 	m.revealTranscriptRow(matches[m.link.selected].row)
 }
 
@@ -123,6 +126,7 @@ func (m *Model) handleLinkKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.C
 	var cmd tea.Cmd
 	m.link.input, cmd = m.link.input.Update(msg)
 	m.link.selected = 0
+	m.link.scroll = 0
 	return m, cmd
 }
 
@@ -140,13 +144,22 @@ func (m *Model) linkCard(width int) string {
 // linkCardBody is the link sheet's content, before the shared frame. inner is
 // the content width inside the border.
 func (m *Model) linkCardBody(inner int) []string {
+	return overlayTexts(m.linkOverlayLines(inner))
+}
+
+// linkOverlayLines is the link card body. The filter is not a row.
+func (m *Model) linkOverlayLines(inner int) []overlayLine {
 	matches := m.linkMatches()
-	lines := []string{truncateLine(m.link.input.View(), inner)}
+	lines := []overlayLine{{text: truncateLine(m.link.input.View(), inner), row: -1}}
 	if len(matches) == 0 {
-		return append(lines, m.overlaySheetEmpty("No links"))
+		return append(lines, overlayLine{text: m.overlaySheetEmpty("No links"), row: -1})
 	}
-	for index, entry := range matches {
-		lines = append(lines, m.overlayToggleRow(inner, index == m.link.selected, entry.label))
+	start, end := listWindow(len(matches), m.link.scroll, m.overlayRowBudget(1))
+	for index := start; index < end; index++ {
+		lines = append(lines, overlayLine{
+			text: m.overlayToggleRow(inner, index == m.link.selected, matches[index].label),
+			row:  index,
+		})
 	}
 	return lines
 }

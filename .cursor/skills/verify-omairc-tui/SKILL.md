@@ -13,7 +13,9 @@ alternate screen. This skill drives the compiled `tui/bin/omairc-tui` inside a
 PTY with `control-omairc-tui`. The shared feature map
 `.cursor/skills/verify-omairc/features/*.md` is the contract for both drivers.
 There is no web UI and no display: this is a terminal program, so there is no
-Xvfb, no `xdotool`, and nothing to click. Never attach to a Qt instance.
+Xvfb and no `xdotool`. Pointer proof is an SGR report written into the PTY,
+and only when the shell was started with `--mouse`. Never attach to a Qt
+instance.
 
 ## Launch
 
@@ -88,9 +90,14 @@ title matches exactly and fails on a miss.
 
 ## Drive
 
-The gate is keyboard-first. It REJECTS pixel/mouse verbs (`click-*`) and the
-QML suite verbs (`qml-suite`, `doctor-qml`) in a recipe: `omairc-tui` has no
-pointer path and no QML suite. The full Phase 6 chord map is live
+The gate is keyboard-first. `click`, `wheel`, `click-conversation`, and
+`click-member` are the pointer verbs: `launch` starts the shell with `--mouse`
+and those verbs write SGR mouse reports (1-based cells, button 0 for a left
+click, 64/65 for the wheel). Other `click-*` verbs (`click-version`,
+`click-send`, `click-people`, `click-network`, `click-edit`) aim Qt chrome
+the TUI does not have, and a recipe that uses one fails with a reason instead
+of being faked as a key. `qml-suite` and `doctor-qml` stay rejected. The full
+Phase 6 chord map is live
 (`internal/ui/keys.go` is the chord table): `Ctrl+Q` is the only quit chord,
 `Ctrl+C` copies via OSC 52, and `Enter` sends. Phase 7 adds the slash catalog,
 the completer, and the `/list` overlay.
@@ -120,6 +127,10 @@ Verb table:
 | `text` | Print the reconstructed grid text (the rows actually on screen). |
 | `wait-title --exact TEXT` | Poll until the title equals `TEXT`; fail on a miss. |
 | `key --key NAME` | Write one key chord (for example `ctrl+q`, `ctrl+c`, `ctrl+k`, `ctrl+``, `return`, `Escape`, `alt+Down`). |
+| `click --x COL --y ROW` | Left-click one cell. Columns and rows are 0-based. The shell must have been launched by this driver (it passes `--mouse`) or with `--mouse` / `OMAIRC_TUI_MOUSE`. |
+| `wheel --x COL --y ROW --up\|--down` | One wheel notch at a cell. Up is the Page Up step on the transcript. |
+| `click-conversation --name NAME` | Click that sidebar row (`#desktop`, `#omarchy`, `anna`, `dax`, …). |
+| `click-member --name NICK` | Click that member-column row. A hidden member column fails the verb. |
 | `type --text TEXT` | Type literal text into the focused input. |
 | `send --text TEXT` | Write `TEXT` into the focused composer, then press `Enter`. |
 | `walk --down` / `walk --up [--times N]` | Write `Alt+Down` / `Alt+Up` `--times N` (default 1) to walk conversations in sidebar order, wrapping. Status is not in the walk. |
@@ -165,9 +176,10 @@ because the decoder does not map `0x1F` to `ctrl+/`.
 
 `run <feature> --dry-run` prints the fence and exits without launching. A
 missing file, a missing fence, or an empty fence exits non-zero. A recipe line
-whose verb the TUI does not support yet (for example `click-*`) FAILS the run
-rather than silently skipping, so a fence that moves on to a later-phase verb
-is expected to fail until that phase lands. The `run keyboard`,
+whose verb the TUI does not support (`click-version`, `click-send`, and the
+other Qt-only `click-*` targets, plus `qml-suite`) FAILS the run rather than
+silently skipping or pretending a key was that click. `click-conversation`
+and `click-member` are real. The `run keyboard`,
 `run slash-commands`, `run slash-complete`, `run toggle-members`,
 `run member-presence`, `run typing`, and `run open-direct-message` fences pass
 end to end over `--demo-server`. Do not soften a fence to make it pass.

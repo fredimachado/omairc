@@ -67,6 +67,31 @@ func (m *Model) syncSidebarNetworkOrder() {
 	m.ctrl.SetNetworkOrder(m.sidebarNetworkIDs())
 }
 
+// sidebarSlotKind is one inner line of the sidebar column. Hit-testing and
+// drawing share these slots so a click lands on the row the frame just painted.
+type sidebarSlotKind int
+
+const (
+	sidebarSlotGap sidebarSlotKind = iota
+	sidebarSlotDivider
+	sidebarSlotHeader
+	sidebarSlotStatus
+	sidebarSlotSection
+	sidebarSlotConversation
+	sidebarSlotFooter
+)
+
+// sidebarSlot is one rendered sidebar line plus the controller target it
+// names, when it has one. Header slots carry networkID. Conversation slots
+// carry networkID, conversationID, and the target name SelectConversation uses.
+type sidebarSlot struct {
+	kind           sidebarSlotKind
+	networkID      string
+	conversationID string
+	target         string
+	line           string
+}
+
 // sidebarView renders the network roster: one header per stored or registered
 // network, then a CHANNELS group and a DIRECT MESSAGES group, then the
 // identity footer pinned to the bottom row. It is data-driven from the
@@ -78,17 +103,33 @@ func (m *Model) syncSidebarNetworkOrder() {
 // header, or else the selected conversation, is kept on screen so a walk,
 // unread jump, or header focus never lands on a clipped row. It mirrors
 // OmaircWindow.qml's revealSidebarRow / revealNamedSidebarItem over the
-// sidebarScroll Flickable.
+// sidebarScroll Flickable. A wheel scroll pins sidebarScroll instead, and the
+// next selection change releases that pin so the reveal returns.
 //
 // The view returns inner content lines only: the outer panel card (border and
-// title) is drawn by the frame that embeds this column.
+// title) is drawn by the frame that embeds this column. The lines are the
+// sidebarVisibleSlots texts, so a click uses the same rows.
 func (m *Model) sidebarView(width, height int) string {
+	slots := m.sidebarVisibleSlots(width, height)
+	lines := make([]string, len(slots))
+	for index, slot := range slots {
+		lines[index] = slot.line
+	}
+	return renderColumn(m.styles.Conversation, width, lines)
+}
+
+// sidebarVisibleSlots is the inner sidebar, top to bottom, exactly height
+// lines. It is the geometry sidebarView draws.
+func (m *Model) sidebarVisibleSlots(width, height int) []sidebarSlot {
+	if m == nil || m.ctrl == nil || height < 1 {
+		return nil
+	}
 	grouped := make(map[string][]controller.ConversationSnapshot)
 	for _, row := range m.ctrl.Conversations() {
 		grouped[row.NetworkID] = append(grouped[row.NetworkID], row)
 	}
 
-	roster := make([]string, 0, height)
+	roster := make([]sidebarSlot, 0, height)
 	// headerSpans and rowSpans record where each revealable element landed in
 	// the roster as [start, end) line indexes, so the window can slide to keep
 	// the focused header or the selected conversation visible.
@@ -102,15 +143,25 @@ func (m *Model) sidebarView(width, height int) string {
 		// Networks are separate blocks: a blank row then a rule, above the
 		// second onward, so the roster never reads as one continuous list.
 		if index > 0 {
-			roster = append(roster, "", m.sidebarDivider(width))
+			roster = append(roster,
+				sidebarSlot{kind: sidebarSlotGap},
+				sidebarSlot{kind: sidebarSlotDivider, line: m.sidebarDivider(width)},
+			)
 		}
 		name := m.sidebarNetworkDisplayName(networkID)
 		headerStart := len(roster)
-		roster = append(roster, m.networkHeader(name, networkID, width))
+		roster = append(roster, sidebarSlot{
+			kind:      sidebarSlotHeader,
+			networkID: networkID,
+			line:      m.networkHeader(name, networkID, width),
+		})
 		// A refused nick or registration ERROR is that network's status line,
 		// the same slot as NetworkSection.qml's liveStatus.
 		if reason := m.ctrl.LastErrorFor(networkID); reason != "" {
-			roster = append(roster, ellipsizeLine(m.styles.MutedLine.Render(reason), width))
+			roster = append(roster, sidebarSlot{
+				kind: sidebarSlotStatus,
+				line: ellipsizeLine(m.styles.MutedLine.Render(reason), width),
+			})
 		}
 		headerSpans[networkID] = [2]int{headerStart, len(roster)}
 		if m.ctrl.IsNetworkCollapsed(networkID) {
@@ -126,16 +177,25 @@ func (m *Model) sidebarView(width, height int) string {
 				continue
 			}
 			if !firstGroup {
-				roster = append(roster, "")
+				roster = append(roster, sidebarSlot{kind: sidebarSlotGap})
 			}
 			firstGroup = false
 			base := len(roster)
-			roster = append(roster, lines...)
-			// lines[0] is the section heading, so the members start one row
-			// past the block's base and follow in render order.
+			roster = append(roster, sidebarSlot{kind: sidebarSlotSection, line: lines[0]})
 			for offset, member := range members {
-				line := base + 1 + offset
-				rowSpans[member.ConversationID] = [2]int{line, line + 1}
+				line := ""
+				if offset+1 < len(lines) {
+					line = lines[offset+1]
+				}
+				roster = append(roster, sidebarSlot{
+					kind:           sidebarSlotConversation,
+					networkID:      member.NetworkID,
+					conversationID: member.ConversationID,
+					target:         member.ConversationName,
+					line:           line,
+				})
+				rowLine := base + 1 + offset
+				rowSpans[member.ConversationID] = [2]int{rowLine, rowLine + 1}
 			}
 		}
 	}
@@ -145,15 +205,29 @@ func (m *Model) sidebarView(width, height int) string {
 	// more, draws a rule above the nick that mirrors ServerListColumn.qml's
 	// identityFooter divider. A sidebar too short for the rule drops it before
 	// the presence row; a tiny one keeps only the nick.
-	footer := m.identityFooterLines(width)
+	footerLines := m.identityFooterLines(width)
+	footer := make([]sidebarSlot, 0, len(footerLines)+1)
+	for _, line := range footerLines {
+		footer = append(footer, sidebarSlot{kind: sidebarSlotFooter, line: line})
+	}
 	if len(footer) > height {
 		footer = footer[:clampInt(height, 0, len(footer))]
 	} else if len(footer) < height {
-		footer = append([]string{m.sidebarDivider(width)}, footer...)
+		footer = append([]sidebarSlot{{
+			kind: sidebarSlotDivider,
+			line: m.sidebarDivider(width),
+		}}, footer...)
 	}
 	rosterHeight := height - len(footer)
 	if rosterHeight > 0 {
-		start := m.sidebarRevealStart(len(roster), rosterHeight, headerSpans, rowSpans)
+		start := m.sidebarWindowStart(len(roster), rosterHeight, headerSpans, rowSpans)
+		m.sidebarWindowLine = start
+		m.sidebarWindowPage = rosterHeight
+		maxStart := len(roster) - rosterHeight
+		if maxStart < 0 {
+			maxStart = 0
+		}
+		m.sidebarWindowMax = maxStart
 		end := start + rosterHeight
 		if end > len(roster) {
 			end = len(roster)
@@ -161,10 +235,40 @@ func (m *Model) sidebarView(width, height int) string {
 		roster = roster[start:end]
 	} else {
 		roster = nil
+		m.sidebarWindowLine = 0
+		m.sidebarWindowPage = 0
+		m.sidebarWindowMax = 0
 	}
-	lines := fitLines(roster, rosterHeight, false)
-	lines = append(lines, footer...)
-	return renderColumn(m.styles.Conversation, width, lines)
+	roster = fitSidebarSlots(roster, rosterHeight)
+	return append(roster, footer...)
+}
+
+// sidebarWindowStart is the first roster line on screen. A wheel pin keeps
+// sidebarScroll; otherwise the focused header or the selected conversation is
+// revealed, which is sidebarRevealStart.
+func (m *Model) sidebarWindowStart(total, height int, headerSpans, rowSpans map[string][2]int) int {
+	maxStart := total - height
+	if maxStart < 0 {
+		maxStart = 0
+	}
+	if m.sidebarScrollPinned {
+		return clampInt(m.sidebarScroll, 0, maxStart)
+	}
+	return m.sidebarRevealStart(total, height, headerSpans, rowSpans)
+}
+
+// fitSidebarSlots pads or clips roster to exactly limit lines, keeping the head.
+func fitSidebarSlots(slots []sidebarSlot, limit int) []sidebarSlot {
+	if limit < 0 {
+		limit = 0
+	}
+	if len(slots) > limit {
+		slots = slots[:limit]
+	}
+	for len(slots) < limit {
+		slots = append(slots, sidebarSlot{kind: sidebarSlotGap})
+	}
+	return slots
 }
 
 // sidebarRevealStart returns the first roster line the sidebar shows, so the

@@ -257,8 +257,10 @@ binary or add a command that dumps it.
 `.cursor/skills/verify-omairc-tui/control-omairc-tui`) replays the same
 `desktop-recipe` fences as `control-omairc`, but over a fixed-size PTY instead
 of Xvfb and xdotool. It reconstructs a text grid from the VT stream, reads the
-OSC 2 title, writes key bytes, renders PNG evidence, and rejects pixel-click
-verbs: the TUI is keyboard-first and has no pointer path. Evidence goes under
+OSC 2 title, writes key bytes, and renders PNG evidence. The pointer path
+is opt-in (`--mouse` / `OMAIRC_TUI_MOUSE`): `click`, `wheel`,
+`click-conversation`, and `click-member` write SGR reports. Other `click-*`
+verbs aim Qt chrome and are rejected rather than faked as keys. Evidence goes under
 `test-artifacts/verify-tui/`. The internal skill lives at
 `.cursor/skills/verify-omairc-tui/`. Phase 5 adds the `jump`, `status`,
 `connect`, and `compare` verbs (the fence's `test-artifacts/verify/` paths are

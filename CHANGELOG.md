@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The terminal client wheel-scrolls and clicks rows when started with `--mouse`
+  or `OMAIRC_TUI_MOUSE=1`. The pointer path stays off by default, so the
+  terminal keeps its own text selection.
+
 ### Fixed
 
 - Upload tests accept the canonical HTTP header names Qt 6.12 writes, and

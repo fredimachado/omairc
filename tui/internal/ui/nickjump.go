@@ -17,6 +17,7 @@ type nickJumpState struct {
 	open     bool
 	input    textinput.Model
 	selected int
+	scroll   int
 }
 
 const nickPlaceholder = "Nick"
@@ -38,6 +39,7 @@ func (m *Model) openNickJump() {
 	m.nick.open = true
 	m.nick.input = newTextInput(m.styles, nickPlaceholder, overlayFilterPrompt)
 	m.nick.selected = 0
+	m.nick.scroll = 0
 	m.nick.input.SetWidth(m.overlayInputWidth())
 	m.composer.Blur()
 	_ = m.nick.input.Focus()
@@ -83,6 +85,7 @@ func (m *Model) moveNick(delta int) {
 		return
 	}
 	m.nick.selected = ((m.nick.selected+delta)%len(entries) + len(entries)) % len(entries)
+	m.revealList(&m.nick.scroll, m.nick.selected, len(entries), 1)
 }
 
 // activateNick opens or creates a direct message with the highlighted member.
@@ -131,6 +134,7 @@ func (m *Model) handleNickKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.C
 	var cmd tea.Cmd
 	m.nick.input, cmd = m.nick.input.Update(msg)
 	m.nick.selected = 0
+	m.nick.scroll = 0
 	return m, cmd
 }
 
@@ -148,13 +152,22 @@ func (m *Model) nickCard(width int) string {
 // nickCardBody is the nick overlay's content, before the shared frame. inner is
 // the content width inside the border.
 func (m *Model) nickCardBody(inner int) []string {
+	return overlayTexts(m.nickOverlayLines(inner))
+}
+
+// nickOverlayLines is the nick card body. The filter is not a row.
+func (m *Model) nickOverlayLines(inner int) []overlayLine {
 	entries := m.nickEntries()
-	lines := []string{truncateLine(m.nick.input.View(), inner)}
+	lines := []overlayLine{{text: truncateLine(m.nick.input.View(), inner), row: -1}}
 	if len(entries) == 0 {
-		return append(lines, m.overlaySheetEmpty("No matches"))
+		return append(lines, overlayLine{text: m.overlaySheetEmpty("No matches"), row: -1})
 	}
-	for index, nick := range entries {
-		lines = append(lines, m.overlayToggleRow(inner, index == m.nick.selected, nick))
+	start, end := listWindow(len(entries), m.nick.scroll, m.overlayRowBudget(1))
+	for index := start; index < end; index++ {
+		lines = append(lines, overlayLine{
+			text: m.overlayToggleRow(inner, index == m.nick.selected, entries[index]),
+			row:  index,
+		})
 	}
 	return lines
 }
