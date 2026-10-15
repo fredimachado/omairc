@@ -1,11 +1,16 @@
 // Package avatar is the terminal peer-avatar seam. It fetches, decodes,
 // caches, and half-block-rasterizes avatars for the TUI shell, mirroring the
 // safety model of src/irc/ircavatarstore.cpp (bounded body, bounded decode,
-// DNS pinning, fail closed, a small insertion-ordered cache).
+// DNS pinning, fail closed, a small insertion-ordered cache). When a terminal
+// answers a Kitty graphics query, the same cache also builds Unicode
+// placeholder cells and the transmit/delete escapes for those images.
 //
-// The package is presentation-neutral: Block returns a raw SGR string and the
-// shell decides where to place it. It never starts a fetch from Block; Ensure
-// is the only path that touches the network.
+// The package is presentation-neutral: Block and Placeholder return raw
+// strings and the shell decides where to place them. It never imports
+// lipgloss. It never starts a fetch from Block or Placeholder; Ensure is the
+// only path that touches the network. Graphics escapes are built from cached
+// image bytes, never from text that arrived on the IRC connection. The Kitty
+// PNG is scaled and encoded before the store lock is taken.
 package avatar
 
 import (
@@ -57,6 +62,19 @@ type Store struct {
 	// callbacks counts onReady calls that are in flight. Close waits for it so
 	// a late callback cannot outlive Close.
 	callbacks sync.WaitGroup
+
+	// Kitty graphics. graphics is set only after a positive a=q reply.
+	// imageIDs maps a cache key to the id transmitted for it. sentIDs are ids
+	// whose bytes have been handed to the terminal. drawnIDs are ids whose
+	// transmit has been written, so placeholder cells may reference them.
+	// graphicsOps is the transmit/delete queue drained outside the view.
+	graphics    bool
+	nextImage   uint32
+	imageIDs    map[string]uint32
+	sentIDs     map[uint32]bool
+	drawnIDs    map[uint32]struct{}
+	inflight    []uint32
+	graphicsOps []graphicsOp
 }
 
 // New returns a store. truecolor selects the half-block raster path; when it
@@ -68,6 +86,9 @@ func New(truecolor bool, onReady func(rawURL string)) *Store {
 		images:    make(map[string]image.Image),
 		pending:   make(map[string]bool),
 		cancels:   make(map[string]context.CancelFunc),
+		imageIDs:  make(map[string]uint32),
+		sentIDs:   make(map[uint32]bool),
+		drawnIDs:  make(map[uint32]struct{}),
 	}
 }
 
@@ -116,6 +137,20 @@ func (s *Store) Block(rawURL string, layoutPixels, cols int) (string, bool) {
 	if !s.truecolor || cols <= 0 {
 		return "", false
 	}
+	key, ok := s.resolvedKey(rawURL, layoutPixels)
+	if !ok {
+		return "", false
+	}
+	img, cached := s.lookup(key)
+	if !cached {
+		return "", false
+	}
+	return renderHalfBlocks(img, cols), true
+}
+
+// resolvedKey is the cache key for rawURL at the fetch size Block and
+// Placeholder share. An empty, unsafe, or unsized URL reports false.
+func (s *Store) resolvedKey(rawURL string, layoutPixels int) (string, bool) {
 	fetchSize := irc.AvatarFetchPixelSize(layoutPixels)
 	if fetchSize <= 0 {
 		return "", false
@@ -124,11 +159,7 @@ func (s *Store) Block(rawURL string, layoutPixels, cols int) (string, bool) {
 	if !ok || !irc.AvatarURLIsSafe(resolved) {
 		return "", false
 	}
-	img, cached := s.lookup(cacheKey(resolved))
-	if !cached {
-		return "", false
-	}
-	return renderHalfBlocks(img, cols), true
+	return cacheKey(resolved), true
 }
 
 // Close stops in-flight fetches and prevents late callbacks. It is idempotent
@@ -166,13 +197,15 @@ func (s *Store) fetch(ctx context.Context, rawURL string, resolved *url.URL,
 		s.forget(key)
 		return
 	}
+	if !s.commit(key, img) {
+		return
+	}
 
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
 		return
 	}
-	s.rememberLocked(key, img)
 	delete(s.pending, key)
 	delete(s.cancels, key)
 	s.callbacks.Add(1)
@@ -203,20 +236,57 @@ func cacheKey(resolved *url.URL) string {
 // remember inserts img under key and moves key to the newest position,
 // evicting the oldest entries past the cap. It is the in-package test seam.
 func (s *Store) remember(key string, img image.Image) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.rememberLocked(key, img)
+	s.commit(key, img)
 }
 
-func (s *Store) rememberLocked(key string, img image.Image) {
+// commit stores img. When graphics are enabled, the avatar is scaled and
+// PNG-encoded before s.mu is taken; the lock only publishes the result.
+// It reports false when the store is closed.
+func (s *Store) commit(key string, img image.Image) bool {
+	for {
+		s.mu.Lock()
+		if s.closed {
+			s.mu.Unlock()
+			return false
+		}
+		enabled := s.graphics
+		s.mu.Unlock()
+
+		var pngBytes []byte
+		if enabled {
+			pngBytes = encodeScaledPNG(img)
+		}
+
+		s.mu.Lock()
+		if s.closed {
+			s.mu.Unlock()
+			return false
+		}
+		if s.graphics != enabled {
+			s.mu.Unlock()
+			continue
+		}
+		s.rememberLocked(key, img, pngBytes)
+		s.mu.Unlock()
+		return true
+	}
+}
+
+func (s *Store) rememberLocked(key string, img image.Image, pngBytes []byte) {
 	s.order = removeKey(s.order, key)
 	s.order = append(s.order, key)
 	s.images[key] = img
+	var evicted []string
 	for len(s.order) > maximumCacheEntries {
 		oldest := s.order[0]
 		s.order = s.order[1:]
 		delete(s.images, oldest)
+		evicted = append(evicted, oldest)
 	}
+	for _, oldest := range evicted {
+		s.dropGraphicsLocked(oldest)
+	}
+	s.noteGraphicsLocked(key, pngBytes)
 }
 
 // removeKey returns keys without the first occurrence of key.
