@@ -149,40 +149,44 @@ func (m *Model) handleChannelListKey(key string, msg tea.KeyPressMsg) (tea.Model
 }
 
 // channelListCard renders the /list overlay as one card block through the
-// shared overlay frame in model.go.
+// shared overlay frame in model.go. The name, mask, and match count sit on the
+// top edge and the highlighted row's position sits on the bottom edge.
 func (m *Model) channelListCard(width int) string {
-	return m.overlayCardBlock(width, m.channelListCardBody)
+	snapshot := m.channelListSnapshot()
+	return m.overlayCardFramed(width,
+		channelListFrameTitle(snapshot),
+		overlayCountLabel(m.list.selected, len(snapshot.Rows)),
+		m.channelListCardBody)
+}
+
+// channelListSnapshot is the controller's current /list snapshot, or an empty
+// one when no controller is bound.
+func (m *Model) channelListSnapshot() ChannelListSnapshot {
+	if m == nil || m.ctrl == nil {
+		return ChannelListSnapshot{}
+	}
+	return m.ctrl.ChannelListSnapshot()
+}
+
+// channelListFrameTitle is the card title: "Channels", plus the list mask when
+// one was requested, plus the match count once the reply is no longer the
+// empty loading state.
+func channelListFrameTitle(snapshot ChannelListSnapshot) string {
+	title := "Channels"
+	if snapshot.Mask != "" {
+		title += " · " + snapshot.Mask
+	}
+	if snapshot.Loading && len(snapshot.Rows) == 0 {
+		return title
+	}
+	return fmt.Sprintf("%s %d", title, len(snapshot.Rows))
 }
 
 // channelListCardBody is the /list overlay's content, before the shared frame.
 // inner is the content width inside the border.
 func (m *Model) channelListCardBody(inner int) []string {
-	snapshot := ChannelListSnapshot{}
-	if m.ctrl != nil {
-		snapshot = m.ctrl.ChannelListSnapshot()
-	}
-	title := "Channels"
-	if snapshot.Mask != "" {
-		title += " · " + snapshot.Mask
-	}
-	titleRendered := m.styles.SheetTitle.Render(title)
-	input := m.list.input.View()
-	const gap = "  "
-	header := titleRendered + gap + input
-	if lipgloss.Width(header) > inner {
-		// The filter is an input view, so it stays a hard cut. The title is the
-		// label and takes an ellipsis when the row cannot hold both.
-		titleBudget := inner - lipgloss.Width(gap) - lipgloss.Width(input)
-		if titleBudget < 1 {
-			header = truncateLine(input, inner)
-		} else {
-			header = ellipsizeLine(titleRendered, titleBudget) + gap + input
-			if lipgloss.Width(header) > inner {
-				header = truncateLine(header, inner)
-			}
-		}
-	}
-	lines := []string{header}
+	snapshot := m.channelListSnapshot()
+	lines := []string{truncateLine(m.list.input.View(), inner)}
 	switch {
 	case snapshot.Loading:
 		lines = append(lines, ellipsizeLine(m.styles.Empty.Render("Loading..."), inner))

@@ -81,8 +81,9 @@ func TestWave4L6JumpRowsCarryToggleChipsAndFill(t *testing.T) {
 		t.Fatalf("jump entries = %d, want at least 2 to compare rows", len(entries))
 	}
 
-	// Header, divider, then the filter line, then one row per entry.
-	rows := body[3:]
+	// The filter line, then one row per entry. The title and the count live on
+	// the card border, not in the body.
+	rows := body[1:]
 	if len(rows) != len(entries) {
 		t.Fatalf("rendered rows = %d, want %d", len(rows), len(entries))
 	}
@@ -149,8 +150,12 @@ func TestWave4L6InboxRowsCarryToggleChips(t *testing.T) {
 	m.toggleInbox()
 	inner := wave4L6Inner(m)
 	body := wave4L6Plain(m.inboxCardBody(inner))
-	if len(body) < 2 || !strings.Contains(strings.Join(body, "\n"), "No mentions") {
+	if !strings.Contains(strings.Join(body, "\n"), "No mentions") {
 		t.Fatalf("empty inbox body = %q, want the No mentions empty state", body)
+	}
+	card := ansiPattern.ReplaceAllString(m.inboxCard(m.width), "")
+	if !strings.Contains(card, "Inbox 0") {
+		t.Fatalf("empty inbox card missing the border title:\n%s", card)
 	}
 }
 

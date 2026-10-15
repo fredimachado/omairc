@@ -1,7 +1,7 @@
 package ui
 
 // This file is the Phase 8 member-panel parity suite for the Bubble Tea shell:
-// the ONLINE heading, the Ctrl+Shift+M toggle, presence dots, away dimming,
+// the Online count on the top border, the Ctrl+Shift+M toggle, presence dots, away dimming,
 // the bot mark, typing ellipsis, status sublines, and Enter-on-member opening a
 // direct message. It reuses the demo-seeded harness in phase5_test.go and the
 // key helpers in phase6_test.go.
@@ -39,24 +39,28 @@ func phase8MemberLine(t *testing.T, m *Model, nick string) []string {
 
 func TestMembersHeadingShowsOnlineCount(t *testing.T) {
 	m := seededModel(t)
-	if !strings.Contains(m.View().Content, "ONLINE - 12") {
-		t.Fatalf("seeded #omarchy panel missing ONLINE - 12:\n%s", m.View().Content)
+	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
+	if !strings.Contains(plain, "Online 12") {
+		t.Fatalf("seeded #omarchy panel missing Online 12:\n%s", plain)
+	}
+	if strings.Contains(plain, "ONLINE -") {
+		t.Fatalf("the member heading row must be gone:\n%s", plain)
 	}
 }
 
 func TestToggleMembersHidesAndReopens(t *testing.T) {
 	m := seededModel(t)
-	if !strings.Contains(m.View().Content, "ONLINE - 12") {
+	if !strings.Contains(ansiPattern.ReplaceAllString(m.View().Content, ""), "Online 12") {
 		t.Fatalf("panel must start open:\n%s", m.View().Content)
 	}
 
 	m = press(t, m, ctrlShiftKey('m'))
-	if strings.Contains(m.View().Content, "ONLINE - 12") {
+	if strings.Contains(ansiPattern.ReplaceAllString(m.View().Content, ""), "Online 12") {
 		t.Fatal("Ctrl+Shift+M must hide the member column")
 	}
 
 	m = press(t, m, ctrlShiftKey('m'))
-	if !strings.Contains(m.View().Content, "ONLINE - 12") {
+	if !strings.Contains(ansiPattern.ReplaceAllString(m.View().Content, ""), "Online 12") {
 		t.Fatal("a second Ctrl+Shift+M must restore the member column")
 	}
 
@@ -102,7 +106,7 @@ func TestToggleMembersNoOpOnDirectMessage(t *testing.T) {
 	if got := m.View().WindowTitle; got != "anna - Omairc" {
 		t.Fatalf("title after the DM toggle = %q, want it unchanged", got)
 	}
-	if strings.Contains(m.View().Content, "ONLINE -") {
+	if strings.Contains(ansiPattern.ReplaceAllString(m.View().Content, ""), "Online ") {
 		t.Fatal("a direct message must not render a member column")
 	}
 }
@@ -306,14 +310,19 @@ func TestMemberActivationOpensDirectMessageAndIgnoresSelf(t *testing.T) {
 	}
 }
 
-// TestMembersPanelHeadingRule covers the restyled card content: the
-// "ONLINE - N" heading is followed by a hairline rule before the member rows.
-func TestMembersPanelHeadingRule(t *testing.T) {
+// TestMembersPanelDropsHeadingRule covers the border titles: the count lives on
+// the top edge, so the inner view no longer spends a heading row and a rule.
+func TestMembersPanelDropsHeadingRule(t *testing.T) {
 	m := seededModel(t)
 	panel := m.membersView(membersWidth, m.bodyHeight())
 	rule := m.styles.Divider.Render(strings.Repeat("─", membersWidth))
-	if !strings.Contains(panel, rule) {
-		t.Fatalf("member panel missing the heading rule %q:\n%s", rule, panel)
+	if strings.Contains(panel, rule) || strings.Contains(panel, "ONLINE -") || strings.Contains(panel, "Online ") {
+		t.Fatalf("member rows must not carry the heading or its rule:\n%s", panel)
+	}
+	framed := ansiPattern.ReplaceAllString(
+		m.framedColumnLabeled(m.membersView, m.membersColumnWidth(), m.bodyHeight(), false, m.memberFrameTitle(), ""), "")
+	if !strings.HasPrefix(strings.TrimLeft(framed, "\n"), "╭─ Online 12") && !strings.Contains(framed, "Online 12") {
+		t.Fatalf("framed panel missing the border title:\n%s", framed)
 	}
 }
 
@@ -510,8 +519,10 @@ func TestMemberListShortRosterStaysAtTop(t *testing.T) {
 	m = press(t, m, ctrlShiftKey('p'))
 	m.memberIndex = phase8MemberIndex(t, m, "anna")
 	panel := m.membersView(membersWidth, 40)
-	if !strings.Contains(panel, "ONLINE - 12") {
-		t.Fatalf("the heading must stay pinned:\n%s", panel)
+	framed := ansiPattern.ReplaceAllString(
+		m.framedColumnLabeled(m.membersView, membersWidth, 40, true, m.memberFrameTitle(), m.memberFrameLabel()), "")
+	if !strings.Contains(framed, "Online 12") {
+		t.Fatalf("the border title must stay pinned:\n%s", framed)
 	}
 	for _, nick := range []string{"fred", "anna", "max"} {
 		if !strings.Contains(panel, nick) {

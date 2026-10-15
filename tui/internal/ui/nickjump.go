@@ -135,17 +135,21 @@ func (m *Model) handleNickKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.C
 }
 
 // nickCard renders the nick overlay as one card block through the shared
-// overlay frame in model.go.
+// overlay frame in model.go. The name and match count sit on the top edge and
+// the highlighted nick's position sits on the bottom edge.
 func (m *Model) nickCard(width int) string {
-	return m.overlayCardBlock(width, m.nickCardBody)
+	entries := m.nickEntries()
+	return m.overlayCardFramed(width,
+		overlayCountTitle("Nick", len(entries)),
+		overlayCountLabel(m.nick.selected, len(entries)),
+		m.nickCardBody)
 }
 
 // nickCardBody is the nick overlay's content, before the shared frame. inner is
 // the content width inside the border.
 func (m *Model) nickCardBody(inner int) []string {
 	entries := m.nickEntries()
-	lines := m.overlaySheetHeader(inner, "Nick", len(entries))
-	lines = append(lines, truncateLine(m.nick.input.View(), inner))
+	lines := []string{truncateLine(m.nick.input.View(), inner)}
 	if len(entries) == 0 {
 		return append(lines, m.overlaySheetEmpty("No matches"))
 	}

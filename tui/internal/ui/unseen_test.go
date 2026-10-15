@@ -73,6 +73,116 @@ func TestDetachedArrivalArmsMarker(t *testing.T) {
 	}
 }
 
+// TestAltUReattachesWhenTheTargetIsTheEnd is the short-arrival repro: a few
+// rows land while the reader is scrolled up, Alt+U puts the newest row on the
+// bottom line, and the view follows the end. A later arrival stays followed
+// and does not bring ↓ new back.
+func TestAltUReattachesWhenTheTargetIsTheEnd(t *testing.T) {
+	m, d := unseenDemoModel(t)
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
+	if m.transcriptFollowEnd {
+		t.Fatal("Page Up must leave follow-the-end")
+	}
+	for i := 0; i < 3; i++ {
+		d.InjectOmarchy([]byte(fmt.Sprintf(
+			"@msgid=few-%d :nora!u@h PRIVMSG #omarchy :arrive %d\r\n", i, i)))
+	}
+	m = updateMsg(t, m, NotifyMsg{})
+	if !m.jumpArmed() {
+		t.Fatal("arrivals while scrolled up must arm the jump")
+	}
+	if !strings.Contains(m.View().Content, "↓ new") {
+		t.Fatal("the header must show ↓ new before Alt+U")
+	}
+	if m.transcriptPlaceLabel() == "" {
+		t.Fatal("a detached reader must show the place counter")
+	}
+
+	m = press(t, m, altKey('u'))
+	if !m.transcriptFollowEnd {
+		t.Fatal("Alt+U onto a target at the end must follow the end")
+	}
+	if m.transcriptScroll != 0 {
+		t.Fatalf("scroll = %d, want 0 after reattach", m.transcriptScroll)
+	}
+	if m.firstUnseenRow != -1 {
+		t.Fatalf("firstUnseenRow = %d, want cleared", m.firstUnseenRow)
+	}
+	if label := m.transcriptPlaceLabel(); label != "" {
+		t.Fatalf("place after reattach = %q, want empty", label)
+	}
+	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
+	if m.jumpArmed() || strings.Contains(plain, "↓ new") {
+		t.Fatalf("↓ new must clear once the view follows the end:\n%s", plain)
+	}
+	if !strings.Contains(plain, "arrive 2") {
+		t.Fatal("the newest arrival must be on screen after Alt+U")
+	}
+
+	d.InjectOmarchy([]byte("@msgid=few-later :nora!u@h PRIVMSG #omarchy :after reattach\r\n"))
+	m = updateMsg(t, m, NotifyMsg{})
+	if !m.transcriptFollowEnd || m.firstUnseenRow != -1 || m.jumpArmed() {
+		t.Fatalf("later arrival follow=%v unseen=%d armed=%v, want followed and clear",
+			m.transcriptFollowEnd, m.firstUnseenRow, m.jumpArmed())
+	}
+	if label := m.transcriptPlaceLabel(); label != "" {
+		t.Fatalf("place after the later arrival = %q, want empty", label)
+	}
+	plain = ansiPattern.ReplaceAllString(m.View().Content, "")
+	if strings.Contains(plain, "↓ new") {
+		t.Fatalf("a later arrival must not bring ↓ new back:\n%s", plain)
+	}
+	if !strings.Contains(plain, "after reattach") {
+		t.Fatal("the later arrival must be visible while following the end")
+	}
+}
+
+// TestAltUStaysDetachedWhenUnseenRowsFillTheViewport proves a long unseen tail
+// still pins to the first new row and keeps the place counter.
+func TestAltUStaysDetachedWhenUnseenRowsFillTheViewport(t *testing.T) {
+	m, d := unseenDemoModel(t)
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
+	before := m.transcriptRowTotal()
+	extra := m.transcriptRowsHeight() + 8
+	if extra < 12 {
+		extra = 12
+	}
+	for i := 0; i < extra; i++ {
+		d.InjectOmarchy([]byte(fmt.Sprintf(
+			"@msgid=many-%d :nora!u@h PRIVMSG #omarchy :buried %d\r\n", i, i)))
+	}
+	m = updateMsg(t, m, NotifyMsg{})
+	if m.firstUnseenRow != before {
+		t.Fatalf("firstUnseenRow = %d, want %d", m.firstUnseenRow, before)
+	}
+
+	m = press(t, m, altKey('u'))
+	if m.transcriptFollowEnd {
+		t.Fatal("Alt+U with more unseen rows than the viewport must stay detached")
+	}
+	if m.transcriptScroll == 0 {
+		t.Fatal("the newest row must stay below the viewport")
+	}
+	if m.firstUnseenRow != -1 {
+		t.Fatalf("firstUnseenRow = %d, want the marker consumed", m.firstUnseenRow)
+	}
+	label := m.transcriptPlaceLabel()
+	if label == "" {
+		t.Fatal("a detached pin must keep the place counter")
+	}
+	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
+	if !strings.Contains(plain, "buried 0") {
+		t.Fatalf("the first unseen row must be on screen:\n%s", plain)
+	}
+	last := fmt.Sprintf("buried %d", extra-1)
+	if strings.Contains(plain, last) {
+		t.Fatalf("the newest unseen row %q must stay below the fold:\n%s", last, plain)
+	}
+	if !strings.Contains(plain, label) {
+		t.Fatalf("composer edge missing the place counter %q:\n%s", label, plain)
+	}
+}
+
 // TestJumpWithMarkGoesToEnd proves Alt+U falls back to the newest row when the
 // only reason to jump is the "New messages" mark.
 func TestJumpWithMarkGoesToEnd(t *testing.T) {

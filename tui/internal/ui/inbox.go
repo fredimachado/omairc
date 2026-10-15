@@ -195,19 +195,24 @@ func (m *Model) handleInboxKey(key string, _ tea.KeyPressMsg) (tea.Model, tea.Cm
 }
 
 // inboxCard renders the inbox sheet as one card block through the shared
-// overlay frame in model.go.
+// overlay frame in model.go. The name and match count sit on the top edge and
+// the highlighted row's position sits on the bottom edge.
 func (m *Model) inboxCard(width int) string {
-	return m.overlayCardBlock(width, m.inboxCardBody)
+	entries := m.inboxEntries()
+	return m.overlayCardFramed(width,
+		overlayCountTitle("Inbox", len(entries)),
+		overlayCountLabel(m.inbox.selected, len(entries)),
+		m.inboxCardBody)
 }
 
 // inboxCardBody is the inbox sheet's content, before the shared frame. inner is
 // the content width inside the border.
 func (m *Model) inboxCardBody(inner int) []string {
 	entries := m.inboxEntries()
-	lines := m.overlaySheetHeader(inner, "Inbox", len(entries))
 	if len(entries) == 0 {
-		return append(lines, m.overlaySheetEmpty("No mentions"))
+		return []string{m.overlaySheetEmpty("No mentions")}
 	}
+	lines := make([]string, 0, len(entries))
 	for index, entry := range entries {
 		lines = append(lines, m.overlayToggleRow(inner, index == m.inbox.selected, entry))
 	}

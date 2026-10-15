@@ -95,11 +95,13 @@ var shortcutGroups = []shortcutGroup{
 	},
 }
 
-// shortcutsHeaderRows is the pinned title row when the sheet scrolls.
-const shortcutsHeaderRows = 1
+// shortcutsHeaderRows is the number of content rows reserved above the chord
+// list. The title sits on the card's top edge, so the body keeps none.
+const shortcutsHeaderRows = 0
 
-// shortcutsFooterRows is the pinned scroll-position row at the bottom.
-const shortcutsFooterRows = 1
+// shortcutsFooterRows is the number of content rows reserved under the chord
+// list. The scroll hint sits on the card's bottom edge, so the body keeps none.
+const shortcutsFooterRows = 0
 
 // shortcutsColumnGap is the blank gutter between multi-column group stacks.
 const shortcutsColumnGap = 4
@@ -163,9 +165,21 @@ func (m *Model) handleShortcutsScrollKey(key string) bool {
 }
 
 // shortcutsCard renders the shortcuts sheet as one card block through the
-// shared overlay frame in model.go.
+// shared overlay frame in model.go. The title sits on the top edge and the
+// scroll hint, when the sheet is taller than the window, sits on the bottom edge.
 func (m *Model) shortcutsCard(width int) string {
-	return m.overlayCardBlock(width, m.shortcutsCardBody)
+	return m.overlayCardFramed(width, "Shortcuts", m.shortcutsFrameLabel(), m.shortcutsCardBody)
+}
+
+// shortcutsFrameLabel is the bottom-edge scroll hint, or empty when every
+// chord already fits.
+func (m *Model) shortcutsFrameLabel() string {
+	total, visible, maxOffset := m.shortcutsScrollBounds(m.shortcutsInnerWidth())
+	if maxOffset < 1 {
+		return ""
+	}
+	offset := clampInt(m.shortcutsScroll, 0, maxOffset)
+	return shortcutsScrollHintText(offset, total, visible)
 }
 
 // shortcutsInnerWidth is the content width inside the shared panel border.
@@ -218,42 +232,39 @@ func sheetShortcutKeys(keys string) string {
 // action in the right column, under a per-group header. inner is the content
 // width inside the border.
 func (m *Model) shortcutsCardBody(inner int) []string {
-	title := ellipsizeLine(m.styles.SheetTitle.Render("Shortcuts"), inner)
 	layout := m.shortcutsLayout(inner)
 	budget := m.overlayCardRowBudget()
 	if len(layout.body) <= budget-shortcutsHeaderRows && shortcutsBodyShowsAllActions(layout.columns) {
-		lines := []string{title}
-		lines = append(lines, layout.body...)
-		return lines
+		return layout.body
 	}
 	total, visible, maxOffset := m.shortcutsScrollBounds(inner)
 	if total <= visible {
-		lines := []string{title}
-		lines = append(lines, layout.body...)
-		return lines
+		return layout.body
 	}
 	offset := clampInt(m.shortcutsScroll, 0, maxOffset)
-	hint := m.shortcutsScrollHint(offset, total, visible)
-	lines := []string{title}
-	lines = append(lines, layout.body[offset:offset+visible]...)
-	lines = append(lines, ellipsizeLine(hint, inner))
-	return lines
+	end := offset + visible
+	if end > len(layout.body) {
+		end = len(layout.body)
+	}
+	if offset > end {
+		offset = end
+	}
+	return layout.body[offset:end]
 }
 
-// shortcutsScrollHint is the pinned footer line while the sheet scrolls.
-func (m *Model) shortcutsScrollHint(offset, total, visible int) string {
-	style := lipgloss.NewStyle().Foreground(m.styles.Colors.TextMuted)
+// shortcutsScrollHintText is the bottom-edge hint while the sheet scrolls.
+func shortcutsScrollHintText(offset, total, visible int) string {
 	end := offset + visible
 	if end > total {
 		end = total
 	}
-	if offset == 0 {
-		return style.Render("↓ more")
+	if offset <= 0 {
+		return "↓ more"
 	}
 	if end >= total {
-		return style.Render("↑ more")
+		return "↑ more"
 	}
-	return style.Render(fmt.Sprintf("%d-%d of %d", offset+1, end, total))
+	return fmt.Sprintf("%d-%d of %d", offset+1, end, total)
 }
 
 // shortcutRenderedColumn is one column's groups and the lines rendered for

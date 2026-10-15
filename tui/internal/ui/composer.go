@@ -66,13 +66,18 @@ func (m *Model) composerView() string {
 	if m.terminalTooSmall() {
 		return m.styles.Composer.Inline(true).MaxWidth(m.width).Render(m.composer.View())
 	}
-	inner := m.composerInteriorWidth()
+	inner := m.composerWidth() - 2*m.composerBorderWidth()
+	if inner < 0 {
+		inner = 0
+	}
 	field := truncateLine(m.composer.View(), inner)
 	if pad := inner - lipgloss.Width(field); pad > 0 {
 		field += strings.Repeat(" ", pad)
 	}
 	indent := strings.Repeat(" ", composerInset)
-	box := m.composerFrameStyle().Width(m.composerWidth()).Render(field)
+	// The composer's top edge is the bottom of the unframed transcript. While
+	// the reader is scrolled away from the end, that edge carries the place.
+	box := m.roundedFrame(field, m.composerWidth(), composerFieldHeight, "", m.transcriptPlaceLabel(), m.composer.Focused(), frameLabelTop)
 	lines := strings.Split(box, "\n")
 	for index, line := range lines {
 		lines[index] = indent + line

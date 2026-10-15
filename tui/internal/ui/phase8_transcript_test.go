@@ -49,7 +49,7 @@ func openPhase8AnnaDirect(t *testing.T, m *Model) *Model {
 
 // TestPhase8TranscriptChannelHeaderHasNoPeopleCount proves the channel header
 // carries the channel name and topic, not the member count: the count belongs to
-// the member column's "ONLINE - N" heading. The band still spans the transcript
+// the member panel's "Online N" border title. The band still spans the transcript
 // column, and the count still renders once, in the member panel.
 func TestPhase8TranscriptChannelHeaderHasNoPeopleCount(t *testing.T) {
 	m := seededModel(t)
@@ -86,12 +86,12 @@ func TestPhase8TranscriptChannelHeaderHasNoPeopleCount(t *testing.T) {
 		t.Fatalf("channel title width = %d, want the full %d-cell band", got, want)
 	}
 
-	// The count survives in exactly one place: the member column's heading.
-	content := m.View().Content
-	if !strings.Contains(content, "ONLINE - 12") {
-		t.Fatalf("rendered content missing the member heading %q:\n%s", "ONLINE - 12", content)
+	// The count survives in exactly one place: the member column's border title.
+	content := ansiPattern.ReplaceAllString(m.View().Content, "")
+	if !strings.Contains(content, "Online 12") {
+		t.Fatalf("rendered content missing the member title %q:\n%s", "Online 12", content)
 	}
-	if got := strings.Count(ansiPattern.ReplaceAllString(content, ""), "12 PEOPLE"); got != 0 {
+	if got := strings.Count(content, "12 PEOPLE"); got != 0 {
 		t.Fatalf("the transcript still repeats the count %d times:\n%s", got, content)
 	}
 }

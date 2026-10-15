@@ -774,17 +774,21 @@ func (m *Model) clearCurrentDraft() {
 // --- Rendering ------------------------------------------------------------
 
 // jumpCard renders the jump overlay as one card block through the shared
-// overlay frame in model.go.
+// overlay frame in model.go. The name and match count sit on the top edge and
+// the highlighted row's position sits on the bottom edge.
 func (m *Model) jumpCard(width int) string {
-	return m.overlayCardBlock(width, m.jumpCardBody)
+	entries := m.jumpEntries()
+	return m.overlayCardFramed(width,
+		overlayCountTitle("Jump", len(entries)),
+		overlayCountLabel(m.jump.selected, len(entries)),
+		m.jumpCardBody)
 }
 
 // jumpCardBody is the jump overlay's content, before the shared frame. inner is
 // the content width inside the border.
 func (m *Model) jumpCardBody(inner int) []string {
 	entries := m.jumpEntries()
-	lines := m.overlaySheetHeader(inner, "Jump", len(entries))
-	lines = append(lines, truncateLine(m.jump.input.View(), inner))
+	lines := []string{truncateLine(m.jump.input.View(), inner)}
 	if len(entries) == 0 {
 		return append(lines, m.overlaySheetEmpty("No matches"))
 	}
@@ -804,9 +808,29 @@ const (
 	overlayChipOff = "[ ]"
 )
 
-// overlaySheetHeader renders the heading every filter sheet opens with: a
-// title, a muted count pill when the sheet has rows, and a divider rule that
-// reaches the card's inner width.
+// overlayCountTitle is a card title with its match count: "Jump 12".
+func overlayCountTitle(name string, count int) string {
+	return name + " " + strconv.Itoa(count)
+}
+
+// overlayCountLabel is the highlighted row's position: "3 of 12". An empty
+// list has no position, so the bottom edge stays a solid rule.
+func overlayCountLabel(selected, count int) string {
+	if count <= 0 {
+		return ""
+	}
+	if selected < 0 {
+		selected = 0
+	}
+	if selected >= count {
+		selected = count - 1
+	}
+	return strconv.Itoa(selected+1) + " of " + strconv.Itoa(count)
+}
+
+// overlaySheetHeader renders the heading a sheet still opens with when its
+// title stays in the body: a title, a muted count pill when the sheet has
+// rows, and a divider rule that reaches the card's inner width.
 func (m *Model) overlaySheetHeader(inner int, title string, count int) []string {
 	head := m.styles.PanelTitle.Render(title)
 	if count > 0 {
