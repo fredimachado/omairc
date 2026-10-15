@@ -478,7 +478,18 @@ ListView {
         Qt.callLater(function() {
             if (generation !== pinGeneration)
                 return;
+            positionViewAtIndex(index, ListView.Beginning);
             pinning = false;
+            // atYEnd can still be true on the turn after a jump to an
+            // earlier row. Following again would undo Ctrl+Home.
+            if (index < modelRowCount() - 1 && contentHeight > height
+                    && viewportPinned()) {
+                stick = stickDetached;
+                rememberDetachedViewportSequence();
+                syncReadMarkerViewport();
+                viewportSettled();
+                return;
+            }
             adoptViewport(false);
         });
     }

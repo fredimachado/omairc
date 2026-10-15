@@ -4277,6 +4277,7 @@ TestCase {
     }
 
     function jumpTranscriptToTop(list) {
+        tryCompare(list, "pinning", false);
         keyClick(Qt.Key_Home, Qt.ControlModifier);
         waitForRendering(appWindow.contentItem);
         wait(0);
@@ -12497,7 +12498,9 @@ TestCase {
         column.acceptDroppedUrls([Qt.resolvedUrl("../../version.pri")]);
         tryCompare(catcher, "uploads", 1, 15000);
         var composer = findChild(appWindow, "messageComposer");
-        verify(composer.text.indexOf("/files/note.txt") >= 0, composer.text);
+        tryVerify(function() {
+            return composer.text.indexOf("/files/note.txt") >= 0;
+        }, 5000, composer.text);
         verify(!seed.omarchyWroteFrom(start, "PRIVMSG"));
         catcher.destroy();
     }
