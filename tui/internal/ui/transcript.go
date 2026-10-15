@@ -799,6 +799,10 @@ func (m *Model) jumpArmed() bool {
 
 // jumpToUnseen lands on the first row that arrived while the reader was
 // scrolled up, else on the newest row. It mirrors TranscriptList.jumpToUnseen.
+// Pinning that row can clamp onto the last page. When the newest row then sits
+// on the bottom line, transcriptScroll is 0, which is the same end condition
+// Page Down and Ctrl+End use, so the view follows the end again and the place
+// counter and ↓ new clear. A pin that still hides rows below stays detached.
 func (m *Model) jumpToUnseen() {
 	if !m.jumpArmed() {
 		return
@@ -807,6 +811,9 @@ func (m *Model) jumpToUnseen() {
 		row := m.firstUnseenRow
 		m.firstUnseenRow = -1
 		m.pinTranscriptToRow(row)
+		if m.transcriptScroll == 0 {
+			m.jumpTranscript(true)
+		}
 		return
 	}
 	m.jumpTranscript(true)
