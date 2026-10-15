@@ -3,10 +3,11 @@ package ui
 import tea "charm.land/bubbletea/v2"
 
 // copySelection emits the OSC 52 clipboard sequence for the row under the
-// transcript cursor, or the composer draft when there is no row. The TUI has no
-// pointer path, so the app tracks a row cursor (set by find and by paging)
-// instead of a mouse selection; the terminal's own mouse selection stays the
-// user's.
+// transcript cursor, or the composer draft when there is no row. Copy does not
+// read a mouse selection: the app tracks a row cursor (set by find and by
+// paging). With the pointer path off, the terminal's own selection stays the
+// user's. With it on, mouse reporting captures that selection and the terminal
+// bypass (usually Shift+drag) is how the user selects text again.
 func (m *Model) copySelection() tea.Cmd {
 	text := m.copyTargetText()
 	if text == "" {

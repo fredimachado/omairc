@@ -56,36 +56,78 @@ func (m *Model) memberFrameLabel() string {
 // A roster taller than the panel scrolls as one window: Page Up/Down, Home/End,
 // and the arrow keys move the member cursor, and the window slides to keep the
 // focused row visible, mirroring the QML ListView's highlightFollowsCurrentItem.
-func (m *Model) membersView(width, height int) string {
-	if height < 1 {
-		return ""
-	}
-	rowsHeight := height
+// memberSlot is one inner line of the member column. index is the member the
+// line belongs to, or -1 for padding. Hit-testing uses the same slots
+// membersView draws.
+type memberSlot struct {
+	index int
+	line  string
+}
 
+func (m *Model) membersView(width, height int) string {
+	slots := m.memberVisibleSlots(width, height)
+	lines := make([]string, len(slots))
+	for index, slot := range slots {
+		lines[index] = slot.line
+	}
+	return renderColumn(m.styles.Conversation, width, lines)
+}
+
+// memberVisibleSlots is the inner member list, top to bottom, exactly height
+// lines. A wheel pin keeps memberScroll; otherwise the focused member stays
+// on screen.
+func (m *Model) memberVisibleSlots(width, height int) []memberSlot {
+	if m == nil || m.ctrl == nil || height < 1 {
+		return nil
+	}
 	// A member block is one line, or two once the network advertises member
 	// status, so the window is measured in lines and each block records its
 	// span. That keeps the focused row fully visible instead of a line short.
 	members := m.ctrl.Members()
-	rows := make([]string, 0, len(members)*2)
+	rows := make([]memberSlot, 0, len(members)*2)
 	spans := make([][2]int, len(members))
 	for index, member := range members {
 		start := len(rows)
-		rows = append(rows, m.memberRow(index, member)...)
+		for _, line := range m.memberRow(index, member) {
+			rows = append(rows, memberSlot{index: index, line: line})
+		}
 		spans[index] = [2]int{start, len(rows)}
 	}
 
-	start := memberWindowStart(len(rows), spans, m.memberIndex, m.memberFocus, rowsHeight)
-	end := start + rowsHeight
+	start := m.memberWindowOffset(len(rows), spans, height)
+	m.memberWindowLine = start
+	m.memberWindowPage = height
+	maxStart := len(rows) - height
+	if maxStart < 0 {
+		maxStart = 0
+	}
+	m.memberWindowMax = maxStart
+	end := start + height
 	if end > len(rows) {
 		end = len(rows)
 	}
-	lines := fitLines(rows[start:end], rowsHeight, false)
-	for index, line := range lines {
-		if width > 0 && lipgloss.Width(line) > width {
-			lines[index] = ellipsizeLine(line, width)
+	visible := append([]memberSlot(nil), rows[start:end]...)
+	for len(visible) < height {
+		visible = append(visible, memberSlot{index: -1})
+	}
+	for index, slot := range visible {
+		if width > 0 && lipgloss.Width(slot.line) > width {
+			visible[index].line = ellipsizeLine(slot.line, width)
 		}
 	}
-	return renderColumn(m.styles.Conversation, width, lines)
+	return visible
+}
+
+// memberWindowOffset is the first member line on screen.
+func (m *Model) memberWindowOffset(total int, spans [][2]int, height int) int {
+	maxStart := total - height
+	if maxStart < 0 {
+		maxStart = 0
+	}
+	if m.memberScrollPinned {
+		return clampInt(m.memberScroll, 0, maxStart)
+	}
+	return memberWindowStart(total, spans, m.memberIndex, m.memberFocus, height)
 }
 
 // memberWindowStart returns the first member line the panel shows. It keeps the
@@ -277,6 +319,7 @@ func (m *Model) memberStatusLine(status string, presenceShown bool) string {
 
 // moveMember moves the focused member row by delta, wrapping at both ends.
 func (m *Model) moveMember(delta int) {
+	m.memberScrollPinned = false
 	count := len(m.ctrl.Members())
 	if count == 0 {
 		m.memberIndex = 0
@@ -287,6 +330,7 @@ func (m *Model) moveMember(delta int) {
 
 // pageMembers pages the focused member list by a page (or a fraction of one).
 func (m *Model) pageMembers(direction int, fraction float64) {
+	m.memberScrollPinned = false
 	count := len(m.ctrl.Members())
 	if count == 0 {
 		return
@@ -305,6 +349,7 @@ func (m *Model) pageMembers(direction int, fraction float64) {
 
 // jumpMembers jumps the focused member list to the first or last nick.
 func (m *Model) jumpMembers(toEnd bool) {
+	m.memberScrollPinned = false
 	count := len(m.ctrl.Members())
 	if count == 0 {
 		m.memberIndex = 0

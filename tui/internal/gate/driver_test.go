@@ -121,21 +121,17 @@ func TestSplitRecipeLineUnbalancedQuotes(t *testing.T) {
 }
 
 func TestRejectRecipeVerb(t *testing.T) {
-	for _, verb := range []string{"click-conversation", "click-member", "click", "qml-suite", "doctor-qml"} {
-		if verb == "click" {
-			// `click` alone is not a "click-" verb; it falls through to the
-			// generic unsupported-verb error during replay.
-			if err := rejectRecipeVerb(verb); err != nil {
-				t.Fatalf("rejectRecipeVerb(%q) = %v, want nil", verb, err)
-			}
-			continue
-		}
-		if err := rejectRecipeVerb(verb); err == nil {
+	for _, verb := range []string{"click-version", "click-send", "click-people", "click-network", "click-edit", "qml-suite", "doctor-qml"} {
+		err := rejectRecipeVerb(verb)
+		if err == nil {
 			t.Fatalf("rejectRecipeVerb(%q) should error", verb)
+		}
+		if strings.HasPrefix(verb, "click-") && !strings.Contains(err.Error(), "Qt-only") {
+			t.Fatalf("rejectRecipeVerb(%q) = %v, want it to name a Qt-only target", verb, err)
 		}
 	}
 	for _, verb := range []string{"launch", "wait-title", "walk", "unread", "screenshot", "send",
-		"jump", "status", "connect", "compare"} {
+		"jump", "status", "connect", "compare", "click", "wheel", "click-conversation", "click-member"} {
 		if err := rejectRecipeVerb(verb); err != nil {
 			t.Fatalf("rejectRecipeVerb(%q) = %v, want nil", verb, err)
 		}
@@ -173,7 +169,7 @@ func TestRemapVerifyPath(t *testing.T) {
 	cases := map[string]string{
 		"test-artifacts/verify/keyboard/before.png":     "test-artifacts/verify-tui/keyboard/before.png",
 		"test-artifacts/verify-tui/keyboard/before.png": "test-artifacts/verify-tui/keyboard/before.png",
-		"other/before.png":                              "other/before.png",
+		"other/before.png": "other/before.png",
 	}
 	for input, want := range cases {
 		if got := remapVerifyPath(input); got != want {
@@ -234,7 +230,7 @@ func TestRunDryRunAndReject(t *testing.T) {
 	}
 	md := "## Driving it with control-omairc\n\n```desktop-recipe\n" +
 		"launch --demo-server\n" +
-		"click-conversation --name \"#desktop\"\n" +
+		"click-version\n" +
 		"```\n"
 	if err := os.WriteFile(features+"/demo.md", []byte(md), 0o644); err != nil {
 		t.Fatal(err)
@@ -255,8 +251,8 @@ func TestRunDryRunAndReject(t *testing.T) {
 	if code := Run([]string{"run", "demo"}, &out, &errBuf); code == 0 {
 		t.Fatalf("replay of a click recipe should fail")
 	}
-	if !strings.Contains(errBuf.String(), "click-conversation") {
-		t.Fatalf("replay error = %q, want it to name click-conversation", errBuf.String())
+	if !strings.Contains(errBuf.String(), "click-version") {
+		t.Fatalf("replay error = %q, want it to name click-version", errBuf.String())
 	}
 	// The failure must name the feature file so the report is actionable.
 	if !strings.Contains(errBuf.String(), filepath.Join("features", "demo.md")) {

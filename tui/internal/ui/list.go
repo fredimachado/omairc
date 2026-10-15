@@ -23,6 +23,7 @@ type channelListState struct {
 	open     bool
 	input    textinput.Model
 	selected int
+	scroll   int
 }
 
 // channelListRowCap bounds how many streamed rows the overlay renders. The
@@ -49,6 +50,7 @@ func (m *Model) openChannelList() {
 	m.closeAllOverlays()
 	m.list.open = true
 	m.list.selected = 0
+	m.list.scroll = 0
 	m.list.input.SetStyles(m.styles.Input)
 	m.list.input.SetValue(m.ctrl.ChannelListSnapshot().Filter)
 	m.list.input.SetWidth(m.overlayInputWidth())
@@ -104,6 +106,7 @@ func (m *Model) moveChannelList(delta int) {
 		return
 	}
 	m.list.selected = ((m.list.selected+delta)%count + count) % count
+	m.revealList(&m.list.scroll, m.list.selected, count, m.channelListHeaderLines())
 }
 
 // activateChannelList opens the highlighted channel and dismisses the overlay.
@@ -145,6 +148,7 @@ func (m *Model) handleChannelListKey(key string, msg tea.KeyPressMsg) (tea.Model
 		m.ctrl.SetChannelListFilter(m.list.input.Value())
 	}
 	m.list.selected = 0
+	m.list.scroll = 0
 	return m, cmd
 }
 
@@ -185,17 +189,48 @@ func channelListFrameTitle(snapshot ChannelListSnapshot) string {
 // channelListCardBody is the /list overlay's content, before the shared frame.
 // inner is the content width inside the border.
 func (m *Model) channelListCardBody(inner int) []string {
+	return overlayTexts(m.listOverlayLines(inner))
+}
+
+// channelListHeaderLines is the filter line plus the table's header and rule.
+// Data rows start after it. The table renders those two chrome lines whenever
+// it has rows; the constant matches BorderHeader(true) with the other borders off.
+func (m *Model) channelListHeaderLines() int { return 1 + channelListTableChrome }
+
+const channelListTableChrome = 2
+
+// listOverlayLines is the /list card body. The filter and the table header are
+// not rows. Each data line is one channel.
+func (m *Model) listOverlayLines(inner int) []overlayLine {
 	snapshot := m.channelListSnapshot()
-	lines := []string{truncateLine(m.list.input.View(), inner)}
+	lines := []overlayLine{{text: truncateLine(m.list.input.View(), inner), row: -1}}
 	switch {
 	case snapshot.Loading:
-		lines = append(lines, ellipsizeLine(m.styles.Empty.Render("Loading..."), inner))
+		return append(lines, overlayLine{text: ellipsizeLine(m.styles.Empty.Render("Loading..."), inner), row: -1})
 	case snapshot.Error != "":
-		lines = append(lines, ellipsizeLine(m.styles.StatusErr.Render(snapshot.Error), inner))
+		return append(lines, overlayLine{text: ellipsizeLine(m.styles.StatusErr.Render(snapshot.Error), inner), row: -1})
 	case len(snapshot.Rows) == 0:
-		lines = append(lines, ellipsizeLine(m.styles.Empty.Render("No matches"), inner))
-	default:
-		lines = append(lines, m.channelListTableLines(snapshot.Rows, inner)...)
+		return append(lines, overlayLine{text: ellipsizeLine(m.styles.Empty.Render("No matches"), inner), row: -1})
+	}
+	rows := snapshot.Rows
+	if len(rows) > channelListRowCap {
+		rows = rows[:channelListRowCap]
+	}
+	visible := m.overlayRowBudget(1) - channelListTableChrome
+	if visible < 1 {
+		visible = 1
+	}
+	start, end := listWindow(len(rows), m.list.scroll, visible)
+	table := m.channelListTableLines(rows[start:end], inner, start)
+	chrome := len(table) - (end - start)
+	if chrome < 0 {
+		chrome = 0
+	}
+	for index := 0; index < chrome && index < len(table); index++ {
+		lines = append(lines, overlayLine{text: table[index], row: -1})
+	}
+	for index := chrome; index < len(table); index++ {
+		lines = append(lines, overlayLine{text: table[index], row: start + (index - chrome)})
 	}
 	return lines
 }
@@ -206,7 +241,10 @@ func (m *Model) channelListCardBody(inner int) []string {
 // row. Each element is one rendered line, truncated to inner so the shared card
 // frame never widens. It mirrors the Qt list's columns and keeps the
 // controller's 200-row cap.
-func (m *Model) channelListTableLines(rows []controller.ChannelListRow, inner int) []string {
+// channelListTableLines lays the visible rows. origin is the absolute index
+// of rows[0], so highlight and zebra stay aligned with the full list when the
+// window is not at the top. origin 0 is the unwindowed table.
+func (m *Model) channelListTableLines(rows []controller.ChannelListRow, inner, origin int) []string {
 	t := table.New().
 		Headers("CHANNEL", "USERS", "TOPIC").
 		Border(lipgloss.NormalBorder()).
@@ -230,9 +268,9 @@ func (m *Model) channelListTableLines(rows []controller.ChannelListRow, inner in
 		switch {
 		case row == table.HeaderRow:
 			return channelListCellStyle(col, m.styles.SectionHeader)
-		case row == m.list.selected:
+		case row+origin == m.list.selected:
 			return channelListCellStyle(col, m.channelListSelectedStyle())
-		case row%2 == 1:
+		case (row+origin)%2 == 1:
 			return channelListCellStyle(col, m.channelListZebraStyle())
 		default:
 			return channelListCellStyle(col, m.channelListRowStyle())

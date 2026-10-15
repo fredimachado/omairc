@@ -95,7 +95,7 @@ func TestListOverlayKeepsRowCap(t *testing.T) {
 			Topic:   "topic",
 		}
 	}
-	lines := m.channelListTableLines(rows, 100)
+	lines := m.channelListTableLines(rows, 100, 0)
 	// header + header rule + capped data rows.
 	if want := channelListRowCap + 2; len(lines) != want {
 		t.Fatalf("rendered %d table lines, want %d (200-row cap)", len(lines), want)
