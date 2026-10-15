@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -143,7 +145,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// rebuilt a snapshot. Coalesce the wake-ups onto one dispatcher instead.
 	model := ui.New(c, conn)
 	model.SetMouseEnabled(ui.MouseOptIn(mouseFlag, os.Getenv("OMAIRC_TUI_MOUSE")))
-	p := tea.NewProgram(model)
 
 	// The live Omarchy theme watcher. SetThemeWatcher adopts the current
 	// palette immediately; the shell then arms one blocking Changes() read as a
@@ -160,17 +161,48 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// answers that probe and stays on the half-block raster, because it does
 	// not draw Unicode placeholders. The store exists when either path is
 	// available. A row with no cached image stays on the nick identicon.
-	graphics := avatar.ProbeGraphics(os.Stdin, os.Stdout, avatar.ProbeTimeout)
+	// input is non-nil when keys typed during the probe must be replayed, or
+	// a Kitty reply that arrives after the probe must be discarded.
+	graphics, input := avatar.ProbeGraphics(os.Stdin, os.Stdout, avatar.ProbeTimeout)
+	var opts []tea.ProgramOption
+	if input != nil {
+		opts = append(opts, tea.WithInput(input))
+	}
+	p := tea.NewProgram(model, opts...)
+
+	// SIGHUP's default action kills the process before deferred cleanup runs.
+	// Quit the program instead so Run returns and the delete escapes are written.
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	defer signal.Stop(hup)
+	stopHup := make(chan struct{})
+	defer close(stopHup)
+	go func() {
+		select {
+		case <-hup:
+			p.Quit()
+		case <-stopHup:
+		}
+	}()
+
+	var avatars *avatar.Store
 	if avatar.TruecolorSupported() || graphics {
-		avatars := avatar.New(avatar.TruecolorSupported(), func(string) {
+		avatars = avatar.New(avatar.TruecolorSupported(), func(string) {
 			p.Send(ui.AvatarReadyMsg{})
 		})
 		if graphics {
 			avatars.EnableGraphics()
 		}
 		model.SetAvatarSource(avatars)
-		defer avatars.Close()
 	}
+	defer func() {
+		if avatars != nil {
+			avatars.Close()
+		}
+	}()
+	defer func() {
+		_ = avatar.WriteDeleteEscapes(os.Stdout, avatars)
+	}()
 
 	// The desktop notifier is platform-specific (internal/notify). Its activation
 	// callback fires from the D-Bus goroutine, so p.Send is the normal path.

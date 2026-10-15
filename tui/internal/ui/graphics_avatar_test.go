@@ -20,11 +20,9 @@ type recordingGraphics struct {
 	fakeAvatarSource
 	cells   string
 	escapes string
-	deletes string
 	asked   int
 	drains  int
 	noted   int
-	deleted int
 	cols    int
 	rows    int
 }
@@ -47,13 +45,6 @@ func (r *recordingGraphics) DrainEscapes(cols, rows int) string {
 }
 
 func (r *recordingGraphics) NoteDrawn() { r.noted++ }
-
-func (r *recordingGraphics) DeleteEscapes() string {
-	r.deleted++
-	out := r.deletes
-	r.deletes = ""
-	return out
-}
 
 func TestAvatarsOffDrawsNoPlaceholder(t *testing.T) {
 	row := controller.ConversationSnapshot{
@@ -159,18 +150,32 @@ func TestAvatarReadySendsEscapesOutsideTheView(t *testing.T) {
 	}
 
 	updated, next := m.Update(raw)
-	if next != nil {
-		t.Fatalf("RawMsg command = %T, want nil", next)
+	if next == nil {
+		t.Fatal("RawMsg produced no follow-up")
 	}
 	if updated.(*Model) != m {
 		t.Fatal("RawMsg replaced the model")
+	}
+	if source.noted != 0 {
+		t.Fatal("NoteDrawn ran in the same turn as the transmit")
+	}
+	drawn := next()
+	if _, ok := drawn.(avatarGraphicsDrawnMsg); !ok {
+		t.Fatalf("RawMsg follow-up = %T, want avatarGraphicsDrawnMsg", drawn)
+	}
+	updated, after := m.Update(drawn)
+	if after != nil {
+		t.Fatalf("drawn follow-up command = %T, want nil", after)
+	}
+	if updated.(*Model) != m {
+		t.Fatal("drawn follow-up replaced the model")
 	}
 	if source.noted != 1 {
 		t.Fatalf("NoteDrawn called %d times, want 1", source.noted)
 	}
 }
 
-func TestQuitDeletesTransmittedImages(t *testing.T) {
+func TestQuitLeavesDeletionUntilTheProgramReturns(t *testing.T) {
 	m := seededModel(t)
 	_, cmd := m.Update(ctrlKey('q'))
 	if _, ok := cmd().(tea.QuitMsg); !ok {
@@ -178,17 +183,14 @@ func TestQuitDeletesTransmittedImages(t *testing.T) {
 	}
 
 	m = seededModel(t)
-	source := &recordingGraphics{deletes: "\x1b_Ga=d,d=I,i=1,q=2\x1b\\"}
+	source := &recordingGraphics{escapes: "\x1b_Ga=t,f=100,i=1,q=2,U=1,m=0;AAAA\x1b\\"}
 	m.SetAvatarSource(source)
 	_, cmd = m.Update(ctrlKey('q'))
 	if cmd == nil {
 		t.Fatal("quit command is nil")
 	}
-	if _, ok := cmd().(tea.QuitMsg); ok {
-		t.Fatal("quit with live images returned tea.Quit before the delete")
-	}
-	if source.deleted != 1 || source.deletes != "" {
-		t.Fatalf("DeleteEscapes consumed = %d, leftover %q", source.deleted, source.deletes)
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatalf("quit with a live avatar = %T, want tea.QuitMsg", cmd())
 	}
 }
 

@@ -174,6 +174,182 @@ func TestReadGraphicsSupportReplyAndTimeout(t *testing.T) {
 	if replyOK([]byte("\x1b_Gi=1;NOTOK\x1b\\")) {
 		t.Fatal("NOTOK counted as OK")
 	}
+	if replyOK([]byte("\x1b_Gi=1;OK\x1b\\")) {
+		t.Fatal("wrong image id counted as OK")
+	}
+	if !replyOK([]byte("\x1b_Gi=4294967295;OK\x1b\\")) {
+		t.Fatal("probe id OK was rejected")
+	}
+}
+
+func TestProbeStopsAtDA1(t *testing.T) {
+	t.Setenv("TERM_PROGRAM", "")
+	da1 := []byte("\x1b[?1;2c")
+	ok := []byte("\x1b_Gi=4294967295;OK\x1b\\")
+
+	t.Run("da1 only", func(t *testing.T) {
+		term := &scriptTerminal{reply: da1}
+		started := time.Now()
+		got := readProbeDeadline(term, term, 400*time.Millisecond)
+		if got.supported {
+			t.Fatal("DA1 only enabled graphics")
+		}
+		if waited := time.Since(started); waited > 100*time.Millisecond {
+			t.Fatalf("DA1 only waited %s", waited)
+		}
+		if !strings.Contains(term.written.String(), "a=q") || !strings.Contains(term.written.String(), "\x1b[c") {
+			t.Fatalf("probe = %q, want a=q and DA1", term.written.String())
+		}
+	})
+
+	t.Run("kitty and da1", func(t *testing.T) {
+		term := &scriptTerminal{reply: append(append([]byte{}, ok...), da1...)}
+		started := time.Now()
+		got := readProbeDeadline(term, term, 400*time.Millisecond)
+		if !got.supported {
+			t.Fatal("Kitty OK plus DA1 did not enable graphics")
+		}
+		if waited := time.Since(started); waited > 100*time.Millisecond {
+			t.Fatalf("Kitty OK plus DA1 waited %s", waited)
+		}
+		if got.dropAPC {
+			t.Fatal("a consumed Kitty reply would be swallowed later")
+		}
+	})
+
+	t.Run("garbled", func(t *testing.T) {
+		term := &scriptTerminal{reply: []byte("\x1b_Gi=4294967295;EINVAL\x1b\\\x1b[?1;2c")}
+		if readProbeDeadline(term, term, 400*time.Millisecond).supported {
+			t.Fatal("garbled reply enabled graphics")
+		}
+	})
+
+	t.Run("ok before wezterm", func(t *testing.T) {
+		term := &scriptTerminal{reply: []byte(
+			"\x1b_Gi=4294967295;OK\x1b\\\x1bP>|WezTerm 20240203-110809-5046fc22\x1b\\\x1b[?1;2c",
+		)}
+		if readProbeDeadline(term, term, 400*time.Millisecond).supported {
+			t.Fatal("OK before WezTerm XTVERSION enabled placeholders")
+		}
+	})
+
+	t.Run("wrong id", func(t *testing.T) {
+		term := &scriptTerminal{reply: []byte("\x1b_Gi=1;OK\x1b\\\x1b[?1;2c")}
+		started := time.Now()
+		if readProbeDeadline(term, term, 400*time.Millisecond).supported {
+			t.Fatal("wrong image id enabled graphics")
+		}
+		if waited := time.Since(started); waited > 100*time.Millisecond {
+			t.Fatalf("wrong id waited %s", waited)
+		}
+	})
+
+	t.Run("keys", func(t *testing.T) {
+		term := &scriptTerminal{reply: []byte("ab\x1b[A\x1b_Gi=4294967295;OK\x1b\\c\x1b[?1;2cd")}
+		got := readProbeDeadline(term, term, 400*time.Millisecond)
+		if !got.supported {
+			t.Fatal("keys around a Kitty reply disabled graphics")
+		}
+		if string(got.replay) != "ab\x1b[Acd" {
+			t.Fatalf("replay = %q, want ab, up-arrow, cd", got.replay)
+		}
+	})
+}
+
+func TestLateKittyReplyIsSwallowed(t *testing.T) {
+	t.Setenv("TERM_PROGRAM", "")
+	silent := &scriptTerminal{}
+	got := readProbeDeadline(silent, silent, 30*time.Millisecond)
+	if got.supported {
+		t.Fatal("timeout enabled graphics")
+	}
+	if !got.dropAPC {
+		t.Fatal("timeout left a late Kitty reply on the input stream")
+	}
+
+	filter := &lateFilter{dropNextAPC: true}
+	kept := filter.push([]byte("xy\x1b_Gi=4294967295;OK\x1b\\Z\x1b[A"))
+	if string(kept) != "xyZ\x1b[A" {
+		t.Fatalf("filtered = %q, want keys without the graphics reply", kept)
+	}
+	if filter.dropNextAPC {
+		t.Fatal("filter stayed armed after the reply")
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	input := probeResult{replay: []byte("hi"), dropAPC: true}.wrap(r)
+	buf := make([]byte, 8)
+	n, err := input.Read(buf)
+	if err != nil || string(buf[:n]) != "hi" {
+		t.Fatalf("replay Read = %q %v, want hi", buf[:n], err)
+	}
+	if _, err := w.Write([]byte("\x1b_Gi=4294967295;OK\x1b\\!")); err != nil {
+		t.Fatal(err)
+	}
+	n, err = input.Read(buf)
+	if err != nil || string(buf[:n]) != "!" {
+		t.Fatalf("late reply Read = %q %v, want !", buf[:n], err)
+	}
+}
+
+func TestNoteDrawnMarksOneDrainAtATime(t *testing.T) {
+	store := New(true, nil)
+	defer store.Close()
+	store.EnableGraphics()
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.RGBA{R: 255, A: 255})
+	store.remember("one", img)
+	if store.DrainEscapes(2, 1) == "" {
+		t.Fatal("first drain was empty")
+	}
+	store.remember("two", img)
+	if store.DrainEscapes(2, 1) == "" {
+		t.Fatal("second drain was empty")
+	}
+	store.NoteDrawn()
+	store.mu.Lock()
+	_, first := store.drawnIDs[1]
+	_, second := store.drawnIDs[2]
+	queued := len(store.drawnQueue)
+	store.mu.Unlock()
+	if !first || second || queued != 1 {
+		t.Fatalf("after one NoteDrawn drawn1=%v drawn2=%v queue=%d", first, second, queued)
+	}
+	store.NoteDrawn()
+	store.mu.Lock()
+	_, second = store.drawnIDs[2]
+	queued = len(store.drawnQueue)
+	store.mu.Unlock()
+	if !second || queued != 0 {
+		t.Fatalf("after two NoteDrawn drawn2=%v queue=%d", second, queued)
+	}
+}
+
+func TestWriteDeleteEscapesWithoutQuit(t *testing.T) {
+	store := New(true, nil)
+	defer store.Close()
+	store.EnableGraphics()
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.RGBA{B: 255, A: 255})
+	store.remember("one", img)
+	if store.DrainEscapes(2, 1) == "" {
+		t.Fatal("drain was empty")
+	}
+	var buf bytes.Buffer
+	if err := WriteDeleteEscapes(&buf, store); err != nil {
+		t.Fatal(err)
+	}
+	if buf.String() != DeleteImage(1) {
+		t.Fatalf("cleanup = %q, want %q", buf.String(), DeleteImage(1))
+	}
+	if again := store.DeleteEscapes(); again != "" {
+		t.Fatalf("second delete = %q, want empty", again)
+	}
 }
 
 func TestPlaceholderFallbackDecision(t *testing.T) {
@@ -225,10 +401,10 @@ func TestProbeGraphicsNonTerminal(t *testing.T) {
 	if term.IsTerminal(os.Stdin.Fd()) {
 		t.Skip("stdin is a terminal")
 	}
-	if ProbeGraphics(os.Stdin, os.Stdout, time.Second) {
+	if ok, _ := ProbeGraphics(os.Stdin, os.Stdout, time.Second); ok {
 		t.Fatal("non-terminal probe returned true")
 	}
-	if ProbeGraphics(nil, nil, time.Second) {
+	if ok, _ := ProbeGraphics(nil, nil, time.Second); ok {
 		t.Fatal("nil probe returned true")
 	}
 }

@@ -42,6 +42,36 @@ func TestScaleBoxMatchesAtPath(t *testing.T) {
 	}
 }
 
+func TestScaleBoxEmptyBounds(t *testing.T) {
+	assertEmptyScale := func(t *testing.T, src image.Image) {
+		t.Helper()
+		got := scaleBox(src, 4, 3)
+		if got == nil {
+			t.Fatal("empty scale returned nil")
+		}
+		if got.Bounds().Dx() != 4 || got.Bounds().Dy() != 3 {
+			t.Fatalf("bounds = %v, want 4x3", got.Bounds())
+		}
+		for i, pix := range got.Pix {
+			if pix != 0 {
+				t.Fatalf("pixel %d = %d, want 0", i, pix)
+			}
+		}
+	}
+	assertEmptyScale(t, image.NewNRGBA(image.Rect(0, 0, 0, 0)))
+	assertEmptyScale(t, image.NewNRGBA(image.Rect(0, 0, 8, 8)).SubImage(image.Rect(2, 2, 2, 2)))
+	assertEmptyScale(t, image.NewRGBA(image.Rect(0, 0, 8, 8)).SubImage(image.Rect(1, 1, 1, 1)))
+	assertEmptyScale(t, image.NewYCbCr(image.Rect(0, 0, 8, 8), image.YCbCrSubsampleRatio444).SubImage(image.Rect(3, 3, 3, 3)))
+	paletted := image.NewPaletted(image.Rect(0, 0, 8, 8), color.Palette{color.Black, color.White})
+	assertEmptyScale(t, paletted.SubImage(image.Rect(4, 4, 4, 4)))
+	if got := scaleBox(nil, 2, 2); got.Bounds().Dx() != 2 || got.Pix[0] != 0 {
+		t.Fatalf("nil source = %v", got.Bounds())
+	}
+	if got := scaleBox(image.NewNRGBA(image.Rect(0, 0, 0, 0)), 0, 0); !got.Bounds().Empty() {
+		t.Fatalf("zero destination = %v", got.Bounds())
+	}
+}
+
 func TestScaleBoxFastPathDoesNotAllocatePerPixel(t *testing.T) {
 	parent := image.Rect(0, 0, 64, 48)
 	sub := image.Rect(3, 5, 43, 37)

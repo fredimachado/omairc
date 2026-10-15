@@ -67,13 +67,15 @@ type Store struct {
 	// imageIDs maps a cache key to the id transmitted for it. sentIDs are ids
 	// whose bytes have been handed to the terminal. drawnIDs are ids whose
 	// transmit has been written, so placeholder cells may reference them.
+	// drawnQueue is one batch per drain, oldest first. NoteDrawn pops one
+	// batch, so an image is not marked drawn before its own bytes are written.
 	// graphicsOps is the transmit/delete queue drained outside the view.
 	graphics    bool
 	nextImage   uint32
 	imageIDs    map[string]uint32
 	sentIDs     map[uint32]bool
 	drawnIDs    map[uint32]struct{}
-	inflight    []uint32
+	drawnQueue  [][]uint32
 	graphicsOps []graphicsOp
 }
 

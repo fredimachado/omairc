@@ -10,6 +10,9 @@ import (
 // their pixel buffers. Every other Image uses scaleBoxAt. Both paths use
 // boxSpan, then average non-premultiplied NRGBA samples.
 func scaleBox(src image.Image, dstW, dstH int) *image.NRGBA {
+	if src == nil || src.Bounds().Empty() || dstW <= 0 || dstH <= 0 {
+		return emptyScaled(dstW, dstH)
+	}
 	switch img := src.(type) {
 	case *image.NRGBA:
 		return scaleBoxNRGBA(img, dstW, dstH)
@@ -31,6 +34,9 @@ func scaleBox(src image.Image, dstW, dstH int) *image.NRGBA {
 // and Paletted images are converted into this layout first, so the average
 // reads bytes instead of image.Image.At.
 func scaleBoxNRGBA(src *image.NRGBA, dstW, dstH int) *image.NRGBA {
+	if src == nil || src.Bounds().Empty() || dstW <= 0 || dstH <= 0 {
+		return emptyScaled(dstW, dstH)
+	}
 	dst := image.NewNRGBA(image.Rect(0, 0, dstW, dstH))
 	bounds := src.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
@@ -66,6 +72,19 @@ func scaleBoxNRGBA(src *image.NRGBA, dstW, dstH int) *image.NRGBA {
 		}
 	}
 	return dst
+}
+
+// emptyScaled is the safe result for a nil image, an empty bounds, or a
+// non-positive destination. The pixels are zero, which is what Image.At
+// returns for a coordinate outside an empty image.
+func emptyScaled(dstW, dstH int) *image.NRGBA {
+	if dstW < 0 {
+		dstW = 0
+	}
+	if dstH < 0 {
+		dstH = 0
+	}
+	return image.NewNRGBA(image.Rect(0, 0, dstW, dstH))
 }
 
 // boxSpan returns the half-open source interval averaged into destination
@@ -174,6 +193,9 @@ func palettedAsNRGBA(src *image.Paletted) *image.NRGBA {
 // scaleBoxAt is the generic Image.At filter. It allocates a color per source
 // pixel; the concrete paths exist so a decoded avatar does not.
 func scaleBoxAt(src image.Image, dstW, dstH int) *image.NRGBA {
+	if src == nil || src.Bounds().Empty() || dstW <= 0 || dstH <= 0 {
+		return emptyScaled(dstW, dstH)
+	}
 	dst := image.NewNRGBA(image.Rect(0, 0, dstW, dstH))
 	bounds := src.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()

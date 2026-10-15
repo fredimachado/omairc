@@ -61,6 +61,11 @@ type NotificationActivatedMsg = notify.Activation
 // and it should re-render.
 type AvatarReadyMsg struct{}
 
+// avatarGraphicsDrawnMsg marks the oldest graphics batch as drawn. It is
+// scheduled from the RawMsg turn so that turn's frame cannot name an image
+// whose transmit is still sitting in the output buffer.
+type avatarGraphicsDrawnMsg struct{}
+
 // ThemeChangedMsg carries a new palette read from the theme watcher. It takes
 // the same program hop as AvatarReadyMsg: the watcher read is a tea.Cmd whose
 // message the runtime delivers to Update, which rebuilds the styles and
@@ -83,7 +88,6 @@ type avatarGraphics interface {
 	Placeholder(rawURL string, layoutPixels, cols int) (string, bool)
 	DrainEscapes(cols, rows int) string
 	NoteDrawn()
-	DeleteEscapes() string
 }
 
 // Model is the Bubble Tea shell state over one controller and the Connect
@@ -538,17 +542,11 @@ func (m *Model) avatarGraphicsCmd() tea.Cmd {
 	return tea.Raw(payload)
 }
 
-// quitCommand deletes every image we transmitted, then quits. With nothing
-// transmitted it is tea.Quit, so the chord stays a single quit message.
+// quitCommand leaves the program. Image deletion is written after Run
+// returns, so a quit chord, a returned error, and a caught signal all free
+// the same transmitted ids.
 func (m *Model) quitCommand() tea.Cmd {
-	payload := ""
-	if g, ok := m.avatars.(avatarGraphics); ok && g != nil {
-		payload = g.DeleteEscapes()
-	}
-	if payload == "" {
-		return tea.Quit
-	}
-	return tea.Sequence(tea.Raw(payload), tea.Quit)
+	return tea.Quit
 }
 
 // Update folds one Bubble Tea message. Quit chords leave the program; the
@@ -605,9 +603,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.colorProfile = msg.Profile
 		return m, nil
 	case tea.RawMsg:
-		// The runtime already wrote the graphics escapes. Placeholder cells
-		// may name those images on the next frame.
-		if g, ok := m.avatars.(avatarGraphics); ok {
+		// execute buffered the graphics escapes. NoteDrawn waits for the next
+		// message so this turn's frame cannot place a placeholder first.
+		return m, func() tea.Msg { return avatarGraphicsDrawnMsg{} }
+	case avatarGraphicsDrawnMsg:
+		if g, ok := m.avatars.(avatarGraphics); ok && g != nil {
 			g.NoteDrawn()
 		}
 		return m, nil
