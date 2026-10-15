@@ -182,6 +182,10 @@ type Model struct {
 	// TranscriptList's firstUnseenIndex and trackedCount.
 	firstUnseenRow  int
 	transcriptCount int
+	// unseenTail stays set after Alt+U pins that row and lines still sit below
+	// the viewport. ↓ new stays armed, and the next Alt+U advances one page
+	// toward the end. Following the end clears it.
+	unseenTail bool
 	// transcriptLineCount is the rendered line count of transcriptArea(),
 	// including the typing footer. A detached append adds the increase to
 	// transcriptScroll so the top line stays put.

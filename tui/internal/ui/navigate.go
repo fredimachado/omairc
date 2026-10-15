@@ -637,6 +637,7 @@ func (m *Model) afterSelectionChange(previousID string, wasConsole bool) {
 		m.ctrl.ClearHistoryPageCapTailForConversationID(previousID)
 	}
 	m.firstUnseenRow = -1
+	m.unseenTail = false
 	m.transcriptCount = m.transcriptRowTotal()
 	console := m.ctrl != nil && m.ctrl.ConsoleOpen()
 	if !wasConsole && !console && m.keepsViewportOnReselect(previousID) {

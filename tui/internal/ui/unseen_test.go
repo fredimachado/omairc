@@ -137,6 +137,174 @@ func TestAltUReattachesWhenTheTargetIsTheEnd(t *testing.T) {
 	}
 }
 
+// TestAltUKeepsMarkerWhileUnseenRowsRemainBelow is the 180x30 repro: two Page
+// Ups, then 35 arrivals. Alt+U lands on the first unseen row with more of
+// that run still below the view. ↓ new must stay, each further Alt+U must
+// move toward the end, and the view follows the end once a landing reaches it.
+func TestAltUKeepsMarkerWhileUnseenRowsRemainBelow(t *testing.T) {
+	m, d := unseenDemoModel(t)
+	m = resizeModel(t, m, 180, 30)
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
+	if m.transcriptFollowEnd {
+		t.Fatal("two Page Ups must leave follow-the-end")
+	}
+	before := m.transcriptRowTotal()
+	const arrivals = 35
+	for i := 0; i < arrivals; i++ {
+		d.InjectOmarchy([]byte(fmt.Sprintf(
+			"@msgid=tail-%d :nora!u@h PRIVMSG #omarchy :tail %d\r\n", i, i)))
+	}
+	m = updateMsg(t, m, NotifyMsg{})
+	if m.firstUnseenRow != before {
+		t.Fatalf("firstUnseenRow = %d, want %d", m.firstUnseenRow, before)
+	}
+	if !m.jumpArmed() {
+		t.Fatal("arrivals while scrolled up must arm the jump")
+	}
+	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
+	if !strings.Contains(plain, "↓ new") {
+		t.Fatal("the header must show ↓ new before Alt+U")
+	}
+
+	m = press(t, m, altKey('u'))
+	if m.transcriptFollowEnd {
+		t.Fatal("Alt+U partway through the unseen run must stay detached")
+	}
+	if m.firstUnseenRow != -1 {
+		t.Fatalf("firstUnseenRow = %d, want the original marker consumed", m.firstUnseenRow)
+	}
+	if got := m.ctrl.Messages()[m.firstVisibleMessageRow()].Body; got != "tail 0" {
+		t.Fatalf("top body = %q, want the first unseen row", got)
+	}
+	wantPlace := fmt.Sprintf("%d of %d", before+1, before+arrivals)
+	if got := m.transcriptPlaceLabel(); got != wantPlace {
+		t.Fatalf("place = %q, want %q", got, wantPlace)
+	}
+	last := fmt.Sprintf("tail %d", arrivals-1)
+	plain = ansiPattern.ReplaceAllString(m.View().Content, "")
+	if !strings.Contains(plain, "↓ new") {
+		t.Fatalf("↓ new must stay while unseen rows remain below:\n%s", plain)
+	}
+	if strings.Contains(plain, last) {
+		t.Fatalf("the newest row %q must stay below the fold:\n%s", last, plain)
+	}
+
+	top := m.firstVisibleMessageRow()
+	for pressN := 0; pressN < 8; pressN++ {
+		m = press(t, m, altKey('u'))
+		if m.transcriptFollowEnd {
+			break
+		}
+		next := m.firstVisibleMessageRow()
+		if next <= top {
+			t.Fatalf("Alt+U %d left the top at row %d, want it to advance past %d", pressN+2, next, top)
+		}
+		plain = ansiPattern.ReplaceAllString(m.View().Content, "")
+		if !strings.Contains(plain, "↓ new") {
+			t.Fatalf("↓ new cleared before the end, place %s:\n%s", m.transcriptPlaceLabel(), plain)
+		}
+		if strings.Contains(plain, last) {
+			t.Fatalf("Alt+U %d showed %q before reattaching:\n%s", pressN+2, last, plain)
+		}
+		top = next
+	}
+	if !m.transcriptFollowEnd || m.transcriptScroll != 0 {
+		t.Fatalf("follow=%v scroll=%d, want followed at the end", m.transcriptFollowEnd, m.transcriptScroll)
+	}
+	if label := m.transcriptPlaceLabel(); label != "" {
+		t.Fatalf("place after reattach = %q, want empty", label)
+	}
+	plain = ansiPattern.ReplaceAllString(m.View().Content, "")
+	if m.jumpArmed() || strings.Contains(plain, "↓ new") {
+		t.Fatalf("↓ new must clear once the view follows the end:\n%s", plain)
+	}
+	if !strings.Contains(plain, last) {
+		t.Fatal("the newest arrival must be on screen after the view reattaches")
+	}
+}
+
+// TestAltUAdvancesOnePageWhenTheUnseenTailOutlastsTwoViewports proves a second
+// Alt+U moves on through a long run instead of jumping to the end. The tail
+// is more than two viewports, so the press after the first landing still has
+// unseen rows below and must stay detached with ↓ new.
+func TestAltUAdvancesOnePageWhenTheUnseenTailOutlastsTwoViewports(t *testing.T) {
+	m, d := unseenDemoModel(t)
+	m = resizeModel(t, m, 180, 30)
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
+	if m.transcriptFollowEnd {
+		t.Fatal("Page Up must leave follow-the-end")
+	}
+	before := m.transcriptRowTotal()
+	extra := m.transcriptRowsHeight()*2 + 8
+	if extra < 40 {
+		extra = 40
+	}
+	for i := 0; i < extra; i++ {
+		d.InjectOmarchy([]byte(fmt.Sprintf(
+			"@msgid=page-%d :nora!u@h PRIVMSG #omarchy :page %d\r\n", i, i)))
+	}
+	m = updateMsg(t, m, NotifyMsg{})
+	if m.firstUnseenRow != before {
+		t.Fatalf("firstUnseenRow = %d, want %d", m.firstUnseenRow, before)
+	}
+
+	m = press(t, m, altKey('u'))
+	if m.transcriptFollowEnd {
+		t.Fatal("the first Alt+U must stay detached")
+	}
+	if got := m.ctrl.Messages()[m.firstVisibleMessageRow()].Body; got != "page 0" {
+		t.Fatalf("top body = %q, want the first unseen row", got)
+	}
+	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
+	if !strings.Contains(plain, "↓ new") {
+		t.Fatalf("↓ new must stay after the first landing:\n%s", plain)
+	}
+	top := m.firstVisibleMessageRow()
+
+	m = press(t, m, altKey('u'))
+	if m.transcriptFollowEnd {
+		t.Fatal("the second Alt+U must stay detached while a viewport of unseen rows remains")
+	}
+	if m.transcriptScroll == 0 {
+		t.Fatal("the second Alt+U must not clamp onto the end")
+	}
+	next := m.firstVisibleMessageRow()
+	if next <= top {
+		t.Fatalf("second landing top = %d, want it past %d", next, top)
+	}
+	last := fmt.Sprintf("page %d", extra-1)
+	plain = ansiPattern.ReplaceAllString(m.View().Content, "")
+	if !strings.Contains(plain, "↓ new") {
+		t.Fatalf("↓ new must stay after the second landing:\n%s", plain)
+	}
+	if strings.Contains(plain, last) {
+		t.Fatalf("the newest row %q must stay below the fold:\n%s", last, plain)
+	}
+
+	for pressN := 0; pressN < 8; pressN++ {
+		m = press(t, m, altKey('u'))
+		if m.transcriptFollowEnd {
+			break
+		}
+		advanced := m.firstVisibleMessageRow()
+		if advanced <= next {
+			t.Fatalf("Alt+U left the top at row %d, want it past %d", advanced, next)
+		}
+		next = advanced
+	}
+	if !m.transcriptFollowEnd || m.transcriptScroll != 0 {
+		t.Fatalf("follow=%v scroll=%d, want followed at the end", m.transcriptFollowEnd, m.transcriptScroll)
+	}
+	plain = ansiPattern.ReplaceAllString(m.View().Content, "")
+	if m.jumpArmed() || strings.Contains(plain, "↓ new") {
+		t.Fatalf("↓ new must clear once the view follows the end:\n%s", plain)
+	}
+	if !strings.Contains(plain, last) {
+		t.Fatal("the newest arrival must be on screen after the view reattaches")
+	}
+}
+
 // TestAltUStaysDetachedWhenUnseenRowsFillTheViewport proves a long unseen tail
 // still pins to the first new row and keeps the place counter.
 func TestAltUStaysDetachedWhenUnseenRowsFillTheViewport(t *testing.T) {

@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The terminal client's `Alt+U` keeps `↓ new` while unseen rows remain below
+  the view. Another press advances one page toward the end, and the view
+  follows the end once that landing reaches it.
 - Upload tests accept the canonical HTTP header names Qt 6.12 writes, and
   the lowercase names from Qt 6.11 and earlier.
 - The channel Leave and Close clicks in the UI tests wait until those

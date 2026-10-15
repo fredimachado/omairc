@@ -514,6 +514,9 @@ func (m *Model) setTranscriptFollowEnd(follow bool) {
 	if follow && !m.transcriptFollowEnd && m.ctrl != nil {
 		m.ctrl.ClearHistoryPageCapTail()
 	}
+	if follow {
+		m.unseenTail = false
+	}
 	m.transcriptFollowEnd = follow
 }
 
@@ -732,6 +735,7 @@ func (m *Model) noteTranscriptGrowth() {
 	case count > m.transcriptCount:
 		if m.transcriptFollowEnd {
 			m.firstUnseenRow = -1
+			m.unseenTail = false
 		} else {
 			if m.firstUnseenRow < 0 {
 				m.firstUnseenRow = m.transcriptCount
@@ -781,14 +785,18 @@ func (m *Model) syncTranscriptLineCount() {
 }
 
 // jumpArmed reports whether a jump-to-newest affordance applies: the reader is
-// scrolled up and either rows arrived below them or the transcript carries a
-// "New messages" mark. It mirrors TranscriptList.jumpArmed with canScrollDown
-// standing in for !transcriptFollowEnd.
+// scrolled up and either rows arrived below them, an Alt+U landing left unseen
+// rows below the view, or the transcript carries a "New messages" mark. It
+// mirrors TranscriptList.jumpArmed with canScrollDown standing in for
+// !transcriptFollowEnd.
 func (m *Model) jumpArmed() bool {
 	if m.ctrl == nil || m.transcriptFollowEnd {
 		return false
 	}
 	if m.firstUnseenRow >= 0 && m.firstUnseenRow < m.transcriptRowTotal() {
+		return true
+	}
+	if m.unseenTail && m.transcriptScroll > 0 {
 		return true
 	}
 	if m.ctrl.ConsoleOpen() {
@@ -798,25 +806,89 @@ func (m *Model) jumpArmed() bool {
 }
 
 // jumpToUnseen lands on the first row that arrived while the reader was
-// scrolled up, else on the newest row. It mirrors TranscriptList.jumpToUnseen.
-// Pinning that row can clamp onto the last page. When the newest row then sits
-// on the bottom line, transcriptScroll is 0, which is the same end condition
-// Page Down and Ctrl+End use, so the view follows the end again and the place
-// counter and ↓ new clear. A pin that still hides rows below stays detached.
+// scrolled up, else one page further through rows still below the view, else
+// on the newest row. It mirrors TranscriptList.jumpToUnseen for the first
+// landing. Pinning a row can clamp onto the last page. When the newest row
+// then sits on the bottom line, transcriptScroll is 0, which is the same end
+// condition Page Down and Ctrl+End use, so the view follows the end again and
+// the place counter and ↓ new clear. A pin that still hides rows below stays
+// detached and keeps ↓ new armed, so another Alt+U advances.
 func (m *Model) jumpToUnseen() {
 	if !m.jumpArmed() {
 		return
 	}
-	if m.firstUnseenRow >= 0 {
+	if m.unseenTail {
+		m.advanceUnseenTail()
+		return
+	}
+	if m.firstUnseenRow >= 0 && m.firstUnseenRow < m.transcriptRowTotal() {
 		row := m.firstUnseenRow
 		m.firstUnseenRow = -1
 		m.pinTranscriptToRow(row)
-		if m.transcriptScroll == 0 {
+		m.settleUnseenTail()
+		return
+	}
+	m.jumpTranscript(true)
+}
+
+// advanceUnseenTail pins the first row still below the viewport. A landing
+// that reaches the end follows it. A row that arrived while this catch-up was
+// in progress is consumed once the landing moves to it or past it.
+func (m *Model) advanceUnseenTail() {
+	row := m.firstRowBelowViewport()
+	if row < 0 {
+		m.unseenTail = false
+		m.jumpTranscript(true)
+		return
+	}
+	if m.firstUnseenRow >= 0 && m.firstUnseenRow <= row {
+		m.firstUnseenRow = -1
+	}
+	m.pinTranscriptToRow(row)
+	m.settleUnseenTail()
+}
+
+// settleUnseenTail follows the end when the landing clamped onto the last
+// page, and otherwise keeps ↓ new armed while a message row remains below.
+func (m *Model) settleUnseenTail() {
+	if m.transcriptFollowEnd || m.transcriptScroll == 0 {
+		m.unseenTail = false
+		if !m.transcriptFollowEnd {
 			m.jumpTranscript(true)
 		}
 		return
 	}
-	m.jumpTranscript(true)
+	m.unseenTail = m.firstRowBelowViewport() >= 0
+}
+
+// firstRowBelowViewport is the first message row that is not fully on screen,
+// or -1 when every row already fits. A row taller than the viewport is already
+// the top line, so the advance is the row after it. The typing footer is not
+// a row.
+func (m *Model) firstRowBelowViewport() int {
+	if m == nil || m.ctrl == nil {
+		return -1
+	}
+	area := m.transcriptArea()
+	height := m.transcriptRowsHeight()
+	if height < 1 {
+		height = 1
+	}
+	start, end := m.transcriptWindow(len(area.lines), height)
+	top := area.rowAt(start)
+	for row := 0; row < area.count(); row++ {
+		if area.endOf(row) <= end {
+			continue
+		}
+		if row == top {
+			if row+1 < area.count() {
+				return row + 1
+			}
+			return -1
+		}
+		return row
+	}
+	return -1
 }
 
 // transcriptPlaceLabel is how far up the reader is, drawn on the composer
