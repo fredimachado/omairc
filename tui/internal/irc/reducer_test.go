@@ -2030,3 +2030,72 @@ func TestAccountChangeRefreshesMemberRowAndTranscript(t *testing.T) {
 	requireTrue(t, "messages", notify.Messages)
 	requireFalse(t, "conversations", notify.Conversations)
 }
+
+func messageByBody(t *testing.T, messages []ReducedMessage, body string) ReducedMessage {
+	t.Helper()
+	for _, message := range messages {
+		if message.Body == body {
+			return message
+		}
+	}
+	t.Fatalf("missing body %q", body)
+	return ReducedMessage{}
+}
+
+func TestOnlyVisibleToYouSurvivesHistoryAndHydrate(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	for _, event := range translateLine(t, "@+draft/channel-context=#room :bot!u@h PRIVMSG omairc :just you") {
+		reducer.Apply(event, reducerTimestamp)
+	}
+	for _, event := range translateLine(t, ":alice!u@h PRIVMSG #room :everyone") {
+		reducer.Apply(event, reducerTimestamp)
+	}
+	for _, event := range translateLine(t, ":op!u@h PRIVMSG @#room :ops") {
+		reducer.Apply(event, reducerTimestamp)
+	}
+
+	room := reducer.ConversationKey(networkA, "#room")
+	conversation := stateOf(t, reducer, room)
+	marked := messageByBody(t, conversation.Messages, "just you")
+	requireTrue(t, "live only you", marked.OnlyVisibleToYou)
+	requireInt(t, "live kind", int(marked.Kind), int(KindMessage))
+	requireInt(t, "live origin", int(marked.Origin), int(OriginLive))
+	requireFalse(t, "no direct for the private delivery", reducer.Find(reducer.ConversationKey(networkA, "bot")) != nil)
+	requireFalse(t, "ordinary", messageByBody(t, conversation.Messages, "everyone").OnlyVisibleToYou)
+	requireFalse(t, "statusmsg", messageByBody(t, conversation.Messages, "ops").OnlyVisibleToYou)
+
+	history, ok := TranslateHistory(networkA, "omairc", NewServerFeatures(), HistoryBatch{
+		Target: "#room",
+		Lines: []Message{
+			mustParse(t, "@msgid=replay-only;+draft/channel-context=#room :bot!u@h PRIVMSG omairc :replayed"),
+			mustParse(t, "@msgid=replay-public :alice!u@h PRIVMSG #room :public replay"),
+			mustParse(t, "@msgid=replay-ops :op!u@h PRIVMSG @#room :ops replay"),
+		},
+	}, reducerTimestamp)
+	requireTrue(t, "history", ok)
+	reducer.Apply(history, reducerTimestamp)
+	conversation = stateOf(t, reducer, room)
+	replayed := messageByBody(t, conversation.Messages, "replayed")
+	requireTrue(t, "replay only you", replayed.OnlyVisibleToYou)
+	requireInt(t, "replay origin", int(replayed.Origin), int(OriginReplay))
+	requireFalse(t, "public replay", messageByBody(t, conversation.Messages, "public replay").OnlyVisibleToYou)
+	requireFalse(t, "ops replay", messageByBody(t, conversation.Messages, "ops replay").OnlyVisibleToYou)
+
+	log := &recordingConversationLog{}
+	first := NewEventReducer()
+	first.SetConversationLog(log)
+	welcome(first, networkA)
+	first.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	for _, event := range translateLine(t, "@msgid=stored-only;+draft/channel-context=#room :bot!u@h PRIVMSG omairc :stored") {
+		first.Apply(event, reducerTimestamp)
+	}
+	again := NewEventReducer()
+	again.SetConversationLog(log)
+	welcome(again, networkA)
+	again.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	hydrated := messageByBody(t, stateOf(t, again, room).Messages, "stored")
+	requireTrue(t, "hydrated only you", hydrated.OnlyVisibleToYou)
+	requireInt(t, "hydrated origin", int(hydrated.Origin), int(OriginReplay))
+}

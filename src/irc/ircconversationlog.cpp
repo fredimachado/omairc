@@ -64,6 +64,8 @@ QByteArray formatLine(const IrcTranscriptLine &line)
     object.insert(QStringLiteral("body"), flattenText(line.body));
     if (!line.msgid.isEmpty())
         object.insert(QStringLiteral("msgid"), line.msgid);
+    if (line.onlyVisibleToYou)
+        object.insert(QStringLiteral("onlyVisibleToYou"), true);
     return QJsonDocument(object).toJson(QJsonDocument::Compact) + '\n';
 }
 
@@ -85,6 +87,7 @@ std::optional<IrcTranscriptLine> parseLine(const QByteArray &raw)
     line.kind = kind;
     line.body = body;
     line.msgid = object.value(QStringLiteral("msgid")).toString();
+    line.onlyVisibleToYou = object.value(QStringLiteral("onlyVisibleToYou")).toBool();
     return line;
 }
 

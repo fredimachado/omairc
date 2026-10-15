@@ -882,6 +882,9 @@ func statusKeepsIncomingPrivmsg(message Message, currentNick, channelTypes strin
 	if features.IsChannel(target) {
 		return false
 	}
+	if _, status := features.StatusMessageChannel(target); status {
+		return false
+	}
 	sender := ""
 	host := ""
 	if message.Prefix != nil {

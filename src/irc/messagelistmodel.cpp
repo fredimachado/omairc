@@ -154,6 +154,8 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
             return QString();
         case MentionedRole:
             return false;
+        case OnlyVisibleToYouRole:
+            return false;
         default:
             return {};
         }
@@ -179,6 +181,8 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
         case AuthorAccountRole:
             return QString();
         case MentionedRole:
+            return false;
+        case OnlyVisibleToYouRole:
             return false;
         default:
             return {};
@@ -228,6 +232,8 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
         return m_reducer.isTranscriptHighlight(
             conversation->key.networkId, message.author, message.kind,
             message.body);
+    case OnlyVisibleToYouRole:
+        return message.onlyVisibleToYou;
     default:
         return {};
     }
@@ -248,6 +254,7 @@ QHash<int, QByteArray> MessageListModel::staticRoleNames()
         {AuthorAccountRole, "authorAccount"},
         {MentionedRole, "mentioned"},
         {SequenceRole, "sequence"},
+        {OnlyVisibleToYouRole, "onlyVisibleToYou"},
     };
 }
 

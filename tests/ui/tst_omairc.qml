@@ -12313,4 +12313,49 @@ TestCase {
         compare(appWindow.connection.name, name);
         compare(nameField.text, name);
     }
+
+    function test_channelLineOnlyVisibleToYou() {
+        openSeededAppWindow();
+        selectOmarchy();
+        var list = item("messageList");
+
+        injectOmarchyChat("alice", "#omarchy", "ordinary room line", "12:10");
+        waitForBody(list, "ordinary room line");
+        var ordinary = renderedRowWithBody("ordinary room line");
+        compare(findChild(ordinary, "onlyVisibleToYou").visible, false);
+        compare(field(list.model, rowForBody(list.model, "ordinary room line"),
+                      "onlyVisibleToYou"), "false");
+
+        seed.injectOmarchy("@time=2026-09-12T12:11:00.000Z :op!u@h PRIVMSG @#omarchy :ops status line\r\n");
+        waitForBody(list, "ops status line");
+        var statusRow = renderedRowWithBody("ops status line");
+        compare(findChild(statusRow, "onlyVisibleToYou").visible, false);
+        compare(field(list.model, rowForBody(list.model, "ops status line"),
+                      "onlyVisibleToYou"), "false");
+
+        seed.injectOmarchy("@time=2026-09-12T12:12:00.000Z;+draft/channel-context=#omarchy :bot!u@h PRIVMSG fred :private channel line\r\n");
+        waitForBody(list, "private channel line");
+        var marked = renderedRowWithBody("private channel line");
+        var label = findChild(marked, "onlyVisibleToYou");
+        verify(label !== null, "The private channel line should carry the marker");
+        compare(label.visible, true);
+        compare(label.text, "only visible to you");
+        compare(findChild(marked, "messageBody").text, "private channel line");
+        compare(field(list.model, rowForBody(list.model, "private channel line"),
+                      "onlyVisibleToYou"), "true");
+
+        seed.injectOmarchy(":irc.host BATCH +onlyyou chathistory #omarchy\r\n"
+            + "@batch=onlyyou;time=2026-09-12T12:13:00.000Z;+draft/channel-context=#omarchy :bot!u@h PRIVMSG fred :replayed private line\r\n"
+            + ":irc.host BATCH -onlyyou\r\n");
+        waitForBody(list, "replayed private line");
+        var replay = renderedRowWithBody("replayed private line");
+        var replayLabel = findChild(replay, "onlyVisibleToYou");
+        compare(replayLabel.visible, true);
+        compare(replayLabel.text, "only visible to you");
+        compare(field(list.model, rowForBody(list.model, "replayed private line"),
+                      "onlyVisibleToYou"), "true");
+        compare(field(list.model, rowForBody(list.model, "replayed private line"),
+                      "origin"), "replay");
+        saveScreenshot("only-visible-to-you");
+    }
 }

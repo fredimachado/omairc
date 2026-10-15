@@ -335,6 +335,23 @@ func (f *ServerFeatures) IsChannel(target string) bool {
 	return target != "" && strings.IndexByte(f.channelTypes, target[0]) != -1
 }
 
+// StatusMessageChannel returns the channel named by a status-prefixed target
+// such as @#room. ok is false when target is a normal channel, a nick, or
+// not a prefix symbol plus a channel.
+func (f *ServerFeatures) StatusMessageChannel(target string) (string, bool) {
+	if len(target) < 2 || f.IsChannel(target) {
+		return "", false
+	}
+	if strings.IndexByte(f.prefixSymbols, target[0]) < 0 {
+		return "", false
+	}
+	channel := target[1:]
+	if !f.IsChannel(channel) {
+		return "", false
+	}
+	return channel, true
+}
+
 // NickLength returns the advertised NICKLEN, and whether it was advertised.
 func (f *ServerFeatures) NickLength() (int, bool) {
 	return f.nickLength, f.nickLengthSet

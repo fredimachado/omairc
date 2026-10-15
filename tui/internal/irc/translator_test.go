@@ -413,3 +413,66 @@ func TestTranslatesHistoryChannelBatchKeepsOnlyChat(t *testing.T) {
 	requireString(t, "join body", event.Lines[0].Body, "alice joined")
 	requireString(t, "body", event.Lines[1].Body, "from history")
 }
+
+func TestChannelContextPrivateLineIsOnlyVisibleToYou(t *testing.T) {
+	marked := translateLine(t, "@+draft/channel-context=#room :bot!u@h PRIVMSG omairc :just you")
+	requireInt(t, "marked events", len(marked), 1)
+	message, ok := marked[0].(MessageEvent)
+	requireTrue(t, "marked message", ok)
+	requireString(t, "marked conversation", message.Conversation.NormalizedTarget, "#room")
+	requireString(t, "marked target", message.Target, "#room")
+	requireString(t, "marked body", message.Body, "just you")
+	requireTrue(t, "marked only you", message.OnlyVisibleToYou)
+
+	unprefixed := translateLine(t, "@draft/channel-context=#room :bot!u@h PRIVMSG omairc :also you")
+	requireInt(t, "unprefixed events", len(unprefixed), 1)
+	unprefixedMessage := unprefixed[0].(MessageEvent)
+	requireTrue(t, "unprefixed only you", unprefixedMessage.OnlyVisibleToYou)
+
+	ordinary := translateLine(t, ":alice!u@h PRIVMSG #room :everyone")
+	requireInt(t, "ordinary events", len(ordinary), 1)
+	ordinaryMessage := ordinary[0].(MessageEvent)
+	requireString(t, "ordinary conversation", ordinaryMessage.Conversation.NormalizedTarget, "#room")
+	requireFalse(t, "ordinary only you", ordinaryMessage.OnlyVisibleToYou)
+
+	taggedChannel := translateLine(t, "@+draft/channel-context=#room :alice!u@h PRIVMSG #room :still public")
+	requireInt(t, "tagged channel events", len(taggedChannel), 1)
+	requireFalse(t, "tagged channel only you", taggedChannel[0].(MessageEvent).OnlyVisibleToYou)
+
+	status := translateLine(t, ":op!u@h PRIVMSG @#room :ops")
+	requireInt(t, "status events", len(status), 1)
+	statusMessage := status[0].(MessageEvent)
+	requireString(t, "status conversation", statusMessage.Conversation.NormalizedTarget, "#room")
+	requireString(t, "status target", statusMessage.Target, "#room")
+	requireFalse(t, "status only you", statusMessage.OnlyVisibleToYou)
+	requireFalse(t, "status stays off Status", StatusKeepsIncoming(mustParse(t, ":op!u@h PRIVMSG @#room :ops"), "omairc", ""))
+	requireFalse(t, "private delivery stays off Status", StatusKeepsIncoming(
+		mustParse(t, "@+draft/channel-context=#room :bot!u@h PRIVMSG omairc :just you"), "omairc", ""))
+
+	notice := translateLine(t, "@+draft/channel-context=#room :bot!u@h NOTICE omairc :heads up")
+	requireInt(t, "notice events", len(notice), 1)
+	noticeEvent, ok := notice[0].(NoticeEvent)
+	requireTrue(t, "notice event", ok)
+	requireTrue(t, "notice only you", noticeEvent.OnlyVisibleToYou)
+	requireString(t, "notice target", noticeEvent.Target, "#room")
+	if events := translateLine(t, ":alice!u@h NOTICE omairc :dm notice"); len(events) != 0 {
+		t.Fatalf("DM NOTICE produced %d events, want 0", len(events))
+	}
+
+	batch := HistoryBatch{
+		Target: "#room",
+		Lines: []Message{
+			mustParse(t, "@+draft/channel-context=#room :bot!u@h PRIVMSG omairc :replayed"),
+			mustParse(t, ":alice!u@h PRIVMSG #room :public replay"),
+			mustParse(t, ":op!u@h PRIVMSG @#room :ops replay"),
+		},
+	}
+	history, ok := TranslateHistory(networkA, "omairc", NewServerFeatures(), batch, reducerTimestamp)
+	requireTrue(t, "history", ok)
+	requireInt(t, "history lines", len(history.Lines), 3)
+	requireTrue(t, "replay marked", history.Lines[0].OnlyVisibleToYou)
+	requireInt(t, "replay kind", int(history.Lines[0].Kind), int(MessageKindChat))
+	requireString(t, "replay body", history.Lines[0].Body, "replayed")
+	requireFalse(t, "public replay", history.Lines[1].OnlyVisibleToYou)
+	requireFalse(t, "ops replay", history.Lines[2].OnlyVisibleToYou)
+}

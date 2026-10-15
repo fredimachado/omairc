@@ -35,6 +35,7 @@ public:
         // `mention` badge, which also flags every direct message.
         MentionedRole,
         SequenceRole,
+        OnlyVisibleToYouRole,
     };
 
     static QHash<int, QByteArray> staticRoleNames();

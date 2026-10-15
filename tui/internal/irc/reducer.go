@@ -40,15 +40,16 @@ const (
 // ReducedMessage is one row in a conversation transcript. It mirrors
 // IrcReducedMessage.
 type ReducedMessage struct {
-	Author      string
-	Body        string
-	Timestamp   time.Time
-	ServerTime  *time.Time
-	Kind        MessageKind
-	Collapsible bool
-	Origin      Origin
-	MsgID       MsgID
-	Sequence    int64
+	Author           string
+	Body             string
+	Timestamp        time.Time
+	ServerTime       *time.Time
+	Kind             MessageKind
+	Collapsible      bool
+	Origin           Origin
+	MsgID            MsgID
+	Sequence         int64
+	OnlyVisibleToYou bool
 }
 
 // MemberState is one channel member as stored: the display nick and its rank
@@ -1107,7 +1108,7 @@ func (r *EventReducer) presenceOf(networkID, normalizedNick string) NickPresence
 // appendChat admits one live chat line, dedupes by msgid, persists it, caps the
 // transcript, clears the author's typing hint, and notes the arrival. It
 // mirrors IrcEventReducer::appendChat.
-func (r *EventReducer) appendChat(key ConversationKey, displayTarget, author, body string, timestamp time.Time, serverTime *time.Time, kind MessageKind, msgid MsgID) {
+func (r *EventReducer) appendChat(key ConversationKey, displayTarget, author, body string, timestamp time.Time, serverTime *time.Time, kind MessageKind, msgid MsgID, onlyVisibleToYou bool) {
 	self := r.isSelf(key.NetworkID, author)
 	cause := CauseInboundOther
 	if self {
@@ -1124,13 +1125,14 @@ func (r *EventReducer) appendChat(key ConversationKey, displayTarget, author, bo
 		conversation.MessageIDs[msgid] = struct{}{}
 	}
 	admitMessage(conversation, ReducedMessage{
-		Author:     author,
-		Body:       body,
-		Timestamp:  timestamp,
-		ServerTime: serverTime,
-		Kind:       kind,
-		Origin:     OriginLive,
-		MsgID:      msgid,
+		Author:           author,
+		Body:             body,
+		Timestamp:        timestamp,
+		ServerTime:       serverTime,
+		Kind:             kind,
+		Origin:           OriginLive,
+		MsgID:            msgid,
+		OnlyVisibleToYou: onlyVisibleToYou,
 	})
 	last := conversation.Messages[len(conversation.Messages)-1]
 	r.persistMessage(conversation, last)
@@ -1388,12 +1390,13 @@ func (r *EventReducer) hydrateFromLog(conversation *ConversationState) {
 			conversation.MessageIDs[msgid] = struct{}{}
 		}
 		admitMessage(conversation, ReducedMessage{
-			Author:    line.Author,
-			Body:      line.Body,
-			Timestamp: line.Timestamp,
-			Kind:      kind,
-			Origin:    OriginReplay,
-			MsgID:     msgid,
+			Author:           line.Author,
+			Body:             line.Body,
+			Timestamp:        line.Timestamp,
+			Kind:             kind,
+			Origin:           OriginReplay,
+			MsgID:            msgid,
+			OnlyVisibleToYou: line.OnlyVisibleToYou,
 		})
 	}
 	r.capMessages(conversation)
@@ -1424,11 +1427,12 @@ func (r *EventReducer) transcriptLineFromMessage(conversation *ConversationState
 		return TranscriptLine{}
 	}
 	return TranscriptLine{
-		Timestamp: message.Timestamp,
-		Author:    message.Author,
-		Kind:      kind,
-		Body:      message.Body,
-		MsgID:     message.MsgID.Value,
+		Timestamp:        message.Timestamp,
+		Author:           message.Author,
+		Kind:             kind,
+		Body:             message.Body,
+		MsgID:            message.MsgID.Value,
+		OnlyVisibleToYou: message.OnlyVisibleToYou,
 	}
 }
 
@@ -1799,8 +1803,11 @@ func (r *EventReducer) spliceHistory(conversation *ConversationState, event Hist
 			continue
 		}
 		kind := KindMessage
-		if line.Kind == MessageKindEmote {
+		switch line.Kind {
+		case MessageKindEmote:
 			kind = KindAction
+		case MessageKindNotice:
+			kind = KindNotice
 		}
 		if sequence, ok := matchedSequence(func(message ReducedMessage) bool {
 			if !line.MsgID.IsEmpty() && !message.MsgID.IsEmpty() && message.MsgID != line.MsgID {
@@ -1815,13 +1822,14 @@ func (r *EventReducer) spliceHistory(conversation *ConversationState, event Hist
 			conversation.MessageIDs[line.MsgID] = struct{}{}
 		}
 		message := ReducedMessage{
-			Author:     line.Author,
-			Body:       line.Body,
-			Timestamp:  line.Timestamp,
-			ServerTime: line.ServerTime,
-			Kind:       kind,
-			Origin:     OriginReplay,
-			MsgID:      line.MsgID,
+			Author:           line.Author,
+			Body:             line.Body,
+			Timestamp:        line.Timestamp,
+			ServerTime:       line.ServerTime,
+			Kind:             kind,
+			Origin:           OriginReplay,
+			MsgID:            line.MsgID,
+			OnlyVisibleToYou: line.OnlyVisibleToYou,
 		}
 		message.Sequence = conversation.NextSequence
 		conversation.NextSequence++
@@ -2000,21 +2008,21 @@ func (r *EventReducer) reduceWelcome(event WelcomeEvent) {
 // IrcEventReducer::reduce(IrcMessageEvent).
 func (r *EventReducer) reduceMessage(event MessageEvent) {
 	r.appendChat(event.Conversation, displayTarget(event.Conversation, event.Target),
-		event.Author, event.Body, event.Timestamp, event.ServerTime, KindMessage, event.MsgID)
+		event.Author, event.Body, event.Timestamp, event.ServerTime, KindMessage, event.MsgID, event.OnlyVisibleToYou)
 }
 
 // reduceNotice admits a NOTICE. It mirrors
 // IrcEventReducer::reduce(IrcNoticeEvent).
 func (r *EventReducer) reduceNotice(event NoticeEvent) {
 	r.appendChat(event.Conversation, displayTarget(event.Conversation, event.Target),
-		event.Author, event.Body, event.Timestamp, event.ServerTime, KindNotice, event.MsgID)
+		event.Author, event.Body, event.Timestamp, event.ServerTime, KindNotice, event.MsgID, event.OnlyVisibleToYou)
 }
 
 // reduceAction admits a CTCP ACTION. It mirrors
 // IrcEventReducer::reduce(IrcActionEvent).
 func (r *EventReducer) reduceAction(event ActionEvent) {
 	r.appendChat(event.Conversation, displayTarget(event.Conversation, event.Target),
-		event.Author, event.Body, event.Timestamp, event.ServerTime, KindAction, event.MsgID)
+		event.Author, event.Body, event.Timestamp, event.ServerTime, KindAction, event.MsgID, event.OnlyVisibleToYou)
 }
 
 // reduceJoin records a JOIN, its account, and a self-join's history anchor. It

@@ -332,6 +332,19 @@ bool IrcServerFeatures::isChannel(std::string_view target) const noexcept
     return !target.empty() && m_channelTypes.find(target.front()) != std::string::npos;
 }
 
+std::optional<std::string> IrcServerFeatures::statusMessageChannel(
+    std::string_view target) const
+{
+    if (target.size() < 2 || isChannel(target))
+        return std::nullopt;
+    if (m_prefixSymbols.find(target.front()) == std::string::npos)
+        return std::nullopt;
+    const std::string_view channel(target.data() + 1, target.size() - 1);
+    if (!isChannel(channel))
+        return std::nullopt;
+    return std::string(channel);
+}
+
 std::optional<std::size_t> IrcServerFeatures::nickLength() const noexcept
 {
     return m_nickLength;

@@ -79,6 +79,45 @@ func ConversationFor(networkID, target string, message Message, currentNick stri
 	return ConversationKey{}, false
 }
 
+// channelContextChannel reads +draft/channel-context or draft/channel-context
+// when the value is a channel name.
+func channelContextChannel(message Message, features ServerFeatures) (string, bool) {
+	for _, name := range []string{"+draft/channel-context", "draft/channel-context"} {
+		value, ok := ircTagValue(message, name)
+		if !ok {
+			continue
+		}
+		channel := strings.TrimSpace(value)
+		if features.IsChannel(channel) {
+			return channel, true
+		}
+	}
+	return "", false
+}
+
+// channelBufferDelivery is a nick-targeted line that still belongs in a
+// channel buffer. A status prefix such as @#room is that channel for the
+// rank. A channel-context tag on a message addressed to the current nick is
+// a private delivery shown in that channel.
+type channelBufferDelivery struct {
+	channel          string
+	onlyVisibleToYou bool
+}
+
+func nickTargetedChannelDelivery(wireTarget string, message Message, currentNick string, features ServerFeatures) (channelBufferDelivery, bool) {
+	if channel, ok := features.StatusMessageChannel(wireTarget); ok {
+		return channelBufferDelivery{channel: channel}, true
+	}
+	context, ok := channelContextChannel(message, features)
+	if !ok || features.IsChannel(wireTarget) || !ircSame(features, wireTarget, currentNick) {
+		return channelBufferDelivery{}, false
+	}
+	if ircAuthor(message) == "" {
+		return channelBufferDelivery{}, false
+	}
+	return channelBufferDelivery{channel: context, onlyVisibleToYou: true}, true
+}
+
 // Translate turns one inbound IRC message into the events the reducer
 // consumes. now is the wall-clock fallback when the IRCv3 time tag is missing
 // or unparseable; it replaces QDateTime::currentDateTimeUtc(). It mirrors
@@ -99,31 +138,80 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 	}
 
 	if command == "NOTICE" {
+		if len(message.Params) >= 2 {
+			body := ircParameter(message, 1)
+			if _, ctcp := ParseCtcpRequest(body); !ctcp {
+				if delivery, ok := nickTargetedChannelDelivery(ircParameter(message, 0), message, currentNick, features); ok {
+					events = append(events, NoticeEvent{
+						Conversation:     ircKey(networkID, delivery.channel, features),
+						Author:           sender,
+						Body:             body,
+						Timestamp:        timestamp,
+						ServerTime:       serverTime,
+						Target:           delivery.channel,
+						MsgID:            MsgID{Value: ircTagValueOrEmpty(message, "msgid")},
+						OnlyVisibleToYou: delivery.onlyVisibleToYou,
+					})
+				}
+			}
+		}
 		return events
 	}
 
 	switch {
 	case command == "PRIVMSG" && len(message.Params) >= 2:
 		wireTarget := ircParameter(message, 0)
-		conversation, ok := ConversationFor(networkID, wireTarget, message, currentNick, features)
-		if !ok {
-			return events
-		}
 		body := ircParameter(message, 1)
 		if ctcp, ok := ParseCtcpRequest(body); ok && ctcp.Command != "ACTION" {
+			return events
+		}
+		msgid := MsgID{Value: ircTagValueOrEmpty(message, "msgid")}
+		const actionPrefix = "\x01ACTION "
+		action := strings.HasPrefix(body, actionPrefix) && strings.HasSuffix(body, "\x01")
+		actionBody := ""
+		if action {
+			actionBody = body[len(actionPrefix) : len(body)-1]
+		}
+		if delivery, ok := nickTargetedChannelDelivery(wireTarget, message, currentNick, features); ok {
+			conversation := ircKey(networkID, delivery.channel, features)
+			if action {
+				events = append(events, ActionEvent{
+					Conversation:     conversation,
+					Author:           sender,
+					Body:             actionBody,
+					Timestamp:        timestamp,
+					ServerTime:       serverTime,
+					Target:           delivery.channel,
+					MsgID:            msgid,
+					OnlyVisibleToYou: delivery.onlyVisibleToYou,
+				})
+			} else {
+				events = append(events, MessageEvent{
+					Conversation:     conversation,
+					Author:           sender,
+					Body:             body,
+					Timestamp:        timestamp,
+					ServerTime:       serverTime,
+					Target:           delivery.channel,
+					MsgID:            msgid,
+					OnlyVisibleToYou: delivery.onlyVisibleToYou,
+				})
+			}
+			break
+		}
+		conversation, ok := ConversationFor(networkID, wireTarget, message, currentNick, features)
+		if !ok {
 			return events
 		}
 		displayTarget := wireTarget
 		if !features.IsChannel(wireTarget) && !ircSame(features, sender, currentNick) {
 			displayTarget = sender
 		}
-		msgid := MsgID{Value: ircTagValueOrEmpty(message, "msgid")}
-		const actionPrefix = "\x01ACTION "
-		if strings.HasPrefix(body, actionPrefix) && strings.HasSuffix(body, "\x01") {
+		if action {
 			events = append(events, ActionEvent{
 				Conversation: conversation,
 				Author:       sender,
-				Body:         body[len(actionPrefix) : len(body)-1],
+				Body:         actionBody,
 				Timestamp:    timestamp,
 				ServerTime:   serverTime,
 				Target:       displayTarget,
@@ -360,12 +448,27 @@ func TranslateHistory(networkID, currentNick string, features ServerFeatures, ba
 					continue
 				}
 				event.Lines = append(event.Lines, ReplayLine{
-					Author:     value.Author,
-					Body:       value.Body,
-					Timestamp:  value.Timestamp,
-					Kind:       MessageKindChat,
-					MsgID:      value.MsgID,
-					ServerTime: serverTime,
+					Author:           value.Author,
+					Body:             value.Body,
+					Timestamp:        value.Timestamp,
+					Kind:             MessageKindChat,
+					MsgID:            value.MsgID,
+					ServerTime:       serverTime,
+					OnlyVisibleToYou: value.OnlyVisibleToYou,
+				})
+				kept = true
+			case NoticeEvent:
+				if value.Conversation != conversation {
+					continue
+				}
+				event.Lines = append(event.Lines, ReplayLine{
+					Author:           value.Author,
+					Body:             value.Body,
+					Timestamp:        value.Timestamp,
+					Kind:             MessageKindNotice,
+					MsgID:            value.MsgID,
+					ServerTime:       serverTime,
+					OnlyVisibleToYou: value.OnlyVisibleToYou,
 				})
 				kept = true
 			case ActionEvent:
@@ -373,12 +476,13 @@ func TranslateHistory(networkID, currentNick string, features ServerFeatures, ba
 					continue
 				}
 				event.Lines = append(event.Lines, ReplayLine{
-					Author:     value.Author,
-					Body:       value.Body,
-					Timestamp:  value.Timestamp,
-					Kind:       MessageKindEmote,
-					MsgID:      value.MsgID,
-					ServerTime: serverTime,
+					Author:           value.Author,
+					Body:             value.Body,
+					Timestamp:        value.Timestamp,
+					Kind:             MessageKindEmote,
+					MsgID:            value.MsgID,
+					ServerTime:       serverTime,
+					OnlyVisibleToYou: value.OnlyVisibleToYou,
 				})
 				kept = true
 			}

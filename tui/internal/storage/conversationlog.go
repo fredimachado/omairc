@@ -124,11 +124,12 @@ func conversationLogChannelTypes() string {
 // conversationLogRecord is the JSONL shape written for one transcript line.
 // msgid is omitted when empty, matching formatLine.
 type conversationLogRecord struct {
-	Timestamp string `json:"timestamp"`
-	Author    string `json:"author"`
-	Kind      string `json:"kind"`
-	Body      string `json:"body"`
-	MsgID     string `json:"msgid,omitempty"`
+	Timestamp        string `json:"timestamp"`
+	Author           string `json:"author"`
+	Kind             string `json:"kind"`
+	Body             string `json:"body"`
+	MsgID            string `json:"msgid,omitempty"`
+	OnlyVisibleToYou bool   `json:"onlyVisibleToYou,omitempty"`
 }
 
 // conversationLogFlatten replaces newlines and carriage returns with spaces,
@@ -160,11 +161,12 @@ func conversationLogFormatLine(line irc.TranscriptLine) []byte {
 		when = time.Now().UTC()
 	}
 	record := conversationLogRecord{
-		Timestamp: conversationLogISODateWithMs(when),
-		Author:    conversationLogFlatten(line.Author),
-		Kind:      line.Kind,
-		Body:      conversationLogFlatten(line.Body),
-		MsgID:     line.MsgID,
+		Timestamp:        conversationLogISODateWithMs(when),
+		Author:           conversationLogFlatten(line.Author),
+		Kind:             line.Kind,
+		Body:             conversationLogFlatten(line.Body),
+		MsgID:            line.MsgID,
+		OnlyVisibleToYou: line.OnlyVisibleToYou,
 	}
 	var buffer bytes.Buffer
 	encoder := json.NewEncoder(&buffer)
@@ -187,10 +189,11 @@ func conversationLogParseLine(raw []byte) (irc.TranscriptLine, bool) {
 		return irc.TranscriptLine{}, false
 	}
 	line := irc.TranscriptLine{
-		Author: termtext.Sanitize(record.Author),
-		Kind:   record.Kind,
-		Body:   termtext.Sanitize(record.Body),
-		MsgID:  record.MsgID,
+		Author:           termtext.Sanitize(record.Author),
+		Kind:             record.Kind,
+		Body:             termtext.Sanitize(record.Body),
+		MsgID:            record.MsgID,
+		OnlyVisibleToYou: record.OnlyVisibleToYou,
 	}
 	if record.Timestamp != "" {
 		if when, err := time.Parse("2006-01-02T15:04:05.000Z", record.Timestamp); err == nil {
