@@ -189,7 +189,7 @@ Tab/Escape/Up/Down completer). Phase 6 landed the full `keyboard.md` chord map;
 Phase 5 landed the Connect sheet and core conversation navigation. The shell
 renders all three columns: the sidebar (network sections with presence marks
 and typing ellipses), the transcript, and, for channels, the Phase 8 member
-column — an `ONLINE - N` heading, green/amber presence dots, away dimming,
+column — an `Online N` title on the top border, green/amber presence dots, away dimming,
 per-member status lines, and the bot mark — with the typing ellipsis beside a
 typing member and a typing footer on the direct-message transcript.
 

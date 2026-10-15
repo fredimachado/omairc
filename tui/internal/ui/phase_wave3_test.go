@@ -143,29 +143,32 @@ func TestOverlayCardTopIsAnchoredAgainstContent(t *testing.T) {
 	}
 }
 
-// TestMemberPanelHasSingleInnerRule reconciles L2's heading rule with F2's
-// frame: the panel border owns the outer rule and the heading is the one inner
-// separator, drawn at the frame's content width, so the column shows neither a
-// double rule nor a double inset.
-func TestMemberPanelHasSingleInnerRule(t *testing.T) {
+// TestMemberPanelTitleLivesOnTheBorder pins that the member count is the top
+// edge of the frame and the rows no longer spend an inner rule on a heading.
+func TestMemberPanelTitleLivesOnTheBorder(t *testing.T) {
 	m := seededModel(t)
 	membersOuter := m.membersColumnWidth()
-	framed := m.framedColumn(m.membersView, membersOuter, m.bodyHeight(), false)
+	framed := m.framedColumnLabeled(m.membersView, membersOuter, m.bodyHeight(), false, m.memberFrameTitle(), "")
 	if got := lipgloss.Width(framed); got != membersOuter {
 		t.Fatalf("framed member panel width = %d, want the layout outer width %d", got, membersOuter)
 	}
+	if got := lipgloss.Height(framed); got != m.bodyHeight() {
+		t.Fatalf("framed member panel height = %d, want %d", got, m.bodyHeight())
+	}
+	plain := ansiPattern.ReplaceAllString(framed, "")
+	lines := strings.Split(plain, "\n")
+	if len(lines) == 0 || !strings.Contains(lines[0], "Online 12") {
+		t.Fatalf("top edge = %q, want the Online 12 title", lines[0])
+	}
 	rules := 0
-	for _, line := range strings.Split(ansiPattern.ReplaceAllString(framed, ""), "\n") {
-		inner := strings.Trim(line, "│")
+	for _, line := range lines[1 : len(lines)-1] {
+		inner := strings.Trim(line, "│ ")
 		if inner == "" || strings.Trim(inner, "─") != "" {
 			continue
 		}
 		rules++
-		if got := lipgloss.Width(inner); got != membersOuter-2 {
-			t.Fatalf("member heading rule width = %d, want the inner width %d", got, membersOuter-2)
-		}
 	}
-	if rules != 1 {
-		t.Fatalf("framed member panel has %d inner rules, want exactly 1:\n%s", rules, framed)
+	if rules != 0 {
+		t.Fatalf("framed member panel has %d inner rules, want none:\n%s", rules, plain)
 	}
 }

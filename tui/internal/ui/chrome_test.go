@@ -151,7 +151,7 @@ func TestStatusConsoleHidesMembersColumn(t *testing.T) {
 	if got := m.transcriptWidth(); got <= widthWithMembers {
 		t.Fatalf("transcript width = %d, want it to grow past %d once the member column hides", got, widthWithMembers)
 	}
-	if strings.Contains(ansiPattern.ReplaceAllString(m.View().Content, ""), "ONLINE - ") {
+	if strings.Contains(ansiPattern.ReplaceAllString(m.View().Content, ""), "Online ") {
 		t.Fatalf("Status transcript still renders the member column:\n%s", m.View().Content)
 	}
 }

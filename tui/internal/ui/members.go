@@ -14,30 +14,53 @@ import (
 // blank, so the rows never shift when the member cursor moves.
 const memberGutter = 2
 
-// membersView renders the member column's inner content: the "ONLINE - N"
-// heading, a hairline rule, then one row per member. It is shown only for
-// channels (see Model.membersVisible); the rows already arrive in PREFIX-rank
-// then nick order from the controller, so the view never sorts. A focused
-// member row carries an accent bar and was chosen with Ctrl+Shift+P. The
-// heading reads "ONLINE - N" like MembersColumn.qml:43 and stays pinned above
-// the rows, the way the QML ListView sits under its heading. The outer card
-// frame is drawn around these lines by the panel chrome, so this returns inner
-// content only.
+// memberFrameTitle is the member panel's top-edge title. The count is
+// PeopleCount, the same number the header's people control reads.
+func (m *Model) memberFrameTitle() string {
+	count := 0
+	if m != nil && m.ctrl != nil {
+		count = m.ctrl.PeopleCount()
+	}
+	return fmt.Sprintf("Online %d", count)
+}
+
+// memberFrameLabel is the focused member's position on the bottom edge, shown
+// only while the member list has focus. It is empty otherwise, so an unfocused
+// panel keeps a solid bottom rule.
+func (m *Model) memberFrameLabel() string {
+	if m == nil || !m.memberFocus || m.ctrl == nil {
+		return ""
+	}
+	members := m.ctrl.Members()
+	count := len(members)
+	if count == 0 {
+		return ""
+	}
+	index := m.memberIndex
+	if index < 0 {
+		index = 0
+	}
+	if index >= count {
+		index = count - 1
+	}
+	return fmt.Sprintf("%d of %d", index+1, count)
+}
+
+// membersView renders the member column's inner content: one row per member.
+// It is shown only for channels (see Model.membersVisible); the rows already
+// arrive in PREFIX-rank then nick order from the controller, so the view never
+// sorts. A focused member row carries an accent bar and was chosen with
+// Ctrl+Shift+P. The count and the focused position live on the card's edges
+// (memberFrameTitle / memberFrameLabel), so this returns member rows only.
 //
 // A roster taller than the panel scrolls as one window: Page Up/Down, Home/End,
 // and the arrow keys move the member cursor, and the window slides to keep the
 // focused row visible, mirroring the QML ListView's highlightFollowsCurrentItem.
 func (m *Model) membersView(width, height int) string {
-	heading := []string{
-		m.styles.MembersHeader.Render(fmt.Sprintf("ONLINE - %d", m.ctrl.PeopleCount())),
-		m.styles.Divider.Render(strings.Repeat("─", width)),
+	if height < 1 {
+		return ""
 	}
-	if height <= len(heading) {
-		// No room for rows: show as much of the heading as fits rather than
-		// letting the pinned block push the grid over its budget.
-		return renderColumn(m.styles.Conversation, width, fitLines(heading, height, false))
-	}
-	rowsHeight := height - len(heading)
+	rowsHeight := height
 
 	// A member block is one line, or two once the network advertises member
 	// status, so the window is measured in lines and each block records its
@@ -56,9 +79,7 @@ func (m *Model) membersView(width, height int) string {
 	if end > len(rows) {
 		end = len(rows)
 	}
-	lines := make([]string, 0, len(heading)+rowsHeight)
-	lines = append(lines, heading...)
-	lines = append(lines, fitLines(rows[start:end], rowsHeight, false)...)
+	lines := fitLines(rows[start:end], rowsHeight, false)
 	for index, line := range lines {
 		if width > 0 && lipgloss.Width(line) > width {
 			lines[index] = ellipsizeLine(line, width)

@@ -787,8 +787,9 @@ func (m *Model) render() string {
 	}
 	columns = append(columns, m.transcriptColumn(bodyHeight))
 	if membersW > 0 {
-		columns = append(columns, m.framedColumn(
-			m.membersView, membersW, bodyHeight, m.memberFocus))
+		columns = append(columns, m.framedColumnLabeled(
+			m.membersView, membersW, bodyHeight, m.memberFocus,
+			m.memberFrameTitle(), m.memberFrameLabel()))
 	}
 	body := lipgloss.JoinHorizontal(lipgloss.Top, columns...)
 
@@ -811,12 +812,20 @@ func (m *Model) render() string {
 	return fitBlock(lipgloss.JoinVertical(lipgloss.Left, parts...), m.width, m.height)
 }
 
-// framedColumn wraps one side column in a rounded card. outerWidth and
-// outerHeight are the invariant outer sizes the layout arithmetic assumes
-// (sidebarWidth() / membersColumnWidth() and bodyHeight); the border consumes its
-// frame, so the leaf renderer receives the remainder and produces inner lines
-// only. That keeps the transcript, which stays unframed, on the same grid.
+// framedColumn wraps one side column in a rounded card with no edge labels.
+// outerWidth and outerHeight are the invariant outer sizes the layout
+// arithmetic assumes (sidebarWidth() / membersColumnWidth() and bodyHeight);
+// the border consumes its frame, so the leaf renderer receives the remainder
+// and produces inner lines only. That keeps the transcript, which stays
+// unframed, on the same grid.
 func (m *Model) framedColumn(render func(width, height int) string, outerWidth, outerHeight int, focused bool) string {
+	return m.framedColumnLabeled(render, outerWidth, outerHeight, focused, "", "")
+}
+
+// framedColumnLabeled is framedColumn with an optional title on the top edge
+// and an optional counter on the bottom-right edge. The outer size does not
+// change to fit either label.
+func (m *Model) framedColumnLabeled(render func(width, height int) string, outerWidth, outerHeight int, focused bool, title, label string) string {
 	style := m.styles.Panel
 	if focused {
 		style = m.styles.PanelFocused
@@ -829,9 +838,7 @@ func (m *Model) framedColumn(render func(width, height int) string, outerWidth, 
 		// aligned on a tiny terminal.
 		return render(outerWidth, outerHeight)
 	}
-	// Panel Width/Height set the total block size, border included, so the leaf
-	// gets the remainder as its content box.
-	return style.Width(outerWidth).Height(outerHeight).Render(render(innerWidth, innerHeight))
+	return m.roundedFrame(render(innerWidth, innerHeight), outerWidth, outerHeight, title, label, focused, frameLabelBottom)
 }
 
 // transcriptColumn renders the middle column: the transcript, or a centered
@@ -1034,17 +1041,31 @@ const overlayCardTopInset = 1
 
 // overlayCardBlock is the single framing path for every overlay card: it
 // clamps the card width, lays the overlay's content lines into the shared
-// panel style, and returns the one block the compositor composites with the
+// panel frame, and returns the one block the compositor composites with the
 // shadow. build receives the content width inside the border, so an overlay
 // body never re-derives the frame inset and a later restyle stays inside the
 // overlay's own file without editing this wrapper.
 func (m *Model) overlayCardBlock(width int, build func(inner int) []string) string {
-	frameX, _ := m.styles.Panel.GetFrameSize()
+	return m.overlayCardFramed(width, "", "", build)
+}
+
+// overlayCardFramed is overlayCardBlock with a title on the top edge and a
+// counter on the bottom-right edge. Empty strings leave that edge a solid rule.
+// The card's width stays the shared outer width; its height is the content
+// plus the one-cell border, and neither label changes that size.
+func (m *Model) overlayCardFramed(width int, title, label string, build func(inner int) []string) string {
+	frameX, frameY := m.styles.Panel.GetFrameSize()
 	inner := width - 2*overlayCardInset - frameX
 	if inner < 8 {
 		inner = 8
 	}
-	return m.styles.Panel.Width(inner + frameX).Render(strings.Join(build(inner), "\n"))
+	lines := build(inner)
+	content := strings.Join(lines, "\n")
+	outerH := len(lines) + frameY
+	if outerH < frameY {
+		outerH = frameY
+	}
+	return m.roundedFrame(content, inner+frameX, outerH, title, label, false, frameLabelBottom)
 }
 
 // overlayCardRowBudget is the number of content rows an overlay card may render:

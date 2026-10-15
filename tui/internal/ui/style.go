@@ -53,8 +53,6 @@ type Styles struct {
 	// waiting below the reader.
 	UnseenJump lipgloss.Style
 
-	MembersHeader lipgloss.Style
-
 	// TopicBar is the band behind the transcript header. The topic caption and
 	// its right-aligned tail sit on it, so the conversation's topic reads as a
 	// title strip rather than another transcript line. It is mixed from the page
@@ -243,8 +241,6 @@ func buildStyles(colors theme.Colors) Styles {
 		UnreadMark:     base.Foreground(colors.UnreadMark).Bold(true),
 		UnreadMarkRule: base.Foreground(colors.UnreadMarkRule),
 		UnseenJump:     base.Foreground(colors.Accent).Bold(true),
-
-		MembersHeader: base.Bold(true).Foreground(colors.Accent),
 
 		TopicBar: base.Background(mixColors(colors.Background, colors.Accent, topicBarTint)),
 

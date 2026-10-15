@@ -127,17 +127,21 @@ func (m *Model) handleLinkKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.C
 }
 
 // linkCard renders the link sheet as one card block through the shared overlay
-// frame in model.go.
+// frame in model.go. The name and match count sit on the top edge and the
+// highlighted row's position sits on the bottom edge.
 func (m *Model) linkCard(width int) string {
-	return m.overlayCardBlock(width, m.linkCardBody)
+	matches := m.linkMatches()
+	return m.overlayCardFramed(width,
+		overlayCountTitle("Links", len(matches)),
+		overlayCountLabel(m.link.selected, len(matches)),
+		m.linkCardBody)
 }
 
 // linkCardBody is the link sheet's content, before the shared frame. inner is
 // the content width inside the border.
 func (m *Model) linkCardBody(inner int) []string {
 	matches := m.linkMatches()
-	lines := m.overlaySheetHeader(inner, "Links", len(matches))
-	lines = append(lines, truncateLine(m.link.input.View(), inner))
+	lines := []string{truncateLine(m.link.input.View(), inner)}
 	if len(matches) == 0 {
 		return append(lines, m.overlaySheetEmpty("No links"))
 	}

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -12,9 +13,7 @@ import (
 
 // headerTailGutter is the blank band left between the transcript header's
 // right-aligned tail and the member column joined immediately after it. The band
-// spans transcriptWidth(), and the member column's "ONLINE - N" heading sits on
-// the same row on the other side of its border, so the tail keeps this much band
-// before the edge rather than running up against it.
+// spans transcriptWidth(), so the tail stops short of the member panel's border.
 const headerTailGutter = 2
 
 // isMentionRow reports whether a message renders as a full-width wash band. Only
@@ -811,6 +810,28 @@ func (m *Model) jumpToUnseen() {
 		return
 	}
 	m.jumpTranscript(true)
+}
+
+// transcriptPlaceLabel is how far up the reader is, drawn on the composer
+// frame's top edge. It is the 1-based index of the topmost visible message and
+// the message count. Following the end leaves it empty, and it never repeats
+// the header's "↓ new" marker.
+func (m *Model) transcriptPlaceLabel() string {
+	if m == nil || m.ctrl == nil || m.transcriptFollowEnd || m.ctrl.ConsoleOpen() {
+		return ""
+	}
+	total := len(m.ctrl.Messages())
+	if total == 0 {
+		return ""
+	}
+	top := m.firstVisibleMessageRow() + 1
+	if top < 1 {
+		top = 1
+	}
+	if top > total {
+		top = total
+	}
+	return fmt.Sprintf("%d of %d", top, total)
 }
 
 // unseenMarker is the transcript header's "↓ new" hint, shown while a jump is
