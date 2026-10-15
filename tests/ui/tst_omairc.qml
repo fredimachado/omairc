@@ -2921,12 +2921,13 @@ TestCase {
     }
 
     function assertTranscriptRestsOnBottom(list) {
-        settleTranscript(list);
-        var first = rowEdgesInList(list, 0);
-        verify(first.top > 0,
-            "A short transcript should leave empty space above the oldest row");
-        fuzzyCompare(contentBottom(list), list.height, 1,
-            "The newest row should sit on the bottom of the transcript");
+        tryVerify(function() {
+            settleTranscript(list);
+            var first = list.itemAtIndex(0);
+            if (!first || first.mapToItem(list, 0, 0).y <= 0)
+                return false;
+            return Math.abs(contentBottom(list) - list.height) <= 1;
+        }, 2000, "The newest row should sit on the bottom of the transcript");
     }
 
     // The typing footer is part of the content and sits under the last
@@ -4278,7 +4279,7 @@ TestCase {
 
     function jumpTranscriptToTop(list) {
         tryCompare(list, "pinning", false);
-        keyClick(Qt.Key_Home, Qt.ControlModifier);
+        clickCtrlHome();
         waitForRendering(appWindow.contentItem);
         wait(0);
         tryCompare(list, "stick", list.stickDetached);
