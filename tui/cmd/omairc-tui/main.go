@@ -155,12 +155,18 @@ func run(args []string, stdout, stderr io.Writer) int {
 	defer watcher.Close()
 	model.SetThemeWatcher(watcher)
 
-	// Peer avatars need 24-bit color for the half-block raster. Without it the
-	// shell falls back to the nick identicon, so no store is created.
-	if avatar.TruecolorSupported() {
-		avatars := avatar.New(true, func(string) {
+	// Peer avatars need 24-bit color for the half-block raster. Kitty graphics
+	// is a separate probe: a positive a=q reply, never a TERM guess. The store
+	// exists when either path is available. A row with no cached image stays
+	// on the nick identicon.
+	graphics := avatar.ProbeGraphics(os.Stdin, os.Stdout, avatar.ProbeTimeout)
+	if avatar.TruecolorSupported() || graphics {
+		avatars := avatar.New(avatar.TruecolorSupported(), func(string) {
 			p.Send(ui.AvatarReadyMsg{})
 		})
+		if graphics {
+			avatars.EnableGraphics()
+		}
 		model.SetAvatarSource(avatars)
 		defer avatars.Close()
 	}

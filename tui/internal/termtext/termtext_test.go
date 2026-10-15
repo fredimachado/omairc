@@ -11,6 +11,7 @@ func TestSanitize(t *testing.T) {
 		{"plain text is untouched", "hello, world ünïcode 日本", "hello, world ünïcode 日本"},
 		{"SGR loses its ESC", "a\x1b[41mred\x1b[0mb", "a[41mred[0mb"},
 		{"OSC 8 hyperlink loses its ESCs", "\x1b]8;;https://evil.example\x07click\x1b]8;;\x07", "]8;;https://evil.exampleclick]8;;"},
+		{"Kitty graphics APC loses its ESCs", "\x1b_Ga=t,i=1;AAAA\x1b\\", "_Ga=t,i=1;AAAA\\"},
 		{"UTF-8 C1 CSI is dropped", "x\u009b2Jy", "x2Jy"},
 		{"Latin-1 C1 CSI byte is dropped", "caf\xe9 \x9b2J", "caf\xe9 2J"},
 		{"DEL and BEL are dropped", "a\x7fb\x07c\x08d", "abcd"},

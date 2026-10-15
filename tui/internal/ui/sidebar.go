@@ -6,12 +6,15 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 
 	"github.com/fredimachado/omairc/tui/internal/controller"
 )
 
-// The sidebar's direct-message avatar is two half-block cells, matching the
-// 22px QML avatar; internal/avatar quantizes that layout size to a 32px fetch.
+// The sidebar's direct-message avatar is two cells, matching the 22px QML
+// avatar; internal/avatar quantizes that layout size to a 32px fetch. Kitty
+// graphics draws the same box with placeholder cells; every other terminal
+// keeps the half-block raster.
 const (
 	avatarGlyphCols      = 2
 	avatarGlyphPixelSize = 22
@@ -552,16 +555,23 @@ func (m *Model) conversationRowWidth(row controller.ConversationSnapshot, width 
 	return rendered
 }
 
-// avatarGlyph is the sidebar's direct-message avatar: two half-block cells
-// rasterized from the cached peer image, or the nick identicon when avatars are
-// off, the row carries no image, or the image is not cached yet. A channel row
-// has no glyph. The glyph is rendered separately from the row text so its
-// trailing reset cannot clear the row style.
+// avatarGlyph is the sidebar's direct-message avatar. The cell box stays two
+// columns: a Kitty Unicode placeholder when that image has been transmitted,
+// otherwise the half-block raster, otherwise the nick identicon. Avatars off
+// stays on the identicon. A channel row has no glyph. The glyph is rendered
+// separately from the row text so its trailing reset cannot clear the row style.
 func (m *Model) avatarGlyph(row controller.ConversationSnapshot) string {
 	if !row.Direct {
 		return ""
 	}
 	if m.ctrl != nil && m.ctrl.PrefAvatarsEnabled() && row.Avatar != "" && m.avatars != nil {
+		if m.colorProfile == colorprofile.Unknown || m.colorProfile == colorprofile.TrueColor {
+			if g, ok := m.avatars.(avatarGraphics); ok {
+				if cells, ok := g.Placeholder(row.Avatar, avatarGlyphPixelSize, avatarGlyphCols); ok {
+					return cells + " "
+				}
+			}
+		}
 		if block, ok := m.avatars.Block(row.Avatar, avatarGlyphPixelSize, avatarGlyphCols); ok {
 			return block + " "
 		}

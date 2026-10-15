@@ -1,11 +1,15 @@
 // Package avatar is the terminal peer-avatar seam. It fetches, decodes,
 // caches, and half-block-rasterizes avatars for the TUI shell, mirroring the
 // safety model of src/irc/ircavatarstore.cpp (bounded body, bounded decode,
-// DNS pinning, fail closed, a small insertion-ordered cache).
+// DNS pinning, fail closed, a small insertion-ordered cache). When a terminal
+// answers a Kitty graphics query, the same cache also builds Unicode
+// placeholder cells and the transmit/delete escapes for those images.
 //
-// The package is presentation-neutral: Block returns a raw SGR string and the
-// shell decides where to place it. It never starts a fetch from Block; Ensure
-// is the only path that touches the network.
+// The package is presentation-neutral: Block and Placeholder return raw
+// strings and the shell decides where to place them. It never imports
+// lipgloss. It never starts a fetch from Block or Placeholder; Ensure is the
+// only path that touches the network. Graphics escapes are built from cached
+// image bytes, never from text that arrived on the IRC connection.
 package avatar
 
 import (
@@ -57,6 +61,19 @@ type Store struct {
 	// callbacks counts onReady calls that are in flight. Close waits for it so
 	// a late callback cannot outlive Close.
 	callbacks sync.WaitGroup
+
+	// Kitty graphics. graphics is set only after a positive a=q reply.
+	// imageIDs maps a cache key to the id transmitted for it. sentIDs are ids
+	// whose bytes have been handed to the terminal. drawnIDs are ids whose
+	// transmit has been written, so placeholder cells may reference them.
+	// graphicsOps is the transmit/delete queue drained outside the view.
+	graphics    bool
+	nextImage   uint32
+	imageIDs    map[string]uint32
+	sentIDs     map[uint32]bool
+	drawnIDs    map[uint32]struct{}
+	inflight    []uint32
+	graphicsOps []graphicsOp
 }
 
 // New returns a store. truecolor selects the half-block raster path; when it
@@ -68,6 +85,9 @@ func New(truecolor bool, onReady func(rawURL string)) *Store {
 		images:    make(map[string]image.Image),
 		pending:   make(map[string]bool),
 		cancels:   make(map[string]context.CancelFunc),
+		imageIDs:  make(map[string]uint32),
+		sentIDs:   make(map[uint32]bool),
+		drawnIDs:  make(map[uint32]struct{}),
 	}
 }
 
@@ -116,6 +136,20 @@ func (s *Store) Block(rawURL string, layoutPixels, cols int) (string, bool) {
 	if !s.truecolor || cols <= 0 {
 		return "", false
 	}
+	key, ok := s.resolvedKey(rawURL, layoutPixels)
+	if !ok {
+		return "", false
+	}
+	img, cached := s.lookup(key)
+	if !cached {
+		return "", false
+	}
+	return renderHalfBlocks(img, cols), true
+}
+
+// resolvedKey is the cache key for rawURL at the fetch size Block and
+// Placeholder share. An empty, unsafe, or unsized URL reports false.
+func (s *Store) resolvedKey(rawURL string, layoutPixels int) (string, bool) {
 	fetchSize := irc.AvatarFetchPixelSize(layoutPixels)
 	if fetchSize <= 0 {
 		return "", false
@@ -124,11 +158,7 @@ func (s *Store) Block(rawURL string, layoutPixels, cols int) (string, bool) {
 	if !ok || !irc.AvatarURLIsSafe(resolved) {
 		return "", false
 	}
-	img, cached := s.lookup(cacheKey(resolved))
-	if !cached {
-		return "", false
-	}
-	return renderHalfBlocks(img, cols), true
+	return cacheKey(resolved), true
 }
 
 // Close stops in-flight fetches and prevents late callbacks. It is idempotent
@@ -212,11 +242,17 @@ func (s *Store) rememberLocked(key string, img image.Image) {
 	s.order = removeKey(s.order, key)
 	s.order = append(s.order, key)
 	s.images[key] = img
+	var evicted []string
 	for len(s.order) > maximumCacheEntries {
 		oldest := s.order[0]
 		s.order = s.order[1:]
 		delete(s.images, oldest)
+		evicted = append(evicted, oldest)
 	}
+	for _, oldest := range evicted {
+		s.dropGraphicsLocked(oldest)
+	}
+	s.noteGraphicsLocked(key, img)
 }
 
 // removeKey returns keys without the first occurrence of key.

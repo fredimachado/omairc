@@ -36,8 +36,9 @@ When the two disagree about the shared contract, the root file wins.
   structural colors plus the fixed semantic/nick block, `Fallback`, and the
   live mtime-poll `Watcher`; lipgloss-free, wrapped by `internal/ui` at the
   rendering edge),
-  `internal/avatar/` (peer-avatar fetch, bounded decode, cache, and
-  half-block raster), `internal/openurl/` (the OS URL-handler seam),
+  `internal/avatar/` (peer-avatar fetch, bounded decode, cache,
+  half-block raster, and Kitty Unicode placeholders),
+  `internal/openurl/` (the OS URL-handler seam),
   `internal/gate/` (the PTY parity driver: VT grid, OSC title capture, key
   writer, screenshot), `internal/crashlog/` (the durable crash record),
   `internal/termtext/` (drops ESC, DEL, C1, and unused C0 from every inbound
@@ -60,7 +61,7 @@ When the two disagree about the shared contract, the root file wins.
 - `internal/avatar`, `internal/openurl`, and `internal/theme` are integration
   packages like `internal/notify`. `internal/avatar` owns `net/http`, the
   DNS-pinned (SSRF-safe) fetch, bounded png/jpeg/gif decode, the 64-entry
-  cache, and the half-block raster; it never renders lipgloss.
+  cache, the half-block raster, and the Kitty graphics escapes; it never renders lipgloss.
   `internal/openurl` is the `xdg-open` seam on Linux with no-op stubs
   elsewhere. `internal/theme` reads Omarchy's `colors.toml`, derives the
   structural palette, keeps the fixed semantic and nick colors, and polls the
@@ -159,6 +160,8 @@ version the moment its package is first imported — never earlier, because
 - `charm.land/bubbles/v2` v2.1.0 — imported in Phase 4.
 - `github.com/charmbracelet/x/ansi` v0.11.7 — imported by the ellipsis fit in
   `internal/ui`.
+- `github.com/charmbracelet/x/term` v0.2.2 — raw mode for the Kitty graphics
+  probe in `internal/avatar`.
 - `github.com/creack/pty` v1.1.24 — imported in Phase 4 by `internal/gate`
   for Unix PTYs (`pty_unix.go`).
 - `github.com/aymanbagabas/go-pty` v0.2.3 — imported by `internal/gate`
@@ -318,9 +321,12 @@ Phase 10 adds the hand-ported emphasis renderer (`internal/irc/textformat.go`,
 wired through `internal/ui/transcript.go`), the URL allowlist and the real
 `Ctrl+Shift+O` link-sheet source (`internal/ui/urllinks.go`), the
 `internal/openurl` seam behind `openAllowedUrl`, and the sidebar
-direct-message avatar glyph: an identicon by default, or a half-block
+direct-message avatar glyph: an identicon by default, a half-block
 truecolor raster when `internal/avatar` has the peer image cached and the
-terminal advertises 24-bit color.
+terminal advertises 24-bit color, or a Kitty Unicode placeholder in that
+same two-cell box when a startup `a=q` probe gets an OK reply. The probe
+never trusts `TERM`. Transmit and delete escapes go out through `tea.Raw`;
+quit deletes the images this process transmitted.
 Phase 11 adds `internal/storage` (the QSettings-compatible INI store, the XDG
 paths, the profile store, the open-direct and playback-time stores, the on-disk
 JSONL conversation log, and the Linux Secret Service credential store behind

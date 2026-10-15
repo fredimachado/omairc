@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 
 	"github.com/fredimachado/omairc/tui/internal/connection"
 	"github.com/fredimachado/omairc/tui/internal/controller"
@@ -75,6 +76,16 @@ type AvatarSource interface {
 	Block(rawURL string, layoutPixels, cols int) (string, bool)
 }
 
+// avatarGraphics is the optional Kitty-graphics half of an AvatarSource.
+// Placeholder cells are ordinary view text. Transmit and delete escapes are
+// drained and written with tea.Raw, never placed in the view string.
+type avatarGraphics interface {
+	Placeholder(rawURL string, layoutPixels, cols int) (string, bool)
+	DrainEscapes(cols, rows int) string
+	NoteDrawn()
+	DeleteEscapes() string
+}
+
 // Model is the Bubble Tea shell state over one controller and the Connect
 // sheet's connection model. conn is nil in the seeded demo, which has no
 // profile to edit.
@@ -118,6 +129,10 @@ type Model struct {
 	// this is set. --mouse and OMAIRC_TUI_MOUSE turn it on. There is no /pref
 	// toggle, because those toggles are shared with the Qt client.
 	mouseEnabled bool
+	// colorProfile is the terminal's color capability. Unknown still allows
+	// Kitty placeholder cells. A known profile below truecolor cannot keep
+	// the 24-bit image id, so the glyph stays on the half-block raster.
+	colorProfile colorprofile.Profile
 
 	// connectOpen reopens the sheet after a profile exists. On first run the
 	// sheet is visible because the connection still requires setup.
@@ -482,6 +497,38 @@ func (m *Model) ensureAvatars() {
 	}
 }
 
+// avatarGraphicsCmd drains transmit and delete escapes for the direct-message
+// glyph and returns a tea.Raw command. Avatars off leaves the queue alone so
+// a later /pref avatars on can still send it. The bytes are never part of the
+// view.
+func (m *Model) avatarGraphicsCmd() tea.Cmd {
+	if m.ctrl == nil || !m.ctrl.PrefAvatarsEnabled() {
+		return nil
+	}
+	g, ok := m.avatars.(avatarGraphics)
+	if !ok || g == nil {
+		return nil
+	}
+	payload := g.DrainEscapes(avatarGlyphCols, 1)
+	if payload == "" {
+		return nil
+	}
+	return tea.Raw(payload)
+}
+
+// quitCommand deletes every image we transmitted, then quits. With nothing
+// transmitted it is tea.Quit, so the chord stays a single quit message.
+func (m *Model) quitCommand() tea.Cmd {
+	payload := ""
+	if g, ok := m.avatars.(avatarGraphics); ok && g != nil {
+		payload = g.DeleteEscapes()
+	}
+	if payload == "" {
+		return tea.Quit
+	}
+	return tea.Sequence(tea.Raw(payload), tea.Quit)
+}
+
 // Update folds one Bubble Tea message. Quit chords leave the program; the
 // Connect sheet and the overlays are modal; otherwise the navigation chords
 // run before the rest reaches the composer.
@@ -528,7 +575,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.noteTranscriptGrowth()
 		m.maybeLandSavedTranscript()
 		m.syncReadMarkerViewport()
-		return m, m.startBackgroundWork()
+		return m, tea.Batch(m.startBackgroundWork(), m.avatarGraphicsCmd())
+	case tea.ColorProfileMsg:
+		// Placeholder cells name the image by a 24-bit foreground color.
+		// A profile that downsamples color would drop that id and leave a
+		// blank private-use glyph, so remember the profile and fall back.
+		m.colorProfile = msg.Profile
+		return m, nil
+	case tea.RawMsg:
+		// The runtime already wrote the graphics escapes. Placeholder cells
+		// may name those images on the next frame.
+		if g, ok := m.avatars.(avatarGraphics); ok {
+			g.NoteDrawn()
+		}
+		return m, nil
 	case ThemeChangedMsg:
 		// A live theme swap. Rebuild every style from the new palette, then
 		// re-arm the read for the next change.
@@ -548,8 +608,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 	case AvatarReadyMsg:
-		// A background avatar fetch cached an image; the next render reads it.
-		return m, nil
+		// A background avatar fetch cached an image. Transmit it outside the
+		// view when Kitty graphics are on; the next render reads the glyph.
+		return m, m.avatarGraphicsCmd()
 	case tea.FocusMsg:
 		// The terminal regained focus. Land on the unread mark before
 		// consuming unread or publishing a read marker. Focus also clears
@@ -633,7 +694,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := normalizeChordKey(msg.Keystroke())
 	if key == "ctrl+q" {
 		m.rememberOpenTranscript()
-		return m, tea.Quit
+		return m, m.quitCommand()
 	}
 	// About is an informational modal that can sit on top of the Connect
 	// sheet. While it is open every other chord is blocked; Escape, Enter, or
