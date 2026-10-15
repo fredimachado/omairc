@@ -523,6 +523,9 @@ func (m *Model) setTranscriptFollowEnd(follow bool) {
 	if follow && !m.transcriptFollowEnd && m.ctrl != nil {
 		m.ctrl.ClearHistoryPageCapTail()
 	}
+	if follow {
+		m.unseenResumeRow = -1
+	}
 	m.transcriptFollowEnd = follow
 }
 
@@ -531,6 +534,7 @@ func (m *Model) clearTranscriptAnchor() {
 	m.transcriptAnchorTextLead = 0
 	m.transcriptAnchorSpliceEpoch = -1
 	m.firstUnseenSequenceAtAnchor = -1
+	m.unseenResumeSequenceAtAnchor = -1
 }
 
 // transcriptPrefixLines is the date rule and unread mark drawn above a
@@ -592,6 +596,11 @@ func (m *Model) snapshotTranscriptAnchor() {
 		m.firstUnseenSequenceAtAnchor = messages[m.firstUnseenRow].Sequence
 	} else {
 		m.firstUnseenSequenceAtAnchor = -1
+	}
+	if m.unseenResumeRow >= 0 && m.unseenResumeRow < len(messages) {
+		m.unseenResumeSequenceAtAnchor = messages[m.unseenResumeRow].Sequence
+	} else {
+		m.unseenResumeSequenceAtAnchor = -1
 	}
 }
 
@@ -750,6 +759,9 @@ func (m *Model) noteTranscriptGrowth() {
 		spliceEpoch := m.ctrl.TranscriptSpliceEpoch()
 		if spliceEpoch > m.transcriptAnchorSpliceEpoch {
 			unseenSequence := m.firstUnseenSequenceAtAnchor
+			resumeSequence := m.unseenResumeSequenceAtAnchor
+			resumeRow := m.unseenResumeRow
+			oldCount := m.transcriptCount
 			m.restoreTranscriptAnchor()
 			if unseenSequence >= 0 && !m.transcriptFollowEnd {
 				resolved := false
@@ -764,6 +776,10 @@ func (m *Model) noteTranscriptGrowth() {
 					m.firstUnseenRow = -1
 				}
 			}
+			if !m.transcriptFollowEnd {
+				m.unseenResumeRow = shiftedResumeRow(
+					m.ctrl.Messages(), resumeSequence, resumeRow, count-oldCount, count)
+			}
 			m.transcriptCount = count
 			return
 		}
@@ -773,9 +789,13 @@ func (m *Model) noteTranscriptGrowth() {
 		if m.firstUnseenRow >= count {
 			m.firstUnseenRow = -1
 		}
+		if m.unseenResumeRow >= count {
+			m.unseenResumeRow = -1
+		}
 	case count > m.transcriptCount:
 		if m.transcriptFollowEnd {
 			m.firstUnseenRow = -1
+			m.unseenResumeRow = -1
 		} else {
 			if m.firstUnseenRow < 0 {
 				m.firstUnseenRow = m.transcriptCount
@@ -825,9 +845,14 @@ func (m *Model) syncTranscriptLineCount() {
 }
 
 // jumpArmed reports whether a jump-to-newest affordance applies: the reader is
-// scrolled up and either rows arrived below them or the transcript carries a
-// "New messages" mark. It mirrors TranscriptList.jumpArmed with canScrollDown
-// standing in for !transcriptFollowEnd.
+// scrolled up and either rows arrived below them, the Alt+U catch-up row is
+// the first row that is not fully on screen, or a "New messages" mark still
+// has a message row below the viewport. It mirrors TranscriptList.jumpArmed
+// with canScrollDown standing in for !transcriptFollowEnd. A catch-up index
+// that sits further down than the current viewport does not arm the marker:
+// the reader is in history already read, and only another Alt+U returns to
+// that row. A leading date can put the boundary on the first row; once every
+// message row is on screen, the typing footer is not a reason to keep ↓ new.
 func (m *Model) jumpArmed() bool {
 	if m.ctrl == nil || m.transcriptFollowEnd {
 		return false
@@ -835,32 +860,168 @@ func (m *Model) jumpArmed() bool {
 	if m.firstUnseenRow >= 0 && m.firstUnseenRow < m.transcriptRowTotal() {
 		return true
 	}
-	if m.ctrl.ConsoleOpen() {
+	if m.unseenResumeArmed() {
+		return true
+	}
+	if m.ctrl.ConsoleOpen() || m.ctrl.UnreadMarkRow() < 0 {
 		return false
 	}
-	return m.ctrl.UnreadMarkRow() >= 0
+	// transcriptRowsHeight renders the header, which asks jumpArmed again.
+	// The marker shares an existing header line, so the nested check can
+	// report this boundary disarmed without changing the measured height.
+	if m.withinResumeArmCheck {
+		return false
+	}
+	m.withinResumeArmCheck = true
+	defer func() { m.withinResumeArmCheck = false }()
+	return m.firstRowBelowViewport() >= 0
+}
+
+// unseenResumeArmed reports whether ↓ new should offer the catch-up row. The
+// row has to be the first message that is not fully on screen. Older history
+// above it, a continuation that is already fully visible, and a viewport whose
+// only hidden lines are the typing footer all leave it disarmed.
+func (m *Model) unseenResumeArmed() bool {
+	if m == nil || m.withinResumeArmCheck {
+		return false
+	}
+	if m.unseenResumeRow < 0 || m.unseenResumeRow >= m.transcriptRowTotal() {
+		return false
+	}
+	m.withinResumeArmCheck = true
+	defer func() { m.withinResumeArmCheck = false }()
+	return m.firstRowBelowViewport() == m.unseenResumeRow
 }
 
 // jumpToUnseen lands on the first row that arrived while the reader was
-// scrolled up, else on the newest row. It mirrors TranscriptList.jumpToUnseen.
-// Pinning that row can clamp onto the last page. When the newest row then sits
-// on the bottom line, transcriptScroll is 0, which is the same end condition
-// Page Down and Ctrl+End use, so the view follows the end again and the place
-// counter and ↓ new clear. A pin that still hides rows below stays detached.
+// scrolled up, else on the catch-up row when one is active, else on the newest
+// row. It mirrors TranscriptList.jumpToUnseen for the first landing. The
+// catch-up runs even when ↓ new is hidden, so Alt+U after Ctrl+Home or Page Up
+// returns to the unseen run instead of walking history already read. The
+// landing is max(resume, first row not fully visible): history above the run
+// jumps to the run, and a viewport already past it steps to the next row that
+// is not fully visible. Pinning a row can clamp onto the last page. When the
+// newest row then sits on the bottom line, transcriptScroll is 0, which is the
+// same end condition Page Down and Ctrl+End use, so the view follows the end
+// again and the place counter and ↓ new clear. A pin that still hides that
+// next row stays detached and keeps ↓ new armed.
 func (m *Model) jumpToUnseen() {
+	if m.unseenResumeRow >= 0 && m.unseenResumeRow < m.transcriptRowTotal() {
+		m.advanceUnseenResume()
+		return
+	}
 	if !m.jumpArmed() {
 		return
 	}
-	if m.firstUnseenRow >= 0 {
+	if m.firstUnseenRow >= 0 && m.firstUnseenRow < m.transcriptRowTotal() {
 		row := m.firstUnseenRow
 		m.firstUnseenRow = -1
 		m.pinTranscriptToRow(row)
-		if m.transcriptScroll == 0 {
+		m.settleUnseenResume()
+		return
+	}
+	m.jumpTranscript(true)
+}
+
+// advanceUnseenResume pins the catch-up row, or the first row still not fully
+// on screen when that row is further down. No message row below the viewport
+// means the reader has caught up and only a typing footer, if any, remains, so
+// the view follows the end. A row that arrived while this catch-up was in
+// progress is consumed once the landing moves to it or past it.
+func (m *Model) advanceUnseenResume() {
+	below := m.firstRowBelowViewport()
+	if below < 0 {
+		m.unseenResumeRow = -1
+		m.jumpTranscript(true)
+		return
+	}
+	target := m.unseenResumeRow
+	if below > target {
+		target = below
+	}
+	if target < 0 || target >= m.transcriptRowTotal() {
+		m.unseenResumeRow = -1
+		m.jumpTranscript(true)
+		return
+	}
+	if m.firstUnseenRow >= 0 && m.firstUnseenRow <= target {
+		m.firstUnseenRow = -1
+	}
+	m.pinTranscriptToRow(target)
+	m.settleUnseenResume()
+}
+
+// settleUnseenResume follows the end when the landing clamped onto the last
+// page. Otherwise the catch-up index becomes the first message row that is not
+// fully on screen, which is what keeps ↓ new armed. A viewport with every
+// message row fully visible leaves the index clear, including when the only
+// lines below it are the typing footer.
+func (m *Model) settleUnseenResume() {
+	if m.transcriptFollowEnd || m.transcriptScroll == 0 {
+		m.unseenResumeRow = -1
+		if !m.transcriptFollowEnd {
 			m.jumpTranscript(true)
 		}
 		return
 	}
-	m.jumpTranscript(true)
+	below := m.firstRowBelowViewport()
+	if below < 0 {
+		m.unseenResumeRow = -1
+		return
+	}
+	m.unseenResumeRow = below
+}
+
+// shiftedResumeRow moves the catch-up index across a prepend. A snapshotted
+// sequence wins, including a tail-cap that keeps the row count steady. Without
+// a sequence the index shifts by the row delta. A trimmed row becomes -1.
+func shiftedResumeRow(messages []controller.MessageSnapshot, sequence int64, row, delta, count int) int {
+	if sequence >= 0 {
+		for index, message := range messages {
+			if message.Sequence == sequence {
+				return index
+			}
+		}
+		return -1
+	}
+	if row < 0 {
+		return -1
+	}
+	shifted := row + delta
+	if shifted < 0 || shifted >= count {
+		return -1
+	}
+	return shifted
+}
+
+// firstRowBelowViewport is the first message row that is not fully on screen,
+// or -1 when every row already fits. A row taller than the viewport is already
+// the top line, so the advance is the row after it. The typing footer is not
+// a row.
+func (m *Model) firstRowBelowViewport() int {
+	if m == nil || m.ctrl == nil {
+		return -1
+	}
+	area := m.transcriptArea()
+	height := m.transcriptRowsHeight()
+	if height < 1 {
+		height = 1
+	}
+	start, end := m.transcriptWindow(len(area.lines), height)
+	top := area.rowAt(start)
+	for row := 0; row < area.count(); row++ {
+		if area.endOf(row) <= end {
+			continue
+		}
+		if row == top {
+			if row+1 < area.count() {
+				return row + 1
+			}
+			return -1
+		}
+		return row
+	}
+	return -1
 }
 
 // transcriptPlaceLabel is how far up the reader is, drawn on the composer

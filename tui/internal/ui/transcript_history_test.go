@@ -199,6 +199,80 @@ func TestNoteTranscriptGrowthRestoresFirstUnseenAfterOlderPage(t *testing.T) {
 	}
 }
 
+func TestNoteTranscriptGrowthRestoresUnseenResumeAfterOlderPage(t *testing.T) {
+	m := seededModel(t)
+	m.transcriptFollowEnd = false
+	messages := m.ctrl.Messages()
+	if len(messages) < 2 {
+		t.Fatal("seeded transcript must have messages")
+	}
+	resumeIndex := len(messages) - 1
+	m.unseenResumeRow = resumeIndex
+	m.transcriptCount = m.transcriptRowTotal()
+	m.transcriptAnchorSequence = messages[0].Sequence
+	m.transcriptAnchorSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
+	m.unseenResumeSequenceAtAnchor = messages[resumeIndex].Sequence
+
+	key := m.ctrl.Reducer().ConversationKey("omarchy", "#omarchy")
+	when := time.Date(2026, 9, 26, 8, 0, 0, 0, time.UTC)
+	m.ctrl.Apply(irc.HistoryEvent{
+		Conversation: key,
+		Target:       "#omarchy",
+		Kind:         irc.HistoryChat,
+		OlderPage:    true,
+		Lines: []irc.ReplayLine{{
+			Author:    "bob",
+			Body:      "older resume page",
+			Timestamp: when,
+			MsgID:     irc.MsgID{Value: "older-resume-page"},
+		}},
+	})
+	m.ctrl.Publish(irc.ViewNotify{Messages: true})
+	m.noteTranscriptGrowth()
+
+	wantRow := resumeIndex + 1
+	if m.unseenResumeRow != wantRow {
+		t.Fatalf("unseenResumeRow = %d, want %d after one prepended row", m.unseenResumeRow, wantRow)
+	}
+}
+
+func TestNoteTranscriptGrowthShiftsUnseenResumeWithoutASequence(t *testing.T) {
+	m := seededModel(t)
+	m.transcriptFollowEnd = false
+	messages := m.ctrl.Messages()
+	if len(messages) < 2 {
+		t.Fatal("seeded transcript must have messages")
+	}
+	resumeIndex := len(messages) - 1
+	m.unseenResumeRow = resumeIndex
+	m.unseenResumeSequenceAtAnchor = -1
+	m.transcriptCount = m.transcriptRowTotal()
+	m.transcriptAnchorSequence = messages[0].Sequence
+	m.transcriptAnchorSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
+
+	key := m.ctrl.Reducer().ConversationKey("omarchy", "#omarchy")
+	when := time.Date(2026, 9, 26, 8, 1, 0, 0, time.UTC)
+	m.ctrl.Apply(irc.HistoryEvent{
+		Conversation: key,
+		Target:       "#omarchy",
+		Kind:         irc.HistoryChat,
+		OlderPage:    true,
+		Lines: []irc.ReplayLine{{
+			Author:    "bob",
+			Body:      "older resume delta",
+			Timestamp: when,
+			MsgID:     irc.MsgID{Value: "older-resume-delta"},
+		}},
+	})
+	m.ctrl.Publish(irc.ViewNotify{Messages: true})
+	m.noteTranscriptGrowth()
+
+	wantRow := resumeIndex + 1
+	if m.unseenResumeRow != wantRow {
+		t.Fatalf("unseenResumeRow = %d, want %d after a delta shift", m.unseenResumeRow, wantRow)
+	}
+}
+
 func TestDetachedGrowthKeepsTheTopLine(t *testing.T) {
 	m, d := unreadDemoModel(t)
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
