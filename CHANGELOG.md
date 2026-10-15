@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The terminal client's `Alt+U` keeps `↓ new` while the next unseen row is
+  not fully visible. Another press steps to that row, and the view follows
+  the end once that landing reaches it. Scrolling back into history already
+  read hides the marker until `Alt+U` returns to the unseen run.
 - Upload tests accept the canonical HTTP header names Qt 6.12 writes, and
   the lowercase names from Qt 6.11 and earlier.
 - The channel Leave and Close clicks in the UI tests wait until those
