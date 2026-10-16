@@ -471,6 +471,30 @@ func TestParsesFileHostFromIsupport(t *testing.T) {
 	}
 }
 
+func TestBouncerNetIDWithAndWithoutAValue(t *testing.T) {
+	features := NewServerFeatures()
+	if features.HasBouncerNetID() || features.BouncerNetID() != "" {
+		t.Fatal("BOUNCER_NETID must be absent until advertised")
+	}
+	features.ApplyToken("BOUNCER_NETID")
+	if !features.HasBouncerNetID() || features.BouncerNetID() != "" {
+		t.Fatalf("bare token = %v %q", features.HasBouncerNetID(), features.BouncerNetID())
+	}
+	features.ApplyToken("BOUNCER_NETID=42")
+	if !features.HasBouncerNetID() || features.BouncerNetID() != "42" {
+		t.Fatalf("valued token = %v %q", features.HasBouncerNetID(), features.BouncerNetID())
+	}
+	features.ApplyToken("-BOUNCER_NETID")
+	if features.HasBouncerNetID() || features.BouncerNetID() != "" {
+		t.Fatal("-BOUNCER_NETID must clear the token")
+	}
+	features.ApplyToken("BOUNCER_NETID=42")
+	features.ApplyToken("-BOUNCER_NETID=42")
+	if features.HasBouncerNetID() || features.BouncerNetID() != "" {
+		t.Fatal("-BOUNCER_NETID=42 must clear the token")
+	}
+}
+
 func TestDraftIconRemovalClearsAdvertisedURL(t *testing.T) {
 	features := NewServerFeatures()
 	features.ApplyToken("draft/ICON=https://example.org/icon.svg")

@@ -32,6 +32,7 @@ HEADERS += \
     ../../src/irc/irccommandbuilder.h \
     ../../src/irc/irccasemapping.h \
     ../../src/irc/ircserverfeatures.h \
+    ../../src/irc/ircbouncernetwork.h \
     ../../src/irc/irccapability.h \
     ../../src/irc/irccapabilitynegotiation.h \
     ../../src/irc/ircreadmarker.h \
@@ -119,6 +120,7 @@ SOURCES += \
     ../../src/irc/irccommandbuilder.cpp \
     ../../src/irc/irccasemapping.cpp \
     ../../src/irc/ircserverfeatures.cpp \
+    ../../src/irc/ircbouncernetwork.cpp \
     ../../src/irc/irccapability.cpp \
     ../../src/irc/irccapabilitynegotiation.cpp \
     ../../src/irc/ircreadmarker.cpp \

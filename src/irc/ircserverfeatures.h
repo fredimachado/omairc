@@ -95,6 +95,11 @@ public:
     // none that this connection may use. An encrypted IRC connection refuses
     // a plain http URI.
     std::string fileHost(bool encrypted) const;
+    // BOUNCER_NETID from 005. hasBouncerNetId is false after -BOUNCER_NETID
+    // and before the token is seen. The value is empty when the token is
+    // present without '=value'.
+    bool hasBouncerNetId() const noexcept { return m_hasBouncerNetId; }
+    const std::string& bouncerNetId() const noexcept { return m_bouncerNetId; }
 
     std::optional<IrcParsedName> parseNamesToken(std::string_view token) const;
     std::vector<IrcPrefixChange> prefixChanges(
@@ -134,5 +139,7 @@ private:
     std::string m_chanModesD;
     std::string m_iconUrl;
     std::vector<std::string> m_fileHosts;
+    bool m_hasBouncerNetId = false;
+    std::string m_bouncerNetId;
     std::array<ModeParamRule, 256> m_modeRules{};
 };

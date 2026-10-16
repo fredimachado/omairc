@@ -295,6 +295,126 @@ func parseParameters(input string) []string {
 	return parameters
 }
 
+// ParseBouncerCommand reads a BOUNCER line. Subcommands are case-insensitive.
+// NETWORK <netid> * sets Removed. Attribute text uses message-tag escapes.
+func ParseBouncerCommand(message Message) (ParsedBouncer, bool) {
+	if !strings.EqualFold(message.Command, "BOUNCER") || len(message.Params) == 0 {
+		return ParsedBouncer{}, false
+	}
+	subcommand, ok := bouncerSubcommand(message.Params[0])
+	if !ok {
+		return ParsedBouncer{}, false
+	}
+	parsed := ParsedBouncer{Subcommand: subcommand}
+	parameterAt := func(index int) string {
+		if index >= len(message.Params) {
+			return ""
+		}
+		return message.Params[index]
+	}
+	switch subcommand {
+	case BouncerBind, BouncerDelNetwork:
+		parsed.NetID = parameterAt(1)
+	case BouncerListNetworks:
+	case BouncerAddNetwork:
+		if len(message.Params) >= 2 {
+			blob := parameterAt(1)
+			if strings.ContainsAny(blob, "=;") {
+				parsed.Attributes = parseBouncerAttributeBlob(blob)
+			} else {
+				parsed.NetID = blob
+			}
+		}
+	case BouncerChangeNetwork:
+		parsed.NetID = parameterAt(1)
+		if len(message.Params) >= 3 {
+			parsed.Attributes = parseBouncerAttributeBlob(parameterAt(2))
+		}
+	case BouncerSubcommandNetwork:
+		if len(message.Params) < 2 {
+			return ParsedBouncer{}, false
+		}
+		parsed.NetID = parameterAt(1)
+		if len(message.Params) >= 3 {
+			if parameterAt(2) == "*" {
+				parsed.Removed = true
+			} else {
+				parsed.Attributes = parseBouncerAttributeBlob(parameterAt(2))
+			}
+		}
+	}
+	return parsed, true
+}
+
+func bouncerSubcommand(name string) (BouncerSubcommand, bool) {
+	switch strings.ToLower(name) {
+	case "bind":
+		return BouncerBind, true
+	case "listnetworks":
+		return BouncerListNetworks, true
+	case "addnetwork":
+		return BouncerAddNetwork, true
+	case "changenetwork":
+		return BouncerChangeNetwork, true
+	case "delnetwork":
+		return BouncerDelNetwork, true
+	case "network":
+		return BouncerSubcommandNetwork, true
+	default:
+		return 0, false
+	}
+}
+
+func splitUnescapedSemicolons(blob string) []string {
+	var pieces []string
+	start := 0
+	slashes := 0
+	for index := 0; index < len(blob); index++ {
+		if blob[index] == '\\' {
+			slashes++
+			continue
+		}
+		if blob[index] == ';' && slashes%2 == 0 {
+			pieces = append(pieces, blob[start:index])
+			start = index + 1
+		}
+		slashes = 0
+	}
+	pieces = append(pieces, blob[start:])
+	return pieces
+}
+
+func parseBouncerAttributeBlob(blob string) []BouncerAttribute {
+	if blob == "" {
+		return nil
+	}
+	var attributes []BouncerAttribute
+	for _, piece := range splitUnescapedSemicolons(blob) {
+		if piece == "" {
+			continue
+		}
+		equals := strings.IndexByte(piece, '=')
+		attribute := BouncerAttribute{}
+		if equals < 0 {
+			attribute.Key = piece
+			attribute.Removed = true
+		} else {
+			attribute.Key = piece[:equals]
+			if equals+1 == len(piece) {
+				attribute.Removed = true
+			} else {
+				attribute.Value = unescapeTagValue(piece[equals+1:])
+				attribute.Removed = attribute.Value == ""
+			}
+		}
+		if attribute.Key == "" {
+			continue
+		}
+		attributes = append(attributes, attribute)
+	}
+	return attributes
+}
+
 func isASCIIDigit(character byte) bool {
 	return character >= '0' && character <= '9'
 }

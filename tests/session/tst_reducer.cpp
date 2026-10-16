@@ -11,7 +11,9 @@
 #include "ircviewnotify.h"
 
 #include <QBuffer>
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
@@ -224,6 +226,7 @@ private slots:
     void nickChangeKeepsServicesAccount();
     void accountChangeRefreshesMemberRowAndTranscript();
     void conversationLogTailFiltersAndOrdersAcceptedRecords();
+    void channelPassWordReloadsFromHistory();
     void conversationLogTailHandlesBoundariesAndEdgeCases();
     void conversationLogTailStopsBeforeHistoricalPrefix();
     void readMarkerSkipsUnreadForCoveredServerTimes();
@@ -4645,6 +4648,76 @@ void ReducerTest::conversationLogTailFiltersAndOrdersAcceptedRecords()
     QCOMPARE(lines[0].body, QStringLiteral("two"));
     QCOMPARE(lines[1].body, QStringLiteral("three"));
     QCOMPARE(lines[2].body, QStringLiteral("four"));
+}
+
+void ReducerTest::channelPassWordReloadsFromHistory()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    IrcConversationLog log(dir.path());
+    const IrcConversationKey room =
+        IrcEventReducer().conversationKey(networkA, QStringLiteral("#chan"));
+    const QString planted = QStringLiteral("hi pass=x");
+    const QByteArray plantedRecord = QJsonDocument(QJsonObject{
+        {QStringLiteral("timestamp"), QStringLiteral("2026-09-04T00:00:00.000Z")},
+        {QStringLiteral("author"), QStringLiteral("alice")},
+        {QStringLiteral("kind"), QStringLiteral("message")},
+        {QStringLiteral("body"), planted},
+    }).toJson(QJsonDocument::Compact) + '\n';
+    const QString path = log.pathFor(networkA, room.normalizedTarget, IrcCaseMapping{});
+    QVERIFY(QDir().mkpath(QFileInfo(path).absolutePath()));
+    {
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write(plantedRecord), qint64(plantedRecord.size()));
+    }
+
+    const auto hasBody = [](const IrcConversationState& conversation, const QString& body) {
+        for (const IrcReducedMessage& message : conversation.messages) {
+            if (message.body == body)
+                return true;
+        }
+        return false;
+    };
+
+    IrcEventReducer loaded;
+    loaded.setConversationLog(&log);
+    welcome(loaded, networkA);
+    loaded.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#chan"), QStringLiteral("omairc")});
+    const IrcConversationState *hydrated = loaded.find(room);
+    QVERIFY(hydrated);
+    QVERIFY(hasBody(*hydrated, planted));
+
+    const QString live = QStringLiteral("hi pass=y");
+    loaded.apply(IrcMessageEvent{
+        room, QStringLiteral("bob"), live, timestamp, QStringLiteral("#chan")});
+    QFile written(path);
+    QVERIFY(written.open(QIODevice::ReadOnly));
+    const QByteArray disk = written.readAll();
+    QVERIFY(disk.contains(planted.toUtf8()));
+    QVERIFY(disk.contains(live.toUtf8()));
+
+    const std::vector<IrcTranscriptLine> tail =
+        log.readTail(networkA, room.normalizedTarget, IrcCaseMapping{}, 10);
+    bool sawPlanted = false;
+    bool sawLive = false;
+    for (const IrcTranscriptLine& line : tail) {
+        sawPlanted = sawPlanted || line.body == planted;
+        sawLive = sawLive || line.body == live;
+    }
+    QVERIFY(sawPlanted);
+    QVERIFY(sawLive);
+
+    IrcEventReducer again;
+    again.setConversationLog(&log);
+    welcome(again, networkA);
+    again.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#chan"), QStringLiteral("omairc")});
+    const IrcConversationState *reloaded = again.find(room);
+    QVERIFY(reloaded);
+    QVERIFY(hasBody(*reloaded, planted));
+    QVERIFY(hasBody(*reloaded, live));
 }
 
 void ReducerTest::conversationLogTailHandlesBoundariesAndEdgeCases()

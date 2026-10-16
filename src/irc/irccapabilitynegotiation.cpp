@@ -109,6 +109,11 @@ const Wanted wantedTable[] = {
      std::nullopt, false, false, acceptsAnyValue},
     {IrcCapability::ExtendedJoin, QLatin1String("extended-join"),
      std::nullopt, false, false, acceptsAnyValue},
+    {IrcCapability::BouncerNetworks, QLatin1String("soju.im/bouncer-networks"),
+     std::nullopt, false, true, acceptsAnyValue},
+    {IrcCapability::BouncerNetworksNotify,
+     QLatin1String("soju.im/bouncer-networks-notify"),
+     std::nullopt, false, true, acceptsAnyValue},
 };
 
 const Wanted *wantedFor(const QString& name)

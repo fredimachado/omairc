@@ -23,6 +23,7 @@
 #include "ircparser.h"
 #include "ircpresence.h"
 #include "ircsaslscram.h"
+#include "ircsecretpolicy.h"
 #include "ircserverfeatures.h"
 #include "ircreadmarker.h"
 #include "ircsession.h"
@@ -573,7 +574,42 @@ private slots:
     void readMarkerAbsentIgnoresInboundCommand();
     void sojuReadCapUsesReadCommand();
     void zonelessReadMarkerParameterIsRejected();
+    void bouncerNetworkSnapshotUpdatesAndRemoval();
+    void bouncerBindFollowsSaslAndPrecedesCapEnd();
+    void bouncerCommandsMatchRepliesAndFailures();
+    void bouncerPassNeverReachesStatus();
 };
+
+void registerBouncerCaps(Fixture& fixture)
+{
+    fixture.connectTls();
+    fixture.transport->injectBytes(QByteArrayLiteral(
+        ":server CAP omairc LS :soju.im/bouncer-networks "
+        "soju.im/bouncer-networks-notify\r\n"
+        ":server CAP omairc ACK :soju.im/bouncer-networks "
+        "soju.im/bouncer-networks-notify\r\n"
+        ":server 001 omairc :Welcome\r\n"));
+}
+
+std::optional<IrcBouncerNetwork> bouncerById(const QList<IrcBouncerNetwork>& networks,
+                                             const QString& id)
+{
+    for (const IrcBouncerNetwork& network : networks) {
+        if (network.id == id)
+            return network;
+    }
+    return std::nullopt;
+}
+
+int countFrames(const QByteArrayList& frames, const QByteArray& frame)
+{
+    int count = 0;
+    for (const QByteArray& candidate : frames) {
+        if (candidate == frame)
+            ++count;
+    }
+    return count;
+}
 
 void SessionTest::registersAndAutojoins()
 {
@@ -6445,6 +6481,299 @@ void SessionTest::sojuReadCapUsesReadCommand()
     QVERIFY(fixture.session->capabilities().contains(IrcCapability::ReadMarker));
     QVERIFY(fixture.session->requestReadMarker(QStringLiteral("#omarchy")));
     QVERIFY(fixture.wrote(QByteArrayLiteral("READ #omarchy\r\n")));
+}
+
+void SessionTest::bouncerNetworkSnapshotUpdatesAndRemoval()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    fixture.connectTls();
+    fixture.transport->injectBytes(QByteArrayLiteral(
+        ":server CAP omairc LS :soju.im/bouncer-networks "
+        "soju.im/bouncer-networks-notify\r\n"
+        ":server CAP omairc ACK :soju.im/bouncer-networks "
+        "soju.im/bouncer-networks-notify\r\n"
+        ":server BATCH +bn soju.im/bouncer-networks\r\n"
+        "@batch=bn BOUNCER NETWORK 1 "
+        "name=My\\sAwesome\\sNetwork;host=irc.example;tls=0;"
+        "not-a-real-key=ignored;pass=s3cret\r\n"
+        "@batch=bn BOUNCER NETWORK 2 host=irc.oftc.net;name=OFTC\r\n"
+        ":server BATCH -bn\r\n"
+        ":server 001 omairc :Welcome\r\n"));
+
+    QVERIFY(fixture.session->capabilities().contains(IrcCapability::BouncerNetworks));
+    QVERIFY(fixture.session->capabilities().contains(
+        IrcCapability::BouncerNetworksNotify));
+    const QList<IrcBouncerNetwork> snapshot = fixture.session->bouncerNetworks();
+    QCOMPARE(snapshot.size(), 2);
+    const std::optional<IrcBouncerNetwork> first = bouncerById(snapshot, QStringLiteral("1"));
+    const std::optional<IrcBouncerNetwork> second = bouncerById(snapshot, QStringLiteral("2"));
+    QVERIFY(first);
+    QVERIFY(second);
+    QCOMPARE(first->name, QStringLiteral("My Awesome Network"));
+    QCOMPARE(first->host, QStringLiteral("irc.example"));
+    QCOMPARE(first->tls, false);
+    QCOMPARE(first->port, 6667);
+    QCOMPARE(first->pass, QStringLiteral("s3cret"));
+    QCOMPARE(second->name, QStringLiteral("OFTC"));
+    QCOMPARE(second->host, QStringLiteral("irc.oftc.net"));
+    QCOMPARE(second->tls, true);
+    QCOMPARE(second->port, 6697);
+
+    fixture.transport->injectBytes(QByteArrayLiteral(
+        "BOUNCER NETWORK 1 not-a-real-key=nope\r\n"
+        "bouncer network 1 name=;state=connected;error=timed\\sout\r\n"
+        "BOUNCER NETWORK 2 *\r\n"));
+    const QList<IrcBouncerNetwork> updated = fixture.session->bouncerNetworks();
+    QCOMPARE(updated.size(), 1);
+    const std::optional<IrcBouncerNetwork> kept = bouncerById(updated, QStringLiteral("1"));
+    QVERIFY(kept);
+    QCOMPARE(kept->name, QString());
+    QCOMPARE(kept->host, QStringLiteral("irc.example"));
+    QCOMPARE(kept->tls, false);
+    QCOMPARE(kept->port, 6667);
+    QCOMPARE(kept->pass, QStringLiteral("s3cret"));
+    QCOMPARE(kept->state, IrcBouncerNetworkState::Connected);
+    QCOMPARE(kept->error, QStringLiteral("timed out"));
+    QVERIFY(!bouncerById(updated, QStringLiteral("2")));
+
+    QVERIFY(fixture.session->listBouncerNetworks());
+    QVERIFY(fixture.wrote(QByteArrayLiteral("BOUNCER LISTNETWORKS\r\n")));
+    fixture.transport->injectBytes(QByteArrayLiteral(
+        ":server BATCH +list soju.im/bouncer-networks\r\n"
+        "@batch=list BOUNCER NETWORK 9 host=irc.libera.chat;name=Libera\r\n"
+        ":server BATCH -list\r\n"));
+    const QList<IrcBouncerNetwork> replaced = fixture.session->bouncerNetworks();
+    QCOMPARE(replaced.size(), 1);
+    const std::optional<IrcBouncerNetwork> libera = bouncerById(replaced, QStringLiteral("9"));
+    QVERIFY(libera);
+    QCOMPARE(libera->name, QStringLiteral("Libera"));
+    QCOMPARE(libera->host, QStringLiteral("irc.libera.chat"));
+    QCOMPARE(libera->tls, true);
+    QCOMPARE(libera->port, 6697);
+    QVERIFY(!bouncerById(replaced, QStringLiteral("1")));
+}
+
+void SessionTest::bouncerBindFollowsSaslAndPrecedesCapEnd()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    sessionConfig.password = QStringLiteral("secret");
+    sessionConfig.bouncerBindNetId = QStringLiteral("42");
+    Fixture fixture(sessionConfig);
+    fixture.connectTls();
+    fixture.transport->injectBytes(QByteArrayLiteral(
+        ":server CAP omairc LS :sasl=PLAIN soju.im/bouncer-networks "
+        "soju.im/bouncer-networks-notify\r\n"
+        ":server CAP omairc ACK :sasl soju.im/bouncer-networks "
+        "soju.im/bouncer-networks-notify\r\n"
+        "AUTHENTICATE +\r\n"));
+    QVERIFY(fixture.wrote(QByteArrayLiteral("AUTHENTICATE PLAIN\r\n")));
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("BOUNCER BIND 42\r\n")));
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("CAP END\r\n")));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 903 omairc :SASL successful\r\n"));
+    const QByteArrayList frames = fixture.transport->writtenFrames();
+    int authenticate = -1;
+    int bind = -1;
+    int capEnd = -1;
+    for (int index = 0; index < frames.size(); ++index) {
+        const QByteArray& frame = frames.at(index);
+        if (frame.startsWith("AUTHENTICATE ")
+            && frame != QByteArrayLiteral("AUTHENTICATE PLAIN\r\n")
+            && frame != QByteArrayLiteral("AUTHENTICATE +\r\n")) {
+            authenticate = index;
+        }
+        if (frame == QByteArrayLiteral("BOUNCER BIND 42\r\n"))
+            bind = index;
+        if (frame == QByteArrayLiteral("CAP END\r\n"))
+            capEnd = index;
+    }
+    QVERIFY(authenticate >= 0);
+    QVERIFY(bind > authenticate);
+    QVERIFY(capEnd > bind);
+    QCOMPARE(countFrames(frames, QByteArrayLiteral("BOUNCER BIND 42\r\n")), 1);
+
+    fixture.transport->injectBytes(QByteArrayLiteral(
+        ":server 001 omairc :Welcome\r\n"
+        ":server CAP omairc NEW :soju.im/bouncer-networks\r\n"
+        ":server CAP omairc ACK :soju.im/bouncer-networks\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+    QCOMPARE(countFrames(fixture.transport->writtenFrames(),
+                         QByteArrayLiteral("BOUNCER BIND 42\r\n")),
+             1);
+}
+
+void SessionTest::bouncerCommandsMatchRepliesAndFailures()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    QVERIFY(!fixture.session->listBouncerNetworks());
+    registerBouncerCaps(fixture);
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+
+    const QList<IrcBouncerAttributeValue> added{
+        {QStringLiteral("host"), QStringLiteral("irc.oftc.net")},
+        {QStringLiteral("name"), QStringLiteral("My Network")},
+        {QStringLiteral("pass"), QStringLiteral("s3cret")},
+    };
+    QVERIFY(fixture.session->addBouncerNetwork(added));
+    QVERIFY(fixture.wrote(QByteArrayLiteral(
+        "BOUNCER ADDNETWORK host=irc.oftc.net;name=My\\sNetwork;pass=s3cret\r\n")));
+    fixture.transport->injectBytes(QByteArrayLiteral("BOUNCER ADDNETWORK 44\r\n"));
+
+    const QList<IrcBouncerAttributeValue> changed{
+        {QStringLiteral("name"), QStringLiteral("Renamed")},
+    };
+    QVERIFY(fixture.session->changeBouncerNetwork(QStringLiteral("44"), changed));
+    QVERIFY(fixture.wrote(QByteArrayLiteral(
+        "BOUNCER CHANGENETWORK 44 name=Renamed\r\n")));
+    fixture.transport->injectBytes(
+        QByteArrayLiteral("BOUNCER CHANGENETWORK 44\r\n"));
+
+    QVERIFY(fixture.session->deleteBouncerNetwork(QStringLiteral("44")));
+    QVERIFY(fixture.wrote(QByteArrayLiteral("BOUNCER DELNETWORK 44\r\n")));
+    fixture.transport->injectBytes(QByteArrayLiteral("BOUNCER DELNETWORK 44\r\n"));
+
+    const QList<IrcBouncerAttributeValue> again{
+        {QStringLiteral("host"), QStringLiteral("irc.example")},
+    };
+    QVERIFY(fixture.session->addBouncerNetwork(again));
+    QVERIFY(fixture.session->changeBouncerNetwork(QStringLiteral("44"), changed));
+    QVERIFY(fixture.session->addBouncerNetwork(again));
+    QVERIFY(fixture.session->addBouncerNetwork(again));
+    QVERIFY(fixture.session->addBouncerNetwork(again));
+    QVERIFY(fixture.session->addBouncerNetwork(again));
+
+    fixture.transport->injectBytes(QByteArrayLiteral(
+        "FAIL BOUNCER UNKNOWN_COMMAND FOO :Unknown subcommand\r\n"
+        "FAIL BOUNCER ACCOUNT_REQUIRED BIND :Authentication required\r\n"
+        "FAIL BOUNCER REGISTRATION_IS_COMPLETED BIND "
+        ":Cannot bind to a network after registration\r\n"
+        "FAIL BOUNCER INVALID_NETID CHANGENETWORK 99 :Network not found\r\n"
+        "FAIL BOUNCER INVALID_ATTRIBUTE ADDNETWORK * host :Invalid attribute value\r\n"
+        "FAIL BOUNCER READ_ONLY_ATTRIBUTE ADDNETWORK * state :Read-only attribute\r\n"
+        "FAIL BOUNCER UNKNOWN_ATTRIBUTE ADDNETWORK * extra :Unknown attribute\r\n"
+        "FAIL BOUNCER NEED_ATTRIBUTE ADDNETWORK * host :Missing required attribute\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+
+    const QList<IrcBouncerCommandResult> results = fixture.session->bouncerCommandResults();
+    QCOMPARE(results.size(), 11);
+    QCOMPARE(results.at(0).subcommand, QStringLiteral("ADDNETWORK"));
+    QVERIFY(results.at(0).ok);
+    QCOMPARE(results.at(0).netId, QStringLiteral("44"));
+    QCOMPARE(results.at(1).subcommand, QStringLiteral("CHANGENETWORK"));
+    QVERIFY(results.at(1).ok);
+    QCOMPARE(results.at(1).netId, QStringLiteral("44"));
+    QCOMPARE(results.at(2).subcommand, QStringLiteral("DELNETWORK"));
+    QVERIFY(results.at(2).ok);
+    QCOMPARE(results.at(2).netId, QStringLiteral("44"));
+
+    const QList<IrcBouncerCommandResult> failures = results.mid(3);
+    QCOMPARE(failures.at(0).code, QStringLiteral("UNKNOWN_COMMAND"));
+    QCOMPARE(failures.at(0).subcommand, QStringLiteral("FOO"));
+    QCOMPARE(failures.at(0).description, QStringLiteral("Unknown subcommand"));
+    QVERIFY(!failures.at(0).ok);
+    QCOMPARE(failures.at(1).code, QStringLiteral("ACCOUNT_REQUIRED"));
+    QCOMPARE(failures.at(1).subcommand, QStringLiteral("BIND"));
+    QCOMPARE(failures.at(2).code, QStringLiteral("REGISTRATION_IS_COMPLETED"));
+    QCOMPARE(failures.at(2).subcommand, QStringLiteral("BIND"));
+    QCOMPARE(failures.at(3).code, QStringLiteral("INVALID_NETID"));
+    QCOMPARE(failures.at(3).subcommand, QStringLiteral("CHANGENETWORK"));
+    QCOMPARE(failures.at(3).netId, QStringLiteral("99"));
+    QCOMPARE(failures.at(4).code, QStringLiteral("INVALID_ATTRIBUTE"));
+    QCOMPARE(failures.at(4).netId, QStringLiteral("*"));
+    QCOMPARE(failures.at(4).attribute, QStringLiteral("host"));
+    QCOMPARE(failures.at(5).code, QStringLiteral("READ_ONLY_ATTRIBUTE"));
+    QCOMPARE(failures.at(5).netId, QStringLiteral("*"));
+    QCOMPARE(failures.at(5).attribute, QStringLiteral("state"));
+    QCOMPARE(failures.at(6).code, QStringLiteral("UNKNOWN_ATTRIBUTE"));
+    QCOMPARE(failures.at(6).netId, QStringLiteral("*"));
+    QCOMPARE(failures.at(6).attribute, QStringLiteral("extra"));
+    QCOMPARE(failures.at(7).code, QStringLiteral("NEED_ATTRIBUTE"));
+    QCOMPARE(failures.at(7).netId, QStringLiteral("*"));
+    QCOMPARE(failures.at(7).attribute, QStringLiteral("host"));
+    QCOMPARE(failures.at(7).description, QStringLiteral("Missing required attribute"));
+}
+
+void SessionTest::bouncerPassNeverReachesStatus()
+{
+    QVERIFY(IrcSecretPolicy::allowsTranscript(QStringLiteral("hi pass=x")));
+    QVERIFY(!IrcSecretPolicy::redactWireLine(QStringLiteral("hi pass=x")));
+    QVERIFY(!IrcSecretPolicy::redactMessage(
+        mustParse(":alice!a@h PRIVMSG #chan :hi pass=x")));
+    QVERIFY(!IrcSecretPolicy::redactWireLine(
+        QStringLiteral("FAIL CHATHISTORY INVALID_TARGET #chan :hi pass=x")));
+
+    const QString network = QStringLiteral("network-a");
+    const QString networkStatus = IrcStatusEntry::incoming(
+        network, mustParse("BOUNCER NETWORK 42 host=irc.example;pass=s3cret")).text();
+    QVERIFY(networkStatus.contains(QStringLiteral("pass=***")));
+    QVERIFY(!networkStatus.contains(QStringLiteral("s3cret")));
+    const QString addStatus = IrcStatusEntry::outgoing(
+        network,
+        QByteArrayLiteral(
+            "BOUNCER ADDNETWORK host=irc.example;pass=s3cret;name=OFTC\r\n")).text();
+    QVERIFY(addStatus.contains(QStringLiteral("pass=***")));
+    QVERIFY(!addStatus.contains(QStringLiteral("s3cret")));
+    const QString changeStatus = IrcStatusEntry::outgoing(
+        network,
+        QByteArrayLiteral(
+            "BOUNCER CHANGENETWORK 44 host=irc.example;pass=s3cret\r\n")).text();
+    QVERIFY(changeStatus.contains(QStringLiteral("pass=***")));
+    QVERIFY(!changeStatus.contains(QStringLiteral("s3cret")));
+
+    const std::optional<QString> outbound = IrcSecretPolicy::redactWireLine(
+        QStringLiteral("BOUNCER ADDNETWORK host=irc.example;pass=s3cret;name=OFTC"));
+    QVERIFY(outbound);
+    QVERIFY(outbound->contains(QStringLiteral("pass=***")));
+    QVERIFY(!outbound->contains(QStringLiteral("s3cret")));
+
+    const std::optional<IrcMaskedCommand> inbound = IrcSecretPolicy::redactMessage(
+        mustParse("BOUNCER NETWORK 42 pass=s3cret"));
+    QVERIFY(inbound);
+    const QString inboundText = inbound->parameters.join(QLatin1Char(' '));
+    QVERIFY(inboundText.contains(QStringLiteral("pass=***")));
+    QVERIFY(!inboundText.contains(QStringLiteral("s3cret")));
+
+    const std::optional<QString> mixed = IrcSecretPolicy::redactWireLine(
+        QStringLiteral("BOUNCER ADDNETWORK Pass=Secret"));
+    QVERIFY(mixed);
+    QVERIFY(mixed->contains(QStringLiteral("Pass=***")));
+    QVERIFY(!mixed->contains(QStringLiteral("Secret")));
+
+    QVERIFY(!IrcSecretPolicy::redactWireLine(
+        QStringLiteral("BOUNCER NETWORK 1 compass=north")));
+    const std::optional<QString> passLine = IrcSecretPolicy::redactWireLine(
+        QStringLiteral("PASS hunter2"));
+    QVERIFY(passLine);
+    QCOMPARE(*passLine, QStringLiteral("PASS ***"));
+
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    StatusCollector status(fixture.session);
+    registerBouncerCaps(fixture);
+    const QList<IrcBouncerAttributeValue> added{
+        {QStringLiteral("host"), QStringLiteral("irc.example")},
+        {QStringLiteral("pass"), QStringLiteral("upstream-pass")},
+    };
+    QVERIFY(fixture.session->addBouncerNetwork(added));
+    fixture.transport->injectBytes(QByteArrayLiteral(
+        "BOUNCER NETWORK 7 host=irc.example;pass=upstream-pass\r\n"
+        "FAIL BOUNCER NEED_ATTRIBUTE ADDNETWORK * host "
+        ":Invalid pass=s3cret-value\r\n"));
+    const std::optional<IrcBouncerNetwork> stored =
+        bouncerById(fixture.session->bouncerNetworks(), QStringLiteral("7"));
+    QVERIFY(stored);
+    QCOMPARE(stored->pass, QStringLiteral("upstream-pass"));
+    QVERIFY(!status.anyFieldContains(QStringLiteral("upstream-pass")));
+    QVERIFY(!status.anyFieldContains(QStringLiteral("s3cret-value")));
+    QCOMPARE(status.textFor(QStringLiteral("FAIL")),
+             QStringLiteral("Invalid pass=***"));
 }
 
 int runSessionTests(int argc, char **argv)

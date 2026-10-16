@@ -615,6 +615,21 @@ func TestZncPlaybackAbsentIsNotRequested(t *testing.T) {
 	}
 }
 
+func TestBouncerNetworksKeepTheirOwnLines(t *testing.T) {
+	negotiation := NewCapabilityNegotiation(false)
+	negotiation.Advertise(tokens("soju.im/bouncer-networks soju.im/bouncer-networks-notify"))
+	assertCapLines(t, negotiation.TakeRequest().Lines,
+		"soju.im/bouncer-networks",
+		"soju.im/bouncer-networks-notify")
+
+	withNeighbor := NewCapabilityNegotiation(false)
+	withNeighbor.Advertise(tokens("soju.im/bouncer-networks soju.im/bouncer-networks-notify multi-prefix"))
+	assertCapLines(t, withNeighbor.TakeRequest().Lines,
+		"soju.im/bouncer-networks",
+		"soju.im/bouncer-networks-notify",
+		"multi-prefix")
+}
+
 func TestLabeledResponseNeedsMessageTags(t *testing.T) {
 	negotiation := NewCapabilityNegotiation(false)
 	negotiation.Advertise(tokens("labeled-response away-notify"))

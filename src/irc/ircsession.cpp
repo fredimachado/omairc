@@ -1023,6 +1023,7 @@ void IrcSession::endCapabilityNegotiation()
     if (!m_registrationSent || !m_capabilities.settled() || m_saslPending)
         return;
 
+    sendBouncerBind();
     m_capabilityNegotiationEnded = true;
     m_capabilityTimer->cancel();
     sendLine(QByteArrayLiteral("CAP END\r\n"));
@@ -1514,6 +1515,12 @@ void IrcSession::handleMessage(const IrcMessage &message)
     if (message.command == "FAIL") {
         handleChatHistoryFail(message);
         handleReadMarkerFail(message);
+        handleBouncerFail(message);
+    }
+
+    if (message.command == "BOUNCER") {
+        handleBouncer(message);
+        return;
     }
 
     if ((message.command == QLatin1String("MARKREAD")
@@ -1581,8 +1588,15 @@ void IrcSession::handleBatch(const IrcMessage &message)
     if (reference.isEmpty())
         return;
     if (token.startsWith(QLatin1Char('+'))) {
-        const QString parent = tagValue(message, "batch");
         const QString type = parameter(message, 1);
+        if (type.compare(QLatin1String("soju.im/bouncer-networks"),
+                         Qt::CaseInsensitive) == 0
+            && message.parameters.size() == 2) {
+            if (!m_bouncerBatches.contains(reference))
+                m_bouncerBatches.insert(reference, {});
+            return;
+        }
+        const QString parent = tagValue(message, "batch");
         const QString carriedLabel = tagValue(message, "label");
         const bool labeledResponse = isLabeledResponseType(type);
         if (m_openBatches.contains(reference))
@@ -1644,8 +1658,13 @@ void IrcSession::handleBatch(const IrcMessage &message)
         m_openBatches.insert(reference, frame);
         return;
     }
-    if (token.startsWith(QLatin1Char('-')))
+    if (token.startsWith(QLatin1Char('-'))) {
+        if (m_bouncerBatches.contains(reference)) {
+            finishBouncerBatch(reference);
+            return;
+        }
         closeBatch(reference);
+    }
 }
 
 void IrcSession::closeBatch(const QString& reference)
@@ -1722,6 +1741,13 @@ bool IrcSession::captureInBatch(const IrcMessage& message)
     const QString batch = tagValue(message, "batch");
     if (batch.isEmpty())
         return false;
+    if (m_bouncerBatches.contains(batch)) {
+        if (const auto parsed = parseBouncerCommand(message)) {
+            if (parsed->subcommand == IrcBouncerSubcommand::Network)
+                m_bouncerBatches[batch].append(*parsed);
+        }
+        return true;
+    }
     if (m_ignoredBatches.contains(batch))
         return true;
     const auto found = m_openBatches.constFind(batch);
@@ -2275,6 +2301,151 @@ void IrcSession::handleReadMarkerFail(const IrcMessage& message)
         return;
 }
 
+void IrcSession::sendBouncerBind()
+{
+    if (m_state == State::Registered || m_config.bouncerBindNetId.isEmpty())
+        return;
+    if (!m_capabilities.enabled().contains(IrcCapability::BouncerNetworks))
+        return;
+    const std::optional<QString> command =
+        ircBouncerBindCommand(m_config.bouncerBindNetId);
+    if (!command)
+        return;
+    const QByteArray line = builtLine(
+        IrcCommandBuilder::line(command->toStdString()));
+    if (!line.isEmpty())
+        sendLine(line);
+}
+
+bool IrcSession::sendBouncerCommand(const QString& line,
+                                    const QString& pendingSubcommand)
+{
+    if (m_state != State::Registered
+        || !m_capabilities.enabled().contains(IrcCapability::BouncerNetworks)) {
+        return false;
+    }
+    const QByteArray wire = builtLine(IrcCommandBuilder::line(
+        line.toStdString(), m_serverFeatures.lineLength()));
+    if (wire.isEmpty())
+        return false;
+    if (!pendingSubcommand.isEmpty())
+        m_pendingBouncerCommands.append(pendingSubcommand);
+    sendLine(wire);
+    return true;
+}
+
+bool IrcSession::listBouncerNetworks()
+{
+    return sendBouncerCommand(ircBouncerListCommand(), QString());
+}
+
+bool IrcSession::addBouncerNetwork(const QList<IrcBouncerAttributeValue>& attributes)
+{
+    const std::optional<QString> command = ircBouncerAddCommand(attributes);
+    if (!command)
+        return false;
+    return sendBouncerCommand(*command, QStringLiteral("ADDNETWORK"));
+}
+
+bool IrcSession::changeBouncerNetwork(
+    const QString& netId, const QList<IrcBouncerAttributeValue>& attributes)
+{
+    const std::optional<QString> command = ircBouncerChangeCommand(netId, attributes);
+    if (!command)
+        return false;
+    return sendBouncerCommand(*command, QStringLiteral("CHANGENETWORK"));
+}
+
+bool IrcSession::deleteBouncerNetwork(const QString& netId)
+{
+    const std::optional<QString> command = ircBouncerDeleteCommand(netId);
+    if (!command)
+        return false;
+    return sendBouncerCommand(*command, QStringLiteral("DELNETWORK"));
+}
+
+QList<IrcBouncerNetwork> IrcSession::bouncerNetworks() const
+{
+    return m_bouncerNetworks.list();
+}
+
+QList<IrcBouncerCommandResult> IrcSession::bouncerCommandResults() const
+{
+    return m_bouncerCommandResults;
+}
+
+static void takePendingBouncerCommand(QStringList& pending, const QString& subcommand)
+{
+    for (int index = 0; index < pending.size(); ++index) {
+        if (pending.at(index).compare(subcommand, Qt::CaseInsensitive) == 0) {
+            pending.removeAt(index);
+            return;
+        }
+    }
+}
+
+void IrcSession::noteBouncerSuccess(const QString& subcommand, const QString& netId)
+{
+    takePendingBouncerCommand(m_pendingBouncerCommands, subcommand);
+    IrcBouncerCommandResult result;
+    result.subcommand = subcommand;
+    result.ok = true;
+    result.netId = netId;
+    m_bouncerCommandResults.append(result);
+}
+
+void IrcSession::handleBouncerFail(const IrcMessage& message)
+{
+    const std::optional<IrcBouncerFailure> failure = parseBouncerFailure(message);
+    if (!failure)
+        return;
+    takePendingBouncerCommand(m_pendingBouncerCommands, failure->subcommand);
+    IrcBouncerCommandResult result;
+    result.subcommand = failure->subcommand;
+    result.ok = false;
+    result.netId = failure->netId;
+    result.code = failure->codeName;
+    result.attribute = failure->attribute;
+    result.description = failure->description;
+    m_bouncerCommandResults.append(result);
+}
+
+void IrcSession::handleBouncer(const IrcMessage& message)
+{
+    const std::optional<IrcParsedBouncer> parsed = parseBouncerCommand(message);
+    if (!parsed)
+        return;
+    switch (parsed->subcommand) {
+    case IrcBouncerSubcommand::Network:
+        m_bouncerNetworks.apply(*parsed);
+        break;
+    case IrcBouncerSubcommand::AddNetwork:
+        if (!parsed->netId.empty())
+            noteBouncerSuccess(QStringLiteral("ADDNETWORK"),
+                               ircWireText(parsed->netId));
+        break;
+    case IrcBouncerSubcommand::ChangeNetwork:
+        if (!parsed->netId.empty())
+            noteBouncerSuccess(QStringLiteral("CHANGENETWORK"),
+                               ircWireText(parsed->netId));
+        break;
+    case IrcBouncerSubcommand::DelNetwork:
+        if (!parsed->netId.empty())
+            noteBouncerSuccess(QStringLiteral("DELNETWORK"),
+                               ircWireText(parsed->netId));
+        break;
+    case IrcBouncerSubcommand::Bind:
+    case IrcBouncerSubcommand::ListNetworks:
+        break;
+    }
+}
+
+void IrcSession::finishBouncerBatch(const QString& reference)
+{
+    const QList<IrcParsedBouncer> lines = m_bouncerBatches.take(reference);
+    m_bouncerNetworks.replaceSnapshot(lines);
+}
+
 void IrcSession::handleChatHistoryFail(const IrcMessage& message)
 {
     if (parameter(message, 0).compare(QLatin1String("CHATHISTORY"),
@@ -2768,6 +2939,10 @@ void IrcSession::resetForConnection()
 {
     m_framer = IrcFramer{};
     m_openBatches.clear();
+    m_bouncerBatches.clear();
+    m_bouncerNetworks.clear();
+    m_pendingBouncerCommands.clear();
+    m_bouncerCommandResults.clear();
     m_ignoredBatches.clear();
     m_historyAsked.clear();
     m_historyPending.clear();
