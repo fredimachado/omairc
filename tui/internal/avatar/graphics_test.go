@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -225,10 +226,9 @@ func TestProbeStopsAtDA1(t *testing.T) {
 		defer r.Close()
 		defer w.Close()
 		input := got.wrap(r)
-		buf := make([]byte, 4)
-		n, err := input.Read(buf)
-		if err != nil || string(buf[:n]) != "\x1b" {
-			t.Fatalf("Esc Read = %q %v", buf[:n], err)
+		defer input.(io.Closer).Close()
+		if got := readSoon(t, input); got != "\x1b" {
+			t.Fatalf("Esc Read = %q, want Esc", got)
 		}
 	})
 
@@ -324,27 +324,109 @@ func TestLateKittyReplyIsSwallowed(t *testing.T) {
 	if _, ok := input.(*bufferedProbeInput); !ok {
 		t.Fatalf("replay input = %T, want *bufferedProbeInput", input)
 	}
-	buf := make([]byte, 8)
-	n, err := input.Read(buf)
-	if err != nil || string(buf[:n]) != "hi" {
-		t.Fatalf("replay Read = %q %v, want hi", buf[:n], err)
+	defer input.(io.Closer).Close()
+	if got := readSoon(t, input); got != "hi" {
+		t.Fatalf("replay Read = %q, want hi", got)
 	}
 	if _, err := w.Write([]byte("\x1b_Gi=4294967295;OK\x1b\\!")); err != nil {
 		t.Fatal(err)
 	}
-	n, err = input.Read(buf)
-	if err != nil || string(buf[:n]) != "!" {
-		t.Fatalf("late reply Read = %q %v, want !", buf[:n], err)
-	}
-	if err := r.SetReadDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
-		t.Fatal(err)
+	if got := readSoon(t, input); got != "!" {
+		t.Fatalf("late reply Read = %q, want !", got)
 	}
 	if _, err := w.Write([]byte{0x1b}); err != nil {
 		t.Fatal(err)
 	}
-	n, err = input.Read(buf)
-	if err != nil || string(buf[:n]) != "\x1b" {
-		t.Fatalf("armed filter Esc = %q %v", buf[:n], err)
+	if got := readSoon(t, input); got != "\x1b" {
+		t.Fatalf("armed filter Esc = %q, want Esc", got)
+	}
+}
+
+func TestLateReplySplitAfterEscIsDropped(t *testing.T) {
+	t.Run("da1", func(t *testing.T) {
+		f := &lateFilter{dropAPC: true, dropDA1: true, dropXT: true}
+		if got := f.push([]byte{0x1b}); string(got) != "\x1b" || f.state != lateGround || len(f.buf) != 0 {
+			t.Fatalf("leading Esc = %q state %d buf %q", got, f.state, f.buf)
+		}
+		if got := f.push([]byte("[?1;2c")); len(got) != 0 || f.dropDA1 {
+			t.Fatalf("split DA1 = %q drop %v, want it consumed", got, f.dropDA1)
+		}
+		if got := f.push([]byte{0x1b}); string(got) != "\x1b" {
+			t.Fatalf("Esc after split DA1 = %q", got)
+		}
+		if got := f.push([]byte("q")); string(got) != "q" {
+			t.Fatalf("key after Esc = %q, want q", got)
+		}
+	})
+
+	t.Run("da1 bracket then query", func(t *testing.T) {
+		f := &lateFilter{dropDA1: true}
+		if got := f.push([]byte("\x1b[")); string(got) != "\x1b" || !f.heldBracket {
+			t.Fatalf("Esc [ = %q held %v", got, f.heldBracket)
+		}
+		if got := f.push([]byte("?6cZ")); string(got) != "Z" || f.dropDA1 {
+			t.Fatalf("split DA1 tail = %q drop %v", got, f.dropDA1)
+		}
+	})
+
+	t.Run("xtversion", func(t *testing.T) {
+		f := &lateFilter{dropXT: true}
+		if got := f.push([]byte{0x1b}); string(got) != "\x1b" {
+			t.Fatalf("leading Esc = %q", got)
+		}
+		if got := f.push([]byte("P>|WezTerm 20240203\x1b\\X")); string(got) != "X" || f.dropXT {
+			t.Fatalf("split XTVERSION = %q drop %v", got, f.dropXT)
+		}
+	})
+
+	t.Run("graphics", func(t *testing.T) {
+		f := &lateFilter{dropAPC: true}
+		if got := f.push([]byte{0x1b}); string(got) != "\x1b" {
+			t.Fatalf("leading Esc = %q", got)
+		}
+		if got := f.push([]byte("_Gi=4294967295;OK\x1b\\Z")); string(got) != "Z" || f.dropAPC {
+			t.Fatalf("split graphics = %q drop %v", got, f.dropAPC)
+		}
+	})
+}
+
+func TestLateDA1RequiresQuestionMark(t *testing.T) {
+	f := &lateFilter{dropAPC: true, dropDA1: true, dropXT: true}
+	kept := f.push([]byte("\x1b[6c\x1b[c\x1b[A"))
+	if string(kept) != "\x1b[6c\x1b[c\x1b[A" {
+		t.Fatalf("non-DA1 CSI = %q", kept)
+	}
+	if !f.dropDA1 {
+		t.Fatal("a CSI without ? consumed the DA1 match")
+	}
+	if got := f.push([]byte("\x1b[?6cX")); string(got) != "X" || f.dropDA1 {
+		t.Fatalf("DA1 = %q drop %v", got, f.dropDA1)
+	}
+}
+
+func TestLateHoldFlushesPastCap(t *testing.T) {
+	f := &lateFilter{dropDA1: true}
+	short := []byte("\x1b[?12")
+	if got := f.push(short); len(got) != 0 || f.state != lateCSI {
+		t.Fatalf("short DA1 = %q state %d, want it held", got, f.state)
+	}
+	if got := f.push([]byte("cX")); string(got) != "X" || f.dropDA1 {
+		t.Fatalf("finished DA1 = %q drop %v", got, f.dropDA1)
+	}
+
+	f = &lateFilter{dropDA1: true}
+	long := append([]byte("\x1b[?"), bytes.Repeat([]byte{'1'}, 80)...)
+	if got := f.push(long); string(got) != string(long) {
+		t.Fatalf("over-long hold emitted %d bytes, want %d", len(got), len(long))
+	}
+	if f.state != lateGround || len(f.buf) != 0 {
+		t.Fatalf("after flush state %d buf %d", f.state, len(f.buf))
+	}
+	if !f.dropDA1 {
+		t.Fatal("flushing an unfinished hold cleared DA1 matching")
+	}
+	if got := f.push([]byte("Z")); string(got) != "Z" {
+		t.Fatalf("key after flush = %q", got)
 	}
 }
 
@@ -363,7 +445,7 @@ func TestLateDA1AndXTVERSIONAreSwallowed(t *testing.T) {
 	}
 }
 
-func TestBufferedProbeInputIsCancellable(t *testing.T) {
+func TestReplayedKeyDoesNotBlockCancelReader(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -374,20 +456,67 @@ func TestBufferedProbeInputIsCancellable(t *testing.T) {
 	named, ok := input.(interface {
 		Name() string
 		Fd() uintptr
+		io.Closer
 	})
-	if !ok {
+	if !ok || named.Name() == "" {
 		t.Fatal("replay input has no Name")
 	}
-	if named.Name() != r.Name() || named.Fd() != r.Fd() {
-		t.Fatalf("Name/Fd = %q %d, want %q %d", named.Name(), named.Fd(), r.Name(), r.Fd())
+	if named.Fd() == r.Fd() {
+		t.Fatal("cancel reader is polling the source, which does not hold the replay")
 	}
+	defer named.Close()
 	cr, err := cancelreader.NewReader(input)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cr.Close()
-	if !cr.Cancel() {
+	buf := make([]byte, 4)
+	type result struct {
+		n   int
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		n, err := cr.Read(buf)
+		done <- result{n, err}
+	}()
+	select {
+	case got := <-done:
+		if got.err != nil || string(buf[:got.n]) != "k" {
+			t.Fatalf("replay Read = %q %v, want k", buf[:got.n], got.err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		cr.Cancel()
+		t.Fatal("replayed key blocked in cancelreader")
+	}
+	// Windows cancelreader only cancels a console stdin handle. A pipe is
+	// still the read that returns the replay without waiting.
+	if runtime.GOOS != "windows" && !cr.Cancel() {
 		t.Fatal("replay input is not a cancellable file")
+	}
+}
+
+func readSoon(t *testing.T, r io.Reader) string {
+	t.Helper()
+	type result struct {
+		b   []byte
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		buf := make([]byte, 64)
+		n, err := r.Read(buf)
+		done <- result{append([]byte(nil), buf[:n]...), err}
+	}()
+	select {
+	case got := <-done:
+		if got.err != nil {
+			t.Fatalf("read: %v", got.err)
+		}
+		return string(got.b)
+	case <-time.After(time.Second):
+		t.Fatal("read blocked")
+		return ""
 	}
 }
 

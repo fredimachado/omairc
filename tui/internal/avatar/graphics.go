@@ -170,15 +170,17 @@ func splitBase64(payload string, size int) []string {
 }
 
 // ProbeGraphics asks the terminal whether it implements the Kitty graphics
-// protocol. It enables raw mode for the wait, restores it, and reports false
-// when the descriptor is not a terminal, the probe cannot be written, or the
-// reply does not arrive before timeout. The wait polls the descriptor: a PTY
+// protocol. It enables raw mode for the wait and reports false when the
+// descriptor is not a terminal, the probe cannot be written, or the reply
+// does not arrive before timeout. The wait polls the descriptor: a PTY
 // rejects SetReadDeadline, and a blocked read would steal later input.
 // Support is never inferred from TERM. WezTerm is a separate opt-out:
 // it answers a=q and does not draw Unicode placeholders.
 //
 // The second result replaces stdin when the probe has keystrokes to replay
-// or a late Kitty reply to discard. A nil reader means stdin is unchanged.
+// or a late Kitty reply to discard. That reader is a pipe, so this function
+// keeps the real terminal in raw mode until the reader is closed. A nil
+// reader means stdin is unchanged and raw mode has already been restored.
 func ProbeGraphics(in, out *os.File, timeout time.Duration) (bool, io.Reader) {
 	if !placeholdersAllowed() {
 		return false, nil
@@ -197,8 +199,15 @@ func ProbeGraphics(in, out *os.File, timeout time.Duration) (bool, io.Reader) {
 	if err != nil {
 		return false, nil
 	}
-	defer func() { _ = term.Restore(fd, state) }()
-	return readProbeReply(out, in, timeout)
+	supported, reader := readProbeReply(out, in, timeout)
+	// A replay pipe is not a terminal, so Bubble Tea will not take raw mode
+	// or restore it. Keep the probe's mode until that pipe is closed.
+	if raw, ok := reader.(*bufferedProbeInput); ok {
+		raw.holdTerminal(fd, state)
+		return supported, reader
+	}
+	_ = term.Restore(fd, state)
+	return supported, reader
 }
 
 // ReadGraphicsSupport writes the probe to w and reports whether r returns a

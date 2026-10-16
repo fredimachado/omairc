@@ -6,7 +6,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/charmbracelet/x/term"
 )
 
 // deviceAttributesQuery is DA1 (ESC [ c). Terminals answer it, so the probe
@@ -241,71 +244,114 @@ func (r probeResult) wrap(in *os.File) io.Reader {
 	if in == nil || (len(r.replay) == 0 && !r.dropLate && len(r.partial) == 0) {
 		return nil
 	}
-	filter := &probeFilter{pending: append([]byte(nil), r.replay...)}
+	// Replay lives on a pipe, not in a userspace buffer. cancelreader waits
+	// until Fd is readable before it calls Read, so the bytes have to be in
+	// the kernel buffer or the first key waits for another keystroke.
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		return nil
+	}
+	late := &lateFilter{}
 	if r.dropLate {
-		filter.late.dropAPC = !r.sawAPC && !bytes.HasPrefix(r.partial, []byte("\x1b_"))
-		filter.late.dropDA1 = true
-		filter.late.dropXT = !r.sawXT && !bytes.HasPrefix(r.partial, []byte("\x1bP"))
+		late.dropAPC = !r.sawAPC && !bytes.HasPrefix(r.partial, []byte("\x1b_"))
+		late.dropDA1 = true
+		late.dropXT = !r.sawXT && !bytes.HasPrefix(r.partial, []byte("\x1bP"))
 	}
 	if len(r.partial) > 0 {
-		filter.late.seed(r.partial)
+		late.seed(r.partial)
 	}
-	return &bufferedProbeInput{f: in, probeFilter: filter}
+	// The replay is in the kernel buffer before wrap returns, so a cancel
+	// reader that waits for the fd to be readable does not block.
+	if err := writeAll(pw, r.replay); err != nil {
+		_ = pr.Close()
+		_ = pw.Close()
+		return nil
+	}
+	go copyProbeInput(in, pw, late)
+	return &bufferedProbeInput{f: pr, src: in}
 }
 
-// probeFilter keeps keystrokes that arrived during the probe and drops one
-// Kitty graphics reply that shows up after the probe stopped.
-type probeFilter struct {
-	pending []byte
-	late    lateFilter
-	tmp     [256]byte
-}
-
-func (f *probeFilter) read(file *os.File, p []byte) (int, error) {
-	if len(p) == 0 {
-		return 0, nil
-	}
-	for {
-		if len(f.pending) > 0 {
-			n := copy(p, f.pending)
-			f.pending = f.pending[n:]
-			return n, nil
-		}
-		n, err := file.Read(f.tmp[:])
+func writeAll(w io.Writer, p []byte) error {
+	for len(p) > 0 {
+		n, err := w.Write(p)
 		if n > 0 {
-			f.pending = append(f.pending, f.late.push(f.tmp[:n])...)
-		}
-		if len(f.pending) > 0 {
-			continue
+			p = p[n:]
 		}
 		if err != nil {
-			return 0, err
+			return err
 		}
 		if n == 0 {
-			return 0, io.EOF
+			return io.ErrShortWrite
+		}
+	}
+	return nil
+}
+
+// copyProbeInput reads the terminal, drops a late probe reply, and writes the
+// kept bytes to the pipe Bubble Tea reads. os.Pipe is the Windows-safe path.
+func copyProbeInput(src, dst *os.File, late *lateFilter) {
+	defer dst.Close()
+	tmp := make([]byte, 256)
+	for {
+		n, err := src.Read(tmp)
+		if n > 0 {
+			kept := late.push(tmp[:n])
+			if err := writeAll(dst, kept); err != nil {
+				return
+			}
+		}
+		if err != nil {
+			return
 		}
 	}
 }
 
-// bufferedProbeInput serves replayed keystrokes before the descriptor and
-// drops a late probe reply. Name and Fd keep it a cancellable terminal file
-// so Bubble Tea can interrupt a blocked read. Close leaves the real stdin open.
+// bufferedProbeInput is the pipe end that carries replayed keys and filtered
+// input. Name and Fd refer to that pipe, so a cancel reader sees the replay
+// as readable. The pipe is not a terminal: Bubble Tea leaves newline mapping
+// on, and holdTerminal keeps ONLCR on the real tty so a newline still returns
+// to column zero. Write goes to the real terminal. Close restores it and does
+// not close it.
 type bufferedProbeInput struct {
-	f *os.File
-	*probeFilter
+	f       *os.File
+	src     *os.File
+	once    sync.Once
+	mu      sync.Mutex
+	fd      uintptr
+	orig    *term.State
+	done    chan struct{}
+	stopped bool
 }
 
-func (b *bufferedProbeInput) Read(p []byte) (int, error) {
-	return b.probeFilter.read(b.f, p)
-}
+func (b *bufferedProbeInput) Read(p []byte) (int, error) { return b.f.Read(p) }
 
-func (b *bufferedProbeInput) Write(p []byte) (int, error) { return b.f.Write(p) }
+func (b *bufferedProbeInput) Write(p []byte) (int, error) { return b.src.Write(p) }
 
 func (b *bufferedProbeInput) Fd() uintptr { return b.f.Fd() }
 
 func (b *bufferedProbeInput) Name() string { return b.f.Name() }
 
-func (b *bufferedProbeInput) Close() error { return nil }
+func (b *bufferedProbeInput) Close() error {
+	b.once.Do(func() {
+		b.finishTerminal()
+		_ = b.f.Close()
+	})
+	return nil
+}
+
+func (b *bufferedProbeInput) finishTerminal() {
+	b.mu.Lock()
+	b.stopped = true
+	orig, fd := b.orig, b.fd
+	done := b.done
+	b.mu.Unlock()
+	if orig != nil {
+		_ = term.Restore(fd, orig)
+	}
+	if done != nil {
+		close(done)
+	}
+}
 
 const (
 	lateGround = iota
@@ -314,15 +360,22 @@ const (
 	lateCSI
 )
 
-// lateFilter drops one graphics APC, one DA1, and one XTVERSION that arrive
-// after a probe timeout. A lone ESC at the end of a read is returned in that
-// read, so Esc is not held until the next key.
+// lateHoldCap is how many bytes of an unfinished reply the filter will keep.
+// A longer run is input, not a probe response.
+const lateHoldCap = 64
+
+// lateFilter drops one graphics APC, one DA1 (`ESC [ ?` … `c`), and one
+// XTVERSION that arrive after a probe timeout. A lone ESC is returned in the
+// read that contained it. If that ESC was the first byte of a reply, the next
+// read's `[?...c`, `P>|...`, or `_G...` continuation is dropped.
 type lateFilter struct {
-	dropAPC bool
-	dropDA1 bool
-	dropXT  bool
-	state   int
-	buf     []byte
+	dropAPC     bool
+	dropDA1     bool
+	dropXT      bool
+	state       int
+	buf         []byte
+	sawEsc      bool
+	heldBracket bool
 }
 
 func (f *lateFilter) armed() bool {
@@ -345,13 +398,20 @@ func (f *lateFilter) seed(partial []byte) {
 }
 
 func (f *lateFilter) push(in []byte) []byte {
-	if f.state == lateGround && !f.armed() {
+	if len(in) == 0 {
 		return in
 	}
-	if f.state == lateGround && bytes.IndexByte(in, 0x1b) < 0 {
+	if f.state == lateGround && !f.dropAPC && !f.dropDA1 && !f.dropXT && !f.sawEsc && !f.heldBracket {
 		return in
 	}
 	out := make([]byte, 0, len(in))
+	if f.state == lateGround && f.sawEsc {
+		f.sawEsc = false
+		in = f.takeEscContinuation(in)
+	}
+	if f.state == lateGround && f.heldBracket && len(in) > 0 {
+		in = f.takeHeldBracket(in, &out)
+	}
 	for i := 0; i < len(in); i++ {
 		b := in[i]
 		switch f.state {
@@ -372,9 +432,15 @@ func (f *lateFilter) push(in []byte) []byte {
 				f.buf = append(f.buf[:0], b, next)
 				f.state = lateDCS
 				i++
-			case next == '[' && f.dropDA1:
-				f.buf = append(f.buf[:0], b, next)
+			case next == '[' && f.dropDA1 && i+2 < len(in) && in[i+2] == '?':
+				f.buf = append(f.buf[:0], 0x1b, '[', '?')
 				f.state = lateCSI
+				i += 2
+			case next == '[' && f.dropDA1 && i+2 >= len(in):
+				// ESC [ at the end of the read. Deliver ESC now and remember
+				// the bracket so a later `?...c` is still a DA1.
+				out = append(out, 0x1b)
+				f.heldBracket = true
 				i++
 			default:
 				out = append(out, b)
@@ -391,13 +457,7 @@ func (f *lateFilter) push(in []byte) []byte {
 				f.state = lateGround
 				continue
 			}
-			if len(f.buf) > 8192 {
-				out = append(out, f.buf...)
-				f.buf = f.buf[:0]
-				f.state = lateGround
-				f.dropAPC = false
-				f.dropXT = false
-			}
+			f.flushHeld(&out)
 		case lateCSI:
 			f.buf = append(f.buf, b)
 			if b >= 0x40 && b <= 0x7e {
@@ -414,8 +474,82 @@ func (f *lateFilter) push(in []byte) []byte {
 				out = append(out, f.buf...)
 				f.buf = f.buf[:0]
 				f.state = lateGround
+				continue
 			}
+			f.flushHeld(&out)
 		}
 	}
+	if f.heldBracket {
+		f.sawEsc = false
+	} else if f.state == lateGround && len(out) > 0 {
+		f.sawEsc = out[len(out)-1] == 0x1b
+	} else if len(out) > 0 {
+		f.sawEsc = false
+	}
 	return out
+}
+
+// takeEscContinuation drops the rest of a reply whose ESC was delivered at
+// the end of the previous read. `[?...c`, `P>|...`, and `_G...` match.
+// Anything else is returned for normal delivery.
+func (f *lateFilter) takeEscContinuation(in []byte) []byte {
+	if len(in) == 0 {
+		return in
+	}
+	switch in[0] {
+	case '_':
+		if !f.dropAPC {
+			return in
+		}
+		f.buf = append(f.buf[:0], 0x1b, '_')
+		f.state = lateAPC
+		return in[1:]
+	case 'P':
+		if !f.dropXT {
+			return in
+		}
+		f.buf = append(f.buf[:0], 0x1b, 'P')
+		f.state = lateDCS
+		return in[1:]
+	case '[':
+		if !f.dropDA1 {
+			return in
+		}
+		if len(in) == 1 {
+			f.heldBracket = true
+			return nil
+		}
+		if in[1] == '?' {
+			f.buf = append(f.buf[:0], 0x1b, '[', '?')
+			f.state = lateCSI
+			return in[2:]
+		}
+		return in
+	default:
+		return in
+	}
+}
+
+// takeHeldBracket finishes a `[` that followed a delivered ESC. `?` continues
+// a DA1. Any other byte emits the bracket and is parsed with the rest.
+func (f *lateFilter) takeHeldBracket(in []byte, out *[]byte) []byte {
+	f.heldBracket = false
+	if len(in) > 0 && in[0] == '?' && f.dropDA1 {
+		f.buf = append(f.buf[:0], 0x1b, '[', '?')
+		f.state = lateCSI
+		return in[1:]
+	}
+	*out = append(*out, '[')
+	return in
+}
+
+// flushHeld emits an unfinished reply once it is too long to be one, and
+// returns to ground so the following bytes are input.
+func (f *lateFilter) flushHeld(out *[]byte) {
+	if len(f.buf) <= lateHoldCap {
+		return
+	}
+	*out = append(*out, f.buf...)
+	f.buf = f.buf[:0]
+	f.state = lateGround
 }

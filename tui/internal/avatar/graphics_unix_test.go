@@ -62,7 +62,11 @@ func TestProbeGraphicsPTYTimeout(t *testing.T) {
 	go func() { _, _ = io.Copy(io.Discard, master) }()
 
 	started := time.Now()
-	if ok, _ := ProbeGraphics(slave, slave, 80*time.Millisecond); ok {
+	ok, input := ProbeGraphics(slave, slave, 80*time.Millisecond)
+	if c, isCloser := input.(io.Closer); isCloser {
+		defer c.Close()
+	}
+	if ok {
 		t.Fatal("silent pty enabled graphics")
 	}
 	if waited := time.Since(started); waited < 40*time.Millisecond {

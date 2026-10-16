@@ -164,6 +164,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// input is non-nil when keys typed during the probe must be replayed, or
 	// a Kitty reply that arrives after the probe must be discarded.
 	graphics, input := avatar.ProbeGraphics(os.Stdin, os.Stdout, avatar.ProbeTimeout)
+	if c, ok := input.(io.Closer); ok {
+		defer func() { _ = c.Close() }()
+	}
 	var opts []tea.ProgramOption
 	if input != nil {
 		opts = append(opts, tea.WithInput(input))
