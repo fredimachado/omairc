@@ -514,11 +514,24 @@ std::optional<IrcWireCommand> maskPassAttributes(const IrcWireCommand& command)
     return masked;
 }
 
+bool bouncerPassCommand(const IrcWireCommand& command)
+{
+    if (command.verb == QLatin1String("BOUNCER"))
+        return true;
+    return command.verb == QLatin1String("FAIL")
+        && !command.parameters.isEmpty()
+        && command.parameters.front().compare(QLatin1String("BOUNCER"),
+                                              Qt::CaseInsensitive) == 0;
+}
+
 std::optional<IrcWireCommand> mask(const IrcWireCommand& command, QStringView channelTypes)
 {
     const IrcSecretRule *rule = ruleFor(command.verb);
-    if (!rule)
-        return maskPassAttributes(command);
+    if (!rule) {
+        if (bouncerPassCommand(command))
+            return maskPassAttributes(command);
+        return std::nullopt;
+    }
     switch (rule->shape) {
     case IrcSecretShape::TailAfterParameters:
         return maskTailAfterParameters(command, rule->visibleParameters);
@@ -652,8 +665,11 @@ std::optional<IrcMaskedCommand> IrcSecretPolicy::redactMessage(const IrcMessage&
     const QString verb = ircWireText(message.command).toUpper();
     const IrcSecretRule *rule = ruleFor(verb);
     if (!rule) {
-        if (const auto pass = maskPassAttributes(viewOf(message)))
-            return IrcMaskedCommand{pass->verb, pass->parameters};
+        const IrcWireCommand view = viewOf(message);
+        if (bouncerPassCommand(view)) {
+            if (const auto pass = maskPassAttributes(view))
+                return IrcMaskedCommand{pass->verb, pass->parameters};
+        }
         return std::nullopt;
     }
     if (rule->shape == IrcSecretShape::ServiceRequestBody) {

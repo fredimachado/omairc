@@ -6701,6 +6701,31 @@ void SessionTest::bouncerCommandsMatchRepliesAndFailures()
 
 void SessionTest::bouncerPassNeverReachesStatus()
 {
+    QVERIFY(IrcSecretPolicy::allowsTranscript(QStringLiteral("hi pass=x")));
+    QVERIFY(!IrcSecretPolicy::redactWireLine(QStringLiteral("hi pass=x")));
+    QVERIFY(!IrcSecretPolicy::redactMessage(
+        mustParse(":alice!a@h PRIVMSG #chan :hi pass=x")));
+    QVERIFY(!IrcSecretPolicy::redactWireLine(
+        QStringLiteral("FAIL CHATHISTORY INVALID_TARGET #chan :hi pass=x")));
+
+    const QString network = QStringLiteral("network-a");
+    const QString networkStatus = IrcStatusEntry::incoming(
+        network, mustParse("BOUNCER NETWORK 42 host=irc.example;pass=s3cret")).text();
+    QVERIFY(networkStatus.contains(QStringLiteral("pass=***")));
+    QVERIFY(!networkStatus.contains(QStringLiteral("s3cret")));
+    const QString addStatus = IrcStatusEntry::outgoing(
+        network,
+        QByteArrayLiteral(
+            "BOUNCER ADDNETWORK host=irc.example;pass=s3cret;name=OFTC\r\n")).text();
+    QVERIFY(addStatus.contains(QStringLiteral("pass=***")));
+    QVERIFY(!addStatus.contains(QStringLiteral("s3cret")));
+    const QString changeStatus = IrcStatusEntry::outgoing(
+        network,
+        QByteArrayLiteral(
+            "BOUNCER CHANGENETWORK 44 host=irc.example;pass=s3cret\r\n")).text();
+    QVERIFY(changeStatus.contains(QStringLiteral("pass=***")));
+    QVERIFY(!changeStatus.contains(QStringLiteral("s3cret")));
+
     const std::optional<QString> outbound = IrcSecretPolicy::redactWireLine(
         QStringLiteral("BOUNCER ADDNETWORK host=irc.example;pass=s3cret;name=OFTC"));
     QVERIFY(outbound);

@@ -544,10 +544,21 @@ func maskPassAttributes(command secretWireCommand) (secretWireCommand, bool) {
 	return masked, true
 }
 
+func bouncerPassCommand(command secretWireCommand) bool {
+	if command.verb == "BOUNCER" {
+		return true
+	}
+	return command.verb == "FAIL" && len(command.parameters) > 0 &&
+		strings.EqualFold(command.parameters[0], "BOUNCER")
+}
+
 func secretMask(command secretWireCommand, channelTypes string) (secretWireCommand, bool) {
 	rule := secretRuleFor(command.verb)
 	if rule == nil {
-		return maskPassAttributes(command)
+		if bouncerPassCommand(command) {
+			return maskPassAttributes(command)
+		}
+		return secretWireCommand{}, false
 	}
 	switch rule.shape {
 	case secretShapeTailAfterParameters:
@@ -672,8 +683,11 @@ func redactMessage(message Message, channelTypes string) (MaskedCommand, bool) {
 	verb := strings.ToUpper(WireText([]byte(message.Command)))
 	rule := secretRuleFor(verb)
 	if rule == nil {
-		if masked, ok := maskPassAttributes(secretViewOf(message)); ok {
-			return MaskedCommand{Verb: masked.verb, Parameters: masked.parameters}, true
+		view := secretViewOf(message)
+		if bouncerPassCommand(view) {
+			if masked, ok := maskPassAttributes(view); ok {
+				return MaskedCommand{Verb: masked.verb, Parameters: masked.parameters}, true
+			}
 		}
 		return MaskedCommand{}, false
 	}
