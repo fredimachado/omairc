@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/charmbracelet/x/term"
 	"github.com/fredimachado/omairc/tui/internal/irc"
+	"github.com/muesli/cancelreader"
 )
 
 func TestTransmitChunksQuietly(t *testing.T) {
@@ -174,6 +176,403 @@ func TestReadGraphicsSupportReplyAndTimeout(t *testing.T) {
 	if replyOK([]byte("\x1b_Gi=1;NOTOK\x1b\\")) {
 		t.Fatal("NOTOK counted as OK")
 	}
+	if replyOK([]byte("\x1b_Gi=1;OK\x1b\\")) {
+		t.Fatal("wrong image id counted as OK")
+	}
+	if !replyOK([]byte("\x1b_Gi=4294967295;OK\x1b\\")) {
+		t.Fatal("probe id OK was rejected")
+	}
+}
+
+func TestProbeStopsAtDA1(t *testing.T) {
+	t.Setenv("TERM_PROGRAM", "")
+	da1 := []byte("\x1b[?1;2c")
+	ok := []byte("\x1b_Gi=4294967295;OK\x1b\\")
+
+	t.Run("da1 only", func(t *testing.T) {
+		term := &scriptTerminal{reply: da1}
+		started := time.Now()
+		got := readProbeDeadline(term, term, 400*time.Millisecond)
+		if got.supported {
+			t.Fatal("DA1 only enabled graphics")
+		}
+		if waited := time.Since(started); waited > 100*time.Millisecond {
+			t.Fatalf("DA1 only waited %s", waited)
+		}
+		if !strings.Contains(term.written.String(), "a=q") || !strings.Contains(term.written.String(), "\x1b[c") {
+			t.Fatalf("probe = %q, want a=q and DA1", term.written.String())
+		}
+		if got.dropLate {
+			t.Fatal("filter armed after DA1")
+		}
+		if got.wrap(os.Stdout) != nil {
+			t.Fatal("DA1-only probe installed a late-reply filter")
+		}
+	})
+
+	t.Run("esc after da1", func(t *testing.T) {
+		term := &scriptTerminal{reply: []byte("\x1b[?1;2c\x1b")}
+		got := readProbeDeadline(term, term, 400*time.Millisecond)
+		if got.dropLate {
+			t.Fatal("filter armed after DA1")
+		}
+		if string(got.replay) != "\x1b" {
+			t.Fatalf("replay = %q, want Esc", got.replay)
+		}
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.Close()
+		defer w.Close()
+		input := got.wrap(r)
+		defer input.(io.Closer).Close()
+		if got := readSoon(t, input); got != "\x1b" {
+			t.Fatalf("Esc Read = %q, want Esc", got)
+		}
+	})
+
+	t.Run("kitty and da1", func(t *testing.T) {
+		term := &scriptTerminal{reply: append(append([]byte{}, ok...), da1...)}
+		started := time.Now()
+		got := readProbeDeadline(term, term, 400*time.Millisecond)
+		if !got.supported {
+			t.Fatal("Kitty OK plus DA1 did not enable graphics")
+		}
+		if waited := time.Since(started); waited > 100*time.Millisecond {
+			t.Fatalf("Kitty OK plus DA1 waited %s", waited)
+		}
+		if got.dropLate {
+			t.Fatal("filter armed after DA1")
+		}
+	})
+
+	t.Run("garbled", func(t *testing.T) {
+		term := &scriptTerminal{reply: []byte("\x1b_Gi=4294967295;EINVAL\x1b\\\x1b[?1;2c")}
+		if readProbeDeadline(term, term, 400*time.Millisecond).supported {
+			t.Fatal("garbled reply enabled graphics")
+		}
+	})
+
+	t.Run("ok before wezterm", func(t *testing.T) {
+		term := &scriptTerminal{reply: []byte(
+			"\x1b_Gi=4294967295;OK\x1b\\\x1bP>|WezTerm 20240203-110809-5046fc22\x1b\\\x1b[?1;2c",
+		)}
+		if readProbeDeadline(term, term, 400*time.Millisecond).supported {
+			t.Fatal("OK before WezTerm XTVERSION enabled placeholders")
+		}
+	})
+
+	t.Run("wrong id", func(t *testing.T) {
+		term := &scriptTerminal{reply: []byte("\x1b_Gi=1;OK\x1b\\\x1b[?1;2c")}
+		started := time.Now()
+		if readProbeDeadline(term, term, 400*time.Millisecond).supported {
+			t.Fatal("wrong image id enabled graphics")
+		}
+		if waited := time.Since(started); waited > 100*time.Millisecond {
+			t.Fatalf("wrong id waited %s", waited)
+		}
+	})
+
+	t.Run("keys", func(t *testing.T) {
+		term := &scriptTerminal{reply: []byte("ab\x1b[A\x1b_Gi=4294967295;OK\x1b\\c\x1b[?1;2cd")}
+		got := readProbeDeadline(term, term, 400*time.Millisecond)
+		if !got.supported {
+			t.Fatal("keys around a Kitty reply disabled graphics")
+		}
+		if string(got.replay) != "ab\x1b[Acd" {
+			t.Fatalf("replay = %q, want ab, up-arrow, cd", got.replay)
+		}
+	})
+}
+
+func TestLateKittyReplyIsSwallowed(t *testing.T) {
+	t.Setenv("TERM_PROGRAM", "")
+	silent := &scriptTerminal{}
+	got := readProbeDeadline(silent, silent, 30*time.Millisecond)
+	if got.supported {
+		t.Fatal("timeout enabled graphics")
+	}
+	if !got.dropLate {
+		t.Fatal("timeout left a late Kitty reply on the input stream")
+	}
+
+	filter := &lateFilter{dropAPC: true, dropDA1: true, dropXT: true}
+	kept := filter.push([]byte("xy\x1b_Gi=4294967295;OK\x1b\\Z\x1b[A"))
+	if string(kept) != "xyZ\x1b[A" {
+		t.Fatalf("filtered = %q, want keys without the graphics reply", kept)
+	}
+	if filter.dropAPC {
+		t.Fatal("graphics reply was not consumed")
+	}
+	esc := filter.push([]byte{0x1b})
+	if string(esc) != "\x1b" || filter.state != lateGround || len(filter.buf) != 0 {
+		t.Fatalf("lone Esc = %q state %d buf %q", esc, filter.state, filter.buf)
+	}
+	next := filter.push([]byte{'q'})
+	if string(next) != "q" {
+		t.Fatalf("key after Esc = %q, want q", next)
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	input := probeResult{replay: []byte("hi"), dropLate: true}.wrap(r)
+	if _, ok := input.(*bufferedProbeInput); !ok {
+		t.Fatalf("replay input = %T, want *bufferedProbeInput", input)
+	}
+	defer input.(io.Closer).Close()
+	if got := readSoon(t, input); got != "hi" {
+		t.Fatalf("replay Read = %q, want hi", got)
+	}
+	if _, err := w.Write([]byte("\x1b_Gi=4294967295;OK\x1b\\!")); err != nil {
+		t.Fatal(err)
+	}
+	if got := readSoon(t, input); got != "!" {
+		t.Fatalf("late reply Read = %q, want !", got)
+	}
+	if _, err := w.Write([]byte{0x1b}); err != nil {
+		t.Fatal(err)
+	}
+	if got := readSoon(t, input); got != "\x1b" {
+		t.Fatalf("armed filter Esc = %q, want Esc", got)
+	}
+}
+
+func TestLateReplySplitAfterEscIsDropped(t *testing.T) {
+	t.Run("da1", func(t *testing.T) {
+		f := &lateFilter{dropAPC: true, dropDA1: true, dropXT: true}
+		if got := f.push([]byte{0x1b}); string(got) != "\x1b" || f.state != lateGround || len(f.buf) != 0 {
+			t.Fatalf("leading Esc = %q state %d buf %q", got, f.state, f.buf)
+		}
+		if got := f.push([]byte("[?1;2c")); len(got) != 0 || f.dropDA1 {
+			t.Fatalf("split DA1 = %q drop %v, want it consumed", got, f.dropDA1)
+		}
+		if got := f.push([]byte{0x1b}); string(got) != "\x1b" {
+			t.Fatalf("Esc after split DA1 = %q", got)
+		}
+		if got := f.push([]byte("q")); string(got) != "q" {
+			t.Fatalf("key after Esc = %q, want q", got)
+		}
+	})
+
+	t.Run("da1 bracket then query", func(t *testing.T) {
+		f := &lateFilter{dropDA1: true}
+		if got := f.push([]byte("\x1b[")); string(got) != "\x1b" || !f.heldBracket {
+			t.Fatalf("Esc [ = %q held %v", got, f.heldBracket)
+		}
+		if got := f.push([]byte("?6cZ")); string(got) != "Z" || f.dropDA1 {
+			t.Fatalf("split DA1 tail = %q drop %v", got, f.dropDA1)
+		}
+	})
+
+	t.Run("xtversion", func(t *testing.T) {
+		f := &lateFilter{dropXT: true}
+		if got := f.push([]byte{0x1b}); string(got) != "\x1b" {
+			t.Fatalf("leading Esc = %q", got)
+		}
+		if got := f.push([]byte("P>|WezTerm 20240203\x1b\\X")); string(got) != "X" || f.dropXT {
+			t.Fatalf("split XTVERSION = %q drop %v", got, f.dropXT)
+		}
+	})
+
+	t.Run("graphics", func(t *testing.T) {
+		f := &lateFilter{dropAPC: true}
+		if got := f.push([]byte{0x1b}); string(got) != "\x1b" {
+			t.Fatalf("leading Esc = %q", got)
+		}
+		if got := f.push([]byte("_Gi=4294967295;OK\x1b\\Z")); string(got) != "Z" || f.dropAPC {
+			t.Fatalf("split graphics = %q drop %v", got, f.dropAPC)
+		}
+	})
+}
+
+func TestLateDA1RequiresQuestionMark(t *testing.T) {
+	f := &lateFilter{dropAPC: true, dropDA1: true, dropXT: true}
+	kept := f.push([]byte("\x1b[6c\x1b[c\x1b[A"))
+	if string(kept) != "\x1b[6c\x1b[c\x1b[A" {
+		t.Fatalf("non-DA1 CSI = %q", kept)
+	}
+	if !f.dropDA1 {
+		t.Fatal("a CSI without ? consumed the DA1 match")
+	}
+	if got := f.push([]byte("\x1b[?6cX")); string(got) != "X" || f.dropDA1 {
+		t.Fatalf("DA1 = %q drop %v", got, f.dropDA1)
+	}
+}
+
+func TestLateHoldFlushesPastCap(t *testing.T) {
+	f := &lateFilter{dropDA1: true}
+	short := []byte("\x1b[?12")
+	if got := f.push(short); len(got) != 0 || f.state != lateCSI {
+		t.Fatalf("short DA1 = %q state %d, want it held", got, f.state)
+	}
+	if got := f.push([]byte("cX")); string(got) != "X" || f.dropDA1 {
+		t.Fatalf("finished DA1 = %q drop %v", got, f.dropDA1)
+	}
+
+	f = &lateFilter{dropDA1: true}
+	long := append([]byte("\x1b[?"), bytes.Repeat([]byte{'1'}, 80)...)
+	if got := f.push(long); string(got) != string(long) {
+		t.Fatalf("over-long hold emitted %d bytes, want %d", len(got), len(long))
+	}
+	if f.state != lateGround || len(f.buf) != 0 {
+		t.Fatalf("after flush state %d buf %d", f.state, len(f.buf))
+	}
+	if !f.dropDA1 {
+		t.Fatal("flushing an unfinished hold cleared DA1 matching")
+	}
+	if got := f.push([]byte("Z")); string(got) != "Z" {
+		t.Fatalf("key after flush = %q", got)
+	}
+}
+
+func TestLateDA1AndXTVERSIONAreSwallowed(t *testing.T) {
+	filter := &lateFilter{dropAPC: true, dropDA1: true, dropXT: true}
+	kept := filter.push([]byte("\x1b[?1;2c\x1bP>|WezTerm 20240203\x1b\\go\x1b[A"))
+	if string(kept) != "go\x1b[A" {
+		t.Fatalf("filtered = %q, want go and the arrow", kept)
+	}
+	if filter.dropDA1 || filter.dropXT {
+		t.Fatal("late DA1 or XTVERSION was not consumed")
+	}
+	again := filter.push([]byte("\x1b[?6c"))
+	if string(again) != "\x1b[?6c" {
+		t.Fatalf("second DA1 = %q, want it kept", again)
+	}
+}
+
+func TestReplayedKeyDoesNotBlockCancelReader(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	input := probeResult{replay: []byte("k")}.wrap(r)
+	named, ok := input.(interface {
+		Name() string
+		Fd() uintptr
+		io.Closer
+	})
+	if !ok || named.Name() == "" {
+		t.Fatal("replay input has no Name")
+	}
+	if named.Fd() == r.Fd() {
+		t.Fatal("cancel reader is polling the source, which does not hold the replay")
+	}
+	defer named.Close()
+	cr, err := cancelreader.NewReader(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cr.Close()
+	buf := make([]byte, 4)
+	type result struct {
+		n   int
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		n, err := cr.Read(buf)
+		done <- result{n, err}
+	}()
+	select {
+	case got := <-done:
+		if got.err != nil || string(buf[:got.n]) != "k" {
+			t.Fatalf("replay Read = %q %v, want k", buf[:got.n], got.err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		cr.Cancel()
+		t.Fatal("replayed key blocked in cancelreader")
+	}
+	// Windows cancelreader only cancels a console stdin handle. A pipe is
+	// still the read that returns the replay without waiting.
+	if runtime.GOOS != "windows" && !cr.Cancel() {
+		t.Fatal("replay input is not a cancellable file")
+	}
+}
+
+func readSoon(t *testing.T, r io.Reader) string {
+	t.Helper()
+	type result struct {
+		b   []byte
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		buf := make([]byte, 64)
+		n, err := r.Read(buf)
+		done <- result{append([]byte(nil), buf[:n]...), err}
+	}()
+	select {
+	case got := <-done:
+		if got.err != nil {
+			t.Fatalf("read: %v", got.err)
+		}
+		return string(got.b)
+	case <-time.After(time.Second):
+		t.Fatal("read blocked")
+		return ""
+	}
+}
+
+func TestNoteDrawnMarksOneDrainAtATime(t *testing.T) {
+	store := New(true, nil)
+	defer store.Close()
+	store.EnableGraphics()
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.RGBA{R: 255, A: 255})
+	store.remember("one", img)
+	if store.DrainEscapes(2, 1) == "" {
+		t.Fatal("first drain was empty")
+	}
+	store.remember("two", img)
+	if store.DrainEscapes(2, 1) == "" {
+		t.Fatal("second drain was empty")
+	}
+	store.NoteDrawn()
+	store.mu.Lock()
+	_, first := store.drawnIDs[1]
+	_, second := store.drawnIDs[2]
+	queued := len(store.drawnQueue)
+	store.mu.Unlock()
+	if !first || second || queued != 1 {
+		t.Fatalf("after one NoteDrawn drawn1=%v drawn2=%v queue=%d", first, second, queued)
+	}
+	store.NoteDrawn()
+	store.mu.Lock()
+	_, second = store.drawnIDs[2]
+	queued = len(store.drawnQueue)
+	store.mu.Unlock()
+	if !second || queued != 0 {
+		t.Fatalf("after two NoteDrawn drawn2=%v queue=%d", second, queued)
+	}
+}
+
+func TestWriteDeleteEscapesWithoutQuit(t *testing.T) {
+	store := New(true, nil)
+	defer store.Close()
+	store.EnableGraphics()
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.RGBA{B: 255, A: 255})
+	store.remember("one", img)
+	if store.DrainEscapes(2, 1) == "" {
+		t.Fatal("drain was empty")
+	}
+	var buf bytes.Buffer
+	if err := WriteDeleteEscapes(&buf, store); err != nil {
+		t.Fatal(err)
+	}
+	if buf.String() != DeleteImage(1) {
+		t.Fatalf("cleanup = %q, want %q", buf.String(), DeleteImage(1))
+	}
+	if again := store.DeleteEscapes(); again != "" {
+		t.Fatalf("second delete = %q, want empty", again)
+	}
 }
 
 func TestPlaceholderFallbackDecision(t *testing.T) {
@@ -225,10 +624,10 @@ func TestProbeGraphicsNonTerminal(t *testing.T) {
 	if term.IsTerminal(os.Stdin.Fd()) {
 		t.Skip("stdin is a terminal")
 	}
-	if ProbeGraphics(os.Stdin, os.Stdout, time.Second) {
+	if ok, _ := ProbeGraphics(os.Stdin, os.Stdout, time.Second); ok {
 		t.Fatal("non-terminal probe returned true")
 	}
-	if ProbeGraphics(nil, nil, time.Second) {
+	if ok, _ := ProbeGraphics(nil, nil, time.Second); ok {
 		t.Fatal("nil probe returned true")
 	}
 }

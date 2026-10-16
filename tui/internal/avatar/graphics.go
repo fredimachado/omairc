@@ -29,9 +29,9 @@ const (
 	// can name, so it cannot collide with an avatar we transmit.
 	probeImageID = 4294967295
 
-	// ProbeTimeout is how long startup waits for a Kitty graphics reply.
-	// Terminals that support the protocol answer immediately; anything else
-	// falls back to the half-block raster.
+	// ProbeTimeout is the backstop when DA1 never arrives. Terminals that
+	// support Kitty graphics answer a=q immediately; the probe stops at DA1
+	// and only spends this long when that sentinel is missing.
 	ProbeTimeout = 150 * time.Millisecond
 
 	// graphicsMaxEdge is the longest edge of a PNG sent to the terminal.
@@ -170,78 +170,65 @@ func splitBase64(payload string, size int) []string {
 }
 
 // ProbeGraphics asks the terminal whether it implements the Kitty graphics
-// protocol. It enables raw mode for the wait, restores it, and reports false
-// when the descriptor is not a terminal, the probe cannot be written, or the
-// reply does not arrive before timeout. The wait polls the descriptor: a PTY
+// protocol. It enables raw mode for the wait and reports false when the
+// descriptor is not a terminal, the probe cannot be written, or the reply
+// does not arrive before timeout. The wait polls the descriptor: a PTY
 // rejects SetReadDeadline, and a blocked read would steal later input.
 // Support is never inferred from TERM. WezTerm is a separate opt-out:
 // it answers a=q and does not draw Unicode placeholders.
-func ProbeGraphics(in, out *os.File, timeout time.Duration) bool {
+//
+// The second result replaces stdin when the probe has keystrokes to replay
+// or a late Kitty reply to discard. That reader is a pipe, so this function
+// keeps the real terminal in raw mode until the reader is closed. A nil
+// reader means stdin is unchanged and raw mode has already been restored.
+func ProbeGraphics(in, out *os.File, timeout time.Duration) (bool, io.Reader) {
 	if !placeholdersAllowed() {
-		return false
+		return false, nil
 	}
 	if in == nil || out == nil {
-		return false
+		return false, nil
 	}
 	if timeout <= 0 {
 		timeout = ProbeTimeout
 	}
 	fd := in.Fd()
 	if !term.IsTerminal(fd) {
-		return false
+		return false, nil
 	}
 	state, err := term.MakeRaw(fd)
 	if err != nil {
-		return false
+		return false, nil
 	}
-	defer func() { _ = term.Restore(fd, state) }()
-	return readProbeReply(out, in, timeout)
+	supported, reader := readProbeReply(out, in, timeout)
+	// A replay pipe is not a terminal, so Bubble Tea will not take raw mode
+	// or restore it. Keep the probe's mode until that pipe is closed.
+	if raw, ok := reader.(*bufferedProbeInput); ok {
+		raw.holdTerminal(fd, state)
+		return supported, reader
+	}
+	_ = term.Restore(fd, state)
+	return supported, reader
 }
 
-// ReadGraphicsSupport writes the a=q probe to w and reports whether r returns
-// a graphics OK before timeout. r must honor SetReadDeadline so a missing
-// reply cannot block the caller past timeout. Real terminals reject that
-// deadline; ProbeGraphics polls the file descriptor instead.
+// ReadGraphicsSupport writes the probe to w and reports whether r returns a
+// matching graphics OK. r must honor SetReadDeadline so a missing reply
+// cannot block the caller past timeout. The probe stops when DA1 arrives.
+// Real terminals reject that deadline; ProbeGraphics polls the file
+// descriptor instead.
 func ReadGraphicsSupport(w io.Writer, r interface {
 	io.Reader
 	SetReadDeadline(time.Time) error
 }, timeout time.Duration) bool {
-	if !placeholdersAllowed() {
-		return false
-	}
-	if w == nil || r == nil || timeout <= 0 {
-		return false
-	}
-	deadline := time.Now().Add(timeout)
-	if err := r.SetReadDeadline(deadline); err != nil {
-		return false
-	}
-	defer func() { _ = r.SetReadDeadline(time.Time{}) }()
-	if _, err := io.WriteString(w, probeQueries()); err != nil {
-		return false
-	}
-	buf := make([]byte, 0, 512)
-	tmp := make([]byte, 256)
-	for {
-		n, err := r.Read(tmp)
-		if n > 0 {
-			buf = append(buf, tmp[:n]...)
-			if stop, ok := absorbGraphics(buf); stop {
-				return ok
-			}
-		}
-		if err != nil || !time.Now().Before(deadline) {
-			return false
-		}
-	}
+	return readProbeDeadline(w, r, timeout).supported
 }
 
-// probeQueries is the startup write: XTVERSION, then the graphics query.
-// One write keeps both replies inside the existing probe timeout. XTVERSION
-// goes first so a terminal that answers in order has identified itself
-// before the graphics OK is complete.
+// probeQueries is the startup write: XTVERSION, then the graphics query,
+// then DA1. One write keeps the replies inside the probe. XTVERSION goes
+// first so a terminal that answers in order has identified itself before
+// the graphics OK is complete. DA1 is the sentinel: when it arrives, the
+// graphics reply is either already buffered or not coming.
 func probeQueries() string {
-	return "\x1b[>q" + QueryEscape()
+	return "\x1b[>q" + QueryEscape() + deviceAttributesQuery
 }
 
 // placeholdersAllowed reports whether Unicode placeholders may be used.
@@ -265,23 +252,9 @@ func xtversionWezTerm(buf []byte) bool {
 	return strings.Contains(string(buf), "\x1bP>|WezTerm")
 }
 
-// absorbGraphics reports whether buf ends the probe and whether the terminal
-// accepted graphics. stop is false while the reply is still incomplete.
-// A WezTerm XTVERSION refuses placeholders even when a=q is OK.
-func absorbGraphics(buf []byte) (stop, ok bool) {
-	if xtversionWezTerm(buf) {
-		return true, false
-	}
-	if replyOK(buf) {
-		return true, true
-	}
-	if len(buf) > 4096 || responseSettled(buf) {
-		return true, false
-	}
-	return false, false
-}
-
-// replyOK reports whether buf contains a graphics APC whose status is exactly OK.
+// replyOK reports whether buf contains a graphics APC whose image id is the
+// startup query and whose status is exactly OK. Any other id is ignored, so
+// a stray OK cannot enable placeholders.
 func replyOK(buf []byte) bool {
 	s := string(buf)
 	for {
@@ -297,31 +270,13 @@ func replyOK(buf []byte) bool {
 			s = s[end+2:]
 		}
 		semi := strings.LastIndex(msg, ";")
-		if semi >= 0 && msg[semi+1:] == "OK" {
+		if semi >= 0 && msg[semi+1:] == "OK" && probeID(msg[:semi]) {
 			return true
 		}
 		if end < 0 {
 			return false
 		}
 	}
-}
-
-// responseSettled reports whether buf holds a finished graphics APC that is
-// not OK, so the probe can stop without using the rest of the timeout.
-func responseSettled(buf []byte) bool {
-	s := string(buf)
-	i := strings.Index(s, "\x1b_G")
-	if i < 0 {
-		return false
-	}
-	s = s[i+3:]
-	end := strings.Index(s, "\x1b\\")
-	if end < 0 {
-		return false
-	}
-	msg := s[:end]
-	semi := strings.LastIndex(msg, ";")
-	return semi >= 0 && msg[semi+1:] != "OK"
 }
 
 // cachedGraphics is one decoded avatar waiting to be scaled and transmitted.
@@ -423,6 +378,7 @@ func (s *Store) DrainEscapes(cols, rows int) string {
 	s.graphicsOps = nil
 	plans := collapseGraphics(ops)
 	var b strings.Builder
+	var batch []uint32
 	for _, plan := range plans {
 		if plan.remove {
 			if s.sentIDs[plan.id] {
@@ -430,7 +386,7 @@ func (s *Store) DrainEscapes(cols, rows int) string {
 				delete(s.sentIDs, plan.id)
 			}
 			delete(s.drawnIDs, plan.id)
-			s.inflight = removeUint(s.inflight, plan.id)
+			s.drawnQueue = dropDrawnID(s.drawnQueue, plan.id)
 			continue
 		}
 		if len(plan.png) == 0 || plan.id == 0 {
@@ -439,25 +395,37 @@ func (s *Store) DrainEscapes(cols, rows int) string {
 		b.WriteString(TransmitPNG(plan.id, plan.png))
 		b.WriteString(VirtualPlacement(plan.id, cols, rows))
 		s.sentIDs[plan.id] = true
-		s.inflight = append(s.inflight, plan.id)
+		batch = append(batch, plan.id)
 	}
-	return b.String()
+	out := b.String()
+	if out == "" {
+		return ""
+	}
+	// One batch per drain, including a delete-only drain, so each later
+	// NoteDrawn consumes exactly the ids this payload carried.
+	s.drawnQueue = append(s.drawnQueue, batch)
+	return out
 }
 
-// NoteDrawn marks the images from the last drain as safe to reference from
-// placeholder cells. Call it only after those escapes have been written.
+// NoteDrawn marks the oldest drained batch as safe to reference from
+// placeholder cells. Call it once per drain, only after that drain's escapes
+// have been written. A later drain stays unmarked until its own call.
 func (s *Store) NoteDrawn() {
 	if s == nil {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, id := range s.inflight {
+	if len(s.drawnQueue) == 0 {
+		return
+	}
+	batch := s.drawnQueue[0]
+	s.drawnQueue = s.drawnQueue[1:]
+	for _, id := range batch {
 		if s.sentIDs[id] {
 			s.drawnIDs[id] = struct{}{}
 		}
 	}
-	s.inflight = nil
 }
 
 // DeleteEscapes returns a=d escapes for every image this store has transmitted
@@ -480,7 +448,7 @@ func (s *Store) DeleteEscapes() string {
 	s.imageIDs = map[string]uint32{}
 	s.sentIDs = map[uint32]bool{}
 	s.drawnIDs = map[uint32]struct{}{}
-	s.inflight = nil
+	s.drawnQueue = nil
 	s.graphicsOps = nil
 	return b.String()
 }
@@ -555,7 +523,7 @@ func (s *Store) queueDeleteLocked(id uint32) {
 		return
 	}
 	delete(s.drawnIDs, id)
-	s.inflight = removeUint(s.inflight, id)
+	s.drawnQueue = dropDrawnID(s.drawnQueue, id)
 	s.graphicsOps = append(s.graphicsOps, graphicsOp{id: id, remove: true})
 }
 
@@ -662,6 +630,30 @@ func removeUint(ids []uint32, id uint32) []uint32 {
 		}
 	}
 	return ids
+}
+
+// dropDrawnID removes id from queued draw batches. An emptied batch stays in
+// place so the NoteDrawn that belongs to that drain does not mark a later image.
+func dropDrawnID(queue [][]uint32, id uint32) [][]uint32 {
+	for i, batch := range queue {
+		queue[i] = removeUint(batch, id)
+	}
+	return queue
+}
+
+// WriteDeleteEscapes writes a=d,d=I for every image store has transmitted.
+// Quit, a returned error, and a caught signal all call it after the program
+// has stopped, so the terminal does not keep the images.
+func WriteDeleteEscapes(w io.Writer, store *Store) error {
+	if w == nil || store == nil {
+		return nil
+	}
+	payload := store.DeleteEscapes()
+	if payload == "" {
+		return nil
+	}
+	_, err := io.WriteString(w, payload)
+	return err
 }
 
 // rowColumnDiacritics is Kitty's row/column table (gen/rowcolumn-diacritics.txt).

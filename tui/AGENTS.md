@@ -325,10 +325,17 @@ direct-message avatar glyph: an identicon by default, a half-block
 truecolor raster when `internal/avatar` has the peer image cached and the
 terminal advertises 24-bit color, or a Kitty Unicode placeholder in that
 same two-cell box when a startup `a=q` probe gets an OK reply. The probe
-never trusts `TERM`. WezTerm answers that probe and stays on the half-block
-raster, because it does not draw Unicode placeholders. Transmit and delete
-escapes go out through `tea.Raw`;
-quit deletes the images this process transmitted.
+never trusts `TERM`. It sends DA1 after the graphics query and stops when
+that answer arrives; the timeout is only the backstop. WezTerm answers that
+probe and stays on the half-block raster, because it does not draw Unicode
+placeholders. tmux and screen do not pass Kitty graphics through, so the
+probe gets no OK and the glyph stays on the half-block raster. Under tmux
+on WezTerm, tmux sets `TERM_PROGRAM` and answers XTVERSION itself, so the
+WezTerm opt-out does not see the host; graphics still depend on `a=q`
+passthrough, and otherwise the glyph stays on the half-block raster.
+Transmit escapes go out through `tea.Raw` and are flushed before a
+placeholder cell may name the image. Every exit writes `a=d,d=I` for the
+images this process transmitted, after the program returns.
 Phase 11 adds `internal/storage` (the QSettings-compatible INI store, the XDG
 paths, the profile store, the open-direct and playback-time stores, the on-disk
 JSONL conversation log, and the Linux Secret Service credential store behind

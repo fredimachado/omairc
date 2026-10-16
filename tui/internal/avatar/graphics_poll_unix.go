@@ -10,35 +10,35 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// readProbeReply writes the graphics query and waits for OK. A PTY rejects
-// SetReadDeadline, so the wait is a poll on the slave descriptor. The read
-// runs only after the descriptor is readable, which keeps a missing reply
-// from blocking the rest of startup.
-func readProbeReply(w io.Writer, in *os.File, timeout time.Duration) bool {
+// readProbeReply writes the graphics query and waits for DA1 or the timeout.
+// A PTY rejects SetReadDeadline, so the wait is a poll on the slave
+// descriptor. The read runs only after the descriptor is readable, which
+// keeps a missing reply from blocking the rest of startup.
+func readProbeReply(w io.Writer, in *os.File, timeout time.Duration) (bool, io.Reader) {
 	if w == nil || in == nil || timeout <= 0 {
-		return false
+		return false, nil
 	}
 	deadline := time.Now().Add(timeout)
 	if _, err := io.WriteString(w, probeQueries()); err != nil {
-		return false
+		return false, nil
 	}
-	buf := make([]byte, 0, 512)
+	var scan probeScan
 	tmp := make([]byte, 256)
 	fd := int(in.Fd())
 	for {
 		ready, err := pollReadable(fd, deadline)
 		if err != nil || !ready {
-			return false
+			res := scan.finish(true)
+			return res.supported, res.wrap(in)
 		}
 		n, err := in.Read(tmp)
-		if n > 0 {
-			buf = append(buf, tmp[:n]...)
-			if stop, ok := absorbGraphics(buf); stop {
-				return ok
-			}
+		if n > 0 && scan.feed(tmp[:n]) {
+			res := scan.finish(false)
+			return res.supported, res.wrap(in)
 		}
 		if err != nil || !time.Now().Before(deadline) {
-			return false
+			res := scan.finish(true)
+			return res.supported, res.wrap(in)
 		}
 	}
 }

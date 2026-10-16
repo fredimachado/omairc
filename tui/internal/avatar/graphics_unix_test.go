@@ -29,8 +29,8 @@ func TestProbeGraphicsPTYReply(t *testing.T) {
 			n, err := master.Read(tmp)
 			if n > 0 {
 				buf = append(buf, tmp[:n]...)
-				if bytes.Contains(buf, []byte("a=q")) {
-					_, _ = master.Write([]byte("\x1b_Gi=4294967295;OK\x1b\\"))
+				if bytes.Contains(buf, []byte("a=q")) && bytes.Contains(buf, []byte("\x1b[c")) {
+					_, _ = master.Write([]byte("\x1b_Gi=4294967295;OK\x1b\\\x1b[?1;2c"))
 					return
 				}
 			}
@@ -40,8 +40,13 @@ func TestProbeGraphicsPTYReply(t *testing.T) {
 		}
 	}()
 
-	if !ProbeGraphics(slave, slave, time.Second) {
+	started := time.Now()
+	ok, _ := ProbeGraphics(slave, slave, time.Second)
+	if !ok {
 		t.Fatal("pty OK did not enable graphics")
+	}
+	if waited := time.Since(started); waited > 500*time.Millisecond {
+		t.Fatalf("pty OK waited %s for DA1", waited)
 	}
 	<-done
 }
@@ -57,7 +62,11 @@ func TestProbeGraphicsPTYTimeout(t *testing.T) {
 	go func() { _, _ = io.Copy(io.Discard, master) }()
 
 	started := time.Now()
-	if ProbeGraphics(slave, slave, 80*time.Millisecond) {
+	ok, input := ProbeGraphics(slave, slave, 80*time.Millisecond)
+	if c, isCloser := input.(io.Closer); isCloser {
+		defer c.Close()
+	}
+	if ok {
 		t.Fatal("silent pty enabled graphics")
 	}
 	if waited := time.Since(started); waited < 40*time.Millisecond {
