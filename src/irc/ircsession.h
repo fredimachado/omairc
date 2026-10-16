@@ -15,6 +15,7 @@
 #include <functional>
 #include <optional>
 
+#include "ircbouncernetwork.h"
 #include "irccapability.h"
 #include "irccapabilitynegotiation.h"
 #include "ircsaslscram.h"
@@ -82,6 +83,9 @@ struct IrcSessionConfig
     QString password;
     QString nickServPassword;
     QString saslAccount;  // empty falls back to nick
+    // When set, BOUNCER BIND is written after SASL and before CAP END.
+    // Empty leaves the connection unbound. Not consulted after registration.
+    QString bouncerBindNetId;
 
     QStringList autojoinChannels;
     QMap<QString, QString> autojoinKeys;
@@ -206,6 +210,13 @@ public slots:
     bool sendRaw(const QString& line);
     bool requestReadMarker(const QString& target);
     bool publishReadMarker(const QString& target, const QDateTime& when);
+    bool listBouncerNetworks();
+    bool addBouncerNetwork(const QList<IrcBouncerAttributeValue>& attributes);
+    bool changeBouncerNetwork(const QString& netId,
+                              const QList<IrcBouncerAttributeValue>& attributes);
+    bool deleteBouncerNetwork(const QString& netId);
+    QList<IrcBouncerNetwork> bouncerNetworks() const;
+    QList<IrcBouncerCommandResult> bouncerCommandResults() const;
 
 signals:
     void stateChanged(IrcSession::State state);
@@ -277,6 +288,12 @@ private:
     void abandonHistoryRequests();
     void handleChatHistoryFail(const IrcMessage& message);
     void handleReadMarkerFail(const IrcMessage& message);
+    void handleBouncerFail(const IrcMessage& message);
+    void handleBouncer(const IrcMessage& message);
+    void sendBouncerBind();
+    bool sendBouncerCommand(const QString& line, const QString& pendingSubcommand);
+    void noteBouncerSuccess(const QString& subcommand, const QString& netId);
+    void finishBouncerBatch(const QString& reference);
     void noteReadMarkerCommand(const QStringList& tokens);
     QString readMarkerCommand() const;
 
@@ -394,6 +411,10 @@ private:
         bool historyEnded = false;
     };
     QHash<QString, OpenBatch> m_openBatches;
+    QHash<QString, QList<IrcParsedBouncer>> m_bouncerBatches;
+    IrcBouncerNetworkTable m_bouncerNetworks;
+    QStringList m_pendingBouncerCommands;
+    QList<IrcBouncerCommandResult> m_bouncerCommandResults;
     QSet<QString> m_ignoredBatches;
     QHash<QString, int> m_historyGeneration;
     QSet<QString> m_historyAsked;
