@@ -1,4 +1,4 @@
-//go:build aix || android || linux || solaris || zos
+//go:build aix || android || illumos || linux || solaris || zos
 
 package avatar
 

@@ -313,14 +313,15 @@ func copyProbeInput(src, dst *os.File, late *lateFilter) {
 // to column zero. Write goes to the real terminal. Close restores it and does
 // not close it.
 type bufferedProbeInput struct {
-	f       *os.File
-	src     *os.File
-	once    sync.Once
-	mu      sync.Mutex
-	fd      uintptr
-	orig    *term.State
-	done    chan struct{}
-	stopped bool
+	f        *os.File
+	src      *os.File
+	once     sync.Once
+	mu       sync.Mutex
+	fd       uintptr
+	orig     *term.State
+	done     chan struct{}
+	watching chan struct{}
+	stopped  bool
 }
 
 func (b *bufferedProbeInput) Read(p []byte) (int, error) { return b.f.Read(p) }
