@@ -81,7 +81,7 @@ fn boot_app(config: &BootConfig) -> (App, iced::Task<app::Message>) {
             watcher,
             config.bench,
         ),
-        iced::Task::none(),
+        iced::Task::done(app::Message::FirstFrame),
     )
 }
 

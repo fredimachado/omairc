@@ -6,7 +6,8 @@ use iced::widget::{
     button, column, container, mouse_area, row, scrollable, text, text_input, Space,
 };
 use iced::futures::SinkExt;
-use iced::{clipboard, Element, Length, Subscription, Task};
+use iced::widget::operation::{self, AbsoluteOffset};
+use iced::{clipboard, Element, Length, Size, Subscription, Task};
 use shared::{
     jump_targets, row_from_message, Conversation, JumpKind, JumpTarget, MockWorld, Network,
     Style, Theme, ThemeWatcher, Transcript,
@@ -41,11 +42,16 @@ pub struct App {
     member_realnames: HashMap<String, String>,
     transcript_focused: bool,
     drag_scroll: bool,
+    drag_edge: Option<i8>,
     shift_held: bool,
     typing_phase: u8,
     bench: bool,
     bench_state: BenchState,
-    first_frame: Option<Instant>,
+    bench_started: Instant,
+    first_frame_ms: Option<f64>,
+    composer_id: iced::widget::Id,
+    jump_filter_id: iced::widget::Id,
+    jump_list_id: iced::widget::Id,
     next_message_id: u64,
 }
 
@@ -53,8 +59,10 @@ struct BenchState {
     phase: BenchPhase,
     scroll_step: usize,
     frame_times: Vec<Instant>,
-    resize_pending: bool,
+    reflow_start: Option<Instant>,
+    reflow_ms: Option<f64>,
     append_at: Option<Instant>,
+    append_latency_ms: Option<f64>,
 }
 
 enum BenchPhase {
@@ -112,10 +120,17 @@ impl App {
                 },
                 scroll_step: 0,
                 frame_times: Vec::new(),
-                resize_pending: false,
+                reflow_start: None,
+                reflow_ms: None,
                 append_at: None,
+                append_latency_ms: None,
             },
-            first_frame: None,
+            bench_started: Instant::now(),
+            first_frame_ms: None,
+            drag_edge: None,
+            composer_id: iced::widget::Id::unique(),
+            jump_filter_id: iced::widget::Id::unique(),
+            jump_list_id: iced::widget::Id::unique(),
             next_message_id,
         };
         app.sync_jump_matches();
@@ -184,11 +199,15 @@ impl App {
                     continues,
                 );
                 app.next_message_id += 1;
-                if app.bench && matches!(app.bench_state.phase, BenchPhase::Append) {
+                let bench_append = app.bench && matches!(app.bench_state.phase, BenchPhase::Append);
+                if bench_append {
                     app.bench_state.append_at = Some(Instant::now());
                 }
                 app.transcript.append(row);
                 app.composer.clear();
+                if bench_append {
+                    return Task::done(Message::BenchAppendDone);
+                }
             }
             Message::ToggleMembers => {
                 app.members_open = !app.members_open;
@@ -202,14 +221,17 @@ impl App {
                 app.jump_filter.clear();
                 app.jump_selected = 0;
                 app.sync_jump_matches();
+                return focus_widget(app.jump_filter_id.clone());
             }
             Message::CloseJump => {
                 app.jump_open = false;
+                return focus_widget(app.composer_id.clone());
             }
             Message::JumpFilter(s) => {
                 app.jump_filter = s;
                 app.jump_selected = 0;
                 app.sync_jump_matches();
+                return jump_list_scroll(app);
             }
             Message::JumpStep(delta) => {
                 if app.jump_matches.is_empty() {
@@ -218,6 +240,7 @@ impl App {
                 let len = app.jump_matches.len();
                 let next = (app.jump_selected as i32 + delta).rem_euclid(len as i32) as usize;
                 app.jump_selected = next;
+                return jump_list_scroll(app);
             }
             Message::JumpActivate => {
                 if let Some(target) = app.jump_matches.get(app.jump_selected).cloned() {
@@ -225,6 +248,7 @@ impl App {
                         app.switch_conversation(target.network_id, target.conversation_id);
                     }
                     app.jump_open = false;
+                    return focus_widget(app.composer_id.clone());
                 }
             }
             Message::Transcript(m) => {
@@ -236,12 +260,16 @@ impl App {
                 }
                 app.handle_transcript(m);
             }
-            Message::Keyboard(event) => app.handle_keyboard(event),
+            Message::Keyboard(event) => {
+                if let Some(task) = app.handle_keyboard(event) {
+                    return task;
+                }
+            }
             Message::Modifiers(m) => {
                 app.shift_held = m.shift();
             }
             Message::FirstFrame => {
-                app.first_frame = Some(Instant::now());
+                app.first_frame_ms = Some(app.bench_started.elapsed().as_secs_f64() * 1000.0);
                 if app.bench && matches!(app.bench_state.phase, BenchPhase::WaitFirstFrame) {
                     app.bench_state.phase = BenchPhase::Scrolling;
                     app.bench_state.frame_times.push(Instant::now());
@@ -263,27 +291,42 @@ impl App {
                 app.bench_state.scroll_step += 1;
                 if app.bench_state.scroll_step >= 200 {
                     app.bench_state.phase = BenchPhase::Resize;
-                    app.bench_state.resize_pending = true;
-                }
-            }
-            Message::BenchResize => {
-                if app.bench_state.resize_pending {
-                    app.bench_state.resize_pending = false;
+                    app.bench_state.reflow_start = Some(Instant::now());
                     app.style = Style::new(app.style.theme.clone(), app.style.text_scale * 1.05);
                     app.transcript.invalidate_all();
+                    return iced::window::latest().then(|id| {
+                        if let Some(id) = id {
+                            iced::window::resize::<Message>(id, Size::new(1020.0, 680.0))
+                        } else {
+                            Task::none()
+                        }
+                    });
+                }
+            }
+            Message::WindowResized(_) => {
+                if app.bench && matches!(app.bench_state.phase, BenchPhase::Resize) {
+                    if let Some(start) = app.bench_state.reflow_start.take() {
+                        app.bench_state.reflow_ms =
+                            Some(start.elapsed().as_secs_f64() * 1000.0);
+                    }
                     app.bench_state.phase = BenchPhase::Append;
                     app.transcript.set_pinned_to_bottom(true);
                     app.composer = "bench append".to_string();
+                    return Task::done(Message::Send);
                 }
             }
-            Message::WindowResized => {
-                if app.bench && matches!(app.bench_state.phase, BenchPhase::Resize) {
-                    return Task::done(Message::BenchResize);
+            Message::BenchAppendDone => {
+                if let Some(start) = app.bench_state.append_at.take() {
+                    app.bench_state.append_latency_ms =
+                        Some(start.elapsed().as_secs_f64() * 1000.0);
                 }
+                return Task::done(Message::ExitBench);
             }
             Message::DragScrollTick => {
                 if app.drag_scroll {
-                    // nudge scroll handled in transcript via wheel simulation
+                    if let Some(edge) = app.drag_edge {
+                        app.nudge_transcript(edge as i32 * 16);
+                    }
                 }
             }
             Message::ExitBench => {
@@ -315,33 +358,65 @@ impl App {
             TranscriptMessage::Copy => {}
             TranscriptMessage::LinkClick(url) => println!("{url}"),
             TranscriptMessage::FocusChanged(f) => self.transcript_focused = f,
-            TranscriptMessage::DragScrollActive(active) => self.drag_scroll = active,
+            TranscriptMessage::DragScrollActive(active) => {
+                self.drag_scroll = active;
+                if !active {
+                    self.drag_edge = None;
+                }
+            }
+            TranscriptMessage::DragEdge(edge) => self.drag_edge = edge,
         }
     }
 
-    fn handle_keyboard(&mut self, event: keyboard::Event) {
+    fn nudge_transcript(&mut self, delta_px: i32) {
+        self.transcript.set_pinned_to_bottom(false);
+        let scroll = self.transcript.scroll();
+        let mut row = scroll.row;
+        let mut off = scroll.offset_px + delta_px;
+        while off < 0 && row > 0 {
+            row -= 1;
+            off += 72;
+        }
+        while off > 72 && row + 1 < self.transcript.rows().len() {
+            off -= 72;
+            row += 1;
+        }
+        self.transcript.set_scroll_anchor(row, off);
+    }
+
+    fn handle_keyboard(&mut self, event: keyboard::Event) -> Option<Task<Message>> {
         if let keyboard::Event::ModifiersChanged(m) = &event {
             self.shift_held = m.shift();
-            return;
+            return None;
         }
         if self.jump_open {
             if let keyboard::Event::KeyPressed { key, .. } = event {
                 match key.as_ref() {
-                    Key::Named(Named::Escape) => self.jump_open = false,
-                    Key::Named(Named::ArrowDown) => self.update_step(1),
-                    Key::Named(Named::ArrowUp) => self.update_step(-1),
+                    Key::Named(Named::Escape) => {
+                        self.jump_open = false;
+                        return Some(focus_widget(self.composer_id.clone()));
+                    }
+                    Key::Named(Named::ArrowDown) => {
+                        self.update_step(1);
+                        return Some(jump_list_scroll(self));
+                    }
+                    Key::Named(Named::ArrowUp) => {
+                        self.update_step(-1);
+                        return Some(jump_list_scroll(self));
+                    }
                     Key::Named(Named::Enter) => {
                         if let Some(target) = self.jump_matches.get(self.jump_selected).cloned() {
                             if target.kind == JumpKind::Conversation {
                                 self.switch_conversation(target.network_id, target.conversation_id);
                             }
                             self.jump_open = false;
+                            return Some(focus_widget(self.composer_id.clone()));
                         }
                     }
                     _ => {}
                 }
             }
-            return;
+            return None;
         }
         if let keyboard::Event::KeyPressed { key, modifiers, .. } = event {
             if modifiers.control() && matches!(key.as_ref(), Key::Character("k") | Key::Character("K")) {
@@ -349,8 +424,10 @@ impl App {
                 self.jump_filter.clear();
                 self.jump_selected = 0;
                 self.sync_jump_matches();
+                return Some(focus_widget(self.jump_filter_id.clone()));
             }
         }
+        None
     }
 
     fn update_step(&mut self, delta: i32) {
@@ -362,10 +439,7 @@ impl App {
     }
 
     fn print_bench(&self) {
-        let first = self
-            .first_frame
-            .map(|t| t.elapsed().as_secs_f64() * 1000.0)
-            .unwrap_or(0.0);
+        let first = self.first_frame_ms.unwrap_or(0.0);
         let frames = self.bench_state.frame_times.len().max(1);
         let duration = self
             .bench_state
@@ -377,9 +451,15 @@ impl App {
         let fps = (frames as f64 - 1.0) / duration.max(0.001);
         println!("first frame: {first:.2} ms");
         println!("scroll fps: {fps:.1}");
-        println!("reflow resize: (see invalidate)");
-        if let Some(at) = self.bench_state.append_at {
-            println!("append latency: {:.2} ms", at.elapsed().as_secs_f64() * 1000.0);
+        if let Some(ms) = self.bench_state.reflow_ms {
+            println!("reflow resize: {ms:.2} ms");
+        } else {
+            println!("reflow resize: n/a");
+        }
+        if let Some(ms) = self.bench_state.append_latency_ms {
+            println!("append latency: {ms:.2} ms");
+        } else {
+            println!("append latency: n/a");
         }
     }
 
@@ -659,6 +739,7 @@ impl App {
 
         let composer = row![
             text_input("Message…", &self.composer)
+                .id(self.composer_id.clone())
                 .on_input(Message::ComposerChanged)
                 .on_submit(Message::Send)
                 .size(px(s, 13.0))
@@ -714,6 +795,7 @@ impl App {
         let card = container(
             column![
                 text_input("Jump to conversation…", &self.jump_filter)
+                    .id(self.jump_filter_id.clone())
                     .on_input(Message::JumpFilter)
                     .size(px(s, 13.0))
                     .font(IA_WRITER)
@@ -749,7 +831,9 @@ impl App {
                             }),
                         );
                     }
-                    scrollable(list).height(Length::Fixed(s.scaled(252.0) as f32))
+                    scrollable(list)
+                        .id(self.jump_list_id.clone())
+                        .height(Length::Fixed(s.scaled(252.0) as f32))
                 },
             ]
             .spacing(px(s, 8.0)),
@@ -800,7 +884,7 @@ impl App {
                 Message::BenchScrollStep
             }));
             subs.push(
-                iced::window::resize_events().map(|_| Message::WindowResized),
+                iced::window::resize_events().map(|(_, size)| Message::WindowResized(size)),
             );
         }
 
@@ -851,10 +935,27 @@ pub enum Message {
     Modifiers(keyboard::Modifiers),
     FirstFrame,
     BenchScrollStep,
-    BenchResize,
-    WindowResized,
+    WindowResized(Size),
+    BenchAppendDone,
     DragScrollTick,
     ExitBench,
+}
+
+fn focus_widget(id: iced::widget::Id) -> Task<Message> {
+    operation::focus(id)
+}
+
+fn jump_list_scroll(app: &App) -> Task<Message> {
+    let row_h = app.style.scaled(28.0) as f32 + 2.0;
+    let max_scroll = (app.jump_matches.len().saturating_sub(1) as f32) * row_h;
+    let y = (app.jump_selected as f32 * row_h).min(max_scroll);
+    operation::scroll_to(
+        app.jump_list_id.clone(),
+        AbsoluteOffset {
+            x: None,
+            y: Some(y),
+        },
+    )
 }
 
 fn default_conversation(world: &MockWorld) -> (String, String) {

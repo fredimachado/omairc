@@ -16,10 +16,12 @@ use iced::{
 use iced::advanced::widget::operation::Focusable;
 use lru::LruCache;
 use shared::{
-    map_pointer, FormattedText, PointerZone, Pos, Row, RowKind, ScrollAnchor, Selection, Style,
+    map_pointer, FormattedText, PointerZone, Pos, Row, RowKind, ScrollAnchor, Style,
     TextStyle, Transcript,
 };
+use std::cell::RefCell;
 use std::num::NonZeroUsize;
+use std::ops::Range;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
@@ -31,6 +33,7 @@ pub enum TranscriptMessage {
     LinkClick(String),
     FocusChanged(bool),
     DragScrollActive(bool),
+    DragEdge(Option<i8>),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -81,7 +84,7 @@ struct CacheKey {
 }
 
 struct WidgetState<P> {
-    paragraphs: LruCache<CacheKey, P>,
+    paragraphs: RefCell<LruCache<CacheKey, P>>,
     dragging: bool,
     last_click: Option<(Instant, usize, u8)>,
     hovered_link: Option<(usize, usize)>,
@@ -92,7 +95,7 @@ struct WidgetState<P> {
 impl<P> Default for WidgetState<P> {
     fn default() -> Self {
         Self {
-            paragraphs: LruCache::new(NonZeroUsize::new(512).unwrap()),
+            paragraphs: RefCell::new(LruCache::new(NonZeroUsize::new(512).unwrap())),
             dragging: false,
             last_click: None,
             hovered_link: None,
@@ -143,11 +146,49 @@ fn body_width(total_width: f32, style: &Style) -> f32 {
     (total_width - left - right).max(1.0)
 }
 
+#[derive(Clone)]
+struct ParagraphOverlay {
+    selection: Option<Range<usize>>,
+    hover_link: Option<Range<usize>>,
+    selection_color: Color,
+}
+
+impl Default for ParagraphOverlay {
+    fn default() -> Self {
+        Self {
+            selection: None,
+            hover_link: None,
+            selection_color: Color::TRANSPARENT,
+        }
+    }
+}
+
+impl ParagraphOverlay {
+    fn cached(&self) -> bool {
+        self.selection.is_none() && self.hover_link.is_none()
+    }
+}
+
+fn hovered_link_range(
+    state: &WidgetState<impl Clone>,
+    row_index: usize,
+    row: &Row,
+) -> Option<Range<usize>> {
+    let (r, i) = state.hovered_link?;
+    if r != row_index {
+        return None;
+    }
+    row.body.links.get(i).cloned()
+}
+
 fn build_spans(
     formatted: &FormattedText,
     style: &Style,
     font_size: f32,
     default_ink: Color,
+    selection: Option<Range<usize>>,
+    selection_color: Color,
+    hover_link: Option<Range<usize>>,
 ) -> Vec<Span<'static, (), iced::Font>> {
     let plain = &formatted.plain;
     if plain.is_empty() {
@@ -161,6 +202,10 @@ fn build_spans(
     for link in &formatted.links {
         boundaries.push(link.start);
         boundaries.push(link.end);
+    }
+    if let Some(sel) = &selection {
+        boundaries.push(sel.start);
+        boundaries.push(sel.end);
     }
     boundaries.sort_unstable();
     boundaries.dedup();
@@ -183,11 +228,22 @@ fn build_spans(
             color = to_iced(fg);
         }
         let is_link = formatted.links.iter().any(|l| l.start <= start && end <= l.end);
+        let selected = selection
+            .as_ref()
+            .is_some_and(|sel| start >= sel.start && end <= sel.end);
+        let link_hovered = hover_link
+            .as_ref()
+            .is_some_and(|l| start >= l.start && end <= l.end);
         let mut span = Span::new(slice).color(color).size(Pixels(font_size));
         if ts.bold {
             span = span.font(bold());
         }
-        if ts.underline || is_link {
+        if selected {
+            span = span
+                .color(Color::WHITE)
+                .background(iced::Background::Color(selection_color));
+        }
+        if ts.underline || (is_link && link_hovered) {
             span = span.underline(true);
         }
         if ts.strikethrough {
@@ -211,9 +267,10 @@ fn paragraph_for_row<Renderer: renderer::Renderer + text::Renderer<Font = iced::
     body_w: f32,
     theme_gen: u64,
     centered: bool,
-    state: &mut WidgetState<Renderer::Paragraph>,
+    state: &WidgetState<Renderer::Paragraph>,
     renderer: &Renderer,
     font_size: f32,
+    overlay: ParagraphOverlay,
 ) -> Renderer::Paragraph
 where
     Renderer::Paragraph: TextParagraph + Clone + Default,
@@ -225,9 +282,18 @@ where
         theme_gen,
         centered,
     };
-    if let Some(p) = state.paragraphs.get(&key) {
-        return p.clone();
+    let cacheable = overlay.cached();
+    if cacheable {
+        if let Some(p) = state.paragraphs.borrow_mut().get(&key) {
+            return p.clone();
+        }
     }
+
+    let ParagraphOverlay {
+        selection,
+        hover_link,
+        selection_color,
+    } = overlay;
 
     let ink = to_iced(style.ink_color());
     let muted = to_iced(style.muted_color());
@@ -257,7 +323,15 @@ where
             wrapping: text::Wrapping::Word,
         })
     } else {
-        let spans = build_spans(&row.body, style, font_size, ink);
+        let spans = build_spans(
+            &row.body,
+            style,
+            font_size,
+            ink,
+            selection,
+            selection_color,
+            hover_link,
+        );
         Renderer::Paragraph::with_spans(text::Text {
             content: spans.as_slice(),
             bounds: Size::new(body_w, f32::INFINITY),
@@ -271,7 +345,9 @@ where
         })
     };
     let _ = (muted, renderer);
-    state.paragraphs.put(key, paragraph.clone());
+    if cacheable {
+        state.paragraphs.borrow_mut().put(key, paragraph.clone());
+    }
     paragraph
 }
 
@@ -280,7 +356,7 @@ fn row_height<Renderer: renderer::Renderer + text::Renderer<Font = iced::Font>>(
     style: &Style,
     width: f32,
     theme_gen: u64,
-    state: &mut WidgetState<Renderer::Paragraph>,
+    state: &WidgetState<Renderer::Paragraph>,
     renderer: &Renderer,
 ) -> i32
 where
@@ -296,6 +372,7 @@ where
             state,
             renderer,
             style.scaled(10.0) as f32,
+            ParagraphOverlay::default(),
         );
         return (p.min_bounds().height as i32 + style.scaled(16.0)).max(style.scaled(24.0));
     }
@@ -313,6 +390,7 @@ where
         state,
         renderer,
         style.scaled(13.0) as f32,
+        ParagraphOverlay::default(),
     );
     let body = p.min_bounds().height as i32 + style.scaled(8.0);
     body.max(style.scaled(52.0) + header).max(style.scaled(40.0))
@@ -441,6 +519,7 @@ where
         }
 
         let position = cursor.position_in(bounds);
+        let mut next_hover = None;
         if let Some(pos) = position {
             let content_y = pos.y - bounds.y + top as f32;
             let row_index = self.transcript.row_at_y(content_y as i32);
@@ -460,20 +539,25 @@ where
                         state,
                         renderer,
                         self.style.scaled(13.0) as f32,
+                        ParagraphOverlay::default(),
                     );
-                    if let Some(text::Hit::CharOffset(offset)) =
-                        p.hit_test(Point::new(pos.x - bounds.x - body_left, content_y - row_y - header_off))
-                    {
+                    if let Some(text::Hit::CharOffset(offset)) = p.hit_test(Point::new(
+                        pos.x - bounds.x - body_left,
+                        content_y - row_y - header_off,
+                    )) {
                         for (i, link) in row.body.links.iter().enumerate() {
                             if link.start <= offset && offset <= link.end {
-                                state.hovered_link = Some((row_index, i));
+                                next_hover = Some((row_index, i));
+                                break;
                             }
                         }
                     }
                 }
             }
-        } else {
-            state.hovered_link = None;
+        }
+        if state.hovered_link != next_hover {
+            state.hovered_link = next_hover;
+            shell.request_redraw();
         }
 
         match event {
@@ -510,6 +594,7 @@ where
                             state,
                             renderer,
                             self.style.scaled(13.0) as f32,
+                            ParagraphOverlay::default(),
                         );
                         let offset = p
                             .hit_test(Point::new(lx - body_left, content_y - row_y - header_off))
@@ -565,6 +650,14 @@ where
             }
             Event::Mouse(mouse::Event::CursorMoved { .. }) if state.dragging => {
                 if let Some(pos) = position {
+                    let edge = if pos.y < bounds.y + 20.0 {
+                        Some(-1i8)
+                    } else if pos.y > bounds.y + bounds.height - 20.0 {
+                        Some(1)
+                    } else {
+                        None
+                    };
+                    shell.publish(TranscriptMessage::DragEdge(edge).into());
                     let content_y = pos.y - bounds.y + top as f32;
                     let row_index = self.transcript.row_at_y(content_y as i32);
                     if row_index < self.transcript.rows().len() {
@@ -584,6 +677,7 @@ where
                                 state,
                                 renderer,
                                 self.style.scaled(13.0) as f32,
+                                ParagraphOverlay::default(),
                             );
                             let offset = p
                                 .hit_test(Point::new(lx - body_left, content_y - row_y - header_off))
@@ -650,6 +744,7 @@ where
             draw_row(
                 renderer,
                 defaults,
+                self.transcript,
                 row,
                 row_index,
                 row_y,
@@ -660,7 +755,6 @@ where
                 self.theme_generation,
                 self.member_realnames,
                 state,
-                self.transcript.selection(),
                 sel_color,
                 viewport,
             );
@@ -768,6 +862,7 @@ fn draw_scrollbar<Renderer: renderer::Renderer>(
 fn draw_row<Renderer: renderer::Renderer + text::Renderer<Font = iced::Font>>(
     renderer: &mut Renderer,
     defaults: &renderer::Style,
+    transcript: &Transcript,
     row: &Row,
     row_index: usize,
     row_y: f32,
@@ -778,7 +873,6 @@ fn draw_row<Renderer: renderer::Renderer + text::Renderer<Font = iced::Font>>(
     theme_gen: u64,
     member_realnames: &std::collections::HashMap<String, String>,
     state: &WidgetState<Renderer::Paragraph>,
-    selection: Option<Selection>,
     sel_color: Color,
     viewport: &Rectangle,
 ) where
@@ -791,16 +885,16 @@ fn draw_row<Renderer: renderer::Renderer + text::Renderer<Font = iced::Font>>(
 
     if row.kind == RowKind::DaySeparator || row.kind == RowKind::Event {
         let size = style.scaled(10.0) as f32;
-        let mut local_state = WidgetState::<Renderer::Paragraph>::default();
         let p = paragraph_for_row(
             row,
             style,
             width - style.scaled(40.0) as f32,
             theme_gen,
             true,
-            &mut local_state,
+            state,
             renderer,
             size,
+            ParagraphOverlay::default(),
         );
         let h = p.min_bounds().height;
         let y = row_y + (row_h - h) / 2.0;
@@ -932,29 +1026,26 @@ fn draw_row<Renderer: renderer::Renderer + text::Renderer<Font = iced::Font>>(
 
     let body_w = body_width(width, style);
     let body_left = origin_x + style.scaled(70.0) as f32;
-    let p = {
-        let mut scratch = WidgetState::<Renderer::Paragraph>::default();
-        paragraph_for_row(
-            row,
-            style,
-            body_w,
-            theme_gen,
-            false,
-            &mut scratch,
-            renderer,
-            style.scaled(13.0) as f32,
-        )
+    let overlay = ParagraphOverlay {
+        selection: transcript.range_for_row(row_index),
+        hover_link: hovered_link_range(state, row_index, row),
+        selection_color: sel_color,
     };
+    let p = paragraph_for_row(
+        row,
+        style,
+        body_w,
+        theme_gen,
+        false,
+        state,
+        renderer,
+        style.scaled(13.0) as f32,
+        overlay,
+    );
     let body_bounds = Rectangle::new(
         Point::new(body_left, body_y),
         Size::new(body_w, (row_y + row_h - body_y).max(1.0)),
     );
-
-    if let Some(sel) = selection {
-        if let Some(range) = selection_range(sel, row_index, row) {
-            draw_selection(renderer, &p, body_bounds, range, sel_color);
-        }
-    }
 
     draw_text(
         renderer,
@@ -965,54 +1056,6 @@ fn draw_row<Renderer: renderer::Renderer + text::Renderer<Font = iced::Font>>(
             color: Some(to_iced(style.ink_color())),
         },
         viewport,
-    );
-}
-
-fn selection_range(sel: Selection, row_index: usize, row: &Row) -> Option<std::ops::Range<usize>> {
-    let (start, end) = if sel.anchor.row < sel.focus.row
-        || (sel.anchor.row == sel.focus.row && sel.anchor.offset <= sel.focus.offset)
-    {
-        (sel.anchor, sel.focus)
-    } else {
-        (sel.focus, sel.anchor)
-    };
-    if row_index < start.row || row_index > end.row {
-        return None;
-    }
-    let row_start = if row_index == start.row { start.offset } else { 0 };
-    let row_end = if row_index == end.row {
-        end.offset
-    } else {
-        row.body.plain.len()
-    };
-    (row_start < row_end).then_some(row_start..row_end)
-}
-
-fn draw_selection<Renderer: text::Renderer<Font = iced::Font>>(
-    renderer: &mut Renderer,
-    paragraph: &Renderer::Paragraph,
-    bounds: Rectangle,
-    range: std::ops::Range<usize>,
-    color: Color,
-) where
-    Renderer::Paragraph: TextParagraph<Font = iced::Font>,
-{
-    let start = paragraph
-        .grapheme_position(0, range.start)
-        .unwrap_or(Point::ORIGIN);
-    let end = paragraph
-        .grapheme_position(0, range.end)
-        .unwrap_or(Point::new(bounds.width, bounds.height));
-    let width = (end.x - start.x).max(1.0);
-    renderer.fill_quad(
-        renderer::Quad {
-            bounds: Rectangle::new(
-                Point::new(bounds.x + start.x, bounds.y + start.y),
-                Size::new(width, paragraph.min_bounds().height),
-            ),
-            ..Default::default()
-        },
-        iced::Background::Color(color),
     );
 }
 
