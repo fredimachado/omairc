@@ -265,6 +265,21 @@ fn six_hex_at(chars: &[char], start: usize) -> bool {
         .all(|c| c.is_ascii_hexdigit())
 }
 
+fn advance_one_code_unit(text: &str, i: usize) -> usize {
+    if i >= text.len() {
+        return i;
+    }
+    if text.as_bytes()[i].is_ascii() {
+        i + 1
+    } else {
+        i + text[i..]
+            .chars()
+            .next()
+            .map(|c| c.len_utf8())
+            .unwrap_or(1)
+    }
+}
+
 pub fn http_link_ranges(text: &str) -> Vec<Range<usize>> {
     let mut ranges = Vec::new();
     let bytes = text.as_bytes();
@@ -276,7 +291,7 @@ pub fn http_link_ranges(text: &str) -> Vec<Range<usize>> {
         } else if rest.starts_with("http://") {
             7
         } else {
-            i += 1;
+            i = advance_one_code_unit(text, i);
             continue;
         };
         let start = i;
@@ -297,7 +312,11 @@ pub fn http_link_ranges(text: &str) -> Vec<Range<usize>> {
         if !trimmed.is_empty() && is_allowed_http_url(trimmed) {
             ranges.push(start..end);
         }
-        i = if j == start + start_scheme { i + 1 } else { j };
+        i = if j == start + start_scheme {
+            advance_one_code_unit(text, i)
+        } else {
+            j
+        };
     }
     ranges
 }
@@ -388,6 +407,17 @@ mod tests {
         let links = http_link_ranges(text);
         assert_eq!(links.len(), 1);
         assert_eq!(&text[links[0].clone()], "https://ci.example.com/omairc/42");
+    }
+
+    #[test]
+    fn link_range_after_em_dash() {
+        let text = format!("day \u{2014} https://example.com/x ok");
+        let formatted = format_irc(&text);
+        assert_eq!(formatted.links.len(), 1);
+        assert_eq!(
+            &formatted.plain[formatted.links[0].clone()],
+            "https://example.com/x"
+        );
     }
 
     #[test]

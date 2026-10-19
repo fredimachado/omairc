@@ -9,7 +9,7 @@ use iced::futures::SinkExt;
 use iced::widget::operation::{self, AbsoluteOffset};
 use iced::{clipboard, Element, Length, Size, Subscription, Task};
 use shared::{
-    jump_targets, row_from_message, Conversation, JumpKind, JumpTarget, MockMessage, MockWorld,
+    jump_targets, row_from_message, Conversation, JumpKind, JumpTarget, MockWorld,
     Network, Style, Theme, ThemeWatcher, Transcript,
 };
 use std::collections::HashMap;
@@ -93,7 +93,7 @@ impl App {
         };
         let conv = find_conversation(&world, &network_id, &conversation_id);
         let next_message_id = conv.messages.len() as u64 + 1000;
-        transcript.set_conversation(&transcript_messages(&conv.messages));
+        transcript.set_conversation(&conv.messages);
         let member_realnames = member_map(conv);
 
         let mut app = Self {
@@ -169,7 +169,7 @@ impl App {
         self.conversation_id = conversation_id;
         let conv = find_conversation(&self.world, &self.network_id, &self.conversation_id);
         self.transcript
-            .set_conversation(&transcript_messages(&conv.messages));
+            .set_conversation(&conv.messages);
         self.member_realnames = member_map(conv);
         self.members_open = conv.channel && self.members_open;
         self.next_message_id = conv.messages.len() as u64 + 1000;
@@ -964,18 +964,6 @@ fn jump_list_scroll(app: &App) -> Task<Message> {
             y: Some(y),
         },
     )
-}
-
-/// Day dividers in `#bench` use U+2014; shared link scanning is byte-indexed.
-fn transcript_messages(messages: &[MockMessage]) -> Vec<MockMessage> {
-    messages
-        .iter()
-        .cloned()
-        .map(|mut m| {
-            m.body = m.body.replace('\u{2014}', "--");
-            m
-        })
-        .collect()
 }
 
 fn bench_conversation(world: &MockWorld) -> (String, String) {

@@ -9,7 +9,7 @@ use gpui::{
     MouseUpEvent, Pixels, Render, ScrollHandle, Window, prelude::*,
 };
 use shared::{
-    bench_channel, jump_targets, load_world, map_pointer, Conversation, MockMessage, MockWorld,
+    bench_channel, jump_targets, load_world, map_pointer, Conversation, MockWorld,
     Network, PointerZone, Pos, RowKind, Transcript, Style as OmStyle,
 };
 
@@ -99,7 +99,7 @@ impl Shell {
         self.conversation_ix = conversation_ix;
         let conv = self.current_conversation().clone();
         self.transcript
-            .set_conversation(&transcript_messages(&conv.messages));
+            .set_conversation(&conv.messages);
         self.member_realnames = member_map(&conv);
         self.transcript.clear_selection();
         self.list_state.reset(self.transcript.rows().len());
@@ -1124,24 +1124,13 @@ impl Shell {
 
         let conv = shell.current_conversation().clone();
         shell.transcript
-            .set_conversation(&transcript_messages(&conv.messages));
+            .set_conversation(&conv.messages);
         shell.member_realnames = member_map(&conv);
         shell
             .list_state
             .reset(shell.transcript.rows().len());
         shell
     }
-}
-
-fn transcript_messages(messages: &[MockMessage]) -> Vec<MockMessage> {
-    messages
-        .iter()
-        .cloned()
-        .map(|mut m| {
-            m.body = m.body.replace('\u{2014}', "--");
-            m
-        })
-        .collect()
 }
 
 fn member_map(conv: &Conversation) -> HashMap<String, String> {
