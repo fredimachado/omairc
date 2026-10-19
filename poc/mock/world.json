@@ -1,0 +1,756 @@
+{
+  "networks": [
+    {
+      "id": "omarchy",
+      "display_name": "omarchy",
+      "nick": "fred",
+      "conversations": [
+        {
+          "name": "#omarchy",
+          "channel": true,
+          "topic": "A cozy corner for Omarchy users and builders.",
+          "members": [
+            {
+              "nick": "fred",
+              "prefix": "~",
+              "realname": "Fred Machado",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "anna",
+              "prefix": "&",
+              "realname": "Anna Vale",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "dax",
+              "prefix": "@",
+              "realname": "Packet Bot",
+              "presence": "online",
+              "bot": true
+            },
+            {
+              "nick": "mira",
+              "prefix": "@+",
+              "realname": "Mira Chen",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "kai",
+              "prefix": "%",
+              "realname": "Kai Dev",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "teo",
+              "prefix": "+",
+              "realname": "Teo",
+              "presence": "away",
+              "bot": false
+            },
+            {
+              "nick": "ivy",
+              "prefix": "",
+              "realname": "Ivy",
+              "presence": "away",
+              "bot": false
+            },
+            {
+              "nick": "lena",
+              "prefix": "",
+              "realname": "Lena Pink",
+              "presence": "away",
+              "bot": false
+            },
+            {
+              "nick": "max",
+              "prefix": "",
+              "realname": "Max",
+              "presence": "away",
+              "bot": false
+            },
+            {
+              "nick": "nora",
+              "prefix": "",
+              "realname": "Nora",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "sam",
+              "prefix": "",
+              "realname": "Sam",
+              "presence": "away",
+              "bot": false
+            },
+            {
+              "nick": "sol",
+              "prefix": "",
+              "realname": "Sol",
+              "presence": "online",
+              "bot": false
+            }
+          ],
+          "messages": [
+            {
+              "kind": "message",
+              "author": "anna",
+              "time": "09:41",
+              "day": "2026-09-12",
+              "body": "Morning! Has anyone tried the new minimal install flow yet?"
+            },
+            {
+              "kind": "message",
+              "author": "dax",
+              "time": "09:43",
+              "day": "2026-09-12",
+              "body": "Yes. Fresh install on my Framework took about twelve minutes. The defaults feel really considered."
+            },
+            {
+              "kind": "message",
+              "author": "mira",
+              "time": "09:46",
+              "day": "2026-09-12",
+              "body": "The way the theme carries across the terminal and native apps is my favorite detail."
+            },
+            {
+              "kind": "join",
+              "author": "sol",
+              "time": "",
+              "day": "2026-09-12",
+              "body": ""
+            },
+            {
+              "kind": "message",
+              "author": "sol",
+              "time": "09:52",
+              "day": "2026-09-12",
+              "body": "Hey all. Just landed here from Arch. This feels surprisingly calm."
+            },
+            {
+              "kind": "message",
+              "author": "anna",
+              "time": "09:53",
+              "day": "2026-09-12",
+              "body": "Welcome, sol. Calm is the whole idea."
+            },
+            {
+              "kind": "message",
+              "author": "dax",
+              "time": "09:55",
+              "day": "2026-09-12",
+              "body": "If you have not already, try the keyboard-first app launcher. It becomes muscle memory fast."
+            },
+            {
+              "kind": "message",
+              "author": "sol",
+              "time": "09:56",
+              "day": "2026-09-12",
+              "body": "I found it. The shortcuts sheet is a nice touch too."
+            },
+            {
+              "kind": "message",
+              "author": "mira",
+              "time": "09:57",
+              "day": "2026-09-12",
+              "body": "Most of the system makes sense once you learn three or four core bindings."
+            },
+            {
+              "kind": "message",
+              "author": "anna",
+              "time": "09:58",
+              "day": "2026-09-12",
+              "body": "And everything important is still plain text when you want to look underneath."
+            },
+            {
+              "kind": "message",
+              "author": "kai",
+              "time": "09:59",
+              "day": "2026-09-12",
+              "body": "That balance is hard to get right: friendly defaults without hiding the actual system."
+            },
+            {
+              "kind": "message",
+              "author": "dax",
+              "time": "10:00",
+              "day": "2026-09-12",
+              "body": "Exactly. Start simple, then make it yours one deliberate change at a time."
+            },
+            {
+              "kind": "join",
+              "author": "nora",
+              "time": "",
+              "day": "2026-09-12",
+              "body": ""
+            },
+            {
+              "kind": "message",
+              "author": "nora",
+              "time": "10:01",
+              "day": "2026-09-12",
+              "body": "Good timing. I was just looking for a quiet place to ask about native Omarchy apps."
+            },
+            {
+              "kind": "message",
+              "author": "fred",
+              "time": "10:02",
+              "day": "2026-09-12",
+              "body": "I am sketching a tiny IRC client that belongs here. No browser chrome, no clutter."
+            },
+            {
+              "kind": "message",
+              "author": "mira",
+              "time": "10:04",
+              "day": "2026-09-12",
+              "body": "Keep the member list optional and I am sold."
+            },
+            {
+              "kind": "message",
+              "author": "fred",
+              "time": "10:05",
+              "day": "2026-09-12",
+              "body": "\u0002Omairc\u000f will ship with \u00034mIRC\u0003 colors like \u0004FF5584aathis accent."
+            }
+          ]
+        },
+        {
+          "name": "#desktop",
+          "channel": true,
+          "topic": "Desktops should feel personal, fast, and calm.",
+          "members": [
+            {
+              "nick": "anna",
+              "prefix": "",
+              "realname": "anna",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "dax",
+              "prefix": "",
+              "realname": "dax",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "fred",
+              "prefix": "",
+              "realname": "fred",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "kai",
+              "prefix": "",
+              "realname": "kai",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "mira",
+              "prefix": "",
+              "realname": "mira",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "nora",
+              "prefix": "",
+              "realname": "nora",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "sol",
+              "prefix": "",
+              "realname": "sol",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "teo",
+              "prefix": "",
+              "realname": "teo",
+              "presence": "online",
+              "bot": false
+            }
+          ],
+          "messages": [
+            {
+              "kind": "message",
+              "author": "dax",
+              "time": "08:22",
+              "day": "2026-09-12",
+              "body": "I finally moved every workspace rule into a small, readable file."
+            },
+            {
+              "kind": "message",
+              "author": "mira",
+              "time": "08:24",
+              "day": "2026-09-12",
+              "body": "That is the dream. Configuration you can understand in one sitting."
+            },
+            {
+              "kind": "message",
+              "author": "sol",
+              "time": "10:08",
+              "day": "2026-09-12",
+              "body": "Does anyone use a vertical monitor alongside the main display?"
+            }
+          ]
+        },
+        {
+          "name": "#ricing",
+          "channel": true,
+          "topic": "Themes, type, wallpapers, and the tiny details.",
+          "unread": 12,
+          "mention": true,
+          "members": [
+            {
+              "nick": "anna",
+              "prefix": "",
+              "realname": "anna",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "dax",
+              "prefix": "",
+              "realname": "dax",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "fred",
+              "prefix": "",
+              "realname": "fred",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "kai",
+              "prefix": "",
+              "realname": "kai",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "lena",
+              "prefix": "",
+              "realname": "lena",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "mira",
+              "prefix": "",
+              "realname": "mira",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "nora",
+              "prefix": "",
+              "realname": "nora",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "sam",
+              "prefix": "",
+              "realname": "sam",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "sol",
+              "prefix": "",
+              "realname": "sol",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "teo",
+              "prefix": "",
+              "realname": "teo",
+              "presence": "online",
+              "bot": false
+            }
+          ],
+          "messages": [
+            {
+              "kind": "message",
+              "author": "anna",
+              "time": "18:10",
+              "day": "2026-09-11",
+              "body": "Muted colors, one strong accent, and enough breathing room."
+            },
+            {
+              "kind": "message",
+              "author": "mira",
+              "time": "18:13",
+              "day": "2026-09-11",
+              "body": "Typography does more work than decoration ever will."
+            },
+            {
+              "kind": "message",
+              "author": "dax",
+              "time": "18:20",
+              "day": "2026-09-11",
+              "body": "Dropped a new warm theme in the usual place. It looks great after sunset."
+            },
+            {
+              "kind": "message",
+              "author": "anna",
+              "time": "18:21",
+              "day": "2026-09-11",
+              "body": "rice-pad-1"
+            },
+            {
+              "kind": "message",
+              "author": "anna",
+              "time": "18:22",
+              "day": "2026-09-11",
+              "body": "rice-pad-2"
+            },
+            {
+              "kind": "message",
+              "author": "anna",
+              "time": "18:23",
+              "day": "2026-09-11",
+              "body": "rice-pad-3"
+            },
+            {
+              "kind": "message",
+              "author": "anna",
+              "time": "18:24",
+              "day": "2026-09-11",
+              "body": "rice-pad-4"
+            },
+            {
+              "kind": "message",
+              "author": "anna",
+              "time": "18:25",
+              "day": "2026-09-11",
+              "body": "rice-pad-5"
+            },
+            {
+              "kind": "message",
+              "author": "anna",
+              "time": "18:26",
+              "day": "2026-09-11",
+              "body": "rice-pad-6"
+            },
+            {
+              "kind": "message",
+              "author": "anna",
+              "time": "18:27",
+              "day": "2026-09-11",
+              "body": "rice-pad-7"
+            },
+            {
+              "kind": "message",
+              "author": "anna",
+              "time": "18:28",
+              "day": "2026-09-11",
+              "body": "rice-pad-8"
+            },
+            {
+              "kind": "message",
+              "author": "anna",
+              "time": "18:29",
+              "day": "2026-09-11",
+              "body": "rice-pad-9"
+            },
+            {
+              "kind": "message",
+              "author": "mira",
+              "time": "18:29",
+              "day": "2026-09-11",
+              "body": "looks good, fred."
+            }
+          ]
+        },
+        {
+          "name": "#help",
+          "channel": true,
+          "topic": "Ask a clear question. Share what you already tried.",
+          "members": [
+            {
+              "nick": "anna",
+              "prefix": "",
+              "realname": "anna",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "dax",
+              "prefix": "",
+              "realname": "dax",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "fred",
+              "prefix": "",
+              "realname": "fred",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "mira",
+              "prefix": "",
+              "realname": "mira",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "sol",
+              "prefix": "",
+              "realname": "sol",
+              "presence": "online",
+              "bot": false
+            }
+          ],
+          "messages": [
+            {
+              "kind": "message",
+              "author": "mira",
+              "time": "09:11",
+              "day": "2026-09-12",
+              "body": "Tip: include the command output and the exact behavior you expected."
+            },
+            {
+              "kind": "message",
+              "author": "sol",
+              "time": "09:15",
+              "day": "2026-09-12",
+              "body": "That made my monitor issue much easier to diagnose. Thanks."
+            }
+          ]
+        },
+        {
+          "name": "anna",
+          "channel": false,
+          "peer_realname": "Anna Vale",
+          "typing": true,
+          "messages": [
+            {
+              "kind": "message",
+              "author": "anna",
+              "time": "10:12",
+              "day": "2026-09-12",
+              "body": "fred: The prototype already feels at home. Nice work."
+            }
+          ]
+        },
+        {
+          "name": "dax",
+          "channel": false,
+          "peer_realname": "Packet Bot",
+          "messages": [
+            {
+              "kind": "message",
+              "author": "dax",
+              "time": "18:40",
+              "day": "2026-09-11",
+              "body": "Send me the build when the mock is ready."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "oftc",
+      "display_name": "oftc",
+      "nick": "oak",
+      "conversations": [
+        {
+          "name": "#omarchy",
+          "channel": true,
+          "topic": "A different #omarchy, hosted on OFTC.",
+          "members": [
+            {
+              "nick": "ness",
+              "prefix": "",
+              "realname": "ness",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "oak",
+              "prefix": "",
+              "realname": "oak",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "pip",
+              "prefix": "",
+              "realname": "Pip",
+              "presence": "away",
+              "bot": false
+            },
+            {
+              "nick": "rio",
+              "prefix": "",
+              "realname": "rio",
+              "presence": "online",
+              "bot": false
+            }
+          ],
+          "messages": [
+            {
+              "kind": "message",
+              "author": "rio",
+              "time": "11:02",
+              "day": "2026-09-12",
+              "body": "This #omarchy is the OFTC one. Different people, same name."
+            },
+            {
+              "kind": "message",
+              "author": "oak",
+              "time": "11:04",
+              "day": "2026-09-12",
+              "body": "Good. If the sidebar mixed them, we would already be lost."
+            }
+          ]
+        },
+        {
+          "name": "#lab",
+          "channel": true,
+          "topic": "Build lab for packaging and CI.",
+          "members": [
+            {
+              "nick": "jules",
+              "prefix": "",
+              "realname": "jules",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "ness",
+              "prefix": "",
+              "realname": "ness",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "oak",
+              "prefix": "",
+              "realname": "oak",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "pip",
+              "prefix": "",
+              "realname": "Pip",
+              "presence": "away",
+              "bot": false
+            },
+            {
+              "nick": "remy",
+              "prefix": "",
+              "realname": "remy",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "rio",
+              "prefix": "",
+              "realname": "rio",
+              "presence": "online",
+              "bot": false
+            }
+          ],
+          "messages": [
+            {
+              "kind": "message",
+              "author": "ness",
+              "time": "10:18",
+              "day": "2026-09-12",
+              "body": "Package build is green: https://ci.example.com/omairc/42"
+            },
+            {
+              "kind": "message",
+              "author": "rio",
+              "time": "10:21",
+              "day": "2026-09-12",
+              "body": "Leave the log in #build if it fails after sunset."
+            }
+          ]
+        },
+        {
+          "name": "#build",
+          "channel": true,
+          "topic": "Nightly builds and failing tests.",
+          "members": [
+            {
+              "nick": "ness",
+              "prefix": "",
+              "realname": "ness",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "oak",
+              "prefix": "",
+              "realname": "oak",
+              "presence": "online",
+              "bot": false
+            },
+            {
+              "nick": "rio",
+              "prefix": "",
+              "realname": "rio",
+              "presence": "online",
+              "bot": false
+            }
+          ],
+          "messages": [
+            {
+              "kind": "message",
+              "author": "ness",
+              "time": "09:05",
+              "day": "2026-09-12",
+              "body": "Nightly failed on missing qt6keychain. Looking."
+            },
+            {
+              "kind": "message",
+              "author": "oak",
+              "time": "09:12",
+              "day": "2026-09-12",
+              "body": "Patched. Waiting on the next image."
+            },
+            {
+              "kind": "message",
+              "author": "remy",
+              "time": "09:13",
+              "day": "2026-09-12",
+              "body": "Image is cooking."
+            }
+          ]
+        },
+        {
+          "name": "rio",
+          "channel": false,
+          "peer_realname": "Rio",
+          "messages": [
+            {
+              "kind": "message",
+              "author": "rio",
+              "time": "11:40",
+              "day": "2026-09-12",
+              "body": "Ping me on OFTC, not Freenode."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

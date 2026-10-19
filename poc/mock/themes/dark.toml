@@ -1,0 +1,6 @@
+# Sample Omarchy dark theme
+background = "#101010"
+foreground = "#eeeeee"
+accent = "#5584aa"
+selection = "#186a9a"
+mode = "dark"

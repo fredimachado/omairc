@@ -1,0 +1,6 @@
+# Sample Omarchy light theme
+background = "#ffffff"
+foreground = "#222324"
+accent = "#2077b2"
+selection = "#2077b2"
+mode = "light"
