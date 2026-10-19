@@ -41,21 +41,21 @@
             {
               "nick": "kai",
               "prefix": "%",
-              "realname": "Kai Dev",
+              "realname": "",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "teo",
               "prefix": "+",
-              "realname": "Teo",
+              "realname": "",
               "presence": "away",
               "bot": false
             },
             {
               "nick": "ivy",
               "prefix": "",
-              "realname": "Ivy",
+              "realname": "",
               "presence": "away",
               "bot": false
             },
@@ -69,28 +69,28 @@
             {
               "nick": "max",
               "prefix": "",
-              "realname": "Max",
+              "realname": "",
               "presence": "away",
               "bot": false
             },
             {
               "nick": "nora",
               "prefix": "",
-              "realname": "Nora",
+              "realname": "",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "sam",
               "prefix": "",
-              "realname": "Sam",
+              "realname": "",
               "presence": "away",
               "bot": false
             },
             {
               "nick": "sol",
               "prefix": "",
-              "realname": "Sol",
+              "realname": "",
               "presence": "online",
               "bot": false
             }
@@ -207,13 +207,6 @@
               "time": "10:04",
               "day": "2026-09-12",
               "body": "Keep the member list optional and I am sold."
-            },
-            {
-              "kind": "message",
-              "author": "fred",
-              "time": "10:05",
-              "day": "2026-09-12",
-              "body": "\u0002Omairc\u000f will ship with \u00034mIRC\u0003 colors like \u0004FF5584aathis accent."
             }
           ]
         },
@@ -221,60 +214,61 @@
           "name": "#desktop",
           "channel": true,
           "topic": "Desktops should feel personal, fast, and calm.",
+          "unread": 3,
           "members": [
             {
               "nick": "anna",
               "prefix": "",
-              "realname": "anna",
+              "realname": "Anna Vale",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "dax",
               "prefix": "",
-              "realname": "dax",
+              "realname": "Packet Bot",
               "presence": "online",
-              "bot": false
+              "bot": true
             },
             {
               "nick": "fred",
               "prefix": "",
-              "realname": "fred",
+              "realname": "Fred Machado",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "kai",
               "prefix": "",
-              "realname": "kai",
+              "realname": "",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "mira",
               "prefix": "",
-              "realname": "mira",
+              "realname": "Mira Chen",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "nora",
               "prefix": "",
-              "realname": "nora",
+              "realname": "",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "sol",
               "prefix": "",
-              "realname": "sol",
+              "realname": "",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "teo",
               "prefix": "",
-              "realname": "teo",
+              "realname": "",
               "presence": "online",
               "bot": false
             }
@@ -313,70 +307,70 @@
             {
               "nick": "anna",
               "prefix": "",
-              "realname": "anna",
+              "realname": "Anna Vale",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "dax",
               "prefix": "",
-              "realname": "dax",
+              "realname": "Packet Bot",
               "presence": "online",
-              "bot": false
+              "bot": true
             },
             {
               "nick": "fred",
               "prefix": "",
-              "realname": "fred",
+              "realname": "Fred Machado",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "kai",
               "prefix": "",
-              "realname": "kai",
+              "realname": "",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "lena",
               "prefix": "",
-              "realname": "lena",
+              "realname": "Lena Pink",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "mira",
               "prefix": "",
-              "realname": "mira",
+              "realname": "Mira Chen",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "nora",
               "prefix": "",
-              "realname": "nora",
+              "realname": "",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "sam",
               "prefix": "",
-              "realname": "sam",
+              "realname": "",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "sol",
               "prefix": "",
-              "realname": "sol",
+              "realname": "",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "teo",
               "prefix": "",
-              "realname": "teo",
+              "realname": "",
               "presence": "online",
               "bot": false
             }
@@ -461,13 +455,6 @@
             },
             {
               "kind": "message",
-              "author": "anna",
-              "time": "18:29",
-              "day": "2026-09-11",
-              "body": "rice-pad-9"
-            },
-            {
-              "kind": "message",
               "author": "mira",
               "time": "18:29",
               "day": "2026-09-11",
@@ -483,35 +470,35 @@
             {
               "nick": "anna",
               "prefix": "",
-              "realname": "anna",
+              "realname": "Anna Vale",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "dax",
               "prefix": "",
-              "realname": "dax",
+              "realname": "Packet Bot",
               "presence": "online",
-              "bot": false
+              "bot": true
             },
             {
               "nick": "fred",
               "prefix": "",
-              "realname": "fred",
+              "realname": "Fred Machado",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "mira",
               "prefix": "",
-              "realname": "mira",
+              "realname": "Mira Chen",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "sol",
               "prefix": "",
-              "realname": "sol",
+              "realname": "",
               "presence": "online",
               "bot": false
             }
@@ -538,6 +525,8 @@
           "channel": false,
           "peer_realname": "Anna Vale",
           "typing": true,
+          "unread": 1,
+          "members": [],
           "messages": [
             {
               "kind": "message",
@@ -552,6 +541,7 @@
           "name": "dax",
           "channel": false,
           "peer_realname": "Packet Bot",
+          "members": [],
           "messages": [
             {
               "kind": "message",
@@ -566,7 +556,7 @@
     },
     {
       "id": "oftc",
-      "display_name": "oftc",
+      "display_name": "OFTC",
       "nick": "oak",
       "conversations": [
         {
@@ -577,28 +567,28 @@
             {
               "nick": "ness",
               "prefix": "",
-              "realname": "ness",
+              "realname": "",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "oak",
               "prefix": "",
-              "realname": "oak",
+              "realname": "",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "pip",
               "prefix": "",
-              "realname": "Pip",
+              "realname": "",
               "presence": "away",
               "bot": false
             },
             {
               "nick": "rio",
               "prefix": "",
-              "realname": "rio",
+              "realname": "",
               "presence": "online",
               "bot": false
             }
@@ -628,42 +618,42 @@
             {
               "nick": "jules",
               "prefix": "",
-              "realname": "jules",
+              "realname": "",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "ness",
               "prefix": "",
-              "realname": "ness",
+              "realname": "",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "oak",
               "prefix": "",
-              "realname": "oak",
+              "realname": "",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "pip",
               "prefix": "",
-              "realname": "Pip",
+              "realname": "",
               "presence": "away",
               "bot": false
             },
             {
               "nick": "remy",
               "prefix": "",
-              "realname": "remy",
+              "realname": "",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "rio",
               "prefix": "",
-              "realname": "rio",
+              "realname": "",
               "presence": "online",
               "bot": false
             }
@@ -689,25 +679,26 @@
           "name": "#build",
           "channel": true,
           "topic": "Nightly builds and failing tests.",
+          "unread": 3,
           "members": [
             {
               "nick": "ness",
               "prefix": "",
-              "realname": "ness",
+              "realname": "",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "oak",
               "prefix": "",
-              "realname": "oak",
+              "realname": "",
               "presence": "online",
               "bot": false
             },
             {
               "nick": "rio",
               "prefix": "",
-              "realname": "rio",
+              "realname": "",
               "presence": "online",
               "bot": false
             }
@@ -739,7 +730,8 @@
         {
           "name": "rio",
           "channel": false,
-          "peer_realname": "Rio",
+          "peer_realname": "",
+          "members": [],
           "messages": [
             {
               "kind": "message",

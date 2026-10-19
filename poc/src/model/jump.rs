@@ -155,12 +155,12 @@ mod tests {
         let targets = jump_targets(&world, "build");
         let name_idx = targets
             .iter()
-            .position(|t| t.score >= 2)
-            .expect("name hit");
+            .position(|t| t.score >= 2 && t.name == "#build")
+            .expect("#build name hit");
         let detail_idx = targets
             .iter()
-            .position(|t| t.score == 1)
-            .expect("detail hit");
+            .position(|t| t.score == 1 && t.name == "#lab")
+            .expect("#lab topic-only hit");
         assert!(name_idx < detail_idx);
     }
 

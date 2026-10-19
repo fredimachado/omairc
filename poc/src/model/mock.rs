@@ -225,4 +225,54 @@ mod tests {
             .expect("anna dm");
         assert!(anna.typing);
     }
+
+    #[test]
+    fn demo_seed_matches_qt_server() {
+        let world = load_world();
+        assert_eq!(world.networks.len(), 2);
+        assert_eq!(world.networks[0].id, "omarchy");
+        assert_eq!(world.networks[0].nick, "fred");
+        assert_eq!(world.networks[0].display_name, "omarchy");
+        assert_eq!(world.networks[1].id, "oftc");
+        assert_eq!(world.networks[1].nick, "oak");
+        assert_eq!(world.networks[1].display_name, "OFTC");
+
+        let ricing = world.networks[0]
+            .conversations
+            .iter()
+            .find(|c| c.name == "#ricing")
+            .expect("#ricing");
+        assert_eq!(ricing.unread, 12);
+        assert_eq!(ricing.messages.len(), 12);
+        assert!(ricing.mention);
+        let mention = ricing
+            .messages
+            .iter()
+            .find(|m| m.body.contains("fred"))
+            .expect("mention line");
+        assert_eq!(mention.body, "looks good, fred.");
+
+        let omarchy = world.networks[0]
+            .conversations
+            .iter()
+            .find(|c| c.name == "#omarchy")
+            .expect("#omarchy");
+        let mira = omarchy
+            .members
+            .iter()
+            .find(|m| m.nick == "mira")
+            .expect("mira member");
+        assert_eq!(mira.prefix, "@+");
+
+        let lab = world.networks[1]
+            .conversations
+            .iter()
+            .find(|c| c.name == "#lab")
+            .expect("#lab");
+        assert!(
+            lab.messages
+                .iter()
+                .any(|m| m.body.contains("https://ci.example.com/omairc/42"))
+        );
+    }
 }
