@@ -1,4 +1,5 @@
-bench scroll fps: 63.2 (18 frames)
-bench first frame: 0.86 ms
-bench reflow: 304.51 ms
-bench append latency: 0.02 ms
+bench scroll fps: 41.7 (200 frames, 50000 rows open)
+bench transcript rows: 50000
+bench first frame: 72.53 ms
+bench reflow: 301.02 ms
+bench append latency: 1.62 ms

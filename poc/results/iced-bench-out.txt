@@ -1,4 +1,5 @@
-first frame: 491.87 ms
+first frame: 517.09 ms
+transcript rows: 50001
 scroll fps: 62.5
-reflow resize: 52.55 ms
-append latency: 0.50 ms
+reflow resize: 87.51 ms
+append latency: 5.96 ms
