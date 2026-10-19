@@ -8,7 +8,7 @@ use gpui::{
     Focusable,     KeyBinding, ListAlignment, ListState, MouseButton, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, Pixels, Render, ScrollHandle, Window, prelude::*,
 };
-use shared::{
+use crate::model::{
     bench_channel, jump_targets, load_world, map_pointer, Conversation, MockWorld,
     Network, PointerZone, Pos, RowKind, Transcript, Style as OmStyle,
 };
@@ -176,7 +176,7 @@ impl Shell {
         let Some(target) = matches.get(self.jump_selected) else {
             return;
         };
-        if target.kind == shared::JumpKind::Conversation {
+        if target.kind == crate::model::JumpKind::Conversation {
             if let Some((net, key)) = target.conversation_id.split_once('\n') {
                 self.switch_by_ids(net, key);
             }
@@ -197,7 +197,7 @@ impl Shell {
             r.kind == RowKind::Message && r.author.as_deref() == Some(author.as_str())
         });
         let id = self.transcript.rows().len() as u64 + 1;
-        let row = shared::row_from_message(
+        let row = crate::model::row_from_message(
             id,
             &author,
             "now",
@@ -433,7 +433,7 @@ impl Shell {
                             .items_center()
                             .justify_center()
                             .text_size(scaled_px(&app_style, 11.))
-                            .text_color(to_gpui(shared::Color::rgb(1., 1., 1.)))
+                            .text_color(to_gpui(crate::model::Color::rgb(1., 1., 1.)))
                             .font_family(FONT_FAMILY)
                             .child(network.display_name.chars().next().unwrap_or('?').to_string()),
                     )
@@ -920,7 +920,7 @@ impl Shell {
                             .rows()
                             .get(ix)
                             .cloned()
-                            .unwrap_or_else(|| shared::row_from_message(0, "", "", "", false));
+                            .unwrap_or_else(|| crate::model::row_from_message(0, "", "", "", false));
                         let selection = shell.transcript.range_for_row(ix);
                         let hover = shell
                             .hovered_link
@@ -1021,7 +1021,7 @@ impl Shell {
                     .bg(to_gpui(app_style.accent_color()))
                     .cursor_pointer()
                     .text_size(scaled_px(app_style, 12.))
-                    .text_color(to_gpui(shared::Color::rgb(1., 1., 1.)))
+                    .text_color(to_gpui(crate::model::Color::rgb(1., 1., 1.)))
                     .font_family(FONT_FAMILY)
                     .child("SEND")
                     .on_mouse_down(

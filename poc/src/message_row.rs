@@ -7,7 +7,7 @@ use gpui::{
     App, Bounds, Element, ElementId, GlobalElementId, Hsla, IntoElement, PaintQuad, Pixels,
     SharedString, StyledText, TextLayout, Window, div, fill, prelude::*, px, size,
 };
-use shared::{Row, RowKind, Style};
+use crate::model::{Row, RowKind, Style};
 
 use crate::format_ui::{gpui_text_style, irc_runs_to_gpui, link_underline_run};
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};

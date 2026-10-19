@@ -1,5 +1,5 @@
 use gpui::{TextRun, TextStyle, UnderlineStyle, px};
-use shared::{Style, StyleRun, TextStyle as IrcStyle};
+use crate::model::{Style, StyleRun, TextStyle as IrcStyle};
 
 use crate::util::{to_gpui, FONT_FAMILY};
 
@@ -113,7 +113,7 @@ fn apply_selection_runs(
         }
         let mut selected = run.clone();
         selected.len = sel_end - sel_start;
-        selected.color = to_gpui(shared::Color::rgb(1., 1., 1.));
+        selected.color = to_gpui(crate::model::Color::rgb(1., 1., 1.));
         selected.background_color = Some(to_gpui(style.selection_color()));
         out.push(selected);
         if sel_end < run_end {

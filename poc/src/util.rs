@@ -1,5 +1,5 @@
 use gpui::{Hsla, px, Pixels, Rgba};
-use shared::Style;
+use crate::model::Style;
 
 pub const FONT_FAMILY: &str = "iA Writer Mono S";
 
@@ -10,7 +10,7 @@ pub struct OmaircStyleGlobal {
 
 impl gpui::Global for OmaircStyleGlobal {}
 
-pub fn to_gpui(color: shared::Color) -> Hsla {
+pub fn to_gpui(color: crate::model::Color) -> Hsla {
     Hsla::from(Rgba {
         r: color.r,
         g: color.g,

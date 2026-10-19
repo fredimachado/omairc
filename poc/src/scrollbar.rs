@@ -2,7 +2,7 @@ use gpui::{
     div, point, px, Context, Entity, MouseButton, MouseDownEvent, Pixels, Point, ScrollHandle,
     prelude::*,
 };
-use shared::Style;
+use crate::model::Style;
 
 use crate::shell::Shell;
 use crate::util::{scaled_px, to_gpui};

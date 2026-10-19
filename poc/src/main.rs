@@ -1,6 +1,7 @@
 mod format_ui;
 mod input;
 mod message_row;
+mod model;
 mod scrollbar;
 mod shell;
 mod util;
@@ -17,7 +18,7 @@ use gpui::{
     px, size, App, Application, Bounds, Entity, Focusable, ListOffset, WindowBounds, WindowOptions,
     prelude::*,
 };
-use shared::{Style, Theme, ThemeWatcher};
+use crate::model::{Style, Theme, ThemeWatcher};
 use shell::{BenchState, Shell};
 
 use crate::input::bind_input_keys;
