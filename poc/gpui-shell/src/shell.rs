@@ -1,11 +1,12 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{
     actions, div, list, point, px, size, App, ClipboardItem, Context, Entity, FocusHandle,
     Focusable,     KeyBinding, ListAlignment, ListState, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, Pixels, Render, Window, prelude::*,
+    MouseUpEvent, Pixels, Render, ScrollHandle, Window, prelude::*,
 };
 use shared::{
     bench_channel, jump_targets, load_world, map_pointer, Conversation, MockWorld, Network,
@@ -67,6 +68,8 @@ pub struct Shell {
     pub members_open: bool,
     pub jump_open: bool,
     pub jump_selected: usize,
+    pub jump_list_scroll: ScrollHandle,
+    pub member_realnames: HashMap<String, String>,
     pub transcript: Transcript,
     pub list_state: ListState,
     pub row_layouts: RowLayoutMap,
@@ -96,6 +99,7 @@ impl Shell {
         self.conversation_ix = conversation_ix;
         let conv = self.current_conversation().clone();
         self.transcript.set_conversation(&conv.messages);
+        self.member_realnames = member_map(&conv);
         self.transcript.clear_selection();
         self.list_state.reset(self.transcript.rows().len());
         self.row_layouts.borrow_mut().clear();
@@ -149,10 +153,11 @@ impl Shell {
         let len = matches.len();
         let next = (self.jump_selected as i32 + delta).rem_euclid(len as i32) as usize;
         self.jump_selected = next;
+        self.jump_list_scroll.scroll_to_item(self.jump_selected);
         cx.notify();
     }
 
-    fn jump_activate(&mut self, cx: &mut Context<Self>) {
+    fn jump_activate(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let matches = jump_targets(&self.world, self.jump_filter.read(cx).text());
         let Some(target) = matches.get(self.jump_selected) else {
             return;
@@ -163,6 +168,7 @@ impl Shell {
             }
         }
         self.jump_open = false;
+        window.focus(&self.composer.read(cx).focus_handle(cx));
         cx.notify();
     }
 
@@ -323,7 +329,9 @@ impl Shell {
             )
             .child(
                 div()
+                    .id("sidebar-conversations")
                     .flex_grow()
+                    .overflow_y_scroll()
                     .child(self.render_conversation_list(&app_style, cx)),
             )
             .child(
@@ -511,7 +519,9 @@ impl Shell {
             )
             .child(
                 div()
+                    .id("member-list")
                     .flex_grow()
+                    .overflow_y_scroll()
                     .children(conv.members.iter().map(|member| {
                         let nick_color = to_gpui(app_style.nick_color(&member.nick));
                         let fill = to_gpui(
@@ -762,6 +772,7 @@ impl Shell {
             .child({
                 let list_state = self.list_state.clone();
                 let layouts = row_layouts;
+                let member_realnames = self.member_realnames.clone();
                 list(list_state, move |ix, _window, app| {
                     let app_style = app.global::<crate::util::OmaircStyleGlobal>().style.clone();
                     entity.update(app, |shell, _cx| {
@@ -781,6 +792,7 @@ impl Shell {
                             ix,
                             &row,
                             &app_style,
+                            &member_realnames,
                             selection,
                             hover,
                             layouts.clone(),
@@ -871,6 +883,7 @@ impl Shell {
         let app_style = style(cx);
         let matches = jump_targets(&self.world, self.jump_filter.read(cx).text());
         let selected = self.jump_selected.min(matches.len().saturating_sub(1));
+        self.jump_list_scroll.scroll_to_item(selected);
 
         div()
             .absolute()
@@ -906,17 +919,36 @@ impl Shell {
                             .on_action(cx.listener(|s, _: &JumpDown, _, cx| {
                                 s.jump_step(1, cx);
                             }))
-                            .on_action(cx.listener(|s, _: &JumpActivate, _, cx| {
-                                s.jump_activate(cx);
+                            .on_action(cx.listener(|s, _: &JumpActivate, window, cx| {
+                                s.jump_activate(window, cx);
                             }))
                             .on_action(cx.listener(|s, _: &JumpClose, window, cx| {
                                 s.close_jump(window, cx);
                             }))
-                            .child(self.jump_filter.clone()),
+                            .child(
+                                div()
+                                    .key_context("JumpFilter")
+                                    .on_action(cx.listener(|s, _: &JumpUp, _, cx| {
+                                        s.jump_step(-1, cx);
+                                    }))
+                                    .on_action(cx.listener(|s, _: &JumpDown, _, cx| {
+                                        s.jump_step(1, cx);
+                                    }))
+                                    .on_action(cx.listener(|s, _: &JumpActivate, window, cx| {
+                                        s.jump_activate(window, cx);
+                                    }))
+                                    .on_action(cx.listener(|s, _: &JumpClose, window, cx| {
+                                        s.close_jump(window, cx);
+                                    }))
+                                    .child(self.jump_filter.clone()),
+                            ),
                     )
                     .child(
                         div()
-                            .max_h(scaled_px(&app_style, 252.))
+                            .id("jump-list")
+                            .h(scaled_px(&app_style, 252.))
+                            .overflow_y_scroll()
+                            .track_scroll(&self.jump_list_scroll)
                             .flex()
                             .flex_col()
                             .children(matches.iter().enumerate().map(|(ix, target)| {
@@ -936,9 +968,9 @@ impl Shell {
                                     .child(target.label.clone())
                                     .on_mouse_down(
                                         MouseButton::Left,
-                                        cx.listener(move |shell, _, _, cx| {
+                                        cx.listener(move |shell, _, window, cx| {
                                             shell.jump_selected = ix;
-                                            shell.jump_activate(cx);
+                                            shell.jump_activate(window, cx);
                                         }),
                                     )
                             })),
@@ -1012,6 +1044,10 @@ pub fn bind_shell_keys(cx: &mut App) {
         KeyBinding::new("down", JumpDown, Some("JumpSheet")),
         KeyBinding::new("enter", JumpActivate, Some("JumpSheet")),
         KeyBinding::new("escape", JumpClose, Some("JumpSheet")),
+        KeyBinding::new("up", JumpUp, Some("JumpFilter")),
+        KeyBinding::new("down", JumpDown, Some("JumpFilter")),
+        KeyBinding::new("enter", JumpActivate, Some("JumpFilter")),
+        KeyBinding::new("escape", JumpClose, Some("JumpFilter")),
         KeyBinding::new("ctrl-a", TranscriptSelectAll, Some("Transcript")),
         KeyBinding::new("ctrl-c", TranscriptCopy, Some("Transcript")),
         KeyBinding::new("escape", TranscriptClearSelection, Some("Transcript")),
@@ -1040,6 +1076,8 @@ impl Shell {
             members_open: true,
             jump_open: false,
             jump_selected: 0,
+            jump_list_scroll: ScrollHandle::new(),
+            member_realnames: HashMap::new(),
             transcript: Transcript::new(72),
             list_state: ListState::new(0, ListAlignment::Bottom, px(120.)),
             row_layouts: Rc::new(RefCell::new(Default::default())),
@@ -1064,9 +1102,24 @@ impl Shell {
 
         let conv = shell.current_conversation().clone();
         shell.transcript.set_conversation(&conv.messages);
+        shell.member_realnames = member_map(&conv);
         shell
             .list_state
             .reset(shell.transcript.rows().len());
         shell
     }
+}
+
+fn member_map(conv: &Conversation) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for m in &conv.members {
+        map.insert(m.nick.clone(), m.realname.clone());
+    }
+    if let Some(real) = &conv.peer_realname {
+        if let Some(name) = conv.name.strip_prefix('#').or(Some(conv.name.as_str())) {
+            map.entry(name.to_string()).or_insert_with(|| real.clone());
+        }
+        map.entry(conv.name.clone()).or_insert_with(|| real.clone());
+    }
+    map
 }

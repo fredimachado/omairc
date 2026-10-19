@@ -1,10 +1,11 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ops::Range;
 use std::rc::Rc;
 
 use gpui::{
-    App, Bounds, Element, ElementId, GlobalElementId, IntoElement, Pixels, SharedString,
-    StyledText, TextLayout, Window, div, prelude::*,
+    App, Bounds, Element, ElementId, GlobalElementId, Hsla, IntoElement, PaintQuad, Pixels,
+    SharedString, StyledText, TextLayout, Window, div, fill, point, prelude::*, px, size,
 };
 use shared::{Row, RowKind, Style};
 
@@ -25,6 +26,7 @@ pub fn render_transcript_row(
     row_ix: usize,
     row: &Row,
     style: &Style,
+    member_realnames: &HashMap<String, String>,
     selection_range: Option<Range<usize>>,
     hovered_link: Option<Range<usize>>,
     layouts: RowLayoutMap,
@@ -70,6 +72,7 @@ pub fn render_transcript_row(
             row_ix,
             row,
             style,
+            member_realnames,
             selection_range,
             hovered_link,
             layouts,
@@ -81,6 +84,7 @@ fn render_message_row(
     row_ix: usize,
     row: &Row,
     style: &Style,
+    member_realnames: &HashMap<String, String>,
     selection_range: Option<Range<usize>>,
     hovered_link: Option<Range<usize>>,
     layouts: RowLayoutMap,
@@ -90,6 +94,12 @@ fn render_message_row(
     let fills = style.nick_avatar_fills();
     let avatar_fill = to_gpui(fills[style.nick_palette_index(author)]);
     let initials = style.initials(author);
+    let realname = member_realnames.get(author).map(String::as_str).unwrap_or("");
+    let realname_suffix = if realname.is_empty() {
+        String::new()
+    } else {
+        format!(" · {realname}")
+    };
 
     let avatar_size = scaled_px(style, 34.);
     let left_pad = scaled_px(style, 24.);
@@ -104,13 +114,14 @@ fn render_message_row(
         &row.body.runs,
         style,
         &base_body_style,
-        selection_range,
+        selection_range.clone(),
     );
     if let Some(link) = hovered_link {
         runs = link_underline_run(runs, link, true);
     }
 
     let styled = StyledText::new(SharedString::from(row.body.plain.clone())).with_runs(runs);
+    let selection_color = to_gpui(style.selection_color());
 
     div()
         .w_full()
@@ -154,11 +165,28 @@ fn render_message_row(
                                     .gap(scaled_px(style, 6.))
                                     .child(
                                         div()
-                                            .text_size(scaled_px(style, 12.))
-                                            .font_weight(gpui::FontWeight::BOLD)
-                                            .text_color(nick_color)
-                                            .font_family(FONT_FAMILY)
-                                            .child(author.to_string()),
+                                            .flex()
+                                            .items_baseline()
+                                            .gap_0()
+                                            .child(
+                                                div()
+                                                    .text_size(scaled_px(style, 12.))
+                                                    .font_weight(gpui::FontWeight::BOLD)
+                                                    .text_color(nick_color)
+                                                    .font_family(FONT_FAMILY)
+                                                    .child(author.to_string()),
+                                            )
+                                            .when(!realname_suffix.is_empty(), |this| {
+                                                this.child(
+                                                    div()
+                                                        .text_size(scaled_px(style, 12.))
+                                                        .text_color(to_gpui(
+                                                            style.muted_color(),
+                                                        ))
+                                                        .font_family(FONT_FAMILY)
+                                                        .child(realname_suffix),
+                                                )
+                                            }),
                                     )
                                     .child(
                                         div()
@@ -183,9 +211,70 @@ fn render_message_row(
                             layouts,
                             avatar_top: top_pad,
                             header_height: header_h,
+                            selection_range,
+                            selection_color,
                         }),
                 ),
         )
+}
+
+fn selection_quads(
+    layout: &TextLayout,
+    bounds: Bounds<Pixels>,
+    range: Range<usize>,
+    color: Hsla,
+) -> Vec<PaintQuad> {
+    let line_height = layout.line_height();
+    let len = layout.len();
+    let start = range.start.min(len);
+    let end = range.end.min(len);
+    if start >= end {
+        return Vec::new();
+    }
+
+    let mut line_starts = vec![0usize];
+    for i in 1..len {
+        let Some(pos) = layout.position_for_index(i) else {
+            break;
+        };
+        let Some(prev) = layout.position_for_index(i - 1) else {
+            continue;
+        };
+        if pos.y > prev.y {
+            line_starts.push(i);
+        }
+    }
+    line_starts.push(len);
+
+    let mut quads = Vec::new();
+    for chunk in line_starts.windows(2) {
+        let line_start = chunk[0];
+        let line_end = chunk[1];
+        let sel_start = start.max(line_start);
+        let sel_end = end.min(line_end);
+        if sel_start >= sel_end {
+            continue;
+        }
+        let Some(start_pos) = layout.position_for_index(sel_start) else {
+            continue;
+        };
+        let width = if sel_end >= line_end {
+            bounds.size.width - start_pos.x
+        } else {
+            layout
+                .position_for_index(sel_end)
+                .map(|end_pos| (end_pos.x - start_pos.x).max(px(1.)))
+                .unwrap_or(px(1.))
+        };
+        quads.push(fill(
+            Bounds::new(
+                point(bounds.origin.x + start_pos.x, bounds.origin.y + start_pos.y),
+                size(width.max(px(1.)), line_height),
+            ),
+            color,
+        ));
+    }
+    quads
 }
 
 struct BodyTextElement {
@@ -194,6 +283,8 @@ struct BodyTextElement {
     layouts: RowLayoutMap,
     avatar_top: Pixels,
     header_height: Pixels,
+    selection_range: Option<Range<usize>>,
+    selection_color: Hsla,
 }
 
 impl IntoElement for BodyTextElement {
@@ -249,6 +340,12 @@ impl Element for BodyTextElement {
         window: &mut Window,
         cx: &mut App,
     ) {
+        let layout = self.text.layout();
+        if let Some(range) = self.selection_range.clone() {
+            for quad in selection_quads(&layout, bounds, range, self.selection_color) {
+                window.paint_quad(quad);
+            }
+        }
         self.text.paint(id, inspector_id, bounds, request_layout, prepaint, window, cx);
         self.layouts.borrow_mut().insert(
             self.row_ix,

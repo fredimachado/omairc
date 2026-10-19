@@ -113,7 +113,6 @@ fn apply_selection_runs(
         }
         let mut selected = run.clone();
         selected.len = sel_end - sel_start;
-        selected.background_color = Some(to_gpui(style.selection_color()));
         selected.color = to_gpui(shared::Color::rgb(1., 1., 1.));
         out.push(selected);
         if sel_end < run_end {
