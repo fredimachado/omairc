@@ -4,18 +4,7 @@ Recorded on **Windows 10** (build 26200), **12th Gen Intel Core i9-12900K**. All
 
 ## Build and run
 
-Shared mock data and transcript logic live in the workspace rooted at `poc/Cargo.toml`.
-
-**Iced shell** (workspace member):
-
-```sh
-cargo build -p omairc-poc-iced --release --manifest-path poc/Cargo.toml
-cargo run -p omairc-poc-iced --release --manifest-path poc/Cargo.toml -- --theme poc/mock/themes/dark.toml
-```
-
-Release binary: `poc/target/release/omairc-poc-iced` (`.exe` on Windows).
-
-**GPUI shell** (separate crate tree under `poc/gpui-shell/`):
+Shared mock data and transcript logic live in the workspace rooted at `poc/Cargo.toml`. The **GPUI shell** is the active UI PoC; build it from `poc/gpui-shell/`:
 
 ```sh
 cargo build --release --manifest-path poc/gpui-shell/Cargo.toml
@@ -29,16 +18,13 @@ Release binary: `poc/gpui-shell/target/release/omairc-poc-gpui` (`.exe` on Windo
 | Flag | Meaning |
 |------|---------|
 | `--theme PATH` | Omarchy-style `colors.toml` (defaults exist; runs here used `poc/mock/themes/dark.toml` and `light.toml`). |
-| `--scale F` | Text scale multiplier (default `1.0`; GPUI via clap, iced via manual parse). |
+| `--scale F` | Text scale multiplier (default `1.0`). |
 | `--lines N` | When `N > 0`, append a generated `#bench` conversation with `N` messages to each network and open that channel on network 0. |
-| `--bench` | Run automated bench (stdout on iced, stderr + `poc/results/gpui-bench-stderr.txt` on GPUI). |
+| `--bench` | Run automated bench (stderr + `poc/results/gpui-bench-stderr.txt` on GPUI). |
 
 Bench invocation used for timing rows in the table:
 
 ```sh
-# iced — prints metrics on stdout then exits
-omairc-poc-iced --lines 50000 --bench --theme poc/mock/themes/dark.toml
-
 # GPUI — prints metrics on stderr and appends to poc/results/gpui-bench-stderr.txt; process stays open (stop after summary lines)
 omairc-poc-gpui --lines 50000 --bench --theme poc/mock/themes/dark.toml
 ```
@@ -57,20 +43,20 @@ The first bench table in commit `81007b5` measured **`#omarchy`** (~17 transcrip
 
 | | First frame | Scroll | Reflow (resize) | Append latency | Idle RSS † | Idle CPU † |
 |---|-------------|--------|-----------------|----------------|------------|------------|
-| **iced** | 517.09 ms | 62.5 fps | 87.51 ms | 5.96 ms | 163.8 MiB | 0.78 % |
+| **iced** (removed shell) | 517.09 ms | 62.5 fps | 87.51 ms | 5.96 ms | 163.8 MiB | 0.78 % |
 | **GPUI** | 72.53 ms | 41.7 fps (200 frames) | 301.02 ms | 1.62 ms | 68.1 MiB | 1.55 % |
 
-**Transcript open during scroll:** `#bench` on network 0 with **50 000** rows (GPUI log; iced reports **50 001** on stdout after the bench append adds one row).
+**Transcript open during scroll:** `#bench` on network 0 with **50 000** rows (GPUI log; the removed iced shell reported **50 001** on stdout after the bench append added one row).
 
-**Scroll method:** **Iced** — **200** steps at ~16 ms; anchor `step × rows / 200` across the open transcript. **GPUI** — same **200** step sweep (`step × rows / 200`) with **16 ms** between steps (replacing the old per-row + 8 ms loop).
+**Scroll method:** **Iced (removed)** — **200** steps at ~16 ms; anchor `step × rows / 200` across the open transcript. **GPUI** — same **200** step sweep (`step × rows / 200`) with **16 ms** between steps (replacing the old per-row + 8 ms loop).
 
-Idle RSS/CPU †: release binary with **only** `--theme poc/mock/themes/dark.toml` (no `--lines`) on the **short demo window** (`#omarchy`). After ~3 s for the window to appear, `Get-Process` sampled `WorkingSet64` and `CPU` twice **2 s** apart; CPU % = ΔCPU seconds ÷ wall time. Process names: `omairc-poc-iced`, `omairc-poc-gpui`. Not remeasured on this pass.
+Idle RSS/CPU †: release binary with **only** `--theme poc/mock/themes/dark.toml` (no `--lines`) on the **short demo window** (`#omarchy`). After ~3 s for the window to appear, `Get-Process` sampled `WorkingSet64` and `CPU` twice **2 s** apart; CPU % = ΔCPU seconds ÷ wall time. Process names at measurement time: `omairc-poc-iced` (removed), `omairc-poc-gpui`. Not remeasured on this pass.
 
 Raw bench output: `poc/results/iced-bench-out.txt`, `poc/results/gpui-bench-stderr.txt`.
 
 ## What `--bench` actually does
 
-**Iced** (`poc/iced-shell/src/app.rs`):
+**Iced (removed; was `poc/iced-shell/src/app.rs`)**:
 
 1. With `--lines N > 0`, open `#bench` on network 0 before the first frame.
 2. Wait for first frame, then run **200** scroll steps. Each step unpins and sets scroll anchor to `step * rows / 200`.
@@ -90,14 +76,14 @@ Raw bench output: `poc/results/iced-bench-out.txt`, `poc/results/gpui-bench-stde
 
 Captured with the idle window focused: `Get-Process` → `MainWindowHandle`, `SetForegroundWindow`, then **ffmpeg** `gdigrab` of the window rectangle. Files:
 
-- `poc/results/iced-dark.png`, `poc/results/gpui-dark.png`
-- `poc/results/iced-light.png`, `poc/results/gpui-light.png`
+- `poc/results/iced-dark.png`, `poc/results/gpui-dark.png` (iced captures are from the **removed** shell)
+- `poc/results/iced-light.png`, `poc/results/gpui-light.png` (iced captures are from the **removed** shell)
 
 Attempts that did **not** work here: PowerShell `Add-Type` + `System.Drawing` (type forwarded to `System.Drawing.Common`, not loaded); ImageMagick `import -window` (X11 delegate missing on this Windows build).
 
 ### Visual comparison to Qt (`test-artifacts/send-message.png`)
 
-Both PoCs reproduce the **three-column** Omairc shape (sidebar, transcript, members) and load the bundled **iA Writer Mono** face. Compared to the Qt reference, the PoCs read flatter: fewer avatar treatments, simpler badges, and less polish on spacing and header hierarchy. The iced dark capture showed **overlapping/clipped header text** in the conversation column; GPUI’s dark capture looked closer to the reference layout but still lacks Qt’s member rail density and topic/subtitle styling. Light-theme shots confirm theme.toml switching works on both shells.
+Both PoCs reproduced the **three-column** Omairc shape (sidebar, transcript, members) and loaded the bundled **iA Writer Mono** face. Compared to the Qt reference, the PoCs read flatter: fewer avatar treatments, simpler badges, and less polish on spacing and header hierarchy. The iced dark capture (removed shell) showed **overlapping/clipped header text** in the conversation column; GPUI’s dark capture looked closer to the reference layout but still lacks Qt’s member rail density and topic/subtitle styling. Light-theme shots confirm theme.toml switching worked on both shells at comparison time.
 
 ## Impressions (single session)
 
