@@ -1,0 +1,12 @@
+D:\code\omairc\poc\shared\target\debug\deps\notify-d0d1b1b181c89551.d: C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\lib.rs C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\windows.rs C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\null.rs C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\poll.rs C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\config.rs C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\error.rs
+
+D:\code\omairc\poc\shared\target\debug\deps\libnotify-d0d1b1b181c89551.rlib: C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\lib.rs C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\windows.rs C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\null.rs C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\poll.rs C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\config.rs C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\error.rs
+
+D:\code\omairc\poc\shared\target\debug\deps\libnotify-d0d1b1b181c89551.rmeta: C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\lib.rs C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\windows.rs C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\null.rs C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\poll.rs C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\config.rs C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\error.rs
+
+C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\lib.rs:
+C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\windows.rs:
+C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\null.rs:
+C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\poll.rs:
+C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\config.rs:
+C:\Users\Fredi\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-8.2.0\src\error.rs:
