@@ -94,12 +94,10 @@ fn main() {
                                     cx.update_global::<OmaircStyleGlobal, _>(|global, _| {
                                         global.style = Style::new(theme, scale);
                                     });
-                                    shell_watch
-                                        .update(cx, |shell, cx| {
-                                            shell.transcript.invalidate_all();
-                                            cx.notify();
-                                        })
-                                        .ok();
+                                    shell_watch.update(cx, |shell, cx| {
+                                        shell.transcript.invalidate_all();
+                                        cx.notify();
+                                    });
                                     cx.refresh_windows();
                                 })
                                 .ok();
