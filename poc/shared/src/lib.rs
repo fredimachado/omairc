@@ -14,8 +14,10 @@ pub use format::{format_irc, plain_irc_text, FormattedText, StyleRun, TextStyle}
 pub use jump::{jump_score, jump_targets, JumpKind, JumpTarget, JUMP_RESULT_LIMIT};
 pub use mock::{bench_channel, load_world, Conversation, Member, MockMessage, MockWorld, Network};
 pub use style::{mix_colors, Style};
-pub use theme::{default_omarchy_colors_path, parse_colors_toml, Theme, ThemeWatcher};
+pub use theme::{
+    default_omarchy_colors_path, parse_colors_toml, Theme, ThemeWatcher,
+};
 pub use transcript::{
-    map_pointer, row_from_message, PointerZone, Pos, Row, RowKind, ScrollAnchor, Selection,
-    Transcript,
+    map_pointer, row_from_message, rows_from_messages, PointerZone, Pos, Row, RowKind,
+    ScrollAnchor, Selection, Transcript,
 };

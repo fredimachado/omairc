@@ -224,6 +224,7 @@ mod tests {
     fn mode_light() {
         let parsed = parse_colors_toml("mode = light\n", Theme::defaults_dark());
         assert!(!parsed.dark_mode);
+        assert!(!Theme::defaults_light().dark_mode);
     }
 
     #[test]

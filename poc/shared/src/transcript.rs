@@ -1,4 +1,5 @@
 use crate::format::{format_irc, FormattedText};
+use crate::mock::MockMessage;
 use std::ops::Range;
 use unicode_segmentation::GraphemeCursor;
 
@@ -67,7 +68,15 @@ impl Fenwick {
         Self { tree: vec![0; n + 1] }
     }
 
+    fn ensure_rows(&mut self, rows: usize) {
+        let need = rows + 1;
+        if self.tree.len() < need {
+            self.tree.resize(need, 0);
+        }
+    }
+
     fn add(&mut self, mut idx: usize, delta: i64) {
+        self.ensure_rows(idx + 1);
         idx += 1;
         while idx < self.tree.len() {
             self.tree[idx] += delta;
@@ -78,7 +87,7 @@ impl Fenwick {
     fn prefix_sum(&self, mut idx: usize) -> i64 {
         idx += 1;
         let mut sum = 0i64;
-        while idx > 0 {
+        while idx > 0 && idx < self.tree.len() {
             sum += self.tree[idx];
             idx -= idx & idx.wrapping_neg();
         }
@@ -86,12 +95,15 @@ impl Fenwick {
     }
 
     fn total(&self) -> i64 {
-        self.prefix_sum(self.tree.len().saturating_sub(2))
+        if self.tree.len() <= 1 {
+            return 0;
+        }
+        self.prefix_sum(self.tree.len() - 2)
     }
 
     fn find_prefix(&self, mut target: i64) -> usize {
         let mut idx = 0usize;
-        let mut bit = (self.tree.len() - 1).next_power_of_two() / 2;
+        let mut bit = self.tree.len().saturating_sub(1).next_power_of_two() / 2;
         while bit > 0 {
             let next = idx + bit;
             if next < self.tree.len() && self.tree[next] <= target {
@@ -221,26 +233,42 @@ impl Transcript {
         if self.rows.is_empty() {
             return 0..0;
         }
-        let top = self.scroll_top_y();
-        let bottom = top + viewport_h;
-        let start = self.row_at_y(top - overscan).saturating_sub(0);
-        let mut end = self.row_at_y(bottom + overscan) + 1;
+        let top = self.scroll_top_y(viewport_h);
+        let scan_top = top - overscan;
+        let scan_bottom = top + viewport_h + overscan;
+        let start = self.row_at_y(scan_top);
+        let total = self.heights.total() as i32;
+        let end_y = scan_bottom
+            .saturating_sub(1)
+            .min(total.saturating_sub(1))
+            .max(0);
+        let mut end = self.row_at_y(end_y) + 1;
+        if scan_bottom >= total {
+            end = end.max(self.rows.len());
+        }
         end = end.min(self.rows.len());
         start..end
     }
 
-    fn scroll_top_y(&self) -> i32 {
+    fn scroll_top_y(&self, viewport_h: i32) -> i32 {
+        let total = self.heights.total() as i32;
+        let max_top = (total - viewport_h).max(0);
         if self.scroll.pinned_to_bottom {
-            let total = self.heights.total() as i32;
-            return total.saturating_sub(1);
+            return max_top;
         }
-        self.y_of_row(self.scroll.row) + self.scroll.offset_px
+        (self.y_of_row(self.scroll.row) + self.scroll.offset_px).clamp(0, max_top)
+    }
+
+    pub fn set_conversation(&mut self, messages: &[MockMessage]) {
+        self.set_rows(rows_from_messages(messages));
     }
 
     pub fn append(&mut self, row: Row) {
         self.rows.push(row);
         self.measured.push(false);
-        self.heights.add(self.rows.len() - 1, self.estimate_height as i64);
+        self.heights.ensure_rows(self.rows.len());
+        self.heights
+            .add(self.rows.len() - 1, self.estimate_height as i64);
         if self.scroll.pinned_to_bottom {
             self.scroll.row = self.rows.len() - 1;
             self.scroll.offset_px = 0;
@@ -489,6 +517,70 @@ fn row_plain(row: &Row) -> &str {
     }
 }
 
+pub fn rows_from_messages(messages: &[MockMessage]) -> Vec<Row> {
+    let mut rows = Vec::with_capacity(messages.len());
+    for (index, message) in messages.iter().enumerate() {
+        let id = index as u64 + 1;
+        match message.kind.as_str() {
+            "message" => {
+                let continues = rows.last().is_some_and(|prev: &Row| {
+                    prev.kind == RowKind::Message
+                        && prev.author.as_deref() == Some(message.author.as_str())
+                });
+                rows.push(Row {
+                    id,
+                    kind: RowKind::Message,
+                    author: Some(message.author.clone()),
+                    time: Some(message.time.clone()),
+                    body: format_irc(&message.body),
+                    continues,
+                    separator_text: None,
+                    event_text: None,
+                });
+            }
+            "day" => {
+                let text = message.body.clone();
+                rows.push(Row {
+                    id,
+                    kind: RowKind::DaySeparator,
+                    author: None,
+                    time: None,
+                    body: format_irc(&text),
+                    continues: false,
+                    separator_text: Some(text),
+                    event_text: None,
+                });
+            }
+            _ => {
+                let event_text = if message.body.is_empty() {
+                    format!("{} joined", message.author)
+                } else {
+                    message.body.clone()
+                };
+                rows.push(Row {
+                    id,
+                    kind: RowKind::Event,
+                    author: if message.author.is_empty() {
+                        None
+                    } else {
+                        Some(message.author.clone())
+                    },
+                    time: if message.time.is_empty() {
+                        None
+                    } else {
+                        Some(message.time.clone())
+                    },
+                    body: format_irc(&event_text),
+                    continues: false,
+                    separator_text: None,
+                    event_text: Some(event_text),
+                });
+            }
+        }
+    }
+    rows
+}
+
 pub fn row_from_message(id: u64, author: &str, time: &str, body: &str, continues: bool) -> Row {
     Row {
         id,
@@ -589,5 +681,141 @@ mod tests {
         let pos = map_pointer(&rows, 1, PointerZone::GapAbove);
         assert_eq!(pos.row, 0);
         assert_eq!(pos.offset, rows[0].body.plain.len());
+    }
+
+    fn tall_transcript(rows: usize) -> Transcript {
+        let mut t = Transcript::new(10);
+        let mut list = Vec::with_capacity(rows);
+        for i in 0..rows {
+            list.push(row_from_message(i as u64 + 1, "user", "09:00", "line", false));
+        }
+        t.set_rows(list);
+        for i in 0..rows {
+            t.set_measured(i, 100);
+        }
+        t
+    }
+
+    #[test]
+    fn visible_range_pinned_shows_bottom_viewport() {
+        let t = tall_transcript(5);
+        assert!(t.scroll().pinned_to_bottom);
+        let range = t.visible_range(250, 0);
+        assert!(range.start > 0, "pinned view must not start at row 0");
+        assert_eq!(range, 2..5);
+    }
+
+    #[test]
+    fn visible_range_unpinned_anchor_at_top() {
+        let mut t = tall_transcript(5);
+        t.set_pinned_to_bottom(false);
+        t.set_scroll_anchor(0, 0);
+        let range = t.visible_range(250, 0);
+        assert_eq!(range.start, 0);
+        assert_eq!(range, 0..3);
+    }
+
+    #[test]
+    fn visible_range_pinned_append_includes_new_row() {
+        let mut t = tall_transcript(4);
+        t.set_pinned_to_bottom(true);
+        assert_eq!(t.visible_range(500, 0), 0..4);
+        t.append(row_from_message(5, "user", "09:01", "newest", false));
+        t.set_measured(4, 100);
+        let range = t.visible_range(250, 0);
+        assert!(range.contains(&4), "appended row must stay in pinned viewport");
+        assert_eq!(range, 2..5);
+    }
+
+    #[test]
+    fn rows_from_messages_continues_same_author() {
+        use crate::mock::MockMessage;
+        let messages = [
+            MockMessage {
+                kind: "message".to_string(),
+                author: "anna".to_string(),
+                time: "09:00".to_string(),
+                day: String::new(),
+                body: "one".to_string(),
+            },
+            MockMessage {
+                kind: "message".to_string(),
+                author: "anna".to_string(),
+                time: "09:01".to_string(),
+                day: String::new(),
+                body: "two".to_string(),
+            },
+        ];
+        let rows = rows_from_messages(&messages);
+        assert!(!rows[0].continues);
+        assert!(rows[1].continues);
+        assert_eq!(rows[0].body.plain, "one");
+        assert_eq!(rows[1].body.plain, "two");
+    }
+
+    #[test]
+    fn rows_from_messages_breaks_on_event_and_day() {
+        use crate::mock::MockMessage;
+        let messages = [
+            MockMessage {
+                kind: "message".to_string(),
+                author: "anna".to_string(),
+                time: "09:00".to_string(),
+                day: String::new(),
+                body: "before join".to_string(),
+            },
+            MockMessage {
+                kind: "join".to_string(),
+                author: "sol".to_string(),
+                time: String::new(),
+                day: String::new(),
+                body: String::new(),
+            },
+            MockMessage {
+                kind: "message".to_string(),
+                author: "anna".to_string(),
+                time: "09:02".to_string(),
+                day: String::new(),
+                body: "after join".to_string(),
+            },
+            MockMessage {
+                kind: "day".to_string(),
+                author: String::new(),
+                time: String::new(),
+                day: String::new(),
+                body: "-- Monday --".to_string(),
+            },
+            MockMessage {
+                kind: "message".to_string(),
+                author: "anna".to_string(),
+                time: "10:00".to_string(),
+                day: String::new(),
+                body: "next day".to_string(),
+            },
+        ];
+        let rows = rows_from_messages(&messages);
+        assert_eq!(rows.len(), 5);
+        assert!(!rows[2].continues);
+        assert!(!rows[4].continues);
+        assert_eq!(rows[1].kind, RowKind::Event);
+        assert_eq!(rows[3].kind, RowKind::DaySeparator);
+    }
+
+    #[test]
+    fn set_conversation_replaces_rows_and_clears_selection() {
+        use crate::mock::MockMessage;
+        let mut t = Transcript::new(10);
+        t.set_rows(sample_rows());
+        t.begin(Pos { row: 0, offset: 1 });
+        t.set_conversation(&[MockMessage {
+            kind: "message".to_string(),
+            author: "solo".to_string(),
+            time: "12:00".to_string(),
+            day: String::new(),
+            body: "fresh".to_string(),
+        }]);
+        assert_eq!(t.rows().len(), 1);
+        assert_eq!(t.rows()[0].author.as_deref(), Some("solo"));
+        assert!(t.selection().is_none());
     }
 }
