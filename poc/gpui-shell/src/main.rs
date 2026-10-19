@@ -151,8 +151,9 @@ fn start_drag_autoscroll(shell: Entity<Shell>, cx: &mut App) {
                 .await;
             shell
                 .update(cx, |shell, cx| {
-                    if shell.dragging && shell.drag_autoscroll {
-                        shell.list_state.scroll_by(px(8.));
+                    if shell.dragging {
+                        let app_style = cx.global::<OmaircStyleGlobal>().style.clone();
+                        shell.tick_drag_autoscroll(&app_style);
                         cx.notify();
                     }
                 })

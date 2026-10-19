@@ -120,10 +120,8 @@ impl<P> Focusable for WidgetState<P> {
 fn row_height_at(transcript: &Transcript, row: usize) -> i32 {
     if row + 1 < transcript.rows().len() {
         transcript.y_of_row(row + 1) - transcript.y_of_row(row)
-    } else if row > 0 {
-        transcript.y_of_row(row) - transcript.y_of_row(row - 1)
     } else {
-        72
+        transcript.stored_row_height(row)
     }
 }
 
@@ -500,16 +498,26 @@ where
         }
 
         if let Event::Mouse(mouse::Event::WheelScrolled { delta }) = event {
+            if cursor.position_in(bounds).is_none() {
+                return;
+            }
             let step = match delta {
                 mouse::ScrollDelta::Lines { y, .. } => (-y * 40.0) as i32,
                 mouse::ScrollDelta::Pixels { y, .. } => (-y) as i32,
             };
-            let row = self.transcript.scroll().row;
-            let new_off = self.transcript.scroll().offset_px + step;
+            let new_top = (scroll_top(self.transcript, viewport_h) + step)
+                .clamp(0, {
+                    let total: i32 = (0..self.transcript.rows().len())
+                        .map(|i| row_height_at(self.transcript, i))
+                        .sum();
+                    (total - viewport_h).max(0)
+                });
+            let row = self.transcript.row_at_y(new_top);
+            let offset_px = new_top - self.transcript.y_of_row(row);
             shell.publish(
                 TranscriptMessage::ScrollTo(ScrollAnchor {
                     row,
-                    offset_px: new_off,
+                    offset_px,
                     pinned_to_bottom: false,
                 })
                 .into(),
@@ -562,6 +570,13 @@ where
 
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                if position.is_none() {
+                    if state.focused {
+                        state.focused = false;
+                        shell.publish(TranscriptMessage::FocusChanged(false).into());
+                    }
+                    return;
+                }
                 if let Some(pos) = position {
                     state.focused = true;
                     shell.publish(TranscriptMessage::FocusChanged(true).into());

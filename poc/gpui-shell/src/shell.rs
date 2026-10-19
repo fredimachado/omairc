@@ -78,6 +78,8 @@ pub struct Shell {
     pub focus_handle: FocusHandle,
     pub dragging: bool,
     pub drag_autoscroll: bool,
+    pub drag_edge: Option<i8>,
+    pub drag_pointer: Option<gpui::Point<Pixels>>,
     pub last_click: (Instant, u32, usize),
     pub typing_phase: u8,
     pub hovered_link: Option<(usize, std::ops::Range<usize>)>,
@@ -222,13 +224,6 @@ impl Shell {
                 PointerZone::HeaderOrAvatar,
             ));
         }
-        let body_local = point(
-            position.x - layout.body_bounds.origin.x,
-            position.y - layout.body_bounds.origin.y,
-        );
-        if let Ok(offset) = layout.layout.index_for_position(body_local) {
-            return Some(Pos { row: row_ix, offset });
-        }
         if local_y
             < (layout.body_bounds.origin.y - row_bounds.origin.y).max(scaled_px(app_style, 0.))
         {
@@ -238,7 +233,80 @@ impl Shell {
                 PointerZone::GapAbove,
             ));
         }
-        None
+        let body_local = point(
+            position.x - layout.body_bounds.origin.x,
+            position.y - layout.body_bounds.origin.y,
+        );
+        match layout.layout.index_for_position(body_local) {
+            Ok(offset) | Err(offset) => Some(Pos { row: row_ix, offset }),
+        }
+    }
+
+    fn first_visible_row(&self) -> Option<usize> {
+        (0..self.transcript.rows().len()).find(|ix| self.list_state.bounds_for_item(*ix).is_some())
+    }
+
+    fn last_visible_row(&self) -> Option<usize> {
+        (0..self.transcript.rows().len())
+            .rev()
+            .find(|ix| self.list_state.bounds_for_item(*ix).is_some())
+    }
+
+    fn update_drag_autoscroll(&mut self, position: gpui::Point<Pixels>) {
+        self.drag_pointer = Some(position);
+        let viewport = self.list_state.viewport_bounds();
+        let edge = px(20.);
+        if position.y < viewport.top() + edge {
+            self.drag_edge = Some(-1);
+            self.drag_autoscroll = true;
+        } else if position.y > viewport.bottom() - edge {
+            self.drag_edge = Some(1);
+            self.drag_autoscroll = true;
+        } else {
+            self.drag_edge = None;
+            self.drag_autoscroll = false;
+        }
+    }
+
+    fn extend_drag_autoscroll(&mut self, position: gpui::Point<Pixels>, app_style: &OmStyle) {
+        let viewport = self.list_state.viewport_bounds();
+        let edge = px(20.);
+        if position.y < viewport.top() + edge {
+            if let Some(row_ix) = self.first_visible_row() {
+                self.transcript.extend(Pos {
+                    row: row_ix,
+                    offset: 0,
+                });
+            }
+            return;
+        }
+        if position.y > viewport.bottom() - edge {
+            if let Some(row_ix) = self.last_visible_row() {
+                let offset = self.transcript.rows()[row_ix].body.plain.len();
+                self.transcript.extend(Pos { row: row_ix, offset });
+            }
+            return;
+        }
+        if let Some(row_ix) = self.row_at_position(position) {
+            if let Some(pos) = self.pos_from_pointer_fixed(position, row_ix, app_style) {
+                self.transcript.extend(pos);
+            }
+        }
+    }
+
+    pub fn tick_drag_autoscroll(&mut self, app_style: &OmStyle) {
+        if !self.dragging || !self.drag_autoscroll {
+            return;
+        }
+        let Some(edge) = self.drag_edge else {
+            return;
+        };
+        let delta = px(if edge < 0 { -8. } else { 8. });
+        self.transcript.set_pinned_to_bottom(false);
+        self.list_state.scroll_by(delta);
+        if let Some(position) = self.drag_pointer {
+            self.extend_drag_autoscroll(position, app_style);
+        }
     }
 
     fn sync_measured_heights(&mut self) {
@@ -698,6 +766,8 @@ impl Shell {
         div()
             .id("transcript")
             .flex_grow()
+            .focusable()
+            .track_focus(&self.focus_handle(cx))
             .key_context("Transcript")
             .on_action(cx.listener(|s, _: &TranscriptSelectAll, _, cx| {
                 s.transcript.select_all();
@@ -715,7 +785,8 @@ impl Shell {
             }))
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|shell, ev: &MouseDownEvent, _, cx| {
+                cx.listener(|shell, ev: &MouseDownEvent, window, cx| {
+                    window.focus(&shell.focus_handle(cx));
                     if let Some(row_ix) = shell.row_at_position(ev.position) {
                         let app_style = style(cx);
                         if let Some(pos) =
@@ -754,6 +825,8 @@ impl Shell {
                 cx.listener(|shell, ev: &MouseUpEvent, _, cx| {
                     shell.dragging = false;
                     shell.drag_autoscroll = false;
+                    shell.drag_edge = None;
+                    shell.drag_pointer = None;
                     if let Some((row_ix, range)) = shell.link_at(ev.position) {
                         if let Some(url) = shell.transcript.rows()[row_ix]
                             .body
@@ -768,15 +841,17 @@ impl Shell {
             )
             .on_mouse_move(cx.listener(|shell, ev: &MouseMoveEvent, _, cx| {
                 if shell.dragging {
-                    if let Some(row_ix) = shell.row_at_position(ev.position) {
-                        let app_style = style(cx);
-                        if let Some(pos) =
-                            shell.pos_from_pointer_fixed(ev.position, row_ix, &app_style)
-                        {
-                            shell.transcript.extend(pos);
+                    shell.update_drag_autoscroll(ev.position);
+                    if !shell.drag_autoscroll {
+                        if let Some(row_ix) = shell.row_at_position(ev.position) {
+                            let app_style = style(cx);
+                            if let Some(pos) =
+                                shell.pos_from_pointer_fixed(ev.position, row_ix, &app_style)
+                            {
+                                shell.transcript.extend(pos);
+                            }
                         }
                     }
-                    shell.drag_autoscroll = true;
                 }
                 shell.hovered_link = shell.link_at(ev.position);
                 cx.notify();
@@ -1102,6 +1177,8 @@ impl Shell {
             focus_handle: cx.focus_handle(),
             dragging: false,
             drag_autoscroll: false,
+            drag_edge: None,
+            drag_pointer: None,
             last_click: (Instant::now(), 0, 0),
             typing_phase: 0,
             hovered_link: None,

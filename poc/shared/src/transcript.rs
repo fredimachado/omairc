@@ -203,6 +203,11 @@ impl Transcript {
         (self.heights.prefix_sum(row) - self.heights.prefix_sum(row - 1)) as i32
     }
 
+    /// Fenwick-backed height for a row index (including the last row).
+    pub fn stored_row_height(&self, row: usize) -> i32 {
+        self.row_height(row)
+    }
+
     pub fn y_of_row(&self, row: usize) -> i32 {
         if row == 0 {
             0
