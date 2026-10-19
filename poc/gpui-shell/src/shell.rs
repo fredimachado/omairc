@@ -9,8 +9,8 @@ use gpui::{
     MouseUpEvent, Pixels, Render, ScrollHandle, Window, prelude::*,
 };
 use shared::{
-    bench_channel, jump_targets, load_world, map_pointer, Conversation, MockWorld, Network,
-    PointerZone, Pos, RowKind, Transcript, Style as OmStyle,
+    bench_channel, jump_targets, load_world, map_pointer, Conversation, MockMessage, MockWorld,
+    Network, PointerZone, Pos, RowKind, Transcript, Style as OmStyle,
 };
 
 use crate::input::SingleLineInput;
@@ -98,7 +98,8 @@ impl Shell {
         self.network_ix = network_ix;
         self.conversation_ix = conversation_ix;
         let conv = self.current_conversation().clone();
-        self.transcript.set_conversation(&conv.messages);
+        self.transcript
+            .set_conversation(&transcript_messages(&conv.messages));
         self.member_realnames = member_map(&conv);
         self.transcript.clear_selection();
         self.list_state.reset(self.transcript.rows().len());
@@ -670,16 +671,27 @@ impl Shell {
         self.list_state.set_scroll_handler({
             let entity = entity.clone();
             move |event, _, cx| {
-                entity.update(cx, |shell, cx| {
-                    for ix in event.visible_range.clone() {
-                        if let Some(bounds) = shell.list_state.bounds_for_item(ix) {
-                            shell
-                                .transcript
-                                .set_measured(ix, f32::from(bounds.size.height) as i32);
-                        }
-                    }
-                    cx.notify();
-                });
+                let range: Vec<usize> = event.visible_range.clone().collect();
+                let entity = entity.clone();
+                cx.spawn(async move |cx| {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(0))
+                        .await;
+                    entity
+                        .update(cx, |shell, cx| {
+                            for ix in range {
+                                if let Some(bounds) = shell.list_state.bounds_for_item(ix) {
+                                    shell.transcript.set_measured(
+                                        ix,
+                                        f32::from(bounds.size.height) as i32,
+                                    );
+                                }
+                            }
+                            cx.notify();
+                        })
+                        .ok();
+                })
+                .detach();
             }
         });
 
@@ -1100,14 +1112,36 @@ impl Shell {
             lines_seed: lines,
         };
 
+        if lines.is_some_and(|n| n > 0) {
+            if let Some(ci) = shell.world.networks[shell.network_ix]
+                .conversations
+                .iter()
+                .position(|c| c.name == "#bench")
+            {
+                shell.conversation_ix = ci;
+            }
+        }
+
         let conv = shell.current_conversation().clone();
-        shell.transcript.set_conversation(&conv.messages);
+        shell.transcript
+            .set_conversation(&transcript_messages(&conv.messages));
         shell.member_realnames = member_map(&conv);
         shell
             .list_state
             .reset(shell.transcript.rows().len());
         shell
     }
+}
+
+fn transcript_messages(messages: &[MockMessage]) -> Vec<MockMessage> {
+    messages
+        .iter()
+        .cloned()
+        .map(|mut m| {
+            m.body = m.body.replace('\u{2014}', "--");
+            m
+        })
+        .collect()
 }
 
 fn member_map(conv: &Conversation) -> HashMap<String, String> {

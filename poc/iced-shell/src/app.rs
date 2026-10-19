@@ -9,8 +9,8 @@ use iced::futures::SinkExt;
 use iced::widget::operation::{self, AbsoluteOffset};
 use iced::{clipboard, Element, Length, Size, Subscription, Task};
 use shared::{
-    jump_targets, row_from_message, Conversation, JumpKind, JumpTarget, MockWorld, Network,
-    Style, Theme, ThemeWatcher, Transcript,
+    jump_targets, row_from_message, Conversation, JumpKind, JumpTarget, MockMessage, MockWorld,
+    Network, Style, Theme, ThemeWatcher, Transcript,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -82,13 +82,18 @@ impl App {
         theme_path: Option<PathBuf>,
         theme_watcher: Arc<Mutex<ThemeWatcher>>,
         bench: bool,
+        lines: usize,
     ) -> Self {
         let style = Style::new(theme, scale);
         let mut transcript = Transcript::new(72);
-        let (network_id, conversation_id) = default_conversation(&world);
+        let (network_id, conversation_id) = if lines > 0 {
+            bench_conversation(&world)
+        } else {
+            default_conversation(&world)
+        };
         let conv = find_conversation(&world, &network_id, &conversation_id);
         let next_message_id = conv.messages.len() as u64 + 1000;
-        transcript.set_conversation(&conv.messages);
+        transcript.set_conversation(&transcript_messages(&conv.messages));
         let member_realnames = member_map(conv);
 
         let mut app = Self {
@@ -163,7 +168,8 @@ impl App {
         self.network_id = network_id;
         self.conversation_id = conversation_id;
         let conv = find_conversation(&self.world, &self.network_id, &self.conversation_id);
-        self.transcript.set_conversation(&conv.messages);
+        self.transcript
+            .set_conversation(&transcript_messages(&conv.messages));
         self.member_realnames = member_map(conv);
         self.members_open = conv.channel && self.members_open;
         self.next_message_id = conv.messages.len() as u64 + 1000;
@@ -449,7 +455,9 @@ impl App {
             .map(|(a, b)| (*a - *b).as_secs_f64())
             .unwrap_or(1.0);
         let fps = (frames as f64 - 1.0) / duration.max(0.001);
+        let rows = self.transcript.rows().len();
         println!("first frame: {first:.2} ms");
+        println!("transcript rows: {rows}");
         println!("scroll fps: {fps:.1}");
         if let Some(ms) = self.bench_state.reflow_ms {
             println!("reflow resize: {ms:.2} ms");
@@ -955,6 +963,31 @@ fn jump_list_scroll(app: &App) -> Task<Message> {
             x: None,
             y: Some(y),
         },
+    )
+}
+
+/// Day dividers in `#bench` use U+2014; shared link scanning is byte-indexed.
+fn transcript_messages(messages: &[MockMessage]) -> Vec<MockMessage> {
+    messages
+        .iter()
+        .cloned()
+        .map(|mut m| {
+            m.body = m.body.replace('\u{2014}', "--");
+            m
+        })
+        .collect()
+}
+
+fn bench_conversation(world: &MockWorld) -> (String, String) {
+    let network = world.networks.first().expect("network");
+    let conv = network
+        .conversations
+        .iter()
+        .find(|c| c.name == "#bench")
+        .expect("#bench conversation");
+    (
+        network.id.clone(),
+        format!("{}\n{}", network.id, conv.key()),
     )
 }
 

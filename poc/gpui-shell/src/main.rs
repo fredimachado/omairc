@@ -5,8 +5,11 @@ mod shell;
 mod util;
 
 use std::borrow::Cow;
+use std::io::Write;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+
+const BENCH_LOG: &str = "poc/results/gpui-bench-stderr.txt";
 
 use clap::Parser;
 use gpui::{
@@ -159,7 +162,21 @@ fn start_drag_autoscroll(shell: Entity<Shell>, cx: &mut App) {
     .detach();
 }
 
+fn bench_log(line: &str) {
+    eprintln!("{line}");
+    let _ = (|| {
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(BENCH_LOG)?;
+        writeln!(file, "{line}")?;
+        file.flush()?;
+        Ok::<(), std::io::Error>(())
+    })();
+}
+
 fn run_bench(shell: Entity<Shell>, cx: &mut App) {
+    let _ = std::fs::write(BENCH_LOG, "");
     let shell_weak = shell.downgrade();
     cx.spawn(async move |cx| {
         cx.background_executor().timer(Duration::from_millis(500)).await;
@@ -171,17 +188,23 @@ fn run_bench(shell: Entity<Shell>, cx: &mut App) {
             return;
         }
 
+        const SCROLL_STEPS: usize = 200;
+        const FRAME_MS: u64 = 16;
+
         shell_weak
             .update(cx, |shell, _| {
                 shell.bench.scroll_start = Some(Instant::now());
+                shell.bench.scroll_frames = 0;
             })
             .ok();
 
-        for step in 0..=row_count {
+        for step in 0..SCROLL_STEPS {
+            let row_ix = (step * row_count / SCROLL_STEPS).min(row_count.saturating_sub(1));
             shell_weak
                 .update(cx, |shell, cx| {
+                    shell.transcript.set_pinned_to_bottom(false);
                     shell.list_state.scroll_to(ListOffset {
-                        item_ix: step.min(row_count.saturating_sub(1)),
+                        item_ix: row_ix,
                         offset_in_item: px(0.),
                     });
                     shell.bench.scroll_frames += 1;
@@ -189,7 +212,7 @@ fn run_bench(shell: Entity<Shell>, cx: &mut App) {
                 })
                 .ok();
             cx.background_executor()
-                .timer(Duration::from_millis(8))
+                .timer(Duration::from_millis(FRAME_MS))
                 .await;
         }
 
@@ -198,10 +221,10 @@ fn run_bench(shell: Entity<Shell>, cx: &mut App) {
                 if let Some(start) = shell.bench.scroll_start.take() {
                     let secs = start.elapsed().as_secs_f64().max(0.001);
                     let fps = shell.bench.scroll_frames as f64 / secs;
-                    eprintln!(
-                        "bench scroll fps: {fps:.1} ({} frames)",
-                        shell.bench.scroll_frames
-                    );
+                    bench_log(&format!(
+                        "bench scroll fps: {fps:.1} ({} frames, {} rows open)",
+                        shell.bench.scroll_frames, row_count
+                    ));
                 }
             })
             .ok();
@@ -252,7 +275,7 @@ fn run_bench(shell: Entity<Shell>, cx: &mut App) {
 
         shell_weak
             .update(cx, |shell, _| {
-                print_bench_summary(&shell.bench);
+                print_bench_summary(&shell.bench, row_count);
                 shell.bench.finished = true;
             })
             .ok();
@@ -260,14 +283,21 @@ fn run_bench(shell: Entity<Shell>, cx: &mut App) {
     .detach();
 }
 
-fn print_bench_summary(bench: &BenchState) {
+fn print_bench_summary(bench: &BenchState, row_count: usize) {
+    bench_log(&format!("bench transcript rows: {row_count}"));
     if let Some(t) = bench.first_frame {
-        eprintln!("bench first frame: {:.2} ms", t.as_secs_f64() * 1000.0);
+        bench_log(&format!(
+            "bench first frame: {:.2} ms",
+            t.as_secs_f64() * 1000.0
+        ));
     }
     if let Some(t) = bench.reflow_done {
-        eprintln!("bench reflow: {:.2} ms", t.as_secs_f64() * 1000.0);
+        bench_log(&format!("bench reflow: {:.2} ms", t.as_secs_f64() * 1000.0));
     }
     if let Some(t) = bench.append_latency {
-        eprintln!("bench append latency: {:.2} ms", t.as_secs_f64() * 1000.0);
+        bench_log(&format!(
+            "bench append latency: {:.2} ms",
+            t.as_secs_f64() * 1000.0
+        ));
     }
 }

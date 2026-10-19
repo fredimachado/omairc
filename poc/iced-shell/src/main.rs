@@ -80,6 +80,7 @@ fn boot_app(config: &BootConfig) -> (App, iced::Task<app::Message>) {
             config.theme_path.clone(),
             watcher,
             config.bench,
+            config.lines,
         ),
         iced::Task::done(app::Message::FirstFrame),
     )
