@@ -1,6 +1,7 @@
 mod format_ui;
 mod input;
 mod message_row;
+mod scrollbar;
 mod shell;
 mod util;
 

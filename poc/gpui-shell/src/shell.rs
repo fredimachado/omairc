@@ -15,6 +15,10 @@ use shared::{
 
 use crate::input::SingleLineInput;
 use crate::message_row::{render_transcript_row, RowLayoutMap};
+use crate::scrollbar::{
+    div_vertical_scrollbar, end_scrollbar_drag, handle_scrollbar_mouse_move,
+    list_vertical_scrollbar, ScrollbarDrag, ScrollbarDragSlot,
+};
 use crate::util::{scaled_px, style, theme_path, to_gpui, FONT_FAMILY};
 
 actions!(
@@ -69,6 +73,9 @@ pub struct Shell {
     pub jump_open: bool,
     pub jump_selected: usize,
     pub jump_list_scroll: ScrollHandle,
+    pub sidebar_scroll: ScrollHandle,
+    pub members_scroll: ScrollHandle,
+    pub scrollbar_drag: Option<ScrollbarDrag>,
     pub member_realnames: HashMap<String, String>,
     pub transcript: Transcript,
     pub list_state: ListState,
@@ -88,6 +95,10 @@ pub struct Shell {
 }
 
 impl Shell {
+    pub(crate) fn set_scrollbar_drag(&mut self, _slot: ScrollbarDragSlot, drag: ScrollbarDrag) {
+        self.scrollbar_drag = Some(drag);
+    }
+
     pub fn current_network(&self) -> &Network {
         &self.world.networks[self.network_ix]
     }
@@ -404,6 +415,7 @@ impl Shell {
             .border_color(to_gpui(app_style.divider_color()))
             .flex()
             .flex_col()
+            .min_h_0()
             .child(
                 div()
                     .p(scaled_px(&app_style, 12.))
@@ -468,13 +480,23 @@ impl Shell {
                             .child("edit"),
                     ),
             )
-            .child(
+            .child({
+                let entity = cx.entity();
                 div()
                     .id("sidebar-conversations")
+                    .relative()
                     .flex_grow()
+                    .min_h_0()
                     .overflow_y_scroll()
-                    .child(self.render_conversation_list(&app_style, cx)),
-            )
+                    .track_scroll(&self.sidebar_scroll)
+                    .child(self.render_conversation_list(&app_style, cx))
+                    .child(div_vertical_scrollbar(
+                        &self.sidebar_scroll,
+                        &app_style,
+                        entity,
+                        ScrollbarDragSlot::Sidebar,
+                    ))
+            })
             .child(
                 div()
                     .m(scaled_px(&app_style, 10.))
@@ -654,6 +676,7 @@ impl Shell {
             .border_color(to_gpui(app_style.divider_color()))
             .flex()
             .flex_col()
+            .min_h_0()
             .child(
                 div()
                     .p(scaled_px(&app_style, 12.))
@@ -664,11 +687,15 @@ impl Shell {
                     .font_family(FONT_FAMILY)
                     .child(format!("ONLINE — {}", online)),
             )
-            .child(
+            .child({
+                let entity = cx.entity();
                 div()
                     .id("member-list")
+                    .relative()
                     .flex_grow()
+                    .min_h_0()
                     .overflow_y_scroll()
+                    .track_scroll(&self.members_scroll)
                     .children(conv.members.iter().map(|member| {
                         let nick_color = to_gpui(app_style.nick_color(&member.nick));
                         let fill = to_gpui(
@@ -707,8 +734,14 @@ impl Shell {
                                             .child(member.realname.clone()),
                                     ),
                             )
-                    })),
-            )
+                    }))
+                    .child(div_vertical_scrollbar(
+                        &self.members_scroll,
+                        &app_style,
+                        entity,
+                        ScrollbarDragSlot::Members,
+                    ))
+            })
     }
 
     fn render_center(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -730,6 +763,7 @@ impl Shell {
         div()
             .flex_grow()
             .h_full()
+            .min_h_0()
             .flex()
             .flex_col()
             .bg(to_gpui(app_style.page_color()))
@@ -824,7 +858,9 @@ impl Shell {
 
         div()
             .id("transcript")
+            .relative()
             .flex_grow()
+            .min_h_0()
             .focusable()
             .track_focus(&self.focus_handle(cx))
             .key_context("Transcript")
@@ -850,7 +886,10 @@ impl Shell {
                 }),
             )
             .on_mouse_move(cx.listener(|shell, ev: &MouseMoveEvent, _, cx| {
-                if !shell.dragging {
+                if shell.scrollbar_drag.is_some() {
+                    let app_style = style(cx);
+                    handle_scrollbar_mouse_move(shell, ev.position, &app_style, cx);
+                } else if !shell.dragging {
                     shell.hovered_link = shell.link_at(ev.position);
                     cx.notify();
                 }
@@ -859,7 +898,9 @@ impl Shell {
                 let list_state = self.list_state.clone();
                 let layouts = row_layouts;
                 let member_realnames = self.member_realnames.clone();
-                list(list_state, move |ix, _window, app| {
+                list(list_state, {
+                    let entity = entity.clone();
+                    move |ix, _window, app| {
                     let app_style = app.global::<crate::util::OmaircStyleGlobal>().style.clone();
                     entity.update(app, |shell, _cx| {
                         let row = shell
@@ -900,10 +941,16 @@ impl Shell {
                             )
                             .into_any_element()
                     })
-                })
-                .flex_grow()
+                }})
+                .size_full()
                 .with_sizing_behavior(gpui::ListSizingBehavior::Infer)
             })
+            .child(list_vertical_scrollbar(
+                self.list_state.clone(),
+                app_style,
+                entity,
+                px(self.transcript.rows().len() as f32 * 72.),
+            ))
     }
 
     fn row_at_position(&self, position: gpui::Point<Pixels>) -> Option<usize> {
@@ -1160,10 +1207,16 @@ impl Render for Shell {
             .flex()
             .flex_row()
             .on_mouse_move(cx.listener(|shell, ev: &MouseMoveEvent, _, cx| {
-                shell.handle_drag_mouse_move(ev.position, cx);
+                if shell.scrollbar_drag.is_some() {
+                    let app_style = style(cx);
+                    handle_scrollbar_mouse_move(shell, ev.position, &app_style, cx);
+                } else {
+                    shell.handle_drag_mouse_move(ev.position, cx);
+                }
             }))
             .capture_any_mouse_up(cx.listener(|shell, ev: &MouseUpEvent, _, cx| {
                 if ev.button == MouseButton::Left {
+                    end_scrollbar_drag(shell);
                     shell.end_text_drag(ev.position, cx);
                 }
             }))
@@ -1229,6 +1282,9 @@ impl Shell {
             jump_open: false,
             jump_selected: 0,
             jump_list_scroll: ScrollHandle::new(),
+            sidebar_scroll: ScrollHandle::new(),
+            members_scroll: ScrollHandle::new(),
+            scrollbar_drag: None,
             member_realnames: HashMap::new(),
             transcript: Transcript::new(72),
             list_state: ListState::new(0, ListAlignment::Bottom, px(120.)),
