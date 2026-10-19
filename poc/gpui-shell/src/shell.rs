@@ -483,13 +483,17 @@ impl Shell {
             .child({
                 let entity = cx.entity();
                 div()
-                    .id("sidebar-conversations")
                     .relative()
                     .flex_grow()
                     .min_h_0()
-                    .overflow_y_scroll()
-                    .track_scroll(&self.sidebar_scroll)
-                    .child(self.render_conversation_list(&app_style, cx))
+                    .child(
+                        div()
+                            .id("sidebar-conversations")
+                            .size_full()
+                            .overflow_y_scroll()
+                            .track_scroll(&self.sidebar_scroll)
+                            .child(self.render_conversation_list(&app_style, cx)),
+                    )
                     .child(div_vertical_scrollbar(
                         &self.sidebar_scroll,
                         &app_style,
@@ -690,51 +694,59 @@ impl Shell {
             .child({
                 let entity = cx.entity();
                 div()
-                    .id("member-list")
                     .relative()
                     .flex_grow()
                     .min_h_0()
-                    .overflow_y_scroll()
-                    .track_scroll(&self.members_scroll)
-                    .children(conv.members.iter().map(|member| {
-                        let nick_color = to_gpui(app_style.nick_color(&member.nick));
-                        let fill = to_gpui(
-                            app_style.nick_avatar_fills()[app_style.nick_palette_index(&member.nick)],
-                        );
+                    .child(
                         div()
-                            .px(scaled_px(&app_style, 10.))
-                            .py(scaled_px(&app_style, 6.))
-                            .flex()
-                            .gap(scaled_px(&app_style, 8.))
-                            .child(avatar_with_presence(
-                                &app_style,
-                                28.,
-                                fill,
-                                app_style.initials(&member.nick),
-                                nick_color,
-                                11.,
-                                &member.presence,
-                            ))
-                            .child(
+                            .id("member-list")
+                            .size_full()
+                            .overflow_y_scroll()
+                            .track_scroll(&self.members_scroll)
+                            .children(conv.members.iter().map(|member| {
+                                let nick_color = to_gpui(app_style.nick_color(&member.nick));
+                                let fill = to_gpui(
+                                    app_style.nick_avatar_fills()
+                                        [app_style.nick_palette_index(&member.nick)],
+                                );
                                 div()
+                                    .px(scaled_px(&app_style, 10.))
+                                    .py(scaled_px(&app_style, 6.))
                                     .flex()
-                                    .flex_col()
+                                    .gap(scaled_px(&app_style, 8.))
+                                    .child(avatar_with_presence(
+                                        &app_style,
+                                        28.,
+                                        fill,
+                                        app_style.initials(&member.nick),
+                                        nick_color,
+                                        11.,
+                                        &member.presence,
+                                    ))
                                     .child(
                                         div()
-                                            .text_size(scaled_px(&app_style, 12.))
-                                            .text_color(nick_color)
-                                            .font_family(FONT_FAMILY)
-                                            .child(format!("{}{}", member.prefix, member.nick)),
+                                            .flex()
+                                            .flex_col()
+                                            .child(
+                                                div()
+                                                    .text_size(scaled_px(&app_style, 12.))
+                                                    .text_color(nick_color)
+                                                    .font_family(FONT_FAMILY)
+                                                    .child(format!(
+                                                        "{}{}",
+                                                        member.prefix, member.nick
+                                                    )),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_size(scaled_px(&app_style, 10.))
+                                                    .text_color(to_gpui(app_style.muted_color()))
+                                                    .font_family(FONT_FAMILY)
+                                                    .child(member.realname.clone()),
+                                            ),
                                     )
-                                    .child(
-                                        div()
-                                            .text_size(scaled_px(&app_style, 10.))
-                                            .text_color(to_gpui(app_style.muted_color()))
-                                            .font_family(FONT_FAMILY)
-                                            .child(member.realname.clone()),
-                                    ),
-                            )
-                    }))
+                            })),
+                    )
                     .child(div_vertical_scrollbar(
                         &self.members_scroll,
                         &app_style,
