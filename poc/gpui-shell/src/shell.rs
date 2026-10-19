@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    actions, div, list, point, px, size, App, ClipboardItem, Context, Entity, FocusHandle,
+    actions, div, list, px, App, ClipboardItem, Context, Entity, FocusHandle,
     Focusable,     KeyBinding, ListAlignment, ListState, MouseButton, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, Pixels, Render, ScrollHandle, Window, prelude::*,
 };
@@ -205,6 +205,43 @@ impl Shell {
             self.bench.append_latency = Some(start.elapsed());
         }
         cx.notify();
+    }
+
+    fn handle_transcript_mouse_down(
+        &mut self,
+        ev: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        window.focus(&self.focus_handle(cx));
+        let Some(row_ix) = self.row_at_position(ev.position) else {
+            return;
+        };
+        let app_style = style(cx);
+        let Some(pos) = self.pos_from_pointer_fixed(ev.position, row_ix, &app_style) else {
+            return;
+        };
+        if ev.modifiers.shift {
+            self.transcript.extend(pos);
+        } else if !ev.modifiers.platform {
+            self.transcript.begin(pos);
+        }
+        let now = Instant::now();
+        if now.duration_since(self.last_click.0) < Duration::from_millis(400)
+            && self.last_click.2 == row_ix
+        {
+            self.last_click.1 += 1;
+        } else {
+            self.last_click.1 = 1;
+        }
+        self.last_click.0 = now;
+        self.last_click.2 = row_ix;
+        if self.last_click.1 >= 3 {
+            self.transcript.select_row(row_ix);
+        } else if self.last_click.1 == 2 {
+            self.transcript.select_word(pos);
+        }
+        self.dragging = true;
     }
 
     fn pos_from_pointer_fixed(
@@ -545,19 +582,25 @@ impl Shell {
                     .items_center()
                     .gap(scaled_px(app_style, 8.))
                     .when(!conv.channel, |this| {
-                        this.child(
-                            div()
-                                .size(scaled_px(app_style, 8.))
-                                .rounded_full()
-                                .bg(to_gpui(
-                                    app_style.presence_color(
-                                        conv.members
-                                            .first()
-                                            .map(|m| m.presence.as_str())
-                                            .unwrap_or("online"),
-                                    ),
-                                )),
-                        )
+                        let peer = conv.name.as_str();
+                        let fill = to_gpui(
+                            app_style.nick_avatar_fills()
+                                [app_style.nick_palette_index(peer)],
+                        );
+                        let presence = conv
+                            .members
+                            .first()
+                            .map(|m| m.presence.as_str())
+                            .unwrap_or("online");
+                        this.child(avatar_with_presence(
+                            app_style,
+                            22.,
+                            fill,
+                            app_style.initials(peer),
+                            to_gpui(app_style.nick_color(peer)),
+                            11.,
+                            presence,
+                        ))
                     })
                     .child(
                         div()
@@ -636,34 +679,15 @@ impl Shell {
                             .py(scaled_px(&app_style, 6.))
                             .flex()
                             .gap(scaled_px(&app_style, 8.))
-                            .child(
-                                div()
-                                    .relative()
-                                    .child(
-                                        div()
-                                            .size(scaled_px(&app_style, 28.))
-                                            .rounded_full()
-                                            .bg(fill)
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .text_size(scaled_px(&app_style, 11.))
-                                            .text_color(nick_color)
-                                            .font_family(FONT_FAMILY)
-                                            .child(app_style.initials(&member.nick)),
-                                    )
-                                    .child(
-                                        div()
-                                            .absolute()
-                                            .bottom_0()
-                                            .right_0()
-                                            .size(scaled_px(&app_style, 8.))
-                                            .rounded_full()
-                                            .bg(to_gpui(
-                                                app_style.presence_color(&member.presence),
-                                            )),
-                                    ),
-                            )
+                            .child(avatar_with_presence(
+                                &app_style,
+                                28.,
+                                fill,
+                                app_style.initials(&member.nick),
+                                nick_color,
+                                11.,
+                                &member.presence,
+                            ))
                             .child(
                                 div()
                                     .flex()
@@ -821,37 +845,7 @@ impl Shell {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|shell, ev: &MouseDownEvent, window, cx| {
-                    window.focus(&shell.focus_handle(cx));
-                    if let Some(row_ix) = shell.row_at_position(ev.position) {
-                        let app_style = style(cx);
-                        if let Some(pos) =
-                            shell.pos_from_pointer_fixed(ev.position, row_ix, &app_style)
-                        {
-                            if ev.modifiers.shift {
-                                shell.transcript.extend(pos);
-                            } else if ev.modifiers.platform {
-                                // handled by multi-click timing below
-                            } else {
-                                shell.transcript.begin(pos);
-                            }
-                            let now = Instant::now();
-                            if now.duration_since(shell.last_click.0) < Duration::from_millis(400)
-                                && shell.last_click.2 == row_ix
-                            {
-                                shell.last_click.1 += 1;
-                            } else {
-                                shell.last_click.1 = 1;
-                            }
-                            shell.last_click.0 = now;
-                            shell.last_click.2 = row_ix;
-                            if shell.last_click.1 >= 3 {
-                                shell.transcript.select_row(row_ix);
-                            } else if shell.last_click.1 == 2 {
-                                shell.transcript.select_word(pos);
-                            }
-                            shell.dragging = true;
-                        }
-                    }
+                    shell.handle_transcript_mouse_down(ev, window, cx);
                     cx.notify();
                 }),
             )
@@ -880,16 +874,31 @@ impl Shell {
                             .as_ref()
                             .filter(|(r, _)| *r == ix)
                             .map(|(_, range)| range.clone());
-                        render_transcript_row(
-                            ix,
-                            &row,
-                            &app_style,
-                            &member_realnames,
-                            selection,
-                            hover,
-                            layouts.clone(),
-                        )
-                        .into_any_element()
+                        div()
+                            .id(("transcript-row-hit", ix))
+                            .w_full()
+                            .child(render_transcript_row(
+                                ix,
+                                &row,
+                                &app_style,
+                                &member_realnames,
+                                selection,
+                                hover,
+                                layouts.clone(),
+                            ))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                {
+                                    let entity = entity.clone();
+                                    move |ev: &MouseDownEvent, window, cx| {
+                                        entity.update(cx, |shell, cx| {
+                                            shell.handle_transcript_mouse_down(ev, window, cx);
+                                            cx.notify();
+                                        });
+                                    }
+                                },
+                            )
+                            .into_any_element()
                     })
                 })
                 .flex_grow()
@@ -917,12 +926,7 @@ impl Shell {
         let row_ix = self.row_at_position(position)?;
         let row = self.transcript.rows().get(row_ix)?;
         let layout = self.row_layouts.borrow().get(&row_ix)?.layout.clone();
-        let body = self.row_layouts.borrow().get(&row_ix)?.body_bounds;
-        let local = point(
-            position.x - body.origin.x,
-            position.y - body.origin.y,
-        );
-        let offset = layout.index_for_position(local).ok()?;
+        let offset = layout.index_for_position(position).ok()?;
         row.body
             .links
             .iter()
@@ -1069,6 +1073,48 @@ impl Shell {
                     ),
             )
     }
+}
+
+fn avatar_with_presence(
+    style: &OmStyle,
+    avatar_px: f32,
+    fill: gpui::Hsla,
+    initials: String,
+    initials_color: gpui::Hsla,
+    initials_size: f32,
+    presence: &str,
+) -> impl IntoElement {
+    let avatar_sz = scaled_px(style, avatar_px);
+    let dot_sz = scaled_px(style, 7.);
+    let inset = avatar_sz - dot_sz;
+    div()
+        .relative()
+        .size(avatar_sz)
+        .flex_shrink_0()
+        .child(
+            div()
+                .size_full()
+                .rounded_full()
+                .bg(fill)
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(scaled_px(style, initials_size))
+                .text_color(initials_color)
+                .font_family(FONT_FAMILY)
+                .child(initials),
+        )
+        .child(
+            div()
+                .absolute()
+                .left(inset)
+                .top(inset)
+                .size(dot_sz)
+                .rounded_full()
+                .border(scaled_px(style, 2.))
+                .border_color(to_gpui(style.panel_color()))
+                .bg(to_gpui(style.presence_color(presence))),
+        )
 }
 
 fn section_label(style: &OmStyle, text: &str) -> impl IntoElement {

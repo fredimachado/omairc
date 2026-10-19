@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use gpui::{
     App, Bounds, Element, ElementId, GlobalElementId, Hsla, IntoElement, PaintQuad, Pixels,
-    SharedString, StyledText, TextLayout, Window, div, fill, point, prelude::*, px, size,
+    SharedString, StyledText, TextLayout, Window, div, fill, prelude::*, px, size,
 };
 use shared::{Row, RowKind, Style};
 
@@ -38,6 +38,7 @@ pub fn render_transcript_row(
                 .as_deref()
                 .unwrap_or(row.body.plain.as_str());
             div()
+                .id(("transcript-row", row_ix))
                 .w_full()
                 .py(scaled_px(style, 8.))
                 .flex()
@@ -56,6 +57,7 @@ pub fn render_transcript_row(
                 .as_deref()
                 .unwrap_or(row.body.plain.as_str());
             div()
+                .id(("transcript-row", row_ix))
                 .w_full()
                 .py(scaled_px(style, 6.))
                 .flex()
@@ -68,15 +70,18 @@ pub fn render_transcript_row(
                         .child(text.to_string()),
                 )
         }
-        RowKind::Message => div().child(render_message_row(
-            row_ix,
-            row,
-            style,
-            member_realnames,
-            selection_range,
-            hovered_link,
-            layouts,
-        )),
+        RowKind::Message => div()
+            .id(("transcript-row", row_ix))
+            .w_full()
+            .child(render_message_row(
+                row_ix,
+                row,
+                style,
+                member_realnames,
+                selection_range,
+                hovered_link,
+                layouts,
+            )),
     }
 }
 
@@ -259,7 +264,7 @@ fn selection_quads(
             continue;
         };
         let width = if sel_end >= line_end {
-            bounds.size.width - start_pos.x
+            bounds.origin.x + bounds.size.width - start_pos.x
         } else {
             layout
                 .position_for_index(sel_end)
@@ -267,10 +272,7 @@ fn selection_quads(
                 .unwrap_or(px(1.))
         };
         quads.push(fill(
-            Bounds::new(
-                point(bounds.origin.x + start_pos.x, bounds.origin.y + start_pos.y),
-                size(width.max(px(1.)), line_height),
-            ),
+            Bounds::new(start_pos, size(width.max(px(1.)), line_height)),
             color,
         ));
     }
