@@ -1,0 +1,4 @@
+first frame: 491.87 ms
+scroll fps: 62.5
+reflow resize: 52.55 ms
+append latency: 0.50 ms

@@ -1,0 +1,4 @@
+bench scroll fps: 63.2 (18 frames)
+bench first frame: 0.86 ms
+bench reflow: 304.51 ms
+bench append latency: 0.02 ms
