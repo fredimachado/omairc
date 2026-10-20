@@ -135,6 +135,11 @@ impl Render for Shell {
         let show_members = self.members_open
             && self.current_conversation().is_channel()
             && wide_enough;
+        // A hidden member list cannot keep focus (a DM, a narrow window, or a
+        // closed panel): hand focus to the composer, as Ctrl+Shift+M does.
+        if !show_members && self.member_focus.is_focused(window) {
+            self.focus_composer(window, cx);
+        }
         let title = conversation_title(&self.world, &self.selected).unwrap_or_default();
         let wanted_window_title = window_title(&self.world, Some(&self.selected));
         if wanted_window_title != self.window_title {
