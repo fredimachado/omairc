@@ -40,6 +40,11 @@ impl Shell {
         if let Some(conv) = self.world.find_mut(&target) {
             conv.mark_read();
         }
+        if let Some(conv) = self.world.find(&target) {
+            let is_channel = conv.is_channel();
+            self.inbox
+                .consume_conversation(&target.network_id, &target.key, is_channel);
+        }
         self.selected = target;
         self.member_cursor = 0;
         let conv = self.current_conversation();
@@ -421,14 +426,6 @@ impl Shell {
         let len = self.current_conversation().members.len();
         self.member_cursor = move_index(len, self.member_cursor, delta);
         self.members_scroll.scroll_to_item(self.member_cursor);
-    }
-
-    pub fn inbox_count(&self) -> u32 {
-        self.current_network()
-            .conversations
-            .iter()
-            .filter(|c| c.unread > 0)
-            .count() as u32
     }
 
     pub fn focus_composer(&self, window: &mut Window, cx: &App) {

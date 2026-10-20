@@ -7,6 +7,7 @@ use gpui::{actions, App, Context, Div, KeyBinding, prelude::*};
 
 use crate::model::chords::Chord;
 use crate::ui::sheets::filter_sheet::bind_filter_keys;
+use crate::ui::sheets::inbox::bind_inbox_keys;
 use crate::ui::shell::Shell;
 
 actions!(
@@ -15,6 +16,7 @@ actions!(
         OpenJump,
         OpenLink,
         OpenNick,
+        OpenInbox,
         CloseSheet,
         TranscriptCopy,
         ComposerSubmit,
@@ -56,8 +58,10 @@ actions!(
 
 pub fn bind_shell_keys(cx: &mut App) {
     bind_filter_keys(cx);
+    bind_inbox_keys(cx);
     cx.bind_keys([
         KeyBinding::new("secondary-k", OpenJump, None),
+        KeyBinding::new("secondary-shift-a", OpenInbox, None),
         KeyBinding::new("secondary-shift-o", OpenLink, None),
         KeyBinding::new("secondary-shift-k", OpenNick, None),
         KeyBinding::new("escape", CloseSheet, None),

@@ -10,6 +10,7 @@ use crate::model::jump::{JumpKind, JumpTarget};
 use crate::model::links::LinkTarget;
 use crate::model::sidebar::set_collapsed;
 use crate::ui::sheets::filter_sheet::{render_filter_sheet, FilterSheet, FilterSource, SheetEvent};
+use crate::ui::sheets::inbox::{render_inbox_sheet, InboxEvent, InboxSheet};
 use crate::ui::sheets::jump::JumpSource;
 use crate::ui::sheets::link::LinkSource;
 use crate::ui::sheets::nick::NickSource;
@@ -24,6 +25,7 @@ pub enum ActiveModal {
     Jump(Entity<FilterSheet<JumpSource>>, Vec<Subscription>),
     Link(Entity<FilterSheet<LinkSource>>, Vec<Subscription>),
     Nick(Entity<FilterSheet<NickSource>>, Vec<Subscription>),
+    Inbox(Entity<InboxSheet>, Vec<Subscription>),
 }
 
 impl ActiveModal {
@@ -32,6 +34,7 @@ impl ActiveModal {
             Self::Jump(..) => Sheet::Jump,
             Self::Link(..) => Sheet::Link,
             Self::Nick(..) => Sheet::Nick,
+            Self::Inbox(..) => Sheet::Inbox,
         }
     }
 }
@@ -69,6 +72,19 @@ impl Shell {
         self.present_nick(window, cx);
     }
 
+    /// Ctrl+Shift+A and the footer `inbox` link: opens the Inbox sheet, or
+    /// closes it when it is already open.
+    pub fn toggle_inbox(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.chord_live(Chord::Inbox, window, cx) {
+            return;
+        }
+        if matches!(self.modal, Some(ActiveModal::Inbox(..))) {
+            self.close_modal(window, cx);
+        } else {
+            self.present_inbox(window, cx);
+        }
+    }
+
     /// Escape: closes the open sheet. Inert when no sheet is open.
     pub fn escape(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.chord_live(Chord::Escape, window, cx) {
@@ -90,6 +106,7 @@ impl Shell {
             ActiveModal::Jump(sheet, _) => render_filter_sheet(sheet, cx),
             ActiveModal::Link(sheet, _) => render_filter_sheet(sheet, cx),
             ActiveModal::Nick(sheet, _) => render_filter_sheet(sheet, cx),
+            ActiveModal::Inbox(sheet, _) => render_inbox_sheet(sheet, cx),
         })
     }
 
@@ -195,6 +212,26 @@ impl Shell {
         ];
         window.focus(&sheet.read(cx).filter_focus(cx));
         self.modal = Some(ActiveModal::Nick(sheet, subscriptions));
+        cx.notify();
+    }
+
+    fn present_inbox(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let items = self.inbox.items().to_vec();
+        let sheet = cx.new(|cx| InboxSheet::new(items, cx));
+        let subscriptions = vec![
+            cx.observe(&sheet, |_, _, cx| cx.notify()),
+            cx.subscribe_in(
+                &sheet,
+                window,
+                |shell: &mut Shell, _, event: &InboxEvent, window, cx| match event {
+                    InboxEvent::Activated(index) => shell.activate_inbox(*index, window, cx),
+                    InboxEvent::Dismissed(index) => shell.dismiss_inbox(*index, cx),
+                    InboxEvent::Closed => shell.close_modal(window, cx),
+                },
+            ),
+        ];
+        window.focus(&sheet.read(cx).focus_handle());
+        self.modal = Some(ActiveModal::Inbox(sheet, subscriptions));
         cx.notify();
     }
 }

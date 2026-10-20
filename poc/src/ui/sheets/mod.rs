@@ -3,6 +3,7 @@
 
 pub mod filter_sheet;
 pub mod frame;
+pub mod inbox;
 pub mod jump;
 pub mod link;
 pub mod nick;

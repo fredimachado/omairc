@@ -3,7 +3,7 @@
 //! `IrcInboxModel::labelFor`. Newest item first.
 
 use super::ids::ConversationRef;
-use super::mock::MockWorld;
+use super::mock::{Conversation, MockWorld};
 
 /// Qt `IrcInbox::kMaxItems`.
 pub const INBOX_CAP: usize = 50;
@@ -162,6 +162,41 @@ pub fn seed_inbox(world: &MockWorld) -> Inbox {
     Inbox { items }
 }
 
+/// The topic a channel has when an invite joins it. The demo server echoes
+/// the same topic on its JOIN; this covers the one invite the seed offers.
+pub fn demo_topic(network_id: &str, channel: &str) -> Option<&'static str> {
+    match (network_id, channel.to_ascii_lowercase().as_str()) {
+        ("oftc", "#debian") => Some("Debian GNU/Linux."),
+        _ => None,
+    }
+}
+
+/// Accepting an invite: adds the channel to `network_id` unless it is already
+/// there, with the demo topic, then returns its reference. `None` when the
+/// network is unknown.
+pub fn join_channel(world: &mut MockWorld, network_id: &str, channel: &str) -> Option<ConversationRef> {
+    let topic = demo_topic(network_id, channel).map(str::to_string);
+    let network = world.networks.iter_mut().find(|n| n.id == network_id)?;
+    let existing = network
+        .conversations
+        .iter()
+        .any(|c| c.channel && c.name.eq_ignore_ascii_case(channel));
+    if !existing {
+        network.conversations.push(Conversation {
+            name: channel.to_string(),
+            channel: true,
+            topic,
+            peer_realname: None,
+            unread: 0,
+            mention: false,
+            typing: false,
+            members: Vec::new(),
+            messages: Vec::new(),
+        });
+    }
+    Some(ConversationRef::new(network_id, channel.to_lowercase()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,6 +317,24 @@ mod tests {
         inbox.push(item(InboxKind::Invite, "oftc", "ota", "#Debian"));
         assert_eq!(inbox.len(), 2);
         assert_eq!(inbox.items()[0].actor, "ota");
+    }
+
+    #[test]
+    fn joining_an_invited_channel_adds_it_once_with_its_demo_topic() {
+        let mut world = load_world();
+        let joined = join_channel(&mut world, "oftc", "#debian").expect("oftc exists");
+        assert_eq!(joined, ConversationRef::new("oftc", "#debian"));
+        let again = join_channel(&mut world, "oftc", "#DEBIAN").expect("oftc exists");
+        assert_eq!(again, joined);
+        let network = world.network("oftc").expect("oftc exists");
+        let added: Vec<_> = network
+            .conversations
+            .iter()
+            .filter(|c| c.name.eq_ignore_ascii_case("#debian"))
+            .collect();
+        assert_eq!(added.len(), 1);
+        assert_eq!(added[0].topic.as_deref(), Some("Debian GNU/Linux."));
+        assert!(join_channel(&mut world, "nowhere", "#debian").is_none());
     }
 
     #[test]

@@ -18,6 +18,8 @@ pub struct SidebarData<'a> {
     pub selected: &'a ConversationRef,
     pub inbox_count: u32,
     pub typing_phase: u8,
+    /// The footer's `inbox` link.
+    pub on_inbox: Handler<()>,
 }
 
 /// The left column: every network stacked in world order, then the identity
@@ -71,6 +73,7 @@ pub fn render_sidebar<V: 'static>(
         .child(identity_footer(
             footer_network,
             data.inbox_count,
+            data.on_inbox.clone(),
             style,
         ))
 }

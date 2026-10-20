@@ -5,6 +5,7 @@
 pub mod actions;
 pub mod bench;
 pub mod commands;
+pub mod inbox;
 pub mod modal;
 
 use std::rc::Rc;
@@ -14,6 +15,7 @@ use gpui::{
     MouseMoveEvent, MouseUpEvent, Render, ScrollHandle, Subscription, Window,
 };
 
+use crate::model::inbox::{seed_inbox, Inbox};
 use crate::model::sidebar::SidebarState;
 use crate::model::title::{conversation_title, window_title};
 use crate::model::{bench_channel, load_world, ConversationRef, MockWorld};
@@ -42,6 +44,9 @@ pub struct Shell {
     pub member_focus: FocusHandle,
     /// The open sheet (Jump, Link, Nick), if any. Only one is open at a time.
     pub modal: Option<modal::ActiveModal>,
+    /// Mentions and invites waiting for the user. Shown by the Inbox sheet and
+    /// the footer count.
+    pub inbox: Inbox,
     pub sidebar_scroll: ScrollHandle,
     pub members_scroll: ScrollHandle,
     pub scrollbar_drag: ScrollbarDragCell,
@@ -74,6 +79,7 @@ impl Shell {
             ConversationRef::new(first.id.clone(), key)
         };
 
+        let inbox = seed_inbox(&world);
         let scrollbar_drag: ScrollbarDragCell = Default::default();
         let composer = cx.new(|cx| SingleLineInput::new("", "Composer", cx.focus_handle()));
         let composer_focus = composer.read(cx).focus_handle(cx);
@@ -92,6 +98,7 @@ impl Shell {
             member_cursor: 0,
             member_focus: cx.focus_handle(),
             modal: None,
+            inbox,
             sidebar_scroll: ScrollHandle::new(),
             members_scroll: ScrollHandle::new(),
             scrollbar_drag,
@@ -140,8 +147,9 @@ impl Render for Shell {
                 world: &self.world,
                 state: &self.sidebar,
                 selected: &self.selected,
-                inbox_count: self.inbox_count(),
+                inbox_count: self.inbox.len() as u32,
                 typing_phase: self.typing_phase,
+                on_inbox: inbox_handler(entity.clone()),
             },
             &app_style,
             &self.sidebar_scroll,
@@ -231,6 +239,13 @@ fn select_handler(entity: Entity<Shell>) -> Handler<ConversationRef> {
             shell.focus_composer(window, cx);
             cx.notify();
         });
+    })
+}
+
+/// The footer's `inbox` link: opens the Inbox sheet, or closes it when open.
+fn inbox_handler(entity: Entity<Shell>) -> Handler<()> {
+    Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
+        entity.update(cx, |shell, cx| shell.toggle_inbox(window, cx));
     })
 }
 

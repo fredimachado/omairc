@@ -1,6 +1,7 @@
 use gpui::{div, prelude::*};
 
 use crate::model::{mix_colors, Color, Network, Style};
+use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
 /// `version.pri` at compile time, so the footer matches Qt's `--version`.
@@ -18,7 +19,12 @@ pub fn parse_version(pri: &str) -> Option<&str> {
 /// The identity footer, a port of the bottom of `ServerListColumn.qml`: 66 tall,
 /// the selected network's nick and presence, then the `inbox` link with its
 /// count and the version.
-pub fn identity_footer(network: &Network, inbox_count: u32, style: &Style) -> impl IntoElement {
+pub fn identity_footer(
+    network: &Network,
+    inbox_count: u32,
+    on_inbox: Handler<()>,
+    style: &Style,
+) -> impl IntoElement {
     let ink = style.ink_color();
     let muted = to_gpui(style.muted_color());
     let amount = if style.dark_mode() { 0.025 } else { 0.018 };
@@ -98,7 +104,7 @@ pub fn identity_footer(network: &Network, inbox_count: u32, style: &Style) -> im
                 .flex()
                 .items_center()
                 .gap(scaled_px(style, 10.))
-                .child(inbox_link(inbox_count, style))
+                .child(inbox_link(inbox_count, on_inbox, style))
                 .child(
                     div()
                         .text_size(scaled_px(style, 11.))
@@ -111,15 +117,18 @@ pub fn identity_footer(network: &Network, inbox_count: u32, style: &Style) -> im
         )
 }
 
-/// `inbox` with the accent count pill in front of it. Inert until the inbox
-/// sheet lands.
-fn inbox_link(count: u32, style: &Style) -> impl IntoElement {
+/// `inbox` with the accent count pill in front of it. A press opens or closes
+/// the Inbox sheet.
+fn inbox_link(count: u32, on_inbox: Handler<()>, style: &Style) -> impl IntoElement {
     let ink = style.ink_color();
     div()
         .flex()
         .items_center()
         .gap(scaled_px(style, 4.))
         .cursor_pointer()
+        .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+            on_inbox((), window, cx);
+        })
         .when(count > 0, |this| {
             this.child(
                 div()
