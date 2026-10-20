@@ -2,7 +2,8 @@
   "networks": [
     {
       "id": "omarchy",
-      "display_name": "omarchy",
+      "display_name": "irc.example · fred",
+      "icon_color": 1,
       "nick": "fred",
       "conversations": [
         {
@@ -524,7 +525,9 @@
           "name": "anna",
           "channel": false,
           "peer_realname": "Anna Vale",
+          "topic": "Direct message with anna",
           "typing": true,
+          "mention": true,
           "unread": 1,
           "members": [],
           "messages": [
@@ -541,6 +544,7 @@
           "name": "dax",
           "channel": false,
           "peer_realname": "Packet Bot",
+          "topic": "Direct message with dax",
           "members": [],
           "messages": [
             {
@@ -556,7 +560,8 @@
     },
     {
       "id": "oftc",
-      "display_name": "OFTC",
+      "display_name": "irc.example · oak",
+      "icon_color": 2,
       "nick": "oak",
       "conversations": [
         {
@@ -731,6 +736,7 @@
           "name": "rio",
           "channel": false,
           "peer_realname": "",
+          "topic": "Direct message with rio",
           "members": [],
           "messages": [
             {

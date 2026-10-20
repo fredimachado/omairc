@@ -1,4 +1,5 @@
 use super::mock::{Conversation, MockWorld, Network};
+use super::sidebar::ordered_conversations;
 
 pub const JUMP_RESULT_LIMIT: usize = 20;
 
@@ -49,7 +50,8 @@ pub fn jump_targets(world: &MockWorld, query: &str) -> Vec<JumpTarget> {
     let mut order = 0usize;
     for network in &world.networks {
         let network_name = &network.display_name;
-        for conv in &network.conversations {
+        // Sidebar order, so the candidate list follows the sidebar and includes collapsed networks.
+        for conv in ordered_conversations(network) {
             let label = conversation_label(&conv.name, network_name, &duplicate_names);
             let detail = conversation_detail(conv, network);
             let score = jump_score(folded, &label, &detail);
@@ -162,6 +164,26 @@ mod tests {
             .position(|t| t.score == 1 && t.name == "#lab")
             .expect("#lab topic-only hit");
         assert!(name_idx < detail_idx);
+    }
+
+    #[test]
+    fn jump_omarchy_picks_the_omarchy_network_first() {
+        let world = mock::load_world();
+        let targets = jump_targets(&world, "#omarchy");
+        let first = targets.first().expect("a #omarchy hit");
+        assert_eq!(first.name, "#omarchy");
+        assert_eq!(first.network_id, "omarchy");
+        assert_eq!(first.label, "#omarchy · irc.example · fred");
+    }
+
+    #[test]
+    fn jump_candidates_follow_sidebar_order_after_a_network_move() {
+        let mut world = mock::load_world();
+        crate::model::sidebar::move_network(&mut world, "omarchy", 1);
+        let targets = jump_targets(&world, "");
+        assert_eq!(targets.first().map(|t| t.network_id.as_str()), Some("oftc"));
+        // Jump takes no collapse state, so a collapsed network still lists its rows.
+        assert!(jump_targets(&world, "#build").iter().any(|t| t.network_id == "oftc"));
     }
 
     #[test]

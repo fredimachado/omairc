@@ -13,6 +13,9 @@ pub struct MockWorld {
 pub struct Network {
     pub id: String,
     pub display_name: String,
+    /// Index into the palette of Qt's `IrcNetworkProfile::iconColor`, if the network has one.
+    #[serde(default)]
+    pub icon_color: Option<u8>,
     pub nick: String,
     pub conversations: Vec<Conversation>,
 }
@@ -311,10 +314,21 @@ mod tests {
         assert_eq!(world.networks.len(), 2);
         assert_eq!(world.networks[0].id, "omarchy");
         assert_eq!(world.networks[0].nick, "fred");
-        assert_eq!(world.networks[0].display_name, "omarchy");
+        // Both networks use the host as their name, and the clash rule adds the nick.
+        assert_eq!(world.networks[0].display_name, "irc.example · fred");
+        assert_eq!(world.networks[0].icon_color, Some(1));
         assert_eq!(world.networks[1].id, "oftc");
         assert_eq!(world.networks[1].nick, "oak");
-        assert_eq!(world.networks[1].display_name, "OFTC");
+        assert_eq!(world.networks[1].display_name, "irc.example · oak");
+        assert_eq!(world.networks[1].icon_color, Some(2));
+
+        let anna_dm = world.networks[0]
+            .conversations
+            .iter()
+            .find(|c| c.name == "anna")
+            .expect("anna dm");
+        assert!(anna_dm.mention);
+        assert_eq!(anna_dm.topic.as_deref(), Some("Direct message with anna"));
 
         let ricing = world.networks[0]
             .conversations

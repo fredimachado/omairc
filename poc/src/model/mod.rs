@@ -4,10 +4,14 @@
 pub mod color;
 pub mod format;
 pub mod ids;
+pub mod directs;
 pub mod jump;
 pub mod mock;
+pub mod navigation;
+pub mod sidebar;
 pub mod style;
 pub mod theme;
+pub mod title;
 pub mod transcript;
 
 pub use color::Color;
