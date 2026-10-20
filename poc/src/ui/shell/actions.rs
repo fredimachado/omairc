@@ -57,6 +57,10 @@ actions!(
         MemberBottom,
         MemberActivate,
         ToggleStatus,
+        ComposerHistoryUp,
+        ComposerHistoryDown,
+        CompleteNickForward,
+        CompleteNickBackward,
     ]
 );
 
@@ -113,6 +117,12 @@ pub fn bind_shell_keys(cx: &mut App) {
         // copies the transcript or member nick. The member list uses the same key.
         KeyBinding::new("secondary-c", CopySelection, Some("MemberList")),
         KeyBinding::new("enter", ComposerSubmit, Some("Composer")),
+        // Up and Down walk the sent lines. With none they fall through to the field.
+        KeyBinding::new("up", ComposerHistoryUp, Some("Composer")),
+        KeyBinding::new("down", ComposerHistoryDown, Some("Composer")),
+        // Tab completes a nick and never moves focus.
+        KeyBinding::new("tab", CompleteNickForward, Some("Composer")),
+        KeyBinding::new("shift-tab", CompleteNickBackward, Some("Composer")),
     ]);
 }
 
@@ -247,5 +257,21 @@ pub fn wire_shell_actions(root: Div, cx: &mut Context<Shell>) -> Div {
     }))
     .on_action(cx.listener(|shell, _: &MemberActivate, window, cx| {
         shell.member_activate(window, cx);
+    }))
+    .on_action(cx.listener(|shell, _: &ComposerHistoryUp, window, cx| {
+        if !shell.recall_history(-1, window, cx) {
+            cx.propagate();
+        }
+    }))
+    .on_action(cx.listener(|shell, _: &ComposerHistoryDown, window, cx| {
+        if !shell.recall_history(1, window, cx) {
+            cx.propagate();
+        }
+    }))
+    .on_action(cx.listener(|shell, _: &CompleteNickForward, window, cx| {
+        shell.complete_nick(false, window, cx);
+    }))
+    .on_action(cx.listener(|shell, _: &CompleteNickBackward, window, cx| {
+        shell.complete_nick(true, window, cx);
     }))
 }

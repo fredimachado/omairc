@@ -4,6 +4,7 @@ use gpui::{App, ClipboardItem, Context, Focusable, Window};
 
 use crate::model::byte_budget::{SendLimit, CLASSIC_FRAME_BYTES};
 use crate::model::chords::{chord_enabled, Chord, ChordContext};
+use crate::model::composer::{nick_candidates, DraftKey, NickScope};
 use crate::model::cursor::{move_index, page_amount};
 use crate::model::directs::{close_direct, open_direct};
 use crate::model::navigation::{
@@ -50,10 +51,18 @@ impl Shell {
             self.inbox
                 .consume_conversation(&target.network_id, &target.key, is_channel);
         }
+        // Re-selecting the target on screen is not a switch, so the draft stays put.
+        let switching = !self.composer_state.is_showing(&DraftKey::for_view(None, &target));
+        if switching {
+            self.stash_composer_draft(cx);
+        }
         self.selected = target;
         self.status = None;
         self.member_cursor = 0;
         self.show_selected_conversation(cx);
+        if switching {
+            self.restore_composer_draft(cx);
+        }
     }
 
     /// Puts the selected conversation's stored lines in the transcript.
@@ -85,11 +94,19 @@ impl Shell {
         if self.world.network(network_id).is_none() {
             return;
         }
+        let status_key = DraftKey::for_view(Some(network_id), &self.selected);
+        let switching = !self.composer_state.is_showing(&status_key);
+        if switching {
+            self.stash_composer_draft(cx);
+        }
         self.sidebar.focus = None;
         self.status = Some(network_id.to_string());
         let rows = status_rows(&self.world, network_id);
         self.transcript.update(cx, |t, _| t.set_status(rows));
         self.sync_send_limit(cx);
+        if switching {
+            self.restore_composer_draft(cx);
+        }
         self.focus_composer(window, cx);
         cx.notify();
     }
@@ -97,12 +114,113 @@ impl Shell {
     /// Leaves Status for the selected conversation, which keeps its scroll place
     /// (Escape and Ctrl+`). Focus goes to the composer.
     pub fn close_status(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.status.take().is_none() {
+        if self.status.is_none() {
             return;
         }
+        self.stash_composer_draft(cx);
+        self.status = None;
         self.show_selected_conversation(cx);
+        self.restore_composer_draft(cx);
         self.focus_composer(window, cx);
         cx.notify();
+    }
+
+    /// The draft key for what is on screen: Status for its network, or the
+    /// selected conversation.
+    fn draft_key(&self) -> DraftKey {
+        DraftKey::for_view(self.status.as_deref(), &self.selected)
+    }
+
+    /// Saves the composer's unsent text under the target on screen. Call it
+    /// before the target changes and before `sync_send_limit` cuts the field to
+    /// the next target's limit, so the text is kept in full.
+    fn stash_composer_draft(&mut self, cx: &App) {
+        let text = self.composer.read(cx).text().to_string();
+        self.composer_state.stash(&text);
+    }
+
+    /// Shows the draft of the target now on screen. Call it after
+    /// `sync_send_limit`, so the draft is cut to the limit that applies to it.
+    fn restore_composer_draft(&mut self, cx: &mut Context<Self>) {
+        let key = self.draft_key();
+        let text = self.composer_state.switch_to(key);
+        self.composer.update(cx, |c, cx| {
+            c.set_text(text);
+            cx.notify();
+        });
+    }
+
+    /// Up (`delta` -1) or Down (`delta` +1) in the composer. Returns whether the
+    /// key was used. With no history to walk it is not, and the key falls
+    /// through to the text field.
+    pub fn recall_history(
+        &mut self,
+        delta: isize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.chord_live(Chord::ComposerHistory, window, cx) {
+            return false;
+        }
+        let text = self.composer.read(cx).text().to_string();
+        let Some(next) = self.composer_state.recall(&text, delta) else {
+            return false;
+        };
+        self.composer.update(cx, |c, cx| {
+            c.set_text(next);
+            cx.notify();
+        });
+        true
+    }
+
+    /// Tab (`backward` false) or Shift+Tab (`backward` true) in the composer.
+    /// The key is always consumed here, even with nothing to complete, so focus
+    /// never leaves the composer.
+    pub fn complete_nick(&mut self, backward: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.chord_live(Chord::NickComplete, window, cx) {
+            return;
+        }
+        let names = self.completion_candidates();
+        let (text, cursor, serial) = {
+            let field = self.composer.read(cx);
+            (field.text().to_string(), field.cursor(), field.input_serial())
+        };
+        if let Some(edit) = self
+            .composer_state
+            .complete_nick(&text, cursor, serial, &names, backward)
+        {
+            self.composer.update(cx, |c, cx| {
+                c.set_text_with_cursor(edit.text, edit.cursor);
+                cx.notify();
+            });
+        }
+    }
+
+    /// The nicks Tab can complete on the open view: the members or the peer,
+    /// then the channel names on the selected network.
+    fn completion_candidates(&self) -> Vec<String> {
+        if self.status.is_some() {
+            return nick_candidates(NickScope::Status);
+        }
+        let rows = sidebar_rows(&self.world, &self.sidebar);
+        let channels: Vec<&str> = rows
+            .iter()
+            .filter(|row| row.channel && row.conversation.network_id == self.selected.network_id)
+            .map(|row| row.name.as_str())
+            .collect();
+        let conv = self.current_conversation();
+        if conv.is_channel() {
+            let members: Vec<&str> = conv.members.iter().map(|m| m.nick.as_str()).collect();
+            nick_candidates(NickScope::Channel {
+                members: &members,
+                channels: &channels,
+            })
+        } else {
+            nick_candidates(NickScope::Direct {
+                peer: &conv.name,
+                channels: &channels,
+            })
+        }
     }
 
     /// Ctrl+`: opens Status for the selected network, or leaves it when Status
@@ -548,6 +666,7 @@ impl Shell {
         let selected = self.selected.clone();
         self.world.record_outgoing(&selected, message);
         self.transcript.update(cx, |t, _| t.append_outgoing(row));
+        self.composer_state.record_sent(&text);
         self.composer.update(cx, |c, cx| {
             c.clear();
             cx.notify();

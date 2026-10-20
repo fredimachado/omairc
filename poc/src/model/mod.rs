@@ -7,6 +7,7 @@ pub mod cursor;
 pub mod format;
 pub mod ids;
 pub mod chords;
+pub mod composer;
 pub mod directs;
 pub mod filter_list;
 pub mod fuzzy;

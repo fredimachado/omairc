@@ -56,6 +56,10 @@ pub enum Chord {
     About,
     /// Ctrl+` (`secondary-\``): opens Status for the selected network, or closes it.
     StatusToggle,
+    /// Up and Down in the composer: walk the sent lines. With no history they fall through.
+    ComposerHistory,
+    /// Tab and Shift+Tab in the composer: complete a nick. Status has no nicks.
+    NickComplete,
     WalkConversationDown,
     WalkConversationUp,
     WalkNetworkRight,
@@ -120,6 +124,12 @@ pub fn chord_enabled(chord: Chord, ctx: &ChordContext) -> bool {
         // Qt binds Ctrl+` with no sheet gate (only the connect and shortcut
         // overlays), so it also closes Status while Status is the view.
         Chord::StatusToggle => no_sheet,
+        // Qt's composer walks history on Up and Down whichever view is open, so
+        // Status keeps its own history. Only a sheet owns those keys.
+        Chord::ComposerHistory => no_sheet,
+        // Tab completes on a conversation only. Status has no nicks. The key is
+        // still consumed there, so focus never leaves the composer.
+        Chord::NickComplete => on_conversation,
         // Qt binds Alt+Shift+A unconditionally and returns early while an
         // overlay is open, so the net gate is "no overlay".
         Chord::MarkAllRead => no_sheet,
@@ -274,6 +284,18 @@ mod tests {
     #[test]
     fn status_toggle_is_live_without_a_sheet_so_it_can_close_status() {
         check(Chord::StatusToggle, nothing, NO_SHEET);
+    }
+
+    #[test]
+    fn composer_history_is_live_without_a_sheet_and_on_status() {
+        check(Chord::ComposerHistory, nothing, NO_SHEET);
+    }
+
+    #[test]
+    fn nick_completion_needs_a_conversation_not_status() {
+        check(Chord::NickComplete, nothing, CONVERSATION_ONLY);
+        check(Chord::NickComplete, channel, CONVERSATION_ONLY);
+        check(Chord::NickComplete, direct, CONVERSATION_ONLY);
     }
 
     #[test]

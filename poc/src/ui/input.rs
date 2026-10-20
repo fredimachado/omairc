@@ -77,6 +77,9 @@ pub struct SingleLineInput {
     /// The send limit a draft must fit. `None` on fields that send nothing,
     /// such as sheet filters, so their text is never cut.
     send_limit: Option<SendLimit>,
+    /// Counts the user's edits and caret moves. A nick completion cycle ends
+    /// when this moves. Programmatic `set_text` does not move it.
+    input_serial: u64,
 }
 
 impl SingleLineInput {
@@ -100,11 +103,28 @@ impl SingleLineInput {
             caret_edit: Instant::now(),
             undo_stack: UndoStack::default(),
             send_limit: None,
+            input_serial: 0,
         }
     }
 
     pub fn text(&self) -> &str {
         &self.content
+    }
+
+    /// The caret as a byte offset into `text()`. With a selection, the end the
+    /// caret is on.
+    pub fn cursor(&self) -> usize {
+        self.cursor_offset()
+    }
+
+    /// Moves on every user edit and caret move. See `input_serial`.
+    pub fn input_serial(&self) -> u64 {
+        self.input_serial
+    }
+
+    /// Records a user edit or caret move for `input_serial`.
+    fn note_input(&mut self) {
+        self.input_serial = self.input_serial.wrapping_add(1);
     }
 
     /// Sets the send limit for what the shell shows: the channel or nick, or
@@ -161,17 +181,28 @@ impl SingleLineInput {
         self.caret_edit = Instant::now();
     }
 
-    /// Replaces the whole text, cut to the send limit. The undo step is dropped,
-    /// since a programmatic change is not something Ctrl+Z should take back.
+    /// Replaces the whole text, cut to the send limit, with the caret at the end.
+    /// The undo step is dropped, since a programmatic change is not something
+    /// Ctrl+Z should take back.
     pub fn set_text(&mut self, text: impl Into<SharedString>) {
-        let text: SharedString = text.into();
+        self.load_text(text.into(), None);
+    }
+
+    /// Like `set_text`, with the caret at byte offset `cursor` (clamped to the
+    /// cut text). Not a user edit, so `input_serial` does not move.
+    pub fn set_text_with_cursor(&mut self, text: impl Into<SharedString>, cursor: usize) {
+        self.load_text(text.into(), Some(cursor));
+    }
+
+    fn load_text(&mut self, text: SharedString, cursor: Option<usize>) {
         let keep = self.fit_len("", &text, "");
         self.content = if keep == text.len() {
             text
         } else {
             text[..keep].to_string().into()
         };
-        self.selected_range = self.content.len()..self.content.len();
+        let caret = cursor.map_or(self.content.len(), |at| at.min(self.content.len()));
+        self.selected_range = caret..caret;
         self.selection_reversed = false;
         self.marked_range = None;
         self.undo_stack.clear();
@@ -279,6 +310,7 @@ impl SingleLineInput {
         let Some(step) = self.undo_stack.undo() else {
             return;
         };
+        self.note_input();
         let keep = self.fit_len("", &step.text, "");
         self.content = step.text[..keep].to_string().into();
         self.selected_range = step.selected;
@@ -353,6 +385,7 @@ impl SingleLineInput {
     }
 
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
+        self.note_input();
         self.selected_range = offset..offset;
         self.restart_caret();
         cx.notify();
@@ -384,6 +417,7 @@ impl SingleLineInput {
     }
 
     fn select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
+        self.note_input();
         if self.selection_reversed {
             self.selected_range.start = offset;
         } else {
@@ -495,6 +529,7 @@ impl EntityInputHandler for SingleLineInput {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.note_input();
         let range = range_utf16
             .as_ref()
             .map(|range_utf16| self.range_from_utf16(range_utf16))
@@ -526,6 +561,7 @@ impl EntityInputHandler for SingleLineInput {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.note_input();
         let range = range_utf16
             .as_ref()
             .map(|range_utf16| self.range_from_utf16(range_utf16))

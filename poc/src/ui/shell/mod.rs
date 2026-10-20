@@ -15,6 +15,7 @@ use gpui::{
     MouseMoveEvent, MouseUpEvent, Render, ScrollHandle, Subscription, Window,
 };
 
+use crate::model::composer::{ComposerState, DraftKey};
 use crate::model::inbox::{seed_inbox, Inbox};
 use crate::model::sidebar::SidebarState;
 use crate::model::status::status_title;
@@ -59,6 +60,8 @@ pub struct Shell {
     pub scrollbar_drag: ScrollbarDragCell,
     pub transcript: Entity<TranscriptView>,
     pub composer: Entity<SingleLineInput>,
+    /// The composer's drafts, sent-line history and Tab cycle, per target.
+    pub composer_state: ComposerState,
     pub focus_handle: FocusHandle,
     pub typing_phase: u8,
     pub bench: BenchState,
@@ -87,6 +90,7 @@ impl Shell {
         };
 
         let inbox = seed_inbox(&world);
+        let composer_state = ComposerState::starting_at(DraftKey::for_view(None, &selected));
         let scrollbar_drag: ScrollbarDragCell = Default::default();
         let composer = cx.new(|cx| SingleLineInput::new("", "Composer", cx.focus_handle()));
         let composer_focus = composer.read(cx).focus_handle(cx);
@@ -115,6 +119,7 @@ impl Shell {
             scrollbar_drag,
             transcript,
             composer,
+            composer_state,
             focus_handle: cx.focus_handle(),
             typing_phase: 0,
             bench: BenchState {
