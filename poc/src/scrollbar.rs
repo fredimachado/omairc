@@ -91,14 +91,12 @@ pub fn list_vertical_scrollbar(
     list_state: gpui::ListState,
     style: &Style,
     entity: Entity<Shell>,
-    content_height: Pixels,
 ) -> impl IntoElement {
     let viewport = list_state.viewport_bounds();
     let viewport_h = viewport.size.height;
-    let max_scroll = list_state
-        .max_offset_for_scrollbar()
-        .height
-        .max((content_height - viewport_h).max(px(0.)));
+    // The list's own range, so the thumb and the wheel agree. The list measures
+    // every row (`measure_all`), so this covers the whole transcript.
+    let max_scroll = list_state.max_offset_for_scrollbar().height;
     if viewport_h <= px(0.) || max_scroll <= px(0.) {
         return div().into_any_element();
     }
@@ -186,11 +184,14 @@ fn thumb_metrics(
     let mut height = px(viewport * viewport / content.max(1.));
     height = height.max(scaled_px(style, MIN_THUMB)).min(viewport_h);
     let travel = (viewport_h - height).max(px(0.));
-    let top = if max_scroll > px(0.) {
-        px(px_f32(travel) * (px_f32(scrolled) / max.max(1.)))
+    // Clamp to the track: an offset past the scrollable range must not push
+    // the thumb's bottom edge below the viewport into the composer.
+    let fraction = if max_scroll > px(0.) {
+        (px_f32(scrolled) / max.max(1.)).clamp(0., 1.)
     } else {
-        px(0.)
+        0.
     };
+    let top = px(px_f32(travel) * fraction);
     ThumbMetrics { top, height }
 }
 
@@ -304,6 +305,28 @@ pub fn end_scrollbar_drag(shell: &mut Shell) {
     if let Some(drag) = shell.scrollbar_drag.take() {
         if let ScrollbarDragKind::List(list) = drag.kind {
             list.scrollbar_drag_ended();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Theme;
+
+    #[test]
+    fn thumb_stays_inside_track_past_max_scroll() {
+        let style = Style::new(Theme::defaults_dark(), 1.0);
+        let viewport = px(300.);
+        let max = px(100.);
+        for scrolled in [0., 50., 100., 140.] {
+            let metrics = thumb_metrics(viewport, max, px(scrolled), &style);
+            assert!(metrics.top >= px(0.), "top at scroll {scrolled}");
+            assert!(
+                metrics.top + metrics.height <= viewport + px(0.01),
+                "thumb bottom {} past viewport at scroll {scrolled}",
+                f32::from(metrics.top + metrics.height)
+            );
         }
     }
 }

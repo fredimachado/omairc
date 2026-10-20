@@ -11,7 +11,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-const BENCH_LOG: &str = "poc/results/gpui-bench-stderr.txt";
+const BENCH_LOG: &str = "results/gpui-bench-stderr.txt";
 
 use clap::Parser;
 use gpui::{
@@ -83,6 +83,7 @@ fn main() {
                         run_bench(shell.clone(), cx);
                     }
                     start_typing_pulse(shell.clone(), cx);
+                    start_caret_blink(shell.clone(), cx);
                     start_drag_autoscroll(shell.clone(), cx);
 
                     let watch_path = theme_path.clone();
@@ -145,6 +146,25 @@ fn start_typing_pulse(shell: Entity<Shell>, cx: &mut App) {
     .detach();
 }
 
+/// Repaints the composer at each caret blink boundary, so the caret flips on time
+/// rather than at the next typing-pulse repaint.
+fn start_caret_blink(shell: Entity<Shell>, cx: &mut App) {
+    cx.spawn(async move |cx| {
+        loop {
+            let wait = shell
+                .update(cx, |shell, cx| shell.composer.read(cx).caret_flip_in())
+                .unwrap_or(Duration::from_millis(530));
+            cx.background_executor().timer(wait).await;
+            shell
+                .update(cx, |shell, cx| {
+                    shell.composer.update(cx, |_, cx| cx.notify());
+                })
+                .ok();
+        }
+    })
+    .detach();
+}
+
 fn start_drag_autoscroll(shell: Entity<Shell>, cx: &mut App) {
     cx.spawn(async move |cx| {
         loop {
@@ -179,6 +199,7 @@ fn bench_log(line: &str) {
 }
 
 fn run_bench(shell: Entity<Shell>, cx: &mut App) {
+    let _ = std::fs::create_dir_all("results");
     let _ = std::fs::write(BENCH_LOG, "");
     let shell_weak = shell.downgrade();
     cx.spawn(async move |cx| {

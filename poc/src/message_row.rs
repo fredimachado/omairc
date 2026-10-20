@@ -113,7 +113,11 @@ fn render_message_row(
     let body_right = scaled_px(style, 34.);
     let header_h = scaled_px(style, if row.continues { 0. } else { 16. });
 
-    let base_body_style = gpui_text_style(style, 13., false);
+    let mut base_body_style = gpui_text_style(style, 13., false);
+    if row.action {
+        base_body_style.font_style = gpui::FontStyle::Italic;
+        base_body_style.color = to_gpui(style.muted_color());
+    }
     let mut runs = irc_runs_to_gpui(
         &row.body.plain,
         &row.body.runs,
@@ -131,22 +135,25 @@ fn render_message_row(
     div()
         .w_full()
         .relative()
-        .child(
-            div()
-                .absolute()
-                .left(left_pad)
-                .top(top_pad)
-                .size(avatar_size)
-                .rounded_full()
-                .bg(avatar_fill)
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_size(scaled_px(style, 12.))
-                .text_color(nick_color)
-                .font_family(FONT_FAMILY)
-                .child(initials),
-        )
+        // Qt draws the avatar only on the first line of a group.
+        .when(!row.continues, |this| {
+            this.child(
+                div()
+                    .absolute()
+                    .left(left_pad)
+                    .top(top_pad)
+                    .size(avatar_size)
+                    .rounded_full()
+                    .bg(avatar_fill)
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_size(scaled_px(style, 12.))
+                    .text_color(nick_color)
+                    .font_family(FONT_FAMILY)
+                    .child(initials),
+            )
+        })
         .child(
             div()
                 .pl(body_left)

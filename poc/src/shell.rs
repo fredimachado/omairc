@@ -9,8 +9,9 @@ use gpui::{
     MouseUpEvent, Pixels, Render, ScrollHandle, Window, prelude::*,
 };
 use crate::model::{
-    bench_channel, jump_targets, load_world, map_pointer, Conversation, MockWorld,
-    Network, PointerZone, Pos, RowKind, Transcript, Style as OmStyle,
+    bench_channel, continues_group, jump_targets, load_world, local_send_stamp, map_pointer,
+    outgoing_message, row_from_mock_message, Conversation, MockWorld, Network, PointerZone, Pos,
+    Transcript, Style as OmStyle,
 };
 
 use crate::input::SingleLineInput;
@@ -29,9 +30,7 @@ actions!(
         JumpDown,
         JumpActivate,
         JumpClose,
-        TranscriptSelectAll,
         TranscriptCopy,
-        TranscriptClearSelection,
         ComposerSubmit,
         ToggleMembers,
     ]
@@ -80,6 +79,9 @@ pub struct Shell {
     pub transcript: Transcript,
     pub list_state: ListState,
     pub row_layouts: RowLayoutMap,
+    /// Window-space bounds of each rendered row, recorded at prepaint. gpui's
+    /// `ListState::bounds_for_item` returns `None` while the list follows the bottom.
+    pub row_bounds: Rc<RefCell<HashMap<usize, gpui::Bounds<Pixels>>>>,
     pub composer: Entity<SingleLineInput>,
     pub jump_filter: Entity<SingleLineInput>,
     pub focus_handle: FocusHandle,
@@ -110,6 +112,7 @@ impl Shell {
     pub fn switch_conversation(&mut self, network_ix: usize, conversation_ix: usize) {
         self.network_ix = network_ix;
         self.conversation_ix = conversation_ix;
+        self.world.networks[network_ix].conversations[conversation_ix].mark_read();
         let conv = self.current_conversation().clone();
         self.transcript
             .set_conversation(&conv.messages);
@@ -149,6 +152,10 @@ impl Shell {
     fn open_jump(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.jump_open = true;
         self.jump_selected = 0;
+        self.jump_filter.update(cx, |filter, cx| {
+            filter.clear();
+            cx.notify();
+        });
         window.focus(&self.jump_filter.read(cx).focus_handle(cx));
         cx.notify();
     }
@@ -193,17 +200,14 @@ impl Shell {
         }
         let append_start = self.bench.enabled.then(Instant::now);
         let author = self.current_network().nick.clone();
-        let continues = self.transcript.rows().last().is_some_and(|r| {
-            r.kind == RowKind::Message && r.author.as_deref() == Some(author.as_str())
-        });
+        let (day, time) = local_send_stamp();
+        let message = outgoing_message(&text, &author, &time, &day);
+        let continues = continues_group(self.transcript.rows().last(), &author, &time);
         let id = self.transcript.rows().len() as u64 + 1;
-        let row = crate::model::row_from_message(
-            id,
-            &author,
-            "now",
-            &text,
-            continues,
-        );
+        let row = row_from_mock_message(id, &message, continues);
+        // Stored with the conversation, so switching away and back keeps it.
+        self.world
+            .record_outgoing(self.network_ix, self.conversation_ix, message);
         let old_len = self.transcript.rows().len();
         self.transcript.append(row);
         self.transcript.set_pinned_to_bottom(true);
@@ -224,7 +228,8 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        window.focus(&self.focus_handle(cx));
+        // Qt keeps focus in the composer when the transcript is clicked.
+        window.focus(&self.composer.read(cx).focus_handle(cx));
         let Some(row_ix) = self.row_at_position(ev.position) else {
             return;
         };
@@ -263,7 +268,7 @@ impl Shell {
     ) -> Option<Pos> {
         let layouts = self.row_layouts.borrow();
         let layout = layouts.get(&row_ix)?;
-        let row_bounds = self.list_state.bounds_for_item(row_ix)?;
+        let row_bounds = self.row_bounds.borrow().get(&row_ix).cloned()?;
         let local_y = position.y - row_bounds.origin.y;
         if local_y < layout.avatar_top + layout.header_height {
             return Some(map_pointer(
@@ -287,18 +292,23 @@ impl Shell {
     }
 
     fn first_visible_row(&self) -> Option<usize> {
-        (0..self.transcript.rows().len()).find(|ix| self.list_state.bounds_for_item(*ix).is_some())
+        let viewport = self.list_state.viewport_bounds();
+        self.row_bounds
+            .borrow()
+            .iter()
+            .filter(|(_, bounds)| bounds.intersects(&viewport))
+            .map(|(ix, _)| *ix)
+            .min()
     }
 
     fn last_visible_row(&self) -> Option<usize> {
         let viewport = self.list_state.viewport_bounds();
-        (0..self.transcript.rows().len())
-            .rev()
-            .find(|ix| {
-                self.list_state
-                    .bounds_for_item(*ix)
-                    .is_some_and(|bounds| bounds.intersects(&viewport))
-            })
+        self.row_bounds
+            .borrow()
+            .iter()
+            .filter(|(_, bounds)| bounds.intersects(&viewport))
+            .map(|(ix, _)| *ix)
+            .max()
     }
 
     fn update_drag_autoscroll(&mut self, position: gpui::Point<Pixels>) {
@@ -392,12 +402,13 @@ impl Shell {
         }
     }
 
+    /// Feeds the heights the last prepaint recorded into the transcript model.
+    /// Reads `row_bounds` rather than `ListState::bounds_for_item`, which is
+    /// `None` while the list follows the bottom.
     fn sync_measured_heights(&mut self) {
-        for ix in 0..self.transcript.rows().len() {
-            if let Some(bounds) = self.list_state.bounds_for_item(ix) {
-                self.transcript
-                    .set_measured(ix, f32::from(bounds.size.height) as i32);
-            }
+        for (ix, bounds) in self.row_bounds.borrow().iter() {
+            self.transcript
+                .set_measured(*ix, f32::from(bounds.size.height) as i32);
         }
     }
 
@@ -666,11 +677,7 @@ impl Shell {
     fn render_members(&self, cx: &Context<Self>) -> impl IntoElement {
         let app_style = style(cx);
         let conv = self.current_conversation();
-        let online = conv
-            .members
-            .iter()
-            .filter(|m| m.presence == "online")
-            .count();
+        let people = conv.people_count();
         div()
             .w(scaled_px(&app_style, 216.))
             .h_full()
@@ -689,7 +696,7 @@ impl Shell {
                     .text_size(scaled_px(&app_style, 10.))
                     .text_color(to_gpui(app_style.muted_color()))
                     .font_family(FONT_FAMILY)
-                    .child(format!("ONLINE — {}", online)),
+                    .child(format!("ONLINE - {}", people)),
             )
             .child({
                 let entity = cx.entity();
@@ -769,7 +776,7 @@ impl Shell {
             conv.name.clone()
         };
         let topic = conv.topic.clone().unwrap_or_default();
-        let people = conv.members.len();
+        let people = conv.people_count();
         let show_people = conv.channel;
 
         div()
@@ -839,57 +846,21 @@ impl Shell {
 
     fn render_transcript(&mut self, app_style: &OmStyle, cx: &mut Context<Self>) -> impl IntoElement {
         let row_layouts = self.row_layouts.clone();
+        // Heights measured by the last frame's prepaint feed the transcript model.
+        self.sync_measured_heights();
+        // Rows re-record their bounds during this frame's prepaint; anything
+        // scrolled out of the list must not keep a stale position.
+        self.row_bounds.borrow_mut().clear();
+        let row_bounds = self.row_bounds.clone();
         let entity = cx.entity();
-
-        self.list_state.set_scroll_handler({
-            let entity = entity.clone();
-            move |event, _, cx| {
-                let range: Vec<usize> = event.visible_range.clone().collect();
-                let entity = entity.clone();
-                cx.spawn(async move |cx| {
-                    cx.background_executor()
-                        .timer(Duration::from_millis(0))
-                        .await;
-                    entity
-                        .update(cx, |shell, cx| {
-                            for ix in range {
-                                if let Some(bounds) = shell.list_state.bounds_for_item(ix) {
-                                    shell.transcript.set_measured(
-                                        ix,
-                                        f32::from(bounds.size.height) as i32,
-                                    );
-                                }
-                            }
-                            cx.notify();
-                        })
-                        .ok();
-                })
-                .detach();
-            }
-        });
 
         div()
             .id("transcript")
             .relative()
             .flex_grow()
             .min_h_0()
-            .focusable()
-            .track_focus(&self.focus_handle(cx))
-            .key_context("Transcript")
-            .on_action(cx.listener(|s, _: &TranscriptSelectAll, _, cx| {
-                s.transcript.select_all();
-                cx.notify();
-            }))
-            .on_action(cx.listener(|s, _: &TranscriptCopy, _, cx| {
-                let text = s.transcript.copy_text();
-                if !text.is_empty() {
-                    cx.write_to_clipboard(ClipboardItem::new_string(text));
-                }
-            }))
-            .on_action(cx.listener(|s, _: &TranscriptClearSelection, _, cx| {
-                s.transcript.clear_selection();
-                cx.notify();
-            }))
+            // Not focusable: a tracked focus handle would take focus on click
+            // and override the composer focus that Qt keeps.
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|shell, ev: &MouseDownEvent, window, cx| {
@@ -912,8 +883,10 @@ impl Shell {
                 let member_realnames = self.member_realnames.clone();
                 list(list_state, {
                     let entity = entity.clone();
-                    move |ix, _window, app| {
+                    move |ix, window, app| {
                     let app_style = app.global::<crate::util::OmaircStyleGlobal>().style.clone();
+                    // The transcript selection is painted only while the window is active.
+                    let window_active = window.is_window_active();
                     entity.update(app, |shell, _cx| {
                         let row = shell
                             .transcript
@@ -921,13 +894,23 @@ impl Shell {
                             .get(ix)
                             .cloned()
                             .unwrap_or_else(|| crate::model::row_from_message(0, "", "", "", false));
-                        let selection = shell.transcript.range_for_row(ix);
+                        let selection = window_active
+                            .then(|| shell.transcript.range_for_row(ix))
+                            .flatten();
                         let hover = shell
                             .hovered_link
                             .as_ref()
                             .filter(|(r, _)| *r == ix)
                             .map(|(_, range)| range.clone());
                         div()
+                            .on_children_prepainted({
+                                let row_bounds = row_bounds.clone();
+                                move |bounds, _, _| {
+                                    if let Some(bounds) = bounds.first() {
+                                        row_bounds.borrow_mut().insert(ix, *bounds);
+                                    }
+                                }
+                            })
                             .id(("transcript-row-hit", ix))
                             .w_full()
                             .child(render_transcript_row(
@@ -939,43 +922,26 @@ impl Shell {
                                 hover,
                                 layouts.clone(),
                             ))
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                {
-                                    let entity = entity.clone();
-                                    move |ev: &MouseDownEvent, window, cx| {
-                                        entity.update(cx, |shell, cx| {
-                                            shell.handle_transcript_mouse_down(ev, window, cx);
-                                            cx.notify();
-                                        });
-                                    }
-                                },
-                            )
                             .into_any_element()
                     })
                 }})
                 .size_full()
-                .with_sizing_behavior(gpui::ListSizingBehavior::Infer)
+                .with_sizing_behavior(gpui::ListSizingBehavior::Auto)
             })
             .child(list_vertical_scrollbar(
                 self.list_state.clone(),
                 app_style,
                 entity,
-                px(self.transcript.rows().len() as f32 * 72.),
             ))
     }
 
     fn row_at_position(&self, position: gpui::Point<Pixels>) -> Option<usize> {
-        for ix in 0..self.transcript.rows().len() {
-            if self
-                .list_state
-                .bounds_for_item(ix)
-                .is_some_and(|b| b.contains(&position))
-            {
-                return Some(ix);
-            }
-        }
-        None
+        self.row_bounds
+            .borrow()
+            .iter()
+            .filter(|(_, bounds)| bounds.contains(&position))
+            .map(|(ix, _)| *ix)
+            .min()
     }
 
     fn link_at(
@@ -1241,6 +1207,18 @@ impl Render for Shell {
             .on_action(cx.listener(|shell, _: &OpenJump, window, cx| {
                 shell.open_jump(window, cx);
             }))
+            .on_action(cx.listener(|shell, _: &TranscriptCopy, _, cx| {
+                // With the composer focused, Ctrl+C copies the transcript
+                // selection unless the draft has its own selection.
+                if shell.composer.read(cx).has_selection() {
+                    cx.propagate();
+                    return;
+                }
+                let text = shell.transcript.copy_text();
+                if !text.is_empty() {
+                    cx.write_to_clipboard(ClipboardItem::new_string(text));
+                }
+            }))
             .child(self.render_sidebar(cx))
             .child(self.render_center(cx))
             .when(show_members, |this| this.child(self.render_members(cx)))
@@ -1265,9 +1243,7 @@ pub fn bind_shell_keys(cx: &mut App) {
         KeyBinding::new("down", JumpDown, Some("JumpFilter")),
         KeyBinding::new("enter", JumpActivate, Some("JumpFilter")),
         KeyBinding::new("escape", JumpClose, Some("JumpFilter")),
-        KeyBinding::new("ctrl-a", TranscriptSelectAll, Some("Transcript")),
-        KeyBinding::new("ctrl-c", TranscriptCopy, Some("Transcript")),
-        KeyBinding::new("escape", TranscriptClearSelection, Some("Transcript")),
+        KeyBinding::new("ctrl-c", TranscriptCopy, Some("Composer")),
         KeyBinding::new("enter", ComposerSubmit, Some("Composer")),
     ]);
 }
@@ -1299,8 +1275,11 @@ impl Shell {
             scrollbar_drag: None,
             member_realnames: HashMap::new(),
             transcript: Transcript::new(72),
-            list_state: ListState::new(0, ListAlignment::Bottom, px(120.)),
+            // Measure every row so the scrollbar spans the whole transcript, not just
+            // the rows rendered so far.
+            list_state: ListState::new(0, ListAlignment::Bottom, px(120.)).measure_all(),
             row_layouts: Rc::new(RefCell::new(Default::default())),
+            row_bounds: Rc::new(RefCell::new(Default::default())),
             composer: cx.new(|cx| {
                 SingleLineInput::new("", "Composer", cx.focus_handle())
             }),

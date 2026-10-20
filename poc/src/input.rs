@@ -1,4 +1,5 @@
 use std::ops::Range;
+use std::time::{Duration, Instant};
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
@@ -29,6 +30,21 @@ actions!(
     ]
 );
 
+/// Half of a caret blink cycle: solid for this long, then hidden for as long.
+const CARET_HALF_PERIOD: Duration = Duration::from_millis(530);
+
+/// Whether the caret is solid `since_edit` after the last edit or cursor move.
+fn solid_at(since_edit: Duration) -> bool {
+    (since_edit.as_millis() / CARET_HALF_PERIOD.as_millis()) % 2 == 0
+}
+
+/// Time from `since_edit` until the caret next changes state.
+fn flip_after(since_edit: Duration) -> Duration {
+    let half = CARET_HALF_PERIOD.as_millis();
+    let into = since_edit.as_millis() % half;
+    Duration::from_millis((half - into) as u64)
+}
+
 pub struct SingleLineInput {
     focus_handle: FocusHandle,
     pub content: SharedString,
@@ -41,6 +57,8 @@ pub struct SingleLineInput {
     last_layout: Option<ShapedLine>,
     last_bounds: Option<Bounds<Pixels>>,
     is_selecting: bool,
+    /// When the text or cursor last changed; the caret blinks from here.
+    caret_edit: Instant,
 }
 
 impl SingleLineInput {
@@ -61,6 +79,7 @@ impl SingleLineInput {
             last_layout: None,
             last_bounds: None,
             is_selecting: false,
+            caret_edit: Instant::now(),
         }
     }
 
@@ -68,11 +87,31 @@ impl SingleLineInput {
         &self.content
     }
 
+    pub fn has_selection(&self) -> bool {
+        !self.selected_range.is_empty()
+    }
+
+    /// Whether the caret is in the solid half of its blink cycle right now.
+    pub fn caret_solid(&self) -> bool {
+        solid_at(self.caret_edit.elapsed())
+    }
+
+    /// How long until the caret next changes state, for the repaint timer.
+    pub fn caret_flip_in(&self) -> Duration {
+        flip_after(self.caret_edit.elapsed())
+    }
+
+    /// Restarts the blink so the caret is solid right after an edit or move.
+    fn restart_caret(&mut self) {
+        self.caret_edit = Instant::now();
+    }
+
     pub fn set_text(&mut self, text: impl Into<SharedString>) {
         self.content = text.into();
         self.selected_range = self.content.len()..self.content.len();
         self.selection_reversed = false;
         self.marked_range = None;
+        self.restart_caret();
     }
 
     pub fn clear(&mut self) {
@@ -169,6 +208,9 @@ impl SingleLineInput {
             cx.write_to_clipboard(ClipboardItem::new_string(
                 self.content[self.selected_range.clone()].to_string(),
             ));
+        } else {
+            // No draft selection: let the transcript's Ctrl+C take it.
+            cx.propagate();
         }
     }
 
@@ -183,6 +225,7 @@ impl SingleLineInput {
 
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         self.selected_range = offset..offset;
+        self.restart_caret();
         cx.notify();
     }
 
@@ -221,6 +264,7 @@ impl SingleLineInput {
             self.selection_reversed = !self.selection_reversed;
             self.selected_range = self.selected_range.end..self.selected_range.start;
         }
+        self.restart_caret();
         cx.notify();
     }
 
@@ -332,6 +376,7 @@ impl EntityInputHandler for SingleLineInput {
             .into();
         self.selected_range = range.start + new_text.len()..range.start + new_text.len();
         self.marked_range = None;
+        self.restart_caret();
         cx.notify();
     }
 
@@ -361,6 +406,7 @@ impl EntityInputHandler for SingleLineInput {
             .map(|range_utf16| self.range_from_utf16(range_utf16))
             .map(|new_range| new_range.start + range.start..new_range.end + range.end)
             .unwrap_or_else(|| range.start + new_text.len()..range.start + new_text.len());
+        self.restart_caret();
         cx.notify();
     }
 
@@ -459,6 +505,7 @@ impl Element for SingleLineInputElement {
         let content = input.content.clone();
         let selected_range = input.selected_range.clone();
         let cursor = input.cursor_offset();
+        let caret_solid = input.caret_solid();
         let mut text_style = window.text_style();
         text_style.font_family = FONT_FAMILY.into();
         text_style.font_size =
@@ -485,16 +532,23 @@ impl Element for SingleLineInputElement {
 
         let cursor_pos = line.x_for_index(cursor);
         let selection_color = to_gpui(app_style.selection_color());
+        // The glyph box that `paint_line` draws: ascent + descent, centred in the
+        // line height. The caret and the selection span that, not the whole field.
+        let line_height = window.line_height();
+        let glyph_height = line.ascent + line.descent;
+        let glyph_top = bounds.top() + (line_height - glyph_height) / 2.;
         let (selection, cursor_quad) = if selected_range.is_empty() {
             (
                 None,
-                Some(fill(
-                    Bounds::new(
-                        point(bounds.left() + cursor_pos, bounds.top()),
-                        size(px(2.), bounds.bottom() - bounds.top()),
-                    ),
-                    to_gpui(app_style.accent_color()),
-                )),
+                caret_solid.then(|| {
+                    fill(
+                        Bounds::new(
+                            point(bounds.left() + cursor_pos, glyph_top),
+                            size(px(2.), glyph_height),
+                        ),
+                        to_gpui(app_style.accent_color()),
+                    )
+                }),
             )
         } else {
             (
@@ -502,11 +556,11 @@ impl Element for SingleLineInputElement {
                     Bounds::from_corners(
                         point(
                             bounds.left() + line.x_for_index(selected_range.start),
-                            bounds.top(),
+                            glyph_top,
                         ),
                         point(
                             bounds.left() + line.x_for_index(selected_range.end),
-                            bounds.bottom(),
+                            glyph_top + glyph_height,
                         ),
                     ),
                     selection_color,
@@ -543,7 +597,7 @@ impl Element for SingleLineInputElement {
         let line = prepaint.line.take().unwrap();
         line.paint(bounds.origin, window.line_height(), window, cx)
             .unwrap();
-        if focus_handle.is_focused(window) {
+        if focus_handle.is_focused(window) && window.is_window_active() {
             if let Some(cursor) = prepaint.cursor.take() {
                 window.paint_quad(cursor);
             }
@@ -558,7 +612,7 @@ impl Element for SingleLineInputElement {
 impl Render for SingleLineInput {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let app_style = crate::util::style(cx);
-        let focused = self.focus_handle.is_focused(window);
+        let focused = self.focus_handle.is_focused(window) && window.is_window_active();
         self.set_accent_border(focused);
         let border = if self.accent_border {
             to_gpui(app_style.accent_color())
@@ -632,4 +686,25 @@ pub fn bind_input_keys(cx: &mut gpui::App) {
         gpui::KeyBinding::new("home", Home, Some("JumpFilter")),
         gpui::KeyBinding::new("end", End, Some("JumpFilter")),
     ]);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn caret_is_solid_then_hidden_in_half_periods() {
+        assert!(solid_at(Duration::ZERO));
+        assert!(solid_at(Duration::from_millis(529)));
+        assert!(!solid_at(Duration::from_millis(530)));
+        assert!(!solid_at(Duration::from_millis(1059)));
+        assert!(solid_at(Duration::from_millis(1060)));
+    }
+
+    #[test]
+    fn caret_flips_at_the_next_boundary() {
+        assert_eq!(flip_after(Duration::ZERO), Duration::from_millis(530));
+        assert_eq!(flip_after(Duration::from_millis(500)), Duration::from_millis(30));
+        assert_eq!(flip_after(Duration::from_millis(530)), Duration::from_millis(530));
+    }
 }

@@ -18,6 +18,8 @@ pub struct Row {
     pub time: Option<String>,
     pub body: FormattedText,
     pub continues: bool,
+    /// A `/me` line: the body renders italic and muted, as Qt's action rows do.
+    pub action: bool,
     pub separator_text: Option<String>,
     pub event_text: Option<String>,
 }
@@ -398,6 +400,12 @@ impl Transcript {
                 continue;
             };
             let line = match self.rows[row].kind {
+                RowKind::Message if self.rows[row].action => format!(
+                    "[{}] * {} {}",
+                    self.rows[row].time.as_deref().unwrap_or("--:--"),
+                    self.rows[row].author.as_deref().unwrap_or(""),
+                    selected
+                ),
                 RowKind::Message => format!(
                     "[{}] <{}> {}",
                     self.rows[row].time.as_deref().unwrap_or("--:--"),
@@ -527,21 +535,9 @@ pub fn rows_from_messages(messages: &[MockMessage]) -> Vec<Row> {
     for (index, message) in messages.iter().enumerate() {
         let id = index as u64 + 1;
         match message.kind.as_str() {
-            "message" => {
-                let continues = rows.last().is_some_and(|prev: &Row| {
-                    prev.kind == RowKind::Message
-                        && prev.author.as_deref() == Some(message.author.as_str())
-                });
-                rows.push(Row {
-                    id,
-                    kind: RowKind::Message,
-                    author: Some(message.author.clone()),
-                    time: Some(message.time.clone()),
-                    body: format_irc(&message.body),
-                    continues,
-                    separator_text: None,
-                    event_text: None,
-                });
+            "message" | "action" => {
+                let continues = continues_group(rows.last(), &message.author, &message.time);
+                rows.push(row_from_mock_message(id, message, continues));
             }
             "day" => {
                 let text = message.body.clone();
@@ -552,6 +548,7 @@ pub fn rows_from_messages(messages: &[MockMessage]) -> Vec<Row> {
                     time: None,
                     body: format_irc(&text),
                     continues: false,
+                    action: false,
                     separator_text: Some(text),
                     event_text: None,
                 });
@@ -577,6 +574,7 @@ pub fn rows_from_messages(messages: &[MockMessage]) -> Vec<Row> {
                     },
                     body: format_irc(&event_text),
                     continues: false,
+                    action: false,
                     separator_text: None,
                     event_text: Some(event_text),
                 });
@@ -584,6 +582,33 @@ pub fn rows_from_messages(messages: &[MockMessage]) -> Vec<Row> {
         }
     }
     rows
+}
+
+/// Qt folds a chat line under the one above when both are chat lines from the
+/// same author in the same minute (`continuesMessageGroup`).
+pub fn continues_group(previous: Option<&Row>, author: &str, time: &str) -> bool {
+    if author.is_empty() || time.is_empty() {
+        return false;
+    }
+    previous.is_some_and(|prev| {
+        prev.kind == RowKind::Message
+            && prev.author.as_deref() == Some(author)
+            && prev.time.as_deref() == Some(time)
+    })
+}
+
+pub fn row_from_mock_message(id: u64, message: &MockMessage, continues: bool) -> Row {
+    Row {
+        id,
+        kind: RowKind::Message,
+        author: Some(message.author.clone()),
+        time: Some(message.time.clone()),
+        body: format_irc(&message.body),
+        continues,
+        action: message.kind == "action",
+        separator_text: None,
+        event_text: None,
+    }
 }
 
 pub fn row_from_message(id: u64, author: &str, time: &str, body: &str, continues: bool) -> Row {
@@ -594,6 +619,7 @@ pub fn row_from_message(id: u64, author: &str, time: &str, body: &str, continues
         time: Some(time.to_string()),
         body: format_irc(body),
         continues,
+        action: false,
         separator_text: None,
         event_text: None,
     }
@@ -746,16 +772,51 @@ mod tests {
             MockMessage {
                 kind: "message".to_string(),
                 author: "anna".to_string(),
-                time: "09:01".to_string(),
+                time: "09:00".to_string(),
                 day: String::new(),
                 body: "two".to_string(),
+            },
+            MockMessage {
+                kind: "message".to_string(),
+                author: "anna".to_string(),
+                time: "09:01".to_string(),
+                day: String::new(),
+                body: "three".to_string(),
             },
         ];
         let rows = rows_from_messages(&messages);
         assert!(!rows[0].continues);
         assert!(rows[1].continues);
+        assert!(!rows[2].continues, "a new minute starts a new header");
         assert_eq!(rows[0].body.plain, "one");
         assert_eq!(rows[1].body.plain, "two");
+    }
+
+    #[test]
+    fn continues_group_needs_same_author_and_minute() {
+        let prev = row_from_message(1, "anna", "09:00", "hi", false);
+        assert!(continues_group(Some(&prev), "anna", "09:00"));
+        assert!(!continues_group(Some(&prev), "dax", "09:00"));
+        assert!(!continues_group(Some(&prev), "anna", "09:01"));
+        assert!(!continues_group(None, "anna", "09:00"));
+        assert!(!continues_group(Some(&prev), "", ""));
+    }
+
+    #[test]
+    fn stored_action_renders_as_action_row() {
+        use crate::model::mock::MockMessage;
+        let messages = [MockMessage {
+            kind: "action".to_string(),
+            author: "fred".to_string(),
+            time: "14:07".to_string(),
+            day: String::new(),
+            body: "waves".to_string(),
+        }];
+        let rows = rows_from_messages(&messages);
+        assert_eq!(rows[0].kind, RowKind::Message);
+        assert!(rows[0].action);
+        assert_eq!(rows[0].body.plain, "waves");
+        assert_eq!(rows[0].author.as_deref(), Some("fred"));
     }
 
     #[test]
