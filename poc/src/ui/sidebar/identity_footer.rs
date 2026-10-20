@@ -99,6 +99,7 @@ pub fn identity_footer(
                 .child(
                     div()
                         .text_size(scaled_px(style, 10.))
+                        .whitespace_nowrap()
                         .text_color(muted)
                         .font_family(FONT_FAMILY)
                         .child("available"),
