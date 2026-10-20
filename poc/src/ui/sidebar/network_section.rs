@@ -1,70 +1,185 @@
-use gpui::{div, prelude::*};
+use gpui::{div, prelude::*, MouseButton};
 
-use crate::model::{Network, Style};
+use crate::model::{sidebar::network_alert, Color, Network, Style};
+use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
-/// The server header at the top of the sidebar: icon, name and connection state.
-pub fn network_header(network: &Network, style: &Style) -> impl IntoElement {
+/// The network header, a port of `NetworkSection.qml`: 64 tall, with the
+/// collapse chevron, the icon, the name with an unread dot, and the status.
+/// The header itself is inert; `on_toggle` receives the network id when the
+/// chevron is clicked.
+pub fn network_header(
+    network: &Network,
+    focused: bool,
+    collapsed: bool,
+    style: &Style,
+    on_toggle: Handler<String>,
+) -> impl IntoElement {
+    let ink = to_gpui(style.ink_color());
+    let muted = to_gpui(style.muted_color());
+    let accent = to_gpui(style.accent_color());
+    let (unread, mention) = network_alert(network);
+    let has_dot = unread || mention;
+    let icon_fill = to_gpui(
+        network
+            .icon_color
+            .and_then(|ix| style.nick_palette().get(ix as usize).copied())
+            .unwrap_or(style.accent_color()),
+    );
+    let initial = network
+        .display_name
+        .chars()
+        .next()
+        .map(|c| c.to_uppercase().to_string())
+        .unwrap_or_else(|| "?".to_string());
+    let id = network.id.clone();
+
     div()
-        .p(scaled_px(style, 12.))
-        .border_b_1()
-        .border_color(to_gpui(style.divider_color()))
-        .flex()
-        .items_center()
-        .gap(scaled_px(style, 8.))
+        .relative()
+        .w_full()
+        .h(scaled_px(style, 64.))
+        .flex_shrink_0()
+        // Highlight: inset 8, radius 7. Raised when focused, hover otherwise.
         .child(
             div()
-                .size(scaled_px(style, 28.))
-                .rounded_full()
-                .bg(to_gpui(style.accent_color()))
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .left(scaled_px(style, 8.))
+                .right(scaled_px(style, 8.))
+                .rounded(scaled_px(style, 7.))
+                .when(focused, |this| this.bg(to_gpui(style.raised_color())))
+                .when(!focused, |this| {
+                    this.hover(|s| s.bg(to_gpui(style.hover_color())))
+                }),
+        )
+        .when(focused, |this| {
+            this.child(
+                div()
+                    .absolute()
+                    .left(scaled_px(style, 8.))
+                    .top(scaled_px(style, 23.))
+                    .w(scaled_px(style, 3.))
+                    .h(scaled_px(style, 18.))
+                    .rounded_full()
+                    .bg(accent),
+            )
+        })
+        // Chevron hit area: 14 x 28 at x 12, centred vertically.
+        .child(
+            div()
+                .absolute()
+                .left(scaled_px(style, 12.))
+                .top(scaled_px(style, 18.))
+                .w(scaled_px(style, 14.))
+                .h(scaled_px(style, 28.))
                 .flex()
                 .items_center()
                 .justify_center()
+                .cursor_pointer()
                 .text_size(scaled_px(style, 11.))
-                .text_color(to_gpui(crate::model::Color::rgb(1., 1., 1.)))
+                .text_color(muted)
                 .font_family(FONT_FAMILY)
-                .child(network.display_name.chars().next().unwrap_or('?').to_string()),
+                .hover(|s| s.text_color(ink))
+                .child(if collapsed { "▸" } else { "▾" })
+                .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                    on_toggle(id.clone(), window, cx);
+                }),
         )
+        // Icon: 28 square, radius 8, at x 30.
         .child(
             div()
+                .absolute()
+                .left(scaled_px(style, 30.))
+                .top(scaled_px(style, 18.))
+                .size(scaled_px(style, 28.))
+                .rounded(scaled_px(style, 8.))
+                .bg(icon_fill)
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(scaled_px(style, 14.))
+                .font_weight(gpui::FontWeight::BOLD)
+                .text_color(to_gpui(Color::rgb(1., 1., 1.)))
+                .font_family(FONT_FAMILY)
+                .child(initial),
+        )
+        // Name and status, at x 68, centred vertically.
+        .child(
+            div()
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .left(scaled_px(style, 68.))
+                .right(scaled_px(style, 46.))
                 .flex()
                 .flex_col()
+                .justify_center()
+                .gap(scaled_px(style, 2.))
                 .child(
                     div()
-                        .text_size(scaled_px(style, 13.))
-                        .font_weight(gpui::FontWeight::BOLD)
-                        .text_color(to_gpui(style.ink_color()))
-                        .font_family(FONT_FAMILY)
-                        .child(network.display_name.clone()),
+                        .flex()
+                        .items_center()
+                        .gap(scaled_px(style, 6.))
+                        .min_w_0()
+                        .child(
+                            div()
+                                .flex_grow()
+                                .min_w_0()
+                                .overflow_hidden()
+                                .text_ellipsis()
+                                .text_size(scaled_px(style, 13.))
+                                .font_weight(gpui::FontWeight::BOLD)
+                                .text_color(ink)
+                                .font_family(FONT_FAMILY)
+                                .child(network.display_name.clone()),
+                        )
+                        .when(has_dot, |this| {
+                            this.child(
+                                div()
+                                    .flex_shrink_0()
+                                    .size(scaled_px(style, 7.))
+                                    .rounded_full()
+                                    .bg(if mention { accent } else { ink }),
+                            )
+                        }),
                 )
                 .child(
                     div()
                         .flex()
                         .items_center()
-                        .gap(scaled_px(style, 4.))
+                        .gap(scaled_px(style, 6.))
                         .child(
                             div()
-                                .size(scaled_px(style, 6.))
+                                .flex_shrink_0()
+                                .size(scaled_px(style, 7.))
                                 .rounded_full()
                                 .bg(to_gpui(style.presence_color("online"))),
                         )
                         .child(
                             div()
                                 .text_size(scaled_px(style, 10.))
-                                .text_color(to_gpui(style.muted_color()))
+                                .text_color(muted)
                                 .font_family(FONT_FAMILY)
                                 .child("Connected"),
                         ),
                 ),
         )
+        // The inert `edit` label at the right edge.
         .child(
             div()
-                .flex_grow()
+                .absolute()
+                .right(scaled_px(style, 10.))
+                .top(scaled_px(style, 18.))
+                .w(scaled_px(style, 28.))
+                .h(scaled_px(style, 28.))
                 .flex()
-                .justify_end()
-                .text_size(scaled_px(style, 10.))
-                .text_color(to_gpui(style.muted_color()))
+                .items_center()
+                .justify_center()
+                .text_size(scaled_px(style, 9.))
+                .text_color(muted)
                 .font_family(FONT_FAMILY)
+                .hover(|s| s.text_color(ink))
                 .child("edit"),
         )
 }

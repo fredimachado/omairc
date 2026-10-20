@@ -1,21 +1,16 @@
 use gpui::{div, prelude::*, MouseButton};
 
-use crate::model::{Conversation, Network, Style};
+use crate::model::{Conversation, Style};
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
 /// The conversation title, topic, and the `N PEOPLE` pill for channels.
 pub fn render_header(
     conv: &Conversation,
-    network: &Network,
+    title: &str,
     style: &Style,
     on_toggle_members: Handler<()>,
 ) -> impl IntoElement {
-    let header_label = if conv.channel {
-        format!("{} · {} · {}", conv.name, network.display_name, network.nick)
-    } else {
-        conv.name.clone()
-    };
     let topic = conv.topic.clone().unwrap_or_default();
     let people = conv.people_count();
     let show_people = conv.channel;
@@ -40,7 +35,7 @@ pub fn render_header(
                         .font_weight(gpui::FontWeight::BOLD)
                         .text_color(to_gpui(style.ink_color()))
                         .font_family(FONT_FAMILY)
-                        .child(header_label),
+                        .child(title.to_string()),
                 )
                 .when(show_people, |this| {
                     this.child(

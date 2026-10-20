@@ -79,6 +79,19 @@ fn conversation_order(left: &Conversation, right: &Conversation) -> Ordering {
         .then_with(|| left.name.cmp(&right.name))
 }
 
+/// Whether any conversation on `network` is unread, and whether any of them
+/// has a mention. Drives the unread dot on the network header.
+pub fn network_alert(network: &Network) -> (bool, bool) {
+    let unread = network.conversations.iter().any(|c| c.unread > 0);
+    let mention = network.conversations.iter().any(|c| c.mention);
+    (unread, mention)
+}
+
+/// Whether `network` has any direct message, so the DM heading shows.
+pub fn has_directs(network: &Network) -> bool {
+    network.conversations.iter().any(|c| !c.channel)
+}
+
 /// Qt `setNetworkCollapsed`. Unknown networks are ignored. Returns whether
 /// the state changed.
 pub fn set_collapsed(
@@ -183,6 +196,25 @@ mod tests {
         assert!(rows[first_oftc..].iter().all(|r| r.collapsed));
         assert!(rows[..first_oftc].iter().all(|r| !r.collapsed));
         assert!(labels(&rows).contains(&"oftc/#build".to_string()));
+    }
+
+    #[test]
+    fn network_alert_and_directs_follow_the_conversations() {
+        let world = load_world();
+        let oftc = world.network("oftc").expect("oftc");
+        assert!(has_directs(oftc));
+        let mut bare = oftc.clone();
+        bare.conversations.retain(|c| c.channel);
+        assert!(!has_directs(&bare));
+        for c in &mut bare.conversations {
+            c.unread = 0;
+            c.mention = false;
+        }
+        assert_eq!(network_alert(&bare), (false, false));
+        bare.conversations[0].unread = 2;
+        assert_eq!(network_alert(&bare), (true, false));
+        bare.conversations[0].mention = true;
+        assert_eq!(network_alert(&bare), (true, true));
     }
 
     #[test]

@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use gpui::{App, Context, Focusable, Window};
 
+use crate::model::sidebar::set_collapsed;
 use crate::model::{
     continues_group, local_send_stamp, outgoing_message, row_from_mock_message, Conversation,
     ConversationRef, Network,
@@ -41,6 +42,23 @@ impl Shell {
         if self.world.find(&target).is_some() {
             self.select(target, cx);
         }
+    }
+
+    /// The network header chevron. Collapsing a network never changes the
+    /// selection, so a hidden selected row stays selected, as in Qt.
+    pub fn toggle_collapsed(&mut self, network_id: &str, cx: &mut Context<Self>) {
+        let collapsed = !self.sidebar.is_collapsed(network_id);
+        if set_collapsed(&self.world, &mut self.sidebar, network_id, collapsed) {
+            cx.notify();
+        }
+    }
+
+    /// Ctrl+Shift+S: collapse or restore the server list by width. Drops
+    /// header focus, as Qt does.
+    pub fn toggle_rail(&mut self, cx: &mut Context<Self>) {
+        self.sidebar.rail_visible = !self.sidebar.rail_visible;
+        self.sidebar.focus = None;
+        cx.notify();
     }
 
     pub fn inbox_count(&self) -> u32 {

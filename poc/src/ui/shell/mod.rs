@@ -14,12 +14,14 @@ use gpui::{
     MouseMoveEvent, MouseUpEvent, Render, ScrollHandle, Window,
 };
 
+use crate::model::sidebar::SidebarState;
+use crate::model::title::{conversation_title, window_title};
 use crate::model::{bench_channel, load_world, ConversationRef, MockWorld};
 use crate::ui::center::render_center;
 use crate::ui::input::SingleLineInput;
 use crate::ui::members::render_members;
 use crate::ui::scrollbar::{end_scrollbar_drag, move_scrollbar_drag, ScrollbarDragCell};
-use crate::ui::shell::actions::{OpenJump, TranscriptCopy};
+use crate::ui::shell::actions::{OpenJump, ToggleSidebarRail, TranscriptCopy};
 use crate::ui::sidebar::{render_sidebar, SidebarData};
 use crate::ui::transcript::TranscriptView;
 use crate::ui::Handler;
@@ -31,6 +33,8 @@ pub use bench::BenchState;
 pub struct Shell {
     pub world: MockWorld,
     pub selected: ConversationRef,
+    pub sidebar: SidebarState,
+    pub window_title: String,
     pub members_open: bool,
     pub jump_open: bool,
     pub jump_selected: usize,
@@ -78,6 +82,8 @@ impl Shell {
         let shell = Self {
             world,
             selected,
+            sidebar: SidebarState::default(),
+            window_title: String::new(),
             members_open: true,
             jump_open: false,
             jump_selected: 0,
@@ -104,7 +110,7 @@ impl Shell {
 }
 
 impl Render for Shell {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.bench.enabled && self.bench.first_frame.is_none() {
             self.bench.first_frame = Some(self.bench.started.elapsed());
         }
@@ -112,10 +118,17 @@ impl Render for Shell {
         let app_style = style(cx);
         let entity = cx.entity();
         let show_members = self.members_open && self.current_conversation().is_channel();
+        let title = conversation_title(&self.world, &self.selected).unwrap_or_default();
+        let wanted_window_title = window_title(&self.world, Some(&self.selected));
+        if wanted_window_title != self.window_title {
+            window.set_window_title(&wanted_window_title);
+            self.window_title = wanted_window_title;
+        }
 
         let sidebar = render_sidebar(
             SidebarData {
-                network: self.current_network(),
+                world: &self.world,
+                state: &self.sidebar,
                 selected: &self.selected,
                 inbox_count: self.inbox_count(),
                 typing_phase: self.typing_phase,
@@ -125,10 +138,11 @@ impl Render for Shell {
             entity.clone(),
             &self.scrollbar_drag,
             select_handler(entity.clone()),
+            collapse_handler(entity.clone()),
         );
         let center = render_center(
             self.current_conversation(),
-            self.current_network(),
+            &title,
             self.transcript.clone(),
             self.composer.clone(),
             &app_style,
@@ -168,6 +182,9 @@ impl Render for Shell {
             )
             .on_action(cx.listener(|shell, _: &OpenJump, window, cx| {
                 shell.open_jump(window, cx);
+            }))
+            .on_action(cx.listener(|shell, _: &ToggleSidebarRail, _, cx| {
+                shell.toggle_rail(cx);
             }))
             .on_action(cx.listener(|shell, _: &TranscriptCopy, _, cx| {
                 // With the composer focused, Ctrl+C copies the transcript
@@ -209,6 +226,15 @@ fn select_handler(entity: Entity<Shell>) -> Handler<ConversationRef> {
             shell.select(target, cx);
             shell.focus_composer(window, cx);
             cx.notify();
+        });
+    })
+}
+
+/// A network header's chevron: flip that network's collapse state.
+fn collapse_handler(entity: Entity<Shell>) -> Handler<String> {
+    Rc::new(move |network_id: String, _: &mut Window, cx: &mut App| {
+        entity.update(cx, |shell, cx| {
+            shell.toggle_collapsed(&network_id, cx);
         });
     })
 }

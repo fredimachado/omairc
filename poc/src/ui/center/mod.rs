@@ -3,7 +3,7 @@ pub mod header;
 
 use gpui::{div, prelude::*, Entity};
 
-use crate::model::{Conversation, Network, Style};
+use crate::model::{Conversation, Style};
 use crate::ui::center::composer::render_composer;
 use crate::ui::center::header::render_header;
 use crate::ui::input::SingleLineInput;
@@ -14,7 +14,7 @@ use crate::util::to_gpui;
 /// The conversation column: header, transcript, composer.
 pub fn render_center(
     conv: &Conversation,
-    network: &Network,
+    title: &str,
     transcript: Entity<TranscriptView>,
     composer: Entity<SingleLineInput>,
     style: &Style,
@@ -28,7 +28,7 @@ pub fn render_center(
         .flex()
         .flex_col()
         .bg(to_gpui(style.page_color()))
-        .child(render_header(conv, network, style, on_toggle_members))
+        .child(render_header(conv, title, style, on_toggle_members))
         .child(
             div()
                 .flex_grow()
