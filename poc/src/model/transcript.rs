@@ -1,4 +1,5 @@
 use super::format::{format_irc, FormattedText};
+use super::membership::membership_text;
 use super::mock::MockMessage;
 use super::status::StatusMark;
 use super::text_edit::{snap_grapheme, word_bounds};
@@ -525,11 +526,7 @@ pub fn row_for_message(id: u64, message: &MockMessage, previous: Option<&Row>) -
         }
         "whois" => row_from_whois(id, &message.body),
         _ => {
-            let event_text = if message.body.is_empty() {
-                format!("{} joined", message.author)
-            } else {
-                message.body.clone()
-            };
+            let event_text = membership_text(message);
             Row {
                 id,
                 kind: RowKind::Event,

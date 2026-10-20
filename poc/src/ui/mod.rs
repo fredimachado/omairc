@@ -9,6 +9,7 @@ pub mod shell;
 pub mod sidebar;
 pub mod status_row;
 pub mod transcript;
+pub mod typing_row;
 pub mod widgets;
 
 use std::rc::Rc;

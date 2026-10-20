@@ -11,10 +11,16 @@ use gpui::{
 
 use crate::model::cursor::{page_amount, scroll_target};
 use crate::model::links::{conversation_channel_hits, invite_hit};
+use crate::model::membership::membership_view;
+use crate::model::mock::local_minute;
+use crate::model::prefs::MembershipNoise;
+use crate::model::scroll_place::{resume, Resume, SavedPlace};
+use crate::model::typing_tail::typing_continues;
 use crate::model::{mix_colors, row_from_message, Conversation, Pos, Row, Style, Transcript};
 use crate::ui::message_row::{render_transcript_row, RowCallbacks, RowLayoutMap};
 use crate::ui::scrollbar::{list_vertical_scrollbar, move_scrollbar_drag, ScrollbarDragCell};
 use crate::ui::transcript::pointer::{self, RowBounds};
+use crate::ui::typing_row::render_typing_row;
 use crate::ui::Handler;
 use crate::util::{style, to_gpui, OmaircStyleGlobal};
 
@@ -57,6 +63,10 @@ pub struct TranscriptView {
     hovered_link: Option<(usize, Range<usize>)>,
     /// The row find mode landed on, drawn with the selection colour.
     find_row: Option<usize>,
+    /// The DM peer whose typing dots end the list, when that peer is typing.
+    typing_peer: Option<String>,
+    /// The typing dots' pulse frame, set by the shell's typing pulse.
+    typing_phase: u8,
 }
 
 impl TranscriptView {
@@ -80,19 +90,31 @@ impl TranscriptView {
             last_click: (Instant::now(), 0, 0),
             hovered_link: None,
             find_row: None,
+            typing_peer: None,
+            typing_phase: 0,
         }
     }
 
-    /// Shows a conversation's stored lines with a fresh selection and scroll.
-    /// `chantypes` is the network's CHANTYPES, for the channel names in its lines.
-    pub fn set_conversation(&mut self, conv: &Conversation, self_nick: &str, chantypes: &str) {
-        self.model.set_conversation(&conv.messages);
+    /// Shows a conversation's stored lines with a fresh selection and scroll. The
+    /// `joins` setting folds or hides its membership lines. `chantypes` is the
+    /// network's CHANTYPES, for the channel names in its lines. A DM whose peer is
+    /// typing gets the typing dots after its last line.
+    pub fn set_conversation(
+        &mut self,
+        conv: &Conversation,
+        self_nick: &str,
+        chantypes: &str,
+        joins: MembershipNoise,
+    ) {
+        self.model
+            .set_conversation(&membership_view(&conv.messages, joins));
         self.member_realnames = member_realnames(conv);
         self.self_nick = self_nick.to_string();
         self.chantypes = chantypes.to_string();
+        self.typing_peer = (!conv.is_channel() && conv.typing).then(|| conv.name.clone());
         self.model.clear_selection();
         self.find_row = None;
-        self.list_state.reset(self.model.rows().len());
+        self.list_state.reset(self.list_len());
         self.row_layouts.borrow_mut().clear();
     }
 
@@ -100,15 +122,68 @@ impl TranscriptView {
         self.model.rows()
     }
 
-    /// Shows a network's Status rows with a fresh selection. Status opens at the end.
+    /// Shows a network's Status rows with a fresh selection. Status opens at the end
+    /// and has no typing dots.
     pub fn set_status(&mut self, rows: Vec<Row>) {
         self.model.set_rows(rows);
         self.member_realnames.clear();
+        self.typing_peer = None;
         self.model.clear_selection();
         self.hovered_link = None;
         self.find_row = None;
-        self.list_state.reset(self.model.rows().len());
+        self.list_state.reset(self.list_len());
         self.row_layouts.borrow_mut().clear();
+    }
+
+    /// The list's items: every row, then the typing dots when they show.
+    fn list_len(&self) -> usize {
+        self.model.rows().len() + usize::from(self.typing_peer.is_some())
+    }
+
+    /// The typing dots' pulse frame. Repaints only while the dots show.
+    pub fn set_typing_phase(&mut self, phase: u8, cx: &mut Context<Self>) {
+        if self.typing_peer.is_some() && self.typing_phase != phase {
+            self.typing_phase = phase;
+            cx.notify();
+        }
+    }
+
+    /// Where the reader is now, for the scroll-place memory. The live list position
+    /// is written into `Transcript::scroll()`, and the place is read back from there.
+    /// Pinned to the end, or scrolled onto the typing dots, is the end.
+    pub fn capture_scroll_place(&mut self) -> SavedPlace {
+        let rows = self.model.rows().len();
+        let top = self.list_state.logical_scroll_top();
+        if self.at_end() || top.item_ix >= rows {
+            self.model.set_pinned_to_bottom(true);
+        } else {
+            let offset_px = f32::from(top.offset_in_item).round() as i32;
+            self.model.set_scroll_anchor(top.item_ix, offset_px);
+        }
+        SavedPlace::from_anchor(self.model.scroll(), self.model.rows())
+    }
+
+    /// Puts the list at `place`, once `set_conversation` or `set_status` has reset
+    /// it. A missing or end place leaves the reset list following the tail.
+    pub fn restore_scroll_place(&mut self, place: Option<&SavedPlace>) {
+        match resume(place, self.model.rows()) {
+            Resume::End => self.model.set_pinned_to_bottom(true),
+            Resume::Line { row, offset_px } => {
+                self.model.set_scroll_anchor(row, offset_px);
+                self.list_state.scroll_to(ListOffset {
+                    item_ix: row,
+                    offset_in_item: px(offset_px as f32),
+                });
+            }
+        }
+    }
+
+    /// Whether the list shows its end. The scrollbar's offset is measured in
+    /// pixels, and a list that follows the tail reports past its maximum.
+    fn at_end(&self) -> bool {
+        let max = f32::from(self.list_state.max_offset_for_scrollbar().height);
+        let current = -f32::from(self.list_state.scroll_px_offset_for_scrollbar().y);
+        current >= max - 1.
     }
 
     /// Adds a line to the open conversation or Status pane: one the local user
@@ -172,7 +247,7 @@ impl TranscriptView {
 
     /// Ctrl+End: the last row, and the list follows new lines again.
     pub fn scroll_to_bottom(&mut self) {
-        let count = self.model.rows().len();
+        let count = self.list_len();
         if count == 0 {
             return;
         }
@@ -409,6 +484,29 @@ impl Render for TranscriptView {
                     // The transcript selection is painted only while the window is active.
                     let window_active = window.is_window_active();
                     entity.update(app, |view, _cx| {
+                        // The typing dots end the list. They get no row bounds, so pointer
+                        // hits and the drag autoscroll never see them.
+                        if ix >= view.model.rows().len() {
+                            return match view.typing_peer.clone() {
+                                Some(peer) => {
+                                    let continues = typing_continues(
+                                        view.model.rows(),
+                                        &peer,
+                                        &local_minute(),
+                                    );
+                                    div()
+                                        .w_full()
+                                        .child(render_typing_row(
+                                            &peer,
+                                            continues,
+                                            view.typing_phase,
+                                            &app_style,
+                                        ))
+                                        .into_any_element()
+                                }
+                                None => div().into_any_element(),
+                            };
+                        }
                         let row = view
                             .model
                             .rows()

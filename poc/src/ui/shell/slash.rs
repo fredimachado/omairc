@@ -201,12 +201,17 @@ impl Shell {
     }
 
     /// `/pref`: the model applies it and says what it printed. A change is saved.
+    /// A new `joins` setting refolds the open conversation at once.
     fn run_pref(&mut self, request: &PrefRequest, cx: &mut Context<Self>) {
+        let joins_before = self.preferences.joins;
         let reply = pref_reply(request, &mut self.preferences);
         if reply.changed {
             if let Err(error) = self.preferences.save() {
                 eprintln!("omairc-poc: could not save preferences: {error}");
             }
+        }
+        if self.preferences.joins != joins_before {
+            self.rebuild_selected_keeping_place(cx);
         }
         self.reply_lines(&reply.text, cx);
     }

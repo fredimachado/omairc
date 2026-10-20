@@ -22,6 +22,7 @@ use crate::model::find::Find;
 use crate::model::format::{format_irc, text_hits, TextHit};
 use crate::model::inbox::{seed_inbox, Inbox};
 use crate::model::prefs::Preferences;
+use crate::model::scroll_place::ScrollPlaces;
 use crate::model::sidebar::SidebarState;
 use crate::model::slash_complete::SlashSession;
 use crate::model::status::status_title;
@@ -76,6 +77,8 @@ pub struct Shell {
     pub find: Option<Find>,
     /// The saved preferences `/pref` reads and writes, loaded once at startup.
     pub preferences: Preferences,
+    /// Where each conversation's transcript was left, so returning opens there.
+    pub scroll_places: ScrollPlaces,
     pub focus_handle: FocusHandle,
     pub typing_phase: u8,
     pub bench: BenchState,
@@ -143,6 +146,7 @@ impl Shell {
             slash: SlashSession::new(),
             find: None,
             preferences: Preferences::load(),
+            scroll_places: ScrollPlaces::default(),
             focus_handle: cx.focus_handle(),
             typing_phase: 0,
             bench: BenchState {
@@ -156,7 +160,10 @@ impl Shell {
         let conv = shell.current_conversation();
         let self_nick = shell.current_network().nick.clone();
         let chantypes = shell.current_network().chantypes.clone();
-        shell.transcript.update(cx, |t, _| t.set_conversation(conv, &self_nick, &chantypes));
+        let joins = shell.preferences.joins;
+        shell
+            .transcript
+            .update(cx, |t, _| t.set_conversation(conv, &self_nick, &chantypes, joins));
         shell.sync_send_limit(cx);
         shell
     }

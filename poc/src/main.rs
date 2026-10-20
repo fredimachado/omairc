@@ -225,6 +225,11 @@ fn start_typing_pulse(shell: Entity<Shell>, cx: &mut App) {
             shell
                 .update(cx, |shell, cx| {
                     shell.typing_phase = shell.typing_phase.wrapping_add(1);
+                    // The transcript's typing dots pulse with the sidebar's.
+                    let phase = shell.typing_phase;
+                    shell
+                        .transcript
+                        .update(cx, |t, cx| t.set_typing_phase(phase, cx));
                     cx.notify();
                 })
                 .ok();

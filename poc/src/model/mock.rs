@@ -248,6 +248,11 @@ pub fn local_log_stamp() -> String {
     chrono::Local::now().format("%H:%M:%S").to_string()
 }
 
+/// Local `HH:MM` now: the minute a typing row is stamped with (Qt `currentTranscriptMinute`).
+pub fn local_minute() -> String {
+    chrono::Local::now().format("%H:%M").to_string()
+}
+
 fn stamp_of(now: chrono::DateTime<chrono::FixedOffset>) -> (String, String) {
     (
         now.format("%Y-%m-%d").to_string(),

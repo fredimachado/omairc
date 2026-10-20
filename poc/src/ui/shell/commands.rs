@@ -9,6 +9,7 @@ use crate::model::format::TextHit;
 use crate::model::navigation::{
     mark_all_read, next_unread_or_status, step_conversation, step_network, UnreadTarget,
 };
+use crate::model::scroll_place::SavedPlace;
 use crate::model::sidebar::{
     collapse_all, move_focused, set_collapsed, set_collapsed_focused, sidebar_rows,
 };
@@ -48,12 +49,14 @@ impl Shell {
             self.inbox
                 .consume_conversation(&target.network_id, &target.key, is_channel);
         }
-        // Re-selecting the target on screen is not a switch, so the draft stays put.
+        // Re-selecting the target on screen is not a switch, so the draft stays put
+        // and the transcript keeps its place.
         let switching = !self.composer_state.is_showing(&DraftKey::for_view(None, &target));
         if switching {
             self.stash_composer_draft(cx);
             // Switching abandons find mode. The draft it saved was stashed just above.
             self.end_find_mode(cx);
+            self.remember_scroll_place(cx);
         }
         // Selecting a conversation clears its network's last command error, so the
         // header shows the topic again. Qt clears it on a successful command or a
@@ -62,20 +65,50 @@ impl Shell {
         self.selected = target;
         self.status = None;
         self.member_cursor = 0;
-        self.show_selected_conversation(cx);
         if switching {
+            self.show_selected_conversation(cx);
             self.restore_composer_draft(cx);
         }
     }
 
-    /// Puts the selected conversation's stored lines in the transcript.
+    /// Puts the selected conversation's stored lines in the transcript, at the place
+    /// the conversation was last left.
     pub fn show_selected_conversation(&mut self, cx: &mut Context<Self>) {
+        let place = self.scroll_places.get(&self.selected).cloned();
+        self.show_selected_at(place, cx);
+    }
+
+    /// Rebuilds the selected conversation's lines, keeping the reader's place. Used
+    /// when a setting changes how the lines show (`/pref joins`). Status has none.
+    pub fn rebuild_selected_keeping_place(&mut self, cx: &mut Context<Self>) {
+        if self.status.is_some() {
+            return;
+        }
+        let place = self.transcript.update(cx, |t, _| t.capture_scroll_place());
+        self.show_selected_at(Some(place), cx);
+    }
+
+    /// Shows the selected conversation's lines and puts the list at `place`.
+    fn show_selected_at(&mut self, place: Option<SavedPlace>, cx: &mut Context<Self>) {
         let conv = self.current_conversation();
         let self_nick = self.current_network().nick.clone();
         let chantypes = self.current_network().chantypes.clone();
-        self.transcript
-            .update(cx, |t, _| t.set_conversation(conv, &self_nick, &chantypes));
+        let joins = self.preferences.joins;
+        self.transcript.update(cx, |t, _| {
+            t.set_conversation(conv, &self_nick, &chantypes, joins);
+            t.restore_scroll_place(place.as_ref());
+        });
         self.sync_send_limit(cx);
+    }
+
+    /// Saves the place the transcript is left at, for the conversation on screen.
+    /// Status is not saved: it always opens at the end.
+    fn remember_scroll_place(&mut self, cx: &mut Context<Self>) {
+        if self.status.is_some() {
+            return;
+        }
+        let place = self.transcript.update(cx, |t, _| t.capture_scroll_place());
+        self.scroll_places.remember(self.selected.clone(), place);
     }
 
     /// Gives the composer its send limit for what is showing: the channel or nick
@@ -103,6 +136,8 @@ impl Shell {
         if switching {
             self.stash_composer_draft(cx);
             self.end_find_mode(cx);
+            // Leaving a conversation keeps its place. Status itself opens at the end.
+            self.remember_scroll_place(cx);
         }
         self.sidebar.focus = None;
         self.status = Some(network_id.to_string());

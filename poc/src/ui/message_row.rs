@@ -185,9 +185,6 @@ fn render_message_row(
     let nick_target = (!row.continues && !author.is_empty() && author != callbacks.self_nick)
         .then(|| author.to_string());
     let nick_color = to_gpui(style.nick_color(author));
-    let fills = style.nick_avatar_fills();
-    let avatar_fill = to_gpui(fills[style.nick_palette_index(author)]);
-    let initials = style.initials(author);
     let realname = member_realnames.get(author).map(String::as_str).unwrap_or("");
     let realname_suffix = if realname.is_empty() {
         String::new()
@@ -242,21 +239,10 @@ fn render_message_row(
         // Qt draws the avatar only on the first line of a group.
         .when(!row.continues, |this| {
             this.child(
-                div()
+                avatar_disc(style, author, avatar_size)
                     .absolute()
                     .left(left_pad)
                     .top(top_pad)
-                    .size(avatar_size)
-                    .rounded_full()
-                    .bg(avatar_fill)
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_size(scaled_px(style, 13.))
-                    .font_weight(gpui::FontWeight::BOLD)
-                    .text_color(nick_color)
-                    .font_family(FONT_FAMILY)
-                    .child(initials)
                     .nick_click(nick_target.clone(), &callbacks.on_nick),
             )
         })
@@ -342,6 +328,24 @@ fn render_message_row(
                         ),
                 ),
         )
+}
+
+/// A nick's round avatar: its palette fill and initials. The caller positions it.
+pub fn avatar_disc(style: &Style, author: &str, size: Pixels) -> Div {
+    let fills = style.nick_avatar_fills();
+    let avatar_fill = to_gpui(fills[style.nick_palette_index(author)]);
+    div()
+        .size(size)
+        .rounded_full()
+        .bg(avatar_fill)
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_size(scaled_px(style, 13.))
+        .font_weight(gpui::FontWeight::BOLD)
+        .text_color(to_gpui(style.nick_color(author)))
+        .font_family(FONT_FAMILY)
+        .child(style.initials(author))
 }
 
 fn selection_quads(
