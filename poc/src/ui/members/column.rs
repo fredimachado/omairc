@@ -1,14 +1,16 @@
-use gpui::{div, prelude::*, Entity, FocusHandle, ScrollHandle};
+use gpui::{div, prelude::*, Entity, FocusHandle, MouseButton, ScrollHandle};
 
 use crate::model::{Conversation, Style};
-use crate::ui::Handler;
 use crate::ui::members::member_row::member_row;
 use crate::ui::scrollbar::{div_vertical_scrollbar, ScrollbarDragCell};
+use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
-/// The right-hand member panel for a channel. `host` is only notified by the
-/// scrollbar. The list is focusable with its own key context (`MemberList`);
-/// `cursor` is the current row, drawn raised only while the list has focus.
+/// The right-hand member panel for a channel (`MembersColumn.qml`). `host` is
+/// only notified by the scrollbar. The list is focusable with its own key
+/// context (`MemberList`); `cursor` is the current row, drawn raised only while
+/// the list has focus. The `ONLINE - N` heading is clickable and calls
+/// `on_heading`, which opens the Nick sheet once step 7 wires it.
 pub fn render_members<V: 'static>(
     conv: &Conversation,
     style: &Style,
@@ -17,14 +19,17 @@ pub fn render_members<V: 'static>(
     drag: &ScrollbarDragCell,
     self_nick: &str,
     on_nick: Handler<String>,
+    on_heading: Handler<()>,
     focus: &FocusHandle,
     cursor: Option<usize>,
 ) -> impl IntoElement {
     let people = conv.people_count();
+    let heading_color = to_gpui(style.muted_color());
+    let ink = to_gpui(style.ink_color());
     div()
         .w(scaled_px(style, 216.))
+        .min_w(scaled_px(style, 196.))
         .h_full()
-        .flex_shrink_0()
         .bg(to_gpui(style.panel_color()))
         .border_l_1()
         .border_color(to_gpui(style.divider_color()))
@@ -33,12 +38,20 @@ pub fn render_members<V: 'static>(
         .min_h_0()
         .child(
             div()
-                .p(scaled_px(style, 12.))
-                .border_b_1()
-                .border_color(to_gpui(style.divider_color()))
-                .text_size(scaled_px(style, 10.))
-                .text_color(to_gpui(style.muted_color()))
+                .id("members-heading")
+                .pt(scaled_px(style, 23.))
+                .pb(scaled_px(style, 14.))
+                .px(scaled_px(style, 20.))
+                .flex_shrink_0()
+                .cursor_pointer()
+                .text_size(scaled_px(style, 9.))
+                .font_weight(gpui::FontWeight::BOLD)
+                .text_color(heading_color)
                 .font_family(FONT_FAMILY)
+                .hover(|s| s.text_color(ink))
+                .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                    on_heading((), window, cx);
+                })
                 .child(format!("ONLINE - {}", people)),
         )
         .child(
@@ -50,6 +63,7 @@ pub fn render_members<V: 'static>(
                     div()
                         .id("member-list")
                         .size_full()
+                        .pb(scaled_px(style, 10.))
                         .overflow_y_scroll()
                         .track_scroll(scroll)
                         .track_focus(focus)

@@ -130,7 +130,12 @@ impl Render for Shell {
 
         let app_style = style(cx);
         let entity = cx.entity();
-        let show_members = self.members_open && self.current_conversation().is_channel();
+        // Qt gates the panel on `win.width >= scaledSize(980)`.
+        let wide_enough = f32::from(window.viewport_size().width)
+            >= app_style.scaled(980.) as f32;
+        let show_members = self.members_open
+            && self.current_conversation().is_channel()
+            && wide_enough;
         let title = conversation_title(&self.world, &self.selected).unwrap_or_default();
         let wanted_window_title = window_title(&self.world, Some(&self.selected));
         if wanted_window_title != self.window_title {
@@ -209,6 +214,7 @@ impl Render for Shell {
                     &self.scrollbar_drag,
                     &self.current_network().nick,
                     nick_handler(entity.clone()),
+                    nick_sheet_placeholder(),
                     &self.member_focus,
                     members_cursor,
                 ))
@@ -281,4 +287,10 @@ fn nick_handler(entity: Entity<Shell>) -> Handler<String> {
             shell.focus_composer(window, cx);
         });
     })
+}
+
+/// The `ONLINE - N` heading opens the Nick sheet. That sheet is not wired yet,
+/// so the click does nothing.
+fn nick_sheet_placeholder() -> Handler<()> {
+    Rc::new(|_: (), _: &mut Window, _: &mut App| {})
 }

@@ -68,6 +68,7 @@ fn main() {
             .open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    window_min_size: Some(size(px(760.), px(540.))),
                     titlebar: Some(gpui::TitlebarOptions {
                         title: Some("Omairc GPUI PoC".into()),
                         ..Default::default()
