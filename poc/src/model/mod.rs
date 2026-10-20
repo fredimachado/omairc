@@ -9,9 +9,6 @@ pub mod format;
 pub mod ids;
 pub mod chords;
 pub mod composer;
-// The sheet UI is the consumer of most of this model, and it lands after the
-// shell wiring. Until then only the shell's subset and the tests reach the rest.
-#[allow(dead_code)]
 pub mod connect;
 pub mod directs;
 pub mod filter_list;

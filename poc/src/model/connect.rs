@@ -70,7 +70,7 @@ impl Problem {
 }
 
 /// The two tabs. Ctrl+Tab steps forward through them and wraps.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ConnectTab {
     Connection,
     Preferences,
@@ -104,7 +104,7 @@ impl ConnectTab {
 
 /// A text field on the Connection tab. Each has a label, and two of them have a
 /// help mark and a badge, copied from the Qt sheet.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ConnectField {
     Name,
     Host,
@@ -165,7 +165,7 @@ impl ConnectField {
 /// One focus stop of the sheet, in Tab order. Enter in a field, switch or help
 /// mark walks to the next stop. Enter or Space on a button, a rail row or the
 /// add row acts on it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Stop {
     Tab(ConnectTab),
     /// A rail row, by network id. The unsaved draft's row is one too.
@@ -212,6 +212,10 @@ pub fn preference_rows() -> [PreferenceRow; 3] {
         },
     ]
 }
+
+/// Shown under the form when a rail click or walk asks for another network while
+/// the draft is dirty. Qt refuses the switch silently; the PoC says why.
+pub const SWITCH_REFUSED_TEXT: &str = "Apply or discard your edits before switching networks.";
 
 /// The label on the Remove button: `Remove`, or `Remove <name>?` once armed.
 pub fn remove_label(armed: bool, display_name: &str) -> String {
@@ -497,6 +501,9 @@ pub struct ConnectState {
     focus: Option<Stop>,
     /// A stop the window should focus at its next render. Taken by `take_focus_request`.
     focus_request: Option<Stop>,
+    /// A switch to another network was refused because the draft is dirty. Cleared
+    /// by the next switch, Apply, Discard, Add or Remove.
+    switch_refused: bool,
 }
 
 impl ConnectState {
@@ -519,20 +526,24 @@ impl ConnectState {
             rail_armed: None,
             focus: None,
             focus_request: None,
+            switch_refused: false,
         }
     }
 
-    /// The saved profiles in rail order.
+    /// The saved profiles in rail order. The sheet reads the rail through `rows`.
+    #[cfg(test)]
     pub fn saved(&self) -> &[Profile] {
         &self.saved
     }
 
-    /// The profile the form shows.
+    /// The profile the form shows. The sheet reads the fields through `text`.
+    #[cfg(test)]
     pub fn draft(&self) -> &Profile {
         &self.draft
     }
 
-    /// The selected network's id.
+    /// The selected network's id. The sheet reads it through `rows`.
+    #[cfg(test)]
     pub fn selected(&self) -> &str {
         &self.selected
     }
@@ -543,6 +554,11 @@ impl ConnectState {
 
     pub fn remove_armed(&self) -> bool {
         self.remove_armed
+    }
+
+    /// Whether the last switch to another network was refused for a dirty draft.
+    pub fn switch_refused(&self) -> bool {
+        self.switch_refused
     }
 
     /// Whether `network_id` is one of the saved networks.
@@ -672,13 +688,14 @@ impl ConnectState {
     /// the selection moved.
     pub fn select(&mut self, network_id: &str) -> bool {
         self.remove_armed = false;
-        if network_id.is_empty()
-            || network_id == self.selected
-            || self.dirty()
-            || !self.is_saved(network_id)
-        {
+        if network_id.is_empty() || network_id == self.selected || !self.is_saved(network_id) {
             return false;
         }
+        if self.dirty() {
+            self.switch_refused = true;
+            return false;
+        }
+        self.switch_refused = false;
         self.rail_armed = None;
         self.load_draft(network_id);
         true
@@ -736,6 +753,7 @@ impl ConnectState {
         self.remove_armed = false;
         self.rail_armed = None;
         self.focus_request = Some(Stop::Field(ConnectField::Name));
+        self.switch_refused = false;
         true
     }
 
@@ -745,6 +763,7 @@ impl ConnectState {
     pub fn discard(&mut self) {
         self.remove_armed = false;
         self.rail_armed = None;
+        self.switch_refused = false;
         if !self.is_saved(&self.selected) {
             let returned = self
                 .added_from
@@ -782,6 +801,7 @@ impl ConnectState {
         self.added_from = None;
         self.remove_armed = false;
         self.rail_armed = None;
+        self.switch_refused = false;
         self.sync_world(world);
         Ok(())
     }
@@ -811,6 +831,7 @@ impl ConnectState {
         self.remove_armed = false;
         self.rail_armed = None;
         self.added_from = None;
+        self.switch_refused = false;
         self.sync_world(world);
         RemoveOutcome::Removed(removed)
     }
@@ -881,21 +902,58 @@ impl ConnectState {
         stops
     }
 
-    /// The stop after `from` in Tab order, or before it when `backwards`. Enter
-    /// walks forward. The order wraps at both ends. A `from` that is not on the
-    /// showing tab falls back to the first stop, or the last when going back.
-    pub fn next_stop(&self, world: &MockWorld, from: &Stop, backwards: bool) -> Option<Stop> {
+    /// The stop after `from` in Tab order, or before it when `backwards`. Tab and
+    /// Enter walk forward, and Shift+Tab backward. The order wraps at both ends. A
+    /// `from` that is not on the showing tab falls back to the first stop, or the
+    /// last when going back. With no `from` (nothing in the sheet has focus), Tab
+    /// goes to the first stop and Shift+Tab to the last.
+    pub fn step_stop(&self, world: &MockWorld, from: Option<&Stop>, backwards: bool) -> Option<Stop> {
         let stops = self.stops(world);
         if stops.is_empty() {
             return None;
         }
         let len = stops.len();
-        Some(match stops.iter().position(|stop| stop == from) {
+        let index = from.and_then(|from| stops.iter().position(|stop| stop == from));
+        Some(match index {
             Some(index) if backwards => stops[(index + len - 1) % len].clone(),
             Some(index) => stops[(index + 1) % len].clone(),
             None if backwards => stops[len - 1].clone(),
             None => stops[0].clone(),
         })
+    }
+
+    /// The Up and Down stops of the network rail: each saved row, then the Add row
+    /// when it shows. Up and Down move focus along this list and stop at its ends
+    /// (Qt `focusNetworkChoiceStop`). They never change the selection.
+    pub fn rail_stops(&self) -> Vec<Stop> {
+        let mut stops: Vec<Stop> = self
+            .rows()
+            .into_iter()
+            .map(|row| Stop::Network(row.network_id))
+            .collect();
+        if self.can_add() {
+            stops.push(Stop::AddNetwork);
+        }
+        stops
+    }
+
+    /// The rail stop `delta` places from `from`, clamped to the rail's ends, so
+    /// focus never wraps here. `None` when `from` is not a rail stop.
+    pub fn rail_step(&self, from: &Stop, delta: isize) -> Option<Stop> {
+        let stops = self.rail_stops();
+        let index = stops.iter().position(|stop| stop == from)? as isize;
+        let last = stops.len() as isize - 1;
+        Some(stops[(index + delta).clamp(0, last) as usize].clone())
+    }
+
+    /// The first rail stop (Home), or the last (End). `None` when the rail is empty.
+    pub fn rail_edge(&self, last: bool) -> Option<Stop> {
+        let stops = self.rail_stops();
+        if last {
+            stops.last().cloned()
+        } else {
+            stops.first().cloned()
+        }
     }
 
     /// The field focus starts on when the sheet opens: Nick when it is empty,
@@ -906,11 +964,6 @@ impl ConnectState {
         } else {
             Stop::Field(ConnectField::Name)
         }
-    }
-
-    /// The stop the window last reported as focused.
-    pub fn focus(&self) -> Option<&Stop> {
-        self.focus.as_ref()
     }
 
     /// Forgets the focused stop and any pending request. Closing the sheet calls it.
@@ -1749,26 +1802,27 @@ mod tests {
     #[test]
     fn enter_and_tab_walk_forward_and_shift_tab_walks_back_with_wrap() {
         let (world, state) = seeded();
+        let step = |from: Stop, backwards: bool| state.step_stop(&world, Some(&from), backwards);
         assert_eq!(
-            state.next_stop(&world, &Stop::Field(ConnectField::Name), false),
+            step(Stop::Field(ConnectField::Name), false),
             Some(Stop::Field(ConnectField::Host))
         );
         assert_eq!(
-            state.next_stop(&world, &Stop::Field(ConnectField::Autojoin), false),
+            step(Stop::Field(ConnectField::Autojoin), false),
             Some(Stop::ConnectOnStartup)
         );
         assert_eq!(
-            state.next_stop(&world, &Stop::Apply, false),
+            step(Stop::Apply, false),
             Some(Stop::Tab(ConnectTab::Connection)),
             "forward wraps to the first stop"
         );
         assert_eq!(
-            state.next_stop(&world, &Stop::Tab(ConnectTab::Connection), true),
+            step(Stop::Tab(ConnectTab::Connection), true),
             Some(Stop::Apply),
             "back wraps to the last stop"
         );
         assert_eq!(
-            state.next_stop(&world, &Stop::Field(ConnectField::Host), true),
+            step(Stop::Field(ConnectField::Host), true),
             Some(Stop::Field(ConnectField::Name))
         );
     }
@@ -1778,10 +1832,13 @@ mod tests {
         let (world, state) = seeded();
         let off = Stop::Preference(PrefName::Directs);
         assert_eq!(
-            state.next_stop(&world, &off, false),
+            state.step_stop(&world, Some(&off), false),
             Some(Stop::Tab(ConnectTab::Connection))
         );
-        assert_eq!(state.next_stop(&world, &off, true), Some(Stop::Apply));
+        assert_eq!(
+            state.step_stop(&world, Some(&off), true),
+            Some(Stop::Apply)
+        );
     }
 
     #[test]
@@ -1802,7 +1859,6 @@ mod tests {
         );
         state.set_focus(Some(Stop::Field(ConnectField::Autojoin)));
         state.restore_focus();
-        assert_eq!(state.focus(), Some(&Stop::Field(ConnectField::Autojoin)));
         assert_eq!(
             state.take_focus_request(),
             Some(Stop::Field(ConnectField::Autojoin))
@@ -1816,5 +1872,112 @@ mod tests {
         state.request_focus(Stop::Apply);
         assert_eq!(state.take_focus_request(), Some(Stop::Apply));
         assert_eq!(state.take_focus_request(), None);
+    }
+
+    // --- Focus steps, rail stepping and the refused switch -----------------
+
+    #[test]
+    fn step_stop_without_a_focused_stop_starts_at_the_ends() {
+        let (world, state) = seeded();
+        assert_eq!(
+            state.step_stop(&world, None, false),
+            Some(Stop::Tab(ConnectTab::Connection))
+        );
+        assert_eq!(state.step_stop(&world, None, true), Some(Stop::Apply));
+    }
+
+    #[test]
+    fn step_stop_walks_from_a_stop_on_the_tab_both_ways() {
+        let (world, state) = seeded();
+        let from = Stop::Field(ConnectField::Host);
+        assert_eq!(
+            state.step_stop(&world, Some(&from), false),
+            Some(Stop::Field(ConnectField::Port))
+        );
+        assert_eq!(
+            state.step_stop(&world, Some(&from), true),
+            Some(Stop::Field(ConnectField::Name))
+        );
+    }
+
+    #[test]
+    fn rail_stops_are_the_rows_then_add_while_it_shows() {
+        let (_, mut state) = seeded();
+        assert_eq!(
+            state.rail_stops(),
+            vec![
+                Stop::Network("omarchy".into()),
+                Stop::Network("oftc".into()),
+                Stop::AddNetwork,
+            ]
+        );
+        state.add();
+        // A dirty or unsaved draft cannot add again, so the Add row is hidden.
+        assert_eq!(
+            state.rail_stops().last(),
+            Some(&Stop::Network("network-1".into()))
+        );
+    }
+
+    #[test]
+    fn rail_up_and_down_clamp_at_the_ends_without_wrapping() {
+        let (_, state) = seeded();
+        let first = Stop::Network("omarchy".into());
+        let add = Stop::AddNetwork;
+        assert_eq!(state.rail_step(&first, -1), Some(first.clone()));
+        assert_eq!(
+            state.rail_step(&first, 1),
+            Some(Stop::Network("oftc".into()))
+        );
+        assert_eq!(state.rail_step(&add, 1), Some(add.clone()));
+        assert_eq!(state.rail_step(&Stop::Apply, 1), None, "not a rail stop");
+    }
+
+    #[test]
+    fn rail_home_and_end_are_its_first_and_last_stops() {
+        let (_, state) = seeded();
+        assert_eq!(state.rail_edge(false), Some(Stop::Network("omarchy".into())));
+        assert_eq!(state.rail_edge(true), Some(Stop::AddNetwork));
+    }
+
+    #[test]
+    fn a_refused_switch_raises_the_notice_until_the_draft_is_settled() {
+        let (mut world, mut state) = seeded();
+        assert!(!state.switch_refused());
+        state.set_text(ConnectField::Host, "edited.example");
+        assert!(!state.select("oftc"));
+        assert!(state.switch_refused(), "a dirty draft refuses the switch");
+        assert_eq!(
+            SWITCH_REFUSED_TEXT,
+            "Apply or discard your edits before switching networks."
+        );
+        state.discard();
+        assert!(!state.switch_refused(), "Discard settles the draft");
+        state.set_text(ConnectField::Host, "edited.example");
+        assert!(!state.select("oftc"));
+        state.apply(&mut world).unwrap();
+        assert!(!state.switch_refused(), "Apply settles the draft");
+    }
+
+    #[test]
+    fn a_switch_that_moves_clears_the_notice() {
+        let (_, mut state) = seeded();
+        state.set_text(ConnectField::Host, "edited.example");
+        state.select("oftc");
+        assert!(state.switch_refused());
+        state.set_text(ConnectField::Host, "irc.example");
+        assert!(!state.dirty());
+        assert!(state.select("oftc"));
+        assert!(!state.switch_refused());
+    }
+
+    #[test]
+    fn a_no_op_select_is_not_a_refusal() {
+        let (_, mut state) = seeded();
+        state.set_text(ConnectField::Name, "edited");
+        assert!(!state.select("omarchy"), "the same row is not a move");
+        assert!(!state.switch_refused(), "and it is not a refused switch");
+        assert!(!state.select("nowhere"));
+        assert!(!state.switch_refused(), "an unknown row is not refused either");
     }
 }

@@ -82,6 +82,32 @@ pub struct SingleLineInput {
     /// Counts the user's edits and caret moves. A nick completion cycle ends
     /// when this moves. Programmatic `set_text` does not move it.
     input_serial: u64,
+    /// Draws each character as a bullet, as Qt's password echo does. Copy and cut
+    /// do nothing, so the secret stays in the field.
+    mask: bool,
+}
+
+/// The bullet a masked field draws for each character.
+const MASK_CHAR: char = '\u{2022}';
+
+/// The text a masked field draws for `text`: one bullet per character.
+pub fn masked_text(text: &str) -> String {
+    MASK_CHAR.to_string().repeat(text.chars().count())
+}
+
+/// Byte offset in `masked_text(text)` for the byte offset `offset` in `text`. An
+/// offset past the end, or inside a character, counts the characters before it.
+pub fn drawn_offset(text: &str, offset: usize) -> usize {
+    text.char_indices().take_while(|(at, _)| *at < offset).count() * MASK_CHAR.len_utf8()
+}
+
+/// Byte offset in `text` for a byte offset `drawn` in `masked_text(text)`, the
+/// inverse of `drawn_offset`. Past the last character it is the text's length.
+pub fn content_offset(text: &str, drawn: usize) -> usize {
+    let index = drawn / MASK_CHAR.len_utf8();
+    text.char_indices()
+        .nth(index)
+        .map_or(text.len(), |(at, _)| at)
 }
 
 impl SingleLineInput {
@@ -107,11 +133,37 @@ impl SingleLineInput {
             undo_stack: UndoStack::default(),
             send_limit: None,
             input_serial: 0,
+            mask: false,
         }
+    }
+
+    /// Draws the text as bullets. Used by the Connect sheet's secret fields.
+    pub fn masked(mut self) -> Self {
+        self.mask = true;
+        self
     }
 
     pub fn text(&self) -> &str {
         &self.content
+    }
+
+    /// The byte offset in the drawn text for a byte offset in the content. The
+    /// two match unless the field is masked.
+    fn drawn_at(&self, offset: usize) -> usize {
+        if self.mask {
+            drawn_offset(&self.content, offset)
+        } else {
+            offset
+        }
+    }
+
+    /// The content byte offset for a byte offset in the drawn text, the inverse of `drawn_at`.
+    fn content_at(&self, drawn: usize) -> usize {
+        if self.mask {
+            content_offset(&self.content, drawn)
+        } else {
+            drawn
+        }
     }
 
     /// The caret as a byte offset into `text()`. With a selection, the end the
@@ -381,6 +433,10 @@ impl SingleLineInput {
     }
 
     fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
+        if self.mask {
+            // A secret is never copied. Nothing else takes the key either.
+            return;
+        }
         if !self.selected_range.is_empty() {
             cx.write_to_clipboard(ClipboardItem::new_string(
                 self.content[self.selected_range.clone()].to_string(),
@@ -392,6 +448,9 @@ impl SingleLineInput {
     }
 
     fn cut(&mut self, _: &Cut, window: &mut Window, cx: &mut Context<Self>) {
+        if self.mask {
+            return;
+        }
         if !self.selected_range.is_empty() {
             cx.write_to_clipboard(ClipboardItem::new_string(
                 self.content[self.selected_range.clone()].to_string(),
@@ -429,7 +488,7 @@ impl SingleLineInput {
         if position.y > bounds.bottom() {
             return self.content.len();
         }
-        line.closest_index_for_x(position.x - bounds.left())
+        self.content_at(line.closest_index_for_x(position.x - bounds.left()))
     }
 
     fn select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
@@ -616,11 +675,11 @@ impl EntityInputHandler for SingleLineInput {
         let range = self.range_from_utf16(&range_utf16);
         Some(Bounds::from_corners(
             point(
-                bounds.left() + last_layout.x_for_index(range.start),
+                bounds.left() + last_layout.x_for_index(self.drawn_at(range.start)),
                 bounds.top(),
             ),
             point(
-                bounds.left() + last_layout.x_for_index(range.end),
+                bounds.left() + last_layout.x_for_index(self.drawn_at(range.end)),
                 bounds.bottom(),
             ),
         ))
@@ -634,8 +693,8 @@ impl EntityInputHandler for SingleLineInput {
     ) -> Option<usize> {
         let line_point = self.last_bounds?.localize(&point)?;
         let last_layout = self.last_layout.as_ref()?;
-        let utf8_index = last_layout.index_for_x(point.x - line_point.x)?;
-        Some(self.offset_to_utf16(utf8_index))
+        let drawn = last_layout.index_for_x(point.x - line_point.x)?;
+        Some(self.offset_to_utf16(self.content_at(drawn)))
     }
 }
 
@@ -707,11 +766,16 @@ impl Element for SingleLineInputElement {
             gpui::AbsoluteLength::Pixels(crate::util::scaled_px(&app_style, 13.));
 
         let find_mode = input.find_mode;
+        let drawn_content: SharedString = if input.mask {
+            masked_text(&content).into()
+        } else {
+            content.clone()
+        };
         let (display_text, text_color) = match (content.is_empty(), find_mode) {
             (true, true) => ("Find".into(), to_gpui(app_style.accent_color())),
             (true, false) => (input.placeholder.clone(), to_gpui(app_style.muted_color())),
-            (false, true) => (content, to_gpui(app_style.accent_color())),
-            (false, false) => (content, to_gpui(app_style.ink_color())),
+            (false, true) => (drawn_content, to_gpui(app_style.accent_color())),
+            (false, false) => (drawn_content, to_gpui(app_style.ink_color())),
         };
 
         let run = TextRun {
@@ -727,7 +791,7 @@ impl Element for SingleLineInputElement {
             .text_system()
             .shape_line(display_text, font_size, &[run], None);
 
-        let cursor_pos = line.x_for_index(cursor);
+        let cursor_pos = line.x_for_index(input.drawn_at(cursor));
         let selection_color = to_gpui(app_style.selection_color());
         // The glyph box that `paint_line` draws: ascent + descent, centred in the
         // line height. The caret and the selection span that, not the whole field.
@@ -752,11 +816,11 @@ impl Element for SingleLineInputElement {
                 Some(fill(
                     Bounds::from_corners(
                         point(
-                            bounds.left() + line.x_for_index(selected_range.start),
+                            bounds.left() + line.x_for_index(input.drawn_at(selected_range.start)),
                             glyph_top,
                         ),
                         point(
-                            bounds.left() + line.x_for_index(selected_range.end),
+                            bounds.left() + line.x_for_index(input.drawn_at(selected_range.end)),
                             glyph_top + glyph_height,
                         ),
                     ),
@@ -865,12 +929,12 @@ impl Focusable for SingleLineInput {
     }
 }
 
-/// Text-field keys for the composer and the sheet filters. `secondary-` is Ctrl
-/// on Windows and Linux and Cmd on macOS, so clipboard and undo follow the
-/// platform. Word movement uses Ctrl+arrows on every platform: Alt+arrows walk
-/// the server list.
+/// Text-field keys for the composer, the sheet filters and the Connect fields.
+/// `secondary-` is Ctrl on Windows and Linux and Cmd on macOS, so clipboard and
+/// undo follow the platform. Word movement uses Ctrl+arrows on every platform:
+/// Alt+arrows walk the server list.
 pub fn bind_input_keys(cx: &mut gpui::App) {
-    for context in ["Composer", "SheetFilter"] {
+    for context in ["Composer", "SheetFilter", "ConnectField"] {
         cx.bind_keys([
             gpui::KeyBinding::new("backspace", Backspace, Some(context)),
             gpui::KeyBinding::new("delete", Delete, Some(context)),
@@ -915,5 +979,40 @@ mod tests {
         assert_eq!(flip_after(Duration::ZERO), Duration::from_millis(530));
         assert_eq!(flip_after(Duration::from_millis(500)), Duration::from_millis(30));
         assert_eq!(flip_after(Duration::from_millis(530)), Duration::from_millis(530));
+    }
+
+    #[test]
+    fn a_masked_field_draws_one_bullet_per_character() {
+        assert_eq!(masked_text(""), "");
+        assert_eq!(masked_text("abc"), "\u{2022}\u{2022}\u{2022}");
+        // A multi-byte character is still one bullet.
+        assert_eq!(masked_text("é€"), "\u{2022}\u{2022}");
+    }
+
+    #[test]
+    fn caret_offsets_map_between_content_and_bullets() {
+        let bullet = MASK_CHAR.len_utf8();
+        assert_eq!(drawn_offset("abc", 0), 0);
+        assert_eq!(drawn_offset("abc", 2), 2 * bullet);
+        assert_eq!(drawn_offset("abc", 3), 3 * bullet, "the end of the text");
+        // Byte 2 sits after the two-byte "é", so it is the second character.
+        assert_eq!(drawn_offset("é€x", 2), bullet);
+        assert_eq!(drawn_offset("é€x", 5), 2 * bullet);
+        assert_eq!(drawn_offset("é€x", 99), 3 * bullet, "past the end counts every character");
+    }
+
+    #[test]
+    fn drawn_offsets_map_back_to_the_content() {
+        let bullet = MASK_CHAR.len_utf8();
+        assert_eq!(content_offset("abc", 0), 0);
+        assert_eq!(content_offset("abc", 2 * bullet), 2);
+        assert_eq!(content_offset("abc", 3 * bullet), 3, "the end of the text");
+        assert_eq!(content_offset("é€x", bullet), 2);
+        assert_eq!(content_offset("é€x", 2 * bullet), 5);
+        assert_eq!(content_offset("é€x", 9 * bullet), 6, "past the end is the length");
+        for offset in [0, 2, 5, 6] {
+            let drawn = drawn_offset("é€x", offset);
+            assert_eq!(content_offset("é€x", drawn), offset);
+        }
     }
 }

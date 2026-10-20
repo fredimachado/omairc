@@ -35,7 +35,7 @@ impl EventEmitter<ShortcutsEvent> for ShortcutsSheet {}
 
 /// The platform the labels are written for: Windows adds the terminal
 /// aliases, macOS relabels Ctrl and Alt.
-fn host_platform() -> Platform {
+pub fn host_platform() -> Platform {
     if cfg!(target_os = "windows") {
         Platform::Windows
     } else if cfg!(target_os = "macos") {

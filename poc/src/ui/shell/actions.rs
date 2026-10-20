@@ -9,6 +9,10 @@ use crate::model::chords::Chord;
 use crate::ui::input::Copy as CopySelection;
 use crate::ui::sheets::about::bind_about_keys;
 use crate::ui::sheets::channel_open::bind_channel_open_keys;
+use crate::ui::sheets::connect::{
+    bind_connect_keys, ConnectArrowLeft, ConnectArrowRight, ConnectEnter, ConnectNextStop,
+    ConnectPrevStop, ConnectRailDown, ConnectRailEnd, ConnectRailHome, ConnectRailUp, ConnectSpace,
+};
 use crate::ui::sheets::filter_sheet::bind_filter_keys;
 use crate::ui::sheets::inbox::bind_inbox_keys;
 use crate::ui::shell::Shell;
@@ -77,6 +81,7 @@ pub fn bind_shell_keys(cx: &mut App) {
     bind_inbox_keys(cx);
     bind_about_keys(cx);
     bind_channel_open_keys(cx);
+    bind_connect_keys(cx);
     let mut bindings = vec![
         KeyBinding::new("secondary-,", OpenConnect, None),
         // Ctrl+Enter applies while Connect shows. The listener checks that.
@@ -319,5 +324,57 @@ pub fn wire_shell_actions(root: Div, cx: &mut Context<Shell>) -> Div {
     }))
     .on_action(cx.listener(|shell, _: &ConnectRemove, window, cx| {
         shell.connect_remove(window, cx);
+    }))
+    // The Connect card's own keys. Each one passes on when the focused stop does not use it,
+    // so a field keeps Space and the arrows, and the composer keeps its keys.
+    .on_action(cx.listener(|shell, _: &ConnectNextStop, window, cx| {
+        if !shell.connect_step(false, window, cx) {
+            cx.propagate();
+        }
+    }))
+    .on_action(cx.listener(|shell, _: &ConnectPrevStop, window, cx| {
+        if !shell.connect_step(true, window, cx) {
+            cx.propagate();
+        }
+    }))
+    .on_action(cx.listener(|shell, _: &ConnectEnter, window, cx| {
+        if !shell.connect_enter(window, cx) {
+            cx.propagate();
+        }
+    }))
+    .on_action(cx.listener(|shell, _: &ConnectSpace, window, cx| {
+        if !shell.connect_space(window, cx) {
+            cx.propagate();
+        }
+    }))
+    .on_action(cx.listener(|shell, _: &ConnectArrowLeft, window, cx| {
+        if !shell.connect_arrow(-1, window, cx) {
+            cx.propagate();
+        }
+    }))
+    .on_action(cx.listener(|shell, _: &ConnectArrowRight, window, cx| {
+        if !shell.connect_arrow(1, window, cx) {
+            cx.propagate();
+        }
+    }))
+    .on_action(cx.listener(|shell, _: &ConnectRailUp, window, cx| {
+        if !shell.connect_rail_step(-1, window, cx) {
+            cx.propagate();
+        }
+    }))
+    .on_action(cx.listener(|shell, _: &ConnectRailDown, window, cx| {
+        if !shell.connect_rail_step(1, window, cx) {
+            cx.propagate();
+        }
+    }))
+    .on_action(cx.listener(|shell, _: &ConnectRailHome, window, cx| {
+        if !shell.connect_rail_edge(false, window, cx) {
+            cx.propagate();
+        }
+    }))
+    .on_action(cx.listener(|shell, _: &ConnectRailEnd, window, cx| {
+        if !shell.connect_rail_edge(true, window, cx) {
+            cx.propagate();
+        }
     }))
 }

@@ -21,7 +21,7 @@ use gpui::{
 
 use crate::model::channel_list::ChannelListCache;
 use crate::model::composer::{ComposerState, DraftKey};
-use crate::model::connect::ConnectState;
+use crate::model::connect::{ConnectState, Stop};
 use crate::model::find::Find;
 use crate::model::format::{format_irc, text_hits, TextHit};
 use crate::model::inbox::{seed_inbox, Inbox};
@@ -39,7 +39,8 @@ use crate::ui::input::SingleLineInput;
 use crate::ui::members::render_members;
 use crate::ui::scrollbar::{end_scrollbar_drag, move_scrollbar_drag, ScrollbarDragCell};
 use crate::ui::shell::actions::wire_shell_actions;
-use crate::ui::sheets::connect::render_connect;
+use crate::ui::sheets::connect::controls::ConnectControls;
+use crate::ui::sheets::connect::{render_connect, ConnectView};
 use crate::ui::sidebar::{render_sidebar, SidebarData};
 use crate::ui::transcript::view::NickClicked;
 use crate::ui::transcript::TranscriptView;
@@ -91,6 +92,8 @@ pub struct Shell {
     pub connect_open: bool,
     /// The focus handle the Connect sheet tracks, so keys reach the window while it shows.
     pub connect_focus: FocusHandle,
+    /// The Connect sheet's text fields, focus handles and scroll handles.
+    pub connect_ui: ConnectControls,
     /// The `/list` answers already shown, per network and mask, so a repeat reuses them.
     pub channel_lists: ChannelListCache,
     /// Where each conversation's transcript was left, so returning opens there.
@@ -148,6 +151,17 @@ impl Shell {
                 cx.notify();
             }
         });
+        // Every Connect field's edit writes the draft, so Apply and Discard see it.
+        let connect_ui = ConnectControls::new(cx);
+        let connect_edits: Vec<Subscription> = connect_ui
+            .fields()
+            .into_iter()
+            .map(|(field, input)| {
+                cx.observe(&input, move |shell: &mut Shell, _, cx| {
+                    shell.connect_field_edited(field, cx);
+                })
+            })
+            .collect();
 
         let shell = Self {
             world,
@@ -172,6 +186,7 @@ impl Shell {
             connect,
             connect_open: false,
             connect_focus: cx.focus_handle(),
+            connect_ui,
             channel_lists: ChannelListCache::default(),
             scroll_places: ScrollPlaces::default(),
             window_active: true,
@@ -183,7 +198,10 @@ impl Shell {
                 ..Default::default()
             },
             lines_seed: lines,
-            _subscriptions: vec![transcript_events, composer_events],
+            _subscriptions: [transcript_events, composer_events]
+                .into_iter()
+                .chain(connect_edits)
+                .collect(),
         };
 
         let conv = shell.current_conversation();
@@ -218,10 +236,34 @@ impl Render for Shell {
             self._subscriptions.push(subscription);
         }
 
-        // Connect's first field takes focus when the sheet opens. Until the sheet UI
-        // focuses fields itself, its card's focus handle takes the request.
-        if self.connect_open && self.connect.take_focus_request().is_some() {
-            window.focus(&self.connect_focus);
+        // Connect's focus. The stops on the showing tab get their handles, then the
+        // focus request a Tab, an open or a tab cycle left is applied. The stop that
+        // holds focus is read back, and the rail's Enter arming resets when the rail
+        // lets go. Finally the fields show the draft.
+        let mut connect_focused: Option<Stop> = None;
+        if self.connect_open {
+            let stops = self.connect.stops(&self.world);
+            self.connect_ui.ensure(cx, &stops);
+            if let Some(stop) = self.connect.take_focus_request() {
+                self.connect_ui.ensure(cx, std::slice::from_ref(&stop));
+                match self.connect_ui.handle(&stop) {
+                    Some(handle) => window.focus(handle),
+                    None => window.focus(&self.connect_focus),
+                }
+            }
+            connect_focused = self.connect_ui.focused(&stops, window);
+            // A click focuses a stop without the keys, so the model learns it here. Focus
+            // on Shortcuts or About leaves the last stop in place for the restore.
+            if let Some(stop) = &connect_focused {
+                self.connect.set_focus(Some(stop.clone()));
+            }
+            if !matches!(
+                connect_focused,
+                Some(Stop::Network(_) | Stop::AddNetwork)
+            ) {
+                self.connect.rail_left();
+            }
+            self.sync_connect_inputs(cx);
         }
 
         let app_style = style(cx);
@@ -393,7 +435,16 @@ impl Render for Shell {
             // Connect sits above the window and below Shortcuts and About, which
             // open after it.
             .when(self.connect_open, |this| {
-                this.child(render_connect(&self.connect, &app_style, &self.connect_focus))
+                this.child(render_connect(&ConnectView {
+                    state: &self.connect,
+                    world: &self.world,
+                    prefs: &self.preferences,
+                    controls: &self.connect_ui,
+                    focused: connect_focused.as_ref(),
+                    card_focus: &self.connect_focus,
+                    style: &app_style,
+                    on_stop: connect_stop_handler(entity.clone()),
+                }))
             })
             .when_some(self.render_modal(cx), |this, modal| this.child(modal));
 
@@ -429,6 +480,13 @@ fn status_handler(entity: Entity<Shell>) -> Handler<String> {
 fn topic_handler(entity: Entity<Shell>) -> Handler<TextHit> {
     Rc::new(move |hit: TextHit, window: &mut Window, cx: &mut App| {
         entity.update(cx, |shell, cx| shell.activate_text_hit(hit, window, cx));
+    })
+}
+
+/// A click on a Connect control: the shell acts on the stop it landed on.
+fn connect_stop_handler(entity: Entity<Shell>) -> Handler<Stop> {
+    Rc::new(move |stop: Stop, window: &mut Window, cx: &mut App| {
+        entity.update(cx, |shell, cx| shell.connect_click(stop, window, cx));
     })
 }
 
