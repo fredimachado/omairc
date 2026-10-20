@@ -55,7 +55,6 @@ pub enum Chord {
     Shortcuts,
     About,
     /// Ctrl+` (`secondary-\``): opens Status for the selected network, or closes it.
-    #[allow(dead_code)] // Phase 2 Status wiring: drop this allow when the chord is bound.
     StatusToggle,
     WalkConversationDown,
     WalkConversationUp,

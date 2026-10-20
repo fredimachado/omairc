@@ -16,8 +16,12 @@ pub struct SidebarData<'a> {
     pub world: &'a MockWorld,
     pub state: &'a SidebarState,
     pub selected: &'a ConversationRef,
+    /// Status is showing, so no conversation row is the current one (Qt `current`).
+    pub status_open: bool,
     pub inbox_count: u32,
     pub typing_phase: u8,
+    /// A network icon or name click: opens that network's Status.
+    pub on_status: Handler<String>,
     /// The footer's `inbox` link.
     pub on_inbox: Handler<()>,
     /// The footer's version: opens the About sheet.
@@ -104,6 +108,7 @@ fn network_list(
                     collapsed,
                     style,
                     on_toggle.clone(),
+                    data.on_status.clone(),
                 ))
                 .when(!collapsed, |this| {
                     this.child(conversation_groups(
@@ -129,7 +134,7 @@ fn conversation_groups(
     let ordered = ordered_conversations(network);
     let row = |conv: &Conversation| {
         let target = ConversationRef::new(network.id.clone(), conv.key());
-        let selected = &target == data.selected;
+        let selected = !data.status_open && &target == data.selected;
         conversation_row(
             target,
             conv,

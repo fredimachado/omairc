@@ -6,14 +6,16 @@ use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
 /// The network header, a port of `NetworkSection.qml`: 64 tall, with the
 /// collapse chevron, the icon, the name with an unread dot, and the status.
-/// The header itself is inert; `on_toggle` receives the network id when the
-/// chevron is clicked.
+/// The header itself is inert. `on_toggle` receives the network id when the
+/// chevron is clicked; `on_open` receives it when the icon or name is clicked,
+/// which opens that network's Status.
 pub fn network_header(
     network: &Network,
     focused: bool,
     collapsed: bool,
     style: &Style,
     on_toggle: Handler<String>,
+    on_open: Handler<String>,
 ) -> impl IntoElement {
     let ink = to_gpui(style.ink_color());
     let muted = to_gpui(style.muted_color());
@@ -33,6 +35,7 @@ pub fn network_header(
         .map(|c| c.to_uppercase().to_string())
         .unwrap_or_else(|| "?".to_string());
     let id = network.id.clone();
+    let open_id = id.clone();
 
     div()
         .relative()
@@ -86,8 +89,10 @@ pub fn network_header(
                     on_toggle(id.clone(), window, cx);
                 }),
         )
-        // Icon: 28 square, radius 8, at x 30.
-        .child(
+        // Icon: 28 square, radius 8, at x 30. A click opens the network's Status.
+        .child({
+            let on_open = on_open.clone();
+            let open_id = open_id.clone();
             div()
                 .absolute()
                 .left(scaled_px(style, 30.))
@@ -98,12 +103,16 @@ pub fn network_header(
                 .flex()
                 .items_center()
                 .justify_center()
+                .cursor_pointer()
                 .text_size(scaled_px(style, 14.))
                 .font_weight(gpui::FontWeight::BOLD)
                 .text_color(to_gpui(Color::rgb(1., 1., 1.)))
                 .font_family(FONT_FAMILY)
-                .child(initial),
-        )
+                .child(initial)
+                .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                    on_open(open_id.clone(), window, cx);
+                })
+        })
         // Name and status, at x 68, centred vertically.
         .child(
             div()
@@ -132,6 +141,10 @@ pub fn network_header(
                                 .font_weight(gpui::FontWeight::BOLD)
                                 .text_color(ink)
                                 .font_family(FONT_FAMILY)
+                                .cursor_pointer()
+                                .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                                    on_open(open_id.clone(), window, cx);
+                                })
                                 .child(network.display_name.clone()),
                         )
                         .when(has_dot, |this| {

@@ -112,12 +112,17 @@ impl Shell {
         self.present_about(window, cx);
     }
 
-    /// Escape: closes the open sheet. Inert when no sheet is open.
+    /// Escape: closes the open sheet, or with no sheet leaves Status for the
+    /// conversation. Inert otherwise.
     pub fn escape(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.chord_live(Chord::Escape, window, cx) {
             return;
         }
-        self.close_modal(window, cx);
+        if self.modal.is_some() {
+            self.close_modal(window, cx);
+        } else {
+            self.close_status(window, cx);
+        }
     }
 
     /// Drops the open sheet and hands focus back to the composer.
@@ -139,17 +144,19 @@ impl Shell {
         })
     }
 
-    /// Activating a Jump row expands its network, then selects it. Status rows
-    /// are never activatable, so they reach here only through a stale event.
-    pub fn jump_to(&mut self, target: &JumpTarget, cx: &mut Context<Self>) {
-        if target.kind != JumpKind::Conversation {
-            return;
+    /// Activating a Jump row. A conversation expands its network, then selects
+    /// it. A Status row opens that network's Status.
+    pub fn jump_to(&mut self, target: &JumpTarget, window: &mut Window, cx: &mut Context<Self>) {
+        match target.kind {
+            JumpKind::Status => self.open_status(&target.network_id, window, cx),
+            JumpKind::Conversation => {
+                let Some((network, key)) = target.conversation_id.split_once('\n') else {
+                    return;
+                };
+                set_collapsed(&self.world, &mut self.sidebar, network, false);
+                self.select_by_ids(network, key, cx);
+            }
         }
-        let Some((network, key)) = target.conversation_id.split_once('\n') else {
-            return;
-        };
-        set_collapsed(&self.world, &mut self.sidebar, network, false);
-        self.select_by_ids(network, key, cx);
     }
 
     /// Link sheet highlight: the transcript scrolls to the row the link is in.
@@ -175,7 +182,7 @@ impl Shell {
                 window,
                 |shell: &mut Shell, _, event: &SheetEvent<JumpTarget>, window, cx| match event {
                     SheetEvent::Activated(target) => {
-                        shell.jump_to(target, cx);
+                        shell.jump_to(target, window, cx);
                         shell.close_modal(window, cx);
                     }
                     SheetEvent::Dismissed => shell.close_modal(window, cx),
@@ -188,10 +195,17 @@ impl Shell {
         cx.notify();
     }
 
+    /// The Link sheet. On a conversation it lists the topic and transcript links;
+    /// on Status it lists the Status rows' URLs and INVITE channels.
     fn present_link(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let source = LinkSource {
-            topic: self.current_conversation().topic.clone(),
-            rows: self.transcript.read(cx).rows().to_vec(),
+        let rows = self.transcript.read(cx).rows().to_vec();
+        let source = if self.status.is_some() {
+            LinkSource::Status { rows }
+        } else {
+            LinkSource::Conversation {
+                topic: self.current_conversation().topic.clone(),
+                rows,
+            }
         };
         let sheet = cx.new(|cx| FilterSheet::new(source, cx));
         let subscriptions = vec![
@@ -208,9 +222,7 @@ impl Shell {
                             LinkKind::Url => {
                                 open_web_link(cx, &text);
                             }
-                            // Invite rows come only from Status, which this sheet does
-                            // not show yet. The Status wiring joins the channel here.
-                            LinkKind::Invite => {}
+                            LinkKind::Invite => shell.join_status_invite(&text, cx),
                         }
                     }
                     SheetEvent::Dismissed => shell.close_modal(window, cx),

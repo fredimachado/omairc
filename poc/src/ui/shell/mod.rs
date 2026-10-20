@@ -17,15 +17,17 @@ use gpui::{
 
 use crate::model::inbox::{seed_inbox, Inbox};
 use crate::model::sidebar::SidebarState;
+use crate::model::status::status_title;
 use crate::model::title::{conversation_title, window_title, TitleView};
 use crate::model::{bench_channel, load_world, ConversationRef, MockWorld};
+use crate::ui::center::header::HeaderView;
 use crate::ui::center::render_center;
 use crate::ui::input::SingleLineInput;
 use crate::ui::members::render_members;
 use crate::ui::scrollbar::{end_scrollbar_drag, move_scrollbar_drag, ScrollbarDragCell};
 use crate::ui::shell::actions::wire_shell_actions;
 use crate::ui::sidebar::{render_sidebar, SidebarData};
-use crate::ui::transcript::view::NickClicked;
+use crate::ui::transcript::view::{InviteClicked, NickClicked};
 use crate::ui::transcript::TranscriptView;
 use crate::ui::Handler;
 use crate::util::{style, to_gpui};
@@ -35,7 +37,12 @@ pub use bench::BenchState;
 
 pub struct Shell {
     pub world: MockWorld,
+    /// The conversation the window has open. While Status is showing it is the
+    /// conversation Escape or Ctrl+` returns to.
     pub selected: ConversationRef,
+    /// The network whose Status pane is showing in place of the conversation.
+    /// `None` shows `selected`.
+    pub status: Option<String>,
     pub sidebar: SidebarState,
     pub window_title: String,
     pub members_open: bool,
@@ -88,10 +95,14 @@ impl Shell {
         let transcript_events = cx.subscribe(&transcript, |shell: &mut Shell, _, event: &NickClicked, cx| {
             shell.open_direct_nick(&event.0, cx);
         });
+        let invite_events = cx.subscribe(&transcript, |shell: &mut Shell, _, event: &InviteClicked, cx| {
+            shell.join_status_invite(&event.0, cx);
+        });
 
         let shell = Self {
             world,
             selected,
+            status: None,
             sidebar: SidebarState::default(),
             window_title: String::new(),
             members_open: true,
@@ -111,7 +122,7 @@ impl Shell {
                 ..Default::default()
             },
             lines_seed: lines,
-            _subscriptions: vec![transcript_events],
+            _subscriptions: vec![transcript_events, invite_events],
         };
 
         let conv = shell.current_conversation();
@@ -129,31 +140,55 @@ impl Render for Shell {
 
         let app_style = style(cx);
         let entity = cx.entity();
-        // Qt gates the panel on `win.width >= scaledSize(980)`.
+        // Qt gates the panel on `win.width >= scaledSize(980)`. Status hides it.
         let wide_enough = f32::from(window.viewport_size().width)
             >= app_style.scaled(980.) as f32;
         let show_members = self.members_open
             && self.current_conversation().is_channel()
+            && self.status.is_none()
             && wide_enough;
         // A hidden member list cannot keep focus (a DM, a narrow window, or a
         // closed panel): hand focus to the composer, as Ctrl+Shift+M does.
         if !show_members && self.member_focus.is_focused(window) {
             self.focus_composer(window, cx);
         }
-        let title = conversation_title(&self.world, &self.selected).unwrap_or_default();
-        let wanted_window_title = window_title(&self.world, TitleView::Conversation(Some(&self.selected)));
+        let view = match self.status.as_deref() {
+            Some(network_id) => TitleView::Status(network_id),
+            None => TitleView::Conversation(Some(&self.selected)),
+        };
+        let wanted_window_title = window_title(&self.world, view);
         if wanted_window_title != self.window_title {
             window.set_window_title(&wanted_window_title);
             self.window_title = wanted_window_title;
         }
+
+        // The header reads the Status pane's title and the connection line, or the
+        // conversation's title, topic and people count.
+        let (title, subtitle, people) = match &self.status {
+            Some(network_id) => (
+                status_title(&self.world, network_id).unwrap_or_else(|| "Status".to_string()),
+                "Connected".to_string(),
+                None,
+            ),
+            None => {
+                let conv = self.current_conversation();
+                (
+                    conversation_title(&self.world, &self.selected).unwrap_or_default(),
+                    conv.topic.clone().unwrap_or_default(),
+                    conv.is_channel().then(|| conv.people_count()),
+                )
+            }
+        };
 
         let sidebar = render_sidebar(
             SidebarData {
                 world: &self.world,
                 state: &self.sidebar,
                 selected: &self.selected,
+                status_open: self.status.is_some(),
                 inbox_count: self.inbox.len() as u32,
                 typing_phase: self.typing_phase,
+                on_status: status_handler(entity.clone()),
                 on_inbox: inbox_handler(entity.clone()),
                 on_about: about_handler(entity.clone()),
             },
@@ -165,9 +200,13 @@ impl Render for Shell {
             close_handler(entity.clone()),
             collapse_handler(entity.clone()),
         );
+        let header = HeaderView {
+            title: &title,
+            subtitle: &subtitle,
+            people,
+        };
         let center = render_center(
-            self.current_conversation(),
-            &title,
+            header,
             self.transcript.clone(),
             self.composer.clone(),
             &app_style,
@@ -245,6 +284,13 @@ fn select_handler(entity: Entity<Shell>) -> Handler<ConversationRef> {
             shell.focus_composer(window, cx);
             cx.notify();
         });
+    })
+}
+
+/// A network icon or name click: opens that network's Status pane.
+fn status_handler(entity: Entity<Shell>) -> Handler<String> {
+    Rc::new(move |network_id: String, window: &mut Window, cx: &mut App| {
+        entity.update(cx, |shell, cx| shell.open_status(&network_id, window, cx));
     })
 }
 

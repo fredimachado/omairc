@@ -12,7 +12,6 @@ pub enum TitleView<'a> {
     /// A conversation, or `None` when nothing is selected.
     Conversation(Option<&'a ConversationRef>),
     /// The Status pane of this network.
-    #[allow(dead_code)] // Phase 2 Status wiring: the shell passes this when Status is open.
     Status(&'a str),
 }
 

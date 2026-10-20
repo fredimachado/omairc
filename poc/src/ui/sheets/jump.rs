@@ -3,7 +3,7 @@
 
 use gpui::AnyElement;
 
-use crate::model::{jump_targets, JumpKind, JumpTarget, MockWorld};
+use crate::model::{jump_targets, JumpTarget, MockWorld};
 use crate::model::Style;
 use crate::ui::sheets::filter_sheet::{text_row, FilterSource};
 use gpui::IntoElement;
@@ -21,10 +21,6 @@ impl FilterSource for JumpSource {
 
     fn items(&self, query: &str) -> Vec<JumpTarget> {
         jump_targets(&self.world, query)
-    }
-
-    fn activatable(&self, item: &JumpTarget) -> bool {
-        item.kind == JumpKind::Conversation
     }
 
     fn width(&self) -> f32 {

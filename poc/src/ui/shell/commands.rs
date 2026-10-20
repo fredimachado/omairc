@@ -5,10 +5,13 @@ use gpui::{App, ClipboardItem, Context, Focusable, Window};
 use crate::model::chords::{chord_enabled, Chord, ChordContext};
 use crate::model::cursor::{move_index, page_amount};
 use crate::model::directs::{close_direct, open_direct};
-use crate::model::navigation::{mark_all_read, next_unread, step_conversation, step_network};
+use crate::model::navigation::{
+    mark_all_read, next_unread_or_status, step_conversation, step_network, UnreadTarget,
+};
 use crate::model::sidebar::{
     collapse_all, move_focused, set_collapsed, set_collapsed_focused, sidebar_rows,
 };
+use crate::model::status::status_rows;
 use crate::model::{
     continues_group, local_send_stamp, outgoing_message, row_from_mock_message, Conversation,
     ConversationRef, Member, Network,
@@ -34,8 +37,9 @@ impl Shell {
             .expect("selected conversation is in the world")
     }
 
-    /// Makes `target` the open conversation. Opening reads it, so its unread
-    /// count and mention flag clear.
+    /// Makes `target` the open conversation and leaves Status, even when `target`
+    /// is the one already selected. Opening reads it, so its unread count and
+    /// mention flag clear.
     pub fn select(&mut self, target: ConversationRef, cx: &mut Context<Self>) {
         if let Some(conv) = self.world.find_mut(&target) {
             conv.mark_read();
@@ -46,11 +50,66 @@ impl Shell {
                 .consume_conversation(&target.network_id, &target.key, is_channel);
         }
         self.selected = target;
+        self.status = None;
         self.member_cursor = 0;
+        self.show_selected_conversation(cx);
+    }
+
+    /// Puts the selected conversation's stored lines in the transcript.
+    fn show_selected_conversation(&mut self, cx: &mut Context<Self>) {
         let conv = self.current_conversation();
         let self_nick = self.current_network().nick.clone();
         self.transcript
             .update(cx, |t, _| t.set_conversation(conv, &self_nick));
+    }
+
+    /// Opens a network's Status pane in place of the conversation. Like Qt's
+    /// `openNetworkStatus`, it clears header focus, shows the lines at the end,
+    /// and focuses the composer. An unknown network does nothing.
+    pub fn open_status(&mut self, network_id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if self.world.network(network_id).is_none() {
+            return;
+        }
+        self.sidebar.focus = None;
+        self.status = Some(network_id.to_string());
+        let rows = status_rows(&self.world, network_id);
+        self.transcript.update(cx, |t, _| t.set_status(rows));
+        self.focus_composer(window, cx);
+        cx.notify();
+    }
+
+    /// Leaves Status for the selected conversation, which keeps its scroll place
+    /// (Escape and Ctrl+`). Focus goes to the composer.
+    pub fn close_status(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.status.take().is_none() {
+            return;
+        }
+        self.show_selected_conversation(cx);
+        self.focus_composer(window, cx);
+        cx.notify();
+    }
+
+    /// Ctrl+`: opens Status for the selected network, or leaves it when Status
+    /// is showing and a conversation is selected.
+    pub fn toggle_status(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.chord_live(Chord::StatusToggle, window, cx) {
+            return;
+        }
+        if self.status.is_some() && self.world.find(&self.selected).is_some() {
+            self.close_status(window, cx);
+        } else {
+            let network_id = self.selected.network_id.clone();
+            self.open_status(&network_id, window, cx);
+        }
+    }
+
+    /// A click on an INVITE line's channel in Status: joins it on that network
+    /// and selects it (Qt `joinInviteChannel`).
+    pub fn join_status_invite(&mut self, channel: &str, cx: &mut Context<Self>) {
+        let Some(network_id) = self.status.clone() else {
+            return;
+        };
+        self.join_invite(&network_id, channel, cx);
     }
 
     /// A nick click (transcript, member list): open or select that DM on the
@@ -107,8 +166,7 @@ impl Shell {
         let conv = self.current_conversation();
         ChordContext {
             sheet: self.modal.as_ref().map(ActiveModal::sheet),
-            // The shell has no Status view yet, so no Status is ever open.
-            status_open: false,
+            status_open: self.status.is_some(),
             channel: conv.is_channel(),
             direct: !conv.is_channel(),
             header_focused: self.sidebar.focus.is_some(),
@@ -158,10 +216,13 @@ impl Shell {
         }
     }
 
-    /// Enter in the composer. A focused network header makes it a no-op, as
-    /// Qt does; the header's own Enter (Status in Qt) is out of scope.
+    /// Enter in the composer. With a network header focused, Enter opens that
+    /// network's Status (Qt `activateFocusedNetworkHeader`) and does not send.
     pub fn composer_submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.chord_live(Chord::HeaderActivate, window, cx) {
+            if let Some(network_id) = self.sidebar.focus.clone() {
+                self.open_status(&network_id, window, cx);
+            }
             return;
         }
         self.send_message(cx);
@@ -295,18 +356,33 @@ impl Shell {
     }
 
     /// Alt+A: the next mention or unread conversation. Its network is expanded
-    /// so the landing row is visible.
+    /// so the landing row is visible. With nothing unread it opens Status: the
+    /// network whose Status is showing, else the selected network (Qt's
+    /// `focusedNetworkId`, which is the open console or the selection).
     pub fn select_next_unread(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.chord_live(Chord::NextUnread, window, cx) {
             return;
         }
         let rows = sidebar_rows(&self.world, &self.sidebar);
-        let Some(target) = next_unread(&self.world, &rows, Some(&self.selected)) else {
-            return;
-        };
-        set_collapsed(&self.world, &mut self.sidebar, &target.network_id, false);
-        self.select(target, cx);
-        cx.notify();
+        let status_network = self
+            .status
+            .clone()
+            .unwrap_or_else(|| self.selected.network_id.clone());
+        let landing = next_unread_or_status(
+            &self.world,
+            &rows,
+            Some(&self.selected),
+            Some(&status_network),
+        );
+        match landing {
+            Some(UnreadTarget::Conversation(target)) => {
+                set_collapsed(&self.world, &mut self.sidebar, &target.network_id, false);
+                self.select(target, cx);
+                cx.notify();
+            }
+            Some(UnreadTarget::Status(network_id)) => self.open_status(&network_id, window, cx),
+            None => {}
+        }
     }
 
     /// Alt+Shift+A: every conversation reads. The selection does not move.
@@ -431,6 +507,11 @@ impl Shell {
     }
 
     pub fn send_message(&mut self, cx: &mut Context<Self>) {
+        // Status takes no plain text yet (slash commands come later). The draft
+        // stays in the composer.
+        if self.status.is_some() {
+            return;
+        }
         let text = self.composer.read(cx).text().trim().to_string();
         if text.is_empty() {
             return;

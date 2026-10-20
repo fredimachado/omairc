@@ -5,6 +5,8 @@
 //! is already applied by `format_irc`, which only records allowed http(s)
 //! ranges in `body.links`. Channel-name entries wait for the Channel open sheet.
 
+use std::ops::Range;
+
 use super::format::format_irc;
 use super::fuzzy::rank;
 use super::transcript::{Row, RowKind};
@@ -15,7 +17,6 @@ pub enum LinkKind {
     /// Opens the URL in the browser.
     Url,
     /// Joins the channel named in an INVITE line.
-    #[allow(dead_code)] // Phase 2 Status wiring: built by status_link_targets.
     Invite,
 }
 
@@ -32,7 +33,6 @@ pub struct LinkTarget {
 }
 
 /// Qt's marker in the INVITE status text, `"<nick> invited you to <channel>"`.
-#[allow(dead_code)] // Phase 2 Status wiring: used by invite_channel.
 const INVITE_MARKER: &str = " invited you to ";
 
 /// Links that fuzzy-match the query, best match first. Ties keep the order
@@ -59,7 +59,6 @@ pub fn link_targets(topic: Option<&str>, rows: &[Row], query: &str) -> Vec<LinkT
 /// The Status sheet's links: for each Status row newest first, its URLs (last
 /// first), then an invite row when the line is an INVITE with a channel after
 /// the marker. Ties keep that order.
-#[allow(dead_code)] // Phase 2 Status wiring: drop this allow when the link sheet shows Status.
 pub fn status_link_targets(rows: &[Row], query: &str) -> Vec<LinkTarget> {
     let mut found = Vec::new();
 
@@ -68,11 +67,7 @@ pub fn status_link_targets(rows: &[Row], query: &str) -> Vec<LinkTarget> {
             continue;
         }
         push_links(&mut found, &row.body.plain, &row.body.links, Some(index));
-        let is_invite = row
-            .status
-            .as_ref()
-            .is_some_and(|mark| mark.label == "INVITE");
-        if let Some(channel) = is_invite.then(|| invite_channel(&row.body.plain)).flatten() {
+        if let Some((channel, _)) = invite_hit(row) {
             found.push(LinkTarget {
                 kind: LinkKind::Invite,
                 text: channel.to_string(),
@@ -85,10 +80,28 @@ pub fn status_link_targets(rows: &[Row], query: &str) -> Vec<LinkTarget> {
     rank_links(query, found)
 }
 
+/// The channel an INVITE Status line offers, with the byte range that name
+/// occupies in the line's text. Only a Status row labelled `INVITE` counts. The
+/// name ends the line, so the range runs to the end (Qt `inviteChannelAt`).
+pub fn invite_hit(row: &Row) -> Option<(&str, Range<usize>)> {
+    if row.kind != RowKind::Status {
+        return None;
+    }
+    let is_invite = row
+        .status
+        .as_ref()
+        .is_some_and(|mark| mark.label == "INVITE");
+    if !is_invite {
+        return None;
+    }
+    let text = row.body.plain.as_str();
+    let channel = invite_channel(text)?;
+    Some((channel, text.len() - channel.len()..text.len()))
+}
+
 /// The channel in an invite line: the text after the last `" invited you to "`,
 /// when it is not empty (`refreshLinkMatches` uses `lastIndexOf`).
-#[allow(dead_code)] // Phase 2 Status wiring: drop this allow when the link sheet shows Status.
-pub fn invite_channel(text: &str) -> Option<&str> {
+fn invite_channel(text: &str) -> Option<&str> {
     let at = text.rfind(INVITE_MARKER)?;
     let channel = &text[at + INVITE_MARKER.len()..];
     (!channel.is_empty()).then_some(channel)
@@ -154,7 +167,7 @@ pub fn elide_middle_marked(text: &str, max_chars: usize, marks: &[usize]) -> (St
 fn push_links(
     out: &mut Vec<LinkTarget>,
     plain: &str,
-    links: &[std::ops::Range<usize>],
+    links: &[Range<usize>],
     row: Option<usize>,
 ) {
     for range in links.iter().rev() {
@@ -374,6 +387,18 @@ mod tests {
             Some("#two")
         );
         assert_eq!(invite_channel("x invited you to #ümlaut"), Some("#ümlaut"));
+    }
+
+    #[test]
+    fn invite_hit_covers_the_channel_at_the_end_of_the_line() {
+        let row = status_row(1, "INVITE", "rio invited you to #debian");
+        let (channel, range) = invite_hit(&row).expect("invite hit");
+        assert_eq!(channel, "#debian");
+        assert_eq!(&row.body.plain[range], "#debian");
+        assert!(invite_hit(&status_row(2, "NOTICE", "rio invited you to #debian")).is_none());
+        assert!(invite_hit(&status_row(3, "INVITE", "rio invited you to ")).is_none());
+        let conversation = row_from_message(4, "rio", "09:00", "rio invited you to #x", false);
+        assert!(invite_hit(&conversation).is_none());
     }
 
     #[test]

@@ -11,6 +11,7 @@ use gpui::{
 use crate::model::{Row, RowKind, Style};
 
 use crate::ui::format_ui::{gpui_text_style, irc_runs_to_gpui, link_underline_run};
+use crate::ui::status_row::render_status_row;
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
@@ -102,26 +103,14 @@ pub fn render_transcript_row(
                         .child(text.to_string()),
                 )
         }
-        // Placeholder until the Status view draws these (`status_row.rs`): the
-        // label column and the plain text, muted, as an event line.
-        RowKind::Status => {
-            let label = row
-                .status
-                .as_ref()
-                .map(|mark| mark.label_text())
-                .unwrap_or_default();
-            div()
-                .id(("transcript-row", row_ix))
-                .w_full()
-                .py(scaled_px(style, 4.))
-                .child(
-                    div()
-                        .text_size(scaled_px(style, 10.))
-                        .text_color(to_gpui(style.muted_color()))
-                        .font_family(FONT_FAMILY)
-                        .child(format!("{label} {}", row.body.plain)),
-                )
-        }
+        RowKind::Status => render_status_row(
+            row_ix,
+            row,
+            style,
+            selection_range,
+            hovered_link,
+            layouts,
+        ),
         RowKind::Message => div()
             .id(("transcript-row", row_ix))
             .w_full()
@@ -353,14 +342,16 @@ fn selection_quads(
     quads
 }
 
-struct BodyTextElement {
-    row_ix: usize,
-    text: StyledText,
-    layouts: RowLayoutMap,
-    avatar_top: Pixels,
-    header_height: Pixels,
-    selection_range: Option<Range<usize>>,
-    selection_color: Hsla,
+/// A row's body text. Painting it records its layout, which the transcript's
+/// pointer hit testing reads. Message and Status rows both use it.
+pub(crate) struct BodyTextElement {
+    pub(crate) row_ix: usize,
+    pub(crate) text: StyledText,
+    pub(crate) layouts: RowLayoutMap,
+    pub(crate) avatar_top: Pixels,
+    pub(crate) header_height: Pixels,
+    pub(crate) selection_range: Option<Range<usize>>,
+    pub(crate) selection_color: Hsla,
 }
 
 impl IntoElement for BodyTextElement {

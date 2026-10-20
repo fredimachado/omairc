@@ -10,6 +10,7 @@ use gpui::{
 };
 
 use crate::model::cursor::{page_amount, scroll_target};
+use crate::model::links::invite_hit;
 use crate::model::{row_from_message, Conversation, Pos, Row, Style, Transcript};
 use crate::ui::message_row::{render_transcript_row, RowCallbacks, RowLayoutMap};
 use crate::ui::scrollbar::{list_vertical_scrollbar, move_scrollbar_drag, ScrollbarDragCell};
@@ -21,7 +22,12 @@ use crate::util::{open_web_link, style, OmaircStyleGlobal};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NickClicked(pub String);
 
+/// A click on the channel of an INVITE Status line. The shell joins it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InviteClicked(pub String);
+
 impl EventEmitter<NickClicked> for TranscriptView {}
+impl EventEmitter<InviteClicked> for TranscriptView {}
 
 /// The transcript list: its model, selection, drag-select and link hover.
 /// Owned as an entity so the shell only holds a handle.
@@ -76,6 +82,16 @@ impl TranscriptView {
 
     pub fn rows(&self) -> &[Row] {
         self.model.rows()
+    }
+
+    /// Shows a network's Status rows with a fresh selection. Status opens at the end.
+    pub fn set_status(&mut self, rows: Vec<Row>) {
+        self.model.set_rows(rows);
+        self.member_realnames.clear();
+        self.model.clear_selection();
+        self.hovered_link = None;
+        self.list_state.reset(self.model.rows().len());
+        self.row_layouts.borrow_mut().clear();
     }
 
     /// Adds a line the local user just sent and keeps the list at the bottom.
@@ -204,9 +220,10 @@ impl TranscriptView {
         true
     }
 
-    /// Ends a drag on mouse-up. A release over an http(s) link opens it in the
-    /// browser. Returns false when no drag was in progress.
-    pub fn finish_drag(&mut self, position: Point<Pixels>, cx: &mut App) -> bool {
+    /// Ends a drag on mouse-up. A release over a link acts on it: an http(s)
+    /// URL opens in the browser, an INVITE channel asks the shell to join it.
+    /// Returns false when no drag was in progress.
+    pub fn finish_drag(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) -> bool {
         if !self.dragging {
             return false;
         }
@@ -215,11 +232,23 @@ impl TranscriptView {
         self.drag_edge = None;
         self.drag_pointer = None;
         if let Some((row_ix, range)) = self.link_at(position) {
-            if let Some(url) = self.model.rows()[row_ix].body.plain.get(range.clone()) {
-                open_web_link(cx, url);
-            }
+            self.activate_link(row_ix, range, cx);
         }
         true
+    }
+
+    fn activate_link(&self, row_ix: usize, range: Range<usize>, cx: &mut Context<Self>) {
+        let row = &self.model.rows()[row_ix];
+        // A URL takes precedence over the invite channel it might share a range with.
+        if row.body.links.contains(&range) {
+            if let Some(url) = row.body.plain.get(range) {
+                open_web_link(cx, url);
+            }
+        } else if let Some((channel, channel_range)) = invite_hit(row) {
+            if channel_range == range {
+                cx.emit(InviteClicked(channel.to_string()));
+            }
+        }
     }
 
     pub fn tick_drag_autoscroll(&mut self, app_style: &Style) {

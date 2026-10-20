@@ -7,6 +7,7 @@ pub mod scrollbar;
 pub mod sheets;
 pub mod shell;
 pub mod sidebar;
+pub mod status_row;
 pub mod transcript;
 pub mod widgets;
 

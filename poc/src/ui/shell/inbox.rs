@@ -37,13 +37,19 @@ impl Shell {
         cx.notify();
     }
 
+    /// Joins `channel` on `network_id` and selects it. Joining clears that
+    /// channel's invite row, as Qt's `IrcInbox::consumeInvite` does. Used by the
+    /// inbox and by an INVITE line in Status.
+    pub fn join_invite(&mut self, network_id: &str, channel: &str, cx: &mut Context<Self>) {
+        self.inbox.consume_invite(network_id, channel);
+        if let Some(target) = join_channel(&mut self.world, network_id, channel) {
+            self.reveal(target, cx);
+        }
+    }
+
     fn act_on_inbox_item(&mut self, item: &InboxItem, cx: &mut Context<Self>) {
         match item.kind {
-            InboxKind::Invite => {
-                if let Some(target) = join_channel(&mut self.world, &item.network_id, &item.target) {
-                    self.reveal(target, cx);
-                }
-            }
+            InboxKind::Invite => self.join_invite(&item.network_id, &item.target, cx),
             InboxKind::MonitorOnline => self.reveal_by_name(&item.network_id, &item.actor, cx),
             InboxKind::Mention | InboxKind::Highlight | InboxKind::Direct | InboxKind::Kick => {
                 self.reveal_by_name(&item.network_id, &item.target, cx)

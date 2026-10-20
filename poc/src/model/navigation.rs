@@ -92,7 +92,6 @@ pub fn next_unread(
 
 /// Where Alt+A lands: a conversation, or the Status pane of a network.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[allow(dead_code)] // Phase 2 Status wiring: drop this allow when select_next_unread uses it.
 pub enum UnreadTarget {
     Conversation(ConversationRef),
     Status(String),
@@ -103,7 +102,6 @@ pub enum UnreadTarget {
 /// `status_network`, which the caller passes as the focused network, else the
 /// selected one. Empty sidebar rows do nothing, as in Qt. `None` when there is
 /// nothing to land on.
-#[allow(dead_code)] // Phase 2 Status wiring: drop this allow when select_next_unread uses it.
 pub fn next_unread_or_status(
     world: &MockWorld,
     rows: &[SidebarRow],

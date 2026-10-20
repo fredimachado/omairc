@@ -1,19 +1,29 @@
 use gpui::{div, prelude::*, MouseButton};
 
-use crate::model::{Conversation, Style};
+use crate::model::Style;
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
-/// The conversation title, topic, and the `N PEOPLE` pill for channels.
+/// What the header shows. A conversation passes its topic as the subtitle and
+/// its people count; Status passes `Connected` and no count.
+pub struct HeaderView<'a> {
+    pub title: &'a str,
+    pub subtitle: &'a str,
+    /// `Some` shows the `N PEOPLE` pill, which only channels have.
+    pub people: Option<usize>,
+}
+
+/// The title, the subtitle line, and the `N PEOPLE` pill when there is a count.
 pub fn render_header(
-    conv: &Conversation,
-    title: &str,
+    view: HeaderView<'_>,
     style: &Style,
     on_toggle_members: Handler<()>,
 ) -> impl IntoElement {
-    let topic = conv.topic.clone().unwrap_or_default();
-    let people = conv.people_count();
-    let show_people = conv.channel;
+    let HeaderView {
+        title,
+        subtitle,
+        people,
+    } = view;
 
     div()
         .px(scaled_px(style, 16.))
@@ -37,7 +47,7 @@ pub fn render_header(
                         .font_family(FONT_FAMILY)
                         .child(title.to_string()),
                 )
-                .when(show_people, |this| {
+                .when_some(people, |this, people| {
                     this.child(
                         div()
                             .px(scaled_px(style, 8.))
@@ -61,6 +71,6 @@ pub fn render_header(
                 .text_size(scaled_px(style, 11.))
                 .text_color(to_gpui(style.muted_color()))
                 .font_family(FONT_FAMILY)
-                .child(topic),
+                .child(subtitle.to_string()),
         )
 }

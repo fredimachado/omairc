@@ -56,6 +56,7 @@ actions!(
         MemberTop,
         MemberBottom,
         MemberActivate,
+        ToggleStatus,
     ]
 );
 
@@ -76,6 +77,7 @@ pub fn bind_shell_keys(cx: &mut App) {
         KeyBinding::new("secondary-shift-s", ToggleSidebarRail, None),
         KeyBinding::new("secondary-w", CloseDirect, None),
         KeyBinding::new("secondary-l", FocusComposer, None),
+        KeyBinding::new("secondary-`", ToggleStatus, None),
         KeyBinding::new("secondary-q", Quit, None),
         KeyBinding::new("secondary-shift-m", ToggleMembers, None),
         KeyBinding::new("secondary-shift-p", FocusMembers, None),
@@ -158,6 +160,9 @@ pub fn wire_shell_actions(root: Div, cx: &mut Context<Shell>) -> Div {
     }))
     .on_action(cx.listener(|shell, _: &FocusComposer, window, cx| {
         shell.clear_header_and_focus_composer(window, cx);
+    }))
+    .on_action(cx.listener(|shell, _: &ToggleStatus, window, cx| {
+        shell.toggle_status(window, cx);
     }))
     .on_action(cx.listener(|shell, _: &Quit, window, cx| {
         shell.quit(window, cx);

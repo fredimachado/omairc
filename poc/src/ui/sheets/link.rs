@@ -1,9 +1,11 @@
-//! The Link sheet (`Ctrl+Shift+O`): the topic's links, then the transcript's
-//! links newest row first. Enter opens the selected link in the browser.
+//! The Link sheet (`Ctrl+Shift+O`): on a conversation, the topic's links then the
+//! transcript's links newest row first; on Status, the Status rows' links and
+//! INVITE channels. Enter opens the selected URL in the browser, or joins the
+//! invited channel.
 
 use gpui::{AnyElement, IntoElement};
 
-use crate::model::links::{elide_middle_marked, link_targets, LinkTarget};
+use crate::model::links::{elide_middle_marked, link_targets, status_link_targets, LinkTarget};
 use crate::model::{Row, Style};
 use crate::ui::sheets::filter_sheet::{text_row, FilterSource};
 
@@ -17,11 +19,12 @@ const HORIZONTAL_INSET: f32 = 48.;
 const CHAR_ADVANCE: f32 = 0.6;
 const LABEL_SIZE: f32 = 12.;
 
-pub struct LinkSource {
-    /// The conversation's topic when the sheet opened.
-    pub topic: Option<String>,
-    /// The transcript rows when the sheet opened.
-    pub rows: Vec<Row>,
+/// What the sheet searches, captured when it opens.
+pub enum LinkSource {
+    /// A conversation: its topic when the sheet opened, and its transcript rows.
+    Conversation { topic: Option<String>, rows: Vec<Row> },
+    /// A network's Status pane: its rows when the sheet opened.
+    Status { rows: Vec<Row> },
 }
 
 impl FilterSource for LinkSource {
@@ -32,7 +35,10 @@ impl FilterSource for LinkSource {
     }
 
     fn items(&self, query: &str) -> Vec<LinkTarget> {
-        link_targets(self.topic.as_deref(), &self.rows, query)
+        match self {
+            Self::Conversation { topic, rows } => link_targets(topic.as_deref(), rows, query),
+            Self::Status { rows } => status_link_targets(rows, query),
+        }
     }
 
     fn width(&self) -> f32 {

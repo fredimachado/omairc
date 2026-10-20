@@ -31,8 +31,33 @@ impl StatusMark {
     }
 }
 
+/// Which theme colour a Status label takes (`ConsoleLine.qml` `labelColor`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LabelTone {
+    /// Alerts: the accent colour.
+    Accent,
+    /// Trace lines: muted.
+    Muted,
+    /// Everything else: the page and ink colours mixed at 62% ink.
+    Mixed,
+}
+
+/// The label colour for a severity.
+pub fn label_tone(severity: StatusSeverity) -> LabelTone {
+    match severity {
+        StatusSeverity::Alert => LabelTone::Accent,
+        StatusSeverity::Trace => LabelTone::Muted,
+        StatusSeverity::Info => LabelTone::Mixed,
+    }
+}
+
+/// Whether a severity mutes the body text. Only trace lines do; the rest use ink
+/// (`ConsoleLine.qml` `bodyColor`).
+pub fn body_is_muted(severity: StatusSeverity) -> bool {
+    severity == StatusSeverity::Trace
+}
+
 /// The Status row for one line. `id` is the row's transcript id.
-#[allow(dead_code)] // Phase 2 Status wiring: drop this allow when the Status view renders rows.
 pub fn row_from_status_line(id: u64, line: &StatusLine) -> Row {
     Row {
         id,
@@ -53,7 +78,6 @@ pub fn row_from_status_line(id: u64, line: &StatusLine) -> Row {
 }
 
 /// The Status rows for `network_id`, oldest first. An unknown network has none.
-#[allow(dead_code)] // Phase 2 Status wiring: drop this allow when the Status view renders rows.
 pub fn status_rows(world: &MockWorld, network_id: &str) -> Vec<Row> {
     let Some(network) = world.network(network_id) else {
         return Vec::new();
@@ -230,6 +254,20 @@ mod tests {
             Some("irc.example · oak Status")
         );
         assert_eq!(status_title(&world, "nope"), None);
+    }
+
+    #[test]
+    fn label_tone_follows_the_severity() {
+        assert_eq!(label_tone(StatusSeverity::Alert), LabelTone::Accent);
+        assert_eq!(label_tone(StatusSeverity::Trace), LabelTone::Muted);
+        assert_eq!(label_tone(StatusSeverity::Info), LabelTone::Mixed);
+    }
+
+    #[test]
+    fn only_trace_lines_mute_the_body() {
+        assert!(body_is_muted(StatusSeverity::Trace));
+        assert!(!body_is_muted(StatusSeverity::Info));
+        assert!(!body_is_muted(StatusSeverity::Alert));
     }
 
     #[test]

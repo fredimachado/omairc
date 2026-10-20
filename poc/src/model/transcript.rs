@@ -10,7 +10,6 @@ pub enum RowKind {
     Event,
     DaySeparator,
     /// A line in a network's Status pane. Its label, glyph and colour live in `Row::status`.
-    #[allow(dead_code)] // Phase 2 Status wiring: built by the Status row conversion.
     Status,
 }
 
