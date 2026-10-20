@@ -10,9 +10,6 @@
 //! the `/list` sheet. This module only says what the command is and whether it
 //! may run on the surface it was typed on.
 
-// The shell wires these in Phase 4 dispatch; drop the allow then.
-#![allow(dead_code)]
-
 use super::prefs::{MembershipNoise, PrefName, PrefValue, Preferences};
 
 /// Where a command was typed: the conversation view, or a network's Status pane

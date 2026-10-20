@@ -10,9 +10,6 @@
 //! Toolkit-free. The shell owns the field: it calls `sync` after each edit, asks
 //! `tab` and `enter` what to insert, and applies the text these return.
 
-// The shell wires these in Phase 4 dispatch; drop the allow then.
-#![allow(dead_code)]
-
 use super::prefs::{MembershipNoise, PrefName};
 use super::slash::{Surface, CATALOG};
 
@@ -237,6 +234,13 @@ fn pref_value_rows(needle: String, name_word: &str, value: &str) -> Option<Slash
     open(needle, hits)
 }
 
+/// The muted text after a row's label (Qt `usageHint` in `ConversationColumn.qml`).
+/// A usage that starts with its label shows the rest, so `/version [nick]` shows
+/// ` [nick]`. Any other usage shows in full, as `Show peer avatars` does.
+pub fn usage_hint<'a>(label: &str, usage: &'a str) -> &'a str {
+    usage.strip_prefix(label).unwrap_or(usage)
+}
+
 /// The popup while the composer is being edited (Qt `IrcSlashSession`, without
 /// the Qt plumbing). It keeps the highlighted row, and Escape dismisses the
 /// popup for the current needle until that needle changes.
@@ -272,7 +276,7 @@ impl SlashSession {
     /// The rows on screen. Empty while the popup is closed.
     pub fn hits(&self) -> &[SlashHit] {
         match &self.probe {
-            Some(probe) => &probe.hits,
+            Some(probe) => probe.hits(),
             None => &[],
         }
     }
@@ -650,6 +654,13 @@ mod tests {
         assert!(!session.is_open());
         session.sync("/v", Surface::Conversation, false);
         assert!(session.is_open());
+    }
+
+    #[test]
+    fn the_usage_hint_drops_the_label_only_when_the_usage_starts_with_it() {
+        assert_eq!(usage_hint("/version", "/version [nick]"), " [nick]");
+        assert_eq!(usage_hint("/pref avatars", "Show peer avatars"), "Show peer avatars");
+        assert_eq!(usage_hint("/pref joins every", "/pref joins every"), "");
     }
 
     #[test]

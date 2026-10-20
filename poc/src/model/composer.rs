@@ -162,8 +162,6 @@ impl ComposerState {
 
     /// Whether Up or Down is walking history right now. The slash popup stays
     /// closed meanwhile, even when a recalled line starts with a slash.
-    // The shell passes this to `SlashSession::sync` in Phase 4; drop the allow then.
-    #[allow(dead_code)]
     pub fn is_browsing(&self) -> bool {
         self.browse.is_some()
     }

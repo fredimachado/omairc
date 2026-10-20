@@ -1,4 +1,4 @@
-use gpui::{div, prelude::*, Entity, MouseButton};
+use gpui::{div, prelude::*, AnyElement, Entity, MouseButton};
 
 use crate::model::Style;
 use crate::ui::input::SingleLineInput;
@@ -7,10 +7,12 @@ use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
 /// The single-line draft and its SEND button. A click calls `on_send`. Enter
 /// is handled by the shell root (`ComposerSubmit`), which checks header focus.
+/// `popup` is the slash-complete popup, if it shows. It hangs over the input.
 pub fn render_composer(
     composer: Entity<SingleLineInput>,
     style: &Style,
     on_send: Handler<()>,
+    popup: Option<AnyElement>,
 ) -> impl IntoElement {
     div()
         .px(scaled_px(style, 16.))
@@ -24,7 +26,8 @@ pub fn render_composer(
             div()
                 .flex_grow()
                 .key_context("Composer")
-                .child(composer),
+                .child(composer)
+                .when_some(popup, |this, popup| this.child(popup)),
         )
         .child(
             div()

@@ -128,8 +128,10 @@ pub fn render_transcript_row(
     }
 }
 
-/// A whois-style line: left-aligned and muted, with selectable text. It has no
-/// time, label or avatar column, so the text starts at the body column.
+/// A whois-style line: left-aligned, muted, wrapping, and selectable. Qt's
+/// `MessageRow.qml` sets its TextEdit in the body column: 70 from the left and
+/// 34 from the right. It has no time, label or avatar, so nothing sits beside it.
+/// Copy and search read `row.body.plain`, the same text the row draws.
 fn render_whois_row(
     row_ix: usize,
     row: &Row,
@@ -150,8 +152,10 @@ fn render_whois_row(
     div()
         .id(("transcript-row", row_ix))
         .w_full()
-        .py(scaled_px(style, 4.))
-        .px(scaled_px(style, 24.))
+        .pt(scaled_px(style, 4.))
+        .pb(scaled_px(style, 4.))
+        .pl(scaled_px(style, 70.))
+        .pr(scaled_px(style, 34.))
         .text_size(scaled_px(style, 12.))
         .font_family(FONT_FAMILY)
         .child(BodyTextElement {

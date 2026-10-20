@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use gpui::{App, ClipboardItem, Context, Focusable, Window};
 
 use crate::model::byte_budget::{SendLimit, CLASSIC_FRAME_BYTES};
@@ -14,10 +12,7 @@ use crate::model::sidebar::{
     collapse_all, move_focused, set_collapsed, set_collapsed_focused, sidebar_rows,
 };
 use crate::model::status::status_rows;
-use crate::model::{
-    continues_group, local_send_stamp, outgoing_message, row_from_mock_message, Conversation,
-    ConversationRef, Member, Network,
-};
+use crate::model::{Conversation, ConversationRef, Member, Network};
 use crate::ui::shell::modal::ActiveModal;
 use crate::ui::shell::Shell;
 use crate::util::{scaled_px, style};
@@ -56,6 +51,10 @@ impl Shell {
         if switching {
             self.stash_composer_draft(cx);
         }
+        // Selecting a conversation clears its network's last command error, so the
+        // header shows the topic again. Qt clears it on a successful command or a
+        // closed DM, and this PoC adds a selection.
+        self.world.set_last_error(&target.network_id, None);
         self.selected = target;
         self.status = None;
         self.member_cursor = 0;
@@ -66,7 +65,7 @@ impl Shell {
     }
 
     /// Puts the selected conversation's stored lines in the transcript.
-    fn show_selected_conversation(&mut self, cx: &mut Context<Self>) {
+    pub fn show_selected_conversation(&mut self, cx: &mut Context<Self>) {
         let conv = self.current_conversation();
         let self_nick = self.current_network().nick.clone();
         self.transcript
@@ -159,6 +158,10 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
+        // While the slash popup shows, Up and Down move its highlight instead.
+        if self.move_slash_selection(delta, window, cx) {
+            return true;
+        }
         if !self.chord_live(Chord::ComposerHistory, window, cx) {
             return false;
         }
@@ -177,6 +180,10 @@ impl Shell {
     /// The key is always consumed here, even with nothing to complete, so focus
     /// never leaves the composer.
     pub fn complete_nick(&mut self, backward: bool, window: &mut Window, cx: &mut Context<Self>) {
+        // Tab inserts the highlighted popup row. Shift+Tab does not, and falls through.
+        if !backward && self.complete_slash_verb(window, cx) {
+            return;
+        }
         if !self.chord_live(Chord::NickComplete, window, cx) {
             return;
         }
@@ -306,6 +313,7 @@ impl Shell {
             header_focused: self.sidebar.focus.is_some(),
             members_focused: self.member_focus.is_focused(window),
             transcript_selection: self.transcript.read(cx).has_selection(),
+            slash_open: self.slash_popup_showing(),
         }
     }
 
@@ -357,6 +365,10 @@ impl Shell {
             if let Some(network_id) = self.sidebar.focus.clone() {
                 self.open_status(&network_id, window, cx);
             }
+            return;
+        }
+        // Enter inserts a partial verb from the popup. An exact name, or no popup, sends.
+        if self.enter_slash_verb(window, cx) {
             return;
         }
         self.send_message(cx);
@@ -638,43 +650,6 @@ impl Shell {
 
     pub fn focus_composer(&self, window: &mut Window, cx: &App) {
         window.focus(&self.composer.read(cx).focus_handle(cx));
-    }
-
-    pub fn send_message(&mut self, cx: &mut Context<Self>) {
-        // Status takes no plain text yet (slash commands come later). The draft
-        // stays in the composer.
-        if self.status.is_some() {
-            return;
-        }
-        let text = self.composer.read(cx).text().trim().to_string();
-        if text.is_empty() {
-            return;
-        }
-        let append_start = self.bench.enabled.then(Instant::now);
-        let author = self.current_network().nick.clone();
-        let (day, time) = local_send_stamp();
-        let message = outgoing_message(&text, &author, &time, &day);
-        let (continues, id) = {
-            let rows = self.transcript.read(cx).rows();
-            (
-                continues_group(rows.last(), &author, &time),
-                rows.len() as u64 + 1,
-            )
-        };
-        let row = row_from_mock_message(id, &message, continues);
-        // Stored with the conversation, so switching away and back keeps it.
-        let selected = self.selected.clone();
-        self.world.record_outgoing(&selected, message);
-        self.transcript.update(cx, |t, _| t.append_outgoing(row));
-        self.composer_state.record_sent(&text);
-        self.composer.update(cx, |c, cx| {
-            c.clear();
-            cx.notify();
-        });
-        if let Some(start) = append_start {
-            self.bench.append_latency = Some(start.elapsed());
-        }
-        cx.notify();
     }
 
     /// Ends a text drag on mouse-up; notifies only when a drag was running.

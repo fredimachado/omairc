@@ -7,6 +7,7 @@ pub mod bench;
 pub mod commands;
 pub mod inbox;
 pub mod modal;
+pub mod slash;
 
 use std::rc::Rc;
 
@@ -17,12 +18,15 @@ use gpui::{
 
 use crate::model::composer::{ComposerState, DraftKey};
 use crate::model::inbox::{seed_inbox, Inbox};
+use crate::model::prefs::Preferences;
 use crate::model::sidebar::SidebarState;
+use crate::model::slash_complete::SlashSession;
 use crate::model::status::status_title;
 use crate::model::title::{conversation_title, window_title, TitleView};
 use crate::model::{bench_channel, load_world, ConversationRef, MockWorld};
 use crate::ui::center::header::HeaderView;
 use crate::ui::center::render_center;
+use crate::ui::center::slash_popup::render_slash_popup;
 use crate::ui::input::SingleLineInput;
 use crate::ui::members::render_members;
 use crate::ui::scrollbar::{end_scrollbar_drag, move_scrollbar_drag, ScrollbarDragCell};
@@ -62,6 +66,10 @@ pub struct Shell {
     pub composer: Entity<SingleLineInput>,
     /// The composer's drafts, sent-line history and Tab cycle, per target.
     pub composer_state: ComposerState,
+    /// The slash-complete popup above the composer: its rows and highlight.
+    pub slash: SlashSession,
+    /// The saved preferences `/pref` reads and writes, loaded once at startup.
+    pub preferences: Preferences,
     pub focus_handle: FocusHandle,
     pub typing_phase: u8,
     pub bench: BenchState,
@@ -102,6 +110,13 @@ impl Shell {
         let invite_events = cx.subscribe(&transcript, |shell: &mut Shell, _, event: &InviteClicked, cx| {
             shell.join_status_invite(&event.0, cx);
         });
+        // Every composer edit, caret move and history step re-reads the slash popup.
+        // The popup only re-renders when its rows or highlight changed.
+        let composer_events = cx.observe(&composer, |shell: &mut Shell, _, cx| {
+            if shell.sync_slash_popup(cx) {
+                cx.notify();
+            }
+        });
 
         let shell = Self {
             world,
@@ -120,6 +135,8 @@ impl Shell {
             transcript,
             composer,
             composer_state,
+            slash: SlashSession::new(),
+            preferences: Preferences::load(),
             focus_handle: cx.focus_handle(),
             typing_phase: 0,
             bench: BenchState {
@@ -127,7 +144,7 @@ impl Shell {
                 ..Default::default()
             },
             lines_seed: lines,
-            _subscriptions: vec![transcript_events, invite_events],
+            _subscriptions: vec![transcript_events, invite_events, composer_events],
         };
 
         let conv = shell.current_conversation();
@@ -169,22 +186,41 @@ impl Render for Shell {
         }
 
         // The header reads the Status pane's title and the connection line, or the
-        // conversation's title, topic and people count.
+        // conversation's title, people count, and subtitle. The subtitle is the
+        // network's last command error while one is set, else the topic (Status
+        // shows the same error over "Connected", as Qt's `statusSubtitle` does).
         let (title, subtitle, people) = match &self.status {
             Some(network_id) => (
                 status_title(&self.world, network_id).unwrap_or_else(|| "Status".to_string()),
-                "Connected".to_string(),
+                self.world
+                    .network(network_id)
+                    .and_then(|network| network.last_error.clone())
+                    .unwrap_or_else(|| "Connected".to_string()),
                 None,
             ),
             None => {
                 let conv = self.current_conversation();
+                let error = self
+                    .world
+                    .network(&self.selected.network_id)
+                    .and_then(|network| network.last_error.clone());
                 (
                     conversation_title(&self.world, &self.selected).unwrap_or_default(),
-                    conv.topic.clone().unwrap_or_default(),
+                    error.unwrap_or_else(|| conv.topic.clone().unwrap_or_default()),
                     conv.is_channel().then(|| conv.people_count()),
                 )
             }
         };
+        // The slash popup hangs over the composer while it shows.
+        let slash_popup = self.slash_popup_showing().then(|| {
+            render_slash_popup(
+                self.slash.hits(),
+                self.slash.selected(),
+                &app_style,
+                slash_pick_handler(entity.clone()),
+            )
+            .into_any_element()
+        });
 
         let sidebar = render_sidebar(
             SidebarData {
@@ -218,6 +254,7 @@ impl Render for Shell {
             &app_style,
             toggle_members_handler(entity.clone()),
             send_handler(entity.clone()),
+            slash_popup,
         );
 
         // The member cursor is drawn only while the list holds keyboard focus.
@@ -328,6 +365,16 @@ fn send_handler(entity: Entity<Shell>) -> Handler<()> {
     Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
         entity.update(cx, |shell, cx| {
             shell.send_message(cx);
+            shell.focus_composer(window, cx);
+        });
+    })
+}
+
+/// A click on a slash-popup row: inserts that row, then focuses the composer.
+fn slash_pick_handler(entity: Entity<Shell>) -> Handler<usize> {
+    Rc::new(move |index: usize, window: &mut Window, cx: &mut App| {
+        entity.update(cx, |shell, cx| {
+            shell.pick_slash_hit(index, window, cx);
             shell.focus_composer(window, cx);
         });
     })

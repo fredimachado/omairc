@@ -94,8 +94,9 @@ impl TranscriptView {
         self.row_layouts.borrow_mut().clear();
     }
 
-    /// Adds a line the local user just sent and keeps the list at the bottom.
-    pub fn append_outgoing(&mut self, row: Row) {
+    /// Adds a line to the open conversation or Status pane: one the local user
+    /// just sent, or a command reply. The list stays at the bottom.
+    pub fn append_line(&mut self, row: Row) {
         let old_len = self.model.rows().len();
         self.model.append(row);
         self.model.set_pinned_to_bottom(true);

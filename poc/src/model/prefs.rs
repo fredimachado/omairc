@@ -6,9 +6,6 @@
 //! reading it back. Loading and saving are separate functions, and they take a
 //! path, so tests can use a temporary file.
 
-// The shell and the Connect sheet wire these in the next phases; drop the allow then.
-#![allow(dead_code)]
-
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -144,19 +141,14 @@ impl Default for Preferences {
 }
 
 impl Preferences {
-    /// The current value of `name`.
-    pub fn get(&self, name: PrefName) -> PrefValue {
-        match name {
-            PrefName::Directs => PrefValue::Toggle(self.directs),
-            PrefName::Avatars => PrefValue::Toggle(self.avatars),
-            PrefName::Unread => PrefValue::Toggle(self.unread),
-            PrefName::Joins => PrefValue::Noise(self.joins),
-        }
-    }
-
     /// Whether a toggle name is on. `Joins` is not a toggle and reads false.
     pub fn enabled(&self, name: PrefName) -> bool {
-        matches!(self.get(name), PrefValue::Toggle(true))
+        match name {
+            PrefName::Directs => self.directs,
+            PrefName::Avatars => self.avatars,
+            PrefName::Unread => self.unread,
+            PrefName::Joins => false,
+        }
     }
 
     /// Stores `value` under `name`. Returns false, and changes nothing, when
@@ -171,18 +163,6 @@ impl Preferences {
             _ => return false,
         }
         true
-    }
-
-    /// Sets a preference from the two typed words, as `/pref <name> <value>`
-    /// does. Returns false when either word is unknown.
-    pub fn set_by_name(&mut self, name: &str, word: &str) -> bool {
-        let Some(name) = PrefName::from_token(name) else {
-            return false;
-        };
-        let Some(value) = PrefValue::parse(name, word) else {
-            return false;
-        };
-        self.set(name, value)
     }
 
     /// Reads `path`. A missing or unreadable file, or one that is not valid
@@ -232,6 +212,18 @@ mod tests {
             std::env::temp_dir().join(format!("omairc-poc-prefs-{}-{test}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         dir.join("prefs.json")
+    }
+
+    /// Sets a preference from the two typed words, as `/pref <name> <value>` does.
+    /// Returns false when either word is unknown or the value does not fit.
+    fn set_by_name(prefs: &mut Preferences, name: &str, word: &str) -> bool {
+        let Some(name) = PrefName::from_token(name) else {
+            return false;
+        };
+        let Some(value) = PrefValue::parse(name, word) else {
+            return false;
+        };
+        prefs.set(name, value)
     }
 
     #[test]
@@ -303,22 +295,19 @@ mod tests {
         assert_eq!(prefs.joins, MembershipNoise::Every);
         assert!(!prefs.set(PrefName::Joins, PrefValue::Toggle(true)));
         assert!(!prefs.set(PrefName::Directs, PrefValue::Noise(MembershipNoise::Hidden)));
-        assert_eq!(
-            prefs.get(PrefName::Joins),
-            PrefValue::Noise(MembershipNoise::Every)
-        );
+        assert_eq!(prefs.joins, MembershipNoise::Every);
     }
 
     #[test]
     fn set_by_name_takes_the_two_typed_words() {
         let mut prefs = Preferences::default();
-        assert!(prefs.set_by_name("Unread", "off"));
+        assert!(set_by_name(&mut prefs,"Unread", "off"));
         assert!(!prefs.unread);
-        assert!(prefs.set_by_name("joins", "hidden"));
+        assert!(set_by_name(&mut prefs,"joins", "hidden"));
         assert_eq!(prefs.joins, MembershipNoise::Hidden);
-        assert!(!prefs.set_by_name("bogus", "on"));
-        assert!(!prefs.set_by_name("directs", "sometimes"));
-        assert!(!prefs.set_by_name("directs", "hidden"));
+        assert!(!set_by_name(&mut prefs,"bogus", "on"));
+        assert!(!set_by_name(&mut prefs,"directs", "sometimes"));
+        assert!(!set_by_name(&mut prefs,"directs", "hidden"));
         assert!(prefs.directs);
     }
 
@@ -326,7 +315,7 @@ mod tests {
     fn enabled_reads_toggles_and_is_false_for_joins() {
         let mut prefs = Preferences::default();
         assert!(prefs.enabled(PrefName::Directs));
-        prefs.set_by_name("directs", "off");
+        set_by_name(&mut prefs,"directs", "off");
         assert!(!prefs.enabled(PrefName::Directs));
         assert!(!prefs.enabled(PrefName::Joins));
     }
@@ -335,8 +324,8 @@ mod tests {
     fn save_then_load_round_trips() {
         let path = scratch("round-trip");
         let mut prefs = Preferences::default();
-        prefs.set_by_name("avatars", "off");
-        prefs.set_by_name("joins", "every");
+        set_by_name(&mut prefs,"avatars", "off");
+        set_by_name(&mut prefs,"joins", "every");
         prefs.save_to(&path).expect("save into a fresh folder");
         assert_eq!(Preferences::load_from(&path), prefs);
     }
@@ -345,7 +334,7 @@ mod tests {
     fn the_file_is_plain_json_with_the_joins_token() {
         let path = scratch("shape");
         let mut prefs = Preferences::default();
-        prefs.set_by_name("joins", "hidden");
+        set_by_name(&mut prefs,"joins", "hidden");
         prefs.save_to(&path).expect("save");
         let text = std::fs::read_to_string(&path).expect("read back");
         let json: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");

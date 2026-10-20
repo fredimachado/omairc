@@ -1,7 +1,8 @@
 pub mod composer;
 pub mod header;
+pub mod slash_popup;
 
-use gpui::{div, prelude::*, Entity};
+use gpui::{div, prelude::*, AnyElement, Entity};
 
 use crate::model::Style;
 use crate::ui::center::composer::render_composer;
@@ -12,7 +13,8 @@ use crate::ui::Handler;
 use crate::util::to_gpui;
 
 /// The centre column: header, transcript, composer. The header is the
-/// conversation's or the Status pane's, so the caller builds `header`.
+/// conversation's or the Status pane's, so the caller builds `header`. `popup`
+/// is the slash-complete popup, when it shows.
 pub fn render_center(
     header: HeaderView<'_>,
     transcript: Entity<TranscriptView>,
@@ -20,6 +22,7 @@ pub fn render_center(
     style: &Style,
     on_toggle_members: Handler<()>,
     on_send: Handler<()>,
+    popup: Option<AnyElement>,
 ) -> impl IntoElement {
     div()
         .flex_grow()
@@ -37,5 +40,5 @@ pub fn render_center(
                 .flex_col()
                 .child(transcript),
         )
-        .child(render_composer(composer, style, on_send))
+        .child(render_composer(composer, style, on_send, popup))
 }

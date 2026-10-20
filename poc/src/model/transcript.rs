@@ -11,10 +11,8 @@ pub enum RowKind {
     DaySeparator,
     /// A line in a network's Status pane. Its label, glyph and colour live in `Row::status`.
     Status,
-    /// A whois-style line in a conversation: the `/help` list and the `/version`
-    /// reply. Left-aligned and muted, with its text in `body`.
-    // Built by the slash dispatch in the next phase; drop the allow then.
-    #[allow(dead_code)]
+    /// A whois-style line in a conversation: the `/help` list, `/pref` replies and
+    /// the `/version` reply. Left-aligned and muted, with its text in `body`.
     Whois,
 }
 
@@ -495,57 +493,65 @@ fn row_plain(row: &Row) -> &str {
 pub fn rows_from_messages(messages: &[MockMessage]) -> Vec<Row> {
     let mut rows = Vec::with_capacity(messages.len());
     for (index, message) in messages.iter().enumerate() {
-        let id = index as u64 + 1;
-        match message.kind.as_str() {
-            "message" | "action" => {
-                let continues = continues_group(rows.last(), &message.author, &message.time);
-                rows.push(row_from_mock_message(id, message, continues));
+        let row = row_for_message(index as u64 + 1, message, rows.last());
+        rows.push(row);
+    }
+    rows
+}
+
+/// The row for one stored line, numbered `id`. `previous` is the row above it,
+/// which decides whether a chat line folds under it (`continues_group`). Used
+/// for stored lines and for lines appended while a conversation is open.
+pub fn row_for_message(id: u64, message: &MockMessage, previous: Option<&Row>) -> Row {
+    match message.kind.as_str() {
+        "message" | "action" => {
+            let continues = continues_group(previous, &message.author, &message.time);
+            row_from_mock_message(id, message, continues)
+        }
+        "day" => {
+            let text = message.body.clone();
+            Row {
+                id,
+                kind: RowKind::DaySeparator,
+                author: None,
+                time: None,
+                body: format_irc(&text),
+                continues: false,
+                action: false,
+                separator_text: Some(text),
+                event_text: None,
+                status: None,
             }
-            "day" => {
-                let text = message.body.clone();
-                rows.push(Row {
-                    id,
-                    kind: RowKind::DaySeparator,
-                    author: None,
-                    time: None,
-                    body: format_irc(&text),
-                    continues: false,
-                    action: false,
-                    separator_text: Some(text),
-                    event_text: None,
-                    status: None,
-                });
-            }
-            _ => {
-                let event_text = if message.body.is_empty() {
-                    format!("{} joined", message.author)
+        }
+        "whois" => row_from_whois(id, &message.body),
+        _ => {
+            let event_text = if message.body.is_empty() {
+                format!("{} joined", message.author)
+            } else {
+                message.body.clone()
+            };
+            Row {
+                id,
+                kind: RowKind::Event,
+                author: if message.author.is_empty() {
+                    None
                 } else {
-                    message.body.clone()
-                };
-                rows.push(Row {
-                    id,
-                    kind: RowKind::Event,
-                    author: if message.author.is_empty() {
-                        None
-                    } else {
-                        Some(message.author.clone())
-                    },
-                    time: if message.time.is_empty() {
-                        None
-                    } else {
-                        Some(message.time.clone())
-                    },
-                    body: format_irc(&event_text),
-                    continues: false,
-                    action: false,
-                    separator_text: None,
-                    event_text: Some(event_text),
-                    status: None,
-                });
+                    Some(message.author.clone())
+                },
+                time: if message.time.is_empty() {
+                    None
+                } else {
+                    Some(message.time.clone())
+                },
+                body: format_irc(&event_text),
+                continues: false,
+                action: false,
+                separator_text: None,
+                event_text: Some(event_text),
+                status: None,
             }
         }
     }
-    rows
 }
 
 /// Qt folds a chat line under the one above when both are chat lines from the
@@ -577,8 +583,6 @@ pub fn row_from_mock_message(id: u64, message: &MockMessage, continues: bool) ->
 }
 
 /// A whois-style line. It has no author, time or avatar: only the text.
-// Built by the slash dispatch in the next phase; drop the allow then.
-#[allow(dead_code)]
 pub fn row_from_whois(id: u64, text: &str) -> Row {
     Row {
         id,
@@ -659,6 +663,49 @@ mod tests {
         t.append(row_from_message(3, "mira", "09:46", "more", false));
         assert_eq!(t.scroll.row, t.rows.len() - 1);
         assert!(t.scroll.pinned_to_bottom);
+    }
+
+    #[test]
+    fn a_stored_whois_line_becomes_a_whois_row_and_breaks_a_group() {
+        let messages = vec![
+            MockMessage {
+                kind: "message".to_string(),
+                author: "anna".to_string(),
+                time: "09:41".to_string(),
+                day: "2026-10-19".to_string(),
+                body: "hello".to_string(),
+            },
+            crate::model::mock::whois_message("VERSION reply from anna: https://omairc.app"),
+            MockMessage {
+                kind: "message".to_string(),
+                author: "anna".to_string(),
+                time: "09:41".to_string(),
+                day: "2026-10-19".to_string(),
+                body: "again".to_string(),
+            },
+        ];
+        let rows = rows_from_messages(&messages);
+        assert_eq!(rows[1].kind, RowKind::Whois);
+        assert_eq!(rows[1].body.plain, "VERSION reply from anna: https://omairc.app");
+        // The whois line sits between the two, so the second line starts a new header.
+        assert!(!rows[2].continues);
+    }
+
+    #[test]
+    fn an_appended_line_folds_under_the_row_above_like_a_stored_one() {
+        let first = row_from_message(1, "fred", "21:00", "one", false);
+        let folded = row_for_message(
+            2,
+            &MockMessage {
+                kind: "message".to_string(),
+                author: "fred".to_string(),
+                time: "21:00".to_string(),
+                day: "2026-10-19".to_string(),
+                body: "two".to_string(),
+            },
+            Some(&first),
+        );
+        assert!(folded.continues);
     }
 
     #[test]

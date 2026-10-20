@@ -90,6 +90,33 @@ pub fn status_rows(world: &MockWorld, network_id: &str) -> Vec<Row> {
         .collect()
 }
 
+/// The Status line for a command outcome or a reply the client wrote: local,
+/// informational, labelled `command` (`IrcStatusEntry::outcome`). A refused
+/// command, a `/help` or `/pref` reply on Status, and a `/version` reply on Status
+/// all use it.
+pub fn outcome_line(time: &str, text: &str) -> StatusLine {
+    StatusLine {
+        time: time.to_string(),
+        label: "command".to_string(),
+        text: text.to_string(),
+        source: StatusSource::Local,
+        severity: StatusSeverity::Info,
+    }
+}
+
+/// The Status line for a CTCP reply from the server, labelled `CTCP`
+/// (`IrcStatusEntry`, the reply branch of `NOTICE`). `text` is the whole reply,
+/// such as `VERSION reply from anna: https://omairc.app`.
+pub fn ctcp_reply_line(time: &str, text: &str) -> StatusLine {
+    StatusLine {
+        time: time.to_string(),
+        label: "CTCP".to_string(),
+        text: text.to_string(),
+        source: StatusSource::Server,
+        severity: StatusSeverity::Info,
+    }
+}
+
 /// The Status title, `{display name} Status`, such as `irc.example · fred Status`.
 ///
 /// Qt names the pane from the network's display name (`statusTitleText`). That
@@ -187,6 +214,39 @@ mod tests {
                 assert_eq!(line.severity, StatusSeverity::Info, "{}", line.label);
                 assert_eq!(line.time, "09:58:00");
             }
+        }
+    }
+
+    #[test]
+    fn command_outcomes_are_local_info_lines_labelled_command() {
+        let line = outcome_line("09:59:01", "Command was refused");
+        assert_eq!(line.label, "command");
+        assert_eq!(line.source, StatusSource::Local);
+        assert_eq!(line.severity, StatusSeverity::Info);
+        assert_eq!(line.time, "09:59:01");
+        assert_eq!(line.text, "Command was refused");
+        assert_eq!(
+            status_mark(&line).label_text(),
+            "-- command",
+            "a local line gets the -- glyph"
+        );
+    }
+
+    #[test]
+    fn ctcp_replies_are_server_lines_labelled_ctcp() {
+        let line = ctcp_reply_line("09:59:02", "VERSION reply from anna: https://omairc.app");
+        assert_eq!(line.label, "CTCP");
+        assert_eq!(line.source, StatusSource::Server);
+        assert_eq!(status_mark(&line).label_text(), "<< CTCP");
+        assert_eq!(line.text, "VERSION reply from anna: https://omairc.app");
+    }
+
+    /// The mark a Status row would carry for `line`.
+    fn status_mark(line: &StatusLine) -> StatusMark {
+        StatusMark {
+            label: line.label.clone(),
+            source: line.source,
+            severity: line.severity,
         }
     }
 

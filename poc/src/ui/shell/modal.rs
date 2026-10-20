@@ -112,9 +112,13 @@ impl Shell {
         self.present_about(window, cx);
     }
 
-    /// Escape: closes the open sheet, or with no sheet leaves Status for the
-    /// conversation. Inert otherwise.
+    /// Escape: closes the slash popup first, keeping the typed text. Otherwise it
+    /// closes the open sheet, or with no sheet leaves Status for the conversation.
+    /// Inert otherwise.
     pub fn escape(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.dismiss_slash_popup(window, cx) {
+            return;
+        }
         if !self.chord_live(Chord::Escape, window, cx) {
             return;
         }

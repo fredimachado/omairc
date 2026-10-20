@@ -20,13 +20,21 @@ pub struct Network {
     /// The network's Status pane: server and client lines, oldest first.
     #[serde(default)]
     pub status: Vec<StatusLine>,
-    /// The last command error. The header subtitle shows it in place of the topic
-    /// until the next command clears it (Qt `lastError`). The seed has none.
-    // The header subtitle reads it in Phase 4; drop the allow then.
+    /// The last command error on this network. The header subtitle shows it in
+    /// place of the topic until the next successful command or selection clears
+    /// it (Qt `lastError`). The seed has none.
     #[serde(default)]
-    #[allow(dead_code)]
     pub last_error: Option<String>,
+    /// The channel prefix characters (Qt `IrcServerFeatures` `CHANTYPES`). A
+    /// `/version` target that starts with one is refused.
+    #[serde(default = "default_chantypes")]
+    pub chantypes: String,
     pub conversations: Vec<Conversation>,
+}
+
+/// Qt's default `CHANTYPES` when a server sends none.
+fn default_chantypes() -> String {
+    "#&".to_string()
 }
 
 /// One line in a network's Status pane, the Qt `IrcStatusEntry` shape.
@@ -161,30 +169,66 @@ impl MockWorld {
             .find(|c| c.key() == target.key)
     }
 
-    /// Stores a line the local user sent, so the conversation keeps it across a switch.
+    /// Stores a line in a conversation, so it survives a switch: a line the local
+    /// user sent, or a command reply.
     pub fn record_outgoing(&mut self, target: &ConversationRef, message: MockMessage) {
         self.find_mut(target)
             .expect("record_outgoing: conversation is in the world")
             .messages
             .push(message);
     }
-}
 
-/// `/me` is an action with or without a trailing space. Returns the action text.
-pub fn action_body(text: &str) -> Option<&str> {
-    let rest = text.strip_prefix("/me")?;
-    if rest.is_empty() {
-        return Some("");
+    /// Empties a conversation's stored lines (`/clear` in a conversation).
+    pub fn clear_conversation(&mut self, target: &ConversationRef) {
+        if let Some(conv) = self.find_mut(target) {
+            conv.messages.clear();
+        }
     }
-    rest.strip_prefix(' ')
+
+    /// Appends a line to a network's Status log. An unknown network is a no-op.
+    pub fn push_status(&mut self, network_id: &str, line: StatusLine) {
+        if let Some(network) = self.network_mut(network_id) {
+            network.status.push(line);
+        }
+    }
+
+    /// Empties a network's Status log (`/clear` on Status).
+    pub fn clear_status(&mut self, network_id: &str) {
+        if let Some(network) = self.network_mut(network_id) {
+            network.status.clear();
+        }
+    }
+
+    /// Sets or clears a network's last command error.
+    pub fn set_last_error(&mut self, network_id: &str, error: Option<String>) {
+        if let Some(network) = self.network_mut(network_id) {
+            network.last_error = error;
+        }
+    }
+
+    fn network_mut(&mut self, network_id: &str) -> Option<&mut Network> {
+        self.networks.iter_mut().find(|n| n.id == network_id)
+    }
 }
 
-/// The stored line for something the local user just sent.
+/// A line the local user typed as chat. `text` is the whole line, sent as is.
+/// Slash parsing happens before this (`model::slash::parse`).
 pub fn outgoing_message(text: &str, author: &str, time: &str, day: &str) -> MockMessage {
-    let (kind, body) = match action_body(text) {
-        Some(body) => ("action", body),
-        None => ("message", text),
-    };
+    stored_line("message", text, author, time, day)
+}
+
+/// A `/me` line. `text` is the action body, without the `/me`.
+pub fn outgoing_action(text: &str, author: &str, time: &str, day: &str) -> MockMessage {
+    stored_line("action", text, author, time, day)
+}
+
+/// A command reply in a conversation: a whois-style line with no author or time
+/// (`IrcMessageKind::Whois`). The transcript shows it left-aligned and muted.
+pub fn whois_message(text: &str) -> MockMessage {
+    stored_line("whois", text, "", "", "")
+}
+
+fn stored_line(kind: &str, body: &str, author: &str, time: &str, day: &str) -> MockMessage {
     MockMessage {
         kind: kind.to_string(),
         author: author.to_string(),
@@ -197,6 +241,11 @@ pub fn outgoing_message(text: &str, author: &str, time: &str, day: &str) -> Mock
 /// Local `(day, HH:MM)` for a line sent now, as Qt's `MessageListModel::displayTime` stamps it.
 pub fn local_send_stamp() -> (String, String) {
     stamp_of(chrono::Local::now().fixed_offset())
+}
+
+/// Local `HH:MM:SS` for a Status line logged now. Qt's `NetworkLogModel` shows `hh:mm:ss`.
+pub fn local_log_stamp() -> String {
+    chrono::Local::now().format("%H:%M:%S").to_string()
 }
 
 fn stamp_of(now: chrono::DateTime<chrono::FixedOffset>) -> (String, String) {
@@ -454,7 +503,7 @@ mod tests {
             .expect("#desktop");
         let before = world.networks[0].conversations[desktop].messages.len();
         let target = ConversationRef::new("omarchy", "#desktop");
-        let sent = outgoing_message("/me waves", "fred", "21:57", "2026-10-19");
+        let sent = outgoing_action("waves", "fred", "21:57", "2026-10-19");
         world.record_outgoing(&target, sent);
         // Switching rebuilds the transcript from the stored messages.
         let rows = crate::model::rows_from_messages(&world.find(&target).expect("#desktop").messages);
@@ -490,22 +539,75 @@ mod tests {
     }
 
     #[test]
-    fn me_prefix_is_an_action_with_or_without_space() {
-        assert_eq!(action_body("/me waves"), Some("waves"));
-        assert_eq!(action_body("/me"), Some(""));
-        assert_eq!(action_body("/melon"), None);
-        assert_eq!(action_body("hello /me waves"), None);
+    fn outgoing_lines_keep_their_kind_and_never_reparse_slashes() {
+        let action = outgoing_action("waves", "fred", "14:07", "2026-10-19");
+        assert_eq!(action.kind, "action");
+        assert_eq!(action.author, "fred");
+        assert_eq!(action.body, "waves");
+        // A `//me` escape reaches here as the text `/me waves`, which stays chat.
+        let plain = outgoing_message("/me waves", "fred", "14:07", "2026-10-19");
+        assert_eq!(plain.kind, "message");
+        assert_eq!(plain.body, "/me waves");
     }
 
     #[test]
-    fn outgoing_me_is_stored_as_action_without_prefix() {
-        let message = outgoing_message("/me waves", "fred", "14:07", "2026-10-19");
-        assert_eq!(message.kind, "action");
-        assert_eq!(message.author, "fred");
-        assert_eq!(message.body, "waves");
-        let plain = outgoing_message("hi there", "fred", "14:07", "2026-10-19");
-        assert_eq!(plain.kind, "message");
-        assert_eq!(plain.body, "hi there");
+    fn a_whois_line_has_no_author_or_time() {
+        let reply = whois_message("Commands: /me, /help.");
+        assert_eq!(reply.kind, "whois");
+        assert!(reply.author.is_empty() && reply.time.is_empty() && reply.day.is_empty());
+        assert_eq!(reply.body, "Commands: /me, /help.");
+    }
+
+    #[test]
+    fn clearing_empties_one_conversation_and_one_status_log() {
+        let mut world = load_world();
+        let target = ConversationRef::new("omarchy", "#desktop");
+        world.clear_conversation(&target);
+        assert!(world.find(&target).expect("#desktop").messages.is_empty());
+        assert!(!world.network("omarchy").expect("omarchy").status.is_empty());
+
+        world.clear_status("omarchy");
+        assert!(world.network("omarchy").expect("omarchy").status.is_empty());
+        assert!(!world.network("oftc").expect("oftc").status.is_empty());
+    }
+
+    #[test]
+    fn a_status_line_is_appended_to_its_network_only() {
+        let mut world = load_world();
+        let before = world.network("oftc").expect("oftc").status.len();
+        let line = StatusLine {
+            time: "09:59:00".to_string(),
+            label: "command".to_string(),
+            text: "Command was refused".to_string(),
+            source: StatusSource::Local,
+            severity: StatusSeverity::Info,
+        };
+        world.push_status("oftc", line.clone());
+        let oftc = world.network("oftc").expect("oftc");
+        assert_eq!(oftc.status.len(), before + 1);
+        assert_eq!(oftc.status.last(), Some(&line));
+        world.push_status("nope", line);
+    }
+
+    #[test]
+    fn last_error_is_set_and_cleared_per_network() {
+        let mut world = load_world();
+        world.set_last_error("omarchy", Some("Name a nick".to_string()));
+        assert_eq!(
+            world.network("omarchy").expect("omarchy").last_error.as_deref(),
+            Some("Name a nick")
+        );
+        assert_eq!(world.network("oftc").expect("oftc").last_error, None);
+        world.set_last_error("omarchy", None);
+        assert_eq!(world.network("omarchy").expect("omarchy").last_error, None);
+    }
+
+    #[test]
+    fn chantypes_default_to_qt_when_the_seed_has_none() {
+        let network: Network =
+            serde_json::from_str(r#"{"id":"x","display_name":"x","nick":"me","conversations":[]}"#)
+                .expect("network without chantypes");
+        assert_eq!(network.chantypes, "#&");
     }
 
     #[test]

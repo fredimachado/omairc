@@ -37,6 +37,9 @@ pub struct ChordContext {
     pub members_focused: bool,
     /// The transcript has a non-empty text selection.
     pub transcript_selection: bool,
+    /// The slash-complete popup is showing above the composer: the typed line
+    /// starts a verb or `/pref` name, and no sheet covers it.
+    pub slash_open: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -60,6 +63,11 @@ pub enum Chord {
     ComposerHistory,
     /// Tab and Shift+Tab in the composer: complete a nick. Status has no nicks.
     NickComplete,
+    /// Up, Down, Tab, Enter and a click while the slash popup is open: they move
+    /// its highlight, insert the highlighted row, or send on an exact name.
+    SlashPopup,
+    /// Escape while the slash popup is open: it closes and the typed text stays.
+    SlashDismiss,
     WalkConversationDown,
     WalkConversationUp,
     WalkNetworkRight,
@@ -130,6 +138,9 @@ pub fn chord_enabled(chord: Chord, ctx: &ChordContext) -> bool {
         // Tab completes on a conversation only. Status has no nicks. The key is
         // still consumed there, so focus never leaves the composer.
         Chord::NickComplete => on_conversation,
+        // The popup owns these keys while it shows and no sheet is open. Status
+        // does not hide it: `/` on Status completes Status's verbs.
+        Chord::SlashPopup | Chord::SlashDismiss => ctx.slash_open && no_sheet,
         // Qt binds Alt+Shift+A unconditionally and returns early while an
         // overlay is open, so the net gate is "no overlay".
         Chord::MarkAllRead => no_sheet,
@@ -224,6 +235,9 @@ mod tests {
     fn selection(ctx: &mut ChordContext) {
         ctx.transcript_selection = true;
     }
+    fn slash_popup(ctx: &mut ChordContext) {
+        ctx.slash_open = true;
+    }
 
     // Columns: none, Shortcuts, About, Jump, Link, Inbox, Nick, Status open.
 
@@ -289,6 +303,26 @@ mod tests {
     #[test]
     fn composer_history_is_live_without_a_sheet_and_on_status() {
         check(Chord::ComposerHistory, nothing, NO_SHEET);
+    }
+
+    #[test]
+    fn the_slash_popup_keys_need_an_open_popup_and_no_sheet() {
+        check(Chord::SlashPopup, slash_popup, NO_SHEET);
+        check(Chord::SlashDismiss, slash_popup, NO_SHEET);
+        check(Chord::SlashPopup, nothing, NOWHERE);
+        check(Chord::SlashDismiss, nothing, NOWHERE);
+    }
+
+    #[test]
+    fn an_open_sheet_keeps_the_slash_popup_out_of_the_keys() {
+        // Ctrl+K while "/v" is typed opens Jump: Escape must close Jump, not the popup.
+        let ctx = ChordContext {
+            sheet: Some(Sheet::Jump),
+            slash_open: true,
+            ..ChordContext::default()
+        };
+        assert!(!chord_enabled(Chord::SlashDismiss, &ctx));
+        assert!(chord_enabled(Chord::Escape, &ctx));
     }
 
     #[test]
