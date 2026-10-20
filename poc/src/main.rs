@@ -174,7 +174,7 @@ fn main() {
                     let watch_path = theme_path.clone();
                     let shell_watch = shell.clone();
                     let transcript_watch = transcript;
-                    let mut watcher =
+                    let watcher =
                         ThemeWatcher::start(theme_path.as_deref()).expect("theme watcher");
                     cx.spawn(async move |cx| {
                         loop {

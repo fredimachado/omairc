@@ -48,7 +48,7 @@ const CARET_HALF_PERIOD: Duration = Duration::from_millis(530);
 
 /// Whether the caret is solid `since_edit` after the last edit or cursor move.
 fn solid_at(since_edit: Duration) -> bool {
-    (since_edit.as_millis() / CARET_HALF_PERIOD.as_millis()) % 2 == 0
+    (since_edit.as_millis() / CARET_HALF_PERIOD.as_millis()).is_multiple_of(2)
 }
 
 /// Time from `since_edit` until the caret next changes state.

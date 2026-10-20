@@ -132,7 +132,7 @@ fn apply_selection_runs(
 }
 
 pub fn link_underline_run(
-    mut runs: Vec<TextRun>,
+    runs: Vec<TextRun>,
     link_range: std::ops::Range<usize>,
     underline: bool,
 ) -> Vec<TextRun> {

@@ -240,9 +240,7 @@ impl Transcript {
     }
 
     pub fn invalidate_all(&mut self) {
-        for flag in &mut self.measured {
-            *flag = false;
-        }
+        self.measured.fill(false);
         self.heights = Fenwick::new(self.rows.len());
         for i in 0..self.rows.len() {
             self.heights.add(i, self.estimate_height as i64);
@@ -485,13 +483,11 @@ fn row_plain(row: &Row) -> &str {
         RowKind::DaySeparator => row
             .separator_text
             .as_deref()
-            .or(Some(row.body.plain.as_str()))
-            .unwrap(),
+            .unwrap_or(row.body.plain.as_str()),
         RowKind::Event => row
             .event_text
             .as_deref()
-            .or(Some(row.body.plain.as_str()))
-            .unwrap(),
+            .unwrap_or(row.body.plain.as_str()),
         RowKind::Message | RowKind::Status | RowKind::Whois | RowKind::UnreadMark => {
             &row.body.plain
         }

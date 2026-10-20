@@ -552,8 +552,8 @@ mod tests {
 
     #[test]
     fn link_range_after_em_dash() {
-        let text = format!("day \u{2014} https://example.com/x ok");
-        let formatted = format_irc(&text);
+        let text = "day \u{2014} https://example.com/x ok";
+        let formatted = format_irc(text);
         assert_eq!(formatted.links.len(), 1);
         assert_eq!(
             &formatted.plain[formatted.links[0].clone()],

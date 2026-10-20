@@ -1,20 +1,21 @@
 //! The About sheet (`Ctrl+Shift+/`, or a click on the footer's version): a
 //! port of `AboutSheet.qml` on the veil look. OK has focus on open. Tab moves
-//! between `Check for Updates` and OK; Enter or Space activates OK. Check for
-//! Updates is inert in the demo, and the GitHub link opens the repo through the
-//! same http(s) policy as the transcript.
+//! between `Check for Updates` and OK. Enter or Space activates the focused
+//! button. Check for Updates asks GitHub on the background executor and shows
+//! one status line. A newer version opens its release page. The GitHub link
+//! opens the repo through the same http(s) policy as the transcript.
 
 use gpui::{
     actions, div, img, prelude::*, App, Context, EventEmitter, FocusHandle, KeyBinding,
     MouseButton, ObjectFit, Window,
 };
 
+use crate::model::update_check::{check_latest, UpdateStatus, LATEST_RELEASE_API_URL, REPO_URL};
+use crate::model::Style;
 use crate::ui::sheets::frame::veil_frame;
 use crate::ui::sidebar::identity_footer::app_version;
 use crate::ui::widgets::text_button::text_button;
 use crate::util::{open_web_link, scaled_px, style, to_gpui, FONT_FAMILY};
-
-pub const REPO_URL: &str = "https://github.com/fredimachado/omairc";
 
 const DESCRIPTION: &str = "Omairc is an Internet Relay Chat client for Omarchy. People use it to communicate, share, play, and work with each other on IRC networks around the world.";
 
@@ -39,6 +40,7 @@ pub enum AboutEvent {
 pub struct AboutSheet {
     check_focus: FocusHandle,
     ok_focus: FocusHandle,
+    update_status: UpdateStatus,
 }
 
 impl AboutSheet {
@@ -46,6 +48,7 @@ impl AboutSheet {
         Self {
             check_focus: cx.focus_handle(),
             ok_focus: cx.focus_handle(),
+            update_status: UpdateStatus::Idle,
         }
     }
 
@@ -63,10 +66,61 @@ impl AboutSheet {
         window.focus(target);
     }
 
-    fn activate(&self, window: &Window, cx: &mut Context<Self>) {
+    fn activate(&mut self, window: &Window, cx: &mut Context<Self>) {
         if self.ok_focus.is_focused(window) {
             cx.emit(AboutEvent::Dismissed);
+        } else if self.check_focus.is_focused(window) {
+            self.start_check(cx);
         }
+    }
+
+    /// The update status line under the GitHub link, hidden until a check runs.
+    /// A newer version is a link to its release page.
+    fn status_line(
+        &self,
+        app_style: &Style,
+        muted: gpui::Hsla,
+        accent: gpui::Hsla,
+    ) -> Option<gpui::Div> {
+        let message = self.update_status.message()?;
+        let line = div()
+            .text_size(scaled_px(app_style, 12.))
+            .text_color(muted)
+            .font_family(FONT_FAMILY)
+            .child(message);
+        let link = self.update_status.link().map(str::to_string);
+        Some(line.when_some(link, |line, url| {
+            line.underline()
+                .cursor_pointer()
+                .hover(move |s| s.text_color(accent))
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    open_web_link(cx, &url);
+                })
+        }))
+    }
+
+    /// Check for Updates. The request runs on the background executor, so the
+    /// window stays live. A press while a check runs does nothing, as Qt's
+    /// disabled button does. The reply is dropped if the sheet has closed.
+    fn start_check(&mut self, cx: &mut Context<Self>) {
+        if self.update_status == UpdateStatus::Checking {
+            return;
+        }
+        self.update_status = UpdateStatus::Checking;
+        cx.notify();
+        let current = app_version().to_string();
+        cx.spawn(async move |this, cx| {
+            let status = cx
+                .background_executor()
+                .spawn(async move { check_latest(&current, LATEST_RELEASE_API_URL) })
+                .await;
+            this.update(cx, |sheet, cx| {
+                sheet.update_status = status;
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
     }
 }
 
@@ -81,6 +135,7 @@ impl Render for AboutSheet {
         let check_focused = self.check_focus.is_focused(window);
         let ok_focused = self.ok_focus.is_focused(window);
         let entity = cx.entity();
+        let check_entity = entity.clone();
         let ok_entity = entity.clone();
         let dismiss_entity = entity;
 
@@ -112,7 +167,9 @@ impl Render for AboutSheet {
                 28.,
                 &self.check_focus,
                 check_focused,
-                |_, _| {},
+                move |_, cx| {
+                    check_entity.update(cx, |sheet, cx| sheet.start_check(cx));
+                },
             ));
 
         let logo = img("icons/omairc.svg")
@@ -173,7 +230,8 @@ impl Render for AboutSheet {
                             .font_family(FONT_FAMILY)
                             .child("This project is open-source."),
                     )
-                    .child(github),
+                    .child(github)
+                    .children(self.status_line(&app_style, muted, accent)),
             )
             .child(
                 div()

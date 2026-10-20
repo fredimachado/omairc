@@ -508,7 +508,7 @@ impl Element for BodyTextElement {
     ) {
         let layout = self.text.layout();
         if let Some(range) = self.selection_range.clone() {
-            for quad in selection_quads(&layout, bounds, range, self.selection_color) {
+            for quad in selection_quads(layout, bounds, range, self.selection_color) {
                 window.paint_quad(quad);
             }
         }

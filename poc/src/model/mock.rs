@@ -576,7 +576,7 @@ mod tests {
         let sent = outgoing_action("waves", "fred", "21:57", "2026-10-19");
         world.record_outgoing(&target, sent);
         // Switching rebuilds the transcript from the stored messages.
-        let rows = crate::model::rows_from_messages(&world.find(&target).expect("#desktop").messages);
+        let rows = crate::model::transcript::rows_from_messages(&world.find(&target).expect("#desktop").messages);
         assert_eq!(rows.len(), before + 1);
         let last = rows.last().expect("sent row");
         assert!(last.action);
