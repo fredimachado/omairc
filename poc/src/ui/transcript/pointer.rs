@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use gpui::{Bounds, Pixels, Point};
 
-use crate::model::links::invite_hit;
+use crate::model::links::{conversation_channel_hits, invite_hit};
 use crate::model::{map_pointer, PointerZone, Pos, Row};
 use crate::ui::message_row::RowLayoutMap;
 use crate::util::scaled_px;
@@ -71,11 +71,13 @@ pub fn pos_at(
 }
 
 /// The link under `position`, as its row and byte range in that row's body. A
-/// link is an http(s) URL in the body, or the channel of a Status INVITE line.
+/// link is an http(s) URL in the body, the channel of a Status INVITE line, or
+/// a channel name in a chat line (`chantypes` is the network's CHANTYPES).
 pub fn link_at(
     rows: &[Row],
     layouts: &RowLayoutMap,
     bounds: &RowBounds,
+    chantypes: &str,
     position: Point<Pixels>,
 ) -> Option<(usize, Range<usize>)> {
     let row_ix = row_at(bounds, position)?;
@@ -83,11 +85,15 @@ pub fn link_at(
     let layout = layouts.borrow().get(&row_ix)?.layout.clone();
     let offset = layout.index_for_position(position).ok()?;
     let invite = invite_hit(row).map(|(_, range)| range);
+    let channels = conversation_channel_hits(row, chantypes)
+        .into_iter()
+        .map(|span| span.range);
     row.body
         .links
         .iter()
-        .chain(invite.as_ref())
-        .find(|range| range.contains(&offset))
         .cloned()
+        .chain(invite)
+        .chain(channels)
+        .find(|range| range.contains(&offset))
         .map(|range| (row_ix, range))
 }

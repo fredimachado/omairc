@@ -5,6 +5,7 @@
       "display_name": "irc.example · fred",
       "icon_color": 1,
       "nick": "fred",
+      "chantypes": "#",
       "status": [
         { "time": "09:58:00", "label": "CAP", "text": "Server supports: echo-message | message-tags | labeled-response | away-notify | multi-prefix | batch | draft/metadata-2 | server-time | account-tag | account-notify | extended-join", "source": "server", "severity": "info" },
         { "time": "09:58:00", "label": "CAP", "text": "Acknowledged: echo-message | message-tags | labeled-response | away-notify | multi-prefix | batch | draft/metadata-2 | server-time | account-tag | account-notify | extended-join", "source": "server", "severity": "info" },
@@ -585,6 +586,7 @@
       "display_name": "irc.example · oak",
       "icon_color": 2,
       "nick": "oak",
+      "chantypes": "#",
       "status": [
         { "time": "09:58:00", "label": "CAP", "text": "Server supports: echo-message | message-tags | labeled-response | away-notify | multi-prefix | batch | draft/metadata-2 | server-time | account-tag | account-notify | extended-join", "source": "server", "severity": "info" },
         { "time": "09:58:00", "label": "CAP", "text": "Acknowledged: echo-message | message-tags | labeled-response | away-notify | multi-prefix | batch | draft/metadata-2 | server-time | account-tag | account-notify | extended-join", "source": "server", "severity": "info" },

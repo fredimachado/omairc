@@ -39,7 +39,7 @@ impl Shell {
 
     /// Joins `channel` on `network_id` and selects it. Joining clears that
     /// channel's invite row, as Qt's `IrcInbox::consumeInvite` does. Used by the
-    /// inbox and by an INVITE line in Status.
+    /// inbox, an INVITE line in Status, and the Channel open sheet.
     pub fn join_invite(&mut self, network_id: &str, channel: &str, cx: &mut Context<Self>) {
         self.inbox.consume_invite(network_id, channel);
         if let Some(target) = join_channel(&mut self.world, network_id, channel) {

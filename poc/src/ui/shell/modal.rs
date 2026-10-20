@@ -6,11 +6,13 @@
 use gpui::{prelude::*, AnyElement, App, Context, Entity, Subscription, Window};
 
 use crate::model::chords::{Chord, Sheet};
+use crate::model::inbox::find_channel;
 use crate::model::jump::{JumpKind, JumpTarget};
 use crate::model::links::{LinkKind, LinkTarget};
 use crate::model::nick_pick::NickTarget;
 use crate::model::sidebar::set_collapsed;
 use crate::ui::sheets::about::{AboutEvent, AboutSheet};
+use crate::ui::sheets::channel_open::{ChannelOpenEvent, ChannelOpenSheet};
 use crate::ui::sheets::filter_sheet::{render_filter_sheet, FilterSheet, FilterSource, SheetEvent};
 use crate::ui::sheets::inbox::{render_inbox_sheet, InboxEvent, InboxSheet};
 use crate::ui::sheets::jump::JumpSource;
@@ -31,6 +33,7 @@ pub enum ActiveModal {
     Inbox(Entity<InboxSheet>, Vec<Subscription>),
     Shortcuts(Entity<ShortcutsSheet>, Vec<Subscription>),
     About(Entity<AboutSheet>, Vec<Subscription>),
+    ChannelOpen(Entity<ChannelOpenSheet>, Vec<Subscription>),
 }
 
 impl ActiveModal {
@@ -42,6 +45,7 @@ impl ActiveModal {
             Self::Inbox(..) => Sheet::Inbox,
             Self::Shortcuts(..) => Sheet::Shortcuts,
             Self::About(..) => Sheet::About,
+            Self::ChannelOpen(..) => Sheet::ChannelOpen,
         }
     }
 }
@@ -148,7 +152,54 @@ impl Shell {
             ActiveModal::Inbox(sheet, _) => render_inbox_sheet(sheet, cx),
             ActiveModal::Shortcuts(sheet, _) => sheet.clone().into_any_element(),
             ActiveModal::About(sheet, _) => sheet.clone().into_any_element(),
+            ActiveModal::ChannelOpen(sheet, _) => sheet.clone().into_any_element(),
         })
+    }
+
+    /// A click on a channel name, or a Link sheet channel row (Qt
+    /// `openChannelName`). A channel the network already has becomes the open
+    /// conversation. Any other name asks first, in the Channel open sheet.
+    pub fn open_channel_name(
+        &mut self,
+        channel: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let network_id = self.selected.network_id.clone();
+        if let Some(target) = find_channel(&self.world, &network_id, channel) {
+            set_collapsed(&self.world, &mut self.sidebar, &network_id, false);
+            self.select(target, cx);
+            self.focus_composer(window, cx);
+            cx.notify();
+        } else {
+            self.present_channel_open(network_id, channel.to_string(), window, cx);
+        }
+    }
+
+    /// The Channel open sheet. Enter joins the channel on the network it opened
+    /// for, and closes the sheet; Escape or a press outside cancels.
+    fn present_channel_open(
+        &mut self,
+        network_id: String,
+        channel: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let sheet = cx.new(|cx| ChannelOpenSheet::new(channel.clone(), cx));
+        let subscriptions = vec![cx.subscribe_in(
+            &sheet,
+            window,
+            move |shell: &mut Shell, _, event: &ChannelOpenEvent, window, cx| match event {
+                ChannelOpenEvent::Confirmed => {
+                    shell.close_modal(window, cx);
+                    shell.join_invite(&network_id, &channel, cx);
+                }
+                ChannelOpenEvent::Dismissed => shell.close_modal(window, cx),
+            },
+        )];
+        window.focus(&sheet.read(cx).focus_handle());
+        self.modal = Some(ActiveModal::ChannelOpen(sheet, subscriptions));
+        cx.notify();
     }
 
     /// Activating a Jump row. A conversation expands its network, then selects
@@ -212,6 +263,7 @@ impl Shell {
             LinkSource::Conversation {
                 topic: self.current_conversation().topic.clone(),
                 rows,
+                chantypes: self.current_network().chantypes.clone(),
             }
         };
         let sheet = cx.new(|cx| FilterSheet::new(source, cx));
@@ -230,6 +282,7 @@ impl Shell {
                                 open_web_link(cx, &text);
                             }
                             LinkKind::Invite => shell.join_status_invite(&text, cx),
+                            LinkKind::Channel => shell.open_channel_name(&text, window, cx),
                         }
                     }
                     SheetEvent::Dismissed => shell.close_modal(window, cx),

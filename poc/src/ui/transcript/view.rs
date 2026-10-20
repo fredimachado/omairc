@@ -10,24 +10,31 @@ use gpui::{
 };
 
 use crate::model::cursor::{page_amount, scroll_target};
-use crate::model::links::invite_hit;
+use crate::model::links::{conversation_channel_hits, invite_hit};
 use crate::model::{mix_colors, row_from_message, Conversation, Pos, Row, Style, Transcript};
 use crate::ui::message_row::{render_transcript_row, RowCallbacks, RowLayoutMap};
 use crate::ui::scrollbar::{list_vertical_scrollbar, move_scrollbar_drag, ScrollbarDragCell};
 use crate::ui::transcript::pointer::{self, RowBounds};
 use crate::ui::Handler;
-use crate::util::{open_web_link, style, to_gpui, OmaircStyleGlobal};
+use crate::util::{style, to_gpui, OmaircStyleGlobal};
 
 /// A click on a transcript author or avatar. The shell opens or creates the DM.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NickClicked(pub String);
 
-/// A click on the channel of an INVITE Status line. The shell joins it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct InviteClicked(pub String);
-
 impl EventEmitter<NickClicked> for TranscriptView {}
-impl EventEmitter<InviteClicked> for TranscriptView {}
+
+/// What a release over a transcript link asks of the shell. The shell acts on it
+/// with its window, so a channel can open its sheet.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LinkClick {
+    /// An http(s) URL: it opens in the browser.
+    Url(String),
+    /// The channel of an INVITE Status line: the shell joins it.
+    Invite(String),
+    /// A channel name in a chat line: the shell switches to it, or asks first.
+    Channel(String),
+}
 
 /// The transcript list: its model, selection, drag-select and link hover.
 /// Owned as an entity so the shell only holds a handle.
@@ -38,6 +45,8 @@ pub struct TranscriptView {
     row_bounds: RowBounds,
     member_realnames: HashMap<String, String>,
     self_nick: String,
+    /// The network's CHANTYPES, which decide what a channel name in a line is.
+    chantypes: String,
     composer_focus: FocusHandle,
     scrollbar_drag: ScrollbarDragCell,
     dragging: bool,
@@ -61,6 +70,7 @@ impl TranscriptView {
             row_bounds: Rc::new(RefCell::new(Default::default())),
             member_realnames: HashMap::new(),
             self_nick: String::new(),
+            chantypes: String::new(),
             composer_focus,
             scrollbar_drag,
             dragging: false,
@@ -74,10 +84,12 @@ impl TranscriptView {
     }
 
     /// Shows a conversation's stored lines with a fresh selection and scroll.
-    pub fn set_conversation(&mut self, conv: &Conversation, self_nick: &str) {
+    /// `chantypes` is the network's CHANTYPES, for the channel names in its lines.
+    pub fn set_conversation(&mut self, conv: &Conversation, self_nick: &str, chantypes: &str) {
         self.model.set_conversation(&conv.messages);
         self.member_realnames = member_realnames(conv);
         self.self_nick = self_nick.to_string();
+        self.chantypes = chantypes.to_string();
         self.model.clear_selection();
         self.find_row = None;
         self.list_state.reset(self.model.rows().len());
@@ -234,35 +246,18 @@ impl TranscriptView {
         true
     }
 
-    /// Ends a drag on mouse-up. A release over a link acts on it: an http(s)
-    /// URL opens in the browser, an INVITE channel asks the shell to join it.
-    /// Returns false when no drag was in progress.
-    pub fn finish_drag(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) -> bool {
+    /// Ends a drag on mouse-up. Returns what a release over a link asks for, or
+    /// None for a release anywhere else or with no drag in progress.
+    pub fn finish_drag(&mut self, position: Point<Pixels>) -> Option<LinkClick> {
         if !self.dragging {
-            return false;
+            return None;
         }
         self.dragging = false;
         self.drag_autoscroll = false;
         self.drag_edge = None;
         self.drag_pointer = None;
-        if let Some((row_ix, range)) = self.link_at(position) {
-            self.activate_link(row_ix, range, cx);
-        }
-        true
-    }
-
-    fn activate_link(&self, row_ix: usize, range: Range<usize>, cx: &mut Context<Self>) {
-        let row = &self.model.rows()[row_ix];
-        // A URL takes precedence over the invite channel it might share a range with.
-        if row.body.links.contains(&range) {
-            if let Some(url) = row.body.plain.get(range) {
-                open_web_link(cx, url);
-            }
-        } else if let Some((channel, channel_range)) = invite_hit(row) {
-            if channel_range == range {
-                cx.emit(InviteClicked(channel.to_string()));
-            }
-        }
+        let (row_ix, range) = self.link_at(position)?;
+        link_click(&self.model.rows()[row_ix], &range, &self.chantypes)
     }
 
     pub fn tick_drag_autoscroll(&mut self, app_style: &Style) {
@@ -299,7 +294,13 @@ impl TranscriptView {
     }
 
     fn link_at(&self, position: Point<Pixels>) -> Option<(usize, Range<usize>)> {
-        pointer::link_at(self.model.rows(), &self.row_layouts, &self.row_bounds, position)
+        pointer::link_at(
+            self.model.rows(),
+            &self.row_layouts,
+            &self.row_bounds,
+            &self.chantypes,
+            position,
+        )
     }
 
     fn update_drag_autoscroll(&mut self, position: Point<Pixels>) {
@@ -467,6 +468,27 @@ impl Render for TranscriptView {
                 drag,
             ))
     }
+}
+
+/// What a release over `range` in `row` asks for. A URL wins over an invite or a
+/// channel that shares its range.
+fn link_click(row: &Row, range: &Range<usize>, chantypes: &str) -> Option<LinkClick> {
+    if row.body.links.contains(range) {
+        return row
+            .body
+            .plain
+            .get(range.clone())
+            .map(|url| LinkClick::Url(url.to_string()));
+    }
+    if let Some((channel, channel_range)) = invite_hit(row) {
+        if &channel_range == range {
+            return Some(LinkClick::Invite(channel.to_string()));
+        }
+    }
+    conversation_channel_hits(row, chantypes)
+        .into_iter()
+        .find(|span| &span.range == range)
+        .map(|span| LinkClick::Channel(span.name))
 }
 
 /// Real names keyed by nick, plus the DM peer's own name.

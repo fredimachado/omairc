@@ -8,6 +8,7 @@ use gpui::{actions, App, Context, Div, KeyBinding, prelude::*};
 use crate::model::chords::Chord;
 use crate::ui::input::Copy as CopySelection;
 use crate::ui::sheets::about::bind_about_keys;
+use crate::ui::sheets::channel_open::bind_channel_open_keys;
 use crate::ui::sheets::filter_sheet::bind_filter_keys;
 use crate::ui::sheets::inbox::bind_inbox_keys;
 use crate::ui::shell::Shell;
@@ -69,6 +70,7 @@ pub fn bind_shell_keys(cx: &mut App) {
     bind_filter_keys(cx);
     bind_inbox_keys(cx);
     bind_about_keys(cx);
+    bind_channel_open_keys(cx);
     cx.bind_keys([
         KeyBinding::new("secondary-/", ToggleShortcuts, None),
         KeyBinding::new("secondary-shift-/", OpenAbout, None),

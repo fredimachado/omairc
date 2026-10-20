@@ -5,6 +5,7 @@ use crate::model::chords::{chord_enabled, Chord, ChordContext};
 use crate::model::composer::{nick_candidates, DraftKey, NickScope};
 use crate::model::cursor::{move_index, page_amount};
 use crate::model::directs::{close_direct, open_direct};
+use crate::model::format::TextHit;
 use crate::model::navigation::{
     mark_all_read, next_unread_or_status, step_conversation, step_network, UnreadTarget,
 };
@@ -15,7 +16,8 @@ use crate::model::status::status_rows;
 use crate::model::{Conversation, ConversationRef, Member, Network};
 use crate::ui::shell::modal::ActiveModal;
 use crate::ui::shell::Shell;
-use crate::util::{scaled_px, style};
+use crate::ui::transcript::view::LinkClick;
+use crate::util::{open_web_link, scaled_px, style};
 
 /// One member row's height in logical pixels (`MembersColumn.qml`).
 const MEMBER_ROW_HEIGHT: f32 = 43.;
@@ -70,8 +72,9 @@ impl Shell {
     pub fn show_selected_conversation(&mut self, cx: &mut Context<Self>) {
         let conv = self.current_conversation();
         let self_nick = self.current_network().nick.clone();
+        let chantypes = self.current_network().chantypes.clone();
         self.transcript
-            .update(cx, |t, _| t.set_conversation(conv, &self_nick));
+            .update(cx, |t, _| t.set_conversation(conv, &self_nick, &chantypes));
         self.sync_send_limit(cx);
     }
 
@@ -662,12 +665,41 @@ impl Shell {
         window.focus(&self.composer.read(cx).focus_handle(cx));
     }
 
-    /// Ends a text drag on mouse-up; notifies only when a drag was running.
-    pub fn end_text_drag(&mut self, position: gpui::Point<gpui::Pixels>, cx: &mut Context<Self>) {
-        self.transcript.update(cx, |t, cx| {
-            if t.finish_drag(position, cx) {
-                cx.notify();
+    /// Ends a text drag on mouse-up. A release over a link acts on it. Notifies
+    /// only when a drag was running.
+    pub fn end_text_drag(
+        &mut self,
+        position: gpui::Point<gpui::Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.transcript.read(cx).is_dragging() {
+            return;
+        }
+        let click = self.transcript.update(cx, |t, _| t.finish_drag(position));
+        cx.notify();
+        match click {
+            Some(LinkClick::Url(url)) => {
+                open_web_link(cx, &url);
             }
-        });
+            Some(LinkClick::Invite(channel)) => self.join_status_invite(&channel, cx),
+            Some(LinkClick::Channel(name)) => self.open_channel_name(&name, window, cx),
+            None => {}
+        }
+    }
+
+    /// A click on a URL or channel name in the header's topic.
+    pub fn activate_text_hit(
+        &mut self,
+        hit: TextHit,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match hit {
+            TextHit::Url(url) => {
+                open_web_link(cx, &url);
+            }
+            TextHit::Channel(name) => self.open_channel_name(&name, window, cx),
+        }
     }
 }

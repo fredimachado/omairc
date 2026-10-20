@@ -15,6 +15,8 @@ pub enum Sheet {
     Link,
     Inbox,
     Nick,
+    /// Asks before a click on a channel name joins a channel the network lacks.
+    ChannelOpen,
 }
 
 /// What the chord decision can see. Built by the shell from its state.
@@ -193,7 +195,7 @@ mod tests {
 
     /// Column order for the tables below: no sheet, then each sheet kind, then
     /// Status open with no sheet.
-    const COLUMNS: [(Option<Sheet>, bool); 8] = [
+    const COLUMNS: [(Option<Sheet>, bool); 9] = [
         (None, false),
         (Some(Sheet::Shortcuts), false),
         (Some(Sheet::About), false),
@@ -201,19 +203,21 @@ mod tests {
         (Some(Sheet::Link), false),
         (Some(Sheet::Inbox), false),
         (Some(Sheet::Nick), false),
+        (Some(Sheet::ChannelOpen), false),
         (None, true),
     ];
 
     /// Live with no sheet, on a conversation or on Status.
-    const NO_SHEET: [bool; 8] = [true, false, false, false, false, false, false, true];
+    const NO_SHEET: [bool; 9] = [true, false, false, false, false, false, false, false, true];
     /// Live with no sheet, but only on a conversation (Status hides it).
-    const CONVERSATION_ONLY: [bool; 8] = [true, false, false, false, false, false, false, false];
+    const CONVERSATION_ONLY: [bool; 9] =
+        [true, false, false, false, false, false, false, false, false];
     /// Never live in these contexts.
-    const NOWHERE: [bool; 8] = [false; 8];
+    const NOWHERE: [bool; 9] = [false; 9];
 
     /// Checks one chord against every column, with `setup` applied to the base
     /// context first.
-    fn check(chord: Chord, setup: fn(&mut ChordContext), expected: [bool; 8]) {
+    fn check(chord: Chord, setup: fn(&mut ChordContext), expected: [bool; 9]) {
         for (column, (sheet, status_open)) in COLUMNS.iter().enumerate() {
             let mut ctx = ChordContext {
                 sheet: *sheet,
@@ -253,7 +257,7 @@ mod tests {
         ctx.find_active = true;
     }
 
-    // Columns: none, Shortcuts, About, Jump, Link, Inbox, Nick, Status open.
+    // Columns: none, Shortcuts, About, Jump, Link, Inbox, Nick, ChannelOpen, Status open.
 
     #[test]
     fn no_overlay_chords_are_live_without_a_sheet_and_on_status() {
@@ -286,17 +290,17 @@ mod tests {
         check(
             Chord::Jump,
             nothing,
-            [true, false, false, true, false, false, false, true],
+            [true, false, false, true, false, false, false, false, true],
         );
         check(
             Chord::Link,
             nothing,
-            [true, false, false, false, true, false, false, true],
+            [true, false, false, false, true, false, false, false, true],
         );
         check(
             Chord::Inbox,
             nothing,
-            [true, false, false, false, false, true, false, true],
+            [true, false, false, false, false, true, false, false, true],
         );
     }
 
@@ -305,7 +309,7 @@ mod tests {
         check(
             Chord::Shortcuts,
             nothing,
-            [true, true, false, false, false, false, false, true],
+            [true, true, false, false, false, false, false, false, true],
         );
     }
 
@@ -338,7 +342,7 @@ mod tests {
 
     #[test]
     fn escape_leaves_find_mode_even_with_no_sheet_and_no_status() {
-        check(Chord::Escape, finding, [true; 8]);
+        check(Chord::Escape, finding, [true; 9]);
     }
 
     #[test]
@@ -385,7 +389,7 @@ mod tests {
         check(
             Chord::Escape,
             nothing,
-            [false, true, true, true, true, true, true, true],
+            [false, true, true, true, true, true, true, true, true],
         );
     }
 
@@ -482,6 +486,46 @@ mod tests {
                 "{chord:?} must be off on Status"
             );
         }
+    }
+
+    #[test]
+    fn the_channel_open_sheet_blocks_every_chord_but_escape() {
+        // Enter confirms and Escape cancels; the other keys wait for the sheet.
+        let ctx = ChordContext {
+            sheet: Some(Sheet::ChannelOpen),
+            channel: true,
+            members_focused: true,
+            transcript_selection: true,
+            ..ChordContext::default()
+        };
+        for chord in [
+            Chord::Quit,
+            Chord::Copy,
+            Chord::ComposerFocus,
+            Chord::Jump,
+            Chord::Link,
+            Chord::NickSheet,
+            Chord::Inbox,
+            Chord::MembersToggle,
+            Chord::MembersFocus,
+            Chord::ServerListToggle,
+            Chord::CloseDirect,
+            Chord::Shortcuts,
+            Chord::About,
+            Chord::StatusToggle,
+            Chord::Find,
+            Chord::ComposerHistory,
+            Chord::NickComplete,
+            Chord::NextUnread,
+            Chord::MarkAllRead,
+            Chord::MembersStep,
+        ] {
+            assert!(
+                !chord_enabled(chord, &ctx),
+                "{chord:?} must wait for the sheet"
+            );
+        }
+        assert!(chord_enabled(Chord::Escape, &ctx));
     }
 
     #[test]

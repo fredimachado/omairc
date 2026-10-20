@@ -255,7 +255,9 @@ fn stamp_of(now: chrono::DateTime<chrono::FixedOffset>) -> (String, String) {
     )
 }
 
-const PREFIX_RANK: &[char] = &['~', '&', '@', '%', '+'];
+/// The member rank symbols, highest first: Qt's default `PREFIX` (`~&@%+`). A
+/// channel name may sit straight after one of them.
+pub const PREFIX_RANK: &[char] = &['~', '&', '@', '%', '+'];
 
 fn prefix_priority(prefix: &str) -> usize {
     prefix
@@ -412,6 +414,9 @@ mod tests {
         assert_eq!(world.networks[1].nick, "oak");
         assert_eq!(world.networks[1].display_name, "irc.example · oak");
         assert_eq!(world.networks[1].icon_color, Some(2));
+        // The demo server's ISUPPORT is `CHANTYPES=# PREFIX=(qaohv)~&@%+`.
+        assert_eq!(world.networks[0].chantypes, "#");
+        assert_eq!(world.networks[1].chantypes, "#");
 
         let anna_dm = world.networks[0]
             .conversations

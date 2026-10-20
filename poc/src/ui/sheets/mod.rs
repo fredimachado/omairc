@@ -2,6 +2,7 @@
 //! filter entity, and one file per sheet holds its source and rows.
 
 pub mod about;
+pub mod channel_open;
 pub mod filter_sheet;
 pub mod frame;
 pub mod inbox;

@@ -15,6 +15,7 @@ pub mod fuzzy;
 pub mod inbox;
 pub mod jump;
 pub mod links;
+pub mod mention;
 pub mod mock;
 pub mod navigation;
 pub mod nick_pick;

@@ -19,6 +19,7 @@ use gpui::{
 
 use crate::model::composer::{ComposerState, DraftKey};
 use crate::model::find::Find;
+use crate::model::format::{format_irc, text_hits, TextHit};
 use crate::model::inbox::{seed_inbox, Inbox};
 use crate::model::prefs::Preferences;
 use crate::model::sidebar::SidebarState;
@@ -26,7 +27,7 @@ use crate::model::slash_complete::SlashSession;
 use crate::model::status::status_title;
 use crate::model::title::{conversation_title, window_title, TitleView};
 use crate::model::{bench_channel, load_world, ConversationRef, MockWorld};
-use crate::ui::center::header::HeaderView;
+use crate::ui::center::header::{HeaderView, Subtitle};
 use crate::ui::center::render_center;
 use crate::ui::center::slash_popup::render_slash_popup;
 use crate::ui::input::SingleLineInput;
@@ -34,7 +35,7 @@ use crate::ui::members::render_members;
 use crate::ui::scrollbar::{end_scrollbar_drag, move_scrollbar_drag, ScrollbarDragCell};
 use crate::ui::shell::actions::wire_shell_actions;
 use crate::ui::sidebar::{render_sidebar, SidebarData};
-use crate::ui::transcript::view::{InviteClicked, NickClicked};
+use crate::ui::transcript::view::NickClicked;
 use crate::ui::transcript::TranscriptView;
 use crate::ui::Handler;
 use crate::util::{style, to_gpui};
@@ -112,9 +113,6 @@ impl Shell {
         let transcript_events = cx.subscribe(&transcript, |shell: &mut Shell, _, event: &NickClicked, cx| {
             shell.open_direct_nick(&event.0, cx);
         });
-        let invite_events = cx.subscribe(&transcript, |shell: &mut Shell, _, event: &InviteClicked, cx| {
-            shell.join_status_invite(&event.0, cx);
-        });
         // Every composer edit, caret move and history step re-reads the slash popup.
         // The popup only re-renders when its rows or highlight changed. A changed
         // find query searches again from the top.
@@ -152,12 +150,13 @@ impl Shell {
                 ..Default::default()
             },
             lines_seed: lines,
-            _subscriptions: vec![transcript_events, invite_events, composer_events],
+            _subscriptions: vec![transcript_events, composer_events],
         };
 
         let conv = shell.current_conversation();
         let self_nick = shell.current_network().nick.clone();
-        shell.transcript.update(cx, |t, _| t.set_conversation(conv, &self_nick));
+        let chantypes = shell.current_network().chantypes.clone();
+        shell.transcript.update(cx, |t, _| t.set_conversation(conv, &self_nick, &chantypes));
         shell.sync_send_limit(cx);
         shell
     }
@@ -197,14 +196,13 @@ impl Render for Shell {
         // conversation's title, people count, and subtitle. The subtitle is the
         // network's last command error while one is set, else the topic (Status
         // shows the same error over "Connected", as Qt's `statusSubtitle` does).
-        let (title, subtitle, people) = match &self.status {
+        let (title, people, error) = match &self.status {
             Some(network_id) => (
                 status_title(&self.world, network_id).unwrap_or_else(|| "Status".to_string()),
+                None,
                 self.world
                     .network(network_id)
-                    .and_then(|network| network.last_error.clone())
-                    .unwrap_or_else(|| "Connected".to_string()),
-                None,
+                    .and_then(|network| network.last_error.clone()),
             ),
             None => {
                 let conv = self.current_conversation();
@@ -214,10 +212,28 @@ impl Render for Shell {
                     .and_then(|network| network.last_error.clone());
                 (
                     conversation_title(&self.world, &self.selected).unwrap_or_default(),
-                    error.unwrap_or_else(|| conv.topic.clone().unwrap_or_default()),
                     conv.is_channel().then(|| conv.people_count()),
+                    error,
                 )
             }
+        };
+        // The topic shows unless an error or Status takes the second line. Its URLs
+        // and channel names are clickable, against the network's CHANTYPES.
+        let topic = (self.status.is_none() && error.is_none()).then(|| {
+            let chantypes = self.current_network().chantypes.clone();
+            let text = format_irc(self.current_conversation().topic.as_deref().unwrap_or(""));
+            let hits = text_hits(&text, &chantypes);
+            (text, hits)
+        });
+        // Otherwise the line is the error, or `Connected` (Qt's `statusSubtitle`).
+        let plain_subtitle = error.unwrap_or_else(|| "Connected".to_string());
+        let subtitle = match &topic {
+            Some((text, hits)) => Subtitle::Topic {
+                text,
+                hits,
+                on_hit: topic_handler(entity.clone()),
+            },
+            None => Subtitle::Plain(&plain_subtitle),
         };
         // The slash popup hangs over the composer while it shows.
         let slash_popup = self.slash_popup_showing().then(|| {
@@ -252,7 +268,7 @@ impl Render for Shell {
         );
         let header = HeaderView {
             title: &title,
-            subtitle: &subtitle,
+            subtitle,
             people,
         };
         let center = render_center(
@@ -287,16 +303,16 @@ impl Render for Shell {
                     });
                 }
             }))
-            .capture_any_mouse_up(cx.listener(|shell, ev: &MouseUpEvent, _, cx| {
+            .capture_any_mouse_up(cx.listener(|shell, ev: &MouseUpEvent, window, cx| {
                 if ev.button == MouseButton::Left {
                     end_scrollbar_drag(&shell.scrollbar_drag);
-                    shell.end_text_drag(ev.position, cx);
+                    shell.end_text_drag(ev.position, window, cx);
                 }
             }))
             .on_mouse_up_out(
                 MouseButton::Left,
-                cx.listener(|shell, ev: &MouseUpEvent, _, cx| {
-                    shell.end_text_drag(ev.position, cx);
+                cx.listener(|shell, ev: &MouseUpEvent, window, cx| {
+                    shell.end_text_drag(ev.position, window, cx);
                 }),
             )
             .child(sidebar)
@@ -342,6 +358,13 @@ fn select_handler(entity: Entity<Shell>) -> Handler<ConversationRef> {
 fn status_handler(entity: Entity<Shell>) -> Handler<String> {
     Rc::new(move |network_id: String, window: &mut Window, cx: &mut App| {
         entity.update(cx, |shell, cx| shell.open_status(&network_id, window, cx));
+    })
+}
+
+/// A click on a URL or channel name in the header's topic.
+fn topic_handler(entity: Entity<Shell>) -> Handler<TextHit> {
+    Rc::new(move |hit: TextHit, window: &mut Window, cx: &mut App| {
+        entity.update(cx, |shell, cx| shell.activate_text_hit(hit, window, cx));
     })
 }
 

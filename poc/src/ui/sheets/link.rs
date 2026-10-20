@@ -1,7 +1,8 @@
-//! The Link sheet (`Ctrl+Shift+O`): on a conversation, the topic's links then the
-//! transcript's links newest row first; on Status, the Status rows' links and
-//! INVITE channels. Enter opens the selected URL in the browser, or joins the
-//! invited channel.
+//! The Link sheet (`Ctrl+Shift+O`): on a conversation, the topic's links and
+//! channel names, then the transcript's, newest row first; on Status, the Status
+//! rows' links and INVITE channels. Enter opens the selected URL in the browser,
+//! joins the invited channel, or switches to a channel (asking first when the
+//! network does not have it yet).
 
 use gpui::{AnyElement, IntoElement};
 
@@ -21,8 +22,13 @@ const LABEL_SIZE: f32 = 12.;
 
 /// What the sheet searches, captured when it opens.
 pub enum LinkSource {
-    /// A conversation: its topic when the sheet opened, and its transcript rows.
-    Conversation { topic: Option<String>, rows: Vec<Row> },
+    /// A conversation: its topic when the sheet opened, its transcript rows, and
+    /// the network's CHANTYPES, which decide what counts as a channel name.
+    Conversation {
+        topic: Option<String>,
+        rows: Vec<Row>,
+        chantypes: String,
+    },
     /// A network's Status pane: its rows when the sheet opened.
     Status { rows: Vec<Row> },
 }
@@ -36,7 +42,11 @@ impl FilterSource for LinkSource {
 
     fn items(&self, query: &str) -> Vec<LinkTarget> {
         match self {
-            Self::Conversation { topic, rows } => link_targets(topic.as_deref(), rows, query),
+            Self::Conversation {
+                topic,
+                rows,
+                chantypes,
+            } => link_targets(topic.as_deref(), rows, query, chantypes),
             Self::Status { rows } => status_link_targets(rows, query),
         }
     }

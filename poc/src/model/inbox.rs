@@ -171,6 +171,17 @@ pub fn demo_topic(network_id: &str, channel: &str) -> Option<&'static str> {
     }
 }
 
+/// The channel row `name` names on `network_id`, if the network has one. Channel
+/// names match ignoring ASCII case, and a direct message never matches.
+pub fn find_channel(world: &MockWorld, network_id: &str, name: &str) -> Option<ConversationRef> {
+    let network = world.network(network_id)?;
+    network
+        .conversations
+        .iter()
+        .find(|c| c.channel && c.name.eq_ignore_ascii_case(name))
+        .map(|c| ConversationRef::new(network_id, c.key()))
+}
+
 /// Accepting an invite: adds the channel to `network_id` unless it is already
 /// there, with the demo topic, then returns its reference. `None` when the
 /// network is unknown.
@@ -335,6 +346,30 @@ mod tests {
         assert_eq!(added.len(), 1);
         assert_eq!(added[0].topic.as_deref(), Some("Debian GNU/Linux."));
         assert!(join_channel(&mut world, "nowhere", "#debian").is_none());
+    }
+
+    #[test]
+    fn find_channel_returns_the_existing_row_only() {
+        let world = load_world();
+        assert_eq!(
+            find_channel(&world, "oftc", "#LAB"),
+            Some(ConversationRef::new("oftc", "#lab"))
+        );
+        assert_eq!(
+            find_channel(&world, "omarchy", "#ricing"),
+            Some(ConversationRef::new("omarchy", "#ricing"))
+        );
+        assert_eq!(
+            find_channel(&world, "oftc", "#debian"),
+            None,
+            "not joined yet"
+        );
+        assert_eq!(
+            find_channel(&world, "omarchy", "anna"),
+            None,
+            "a DM is not a channel"
+        );
+        assert_eq!(find_channel(&world, "nowhere", "#lab"), None);
     }
 
     #[test]

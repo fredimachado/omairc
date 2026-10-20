@@ -8,6 +8,7 @@ use gpui::{
     PaintQuad, Pixels, SharedString, Stateful, StyledText, TextLayout, Window, div, fill,
     prelude::*, px, size,
 };
+use crate::model::mention::{is_mention_row, mention_wash};
 use crate::model::{Row, RowKind, Style};
 
 use crate::ui::format_ui::{gpui_text_style, irc_runs_to_gpui, link_underline_run};
@@ -219,10 +220,25 @@ fn render_message_row(
 
     let styled = StyledText::new(SharedString::from(row.body.plain.clone())).with_runs(runs);
     let selection_color = to_gpui(style.selection_color());
+    // A line that names the local nick is washed, with a bar on its left edge.
+    let mention = is_mention_row(row, &callbacks.self_nick);
+    let (wash, wash_bar) = mention_wash(style);
 
     div()
         .w_full()
         .relative()
+        .when(mention, |this| this.bg(to_gpui(wash)))
+        .when(mention, |this| {
+            this.child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .bottom_0()
+                    .left_0()
+                    .w(scaled_px(style, 2.))
+                    .bg(to_gpui(wash_bar)),
+            )
+        })
         // Qt draws the avatar only on the first line of a group.
         .when(!row.continues, |this| {
             this.child(
