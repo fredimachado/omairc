@@ -90,6 +90,37 @@ pub fn next_unread(
     unread
 }
 
+/// Where Alt+A lands: a conversation, or the Status pane of a network.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(dead_code)] // Phase 2 Status wiring: drop this allow when select_next_unread uses it.
+pub enum UnreadTarget {
+    Conversation(ConversationRef),
+    Status(String),
+}
+
+/// Alt+A with Qt's Status fallback (`jumpToNextUnread`). It lands where
+/// `next_unread` does. When nothing is unread, it opens the Status pane of
+/// `status_network`, which the caller passes as the focused network, else the
+/// selected one. Empty sidebar rows do nothing, as in Qt. `None` when there is
+/// nothing to land on.
+#[allow(dead_code)] // Phase 2 Status wiring: drop this allow when select_next_unread uses it.
+pub fn next_unread_or_status(
+    world: &MockWorld,
+    rows: &[SidebarRow],
+    current: Option<&ConversationRef>,
+    status_network: Option<&str>,
+) -> Option<UnreadTarget> {
+    if rows.is_empty() {
+        return None;
+    }
+    if let Some(conversation) = next_unread(world, rows, current) {
+        return Some(UnreadTarget::Conversation(conversation));
+    }
+    let network_id = status_network?;
+    world.network(network_id)?;
+    Some(UnreadTarget::Status(network_id.to_string()))
+}
+
 /// Alt+Shift+A: every conversation reads. The selection does not move.
 pub fn mark_all_read(world: &mut MockWorld) {
     for network in &mut world.networks {
@@ -232,6 +263,55 @@ mod tests {
         assert_eq!(next_unread(&world, &rows, Some(&omarchy("#ricing"))), Some(omarchy("anna")));
         mark_all_read(&mut world);
         assert_eq!(next_unread(&world, &rows, None), None);
+    }
+
+    #[test]
+    fn alt_a_with_nothing_unread_opens_the_status_of_the_given_network() {
+        let mut world = load_world();
+        mark_all_read(&mut world);
+        let rows = sidebar_rows(&world, &SidebarState::default());
+        assert_eq!(
+            next_unread_or_status(&world, &rows, Some(&omarchy("#ricing")), Some("oftc")),
+            Some(UnreadTarget::Status("oftc".to_string()))
+        );
+        // No focused or selected network: nothing to fall back to.
+        assert_eq!(next_unread_or_status(&world, &rows, None, None), None);
+        // A network that is not in the world cannot open.
+        assert_eq!(
+            next_unread_or_status(&world, &rows, None, Some("nope")),
+            None
+        );
+    }
+
+    #[test]
+    fn alt_a_prefers_a_conversation_to_the_status_fallback() {
+        let world = load_world();
+        let rows = sidebar_rows(&world, &SidebarState::default());
+        assert_eq!(
+            next_unread_or_status(&world, &rows, None, Some("oftc")),
+            Some(UnreadTarget::Conversation(omarchy("#ricing")))
+        );
+        let mut cleared = load_world();
+        mark_all_read(&mut cleared);
+        cleared
+            .find_mut(&ConversationRef::new("oftc", "rio"))
+            .expect("rio")
+            .unread = 1;
+        let rio = ConversationRef::new("oftc", "rio");
+        assert_eq!(
+            next_unread_or_status(&cleared, &rows, Some(&omarchy("#ricing")), Some("omarchy")),
+            Some(UnreadTarget::Conversation(rio))
+        );
+    }
+
+    #[test]
+    fn alt_a_with_no_sidebar_rows_does_nothing_even_with_a_network() {
+        let mut world = load_world();
+        mark_all_read(&mut world);
+        assert_eq!(
+            next_unread_or_status(&world, &[], None, Some("omarchy")),
+            None
+        );
     }
 
     #[test]

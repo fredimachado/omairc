@@ -107,6 +107,8 @@ impl Shell {
         let conv = self.current_conversation();
         ChordContext {
             sheet: self.modal.as_ref().map(ActiveModal::sheet),
+            // The shell has no Status view yet, so no Status is ever open.
+            status_open: false,
             channel: conv.is_channel(),
             direct: !conv.is_channel(),
             header_focused: self.sidebar.focus.is_some(),

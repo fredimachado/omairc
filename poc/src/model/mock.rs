@@ -17,7 +17,43 @@ pub struct Network {
     #[serde(default)]
     pub icon_color: Option<u8>,
     pub nick: String,
+    /// The network's Status pane: server and client lines, oldest first.
+    #[serde(default)]
+    pub status: Vec<StatusLine>,
     pub conversations: Vec<Conversation>,
+}
+
+/// One line in a network's Status pane, the Qt `IrcStatusEntry` shape.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct StatusLine {
+    pub time: String,
+    pub label: String,
+    pub text: String,
+    #[serde(default)]
+    pub source: StatusSource,
+    #[serde(default)]
+    pub severity: StatusSeverity,
+}
+
+/// Who wrote a Status line: the server, the client, or the client itself
+/// (`IrcLogSource`). It picks the glyph.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum StatusSource {
+    #[default]
+    Server,
+    Client,
+    Local,
+}
+
+/// How a Status line is coloured (`IrcLogSeverity`).
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum StatusSeverity {
+    Trace,
+    #[default]
+    Info,
+    Alert,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -477,5 +513,33 @@ mod tests {
         assert_eq!(day.len(), 10);
         assert_eq!(time.len(), 5);
         assert_eq!(&time[2..3], ":");
+    }
+
+    #[test]
+    fn status_is_optional_and_its_fields_default() {
+        let network: Network =
+            serde_json::from_str(r#"{"id":"x","display_name":"x","nick":"me","conversations":[]}"#)
+                .expect("network without status");
+        assert!(network.status.is_empty());
+
+        let plain: StatusLine =
+            serde_json::from_str(r#"{"time":"09:00:00","label":"NOTICE","text":"hi"}"#)
+                .expect("line with defaults");
+        assert_eq!(plain.source, StatusSource::Server);
+        assert_eq!(plain.severity, StatusSeverity::Info);
+
+        let client: StatusLine = serde_json::from_str(
+            r#"{"time":"09:00:00","label":"PING","text":"x","source":"client","severity":"trace"}"#,
+        )
+        .expect("client trace line");
+        assert_eq!(client.source, StatusSource::Client);
+        assert_eq!(client.severity, StatusSeverity::Trace);
+
+        let local: StatusLine = serde_json::from_str(
+            r#"{"time":"09:00:00","label":"FAIL","text":"x","source":"local","severity":"alert"}"#,
+        )
+        .expect("local alert line");
+        assert_eq!(local.source, StatusSource::Local);
+        assert_eq!(local.severity, StatusSeverity::Alert);
     }
 }

@@ -17,7 +17,7 @@ use gpui::{
 
 use crate::model::inbox::{seed_inbox, Inbox};
 use crate::model::sidebar::SidebarState;
-use crate::model::title::{conversation_title, window_title};
+use crate::model::title::{conversation_title, window_title, TitleView};
 use crate::model::{bench_channel, load_world, ConversationRef, MockWorld};
 use crate::ui::center::render_center;
 use crate::ui::input::SingleLineInput;
@@ -141,7 +141,7 @@ impl Render for Shell {
             self.focus_composer(window, cx);
         }
         let title = conversation_title(&self.world, &self.selected).unwrap_or_default();
-        let wanted_window_title = window_title(&self.world, Some(&self.selected));
+        let wanted_window_title = window_title(&self.world, TitleView::Conversation(Some(&self.selected)));
         if wanted_window_title != self.window_title {
             window.set_window_title(&wanted_window_title);
             self.window_title = wanted_window_title;

@@ -102,6 +102,26 @@ pub fn render_transcript_row(
                         .child(text.to_string()),
                 )
         }
+        // Placeholder until the Status view draws these (`status_row.rs`): the
+        // label column and the plain text, muted, as an event line.
+        RowKind::Status => {
+            let label = row
+                .status
+                .as_ref()
+                .map(|mark| mark.label_text())
+                .unwrap_or_default();
+            div()
+                .id(("transcript-row", row_ix))
+                .w_full()
+                .py(scaled_px(style, 4.))
+                .child(
+                    div()
+                        .text_size(scaled_px(style, 10.))
+                        .text_color(to_gpui(style.muted_color()))
+                        .font_family(FONT_FAMILY)
+                        .child(format!("{label} {}", row.body.plain)),
+                )
+        }
         RowKind::Message => div()
             .id(("transcript-row", row_ix))
             .w_full()

@@ -7,7 +7,7 @@ use gpui::{prelude::*, AnyElement, App, Context, Entity, Subscription, Window};
 
 use crate::model::chords::{Chord, Sheet};
 use crate::model::jump::{JumpKind, JumpTarget};
-use crate::model::links::LinkTarget;
+use crate::model::links::{LinkKind, LinkTarget};
 use crate::model::nick_pick::NickTarget;
 use crate::model::sidebar::set_collapsed;
 use crate::ui::sheets::about::{AboutEvent, AboutSheet};
@@ -201,9 +201,17 @@ impl Shell {
                 window,
                 |shell: &mut Shell, _, event: &SheetEvent<LinkTarget>, window, cx| match event {
                     SheetEvent::Activated(link) => {
-                        let url = link.url.clone();
+                        let text = link.text.clone();
+                        let kind = link.kind;
                         shell.close_modal(window, cx);
-                        open_web_link(cx, &url);
+                        match kind {
+                            LinkKind::Url => {
+                                open_web_link(cx, &text);
+                            }
+                            // Invite rows come only from Status, which this sheet does
+                            // not show yet. The Status wiring joins the channel here.
+                            LinkKind::Invite => {}
+                        }
                     }
                     SheetEvent::Dismissed => shell.close_modal(window, cx),
                     SheetEvent::Highlighted(link) => shell.reveal_link_row(link.row, cx),

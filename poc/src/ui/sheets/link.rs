@@ -45,7 +45,7 @@ impl FilterSource for LinkSource {
 
     fn render_row(&self, item: &LinkTarget, selected: bool, style: &Style) -> AnyElement {
         let max_chars = ((WIDTH - HORIZONTAL_INSET) / (CHAR_ADVANCE * LABEL_SIZE)).floor() as usize;
-        let (label, highlights) = elide_middle_marked(&item.url, max_chars, &item.indices);
+        let (label, highlights) = elide_middle_marked(&item.text, max_chars, &item.indices);
         text_row(style, 28., label, &highlights, selected).into_any_element()
     }
 }

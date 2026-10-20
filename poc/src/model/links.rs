@@ -1,22 +1,39 @@
-//! Link sheet rows: the topic's links first, then the transcript's links from
-//! newest row to oldest, the last link in each row first. Port of
-//! `refreshLinkMatches` for the http(s) part. URL policy is already applied by
-//! `format_irc`, which only records allowed http(s) ranges in `body.links`.
-//! Channel-name entries wait for the Channel open sheet.
+//! Link sheet rows. On a conversation: the topic's links first, then the
+//! transcript's links from newest row to oldest, the last link in each row
+//! first. On Status: the same walk over the Status rows, plus an invite row
+//! after a `… invited you to #channel` line (`refreshLinkMatches`). URL policy
+//! is already applied by `format_irc`, which only records allowed http(s)
+//! ranges in `body.links`. Channel-name entries wait for the Channel open sheet.
 
 use super::format::format_irc;
 use super::fuzzy::rank;
 use super::transcript::{Row, RowKind};
 
+/// What a link row does when activated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LinkKind {
+    /// Opens the URL in the browser.
+    Url,
+    /// Joins the channel named in an INVITE line.
+    #[allow(dead_code)] // Phase 2 Status wiring: built by status_link_targets.
+    Invite,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LinkTarget {
-    pub url: String,
+    pub kind: LinkKind,
+    /// The URL, or the channel name for an invite.
+    pub text: String,
     /// Index into `rows` of the message the link came from. `None` for a
     /// topic link, which Qt reveals nowhere.
     pub row: Option<usize>,
-    /// Byte offsets into `url` of the characters the query matched.
+    /// Byte offsets into `text` of the characters the query matched.
     pub indices: Vec<usize>,
 }
+
+/// Qt's marker in the INVITE status text, `"<nick> invited you to <channel>"`.
+#[allow(dead_code)] // Phase 2 Status wiring: used by invite_channel.
+const INVITE_MARKER: &str = " invited you to ";
 
 /// Links that fuzzy-match the query, best match first. Ties keep the order
 /// the links were found in: topic links, then transcript links newest row
@@ -36,7 +53,50 @@ pub fn link_targets(topic: Option<&str>, rows: &[Row], query: &str) -> Vec<LinkT
         push_links(&mut found, &row.body.plain, &row.body.links, Some(index));
     }
 
-    rank(query, found, |link: &LinkTarget| [(link.url.as_str(), 1)])
+    rank_links(query, found)
+}
+
+/// The Status sheet's links: for each Status row newest first, its URLs (last
+/// first), then an invite row when the line is an INVITE with a channel after
+/// the marker. Ties keep that order.
+#[allow(dead_code)] // Phase 2 Status wiring: drop this allow when the link sheet shows Status.
+pub fn status_link_targets(rows: &[Row], query: &str) -> Vec<LinkTarget> {
+    let mut found = Vec::new();
+
+    for (index, row) in rows.iter().enumerate().rev() {
+        if row.kind != RowKind::Status {
+            continue;
+        }
+        push_links(&mut found, &row.body.plain, &row.body.links, Some(index));
+        let is_invite = row
+            .status
+            .as_ref()
+            .is_some_and(|mark| mark.label == "INVITE");
+        if let Some(channel) = is_invite.then(|| invite_channel(&row.body.plain)).flatten() {
+            found.push(LinkTarget {
+                kind: LinkKind::Invite,
+                text: channel.to_string(),
+                row: Some(index),
+                indices: Vec::new(),
+            });
+        }
+    }
+
+    rank_links(query, found)
+}
+
+/// The channel in an invite line: the text after the last `" invited you to "`,
+/// when it is not empty (`refreshLinkMatches` uses `lastIndexOf`).
+#[allow(dead_code)] // Phase 2 Status wiring: drop this allow when the link sheet shows Status.
+pub fn invite_channel(text: &str) -> Option<&str> {
+    let at = text.rfind(INVITE_MARKER)?;
+    let channel = &text[at + INVITE_MARKER.len()..];
+    (!channel.is_empty()).then_some(channel)
+}
+
+/// Fuzzy-ranks `found` by its text. Keeps `found`'s order on ties.
+fn rank_links(query: &str, found: Vec<LinkTarget>) -> Vec<LinkTarget> {
+    rank(query, found, |link: &LinkTarget| [(link.text.as_str(), 1)])
         .into_iter()
         .map(|ranked| {
             let [hit] = ranked.fields;
@@ -99,7 +159,8 @@ fn push_links(
 ) {
     for range in links.iter().rev() {
         out.push(LinkTarget {
-            url: plain[range.clone()].to_string(),
+            kind: LinkKind::Url,
+            text: plain[range.clone()].to_string(),
             row,
             indices: Vec::new(),
         });
@@ -109,10 +170,12 @@ fn push_links(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::mock::{StatusLine, StatusSeverity, StatusSource};
+    use crate::model::status::row_from_status_line;
     use crate::model::transcript::row_from_message;
 
     fn urls(targets: &[LinkTarget]) -> Vec<&str> {
-        targets.iter().map(|t| t.url.as_str()).collect()
+        targets.iter().map(|t| t.text.as_str()).collect()
     }
 
     fn transcript() -> Vec<Row> {
@@ -149,7 +212,7 @@ mod tests {
     fn topic_links_come_before_transcript_links() {
         let rows = transcript();
         let targets = link_targets(Some("docs at https://docs.example/"), &rows, "");
-        assert_eq!(targets[0].url, "https://docs.example/");
+        assert_eq!(targets[0].text, "https://docs.example/");
         assert_eq!(targets[0].row, None);
         assert_eq!(targets.len(), 4);
     }
@@ -191,7 +254,7 @@ mod tests {
         let picked: Vec<char> = targets[0]
             .indices
             .iter()
-            .map(|&at| targets[0].url[at..].chars().next().unwrap())
+            .map(|&at| targets[0].text[at..].chars().next().unwrap())
             .collect();
         assert_eq!(picked, ['h', 'b', 't']);
     }
@@ -235,5 +298,100 @@ mod tests {
     fn no_links_is_an_empty_list() {
         assert!(link_targets(None, &[], "").is_empty());
         assert!(link_targets(Some("plain topic"), &[], "").is_empty());
+    }
+
+    fn status_row(id: u64, label: &str, text: &str) -> Row {
+        row_from_status_line(
+            id,
+            &StatusLine {
+                time: "09:58:00".to_string(),
+                label: label.to_string(),
+                text: text.to_string(),
+                source: StatusSource::Server,
+                severity: StatusSeverity::Info,
+            },
+        )
+    }
+
+    fn kinds_and_texts(targets: &[LinkTarget]) -> Vec<(LinkKind, &str)> {
+        targets.iter().map(|t| (t.kind, t.text.as_str())).collect()
+    }
+
+    #[test]
+    fn status_lists_urls_newest_first_with_invites_in_their_row() {
+        let rows = vec![
+            status_row(1, "NOTICE", "see https://a.example/one"),
+            status_row(2, "INVITE", "rio invited you to #debian"),
+            status_row(3, "001", "nothing here"),
+            status_row(
+                4,
+                "002",
+                "two: https://b.example/two and https://c.example/three",
+            ),
+        ];
+        let targets = status_link_targets(&rows, "");
+        assert_eq!(
+            kinds_and_texts(&targets),
+            [
+                (LinkKind::Url, "https://c.example/three"),
+                (LinkKind::Url, "https://b.example/two"),
+                (LinkKind::Invite, "#debian"),
+                (LinkKind::Url, "https://a.example/one"),
+            ]
+        );
+        assert_eq!(targets[2].row, Some(1));
+        assert_eq!(targets[3].row, Some(0));
+    }
+
+    #[test]
+    fn only_status_rows_feed_the_status_list() {
+        let conversation = row_from_message(
+            1,
+            "rio",
+            "09:00",
+            "rio invited you to #x and https://x.example/",
+            false,
+        );
+        assert!(status_link_targets(&[conversation], "").is_empty());
+    }
+
+    #[test]
+    fn invite_needs_the_invite_label_not_just_the_marker() {
+        let rows = vec![status_row(1, "NOTICE", "rio invited you to #debian")];
+        assert!(status_link_targets(&rows, "").is_empty());
+    }
+
+    #[test]
+    fn invite_channel_is_the_text_after_the_last_marker() {
+        assert_eq!(
+            invite_channel("rio invited you to #debian"),
+            Some("#debian")
+        );
+        assert_eq!(invite_channel("rio invited you to "), None);
+        assert_eq!(invite_channel("no marker here"), None);
+        assert_eq!(
+            invite_channel("a invited you to #one, b invited you to #two"),
+            Some("#two")
+        );
+        assert_eq!(invite_channel("x invited you to #ümlaut"), Some("#ümlaut"));
+    }
+
+    #[test]
+    fn invite_query_is_fuzzy_over_the_channel_name() {
+        let rows = vec![status_row(1, "INVITE", "rio invited you to #debian")];
+        let targets = status_link_targets(&rows, "dbn");
+        assert_eq!(kinds_and_texts(&targets), [(LinkKind::Invite, "#debian")]);
+        let picked: Vec<char> = targets[0]
+            .indices
+            .iter()
+            .map(|&at| targets[0].text[at..].chars().next().unwrap())
+            .collect();
+        assert_eq!(picked, ['d', 'b', 'n']);
+        assert!(status_link_targets(&rows, "zzz").is_empty());
+    }
+
+    #[test]
+    fn empty_status_has_no_links() {
+        assert!(status_link_targets(&[], "").is_empty());
     }
 }

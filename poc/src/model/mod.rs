@@ -17,6 +17,7 @@ pub mod navigation;
 pub mod nick_pick;
 pub mod shortcuts;
 pub mod sidebar;
+pub mod status;
 pub mod style;
 pub mod theme;
 pub mod title;

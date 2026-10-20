@@ -1,5 +1,6 @@
 use super::format::{format_irc, FormattedText};
 use super::mock::MockMessage;
+use super::status::StatusMark;
 use std::ops::Range;
 use unicode_segmentation::GraphemeCursor;
 
@@ -8,6 +9,9 @@ pub enum RowKind {
     Message,
     Event,
     DaySeparator,
+    /// A line in a network's Status pane. Its label, glyph and colour live in `Row::status`.
+    #[allow(dead_code)] // Phase 2 Status wiring: built by the Status row conversion.
+    Status,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -22,6 +26,8 @@ pub struct Row {
     pub action: bool,
     pub separator_text: Option<String>,
     pub event_text: Option<String>,
+    /// Set on `RowKind::Status` rows only.
+    pub status: Option<StatusMark>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -414,6 +420,15 @@ impl Transcript {
                 ),
                 RowKind::Event => format!("* {selected}"),
                 RowKind::DaySeparator => selected,
+                RowKind::Status => format!(
+                    "[{}] {} {}",
+                    self.rows[row].time.as_deref().unwrap_or("--:--"),
+                    self.rows[row]
+                        .status
+                        .as_ref()
+                        .map_or("", |mark| mark.label.as_str()),
+                    selected
+                ),
             };
             lines.push(line);
         }
@@ -526,7 +541,7 @@ fn row_plain(row: &Row) -> &str {
             .as_deref()
             .or(Some(row.body.plain.as_str()))
             .unwrap(),
-        RowKind::Message => &row.body.plain,
+        RowKind::Message | RowKind::Status => &row.body.plain,
     }
 }
 
@@ -551,6 +566,7 @@ pub fn rows_from_messages(messages: &[MockMessage]) -> Vec<Row> {
                     action: false,
                     separator_text: Some(text),
                     event_text: None,
+                    status: None,
                 });
             }
             _ => {
@@ -577,6 +593,7 @@ pub fn rows_from_messages(messages: &[MockMessage]) -> Vec<Row> {
                     action: false,
                     separator_text: None,
                     event_text: Some(event_text),
+                    status: None,
                 });
             }
         }
@@ -608,6 +625,7 @@ pub fn row_from_mock_message(id: u64, message: &MockMessage, continues: bool) ->
         action: message.kind == "action",
         separator_text: None,
         event_text: None,
+        status: None,
     }
 }
 
@@ -622,6 +640,7 @@ pub fn row_from_message(id: u64, author: &str, time: &str, body: &str, continues
         action: false,
         separator_text: None,
         event_text: None,
+        status: None,
     }
 }
 
