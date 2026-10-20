@@ -8,6 +8,7 @@ pub mod ids;
 pub mod chords;
 pub mod directs;
 pub mod filter_list;
+pub mod fuzzy;
 pub mod inbox;
 pub mod jump;
 pub mod links;
@@ -24,7 +25,7 @@ pub mod transcript;
 pub use color::Color;
 pub use ids::ConversationRef;
 pub use format::{format_irc, plain_irc_text, FormattedText, StyleRun, TextStyle};
-pub use jump::{jump_score, jump_targets, JumpKind, JumpTarget, JUMP_RESULT_LIMIT};
+pub use jump::{jump_targets, JumpKind, JumpTarget, JUMP_RESULT_LIMIT};
 pub use mock::{
     bench_channel, load_world, local_send_stamp, outgoing_message, Conversation, Member,
     MockMessage, MockWorld, Network,

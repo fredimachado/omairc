@@ -1,22 +1,13 @@
+use super::fuzzy::{rank, FuzzyHit, Ranked};
 use super::mock::{Conversation, MockWorld, Network};
 use super::sidebar::ordered_conversations;
 
 pub const JUMP_RESULT_LIMIT: usize = 20;
 
-pub fn jump_score(query: &str, name: &str, detail: &str) -> i32 {
-    let folded = query.trim().to_lowercase();
-    if folded.is_empty() {
-        return 0;
-    }
-    let mut score = 0;
-    if name.to_lowercase().contains(&folded) {
-        score += 2;
-    }
-    if !detail.is_empty() && detail.to_lowercase().contains(&folded) {
-        score += 1;
-    }
-    score
-}
+/// The label is the name, and a hit there outranks a hit on the detail (the
+/// topic or real name), as Qt's Jump tiers them.
+const NAME_WEIGHT: u32 = 2;
+const DETAIL_WEIGHT: u32 = 1;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct JumpTarget {
@@ -25,7 +16,12 @@ pub struct JumpTarget {
     pub network_id: String,
     pub conversation_id: String,
     pub label: String,
-    pub score: i32,
+    /// Byte offsets into `label` of the characters the query matched, drawn bold.
+    pub label_indices: Vec<usize>,
+    /// Whether the label itself matched. Detail-only hits sort below these.
+    pub name_hit: bool,
+    /// The best weighted field score.
+    pub score: u32,
     pub order: usize,
 }
 
@@ -35,8 +31,18 @@ pub enum JumpKind {
     Status,
 }
 
+/// One row before ranking, in sidebar order.
+struct Candidate {
+    kind: JumpKind,
+    name: String,
+    network_id: String,
+    conversation_id: String,
+    label: String,
+    detail: String,
+    order: usize,
+}
+
 pub fn jump_targets(world: &MockWorld, query: &str) -> Vec<JumpTarget> {
-    let folded = query.trim();
     let mut duplicate_names = std::collections::HashMap::<String, usize>::new();
     for network in &world.networks {
         for conv in &network.conversations {
@@ -47,56 +53,62 @@ pub fn jump_targets(world: &MockWorld, query: &str) -> Vec<JumpTarget> {
     }
 
     let mut candidates = Vec::new();
-    let mut order = 0usize;
     for network in &world.networks {
         let network_name = &network.display_name;
         // Sidebar order, so the candidate list follows the sidebar and includes collapsed networks.
         for conv in ordered_conversations(network) {
-            let label = conversation_label(&conv.name, network_name, &duplicate_names);
-            let detail = conversation_detail(conv, network);
-            let score = jump_score(folded, &label, &detail);
-            if !folded.is_empty() && score <= 0 {
-                continue;
-            }
-            candidates.push(JumpTarget {
+            candidates.push(Candidate {
                 kind: JumpKind::Conversation,
                 name: conv.name.clone(),
                 network_id: network.id.clone(),
                 conversation_id: format!("{}\n{}", network.id, conv.key()),
-                label,
-                score,
-                order,
+                label: conversation_label(&conv.name, network_name, &duplicate_names),
+                detail: conversation_detail(conv, network),
+                order: candidates.len(),
             });
-            order += 1;
         }
-        let status_label = status_label(network_name);
-        let status_score = jump_score(folded, &status_label, "");
-        if folded.is_empty() || status_score > 0 {
-            candidates.push(JumpTarget {
-                kind: JumpKind::Status,
-                name: "Status".to_string(),
-                network_id: network.id.clone(),
-                conversation_id: String::new(),
-                label: status_label,
-                score: status_score,
-                order,
-            });
-            order += 1;
-        }
+        candidates.push(Candidate {
+            kind: JumpKind::Status,
+            name: "Status".to_string(),
+            network_id: network.id.clone(),
+            conversation_id: String::new(),
+            label: status_label(network_name),
+            detail: String::new(),
+            order: candidates.len(),
+        });
     }
 
-    candidates.sort_by(|left, right| {
-        let left_name = i32::from(left.score >= 2);
-        let right_name = i32::from(right.score >= 2);
-        right_name
-            .cmp(&left_name)
-            .then(left.order.cmp(&right.order))
-    });
+    let mut targets: Vec<JumpTarget> = rank(query, candidates, |c: &Candidate| {
+        [
+            (c.label.as_str(), NAME_WEIGHT),
+            (c.detail.as_str(), DETAIL_WEIGHT),
+        ]
+    })
+    .into_iter()
+    .map(|ranked: Ranked<Candidate, 2>| {
+        let [label_hit, _detail_hit] = ranked.fields;
+        jump_target(ranked.item, ranked.score, label_hit)
+    })
+    .collect();
 
-    if candidates.len() > JUMP_RESULT_LIMIT {
-        candidates.truncate(JUMP_RESULT_LIMIT);
+    // Name hits first. The sort is stable, so each tier keeps its score order, then sidebar order.
+    targets.sort_by_key(|target| !target.name_hit);
+    targets.truncate(JUMP_RESULT_LIMIT);
+    targets
+}
+
+fn jump_target(candidate: Candidate, score: u32, label_hit: Option<FuzzyHit>) -> JumpTarget {
+    JumpTarget {
+        kind: candidate.kind,
+        name: candidate.name,
+        network_id: candidate.network_id,
+        conversation_id: candidate.conversation_id,
+        label: candidate.label,
+        name_hit: label_hit.is_some(),
+        label_indices: label_hit.map(|hit| hit.indices).unwrap_or_default(),
+        score,
+        order: candidate.order,
     }
-    candidates
 }
 
 fn conversation_label(
@@ -157,13 +169,50 @@ mod tests {
         let targets = jump_targets(&world, "build");
         let name_idx = targets
             .iter()
-            .position(|t| t.score >= 2 && t.name == "#build")
+            .position(|t| t.name_hit && t.name == "#build")
             .expect("#build name hit");
         let detail_idx = targets
             .iter()
-            .position(|t| t.score == 1 && t.name == "#lab")
+            .position(|t| !t.name_hit && t.name == "#lab")
             .expect("#lab topic-only hit");
         assert!(name_idx < detail_idx);
+    }
+
+    #[test]
+    fn fuzzy_subsequence_finds_omarchy() {
+        let world = mock::load_world();
+        let targets = jump_targets(&world, "omy");
+        let first = targets.first().expect("omy hits #omarchy");
+        assert_eq!(first.name, "#omarchy");
+        assert_eq!(first.network_id, "omarchy");
+        // The label is "#omarchy · irc.example · fred": o, m and y, with gaps.
+        assert_eq!(first.label_indices.len(), 3);
+        let picked: Vec<char> = first
+            .label_indices
+            .iter()
+            .map(|&at| first.label[at..].chars().next().unwrap())
+            .collect();
+        assert_eq!(picked, ['o', 'm', 'y']);
+    }
+
+    #[test]
+    fn label_indices_are_empty_for_detail_only_hits() {
+        let world = mock::load_world();
+        let targets = jump_targets(&world, "build");
+        let detail_only = targets
+            .iter()
+            .find(|t| !t.name_hit && t.name == "#lab")
+            .expect("#lab topic-only hit");
+        assert!(detail_only.label_indices.is_empty());
+    }
+
+    #[test]
+    fn blank_query_keeps_sidebar_order_and_marks_no_letters() {
+        let world = mock::load_world();
+        let blank = jump_targets(&world, "");
+        assert!(blank.iter().all(|t| t.label_indices.is_empty()));
+        let orders: Vec<usize> = blank.iter().map(|t| t.order).collect();
+        assert!(orders.windows(2).all(|pair| pair[0] < pair[1]));
     }
 
     #[test]

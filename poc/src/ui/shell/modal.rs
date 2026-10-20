@@ -8,6 +8,7 @@ use gpui::{prelude::*, AnyElement, App, Context, Entity, Subscription, Window};
 use crate::model::chords::{Chord, Sheet};
 use crate::model::jump::{JumpKind, JumpTarget};
 use crate::model::links::LinkTarget;
+use crate::model::nick_pick::NickTarget;
 use crate::model::sidebar::set_collapsed;
 use crate::ui::sheets::about::{AboutEvent, AboutSheet};
 use crate::ui::sheets::filter_sheet::{render_filter_sheet, FilterSheet, FilterSource, SheetEvent};
@@ -225,16 +226,14 @@ impl Shell {
             cx.subscribe_in(
                 &sheet,
                 window,
-                |shell: &mut Shell, _, event: &SheetEvent<crate::model::Member>, window, cx| {
-                    match event {
-                        SheetEvent::Activated(member) => {
-                            let nick = member.nick.clone();
-                            shell.close_modal(window, cx);
-                            shell.open_direct_nick(&nick, cx);
-                        }
-                        SheetEvent::Dismissed => shell.close_modal(window, cx),
-                        SheetEvent::Highlighted(_) => {}
+                |shell: &mut Shell, _, event: &SheetEvent<NickTarget>, window, cx| match event {
+                    SheetEvent::Activated(target) => {
+                        let nick = target.member.nick.clone();
+                        shell.close_modal(window, cx);
+                        shell.open_direct_nick(&nick, cx);
                     }
+                    SheetEvent::Dismissed => shell.close_modal(window, cx),
+                    SheetEvent::Highlighted(_) => {}
                 },
             ),
         ];

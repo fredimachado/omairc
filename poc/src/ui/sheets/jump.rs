@@ -1,5 +1,5 @@
 //! The Jump sheet (`Ctrl+K`): every conversation across networks, plus one
-//! inert Status row per network (Status is out of scope for this client).
+//! Status row per network, fuzzy-matched on the label.
 
 use gpui::AnyElement;
 
@@ -36,6 +36,13 @@ impl FilterSource for JumpSource {
     }
 
     fn render_row(&self, item: &JumpTarget, selected: bool, style: &Style) -> AnyElement {
-        text_row(style, 28., item.label.clone(), selected).into_any_element()
+        text_row(
+            style,
+            28.,
+            item.label.clone(),
+            &item.label_indices,
+            selected,
+        )
+        .into_any_element()
     }
 }

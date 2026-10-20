@@ -3,7 +3,7 @@
 
 use gpui::{AnyElement, IntoElement};
 
-use crate::model::links::{elide_middle, link_targets, LinkTarget};
+use crate::model::links::{elide_middle_marked, link_targets, LinkTarget};
 use crate::model::{Row, Style};
 use crate::ui::sheets::filter_sheet::{text_row, FilterSource};
 
@@ -45,7 +45,7 @@ impl FilterSource for LinkSource {
 
     fn render_row(&self, item: &LinkTarget, selected: bool, style: &Style) -> AnyElement {
         let max_chars = ((WIDTH - HORIZONTAL_INSET) / (CHAR_ADVANCE * LABEL_SIZE)).floor() as usize;
-        let label = elide_middle(&item.url, max_chars);
-        text_row(style, 28., label, selected).into_any_element()
+        let (label, highlights) = elide_middle_marked(&item.url, max_chars, &item.indices);
+        text_row(style, 28., label, &highlights, selected).into_any_element()
     }
 }

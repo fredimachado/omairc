@@ -5,10 +5,12 @@
 
 use gpui::{
     actions, div, prelude::*, px, AnyElement, App, Context, Entity, EventEmitter, FocusHandle,
-    KeyBinding, MouseButton, ScrollHandle, Subscription,
+    FontWeight, HighlightStyle, Hsla, KeyBinding, MouseButton, ScrollHandle, SharedString,
+    StyledText, Subscription,
 };
 
 use crate::model::filter_list::{clamp_after_filter, step};
+use crate::model::fuzzy::char_ranges;
 use crate::model::Style;
 use crate::ui::input::SingleLineInput;
 use crate::ui::sheets::frame::popup_frame;
@@ -204,9 +206,34 @@ pub fn render_filter_sheet<S: FilterSource>(sheet: &Entity<FilterSheet<S>>, cx: 
     .into_any_element()
 }
 
+/// A label with the fuzzy-matched characters drawn bold in `ink`. `highlights`
+/// are ascending byte offsets into `text`, as `FuzzyHit::indices` gives them.
+/// The text takes its size and colour from the parent, so the unmatched part
+/// keeps the row's own muted or ink colour.
+pub fn match_text(text: String, highlights: &[usize], ink: Hsla) -> StyledText {
+    let marked = char_ranges(&text, highlights).into_iter().map(|range| {
+        (
+            range,
+            HighlightStyle {
+                color: Some(ink),
+                font_weight: Some(FontWeight::BOLD),
+                ..Default::default()
+            },
+        )
+    });
+    StyledText::new(SharedString::from(text)).with_highlights(marked)
+}
+
 /// One text row of a filter list (Jump and Link): 12px, radius 7, `hover`
-/// when selected and muted otherwise, as Qt's `jumpList` delegate.
-pub fn text_row(style: &Style, height: f32, label: String, selected: bool) -> impl IntoElement {
+/// when selected and muted otherwise, as Qt's `jumpList` delegate. The matched
+/// characters in `highlights` are drawn bold, see [`match_text`].
+pub fn text_row(
+    style: &Style,
+    height: f32,
+    label: String,
+    highlights: &[usize],
+    selected: bool,
+) -> impl IntoElement {
     div()
         .h(scaled_px(style, height))
         .px(scaled_px(style, 8.))
@@ -227,5 +254,5 @@ pub fn text_row(style: &Style, height: f32, label: String, selected: bool) -> im
         } else {
             to_gpui(style.muted_color())
         })
-        .child(label)
+        .child(match_text(label, highlights, to_gpui(style.ink_color())))
 }
