@@ -1,3 +1,5 @@
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 mod assets;
 mod model;
 mod ui;
@@ -36,7 +38,90 @@ struct Args {
     bench: bool,
 }
 
+/// Windows GUI-subsystem builds have no console. Attach to the parent's console
+/// (cmd/PowerShell) so `--help`, `--version`, and stdout/stderr still show up
+/// there. Skipped when stdout or stderr is already redirected to a pipe or file.
+#[cfg(windows)]
+mod console {
+    use std::ffi::c_void;
+    use std::os::windows::ffi::OsStrExt;
+
+    type Handle = *mut c_void;
+    const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
+    const STD_OUTPUT_HANDLE: u32 = -11i32 as u32;
+    const STD_ERROR_HANDLE: u32 = -12i32 as u32;
+    const FILE_TYPE_DISK: u32 = 0x0001;
+    const FILE_TYPE_PIPE: u32 = 0x0003;
+    const GENERIC_READ_WRITE: u32 = 0xC000_0000;
+    const FILE_SHARE_READ_WRITE: u32 = 0x0000_0003;
+    const OPEN_EXISTING: u32 = 3;
+
+    extern "system" {
+        fn AttachConsole(process_id: u32) -> i32;
+        fn GetStdHandle(which: u32) -> Handle;
+        fn GetFileType(handle: Handle) -> u32;
+        fn SetStdHandle(which: u32, handle: Handle) -> i32;
+        fn CreateFileW(
+            name: *const u16,
+            access: u32,
+            share: u32,
+            security: *const c_void,
+            disposition: u32,
+            flags: u32,
+            template: Handle,
+        ) -> Handle;
+    }
+
+    fn is_invalid(handle: Handle) -> bool {
+        handle.is_null() || handle as isize == -1
+    }
+
+    fn is_redirected(which: u32) -> bool {
+        let handle = unsafe { GetStdHandle(which) };
+        if is_invalid(handle) {
+            return false;
+        }
+        matches!(
+            unsafe { GetFileType(handle) },
+            FILE_TYPE_DISK | FILE_TYPE_PIPE
+        )
+    }
+
+    pub fn attach_parent_console() {
+        if is_redirected(STD_OUTPUT_HANDLE) || is_redirected(STD_ERROR_HANDLE) {
+            return;
+        }
+        if unsafe { AttachConsole(ATTACH_PARENT_PROCESS) } == 0 {
+            return;
+        }
+        let conout: Vec<u16> = std::ffi::OsStr::new("CONOUT$")
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let handle = unsafe {
+            CreateFileW(
+                conout.as_ptr(),
+                GENERIC_READ_WRITE,
+                FILE_SHARE_READ_WRITE,
+                std::ptr::null(),
+                OPEN_EXISTING,
+                0,
+                std::ptr::null_mut(),
+            )
+        };
+        if !is_invalid(handle) {
+            unsafe {
+                SetStdHandle(STD_OUTPUT_HANDLE, handle);
+                SetStdHandle(STD_ERROR_HANDLE, handle);
+            }
+        }
+    }
+}
+
 fn main() {
+    #[cfg(windows)]
+    console::attach_parent_console();
+
     let args = Args::parse();
     let theme_path = args.theme.clone();
     let scale = args.scale;
