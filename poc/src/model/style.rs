@@ -84,6 +84,20 @@ impl Style {
         veil.with_alpha(0.5)
     }
 
+    /// The dim behind a modal popup (Jump, Link, Nick, Inbox, Shortcuts).
+    /// Qt's Material style draws `Material.backgroundDimColor`, read from Qt
+    /// 6.11.2 with `qml.exe`: `#303030` at alpha 0.6 for the light theme and
+    /// `#fafafa` at alpha 0.6 for the dark one. The Qt window picks the theme
+    /// from `darkMode` (`OmaircWindow.qml`), so this follows `dark_mode`.
+    pub fn popup_dim_color(&self) -> Color {
+        let base = if self.dark_mode() {
+            Color::from_rgb8(250, 250, 250)
+        } else {
+            Color::from_rgb8(48, 48, 48)
+        };
+        base.with_alpha(0.6)
+    }
+
     pub fn nick_palette(&self) -> [Color; 8] {
         let accent = self.accent_color();
         if self.dark_mode() {
@@ -186,6 +200,20 @@ mod tests {
         let veil = style.overlay_veil_color();
         assert_eq!(veil.to_rgb8(), (228, 229, 229));
         assert!((veil.a - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn popup_dim_matches_qt_material_background_dim() {
+        // Values read from Qt 6.11.2's Material style (see popup_dim_color).
+        let dark = Style::new(Theme::defaults_dark(), 1.0);
+        assert_eq!(dark.popup_dim_color().to_rgb8(), (250, 250, 250));
+        assert!((dark.popup_dim_color().a - 0.6).abs() < 1e-6);
+
+        let mut theme = Theme::defaults_dark();
+        theme.dark_mode = false;
+        let light = Style::new(theme, 1.0);
+        assert_eq!(light.popup_dim_color().to_rgb8(), (48, 48, 48));
+        assert!((light.popup_dim_color().a - 0.6).abs() < 1e-6);
     }
 
     #[test]

@@ -4,6 +4,7 @@ pub mod input;
 pub mod members;
 pub mod message_row;
 pub mod scrollbar;
+pub mod sheets;
 pub mod shell;
 pub mod sidebar;
 pub mod transcript;

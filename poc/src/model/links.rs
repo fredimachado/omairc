@@ -42,6 +42,28 @@ pub fn link_targets(topic: Option<&str>, rows: &[Row], query: &str) -> Vec<LinkT
     out
 }
 
+/// Shortens `text` to at most `max_chars` characters by replacing its middle
+/// with `…`, keeping both ends (Qt's `ElideMiddle`, counted in characters).
+pub fn elide_middle(text: &str, max_chars: usize) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= max_chars {
+        return text.to_string();
+    }
+    match max_chars {
+        0 => String::new(),
+        1 => "…".to_string(),
+        _ => {
+            let keep = max_chars - 1;
+            let head = keep - keep / 2;
+            let tail = keep / 2;
+            let mut out: String = chars[..head].iter().collect();
+            out.push('…');
+            out.extend(chars[chars.len() - tail..].iter());
+            out
+        }
+    }
+}
+
 fn push_links(
     out: &mut Vec<LinkTarget>,
     plain: &str,
@@ -122,6 +144,16 @@ mod tests {
         event.kind = RowKind::Event;
         let rows = vec![event];
         assert!(link_targets(None, &rows, "").is_empty());
+    }
+
+    #[test]
+    fn elide_middle_keeps_both_ends() {
+        assert_eq!(elide_middle("https://a.example/x", 40), "https://a.example/x");
+        assert_eq!(elide_middle("abcdefghij", 5), "ab…ij");
+        assert_eq!(elide_middle("abcdefghij", 4), "ab…j");
+        assert_eq!(elide_middle("abcdefghij", 1), "…");
+        assert_eq!(elide_middle("abcdefghij", 0), "");
+        assert_eq!(elide_middle("abcdefghij", 5).chars().count(), 5);
     }
 
     #[test]

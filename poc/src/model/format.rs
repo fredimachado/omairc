@@ -321,7 +321,8 @@ pub fn http_link_ranges(text: &str) -> Vec<Range<usize>> {
     ranges
 }
 
-fn is_allowed_http_url(url: &str) -> bool {
+/// The http(s) URL policy shared by the transcript and the Link sheet.
+pub fn is_allowed_http_url(url: &str) -> bool {
     let Some(colon) = url.find(':') else {
         return false;
     };

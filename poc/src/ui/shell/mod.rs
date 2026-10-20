@@ -40,15 +40,13 @@ pub struct Shell {
     /// The member list's keyboard cursor, an index into the channel's members.
     pub member_cursor: usize,
     pub member_focus: FocusHandle,
-    pub jump_open: bool,
-    pub jump_selected: usize,
-    pub jump_list_scroll: ScrollHandle,
+    /// The open sheet (Jump, Link, Nick), if any. Only one is open at a time.
+    pub modal: Option<modal::ActiveModal>,
     pub sidebar_scroll: ScrollHandle,
     pub members_scroll: ScrollHandle,
     pub scrollbar_drag: ScrollbarDragCell,
     pub transcript: Entity<TranscriptView>,
     pub composer: Entity<SingleLineInput>,
-    pub jump_filter: Entity<SingleLineInput>,
     pub focus_handle: FocusHandle,
     pub typing_phase: u8,
     pub bench: BenchState,
@@ -80,9 +78,6 @@ impl Shell {
         let composer = cx.new(|cx| SingleLineInput::new("", "Composer", cx.focus_handle()));
         let composer_focus = composer.read(cx).focus_handle(cx);
         let transcript = cx.new(|_| TranscriptView::new(composer_focus, scrollbar_drag.clone()));
-        let jump_filter = cx.new(|cx| {
-            SingleLineInput::new("Jump to conversation…", "JumpFilter", cx.focus_handle())
-        });
 
         let transcript_events = cx.subscribe(&transcript, |shell: &mut Shell, _, event: &NickClicked, cx| {
             shell.open_direct_nick(&event.0, cx);
@@ -96,15 +91,12 @@ impl Shell {
             members_open: true,
             member_cursor: 0,
             member_focus: cx.focus_handle(),
-            jump_open: false,
-            jump_selected: 0,
-            jump_list_scroll: ScrollHandle::new(),
+            modal: None,
             sidebar_scroll: ScrollHandle::new(),
             members_scroll: ScrollHandle::new(),
             scrollbar_drag,
             transcript,
             composer,
-            jump_filter,
             focus_handle: cx.focus_handle(),
             typing_phase: 0,
             bench: BenchState {
@@ -214,12 +206,12 @@ impl Render for Shell {
                     &self.scrollbar_drag,
                     &self.current_network().nick,
                     nick_handler(entity.clone()),
-                    nick_sheet_placeholder(),
+                    heading_handler(entity.clone()),
                     &self.member_focus,
                     members_cursor,
                 ))
             })
-            .when(self.jump_open, |this| this.child(self.render_jump(cx)));
+            .when_some(self.render_modal(cx), |this, modal| this.child(modal));
 
         wire_shell_actions(root, cx)
     }
@@ -279,6 +271,13 @@ fn close_handler(entity: Entity<Shell>) -> Handler<ConversationRef> {
     })
 }
 
+/// A click on the `ONLINE - N` heading: the Nick sheet.
+fn heading_handler(entity: Entity<Shell>) -> Handler<()> {
+    Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
+        entity.update(cx, |shell, cx| shell.open_nick_sheet(window, cx));
+    })
+}
+
 /// A member row click: open or select that nick's DM, then focus the composer.
 fn nick_handler(entity: Entity<Shell>) -> Handler<String> {
     Rc::new(move |nick: String, window: &mut Window, cx: &mut App| {
@@ -287,10 +286,4 @@ fn nick_handler(entity: Entity<Shell>) -> Handler<String> {
             shell.focus_composer(window, cx);
         });
     })
-}
-
-/// The `ONLINE - N` heading opens the Nick sheet. That sheet is not wired yet,
-/// so the click does nothing.
-fn nick_sheet_placeholder() -> Handler<()> {
-    Rc::new(|_: (), _: &mut Window, _: &mut App| {})
 }

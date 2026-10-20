@@ -6,16 +6,16 @@
 use gpui::{actions, App, Context, Div, KeyBinding, prelude::*};
 
 use crate::model::chords::Chord;
+use crate::ui::sheets::filter_sheet::bind_filter_keys;
 use crate::ui::shell::Shell;
 
 actions!(
     omairc_shell,
     [
         OpenJump,
-        JumpUp,
-        JumpDown,
-        JumpActivate,
-        JumpClose,
+        OpenLink,
+        OpenNick,
+        CloseSheet,
         TranscriptCopy,
         ComposerSubmit,
         ToggleMembers,
@@ -55,8 +55,12 @@ actions!(
 );
 
 pub fn bind_shell_keys(cx: &mut App) {
+    bind_filter_keys(cx);
     cx.bind_keys([
         KeyBinding::new("secondary-k", OpenJump, None),
+        KeyBinding::new("secondary-shift-o", OpenLink, None),
+        KeyBinding::new("secondary-shift-k", OpenNick, None),
+        KeyBinding::new("escape", CloseSheet, None),
         KeyBinding::new("secondary-shift-s", ToggleSidebarRail, None),
         KeyBinding::new("secondary-w", CloseDirect, None),
         KeyBinding::new("secondary-l", FocusComposer, None),
@@ -81,14 +85,6 @@ pub fn bind_shell_keys(cx: &mut App) {
         KeyBinding::new("shift-pagedown", TranscriptHalfPageDown, None),
         KeyBinding::new("secondary-home", TranscriptTop, None),
         KeyBinding::new("secondary-end", TranscriptBottom, None),
-        KeyBinding::new("up", JumpUp, Some("JumpSheet")),
-        KeyBinding::new("down", JumpDown, Some("JumpSheet")),
-        KeyBinding::new("enter", JumpActivate, Some("JumpSheet")),
-        KeyBinding::new("escape", JumpClose, Some("JumpSheet")),
-        KeyBinding::new("up", JumpUp, Some("JumpFilter")),
-        KeyBinding::new("down", JumpDown, Some("JumpFilter")),
-        KeyBinding::new("enter", JumpActivate, Some("JumpFilter")),
-        KeyBinding::new("escape", JumpClose, Some("JumpFilter")),
         KeyBinding::new("up", MemberUp, Some("MemberList")),
         KeyBinding::new("down", MemberDown, Some("MemberList")),
         KeyBinding::new("pageup", MemberPageUp, Some("MemberList")),
@@ -109,6 +105,15 @@ pub fn bind_shell_keys(cx: &mut App) {
 pub fn wire_shell_actions(root: Div, cx: &mut Context<Shell>) -> Div {
     root.on_action(cx.listener(|shell, _: &OpenJump, window, cx| {
         shell.toggle_jump(window, cx);
+    }))
+    .on_action(cx.listener(|shell, _: &OpenLink, window, cx| {
+        shell.toggle_link(window, cx);
+    }))
+    .on_action(cx.listener(|shell, _: &OpenNick, window, cx| {
+        shell.open_nick_sheet(window, cx);
+    }))
+    .on_action(cx.listener(|shell, _: &CloseSheet, window, cx| {
+        shell.escape(window, cx);
     }))
     .on_action(cx.listener(|shell, _: &ToggleSidebarRail, window, cx| {
         shell.toggle_rail(window, cx);

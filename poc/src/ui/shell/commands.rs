@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use gpui::{App, ClipboardItem, Context, Focusable, Window};
 
-use crate::model::chords::{chord_enabled, Chord, ChordContext, Sheet};
+use crate::model::chords::{chord_enabled, Chord, ChordContext};
 use crate::model::cursor::{move_index, page_amount};
 use crate::model::directs::{close_direct, open_direct};
 use crate::model::navigation::{mark_all_read, next_unread, step_conversation, step_network};
@@ -13,6 +13,7 @@ use crate::model::{
     continues_group, local_send_stamp, outgoing_message, row_from_mock_message, Conversation,
     ConversationRef, Member, Network,
 };
+use crate::ui::shell::modal::ActiveModal;
 use crate::ui::shell::Shell;
 use crate::util::{scaled_px, style};
 
@@ -103,7 +104,7 @@ impl Shell {
     pub fn chord_context(&self, window: &Window, cx: &App) -> ChordContext {
         let conv = self.current_conversation();
         ChordContext {
-            sheet: self.jump_open.then_some(Sheet::Jump),
+            sheet: self.modal.as_ref().map(ActiveModal::sheet),
             channel: conv.is_channel(),
             direct: !conv.is_channel(),
             header_focused: self.sidebar.focus.is_some(),
@@ -114,7 +115,7 @@ impl Shell {
     }
 
     /// Whether `chord` is live now. Every shell action checks this first.
-    fn chord_live(&self, chord: Chord, window: &Window, cx: &App) -> bool {
+    pub fn chord_live(&self, chord: Chord, window: &Window, cx: &App) -> bool {
         chord_enabled(chord, &self.chord_context(window, cx))
     }
 
@@ -127,18 +128,6 @@ impl Shell {
         self.sidebar.rail_visible = !self.sidebar.rail_visible;
         self.sidebar.focus = None;
         cx.notify();
-    }
-
-    /// Ctrl+K: toggles the Jump sheet.
-    pub fn toggle_jump(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.chord_live(Chord::Jump, window, cx) {
-            return;
-        }
-        if self.jump_open {
-            self.close_jump(window, cx);
-        } else {
-            self.open_jump(window, cx);
-        }
     }
 
     /// Ctrl+W on the selected DM. Channels are a no-op.
@@ -480,7 +469,7 @@ impl Shell {
     /// Ends a text drag on mouse-up; notifies only when a drag was running.
     pub fn end_text_drag(&mut self, position: gpui::Point<gpui::Pixels>, cx: &mut Context<Self>) {
         self.transcript.update(cx, |t, cx| {
-            if t.finish_drag(position) {
+            if t.finish_drag(position, cx) {
                 cx.notify();
             }
         });

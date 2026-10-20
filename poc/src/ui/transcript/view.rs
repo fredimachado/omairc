@@ -15,7 +15,7 @@ use crate::ui::message_row::{render_transcript_row, RowCallbacks, RowLayoutMap};
 use crate::ui::scrollbar::{list_vertical_scrollbar, move_scrollbar_drag, ScrollbarDragCell};
 use crate::ui::transcript::pointer::{self, RowBounds};
 use crate::ui::Handler;
-use crate::util::{style, OmaircStyleGlobal};
+use crate::util::{open_web_link, style, OmaircStyleGlobal};
 
 /// A click on a transcript author or avatar. The shell opens or creates the DM.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -194,9 +194,9 @@ impl TranscriptView {
         true
     }
 
-    /// Ends a drag on mouse-up. A release over a link prints its URL, as the
-    /// click always has. Returns false when no drag was in progress.
-    pub fn finish_drag(&mut self, position: Point<Pixels>) -> bool {
+    /// Ends a drag on mouse-up. A release over an http(s) link opens it in the
+    /// browser. Returns false when no drag was in progress.
+    pub fn finish_drag(&mut self, position: Point<Pixels>, cx: &mut App) -> bool {
         if !self.dragging {
             return false;
         }
@@ -206,7 +206,7 @@ impl TranscriptView {
         self.drag_pointer = None;
         if let Some((row_ix, range)) = self.link_at(position) {
             if let Some(url) = self.model.rows()[row_ix].body.plain.get(range.clone()) {
-                println!("{url}");
+                open_web_link(cx, url);
             }
         }
         true
