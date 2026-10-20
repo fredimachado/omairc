@@ -9,6 +9,7 @@ use gpui::{
     MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, Render, Window, prelude::*,
 };
 
+use crate::model::cursor::page_amount;
 use crate::model::{row_from_message, Conversation, Pos, Row, Style, Transcript};
 use crate::ui::message_row::{render_transcript_row, RowCallbacks, RowLayoutMap};
 use crate::ui::scrollbar::{list_vertical_scrollbar, move_scrollbar_drag, ScrollbarDragCell};
@@ -91,6 +92,44 @@ impl TranscriptView {
             item_ix: row_ix,
             offset_in_item: px(0.),
         });
+    }
+
+    /// PgUp/PgDn (or the half-page chords): scrolls by `page_amount` of the
+    /// viewport height. Scrolling up releases the bottom pin.
+    pub fn scroll_page(&mut self, down: bool, half: bool) {
+        let viewport = f32::from(self.list_state.viewport_bounds().size.height);
+        let amount = page_amount(viewport, half);
+        if amount <= 0. {
+            return;
+        }
+        if !down {
+            self.model.set_pinned_to_bottom(false);
+        }
+        let distance = px(if down { amount } else { -amount });
+        self.list_state.scroll_by(distance);
+    }
+
+    /// Ctrl+Home: the first row.
+    pub fn scroll_to_top(&mut self) {
+        self.model.set_pinned_to_bottom(false);
+        self.list_state.scroll_to(ListOffset {
+            item_ix: 0,
+            offset_in_item: px(0.),
+        });
+    }
+
+    /// Ctrl+End: the last row, and the list follows new lines again.
+    pub fn scroll_to_bottom(&mut self) {
+        let count = self.model.rows().len();
+        if count == 0 {
+            return;
+        }
+        self.model.set_pinned_to_bottom(true);
+        self.list_state.scroll_to_reveal_item(count - 1);
+    }
+
+    pub fn has_selection(&self) -> bool {
+        self.model.selection().is_some()
     }
 
     pub fn invalidate_all(&mut self) {

@@ -6,12 +6,14 @@ use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
 /// One nick in the member list: presence glyph, prefixed nick and real name.
-/// A click on anyone but `self_nick` reports the nick to `on_nick`.
+/// A click on anyone but `self_nick` reports the nick to `on_nick`. `current`
+/// draws the keyboard cursor's row raised.
 pub fn member_row(
     member: &Member,
     style: &Style,
     self_nick: &str,
     on_nick: Handler<String>,
+    current: bool,
 ) -> impl IntoElement {
     let nick_color = to_gpui(style.nick_color(&member.nick));
     let fill = to_gpui(style.nick_avatar_fills()[style.nick_palette_index(&member.nick)]);
@@ -22,6 +24,7 @@ pub fn member_row(
         .py(scaled_px(style, 6.))
         .flex()
         .gap(scaled_px(style, 8.))
+        .when(current, |this| this.bg(to_gpui(style.raised_color())))
         .when(clickable, |this| {
             this.cursor_pointer()
                 .on_mouse_down(MouseButton::Left, move |_, window, cx| {

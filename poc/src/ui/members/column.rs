@@ -1,4 +1,4 @@
-use gpui::{div, prelude::*, Entity, ScrollHandle};
+use gpui::{div, prelude::*, Entity, FocusHandle, ScrollHandle};
 
 use crate::model::{Conversation, Style};
 use crate::ui::Handler;
@@ -7,7 +7,8 @@ use crate::ui::scrollbar::{div_vertical_scrollbar, ScrollbarDragCell};
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
 /// The right-hand member panel for a channel. `host` is only notified by the
-/// scrollbar.
+/// scrollbar. The list is focusable with its own key context (`MemberList`);
+/// `cursor` is the current row, drawn raised only while the list has focus.
 pub fn render_members<V: 'static>(
     conv: &Conversation,
     style: &Style,
@@ -16,6 +17,8 @@ pub fn render_members<V: 'static>(
     drag: &ScrollbarDragCell,
     self_nick: &str,
     on_nick: Handler<String>,
+    focus: &FocusHandle,
+    cursor: Option<usize>,
 ) -> impl IntoElement {
     let people = conv.people_count();
     div()
@@ -49,8 +52,16 @@ pub fn render_members<V: 'static>(
                         .size_full()
                         .overflow_y_scroll()
                         .track_scroll(scroll)
-                        .children(conv.members.iter().map(|member| {
-                            member_row(member, style, self_nick, on_nick.clone())
+                        .track_focus(focus)
+                        .key_context("MemberList")
+                        .children(conv.members.iter().enumerate().map(|(ix, member)| {
+                            member_row(
+                                member,
+                                style,
+                                self_nick,
+                                on_nick.clone(),
+                                cursor == Some(ix),
+                            )
                         })),
                 )
                 .child(div_vertical_scrollbar(scroll, style, host, drag.clone())),

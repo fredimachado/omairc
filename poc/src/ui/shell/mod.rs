@@ -10,7 +10,7 @@ pub mod modal;
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::*, App, ClipboardItem, Context, Entity, FocusHandle, Focusable, MouseButton,
+    div, prelude::*, App, Context, Entity, FocusHandle, Focusable, MouseButton,
     MouseMoveEvent, MouseUpEvent, Render, ScrollHandle, Subscription, Window,
 };
 
@@ -21,7 +21,7 @@ use crate::ui::center::render_center;
 use crate::ui::input::SingleLineInput;
 use crate::ui::members::render_members;
 use crate::ui::scrollbar::{end_scrollbar_drag, move_scrollbar_drag, ScrollbarDragCell};
-use crate::ui::shell::actions::{CloseDirect, OpenJump, ToggleSidebarRail, TranscriptCopy};
+use crate::ui::shell::actions::wire_shell_actions;
 use crate::ui::sidebar::{render_sidebar, SidebarData};
 use crate::ui::transcript::view::NickClicked;
 use crate::ui::transcript::TranscriptView;
@@ -37,6 +37,9 @@ pub struct Shell {
     pub sidebar: SidebarState,
     pub window_title: String,
     pub members_open: bool,
+    /// The member list's keyboard cursor, an index into the channel's members.
+    pub member_cursor: usize,
+    pub member_focus: FocusHandle,
     pub jump_open: bool,
     pub jump_selected: usize,
     pub jump_list_scroll: ScrollHandle,
@@ -91,6 +94,8 @@ impl Shell {
             sidebar: SidebarState::default(),
             window_title: String::new(),
             members_open: true,
+            member_cursor: 0,
+            member_focus: cx.focus_handle(),
             jump_open: false,
             jump_selected: 0,
             jump_list_scroll: ScrollHandle::new(),
@@ -159,7 +164,11 @@ impl Render for Shell {
             send_handler(entity.clone()),
         );
 
-        div()
+        // The member cursor is drawn only while the list holds keyboard focus.
+        let members_focused = self.member_focus.is_focused(window);
+        let members_cursor = members_focused.then_some(self.member_cursor);
+
+        let root = div()
             .size_full()
             .bg(to_gpui(app_style.page_color()))
             .flex()
@@ -189,28 +198,6 @@ impl Render for Shell {
                     shell.end_text_drag(ev.position, cx);
                 }),
             )
-            .on_action(cx.listener(|shell, _: &OpenJump, window, cx| {
-                shell.open_jump(window, cx);
-            }))
-            .on_action(cx.listener(|shell, _: &ToggleSidebarRail, _, cx| {
-                shell.toggle_rail(cx);
-            }))
-            .on_action(cx.listener(|shell, _: &CloseDirect, window, cx| {
-                let target = shell.selected.clone();
-                shell.close_direct_message(&target, window, cx);
-            }))
-            .on_action(cx.listener(|shell, _: &TranscriptCopy, _, cx| {
-                // With the composer focused, Ctrl+C copies the transcript
-                // selection unless the draft has its own selection.
-                if shell.composer.read(cx).has_selection() {
-                    cx.propagate();
-                    return;
-                }
-                let text = shell.transcript.read(cx).copy_text();
-                if !text.is_empty() {
-                    cx.write_to_clipboard(ClipboardItem::new_string(text));
-                }
-            }))
             .child(sidebar)
             .child(center)
             .when(show_members, |this| {
@@ -222,9 +209,13 @@ impl Render for Shell {
                     &self.scrollbar_drag,
                     &self.current_network().nick,
                     nick_handler(entity.clone()),
+                    &self.member_focus,
+                    members_cursor,
                 ))
             })
-            .when(self.jump_open, |this| this.child(self.render_jump(cx)))
+            .when(self.jump_open, |this| this.child(self.render_jump(cx)));
+
+        wire_shell_actions(root, cx)
     }
 }
 

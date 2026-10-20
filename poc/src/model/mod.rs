@@ -2,6 +2,7 @@
 //! jump palette, and virtualized transcript selection.
 
 pub mod color;
+pub mod cursor;
 pub mod format;
 pub mod ids;
 pub mod chords;

@@ -2,18 +2,16 @@ use gpui::{div, prelude::*, Entity, MouseButton};
 
 use crate::model::Style;
 use crate::ui::input::SingleLineInput;
-use crate::ui::shell::actions::ComposerSubmit;
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
-/// The single-line draft and its SEND button. Enter and a click both call
-/// `on_send`.
+/// The single-line draft and its SEND button. A click calls `on_send`. Enter
+/// is handled by the shell root (`ComposerSubmit`), which checks header focus.
 pub fn render_composer(
     composer: Entity<SingleLineInput>,
     style: &Style,
     on_send: Handler<()>,
 ) -> impl IntoElement {
-    let send_key = on_send.clone();
     div()
         .px(scaled_px(style, 16.))
         .py(scaled_px(style, 10.))
@@ -26,9 +24,6 @@ pub fn render_composer(
             div()
                 .flex_grow()
                 .key_context("Composer")
-                .on_action(move |_: &ComposerSubmit, window, cx| {
-                    send_key((), window, cx);
-                })
                 .child(composer),
         )
         .child(

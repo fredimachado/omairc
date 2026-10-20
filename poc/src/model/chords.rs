@@ -72,6 +72,10 @@ pub enum Chord {
     TranscriptBottom,
     MembersTop,
     MembersBottom,
+    MembersStep,
+    MembersPage,
+    MembersHalfPage,
+    MembersActivate,
     Escape,
 }
 
@@ -126,7 +130,12 @@ pub fn chord_enabled(chord: Chord, ctx: &ChordContext) -> bool {
         // Return and Enter activate a focused header. Its handler is a no-op
         // for now, but the composer must not send while a header is focused.
         Chord::HeaderActivate => ctx.header_focused && no_sheet,
-        Chord::MembersTop | Chord::MembersBottom => ctx.members_focused && no_sheet,
+        Chord::MembersTop
+        | Chord::MembersBottom
+        | Chord::MembersStep
+        | Chord::MembersPage
+        | Chord::MembersHalfPage
+        | Chord::MembersActivate => ctx.members_focused && no_sheet,
         // Escape closes whichever sheet is open.
         Chord::Escape => !no_sheet,
     }
@@ -305,6 +314,19 @@ mod tests {
         );
         check(Chord::MembersTop, channel, [false; 7]);
         check(Chord::MembersBottom, nothing, [false; 7]);
+        for chord in [
+            Chord::MembersStep,
+            Chord::MembersPage,
+            Chord::MembersHalfPage,
+            Chord::MembersActivate,
+        ] {
+            check(
+                chord,
+                members,
+                [true, false, false, false, false, false, false],
+            );
+            check(chord, channel, [false; 7]);
+        }
     }
 
     #[test]
