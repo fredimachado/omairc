@@ -5,6 +5,7 @@
 pub mod actions;
 pub mod bench;
 pub mod commands;
+pub mod find;
 pub mod inbox;
 pub mod modal;
 pub mod slash;
@@ -17,6 +18,7 @@ use gpui::{
 };
 
 use crate::model::composer::{ComposerState, DraftKey};
+use crate::model::find::Find;
 use crate::model::inbox::{seed_inbox, Inbox};
 use crate::model::prefs::Preferences;
 use crate::model::sidebar::SidebarState;
@@ -68,6 +70,9 @@ pub struct Shell {
     pub composer_state: ComposerState,
     /// The slash-complete popup above the composer: its rows and highlight.
     pub slash: SlashSession,
+    /// Find mode (Ctrl+F) while it is on: the last query searched and the match
+    /// row. The composer holds the query, and `composer_state` holds the draft.
+    pub find: Option<Find>,
     /// The saved preferences `/pref` reads and writes, loaded once at startup.
     pub preferences: Preferences,
     pub focus_handle: FocusHandle,
@@ -111,8 +116,10 @@ impl Shell {
             shell.join_status_invite(&event.0, cx);
         });
         // Every composer edit, caret move and history step re-reads the slash popup.
-        // The popup only re-renders when its rows or highlight changed.
+        // The popup only re-renders when its rows or highlight changed. A changed
+        // find query searches again from the top.
         let composer_events = cx.observe(&composer, |shell: &mut Shell, _, cx| {
+            shell.follow_find_query(cx);
             if shell.sync_slash_popup(cx) {
                 cx.notify();
             }
@@ -136,6 +143,7 @@ impl Shell {
             composer,
             composer_state,
             slash: SlashSession::new(),
+            find: None,
             preferences: Preferences::load(),
             focus_handle: cx.focus_handle(),
             typing_phase: 0,
@@ -360,11 +368,16 @@ fn collapse_handler(entity: Entity<Shell>) -> Handler<String> {
     })
 }
 
-/// SEND or Enter: send the draft, then focus the composer.
+/// SEND: send the draft, then focus the composer. In find mode SEND moves to the
+/// next match instead, as Qt's `sendMessage` does.
 fn send_handler(entity: Entity<Shell>) -> Handler<()> {
     Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
         entity.update(cx, |shell, cx| {
-            shell.send_message(cx);
+            if shell.find.is_some() {
+                shell.begin_or_advance_find(window, cx);
+            } else {
+                shell.send_message(cx);
+            }
             shell.focus_composer(window, cx);
         });
     })

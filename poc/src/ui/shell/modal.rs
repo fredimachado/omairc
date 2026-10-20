@@ -112,8 +112,9 @@ impl Shell {
         self.present_about(window, cx);
     }
 
-    /// Escape: closes the slash popup first, keeping the typed text. Otherwise it
-    /// closes the open sheet, or with no sheet leaves Status for the conversation.
+    /// Escape, in Qt's order: closes the slash popup first, keeping the typed text.
+    /// Then it closes the open sheet. Then, with no sheet, it leaves find mode and
+    /// restores the draft. Then, with neither, it leaves Status for the conversation.
     /// Inert otherwise.
     pub fn escape(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.dismiss_slash_popup(window, cx) {
@@ -124,6 +125,8 @@ impl Shell {
         }
         if self.modal.is_some() {
             self.close_modal(window, cx);
+        } else if self.find.is_some() {
+            self.leave_find(window, cx);
         } else {
             self.close_status(window, cx);
         }

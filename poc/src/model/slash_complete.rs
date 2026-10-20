@@ -325,6 +325,14 @@ impl SlashSession {
         self.insertion(composer_text, self.selected)
     }
 
+    /// Shuts the popup without remembering a dismissed needle. Find mode uses it:
+    /// the field holds a query there, so the popup stays shut, and it can open
+    /// again on the same text once find ends.
+    pub fn close(&mut self) {
+        self.probe = None;
+        self.selected = 0;
+    }
+
     /// Escape. Closes the popup and keeps the typed text. Returns false when the
     /// popup was already closed, so Escape falls through to the other handlers.
     pub fn dismiss(&mut self) -> bool {
@@ -620,6 +628,20 @@ mod tests {
         assert_eq!(session.enter("hello"), None);
         assert_eq!(session.activate(0, "hello"), None);
         assert!(!session.dismiss(), "Escape is not consumed when closed");
+    }
+
+    #[test]
+    fn close_shuts_the_popup_without_remembering_the_needle() {
+        let mut session = SlashSession::new();
+        session.sync("/v", Surface::Conversation, false);
+        assert!(session.is_open());
+        session.close();
+        assert!(!session.is_open());
+        assert!(!session.dismiss(), "nothing was dismissed, so Escape is not consumed");
+
+        // Unlike Escape, the same text opens the popup again.
+        session.sync("/v", Surface::Conversation, false);
+        assert!(session.is_open());
     }
 
     #[test]

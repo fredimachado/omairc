@@ -11,12 +11,12 @@ use gpui::{
 
 use crate::model::cursor::{page_amount, scroll_target};
 use crate::model::links::invite_hit;
-use crate::model::{row_from_message, Conversation, Pos, Row, Style, Transcript};
+use crate::model::{mix_colors, row_from_message, Conversation, Pos, Row, Style, Transcript};
 use crate::ui::message_row::{render_transcript_row, RowCallbacks, RowLayoutMap};
 use crate::ui::scrollbar::{list_vertical_scrollbar, move_scrollbar_drag, ScrollbarDragCell};
 use crate::ui::transcript::pointer::{self, RowBounds};
 use crate::ui::Handler;
-use crate::util::{open_web_link, style, OmaircStyleGlobal};
+use crate::util::{open_web_link, style, to_gpui, OmaircStyleGlobal};
 
 /// A click on a transcript author or avatar. The shell opens or creates the DM.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -46,6 +46,8 @@ pub struct TranscriptView {
     drag_pointer: Option<Point<Pixels>>,
     last_click: (Instant, u32, usize),
     hovered_link: Option<(usize, Range<usize>)>,
+    /// The row find mode landed on, drawn with the selection colour.
+    find_row: Option<usize>,
 }
 
 impl TranscriptView {
@@ -67,6 +69,7 @@ impl TranscriptView {
             drag_pointer: None,
             last_click: (Instant::now(), 0, 0),
             hovered_link: None,
+            find_row: None,
         }
     }
 
@@ -76,6 +79,7 @@ impl TranscriptView {
         self.member_realnames = member_realnames(conv);
         self.self_nick = self_nick.to_string();
         self.model.clear_selection();
+        self.find_row = None;
         self.list_state.reset(self.model.rows().len());
         self.row_layouts.borrow_mut().clear();
     }
@@ -90,6 +94,7 @@ impl TranscriptView {
         self.member_realnames.clear();
         self.model.clear_selection();
         self.hovered_link = None;
+        self.find_row = None;
         self.list_state.reset(self.model.rows().len());
         self.row_layouts.borrow_mut().clear();
     }
@@ -103,12 +108,20 @@ impl TranscriptView {
         self.list_state.splice(old_len..old_len, 1);
     }
 
+    /// Reveals `row_ix` at the top of the list and leaves follow-the-end, as Qt's
+    /// `revealRow` does for a find or link match. The caller notifies.
     pub fn scroll_to_row(&mut self, row_ix: usize) {
         self.model.set_pinned_to_bottom(false);
         self.list_state.scroll_to(ListOffset {
             item_ix: row_ix,
             offset_in_item: px(0.),
         });
+    }
+
+    /// The row find mode is on, drawn with the selection colour. `None` clears it.
+    /// The caller notifies.
+    pub fn set_find_row(&mut self, row: Option<usize>) {
+        self.find_row = row;
     }
 
     /// PgUp/PgDn (or the half-page chords): scrolls by `page_amount` of the
@@ -409,6 +422,13 @@ impl Render for TranscriptView {
                             .as_ref()
                             .filter(|(r, _)| *r == ix)
                             .map(|(_, range)| range.clone());
+                        // Qt's find match is the page colour mixed 42% toward the selection.
+                        let finding = view.find_row == Some(ix);
+                        let find_fill = to_gpui(mix_colors(
+                            app_style.page_color(),
+                            app_style.selection_color(),
+                            0.42,
+                        ));
                         div()
                             .on_children_prepainted({
                                 let row_bounds = row_bounds.clone();
@@ -420,6 +440,7 @@ impl Render for TranscriptView {
                             })
                             .id(("transcript-row-hit", ix))
                             .w_full()
+                            .when(finding, |this| this.bg(find_fill))
                             .child(render_transcript_row(
                                 ix,
                                 &row,

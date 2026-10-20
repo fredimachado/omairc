@@ -40,6 +40,8 @@ pub struct ChordContext {
     /// The slash-complete popup is showing above the composer: the typed line
     /// starts a verb or `/pref` name, and no sheet covers it.
     pub slash_open: bool,
+    /// Find mode is on: the composer holds a query, and Enter moves to the next match.
+    pub find_active: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -59,6 +61,8 @@ pub enum Chord {
     About,
     /// Ctrl+` (`secondary-\``): opens Status for the selected network, or closes it.
     StatusToggle,
+    /// Ctrl+F (`secondary-f`): starts find mode, or moves to the next match while it is on.
+    Find,
     /// Up and Down in the composer: walk the sent lines. With no history they fall through.
     ComposerHistory,
     /// Tab and Shift+Tab in the composer: complete a nick. Status has no nicks.
@@ -132,12 +136,18 @@ pub fn chord_enabled(chord: Chord, ctx: &ChordContext) -> bool {
         // Qt binds Ctrl+` with no sheet gate (only the connect and shortcut
         // overlays), so it also closes Status while Status is the view.
         Chord::StatusToggle => no_sheet,
+        // Qt's Ctrl+F is off only under its two overlays. Here any open sheet blocks
+        // it, so a search never runs behind a sheet. A press while finding moves to
+        // the next match. Status has a transcript too, so it is live there.
+        Chord::Find => no_sheet,
         // Qt's composer walks history on Up and Down whichever view is open, so
-        // Status keeps its own history. Only a sheet owns those keys.
-        Chord::ComposerHistory => no_sheet,
+        // Status keeps its own history. A sheet owns those keys, and so does find,
+        // which ignores them.
+        Chord::ComposerHistory => no_sheet && !ctx.find_active,
         // Tab completes on a conversation only. Status has no nicks. The key is
-        // still consumed there, so focus never leaves the composer.
-        Chord::NickComplete => on_conversation,
+        // still consumed there, so focus never leaves the composer. Find mode
+        // consumes it too, and completes nothing.
+        Chord::NickComplete => on_conversation && !ctx.find_active,
         // The popup owns these keys while it shows and no sheet is open. Status
         // does not hide it: `/` on Status completes Status's verbs.
         Chord::SlashPopup | Chord::SlashDismiss => ctx.slash_open && no_sheet,
@@ -162,17 +172,18 @@ pub fn chord_enabled(chord: Chord, ctx: &ChordContext) -> bool {
         | Chord::TranscriptTop
         | Chord::TranscriptBottom => no_sheet,
         // Return and Enter activate a focused header, which opens that network's
-        // Status. The composer must not send while a header is focused.
-        Chord::HeaderActivate => ctx.header_focused && no_sheet,
+        // Status. The composer must not send while a header is focused. Find mode
+        // takes Enter for the next match instead (Qt's Return shortcut is off then).
+        Chord::HeaderActivate => ctx.header_focused && no_sheet && !ctx.find_active,
         Chord::MembersTop
         | Chord::MembersBottom
         | Chord::MembersStep
         | Chord::MembersPage
         | Chord::MembersHalfPage
         | Chord::MembersActivate => ctx.members_focused && on_conversation,
-        // Escape closes whichever sheet is open. With no sheet, it leaves
-        // Status for the last conversation.
-        Chord::Escape => !no_sheet || ctx.status_open,
+        // Escape closes whichever sheet is open. With no sheet, it leaves find
+        // mode first, then Status for the last conversation.
+        Chord::Escape => !no_sheet || ctx.status_open || ctx.find_active,
     }
 }
 
@@ -237,6 +248,9 @@ mod tests {
     }
     fn slash_popup(ctx: &mut ChordContext) {
         ctx.slash_open = true;
+    }
+    fn finding(ctx: &mut ChordContext) {
+        ctx.find_active = true;
     }
 
     // Columns: none, Shortcuts, About, Jump, Link, Inbox, Nick, Status open.
@@ -303,6 +317,40 @@ mod tests {
     #[test]
     fn composer_history_is_live_without_a_sheet_and_on_status() {
         check(Chord::ComposerHistory, nothing, NO_SHEET);
+    }
+
+    #[test]
+    fn find_is_live_without_a_sheet_on_a_conversation_or_status_and_while_finding() {
+        check(Chord::Find, nothing, NO_SHEET);
+        check(Chord::Find, finding, NO_SHEET);
+        check(Chord::Find, channel, NO_SHEET);
+    }
+
+    #[test]
+    fn find_mode_takes_history_completion_and_header_enter_from_the_composer() {
+        check(Chord::ComposerHistory, finding, NOWHERE);
+        check(Chord::NickComplete, finding, NOWHERE);
+        check(Chord::HeaderActivate, |ctx| {
+            ctx.header_focused = true;
+            ctx.find_active = true;
+        }, NOWHERE);
+    }
+
+    #[test]
+    fn escape_leaves_find_mode_even_with_no_sheet_and_no_status() {
+        check(Chord::Escape, finding, [true; 8]);
+    }
+
+    #[test]
+    fn escape_stays_a_sheet_key_while_finding() {
+        // A sheet opened during find (Ctrl+K is not gated by find) closes first.
+        let ctx = ChordContext {
+            sheet: Some(Sheet::Jump),
+            find_active: true,
+            ..ChordContext::default()
+        };
+        assert!(chord_enabled(Chord::Escape, &ctx));
+        assert!(!chord_enabled(Chord::Find, &ctx));
     }
 
     #[test]

@@ -61,6 +61,7 @@ actions!(
         ComposerHistoryDown,
         CompleteNickForward,
         CompleteNickBackward,
+        OpenFind,
     ]
 );
 
@@ -82,6 +83,7 @@ pub fn bind_shell_keys(cx: &mut App) {
         KeyBinding::new("secondary-w", CloseDirect, None),
         KeyBinding::new("secondary-l", FocusComposer, None),
         KeyBinding::new("secondary-`", ToggleStatus, None),
+        KeyBinding::new("secondary-f", OpenFind, None),
         KeyBinding::new("secondary-q", Quit, None),
         KeyBinding::new("secondary-shift-m", ToggleMembers, None),
         KeyBinding::new("secondary-shift-p", FocusMembers, None),
@@ -273,5 +275,8 @@ pub fn wire_shell_actions(root: Div, cx: &mut Context<Shell>) -> Div {
     }))
     .on_action(cx.listener(|shell, _: &CompleteNickBackward, window, cx| {
         shell.complete_nick(true, window, cx);
+    }))
+    .on_action(cx.listener(|shell, _: &OpenFind, window, cx| {
+        shell.begin_or_advance_find(window, cx);
     }))
 }

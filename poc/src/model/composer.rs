@@ -102,6 +102,9 @@ pub struct ComposerState {
     browse: Option<Browse>,
     /// A Tab cycle in progress.
     completion: Option<Completion>,
+    /// The draft Ctrl+F saved when find mode began. While find is active the
+    /// field holds the query, so this copy is the unsent text.
+    find: Option<String>,
 }
 
 /// An Up/Down walk: the history index on screen, and the draft typed before
@@ -136,14 +139,32 @@ impl ComposerState {
     /// The text the user has typed and not sent. While Up/Down walks history
     /// that is the draft saved when the walk began, not the recalled line.
     ///
-    /// Every stash goes through here. Find mode (Phase 5) keeps its own copy of
-    /// the draft, and that copy should be returned from this function while
-    /// find is active.
+    /// Every stash goes through here. While find is active, the field holds the
+    /// query, so the draft Ctrl+F saved is the unsent text.
     pub fn unsent_text(&self, composer_text: &str) -> String {
+        if let Some(draft) = &self.find {
+            return draft.clone();
+        }
         match &self.browse {
             Some(browse) => browse.draft.clone(),
             None => composer_text.to_string(),
         }
+    }
+
+    /// Enters find mode for the field's current text. Its unsent text is saved
+    /// and comes back from `end_find`. An Up/Down walk ends, since the field
+    /// now holds the query and not a recalled line.
+    pub fn begin_find(&mut self, composer_text: &str) {
+        let draft = self.unsent_text(composer_text);
+        self.browse = None;
+        self.completion = None;
+        self.find = Some(draft);
+    }
+
+    /// Leaves find mode and returns the draft it saved, or `None` when find was
+    /// not active. The caller puts that text back in the field.
+    pub fn end_find(&mut self) -> Option<String> {
+        self.find.take()
     }
 
     /// Saves the unsent text under the current target. Call this before the
@@ -173,10 +194,12 @@ impl ComposerState {
     }
 
     /// Makes `key` the target and returns the draft it holds, empty if none.
-    /// Ends any history walk or Tab cycle.
+    /// Ends any history walk, Tab cycle or find. The saved find draft is
+    /// dropped, so the caller stashes before it switches.
     pub fn switch_to(&mut self, key: DraftKey) -> String {
         self.browse = None;
         self.completion = None;
+        self.find = None;
         let text = self.drafts.get(&key).cloned().unwrap_or_default();
         self.key = Some(key);
         text
@@ -453,6 +476,46 @@ mod tests {
         state.stash("sent");
         state.switch_to(conversation("anna"));
         assert_eq!(state.switch_to(conversation("#omarchy")), "typed");
+    }
+
+    #[test]
+    fn find_gives_back_the_draft_it_saved_not_the_query() {
+        let mut state = ComposerState::starting_at(conversation("#omarchy"));
+        state.begin_find("half typed");
+        assert_eq!(state.unsent_text("query"), "half typed");
+
+        // A stash while find is on keeps the saved draft for this target.
+        state.stash("query");
+        assert_eq!(state.end_find().as_deref(), Some("half typed"));
+        assert_eq!(state.end_find(), None, "find is off once it has ended");
+        assert_eq!(state.unsent_text("typed after"), "typed after");
+    }
+
+    #[test]
+    fn the_saved_find_draft_is_stored_when_the_target_changes() {
+        let mut state = ComposerState::starting_at(conversation("#omarchy"));
+        state.begin_find("draft");
+        state.stash("query");
+        assert_eq!(state.switch_to(conversation("anna")), "");
+        assert_eq!(state.end_find(), None, "a switch ends find");
+        assert_eq!(state.switch_to(conversation("#omarchy")), "draft");
+    }
+
+    #[test]
+    fn beginning_find_during_a_walk_saves_the_typed_draft() {
+        let mut state = ComposerState::starting_at(conversation("#omarchy"));
+        state.record_sent("sent");
+        assert_eq!(state.recall("typed", -1).as_deref(), Some("sent"));
+
+        state.begin_find("sent");
+        assert!(!state.is_browsing(), "find ends the walk");
+        assert_eq!(state.end_find().as_deref(), Some("typed"));
+    }
+
+    #[test]
+    fn end_find_without_find_returns_nothing() {
+        let mut state = ComposerState::starting_at(conversation("#omarchy"));
+        assert_eq!(state.end_find(), None);
     }
 
     #[test]

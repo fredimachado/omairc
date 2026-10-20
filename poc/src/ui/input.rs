@@ -64,6 +64,8 @@ pub struct SingleLineInput {
     pub placeholder: SharedString,
     key_context: String,
     accent_border: bool,
+    /// Find mode: an empty field shows "Find", and its text is drawn in the accent colour.
+    find_mode: bool,
     selected_range: Range<usize>,
     selection_reversed: bool,
     marked_range: Option<Range<usize>>,
@@ -94,6 +96,7 @@ impl SingleLineInput {
             placeholder: placeholder.into(),
             key_context: key_context.into(),
             accent_border: false,
+            find_mode: false,
             selected_range: 0..0,
             selection_reversed: false,
             marked_range: None,
@@ -217,6 +220,20 @@ impl SingleLineInput {
         self.accent_border = on;
     }
 
+    /// Find mode on or off. While it is on, an empty field shows "Find" and the
+    /// text is drawn in the accent colour, so the query reads as a search.
+    pub fn set_find_mode(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.find_mode = on;
+        cx.notify();
+    }
+
+    /// Selects the whole text with the caret at its end, as Ctrl+A does. Find
+    /// mode uses it so that typing replaces the draft that becomes the query.
+    pub fn select_all_text(&mut self, cx: &mut Context<Self>) {
+        self.move_to(0, cx);
+        self.select_to(self.content.len(), cx);
+    }
+
     fn left(&mut self, _: &Left, _: &mut Window, cx: &mut Context<Self>) {
         if self.selected_range.is_empty() {
             self.move_to(self.previous_boundary(self.cursor_offset()), cx);
@@ -242,8 +259,7 @@ impl SingleLineInput {
     }
 
     fn select_all(&mut self, _: &SelectAll, _: &mut Window, cx: &mut Context<Self>) {
-        self.move_to(0, cx);
-        self.select_to(self.content.len(), cx);
+        self.select_all_text(cx);
     }
 
     fn home(&mut self, _: &Home, _: &mut Window, cx: &mut Context<Self>) {
@@ -690,10 +706,12 @@ impl Element for SingleLineInputElement {
         text_style.font_size =
             gpui::AbsoluteLength::Pixels(crate::util::scaled_px(&app_style, 13.));
 
-        let (display_text, text_color) = if content.is_empty() {
-            (input.placeholder.clone(), to_gpui(app_style.muted_color()))
-        } else {
-            (content, to_gpui(app_style.ink_color()))
+        let find_mode = input.find_mode;
+        let (display_text, text_color) = match (content.is_empty(), find_mode) {
+            (true, true) => ("Find".into(), to_gpui(app_style.accent_color())),
+            (true, false) => (input.placeholder.clone(), to_gpui(app_style.muted_color())),
+            (false, true) => (content, to_gpui(app_style.accent_color())),
+            (false, false) => (content, to_gpui(app_style.ink_color())),
         };
 
         let run = TextRun {

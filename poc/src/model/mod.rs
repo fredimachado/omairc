@@ -10,6 +10,7 @@ pub mod chords;
 pub mod composer;
 pub mod directs;
 pub mod filter_list;
+pub mod find;
 pub mod fuzzy;
 pub mod inbox;
 pub mod jump;

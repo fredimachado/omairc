@@ -50,6 +50,8 @@ impl Shell {
         let switching = !self.composer_state.is_showing(&DraftKey::for_view(None, &target));
         if switching {
             self.stash_composer_draft(cx);
+            // Switching abandons find mode. The draft it saved was stashed just above.
+            self.end_find_mode(cx);
         }
         // Selecting a conversation clears its network's last command error, so the
         // header shows the topic again. Qt clears it on a successful command or a
@@ -97,6 +99,7 @@ impl Shell {
         let switching = !self.composer_state.is_showing(&status_key);
         if switching {
             self.stash_composer_draft(cx);
+            self.end_find_mode(cx);
         }
         self.sidebar.focus = None;
         self.status = Some(network_id.to_string());
@@ -111,12 +114,13 @@ impl Shell {
     }
 
     /// Leaves Status for the selected conversation, which keeps its scroll place
-    /// (Escape and Ctrl+`). Focus goes to the composer.
+    /// (Escape and Ctrl+`). Focus goes to the composer. Find mode ends too.
     pub fn close_status(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.status.is_none() {
             return;
         }
         self.stash_composer_draft(cx);
+        self.end_find_mode(cx);
         self.status = None;
         self.show_selected_conversation(cx);
         self.restore_composer_draft(cx);
@@ -314,6 +318,7 @@ impl Shell {
             members_focused: self.member_focus.is_focused(window),
             transcript_selection: self.transcript.read(cx).has_selection(),
             slash_open: self.slash_popup_showing(),
+            find_active: self.find.is_some(),
         }
     }
 
@@ -361,6 +366,11 @@ impl Shell {
     /// Enter in the composer. With a network header focused, Enter opens that
     /// network's Status (Qt `activateFocusedNetworkHeader`) and does not send.
     pub fn composer_submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // In find mode Enter moves to the next match. It never sends.
+        if self.find.is_some() {
+            self.begin_or_advance_find(window, cx);
+            return;
+        }
         if self.chord_live(Chord::HeaderActivate, window, cx) {
             if let Some(network_id) = self.sidebar.focus.clone() {
                 self.open_status(&network_id, window, cx);

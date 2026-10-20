@@ -50,10 +50,15 @@ impl Shell {
     /// only then.
     pub fn sync_slash_popup(&mut self, cx: &App) -> bool {
         let before = self.slash.clone();
-        let text = self.composer_text(cx);
-        let surface = self.surface();
-        let browsing = self.composer_state.is_browsing();
-        self.slash.sync(&text, surface, browsing);
+        // Find mode types a query, not a command, so the popup stays shut.
+        if self.find.is_some() {
+            self.slash.close();
+        } else {
+            let text = self.composer_text(cx);
+            let surface = self.surface();
+            let browsing = self.composer_state.is_browsing();
+            self.slash.sync(&text, surface, browsing);
+        }
         self.slash != before
     }
 
@@ -130,6 +135,10 @@ impl Shell {
     /// a slash line runs its command. A refused line keeps the composer text. A
     /// line that runs clears the composer and joins its history.
     pub fn send_message(&mut self, cx: &mut Context<Self>) {
+        // Find mode holds a query in the field. Its callers move to the next match.
+        if self.find.is_some() {
+            return;
+        }
         let text = self.composer_text(cx).trim().to_string();
         if text.is_empty() {
             return;
