@@ -45,12 +45,28 @@ fn host_platform() -> Platform {
     }
 }
 
+/// Space kept above and below the card so it never touches the window edge.
+const WINDOW_MARGIN: f32 = 24.;
+
 impl Render for ShortcutsSheet {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let app_style = style(cx);
         let entity = cx.entity();
+        // The card is clamped to the window; the chord list scrolls inside it
+        // when the window is too short for all five groups.
+        let room = window.viewport_size().height - scaled_px(&app_style, 2. * WINDOW_MARGIN);
+        let list = div()
+            .id("shortcuts-list")
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .flex()
+            .flex_col()
+            .gap(scaled_px(&app_style, 12.))
+            .children(GROUPS.iter().map(|group| group_block(&app_style, group)));
         let card = div()
             .w(scaled_px(&app_style, 460.))
+            .max_h(room)
             .p(scaled_px(&app_style, 16.))
             .bg(to_gpui(app_style.raised_color()))
             .border_1()
@@ -58,9 +74,9 @@ impl Render for ShortcutsSheet {
             .rounded(scaled_px(&app_style, 9.))
             .flex()
             .flex_col()
-            .gap(scaled_px(&app_style, 12.))
+            .overflow_hidden()
             .track_focus(&self.focus)
-            .children(GROUPS.iter().map(|group| group_block(&app_style, group)));
+            .child(list);
         popup_frame(&app_style, card, move |_, cx| {
             entity.update(cx, |_, cx| cx.emit(ShortcutsEvent::Dismissed));
         })
@@ -90,8 +106,8 @@ fn group_block(style: &Style, group: &ShortcutGroup) -> impl IntoElement {
         )
 }
 
-/// A chord and its action, 12px apart. The key column is 220 wide and never
-/// wraps.
+/// A chord and its action, 12px apart. The key column is 220 wide; a long
+/// chord list wraps inside it instead of running into the action column.
 fn shortcut_row(style: &Style, row: &ShortcutRow, platform: Platform) -> impl IntoElement {
     div()
         .w_full()
@@ -103,7 +119,6 @@ fn shortcut_row(style: &Style, row: &ShortcutRow, platform: Platform) -> impl In
             div()
                 .w(scaled_px(style, 220.))
                 .flex_shrink_0()
-                .whitespace_nowrap()
                 .text_color(to_gpui(style.ink_color()))
                 .child(chord_label(row, platform)),
         )
