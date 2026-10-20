@@ -45,7 +45,11 @@ pub fn member_row(
     let hover = to_gpui(style.hover_color());
     let raised = to_gpui(style.raised_color());
 
+    // The label takes the row's leftover width with `flex_1`. It must not size
+    // itself from its text: as a flex item in this nested row, the auto basis
+    // collapsed to about one glyph, so the nick showed only as `~…`.
     let label = div()
+        .flex_1()
         .min_w_0()
         .overflow_hidden()
         .text_ellipsis()

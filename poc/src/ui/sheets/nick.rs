@@ -91,6 +91,9 @@ fn nick_row(
         .filter(|status| !status.is_empty())
         .map(|status| status.to_string());
 
+    // Same as the member row: `flex_1` gives the nick the leftover width. Sized
+    // from its text, this nested flex item collapsed to nothing, so the nick
+    // vanished from the sheet.
     let label = div()
         .min_w_0()
         .flex()
@@ -98,6 +101,7 @@ fn nick_row(
         .gap(scaled_px(style, 4.))
         .child(
             div()
+                .flex_1()
                 .min_w_0()
                 .overflow_hidden()
                 .text_ellipsis()
