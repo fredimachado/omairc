@@ -1,6 +1,7 @@
 //! Toolkit-agnostic Omairc PoC model: theme, style, mock world, IRC formatting,
 //! jump palette, and virtualized transcript selection.
 
+pub mod byte_budget;
 pub mod color;
 pub mod cursor;
 pub mod format;
@@ -19,6 +20,7 @@ pub mod shortcuts;
 pub mod sidebar;
 pub mod status;
 pub mod style;
+pub mod text_edit;
 pub mod theme;
 pub mod title;
 pub mod transcript;

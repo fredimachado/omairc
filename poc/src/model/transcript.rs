@@ -1,8 +1,8 @@
 use super::format::{format_irc, FormattedText};
 use super::mock::MockMessage;
 use super::status::StatusMark;
+use super::text_edit::{snap_grapheme, word_bounds};
 use std::ops::Range;
-use unicode_segmentation::GraphemeCursor;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RowKind {
@@ -464,64 +464,6 @@ fn snap_pos(rows: &[Row], pos: Pos) -> Pos {
         row: pos.row,
         offset: snap_grapheme(row_plain(&rows[pos.row]), pos.offset.min(len)),
     }
-}
-
-fn snap_grapheme(text: &str, offset: usize) -> usize {
-    if offset == 0 || text.is_empty() {
-        return 0;
-    }
-    if offset >= text.len() {
-        return text.len();
-    }
-    let mut cursor = GraphemeCursor::new(offset, text.len(), true);
-    if cursor.is_boundary(text, 0).unwrap_or(false) {
-        return offset;
-    }
-    cursor.prev_boundary(text, 0).ok().flatten().unwrap_or(0)
-}
-
-fn word_bounds(text: &str, offset: usize) -> (usize, usize) {
-    let offset = snap_grapheme(text, offset.min(text.len()));
-    if text.is_empty() {
-        return (0, 0);
-    }
-    let mut start = offset;
-    while start > 0 {
-        let prev = snap_grapheme(text, start - 1);
-        if prev == start {
-            break;
-        }
-        let ch = text[prev..start].chars().next().unwrap();
-        if is_word_char(ch) {
-            start = prev;
-        } else {
-            break;
-        }
-    }
-    let mut end = offset;
-    while end < text.len() {
-        let next = next_grapheme_end(text, end);
-        let ch = text[end..next].chars().next().unwrap_or(' ');
-        if is_word_char(ch) {
-            end = next;
-        } else {
-            break;
-        }
-    }
-    (start, end)
-}
-
-fn next_grapheme_end(text: &str, offset: usize) -> usize {
-    let mut cursor = GraphemeCursor::new(offset, text.len(), true);
-    cursor
-        .next_boundary(text, 0)
-        .ok()
-        .flatten()
-        .unwrap_or(text.len())
-}
-
-fn is_word_char(ch: char) -> bool {
-    ch.is_alphanumeric() || ch == '_' || ch == '-'
 }
 
 fn plain_len(row: &Row) -> usize {

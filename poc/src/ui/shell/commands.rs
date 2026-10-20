@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use gpui::{App, ClipboardItem, Context, Focusable, Window};
 
+use crate::model::byte_budget::{SendLimit, CLASSIC_FRAME_BYTES};
 use crate::model::chords::{chord_enabled, Chord, ChordContext};
 use crate::model::cursor::{move_index, page_amount};
 use crate::model::directs::{close_direct, open_direct};
@@ -61,6 +62,20 @@ impl Shell {
         let self_nick = self.current_network().nick.clone();
         self.transcript
             .update(cx, |t, _| t.set_conversation(conv, &self_nick));
+        self.sync_send_limit(cx);
+    }
+
+    /// Gives the composer its send limit for what is showing: the channel or nick
+    /// the draft goes to, or Status (Qt's `composerByteBudgetFor`). Called whenever
+    /// the conversation or Status changes. A `/me` draft gets its own budget from
+    /// the composer itself, as the text changes.
+    pub fn sync_send_limit(&self, cx: &mut Context<Self>) {
+        let target = self
+            .status
+            .is_none()
+            .then(|| self.current_conversation().name.as_str());
+        let limit = SendLimit::new(target, CLASSIC_FRAME_BYTES);
+        self.composer.update(cx, |c, cx| c.set_send_limit(Some(limit), cx));
     }
 
     /// Opens a network's Status pane in place of the conversation. Like Qt's
@@ -74,6 +89,7 @@ impl Shell {
         self.status = Some(network_id.to_string());
         let rows = status_rows(&self.world, network_id);
         self.transcript.update(cx, |t, _| t.set_status(rows));
+        self.sync_send_limit(cx);
         self.focus_composer(window, cx);
         cx.notify();
     }

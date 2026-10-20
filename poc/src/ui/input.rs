@@ -10,6 +10,10 @@ use gpui::{
 };
 use unicode_segmentation::UnicodeSegmentation as _;
 
+use crate::model::byte_budget::SendLimit;
+use crate::model::text_edit::{
+    next_word_end, previous_word_start, EditSnapshot, UndoStack,
+};
 use crate::util::{to_gpui, FONT_FAMILY};
 
 actions!(
@@ -24,6 +28,15 @@ actions!(
         SelectAll,
         Home,
         End,
+        SelectHome,
+        SelectEnd,
+        WordLeft,
+        WordRight,
+        SelectWordLeft,
+        SelectWordRight,
+        DeleteWordBackward,
+        DeleteWordForward,
+        Undo,
         Paste,
         Cut,
         Copy,
@@ -59,6 +72,11 @@ pub struct SingleLineInput {
     is_selecting: bool,
     /// When the text or cursor last changed; the caret blinks from here.
     caret_edit: Instant,
+    /// The single-level undo step for Ctrl+Z.
+    undo_stack: UndoStack,
+    /// The send limit a draft must fit. `None` on fields that send nothing,
+    /// such as sheet filters, so their text is never cut.
+    send_limit: Option<SendLimit>,
 }
 
 impl SingleLineInput {
@@ -80,11 +98,52 @@ impl SingleLineInput {
             last_bounds: None,
             is_selecting: false,
             caret_edit: Instant::now(),
+            undo_stack: UndoStack::default(),
+            send_limit: None,
         }
     }
 
     pub fn text(&self) -> &str {
         &self.content
+    }
+
+    /// Sets the send limit for what the shell shows: the channel or nick, or
+    /// Status. Text already over the new limit is cut at its end, the way Qt
+    /// clamps the composer when its target changes.
+    pub fn set_send_limit(&mut self, limit: Option<SendLimit>, cx: &mut Context<Self>) {
+        self.send_limit = limit;
+        let keep = self.fit_len("", &self.content, "");
+        if keep < self.content.len() {
+            self.content = self.content[..keep].to_string().into();
+            self.clamp_selection();
+            self.undo_stack.clear();
+        }
+        self.restart_caret();
+        cx.notify();
+    }
+
+    /// How many bytes of `inserted` fit between `before` and `after`. Without a
+    /// send limit everything fits.
+    fn fit_len(&self, before: &str, inserted: &str, after: &str) -> usize {
+        match &self.send_limit {
+            Some(limit) => limit.insert_fit_len(before, inserted, after),
+            None => inserted.len(),
+        }
+    }
+
+    /// Keeps both ends of the selection inside the text after a cut.
+    fn clamp_selection(&mut self) {
+        let len = self.content.len();
+        self.selected_range = self.selected_range.start.min(len)..self.selected_range.end.min(len);
+        self.marked_range = None;
+    }
+
+    /// The text and selection as they are now, for an undo step.
+    fn snapshot(&self) -> EditSnapshot {
+        EditSnapshot {
+            text: self.content.to_string(),
+            selected: self.selected_range.clone(),
+        }
     }
 
     /// Whether the caret is in the solid half of its blink cycle right now.
@@ -102,11 +161,20 @@ impl SingleLineInput {
         self.caret_edit = Instant::now();
     }
 
+    /// Replaces the whole text, cut to the send limit. The undo step is dropped,
+    /// since a programmatic change is not something Ctrl+Z should take back.
     pub fn set_text(&mut self, text: impl Into<SharedString>) {
-        self.content = text.into();
+        let text: SharedString = text.into();
+        let keep = self.fit_len("", &text, "");
+        self.content = if keep == text.len() {
+            text
+        } else {
+            text[..keep].to_string().into()
+        };
         self.selected_range = self.content.len()..self.content.len();
         self.selection_reversed = false;
         self.marked_range = None;
+        self.undo_stack.clear();
         self.restart_caret();
     }
 
@@ -153,6 +221,71 @@ impl SingleLineInput {
 
     fn end(&mut self, _: &End, _: &mut Window, cx: &mut Context<Self>) {
         self.move_to(self.content.len(), cx);
+    }
+
+    fn select_home(&mut self, _: &SelectHome, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(0, cx);
+    }
+
+    fn select_end(&mut self, _: &SelectEnd, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(self.content.len(), cx);
+    }
+
+    /// Ctrl+Left: the start of the word before the cursor.
+    fn word_left(&mut self, _: &WordLeft, _: &mut Window, cx: &mut Context<Self>) {
+        self.move_to(previous_word_start(&self.content, self.cursor_offset()), cx);
+    }
+
+    /// Ctrl+Right: the end of the word after the cursor.
+    fn word_right(&mut self, _: &WordRight, _: &mut Window, cx: &mut Context<Self>) {
+        self.move_to(next_word_end(&self.content, self.cursor_offset()), cx);
+    }
+
+    fn select_word_left(&mut self, _: &SelectWordLeft, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(previous_word_start(&self.content, self.cursor_offset()), cx);
+    }
+
+    fn select_word_right(&mut self, _: &SelectWordRight, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(next_word_end(&self.content, self.cursor_offset()), cx);
+    }
+
+    fn delete_word_backward(
+        &mut self,
+        _: &DeleteWordBackward,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.selected_range.is_empty() {
+            self.select_to(previous_word_start(&self.content, self.cursor_offset()), cx);
+        }
+        self.replace_text_in_range(None, "", window, cx);
+    }
+
+    fn delete_word_forward(
+        &mut self,
+        _: &DeleteWordForward,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.selected_range.is_empty() {
+            self.select_to(next_word_end(&self.content, self.cursor_offset()), cx);
+        }
+        self.replace_text_in_range(None, "", window, cx);
+    }
+
+    /// Ctrl+Z: restores the text and selection from before the last step. The
+    /// restored text is cut to the send limit, which may have changed since.
+    fn undo(&mut self, _: &Undo, _: &mut Window, cx: &mut Context<Self>) {
+        let Some(step) = self.undo_stack.undo() else {
+            return;
+        };
+        let keep = self.fit_len("", &step.text, "");
+        self.content = step.text[..keep].to_string().into();
+        self.selected_range = step.selected;
+        self.selection_reversed = false;
+        self.clamp_selection();
+        self.restart_caret();
+        cx.notify();
     }
 
     fn backspace(&mut self, _: &Backspace, window: &mut Window, cx: &mut Context<Self>) {
@@ -368,6 +501,15 @@ impl EntityInputHandler for SingleLineInput {
             .or_else(|| self.marked_range.clone())
             .unwrap_or_else(|| self.selected_range.clone());
 
+        // Typed and pasted text is cut at a character boundary to the send limit.
+        let keep = self.fit_len(&self.content[..range.start], new_text, &self.content[range.end..]);
+        let new_text = &new_text[..keep];
+        if range.is_empty() && new_text.is_empty() {
+            return;
+        }
+
+        let before = self.snapshot();
+        self.undo_stack.record(before, range.clone(), new_text);
         self.content = (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
             .into();
         self.selected_range = range.start + new_text.len()..range.start + new_text.len();
@@ -390,6 +532,8 @@ impl EntityInputHandler for SingleLineInput {
             .or_else(|| self.marked_range.clone())
             .unwrap_or_else(|| self.selected_range.clone());
 
+        let keep = self.fit_len(&self.content[..range.start], new_text, &self.content[range.end..]);
+        let new_text = &new_text[..keep];
         self.content = (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
             .into();
         if !new_text.is_empty() {
@@ -402,6 +546,9 @@ impl EntityInputHandler for SingleLineInput {
             .map(|range_utf16| self.range_from_utf16(range_utf16))
             .map(|new_range| new_range.start + range.start..new_range.end + range.end)
             .unwrap_or_else(|| range.start + new_text.len()..range.start + new_text.len());
+        // A composition can report offsets past a cut, so keep them inside the text.
+        let len = self.content.len();
+        self.selected_range = self.selected_range.start.min(len)..self.selected_range.end.min(len);
         self.restart_caret();
         cx.notify();
     }
@@ -629,6 +776,15 @@ impl Render for SingleLineInput {
             .on_action(cx.listener(Self::select_all))
             .on_action(cx.listener(Self::home))
             .on_action(cx.listener(Self::end))
+            .on_action(cx.listener(Self::select_home))
+            .on_action(cx.listener(Self::select_end))
+            .on_action(cx.listener(Self::word_left))
+            .on_action(cx.listener(Self::word_right))
+            .on_action(cx.listener(Self::select_word_left))
+            .on_action(cx.listener(Self::select_word_right))
+            .on_action(cx.listener(Self::delete_word_backward))
+            .on_action(cx.listener(Self::delete_word_forward))
+            .on_action(cx.listener(Self::undo))
             .on_action(cx.listener(Self::paste))
             .on_action(cx.listener(Self::cut))
             .on_action(cx.listener(Self::copy))
@@ -655,33 +811,36 @@ impl Focusable for SingleLineInput {
     }
 }
 
+/// Text-field keys for the composer and the sheet filters. `secondary-` is Ctrl
+/// on Windows and Linux and Cmd on macOS, so clipboard and undo follow the
+/// platform. Word movement uses Ctrl+arrows on every platform: Alt+arrows walk
+/// the server list.
 pub fn bind_input_keys(cx: &mut gpui::App) {
-    cx.bind_keys([
-        gpui::KeyBinding::new("backspace", Backspace, Some("Composer")),
-        gpui::KeyBinding::new("delete", Delete, Some("Composer")),
-        gpui::KeyBinding::new("left", Left, Some("Composer")),
-        gpui::KeyBinding::new("right", Right, Some("Composer")),
-        gpui::KeyBinding::new("shift-left", SelectLeft, Some("Composer")),
-        gpui::KeyBinding::new("shift-right", SelectRight, Some("Composer")),
-        gpui::KeyBinding::new("ctrl-a", SelectAll, Some("Composer")),
-        gpui::KeyBinding::new("ctrl-v", Paste, Some("Composer")),
-        gpui::KeyBinding::new("ctrl-c", Copy, Some("Composer")),
-        gpui::KeyBinding::new("ctrl-x", Cut, Some("Composer")),
-        gpui::KeyBinding::new("home", Home, Some("Composer")),
-        gpui::KeyBinding::new("end", End, Some("Composer")),
-        gpui::KeyBinding::new("backspace", Backspace, Some("SheetFilter")),
-        gpui::KeyBinding::new("delete", Delete, Some("SheetFilter")),
-        gpui::KeyBinding::new("left", Left, Some("SheetFilter")),
-        gpui::KeyBinding::new("right", Right, Some("SheetFilter")),
-        gpui::KeyBinding::new("shift-left", SelectLeft, Some("SheetFilter")),
-        gpui::KeyBinding::new("shift-right", SelectRight, Some("SheetFilter")),
-        gpui::KeyBinding::new("ctrl-a", SelectAll, Some("SheetFilter")),
-        gpui::KeyBinding::new("ctrl-v", Paste, Some("SheetFilter")),
-        gpui::KeyBinding::new("ctrl-c", Copy, Some("SheetFilter")),
-        gpui::KeyBinding::new("ctrl-x", Cut, Some("SheetFilter")),
-        gpui::KeyBinding::new("home", Home, Some("SheetFilter")),
-        gpui::KeyBinding::new("end", End, Some("SheetFilter")),
-    ]);
+    for context in ["Composer", "SheetFilter"] {
+        cx.bind_keys([
+            gpui::KeyBinding::new("backspace", Backspace, Some(context)),
+            gpui::KeyBinding::new("delete", Delete, Some(context)),
+            gpui::KeyBinding::new("left", Left, Some(context)),
+            gpui::KeyBinding::new("right", Right, Some(context)),
+            gpui::KeyBinding::new("shift-left", SelectLeft, Some(context)),
+            gpui::KeyBinding::new("shift-right", SelectRight, Some(context)),
+            gpui::KeyBinding::new("ctrl-left", WordLeft, Some(context)),
+            gpui::KeyBinding::new("ctrl-right", WordRight, Some(context)),
+            gpui::KeyBinding::new("ctrl-shift-left", SelectWordLeft, Some(context)),
+            gpui::KeyBinding::new("ctrl-shift-right", SelectWordRight, Some(context)),
+            gpui::KeyBinding::new("ctrl-backspace", DeleteWordBackward, Some(context)),
+            gpui::KeyBinding::new("ctrl-delete", DeleteWordForward, Some(context)),
+            gpui::KeyBinding::new("secondary-a", SelectAll, Some(context)),
+            gpui::KeyBinding::new("secondary-v", Paste, Some(context)),
+            gpui::KeyBinding::new("secondary-c", Copy, Some(context)),
+            gpui::KeyBinding::new("secondary-x", Cut, Some(context)),
+            gpui::KeyBinding::new("secondary-z", Undo, Some(context)),
+            gpui::KeyBinding::new("home", Home, Some(context)),
+            gpui::KeyBinding::new("end", End, Some(context)),
+            gpui::KeyBinding::new("shift-home", SelectHome, Some(context)),
+            gpui::KeyBinding::new("shift-end", SelectEnd, Some(context)),
+        ]);
+    }
 }
 
 #[cfg(test)]

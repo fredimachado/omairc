@@ -108,10 +108,10 @@ pub fn bind_shell_keys(cx: &mut App) {
         KeyBinding::new("home", MemberTop, Some("MemberList")),
         KeyBinding::new("end", MemberBottom, Some("MemberList")),
         KeyBinding::new("enter", MemberActivate, Some("MemberList")),
-        // The composer binds ctrl-c to `Copy` itself (bind_input_keys). When its
+        // The composer binds secondary-c to `Copy` itself (bind_input_keys). When its
         // draft has no selection it propagates, and the shell's listener below
-        // copies the transcript or member nick.
-        KeyBinding::new("ctrl-c", CopySelection, Some("MemberList")),
+        // copies the transcript or member nick. The member list uses the same key.
+        KeyBinding::new("secondary-c", CopySelection, Some("MemberList")),
         KeyBinding::new("enter", ComposerSubmit, Some("Composer")),
     ]);
 }

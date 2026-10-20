@@ -128,6 +128,7 @@ impl Shell {
         let conv = shell.current_conversation();
         let self_nick = shell.current_network().nick.clone();
         shell.transcript.update(cx, |t, _| t.set_conversation(conv, &self_nick));
+        shell.sync_send_limit(cx);
         shell
     }
 }
