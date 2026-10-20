@@ -1,11 +1,24 @@
 use gpui::{div, prelude::*, MouseButton};
 
 use crate::model::{Conversation, ConversationRef, Style};
-use crate::ui::widgets::{
-    avatar::avatar_with_presence, badge::unread_badge, typing_dots::typing_dots,
-};
+use crate::ui::widgets::avatar::avatar_with_presence;
+use crate::ui::widgets::badge::unread_badge;
+use crate::ui::widgets::bot_mark::bot_mark;
+use crate::ui::widgets::typing_dots::typing_dots;
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
+
+/// What a row shows beyond its conversation: whether it is selected, the typing
+/// dots' phase, and for a DM its peer's photo and bot flag. A channel passes no
+/// photo and no bot.
+pub struct RowLook<'a> {
+    pub selected: bool,
+    pub typing_phase: u8,
+    /// The peer's bundled photo, when the `avatars` preference allows it.
+    pub photo: Option<&'a str>,
+    /// The peer is a bot, so its row gets the bot mark.
+    pub bot: bool,
+}
 
 /// One channel or direct message row, a port of `ConversationRow.qml`: 36 tall,
 /// inset 8. A click reports `target` to `on_select`; a middle click on a DM
@@ -13,8 +26,7 @@ use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 pub fn conversation_row(
     target: ConversationRef,
     conv: &Conversation,
-    selected: bool,
-    typing_phase: u8,
+    look: RowLook,
     style: &Style,
     on_select: Handler<ConversationRef>,
     on_close: Handler<ConversationRef>,
@@ -22,7 +34,7 @@ pub fn conversation_row(
     let ink = to_gpui(style.ink_color());
     let muted = to_gpui(style.muted_color());
     let unread = conv.unread > 0;
-    let emphasized = selected || unread;
+    let emphasized = look.selected || unread;
     let label_color = if emphasized { ink } else { muted };
     let label = if conv.channel {
         format!("#  {}", conv.name.replace('#', ""))
@@ -37,6 +49,7 @@ pub fn conversation_row(
         8.
     };
     let typing = conv.typing && !conv.channel;
+    let bot = look.bot && !conv.channel;
 
     div()
         .w_full()
@@ -61,12 +74,12 @@ pub fn conversation_row(
                 .left(scaled_px(style, 8.))
                 .right(scaled_px(style, 8.))
                 .rounded(scaled_px(style, 7.))
-                .when(selected, |this| this.bg(to_gpui(style.raised_color())))
-                .when(!selected, |this| {
+                .when(look.selected, |this| this.bg(to_gpui(style.raised_color())))
+                .when(!look.selected, |this| {
                     this.hover(|s| s.bg(to_gpui(style.hover_color())))
                 }),
         )
-        .when(selected, |this| {
+        .when(look.selected, |this| {
             this.child(
                 div()
                     .absolute()
@@ -79,7 +92,6 @@ pub fn conversation_row(
             )
         })
         .when(!conv.channel, |this| {
-            let fill = to_gpui(style.nick_avatar_fills()[style.nick_palette_index(&conv.name)]);
             let presence = conv
                 .members
                 .first()
@@ -92,11 +104,10 @@ pub fn conversation_row(
                     .top(scaled_px(style, 7.))
                     .child(avatar_with_presence(
                         style,
+                        &conv.name,
                         22.,
-                        fill,
-                        style.initials(&conv.name),
-                        to_gpui(style.nick_color(&conv.name)),
                         11.,
+                        look.photo,
                         presence,
                     )),
             )
@@ -110,6 +121,7 @@ pub fn conversation_row(
                 .right(scaled_px(style, label_right))
                 .flex()
                 .items_center()
+                .gap(scaled_px(style, 4.))
                 .child(
                     div()
                         .min_w_0()
@@ -122,7 +134,8 @@ pub fn conversation_row(
                         .text_color(label_color)
                         .font_family(FONT_FAMILY)
                         .child(label),
-                ),
+                )
+                .when(bot, |this| this.child(bot_mark(style))),
         )
         .child(
             div()
@@ -133,7 +146,7 @@ pub fn conversation_row(
                 .flex()
                 .items_center()
                 .gap(scaled_px(style, 6.))
-                .when(typing, |this| this.child(typing_dots(style, typing_phase)))
+                .when(typing, |this| this.child(typing_dots(style, look.typing_phase)))
                 .when(unread, |this| {
                     this.child(unread_badge(style, conv.unread, conv.mention))
                 }),

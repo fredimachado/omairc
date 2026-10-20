@@ -1,6 +1,8 @@
 use gpui::{div, prelude::*, MouseButton};
 
+use crate::model::presence::photo_for;
 use crate::model::{mix_colors, Color, Network, Style};
+use crate::ui::widgets::avatar::avatar_disc;
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
@@ -22,20 +24,23 @@ pub fn parse_version(pri: &str) -> Option<&str> {
 }
 
 /// The identity footer, a port of the bottom of `ServerListColumn.qml`: 66 tall,
-/// the selected network's nick and presence, then the `inbox` link with its
-/// count and the version.
+/// the selected network's avatar, nick and presence, then the `inbox` link with
+/// its count and the version. The avatar is the operator's own member record,
+/// and `avatars` is the `avatars` preference.
 pub fn identity_footer(
     network: &Network,
     inbox_count: u32,
     on_inbox: Handler<()>,
     on_about: Handler<()>,
+    avatars: bool,
     style: &Style,
 ) -> impl IntoElement {
     let ink = style.ink_color();
     let muted = to_gpui(style.muted_color());
     let amount = if style.dark_mode() { 0.025 } else { 0.018 };
-    let fill_index = style.nick_palette_index(&network.nick);
-    let glyph_fill = to_gpui(style.nick_avatar_fills()[fill_index]);
+    let photo = network
+        .member_for(&network.nick)
+        .and_then(|member| photo_for(member.avatar.as_deref(), avatars));
     let version = app_version();
 
     div()
@@ -54,20 +59,7 @@ pub fn identity_footer(
                 .relative()
                 .size(scaled_px(style, 34.))
                 .flex_shrink_0()
-                .child(
-                    div()
-                        .size_full()
-                        .rounded_full()
-                        .bg(glyph_fill)
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .text_size(scaled_px(style, 14.))
-                        .font_weight(gpui::FontWeight::BOLD)
-                        .text_color(to_gpui(style.nick_color(&network.nick)))
-                        .font_family(FONT_FAMILY)
-                        .child(style.initials(&network.nick)),
-                )
+                .child(avatar_disc(style, &network.nick, 34., 14., photo))
                 .child(
                     div()
                         .absolute()

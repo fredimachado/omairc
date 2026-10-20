@@ -1,9 +1,10 @@
 use gpui::{div, prelude::*, Entity, ScrollHandle};
 
+use crate::model::presence::photo_for;
 use crate::model::sidebar::{has_directs, ordered_conversations, SidebarState};
 use crate::model::{Conversation, ConversationRef, MockWorld, Network, Style};
 use crate::ui::scrollbar::{div_vertical_scrollbar, ScrollbarDragCell};
-use crate::ui::sidebar::conversation_row::conversation_row;
+use crate::ui::sidebar::conversation_row::{conversation_row, RowLook};
 use crate::ui::sidebar::identity_footer::identity_footer;
 use crate::ui::sidebar::network_section::network_header;
 use crate::ui::widgets::section_heading::{channels_heading, directs_heading};
@@ -20,6 +21,8 @@ pub struct SidebarData<'a> {
     pub status_open: bool,
     pub inbox_count: u32,
     pub typing_phase: u8,
+    /// The `avatars` preference: off, rows and the footer show initials.
+    pub avatars: bool,
     /// A network icon or name click: opens that network's Status.
     pub on_status: Handler<String>,
     /// The footer's `inbox` link.
@@ -81,6 +84,7 @@ pub fn render_sidebar<V: 'static>(
             data.inbox_count,
             data.on_inbox.clone(),
             data.on_about.clone(),
+            data.avatars,
             style,
         ))
 }
@@ -135,15 +139,16 @@ fn conversation_groups(
     let row = |conv: &Conversation| {
         let target = ConversationRef::new(network.id.clone(), conv.key());
         let selected = !data.status_open && &target == data.selected;
-        conversation_row(
-            target,
-            conv,
+        // A DM's peer is a nick on this network, so its avatar and bot flag come
+        // from the network's member records.
+        let peer = (!conv.channel).then(|| network.member_for(&conv.name)).flatten();
+        let look = RowLook {
             selected,
-            data.typing_phase,
-            style,
-            on_select.clone(),
-            on_close.clone(),
-        )
+            typing_phase: data.typing_phase,
+            photo: peer.and_then(|m| photo_for(m.avatar.as_deref(), data.avatars)),
+            bot: peer.is_some_and(|m| m.bot),
+        };
+        conversation_row(target, conv, look, style, on_select.clone(), on_close.clone())
     };
     let channels: Vec<&Conversation> = ordered.iter().copied().filter(|c| c.channel).collect();
     let directs: Vec<&Conversation> = ordered.iter().copied().filter(|c| !c.channel).collect();

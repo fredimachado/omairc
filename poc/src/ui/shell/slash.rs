@@ -201,14 +201,23 @@ impl Shell {
     }
 
     /// `/pref`: the model applies it and says what it printed. A change is saved.
-    /// A new `joins` setting refolds the open conversation at once.
+    /// A new `joins` setting refolds the open conversation at once, and a new
+    /// `avatars` setting redraws its photos.
     fn run_pref(&mut self, request: &PrefRequest, cx: &mut Context<Self>) {
         let joins_before = self.preferences.joins;
+        let avatars_before = self.preferences.avatars;
         let reply = pref_reply(request, &mut self.preferences);
         if reply.changed {
             if let Err(error) = self.preferences.save() {
                 eprintln!("omairc-poc: could not save preferences: {error}");
             }
+        }
+        if self.preferences.avatars != avatars_before {
+            let avatars = self.preferences.avatars;
+            self.transcript.update(cx, |t, cx| {
+                t.set_avatars(avatars);
+                cx.notify();
+            });
         }
         if self.preferences.joins != joins_before {
             self.rebuild_selected_keeping_place(cx);

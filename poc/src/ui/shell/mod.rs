@@ -167,12 +167,13 @@ impl Shell {
         };
 
         let conv = shell.current_conversation();
-        let self_nick = shell.current_network().nick.clone();
-        let chantypes = shell.current_network().chantypes.clone();
+        let network = shell.current_network();
         let joins = shell.preferences.joins;
-        shell
-            .transcript
-            .update(cx, |t, _| t.set_conversation(conv, &self_nick, &chantypes, joins));
+        let avatars = shell.preferences.avatars;
+        shell.transcript.update(cx, |t, _| {
+            t.set_avatars(avatars);
+            t.set_conversation(conv, network, joins);
+        });
         shell.sync_send_limit(cx);
         shell
     }
@@ -283,6 +284,7 @@ impl Render for Shell {
                 status_open: self.status.is_some(),
                 inbox_count: self.inbox.len() as u32,
                 typing_phase: self.typing_phase,
+                avatars: self.preferences.avatars,
                 on_status: status_handler(entity.clone()),
                 on_inbox: inbox_handler(entity.clone()),
                 on_about: about_handler(entity.clone()),
@@ -358,6 +360,7 @@ impl Render for Shell {
                     heading_handler(entity.clone()),
                     &self.member_focus,
                     members_cursor,
+                    self.preferences.avatars,
                 ))
             })
             .when_some(self.render_modal(cx), |this, modal| this.child(modal));

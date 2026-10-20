@@ -5,9 +5,11 @@
 use gpui::{div, prelude::*, AnyElement, FontWeight};
 
 use crate::model::nick_pick::{can_open_direct, first_selectable, nick_targets, NickTarget};
+use crate::model::presence::photo_for;
 use crate::model::{Member, Style};
 use crate::ui::sheets::filter_sheet::{match_text, FilterSource};
 use crate::ui::widgets::avatar::avatar_with_presence;
+use crate::ui::widgets::bot_mark::bot_mark;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
 /// Qt's dimmed glyph for an away member (`NickSheet.qml` `opacity`).
@@ -18,6 +20,8 @@ pub struct NickSource {
     pub members: Vec<Member>,
     /// The local nick on the selected conversation's network.
     pub self_nick: String,
+    /// The `avatars` preference when the sheet opened.
+    pub avatars: bool,
 }
 
 impl FilterSource for NickSource {
@@ -48,29 +52,31 @@ impl FilterSource for NickSource {
     }
 
     fn render_row(&self, item: &NickTarget, selected: bool, style: &Style) -> AnyElement {
-        nick_row(style, item, &self.self_nick, selected).into_any_element()
+        nick_row(style, item, &self.self_nick, selected, self.avatars).into_any_element()
     }
 }
 
 /// A 43px nick row: an 8px inset with radius 7, `hover` when selected. The
-/// glyph sits at x 18, the label at x 56 (bold for self, muted when away).
+/// glyph sits at x 18, the label at x 56 (bold for self, muted when away). A bot
+/// gets its mark after the nick, and the status line sits under it, muted and
+/// 9px. The status never dims the row.
 fn nick_row(
     style: &Style,
     target: &NickTarget,
     self_nick: &str,
     selected: bool,
+    avatars: bool,
 ) -> impl IntoElement {
     let member: &Member = &target.member;
     let is_self = member.nick == self_nick;
     let away = member.presence == "away";
-    let fill = to_gpui(style.nick_avatar_fills()[style.nick_palette_index(&member.nick)]);
+    let photo = photo_for(member.avatar.as_deref(), avatars);
     let glyph = avatar_with_presence(
         style,
+        &member.nick,
         28.,
-        fill,
-        style.initials(&member.nick),
-        to_gpui(style.nick_color(&member.nick)),
         11.,
+        photo,
         &member.presence,
     );
     let label_color = if away {
@@ -79,6 +85,33 @@ fn nick_row(
         to_gpui(style.ink_color())
     };
     let hover = to_gpui(style.hover_color());
+    let status = member
+        .status
+        .as_deref()
+        .filter(|status| !status.is_empty())
+        .map(|status| status.to_string());
+
+    let label = div()
+        .min_w_0()
+        .flex()
+        .items_center()
+        .gap(scaled_px(style, 4.))
+        .child(
+            div()
+                .min_w_0()
+                .overflow_hidden()
+                .text_ellipsis()
+                .font_family(FONT_FAMILY)
+                .text_size(scaled_px(style, 12.))
+                .text_color(label_color)
+                .when(is_self, |this| this.font_weight(FontWeight::BOLD))
+                .child(match_text(
+                    member.nick.clone(),
+                    &target.indices,
+                    to_gpui(style.ink_color()),
+                )),
+        )
+        .when(member.bot, |this| this.child(bot_mark(style)));
 
     div()
         .h(scaled_px(style, 43.))
@@ -104,17 +137,21 @@ fn nick_row(
                 .child(
                     div()
                         .min_w_0()
-                        .overflow_hidden()
-                        .text_ellipsis()
-                        .font_family(FONT_FAMILY)
-                        .text_size(scaled_px(style, 12.))
-                        .text_color(label_color)
-                        .when(is_self, |this| this.font_weight(FontWeight::BOLD))
-                        .child(match_text(
-                            member.nick.clone(),
-                            &target.indices,
-                            to_gpui(style.ink_color()),
-                        )),
+                        .flex()
+                        .flex_col()
+                        .child(label)
+                        .when_some(status, |this, status| {
+                            this.child(
+                                div()
+                                    .min_w_0()
+                                    .overflow_hidden()
+                                    .text_ellipsis()
+                                    .font_family(FONT_FAMILY)
+                                    .text_size(scaled_px(style, 9.))
+                                    .text_color(to_gpui(style.muted_color()))
+                                    .child(status),
+                            )
+                        }),
                 ),
         )
 }

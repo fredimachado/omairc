@@ -29,7 +29,23 @@ pub struct Network {
     /// `/version` target that starts with one is refused.
     #[serde(default = "default_chantypes")]
     pub chantypes: String,
+    /// The network's icon (Qt `draft/ICON` from ISUPPORT): a bundled `qrc:/` image
+    /// or an https URL. The sidebar draws it in place of the initial.
+    #[serde(default)]
+    pub icon: Option<String>,
     pub conversations: Vec<Conversation>,
+}
+
+impl Network {
+    /// The first member record for `nick` in any of this network's channels. Qt
+    /// keeps a nick's status, avatar and bot flag per network, so any record
+    /// answers for all of them.
+    pub fn member_for(&self, nick: &str) -> Option<&Member> {
+        self.conversations
+            .iter()
+            .flat_map(|conv| &conv.members)
+            .find(|member| member.nick == nick)
+    }
 }
 
 /// Qt's default `CHANTYPES` when a server sends none.
@@ -100,6 +116,13 @@ pub struct Member {
     pub presence: String,
     #[serde(default)]
     pub bot: bool,
+    /// The nick's status line (Qt `761 status`), drawn muted under the nick.
+    #[serde(default)]
+    pub status: Option<String>,
+    /// The nick's avatar (Qt `761 avatar`): a bundled `qrc:/` image or an https
+    /// URL. Absent means the initials.
+    #[serde(default)]
+    pub avatar: Option<String>,
 }
 
 fn default_online() -> String {
@@ -352,7 +375,7 @@ fn lcg(state: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
     #[test]
     fn world_loads_and_members_sorted() {
@@ -610,6 +633,81 @@ mod tests {
         assert_eq!(world.network("oftc").expect("oftc").last_error, None);
         world.set_last_error("omarchy", None);
         assert_eq!(world.network("omarchy").expect("omarchy").last_error, None);
+    }
+
+    #[test]
+    fn presence_seed_matches_the_qt_demo() {
+        let world = load_world();
+        let omarchy = world.network("omarchy").expect("omarchy");
+        let status = |nick: &str| {
+            omarchy
+                .member_for(nick)
+                .and_then(|m| m.status.as_deref())
+                .map(str::to_string)
+        };
+        assert_eq!(status("anna").as_deref(), Some("writing docs"));
+        assert_eq!(status("dax").as_deref(), Some("on #desktop"));
+        assert_eq!(status("mira").as_deref(), Some("making tea"));
+        assert_eq!(status("sol").as_deref(), Some("new here"));
+        assert_eq!(status("fred").as_deref(), Some("building Omairc"));
+        assert_eq!(status("kai"), None);
+
+        assert!(omarchy.member_for("dax").expect("dax").bot);
+        assert!(!omarchy.member_for("mira").expect("mira").bot);
+
+        // Qt's omarchy avatars: the bundled art for the three peers, and the
+        // operator's own HTTPS avatar.
+        let avatar = |nick: &str| {
+            omarchy
+                .member_for(nick)
+                .and_then(|m| m.avatar.as_deref())
+                .map(str::to_string)
+        };
+        assert_eq!(avatar("mira").as_deref(), Some("qrc:/demo/mira-avatar.png"));
+        assert_eq!(avatar("anna").as_deref(), Some("qrc:/demo/anna-avatar.png"));
+        assert_eq!(avatar("kai").as_deref(), Some("qrc:/demo/kai-avatar.png"));
+        assert_eq!(avatar("fred").as_deref(), Some("https://omairc.app/omairc128.png"));
+        assert_eq!(avatar("sol"), None);
+        assert_eq!(omarchy.icon.as_deref(), Some("qrc:/demo/omarchy-icon.png"));
+
+        // OFTC's own statuses and self avatar, which the Qt demo sends too.
+        let oftc = world.network("oftc").expect("oftc");
+        assert_eq!(oftc.icon, None);
+        assert_eq!(
+            oftc.member_for("rio").and_then(|m| m.status.as_deref()),
+            Some("on #lab")
+        );
+        assert_eq!(
+            oftc.member_for("oak").and_then(|m| m.avatar.as_deref()),
+            Some("https://omairc.app/omairc128.png")
+        );
+    }
+
+    #[test]
+    fn a_nick_has_one_status_avatar_and_bot_flag_per_network() {
+        let world = load_world();
+        for network in &world.networks {
+            let mut seen: HashMap<&str, (Option<&str>, Option<&str>, bool)> = HashMap::new();
+            for member in network.conversations.iter().flat_map(|c| &c.members) {
+                let record = (
+                    member.status.as_deref(),
+                    member.avatar.as_deref(),
+                    member.bot,
+                );
+                if let Some(previous) = seen.insert(member.nick.as_str(), record) {
+                    assert_eq!(previous, record, "{} differs across channels", member.nick);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_member_record_without_presence_fields_defaults_to_none() {
+        let member: Member =
+            serde_json::from_str(r#"{"nick":"x"}"#).expect("member with only a nick");
+        assert_eq!(member.status, None);
+        assert_eq!(member.avatar, None);
+        assert!(!member.bot);
     }
 
     #[test]

@@ -299,6 +299,7 @@ impl Shell {
         let source = NickSource {
             members: self.current_conversation().members.clone(),
             self_nick: self.current_network().nick.clone(),
+            avatars: self.preferences.avatars,
         };
         let sheet = cx.new(|cx| FilterSheet::new(source, cx));
         let subscriptions = vec![

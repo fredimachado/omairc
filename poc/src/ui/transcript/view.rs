@@ -14,13 +14,14 @@ use crate::model::links::{conversation_channel_hits, invite_hit};
 use crate::model::membership::membership_view;
 use crate::model::mock::local_minute;
 use crate::model::prefs::MembershipNoise;
+use crate::model::presence::{nick_facts, NickFacts};
 use crate::model::scroll_place::{resume, Resume, SavedPlace};
 use crate::model::typing_tail::typing_continues;
 use crate::model::unread::{self, UnseenLanding};
 use crate::model::{
-    mix_colors, row_from_message, Conversation, MockMessage, Pos, Row, Style, Transcript,
+    mix_colors, row_from_message, Conversation, MockMessage, Network, Pos, Row, Style, Transcript,
 };
-use crate::ui::message_row::{render_transcript_row, RowCallbacks, RowLayoutMap};
+use crate::ui::message_row::{render_transcript_row, RowCallbacks, RowLayoutMap, RowPeers};
 use crate::ui::scrollbar::{list_vertical_scrollbar, move_scrollbar_drag, ScrollbarDragCell};
 use crate::ui::transcript::pointer::{self, RowBounds};
 use crate::ui::transcript::unseen_jump::render_unseen_jump;
@@ -53,7 +54,8 @@ pub struct TranscriptView {
     list_state: ListState,
     row_layouts: RowLayoutMap,
     row_bounds: RowBounds,
-    member_realnames: HashMap<String, String>,
+    /// What the rows read by nick, and whether peer photos show.
+    peers: RowPeers,
     self_nick: String,
     /// The network's CHANTYPES, which decide what a channel name in a line is.
     chantypes: String,
@@ -86,7 +88,7 @@ impl TranscriptView {
             list_state: ListState::new(0, ListAlignment::Bottom, px(120.)).measure_all(),
             row_layouts: Rc::new(RefCell::new(Default::default())),
             row_bounds: Rc::new(RefCell::new(Default::default())),
-            member_realnames: HashMap::new(),
+            peers: RowPeers::default(),
             self_nick: String::new(),
             chantypes: String::new(),
             composer_focus,
@@ -105,21 +107,20 @@ impl TranscriptView {
     }
 
     /// Shows a conversation's stored lines with a fresh selection and scroll. The
-    /// `joins` setting folds or hides its membership lines. `chantypes` is the
-    /// network's CHANTYPES, for the channel names in its lines. A DM whose peer is
-    /// typing gets the typing dots after its last line.
+    /// `joins` setting folds or hides its membership lines. The network gives the
+    /// local nick, its CHANTYPES for the channel names in its lines, and the nicks'
+    /// facts. A DM whose peer is typing gets the typing dots after its last line.
     pub fn set_conversation(
         &mut self,
         conv: &Conversation,
-        self_nick: &str,
-        chantypes: &str,
+        network: &Network,
         joins: MembershipNoise,
     ) {
         self.model
             .set_conversation(&membership_view(&conv.messages, joins));
-        self.member_realnames = member_realnames(conv);
-        self.self_nick = self_nick.to_string();
-        self.chantypes = chantypes.to_string();
+        self.peers.facts = row_facts(conv, network);
+        self.self_nick = network.nick.clone();
+        self.chantypes = network.chantypes.clone();
         self.typing_peer = (!conv.is_channel() && conv.typing).then(|| conv.name.clone());
         self.model.clear_selection();
         self.find_row = None;
@@ -127,6 +128,12 @@ impl TranscriptView {
         self.first_unseen = None;
         self.list_state.reset(self.list_len());
         self.row_layouts.borrow_mut().clear();
+    }
+
+    /// The `avatars` preference. Off, the rows show initials. The rows are drawn
+    /// again on the next frame, so a change shows at once.
+    pub fn set_avatars(&mut self, on: bool) {
+        self.peers.avatars = on;
     }
 
     pub fn rows(&self) -> &[Row] {
@@ -137,7 +144,7 @@ impl TranscriptView {
     /// and has no typing dots.
     pub fn set_status(&mut self, rows: Vec<Row>) {
         self.model.set_rows(rows);
-        self.member_realnames.clear();
+        self.peers.facts.clear();
         self.typing_peer = None;
         self.model.clear_selection();
         self.hovered_link = None;
@@ -532,7 +539,7 @@ impl Render for TranscriptView {
         let drag = self.scrollbar_drag.clone();
         let row_bounds = self.row_bounds.clone();
         let layouts = self.row_layouts.clone();
-        let member_realnames = self.member_realnames.clone();
+        let peers = self.peers.clone();
         let list_state = self.list_state.clone();
         let focus = self.composer_focus.clone();
         let on_nick: Handler<String> = {
@@ -591,6 +598,7 @@ impl Render for TranscriptView {
                                             &peer,
                                             continues,
                                             view.typing_phase,
+                                            &peers,
                                             &app_style,
                                         ))
                                         .into_any_element()
@@ -635,7 +643,7 @@ impl Render for TranscriptView {
                                 ix,
                                 &row,
                                 &app_style,
-                                &member_realnames,
+                                &peers,
                                 selection,
                                 hover,
                                 layouts.clone(),
@@ -683,17 +691,18 @@ fn link_click(row: &Row, range: &Range<usize>, chantypes: &str) -> Option<LinkCl
         .map(|span| LinkClick::Channel(span.name))
 }
 
-/// Real names keyed by nick, plus the DM peer's own name.
-pub fn member_realnames(conv: &Conversation) -> HashMap<String, String> {
-    let mut map = HashMap::new();
-    for m in &conv.members {
-        map.insert(m.nick.clone(), m.realname.clone());
-    }
+/// The facts the transcript reads by nick: the network's, plus the DM peer's real
+/// name when the conversation has one.
+pub fn row_facts(conv: &Conversation, network: &Network) -> HashMap<String, NickFacts> {
+    let mut facts = nick_facts(network);
     if let Some(real) = &conv.peer_realname {
-        if let Some(name) = conv.name.strip_prefix('#').or(Some(conv.name.as_str())) {
-            map.entry(name.to_string()).or_insert_with(|| real.clone());
+        let keys = [conv.name.strip_prefix('#').unwrap_or(&conv.name), conv.name.as_str()];
+        for key in keys {
+            let entry = facts.entry(key.to_string()).or_default();
+            if entry.realname.is_empty() {
+                entry.realname.clone_from(real);
+            }
         }
-        map.entry(conv.name.clone()).or_insert_with(|| real.clone());
     }
-    map
+    facts
 }

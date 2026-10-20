@@ -4,6 +4,7 @@
       "id": "omarchy",
       "display_name": "irc.example · fred",
       "icon_color": 1,
+      "icon": "qrc:/demo/omarchy-icon.png",
       "nick": "fred",
       "chantypes": "#",
       "status": [
@@ -39,35 +40,43 @@
               "prefix": "~",
               "realname": "Fred Machado",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "building Omairc",
+              "avatar": "https://omairc.app/omairc128.png"
             },
             {
               "nick": "anna",
               "prefix": "&",
               "realname": "Anna Vale",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "writing docs",
+              "avatar": "qrc:/demo/anna-avatar.png"
             },
             {
               "nick": "dax",
               "prefix": "@",
               "realname": "Packet Bot",
               "presence": "online",
-              "bot": true
+              "bot": true,
+              "status": "on #desktop"
             },
             {
               "nick": "mira",
               "prefix": "@+",
               "realname": "Mira Chen",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "making tea",
+              "avatar": "qrc:/demo/mira-avatar.png"
             },
             {
               "nick": "kai",
               "prefix": "%",
               "realname": "",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "avatar": "qrc:/demo/kai-avatar.png"
             },
             {
               "nick": "teo",
@@ -116,7 +125,8 @@
               "prefix": "",
               "realname": "",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "new here"
             }
           ],
           "messages": [
@@ -245,35 +255,43 @@
               "prefix": "",
               "realname": "Anna Vale",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "writing docs",
+              "avatar": "qrc:/demo/anna-avatar.png"
             },
             {
               "nick": "dax",
               "prefix": "",
               "realname": "Packet Bot",
               "presence": "online",
-              "bot": true
+              "bot": true,
+              "status": "on #desktop"
             },
             {
               "nick": "fred",
               "prefix": "",
               "realname": "Fred Machado",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "building Omairc",
+              "avatar": "https://omairc.app/omairc128.png"
             },
             {
               "nick": "kai",
               "prefix": "",
               "realname": "",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "avatar": "qrc:/demo/kai-avatar.png"
             },
             {
               "nick": "mira",
               "prefix": "",
               "realname": "Mira Chen",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "making tea",
+              "avatar": "qrc:/demo/mira-avatar.png"
             },
             {
               "nick": "nora",
@@ -287,7 +305,8 @@
               "prefix": "",
               "realname": "",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "new here"
             },
             {
               "nick": "teo",
@@ -333,28 +352,34 @@
               "prefix": "",
               "realname": "Anna Vale",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "writing docs",
+              "avatar": "qrc:/demo/anna-avatar.png"
             },
             {
               "nick": "dax",
               "prefix": "",
               "realname": "Packet Bot",
               "presence": "online",
-              "bot": true
+              "bot": true,
+              "status": "on #desktop"
             },
             {
               "nick": "fred",
               "prefix": "",
               "realname": "Fred Machado",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "building Omairc",
+              "avatar": "https://omairc.app/omairc128.png"
             },
             {
               "nick": "kai",
               "prefix": "",
               "realname": "",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "avatar": "qrc:/demo/kai-avatar.png"
             },
             {
               "nick": "lena",
@@ -368,7 +393,9 @@
               "prefix": "",
               "realname": "Mira Chen",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "making tea",
+              "avatar": "qrc:/demo/mira-avatar.png"
             },
             {
               "nick": "nora",
@@ -389,7 +416,8 @@
               "prefix": "",
               "realname": "",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "new here"
             },
             {
               "nick": "teo",
@@ -496,35 +524,43 @@
               "prefix": "",
               "realname": "Anna Vale",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "writing docs",
+              "avatar": "qrc:/demo/anna-avatar.png"
             },
             {
               "nick": "dax",
               "prefix": "",
               "realname": "Packet Bot",
               "presence": "online",
-              "bot": true
+              "bot": true,
+              "status": "on #desktop"
             },
             {
               "nick": "fred",
               "prefix": "",
               "realname": "Fred Machado",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "building Omairc",
+              "avatar": "https://omairc.app/omairc128.png"
             },
             {
               "nick": "mira",
               "prefix": "",
               "realname": "Mira Chen",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "making tea",
+              "avatar": "qrc:/demo/mira-avatar.png"
             },
             {
               "nick": "sol",
               "prefix": "",
               "realname": "",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "new here"
             }
           ],
           "messages": [
@@ -621,14 +657,17 @@
               "prefix": "",
               "realname": "",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "watching CI"
             },
             {
               "nick": "oak",
               "prefix": "",
               "realname": "",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "building Omairc",
+              "avatar": "https://omairc.app/omairc128.png"
             },
             {
               "nick": "pip",
@@ -642,7 +681,8 @@
               "prefix": "",
               "realname": "",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "on #lab"
             }
           ],
           "messages": [
@@ -679,14 +719,17 @@
               "prefix": "",
               "realname": "",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "watching CI"
             },
             {
               "nick": "oak",
               "prefix": "",
               "realname": "",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "building Omairc",
+              "avatar": "https://omairc.app/omairc128.png"
             },
             {
               "nick": "pip",
@@ -707,7 +750,8 @@
               "prefix": "",
               "realname": "",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "on #lab"
             }
           ],
           "messages": [
@@ -738,21 +782,25 @@
               "prefix": "",
               "realname": "",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "watching CI"
             },
             {
               "nick": "oak",
               "prefix": "",
               "realname": "",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "building Omairc",
+              "avatar": "https://omairc.app/omairc128.png"
             },
             {
               "nick": "rio",
               "prefix": "",
               "realname": "",
               "presence": "online",
-              "bot": false
+              "bot": false,
+              "status": "on #lab"
             }
           ],
           "messages": [

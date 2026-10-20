@@ -58,6 +58,8 @@ mod tests {
             realname: String::new(),
             presence: "online".to_string(),
             bot: false,
+            status: None,
+            avatar: None,
         }
     }
 

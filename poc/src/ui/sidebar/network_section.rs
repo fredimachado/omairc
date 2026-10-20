@@ -1,6 +1,8 @@
 use gpui::{div, prelude::*, MouseButton};
 
+use crate::model::presence::bundled_path;
 use crate::model::{sidebar::network_alert, Color, Network, Style};
+use crate::ui::widgets::avatar::photo_layer;
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
@@ -8,7 +10,9 @@ use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 /// collapse chevron, the icon, the name with an unread dot, and the status.
 /// The header itself is inert. `on_toggle` receives the network id when the
 /// chevron is clicked; `on_open` receives it when the icon or name is clicked,
-/// which opens that network's Status.
+/// which opens that network's Status. The icon is the network's own image when
+/// it has one, and the initial otherwise. Qt shows it whatever the `avatars`
+/// preference says.
 pub fn network_header(
     network: &Network,
     focused: bool,
@@ -34,6 +38,7 @@ pub fn network_header(
         .next()
         .map(|c| c.to_uppercase().to_string())
         .unwrap_or_else(|| "?".to_string());
+    let icon_photo = network.icon.as_deref().and_then(bundled_path);
     let id = network.id.clone();
     let open_id = id.clone();
 
@@ -109,6 +114,9 @@ pub fn network_header(
                 .text_color(to_gpui(Color::rgb(1., 1., 1.)))
                 .font_family(FONT_FAMILY)
                 .child(initial)
+                .when_some(icon_photo, |this, path| {
+                    this.child(photo_layer(path).rounded(scaled_px(style, 8.)))
+                })
                 .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                     on_open(open_id.clone(), window, cx);
                 })

@@ -10,7 +10,8 @@ use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 /// only notified by the scrollbar. The list is focusable with its own key
 /// context (`MemberList`); `cursor` is the current row, drawn raised only while
 /// the list has focus. The `ONLINE - N` heading is clickable and calls
-/// `on_heading`, which opens the Nick sheet once step 7 wires it.
+/// `on_heading`, which opens the Nick sheet. `avatars` is the `avatars`
+/// preference: off, every row shows its initials.
 pub fn render_members<V: 'static>(
     conv: &Conversation,
     style: &Style,
@@ -22,6 +23,7 @@ pub fn render_members<V: 'static>(
     on_heading: Handler<()>,
     focus: &FocusHandle,
     cursor: Option<usize>,
+    avatars: bool,
 ) -> impl IntoElement {
     let people = conv.people_count();
     let heading_color = to_gpui(style.muted_color());
@@ -75,6 +77,7 @@ pub fn render_members<V: 'static>(
                                 self_nick,
                                 on_nick.clone(),
                                 cursor == Some(ix),
+                                avatars,
                             )
                         })),
                 )

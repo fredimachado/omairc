@@ -9,10 +9,13 @@ use gpui::{
     prelude::*, px, size,
 };
 use crate::model::mention::{is_mention_row, mention_wash};
+use crate::model::presence::{photo_for, NickFacts};
 use crate::model::{mix_colors, Row, RowKind, Style};
 
 use crate::ui::format_ui::{gpui_text_style, irc_runs_to_gpui, link_underline_run};
 use crate::ui::status_row::render_status_row;
+use crate::ui::widgets::avatar::avatar_disc;
+use crate::ui::widgets::bot_mark::bot_mark;
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
@@ -21,6 +24,14 @@ use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 pub struct RowCallbacks {
     pub on_nick: Handler<String>,
     pub self_nick: String,
+}
+
+/// What a row reads about the nicks it names: each nick's facts on the network,
+/// and whether peer photos show (the `avatars` preference).
+#[derive(Clone, Default)]
+pub struct RowPeers {
+    pub facts: HashMap<String, NickFacts>,
+    pub avatars: bool,
 }
 
 /// Makes an author name or avatar open that nick's DM. The click stops here so
@@ -59,7 +70,7 @@ pub fn render_transcript_row(
     row_ix: usize,
     row: &Row,
     style: &Style,
-    member_realnames: &HashMap<String, String>,
+    peers: &RowPeers,
     selection_range: Option<Range<usize>>,
     hovered_link: Option<Range<usize>>,
     layouts: RowLayoutMap,
@@ -121,7 +132,7 @@ pub fn render_transcript_row(
                 row_ix,
                 row,
                 style,
-                member_realnames,
+                peers,
                 selection_range,
                 hovered_link,
                 layouts,
@@ -209,7 +220,7 @@ fn render_message_row(
     row_ix: usize,
     row: &Row,
     style: &Style,
-    member_realnames: &HashMap<String, String>,
+    peers: &RowPeers,
     selection_range: Option<Range<usize>>,
     hovered_link: Option<Range<usize>>,
     layouts: RowLayoutMap,
@@ -220,14 +231,16 @@ fn render_message_row(
     let nick_target = (!row.continues && !author.is_empty() && author != callbacks.self_nick)
         .then(|| author.to_string());
     let nick_color = to_gpui(style.nick_color(author));
-    let realname = member_realnames.get(author).map(String::as_str).unwrap_or("");
+    let facts = peers.facts.get(author);
+    let realname = facts.map_or("", |facts| facts.realname.as_str());
     let realname_suffix = if realname.is_empty() {
         String::new()
     } else {
         format!(" · {realname}")
     };
+    let bot = facts.is_some_and(|facts| facts.bot);
+    let photo = photo_for(facts.and_then(|facts| facts.avatar.as_deref()), peers.avatars);
 
-    let avatar_size = scaled_px(style, 34.);
     let left_pad = scaled_px(style, 24.);
     let top_pad = scaled_px(style, 9.);
     let body_left = scaled_px(style, 70.);
@@ -274,7 +287,7 @@ fn render_message_row(
         // Qt draws the avatar only on the first line of a group.
         .when(!row.continues, |this| {
             this.child(
-                avatar_disc(style, author, avatar_size)
+                avatar_disc(style, author, 34., 13., photo)
                     .absolute()
                     .left(left_pad)
                     .top(top_pad)
@@ -326,6 +339,13 @@ fn render_message_row(
                                                         .font_family(FONT_FAMILY)
                                                         .child(realname_suffix),
                                                 )
+                                            })
+                                            .when(bot, |this| {
+                                                this.child(
+                                                    div()
+                                                        .ml(scaled_px(style, 4.))
+                                                        .child(bot_mark(style)),
+                                                )
                                             }),
                                     )
                                     .child(
@@ -363,24 +383,6 @@ fn render_message_row(
                         ),
                 ),
         )
-}
-
-/// A nick's round avatar: its palette fill and initials. The caller positions it.
-pub fn avatar_disc(style: &Style, author: &str, size: Pixels) -> Div {
-    let fills = style.nick_avatar_fills();
-    let avatar_fill = to_gpui(fills[style.nick_palette_index(author)]);
-    div()
-        .size(size)
-        .rounded_full()
-        .bg(avatar_fill)
-        .flex()
-        .items_center()
-        .justify_center()
-        .text_size(scaled_px(style, 13.))
-        .font_weight(gpui::FontWeight::BOLD)
-        .text_color(to_gpui(style.nick_color(author)))
-        .font_family(FONT_FAMILY)
-        .child(style.initials(author))
 }
 
 fn selection_quads(

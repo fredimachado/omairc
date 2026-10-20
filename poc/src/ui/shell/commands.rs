@@ -98,13 +98,12 @@ impl Shell {
     /// Shows the selected conversation's lines and puts the list at `place`.
     fn show_selected_at(&mut self, place: Option<SavedPlace>, cx: &mut Context<Self>) {
         let conv = self.current_conversation();
-        let self_nick = self.current_network().nick.clone();
-        let chantypes = self.current_network().chantypes.clone();
+        let network = self.current_network();
         let joins = self.preferences.joins;
         // With no saved place the conversation opens at its mark, when the pref is on.
         let open_at_unread = place.is_none() && self.preferences.unread;
         self.transcript.update(cx, |t, _| {
-            t.set_conversation(conv, &self_nick, &chantypes, joins);
+            t.set_conversation(conv, network, joins);
             t.restore_scroll_place(place.as_ref(), open_at_unread);
         });
         self.sync_send_limit(cx);
