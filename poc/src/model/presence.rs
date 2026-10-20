@@ -94,6 +94,7 @@ mod tests {
             last_error: None,
             chantypes: "#".to_string(),
             icon: None,
+            directory: Vec::new(),
             conversations,
         }
     }

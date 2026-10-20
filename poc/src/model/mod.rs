@@ -2,6 +2,7 @@
 //! jump palette, and virtualized transcript selection.
 
 pub mod byte_budget;
+pub mod channel_list;
 pub mod color;
 pub mod cursor;
 pub mod format;

@@ -33,7 +33,21 @@ pub struct Network {
     /// or an https URL. The sidebar draws it in place of the initial.
     #[serde(default)]
     pub icon: Option<String>,
+    /// Channels the server lists for `/list` that the user is not in (Qt
+    /// `SeedNetwork::directory`).
+    #[serde(default)]
+    pub directory: Vec<DirectoryEntry>,
     pub conversations: Vec<Conversation>,
+}
+
+/// One channel a network lists for `/list` without the user in it.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct DirectoryEntry {
+    pub name: String,
+    pub users: usize,
+    /// The topic as the server sends it, with its mIRC codes.
+    #[serde(default)]
+    pub topic: String,
 }
 
 impl Network {

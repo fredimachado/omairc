@@ -427,8 +427,11 @@ impl Shell {
         if self.enter_slash_verb(window, cx) {
             return;
         }
-        self.send_message(cx);
-        self.focus_composer(window, cx);
+        self.send_message(window, cx);
+        // A command that opened a sheet (`/list`) keeps the focus.
+        if self.modal.is_none() {
+            self.focus_composer(window, cx);
+        }
     }
 
     /// Ctrl+Shift+M: show or hide the member panel (channels only). Hiding it

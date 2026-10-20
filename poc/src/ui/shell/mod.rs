@@ -18,6 +18,7 @@ use gpui::{
     MouseMoveEvent, MouseUpEvent, Render, ScrollHandle, Subscription, Window,
 };
 
+use crate::model::channel_list::ChannelListCache;
 use crate::model::composer::{ComposerState, DraftKey};
 use crate::model::find::Find;
 use crate::model::format::{format_irc, text_hits, TextHit};
@@ -78,6 +79,8 @@ pub struct Shell {
     pub find: Option<Find>,
     /// The saved preferences `/pref` reads and writes, loaded once at startup.
     pub preferences: Preferences,
+    /// The `/list` answers already shown, per network and mask, so a repeat reuses them.
+    pub channel_lists: ChannelListCache,
     /// Where each conversation's transcript was left, so returning opens there.
     pub scroll_places: ScrollPlaces,
     /// Whether the window is the active one. While it is not, a line that arrives
@@ -153,6 +156,7 @@ impl Shell {
             slash: SlashSession::new(),
             find: None,
             preferences: Preferences::load(),
+            channel_lists: ChannelListCache::default(),
             scroll_places: ScrollPlaces::default(),
             window_active: true,
             activation_watched: false,
@@ -424,16 +428,19 @@ fn collapse_handler(entity: Entity<Shell>) -> Handler<String> {
 }
 
 /// SEND: send the draft, then focus the composer. In find mode SEND moves to the
-/// next match instead, as Qt's `sendMessage` does.
+/// next match instead, as Qt's `sendMessage` does. A command that opens a sheet
+/// (`/list`) keeps the focus there.
 fn send_handler(entity: Entity<Shell>) -> Handler<()> {
     Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
         entity.update(cx, |shell, cx| {
             if shell.find.is_some() {
                 shell.begin_or_advance_find(window, cx);
             } else {
-                shell.send_message(cx);
+                shell.send_message(window, cx);
             }
-            shell.focus_composer(window, cx);
+            if shell.modal.is_none() {
+                shell.focus_composer(window, cx);
+            }
         });
     })
 }

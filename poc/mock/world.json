@@ -29,6 +29,10 @@
         { "time": "09:58:00", "label": "266", "text": "Current global users 12, max 42", "source": "server", "severity": "info" },
         { "time": "09:58:00", "label": "005", "text": "CHANTYPES=# PREFIX=(qaohv)~&@%+ MONITOR=100 draft/ICON=qrc:/demo/omarchy-icon.png are supported by this server", "source": "server", "severity": "info" }
       ],
+      "directory": [
+        { "name": "#linux", "users": 42, "topic": "\u0002Kernel\u0002 discussion and \u000304distro\u0003 help." },
+        { "name": "#random", "users": 4, "topic": "Off-topic chatter." }
+      ],
       "conversations": [
         {
           "name": "#omarchy",
@@ -645,6 +649,9 @@
         { "time": "09:58:00", "label": "266", "text": "Current global users 12, max 42", "source": "server", "severity": "info" },
         { "time": "09:58:00", "label": "005", "text": "CHANTYPES=# PREFIX=(qaohv)~&@%+ MONITOR=100 are supported by this server", "source": "server", "severity": "info" },
         { "time": "09:58:00", "label": "INVITE", "text": "rio invited you to #debian", "source": "server", "severity": "info" }
+      ],
+      "directory": [
+        { "name": "#debian", "users": 28, "topic": "Debian GNU/Linux." }
       ],
       "conversations": [
         {

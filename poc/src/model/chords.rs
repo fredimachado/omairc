@@ -17,6 +17,8 @@ pub enum Sheet {
     Nick,
     /// Asks before a click on a channel name joins a channel the network lacks.
     ChannelOpen,
+    /// The `/list` channel directory. Enter or a click joins a channel, and Escape closes it.
+    ChannelList,
 }
 
 /// What the chord decision can see. Built by the shell from its state.
@@ -202,7 +204,7 @@ mod tests {
 
     /// Column order for the tables below: no sheet, then each sheet kind, then
     /// Status open with no sheet.
-    const COLUMNS: [(Option<Sheet>, bool); 9] = [
+    const COLUMNS: [(Option<Sheet>, bool); 10] = [
         (None, false),
         (Some(Sheet::Shortcuts), false),
         (Some(Sheet::About), false),
@@ -211,20 +213,24 @@ mod tests {
         (Some(Sheet::Inbox), false),
         (Some(Sheet::Nick), false),
         (Some(Sheet::ChannelOpen), false),
+        (Some(Sheet::ChannelList), false),
         (None, true),
     ];
 
     /// Live with no sheet, on a conversation or on Status.
-    const NO_SHEET: [bool; 9] = [true, false, false, false, false, false, false, false, true];
+    const NO_SHEET: [bool; 10] = [
+        true, false, false, false, false, false, false, false, false, true,
+    ];
     /// Live with no sheet, but only on a conversation (Status hides it).
-    const CONVERSATION_ONLY: [bool; 9] =
-        [true, false, false, false, false, false, false, false, false];
+    const CONVERSATION_ONLY: [bool; 10] = [
+        true, false, false, false, false, false, false, false, false, false,
+    ];
     /// Never live in these contexts.
-    const NOWHERE: [bool; 9] = [false; 9];
+    const NOWHERE: [bool; 10] = [false; 10];
 
     /// Checks one chord against every column, with `setup` applied to the base
     /// context first.
-    fn check(chord: Chord, setup: fn(&mut ChordContext), expected: [bool; 9]) {
+    fn check(chord: Chord, setup: fn(&mut ChordContext), expected: [bool; 10]) {
         for (column, (sheet, status_open)) in COLUMNS.iter().enumerate() {
             let mut ctx = ChordContext {
                 sheet: *sheet,
@@ -264,7 +270,8 @@ mod tests {
         ctx.find_active = true;
     }
 
-    // Columns: none, Shortcuts, About, Jump, Link, Inbox, Nick, ChannelOpen, Status open.
+    // Columns: none, Shortcuts, About, Jump, Link, Inbox, Nick, ChannelOpen, ChannelList,
+    // Status open.
 
     #[test]
     fn no_overlay_chords_are_live_without_a_sheet_and_on_status() {
@@ -297,17 +304,17 @@ mod tests {
         check(
             Chord::Jump,
             nothing,
-            [true, false, false, true, false, false, false, false, true],
+            [true, false, false, true, false, false, false, false, false, true],
         );
         check(
             Chord::Link,
             nothing,
-            [true, false, false, false, true, false, false, false, true],
+            [true, false, false, false, true, false, false, false, false, true],
         );
         check(
             Chord::Inbox,
             nothing,
-            [true, false, false, false, false, true, false, false, true],
+            [true, false, false, false, false, true, false, false, false, true],
         );
     }
 
@@ -316,7 +323,7 @@ mod tests {
         check(
             Chord::Shortcuts,
             nothing,
-            [true, true, false, false, false, false, false, false, true],
+            [true, true, false, false, false, false, false, false, false, true],
         );
     }
 
@@ -356,7 +363,7 @@ mod tests {
 
     #[test]
     fn escape_leaves_find_mode_even_with_no_sheet_and_no_status() {
-        check(Chord::Escape, finding, [true; 9]);
+        check(Chord::Escape, finding, [true; 10]);
     }
 
     #[test]
@@ -403,7 +410,7 @@ mod tests {
         check(
             Chord::Escape,
             nothing,
-            [false, true, true, true, true, true, true, true, true],
+            [false, true, true, true, true, true, true, true, true, true],
         );
     }
 
@@ -502,11 +509,11 @@ mod tests {
         }
     }
 
-    #[test]
-    fn the_channel_open_sheet_blocks_every_chord_but_escape() {
-        // Enter confirms and Escape cancels; the other keys wait for the sheet.
+    /// Asserts that `sheet` holds the keyboard: every chord in the list waits for
+    /// it, and only Escape gets through.
+    fn blocks_every_chord_but_escape(sheet: Sheet) {
         let ctx = ChordContext {
-            sheet: Some(Sheet::ChannelOpen),
+            sheet: Some(sheet),
             channel: true,
             members_focused: true,
             transcript_selection: true,
@@ -537,10 +544,22 @@ mod tests {
         ] {
             assert!(
                 !chord_enabled(chord, &ctx),
-                "{chord:?} must wait for the sheet"
+                "{chord:?} must wait for {sheet:?}"
             );
         }
         assert!(chord_enabled(Chord::Escape, &ctx));
+    }
+
+    #[test]
+    fn the_channel_open_sheet_blocks_every_chord_but_escape() {
+        // Enter confirms and Escape cancels; the other keys wait for the sheet.
+        blocks_every_chord_but_escape(Sheet::ChannelOpen);
+    }
+
+    #[test]
+    fn the_channel_list_sheet_blocks_every_chord_but_escape() {
+        // Enter joins and Escape closes; the other keys wait for the sheet.
+        blocks_every_chord_but_escape(Sheet::ChannelList);
     }
 
     #[test]

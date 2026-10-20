@@ -14,8 +14,8 @@ const BENCH_LOG: &str = "results/gpui-bench-stderr.txt";
 
 use clap::Parser;
 use gpui::{
-    px, size, App, Application, Bounds, Entity, Focusable, WindowBounds, WindowOptions,
-    prelude::*,
+    px, size, AnyWindowHandle, App, Application, Bounds, Entity, Focusable, WindowBounds,
+    WindowOptions, prelude::*,
 };
 use crate::model::{Style, Theme, ThemeWatcher};
 use ui::shell::{BenchState, Shell};
@@ -161,11 +161,11 @@ fn main() {
                     }),
                     ..Default::default()
                 },
-                |_, cx| {
+                |window, cx| {
                     let shell = cx.new(|cx| Shell::new(cx, lines, bench));
                     let transcript = shell.read(cx).transcript.clone();
                     if bench {
-                        run_bench(shell.clone(), cx);
+                        run_bench(shell.clone(), window.window_handle(), cx);
                     }
                     start_typing_pulse(shell.clone(), cx);
                     start_caret_blink(shell.clone(), cx);
@@ -290,7 +290,7 @@ fn bench_log(line: &str) {
     })();
 }
 
-fn run_bench(shell: Entity<Shell>, cx: &mut App) {
+fn run_bench(shell: Entity<Shell>, window: AnyWindowHandle, cx: &mut App) {
     let _ = std::fs::create_dir_all("results");
     let _ = std::fs::write(BENCH_LOG, "");
     let shell_weak = shell.downgrade();
@@ -375,11 +375,13 @@ fn run_bench(shell: Entity<Shell>, cx: &mut App) {
                 });
             })
             .ok();
-        shell_weak
-            .update(cx, |shell, cx| {
-                shell.send_message(cx);
-            })
-            .ok();
+        // A command needs the window, as `/list` opens a sheet that takes focus.
+        cx.update_window(window, |_, window, cx| {
+            shell_weak
+                .update(cx, |shell, cx| shell.send_message(window, cx))
+                .ok();
+        })
+        .ok();
 
         cx.background_executor()
             .timer(Duration::from_millis(200))

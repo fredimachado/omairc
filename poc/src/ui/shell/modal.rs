@@ -5,6 +5,7 @@
 
 use gpui::{prelude::*, AnyElement, App, Context, Entity, Subscription, Window};
 
+use crate::model::channel_list::ListRow;
 use crate::model::chords::{Chord, Sheet};
 use crate::model::inbox::find_channel;
 use crate::model::jump::{JumpKind, JumpTarget};
@@ -12,6 +13,7 @@ use crate::model::links::{LinkKind, LinkTarget};
 use crate::model::nick_pick::NickTarget;
 use crate::model::sidebar::set_collapsed;
 use crate::ui::sheets::about::{AboutEvent, AboutSheet};
+use crate::ui::sheets::channel_list::ChannelListSource;
 use crate::ui::sheets::channel_open::{ChannelOpenEvent, ChannelOpenSheet};
 use crate::ui::sheets::filter_sheet::{render_filter_sheet, FilterSheet, FilterSource, SheetEvent};
 use crate::ui::sheets::inbox::{render_inbox_sheet, InboxEvent, InboxSheet};
@@ -34,6 +36,7 @@ pub enum ActiveModal {
     Shortcuts(Entity<ShortcutsSheet>, Vec<Subscription>),
     About(Entity<AboutSheet>, Vec<Subscription>),
     ChannelOpen(Entity<ChannelOpenSheet>, Vec<Subscription>),
+    ChannelList(Entity<FilterSheet<ChannelListSource>>, Vec<Subscription>),
 }
 
 impl ActiveModal {
@@ -46,6 +49,7 @@ impl ActiveModal {
             Self::Shortcuts(..) => Sheet::Shortcuts,
             Self::About(..) => Sheet::About,
             Self::ChannelOpen(..) => Sheet::ChannelOpen,
+            Self::ChannelList(..) => Sheet::ChannelList,
         }
     }
 }
@@ -153,7 +157,62 @@ impl Shell {
             ActiveModal::Shortcuts(sheet, _) => sheet.clone().into_any_element(),
             ActiveModal::About(sheet, _) => sheet.clone().into_any_element(),
             ActiveModal::ChannelOpen(sheet, _) => sheet.clone().into_any_element(),
+            ActiveModal::ChannelList(sheet, _) => render_filter_sheet(sheet, cx),
         })
+    }
+
+    /// GATE(Phase 9): whether the Connect sheet holds the keyboard. Connect is a
+    /// window-level slot that Phase 9 adds, and `/list` is a no-op while it is open.
+    /// Connect does not exist yet, so nothing can be open here and this is false.
+    pub fn connect_open(&self) -> bool {
+        false
+    }
+
+    /// `/list [mask]` for `network_id` (Qt `openChannelListSheet`): the channel list
+    /// for the mask, from the cache when this mask was asked before. A channel the
+    /// network has is focused, and any other is joined, on Enter or a click. Escape
+    /// closes it and returns focus to the composer.
+    pub fn present_channel_list(
+        &mut self,
+        network_id: String,
+        mask: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let listing = self.channel_lists.listing(&self.world, &network_id, mask).to_vec();
+        let sheet = cx.new(|cx| FilterSheet::new(ChannelListSource { listing }, cx));
+        let subscriptions = vec![
+            track(cx, &sheet),
+            cx.subscribe_in(
+                &sheet,
+                window,
+                move |shell: &mut Shell, _, event: &SheetEvent<ListRow>, window, cx| match event {
+                    SheetEvent::Activated(row) => {
+                        let name = row.name.clone();
+                        shell.close_modal(window, cx);
+                        shell.join_listed_channel(&network_id, &name, cx);
+                    }
+                    SheetEvent::Dismissed => shell.close_modal(window, cx),
+                    SheetEvent::Highlighted(_) => {}
+                },
+            ),
+        ];
+        window.focus(&sheet.read(cx).filter_focus(cx));
+        self.modal = Some(ActiveModal::ChannelList(sheet, subscriptions));
+        cx.notify();
+    }
+
+    /// Enter or a click on a list row. A channel the network already has is selected,
+    /// as `open_channel_name` does. Any other channel is joined through `join_invite`.
+    fn join_listed_channel(&mut self, network_id: &str, name: &str, cx: &mut Context<Self>) {
+        match find_channel(&self.world, network_id, name) {
+            Some(target) => {
+                set_collapsed(&self.world, &mut self.sidebar, network_id, false);
+                self.select(target, cx);
+                cx.notify();
+            }
+            None => self.join_invite(network_id, name, cx),
+        }
     }
 
     /// A click on a channel name, or a Link sheet channel row (Qt

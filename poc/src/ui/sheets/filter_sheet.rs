@@ -3,6 +3,8 @@
 //! `SheetEvent`s. The shell subscribes and applies them. Rendering is a free
 //! function because the sheet's rows need the sheet's own handle for clicks.
 
+use std::ops::Range;
+
 use gpui::{
     actions, div, prelude::*, px, AnyElement, App, Context, Entity, EventEmitter, FocusHandle,
     FontWeight, HighlightStyle, Hsla, KeyBinding, MouseButton, ScrollHandle, SharedString,
@@ -50,6 +52,14 @@ pub trait FilterSource: 'static {
     fn width(&self) -> f32;
     /// One row's height in logical pixels.
     fn row_height(&self) -> f32;
+    /// The list's height cap in logical pixels. Longer lists scroll.
+    fn list_cap(&self) -> f32 {
+        LIST_CAP
+    }
+    /// A muted line under the list, given the filter and how many rows it kept.
+    fn footer(&self, _query: &str, _visible: usize) -> Option<String> {
+        None
+    }
     fn render_row(&self, item: &Self::Item, selected: bool, style: &Style) -> AnyElement;
 }
 
@@ -151,8 +161,16 @@ pub fn render_filter_sheet<S: FilterSource>(sheet: &Entity<FilterSheet<S>>, cx: 
     state.scroll.scroll_to_item(selected);
 
     let row_h = app_style.scaled(state.source.row_height()) as f32;
-    let cap = app_style.scaled(LIST_CAP) as f32;
+    let cap = app_style.scaled(state.source.list_cap()) as f32;
     let list_h = px((items.len() as f32 * row_h).min(cap));
+    let footer = state.source.footer(&query, items.len()).map(|text| {
+        div()
+            .w_full()
+            .font_family(FONT_FAMILY)
+            .text_size(scaled_px(&app_style, 11.))
+            .text_color(to_gpui(app_style.muted_color()))
+            .child(text)
+    });
 
     let rows = items.iter().enumerate().map(|(ix, item)| {
         let entity = sheet.clone();
@@ -197,7 +215,8 @@ pub fn render_filter_sheet<S: FilterSource>(sheet: &Entity<FilterSheet<S>>, cx: 
                 .flex()
                 .flex_col()
                 .children(rows),
-        );
+        )
+        .when_some(footer, |card, footer| card.child(footer));
 
     let dismiss = sheet.clone();
     popup_frame(&app_style, card, move |_, cx| {
@@ -211,17 +230,31 @@ pub fn render_filter_sheet<S: FilterSource>(sheet: &Entity<FilterSheet<S>>, cx: 
 /// The text takes its size and colour from the parent, so the unmatched part
 /// keeps the row's own muted or ink colour.
 pub fn match_text(text: String, highlights: &[usize], ink: Hsla) -> StyledText {
-    let marked = char_ranges(&text, highlights).into_iter().map(|range| {
-        (
-            range,
-            HighlightStyle {
-                color: Some(ink),
-                font_weight: Some(FontWeight::BOLD),
-                ..Default::default()
-            },
-        )
-    });
+    let marked = match_highlights(&text, highlights, ink);
     StyledText::new(SharedString::from(text)).with_highlights(marked)
+}
+
+/// The bold, ink-coloured ranges of the matched characters in `text`, for
+/// `StyledText::with_highlights`. Combine them with other highlights through
+/// `gpui::combine_highlights`, since overlapping ranges are not merged here.
+pub fn match_highlights(
+    text: &str,
+    highlights: &[usize],
+    ink: Hsla,
+) -> Vec<(Range<usize>, HighlightStyle)> {
+    char_ranges(text, highlights)
+        .into_iter()
+        .map(|range| {
+            (
+                range,
+                HighlightStyle {
+                    color: Some(ink),
+                    font_weight: Some(FontWeight::BOLD),
+                    ..Default::default()
+                },
+            )
+        })
+        .collect()
 }
 
 /// One text row of a filter list (Jump and Link): 12px, radius 7, `hover`

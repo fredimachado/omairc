@@ -133,8 +133,10 @@ impl Shell {
 
     /// Enter or SEND. A line of plain text goes to the selected conversation, and
     /// a slash line runs its command. A refused line keeps the composer text. A
-    /// line that runs clears the composer and joins its history.
-    pub fn send_message(&mut self, cx: &mut Context<Self>) {
+    /// line that runs clears the composer and joins its history. `/list` opens a
+    /// sheet, which takes the keyboard from the composer, so callers check for one
+    /// before they refocus the composer.
+    pub fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Find mode holds a query in the field. Its callers move to the next match.
         if self.find.is_some() {
             return;
@@ -146,7 +148,7 @@ impl Shell {
         let command = parse(&text);
         let outcome = match command.rejection(self.surface()) {
             Some(rejection) => Err(rejection),
-            None => self.run_command(command, cx),
+            None => self.run_command(command, window, cx),
         };
         match outcome {
             Ok(()) => self.finish_command(&text, cx),
@@ -156,7 +158,12 @@ impl Shell {
 
     /// Runs a command that may run on this surface. An `Err` is a refusal found
     /// while running it, such as `/version` with a channel target.
-    fn run_command(&mut self, command: Command, cx: &mut Context<Self>) -> Result<(), Rejection> {
+    fn run_command(
+        &mut self,
+        command: Command,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<(), Rejection> {
         match command {
             // Blank input never reaches here, and an unknown word is rejected first.
             Command::Empty | Command::Unknown(_) => {}
@@ -169,7 +176,7 @@ impl Shell {
             Command::Help => self.reply_lines(help_text(), cx),
             Command::Pref(request) => self.run_pref(&request, cx),
             Command::Version(argument) => self.run_version(&argument, cx)?,
-            Command::List(mask) => self.open_channel_list(&mask),
+            Command::List(mask) => self.open_channel_list(&mask, window, cx),
         }
         Ok(())
     }
@@ -250,9 +257,19 @@ impl Shell {
         Ok(())
     }
 
-    /// `/list [mask]` opens the channel list sheet.
-    // TODO(Phase 8): the channel list sheet does not exist yet, so this does nothing.
-    pub fn open_channel_list(&mut self, _mask: &str) {}
+    /// `/list [mask]` (Qt `dispatchList`): opens the channel list for the network
+    /// the command was typed on, which is Status's network or the selected
+    /// conversation's. It does nothing while Connect is open.
+    pub fn open_channel_list(&mut self, mask: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if self.connect_open() {
+            return;
+        }
+        let network_id = self.surface_network();
+        if self.world.network(&network_id).is_none() {
+            return;
+        }
+        self.present_channel_list(network_id, mask, window, cx);
+    }
 
     /// A command ran: the composer clears, the line joins its history, and the
     /// network's last error clears, as Qt's `report` does on success.
