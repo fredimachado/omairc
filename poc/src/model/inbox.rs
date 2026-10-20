@@ -11,10 +11,14 @@ pub const INBOX_CAP: usize = 50;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InboxKind {
     Mention,
+    // Dormant: these arrival kinds have no live producer until arrivals are wired.
+    #[allow(dead_code)]
     Highlight,
+    #[allow(dead_code)]
     Direct,
     Invite,
     MonitorOnline,
+    #[allow(dead_code)]
     Kick,
 }
 
@@ -64,12 +68,10 @@ impl Inbox {
         self.items.len()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
-    }
-
     /// Adds a new item at the top. A repeated invite to the same channel, or a
     /// repeated online notice for the same nick, replaces the older row.
+    // Dormant: the append rule waits for the arrival chain (see Shell::ingest).
+    #[allow(dead_code)]
     pub fn push(&mut self, item: InboxItem) {
         let replaces = |old: &InboxItem| {
             old.network_id == item.network_id
@@ -327,7 +329,7 @@ mod tests {
         inbox.consume_conversation("oftc", "#lab", true);
         assert_eq!(inbox.len(), 1, "a channel selection leaves presence rows");
         inbox.consume_conversation("oftc", "Kai", false);
-        assert!(inbox.is_empty());
+        assert_eq!(inbox.len(), 0);
     }
 
     #[test]

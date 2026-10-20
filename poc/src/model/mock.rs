@@ -324,6 +324,7 @@ fn stamp_of(now: chrono::DateTime<chrono::FixedOffset>) -> (String, String) {
 /// channel name may sit straight after one of them.
 pub const PREFIX_RANK: &[char] = &['~', '&', '@', '%', '+'];
 
+#[cfg(test)]
 fn prefix_priority(prefix: &str) -> usize {
     prefix
         .chars()
@@ -332,6 +333,7 @@ fn prefix_priority(prefix: &str) -> usize {
         .unwrap_or(PREFIX_RANK.len())
 }
 
+#[cfg(test)]
 pub fn assert_members_sorted(members: &[Member]) {
     for window in members.windows(2) {
         let left = &window[0];

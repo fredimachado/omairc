@@ -143,7 +143,6 @@ fn main() {
         let theme = Theme::load(theme_path.as_deref()).expect("theme load");
         cx.set_global(OmaircStyleGlobal {
             style: Style::new(theme, scale),
-            theme_path: theme_path.clone(),
         });
 
         bind_input_keys(cx);

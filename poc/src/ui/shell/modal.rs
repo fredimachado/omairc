@@ -25,31 +25,54 @@ use crate::ui::shell::Shell;
 use crate::util::open_web_link;
 
 /// The open sheet and the subscriptions that keep it wired to the shell. The
-/// subscriptions are never read; they are held so that dropping the sheet
-/// unhooks them.
-#[allow(dead_code)]
+/// `_subscriptions` fields are never read; they are held so that dropping the
+/// sheet unhooks them.
 pub enum ActiveModal {
-    Jump(Entity<FilterSheet<JumpSource>>, Vec<Subscription>),
-    Link(Entity<FilterSheet<LinkSource>>, Vec<Subscription>),
-    Nick(Entity<FilterSheet<NickSource>>, Vec<Subscription>),
-    Inbox(Entity<InboxSheet>, Vec<Subscription>),
-    Shortcuts(Entity<ShortcutsSheet>, Vec<Subscription>),
-    About(Entity<AboutSheet>, Vec<Subscription>),
-    ChannelOpen(Entity<ChannelOpenSheet>, Vec<Subscription>),
-    ChannelList(Entity<FilterSheet<ChannelListSource>>, Vec<Subscription>),
+    Jump {
+        sheet: Entity<FilterSheet<JumpSource>>,
+        _subscriptions: Vec<Subscription>,
+    },
+    Link {
+        sheet: Entity<FilterSheet<LinkSource>>,
+        _subscriptions: Vec<Subscription>,
+    },
+    Nick {
+        sheet: Entity<FilterSheet<NickSource>>,
+        _subscriptions: Vec<Subscription>,
+    },
+    Inbox {
+        sheet: Entity<InboxSheet>,
+        _subscriptions: Vec<Subscription>,
+    },
+    Shortcuts {
+        sheet: Entity<ShortcutsSheet>,
+        _subscriptions: Vec<Subscription>,
+    },
+    About {
+        sheet: Entity<AboutSheet>,
+        _subscriptions: Vec<Subscription>,
+    },
+    ChannelOpen {
+        sheet: Entity<ChannelOpenSheet>,
+        _subscriptions: Vec<Subscription>,
+    },
+    ChannelList {
+        sheet: Entity<FilterSheet<ChannelListSource>>,
+        _subscriptions: Vec<Subscription>,
+    },
 }
 
 impl ActiveModal {
     pub fn sheet(&self) -> Sheet {
         match self {
-            Self::Jump(..) => Sheet::Jump,
-            Self::Link(..) => Sheet::Link,
-            Self::Nick(..) => Sheet::Nick,
-            Self::Inbox(..) => Sheet::Inbox,
-            Self::Shortcuts(..) => Sheet::Shortcuts,
-            Self::About(..) => Sheet::About,
-            Self::ChannelOpen(..) => Sheet::ChannelOpen,
-            Self::ChannelList(..) => Sheet::ChannelList,
+            Self::Jump { .. } => Sheet::Jump,
+            Self::Link { .. } => Sheet::Link,
+            Self::Nick { .. } => Sheet::Nick,
+            Self::Inbox { .. } => Sheet::Inbox,
+            Self::Shortcuts { .. } => Sheet::Shortcuts,
+            Self::About { .. } => Sheet::About,
+            Self::ChannelOpen { .. } => Sheet::ChannelOpen,
+            Self::ChannelList { .. } => Sheet::ChannelList,
         }
     }
 }
@@ -60,7 +83,7 @@ impl Shell {
         if !self.chord_live(Chord::Jump, window, cx) {
             return;
         }
-        if matches!(self.modal, Some(ActiveModal::Jump(..))) {
+        if matches!(self.modal, Some(ActiveModal::Jump { .. })) {
             self.close_modal(window, cx);
         } else {
             self.present_jump(window, cx);
@@ -72,7 +95,7 @@ impl Shell {
         if !self.chord_live(Chord::Link, window, cx) {
             return;
         }
-        if matches!(self.modal, Some(ActiveModal::Link(..))) {
+        if matches!(self.modal, Some(ActiveModal::Link { .. })) {
             self.close_modal(window, cx);
         } else {
             self.present_link(window, cx);
@@ -93,7 +116,7 @@ impl Shell {
         if !self.chord_live(Chord::Inbox, window, cx) {
             return;
         }
-        if matches!(self.modal, Some(ActiveModal::Inbox(..))) {
+        if matches!(self.modal, Some(ActiveModal::Inbox { .. })) {
             self.close_modal(window, cx);
         } else {
             self.present_inbox(window, cx);
@@ -105,7 +128,7 @@ impl Shell {
         if !self.chord_live(Chord::Shortcuts, window, cx) {
             return;
         }
-        if matches!(self.modal, Some(ActiveModal::Shortcuts(..))) {
+        if matches!(self.modal, Some(ActiveModal::Shortcuts { .. })) {
             self.close_modal(window, cx);
         } else {
             self.present_shortcuts(window, cx);
@@ -157,14 +180,14 @@ impl Shell {
     /// The open sheet as an overlay, or nothing when no sheet is open.
     pub fn render_modal(&self, cx: &App) -> Option<AnyElement> {
         Some(match self.modal.as_ref()? {
-            ActiveModal::Jump(sheet, _) => render_filter_sheet(sheet, cx),
-            ActiveModal::Link(sheet, _) => render_filter_sheet(sheet, cx),
-            ActiveModal::Nick(sheet, _) => render_filter_sheet(sheet, cx),
-            ActiveModal::Inbox(sheet, _) => render_inbox_sheet(sheet, cx),
-            ActiveModal::Shortcuts(sheet, _) => sheet.clone().into_any_element(),
-            ActiveModal::About(sheet, _) => sheet.clone().into_any_element(),
-            ActiveModal::ChannelOpen(sheet, _) => sheet.clone().into_any_element(),
-            ActiveModal::ChannelList(sheet, _) => render_filter_sheet(sheet, cx),
+            ActiveModal::Jump { sheet, .. } => render_filter_sheet(sheet, cx),
+            ActiveModal::Link { sheet, .. } => render_filter_sheet(sheet, cx),
+            ActiveModal::Nick { sheet, .. } => render_filter_sheet(sheet, cx),
+            ActiveModal::Inbox { sheet, .. } => render_inbox_sheet(sheet, cx),
+            ActiveModal::Shortcuts { sheet, .. } => sheet.clone().into_any_element(),
+            ActiveModal::About { sheet, .. } => sheet.clone().into_any_element(),
+            ActiveModal::ChannelOpen { sheet, .. } => sheet.clone().into_any_element(),
+            ActiveModal::ChannelList { sheet, .. } => render_filter_sheet(sheet, cx),
         })
     }
 
@@ -198,7 +221,10 @@ impl Shell {
             ),
         ];
         window.focus(&sheet.read(cx).filter_focus(cx));
-        self.modal = Some(ActiveModal::ChannelList(sheet, subscriptions));
+        self.modal = Some(ActiveModal::ChannelList {
+            sheet,
+            _subscriptions: subscriptions,
+        });
         cx.notify();
     }
 
@@ -257,7 +283,10 @@ impl Shell {
             },
         )];
         window.focus(&sheet.read(cx).focus_handle());
-        self.modal = Some(ActiveModal::ChannelOpen(sheet, subscriptions));
+        self.modal = Some(ActiveModal::ChannelOpen {
+            sheet,
+            _subscriptions: subscriptions,
+        });
         cx.notify();
     }
 
@@ -308,7 +337,10 @@ impl Shell {
             ),
         ];
         window.focus(&sheet.read(cx).filter_focus(cx));
-        self.modal = Some(ActiveModal::Jump(sheet, subscriptions));
+        self.modal = Some(ActiveModal::Jump {
+            sheet,
+            _subscriptions: subscriptions,
+        });
         cx.notify();
     }
 
@@ -350,7 +382,10 @@ impl Shell {
             ),
         ];
         window.focus(&sheet.read(cx).filter_focus(cx));
-        self.modal = Some(ActiveModal::Link(sheet, subscriptions));
+        self.modal = Some(ActiveModal::Link {
+            sheet,
+            _subscriptions: subscriptions,
+        });
         cx.notify();
     }
 
@@ -378,7 +413,10 @@ impl Shell {
             ),
         ];
         window.focus(&sheet.read(cx).filter_focus(cx));
-        self.modal = Some(ActiveModal::Nick(sheet, subscriptions));
+        self.modal = Some(ActiveModal::Nick {
+            sheet,
+            _subscriptions: subscriptions,
+        });
         cx.notify();
     }
 
@@ -398,7 +436,10 @@ impl Shell {
             ),
         ];
         window.focus(&sheet.read(cx).focus_handle());
-        self.modal = Some(ActiveModal::Inbox(sheet, subscriptions));
+        self.modal = Some(ActiveModal::Inbox {
+            sheet,
+            _subscriptions: subscriptions,
+        });
         cx.notify();
     }
 
@@ -410,7 +451,10 @@ impl Shell {
             |shell: &mut Shell, _, _: &ShortcutsEvent, window, cx| shell.close_modal(window, cx),
         )];
         window.focus(&sheet.read(cx).focus_handle());
-        self.modal = Some(ActiveModal::Shortcuts(sheet, subscriptions));
+        self.modal = Some(ActiveModal::Shortcuts {
+            sheet,
+            _subscriptions: subscriptions,
+        });
         cx.notify();
     }
 
@@ -422,7 +466,10 @@ impl Shell {
             |shell: &mut Shell, _, _: &AboutEvent, window, cx| shell.close_modal(window, cx),
         )];
         window.focus(&sheet.read(cx).initial_focus());
-        self.modal = Some(ActiveModal::About(sheet, subscriptions));
+        self.modal = Some(ActiveModal::About {
+            sheet,
+            _subscriptions: subscriptions,
+        });
         cx.notify();
     }
 }

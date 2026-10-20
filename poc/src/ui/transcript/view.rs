@@ -21,7 +21,9 @@ use crate::model::unread::{self, UnseenLanding};
 use crate::model::{
     mix_colors, row_from_message, Conversation, MockMessage, Network, Pos, Row, Style, Transcript,
 };
-use crate::ui::message_row::{render_transcript_row, RowCallbacks, RowLayoutMap, RowPeers};
+use crate::ui::message_row::{
+    render_transcript_row, RowCallbacks, RowContext, RowLayoutMap, RowPeers,
+};
 use crate::ui::scrollbar::{list_vertical_scrollbar, move_scrollbar_drag, ScrollbarDragCell};
 use crate::ui::transcript::pointer::{self, RowBounds};
 use crate::ui::transcript::unseen_jump::render_unseen_jump;
@@ -642,15 +644,17 @@ impl Render for TranscriptView {
                             .child(render_transcript_row(
                                 ix,
                                 &row,
-                                &app_style,
-                                &peers,
+                                RowContext {
+                                    style: &app_style,
+                                    peers: &peers,
+                                    layouts: layouts.clone(),
+                                    callbacks: &RowCallbacks {
+                                        on_nick: on_nick.clone(),
+                                        self_nick: self_nick.clone(),
+                                    },
+                                },
                                 selection,
                                 hover,
-                                layouts.clone(),
-                                &RowCallbacks {
-                                    on_nick: on_nick.clone(),
-                                    self_nick: self_nick.clone(),
-                                },
                             ))
                             .into_any_element()
                     })

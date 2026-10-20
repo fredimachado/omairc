@@ -30,7 +30,7 @@ impl Shell {
         if !self.inbox.dismiss(index) {
             return;
         }
-        if let Some(ActiveModal::Inbox(sheet, _)) = &self.modal {
+        if let Some(ActiveModal::Inbox { sheet, .. }) = &self.modal {
             let items = self.inbox.items().to_vec();
             sheet.update(cx, |sheet, cx| sheet.sync(items, Some(index), cx));
         }

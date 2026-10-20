@@ -5,7 +5,6 @@ pub const FONT_FAMILY: &str = "iA Writer Mono S";
 
 pub struct OmaircStyleGlobal {
     pub style: Style,
-    pub theme_path: Option<std::path::PathBuf>,
 }
 
 impl gpui::Global for OmaircStyleGlobal {}
@@ -35,8 +34,4 @@ pub fn open_web_link(cx: &gpui::App, url: &str) -> bool {
     }
     cx.open_url(url);
     true
-}
-
-pub fn theme_path(cx: &gpui::App) -> Option<std::path::PathBuf> {
-    cx.global::<OmaircStyleGlobal>().theme_path.clone()
 }

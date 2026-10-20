@@ -8,7 +8,7 @@
 //! let theme = Theme::load(None)?;
 //! loop {
 //!     while watcher.receiver().try_recv().is_ok() {
-//!         theme = Theme::load(watcher.override_path())?;
+//!         theme = Theme::load(None)?;
 //!     }
 //!     // draw with `theme`
 //! }
@@ -55,6 +55,7 @@ impl Theme {
         }
     }
 
+    #[cfg(test)]
     pub fn defaults_light() -> Self {
         Self {
             background: Color::from_hex("#ffffff").unwrap(),
@@ -144,13 +145,11 @@ fn resolve_mode(theme_mode: &str, background: Color) -> (bool, bool) {
 pub struct ThemeWatcher {
     _watcher: RecommendedWatcher,
     receiver: Receiver<()>,
-    override_path: Option<PathBuf>,
 }
 
 impl ThemeWatcher {
     pub fn start(override_path: Option<&Path>) -> notify::Result<Self> {
         let (tx, rx) = mpsc::channel();
-        let override_store = override_path.map(Path::to_path_buf);
         let mut watcher = RecommendedWatcher::new(
             move |res: notify::Result<notify::Event>| {
                 if let Ok(event) = res {
@@ -193,16 +192,11 @@ impl ThemeWatcher {
         Ok(Self {
             _watcher: watcher,
             receiver: rx,
-            override_path: override_store,
         })
     }
 
     pub fn receiver(&self) -> &Receiver<()> {
         &self.receiver
-    }
-
-    pub fn override_path(&self) -> Option<&Path> {
-        self.override_path.as_deref()
     }
 }
 

@@ -95,7 +95,7 @@ impl Fenwick {
         idx += 1;
         while idx < self.tree.len() {
             self.tree[idx] += delta;
-            idx += idx & idx.wrapping_neg();
+            idx += idx.isolate_lowest_one();
         }
     }
 
@@ -104,30 +104,9 @@ impl Fenwick {
         let mut sum = 0i64;
         while idx > 0 && idx < self.tree.len() {
             sum += self.tree[idx];
-            idx -= idx & idx.wrapping_neg();
+            idx -= idx.isolate_lowest_one();
         }
         sum
-    }
-
-    fn total(&self) -> i64 {
-        if self.tree.len() <= 1 {
-            return 0;
-        }
-        self.prefix_sum(self.tree.len() - 2)
-    }
-
-    fn find_prefix(&self, mut target: i64) -> usize {
-        let mut idx = 0usize;
-        let mut bit = self.tree.len().saturating_sub(1).next_power_of_two() / 2;
-        while bit > 0 {
-            let next = idx + bit;
-            if next < self.tree.len() && self.tree[next] <= target {
-                target -= self.tree[next];
-                idx = next;
-            }
-            bit /= 2;
-        }
-        idx
     }
 }
 
@@ -218,63 +197,12 @@ impl Transcript {
         (self.heights.prefix_sum(row) - self.heights.prefix_sum(row - 1)) as i32
     }
 
-    /// Fenwick-backed height for a row index (including the last row).
-    pub fn stored_row_height(&self, row: usize) -> i32 {
-        self.row_height(row)
-    }
-
-    pub fn y_of_row(&self, row: usize) -> i32 {
-        if row == 0 {
-            0
-        } else {
-            self.heights.prefix_sum(row - 1) as i32
-        }
-    }
-
-    pub fn row_at_y(&self, y: i32) -> usize {
-        if self.rows.is_empty() {
-            return 0;
-        }
-        let target = y.max(0) as i64;
-        self.heights.find_prefix(target).min(self.rows.len() - 1)
-    }
-
     pub fn invalidate_all(&mut self) {
         self.measured.fill(false);
         self.heights = Fenwick::new(self.rows.len());
         for i in 0..self.rows.len() {
             self.heights.add(i, self.estimate_height as i64);
         }
-    }
-
-    pub fn visible_range(&self, viewport_h: i32, overscan: i32) -> Range<usize> {
-        if self.rows.is_empty() {
-            return 0..0;
-        }
-        let top = self.scroll_top_y(viewport_h);
-        let scan_top = top - overscan;
-        let scan_bottom = top + viewport_h + overscan;
-        let start = self.row_at_y(scan_top);
-        let total = self.heights.total() as i32;
-        let end_y = scan_bottom
-            .saturating_sub(1)
-            .min(total.saturating_sub(1))
-            .max(0);
-        let mut end = self.row_at_y(end_y) + 1;
-        if scan_bottom >= total {
-            end = end.max(self.rows.len());
-        }
-        end = end.min(self.rows.len());
-        start..end
-    }
-
-    fn scroll_top_y(&self, viewport_h: i32) -> i32 {
-        let total = self.heights.total() as i32;
-        let max_top = (total - viewport_h).max(0);
-        if self.scroll.pinned_to_bottom {
-            return max_top;
-        }
-        (self.y_of_row(self.scroll.row) + self.scroll.offset_px).clamp(0, max_top)
     }
 
     pub fn set_conversation(&mut self, messages: &[MockMessage]) {
@@ -352,25 +280,6 @@ impl Transcript {
             anchor: Pos { row, offset: 0 },
             focus: Pos { row, offset: end },
         });
-    }
-
-    pub fn select_all(&mut self) {
-        if self.rows.is_empty() {
-            self.selection = None;
-            return;
-        }
-        let last = self.rows.len() - 1;
-        self.selection = Some(Selection {
-            anchor: Pos { row: 0, offset: 0 },
-            focus: Pos {
-                row: last,
-                offset: plain_len(&self.rows[last]),
-            },
-        });
-    }
-
-    pub fn clear(&mut self) {
-        self.selection = None;
     }
 
     pub fn range_for_row(&self, row: usize) -> Option<Range<usize>> {
@@ -639,25 +548,27 @@ mod tests {
         ]
     }
 
+    /// Selects the whole transcript, from the first row's start to the last row's end.
+    fn select_everything(t: &mut Transcript) {
+        let last = t.rows().len() - 1;
+        let end = plain_len(&t.rows()[last]);
+        t.begin(Pos { row: 0, offset: 0 });
+        t.extend(Pos {
+            row: last,
+            offset: end,
+        });
+    }
+
     #[test]
     fn fenwick_prefix_and_update() {
         let mut t = Transcript::new(20);
         t.set_rows(sample_rows());
         t.set_measured(0, 30);
-        assert_eq!(t.y_of_row(1), 30);
+        assert_eq!(t.row_height(0), 30);
+        assert_eq!(t.row_height(1), 20);
         t.set_measured(1, 40);
-        assert_eq!(t.heights.total(), 70);
-    }
-
-    #[test]
-    fn row_at_y_boundaries() {
-        let mut t = Transcript::new(10);
-        t.set_rows(sample_rows());
-        t.set_measured(0, 20);
-        t.set_measured(1, 30);
-        assert_eq!(t.row_at_y(0), 0);
-        assert_eq!(t.row_at_y(19), 0);
-        assert_eq!(t.row_at_y(20), 1);
+        assert_eq!(t.row_height(0), 30);
+        assert_eq!(t.row_height(1), 40);
     }
 
     #[test]
@@ -745,7 +656,7 @@ mod tests {
         ];
         let mut t = Transcript::new(10);
         t.set_rows(rows_from_messages(&messages));
-        t.select_all();
+        select_everything(&mut t);
         assert_eq!(t.copy_text(), "[09:00] <anna> one\n[09:01] <dax> two");
     }
 
@@ -753,7 +664,7 @@ mod tests {
     fn a_whois_row_copies_its_text_alone() {
         let mut t = Transcript::new(10);
         t.set_rows(vec![row_from_whois(1, "Commands: /me, /help.")]);
-        t.select_all();
+        select_everything(&mut t);
         assert_eq!(t.copy_text(), "Commands: /me, /help.");
     }
 
@@ -792,50 +703,6 @@ mod tests {
         let pos = map_pointer(&rows, 1, PointerZone::GapAbove);
         assert_eq!(pos.row, 0);
         assert_eq!(pos.offset, rows[0].body.plain.len());
-    }
-
-    fn tall_transcript(rows: usize) -> Transcript {
-        let mut t = Transcript::new(10);
-        let mut list = Vec::with_capacity(rows);
-        for i in 0..rows {
-            list.push(row_from_message(i as u64 + 1, "user", "09:00", "line", false));
-        }
-        t.set_rows(list);
-        for i in 0..rows {
-            t.set_measured(i, 100);
-        }
-        t
-    }
-
-    #[test]
-    fn visible_range_pinned_shows_bottom_viewport() {
-        let t = tall_transcript(5);
-        assert!(t.scroll().pinned_to_bottom);
-        let range = t.visible_range(250, 0);
-        assert!(range.start > 0, "pinned view must not start at row 0");
-        assert_eq!(range, 2..5);
-    }
-
-    #[test]
-    fn visible_range_unpinned_anchor_at_top() {
-        let mut t = tall_transcript(5);
-        t.set_pinned_to_bottom(false);
-        t.set_scroll_anchor(0, 0);
-        let range = t.visible_range(250, 0);
-        assert_eq!(range.start, 0);
-        assert_eq!(range, 0..3);
-    }
-
-    #[test]
-    fn visible_range_pinned_append_includes_new_row() {
-        let mut t = tall_transcript(4);
-        t.set_pinned_to_bottom(true);
-        assert_eq!(t.visible_range(500, 0), 0..4);
-        t.append(row_from_message(5, "user", "09:01", "newest", false));
-        t.set_measured(4, 100);
-        let range = t.visible_range(250, 0);
-        assert!(range.contains(&4), "appended row must stay in pinned viewport");
-        assert_eq!(range, 2..5);
     }
 
     #[test]

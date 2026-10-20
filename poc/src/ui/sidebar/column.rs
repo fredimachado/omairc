@@ -31,6 +31,12 @@ pub struct SidebarData<'a> {
     pub on_inbox: Handler<()>,
     /// The footer's version: opens the About sheet.
     pub on_about: Handler<()>,
+    /// A conversation row's click: selects it.
+    pub on_select: Handler<ConversationRef>,
+    /// A direct message row's close control.
+    pub on_close: Handler<ConversationRef>,
+    /// A network header's collapse toggle.
+    pub on_toggle: Handler<String>,
 }
 
 /// The left column: every network stacked in world order, then the identity
@@ -42,9 +48,6 @@ pub fn render_sidebar<V: 'static>(
     scroll: &ScrollHandle,
     host: Entity<V>,
     drag: &ScrollbarDragCell,
-    on_select: Handler<ConversationRef>,
-    on_close: Handler<ConversationRef>,
-    on_toggle: Handler<String>,
 ) -> impl IntoElement {
     let visible = data.state.rail_visible;
     let width = if visible { 244. } else { 0. };
@@ -77,7 +80,7 @@ pub fn render_sidebar<V: 'static>(
                         .size_full()
                         .overflow_y_scroll()
                         .track_scroll(scroll)
-                        .child(network_list(&data, style, on_select, on_close, on_toggle)),
+                        .child(network_list(&data, style)),
                 )
                 .child(div_vertical_scrollbar(scroll, style, host, drag.clone())),
         )
@@ -91,13 +94,7 @@ pub fn render_sidebar<V: 'static>(
         ))
 }
 
-fn network_list(
-    data: &SidebarData,
-    style: &Style,
-    on_select: Handler<ConversationRef>,
-    on_close: Handler<ConversationRef>,
-    on_toggle: Handler<String>,
-) -> impl IntoElement {
+fn network_list(data: &SidebarData, style: &Style) -> impl IntoElement {
     div()
         .flex()
         .flex_col()
@@ -113,7 +110,7 @@ fn network_list(
                     focused,
                     collapsed,
                     style,
-                    on_toggle.clone(),
+                    data.on_toggle.clone(),
                     data.on_status.clone(),
                     data.on_edit.clone(),
                 ))
@@ -122,8 +119,8 @@ fn network_list(
                         network,
                         data,
                         style,
-                        on_select.clone(),
-                        on_close.clone(),
+                        data.on_select.clone(),
+                        data.on_close.clone(),
                     ))
                 })
         }))

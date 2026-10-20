@@ -66,16 +66,24 @@ pub struct RowLayout {
 
 pub type RowLayoutMap = Rc<RefCell<std::collections::HashMap<usize, RowLayout>>>;
 
+/// What every transcript row draws with: the style, the peers' facts, the map
+/// rows record their layouts into, and the shell's callbacks. The view builds
+/// one per row from the frame's values.
+pub struct RowContext<'a> {
+    pub style: &'a Style,
+    pub peers: &'a RowPeers,
+    pub layouts: RowLayoutMap,
+    pub callbacks: &'a RowCallbacks,
+}
+
 pub fn render_transcript_row(
     row_ix: usize,
     row: &Row,
-    style: &Style,
-    peers: &RowPeers,
+    ctx: RowContext<'_>,
     selection_range: Option<Range<usize>>,
     hovered_link: Option<Range<usize>>,
-    layouts: RowLayoutMap,
-    callbacks: &RowCallbacks,
 ) -> impl IntoElement {
+    let style = ctx.style;
     match row.kind {
         RowKind::DaySeparator => {
             let text = row
@@ -121,9 +129,9 @@ pub fn render_transcript_row(
             style,
             selection_range,
             hovered_link,
-            layouts,
+            ctx.layouts,
         ),
-        RowKind::Whois => render_whois_row(row_ix, row, style, selection_range, layouts),
+        RowKind::Whois => render_whois_row(row_ix, row, style, selection_range, ctx.layouts),
         RowKind::UnreadMark => render_unread_mark_row(row_ix, style),
         RowKind::Message => div()
             .id(("transcript-row", row_ix))
@@ -131,12 +139,9 @@ pub fn render_transcript_row(
             .child(render_message_row(
                 row_ix,
                 row,
-                style,
-                peers,
+                ctx,
                 selection_range,
                 hovered_link,
-                layouts,
-                callbacks,
             )),
     }
 }
@@ -219,13 +224,16 @@ fn render_whois_row(
 fn render_message_row(
     row_ix: usize,
     row: &Row,
-    style: &Style,
-    peers: &RowPeers,
+    ctx: RowContext<'_>,
     selection_range: Option<Range<usize>>,
     hovered_link: Option<Range<usize>>,
-    layouts: RowLayoutMap,
-    callbacks: &RowCallbacks,
 ) -> impl IntoElement {
+    let RowContext {
+        style,
+        peers,
+        layouts,
+        callbacks,
+    } = ctx;
     let author = row.author.as_deref().unwrap_or("");
     // Only the first row of a group has a clickable author. Self is inert.
     let nick_target = (!row.continues && !author.is_empty() && author != callbacks.self_nick)

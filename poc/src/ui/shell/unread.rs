@@ -15,8 +15,7 @@ impl Shell {
     /// `openStatus` does, so the transcript shows the line only while the
     /// conversation is on screen. A conversation the world does not hold is left
     /// alone, and so is the world.
-    // Nothing calls this after launch, which matches Qt's demo: the seeded world
-    // shows no mark. Tests reach the same rules through `model::unread::arrive_in`.
+    // Dormant: the demo world has no live arrivals; model::unread tests cover the rules.
     #[allow(dead_code)]
     pub fn ingest(
         &mut self,

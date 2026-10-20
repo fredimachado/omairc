@@ -36,7 +36,7 @@ use crate::ui::center::header::{HeaderView, Subtitle};
 use crate::ui::center::render_center;
 use crate::ui::center::slash_popup::render_slash_popup;
 use crate::ui::input::SingleLineInput;
-use crate::ui::members::render_members;
+use crate::ui::members::{render_members, MembersData};
 use crate::ui::scrollbar::{end_scrollbar_drag, move_scrollbar_drag, ScrollbarDragCell};
 use crate::ui::shell::actions::wire_shell_actions;
 use crate::ui::sheets::connect::controls::ConnectControls;
@@ -107,7 +107,6 @@ pub struct Shell {
     pub focus_handle: FocusHandle,
     pub typing_phase: u8,
     pub bench: BenchState,
-    pub lines_seed: Option<usize>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -197,7 +196,6 @@ impl Shell {
                 enabled: bench,
                 ..Default::default()
             },
-            lines_seed: lines,
             _subscriptions: [transcript_events, composer_events]
                 .into_iter()
                 .chain(connect_edits)
@@ -357,14 +355,14 @@ impl Render for Shell {
                 on_edit: edit_handler(entity.clone()),
                 on_inbox: inbox_handler(entity.clone()),
                 on_about: about_handler(entity.clone()),
+                on_select: select_handler(entity.clone()),
+                on_close: close_handler(entity.clone()),
+                on_toggle: collapse_handler(entity.clone()),
             },
             &app_style,
             &self.sidebar_scroll,
             entity.clone(),
             &self.scrollbar_drag,
-            select_handler(entity.clone()),
-            close_handler(entity.clone()),
-            collapse_handler(entity.clone()),
         );
         let header = HeaderView {
             title: &title,
@@ -419,17 +417,19 @@ impl Render for Shell {
             .child(center)
             .when(show_members, |this| {
                 this.child(render_members(
-                    self.current_conversation(),
+                    MembersData {
+                        conv: self.current_conversation(),
+                        self_nick: &self.current_network().nick,
+                        on_nick: nick_handler(entity.clone()),
+                        on_heading: heading_handler(entity.clone()),
+                        focus: &self.member_focus,
+                        cursor: members_cursor,
+                        avatars: self.preferences.avatars,
+                    },
                     &app_style,
                     &self.members_scroll,
                     entity.clone(),
                     &self.scrollbar_drag,
-                    &self.current_network().nick,
-                    nick_handler(entity.clone()),
-                    heading_handler(entity.clone()),
-                    &self.member_focus,
-                    members_cursor,
-                    self.preferences.avatars,
                 ))
             })
             // Connect sits above the window and below Shortcuts and About, which

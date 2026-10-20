@@ -6,25 +6,42 @@ use crate::ui::scrollbar::{div_vertical_scrollbar, ScrollbarDragCell};
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
+/// What the member panel shows and answers, for the current channel.
+pub struct MembersData<'a> {
+    pub conv: &'a Conversation,
+    pub self_nick: &'a str,
+    /// A member row click: opens or selects that nick's DM.
+    pub on_nick: Handler<String>,
+    /// The `ONLINE - N` heading's click: opens the Nick sheet.
+    pub on_heading: Handler<()>,
+    /// The list's keyboard focus.
+    pub focus: &'a FocusHandle,
+    /// The current row, drawn raised only while the list has focus.
+    pub cursor: Option<usize>,
+    /// The `avatars` preference: off, every row shows its initials.
+    pub avatars: bool,
+}
+
 /// The right-hand member panel for a channel (`MembersColumn.qml`). `host` is
 /// only notified by the scrollbar. The list is focusable with its own key
-/// context (`MemberList`); `cursor` is the current row, drawn raised only while
-/// the list has focus. The `ONLINE - N` heading is clickable and calls
-/// `on_heading`, which opens the Nick sheet. `avatars` is the `avatars`
-/// preference: off, every row shows its initials.
+/// context (`MemberList`). The `ONLINE - N` heading is clickable and calls
+/// `on_heading`, which opens the Nick sheet.
 pub fn render_members<V: 'static>(
-    conv: &Conversation,
+    data: MembersData,
     style: &Style,
     scroll: &ScrollHandle,
     host: Entity<V>,
     drag: &ScrollbarDragCell,
-    self_nick: &str,
-    on_nick: Handler<String>,
-    on_heading: Handler<()>,
-    focus: &FocusHandle,
-    cursor: Option<usize>,
-    avatars: bool,
 ) -> impl IntoElement {
+    let MembersData {
+        conv,
+        self_nick,
+        on_nick,
+        on_heading,
+        focus,
+        cursor,
+        avatars,
+    } = data;
     let people = conv.people_count();
     let heading_color = to_gpui(style.muted_color());
     let ink = to_gpui(style.ink_color());
