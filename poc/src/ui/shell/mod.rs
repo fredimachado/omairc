@@ -150,6 +150,7 @@ impl Render for Shell {
                 inbox_count: self.inbox.len() as u32,
                 typing_phase: self.typing_phase,
                 on_inbox: inbox_handler(entity.clone()),
+                on_about: about_handler(entity.clone()),
             },
             &app_style,
             &self.sidebar_scroll,
@@ -246,6 +247,13 @@ fn select_handler(entity: Entity<Shell>) -> Handler<ConversationRef> {
 fn inbox_handler(entity: Entity<Shell>) -> Handler<()> {
     Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
         entity.update(cx, |shell, cx| shell.toggle_inbox(window, cx));
+    })
+}
+
+/// A click on the footer's version: the About sheet.
+fn about_handler(entity: Entity<Shell>) -> Handler<()> {
+    Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
+        entity.update(cx, |shell, cx| shell.open_about(window, cx));
     })
 }
 

@@ -1,4 +1,4 @@
-use gpui::{div, prelude::*};
+use gpui::{div, prelude::*, MouseButton};
 
 use crate::model::{mix_colors, Color, Network, Style};
 use crate::ui::Handler;
@@ -6,6 +6,11 @@ use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
 /// `version.pri` at compile time, so the footer matches Qt's `--version`.
 const VERSION_PRI: &str = include_str!("../../../../version.pri");
+
+/// The app version shown in the footer and the About sheet.
+pub fn app_version() -> &'static str {
+    parse_version(VERSION_PRI).unwrap_or("")
+}
 
 /// The `VERSION = x.y.z` value from a `version.pri` body.
 pub fn parse_version(pri: &str) -> Option<&str> {
@@ -23,6 +28,7 @@ pub fn identity_footer(
     network: &Network,
     inbox_count: u32,
     on_inbox: Handler<()>,
+    on_about: Handler<()>,
     style: &Style,
 ) -> impl IntoElement {
     let ink = style.ink_color();
@@ -30,7 +36,7 @@ pub fn identity_footer(
     let amount = if style.dark_mode() { 0.025 } else { 0.018 };
     let fill_index = style.nick_palette_index(&network.nick);
     let glyph_fill = to_gpui(style.nick_avatar_fills()[fill_index]);
-    let version = parse_version(VERSION_PRI).unwrap_or("");
+    let version = app_version();
 
     div()
         .w_full()
@@ -112,6 +118,9 @@ pub fn identity_footer(
                         .font_family(FONT_FAMILY)
                         .cursor_pointer()
                         .hover(|s| s.text_color(to_gpui(ink)).underline())
+                        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                            on_about((), window, cx);
+                        })
                         .child(version.to_string()),
                 ),
         )

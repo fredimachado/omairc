@@ -6,6 +6,7 @@
 use gpui::{actions, App, Context, Div, KeyBinding, prelude::*};
 
 use crate::model::chords::Chord;
+use crate::ui::sheets::about::bind_about_keys;
 use crate::ui::sheets::filter_sheet::bind_filter_keys;
 use crate::ui::sheets::inbox::bind_inbox_keys;
 use crate::ui::shell::Shell;
@@ -17,6 +18,8 @@ actions!(
         OpenLink,
         OpenNick,
         OpenInbox,
+        ToggleShortcuts,
+        OpenAbout,
         CloseSheet,
         TranscriptCopy,
         ComposerSubmit,
@@ -59,7 +62,12 @@ actions!(
 pub fn bind_shell_keys(cx: &mut App) {
     bind_filter_keys(cx);
     bind_inbox_keys(cx);
+    bind_about_keys(cx);
     cx.bind_keys([
+        KeyBinding::new("secondary-/", ToggleShortcuts, None),
+        KeyBinding::new("secondary-shift-/", OpenAbout, None),
+        // Shift+/ can arrive as "?" on some layouts (Windows SendKeys does).
+        KeyBinding::new("secondary-?", OpenAbout, None),
         KeyBinding::new("secondary-k", OpenJump, None),
         KeyBinding::new("secondary-shift-a", OpenInbox, None),
         KeyBinding::new("secondary-shift-o", OpenLink, None),
@@ -115,6 +123,15 @@ pub fn wire_shell_actions(root: Div, cx: &mut Context<Shell>) -> Div {
     }))
     .on_action(cx.listener(|shell, _: &OpenNick, window, cx| {
         shell.open_nick_sheet(window, cx);
+    }))
+    .on_action(cx.listener(|shell, _: &OpenInbox, window, cx| {
+        shell.toggle_inbox(window, cx);
+    }))
+    .on_action(cx.listener(|shell, _: &ToggleShortcuts, window, cx| {
+        shell.toggle_shortcuts(window, cx);
+    }))
+    .on_action(cx.listener(|shell, _: &OpenAbout, window, cx| {
+        shell.open_about(window, cx);
     }))
     .on_action(cx.listener(|shell, _: &CloseSheet, window, cx| {
         shell.escape(window, cx);

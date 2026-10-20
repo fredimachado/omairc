@@ -28,7 +28,6 @@ pub fn popup_frame(
 
 /// The About look: a full-window `overlay_veil_color` with a centred card.
 /// Only a left click on the veil dismisses; right clicks and card clicks do not.
-#[allow(dead_code)] // The About sheet (step 7) is the first caller.
 pub fn veil_frame(
     style: &Style,
     card: impl IntoElement,

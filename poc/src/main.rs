@@ -1,3 +1,4 @@
+mod assets;
 mod model;
 mod ui;
 mod util;
@@ -42,7 +43,7 @@ fn main() {
     let lines = args.lines;
     let bench = args.bench;
 
-    Application::new().run(move |cx: &mut App| {
+    Application::new().with_assets(assets::OmaircAssets).run(move |cx: &mut App| {
         cx.text_system()
             .add_fonts(vec![Cow::Borrowed(
                 include_bytes!("../../fonts/iAWriterMonoS-Regular.ttf") as &[u8],
