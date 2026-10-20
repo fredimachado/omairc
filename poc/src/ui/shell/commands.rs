@@ -111,7 +111,6 @@ impl Shell {
             direct: !conv.is_channel(),
             header_focused: self.sidebar.focus.is_some(),
             members_focused: self.member_focus.is_focused(window),
-            composer_focused: self.composer.read(cx).focus_handle(cx).is_focused(window),
             transcript_selection: self.transcript.read(cx).has_selection(),
         }
     }

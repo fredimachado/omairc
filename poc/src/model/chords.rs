@@ -30,8 +30,6 @@ pub struct ChordContext {
     pub header_focused: bool,
     /// The member list has keyboard focus.
     pub members_focused: bool,
-    /// The composer has keyboard focus.
-    pub composer_focused: bool,
     /// The transcript has a non-empty text selection.
     pub transcript_selection: bool,
 }
@@ -89,9 +87,10 @@ pub fn chord_enabled(chord: Chord, ctx: &ChordContext) -> bool {
         // Qt's Ctrl+Q is disabled while any sheet is open.
         Chord::Quit => no_sheet,
         // Copies the transcript selection, or the member list's selection.
-        Chord::Copy => {
-            no_sheet && ((ctx.transcript_selection && !ctx.composer_focused) || ctx.members_focused)
-        }
+        // The composer's own selection is copied by the composer first, so this
+        // only sees Ctrl+C when the draft has none. Focus does not matter here:
+        // a click in the transcript moves focus to the composer.
+        Chord::Copy => no_sheet && (ctx.transcript_selection || ctx.members_focused),
         Chord::ComposerFocus => no_sheet,
         // Toggles Jump, and is blocked by every other sheet.
         Chord::Jump => no_sheet || sheet_is(Sheet::Jump),
@@ -330,7 +329,7 @@ mod tests {
     }
 
     #[test]
-    fn copy_needs_a_selection_outside_the_composer_or_a_focused_member_list() {
+    fn copy_needs_a_transcript_selection_or_a_focused_member_list() {
         check(
             Chord::Copy,
             selection,
@@ -342,15 +341,17 @@ mod tests {
             members,
             [true, false, false, false, false, false, false],
         );
+    }
 
-        let mut composer = ChordContext {
+    #[test]
+    fn copy_works_with_the_composer_focused_after_a_transcript_drag() {
+        // A transcript click focuses the composer, so the selection must
+        // still copy with the composer focused and its draft unselected.
+        let ctx = ChordContext {
             transcript_selection: true,
-            composer_focused: true,
             ..ChordContext::default()
         };
-        assert!(!chord_enabled(Chord::Copy, &composer));
-        composer.composer_focused = false;
-        assert!(chord_enabled(Chord::Copy, &composer));
+        assert!(chord_enabled(Chord::Copy, &ctx));
     }
 
     #[test]

@@ -87,10 +87,6 @@ impl SingleLineInput {
         &self.content
     }
 
-    pub fn has_selection(&self) -> bool {
-        !self.selected_range.is_empty()
-    }
-
     /// Whether the caret is in the solid half of its blink cycle right now.
     pub fn caret_solid(&self) -> bool {
         solid_at(self.caret_edit.elapsed())

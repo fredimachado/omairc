@@ -6,6 +6,7 @@
 use gpui::{actions, App, Context, Div, KeyBinding, prelude::*};
 
 use crate::model::chords::Chord;
+use crate::ui::input::Copy as CopySelection;
 use crate::ui::sheets::about::bind_about_keys;
 use crate::ui::sheets::filter_sheet::bind_filter_keys;
 use crate::ui::sheets::inbox::bind_inbox_keys;
@@ -21,7 +22,6 @@ actions!(
         ToggleShortcuts,
         OpenAbout,
         CloseSheet,
-        TranscriptCopy,
         ComposerSubmit,
         ToggleMembers,
         ToggleSidebarRail,
@@ -106,8 +106,10 @@ pub fn bind_shell_keys(cx: &mut App) {
         KeyBinding::new("home", MemberTop, Some("MemberList")),
         KeyBinding::new("end", MemberBottom, Some("MemberList")),
         KeyBinding::new("enter", MemberActivate, Some("MemberList")),
-        KeyBinding::new("ctrl-c", TranscriptCopy, Some("MemberList")),
-        KeyBinding::new("ctrl-c", TranscriptCopy, Some("Composer")),
+        // The composer binds ctrl-c to `Copy` itself (bind_input_keys). When its
+        // draft has no selection it propagates, and the shell's listener below
+        // copies the transcript or member nick.
+        KeyBinding::new("ctrl-c", CopySelection, Some("MemberList")),
         KeyBinding::new("enter", ComposerSubmit, Some("Composer")),
     ]);
 }
@@ -142,13 +144,7 @@ pub fn wire_shell_actions(root: Div, cx: &mut Context<Shell>) -> Div {
     .on_action(cx.listener(|shell, _: &CloseDirect, window, cx| {
         shell.close_selected_direct(window, cx);
     }))
-    .on_action(cx.listener(|shell, _: &TranscriptCopy, window, cx| {
-        // With the composer focused, Ctrl+C copies the transcript selection
-        // unless the draft has its own selection.
-        if shell.composer.read(cx).has_selection() {
-            cx.propagate();
-            return;
-        }
+    .on_action(cx.listener(|shell, _: &CopySelection, window, cx| {
         shell.copy_focused(window, cx);
     }))
     .on_action(cx.listener(|shell, _: &ComposerSubmit, window, cx| {
