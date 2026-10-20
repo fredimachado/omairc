@@ -18,5 +18,13 @@ ureq = "=3.4.2"
 # xattr 0.2.3 reads libc::ENOATTR on Linux, which current libc no longer
 # exports there. The vendored copy maps it to ENODATA on Linux only; the
 # other targets keep libc::ENOATTR, and Windows never builds xattr.
+#
+# gpui 0.2.2 -> stacksafe 0.1.4 -> stacksafe-macro 0.1.4 pins proc-macro-error2
+# "2", and 2.0.1 is still the newest release. Its `pub use proc_macro;` trips
+# rustc's future-incompatible E0365 (a hard error in a future Rust). Upstream
+# master is unchanged since 2024-09, so point at a vendored copy of 2.0.1 with
+# one line changed (`pub extern crate proc_macro;`). See the comment in
+# vendor/proc-macro-error2/src/lib.rs. Drop this when a fixed release ships.
 [patch.crates-io]
 xattr = { path = "vendor/xattr" }
+proc-macro-error2 = { path = "vendor/proc-macro-error2" }
