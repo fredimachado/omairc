@@ -25,6 +25,8 @@ pub struct SidebarData<'a> {
     pub avatars: bool,
     /// A network icon or name click: opens that network's Status.
     pub on_status: Handler<String>,
+    /// The `edit` label on a network: opens the Connect sheet on that network.
+    pub on_edit: Handler<String>,
     /// The footer's `inbox` link.
     pub on_inbox: Handler<()>,
     /// The footer's version: opens the About sheet.
@@ -113,6 +115,7 @@ fn network_list(
                     style,
                     on_toggle.clone(),
                     data.on_status.clone(),
+                    data.on_edit.clone(),
                 ))
                 .when(!collapsed, |this| {
                     this.child(conversation_groups(

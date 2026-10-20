@@ -365,6 +365,7 @@ impl Shell {
             transcript_selection: self.transcript.read(cx).has_selection(),
             slash_open: self.slash_popup_showing(),
             find_active: self.find.is_some(),
+            connect_open: self.connect_open,
         }
     }
 
@@ -412,6 +413,10 @@ impl Shell {
     /// Enter in the composer. With a network header focused, Enter opens that
     /// network's Status (Qt `activateFocusedNetworkHeader`) and does not send.
     pub fn composer_submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // The composer is under the Connect sheet, so Enter there never sends.
+        if self.connect_open {
+            return;
+        }
         // In find mode Enter moves to the next match. It never sends.
         if self.find.is_some() {
             self.begin_or_advance_find(window, cx);
@@ -494,6 +499,16 @@ impl Shell {
     /// Alt+Left / Alt+Right: moves header focus to the neighbouring network
     /// (wrapping) and restores a collapsed server list. The selection stays.
     pub fn walk_header(&mut self, delta: isize, window: &mut Window, cx: &mut Context<Self>) {
+        // While Connect shows, the same keys walk its rail instead.
+        let connect_chord = if delta > 0 {
+            Chord::ConnectWalkNetworkRight
+        } else {
+            Chord::ConnectWalkNetworkLeft
+        };
+        if self.chord_live(connect_chord, window, cx) {
+            self.connect_walk_network(delta, window, cx);
+            return;
+        }
         let chord = if delta > 0 {
             Chord::WalkNetworkRight
         } else {

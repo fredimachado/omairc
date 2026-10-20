@@ -4,6 +4,7 @@
 pub mod about;
 pub mod channel_list;
 pub mod channel_open;
+pub mod connect;
 pub mod filter_sheet;
 pub mod frame;
 pub mod inbox;

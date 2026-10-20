@@ -51,6 +51,29 @@ pub struct DirectoryEntry {
 }
 
 impl Network {
+    /// A network with no conversations, Status or directory. The Connect sheet adds
+    /// one when a new network is applied.
+    pub fn empty(
+        id: &str,
+        display_name: &str,
+        nick: &str,
+        icon_color: Option<u8>,
+        chantypes: &str,
+    ) -> Self {
+        Self {
+            id: id.to_string(),
+            display_name: display_name.to_string(),
+            icon_color,
+            nick: nick.to_string(),
+            status: Vec::new(),
+            last_error: None,
+            chantypes: chantypes.to_string(),
+            icon: None,
+            directory: Vec::new(),
+            conversations: Vec::new(),
+        }
+    }
+
     /// The first member record for `nick` in any of this network's channels. Qt
     /// keeps a nick's status, avatar and bot flag per network, so any record
     /// answers for all of them.

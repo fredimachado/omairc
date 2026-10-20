@@ -91,6 +91,11 @@ impl Inbox {
     }
 
     /// Enter on a row: removes it and hands it back so the caller can act on it.
+    /// Drops every row for a network the Connect sheet removed.
+    pub fn drop_network(&mut self, network_id: &str) {
+        self.items.retain(|item| item.network_id != network_id);
+    }
+
     pub fn activate(&mut self, index: usize) -> Option<InboxItem> {
         (index < self.items.len()).then(|| self.items.remove(index))
     }
@@ -282,6 +287,18 @@ mod tests {
         assert!(inbox.dismiss(1));
         assert_eq!(labels(&inbox), ["mira mentioned you in #ricing"]);
         assert!(!inbox.dismiss(1));
+    }
+
+    #[test]
+    fn removing_a_network_drops_only_its_rows() {
+        let mut inbox = Inbox::default();
+        inbox.push(item(InboxKind::Mention, "omarchy", "mira", "#ricing"));
+        inbox.push(item(InboxKind::Invite, "oftc", "rio", "#debian"));
+        inbox.drop_network("oftc");
+        assert_eq!(inbox.len(), 1);
+        assert_eq!(inbox.items()[0].network_id, "omarchy");
+        inbox.drop_network("nowhere");
+        assert_eq!(inbox.len(), 1);
     }
 
     #[test]

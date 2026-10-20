@@ -5,6 +5,7 @@
 pub mod actions;
 pub mod bench;
 pub mod commands;
+pub mod connect;
 pub mod find;
 pub mod inbox;
 pub mod modal;
@@ -20,6 +21,7 @@ use gpui::{
 
 use crate::model::channel_list::ChannelListCache;
 use crate::model::composer::{ComposerState, DraftKey};
+use crate::model::connect::ConnectState;
 use crate::model::find::Find;
 use crate::model::format::{format_irc, text_hits, TextHit};
 use crate::model::inbox::{seed_inbox, Inbox};
@@ -37,6 +39,7 @@ use crate::ui::input::SingleLineInput;
 use crate::ui::members::render_members;
 use crate::ui::scrollbar::{end_scrollbar_drag, move_scrollbar_drag, ScrollbarDragCell};
 use crate::ui::shell::actions::wire_shell_actions;
+use crate::ui::sheets::connect::render_connect;
 use crate::ui::sidebar::{render_sidebar, SidebarData};
 use crate::ui::transcript::view::NickClicked;
 use crate::ui::transcript::TranscriptView;
@@ -79,6 +82,15 @@ pub struct Shell {
     pub find: Option<Find>,
     /// The saved preferences `/pref` reads and writes, loaded once at startup.
     pub preferences: Preferences,
+    /// The Connect sheet's model: the saved networks, the draft, and the sheet's tab.
+    /// It lives for the window, so an unapplied draft survives closing the sheet, as
+    /// Qt's does.
+    pub connect: ConnectState,
+    /// Whether the Connect sheet is showing. It holds the keyboard, and only
+    /// Shortcuts and About open above it.
+    pub connect_open: bool,
+    /// The focus handle the Connect sheet tracks, so keys reach the window while it shows.
+    pub connect_focus: FocusHandle,
     /// The `/list` answers already shown, per network and mask, so a repeat reuses them.
     pub channel_lists: ChannelListCache,
     /// Where each conversation's transcript was left, so returning opens there.
@@ -117,6 +129,7 @@ impl Shell {
         };
 
         let inbox = seed_inbox(&world);
+        let connect = ConnectState::seed(&world);
         let composer_state = ComposerState::starting_at(DraftKey::for_view(None, &selected));
         let scrollbar_drag: ScrollbarDragCell = Default::default();
         let composer = cx.new(|cx| SingleLineInput::new("", "Composer", cx.focus_handle()));
@@ -156,6 +169,9 @@ impl Shell {
             slash: SlashSession::new(),
             find: None,
             preferences: Preferences::load(),
+            connect,
+            connect_open: false,
+            connect_focus: cx.focus_handle(),
             channel_lists: ChannelListCache::default(),
             scroll_places: ScrollPlaces::default(),
             window_active: true,
@@ -200,6 +216,12 @@ impl Render for Shell {
                 },
             );
             self._subscriptions.push(subscription);
+        }
+
+        // Connect's first field takes focus when the sheet opens. Until the sheet UI
+        // focuses fields itself, its card's focus handle takes the request.
+        if self.connect_open && self.connect.take_focus_request().is_some() {
+            window.focus(&self.connect_focus);
         }
 
         let app_style = style(cx);
@@ -290,6 +312,7 @@ impl Render for Shell {
                 typing_phase: self.typing_phase,
                 avatars: self.preferences.avatars,
                 on_status: status_handler(entity.clone()),
+                on_edit: edit_handler(entity.clone()),
                 on_inbox: inbox_handler(entity.clone()),
                 on_about: about_handler(entity.clone()),
             },
@@ -367,6 +390,11 @@ impl Render for Shell {
                     self.preferences.avatars,
                 ))
             })
+            // Connect sits above the window and below Shortcuts and About, which
+            // open after it.
+            .when(self.connect_open, |this| {
+                this.child(render_connect(&self.connect, &app_style, &self.connect_focus))
+            })
             .when_some(self.render_modal(cx), |this, modal| this.child(modal));
 
         wire_shell_actions(root, cx)
@@ -401,6 +429,13 @@ fn status_handler(entity: Entity<Shell>) -> Handler<String> {
 fn topic_handler(entity: Entity<Shell>) -> Handler<TextHit> {
     Rc::new(move |hit: TextHit, window: &mut Window, cx: &mut App| {
         entity.update(cx, |shell, cx| shell.activate_text_hit(hit, window, cx));
+    })
+}
+
+/// A network's `edit` label: opens the Connect sheet on that network.
+fn edit_handler(entity: Entity<Shell>) -> Handler<String> {
+    Rc::new(move |network_id: String, window: &mut Window, cx: &mut App| {
+        entity.update(cx, |shell, cx| shell.open_connect_for(&network_id, window, cx));
     })
 }
 

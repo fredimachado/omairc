@@ -261,7 +261,7 @@ impl Shell {
     /// the command was typed on, which is Status's network or the selected
     /// conversation's. It does nothing while Connect is open.
     pub fn open_channel_list(&mut self, mask: &str, window: &mut Window, cx: &mut Context<Self>) {
-        if self.connect_open() {
+        if self.connect_open {
             return;
         }
         let network_id = self.surface_network();

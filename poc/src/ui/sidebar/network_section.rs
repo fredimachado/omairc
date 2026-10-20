@@ -10,9 +10,10 @@ use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 /// collapse chevron, the icon, the name with an unread dot, and the status.
 /// The header itself is inert. `on_toggle` receives the network id when the
 /// chevron is clicked; `on_open` receives it when the icon or name is clicked,
-/// which opens that network's Status. The icon is the network's own image when
-/// it has one, and the initial otherwise. Qt shows it whatever the `avatars`
-/// preference says.
+/// which opens that network's Status. `on_edit` receives it when the `edit`
+/// label is clicked, which opens the Connect sheet on that network. The icon is
+/// the network's own image when it has one, and the initial otherwise. Qt shows
+/// it whatever the `avatars` preference says.
 pub fn network_header(
     network: &Network,
     focused: bool,
@@ -20,6 +21,7 @@ pub fn network_header(
     style: &Style,
     on_toggle: Handler<String>,
     on_open: Handler<String>,
+    on_edit: Handler<String>,
 ) -> impl IntoElement {
     let ink = to_gpui(style.ink_color());
     let muted = to_gpui(style.muted_color());
@@ -41,6 +43,7 @@ pub fn network_header(
     let icon_photo = network.icon.as_deref().and_then(bundled_path);
     let id = network.id.clone();
     let open_id = id.clone();
+    let edit_id = id.clone();
 
     div()
         .relative()
@@ -186,7 +189,7 @@ pub fn network_header(
                         ),
                 ),
         )
-        // The inert `edit` label at the right edge.
+        // The `edit` label at the right edge. A click opens Connect on this network.
         .child(
             div()
                 .absolute()
@@ -200,7 +203,11 @@ pub fn network_header(
                 .text_size(scaled_px(style, 9.))
                 .text_color(muted)
                 .font_family(FONT_FAMILY)
+                .cursor_pointer()
                 .hover(|s| s.text_color(ink))
+                .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                    on_edit(edit_id.clone(), window, cx);
+                })
                 .child("edit"),
         )
 }

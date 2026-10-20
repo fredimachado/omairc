@@ -64,6 +64,11 @@ actions!(
         CompleteNickForward,
         CompleteNickBackward,
         OpenFind,
+        OpenConnect,
+        ConnectApply,
+        ConnectCycleTab,
+        ConnectAdd,
+        ConnectRemove,
     ]
 );
 
@@ -72,7 +77,13 @@ pub fn bind_shell_keys(cx: &mut App) {
     bind_inbox_keys(cx);
     bind_about_keys(cx);
     bind_channel_open_keys(cx);
-    cx.bind_keys([
+    let mut bindings = vec![
+        KeyBinding::new("secondary-,", OpenConnect, None),
+        // Ctrl+Enter applies while Connect shows. The listener checks that.
+        KeyBinding::new("secondary-enter", ConnectApply, None),
+        KeyBinding::new("secondary-tab", ConnectCycleTab, None),
+        KeyBinding::new("secondary-n", ConnectAdd, None),
+        KeyBinding::new("secondary-shift-delete", ConnectRemove, None),
         KeyBinding::new("secondary-/", ToggleShortcuts, None),
         KeyBinding::new("secondary-shift-/", OpenAbout, None),
         // Shift+/ can arrive as "?" on some layouts (Windows SendKeys does).
@@ -129,7 +140,15 @@ pub fn bind_shell_keys(cx: &mut App) {
         // Tab completes a nick and never moves focus.
         KeyBinding::new("tab", CompleteNickForward, Some("Composer")),
         KeyBinding::new("shift-tab", CompleteNickBackward, Some("Composer")),
-    ]);
+    ];
+    // Windows Terminal keeps Ctrl+, for its Settings, and Ctrl+PgDn for its tabs, so
+    // Qt adds Ctrl+] and Ctrl+PgDn on Windows only.
+    #[cfg(target_os = "windows")]
+    {
+        bindings.push(KeyBinding::new("secondary-]", OpenConnect, None));
+        bindings.push(KeyBinding::new("secondary-pagedown", ConnectCycleTab, None));
+    }
+    cx.bind_keys(bindings);
 }
 
 /// Attaches every shell action to the window root. Each listener defers to a
@@ -285,5 +304,20 @@ pub fn wire_shell_actions(root: Div, cx: &mut Context<Shell>) -> Div {
     }))
     .on_action(cx.listener(|shell, _: &OpenFind, window, cx| {
         shell.begin_or_advance_find(window, cx);
+    }))
+    .on_action(cx.listener(|shell, _: &OpenConnect, window, cx| {
+        shell.open_connect(window, cx);
+    }))
+    .on_action(cx.listener(|shell, _: &ConnectApply, window, cx| {
+        shell.connect_apply(window, cx);
+    }))
+    .on_action(cx.listener(|shell, _: &ConnectCycleTab, window, cx| {
+        shell.connect_cycle_tab(1, window, cx);
+    }))
+    .on_action(cx.listener(|shell, _: &ConnectAdd, window, cx| {
+        shell.connect_add(window, cx);
+    }))
+    .on_action(cx.listener(|shell, _: &ConnectRemove, window, cx| {
+        shell.connect_remove(window, cx);
     }))
 }

@@ -121,9 +121,9 @@ impl Shell {
     }
 
     /// Escape, in Qt's order: closes the slash popup first, keeping the typed text.
-    /// Then it closes the open sheet. Then, with no sheet, it leaves find mode and
-    /// restores the draft. Then, with neither, it leaves Status for the conversation.
-    /// Inert otherwise.
+    /// Then it closes the top layer: the open sheet, then the Connect sheet. Then,
+    /// with neither, it leaves find mode and restores the draft. Then, with nothing
+    /// open, it leaves Status for the conversation. Inert otherwise.
     pub fn escape(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.dismiss_slash_popup(window, cx) {
             return;
@@ -133,6 +133,8 @@ impl Shell {
         }
         if self.modal.is_some() {
             self.close_modal(window, cx);
+        } else if self.connect_open {
+            self.close_connect(window, cx);
         } else if self.find.is_some() {
             self.leave_find(window, cx);
         } else {
@@ -140,10 +142,15 @@ impl Shell {
         }
     }
 
-    /// Drops the open sheet and hands focus back to the composer.
+    /// Drops the open sheet. Focus goes back to the composer, or to Connect when
+    /// that sheet is open under it, so keys never reach the composer behind the veil.
     pub fn close_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.modal = None;
-        self.focus_composer(window, cx);
+        if self.connect_open {
+            self.connect.restore_focus();
+        } else {
+            self.focus_composer(window, cx);
+        }
         cx.notify();
     }
 
@@ -159,13 +166,6 @@ impl Shell {
             ActiveModal::ChannelOpen(sheet, _) => sheet.clone().into_any_element(),
             ActiveModal::ChannelList(sheet, _) => render_filter_sheet(sheet, cx),
         })
-    }
-
-    /// GATE(Phase 9): whether the Connect sheet holds the keyboard. Connect is a
-    /// window-level slot that Phase 9 adds, and `/list` is a no-op while it is open.
-    /// Connect does not exist yet, so nothing can be open here and this is false.
-    pub fn connect_open(&self) -> bool {
-        false
     }
 
     /// `/list [mask]` for `network_id` (Qt `openChannelListSheet`): the channel list
