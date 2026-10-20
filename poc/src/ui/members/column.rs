@@ -1,6 +1,7 @@
 use gpui::{div, prelude::*, Entity, ScrollHandle};
 
 use crate::model::{Conversation, Style};
+use crate::ui::Handler;
 use crate::ui::members::member_row::member_row;
 use crate::ui::scrollbar::{div_vertical_scrollbar, ScrollbarDragCell};
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
@@ -13,6 +14,8 @@ pub fn render_members<V: 'static>(
     scroll: &ScrollHandle,
     host: Entity<V>,
     drag: &ScrollbarDragCell,
+    self_nick: &str,
+    on_nick: Handler<String>,
 ) -> impl IntoElement {
     let people = conv.people_count();
     div()
@@ -46,7 +49,9 @@ pub fn render_members<V: 'static>(
                         .size_full()
                         .overflow_y_scroll()
                         .track_scroll(scroll)
-                        .children(conv.members.iter().map(|member| member_row(member, style))),
+                        .children(conv.members.iter().map(|member| {
+                            member_row(member, style, self_nick, on_nick.clone())
+                        })),
                 )
                 .child(div_vertical_scrollbar(scroll, style, host, drag.clone())),
         )

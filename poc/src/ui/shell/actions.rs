@@ -12,6 +12,7 @@ actions!(
         ComposerSubmit,
         ToggleMembers,
         ToggleSidebarRail,
+        CloseDirect,
     ]
 );
 
@@ -19,6 +20,7 @@ pub fn bind_shell_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("ctrl-k", OpenJump, None),
         KeyBinding::new("secondary-shift-s", ToggleSidebarRail, None),
+        KeyBinding::new("secondary-w", CloseDirect, None),
         KeyBinding::new("up", JumpUp, Some("JumpSheet")),
         KeyBinding::new("down", JumpDown, Some("JumpSheet")),
         KeyBinding::new("enter", JumpActivate, Some("JumpSheet")),

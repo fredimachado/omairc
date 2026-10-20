@@ -30,6 +30,7 @@ pub fn render_sidebar<V: 'static>(
     host: Entity<V>,
     drag: &ScrollbarDragCell,
     on_select: Handler<ConversationRef>,
+    on_close: Handler<ConversationRef>,
     on_toggle: Handler<String>,
 ) -> impl IntoElement {
     let visible = data.state.rail_visible;
@@ -63,7 +64,7 @@ pub fn render_sidebar<V: 'static>(
                         .size_full()
                         .overflow_y_scroll()
                         .track_scroll(scroll)
-                        .child(network_list(&data, style, on_select, on_toggle)),
+                        .child(network_list(&data, style, on_select, on_close, on_toggle)),
                 )
                 .child(div_vertical_scrollbar(scroll, style, host, drag.clone())),
         )
@@ -78,6 +79,7 @@ fn network_list(
     data: &SidebarData,
     style: &Style,
     on_select: Handler<ConversationRef>,
+    on_close: Handler<ConversationRef>,
     on_toggle: Handler<String>,
 ) -> impl IntoElement {
     div()
@@ -103,6 +105,7 @@ fn network_list(
                         data,
                         style,
                         on_select.clone(),
+                        on_close.clone(),
                     ))
                 })
         }))
@@ -115,6 +118,7 @@ fn conversation_groups(
     data: &SidebarData,
     style: &Style,
     on_select: Handler<ConversationRef>,
+    on_close: Handler<ConversationRef>,
 ) -> impl IntoElement {
     let ordered = ordered_conversations(network);
     let row = |conv: &Conversation| {
@@ -127,6 +131,7 @@ fn conversation_groups(
             data.typing_phase,
             style,
             on_select.clone(),
+            on_close.clone(),
         )
     };
     let channels: Vec<&Conversation> = ordered.iter().copied().filter(|c| c.channel).collect();

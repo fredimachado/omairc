@@ -2,7 +2,8 @@ use std::time::Instant;
 
 use gpui::{App, Context, Focusable, Window};
 
-use crate::model::sidebar::set_collapsed;
+use crate::model::directs::{close_direct, open_direct};
+use crate::model::sidebar::{set_collapsed, sidebar_rows};
 use crate::model::{
     continues_group, local_send_stamp, outgoing_message, row_from_mock_message, Conversation,
     ConversationRef, Network,
@@ -31,10 +32,45 @@ impl Shell {
         }
         self.selected = target;
         let conv = self.current_conversation();
-        self.transcript.update(cx, |t, _| t.set_conversation(conv));
+        let self_nick = self.current_network().nick.clone();
+        self.transcript
+            .update(cx, |t, _| t.set_conversation(conv, &self_nick));
         if !conv.is_channel() {
             self.members_open = false;
         }
+    }
+
+    /// A nick click (transcript, member list): open or select that DM on the
+    /// selected conversation's network. Self and channel-looking nicks do nothing.
+    pub fn open_direct_nick(&mut self, nick: &str, cx: &mut Context<Self>) {
+        let network_id = self.selected.network_id.clone();
+        if let Some(target) = open_direct(&mut self.world, &network_id, nick) {
+            self.select(target, cx);
+        }
+    }
+
+    /// Ctrl+W on a DM, or a middle click on its row. Closing the selected DM
+    /// selects the neighbour (or the first row when none is left). Channels are a no-op.
+    pub fn close_direct_message(
+        &mut self,
+        target: &ConversationRef,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let was_selected = *target == self.selected;
+        let Some(next) = close_direct(&mut self.world, &self.sidebar, target) else {
+            return;
+        };
+        if was_selected {
+            let fallback = sidebar_rows(&self.world, &self.sidebar)
+                .first()
+                .map(|row| row.conversation.clone());
+            if let Some(row) = next.or(fallback) {
+                self.select(row, cx);
+            }
+            self.focus_composer(window, cx);
+        }
+        cx.notify();
     }
 
     pub fn select_by_ids(&mut self, network_id: &str, key: &str, cx: &mut Context<Self>) {

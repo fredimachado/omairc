@@ -11,7 +11,7 @@ use std::rc::Rc;
 
 use gpui::{
     div, prelude::*, App, ClipboardItem, Context, Entity, FocusHandle, Focusable, MouseButton,
-    MouseMoveEvent, MouseUpEvent, Render, ScrollHandle, Window,
+    MouseMoveEvent, MouseUpEvent, Render, ScrollHandle, Subscription, Window,
 };
 
 use crate::model::sidebar::SidebarState;
@@ -21,8 +21,9 @@ use crate::ui::center::render_center;
 use crate::ui::input::SingleLineInput;
 use crate::ui::members::render_members;
 use crate::ui::scrollbar::{end_scrollbar_drag, move_scrollbar_drag, ScrollbarDragCell};
-use crate::ui::shell::actions::{OpenJump, ToggleSidebarRail, TranscriptCopy};
+use crate::ui::shell::actions::{CloseDirect, OpenJump, ToggleSidebarRail, TranscriptCopy};
 use crate::ui::sidebar::{render_sidebar, SidebarData};
+use crate::ui::transcript::view::NickClicked;
 use crate::ui::transcript::TranscriptView;
 use crate::ui::Handler;
 use crate::util::{style, to_gpui};
@@ -49,6 +50,7 @@ pub struct Shell {
     pub typing_phase: u8,
     pub bench: BenchState,
     pub lines_seed: Option<usize>,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl Shell {
@@ -79,6 +81,10 @@ impl Shell {
             SingleLineInput::new("Jump to conversation…", "JumpFilter", cx.focus_handle())
         });
 
+        let transcript_events = cx.subscribe(&transcript, |shell: &mut Shell, _, event: &NickClicked, cx| {
+            shell.open_direct_nick(&event.0, cx);
+        });
+
         let shell = Self {
             world,
             selected,
@@ -101,10 +107,12 @@ impl Shell {
                 ..Default::default()
             },
             lines_seed: lines,
+            _subscriptions: vec![transcript_events],
         };
 
         let conv = shell.current_conversation();
-        shell.transcript.update(cx, |t, _| t.set_conversation(conv));
+        let self_nick = shell.current_network().nick.clone();
+        shell.transcript.update(cx, |t, _| t.set_conversation(conv, &self_nick));
         shell
     }
 }
@@ -138,6 +146,7 @@ impl Render for Shell {
             entity.clone(),
             &self.scrollbar_drag,
             select_handler(entity.clone()),
+            close_handler(entity.clone()),
             collapse_handler(entity.clone()),
         );
         let center = render_center(
@@ -186,6 +195,10 @@ impl Render for Shell {
             .on_action(cx.listener(|shell, _: &ToggleSidebarRail, _, cx| {
                 shell.toggle_rail(cx);
             }))
+            .on_action(cx.listener(|shell, _: &CloseDirect, window, cx| {
+                let target = shell.selected.clone();
+                shell.close_direct_message(&target, window, cx);
+            }))
             .on_action(cx.listener(|shell, _: &TranscriptCopy, _, cx| {
                 // With the composer focused, Ctrl+C copies the transcript
                 // selection unless the draft has its own selection.
@@ -207,6 +220,8 @@ impl Render for Shell {
                     &self.members_scroll,
                     entity.clone(),
                     &self.scrollbar_drag,
+                    &self.current_network().nick,
+                    nick_handler(entity.clone()),
                 ))
             })
             .when(self.jump_open, |this| this.child(self.render_jump(cx)))
@@ -254,6 +269,25 @@ fn toggle_members_handler(entity: Entity<Shell>) -> Handler<()> {
         entity.update(cx, |shell, cx| {
             shell.members_open = !shell.members_open;
             cx.notify();
+        });
+    })
+}
+
+/// Ctrl+W, or a middle click on a DM row: close that DM.
+fn close_handler(entity: Entity<Shell>) -> Handler<ConversationRef> {
+    Rc::new(move |target: ConversationRef, window: &mut Window, cx: &mut App| {
+        entity.update(cx, |shell, cx| {
+            shell.close_direct_message(&target, window, cx);
+        });
+    })
+}
+
+/// A member row click: open or select that nick's DM, then focus the composer.
+fn nick_handler(entity: Entity<Shell>) -> Handler<String> {
+    Rc::new(move |nick: String, window: &mut Window, cx: &mut App| {
+        entity.update(cx, |shell, cx| {
+            shell.open_direct_nick(&nick, cx);
+            shell.focus_composer(window, cx);
         });
     })
 }

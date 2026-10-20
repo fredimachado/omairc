@@ -4,13 +4,44 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use gpui::{
-    App, Bounds, Element, ElementId, GlobalElementId, Hsla, IntoElement, PaintQuad, Pixels,
-    SharedString, StyledText, TextLayout, Window, div, fill, prelude::*, px, size,
+    App, Bounds, Div, Element, ElementId, GlobalElementId, Hsla, IntoElement, MouseButton,
+    PaintQuad, Pixels, SharedString, StyledText, TextLayout, Window, div, fill, prelude::*, px,
+    size,
 };
 use crate::model::{Row, RowKind, Style};
 
 use crate::ui::format_ui::{gpui_text_style, irc_runs_to_gpui, link_underline_run};
+use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
+
+/// What a message row reports back to the shell. `self_nick` is inert: a click on
+/// your own author or avatar does nothing.
+pub struct RowCallbacks {
+    pub on_nick: Handler<String>,
+    pub self_nick: String,
+}
+
+/// Makes an author name or avatar open that nick's DM. The click stops here so
+/// it does not start a transcript selection.
+trait NickClick: Sized {
+    fn nick_click(self, nick: Option<String>, on_nick: &Handler<String>) -> Self;
+}
+
+impl NickClick for Div {
+    fn nick_click(self, nick: Option<String>, on_nick: &Handler<String>) -> Self {
+        match nick {
+            Some(nick) => {
+                let on_nick = on_nick.clone();
+                self.cursor_pointer()
+                    .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                        cx.stop_propagation();
+                        on_nick(nick.clone(), window, cx);
+                    })
+            }
+            None => self,
+        }
+    }
+}
 
 #[derive(Clone, Default)]
 pub struct RowLayout {
@@ -30,6 +61,7 @@ pub fn render_transcript_row(
     selection_range: Option<Range<usize>>,
     hovered_link: Option<Range<usize>>,
     layouts: RowLayoutMap,
+    callbacks: &RowCallbacks,
 ) -> impl IntoElement {
     match row.kind {
         RowKind::DaySeparator => {
@@ -81,6 +113,7 @@ pub fn render_transcript_row(
                 selection_range,
                 hovered_link,
                 layouts,
+                callbacks,
             )),
     }
 }
@@ -93,8 +126,12 @@ fn render_message_row(
     selection_range: Option<Range<usize>>,
     hovered_link: Option<Range<usize>>,
     layouts: RowLayoutMap,
+    callbacks: &RowCallbacks,
 ) -> impl IntoElement {
     let author = row.author.as_deref().unwrap_or("");
+    // Only the first row of a group has a clickable author. Self is inert.
+    let nick_target = (!row.continues && !author.is_empty() && author != callbacks.self_nick)
+        .then(|| author.to_string());
     let nick_color = to_gpui(style.nick_color(author));
     let fills = style.nick_avatar_fills();
     let avatar_fill = to_gpui(fills[style.nick_palette_index(author)]);
@@ -151,7 +188,8 @@ fn render_message_row(
                     .text_size(scaled_px(style, 12.))
                     .text_color(nick_color)
                     .font_family(FONT_FAMILY)
-                    .child(initials),
+                    .child(initials)
+                    .nick_click(nick_target.clone(), &callbacks.on_nick),
             )
         })
         .child(
@@ -186,7 +224,8 @@ fn render_message_row(
                                                     .font_weight(gpui::FontWeight::BOLD)
                                                     .text_color(nick_color)
                                                     .font_family(FONT_FAMILY)
-                                                    .child(author.to_string()),
+                                                    .child(author.to_string())
+                                                    .nick_click(nick_target.clone(), &callbacks.on_nick),
                                             )
                                             .when(!realname_suffix.is_empty(), |this| {
                                                 this.child(

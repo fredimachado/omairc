@@ -8,7 +8,8 @@ use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
 /// One channel or direct message row, a port of `ConversationRow.qml`: 36 tall,
-/// inset 8. A click reports `target` to `on_select`.
+/// inset 8. A click reports `target` to `on_select`; a middle click on a DM
+/// reports it to `on_close`.
 pub fn conversation_row(
     target: ConversationRef,
     conv: &Conversation,
@@ -16,6 +17,7 @@ pub fn conversation_row(
     typing_phase: u8,
     style: &Style,
     on_select: Handler<ConversationRef>,
+    on_close: Handler<ConversationRef>,
 ) -> impl IntoElement {
     let ink = to_gpui(style.ink_color());
     let muted = to_gpui(style.muted_color());
@@ -42,8 +44,14 @@ pub fn conversation_row(
         .flex_shrink_0()
         .relative()
         .cursor_pointer()
-        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-            on_select(target.clone(), window, cx);
+        .on_mouse_down(MouseButton::Left, {
+            let target = target.clone();
+            move |_, window, cx| on_select(target.clone(), window, cx)
+        })
+        .when(!conv.channel, |this| {
+            this.on_mouse_down(MouseButton::Middle, move |_, window, cx| {
+                on_close(target.clone(), window, cx);
+            })
         })
         .child(
             div()

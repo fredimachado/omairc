@@ -5,15 +5,22 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    div, list, px, Context, FocusHandle, ListAlignment, ListOffset, ListState, MouseButton,
-    MouseDownEvent, MouseMoveEvent, Pixels, Point, Render, Window, prelude::*,
+    div, list, px, App, Context, EventEmitter, FocusHandle, ListAlignment, ListOffset, ListState,
+    MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, Render, Window, prelude::*,
 };
 
 use crate::model::{row_from_message, Conversation, Pos, Row, Style, Transcript};
-use crate::ui::message_row::{render_transcript_row, RowLayoutMap};
+use crate::ui::message_row::{render_transcript_row, RowCallbacks, RowLayoutMap};
 use crate::ui::scrollbar::{list_vertical_scrollbar, move_scrollbar_drag, ScrollbarDragCell};
 use crate::ui::transcript::pointer::{self, RowBounds};
+use crate::ui::Handler;
 use crate::util::{style, OmaircStyleGlobal};
+
+/// A click on a transcript author or avatar. The shell opens or creates the DM.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NickClicked(pub String);
+
+impl EventEmitter<NickClicked> for TranscriptView {}
 
 /// The transcript list: its model, selection, drag-select and link hover.
 /// Owned as an entity so the shell only holds a handle.
@@ -23,6 +30,7 @@ pub struct TranscriptView {
     row_layouts: RowLayoutMap,
     row_bounds: RowBounds,
     member_realnames: HashMap<String, String>,
+    self_nick: String,
     composer_focus: FocusHandle,
     scrollbar_drag: ScrollbarDragCell,
     dragging: bool,
@@ -43,6 +51,7 @@ impl TranscriptView {
             row_layouts: Rc::new(RefCell::new(Default::default())),
             row_bounds: Rc::new(RefCell::new(Default::default())),
             member_realnames: HashMap::new(),
+            self_nick: String::new(),
             composer_focus,
             scrollbar_drag,
             dragging: false,
@@ -55,9 +64,10 @@ impl TranscriptView {
     }
 
     /// Shows a conversation's stored lines with a fresh selection and scroll.
-    pub fn set_conversation(&mut self, conv: &Conversation) {
+    pub fn set_conversation(&mut self, conv: &Conversation, self_nick: &str) {
         self.model.set_conversation(&conv.messages);
         self.member_realnames = member_realnames(conv);
+        self.self_nick = self_nick.to_string();
         self.model.clear_selection();
         self.list_state.reset(self.model.rows().len());
         self.row_layouts.borrow_mut().clear();
@@ -267,6 +277,15 @@ impl Render for TranscriptView {
         let layouts = self.row_layouts.clone();
         let member_realnames = self.member_realnames.clone();
         let list_state = self.list_state.clone();
+        let focus = self.composer_focus.clone();
+        let on_nick: Handler<String> = {
+            let entity = entity.clone();
+            Rc::new(move |nick: String, window: &mut Window, app: &mut App| {
+                window.focus(&focus);
+                entity.update(app, |_, cx| cx.emit(NickClicked(nick)));
+            })
+        };
+        let self_nick = self.self_nick.clone();
 
         div()
             .id("transcript")
@@ -332,6 +351,10 @@ impl Render for TranscriptView {
                                 selection,
                                 hover,
                                 layouts.clone(),
+                                &RowCallbacks {
+                                    on_nick: on_nick.clone(),
+                                    self_nick: self_nick.clone(),
+                                },
                             ))
                             .into_any_element()
                     })
