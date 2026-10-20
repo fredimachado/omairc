@@ -89,6 +89,7 @@ pub fn identity_footer(
                 .child(
                     div()
                         .overflow_hidden()
+                        .whitespace_nowrap()
                         .text_ellipsis()
                         .text_size(scaled_px(style, 13.))
                         .font_weight(gpui::FontWeight::BOLD)
@@ -108,34 +109,45 @@ pub fn identity_footer(
         .child(
             div()
                 .flex_shrink_0()
+                .pr(scaled_px(style, 8.))
                 .flex()
-                .items_center()
-                .gap(scaled_px(style, 10.))
+                .flex_col()
+                .items_end()
+                .gap(scaled_px(style, 4.))
                 .child(inbox_link(inbox_count, on_inbox, style))
-                .child(
-                    div()
-                        .text_size(scaled_px(style, 11.))
-                        .text_color(muted)
-                        .font_family(FONT_FAMILY)
-                        .cursor_pointer()
-                        .hover(|s| s.text_color(to_gpui(ink)).underline())
-                        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                            on_about((), window, cx);
-                        })
-                        .child(version.to_string()),
-                ),
+                .child(version_link(version, on_about, style)),
         )
 }
 
-/// `inbox` with the accent count pill in front of it. A press opens or closes
-/// the Inbox sheet.
+/// The version link under `inbox`. A press opens the About sheet. Hover turns
+/// the text ink and underlines it, like Qt's `selfVersionHit`.
+fn version_link(version: &str, on_about: Handler<()>, style: &Style) -> impl IntoElement {
+    let ink = style.ink_color();
+    div()
+        .pr(scaled_px(style, 9.))
+        .cursor_pointer()
+        .text_size(scaled_px(style, 10.))
+        .text_color(to_gpui(style.muted_color()))
+        .font_family(FONT_FAMILY)
+        .whitespace_nowrap()
+        .hover(|s| s.text_color(to_gpui(ink)).underline())
+        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+            on_about((), window, cx);
+        })
+        .child(version.to_string())
+}
+
+/// `inbox` with the accent count pill in front of it, right-aligned in the
+/// footer column. A press opens or closes the Inbox sheet.
 fn inbox_link(count: u32, on_inbox: Handler<()>, style: &Style) -> impl IntoElement {
     let ink = style.ink_color();
     div()
         .flex()
         .items_center()
         .gap(scaled_px(style, 4.))
+        .pr(scaled_px(style, 9.))
         .cursor_pointer()
+        .group("footer-inbox")
         .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
             on_inbox((), window, cx);
         })
@@ -159,10 +171,11 @@ fn inbox_link(count: u32, on_inbox: Handler<()>, style: &Style) -> impl IntoElem
         })
         .child(
             div()
-                .text_size(scaled_px(style, 11.))
+                .text_size(scaled_px(style, 10.))
                 .text_color(to_gpui(style.muted_color()))
                 .font_family(FONT_FAMILY)
-                .hover(|s| s.text_color(to_gpui(ink)).underline())
+                .whitespace_nowrap()
+                .group_hover("footer-inbox", |s| s.text_color(to_gpui(ink)).underline())
                 .child("inbox"),
         )
 }
