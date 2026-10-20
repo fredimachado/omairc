@@ -51,9 +51,6 @@ impl Shell {
         let self_nick = self.current_network().nick.clone();
         self.transcript
             .update(cx, |t, _| t.set_conversation(conv, &self_nick));
-        if !conv.is_channel() {
-            self.members_open = false;
-        }
     }
 
     /// A nick click (transcript, member list): open or select that DM on the
