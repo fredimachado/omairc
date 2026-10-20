@@ -185,7 +185,8 @@ fn render_message_row(
                     .flex()
                     .items_center()
                     .justify_center()
-                    .text_size(scaled_px(style, 12.))
+                    .text_size(scaled_px(style, 13.))
+                    .font_weight(gpui::FontWeight::BOLD)
                     .text_color(nick_color)
                     .font_family(FONT_FAMILY)
                     .child(initials)
@@ -256,15 +257,22 @@ fn render_message_row(
                                     ),
                             )
                         })
-                        .child(BodyTextElement {
-                            row_ix,
-                            text: styled,
-                            layouts,
-                            avatar_top: top_pad,
-                            header_height: header_h,
-                            selection_range,
-                            selection_color,
-                        }),
+                        // StyledText takes its size from the ancestor text style and
+                        // TextRun carries none, so the body sets Qt's 13px here.
+                        .child(
+                            div()
+                                .text_size(scaled_px(style, 13.))
+                                .font_family(FONT_FAMILY)
+                                .child(BodyTextElement {
+                                    row_ix,
+                                    text: styled,
+                                    layouts,
+                                    avatar_top: top_pad,
+                                    header_height: header_h,
+                                    selection_range,
+                                    selection_color,
+                                }),
+                        ),
                 ),
         )
 }

@@ -29,6 +29,8 @@ pub fn avatar_with_presence(
                 .items_center()
                 .justify_center()
                 .text_size(scaled_px(style, initials_size))
+                // Qt's NickGlyph initial is bold (iA Writer Mono S Bold, weight 700).
+                .font_weight(gpui::FontWeight::BOLD)
                 .text_color(initials_color)
                 .font_family(FONT_FAMILY)
                 .child(initials),

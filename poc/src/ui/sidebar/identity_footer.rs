@@ -62,7 +62,8 @@ pub fn identity_footer(
                         .flex()
                         .items_center()
                         .justify_center()
-                        .text_size(scaled_px(style, 12.))
+                        .text_size(scaled_px(style, 14.))
+                        .font_weight(gpui::FontWeight::BOLD)
                         .text_color(to_gpui(style.nick_color(&network.nick)))
                         .font_family(FONT_FAMILY)
                         .child(style.initials(&network.nick)),
