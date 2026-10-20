@@ -4,10 +4,16 @@
 pub mod color;
 pub mod format;
 pub mod ids;
+pub mod chords;
 pub mod directs;
+pub mod filter_list;
+pub mod inbox;
 pub mod jump;
+pub mod links;
 pub mod mock;
 pub mod navigation;
+pub mod nick_pick;
+pub mod shortcuts;
 pub mod sidebar;
 pub mod style;
 pub mod theme;
