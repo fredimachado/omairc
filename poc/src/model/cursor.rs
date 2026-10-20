@@ -10,6 +10,15 @@ pub fn page_amount(extent: f32, half: bool) -> f32 {
     (extent * factor).round().max(0.0)
 }
 
+/// The absolute pixel top a relative scroll lands on. `current` is the list's
+/// top offset and `max` its largest scrollable top. A list that follows the
+/// tail reports its top as the whole content height, which is past `max`, so
+/// `current` is clamped first. The result stays within `0..=max`.
+pub fn scroll_target(current: f32, max: f32, delta: f32) -> f32 {
+    let max = max.max(0.);
+    (current.min(max) + delta).clamp(0., max)
+}
+
 /// Moves a list cursor by `delta` without wrapping. Clamps to `0..len`.
 /// An empty list stays at 0.
 pub fn move_index(len: usize, current: usize, delta: isize) -> usize {
@@ -31,6 +40,17 @@ mod tests {
         assert_eq!(page_amount(10., false), 8.);
         assert_eq!(page_amount(1., true), 0.);
         assert_eq!(page_amount(-5., false), 0.);
+    }
+
+    #[test]
+    fn scroll_target_clamps_a_tail_following_top_to_the_real_max() {
+        // Tail-follow reports the full content height (1000) against a max of 700.
+        // PgUp by 560 must land at 140, not at 440 from the content end.
+        assert_eq!(scroll_target(1000., 700., -560.), 140.);
+        assert_eq!(scroll_target(700., 700., 560.), 700.);
+        assert_eq!(scroll_target(100., 700., -560.), 0.);
+        assert_eq!(scroll_target(0., 0., 560.), 0.);
+        assert_eq!(scroll_target(0., -5., 10.), 0.);
     }
 
     #[test]

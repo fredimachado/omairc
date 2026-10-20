@@ -9,7 +9,7 @@ use gpui::{
     MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, Render, Window, prelude::*,
 };
 
-use crate::model::cursor::page_amount;
+use crate::model::cursor::{page_amount, scroll_target};
 use crate::model::{row_from_message, Conversation, Pos, Row, Style, Transcript};
 use crate::ui::message_row::{render_transcript_row, RowCallbacks, RowLayoutMap};
 use crate::ui::scrollbar::{list_vertical_scrollbar, move_scrollbar_drag, ScrollbarDragCell};
@@ -102,11 +102,21 @@ impl TranscriptView {
         if amount <= 0. {
             return;
         }
-        if !down {
-            self.model.set_pinned_to_bottom(false);
-        }
-        let distance = px(if down { amount } else { -amount });
-        self.list_state.scroll_by(distance);
+        self.scroll_by_px(if down { amount } else { -amount });
+    }
+
+    /// Moves the list by `delta` pixels from its real top. `ListState::scroll_by`
+    /// is not used: while the list follows the tail, its top is the full content
+    /// height, so a relative move from there lands past the bottom and the next
+    /// layout snaps back. Clamping to the real range and setting the absolute
+    /// offset avoids that, and reaching the bottom re-pins the tail.
+    fn scroll_by_px(&mut self, delta: f32) {
+        let list = &self.list_state;
+        let max = f32::from(list.max_offset_for_scrollbar().height);
+        let current = -f32::from(list.scroll_px_offset_for_scrollbar().y);
+        let target = scroll_target(current, max, delta);
+        self.model.set_pinned_to_bottom(target >= max);
+        list.set_offset_from_scrollbar(Point::new(px(0.), px(target)));
     }
 
     /// Ctrl+Home: the first row.
@@ -219,9 +229,7 @@ impl TranscriptView {
         let Some(edge) = self.drag_edge else {
             return;
         };
-        let delta = px(if edge < 0 { -8. } else { 8. });
-        self.model.set_pinned_to_bottom(false);
-        self.list_state.scroll_by(delta);
+        self.scroll_by_px(if edge < 0 { -8. } else { 8. });
         if let Some(position) = self.drag_pointer {
             self.extend_drag_autoscroll(position, app_style);
         }
