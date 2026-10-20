@@ -14,6 +14,7 @@ use crate::model::sidebar::{
     collapse_all, move_focused, set_collapsed, set_collapsed_focused, sidebar_rows,
 };
 use crate::model::status::status_rows;
+use crate::model::unread;
 use crate::model::{Conversation, ConversationRef, Member, Network};
 use crate::ui::shell::modal::ActiveModal;
 use crate::ui::shell::Shell;
@@ -41,8 +42,14 @@ impl Shell {
     /// is the one already selected. Opening reads it, so its unread count and
     /// mention flag clear.
     pub fn select(&mut self, target: ConversationRef, cx: &mut Context<Self>) {
-        if let Some(conv) = self.world.find_mut(&target) {
-            conv.mark_read();
+        // A visit reads the conversation, and clears its mark once nothing is left
+        // unread (Qt `markSelected`). Re-selecting the selected conversation is no
+        // visit, so its unread stays put. Status does not change the selection.
+        let visit = self.selected != target;
+        if visit {
+            if let Some(conv) = self.world.find_mut(&target) {
+                unread::enter(conv);
+            }
         }
         if let Some(conv) = self.world.find(&target) {
             let is_channel = conv.is_channel();
@@ -94,9 +101,11 @@ impl Shell {
         let self_nick = self.current_network().nick.clone();
         let chantypes = self.current_network().chantypes.clone();
         let joins = self.preferences.joins;
+        // With no saved place the conversation opens at its mark, when the pref is on.
+        let open_at_unread = place.is_none() && self.preferences.unread;
         self.transcript.update(cx, |t, _| {
             t.set_conversation(conv, &self_nick, &chantypes, joins);
-            t.restore_scroll_place(place.as_ref());
+            t.restore_scroll_place(place.as_ref(), open_at_unread);
         });
         self.sync_send_limit(cx);
     }

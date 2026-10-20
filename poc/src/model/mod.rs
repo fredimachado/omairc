@@ -33,6 +33,7 @@ pub mod theme;
 pub mod title;
 pub mod transcript;
 pub mod typing_tail;
+pub mod unread;
 
 pub use color::Color;
 pub use ids::ConversationRef;

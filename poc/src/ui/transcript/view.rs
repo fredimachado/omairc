@@ -16,10 +16,14 @@ use crate::model::mock::local_minute;
 use crate::model::prefs::MembershipNoise;
 use crate::model::scroll_place::{resume, Resume, SavedPlace};
 use crate::model::typing_tail::typing_continues;
-use crate::model::{mix_colors, row_from_message, Conversation, Pos, Row, Style, Transcript};
+use crate::model::unread::{self, UnseenLanding};
+use crate::model::{
+    mix_colors, row_from_message, Conversation, MockMessage, Pos, Row, Style, Transcript,
+};
 use crate::ui::message_row::{render_transcript_row, RowCallbacks, RowLayoutMap};
 use crate::ui::scrollbar::{list_vertical_scrollbar, move_scrollbar_drag, ScrollbarDragCell};
 use crate::ui::transcript::pointer::{self, RowBounds};
+use crate::ui::transcript::unseen_jump::render_unseen_jump;
 use crate::ui::typing_row::render_typing_row;
 use crate::ui::Handler;
 use crate::util::{style, to_gpui, OmaircStyleGlobal};
@@ -67,6 +71,10 @@ pub struct TranscriptView {
     typing_peer: Option<String>,
     /// The typing dots' pulse frame, set by the shell's typing pulse.
     typing_phase: u8,
+    /// The row of the first line that arrived while the reader was scrolled up.
+    /// The unseen jump lands there. It clears when the reader reaches the end, or
+    /// jumps (Qt `firstUnseenIndex`).
+    first_unseen: Option<usize>,
 }
 
 impl TranscriptView {
@@ -92,6 +100,7 @@ impl TranscriptView {
             find_row: None,
             typing_peer: None,
             typing_phase: 0,
+            first_unseen: None,
         }
     }
 
@@ -114,6 +123,8 @@ impl TranscriptView {
         self.typing_peer = (!conv.is_channel() && conv.typing).then(|| conv.name.clone());
         self.model.clear_selection();
         self.find_row = None;
+        // Switching buffers drops any catch-up (Qt `resetPending`).
+        self.first_unseen = None;
         self.list_state.reset(self.list_len());
         self.row_layouts.borrow_mut().clear();
     }
@@ -131,6 +142,7 @@ impl TranscriptView {
         self.model.clear_selection();
         self.hovered_link = None;
         self.find_row = None;
+        self.first_unseen = None;
         self.list_state.reset(self.list_len());
         self.row_layouts.borrow_mut().clear();
     }
@@ -164,10 +176,17 @@ impl TranscriptView {
     }
 
     /// Puts the list at `place`, once `set_conversation` or `set_status` has reset
-    /// it. A missing or end place leaves the reset list following the tail.
-    pub fn restore_scroll_place(&mut self, place: Option<&SavedPlace>) {
-        match resume(place, self.model.rows()) {
-            Resume::End => self.model.set_pinned_to_bottom(true),
+    /// it. A missing or end place leaves the reset list following the tail, unless
+    /// `open_at_unread` is on and the conversation holds a "New messages" mark: then
+    /// the mark is the top of the view (Qt `pinTranscriptToUnreadOr`).
+    pub fn restore_scroll_place(&mut self, place: Option<&SavedPlace>, open_at_unread: bool) {
+        let rows = self.model.rows();
+        let mark = unread::opening_row(rows, open_at_unread);
+        match resume(place, rows) {
+            Resume::End => match mark {
+                Some(row) => self.scroll_to_row(row),
+                None => self.model.set_pinned_to_bottom(true),
+            },
             Resume::Line { row, offset_px } => {
                 self.model.set_scroll_anchor(row, offset_px);
                 self.list_state.scroll_to(ListOffset {
@@ -193,6 +212,68 @@ impl TranscriptView {
         self.model.append(row);
         self.model.set_pinned_to_bottom(true);
         self.list_state.splice(old_len..old_len, 1);
+    }
+
+    /// Adds the lines that just arrived in the open conversation: its "New messages"
+    /// mark when one was planted, then the line. A reader at the end keeps following.
+    /// A reader scrolled up stays where they are, and the first line that arrived
+    /// becomes the unseen landing (Qt `noteGrowth`).
+    pub fn append_arrival(&mut self, lines: &[MockMessage]) {
+        let was_at_end = self.at_end();
+        let old_len = self.model.rows().len();
+        for line in lines {
+            let previous = self.model.rows().last().cloned();
+            let id = self.model.rows().len() as u64 + 1;
+            if let Some(row) = unread::arrival_row(id, line, previous.as_ref()) {
+                self.model.append(row);
+            }
+        }
+        let added = self.model.rows().len() - old_len;
+        if added == 0 {
+            return;
+        }
+        self.list_state.splice(old_len..old_len, added);
+        if was_at_end {
+            self.first_unseen = None;
+            self.model.set_pinned_to_bottom(true);
+        } else if self.first_unseen.is_none() {
+            // The arrival is the last row appended, so it is the newest.
+            self.first_unseen = Some(old_len + added - 1);
+        }
+    }
+
+    /// Focus returns to the window: the list lands on its open mark, and keeps its
+    /// place when there is none (Qt `pinTranscriptOnFocusReturn`).
+    pub fn land_on_unread_mark(&mut self) {
+        let mark = unread::unread_mark_row(self.model.rows());
+        if let Some(row) = mark {
+            self.scroll_to_row(row);
+        }
+    }
+
+    /// Where the unseen jump lands now, for the `↓` chip and Alt+U.
+    pub fn unseen_target(&self) -> Option<UnseenLanding> {
+        unread::unseen_landing(!self.at_end(), self.first_unseen, self.model.rows())
+    }
+
+    /// Alt+U and the `↓` chip (Qt `jumpToUnseen`): to the first line that arrived
+    /// while the reader was scrolled up, else to the end while a mark is open.
+    /// Returns whether the view moved. It does nothing while the reader follows the
+    /// end.
+    pub fn jump_to_unseen(&mut self) -> bool {
+        match self.unseen_target() {
+            Some(UnseenLanding::Row(row)) => {
+                self.first_unseen = None;
+                self.scroll_to_row(row);
+                true
+            }
+            Some(UnseenLanding::End) => {
+                self.first_unseen = None;
+                self.scroll_to_bottom();
+                true
+            }
+            None => false,
+        }
     }
 
     /// Reveals `row_ix` at the top of the list and leaves follow-the-end, as Qt's
@@ -434,6 +515,16 @@ impl Render for TranscriptView {
         let app_style = style(cx);
         // Heights measured by the last frame's prepaint feed the transcript model.
         self.sync_measured_heights();
+        // A reader who has reached the end has seen what arrived while scrolled up.
+        if self.at_end() {
+            self.first_unseen = None;
+        }
+        let unseen = self.unseen_target().is_some();
+        let on_unseen = cx.listener(|view, _: &MouseDownEvent, _, cx| {
+            if view.jump_to_unseen() {
+                cx.notify();
+            }
+        });
         // Rows re-record their bounds during this frame's prepaint; anything
         // scrolled out of the list must not keep a stale position.
         self.row_bounds.borrow_mut().clear();
@@ -565,6 +656,9 @@ impl Render for TranscriptView {
                 entity,
                 drag,
             ))
+            .when(unseen, |this| {
+                this.child(render_unseen_jump(&app_style, on_unseen))
+            })
     }
 }
 

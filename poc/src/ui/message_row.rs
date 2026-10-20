@@ -9,7 +9,7 @@ use gpui::{
     prelude::*, px, size,
 };
 use crate::model::mention::{is_mention_row, mention_wash};
-use crate::model::{Row, RowKind, Style};
+use crate::model::{mix_colors, Row, RowKind, Style};
 
 use crate::ui::format_ui::{gpui_text_style, irc_runs_to_gpui, link_underline_run};
 use crate::ui::status_row::render_status_row;
@@ -113,6 +113,7 @@ pub fn render_transcript_row(
             layouts,
         ),
         RowKind::Whois => render_whois_row(row_ix, row, style, selection_range, layouts),
+        RowKind::UnreadMark => render_unread_mark_row(row_ix, style),
         RowKind::Message => div()
             .id(("transcript-row", row_ix))
             .w_full()
@@ -127,6 +128,40 @@ pub fn render_transcript_row(
                 callbacks,
             )),
     }
+}
+
+/// The "New messages" boundary (`UnreadMark.qml`): the caption between two rules.
+/// Both are tinted toward the accent, so the boundary reads as a boundary rather
+/// than as a join caption. It is not selectable and it does not take pointer hits.
+fn render_unread_mark_row(row_ix: usize, style: &Style) -> Stateful<Div> {
+    let dark = style.dark_mode();
+    let mark = to_gpui(mix_colors(
+        style.ink_color(),
+        style.accent_color(),
+        if dark { 0.55 } else { 0.42 },
+    ));
+    let rule = to_gpui(mix_colors(
+        style.page_color(),
+        style.accent_color(),
+        if dark { 0.48 } else { 0.36 },
+    ));
+    div()
+        .id(("transcript-row", row_ix))
+        .w_full()
+        .py(scaled_px(style, 8.))
+        .px(scaled_px(style, 24.))
+        .flex()
+        .items_center()
+        .child(div().flex_grow().h(scaled_px(style, 1.)).bg(rule))
+        .child(
+            div()
+                .mx(scaled_px(style, 10.))
+                .text_size(scaled_px(style, 10.))
+                .text_color(mark)
+                .font_family(FONT_FAMILY)
+                .child("New messages"),
+        )
+        .child(div().flex_grow().h(scaled_px(style, 1.)).bg(rule))
 }
 
 /// A whois-style line: left-aligned, muted, wrapping, and selectable. Qt's

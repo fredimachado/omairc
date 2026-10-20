@@ -3,6 +3,7 @@ use super::membership::membership_text;
 use super::mock::MockMessage;
 use super::status::StatusMark;
 use super::text_edit::{snap_grapheme, word_bounds};
+use super::unread::{shows_row, UNREAD_LINE};
 use std::ops::Range;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -15,6 +16,9 @@ pub enum RowKind {
     /// A whois-style line in a conversation: the `/help` list, `/pref` replies and
     /// the `/version` reply. Left-aligned and muted, with its text in `body`.
     Whois,
+    /// The "New messages" boundary in front of the first line that arrived unseen
+    /// (`model::unread`). Drawn between two rules, and never copied.
+    UnreadMark,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -433,6 +437,7 @@ impl Transcript {
                     selected
                 ),
                 RowKind::Whois => selected,
+                RowKind::UnreadMark => continue,
             };
             lines.push(line);
         }
@@ -487,13 +492,18 @@ fn row_plain(row: &Row) -> &str {
             .as_deref()
             .or(Some(row.body.plain.as_str()))
             .unwrap(),
-        RowKind::Message | RowKind::Status | RowKind::Whois => &row.body.plain,
+        RowKind::Message | RowKind::Status | RowKind::Whois | RowKind::UnreadMark => {
+            &row.body.plain
+        }
     }
 }
 
 pub fn rows_from_messages(messages: &[MockMessage]) -> Vec<Row> {
     let mut rows = Vec::with_capacity(messages.len());
     for (index, message) in messages.iter().enumerate() {
+        if !shows_row(message, rows.last()) {
+            continue;
+        }
         let row = row_for_message(index as u64 + 1, message, rows.last());
         rows.push(row);
     }
@@ -525,6 +535,18 @@ pub fn row_for_message(id: u64, message: &MockMessage, previous: Option<&Row>) -
             }
         }
         "whois" => row_from_whois(id, &message.body),
+        UNREAD_LINE => Row {
+            id,
+            kind: RowKind::UnreadMark,
+            author: None,
+            time: None,
+            body: format_irc("New messages"),
+            continues: false,
+            action: false,
+            separator_text: None,
+            event_text: None,
+            status: None,
+        },
         _ => {
             let event_text = membership_text(message);
             Row {
@@ -703,6 +725,32 @@ mod tests {
             Some(&first),
         );
         assert!(folded.continues);
+    }
+
+    #[test]
+    fn a_selection_over_the_unread_mark_copies_the_lines_only() {
+        use crate::model::unread::mark_line;
+        let messages = [
+            crate::model::mock::MockMessage {
+                kind: "message".to_string(),
+                author: "anna".to_string(),
+                time: "09:00".to_string(),
+                day: String::new(),
+                body: "one".to_string(),
+            },
+            mark_line(),
+            crate::model::mock::MockMessage {
+                kind: "message".to_string(),
+                author: "dax".to_string(),
+                time: "09:01".to_string(),
+                day: String::new(),
+                body: "two".to_string(),
+            },
+        ];
+        let mut t = Transcript::new(10);
+        t.set_rows(rows_from_messages(&messages));
+        t.select_all();
+        assert_eq!(t.copy_text(), "[09:00] <anna> one\n[09:01] <dax> two");
     }
 
     #[test]

@@ -39,6 +39,7 @@ actions!(
         MoveNetworkDown,
         NextUnread,
         MarkAllRead,
+        JumpUnseen,
         FocusComposer,
         FocusMembers,
         Quit,
@@ -101,6 +102,7 @@ pub fn bind_shell_keys(cx: &mut App) {
         KeyBinding::new("alt-shift-down", MoveNetworkDown, None),
         KeyBinding::new("alt-a", NextUnread, None),
         KeyBinding::new("alt-shift-a", MarkAllRead, None),
+        KeyBinding::new("alt-u", JumpUnseen, None),
         KeyBinding::new("pageup", TranscriptPageUp, None),
         KeyBinding::new("pagedown", TranscriptPageDown, None),
         KeyBinding::new("shift-pageup", TranscriptHalfPageUp, None),
@@ -216,6 +218,9 @@ pub fn wire_shell_actions(root: Div, cx: &mut Context<Shell>) -> Div {
     }))
     .on_action(cx.listener(|shell, _: &MarkAllRead, window, cx| {
         shell.read_all(window, cx);
+    }))
+    .on_action(cx.listener(|shell, _: &JumpUnseen, window, cx| {
+        shell.jump_to_unseen(window, cx);
     }))
     .on_action(cx.listener(|shell, _: &TranscriptPageUp, window, cx| {
         shell.transcript_scroll(Chord::PageUp, false, window, cx);

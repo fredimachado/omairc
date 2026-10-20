@@ -86,6 +86,11 @@ pub enum Chord {
     MoveNetworkDown,
     NextUnread,
     MarkAllRead,
+    /// Alt+U: the unseen jump, to the first line that arrived while the reader was
+    /// scrolled up, or to the end while a "New messages" mark is open. Status has
+    /// no unseen lines, so it is off there. Qt has no Alt+U: its jump is the `↓`
+    /// chip, and the shortcuts sheet does not list this chord.
+    Unseen,
     HeaderActivate,
     PageUp,
     PageDown,
@@ -156,6 +161,8 @@ pub fn chord_enabled(chord: Chord, ctx: &ChordContext) -> bool {
         // Qt binds Alt+Shift+A unconditionally and returns early while an
         // overlay is open, so the net gate is "no overlay".
         Chord::MarkAllRead => no_sheet,
+        // The unseen jump moves a transcript, so it needs a conversation on screen.
+        Chord::Unseen => on_conversation,
         Chord::WalkConversationDown
         | Chord::WalkConversationUp
         | Chord::WalkNetworkRight
@@ -311,6 +318,13 @@ mod tests {
             nothing,
             [true, true, false, false, false, false, false, false, true],
         );
+    }
+
+    #[test]
+    fn the_unseen_jump_needs_a_conversation_and_no_sheet() {
+        check(Chord::Unseen, nothing, CONVERSATION_ONLY);
+        check(Chord::Unseen, channel, CONVERSATION_ONLY);
+        check(Chord::Unseen, direct, CONVERSATION_ONLY);
     }
 
     #[test]
@@ -518,6 +532,7 @@ mod tests {
             Chord::NickComplete,
             Chord::NextUnread,
             Chord::MarkAllRead,
+            Chord::Unseen,
             Chord::MembersStep,
         ] {
             assert!(

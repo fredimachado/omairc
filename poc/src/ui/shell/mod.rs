@@ -9,6 +9,7 @@ pub mod find;
 pub mod inbox;
 pub mod modal;
 pub mod slash;
+pub mod unread;
 
 use std::rc::Rc;
 
@@ -79,6 +80,12 @@ pub struct Shell {
     pub preferences: Preferences,
     /// Where each conversation's transcript was left, so returning opens there.
     pub scroll_places: ScrollPlaces,
+    /// Whether the window is the active one. While it is not, a line that arrives
+    /// in the open conversation counts as unread (Qt `m_windowActive`).
+    pub window_active: bool,
+    /// The window's activation observer is registered. It needs a window, so it is
+    /// set up on the first render.
+    activation_watched: bool,
     pub focus_handle: FocusHandle,
     pub typing_phase: u8,
     pub bench: BenchState,
@@ -147,6 +154,8 @@ impl Shell {
             find: None,
             preferences: Preferences::load(),
             scroll_places: ScrollPlaces::default(),
+            window_active: true,
+            activation_watched: false,
             focus_handle: cx.focus_handle(),
             typing_phase: 0,
             bench: BenchState {
@@ -173,6 +182,19 @@ impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.bench.enabled && self.bench.first_frame.is_none() {
             self.bench.first_frame = Some(self.bench.started.elapsed());
+        }
+        // Window focus drives the unread rules. The observer needs the window, so it
+        // is registered here, once, and reads the starting focus from it.
+        if !self.activation_watched {
+            self.activation_watched = true;
+            self.window_active = window.is_window_active();
+            let subscription = cx.observe_window_activation(
+                window,
+                |shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>| {
+                    shell.set_window_active(window.is_window_active(), cx);
+                },
+            );
+            self._subscriptions.push(subscription);
         }
 
         let app_style = style(cx);

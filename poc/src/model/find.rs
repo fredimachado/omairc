@@ -4,7 +4,7 @@
 //! Status label in front. Toolkit-free: the shell owns the composer and the
 //! transcript, and passes the rows in.
 
-use super::transcript::Row;
+use super::transcript::{Row, RowKind};
 
 /// Find mode's place in the transcript: the row it last landed on and the
 /// query it last searched. The composer holds the query and the draft (see
@@ -88,6 +88,10 @@ pub fn find_next(
             None => step - 1,
             Some(current) => (current + step) % count,
         };
+        // The "New messages" boundary is chrome, not a line to land on.
+        if rows[index].kind == RowKind::UnreadMark {
+            return None;
+        }
         let hay = row_search_text(&rows[index], status_view).to_lowercase();
         hay.contains(&needle).then_some(index)
     })
@@ -251,5 +255,32 @@ mod tests {
         assert_eq!(find.advance(&rows, false, "anna", true), Some(0));
         assert_eq!(find.advance(&rows, false, "anna", false), Some(2));
         assert_eq!(find.advance(&rows, false, "anna", false), Some(0));
+    }
+
+    #[test]
+    fn find_never_lands_on_the_new_messages_mark() {
+        use crate::model::transcript::rows_from_messages;
+        use crate::model::unread::mark_line;
+        let messages = [
+            crate::model::mock::MockMessage {
+                kind: "message".to_string(),
+                author: "anna".to_string(),
+                time: "09:00".to_string(),
+                day: String::new(),
+                body: "one".to_string(),
+            },
+            mark_line(),
+            crate::model::mock::MockMessage {
+                kind: "message".to_string(),
+                author: "dax".to_string(),
+                time: "09:01".to_string(),
+                day: String::new(),
+                body: "two".to_string(),
+            },
+        ];
+        let rows = rows_from_messages(&messages);
+        assert_eq!(rows[1].kind, RowKind::UnreadMark);
+        assert_eq!(find_next(&rows, false, "new messages", None), None);
+        assert_eq!(find_next(&rows, false, "two", None), Some(2));
     }
 }
