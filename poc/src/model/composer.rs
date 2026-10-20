@@ -160,6 +160,14 @@ impl ComposerState {
         }
     }
 
+    /// Whether Up or Down is walking history right now. The slash popup stays
+    /// closed meanwhile, even when a recalled line starts with a slash.
+    // The shell passes this to `SlashSession::sync` in Phase 4; drop the allow then.
+    #[allow(dead_code)]
+    pub fn is_browsing(&self) -> bool {
+        self.browse.is_some()
+    }
+
     /// Whether the field's draft already belongs to `key`. Re-selecting the
     /// target on screen is not a switch, so the caret and any walk stay put.
     pub fn is_showing(&self, key: &DraftKey) -> bool {
@@ -447,6 +455,17 @@ mod tests {
         state.stash("sent");
         state.switch_to(conversation("anna"));
         assert_eq!(state.switch_to(conversation("#omarchy")), "typed");
+    }
+
+    #[test]
+    fn is_browsing_is_true_only_while_a_walk_is_in_progress() {
+        let mut state = ComposerState::starting_at(conversation("#omarchy"));
+        state.record_sent("one");
+        assert!(!state.is_browsing());
+        state.recall("typed", -1);
+        assert!(state.is_browsing());
+        state.recall("", 1);
+        assert!(!state.is_browsing(), "Down past the newest line ends the walk");
     }
 
     #[test]

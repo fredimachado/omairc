@@ -5,8 +5,8 @@ use std::rc::Rc;
 
 use gpui::{
     App, Bounds, Div, Element, ElementId, GlobalElementId, Hsla, IntoElement, MouseButton,
-    PaintQuad, Pixels, SharedString, StyledText, TextLayout, Window, div, fill, prelude::*, px,
-    size,
+    PaintQuad, Pixels, SharedString, Stateful, StyledText, TextLayout, Window, div, fill,
+    prelude::*, px, size,
 };
 use crate::model::{Row, RowKind, Style};
 
@@ -111,6 +111,7 @@ pub fn render_transcript_row(
             hovered_link,
             layouts,
         ),
+        RowKind::Whois => render_whois_row(row_ix, row, style, selection_range, layouts),
         RowKind::Message => div()
             .id(("transcript-row", row_ix))
             .w_full()
@@ -125,6 +126,43 @@ pub fn render_transcript_row(
                 callbacks,
             )),
     }
+}
+
+/// A whois-style line: left-aligned and muted, with selectable text. It has no
+/// time, label or avatar column, so the text starts at the body column.
+fn render_whois_row(
+    row_ix: usize,
+    row: &Row,
+    style: &Style,
+    selection_range: Option<Range<usize>>,
+    layouts: RowLayoutMap,
+) -> Stateful<Div> {
+    let mut base = gpui_text_style(style, 12., false);
+    base.color = to_gpui(style.muted_color());
+    let runs = irc_runs_to_gpui(
+        &row.body.plain,
+        &row.body.runs,
+        style,
+        &base,
+        selection_range.clone(),
+    );
+    let text = StyledText::new(SharedString::from(row.body.plain.clone())).with_runs(runs);
+    div()
+        .id(("transcript-row", row_ix))
+        .w_full()
+        .py(scaled_px(style, 4.))
+        .px(scaled_px(style, 24.))
+        .text_size(scaled_px(style, 12.))
+        .font_family(FONT_FAMILY)
+        .child(BodyTextElement {
+            row_ix,
+            text,
+            layouts,
+            avatar_top: px(0.),
+            header_height: px(0.),
+            selection_range,
+            selection_color: to_gpui(style.selection_color()),
+        })
 }
 
 fn render_message_row(

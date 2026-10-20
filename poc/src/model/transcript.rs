@@ -11,6 +11,11 @@ pub enum RowKind {
     DaySeparator,
     /// A line in a network's Status pane. Its label, glyph and colour live in `Row::status`.
     Status,
+    /// A whois-style line in a conversation: the `/help` list and the `/version`
+    /// reply. Left-aligned and muted, with its text in `body`.
+    // Built by the slash dispatch in the next phase; drop the allow then.
+    #[allow(dead_code)]
+    Whois,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -428,6 +433,7 @@ impl Transcript {
                         .map_or("", |mark| mark.label.as_str()),
                     selected
                 ),
+                RowKind::Whois => selected,
             };
             lines.push(line);
         }
@@ -482,7 +488,7 @@ fn row_plain(row: &Row) -> &str {
             .as_deref()
             .or(Some(row.body.plain.as_str()))
             .unwrap(),
-        RowKind::Message | RowKind::Status => &row.body.plain,
+        RowKind::Message | RowKind::Status | RowKind::Whois => &row.body.plain,
     }
 }
 
@@ -570,6 +576,24 @@ pub fn row_from_mock_message(id: u64, message: &MockMessage, continues: bool) ->
     }
 }
 
+/// A whois-style line. It has no author, time or avatar: only the text.
+// Built by the slash dispatch in the next phase; drop the allow then.
+#[allow(dead_code)]
+pub fn row_from_whois(id: u64, text: &str) -> Row {
+    Row {
+        id,
+        kind: RowKind::Whois,
+        author: None,
+        time: None,
+        body: format_irc(text),
+        continues: false,
+        action: false,
+        separator_text: None,
+        event_text: None,
+        status: None,
+    }
+}
+
 pub fn row_from_message(id: u64, author: &str, time: &str, body: &str, continues: bool) -> Row {
     Row {
         id,
@@ -635,6 +659,14 @@ mod tests {
         t.append(row_from_message(3, "mira", "09:46", "more", false));
         assert_eq!(t.scroll.row, t.rows.len() - 1);
         assert!(t.scroll.pinned_to_bottom);
+    }
+
+    #[test]
+    fn a_whois_row_copies_its_text_alone() {
+        let mut t = Transcript::new(10);
+        t.set_rows(vec![row_from_whois(1, "Commands: /me, /help.")]);
+        t.select_all();
+        assert_eq!(t.copy_text(), "Commands: /me, /help.");
     }
 
     #[test]

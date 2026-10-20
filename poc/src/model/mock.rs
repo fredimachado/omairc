@@ -20,6 +20,12 @@ pub struct Network {
     /// The network's Status pane: server and client lines, oldest first.
     #[serde(default)]
     pub status: Vec<StatusLine>,
+    /// The last command error. The header subtitle shows it in place of the topic
+    /// until the next command clears it (Qt `lastError`). The seed has none.
+    // The header subtitle reads it in Phase 4; drop the allow then.
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub last_error: Option<String>,
     pub conversations: Vec<Conversation>,
 }
 
