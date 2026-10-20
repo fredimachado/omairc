@@ -1,5 +1,7 @@
 use serde::Deserialize;
 
+use super::ids::ConversationRef;
+
 static WORLD_JSON: &str = include_str!("../../mock/world.json");
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -94,9 +96,30 @@ pub fn load_world() -> MockWorld {
 }
 
 impl MockWorld {
+    pub fn network(&self, network_id: &str) -> Option<&Network> {
+        self.networks.iter().find(|n| n.id == network_id)
+    }
+
+    pub fn find(&self, target: &ConversationRef) -> Option<&Conversation> {
+        self.network(&target.network_id)?
+            .conversations
+            .iter()
+            .find(|c| c.key() == target.key)
+    }
+
+    pub fn find_mut(&mut self, target: &ConversationRef) -> Option<&mut Conversation> {
+        self.networks
+            .iter_mut()
+            .find(|n| n.id == target.network_id)?
+            .conversations
+            .iter_mut()
+            .find(|c| c.key() == target.key)
+    }
+
     /// Stores a line the local user sent, so the conversation keeps it across a switch.
-    pub fn record_outgoing(&mut self, network_ix: usize, conversation_ix: usize, message: MockMessage) {
-        self.networks[network_ix].conversations[conversation_ix]
+    pub fn record_outgoing(&mut self, target: &ConversationRef, message: MockMessage) {
+        self.find_mut(target)
+            .expect("record_outgoing: conversation is in the world")
             .messages
             .push(message);
     }
@@ -374,16 +397,40 @@ mod tests {
             .position(|c| c.name == "#desktop")
             .expect("#desktop");
         let before = world.networks[0].conversations[desktop].messages.len();
+        let target = ConversationRef::new("omarchy", "#desktop");
         let sent = outgoing_message("/me waves", "fred", "21:57", "2026-10-19");
-        world.record_outgoing(0, desktop, sent);
+        world.record_outgoing(&target, sent);
         // Switching rebuilds the transcript from the stored messages.
-        let rows = crate::model::rows_from_messages(&world.networks[0].conversations[desktop].messages);
+        let rows = crate::model::rows_from_messages(&world.find(&target).expect("#desktop").messages);
         assert_eq!(rows.len(), before + 1);
         let last = rows.last().expect("sent row");
         assert!(last.action);
         assert_eq!(last.author.as_deref(), Some("fred"));
         assert_eq!(last.time.as_deref(), Some("21:57"));
         assert_eq!(last.body.plain, "waves");
+    }
+
+    #[test]
+    fn find_resolves_by_network_and_key() {
+        let mut world = load_world();
+        let omarchy = world
+            .find(&ConversationRef::new("omarchy", "#omarchy"))
+            .expect("omarchy");
+        assert_eq!(omarchy.name, "#omarchy");
+        let oftc = world
+            .find(&ConversationRef::new("oftc", "#omarchy"))
+            .expect("oftc");
+        assert_eq!(oftc.name, "#omarchy");
+        assert!(world.find(&ConversationRef::new("oftc", "#nope")).is_none());
+        assert!(world.find(&ConversationRef::new("nope", "#omarchy")).is_none());
+        world
+            .find_mut(&ConversationRef::new("omarchy", "anna"))
+            .expect("anna dm")
+            .mark_read();
+        assert_eq!(
+            world.find(&ConversationRef::new("omarchy", "anna")).expect("anna").unread,
+            0
+        );
     }
 
     #[test]

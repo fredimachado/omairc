@@ -3,6 +3,7 @@
 
 pub mod color;
 pub mod format;
+pub mod ids;
 pub mod jump;
 pub mod mock;
 pub mod style;
@@ -10,6 +11,7 @@ pub mod theme;
 pub mod transcript;
 
 pub use color::Color;
+pub use ids::ConversationRef;
 pub use format::{format_irc, plain_irc_text, FormattedText, StyleRun, TextStyle};
 pub use jump::{jump_score, jump_targets, JumpKind, JumpTarget, JUMP_RESULT_LIMIT};
 pub use mock::{

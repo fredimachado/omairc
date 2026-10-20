@@ -9,7 +9,7 @@ use gpui::{
 };
 use crate::model::{Row, RowKind, Style};
 
-use crate::format_ui::{gpui_text_style, irc_runs_to_gpui, link_underline_run};
+use crate::ui::format_ui::{gpui_text_style, irc_runs_to_gpui, link_underline_run};
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
 #[derive(Clone, Default)]

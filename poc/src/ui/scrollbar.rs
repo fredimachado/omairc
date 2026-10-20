@@ -1,19 +1,25 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use gpui::{
-    div, point, px, Context, Entity, MouseButton, MouseDownEvent, Pixels, Point, ScrollHandle,
-    prelude::*,
+    div, point, px, Entity, MouseButton, MouseDownEvent, Pixels, Point, ScrollHandle, prelude::*,
 };
 use crate::model::Style;
 
-use crate::shell::Shell;
 use crate::util::{scaled_px, to_gpui};
 
 const MIN_THUMB: f32 = 28.;
 
-pub fn div_vertical_scrollbar(
+/// The drag in progress, shared by every scrollbar in a window. Only one thumb
+/// can be dragged at a time, so one cell is enough.
+pub type ScrollbarDragCell = Rc<RefCell<Option<ScrollbarDrag>>>;
+
+/// `entity` is only notified (on a track click); it does not hold the drag.
+pub fn div_vertical_scrollbar<V: 'static>(
     scroll_handle: &ScrollHandle,
     style: &Style,
-    entity: Entity<Shell>,
-    drag_slot: ScrollbarDragSlot,
+    entity: Entity<V>,
+    drag: ScrollbarDragCell,
 ) -> impl IntoElement {
     let viewport = scroll_handle.bounds();
     let viewport_h = viewport.size.height;
@@ -51,17 +57,12 @@ pub fn div_vertical_scrollbar(
                 .on_mouse_down(
                     MouseButton::Left,
                     {
-                        let entity = entity.clone();
-                        move |ev: &MouseDownEvent, _, cx| {
+                        let drag = drag.clone();
+                        move |ev: &MouseDownEvent, _, _| {
                             let handle = handle_thumb.clone();
-                            entity.update(cx, |shell, _| {
-                                shell.set_scrollbar_drag(
-                                    drag_slot,
-                                    ScrollbarDrag {
-                                        kind: ScrollbarDragKind::Div(handle),
-                                        pointer_offset: ev.position.y - (track_top + metrics.top),
-                                    },
-                                );
+                            *drag.borrow_mut() = Some(ScrollbarDrag {
+                                kind: ScrollbarDragKind::Div(handle),
+                                pointer_offset: ev.position.y - (track_top + metrics.top),
                             });
                         }
                     },
@@ -77,7 +78,7 @@ pub fn div_vertical_scrollbar(
                     if local_y >= metrics.top && local_y <= metrics.top + metrics.height {
                         return;
                     }
-                    entity.update(cx, |_shell, cx| {
+                    entity.update(cx, |_, cx| {
                         jump_div_scroll(&handle, viewport_h, max_scroll, local_y, min_thumb);
                         cx.notify();
                     });
@@ -87,10 +88,11 @@ pub fn div_vertical_scrollbar(
         .into_any_element()
 }
 
-pub fn list_vertical_scrollbar(
+pub fn list_vertical_scrollbar<V: 'static>(
     list_state: gpui::ListState,
     style: &Style,
-    entity: Entity<Shell>,
+    entity: Entity<V>,
+    drag: ScrollbarDragCell,
 ) -> impl IntoElement {
     let viewport = list_state.viewport_bounds();
     let viewport_h = viewport.size.height;
@@ -130,18 +132,13 @@ pub fn list_vertical_scrollbar(
                 .on_mouse_down(
                     MouseButton::Left,
                     {
-                        let entity = entity.clone();
-                        move |ev: &MouseDownEvent, _, cx| {
+                        let drag = drag.clone();
+                        move |ev: &MouseDownEvent, _, _| {
                             let list = list_thumb.clone();
                             list.scrollbar_drag_started();
-                            entity.update(cx, |shell, _| {
-                                shell.set_scrollbar_drag(
-                                    ScrollbarDragSlot::Transcript,
-                                    ScrollbarDrag {
-                                        kind: ScrollbarDragKind::List(list.clone()),
-                                        pointer_offset: ev.position.y - (track_top + metrics.top),
-                                    },
-                                );
+                            *drag.borrow_mut() = Some(ScrollbarDrag {
+                                kind: ScrollbarDragKind::List(list),
+                                pointer_offset: ev.position.y - (track_top + metrics.top),
                             });
                         }
                     },
@@ -157,7 +154,7 @@ pub fn list_vertical_scrollbar(
                     if local_y >= metrics.top && local_y <= metrics.top + metrics.height {
                         return;
                     }
-                    entity.update(cx, |_shell, cx| {
+                    entity.update(cx, |_, cx| {
                         jump_list_scroll(&list, max_scroll, local_y, min_thumb);
                         cx.notify();
                     });
@@ -238,13 +235,6 @@ fn px_f32(value: Pixels) -> f32 {
     f32::from(value)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ScrollbarDragSlot {
-    Transcript,
-    Sidebar,
-    Members,
-}
-
 #[derive(Clone)]
 pub enum ScrollbarDragKind {
     Div(ScrollHandle),
@@ -257,13 +247,10 @@ pub struct ScrollbarDrag {
     pub pointer_offset: Pixels,
 }
 
-pub fn handle_scrollbar_mouse_move(
-    shell: &mut Shell,
-    position: Point<Pixels>,
-    style: &Style,
-    cx: &mut Context<Shell>,
-) {
-    let Some(drag) = shell.scrollbar_drag.clone() else {
+/// Moves the dragged thumb to the pointer. The caller notifies its view.
+pub fn move_scrollbar_drag(drag: &ScrollbarDragCell, position: Point<Pixels>, style: &Style) {
+    let current = drag.borrow().clone();
+    let Some(drag) = current else {
         return;
     };
     match drag.kind {
@@ -298,14 +285,16 @@ pub fn handle_scrollbar_mouse_move(
             list.set_offset_from_scrollbar(point(px(0.), scroll_top));
         }
     }
-    cx.notify();
 }
 
-pub fn end_scrollbar_drag(shell: &mut Shell) {
-    if let Some(drag) = shell.scrollbar_drag.take() {
-        if let ScrollbarDragKind::List(list) = drag.kind {
-            list.scrollbar_drag_ended();
-        }
+pub fn end_scrollbar_drag(drag: &ScrollbarDragCell) {
+    let ended = drag.borrow_mut().take();
+    if let Some(ScrollbarDrag {
+        kind: ScrollbarDragKind::List(list),
+        ..
+    }) = ended
+    {
+        list.scrollbar_drag_ended();
     }
 }
 

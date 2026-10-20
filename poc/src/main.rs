@@ -1,9 +1,5 @@
-mod format_ui;
-mod input;
-mod message_row;
 mod model;
-mod scrollbar;
-mod shell;
+mod ui;
 mod util;
 
 use std::borrow::Cow;
@@ -15,14 +11,15 @@ const BENCH_LOG: &str = "results/gpui-bench-stderr.txt";
 
 use clap::Parser;
 use gpui::{
-    px, size, App, Application, Bounds, Entity, Focusable, ListOffset, WindowBounds, WindowOptions,
+    px, size, App, Application, Bounds, Entity, Focusable, WindowBounds, WindowOptions,
     prelude::*,
 };
 use crate::model::{Style, Theme, ThemeWatcher};
-use shell::{BenchState, Shell};
+use ui::shell::{BenchState, Shell};
 
-use crate::input::bind_input_keys;
-use crate::shell::bind_shell_keys;
+use crate::ui::input::bind_input_keys;
+use crate::ui::shell::bind_shell_keys;
+use crate::ui::transcript::TranscriptView;
 use crate::util::OmaircStyleGlobal;
 
 #[derive(Parser, Debug)]
@@ -79,15 +76,17 @@ fn main() {
                 },
                 |_, cx| {
                     let shell = cx.new(|cx| Shell::new(cx, lines, bench));
+                    let transcript = shell.read(cx).transcript.clone();
                     if bench {
                         run_bench(shell.clone(), cx);
                     }
                     start_typing_pulse(shell.clone(), cx);
                     start_caret_blink(shell.clone(), cx);
-                    start_drag_autoscroll(shell.clone(), cx);
+                    start_drag_autoscroll(transcript.clone(), cx);
 
                     let watch_path = theme_path.clone();
                     let shell_watch = shell.clone();
+                    let transcript_watch = transcript;
                     let mut watcher =
                         ThemeWatcher::start(theme_path.as_deref()).expect("theme watcher");
                     cx.spawn(async move |cx| {
@@ -100,10 +99,11 @@ fn main() {
                                     cx.update_global::<OmaircStyleGlobal, _>(|global, _| {
                                         global.style = Style::new(theme, scale);
                                     });
-                                    shell_watch.update(cx, |shell, cx| {
-                                        shell.transcript.invalidate_all();
+                                    transcript_watch.update(cx, |t, cx| {
+                                        t.invalidate_all();
                                         cx.notify();
                                     });
+                                    shell_watch.update(cx, |_, cx| cx.notify());
                                     cx.refresh_windows();
                                 })
                                 .ok();
@@ -165,17 +165,17 @@ fn start_caret_blink(shell: Entity<Shell>, cx: &mut App) {
     .detach();
 }
 
-fn start_drag_autoscroll(shell: Entity<Shell>, cx: &mut App) {
+fn start_drag_autoscroll(transcript: Entity<TranscriptView>, cx: &mut App) {
     cx.spawn(async move |cx| {
         loop {
             cx.background_executor()
                 .timer(Duration::from_millis(50))
                 .await;
-            shell
-                .update(cx, |shell, cx| {
-                    if shell.dragging {
+            transcript
+                .update(cx, |t, cx| {
+                    if t.is_dragging() {
                         let app_style = cx.global::<OmaircStyleGlobal>().style.clone();
-                        shell.tick_drag_autoscroll(&app_style);
+                        t.tick_drag_autoscroll(&app_style);
                         cx.notify();
                     }
                 })
@@ -205,7 +205,7 @@ fn run_bench(shell: Entity<Shell>, cx: &mut App) {
     cx.spawn(async move |cx| {
         cx.background_executor().timer(Duration::from_millis(500)).await;
         let row_count = shell_weak
-            .update(cx, |s, _| s.transcript.rows().len())
+            .update(cx, |s, cx| s.transcript.read(cx).rows().len())
             .ok()
             .unwrap_or(0);
         if row_count == 0 {
@@ -226,11 +226,7 @@ fn run_bench(shell: Entity<Shell>, cx: &mut App) {
             let row_ix = (step * row_count / SCROLL_STEPS).min(row_count.saturating_sub(1));
             shell_weak
                 .update(cx, |shell, cx| {
-                    shell.transcript.set_pinned_to_bottom(false);
-                    shell.list_state.scroll_to(ListOffset {
-                        item_ix: row_ix,
-                        offset_in_item: px(0.),
-                    });
+                    shell.transcript.update(cx, |t, _| t.scroll_to_row(row_ix));
                     shell.bench.scroll_frames += 1;
                     cx.notify();
                 })
