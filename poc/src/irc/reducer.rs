@@ -30,6 +30,9 @@ mod splice;
 mod state;
 mod transcript;
 
+#[cfg(test)]
+mod tests;
+
 pub use log::{ConversationLog, TranscriptLine};
 pub use notify::{channel_names_syncing, classify_view_notify};
 pub use readmarker::latest_server_message_time;
