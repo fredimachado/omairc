@@ -311,6 +311,7 @@ fn parse_parameters(input: &[u8]) -> Vec<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::irc::prefixnick::prefix_nick;
 
     fn parse_ok(line: &str) -> IrcMessage {
         parse(line.as_bytes()).unwrap_or_else(|error| panic!("parse({line:?}) failed: {error}"))
@@ -381,6 +382,19 @@ mod tests {
         assert_eq!(prefix.nick, bytes("n"));
         assert_eq!(prefix.user, bytes("u"));
         assert_eq!(prefix.host, bytes("h"));
+    }
+
+    // Ported from tui/internal/irc/parser_test.go (TestRecoversPrefixNick).
+    #[test]
+    fn recovers_prefix_nick() {
+        let message = parse_ok(":alice PRIVMSG #room :hello");
+        assert_eq!(prefix_nick(&message), "alice");
+
+        let message = parse_ok(":irc.example.net PRIVMSG #room :hello");
+        assert_eq!(prefix_nick(&message), "", "a server name has no nick");
+
+        let message = parse_ok(":n!u@h PRIVMSG #room :hello");
+        assert_eq!(prefix_nick(&message), "n");
     }
 
     #[test]

@@ -5,7 +5,6 @@
 //! per byte, so no U+FFFD is injected.
 
 /// Converts raw wire bytes to display text.
-#[allow(dead_code)] // The parser (Phase 1, agent A) is the first consumer.
 pub fn wire_text(raw: &[u8]) -> String {
     match std::str::from_utf8(raw) {
         Ok(valid) => valid.to_string(),
@@ -13,9 +12,8 @@ pub fn wire_text(raw: &[u8]) -> String {
     }
 }
 
-/// Whether `text` holds an ASCII period. `PrefixNick` uses it to recognize server
+/// Whether `text` holds an ASCII period. `prefix_nick` uses it to recognize server
 /// names.
-#[allow(dead_code)] // PrefixNick (Phase 1) is the first consumer.
 pub fn contains_dot(text: &str) -> bool {
     text.contains('.')
 }
