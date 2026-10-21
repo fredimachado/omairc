@@ -1,16 +1,23 @@
 //! Port of `tui/internal/session/readmarker.go` (Go) and the outbound half of
-//! `src/irc/ircreadmarker.cpp` (C++), plus the wire helpers of
-//! `tui/internal/irc/readmarker.go`.
+//! `src/irc/ircreadmarker.cpp` (C++).
 //!
 //! The session publishes a read marker only when the server acknowledged
 //! `draft/read-marker` (`MARKREAD`) or `soju.im/read` (`READ`). One marker per
 //! target is in flight at a time; a newer marker waits behind it, and the echo
 //! of the in-flight marker releases the next. A failed `FAIL` clears only the
 //! target it names.
+//!
+//! The timestamp and verb helpers are wire vocabulary and live in
+//! `irc/readmarker`; they are re-exported here for the session's callers.
 
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
+
+pub(crate) use crate::irc::readmarker::{
+    format_read_marker_time, parse_read_marker_parameter, read_marker_time_after,
+    read_marker_time_millis,
+};
 
 use super::events::SessionEvent;
 use super::session::Core;
@@ -31,56 +38,11 @@ pub(crate) struct ReadMarkerLedger {
     pub(crate) in_flight: BTreeMap<String, DateTime<Utc>>,
 }
 
-const READ_MARKER_TIME_FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.3fZ";
-
-/// Truncates to whole UTC milliseconds, the precision markers compare at.
-pub(crate) fn read_marker_time_millis(when: DateTime<Utc>) -> DateTime<Utc> {
-    DateTime::from_timestamp_millis(when.timestamp_millis()).unwrap_or(when)
-}
-
-/// Whether `left` is strictly newer than `right` at millisecond precision.
-pub(crate) fn read_marker_time_after(left: DateTime<Utc>, right: DateTime<Utc>) -> bool {
-    read_marker_time_millis(left) > read_marker_time_millis(right)
-}
-
-/// A UTC timestamp for a `timestamp=` parameter.
-pub(crate) fn format_read_marker_time(when: DateTime<Utc>) -> String {
-    read_marker_time_millis(when)
-        .format(READ_MARKER_TIME_FORMAT)
-        .to_string()
-}
-
-/// Parses a `timestamp=` value. Only a trailing `Z` is accepted.
-pub(crate) fn parse_read_marker_time(value: &str) -> Option<DateTime<Utc>> {
-    let value = value.trim();
-    if value.is_empty() || !value.ends_with('Z') {
-        return None;
-    }
-    DateTime::parse_from_rfc3339(value)
-        .ok()
-        .map(|parsed| read_marker_time_millis(parsed.with_timezone(&Utc)))
-}
-
-/// Parses the trailing parameter of a `MARKREAD` / `READ` line. `Some(None)` is
-/// `*` (no marker), `Some(Some(time))` a marker, and `None` anything else.
-pub(crate) fn parse_read_marker_parameter(parameter: &str) -> Option<Option<DateTime<Utc>>> {
-    let parameter = parameter.trim();
-    if parameter == "*" {
-        return Some(None);
-    }
-    let value = parameter.strip_prefix("timestamp=")?;
-    parse_read_marker_time(value).map(Some)
-}
-
 impl Core {
     /// The read-marker verb for the acknowledged token: `MARKREAD` for
     /// `draft/read-marker`, `READ` for `soju.im/read`, empty when neither.
     pub(crate) fn read_marker_command(&self) -> &'static str {
-        match self.read_marker_token {
-            Some("draft/read-marker") => "MARKREAD",
-            Some("soju.im/read") => "READ",
-            _ => "",
-        }
+        crate::irc::readmarker::read_marker_command(self.read_marker_token)
     }
 
     /// Folds a target the way the session folds channels and nicks.
