@@ -8,5 +8,6 @@
 // off when `--demo-server` calls `DemoServer::attach` and `seed`.
 #![allow(dead_code)]
 
+pub mod answers;
 pub mod seed;
 pub mod wire;
