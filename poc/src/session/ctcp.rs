@@ -16,6 +16,8 @@ use crate::irc::message::IrcMessage;
 use crate::irc::prefixnick::prefix_nick;
 use crate::irc::servicenick::is_service_identity;
 
+// Phase 4: /ping, /time and /version send CTCP requests
+#[allow(dead_code)]
 impl Core {
     /// Answers a CTCP query sent to this user. Returns true when the message was
     /// a non-ACTION CTCP and has been consumed, even when no reply went out
@@ -87,6 +89,8 @@ impl Core {
 
     /// Sends a CTCP query, optionally labeled (`sendCtcpLocked`). The verb is
     /// upper-cased and may not contain a space.
+    // Phase 4: /ping, /time and /version send CTCP requests
+    #[allow(dead_code)]
     pub(crate) fn send_ctcp(
         &mut self,
         target: &str,

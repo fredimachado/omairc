@@ -1,5 +1,5 @@
 use super::color::Color;
-use super::mock::PREFIX_RANK;
+use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::irc::plaintext::plain_irc_text;
 use crate::irc::textformat::{styled_runs, IrcColor, IrcStyle};
 use std::ops::Range;
@@ -165,16 +165,18 @@ pub enum TextHit {
     Channel(String),
 }
 
-/// Channel names in `text`, left to right (`ircChannelNameSpans`). `chantypes`
-/// is the network's CHANTYPES. A name starts with one of those characters, and
-/// only at the start of the text, after whitespace or an opening delimiter, or
-/// straight after a rank symbol. The rank is not part of the name. The token
-/// runs to a space, comma or colon, and the name needs two characters. Trailing
-/// `.,;:!?` and a trailing `"` or `'` come off one at a time, and so does a `)`,
-/// `]`, `}` or `>` with no opener. `#foo<bar>` keeps its `>`.
+/// Channel names in `text`, left to right (`ircChannelNameSpans`). `features` gives
+/// the network's CHANTYPES, which start a name, and its PREFIX symbols, which may sit
+/// in front of one. A name starts only at the start of the text, after whitespace or
+/// an opening delimiter, or straight after a rank symbol. The rank is not part of the
+/// name. The token runs to a space, comma or colon, and the name needs two characters.
+/// Trailing `.,;:!?` and a trailing `"` or `'` come off one at a time, and so does a
+/// `)`, `]`, `}` or `>` with no opener. `#foo<bar>` keeps its `>`.
 ///
 /// This does not skip names inside URLs. `channel_hits` does that.
-pub fn channel_name_ranges(text: &str, chantypes: &str) -> Vec<ChannelNameSpan> {
+pub fn channel_name_ranges(text: &str, features: &IrcServerFeatures) -> Vec<ChannelNameSpan> {
+    let chantypes = features.channel_types();
+    let prefixes = features.prefix_symbols();
     let mut spans = Vec::new();
     if chantypes.is_empty() {
         return spans;
@@ -185,7 +187,7 @@ pub fn channel_name_ranges(text: &str, chantypes: &str) -> Vec<ChannelNameSpan> 
         let (start, ch) = chars[index];
         let boundary = match index.checked_sub(1).map(|prev| chars[prev].1) {
             None => true,
-            Some(prev) => is_rank_symbol(prev) || is_channel_boundary(prev),
+            Some(prev) => is_rank_symbol(prev, prefixes) || is_channel_boundary(prev),
         };
         if !boundary || !is_channel_type(ch, chantypes) {
             index += 1;
@@ -215,8 +217,8 @@ pub fn channel_name_ranges(text: &str, chantypes: &str) -> Vec<ChannelNameSpan> 
 /// The channel names in a formatted line that a click can reach: those that do
 /// not start inside a URL (`ircChannelNameAt` and `appendChannelNamesFromText`
 /// both skip them). The ranges are in `text.plain`.
-pub fn channel_hits(text: &FormattedText, chantypes: &str) -> Vec<ChannelNameSpan> {
-    channel_name_ranges(&text.plain, chantypes)
+pub fn channel_hits(text: &FormattedText, features: &IrcServerFeatures) -> Vec<ChannelNameSpan> {
+    channel_name_ranges(&text.plain, features)
         .into_iter()
         .filter(|span| {
             !text
@@ -229,14 +231,14 @@ pub fn channel_hits(text: &FormattedText, chantypes: &str) -> Vec<ChannelNameSpa
 
 /// Every clickable piece of a formatted line, with its range in `text.plain`:
 /// the URLs first, then the channel names. Topic text uses this.
-pub fn text_hits(text: &FormattedText, chantypes: &str) -> Vec<(Range<usize>, TextHit)> {
+pub fn text_hits(text: &FormattedText, features: &IrcServerFeatures) -> Vec<(Range<usize>, TextHit)> {
     let urls = text.links.iter().map(|range| {
         (
             range.clone(),
             TextHit::Url(text.plain[range.clone()].to_string()),
         )
     });
-    let channels = channel_hits(text, chantypes)
+    let channels = channel_hits(text, features)
         .into_iter()
         .map(|span| (span.range, TextHit::Channel(span.name)));
     urls.chain(channels).collect()
@@ -256,8 +258,9 @@ fn is_channel_type(ch: char, chantypes: &str) -> bool {
     ch.is_ascii() && chantypes.contains(ch)
 }
 
-fn is_rank_symbol(ch: char) -> bool {
-    ch.is_ascii() && PREFIX_RANK.contains(&ch)
+/// Whether `ch` is one of the network's PREFIX symbols (`~&@%+` on the default server).
+fn is_rank_symbol(ch: char, prefixes: &str) -> bool {
+    ch.is_ascii() && prefixes.contains(ch)
 }
 
 /// Qt's `trimChannelName`: drops trailing sentence marks and quotes one at a
@@ -390,7 +393,7 @@ mod tests {
     }
 
     fn names(text: &str) -> Vec<String> {
-        channel_name_ranges(text, "#&")
+        channel_name_ranges(text, &IrcServerFeatures::with_chantypes("#&"))
             .into_iter()
             .map(|span| span.name)
             .collect()
@@ -419,10 +422,10 @@ mod tests {
         assert!(names("# alone").is_empty());
         assert!(names("#.").is_empty(), "trimming leaves only the type");
         assert!(names("nick hello").is_empty());
-        assert!(channel_name_ranges("#desktop", "").is_empty());
-        assert!(channel_name_ranges("&local", "#").is_empty());
+        assert!(channel_name_ranges("#desktop", &IrcServerFeatures::with_chantypes("")).is_empty());
+        assert!(channel_name_ranges("&local", &IrcServerFeatures::with_chantypes("#")).is_empty());
         assert_eq!(
-            channel_name_ranges("&local #x", "#")
+            channel_name_ranges("&local #x", &IrcServerFeatures::with_chantypes("#"))
                 .into_iter()
                 .map(|span| span.name)
                 .collect::<Vec<_>>(),
@@ -443,14 +446,14 @@ mod tests {
         assert_eq!(names("<#desktop>"), ["#desktop"]);
         assert_eq!(names("#foo<bar>"), ["#foo<bar>"]);
         let text = "<#desktop>";
-        let span = &channel_name_ranges(text, "#&")[0];
+        let span = &channel_name_ranges(text, &IrcServerFeatures::with_chantypes("#&"))[0];
         assert_eq!(&text[span.range.clone()], "#desktop");
     }
 
     #[test]
     fn a_rank_in_front_is_outside_the_name() {
         let text = "@#desktop";
-        let spans = channel_name_ranges(text, "#&");
+        let spans = channel_name_ranges(text, &IrcServerFeatures::with_chantypes("#&"));
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].name, "#desktop");
         assert_eq!(&text[spans[0].range.clone()], "#desktop");
@@ -460,7 +463,7 @@ mod tests {
     #[test]
     fn multibyte_text_keeps_byte_ranges() {
         let text = "héllo #café ok";
-        let spans = channel_name_ranges(text, "#&");
+        let spans = channel_name_ranges(text, &IrcServerFeatures::with_chantypes("#&"));
         assert_eq!(spans.len(), 1);
         assert_eq!(&text[spans[0].range.clone()], "#café");
     }
@@ -468,7 +471,7 @@ mod tests {
     #[test]
     fn channel_hits_skip_a_name_that_starts_inside_a_url() {
         let text = format_irc("see https://x.example/(#chan) and #lab");
-        let hits = channel_hits(&text, "#&");
+        let hits = channel_hits(&text, &IrcServerFeatures::with_chantypes("#&"));
         let found: Vec<&str> = hits.iter().map(|span| span.name.as_str()).collect();
         assert_eq!(found, ["#lab"]);
         assert_eq!(&text.plain[hits[0].range.clone()], "#lab");
@@ -477,7 +480,7 @@ mod tests {
     #[test]
     fn text_hits_list_urls_then_channel_names() {
         let text = format_irc("docs https://d.example/ in #lab");
-        let hits = text_hits(&text, "#&");
+        let hits = text_hits(&text, &IrcServerFeatures::with_chantypes("#&"));
         assert_eq!(hits.len(), 2);
         assert_eq!(&text.plain[hits[0].0.clone()], "https://d.example/");
         assert_eq!(hits[0].1, TextHit::Url("https://d.example/".to_string()));
@@ -488,7 +491,7 @@ mod tests {
     #[test]
     fn colour_codes_do_not_shift_the_channel_range() {
         let text = format_irc(&format!("{BOLD}#lab{RESET} ok"));
-        let hits = channel_hits(&text, "#&");
+        let hits = channel_hits(&text, &IrcServerFeatures::with_chantypes("#&"));
         assert_eq!(&text.plain[hits[0].range.clone()], "#lab");
     }
 }

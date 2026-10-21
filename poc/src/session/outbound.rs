@@ -26,6 +26,8 @@ impl Session {
     }
 
     /// Writes a NOTICE (`IrcSession::sendNotice`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn send_notice(&self, target: &str, body: &str) -> bool {
         self.locked(|core| {
             if target.is_empty() || body.is_empty() {
@@ -56,6 +58,8 @@ impl Session {
 
     /// Writes a CTCP query, optionally under a request label
     /// (`IrcSession::sendCtcp`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn send_ctcp(
         &self,
         target: &str,
@@ -68,11 +72,15 @@ impl Session {
 
     /// Writes a `+typing` TAGMSG when `message-tags` is on and the pace allows it
     /// (`IrcSession::sendTyping`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn send_typing(&self, target: &str, phase: TypingPhase) -> bool {
         self.locked(|core| core.send_typing(target, phase))
     }
 
     /// Writes a MODE query or change (`IrcSession::sendChannelMode`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn send_channel_mode(&self, request: &IrcChannelModeRequest) -> bool {
         self.locked(|core| {
             if request.query {
@@ -95,11 +103,15 @@ impl Session {
     }
 
     /// Writes a PART (`IrcSession::part`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn part(&self, channel: &str) -> bool {
         self.locked(|core| !channel.is_empty() && core.send_command(&format!("PART {channel}"), ""))
     }
 
     /// Writes a KICK with an optional reason (`IrcSession::kick`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn kick(&self, channel: &str, nick: &str, reason: &str) -> bool {
         self.locked(|core| {
             if channel.is_empty() || nick.is_empty() {
@@ -115,6 +127,8 @@ impl Session {
     }
 
     /// Writes an INVITE (`IrcSession::invite`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn invite(&self, nick: &str, channel: &str) -> bool {
         self.locked(|core| {
             !nick.is_empty()
@@ -124,6 +138,8 @@ impl Session {
     }
 
     /// Writes a TOPIC (`IrcSession::setTopic`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn set_topic(&self, channel: &str, topic: &str) -> bool {
         self.locked(|core| {
             !channel.is_empty()
@@ -134,6 +150,8 @@ impl Session {
 
     /// Writes AWAY with a reason, or clears away with an empty one
     /// (`IrcSession::setAway`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn set_away(&self, reason: &str) -> bool {
         self.locked(|core| core.set_away_locked(reason))
     }
@@ -141,6 +159,8 @@ impl Session {
     /// Writes `AWAY :` with no reason, which marks the user away with the server's
     /// default text. It differs from `set_away("")`, which clears
     /// (`IrcSession::markAway`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn mark_away(&self, reason: &str) -> bool {
         self.locked(|core| {
             let trimmed = reason.trim();
@@ -152,6 +172,8 @@ impl Session {
     }
 
     /// Clears away (`IrcSession::clearAway`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn clear_away(&self) -> bool {
         self.locked(|core| core.set_away_locked(""))
     }
@@ -159,22 +181,30 @@ impl Session {
     /// Sets one of this user's metadata values. Returns the value placed on the
     /// wire, `Some("")` for a clear, or `None` when nothing was sent
     /// (`IrcSession::setOwnMetadata`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn set_own_metadata(&self, key: &str, value: &str) -> Option<String> {
         self.locked(|core| core.set_own_metadata(key, value))
     }
 
     /// Clears one of this user's metadata values (`IrcSession::clearOwnMetadata`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn clear_own_metadata(&self, key: &str) -> bool {
         self.locked(|core| core.set_own_metadata(key, "").is_some())
     }
 
     /// Writes NICK (`IrcSession::changeNick`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn change_nick(&self, nick: &str) -> bool {
         self.locked(|core| !nick.is_empty() && core.send_command(&format!("NICK {nick}"), ""))
     }
 
     /// Writes `WHOIS <nick> <nick>`, optionally under a request label
     /// (`IrcSession::whois`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn whois(&self, nick: &str, request_label: &str) -> bool {
         self.locked(|core| {
             let trimmed = nick.trim();
@@ -187,6 +217,8 @@ impl Session {
 
     /// Begins a labeled request and returns its label, or `""` when
     /// `labeled-response` is not on (`IrcSession::startLabeledRequest`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn start_labeled_request(&self) -> String {
         self.locked(|core| {
             if !core.caps.enabled().contains(IrcCapability::LabeledResponse) {
@@ -197,17 +229,23 @@ impl Session {
     }
 
     /// Drops a label without notifying (`IrcSession::cancelRequestLabel`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn cancel_request_label(&self, label: &str) {
         self.locked(|core| core.drop_request_label(label));
     }
 
     /// Writes a MONITOR command. `modifier` is `+`, `-`, `C`, `L` or `S`. Long
     /// lists are split so each line fits one frame (`IrcSession::sendMonitor`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn send_monitor(&self, modifier: char, nicks: &[String]) -> bool {
         self.locked(|core| core.send_monitor_locked(modifier, nicks))
     }
 
     /// Writes `LIST`, or `LIST <mask>` (`IrcSession::list`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn list(&self, mask: &str) -> bool {
         self.locked(|core| {
             let trimmed = mask.trim();
@@ -222,12 +260,16 @@ impl Session {
     }
 
     /// Writes one already-built command line (`IrcSession::sendRaw`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn send_raw(&self, line: &str) -> bool {
         self.locked(|core| core.send_command(line, ""))
     }
 
     /// Asks for one page older than `msgid`, or older than `timestamp` when no
     /// msgid is given (`requestOlderHistory`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn request_older_history(
         &self,
         target: &str,
@@ -238,17 +280,23 @@ impl Session {
     }
 
     /// Asks for lines strictly after `after` (`requestHistoryAfter`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn request_history_after(&self, target: &str, after: DateTime<Utc>) -> bool {
         self.locked(|core| core.request_history_after(target, after))
     }
 
     /// Asks for the newest page of `target` (`requestHistoryLatest`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn request_history_latest(&self, target: &str) -> bool {
         self.locked(|core| core.request_history_latest(target))
     }
 
     /// Asks which targets have messages between `from` and `until`
     /// (`requestHistoryTargets`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn request_history_targets(&self, from: DateTime<Utc>, until: DateTime<Utc>) -> bool {
         self.locked(|core| core.request_history_targets(from, until))
     }
@@ -260,6 +308,8 @@ impl Session {
 
     /// Records a read marker to publish once the target is caught up
     /// (`queueReadMarkerSet`).
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub fn queue_read_marker_set(&self, target: &str, when: DateTime<Utc>) {
         self.locked(|core| core.queue_read_marker_set(target, when));
     }
@@ -297,6 +347,8 @@ impl super::session::Core {
     }
 
     /// `setAwayLocked`: AWAY with a trimmed reason, or a bare AWAY to clear.
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub(crate) fn set_away_locked(&mut self, reason: &str) -> bool {
         let trimmed = reason.trim();
         if trimmed.is_empty() {
@@ -306,6 +358,8 @@ impl super::session::Core {
     }
 
     /// `sendMonitorLocked`: packs nicks into MONITOR lines that each fit one frame.
+    // Phase 4: the slash catalog sends these frames
+    #[allow(dead_code)]
     pub(crate) fn send_monitor_locked(&mut self, modifier: char, nicks: &[String]) -> bool {
         let mark = modifier.to_ascii_uppercase();
         match mark {

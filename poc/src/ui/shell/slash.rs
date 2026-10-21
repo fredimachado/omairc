@@ -1,31 +1,26 @@
 //! What the composer's line does: Enter and SEND. Plain text goes to the selected
-//! conversation. A slash line runs through `model::slash`, and a refused one
-//! keeps the typed text. Replies follow Qt's routing: a conversation gets whois
-//! rows (`IrcWhoisTranscriptEvent`), and a Status pane gets its own log lines
-//! (`IrcStatusEntry::outcome`). The slash-complete popup's state and keys live
-//! here too, since they edit the same line.
+//! conversation through the controller. A slash line runs through `model::slash`, and a
+//! refused one keeps the typed text. Replies follow Qt's routing: a conversation gets
+//! whois rows (`IrcWhoisTranscriptEvent`), and a Status pane gets its own log lines
+//! (`IrcStatusEntry::outcome`). Every line lands through a controller intent, and the
+//! shell repaints from the surfaces the controller raises. The slash-complete popup's
+//! state and keys live here too, since they edit the same line.
 
 use std::time::Instant;
 
 use gpui::{App, Context, Window};
 
 use crate::model::chords::Chord;
-use crate::model::mock::{MockMessage, StatusLine};
 use crate::model::slash::{
     help_text, parse, pref_reply, version_reply_text, version_request, Command, PrefRequest,
     Rejection, Selected, Surface,
-};
-use crate::model::status::{ctcp_reply_line, outcome_line, row_from_status_line, status_rows};
-use crate::model::{
-    local_log_stamp, local_send_stamp, outgoing_action, outgoing_message, row_for_message,
-    whois_message,
 };
 use crate::ui::shell::Shell;
 
 impl Shell {
     /// The surface the composer types into: Status while it shows, else the conversation.
     pub fn surface(&self) -> Surface {
-        if self.status.is_some() {
+        if self.status_showing() {
             Surface::Status
         } else {
             Surface::Conversation
@@ -35,9 +30,7 @@ impl Shell {
     /// The network that owns the open view: Status's network, else the selected
     /// conversation's. Qt's `errorNetworkId` picks the same one.
     pub fn surface_network(&self) -> String {
-        self.status
-            .clone()
-            .unwrap_or_else(|| self.selected.network_id.clone())
+        self.focused_network()
     }
 
     /// Whether the slash-complete popup shows: its state is open and no sheet covers the composer.
@@ -45,9 +38,8 @@ impl Shell {
         self.modal.is_none() && self.slash.is_open()
     }
 
-    /// Recomputes the popup after the composer's text, the surface or a history
-    /// walk changed. Returns whether the popup changed, so the caller re-renders
-    /// only then.
+    /// Recomputes the popup after the composer's text, the surface or a history walk
+    /// changed. Returns whether the popup changed, so the caller re-renders only then.
     pub fn sync_slash_popup(&mut self, cx: &App) -> bool {
         let before = self.slash.clone();
         // Find mode types a query, not a command, so the popup stays shut.
@@ -62,8 +54,8 @@ impl Shell {
         self.slash != before
     }
 
-    /// A click on a popup row: inserts that row, as Tab does. The shell focuses
-    /// the composer afterwards.
+    /// A click on a popup row: inserts that row, as Tab does. The shell focuses the
+    /// composer afterwards.
     pub fn pick_slash_hit(&mut self, index: usize, window: &Window, cx: &mut Context<Self>) {
         if !self.chord_live(Chord::SlashPopup, window, cx) {
             return;
@@ -75,8 +67,8 @@ impl Shell {
         cx.notify();
     }
 
-    /// Up or Down while the popup is open: moves its highlight, with wrap.
-    /// Returns whether the key was used.
+    /// Up or Down while the popup is open: moves its highlight, with wrap. Returns
+    /// whether the key was used.
     pub fn move_slash_selection(
         &mut self,
         delta: isize,
@@ -91,8 +83,8 @@ impl Shell {
         true
     }
 
-    /// Tab while the popup is open: inserts the highlighted row. Returns false
-    /// when Tab should fall through to nick completion.
+    /// Tab while the popup is open: inserts the highlighted row. Returns false when Tab
+    /// should fall through to nick completion.
     pub fn complete_slash_verb(&mut self, window: &Window, cx: &mut Context<Self>) -> bool {
         if !self.chord_live(Chord::SlashPopup, window, cx) {
             return false;
@@ -106,8 +98,8 @@ impl Shell {
         true
     }
 
-    /// Enter while the popup is open: inserts the highlighted row when the typed
-    /// word is partial. Returns false on an exact name, so Enter sends it.
+    /// Enter while the popup is open: inserts the highlighted row when the typed word is
+    /// partial. Returns false on an exact name, so Enter sends it.
     pub fn enter_slash_verb(&mut self, window: &Window, cx: &mut Context<Self>) -> bool {
         if !self.chord_live(Chord::SlashPopup, window, cx) {
             return false;
@@ -121,8 +113,8 @@ impl Shell {
         true
     }
 
-    /// Escape while the popup is open: closes it and keeps the text. Returns
-    /// false when the popup is shut, so Escape reaches the other handlers.
+    /// Escape while the popup is open: closes it and keeps the text. Returns false when
+    /// the popup is shut, so Escape reaches the other handlers.
     pub fn dismiss_slash_popup(&mut self, window: &Window, cx: &mut Context<Self>) -> bool {
         if !self.chord_live(Chord::SlashDismiss, window, cx) || !self.slash.dismiss() {
             return false;
@@ -131,11 +123,11 @@ impl Shell {
         true
     }
 
-    /// Enter or SEND. A line of plain text goes to the selected conversation, and
-    /// a slash line runs its command. A refused line keeps the composer text. A
-    /// line that runs clears the composer and joins its history. `/list` opens a
-    /// sheet, which takes the keyboard from the composer, so callers check for one
-    /// before they refocus the composer.
+    /// Enter or SEND. A line of plain text goes to the selected conversation, and a slash
+    /// line runs its command. A refused line keeps the composer text. A line that runs
+    /// clears the composer and joins its history. `/list` opens a sheet, which takes the
+    /// keyboard from the composer, so callers check for one before they refocus the
+    /// composer.
     pub fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Find mode holds a query in the field. Its callers move to the next match.
         if self.find.is_some() {
@@ -156,8 +148,8 @@ impl Shell {
         }
     }
 
-    /// Runs a command that may run on this surface. An `Err` is a refusal found
-    /// while running it, such as `/version` with a channel target.
+    /// Runs a command that may run on this surface. An `Err` is a refusal found while
+    /// running it, such as `/version` with a channel target.
     fn run_command(
         &mut self,
         command: Command,
@@ -168,10 +160,7 @@ impl Shell {
             // Blank input never reaches here, and an unknown word is rejected first.
             Command::Empty | Command::Unknown(_) => {}
             Command::Say(text) => self.send_say(&text, cx),
-            Command::Action(text) => {
-                let (author, day, time) = self.author_and_stamp();
-                self.append_selected_line(outgoing_action(&text, &author, &time, &day), cx);
-            }
+            Command::Action(text) => self.send_action(&text, cx),
             Command::Clear => self.clear_view(cx),
             Command::Help => self.reply_lines(help_text(), cx),
             Command::Pref(request) => self.run_pref(&request, cx),
@@ -184,32 +173,39 @@ impl Shell {
     /// Plain text to the selected conversation. Its send latency is the bench's append timing.
     fn send_say(&mut self, text: &str, cx: &mut Context<Self>) {
         let append_start = self.bench.enabled.then(Instant::now);
-        let (author, day, time) = self.author_and_stamp();
-        self.append_selected_line(outgoing_message(text, &author, &time, &day), cx);
+        let network_id = self.surface_network();
+        let target = self.controller.selected_target().to_owned();
+        self.controller.send_to_target(&network_id, &target, text);
+        self.drain_notifications(cx);
         if let Some(start) = append_start {
             self.bench.append_latency = Some(start.elapsed());
         }
     }
 
-    /// `/clear`: empties the open Status log, or the selected conversation's lines.
-    fn clear_view(&mut self, cx: &mut Context<Self>) {
-        match self.status.clone() {
-            Some(network_id) => {
-                self.world.clear_status(&network_id);
-                let rows = status_rows(&self.world, &network_id);
-                self.transcript.update(cx, |t, _| t.set_status(rows));
-            }
-            None => {
-                let selected = self.selected.clone();
-                self.world.clear_conversation(&selected);
-                self.show_selected_conversation(cx);
-            }
-        }
+    /// `/me`: a CTCP ACTION to the selected conversation.
+    fn send_action(&mut self, text: &str, cx: &mut Context<Self>) {
+        let network_id = self.surface_network();
+        let target = self.controller.selected_target().to_owned();
+        self.controller.send_action(&network_id, &target, text);
+        self.drain_notifications(cx);
     }
 
-    /// `/pref`: the model applies it and says what it printed. A change is saved.
-    /// A new `joins` setting refolds the open conversation at once, and a new
-    /// `avatars` setting redraws its photos.
+    /// `/clear`: empties the open Status log, or the selected conversation's lines.
+    fn clear_view(&mut self, cx: &mut Context<Self>) {
+        match self.status_network() {
+            Some(network_id) => self.controller.clear_status(&network_id),
+            None => {
+                let network_id = self.surface_network();
+                let target = self.controller.selected_target().to_owned();
+                self.controller.clear_conversation(&network_id, &target);
+            }
+        }
+        self.drain_notifications(cx);
+    }
+
+    /// `/pref`: the model applies it and says what it printed. A change is saved. A new
+    /// `joins` setting goes to the controller and refolds the open view at once, and a
+    /// new `avatars` setting redraws its photos.
     fn run_pref(&mut self, request: &PrefRequest, cx: &mut Context<Self>) {
         let joins_before = self.preferences.joins;
         let avatars_before = self.preferences.avatars;
@@ -227,23 +223,19 @@ impl Shell {
             });
         }
         if self.preferences.joins != joins_before {
-            self.rebuild_selected_keeping_place(cx);
+            self.controller.set_membership_noise(self.preferences.joins);
+            self.rebuild_view_keeping_place(cx);
         }
         self.reply_lines(&reply.text, cx);
     }
 
-    /// `/version [nick]`. A conversation gets the reply as a whois row, and the
-    /// network's Status gets a CTCP line. On Status only the Status line is written.
+    /// `/version [nick]`. A conversation gets the reply as a whois row, and the network's
+    /// Status gets a CTCP line. On Status only the Status line is written.
     fn run_version(&mut self, argument: &str, cx: &mut Context<Self>) -> Result<(), Rejection> {
         let network_id = self.surface_network();
-        let chantypes = self
-            .world
-            .network(&network_id)
-            .map(|network| network.chantypes.clone())
-            .unwrap_or_default();
-        let conv = self.current_conversation();
-        let peer = conv.name.clone();
-        let selected = if conv.is_channel() {
+        let chantypes = self.features_of(&network_id).channel_types().to_owned();
+        let peer = self.controller.selected_target().to_owned();
+        let selected = if self.controller.is_channel() {
             Selected::Channel
         } else {
             Selected::Direct(peer.as_str())
@@ -251,99 +243,67 @@ impl Shell {
         let request = version_request(argument, self.surface(), Some(selected), &chantypes)?;
         let reply = version_reply_text(&request.nick);
         if request.in_conversation {
-            self.append_selected_line(whois_message(&reply), cx);
+            self.controller.reply_in_selection(&reply);
         }
-        self.log_status(&network_id, ctcp_reply_line(&local_log_stamp(), &reply), cx);
+        self.controller.log_ctcp_reply(&network_id, &reply);
+        self.drain_notifications(cx);
         Ok(())
     }
 
-    /// `/list [mask]` (Qt `dispatchList`): opens the channel list for the network
-    /// the command was typed on, which is Status's network or the selected
-    /// conversation's. It does nothing while Connect is open.
+    /// `/list [mask]` (Qt `dispatchList`): opens the channel list for the network the
+    /// command was typed on, which is Status's network or the selected conversation's.
+    /// It does nothing while Connect is open.
     pub fn open_channel_list(&mut self, mask: &str, window: &mut Window, cx: &mut Context<Self>) {
         if self.connect_open {
             return;
         }
         let network_id = self.surface_network();
-        if self.world.network(&network_id).is_none() {
+        if !self.controller.knows_network(&network_id) {
             return;
         }
         self.present_channel_list(network_id, mask, window, cx);
     }
 
-    /// A command ran: the composer clears, the line joins its history, and the
-    /// network's last error clears, as Qt's `report` does on success.
+    /// A command ran: the composer clears, the line joins its history, and the network's
+    /// last error clears, as Qt's `report` does on success.
     fn finish_command(&mut self, text: &str, cx: &mut Context<Self>) {
         let network_id = self.surface_network();
-        self.world.set_last_error(&network_id, None);
+        self.controller.set_last_error(&network_id, None);
         self.composer_state.record_sent(text);
         self.composer.update(cx, |c, cx| {
             c.clear();
             cx.notify();
         });
-        cx.notify();
+        self.drain_notifications(cx);
     }
 
-    /// A command was refused. On a conversation it becomes the network's last
-    /// error, shown in the header. On Status it is a Status line. The text stays.
+    /// A command was refused. On a conversation it becomes the network's last error,
+    /// shown in the header. On Status it is a Status line. The text stays.
     fn refuse_command(&mut self, rejection: &Rejection, cx: &mut Context<Self>) {
         let text = rejection.text();
-        match self.status.clone() {
-            Some(network_id) => {
-                self.log_status(&network_id, outcome_line(&local_log_stamp(), &text), cx);
-            }
+        match self.status_network() {
+            Some(network_id) => self.controller.log_outcome(&network_id, &text),
             None => {
                 let network_id = self.surface_network();
-                self.world.set_last_error(&network_id, Some(text));
+                self.controller.set_last_error(&network_id, Some(text));
             }
         }
-        cx.notify();
+        self.drain_notifications(cx);
     }
 
-    /// Shows a reply one line at a time: a whois row in the conversation, or an
-    /// outcome line on Status.
+    /// Shows a reply one line at a time: a whois row in the conversation, or an outcome
+    /// line on Status.
     fn reply_lines(&mut self, text: &str, cx: &mut Context<Self>) {
-        let status = self.status.clone();
+        let status = self.status_network();
         for line in text.lines() {
             match &status {
-                Some(network_id) => {
-                    self.log_status(network_id, outcome_line(&local_log_stamp(), line), cx);
+                Some(network_id) => self.controller.log_outcome(network_id, line),
+                None => {
+                    self.controller.reply_in_selection(line);
                 }
-                None => self.append_selected_line(whois_message(line), cx),
             }
         }
-    }
-
-    /// Adds a line to a network's Status log, and to the Status pane when it shows that network.
-    fn log_status(&mut self, network_id: &str, line: StatusLine, cx: &mut Context<Self>) {
-        let row = if self.status.as_deref() == Some(network_id) {
-            let id = self.transcript.read(cx).rows().len() as u64 + 1;
-            Some(row_from_status_line(id, &line))
-        } else {
-            None
-        };
-        self.world.push_status(network_id, line);
-        if let Some(row) = row {
-            self.transcript.update(cx, |t, _| t.append_line(row));
-        }
-    }
-
-    /// Stores a line in the selected conversation and appends its row to the transcript.
-    fn append_selected_line(&mut self, message: MockMessage, cx: &mut Context<Self>) {
-        let row = {
-            let rows = self.transcript.read(cx).rows();
-            row_for_message(rows.len() as u64 + 1, &message, rows.last())
-        };
-        let selected = self.selected.clone();
-        self.world.record_outgoing(&selected, message);
-        self.transcript.update(cx, |t, _| t.append_line(row));
-    }
-
-    /// The author nick and the local `(day, HH:MM)` stamp for a line sent now.
-    fn author_and_stamp(&self) -> (String, String, String) {
-        let author = self.current_network().nick.clone();
-        let (day, time) = local_send_stamp();
-        (author, day, time)
+        self.drain_notifications(cx);
     }
 
     /// Replaces the composer's text. The caret goes to the end, as after typing.

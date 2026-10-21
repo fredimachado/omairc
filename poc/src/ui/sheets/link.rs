@@ -7,6 +7,7 @@
 use gpui::{AnyElement, IntoElement};
 
 use crate::model::links::{elide_middle_marked, link_targets, status_link_targets, LinkTarget};
+use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::model::{Row, Style};
 use crate::ui::sheets::filter_sheet::{text_row, FilterSource};
 
@@ -23,11 +24,12 @@ const LABEL_SIZE: f32 = 12.;
 /// What the sheet searches, captured when it opens.
 pub enum LinkSource {
     /// A conversation: its topic when the sheet opened, its transcript rows, and
-    /// the network's CHANTYPES, which decide what counts as a channel name.
+    /// the network's features, which decide what counts as a channel name (its
+    /// CHANTYPES) and as a rank symbol in front of one.
     Conversation {
         topic: Option<String>,
         rows: Vec<Row>,
-        chantypes: String,
+        features: IrcServerFeatures,
     },
     /// A network's Status pane: its rows when the sheet opened.
     Status { rows: Vec<Row> },
@@ -45,8 +47,8 @@ impl FilterSource for LinkSource {
             Self::Conversation {
                 topic,
                 rows,
-                chantypes,
-            } => link_targets(topic.as_deref(), rows, query, chantypes),
+                features,
+            } => link_targets(topic.as_deref(), rows, query, features),
             Self::Status { rows } => status_link_targets(rows, query),
         }
     }

@@ -180,17 +180,16 @@ fn notices(view: &ConnectView<'_>) -> impl IntoElement {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::connect::ConnectState;
-    use crate::model::mock::load_world;
+    use crate::model::connect::{demo_seeds, ConnectState};
 
     /// Every form stop has a row, and the rows never run backwards along the Tab
     /// order. Scrolling a focused field into view depends on both.
     #[test]
     fn form_rows_follow_the_tab_order() {
-        let world = load_world();
-        let state = ConnectState::seed(&world);
+        let populated = vec!["omarchy".to_string(), "oftc".to_string()];
+        let state = ConnectState::seed(&demo_seeds());
         let rows: Vec<usize> = state
-            .stops(&world)
+            .stops(&populated)
             .iter()
             .filter(|stop| !matches!(stop, Stop::Tab(_)))
             .filter_map(|stop| match stop {

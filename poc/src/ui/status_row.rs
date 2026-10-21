@@ -7,7 +7,7 @@ use std::ops::Range;
 
 use gpui::{div, prelude::*, px, SharedString, Stateful, StyledText};
 
-use crate::model::mock::StatusSeverity;
+use crate::irc::statusentry::LogSeverity;
 use crate::model::status::{body_is_muted, label_tone, LabelTone};
 use crate::model::{mix_colors, Row, Style};
 use crate::ui::format_ui::{gpui_text_style, irc_runs_to_gpui, link_underline_run};
@@ -27,7 +27,7 @@ pub fn render_status_row(
     let severity = row
         .status
         .as_ref()
-        .map_or(StatusSeverity::Info, |mark| mark.severity);
+        .map_or(LogSeverity::Info, |mark| mark.severity);
     let label_color = match label_tone(severity) {
         LabelTone::Accent => style.accent_color(),
         LabelTone::Muted => style.muted_color(),

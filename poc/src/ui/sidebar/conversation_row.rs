@@ -1,6 +1,7 @@
 use gpui::{div, prelude::*, MouseButton};
 
-use crate::model::{Conversation, ConversationRef, Style};
+use crate::controller::snapshots::ConversationRow;
+use crate::model::{ConversationRef, Style};
 use crate::ui::widgets::avatar::avatar_with_presence;
 use crate::ui::widgets::badge::unread_badge;
 use crate::ui::widgets::bot_mark::bot_mark;
@@ -25,7 +26,7 @@ pub struct RowLook<'a> {
 /// reports it to `on_close`.
 pub fn conversation_row(
     target: ConversationRef,
-    conv: &Conversation,
+    conv: &ConversationRow,
     look: RowLook,
     style: &Style,
     on_select: Handler<ConversationRef>,
@@ -36,20 +37,20 @@ pub fn conversation_row(
     let unread = conv.unread > 0;
     let emphasized = look.selected || unread;
     let label_color = if emphasized { ink } else { muted };
-    let label = if conv.channel {
-        format!("#  {}", conv.name.replace('#', ""))
+    let label = if !conv.direct {
+        format!("#  {}", conv.target.replace('#', ""))
     } else {
-        conv.name.clone()
+        conv.target.clone()
     };
-    let label_left = if conv.channel { 20. } else { 49. };
+    let label_left = if !conv.direct { 20. } else { 49. };
     // Keep the label clear of the badge and typing dots at the right edge.
-    let label_right = if unread || (conv.typing && !conv.channel) {
+    let label_right = if unread || (conv.typing && conv.direct) {
         40.
     } else {
         8.
     };
-    let typing = conv.typing && !conv.channel;
-    let bot = look.bot && !conv.channel;
+    let typing = conv.typing && conv.direct;
+    let bot = look.bot && conv.direct;
 
     div()
         .w_full()
@@ -61,7 +62,7 @@ pub fn conversation_row(
             let target = target.clone();
             move |_, window, cx| on_select(target.clone(), window, cx)
         })
-        .when(!conv.channel, |this| {
+        .when(conv.direct, |this| {
             this.on_mouse_down(MouseButton::Middle, move |_, window, cx| {
                 on_close(target.clone(), window, cx);
             })
@@ -91,12 +92,12 @@ pub fn conversation_row(
                     .bg(to_gpui(style.accent_color())),
             )
         })
-        .when(!conv.channel, |this| {
-            let presence = conv
-                .members
-                .first()
-                .map(|m| m.presence.as_str())
-                .unwrap_or("online");
+        .when(conv.direct, |this| {
+            let presence = if conv.presence.is_empty() {
+                "offline"
+            } else {
+                conv.presence
+            };
             this.child(
                 div()
                     .absolute()
@@ -104,7 +105,7 @@ pub fn conversation_row(
                     .top(scaled_px(style, 7.))
                     .child(avatar_with_presence(
                         style,
-                        &conv.name,
+                        &conv.target,
                         22.,
                         11.,
                         look.photo,

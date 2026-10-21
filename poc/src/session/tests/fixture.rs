@@ -43,6 +43,8 @@ pub fn test_config() -> SessionConfig {
 }
 
 /// The Go `sessionTestPlaintextConfig`: port 6667, no TLS, no autojoin.
+// test fixture: not every test module uses this helper
+#[allow(dead_code)]
 pub fn plaintext_config() -> SessionConfig {
     let mut config = test_config();
     config.port = 6667;
@@ -96,6 +98,8 @@ impl Fixture {
             .collect()
     }
 
+    // test fixture: not every test module uses this helper
+    #[allow(dead_code)]
     pub fn states(&self) -> Vec<SessionState> {
         self.events()
             .into_iter()
@@ -166,6 +170,8 @@ impl Fixture {
             .collect()
     }
 
+    // test fixture: not every test module uses this helper
+    #[allow(dead_code)]
     pub fn autojoin_changes(&self) -> Vec<(Vec<String>, BTreeMap<String, String>)> {
         self.events()
             .into_iter()
@@ -190,6 +196,8 @@ impl Fixture {
     }
 
     /// Starts the session and completes a plaintext connect.
+    // test fixture: not every test module uses this helper
+    #[allow(dead_code)]
     pub fn connect_plaintext(&self) {
         self.session.start();
         self.transport.complete_connect();
@@ -263,6 +271,8 @@ pub fn joins(frames: &[String]) -> Vec<String> {
 
 /// Parses a line that must be valid IRC, for building inbound fixtures.
 #[track_caller]
+// test fixture: not every test module uses this helper
+#[allow(dead_code)]
 pub fn parse(line: &str) -> IrcMessage {
     crate::irc::parser::parse(line.as_bytes()).expect("test line must parse")
 }

@@ -46,6 +46,8 @@ impl LoopbackTransport {
     }
 
     /// Removes the frame-written hook. Writes still record their frames.
+    // test seam: the loopback transport is driven by the tests
+    #[allow(dead_code)]
     pub fn clear_frame_written_hook(&self) {
         *self.frame_written.borrow_mut() = None;
     }
@@ -75,12 +77,16 @@ impl LoopbackTransport {
     }
 
     /// Fails a connection that is still connecting.
+    // test seam: the loopback transport is driven by the tests
+    #[allow(dead_code)]
     pub fn fail_connect(&self, message: &str) {
         self.fail(message, &[ConnectionState::Connecting]);
     }
 
     /// Fails a connection during the TLS phase: while connecting, or after the
     /// plaintext socket opened but before encryption.
+    // test seam: the loopback transport is driven by the tests
+    #[allow(dead_code)]
     pub fn fail_tls(&self, message: &str) {
         self.fail(
             message,
@@ -89,6 +95,8 @@ impl LoopbackTransport {
     }
 
     /// Fails a pending connection with the timeout message.
+    // test seam: the loopback transport is driven by the tests
+    #[allow(dead_code)]
     pub fn timeout_connect(&self) {
         self.fail("Connection timed out", &[ConnectionState::Connecting]);
     }
@@ -106,6 +114,8 @@ impl LoopbackTransport {
 
     /// Ends an open connection as if the peer hung up. Emits `disconnected`,
     /// not `error`.
+    // test seam: the loopback transport is driven by the tests
+    #[allow(dead_code)]
     pub fn remote_close(&self) {
         {
             let mut state = self.state.borrow_mut();
@@ -123,31 +133,43 @@ impl LoopbackTransport {
     }
 
     /// Every frame passed to `write`, in order.
+    // test seam: the loopback transport is driven by the tests
+    #[allow(dead_code)]
     pub fn written_frames(&self) -> Vec<Vec<u8>> {
         self.state.borrow().written.clone()
     }
 
     /// Forgets the recorded frames.
+    // test seam: the loopback transport is driven by the tests
+    #[allow(dead_code)]
     pub fn clear_written_frames(&self) {
         self.state.borrow_mut().written.clear();
     }
 
     /// The message recorded by the most recent failure.
+    // test seam: the loopback transport is driven by the tests
+    #[allow(dead_code)]
     pub fn last_error(&self) -> String {
         self.state.borrow().last_error.clone()
     }
 
     /// The host from the most recent `connect`.
+    // test seam: the loopback transport is driven by the tests
+    #[allow(dead_code)]
     pub fn connected_host(&self) -> String {
         self.state.borrow().host.clone()
     }
 
     /// The port from the most recent `connect`.
+    // test seam: the loopback transport is driven by the tests
+    #[allow(dead_code)]
     pub fn connected_port(&self) -> u16 {
         self.state.borrow().port
     }
 
     /// Whether the most recent `connect` asked for TLS.
+    // test seam: the loopback transport is driven by the tests
+    #[allow(dead_code)]
     pub fn tls_requested(&self) -> bool {
         self.state.borrow().tls_on
     }
@@ -165,6 +187,8 @@ impl LoopbackTransport {
 
     /// Moves to `Failed` from one of `from`, recording `message`, and reports it
     /// to the sink. A transport already failed keeps its first error.
+    // test seam: the loopback transport is driven by the tests
+    #[allow(dead_code)]
     fn fail(&self, message: &str, from: &[ConnectionState]) {
         {
             let mut state = self.state.borrow_mut();

@@ -13,11 +13,6 @@
 //! `--demo-server` wiring and `--lines`), `transports` (the transport seam), and
 //! `console` and `snapshots` (the Status ring and the row shapes).
 
-// The Shell rewire is the first consumer outside the tests. Until it lands, nothing
-// in the binary reaches the controller, so the allow covers the whole tree here and
-// comes off with that change.
-#![allow(dead_code)]
-
 pub mod autoawayruntime;
 pub mod channellist;
 pub mod commanddispatcher;

@@ -18,7 +18,7 @@ use gpui::{actions, div, prelude::*, relative, AnyElement, App, FocusHandle, Key
 
 use crate::model::connect::{ConnectState, ConnectTab, Stop};
 use crate::model::prefs::Preferences;
-use crate::model::{MockWorld, Style};
+use crate::model::Style;
 use crate::ui::sheets::connect::controls::ConnectControls;
 use crate::ui::sheets::frame::veil_frame;
 use crate::ui::Handler;
@@ -67,7 +67,8 @@ pub fn bind_connect_keys(cx: &mut App) {
 /// Everything the card draws in one frame, read from the shell.
 pub struct ConnectView<'a> {
     pub state: &'a ConnectState,
-    pub world: &'a MockWorld,
+    /// The networks that hold a conversation (Remove needs another one to show).
+    pub populated: &'a [String],
     pub prefs: &'a Preferences,
     pub controls: &'a ConnectControls,
     /// The stop holding focus, if any. Captions and focus rings read it.

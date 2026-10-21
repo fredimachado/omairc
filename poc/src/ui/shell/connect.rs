@@ -12,7 +12,6 @@ use gpui::{Context, Window};
 use crate::model::chords::Chord;
 use crate::model::connect::{ConnectField, RailEnter, RemoveOutcome, Stop};
 use crate::model::prefs::{PrefName, PrefValue};
-use crate::model::sidebar::sidebar_rows;
 use crate::ui::sheets::connect::form_row_of;
 use crate::ui::shell::Shell;
 
@@ -28,8 +27,8 @@ impl Shell {
             .sidebar
             .focus
             .clone()
-            .or_else(|| self.status.clone())
-            .unwrap_or_else(|| self.selected.network_id.clone());
+            .or_else(|| self.status_network())
+            .unwrap_or_else(|| self.selected_ref().network_id);
         self.present_connect(&network_id, window, cx);
     }
 
@@ -86,8 +85,12 @@ impl Shell {
         if !self.chord_live(Chord::ConnectApply, window, cx) {
             return;
         }
-        if self.connect.apply(&mut self.world).is_ok() {
+        // Apply hands the saved profile to the controller, which starts the network. A
+        // network the build cannot connect reports that on its Status, as Qt's Connect does.
+        if let Ok(profile) = self.connect.apply() {
+            self.controller.start(&profile.network_id);
             self.close_connect(window, cx);
+            self.drain_notifications(cx);
         }
         cx.notify();
     }
@@ -107,8 +110,11 @@ impl Shell {
         if !self.chord_live(Chord::ConnectRemove, window, cx) {
             return;
         }
-        if let RemoveOutcome::Removed(network_id) = self.connect.remove(&mut self.world) {
-            self.after_network_removed(&network_id, window, cx);
+        let populated = self.populated_networks();
+        if let RemoveOutcome::Removed(network_id) = self.connect.remove(&populated) {
+            let was_status = self.status_network().as_deref() == Some(network_id.as_str());
+            self.controller.forget_network(&network_id);
+            self.after_network_removed(&network_id, was_status, window, cx);
         }
         cx.notify();
     }
@@ -181,7 +187,7 @@ impl Shell {
     /// The stop that holds focus in the Connect card, if one does.
     pub fn connect_focused(&self, window: &Window) -> Option<Stop> {
         self.connect_ui
-            .focused(&self.connect.stops(&self.world), window)
+            .focused(&self.connect.stops(&self.populated_networks()), window)
     }
 
     /// Moves focus to `stop` and brings it into view. The keys then act on it.
@@ -312,7 +318,7 @@ impl Shell {
         let focused = self.connect_focused(window);
         if let Some(target) = self
             .connect
-            .step_stop(&self.world, focused.as_ref(), backwards)
+            .step_stop(&self.populated_networks(), focused.as_ref(), backwards)
         {
             self.focus_connect(target, window, cx);
         }
@@ -414,24 +420,25 @@ impl Shell {
     fn after_network_removed(
         &mut self,
         network_id: &str,
+        was_status: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.inbox.drop_network(network_id);
         if self.sidebar.focus.as_deref() == Some(network_id) {
             self.sidebar.focus = None;
         }
-        if self.selected.network_id == network_id {
-            // The model only removes a network when another one has a conversation.
-            let fallback = sidebar_rows(&self.world, &self.sidebar)
-                .first()
-                .map(|row| row.conversation.clone());
+        // The controller dropped the selection with the network. The first row left takes
+        // it (the model only removes a network when another one has a conversation).
+        if self.controller.selected().is_none() {
+            let fallback = self.sidebar_walk().first().map(|row| row.conversation.clone());
             if let Some(target) = fallback {
                 self.select(target, cx);
             }
-        } else if self.status.as_deref() == Some(network_id) {
-            self.close_status(window, cx);
+        }
+        self.drain_notifications(cx);
+        if was_status {
             // Closing Status focuses the composer, which sits under Connect.
+            self.focus_composer(window, cx);
             self.connect.restore_focus();
         }
     }

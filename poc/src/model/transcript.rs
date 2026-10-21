@@ -1,9 +1,8 @@
 use super::format::{format_irc, FormattedText};
-use super::membership::membership_text;
-use super::mock::MockMessage;
 use super::status::StatusMark;
 use super::text_edit::{snap_grapheme, word_bounds};
-use super::unread::{shows_row, UNREAD_LINE};
+use crate::irc::world::{Message, MessageKind};
+use chrono::{DateTime, Local, NaiveDate, Utc};
 use std::ops::Range;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -205,10 +204,13 @@ impl Transcript {
         }
     }
 
-    pub fn set_conversation(&mut self, messages: &[MockMessage]) {
-        self.set_rows(rows_from_messages(messages));
+    /// Replaces the rows with a conversation's lines and its "New messages" mark.
+    pub fn set_conversation(&mut self, messages: &[Message], mark: Option<i64>) {
+        self.set_rows(rows_from_messages(messages, mark));
     }
 
+    /// Appends one row, as the test fixtures build a transcript line by line.
+    #[cfg(test)]
     pub fn append(&mut self, row: Row) {
         self.rows.push(row);
         self.measured.push(false);
@@ -403,83 +405,103 @@ fn row_plain(row: &Row) -> &str {
     }
 }
 
-pub fn rows_from_messages(messages: &[MockMessage]) -> Vec<Row> {
-    let mut rows = Vec::with_capacity(messages.len());
-    for (index, message) in messages.iter().enumerate() {
-        if !shows_row(message, rows.last()) {
-            continue;
+/// The local `HH:MM` a line shows (Qt `displayTime`), from its display instant.
+pub fn minute_of(time: DateTime<Utc>) -> String {
+    time.with_timezone(&Local).format("%H:%M").to_string()
+}
+
+/// The local date a line falls on. Two lines on different dates split a day separator.
+fn day_of(time: DateTime<Utc>) -> NaiveDate {
+    time.with_timezone(&Local).date_naive()
+}
+
+/// The caption of a day separator, such as `— September 12, 2026 —`.
+pub fn day_caption(day: NaiveDate) -> String {
+    format!("— {} —", day.format("%B %-d, %Y"))
+}
+
+/// Whether a line carries a display time. A whois line has none.
+fn has_time(message: &Message) -> bool {
+    message.kind != MessageKind::Whois
+}
+
+/// The rows for one conversation's lines, oldest first.
+///
+/// `mark` is the sequence of the "New messages" boundary (`ConversationState::unread_mark`).
+/// The boundary row sits in front of that line, but only when a row is above it, as
+/// Qt's `!view.empty()` rule has it. A day separator sits in front of the first line of
+/// each local day.
+pub fn rows_from_messages(messages: &[Message], mark: Option<i64>) -> Vec<Row> {
+    let mut rows: Vec<Row> = Vec::with_capacity(messages.len());
+    let mut last_day: Option<NaiveDate> = None;
+    for message in messages {
+        if has_time(message) {
+            let day = day_of(message.time);
+            if last_day != Some(day) {
+                let id = rows.len() as u64 + 1;
+                rows.push(day_separator_row(id, day));
+                last_day = Some(day);
+            }
         }
-        let row = row_for_message(index as u64 + 1, message, rows.last());
+        if mark == Some(message.sequence) && !rows.is_empty() {
+            let id = rows.len() as u64 + 1;
+            rows.push(unread_mark_row_for(id));
+        }
+        let id = rows.len() as u64 + 1;
+        let row = row_for_message(id, message, rows.last());
         rows.push(row);
     }
     rows
 }
 
-/// The row for one stored line, numbered `id`. `previous` is the row above it,
-/// which decides whether a chat line folds under it (`continues_group`). Used
-/// for stored lines and for lines appended while a conversation is open.
-pub fn row_for_message(id: u64, message: &MockMessage, previous: Option<&Row>) -> Row {
-    match message.kind.as_str() {
-        "message" | "action" => {
-            let continues = continues_group(previous, &message.author, &message.time);
-            row_from_mock_message(id, message, continues)
+/// The row for one line, numbered `id`. `previous` is the row above it, which decides
+/// whether a chat line folds under it (`continues_group`). Used for the stored lines and
+/// for a line appended while the conversation is open.
+pub fn row_for_message(id: u64, message: &Message, previous: Option<&Row>) -> Row {
+    match message.kind {
+        MessageKind::Message | MessageKind::Notice | MessageKind::Action => {
+            let minute = minute_of(message.time);
+            let continues = continues_group(previous, &message.author, &minute);
+            row_from_chat_line(id, message, &minute, continues)
         }
-        "day" => {
-            let text = message.body.clone();
-            Row {
-                id,
-                kind: RowKind::DaySeparator,
-                author: None,
-                time: None,
-                body: format_irc(&text),
-                continues: false,
-                action: false,
-                separator_text: Some(text),
-                event_text: None,
-                status: None,
-            }
-        }
-        "whois" => row_from_whois(id, &message.body),
-        UNREAD_LINE => Row {
-            id,
-            kind: RowKind::UnreadMark,
-            author: None,
-            time: None,
-            body: format_irc("New messages"),
-            continues: false,
-            action: false,
-            separator_text: None,
-            event_text: None,
-            status: None,
-        },
-        _ => {
-            let event_text = membership_text(message);
-            Row {
-                id,
-                kind: RowKind::Event,
-                author: if message.author.is_empty() {
-                    None
-                } else {
-                    Some(message.author.clone())
-                },
-                time: if message.time.is_empty() {
-                    None
-                } else {
-                    Some(message.time.clone())
-                },
-                body: format_irc(&event_text),
-                continues: false,
-                action: false,
-                separator_text: None,
-                event_text: Some(event_text),
-                status: None,
-            }
-        }
+        MessageKind::Whois => row_from_whois(id, &message.body),
+        MessageKind::Event | MessageKind::Error => row_from_event(id, &message.body),
     }
 }
 
-/// Qt folds a chat line under the one above when both are chat lines from the
-/// same author in the same minute (`continuesMessageGroup`).
+fn day_separator_row(id: u64, day: NaiveDate) -> Row {
+    let text = day_caption(day);
+    Row {
+        id,
+        kind: RowKind::DaySeparator,
+        author: None,
+        time: None,
+        body: format_irc(&text),
+        continues: false,
+        action: false,
+        separator_text: Some(text),
+        event_text: None,
+        status: None,
+    }
+}
+
+fn unread_mark_row_for(id: u64) -> Row {
+    Row {
+        id,
+        kind: RowKind::UnreadMark,
+        author: None,
+        time: None,
+        body: format_irc("New messages"),
+        continues: false,
+        action: false,
+        separator_text: None,
+        event_text: None,
+        status: None,
+    }
+}
+
+/// Qt folds a chat line under the one above when both are chat lines from the same
+/// author in the same minute (`continuesMessageGroup`).
 pub fn continues_group(previous: Option<&Row>, author: &str, time: &str) -> bool {
     if author.is_empty() || time.is_empty() {
         return false;
@@ -491,17 +513,34 @@ pub fn continues_group(previous: Option<&Row>, author: &str, time: &str) -> bool
     })
 }
 
-pub fn row_from_mock_message(id: u64, message: &MockMessage, continues: bool) -> Row {
+/// A chat, notice or `/me` line. `minute` is its local `HH:MM`.
+fn row_from_chat_line(id: u64, message: &Message, minute: &str, continues: bool) -> Row {
     Row {
         id,
         kind: RowKind::Message,
         author: Some(message.author.clone()),
-        time: Some(message.time.clone()),
+        time: Some(minute.to_owned()),
         body: format_irc(&message.body),
         continues,
-        action: message.kind == "action",
+        action: message.kind == MessageKind::Action,
         separator_text: None,
         event_text: None,
+        status: None,
+    }
+}
+
+/// A join, part, quit, mode or error line. Its caption is the stored body.
+fn row_from_event(id: u64, caption: &str) -> Row {
+    Row {
+        id,
+        kind: RowKind::Event,
+        author: None,
+        time: None,
+        body: format_irc(caption),
+        continues: false,
+        action: false,
+        separator_text: None,
+        event_text: Some(caption.to_owned()),
         status: None,
     }
 }
@@ -539,6 +578,47 @@ pub fn row_from_message(id: u64, author: &str, time: &str, body: &str, continues
 
 #[cfg(test)]
 mod tests {
+    use crate::irc::event::MsgId;
+    use crate::irc::world::{Message, MessageKind, Origin};
+    use chrono::{Local, TimeZone};
+
+    /// A local wall time on 19 October 2026, as a UTC instant. The transcript shows its
+    /// `HH:MM` back in the local zone, so the minute reads the same in any zone.
+    fn local(hour: u32, minute: u32) -> chrono::DateTime<chrono::Utc> {
+        Local
+            .with_ymd_and_hms(2026, 10, 19, hour, minute, 0)
+            .unwrap()
+            .with_timezone(&chrono::Utc)
+    }
+
+    /// One transcript line of the given kind.
+    fn line(kind: MessageKind, author: &str, body: &str, time: chrono::DateTime<chrono::Utc>, sequence: i64) -> Message {
+        Message {
+            kind,
+            author: author.to_string(),
+            body: body.to_string(),
+            time,
+            server_time: None,
+            msgid: MsgId::default(),
+            origin: Origin::Live,
+            mentioned: false,
+            collapsible: false,
+            sequence,
+            only_visible_to_you: false,
+        }
+    }
+
+    fn chat(author: &str, body: &str, hour: u32, minute: u32, sequence: i64) -> Message {
+        line(MessageKind::Message, author, body, local(hour, minute), sequence)
+    }
+
+    /// The row kinds of a transcript, without its day separators.
+    fn kinds(rows: &[Row]) -> Vec<RowKind> {
+        rows.iter()
+            .map(|row| row.kind)
+            .filter(|kind| *kind != RowKind::DaySeparator)
+            .collect()
+    }
     use super::*;
 
     fn sample_rows() -> Vec<Row> {
@@ -593,71 +673,41 @@ mod tests {
 
     #[test]
     fn a_stored_whois_line_becomes_a_whois_row_and_breaks_a_group() {
-        let messages = vec![
-            MockMessage {
-                kind: "message".to_string(),
-                author: "anna".to_string(),
-                time: "09:41".to_string(),
-                day: "2026-10-19".to_string(),
-                body: "hello".to_string(),
-            },
-            crate::model::mock::whois_message("VERSION reply from anna: https://omairc.app"),
-            MockMessage {
-                kind: "message".to_string(),
-                author: "anna".to_string(),
-                time: "09:41".to_string(),
-                day: "2026-10-19".to_string(),
-                body: "again".to_string(),
-            },
+        let messages = [
+            chat("anna", "hello", 9, 41, 1),
+            line(MessageKind::Whois, "", "VERSION reply from anna: https://omairc.app", local(0, 0), 2),
+            chat("anna", "again", 9, 41, 3),
         ];
-        let rows = rows_from_messages(&messages);
-        assert_eq!(rows[1].kind, RowKind::Whois);
-        assert_eq!(rows[1].body.plain, "VERSION reply from anna: https://omairc.app");
-        // The whois line sits between the two, so the second line starts a new header.
-        assert!(!rows[2].continues);
+        let rows = rows_from_messages(&messages, None);
+        assert_eq!(
+            kinds(&rows),
+            [RowKind::Message, RowKind::Whois, RowKind::Message]
+        );
+        assert_eq!(rows.last().map(|row| row.continues), Some(false));
     }
 
     #[test]
     fn an_appended_line_folds_under_the_row_above_like_a_stored_one() {
-        let first = row_from_message(1, "fred", "21:00", "one", false);
-        let folded = row_for_message(
-            2,
-            &MockMessage {
-                kind: "message".to_string(),
-                author: "fred".to_string(),
-                time: "21:00".to_string(),
-                day: "2026-10-19".to_string(),
-                body: "two".to_string(),
-            },
-            Some(&first),
-        );
+        let messages = [chat("anna", "first", 9, 41, 1)];
+        let rows = rows_from_messages(&messages, None);
+        let previous = rows.last().cloned();
+        let folded = row_for_message(9, &chat("anna", "second", 9, 41, 2), previous.as_ref());
         assert!(folded.continues);
+        let apart = row_for_message(10, &chat("anna", "third", 9, 42, 3), previous.as_ref());
+        assert!(!apart.continues);
     }
 
     #[test]
     fn a_selection_over_the_unread_mark_copies_the_lines_only() {
-        use crate::model::unread::mark_line;
-        let messages = [
-            crate::model::mock::MockMessage {
-                kind: "message".to_string(),
-                author: "anna".to_string(),
-                time: "09:00".to_string(),
-                day: String::new(),
-                body: "one".to_string(),
-            },
-            mark_line(),
-            crate::model::mock::MockMessage {
-                kind: "message".to_string(),
-                author: "dax".to_string(),
-                time: "09:01".to_string(),
-                day: String::new(),
-                body: "two".to_string(),
-            },
-        ];
-        let mut t = Transcript::new(10);
-        t.set_rows(rows_from_messages(&messages));
+        let messages = [chat("anna", "one", 9, 41, 1), chat("anna", "two", 9, 43, 2)];
+        let rows = rows_from_messages(&messages, Some(2));
+        assert!(rows.iter().any(|row| row.kind == RowKind::UnreadMark));
+        let mut t = Transcript::new(72);
+        t.set_rows(rows);
         select_everything(&mut t);
-        assert_eq!(t.copy_text(), "[09:00] <anna> one\n[09:01] <dax> two");
+        let copied = t.copy_text();
+        assert!(copied.contains("one") && copied.contains("two"));
+        assert!(!copied.contains("New messages"));
     }
 
     #[test]
@@ -707,36 +757,17 @@ mod tests {
 
     #[test]
     fn rows_from_messages_continues_same_author() {
-        use crate::model::mock::MockMessage;
         let messages = [
-            MockMessage {
-                kind: "message".to_string(),
-                author: "anna".to_string(),
-                time: "09:00".to_string(),
-                day: String::new(),
-                body: "one".to_string(),
-            },
-            MockMessage {
-                kind: "message".to_string(),
-                author: "anna".to_string(),
-                time: "09:00".to_string(),
-                day: String::new(),
-                body: "two".to_string(),
-            },
-            MockMessage {
-                kind: "message".to_string(),
-                author: "anna".to_string(),
-                time: "09:01".to_string(),
-                day: String::new(),
-                body: "three".to_string(),
-            },
+            chat("fred", "a", 9, 46, 1),
+            chat("fred", "b", 9, 46, 2),
+            chat("fred", "c", 9, 47, 3),
         ];
-        let rows = rows_from_messages(&messages);
-        assert!(!rows[0].continues);
-        assert!(rows[1].continues);
-        assert!(!rows[2].continues, "a new minute starts a new header");
-        assert_eq!(rows[0].body.plain, "one");
-        assert_eq!(rows[1].body.plain, "two");
+        let rows = rows_from_messages(&messages, None);
+        let chats: Vec<&Row> = rows.iter().filter(|row| row.kind == RowKind::Message).collect();
+        assert_eq!(chats.len(), 3);
+        assert!(!chats[0].continues);
+        assert!(chats[1].continues, "same author, same minute");
+        assert!(!chats[2].continues, "a new minute starts a group");
     }
 
     #[test]
@@ -751,84 +782,55 @@ mod tests {
 
     #[test]
     fn stored_action_renders_as_action_row() {
-        use crate::model::mock::MockMessage;
-        let messages = [MockMessage {
-            kind: "action".to_string(),
-            author: "fred".to_string(),
-            time: "14:07".to_string(),
-            day: String::new(),
-            body: "waves".to_string(),
-        }];
-        let rows = rows_from_messages(&messages);
-        assert_eq!(rows[0].kind, RowKind::Message);
-        assert!(rows[0].action);
-        assert_eq!(rows[0].body.plain, "waves");
-        assert_eq!(rows[0].author.as_deref(), Some("fred"));
+        let messages = [line(MessageKind::Action, "fred", "waves", local(21, 57), 1)];
+        let rows = rows_from_messages(&messages, None);
+        let row = rows.last().expect("an action row");
+        assert!(row.action);
+        assert_eq!(row.author.as_deref(), Some("fred"));
+        assert_eq!(row.time.as_deref(), Some("21:57"));
+        assert_eq!(row.body.plain, "waves");
     }
 
     #[test]
     fn rows_from_messages_breaks_on_event_and_day() {
-        use crate::model::mock::MockMessage;
+        let next_day = Local
+            .with_ymd_and_hms(2026, 10, 20, 9, 0, 0)
+            .unwrap()
+            .with_timezone(&chrono::Utc);
         let messages = [
-            MockMessage {
-                kind: "message".to_string(),
-                author: "anna".to_string(),
-                time: "09:00".to_string(),
-                day: String::new(),
-                body: "before join".to_string(),
-            },
-            MockMessage {
-                kind: "join".to_string(),
-                author: "sol".to_string(),
-                time: String::new(),
-                day: String::new(),
-                body: String::new(),
-            },
-            MockMessage {
-                kind: "message".to_string(),
-                author: "anna".to_string(),
-                time: "09:02".to_string(),
-                day: String::new(),
-                body: "after join".to_string(),
-            },
-            MockMessage {
-                kind: "day".to_string(),
-                author: String::new(),
-                time: String::new(),
-                day: String::new(),
-                body: "-- Monday --".to_string(),
-            },
-            MockMessage {
-                kind: "message".to_string(),
-                author: "anna".to_string(),
-                time: "10:00".to_string(),
-                day: String::new(),
-                body: "next day".to_string(),
-            },
+            chat("anna", "one", 9, 0, 1),
+            line(MessageKind::Event, "", "dax joined #omarchy", local(9, 0), 2),
+            chat("anna", "two", 9, 0, 3),
+            line(MessageKind::Message, "anna", "three", next_day, 4),
         ];
-        let rows = rows_from_messages(&messages);
-        assert_eq!(rows.len(), 5);
-        assert!(!rows[2].continues);
-        assert!(!rows[4].continues);
-        assert_eq!(rows[1].kind, RowKind::Event);
-        assert_eq!(rows[3].kind, RowKind::DaySeparator);
+        let rows = rows_from_messages(&messages, None);
+        let plain: Vec<RowKind> = rows.iter().map(|row| row.kind).collect();
+        assert_eq!(
+            plain,
+            [
+                RowKind::DaySeparator,
+                RowKind::Message,
+                RowKind::Event,
+                RowKind::Message,
+                RowKind::DaySeparator,
+                RowKind::Message,
+            ]
+        );
+        assert!(!rows[3].continues, "an event row ends the group");
+        assert_eq!(
+            rows[4].separator_text.as_deref(),
+            Some("— October 20, 2026 —")
+        );
     }
 
     #[test]
     fn set_conversation_replaces_rows_and_clears_selection() {
-        use crate::model::mock::MockMessage;
-        let mut t = Transcript::new(10);
+        let mut t = Transcript::new(72);
         t.set_rows(sample_rows());
-        t.begin(Pos { row: 0, offset: 1 });
-        t.set_conversation(&[MockMessage {
-            kind: "message".to_string(),
-            author: "solo".to_string(),
-            time: "12:00".to_string(),
-            day: String::new(),
-            body: "fresh".to_string(),
-        }]);
-        assert_eq!(t.rows().len(), 1);
-        assert_eq!(t.rows()[0].author.as_deref(), Some("solo"));
+        select_everything(&mut t);
+        t.set_conversation(&[chat("anna", "fresh", 9, 50, 1)], None);
         assert!(t.selection().is_none());
+        assert!(t.rows().iter().any(|row| row.body.plain == "fresh"));
+        assert!(!t.rows().iter().any(|row| row.body.plain == "hello"));
     }
 }

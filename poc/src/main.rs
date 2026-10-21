@@ -27,7 +27,7 @@ use crate::desktop::systemtheme::SystemAppearance;
 use crate::desktop::windowstate::{self, GeometryKeeper};
 use crate::model::{Style, Theme, ThemeWatcher};
 use crate::storage::{geometry, paths};
-use ui::shell::{BenchState, Shell};
+use ui::shell::{BenchState, Shell, CONTROLLER_TICK};
 
 use crate::ui::input::bind_input_keys;
 use crate::ui::shell::bind_shell_keys;
@@ -49,8 +49,7 @@ struct Args {
     lines: Option<usize>,
     #[arg(long)]
     bench: bool,
-    /// Seed the in-process demo server (not wired up yet).
-    #[allow(dead_code)]
+    /// Run the seeded in-process demo server: the controller starts on its networks.
     #[arg(long)]
     demo_server: bool,
 }
@@ -193,7 +192,7 @@ fn main() {
                     ..Default::default()
                 },
                 |window, cx| {
-                    let shell = cx.new(|cx| Shell::new(cx, lines, bench));
+                    let shell = cx.new(|cx| Shell::new(cx, lines, bench, demo_server));
                     // The first window close starts a ready installer, as Qt's onClosing does.
                     let close_shell = shell.clone();
                     window.on_window_should_close(cx, move |_, cx| {
@@ -208,6 +207,7 @@ fn main() {
                         run_bench(shell.clone(), window.window_handle(), cx);
                     }
                     start_typing_pulse(shell.clone(), cx);
+                    start_controller_tick(shell.clone(), cx);
                     start_caret_blink(shell.clone(), cx);
                     start_drag_autoscroll(transcript.clone(), cx);
 
@@ -308,6 +308,18 @@ fn start_typing_pulse(shell: Entity<Shell>, cx: &mut App) {
                     cx.notify();
                 })
                 .ok();
+        }
+    })
+    .detach();
+}
+
+/// Drives the controller's timers and repaints what they change. The clock is polled
+/// (`RealClock`), so the loop ticks on an interval. A tick with nothing due costs nothing.
+fn start_controller_tick(shell: Entity<Shell>, cx: &mut App) {
+    cx.spawn(async move |cx| {
+        loop {
+            cx.background_executor().timer(CONTROLLER_TICK).await;
+            shell.update(cx, |shell, cx| shell.tick(cx)).ok();
         }
     })
     .detach();

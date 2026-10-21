@@ -10,7 +10,8 @@ use gpui::{
     Hsla, SharedString, StyledText, UnderlineStyle,
 };
 
-use crate::model::channel_list::{channel_list_rows, listing_status, ListRow, ListedChannel};
+use crate::controller::channellist::ListedChannel;
+use crate::model::channel_list::{channel_list_rows, listing_status, ListRow};
 use crate::model::{Style, StyleRun};
 use crate::ui::sheets::filter_sheet::{match_highlights, match_text, FilterSource};
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};

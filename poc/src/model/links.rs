@@ -11,6 +11,7 @@ use std::ops::Range;
 use super::format::{channel_hits, format_irc, ChannelNameSpan, FormattedText};
 use super::fuzzy::rank;
 use super::transcript::{Row, RowKind};
+use crate::irc::serverfeatures::IrcServerFeatures;
 
 /// What a link row does when activated.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,25 +42,25 @@ const INVITE_MARKER: &str = " invited you to ";
 /// Links that fuzzy-match the query, best match first. Ties keep the order
 /// the links were found in: topic links, then transcript links newest row
 /// first. An empty query keeps every link in that order. A channel name is
-/// listed only when `chantypes` (the network's CHANTYPES) makes it one.
+/// listed only when the network's CHANTYPES (`features`) makes it one.
 pub fn link_targets(
     topic: Option<&str>,
     rows: &[Row],
     query: &str,
-    chantypes: &str,
+    features: &IrcServerFeatures,
 ) -> Vec<LinkTarget> {
     let mut found = Vec::new();
 
     if let Some(topic) = topic {
         let formatted = format_irc(topic);
-        push_line_links(&mut found, &formatted, None, chantypes);
+        push_line_links(&mut found, &formatted, None, features);
     }
 
     for (index, row) in rows.iter().enumerate().rev() {
         if !is_chat_line(row) {
             continue;
         }
-        push_line_links(&mut found, &row.body, Some(index), chantypes);
+        push_line_links(&mut found, &row.body, Some(index), features);
     }
 
     rank_links(query, found)
@@ -67,11 +68,11 @@ pub fn link_targets(
 
 /// The channel names a transcript row offers to a click: a message or whois
 /// line's names, outside URLs. Status and event rows offer none.
-pub fn conversation_channel_hits(row: &Row, chantypes: &str) -> Vec<ChannelNameSpan> {
+pub fn conversation_channel_hits(row: &Row, features: &IrcServerFeatures) -> Vec<ChannelNameSpan> {
     if !is_chat_line(row) {
         return Vec::new();
     }
-    channel_hits(&row.body, chantypes)
+    channel_hits(&row.body, features)
 }
 
 /// The rows whose text the Link sheet and the transcript's clicks read as chat:
@@ -193,10 +194,10 @@ fn push_line_links(
     out: &mut Vec<LinkTarget>,
     text: &FormattedText,
     row: Option<usize>,
-    chantypes: &str,
+    features: &IrcServerFeatures,
 ) {
     push_url_links(out, &text.plain, &text.links, row);
-    for span in channel_hits(text, chantypes).into_iter().rev() {
+    for span in channel_hits(text, features).into_iter().rev() {
         out.push(LinkTarget {
             kind: LinkKind::Channel,
             text: span.name,
@@ -225,8 +226,9 @@ fn push_url_links(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::mock::{StatusLine, StatusSeverity, StatusSource};
-    use crate::model::status::row_from_status_line;
+    use crate::controller::controller::Controller;
+    use crate::irc::statusentry::{outcome, LogSource, StatusEntry};
+    use crate::model::status::row_from_status_entry;
     use crate::model::transcript::row_from_message;
 
     fn urls(targets: &[LinkTarget]) -> Vec<&str> {
@@ -250,7 +252,7 @@ mod tests {
     #[test]
     fn newest_row_first_and_last_link_in_a_row_first() {
         let rows = transcript();
-        let targets = link_targets(None, &rows, "", "#&");
+        let targets = link_targets(None, &rows, "", &IrcServerFeatures::with_chantypes("#&"));
         assert_eq!(
             urls(&targets),
             [
@@ -266,7 +268,7 @@ mod tests {
     #[test]
     fn topic_links_come_before_transcript_links() {
         let rows = transcript();
-        let targets = link_targets(Some("docs at https://docs.example/"), &rows, "", "#&");
+        let targets = link_targets(Some("docs at https://docs.example/"), &rows, "", &IrcServerFeatures::with_chantypes("#&"));
         assert_eq!(targets[0].text, "https://docs.example/");
         assert_eq!(targets[0].row, None);
         assert_eq!(targets.len(), 4);
@@ -275,7 +277,7 @@ mod tests {
     #[test]
     fn query_filters_by_url_case_insensitively() {
         let rows = transcript();
-        let targets = link_targets(None, &rows, "  B.EXAMPLE ", "#&");
+        let targets = link_targets(None, &rows, "  B.EXAMPLE ", &IrcServerFeatures::with_chantypes("#&"));
         assert_eq!(urls(&targets), ["https://b.example/two"]);
     }
 
@@ -284,7 +286,7 @@ mod tests {
         let mut event = row_from_message(9, "", "", "https://ignored.example/", false);
         event.kind = RowKind::Event;
         let rows = vec![event];
-        assert!(link_targets(None, &rows, "", "#&").is_empty());
+        assert!(link_targets(None, &rows, "", &IrcServerFeatures::with_chantypes("#&")).is_empty());
     }
 
     fn elide(text: &str, max_chars: usize) -> String {
@@ -304,7 +306,7 @@ mod tests {
     #[test]
     fn fuzzy_query_matches_a_subsequence_of_the_url() {
         let rows = transcript();
-        let targets = link_targets(None, &rows, "hbt", "#&");
+        let targets = link_targets(None, &rows, "hbt", &IrcServerFeatures::with_chantypes("#&"));
         assert_eq!(urls(&targets), ["https://b.example/two"]);
         let picked: Vec<char> = targets[0]
             .indices
@@ -318,7 +320,7 @@ mod tests {
     fn a_tie_keeps_the_topic_link_first() {
         let url = "https://docs.example/";
         let rows = vec![row_from_message(1, "anna", "09:41", url, false)];
-        let targets = link_targets(Some(url), &rows, "docs", "#&");
+        let targets = link_targets(Some(url), &rows, "docs", &IrcServerFeatures::with_chantypes("#&"));
         assert_eq!(targets.len(), 2);
         assert_eq!(targets[0].row, None);
         assert_eq!(targets[1].row, Some(0));
@@ -351,21 +353,17 @@ mod tests {
 
     #[test]
     fn no_links_is_an_empty_list() {
-        assert!(link_targets(None, &[], "", "#&").is_empty());
-        assert!(link_targets(Some("plain topic"), &[], "", "#&").is_empty());
+        assert!(link_targets(None, &[], "", &IrcServerFeatures::with_chantypes("#&")).is_empty());
+        assert!(link_targets(Some("plain topic"), &[], "", &IrcServerFeatures::with_chantypes("#&")).is_empty());
     }
 
     fn status_row(id: u64, label: &str, text: &str) -> Row {
-        row_from_status_line(
-            id,
-            &StatusLine {
-                time: "09:58:00".to_string(),
-                label: label.to_string(),
-                text: text.to_string(),
-                source: StatusSource::Server,
-                severity: StatusSeverity::Info,
-            },
-        )
+        let entry = StatusEntry {
+            label: label.to_string(),
+            source: LogSource::Server,
+            ..outcome("omarchy", text, chrono::Utc::now())
+        };
+        row_from_status_entry(id, &entry)
     }
 
     fn kinds_and_texts(targets: &[LinkTarget]) -> Vec<(LinkKind, &str)> {
@@ -474,7 +472,7 @@ mod tests {
                 false,
             ),
         ];
-        let targets = link_targets(None, &rows, "", "#&");
+        let targets = link_targets(None, &rows, "", &IrcServerFeatures::with_chantypes("#&"));
         assert_eq!(
             kinds_and_texts(&targets),
             [
@@ -491,7 +489,7 @@ mod tests {
     #[test]
     fn the_topic_lists_its_channels_after_its_urls_with_no_row() {
         let rows = Vec::new();
-        let targets = link_targets(Some("about #lab, https://docs.example/"), &rows, "", "#&");
+        let targets = link_targets(Some("about #lab, https://docs.example/"), &rows, "", &IrcServerFeatures::with_chantypes("#&"));
         assert_eq!(
             kinds_and_texts(&targets),
             [
@@ -511,7 +509,7 @@ mod tests {
             "https://x.example/(#chan)",
             false,
         )];
-        let targets = link_targets(None, &rows, "", "#&");
+        let targets = link_targets(None, &rows, "", &IrcServerFeatures::with_chantypes("#&"));
         assert_eq!(
             kinds_and_texts(&targets),
             [(LinkKind::Url, "https://x.example/(#chan)")]
@@ -530,7 +528,7 @@ mod tests {
         whois.kind = RowKind::Whois;
         let mut event = row_from_message(2, "", "", "#lab joined https://ignored.example/", false);
         event.kind = RowKind::Event;
-        let targets = link_targets(None, &[whois, event], "", "#&");
+        let targets = link_targets(None, &[whois, event], "", &IrcServerFeatures::with_chantypes("#&"));
         assert_eq!(
             kinds_and_texts(&targets),
             [(LinkKind::Url, "https://omairc.app")]
@@ -546,7 +544,7 @@ mod tests {
             "meet in #desktop",
             false,
         )];
-        let targets = link_targets(None, &rows, "dsk", "#&");
+        let targets = link_targets(None, &rows, "dsk", &IrcServerFeatures::with_chantypes("#&"));
         assert_eq!(kinds_and_texts(&targets), [(LinkKind::Channel, "#desktop")]);
         let picked: Vec<char> = targets[0]
             .indices
@@ -567,48 +565,45 @@ mod tests {
 
     #[test]
     fn the_seeded_channel_names_resolve_on_their_network() {
-        use crate::model::inbox::find_channel;
-        use crate::model::mock::load_world;
         use crate::model::transcript::rows_from_messages;
 
-        let world = load_world();
-        let oftc = world.network("oftc").expect("oftc");
+        let mut controller = Controller::seeded_for_tests();
+        let features = controller.features("oftc").clone();
+        let has_row = |controller: &Controller, target: &str| {
+            controller
+                .conversations()
+                .iter()
+                .any(|row| row.key.network_id == "oftc" && row.target == target)
+        };
+
         // `This #omarchy is the OFTC one.` sits in OFTC's #omarchy, and names a row there.
-        let omarchy = oftc
-            .conversations
+        controller.select_conversation("oftc", "#omarchy");
+        let names: Vec<String> = rows_from_messages(controller.messages(), None)
             .iter()
-            .find(|c| c.name == "#omarchy")
-            .expect("oftc #omarchy");
-        let names: Vec<String> = rows_from_messages(&omarchy.messages)
-            .iter()
-            .flat_map(|row| conversation_channel_hits(row, &oftc.chantypes))
+            .flat_map(|row| conversation_channel_hits(row, &features))
             .map(|span| span.name)
             .collect();
         assert!(names.iter().any(|name| name == "#omarchy"));
-        assert!(find_channel(&world, "oftc", "#omarchy").is_some());
+        assert!(has_row(&controller, "#omarchy"));
 
         // `Leave the log in #build` is in OFTC's #lab; #build is a row too.
-        let lab = oftc
-            .conversations
+        controller.select_conversation("oftc", "#lab");
+        let hits: Vec<String> = rows_from_messages(controller.messages(), None)
             .iter()
-            .find(|c| c.name == "#lab")
-            .expect("oftc #lab");
-        let hits: Vec<String> = rows_from_messages(&lab.messages)
-            .iter()
-            .flat_map(|row| conversation_channel_hits(row, &oftc.chantypes))
+            .flat_map(|row| conversation_channel_hits(row, &features))
             .map(|span| span.name)
             .collect();
         assert_eq!(hits, ["#build"]);
-        assert!(find_channel(&world, "oftc", "#build").is_some());
+        assert!(has_row(&controller, "#build"));
     }
 
     #[test]
     fn conversation_channel_hits_are_for_chat_lines_only() {
         let chat = row_from_message(1, "anna", "09:41", "in #lab", false);
-        let hits = conversation_channel_hits(&chat, "#&");
+        let hits = conversation_channel_hits(&chat, &IrcServerFeatures::with_chantypes("#&"));
         assert_eq!(hits.len(), 1);
         assert_eq!(&chat.body.plain[hits[0].range.clone()], "#lab");
         let status = status_row(2, "NOTICE", "in #lab");
-        assert!(conversation_channel_hits(&status, "#&").is_empty());
+        assert!(conversation_channel_hits(&status, &IrcServerFeatures::with_chantypes("#&")).is_empty());
     }
 }

@@ -1,20 +1,18 @@
-//! Sidebar order and the per-network collapse, move, and focus state.
+//! Sidebar rows and the sidebar's keyboard state. The order, the unread and mention
+//! counts, and the collapse set come from the controller (`conversations`,
+//! `network_order`, `is_network_collapsed`), so this module only shapes them into the
+//! rows the UI walks. Ports Qt's `ircSidebarOrder` for the walk.
 //!
-//! Ports Qt's `ircSidebarOrder` (per network: channels, then direct messages,
-//! each case-insensitively by name) and the `IrcConnection` collapse and move
-//! setters. Pure data: the UI reads `sidebar_rows` and owns the scroll.
-
-use std::cmp::Ordering;
-use std::collections::HashSet;
+//! What stays here is what the window remembers between chords: the network the
+//! keyboard has on its header, and whether the server list is shown.
 
 use super::ids::ConversationRef;
-use super::mock::{Conversation, MockWorld, Network};
+use crate::controller::snapshots::ConversationRow;
 
-/// What the sidebar remembers between chords. Focus is a network id, so it
-/// survives the network being moved.
+/// What the sidebar remembers between chords. Focus is a network id, so it survives
+/// the network being moved.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SidebarState {
-    pub collapsed: HashSet<String>,
     pub focus: Option<String>,
     pub rail_visible: bool,
 }
@@ -22,147 +20,71 @@ pub struct SidebarState {
 impl Default for SidebarState {
     fn default() -> Self {
         Self {
-            collapsed: HashSet::new(),
             focus: None,
             rail_visible: true,
         }
     }
 }
 
-impl SidebarState {
-    pub fn is_collapsed(&self, network_id: &str) -> bool {
-        self.collapsed.contains(network_id)
-    }
-}
-
-/// One conversation in sidebar order. `collapsed` is the owning network's
-/// state at the time the rows were built.
+/// One conversation in sidebar order. `collapsed` is the owning network's state when
+/// the rows were built; `unread` and `mention` are the row's badges.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SidebarRow {
     pub conversation: ConversationRef,
     pub name: String,
     pub channel: bool,
     pub collapsed: bool,
+    pub unread: u32,
+    pub mention: bool,
 }
 
-/// Every conversation in sidebar order, collapsed networks included. Callers
-/// that walk only visible rows filter on `collapsed`.
-pub fn sidebar_rows(world: &MockWorld, state: &SidebarState) -> Vec<SidebarRow> {
-    let mut rows = Vec::new();
-    for network in &world.networks {
-        let collapsed = state.is_collapsed(&network.id);
-        for conversation in ordered_conversations(network) {
-            rows.push(SidebarRow {
-                conversation: ConversationRef::new(network.id.clone(), conversation.key()),
-                name: conversation.name.clone(),
-                channel: conversation.channel,
-                collapsed,
-            });
-        }
-    }
-    rows
+/// One network's header and its badges, as the sidebar and its footer draw them. The
+/// name, nick and counts come from the controller; the icon colour comes from the
+/// Connect profile the sheet keeps for the network.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct NetworkHeader {
+    pub id: String,
+    /// The display name, with the clash suffix when another network shares it.
+    pub name: String,
+    /// The nick the network's session holds.
+    pub nick: String,
+    /// The nick's avatar reference, from the presence facts.
+    pub avatar: Option<String>,
+    /// Index into the nick palette, if the profile has one.
+    pub icon_color: Option<u8>,
+    /// The network's icon (`draft/ICON`): a bundled image or an https URL.
+    pub icon: Option<String>,
+    pub unread: bool,
+    pub mention: bool,
+    /// Whether the network has a direct message, so the DM heading shows.
+    pub has_directs: bool,
+    pub collapsed: bool,
 }
 
-/// One network's conversations in sidebar order: channels, then direct
-/// messages, each case-insensitively by name (Qt `ircSidebarOrder`).
-pub fn ordered_conversations(network: &Network) -> Vec<&Conversation> {
-    let mut conversations: Vec<&Conversation> = network.conversations.iter().collect();
-    conversations.sort_by(|left, right| conversation_order(left, right));
+/// Every conversation in sidebar order, collapsed networks included. Callers that walk
+/// only visible rows filter on `collapsed`. `conversations` arrives in sidebar order
+/// already, from `Controller::conversations`.
+pub fn sidebar_rows(
+    conversations: &[ConversationRow],
+    is_collapsed: impl Fn(&str) -> bool,
+) -> Vec<SidebarRow> {
     conversations
-}
-
-fn conversation_order(left: &Conversation, right: &Conversation) -> Ordering {
-    // Channels sort before direct messages (`false` < `true` after negation).
-    (!left.channel)
-        .cmp(&!right.channel)
-        .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
-        .then_with(|| left.name.cmp(&right.name))
-}
-
-/// Whether any conversation on `network` is unread, and whether any of them
-/// has a mention. Drives the unread dot on the network header.
-pub fn network_alert(network: &Network) -> (bool, bool) {
-    let unread = network.conversations.iter().any(|c| c.unread > 0);
-    let mention = network.conversations.iter().any(|c| c.mention);
-    (unread, mention)
-}
-
-/// Whether `network` has any direct message, so the DM heading shows.
-pub fn has_directs(network: &Network) -> bool {
-    network.conversations.iter().any(|c| !c.channel)
-}
-
-/// Qt `setNetworkCollapsed`. Unknown networks are ignored. Returns whether
-/// the state changed.
-pub fn set_collapsed(
-    world: &MockWorld,
-    state: &mut SidebarState,
-    network_id: &str,
-    collapsed: bool,
-) -> bool {
-    if world.network(network_id).is_none() {
-        return false;
-    }
-    if collapsed {
-        state.collapsed.insert(network_id.to_string())
-    } else {
-        state.collapsed.remove(network_id)
-    }
-}
-
-/// Collapses or restores the focused network. Returns whether anything changed.
-pub fn set_collapsed_focused(world: &MockWorld, state: &mut SidebarState, collapsed: bool) -> bool {
-    match state.focus.clone() {
-        Some(id) => set_collapsed(world, state, &id, collapsed),
-        None => false,
-    }
-}
-
-/// Qt `setAllNetworksCollapsed`: collapsing marks every network, restoring
-/// clears the set. Returns whether anything changed.
-pub fn collapse_all(world: &MockWorld, state: &mut SidebarState, collapsed: bool) -> bool {
-    let next: HashSet<String> = if collapsed {
-        world.networks.iter().map(|n| n.id.clone()).collect()
-    } else {
-        HashSet::new()
-    };
-    if next == state.collapsed {
-        return false;
-    }
-    state.collapsed = next;
-    true
-}
-
-/// Qt `moveNetwork`: swaps the network `delta` places in the stored order.
-/// No wrap; returns false at either edge.
-pub fn move_network(world: &mut MockWorld, network_id: &str, delta: isize) -> bool {
-    if delta == 0 {
-        return false;
-    }
-    let Some(index) = world.networks.iter().position(|n| n.id == network_id) else {
-        return false;
-    };
-    let next = index as isize + delta;
-    if next < 0 || next >= world.networks.len() as isize {
-        return false;
-    }
-    let network = world.networks.remove(index);
-    world.networks.insert(next as usize, network);
-    true
-}
-
-/// Moves the focused network. Focus stays on it, because focus is stored by id.
-pub fn move_focused(world: &mut MockWorld, state: &SidebarState, delta: isize) -> bool {
-    match state.focus.as_deref() {
-        Some(id) => move_network(world, id, delta),
-        None => false,
-    }
+        .iter()
+        .map(|row| SidebarRow {
+            conversation: ConversationRef::from_key(&row.key),
+            name: row.target.clone(),
+            channel: !row.direct,
+            collapsed: is_collapsed(&row.key.network_id),
+            unread: row.unread,
+            mention: row.mention,
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::mock::load_world;
+    use crate::controller::controller::Controller;
 
     fn labels(rows: &[SidebarRow]) -> Vec<String> {
         rows.iter()
@@ -172,8 +94,8 @@ mod tests {
 
     #[test]
     fn order_is_channels_then_directs_case_insensitively_per_network() {
-        let world = load_world();
-        let rows = sidebar_rows(&world, &SidebarState::default());
+        let controller = Controller::seeded_for_tests();
+        let rows = sidebar_rows(&controller.conversations(), |_| false);
         let omarchy: Vec<_> = rows
             .iter()
             .filter(|r| r.conversation.network_id == "omarchy")
@@ -186,99 +108,33 @@ mod tests {
     }
 
     #[test]
-    fn networks_keep_world_order_and_rows_carry_collapse_state() {
-        let world = load_world();
-        let mut state = SidebarState::default();
-        state.collapsed.insert("oftc".to_string());
-        let rows = sidebar_rows(&world, &state);
-        let first_oftc = rows.iter().position(|r| r.conversation.network_id == "oftc").unwrap();
-        assert!(rows[..first_oftc].iter().all(|r| r.conversation.network_id == "omarchy"));
+    fn networks_keep_their_order_and_rows_carry_collapse_state() {
+        let mut controller = Controller::seeded_for_tests();
+        controller.set_network_collapsed("oftc", true);
+        let rows = sidebar_rows(&controller.conversations(), |id| {
+            controller.is_network_collapsed(id)
+        });
+        let first_oftc = rows
+            .iter()
+            .position(|r| r.conversation.network_id == "oftc")
+            .unwrap();
+        assert!(rows[..first_oftc]
+            .iter()
+            .all(|r| r.conversation.network_id == "omarchy"));
         assert!(rows[first_oftc..].iter().all(|r| r.collapsed));
         assert!(rows[..first_oftc].iter().all(|r| !r.collapsed));
         assert!(labels(&rows).contains(&"oftc/#build".to_string()));
     }
 
     #[test]
-    fn network_alert_and_directs_follow_the_conversations() {
-        let world = load_world();
-        let oftc = world.network("oftc").expect("oftc");
-        assert!(has_directs(oftc));
-        let mut bare = oftc.clone();
-        bare.conversations.retain(|c| c.channel);
-        assert!(!has_directs(&bare));
-        for c in &mut bare.conversations {
-            c.unread = 0;
-            c.mention = false;
-        }
-        assert_eq!(network_alert(&bare), (false, false));
-        bare.conversations[0].unread = 2;
-        assert_eq!(network_alert(&bare), (true, false));
-        bare.conversations[0].mention = true;
-        assert_eq!(network_alert(&bare), (true, true));
-    }
-
-    #[test]
-    fn rows_key_channels_by_lowercase_name() {
-        let world = load_world();
-        let rows = sidebar_rows(&world, &SidebarState::default());
-        assert!(rows.iter().any(|r| r.conversation == ConversationRef::new("oftc", "#omarchy")));
-    }
-
-    #[test]
-    fn collapse_ignores_unknown_networks_and_reports_change() {
-        let world = load_world();
-        let mut state = SidebarState::default();
-        assert!(!set_collapsed(&world, &mut state, "nope", true));
-        assert!(set_collapsed(&world, &mut state, "oftc", true));
-        assert!(!set_collapsed(&world, &mut state, "oftc", true));
-        assert!(state.is_collapsed("oftc"));
-        assert!(set_collapsed(&world, &mut state, "oftc", false));
-        assert!(!state.is_collapsed("oftc"));
-    }
-
-    #[test]
-    fn collapse_focused_needs_focus() {
-        let world = load_world();
-        let mut state = SidebarState::default();
-        assert!(!set_collapsed_focused(&world, &mut state, true));
-        state.focus = Some("omarchy".to_string());
-        assert!(set_collapsed_focused(&world, &mut state, true));
-        assert!(state.is_collapsed("omarchy"));
-    }
-
-    #[test]
-    fn collapse_all_marks_every_network_and_restores() {
-        let world = load_world();
-        let mut state = SidebarState::default();
-        assert!(collapse_all(&world, &mut state, true));
-        assert!(state.is_collapsed("omarchy") && state.is_collapsed("oftc"));
-        assert!(!collapse_all(&world, &mut state, true));
-        assert!(collapse_all(&world, &mut state, false));
-        assert!(state.collapsed.is_empty());
-    }
-
-    #[test]
-    fn move_swaps_neighbours_without_wrapping() {
-        let mut world = load_world();
-        assert!(!move_network(&mut world, "omarchy", -1));
-        assert!(!move_network(&mut world, "omarchy", 0));
-        assert!(move_network(&mut world, "omarchy", 1));
-        assert_eq!(world.networks[0].id, "oftc");
-        assert_eq!(world.networks[1].id, "omarchy");
-        assert!(!move_network(&mut world, "omarchy", 1));
-        assert!(!move_network(&mut world, "missing", 1));
-    }
-
-    #[test]
-    fn move_focused_keeps_focus_on_the_moved_network() {
-        let mut world = load_world();
-        let mut state = SidebarState::default();
-        assert!(!move_focused(&mut world, &state, 1));
-        state.focus = Some("omarchy".to_string());
-        assert!(move_focused(&mut world, &state, 1));
-        assert_eq!(state.focus.as_deref(), Some("omarchy"));
-        assert_eq!(world.networks[1].id, "omarchy");
-        let rows = sidebar_rows(&world, &state);
-        assert_eq!(rows[0].conversation.network_id, "oftc");
+    fn rows_carry_the_unread_and_mention_badges() {
+        let controller = Controller::seeded_for_tests();
+        let rows = sidebar_rows(&controller.conversations(), |_| false);
+        let ricing = rows.iter().find(|r| r.name == "#ricing").expect("#ricing");
+        assert_eq!(ricing.unread, 12);
+        assert!(ricing.mention);
+        let desktop = rows.iter().find(|r| r.name == "#desktop").expect("#desktop");
+        assert_eq!(desktop.unread, 3);
+        assert!(!desktop.mention);
     }
 }

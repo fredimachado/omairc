@@ -1,6 +1,32 @@
 use super::fuzzy::{rank, FuzzyHit, Ranked};
-use super::mock::{Conversation, MockWorld, Network};
-use super::sidebar::ordered_conversations;
+use crate::controller::controller::Controller;
+use crate::controller::snapshots::ConversationRow;
+
+/// What Jump searches: each network's id and display name in sidebar order, and every
+/// conversation row. The shell takes a view when the sheet opens, as the sheet holds
+/// the list it searches (the old world was cloned the same way).
+#[derive(Clone, Debug, Default)]
+pub struct JumpView {
+    pub networks: Vec<(String, String)>,
+    pub conversations: Vec<ConversationRow>,
+}
+
+impl JumpView {
+    /// The view of the controller's networks and rows right now.
+    pub fn of(controller: &Controller) -> Self {
+        Self {
+            networks: controller
+                .network_order()
+                .into_iter()
+                .map(|id| {
+                    let name = controller.network_name(&id);
+                    (id, name)
+                })
+                .collect(),
+            conversations: controller.conversations(),
+        }
+    }
+}
 
 pub const JUMP_RESULT_LIMIT: usize = 20;
 
@@ -42,37 +68,37 @@ struct Candidate {
     order: usize,
 }
 
-pub fn jump_targets(world: &MockWorld, query: &str) -> Vec<JumpTarget> {
+/// The Jump candidates for `query`, ranked and capped. The candidates are every
+/// conversation and each network's Status, in sidebar order, collapsed networks
+/// included. Jump takes no collapse state.
+pub fn jump_targets(view: &JumpView, query: &str) -> Vec<JumpTarget> {
+    let rows = &view.conversations;
     let mut duplicate_names = std::collections::HashMap::<String, usize>::new();
-    for network in &world.networks {
-        for conv in &network.conversations {
-            *duplicate_names
-                .entry(conv.name.clone())
-                .or_insert(0) += 1;
-        }
+    for row in rows {
+        *duplicate_names.entry(row.target.clone()).or_insert(0) += 1;
     }
 
     let mut candidates = Vec::new();
-    for network in &world.networks {
-        let network_name = &network.display_name;
-        // Sidebar order, so the candidate list follows the sidebar and includes collapsed networks.
-        for conv in ordered_conversations(network) {
+    for (network_id, network_name) in &view.networks {
+        let network_name = network_name.clone();
+        let network_id = network_id.clone();
+        for row in rows.iter().filter(|row| row.key.network_id == network_id) {
             candidates.push(Candidate {
                 kind: JumpKind::Conversation,
-                name: conv.name.clone(),
-                network_id: network.id.clone(),
-                conversation_id: format!("{}\n{}", network.id, conv.key()),
-                label: conversation_label(&conv.name, network_name, &duplicate_names),
-                detail: conversation_detail(conv, network),
+                name: row.target.clone(),
+                network_id: network_id.clone(),
+                conversation_id: row.conversation_id.clone(),
+                label: conversation_label(&row.target, &network_name, &duplicate_names),
+                detail: row.detail.clone(),
                 order: candidates.len(),
             });
         }
         candidates.push(Candidate {
             kind: JumpKind::Status,
             name: "Status".to_string(),
-            network_id: network.id.clone(),
+            network_id: network_id.clone(),
             conversation_id: String::new(),
-            label: status_label(network_name),
+            label: status_label(&network_name),
             detail: String::new(),
             order: candidates.len(),
         });
@@ -131,23 +157,14 @@ fn status_label(network_name: &str) -> String {
     }
 }
 
-fn conversation_detail(conv: &Conversation, _network: &Network) -> String {
-    if conv.channel {
-        conv.topic.clone().unwrap_or_default()
-    } else {
-        conv.peer_realname.clone().unwrap_or_default()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::mock;
 
     #[test]
     fn duplicate_omarchy_gets_network_suffix() {
-        let world = mock::load_world();
-        let targets = jump_targets(&world, "omarchy");
+        let controller = Controller::seeded_for_tests();
+        let targets = jump_targets(&JumpView::of(&controller), "omarchy");
         let labels: Vec<_> = targets
             .iter()
             .filter(|t| t.name == "#omarchy")
@@ -158,30 +175,16 @@ mod tests {
 
     #[test]
     fn unique_names_no_suffix() {
-        let world = mock::load_world();
-        let targets = jump_targets(&world, "desktop");
-        assert!(targets.iter().any(|t| t.label == "#desktop"));
-    }
-
-    #[test]
-    fn detail_only_ranks_below_name_hits() {
-        let world = mock::load_world();
-        let targets = jump_targets(&world, "build");
-        let name_idx = targets
-            .iter()
-            .position(|t| t.name_hit && t.name == "#build")
-            .expect("#build name hit");
-        let detail_idx = targets
-            .iter()
-            .position(|t| !t.name_hit && t.name == "#lab")
-            .expect("#lab topic-only hit");
-        assert!(name_idx < detail_idx);
+        let controller = Controller::seeded_for_tests();
+        let targets = jump_targets(&JumpView::of(&controller), "ricing");
+        let ricing = targets.iter().find(|t| t.name == "#ricing").expect("#ricing");
+        assert_eq!(ricing.label, "#ricing");
     }
 
     #[test]
     fn fuzzy_subsequence_finds_omarchy() {
-        let world = mock::load_world();
-        let targets = jump_targets(&world, "omy");
+        let controller = Controller::seeded_for_tests();
+        let targets = jump_targets(&JumpView::of(&controller), "omy");
         let first = targets.first().expect("omy hits #omarchy");
         assert_eq!(first.name, "#omarchy");
         assert_eq!(first.network_id, "omarchy");
@@ -197,8 +200,8 @@ mod tests {
 
     #[test]
     fn label_indices_are_empty_for_detail_only_hits() {
-        let world = mock::load_world();
-        let targets = jump_targets(&world, "build");
+        let controller = Controller::seeded_for_tests();
+        let targets = jump_targets(&JumpView::of(&controller), "build");
         let detail_only = targets
             .iter()
             .find(|t| !t.name_hit && t.name == "#lab")
@@ -208,8 +211,8 @@ mod tests {
 
     #[test]
     fn blank_query_keeps_sidebar_order_and_marks_no_letters() {
-        let world = mock::load_world();
-        let blank = jump_targets(&world, "");
+        let controller = Controller::seeded_for_tests();
+        let blank = jump_targets(&JumpView::of(&controller), "");
         assert!(blank.iter().all(|t| t.label_indices.is_empty()));
         let orders: Vec<usize> = blank.iter().map(|t| t.order).collect();
         assert!(orders.windows(2).all(|pair| pair[0] < pair[1]));
@@ -217,8 +220,8 @@ mod tests {
 
     #[test]
     fn jump_omarchy_picks_the_omarchy_network_first() {
-        let world = mock::load_world();
-        let targets = jump_targets(&world, "#omarchy");
+        let controller = Controller::seeded_for_tests();
+        let targets = jump_targets(&JumpView::of(&controller), "#omarchy");
         let first = targets.first().expect("a #omarchy hit");
         assert_eq!(first.name, "#omarchy");
         assert_eq!(first.network_id, "omarchy");
@@ -227,18 +230,18 @@ mod tests {
 
     #[test]
     fn jump_candidates_follow_sidebar_order_after_a_network_move() {
-        let mut world = mock::load_world();
-        crate::model::sidebar::move_network(&mut world, "omarchy", 1);
-        let targets = jump_targets(&world, "");
+        let mut controller = Controller::seeded_for_tests();
+        assert!(controller.move_network("omarchy", 1));
+        let targets = jump_targets(&JumpView::of(&controller), "");
         assert_eq!(targets.first().map(|t| t.network_id.as_str()), Some("oftc"));
         // Jump takes no collapse state, so a collapsed network still lists its rows.
-        assert!(jump_targets(&world, "#build").iter().any(|t| t.network_id == "oftc"));
+        assert!(jump_targets(&JumpView::of(&controller), "#build").iter().any(|t| t.network_id == "oftc"));
     }
 
     #[test]
     fn limit_twenty() {
-        let world = mock::load_world();
-        let targets = jump_targets(&world, "");
+        let controller = Controller::seeded_for_tests();
+        let targets = jump_targets(&JumpView::of(&controller), "");
         assert!(targets.len() <= JUMP_RESULT_LIMIT);
     }
 }

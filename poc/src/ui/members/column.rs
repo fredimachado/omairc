@@ -1,6 +1,7 @@
 use gpui::{div, prelude::*, Entity, FocusHandle, MouseButton, ScrollHandle};
 
-use crate::model::{Conversation, Style};
+use crate::irc::reducer::MemberView;
+use crate::model::Style;
 use crate::ui::members::member_row::member_row;
 use crate::ui::scrollbar::{div_vertical_scrollbar, ScrollbarDragCell};
 use crate::ui::Handler;
@@ -8,7 +9,10 @@ use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
 /// What the member panel shows and answers, for the current channel.
 pub struct MembersData<'a> {
-    pub conv: &'a Conversation,
+    /// The channel's members in panel order (`Controller::members`).
+    pub members: &'a [MemberView],
+    /// The people count the heading shows, which the people pill shares.
+    pub people: usize,
     pub self_nick: &'a str,
     /// A member row click: opens or selects that nick's DM.
     pub on_nick: Handler<String>,
@@ -34,7 +38,8 @@ pub fn render_members<V: 'static>(
     drag: &ScrollbarDragCell,
 ) -> impl IntoElement {
     let MembersData {
-        conv,
+        members,
+        people,
         self_nick,
         on_nick,
         on_heading,
@@ -42,7 +47,6 @@ pub fn render_members<V: 'static>(
         cursor,
         avatars,
     } = data;
-    let people = conv.people_count();
     let heading_color = to_gpui(style.muted_color());
     let ink = to_gpui(style.ink_color());
     div()
@@ -87,7 +91,7 @@ pub fn render_members<V: 'static>(
                         .track_scroll(scroll)
                         .track_focus(focus)
                         .key_context("MemberList")
-                        .children(conv.members.iter().enumerate().map(|(ix, member)| {
+                        .children(members.iter().enumerate().map(|(ix, member)| {
                             member_row(
                                 member,
                                 style,

@@ -4,12 +4,12 @@
 //! `firstOpenableNickIndex` in OmaircWindow.qml.
 
 use super::fuzzy::rank;
-use super::mock::Member;
+use crate::irc::reducer::MemberView;
 
 /// One row of the nick sheet.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NickTarget {
-    pub member: Member,
+    pub member: MemberView,
     /// Byte offsets into the nick of the characters the query matched.
     pub indices: Vec<usize>,
 }
@@ -17,8 +17,8 @@ pub struct NickTarget {
 /// Members whose nick fuzzy-matches the query, best match first, then panel
 /// order. An empty query keeps everyone, including the local user (who is
 /// listed but inert).
-pub fn nick_targets(members: &[Member], query: &str) -> Vec<NickTarget> {
-    rank(query, members.iter().cloned(), |member: &Member| {
+pub fn nick_targets(members: &[MemberView], query: &str) -> Vec<NickTarget> {
+    rank(query, members.iter().cloned(), |member: &MemberView| {
         [(member.nick.as_str(), 1)]
     })
     .into_iter()
@@ -51,19 +51,14 @@ pub fn first_selectable(targets: &[NickTarget], self_nick: &str) -> usize {
 mod tests {
     use super::*;
 
-    fn member(nick: &str) -> Member {
-        Member {
+    fn member(nick: &str) -> MemberView {
+        MemberView {
             nick: nick.to_string(),
-            prefix: String::new(),
-            realname: String::new(),
-            presence: "online".to_string(),
-            bot: false,
-            status: None,
-            avatar: None,
+            ..Default::default()
         }
     }
 
-    fn roster() -> Vec<Member> {
+    fn roster() -> Vec<MemberView> {
         vec![
             member("fred"),
             member("anna"),

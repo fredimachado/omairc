@@ -69,7 +69,10 @@ pub fn mention_wash(style: &Style) -> (Color, Color) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::mock::{load_world, MockMessage};
+    use crate::controller::controller::Controller;
+    use crate::irc::event::MsgId;
+    use crate::irc::world::{Message, MessageKind, Origin};
+    use chrono::{Local, TimeZone, Utc};
     use crate::model::transcript::{row_from_message, rows_from_messages};
 
     #[test]
@@ -134,13 +137,9 @@ mod tests {
 
     #[test]
     fn the_seeded_ricing_mention_is_the_one_washed_row() {
-        let world = load_world();
-        let ricing = world.networks[0]
-            .conversations
-            .iter()
-            .find(|c| c.name == "#ricing")
-            .expect("#ricing");
-        let rows = rows_from_messages(&ricing.messages);
+        let mut controller = Controller::seeded_for_tests();
+        controller.select_conversation("omarchy", "#ricing");
+        let rows = rows_from_messages(controller.messages(), None);
         let washed: Vec<&Row> = rows
             .iter()
             .filter(|row| is_mention_row(row, "fred"))
@@ -151,25 +150,29 @@ mod tests {
 
     #[test]
     fn a_direct_message_washes_only_on_a_body_hit() {
-        let messages = [
-            MockMessage {
-                kind: "message".to_string(),
-                author: "anna".to_string(),
-                time: "09:00".to_string(),
-                day: String::new(),
-                body: "plain dm".to_string(),
-            },
-            MockMessage {
-                kind: "message".to_string(),
-                author: "anna".to_string(),
-                time: "09:01".to_string(),
-                day: String::new(),
-                body: "fred, you there?".to_string(),
-            },
-        ];
-        let rows = rows_from_messages(&messages);
-        assert!(!is_mention_row(&rows[0], "fred"));
-        assert!(is_mention_row(&rows[1], "fred"));
+        let at = |minute: u32| {
+            Local
+                .with_ymd_and_hms(2026, 10, 19, 9, minute, 0)
+                .unwrap()
+                .with_timezone(&Utc)
+        };
+        let line = |body: &str, minute: u32| Message {
+            kind: MessageKind::Message,
+            author: "anna".to_string(),
+            body: body.to_string(),
+            time: at(minute),
+            server_time: None,
+            msgid: MsgId::default(),
+            origin: Origin::Live,
+            mentioned: false,
+            collapsible: false,
+            sequence: minute as i64,
+            only_visible_to_you: false,
+        };
+        let rows = rows_from_messages(&[line("plain dm", 0), line("fred, you there?", 1)], None);
+        let chats: Vec<&Row> = rows.iter().filter(|row| row.kind == RowKind::Message).collect();
+        assert!(!is_mention_row(chats[0], "fred"));
+        assert!(is_mention_row(chats[1], "fred"));
     }
 
     #[test]

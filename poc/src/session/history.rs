@@ -457,6 +457,8 @@ impl Core {
     }
 
     /// `CHATHISTORY TARGETS` between two instants (`requestHistoryTargetsLocked`).
+    // Phase 11: CHATHISTORY requests are outside the PoC core
+    #[allow(dead_code)]
     pub(crate) fn request_history_targets(
         &mut self,
         from: DateTime<Utc>,
@@ -483,6 +485,8 @@ impl Core {
 
     /// Asks for one page older than `msgid` or `timestamp`, unless the channel is
     /// exhausted or a request is already in flight (`requestOlderHistoryLocked`).
+    // Phase 11: CHATHISTORY requests are outside the PoC core
+    #[allow(dead_code)]
     pub(crate) fn request_older_history(
         &mut self,
         target: &str,

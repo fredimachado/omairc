@@ -1,6 +1,7 @@
-//! The window's root view. Owns the selection, the sheets and the entities
-//! for the transcript and inputs; rows and widgets only receive data and
-//! `Handler`s built here.
+//! The window's root view. Owns the controller, the selection's presentation (the view on
+//! screen, the sidebar focus, the sheets) and the entities for the transcript and inputs.
+//! Rows and widgets only receive data and `Handler`s built here. The shell never writes
+//! IRC state: it calls controller intents, then follows the surfaces the controller raises.
 
 pub mod actions;
 pub mod bench;
@@ -11,20 +12,23 @@ pub mod inbox;
 pub mod modal;
 pub mod slash;
 pub mod unread;
+pub mod view;
 
 use std::rc::Rc;
+use std::time::Duration;
 
 use gpui::{
     div, prelude::*, App, Context, Entity, FocusHandle, Focusable, MouseButton,
     MouseMoveEvent, MouseUpEvent, Render, ScrollHandle, Subscription, Window,
 };
 
+use crate::controller::controller::Controller;
+use crate::irc::viewnotify::ViewNotify;
 use crate::model::channel_list::ChannelListCache;
-use crate::model::composer::{ComposerState, DraftKey};
+use crate::model::composer::ComposerState;
 use crate::model::connect::{ConnectState, Stop};
 use crate::model::find::Find;
 use crate::model::format::{format_irc, text_hits, TextHit};
-use crate::model::inbox::{seed_inbox, Inbox};
 use crate::model::prefs::Preferences;
 use crate::model::scroll_place::ScrollPlaces;
 use crate::model::sidebar::SidebarState;
@@ -32,7 +36,8 @@ use crate::model::slash_complete::SlashSession;
 use crate::model::status::status_title;
 use crate::model::title::{conversation_title, window_title, TitleView};
 use crate::model::update_check::UpdateCheck;
-use crate::model::{bench_channel, load_world, ConversationRef, MockWorld};
+use crate::model::ConversationRef;
+use crate::session::clock::RealClock;
 use crate::ui::center::header::{HeaderView, Subtitle};
 use crate::ui::center::render_center;
 use crate::ui::center::slash_popup::render_slash_popup;
@@ -40,6 +45,7 @@ use crate::ui::input::SingleLineInput;
 use crate::ui::members::{render_members, MembersData};
 use crate::ui::scrollbar::{end_scrollbar_drag, move_scrollbar_drag, ScrollbarDragCell};
 use crate::ui::shell::actions::wire_shell_actions;
+use crate::ui::shell::view::{shown_view, ShownView};
 use crate::ui::sheets::connect::controls::ConnectControls;
 use crate::ui::sheets::connect::{render_connect, ConnectView};
 use crate::ui::sidebar::{render_sidebar, SidebarData};
@@ -53,13 +59,11 @@ pub use actions::bind_shell_keys;
 pub use bench::BenchState;
 
 pub struct Shell {
-    pub world: MockWorld,
-    /// The conversation the window has open. While Status is showing it is the
-    /// conversation Escape or Ctrl+` returns to.
-    pub selected: ConversationRef,
-    /// The network whose Status pane is showing in place of the conversation.
-    /// `None` shows `selected`.
-    pub status: Option<String>,
+    /// The live IRC state: sessions, conversations, Status, the inbox and the selection.
+    /// The shell reads it and calls its intents; it never writes it.
+    pub controller: Controller,
+    /// The view the transcript was last built for (Status of a network, or a conversation).
+    pub shown: ShownView,
     pub sidebar: SidebarState,
     pub window_title: String,
     pub members_open: bool,
@@ -68,9 +72,6 @@ pub struct Shell {
     pub member_focus: FocusHandle,
     /// The open sheet (Jump, Link, Nick), if any. Only one is open at a time.
     pub modal: Option<modal::ActiveModal>,
-    /// Mentions and invites waiting for the user. Shown by the Inbox sheet and
-    /// the footer count.
-    pub inbox: Inbox,
     pub sidebar_scroll: ScrollHandle,
     pub members_scroll: ScrollHandle,
     pub scrollbar_drag: ScrollbarDragCell,
@@ -80,17 +81,16 @@ pub struct Shell {
     pub composer_state: ComposerState,
     /// The slash-complete popup above the composer: its rows and highlight.
     pub slash: SlashSession,
-    /// Find mode (Ctrl+F) while it is on: the last query searched and the match
-    /// row. The composer holds the query, and `composer_state` holds the draft.
+    /// Find mode (Ctrl+F) while it is on: the last query searched and the match row. The
+    /// composer holds the query, and `composer_state` holds the draft.
     pub find: Option<Find>,
     /// The saved preferences `/pref` reads and writes, loaded once at startup.
     pub preferences: Preferences,
-    /// The Connect sheet's model: the saved networks, the draft, and the sheet's tab.
-    /// It lives for the window, so an unapplied draft survives closing the sheet, as
-    /// Qt's does.
+    /// The Connect sheet's model: the saved networks, the draft, and the sheet's tab. It
+    /// lives for the window, so an unapplied draft survives closing the sheet, as Qt's does.
     pub connect: ConnectState,
-    /// Whether the Connect sheet is showing. It holds the keyboard, and only
-    /// Shortcuts and About open above it.
+    /// Whether the Connect sheet is showing. It holds the keyboard, and only Shortcuts and
+    /// About open above it.
     pub connect_open: bool,
     /// The focus handle the Connect sheet tracks, so keys reach the window while it shows.
     pub connect_focus: FocusHandle,
@@ -100,11 +100,11 @@ pub struct Shell {
     pub channel_lists: ChannelListCache,
     /// Where each conversation's transcript was left, so returning opens there.
     pub scroll_places: ScrollPlaces,
-    /// Whether the window is the active one. While it is not, a line that arrives
-    /// in the open conversation counts as unread (Qt `m_windowActive`).
+    /// Whether the window is the active one. While it is not, a line that arrives in the
+    /// open conversation counts as unread (Qt `m_windowActive`).
     pub window_active: bool,
-    /// The window's activation observer is registered. It needs a window, so it is
-    /// set up on the first render.
+    /// The window's activation observer is registered. It needs a window, so it is set up
+    /// on the first render.
     activation_watched: bool,
     pub focus_handle: FocusHandle,
     pub typing_phase: u8,
@@ -115,28 +115,24 @@ pub struct Shell {
 }
 
 impl Shell {
-    pub fn new(cx: &mut Context<Self>, lines: Option<usize>, bench: bool) -> Self {
-        let mut world = load_world();
+    /// The window. `demo` runs the seeded `--demo-server` controller; otherwise the
+    /// controller starts with no networks, and the Connect sheet is how a network is added.
+    /// `lines` replaces the selection with the `#bench` channel of that many lines.
+    pub fn new(cx: &mut Context<Self>, lines: Option<usize>, bench: bool, demo: bool) -> Self {
+        let mut controller = if demo {
+            Controller::new_demo().expect("the demo controller starts")
+        } else {
+            Controller::new(Rc::new(RealClock::new()))
+        };
+        let preferences = Preferences::load();
+        controller.set_membership_noise(preferences.joins);
         if let Some(n) = lines {
-            for network in &mut world.networks {
-                network.conversations.retain(|c| c.name != "#bench");
-                network.conversations.push(bench_channel(n));
-            }
+            controller.bench_channel(n);
         }
 
-        let selected = {
-            let first = &world.networks[0];
-            let bench_key = lines
-                .filter(|n| *n > 0)
-                .and_then(|_| first.conversations.iter().find(|c| c.name == "#bench"))
-                .map(|c| c.key());
-            let key = bench_key.unwrap_or_else(|| first.conversations[0].key());
-            ConversationRef::new(first.id.clone(), key)
-        };
-
-        let inbox = seed_inbox(&world);
-        let connect = ConnectState::seed(&world);
-        let composer_state = ComposerState::starting_at(DraftKey::for_view(None, &selected));
+        let shown = shown_view(&controller);
+        let connect = ConnectState::seed(&connect_seeds(&controller));
+        let composer_state = ComposerState::starting_at(shown.draft_key());
         let update = cx.new(|_| {
             UpdateCheck::new(
                 version(),
@@ -152,9 +148,9 @@ impl Shell {
         let transcript_events = cx.subscribe(&transcript, |shell: &mut Shell, _, event: &NickClicked, cx| {
             shell.open_direct_nick(&event.0, cx);
         });
-        // Every composer edit, caret move and history step re-reads the slash popup.
-        // The popup only re-renders when its rows or highlight changed. A changed
-        // find query searches again from the top.
+        // Every composer edit, caret move and history step re-reads the slash popup. The
+        // popup only re-renders when its rows or highlight changed. A changed find query
+        // searches again from the top.
         let composer_events = cx.observe(&composer, |shell: &mut Shell, _, cx| {
             shell.follow_find_query(cx);
             if shell.sync_slash_popup(cx) {
@@ -173,17 +169,15 @@ impl Shell {
             })
             .collect();
 
-        let shell = Self {
-            world,
-            selected,
-            status: None,
+        let mut shell = Self {
+            controller,
+            shown,
             sidebar: SidebarState::default(),
             window_title: String::new(),
             members_open: true,
             member_cursor: 0,
             member_focus: cx.focus_handle(),
             modal: None,
-            inbox,
             sidebar_scroll: ScrollHandle::new(),
             members_scroll: ScrollHandle::new(),
             scrollbar_drag,
@@ -192,7 +186,7 @@ impl Shell {
             composer_state,
             slash: SlashSession::new(),
             find: None,
-            preferences: Preferences::load(),
+            preferences,
             connect,
             connect_open: false,
             connect_focus: cx.focus_handle(),
@@ -214,17 +208,62 @@ impl Shell {
                 .collect(),
         };
 
-        let conv = shell.current_conversation();
-        let network = shell.current_network();
-        let joins = shell.preferences.joins;
-        let avatars = shell.preferences.avatars;
-        shell.transcript.update(cx, |t, _| {
-            t.set_avatars(avatars);
-            t.set_conversation(conv, network, joins);
-        });
+        let joins_avatars = shell.preferences.avatars;
+        shell.transcript.update(cx, |t, _| t.set_avatars(joins_avatars));
+        shell.show_shown_view(None, cx);
         shell.sync_send_limit(cx);
         shell
     }
+
+    /// One controller tick: the timers that are due fire, and the shell follows what they
+    /// changed. The UI loop calls this on each interval.
+    pub fn tick(&mut self, cx: &mut Context<Self>) {
+        self.controller.tick();
+        self.drain_notifications(cx);
+    }
+
+    /// Drains the surfaces the controller raised and brings the shell up to them. A
+    /// selection the controller made on its own (a join, a close, a removal) is followed
+    /// the same way a click is. The transcript rebuilds for changed lines, and the window
+    /// repaints.
+    pub fn drain_notifications(&mut self, cx: &mut Context<Self>) {
+        let surfaces = self.controller.take_notifications();
+        self.sync_view(cx);
+        let status = self.status_showing();
+        let rebuild = surfaces.iter().any(|surface| match surface {
+            ViewNotify::Messages | ViewNotify::MemberReset => !status,
+            ViewNotify::Status => status,
+            _ => false,
+        });
+        if rebuild {
+            self.rebuild_view_keeping_place(cx);
+        }
+        if !surfaces.is_empty() {
+            cx.notify();
+        }
+    }
+}
+
+/// The networks the Connect sheet starts from: every network the controller holds, with
+/// its nick, its CHANTYPES and the channels it has joined. The icon colour follows the
+/// network's place, as the seeded profiles number theirs.
+fn connect_seeds(controller: &Controller) -> Vec<crate::model::connect::NetworkSeed> {
+    use crate::model::connect::{NetworkSeed, ICON_COLOR_COUNT};
+    controller
+        .network_order()
+        .into_iter()
+        .enumerate()
+        .map(|(index, id)| NetworkSeed {
+            nick: controller.current_nick_for(&id),
+            icon_color: Some((index as u8 % ICON_COLOR_COUNT) + 1),
+            chantypes: controller.features(&id).channel_types().to_owned(),
+            channels: controller
+                .session(&id)
+                .map(|session| session.autojoin_channels())
+                .unwrap_or_default(),
+            network_id: id,
+        })
+        .collect()
 }
 
 impl Render for Shell {
@@ -232,8 +271,8 @@ impl Render for Shell {
         if self.bench.enabled && self.bench.first_frame.is_none() {
             self.bench.first_frame = Some(self.bench.started.elapsed());
         }
-        // Window focus drives the unread rules. The observer needs the window, so it
-        // is registered here, once, and reads the starting focus from it.
+        // Window focus drives the unread rules. The observer needs the window, so it is
+        // registered here, once, and reads the starting focus from it.
         if !self.activation_watched {
             self.activation_watched = true;
             self.window_active = window.is_window_active();
@@ -246,13 +285,14 @@ impl Render for Shell {
             self._subscriptions.push(subscription);
         }
 
-        // Connect's focus. The stops on the showing tab get their handles, then the
-        // focus request a Tab, an open or a tab cycle left is applied. The stop that
-        // holds focus is read back, and the rail's Enter arming resets when the rail
-        // lets go. Finally the fields show the draft.
+        let populated = self.populated_networks();
+        // Connect's focus. The stops on the showing tab get their handles, then the focus
+        // request a Tab, an open or a tab cycle left is applied. The stop that holds focus
+        // is read back, and the rail's Enter arming resets when the rail lets go. Finally
+        // the fields show the draft.
         let mut connect_focused: Option<Stop> = None;
         if self.connect_open {
-            let stops = self.connect.stops(&self.world);
+            let stops = self.connect.stops(&populated);
             self.connect_ui.ensure(cx, &stops);
             if let Some(stop) = self.connect.take_focus_request() {
                 self.connect_ui.ensure(cx, std::slice::from_ref(&stop));
@@ -262,8 +302,8 @@ impl Render for Shell {
                 }
             }
             connect_focused = self.connect_ui.focused(&stops, window);
-            // A click focuses a stop without the keys, so the model learns it here. Focus
-            // on Shortcuts or About leaves the last stop in place for the restore.
+            // A click focuses a stop without the keys, so the model learns it here. Focus on
+            // Shortcuts or About leaves the last stop in place for the restore.
             if let Some(stop) = &connect_focused {
                 self.connect.set_focus(Some(stop.clone()));
             }
@@ -282,55 +322,53 @@ impl Render for Shell {
         let wide_enough = f32::from(window.viewport_size().width)
             >= app_style.scaled(980.) as f32;
         let show_members = self.members_open
-            && self.current_conversation().is_channel()
-            && self.status.is_none()
+            && self.controller.is_channel()
+            && !self.status_showing()
             && wide_enough;
-        // A hidden member list cannot keep focus (a DM, a narrow window, or a
-        // closed panel): hand focus to the composer, as Ctrl+Shift+M does.
+        // A hidden member list cannot keep focus (a DM, a narrow window, or a closed panel):
+        // hand focus to the composer, as Ctrl+Shift+M does.
         if !show_members && self.member_focus.is_focused(window) {
             self.focus_composer(window, cx);
         }
-        let view = match self.status.as_deref() {
-            Some(network_id) => TitleView::Status(network_id),
-            None => TitleView::Conversation(Some(&self.selected)),
+        let selected = self.selected_ref();
+        let status = self.status_network();
+        let wanted_window_title = match &status {
+            Some(network_id) => window_title(&self.controller, TitleView::Status(network_id)),
+            None => window_title(&self.controller, TitleView::Conversation(Some(&selected))),
         };
-        let wanted_window_title = window_title(&self.world, view);
         if wanted_window_title != self.window_title {
             window.set_window_title(&wanted_window_title);
             self.window_title = wanted_window_title;
         }
 
         // The header reads the Status pane's title and the connection line, or the
-        // conversation's title, people count, and subtitle. The subtitle is the
-        // network's last command error while one is set, else the topic (Status
-        // shows the same error over "Connected", as Qt's `statusSubtitle` does).
-        let (title, people, error) = match &self.status {
+        // conversation's title, people count, and subtitle. The subtitle is the network's
+        // last command error while one is set, else the topic (Status shows the same error
+        // over "Connected", as Qt's `statusSubtitle` does).
+        let (title, people, error) = match &status {
             Some(network_id) => (
-                status_title(&self.world, network_id).unwrap_or_else(|| "Status".to_string()),
+                status_title(&self.controller.network_name(network_id)),
                 None,
-                self.world
-                    .network(network_id)
-                    .and_then(|network| network.last_error.clone()),
+                self.controller.last_error_for(network_id).map(str::to_string),
             ),
             None => {
-                let conv = self.current_conversation();
                 let error = self
-                    .world
-                    .network(&self.selected.network_id)
-                    .and_then(|network| network.last_error.clone());
+                    .controller
+                    .last_error_for(&selected.network_id)
+                    .map(str::to_string);
                 (
-                    conversation_title(&self.world, &self.selected).unwrap_or_default(),
-                    conv.is_channel().then(|| conv.people_count()),
+                    conversation_title(&self.controller, &selected).unwrap_or_default(),
+                    self.controller.is_channel().then(|| self.controller.people_count()),
                     error,
                 )
             }
         };
-        // The topic shows unless an error or Status takes the second line. Its URLs
-        // and channel names are clickable, against the network's CHANTYPES.
-        let topic = (self.status.is_none() && error.is_none()).then(|| {
-            let chantypes = self.current_network().chantypes.clone();
-            let text = format_irc(self.current_conversation().topic.as_deref().unwrap_or(""));
-            let hits = text_hits(&text, &chantypes);
+        // The topic shows unless an error or Status takes the second line. Its URLs and
+        // channel names are clickable, against the network's CHANTYPES.
+        let topic = (status.is_none() && error.is_none()).then(|| {
+            let features = self.features_of(&selected.network_id);
+            let text = format_irc(&self.controller.topic());
+            let hits = text_hits(&text, &features);
             (text, hits)
         });
         // Otherwise the line is the error, or `Connected` (Qt's `statusSubtitle`).
@@ -355,14 +393,17 @@ impl Render for Shell {
         });
 
         let update_ready = self.update.read(cx).restart_ready();
+        let conversations = self.controller.conversations();
+        let networks = self.network_headers(&conversations);
         let sidebar = render_sidebar(
             SidebarData {
                 update_ready,
-                world: &self.world,
+                networks: &networks,
+                conversations: &conversations,
                 state: &self.sidebar,
-                selected: &self.selected,
-                status_open: self.status.is_some(),
-                inbox_count: self.inbox.len() as u32,
+                selected: &selected,
+                status_open: status.is_some(),
+                inbox_count: self.controller.inbox_items().len() as u32,
                 typing_phase: self.typing_phase,
                 avatars: self.preferences.avatars,
                 on_status: status_handler(entity.clone()),
@@ -430,10 +471,13 @@ impl Render for Shell {
             .child(sidebar)
             .child(center)
             .when(show_members, |this| {
+                let members = self.controller.members();
+                let people = self.controller.people_count();
                 this.child(render_members(
                     MembersData {
-                        conv: self.current_conversation(),
-                        self_nick: &self.current_network().nick,
+                        members: &members,
+                        people,
+                        self_nick: &self.current_nick(),
                         on_nick: nick_handler(entity.clone()),
                         on_heading: heading_handler(entity.clone()),
                         focus: &self.member_focus,
@@ -446,12 +490,11 @@ impl Render for Shell {
                     &self.scrollbar_drag,
                 ))
             })
-            // Connect sits above the window and below Shortcuts and About, which
-            // open after it.
+            // Connect sits above the window and below Shortcuts and About, which open after it.
             .when(self.connect_open, |this| {
                 this.child(render_connect(&ConnectView {
                     state: &self.connect,
-                    world: &self.world,
+                    populated: &populated,
                     prefs: &self.preferences,
                     controls: &self.connect_ui,
                     focused: connect_focused.as_ref(),
@@ -518,7 +561,6 @@ fn inbox_handler(entity: Entity<Shell>) -> Handler<()> {
     })
 }
 
-/// A click on the footer's version: the About sheet.
 /// The footer's version link: a ready installer starts, and anything else opens About.
 fn about_handler(entity: Entity<Shell>) -> Handler<()> {
     Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
@@ -535,9 +577,9 @@ fn collapse_handler(entity: Entity<Shell>) -> Handler<String> {
     })
 }
 
-/// SEND: send the draft, then focus the composer. In find mode SEND moves to the
-/// next match instead, as Qt's `sendMessage` does. A command that opens a sheet
-/// (`/list`) keeps the focus there.
+/// SEND: send the draft, then focus the composer. In find mode SEND moves to the next
+/// match instead, as Qt's `sendMessage` does. A command that opens a sheet (`/list`)
+/// keeps the focus there.
 fn send_handler(entity: Entity<Shell>) -> Handler<()> {
     Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
         entity.update(cx, |shell, cx| {
@@ -597,3 +639,6 @@ fn nick_handler(entity: Entity<Shell>) -> Handler<String> {
         });
     })
 }
+
+/// The interval of the controller's timers (autoaway, typing, reconnect), in milliseconds.
+pub const CONTROLLER_TICK: Duration = Duration::from_millis(100);

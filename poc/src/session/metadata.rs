@@ -19,6 +19,8 @@ pub use crate::irc::presence::{
     subscription_keys, MetadataCapability,
 };
 
+// Phase 4: /avatar sets the own METADATA
+#[allow(dead_code)]
 impl Core {
     /// Subscribes to the metadata keys the server allows, once member metadata
     /// and batch are both enabled (`subscribeToMemberMetadataLocked`).
@@ -40,6 +42,8 @@ impl Core {
     /// Sets (or, for an empty value, clears) one of this user's metadata keys.
     /// Returns the value placed on the wire, `Some("")` for a clear, or `None`
     /// when nothing was sent (`setOwnMetadataLocked`).
+    // Phase 4: /avatar sets the own METADATA
+    #[allow(dead_code)]
     pub(crate) fn set_own_metadata(&mut self, key: &str, value: &str) -> Option<String> {
         if self.state != super::events::SessionState::Registered {
             return None;

@@ -6,7 +6,8 @@ use gpui::{div, prelude::*, AnyElement, FontWeight};
 
 use crate::model::nick_pick::{can_open_direct, first_selectable, nick_targets, NickTarget};
 use crate::model::presence::photo_for;
-use crate::model::{Member, Style};
+use crate::irc::reducer::MemberView;
+use crate::model::Style;
 use crate::ui::sheets::filter_sheet::{match_text, FilterSource};
 use crate::ui::widgets::avatar::avatar_with_presence;
 use crate::ui::widgets::bot_mark::bot_mark;
@@ -17,7 +18,7 @@ const AWAY_GLYPH_OPACITY: f32 = 0.62;
 
 pub struct NickSource {
     /// The channel's members when the sheet opened, in panel order.
-    pub members: Vec<Member>,
+    pub members: Vec<MemberView>,
     /// The local nick on the selected conversation's network.
     pub self_nick: String,
     /// The `avatars` preference when the sheet opened.
@@ -67,17 +68,18 @@ fn nick_row(
     selected: bool,
     avatars: bool,
 ) -> impl IntoElement {
-    let member: &Member = &target.member;
+    let member: &MemberView = &target.member;
     let is_self = member.nick == self_nick;
-    let away = member.presence == "away";
-    let photo = photo_for(member.avatar.as_deref(), avatars);
+    let away = member.away.is_some();
+    let presence = if away { "away" } else { "online" };
+    let photo = photo_for((!member.avatar.is_empty()).then_some(member.avatar.as_str()), avatars);
     let glyph = avatar_with_presence(
         style,
         &member.nick,
         28.,
         11.,
         photo,
-        &member.presence,
+        presence,
     );
     let label_color = if away {
         to_gpui(style.muted_color())
@@ -85,11 +87,7 @@ fn nick_row(
         to_gpui(style.ink_color())
     };
     let hover = to_gpui(style.hover_color());
-    let status = member
-        .status
-        .as_deref()
-        .filter(|status| !status.is_empty())
-        .map(|status| status.to_string());
+    let status = (!member.status.is_empty()).then(|| member.status.clone());
 
     // Same as the member row: `flex_1` gives the nick the leftover width. Sized
     // from its text, this nested flex item collapsed to nothing, so the nick

@@ -8,11 +8,6 @@
 //! `SessionEvent`s. `tests/irc_portability.rs` keeps `std::net` out of `irc/`;
 //! this module is the seam where the socket transport will plug in.
 
-// The layer has no caller in the binary until the Phase 3 controller drives it,
-// so a non-test build sees every item as unused. The allow covers this module
-// only, and comes off when the controller is wired in.
-#![allow(dead_code)]
-
 pub mod autojoin;
 pub mod batch;
 pub mod caps;

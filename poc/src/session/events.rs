@@ -45,6 +45,8 @@ pub enum SessionState {
 
 impl SessionState {
     /// The C++ enumerator name, for logs and tests.
+    // Phase 8: the Connect sheet reads the session's display name
+    #[allow(dead_code)]
     pub fn name(self) -> &'static str {
         match self {
             Self::Idle => "Idle",
@@ -67,6 +69,8 @@ impl SessionState {
 pub enum ErrorKind {
     Protocol,
     Authentication,
+    // Phase 11: the socket transport reports the TLS handshake
+    #[allow(dead_code)]
     Tls,
     Network,
     Registration,

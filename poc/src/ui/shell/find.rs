@@ -91,7 +91,7 @@ impl Shell {
     /// list, and the highlight moves with it. No match keeps the old highlight.
     pub fn search_find(&mut self, from_start: bool, cx: &mut Context<Self>) {
         let query = self.composer.read(cx).text().to_string();
-        let status_view = self.status.is_some();
+        let status_view = self.status_showing();
         let (reveal, current) = {
             let rows = self.transcript.read(cx).rows();
             let Some(find) = self.find.as_mut() else {

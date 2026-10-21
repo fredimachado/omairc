@@ -35,18 +35,21 @@ impl AssetSource for OmaircAssets {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::load_world;
+    use crate::controller::controller::Controller;
     use crate::model::presence::bundled_path;
 
     #[test]
     fn every_seeded_bundled_image_is_embedded() {
-        let world = load_world();
+        let controller = Controller::seeded_for_tests();
         let mut references: Vec<String> = Vec::new();
-        for network in &world.networks {
-            references.extend(network.icon.clone());
-            for member in network.conversations.iter().flat_map(|c| &c.members) {
-                references.extend(member.avatar.clone());
-            }
+        for network_id in controller.network_order() {
+            references.extend(controller.features(&network_id).icon_url().map(str::to_owned));
+            references.extend(
+                controller
+                    .nick_facts(&network_id)
+                    .values()
+                    .filter_map(|facts| facts.avatar.clone()),
+            );
         }
         let bundled: Vec<&str> = references
             .iter()

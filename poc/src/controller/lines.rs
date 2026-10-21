@@ -51,6 +51,12 @@ impl Controller {
         true
     }
 
+    /// Sets how join, part, quit and nick lines show from now on (`/pref joins`). As Qt
+    /// does, the setting shapes the lines that arrive after it, not the stored ones.
+    pub fn set_membership_noise(&mut self, noise: crate::irc::membershipnoise::MembershipNoise) {
+        self.reducer.set_membership_noise(noise);
+    }
+
     /// Empties one network's Status log (`/clear` on Status).
     pub fn clear_status(&mut self, network_id: &str) {
         self.pump();

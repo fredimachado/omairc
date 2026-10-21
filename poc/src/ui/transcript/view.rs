@@ -11,16 +11,14 @@ use gpui::{
 
 use crate::model::cursor::{page_amount, scroll_target};
 use crate::model::links::{conversation_channel_hits, invite_hit};
-use crate::model::membership::membership_view;
-use crate::model::mock::local_minute;
-use crate::model::prefs::MembershipNoise;
-use crate::model::presence::{nick_facts, NickFacts};
+use crate::irc::serverfeatures::IrcServerFeatures;
+use crate::irc::world::Message;
+use crate::model::presence::NickFacts;
 use crate::model::scroll_place::{resume, Resume, SavedPlace};
 use crate::model::typing_tail::typing_continues;
 use crate::model::unread::{self, UnseenLanding};
-use crate::model::{
-    mix_colors, row_from_message, Conversation, MockMessage, Network, Pos, Row, Style, Transcript,
-};
+use crate::model::transcript::minute_of;
+use crate::model::{mix_colors, row_from_message, Pos, Row, Style, Transcript};
 use crate::ui::message_row::{
     render_transcript_row, RowCallbacks, RowContext, RowLayoutMap, RowPeers,
 };
@@ -59,8 +57,8 @@ pub struct TranscriptView {
     /// What the rows read by nick, and whether peer photos show.
     peers: RowPeers,
     self_nick: String,
-    /// The network's CHANTYPES, which decide what a channel name in a line is.
-    chantypes: String,
+    /// The network's features: its CHANTYPES decide what a channel name in a line is.
+    features: IrcServerFeatures,
     composer_focus: FocusHandle,
     scrollbar_drag: ScrollbarDragCell,
     dragging: bool,
@@ -92,7 +90,7 @@ impl TranscriptView {
             row_bounds: Rc::new(RefCell::new(Default::default())),
             peers: RowPeers::default(),
             self_nick: String::new(),
-            chantypes: String::new(),
+            features: IrcServerFeatures::new(),
             composer_focus,
             scrollbar_drag,
             dragging: false,
@@ -108,22 +106,15 @@ impl TranscriptView {
         }
     }
 
-    /// Shows a conversation's stored lines with a fresh selection and scroll. The
-    /// `joins` setting folds or hides its membership lines. The network gives the
-    /// local nick, its CHANTYPES for the channel names in its lines, and the nicks'
-    /// facts. A DM whose peer is typing gets the typing dots after its last line.
-    pub fn set_conversation(
-        &mut self,
-        conv: &Conversation,
-        network: &Network,
-        joins: MembershipNoise,
-    ) {
-        self.model
-            .set_conversation(&membership_view(&conv.messages, joins));
-        self.peers.facts = row_facts(conv, network);
-        self.self_nick = network.nick.clone();
-        self.chantypes = network.chantypes.clone();
-        self.typing_peer = (!conv.is_channel() && conv.typing).then(|| conv.name.clone());
+    /// Shows a conversation's lines with a fresh selection and scroll. The lines carry
+    /// their membership folding already: the reducer applies `/pref joins` as lines
+    /// arrive. A DM whose peer is typing gets the typing dots after its last line.
+    pub fn set_conversation(&mut self, lines: ConversationLines) {
+        self.model.set_conversation(lines.messages, lines.mark);
+        self.peers.facts = lines.facts;
+        self.self_nick = lines.self_nick.to_owned();
+        self.features = lines.features.clone();
+        self.typing_peer = lines.typing_peer;
         self.model.clear_selection();
         self.find_row = None;
         // Switching buffers drops any catch-up (Qt `resetPending`).
@@ -212,43 +203,6 @@ impl TranscriptView {
         let max = f32::from(self.list_state.max_offset_for_scrollbar().height);
         let current = -f32::from(self.list_state.scroll_px_offset_for_scrollbar().y);
         current >= max - 1.
-    }
-
-    /// Adds a line to the open conversation or Status pane: one the local user
-    /// just sent, or a command reply. The list stays at the bottom.
-    pub fn append_line(&mut self, row: Row) {
-        let old_len = self.model.rows().len();
-        self.model.append(row);
-        self.model.set_pinned_to_bottom(true);
-        self.list_state.splice(old_len..old_len, 1);
-    }
-
-    /// Adds the lines that just arrived in the open conversation: its "New messages"
-    /// mark when one was planted, then the line. A reader at the end keeps following.
-    /// A reader scrolled up stays where they are, and the first line that arrived
-    /// becomes the unseen landing (Qt `noteGrowth`).
-    pub fn append_arrival(&mut self, lines: &[MockMessage]) {
-        let was_at_end = self.at_end();
-        let old_len = self.model.rows().len();
-        for line in lines {
-            let previous = self.model.rows().last().cloned();
-            let id = self.model.rows().len() as u64 + 1;
-            if let Some(row) = unread::arrival_row(id, line, previous.as_ref()) {
-                self.model.append(row);
-            }
-        }
-        let added = self.model.rows().len() - old_len;
-        if added == 0 {
-            return;
-        }
-        self.list_state.splice(old_len..old_len, added);
-        if was_at_end {
-            self.first_unseen = None;
-            self.model.set_pinned_to_bottom(true);
-        } else if self.first_unseen.is_none() {
-            // The arrival is the last row appended, so it is the newest.
-            self.first_unseen = Some(old_len + added - 1);
-        }
     }
 
     /// Focus returns to the window: the list lands on its open mark, and keeps its
@@ -422,7 +376,7 @@ impl TranscriptView {
         self.drag_edge = None;
         self.drag_pointer = None;
         let (row_ix, range) = self.link_at(position)?;
-        link_click(&self.model.rows()[row_ix], &range, &self.chantypes)
+        link_click(&self.model.rows()[row_ix], &range, &self.features)
     }
 
     pub fn tick_drag_autoscroll(&mut self, app_style: &Style) {
@@ -463,7 +417,7 @@ impl TranscriptView {
             self.model.rows(),
             &self.row_layouts,
             &self.row_bounds,
-            &self.chantypes,
+            &self.features,
             position,
         )
     }
@@ -592,7 +546,7 @@ impl Render for TranscriptView {
                                     let continues = typing_continues(
                                         view.model.rows(),
                                         &peer,
-                                        &local_minute(),
+                                        &minute_of(chrono::Utc::now()),
                                     );
                                     div()
                                         .w_full()
@@ -676,7 +630,7 @@ impl Render for TranscriptView {
 
 /// What a release over `range` in `row` asks for. A URL wins over an invite or a
 /// channel that shares its range.
-fn link_click(row: &Row, range: &Range<usize>, chantypes: &str) -> Option<LinkClick> {
+fn link_click(row: &Row, range: &Range<usize>, features: &IrcServerFeatures) -> Option<LinkClick> {
     if row.body.links.contains(range) {
         return row
             .body
@@ -689,24 +643,20 @@ fn link_click(row: &Row, range: &Range<usize>, chantypes: &str) -> Option<LinkCl
             return Some(LinkClick::Invite(channel.to_string()));
         }
     }
-    conversation_channel_hits(row, chantypes)
+    conversation_channel_hits(row, features)
         .into_iter()
         .find(|span| &span.range == range)
         .map(|span| LinkClick::Channel(span.name))
 }
 
-/// The facts the transcript reads by nick: the network's, plus the DM peer's real
-/// name when the conversation has one.
-pub fn row_facts(conv: &Conversation, network: &Network) -> HashMap<String, NickFacts> {
-    let mut facts = nick_facts(network);
-    if let Some(real) = &conv.peer_realname {
-        let keys = [conv.name.strip_prefix('#').unwrap_or(&conv.name), conv.name.as_str()];
-        for key in keys {
-            let entry = facts.entry(key.to_string()).or_default();
-            if entry.realname.is_empty() {
-                entry.realname.clone_from(real);
-            }
-        }
-    }
-    facts
+/// What a conversation's transcript is built from: its lines, the "New messages" mark,
+/// the nicks' facts, the local nick, the network's features, and the DM peer whose typing
+/// dots end the list.
+pub struct ConversationLines<'a> {
+    pub messages: &'a [Message],
+    pub mark: Option<i64>,
+    pub facts: HashMap<String, NickFacts>,
+    pub self_nick: &'a str,
+    pub features: &'a IrcServerFeatures,
+    pub typing_peer: Option<String>,
 }

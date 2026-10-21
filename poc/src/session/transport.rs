@@ -13,6 +13,8 @@ use std::rc::Weak;
 /// order matters: `Encrypted` means open and secure, `Connected` open but
 /// plaintext.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+// Phase 11: the socket transport reports its lifecycle
+#[allow(dead_code)]
 pub enum ConnectionState {
     /// Never connected.
     #[default]
@@ -24,15 +26,23 @@ pub enum ConnectionState {
     /// An open TLS socket.
     Encrypted,
     /// A shutdown in progress.
+    // Phase 11: the socket transport reports its lifecycle
+    #[allow(dead_code)]
     Closing,
     /// A cleanly ended connection.
     Disconnected,
     /// An error end. The sink's `error` carried the reason.
+    // Phase 11: the socket transport reports its lifecycle
+    #[allow(dead_code)]
     Failed,
 }
 
+// Phase 11: the socket transport reports its lifecycle
+#[allow(dead_code)]
 impl ConnectionState {
     /// The C++ enumerator name, for logs and tests.
+    // Phase 11: the socket transport reports its lifecycle
+    #[allow(dead_code)]
     pub fn name(self) -> &'static str {
         match self {
             Self::Idle => "Idle",
@@ -50,6 +60,8 @@ impl ConnectionState {
 /// `IrcTransport` signals in C++). Implementations must not block. A loopback
 /// transport calls these synchronously, on the caller's stack, so a sink may
 /// call back into the transport.
+// Phase 11: the socket transport reports its lifecycle
+#[allow(dead_code)]
 pub trait TransportSink {
     /// The socket is open. For TLS this fires before `encrypted`.
     fn connected(&self);
@@ -60,6 +72,8 @@ pub trait TransportSink {
     /// Raw inbound bytes, in order, unframed.
     fn bytes_received(&self, bytes: &[u8]);
     /// A transport failure, already presentable.
+    // Phase 11: the socket transport reports its lifecycle
+    #[allow(dead_code)]
     fn error(&self, message: &str);
 }
 

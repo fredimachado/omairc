@@ -25,7 +25,7 @@ pub fn render_footer(view: &ConnectView<'_>) -> impl IntoElement {
         .items_center()
         .gap(scaled_px(style, 8.))
         .flex_shrink_0();
-    if view.state.can_remove(view.world) {
+    if view.state.can_remove(view.populated) {
         actions = actions.child(remove_button(view, &name));
     }
     actions = actions

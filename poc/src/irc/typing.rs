@@ -20,6 +20,8 @@ pub const TYPING_ACTIVE_HOLD_MS: i64 = 6000;
 pub const TYPING_PAUSED_HOLD_MS: i64 = 30000;
 
 /// The per-target outbound throttle, in milliseconds (`irctyping.h`).
+// Phase 4: the typing publisher sends TAGMSG typing frames
+#[allow(dead_code)]
 pub const TYPING_SEND_INTERVAL_MS: i64 = 3000;
 
 /// Which hold a stored hint uses (`TypingClock`, `IrcTypingClock`). The zero
@@ -46,8 +48,12 @@ pub enum TypingPhase {
     Done,
 }
 
+// Phase 4: the typing publisher sends TAGMSG typing frames
+#[allow(dead_code)]
 impl TypingPhase {
     /// The tag value on the wire.
+    // Phase 4: the typing publisher sends TAGMSG typing frames
+    #[allow(dead_code)]
     pub fn tag_value(self) -> &'static str {
         match self {
             Self::Active => "active",
@@ -128,6 +134,8 @@ pub fn typing_phase_from_tag(value: &str) -> Option<TypingPhase> {
 /// Builds `@+typing=<phase> TAGMSG <target>` with its CRLF (`TypingTagmsg`,
 /// `ircTypingTagmsg`). `None` when the target is empty or carries a space, CR or
 /// LF.
+// Phase 4: the typing publisher sends TAGMSG typing frames
+#[allow(dead_code)]
 pub fn typing_tagmsg(target: &str, phase: TypingPhase) -> Option<String> {
     if target.is_empty()
         || target

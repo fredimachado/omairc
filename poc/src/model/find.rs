@@ -100,8 +100,8 @@ pub fn find_next(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::mock::{StatusLine, StatusSeverity, StatusSource};
-    use crate::model::status::row_from_status_line;
+    use crate::irc::statusentry::{LogSource, StatusEntry};
+    use crate::model::status::row_from_status_entry;
     use crate::model::transcript::row_from_message;
 
     fn chat(id: u64, author: &str, body: &str) -> Row {
@@ -109,16 +109,12 @@ mod tests {
     }
 
     fn status(id: u64, label: &str, text: &str) -> Row {
-        row_from_status_line(
-            id,
-            &StatusLine {
-                time: "09:00".to_string(),
-                label: label.to_string(),
-                text: text.to_string(),
-                source: StatusSource::Server,
-                severity: StatusSeverity::Info,
-            },
-        )
+        let entry = StatusEntry {
+            label: label.to_string(),
+            source: LogSource::Server,
+            ..crate::irc::statusentry::outcome("omarchy", text, chrono::Utc::now())
+        };
+        row_from_status_entry(id, &entry)
     }
 
     fn sample() -> Vec<Row> {
@@ -259,28 +255,36 @@ mod tests {
 
     #[test]
     fn find_never_lands_on_the_new_messages_mark() {
+        use crate::irc::event::MsgId;
+        use crate::irc::world::{Message, MessageKind, Origin};
         use crate::model::transcript::rows_from_messages;
-        use crate::model::unread::mark_line;
-        let messages = [
-            crate::model::mock::MockMessage {
-                kind: "message".to_string(),
-                author: "anna".to_string(),
-                time: "09:00".to_string(),
-                day: String::new(),
-                body: "one".to_string(),
-            },
-            mark_line(),
-            crate::model::mock::MockMessage {
-                kind: "message".to_string(),
-                author: "dax".to_string(),
-                time: "09:01".to_string(),
-                day: String::new(),
-                body: "two".to_string(),
-            },
-        ];
-        let rows = rows_from_messages(&messages);
-        assert_eq!(rows[1].kind, RowKind::UnreadMark);
+        use chrono::{Local, TimeZone, Utc};
+        let at = |minute: u32| {
+            Local
+                .with_ymd_and_hms(2026, 10, 19, 9, minute, 0)
+                .unwrap()
+                .with_timezone(&Utc)
+        };
+        let line = |author: &str, body: &str, minute: u32| Message {
+            kind: MessageKind::Message,
+            author: author.to_string(),
+            body: body.to_string(),
+            time: at(minute),
+            server_time: None,
+            msgid: MsgId::default(),
+            origin: Origin::Live,
+            mentioned: false,
+            collapsible: false,
+            sequence: minute as i64,
+            only_visible_to_you: false,
+        };
+        let messages = [line("anna", "one", 0), line("dax", "two", 1)];
+        // The reducer plants the mark in front of the second line (its sequence).
+        let rows = rows_from_messages(&messages, Some(1));
+        let mark = rows.iter().position(|row| row.kind == RowKind::UnreadMark);
+        assert!(mark.is_some(), "the mark row is in the transcript");
         assert_eq!(find_next(&rows, false, "new messages", None), None);
-        assert_eq!(find_next(&rows, false, "two", None), Some(2));
+        let two = rows.iter().position(|row| row.body.plain == "two");
+        assert_eq!(find_next(&rows, false, "two", None), two);
     }
 }

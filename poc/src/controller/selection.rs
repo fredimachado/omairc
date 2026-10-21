@@ -45,8 +45,26 @@ impl Controller {
         self.pump();
     }
 
+    /// Leaves Status for the selected conversation (`CloseStatus`). The selection is kept,
+    /// so the transcript shows it again. Nothing else changes.
+    pub fn leave_status(&mut self) {
+        self.pump();
+        if !self.console_open {
+            return;
+        }
+        self.console_open = false;
+        self.queue(vec![
+            ViewNotify::Selection,
+            ViewNotify::Messages,
+            ViewNotify::Status,
+        ]);
+        self.pump();
+    }
+
     /// Clears the selection, so the transcript falls back to Status
     /// (`ClearConversationSelection`).
+    // Phase 5: the header's CLOSE falls back to Status
+    #[allow(dead_code)]
     pub fn clear_selection(&mut self) {
         self.pump();
         self.clear_selected();
@@ -81,6 +99,8 @@ impl Controller {
     /// Closes what the user has selected (`CloseDirectMessage`). A direct message
     /// closes; a channel closes only once it is left. A closed direct message
     /// selects its neighbour. False when the selection cannot close.
+    // Phase 5: CLOSE on the header closes the selection
+    #[allow(dead_code)]
     pub fn close_direct(&mut self) -> bool {
         self.pump();
         let network_id = self.focused_network_id().to_owned();
@@ -115,6 +135,8 @@ impl Controller {
 
     /// Whether the selection can close: a direct message always can, a channel only
     /// once it is no longer joined (`CanCloseSelection`).
+    // Phase 5: the header's CLOSE and Ctrl+W check it
+    #[allow(dead_code)]
     pub fn can_close_selection(&self) -> bool {
         let Some(key) = self.selected.as_ref() else {
             return false;
@@ -131,6 +153,8 @@ impl Controller {
 
     /// Whether the selected channel is joined (`ChannelJoined`). False for a direct
     /// message or an empty selection.
+    // Phase 5: the header's LEAVE and JOIN read it
+    #[allow(dead_code)]
     pub fn channel_joined(&self) -> bool {
         let Some(key) = self.selected.as_ref() else {
             return false;
@@ -166,6 +190,8 @@ impl Controller {
     }
 
     /// Mutes or unmutes a conversation (`SetMuted`).
+    // Phase 4: /mute and /unmute set the conversation mute
+    #[allow(dead_code)]
     pub fn set_muted(&mut self, network_id: &str, target: &str, muted: bool) {
         if network_id.is_empty() || target.is_empty() {
             return;
@@ -217,6 +243,8 @@ impl Controller {
     /// Closes the selection (`closeSelectedConversation`). A channel closes only when
     /// it is not joined, and then dismisses the channel. A direct message or a
     /// conversation that does not exist yet drops and reselects.
+    // Phase 5: the header's CLOSE closes the selection
+    #[allow(dead_code)]
     fn close_selected(&mut self) -> bool {
         let Some(key) = self.selected.clone() else {
             return false;

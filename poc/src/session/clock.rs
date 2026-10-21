@@ -78,6 +78,8 @@ struct RealEntry {
     callback: Box<dyn FnOnce()>,
 }
 
+// test seam: FakeClock drives the timers in the tests
+#[allow(dead_code)]
 impl RealClock {
     /// A clock with no timers armed.
     pub fn new() -> Self {
@@ -113,6 +115,8 @@ impl RealClock {
     }
 
     /// How many timers are still armed.
+    // Phase 8: the reconnect schedule shows the pending timers
+    #[allow(dead_code)]
     pub fn pending(&self) -> usize {
         self.pending
             .borrow()
@@ -146,6 +150,8 @@ impl Clock for RealClock {
 /// runs the timers that come due, earliest deadline first, ties broken by
 /// scheduling order. A callback may arm another timer, which fires in the same
 /// `advance` when its deadline also falls inside the window.
+// test seam: FakeClock drives the timers in the tests
+#[allow(dead_code)]
 pub struct FakeClock {
     start: DateTime<Utc>,
     elapsed: Cell<Duration>,
@@ -153,6 +159,8 @@ pub struct FakeClock {
     timers: RefCell<Vec<FakeEntry>>,
 }
 
+// test seam: FakeClock drives the timers in the tests
+#[allow(dead_code)]
 struct FakeEntry {
     due: Duration,
     sequence: u64,
@@ -160,8 +168,12 @@ struct FakeEntry {
     callback: Box<dyn FnOnce()>,
 }
 
+// test seam: FakeClock drives the timers in the tests
+#[allow(dead_code)]
 impl FakeClock {
     /// A fake clock whose virtual time starts at `start`.
+    // test seam: FakeClock drives the timers in the tests
+    #[allow(dead_code)]
     pub fn new(start: DateTime<Utc>) -> Self {
         Self {
             start,
@@ -172,6 +184,8 @@ impl FakeClock {
     }
 
     /// Moves virtual time forward by `delta`, running each timer that comes due.
+    // test seam: FakeClock drives the timers in the tests
+    #[allow(dead_code)]
     pub fn advance(&self, delta: Duration) {
         let target = self.elapsed.get() + delta;
         loop {
@@ -201,6 +215,8 @@ impl FakeClock {
     }
 
     /// How many timers are still armed. Fired and stopped timers do not count.
+    // Phase 8: the reconnect schedule shows the pending timers
+    #[allow(dead_code)]
     pub fn pending(&self) -> usize {
         self.timers
             .borrow()

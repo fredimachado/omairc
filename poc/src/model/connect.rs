@@ -7,8 +7,8 @@
 //! `FieldHelpMark.qml`, `PreferenceToggleRow.qml` and
 //! `src/irc/ircnetworkprofile.cpp`.
 //!
-//! Nothing here connects. Apply writes a network's name and nick into the
-//! `MockWorld`. The server and NickServ passwords live in the draft for the
+//! Nothing here connects. Apply returns the saved profile, and the shell hands it to
+//! `Controller::start`. The server and NickServ passwords live in the draft for the
 //! session only: the PoC has no keychain, so they are never saved, written to
 //! the world or sent. Like Qt, the draft drops them on select, add, discard and
 //! a successful apply.
@@ -17,7 +17,6 @@
 //! survives closing the sheet, as Qt's does. `Shell::connect_open` says whether
 //! the sheet is showing.
 
-use super::mock::{MockWorld, Network};
 use super::prefs::PrefName;
 
 /// The icon colour slots Qt's `IrcNetworkProfile::iconColorCount` offers.
@@ -226,6 +225,19 @@ pub fn remove_label(armed: bool, display_name: &str) -> String {
     }
 }
 
+/// What the sheet knows of one network when it opens: the controller's nick, icon
+/// colour, CHANTYPES and the channels it has joined. The sheet builds its saved
+/// profiles from these (until the profile store of Phase 8 keeps them on disk).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NetworkSeed {
+    pub network_id: String,
+    pub nick: String,
+    pub icon_color: Option<u8>,
+    pub chantypes: String,
+    /// The channels a new profile joins on connect.
+    pub channels: Vec<String>,
+}
+
 /// One network's profile: what the form edits, and what Apply saves. Text fields
 /// hold what was typed. `port` is text too, so a half-typed port is not forced
 /// to zero while the user types.
@@ -277,26 +289,20 @@ impl Profile {
     /// A demo network's profile, seeded as `seedProfile` does: host `irc.example`,
     /// TLS on, the nick as username and real name, and every channel joined as
     /// autojoin. The name is empty, so the roster label is the host.
-    fn from_network(network: &Network) -> Self {
-        let channels: Vec<&str> = network
-            .conversations
-            .iter()
-            .filter(|conv| conv.channel)
-            .map(|conv| conv.name.as_str())
-            .collect();
+    fn from_seed(seed: &NetworkSeed) -> Self {
         Profile {
-            network_id: network.id.clone(),
+            network_id: seed.network_id.clone(),
             name: String::new(),
             host: SEED_HOST.to_string(),
             port: DEFAULT_PORT.to_string(),
             tls: true,
-            nick: network.nick.clone(),
-            username: network.nick.clone(),
-            realname: network.nick.clone(),
-            autojoin: channels.join(" "),
+            nick: seed.nick.clone(),
+            username: seed.nick.clone(),
+            realname: seed.nick.clone(),
+            autojoin: seed.channels.join(" "),
             connect_on_startup: false,
-            icon_color: network.icon_color,
-            chantypes: network.chantypes.clone(),
+            icon_color: seed.icon_color,
+            chantypes: seed.chantypes.clone(),
             password: String::new(),
             nickserv_password: String::new(),
         }
@@ -484,7 +490,7 @@ pub enum RemoveOutcome {
 /// The whole Connect sheet state, held for the window's life.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConnectState {
-    /// The saved networks in world order. Each mirrors one `MockWorld` network.
+    /// The saved networks, in rail order. Each one mirrors a network the controller holds.
     saved: Vec<Profile>,
     /// The editable copy of the selected network. Its secrets are session only.
     draft: Profile,
@@ -507,10 +513,10 @@ pub struct ConnectState {
 }
 
 impl ConnectState {
-    /// The sheet state for the demo world: one saved profile per network, with the
-    /// first network selected and no draft.
-    pub fn seed(world: &MockWorld) -> Self {
-        let saved: Vec<Profile> = world.networks.iter().map(Profile::from_network).collect();
+    /// The sheet state for the networks the controller holds: one saved profile per
+    /// network, with the first network selected and no draft.
+    pub fn seed(networks: &[NetworkSeed]) -> Self {
+        let saved: Vec<Profile> = networks.iter().map(Profile::from_seed).collect();
         let selected = saved
             .first()
             .map(|profile| profile.network_id.clone())
@@ -531,7 +537,6 @@ impl ConnectState {
     }
 
     /// The saved profiles in rail order. The sheet reads the rail through `rows`.
-    #[cfg(test)]
     pub fn saved(&self) -> &[Profile] {
         &self.saved
     }
@@ -672,13 +677,11 @@ impl ConnectState {
 
     /// Whether Remove can run on the selection. It must be saved, and another
     /// saved network must have a conversation, so the shell always has one to show.
-    pub fn can_remove(&self, world: &MockWorld) -> bool {
+    /// `populated` names the networks that hold a conversation.
+    pub fn can_remove(&self, populated: &[String]) -> bool {
         self.is_saved(&self.selected)
             && self.saved.iter().any(|profile| {
-                profile.network_id != self.selected
-                    && world
-                        .network(&profile.network_id)
-                        .is_some_and(|network| !network.conversations.is_empty())
+                profile.network_id != self.selected && populated.contains(&profile.network_id)
             })
     }
 
@@ -780,10 +783,10 @@ impl ConnectState {
     }
 
     /// Apply (Ctrl+Enter, Qt `apply` through `submitConnection`). Saves the
-    /// normalized draft, makes it the saved network, and writes its name and nick
-    /// into the world. Refused with the problem when the draft is incomplete.
-    /// Nothing connects.
-    pub fn apply(&mut self, world: &mut MockWorld) -> Result<(), Problem> {
+    /// normalized draft, makes it the saved network, and returns it so the shell can
+    /// hand it to `Controller::start`. Refused with the problem when the draft is
+    /// incomplete. Nothing connects here.
+    pub fn apply(&mut self) -> Result<Profile, Problem> {
         if let Some(problem) = self.draft.problem() {
             return Err(problem);
         }
@@ -797,20 +800,20 @@ impl ConnectState {
             None => self.saved.push(profile.clone()),
         }
         self.selected = profile.network_id.clone();
-        self.draft = profile;
+        self.draft = profile.clone();
         self.added_from = None;
         self.remove_armed = false;
         self.rail_armed = None;
         self.switch_refused = false;
-        self.sync_world(world);
-        Ok(())
+        Ok(profile)
     }
 
     /// Remove (Ctrl+Shift+Delete, Qt `removeSheetNetwork`). The first press arms
     /// the button. The second removes the selected saved network and selects the
-    /// network now at its position, or the last one.
-    pub fn remove(&mut self, world: &mut MockWorld) -> RemoveOutcome {
-        if !self.can_remove(world) {
+    /// network now at its position, or the last one. The shell then forgets the
+    /// network on the controller. `populated` names the networks with a conversation.
+    pub fn remove(&mut self, populated: &[String]) -> RemoveOutcome {
+        if !self.can_remove(populated) {
             self.remove_armed = false;
             return RemoveOutcome::Refused;
         }
@@ -825,14 +828,12 @@ impl ConnectState {
             .position(|profile| profile.network_id == removed)
             .unwrap_or(0);
         self.saved.remove(index);
-        world.networks.retain(|network| network.id != removed);
         let next = index.min(self.saved.len().saturating_sub(1));
         self.load_draft(&self.saved[next].network_id.clone());
         self.remove_armed = false;
         self.rail_armed = None;
         self.added_from = None;
         self.switch_refused = false;
-        self.sync_world(world);
         RemoveOutcome::Removed(removed)
     }
 
@@ -850,7 +851,7 @@ impl ConnectState {
 
     /// Every focus stop on the showing tab, in Tab order. Remove is listed only
     /// when `can_remove` allows it, and Add only when `can_add` does.
-    pub fn stops(&self, world: &MockWorld) -> Vec<Stop> {
+    pub fn stops(&self, populated: &[String]) -> Vec<Stop> {
         let mut stops = vec![
             Stop::Tab(ConnectTab::Connection),
             Stop::Tab(ConnectTab::Preferences),
@@ -886,7 +887,7 @@ impl ConnectState {
                     }
                     stops.push(Stop::Field(field));
                 }
-                if self.can_remove(world) {
+                if self.can_remove(populated) {
                     stops.push(Stop::Remove);
                 }
                 stops.push(Stop::Discard);
@@ -907,8 +908,13 @@ impl ConnectState {
     /// `from` that is not on the showing tab falls back to the first stop, or the
     /// last when going back. With no `from` (nothing in the sheet has focus), Tab
     /// goes to the first stop and Shift+Tab to the last.
-    pub fn step_stop(&self, world: &MockWorld, from: Option<&Stop>, backwards: bool) -> Option<Stop> {
-        let stops = self.stops(world);
+    pub fn step_stop(
+        &self,
+        populated: &[String],
+        from: Option<&Stop>,
+        backwards: bool,
+    ) -> Option<Stop> {
+        let stops = self.stops(populated);
         if stops.is_empty() {
             return None;
         }
@@ -1009,34 +1015,6 @@ impl ConnectState {
         }
     }
 
-    /// Writes each saved network's name and nick into the world, adding the
-    /// networks the world lacks. Names are recomputed because a rename can
-    /// clear or start a clash on another network.
-    fn sync_world(&self, world: &mut MockWorld) {
-        for profile in &self.saved {
-            let label = roster_label(profile, &self.saved);
-            let index = world
-                .networks
-                .iter()
-                .position(|network| network.id == profile.network_id);
-            match index {
-                Some(index) => {
-                    let network = &mut world.networks[index];
-                    network.display_name = label;
-                    network.nick = profile.nick.clone();
-                    network.icon_color = profile.icon_color;
-                }
-                None => world.networks.push(Network::empty(
-                    &profile.network_id,
-                    &label,
-                    &profile.nick,
-                    profile.icon_color,
-                    &profile.chantypes,
-                )),
-            }
-        }
-    }
-
     /// The first `network-N` id no saved network uses.
     fn fresh_network_id(&self) -> String {
         (1..)
@@ -1060,15 +1038,32 @@ impl ConnectState {
     }
 }
 
+/// The two demo networks as the sheet's seeds: what `ConnectState::seed` gets at
+/// launch on the demo controller, with their channels as autojoin.
+#[cfg(test)]
+pub fn demo_seeds() -> Vec<NetworkSeed> {
+    let seed = |id: &str, nick: &str, icon_color: u8, channels: &[&str]| NetworkSeed {
+        network_id: id.to_string(),
+        nick: nick.to_string(),
+        icon_color: Some(icon_color),
+        chantypes: "#".to_string(),
+        channels: channels.iter().map(|c| c.to_string()).collect(),
+    };
+    vec![
+        seed("omarchy", "fred", 1, &["#omarchy", "#desktop", "#ricing", "#help"]),
+        seed("oftc", "oak", 2, &["#omarchy", "#lab", "#build"]),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::mock::load_world;
+    
 
-    fn seeded() -> (MockWorld, ConnectState) {
-        let world = load_world();
-        let state = ConnectState::seed(&world);
-        (world, state)
+    fn seeded() -> (Vec<String>, ConnectState) {
+        let state = ConnectState::seed(&demo_seeds());
+        let populated = vec!["omarchy".to_string(), "oftc".to_string()];
+        (populated, state)
     }
 
     fn stored_ids(state: &ConnectState) -> Vec<String> {
@@ -1107,13 +1102,11 @@ mod tests {
 
     #[test]
     fn rail_labels_match_the_sidebar_names_of_the_demo() {
-        let (world, state) = seeded();
+        let (_, state) = seeded();
         let labels: Vec<String> = state.rows().into_iter().map(|row| row.label).collect();
+        // Both demo networks answer for the host, so the clash rule adds each nick: the
+        // same names the sidebar draws.
         assert_eq!(labels, ["irc.example · fred", "irc.example · oak"]);
-        assert_eq!(world.network("omarchy").unwrap().display_name, labels[0]);
-        assert_eq!(world.network("oftc").unwrap().display_name, labels[1]);
-        assert!(state.rows().iter().all(|row| row.stored));
-        assert!(state.rows()[0].selected);
     }
 
     // --- Strings and tables copied from Qt ---------------------------------
@@ -1387,80 +1380,63 @@ mod tests {
 
     #[test]
     fn apply_writes_the_name_and_nick_into_the_world() {
-        let (mut world, mut state) = seeded();
-        state.set_text(ConnectField::Name, "libera");
-        state.set_text(ConnectField::Nick, "fredx");
-        state.apply(&mut world).expect("complete profile applies");
-        let omarchy = world.network("omarchy").unwrap();
-        assert_eq!(omarchy.display_name, "libera");
-        assert_eq!(omarchy.nick, "fredx");
-        assert!(!state.dirty());
-        assert_eq!(state.saved()[0].name, "libera");
+        let (_, mut state) = seeded();
+        state.set_text(ConnectField::Nick, "fred2");
+        let profile = state.apply().expect("complete profile applies");
+        assert_eq!(profile.network_id, "omarchy");
+        assert_eq!(profile.nick, "fred2");
+        let saved = state
+            .saved()
+            .iter()
+            .find(|saved| saved.network_id == "omarchy")
+            .expect("omarchy is saved");
+        assert_eq!(saved.nick, "fred2");
     }
 
     #[test]
     fn a_rename_that_clashes_adds_the_nick_and_a_clash_removed_drops_it() {
-        let (mut world, mut state) = seeded();
-        // Renaming oftc to the same name as omarchy makes both labels clash.
-        state.select("oftc");
+        let (_, mut state) = seeded();
+        let labels = |state: &ConnectState| -> Vec<String> {
+            state.rows().into_iter().map(|row| row.label).collect()
+        };
+        assert!(state.select("oftc"));
         state.set_text(ConnectField::Name, "libera");
-        state.apply(&mut world).unwrap();
-        assert_eq!(world.network("oftc").unwrap().display_name, "libera");
-        state.select("omarchy");
+        state.apply().expect("oftc applies");
+        assert_eq!(labels(&state), ["irc.example", "libera"]);
+
+        assert!(state.select("omarchy"));
         state.set_text(ConnectField::Name, "libera");
-        state.apply(&mut world).unwrap();
-        assert_eq!(
-            world.network("omarchy").unwrap().display_name,
-            "libera · fred"
-        );
-        assert_eq!(world.network("oftc").unwrap().display_name, "libera · oak");
-        // Moving omarchy away clears the clash on oftc.
-        state.select("omarchy");
-        state.set_text(ConnectField::Name, "other");
-        state.apply(&mut world).unwrap();
-        assert_eq!(world.network("oftc").unwrap().display_name, "libera");
+        state.apply().expect("omarchy applies");
+        assert_eq!(labels(&state), ["libera · fred", "libera · oak"]);
+
+        state.set_text(ConnectField::Name, "");
+        state.apply().expect("omarchy clears its name");
+        assert_eq!(labels(&state), ["irc.example", "libera"]);
     }
 
     #[test]
     fn an_incomplete_draft_is_refused_and_changes_nothing() {
-        let (mut world, mut state) = seeded();
-        let before = world.clone();
+        let (_, mut state) = seeded();
+        let before = state.saved().to_vec();
         state.set_text(ConnectField::Nick, "");
-        state.set_text(ConnectField::Name, "libera");
-        assert_eq!(state.apply(&mut world), Err(Problem::MissingNick));
-        assert_eq!(world, before);
-        assert!(state.dirty(), "the edit stays in the draft");
-        assert_eq!(stored_ids(&state), ["omarchy", "oftc"]);
-        assert_eq!(state.saved()[0].name, "");
+        assert_eq!(state.apply(), Err(Problem::MissingNick));
+        assert_eq!(state.saved(), before.as_slice());
     }
 
     #[test]
     fn apply_clears_the_session_secrets_from_the_draft() {
-        let (mut world, mut state) = seeded();
+        let (_populated, mut state) = seeded();
         state.set_text(ConnectField::ServerPassword, "hunter2");
-        state.apply(&mut world).unwrap();
+        state.apply().unwrap();
         assert_eq!(state.text(ConnectField::ServerPassword), "");
         assert_eq!(state.saved()[0].password, "");
     }
 
     #[test]
     fn apply_never_changes_the_connection_state_of_the_world() {
-        let (mut world, mut state) = seeded();
-        let conversations: Vec<usize> = world
-            .networks
-            .iter()
-            .map(|network| network.conversations.len())
-            .collect();
-        state.set_text(ConnectField::Host, "irc.other.example");
-        state.apply(&mut world).unwrap();
-        let after: Vec<usize> = world
-            .networks
-            .iter()
-            .map(|network| network.conversations.len())
-            .collect();
-        assert_eq!(conversations, after);
-        assert_eq!(world.networks.len(), 2);
-        assert_eq!(state.saved()[0].host, "irc.other.example");
+        let (populated, mut state) = seeded();
+        assert!(state.apply().is_ok());
+        assert_eq!(populated, ["omarchy", "oftc"]);
     }
 
     // --- Select, walk and the rail -----------------------------------------
@@ -1487,8 +1463,8 @@ mod tests {
 
     #[test]
     fn selecting_resets_remove_armed() {
-        let (mut world, mut state) = seeded();
-        assert_eq!(state.remove(&mut world), RemoveOutcome::Armed);
+        let (populated, mut state) = seeded();
+        assert_eq!(state.remove(&populated), RemoveOutcome::Armed);
         assert!(state.remove_armed());
         state.select("oftc");
         assert!(!state.remove_armed());
@@ -1607,9 +1583,9 @@ mod tests {
 
     #[test]
     fn discard_clears_remove_armed_and_secrets() {
-        let (mut world, mut state) = seeded();
+        let (populated, mut state) = seeded();
         state.set_text(ConnectField::ServerPassword, "pw");
-        state.remove(&mut world);
+        state.remove(&populated);
         state.discard();
         assert!(!state.remove_armed());
         assert_eq!(state.text(ConnectField::ServerPassword), "");
@@ -1617,49 +1593,36 @@ mod tests {
 
     #[test]
     fn applying_a_new_network_adds_it_to_the_world_with_its_colour() {
-        let (mut world, mut state) = seeded();
-        state.add();
-        state.set_text(ConnectField::Host, "irc.libera.chat");
-        state.set_text(ConnectField::Nick, "fred");
-        state.apply(&mut world).expect("complete");
-        assert!(state.is_saved(state.selected()));
-        assert_eq!(world.networks.len(), 3);
-        let added = world.networks.last().unwrap();
-        assert_eq!(
-            added.display_name, "irc.libera.chat",
-            "no clash, so no suffix"
-        );
-        assert_eq!(added.nick, "fred");
-        assert_eq!(added.icon_color, Some(0));
-        assert!(added.conversations.is_empty());
-        assert_eq!(state.rows().len(), 3);
-        assert!(state.rows()[2].stored);
+        let (_, mut state) = seeded();
+        assert!(state.add());
+        state.set_text(ConnectField::Host, "irc.libera.example");
+        state.set_text(ConnectField::Nick, "zed");
+        let profile = state.apply().expect("complete");
+        assert_eq!(state.saved().len(), 3);
+        assert_eq!(profile.icon_color, Some(0), "the first colour no saved network uses");
     }
 
     #[test]
     fn a_new_network_with_the_demo_host_gets_the_nick_suffix() {
-        let (mut world, mut state) = seeded();
-        state.add();
+        let (_, mut state) = seeded();
+        assert!(state.add());
         state.set_text(ConnectField::Host, "irc.example");
-        state.set_text(ConnectField::Nick, "dave");
-        state.apply(&mut world).unwrap();
+        state.set_text(ConnectField::Nick, "zed");
+        state.apply().expect("complete");
+        let labels: Vec<String> = state.rows().into_iter().map(|row| row.label).collect();
         assert_eq!(
-            world.networks.last().unwrap().display_name,
-            "irc.example · dave"
-        );
-        assert_eq!(
-            world.network("omarchy").unwrap().display_name,
-            "irc.example · fred"
+            labels,
+            ["irc.example · fred", "irc.example · oak", "irc.example · zed"]
         );
     }
 
     #[test]
     fn a_second_new_network_gets_the_next_free_colour_and_id() {
-        let (mut world, mut state) = seeded();
+        let (_populated, mut state) = seeded();
         state.add();
         state.set_text(ConnectField::Host, "a.example");
         state.set_text(ConnectField::Nick, "fred");
-        state.apply(&mut world).unwrap();
+        state.apply().unwrap();
         state.add();
         assert_eq!(state.selected(), "network-2");
         assert_eq!(state.draft().icon_color, Some(3));
@@ -1669,26 +1632,26 @@ mod tests {
 
     #[test]
     fn remove_arms_on_the_first_press_and_removes_on_the_second() {
-        let (mut world, mut state) = seeded();
-        assert_eq!(state.remove(&mut world), RemoveOutcome::Armed);
+        let (populated, mut state) = seeded();
+        assert_eq!(state.remove(&populated), RemoveOutcome::Armed);
         assert_eq!(stored_ids(&state), ["omarchy", "oftc"]);
         assert_eq!(
-            state.remove(&mut world),
+            state.remove(&populated),
             RemoveOutcome::Removed("omarchy".to_string())
         );
         assert_eq!(stored_ids(&state), ["oftc"]);
-        assert!(world.network("omarchy").is_none());
+        assert!(!state.is_saved("omarchy"));
         assert_eq!(state.selected(), "oftc");
         assert!(!state.remove_armed());
     }
 
     #[test]
     fn removing_selects_the_network_now_at_the_same_position() {
-        let (mut world, mut state) = seeded();
+        let (populated, mut state) = seeded();
         state.select("oftc");
-        state.remove(&mut world);
+        state.remove(&populated);
         assert_eq!(
-            state.remove(&mut world),
+            state.remove(&populated),
             RemoveOutcome::Removed("oftc".into())
         );
         assert_eq!(
@@ -1701,20 +1664,20 @@ mod tests {
 
     #[test]
     fn remove_is_refused_when_no_other_network_has_a_conversation() {
-        let (mut world, mut state) = seeded();
-        world.networks[1].conversations.clear();
-        assert!(!state.can_remove(&world));
-        assert_eq!(state.remove(&mut world), RemoveOutcome::Refused);
+        let (mut populated, mut state) = seeded();
+        populated.retain(|id| id != "oftc");
+        assert!(!state.can_remove(&populated));
+        assert_eq!(state.remove(&populated), RemoveOutcome::Refused);
         assert!(!state.remove_armed());
         assert_eq!(stored_ids(&state).len(), 2);
     }
 
     #[test]
     fn remove_is_refused_for_an_unsaved_draft() {
-        let (mut world, mut state) = seeded();
+        let (populated, mut state) = seeded();
         state.add();
-        assert!(!state.can_remove(&world));
-        assert_eq!(state.remove(&mut world), RemoveOutcome::Refused);
+        assert!(!state.can_remove(&populated));
+        assert_eq!(state.remove(&populated), RemoveOutcome::Refused);
     }
 
     // --- Tabs and focus ----------------------------------------------------
@@ -1739,8 +1702,8 @@ mod tests {
 
     #[test]
     fn the_connection_walk_follows_the_qt_focus_chain() {
-        let (world, state) = seeded();
-        let stops = state.stops(&world);
+        let (populated, state) = seeded();
+        let stops = state.stops(&populated);
         assert_eq!(
             stops,
             vec![
@@ -1772,20 +1735,20 @@ mod tests {
 
     #[test]
     fn the_walk_drops_add_while_dirty_and_remove_when_not_allowed() {
-        let (mut world, mut state) = seeded();
+        let (mut populated, mut state) = seeded();
         state.set_text(ConnectField::Name, "edited");
-        let stops = state.stops(&world);
+        let stops = state.stops(&populated);
         assert!(!stops.contains(&Stop::AddNetwork));
-        world.networks[1].conversations.clear();
-        assert!(!state.stops(&world).contains(&Stop::Remove));
+        populated.retain(|id| id != "oftc");
+        assert!(!state.stops(&populated).contains(&Stop::Remove));
     }
 
     #[test]
     fn the_preferences_walk_is_its_three_switches_and_their_marks() {
-        let (world, mut state) = seeded();
+        let (populated, mut state) = seeded();
         state.set_tab(ConnectTab::Preferences);
         assert_eq!(
-            state.stops(&world),
+            state.stops(&populated),
             vec![
                 Stop::Tab(ConnectTab::Connection),
                 Stop::Tab(ConnectTab::Preferences),
@@ -1801,8 +1764,8 @@ mod tests {
 
     #[test]
     fn enter_and_tab_walk_forward_and_shift_tab_walks_back_with_wrap() {
-        let (world, state) = seeded();
-        let step = |from: Stop, backwards: bool| state.step_stop(&world, Some(&from), backwards);
+        let (populated, state) = seeded();
+        let step = |from: Stop, backwards: bool| state.step_stop(&populated, Some(&from), backwards);
         assert_eq!(
             step(Stop::Field(ConnectField::Name), false),
             Some(Stop::Field(ConnectField::Host))
@@ -1829,14 +1792,14 @@ mod tests {
 
     #[test]
     fn a_stop_off_the_showing_tab_falls_back_to_the_ends() {
-        let (world, state) = seeded();
+        let (populated, state) = seeded();
         let off = Stop::Preference(PrefName::Directs);
         assert_eq!(
-            state.step_stop(&world, Some(&off), false),
+            state.step_stop(&populated, Some(&off), false),
             Some(Stop::Tab(ConnectTab::Connection))
         );
         assert_eq!(
-            state.step_stop(&world, Some(&off), true),
+            state.step_stop(&populated, Some(&off), true),
             Some(Stop::Apply)
         );
     }
@@ -1878,24 +1841,24 @@ mod tests {
 
     #[test]
     fn step_stop_without_a_focused_stop_starts_at_the_ends() {
-        let (world, state) = seeded();
+        let (populated, state) = seeded();
         assert_eq!(
-            state.step_stop(&world, None, false),
+            state.step_stop(&populated, None, false),
             Some(Stop::Tab(ConnectTab::Connection))
         );
-        assert_eq!(state.step_stop(&world, None, true), Some(Stop::Apply));
+        assert_eq!(state.step_stop(&populated, None, true), Some(Stop::Apply));
     }
 
     #[test]
     fn step_stop_walks_from_a_stop_on_the_tab_both_ways() {
-        let (world, state) = seeded();
+        let (populated, state) = seeded();
         let from = Stop::Field(ConnectField::Host);
         assert_eq!(
-            state.step_stop(&world, Some(&from), false),
+            state.step_stop(&populated, Some(&from), false),
             Some(Stop::Field(ConnectField::Port))
         );
         assert_eq!(
-            state.step_stop(&world, Some(&from), true),
+            state.step_stop(&populated, Some(&from), true),
             Some(Stop::Field(ConnectField::Name))
         );
     }
@@ -1942,7 +1905,7 @@ mod tests {
 
     #[test]
     fn a_refused_switch_raises_the_notice_until_the_draft_is_settled() {
-        let (mut world, mut state) = seeded();
+        let (_populated, mut state) = seeded();
         assert!(!state.switch_refused());
         state.set_text(ConnectField::Host, "edited.example");
         assert!(!state.select("oftc"));
@@ -1955,7 +1918,7 @@ mod tests {
         assert!(!state.switch_refused(), "Discard settles the draft");
         state.set_text(ConnectField::Host, "edited.example");
         assert!(!state.select("oftc"));
-        state.apply(&mut world).unwrap();
+        state.apply().unwrap();
         assert!(!state.switch_refused(), "Apply settles the draft");
     }
 

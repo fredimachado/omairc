@@ -24,10 +24,14 @@ pub struct ConversationRow {
     pub presence: &'static str,
     pub avatar: String,
     pub bot: bool,
+    /// The channel's topic, or a direct message peer's real name (the Jump detail line).
+    pub detail: String,
 }
 
 /// The direct-message header (`PeerHeader`).
 #[derive(Clone, Debug, PartialEq, Eq)]
+// Phase 6: the direct-message header and the connection footer read these
+#[allow(dead_code)]
 pub struct PeerHeader {
     pub nick: String,
     /// `online`, `away` or `offline`.
@@ -38,6 +42,8 @@ pub struct PeerHeader {
 }
 
 /// The connection word the footer and the subtitles show (`stateText`).
+// Phase 6: the direct-message header and the connection footer read these
+#[allow(dead_code)]
 pub fn state_text(state: SessionState) -> &'static str {
     match state {
         SessionState::Idle | SessionState::Failed => "Offline",

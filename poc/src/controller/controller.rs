@@ -190,6 +190,8 @@ impl Controller {
     }
 
     /// The demo peers, when the controller runs `--demo-server`.
+    // test seam: the controller tests reach the demo peers
+    #[allow(dead_code)]
     pub fn demo(&self) -> Option<&DemoServer> {
         self.demo.as_deref()
     }
@@ -237,6 +239,8 @@ impl Controller {
 
     /// The connection word for `network_id`, or for the focused network when the id
     /// is empty (`ConnectionStatusFor`). A network with no session is Offline.
+    // Phase 6: the footer and subtitles read the connection word
+    #[allow(dead_code)]
     pub fn connection_status_for(&self, network_id: &str) -> &'static str {
         let id = if network_id.is_empty() {
             self.focused_network_id()

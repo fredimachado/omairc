@@ -189,6 +189,7 @@ impl ComposerState {
 
     /// Whether the field's draft already belongs to `key`. Re-selecting the
     /// target on screen is not a switch, so the caret and any walk stay put.
+    #[cfg(test)]
     pub fn is_showing(&self, key: &DraftKey) -> bool {
         self.key.as_ref() == Some(key)
     }

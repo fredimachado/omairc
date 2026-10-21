@@ -1,7 +1,7 @@
 use gpui::{div, prelude::*, MouseButton};
 
 use crate::model::presence::bundled_path;
-use crate::model::{sidebar::network_alert, Color, Network, Style};
+use crate::model::{sidebar::NetworkHeader, Color, Style};
 use crate::ui::widgets::avatar::photo_layer;
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
@@ -15,7 +15,7 @@ use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 /// the network's own image when it has one, and the initial otherwise. Qt shows
 /// it whatever the `avatars` preference says.
 pub fn network_header(
-    network: &Network,
+    network: &NetworkHeader,
     focused: bool,
     collapsed: bool,
     style: &Style,
@@ -26,7 +26,7 @@ pub fn network_header(
     let ink = to_gpui(style.ink_color());
     let muted = to_gpui(style.muted_color());
     let accent = to_gpui(style.accent_color());
-    let (unread, mention) = network_alert(network);
+    let (unread, mention) = (network.unread, network.mention);
     let has_dot = unread || mention;
     let icon_fill = to_gpui(
         network
@@ -35,7 +35,7 @@ pub fn network_header(
             .unwrap_or(style.accent_color()),
     );
     let initial = network
-        .display_name
+        .name
         .chars()
         .next()
         .map(|c| c.to_uppercase().to_string())
@@ -156,7 +156,7 @@ pub fn network_header(
                                 .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                                     on_open(open_id.clone(), window, cx);
                                 })
-                                .child(network.display_name.clone()),
+                                .child(network.name.clone()),
                         )
                         .when(has_dot, |this| {
                             this.child(

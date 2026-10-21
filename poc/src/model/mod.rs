@@ -1,25 +1,23 @@
-//! Toolkit-agnostic Omairc PoC model: theme, style, mock world, IRC formatting,
-//! jump palette, and virtualized transcript selection.
+//! Toolkit-agnostic Omairc PoC model: theme, style, the presentation of controller
+//! reads (transcript rows, sidebar and jump walks, titles, Connect's form), IRC
+//! formatting for display, chords, and the URL policy. Nothing here owns IRC state:
+//! the `controller` does, and the UI reads it through `Controller` snapshots.
 
 pub mod byte_budget;
 pub mod channel_list;
-pub mod color;
-pub mod cursor;
-pub mod format;
-pub mod ids;
 pub mod chords;
+pub mod color;
 pub mod composer;
 pub mod connect;
-pub mod directs;
+pub mod cursor;
 pub mod filter_list;
 pub mod find;
+pub mod format;
 pub mod fuzzy;
-pub mod inbox;
+pub mod ids;
 pub mod jump;
 pub mod links;
-pub mod membership;
 pub mod mention;
-pub mod mock;
 pub mod navigation;
 pub mod nick_pick;
 pub mod prefs;
@@ -43,12 +41,8 @@ pub use color::Color;
 pub use ids::ConversationRef;
 pub use format::{StyleRun, TextStyle};
 pub use jump::{jump_targets, JumpTarget};
-pub use mock::{
-    bench_channel, load_world, local_log_stamp, local_send_stamp, outgoing_action,
-    outgoing_message, whois_message, Conversation, Member, MockMessage, MockWorld, Network,
-};
 pub use style::{mix_colors, Style};
 pub use theme::{Theme, ThemeWatcher};
 pub use transcript::{
-    map_pointer, row_for_message, row_from_message, PointerZone, Pos, Row, RowKind, Transcript,
+    map_pointer, row_from_message, PointerZone, Pos, Row, RowKind, Transcript,
 };

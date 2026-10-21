@@ -18,8 +18,14 @@ use crate::irc::capability::IrcCapability;
 
 /// One target's outbound pace (`IrcTypingPublisher::TargetClock`).
 #[derive(Clone, Debug, Default)]
+// Phase 4: the typing publisher throttles and sends typing frames
+#[allow(dead_code)]
 pub(crate) struct TargetClock {
+    // Phase 4: the typing publisher throttles and sends typing frames
+    #[allow(dead_code)]
     pub(crate) last_sent_at: Option<DateTime<Utc>>,
+    // Phase 4: the typing publisher throttles and sends typing frames
+    #[allow(dead_code)]
     pub(crate) last_phase: TypingPhase,
     pub(crate) suppress_done: bool,
 }
@@ -32,6 +38,8 @@ pub(crate) struct TypingPublisher {
 
 impl TypingPublisher {
     /// Whether `phase` may go out for `target` at `now`.
+    // Phase 4: the typing publisher throttles and sends typing frames
+    #[allow(dead_code)]
     pub(crate) fn should_send(&self, target: &str, phase: TypingPhase, now: DateTime<Utc>) -> bool {
         if phase == TypingPhase::Paused {
             return false;
@@ -54,6 +62,8 @@ impl TypingPublisher {
     }
 
     /// Records that `phase` went out for `target` at `now`.
+    // Phase 4: the typing publisher throttles and sends typing frames
+    #[allow(dead_code)]
     pub(crate) fn record_sent(&mut self, target: &str, phase: TypingPhase, now: DateTime<Utc>) {
         let clock = self.targets.entry(target.to_owned()).or_default();
         clock.last_sent_at = Some(now);
@@ -77,10 +87,14 @@ impl TypingPublisher {
     }
 }
 
+// Phase 4: the typing publisher throttles and sends typing frames
+#[allow(dead_code)]
 impl Core {
     /// Sends a typing phase when registered, with `message-tags`, and the pace
     /// allows it (`sendTypingLocked`). The TAGMSG bypasses the outbound status
     /// event, as the Go write does.
+    // Phase 4: the typing publisher throttles and sends typing frames
+    #[allow(dead_code)]
     pub(crate) fn send_typing(&mut self, target: &str, phase: TypingPhase) -> bool {
         if self.state != super::events::SessionState::Registered {
             return false;

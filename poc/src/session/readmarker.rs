@@ -38,6 +38,8 @@ pub(crate) struct ReadMarkerLedger {
     pub(crate) in_flight: BTreeMap<String, DateTime<Utc>>,
 }
 
+// Phase 8: read markers persist with the open-direct store
+#[allow(dead_code)]
 impl Core {
     /// The read-marker verb for the acknowledged token: `MARKREAD` for
     /// `draft/read-marker`, `READ` for `soju.im/read`, empty when neither.
@@ -149,6 +151,8 @@ impl Core {
 
     /// Records a newer marker to publish once the target is caught up
     /// (`queueReadMarkerSetLocked`).
+    // Phase 8: read markers persist with the open-direct store
+    #[allow(dead_code)]
     pub(crate) fn queue_read_marker_set(&mut self, target: &str, when: DateTime<Utc>) {
         if target.is_empty() || self.read_marker_command().is_empty() {
             return;

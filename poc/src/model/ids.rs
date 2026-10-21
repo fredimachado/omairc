@@ -1,6 +1,9 @@
-/// Names one conversation by its network id and its stable key, so a stored
-/// reference survives reordering networks or closing a DM. Positions are
-/// resolved through `MockWorld::find` when needed.
+use crate::irc::event::ConversationKey;
+
+/// Names one conversation by its network id and its normalized target, so a stored
+/// reference survives reordering networks or closing a DM. The normalized target is
+/// the controller's key (`ConversationKey::normalized_target`), folded under the
+/// network's case mapping, so it matches the controller's rows exactly.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ConversationRef {
     pub network_id: String,
@@ -14,6 +17,12 @@ impl ConversationRef {
             key: key.into(),
         }
     }
+
+    /// The reference for a controller key.
+    pub fn from_key(key: &ConversationKey) -> Self {
+        Self::new(key.network_id.clone(), key.normalized_target.clone())
+    }
+
 }
 
 #[cfg(test)]
@@ -30,5 +39,13 @@ mod tests {
             ConversationRef::new("omarchy", "#omarchy"),
             ConversationRef::new("oftc", "#omarchy")
         );
+    }
+
+    #[test]
+    fn a_ref_takes_the_normalized_target_of_its_controller_key() {
+        let key = ConversationKey::new("oftc", "#omarchy");
+        let reference = ConversationRef::from_key(&key);
+        assert_eq!(reference.network_id, "oftc");
+        assert_eq!(reference.key, "#omarchy");
     }
 }

@@ -9,11 +9,6 @@
 //! - `server`: `DemoServer`, which attaches the peers to sessions and plays the
 //!   seed in Qt's order (`demo.go`).
 
-// The controller wires the demo in during Phase 3. Until then only the tests
-// reach these items, so the dead-code allow covers this module only, and it comes
-// off when `--demo-server` calls `DemoServer::attach` and `seed`.
-#![allow(dead_code)]
-
 pub mod answers;
 pub mod seed;
 pub mod server;

@@ -1,7 +1,7 @@
 use gpui::{div, prelude::*, MouseButton};
 
 use crate::model::presence::photo_for;
-use crate::model::{mix_colors, Color, Network, Style};
+use crate::model::{mix_colors, sidebar::NetworkHeader, Color, Style};
 use crate::ui::widgets::avatar::avatar_disc;
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
@@ -12,7 +12,7 @@ use crate::version::version;
 /// its count and the version. The avatar is the operator's own member record,
 /// and `avatars` is the `avatars` preference.
 pub fn identity_footer(
-    network: &Network,
+    network: &NetworkHeader,
     inbox_count: u32,
     on_inbox: Handler<()>,
     on_about: Handler<()>,
@@ -23,9 +23,7 @@ pub fn identity_footer(
     let ink = style.ink_color();
     let muted = to_gpui(style.muted_color());
     let amount = if style.dark_mode() { 0.025 } else { 0.018 };
-    let photo = network
-        .member_for(&network.nick)
-        .and_then(|member| photo_for(member.avatar.as_deref(), avatars));
+    let photo = photo_for(network.avatar.as_deref(), avatars);
 
     div()
         .w_full()

@@ -1,7 +1,8 @@
 use gpui::{div, prelude::*, MouseButton};
 
 use crate::model::presence::photo_for;
-use crate::model::{Member, Style};
+use crate::irc::reducer::MemberView;
+use crate::model::Style;
 use crate::ui::widgets::avatar::avatar_with_presence;
 use crate::ui::widgets::bot_mark::bot_mark;
 use crate::ui::Handler;
@@ -17,7 +18,7 @@ const AWAY_GLYPH_OPACITY: f32 = 0.62;
 /// only the glyph and the label take the away treatment. A click on anyone but
 /// `self_nick` reports the nick to `on_nick`, which also gets the pointer cursor.
 pub fn member_row(
-    member: &Member,
+    member: &MemberView,
     style: &Style,
     self_nick: &str,
     on_nick: Handler<String>,
@@ -25,17 +26,18 @@ pub fn member_row(
     avatars: bool,
 ) -> impl IntoElement {
     let is_self = member.nick == self_nick;
-    let away = member.presence == "away";
+    let away = member.away.is_some();
+    let presence = if away { "away" } else { "online" };
     let clickable = !is_self;
     let nick = member.nick.clone();
-    let photo = photo_for(member.avatar.as_deref(), avatars);
+    let photo = photo_for((!member.avatar.is_empty()).then_some(member.avatar.as_str()), avatars);
     let glyph = avatar_with_presence(
         style,
         &member.nick,
         28.,
         11.,
         photo,
-        &member.presence,
+        presence,
     );
     let label_color = if away {
         to_gpui(style.muted_color())
@@ -57,7 +59,7 @@ pub fn member_row(
         .text_color(label_color)
         .font_family(FONT_FAMILY)
         .when(is_self, |this| this.font_weight(gpui::FontWeight::BOLD))
-        .child(format!("{}{}", member.prefix, member.nick));
+        .child(member.label.clone());
     let label_row = div()
         .flex()
         .items_center()
@@ -65,11 +67,7 @@ pub fn member_row(
         .min_w_0()
         .child(label)
         .when(member.bot, |this| this.child(bot_mark(style)));
-    let status = member
-        .status
-        .as_deref()
-        .filter(|status| !status.is_empty())
-        .map(|status| status.to_string());
+    let status = (!member.status.is_empty()).then(|| member.status.clone());
 
     div()
         .h(scaled_px(style, 43.))

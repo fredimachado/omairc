@@ -3,13 +3,14 @@
 
 use gpui::AnyElement;
 
-use crate::model::{jump_targets, JumpTarget, MockWorld};
+use crate::model::jump::JumpView;
+use crate::model::{jump_targets, JumpTarget};
 use crate::model::Style;
 use crate::ui::sheets::filter_sheet::{text_row, FilterSource};
 use gpui::IntoElement;
 
 pub struct JumpSource {
-    pub world: MockWorld,
+    pub view: JumpView,
 }
 
 impl FilterSource for JumpSource {
@@ -20,7 +21,7 @@ impl FilterSource for JumpSource {
     }
 
     fn items(&self, query: &str) -> Vec<JumpTarget> {
-        jump_targets(&self.world, query)
+        jump_targets(&self.view, query)
     }
 
     fn width(&self) -> f32 {

@@ -7,11 +7,9 @@ use gpui::{prelude::*, AnyElement, App, Context, Entity, Subscription, Window};
 
 use crate::model::channel_list::ListRow;
 use crate::model::chords::{Chord, Sheet};
-use crate::model::inbox::find_channel;
-use crate::model::jump::{JumpKind, JumpTarget};
+use crate::model::jump::{JumpKind, JumpTarget, JumpView};
 use crate::model::links::{LinkKind, LinkTarget};
 use crate::model::nick_pick::NickTarget;
-use crate::model::sidebar::set_collapsed;
 use crate::ui::sheets::about::{AboutEvent, AboutSheet};
 use crate::ui::sheets::channel_list::ChannelListSource;
 use crate::ui::sheets::channel_open::{ChannelOpenEvent, ChannelOpenSheet};
@@ -203,7 +201,10 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let listing = self.channel_lists.listing(&self.world, &network_id, mask).to_vec();
+        let listing = self
+            .channel_lists
+            .listing(&self.controller, &network_id, mask)
+            .to_vec();
         let sheet = cx.new(|cx| FilterSheet::new(ChannelListSource { listing }, cx));
         let subscriptions = vec![
             track(cx, &sheet),
@@ -232,9 +233,9 @@ impl Shell {
     /// Enter or a click on a list row. A channel the network already has is selected,
     /// as `open_channel_name` does. Any other channel is joined through `join_invite`.
     fn join_listed_channel(&mut self, network_id: &str, name: &str, cx: &mut Context<Self>) {
-        match find_channel(&self.world, network_id, name) {
+        match self.find_channel(network_id, name) {
             Some(target) => {
-                set_collapsed(&self.world, &mut self.sidebar, network_id, false);
+                self.controller.set_network_collapsed(network_id, false);
                 self.select(target, cx);
                 cx.notify();
             }
@@ -251,9 +252,9 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let network_id = self.selected.network_id.clone();
-        if let Some(target) = find_channel(&self.world, &network_id, channel) {
-            set_collapsed(&self.world, &mut self.sidebar, &network_id, false);
+        let network_id = self.selected_ref().network_id;
+        if let Some(target) = self.find_channel(&network_id, channel) {
+            self.controller.set_network_collapsed(&network_id, false);
             self.select(target, cx);
             self.focus_composer(window, cx);
             cx.notify();
@@ -300,7 +301,7 @@ impl Shell {
                 let Some((network, key)) = target.conversation_id.split_once('\n') else {
                     return;
                 };
-                set_collapsed(&self.world, &mut self.sidebar, network, false);
+                self.controller.set_network_collapsed(network, false);
                 self.select_by_ids(network, key, cx);
             }
         }
@@ -319,7 +320,7 @@ impl Shell {
 
     fn present_jump(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let source = JumpSource {
-            world: self.world.clone(),
+            view: JumpView::of(&self.controller),
         };
         let sheet = cx.new(|cx| FilterSheet::new(source, cx));
         let subscriptions = vec![
@@ -349,13 +350,13 @@ impl Shell {
     /// on Status it lists the Status rows' URLs and INVITE channels.
     fn present_link(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let rows = self.transcript.read(cx).rows().to_vec();
-        let source = if self.status.is_some() {
+        let source = if self.status_showing() {
             LinkSource::Status { rows }
         } else {
             LinkSource::Conversation {
-                topic: self.current_conversation().topic.clone(),
+                topic: Some(self.controller.topic()),
                 rows,
-                chantypes: self.current_network().chantypes.clone(),
+                features: self.features_of(&self.selected_ref().network_id),
             }
         };
         let sheet = cx.new(|cx| FilterSheet::new(source, cx));
@@ -392,8 +393,8 @@ impl Shell {
 
     fn present_nick(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let source = NickSource {
-            members: self.current_conversation().members.clone(),
-            self_nick: self.current_network().nick.clone(),
+            members: self.controller.members(),
+            self_nick: self.current_nick(),
             avatars: self.preferences.avatars,
         };
         let sheet = cx.new(|cx| FilterSheet::new(source, cx));
@@ -422,7 +423,7 @@ impl Shell {
     }
 
     fn present_inbox(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let items = self.inbox.items().to_vec();
+        let items = self.controller.inbox_items().to_vec();
         let sheet = cx.new(|cx| InboxSheet::new(items, cx));
         let subscriptions = vec![
             cx.observe(&sheet, |_, _, cx| cx.notify()),

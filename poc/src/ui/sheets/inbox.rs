@@ -15,7 +15,7 @@ use gpui::{
 };
 
 use crate::model::filter_list::step;
-use crate::model::inbox::InboxItem;
+use crate::irc::inbox::InboxItem;
 use crate::model::Style;
 use crate::ui::sheets::frame::popup_frame;
 use crate::ui::Handler;

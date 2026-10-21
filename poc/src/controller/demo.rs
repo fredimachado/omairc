@@ -76,3 +76,19 @@ impl SeedControls for Controller {
         Controller::select_conversation(self, network_id, target);
     }
 }
+
+#[cfg(test)]
+impl Controller {
+    /// The seeded demo on a fixed clock with the no-op notifier, for the presentation
+    /// tests in `model/` and `ui/`. Frame-level tests use `tests/fixture.rs`, which
+    /// also records the mentions the seed raises.
+    pub fn seeded_for_tests() -> Self {
+        use chrono::{TimeZone, Utc};
+        use crate::session::clock::FakeClock;
+
+        let clock: Rc<dyn Clock> = Rc::new(FakeClock::new(
+            Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap(),
+        ));
+        Self::new_demo_with(clock, Box::new(NullNotifier)).expect("the demo starts")
+    }
+}

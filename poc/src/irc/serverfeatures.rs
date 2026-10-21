@@ -897,3 +897,14 @@ mod tests {
         assert_eq!(features.member_label(IrcPrefixSet::default(), "alice"), "alice");
     }
 }
+
+#[cfg(test)]
+impl IrcServerFeatures {
+    /// Features that advertise only `CHANTYPES=<chantypes>`, for the presentation tests
+    /// that need a channel prefix set without a whole ISUPPORT burst.
+    pub fn with_chantypes(chantypes: &str) -> Self {
+        let mut features = Self::new();
+        features.apply_token(&format!("CHANTYPES={chantypes}"));
+        features
+    }
+}

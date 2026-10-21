@@ -1,40 +1,24 @@
-//! Rule 2 of the GPUI plan: the UI never writes state. The controller owns every
-//! write to the world, and `src/ui/` only reads it and calls controller intents.
+//! Rule 2 of the GPUI plan: the UI never writes state. The controller owns every write
+//! to the IRC state, and `src/ui/` reads its snapshots and calls its intents.
 //!
-//! This gate counts world writes per file under `src/ui/` and compares them with
-//! `ALLOWLIST`, the writes that exist today. A write is one of:
+//! This gate scans `src/ui/` for writes to a world value. A write is one of:
 //!
-//! - a mutable borrow of the world, `&mut self.world` or `&mut world`, which is
-//!   how the UI hands the world to a model function such as `open_direct`;
-//! - a call to a `&mut self` method on the world (`MockWorld`, `Network` and
-//!   `Conversation` in `src/model/mock.rs`) or a collection mutator on a world
-//!   field, such as `self.world.push_status(..)` or `.networks.retain(..)`;
+//! - a mutable borrow of the world, `&mut self.world` or `&mut world`, which is how a
+//!   model function would hand the state over to be changed;
+//! - a call to a `&mut self` method on the world or a collection mutator on one of its
+//!   fields, such as `self.world.push_status(..)` or `.networks.retain(..)`;
 //! - an assignment into the world, `self.world.x = ..` or `world.x += ..`.
 //!
-//! Phase 0 records today's writes. Phase 3 routes each one through a controller
-//! intent and the allowlist shrinks to zero; this test then asserts an empty list.
-//!
-//! The ratchet runs both ways. A file may not exceed its count, and a new file
-//! may not appear. A count may not sit above what the file has either, so each
-//! removed write must lower its entry. The allowlist only goes down.
+//! The Phase 3 rewire took the allowlist to zero. The UI now holds no world at all, so
+//! the gate asserts that the scan finds nothing. A write that appears again is a new
+//! failure: route it through a `Controller` intent instead of an allowlist entry.
 
 mod common;
 
-use std::collections::BTreeMap;
 use std::path::Path;
 
 use common::{code_only, crate_root, line_of, read_code, rust_files_under};
 use regex::Regex;
-
-/// Writes per file, keyed by path under `src/`. Recorded in Phase 0.
-const ALLOWLIST: &[(&str, usize)] = &[
-    ("ui/shell/commands.rs", 6),
-    ("ui/shell/connect.rs", 2),
-    ("ui/shell/inbox.rs", 1),
-    ("ui/shell/mod.rs", 1),
-    ("ui/shell/slash.rs", 6),
-    ("ui/shell/unread.rs", 2),
-];
 
 /// Methods that take `&mut self` on the world types, plus collection mutators.
 const MUTATORS: &str = "find_mut|record_outgoing|clear_conversation|push_status|clear_status|\
@@ -79,54 +63,21 @@ fn key_under_src(path: &Path) -> String {
 }
 
 #[test]
-fn allowlist_has_unique_keys() {
-    let mut seen = std::collections::BTreeSet::new();
-    for (file, _) in ALLOWLIST {
-        assert!(seen.insert(*file), "duplicate allowlist entry: {file}");
-    }
-}
-
-#[test]
-fn ui_world_writes_do_not_grow() {
+fn ui_never_writes_a_world() {
     let ui = crate_root().join("src").join("ui");
     let files = rust_files_under(&ui);
     assert!(!files.is_empty(), "no .rs files under {}", ui.display());
 
-    let mut actual: BTreeMap<String, Vec<(usize, String)>> = BTreeMap::new();
-    for file in &files {
-        let hits = world_writes(&read_code(file));
-        if !hits.is_empty() {
-            actual.insert(key_under_src(file), hits);
-        }
-    }
-
-    let allowed: BTreeMap<&str, usize> = ALLOWLIST.iter().copied().collect();
     let mut problems = Vec::new();
-
-    for (file, hits) in &actual {
-        let allow = allowed.get(file.as_str()).copied().unwrap_or(0);
-        if hits.len() > allow {
-            let lines: Vec<String> = hits.iter().map(|(line, text)| format!("    {file}:{line}: {text}")).collect();
-            problems.push(format!(
-                "{file}: {} world writes, the allowlist allows {allow}. Route the new write through a controller intent.\n{}",
-                hits.len(),
-                lines.join("\n")
-            ));
-        }
-    }
-
-    for (file, allow) in &allowed {
-        let count = actual.get(*file).map_or(0, Vec::len);
-        if count < *allow {
-            problems.push(format!(
-                "{file}: {count} world writes left, the allowlist still says {allow}. Lower the entry to {count}."
-            ));
+    for file in &files {
+        for (line, text) in world_writes(&read_code(file)) {
+            problems.push(format!("    {}:{line}: {text}", key_under_src(file)));
         }
     }
 
     assert!(
         problems.is_empty(),
-        "src/ui/ must not write the world (Phase 3 drives this to zero):\n{}",
+        "src/ui/ must not write state. Route the write through a Controller intent:\n{}",
         problems.join("\n")
     );
 }
@@ -157,5 +108,20 @@ fn the_scanner_counts_each_write_shape_once() {
     for (source, expected) in counts {
         let hits = world_writes(&code_only(source));
         assert_eq!(hits.len(), expected, "writes in {source:?}: {hits:?}");
+    }
+}
+
+#[test]
+fn a_controller_intent_is_not_a_world_write() {
+    // The shell calls intents on its controller. Those are method calls on a value the
+    // controller owns, not writes to a world, so the gate lets them through.
+    let intents = [
+        "self.controller.select_conversation(&net, &key);",
+        "self.controller.clear_status(&network_id);",
+        "let ok = self.controller.join_channel(network_id, channel);",
+        "self.controller.set_network_collapsed(&id, true);",
+    ];
+    for source in intents {
+        assert!(world_writes(&code_only(source)).is_empty(), "{source}");
     }
 }

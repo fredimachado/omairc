@@ -1,8 +1,9 @@
 use gpui::{div, prelude::*, Entity, ScrollHandle};
 
+use crate::controller::snapshots::ConversationRow;
 use crate::model::presence::photo_for;
-use crate::model::sidebar::{has_directs, ordered_conversations, SidebarState};
-use crate::model::{Conversation, ConversationRef, MockWorld, Network, Style};
+use crate::model::sidebar::{NetworkHeader, SidebarState};
+use crate::model::{ConversationRef, Style};
 use crate::ui::scrollbar::{div_vertical_scrollbar, ScrollbarDragCell};
 use crate::ui::sidebar::conversation_row::{conversation_row, RowLook};
 use crate::ui::sidebar::identity_footer::identity_footer;
@@ -11,10 +12,13 @@ use crate::ui::widgets::section_heading::{channels_heading, directs_heading};
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui};
 
-/// What the sidebar shows: every network, the collapse and rail state, the
-/// selection, and the identity footer's numbers.
+/// What the sidebar shows: every network, the rail and focus state, the selection, and
+/// the identity footer's numbers.
 pub struct SidebarData<'a> {
-    pub world: &'a MockWorld,
+    /// Every network in sidebar order, with its header and badges.
+    pub networks: &'a [NetworkHeader],
+    /// Every conversation row in sidebar order (`Controller::conversations`).
+    pub conversations: &'a [ConversationRow],
     pub state: &'a SidebarState,
     pub selected: &'a ConversationRef,
     /// Status is showing, so no conversation row is the current one (Qt `current`).
@@ -41,9 +45,9 @@ pub struct SidebarData<'a> {
     pub on_toggle: Handler<String>,
 }
 
-/// The left column: every network stacked in world order, then the identity
-/// footer. The column collapses by width (`rail_visible`), clipped, so its
-/// rows stay mounted. `host` is only notified by the scrollbar.
+/// The left column: every network stacked in sidebar order, then the identity footer.
+/// The column collapses by width (`rail_visible`), clipped, so its rows stay mounted.
+/// `host` is only notified by the scrollbar.
 pub fn render_sidebar<V: 'static>(
     data: SidebarData,
     style: &Style,
@@ -53,10 +57,13 @@ pub fn render_sidebar<V: 'static>(
 ) -> impl IntoElement {
     let visible = data.state.rail_visible;
     let width = if visible { 244. } else { 0. };
+    // With no network the footer shows the blank identity, as a first run does.
     let footer_network = data
-        .world
-        .network(&data.selected.network_id)
-        .expect("selected network is in the world");
+        .networks
+        .iter()
+        .find(|network| network.id == data.selected.network_id)
+        .cloned()
+        .unwrap_or_default();
 
     div()
         .w(scaled_px(style, width))
@@ -87,7 +94,7 @@ pub fn render_sidebar<V: 'static>(
                 .child(div_vertical_scrollbar(scroll, style, host, drag.clone())),
         )
         .child(identity_footer(
-            footer_network,
+            &footer_network,
             data.inbox_count,
             data.on_inbox.clone(),
             data.on_about.clone(),
@@ -102,8 +109,8 @@ fn network_list(data: &SidebarData, style: &Style) -> impl IntoElement {
         .flex()
         .flex_col()
         .pb(scaled_px(style, 8.))
-        .children(data.world.networks.iter().map(|network| {
-            let collapsed = data.state.is_collapsed(&network.id);
+        .children(data.networks.iter().map(|network| {
+            let collapsed = network.collapsed;
             let focused = data.state.focus.as_deref() == Some(network.id.as_str());
             div()
                 .flex()
@@ -129,39 +136,42 @@ fn network_list(data: &SidebarData, style: &Style) -> impl IntoElement {
         }))
 }
 
-/// One network's channels, then its direct messages. The DM heading shows
-/// only when the network has a DM.
+/// One network's channels, then its direct messages. The DM heading shows only when
+/// the network has a DM.
 fn conversation_groups(
-    network: &Network,
+    network: &NetworkHeader,
     data: &SidebarData,
     style: &Style,
     on_select: Handler<ConversationRef>,
     on_close: Handler<ConversationRef>,
 ) -> impl IntoElement {
-    let ordered = ordered_conversations(network);
-    let row = |conv: &Conversation| {
-        let target = ConversationRef::new(network.id.clone(), conv.key());
+    let rows: Vec<&ConversationRow> = data
+        .conversations
+        .iter()
+        .filter(|row| row.key.network_id == network.id)
+        .collect();
+    let row = |conv: &ConversationRow| {
+        let target = ConversationRef::from_key(&conv.key);
         let selected = !data.status_open && &target == data.selected;
-        // A DM's peer is a nick on this network, so its avatar and bot flag come
-        // from the network's member records.
-        let peer = (!conv.channel).then(|| network.member_for(&conv.name)).flatten();
+        // A DM's photo and bot flag come from the peer's presence facts, which the row
+        // already carries.
         let look = RowLook {
             selected,
             typing_phase: data.typing_phase,
-            photo: peer.and_then(|m| photo_for(m.avatar.as_deref(), data.avatars)),
-            bot: peer.is_some_and(|m| m.bot),
+            photo: photo_for(Some(conv.avatar.as_str()).filter(|a| !a.is_empty()), data.avatars),
+            bot: conv.bot,
         };
         conversation_row(target, conv, look, style, on_select.clone(), on_close.clone())
     };
-    let channels: Vec<&Conversation> = ordered.iter().copied().filter(|c| c.channel).collect();
-    let directs: Vec<&Conversation> = ordered.iter().copied().filter(|c| !c.channel).collect();
+    let channels: Vec<&ConversationRow> = rows.iter().copied().filter(|c| !c.direct).collect();
+    let directs: Vec<&ConversationRow> = rows.iter().copied().filter(|c| c.direct).collect();
 
     div()
         .flex()
         .flex_col()
         .child(channels_heading(style))
         .children(channels.into_iter().map(&row))
-        .when(has_directs(network), |this| {
+        .when(network.has_directs, |this| {
             this.child(directs_heading(style))
                 .children(directs.into_iter().map(&row))
         })
