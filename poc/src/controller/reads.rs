@@ -30,8 +30,6 @@ impl Controller {
     }
 
     /// The selected conversation's network id.
-    // Phase 4: the slash catalog reads the selection's network
-    #[allow(dead_code)]
     pub fn selected_network_id(&self) -> Option<&str> {
         self.selected.as_ref().map(|key| key.network_id.as_str())
     }
@@ -346,8 +344,6 @@ impl Controller {
     }
 
     /// Whether typing indicators can be sent and shown (`HasTyping`).
-    // Phase 4: the typing publisher gates on the typing capability
-    #[allow(dead_code)]
     pub fn has_typing(&self) -> bool {
         self.selected_network_id()
             .is_some_and(|network| self.caps(network).contains(IrcCapability::MessageTags))
