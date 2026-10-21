@@ -3828,6 +3828,7 @@ dependencies = [
  "unicode-segmentation",
  "ureq",
  "url",
+ "winreg",
 ]
 
 [[package]]

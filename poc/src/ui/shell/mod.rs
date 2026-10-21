@@ -31,6 +31,7 @@ use crate::model::sidebar::SidebarState;
 use crate::model::slash_complete::SlashSession;
 use crate::model::status::status_title;
 use crate::model::title::{conversation_title, window_title, TitleView};
+use crate::model::update_check::UpdateCheck;
 use crate::model::{bench_channel, load_world, ConversationRef, MockWorld};
 use crate::ui::center::header::{HeaderView, Subtitle};
 use crate::ui::center::render_center;
@@ -46,6 +47,7 @@ use crate::ui::transcript::view::NickClicked;
 use crate::ui::transcript::TranscriptView;
 use crate::ui::Handler;
 use crate::util::{style, to_gpui};
+use crate::version::version;
 
 pub use actions::bind_shell_keys;
 pub use bench::BenchState;
@@ -107,6 +109,8 @@ pub struct Shell {
     pub focus_handle: FocusHandle,
     pub typing_phase: u8,
     pub bench: BenchState,
+    /// The Windows installer update's state. The About sheet and the footer observe it.
+    pub update: Entity<UpdateCheck>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -133,6 +137,13 @@ impl Shell {
         let inbox = seed_inbox(&world);
         let connect = ConnectState::seed(&world);
         let composer_state = ComposerState::starting_at(DraftKey::for_view(None, &selected));
+        let update = cx.new(|_| {
+            UpdateCheck::new(
+                version(),
+                crate::desktop::installer::running_copy_is_installed(),
+            )
+        });
+        let update_observe = cx.observe(&update, |_, _, cx| cx.notify());
         let scrollbar_drag: ScrollbarDragCell = Default::default();
         let composer = cx.new(|cx| SingleLineInput::new("", "Composer", cx.focus_handle()));
         let composer_focus = composer.read(cx).focus_handle(cx);
@@ -196,7 +207,8 @@ impl Shell {
                 enabled: bench,
                 ..Default::default()
             },
-            _subscriptions: [transcript_events, composer_events]
+            update,
+            _subscriptions: [transcript_events, composer_events, update_observe]
                 .into_iter()
                 .chain(connect_edits)
                 .collect(),
@@ -342,8 +354,10 @@ impl Render for Shell {
             .into_any_element()
         });
 
+        let update_ready = self.update.read(cx).restart_ready();
         let sidebar = render_sidebar(
             SidebarData {
+                update_ready,
                 world: &self.world,
                 state: &self.sidebar,
                 selected: &self.selected,
@@ -505,9 +519,10 @@ fn inbox_handler(entity: Entity<Shell>) -> Handler<()> {
 }
 
 /// A click on the footer's version: the About sheet.
+/// The footer's version link: a ready installer starts, and anything else opens About.
 fn about_handler(entity: Entity<Shell>) -> Handler<()> {
     Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
-        entity.update(cx, |shell, cx| shell.open_about(window, cx));
+        entity.update(cx, |shell, cx| shell.activate_version_control(window, cx));
     })
 }
 

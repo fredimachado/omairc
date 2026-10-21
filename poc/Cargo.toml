@@ -17,6 +17,10 @@ unicode-segmentation = "1.12"
 ureq = "=3.4.2"
 url = "2.5"
 
+# The installed-copy probe reads the Inno uninstall key from the registry.
+[target.'cfg(windows)'.dependencies]
+winreg = "0.56"
+
 # Test-only: the architecture gates in tests/ match source text with it.
 [dev-dependencies]
 regex = "=1.13.1"

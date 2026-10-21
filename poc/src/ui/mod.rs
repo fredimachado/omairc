@@ -10,6 +10,7 @@ pub mod sidebar;
 pub mod status_row;
 pub mod transcript;
 pub mod typing_row;
+pub mod update;
 pub mod widgets;
 
 use std::rc::Rc;

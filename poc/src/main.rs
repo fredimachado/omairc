@@ -177,6 +177,12 @@ fn main() {
                 },
                 |window, cx| {
                     let shell = cx.new(|cx| Shell::new(cx, lines, bench));
+                    // The first window close starts a ready installer, as Qt's onClosing does.
+                    let close_shell = shell.clone();
+                    window.on_window_should_close(cx, move |_, cx| {
+                        close_shell.update(cx, |shell, cx| shell.launch_update_on_close(cx));
+                        true
+                    });
                     let transcript = shell.read(cx).transcript.clone();
                     if bench {
                         run_bench(shell.clone(), window.window_handle(), cx);
