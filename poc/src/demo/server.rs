@@ -36,8 +36,9 @@ use super::seed::{
     world_for, SeedNetwork, OFTC_NETWORK_ID, OFTC_WORLD, OMARCHY_NETWORK_ID, OMARCHY_WORLD,
 };
 use super::wire::{
-    autojoin_names, bytes, live_account_lines, oftc_invite_line, registration_lines,
-    transcript_lines, typing_lines, world_lines,
+    account_lines, autojoin_names, bytes, channel_state_lines_with, live_account_lines,
+    oftc_invite_line, presence_lines, present_names_tokens, registration_lines, transcript_lines,
+    typing_lines, world_lines,
 };
 
 /// One step of Qt's seeding order (`IrcDemoServer::attach`). `Inject` bytes go to
@@ -174,9 +175,11 @@ impl DemoServer {
     }
 
     /// Starts a seeded network again on a fresh loopback. It attaches the session,
-    /// plays the network's registration burst, and installs the auto-answer hook,
-    /// so the restarted session registers and answers like the first one did. The
-    /// controller calls it after a disconnect (`Start`).
+    /// plays the network's registration burst and then its world (the channels' JOIN,
+    /// topic and NAMES, and the presence lines), and installs the auto-answer hook last,
+    /// so the restarted session registers and answers like the first one did. It does
+    /// not replay the transcript, so no message comes back twice. The controller calls
+    /// it after a disconnect (`Start`).
     pub fn restart(
         &self,
         session: &Session,
@@ -186,6 +189,18 @@ impl DemoServer {
         let network_id = session.network_id();
         let network =
             world_for(&network_id).ok_or_else(|| DemoError::UnknownNetwork(network_id.clone()))?;
+        let peer = self
+            .peers
+            .borrow()
+            .iter()
+            .find(|peer| peer.network.network_id == network.network_id)
+            .cloned()
+            .ok_or(DemoError::NotAttached(network_id))?;
+        // The seed's order, again: the burst, then the world. The autojoin JOINs the session
+        // writes while it registers go unanswered, as the seed's own traffic does, and the
+        // world puts each channel's members back. The auto-answers go in last, so the new
+        // session answers the way the first one did.
+        let topics = peer.state.borrow().topics.clone();
         self.inject(
             network.network_id,
             &bytes(&registration_lines(
@@ -194,13 +209,10 @@ impl DemoServer {
                 network.icon_url,
             )),
         );
-        let peer = self
-            .peers
-            .borrow()
-            .iter()
-            .find(|peer| peer.network.network_id == network.network_id)
-            .cloned()
-            .ok_or(DemoError::NotAttached(network_id))?;
+        self.inject(
+            network.network_id,
+            &bytes(&reseed_world_lines(network, &topics)),
+        );
         self.install_auto_echo(&peer);
         Ok(())
     }
@@ -357,6 +369,30 @@ impl DemoServer {
         });
         peer.transport.set_frame_written_hook(hook);
     }
+}
+
+/// The world a restarted session is handed, in the seed's order: each channel's self JOIN,
+/// topic and NAMES, then the presence and account lines. The NAMES list every member the
+/// channel holds now, late joiners included, since the transcript that brought them in is
+/// not replayed. A channel's topic is the one the peer holds, so a topic a client set
+/// survives the reconnect.
+fn reseed_world_lines(network: &SeedNetwork, topics: &TopicOverrides) -> Vec<String> {
+    let mut out = Vec::new();
+    for channel in network.channels {
+        let topic = topics
+            .get(&channel.name.to_ascii_lowercase())
+            .map(String::as_str)
+            .unwrap_or(channel.topic);
+        out.extend(channel_state_lines_with(
+            network,
+            channel,
+            topic,
+            &present_names_tokens(channel),
+        ));
+    }
+    out.extend(presence_lines(network));
+    out.extend(account_lines(network));
+    out
 }
 
 /// The answer ladder, in the Go order: PING, LIST, CTCP, AWAY, METADATA, MONITOR,

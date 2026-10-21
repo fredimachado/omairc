@@ -132,12 +132,22 @@ pub fn initial_members(channel: &SeedChannel) -> Vec<&'static str> {
 /// The NAMES tokens: each member, prefixed with its PREFIX symbols. A member may
 /// carry more than one, as mira's `@+` does (`namesTokens`).
 pub fn names_tokens(channel: &SeedChannel) -> Vec<String> {
-    initial_members(channel)
-        .into_iter()
+    prefixed_names(channel, &initial_members(channel))
+}
+
+/// The NAMES tokens for every member the channel holds once its transcript has played,
+/// late joiners included. A reconnect lists the members as they are now.
+pub fn present_names_tokens(channel: &SeedChannel) -> Vec<String> {
+    prefixed_names(channel, channel.members)
+}
+
+fn prefixed_names(channel: &SeedChannel, members: &[&str]) -> Vec<String> {
+    members
+        .iter()
         .map(
-            |member| match channel.ranks.iter().find(|rank| rank.nick == member) {
+            |member| match channel.ranks.iter().find(|rank| rank.nick == *member) {
                 Some(rank) => format!("{}{member}", rank.value),
-                None => member.to_owned(),
+                None => (*member).to_owned(),
             },
         )
         .collect()
@@ -174,15 +184,22 @@ pub fn registration_lines(nick: &str, welcome: &str, icon_url: &str) -> Vec<Stri
 
 /// One channel's self JOIN, topic, NAMES and end-of-NAMES (`channelStateBytes`).
 pub fn channel_state_lines(network: &SeedNetwork, channel: &SeedChannel) -> Vec<String> {
+    channel_state_lines_with(network, channel, channel.topic, &names_tokens(channel))
+}
+
+/// `channel_state_lines` with the topic and the NAMES tokens the channel holds now. A
+/// reconnect restores the topic a session set, and lists the members present.
+pub fn channel_state_lines_with(
+    network: &SeedNetwork,
+    channel: &SeedChannel,
+    topic: &str,
+    names: &[String],
+) -> Vec<String> {
     let me = network.nick;
     vec![
         join_line(me, channel.name, ""),
-        format!(":server 332 {me} {} :{}", channel.name, channel.topic),
-        format!(
-            ":server 353 {me} = {} :{}",
-            channel.name,
-            names_tokens(channel).join(" ")
-        ),
+        format!(":server 332 {me} {} :{topic}", channel.name),
+        format!(":server 353 {me} = {} :{}", channel.name, names.join(" ")),
         format!(":server 366 {me} {} :End of NAMES", channel.name),
     ]
 }
