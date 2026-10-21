@@ -505,6 +505,11 @@ mod tests {
         assert_eq!(clamped_to("a\u{1F600}", 4), "a\u{FFFD}");
         assert_eq!(clamped_to("a\u{1F600}", 5), "a\u{1F600}");
         assert_eq!(clamped("x").len(), 1);
+        // At the 512-byte ceiling, 511 letters and an emoji are 515 bytes. Cutting the
+        // low surrogate leaves a lone high surrogate, which decodes to three bytes of
+        // U+FFFD and does not fit, so only the 511 letters survive.
+        let straddling = format!("{}\u{1F600}", "a".repeat(511));
+        assert_eq!(clamped(&straddling), "a".repeat(511));
     }
 
     #[test]

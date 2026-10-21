@@ -13,8 +13,15 @@ use std::path::Path;
 
 use common::{code_only, crate_root, line_of, read_code, rust_files_under};
 
-/// Paths whose use is forbidden anywhere in `src/irc/`.
-const FORBIDDEN_PATHS: &[&str] = &["std::net", "std::fs", "std::thread", "std::process"];
+/// Paths whose use is forbidden anywhere in `src/irc/`. `crate::session` is the
+/// layer above the protocol core, so the core never imports from it.
+const FORBIDDEN_PATHS: &[&str] = &[
+    "std::net",
+    "std::fs",
+    "std::thread",
+    "std::process",
+    "crate::session",
+];
 /// Crate roots that are forbidden anywhere in `src/irc/`.
 const FORBIDDEN_CRATES: &[&str] = &["gpui", "tokio"];
 /// The `std` modules above, by name, for `use std::{io, fs}` style groups.
@@ -102,7 +109,7 @@ fn irc_sources_stay_portable() {
     }
     assert!(
         problems.is_empty(),
-        "src/irc/ must stay portable (no std::net, std::fs, std::thread, std::process, gpui, tokio):\n{}",
+        "src/irc/ must stay portable (no std::net, std::fs, std::thread, std::process, gpui, tokio, crate::session):\n{}",
         problems.join("\n")
     );
 }
@@ -117,6 +124,7 @@ fn the_gate_flags_each_forbidden_form() {
         "use std::process::Command;",
         "use gpui::App;",
         "use tokio::spawn;",
+        "use crate::session::typing::TypingPhase;",
         "use std::{io, fs};",
         "use std::{io::{self, Read}, thread};",
         "let url = \"https://x\"; use std::process;",

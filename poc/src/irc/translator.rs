@@ -19,14 +19,13 @@ use super::event::{
     ModeEvent, MsgId, Name, NamesEvent, NickEvent, NickFactsEvent, NoticeEvent, PartEvent,
     QuitEvent, ReplayLine, SelfAwayEvent, TopicEvent, TypingEvent,
 };
-use super::leafcontract::{
-    canonical_key, clamped, join_line, nick_line, part_line, quit_line, shown_account,
-    typing_phase_from_tag, Away,
-};
+use super::membershipnoise::{join_line, nick_line, part_line, quit_line, shown_account};
 use super::message::IrcMessage;
 use super::prefixnick::prefix_nick;
+use super::presence::{canonical_key, clamped, Away};
 use super::serverfeatures::IrcServerFeatures;
 use super::servicenick::{is_service_identity, nick_is_routable};
+use super::typing::typing_phase_from_tag;
 use super::wiretext::wire_text;
 
 /// Resolves the channel a sender is a member of, for channel-context delivery
@@ -1169,8 +1168,8 @@ fn all_digits(value: &str) -> bool {
 mod tests {
     use super::*;
     use crate::irc::event::{ConversationKey as Key, EventKind, MsgId as Id};
-    use crate::irc::leafcontract::TypingPhase;
     use crate::irc::parser::parse;
+    use crate::irc::typing::TypingPhase;
     use chrono::TimeZone;
 
     const NETWORK_A: &str = "network-a";

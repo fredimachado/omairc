@@ -11,8 +11,10 @@
 
 use chrono::{DateTime, Utc};
 
-use super::leafcontract::{Away, InboxKind, TypingPhase};
+use super::inbox::InboxKind;
+use super::presence::Away;
 use super::serverfeatures::IrcPrefixSet;
+use super::typing::TypingPhase;
 
 /// The alternative an `Event` carries (`EventKind`). The order matches the Go.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

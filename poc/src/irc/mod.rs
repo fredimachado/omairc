@@ -39,10 +39,6 @@ pub mod framer;
 pub mod inbox;
 #[allow(dead_code)]
 pub mod jointarget;
-// Temporary seam for the presence, membershipnoise, typing and inbox leaves. See
-// the module header; delete it once those leaves own the symbols.
-#[allow(dead_code)]
-pub mod leafcontract;
 #[allow(dead_code)]
 pub mod membershipnoise;
 #[allow(dead_code)]

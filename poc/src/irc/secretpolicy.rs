@@ -2,9 +2,10 @@
 //! (C++).
 //!
 //! Redaction fails closed. A wire line that would reveal a password, a channel key
-//! or a service credential comes back masked. A preview that cannot be proven safe
-//! comes back as `None`, and the caller drops it. When a case is unclear, drop the
-//! line or keep the masked form; do not add a well-formed bypass for one fixture.
+//! or a service credential comes back masked. A preview with no mask to apply
+//! comes back as `None`. That is not a safety verdict, so each caller decides what
+//! to show (see `redact_preview_line`). When a case is unclear, drop the line or
+//! keep the masked form; do not add a well-formed bypass for one fixture.
 //!
 //! The Go port has no tests of its own. The tests below carry the policy-level
 //! expectations of `SessionTest::keyedJoinIsRedactedInStatusEntries`,
@@ -569,8 +570,20 @@ pub fn redact_wire_line(line: &str, channel_types: &str) -> Option<String> {
 
 /// The fail-closed preview redactor for text that is not known to be a command:
 /// the wire mask, a near-miss verb, a later command in the fragment, then the
-/// conservative leading-verb mask. `None` means no mask applied, and the caller
-/// must drop the text rather than show it.
+/// conservative leading-verb mask.
+///
+/// `Some` is the masked text to show. `None` means no mask applied. It is not a
+/// verdict that the text is safe, and it does not tell the caller to drop it.
+/// Each caller decides what `None` leaves on screen:
+/// - the protocol-error preview (`session::malformed`'s `preview_wire`) shows the
+///   printable text unmasked;
+/// - a refusal reason on Status (`statusentry`'s `nick_refusal_tail`) and the
+///   server sentence (`session::session::Core::server_sentence_or`) show the
+///   unmasked reason only when `allows_transcript` also passes, and omit it
+///   otherwise.
+///
+/// Mirrors `RedactPreviewLine` in `tui/internal/irc/secretpolicy.go` and
+/// `IrcSecretPolicy::redactPreviewLine` in `src/irc/ircsecretpolicy.cpp`.
 #[allow(dead_code)] // The protocol-error preview (Phase 2) is the first consumer.
 pub fn redact_preview_line(line: &str, channel_types: &str) -> Option<String> {
     if let Some(safe) = redact_wire_line(line, channel_types) {
@@ -945,10 +958,12 @@ mod tests {
     }
 
     #[test]
-    fn a_preview_that_cannot_be_proven_safe_is_dropped() {
-        // Not a secret verb, so no mask applies, and the password is in the text.
-        // redact_preview_line returns None so the caller drops the text.
+    fn a_line_with_no_mask_returns_none() {
+        // IDENTIFY is a NickServ body, not a wire command, so no mask applies here
+        // and the password stays in the text. `None` is not a verdict: the
+        // transcript check is what rejects this line.
         assert_eq!(redact_preview_line("IDENTIFY hunter2", ""), None);
+        assert!(!allows_transcript("IDENTIFY hunter2", ""));
         assert_eq!(redact_preview_line("hello hunter2", ""), None);
     }
 
