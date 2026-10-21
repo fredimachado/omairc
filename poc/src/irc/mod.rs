@@ -39,7 +39,6 @@ pub mod framer;
 pub mod inbox;
 #[allow(dead_code)]
 pub mod jointarget;
-#[allow(dead_code)]
 pub mod membershipnoise;
 #[allow(dead_code)]
 pub mod message;
@@ -52,6 +51,7 @@ pub mod presence;
 #[allow(dead_code)]
 pub mod pref;
 pub mod readmarker;
+#[allow(dead_code, unused_imports)]
 pub mod reducer;
 pub mod secretpolicy;
 #[allow(dead_code)]
@@ -63,9 +63,7 @@ pub mod statusentry;
 pub mod textformat;
 #[allow(dead_code)]
 pub mod translator;
-#[allow(dead_code)]
 pub mod typing;
-#[allow(dead_code)]
 pub mod viewnotify;
 #[allow(dead_code)]
 pub mod world;
