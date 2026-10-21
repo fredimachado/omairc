@@ -36,6 +36,11 @@ windows-sys = { version = "=0.61.2", features = [
     "Win32_System_Pipes",
 ] }
 
+# Windows build script only: compiles the icon and version resource that build.rs
+# embeds. The pin is the copy gpui already builds with, so no new crate is added.
+[target.'cfg(windows)'.build-dependencies]
+embed-resource = "=3.0.12"
+
 # Test-only: the architecture gates in tests/ match source text with it.
 [dev-dependencies]
 regex = "=1.13.1"
