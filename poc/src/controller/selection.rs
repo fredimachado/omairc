@@ -67,6 +67,7 @@ impl Controller {
     #[allow(dead_code)]
     pub fn clear_selection(&mut self) {
         self.pump();
+        self.withdraw_typing();
         self.clear_selected();
         self.pump();
     }
@@ -212,6 +213,9 @@ impl Controller {
         self.console_network = network_id.to_owned();
         self.console_open = false;
         let key = self.reducer.conversation_key(network_id, target);
+        if self.selected.as_ref() != Some(&key) {
+            self.withdraw_typing();
+        }
         self.selected = Some(key.clone());
         self.selected_target = target.to_owned();
         let features = self.reducer.server_features(network_id);

@@ -13,8 +13,6 @@ use super::session::{Core, TimerSlot};
 
 impl Core {
     /// Starts a labeled request and returns its label (`beginLabeledRequestLocked`).
-    // Phase 4: labeled replies for /whois and /ns
-    #[allow(dead_code)]
     pub(crate) fn begin_labeled_request(&mut self) -> String {
         self.next_request_label += 1;
         let label = format!("lr{}", self.next_request_label);
@@ -34,8 +32,6 @@ impl Core {
     }
 
     /// Drops a label without notifying (`dropRequestLabelLocked`).
-    // Phase 4: labeled replies for /whois and /ns
-    #[allow(dead_code)]
     pub(crate) fn drop_request_label(&mut self, label: &str) {
         if label.is_empty() || self.pending_labels.remove(label).is_none() {
             return;

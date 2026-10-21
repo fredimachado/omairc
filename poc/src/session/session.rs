@@ -66,9 +66,10 @@ pub(crate) const CTCP_PING_PAYLOAD_MAX_BYTES: usize = 32;
 /// The minimum spacing of CTCP replies to one nick.
 pub(crate) const CTCP_REPLY_INTERVAL: Duration = Duration::from_millis(5000);
 
-/// The inbound filter (`IgnoreFilter`). It runs before any state change or
-/// event, with the message and the network id. It must not call the session.
-pub type IgnoreFilter = Box<dyn Fn(&IrcMessage, &str) -> bool>;
+/// The inbound filter (`IgnoreFilter`). It runs before any state change or event,
+/// with the message, the network id and our own nick (the predicate needs the nick
+/// to tell a direct message from a channel line). It must not call the session.
+pub type IgnoreFilter = Box<dyn Fn(&IrcMessage, &str, &str) -> bool>;
 
 /// The registration-snapshot lookup a self-JOIN uses as the CHATHISTORY AFTER
 /// bound (`setChatHistoryResume`). It must not call the session.
@@ -328,8 +329,6 @@ impl Session {
     }
 
     /// Installs the inbound drop predicate. `None` keeps every message.
-    // Phase 4: the slash catalog and the socket transport drive these
-    #[allow(dead_code)]
     pub fn set_ignore_filter(&self, filter: Option<IgnoreFilter>) {
         self.shared.core.borrow_mut().ignore_filter = filter;
     }
@@ -1010,7 +1009,7 @@ impl Core {
     /// Go order, which the tests pin.
     pub(crate) fn handle_message(&mut self, message: IrcMessage) {
         if let Some(filter) = &self.ignore_filter {
-            if filter(&message, &self.config.network_id) {
+            if filter(&message, &self.config.network_id, &self.nickname) {
                 return;
             }
         }

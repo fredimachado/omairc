@@ -3,13 +3,20 @@
 //! checks the reads. The demo is the real `DemoServer`: nothing here stubs the
 //! protocol. The Go cases they port are named in each file's header.
 
+mod autoaway;
+mod channellist;
+mod composer;
 mod console;
 mod fixture;
 mod inbox;
 mod lifecycle;
+mod monitor;
 mod networks;
 mod parity;
+mod replies;
+mod scrollplace;
 mod selection;
 mod shell;
 mod sends;
 mod source;
+mod stores;

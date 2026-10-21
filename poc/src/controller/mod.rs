@@ -11,23 +11,42 @@
 //! `selection` (which conversation shows), `send` (the outbound intent), `networks`
 //! (sidebar order and collapse), `reads` (what the shell draws), `demo` (the
 //! `--demo-server` wiring and `--lines`), `transports` (the transport seam), and
-//! `console` and `snapshots` (the Status ring and the row shapes).
+//! `console` and `snapshots` (the Status ring and the row shapes). The Phase 4
+//! modules are `stores` (ignore, mute, monitor and highlight lists), `monitorcoordinator`
+//! (MONITOR), `autoawayruntime` (idle and grace timers), `composertyping` (the typing
+//! hint), `channellist` (`/list` through the wire), `replyrouter` (WHOIS and CTCP
+//! replies), and `scrollplace` (where a transcript was left). Timers run on the `Clock`
+//! seam, and `pump` runs what they queued on the UI thread.
 
+// Phase 4: the slash dispatcher calls the intents in these modules (auto-away, the
+// composer hint, MONITOR and the stores). Until it lands only the tests call them,
+// so the dead-code allow stays on each one and comes off with its first consumer.
+#[allow(dead_code)]
 pub mod autoawayruntime;
 pub mod channellist;
 pub mod commanddispatcher;
+#[allow(dead_code)]
+pub mod composertyping;
 pub mod console;
 pub mod controller;
 pub mod demo;
 pub mod lines;
+#[allow(dead_code)]
 pub mod monitorcoordinator;
 pub mod networks;
 pub mod reads;
+// Phase 4: the slash dispatcher calls the WHOIS and CTCP intents. Until it lands only
+// the tests call them, so the allow stays here and comes off with the first consumer.
+#[allow(dead_code)]
 pub mod replyrouter;
+// Phase 4: the shell still keeps its scroll places in `model/scroll_place.rs`. The
+// rewire to this store lands with the shell's transcript work, and the allow comes off then.
+#[allow(dead_code)]
 pub mod scrollplace;
 pub mod selection;
 pub mod send;
 pub mod snapshots;
+#[allow(dead_code)]
 pub mod stores;
 pub mod transports;
 

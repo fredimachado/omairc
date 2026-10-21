@@ -10,6 +10,7 @@ use std::time::Instant;
 
 use gpui::{App, Context, Window};
 
+use crate::controller::channellist::ListOutcome;
 use crate::model::chords::Chord;
 use crate::model::slash::{
     command_outcome_text, ctcp_target, help_text, parse, pref_reply, version_reply_text, Command,
@@ -267,7 +268,10 @@ impl Shell {
         if !self.controller.knows_network(&network_id) {
             return;
         }
-        self.present_channel_list(network_id, mask, window, cx);
+        if self.controller.list_channels(&network_id, mask) != ListOutcome::Sent {
+            return;
+        }
+        self.present_channel_list(network_id, window, cx);
     }
 
     /// A command ran: the composer clears, the line joins its history, and the network's

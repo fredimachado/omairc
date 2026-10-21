@@ -58,8 +58,6 @@ impl Session {
 
     /// Writes a CTCP query, optionally under a request label
     /// (`IrcSession::sendCtcp`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn send_ctcp(
         &self,
         target: &str,
@@ -72,8 +70,6 @@ impl Session {
 
     /// Writes a `+typing` TAGMSG when `message-tags` is on and the pace allows it
     /// (`IrcSession::sendTyping`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn send_typing(&self, target: &str, phase: TypingPhase) -> bool {
         self.locked(|core| core.send_typing(target, phase))
     }
@@ -150,8 +146,6 @@ impl Session {
 
     /// Writes AWAY with a reason, or clears away with an empty one
     /// (`IrcSession::setAway`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn set_away(&self, reason: &str) -> bool {
         self.locked(|core| core.set_away_locked(reason))
     }
@@ -159,8 +153,6 @@ impl Session {
     /// Writes `AWAY :` with no reason, which marks the user away with the server's
     /// default text. It differs from `set_away("")`, which clears
     /// (`IrcSession::markAway`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn mark_away(&self, reason: &str) -> bool {
         self.locked(|core| {
             let trimmed = reason.trim();
@@ -172,8 +164,6 @@ impl Session {
     }
 
     /// Clears away (`IrcSession::clearAway`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn clear_away(&self) -> bool {
         self.locked(|core| core.set_away_locked(""))
     }
@@ -203,8 +193,6 @@ impl Session {
 
     /// Writes `WHOIS <nick> <nick>`, optionally under a request label
     /// (`IrcSession::whois`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn whois(&self, nick: &str, request_label: &str) -> bool {
         self.locked(|core| {
             let trimmed = nick.trim();
@@ -217,8 +205,6 @@ impl Session {
 
     /// Begins a labeled request and returns its label, or `""` when
     /// `labeled-response` is not on (`IrcSession::startLabeledRequest`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn start_labeled_request(&self) -> String {
         self.locked(|core| {
             if !core.caps.enabled().contains(IrcCapability::LabeledResponse) {
@@ -229,23 +215,17 @@ impl Session {
     }
 
     /// Drops a label without notifying (`IrcSession::cancelRequestLabel`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn cancel_request_label(&self, label: &str) {
         self.locked(|core| core.drop_request_label(label));
     }
 
     /// Writes a MONITOR command. `modifier` is `+`, `-`, `C`, `L` or `S`. Long
     /// lists are split so each line fits one frame (`IrcSession::sendMonitor`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn send_monitor(&self, modifier: char, nicks: &[String]) -> bool {
         self.locked(|core| core.send_monitor_locked(modifier, nicks))
     }
 
     /// Writes `LIST`, or `LIST <mask>` (`IrcSession::list`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn list(&self, mask: &str) -> bool {
         self.locked(|core| {
             let trimmed = mask.trim();
@@ -348,7 +328,6 @@ impl super::session::Core {
 
     /// `setAwayLocked`: AWAY with a trimmed reason, or a bare AWAY to clear.
     // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub(crate) fn set_away_locked(&mut self, reason: &str) -> bool {
         let trimmed = reason.trim();
         if trimmed.is_empty() {
@@ -359,7 +338,6 @@ impl super::session::Core {
 
     /// `sendMonitorLocked`: packs nicks into MONITOR lines that each fit one frame.
     // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub(crate) fn send_monitor_locked(&mut self, modifier: char, nicks: &[String]) -> bool {
         let mark = modifier.to_ascii_uppercase();
         match mark {
