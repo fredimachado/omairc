@@ -76,7 +76,12 @@ pub fn render_header_actions(actions: HeaderActions, style: &Style) -> Option<An
 
 /// One 30-tall button. It is transparent until hovered, when it takes the raised fill and
 /// the divider border, as the QML button does.
-fn action_button(style: &Style, label: &str, width: f32, on_click: Handler<()>) -> impl IntoElement {
+fn action_button(
+    style: &Style,
+    label: &str,
+    width: f32,
+    on_click: Handler<()>,
+) -> impl IntoElement {
     let raised = to_gpui(style.raised_color());
     let divider = to_gpui(style.divider_color());
     div()
@@ -134,7 +139,10 @@ mod tests {
 
     #[test]
     fn a_left_channel_offers_join_and_close() {
-        assert_eq!(HeaderOffers::for_selection(true, false, true), JOIN_AND_CLOSE);
+        assert_eq!(
+            HeaderOffers::for_selection(true, false, true),
+            JOIN_AND_CLOSE
+        );
     }
 
     #[test]
