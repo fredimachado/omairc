@@ -32,6 +32,10 @@ pub mod ctcp;
 pub mod event;
 #[allow(dead_code)]
 pub mod framer;
+// Phase 3 leaf modules. Their reducer and controller consumers (the inbound
+// typing hints, the presence store, the Status recorder, the inbox) land in the
+// next Phase 3 steps, so the dead-code allow stays here until they call in.
+#[allow(dead_code)]
 pub mod inbox;
 #[allow(dead_code)]
 pub mod jointarget;
@@ -39,6 +43,7 @@ pub mod jointarget;
 // the module header; delete it once those leaves own the symbols.
 #[allow(dead_code)]
 pub mod leafcontract;
+#[allow(dead_code)]
 pub mod membershipnoise;
 #[allow(dead_code)]
 pub mod message;
@@ -46,7 +51,9 @@ pub mod message;
 pub mod parser;
 pub mod plaintext;
 pub mod prefixnick;
+#[allow(dead_code)]
 pub mod presence;
+#[allow(dead_code)]
 pub mod pref;
 pub mod readmarker;
 pub mod reducer;
@@ -55,10 +62,12 @@ pub mod secretpolicy;
 pub mod serverfeatures;
 pub mod servicenick;
 pub mod slashcomplete;
+#[allow(dead_code)]
 pub mod statusentry;
 pub mod textformat;
 #[allow(dead_code)]
 pub mod translator;
+#[allow(dead_code)]
 pub mod typing;
 #[allow(dead_code)]
 pub mod viewnotify;

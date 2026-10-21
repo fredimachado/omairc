@@ -1,164 +1,81 @@
-//! The session inbox: mentions, invites, and other things waiting for the
-//! user. Port of `IrcInbox` (consume and append rules) and
-//! `IrcInboxModel::labelFor`. Newest item first.
+//! The session inbox as the Shell holds it, plus the demo seed.
+//!
+//! The rows and the append and consume rules are protocol state in `irc/inbox`
+//! (Qt `IrcInbox`). `Inbox` wraps that list for the Shell and adds the one rule the
+//! Shell applies on top: selecting a non-channel target also clears its presence
+//! row, as Qt does. The demo seed, and the channel an accepted invite joins, stay
+//! here until the controller owns them.
+
+use std::ops::Deref;
 
 use super::ids::ConversationRef;
 use super::mock::{Conversation, MockWorld};
+use crate::irc::casemapping::IrcCaseMapping;
+pub use crate::irc::inbox::{InboxItem, InboxKind};
 
-/// Qt `IrcInbox::kMaxItems`.
-pub const INBOX_CAP: usize = 50;
+/// The case mapping the Shell compares names under: the RFC 1459 default that Go
+/// and Qt use when a server advertises nothing else.
+const MAPPING: IrcCaseMapping =
+    IrcCaseMapping::new(crate::irc::casemapping::IrcCaseMappingKind::Rfc1459);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum InboxKind {
-    Mention,
-    // Dormant: these arrival kinds have no live producer until arrivals are wired.
-    #[allow(dead_code)]
-    Highlight,
-    #[allow(dead_code)]
-    Direct,
-    Invite,
-    MonitorOnline,
-    #[allow(dead_code)]
-    Kick,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct InboxItem {
-    pub kind: InboxKind,
-    pub network_id: String,
-    pub actor: String,
-    pub target: String,
-    pub preview: String,
-}
-
-impl InboxItem {
-    /// The one-line text the inbox row shows.
-    pub fn label(&self) -> String {
-        match self.kind {
-            InboxKind::Mention => format!("{} mentioned you in {}", self.actor, self.target),
-            InboxKind::Highlight => format!("Highlight in {}", self.target),
-            InboxKind::Direct => format!("Message from {}", self.actor),
-            InboxKind::Invite => format!("{} invited you to {}", self.actor, self.target),
-            InboxKind::MonitorOnline => format!("{} is online", self.actor),
-            InboxKind::Kick => format!("You were kicked from {}", self.target),
-        }
-    }
-
-    /// Mention, highlight, direct, and kick rows belong to a conversation and
-    /// clear when it is selected. Invites and presence rows do not.
-    fn is_conversation_kind(&self) -> bool {
-        matches!(
-            self.kind,
-            InboxKind::Mention | InboxKind::Highlight | InboxKind::Direct | InboxKind::Kick
-        )
-    }
-}
-
+/// The session waiting list, as the Shell holds it. Reads go straight to the
+/// protocol list through `Deref`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Inbox {
-    items: Vec<InboxItem>,
+pub struct Inbox(crate::irc::inbox::Inbox);
+
+impl Deref for Inbox {
+    type Target = crate::irc::inbox::Inbox;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl Inbox {
-    pub fn items(&self) -> &[InboxItem] {
-        &self.items
-    }
-
-    pub fn len(&self) -> usize {
-        self.items.len()
-    }
-
     /// Adds a new item at the top. A repeated invite to the same channel, or a
     /// repeated online notice for the same nick, replaces the older row.
-    // Dormant: the append rule waits for the arrival chain (see Shell::ingest).
-    #[allow(dead_code)]
     pub fn push(&mut self, item: InboxItem) {
-        let replaces = |old: &InboxItem| {
-            old.network_id == item.network_id
-                && match item.kind {
-                    InboxKind::Invite => {
-                        old.kind == InboxKind::Invite && same_name(&old.target, &item.target)
-                    }
-                    InboxKind::MonitorOnline => {
-                        old.kind == InboxKind::MonitorOnline && same_name(&old.actor, &item.actor)
-                    }
-                    _ => false,
-                }
-        };
-        if let Some(index) = self.items.iter().position(replaces) {
-            self.items.remove(index);
-        }
-        self.items.insert(0, item);
-        self.items.truncate(INBOX_CAP);
+        self.0.append(item, MAPPING);
+    }
+
+    /// Drops every row for a network the Connect sheet removed.
+    pub fn drop_network(&mut self, network_id: &str) {
+        self.0.purge_network(network_id);
     }
 
     /// Enter on a row: removes it and hands it back so the caller can act on it.
-    /// Drops every row for a network the Connect sheet removed.
-    pub fn drop_network(&mut self, network_id: &str) {
-        self.items.retain(|item| item.network_id != network_id);
-    }
-
     pub fn activate(&mut self, index: usize) -> Option<InboxItem> {
-        (index < self.items.len()).then(|| self.items.remove(index))
+        self.0.remove_at(index)
     }
 
     /// The delete button: removes the row without acting on it.
     pub fn dismiss(&mut self, index: usize) -> bool {
-        if index < self.items.len() {
-            self.items.remove(index);
-            true
-        } else {
-            false
-        }
+        self.0.remove_at(index).is_some()
     }
 
     /// Selecting a conversation clears its conversation rows. A non-channel
     /// target also clears the presence row for that nick, as Qt does.
     pub fn consume_conversation(&mut self, network_id: &str, key: &str, is_channel: bool) {
-        self.items.retain(|item| {
-            let same_network = item.network_id == network_id;
-            let clears_conversation = item.is_conversation_kind() && same_name(&item.target, key);
-            let clears_presence =
-                !is_channel && item.kind == InboxKind::MonitorOnline && same_name(&item.actor, key);
-            !(same_network && (clears_conversation || clears_presence))
-        });
+        self.0.consume_conversation(network_id, key, MAPPING);
+        if !is_channel {
+            self.0.consume_monitor(network_id, key, MAPPING);
+        }
     }
 
     /// Joining a channel clears its invite row.
     pub fn consume_invite(&mut self, network_id: &str, channel: &str) {
-        self.items.retain(|item| {
-            !(item.kind == InboxKind::Invite
-                && item.network_id == network_id
-                && same_name(&item.target, channel))
-        });
+        self.0.consume_invite(network_id, channel, MAPPING);
     }
-}
-
-/// IRC names compare case-insensitively. ASCII folding stands in for the
-/// server's CASEMAPPING here, which is enough for the static seed.
-fn same_name(left: &str, right: &str) -> bool {
-    left.eq_ignore_ascii_case(right)
 }
 
 /// The rows the demo starts with, newest first: a mention in `#ricing` on
 /// Omarchy and an invite to `#debian` on OFTC. A row is only seeded when its
 /// network or conversation exists in the world.
 pub fn seed_inbox(world: &MockWorld) -> Inbox {
-    let mut items = Vec::new();
-    if world
-        .find(&ConversationRef::new("omarchy", "#ricing"))
-        .is_some()
-    {
-        items.push(InboxItem {
-            kind: InboxKind::Mention,
-            network_id: "omarchy".to_string(),
-            actor: "mira".to_string(),
-            target: "#ricing".to_string(),
-            preview: String::new(),
-        });
-    }
+    let mut inbox = Inbox::default();
+    // Pushed oldest first, so the mention ends up on top.
     if world.network("oftc").is_some() {
-        items.push(InboxItem {
+        inbox.push(InboxItem {
             kind: InboxKind::Invite,
             network_id: "oftc".to_string(),
             actor: "rio".to_string(),
@@ -166,7 +83,19 @@ pub fn seed_inbox(world: &MockWorld) -> Inbox {
             preview: String::new(),
         });
     }
-    Inbox { items }
+    if world
+        .find(&ConversationRef::new("omarchy", "#ricing"))
+        .is_some()
+    {
+        inbox.push(InboxItem {
+            kind: InboxKind::Mention,
+            network_id: "omarchy".to_string(),
+            actor: "mira".to_string(),
+            target: "#ricing".to_string(),
+            preview: String::new(),
+        });
+    }
+    inbox
 }
 
 /// The topic a channel has when an invite joins it. The demo server echoes
@@ -192,7 +121,11 @@ pub fn find_channel(world: &MockWorld, network_id: &str, name: &str) -> Option<C
 /// Accepting an invite: adds the channel to `network_id` unless it is already
 /// there, with the demo topic, then returns its reference. `None` when the
 /// network is unknown.
-pub fn join_channel(world: &mut MockWorld, network_id: &str, channel: &str) -> Option<ConversationRef> {
+pub fn join_channel(
+    world: &mut MockWorld,
+    network_id: &str,
+    channel: &str,
+) -> Option<ConversationRef> {
     let topic = demo_topic(network_id, channel).map(str::to_string);
     let network = world.networks.iter_mut().find(|n| n.id == network_id)?;
     let existing = network
@@ -218,6 +151,7 @@ pub fn join_channel(world: &mut MockWorld, network_id: &str, channel: &str) -> O
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::irc::inbox::MAX_INBOX_ITEMS as INBOX_CAP;
     use crate::model::mock::load_world;
 
     fn item(kind: InboxKind, network: &str, actor: &str, target: &str) -> InboxItem {
@@ -232,34 +166,6 @@ mod tests {
 
     fn labels(inbox: &Inbox) -> Vec<String> {
         inbox.items().iter().map(InboxItem::label).collect()
-    }
-
-    #[test]
-    fn labels_match_qt_wording() {
-        assert_eq!(
-            item(InboxKind::Mention, "omarchy", "mira", "#ricing").label(),
-            "mira mentioned you in #ricing"
-        );
-        assert_eq!(
-            item(InboxKind::Highlight, "omarchy", "anna", "#help").label(),
-            "Highlight in #help"
-        );
-        assert_eq!(
-            item(InboxKind::Direct, "omarchy", "dax", "dax").label(),
-            "Message from dax"
-        );
-        assert_eq!(
-            item(InboxKind::Invite, "oftc", "rio", "#debian").label(),
-            "rio invited you to #debian"
-        );
-        assert_eq!(
-            item(InboxKind::MonitorOnline, "oftc", "kai", "").label(),
-            "kai is online"
-        );
-        assert_eq!(
-            item(InboxKind::Kick, "oftc", "op", "#lab").label(),
-            "You were kicked from #lab"
-        );
     }
 
     #[test]

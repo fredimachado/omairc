@@ -1,57 +1,20 @@
 //! Port of the outbound typing gate in `tui/internal/session/session.go` (Go,
-//! `typingPublisher`), `src/irc/irctypingpublisher.{h,cpp}` (C++), and the
-//! `TypingTagmsg` builder of `tui/internal/irc/typing.go`.
+//! `typingPublisher`) and `src/irc/irctypingpublisher.{h,cpp}` (C++).
 //!
 //! The composer's `+typing` TAGMSG is sent only when `message-tags` is enabled,
 //! at most once per target every `TYPING_SEND_INTERVAL` (3 s), and never as a
-//! `done` right after the user sent a message. Phase 4 moves the phase type and
-//! the builder into `irc/typing.rs` with the inbound hint side.
+//! `done` right after the user sent a message. The phase type, the TAGMSG
+//! builder and the pace constant are wire vocabulary: they live in `irc/typing`
+//! and are re-exported here for the session's callers.
 
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 
+pub use crate::irc::typing::{typing_tagmsg, TypingPhase, TYPING_SEND_INTERVAL_MS};
+
 use super::session::Core;
 use crate::irc::capability::IrcCapability;
-
-/// The per-target outbound throttle, in milliseconds.
-pub const TYPING_SEND_INTERVAL_MS: i64 = 3000;
-
-/// A `+typing` phase (`IrcTypingPhase`). `Done` is never stored.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum TypingPhase {
-    #[default]
-    Active,
-    Paused,
-    Done,
-}
-
-impl TypingPhase {
-    /// The tag value on the wire.
-    pub fn tag_value(self) -> &'static str {
-        match self {
-            Self::Active => "active",
-            Self::Paused => "paused",
-            Self::Done => "done",
-        }
-    }
-}
-
-/// Builds `@+typing=<phase> TAGMSG <target>` with its CRLF. `None` when the
-/// target is empty or carries a space, CR or LF.
-pub fn typing_tagmsg(target: &str, phase: TypingPhase) -> Option<String> {
-    if target.is_empty()
-        || target
-            .bytes()
-            .any(|byte| matches!(byte, b' ' | b'\r' | b'\n'))
-    {
-        return None;
-    }
-    Some(format!(
-        "@+typing={} TAGMSG {target}\r\n",
-        phase.tag_value()
-    ))
-}
 
 /// One target's outbound pace (`IrcTypingPublisher::TargetClock`).
 #[derive(Clone, Debug, Default)]

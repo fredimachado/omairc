@@ -5,6 +5,7 @@
 use super::format::format_irc;
 use super::mock::{MockWorld, StatusLine, StatusSeverity, StatusSource};
 use super::transcript::{Row, RowKind};
+use crate::irc::statusentry::{CTCP_LABEL, OUTCOME_LABEL};
 
 /// What a Status row carries besides its text: the label, the source that
 /// picks the glyph, and the severity that picks the colour.
@@ -97,7 +98,7 @@ pub fn status_rows(world: &MockWorld, network_id: &str) -> Vec<Row> {
 pub fn outcome_line(time: &str, text: &str) -> StatusLine {
     StatusLine {
         time: time.to_string(),
-        label: "command".to_string(),
+        label: OUTCOME_LABEL.to_string(),
         text: text.to_string(),
         source: StatusSource::Local,
         severity: StatusSeverity::Info,
@@ -110,7 +111,7 @@ pub fn outcome_line(time: &str, text: &str) -> StatusLine {
 pub fn ctcp_reply_line(time: &str, text: &str) -> StatusLine {
     StatusLine {
         time: time.to_string(),
-        label: "CTCP".to_string(),
+        label: CTCP_LABEL.to_string(),
         text: text.to_string(),
         source: StatusSource::Server,
         severity: StatusSeverity::Info,
