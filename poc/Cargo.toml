@@ -25,6 +25,16 @@ url = "2.5"
 # The installed-copy probe reads the Inno uninstall key from the registry.
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56"
+# The product CLI's named pipe: std has no pipe server, so the few kernel32 calls come from here.
+# Pinned to the 0.61.2 that winreg already builds on Windows, so no new crate is fetched.
+windows-sys = { version = "=0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+] }
 
 # Test-only: the architecture gates in tests/ match source text with it.
 [dev-dependencies]

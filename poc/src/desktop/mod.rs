@@ -5,10 +5,14 @@
 //! `src/omaircipc.cpp`, `src/omaircupdatecheck.cpp`, `src/irc/ircavatarstore.cpp`.
 
 pub mod avatarhttp;
+pub mod cli;
+pub mod cli_cursor;
+pub mod endpoint;
 pub mod filelog;
 pub mod httpfetch;
 pub mod installer;
 pub mod ipc;
+pub mod ipchandler;
 pub mod notifier;
 pub mod singleinstance;
 pub mod systemtheme;

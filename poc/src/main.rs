@@ -138,12 +138,32 @@ fn main() {
     #[cfg(windows)]
     console::attach_parent_console();
 
+    // A control command talks to the running window and exits before clap or gpui start.
+    let raw_args: Vec<String> = std::env::args_os()
+        .skip(1)
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect();
+    if desktop::cli::is_control_invocation(&raw_args) {
+        std::process::exit(desktop::cli::run(&raw_args));
+    }
+
     let args = Args::parse();
     let theme_path = args.theme.clone();
     let scale = args.scale;
     let lines = args.lines;
     let bench = args.bench;
     let demo_server = args.demo_server;
+
+    // One window per user: a second launch raises the first and exits, as Qt's guard does.
+    let ipc = match desktop::singleinstance::acquire_for_app() {
+        Ok(desktop::singleinstance::Startup::Primary(server)) => Some(server),
+        Ok(desktop::singleinstance::Startup::Unguarded) => None,
+        Ok(desktop::singleinstance::Startup::Secondary) => return,
+        Err(error) => {
+            eprintln!("omairc-poc-gpui: {error}");
+            std::process::exit(1);
+        }
+    };
 
     // Demo mode keeps no log file, as the Qt client does.
     if !demo_server {
@@ -202,6 +222,9 @@ fn main() {
                     let transcript = shell.read(cx).transcript.clone();
                     if let Some(keeper) = &keeper {
                         windowstate::attach(keeper, &shell, window, cx);
+                    }
+                    if let Some(server) = ipc {
+                        desktop::ipchandler::serve(shell.clone(), window.window_handle(), server, cx);
                     }
                     if bench {
                         run_bench(shell.clone(), window.window_handle(), cx);
