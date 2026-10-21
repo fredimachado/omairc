@@ -5,8 +5,4 @@
 //! are in `irc/slashcomplete`, and the popup's state is in `model/slash_complete`.
 
 pub use crate::irc::command::ComposerSurface as Surface;
-pub use crate::irc::command::{
-    command_outcome_text, ctcp_target, help_text, parse, pref_reply, version_reply_text, Command,
-    CommandOutcome, SelectedView, Words,
-};
-pub use crate::irc::pref::PrefRequest;
+pub use crate::irc::command::{parse, Command};

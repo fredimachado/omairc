@@ -395,7 +395,7 @@ impl Shell {
         let source = NickSource {
             members: self.controller.members(),
             self_nick: self.current_nick(),
-            avatars: self.preferences.avatars,
+            avatars: self.controller.preferences().avatars,
         };
         let sheet = cx.new(|cx| FilterSheet::new(source, cx));
         let subscriptions = vec![

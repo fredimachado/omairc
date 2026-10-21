@@ -219,7 +219,7 @@ impl Shell {
                     features: &features,
                     typing_peer,
                 };
-                let open_at_unread = place.is_none() && self.preferences.unread;
+                let open_at_unread = place.is_none() && self.controller.preferences().unread;
                 let place =
                     place.or_else(|| self.scroll_places.get(&self.shown.conversation).cloned());
                 self.transcript.update(cx, |t, _| {

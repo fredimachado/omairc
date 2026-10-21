@@ -13,17 +13,30 @@
 //! a WHOIS writes those facts to Status once. A watch armed while the nick's delivery
 //! changed is marked ambiguous, so the 401 that follows does not read as "no such nick".
 //!
-//! Not here yet: the METADATA reply routes (761, 766 and FAIL for the user's own
-//! `/status` and `/avatar`) and the `/status` and `/avatar` dispatch. Those land with the
-//! slash dispatcher.
+//! The user's own `/status` and `/avatar` are METADATA writes the same way: a set or a clear
+//! arms a watch keyed by network and canonical key, and the 761 or 766 that confirms it (or a
+//! FAIL, or a 764, 767 or 769 that refuses it) ends the watch and echoes the outcome to the
+//! conversation that asked, or to Status. A reply that lands while the write is still being
+//! armed waits until the watch exists (`IrcReplyRouter::routeOwnMetadataReply`).
+//!
+//! Port of `tui/internal/controller/replyrouter.go` (Go) and `src/irc/ircreplyrouter.{h,cpp}`
+//! (C++). The `/whois`, `/ping`, `/time`, `/version`, `/status` and `/avatar` dispatch lives
+//! here too, so the dispatcher only routes the verb.
 
 use std::collections::BTreeMap;
 
+use crate::irc::avatarurl::avatar_metadata_value;
+use crate::irc::capability::IrcCapability;
+use crate::irc::command::{CommandOutcome, ComposerSurface, Words};
 use crate::irc::event::{ConversationKey, Event, WhoisTranscriptEvent};
+use crate::irc::message::IrcMessage;
 use crate::irc::presence::{
-    AVATAR_KEY, BOT_KEY, COLOR_KEY, DISPLAY_NAME_KEY, HOMEPAGE_KEY, PRONOUNS_KEY, STATUS_KEY,
+    canonical_key, clamped_to, effective_max_value_bytes, is_known_key, AVATAR_KEY, BOT_KEY,
+    COLOR_KEY, DISPLAY_NAME_KEY, HOMEPAGE_KEY, PRONOUNS_KEY, STATUS_KEY,
 };
 use crate::irc::statusentry::{self, CtcpReplyLine, LogSeverity, StatusEntry, WhoisLine, WhoisProgress};
+use crate::irc::wiretext::wire_text;
+use crate::session::events::SessionState;
 use crate::session::session::Session;
 
 use super::controller::Controller;
@@ -76,12 +89,43 @@ struct LabeledWatch {
     metadata_emitted: bool,
 }
 
+/// Whether an own-metadata write sets a value or clears it (`IrcOwnMetadataWatch::Kind`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OwnMetadataKind {
+    Set,
+    Clear,
+}
+
+/// One in-flight set or clear of the user's own `status` or `avatar` (`IrcOwnMetadataWatch`).
+/// `value` is the wire value a set sent, which the confirming 761 must echo.
+#[derive(Clone, Debug)]
+struct OwnMetadataWatch {
+    destination: Option<ConversationKey>,
+    kind: OwnMetadataKind,
+    value: String,
+}
+
+/// A 761 or 766 that arrived while its write was still being armed (`replyOwnMetadataPending`).
+#[derive(Clone, Debug)]
+struct PendingOwnMetadata {
+    network_id: String,
+    nick: String,
+    key: String,
+    value: String,
+}
+
 /// The reply watches the router holds (`IrcReplyRouter`'s watch maps).
 #[derive(Default)]
 pub(super) struct ReplyWatches {
     whois: BTreeMap<WhoisKey, WhoisWatch>,
     ctcp: BTreeMap<CtcpKey, CtcpWatch>,
     labeled: BTreeMap<LabeledKey, LabeledWatch>,
+    /// The in-flight own-metadata writes, by network and canonical key.
+    own_metadata: BTreeMap<String, BTreeMap<&'static str, OwnMetadataWatch>>,
+    /// How many own-metadata writes are being armed. While one is, a confirming reply waits
+    /// in `pending_own_metadata`, because the loopback can answer before the watch exists.
+    own_metadata_depth: usize,
+    pending_own_metadata: Vec<PendingOwnMetadata>,
 }
 
 #[cfg(test)]
@@ -156,6 +200,7 @@ impl Controller {
         self.reply_watches
             .labeled
             .retain(|key, _| key.network_id != network_id);
+        self.reply_watches.own_metadata.remove(network_id);
     }
 
     /// The session finished a labeled request: its watch goes (`requestLabelFinished`).
@@ -180,6 +225,7 @@ impl Controller {
     /// CTCP watches when it carries no label (`routeStatusEntry`).
     fn route_status_entry(&mut self, entry: &StatusEntry) {
         let network_id = entry.network_id.clone();
+        self.route_own_metadata_error(entry);
         if !entry.request_label.is_empty() {
             let key = LabeledKey {
                 network_id: network_id.clone(),
@@ -442,7 +488,7 @@ impl Controller {
         }
     }
 
-    fn apply_whois_transcript(&mut self, destination: &ConversationKey, body: &str) {
+    pub(super) fn apply_whois_transcript(&mut self, destination: &ConversationKey, body: &str) {
         self.apply(Event::WhoisTranscript(WhoisTranscriptEvent {
             destination: destination.clone(),
             formatted_body: body.to_owned(),
@@ -515,6 +561,607 @@ impl Controller {
                 .normalized_target,
             command: verb,
         })
+    }
+}
+
+impl Controller {
+    /// `/whois` (`IrcReplyRouter::dispatchWhois`). A bare WHOIS asks the selected direct
+    /// message's peer. With a nick, the reply copies into the selected conversation, or stays
+    /// on Status when Status is the surface.
+    pub(super) fn dispatch_whois(&mut self, words: &Words, surface: ComposerSurface) -> CommandOutcome {
+        let (nick, session) = if words.first.is_empty() {
+            match self.bare_nick_target() {
+                Ok(target) => target,
+                Err(outcome) => return outcome,
+            }
+        } else {
+            let network = self.surface_network(surface);
+            if network.is_empty() {
+                return refused_or_wrong_scope(surface);
+            }
+            (words.first.clone(), self.session_for(surface))
+        };
+        if nick.is_empty() {
+            return CommandOutcome::Refused;
+        }
+        let Some(session) = session.filter(|session| session.state() == SessionState::Registered)
+        else {
+            return CommandOutcome::NotConnected;
+        };
+        let destination = match self.destination_for(surface) {
+            Ok(destination) => destination,
+            Err(outcome) => return outcome,
+        };
+        if self.send_whois(&session, &nick, destination) {
+            CommandOutcome::Sent
+        } else {
+            CommandOutcome::Refused
+        }
+    }
+
+    /// `/ping`, `/time` or `/version` (`IrcReplyRouter::dispatchCtcp`). `query` is the CTCP
+    /// command name. The reply copies into the selected conversation as a whois row.
+    pub(super) fn dispatch_ctcp(
+        &mut self,
+        query: &'static str,
+        words: &Words,
+        surface: ComposerSurface,
+    ) -> CommandOutcome {
+        if !words.rest.is_empty() {
+            return CommandOutcome::Refused;
+        }
+        let (nick, session) = if words.first.is_empty() {
+            match self.bare_nick_target() {
+                Ok(target) => target,
+                Err(outcome) => return outcome,
+            }
+        } else {
+            let network = self.surface_network(surface);
+            if network.is_empty() {
+                return refused_or_wrong_scope(surface);
+            }
+            if self.reducer.server_features(&network).is_channel(&words.first) {
+                return CommandOutcome::Refused;
+            }
+            (words.first.clone(), self.session_for(surface))
+        };
+        if nick.is_empty() {
+            return CommandOutcome::Refused;
+        }
+        let Some(session) = session.filter(|session| session.state() == SessionState::Registered)
+        else {
+            return CommandOutcome::NotConnected;
+        };
+        let destination = match self.destination_for(surface) {
+            Ok(destination) => destination,
+            Err(outcome) => return outcome,
+        };
+        // A PING carries the send time in milliseconds, so the reply's latency is readable.
+        let argument = if query == "PING" {
+            self.clock.now().timestamp_millis().to_string()
+        } else {
+            String::new()
+        };
+        if self.send_ctcp_query(&session, &nick, query, &argument, destination) {
+            CommandOutcome::Sent
+        } else {
+            CommandOutcome::Refused
+        }
+    }
+
+    /// `/status` (`IrcReplyRouter::dispatchStatus`): no argument reads the standing status,
+    /// `clear` unsets it, and anything else sets it, clamped to the network's value budget.
+    pub(super) fn dispatch_status(&mut self, argument: &str, surface: ComposerSurface) -> CommandOutcome {
+        self.dispatch_own_metadata(argument, surface, STATUS_KEY)
+    }
+
+    /// `/avatar` (`IrcReplyRouter::dispatchAvatar`): an HTTPS URL or an email, stored as a
+    /// Gravatar URL. Like `/status`, it reads, clears or sets.
+    pub(super) fn dispatch_avatar(&mut self, argument: &str, surface: ComposerSurface) -> CommandOutcome {
+        self.dispatch_own_metadata(argument, surface, AVATAR_KEY)
+    }
+
+    /// The shared body of `/status` and `/avatar`. The two differ only in the key, the
+    /// inspect read, and how the value is resolved.
+    fn dispatch_own_metadata(
+        &mut self,
+        argument: &str,
+        surface: ComposerSurface,
+        key: &'static str,
+    ) -> CommandOutcome {
+        let Some(session) = self.session_for(surface) else {
+            return if surface == ComposerSurface::Conversation
+                && self.selected.is_none()
+                && !self.manager.network_ids().is_empty()
+            {
+                CommandOutcome::Refused
+            } else {
+                CommandOutcome::NotConnected
+            };
+        };
+        if session.state() != SessionState::Registered {
+            return CommandOutcome::NotConnected;
+        }
+        let network = session.network_id();
+        let capabilities = self.caps(&network);
+        if !capabilities.contains(IrcCapability::MemberMetadata)
+            || !capabilities.contains(IrcCapability::Batch)
+        {
+            let text = no_capability_message(key);
+            return self.echo_metadata_feedback(surface, &network, &text);
+        }
+
+        if argument.is_empty() {
+            let presence = self.reducer.nick_presence(&network, &session.nick());
+            let current = if key == STATUS_KEY {
+                presence.status()
+            } else {
+                presence.avatar()
+            };
+            let text = if current.is_empty() {
+                inspect_empty_message(key)
+            } else {
+                inspect_value_message(key, current)
+            };
+            return self.echo_metadata_feedback(surface, &network, &text);
+        }
+
+        if is_clear_alias(argument) {
+            return self.dispatch_own_metadata_clear(&session, key);
+        }
+
+        let value = if key == AVATAR_KEY {
+            match avatar_metadata_value(argument) {
+                Some(resolved) => resolved,
+                None => {
+                    return self.echo_metadata_feedback(
+                        surface,
+                        &network,
+                        "Avatar must be an HTTPS URL or an email address.",
+                    );
+                }
+            }
+        } else {
+            argument.to_owned()
+        };
+        let budget = effective_max_value_bytes(session.metadata_capability().max_value_bytes);
+        if budget == 0 {
+            let text = no_value_message(key);
+            return self.echo_metadata_feedback(surface, &network, &text);
+        }
+        let clamped = clamped_to(&value, budget);
+        if clamped.is_empty() {
+            return CommandOutcome::Refused;
+        }
+        self.dispatch_own_metadata_set(&session, key, &clamped)
+    }
+
+    /// Clears one own key and arms its clear watch (`dispatchOwnMetadataClear`).
+    fn dispatch_own_metadata_clear(&mut self, session: &Session, key: &'static str) -> CommandOutcome {
+        self.begin_own_metadata_dispatch();
+        if !session.clear_own_metadata(key) {
+            self.end_own_metadata_dispatch();
+            return CommandOutcome::Refused;
+        }
+        self.arm_own_metadata_watch(&session.network_id(), key, OwnMetadataKind::Clear, "");
+        self.end_own_metadata_dispatch();
+        CommandOutcome::Sent
+    }
+
+    /// Sets one own key and arms its set watch with the value the wire carried
+    /// (`dispatchOwnMetadataSet`).
+    fn dispatch_own_metadata_set(
+        &mut self,
+        session: &Session,
+        key: &'static str,
+        value: &str,
+    ) -> CommandOutcome {
+        if value.is_empty() {
+            return CommandOutcome::Refused;
+        }
+        self.begin_own_metadata_dispatch();
+        let sent = match session.set_own_metadata(key, value) {
+            Some(wire) if !wire.is_empty() => wire,
+            _ => {
+                self.end_own_metadata_dispatch();
+                return CommandOutcome::Refused;
+            }
+        };
+        self.arm_own_metadata_watch(&session.network_id(), key, OwnMetadataKind::Set, &sent);
+        self.end_own_metadata_dispatch();
+        CommandOutcome::Sent
+    }
+
+    fn begin_own_metadata_dispatch(&mut self) {
+        self.reply_watches.own_metadata_depth += 1;
+    }
+
+    /// Closes one write. When the last one closes, the replies that waited for it are
+    /// routed now that their watches exist.
+    fn end_own_metadata_dispatch(&mut self) {
+        self.reply_watches.own_metadata_depth = self.reply_watches.own_metadata_depth.saturating_sub(1);
+        if self.reply_watches.own_metadata_depth > 0 {
+            return;
+        }
+        let pending = std::mem::take(&mut self.reply_watches.pending_own_metadata);
+        for item in pending {
+            self.route_own_metadata_reply(&item.network_id, &item.nick, &item.key, &item.value);
+        }
+    }
+
+    /// Echoes a local `/status` or `/avatar` message to the selected conversation of this
+    /// network, or else to Status (`echoMetadataCommandFeedback`). A conversation surface with
+    /// no selection on this network is a wrong scope.
+    fn echo_metadata_feedback(&mut self, surface: ComposerSurface, network_id: &str, text: &str) -> CommandOutcome {
+        if let Some(selected) = self.selected.clone() {
+            if selected.network_id == network_id {
+                self.apply_whois_transcript(&selected, text);
+                return CommandOutcome::Sent;
+            }
+        }
+        if surface == ComposerSurface::Conversation {
+            return CommandOutcome::WrongScope;
+        }
+        self.append_status(statusentry::outcome(network_id, text, self.clock.now()));
+        CommandOutcome::Sent
+    }
+
+    /// Arms the watch for one own-metadata write. The outcome goes to the selection when it
+    /// is on the same network (`armOwnMetadataWatch`).
+    fn arm_own_metadata_watch(
+        &mut self,
+        network_id: &str,
+        key: &str,
+        kind: OwnMetadataKind,
+        value: &str,
+    ) {
+        let Some(canonical) = canonical_key(key) else {
+            return;
+        };
+        let destination = match self.selected.clone() {
+            Some(selected) if selected.network_id == network_id => Some(selected),
+            _ => None,
+        };
+        self.reply_watches
+            .own_metadata
+            .entry(network_id.to_owned())
+            .or_default()
+            .insert(
+                canonical,
+                OwnMetadataWatch {
+                    destination,
+                    kind,
+                    value: value.to_owned(),
+                },
+            );
+    }
+
+    /// Ends one own-metadata watch, and the network's map when it was the last.
+    fn remove_own_metadata_watch(&mut self, network_id: &str, canonical: &str) {
+        let emptied = match self.reply_watches.own_metadata.get_mut(network_id) {
+            Some(watches) => {
+                watches.remove(canonical);
+                watches.is_empty()
+            }
+            None => false,
+        };
+        if emptied {
+            self.reply_watches.own_metadata.remove(network_id);
+        }
+    }
+
+    /// Writes an own-metadata outcome to its captured destination, else to the selection when
+    /// it is on this network, else to Status (`echoOwnMetadataOutcome`).
+    fn echo_own_metadata_outcome(
+        &mut self,
+        network_id: &str,
+        destination: Option<&ConversationKey>,
+        text: &str,
+    ) {
+        if let Some(destination) = destination {
+            self.apply_whois_transcript(destination, text);
+            return;
+        }
+        if let Some(selected) = self.selected.clone() {
+            if selected.network_id == network_id {
+                self.apply_whois_transcript(&selected, text);
+                return;
+            }
+        }
+        self.append_status(statusentry::outcome(network_id, text, self.clock.now()));
+    }
+
+    /// A METADATA FAIL that answers one of the user's own writes (`routeOwnMetadataFail`).
+    /// The FAIL names the keys it refused, and each pending watch for one of them ends with
+    /// the refusal, or with the "already unset" reading of a clear.
+    pub(super) fn route_own_metadata_fail(&mut self, network_id: &str, message: &IrcMessage) {
+        if !param_text(message, 0).eq_ignore_ascii_case("METADATA") {
+            return;
+        }
+        if !self.reply_watches.own_metadata.contains_key(network_id) {
+            return;
+        }
+        let code = param_text(message, 1).to_uppercase();
+        if !matches!(
+            code.as_str(),
+            "KEY_NO_PERMISSION" | "VALUE_INVALID" | "RATE_LIMITED" | "KEY_NOT_SET" | "LIMIT_REACHED" | "KEY_INVALID"
+        ) {
+            return;
+        }
+
+        let last_context = if message.params.len() > 2 {
+            message.params.len() - 1
+        } else {
+            2
+        };
+        let mut fail_keys: Vec<&'static str> = Vec::new();
+        for index in 2..last_context {
+            let token = param_text(message, index);
+            if !is_known_key(&token) {
+                continue;
+            }
+            if let Some(canonical) = canonical_key(&token) {
+                if !fail_keys.contains(&canonical) {
+                    fail_keys.push(canonical);
+                }
+            }
+        }
+        if fail_keys.is_empty() {
+            return;
+        }
+
+        let description = if message.params.is_empty() {
+            code.clone()
+        } else {
+            param_text(message, message.params.len() - 1)
+        };
+        let reason = if description.is_empty() {
+            code.clone()
+        } else {
+            format!("{code} {description}")
+        };
+
+        let Some(watches) = self.reply_watches.own_metadata.get_mut(network_id) else {
+            return;
+        };
+        let taken: Vec<(&'static str, OwnMetadataWatch)> = fail_keys
+            .iter()
+            .filter_map(|key| watches.remove(key).map(|watch| (*key, watch)))
+            .collect();
+        if watches.is_empty() {
+            self.reply_watches.own_metadata.remove(network_id);
+        }
+
+        for (canonical, watch) in taken {
+            if watch.kind == OwnMetadataKind::Clear && code == "KEY_NOT_SET" {
+                self.echo_own_metadata_outcome(
+                    network_id,
+                    watch.destination.as_ref(),
+                    &cleared_message(canonical),
+                );
+                if canonical == AVATAR_KEY {
+                    self.persist_own_avatar(network_id, "");
+                }
+                continue;
+            }
+            let text = match watch.kind {
+                OwnMetadataKind::Set => set_fail_message(canonical, &reason),
+                OwnMetadataKind::Clear => clear_fail_message(canonical, &reason),
+            };
+            self.echo_own_metadata_outcome(network_id, watch.destination.as_ref(), &text);
+        }
+    }
+
+    /// A confirmed METADATA value for a nick (761 or 766). It answers the own write only when
+    /// the nick is this network's own nick and the value is the one the write sent, or empty
+    /// for a clear (`routeOwnMetadataReply`).
+    pub(super) fn route_own_metadata_reply(&mut self, network_id: &str, nick: &str, key: &str, value: &str) {
+        if self.reply_watches.own_metadata_depth > 0 {
+            self.reply_watches.pending_own_metadata.push(PendingOwnMetadata {
+                network_id: network_id.to_owned(),
+                nick: nick.to_owned(),
+                key: key.to_owned(),
+                value: value.to_owned(),
+            });
+            return;
+        }
+        let Some(canonical) = canonical_key(key) else {
+            return;
+        };
+        let Some(watch) = self
+            .reply_watches
+            .own_metadata
+            .get(network_id)
+            .and_then(|watches| watches.get(canonical))
+            .cloned()
+        else {
+            return;
+        };
+        let own_nick = self.current_nick(network_id);
+        if own_nick.is_empty() {
+            return;
+        }
+        if !self.reducer.server_features(network_id).case_mapping().equals(nick, &own_nick) {
+            return;
+        }
+
+        match watch.kind {
+            OwnMetadataKind::Clear => {
+                if !value.is_empty() {
+                    return;
+                }
+                self.echo_own_metadata_outcome(network_id, watch.destination.as_ref(), &cleared_message(canonical));
+                if canonical == AVATAR_KEY {
+                    self.persist_own_avatar(network_id, "");
+                }
+            }
+            OwnMetadataKind::Set => {
+                if value.is_empty() || watch.value != value {
+                    return;
+                }
+                let text = set_message(canonical, value);
+                self.echo_own_metadata_outcome(network_id, watch.destination.as_ref(), &text);
+                if canonical == AVATAR_KEY {
+                    self.persist_own_avatar(network_id, value);
+                }
+            }
+        }
+        self.remove_own_metadata_watch(network_id, canonical);
+    }
+
+    /// A 764, 767 or 769 that refuses one own write (`routeOwnMetadataError`). The first word
+    /// of its text names the key; the text, or the numeric when there is none, is the reason.
+    fn route_own_metadata_error(&mut self, entry: &StatusEntry) {
+        if !self.reply_watches.own_metadata.contains_key(&entry.network_id) {
+            return;
+        }
+        if !matches!(entry.label.as_str(), "764" | "767" | "769") {
+            return;
+        }
+        let key_token = Words::split(&entry.text).first;
+        if key_token.is_empty() {
+            return;
+        }
+        let Some(canonical) = canonical_key(&key_token) else {
+            return;
+        };
+        let Some(watch) = self
+            .reply_watches
+            .own_metadata
+            .get(&entry.network_id)
+            .and_then(|watches| watches.get(canonical))
+            .cloned()
+        else {
+            return;
+        };
+        let reason = if entry.text.is_empty() {
+            entry.label.as_str()
+        } else {
+            entry.text.as_str()
+        };
+        let text = match watch.kind {
+            OwnMetadataKind::Set => set_fail_message(canonical, reason),
+            OwnMetadataKind::Clear => clear_fail_message(canonical, reason),
+        };
+        self.echo_own_metadata_outcome(&entry.network_id, watch.destination.as_ref(), &text);
+        self.remove_own_metadata_watch(&entry.network_id, canonical);
+    }
+
+    /// Stores the own avatar URL the server confirmed. The avatar store lands with the
+    /// persistence phase; until then the reducer already holds the server's value for this
+    /// nick, so this changes nothing.
+    fn persist_own_avatar(&mut self, _network_id: &str, _url: &str) {}
+
+    /// The selected conversation's target for a bare CTCP or WHOIS: a direct message's peer
+    /// with its session, or the outcome that refuses it (`dispatchCtcp` and `dispatchWhois`).
+    fn bare_nick_target(&self) -> Result<(String, Option<Session>), CommandOutcome> {
+        if self.selected_is_closeable_direct() {
+            return Ok((self.selected_target().to_owned(), self.selected_session()));
+        }
+        if self.selected.is_some() {
+            return Err(CommandOutcome::WrongScope);
+        }
+        Err(CommandOutcome::Refused)
+    }
+
+    /// The destination a reply copies into: the selection on a conversation, nothing on
+    /// Status. A conversation with no selection is a wrong scope.
+    fn destination_for(&self, surface: ComposerSurface) -> Result<Option<ConversationKey>, CommandOutcome> {
+        match surface {
+            ComposerSurface::Status => Ok(None),
+            ComposerSurface::Conversation => match self.selected.clone() {
+                Some(selected) => Ok(Some(selected)),
+                None => Err(CommandOutcome::WrongScope),
+            },
+        }
+    }
+}
+
+/// The outcome for a verb whose network the surface cannot name: a conversation with no
+/// selection is a wrong scope, and Status with no network is a refusal.
+fn refused_or_wrong_scope(surface: ComposerSurface) -> CommandOutcome {
+    match surface {
+        ComposerSurface::Conversation => CommandOutcome::WrongScope,
+        ComposerSurface::Status => CommandOutcome::Refused,
+    }
+}
+
+/// One message parameter as text, or "" when it is absent (`parameterText`).
+fn param_text(message: &IrcMessage, index: usize) -> String {
+    message.params.get(index).map(|raw| wire_text(raw)).unwrap_or_default()
+}
+
+/// Whether an argument is exactly `clear` (`isOwnMetadataClearAlias`).
+fn is_clear_alias(argument: &str) -> bool {
+    let words = Words::split(argument);
+    words.first.eq_ignore_ascii_case("clear") && words.rest.is_empty()
+}
+
+/// The success text for a cleared key (`ownMetadataClearedMessage`).
+fn cleared_message(canonical: &str) -> String {
+    match canonical {
+        STATUS_KEY => "Standing status cleared.".to_owned(),
+        AVATAR_KEY => "Avatar cleared.".to_owned(),
+        _ => String::new(),
+    }
+}
+
+/// The success text for a set key (`ownMetadataSetMessage`).
+fn set_message(canonical: &str, value: &str) -> String {
+    match canonical {
+        STATUS_KEY => format!("Standing status set to {value}."),
+        AVATAR_KEY => format!("Avatar set to {value}."),
+        _ => String::new(),
+    }
+}
+
+/// The failure text for a refused set (`ownMetadataSetFailMessage`).
+fn set_fail_message(canonical: &str, reason: &str) -> String {
+    match canonical {
+        STATUS_KEY => format!("Could not set standing status: {reason}"),
+        AVATAR_KEY => format!("Could not set avatar: {reason}"),
+        _ => String::new(),
+    }
+}
+
+/// The failure text for a refused clear (`ownMetadataClearFailMessage`).
+fn clear_fail_message(canonical: &str, reason: &str) -> String {
+    match canonical {
+        STATUS_KEY => format!("Could not clear standing status: {reason}"),
+        AVATAR_KEY => format!("Could not clear avatar: {reason}"),
+        _ => String::new(),
+    }
+}
+
+/// The text for a network without the capability (`ownMetadataNoCapMessage`).
+fn no_capability_message(key: &str) -> String {
+    match key {
+        STATUS_KEY => "This network does not support standing status.".to_owned(),
+        _ => "This network does not support avatars.".to_owned(),
+    }
+}
+
+/// The text for a network whose value budget is zero (`ownMetadataNoValueMessage`).
+fn no_value_message(key: &str) -> String {
+    match key {
+        STATUS_KEY => "This network does not allow standing status text.".to_owned(),
+        _ => "This network does not allow avatar URLs.".to_owned(),
+    }
+}
+
+/// The text for an inspect with nothing stored (`ownMetadataInspectEmptyMessage`).
+fn inspect_empty_message(key: &str) -> String {
+    match key {
+        STATUS_KEY => "No standing status. Use /status <text> or /status clear.".to_owned(),
+        _ => "No standing avatar. Use /avatar <url|email> or /avatar clear.".to_owned(),
+    }
+}
+
+/// The text for an inspect with a stored value (`ownMetadataInspectValueMessage`).
+fn inspect_value_message(key: &str, value: &str) -> String {
+    match key {
+        STATUS_KEY => format!("Standing status: {value}"),
+        _ => format!("Standing avatar: {value}"),
     }
 }
 

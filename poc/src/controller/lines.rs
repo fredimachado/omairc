@@ -22,6 +22,8 @@ impl Controller {
         self.pump();
     }
 
+    // Test seam: the shell writes CTCP replies through the dispatcher, so only the tests call this.
+    #[allow(dead_code)]
     /// Writes a CTCP reply line to a network's Status log, labelled `CTCP`.
     pub fn log_ctcp_reply(&mut self, network_id: &str, text: &str) {
         self.pump();
@@ -30,6 +32,8 @@ impl Controller {
         self.pump();
     }
 
+    // Test seam: the shell writes whois rows through the dispatcher, so only the tests call this.
+    #[allow(dead_code)]
     /// Writes one whois-style line into the selected conversation. Returns false
     /// when Status is the selection, so the caller writes to Status instead.
     pub fn reply_in_selection(&mut self, text: &str) -> bool {
@@ -49,12 +53,6 @@ impl Controller {
         }));
         self.pump();
         true
-    }
-
-    /// Sets how join, part, quit and nick lines show from now on (`/pref joins`). As Qt
-    /// does, the setting shapes the lines that arrive after it, not the stored ones.
-    pub fn set_membership_noise(&mut self, noise: crate::irc::membershipnoise::MembershipNoise) {
-        self.reducer.set_membership_noise(noise);
     }
 
     /// Empties one network's Status log (`/clear` on Status).

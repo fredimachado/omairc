@@ -52,6 +52,17 @@ impl Controller {
         self.pump();
     }
 
+    /// The composer's text changed while a conversation is selected. The selection supplies the
+    /// network and target, so the shell only reports the text (`NotifyComposerText`). Status and
+    /// find mode never publish, since the shell does not report them.
+    pub fn composer_text_changed(&mut self, text: &str) {
+        let Some(key) = self.selected.clone() else {
+            return;
+        };
+        let target = self.selected_target().to_owned();
+        self.composer_edited(&key.network_id, &target, text);
+    }
+
     /// The network and target the composer's typing hint is held on, if any: the last
     /// target a `typing=active` went to and no `done` has followed yet.
     pub fn typing_target(&self) -> Option<(&str, &str)> {

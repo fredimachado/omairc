@@ -30,6 +30,7 @@ use crate::irc::capability::{IrcCapability, IrcCapabilitySet};
 use crate::irc::event::{ConversationKey, Event, HistoryKind, NickEvent, WelcomeEvent};
 use crate::irc::inbox::{Inbox, InboxItem, InboxKind};
 use crate::irc::message::IrcMessage;
+use crate::irc::pref::Preferences;
 use crate::irc::prefixnick::prefix_nick;
 use crate::irc::reducer::EventReducer;
 use crate::irc::serverfeatures::IrcServerFeatures;
@@ -133,6 +134,13 @@ pub struct Controller {
     pub(super) monitor: MonitorState,
     /// The network and target the composer's typing hint is held on (`typingTarget`).
     pub(super) typing_target: Option<(String, String)>,
+    /// The channels a `/part` or a close cancelled while their JOIN was in flight. The
+    /// self JOIN that answers the join parts again instead of rejoining (`cancelled`).
+    pub(super) cancelled_joins: BTreeSet<ConversationKey>,
+    /// The saved preferences `/pref` and the Connect toggles read and write (`prefs`).
+    pub(super) prefs: Preferences,
+    /// Whether a preference changed since the shell last saved them (`prefsDirty`).
+    pub(super) prefs_dirty: bool,
     pumping: bool,
 }
 
@@ -179,6 +187,9 @@ impl Controller {
             monitors: MonitorStore::in_memory(),
             monitor: MonitorState::default(),
             typing_target: None,
+            cancelled_joins: BTreeSet::new(),
+            prefs: Preferences::default(),
+            prefs_dirty: false,
             pumping: false,
         }
     }
@@ -501,6 +512,9 @@ impl Controller {
     /// Translates one inbound message and folds each event in. A self JOIN that
     /// answers the session's pending invite selects that channel.
     fn handle_message(&mut self, network_id: &str, message: &IrcMessage) {
+        if message.command == "FAIL" {
+            self.route_own_metadata_fail(network_id, message);
+        }
         match message.command.as_str() {
             "005" => {
                 self.apply_isupport(network_id, message);
@@ -551,6 +565,12 @@ impl Controller {
 
         let mapping = features.case_mapping();
         for event in events {
+            let own_join = match &event {
+                Event::Join(join) if mapping.equals(&join.nick, &current_nick) => {
+                    Some((join.channel.clone(), self.reducer.conversation_key(network_id, &join.channel)))
+                }
+                _ => None,
+            };
             let self_join = match &event {
                 Event::Join(join)
                     if mapping.equals(&join.nick, &current_nick)
@@ -570,9 +590,30 @@ impl Controller {
                 }
             }
             self.apply(event);
+            // A JOIN the user cancelled while it was in flight parts again instead of
+            // staying in the channel (`TakeCancelledSelfJoin`).
+            if let Some((channel, key)) = own_join {
+                if self.cancelled_joins.remove(&key) {
+                    self.drop_cancelled_join(network_id, &channel, &key);
+                    continue;
+                }
+            }
             if let Some(channel) = self_join {
                 self.on_self_join(network_id, &channel);
             }
+        }
+    }
+
+    /// Parts a channel whose cancelled JOIN just landed. A closed channel drops its row, and a
+    /// left one stays as a row that is not joined (`handleMessage`'s cancelled self JOIN).
+    fn drop_cancelled_join(&mut self, network_id: &str, channel: &str, key: &ConversationKey) {
+        if let Some(session) = self.manager.find(network_id) {
+            session.part(channel);
+        }
+        if self.reducer.closed(key) {
+            self.dismiss_channel(network_id, channel);
+        } else {
+            self.mark_channel_left(network_id, channel);
         }
     }
 
@@ -666,6 +707,10 @@ impl Controller {
     /// mention reaches the notifier, and an inbox arrival lands in the inbox.
     pub(super) fn apply(&mut self, event: Event) {
         let now = self.clock.now();
+        let metadata_reply = match &event {
+            Event::MemberMetadata(metadata) => Some(metadata.clone()),
+            _ => None,
+        };
         // A welcome re-enters registration, so the away bookkeeping resets first. A
         // 305 or 306 lifts the unaway latch (`IrcController::apply`'s welcome and
         // selfAway branches).
@@ -699,6 +744,14 @@ impl Controller {
             );
         }
         self.queue(surfaces);
+        if let Some(metadata) = metadata_reply {
+            self.route_own_metadata_reply(
+                &metadata.network_id,
+                &metadata.nick,
+                &metadata.key,
+                &metadata.value,
+            );
+        }
 
         if let Some(mention) = self.reducer.take_mention_arrival() {
             self.notifier.mention(&mention);

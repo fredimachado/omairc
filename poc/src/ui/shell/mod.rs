@@ -83,8 +83,6 @@ pub struct Shell {
     /// Find mode (Ctrl+F) while it is on: the last query searched and the match row. The
     /// composer holds the query, and `composer_state` holds the draft.
     pub find: Option<Find>,
-    /// The saved preferences `/pref` reads and writes, loaded once at startup.
-    pub preferences: Preferences,
     /// The Connect sheet's model: the saved networks, the draft, and the sheet's tab. It
     /// lives for the window, so an unapplied draft survives closing the sheet, as Qt's does.
     pub connect: ConnectState,
@@ -121,8 +119,7 @@ impl Shell {
         } else {
             Controller::new(Rc::new(RealClock::new()))
         };
-        let preferences = Preferences::load();
-        controller.set_membership_noise(preferences.joins);
+        controller.load_preferences(Preferences::load());
         if let Some(n) = lines {
             controller.bench_channel(n);
         }
@@ -150,6 +147,7 @@ impl Shell {
         // searches again from the top.
         let composer_events = cx.observe(&composer, |shell: &mut Shell, _, cx| {
             shell.follow_find_query(cx);
+            shell.report_composer_text(cx);
             if shell.sync_slash_popup(cx) {
                 cx.notify();
             }
@@ -183,7 +181,6 @@ impl Shell {
             composer_state,
             slash: SlashSession::new(),
             find: None,
-            preferences,
             connect,
             connect_open: false,
             connect_focus: cx.focus_handle(),
@@ -204,7 +201,7 @@ impl Shell {
                 .collect(),
         };
 
-        let joins_avatars = shell.preferences.avatars;
+        let joins_avatars = shell.controller.preferences().avatars;
         shell.transcript.update(cx, |t, _| t.set_avatars(joins_avatars));
         shell.show_shown_view(None, cx);
         shell.sync_send_limit(cx);
@@ -401,7 +398,7 @@ impl Render for Shell {
                 status_open: status.is_some(),
                 inbox_count: self.controller.inbox_items().len() as u32,
                 typing_phase: self.typing_phase,
-                avatars: self.preferences.avatars,
+                avatars: self.controller.preferences().avatars,
                 on_status: status_handler(entity.clone()),
                 on_edit: edit_handler(entity.clone()),
                 on_inbox: inbox_handler(entity.clone()),
@@ -478,7 +475,7 @@ impl Render for Shell {
                         on_heading: heading_handler(entity.clone()),
                         focus: &self.member_focus,
                         cursor: members_cursor,
-                        avatars: self.preferences.avatars,
+                        avatars: self.controller.preferences().avatars,
                     },
                     &app_style,
                     &self.members_scroll,
@@ -491,7 +488,7 @@ impl Render for Shell {
                 this.child(render_connect(&ConnectView {
                     state: &self.connect,
                     populated: &populated,
-                    prefs: &self.preferences,
+                    prefs: self.controller.preferences(),
                     controls: &self.connect_ui,
                     focused: connect_focused.as_ref(),
                     card_focus: &self.connect_focus,

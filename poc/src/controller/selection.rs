@@ -246,10 +246,8 @@ impl Controller {
 
     /// Closes the selection (`closeSelectedConversation`). A channel closes only when
     /// it is not joined, and then dismisses the channel. A direct message or a
-    /// conversation that does not exist yet drops and reselects.
-    // Phase 5: the header's CLOSE closes the selection
-    #[allow(dead_code)]
-    fn close_selected(&mut self) -> bool {
+    /// conversation that does not exist yet drops and reselects. `/close` calls it.
+    pub(super) fn close_selected(&mut self) -> bool {
         let Some(key) = self.selected.clone() else {
             return false;
         };
@@ -279,6 +277,8 @@ impl Controller {
             } else {
                 display
             };
+            // A JOIN still in flight must not reopen the channel the user just closed.
+            self.cancelled_joins.insert(key.clone());
             self.reducer.note_closed(&key);
             return self.dismiss_channel(&key.network_id, &display);
         }
@@ -304,7 +304,7 @@ impl Controller {
     /// Removes a conversation's row, then selects its neighbour when the dropped row
     /// was selected, or clears the selection when nothing is left
     /// (`DropConversationAndReselect`).
-    fn drop_and_reselect(&mut self, key: ConversationKey) {
+    pub(super) fn drop_and_reselect(&mut self, key: ConversationKey) {
         let is_channel = self
             .reducer
             .find(&key)

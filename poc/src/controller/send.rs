@@ -9,7 +9,7 @@
 //! local echo, the same fallback Qt uses.
 
 use crate::irc::capability::IrcCapability;
-use crate::irc::event::{ActionEvent, Event, IrcConversationCause, MessageEvent, MsgId};
+use crate::irc::event::{ActionEvent, Event, IrcConversationCause, MessageEvent, MsgId, NoticeEvent};
 use crate::irc::jointarget::IrcJoinTarget;
 use crate::irc::viewnotify::ViewNotify;
 use crate::session::events::SessionState;
@@ -17,14 +17,18 @@ use crate::session::session::Session;
 
 use super::controller::Controller;
 
-/// What a send carries: a chat line, or a CTCP ACTION (`/me`).
+/// What a send carries: a chat line, a CTCP ACTION (`/me`), or a NOTICE (`/notice`). A NOTICE
+/// echoes locally even on an `echo-message` network, as Qt does (`EchoIfPresent`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Outgoing {
+pub(super) enum Outgoing {
     Say,
     Action,
+    Notice,
 }
 
 impl Controller {
+    // Phase 9: the product CLI `send` calls this; until then only the tests do.
+    #[allow(dead_code)]
     /// Sends `text` to `target` on `network_id` (`SendToTarget`). Returns false, and
     /// records the reason as the network's last error, when the send is refused:
     /// missing input, an unknown network, a network that is not registered, or a
@@ -38,6 +42,7 @@ impl Controller {
 
     /// Sends a `/me` action to `target` on `network_id` (a CTCP ACTION PRIVMSG). The
     /// refusals are the same as `send_to_target`'s.
+    #[allow(dead_code)]
     pub fn send_action(&mut self, network_id: &str, target: &str, text: &str) -> bool {
         self.pump();
         let sent = self.send_now(network_id, target, text, Outgoing::Action);
@@ -85,6 +90,7 @@ impl Controller {
         }
         let written = match kind {
             Outgoing::Say => session.send_privmsg(target, text),
+            Outgoing::Notice => session.send_notice(target, text),
             Outgoing::Action => session.send_action(target, text),
         };
         if !written {
@@ -109,13 +115,13 @@ impl Controller {
 
     /// Adds the local echo of a sent line, when the network did not negotiate
     /// `echo-message` and the conversation exists (`echoIfPresent`).
-    fn echo_if_present(&mut self, session: &Session, target: &str, body: &str, kind: Outgoing) {
+    pub(super) fn echo_if_present(&mut self, session: &Session, target: &str, body: &str, kind: Outgoing) {
         let network_id = session.network_id();
         let echo_negotiated = self
             .capabilities
             .get(&network_id)
             .is_some_and(|caps| caps.contains(IrcCapability::EchoMessage));
-        if echo_negotiated {
+        if echo_negotiated && kind != Outgoing::Notice {
             return;
         }
         let key = self.reducer.conversation_key(&network_id, target);
@@ -135,6 +141,16 @@ impl Controller {
                 only_visible_to_you: false,
             }),
             Outgoing::Action => Event::Action(ActionEvent {
+                conversation: key,
+                author: session.nick(),
+                body: body.to_owned(),
+                timestamp,
+                server_time: None,
+                target: target.to_owned(),
+                msgid: MsgId::default(),
+                only_visible_to_you: false,
+            }),
+            Outgoing::Notice => Event::Notice(NoticeEvent {
                 conversation: key,
                 author: session.nick(),
                 body: body.to_owned(),

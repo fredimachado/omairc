@@ -162,20 +162,13 @@ impl Shell {
     /// A Preferences switch on the Connect sheet, or `/pref`. The value writes
     /// through at once and is saved to the preferences file. No Apply.
     pub fn set_connect_preference(&mut self, name: PrefName, on: bool, cx: &mut Context<Self>) {
-        let avatars_before = self.preferences.avatars;
-        if !self.preferences.set(name, PrefValue::Toggle(on)) {
+        let before = *self.controller.preferences();
+        if !self.controller.set_preference(name, PrefValue::Toggle(on)) {
             return;
         }
-        if let Err(error) = self.preferences.save() {
-            eprintln!("omairc-poc: could not save preferences: {error}");
-        }
-        if self.preferences.avatars != avatars_before {
-            let avatars = self.preferences.avatars;
-            self.transcript.update(cx, |t, cx| {
-                t.set_avatars(avatars);
-                cx.notify();
-            });
-        }
+        self.save_preferences();
+        self.apply_preference_changes(before, cx);
+        self.drain_notifications(cx);
         cx.notify();
     }
 
@@ -243,7 +236,7 @@ impl Shell {
                 self.connect.set_connect_on_startup(on);
             }
             Stop::Preference(name) => {
-                let on = !self.preferences.enabled(name);
+                let on = !self.controller.preferences().enabled(name);
                 self.set_connect_preference(name, on, cx);
             }
             Stop::Remove => self.connect_remove(window, cx),
