@@ -943,6 +943,56 @@ Examples:
     }
 
     #[test]
+    fn a_send_whose_reply_is_lost_is_uncertain_and_exits_two() {
+        let endpoint = Endpoint::named(&format!("omairc-poc-cli-uncertain-{}", std::process::id()));
+        let mut listener = endpoint::Listener::bind(&endpoint).expect("the test endpoint is free");
+        let server = std::thread::spawn(move || {
+            let mut stream = listener.accept().expect("a client connects");
+            let mut byte = [0u8; 1];
+            loop {
+                match stream.read(&mut byte) {
+                    Ok(1) if byte[0] != b'\n' => continue,
+                    _ => break,
+                }
+            }
+            // The request is read and the stream dropped with no reply, which the client sees as lost.
+        });
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let code = execute(&args(&["send", "#chan", "hi"]), &endpoint, &mut out, &mut err);
+        server.join().expect("the server thread");
+        assert_eq!(code, 2);
+        assert_eq!(
+            String::from_utf8(out).expect("utf-8"),
+            format!(
+                "{}\n",
+                ipc::uncertain_response(
+                    "No response from Omairc after send; the message may already have been delivered"
+                )
+            )
+        );
+        assert_eq!(
+            String::from_utf8(err).expect("utf-8"),
+            "No response from Omairc after send; the message may already have been delivered\n"
+        );
+    }
+
+    #[test]
+    fn a_window_that_is_not_running_is_reported_as_such() {
+        let endpoint = Endpoint::named(&format!("omairc-poc-cli-absent-{}", std::process::id()));
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let code = execute(&args(&["connections"]), &endpoint, &mut out, &mut err);
+        assert_eq!(code, 1);
+        let message = "Omairc is not running (no local socket). Start the client first.";
+        assert_eq!(
+            String::from_utf8(out).expect("utf-8"),
+            format!("{}\n", ipc::error_response(message))
+        );
+        assert_eq!(String::from_utf8(err).expect("utf-8"), format!("{message}\n"));
+    }
+
+    #[test]
     fn control_invocations_are_the_verbs_and_help() {
         assert!(is_control_invocation(&args(&["list"])));
         assert!(is_control_invocation(&args(&["conversations"])));
