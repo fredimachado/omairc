@@ -8,3 +8,5 @@ pub mod installer;
 pub mod ipc;
 pub mod notifier;
 pub mod singleinstance;
+pub mod systemtheme;
+pub mod windowstate;

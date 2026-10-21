@@ -1,14 +1,19 @@
 //! Omarchy `colors.toml` loading and live reload.
 //!
+//! The palette comes from Omarchy's `colors.toml`. Without that file, or for any
+//! key the file leaves out, the system light or dark mode decides the base colours,
+//! as `Backend::loadOmarchyTheme` does in the Qt client. A `mode` line, or a
+//! background to measure, overrides the system mode.
+//!
 //! Shells subscribe to theme changes by calling [`ThemeWatcher::start`] once at
 //! startup, then polling or blocking on [`ThemeWatcher::receiver`]:
 //!
 //! ```ignore
 //! let mut watcher = ThemeWatcher::start(None)?;
-//! let theme = Theme::load(None)?;
+//! let mut theme = Theme::load(None, system_dark)?;
 //! loop {
 //!     while watcher.receiver().try_recv().is_ok() {
-//!         theme = Theme::load(None)?;
+//!         theme = Theme::load(None, system_dark)?;
 //!     }
 //!     // draw with `theme`
 //! }
@@ -30,8 +35,11 @@ pub struct Theme {
 }
 
 impl Theme {
-    pub fn load(path: Option<&Path>) -> std::io::Result<Self> {
-        let defaults = Self::defaults_dark();
+    /// Loads the palette at `path`, or the Omarchy default path. `system_dark` is the
+    /// system light or dark mode and sets the base colours when the file is absent or
+    /// leaves them out.
+    pub fn load(path: Option<&Path>, system_dark: bool) -> std::io::Result<Self> {
+        let defaults = Self::defaults(system_dark);
         let Some(resolved) = resolve_path(path) else {
             return Ok(defaults);
         };
@@ -45,6 +53,15 @@ impl Theme {
         Ok(parse_colors_toml(&content, defaults))
     }
 
+    /// The base palette for a system light or dark mode.
+    pub fn defaults(dark: bool) -> Self {
+        if dark {
+            Self::defaults_dark()
+        } else {
+            Self::defaults_light()
+        }
+    }
+
     pub fn defaults_dark() -> Self {
         Self {
             background: Color::from_hex("#101010").unwrap(),
@@ -55,7 +72,6 @@ impl Theme {
         }
     }
 
-    #[cfg(test)]
     pub fn defaults_light() -> Self {
         Self {
             background: Color::from_hex("#ffffff").unwrap(),
@@ -241,10 +257,37 @@ mod tests {
     }
 
     #[test]
-    fn missing_file_uses_defaults() {
-        let theme = Theme::load(Some(Path::new("/nonexistent/omairc-theme-test.toml"))).unwrap();
-        assert_eq!(theme.background.to_hex(), "#101010");
-        assert!(theme.dark_mode);
+    fn missing_file_uses_system_mode_defaults() {
+        let missing = Path::new("/nonexistent/omairc-theme-test.toml");
+        let dark = Theme::load(Some(missing), true).unwrap();
+        assert_eq!(dark.background.to_hex(), "#101010");
+        assert!(dark.dark_mode);
+
+        let light = Theme::load(Some(missing), false).unwrap();
+        assert_eq!(light.background.to_hex(), "#ffffff");
+        assert!(!light.dark_mode);
+    }
+
+    #[test]
+    fn colors_file_mode_overrides_system_mode() {
+        let dark = parse_colors_toml("mode = dark\n", Theme::defaults(false));
+        assert!(dark.dark_mode);
+        let light = parse_colors_toml("mode = light\n", Theme::defaults(true));
+        assert!(!light.dark_mode);
+        let by_background = parse_colors_toml("background = \"#101010\"\n", Theme::defaults(false));
+        assert!(by_background.dark_mode);
+    }
+
+    #[test]
+    fn partial_colors_file_takes_base_colours_from_system() {
+        let light = parse_colors_toml("accent = \"#2077b2\"\n", Theme::defaults(false));
+        assert!(!light.dark_mode);
+        assert_eq!(light.background.to_hex(), "#ffffff");
+        assert_eq!(light.accent.to_hex(), "#2077b2");
+
+        let dark = parse_colors_toml("accent = \"#2077b2\"\n", Theme::defaults(true));
+        assert!(dark.dark_mode);
+        assert_eq!(dark.background.to_hex(), "#101010");
     }
 
     #[test]
@@ -256,8 +299,9 @@ mod tests {
             "background = \"#222222\"\nforeground = \"#dddddd\"\nmode = dark\n",
         )
         .unwrap();
-        let theme = Theme::load(Some(&path)).unwrap();
+        let theme = Theme::load(Some(&path), false).unwrap();
         assert_eq!(theme.background.to_hex(), "#222222");
+        assert!(theme.dark_mode);
     }
 
     fn tempfile_dir() -> PathBuf {
