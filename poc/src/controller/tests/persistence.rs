@@ -260,6 +260,27 @@ fn open_queries_come_back_after_the_motd_and_closed_ones_stay_closed() {
 }
 
 #[test]
+fn a_line_sent_into_a_direct_message_through_the_cli_path_is_remembered() {
+    let dir = TempDir::new("directs-cli-send");
+    let backing = disk(&dir);
+    let loopbacks = Loopbacks::default();
+    {
+        let mut first = launch(&backing, Box::new(loopbacks.clone()));
+        save(&mut first, libera(LIBERA));
+        assert!(first.start(LIBERA));
+        feed(&mut first, &loopbacks, LIBERA, ":irc.libera.chat 001 fred :Welcome");
+        // The product CLI's `send` calls `send_to_target`. The query is never opened in the window.
+        assert!(first.send_to_target(LIBERA, "anna", "hello from the cli"));
+    }
+
+    let mut second = launch(&backing, Box::new(loopbacks.clone()));
+    assert!(second.start(LIBERA));
+    feed(&mut second, &loopbacks, LIBERA, ":irc.libera.chat 376 fred :End of MOTD");
+    let targets = conversation_targets(&second);
+    assert!(targets.iter().any(|target| target == "anna"), "anna is restored: {targets:?}");
+}
+
+#[test]
 fn turning_the_reopen_preference_off_stops_the_restore() {
     let dir = TempDir::new("directs-pref");
     let backing = disk(&dir);
