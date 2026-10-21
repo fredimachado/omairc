@@ -22,6 +22,7 @@ use crate::ui::sheets::link::LinkSource;
 use crate::ui::sheets::nick::NickSource;
 use crate::ui::sheets::shortcuts::{ShortcutsEvent, ShortcutsSheet};
 use crate::ui::shell::Shell;
+use crate::ui::update::{launch_installer, launch_on_close};
 use crate::util::open_web_link;
 
 /// The open sheet and the subscriptions that keep it wired to the shell. The
@@ -458,12 +459,32 @@ impl Shell {
         cx.notify();
     }
 
+    /// The footer's version and `Restart to update`. A ready installer starts, and
+    /// anything else opens About. Qt `activateVersionControl`.
+    pub fn activate_version_control(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.update.read(cx).restart_ready() {
+            let _ = launch_installer(&self.update, cx);
+            return;
+        }
+        self.open_about(window, cx);
+    }
+
+    /// The window's first close starts a ready installer. Qt `onClosing`.
+    pub fn launch_update_on_close(&self, cx: &mut App) {
+        let _ = launch_on_close(&self.update, cx);
+    }
+
     fn present_about(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let sheet = cx.new(AboutSheet::new);
+        let update = self.update.clone();
+        let sheet = cx.new(|cx| AboutSheet::new(update, cx));
         let subscriptions = vec![cx.subscribe_in(
             &sheet,
             window,
-            |shell: &mut Shell, _, _: &AboutEvent, window, cx| shell.close_modal(window, cx),
+            |shell: &mut Shell, _, _: &AboutEvent, window, cx| {
+                // Closing the sheet cancels a check still running, as Qt does.
+                shell.update.update(cx, |state, _| state.cancel_check());
+                shell.close_modal(window, cx);
+            },
         )];
         window.focus(&sheet.read(cx).initial_focus());
         self.modal = Some(ActiveModal::About {

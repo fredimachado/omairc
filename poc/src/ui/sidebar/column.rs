@@ -29,8 +29,10 @@ pub struct SidebarData<'a> {
     pub on_edit: Handler<String>,
     /// The footer's `inbox` link.
     pub on_inbox: Handler<()>,
-    /// The footer's version: opens the About sheet.
+    /// The footer's version: opens the About sheet, or starts a ready installer.
     pub on_about: Handler<()>,
+    /// The installer is ready, so the footer's version reads `Restart to update`.
+    pub update_ready: bool,
     /// A conversation row's click: selects it.
     pub on_select: Handler<ConversationRef>,
     /// A direct message row's close control.
@@ -89,6 +91,7 @@ pub fn render_sidebar<V: 'static>(
             data.inbox_count,
             data.on_inbox.clone(),
             data.on_about.clone(),
+            data.update_ready,
             data.avatars,
             style,
         ))

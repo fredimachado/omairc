@@ -16,6 +16,7 @@ pub fn identity_footer(
     inbox_count: u32,
     on_inbox: Handler<()>,
     on_about: Handler<()>,
+    update_ready: bool,
     avatars: bool,
     style: &Style,
 ) -> impl IntoElement {
@@ -91,7 +92,15 @@ pub fn identity_footer(
                 .items_end()
                 .gap(scaled_px(style, 4.))
                 .child(inbox_link(inbox_count, on_inbox, style))
-                .child(version_link(version(), on_about, style)),
+                .child(version_link(
+                    if update_ready {
+                        "Restart to update"
+                    } else {
+                        version()
+                    },
+                    on_about,
+                    style,
+                )),
         )
 }
 

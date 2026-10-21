@@ -13,8 +13,14 @@ notify = "8.0"
 nucleo-matcher = "=0.3.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha2 = "0.10"
 unicode-segmentation = "1.12"
 ureq = "=3.4.2"
+url = "2.5"
+
+# The installed-copy probe reads the Inno uninstall key from the registry.
+[target.'cfg(windows)'.dependencies]
+winreg = "0.56"
 
 # Test-only: the architecture gates in tests/ match source text with it.
 [dev-dependencies]
