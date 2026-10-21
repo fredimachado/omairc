@@ -35,3 +35,44 @@ pub fn open_web_link(cx: &gpui::App, url: &str) -> bool {
     cx.open_url(url);
     true
 }
+
+/// Scratch folders for tests, so no test touches the real config or state.
+#[cfg(test)]
+pub mod testdir {
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+    /// A unique directory under the system temp dir, removed on drop.
+    pub struct TempDir {
+        path: PathBuf,
+    }
+
+    impl TempDir {
+        pub fn new(label: &str) -> Self {
+            let n = NEXT.fetch_add(1, Ordering::Relaxed);
+            let stamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_nanos())
+                .unwrap_or_default();
+            let path = std::env::temp_dir().join(format!(
+                "omairc-poc-test-{label}-{}-{n}-{stamp}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&path).expect("create test dir");
+            Self { path }
+        }
+
+        pub fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+}

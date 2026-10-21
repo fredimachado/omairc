@@ -14,17 +14,19 @@ mod version;
 
 use std::borrow::Cow;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 const BENCH_LOG: &str = "results/gpui-bench-stderr.txt";
 
 use clap::Parser;
 use gpui::{
-    px, size, AnyWindowHandle, App, Application, Bounds, Entity, Focusable, WindowBounds,
-    WindowOptions, prelude::*,
+    px, size, AnyWindowHandle, App, Application, Entity, Focusable, WindowOptions, prelude::*,
 };
+use crate::desktop::systemtheme::SystemAppearance;
+use crate::desktop::windowstate::{self, GeometryKeeper};
 use crate::model::{Style, Theme, ThemeWatcher};
+use crate::storage::{geometry, paths};
 use ui::shell::{BenchState, Shell};
 
 use crate::ui::input::bind_input_keys;
@@ -142,6 +144,12 @@ fn main() {
     let scale = args.scale;
     let lines = args.lines;
     let bench = args.bench;
+    let demo_server = args.demo_server;
+
+    // Demo mode keeps no log file, as the Qt client does.
+    if !demo_server {
+        let _ = desktop::filelog::install(paths::log_path());
+    }
 
     Application::new().with_assets(assets::OmaircAssets).run(move |cx: &mut App| {
         cx.text_system()
@@ -155,7 +163,9 @@ fn main() {
             )])
             .expect("bold font");
 
-        let theme = Theme::load(theme_path.as_deref()).expect("theme load");
+        let system = SystemAppearance::from_window(cx.window_appearance());
+        cx.set_global(system);
+        let theme = Theme::load(theme_path.as_deref(), system.dark).expect("theme load");
         cx.set_global(OmaircStyleGlobal {
             style: Style::new(theme, scale),
         });
@@ -163,11 +173,18 @@ fn main() {
         bind_input_keys(cx);
         bind_shell_keys(cx);
 
-        let bounds = Bounds::centered(None, size(px(1180.), px(760.)), cx);
+        // Demo and bench runs restore the window but never save over the user's
+        // geometry, as the Qt client's demo mode is ephemeral.
+        let settings_path = paths::settings_path();
+        let stored = settings_path.as_deref().and_then(geometry::load_from);
+        let keeper = settings_path
+            .filter(|_| !demo_server && !bench)
+            .map(|path| GeometryKeeper::new(path, stored));
+        let window_bounds = windowstate::initial_bounds(stored, cx);
         let window = cx
             .open_window(
                 WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    window_bounds: Some(window_bounds),
                     window_min_size: Some(size(px(760.), px(540.))),
                     titlebar: Some(gpui::TitlebarOptions {
                         title: Some("Omairc GPUI PoC".into()),
@@ -178,12 +195,32 @@ fn main() {
                 |window, cx| {
                     let shell = cx.new(|cx| Shell::new(cx, lines, bench));
                     let transcript = shell.read(cx).transcript.clone();
+                    if let Some(keeper) = &keeper {
+                        windowstate::attach(keeper, &shell, window, cx);
+                    }
                     if bench {
                         run_bench(shell.clone(), window.window_handle(), cx);
                     }
                     start_typing_pulse(shell.clone(), cx);
                     start_caret_blink(shell.clone(), cx);
                     start_drag_autoscroll(transcript.clone(), cx);
+
+                    // The system light or dark mode can change while the app runs.
+                    let appearance_path = theme_path.clone();
+                    let shell_appearance = shell.clone();
+                    let transcript_appearance = transcript.clone();
+                    window
+                        .observe_window_appearance(move |window, cx| {
+                            cx.set_global(SystemAppearance::from_window(window.appearance()));
+                            refresh_theme(
+                                cx,
+                                appearance_path.as_deref(),
+                                scale,
+                                &shell_appearance,
+                                &transcript_appearance,
+                            );
+                        })
+                        .detach();
 
                     let watch_path = theme_path.clone();
                     let shell_watch = shell.clone();
@@ -195,17 +232,13 @@ fn main() {
                             while watcher.receiver().try_recv().is_ok() {
                                 let path = watch_path.clone();
                                 cx.update(|cx| {
-                                    let theme = Theme::load(path.as_deref())
-                                        .unwrap_or_else(|_| Theme::defaults_dark());
-                                    cx.update_global::<OmaircStyleGlobal, _>(|global, _| {
-                                        global.style = Style::new(theme, scale);
-                                    });
-                                    transcript_watch.update(cx, |t, cx| {
-                                        t.invalidate_all();
-                                        cx.notify();
-                                    });
-                                    shell_watch.update(cx, |_, cx| cx.notify());
-                                    cx.refresh_windows();
+                                    refresh_theme(
+                                        cx,
+                                        path.as_deref(),
+                                        scale,
+                                        &shell_watch,
+                                        &transcript_watch,
+                                    );
                                 })
                                 .ok();
                             }
@@ -228,6 +261,28 @@ fn main() {
             })
             .ok();
     });
+}
+
+/// Re-reads the palette for the current system appearance and repaints the shell.
+/// Runs on a `colors.toml` change and on a system light or dark switch.
+fn refresh_theme(
+    cx: &mut App,
+    theme_path: Option<&Path>,
+    scale: f32,
+    shell: &Entity<Shell>,
+    transcript: &Entity<TranscriptView>,
+) {
+    let dark = cx.global::<SystemAppearance>().dark;
+    let theme = Theme::load(theme_path, dark).unwrap_or_else(|_| Theme::defaults(dark));
+    cx.update_global::<OmaircStyleGlobal, _>(|global, _| {
+        global.style = Style::new(theme, scale);
+    });
+    transcript.update(cx, |t, cx| {
+        t.invalidate_all();
+        cx.notify();
+    });
+    shell.update(cx, |_, cx| cx.notify());
+    cx.refresh_windows();
 }
 
 fn start_typing_pulse(shell: Entity<Shell>, cx: &mut App) {
