@@ -3,6 +3,11 @@
 //! gpui; `tests/irc_portability.rs` enforces that. Each submodule names its own
 //! Go and C++ source in its header.
 
+// Phase 7 consumers (the avatar fetch and the presence photo) arrive with the UI,
+// so the avatar policy and store carry the dead-code allow until then.
+#[allow(dead_code)]
+pub mod avatarstore;
+#[allow(dead_code)]
 pub mod avatarurl;
 pub mod capability;
 pub mod capabilitynegotiation;
