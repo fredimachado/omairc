@@ -1,9 +1,16 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod assets;
+mod controller;
+mod demo;
+mod desktop;
+mod irc;
 mod model;
+mod session;
+mod storage;
 mod ui;
 mod util;
+mod version;
 
 use std::borrow::Cow;
 use std::io::Write;
@@ -26,7 +33,11 @@ use crate::ui::transcript::TranscriptView;
 use crate::util::OmaircStyleGlobal;
 
 #[derive(Parser, Debug)]
-#[command(name = "omairc-poc-gpui", about = "Omairc GPUI visual shell PoC")]
+#[command(
+    name = "omairc-poc-gpui",
+    about = "Omairc GPUI visual shell PoC",
+    version = version::version()
+)]
 struct Args {
     #[arg(long)]
     theme: Option<PathBuf>,
@@ -36,6 +47,10 @@ struct Args {
     lines: Option<usize>,
     #[arg(long)]
     bench: bool,
+    /// Seed the in-process demo server (not wired up yet).
+    #[allow(dead_code)]
+    #[arg(long)]
+    demo_server: bool,
 }
 
 /// Windows GUI-subsystem builds have no console. Attach to the parent's console

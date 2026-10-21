@@ -13,9 +13,9 @@ use gpui::{
 use crate::model::update_check::{check_latest, UpdateStatus, LATEST_RELEASE_API_URL, REPO_URL};
 use crate::model::Style;
 use crate::ui::sheets::frame::veil_frame;
-use crate::ui::sidebar::identity_footer::app_version;
 use crate::ui::widgets::text_button::text_button;
 use crate::util::{open_web_link, scaled_px, style, to_gpui, FONT_FAMILY};
+use crate::version::version;
 
 const DESCRIPTION: &str = "Omairc is an Internet Relay Chat client for Omarchy. People use it to communicate, share, play, and work with each other on IRC networks around the world.";
 
@@ -108,7 +108,7 @@ impl AboutSheet {
         }
         self.update_status = UpdateStatus::Checking;
         cx.notify();
-        let current = app_version().to_string();
+        let current = version().to_string();
         cx.spawn(async move |this, cx| {
             let status = cx
                 .background_executor()
@@ -158,7 +158,7 @@ impl Render for AboutSheet {
                     .text_size(scaled_px(&app_style, 13.))
                     .text_color(muted)
                     .font_family(FONT_FAMILY)
-                    .child(app_version()),
+                    .child(version()),
             )
             .child(text_button(
                 &app_style,
