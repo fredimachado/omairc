@@ -3,6 +3,8 @@
 //! (the notifier seam only). C++: `src/backend.cpp`, `src/omaircfilelog.cpp`,
 //! `src/singleinstance.cpp`, `src/omaircipc.cpp`, `src/omaircupdatecheck.cpp`.
 
+pub mod cli;
+pub mod endpoint;
 pub mod filelog;
 pub mod httpfetch;
 pub mod installer;
