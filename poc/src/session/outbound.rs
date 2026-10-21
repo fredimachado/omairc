@@ -26,8 +26,6 @@ impl Session {
     }
 
     /// Writes a NOTICE (`IrcSession::sendNotice`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn send_notice(&self, target: &str, body: &str) -> bool {
         self.locked(|core| {
             if target.is_empty() || body.is_empty() {
@@ -75,8 +73,6 @@ impl Session {
     }
 
     /// Writes a MODE query or change (`IrcSession::sendChannelMode`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn send_channel_mode(&self, request: &IrcChannelModeRequest) -> bool {
         self.locked(|core| {
             if request.query {
@@ -99,15 +95,11 @@ impl Session {
     }
 
     /// Writes a PART (`IrcSession::part`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn part(&self, channel: &str) -> bool {
         self.locked(|core| !channel.is_empty() && core.send_command(&format!("PART {channel}"), ""))
     }
 
     /// Writes a KICK with an optional reason (`IrcSession::kick`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn kick(&self, channel: &str, nick: &str, reason: &str) -> bool {
         self.locked(|core| {
             if channel.is_empty() || nick.is_empty() {
@@ -123,8 +115,6 @@ impl Session {
     }
 
     /// Writes an INVITE (`IrcSession::invite`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn invite(&self, nick: &str, channel: &str) -> bool {
         self.locked(|core| {
             !nick.is_empty()
@@ -134,8 +124,6 @@ impl Session {
     }
 
     /// Writes a TOPIC (`IrcSession::setTopic`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn set_topic(&self, channel: &str, topic: &str) -> bool {
         self.locked(|core| {
             !channel.is_empty()
@@ -171,22 +159,16 @@ impl Session {
     /// Sets one of this user's metadata values. Returns the value placed on the
     /// wire, `Some("")` for a clear, or `None` when nothing was sent
     /// (`IrcSession::setOwnMetadata`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn set_own_metadata(&self, key: &str, value: &str) -> Option<String> {
         self.locked(|core| core.set_own_metadata(key, value))
     }
 
     /// Clears one of this user's metadata values (`IrcSession::clearOwnMetadata`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn clear_own_metadata(&self, key: &str) -> bool {
         self.locked(|core| core.set_own_metadata(key, "").is_some())
     }
 
     /// Writes NICK (`IrcSession::changeNick`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn change_nick(&self, nick: &str) -> bool {
         self.locked(|core| !nick.is_empty() && core.send_command(&format!("NICK {nick}"), ""))
     }
@@ -240,15 +222,13 @@ impl Session {
     }
 
     /// Writes one already-built command line (`IrcSession::sendRaw`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn send_raw(&self, line: &str) -> bool {
         self.locked(|core| core.send_command(line, ""))
     }
 
     /// Asks for one page older than `msgid`, or older than `timestamp` when no
     /// msgid is given (`requestOlderHistory`).
-    // Phase 4: the slash catalog sends these frames
+    // Chat history and read-marker sync wait for the playback phase; the allow comes off with it.
     #[allow(dead_code)]
     pub fn request_older_history(
         &self,
@@ -260,14 +240,14 @@ impl Session {
     }
 
     /// Asks for lines strictly after `after` (`requestHistoryAfter`).
-    // Phase 4: the slash catalog sends these frames
+    // Chat history and read-marker sync wait for the playback phase; the allow comes off with it.
     #[allow(dead_code)]
     pub fn request_history_after(&self, target: &str, after: DateTime<Utc>) -> bool {
         self.locked(|core| core.request_history_after(target, after))
     }
 
     /// Asks for the newest page of `target` (`requestHistoryLatest`).
-    // Phase 4: the slash catalog sends these frames
+    // Chat history and read-marker sync wait for the playback phase; the allow comes off with it.
     #[allow(dead_code)]
     pub fn request_history_latest(&self, target: &str) -> bool {
         self.locked(|core| core.request_history_latest(target))
@@ -275,7 +255,7 @@ impl Session {
 
     /// Asks which targets have messages between `from` and `until`
     /// (`requestHistoryTargets`).
-    // Phase 4: the slash catalog sends these frames
+    // Chat history and read-marker sync wait for the playback phase; the allow comes off with it.
     #[allow(dead_code)]
     pub fn request_history_targets(&self, from: DateTime<Utc>, until: DateTime<Utc>) -> bool {
         self.locked(|core| core.request_history_targets(from, until))
@@ -288,7 +268,7 @@ impl Session {
 
     /// Records a read marker to publish once the target is caught up
     /// (`queueReadMarkerSet`).
-    // Phase 4: the slash catalog sends these frames
+    // Chat history and read-marker sync wait for the playback phase; the allow comes off with it.
     #[allow(dead_code)]
     pub fn queue_read_marker_set(&self, target: &str, when: DateTime<Utc>) {
         self.locked(|core| core.queue_read_marker_set(target, when));

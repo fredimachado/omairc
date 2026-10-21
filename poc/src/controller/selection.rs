@@ -191,7 +191,7 @@ impl Controller {
     }
 
     /// Mutes or unmutes a conversation (`SetMuted`).
-    // Phase 4: /mute and /unmute set the conversation mute
+    // The header's mute toggle (Phase 5) sets it; the allow comes off with it.
     #[allow(dead_code)]
     pub fn set_muted(&mut self, network_id: &str, target: &str, muted: bool) {
         if network_id.is_empty() || target.is_empty() {

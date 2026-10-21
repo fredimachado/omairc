@@ -88,6 +88,8 @@ impl Default for AutoawayState {
 
 impl AutoawayState {
     /// Whether auto-away has tripped and not been cleared.
+    // A test seam: the auto-away tests read the timer state; the allow comes off with a consumer.
+    #[allow(dead_code)]
     pub(super) fn tripped(&self) -> bool {
         self.tripped
     }
@@ -98,11 +100,15 @@ impl AutoawayState {
     }
 
     /// Whether the idle timer is scheduled.
+    // A test seam: the auto-away tests read the timer state; the allow comes off with a consumer.
+    #[allow(dead_code)]
     pub(super) fn idle_scheduled(&self) -> bool {
         self.idle_timer.is_some()
     }
 
     /// Whether the grace timer is scheduled.
+    // A test seam: the auto-away tests read the timer state; the allow comes off with a consumer.
+    #[allow(dead_code)]
     pub(super) fn grace_scheduled(&self) -> bool {
         self.grace_timer.is_some()
     }
@@ -437,6 +443,8 @@ impl Controller {
     /// `/away reason` on `network_id`: an empty reason clears away, anything else marks
     /// the user away by hand. Returns false when the session refuses the line
     /// (`VerbAway`).
+    // The product CLI (Phase 9) calls these; the dispatcher writes the same frames for /away and /back.
+    #[allow(dead_code)]
     pub fn away(&mut self, network_id: &str, reason: &str) -> bool {
         self.pump();
         let Some(session) = self.session(network_id) else {
@@ -456,6 +464,8 @@ impl Controller {
 
     /// `/back` on `network_id`: clears away. Returns false when the session refuses the
     /// line (`VerbBack`).
+    // The product CLI (Phase 9) calls these; the dispatcher writes the same frames for /away and /back.
+    #[allow(dead_code)]
     pub fn back(&mut self, network_id: &str) -> bool {
         self.pump();
         let Some(session) = self.session(network_id) else {

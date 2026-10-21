@@ -139,8 +139,6 @@ struct ArmedTimer {
 }
 
 /// Everything the state machine mutates, behind the `RefCell`.
-// Phase 4: the slash catalog and the socket transport drive these
-#[allow(dead_code)]
 pub(crate) struct Core {
     pub(crate) config: SessionConfig,
     pub(crate) clock: Rc<dyn Clock>,
@@ -176,8 +174,6 @@ pub(crate) struct Core {
     pub(crate) read_markers: ReadMarkerLedger,
 
     pub(crate) pending_labels: BTreeMap<String, DateTime<Utc>>,
-    // Phase 4: the slash catalog and the socket transport drive these
-    #[allow(dead_code)]
     pub(crate) next_request_label: u64,
     pub(crate) ctcp_reply_clock: BTreeMap<String, DateTime<Utc>>,
 
@@ -334,14 +330,14 @@ impl Session {
     }
 
     /// Installs the self-JOIN resume lookup. `None` keeps LATEST.
-    // Phase 4: the slash catalog and the socket transport drive these
+    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
     #[allow(dead_code)]
     pub fn set_history_resume(&self, resume: Option<HistoryResume>) {
         self.shared.core.borrow_mut().history_resume = resume;
     }
 
     /// Lowers the AFTER page cap, for tests. Production keeps the default.
-    // Phase 4: the slash catalog and the socket transport drive these
+    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
     #[allow(dead_code)]
     pub fn set_history_after_page_cap(&self, cap: u32) {
         if cap == 0 {
@@ -361,21 +357,21 @@ impl Session {
     }
 
     /// The configured host.
-    // Phase 4: the slash catalog and the socket transport drive these
+    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
     #[allow(dead_code)]
     pub fn host(&self) -> String {
         self.shared.core.borrow().config.host.clone()
     }
 
     /// The active port, as configured until STS (Phase 11) changes it.
-    // Phase 4: the slash catalog and the socket transport drive these
+    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
     #[allow(dead_code)]
     pub fn port(&self) -> u16 {
         self.shared.core.borrow().port
     }
 
     /// Whether the active connection uses TLS.
-    // Phase 4: the slash catalog and the socket transport drive these
+    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
     #[allow(dead_code)]
     pub fn tls_enabled(&self) -> bool {
         self.shared.core.borrow().tls_enabled
@@ -388,7 +384,7 @@ impl Session {
     }
 
     /// The CHANTYPES the server advertised, or empty before ISUPPORT.
-    // Phase 4: the slash catalog and the socket transport drive these
+    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
     #[allow(dead_code)]
     pub fn channel_types(&self) -> String {
         self.shared.core.borrow().channel_types.clone()
@@ -400,28 +396,26 @@ impl Session {
     }
 
     /// How many reconnect attempts have been scheduled since the last success.
-    // Phase 4: the slash catalog and the socket transport drive these
+    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
     #[allow(dead_code)]
     pub fn reconnect_attempt(&self) -> u32 {
         self.shared.core.borrow().reconnect_attempt
     }
 
     /// The capabilities the server acknowledged.
-    // Phase 4: the slash catalog and the socket transport drive these
+    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
     #[allow(dead_code)]
     pub fn capabilities(&self) -> IrcCapabilitySet {
         self.shared.core.borrow().caps.enabled()
     }
 
     /// The draft/metadata-2 limits the server last advertised.
-    // Phase 4: the slash catalog and the socket transport drive these
-    #[allow(dead_code)]
     pub fn metadata_capability(&self) -> MetadataCapability {
         self.shared.core.borrow().metadata.clone()
     }
 
     /// Whether a CHATHISTORY request is outstanding on any target.
-    // Phase 4: the slash catalog and the socket transport drive these
+    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
     #[allow(dead_code)]
     pub fn history_pending(&self) -> bool {
         !self.shared.core.borrow().history.pending.is_empty()
@@ -429,14 +423,14 @@ impl Session {
 
     /// Whether a CHATHISTORY request is outstanding on `target`, for the current
     /// membership generation.
-    // Phase 4: the slash catalog and the socket transport drive these
+    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
     #[allow(dead_code)]
     pub fn history_inflight_for(&self, target: &str) -> bool {
         self.shared.core.borrow().history_inflight(target)
     }
 
     /// The CHATHISTORY page size: 100, capped by ISUPPORT `CHATHISTORY=`.
-    // Phase 4: the slash catalog and the socket transport drive these
+    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
     #[allow(dead_code)]
     pub fn history_limit(&self) -> usize {
         self.shared.core.borrow().history_limit
@@ -453,21 +447,21 @@ impl Session {
     }
 
     /// How many batches are open.
-    // Phase 4: the slash catalog and the socket transport drive these
+    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
     #[allow(dead_code)]
     pub fn open_batch_count(&self) -> usize {
         self.shared.core.borrow().batches.open.len()
     }
 
     /// How many labeled requests are outstanding.
-    // Phase 4: the slash catalog and the socket transport drive these
+    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
     #[allow(dead_code)]
     pub fn pending_request_label_count(&self) -> usize {
         self.shared.core.borrow().pending_labels.len()
     }
 
     /// Whether `label` names an outstanding labeled request.
-    // Phase 4: the slash catalog and the socket transport drive these
+    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
     #[allow(dead_code)]
     pub fn has_pending_request_label(&self, label: &str) -> bool {
         self.shared.core.borrow().pending_labels.contains_key(label)
@@ -475,7 +469,7 @@ impl Session {
 
     /// Credentials for a file upload: the account, the secret SASL sent (or the
     /// server password until SASL succeeds), the host and the TLS state.
-    // Phase 4: the slash catalog and the socket transport drive these
+    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
     #[allow(dead_code)]
     pub fn upload_credential(&self) -> (String, String, String, bool) {
         let core = self.shared.core.borrow();
@@ -525,15 +519,13 @@ impl Session {
 
     /// Reports that the host is reachable again. A scheduled reconnect starts
     /// now instead of waiting out the backoff; otherwise this does nothing.
-    // Phase 4: the slash catalog and the socket transport drive these
+    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
     #[allow(dead_code)]
     pub fn notify_reachable(&self) {
         self.locked(Core::begin_reconnect_attempt);
     }
 }
 
-// Phase 4: the slash catalog and the socket transport drive these
-#[allow(dead_code)]
 impl Core {
     fn new(
         config: SessionConfig,

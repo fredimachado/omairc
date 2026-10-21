@@ -8,8 +8,6 @@ use crate::irc::world::MessageKind;
 use crate::session::events::SessionState;
 
 /// The transcript kind's name (`messageKindName`), as the saved scroll anchor records it.
-// Phase 4: the scroll place store reads it; the allow comes off with the shell rewire.
-#[allow(dead_code)]
 pub fn message_kind_name(kind: MessageKind) -> &'static str {
     match kind {
         MessageKind::Action => "action",

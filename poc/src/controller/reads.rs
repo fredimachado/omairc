@@ -35,7 +35,7 @@ impl Controller {
     }
 
     /// The selected conversation's stable id, as the sidebar keys its row.
-    // Phase 4: the slash catalog reads the selection's stable id
+    // The header and the CLI read it (Phases 5, 6 and 9); the allow comes off with the first consumer.
     #[allow(dead_code)]
     pub fn selected_conversation_id(&self) -> Option<String> {
         self.selected.as_ref().map(conversation_id)
@@ -179,7 +179,7 @@ impl Controller {
     }
 
     /// The join, part, quit and nick display setting (`/pref joins`).
-    // Phase 4: /pref joins reads the membership setting back
+    // The header and the CLI read it (Phases 5, 6 and 9); the allow comes off with the first consumer.
     #[allow(dead_code)]
     pub fn membership_noise(&self) -> crate::irc::membershipnoise::MembershipNoise {
         self.reducer.membership_noise()
@@ -318,7 +318,7 @@ impl Controller {
     }
 
     /// The last error for the focused network (`LastError`).
-    // Phase 4: the slash catalog reads the focused network's last error
+    // The header and the CLI read it (Phases 5, 6 and 9); the allow comes off with the first consumer.
     #[allow(dead_code)]
     pub fn last_error(&self) -> Option<&str> {
         self.last_error_for(self.focused_network_id())

@@ -19,8 +19,6 @@ pub struct StatusConsole {
     lines: BTreeMap<String, VecDeque<StatusEntry>>,
 }
 
-// Phase 4: the slash catalog's /status reads the console text
-#[allow(dead_code)]
 impl StatusConsole {
     /// An empty console. A zero capacity falls back to `DEFAULT_CAPACITY`.
     pub fn new(capacity: usize) -> Self {
@@ -57,7 +55,7 @@ impl StatusConsole {
     }
 
     /// The display text of each line, oldest first (`ConsoleText`).
-    // Phase 4: the slash catalog's /status reads the console text
+    // The product CLI's read verb (Phase 9) prints the Status text; the allow comes off with it.
     #[allow(dead_code)]
     pub fn text(&self, network_id: &str) -> Vec<String> {
         self.lines(network_id)

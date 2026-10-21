@@ -143,6 +143,8 @@ impl CaseListStore {
     }
 
     /// Drops the whole list for `network_id` (`Forget`).
+    // Forgetting a network's stored lists is the network-removal path (Phase 8); the allow comes off with it.
+    #[allow(dead_code)]
     pub fn forget(&mut self, network_id: &str) {
         if network_id.is_empty() {
             return;
@@ -255,6 +257,8 @@ impl Controller {
     }
 
     /// Whether `target` is on the mute list of `network_id`.
+    // The sidebar's mute mark and the product CLI read these (Phases 5 and 9); the allow comes off with the first reader.
+    #[allow(dead_code)]
     pub fn is_muted_target(&self, network_id: &str, target: &str) -> bool {
         let mapping = self.reducer.server_features(network_id).case_mapping();
         self.mutes.contains(network_id, target, mapping)
@@ -285,6 +289,8 @@ impl Controller {
     }
 
     /// The `/monitor` nicks of `network_id`, deduplicated under its case mapping.
+    // The sidebar's mute mark and the product CLI read these (Phases 5 and 9); the allow comes off with the first reader.
+    #[allow(dead_code)]
     pub fn watched_nicks(&self, network_id: &str) -> Vec<String> {
         let mapping = self.reducer.server_features(network_id).case_mapping();
         self.monitors.listed(network_id, mapping)
