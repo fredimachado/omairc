@@ -13,9 +13,9 @@
 use chrono::{DateTime, Local, Utc};
 
 use crate::irc::ctcp::{ctcp_payload, ctcp_version_reply_text, parse_ctcp_request, CtcpRequest};
+use crate::irc::presence::{canonical_key, clamped_to, MAXIMUM_VALUE_BYTES};
 use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::irc::wiretext::wire_text;
-use crate::session::metadata::{canonical_key, clamped_to, MAXIMUM_VALUE_BYTES};
 
 use super::seed::{channel_named, SeedListed, SeedNetwork, ISUPPORT, MONITOR_LIMIT};
 use super::wire::{
