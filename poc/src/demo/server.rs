@@ -28,8 +28,9 @@ use crate::session::session::Session;
 use crate::session::transport::{ConnectionState, Transport};
 
 use super::answers::{
-    answer_away, answer_ctcp, answer_list, answer_metadata, answer_monitor, answer_ping,
-    client_echo, demo_online_nicks, self_join,
+    answer_away, answer_ctcp, answer_list, answer_metadata, answer_monitor, answer_nick,
+    answer_part, answer_ping, answer_topic, client_echo, demo_online_nicks, self_join,
+    TopicOverrides,
 };
 use super::seed::{
     world_for, SeedNetwork, OFTC_NETWORK_ID, OFTC_WORLD, OMARCHY_NETWORK_ID, OMARCHY_WORLD,
@@ -97,12 +98,20 @@ pub fn session_config(network: &SeedNetwork) -> SessionConfig {
     config
 }
 
-/// One attached network: its seed, its loopback, and its MONITOR list.
+/// What the peer holds for one attached session: the nick it answers as (NICK changes
+/// it), the topics the client set (a TOPIC changes one), and the MONITOR list.
+struct PeerState {
+    nick: String,
+    topics: TopicOverrides,
+    monitor: Vec<String>,
+}
+
+/// One attached network: its seed, its loopback, and what it holds for the session.
 #[derive(Clone)]
 struct Peer {
     network: &'static SeedNetwork,
     transport: Rc<LoopbackTransport>,
-    monitor: Rc<RefCell<Vec<String>>>,
+    state: Rc<RefCell<PeerState>>,
 }
 
 /// The demo peer for the two seeded networks.
@@ -142,12 +151,23 @@ impl DemoServer {
             return Err(DemoError::NotConnected(network_id));
         }
 
+        // A reconnect registers under the seeded nick again, and the MONITOR list starts
+        // over. The topics carry across, as a server keeps its topics over a reconnect.
+        let mut peers = self.peers.borrow_mut();
+        let topics = peers
+            .iter()
+            .find(|existing| existing.network.network_id == network.network_id)
+            .map(|existing| existing.state.borrow().topics.clone())
+            .unwrap_or_default();
         let peer = Peer {
             network,
             transport: Rc::clone(transport),
-            monitor: Rc::new(RefCell::new(Vec::new())),
+            state: Rc::new(RefCell::new(PeerState {
+                nick: network.nick.to_owned(),
+                topics,
+                monitor: Vec::new(),
+            })),
         };
-        let mut peers = self.peers.borrow_mut();
         peers.retain(|existing| existing.network.network_id != network.network_id);
         peers.push(peer);
         Ok(())
@@ -322,14 +342,13 @@ impl DemoServer {
     fn install_auto_echo(&self, peer: &Peer) {
         let weak = Rc::downgrade(&peer.transport);
         let network = peer.network;
-        let monitor = Rc::clone(&peer.monitor);
+        let state = Rc::clone(&peer.state);
         let clock = Rc::clone(&self.clock);
-        let online = demo_online_nicks(network);
         let hook: FrameWrittenHook = Rc::new(move |frame: &[u8]| {
             let Some(transport) = weak.upgrade() else {
                 return;
             };
-            let reply = auto_echo_reply(network, &monitor, &online, clock.now(), frame);
+            let reply = auto_echo_reply(network, &state, clock.now(), frame);
             if let Some(reply) = reply {
                 if !reply.is_empty() {
                     transport.inject_bytes(&reply);
@@ -341,20 +360,28 @@ impl DemoServer {
 }
 
 /// The answer ladder, in the Go order: PING, LIST, CTCP, AWAY, METADATA, MONITOR,
-/// then the self JOIN and the PRIVMSG or NOTICE echo (`hookAutoEcho`). The first
-/// answer that claims the frame wins.
+/// then PART, NICK and TOPIC, the self JOIN, and the PRIVMSG or NOTICE echo
+/// (`hookAutoEcho`). The first answer that claims the frame wins. The nick is read
+/// once per frame, so a NICK answers as the nick it replaces and the next frame
+/// uses the new one.
 fn auto_echo_reply(
     network: &SeedNetwork,
-    monitor: &RefCell<Vec<String>>,
-    online: &[String],
+    state: &RefCell<PeerState>,
     now: DateTime<Utc>,
     frame: &[u8],
 ) -> Option<Vec<u8>> {
-    let me = network.nick;
+    let mut state = state.borrow_mut();
+    let PeerState {
+        nick,
+        topics,
+        monitor,
+    } = &mut *state;
+    let me = nick.clone();
+    let me = me.as_str();
     if let Some(reply) = answer_ping(frame) {
         return Some(reply);
     }
-    if let Some(reply) = answer_list(network, frame) {
+    if let Some(reply) = answer_list(network, me, frame) {
         return Some(reply);
     }
     if let Some(reply) = answer_ctcp(me, frame, now) {
@@ -366,15 +393,21 @@ fn auto_echo_reply(
     if let Some(reply) = answer_metadata(me, frame) {
         return Some(reply);
     }
-    let monitored = {
-        let mut watched = monitor.borrow_mut();
-        answer_monitor(me, frame, online, &mut watched)
-    };
-    if let Some(reply) = monitored {
+    let online = demo_online_nicks(network, me);
+    if let Some(reply) = answer_monitor(me, frame, &online, monitor) {
+        return Some(reply);
+    }
+    if let Some(reply) = answer_part(me, frame) {
+        return Some(reply);
+    }
+    if let Some(reply) = answer_nick(nick, frame) {
+        return Some(reply);
+    }
+    if let Some(reply) = answer_topic(me, topics, frame) {
         return Some(reply);
     }
     if frame.starts_with(b"JOIN ") {
-        return Some(self_join(network, me, frame));
+        return Some(self_join(network, me, topics, frame));
     }
     if frame.starts_with(b"PRIVMSG ") || frame.starts_with(b"NOTICE ") {
         return Some(client_echo(me, frame));

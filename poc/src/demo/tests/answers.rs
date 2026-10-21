@@ -6,8 +6,9 @@
 use chrono::{Local, TimeZone, Utc};
 
 use crate::demo::answers::{
-    answer_away, answer_ctcp, answer_list, answer_metadata, answer_monitor, answer_ping,
-    client_echo, demo_online_nicks, list_mask_matches, self_join,
+    answer_away, answer_ctcp, answer_list, answer_metadata, answer_monitor, answer_nick,
+    answer_part, answer_ping, answer_topic, client_echo, demo_online_nicks, list_mask_matches,
+    self_join, TopicOverrides,
 };
 use crate::demo::seed::{OFTC_WORLD, OMARCHY_WORLD};
 
@@ -34,7 +35,7 @@ fn a_bare_ping_is_not_answered() {
 
 #[test]
 fn monitor_add_splits_online_and_offline() {
-    let online = demo_online_nicks(&OMARCHY_WORLD);
+    let online = demo_online_nicks(&OMARCHY_WORLD, OMARCHY_WORLD.nick);
     let mut watched = Vec::new();
     let reply = answer_monitor("fred", b"MONITOR + anna,ghost\r\n", &online, &mut watched);
     assert_eq!(
@@ -46,7 +47,7 @@ fn monitor_add_splits_online_and_offline() {
 
 #[test]
 fn monitor_add_past_the_ceiling_overflows_with_734() {
-    let online = demo_online_nicks(&OMARCHY_WORLD);
+    let online = demo_online_nicks(&OMARCHY_WORLD, OMARCHY_WORLD.nick);
     let mut watched: Vec<String> = (0..100).map(|index| format!("n{index}")).collect();
     let reply = answer_monitor("fred", b"MONITOR + zed\r\n", &online, &mut watched);
     assert_eq!(
@@ -58,7 +59,7 @@ fn monitor_add_past_the_ceiling_overflows_with_734() {
 
 #[test]
 fn monitor_list_clear_and_remove() {
-    let online = demo_online_nicks(&OMARCHY_WORLD);
+    let online = demo_online_nicks(&OMARCHY_WORLD, OMARCHY_WORLD.nick);
     let mut watched = vec!["anna".to_owned(), "ghost".to_owned()];
 
     let listed = answer_monitor("fred", b"MONITOR L\r\n", &online, &mut watched);
@@ -83,7 +84,7 @@ fn monitor_list_clear_and_remove() {
 
 #[test]
 fn monitor_status_reports_the_watched_nicks() {
-    let online = demo_online_nicks(&OMARCHY_WORLD);
+    let online = demo_online_nicks(&OMARCHY_WORLD, OMARCHY_WORLD.nick);
     let mut watched = vec!["anna".to_owned(), "ghost".to_owned()];
     assert_eq!(
         answer_monitor("fred", b"MONITOR S\r\n", &online, &mut watched),
@@ -93,7 +94,7 @@ fn monitor_status_reports_the_watched_nicks() {
 
 #[test]
 fn monitor_ignores_an_unknown_modifier() {
-    let online = demo_online_nicks(&OMARCHY_WORLD);
+    let online = demo_online_nicks(&OMARCHY_WORLD, OMARCHY_WORLD.nick);
     let mut watched = Vec::new();
     assert_eq!(
         answer_monitor("fred", b"MONITOR X anna\r\n", &online, &mut watched),
@@ -103,7 +104,7 @@ fn monitor_ignores_an_unknown_modifier() {
 
 #[test]
 fn answers_list_with_the_seeded_directory() {
-    let reply = text(answer_list(&OMARCHY_WORLD, b"LIST\r\n"));
+    let reply = text(answer_list(&OMARCHY_WORLD, "fred", b"LIST\r\n"));
     let lines: Vec<&str> = reply
         .split("\r\n")
         .filter(|line| !line.is_empty())
@@ -136,7 +137,7 @@ fn list_masks_are_case_insensitive_globs_or_exact() {
     assert!(!list_mask_matches("#linux", "#lin"));
     assert!(!list_mask_matches("#linux", "#random"));
 
-    let filtered = text(answer_list(&OMARCHY_WORLD, b"LIST #l*\r\n"));
+    let filtered = text(answer_list(&OMARCHY_WORLD, "fred", b"LIST #l*\r\n"));
     let rows: Vec<&str> = filtered
         .split("\r\n")
         .filter(|line| line.starts_with(":server 322 "))
@@ -147,7 +148,7 @@ fn list_masks_are_case_insensitive_globs_or_exact() {
 
 #[test]
 fn a_non_list_frame_is_not_answered() {
-    assert_eq!(answer_list(&OMARCHY_WORLD, b"MODE #omarchy\r\n"), None);
+    assert_eq!(answer_list(&OMARCHY_WORLD, "fred", b"MODE #omarchy\r\n"), None);
 }
 
 #[test]
@@ -255,6 +256,7 @@ fn a_join_echoes_each_channel_with_its_seeded_topic() {
     let reply = text(Some(self_join(
         &OMARCHY_WORLD,
         "fred",
+        &TopicOverrides::new(),
         b"JOIN #omarchy,#desktop\r\n",
     )));
     assert_eq!(
@@ -268,7 +270,12 @@ fn a_join_echoes_each_channel_with_its_seeded_topic() {
 
 #[test]
 fn a_join_of_an_unseeded_channel_has_no_topic_line() {
-    let reply = text(Some(self_join(&OMARCHY_WORLD, "fred", b"JOIN #new\r\n")));
+    let reply = text(Some(self_join(
+        &OMARCHY_WORLD,
+        "fred",
+        &TopicOverrides::new(),
+        b"JOIN #new\r\n",
+    )));
     assert_eq!(reply, ":fred!u@h JOIN :#new\r\n");
 }
 
@@ -277,6 +284,7 @@ fn a_join_topic_matches_the_channel_case_insensitively() {
     let reply = text(Some(self_join(
         &OMARCHY_WORLD,
         "fred",
+        &TopicOverrides::new(),
         b"JOIN #OMARCHY\r\n",
     )));
     assert!(reply.contains(":server 332 fred #OMARCHY :A cozy corner"));
@@ -284,7 +292,12 @@ fn a_join_topic_matches_the_channel_case_insensitively() {
 
 #[test]
 fn a_join_on_oftc_restores_the_oftc_topic() {
-    let reply = text(Some(self_join(&OFTC_WORLD, "oak", b"JOIN #lab\r\n")));
+    let reply = text(Some(self_join(
+        &OFTC_WORLD,
+        "oak",
+        &TopicOverrides::new(),
+        b"JOIN #lab\r\n",
+    )));
     assert_eq!(
         reply,
         ":oak!u@h JOIN :#lab\r\n:server 332 oak #lab :Build lab for packaging and CI.\r\n"
@@ -300,8 +313,114 @@ fn the_client_echo_keeps_the_frame_bytes() {
 }
 
 #[test]
+fn a_part_is_echoed_with_the_senders_prefix_and_its_reason() {
+    assert_eq!(
+        text(answer_part("fred", b"PART #omarchy\r\n")),
+        ":fred!u@h PART #omarchy\r\n"
+    );
+    assert_eq!(
+        text(answer_part("fred", b"PART #omarchy :heading out\r\n")),
+        ":fred!u@h PART #omarchy :heading out\r\n"
+    );
+}
+
+#[test]
+fn a_part_to_a_non_channel_or_a_bare_part_is_not_answered() {
+    assert_eq!(answer_part("fred", b"PART anna\r\n"), None);
+    assert_eq!(answer_part("fred", b"PART\r\n"), None);
+    assert_eq!(answer_part("fred", b"PRIVMSG #omarchy :hi\r\n"), None);
+}
+
+#[test]
+fn a_nick_change_is_echoed_under_the_old_nick_and_becomes_the_current_one() {
+    let mut current = "fred".to_owned();
+    assert_eq!(
+        text(answer_nick(&mut current, b"NICK fred2\r\n")),
+        ":fred!u@h NICK :fred2\r\n"
+    );
+    assert_eq!(current, "fred2");
+    assert_eq!(
+        text(answer_nick(&mut current, b"NICK :fred3\r\n")),
+        ":fred2!u@h NICK :fred3\r\n"
+    );
+    assert_eq!(current, "fred3");
+}
+
+#[test]
+fn a_nick_with_a_space_or_no_nick_is_not_answered() {
+    let mut current = "fred".to_owned();
+    assert_eq!(answer_nick(&mut current, b"NICK\r\n"), None);
+    assert_eq!(answer_nick(&mut current, b"NICK a b\r\n"), None);
+    assert_eq!(current, "fred", "a refused NICK keeps the nick");
+}
+
+#[test]
+fn a_topic_is_echoed_with_the_senders_prefix_and_kept_for_the_next_join() {
+    let mut topics = TopicOverrides::new();
+    assert_eq!(
+        text(answer_topic("fred", &mut topics, b"TOPIC #omarchy :new topic\r\n")),
+        ":fred!u@h TOPIC #omarchy :new topic\r\n"
+    );
+    assert_eq!(topics.get("#omarchy").map(String::as_str), Some("new topic"));
+    let rejoin = text(Some(self_join(
+        &OMARCHY_WORLD,
+        "fred",
+        &topics,
+        b"JOIN #omarchy\r\n",
+    )));
+    assert_eq!(
+        rejoin,
+        ":fred!u@h JOIN :#omarchy\r\n:server 332 fred #omarchy :new topic\r\n"
+    );
+}
+
+#[test]
+fn an_empty_topic_clears_the_restored_topic_line() {
+    let mut topics = TopicOverrides::new();
+    assert_eq!(
+        text(answer_topic("fred", &mut topics, b"TOPIC #omarchy :\r\n")),
+        ":fred!u@h TOPIC #omarchy :\r\n"
+    );
+    let rejoin = text(Some(self_join(
+        &OMARCHY_WORLD,
+        "fred",
+        &topics,
+        b"JOIN #omarchy\r\n",
+    )));
+    assert_eq!(rejoin, ":fred!u@h JOIN :#omarchy\r\n");
+}
+
+#[test]
+fn a_topic_query_or_a_topic_on_a_non_channel_is_not_answered() {
+    let mut topics = TopicOverrides::new();
+    assert_eq!(answer_topic("fred", &mut topics, b"TOPIC #omarchy\r\n"), None);
+    assert_eq!(answer_topic("fred", &mut topics, b"TOPIC anna :hi\r\n"), None);
+    assert!(topics.is_empty());
+}
+
+#[test]
+fn a_topic_set_on_an_unseeded_channel_is_restored_by_its_join() {
+    let mut topics = TopicOverrides::new();
+    answer_topic("fred", &mut topics, b"TOPIC #new :hello\r\n");
+    let rejoin = text(Some(self_join(
+        &OMARCHY_WORLD,
+        "fred",
+        &topics,
+        b"JOIN #NEW\r\n",
+    )));
+    assert!(rejoin.ends_with(":server 332 fred #NEW :hello\r\n"));
+}
+
+#[test]
+fn the_online_set_follows_a_changed_nick() {
+    let online = demo_online_nicks(&OMARCHY_WORLD, "fred2");
+    assert!(online.iter().any(|nick| nick == "fred2"));
+    assert!(!online.iter().any(|nick| nick == "fred"));
+}
+
+#[test]
 fn the_online_set_is_self_members_and_directs_sorted_and_unique() {
-    let online = demo_online_nicks(&OMARCHY_WORLD);
+    let online = demo_online_nicks(&OMARCHY_WORLD, OMARCHY_WORLD.nick);
     let mut sorted = online.clone();
     sorted.sort();
     assert_eq!(online, sorted);

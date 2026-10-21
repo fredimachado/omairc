@@ -317,15 +317,50 @@ fn a_ping_is_answered_with_auto_echo_on() {
 }
 
 #[test]
-fn part_nick_and_topic_are_not_answered_yet() {
+fn a_part_is_echoed_under_the_senders_prefix_with_its_reason() {
     let harness = Harness::seeded(true);
-    harness.omarchy.send("PART #omarchy\r\n");
+    harness.omarchy.send("PART #omarchy :heading out\r\n");
+    let fresh = harness.omarchy.fresh_inbound();
+    let parts = with_command(&fresh, "PART");
+    let echo = parts.first().expect("the PART echo");
+    assert_eq!(nick_of(echo), "fred");
+    assert_eq!(params_of(echo), ["#omarchy", "heading out"]);
+}
+
+#[test]
+fn a_nick_change_is_echoed_and_later_echoes_use_the_new_nick() {
+    let harness = Harness::seeded(true);
     harness.omarchy.send("NICK fred2\r\n");
-    harness.omarchy.send("TOPIC #omarchy :new\r\n");
-    assert!(
-        harness.omarchy.fresh_inbound().is_empty(),
-        "PART, NICK and TOPIC wait for the Phase 5 shared contract"
-    );
+    let fresh = harness.omarchy.fresh_inbound();
+    let nicks = with_command(&fresh, "NICK");
+    let echo = nicks.first().expect("the NICK echo");
+    assert_eq!(nick_of(echo), "fred");
+    assert_eq!(params_of(echo), ["fred2"]);
+
+    harness.omarchy.send("PRIVMSG #omarchy :hello\r\n");
+    let fresh = harness.omarchy.fresh_inbound();
+    let said = with_command(&fresh, "PRIVMSG");
+    assert_eq!(nick_of(said.first().expect("the PRIVMSG echo")), "fred2");
+}
+
+#[test]
+fn a_topic_is_echoed_and_the_next_join_restores_it() {
+    let harness = Harness::seeded(true);
+    let features = demo_server_features();
+    harness.omarchy.send("TOPIC #omarchy :Fresh topic\r\n");
+    let fresh = harness.omarchy.fresh_inbound();
+    let topics = with_command(&fresh, "TOPIC");
+    let echo = topics.first().expect("the TOPIC echo");
+    assert_eq!(nick_of(echo), "fred");
+    assert_eq!(params_of(echo), ["#omarchy", "Fresh topic"]);
+
+    assert!(harness.omarchy.session.part("#omarchy"));
+    harness.omarchy.fresh_inbound();
+    let target = IrcJoinTarget::make("#omarchy", None, &features).expect("join target");
+    assert!(harness.omarchy.session.join(&target));
+    let rejoin = harness.omarchy.fresh_inbound();
+    let restored = with_command(&rejoin, "332");
+    assert_eq!(params_of(restored[0])[2], "Fresh topic");
 }
 
 #[test]
@@ -431,9 +466,11 @@ fn a_join_echoes_the_self_join_with_its_seeded_topic() {
     let harness = Harness::seeded(true);
     let features = demo_server_features();
     assert!(harness.omarchy.session.part("#omarchy"));
+    let parted = harness.omarchy.fresh_inbound();
+    assert_eq!(with_command(&parted, "PART").len(), 1, "a PART is echoed");
     assert!(
-        with_command(&harness.omarchy.fresh_inbound(), "JOIN").is_empty(),
-        "a PART is not echoed"
+        with_command(&parted, "JOIN").is_empty(),
+        "the PART echo is not a JOIN"
     );
 
     let target = IrcJoinTarget::make("#omarchy", None, &features).expect("join target");

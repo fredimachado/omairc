@@ -1,14 +1,17 @@
 //! Port of `tui/internal/demo/answers.go` (Go) and the anonymous auto-echo
 //! handlers in `src/irc/ircdemoserver.cpp` (C++): the replies the demo peer
 //! sends for the client's own frames. The server answers PING, LIST, CTCP
-//! PING/TIME/VERSION, AWAY, METADATA SET, MONITOR, and the JOIN and PRIVMSG/NOTICE
-//! echoes. It answers nothing else. PART, NICK and TOPIC are left out on
-//! purpose, as the Qt demo leaves them out.
+//! PING/TIME/VERSION, AWAY, METADATA SET, MONITOR, the PART, NICK and TOPIC
+//! echoes, and the JOIN and PRIVMSG/NOTICE echoes. It answers nothing else. The
+//! PART, NICK and TOPIC echoes carry the sender's own `!u@h` prefix, as a real
+//! server sends them. The C++ and Go demos use the same shapes.
 //!
 //! Each `answer_*` returns `None` when the frame is not its own. `Some` means it
 //! was handled, and the reply may be empty: a MONITOR C or a `-` removal answers
 //! with nothing, and the caller must still treat that as handled. The Go
 //! `tryAnswer*` ladder uses the same convention.
+
+use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Local, Utc};
 
@@ -21,6 +24,10 @@ use super::seed::{channel_named, SeedListed, SeedNetwork, ISUPPORT, MONITOR_LIMI
 use super::wire::{
     demo_label_prefix, demo_tag_value, join_line, line, parse_demo_frame, strip_crlf,
 };
+
+/// The topics the client has set on the demo, keyed by the channel name lower-cased.
+/// A topic set here replaces the seeded topic that a later self JOIN restores.
+pub type TopicOverrides = BTreeMap<String, String>;
 
 /// The features the demo advertises, built from the ISUPPORT tokens the same way
 /// the session builds them. Nothing here hard-codes CHANTYPES or PREFIX
@@ -125,7 +132,7 @@ pub fn list_entries(network: &SeedNetwork) -> Vec<SeedListed> {
 
 /// Answers `LIST` or `LIST <mask>` with 321, one 322 per match, and 323
 /// (`tryAnswerList`).
-pub fn answer_list(network: &SeedNetwork, frame: &[u8]) -> Option<Vec<u8>> {
+pub fn answer_list(network: &SeedNetwork, self_nick: &str, frame: &[u8]) -> Option<Vec<u8>> {
     let wire = strip_crlf(frame);
     if wire != b"LIST" && !wire.starts_with(b"LIST ") {
         return None;
@@ -136,7 +143,7 @@ pub fn answer_list(network: &SeedNetwork, frame: &[u8]) -> Option<Vec<u8>> {
         String::new()
     };
 
-    let me = network.nick;
+    let me = self_nick;
     let mut out = line(&format!(":server 321 {me} Channel :Users  Name"));
     for entry in list_entries(network) {
         if !list_mask_matches(entry.name, &mask) {
@@ -385,11 +392,87 @@ pub fn client_echo(self_nick: &str, frame: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Answers a client JOIN with one self JOIN per channel, each followed by the
-/// seeded topic when the channel is a seeded one (`injectSelfJoin`). The seeded
-/// topic restores the header after a PART and a rejoin. No fresh NAMES is sent,
-/// so the member column keeps the nick that just joined.
-pub fn self_join(network: &SeedNetwork, self_nick: &str, frame: &[u8]) -> Vec<u8> {
+/// Answers a client PART on a channel with the server's echo, `:<nick>!u@h PART #chan`
+/// with the reason kept as the client sent it (`tryAnswerPart`). A PART to a target that
+/// is not a channel is not answered.
+pub fn answer_part(self_nick: &str, frame: &[u8]) -> Option<Vec<u8>> {
+    if self_nick.is_empty() || !strip_crlf(frame).starts_with(b"PART ") {
+        return None;
+    }
+    let message = parse_demo_frame(frame)?;
+    if message.command != "PART" {
+        return None;
+    }
+    let channel = wire_text(message.params.first()?);
+    if !demo_server_features().is_channel(&channel) {
+        return None;
+    }
+    Some(client_echo(self_nick, frame))
+}
+
+/// Answers a client NICK with the echo `:<old>!u@h NICK :<new>`, then makes `new` the
+/// nick the demo answers as (`tryAnswerNick`). `current` holds that nick and is updated
+/// here, so every later answer and echo uses the new one.
+pub fn answer_nick(current: &mut String, frame: &[u8]) -> Option<Vec<u8>> {
+    if current.is_empty() || !strip_crlf(frame).starts_with(b"NICK ") {
+        return None;
+    }
+    let message = parse_demo_frame(frame)?;
+    if message.command != "NICK" || message.params.len() != 1 {
+        return None;
+    }
+    let new_nick = wire_text(&message.params[0]);
+    if new_nick.is_empty() || new_nick.contains(' ') {
+        return None;
+    }
+    let echo = line(&format!(":{current}!u@h NICK :{new_nick}"));
+    *current = new_nick;
+    Some(echo)
+}
+
+/// Answers a client TOPIC that sets a channel's topic with the echo
+/// `:<self>!u@h TOPIC #chan :<text>`. The text becomes the topic a later self JOIN
+/// restores (`tryAnswerTopic`). A TOPIC query, or one on a non-channel target, is not
+/// answered.
+pub fn answer_topic(
+    self_nick: &str,
+    topics: &mut TopicOverrides,
+    frame: &[u8],
+) -> Option<Vec<u8>> {
+    if self_nick.is_empty() || !strip_crlf(frame).starts_with(b"TOPIC ") {
+        return None;
+    }
+    let message = parse_demo_frame(frame)?;
+    if message.command != "TOPIC" || message.params.len() < 2 {
+        return None;
+    }
+    let channel = wire_text(&message.params[0]);
+    if !demo_server_features().is_channel(&channel) {
+        return None;
+    }
+    let text = wire_text(&message.params[1]);
+    topics.insert(channel.to_ascii_lowercase(), text.clone());
+    Some(line(&format!(":{self_nick}!u@h TOPIC {channel} :{text}")))
+}
+
+/// The topic a self JOIN restores for `name`: a topic the client set this session, else
+/// the seeded topic of a seeded channel. Empty means no 332 line.
+fn restored_topic(network: &SeedNetwork, topics: &TopicOverrides, name: &str) -> Option<String> {
+    match topics.get(&name.to_ascii_lowercase()) {
+        Some(topic) => Some(topic.clone()),
+        None => channel_named(network, name).map(|channel| channel.topic.to_owned()),
+    }
+}
+
+/// Answers a client JOIN with one self JOIN per channel, each followed by the topic it
+/// restores (`injectSelfJoin`). The topic restores the header after a PART and a rejoin.
+/// No fresh NAMES is sent, so the member column keeps the nick that just joined.
+pub fn self_join(
+    network: &SeedNetwork,
+    self_nick: &str,
+    topics: &TopicOverrides,
+    frame: &[u8],
+) -> Vec<u8> {
     let Some(rest) = frame.get(5..) else {
         return Vec::new();
     };
@@ -413,25 +496,27 @@ pub fn self_join(network: &SeedNetwork, self_nick: &str, frame: &[u8]) -> Vec<u8
         }
         let name = wire_text(raw);
         out.extend(line(&join_line(self_nick, &name, "")));
-        if let Some(channel) = channel_named(network, &name) {
-            if !channel.topic.is_empty() {
-                out.extend(line(&format!(
-                    ":server 332 {self_nick} {name} :{}",
-                    channel.topic
-                )));
+        if let Some(topic) = restored_topic(network, topics, &name) {
+            if !topic.is_empty() {
+                out.extend(line(&format!(":server 332 {self_nick} {name} :{topic}")));
             }
         }
     }
     out
 }
 
-/// Every nick a MONITOR reply may call online: our own nick, each channel member,
-/// and each direct peer, sorted and unique (`demoOnlineNicks`).
-pub fn demo_online_nicks(network: &SeedNetwork) -> Vec<String> {
-    let mut nicks = std::collections::BTreeSet::new();
-    nicks.insert(network.nick.to_owned());
+/// Every nick a MONITOR reply may call online: the nick the session answers as, each
+/// channel member, and each direct peer, sorted and unique (`demoOnlineNicks`). NICK
+/// may have changed the session's nick from the seeded one.
+pub fn demo_online_nicks(network: &SeedNetwork, self_nick: &str) -> Vec<String> {
+    let mut nicks = BTreeSet::new();
+    nicks.insert(self_nick.to_owned());
     for channel in network.channels {
         for nick in channel.members {
+            // The seeded nick is no longer online once NICK has renamed the session.
+            if self_nick != network.nick && nick.eq_ignore_ascii_case(network.nick) {
+                continue;
+            }
             nicks.insert((*nick).to_owned());
         }
     }
