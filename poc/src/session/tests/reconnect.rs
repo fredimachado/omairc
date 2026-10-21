@@ -10,18 +10,22 @@ use super::fixture::{test_config, Fixture};
 use crate::session::clock::FakeClock;
 use crate::session::events::{ErrorKind, SessionState};
 use crate::session::loopback::LoopbackTransport;
-use crate::session::transport::Transport;
 use crate::session::sessionmanager::{SessionManager, SessionManagerError};
 use crate::session::transport::ConnectionState;
+use crate::session::transport::Transport;
 
 fn delays(fx: &Fixture) -> Vec<u64> {
-    fx.reconnects().into_iter().map(|(delay, _)| delay).collect()
+    fx.reconnects()
+        .into_iter()
+        .map(|(delay, _)| delay)
+        .collect()
 }
 
 fn clock_at_epoch() -> Rc<FakeClock> {
-    Rc::new(FakeClock::new(chrono::Utc.timestamp_opt(0, 0).single().unwrap()))
+    Rc::new(FakeClock::new(
+        chrono::Utc.timestamp_opt(0, 0).single().unwrap(),
+    ))
 }
-
 
 #[test]
 fn connection_timeout_schedules_reconnect() {
@@ -81,13 +85,24 @@ fn reconnect_can_be_cancelled() {
     let fx = Fixture::new(test_config());
     fx.connect_tls();
     fx.transport.remote_close();
-    assert!(fx.clock.pending() > 0, "the reconnect timer must be pending");
+    assert!(
+        fx.clock.pending() > 0,
+        "the reconnect timer must be pending"
+    );
     fx.session.stop();
     assert_eq!(fx.session.state(), SessionState::Idle);
-    assert_eq!(fx.clock.pending(), 0, "the reconnect timer must be cancelled");
+    assert_eq!(
+        fx.clock.pending(),
+        0,
+        "the reconnect timer must be cancelled"
+    );
     let written = fx.frames().len();
     fx.clock.advance(Duration::from_millis(250));
-    assert_eq!(fx.frames().len(), written, "a cancelled reconnect must not write frames");
+    assert_eq!(
+        fx.frames().len(),
+        written,
+        "a cancelled reconnect must not write frames"
+    );
     assert_eq!(fx.transport.state(), ConnectionState::Disconnected);
 }
 
@@ -198,7 +213,10 @@ fn retryable_errors_stay_deduped_across_kinds_until_welcome() {
     fx.transport.remote_close();
     let errors = fx.errors();
     assert_eq!(errors.len(), 2, "{errors:?}");
-    assert_eq!((errors[0].0, errors[1].0), (ErrorKind::Network, ErrorKind::Tls));
+    assert_eq!(
+        (errors[0].0, errors[1].0),
+        (ErrorKind::Network, ErrorKind::Tls)
+    );
 }
 
 #[test]
@@ -206,7 +224,10 @@ fn quit_rejects_invalid_reason_while_registered() {
     let fx = Fixture::new(test_config());
     fx.register_with_welcome();
     assert_eq!(fx.session.state(), SessionState::Registered);
-    assert!(!fx.session.quit("bad\nreason"), "quit with an invalid reason must fail");
+    assert!(
+        !fx.session.quit("bad\nreason"),
+        "quit with an invalid reason must fail"
+    );
     assert_eq!(fx.session.state(), SessionState::Registered);
     assert!(!fx.wrote("QUIT :bad\nreason\r\n"));
 
@@ -219,7 +240,8 @@ fn quit_rejects_invalid_reason_while_registered() {
 #[test]
 fn destruction_while_connecting_is_safe() {
     let transport = Rc::new(LoopbackTransport::new());
-    let session = crate::session::session::Session::new(test_config(), transport.clone(), clock_at_epoch());
+    let session =
+        crate::session::session::Session::new(test_config(), transport.clone(), clock_at_epoch());
     session.start();
     assert_eq!(transport.state(), ConnectionState::Connecting);
     drop(session);
@@ -273,14 +295,27 @@ fn manager_create_stays_add_only() {
         ..test_config()
     };
     let first = manager
-        .create(config(), Rc::new(LoopbackTransport::new()), clock_at_epoch())
+        .create(
+            config(),
+            Rc::new(LoopbackTransport::new()),
+            clock_at_epoch(),
+        )
         .expect("create");
-    let duplicate = manager.create(config(), Rc::new(LoopbackTransport::new()), clock_at_epoch());
+    let duplicate = manager.create(
+        config(),
+        Rc::new(LoopbackTransport::new()),
+        clock_at_epoch(),
+    );
     assert_eq!(
         duplicate.err(),
-        Some(SessionManagerError::DuplicateNetworkId("network-a".to_owned()))
+        Some(SessionManagerError::DuplicateNetworkId(
+            "network-a".to_owned()
+        ))
     );
-    assert_eq!(manager.find("network-a").unwrap().network_id(), first.network_id());
+    assert_eq!(
+        manager.find("network-a").unwrap().network_id(),
+        first.network_id()
+    );
 }
 
 #[test]
@@ -291,14 +326,25 @@ fn manager_discard_unregisters_immediately() {
         ..test_config()
     };
     let session = manager
-        .create(config(), Rc::new(LoopbackTransport::new()), clock_at_epoch())
+        .create(
+            config(),
+            Rc::new(LoopbackTransport::new()),
+            clock_at_epoch(),
+        )
         .expect("create");
     assert!(manager.activate("network-a"));
     manager.discard("network-a");
-    assert!(manager.find("network-a").is_none(), "discard must unregister immediately");
+    assert!(
+        manager.find("network-a").is_none(),
+        "discard must unregister immediately"
+    );
     manager.discard("network-a");
     let replacement = manager
-        .create(config(), Rc::new(LoopbackTransport::new()), clock_at_epoch())
+        .create(
+            config(),
+            Rc::new(LoopbackTransport::new()),
+            clock_at_epoch(),
+        )
         .expect("replacement");
     assert!(manager.find("network-a").is_some());
     assert_eq!(session.state(), SessionState::Idle);
@@ -315,7 +361,9 @@ fn malformed_input_surfaces_protocol_error() {
     assert_eq!(errors[0].0, ErrorKind::Protocol);
     let message = errors[0].1.clone();
     assert!(
-        message.contains("invalid character") && message.contains("Preview:") && message.contains("BAD"),
+        message.contains("invalid character")
+            && message.contains("Preview:")
+            && message.contains("BAD"),
         "error = {message:?}"
     );
     assert_eq!(fx.session.state(), SessionState::CapLs);
@@ -325,9 +373,15 @@ fn malformed_input_surfaces_protocol_error() {
         let errors = fx.errors();
         assert_eq!(errors.len(), index, "errors after {raw:?}");
         let got = &errors[index - 1].1;
-        assert!(got.contains(want_substring), "error = {got:?}, want {want_substring:?}");
+        assert!(
+            got.contains(want_substring),
+            "error = {got:?}, want {want_substring:?}"
+        );
         if !want_redacted.is_empty() {
-            assert!(got.contains(want_redacted), "error = {got:?}, want {want_redacted:?}");
+            assert!(
+                got.contains(want_redacted),
+                "error = {got:?}, want {want_redacted:?}"
+            );
         }
         for secret in ["hunter2", "s3cret", "my_nick"] {
             assert!(!got.contains(secret), "error = {got:?} leaked {secret}");
@@ -341,10 +395,30 @@ fn malformed_input_surfaces_protocol_error() {
     check(6, b"PASS\x7F hunter2\r\n", "invalid command", "PASS ***");
     check(7, b"P@SS hunter2\r\n", "invalid command", "PASS ***");
     check(8, b"PA@SS hunter2\r\n", "invalid command", "PASS ***");
-    check(9, b"32@4 omairc #omarchy +k s3cret\r\n", "invalid command", "+k ***");
-    check(10, b"PRIVMSG nickserv :identif\x00 my_nick s3cret\r\n", "invalid character", "IDENTIFY ***");
-    check(11, b"P\x00ASS\x00hunter2\r\n", "invalid character", "PASS ***");
-    check(12, b"@bad tag=foo PRIVMSG nickserv :identify my_nick s3cret\r\n", "invalid command", "IDENTIFY ***");
+    check(
+        9,
+        b"32@4 omairc #omarchy +k s3cret\r\n",
+        "invalid command",
+        "+k ***",
+    );
+    check(
+        10,
+        b"PRIVMSG nickserv :identif\x00 my_nick s3cret\r\n",
+        "invalid character",
+        "IDENTIFY ***",
+    );
+    check(
+        11,
+        b"P\x00ASS\x00hunter2\r\n",
+        "invalid character",
+        "PASS ***",
+    );
+    check(
+        12,
+        b"@bad tag=foo PRIVMSG nickserv :identify my_nick s3cret\r\n",
+        "invalid command",
+        "IDENTIFY ***",
+    );
 }
 
 #[test]
@@ -362,7 +436,10 @@ fn overlong_frame_logs_preview_without_secrets() {
     assert_eq!(errors.len(), 1, "{errors:?}");
     let message = &errors[0].1;
     assert!(message.contains("too many bytes"), "{message:?}");
-    assert!(message.contains(&format!("{} bytes", max - 1)), "{message:?}");
+    assert!(
+        message.contains(&format!("{} bytes", max - 1)),
+        "{message:?}"
+    );
     assert!(message.contains("Preview: PING :"), "{message:?}");
 
     let check_overlong = |index: usize, prefix: &str, redacted: &str, secret: &str| {
@@ -379,8 +456,23 @@ fn overlong_frame_logs_preview_without_secrets() {
     };
     check_overlong(2, "PASS hunter2 ", "PASS ***", "hunter2");
     check_overlong(3, "JOIN #secret hunter2 ", "JOIN #secret ***", "hunter2");
-    check_overlong(4, "PRIVMSG nickserv :identify my_nick s3cret ", "PRIVMSG nickserv :IDENTIFY ***", "s3cret");
-    check_overlong(5, "MODE #omarchy +k s3cret ", "MODE #omarchy +k ***", "s3cret");
+    check_overlong(
+        4,
+        "PRIVMSG nickserv :identify my_nick s3cret ",
+        "PRIVMSG nickserv :IDENTIFY ***",
+        "s3cret",
+    );
+    check_overlong(
+        5,
+        "MODE #omarchy +k s3cret ",
+        "MODE #omarchy +k ***",
+        "s3cret",
+    );
     check_overlong(6, "PASS\thunter2 ", "PASS ***", "hunter2");
-    check_overlong(7, "PRIVMSG nickserv :\x01identify my_nick s3cret\x01 ", "PRIVMSG nickserv :IDENTIFY ***", "s3cret");
+    check_overlong(
+        7,
+        "PRIVMSG nickserv :\x01identify my_nick s3cret\x01 ",
+        "PRIVMSG nickserv :IDENTIFY ***",
+        "s3cret",
+    );
 }

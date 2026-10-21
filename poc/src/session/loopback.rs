@@ -45,6 +45,11 @@ impl LoopbackTransport {
         *self.frame_written.borrow_mut() = Some(hook);
     }
 
+    /// Removes the frame-written hook. Writes still record their frames.
+    pub fn clear_frame_written_hook(&self) {
+        *self.frame_written.borrow_mut() = None;
+    }
+
     /// Completes a pending `connect`: emits `connected`, and `encrypted` when TLS
     /// was requested. A no-op unless the state is `Connecting`.
     pub fn complete_connect(&self) {

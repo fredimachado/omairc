@@ -420,7 +420,13 @@ impl Core {
             return;
         }
         let key = self.fold_channel(target);
-        let pages = self.history.after_pages.get(&key).copied().unwrap_or(1).max(1);
+        let pages = self
+            .history
+            .after_pages
+            .get(&key)
+            .copied()
+            .unwrap_or(1)
+            .max(1);
         let cap = if self.history.after_page_cap == 0 {
             HISTORY_AFTER_PAGE_CAP
         } else {
@@ -433,7 +439,12 @@ impl Core {
         // A timestamp bound that does not move would ask for the same page again.
         // A msgid always moves, even when two lines share a time.
         if next.msgid.is_empty() {
-            let previous = self.history.after_cursor.get(&key).cloned().unwrap_or_default();
+            let previous = self
+                .history
+                .after_cursor
+                .get(&key)
+                .cloned()
+                .unwrap_or_default();
             if let (Some(previous_when), Some(next_when)) = (previous.when, next.when) {
                 if next_when <= previous_when {
                     return;
@@ -446,7 +457,11 @@ impl Core {
     }
 
     /// `CHATHISTORY TARGETS` between two instants (`requestHistoryTargetsLocked`).
-    pub(crate) fn request_history_targets(&mut self, from: DateTime<Utc>, until: DateTime<Utc>) -> bool {
+    pub(crate) fn request_history_targets(
+        &mut self,
+        from: DateTime<Utc>,
+        until: DateTime<Utc>,
+    ) -> bool {
         if !self.replay_enabled(HistoryKind::Chat) || self.history.targets_pending {
             return false;
         }
@@ -497,7 +512,10 @@ impl Core {
         self.history
             .pending_kind
             .insert(key.clone(), HistoryRequestKind::Before);
-        let command = format!("CHATHISTORY BEFORE {target} {cursor} {}", self.history_limit);
+        let command = format!(
+            "CHATHISTORY BEFORE {target} {cursor} {}",
+            self.history_limit
+        );
         if !self.send_command(&command, "") {
             self.history.pending.remove(&key);
             self.history.pending_before.remove(&key);

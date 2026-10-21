@@ -78,7 +78,11 @@ pub type HistoryResume = Box<dyn Fn(&str) -> Option<DateTime<Utc>>>;
 #[derive(Debug)]
 pub(crate) enum Effect {
     Write(Vec<u8>),
-    Connect { host: String, port: u16, tls: bool },
+    Connect {
+        host: String,
+        port: u16,
+        tls: bool,
+    },
     Shutdown,
     /// After a shutdown, move a Closing session to Idle once the transport has
     /// settled (the `post` in Go `stopLocked`).
@@ -251,11 +255,7 @@ impl TransportSink for SinkAdapter {
 impl Session {
     /// Builds a session and installs it as the transport's sink. `transport` and
     /// `clock` are shared with the owner, so tests keep a handle to drive them.
-    pub fn new(
-        config: SessionConfig,
-        transport: Rc<dyn Transport>,
-        clock: Rc<dyn Clock>,
-    ) -> Self {
+    pub fn new(config: SessionConfig, transport: Rc<dyn Transport>, clock: Rc<dyn Clock>) -> Self {
         let shared = Rc::new_cyclic(|weak: &Weak<Shared>| {
             let sink: Rc<dyn TransportSink> = Rc::new(SinkAdapter {
                 session: weak.clone(),
@@ -606,11 +606,7 @@ impl Core {
             }
             return;
         }
-        self.fail(
-            ErrorKind::Network,
-            "Connection closed by the server",
-            true,
-        );
+        self.fail(ErrorKind::Network, "Connection closed by the server", true);
     }
 
     /// A transport failure (`IrcTransport::errorOccurred`). A TLS or certificate
@@ -908,10 +904,6 @@ impl Core {
         }
     }
 
-    pub(crate) fn timer_armed(&self, slot: TimerSlot) -> bool {
-        self.timers[slot.index()].is_some()
-    }
-
     pub(crate) fn timer_fired(&mut self, slot: TimerSlot, id: u64) {
         let current = matches!(&self.timers[slot.index()], Some(armed) if armed.id == id);
         if !current {
@@ -1081,8 +1073,9 @@ impl Core {
                 );
                 return;
             }
-            "421" if wire::param_index(&message, "CAP").is_some()
-                && self.state == SessionState::CapLs =>
+            "421"
+                if wire::param_index(&message, "CAP").is_some()
+                    && self.state == SessionState::CapLs =>
             {
                 self.capability_negotiation_ended = true;
                 self.cancel_timer(TimerSlot::Capability);
@@ -1127,7 +1120,10 @@ impl Core {
         if command == "NICK" {
             let old_nick = wire::claimed_nick(&message);
             let new_nick = wire::param(&message, 0);
-            if !old_nick.is_empty() && !new_nick.is_empty() && self.nicks_equal(&old_nick, &self.nickname.clone()) {
+            if !old_nick.is_empty()
+                && !new_nick.is_empty()
+                && self.nicks_equal(&old_nick, &self.nickname.clone())
+            {
                 self.nickname = new_nick;
             }
         }

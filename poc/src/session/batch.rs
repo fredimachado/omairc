@@ -22,8 +22,6 @@ use crate::irc::message::IrcMessage;
 /// One batch the session is collecting, or a child of one.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct OpenBatch {
-    pub(crate) batch_type: String,
-    pub(crate) parent: String,
     /// The reference of the batch that owns the collected lines. Equal to the
     /// batch's own reference when it is a replay root, empty when it is not
     /// part of a replay.
@@ -93,15 +91,13 @@ impl Core {
         // labeled-response batch whose opening label is pending, is never
         // crowded out. Everything else shares the open-batch budget.
         let target_arg = wire::param(message, 2);
-        let solicited_targets =
-            kind == Some(HistoryKind::Targets) && self.history.targets_pending;
+        let solicited_targets = kind == Some(HistoryKind::Targets) && self.history.targets_pending;
         let solicited = solicited_targets
             || (kind == Some(HistoryKind::Chat) && self.answers_pending_history(&target_arg));
         let pending_labeled_response =
             labeled_response && self.has_pending_request_label(&carried_label);
-        let over_open_cap = !solicited
-            && !pending_labeled_response
-            && self.batches.open.len() >= MAX_OPEN_BATCHES;
+        let over_open_cap =
+            !solicited && !pending_labeled_response && self.batches.open.len() >= MAX_OPEN_BATCHES;
         let ignored = self.batches.ignored.contains(&reference);
         let parent_ignored = !parent.is_empty() && self.batches.ignored.contains(&parent);
         if ignored
@@ -121,11 +117,7 @@ impl Core {
             return;
         }
 
-        let mut frame = OpenBatch {
-            batch_type: batch_type.clone(),
-            parent: parent.clone(),
-            ..OpenBatch::default()
-        };
+        let mut frame = OpenBatch::default();
         if labeled_response {
             frame.request_label = carried_label;
         }

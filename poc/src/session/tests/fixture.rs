@@ -14,9 +14,7 @@ use crate::irc::capability::IrcCapabilitySet;
 use crate::irc::message::IrcMessage;
 use crate::session::clock::FakeClock;
 use crate::session::config::SessionConfig;
-use crate::session::events::{
-    ErrorKind, HistoryBatch, SessionEvent, SessionState,
-};
+use crate::session::events::{ErrorKind, HistoryBatch, SessionEvent, SessionState};
 use crate::session::loopback::LoopbackTransport;
 use crate::session::session::Session;
 
@@ -92,7 +90,10 @@ impl Fixture {
     }
 
     pub fn error_messages(&self) -> Vec<String> {
-        self.errors().into_iter().map(|(_, message)| message).collect()
+        self.errors()
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect()
     }
 
     pub fn states(&self) -> Vec<SessionState> {
@@ -230,10 +231,7 @@ impl Fixture {
 
     /// Advances virtual time by the most recent scheduled reconnect delay.
     pub fn fire_reconnect(&self) {
-        let (delay, _) = *self
-            .reconnects()
-            .last()
-            .expect("no reconnect scheduled");
+        let (delay, _) = *self.reconnects().last().expect("no reconnect scheduled");
         self.clock.advance(Duration::from_millis(delay));
     }
 

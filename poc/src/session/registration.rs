@@ -30,7 +30,8 @@ impl Core {
             None
         };
         let nick = commandbuilder::nick(&self.config.nick, &self.features);
-        let user = commandbuilder::user(&self.config.username, &self.config.realname, &self.features);
+        let user =
+            commandbuilder::user(&self.config.username, &self.config.realname, &self.features);
         if (send_pass && pass.is_none()) || nick.is_err() || user.is_err() {
             self.fail(
                 ErrorKind::Registration,
@@ -59,8 +60,13 @@ impl Core {
             return false;
         }
         let (fallback, next) = match self.registration_nick {
-            RegistrationNick::Configured => (format!("{}_", self.config.nick), RegistrationNick::Underscore),
-            RegistrationNick::Underscore => (format!("{}2", self.config.nick), RegistrationNick::Digit),
+            RegistrationNick::Configured => (
+                format!("{}_", self.config.nick),
+                RegistrationNick::Underscore,
+            ),
+            RegistrationNick::Underscore => {
+                (format!("{}2", self.config.nick), RegistrationNick::Digit)
+            }
             RegistrationNick::Digit => return false,
         };
         let Ok(line) = commandbuilder::nick(&fallback, &self.features) else {
@@ -111,11 +117,13 @@ impl Core {
         // negotiation, so that welcome registers.
         if self.sasl.mechanism == Some(super::caps::SASL_SCRAM)
             && !self.sasl.succeeded
-            && (self.sasl.pending
-                || self.state == SessionState::Sasl
-                || self.sasl.exchange_started)
+            && (self.sasl.pending || self.state == SessionState::Sasl || self.sasl.exchange_started)
         {
-            self.fail(ErrorKind::Authentication, "SASL authentication failed", false);
+            self.fail(
+                ErrorKind::Authentication,
+                "SASL authentication failed",
+                false,
+            );
             return;
         }
 

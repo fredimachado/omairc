@@ -17,8 +17,7 @@ use super::wire;
 use crate::irc::capability::{IrcCapability, IrcCapabilitySet};
 use crate::irc::message::IrcMessage;
 
-/// The SASL mechanism the session can run. SCRAM is named only to refuse it.
-pub(crate) const SASL_PLAIN: &str = "PLAIN";
+/// The SCRAM mechanism name. The session names it only to refuse it.
 pub(crate) const SASL_SCRAM: &str = "SCRAM-SHA-256";
 
 /// The longest AUTHENTICATE payload per frame (SASL 1.0 section 4.3).
@@ -308,8 +307,7 @@ pub(crate) fn encode_sasl_frames(raw: &[u8]) -> Vec<Vec<u8>> {
 /// Standard base64 with padding. Written out here so the session stays free of a
 /// codec dependency.
 fn base64_encode(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
         let b0 = u32::from(chunk[0]);

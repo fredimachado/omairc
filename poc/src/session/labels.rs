@@ -16,9 +16,10 @@ impl Core {
     pub(crate) fn begin_labeled_request(&mut self) -> String {
         self.next_request_label += 1;
         let label = format!("lr{}", self.next_request_label);
-        let deadline = self.now() + chrono::TimeDelta::milliseconds(
-            i64::try_from(self.config.labeled_response_timeout_ms).unwrap_or(i64::MAX),
-        );
+        let deadline = self.now()
+            + chrono::TimeDelta::milliseconds(
+                i64::try_from(self.config.labeled_response_timeout_ms).unwrap_or(i64::MAX),
+            );
         self.pending_labels.insert(label.clone(), deadline);
         self.arm_label_timer();
         label

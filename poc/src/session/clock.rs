@@ -201,8 +201,8 @@ impl FakeClock {
 
 impl Clock for FakeClock {
     fn now(&self) -> DateTime<Utc> {
-        let elapsed = chrono::TimeDelta::from_std(self.elapsed.get())
-            .unwrap_or(chrono::TimeDelta::MAX);
+        let elapsed =
+            chrono::TimeDelta::from_std(self.elapsed.get()).unwrap_or(chrono::TimeDelta::MAX);
         self.start + elapsed
     }
 

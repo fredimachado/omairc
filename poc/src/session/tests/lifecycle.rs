@@ -21,7 +21,11 @@ fn answers_ping_immediately() {
     fx.connect_tls();
     fx.inject("PING :server-token\r\n");
     assert_eq!(fx.last_frame(), "PONG :server-token\r\n");
-    assert_eq!(fx.clock.pending(), 0, "no watchdog is armed before registration");
+    assert_eq!(
+        fx.clock.pending(),
+        0,
+        "no watchdog is armed before registration"
+    );
 }
 
 #[test]
@@ -78,7 +82,10 @@ fn answers_server_ping_after_welcome() {
     fx.inject("PING :server-token\r\n");
     assert_eq!(fx.last_frame(), "PONG :server-token\r\n");
     assert_eq!(fx.session.state(), SessionState::Registered);
-    assert!(!fx.wrote("PING :omairc-watchdog\r\n"), "a server ping must not trigger the watchdog");
+    assert!(
+        !fx.wrote("PING :omairc-watchdog\r\n"),
+        "a server ping must not trigger the watchdog"
+    );
 }
 
 #[test]
@@ -100,7 +107,10 @@ fn registration_refusal_without_sentence_keeps_numeric() {
     fx.connect_tls();
     fx.inject(":server 432 * omairc :\r\n");
     assert_eq!(fx.session.state(), SessionState::Failed);
-    assert_eq!(fx.error_messages(), vec!["IRC registration was refused (432)"]);
+    assert_eq!(
+        fx.error_messages(),
+        vec!["IRC registration was refused (432)"]
+    );
 }
 
 #[test]
@@ -115,7 +125,11 @@ fn registration_refusal_without_colon_keeps_numeric() {
         fx.inject(line);
         assert_eq!(fx.session.state(), SessionState::Failed, "{line:?}");
         let messages = fx.error_messages();
-        assert_eq!(messages, vec!["IRC registration was refused (432)"], "{line:?}");
+        assert_eq!(
+            messages,
+            vec!["IRC registration was refused (432)"],
+            "{line:?}"
+        );
         assert!(!messages[0].contains("hunter2"), "{line:?}");
     }
 }
@@ -204,7 +218,10 @@ fn nick_in_use_after_welcome_keeps_session() {
 
     fx.inject(":server 433 omairc othernick :Nickname is already in use\r\n");
     assert_eq!(fx.session.state(), SessionState::Registered);
-    assert_eq!(fx.transport.state(), crate::session::transport::ConnectionState::Encrypted);
+    assert_eq!(
+        fx.transport.state(),
+        crate::session::transport::ConnectionState::Encrypted
+    );
     assert!(fx.errors().is_empty());
     let messages: Vec<String> = fx.messages().iter().map(|m| m.command.clone()).collect();
     assert_eq!(messages.last().map(String::as_str), Some("433"));
@@ -241,7 +258,10 @@ fn unavailable_resource_after_welcome_keeps_session() {
     assert_eq!(fx.session.state(), SessionState::Registered);
     fx.inject(":server 437 omairc othernick :Nick/channel is temporarily unavailable\r\n");
     assert_eq!(fx.session.state(), SessionState::Registered);
-    assert_eq!(fx.transport.state(), crate::session::transport::ConnectionState::Encrypted);
+    assert_eq!(
+        fx.transport.state(),
+        crate::session::transport::ConnectionState::Encrypted
+    );
     assert!(fx.errors().is_empty());
 }
 
@@ -317,6 +337,10 @@ fn ping_reconnect_event_carries_delay_and_attempt() {
         .find(|event| matches!(event, SessionEvent::ReconnectScheduled { .. }));
     assert!(matches!(
         scheduled,
-        Some(SessionEvent::ReconnectScheduled { delay_ms: 250, attempt: 1, .. })
+        Some(SessionEvent::ReconnectScheduled {
+            delay_ms: 250,
+            attempt: 1,
+            ..
+        })
     ));
 }

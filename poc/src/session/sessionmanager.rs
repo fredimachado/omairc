@@ -30,10 +30,9 @@ impl fmt::Display for SessionManagerError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NetworkIdRequired => formatter.write_str("session: network id is required"),
-            Self::DuplicateNetworkId(id) => write!(
-                formatter,
-                "session: network id {id} is already registered"
-            ),
+            Self::DuplicateNetworkId(id) => {
+                write!(formatter, "session: network id {id} is already registered")
+            }
         }
     }
 }
@@ -112,7 +111,8 @@ impl SessionManager {
 
     /// Whether `network_id` is registered and its session is live.
     pub fn is_live(&self, network_id: &str) -> bool {
-        self.find(network_id).is_some_and(|session| is_live(&session))
+        self.find(network_id)
+            .is_some_and(|session| is_live(&session))
     }
 }
 

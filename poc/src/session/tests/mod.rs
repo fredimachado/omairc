@@ -1,4 +1,15 @@
+mod auth;
+mod autojoin;
+mod batch;
 mod core;
 mod fixture;
+mod history;
+mod labeled;
+mod ledger;
 mod lifecycle;
+mod outbound;
+mod portability;
+mod readmarker;
 mod reconnect;
+mod transport;
+mod typing;

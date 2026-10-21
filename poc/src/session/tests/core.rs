@@ -22,7 +22,10 @@ fn registers_and_autojoins() {
             "USER omairc 8 * :Omairc User\r\n",
         ],
     );
-    assert!(fx.session.capabilities().is_empty(), "capabilities must be empty before the ACK");
+    assert!(
+        fx.session.capabilities().is_empty(),
+        "capabilities must be empty before the ACK"
+    );
 
     fx.inject(":server CAP omairc ACK :multi-prefix chghost cap-notify echo-message\r\n");
     assert!(fx.wrote("CAP END\r\n"), "CAP END must follow the ACK");
@@ -33,14 +36,20 @@ fn registers_and_autojoins() {
         IrcCapability::CapNotify,
         IrcCapability::EchoMessage,
     ] {
-        assert!(enabled.contains(capability), "capabilities missing {capability:?}");
+        assert!(
+            enabled.contains(capability),
+            "capabilities missing {capability:?}"
+        );
     }
 
     fx.inject(":server 001 omairc :Welcome\r\n");
     assert_eq!(fx.session.state(), SessionState::Registered);
     assert_eq!(fx.session.nick(), "omairc");
     assert_eq!(fx.registered_count(), 1);
-    assert_frames(&fx.written_since(5), &["JOIN #omarchy\r\n", "JOIN &local\r\n"]);
+    assert_frames(
+        &fx.written_since(5),
+        &["JOIN #omarchy\r\n", "JOIN &local\r\n"],
+    );
 }
 
 #[test]
@@ -65,7 +74,10 @@ fn negotiates_presence_capabilities() {
     );
 
     fx.inject(":server CAP omairc ACK :away-notify batch draft/metadata-2 multi-prefix\r\n");
-    assert!(!fx.wrote("CAP END\r\n"), "CAP END must wait for the SASL ACK");
+    assert!(
+        !fx.wrote("CAP END\r\n"),
+        "CAP END must wait for the SASL ACK"
+    );
 
     fx.inject(
         ":server CAP omairc ACK :sasl\r\n\
@@ -89,9 +101,15 @@ fn negotiates_presence_capabilities() {
         IrcCapability::Batch,
         IrcCapability::MemberMetadata,
     ] {
-        assert!(enabled.contains(capability), "capabilities missing {capability:?}");
+        assert!(
+            enabled.contains(capability),
+            "capabilities missing {capability:?}"
+        );
     }
-    assert!(!fx.capability_changes().is_empty(), "capabilitiesChanged must have fired");
+    assert!(
+        !fx.capability_changes().is_empty(),
+        "capabilitiesChanged must have fired"
+    );
 }
 
 #[test]
@@ -131,8 +149,14 @@ fn refused_presence_capabilities_stay_off_without_failing() {
     );
     fx.inject(":server CAP omairc NAK :away-notify batch draft/metadata-2\r\n");
     assert!(fx.wrote("CAP END\r\n"), "CAP END must follow the NAK");
-    assert!(fx.errors().is_empty(), "a refused capability is not a failure");
-    assert!(fx.session.capabilities().is_empty(), "refused capabilities must stay off");
+    assert!(
+        fx.errors().is_empty(),
+        "a refused capability is not a failure"
+    );
+    assert!(
+        fx.session.capabilities().is_empty(),
+        "refused capabilities must stay off"
+    );
 
     fx.inject(":server 001 omairc :Welcome\r\n:server 366 omairc #omarchy :End of /NAMES\r\n");
     assert_eq!(fx.session.state(), SessionState::Registered);
@@ -158,15 +182,30 @@ fn refused_message_tags_stay_off_without_failing() {
         ],
     );
     fx.inject(":server CAP omairc NAK :message-tags\r\n");
-    assert!(!fx.wrote("CAP END\r\n"), "CAP END must wait for the outstanding away-notify");
+    assert!(
+        !fx.wrote("CAP END\r\n"),
+        "CAP END must wait for the outstanding away-notify"
+    );
     assert!(fx.errors().is_empty());
-    assert!(!fx.session.capabilities().contains(IrcCapability::MessageTags));
+    assert!(!fx
+        .session
+        .capabilities()
+        .contains(IrcCapability::MessageTags));
 
     fx.inject(":server CAP omairc ACK :away-notify\r\n");
-    assert!(fx.wrote("CAP END\r\n"), "CAP END must follow the away-notify ACK");
+    assert!(
+        fx.wrote("CAP END\r\n"),
+        "CAP END must follow the away-notify ACK"
+    );
     fx.inject(":server 001 omairc :Welcome\r\n");
-    assert!(fx.session.capabilities().contains(IrcCapability::AwayNotify));
-    assert!(!fx.session.capabilities().contains(IrcCapability::MessageTags));
+    assert!(fx
+        .session
+        .capabilities()
+        .contains(IrcCapability::AwayNotify));
+    assert!(!fx
+        .session
+        .capabilities()
+        .contains(IrcCapability::MessageTags));
 }
 
 #[test]
@@ -178,8 +217,14 @@ fn unanswered_presence_request_still_registers() {
     assert!(!fx.wrote("CAP END\r\n"), "CAP END must wait for the ACK");
 
     fx.clock.advance(std::time::Duration::from_millis(10000));
-    assert!(fx.wrote("CAP END\r\n"), "CAP END must follow the capability timeout");
-    assert!(fx.session.capabilities().is_empty(), "unanswered capabilities must stay off");
+    assert!(
+        fx.wrote("CAP END\r\n"),
+        "CAP END must follow the capability timeout"
+    );
+    assert!(
+        fx.session.capabilities().is_empty(),
+        "unanswered capabilities must stay off"
+    );
 }
 
 #[test]
@@ -191,7 +236,9 @@ fn late_cap_ack_after_timeout_is_ignored() {
     assert!(fx.session.capabilities().is_empty());
     fx.inject(":server CAP omairc ACK :away-notify\r\n:server 001 omairc :Welcome\r\n");
     assert!(
-        !fx.session.capabilities().contains(IrcCapability::AwayNotify),
+        !fx.session
+            .capabilities()
+            .contains(IrcCapability::AwayNotify),
         "a late ACK must not re-enable away-notify"
     );
 }
@@ -205,7 +252,10 @@ fn late_cap_nak_after_timeout_is_ignored() {
     fx.inject(":server CAP omairc LS :sasl\r\n");
     fx.clock.advance(std::time::Duration::from_millis(10000));
     fx.inject(":server CAP omairc NAK :sasl\r\n");
-    assert!(fx.errors().is_empty(), "a late NAK must not fail the session");
+    assert!(
+        fx.errors().is_empty(),
+        "a late NAK must not fail the session"
+    );
 }
 
 #[test]
@@ -213,10 +263,16 @@ fn cap_nak_before_cap_list_is_ignored() {
     let fx = Fixture::new(test_config());
     fx.connect_tls();
     fx.inject(":server CAP omairc NAK :away-notify\r\n");
-    assert!(!fx.wrote("CAP END\r\n"), "a NAK before CAP LS must not register");
+    assert!(
+        !fx.wrote("CAP END\r\n"),
+        "a NAK before CAP LS must not register"
+    );
     fx.inject(":server CAP omairc LS :away-notify\r\n:server CAP omairc ACK :away-notify\r\n");
     assert!(fx.wrote("CAP END\r\n"), "CAP END must follow the real ACK");
-    assert!(fx.session.capabilities().contains(IrcCapability::AwayNotify));
+    assert!(fx
+        .session
+        .capabilities()
+        .contains(IrcCapability::AwayNotify));
 }
 
 #[test]
@@ -243,16 +299,29 @@ fn withdrawn_capability_is_published() {
          :server 366 omairc #omarchy :End of /NAMES\r\n",
     );
     assert!(fx.wrote("WHO #omarchy\r\n"), "away probe missing");
-    assert!(fx.session.capabilities().contains(IrcCapability::AwayNotify));
+    assert!(fx
+        .session
+        .capabilities()
+        .contains(IrcCapability::AwayNotify));
 
     let changes_before = fx.capability_changes().len();
     fx.inject(
         ":server CAP omairc DEL :away-notify\r\n\
          :server 366 omairc #desktop :End of /NAMES\r\n",
     );
-    assert_eq!(fx.capability_changes().len() - changes_before, 1, "one capabilitiesChanged after DEL");
-    assert!(!fx.session.capabilities().contains(IrcCapability::AwayNotify));
-    assert!(!fx.wrote("WHO #desktop\r\n"), "withdrawn away-notify must not probe");
+    assert_eq!(
+        fx.capability_changes().len() - changes_before,
+        1,
+        "one capabilitiesChanged after DEL"
+    );
+    assert!(!fx
+        .session
+        .capabilities()
+        .contains(IrcCapability::AwayNotify));
+    assert!(
+        !fx.wrote("WHO #desktop\r\n"),
+        "withdrawn away-notify must not probe"
+    );
 }
 
 #[test]

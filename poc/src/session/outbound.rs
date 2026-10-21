@@ -12,10 +12,10 @@ use chrono::{DateTime, Utc};
 use super::events::SessionState;
 use super::session::{is_valid_privmsg_target, Session};
 use super::typing::TypingPhase;
+use crate::irc::capability::IrcCapability;
 use crate::irc::channelmode::IrcChannelModeRequest;
 use crate::irc::commandbuilder;
 use crate::irc::jointarget::IrcJoinTarget;
-use crate::irc::capability::IrcCapability;
 use crate::irc::message::MAX_CLASSIC_FRAME_BYTES;
 
 impl Session {
@@ -56,7 +56,13 @@ impl Session {
 
     /// Writes a CTCP query, optionally under a request label
     /// (`IrcSession::sendCtcp`).
-    pub fn send_ctcp(&self, target: &str, command: &str, argument: &str, request_label: &str) -> bool {
+    pub fn send_ctcp(
+        &self,
+        target: &str,
+        command: &str,
+        argument: &str,
+        request_label: &str,
+    ) -> bool {
         self.locked(|core| core.send_ctcp(target, command, argument, request_label))
     }
 
@@ -72,7 +78,11 @@ impl Session {
             if request.query {
                 return core.send_command(&format!("MODE {}", request.channel), "");
             }
-            let mut parts = vec!["MODE".to_owned(), request.channel.clone(), request.modes.clone()];
+            let mut parts = vec![
+                "MODE".to_owned(),
+                request.channel.clone(),
+                request.modes.clone(),
+            ];
             parts.extend(request.parameters.iter().cloned());
             core.send_command(&parts.join(" "), "")
         })
@@ -107,14 +117,18 @@ impl Session {
     /// Writes an INVITE (`IrcSession::invite`).
     pub fn invite(&self, nick: &str, channel: &str) -> bool {
         self.locked(|core| {
-            !nick.is_empty() && !channel.is_empty() && core.send_command(&format!("INVITE {nick} {channel}"), "")
+            !nick.is_empty()
+                && !channel.is_empty()
+                && core.send_command(&format!("INVITE {nick} {channel}"), "")
         })
     }
 
     /// Writes a TOPIC (`IrcSession::setTopic`).
     pub fn set_topic(&self, channel: &str, topic: &str) -> bool {
         self.locked(|core| {
-            !channel.is_empty() && !topic.is_empty() && core.send_command(&format!("TOPIC {channel} :{topic}"), "")
+            !channel.is_empty()
+                && !topic.is_empty()
+                && core.send_command(&format!("TOPIC {channel} :{topic}"), "")
         })
     }
 
@@ -214,7 +228,12 @@ impl Session {
 
     /// Asks for one page older than `msgid`, or older than `timestamp` when no
     /// msgid is given (`requestOlderHistory`).
-    pub fn request_older_history(&self, target: &str, msgid: &str, timestamp: Option<DateTime<Utc>>) -> bool {
+    pub fn request_older_history(
+        &self,
+        target: &str,
+        msgid: &str,
+        timestamp: Option<DateTime<Utc>>,
+    ) -> bool {
         self.locked(|core| core.request_older_history(target, msgid, timestamp))
     }
 

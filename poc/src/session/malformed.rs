@@ -22,7 +22,10 @@ pub(crate) fn describe_malformed(
     byte_count: usize,
     channel_types: &str,
 ) -> String {
-    let text = format!("Malformed IRC {kind}: {} ({byte_count} bytes)", error.name());
+    let text = format!(
+        "Malformed IRC {kind}: {} ({byte_count} bytes)",
+        error.name()
+    );
     let shown = preview_wire(preview, byte_count, channel_types);
     if shown.is_empty() {
         return text;

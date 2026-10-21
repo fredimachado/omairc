@@ -205,10 +205,7 @@ pub enum SessionEvent {
         capabilities: IrcCapabilitySet,
     },
     /// A labeled request ended, by response, failure or timeout.
-    RequestLabelFinished {
-        network_id: String,
-        label: String,
-    },
+    RequestLabelFinished { network_id: String, label: String },
     /// The autojoin list or its keys changed. The owner persists the new value.
     AutojoinChannelsChanged {
         network_id: String,

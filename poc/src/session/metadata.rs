@@ -8,7 +8,6 @@
 //! (`NickPresence`, `NetworkPresence`) is Phase 3 (`irc/presence`). The helpers
 //! live here until then, so the session does not wait on the presence port.
 
-
 use super::session::Core;
 use super::wire;
 use crate::irc::capability::IrcCapability;
@@ -218,5 +217,4 @@ impl Core {
             }),
         );
     }
-
 }

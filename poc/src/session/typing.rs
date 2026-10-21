@@ -40,24 +40,31 @@ impl TypingPhase {
 /// Builds `@+typing=<phase> TAGMSG <target>` with its CRLF. `None` when the
 /// target is empty or carries a space, CR or LF.
 pub fn typing_tagmsg(target: &str, phase: TypingPhase) -> Option<String> {
-    if target.is_empty() || target.bytes().any(|byte| matches!(byte, b' ' | b'\r' | b'\n')) {
+    if target.is_empty()
+        || target
+            .bytes()
+            .any(|byte| matches!(byte, b' ' | b'\r' | b'\n'))
+    {
         return None;
     }
-    Some(format!("@+typing={} TAGMSG {target}\r\n", phase.tag_value()))
+    Some(format!(
+        "@+typing={} TAGMSG {target}\r\n",
+        phase.tag_value()
+    ))
 }
 
 /// One target's outbound pace (`IrcTypingPublisher::TargetClock`).
 #[derive(Clone, Debug, Default)]
-struct TargetClock {
-    last_sent_at: Option<DateTime<Utc>>,
-    last_phase: TypingPhase,
-    suppress_done: bool,
+pub(crate) struct TargetClock {
+    pub(crate) last_sent_at: Option<DateTime<Utc>>,
+    pub(crate) last_phase: TypingPhase,
+    pub(crate) suppress_done: bool,
 }
 
 /// The outbound typing gate, keyed by the raw target.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct TypingPublisher {
-    targets: BTreeMap<String, TargetClock>,
+    pub(crate) targets: BTreeMap<String, TargetClock>,
 }
 
 impl TypingPublisher {
@@ -95,7 +102,10 @@ impl TypingPublisher {
 
     /// A message went to `target`, so a trailing `done` is suppressed.
     pub(crate) fn note_message_sent(&mut self, target: &str) {
-        self.targets.entry(target.to_owned()).or_default().suppress_done = true;
+        self.targets
+            .entry(target.to_owned())
+            .or_default()
+            .suppress_done = true;
     }
 
     /// Forgets every target, on a new connection.
@@ -122,7 +132,8 @@ impl Core {
         let Some(line) = typing_tagmsg(target, phase) else {
             return false;
         };
-        self.effects.push(super::session::Effect::Write(line.into_bytes()));
+        self.effects
+            .push(super::session::Effect::Write(line.into_bytes()));
         self.typing.record_sent(target, phase, now);
         true
     }

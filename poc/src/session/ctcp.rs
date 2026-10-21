@@ -30,7 +30,11 @@ impl Core {
         }
         let sender = prefix_nick(message);
         if sender.is_empty()
-            || is_service_identity(&sender, &wire::ctcp_reply_host(message), &self.channel_types)
+            || is_service_identity(
+                &sender,
+                &wire::ctcp_reply_host(message),
+                &self.channel_types,
+            )
         {
             return true;
         }
@@ -46,7 +50,11 @@ impl Core {
             }
             "TIME" => ctcp_payload(&CtcpRequest {
                 command: "TIME".to_owned(),
-                argument: self.now().with_timezone(&Local).format("%a, %d %b %Y %H:%M:%S %z").to_string(),
+                argument: self
+                    .now()
+                    .with_timezone(&Local)
+                    .format("%a, %d %b %Y %H:%M:%S %z")
+                    .to_string(),
             }),
             "VERSION" => ctcp_payload(&CtcpRequest {
                 command: "VERSION".to_owned(),
@@ -67,8 +75,8 @@ impl Core {
         let key = nick.to_lowercase();
         let now = self.now();
         if let Some(last) = self.ctcp_reply_clock.get(&key) {
-            let interval = chrono::TimeDelta::from_std(CTCP_REPLY_INTERVAL)
-                .unwrap_or(chrono::TimeDelta::MAX);
+            let interval =
+                chrono::TimeDelta::from_std(CTCP_REPLY_INTERVAL).unwrap_or(chrono::TimeDelta::MAX);
             if now - *last < interval {
                 return false;
             }
@@ -79,9 +87,16 @@ impl Core {
 
     /// Sends a CTCP query, optionally labeled (`sendCtcpLocked`). The verb is
     /// upper-cased and may not contain a space.
-    pub(crate) fn send_ctcp(&mut self, target: &str, command: &str, argument: &str, request_label: &str) -> bool {
+    pub(crate) fn send_ctcp(
+        &mut self,
+        target: &str,
+        command: &str,
+        argument: &str,
+        request_label: &str,
+    ) -> bool {
         let verb = command.trim().to_uppercase();
-        if !super::session::is_valid_privmsg_target(target) || verb.is_empty() || verb.contains(' ') {
+        if !super::session::is_valid_privmsg_target(target) || verb.is_empty() || verb.contains(' ')
+        {
             return false;
         }
         let payload = ctcp_payload(&CtcpRequest {
