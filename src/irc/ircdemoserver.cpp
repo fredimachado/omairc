@@ -783,8 +783,11 @@ void injectClientEcho(IrcLoopbackTransport *transport, const QString &nick,
     transport->injectBytes(":" + nick.toUtf8() + "!u@h " + frame);
 }
 
+// A real server follows the self JOIN with the current topic. The demo still
+// sends no fresh 353, so the member column stays the nick who just joined. The
+// topic is the value a TOPIC frame set, not the seed.
 void injectSelfJoin(IrcLoopbackTransport *transport, const QString &nick,
-                    const QByteArray &frame)
+                    const QByteArray &frame, const QHash<QString, QString> &topics)
 {
     QByteArray rest = frame.mid(5);
     while (!rest.isEmpty() && (rest.endsWith('\n') || rest.endsWith('\r')))
@@ -795,17 +798,42 @@ void injectSelfJoin(IrcLoopbackTransport *transport, const QString &nick,
     for (const QByteArray &raw : names) {
         if (raw.isEmpty())
             continue;
-        transport->injectBytes(joinLine(nick, QString::fromUtf8(raw)));
+        const QString channel = QString::fromUtf8(raw);
+        transport->injectBytes(joinLine(nick, channel));
+        const QString topic = topics.value(channel.toLower());
+        if (!topic.isEmpty()) {
+            transport->injectBytes(line(QStringLiteral(":server 332 %1 %2 :%3")
+                                            .arg(nick, channel, topic)));
+        }
     }
 }
 
-QStringList demoOnlineNicks(const SeedNetwork &network)
+// The channel state a network starts from: each seeded channel, lower-cased,
+// with its seeded topic. A name missing from the map is a channel the demo does
+// not know, so PART and TOPIC leave it alone.
+QHash<QString, QString> seedChannelTopics(const SeedNetwork &network)
+{
+    QHash<QString, QString> topics;
+    for (const SeedChannel &channel : network.channels)
+        topics.insert(channel.name.toLower(), channel.topic);
+    return topics;
+}
+
+// Every nick a MONITOR reply may call online: the nick the session answers as,
+// each channel member, and each direct peer. NICK may have renamed the session,
+// so the seeded nick stops counting as online once the self nick differs from it.
+QStringList demoOnlineNicks(const SeedNetwork &network, const QString &selfNick)
 {
     QSet<QString> nicks;
-    nicks.insert(network.nick);
+    nicks.insert(selfNick);
     for (const SeedChannel &channel : network.channels) {
-        for (const QString &nick : channel.members)
+        for (const QString &nick : channel.members) {
+            if (selfNick != network.nick
+                && nick.compare(network.nick, Qt::CaseInsensitive) == 0) {
+                continue;
+            }
             nicks.insert(nick);
+        }
     }
     for (const SeedDirect &direct : network.directs)
         nicks.insert(direct.nick);
@@ -990,8 +1018,9 @@ QVector<ListEntry> listEntries(const SeedNetwork &network)
     return rows;
 }
 
+// Numerics are addressed to selfNick, the network's current nick.
 bool tryAnswerList(IrcLoopbackTransport *transport, const SeedNetwork &network,
-                   const QByteArray &frame)
+                   const QString &selfNick, const QByteArray &frame)
 {
     if (!transport)
         return false;
@@ -1008,15 +1037,15 @@ bool tryAnswerList(IrcLoopbackTransport *transport, const SeedNetwork &network,
         mask = QString::fromUtf8(wire.mid(5)).trimmed();
 
     QByteArray out = line(QStringLiteral(":server 321 %1 Channel :Users  Name")
-                              .arg(network.nick));
+                              .arg(selfNick));
     for (const ListEntry &entry : listEntries(network)) {
         if (!listMaskMatches(entry.name, mask))
             continue;
         out += line(QStringLiteral(":server 322 %1 %2 %3 :%4")
-                        .arg(network.nick, entry.name,
+                        .arg(selfNick, entry.name,
                              QString::number(entry.users), entry.topic));
     }
-    out += line(QStringLiteral(":server 323 %1 :End of /LIST").arg(network.nick));
+    out += line(QStringLiteral(":server 323 %1 :End of /LIST").arg(selfNick));
     transport->injectBytes(out);
     return true;
 }
@@ -1119,6 +1148,71 @@ bool tryAnswerMetadata(IrcLoopbackTransport *transport, const QString &selfNick,
     }
     transport->injectBytes(line(QStringLiteral(":server 761 %1 %2 %3 * :%4")
                                     .arg(selfNick, selfNick, stored, value)));
+    return true;
+}
+
+IrcServerFeatures demoServerFeatures();
+
+// A real server echoes our own NICK under the old nick. The demo then moves its
+// self nick to the new one, so every later echo and reply uses it. A NICK that
+// does not carry exactly one new nick, with no space in it, gets no echo.
+bool tryAnswerNick(IrcLoopbackTransport *transport, QString &selfNick,
+                   const QByteArray &frame)
+{
+    if (!transport || selfNick.isEmpty() || !stripCrlf(frame).startsWith("NICK "))
+        return false;
+    const std::optional<IrcMessage> parsed = parseDemoFrame(frame);
+    if (!parsed || parsed->command != "NICK" || parsed->parameters.size() != 1)
+        return false;
+
+    const QString newNick = ircWireText(parsed->parameters[0]);
+    if (newNick.isEmpty() || newNick.contains(QLatin1Char(' ')))
+        return false;
+    const QString oldNick = selfNick;
+    selfNick = newNick;
+    transport->injectBytes(line(QStringLiteral(":%1!u@h NICK :%2").arg(oldNick, newNick)));
+    return true;
+}
+
+// A real server echoes our own PART for any channel name, as it echoes JOIN. The
+// frame is kept as the client sent it under our own prefix, so a reason stays as
+// written. A target that is not a channel gets no echo.
+bool tryAnswerPart(IrcLoopbackTransport *transport, const QString &selfNick,
+                   const QByteArray &frame)
+{
+    if (!transport || selfNick.isEmpty() || !stripCrlf(frame).startsWith("PART "))
+        return false;
+    const std::optional<IrcMessage> parsed = parseDemoFrame(frame);
+    if (!parsed || parsed->command != "PART" || parsed->parameters.empty())
+        return false;
+
+    static const IrcServerFeatures features = demoServerFeatures();
+    if (!features.isChannel(parsed->parameters[0]))
+        return false;
+    injectClientEcho(transport, selfNick, frame);
+    return true;
+}
+
+// A real server echoes our own TOPIC on any channel name and keeps the new text,
+// so a later self JOIN reports it in 332. A bare TOPIC query has no text
+// parameter, and a target that is not a channel gets no echo.
+bool tryAnswerTopic(IrcLoopbackTransport *transport, const QString &selfNick,
+                    QHash<QString, QString> &topics, const QByteArray &frame)
+{
+    if (!transport || selfNick.isEmpty() || !stripCrlf(frame).startsWith("TOPIC "))
+        return false;
+    const std::optional<IrcMessage> parsed = parseDemoFrame(frame);
+    if (!parsed || parsed->command != "TOPIC" || parsed->parameters.size() < 2)
+        return false;
+
+    static const IrcServerFeatures features = demoServerFeatures();
+    if (!features.isChannel(parsed->parameters[0]))
+        return false;
+    const QString channel = ircWireText(parsed->parameters[0]);
+    const QString text = ircWireText(parsed->parameters[1]);
+    topics.insert(channel.toLower(), text);
+    transport->injectBytes(line(QStringLiteral(":%1!u@h TOPIC %2 :%3")
+                                    .arg(selfNick, channel, text)));
     return true;
 }
 
@@ -1273,30 +1367,42 @@ bool IrcDemoServer::startNetwork(IrcController &controller,
 }
 
 void IrcDemoServer::hookAutoEcho(IrcLoopbackTransport *transport,
-                                 const QString &nick,
-                                 const QStringList &online)
+                                 const QString &nick)
 {
     const SeedNetwork network = nick == oftcWorld().nick ? oftcWorld() : omarchyWorld();
+    m_selfNicks.insert(transport, nick);
+    m_topics.insert(transport, seedChannelTopics(network));
+    // Each frame reads the network's current self nick, so a NICK frame moves
+    // every later reply and echo to the new nick, and the MONITOR online set is
+    // rebuilt from it.
     QObject::connect(transport, &IrcLoopbackTransport::frameWritten, this,
-                     [this, transport, nick, online, network](const QByteArray &frame) {
+                     [this, transport, network](const QByteArray &frame) {
+        const QString self = m_selfNicks.value(transport);
+        const QStringList online = demoOnlineNicks(network, self);
         if (tryAnswerPing(transport, frame))
             return;
-        if (tryAnswerList(transport, network, frame))
+        if (tryAnswerList(transport, network, self, frame))
             return;
-        if (tryAnswerCtcp(transport, nick, frame))
+        if (tryAnswerCtcp(transport, self, frame))
             return;
-        if (tryAnswerAway(transport, nick, frame))
+        if (tryAnswerAway(transport, self, frame))
             return;
-        if (tryAnswerMetadata(transport, nick, frame))
+        if (tryAnswerMetadata(transport, self, frame))
             return;
-        if (tryAnswerMonitor(transport, nick, frame, online,
+        if (tryAnswerMonitor(transport, self, frame, online,
                              m_monitorLists[transport])) {
             return;
         }
+        if (tryAnswerNick(transport, m_selfNicks[transport], frame))
+            return;
+        if (tryAnswerPart(transport, self, frame))
+            return;
+        if (tryAnswerTopic(transport, self, m_topics[transport], frame))
+            return;
         if (frame.startsWith("JOIN "))
-            injectSelfJoin(transport, nick, frame);
+            injectSelfJoin(transport, self, frame, m_topics.value(transport));
         if (frame.startsWith("PRIVMSG ") || frame.startsWith("NOTICE "))
-            injectClientEcho(transport, nick, frame);
+            injectClientEcho(transport, self, frame);
     });
 }
 
@@ -1335,8 +1441,8 @@ bool IrcDemoServer::attach(IrcController &controller, bool autoEcho)
     m_oftcTransport->injectBytes(
         line(QStringLiteral(":rio!u@h INVITE oak :#debian")));
     if (autoEcho) {
-        hookAutoEcho(m_omarchyTransport, omarchy.nick, demoOnlineNicks(omarchy));
-        hookAutoEcho(m_oftcTransport, oftc.nick, demoOnlineNicks(oftc));
+        hookAutoEcho(m_omarchyTransport, omarchy.nick);
+        hookAutoEcho(m_oftcTransport, oftc.nick);
     }
     return true;
 }

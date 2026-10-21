@@ -17,6 +17,13 @@ private slots:
     void answersList();
     void rejoinEchoesSelfJoin();
     void closedChannelsRejoinFromDemoEcho();
+    void echoesSelfPart();
+    void partEchoLeavesChannel();
+    void echoesSelfNickChange();
+    void echoesTopicChangeOnRejoin();
+    void rejoinCarriesSeededTopic();
+    void rejoinCarriesTopicOnDirectoryChannel();
+    void ignoresTopicQueryAndNonChannelTargets();
     void seedsServiceAccounts();
     void seedsQueryHeaderFacts();
     void seedsSelfAvatars();
@@ -248,6 +255,185 @@ void DemoServerTest::closedChannelsRejoinFromDemoEcho()
     controller.selectConversation(network, QStringLiteral("#desktop"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#desktop"));
     QVERIFY(controller.channelJoined());
+}
+
+void DemoServerTest::echoesSelfPart()
+{
+    IrcController controller;
+    IrcDemoServer demo;
+    QVERIFY(demo.attach(controller, true));
+    IrcLoopbackTransport *transport = demo.omarchyTransport();
+    QVERIFY(transport);
+
+    QSignalSpy received(transport, &IrcLoopbackTransport::bytesReceived);
+    transport->write(QByteArrayLiteral("PART #desktop\r\n"));
+    QCOMPARE(received.size(), 1);
+    QCOMPARE(received.last().first().toByteArray(),
+             QByteArrayLiteral(":fred!u@h PART #desktop\r\n"));
+
+    transport->write(QByteArrayLiteral("PART #desktop :see you\r\n"));
+    QCOMPARE(received.size(), 2);
+    QCOMPARE(received.last().first().toByteArray(),
+             QByteArrayLiteral(":fred!u@h PART #desktop :see you\r\n"));
+
+    // Any channel name is echoed, as JOIN echoes it. A target that is not a
+    // channel gets no echo.
+    transport->write(QByteArrayLiteral("PART #nowhere\r\n"));
+    QCOMPARE(received.size(), 3);
+    QCOMPARE(received.last().first().toByteArray(),
+             QByteArrayLiteral(":fred!u@h PART #nowhere\r\n"));
+    transport->write(QByteArrayLiteral("PART fred\r\n"));
+    QCOMPARE(received.size(), 3);
+}
+
+void DemoServerTest::partEchoLeavesChannel()
+{
+    IrcController controller;
+    IrcDemoServer demo;
+    QVERIFY(demo.attach(controller, true));
+    IrcLoopbackTransport *transport = demo.omarchyTransport();
+    QVERIFY(transport);
+    controller.selectConversation(IrcDemoServer::omarchyNetworkId(),
+                                  QStringLiteral("#desktop"));
+    QVERIFY(controller.channelJoined());
+
+    // Written straight to the transport, so no controller-side /part runs and
+    // only the demo echo can mark the channel left.
+    transport->write(QByteArrayLiteral("PART #desktop\r\n"));
+    QVERIFY(!controller.channelJoined());
+}
+
+void DemoServerTest::echoesSelfNickChange()
+{
+    IrcController controller;
+    IrcDemoServer demo;
+    QVERIFY(demo.attach(controller, true));
+    IrcLoopbackTransport *transport = demo.omarchyTransport();
+    QVERIFY(transport);
+
+    QSignalSpy received(transport, &IrcLoopbackTransport::bytesReceived);
+    transport->write(QByteArrayLiteral("NICK bob\r\n"));
+    QCOMPARE(received.size(), 1);
+    QCOMPARE(received.last().first().toByteArray(),
+             QByteArrayLiteral(":fred!u@h NICK :bob\r\n"));
+
+    // Later replies and echoes use the nick the demo now holds.
+    transport->write(QByteArrayLiteral("AWAY :brb\r\n"));
+    QCOMPARE(received.size(), 2);
+    QCOMPARE(received.last().first().toByteArray(),
+             QByteArrayLiteral(":server 306 bob :You have been marked as being away\r\n"));
+
+    transport->write(QByteArrayLiteral("PART #desktop\r\n"));
+    QCOMPARE(received.size(), 3);
+    QCOMPARE(received.last().first().toByteArray(),
+             QByteArrayLiteral(":bob!u@h PART #desktop\r\n"));
+
+    // MONITOR rebuilds its online set from the new nick: bob is online, and the
+    // seeded fred no longer is.
+    transport->write(QByteArrayLiteral("MONITOR + fred,bob\r\n"));
+    QCOMPARE(received.size(), 5);
+    QCOMPARE(received.at(3).first().toByteArray(),
+             QByteArrayLiteral(":server 730 bob :bob!u@h\r\n"));
+    QCOMPARE(received.at(4).first().toByteArray(),
+             QByteArrayLiteral(":server 731 bob :fred\r\n"));
+
+    // The next NICK carries the old nick as its prefix.
+    transport->write(QByteArrayLiteral("NICK alice\r\n"));
+    QCOMPARE(received.size(), 6);
+    QCOMPARE(received.last().first().toByteArray(),
+             QByteArrayLiteral(":bob!u@h NICK :alice\r\n"));
+}
+
+void DemoServerTest::echoesTopicChangeOnRejoin()
+{
+    IrcController controller;
+    IrcDemoServer demo;
+    QVERIFY(demo.attach(controller, true));
+    IrcLoopbackTransport *transport = demo.omarchyTransport();
+    QVERIFY(transport);
+
+    QSignalSpy received(transport, &IrcLoopbackTransport::bytesReceived);
+    transport->write(QByteArrayLiteral("TOPIC #desktop :new banner\r\n"));
+    QCOMPARE(received.size(), 1);
+    QCOMPARE(received.last().first().toByteArray(),
+             QByteArrayLiteral(":fred!u@h TOPIC #desktop :new banner\r\n"));
+
+    // The rejoin's self JOIN is followed by 332 with the value the TOPIC set.
+    transport->write(QByteArrayLiteral("PART #desktop\r\n"));
+    transport->write(QByteArrayLiteral("JOIN #desktop\r\n"));
+    QCOMPARE(received.size(), 4);
+    QCOMPARE(received.at(2).first().toByteArray(),
+             QByteArrayLiteral(":fred!u@h JOIN :#desktop\r\n"));
+    QCOMPARE(received.at(3).first().toByteArray(),
+             QByteArrayLiteral(":server 332 fred #desktop :new banner\r\n"));
+
+    // A cleared topic leaves the rejoin with no 332.
+    transport->write(QByteArrayLiteral("TOPIC #desktop :\r\n"));
+    QCOMPARE(received.size(), 5);
+    QCOMPARE(received.last().first().toByteArray(),
+             QByteArrayLiteral(":fred!u@h TOPIC #desktop :\r\n"));
+    transport->write(QByteArrayLiteral("PART #desktop\r\n"));
+    transport->write(QByteArrayLiteral("JOIN #desktop\r\n"));
+    QCOMPARE(received.size(), 7);
+    QCOMPARE(received.last().first().toByteArray(),
+             QByteArrayLiteral(":fred!u@h JOIN :#desktop\r\n"));
+}
+
+void DemoServerTest::rejoinCarriesSeededTopic()
+{
+    IrcController controller;
+    IrcDemoServer demo;
+    QVERIFY(demo.attach(controller, true));
+    IrcLoopbackTransport *transport = demo.omarchyTransport();
+    QVERIFY(transport);
+
+    QSignalSpy received(transport, &IrcLoopbackTransport::bytesReceived);
+    transport->write(QByteArrayLiteral("JOIN #omarchy\r\n"));
+    QCOMPARE(received.size(), 2);
+    QCOMPARE(received.at(0).first().toByteArray(),
+             QByteArrayLiteral(":fred!u@h JOIN :#omarchy\r\n"));
+    QCOMPARE(received.at(1).first().toByteArray(),
+             QByteArrayLiteral(":server 332 fred #omarchy :A cozy corner for Omarchy users and builders.\r\n"));
+}
+
+void DemoServerTest::ignoresTopicQueryAndNonChannelTargets()
+{
+    IrcController controller;
+    IrcDemoServer demo;
+    QVERIFY(demo.attach(controller, true));
+    IrcLoopbackTransport *transport = demo.omarchyTransport();
+    QVERIFY(transport);
+
+    QSignalSpy received(transport, &IrcLoopbackTransport::bytesReceived);
+    // A bare TOPIC asks for the topic; it is not a change, so nothing is echoed.
+    transport->write(QByteArrayLiteral("TOPIC #desktop\r\n"));
+    // A target that is not a channel has no topic to set.
+    transport->write(QByteArrayLiteral("TOPIC fred :x\r\n"));
+    QCOMPARE(received.size(), 0);
+}
+
+void DemoServerTest::rejoinCarriesTopicOnDirectoryChannel()
+{
+    IrcController controller;
+    IrcDemoServer demo;
+    QVERIFY(demo.attach(controller, true));
+    IrcLoopbackTransport *transport = demo.omarchyTransport();
+    QVERIFY(transport);
+
+    // #linux is only in the LIST directory, not seeded, but a topic set on it is
+    // kept and the rejoin reports it, as a real server does for any channel.
+    QSignalSpy received(transport, &IrcLoopbackTransport::bytesReceived);
+    transport->write(QByteArrayLiteral("TOPIC #linux :kernel talk\r\n"));
+    QCOMPARE(received.size(), 1);
+    QCOMPARE(received.last().first().toByteArray(),
+             QByteArrayLiteral(":fred!u@h TOPIC #linux :kernel talk\r\n"));
+
+    transport->write(QByteArrayLiteral("JOIN #linux\r\n"));
+    QCOMPARE(received.size(), 3);
+    QCOMPARE(received.at(1).first().toByteArray(),
+             QByteArrayLiteral(":fred!u@h JOIN :#linux\r\n"));
+    QCOMPARE(received.at(2).first().toByteArray(),
+             QByteArrayLiteral(":server 332 fred #linux :kernel talk\r\n"));
 }
 
 int runDemoServerTests(int argc, char **argv)

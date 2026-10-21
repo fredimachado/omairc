@@ -113,9 +113,9 @@ func (d *DemoServer) tryAnswerPing(frame []byte) []byte {
 	return line(":server PONG irc.example :" + token)
 }
 
-// tryAnswerList answers a /list mask with 321/322/323. It mirrors
-// tryAnswerList().
-func (d *DemoServer) tryAnswerList(network SeedNetwork, frame []byte) []byte {
+// tryAnswerList answers a /list mask with 321/322/323 addressed to selfNick, the
+// network's current nick. It mirrors tryAnswerList().
+func (d *DemoServer) tryAnswerList(network SeedNetwork, selfNick string, frame []byte) []byte {
 	wire := stripCrlf(frame)
 	if !bytes.Equal(wire, []byte("LIST")) && !bytes.HasPrefix(wire, []byte("LIST ")) {
 		return nil
@@ -125,15 +125,113 @@ func (d *DemoServer) tryAnswerList(network SeedNetwork, frame []byte) []byte {
 		mask = strings.TrimSpace(string(wire[5:]))
 	}
 
-	out := line(":server 321 " + network.Nick + " Channel :Users  Name")
+	out := line(":server 321 " + selfNick + " Channel :Users  Name")
 	for _, entry := range listEntries(network) {
 		if !listMaskMatches(entry.Name, mask) {
 			continue
 		}
-		out = append(out, line(":server 322 "+network.Nick+" "+entry.Name+" "+
+		out = append(out, line(":server 322 "+selfNick+" "+entry.Name+" "+
 			strconv.Itoa(entry.Users)+" :"+entry.Topic)...)
 	}
-	out = append(out, line(":server 323 "+network.Nick+" :End of /LIST")...)
+	out = append(out, line(":server 323 "+selfNick+" :End of /LIST")...)
+	return out
+}
+
+// tryAnswerNick answers our own NICK with an echo under the old nick, then moves
+// the network's self nick to the new one so later replies use it. A NICK that
+// does not carry exactly one new nick, with no space in it, gets no echo. It
+// mirrors tryAnswerNick().
+func (d *DemoServer) tryAnswerNick(networkID string, frame []byte) []byte {
+	oldNick := d.selfNicks[networkID]
+	if oldNick == "" || !bytes.HasPrefix(stripCrlf(frame), []byte("NICK ")) {
+		return nil
+	}
+	message, ok := parseDemoFrame(frame)
+	if !ok || message.Command != "NICK" || len(message.Params) != 1 {
+		return nil
+	}
+	newNick := irc.WireText([]byte(message.Params[0]))
+	if newNick == "" || strings.Contains(newNick, " ") {
+		return nil
+	}
+	d.selfNicks[networkID] = newNick
+	return line(":" + oldNick + "!u@h NICK :" + newNick)
+}
+
+// tryAnswerPart echoes our own PART for any channel name, keeping the frame as
+// the client sent it under our own prefix, so a reason stays as written. A target
+// that is not a channel gets no echo. It mirrors tryAnswerPart().
+func (d *DemoServer) tryAnswerPart(networkID string, frame []byte) []byte {
+	selfNick := d.selfNicks[networkID]
+	if selfNick == "" || !bytes.HasPrefix(stripCrlf(frame), []byte("PART ")) {
+		return nil
+	}
+	message, ok := parseDemoFrame(frame)
+	if !ok || message.Command != "PART" || len(message.Params) == 0 {
+		return nil
+	}
+	features := demoServerFeatures()
+	if !features.IsChannel(message.Params[0]) {
+		return nil
+	}
+	return injectClientEcho(selfNick, frame)
+}
+
+// tryAnswerTopic echoes our own TOPIC on any channel name and keeps the new text,
+// so a later self JOIN reports it in 332. A bare TOPIC query has no text
+// parameter, and a target that is not a channel gets no echo. It mirrors
+// tryAnswerTopic().
+func (d *DemoServer) tryAnswerTopic(networkID string, frame []byte) []byte {
+	selfNick := d.selfNicks[networkID]
+	if selfNick == "" || !bytes.HasPrefix(stripCrlf(frame), []byte("TOPIC ")) {
+		return nil
+	}
+	message, ok := parseDemoFrame(frame)
+	if !ok || message.Command != "TOPIC" || len(message.Params) < 2 {
+		return nil
+	}
+	features := demoServerFeatures()
+	if !features.IsChannel(message.Params[0]) {
+		return nil
+	}
+	topics := d.topics[networkID]
+	if topics == nil {
+		return nil
+	}
+	channel := irc.WireText([]byte(message.Params[0]))
+	text := irc.WireText([]byte(message.Params[1]))
+	topics[strings.ToLower(channel)] = text
+	return line(":" + selfNick + "!u@h TOPIC " + channel + " :" + text)
+}
+
+// tryAnswerJoin echoes one self JOIN per channel in an outbound JOIN frame. A
+// channel the demo holds a topic for is followed by 332 carrying the current
+// topic, which a TOPIC frame may have replaced. The demo still sends no fresh
+// 353, so the member column stays the nick who just joined. It mirrors
+// IrcDemoServer::injectSelfJoin, which injects the same lines.
+func (d *DemoServer) tryAnswerJoin(networkID, selfNick string, frame []byte) []byte {
+	if !bytes.HasPrefix(stripCrlf(frame), []byte("JOIN ")) {
+		return nil
+	}
+	rest := bytes.TrimRight(frame[len("JOIN "):], "\r\n")
+	if len(rest) == 0 {
+		return nil
+	}
+	channelField := rest
+	if space := bytes.IndexByte(rest, ' '); space >= 0 {
+		channelField = rest[:space]
+	}
+	var out []byte
+	for _, raw := range bytes.Split(channelField, []byte(",")) {
+		if len(raw) == 0 {
+			continue
+		}
+		name := string(raw)
+		out = append(out, joinLine(selfNick, name, "")...)
+		if topic := d.topics[networkID][strings.ToLower(name)]; topic != "" {
+			out = append(out, line(":server 332 "+selfNick+" "+name+" :"+topic)...)
+		}
+	}
 	return out
 }
 
@@ -373,14 +471,19 @@ func demoNickIsOnline(online []string, nick string) bool {
 	return demoMonitorIndex(online, nick) >= 0
 }
 
-// demoOnlineNicks is our own nick, every channel member, and every direct peer.
-// The C++ returns QSet::values() (unordered); this port sorts for determinism.
-// It mirrors demoOnlineNicks().
-func demoOnlineNicks(network SeedNetwork) []string {
+// demoOnlineNicks is the nick the session answers as, every channel member, and
+// every direct peer. NICK may have renamed the session, so the seeded nick stops
+// counting as online once the self nick differs from it. The C++ returns
+// QSet::values() (unordered); this port sorts for determinism. It mirrors
+// demoOnlineNicks().
+func demoOnlineNicks(network SeedNetwork, selfNick string) []string {
 	nicks := make(map[string]struct{})
-	nicks[network.Nick] = struct{}{}
+	nicks[selfNick] = struct{}{}
 	for _, channel := range network.Channels {
 		for _, nick := range channel.Members {
+			if selfNick != network.Nick && strings.EqualFold(nick, network.Nick) {
+				continue
+			}
 			nicks[nick] = struct{}{}
 		}
 	}
