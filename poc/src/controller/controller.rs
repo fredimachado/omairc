@@ -47,6 +47,7 @@ use super::autoawayruntime::AutoawayState;
 use super::channellist::{ChannelListRequests, ChannelListView};
 use super::console::StatusConsole;
 use super::monitorcoordinator::MonitorState;
+use super::scrollplace::ScrollPlaceStore;
 use super::snapshots::state_text;
 use super::stores::{HighlightStore, IgnoreStore, MonitorStore, MuteStore};
 use super::transports::{LiveTransports, TransportFactory};
@@ -114,6 +115,8 @@ pub struct Controller {
     notifications: Vec<ViewNotify>,
     /// The auto-away timers, settings and away sets (`autoawayruntime.rs`).
     pub(super) autoaway: AutoawayState,
+    /// Where each conversation's transcript was left (`scrollplace.rs`).
+    pub(super) scroll_places: ScrollPlaceStore,
     /// The `/list` requests, their rows and idle timers (`channellist.rs`), and the
     /// overlay that shows them.
     pub(super) channel_lists: ChannelListRequests,
@@ -163,6 +166,7 @@ impl Controller {
             network_collapsed: BTreeSet::new(),
             notifications: Vec::new(),
             autoaway: AutoawayState::default(),
+            scroll_places: ScrollPlaceStore::default(),
             channel_lists,
             channel_view: ChannelListView::default(),
             ignores: Rc::new(RefCell::new(IgnoreStore::in_memory())),

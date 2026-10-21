@@ -4,7 +4,21 @@
 //! this module keeps the shapes the sidebar and the header draw from in one place.
 
 use crate::irc::event::ConversationKey;
+use crate::irc::world::MessageKind;
 use crate::session::events::SessionState;
+
+/// The transcript kind's name (`messageKindName`), as the saved scroll anchor records it.
+// Phase 4: the scroll place store reads it; the allow comes off with the shell rewire.
+#[allow(dead_code)]
+pub fn message_kind_name(kind: MessageKind) -> &'static str {
+    match kind {
+        MessageKind::Action => "action",
+        MessageKind::Event | MessageKind::Error => "event",
+        MessageKind::Whois => "whois",
+        MessageKind::Notice => "notice",
+        MessageKind::Message => "message",
+    }
+}
 
 /// One sidebar row (`ConversationSnapshot`, the `ConversationListModel` roles).
 #[derive(Clone, Debug, PartialEq, Eq)]

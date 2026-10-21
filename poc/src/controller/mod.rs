@@ -31,6 +31,9 @@ pub mod monitorcoordinator;
 pub mod networks;
 pub mod reads;
 pub mod replyrouter;
+// Phase 4: the shell still keeps its scroll places in `model/scroll_place.rs`. The
+// rewire to this store lands with the shell's transcript work, and the allow comes off then.
+#[allow(dead_code)]
 pub mod scrollplace;
 pub mod selection;
 pub mod send;
