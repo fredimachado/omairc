@@ -4,6 +4,7 @@ use crate::irc::reducer::MemberView;
 use crate::model::Style;
 use crate::ui::members::member_row::member_row;
 use crate::ui::scrollbar::{div_vertical_scrollbar, ScrollbarDragCell};
+use crate::ui::widgets::avatar::AvatarPhotos;
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
@@ -24,6 +25,8 @@ pub struct MembersData<'a> {
     pub cursor: Option<usize>,
     /// The `avatars` preference: off, every row shows its initials.
     pub avatars: bool,
+    /// The photos this frame draws, by avatar reference (`ui::shell::avatars`).
+    pub photos: &'a AvatarPhotos,
 }
 
 /// The right-hand member panel for a channel (`MembersColumn.qml`). `host` is
@@ -46,6 +49,7 @@ pub fn render_members<V: 'static>(
         focus,
         cursor,
         avatars,
+        photos,
     } = data;
     let heading_color = to_gpui(style.muted_color());
     let ink = to_gpui(style.ink_color());
@@ -99,6 +103,7 @@ pub fn render_members<V: 'static>(
                                 on_nick.clone(),
                                 cursor == Some(ix),
                                 avatars,
+                                photos,
                             )
                         })),
                 )

@@ -3819,6 +3819,7 @@ dependencies = [
  "clap",
  "dirs 6.0.0",
  "gpui",
+ "image",
  "log",
  "notify",
  "nucleo-matcher",

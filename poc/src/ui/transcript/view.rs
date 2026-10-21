@@ -26,6 +26,7 @@ use crate::ui::scrollbar::{list_vertical_scrollbar, move_scrollbar_drag, Scrollb
 use crate::ui::transcript::pointer::{self, RowBounds};
 use crate::ui::transcript::unseen_jump::render_unseen_jump;
 use crate::ui::typing_row::render_typing_row;
+use crate::ui::widgets::avatar::AvatarPhotos;
 use crate::ui::Handler;
 use crate::util::{style, to_gpui, OmaircStyleGlobal};
 
@@ -127,6 +128,16 @@ impl TranscriptView {
     /// again on the next frame, so a change shows at once.
     pub fn set_avatars(&mut self, on: bool) {
         self.peers.avatars = on;
+    }
+
+    /// The photos the frame draws. Returns whether the references changed, so the
+    /// caller repaints only then.
+    pub fn set_photos(&mut self, photos: AvatarPhotos) -> bool {
+        if self.peers.photos.same_references(&photos) {
+            return false;
+        }
+        self.peers.photos = photos;
+        true
     }
 
     pub fn rows(&self) -> &[Row] {

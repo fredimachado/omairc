@@ -4,6 +4,7 @@
 //! protocol. The Go cases they port are named in each file's header.
 
 mod autoaway;
+mod avatars;
 mod channellist;
 mod chrome;
 mod commands;

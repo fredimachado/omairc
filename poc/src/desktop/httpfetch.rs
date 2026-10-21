@@ -7,14 +7,23 @@
 //! `UreqFetch` is the one implementation that opens a socket. It blocks, so
 //! callers run it on `cx.background_executor()`. It never follows a redirect
 //! itself: `get_following` walks each hop, so the caller's policy judges every
-//! target before it is requested. `FakeFetch` is the test double and serves
-//! canned replies.
+//! target before it is requested. A request that sets `public_addresses_only`
+//! resolves its host itself, keeps one global address and connects to that
+//! address (the DNS pin), with no proxy in between, so the address judged is the
+//! address dialled. `FakeFetch` is the test double and serves canned replies.
 
 use std::fmt;
+use std::net::IpAddr;
 use std::time::Duration;
 
-use ureq::Agent;
+use ureq::config::Config;
+use ureq::http::Uri;
+use ureq::unversioned::resolver::{DefaultResolver, ResolvedSocketAddrs, Resolver};
+use ureq::unversioned::transport::{DefaultConnector, NextTimeout};
+use ureq::{Agent, Error as UreqError};
 use url::Url;
+
+use crate::irc::avatarurl::{select_safe_avatar_address, IpLiteral};
 
 /// One GET. `max_body` caps the bytes a 2xx reply may send. A longer body is a
 /// transport failure, so a hostile peer cannot grow the buffer without bound.
@@ -24,6 +33,10 @@ pub struct FetchRequest {
     pub headers: Vec<(String, String)>,
     pub timeout: Duration,
     pub max_body: u64,
+    /// Connect only to a global address, pinned to the first one the resolver gives,
+    /// and never through a proxy. The avatar fetch sets it. A request judged here
+    /// is one hop, so each redirect target gets its own pin.
+    pub public_addresses_only: bool,
 }
 
 impl FetchRequest {
@@ -33,6 +46,7 @@ impl FetchRequest {
             headers: Vec::new(),
             timeout,
             max_body,
+            public_addresses_only: false,
         }
     }
 
@@ -40,14 +54,21 @@ impl FetchRequest {
         self.headers.push((name.to_string(), value.to_string()));
         self
     }
+
+    /// Connects only to a global address of the host, pinned to one of them.
+    pub fn public_addresses_only(mut self) -> Self {
+        self.public_addresses_only = true;
+        self
+    }
 }
 
-/// The status and the one header a redirect needs. A 2xx body is not returned
-/// here: it goes to the caller's sink as it arrives.
+/// The status, the header a redirect needs, and the `Content-Type` a fetch judges.
+/// A 2xx body is not returned here: it goes to the caller's sink as it arrives.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FetchReply {
     pub status: u16,
     pub location: Option<String>,
+    pub content_type: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -84,11 +105,13 @@ pub trait HttpFetch: Send + Sync {
     ) -> Result<FetchReply, FetchError>;
 }
 
-/// Where a `get_following` call finished, and the status it got there.
+/// Where a `get_following` call finished, the status it got there, and the
+/// `Content-Type` of that reply.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Fetched {
     pub url: Url,
     pub status: u16,
+    pub content_type: Option<String>,
 }
 
 /// Follows redirects one hop at a time. `allow` judges each target before it is
@@ -113,6 +136,7 @@ pub fn get_following(
                 return Ok(Fetched {
                     url: current,
                     status: reply.status,
+                    content_type: reply.content_type.clone(),
                 })
             }
         };
@@ -147,12 +171,18 @@ impl HttpFetch for UreqFetch {
         request: &FetchRequest,
         on_body: &mut dyn FnMut(&[u8]) -> bool,
     ) -> Result<FetchReply, FetchError> {
-        let config = Agent::config_builder()
+        let builder = Agent::config_builder()
             .timeout_global(Some(request.timeout))
             .max_redirects(0)
-            .http_status_as_error(false)
-            .build();
-        let agent = Agent::new_with_config(config);
+            .http_status_as_error(false);
+        let agent = if request.public_addresses_only {
+            // The pinned agent ignores an ambient proxy: a proxy would resolve the host
+            // itself, and the address this request judged would not be the one dialled.
+            let config = builder.proxy(None).build();
+            Agent::with_parts(config, DefaultConnector::new(), PublicAddressResolver)
+        } else {
+            Agent::new_with_config(builder.build())
+        };
         let mut builder = agent.get(request.url.as_str());
         for (name, value) in &request.headers {
             builder = builder.header(name.as_str(), value.as_str());
@@ -161,11 +191,15 @@ impl HttpFetch for UreqFetch {
             .call()
             .map_err(|err| FetchError::Transport(err.to_string()))?;
         let status = response.status().as_u16();
-        let location = response
-            .headers()
-            .get("location")
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_string);
+        let header_text = |name: &str| {
+            response
+                .headers()
+                .get(name)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string)
+        };
+        let location = header_text("location");
+        let content_type = header_text("content-type");
         if (200..300).contains(&status) {
             let mut reader = response
                 .body_mut()
@@ -184,7 +218,50 @@ impl HttpFetch for UreqFetch {
                 }
             }
         }
-        Ok(FetchReply { status, location })
+        Ok(FetchReply {
+            status,
+            location,
+            content_type,
+        })
+    }
+}
+
+/// The address the pinned agent connects to. The system resolver answers the host,
+/// and the first global address is kept, so the connection cannot be steered to a
+/// private or loopback address by DNS. The check is on the address that will be
+/// dialled (DNS rebinding), not on the name. A host with no global address fails
+/// the same way a missing host does.
+#[derive(Debug)]
+struct PublicAddressResolver;
+
+impl Resolver for PublicAddressResolver {
+    fn resolve(
+        &self,
+        uri: &Uri,
+        config: &Config,
+        timeout: NextTimeout,
+    ) -> Result<ResolvedSocketAddrs, UreqError> {
+        let found = DefaultResolver::default().resolve(uri, config, timeout)?;
+        let literals: Vec<IpLiteral> = found.iter().map(|addr| ip_literal(addr.ip())).collect();
+        let Some(chosen) = select_safe_avatar_address(&literals) else {
+            return Err(UreqError::HostNotFound);
+        };
+        let mut pinned = self.empty();
+        if let Some(addr) = found
+            .iter()
+            .find(|addr| ip_literal(addr.ip()) == chosen)
+        {
+            pinned.push(*addr);
+        }
+        Ok(pinned)
+    }
+}
+
+/// The `irc::avatarurl` form of a socket address's IP.
+fn ip_literal(ip: IpAddr) -> IpLiteral {
+    match ip {
+        IpAddr::V4(v4) => IpLiteral::V4(v4.octets()),
+        IpAddr::V6(v6) => IpLiteral::V6(v6.segments()),
     }
 }
 
@@ -219,25 +296,34 @@ mod fake {
             Self::default()
         }
 
-        /// Answers `url` with `status` and `body` in one chunk.
+        /// Answers `url` with `status` and `body` in one chunk, with no `Content-Type`.
         pub fn serve(&self, url: &str, status: u16, body: &[u8]) {
-            self.serve_chunked(url, status, body, body.len().max(1));
+            self.serve_typed(url, status, None, body);
         }
 
-        /// Answers `url` with `status` and `body`, delivered `chunk` bytes at a time.
-        pub fn serve_chunked(&self, url: &str, status: u16, body: &[u8], chunk: usize) {
+        /// Answers `url` with `status`, `content_type` and `body` in one chunk.
+        pub fn serve_typed(&self, url: &str, status: u16, content_type: Option<&str>, body: &[u8]) {
             self.insert(
                 url,
                 Route {
                     reply: FetchReply {
                         status,
                         location: None,
+                        content_type: content_type.map(str::to_string),
                     },
                     body: body.to_vec(),
-                    chunk: chunk.max(1),
+                    chunk: body.len().max(1),
                     failure: None,
                 },
             );
+        }
+
+        /// Answers `url` with `status` and `body`, delivered `chunk` bytes at a time.
+        pub fn serve_chunked(&self, url: &str, status: u16, body: &[u8], chunk: usize) {
+            self.serve_typed(url, status, None, body);
+            if let Some(route) = self.routes.lock().unwrap().get_mut(url) {
+                route.chunk = chunk.max(1);
+            }
         }
 
         /// Answers `url` with a redirect to `location`.
@@ -248,6 +334,7 @@ mod fake {
                     reply: FetchReply {
                         status,
                         location: Some(location.to_string()),
+                        content_type: None,
                     },
                     body: Vec::new(),
                     chunk: 1,
@@ -264,6 +351,7 @@ mod fake {
                     reply: FetchReply {
                         status: 0,
                         location: None,
+                        content_type: None,
                     },
                     body: Vec::new(),
                     chunk: 1,
@@ -572,5 +660,54 @@ mod tests {
             &mut |_| true,
         );
         assert!(matches!(result, Err(FetchError::Transport(_))), "{result:?}");
+    }
+
+    #[test]
+    fn ureq_fetch_reports_the_content_type() {
+        let (url, server) = serve_once("200 OK", "Content-Type: image/png\r\n", b"png".to_vec());
+        let reply = UreqFetch
+            .get(&request(&url), &mut |_| true)
+            .expect("served");
+        server.join().expect("server thread");
+        assert_eq!(reply.content_type.as_deref(), Some("image/png"));
+    }
+
+    #[test]
+    fn a_body_over_the_limit_fails_the_transfer() {
+        let (url, _server) = serve_once("200 OK", "", vec![0u8; 4096]);
+        let small = FetchRequest::get(&url, Duration::from_secs(5), 1024);
+        let result = UreqFetch.get(&small, &mut |_| true);
+        assert!(matches!(result, Err(FetchError::Transport(_))), "{result:?}");
+    }
+
+    #[test]
+    fn a_public_only_request_never_dials_a_loopback_address() {
+        // The loopback server is reachable, but the pinned resolver keeps only global
+        // addresses, so the request fails before any connection is made.
+        let (url, _server) = serve_once("200 OK", "", b"secret".to_vec());
+        let pinned = request(&url).public_addresses_only();
+        let mut delivered = false;
+        let result = UreqFetch.get(&pinned, &mut |_| {
+            delivered = true;
+            true
+        });
+        assert!(matches!(result, Err(FetchError::Transport(_))), "{result:?}");
+        assert!(!delivered, "no body reached the sink");
+    }
+
+    #[test]
+    fn get_following_carries_the_final_content_type() {
+        let fake = FakeFetch::new();
+        fake.redirect("https://a.example/x", 301, "https://b.example/y");
+        fake.serve_typed("https://b.example/y", 200, Some("image/gif"), b"gif");
+        let fetched = get_following(
+            &fake,
+            request("https://a.example/x"),
+            3,
+            &|_| true,
+            &mut |_| true,
+        )
+        .expect("followed");
+        assert_eq!(fetched.content_type.as_deref(), Some("image/gif"));
     }
 }

@@ -21,6 +21,7 @@
 //! seam, and `pump` runs what they queued on the UI thread.
 
 pub mod autoawayruntime;
+pub mod avatars;
 pub mod channellist;
 pub mod cli;
 pub mod commanddispatcher;

@@ -4,6 +4,7 @@
 //! IRC state: it calls controller intents, then follows the surfaces the controller raises.
 
 pub mod actions;
+pub mod avatars;
 pub mod bench;
 pub mod commands;
 pub mod connect;
@@ -106,6 +107,8 @@ pub struct Shell {
     pub focus_handle: FocusHandle,
     pub typing_phase: u8,
     pub bench: BenchState,
+    /// The decoded avatar images the frame draws, by reference (`avatars.rs`).
+    pub avatar_memo: avatars::AvatarMemo,
     /// The Windows installer update's state. The About sheet and the footer observe it.
     pub update: Entity<UpdateCheck>,
     _subscriptions: Vec<Subscription>,
@@ -196,6 +199,7 @@ impl Shell {
                 enabled: bench,
                 ..Default::default()
             },
+            avatar_memo: Default::default(),
             update,
             _subscriptions: [transcript_events, composer_events, update_observe]
                 .into_iter()
@@ -404,6 +408,16 @@ impl Render for Shell {
         let update_ready = self.update.read(cx).restart_ready();
         let conversations = self.controller.conversations();
         let networks = self.network_headers(&conversations);
+        // The member list is read only while its panel shows. Its avatars, with the rest
+        // this frame draws, get their photos here, and the transcript and a Nick sheet
+        // are handed the same set.
+        let members = if show_members {
+            self.controller.members()
+        } else {
+            Vec::new()
+        };
+        let photos = self.avatar_photos_for_frame(&networks, &conversations, &members, cx);
+        self.push_photos(&photos, cx);
         // The footer is the focused network's identity (Qt's `identityNetworkId`): its nick,
         // and the presence the controller reads for that network.
         let footer_network = self.focused_network();
@@ -421,6 +435,7 @@ impl Render for Shell {
                 inbox_count: self.controller.inbox_items().len() as u32,
                 typing_phase: self.typing_phase,
                 avatars: self.controller.preferences().avatars,
+                photos: &photos,
                 on_status: status_handler(entity.clone()),
                 on_edit: edit_handler(entity.clone()),
                 on_inbox: inbox_handler(entity.clone()),
@@ -487,7 +502,6 @@ impl Render for Shell {
             .child(sidebar)
             .child(center)
             .when(show_members, |this| {
-                let members = self.controller.members();
                 let people = self.controller.people_count();
                 this.child(render_members(
                     MembersData {
@@ -499,6 +513,7 @@ impl Render for Shell {
                         focus: &self.member_focus,
                         cursor: members_cursor,
                         avatars: self.controller.preferences().avatars,
+                        photos: &photos,
                     },
                     &app_style,
                     &self.members_scroll,

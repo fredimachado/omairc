@@ -3,7 +3,7 @@ use gpui::{div, prelude::*, MouseButton};
 use crate::model::presence::bundled_path;
 use crate::model::status::network_mark_online;
 use crate::model::{sidebar::NetworkHeader, Color, Style};
-use crate::ui::widgets::avatar::photo_layer;
+use crate::ui::widgets::avatar::{embedded_photo, photo_layer};
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
@@ -125,7 +125,7 @@ pub fn network_header(
                 .font_family(FONT_FAMILY)
                 .child(initial)
                 .when_some(icon_photo, |this, path| {
-                    this.child(photo_layer(path).rounded(scaled_px(style, 8.)))
+                    this.child(photo_layer(embedded_photo(path)).rounded(scaled_px(style, 8.)))
                 })
                 .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                     on_open(open_id.clone(), window, cx);

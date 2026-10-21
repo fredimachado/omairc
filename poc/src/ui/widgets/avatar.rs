@@ -1,35 +1,74 @@
-//! A nick's avatar: the initials on the nick's palette fill, with a bundled photo
-//! clipped into the circle over them once it has decoded, and the presence dot.
-//! Qt's `NickGlyph.qml` shows the photo when there is one and the initials until
-//! it loads or when there is none.
+//! A nick's avatar: the initials on the nick's palette fill, with a photo clipped into
+//! the circle over them once its image is ready, and the presence dot. Qt's
+//! `NickGlyph.qml` shows the photo when there is one and the initials until it loads
+//! or when there is none. The photo is an `ImageSource` the shell resolved
+//! (`ui::shell::avatars`): a bundled asset, or a fetched avatar already decoded.
 
-use gpui::{div, img, prelude::*, Div, ImageSource, ObjectFit, Resource, StyledImage};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use gpui::{div, img, prelude::*, Div, Image, ImageFormat, ImageSource, ObjectFit, Resource, StyledImage};
 
 use crate::model::Style;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
-/// A bundled photo over the full size of its positioned parent, cover-fitted. It
-/// paints nothing until it has decoded, so the initials under it show meanwhile.
-/// The caller sets the corner radius, which clips the photo.
-pub fn photo_layer(path: &str) -> gpui::Img {
-    img(ImageSource::Resource(Resource::Embedded(
-        path.to_string().into(),
-    )))
-    .absolute()
-    .top_0()
-    .left_0()
-    .size_full()
-    .object_fit(ObjectFit::Cover)
+/// The photos one frame draws, keyed by avatar reference. A reference with no entry
+/// draws its initials: the avatars preference is off, the fetch has not finished, or
+/// it failed. The shell builds it each frame (`ui::shell::avatars`).
+#[derive(Clone, Default)]
+pub struct AvatarPhotos {
+    sources: HashMap<String, ImageSource>,
 }
 
-/// A round avatar of `size` px: the photo when `photo` is a bundled path, else the
-/// initials at `initials_px` on the nick's fill. The caller positions it.
+impl AvatarPhotos {
+    pub fn new(sources: HashMap<String, ImageSource>) -> Self {
+        Self { sources }
+    }
+
+    /// The photo for an avatar reference, when it is ready.
+    pub fn get(&self, reference: &str) -> Option<ImageSource> {
+        self.sources.get(reference).cloned()
+    }
+
+    /// Whether `other` draws the same references. A view repaints only when this
+    /// changes, since the image of a reference changes only when it becomes ready.
+    pub fn same_references(&self, other: &Self) -> bool {
+        self.sources.len() == other.sources.len()
+            && self.sources.keys().all(|key| other.sources.contains_key(key))
+    }
+}
+
+/// A bundled asset's photo source, by its path under `qrc:/` (`demo/mira-avatar.png`).
+pub fn embedded_photo(path: &str) -> ImageSource {
+    ImageSource::Resource(Resource::Embedded(path.to_string().into()))
+}
+
+/// A fetched avatar's photo source: the PNG the avatar fetch kept, handed to gpui to
+/// decode. gpui decodes it on its background loader and paints nothing until then.
+pub fn fetched_photo(png: &[u8]) -> ImageSource {
+    ImageSource::Image(Arc::new(Image::from_bytes(ImageFormat::Png, png.to_vec())))
+}
+
+/// A photo over the full size of its positioned parent, cover-fitted. It paints
+/// nothing until it has decoded, so the initials under it show meanwhile. The caller
+/// sets the corner radius, which clips the photo.
+pub fn photo_layer(source: ImageSource) -> gpui::Img {
+    img(source)
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_full()
+        .object_fit(ObjectFit::Cover)
+}
+
+/// A round avatar of `size` px: the photo when there is one, else the initials at
+/// `initials_px` on the nick's fill. The caller positions it.
 pub fn avatar_disc(
     style: &Style,
     nick: &str,
     size: f32,
     initials_px: f32,
-    photo: Option<&str>,
+    photo: Option<ImageSource>,
 ) -> Div {
     let fill = to_gpui(style.nick_avatar_fills()[style.nick_palette_index(nick)]);
     let disc = div()
@@ -48,7 +87,7 @@ pub fn avatar_disc(
         .font_family(FONT_FAMILY)
         .child(style.initials(nick));
     match photo {
-        Some(path) => disc.child(photo_layer(path).rounded_full()),
+        Some(source) => disc.child(photo_layer(source).rounded_full()),
         None => disc,
     }
 }
@@ -60,7 +99,7 @@ pub fn avatar_with_presence(
     nick: &str,
     size: f32,
     initials_px: f32,
-    photo: Option<&str>,
+    photo: Option<ImageSource>,
     presence: &str,
 ) -> impl IntoElement {
     let avatar_sz = scaled_px(style, size);

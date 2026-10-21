@@ -396,6 +396,8 @@ impl Shell {
             members: self.controller.members(),
             self_nick: self.current_nick(),
             avatars: self.controller.preferences().avatars,
+            // The shell fills the photos in on its next frame (`avatars.rs`).
+            photos: Default::default(),
         };
         let sheet = cx.new(|cx| FilterSheet::new(source, cx));
         let subscriptions = vec![

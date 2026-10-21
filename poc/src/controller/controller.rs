@@ -20,11 +20,13 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 
 use crate::demo::seed::{world_for, SeedNetwork};
 use crate::demo::server::{session_config, DemoError, DemoServer};
+use crate::desktop::httpfetch::UreqFetch;
 use crate::desktop::notifier::{Notifier, NullNotifier};
 use crate::irc::capability::{IrcCapability, IrcCapabilitySet};
 use crate::irc::event::{ConversationKey, Event, HistoryKind, NickEvent, WelcomeEvent};
@@ -45,6 +47,7 @@ use crate::session::session::Session;
 use crate::session::sessionmanager::{SessionManager, SessionManagerError};
 
 use super::autoawayruntime::AutoawayState;
+use super::avatars::AvatarFetches;
 use super::channellist::{ChannelListRequests, ChannelListView};
 use super::console::StatusConsole;
 use super::monitorcoordinator::MonitorState;
@@ -141,6 +144,8 @@ pub struct Controller {
     pub(super) prefs: Preferences,
     /// Whether a preference changed since the shell last saved them (`prefsDirty`).
     pub(super) prefs_dirty: bool,
+    /// The avatar cache, its in-flight slots and the seam its jobs fetch through (`avatars.rs`).
+    pub(super) avatars: AvatarFetches,
     pumping: bool,
 }
 
@@ -190,6 +195,7 @@ impl Controller {
             cancelled_joins: BTreeSet::new(),
             prefs: Preferences::default(),
             prefs_dirty: false,
+            avatars: AvatarFetches::new(Arc::new(UreqFetch)),
             pumping: false,
         }
     }

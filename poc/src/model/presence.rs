@@ -75,15 +75,16 @@ pub fn bundled_path(reference: &str) -> Option<&str> {
     reference.strip_prefix(BUNDLED_PREFIX)
 }
 
-/// The photo to draw for an avatar reference, given the `avatars` preference.
-/// `None` means the initials. An https avatar is never fetched: gpui 0.2.2 ships
-/// no HTTP client (its default refuses every request), so it keeps the initials,
-/// which is also Qt's fallback when its own fetch fails.
+/// The avatar reference a nick's photo is drawn from, given the `avatars` preference.
+/// `None` means the initials. Both a bundled `qrc:/` reference and an https one come
+/// back, and the shell resolves each to an image (`ui::shell::avatars`). An https
+/// reference is fetched only while the preference is on, and until its image is ready
+/// the nick keeps its initials, as it does again when the fetch fails (Qt's fallback).
 pub fn photo_for(reference: Option<&str>, avatars_on: bool) -> Option<&str> {
     if !avatars_on {
         return None;
     }
-    reference.and_then(bundled_path)
+    reference.filter(|reference| !reference.is_empty())
 }
 
 #[cfg(test)]
@@ -99,14 +100,21 @@ mod tests {
     #[test]
     fn the_avatars_pref_gates_the_photo() {
         let reference = Some("qrc:/demo/anna-avatar.png");
-        assert_eq!(photo_for(reference, true), Some("demo/anna-avatar.png"));
+        assert_eq!(photo_for(reference, true), reference);
         assert_eq!(photo_for(reference, false), None);
     }
 
     #[test]
-    fn an_https_or_missing_avatar_falls_back_to_initials() {
-        assert_eq!(photo_for(Some("https://omairc.app/omairc128.png"), true), None);
+    fn an_https_reference_is_a_photo_only_while_avatars_are_on() {
+        let https = Some("https://omairc.app/omairc128.png");
+        assert_eq!(photo_for(https, true), https, "fetched and drawn once ready");
+        assert_eq!(photo_for(https, false), None, "the pref off never fetches");
+    }
+
+    #[test]
+    fn a_missing_or_empty_avatar_falls_back_to_initials() {
         assert_eq!(photo_for(None, true), None);
+        assert_eq!(photo_for(Some(""), true), None);
     }
 
     #[test]
@@ -147,7 +155,7 @@ mod tests {
         let controller = crate::controller::controller::Controller::seeded_for_tests();
         let facts = controller.nick_facts("omarchy");
         let mira = facts.get("mira").expect("mira is on omarchy");
-        assert_eq!(photo_for(mira.avatar.as_deref(), true), Some("demo/mira-avatar.png"));
+        assert_eq!(photo_for(mira.avatar.as_deref(), true), Some("qrc:/demo/mira-avatar.png"));
         assert!(facts.get("dax").is_some_and(|dax| dax.bot));
         assert!(facts.get("sol").is_some_and(|sol| sol.avatar.is_none()));
     }

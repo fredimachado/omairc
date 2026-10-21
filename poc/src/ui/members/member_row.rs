@@ -3,7 +3,7 @@ use gpui::{div, prelude::*, MouseButton};
 use crate::model::presence::photo_for;
 use crate::irc::reducer::MemberView;
 use crate::model::Style;
-use crate::ui::widgets::avatar::avatar_with_presence;
+use crate::ui::widgets::avatar::{avatar_with_presence, AvatarPhotos};
 use crate::ui::widgets::bot_mark::bot_mark;
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
@@ -24,13 +24,15 @@ pub fn member_row(
     on_nick: Handler<String>,
     current: bool,
     avatars: bool,
+    photos: &AvatarPhotos,
 ) -> impl IntoElement {
     let is_self = member.nick == self_nick;
     let away = member.away.is_some();
     let presence = if away { "away" } else { "online" };
     let clickable = !is_self;
     let nick = member.nick.clone();
-    let photo = photo_for((!member.avatar.is_empty()).then_some(member.avatar.as_str()), avatars);
+    let photo = photo_for((!member.avatar.is_empty()).then_some(member.avatar.as_str()), avatars)
+        .and_then(|reference| photos.get(reference));
     let glyph = avatar_with_presence(
         style,
         &member.nick,
