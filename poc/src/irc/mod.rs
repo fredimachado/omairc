@@ -21,15 +21,24 @@ pub mod channelmode;
 pub mod channelname;
 pub mod command;
 pub mod commandbuilder;
+#[allow(dead_code)]
+pub mod conversation;
 #[cfg(test)]
 mod corpus;
 pub mod ctcp;
+// The event taxonomy, the translator and the World shapes have no consumer until
+// the Phase 3 reducer and controller land. The allows come off then.
+#[allow(dead_code)]
 pub mod event;
 #[allow(dead_code)]
 pub mod framer;
 pub mod inbox;
 #[allow(dead_code)]
 pub mod jointarget;
+// Temporary seam for the presence, membershipnoise, typing and inbox leaves. See
+// the module header; delete it once those leaves own the symbols.
+#[allow(dead_code)]
+pub mod leafcontract;
 pub mod membershipnoise;
 #[allow(dead_code)]
 pub mod message;
@@ -48,7 +57,11 @@ pub mod servicenick;
 pub mod slashcomplete;
 pub mod statusentry;
 pub mod textformat;
+#[allow(dead_code)]
 pub mod translator;
 pub mod typing;
+#[allow(dead_code)]
 pub mod viewnotify;
+#[allow(dead_code)]
+pub mod world;
 pub mod wiretext;
