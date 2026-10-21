@@ -9,6 +9,10 @@
 pub mod avatarstore;
 #[allow(dead_code)]
 pub mod avatarurl;
+// Phase 4: the controller's auto-away runtime and the slash dispatcher's /autoaway
+// read these. The allow comes off with the dispatcher's first use.
+#[allow(dead_code)]
+pub mod autoaway;
 pub mod capability;
 pub mod capabilitynegotiation;
 // Phase 1 (protocol core) modules. Their consumers arrive in Phases 2-3, so the
