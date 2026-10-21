@@ -10,5 +10,6 @@ mod lifecycle;
 mod networks;
 mod parity;
 mod selection;
+mod shell;
 mod sends;
 mod source;

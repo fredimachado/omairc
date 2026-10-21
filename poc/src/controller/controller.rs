@@ -256,7 +256,7 @@ impl Controller {
 
     /// Records or clears a network's last error (`setLastError`). An empty or `None`
     /// message clears it.
-    pub(super) fn set_last_error(&mut self, network_id: &str, message: Option<String>) {
+    pub fn set_last_error(&mut self, network_id: &str, message: Option<String>) {
         match message {
             Some(message) if !message.is_empty() => {
                 self.last_errors.insert(network_id.to_owned(), message);
@@ -409,7 +409,7 @@ impl Controller {
     }
 
     /// Stores one Status line and wakes the Status surface.
-    fn append_status(&mut self, entry: StatusEntry) {
+    pub(super) fn append_status(&mut self, entry: StatusEntry) {
         self.console.append(entry);
         self.queue(vec![ViewNotify::Status]);
     }
@@ -420,6 +420,17 @@ impl Controller {
         let mapping = self.reducer.server_features(&item.network_id).case_mapping();
         self.inbox.append(item, mapping);
         self.queue(vec![ViewNotify::Inbox]);
+    }
+
+    /// Removes one inbox row and hands it back, so the shell can act on it (Enter)
+    /// or only drop it (the delete button). `None` for an index past the end.
+    pub fn take_inbox_item(&mut self, index: usize) -> Option<InboxItem> {
+        self.pump();
+        let item = self.inbox.remove_at(index);
+        if item.is_some() {
+            self.queue(vec![ViewNotify::Inbox]);
+        }
+        item
     }
 
     /// Translates one inbound message and folds each event in. A self JOIN that

@@ -56,8 +56,9 @@ fn both_seeded_networks_register_and_show_connected() {
     assert_eq!(fixture.controller.connection_status_for(OMARCHY), "Connected");
     assert_eq!(fixture.controller.connection_status_for(OFTC), "Connected");
     assert_eq!(fixture.controller.network_order(), [OMARCHY, OFTC]);
-    assert_eq!(fixture.controller.network_name(OMARCHY), "irc.example");
-    assert_eq!(fixture.controller.network_name(OFTC), "irc.example");
+    // Both networks answer for the host, so the clash rule adds each nick.
+    assert_eq!(fixture.controller.network_name(OMARCHY), "irc.example · fred");
+    assert_eq!(fixture.controller.network_name(OFTC), "irc.example · oak");
     assert_eq!(fixture.controller.selected_network_id(), Some(OMARCHY));
     assert_eq!(fixture.controller.selected_target(), "#omarchy");
     assert!(!fixture.controller.shows_status());

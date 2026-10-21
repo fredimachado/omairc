@@ -24,6 +24,7 @@ pub mod commanddispatcher;
 pub mod console;
 pub mod controller;
 pub mod demo;
+pub mod lines;
 pub mod monitorcoordinator;
 pub mod networks;
 pub mod reads;

@@ -95,6 +95,24 @@ impl Controller {
         true
     }
 
+    /// Closes the named conversation, selected or not (`CloseConversation`). The
+    /// middle-click and Ctrl+W paths use it. A direct message closes; a channel only
+    /// once it is left. Closing a row that is not selected leaves the selection where
+    /// it is. False when the conversation is unknown or cannot close.
+    pub fn close_conversation(&mut self, network_id: &str, target: &str) -> bool {
+        self.pump();
+        if network_id.is_empty() || target.is_empty() {
+            return false;
+        }
+        let key = self.reducer.conversation_key(network_id, target);
+        if self.reducer.find(&key).is_none() {
+            return false;
+        }
+        let closed = self.close_key(key);
+        self.pump();
+        closed
+    }
+
     /// Whether the selection can close: a direct message always can, a channel only
     /// once it is no longer joined (`CanCloseSelection`).
     pub fn can_close_selection(&self) -> bool {
@@ -158,11 +176,13 @@ impl Controller {
     }
 
     /// The selection as the reducer keeps it, applied without pumping. `select_conversation`
-    /// and the join path both come here.
+    /// and the join path both come here. Selecting a row clears its network's last
+    /// command error, so the header shows the topic again (the PoC's selection rule).
     pub(super) fn select(&mut self, network_id: &str, target: &str) {
         if network_id.is_empty() || target.is_empty() {
             return;
         }
+        self.set_last_error(network_id, None);
         self.console_network = network_id.to_owned();
         self.console_open = false;
         let key = self.reducer.conversation_key(network_id, target);
@@ -201,6 +221,13 @@ impl Controller {
         let Some(key) = self.selected.clone() else {
             return false;
         };
+        self.close_key(key)
+    }
+
+    /// Closes one conversation row (`closeConversation`). The rules are the
+    /// selection's: a channel closes only once it is left, and a direct message
+    /// drops and reselects when its row was selected.
+    fn close_key(&mut self, key: ConversationKey) -> bool {
         let channel = self
             .reducer
             .find(&key)
@@ -216,7 +243,7 @@ impl Controller {
                 return false;
             }
             let display = if display.is_empty() {
-                self.selected_target.clone()
+                key.normalized_target.clone()
             } else {
                 display
             };

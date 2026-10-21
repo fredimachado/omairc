@@ -281,11 +281,25 @@ impl Controller {
     }
 
     /// The display name of a network: its profile name, else its host
-    /// (`IrcNetworkProfile::resolvedName`). Empty for an unknown network.
+    /// (`IrcNetworkProfile::resolvedName`). When another network shows the same name,
+    /// the nick joins it, as `irc.example · fred`. Empty for an unknown network.
     pub fn network_name(&self, network_id: &str) -> String {
-        self.session(network_id)
-            .map(|session| session.name())
-            .unwrap_or_default()
+        let Some(session) = self.session(network_id) else {
+            return String::new();
+        };
+        let base = session.name();
+        let clash = self
+            .manager
+            .network_ids()
+            .iter()
+            .filter(|other| other.as_str() != network_id)
+            .filter_map(|other| self.session(other))
+            .any(|other| other.name() == base);
+        if clash {
+            format!("{base} · {}", session.nick())
+        } else {
+            base
+        }
     }
 
     /// The capabilities a network last reported, empty before any report.

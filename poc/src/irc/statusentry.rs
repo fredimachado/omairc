@@ -164,6 +164,20 @@ pub fn outcome(network_id: &str, text: &str, now: DateTime<Utc>) -> StatusEntry 
     )
 }
 
+/// A CTCP reply line written on Status, labelled `CTCP`, such as the `/version`
+/// answer `VERSION reply from anna: https://omairc.app`. It reads as a server
+/// line, as the reply branch of a NOTICE does.
+pub fn ctcp_reply(network_id: &str, text: &str, now: DateTime<Utc>) -> StatusEntry {
+    StatusEntry::new(
+        network_id,
+        now,
+        LogSource::Server,
+        LogSeverity::Info,
+        CTCP_LABEL,
+        text.to_owned(),
+    )
+}
+
 /// The command of a message, upper-cased (`statusCommandOf`).
 fn command_of(message: &IrcMessage) -> String {
     message.command.to_uppercase()

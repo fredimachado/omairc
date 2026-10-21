@@ -8,7 +8,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::irc::viewnotify::ViewNotify;
+use crate::irc::viewnotify::{self, ViewNotify};
 
 use super::controller::Controller;
 
@@ -84,6 +84,48 @@ impl Controller {
             }
         }
         self.queue(vec![ViewNotify::Conversations]);
+    }
+
+    /// Forgets a network the Connect sheet removed (`ForgetNetwork`). A live session
+    /// quits and stops; the network's conversations, Status log, last error, order,
+    /// collapse state and inbox rows go with it. The selection leaves it when it held
+    /// the selection. False when the network was never known.
+    pub fn forget_network(&mut self, network_id: &str) -> bool {
+        self.pump();
+        if network_id.is_empty() {
+            return false;
+        }
+        let known = self.manager.find(network_id).is_some()
+            || !self.console.lines(network_id).is_empty()
+            || self.reducer.conversations().keys().any(|key| key.network_id == network_id);
+        if self.manager.is_live(network_id) {
+            self.disconnect(network_id);
+        }
+        self.manager.discard(network_id);
+        self.reducer.forget_network(network_id);
+        self.console.clear(network_id);
+        self.last_errors.remove(network_id);
+        self.capabilities.remove(network_id);
+        self.current_nicks.remove(network_id);
+        self.inbox.purge_network(network_id);
+        self.network_order.retain(|id| id != network_id);
+        self.network_collapsed.remove(network_id);
+        if self.console_network == network_id {
+            self.console_network.clear();
+            self.console_open = false;
+        }
+        if self
+            .selected
+            .as_ref()
+            .is_some_and(|key| key.network_id == network_id)
+        {
+            self.selected = None;
+            self.selected_target.clear();
+        }
+        self.queue(viewnotify::reset_all());
+        self.queue(vec![ViewNotify::Status]);
+        self.pump();
+        known
     }
 
     /// Moves a network `delta` places up (negative) or down (positive) in the
