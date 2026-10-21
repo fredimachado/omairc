@@ -585,6 +585,7 @@ impl Controller {
         {
             return CommandOutcome::Refused;
         }
+        self.remember_open_direct(&network, &nick);
         self.queue(vec![ViewNotify::Conversations]);
         self.select(&network, &nick);
         if words.rest.is_empty() {
@@ -624,6 +625,10 @@ impl Controller {
         }
 
         self.note_nick_delivery(&network, &target);
+        if kind == QuietSend::Msg {
+            // A private message the user sent is a query worth reopening (`rememberOpenDirect`).
+            self.remember_open_direct(&network, &target);
+        }
         let key = self.reducer.conversation_key(&network, &target);
         self.reducer
             .ensure_conversation(&key, &target, IrcConversationCause::QuietSend);
@@ -1046,12 +1051,12 @@ impl Controller {
     fn dispatch_pref(&mut self, request: PrefRequest, surface: ComposerSurface) -> CommandOutcome {
         let reply = pref_reply(request, &mut self.prefs);
         if reply.changed {
-            self.prefs_dirty = true;
             if request.name == crate::irc::pref::PrefName::Joins {
                 let noise = self.prefs.joins;
                 self.reducer.set_membership_noise(noise);
                 self.queue(vec![ViewNotify::Messages]);
             }
+            self.after_preference_change(request.name);
         }
         self.echo_pref_feedback(surface, &reply.text)
     }
@@ -1106,43 +1111,26 @@ impl Controller {
 
 }
 
-/// The saved preferences the dispatcher and the Connect toggles share. The shell loads them at
-/// startup, and writes them back when `take_preferences_to_save` reports a change.
+/// The saved preferences the dispatcher and the Connect toggles share. The controller loads
+/// them in `load_stored` and stores each change as it is made.
 impl Controller {
     /// The preferences `/pref` reads and writes.
     pub fn preferences(&self) -> &Preferences {
         &self.prefs
     }
 
-    /// Loads the saved preferences at startup. Nothing is marked for saving, and the
-    /// membership-noise setting applies to the lines that follow.
-    pub fn load_preferences(&mut self, prefs: Preferences) {
-        self.reducer.set_membership_noise(prefs.joins);
-        self.prefs = prefs;
-        self.prefs_dirty = false;
-    }
-
-    /// Sets one preference (a Connect toggle, or `/pref`). Returns false, and changes nothing,
-    /// when the value's kind does not fit the name. A change is marked for saving.
+    /// Sets one preference (a Connect toggle). Returns false, and changes nothing, when the
+    /// value's kind does not fit the name. A change is stored at once, with its side effects.
     pub fn set_preference(&mut self, name: PrefName, value: PrefValue) -> bool {
         if !self.prefs.set(name, value) {
             return false;
         }
-        self.prefs_dirty = true;
         if name == PrefName::Joins {
             self.reducer.set_membership_noise(self.prefs.joins);
             self.queue(vec![ViewNotify::Messages]);
         }
+        self.after_preference_change(name);
         true
-    }
-
-    /// The preferences to write to disk, once after each change. `None` when nothing changed
-    /// since the last call.
-    pub fn take_preferences_to_save(&mut self) -> Option<Preferences> {
-        if !std::mem::take(&mut self.prefs_dirty) {
-            return None;
-        }
-        Some(self.prefs)
     }
 }
 

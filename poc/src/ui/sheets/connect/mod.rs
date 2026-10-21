@@ -81,6 +81,8 @@ pub struct ConnectView<'a> {
     pub style: &'a Style,
     /// Called with the stop a click landed on.
     pub on_stop: Handler<Stop>,
+    /// Called when the dimmer is clicked. The shell ignores it while the sheet is required.
+    pub on_dismiss: Handler<()>,
 }
 
 impl<'a> ConnectView<'a> {
@@ -127,7 +129,8 @@ pub fn render_connect(view: &ConnectView<'_>) -> AnyElement {
         ConnectTab::Connection => card.child(connection_body(view)),
         ConnectTab::Preferences => card.child(toggles::preferences_panel(view)),
     };
-    veil_frame(style, card, |_, _| {}).into_any_element()
+    let dismiss = view.on_dismiss.clone();
+    veil_frame(style, card, move |window, cx| dismiss((), window, cx)).into_any_element()
 }
 
 /// The Connection tab: the rail and the form side by side, then the footer.

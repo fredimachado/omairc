@@ -19,6 +19,7 @@ mod metadata;
 mod monitor;
 mod networks;
 mod parity;
+mod persistence;
 mod replies;
 mod scrollplace;
 mod selection;

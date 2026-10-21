@@ -15,6 +15,7 @@ use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::model::composer::DraftKey;
 use crate::model::sidebar::{sidebar_rows, NetworkHeader, SidebarRow};
 use crate::model::status::{connection_line, status_rows};
+use crate::model::scroll_place::SavedPlace;
 use crate::model::ConversationRef;
 use crate::ui::shell::Shell;
 use crate::ui::transcript::view::ConversationLines;
@@ -171,7 +172,7 @@ impl Shell {
         let previous = std::mem::replace(&mut self.shown, view.clone());
         if previous.status.is_none() {
             let place = self.transcript.update(cx, |t, _| t.capture_scroll_place());
-            self.scroll_places.remember(previous.conversation, place);
+            self.remember_place(previous.conversation, place);
         }
         let text = self.composer.read(cx).text().to_string();
         self.composer_state.stash(&text);
@@ -185,6 +186,20 @@ impl Shell {
         self.show_shown_view(None, cx);
         self.sync_send_limit(cx);
         cx.notify();
+    }
+
+    /// Stores where a conversation's transcript was left. The controller keeps it in the
+    /// settings file, so it is there after a restart.
+    fn remember_place(&mut self, conversation: ConversationRef, place: SavedPlace) {
+        self.controller
+            .remember_place(&conversation.network_id, &conversation.key, place.to_stored());
+    }
+
+    /// Where a conversation's transcript was last left, as the settings file has it.
+    fn saved_place(&self, conversation: &ConversationRef) -> Option<SavedPlace> {
+        self.controller
+            .place_for(&conversation.network_id, &conversation.key)
+            .and_then(|stored| SavedPlace::from_stored(&stored))
     }
 
     /// Rebuilds the transcript for the view on screen, keeping the reader's place. Used
@@ -221,8 +236,7 @@ impl Shell {
                     typing_peer,
                 };
                 let open_at_unread = place.is_none() && self.controller.preferences().unread;
-                let place =
-                    place.or_else(|| self.scroll_places.get(&self.shown.conversation).cloned());
+                let place = place.or_else(|| self.saved_place(&self.shown.conversation));
                 self.transcript.update(cx, |t, _| {
                     t.set_conversation(lines);
                     t.restore_scroll_place(place.as_ref(), open_at_unread);

@@ -8,6 +8,8 @@ use crate::irc::world::MessageKind;
 use crate::session::events::SessionState;
 
 /// The transcript kind's name (`messageKindName`), as the saved scroll anchor records it.
+// The scroll anchor is the Qt-format path, which nothing outside the tests drives yet.
+#[allow(dead_code)]
 pub fn message_kind_name(kind: MessageKind) -> &'static str {
     match kind {
         MessageKind::Action => "action",

@@ -4,7 +4,8 @@
 //! (Go), and the sidebar's order roles in `src/irc/irccontroller.cpp` (C++).
 //!
 //! The order and the collapse set live on the controller, because the sidebar reads
-//! the controller's order rather than the connection's. Persisting them is Phase 8.
+//! the controller's order rather than the connection's. Each change is saved through the
+//! preference store (`persistence.rs`), so the layout comes back on the next launch.
 
 use std::collections::BTreeSet;
 
@@ -21,6 +22,7 @@ impl Controller {
         let mut ids: BTreeSet<String> = self.manager.network_ids().into_iter().collect();
         ids.extend(self.last_errors.keys().filter(|id| !id.is_empty()).cloned());
         ids.extend(self.console.network_ids());
+        ids.extend(self.profiles.keys().cloned());
         ids.into_iter().collect()
     }
 
@@ -55,6 +57,7 @@ impl Controller {
             return;
         }
         self.network_order = order.to_vec();
+        self.persist_network_layout();
         self.queue(vec![ViewNotify::Conversations]);
     }
 
@@ -74,6 +77,7 @@ impl Controller {
             self.network_collapsed.remove(network_id)
         };
         if changed {
+            self.persist_network_layout();
             self.queue(vec![ViewNotify::Conversations]);
         }
     }
@@ -94,6 +98,7 @@ impl Controller {
                 self.network_collapsed.remove(&id);
             }
         }
+        self.persist_network_layout();
         self.queue(vec![ViewNotify::Conversations]);
     }
 
@@ -107,6 +112,7 @@ impl Controller {
             return false;
         }
         let known = self.manager.find(network_id).is_some()
+            || self.profiles.contains_key(network_id)
             || !self.console.lines(network_id).is_empty()
             || self.reducer.conversations().keys().any(|key| key.network_id == network_id);
         if self.manager.is_live(network_id) {
@@ -117,6 +123,9 @@ impl Controller {
         self.monitor_forget_presence(network_id);
         self.forget_channel_list(network_id);
         self.scroll_places.forget(network_id);
+        self.open_directs.forget(network_id);
+        self.open_directs_motd_seen.remove(network_id);
+        self.remove_profile(network_id);
         self.reducer.forget_network(network_id);
         self.cancelled_joins.retain(|key| key.network_id != network_id);
         self.console.clear(network_id);
@@ -126,6 +135,7 @@ impl Controller {
         self.inbox.purge_network(network_id);
         self.network_order.retain(|id| id != network_id);
         self.network_collapsed.remove(network_id);
+        self.persist_network_layout();
         if self.console_network == network_id {
             self.console_network.clear();
             self.console_open = false;

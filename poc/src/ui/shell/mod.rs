@@ -30,8 +30,6 @@ use crate::model::connect::{ConnectState, Stop};
 use crate::model::find::Find;
 use crate::model::format::{format_irc, text_hits, TextHit};
 use crate::model::presence::footer_presence;
-use crate::model::prefs::Preferences;
-use crate::model::scroll_place::ScrollPlaces;
 use crate::model::sidebar::SidebarState;
 use crate::model::slash_complete::SlashSession;
 use crate::model::status::{connection_line, status_title};
@@ -96,8 +94,6 @@ pub struct Shell {
     pub connect_focus: FocusHandle,
     /// The Connect sheet's text fields, focus handles and scroll handles.
     pub connect_ui: ConnectControls,
-    /// Where each conversation's transcript was left, so returning opens there.
-    pub scroll_places: ScrollPlaces,
     /// Whether the window is the active one. While it is not, a line that arrives in the
     /// open conversation counts as unread (Qt `m_windowActive`).
     pub window_active: bool,
@@ -115,22 +111,44 @@ pub struct Shell {
 }
 
 impl Shell {
-    /// The window. `demo` runs the seeded `--demo-server` controller; otherwise the
-    /// controller starts with no networks, and the Connect sheet is how a network is added.
+    /// The window. `demo` runs the seeded `--demo-server` controller, which reads and writes
+    /// nothing. Otherwise the controller loads the user's saved networks and preferences; with no
+    /// complete network saved yet, the Connect sheet opens and stays open until one is.
     /// `lines` replaces the selection with the `#bench` channel of that many lines.
     pub fn new(cx: &mut Context<Self>, lines: Option<usize>, bench: bool, demo: bool) -> Self {
         let mut controller = if demo {
+            // The demo keeps nothing: it never reads or writes the user's files.
             Controller::new_demo().expect("the demo controller starts")
         } else {
-            Controller::new(Rc::new(RealClock::new()))
+            // The saved networks, preferences and open queries come back, and each complete
+            // network that asks to connect on launch starts.
+            let mut controller = Controller::new_user(Rc::new(RealClock::new()));
+            controller.activate_startup();
+            controller
         };
-        controller.load_preferences(Preferences::load());
         if let Some(n) = lines {
             controller.bench_channel(n);
         }
 
+        let connect = if demo {
+            ConnectState::seed(&connect_seeds(&controller))
+        } else {
+            ConnectState::from_stored(&controller.stored_profiles())
+        };
+        let required = connect.setup_required();
+        // With nothing selected, the window opens on Status, as Qt's does: the draft the sheet is
+        // editing on a first run, else the first network in the sidebar.
+        if controller.selected().is_none() {
+            let network = if required {
+                Some(connect.selected().to_owned())
+            } else {
+                controller.network_order().first().cloned()
+            };
+            if let Some(network) = network.filter(|id| !id.is_empty()) {
+                controller.open_status(&network);
+            }
+        }
         let shown = shown_view(&controller);
-        let connect = ConnectState::seed(&connect_seeds(&controller));
         let composer_state = ComposerState::starting_at(shown.draft_key());
         let update = cx.new(|_| {
             UpdateCheck::new(
@@ -187,10 +205,9 @@ impl Shell {
             slash: SlashSession::new(),
             find: None,
             connect,
-            connect_open: false,
+            connect_open: required,
             connect_focus: cx.focus_handle(),
             connect_ui,
-            scroll_places: ScrollPlaces::default(),
             window_active: true,
             activation_watched: false,
             focus_handle: cx.focus_handle(),
@@ -211,7 +228,20 @@ impl Shell {
         shell.transcript.update(cx, |t, _| t.set_avatars(joins_avatars));
         shell.show_shown_view(None, cx);
         shell.sync_send_limit(cx);
+        if required {
+            // The first field takes focus, as Qt focuses it when the sheet opens.
+            let first = shell.connect.initial_focus();
+            shell.connect.request_focus(first);
+        }
         shell
+    }
+
+    /// A network's display name. While Connect holds a network that is not saved yet (the
+    /// first run's draft), the draft's name is shown; otherwise the controller names it.
+    pub fn network_name(&self, network_id: &str) -> String {
+        self.connect
+            .draft_name(network_id)
+            .unwrap_or_else(|| self.controller.network_name(network_id))
     }
 
     /// One controller tick: the timers that are due fire, and the shell follows what they
@@ -335,7 +365,7 @@ impl Render for Shell {
         let selected = self.selected_ref();
         let status = self.status_network();
         let wanted_window_title = match &status {
-            Some(network_id) => window_title(&self.controller, TitleView::Status(network_id)),
+            Some(network_id) => window_title(&self.controller, TitleView::Status(&self.network_name(network_id))),
             None => window_title(&self.controller, TitleView::Conversation(Some(&selected))),
         };
         if wanted_window_title != self.window_title {
@@ -349,7 +379,7 @@ impl Render for Shell {
         // controller: the network's last error while one is set, else its connection word.
         let (title, people, actions) = match &status {
             Some(network_id) => (
-                status_title(&self.controller.network_name(network_id)),
+                status_title(&self.network_name(network_id)),
                 None,
                 None,
             ),
@@ -533,6 +563,7 @@ impl Render for Shell {
                     card_focus: &self.connect_focus,
                     style: &app_style,
                     on_stop: connect_stop_handler(entity.clone()),
+                    on_dismiss: connect_dismiss_handler(entity.clone()),
                 }))
             })
             .when_some(self.render_modal(cx), |this, modal| this.child(modal));
@@ -576,6 +607,13 @@ fn topic_handler(entity: Entity<Shell>) -> Handler<TextHit> {
 fn connect_stop_handler(entity: Entity<Shell>) -> Handler<Stop> {
     Rc::new(move |stop: Stop, window: &mut Window, cx: &mut App| {
         entity.update(cx, |shell, cx| shell.connect_click(stop, window, cx));
+    })
+}
+
+/// A click on the Connect dimmer. Closing is refused while the sheet is required.
+fn connect_dismiss_handler(entity: Entity<Shell>) -> Handler<()> {
+    Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
+        entity.update(cx, |shell, cx| shell.close_connect(window, cx));
     })
 }
 

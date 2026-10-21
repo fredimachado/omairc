@@ -156,8 +156,9 @@ fn startup_row(view: &ConnectView<'_>) -> impl IntoElement {
         )
 }
 
-/// The lines under the form: why Apply is off, and why a switch was refused. Both
-/// are accent-coloured, as Qt's problem line is.
+/// The lines under the form, in Qt's order: where the password is kept, why Apply is off, why a
+/// switch was refused, and what the last Apply saved. The credential line is muted, and the rest
+/// are accent-coloured, as Qt's are.
 fn notices(view: &ConnectView<'_>) -> impl IntoElement {
     let style = view.style;
     let accent = to_gpui(style.accent_color());
@@ -168,11 +169,24 @@ fn notices(view: &ConnectView<'_>) -> impl IntoElement {
         .gap(scaled_px(style, 4.))
         .text_size(scaled_px(style, 11.))
         .font_family(FONT_FAMILY);
+    let credential = view.state.credential_status();
+    if !credential.is_empty() {
+        column = column.child(
+            div()
+                .text_size(scaled_px(style, 10.))
+                .text_color(to_gpui(style.muted_color()))
+                .child(credential),
+        );
+    }
     if let Some(problem) = view.state.problem() {
         column = column.child(div().text_color(accent).child(problem.text()));
     }
     if view.state.switch_refused() {
         column = column.child(div().text_color(accent).child(SWITCH_REFUSED_TEXT));
+    }
+    let persistence = view.state.persistence_status();
+    if !persistence.is_empty() {
+        column = column.child(div().text_color(accent).child(persistence));
     }
     column
 }

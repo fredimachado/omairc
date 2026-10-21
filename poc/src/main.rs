@@ -21,7 +21,7 @@ const BENCH_LOG: &str = "results/gpui-bench-stderr.txt";
 
 use clap::Parser;
 use gpui::{
-    px, size, AnyWindowHandle, App, Application, Entity, Focusable, WindowOptions, prelude::*,
+    px, size, AnyWindowHandle, App, Application, Entity, WindowOptions, prelude::*,
 };
 use crate::desktop::systemtheme::SystemAppearance;
 use crate::desktop::windowstate::{self, GeometryKeeper};
@@ -262,7 +262,7 @@ fn main() {
 
         window
             .update(cx, |shell, window, cx| {
-                window.focus(&shell.composer.read(cx).focus_handle(cx));
+                shell.focus_on_launch(window, cx);
                 cx.activate(true);
             })
             .ok();

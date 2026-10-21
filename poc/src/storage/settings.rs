@@ -7,10 +7,8 @@
 //! Writes fail closed. A malformed or unreadable file is never overwritten, so a
 //! corrupt store is not rebuilt from memory and silently loses its contents.
 //!
-//! The profile and open-direct stores, the next Phase 8 items, read the rest of
-//! this API. It is ported with its tests now, so it can be unused in the binary
-//! until then.
-#![allow(dead_code)]
+//! The stores in this folder (profiles, open directs, lists, preferences, scroll places)
+//! read and write through this API.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -33,6 +31,8 @@ pub enum IniProbe {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
     Written,
+    /// There was nothing to write or remove: no network id, or no such entry.
+    Absent,
     /// The file could not be read or written.
     AccessError,
     /// The file is not a well-formed INI, so it is left alone.
@@ -76,10 +76,6 @@ impl Settings {
             values,
             dirty: false,
         }
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.path
     }
 
     /// The stored string, or `""` when the key is absent. A string list and an
@@ -160,7 +156,9 @@ impl Settings {
         self.dirty = true;
     }
 
-    /// Removes one key. Removing an absent key is a no-op.
+    /// Removes one key. Removing an absent key is a no-op. Only the settings tests remove a
+    /// single key; the stores remove whole groups.
+    #[cfg(test)]
     pub fn remove_key(&mut self, group: &str, key: &str) {
         self.values.remove(&settings_key(group, key));
         self.dirty = true;

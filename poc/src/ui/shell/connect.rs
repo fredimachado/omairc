@@ -10,7 +10,8 @@
 use gpui::{Context, Window};
 
 use crate::model::chords::Chord;
-use crate::model::connect::{ConnectField, RailEnter, RemoveOutcome, Stop};
+use crate::controller::persistence::SecretEdits;
+use crate::model::connect::{ConnectField, RailEnter, RemoveOutcome, Secret, Stop};
 use crate::model::prefs::{PrefName, PrefValue};
 use crate::ui::sheets::connect::form_row_of;
 use crate::ui::shell::Shell;
@@ -65,10 +66,24 @@ impl Shell {
         cx.notify();
     }
 
-    /// Escape, or a successful Apply. Closes Connect and returns focus to the
-    /// composer. A draft that was not applied stays in the model.
+    /// The window's first focus, once it is open. While the first-run Connect sheet is up, its
+    /// first field takes the keys now, so the composer behind the sheet does not. Otherwise the
+    /// composer takes them. Focusing here, not on the next render, keeps the composer from
+    /// winning the race for the window's focus.
+    pub fn focus_on_launch(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.connect_open {
+            let first = self.connect.initial_focus();
+            self.focus_connect(first, window, cx);
+        } else {
+            self.focus_composer(window, cx);
+        }
+    }
+
+    /// Escape, the dimmer, or a successful Apply. Closes Connect and returns focus to the
+    /// composer. A draft that was not applied stays in the model. While no network is saved
+    /// yet the sheet is required, so Escape and the dimmer do nothing.
     pub fn close_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.connect_open {
+        if !self.connect_open || self.connect.setup_required() {
             return;
         }
         self.connect_open = false;
@@ -78,17 +93,31 @@ impl Shell {
         cx.notify();
     }
 
-    /// Ctrl+Enter and Ctrl+Return, or the Apply button (Qt `submitConnection`).
-    /// A complete draft is saved, and the controller starts its network: a demo network
-    /// reconnects, and any other is refused with the reason on its Status. Then the sheet
-    /// closes. An incomplete draft stays open with its problem shown.
+    /// Ctrl+Enter and Ctrl+Return, or the Apply button (Qt `submitConnection`). A complete
+    /// draft is saved to the profile file and its secrets to the credential store, then the
+    /// controller starts the network: a demo network reconnects, and any other is refused with
+    /// the reason on its Status. The sheet closes when the session started and nothing needs
+    /// the user; otherwise it stays with the sentence that says why. An incomplete draft stays
+    /// open with its problem shown.
     pub fn connect_apply(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.chord_live(Chord::ConnectApply, window, cx) {
             return;
         }
+        let edits = SecretEdits {
+            password: self.connect.secret_edit(Secret::Password),
+            nickserv: self.connect.secret_edit(Secret::NickServ),
+        };
         if let Ok(profile) = self.connect.apply() {
-            self.controller.start(&profile.network_id);
-            self.close_connect(window, cx);
+            let stored = profile.to_stored(self.controller.profile(&profile.network_id));
+            let saved = self.controller.save_profile(stored, edits);
+            let started = self.controller.start(&profile.network_id);
+            let close = self
+                .connect
+                .record_apply(saved.status, saved.password, saved.nickserv, started);
+            if close {
+                self.connect.clear_secret_text();
+                self.close_connect(window, cx);
+            }
             self.drain_notifications(cx);
         }
         cx.notify();
@@ -189,7 +218,6 @@ impl Shell {
         if !self.controller.set_preference(name, PrefValue::Toggle(on)) {
             return;
         }
-        self.save_preferences();
         self.apply_preference_changes(before, cx);
         self.drain_notifications(cx);
         cx.notify();

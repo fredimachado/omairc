@@ -92,6 +92,7 @@ impl Controller {
         {
             return false;
         }
+        self.remember_open_direct(&network_id, nick);
         self.queue(vec![ViewNotify::Conversations]);
         self.select(&network_id, nick);
         self.pump();
@@ -295,6 +296,15 @@ impl Controller {
             self.reducer.note_closed(&key);
             return self.dismiss_channel(&key.network_id, &display);
         }
+        // A closed direct message is not reopened at the next launch, and its messages do not
+        // bring it back (`forgetOpenDirect`).
+        let display = self
+            .reducer
+            .find(&key)
+            .map(|conversation| conversation.target.clone())
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| key.normalized_target.clone());
+        self.forget_open_direct(&key.network_id, &display);
         self.drop_and_reselect(key);
         true
     }

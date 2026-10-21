@@ -3,7 +3,7 @@
 //!
 //! One network's identity, credentials, autojoin state and timer policy. Build
 //! the defaults with `SessionConfig::with_defaults`, adjust the fields, then pass
-//! the config to `Session::new`. The profile layer (Phase 8) fills the fields
+//! the config to `Session::new`. The controller's persistence layer fills the fields
 //! from the saved Connect profile.
 
 use std::collections::BTreeMap;

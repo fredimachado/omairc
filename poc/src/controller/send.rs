@@ -96,6 +96,10 @@ impl Controller {
         if !written {
             return self.refuse_send(network_id, "Failed to send message");
         }
+        if kind == Outgoing::Say {
+            // Talking in a direct message is what keeps it for the next launch.
+            self.remember_open_direct(network_id, target);
+        }
         let key = self.reducer.conversation_key(network_id, target);
         // A quiet send never creates a conversation; it only reaches one that exists.
         self.reducer
