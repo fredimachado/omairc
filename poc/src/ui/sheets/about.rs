@@ -10,6 +10,7 @@ use gpui::{
     MouseButton, ObjectFit, Window,
 };
 
+use crate::desktop::httpfetch::UreqFetch;
 use crate::model::update_check::{check_latest, UpdateStatus, LATEST_RELEASE_API_URL, REPO_URL};
 use crate::model::Style;
 use crate::ui::sheets::frame::veil_frame;
@@ -112,7 +113,7 @@ impl AboutSheet {
         cx.spawn(async move |this, cx| {
             let status = cx
                 .background_executor()
-                .spawn(async move { check_latest(&current, LATEST_RELEASE_API_URL) })
+                .spawn(async move { check_latest(&UreqFetch, &current, LATEST_RELEASE_API_URL) })
                 .await;
             this.update(cx, |sheet, cx| {
                 sheet.update_status = status;

@@ -4,6 +4,7 @@
 //! `src/singleinstance.cpp`, `src/omaircipc.cpp`, `src/omaircupdatecheck.cpp`.
 
 pub mod filelog;
+pub mod httpfetch;
 pub mod installer;
 pub mod ipc;
 pub mod notifier;

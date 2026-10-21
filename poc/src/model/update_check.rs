@@ -7,7 +7,9 @@
 use std::cmp::Ordering;
 use std::time::Duration;
 
-use ureq::Agent;
+use url::Url;
+
+use crate::desktop::httpfetch::{get_following, FetchRequest, HttpFetch};
 
 /// Qt `omaircGithubRepoUrl()`.
 pub const REPO_URL: &str = "https://github.com/fredimachado/omairc";
@@ -75,32 +77,32 @@ pub fn user_agent(current: &str) -> String {
 }
 
 /// Asks GitHub for the latest release and judges it against `current`. This blocks,
-/// so the caller runs it on the background executor. A transport error, a non-200
+/// so the caller runs it on the background executor. The request goes through the
+/// `HttpFetch` seam. A transport error, a redirect the policy refuses, a non-200
 /// reply, an oversized body, or a reply that does not parse is `Failed`.
-pub fn check_latest(current: &str, api_url: &str) -> UpdateStatus {
-    let config = Agent::config_builder()
-        .timeout_global(Some(CHECK_TIMEOUT))
-        .build();
-    let agent = Agent::new_with_config(config);
-    let Ok(mut response) = agent
-        .get(api_url)
+pub fn check_latest(fetch: &dyn HttpFetch, current: &str, api_url: &str) -> UpdateStatus {
+    let request = FetchRequest::get(api_url, CHECK_TIMEOUT, MAXIMUM_RELEASE_BYTES)
         .header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28")
-        .header("User-Agent", user_agent(current))
-        .call()
-    else {
-        return UpdateStatus::Failed;
-    };
-    let status = response.status().as_u16();
-    let Ok(body) = response
-        .body_mut()
-        .with_config()
-        .limit(MAXIMUM_RELEASE_BYTES)
-        .read_to_string()
-    else {
-        return UpdateStatus::Failed;
-    };
-    status_for_reply(current, status, &body)
+        .header("User-Agent", &user_agent(current));
+    let mut body = Vec::new();
+    let fetched = get_following(
+        fetch,
+        request,
+        5,
+        &|url: &Url| url.scheme() == "https",
+        &mut |bytes| {
+            if body.len() as u64 + bytes.len() as u64 > MAXIMUM_RELEASE_BYTES {
+                return false;
+            }
+            body.extend_from_slice(bytes);
+            true
+        },
+    );
+    match fetched {
+        Ok(fetched) => status_for_reply(current, fetched.status, &String::from_utf8_lossy(&body)),
+        Err(_) => UpdateStatus::Failed,
+    }
 }
 
 /// Judges one HTTP reply. Only a 200 that carries a release can say anything.
@@ -254,6 +256,8 @@ mod tests {
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::thread;
+
+    use crate::desktop::httpfetch::UreqFetch;
 
     /// A trimmed `releases/latest` reply, shaped as GitHub sends it.
     const LATEST_RELEASE: &str = r#"{
@@ -444,7 +448,7 @@ mod tests {
     #[test]
     fn check_latest_reads_a_served_release_and_sends_the_user_agent() {
         let (url, server) = serve_once("200 OK", LATEST_RELEASE.as_bytes().to_vec());
-        let status = check_latest("1.10.3", &url);
+        let status = check_latest(&UreqFetch, "1.10.3", &url);
         let request = server.join().expect("server thread").to_ascii_lowercase();
         assert!(status.message().unwrap().contains("1.11.0"), "{status:?}");
         // HTTP/1.1 header names arrive lowercased, so compare the head lowercased.
@@ -458,12 +462,12 @@ mod tests {
     #[test]
     fn check_latest_fails_on_an_error_status_and_on_an_oversized_body() {
         let (url, server) = serve_once("404 Not Found", br#"{"message":"Not Found"}"#.to_vec());
-        assert_eq!(check_latest("1.10.3", &url), UpdateStatus::Failed);
+        assert_eq!(check_latest(&UreqFetch, "1.10.3", &url), UpdateStatus::Failed);
         server.join().expect("server thread");
 
         let oversized = vec![b' '; (MAXIMUM_RELEASE_BYTES + 1) as usize];
         let (url, server) = serve_once("200 OK", oversized);
-        assert_eq!(check_latest("1.10.3", &url), UpdateStatus::Failed);
+        assert_eq!(check_latest(&UreqFetch, "1.10.3", &url), UpdateStatus::Failed);
         server.join().expect("server thread");
     }
 }
