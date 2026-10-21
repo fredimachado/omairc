@@ -55,7 +55,7 @@ func TestAnswersMonitorAdd(t *testing.T) {
 func TestAnswersList(t *testing.T) {
 	_, d := attachController(t, true)
 
-	reply := d.tryAnswerList(omarchyWorld(), []byte("LIST\r\n"))
+	reply := d.tryAnswerList(omarchyWorld(), "fred", []byte("LIST\r\n"))
 	if reply == nil {
 		t.Fatal("LIST was not answered")
 	}
@@ -103,7 +103,7 @@ func TestAnswersList(t *testing.T) {
 		t.Fatalf("row 1 = %+v, want #omarchy/12", rows[1])
 	}
 
-	filtered := d.tryAnswerList(omarchyWorld(), []byte("LIST #l*\r\n"))
+	filtered := d.tryAnswerList(omarchyWorld(), "fred", []byte("LIST #l*\r\n"))
 	var filteredRows []string
 	for _, line := range wireLines(filtered) {
 		if strings.HasPrefix(line, ":server 322 ") {
@@ -114,7 +114,7 @@ func TestAnswersList(t *testing.T) {
 		t.Fatalf("LIST #l* = %v, want one #linux row", filteredRows)
 	}
 
-	if got := d.tryAnswerList(omarchyWorld(), []byte("MODE #omarchy\r\n")); got != nil {
+	if got := d.tryAnswerList(omarchyWorld(), "fred", []byte("MODE #omarchy\r\n")); got != nil {
 		t.Fatalf("non-LIST frame answered %q", got)
 	}
 }
@@ -415,6 +415,124 @@ func TestClosedChannelsRejoinFromDemoEcho(t *testing.T) {
 	}
 	if c.PeopleCount() != 1 {
 		t.Fatalf("#desktop people = %d, want 1", c.PeopleCount())
+	}
+}
+
+// TestAnswersPartForSeededChannel echoes our PART under our own prefix, keeping
+// the client's reason as the trailing parameter. A channel the network does not
+// seed gets no echo, and each network answers only for its own channels.
+func TestAnswersPartForSeededChannel(t *testing.T) {
+	_, d := attachController(t, true)
+
+	if got := string(d.tryAnswerPart("omarchy", []byte("PART #desktop\r\n"))); got != ":fred!u@h PART #desktop\r\n" {
+		t.Fatalf("PART = %q", got)
+	}
+	if got := string(d.tryAnswerPart("omarchy", []byte("PART #desktop :see you\r\n"))); got != ":fred!u@h PART #desktop :see you\r\n" {
+		t.Fatalf("PART with reason = %q", got)
+	}
+	if got := string(d.tryAnswerPart("omarchy", []byte("PART #Desktop\r\n"))); got != ":fred!u@h PART #Desktop\r\n" {
+		t.Fatalf("PART with other case = %q", got)
+	}
+	if got := d.tryAnswerPart("omarchy", []byte("PART #nowhere\r\n")); got != nil {
+		t.Fatalf("PART on an unseeded channel answered %q", got)
+	}
+	if got := d.tryAnswerPart("oftc", []byte("PART #desktop\r\n")); got != nil {
+		t.Fatalf("oftc answered for omarchy's #desktop: %q", got)
+	}
+	if got := string(d.tryAnswerPart("oftc", []byte("PART #omarchy\r\n"))); got != ":oak!u@h PART #omarchy\r\n" {
+		t.Fatalf("oftc PART = %q", got)
+	}
+	if got := d.tryAnswerPart("omarchy", []byte("MODE #desktop\r\n")); got != nil {
+		t.Fatalf("non-PART frame answered %q", got)
+	}
+}
+
+// TestPartEchoLeavesChannel writes our PART through the transport, so no
+// controller-side /part runs and only the demo echo can mark the channel left.
+func TestPartEchoLeavesChannel(t *testing.T) {
+	c, d := attachController(t, true)
+	c.SelectConversation("omarchy", "#desktop")
+	if !c.ChannelJoined() {
+		t.Fatal("seeded #desktop should start joined")
+	}
+	d.omarchy.Write([]byte("PART #desktop\r\n"))
+	if c.ChannelJoined() {
+		t.Fatal("the demo PART echo should leave #desktop")
+	}
+}
+
+// TestAnswersNickChangeMovesLaterReplies checks that the NICK echo carries the
+// old nick as its prefix, and that the next echo and the next NICK both use the
+// nick the demo now holds. The other network keeps its own nick.
+func TestAnswersNickChangeMovesLaterReplies(t *testing.T) {
+	_, d := attachController(t, true)
+
+	if got := string(d.tryAnswerNick("omarchy", []byte("NICK bob\r\n"))); got != ":fred!u@h NICK :bob\r\n" {
+		t.Fatalf("NICK = %q", got)
+	}
+	if got := d.selfNicks["omarchy"]; got != "bob" {
+		t.Fatalf("self nick = %q, want bob", got)
+	}
+	if got := string(d.tryAnswerPart("omarchy", []byte("PART #desktop\r\n"))); got != ":bob!u@h PART #desktop\r\n" {
+		t.Fatalf("PART after NICK = %q", got)
+	}
+	if got := string(d.tryAnswerNick("omarchy", []byte("NICK alice\r\n"))); got != ":bob!u@h NICK :alice\r\n" {
+		t.Fatalf("second NICK = %q", got)
+	}
+	if got := d.tryAnswerNick("omarchy", []byte("NICK\r\n")); got != nil {
+		t.Fatalf("NICK without a new nick answered %q", got)
+	}
+	if got := d.selfNicks["oftc"]; got != "oak" {
+		t.Fatalf("oftc self nick = %q, want oak", got)
+	}
+}
+
+// TestAnswersTopicChangeCarriesOnRejoin sets a seeded topic, then checks the
+// TOPIC echo and the 332 that a later self JOIN sends with the new value. A
+// channel the demo did not seed rejoins without a topic.
+func TestAnswersTopicChangeCarriesOnRejoin(t *testing.T) {
+	_, d := attachController(t, true)
+
+	if got := string(d.tryAnswerTopic("omarchy", []byte("TOPIC #desktop :new banner\r\n"))); got != ":fred!u@h TOPIC #desktop :new banner\r\n" {
+		t.Fatalf("TOPIC = %q", got)
+	}
+	want := ":fred!u@h JOIN :#desktop\r\n:server 332 fred #desktop :new banner\r\n"
+	if got := string(d.tryAnswerJoin("omarchy", "fred", []byte("JOIN #desktop\r\n"))); got != want {
+		t.Fatalf("JOIN #desktop = %q, want %q", got, want)
+	}
+	if got := string(d.tryAnswerJoin("omarchy", "fred", []byte("JOIN #nowhere\r\n"))); got != ":fred!u@h JOIN :#nowhere\r\n" {
+		t.Fatalf("JOIN #nowhere = %q", got)
+	}
+}
+
+// TestAnswersTopicClearAndQuery covers the two TOPIC shapes that differ: an
+// empty trailing text clears the topic, so a later JOIN has no 332, and a bare
+// TOPIC query, or a TOPIC on an unseeded channel, is not answered.
+func TestAnswersTopicClearAndQuery(t *testing.T) {
+	_, d := attachController(t, true)
+
+	if got := d.tryAnswerTopic("omarchy", []byte("TOPIC #desktop\r\n")); got != nil {
+		t.Fatalf("TOPIC query answered %q", got)
+	}
+	if got := d.tryAnswerTopic("omarchy", []byte("TOPIC #nowhere :x\r\n")); got != nil {
+		t.Fatalf("TOPIC on an unseeded channel answered %q", got)
+	}
+	if got := string(d.tryAnswerTopic("omarchy", []byte("TOPIC #desktop :\r\n"))); got != ":fred!u@h TOPIC #desktop :\r\n" {
+		t.Fatalf("TOPIC clear = %q", got)
+	}
+	if got := string(d.tryAnswerJoin("omarchy", "fred", []byte("JOIN #desktop\r\n"))); got != ":fred!u@h JOIN :#desktop\r\n" {
+		t.Fatalf("JOIN after clear = %q", got)
+	}
+}
+
+// TestTopicEchoReachesController writes our TOPIC through the transport and
+// checks that the controller shows the echoed topic on the channel.
+func TestTopicEchoReachesController(t *testing.T) {
+	c, d := attachController(t, true)
+	c.SelectConversation("omarchy", "#desktop")
+	d.omarchy.Write([]byte("TOPIC #desktop :new banner\r\n"))
+	if got := c.Topic(); got != "new banner" {
+		t.Fatalf("topic = %q, want the echoed banner", got)
 	}
 }
 

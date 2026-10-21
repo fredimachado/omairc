@@ -14,6 +14,7 @@ Slash commands let a live session send catalog verbs from the same single-line c
 
 - In a live conversation or Status, type a catalog verb and press Enter.
 - On `--demo-server`, catalog verbs run against the seeded controller. `/close` on a channel you are in is rejected and stays in the composer. A partial needle such as `/j` Tab-inserts instead of sending. `/ping`, `/time`, and `/version` get a NOTICE reply from the target nick, copied into the asking transcript as `whois` rows. `/away` and `/back` get the `306` / `305` numerics, so the footer and the `fred` member row switch between `away` and `available` on every channel.
+- On `--demo-server`, `/part` on a seeded channel echoes `:fred!u@h PART #chan` (with the reason as a trailing parameter when one was given), so the row turns left and `/join #chan` rejoins it. `/nick new` echoes `:fred!u@h NICK :new`, and every later demo reply uses `new`. `/topic text` in a seeded channel echoes `:fred!u@h TOPIC #chan :text`, and the next `/join #chan` carries `332` with that text. A `PART` or `TOPIC` on a channel the demo does not seed gets no echo; `/join` still echoes. A bare `/topic` with no text asks for the topic and gets no echo. Qt and the TUI answer these the same way.
 - Press `Ctrl+W` to close a DM without typing `/close`. That chord is keyboard.
 
 ## Driving it with control-omairc

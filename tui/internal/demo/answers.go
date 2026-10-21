@@ -113,9 +113,9 @@ func (d *DemoServer) tryAnswerPing(frame []byte) []byte {
 	return line(":server PONG irc.example :" + token)
 }
 
-// tryAnswerList answers a /list mask with 321/322/323. It mirrors
-// tryAnswerList().
-func (d *DemoServer) tryAnswerList(network SeedNetwork, frame []byte) []byte {
+// tryAnswerList answers a /list mask with 321/322/323 addressed to selfNick, the
+// network's current nick. It mirrors tryAnswerList().
+func (d *DemoServer) tryAnswerList(network SeedNetwork, selfNick string, frame []byte) []byte {
 	wire := stripCrlf(frame)
 	if !bytes.Equal(wire, []byte("LIST")) && !bytes.HasPrefix(wire, []byte("LIST ")) {
 		return nil
@@ -125,15 +125,112 @@ func (d *DemoServer) tryAnswerList(network SeedNetwork, frame []byte) []byte {
 		mask = strings.TrimSpace(string(wire[5:]))
 	}
 
-	out := line(":server 321 " + network.Nick + " Channel :Users  Name")
+	out := line(":server 321 " + selfNick + " Channel :Users  Name")
 	for _, entry := range listEntries(network) {
 		if !listMaskMatches(entry.Name, mask) {
 			continue
 		}
-		out = append(out, line(":server 322 "+network.Nick+" "+entry.Name+" "+
+		out = append(out, line(":server 322 "+selfNick+" "+entry.Name+" "+
 			strconv.Itoa(entry.Users)+" :"+entry.Topic)...)
 	}
-	out = append(out, line(":server 323 "+network.Nick+" :End of /LIST")...)
+	out = append(out, line(":server 323 "+selfNick+" :End of /LIST")...)
+	return out
+}
+
+// tryAnswerNick answers our own NICK with an echo under the old nick, then moves
+// the network's self nick to the new one so later replies use it. It mirrors
+// tryAnswerNick().
+func (d *DemoServer) tryAnswerNick(networkID string, frame []byte) []byte {
+	oldNick := d.selfNicks[networkID]
+	if oldNick == "" || !bytes.HasPrefix(stripCrlf(frame), []byte("NICK ")) {
+		return nil
+	}
+	message, ok := parseDemoFrame(frame)
+	if !ok || message.Command != "NICK" || len(message.Params) == 0 {
+		return nil
+	}
+	newNick := irc.WireText([]byte(message.Params[0]))
+	if newNick == "" {
+		return nil
+	}
+	d.selfNicks[networkID] = newNick
+	return line(":" + oldNick + "!u@h NICK :" + newNick)
+}
+
+// tryAnswerPart echoes our own PART for a channel the network seeds, keeping the
+// client's reason as the trailing parameter when one is sent. A channel the demo
+// does not know gets no echo. It mirrors tryAnswerPart().
+func (d *DemoServer) tryAnswerPart(networkID string, frame []byte) []byte {
+	selfNick := d.selfNicks[networkID]
+	if selfNick == "" || !bytes.HasPrefix(stripCrlf(frame), []byte("PART ")) {
+		return nil
+	}
+	message, ok := parseDemoFrame(frame)
+	if !ok || message.Command != "PART" || len(message.Params) == 0 {
+		return nil
+	}
+	channel := irc.WireText([]byte(message.Params[0]))
+	if _, known := d.topics[networkID][strings.ToLower(channel)]; !known {
+		return nil
+	}
+	out := ":" + selfNick + "!u@h PART " + channel
+	if len(message.Params) >= 2 {
+		out += " :" + irc.WireText([]byte(message.Params[1]))
+	}
+	return line(out)
+}
+
+// tryAnswerTopic echoes our own TOPIC for a seeded channel and stores the new
+// text, so a later self JOIN reports it in 332. A bare TOPIC query has no text
+// parameter and gets no echo. It mirrors tryAnswerTopic().
+func (d *DemoServer) tryAnswerTopic(networkID string, frame []byte) []byte {
+	selfNick := d.selfNicks[networkID]
+	if selfNick == "" || !bytes.HasPrefix(stripCrlf(frame), []byte("TOPIC ")) {
+		return nil
+	}
+	message, ok := parseDemoFrame(frame)
+	if !ok || message.Command != "TOPIC" || len(message.Params) < 2 {
+		return nil
+	}
+	channel := irc.WireText([]byte(message.Params[0]))
+	key := strings.ToLower(channel)
+	topics := d.topics[networkID]
+	if _, known := topics[key]; !known {
+		return nil
+	}
+	text := irc.WireText([]byte(message.Params[1]))
+	topics[key] = text
+	return line(":" + selfNick + "!u@h TOPIC " + channel + " :" + text)
+}
+
+// tryAnswerJoin echoes one self JOIN per channel in an outbound JOIN frame. A
+// channel the demo holds a topic for is followed by 332 carrying the current
+// topic, which a TOPIC frame may have replaced. The demo still sends no fresh
+// 353, so the member column stays the nick who just joined. It mirrors
+// IrcDemoServer::injectSelfJoin, which injects the same lines.
+func (d *DemoServer) tryAnswerJoin(networkID, selfNick string, frame []byte) []byte {
+	if !bytes.HasPrefix(stripCrlf(frame), []byte("JOIN ")) {
+		return nil
+	}
+	rest := bytes.TrimRight(frame[len("JOIN "):], "\r\n")
+	if len(rest) == 0 {
+		return nil
+	}
+	channelField := rest
+	if space := bytes.IndexByte(rest, ' '); space >= 0 {
+		channelField = rest[:space]
+	}
+	var out []byte
+	for _, raw := range bytes.Split(channelField, []byte(",")) {
+		if len(raw) == 0 {
+			continue
+		}
+		name := string(raw)
+		out = append(out, joinLine(selfNick, name, "")...)
+		if topic := d.topics[networkID][strings.ToLower(name)]; topic != "" {
+			out = append(out, line(":server 332 "+selfNick+" "+name+" :"+topic)...)
+		}
+	}
 	return out
 }
 

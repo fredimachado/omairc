@@ -54,5 +54,10 @@ private:
     IrcLoopbackTransport *m_omarchyTransport = nullptr;
     IrcLoopbackTransport *m_oftcTransport = nullptr;
     QHash<IrcLoopbackTransport *, QStringList> m_monitorLists;
+    // Each network's current nick: the seeded nick until a NICK frame changes it.
+    QHash<IrcLoopbackTransport *, QString> m_selfNicks;
+    // Each network's seeded channels, keyed by lower-cased name, with the current
+    // topic. A TOPIC frame on a seeded channel replaces its value.
+    QHash<IrcLoopbackTransport *, QHash<QString, QString>> m_topics;
     QString m_error;
 };

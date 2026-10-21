@@ -9,7 +9,8 @@ import (
 )
 
 // DemoServer is the Go port of IrcDemoServer. It owns the two loopback
-// transports it seeds, the per-network MONITOR watch lists, and the last
+// transports it seeds, the per-network MONITOR watch lists, the per-network
+// self nick and channel topics that NICK and TOPIC frames change, and the last
 // attach error.
 type DemoServer struct {
 	omarchy *session.LoopbackTransport
@@ -19,12 +20,26 @@ type DemoServer struct {
 	// mirrors the C++ QHash<IrcLoopbackTransport *, QStringList> keyed by the
 	// transport pointer; the network id is the stable equivalent.
 	monitorLists map[string][]string
-	err          string
+
+	// selfNicks is each network's current nick: the seeded nick until a NICK
+	// frame changes it. Every self-addressed reply and echo reads it.
+	selfNicks map[string]string
+
+	// topics is each network's seeded channels, keyed by lower-cased name, with
+	// the current topic. A TOPIC frame on a seeded channel replaces its value,
+	// and a self JOIN reports the value in 332.
+	topics map[string]map[string]string
+
+	err string
 }
 
 // New returns an empty demo server. Call Attach to seed a controller.
 func New() *DemoServer {
-	return &DemoServer{monitorLists: make(map[string][]string)}
+	return &DemoServer{
+		monitorLists: make(map[string][]string),
+		selfNicks:    make(map[string]string),
+		topics:       make(map[string]map[string]string),
+	}
 }
 
 // OmarchyNetworkID returns the primary demo network id.
@@ -145,82 +160,73 @@ func (d *DemoServer) startNetwork(c *controller.Controller, networkID, nick stri
 }
 
 // hookAutoEcho returns the frameWritten handler: answer ping, list, ctcp, away,
-// metadata, and monitor in order, then echo JOIN, PRIVMSG, and NOTICE back to
-// the client. Because tryAnswerMonitor uses a non-nil empty slice for a handled
-// no-op, the ladder tests `reply != nil`, not `len(reply) > 0`. It mirrors
+// metadata, monitor, nick, part, and topic in order, then echo JOIN, PRIVMSG,
+// and NOTICE back to the client. Because tryAnswerMonitor uses a non-nil empty
+// slice for a handled no-op, the ladder tests `reply != nil`, not
+// `len(reply) > 0`. Each frame reads the network's current self nick, so a NICK
+// frame moves every later reply to the new nick. It mirrors
 // IrcDemoServer::hookAutoEcho.
 func (d *DemoServer) hookAutoEcho(networkID, nick string, online []string) func([]byte) {
 	seed := seedFor(networkID)
+	d.selfNicks[networkID] = nick
+	d.topics[networkID] = seedChannelTopics(seed)
 	return func(frame []byte) {
+		self := d.selfNicks[networkID]
 		if reply := d.tryAnswerPing(frame); reply != nil {
 			d.inject(networkID, reply)
 			return
 		}
-		if reply := d.tryAnswerList(seed, frame); reply != nil {
+		if reply := d.tryAnswerList(seed, self, frame); reply != nil {
 			d.inject(networkID, reply)
 			return
 		}
-		if reply := d.tryAnswerCtcp(nick, frame); reply != nil {
+		if reply := d.tryAnswerCtcp(self, frame); reply != nil {
 			d.inject(networkID, reply)
 			return
 		}
-		if reply := d.tryAnswerAway(nick, frame); reply != nil {
+		if reply := d.tryAnswerAway(self, frame); reply != nil {
 			d.inject(networkID, reply)
 			return
 		}
-		if reply := d.tryAnswerMetadata(nick, frame); reply != nil {
+		if reply := d.tryAnswerMetadata(self, frame); reply != nil {
 			d.inject(networkID, reply)
 			return
 		}
-		if reply := d.tryAnswerMonitor(networkID, nick, frame, online); reply != nil {
+		if reply := d.tryAnswerMonitor(networkID, self, frame, online); reply != nil {
 			d.inject(networkID, reply)
 			return
 		}
-		if bytes.HasPrefix(frame, []byte("JOIN ")) {
-			d.injectSelfJoin(networkID, nick, frame)
+		if reply := d.tryAnswerNick(networkID, frame); reply != nil {
+			d.inject(networkID, reply)
+			return
+		}
+		if reply := d.tryAnswerPart(networkID, frame); reply != nil {
+			d.inject(networkID, reply)
+			return
+		}
+		if reply := d.tryAnswerTopic(networkID, frame); reply != nil {
+			d.inject(networkID, reply)
+			return
+		}
+		if reply := d.tryAnswerJoin(networkID, self, frame); reply != nil {
+			d.inject(networkID, reply)
+			return
 		}
 		if bytes.HasPrefix(frame, []byte("PRIVMSG ")) || bytes.HasPrefix(frame, []byte("NOTICE ")) {
-			d.inject(networkID, injectClientEcho(nick, frame))
+			d.inject(networkID, injectClientEcho(self, frame))
 		}
 	}
 }
 
-// injectSelfJoin echoes one self JOIN per channel in an outbound JOIN frame.
-// The line is the same form joinLine already writes for the seed transcript.
-func (d *DemoServer) injectSelfJoin(networkID, nick string, frame []byte) {
-	rest := bytes.TrimRight(frame[len("JOIN "):], "\r\n")
-	if len(rest) == 0 {
-		return
+// seedChannelTopics is the channel state a network starts from: each seeded
+// channel, lower-cased, with its seeded topic. A name missing from the map is a
+// channel the demo does not know, so PART and TOPIC leave it alone.
+func seedChannelTopics(network SeedNetwork) map[string]string {
+	topics := make(map[string]string, len(network.Channels))
+	for _, channel := range network.Channels {
+		topics[strings.ToLower(channel.Name)] = channel.Topic
 	}
-	channelField := rest
-	if space := bytes.IndexByte(rest, ' '); space >= 0 {
-		channelField = rest[:space]
-	}
-	seed := seedFor(networkID)
-	for _, raw := range bytes.Split(channelField, []byte(",")) {
-		if len(raw) == 0 {
-			continue
-		}
-		name := string(raw)
-		d.inject(networkID, joinLine(nick, name, ""))
-		// A real server follows the self JOIN with the current topic. The demo
-		// still does not send a fresh 353, so the member column stays the nick
-		// who just joined. The topic is what the header slot shows.
-		if topic := seedChannelTopic(seed, name); topic != "" {
-			d.inject(networkID, line(":server 332 "+nick+" "+name+" :"+topic))
-		}
-	}
-}
-
-// seedChannelTopic returns the seeded topic for one channel, matched
-// case-insensitively. An unknown channel has no topic to echo.
-func seedChannelTopic(network SeedNetwork, channel string) string {
-	for _, item := range network.Channels {
-		if strings.EqualFold(item.Name, channel) {
-			return item.Topic
-		}
-	}
-	return ""
+	return topics
 }
 
 // inject delivers reply bytes on one network. An empty payload is a handled
