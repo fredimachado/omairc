@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use super::fixture::{test_config, Fixture};
 use crate::irc::message::MAX_CLASSIC_FRAME_BYTES;
+use crate::irc::presence::{clamped_to, effective_max_value_bytes, MAXIMUM_VALUE_BYTES};
 use crate::session::events::SessionState;
-use crate::session::metadata::{clamped_to, effective_max_value_bytes, MAXIMUM_VALUE_BYTES};
 
 fn ctcp_version_reply(nick: &str) -> String {
     format!("NOTICE {nick} :\u{1}VERSION https://omairc.app\u{1}\r\n")

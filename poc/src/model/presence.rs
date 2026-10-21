@@ -6,32 +6,22 @@
 use std::collections::HashMap;
 
 use super::mock::Network;
+pub use crate::irc::presence::NickFacts;
 
 /// The prefix of a bundled image reference. Qt's demo seed writes it that way.
 const BUNDLED_PREFIX: &str = "qrc:/";
 
-/// What the transcript shows for one nick, taken from its member records.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct NickFacts {
-    pub realname: String,
-    pub bot: bool,
-    pub avatar: Option<String>,
-}
-
-/// The facts for every nick on `network`, keyed by nick. For each field the first
-/// non-empty value wins, so a nick listed in several channels keeps its real name
-/// and avatar even where one record leaves them out.
+/// The facts for every nick on `network`, keyed by nick. Each member record folds
+/// in through `NickFacts::absorb`, so a nick listed in several channels keeps its
+/// real name and avatar even where one record leaves them out.
 pub fn nick_facts(network: &Network) -> HashMap<String, NickFacts> {
     let mut facts: HashMap<String, NickFacts> = HashMap::new();
     for member in network.conversations.iter().flat_map(|conv| &conv.members) {
-        let entry = facts.entry(member.nick.clone()).or_default();
-        if entry.realname.is_empty() {
-            entry.realname = member.realname.clone();
-        }
-        entry.bot |= member.bot;
-        if entry.avatar.is_none() {
-            entry.avatar.clone_from(&member.avatar);
-        }
+        facts.entry(member.nick.clone()).or_default().absorb(
+            &member.realname,
+            member.bot,
+            member.avatar.as_deref(),
+        );
     }
     facts
 }
