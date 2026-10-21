@@ -77,10 +77,12 @@ pub fn seed_inbox(world: &MockWorld) -> Inbox {
     if world.network("oftc").is_some() {
         inbox.push(InboxItem {
             kind: InboxKind::Invite,
+            timestamp: chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
             network_id: "oftc".to_string(),
             actor: "rio".to_string(),
             target: "#debian".to_string(),
             preview: String::new(),
+            msgid: Default::default(),
         });
     }
     if world
@@ -89,10 +91,12 @@ pub fn seed_inbox(world: &MockWorld) -> Inbox {
     {
         inbox.push(InboxItem {
             kind: InboxKind::Mention,
+            timestamp: chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
             network_id: "omarchy".to_string(),
             actor: "mira".to_string(),
             target: "#ricing".to_string(),
             preview: String::new(),
+            msgid: Default::default(),
         });
     }
     inbox
@@ -157,10 +161,12 @@ mod tests {
     fn item(kind: InboxKind, network: &str, actor: &str, target: &str) -> InboxItem {
         InboxItem {
             kind,
+            timestamp: chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
             network_id: network.to_string(),
             actor: actor.to_string(),
             target: target.to_string(),
             preview: String::new(),
+            msgid: Default::default(),
         }
     }
 

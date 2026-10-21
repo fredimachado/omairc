@@ -11,7 +11,10 @@
 //! the channel join that accepting an invite triggers are model and controller
 //! concerns; they stay outside this file.
 
+use chrono::{DateTime, Utc};
+
 use super::casemapping::IrcCaseMapping;
+use super::event::MsgId;
 
 /// The waiting-list cap (`IrcInbox::kMaxItems`).
 pub const MAX_INBOX_ITEMS: usize = 50;
@@ -61,10 +64,14 @@ impl InboxKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InboxItem {
     pub kind: InboxKind,
+    /// When the arrival was stamped (`Timestamp`).
+    pub timestamp: DateTime<Utc>,
     pub network_id: String,
     pub actor: String,
     pub target: String,
     pub preview: String,
+    /// The IRCv3 `msgid` of the line that raised the row, empty when none.
+    pub msgid: MsgId,
 }
 
 impl InboxItem {
@@ -202,10 +209,12 @@ mod tests {
     fn item(kind: InboxKind, network: &str, actor: &str, target: &str) -> InboxItem {
         InboxItem {
             kind,
+            timestamp: DateTime::<Utc>::UNIX_EPOCH,
             network_id: network.to_owned(),
             actor: actor.to_owned(),
             target: target.to_owned(),
             preview: String::new(),
+            msgid: MsgId::default(),
         }
     }
 

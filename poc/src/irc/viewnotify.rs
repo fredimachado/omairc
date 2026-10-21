@@ -28,6 +28,12 @@ pub enum ViewNotify {
     /// The typing refresh timer restarts, because the event reset the typing
     /// facts that timer watches (`RearmTyping`).
     RearmTyping,
+    /// The connection footer, the Status subtitle or the last error changed. Go
+    /// reports this through its own status callback; the PoC queues it beside the
+    /// reducer's surfaces so one drain feeds the shell.
+    Status,
+    /// The session inbox gained, lost or reordered a row.
+    Inbox,
 }
 
 /// The surfaces a `001` welcome dirties (`ViewNotifyResetAll`).
