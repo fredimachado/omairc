@@ -19,6 +19,10 @@ pub mod casemapping;
 pub mod channelmode;
 #[allow(dead_code)]
 pub mod channelname;
+// The slash catalog's dispatcher (the controller's CommandDispatcher) is the consumer of
+// the rest of the parser and the outcome set. It lands in the next step, so the allow
+// stays until it calls in.
+#[allow(dead_code)]
 pub mod command;
 pub mod commandbuilder;
 #[allow(dead_code)]
@@ -57,6 +61,9 @@ pub mod secretpolicy;
 #[allow(dead_code)]
 pub mod serverfeatures;
 pub mod servicenick;
+// The rows the popup does not read yet (`has_label`, `needle`) are the dispatcher's and
+// the tests', so the allow stays until the dispatcher calls in.
+#[allow(dead_code)]
 pub mod slashcomplete;
 #[allow(dead_code)]
 pub mod statusentry;

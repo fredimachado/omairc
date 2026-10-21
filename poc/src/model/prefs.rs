@@ -4,13 +4,12 @@
 //! The catalog, the value types and the in-memory `Preferences` are protocol
 //! vocabulary and live in `irc/pref` and `irc/membershipnoise` (Qt
 //! `src/irc/ircpref.cpp` and `src/irc/ircmembershipnoise.h`). They are re-exported
-//! here so the Connect sheet and the slash catalog keep their paths. This file
-//! adds the file I/O, which moves to the INI store in the storage phase.
+//! here so the Connect sheet keeps its paths. This file adds the file I/O, which
+//! moves to the INI store in the storage phase.
 
 use std::io;
 use std::path::{Path, PathBuf};
 
-pub use crate::irc::membershipnoise::MembershipNoise;
 pub use crate::irc::pref::{PrefName, PrefValue, Preferences};
 
 impl Preferences {
@@ -54,6 +53,7 @@ pub fn default_path() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::irc::membershipnoise::MembershipNoise;
 
     /// A fresh path under the system temp dir, unique per test.
     fn scratch(test: &str) -> PathBuf {
