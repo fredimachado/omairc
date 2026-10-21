@@ -4,6 +4,7 @@ use gpui::{div, prelude::*, InteractiveText, MouseButton, SharedString, StyledTe
 
 use crate::model::format::{FormattedText, TextHit};
 use crate::model::Style;
+use crate::ui::center::header_actions::{render_header_actions, HeaderActions};
 use crate::ui::format_ui::{gpui_text_style, irc_runs_to_gpui};
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
@@ -21,16 +22,27 @@ pub enum Subtitle<'a> {
     },
 }
 
-/// What the header shows. A conversation passes its topic as the subtitle and
-/// its people count; Status passes `Connected` and no count.
+/// What the header shows. A conversation passes its topic as the subtitle, its people
+/// count and its LEAVE, JOIN and CLOSE buttons; Status passes `Connected` and no count
+/// and no buttons.
 pub struct HeaderView<'a> {
     pub title: &'a str,
     pub subtitle: Subtitle<'a>,
-    /// `Some` shows the `N PEOPLE` pill, which only channels have.
+    /// `Some` shows the `N PEOPLE` pill. See `people_pill`.
     pub people: Option<usize>,
+    /// The LEAVE, JOIN and CLOSE buttons, left of the pill. `None` on Status.
+    pub actions: Option<HeaderActions>,
 }
 
-/// The title, the subtitle line, and the `N PEOPLE` pill when there is a count.
+/// The count the `N PEOPLE` pill shows for the selection. Only a channel the user is in
+/// has one: a direct message, a channel the user has left, and Status hide the pill and
+/// the member panel (Qt's `peopleButton` visibility).
+pub fn people_pill(channel: bool, joined: bool, count: usize) -> Option<usize> {
+    (channel && joined).then_some(count)
+}
+
+/// The title, the subtitle line, the action buttons, and the `N PEOPLE` pill when there is
+/// a count.
 pub fn render_header(
     view: HeaderView<'_>,
     style: &Style,
@@ -40,6 +52,7 @@ pub fn render_header(
         title,
         subtitle,
         people,
+        actions,
     } = view;
 
     div()
@@ -64,6 +77,7 @@ pub fn render_header(
                         .font_family(FONT_FAMILY)
                         .child(title.to_string()),
                 )
+                .children(actions.and_then(|actions| render_header_actions(actions, style)))
                 .when_some(people, |this, people| {
                     this.child(
                         div()
@@ -112,5 +126,18 @@ fn subtitle_line(style: &Style, subtitle: Subtitle<'_>) -> impl IntoElement {
                 },
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::people_pill;
+
+    #[test]
+    fn the_pill_shows_the_count_only_on_a_joined_channel() {
+        assert_eq!(people_pill(true, true, 12), Some(12));
+        assert_eq!(people_pill(true, false, 0), None, "a left channel hides the pill");
+        assert_eq!(people_pill(false, false, 3), None, "a direct message hides it");
+        assert_eq!(people_pill(false, true, 3), None, "a direct message is never joined");
     }
 }

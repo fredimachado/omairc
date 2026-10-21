@@ -5,8 +5,9 @@
 //! and `CanCloseSelection` in `tui/internal/controller/controller.go` and
 //! `wiring.go` (Go), and `src/irc/irccontroller.cpp` (C++).
 
-use crate::irc::event::{ConversationKey, IrcConversationCause};
+use crate::irc::command::ComposerSurface;
 use crate::irc::conversation::neighbor_after_drop;
+use crate::irc::event::{ConversationKey, IrcConversationCause};
 use crate::irc::viewnotify::{self, ViewNotify};
 
 use super::controller::Controller;
@@ -100,8 +101,6 @@ impl Controller {
     /// Closes what the user has selected (`CloseDirectMessage`). A direct message
     /// closes; a channel closes only once it is left. A closed direct message
     /// selects its neighbour. False when the selection cannot close.
-    // Phase 5: CLOSE on the header closes the selection
-    #[allow(dead_code)]
     pub fn close_direct(&mut self) -> bool {
         self.pump();
         let network_id = self.focused_network_id().to_owned();
@@ -136,8 +135,6 @@ impl Controller {
 
     /// Whether the selection can close: a direct message always can, a channel only
     /// once it is no longer joined (`CanCloseSelection`).
-    // Phase 5: the header's CLOSE and Ctrl+W check it
-    #[allow(dead_code)]
     pub fn can_close_selection(&self) -> bool {
         let Some(key) = self.selected.as_ref() else {
             return false;
@@ -154,8 +151,6 @@ impl Controller {
 
     /// Whether the selected channel is joined (`ChannelJoined`). False for a direct
     /// message or an empty selection.
-    // Phase 5: the header's LEAVE and JOIN read it
-    #[allow(dead_code)]
     pub fn channel_joined(&self) -> bool {
         let Some(key) = self.selected.as_ref() else {
             return false;
@@ -164,6 +159,24 @@ impl Controller {
             .find(key)
             .and_then(|conversation| conversation.channel.as_ref())
             .is_some_and(|channel| channel.joined)
+    }
+
+    /// Parts the selected channel (`leaveSelectedChannel`). The header's LEAVE takes this
+    /// path, and so does a typed `/part`: the line goes through `submit`, the one path every
+    /// outbound verb takes. False when the part was refused.
+    pub fn leave_selected_channel(&mut self) -> bool {
+        self.submit(ComposerSurface::Conversation, "/part")
+    }
+
+    /// Joins the selected channel again (`joinSelectedChannel`). It does nothing when the
+    /// selection is not a channel or the channel is still joined. The JOIN goes through
+    /// `submit`, as a typed `/join` does.
+    pub fn join_selected_channel(&mut self) -> bool {
+        if !self.is_channel() || self.channel_joined() {
+            return false;
+        }
+        let line = format!("/join {}", self.selected_target());
+        self.submit(ComposerSurface::Conversation, &line)
     }
 
     /// Clears every unread and mention count (`MarkAllRead`).

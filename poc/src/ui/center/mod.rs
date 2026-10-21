@@ -1,5 +1,6 @@
 pub mod composer;
 pub mod header;
+pub mod header_actions;
 pub mod slash_popup;
 
 use gpui::{div, prelude::*, AnyElement, Entity};

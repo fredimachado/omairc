@@ -10,6 +10,7 @@ mod composer;
 mod console;
 mod fixture;
 mod inbox;
+mod left_channel;
 mod lifecycle;
 mod matrices;
 mod metadata;

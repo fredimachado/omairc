@@ -37,7 +37,8 @@ use crate::model::title::{conversation_title, window_title, TitleView};
 use crate::model::update_check::UpdateCheck;
 use crate::model::ConversationRef;
 use crate::session::clock::RealClock;
-use crate::ui::center::header::{HeaderView, Subtitle};
+use crate::ui::center::header::{people_pill, HeaderView, Subtitle};
+use crate::ui::center::header_actions::{HeaderActions, HeaderOffers};
 use crate::ui::center::render_center;
 use crate::ui::center::slash_popup::render_slash_popup;
 use crate::ui::input::SingleLineInput;
@@ -314,8 +315,10 @@ impl Render for Shell {
         // Qt gates the panel on `win.width >= scaledSize(980)`. Status hides it.
         let wide_enough = f32::from(window.viewport_size().width)
             >= app_style.scaled(980.) as f32;
+        // Qt shows the panel only on a channel the user is in (`membersPanel.visible`).
         let show_members = self.members_open
             && self.controller.is_channel()
+            && self.controller.channel_joined()
             && !self.status_showing()
             && wide_enough;
         // A hidden member list cannot keep focus (a DM, a narrow window, or a closed panel):
@@ -338,21 +341,36 @@ impl Render for Shell {
         // conversation's title, people count, and subtitle. The subtitle is the network's
         // last command error while one is set, else the topic (Status shows the same error
         // over "Connected", as Qt's `statusSubtitle` does).
-        let (title, people, error) = match &status {
+        let (title, people, error, actions) = match &status {
             Some(network_id) => (
                 status_title(&self.controller.network_name(network_id)),
                 None,
                 self.controller.last_error_for(network_id).map(str::to_string),
+                None,
             ),
             None => {
                 let error = self
                     .controller
                     .last_error_for(&selected.network_id)
                     .map(str::to_string);
+                let channel = self.controller.is_channel();
+                let joined = self.controller.channel_joined();
+                let people = people_pill(channel, joined, self.controller.people_count());
+                let actions = HeaderActions {
+                    offers: HeaderOffers::for_selection(
+                        channel,
+                        joined,
+                        self.controller.can_close_selection(),
+                    ),
+                    on_leave: leave_handler(entity.clone()),
+                    on_join: join_handler(entity.clone()),
+                    on_close: close_selection_handler(entity.clone()),
+                };
                 (
                     conversation_title(&self.controller, &selected).unwrap_or_default(),
-                    self.controller.is_channel().then(|| self.controller.people_count()),
+                    people,
                     error,
+                    Some(actions),
                 )
             }
         };
@@ -416,6 +434,7 @@ impl Render for Shell {
             title: &title,
             subtitle,
             people,
+            actions,
         };
         let center = render_center(
             header,
@@ -607,12 +626,33 @@ fn toggle_members_handler(entity: Entity<Shell>) -> Handler<()> {
     })
 }
 
-/// Ctrl+W, or a middle click on a DM row: close that DM.
+/// A middle click on a sidebar row: closes that conversation.
 fn close_handler(entity: Entity<Shell>) -> Handler<ConversationRef> {
     Rc::new(move |target: ConversationRef, window: &mut Window, cx: &mut App| {
         entity.update(cx, |shell, cx| {
-            shell.close_direct_message(&target, window, cx);
+            shell.close_conversation_row(&target, window, cx);
         });
+    })
+}
+
+/// A click on the header's LEAVE button.
+fn leave_handler(entity: Entity<Shell>) -> Handler<()> {
+    Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
+        entity.update(cx, |shell, cx| shell.leave_selected_channel(window, cx));
+    })
+}
+
+/// A click on the header's JOIN button.
+fn join_handler(entity: Entity<Shell>) -> Handler<()> {
+    Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
+        entity.update(cx, |shell, cx| shell.join_selected_channel(window, cx));
+    })
+}
+
+/// A click on the header's CLOSE button.
+fn close_selection_handler(entity: Entity<Shell>) -> Handler<()> {
+    Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
+        entity.update(cx, |shell, cx| shell.close_selection(window, cx));
     })
 }
 

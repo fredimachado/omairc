@@ -96,9 +96,10 @@ impl Shell {
         }
     }
 
-    /// Ctrl+W on a DM, or a middle click on its row. Closing the selected DM selects
-    /// the neighbour. Channels that are still joined are a no-op.
-    pub fn close_direct_message(
+    /// A middle click on a sidebar row: closes that conversation through the controller's
+    /// `close_conversation`. A direct message closes, and so does a channel the user has
+    /// left. A joined channel is a no-op. Closing the selected row selects its neighbour.
+    pub fn close_conversation_row(
         &mut self,
         target: &ConversationRef,
         window: &mut Window,
@@ -115,6 +116,36 @@ impl Shell {
         if was_selected {
             self.focus_composer(window, cx);
         }
+        cx.notify();
+    }
+
+    /// The header's LEAVE: parts the selected channel. The controller sends the `/part`
+    /// through the same path a typed line takes.
+    pub fn leave_selected_channel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.controller.leave_selected_channel();
+        self.after_header_action(window, cx);
+    }
+
+    /// The header's JOIN: joins the selected channel again, as a typed `/join` does.
+    pub fn join_selected_channel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.controller.join_selected_channel();
+        self.after_header_action(window, cx);
+    }
+
+    /// The header's CLOSE, and Ctrl+W once its chord is live. Closes the selection through
+    /// `close_direct`, which refuses a joined channel. Focus returns to the composer.
+    pub fn close_selection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.controller.close_direct() {
+            return;
+        }
+        self.after_header_action(window, cx);
+    }
+
+    /// Brings the shell up to what a header action changed, then returns focus to the
+    /// composer, as Qt's header actions do.
+    fn after_header_action(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.drain_notifications(cx);
+        self.focus_composer(window, cx);
         cx.notify();
     }
 
@@ -170,13 +201,13 @@ impl Shell {
         cx.notify();
     }
 
-    /// Ctrl+W on the selected DM. Channels are a no-op.
+    /// Ctrl+W: closes the selection while the chord is live. A direct message closes, and so
+    /// does a channel the user has left. A joined channel is refused by the controller.
     pub fn close_selected_direct(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.chord_live(Chord::CloseDirect, window, cx) {
             return;
         }
-        let target = self.selected_ref();
-        self.close_direct_message(&target, window, cx);
+        self.close_selection(window, cx);
     }
 
     /// Ctrl+C with no composer selection: the member list copies the current row's
