@@ -1,0 +1,4 @@
+# The corpus is wire bytes: CRLF line ends and raw Latin-1 bytes must survive
+# checkout and commit as they are, the way tui/internal/irc/testdata/corpus does.
+# Without -text, core.autocrlf would rewrite them to LF.
+src/irc/testdata/corpus/** -text
