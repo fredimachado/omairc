@@ -1,7 +1,7 @@
 use gpui::{div, prelude::*, Entity, ScrollHandle};
 
 use crate::controller::snapshots::ConversationRow;
-use crate::model::presence::photo_for;
+use crate::model::presence::{photo_for, SelfPresence};
 use crate::model::sidebar::{NetworkHeader, SidebarState};
 use crate::model::{ConversationRef, Style};
 use crate::ui::scrollbar::{div_vertical_scrollbar, ScrollbarDragCell};
@@ -21,6 +21,10 @@ pub struct SidebarData<'a> {
     pub conversations: &'a [ConversationRow],
     pub state: &'a SidebarState,
     pub selected: &'a ConversationRef,
+    /// The focused network: the footer shows its nick, and `presence` is its presence.
+    pub footer_network: &'a str,
+    /// The footer's presence, read from the controller for `footer_network`.
+    pub presence: SelfPresence,
     /// Status is showing, so no conversation row is the current one (Qt `current`).
     pub status_open: bool,
     pub inbox_count: u32,
@@ -58,10 +62,10 @@ pub fn render_sidebar<V: 'static>(
     let visible = data.state.rail_visible;
     let width = if visible { 244. } else { 0. };
     // With no network the footer shows the blank identity, as a first run does.
-    let footer_network = data
+    let footer_header = data
         .networks
         .iter()
-        .find(|network| network.id == data.selected.network_id)
+        .find(|network| network.id == data.footer_network)
         .cloned()
         .unwrap_or_default();
 
@@ -94,7 +98,8 @@ pub fn render_sidebar<V: 'static>(
                 .child(div_vertical_scrollbar(scroll, style, host, drag.clone())),
         )
         .child(identity_footer(
-            &footer_network,
+            &footer_header,
+            data.presence,
             data.inbox_count,
             data.on_inbox.clone(),
             data.on_about.clone(),

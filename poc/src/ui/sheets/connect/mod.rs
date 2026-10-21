@@ -69,6 +69,9 @@ pub struct ConnectView<'a> {
     pub state: &'a ConnectState,
     /// The networks that hold a conversation (Remove needs another one to show).
     pub populated: &'a [String],
+    /// Whether the selected network's session is live or reconnecting, so Disconnect
+    /// shows. The controller answers it (`Controller::can_disconnect`).
+    pub disconnectable: bool,
     pub prefs: &'a Preferences,
     pub controls: &'a ConnectControls,
     /// The stop holding focus, if any. Captions and focus rings read it.

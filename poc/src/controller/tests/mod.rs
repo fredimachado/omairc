@@ -5,6 +5,7 @@
 
 mod autoaway;
 mod channellist;
+mod chrome;
 mod commands;
 mod composer;
 mod console;

@@ -256,12 +256,17 @@ impl Controller {
         self.manager.find(network_id)
     }
 
-    /// Starts `network_id`'s connection (`Start`). A seeded demo network gets a
-    /// fresh loopback and its peer, as at launch. Any other network is refused: the
-    /// factory's reason becomes the network's last error and a Status line. Returns
-    /// whether the connection began.
+    /// Starts `network_id`'s connection (`Start`), the intent Connect's Apply calls. A
+    /// live session is left alone. A seeded demo network that is idle gets a fresh
+    /// loopback and its peer, as at launch, and its conversations stay. Any other
+    /// network goes through the transport factory, and a refusal (the build's reason)
+    /// becomes the network's last error and a Status line. An empty id does nothing.
+    /// Returns whether the connection began.
     pub fn start(&mut self, network_id: &str) -> bool {
         self.pump();
+        if network_id.is_empty() {
+            return false;
+        }
         self.set_last_error(network_id, None);
         let started = if self.manager.is_live(network_id) {
             // A connecting or registered session already holds the connection.
@@ -298,10 +303,15 @@ impl Controller {
         true
     }
 
+    /// Whether `network_id` can be disconnected: its session is live or reconnecting, so
+    /// Disconnect has something to stop (Qt `IrcConnection::canDisconnect`). Connecting
+    /// counts as live, as it does in Qt. False for a network with no session.
+    pub fn can_disconnect(&self, network_id: &str) -> bool {
+        self.manager.is_live(network_id)
+    }
+
     /// The connection word for `network_id`, or for the focused network when the id
     /// is empty (`ConnectionStatusFor`). A network with no session is Offline.
-    // Phase 6: the footer and subtitles read the connection word
-    #[allow(dead_code)]
     pub fn connection_status_for(&self, network_id: &str) -> &'static str {
         let id = if network_id.is_empty() {
             self.focused_network_id()
@@ -842,11 +852,16 @@ impl Controller {
     }
 
     /// Records a refused start as the network's last error and writes it to Status.
+    /// With no selection, Status is what the window shows, so it moves to this network
+    /// (the first-run Apply case). A selected conversation stays on screen.
     fn refuse_with(&mut self, network_id: &str, message: &str) {
         self.set_last_error(network_id, Some(message.to_owned()));
         let now = self.clock.now();
         let entry = statusentry::lifecycle(network_id, LogSeverity::Alert, "error", message, now);
         self.append_status(entry);
+        if self.selected.is_none() {
+            self.console_network = network_id.to_owned();
+        }
     }
 }
 

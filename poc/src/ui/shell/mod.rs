@@ -28,11 +28,12 @@ use crate::model::composer::ComposerState;
 use crate::model::connect::{ConnectState, Stop};
 use crate::model::find::Find;
 use crate::model::format::{format_irc, text_hits, TextHit};
+use crate::model::presence::footer_presence;
 use crate::model::prefs::Preferences;
 use crate::model::scroll_place::ScrollPlaces;
 use crate::model::sidebar::SidebarState;
 use crate::model::slash_complete::SlashSession;
-use crate::model::status::status_title;
+use crate::model::status::{connection_line, status_title};
 use crate::model::title::{conversation_title, window_title, TitleView};
 use crate::model::update_check::UpdateCheck;
 use crate::model::ConversationRef;
@@ -280,13 +281,14 @@ impl Render for Shell {
         }
 
         let populated = self.populated_networks();
+        let disconnectable = self.connect_disconnectable();
         // Connect's focus. The stops on the showing tab get their handles, then the focus
         // request a Tab, an open or a tab cycle left is applied. The stop that holds focus
         // is read back, and the rail's Enter arming resets when the rail lets go. Finally
         // the fields show the draft.
         let mut connect_focused: Option<Stop> = None;
         if self.connect_open {
-            let stops = self.connect.stops(&populated);
+            let stops = self.connect.stops(&populated, disconnectable);
             self.connect_ui.ensure(cx, &stops);
             if let Some(stop) = self.connect.take_focus_request() {
                 self.connect_ui.ensure(cx, std::slice::from_ref(&stop));
@@ -337,22 +339,17 @@ impl Render for Shell {
             self.window_title = wanted_window_title;
         }
 
-        // The header reads the Status pane's title and the connection line, or the
-        // conversation's title, people count, and subtitle. The subtitle is the network's
-        // last command error while one is set, else the topic (Status shows the same error
-        // over "Connected", as Qt's `statusSubtitle` does).
-        let (title, people, error, actions) = match &status {
+        // The header reads the Status pane's title and its connection line, or the
+        // conversation's title, people count, and topic. A conversation's second line is
+        // its topic (Qt's `currentTopic`). Status shows the connection line from the
+        // controller: the network's last error while one is set, else its connection word.
+        let (title, people, actions) = match &status {
             Some(network_id) => (
                 status_title(&self.controller.network_name(network_id)),
                 None,
-                self.controller.last_error_for(network_id).map(str::to_string),
                 None,
             ),
             None => {
-                let error = self
-                    .controller
-                    .last_error_for(&selected.network_id)
-                    .map(str::to_string);
                 let channel = self.controller.is_channel();
                 let joined = self.controller.channel_joined();
                 let people = people_pill(channel, joined, self.controller.people_count());
@@ -369,28 +366,29 @@ impl Render for Shell {
                 (
                     conversation_title(&self.controller, &selected).unwrap_or_default(),
                     people,
-                    error,
                     Some(actions),
                 )
             }
         };
-        // The topic shows unless an error or Status takes the second line. Its URLs and
-        // channel names are clickable, against the network's CHANTYPES.
-        let topic = (status.is_none() && error.is_none()).then(|| {
+        // The topic is the second line of a conversation. Its URLs and channel names are
+        // clickable, against the network's CHANTYPES. Status has no topic.
+        let topic = status.is_none().then(|| {
             let features = self.features_of(&selected.network_id);
             let text = format_irc(&self.controller.topic());
             let hits = text_hits(&text, &features);
             (text, hits)
         });
-        // Otherwise the line is the error, or `Connected` (Qt's `statusSubtitle`).
-        let plain_subtitle = error.unwrap_or_else(|| "Connected".to_string());
+        let connection = status
+            .as_deref()
+            .map(|network_id| connection_line(&self.controller, network_id))
+            .unwrap_or_default();
         let subtitle = match &topic {
             Some((text, hits)) => Subtitle::Topic {
                 text,
                 hits,
                 on_hit: topic_handler(entity.clone()),
             },
-            None => Subtitle::Plain(&plain_subtitle),
+            None => Subtitle::Plain(&connection),
         };
         // The slash popup hangs over the composer while it shows.
         let slash_popup = self.slash_popup_showing().then(|| {
@@ -406,6 +404,10 @@ impl Render for Shell {
         let update_ready = self.update.read(cx).restart_ready();
         let conversations = self.controller.conversations();
         let networks = self.network_headers(&conversations);
+        // The footer is the focused network's identity (Qt's `identityNetworkId`): its nick,
+        // and the presence the controller reads for that network.
+        let footer_network = self.focused_network();
+        let presence = footer_presence(&self.controller);
         let sidebar = render_sidebar(
             SidebarData {
                 update_ready,
@@ -413,6 +415,8 @@ impl Render for Shell {
                 conversations: &conversations,
                 state: &self.sidebar,
                 selected: &selected,
+                footer_network: &footer_network,
+                presence,
                 status_open: status.is_some(),
                 inbox_count: self.controller.inbox_items().len() as u32,
                 typing_phase: self.typing_phase,
@@ -507,6 +511,7 @@ impl Render for Shell {
                 this.child(render_connect(&ConnectView {
                     state: &self.connect,
                     populated: &populated,
+                    disconnectable,
                     prefs: self.controller.preferences(),
                     controls: &self.connect_ui,
                     focused: connect_focused.as_ref(),

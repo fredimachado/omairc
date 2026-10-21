@@ -8,7 +8,9 @@
 use chrono::{DateTime, Local, Utc};
 
 use super::format::format_irc;
+use super::presence::CONNECTED;
 use super::transcript::{Row, RowKind};
+use crate::controller::controller::Controller;
 use crate::irc::statusentry::{LogSeverity, LogSource, StatusEntry};
 
 /// What a Status row carries besides its text: the label, the source that
@@ -107,6 +109,23 @@ pub fn status_title(network_name: &str) -> String {
         return "Status".to_string();
     }
     format!("{network_name} Status")
+}
+
+/// The line under a network's name, in the sidebar's network row and under the Status
+/// title (Qt's `liveStatus` and `statusSubtitle`). It is the network's last error while one
+/// is set, else its connection word (`Connecting`, `Connected`, `Reconnecting`,
+/// `Disconnecting` or `Offline`), as the controller reads them.
+pub fn connection_line(controller: &Controller, network_id: &str) -> String {
+    match controller.last_error_for(network_id) {
+        Some(error) if !error.is_empty() => error.to_owned(),
+        _ => controller.connection_status_for(network_id).to_owned(),
+    }
+}
+
+/// Whether a network's sidebar mark is green. Qt paints it only when the line reads
+/// `Connected`, so a connected network with an error shows the muted mark.
+pub fn network_mark_online(line: &str) -> bool {
+    line == CONNECTED
 }
 
 #[cfg(test)]

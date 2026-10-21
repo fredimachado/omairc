@@ -41,6 +41,7 @@ pub const TLS_LABEL: &str = "TLS";
 pub const CONNECT_ON_STARTUP_LABEL: &str = "Connect automatically on startup";
 pub const REMOVE_LABEL: &str = "Remove";
 pub const DISCARD_LABEL: &str = "Discard";
+pub const DISCONNECT_LABEL: &str = "Disconnect";
 pub const APPLY_LABEL: &str = "Apply";
 
 /// Why Apply is refused. Qt's `IrcNetworkProfile::Problem`, without the account
@@ -179,6 +180,9 @@ pub enum Stop {
     PreferenceHelp(PrefName),
     Remove,
     Discard,
+    /// Stops the selected network's live or reconnecting session. Shown only while
+    /// that session exists (`stops`), and it leaves the profile as it is.
+    Disconnect,
     Apply,
 }
 
@@ -455,6 +459,14 @@ fn roster_label(profile: &Profile, saved: &[Profile]) -> String {
     }
 }
 
+/// The first `network-N` id none of the saved profiles uses.
+fn fresh_network_id_among(saved: &[Profile]) -> String {
+    (1..)
+        .map(|n| format!("network-{n}"))
+        .find(|id| !saved.iter().any(|profile| profile.network_id == *id))
+        .unwrap_or_default()
+}
+
 /// One rail row.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RailRow {
@@ -517,11 +529,15 @@ impl ConnectState {
     /// network, with the first network selected and no draft.
     pub fn seed(networks: &[NetworkSeed]) -> Self {
         let saved: Vec<Profile> = networks.iter().map(Profile::from_seed).collect();
-        let selected = saved
-            .first()
-            .map(|profile| profile.network_id.clone())
-            .unwrap_or_default();
-        let draft = saved.first().cloned().unwrap_or_else(|| Profile::blank(""));
+        // With no network yet, the draft takes a fresh id, so that Apply has a network to
+        // start. An empty id would have nothing to name on Status or in the sidebar.
+        let (selected, draft) = match saved.first() {
+            Some(profile) => (profile.network_id.clone(), profile.clone()),
+            None => {
+                let id = fresh_network_id_among(&saved);
+                (id.clone(), Profile::blank(&id))
+            }
+        };
         Self {
             saved,
             draft,
@@ -547,8 +563,7 @@ impl ConnectState {
         &self.draft
     }
 
-    /// The selected network's id. The sheet reads it through `rows`.
-    #[cfg(test)]
+    /// The selected network's id. Disconnect and Apply act on it.
     pub fn selected(&self) -> &str {
         &self.selected
     }
@@ -850,8 +865,9 @@ impl ConnectState {
     }
 
     /// Every focus stop on the showing tab, in Tab order. Remove is listed only
-    /// when `can_remove` allows it, and Add only when `can_add` does.
-    pub fn stops(&self, populated: &[String]) -> Vec<Stop> {
+    /// when `can_remove` allows it, Add only when `can_add` does, and Disconnect only
+    /// when `disconnectable` says the selected network's session can be stopped.
+    pub fn stops(&self, populated: &[String], disconnectable: bool) -> Vec<Stop> {
         let mut stops = vec![
             Stop::Tab(ConnectTab::Connection),
             Stop::Tab(ConnectTab::Preferences),
@@ -891,6 +907,9 @@ impl ConnectState {
                     stops.push(Stop::Remove);
                 }
                 stops.push(Stop::Discard);
+                if disconnectable {
+                    stops.push(Stop::Disconnect);
+                }
                 stops.push(Stop::Apply);
             }
             ConnectTab::Preferences => {
@@ -911,10 +930,11 @@ impl ConnectState {
     pub fn step_stop(
         &self,
         populated: &[String],
+        disconnectable: bool,
         from: Option<&Stop>,
         backwards: bool,
     ) -> Option<Stop> {
-        let stops = self.stops(populated);
+        let stops = self.stops(populated, disconnectable);
         if stops.is_empty() {
             return None;
         }
@@ -1017,10 +1037,7 @@ impl ConnectState {
 
     /// The first `network-N` id no saved network uses.
     fn fresh_network_id(&self) -> String {
-        (1..)
-            .map(|n| format!("network-{n}"))
-            .find(|id| !self.is_saved(id))
-            .unwrap_or_default()
+        fresh_network_id_among(&self.saved)
     }
 
     /// The lowest icon colour no saved network uses, or colour 0 when all are.
@@ -1703,7 +1720,7 @@ mod tests {
     #[test]
     fn the_connection_walk_follows_the_qt_focus_chain() {
         let (populated, state) = seeded();
-        let stops = state.stops(&populated);
+        let stops = state.stops(&populated, false);
         assert_eq!(
             stops,
             vec![
@@ -1737,10 +1754,10 @@ mod tests {
     fn the_walk_drops_add_while_dirty_and_remove_when_not_allowed() {
         let (mut populated, mut state) = seeded();
         state.set_text(ConnectField::Name, "edited");
-        let stops = state.stops(&populated);
+        let stops = state.stops(&populated, false);
         assert!(!stops.contains(&Stop::AddNetwork));
         populated.retain(|id| id != "oftc");
-        assert!(!state.stops(&populated).contains(&Stop::Remove));
+        assert!(!state.stops(&populated, false).contains(&Stop::Remove));
     }
 
     #[test]
@@ -1748,7 +1765,7 @@ mod tests {
         let (populated, mut state) = seeded();
         state.set_tab(ConnectTab::Preferences);
         assert_eq!(
-            state.stops(&populated),
+            state.stops(&populated, false),
             vec![
                 Stop::Tab(ConnectTab::Connection),
                 Stop::Tab(ConnectTab::Preferences),
@@ -1765,7 +1782,7 @@ mod tests {
     #[test]
     fn enter_and_tab_walk_forward_and_shift_tab_walks_back_with_wrap() {
         let (populated, state) = seeded();
-        let step = |from: Stop, backwards: bool| state.step_stop(&populated, Some(&from), backwards);
+        let step = |from: Stop, backwards: bool| state.step_stop(&populated, false, Some(&from), backwards);
         assert_eq!(
             step(Stop::Field(ConnectField::Name), false),
             Some(Stop::Field(ConnectField::Host))
@@ -1795,11 +1812,11 @@ mod tests {
         let (populated, state) = seeded();
         let off = Stop::Preference(PrefName::Directs);
         assert_eq!(
-            state.step_stop(&populated, Some(&off), false),
+            state.step_stop(&populated, false, Some(&off), false),
             Some(Stop::Tab(ConnectTab::Connection))
         );
         assert_eq!(
-            state.step_stop(&populated, Some(&off), true),
+            state.step_stop(&populated, false, Some(&off), true),
             Some(Stop::Apply)
         );
     }
@@ -1843,10 +1860,10 @@ mod tests {
     fn step_stop_without_a_focused_stop_starts_at_the_ends() {
         let (populated, state) = seeded();
         assert_eq!(
-            state.step_stop(&populated, None, false),
+            state.step_stop(&populated, false, None, false),
             Some(Stop::Tab(ConnectTab::Connection))
         );
-        assert_eq!(state.step_stop(&populated, None, true), Some(Stop::Apply));
+        assert_eq!(state.step_stop(&populated, false, None, true), Some(Stop::Apply));
     }
 
     #[test]
@@ -1854,13 +1871,54 @@ mod tests {
         let (populated, state) = seeded();
         let from = Stop::Field(ConnectField::Host);
         assert_eq!(
-            state.step_stop(&populated, Some(&from), false),
+            state.step_stop(&populated, false, Some(&from), false),
             Some(Stop::Field(ConnectField::Port))
         );
         assert_eq!(
-            state.step_stop(&populated, Some(&from), true),
+            state.step_stop(&populated, false, Some(&from), true),
             Some(Stop::Field(ConnectField::Name))
         );
+    }
+
+    #[test]
+    fn disconnect_joins_the_walk_only_while_the_session_can_stop() {
+        let (populated, state) = seeded();
+        let before_apply = |stops: &[Stop]| {
+            let at = stops.iter().position(|stop| *stop == Stop::Apply).unwrap();
+            stops[at - 1].clone()
+        };
+
+        let live = state.stops(&populated, true);
+        assert_eq!(before_apply(&live), Stop::Disconnect, "Disconnect sits next to Apply");
+        assert_eq!(live[live.len() - 3], Stop::Discard, "after Discard, before Apply");
+        assert!(!state.stops(&populated, false).contains(&Stop::Disconnect));
+
+        assert_eq!(
+            state.step_stop(&populated, true, Some(&Stop::Discard), false),
+            Some(Stop::Disconnect)
+        );
+        assert_eq!(
+            state.step_stop(&populated, false, Some(&Stop::Discard), false),
+            Some(Stop::Apply),
+            "without a live session Tab goes from Discard to Apply"
+        );
+        assert_eq!(
+            state.step_stop(&populated, true, Some(&Stop::Apply), false),
+            Some(Stop::Tab(ConnectTab::Connection)),
+            "the walk still wraps"
+        );
+    }
+
+    #[test]
+    fn a_first_run_draft_takes_a_fresh_network_id_so_apply_has_a_network() {
+        let mut state = ConnectState::seed(&[]);
+        assert_eq!(state.selected(), "network-1");
+        assert_eq!(state.draft().network_id, "network-1");
+        state.set_text(ConnectField::Host, "irc.example");
+        state.set_text(ConnectField::Nick, "fred");
+        let profile = state.apply().expect("a complete draft applies");
+        assert_eq!(profile.network_id, "network-1");
+        assert!(state.is_saved("network-1"));
     }
 
     #[test]

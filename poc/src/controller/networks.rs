@@ -13,24 +13,35 @@ use crate::irc::viewnotify::{self, ViewNotify};
 use super::controller::Controller;
 
 impl Controller {
+    /// The networks the controller knows, in id order: every registered session, and
+    /// every network that has a recorded last error or a Status line. A network whose
+    /// start was refused has no session, but Qt lists its profile in the sidebar, and
+    /// its last error is the row's status line, so the row has to exist here.
+    pub fn known_network_ids(&self) -> Vec<String> {
+        let mut ids: BTreeSet<String> = self.manager.network_ids().into_iter().collect();
+        ids.extend(self.last_errors.keys().filter(|id| !id.is_empty()).cloned());
+        ids.extend(self.console.network_ids());
+        ids.into_iter().collect()
+    }
+
     /// The network ids in display order (`NetworkOrder`): the recorded order first,
-    /// keeping only networks that have a session, then any other registered network
+    /// keeping only known networks (`known_network_ids`), then any other known network
     /// in id order.
     pub fn network_order(&self) -> Vec<String> {
-        let registered = self.manager.network_ids();
+        let known = self.known_network_ids();
         if self.network_order.is_empty() {
-            return registered;
+            return known;
         }
         let mut seen = BTreeSet::new();
-        let mut order = Vec::with_capacity(registered.len());
+        let mut order = Vec::with_capacity(known.len());
         for id in &self.network_order {
-            if seen.contains(id) || self.manager.find(id).is_none() {
+            if seen.contains(id) || !known.contains(id) {
                 continue;
             }
             seen.insert(id.clone());
             order.push(id.clone());
         }
-        for id in registered {
+        for id in known {
             if seen.insert(id.clone()) {
                 order.push(id);
             }

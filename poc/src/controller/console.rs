@@ -54,6 +54,11 @@ impl StatusConsole {
             .unwrap_or_default()
     }
 
+    /// The networks that hold at least one Status line, in id order.
+    pub fn network_ids(&self) -> Vec<String> {
+        self.lines.keys().cloned().collect()
+    }
+
     /// The display text of each line, oldest first (`ConsoleText`).
     // The product CLI's read verb (Phase 9) prints the Status text; the allow comes off with it.
     #[allow(dead_code)]

@@ -1,6 +1,7 @@
 use gpui::{div, prelude::*, MouseButton};
 
 use crate::model::presence::bundled_path;
+use crate::model::status::network_mark_online;
 use crate::model::{sidebar::NetworkHeader, Color, Style};
 use crate::ui::widgets::avatar::photo_layer;
 use crate::ui::Handler;
@@ -41,6 +42,12 @@ pub fn network_header(
         .map(|c| c.to_uppercase().to_string())
         .unwrap_or_else(|| "?".to_string());
     let icon_photo = network.icon.as_deref().and_then(bundled_path);
+    // The mark is green only while the status line reads Connected (Qt's `liveStatus`).
+    let mark = if network_mark_online(&network.status) {
+        "online"
+    } else {
+        "offline"
+    };
     let id = network.id.clone();
     let open_id = id.clone();
     let edit_id = id.clone();
@@ -173,19 +180,23 @@ pub fn network_header(
                         .flex()
                         .items_center()
                         .gap(scaled_px(style, 6.))
+                        .min_w_0()
                         .child(
                             div()
                                 .flex_shrink_0()
                                 .size(scaled_px(style, 7.))
                                 .rounded_full()
-                                .bg(to_gpui(style.presence_color("online"))),
+                                .bg(to_gpui(style.presence_color(mark))),
                         )
                         .child(
                             div()
+                                .flex_grow()
+                                .min_w_0()
+                                .truncate()
                                 .text_size(scaled_px(style, 10.))
                                 .text_color(muted)
                                 .font_family(FONT_FAMILY)
-                                .child("Connected"),
+                                .child(network.status.clone()),
                         ),
                 ),
         )

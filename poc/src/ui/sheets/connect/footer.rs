@@ -1,11 +1,12 @@
 //! The footer of the Connection tab (`ConnectionSheet.qml`'s `connectionFooter`):
-//! the selected network's name, then Remove, Discard and Apply. Apply is accent
-//! when the draft is complete, and muted while `problem` says why it is not.
+//! the selected network's name, then Remove, Discard, Disconnect and Apply. Apply is
+//! accent when the draft is complete, and muted while `problem` says why it is not.
 //! Remove is offered only when `can_remove` allows it, and its first press arms it.
+//! Disconnect shows only while the selected network's session is live or reconnecting.
 
 use gpui::{div, prelude::*, transparent_black, white, Div, FontWeight, MouseButton};
 
-use crate::model::connect::{remove_label, Stop, APPLY_LABEL, DISCARD_LABEL};
+use crate::model::connect::{remove_label, Stop, APPLY_LABEL, DISCARD_LABEL, DISCONNECT_LABEL};
 use crate::ui::sheets::connect::ConnectView;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
@@ -28,9 +29,11 @@ pub fn render_footer(view: &ConnectView<'_>) -> impl IntoElement {
     if view.state.can_remove(view.populated) {
         actions = actions.child(remove_button(view, &name));
     }
-    actions = actions
-        .child(discard_button(view))
-        .child(apply_button(view));
+    actions = actions.child(discard_button(view));
+    if view.disconnectable {
+        actions = actions.child(disconnect_button(view));
+    }
+    actions = actions.child(apply_button(view));
 
     div()
         .h(scaled_px(style, 52.))
@@ -130,6 +133,25 @@ fn discard_button(view: &ConnectView<'_>) -> impl IntoElement {
         })
         .text_color(to_gpui(style.muted_color()))
         .child(label(DISCARD_LABEL))
+}
+
+/// `Disconnect`, shown while the selected network is live or reconnecting. It stops that
+/// session and leaves the profile, so Apply starts the network again. Its press goes to
+/// the shell, which asks the controller.
+fn disconnect_button(view: &ConnectView<'_>) -> impl IntoElement {
+    let style = view.style;
+    let focused = view.is_focused(&Stop::Disconnect);
+    let hover = to_gpui(style.hover_color());
+    base(view, Stop::Disconnect, 108.)
+        .bg(if focused { hover } else { transparent_black() })
+        .hover(move |s| s.bg(hover))
+        .border_color(if focused {
+            to_gpui(style.accent_color())
+        } else {
+            to_gpui(style.divider_color())
+        })
+        .text_color(to_gpui(style.muted_color()))
+        .child(label(DISCONNECT_LABEL))
 }
 
 /// `Apply`. Filled in accent when the draft can be applied. Otherwise it is raised

@@ -1,6 +1,6 @@
 use gpui::{div, prelude::*, MouseButton};
 
-use crate::model::presence::photo_for;
+use crate::model::presence::{photo_for, SelfPresence};
 use crate::model::{mix_colors, sidebar::NetworkHeader, Color, Style};
 use crate::ui::widgets::avatar::avatar_disc;
 use crate::ui::Handler;
@@ -8,11 +8,14 @@ use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 use crate::version::version;
 
 /// The identity footer, a port of the bottom of `ServerListColumn.qml`: 66 tall,
-/// the selected network's avatar, nick and presence, then the `inbox` link with
-/// its count and the version. The avatar is the operator's own member record,
-/// and `avatars` is the `avatars` preference.
+/// the focused network's avatar, nick and presence, then the `inbox` link with
+/// its count and the version. The presence word and the mark come from the
+/// controller through `presence`: green when available, amber when away, muted when
+/// offline. The avatar is the operator's own member record, and `avatars` is the
+/// `avatars` preference.
 pub fn identity_footer(
     network: &NetworkHeader,
+    presence: SelfPresence,
     inbox_count: u32,
     on_inbox: Handler<()>,
     on_about: Handler<()>,
@@ -24,6 +27,7 @@ pub fn identity_footer(
     let muted = to_gpui(style.muted_color());
     let amount = if style.dark_mode() { 0.025 } else { 0.018 };
     let photo = photo_for(network.avatar.as_deref(), avatars);
+    let mark = to_gpui(style.presence_color(presence.mark()));
 
     div()
         .w_full()
@@ -51,7 +55,7 @@ pub fn identity_footer(
                         .rounded_full()
                         .border(scaled_px(style, 2.))
                         .border_color(to_gpui(style.panel_color()))
-                        .bg(to_gpui(style.presence_color("online"))),
+                        .bg(mark),
                 ),
         )
         .child(
@@ -78,7 +82,7 @@ pub fn identity_footer(
                         .whitespace_nowrap()
                         .text_color(muted)
                         .font_family(FONT_FAMILY)
-                        .child("available"),
+                        .child(presence.word()),
                 ),
         )
         .child(

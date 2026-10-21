@@ -59,6 +59,9 @@ pub struct NetworkHeader {
     /// Whether the network has a direct message, so the DM heading shows.
     pub has_directs: bool,
     pub collapsed: bool,
+    /// The status line under the name: the last error while one is set, else the
+    /// connection word (`model::status::connection_line`).
+    pub status: String,
 }
 
 /// Every conversation in sidebar order, collapsed networks included. Callers that walk

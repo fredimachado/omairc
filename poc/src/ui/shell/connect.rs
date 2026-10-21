@@ -4,8 +4,8 @@
 //! `model/connect.rs`.
 //!
 //! Connect is a window-level layer, not a `Sheet`. It sits under Shortcuts and
-//! About, which open above it. It never connects: Apply writes the name and nick
-//! into the mock world and closes the sheet.
+//! About, which open above it. Apply hands the saved profile to `Controller::start`,
+//! and Disconnect calls `Controller::disconnect`; the sheet itself never connects.
 
 use gpui::{Context, Window};
 
@@ -79,19 +79,42 @@ impl Shell {
     }
 
     /// Ctrl+Enter and Ctrl+Return, or the Apply button (Qt `submitConnection`).
-    /// A complete draft is saved and written into the world, and the sheet closes.
-    /// An incomplete one stays open with its problem shown.
+    /// A complete draft is saved, and the controller starts its network: a demo network
+    /// reconnects, and any other is refused with the reason on its Status. Then the sheet
+    /// closes. An incomplete draft stays open with its problem shown.
     pub fn connect_apply(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.chord_live(Chord::ConnectApply, window, cx) {
             return;
         }
-        // Apply hands the saved profile to the controller, which starts the network. A
-        // network the build cannot connect reports that on its Status, as Qt's Connect does.
         if let Ok(profile) = self.connect.apply() {
             self.controller.start(&profile.network_id);
             self.close_connect(window, cx);
             self.drain_notifications(cx);
         }
+        cx.notify();
+    }
+
+    /// Whether the selected network's session can be stopped, so the footer offers
+    /// Disconnect. The controller answers it, so the sheet never holds a copy.
+    pub fn connect_disconnectable(&self) -> bool {
+        self.controller.can_disconnect(self.connect.selected())
+    }
+
+    /// The Disconnect button (Qt `disconnectSelected`). It stops the selected network's
+    /// session through the controller, as `/disconnect` does, and the sheet stays open
+    /// with the profile kept. Focus that was on the button moves to Apply, since the
+    /// button leaves the walk.
+    pub fn connect_disconnect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.connect_open {
+            return;
+        }
+        let was_focused = self.connect_focused(window) == Some(Stop::Disconnect);
+        let network_id = self.connect.selected().to_owned();
+        self.controller.disconnect(&network_id);
+        if was_focused {
+            self.focus_connect(Stop::Apply, window, cx);
+        }
+        self.drain_notifications(cx);
         cx.notify();
     }
 
@@ -179,8 +202,12 @@ impl Shell {
 
     /// The stop that holds focus in the Connect card, if one does.
     pub fn connect_focused(&self, window: &Window) -> Option<Stop> {
-        self.connect_ui
-            .focused(&self.connect.stops(&self.populated_networks()), window)
+        self.connect_ui.focused(
+            &self
+                .connect
+                .stops(&self.populated_networks(), self.connect_disconnectable()),
+            window,
+        )
     }
 
     /// Moves focus to `stop` and brings it into view. The keys then act on it.
@@ -241,6 +268,7 @@ impl Shell {
             }
             Stop::Remove => self.connect_remove(window, cx),
             Stop::Discard => self.connect.discard(),
+            Stop::Disconnect => self.connect_disconnect(window, cx),
             Stop::Apply => self.connect_apply(window, cx),
             stop @ (Stop::Field(_) | Stop::FieldHelp(_) | Stop::PreferenceHelp(_)) => {
                 self.focus_connect(stop, window, cx);
@@ -267,6 +295,7 @@ impl Shell {
                 | Stop::ShortcutsHint
                 | Stop::Remove
                 | Stop::Discard
+                | Stop::Disconnect
                 | Stop::Apply),
             ) => self.connect_click(stop, window, cx),
             _ => {
@@ -309,9 +338,11 @@ impl Shell {
             return false;
         }
         let focused = self.connect_focused(window);
-        if let Some(target) = self
-            .connect
-            .step_stop(&self.populated_networks(), focused.as_ref(), backwards)
+        let populated = self.populated_networks();
+        let disconnectable = self.connect_disconnectable();
+        if let Some(target) =
+            self.connect
+                .step_stop(&populated, disconnectable, focused.as_ref(), backwards)
         {
             self.focus_connect(target, window, cx);
         }

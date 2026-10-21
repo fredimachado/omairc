@@ -189,7 +189,7 @@ mod tests {
         let populated = vec!["omarchy".to_string(), "oftc".to_string()];
         let state = ConnectState::seed(&demo_seeds());
         let rows: Vec<usize> = state
-            .stops(&populated)
+            .stops(&populated, false)
             .iter()
             .filter(|stop| !matches!(stop, Stop::Tab(_)))
             .filter_map(|stop| match stop {

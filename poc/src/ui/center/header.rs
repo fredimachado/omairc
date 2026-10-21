@@ -11,7 +11,8 @@ use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
 /// The header's second line.
 pub enum Subtitle<'a> {
-    /// Text with nothing to click: the network's last error, or `Connected`.
+    /// Text with nothing to click. Status passes its network's connection line
+    /// (`model::status::connection_line`): the last error, or the connection word.
     Plain(&'a str),
     /// A conversation's topic. It is formatted, its URLs and channel names are
     /// clickable, and `on_hit` gets the hit that was clicked.
@@ -23,8 +24,8 @@ pub enum Subtitle<'a> {
 }
 
 /// What the header shows. A conversation passes its topic as the subtitle, its people
-/// count and its LEAVE, JOIN and CLOSE buttons; Status passes `Connected` and no count
-/// and no buttons.
+/// count and its LEAVE, JOIN and CLOSE buttons; Status passes its connection line and no
+/// count and no buttons.
 pub struct HeaderView<'a> {
     pub title: &'a str,
     pub subtitle: Subtitle<'a>,

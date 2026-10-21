@@ -14,7 +14,7 @@ use crate::controller::snapshots::ConversationRow;
 use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::model::composer::DraftKey;
 use crate::model::sidebar::{sidebar_rows, NetworkHeader, SidebarRow};
-use crate::model::status::status_rows;
+use crate::model::status::{connection_line, status_rows};
 use crate::model::ConversationRef;
 use crate::ui::shell::Shell;
 use crate::ui::transcript::view::ConversationLines;
@@ -127,6 +127,7 @@ impl Shell {
                     mention: self.controller.mention_for(&id),
                     has_directs: rows.iter().any(|row| row.key.network_id == id && row.direct),
                     collapsed: self.controller.is_network_collapsed(&id),
+                    status: connection_line(&self.controller, &id),
                     id,
                 }
             })

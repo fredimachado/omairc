@@ -310,10 +310,14 @@ impl Controller {
     }
 
     /// Whether the user is away on the focused network (`SelfAway`).
-    // Phase 6: the footer shows away and available
-    #[allow(dead_code)]
     pub fn self_away(&self) -> bool {
-        let network_id = self.focused_network_id();
+        self.self_away_for(self.focused_network_id())
+    }
+
+    /// Whether the user is away on `network_id`: the 305 and 306 numerics and
+    /// `away-notify` for our own nick set it (`SelfAway`, per network). False for an
+    /// empty id.
+    pub fn self_away_for(&self, network_id: &str) -> bool {
         !network_id.is_empty() && self.reducer.self_away(network_id)
     }
 
@@ -367,10 +371,16 @@ impl Controller {
 
     /// The display name of a network: its profile name, else its host
     /// (`IrcNetworkProfile::resolvedName`). When another network shows the same name,
-    /// the nick joins it, as `irc.example · fred`. Empty for an unknown network.
+    /// the nick joins it, as `irc.example · fred`. A known network with no session yet
+    /// (its start was refused) is named by its id until its profile is kept (Phase 8).
+    /// Empty for an unknown network.
     pub fn network_name(&self, network_id: &str) -> String {
         let Some(session) = self.session(network_id) else {
-            return String::new();
+            return if self.known_network_ids().iter().any(|id| id == network_id) {
+                network_id.to_owned()
+            } else {
+                String::new()
+            };
         };
         let base = session.name();
         let clash = self
