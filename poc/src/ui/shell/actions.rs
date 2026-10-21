@@ -83,7 +83,7 @@ pub fn bind_shell_keys(cx: &mut App) {
     bind_about_keys(cx);
     bind_channel_open_keys(cx);
     bind_connect_keys(cx);
-    let mut bindings = vec![
+    let bindings = vec![
         KeyBinding::new("secondary-,", OpenConnect, None),
         // Ctrl+Enter applies while Connect shows. The listener checks that.
         KeyBinding::new("secondary-enter", ConnectApply, None),
