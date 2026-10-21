@@ -13,6 +13,7 @@ mod lifecycle;
 mod monitor;
 mod networks;
 mod parity;
+mod replies;
 mod scrollplace;
 mod selection;
 mod shell;

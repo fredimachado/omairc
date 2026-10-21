@@ -47,6 +47,7 @@ use super::autoawayruntime::AutoawayState;
 use super::channellist::{ChannelListRequests, ChannelListView};
 use super::console::StatusConsole;
 use super::monitorcoordinator::MonitorState;
+use super::replyrouter::ReplyWatches;
 use super::scrollplace::ScrollPlaceStore;
 use super::snapshots::state_text;
 use super::stores::{HighlightStore, IgnoreStore, MonitorStore, MuteStore};
@@ -117,6 +118,8 @@ pub struct Controller {
     pub(super) autoaway: AutoawayState,
     /// Where each conversation's transcript was left (`scrollplace.rs`).
     pub(super) scroll_places: ScrollPlaceStore,
+    /// The WHOIS, CTCP and labeled-reply watches (`replyrouter.rs`).
+    pub(super) reply_watches: ReplyWatches,
     /// The `/list` requests, their rows and idle timers (`channellist.rs`), and the
     /// overlay that shows them.
     pub(super) channel_lists: ChannelListRequests,
@@ -167,6 +170,7 @@ impl Controller {
             notifications: Vec::new(),
             autoaway: AutoawayState::default(),
             scroll_places: ScrollPlaceStore::default(),
+            reply_watches: ReplyWatches::default(),
             channel_lists,
             channel_view: ChannelListView::default(),
             ignores: Rc::new(RefCell::new(IgnoreStore::in_memory())),
@@ -342,11 +346,18 @@ impl Controller {
             SessionEvent::Inbound {
                 network_id,
                 message,
+                request_label,
                 nick,
                 channel_types,
                 at,
-                ..
-            } => self.record_inbound(&network_id, &message, &nick, &channel_types, at),
+            } => self.record_inbound(
+                &network_id,
+                &message,
+                &request_label,
+                &nick,
+                &channel_types,
+                at,
+            ),
             SessionEvent::Outbound {
                 network_id,
                 line,
@@ -355,7 +366,7 @@ impl Controller {
             } => {
                 if statusentry::keeps_outgoing(&line) {
                     let entry = statusentry::outgoing(&network_id, &line, &channel_types, at);
-                    self.append_status(entry);
+                    self.status_entry(entry);
                 }
             }
             SessionEvent::Lifecycle {
@@ -367,7 +378,7 @@ impl Controller {
             } => {
                 let entry =
                     statusentry::lifecycle(&network_id, log_severity(severity), kind, &text, at);
-                self.append_status(entry);
+                self.status_entry(entry);
             }
             SessionEvent::MessageReceived {
                 network_id,
@@ -390,12 +401,14 @@ impl Controller {
                     self.queue(vec![ViewNotify::Conversations]);
                 }
             }
-            // Playback resume, the labeled-reply router and autojoin persistence
-            // arrive with their Phase 4 and Phase 8 ports. Until then their events
-            // are consumed here and do nothing.
+            SessionEvent::RequestLabelFinished {
+                network_id,
+                label,
+            } => self.request_label_finished(&network_id, &label),
+            // Playback resume and autojoin persistence arrive with their Phase 8
+            // ports. Until then their events are consumed here and do nothing.
             SessionEvent::ChatHistoryRequestFinished { .. }
             | SessionEvent::ChatHistoryFailed { .. }
-            | SessionEvent::RequestLabelFinished { .. }
             | SessionEvent::AutojoinChannelsChanged { .. } => {}
         }
     }
@@ -427,6 +440,7 @@ impl Controller {
         &mut self,
         network_id: &str,
         message: &IrcMessage,
+        request_label: &str,
         nick: &str,
         channel_types: &str,
         at: DateTime<Utc>,
@@ -434,7 +448,11 @@ impl Controller {
         if !statusentry::keeps_incoming(message, nick, channel_types) {
             return;
         }
-        for entry in statusentry::incoming_all(network_id, message, channel_types, at) {
+        for mut entry in statusentry::incoming_all(network_id, message, channel_types, at) {
+            // The session's correlation label names the request each line answers.
+            if !request_label.is_empty() {
+                entry.set_request_label(request_label);
+            }
             if entry.label == "INVITE" {
                 let channel = message
                     .params
@@ -451,7 +469,7 @@ impl Controller {
                     msgid: Default::default(),
                 });
             }
-            self.append_status(entry);
+            self.status_entry(entry);
         }
     }
 
@@ -652,7 +670,10 @@ impl Controller {
         // 305 or 306 lifts the unaway latch (`IrcController::apply`'s welcome and
         // selfAway branches).
         match &event {
-            Event::Welcome(welcome) => self.autoaway_forget_network(&welcome.network_id),
+            Event::Welcome(welcome) => {
+                self.autoaway_forget_network(&welcome.network_id);
+                self.forget_replies(&welcome.network_id);
+            }
             Event::SelfAway(away) => {
                 self.autoaway.unaway_sent.remove(&away.network_id);
             }
@@ -727,6 +748,7 @@ impl Controller {
         self.autoaway_forget_network(network.network_id);
         self.monitor_forget_presence(network.network_id);
         self.forget_channel_list(network.network_id);
+        self.forget_replies(network.network_id);
         let transport = Rc::new(LoopbackTransport::new());
         let session = match self.manager.create(
             session_config(network),

@@ -30,6 +30,9 @@ pub mod lines;
 pub mod monitorcoordinator;
 pub mod networks;
 pub mod reads;
+// Phase 4: the slash dispatcher calls the WHOIS and CTCP intents. Until it lands only
+// the tests call them, so the allow stays here and comes off with the first consumer.
+#[allow(dead_code)]
 pub mod replyrouter;
 // Phase 4: the shell still keeps its scroll places in `model/scroll_place.rs`. The
 // rewire to this store lands with the shell's transcript work, and the allow comes off then.

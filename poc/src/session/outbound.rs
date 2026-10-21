@@ -58,8 +58,6 @@ impl Session {
 
     /// Writes a CTCP query, optionally under a request label
     /// (`IrcSession::sendCtcp`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn send_ctcp(
         &self,
         target: &str,
@@ -195,8 +193,6 @@ impl Session {
 
     /// Writes `WHOIS <nick> <nick>`, optionally under a request label
     /// (`IrcSession::whois`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn whois(&self, nick: &str, request_label: &str) -> bool {
         self.locked(|core| {
             let trimmed = nick.trim();
@@ -209,8 +205,6 @@ impl Session {
 
     /// Begins a labeled request and returns its label, or `""` when
     /// `labeled-response` is not on (`IrcSession::startLabeledRequest`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn start_labeled_request(&self) -> String {
         self.locked(|core| {
             if !core.caps.enabled().contains(IrcCapability::LabeledResponse) {
@@ -221,8 +215,6 @@ impl Session {
     }
 
     /// Drops a label without notifying (`IrcSession::cancelRequestLabel`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn cancel_request_label(&self, label: &str) {
         self.locked(|core| core.drop_request_label(label));
     }
@@ -234,8 +226,6 @@ impl Session {
     }
 
     /// Writes `LIST`, or `LIST <mask>` (`IrcSession::list`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn list(&self, mask: &str) -> bool {
         self.locked(|core| {
             let trimmed = mask.trim();
@@ -338,7 +328,6 @@ impl super::session::Core {
 
     /// `setAwayLocked`: AWAY with a trimmed reason, or a bare AWAY to clear.
     // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub(crate) fn set_away_locked(&mut self, reason: &str) -> bool {
         let trimmed = reason.trim();
         if trimmed.is_empty() {
@@ -349,7 +338,6 @@ impl super::session::Core {
 
     /// `sendMonitorLocked`: packs nicks into MONITOR lines that each fit one frame.
     // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub(crate) fn send_monitor_locked(&mut self, modifier: char, nicks: &[String]) -> bool {
         let mark = modifier.to_ascii_uppercase();
         match mark {
