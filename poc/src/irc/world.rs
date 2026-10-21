@@ -205,7 +205,10 @@ mod tests {
         let channel = &network.conversations[0];
         assert!(channel.is_channel());
         assert_eq!(channel.people_count(), 2);
-        assert_eq!(network.member_for("bob").map(|m| m.nick.as_str()), Some("bob"));
+        assert_eq!(
+            network.member_for("bob").map(|m| m.nick.as_str()),
+            Some("bob")
+        );
         assert!(network.member_for("carol").is_none());
     }
 

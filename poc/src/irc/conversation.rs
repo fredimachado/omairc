@@ -107,11 +107,7 @@ mod tests {
     fn service_targets_follow_the_services_rule() {
         let features = features();
         for (target, channel, service) in targets() {
-            assert_eq!(
-                features.is_channel(target),
-                channel,
-                "is_channel({target})"
-            );
+            assert_eq!(features.is_channel(target), channel, "is_channel({target})");
             assert_eq!(
                 target_looks_like_service(target, &features),
                 service,
@@ -189,7 +185,10 @@ mod tests {
             neighbor_after_drop(&ordered, &ConversationKey::new("c", "#z")),
             Some(ConversationKey::new("b", "#x"))
         );
-        assert_eq!(neighbor_after_drop(&[], &ConversationKey::new("a", "#one")), None);
+        assert_eq!(
+            neighbor_after_drop(&[], &ConversationKey::new("a", "#one")),
+            None
+        );
     }
 
     #[test]

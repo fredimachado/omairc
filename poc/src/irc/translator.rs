@@ -15,9 +15,9 @@ use chrono::{DateTime, Utc};
 use super::ctcp::parse_ctcp_request;
 use super::event::{
     AccountEvent, ActionEvent, AwayEvent, ChannelErrorEvent, ConversationKey, Event, HistoryEvent,
-    HistoryKind, JoinEvent, KickEvent, MemberMetadataEvent, MessageEvent, MessageKindTag, ModeEvent,
-    MsgId, Name, NamesEvent, NickEvent, NickFactsEvent, NoticeEvent, PartEvent, QuitEvent,
-    ReplayLine, SelfAwayEvent, TopicEvent, TypingEvent,
+    HistoryKind, JoinEvent, KickEvent, MemberMetadataEvent, MessageEvent, MessageKindTag,
+    ModeEvent, MsgId, Name, NamesEvent, NickEvent, NickFactsEvent, NoticeEvent, PartEvent,
+    QuitEvent, ReplayLine, SelfAwayEvent, TopicEvent, TypingEvent,
 };
 use super::leafcontract::{
     canonical_key, clamped, join_line, nick_line, part_line, quit_line, shown_account,
@@ -178,13 +178,12 @@ pub fn translate(
         else {
             return events;
         };
-        let display_target = if !features.is_channel(&wire_target)
-            && !same(features, &sender, current_nick)
-        {
-            sender.clone()
-        } else {
-            wire_target
-        };
+        let display_target =
+            if !features.is_channel(&wire_target) && !same(features, &sender, current_nick) {
+                sender.clone()
+            } else {
+                wire_target
+            };
         match action {
             Some(text) => events.push(
                 ActionEvent {
@@ -601,7 +600,14 @@ pub fn translate_history(
     for line in &batch.lines {
         let server_time = server_time_of(line);
         let mut kept = false;
-        let translated = translate(network_id, current_nick, features, line, now, history_lookup);
+        let translated = translate(
+            network_id,
+            current_nick,
+            features,
+            line,
+            now,
+            history_lookup,
+        );
         for translated_event in &translated {
             match translated_event {
                 Event::Message(value) => {
@@ -638,9 +644,14 @@ pub fn translate_history(
             }
         }
         if !kept {
-            if let Some(membership) =
-                channel_membership_replay_line(&batch.target, features, line, &translated, server_time, now)
-            {
+            if let Some(membership) = channel_membership_replay_line(
+                &batch.target,
+                features,
+                line,
+                &translated,
+                server_time,
+                now,
+            ) {
                 event.lines.push(membership);
                 kept = true;
             }
@@ -648,7 +659,8 @@ pub fn translate_history(
         if kept || !bouncer_query {
             continue;
         }
-        if let Some(replay) = bouncer_query_replay_line(&batch.target, features, line, server_time, now)
+        if let Some(replay) =
+            bouncer_query_replay_line(&batch.target, features, line, server_time, now)
         {
             event.lines.push(replay);
         }
@@ -818,9 +830,7 @@ fn channel_membership_replay_line(
                 let shown = value
                     .account
                     .as_deref()
-                    .map(|account| {
-                        shown_account(same(features, account, &value.nick), account)
-                    })
+                    .map(|account| shown_account(same(features, account, &value.nick), account))
                     .unwrap_or_default();
                 return Some(line(join_line(&value.nick, &shown)));
             }
@@ -990,7 +1000,11 @@ fn member_metadata(
 /// `766 RPL_KEYNOTSET`: `<Target> <Key> [:reason]`. It clears one known key on a
 /// GET miss, a successful SET unset, or a CLEAR batch. Replies that omit `<Key>`
 /// are ignored, and the trailing text is never taken as the key (`append766KeyNotSet`).
-fn key_not_set(network_id: &str, message: &IrcMessage, features: &IrcServerFeatures) -> Option<Event> {
+fn key_not_set(
+    network_id: &str,
+    message: &IrcMessage,
+    features: &IrcServerFeatures,
+) -> Option<Event> {
     const TARGET_INDEX: usize = 1;
     if message.params.len() < TARGET_INDEX + 2 {
         return None;
@@ -1015,7 +1029,18 @@ fn key_not_set(network_id: &str, message: &IrcMessage, features: &IrcServerFeatu
 fn is_join_failure_numeric(command: &str) -> bool {
     matches!(
         command,
-        "403" | "405" | "448" | "471" | "473" | "474" | "475" | "476" | "477" | "479" | "489" | "520"
+        "403"
+            | "405"
+            | "448"
+            | "471"
+            | "473"
+            | "474"
+            | "475"
+            | "476"
+            | "477"
+            | "479"
+            | "489"
+            | "520"
     )
 }
 
@@ -1080,10 +1105,7 @@ fn is_network_notice_target(target: &str) -> bool {
 
 /// The conversation key for `target` on `network_id` (`ircKey`).
 fn key(network_id: &str, target: &str, features: &IrcServerFeatures) -> ConversationKey {
-    ConversationKey::new(
-        network_id,
-        features.case_mapping().normalize(target),
-    )
+    ConversationKey::new(network_id, features.case_mapping().normalize(target))
 }
 
 /// Whether two identifiers name the same thing under the network's case mapping.
@@ -1112,7 +1134,12 @@ fn tag_value_or_empty(message: &IrcMessage, name: &str) -> String {
 /// `account` therefore both count as present (`ircPresentTagValue`).
 fn present_tag_value(message: &IrcMessage, name: &str) -> Option<String> {
     let tag = message.tags.iter().find(|tag| tag.name == name)?;
-    Some(tag.value.as_ref().map(|raw| wire_text(raw)).unwrap_or_default())
+    Some(
+        tag.value
+            .as_ref()
+            .map(|raw| wire_text(raw))
+            .unwrap_or_default(),
+    )
 }
 
 /// The message time: the parsed `time` tag, else the wall clock `now` (`timestampFor`).
@@ -1213,8 +1240,15 @@ mod tests {
     }
 
     fn history_of(batch: &HistoryBatch, joined: Option<JoinedMemberLookup<'_>>) -> HistoryEvent {
-        translate_history(NETWORK_A, "omairc", &features(), batch, reducer_timestamp(), joined)
-            .expect("the batch translates")
+        translate_history(
+            NETWORK_A,
+            "omairc",
+            &features(),
+            batch,
+            reducer_timestamp(),
+            joined,
+        )
+        .expect("the batch translates")
     }
 
     fn batch(target: &str, kind: Option<HistoryKind>, lines: &[&str]) -> HistoryBatch {
@@ -1229,13 +1263,37 @@ mod tests {
     #[test]
     fn numeric_and_command_table_yields_the_expected_first_kind() {
         let cases: [(&str, &str, EventKind); 21] = [
-            ("self away", ":server 306 omairc :marked away", EventKind::SelfAway),
+            (
+                "self away",
+                ":server 306 omairc :marked away",
+                EventKind::SelfAway,
+            ),
             ("self back", ":server 305 omairc :back", EventKind::SelfAway),
-            ("whois away", ":server 352 omairc #room user host server Alice G :0 Alice", EventKind::Away),
-            ("whois account", ":server 330 omairc Alice whoisacct :is logged in as", EventKind::Account),
-            ("channel topic reply", ":server 332 omairc #room :topic", EventKind::Topic),
-            ("names reply", ":server 353 omairc = #room :@Alice +Bob", EventKind::Names),
-            ("end of names", ":server 366 omairc #room :End of /NAMES list.", EventKind::Names),
+            (
+                "whois away",
+                ":server 352 omairc #room user host server Alice G :0 Alice",
+                EventKind::Away,
+            ),
+            (
+                "whois account",
+                ":server 330 omairc Alice whoisacct :is logged in as",
+                EventKind::Account,
+            ),
+            (
+                "channel topic reply",
+                ":server 332 omairc #room :topic",
+                EventKind::Topic,
+            ),
+            (
+                "names reply",
+                ":server 353 omairc = #room :@Alice +Bob",
+                EventKind::Names,
+            ),
+            (
+                "end of names",
+                ":server 366 omairc #room :End of /NAMES list.",
+                EventKind::Names,
+            ),
             ("mode", ":op!u@h MODE #room +o alice", EventKind::Mode),
             ("topic", ":op!u@h TOPIC #room :topic", EventKind::Topic),
             ("part", ":alice!u@h PART #room :bye", EventKind::Part),
@@ -1244,16 +1302,43 @@ mod tests {
             ("kick", ":op!u@h KICK #room bob :bye", EventKind::Kick),
             ("account", ":alice!u@h ACCOUNT services", EventKind::Account),
             ("away", ":alice!u@h AWAY :lunch", EventKind::Away),
-            ("metadata 761", ":server 761 omairc Alice status priv :writing docs", EventKind::MemberMetadata),
-            ("metadata 766", ":server 766 omairc Alice status :Key not set", EventKind::MemberMetadata),
-            ("join failure 471", ":server 471 omairc #room :Cannot join channel (+l)", EventKind::ChannelError),
-            ("join failure 473", ":server 473 omairc #room :Invite only", EventKind::ChannelError),
-            ("ambiguous join failure 437", ":server 437 omairc #room :unavailable", EventKind::ChannelError),
-            ("whois user", ":server 311 omairc Alice user host * :Alice Example", EventKind::Away),
+            (
+                "metadata 761",
+                ":server 761 omairc Alice status priv :writing docs",
+                EventKind::MemberMetadata,
+            ),
+            (
+                "metadata 766",
+                ":server 766 omairc Alice status :Key not set",
+                EventKind::MemberMetadata,
+            ),
+            (
+                "join failure 471",
+                ":server 471 omairc #room :Cannot join channel (+l)",
+                EventKind::ChannelError,
+            ),
+            (
+                "join failure 473",
+                ":server 473 omairc #room :Invite only",
+                EventKind::ChannelError,
+            ),
+            (
+                "ambiguous join failure 437",
+                ":server 437 omairc #room :unavailable",
+                EventKind::ChannelError,
+            ),
+            (
+                "whois user",
+                ":server 311 omairc Alice user host * :Alice Example",
+                EventKind::Away,
+            ),
         ];
         for (name, line, want) in cases {
             let events = translate_line(line);
-            assert!(!events.is_empty(), "{name}: Translate({line:?}) produced no events");
+            assert!(
+                !events.is_empty(),
+                "{name}: Translate({line:?}) produced no events"
+            );
             assert_eq!(events[0].kind(), want, "{name}");
         }
     }
@@ -1333,7 +1418,10 @@ mod tests {
 
         match translate_line(":alice!u@h JOIN #room").first() {
             Some(Event::Join(join)) => {
-                assert!(join.account.is_none(), "a classic join must not clear an account");
+                assert!(
+                    join.account.is_none(),
+                    "a classic join must not clear an account"
+                );
                 assert!(join.realname.is_none());
             }
             other => panic!("want JoinEvent, got {other:?}"),
@@ -1396,13 +1484,17 @@ mod tests {
         }
 
         // 352 with H*: operator, and the realname stays on the away event.
-        let events = translate_line(":server 352 omairc #room user host server Alice H* :0 Alice Vale");
+        let events =
+            translate_line(":server 352 omairc #room user host server Alice H* :0 Alice Vale");
         assert_eq!(events.len(), 2);
         match (&events[0], &events[1]) {
             (Event::Away(away), Event::NickFacts(facts)) => {
                 assert_eq!(away.realname.as_deref(), Some("Alice Vale"));
                 assert!(away.away.is_none());
-                assert!(facts.realname.is_none(), "the realname stays on the away event");
+                assert!(
+                    facts.realname.is_none(),
+                    "the realname stays on the away event"
+                );
                 assert_eq!(facts.server_operator, Some(true));
             }
             other => panic!("want AwayEvent then NickFactsEvent, got {other:?}"),
@@ -1430,7 +1522,9 @@ mod tests {
         }
 
         match translate_line(":alice!u@h AWAY :lunch").first() {
-            Some(Event::Away(away)) => assert_eq!(away.away.as_ref().map(|a| a.reason.as_str()), Some("lunch")),
+            Some(Event::Away(away)) => {
+                assert_eq!(away.away.as_ref().map(|a| a.reason.as_str()), Some("lunch"))
+            }
             other => panic!("want AwayEvent, got {other:?}"),
         }
         match translate_line(":alice!u@h AWAY").first() {
@@ -1442,7 +1536,9 @@ mod tests {
     #[test]
     fn who_reply_real_names_follow_the_hop_count_rules() {
         // A signed hop count is still a hop count, as Go's Atoi reads it.
-        match translate_line(":server 352 omairc #room user host server Alice H :+1 Alice Vale").first() {
+        match translate_line(":server 352 omairc #room user host server Alice H :+1 Alice Vale")
+            .first()
+        {
             Some(Event::Away(away)) => assert_eq!(away.realname.as_deref(), Some("Alice Vale")),
             other => panic!("want AwayEvent, got {other:?}"),
         }
@@ -1452,7 +1548,9 @@ mod tests {
             other => panic!("want AwayEvent, got {other:?}"),
         }
         // A trailing value with no hop count is the name itself.
-        match translate_line(":server 352 omairc #room user host server Alice H :Alice Vale").first() {
+        match translate_line(":server 352 omairc #room user host server Alice H :Alice Vale")
+            .first()
+        {
             Some(Event::Away(away)) => assert_eq!(away.realname.as_deref(), Some("Alice Vale")),
             other => panic!("want AwayEvent, got {other:?}"),
         }
@@ -1542,20 +1640,28 @@ mod tests {
         );
 
         let service = must_parse(":NickServ!s@services PRIVMSG omairc :hi");
-        assert!(conversation_for(NETWORK_A, "omairc", &service, "omairc", &features).is_none(),
-            "a service identity must not resolve to a conversation");
+        assert!(
+            conversation_for(NETWORK_A, "omairc", &service, "omairc", &features).is_none(),
+            "a service identity must not resolve to a conversation"
+        );
 
         let no_user = must_parse(":alice PRIVMSG omairc :hi");
-        assert!(conversation_for(NETWORK_A, "omairc", &no_user, "omairc", &features).is_none(),
-            "a user-less prefix must not resolve to a conversation");
+        assert!(
+            conversation_for(NETWORK_A, "omairc", &no_user, "omairc", &features).is_none(),
+            "a user-less prefix must not resolve to a conversation"
+        );
 
         let notice_target = must_parse(":alice!u@h PRIVMSG * :hi");
-        assert!(conversation_for(NETWORK_A, "*", &notice_target, "omairc", &features).is_none(),
-            "a network notice target must not resolve to a conversation");
+        assert!(
+            conversation_for(NETWORK_A, "*", &notice_target, "omairc", &features).is_none(),
+            "a network notice target must not resolve to a conversation"
+        );
 
         let bouncer = must_parse(":*status!u@h PRIVMSG omairc :hi");
-        assert!(conversation_for(NETWORK_A, "omairc", &bouncer, "omairc", &features).is_none(),
-            "a non-routable bouncer nick must not resolve to a conversation");
+        assert!(
+            conversation_for(NETWORK_A, "omairc", &bouncer, "omairc", &features).is_none(),
+            "a non-routable bouncer nick must not resolve to a conversation"
+        );
     }
 
     #[test]
@@ -1584,27 +1690,43 @@ mod tests {
             ":alice!u@h TAGMSG #omarchy",
             "@+typing=active TAGMSG #omarchy",
         ] {
-            assert!(translate_line(line).is_empty(), "{line} must produce nothing");
+            assert!(
+                translate_line(line).is_empty(),
+                "{line} must produce nothing"
+            );
         }
 
         let events = translate_line("@+typing=active :alice!u@h PRIVMSG #omarchy :here");
         assert_eq!(events.len(), 1);
-        assert!(matches!(events[0], Event::Message(_)), "a typing tag on chat is still chat");
+        assert!(
+            matches!(events[0], Event::Message(_)),
+            "a typing tag on chat is still chat"
+        );
     }
 
     #[test]
     fn history_batch_keeps_the_server_time_and_falls_back_to_now() {
         let now = reducer_timestamp();
-        let event = history_of(&batch("lena", None, &[":lena!u@h PRIVMSG omairc :hi"]), None);
+        let event = history_of(
+            &batch("lena", None, &[":lena!u@h PRIVMSG omairc :hi"]),
+            None,
+        );
         assert_eq!(event.lines.len(), 1);
         let line = &event.lines[0];
         assert_eq!(line.author, "lena");
         assert_eq!(line.body, "hi");
         assert!(line.server_time.is_none());
-        assert_eq!(line.timestamp, now, "no time tag falls back to the wall clock");
+        assert_eq!(
+            line.timestamp, now,
+            "no time tag falls back to the wall clock"
+        );
 
         let event = history_of(
-            &batch("lena", None, &["@time=2024-03-09T16:00:00.620Z :lena!u@h PRIVMSG omairc :hi"]),
+            &batch(
+                "lena",
+                None,
+                &["@time=2024-03-09T16:00:00.620Z :lena!u@h PRIVMSG omairc :hi"],
+            ),
             None,
         );
         let line = &event.lines[0];
@@ -1614,8 +1736,15 @@ mod tests {
         assert_eq!(line.timestamp, want, "the timestamp uses the tag");
 
         assert!(
-            translate_history(NETWORK_A, "omairc", &features(), &HistoryBatch::default(), now, None)
-                .is_none(),
+            translate_history(
+                NETWORK_A,
+                "omairc",
+                &features(),
+                &HistoryBatch::default(),
+                now,
+                None
+            )
+            .is_none(),
             "an empty target must not translate"
         );
     }
@@ -1627,7 +1756,15 @@ mod tests {
             kind: Some(HistoryKind::Targets),
             ..HistoryBatch::default()
         };
-        assert!(translate_history(NETWORK_A, "omairc", &features(), &targets, reducer_timestamp(), None).is_none());
+        assert!(translate_history(
+            NETWORK_A,
+            "omairc",
+            &features(),
+            &targets,
+            reducer_timestamp(),
+            None
+        )
+        .is_none());
     }
 
     #[test]
@@ -1655,7 +1792,10 @@ mod tests {
 
     #[test]
     fn chat_history_keeps_only_the_current_nick() {
-        let event = history_of(&batch("lena", None, &[":oldnick!u@h PRIVMSG lena :mine"]), None);
+        let event = history_of(
+            &batch("lena", None, &[":oldnick!u@h PRIVMSG lena :mine"]),
+            None,
+        );
         assert!(event.lines.is_empty());
     }
 
@@ -1786,30 +1926,47 @@ mod tests {
             "eve",
             "not a member",
         );
-        let overlong = format!("@+draft/channel-context=#{} :eve!u@h PRIVMSG omairc :overlong", "x".repeat(60));
+        let overlong = format!(
+            "@+draft/channel-context=#{} :eve!u@h PRIVMSG omairc :overlong",
+            "x".repeat(60)
+        );
         expect_direct(&translate_joined(&overlong, accept), "eve", "overlong");
         expect_direct(
-            &translate_joined("@+draft/channel-context=#a,#b :eve!u@h PRIVMSG omairc :comma", accept),
+            &translate_joined(
+                "@+draft/channel-context=#a,#b :eve!u@h PRIVMSG omairc :comma",
+                accept,
+            ),
             "eve",
             "comma",
         );
         expect_direct(
-            &translate_joined("@+draft/channel-context=#my\\sroom :eve!u@h PRIVMSG omairc :space", accept),
+            &translate_joined(
+                "@+draft/channel-context=#my\\sroom :eve!u@h PRIVMSG omairc :space",
+                accept,
+            ),
             "eve",
             "space",
         );
         expect_direct(
-            &translate_joined("@+draft/channel-context=#room\u{1}x :eve!u@h PRIVMSG omairc :control", accept),
+            &translate_joined(
+                "@+draft/channel-context=#room\u{1}x :eve!u@h PRIVMSG omairc :control",
+                accept,
+            ),
             "eve",
             "control",
         );
         expect_direct(
-            &translate_joined("@+draft/channel-context=omairc :eve!u@h PRIVMSG omairc :own nick", accept),
+            &translate_joined(
+                "@+draft/channel-context=omairc :eve!u@h PRIVMSG omairc :own nick",
+                accept,
+            ),
             "eve",
             "own nick",
         );
 
-        let action = translate_line("@+draft/channel-context=#room :eve!u@h PRIVMSG omairc :\u{1}ACTION waves\u{1}");
+        let action = translate_line(
+            "@+draft/channel-context=#room :eve!u@h PRIVMSG omairc :\u{1}ACTION waves\u{1}",
+        );
         assert_eq!(action.len(), 1);
         match &action[0] {
             Event::Action(value) => {
@@ -1819,7 +1976,10 @@ mod tests {
             }
             other => panic!("want ActionEvent, got {other:?}"),
         }
-        assert!(translate_line("@+draft/channel-context=#room :eve!u@h NOTICE omairc :heads up").is_empty());
+        assert!(
+            translate_line("@+draft/channel-context=#room :eve!u@h NOTICE omairc :heads up")
+                .is_empty()
+        );
 
         let query = history_of(
             &batch(
@@ -1854,10 +2014,18 @@ mod tests {
     #[test]
     fn the_time_tag_reader_takes_only_a_parseable_value() {
         assert_eq!(server_time_of(&must_parse(":a!u@h PRIVMSG #c :x")), None);
-        assert_eq!(server_time_of(&must_parse("@time= :a!u@h PRIVMSG #c :x")), None);
-        assert_eq!(server_time_of(&must_parse("@time=not-a-time :a!u@h PRIVMSG #c :x")), None);
         assert_eq!(
-            server_time_of(&must_parse("@time=2024-03-09T16:00:00Z :a!u@h PRIVMSG #c :x")),
+            server_time_of(&must_parse("@time= :a!u@h PRIVMSG #c :x")),
+            None
+        );
+        assert_eq!(
+            server_time_of(&must_parse("@time=not-a-time :a!u@h PRIVMSG #c :x")),
+            None
+        );
+        assert_eq!(
+            server_time_of(&must_parse(
+                "@time=2024-03-09T16:00:00Z :a!u@h PRIVMSG #c :x"
+            )),
             Some(Utc.with_ymd_and_hms(2024, 3, 9, 16, 0, 0).unwrap())
         );
     }
@@ -1865,7 +2033,10 @@ mod tests {
     #[test]
     fn chathistory_targets_times_accept_the_prefix_or_the_bare_value() {
         let want = Some(Utc.with_ymd_and_hms(2024, 3, 9, 16, 0, 0).unwrap());
-        assert_eq!(parse_history_target_time("timestamp=2024-03-09T16:00:00Z"), want);
+        assert_eq!(
+            parse_history_target_time("timestamp=2024-03-09T16:00:00Z"),
+            want
+        );
         assert_eq!(parse_history_target_time("2024-03-09T16:00:00Z"), want);
         assert_eq!(parse_history_target_time("timestamp="), None);
         assert_eq!(parse_history_target_time(""), None);
@@ -1876,7 +2047,14 @@ mod tests {
     fn corpus_frames_translate_to_the_expected_events() {
         // 01: a classic line. The corpus file carries CRLF, which the framer strips.
         let classic = corpus_frame(include_bytes!("testdata/corpus/01-classic-privmsg.txt"));
-        let events = translate(NETWORK_A, "omairc", &features(), &classic, reducer_timestamp(), None);
+        let events = translate(
+            NETWORK_A,
+            "omairc",
+            &features(),
+            &classic,
+            reducer_timestamp(),
+            None,
+        );
         let message = message_of(&events);
         assert_eq!(message.conversation.normalized_target, "#c");
         assert_eq!(message.author, "n");
@@ -1885,15 +2063,33 @@ mod tests {
 
         // 02: a tagged line. msgid survives and the +typing tag adds no event.
         let tagged = corpus_frame(include_bytes!("testdata/corpus/02-tagged-privmsg.txt"));
-        let events = translate(NETWORK_A, "omairc", &features(), &tagged, reducer_timestamp(), None);
-        assert_eq!(events.len(), 1, "+typing on a PRIVMSG is not a typing event");
+        let events = translate(
+            NETWORK_A,
+            "omairc",
+            &features(),
+            &tagged,
+            reducer_timestamp(),
+            None,
+        );
+        assert_eq!(
+            events.len(),
+            1,
+            "+typing on a PRIVMSG is not a typing event"
+        );
         let message = message_of(&events);
         assert_eq!(message.msgid, Id::new("abc"));
         assert_eq!(message.body, "tagged");
 
         // 03: the Latin-1 body decodes byte for byte as the scalar it names.
         let latin1 = corpus_frame(include_bytes!("testdata/corpus/03-latin1-e9-body.txt"));
-        let events = translate(NETWORK_A, "omairc", &features(), &latin1, reducer_timestamp(), None);
+        let events = translate(
+            NETWORK_A,
+            "omairc",
+            &features(),
+            &latin1,
+            reducer_timestamp(),
+            None,
+        );
         assert_eq!(message_of(&events).body, "caf\u{e9}");
     }
 
