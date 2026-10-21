@@ -10,4 +10,5 @@
 
 pub mod answers;
 pub mod seed;
+pub mod server;
 pub mod wire;
