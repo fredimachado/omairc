@@ -235,3 +235,35 @@ fn leaving_a_network_with_a_hint_open_withdraws_it_on_the_held_target() {
     // The held hint names the channel, not the new selection, so it cleared.
     assert!(fixture.controller.typing_target().is_none());
 }
+
+#[test]
+fn without_echo_message_a_msg_echoes_locally_into_an_open_direct_and_never_opens_a_missing_one() {
+    // The `/msg` fallback: with no `echo-message` the controller draws the line itself, and only
+    // into a conversation that already exists (`EchoIfPresent`).
+    let mut fixture = Fixture::seeded();
+    let mut caps = fixture
+        .controller
+        .capabilities
+        .get(OMARCHY)
+        .copied()
+        .expect("omarchy negotiated caps");
+    caps.remove(crate::irc::capability::IrcCapability::EchoMessage);
+    fixture.controller.capabilities.insert(OMARCHY.to_owned(), caps);
+    fixture
+        .controller
+        .demo()
+        .and_then(|demo| demo.transport(OMARCHY))
+        .expect("the omarchy loopback")
+        .clear_frame_written_hook();
+
+    fixture.controller.select_conversation(OMARCHY, "anna");
+    assert!(fixture.controller.submit(CONVERSATION, "/msg anna quiet hello"));
+    let echoed = super::fixture::bodies(&fixture.controller)
+        .iter()
+        .filter(|body| body.as_str() == "quiet hello")
+        .count();
+    assert_eq!(echoed, 1, "one local echo, since the server did not echo");
+
+    assert!(fixture.controller.submit(CONVERSATION, "/msg lena nobody sees this"));
+    assert!(!has_conversation(&fixture, OMARCHY, "lena"));
+}

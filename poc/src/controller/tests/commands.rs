@@ -721,3 +721,15 @@ fn a_pending_join_cancellation_is_kept_per_network_and_forgotten_with_its_networ
     assert!(fixture.controller.cancelled_joins.contains(&omarchy));
     assert!(!fixture.controller.cancelled_joins.contains(&oftc));
 }
+
+#[test]
+fn a_ctcp_reply_copies_into_the_asking_conversation_as_a_whois_row() {
+    // The slash-commands feature: the demo answers the CTCP with a NOTICE, and the reply is
+    // copied into the transcript that asked, as a whois row.
+    let mut fixture = Fixture::seeded();
+    fixture.controller.select_conversation(OMARCHY, "anna");
+    assert_eq!(run(&mut fixture, CONVERSATION, "/time"), CommandOutcome::Sent);
+    assert!(fixture.controller.messages().iter().any(|row| {
+        row.kind == MessageKind::Whois && row.body.contains("TIME reply from anna")
+    }));
+}
