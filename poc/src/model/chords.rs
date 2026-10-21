@@ -32,11 +32,15 @@ pub struct ChordContext {
     /// it hides the member panel and the conversation, so the channel and DM
     /// chords are off.
     pub status_open: bool,
-    /// The selected conversation is a channel. Ctrl+Shift+K, M, and P need one.
+    /// The selected conversation is a channel.
     pub channel: bool,
-    /// The selection is a direct message. Ctrl+W closes it (Qt
-    /// `canCloseSelection`; the seed has no unjoined channel to close).
-    pub direct: bool,
+    /// The selected channel is one the user is in (Qt `currentChannelJoined`). Ctrl+Shift+K
+    /// (the nick sheet), Ctrl+Shift+M (the member panel) and Ctrl+Shift+P (member focus) need
+    /// one, so on a channel the user has left they do nothing.
+    pub joined: bool,
+    /// The selection can close: a direct message, or a channel the user has left (Qt
+    /// `canCloseSelection`). Ctrl+W closes it. A joined channel is refused.
+    pub can_close: bool,
     /// A network header in the server list has keyboard focus.
     pub header_focused: bool,
     /// The member list has keyboard focus.
@@ -164,10 +168,12 @@ pub fn chord_enabled(chord: Chord, ctx: &ChordContext) -> bool {
         Chord::Link => no_sheet || sheet_is(Sheet::Link),
         // Toggles Inbox, and is blocked by every other sheet.
         Chord::Inbox => no_sheet || sheet_is(Sheet::Inbox),
-        Chord::NickSheet => ctx.channel && on_conversation,
-        Chord::MembersToggle | Chord::MembersFocus => ctx.channel && on_conversation,
+        Chord::NickSheet => ctx.channel && ctx.joined && on_conversation,
+        Chord::MembersToggle | Chord::MembersFocus => ctx.channel && ctx.joined && on_conversation,
         Chord::ServerListToggle => no_sheet,
-        Chord::CloseDirect => ctx.direct && on_conversation,
+        // Qt's closeDirectMessage, Ctrl+W. It closes a direct message or a channel the user
+        // has left, and a joined channel is refused.
+        Chord::CloseDirect => ctx.can_close && on_conversation,
         // Qt binds Ctrl+/ unconditionally and its handler returns early while
         // another sheet is open, so the result is the same as this gate. It opens
         // above the Connect sheet, as Qt's shortcuts overlay does.
@@ -307,17 +313,26 @@ mod tests {
     }
 
     fn nothing(_: &mut ChordContext) {}
-    fn channel(ctx: &mut ChordContext) {
+    /// A channel the user is in.
+    fn joined_channel(ctx: &mut ChordContext) {
         ctx.channel = true;
+        ctx.joined = true;
     }
+    /// A channel the user has left: it is not joined, and it can close.
+    fn left_channel(ctx: &mut ChordContext) {
+        ctx.channel = true;
+        ctx.can_close = true;
+    }
+    /// A direct message: it closes, and it has no members.
     fn direct(ctx: &mut ChordContext) {
-        ctx.direct = true;
+        ctx.can_close = true;
     }
     fn header(ctx: &mut ChordContext) {
         ctx.header_focused = true;
     }
     fn members(ctx: &mut ChordContext) {
         ctx.channel = true;
+        ctx.joined = true;
         ctx.members_focused = true;
     }
     fn selection(ctx: &mut ChordContext) {
@@ -390,7 +405,7 @@ mod tests {
     #[test]
     fn the_unseen_jump_needs_a_conversation_and_no_sheet() {
         check(Chord::Unseen, nothing, CONVERSATION_ONLY);
-        check(Chord::Unseen, channel, CONVERSATION_ONLY);
+        check(Chord::Unseen, joined_channel, CONVERSATION_ONLY);
         check(Chord::Unseen, direct, CONVERSATION_ONLY);
     }
 
@@ -408,7 +423,7 @@ mod tests {
     fn find_is_live_without_a_sheet_on_a_conversation_or_status_and_while_finding() {
         check(Chord::Find, nothing, NO_SHEET);
         check(Chord::Find, finding, NO_SHEET);
-        check(Chord::Find, channel, NO_SHEET);
+        check(Chord::Find, joined_channel, NO_SHEET);
     }
 
     #[test]
@@ -465,7 +480,7 @@ mod tests {
     #[test]
     fn nick_completion_needs_a_conversation_not_status() {
         check(Chord::NickComplete, nothing, CONVERSATION_ONLY);
-        check(Chord::NickComplete, channel, CONVERSATION_ONLY);
+        check(Chord::NickComplete, joined_channel, CONVERSATION_ONLY);
         check(Chord::NickComplete, direct, CONVERSATION_ONLY);
     }
 
@@ -479,19 +494,31 @@ mod tests {
     }
 
     #[test]
-    fn member_chords_need_a_channel_and_a_conversation() {
-        check(Chord::NickSheet, channel, CONVERSATION_ONLY);
-        check(Chord::MembersToggle, channel, CONVERSATION_ONLY);
-        check(Chord::MembersFocus, channel, CONVERSATION_ONLY);
+    fn member_chords_need_a_joined_channel_and_a_conversation() {
+        check(Chord::NickSheet, joined_channel, CONVERSATION_ONLY);
+        check(Chord::MembersToggle, joined_channel, CONVERSATION_ONLY);
+        check(Chord::MembersFocus, joined_channel, CONVERSATION_ONLY);
         check(Chord::NickSheet, nothing, NOWHERE);
         check(Chord::MembersToggle, nothing, NOWHERE);
         check(Chord::MembersFocus, nothing, NOWHERE);
     }
 
     #[test]
-    fn close_direct_needs_a_direct_message_and_a_conversation() {
+    fn ctrl_shift_k_m_and_p_do_nothing_on_a_channel_you_have_left() {
+        // A left channel is not joined, so the nick sheet and the member chords stay off, and
+        // Ctrl+Shift+K opens nothing there.
+        check(Chord::NickSheet, left_channel, NOWHERE);
+        check(Chord::MembersToggle, left_channel, NOWHERE);
+        check(Chord::MembersFocus, left_channel, NOWHERE);
+        check(Chord::NickSheet, direct, NOWHERE);
+    }
+
+    #[test]
+    fn close_needs_a_selection_that_can_close_and_a_conversation() {
+        // A direct message and a left channel close. A joined channel is refused.
         check(Chord::CloseDirect, direct, CONVERSATION_ONLY);
-        check(Chord::CloseDirect, channel, NOWHERE);
+        check(Chord::CloseDirect, left_channel, CONVERSATION_ONLY);
+        check(Chord::CloseDirect, joined_channel, NOWHERE);
         check(Chord::CloseDirect, nothing, NOWHERE);
     }
 
@@ -505,7 +532,7 @@ mod tests {
     fn member_list_navigation_needs_member_focus_and_a_conversation() {
         check(Chord::MembersTop, members, CONVERSATION_ONLY);
         check(Chord::MembersBottom, members, CONVERSATION_ONLY);
-        check(Chord::MembersTop, channel, NOWHERE);
+        check(Chord::MembersTop, joined_channel, NOWHERE);
         check(Chord::MembersBottom, nothing, NOWHERE);
         for chord in [
             Chord::MembersStep,
@@ -514,7 +541,7 @@ mod tests {
             Chord::MembersActivate,
         ] {
             check(chord, members, CONVERSATION_ONLY);
-            check(chord, channel, NOWHERE);
+            check(chord, joined_channel, NOWHERE);
         }
     }
 
@@ -548,13 +575,14 @@ mod tests {
     }
 
     #[test]
-    fn status_hides_the_member_panel_and_the_direct_message_close() {
-        // A channel with the member list focused, viewed on Status: none of the
-        // member or close-direct chords are live.
+    fn status_hides_the_member_panel_and_the_close() {
+        // A joined channel with the member list focused, viewed on Status: none of the
+        // member chords or Ctrl+W are live.
         let ctx = ChordContext {
             status_open: true,
             channel: true,
-            direct: true,
+            joined: true,
+            can_close: true,
             members_focused: true,
             ..ChordContext::default()
         };
@@ -579,6 +607,8 @@ mod tests {
         let ctx = ChordContext {
             sheet: Some(sheet),
             channel: true,
+            joined: true,
+            can_close: true,
             members_focused: true,
             transcript_selection: true,
             ..ChordContext::default()
@@ -639,7 +669,8 @@ mod tests {
         let ctx = ChordContext {
             connect_open: true,
             channel: true,
-            direct: true,
+            joined: true,
+            can_close: true,
             header_focused: true,
             members_focused: true,
             transcript_selection: true,
@@ -706,7 +737,7 @@ mod tests {
     #[test]
     fn the_connect_entry_is_live_unless_another_sheet_holds_the_keyboard() {
         check(Chord::Connect, nothing, CONNECT_ENTRY);
-        check(Chord::Connect, channel, CONNECT_ENTRY);
+        check(Chord::Connect, joined_channel, CONNECT_ENTRY);
     }
 
     #[test]
@@ -721,7 +752,7 @@ mod tests {
             Chord::ConnectRemove,
         ] {
             check(chord, nothing, CONNECT_ONLY);
-            check(chord, channel, CONNECT_ONLY);
+            check(chord, joined_channel, CONNECT_ONLY);
         }
     }
 

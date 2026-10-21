@@ -22,8 +22,9 @@ pub struct RowLook<'a> {
 }
 
 /// One channel or direct message row, a port of `ConversationRow.qml`: 36 tall,
-/// inset 8. A click reports `target` to `on_select`; a middle click on a DM
-/// reports it to `on_close`.
+/// inset 8. A click reports `target` to `on_select`; a middle click, on a channel
+/// or a direct message alike, reports it to `on_close`. The controller decides
+/// whether the row closes: a joined channel does not.
 pub fn conversation_row(
     target: ConversationRef,
     conv: &ConversationRow,
@@ -62,10 +63,8 @@ pub fn conversation_row(
             let target = target.clone();
             move |_, window, cx| on_select(target.clone(), window, cx)
         })
-        .when(conv.direct, |this| {
-            this.on_mouse_down(MouseButton::Middle, move |_, window, cx| {
-                on_close(target.clone(), window, cx);
-            })
+        .on_mouse_down(MouseButton::Middle, move |_, window, cx| {
+            on_close(target.clone(), window, cx);
         })
         .child(
             div()
