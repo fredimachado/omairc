@@ -225,6 +225,9 @@ fn main() {
                         title: Some("Omairc GPUI PoC".into()),
                         ..Default::default()
                     }),
+                    // Same id as the Qt client's desktop file name. Omarchy's
+                    // compositor rules match it to give the window transparency.
+                    app_id: Some("omairc".into()),
                     ..Default::default()
                 },
                 |window, cx| {
