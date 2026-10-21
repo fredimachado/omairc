@@ -565,9 +565,8 @@ fn pref_reads_and_sets_on_status_and_prints_into_a_conversation() {
     assert_eq!(last_status(&fixture, OMARCHY), format_pref_state(PrefName::Avatars, false));
     assert!(!fixture.controller.preferences().avatars);
 
-    // A set changes the value and marks it for the shell to save, once.
-    assert!(fixture.controller.take_preferences_to_save().is_some());
-    assert!(fixture.controller.take_preferences_to_save().is_none());
+    // A demo controller keeps nothing: the value changes in memory only. The disk round trip
+    // is covered by the persistence tests, which build over a settings file.
 
     // On a conversation the feedback is a transcript row, not Status.
     fixture.controller.select_conversation(OMARCHY, "anna");

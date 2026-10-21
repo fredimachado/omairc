@@ -6,32 +6,26 @@
 //! after the transcript changes, so a place survives a reload. A place that pins the
 //! bottom is stored as `follow_end`. The Status console has no place.
 //!
-//! The store is in memory for now. Phase 8 binds it to the settings file under
-//! `scrollPlaces/<network>`, with the group and key names of the Qt client.
+//! The places live in the settings file under `scrollPlaces/<network>`, the group Qt uses
+//! (`storage::scrollplace`). Each network's list is loaded when the store is built and
+//! written again after each change.
+//!
+//! The shell resumes a transcript by its own rows (`model::scroll_place`) and stores the
+//! result through `remember_place` and `place_for`. The message-anchor reads below are the
+//! Qt-format path over the controller's messages. Nothing calls them outside the tests yet,
+//! so their dead-code allow stays until the transcript reads through this module.
 
-use std::collections::BTreeMap;
+#![allow(dead_code)]
 
 use chrono::{DateTime, Utc};
 
 use crate::irc::casemapping::IrcCaseMapping;
 use crate::irc::reducer::zero_time;
 use crate::irc::world::Message;
+use crate::storage::scrollplace::{PlaceRows, ScrollPlace, ScrollPlaceFile};
 
 use super::controller::Controller;
 use super::snapshots::message_kind_name;
-
-/// One conversation's saved place (`storage::ScrollPlace`). `follow_end` pins the
-/// bottom. Otherwise the anchor fields name the first visible message.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ScrollPlace {
-    pub follow_end: bool,
-    pub msg_id: String,
-    pub author: String,
-    pub kind: String,
-    pub body: String,
-    pub epoch_ms: i64,
-    pub has_time: bool,
-}
 
 /// The selected conversation's saved place, resolved against the transcript
 /// (`ScrollView`). `known` is false when the conversation has no place. `row` is `None`
@@ -44,15 +38,23 @@ pub struct ScrollView {
     pub row: Option<usize>,
 }
 
-/// The saved places, one per conversation (`ScrollPlaceStore`). Keys are the network id
-/// and the target folded under the network's case mapping.
-#[derive(Debug, Default)]
+/// The saved places of every network, one list per network in the order they were first
+/// saved (`ScrollPlaceStore`). A target matches under the network's case mapping.
+#[derive(Debug)]
 pub struct ScrollPlaceStore {
-    places: BTreeMap<String, BTreeMap<String, ScrollPlace>>,
+    file: ScrollPlaceFile,
+    places: std::collections::BTreeMap<String, PlaceRows>,
 }
 
 impl ScrollPlaceStore {
-    /// Stores the place for `target` on `network_id`.
+    /// The store over `file`, holding every place an earlier run saved.
+    pub fn new(file: ScrollPlaceFile) -> Self {
+        let places = file.load_all();
+        Self { file, places }
+    }
+
+    /// Stores the place for `target` on `network_id`, replacing a place that names it
+    /// under `mapping`, and saves the network's list.
     pub fn remember(
         &mut self,
         network_id: &str,
@@ -60,25 +62,54 @@ impl ScrollPlaceStore {
         place: ScrollPlace,
         mapping: IrcCaseMapping,
     ) {
-        if network_id.is_empty() {
+        if network_id.is_empty() || target.is_empty() {
             return;
         }
-        self.places
-            .entry(network_id.to_owned())
-            .or_default()
-            .insert(mapping.normalize(target), place);
+        let rows = self.places.entry(network_id.to_owned()).or_default();
+        match rows.iter().position(|(stored, _)| mapping.equals(stored, target)) {
+            Some(index) => rows[index] = (target.to_owned(), place),
+            None => rows.push((target.to_owned(), place)),
+        }
+        self.save(network_id);
     }
 
     /// The saved place for `target` on `network_id`, if any.
     pub fn place(&self, network_id: &str, target: &str, mapping: IrcCaseMapping) -> Option<&ScrollPlace> {
         self.places
-            .get(network_id)
-            .and_then(|targets| targets.get(&mapping.normalize(target)))
+            .get(network_id)?
+            .iter()
+            .find(|(stored, _)| mapping.equals(stored, target))
+            .map(|(_, place)| place)
+    }
+
+    /// Follows a NICK: the place of `old` moves to `new` (`Rekey`). A `new` that already
+    /// has a place takes this one. Returns whether anything moved.
+    pub fn rekey(&mut self, network_id: &str, old: &str, new: &str, mapping: IrcCaseMapping) -> bool {
+        let Some(rows) = self.places.get_mut(network_id) else {
+            return false;
+        };
+        let Some(index) = rows.iter().position(|(stored, _)| mapping.equals(stored, old)) else {
+            return false;
+        };
+        let (_, kept) = rows.remove(index);
+        match rows.iter().position(|(stored, _)| mapping.equals(stored, new)) {
+            Some(existing) => rows[existing] = (new.to_owned(), kept),
+            None => rows.push((new.to_owned(), kept)),
+        }
+        self.save(network_id);
+        true
     }
 
     /// Drops every place of `network_id` (`Forget`).
     pub fn forget(&mut self, network_id: &str) {
-        self.places.remove(network_id);
+        if self.places.remove(network_id).is_some() {
+            self.file.save(network_id, &PlaceRows::new());
+        }
+    }
+
+    fn save(&self, network_id: &str) {
+        let rows = self.places.get(network_id).cloned().unwrap_or_default();
+        self.file.save(network_id, &rows);
     }
 }
 
@@ -107,10 +138,20 @@ impl Controller {
             };
             place = anchor_of(message);
         }
-        let mapping = self.reducer.server_features(&key.network_id).case_mapping();
-        let target = self.selected_target.clone();
-        self.scroll_places
-            .remember(&key.network_id, &target, place, mapping);
+        self.remember_place(&key.network_id, &self.selected_target.clone(), place);
+    }
+
+    /// Stores a place for a conversation, from whatever anchor the caller holds. The shell
+    /// uses it for the rows it shows, which are not the controller's messages.
+    pub fn remember_place(&mut self, network_id: &str, target: &str, place: ScrollPlace) {
+        let mapping = self.reducer.server_features(network_id).case_mapping();
+        self.scroll_places.remember(network_id, target, place, mapping);
+    }
+
+    /// The saved place for a conversation, as the caller last stored it.
+    pub fn place_for(&self, network_id: &str, target: &str) -> Option<ScrollPlace> {
+        let mapping = self.reducer.server_features(network_id).case_mapping();
+        self.scroll_places.place(network_id, target, mapping).cloned()
     }
 
     /// The selected conversation's saved place, resolved against its transcript
@@ -189,4 +230,3 @@ fn anchor_matches(place: &ScrollPlace, message: &Message) -> bool {
 fn millis(time: DateTime<Utc>) -> i64 {
     time.timestamp_millis()
 }
-

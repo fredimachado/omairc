@@ -372,28 +372,46 @@ impl Controller {
     /// The display name of a network: its profile name, else its host
     /// (`IrcNetworkProfile::resolvedName`). When another network shows the same name,
     /// the nick joins it, as `irc.example · fred`. A known network with no session yet
-    /// (its start was refused) is named by its id until its profile is kept (Phase 8).
+    /// (its start was refused) is named by its profile, and by its id when it has none.
     /// Empty for an unknown network.
     pub fn network_name(&self, network_id: &str) -> String {
-        let Some(session) = self.session(network_id) else {
+        let Some(base) = self.network_base_name(network_id) else {
             return if self.known_network_ids().iter().any(|id| id == network_id) {
                 network_id.to_owned()
             } else {
                 String::new()
             };
         };
-        let base = session.name();
         let clash = self
-            .manager
-            .network_ids()
+            .known_network_ids()
             .iter()
             .filter(|other| other.as_str() != network_id)
-            .filter_map(|other| self.session(other))
-            .any(|other| other.name() == base);
+            .any(|other| self.network_base_name(other).as_deref() == Some(base.as_str()));
         if clash {
-            format!("{base} · {}", session.nick())
+            format!("{base} · {}", self.network_nick(network_id))
         } else {
             base
+        }
+    }
+
+    /// A network's name before any clash suffix: its saved profile's name, else the name its
+    /// live session was built with. `None` for a network with neither.
+    fn network_base_name(&self, network_id: &str) -> Option<String> {
+        if let Some(profile) = self.profiles.get(network_id) {
+            return Some(profile.resolved_name());
+        }
+        self.session(network_id).map(|session| session.name())
+    }
+
+    /// The nick a network shows after its name on a clash: the session's, else the profile's.
+    fn network_nick(&self, network_id: &str) -> String {
+        match self.session(network_id) {
+            Some(session) => session.nick(),
+            None => self
+                .profiles
+                .get(network_id)
+                .map(|profile| profile.nick.trim().to_owned())
+                .unwrap_or_default(),
         }
     }
 

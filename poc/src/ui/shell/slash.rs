@@ -143,7 +143,6 @@ impl Shell {
         if let Some(start) = append_start {
             self.bench.append_latency = Some(start.elapsed());
         }
-        self.save_preferences();
         self.apply_preference_changes(before, cx);
         if accepted {
             self.finish_command(&text, cx);
@@ -165,16 +164,6 @@ impl Shell {
         let text = self.composer_text(cx);
         self.controller.composer_text_changed(&text);
         self.drain_notifications(cx);
-    }
-
-    /// Writes the saved preferences to disk when the controller reports a change. The
-    /// controller owns the values; this is the one place they reach the file.
-    pub fn save_preferences(&mut self) {
-        if let Some(prefs) = self.controller.take_preferences_to_save() {
-            if let Err(error) = prefs.save() {
-                eprintln!("omairc-poc: could not save preferences: {error}");
-            }
-        }
     }
 
     /// Redraws what a changed preference touches: the avatars in the transcript, and the view

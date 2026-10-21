@@ -10,8 +10,8 @@
 //! clock and then pump, which is what the UI loop does on each tick.
 //!
 //! Away decisions stay here. The controller records the Status lines and the unaway
-//! bookkeeping the runtime asks for. Persistence is a Phase 8 concern; a change only
-//! updates the live configuration.
+//! bookkeeping the runtime asks for. A changed setting is also saved through the preference
+//! store (`persistence.rs`).
 
 use std::cell::RefCell;
 use std::collections::{BTreeSet, VecDeque};
@@ -199,6 +199,9 @@ impl Controller {
                 format_autoaway_confirmation(&self.autoaway.config)
             }
         };
+        if !matches!(request.kind, AutoawayKind::Usage | AutoawayKind::Query) {
+            self.persist_autoaway();
+        }
         if self.autoaway.tripped
             && self.autoaway.config.enabled
             && self.autoaway.reason() != previous_reason

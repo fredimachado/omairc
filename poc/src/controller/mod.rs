@@ -18,7 +18,9 @@
 //! `composertyping` (the typing hint), `channellist` (`/list` through the wire), and
 //! `replyrouter` (WHOIS, CTCP, and the user's own `/status` and `/avatar` replies). The
 //! `scrollplace` module records where a transcript was left. Timers run on the `Clock`
-//! seam, and `pump` runs what they queued on the UI thread.
+//! seam, and `pump` runs what they queued on the UI thread. `persistence` loads what the
+//! controller keeps between runs (profiles, preferences, open queries, lists, and each complete
+//! network's session), and saves each change through the stores in `storage/`.
 
 pub mod autoawayruntime;
 pub mod avatars;
@@ -31,11 +33,9 @@ pub mod demo;
 pub mod lines;
 pub mod monitorcoordinator;
 pub mod networks;
+pub mod persistence;
 pub mod reads;
 pub mod replyrouter;
-// The shell still keeps its scroll places in `model/scroll_place.rs`. The rewire to this
-// store lands with the shell's transcript work, and the allow comes off then.
-#[allow(dead_code)]
 pub mod scrollplace;
 pub mod selection;
 pub mod send;

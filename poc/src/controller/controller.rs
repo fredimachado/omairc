@@ -27,7 +27,7 @@ use chrono::{DateTime, Utc};
 use crate::demo::seed::{world_for, SeedNetwork};
 use crate::demo::server::{session_config, DemoError, DemoServer};
 use crate::desktop::httpfetch::UreqFetch;
-use crate::desktop::notifier::{Notifier, NullNotifier};
+use crate::desktop::notifier::Notifier;
 use crate::irc::capability::{IrcCapability, IrcCapabilitySet};
 use crate::irc::event::{ConversationKey, Event, HistoryKind, NickEvent, WelcomeEvent};
 use crate::irc::inbox::{Inbox, InboxItem, InboxKind};
@@ -46,6 +46,14 @@ use crate::session::loopback::LoopbackTransport;
 use crate::session::session::Session;
 use crate::session::sessionmanager::{SessionManager, SessionManagerError};
 
+use crate::storage::credentialstore::{CredentialStore, MemoryCredentialStore};
+use crate::storage::lists::{CaseListStore, IniListBacking};
+use crate::storage::opendirect::OpenDirectStore;
+use crate::storage::preferences::PreferenceStore;
+use crate::storage::profilestore::{Profile, ProfileStore};
+use crate::storage::scrollplace::ScrollPlaceFile;
+use crate::storage::Backing;
+
 use super::autoawayruntime::AutoawayState;
 use super::avatars::AvatarFetches;
 use super::channellist::{ChannelListRequests, ChannelListView};
@@ -55,7 +63,7 @@ use super::replyrouter::ReplyWatches;
 use super::scrollplace::ScrollPlaceStore;
 use super::snapshots::state_text;
 use super::stores::{HighlightStore, IgnoreStore, MonitorStore, MuteStore};
-use super::transports::{LiveTransports, TransportFactory};
+use super::transports::TransportFactory;
 
 /// Why the controller could not be built.
 #[derive(Debug)]
@@ -93,7 +101,7 @@ impl From<DemoError> for ControllerError {
 pub struct Controller {
     pub(super) clock: Rc<dyn Clock>,
     notifier: Box<dyn Notifier>,
-    transports: Box<dyn TransportFactory>,
+    pub(super) transports: Box<dyn TransportFactory>,
     /// The demo peers, when the controller runs `--demo-server`.
     pub(super) demo: Option<Rc<DemoServer>>,
     pub(super) manager: SessionManager,
@@ -142,26 +150,59 @@ pub struct Controller {
     pub(super) cancelled_joins: BTreeSet<ConversationKey>,
     /// The saved preferences `/pref` and the Connect toggles read and write (`prefs`).
     pub(super) prefs: Preferences,
-    /// Whether a preference changed since the shell last saved them (`prefsDirty`).
-    pub(super) prefs_dirty: bool,
+    /// Where the controller's state lives between runs (`Ephemeral` for the demo and tests).
+    pub(super) backing: Backing,
+    /// The saved Connect profiles, by network id (`IrcProfileStore`'s records).
+    pub(super) profiles: BTreeMap<String, Profile>,
+    pub(super) profile_store: ProfileStore,
+    pub(super) preference_store: PreferenceStore,
+    /// The network secrets. Only the in-memory store exists until the keychain (Phase 11).
+    pub(super) credentials: Box<dyn CredentialStore>,
+    /// The profile each network's session was built from, so Apply rebuilds only a changed one.
+    pub(super) applied_profiles: BTreeMap<String, Profile>,
+    /// The direct messages to reopen, and the ones the user closed (`IrcOpenDirectStore`).
+    pub(super) open_directs: OpenDirectStore,
+    /// The networks whose MOTD-end restore has run (`openDirectsMotdSeen`).
+    pub(super) open_directs_motd_seen: BTreeSet<String>,
     /// The avatar cache, its in-flight slots and the seam its jobs fetch through (`avatars.rs`).
     pub(super) avatars: AvatarFetches,
     pumping: bool,
 }
 
 impl Controller {
-    /// A controller with no networks, the no-op notifier and no live transports.
+    /// A controller with no networks, the no-op notifier and no live transports. It keeps
+    /// nothing between runs.
+    #[cfg(test)]
     pub fn new(clock: Rc<dyn Clock>) -> Self {
-        Self::with_parts(clock, Box::new(NullNotifier), Box::new(LiveTransports))
+        Self::with_parts(
+            clock,
+            Box::new(crate::desktop::notifier::NullNotifier),
+            Box::new(super::transports::LiveTransports),
+        )
     }
 
-    /// A controller with the given notifier and transport factory.
+    /// A controller with the given notifier and transport factory, keeping nothing between
+    /// runs.
     pub fn with_parts(
         clock: Rc<dyn Clock>,
         notifier: Box<dyn Notifier>,
         transports: Box<dyn TransportFactory>,
     ) -> Self {
+        Self::with_backing(clock, notifier, transports, Backing::Ephemeral)
+    }
+
+    /// A controller whose stores live in `backing`. Nothing is loaded here: `load_stored`
+    /// reads what an earlier run saved.
+    pub fn with_backing(
+        clock: Rc<dyn Clock>,
+        notifier: Box<dyn Notifier>,
+        transports: Box<dyn TransportFactory>,
+        backing: Backing,
+    ) -> Self {
         let channel_lists = ChannelListRequests::new(Rc::clone(&clock));
+        let list = |group: &'static str, key: &'static str| {
+            CaseListStore::new(Box::new(IniListBacking::new(backing.clone(), group, key)))
+        };
         Self {
             clock,
             notifier,
@@ -182,19 +223,26 @@ impl Controller {
             network_collapsed: BTreeSet::new(),
             notifications: Vec::new(),
             autoaway: AutoawayState::default(),
-            scroll_places: ScrollPlaceStore::default(),
+            scroll_places: ScrollPlaceStore::new(ScrollPlaceFile::new(backing.clone())),
             reply_watches: ReplyWatches::default(),
             channel_lists,
             channel_view: ChannelListView::default(),
-            ignores: Rc::new(RefCell::new(IgnoreStore::in_memory())),
-            mutes: MuteStore::in_memory(),
-            highlights: HighlightStore::in_memory(),
-            monitors: MonitorStore::in_memory(),
+            ignores: Rc::new(RefCell::new(list("ignores", "nicks"))),
+            mutes: list("mutes", "targets"),
+            highlights: list("highlights", "words"),
+            monitors: list("monitors", "nicks"),
             monitor: MonitorState::default(),
             typing_target: None,
             cancelled_joins: BTreeSet::new(),
             prefs: Preferences::default(),
-            prefs_dirty: false,
+            backing: backing.clone(),
+            profiles: BTreeMap::new(),
+            profile_store: ProfileStore::new(backing.clone()),
+            preference_store: PreferenceStore::new(backing.clone()),
+            credentials: Box::new(MemoryCredentialStore::default()),
+            applied_profiles: BTreeMap::new(),
+            open_directs: OpenDirectStore::new(&backing),
+            open_directs_motd_seen: BTreeSet::new(),
             avatars: AvatarFetches::new(Arc::new(UreqFetch)),
             pumping: false,
         }
@@ -280,7 +328,7 @@ impl Controller {
         } else {
             match world_for(network_id) {
                 Some(network) if self.demo.is_some() => self.restart_demo(network),
-                _ => self.refuse_start(network_id),
+                _ => self.start_profile(network_id),
             }
         };
         self.queue(vec![ViewNotify::Status]);
@@ -438,11 +486,14 @@ impl Controller {
                 network_id,
                 label,
             } => self.request_label_finished(&network_id, &label),
-            // Playback resume and autojoin persistence arrive with their Phase 8
-            // ports. Until then their events are consumed here and do nothing.
+            SessionEvent::AutojoinChannelsChanged {
+                network_id,
+                channels,
+                keys,
+            } => self.persist_autojoin(&network_id, channels, keys),
+            // Playback resume arrives with the chathistory port (Phase 11).
             SessionEvent::ChatHistoryRequestFinished { .. }
-            | SessionEvent::ChatHistoryFailed { .. }
-            | SessionEvent::AutojoinChannelsChanged { .. } => {}
+            | SessionEvent::ChatHistoryFailed { .. } => {}
         }
     }
 
@@ -565,6 +616,8 @@ impl Controller {
                 features.mark_case_mapping_known();
                 self.reducer.set_server_features(network_id, features);
             }
+            // MOTD end restores the open queries, after ISUPPORT has settled the case mapping.
+            self.note_open_directs_motd(network_id);
         }
 
         let features = self.reducer.server_features(network_id).clone();
@@ -672,8 +725,8 @@ impl Controller {
         }
     }
 
-    /// Replays one history batch. A TARGETS answer discovers directs, which the
-    /// open-direct store owns (Phase 8), so it splices nothing here.
+    /// Replays one history batch. A TARGETS answer discovers directs, which the chathistory
+    /// port (Phase 11) turns into queries, so it splices nothing here.
     fn handle_history_batch(&mut self, network_id: &str, batch: &HistoryBatch) {
         if batch.kind == Some(HistoryKind::Targets) {
             return;
@@ -747,7 +800,33 @@ impl Controller {
             _ => {}
         }
         let typing_only = matches!(event, Event::Typing(_));
+        // What the saved lists need to see, read before the reducer takes the event.
+        let renamed = match &event {
+            Event::Nick(nick) => Some((nick.network_id.clone(), nick.old_nick.clone(), nick.new_nick.clone())),
+            _ => None,
+        };
+        let self_authored = match &event {
+            Event::Message(line) => Some((line.conversation.network_id.clone(), line.author.clone(), line.target.clone())),
+            Event::Notice(line) => Some((line.conversation.network_id.clone(), line.author.clone(), line.target.clone())),
+            Event::Action(line) => Some((line.conversation.network_id.clone(), line.author.clone(), line.target.clone())),
+            _ => None,
+        };
         let mut surfaces = self.reducer.apply(event, now);
+        if let Some((network_id, old, new)) = renamed {
+            self.rekey_nick_lists(&network_id, &old, &new);
+        }
+        if let Some((network_id, author, target)) = self_authored {
+            self.note_self_authored_direct(&network_id, &author, &target);
+        }
+        for query in self.reducer.take_remembered_queries() {
+            if self
+                .reducer
+                .find(&self.reducer.conversation_key(&query.network_id, &query.target))
+                .is_some()
+            {
+                self.remember_open_direct(&query.network_id, &query.target);
+            }
+        }
         if self.selected.is_none() && !typing_only {
             self.claim_first_conversation();
         }
@@ -847,7 +926,7 @@ impl Controller {
 
     /// A start the build cannot honour. The transport factory gives the reason, and
     /// the reason becomes the network's last error and a Status line.
-    fn refuse_start(&mut self, network_id: &str) -> bool {
+    pub(super) fn refuse_start(&mut self, network_id: &str) -> bool {
         let message = match self.transports.open(network_id) {
             Err(message) => message,
             // A transport opened, but no profile exists to build a session from.
@@ -860,7 +939,7 @@ impl Controller {
     /// Records a refused start as the network's last error and writes it to Status.
     /// With no selection, Status is what the window shows, so it moves to this network
     /// (the first-run Apply case). A selected conversation stays on screen.
-    fn refuse_with(&mut self, network_id: &str, message: &str) {
+    pub(super) fn refuse_with(&mut self, network_id: &str, message: &str) {
         self.set_last_error(network_id, Some(message.to_owned()));
         let now = self.clock.now();
         let entry = statusentry::lifecycle(network_id, LogSeverity::Alert, "error", message, now);

@@ -3,9 +3,8 @@
 //! formatting, the argument parser, and the in-memory preferences a session
 //! holds.
 //!
-//! Pure: this module reads and writes no file. The JSON file that stores the
-//! preferences is `model/prefs.rs`, which adds the load and save functions to
-//! `Preferences` and moves to the INI store in the storage phase.
+//! Pure: this module reads and writes no file. The preferences are saved in the settings
+//! file's `preferences` group by `storage/preferences.rs`.
 
 use serde::{Deserialize, Serialize};
 

@@ -17,7 +17,12 @@
 //! survives closing the sheet, as Qt's does. `Shell::connect_open` says whether
 //! the sheet is showing.
 
+use std::collections::BTreeMap;
+
 use super::prefs::PrefName;
+use crate::storage::credentialstore::CredentialState;
+use crate::storage::profilestore::Profile as StoredProfile;
+use crate::storage::settings::Status;
 
 /// The icon colour slots Qt's `IrcNetworkProfile::iconColorCount` offers.
 pub const ICON_COLOR_COUNT: u8 = 5;
@@ -44,17 +49,9 @@ pub const DISCARD_LABEL: &str = "Discard";
 pub const DISCONNECT_LABEL: &str = "Disconnect";
 pub const APPLY_LABEL: &str = "Apply";
 
-/// Why Apply is refused. Qt's `IrcNetworkProfile::Problem`, without the account
-/// and bouncer fields the PoC does not edit. The first failing check wins, in
-/// this order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Problem {
-    MissingHost,
-    InvalidPort,
-    MissingNick,
-    UnsendableIdentity,
-    UnsendableChannel,
-}
+/// Why Apply is refused. The rules live with the stored profile, so the draft and the
+/// saved network are checked the same way (`storage::profilestore::ProfileProblem`).
+pub use crate::storage::profilestore::ProfileProblem as Problem;
 
 impl Problem {
     /// The line under the form, copied from `problemText`.
@@ -231,7 +228,7 @@ pub fn remove_label(armed: bool, display_name: &str) -> String {
 
 /// What the sheet knows of one network when it opens: the controller's nick, icon
 /// colour, CHANTYPES and the channels it has joined. The sheet builds its saved
-/// profiles from these (until the profile store of Phase 8 keeps them on disk).
+/// profiles from these. A launch with saved networks reads them from the profile store instead.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NetworkSeed {
     pub network_id: String,
@@ -350,39 +347,78 @@ impl Profile {
 
     /// The first reason this profile cannot be applied, or `None` when it can.
     pub fn problem(&self) -> Option<Problem> {
-        let profile = self.normalized();
-        if profile.host.is_empty() {
-            return Some(Problem::MissingHost);
+        self.to_stored(None).problem()
+    }
+
+    /// The profile as the file keeps it. The fields the sheet does not edit (account,
+    /// bouncer network, avatar, and the keys of channels that stay) come from `existing`, so
+    /// saving a network keeps what the Qt client or the TUI wrote there.
+    pub fn to_stored(&self, existing: Option<&StoredProfile>) -> StoredProfile {
+        let autojoin_channels = self.channels();
+        let autojoin_keys = existing
+            .map(|stored| {
+                stored
+                    .autojoin_keys
+                    .iter()
+                    .filter(|(channel, _)| autojoin_channels.contains(channel))
+                    .map(|(channel, key)| (channel.clone(), key.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        StoredProfile {
+            network_id: self.network_id.clone(),
+            name: self.name.trim().to_owned(),
+            host: self.host.trim().to_owned(),
+            port: port_number(&self.port),
+            tls: self.tls,
+            connect_on_startup: self.connect_on_startup,
+            secret_saved: existing.is_some_and(|stored| stored.secret_saved),
+            nickserv_saved: existing.is_some_and(|stored| stored.nickserv_saved),
+            nick: self.nick.trim().to_owned(),
+            username: self.username.trim().to_owned(),
+            realname: self.realname.trim().to_owned(),
+            account: existing.map(|stored| stored.account.clone()).unwrap_or_default(),
+            bouncer_network: existing
+                .map(|stored| stored.bouncer_network.clone())
+                .unwrap_or_default(),
+            autojoin_channels,
+            autojoin_keys,
+            icon_color: self.icon_color.filter(|color| *color < ICON_COLOR_COUNT),
+            avatar_url: existing.map(|stored| stored.avatar_url.clone()).unwrap_or_default(),
         }
-        if port_number(&profile.port) == 0 {
-            return Some(Problem::InvalidPort);
+    }
+
+    /// The sheet's view of a saved network. Its secrets are not in the file, so they start
+    /// empty, and the channel list is the autojoin list the file holds.
+    pub fn from_stored(stored: &StoredProfile) -> Self {
+        Profile {
+            network_id: stored.network_id.clone(),
+            name: stored.name.clone(),
+            host: stored.host.clone(),
+            port: stored.port.to_string(),
+            tls: stored.tls,
+            nick: stored.nick.clone(),
+            username: stored.username.clone(),
+            realname: stored.realname.clone(),
+            autojoin: stored.autojoin_channels.join(" "),
+            connect_on_startup: stored.connect_on_startup,
+            icon_color: stored.icon_color,
+            chantypes: DEFAULT_CHANTYPES.to_string(),
+            password: String::new(),
+            nickserv_password: String::new(),
         }
-        if profile.nick.is_empty() {
-            return Some(Problem::MissingNick);
+    }
+
+    /// The profile a first run starts from (`IrcNetworkProfile::suggested`): the Freenode
+    /// host, TLS on, and `#omarchy` to autojoin. The name is the host.
+    pub fn suggested(network_id: &str) -> Self {
+        let host = "chat.freenode.net";
+        Profile {
+            name: host.to_owned(),
+            host: host.to_owned(),
+            autojoin: "#omarchy".to_owned(),
+            ..Profile::blank(network_id)
         }
-        if !single_field(&profile.nick) {
-            return Some(Problem::UnsendableIdentity);
-        }
-        if !profile.username.is_empty() || !profile.realname.is_empty() {
-            // A blank username or real name falls back to the nick, as Qt does.
-            let user = if profile.username.is_empty() {
-                profile.nick.as_str()
-            } else {
-                profile.username.as_str()
-            };
-            let real = if profile.realname.is_empty() {
-                profile.nick.as_str()
-            } else {
-                profile.realname.as_str()
-            };
-            if !single_field(user) || real.is_empty() || contains_forbidden(real) {
-                return Some(Problem::UnsendableIdentity);
-            }
-        }
-        if self.channels().iter().any(|channel| !join_field(channel)) {
-            return Some(Problem::UnsendableChannel);
-        }
-        None
     }
 
     /// The autojoin channels, with prefixes added and keys dropped.
@@ -419,24 +455,6 @@ pub fn parse_autojoin(text: &str, chantypes: &str) -> Vec<String> {
 /// which validation reports as "Port is required".
 pub fn port_number(text: &str) -> u16 {
     text.trim().parse::<u16>().unwrap_or(0)
-}
-
-/// Qt's `IrcCommandBuilder` nick and user check: non-empty, no space, CR, LF or NUL.
-fn single_field(text: &str) -> bool {
-    !text.is_empty() && !contains_forbidden(text) && !text.contains(' ')
-}
-
-fn contains_forbidden(text: &str) -> bool {
-    text.chars().any(|c| matches!(c, '\r' | '\n' | '\0'))
-}
-
-/// Qt's `isJoinField`: non-empty, no leading colon, and no whitespace, comma or NUL.
-fn join_field(text: &str) -> bool {
-    !text.is_empty()
-        && !text.starts_with(':')
-        && !text
-            .chars()
-            .any(|c| c.is_whitespace() || c == ',' || c == '\0')
 }
 
 /// The label a network shows in the rail and the sidebar (Qt `rosterDisplayName`).
@@ -522,6 +540,103 @@ pub struct ConnectState {
     /// A switch to another network was refused because the draft is dirty. Cleared
     /// by the next switch, Apply, Discard, Add or Remove.
     switch_refused: bool,
+    /// Each saved network's secret slots, as the credential store left them.
+    secrets: BTreeMap<String, SecretStates>,
+    /// The draft's password was typed since the last Apply.
+    password_edited: bool,
+    /// The draft's NickServ password was typed since the last Apply.
+    nickserv_edited: bool,
+    /// The sentence the last Apply left for each network (`persistenceMessages`).
+    persistence: BTreeMap<String, String>,
+}
+
+/// One secret slot of a network, as the sheet words it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SecretStates {
+    pub password: CredentialState,
+    pub nickserv: CredentialState,
+}
+
+/// The two secret slots a network has.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Secret {
+    Password,
+    NickServ,
+}
+
+/// One slot as the status line reads it: its noun, whether text is held for it, whether it was
+/// edited since Apply, and where the store left it.
+struct SecretSlot {
+    noun: &'static str,
+    held: bool,
+    edited: bool,
+    state: CredentialState,
+}
+
+impl SecretSlot {
+    fn idle(&self) -> bool {
+        !self.held && !self.edited
+    }
+
+    /// One slot's sentence (`IrcConnection::secretStatus`, without the durable states).
+    fn sentence(&self) -> String {
+        if self.edited && self.held && self.state == CredentialState::Missing {
+            return format!("{} changed; apply to save securely", self.noun);
+        }
+        match self.state {
+            CredentialState::Missing if self.held => {
+                format!("{} is session-only until applied", self.noun)
+            }
+            CredentialState::Missing => String::new(),
+            CredentialState::SessionOnly => {
+                format!("secure storage unavailable; {} is session-only", self.noun)
+            }
+        }
+    }
+}
+
+/// The credential line under the form: the password's sentence, joined with the NickServ one
+/// (`IrcConnection::credentialStatus`).
+fn combined_secret_status(password: &SecretSlot, nickserv: &SecretSlot) -> String {
+    let left = password.sentence();
+    let right = if nickserv.idle() { String::new() } else { nickserv.sentence() };
+    if right.is_empty() {
+        return left;
+    }
+    let shown_left = if password.idle() { String::new() } else { left };
+    if shown_left.is_empty() {
+        return right;
+    }
+    if shown_left == right {
+        return shown_left;
+    }
+    let both_session_only = password.state == CredentialState::SessionOnly
+        && nickserv.state == CredentialState::SessionOnly;
+    if password.held && nickserv.held && both_session_only {
+        return "secure storage unavailable; password and NickServ are session-only".to_owned();
+    }
+    format!("{shown_left}; {right}")
+}
+
+/// The sentence an Apply leaves under the form (`recordApplyPersistence`). A saved file with
+/// a session that started leaves none, so the sheet closes.
+fn apply_sentence(status: Status, started: bool) -> Option<String> {
+    match (status, started) {
+        (Status::Absent, _) | (Status::Written, true) => None,
+        (Status::Written, false) => Some("These settings were saved successfully.".to_owned()),
+        (failed, accepted) => {
+            let reason = match failed {
+                Status::AccessError => "The settings file could not be written.",
+                Status::FormatError => "The settings file could not be read.",
+                _ => return None,
+            };
+            Some(if accepted {
+                format!("Connected using these settings. {reason}")
+            } else {
+                reason.to_owned()
+            })
+        }
+    }
 }
 
 impl ConnectState {
@@ -538,6 +653,34 @@ impl ConnectState {
                 (id.clone(), Profile::blank(&id))
             }
         };
+        Self::assembled(saved, selected, draft)
+    }
+
+    /// The sheet for the networks the controller saved (`IrcConnection`'s start). The first
+    /// complete network is selected, or the first one. With none saved, the first run starts.
+    pub fn from_stored(stored: &[StoredProfile]) -> Self {
+        let saved: Vec<Profile> = stored.iter().map(Profile::from_stored).collect();
+        if saved.is_empty() {
+            return Self::first_run();
+        }
+        let chosen = saved
+            .iter()
+            .find(|profile| profile.problem().is_none())
+            .unwrap_or(&saved[0])
+            .clone();
+        Self::assembled(saved, chosen.network_id.clone(), chosen)
+    }
+
+    /// The sheet for a first run with nothing saved: the suggested Freenode network, as a new
+    /// draft with a fresh id, so that Apply has a network to start (`IrcConnection::suggested`).
+    pub fn first_run() -> Self {
+        let id = fresh_network_id_among(&[]);
+        let mut draft = Profile::suggested(&id);
+        draft.icon_color = Some(0);
+        Self::assembled(Vec::new(), id, draft)
+    }
+
+    fn assembled(saved: Vec<Profile>, selected: String, draft: Profile) -> Self {
         Self {
             saved,
             draft,
@@ -549,7 +692,101 @@ impl ConnectState {
             focus: None,
             focus_request: None,
             switch_refused: false,
+            secrets: BTreeMap::new(),
+            password_edited: false,
+            nickserv_edited: false,
+            persistence: BTreeMap::new(),
         }
+    }
+
+    /// Whether no saved network is complete, so the sheet stays up until one is
+    /// (`setupRequired`).
+    pub fn setup_required(&self) -> bool {
+        !self.saved.iter().any(|profile| profile.problem().is_none())
+    }
+
+    /// The text the draft's secret slot was given since the last Apply, or `None` when the slot
+    /// was not typed in. Apply hands this to the credential store.
+    pub fn secret_edit(&self, slot: Secret) -> Option<String> {
+        match slot {
+            Secret::Password if self.password_edited => Some(self.draft.password.clone()),
+            Secret::NickServ if self.nickserv_edited => Some(self.draft.nickserv_password.clone()),
+            _ => None,
+        }
+    }
+
+    /// Where the selected network's secret slots stand.
+    pub fn secret_states(&self) -> SecretStates {
+        self.secrets.get(&self.selected).copied().unwrap_or_default()
+    }
+
+    /// The credential sentence under the form for the selected network (`credentialStatus`).
+    pub fn credential_status(&self) -> String {
+        let states = self.secret_states();
+        let password = SecretSlot {
+            noun: "password",
+            held: !self.draft.password.is_empty(),
+            edited: self.password_edited,
+            state: states.password,
+        };
+        let nickserv = SecretSlot {
+            noun: "NickServ",
+            held: !self.draft.nickserv_password.is_empty(),
+            edited: self.nickserv_edited,
+            state: states.nickserv,
+        };
+        combined_secret_status(&password, &nickserv)
+    }
+
+    /// The name of an unsaved draft network, while the sheet holds it. `None` for a saved
+    /// network or an unknown id, which the controller names.
+    pub fn draft_name(&self, network_id: &str) -> Option<String> {
+        if self.is_saved(network_id) || self.draft.network_id != network_id {
+            return None;
+        }
+        let name = self.draft.resolved_name();
+        (!name.is_empty()).then_some(name)
+    }
+
+    /// The persistence sentence for the selected network (`persistenceStatus`), or empty.
+    pub fn persistence_status(&self) -> String {
+        self.persistence
+            .get(&self.selected)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Records what an Apply did after the controller saved and started the network. The
+    /// secret states and the persistence sentence are kept for the selected network. Returns
+    /// whether the sheet may close: the session started, no network is still required, and
+    /// nothing needs the user's attention (`submitConnection`).
+    pub fn record_apply(&mut self, status: Status, password: CredentialState, nickserv: CredentialState, started: bool) -> bool {
+        let network_id = self.selected.clone();
+        self.secrets.insert(
+            network_id.clone(),
+            SecretStates {
+                password,
+                nickserv,
+            },
+        );
+        match apply_sentence(status, started) {
+            Some(sentence) => {
+                self.persistence.insert(network_id, sentence);
+            }
+            None => {
+                self.persistence.remove(&network_id);
+            }
+        }
+        started && !self.setup_required() && self.persistence_status().is_empty()
+    }
+
+    /// Forgets the secret text in the draft, as the sheet does once it closes after a
+    /// successful Apply (`clearConnectionPassword`).
+    pub fn clear_secret_text(&mut self) {
+        self.draft.password.clear();
+        self.draft.nickserv_password.clear();
+        self.password_edited = false;
+        self.nickserv_edited = false;
     }
 
     /// The saved profiles in rail order. The sheet reads the rail through `rows`.
@@ -614,8 +851,14 @@ impl ConnectState {
             ConnectField::Username => self.draft.username = value,
             ConnectField::RealName => self.draft.realname = value,
             ConnectField::Autojoin => self.draft.autojoin = value,
-            ConnectField::ServerPassword => self.draft.password = value,
-            ConnectField::NickServPassword => self.draft.nickserv_password = value,
+            ConnectField::ServerPassword => {
+                self.draft.password = value;
+                self.password_edited = true;
+            }
+            ConnectField::NickServPassword => {
+                self.draft.nickserv_password = value;
+                self.nickserv_edited = true;
+            }
         }
     }
 
@@ -766,6 +1009,8 @@ impl ConnectState {
         profile.icon_color = self.first_free_icon_color();
         self.added_from = Some(self.selected.clone());
         self.draft = profile;
+        self.password_edited = false;
+        self.nickserv_edited = false;
         self.selected = id;
         self.tab = ConnectTab::Connection;
         self.remove_armed = false;
@@ -814,8 +1059,16 @@ impl ConnectState {
             Some(index) => self.saved[index] = profile.clone(),
             None => self.saved.push(profile.clone()),
         }
+        // The secret text stays in the draft while the sheet is open, as Qt keeps it until the
+        // sheet closes. The saved network never holds it.
+        let password = self.draft.password.clone();
+        let nickserv_password = self.draft.nickserv_password.clone();
         self.selected = profile.network_id.clone();
         self.draft = profile.clone();
+        self.draft.password = password;
+        self.draft.nickserv_password = nickserv_password;
+        self.password_edited = false;
+        self.nickserv_edited = false;
         self.added_from = None;
         self.remove_armed = false;
         self.rail_armed = None;
@@ -1032,6 +1285,8 @@ impl ConnectState {
         {
             self.draft = profile.clone();
             self.selected = network_id.to_string();
+            self.password_edited = false;
+            self.nickserv_edited = false;
         }
     }
 
@@ -1441,12 +1696,169 @@ mod tests {
     }
 
     #[test]
-    fn apply_clears_the_session_secrets_from_the_draft() {
+    fn apply_keeps_the_secret_text_until_the_sheet_closes() {
         let (_populated, mut state) = seeded();
         state.set_text(ConnectField::ServerPassword, "hunter2");
+        assert_eq!(state.secret_edit(Secret::Password).as_deref(), Some("hunter2"));
         state.apply().unwrap();
-        assert_eq!(state.text(ConnectField::ServerPassword), "");
+        // The saved network never holds the secret, and the sheet keeps the typed text.
+        assert_eq!(state.text(ConnectField::ServerPassword), "hunter2");
         assert_eq!(state.saved()[0].password, "");
+        assert_eq!(state.secret_edit(Secret::Password), None, "Apply took the edit");
+        state.clear_secret_text();
+        assert_eq!(state.text(ConnectField::ServerPassword), "");
+    }
+
+    // --- First run and the saved networks ----------------------------------
+
+    fn stored(id: &str, host: &str, nick: &str) -> StoredProfile {
+        StoredProfile {
+            name: host.to_owned(),
+            host: host.to_owned(),
+            nick: nick.to_owned(),
+            autojoin_channels: vec!["#omarchy".to_owned()],
+            ..StoredProfile::new(id)
+        }
+    }
+
+    #[test]
+    fn first_run_is_the_suggested_freenode_draft_and_it_is_required() {
+        let state = ConnectState::first_run();
+        assert!(state.setup_required());
+        assert_eq!(state.text(ConnectField::Name), "chat.freenode.net");
+        assert_eq!(state.text(ConnectField::Host), "chat.freenode.net");
+        assert_eq!(state.text(ConnectField::Port), "6697");
+        assert!(state.tls());
+        assert_eq!(state.text(ConnectField::Autojoin), "#omarchy");
+        assert!(!state.connect_on_startup());
+        assert_eq!(state.text(ConnectField::Nick), "", "no nick is suggested");
+        assert_eq!(state.problem(), Some(Problem::MissingNick));
+        assert_eq!(Problem::MissingNick.text(), "Nick is required");
+        assert_eq!(
+            state.draft_name(state.selected()).as_deref(),
+            Some("chat.freenode.net"),
+            "Status shows the draft's name before anything is saved"
+        );
+        assert!(state.saved().is_empty());
+        assert_eq!(state.credential_status(), "");
+        assert_eq!(state.persistence_status(), "");
+        assert_eq!(state.initial_focus(), Stop::Field(ConnectField::Nick));
+    }
+
+    #[test]
+    fn a_saved_and_started_network_ends_the_requirement_and_closes_the_sheet() {
+        let mut state = ConnectState::first_run();
+        state.set_text(ConnectField::Nick, "fred");
+        let id = state.selected().to_owned();
+        let profile = state.apply().expect("a complete draft applies");
+        assert_eq!(profile.network_id, id);
+        assert!(!state.setup_required());
+        assert!(state.record_apply(Status::Written, CredentialState::Missing, CredentialState::Missing, true));
+        assert_eq!(state.persistence_status(), "");
+        assert_eq!(state.draft_name(&id), None, "the saved network is named by the controller");
+    }
+
+    #[test]
+    fn a_saved_network_that_did_not_start_keeps_the_sheet_and_says_so() {
+        let mut state = ConnectState::first_run();
+        state.set_text(ConnectField::Nick, "fred");
+        state.apply().expect("complete");
+        let close = state.record_apply(Status::Written, CredentialState::Missing, CredentialState::Missing, false);
+        assert!(!close, "the sheet stays up with the sentence");
+        assert_eq!(state.persistence_status(), "These settings were saved successfully.");
+    }
+
+    #[test]
+    fn a_failed_settings_write_is_said_and_a_started_session_is_noted() {
+        let mut state = ConnectState::first_run();
+        state.set_text(ConnectField::Nick, "fred");
+        state.apply().expect("complete");
+        state.record_apply(Status::AccessError, CredentialState::Missing, CredentialState::Missing, false);
+        assert_eq!(state.persistence_status(), "The settings file could not be written.");
+        state.record_apply(Status::FormatError, CredentialState::Missing, CredentialState::Missing, true);
+        assert_eq!(
+            state.persistence_status(),
+            "Connected using these settings. The settings file could not be read."
+        );
+    }
+
+    #[test]
+    fn the_credential_line_says_where_a_typed_secret_lives() {
+        let mut state = ConnectState::from_stored(&[stored("network-1", "irc.libera.chat", "fred")]);
+        state.set_text(ConnectField::ServerPassword, "hunter2");
+        assert_eq!(state.credential_status(), "password changed; apply to save securely");
+        assert_eq!(state.secret_edit(Secret::Password).as_deref(), Some("hunter2"));
+        state.apply().expect("complete");
+        state.record_apply(Status::Written, CredentialState::SessionOnly, CredentialState::Missing, false);
+        assert_eq!(
+            state.credential_status(),
+            "secure storage unavailable; password is session-only"
+        );
+        state.set_text(ConnectField::NickServPassword, "nickpw");
+        let line = state.credential_status();
+        assert!(line.starts_with("secure storage unavailable; password is session-only; "), "{line}");
+        assert!(line.ends_with("NickServ changed; apply to save securely"), "{line}");
+    }
+
+    #[test]
+    fn a_cleared_secret_leaves_no_line_behind() {
+        let mut state = ConnectState::from_stored(&[stored("network-1", "irc.libera.chat", "fred")]);
+        state.set_text(ConnectField::ServerPassword, "hunter2");
+        state.apply().expect("complete");
+        state.record_apply(Status::Written, CredentialState::Missing, CredentialState::Missing, false);
+        state.clear_secret_text();
+        assert_eq!(state.credential_status(), "");
+        assert_eq!(state.text(ConnectField::ServerPassword), "");
+    }
+
+    #[test]
+    fn from_stored_selects_the_first_complete_network() {
+        let incomplete = stored("network-1", "a.example", "");
+        let complete = stored("network-2", "b.example", "fred");
+        let state = ConnectState::from_stored(&[incomplete, complete]);
+        assert_eq!(state.selected(), "network-2");
+        assert!(!state.setup_required());
+        assert_eq!(state.text(ConnectField::Host), "b.example");
+    }
+
+    #[test]
+    fn saved_networks_with_none_complete_still_require_setup() {
+        let state = ConnectState::from_stored(&[stored("network-1", "a.example", "")]);
+        assert!(state.setup_required());
+        assert_eq!(state.selected(), "network-1");
+    }
+
+    #[test]
+    fn saving_keeps_the_fields_the_sheet_does_not_edit() {
+        let existing = StoredProfile {
+            account: "fred-acct".to_owned(),
+            bouncer_network: "bnc".to_owned(),
+            avatar_url: "https://omairc.app/omairc128.png".to_owned(),
+            autojoin_channels: vec!["#lab".to_owned(), "#omarchy".to_owned()],
+            autojoin_keys: BTreeMap::from([
+                ("#lab".to_owned(), "pw".to_owned()),
+                ("#gone".to_owned(), "old".to_owned()),
+            ]),
+            ..stored("network-1", "irc.libera.chat", "fred")
+        };
+        let saved = Profile::from_stored(&existing).to_stored(Some(&existing));
+        assert_eq!(saved.account, "fred-acct");
+        assert_eq!(saved.bouncer_network, "bnc");
+        assert_eq!(saved.avatar_url, "https://omairc.app/omairc128.png");
+        assert_eq!(saved.autojoin_channels, ["#lab", "#omarchy"]);
+        assert_eq!(
+            saved.autojoin_keys,
+            BTreeMap::from([("#lab".to_owned(), "pw".to_owned())]),
+            "a key stays only while its channel is in the list"
+        );
+    }
+
+    #[test]
+    fn the_stored_port_round_trips_and_a_bad_port_is_a_problem() {
+        let mut state = ConnectState::from_stored(&[stored("network-1", "irc.libera.chat", "fred")]);
+        assert_eq!(state.text(ConnectField::Port), "6697");
+        state.set_text(ConnectField::Port, "abc");
+        assert_eq!(state.problem(), Some(Problem::InvalidPort));
     }
 
     #[test]

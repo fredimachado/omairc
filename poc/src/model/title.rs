@@ -16,7 +16,7 @@ use crate::controller::controller::Controller;
 pub enum TitleView<'a> {
     /// A conversation, or `None` when nothing is selected.
     Conversation(Option<&'a ConversationRef>),
-    /// The Status pane of this network.
+    /// The Status pane, named by its network's display name (empty when it has none).
     Status(&'a str),
 }
 
@@ -55,12 +55,11 @@ pub fn window_title(controller: &Controller, view: TitleView<'_>) -> String {
                 None => "Omairc".to_string(),
             }
         }
-        TitleView::Status(network_id) => {
-            let name = controller.network_name(network_id);
+        TitleView::Status(name) => {
             if name.is_empty() {
                 "Omairc".to_string()
             } else {
-                status_title(&name)
+                status_title(name)
             }
         }
     }
@@ -102,12 +101,14 @@ mod tests {
             window_title(&controller, TitleView::Conversation(Some(&omarchy("#ricing")))),
             "#ricing - Omairc"
         );
+        let omarchy = controller.network_name("omarchy");
         assert_eq!(
-            window_title(&controller, TitleView::Status("omarchy")),
+            window_title(&controller, TitleView::Status(&omarchy)),
             "irc.example · fred Status"
         );
         assert_eq!(window_title(&controller, TitleView::Conversation(None)), "Omairc");
-        assert_eq!(window_title(&controller, TitleView::Status("nope")), "Omairc");
+        let nowhere = controller.network_name("nope");
+        assert_eq!(window_title(&controller, TitleView::Status(&nowhere)), "Omairc");
     }
 
     #[test]

@@ -7,10 +7,8 @@
 //! checks the line's content on return, so a row inserted or hidden above it
 //! (a `/pref joins` change, say) does not move the view to a different line.
 
-use std::collections::HashMap;
-
-use super::ids::ConversationRef;
 use super::transcript::{Row, RowKind, ScrollAnchor};
+use crate::storage::scrollplace::ScrollPlace as StoredPlace;
 
 /// What a transcript looked like when it was left.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -106,20 +104,64 @@ pub fn resume(place: Option<&SavedPlace>, rows: &[Row]) -> Resume {
     }
 }
 
-/// The saved places, one per conversation. Status is never kept: it always
-/// opens at the end, so the shell does not store it here.
-#[derive(Debug, Default)]
-pub struct ScrollPlaces {
-    places: HashMap<ConversationRef, SavedPlace>,
+/// The Qt name of a row kind, as the saved place's `kind` field holds it.
+fn kind_name(kind: RowKind) -> &'static str {
+    match kind {
+        RowKind::Message => "message",
+        RowKind::Event => "event",
+        RowKind::DaySeparator => "day",
+        RowKind::Status => "status",
+        RowKind::Whois => "whois",
+        RowKind::UnreadMark => "unread",
+    }
 }
 
-impl ScrollPlaces {
-    pub fn remember(&mut self, target: ConversationRef, place: SavedPlace) {
-        self.places.insert(target, place);
+fn kind_from_name(name: &str) -> Option<RowKind> {
+    Some(match name {
+        "message" => RowKind::Message,
+        "event" => RowKind::Event,
+        "status" => RowKind::Status,
+        "whois" => RowKind::Whois,
+        _ => return None,
+    })
+}
+
+impl SavedPlace {
+    /// The place as the settings file keeps it. A line is stored by its content, which is
+    /// what `resume` matches on after a restart. Its pixel offset is not kept.
+    pub fn to_stored(&self) -> StoredPlace {
+        match self {
+            SavedPlace::End => StoredPlace {
+                follow_end: true,
+                ..StoredPlace::default()
+            },
+            SavedPlace::Line { line, .. } => StoredPlace {
+                kind: kind_name(line.kind).to_owned(),
+                author: line.author.clone().unwrap_or_default(),
+                body: line.text.clone(),
+                shown_time: line.time.clone().unwrap_or_default(),
+                ..StoredPlace::default()
+            },
+        }
     }
 
-    pub fn get(&self, target: &ConversationRef) -> Option<&SavedPlace> {
-        self.places.get(target)
+    /// The place a stored one describes. A line whose kind this build does not draw is not
+    /// restored, and the conversation opens where it would with no place.
+    pub fn from_stored(place: &StoredPlace) -> Option<Self> {
+        if place.follow_end {
+            return Some(SavedPlace::End);
+        }
+        let kind = kind_from_name(&place.kind)?;
+        Some(SavedPlace::Line {
+            row: 0,
+            offset_px: 0,
+            line: LineKey {
+                kind,
+                author: (!place.author.is_empty()).then(|| place.author.clone()),
+                time: (!place.shown_time.is_empty()).then(|| place.shown_time.clone()),
+                text: place.body.clone(),
+            },
+        })
     }
 }
 
@@ -229,22 +271,29 @@ mod tests {
     }
 
     #[test]
-    fn places_are_kept_per_conversation() {
-        let mut places = ScrollPlaces::default();
-        let anna = ConversationRef::new("omarchy", "anna");
-        let dax = ConversationRef::new("omarchy", "dax");
-        places.remember(anna.clone(), SavedPlace::End);
-        assert_eq!(places.get(&anna), Some(&SavedPlace::End));
-        assert_eq!(places.get(&dax), None);
+    fn a_line_place_round_trips_by_its_content() {
+        let rows = rows(4);
+        let place = SavedPlace::from_anchor(anchor(2, 5), &rows);
+        let stored = place.to_stored();
+        assert_eq!(stored.kind, "message");
+        let restored = SavedPlace::from_stored(&stored).expect("a message restores");
+        // The restored line has no row of its own, so it is found by its content.
+        assert_eq!(resume(Some(&restored), &rows), Resume::Line { row: 2, offset_px: 0 });
     }
 
     #[test]
-    fn a_later_save_replaces_the_earlier_place() {
-        let mut places = ScrollPlaces::default();
-        let anna = ConversationRef::new("omarchy", "anna");
-        places.remember(anna.clone(), SavedPlace::End);
-        let rows = rows(4);
-        places.remember(anna.clone(), SavedPlace::from_anchor(anchor(1, 0), &rows));
-        assert!(matches!(places.get(&anna), Some(SavedPlace::Line { row: 1, .. })));
+    fn the_end_round_trips_as_follow_end() {
+        let stored = SavedPlace::End.to_stored();
+        assert!(stored.follow_end);
+        assert_eq!(SavedPlace::from_stored(&stored), Some(SavedPlace::End));
+    }
+
+    #[test]
+    fn an_unknown_kind_is_not_restored() {
+        let stored = StoredPlace {
+            kind: "day".to_owned(),
+            ..StoredPlace::default()
+        };
+        assert_eq!(SavedPlace::from_stored(&stored), None);
     }
 }
