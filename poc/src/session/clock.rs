@@ -23,6 +23,13 @@ pub trait Clock {
     /// Schedules `callback` to run once `delay` has elapsed. The returned handle
     /// cancels the callback when stopped.
     fn after(&self, delay: Duration, callback: Box<dyn FnOnce()>) -> Box<dyn ClockTimer>;
+
+    /// Runs the timers that are due now and returns how many ran. The UI loop calls
+    /// it on each tick. The real clock fires from here; the fake clock fires only
+    /// on `advance`, so its default runs nothing.
+    fn fire_due(&self) -> usize {
+        0
+    }
 }
 
 /// A one-shot timer handle, the Rust shape of Go `Timer`.
@@ -118,6 +125,10 @@ impl RealClock {
 impl Clock for RealClock {
     fn now(&self) -> DateTime<Utc> {
         Utc::now()
+    }
+
+    fn fire_due(&self) -> usize {
+        RealClock::fire_due(self)
     }
 
     fn after(&self, delay: Duration, callback: Box<dyn FnOnce()>) -> Box<dyn ClockTimer> {
