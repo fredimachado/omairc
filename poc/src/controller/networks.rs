@@ -107,6 +107,7 @@ impl Controller {
         self.forget_channel_list(network_id);
         self.scroll_places.forget(network_id);
         self.reducer.forget_network(network_id);
+        self.cancelled_joins.retain(|key| key.network_id != network_id);
         self.console.clear(network_id);
         self.last_errors.remove(network_id);
         self.capabilities.remove(network_id);

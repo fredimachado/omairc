@@ -130,6 +130,11 @@ pub(super) struct ReplyWatches {
 
 #[cfg(test)]
 impl ReplyWatches {
+    /// How many own `/status` or `/avatar` writes are awaiting their reply (a test seam).
+    pub(super) fn own_metadata_count(&self) -> usize {
+        self.own_metadata.values().map(BTreeMap::len).sum()
+    }
+
     /// How many labeled watches are armed (a test seam).
     pub(super) fn labeled_count(&self) -> usize {
         self.labeled.len()

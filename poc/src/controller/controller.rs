@@ -280,11 +280,17 @@ impl Controller {
     /// Sends QUIT and stops `network_id`'s session (`Disconnect`). Returns false when
     /// the network has no session or the session was already idle.
     pub fn disconnect(&mut self, network_id: &str) -> bool {
+        self.disconnect_with_reason(network_id, "")
+    }
+
+    /// Sends QUIT with `reason` and stops `network_id`'s session. `/disconnect <reason>` and
+    /// `/quit <reason>` run through here, as does `disconnect`.
+    pub(super) fn disconnect_with_reason(&mut self, network_id: &str, reason: &str) -> bool {
         self.pump();
         let Some(session) = self.manager.find(network_id) else {
             return false;
         };
-        if !session.quit("") {
+        if !session.quit(reason) {
             return false;
         }
         self.queue(vec![ViewNotify::Status]);
@@ -802,6 +808,7 @@ impl Controller {
         self.monitor_forget_presence(network.network_id);
         self.forget_channel_list(network.network_id);
         self.forget_replies(network.network_id);
+        self.cancelled_joins.retain(|key| key.network_id != network.network_id);
         let transport = Rc::new(LoopbackTransport::new());
         let session = match self.manager.create(
             session_config(network),

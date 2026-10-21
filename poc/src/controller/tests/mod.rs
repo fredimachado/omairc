@@ -5,11 +5,14 @@
 
 mod autoaway;
 mod channellist;
+mod commands;
 mod composer;
 mod console;
 mod fixture;
 mod inbox;
 mod lifecycle;
+mod matrices;
+mod metadata;
 mod monitor;
 mod networks;
 mod parity;

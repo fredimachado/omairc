@@ -343,11 +343,8 @@ impl Controller {
             Command::Invite(words) => return self.dispatch_invite(&active, &joined(words), surface),
             Command::Nick(nick) => !nick.is_empty() && active.change_nick(nick),
             Command::Disconnect(reason) => {
-                let quit = active.quit(reason);
-                if quit {
-                    self.queue(vec![ViewNotify::Status]);
-                }
-                quit
+                let network = active.network_id();
+                self.disconnect_with_reason(&network, reason)
             }
             Command::Away(reason) => {
                 let sent = active.set_away(reason);
@@ -793,7 +790,8 @@ impl Controller {
         let Some(key) = self.selected.clone() else {
             return CommandOutcome::WrongScope;
         };
-        self.clear_conversation(&key.network_id, &key.normalized_target);
+        let target = self.selected_target().to_owned();
+        self.clear_conversation(&key.network_id, &target);
         CommandOutcome::Sent
     }
 
