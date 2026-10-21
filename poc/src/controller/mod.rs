@@ -35,3 +35,6 @@ pub mod snapshots;
 pub mod stores;
 pub mod transports;
 
+#[cfg(test)]
+mod tests;
+
