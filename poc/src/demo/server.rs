@@ -153,6 +153,38 @@ impl DemoServer {
         Ok(())
     }
 
+    /// Starts a seeded network again on a fresh loopback. It attaches the session,
+    /// plays the network's registration burst, and installs the auto-answer hook,
+    /// so the restarted session registers and answers like the first one did. The
+    /// controller calls it after a disconnect (`Start`).
+    pub fn restart(
+        &self,
+        session: &Session,
+        transport: &Rc<LoopbackTransport>,
+    ) -> Result<(), DemoError> {
+        self.attach(session, transport)?;
+        let network_id = session.network_id();
+        let network =
+            world_for(&network_id).ok_or_else(|| DemoError::UnknownNetwork(network_id.clone()))?;
+        self.inject(
+            network.network_id,
+            &bytes(&registration_lines(
+                network.nick,
+                network.welcome,
+                network.icon_url,
+            )),
+        );
+        let peer = self
+            .peers
+            .borrow()
+            .iter()
+            .find(|peer| peer.network.network_id == network.network_id)
+            .cloned()
+            .ok_or(DemoError::NotAttached(network_id))?;
+        self.install_auto_echo(&peer);
+        Ok(())
+    }
+
     /// The loopback attached for `network_id`, or `None`.
     pub fn transport(&self, network_id: &str) -> Option<Rc<LoopbackTransport>> {
         self.peers
