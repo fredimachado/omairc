@@ -57,16 +57,16 @@ impl Core {
         if token.len() < 2 {
             return;
         }
-        let (sign, rest) = token.split_at(1);
-        if sign != "+" && sign != "-" {
+        // The sign is one character; a multi-byte first character is not a sign.
+        let Some(sign) = token.chars().next().filter(|sign| *sign == '+' || *sign == '-') else {
             return;
-        }
-        let reference = rest.to_owned();
+        };
+        let reference = token[sign.len_utf8()..].to_owned();
         if reference.is_empty() {
             return;
         }
 
-        if sign == "-" {
+        if sign == '-' {
             self.close_batch(&reference);
             return;
         }

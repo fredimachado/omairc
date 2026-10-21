@@ -4,6 +4,7 @@ mod batch;
 mod core;
 mod fixture;
 mod history;
+mod hostile;
 mod labeled;
 mod ledger;
 mod lifecycle;
