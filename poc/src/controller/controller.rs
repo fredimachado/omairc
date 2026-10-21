@@ -44,6 +44,7 @@ use crate::session::session::Session;
 use crate::session::sessionmanager::{SessionManager, SessionManagerError};
 
 use super::autoawayruntime::AutoawayState;
+use super::channellist::{ChannelListRequests, ChannelListView};
 use super::console::StatusConsole;
 use super::monitorcoordinator::MonitorState;
 use super::snapshots::state_text;
@@ -113,6 +114,10 @@ pub struct Controller {
     notifications: Vec<ViewNotify>,
     /// The auto-away timers, settings and away sets (`autoawayruntime.rs`).
     pub(super) autoaway: AutoawayState,
+    /// The `/list` requests, their rows and idle timers (`channellist.rs`), and the
+    /// overlay that shows them.
+    pub(super) channel_lists: ChannelListRequests,
+    pub(super) channel_view: ChannelListView,
     /// The `/ignore` list. It is shared with the inbound filter each session holds.
     pub(super) ignores: Rc<RefCell<IgnoreStore>>,
     pub(super) mutes: MuteStore,
@@ -137,6 +142,7 @@ impl Controller {
         notifier: Box<dyn Notifier>,
         transports: Box<dyn TransportFactory>,
     ) -> Self {
+        let channel_lists = ChannelListRequests::new(Rc::clone(&clock));
         Self {
             clock,
             notifier,
@@ -157,6 +163,8 @@ impl Controller {
             network_collapsed: BTreeSet::new(),
             notifications: Vec::new(),
             autoaway: AutoawayState::default(),
+            channel_lists,
+            channel_view: ChannelListView::default(),
             ignores: Rc::new(RefCell::new(IgnoreStore::in_memory())),
             mutes: MuteStore::in_memory(),
             highlights: HighlightStore::in_memory(),
@@ -186,6 +194,9 @@ impl Controller {
         loop {
             let mut drained = false;
             while self.run_autoaway_expiry() {
+                drained = true;
+            }
+            while self.run_channel_list_expiry() {
                 drained = true;
             }
             for network_id in self.manager.network_ids() {
@@ -487,6 +498,9 @@ impl Controller {
             }
             _ => {}
         }
+        if self.handle_channel_list_message(network_id, message) {
+            return;
+        }
         if message.command == "376" || message.command == "422" {
             let mut features = self.reducer.server_features(network_id).clone();
             if !features.case_mapping_known() {
@@ -708,6 +722,7 @@ impl Controller {
         self.manager.discard(network.network_id);
         self.autoaway_forget_network(network.network_id);
         self.monitor_forget_presence(network.network_id);
+        self.forget_channel_list(network.network_id);
         let transport = Rc::new(LoopbackTransport::new());
         let session = match self.manager.create(
             session_config(network),

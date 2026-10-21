@@ -1,15 +1,12 @@
 //! The `/list` channel sheet's rows: the controller's answer to `LIST mask`, ranked by
 //! the sheet's query, and the status line of `src/qml/ChannelListSheet.qml`. The
-//! answer itself is `Controller::channel_listing` (`controller/channellist`), and this
-//! module only ranks and shows it. Ports `ChannelListModel::rowLess` (most users first,
-//! then name).
-
-use std::collections::HashMap;
+//! answer is the overlay's rows (`Controller::channel_list`, fed by the wire in
+//! `controller/channellist`), and this module only ranks and shows it. Ports
+//! `ChannelListModel::rowLess` (most users first, then name).
 
 use super::format::{format_irc, FormattedText, TextStyle};
 use super::fuzzy::rank;
 use crate::controller::channellist::ListedChannel;
-use crate::controller::controller::Controller;
 
 /// A name hit outranks a topic hit: the name weighs twice the topic.
 const NAME_WEIGHT: u32 = 2;
@@ -26,30 +23,6 @@ pub struct ListRow {
     pub name_indices: Vec<usize>,
     /// Byte offsets into `topic.plain` of the characters the query matched.
     pub topic_indices: Vec<usize>,
-}
-
-/// The answers the sheet has shown, kept per network and mask. A mask matches an
-/// earlier one ignoring case and surrounding spaces, as Qt's
-/// `IrcChannelListRequest::sameMask` does. A repeat `/list` reuses the rows.
-#[derive(Debug, Default)]
-pub struct ChannelListCache {
-    answers: HashMap<(String, String), Vec<ListedChannel>>,
-}
-
-impl ChannelListCache {
-    /// The answer for `mask` on `network_id`. The first ask asks the controller. A
-    /// repeat returns the rows already held, even if the network has moved on.
-    pub fn listing(
-        &mut self,
-        controller: &Controller,
-        network_id: &str,
-        mask: &str,
-    ) -> &[ListedChannel] {
-        let key = (network_id.to_string(), fold(mask.trim()));
-        self.answers
-            .entry(key)
-            .or_insert_with(|| controller.channel_listing(network_id, mask))
-    }
 }
 
 /// The sheet's rows for `query`. `listing` is in listing order. The query ranks it
@@ -114,11 +87,6 @@ pub fn listing_status(listed: usize, shown: usize, query: &str) -> String {
     format!("{listed} channels")
 }
 
-/// Lower-cases for comparison, as Qt's case-insensitive compares do.
-fn fold(text: &str) -> String {
-    text.to_lowercase()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,12 +133,4 @@ mod tests {
         assert_eq!(listing_status(3, 3, ""), "3 channels");
     }
 
-    #[test]
-    fn the_cache_answers_a_repeat_mask_from_its_first_answer() {
-        let controller = Controller::seeded_for_tests();
-        let mut cache = ChannelListCache::default();
-        let first = cache.listing(&controller, "omarchy", "*").len();
-        assert!(first > 0);
-        assert_eq!(cache.listing(&controller, "omarchy", "  *  ").len(), first);
-    }
 }

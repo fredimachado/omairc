@@ -24,7 +24,6 @@ use gpui::{
 
 use crate::controller::controller::Controller;
 use crate::irc::viewnotify::ViewNotify;
-use crate::model::channel_list::ChannelListCache;
 use crate::model::composer::ComposerState;
 use crate::model::connect::{ConnectState, Stop};
 use crate::model::find::Find;
@@ -96,8 +95,6 @@ pub struct Shell {
     pub connect_focus: FocusHandle,
     /// The Connect sheet's text fields, focus handles and scroll handles.
     pub connect_ui: ConnectControls,
-    /// The `/list` answers already shown, per network and mask, so a repeat reuses them.
-    pub channel_lists: ChannelListCache,
     /// Where each conversation's transcript was left, so returning opens there.
     pub scroll_places: ScrollPlaces,
     /// Whether the window is the active one. While it is not, a line that arrives in the
@@ -191,7 +188,6 @@ impl Shell {
             connect_open: false,
             connect_focus: cx.focus_handle(),
             connect_ui,
-            channel_lists: ChannelListCache::default(),
             scroll_places: ScrollPlaces::default(),
             window_active: true,
             activation_watched: false,

@@ -197,14 +197,10 @@ impl Shell {
     pub fn present_channel_list(
         &mut self,
         network_id: String,
-        mask: &str,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let listing = self
-            .channel_lists
-            .listing(&self.controller, &network_id, mask)
-            .to_vec();
+        let listing = self.controller.channel_list().rows.clone();
         let sheet = cx.new(|cx| FilterSheet::new(ChannelListSource { listing }, cx));
         let subscriptions = vec![
             track(cx, &sheet),
@@ -214,10 +210,14 @@ impl Shell {
                 move |shell: &mut Shell, _, event: &SheetEvent<ListRow>, window, cx| match event {
                     SheetEvent::Activated(row) => {
                         let name = row.name.clone();
+                        shell.controller.dismiss_channel_list();
                         shell.close_modal(window, cx);
                         shell.join_listed_channel(&network_id, &name, cx);
                     }
-                    SheetEvent::Dismissed => shell.close_modal(window, cx),
+                    SheetEvent::Dismissed => {
+                        shell.controller.dismiss_channel_list();
+                        shell.close_modal(window, cx);
+                    }
                     SheetEvent::Highlighted(_) => {}
                 },
             ),
