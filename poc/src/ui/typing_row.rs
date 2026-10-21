@@ -28,7 +28,8 @@ pub fn render_typing_row(
 ) -> impl IntoElement {
     let facts = peers.facts.get(nick);
     let bot = facts.is_some_and(|facts| facts.bot);
-    let photo = photo_for(facts.and_then(|facts| facts.avatar.as_deref()), peers.avatars);
+    let photo = photo_for(facts.and_then(|facts| facts.avatar.as_deref()), peers.avatars)
+        .and_then(|reference| peers.photos.get(reference));
     let left_pad = scaled_px(style, 24.);
     let top_pad = scaled_px(style, 9.);
     div()

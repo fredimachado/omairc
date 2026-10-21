@@ -2,7 +2,7 @@ use gpui::{div, prelude::*, MouseButton};
 
 use crate::model::presence::{photo_for, SelfPresence};
 use crate::model::{mix_colors, sidebar::NetworkHeader, Color, Style};
-use crate::ui::widgets::avatar::avatar_disc;
+use crate::ui::widgets::avatar::{avatar_disc, AvatarPhotos};
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 use crate::version::version;
@@ -21,12 +21,14 @@ pub fn identity_footer(
     on_about: Handler<()>,
     update_ready: bool,
     avatars: bool,
+    photos: &AvatarPhotos,
     style: &Style,
 ) -> impl IntoElement {
     let ink = style.ink_color();
     let muted = to_gpui(style.muted_color());
     let amount = if style.dark_mode() { 0.025 } else { 0.018 };
-    let photo = photo_for(network.avatar.as_deref(), avatars);
+    let photo = photo_for(network.avatar.as_deref(), avatars)
+        .and_then(|reference| photos.get(reference));
     let mark = to_gpui(style.presence_color(presence.mark()));
 
     div()

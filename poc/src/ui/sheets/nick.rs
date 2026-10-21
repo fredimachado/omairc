@@ -9,7 +9,7 @@ use crate::model::presence::photo_for;
 use crate::irc::reducer::MemberView;
 use crate::model::Style;
 use crate::ui::sheets::filter_sheet::{match_text, FilterSource};
-use crate::ui::widgets::avatar::avatar_with_presence;
+use crate::ui::widgets::avatar::{avatar_with_presence, AvatarPhotos};
 use crate::ui::widgets::bot_mark::bot_mark;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
@@ -23,6 +23,8 @@ pub struct NickSource {
     pub self_nick: String,
     /// The `avatars` preference when the sheet opened.
     pub avatars: bool,
+    /// The photos the frame draws, by avatar reference. The shell keeps them current.
+    pub photos: AvatarPhotos,
 }
 
 impl FilterSource for NickSource {
@@ -53,7 +55,7 @@ impl FilterSource for NickSource {
     }
 
     fn render_row(&self, item: &NickTarget, selected: bool, style: &Style) -> AnyElement {
-        nick_row(style, item, &self.self_nick, selected, self.avatars).into_any_element()
+        nick_row(style, item, &self.self_nick, selected, self.avatars, &self.photos).into_any_element()
     }
 }
 
@@ -67,12 +69,14 @@ fn nick_row(
     self_nick: &str,
     selected: bool,
     avatars: bool,
+    photos: &AvatarPhotos,
 ) -> impl IntoElement {
     let member: &MemberView = &target.member;
     let is_self = member.nick == self_nick;
     let away = member.away.is_some();
     let presence = if away { "away" } else { "online" };
-    let photo = photo_for((!member.avatar.is_empty()).then_some(member.avatar.as_str()), avatars);
+    let photo = photo_for((!member.avatar.is_empty()).then_some(member.avatar.as_str()), avatars)
+        .and_then(|reference| photos.get(reference));
     let glyph = avatar_with_presence(
         style,
         &member.nick,

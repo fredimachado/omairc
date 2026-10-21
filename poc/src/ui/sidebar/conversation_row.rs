@@ -1,4 +1,4 @@
-use gpui::{div, prelude::*, MouseButton};
+use gpui::{div, prelude::*, ImageSource, MouseButton};
 
 use crate::controller::snapshots::ConversationRow;
 use crate::model::{ConversationRef, Style};
@@ -12,11 +12,11 @@ use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 /// What a row shows beyond its conversation: whether it is selected, the typing
 /// dots' phase, and for a DM its peer's photo and bot flag. A channel passes no
 /// photo and no bot.
-pub struct RowLook<'a> {
+pub struct RowLook {
     pub selected: bool,
     pub typing_phase: u8,
-    /// The peer's bundled photo, when the `avatars` preference allows it.
-    pub photo: Option<&'a str>,
+    /// The peer's photo, when the `avatars` preference allows it and its image is ready.
+    pub photo: Option<ImageSource>,
     /// The peer is a bot, so its row gets the bot mark.
     pub bot: bool,
 }

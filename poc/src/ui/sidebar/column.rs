@@ -8,6 +8,7 @@ use crate::ui::scrollbar::{div_vertical_scrollbar, ScrollbarDragCell};
 use crate::ui::sidebar::conversation_row::{conversation_row, RowLook};
 use crate::ui::sidebar::identity_footer::identity_footer;
 use crate::ui::sidebar::network_section::network_header;
+use crate::ui::widgets::avatar::AvatarPhotos;
 use crate::ui::widgets::section_heading::{channels_heading, directs_heading};
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui};
@@ -31,6 +32,8 @@ pub struct SidebarData<'a> {
     pub typing_phase: u8,
     /// The `avatars` preference: off, rows and the footer show initials.
     pub avatars: bool,
+    /// The photos this frame draws, by avatar reference (`ui::shell::avatars`).
+    pub photos: &'a AvatarPhotos,
     /// A network icon or name click: opens that network's Status.
     pub on_status: Handler<String>,
     /// The `edit` label on a network: opens the Connect sheet on that network.
@@ -105,6 +108,7 @@ pub fn render_sidebar<V: 'static>(
             data.on_about.clone(),
             data.update_ready,
             data.avatars,
+            data.photos,
             style,
         ))
 }
@@ -163,7 +167,8 @@ fn conversation_groups(
         let look = RowLook {
             selected,
             typing_phase: data.typing_phase,
-            photo: photo_for(Some(conv.avatar.as_str()).filter(|a| !a.is_empty()), data.avatars),
+            photo: photo_for(Some(conv.avatar.as_str()).filter(|a| !a.is_empty()), data.avatars)
+                .and_then(|reference| data.photos.get(reference)),
             bot: conv.bot,
         };
         conversation_row(target, conv, look, style, on_select.clone(), on_close.clone())

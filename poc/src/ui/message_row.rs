@@ -14,7 +14,7 @@ use crate::model::{mix_colors, Row, RowKind, Style};
 
 use crate::ui::format_ui::{gpui_text_style, irc_runs_to_gpui, link_underline_run};
 use crate::ui::status_row::render_status_row;
-use crate::ui::widgets::avatar::avatar_disc;
+use crate::ui::widgets::avatar::{avatar_disc, AvatarPhotos};
 use crate::ui::widgets::bot_mark::bot_mark;
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
@@ -27,11 +27,12 @@ pub struct RowCallbacks {
 }
 
 /// What a row reads about the nicks it names: each nick's facts on the network,
-/// and whether peer photos show (the `avatars` preference).
+/// whether peer photos show (the `avatars` preference), and the photos the frame draws.
 #[derive(Clone, Default)]
 pub struct RowPeers {
     pub facts: HashMap<String, NickFacts>,
     pub avatars: bool,
+    pub photos: AvatarPhotos,
 }
 
 /// Makes an author name or avatar open that nick's DM. The click stops here so
@@ -247,7 +248,8 @@ fn render_message_row(
         format!(" · {realname}")
     };
     let bot = facts.is_some_and(|facts| facts.bot);
-    let photo = photo_for(facts.and_then(|facts| facts.avatar.as_deref()), peers.avatars);
+    let photo = photo_for(facts.and_then(|facts| facts.avatar.as_deref()), peers.avatars)
+        .and_then(|reference| peers.photos.get(reference));
 
     let left_pad = scaled_px(style, 24.);
     let top_pad = scaled_px(style, 9.);
