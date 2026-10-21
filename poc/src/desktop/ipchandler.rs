@@ -232,6 +232,7 @@ pub fn serve(shell: Entity<Shell>, window: AnyWindowHandle, server: IpcServer, c
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
     use std::rc::Rc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::thread;
@@ -261,13 +262,22 @@ mod tests {
         Controller::new_demo_with(clock, Box::new(NullNotifier)).expect("the demo starts")
     }
 
-    fn scratch_handler(tag: &str) -> CliHandler {
+    /// A folder under the temp directory for one test's cursors, removed when the test ends.
+    struct Scratch(PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn scratch_handler(tag: &str) -> (CliHandler, Scratch) {
         let root = std::env::temp_dir().join(format!(
             "omairc-poc-loop-{tag}-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::SeqCst)
         ));
-        CliHandler::new(CursorStore::at(root))
+        (CliHandler::new(CursorStore::at(root.clone())), Scratch(root))
     }
 
     /// Runs `args` through the real CLI client against `endpoint`, while this thread plays the UI loop
@@ -322,7 +332,7 @@ mod tests {
         let endpoint = endpoint();
         let server = primary(&endpoint);
         let mut controller = demo();
-        let handler = scratch_handler("connections");
+        let (handler, _scratch) = scratch_handler("connections");
         let (code, out, _) = run_cli(&server, &mut controller, &handler, &endpoint, &["connections"]);
         assert_eq!(code, 0);
         let body = parsed(&out);
@@ -345,7 +355,7 @@ mod tests {
         let endpoint = endpoint();
         let server = primary(&endpoint);
         let mut controller = demo();
-        let handler = scratch_handler("status");
+        let (handler, _scratch) = scratch_handler("status");
         let (code, out, _) = run_cli(&server, &mut controller, &handler, &endpoint, &["status", "--network", "oftc"]);
         assert_eq!(code, 0);
         assert_eq!(parsed(&out)["status"]["id"], "oftc");
@@ -366,7 +376,7 @@ mod tests {
         let endpoint = endpoint();
         let server = primary(&endpoint);
         let mut controller = demo();
-        let handler = scratch_handler("names");
+        let (handler, _scratch) = scratch_handler("names");
         let (code, out, _) = run_cli(
             &server,
             &mut controller,
@@ -405,7 +415,7 @@ mod tests {
         let endpoint = endpoint();
         let server = primary(&endpoint);
         let mut controller = demo();
-        let handler = scratch_handler("read");
+        let (handler, _scratch) = scratch_handler("read");
         let selected_before = controller.selected_target().to_owned();
         let (code, out, _) = run_cli(
             &server,
@@ -441,7 +451,7 @@ mod tests {
         let endpoint = endpoint();
         let server = primary(&endpoint);
         let mut controller = demo();
-        let handler = scratch_handler("unread");
+        let (handler, _scratch) = scratch_handler("unread");
         let first = run_cli(
             &server,
             &mut controller,
@@ -469,7 +479,7 @@ mod tests {
         let endpoint = endpoint();
         let server = primary(&endpoint);
         let mut controller = demo();
-        let handler = scratch_handler("send");
+        let (handler, _scratch) = scratch_handler("send");
         let selected_before = controller.selected_target().to_owned();
         let (code, out, err) = run_cli(
             &server,
@@ -498,7 +508,7 @@ mod tests {
         let endpoint = endpoint();
         let server = primary(&endpoint);
         let mut controller = demo();
-        let handler = scratch_handler("refused");
+        let (handler, _scratch) = scratch_handler("refused");
         let (code, out, _) = run_cli(
             &server,
             &mut controller,
@@ -515,7 +525,7 @@ mod tests {
         let endpoint = endpoint();
         let server = primary(&endpoint);
         let mut controller = demo();
-        let handler = scratch_handler("secret");
+        let (handler, _scratch) = scratch_handler("secret");
         let (code, out, _) = run_cli(
             &server,
             &mut controller,
@@ -543,7 +553,7 @@ mod tests {
         let endpoint = endpoint();
         let server = primary(&endpoint);
         let mut controller = demo();
-        let handler = scratch_handler("conversations");
+        let (handler, _scratch) = scratch_handler("conversations");
         let (code, out, _) = run_cli(
             &server,
             &mut controller,
@@ -561,7 +571,7 @@ mod tests {
     #[test]
     fn raise_answers_ok_and_asks_for_the_window() {
         let mut controller = demo();
-        let handler = scratch_handler("raise");
+        let (handler, _scratch) = scratch_handler("raise");
         let reply = handler.handle_line(&mut controller, r#"{"cmd":"raise"}"#);
         assert!(reply.raise);
         assert_eq!(reply.line, r#"{"ok":true}"#);
@@ -572,7 +582,7 @@ mod tests {
     #[test]
     fn a_bad_request_answers_with_its_error() {
         let mut controller = demo();
-        let handler = scratch_handler("bad");
+        let (handler, _scratch) = scratch_handler("bad");
         let reply = handler.handle_line(&mut controller, r#"{"cmd":"read","last":101}"#);
         assert!(!reply.raise);
         assert_eq!(reply.line, r#"{"error":"last must be between 1 and 100","ok":false}"#);
@@ -582,7 +592,7 @@ mod tests {
 
     #[test]
     fn cursors_from_the_handler_are_the_ones_the_store_writes() {
-        let handler = scratch_handler("store");
+        let (handler, _scratch) = scratch_handler("store");
         let saved = CliCursor {
             timestamp: chrono::Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap(),
             msgid: "m".to_owned(),
