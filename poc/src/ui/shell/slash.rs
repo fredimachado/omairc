@@ -12,8 +12,8 @@ use gpui::{App, Context, Window};
 
 use crate::model::chords::Chord;
 use crate::model::slash::{
-    help_text, parse, pref_reply, version_reply_text, version_request, Command, PrefRequest,
-    Rejection, Selected, Surface,
+    command_outcome_text, ctcp_target, help_text, parse, pref_reply, version_reply_text, Command,
+    CommandOutcome, PrefRequest, SelectedView, Surface, Words,
 };
 use crate::ui::shell::Shell;
 
@@ -139,12 +139,15 @@ impl Shell {
         }
         let command = parse(&text);
         let outcome = match command.rejection(self.surface()) {
-            Some(rejection) => Err(rejection),
-            None => self.run_command(command, window, cx),
+            Some(outcome) => Err(outcome),
+            None => self.run_command(&command, window, cx),
         };
         match outcome {
             Ok(()) => self.finish_command(&text, cx),
-            Err(rejection) => self.refuse_command(&rejection, cx),
+            Err(outcome) => {
+                let refusal = command_outcome_text(outcome, &command);
+                self.refuse_command(&refusal, cx);
+            }
         }
     }
 
@@ -152,20 +155,23 @@ impl Shell {
     /// running it, such as `/version` with a channel target.
     fn run_command(
         &mut self,
-        command: Command,
+        command: &Command,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> Result<(), Rejection> {
+    ) -> Result<(), CommandOutcome> {
         match command {
             // Blank input never reaches here, and an unknown word is rejected first.
             Command::Empty | Command::Unknown(_) => {}
-            Command::Say(text) => self.send_say(&text, cx),
-            Command::Action(text) => self.send_action(&text, cx),
+            Command::Say(text) => self.send_say(text, cx),
+            Command::Action(text) => self.send_action(text, cx),
             Command::Clear => self.clear_view(cx),
-            Command::Help => self.reply_lines(help_text(), cx),
-            Command::Pref(request) => self.run_pref(&request, cx),
-            Command::Version(argument) => self.run_version(&argument, cx)?,
-            Command::List(mask) => self.open_channel_list(&mask, window, cx),
+            Command::Help => self.reply_lines(&help_text(), cx),
+            Command::Pref(request) => self.run_pref(request, cx),
+            Command::Version(words) => self.run_version(words, cx)?,
+            Command::List(mask) => self.open_channel_list(mask, window, cx),
+            // The rest of the catalog runs through the controller's dispatcher, which
+            // lands next. Until then a typed one is refused, never sent.
+            _ => return Err(CommandOutcome::Unsupported),
         }
         Ok(())
     }
@@ -209,7 +215,7 @@ impl Shell {
     fn run_pref(&mut self, request: &PrefRequest, cx: &mut Context<Self>) {
         let joins_before = self.preferences.joins;
         let avatars_before = self.preferences.avatars;
-        let reply = pref_reply(request, &mut self.preferences);
+        let reply = pref_reply(*request, &mut self.preferences);
         if reply.changed {
             if let Err(error) = self.preferences.save() {
                 eprintln!("omairc-poc: could not save preferences: {error}");
@@ -231,16 +237,16 @@ impl Shell {
 
     /// `/version [nick]`. A conversation gets the reply as a whois row, and the network's
     /// Status gets a CTCP line. On Status only the Status line is written.
-    fn run_version(&mut self, argument: &str, cx: &mut Context<Self>) -> Result<(), Rejection> {
+    fn run_version(&mut self, words: &Words, cx: &mut Context<Self>) -> Result<(), CommandOutcome> {
         let network_id = self.surface_network();
         let chantypes = self.features_of(&network_id).channel_types().to_owned();
         let peer = self.controller.selected_target().to_owned();
         let selected = if self.controller.is_channel() {
-            Selected::Channel
+            SelectedView::Channel
         } else {
-            Selected::Direct(peer.as_str())
+            SelectedView::Direct(peer.as_str())
         };
-        let request = version_request(argument, self.surface(), Some(selected), &chantypes)?;
+        let request = ctcp_target(words, self.surface(), Some(selected), &chantypes)?;
         let reply = version_reply_text(&request.nick);
         if request.in_conversation {
             self.controller.reply_in_selection(&reply);
@@ -279,13 +285,13 @@ impl Shell {
 
     /// A command was refused. On a conversation it becomes the network's last error,
     /// shown in the header. On Status it is a Status line. The text stays.
-    fn refuse_command(&mut self, rejection: &Rejection, cx: &mut Context<Self>) {
-        let text = rejection.text();
+    fn refuse_command(&mut self, text: &str, cx: &mut Context<Self>) {
         match self.status_network() {
-            Some(network_id) => self.controller.log_outcome(&network_id, &text),
+            Some(network_id) => self.controller.log_outcome(&network_id, text),
             None => {
                 let network_id = self.surface_network();
-                self.controller.set_last_error(&network_id, Some(text));
+                self.controller
+                    .set_last_error(&network_id, Some(text.to_string()));
             }
         }
         self.drain_notifications(cx);
