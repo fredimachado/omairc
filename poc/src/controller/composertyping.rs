@@ -12,6 +12,7 @@
 //!
 //! Inbound typing (who is typing to us) is the reads in `reads.rs`.
 
+use crate::irc::command::parse;
 use crate::irc::typing::TypingPhase;
 
 use super::controller::Controller;
@@ -33,7 +34,7 @@ impl Controller {
         let Some(session) = self.session(network_id) else {
             return;
         };
-        if is_live_text(text) {
+        if parse(text).is_live_message() {
             session.send_typing(target, TypingPhase::Active);
             self.typing_target = Some((network_id.to_owned(), target.to_owned()));
             self.pump();
@@ -77,19 +78,4 @@ impl Controller {
             .is_some_and(|key| key.network_id == network_id)
             && self.selected_target == target
     }
-}
-
-/// Whether composer text is a live message: plain text, `//`-escaped text, or `/me`.
-/// Every other slash line is a command and withdraws the hint. The verb check reads the
-/// one live verb this module needs; the command catalog (`irc::command`) owns the rest.
-fn is_live_text(text: &str) -> bool {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return false;
-    }
-    if !trimmed.starts_with('/') || trimmed.starts_with("//") {
-        return true;
-    }
-    let name = trimmed.split(' ').next().unwrap_or_default();
-    name[1..].eq_ignore_ascii_case("me")
 }

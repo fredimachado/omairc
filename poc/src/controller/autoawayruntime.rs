@@ -21,8 +21,9 @@ use std::time::Duration;
 use crate::irc::autoaway::{
     autoaway_grace_seconds, format_autoaway_cleared_status, format_autoaway_confirmation,
     format_autoaway_query, format_autoaway_tripped_status, AutoawayConfig, AutoawayKind,
-    AutoawayRequest, AUTOAWAY_MAX_TIMEOUT_SECONDS, AUTOAWAY_MIN_TIMEOUT_SECONDS, AUTOAWAY_USAGE,
+    AutoawayRequest, AUTOAWAY_MAX_TIMEOUT_SECONDS, AUTOAWAY_MIN_TIMEOUT_SECONDS,
 };
+use crate::irc::command::{spec_for, Verb};
 use crate::irc::statusentry;
 use crate::session::clock::ClockTimer;
 use crate::session::events::SessionState;
@@ -153,7 +154,7 @@ impl Controller {
         self.pump();
         let previous_reason = self.autoaway.reason();
         let text = match request.kind {
-            AutoawayKind::Usage => return AUTOAWAY_USAGE.to_owned(),
+            AutoawayKind::Usage => return spec_for(Verb::Autoaway).usage.to_owned(),
             AutoawayKind::Query => format_autoaway_query(&self.autoaway.config),
             AutoawayKind::Disable => {
                 self.autoaway.config.enabled = false;
@@ -164,7 +165,7 @@ impl Controller {
             }
             AutoawayKind::EnableOn => {
                 if self.autoaway.config.timeout_seconds < AUTOAWAY_MIN_TIMEOUT_SECONDS {
-                    return AUTOAWAY_USAGE.to_owned();
+                    return spec_for(Verb::Autoaway).usage.to_owned();
                 }
                 self.autoaway.config.enabled = true;
                 if !self.autoaway.tripped {

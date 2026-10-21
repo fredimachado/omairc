@@ -11,9 +11,6 @@ pub const AUTOAWAY_MIN_TIMEOUT_SECONDS: i64 = 30;
 /// The longest accepted auto-away timeout, in seconds (`numeric_limits<int>::max()/1000`).
 pub const AUTOAWAY_MAX_TIMEOUT_SECONDS: i64 = 2_147_483;
 
-/// The usage line for `/autoaway`, the verb table's entry in the command catalog.
-pub const AUTOAWAY_USAGE: &str = "/autoaway [off|on|duration [reason]|reason [text]]";
-
 /// The parsed shape of a `/autoaway` argument (`IrcAutoawayKind`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AutoawayKind {

@@ -6,7 +6,8 @@
 
 use std::time::Duration;
 
-use crate::irc::autoaway::{parse_autoaway_argument, AUTOAWAY_USAGE};
+use crate::irc::autoaway::parse_autoaway_argument;
+use crate::irc::command::{spec_for, Verb};
 use crate::irc::event::{Event, SelfAwayEvent};
 
 use super::fixture::{status_text, Fixture, OFTC, OMARCHY};
@@ -16,6 +17,11 @@ fn autoaway(fixture: &mut Fixture, argument: &str) -> String {
     fixture
         .controller
         .autoaway_command(parse_autoaway_argument(argument))
+}
+
+/// The `/autoaway` usage line, the command catalog's row.
+fn usage() -> &'static str {
+    spec_for(Verb::Autoaway).usage
 }
 
 /// Fires the idle timer for `seconds` of idleness, then the grace timer.
@@ -63,13 +69,13 @@ fn the_query_and_each_change_return_their_confirmation() {
     assert!(!fixture.controller.autoaway.idle_scheduled(), "off stops the idle timer");
 
     assert_eq!(autoaway(&mut fixture, "reason"), "Auto-away off");
-    assert_eq!(autoaway(&mut fixture, "bogus"), AUTOAWAY_USAGE);
+    assert_eq!(autoaway(&mut fixture, "bogus"), usage());
 }
 
 #[test]
 fn on_without_a_timeout_gives_the_usage_line() {
     let mut fixture = Fixture::seeded();
-    assert_eq!(autoaway(&mut fixture, "on"), AUTOAWAY_USAGE);
+    assert_eq!(autoaway(&mut fixture, "on"), usage());
 }
 
 #[test]
