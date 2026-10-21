@@ -422,7 +422,8 @@ pub fn day_caption(day: NaiveDate) -> String {
 
 /// Whether a line carries a display time. A whois line has none.
 fn has_time(message: &Message) -> bool {
-    message.kind != MessageKind::Whois
+    // A whois line and a line the reducer stamped with no time (`zero_time`) have no day.
+    message.kind != MessageKind::Whois && message.time != DateTime::<Utc>::MIN_UTC
 }
 
 /// The rows for one conversation's lines, oldest first.
@@ -789,6 +790,14 @@ mod tests {
         assert_eq!(row.author.as_deref(), Some("fred"));
         assert_eq!(row.time.as_deref(), Some("21:57"));
         assert_eq!(row.body.plain, "waves");
+    }
+
+    #[test]
+    fn a_line_with_no_time_starts_no_day() {
+        let untimed = line(MessageKind::Event, "", "nora joined", DateTime::<Utc>::MIN_UTC, 1);
+        let rows = rows_from_messages(&[untimed], None);
+        assert_eq!(kinds(&rows), [RowKind::Event]);
+        assert!(rows.iter().all(|row| row.kind != RowKind::DaySeparator));
     }
 
     #[test]
