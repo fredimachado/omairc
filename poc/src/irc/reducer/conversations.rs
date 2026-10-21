@@ -317,6 +317,21 @@ impl EventReducer {
         changed
     }
 
+    /// Arms tail-first trimming for the next CHATHISTORY splice into `key`
+    /// (`MarkHistoryPageCapTail`).
+    pub fn mark_history_page_cap_tail(&mut self, key: &ConversationKey) {
+        if let Some(conv) = self.conversations.get_mut(key) {
+            conv.history_page_cap_tail = true;
+        }
+    }
+
+    /// Drops tail-first trimming for the transcript (`ClearHistoryPageCapTail`).
+    pub fn clear_history_page_cap_tail(&mut self, key: &ConversationKey) {
+        if let Some(conv) = self.conversations.get_mut(key) {
+            conv.history_page_cap_tail = false;
+        }
+    }
+
     /// Forgets the selected conversation (`ClearSelection`).
     pub fn clear_selection(&mut self) {
         self.facts.selected = None;

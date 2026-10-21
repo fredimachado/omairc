@@ -522,3 +522,18 @@ fn hidden_membership_older_page_keeps_history_page_cap_tail() {
     assert_eq!(conversation.messages[0].body, "omairc joined", "self join");
     assert_eq!(conversation.people_count(), 1, "people");
 }
+
+#[test]
+fn history_page_cap_tail_marks_and_clears() {
+    let mut reducer = EventReducer::new();
+    welcome_omairc(&mut reducer, NETWORK_A);
+    let room = reducer.conversation_key(NETWORK_A, "#room");
+    fold(&mut reducer, join(NETWORK_A, "#room", "omairc"));
+    assert!(!state_of(&reducer, &room).history_page_cap_tail, "unarmed by default");
+    reducer.mark_history_page_cap_tail(&room);
+    assert!(state_of(&reducer, &room).history_page_cap_tail, "armed");
+    reducer.clear_history_page_cap_tail(&room);
+    assert!(!state_of(&reducer, &room).history_page_cap_tail, "cleared");
+    reducer.mark_history_page_cap_tail(&reducer.conversation_key(NETWORK_A, "ghost"));
+    assert!(reducer.find(&reducer.conversation_key(NETWORK_A, "ghost")).is_none(), "missing stays missing");
+}
