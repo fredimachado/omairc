@@ -1,17 +1,10 @@
 use super::color::Color;
 use super::mock::PREFIX_RANK;
+use crate::irc::plaintext::plain_irc_text;
+use crate::irc::textformat::{styled_runs, IrcColor, IrcStyle};
 use std::ops::Range;
 
-const BOLD: char = '\x02';
-const COLOR: char = '\x03';
-const HEX_COLOR: char = '\x04';
-const RESET: char = '\x0f';
-const MONOSPACE: char = '\x11';
-const REVERSE: char = '\x16';
-const ITALIC: char = '\x1d';
-const STRIKETHROUGH: char = '\x1e';
-const UNDERLINE: char = '\x1f';
-
+/// The sixteen mIRC palette colors. Presentation: the protocol only carries the index.
 const MIRC_PALETTE: [&str; 16] = [
     "#FFFFFF", "#000000", "#00007F", "#009300", "#FF0000", "#7F0000", "#9C009C", "#FC7F00",
     "#FFFF00", "#00FC00", "#009393", "#00FFFF", "#0000FC", "#FF00FF", "#7F7F7F", "#D2D2D2",
@@ -42,228 +35,41 @@ pub struct FormattedText {
     pub links: Vec<Range<usize>>,
 }
 
+/// Formats one IRC line for the transcript. The control-code walk lives in
+/// `irc::textformat`; this only maps its colors onto the presentation palette.
 pub fn format_irc(text: &str) -> FormattedText {
     let plain = plain_irc_text(text);
-    let mut runs = style_runs(text);
-    for run in &mut runs {
-        debug_assert!(run.range.end <= plain.len());
-    }
+    let runs = styled_runs(text)
+        .into_iter()
+        .map(|run| StyleRun {
+            range: run.range,
+            style: text_style(&run.style),
+        })
+        .collect();
     let links = http_link_ranges(&plain);
     FormattedText { plain, runs, links }
 }
 
-pub fn plain_irc_text(text: &str) -> String {
-    let stripped = strip_irc_colors(text);
-    let mut out = String::with_capacity(stripped.len());
-    for ch in stripped.chars() {
-        match ch {
-            BOLD | RESET | MONOSPACE | REVERSE | ITALIC | STRIKETHROUGH | UNDERLINE => {}
-            _ => out.push(ch),
-        }
+fn text_style(style: &IrcStyle) -> TextStyle {
+    TextStyle {
+        bold: style.bold,
+        italic: style.italic,
+        underline: style.underline,
+        reverse: style.reverse,
+        monospace: style.monospace,
+        strikethrough: style.strikethrough,
+        fg: style.fg.and_then(presentation_color),
+        bg: style.bg.and_then(presentation_color),
     }
-    out
 }
 
-fn strip_irc_colors(text: &str) -> String {
-    let chars: Vec<char> = text.chars().collect();
-    let mut out = String::with_capacity(text.len());
-    let mut i = 0;
-    while i < chars.len() {
-        let code = chars[i];
-        if code == COLOR {
-            i = consume_mirc_color(&chars, i) + 1;
-            continue;
-        }
-        if code == HEX_COLOR {
-            i = consume_hex_color(&chars, i) + 1;
-            continue;
-        }
-        out.push(code);
-        i += 1;
+fn presentation_color(color: IrcColor) -> Option<Color> {
+    match color {
+        IrcColor::Palette(index) => MIRC_PALETTE
+            .get(index as usize)
+            .and_then(|hex| Color::from_hex(hex)),
+        IrcColor::Rgb(red, green, blue) => Some(Color::from_rgb8(red, green, blue)),
     }
-    out
-}
-
-fn style_runs(text: &str) -> Vec<StyleRun> {
-    let chars: Vec<char> = text.chars().collect();
-    let mut state = TextStyle::default();
-    let mut plain = String::new();
-    let mut runs = Vec::new();
-    let mut run_start = 0usize;
-
-    let flush = |plain: &str, runs: &mut Vec<StyleRun>, run_start: &mut usize, state: &TextStyle| {
-        let end = plain.len();
-        if end > *run_start {
-            runs.push(StyleRun {
-                range: *run_start..end,
-                style: state.clone(),
-            });
-        }
-        *run_start = end;
-    };
-
-    let mut i = 0;
-    while i < chars.len() {
-        let code = chars[i];
-        if code == COLOR {
-            flush(&plain, &mut runs, &mut run_start, &state);
-            let next = consume_mirc_color(&chars, i);
-            if next == i {
-                state.fg = None;
-                state.bg = None;
-            } else {
-                apply_mirc_color(&chars, i, next, &mut state);
-            }
-            i = next + 1;
-            continue;
-        }
-        if code == HEX_COLOR {
-            flush(&plain, &mut runs, &mut run_start, &state);
-            let next = consume_hex_color(&chars, i);
-            if next > i {
-                apply_hex_color(&chars, i, next, &mut state);
-            }
-            i = next + 1;
-            continue;
-        }
-        if matches!(
-            code,
-            BOLD | ITALIC | UNDERLINE | REVERSE | MONOSPACE | STRIKETHROUGH | RESET
-        ) {
-            flush(&plain, &mut runs, &mut run_start, &state);
-            match code {
-                BOLD => state.bold = !state.bold,
-                ITALIC => state.italic = !state.italic,
-                UNDERLINE => state.underline = !state.underline,
-                REVERSE => state.reverse = !state.reverse,
-                MONOSPACE => state.monospace = !state.monospace,
-                STRIKETHROUGH => state.strikethrough = !state.strikethrough,
-                RESET => state = TextStyle::default(),
-                _ => {}
-            }
-            i += 1;
-            continue;
-        }
-        plain.push(code);
-        i += 1;
-    }
-    flush(&plain, &mut runs, &mut run_start, &state);
-    runs
-}
-
-fn apply_mirc_color(chars: &[char], start: usize, end: usize, state: &mut TextStyle) {
-    let mut i = start + 1;
-    if i >= chars.len() || !chars[i].is_ascii_digit() {
-        state.fg = None;
-        state.bg = None;
-        return;
-    }
-    let mut fg = digit_value(chars[i]);
-    i += 1;
-    if i < chars.len() && chars[i].is_ascii_digit() {
-        fg = fg * 10 + digit_value(chars[i]);
-        i += 1;
-    }
-    if fg <= 15 {
-        state.fg = palette_color(fg);
-    }
-    if i < chars.len() && chars[i] == ',' && i + 1 < chars.len() && chars[i + 1].is_ascii_digit() {
-        i += 1;
-        let mut bg = digit_value(chars[i]);
-        i += 1;
-        if i < chars.len() && chars[i].is_ascii_digit() {
-            bg = bg * 10 + digit_value(chars[i]);
-        }
-        if bg <= 15 {
-            state.bg = palette_color(bg);
-        }
-    }
-    let _ = end;
-}
-
-fn apply_hex_color(chars: &[char], start: usize, end: usize, state: &mut TextStyle) {
-    let mut i = start + 1;
-    if let Some(fg) = read_hex6(chars, i) {
-        state.fg = Some(fg);
-        i += 6;
-    }
-    if i < chars.len() && chars[i] == ',' {
-        if let Some(bg) = read_hex6(chars, i + 1) {
-            state.bg = Some(bg);
-        }
-    }
-    let _ = end;
-}
-
-fn read_hex6(chars: &[char], start: usize) -> Option<Color> {
-    if start + 5 >= chars.len() {
-        return None;
-    }
-    let mut hex = String::with_capacity(6);
-    for ch in &chars[start..start + 6] {
-        if !ch.is_ascii_hexdigit() {
-            return None;
-        }
-        hex.push(ch.to_ascii_lowercase());
-    }
-    Color::from_hex(&hex)
-}
-
-fn palette_color(index: u8) -> Option<Color> {
-    MIRC_PALETTE.get(index as usize).and_then(|h| Color::from_hex(h))
-}
-
-fn digit_value(ch: char) -> u8 {
-    (ch as u8) - b'0'
-}
-
-fn ascii_digit(ch: char) -> bool {
-    ch.is_ascii_digit()
-}
-
-fn consume_mirc_color(chars: &[char], index: usize) -> usize {
-    let n = chars.len();
-    let mut i = index + 1;
-    if i >= n || !ascii_digit(chars[i]) {
-        return index;
-    }
-    i += 1;
-    if i < n && ascii_digit(chars[i]) {
-        i += 1;
-    }
-    if i < n
-        && chars[i] == ','
-        && i + 1 < n
-        && ascii_digit(chars[i + 1])
-    {
-        i += 2;
-        if i < n && ascii_digit(chars[i]) {
-            i += 1;
-        }
-    }
-    i - 1
-}
-
-fn consume_hex_color(chars: &[char], index: usize) -> usize {
-    let n = chars.len();
-    let mut i = index + 1;
-    if !six_hex_at(chars, i) {
-        return index;
-    }
-    i += 6;
-    if i < n && chars[i] == ',' && six_hex_at(chars, i + 1) {
-        i += 7;
-    }
-    i - 1
-}
-
-fn six_hex_at(chars: &[char], start: usize) -> bool {
-    if start + 5 >= chars.len() {
-        return false;
-    }
-    chars[start..start + 6]
-        .iter()
-        .all(|c| c.is_ascii_hexdigit())
 }
 
 fn advance_one_code_unit(text: &str, i: usize) -> usize {
@@ -512,6 +318,7 @@ fn trim_http_url_match(raw: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::irc::plaintext::{BOLD, COLOR, HEX_COLOR, ITALIC, RESET, UNDERLINE};
 
     #[test]
     fn bold_italic_underline_reset() {
@@ -534,6 +341,21 @@ mod tests {
     fn hex_color_plain() {
         let input = format!("{HEX_COLOR}FF0000warm");
         assert_eq!(plain_irc_text(&input), "warm");
+    }
+
+    #[test]
+    fn palette_and_hex_colors_map_to_presentation_colors() {
+        let palette = format_irc("\x0304red");
+        assert_eq!(palette.runs[0].style.fg, Color::from_hex("#FF0000"));
+        let hex = format_irc("\x04FF0080x");
+        assert_eq!(hex.runs[0].style.fg, Some(Color::from_rgb8(255, 0, 128)));
+    }
+
+    #[test]
+    fn a_palette_index_past_fifteen_leaves_the_color_alone() {
+        let text = format_irc("\x0399x");
+        assert_eq!(text.plain, "x");
+        assert_eq!(text.runs[0].style.fg, None);
     }
 
     #[test]
