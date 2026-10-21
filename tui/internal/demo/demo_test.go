@@ -45,7 +45,7 @@ func TestAnswersClientPing(t *testing.T) {
 func TestAnswersMonitorAdd(t *testing.T) {
 	_, d := attachController(t, true)
 	got := d.tryAnswerMonitor("omarchy", "fred",
-		[]byte("MONITOR + anna,ghost\r\n"), demoOnlineNicks(omarchyWorld()))
+		[]byte("MONITOR + anna,ghost\r\n"), demoOnlineNicks(omarchyWorld(), "fred"))
 	want := ":server 730 fred :anna!u@h\r\n" + ":server 731 fred :ghost\r\n"
 	if string(got) != want {
 		t.Fatalf("MONITOR + = %q, want %q", got, want)
@@ -418,10 +418,11 @@ func TestClosedChannelsRejoinFromDemoEcho(t *testing.T) {
 	}
 }
 
-// TestAnswersPartForSeededChannel echoes our PART under our own prefix, keeping
-// the client's reason as the trailing parameter. A channel the network does not
-// seed gets no echo, and each network answers only for its own channels.
-func TestAnswersPartForSeededChannel(t *testing.T) {
+// TestAnswersPartForAnyChannel echoes our PART under our own prefix for any
+// channel name, as JOIN does. The client's frame is kept as sent, so a reason
+// stays as written. A target that is not a channel gets no echo, and each
+// network answers under its own nick.
+func TestAnswersPartForAnyChannel(t *testing.T) {
 	_, d := attachController(t, true)
 
 	if got := string(d.tryAnswerPart("omarchy", []byte("PART #desktop\r\n"))); got != ":fred!u@h PART #desktop\r\n" {
@@ -433,11 +434,14 @@ func TestAnswersPartForSeededChannel(t *testing.T) {
 	if got := string(d.tryAnswerPart("omarchy", []byte("PART #Desktop\r\n"))); got != ":fred!u@h PART #Desktop\r\n" {
 		t.Fatalf("PART with other case = %q", got)
 	}
-	if got := d.tryAnswerPart("omarchy", []byte("PART #nowhere\r\n")); got != nil {
-		t.Fatalf("PART on an unseeded channel answered %q", got)
+	if got := string(d.tryAnswerPart("omarchy", []byte("PART #linux\r\n"))); got != ":fred!u@h PART #linux\r\n" {
+		t.Fatalf("PART on a directory channel = %q", got)
 	}
-	if got := d.tryAnswerPart("oftc", []byte("PART #desktop\r\n")); got != nil {
-		t.Fatalf("oftc answered for omarchy's #desktop: %q", got)
+	if got := d.tryAnswerPart("omarchy", []byte("PART fred\r\n")); got != nil {
+		t.Fatalf("PART on a non-channel target answered %q", got)
+	}
+	if got := string(d.tryAnswerPart("oftc", []byte("PART #desktop\r\n"))); got != ":oak!u@h PART #desktop\r\n" {
+		t.Fatalf("oftc PART = %q", got)
 	}
 	if got := string(d.tryAnswerPart("oftc", []byte("PART #omarchy\r\n"))); got != ":oak!u@h PART #omarchy\r\n" {
 		t.Fatalf("oftc PART = %q", got)
@@ -476,11 +480,20 @@ func TestAnswersNickChangeMovesLaterReplies(t *testing.T) {
 	if got := string(d.tryAnswerPart("omarchy", []byte("PART #desktop\r\n"))); got != ":bob!u@h PART #desktop\r\n" {
 		t.Fatalf("PART after NICK = %q", got)
 	}
+	// MONITOR rebuilds its online set from the new nick: bob is online, and the
+	// seeded fred no longer is.
+	wantMonitor := ":server 730 bob :bob!u@h\r\n:server 731 bob :fred\r\n"
+	if got := string(d.tryAnswerMonitor("omarchy", "bob", []byte("MONITOR + fred,bob\r\n"), demoOnlineNicks(omarchyWorld(), "bob"))); got != wantMonitor {
+		t.Fatalf("MONITOR after NICK = %q, want %q", got, wantMonitor)
+	}
 	if got := string(d.tryAnswerNick("omarchy", []byte("NICK alice\r\n"))); got != ":bob!u@h NICK :alice\r\n" {
 		t.Fatalf("second NICK = %q", got)
 	}
 	if got := d.tryAnswerNick("omarchy", []byte("NICK\r\n")); got != nil {
 		t.Fatalf("NICK without a new nick answered %q", got)
+	}
+	if got := d.tryAnswerNick("omarchy", []byte("NICK two words\r\n")); got != nil {
+		t.Fatalf("NICK with two words answered %q", got)
 	}
 	if got := d.selfNicks["oftc"]; got != "oak" {
 		t.Fatalf("oftc self nick = %q, want oak", got)
@@ -489,7 +502,7 @@ func TestAnswersNickChangeMovesLaterReplies(t *testing.T) {
 
 // TestAnswersTopicChangeCarriesOnRejoin sets a seeded topic, then checks the
 // TOPIC echo and the 332 that a later self JOIN sends with the new value. A
-// channel the demo did not seed rejoins without a topic.
+// channel that has no topic yet rejoins without a 332.
 func TestAnswersTopicChangeCarriesOnRejoin(t *testing.T) {
 	_, d := attachController(t, true)
 
@@ -503,19 +516,28 @@ func TestAnswersTopicChangeCarriesOnRejoin(t *testing.T) {
 	if got := string(d.tryAnswerJoin("omarchy", "fred", []byte("JOIN #nowhere\r\n"))); got != ":fred!u@h JOIN :#nowhere\r\n" {
 		t.Fatalf("JOIN #nowhere = %q", got)
 	}
+	// A topic set on a channel the network does not seed is kept, and the rejoin
+	// reports it, as a real server does for any channel.
+	if got := string(d.tryAnswerTopic("omarchy", []byte("TOPIC #nowhere :x\r\n"))); got != ":fred!u@h TOPIC #nowhere :x\r\n" {
+		t.Fatalf("TOPIC on a directory channel = %q", got)
+	}
+	want = ":fred!u@h JOIN :#nowhere\r\n:server 332 fred #nowhere :x\r\n"
+	if got := string(d.tryAnswerJoin("omarchy", "fred", []byte("JOIN #nowhere\r\n"))); got != want {
+		t.Fatalf("JOIN #nowhere after TOPIC = %q, want %q", got, want)
+	}
 }
 
-// TestAnswersTopicClearAndQuery covers the two TOPIC shapes that differ: an
-// empty trailing text clears the topic, so a later JOIN has no 332, and a bare
-// TOPIC query, or a TOPIC on an unseeded channel, is not answered.
+// TestAnswersTopicClearAndQuery covers the TOPIC shapes that differ: an empty
+// trailing text clears the topic, so a later JOIN has no 332, and a bare TOPIC
+// query, or a TOPIC whose target is not a channel, is not answered.
 func TestAnswersTopicClearAndQuery(t *testing.T) {
 	_, d := attachController(t, true)
 
 	if got := d.tryAnswerTopic("omarchy", []byte("TOPIC #desktop\r\n")); got != nil {
 		t.Fatalf("TOPIC query answered %q", got)
 	}
-	if got := d.tryAnswerTopic("omarchy", []byte("TOPIC #nowhere :x\r\n")); got != nil {
-		t.Fatalf("TOPIC on an unseeded channel answered %q", got)
+	if got := d.tryAnswerTopic("omarchy", []byte("TOPIC fred :x\r\n")); got != nil {
+		t.Fatalf("TOPIC on a non-channel target answered %q", got)
 	}
 	if got := string(d.tryAnswerTopic("omarchy", []byte("TOPIC #desktop :\r\n"))); got != ":fred!u@h TOPIC #desktop :\r\n" {
 		t.Fatalf("TOPIC clear = %q", got)

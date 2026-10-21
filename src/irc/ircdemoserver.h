@@ -48,8 +48,7 @@ private:
                       const QStringList &autojoin,
                       IrcLoopbackTransport **transport);
     void hookAutoEcho(IrcLoopbackTransport *transport,
-                      const QString &nick,
-                      const QStringList &online);
+                      const QString &nick);
 
     IrcLoopbackTransport *m_omarchyTransport = nullptr;
     IrcLoopbackTransport *m_oftcTransport = nullptr;

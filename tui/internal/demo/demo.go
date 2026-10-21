@@ -25,9 +25,9 @@ type DemoServer struct {
 	// frame changes it. Every self-addressed reply and echo reads it.
 	selfNicks map[string]string
 
-	// topics is each network's seeded channels, keyed by lower-cased name, with
-	// the current topic. A TOPIC frame on a seeded channel replaces its value,
-	// and a self JOIN reports the value in 332.
+	// topics is each network's channel topics, keyed by lower-cased name. It starts
+	// with the seeded channels, and a TOPIC frame on any channel name sets its
+	// value. A self JOIN reports a non-empty value in 332.
 	topics map[string]map[string]string
 
 	err string
@@ -127,8 +127,8 @@ func (d *DemoServer) Attach(c *controller.Controller, autoEcho bool) bool {
 	d.oftc.InjectBytes(line(":rio!u@h INVITE oak :#debian"))
 
 	if autoEcho {
-		d.omarchy.OnFrameWritten = d.hookAutoEcho(omarchy.NetworkID, omarchy.Nick, demoOnlineNicks(omarchy))
-		d.oftc.OnFrameWritten = d.hookAutoEcho(oftc.NetworkID, oftc.Nick, demoOnlineNicks(oftc))
+		d.omarchy.OnFrameWritten = d.hookAutoEcho(omarchy.NetworkID, omarchy.Nick)
+		d.oftc.OnFrameWritten = d.hookAutoEcho(oftc.NetworkID, oftc.Nick)
 	}
 	return true
 }
@@ -164,14 +164,15 @@ func (d *DemoServer) startNetwork(c *controller.Controller, networkID, nick stri
 // and NOTICE back to the client. Because tryAnswerMonitor uses a non-nil empty
 // slice for a handled no-op, the ladder tests `reply != nil`, not
 // `len(reply) > 0`. Each frame reads the network's current self nick, so a NICK
-// frame moves every later reply to the new nick. It mirrors
-// IrcDemoServer::hookAutoEcho.
-func (d *DemoServer) hookAutoEcho(networkID, nick string, online []string) func([]byte) {
+// frame moves every later reply to the new nick, and the MONITOR online set is
+// rebuilt from that nick. It mirrors IrcDemoServer::hookAutoEcho.
+func (d *DemoServer) hookAutoEcho(networkID, nick string) func([]byte) {
 	seed := seedFor(networkID)
 	d.selfNicks[networkID] = nick
 	d.topics[networkID] = seedChannelTopics(seed)
 	return func(frame []byte) {
 		self := d.selfNicks[networkID]
+		online := demoOnlineNicks(seed, self)
 		if reply := d.tryAnswerPing(frame); reply != nil {
 			d.inject(networkID, reply)
 			return
@@ -219,8 +220,8 @@ func (d *DemoServer) hookAutoEcho(networkID, nick string, online []string) func(
 }
 
 // seedChannelTopics is the channel state a network starts from: each seeded
-// channel, lower-cased, with its seeded topic. A name missing from the map is a
-// channel the demo does not know, so PART and TOPIC leave it alone.
+// channel, lower-cased, with its seeded topic. A name missing from the map has
+// no topic until a TOPIC frame sets one, so a self JOIN sends no 332 for it.
 func seedChannelTopics(network SeedNetwork) map[string]string {
 	topics := make(map[string]string, len(network.Channels))
 	for _, channel := range network.Channels {

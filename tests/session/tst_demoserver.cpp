@@ -22,7 +22,8 @@ private slots:
     void echoesSelfNickChange();
     void echoesTopicChangeOnRejoin();
     void rejoinCarriesSeededTopic();
-    void ignoresTopicQueryAndUnknownChannels();
+    void rejoinCarriesTopicOnDirectoryChannel();
+    void ignoresTopicQueryAndNonChannelTargets();
     void seedsServiceAccounts();
     void seedsQueryHeaderFacts();
     void seedsSelfAvatars();
@@ -275,9 +276,14 @@ void DemoServerTest::echoesSelfPart()
     QCOMPARE(received.last().first().toByteArray(),
              QByteArrayLiteral(":fred!u@h PART #desktop :see you\r\n"));
 
-    // A channel the demo did not seed gets no echo.
+    // Any channel name is echoed, as JOIN echoes it. A target that is not a
+    // channel gets no echo.
     transport->write(QByteArrayLiteral("PART #nowhere\r\n"));
-    QCOMPARE(received.size(), 2);
+    QCOMPARE(received.size(), 3);
+    QCOMPARE(received.last().first().toByteArray(),
+             QByteArrayLiteral(":fred!u@h PART #nowhere\r\n"));
+    transport->write(QByteArrayLiteral("PART fred\r\n"));
+    QCOMPARE(received.size(), 3);
 }
 
 void DemoServerTest::partEchoLeavesChannel()
@@ -322,9 +328,18 @@ void DemoServerTest::echoesSelfNickChange()
     QCOMPARE(received.last().first().toByteArray(),
              QByteArrayLiteral(":bob!u@h PART #desktop\r\n"));
 
+    // MONITOR rebuilds its online set from the new nick: bob is online, and the
+    // seeded fred no longer is.
+    transport->write(QByteArrayLiteral("MONITOR + fred,bob\r\n"));
+    QCOMPARE(received.size(), 5);
+    QCOMPARE(received.at(3).first().toByteArray(),
+             QByteArrayLiteral(":server 730 bob :bob!u@h\r\n"));
+    QCOMPARE(received.at(4).first().toByteArray(),
+             QByteArrayLiteral(":server 731 bob :fred\r\n"));
+
     // The next NICK carries the old nick as its prefix.
     transport->write(QByteArrayLiteral("NICK alice\r\n"));
-    QCOMPARE(received.size(), 4);
+    QCOMPARE(received.size(), 6);
     QCOMPARE(received.last().first().toByteArray(),
              QByteArrayLiteral(":bob!u@h NICK :alice\r\n"));
 }
@@ -381,7 +396,7 @@ void DemoServerTest::rejoinCarriesSeededTopic()
              QByteArrayLiteral(":server 332 fred #omarchy :A cozy corner for Omarchy users and builders.\r\n"));
 }
 
-void DemoServerTest::ignoresTopicQueryAndUnknownChannels()
+void DemoServerTest::ignoresTopicQueryAndNonChannelTargets()
 {
     IrcController controller;
     IrcDemoServer demo;
@@ -392,9 +407,33 @@ void DemoServerTest::ignoresTopicQueryAndUnknownChannels()
     QSignalSpy received(transport, &IrcLoopbackTransport::bytesReceived);
     // A bare TOPIC asks for the topic; it is not a change, so nothing is echoed.
     transport->write(QByteArrayLiteral("TOPIC #desktop\r\n"));
-    // An unseeded channel has no topic state to change.
-    transport->write(QByteArrayLiteral("TOPIC #nowhere :x\r\n"));
+    // A target that is not a channel has no topic to set.
+    transport->write(QByteArrayLiteral("TOPIC fred :x\r\n"));
     QCOMPARE(received.size(), 0);
+}
+
+void DemoServerTest::rejoinCarriesTopicOnDirectoryChannel()
+{
+    IrcController controller;
+    IrcDemoServer demo;
+    QVERIFY(demo.attach(controller, true));
+    IrcLoopbackTransport *transport = demo.omarchyTransport();
+    QVERIFY(transport);
+
+    // #linux is only in the LIST directory, not seeded, but a topic set on it is
+    // kept and the rejoin reports it, as a real server does for any channel.
+    QSignalSpy received(transport, &IrcLoopbackTransport::bytesReceived);
+    transport->write(QByteArrayLiteral("TOPIC #linux :kernel talk\r\n"));
+    QCOMPARE(received.size(), 1);
+    QCOMPARE(received.last().first().toByteArray(),
+             QByteArrayLiteral(":fred!u@h TOPIC #linux :kernel talk\r\n"));
+
+    transport->write(QByteArrayLiteral("JOIN #linux\r\n"));
+    QCOMPARE(received.size(), 3);
+    QCOMPARE(received.at(1).first().toByteArray(),
+             QByteArrayLiteral(":fred!u@h JOIN :#linux\r\n"));
+    QCOMPARE(received.at(2).first().toByteArray(),
+             QByteArrayLiteral(":server 332 fred #linux :kernel talk\r\n"));
 }
 
 int runDemoServerTests(int argc, char **argv)
