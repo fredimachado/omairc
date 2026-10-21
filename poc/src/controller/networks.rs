@@ -102,6 +102,8 @@ impl Controller {
             self.disconnect(network_id);
         }
         self.manager.discard(network_id);
+        self.autoaway_forget_network(network_id);
+        self.monitor_forget_presence(network_id);
         self.reducer.forget_network(network_id);
         self.console.clear(network_id);
         self.last_errors.remove(network_id);

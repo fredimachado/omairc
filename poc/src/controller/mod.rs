@@ -13,13 +13,20 @@
 //! `--demo-server` wiring and `--lines`), `transports` (the transport seam), and
 //! `console` and `snapshots` (the Status ring and the row shapes).
 
+// Phase 4: the slash dispatcher calls the intents in these modules (auto-away, the
+// composer hint, MONITOR and the stores). Until it lands only the tests call them,
+// so the dead-code allow stays on each one and comes off with its first consumer.
+#[allow(dead_code)]
 pub mod autoawayruntime;
 pub mod channellist;
 pub mod commanddispatcher;
+#[allow(dead_code)]
+pub mod composertyping;
 pub mod console;
 pub mod controller;
 pub mod demo;
 pub mod lines;
+#[allow(dead_code)]
 pub mod monitorcoordinator;
 pub mod networks;
 pub mod reads;
@@ -28,6 +35,7 @@ pub mod scrollplace;
 pub mod selection;
 pub mod send;
 pub mod snapshots;
+#[allow(dead_code)]
 pub mod stores;
 pub mod transports;
 

@@ -16,6 +16,7 @@
 //! loopback delivers synchronously, so a demo reply is queued before the intent
 //! returns. Nothing here depends on gpui.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::rc::Rc;
@@ -42,8 +43,11 @@ use crate::session::loopback::LoopbackTransport;
 use crate::session::session::Session;
 use crate::session::sessionmanager::{SessionManager, SessionManagerError};
 
+use super::autoawayruntime::AutoawayState;
 use super::console::StatusConsole;
+use super::monitorcoordinator::MonitorState;
 use super::snapshots::state_text;
+use super::stores::{HighlightStore, IgnoreStore, MonitorStore, MuteStore};
 use super::transports::{LiveTransports, TransportFactory};
 
 /// Why the controller could not be built.
@@ -107,6 +111,17 @@ pub struct Controller {
     pub(super) network_order: Vec<String>,
     pub(super) network_collapsed: BTreeSet<String>,
     notifications: Vec<ViewNotify>,
+    /// The auto-away timers, settings and away sets (`autoawayruntime.rs`).
+    pub(super) autoaway: AutoawayState,
+    /// The `/ignore` list. It is shared with the inbound filter each session holds.
+    pub(super) ignores: Rc<RefCell<IgnoreStore>>,
+    pub(super) mutes: MuteStore,
+    pub(super) highlights: HighlightStore,
+    pub(super) monitors: MonitorStore,
+    /// The session-scoped MONITOR subscription and presence (`monitorcoordinator.rs`).
+    pub(super) monitor: MonitorState,
+    /// The network and target the composer's typing hint is held on (`typingTarget`).
+    pub(super) typing_target: Option<(String, String)>,
     pumping: bool,
 }
 
@@ -141,6 +156,13 @@ impl Controller {
             network_order: Vec::new(),
             network_collapsed: BTreeSet::new(),
             notifications: Vec::new(),
+            autoaway: AutoawayState::default(),
+            ignores: Rc::new(RefCell::new(IgnoreStore::in_memory())),
+            mutes: MuteStore::in_memory(),
+            highlights: HighlightStore::in_memory(),
+            monitors: MonitorStore::in_memory(),
+            monitor: MonitorState::default(),
+            typing_target: None,
             pumping: false,
         }
     }
@@ -163,6 +185,9 @@ impl Controller {
         self.pumping = true;
         loop {
             let mut drained = false;
+            while self.run_autoaway_expiry() {
+                drained = true;
+            }
             for network_id in self.manager.network_ids() {
                 let Some(session) = self.manager.find(&network_id) else {
                     continue;
@@ -371,11 +396,14 @@ impl Controller {
             .insert(network_id.to_owned(), nick.clone());
         self.reducer
             .set_server_features(network_id, IrcServerFeatures::new());
+        self.install_ignore_filter(network_id);
+        self.monitor_forget_presence(network_id);
         self.apply(Event::Welcome(WelcomeEvent {
             network_id: network_id.to_owned(),
             current_nick: nick,
         }));
         self.queue(vec![ViewNotify::Status]);
+        self.autoaway_on_registered(network_id);
     }
 
     /// Classifies one inbound line for Status, and raises an inbox row for an
@@ -445,9 +473,18 @@ impl Controller {
                 self.apply_isupport(network_id, message);
                 return;
             }
-            // MONITOR presence (730, 731, 734) belongs to the monitor coordinator,
-            // which is Phase 4.
-            "730" | "731" | "734" => return,
+            "730" => {
+                self.handle_monitor_presence(network_id, message, true);
+                return;
+            }
+            "731" => {
+                self.handle_monitor_presence(network_id, message, false);
+                return;
+            }
+            "734" => {
+                self.handle_monitor_list_full(network_id, message);
+                return;
+            }
             _ => {}
         }
         if message.command == "376" || message.command == "422" {
@@ -515,6 +552,8 @@ impl Controller {
             features.apply_token(&wire_text(param));
         }
         self.reducer.set_server_features(network_id, features);
+        self.install_ignore_filter(network_id);
+        self.monitor_subscribe(network_id);
         self.queue(vec![ViewNotify::Conversations]);
     }
 
@@ -591,6 +630,16 @@ impl Controller {
     /// mention reaches the notifier, and an inbox arrival lands in the inbox.
     pub(super) fn apply(&mut self, event: Event) {
         let now = self.clock.now();
+        // A welcome re-enters registration, so the away bookkeeping resets first. A
+        // 305 or 306 lifts the unaway latch (`IrcController::apply`'s welcome and
+        // selfAway branches).
+        match &event {
+            Event::Welcome(welcome) => self.autoaway_forget_network(&welcome.network_id),
+            Event::SelfAway(away) => {
+                self.autoaway.unaway_sent.remove(&away.network_id);
+            }
+            _ => {}
+        }
         let typing_only = matches!(event, Event::Typing(_));
         let mut surfaces = self.reducer.apply(event, now);
         if self.selected.is_none() && !typing_only {
@@ -657,6 +706,8 @@ impl Controller {
             return self.refuse_start(network.network_id);
         };
         self.manager.discard(network.network_id);
+        self.autoaway_forget_network(network.network_id);
+        self.monitor_forget_presence(network.network_id);
         let transport = Rc::new(LoopbackTransport::new());
         let session = match self.manager.create(
             session_config(network),
@@ -669,6 +720,7 @@ impl Controller {
                 return false;
             }
         };
+        self.attach_store_hooks(network.network_id);
         if let Err(error) = demo.restart(&session, &transport) {
             self.refuse_with(network.network_id, &error.to_string());
             return false;

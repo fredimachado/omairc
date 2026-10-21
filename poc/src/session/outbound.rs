@@ -72,8 +72,6 @@ impl Session {
 
     /// Writes a `+typing` TAGMSG when `message-tags` is on and the pace allows it
     /// (`IrcSession::sendTyping`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn send_typing(&self, target: &str, phase: TypingPhase) -> bool {
         self.locked(|core| core.send_typing(target, phase))
     }
@@ -150,8 +148,6 @@ impl Session {
 
     /// Writes AWAY with a reason, or clears away with an empty one
     /// (`IrcSession::setAway`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn set_away(&self, reason: &str) -> bool {
         self.locked(|core| core.set_away_locked(reason))
     }
@@ -159,8 +155,6 @@ impl Session {
     /// Writes `AWAY :` with no reason, which marks the user away with the server's
     /// default text. It differs from `set_away("")`, which clears
     /// (`IrcSession::markAway`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn mark_away(&self, reason: &str) -> bool {
         self.locked(|core| {
             let trimmed = reason.trim();
@@ -172,8 +166,6 @@ impl Session {
     }
 
     /// Clears away (`IrcSession::clearAway`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn clear_away(&self) -> bool {
         self.locked(|core| core.set_away_locked(""))
     }
@@ -237,8 +229,6 @@ impl Session {
 
     /// Writes a MONITOR command. `modifier` is `+`, `-`, `C`, `L` or `S`. Long
     /// lists are split so each line fits one frame (`IrcSession::sendMonitor`).
-    // Phase 4: the slash catalog sends these frames
-    #[allow(dead_code)]
     pub fn send_monitor(&self, modifier: char, nicks: &[String]) -> bool {
         self.locked(|core| core.send_monitor_locked(modifier, nicks))
     }
