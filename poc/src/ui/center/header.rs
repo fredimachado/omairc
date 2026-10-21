@@ -131,7 +131,14 @@ fn subtitle_line(style: &Style, subtitle: Subtitle<'_>) -> impl IntoElement {
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
+
+    use chrono::{TimeZone, Utc};
+
     use super::people_pill;
+    use crate::controller::controller::Controller;
+    use crate::desktop::notifier::NullNotifier;
+    use crate::session::clock::FakeClock;
 
     #[test]
     fn the_pill_shows_the_count_only_on_a_joined_channel() {
@@ -139,5 +146,29 @@ mod tests {
         assert_eq!(people_pill(true, false, 0), None, "a left channel hides the pill");
         assert_eq!(people_pill(false, false, 3), None, "a direct message hides it");
         assert_eq!(people_pill(false, true, 3), None, "a direct message is never joined");
+    }
+
+    #[test]
+    fn a_part_hides_the_pill_and_a_join_shows_it_again() {
+        let clock = Rc::new(FakeClock::new(
+            Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap(),
+        ));
+        let mut controller =
+            Controller::new_demo_with(clock, Box::new(NullNotifier)).expect("the demo starts");
+        controller.select_conversation("omarchy", "#omarchy");
+        let pill = |controller: &Controller| {
+            people_pill(
+                controller.is_channel(),
+                controller.channel_joined(),
+                controller.people_count(),
+            )
+        };
+        assert!(pill(&controller).is_some(), "a joined channel shows its count");
+
+        assert!(controller.leave_selected_channel());
+        assert_eq!(pill(&controller), None, "a parted channel hides the pill");
+
+        assert!(controller.join_selected_channel());
+        assert!(pill(&controller).is_some(), "the rejoined channel shows its count again");
     }
 }
