@@ -3821,6 +3821,7 @@ dependencies = [
  "gpui",
  "notify",
  "nucleo-matcher",
+ "regex",
  "serde",
  "serde_json",
  "unicode-segmentation",
