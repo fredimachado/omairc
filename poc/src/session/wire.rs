@@ -7,8 +7,6 @@
 //! `wire_text`, so a stray byte cannot reach the state machine as anything but
 //! a scalar.
 
-use chrono::{DateTime, Utc};
-
 use crate::irc::message::IrcMessage;
 use crate::irc::wiretext::wire_text;
 
@@ -90,13 +88,6 @@ pub(crate) fn ctcp_reply_host(message: &IrcMessage) -> String {
     String::new()
 }
 
-/// The IRCv3 `time` tag, parsed to UTC. `None` when absent, empty or unparsable.
-pub(crate) fn server_time_of(message: &IrcMessage) -> Option<DateTime<Utc>> {
-    let raw = tag_value(message, "time");
-    if raw.is_empty() {
-        return None;
-    }
-    DateTime::parse_from_rfc3339(&raw)
-        .ok()
-        .map(|parsed| parsed.with_timezone(&Utc))
-}
+/// The IRCv3 `time` tag reader lives in the portable translator, beside the rest
+/// of the inbound time rules. Re-exported so the session keeps its path.
+pub(crate) use crate::irc::translator::server_time_of;

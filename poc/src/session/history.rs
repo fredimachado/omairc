@@ -583,14 +583,6 @@ fn cursor_from_after_page(lines: &[IrcMessage]) -> HistoryCursor {
         .unwrap_or_default()
 }
 
-/// Parses the time of a `CHATHISTORY TARGETS` row, with or without `timestamp=`
-/// (`parseHistoryTargetTime`).
-pub(crate) fn parse_history_target_time(raw: &str) -> Option<DateTime<Utc>> {
-    let raw = raw.strip_prefix("timestamp=").unwrap_or(raw);
-    if raw.is_empty() {
-        return None;
-    }
-    DateTime::parse_from_rfc3339(raw)
-        .ok()
-        .map(|parsed| parsed.with_timezone(&Utc))
-}
+/// `CHATHISTORY TARGETS` time reader. It lives in the portable translator with the
+/// other inbound time rules; re-exported so the session keeps its path.
+pub(crate) use crate::irc::translator::parse_history_target_time;

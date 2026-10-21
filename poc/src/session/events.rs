@@ -20,6 +20,12 @@ use chrono::{DateTime, Utc};
 use crate::irc::capability::IrcCapabilitySet;
 use crate::irc::message::IrcMessage;
 
+// The value types the session hands its owner now live in the portable core,
+// where the translator reads them. They are re-exported so `session::events::...`
+// keeps its path for the session submodules and their tests.
+pub use crate::irc::event::{HistoryKind, PendingInvite, Severity};
+pub use crate::irc::translator::{HistoryBatch, HistoryTarget};
+
 /// The connection state machine (`IrcSession::State`, src/irc/ircsession.h). The
 /// STS upgrade state of Go is absent: STS is Phase 11.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -71,57 +77,6 @@ impl ErrorKind {
     pub(crate) fn bit(self) -> u32 {
         1 << (self as u32)
     }
-}
-
-/// The last unhandled INVITE (`IrcPendingInvite`).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PendingInvite {
-    pub nick: String,
-    pub channel: String,
-}
-
-/// Which reply produced a replay batch (`IrcHistoryKind`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum HistoryKind {
-    /// A `chathistory` / `draft/chathistory` reply.
-    Chat,
-    /// A `znc.in/playback` batch from a bouncer.
-    BouncerPlayback,
-    /// A `draft/chathistory-targets` answer: names, not lines.
-    Targets,
-}
-
-/// One row of `CHATHISTORY TARGETS` (`IrcHistoryTarget`). `latest` is the
-/// server's time of that target's newest message, when the reply gave one.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct HistoryTarget {
-    pub name: String,
-    pub latest: Option<DateTime<Utc>>,
-}
-
-/// One completed replay batch (`IrcHistoryBatch`). The lines are still raw
-/// protocol, so the translator applies the same rules it applies to live
-/// traffic.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct HistoryBatch {
-    pub target: String,
-    pub lines: Vec<IrcMessage>,
-    pub kind: Option<HistoryKind>,
-    /// True for a solicited `CHATHISTORY BEFORE` answer.
-    pub older_page: bool,
-    /// True when `draft/chathistory-end` was on the opening `BATCH`.
-    pub history_ended: bool,
-    /// True when the batch answers `CHATHISTORY AFTER`.
-    pub after_request: bool,
-    /// The rows of a `Targets` batch. Empty for every other kind.
-    pub targets: Vec<HistoryTarget>,
-}
-
-/// Severity of a lifecycle note (`irc.LogSeverity`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Severity {
-    Info,
-    Alert,
 }
 
 /// One event from a session. The owner drains them in order.
