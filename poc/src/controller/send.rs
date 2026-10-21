@@ -27,12 +27,11 @@ pub(super) enum Outgoing {
 }
 
 impl Controller {
-    // Phase 9: the product CLI `send` calls this; until then only the tests do.
-    #[allow(dead_code)]
-    /// Sends `text` to `target` on `network_id` (`SendToTarget`). Returns false, and
-    /// records the reason as the network's last error, when the send is refused:
-    /// missing input, an unknown network, a network that is not registered, or a
-    /// frame the session would not write.
+    /// Sends `text` to `target` on `network_id` (`SendToTarget`). The product CLI's `send` calls
+    /// this. It never changes the selection. Returns false, and records the reason as the network's
+    /// last error, when the send is refused: missing input, an unknown network, a network that is not
+    /// registered, or a frame the session would not write. A `/ns` or `/msg` line takes the same
+    /// outbound path, so its Status entry is masked the same way.
     pub fn send_to_target(&mut self, network_id: &str, target: &str, text: &str) -> bool {
         self.pump();
         let sent = self.send_now(network_id, target, text, Outgoing::Say);
@@ -96,11 +95,19 @@ impl Controller {
         if !written {
             return self.refuse_send(network_id, "Failed to send message");
         }
+        // A PRIVMSG counts as chat from this user: it records the nick and brings the user back
+        // from away, as `/msg` and Qt's `sendToTarget` do.
+        if kind == Outgoing::Say {
+            self.note_nick_delivery(network_id, target);
+        }
         let key = self.reducer.conversation_key(network_id, target);
         // A quiet send never creates a conversation; it only reaches one that exists.
         self.reducer
             .ensure_conversation(&key, target, IrcConversationCause::QuietSend);
         self.echo_if_present(&session, target, text, kind);
+        if kind == Outgoing::Say {
+            self.note_chat_sent(network_id);
+        }
         self.set_last_error(network_id, None);
         self.queue(vec![ViewNotify::Status]);
         true

@@ -111,14 +111,10 @@ impl Controller {
     /// The selected channel's members, in panel order: the server's PREFIX rank
     /// highest first, then nick (`MemberListModel`). Empty for a direct message.
     pub fn members(&self) -> Vec<MemberView> {
-        let Some(key) = self.selected.as_ref() else {
-            return Vec::new();
-        };
-        self.reducer
-            .ordered_members(key)
-            .into_iter()
-            .filter_map(|member| self.reducer.member_view(key, &member.nick))
-            .collect()
+        match self.selected.as_ref() {
+            Some(key) => self.members_of(key),
+            None => Vec::new(),
+        }
     }
 
     /// The presence facts for every nick a network's conversations name, keyed by the

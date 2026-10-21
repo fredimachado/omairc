@@ -22,6 +22,7 @@
 
 pub mod autoawayruntime;
 pub mod channellist;
+pub mod cli;
 pub mod commanddispatcher;
 pub mod composertyping;
 pub mod console;
