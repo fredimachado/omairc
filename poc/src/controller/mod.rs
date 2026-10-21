@@ -11,7 +11,12 @@
 //! `selection` (which conversation shows), `send` (the outbound intent), `networks`
 //! (sidebar order and collapse), `reads` (what the shell draws), `demo` (the
 //! `--demo-server` wiring and `--lines`), `transports` (the transport seam), and
-//! `console` and `snapshots` (the Status ring and the row shapes).
+//! `console` and `snapshots` (the Status ring and the row shapes). The Phase 4
+//! modules are `stores` (ignore, mute, monitor and highlight lists), `monitorcoordinator`
+//! (MONITOR), `autoawayruntime` (idle and grace timers), `composertyping` (the typing
+//! hint), `channellist` (`/list` through the wire), `replyrouter` (WHOIS and CTCP
+//! replies), and `scrollplace` (where a transcript was left). Timers run on the `Clock`
+//! seam, and `pump` runs what they queued on the UI thread.
 
 // Phase 4: the slash dispatcher calls the intents in these modules (auto-away, the
 // composer hint, MONITOR and the stores). Until it lands only the tests call them,
