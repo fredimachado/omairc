@@ -7,7 +7,7 @@
 
 use gpui::{
     actions, div, img, prelude::*, App, Context, Entity, EventEmitter, FocusHandle, KeyBinding,
-    MouseButton, ObjectFit, Subscription, Window,
+    MouseButton, ObjectFit, ScrollHandle, Subscription, Window,
 };
 
 use crate::model::update_check::{StatusAction, UpdateCheck, REPO_URL};
@@ -41,6 +41,9 @@ pub enum AboutEvent {
 pub struct AboutSheet {
     check_focus: FocusHandle,
     ok_focus: FocusHandle,
+    /// The body between the title and the footer. In a short window it scrolls, and
+    /// it is moved so the button that has focus is in view.
+    body_scroll: ScrollHandle,
     /// The window's update state. The sheet re-renders when it changes.
     update: Entity<UpdateCheck>,
     _observe: Subscription,
@@ -49,9 +52,13 @@ pub struct AboutSheet {
 impl AboutSheet {
     pub fn new(update: Entity<UpdateCheck>, cx: &mut Context<Self>) -> Self {
         let observe = cx.observe(&update, |_, _, cx| cx.notify());
+        let body_scroll = ScrollHandle::new();
+        // OK has focus when the sheet opens, and it sits at the foot of the body.
+        body_scroll.scroll_to_bottom();
         Self {
             check_focus: cx.focus_handle(),
             ok_focus: cx.focus_handle(),
+            body_scroll,
             update,
             _observe: observe,
         }
@@ -62,13 +69,21 @@ impl AboutSheet {
         self.ok_focus.clone()
     }
 
+    /// Tab and Shift+Tab. The body scrolls to whichever button takes focus: OK is at
+    /// its foot and Check for Updates near its top.
     fn toggle_focus(&self, window: &mut Window) {
-        let target = if self.check_focus.is_focused(window) {
+        let to_ok = self.check_focus.is_focused(window);
+        let target = if to_ok {
             &self.ok_focus
         } else {
             &self.check_focus
         };
         window.focus(target);
+        if to_ok {
+            self.body_scroll.scroll_to_bottom();
+        } else {
+            self.body_scroll.set_offset(Default::default());
+        }
     }
 
     fn activate(&mut self, window: &Window, cx: &mut Context<Self>) {
@@ -175,20 +190,32 @@ impl Render for AboutSheet {
             })
             .child("View the source on GitHub");
 
-        let body = div()
-            .flex()
-            .flex_col()
-            .gap(scaled_px(&app_style, 14.))
+        // The title stays put; the body under it scrolls in a short window. The gap
+        // under the title sits on the title, so the body starts where the title ends.
+        let title = div()
+            .flex_shrink_0()
             .px(scaled_px(&app_style, 22.))
             .pt(scaled_px(&app_style, 18.))
-            .pb(scaled_px(&app_style, 16.))
+            .pb(scaled_px(&app_style, 14.))
             .child(
                 div()
                     .text_size(scaled_px(&app_style, 11.))
                     .text_color(muted)
                     .font_family(FONT_FAMILY)
                     .child("About Omairc"),
-            )
+            );
+
+        let body = div()
+            .id("about-body")
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .track_scroll(&self.body_scroll)
+            .flex()
+            .flex_col()
+            .gap(scaled_px(&app_style, 14.))
+            .px(scaled_px(&app_style, 22.))
+            .pb(scaled_px(&app_style, 16.))
             .child(
                 div()
                     .flex()
@@ -241,6 +268,7 @@ impl Render for AboutSheet {
         let footer = div()
             .w_full()
             .h(scaled_px(&app_style, 40.))
+            .flex_shrink_0()
             .border_t_1()
             .border_color(to_gpui(app_style.divider_color()))
             .flex()
@@ -270,6 +298,7 @@ impl Render for AboutSheet {
             .on_action(cx.listener(|sheet, _: &AboutActivate, window, cx| {
                 sheet.activate(window, cx);
             }))
+            .child(title)
             .child(body)
             .child(footer);
 

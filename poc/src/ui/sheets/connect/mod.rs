@@ -14,7 +14,7 @@ mod rail;
 mod tabs;
 mod toggles;
 
-use gpui::{actions, div, prelude::*, relative, AnyElement, App, FocusHandle, KeyBinding};
+use gpui::{actions, div, prelude::*, AnyElement, App, FocusHandle, KeyBinding};
 
 use crate::model::connect::{ConnectState, ConnectTab, Stop};
 use crate::model::prefs::Preferences;
@@ -112,8 +112,6 @@ pub fn render_connect(view: &ConnectView<'_>) -> AnyElement {
         .key_context(CONTEXT)
         .track_focus(view.card_focus)
         .w(scaled_px(style, 860.))
-        .max_w(relative(0.95))
-        .max_h(relative(0.92))
         .rounded(scaled_px(style, 10.))
         .bg(to_gpui(style.raised_color()))
         .border_1()

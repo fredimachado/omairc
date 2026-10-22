@@ -45,16 +45,12 @@ pub fn host_platform() -> Platform {
     }
 }
 
-/// Space kept above and below the card so it never touches the window edge.
-const WINDOW_MARGIN: f32 = 24.;
-
 impl Render for ShortcutsSheet {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let app_style = style(cx);
         let entity = cx.entity();
-        // The card is clamped to the window; the chord list scrolls inside it
-        // when the window is too short for all five groups.
-        let room = window.viewport_size().height - scaled_px(&app_style, 2. * WINDOW_MARGIN);
+        // The frame keeps the card inside the window; the chord list scrolls inside
+        // it when the window is too short for all five groups.
         let list = div()
             .id("shortcuts-list")
             .flex_1()
@@ -66,7 +62,6 @@ impl Render for ShortcutsSheet {
             .children(GROUPS.iter().map(|group| group_block(&app_style, group)));
         let card = div()
             .w(scaled_px(&app_style, 460.))
-            .max_h(room)
             .p(scaled_px(&app_style, 16.))
             .bg(to_gpui(app_style.raised_color()))
             .border_1()

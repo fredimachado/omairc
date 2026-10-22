@@ -210,6 +210,7 @@ pub fn render_filter_sheet<S: FilterSource>(sheet: &Entity<FilterSheet<S>>, cx: 
             div()
                 .id("filter-list")
                 .h(list_h)
+                .min_h_0()
                 .overflow_y_scroll()
                 .track_scroll(&state.scroll)
                 .flex()

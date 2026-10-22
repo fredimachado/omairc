@@ -165,6 +165,7 @@ pub fn render_inbox_sheet(sheet: &Entity<InboxSheet>, cx: &App) -> AnyElement {
         div()
             .id("inbox-list")
             .h(list_h)
+            .min_h_0()
             .overflow_y_scroll()
             .track_scroll(&state.scroll)
             .flex()
