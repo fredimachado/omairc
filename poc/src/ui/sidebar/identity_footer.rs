@@ -1,4 +1,4 @@
-use gpui::{div, prelude::*, relative, MouseButton};
+use gpui::{div, prelude::*, px, relative, MouseButton, Pixels};
 
 use crate::model::presence::{photo_for, SelfPresence};
 use crate::model::{mix_colors, sidebar::NetworkHeader, Color, Style};
@@ -6,6 +6,10 @@ use crate::ui::widgets::avatar::{avatar_disc, AvatarPhotos};
 use crate::ui::{Handler, BOTTOM_BAR_HEIGHT};
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 use crate::version::version;
+
+/// The advance of one glyph in iA Writer Mono S, per point of size. The face is
+/// monospaced, so a string's width is its character count times this.
+const MONO_ADVANCE_EM: f32 = 0.6;
 
 /// The identity footer, a port of the bottom of `ServerListColumn.qml`: 66 tall,
 /// the focused network's avatar, nick and presence, then the `inbox` link with
@@ -31,14 +35,17 @@ pub fn identity_footer(
         .and_then(|reference| photos.get(reference));
     let mark = to_gpui(style.presence_color(presence.mark()));
 
+    // Qt's identity column: the avatar sits 17 in, the text 63 in (17, the 34 avatar and a
+    // 12 gap), and the text stops 8 short of the inbox column. The inbox column ends 8 in
+    // from the right, and its labels sit 9 further in, so the text ends 17 from the edge.
     div()
         .w_full()
         .h(scaled_px(style, BOTTOM_BAR_HEIGHT))
         .flex_shrink_0()
-        .px(scaled_px(style, 17.))
+        .pl(scaled_px(style, 17.))
+        .pr(scaled_px(style, 8.))
         .flex()
         .items_center()
-        .gap(scaled_px(style, 12.))
         .bg(to_gpui(mix_colors(style.panel_color(), ink, amount)))
         .border_t_1()
         .border_color(to_gpui(style.divider_color()))
@@ -64,12 +71,16 @@ pub fn identity_footer(
             div()
                 .flex_grow()
                 .min_w_0()
+                .ml(scaled_px(style, 12.))
+                .mr(scaled_px(style, 8.))
                 .flex()
                 .flex_col()
                 .gap(scaled_px(style, 1.))
                 .child(nick_and_account(network, style))
                 .child(
                     div()
+                        // Qt's 10px line is 14 tall, so the column keeps Qt's rhythm.
+                        .line_height(scaled_px(style, 14.))
                         .text_size(scaled_px(style, 10.))
                         .whitespace_nowrap()
                         .text_color(muted)
@@ -80,7 +91,6 @@ pub fn identity_footer(
         .child(
             div()
                 .flex_shrink_0()
-                .pr(scaled_px(style, 8.))
                 .flex()
                 .flex_col()
                 .items_end()
@@ -99,8 +109,10 @@ pub fn identity_footer(
 }
 
 /// The nick in bold, then the account in muted 13px on the same line (Qt's `selfNickLabel`
-/// and `selfAccountLabel`). The account takes at most 40% of the row, and both elide. The
-/// account is empty when the network reports none, or it only repeats the nick.
+/// and `selfAccountLabel`). The account is `min(its width, max(48, 40% of the row))`: it
+/// keeps its whole width when it fits, and it never shrinks, so the nick takes the rest
+/// and elides first. The account elides past its cap. It is empty when the network reports
+/// none, or it only repeats the nick.
 fn nick_and_account(network: &NetworkHeader, style: &Style) -> impl IntoElement {
     let ink = style.ink_color();
     div()
@@ -108,6 +120,8 @@ fn nick_and_account(network: &NetworkHeader, style: &Style) -> impl IntoElement 
         .min_w_0()
         .flex()
         .items_center()
+        // Qt's 13px line is 17 tall: the nick row keeps Qt's height, not the default 1.6 em.
+        .line_height(scaled_px(style, 17.))
         .gap(scaled_px(style, 4.))
         .child(
             div()
@@ -124,8 +138,9 @@ fn nick_and_account(network: &NetworkHeader, style: &Style) -> impl IntoElement 
         .when(!network.account.is_empty(), |this| {
             this.child(
                 div()
+                    .flex_shrink_0()
+                    .min_w(account_floor(&network.account, style))
                     .max_w(relative(0.4))
-                    .min_w_0()
                     .overflow_hidden()
                     .whitespace_nowrap()
                     .text_ellipsis()
@@ -135,6 +150,15 @@ fn nick_and_account(network: &NetworkHeader, style: &Style) -> impl IntoElement 
                     .child(network.account.clone()),
             )
         })
+}
+
+/// Qt's floor on the account: `max(48, 40%)` caps it from below at 48, but never past the
+/// account's own width, so a short account is not padded out to 48. GPUI's min width wins
+/// over its max width, so this floor and the 40% cap combine as Qt's `min` does.
+fn account_floor(account: &str, style: &Style) -> Pixels {
+    let font_px = style.scaled(13.) as f32;
+    let natural = account.chars().count() as f32 * MONO_ADVANCE_EM * font_px;
+    px(natural.min(style.scaled(48.) as f32))
 }
 
 /// The version link under `inbox`. A press opens the About sheet. Hover turns
