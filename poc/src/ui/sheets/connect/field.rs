@@ -2,11 +2,12 @@
 //! small `?` help mark that `FieldHelpMark.qml` draws beside a label. The input is
 //! the shared `SingleLineInput`, so typing, selection and undo are the composer's.
 
-use gpui::{div, prelude::*, MouseButton};
+use gpui::{div, prelude::*, MouseButton, SharedString};
 
 use crate::model::connect::{ConnectField, Stop};
 use crate::model::mix_colors;
 use crate::ui::sheets::connect::ConnectView;
+use crate::ui::widgets::tooltip::text_tooltip;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
 /// One field: its label, a badge and help mark when it has them, the input, and
@@ -29,8 +30,8 @@ pub fn text_field(view: &ConnectView<'_>, field: ConnectField) -> impl IntoEleme
         label_row = label_row.child(badge_chip(view, badge));
     }
     let help = field.help();
-    if help.is_some() {
-        label_row = label_row.child(help_mark(view, Stop::FieldHelp(field)));
+    if let Some(text) = help {
+        label_row = label_row.child(help_mark(view, Stop::FieldHelp(field), text));
     }
 
     let mut column = div()
@@ -78,9 +79,11 @@ pub fn caption(view: &ConnectView<'_>, text: &str) -> impl IntoElement {
         .child(text.to_string())
 }
 
-/// The 12px `?` circle. A click or Enter on it focuses it, and a focused mark
-/// shows its help (`caption`). Its stop is `stop`, a `FieldHelp` or `PreferenceHelp`.
-pub fn help_mark(view: &ConnectView<'_>, stop: Stop) -> impl IntoElement {
+/// The 12px `?` circle. Hovering it shows `help` as a tooltip (Qt's
+/// `ToolTip`). A click or Enter on it focuses it, and a focused mark shows its
+/// help as a `caption` under the field, for keyboard users. Its stop is `stop`, a
+/// `FieldHelp` or `PreferenceHelp`, and its element id comes from that stop.
+pub fn help_mark(view: &ConnectView<'_>, stop: Stop, help: &str) -> impl IntoElement {
     let style = view.style;
     let focused = view.is_focused(&stop);
     let resting = mix_colors(
@@ -90,6 +93,7 @@ pub fn help_mark(view: &ConnectView<'_>, stop: Stop) -> impl IntoElement {
     );
     let accent = to_gpui(style.accent_color());
     let mut mark = div()
+        .id(SharedString::from(format!("help-mark-{stop:?}")))
         .w(scaled_px(style, 12.))
         .h(scaled_px(style, 12.))
         .flex_shrink_0()
@@ -111,6 +115,7 @@ pub fn help_mark(view: &ConnectView<'_>, stop: Stop) -> impl IntoElement {
             let click = view.click(stop.clone());
             move |_, window, cx| click(window, cx)
         })
+        .tooltip(text_tooltip(vec![help.to_owned()]))
         .child("?");
     if let Some(handle) = view.handle(&stop) {
         mark = mark.track_focus(handle);

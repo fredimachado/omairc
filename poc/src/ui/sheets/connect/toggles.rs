@@ -127,7 +127,7 @@ fn preference_row(view: &ConnectView<'_>, row: PreferenceRow) -> impl IntoElemen
                                 .font_family(FONT_FAMILY)
                                 .child(row.label),
                         )
-                        .child(help_mark(view, help_stop.clone())),
+                        .child(help_mark(view, help_stop.clone(), row.help)),
                 ),
         );
     if view.is_focused(&help_stop) {
