@@ -8,16 +8,23 @@ use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 /// The shell's height: Qt's `composerShell` minimum.
 const SHELL_HEIGHT: f32 = 46.;
 
+/// The shell's side and bottom inset (Qt's `composerShell` margins). The slash popup
+/// uses the same side inset, so its edges are the shell's edges.
+pub const SHELL_INSET: f32 = 20.;
+
 /// The composer strip under the transcript, a port of `composerShell` in
 /// `ConversationColumn.qml`. The strip is `BOTTOM_BAR_HEIGHT` tall, the same as the
-/// identity footer, so their top dividers line up. Inside it sits the 46px shell
-/// that holds the single-line draft and the SEND button. The shell's border is the
-/// accent while the draft has focus (`focused`), else the divider.
+/// identity footer. The shell sits at its top, `SHELL_INSET` in from the sides and
+/// the bottom, so the shell's top lands on the footer's divider line as Qt's does.
+/// The strip draws no rule of its own: Qt has none above the composer. Inside it sits
+/// the 46px shell that holds the single-line draft and the SEND button. The shell's
+/// border is the accent while the draft has focus (`focused`), else the divider.
 ///
 /// `has_text` says whether the draft has anything to send. A click on SEND calls
 /// `on_send`. Enter is handled by the shell root (`ComposerSubmit`), which checks
 /// header focus. `popup` is the slash-complete popup, if it shows. It is a child of
-/// the shell, so it hangs over the field.
+/// the strip, not the shell, so it can hang above the shell's top edge with the shell's
+/// side edges.
 pub fn render_composer(
     composer: Entity<SingleLineInput>,
     style: &Style,
@@ -33,16 +40,15 @@ pub fn render_composer(
     };
 
     div()
-        .px(scaled_px(style, 16.))
+        .relative()
+        .px(scaled_px(style, SHELL_INSET))
+        .pb(scaled_px(style, SHELL_INSET))
         .h(scaled_px(style, BOTTOM_BAR_HEIGHT))
         .flex_shrink_0()
-        .border_t_1()
-        .border_color(to_gpui(style.divider_color()))
         .flex()
-        .items_center()
+        .items_start()
         .child(
             div()
-                .relative()
                 .flex_grow()
                 .min_w_0()
                 .h(scaled_px(style, SHELL_HEIGHT))
@@ -60,9 +66,9 @@ pub fn render_composer(
                         .pl(scaled_px(style, 8.))
                         .child(composer),
                 )
-                .child(send_button(style, has_text, on_send))
-                .when_some(popup, |this, popup| this.child(popup)),
+                .child(send_button(style, has_text, on_send)),
         )
+        .when_some(popup, |this, popup| this.child(popup))
 }
 
 /// SEND: 54 by 30 with a 7px radius, 8px in from the shell's right edge. With text

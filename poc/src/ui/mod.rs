@@ -23,6 +23,6 @@ pub type Handler<A> = Rc<dyn Fn(A, &mut Window, &mut App)>;
 
 /// The height of both bottom bars: the identity footer under the sidebar
 /// (`sidebar::identity_footer`) and the composer strip under the transcript
-/// (`center::composer`). Both are border-box at this height, so their top
-/// dividers land on the same line at any text scale.
+/// (`center::composer`). Both are border-box at this height, so the footer's top
+/// divider and the composer shell's top edge land on the same line at any text scale.
 pub const BOTTOM_BAR_HEIGHT: f32 = 66.;
