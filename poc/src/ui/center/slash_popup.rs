@@ -15,14 +15,16 @@ use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 /// One row's height in logical pixels (Qt `slashHit` height 28).
 const ROW_HEIGHT: f32 = 28.;
 
-/// The gap between the popup's bottom edge and the composer shell's top (Qt's
-/// `slashCompleteList` `anchors.bottomMargin`).
+/// The gap between the popup's bottom edge and the composer strip's top rule (Qt's
+/// `slashCompleteList` `anchors.bottomMargin`, measured from the rule rather than the
+/// shell, which sits below the rule now that the shell is centred in the strip).
 const SHELL_GAP: f32 = 6.;
 
 /// The popup as an overlay over the transcript, standing `SHELL_GAP` above the
-/// composer shell and spanning its edges (Qt's `slashCompleteList`, anchored to
-/// `composerShell`). It is absolute, so it does not push the transcript, and it
-/// occludes the mouse so a click on a row does not start a transcript selection.
+/// composer strip's rule and spanning the shell's side edges (Qt's
+/// `slashCompleteList`). Anchoring to the rule keeps the popup clear of it, so the
+/// popup never covers the divider. It is absolute, so it does not push the transcript,
+/// and it occludes the mouse so a click on a row does not start a transcript selection.
 /// `render_composer` places it in the composer strip.
 pub fn render_slash_popup(
     hits: &[SlashHit],

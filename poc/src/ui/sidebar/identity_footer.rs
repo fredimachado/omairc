@@ -11,6 +11,10 @@ use crate::version::version;
 /// monospaced, so a string's width is its character count times this.
 const MONO_ADVANCE_EM: f32 = 0.6;
 
+/// The inset of the inbox and version column from the footer's right edge, so the
+/// right-aligned labels do not sit against that edge.
+const INBOX_RIGHT_INSET: f32 = 16.;
+
 /// The identity footer, a port of the bottom of `ServerListColumn.qml`: 66 tall,
 /// the focused network's avatar, nick and presence, then the `inbox` link with
 /// its count and the version. The presence word and the mark come from the
@@ -36,15 +40,15 @@ pub fn identity_footer(
     let mark = to_gpui(style.presence_color(presence.mark()));
 
     // Qt's identity column: the avatar sits 17 in, the text 63 in (17, the 34 avatar and a
-    // 12 gap), and the text stops 8 short of the inbox column. The inbox column ends 8 in
-    // from the right. Its labels are right-aligned to that edge, not 9 further in as Qt's
-    // are, so the nick and account get those 9 px.
+    // 12 gap), and the text stops 8 short of the inbox column. The inbox column ends
+    // `INBOX_RIGHT_INSET` in from the right, so its labels sit off the window edge. The
+    // nick and account give up that extra inset, and they still elide before the column.
     div()
         .w_full()
         .h(scaled_px(style, BOTTOM_BAR_HEIGHT))
         .flex_shrink_0()
         .pl(scaled_px(style, 17.))
-        .pr(scaled_px(style, 8.))
+        .pr(scaled_px(style, INBOX_RIGHT_INSET))
         .flex()
         .items_center()
         .bg(to_gpui(mix_colors(style.panel_color(), ink, amount)))
