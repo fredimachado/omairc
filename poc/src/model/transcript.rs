@@ -1,7 +1,9 @@
 use super::format::{format_irc, FormattedText};
 use super::status::StatusMark;
 use super::text_edit::{snap_grapheme, word_bounds};
-use crate::irc::world::{Message, MessageKind};
+use crate::desktop::locale::short_date;
+use crate::irc::reducer::zero_time;
+use crate::irc::world::{Message, MessageKind, Origin};
 use chrono::{DateTime, Local, NaiveDate, Utc};
 use std::ops::Range;
 
@@ -79,7 +81,9 @@ struct Fenwick {
 
 impl Fenwick {
     fn new(n: usize) -> Self {
-        Self { tree: vec![0; n + 1] }
+        Self {
+            tree: vec![0; n + 1],
+        }
     }
 
     fn ensure_rows(&mut self, rows: usize) {
@@ -395,10 +399,7 @@ fn row_plain(row: &Row) -> &str {
             .separator_text
             .as_deref()
             .unwrap_or(row.body.plain.as_str()),
-        RowKind::Event => row
-            .event_text
-            .as_deref()
-            .unwrap_or(row.body.plain.as_str()),
+        RowKind::Event => row.event_text.as_deref().unwrap_or(row.body.plain.as_str()),
         RowKind::Message | RowKind::Status | RowKind::Whois | RowKind::UnreadMark => {
             &row.body.plain
         }
@@ -415,34 +416,65 @@ fn day_of(time: DateTime<Utc>) -> NaiveDate {
     time.with_timezone(&Local).date_naive()
 }
 
-/// The caption of a day separator, such as `— September 12, 2026 —`.
-pub fn day_caption(day: NaiveDate) -> String {
-    format!("— {} —", day.format("%B %-d, %Y"))
+/// The caption of a day separator (Qt `dateLabel`): `Today`, `Yesterday`, or the
+/// locale's short date for any other day.
+pub fn day_caption(day: NaiveDate, today: NaiveDate) -> String {
+    if day == today {
+        return "Today".to_owned();
+    }
+    if today.pred_opt() == Some(day) {
+        return "Yesterday".to_owned();
+    }
+    short_date(day)
 }
 
-/// Whether a line carries a display time. A whois line has none.
-fn has_time(message: &Message) -> bool {
-    // A whois line and a line the reducer stamped with no time (`zero_time`) have no day.
-    message.kind != MessageKind::Whois && message.time != DateTime::<Utc>::MIN_UTC
+/// The day a line belongs to (Qt `assignedDate`). A line with a display time takes that
+/// time's local date. A live line without one takes today. Any other untimed line, such as
+/// a replayed one, takes the day of the line above it.
+fn assigned_day(
+    message: &Message,
+    previous: Option<NaiveDate>,
+    today: NaiveDate,
+) -> Option<NaiveDate> {
+    if message.time != zero_time() {
+        return Some(day_of(message.time));
+    }
+    if message.origin == Origin::Live {
+        return Some(today);
+    }
+    previous
 }
 
 /// The rows for one conversation's lines, oldest first.
 ///
 /// `mark` is the sequence of the "New messages" boundary (`ConversationState::unread_mark`).
 /// The boundary row sits in front of that line, but only when a row is above it, as
-/// Qt's `!view.empty()` rule has it. A day separator sits in front of the first line of
-/// each local day.
+/// Qt's `!view.empty()` rule has it. A day separator sits in front of a line whose day
+/// differs from the line above, and in front of the first dated line when that day is not
+/// today, so a backlog still says which day it is (Qt `buildView`).
 pub fn rows_from_messages(messages: &[Message], mark: Option<i64>) -> Vec<Row> {
+    rows_from_messages_on(messages, mark, Local::now().date_naive())
+}
+
+/// `rows_from_messages` with `today` given, so a test can fix the day as Qt's
+/// `setTranscriptTodayForTest` does.
+pub fn rows_from_messages_on(
+    messages: &[Message],
+    mark: Option<i64>,
+    today: NaiveDate,
+) -> Vec<Row> {
     let mut rows: Vec<Row> = Vec::with_capacity(messages.len());
-    let mut last_day: Option<NaiveDate> = None;
+    let mut previous: Option<NaiveDate> = None;
     for message in messages {
-        if has_time(message) {
-            let day = day_of(message.time);
-            if last_day != Some(day) {
+        let date = assigned_day(message, previous, today);
+        let day_change = matches!((date, previous), (Some(day), Some(prior)) if day != prior);
+        let leading_backlog = previous.is_none() && date.is_some_and(|day| day != today);
+        if let Some(day) = date {
+            if day_change || leading_backlog {
                 let id = rows.len() as u64 + 1;
-                rows.push(day_separator_row(id, day));
-                last_day = Some(day);
+                rows.push(day_separator_row(id, day, today));
             }
+            previous = Some(day);
         }
         if mark == Some(message.sequence) && !rows.is_empty() {
             let id = rows.len() as u64 + 1;
@@ -470,8 +502,8 @@ pub fn row_for_message(id: u64, message: &Message, previous: Option<&Row>) -> Ro
     }
 }
 
-fn day_separator_row(id: u64, day: NaiveDate) -> Row {
-    let text = day_caption(day);
+fn day_separator_row(id: u64, day: NaiveDate, today: NaiveDate) -> Row {
+    let text = day_caption(day, today);
     Row {
         id,
         kind: RowKind::DaySeparator,
@@ -586,14 +618,40 @@ mod tests {
     /// A local wall time on 19 October 2026, as a UTC instant. The transcript shows its
     /// `HH:MM` back in the local zone, so the minute reads the same in any zone.
     fn local(hour: u32, minute: u32) -> chrono::DateTime<chrono::Utc> {
+        local_on(19, hour, minute)
+    }
+
+    /// A local wall time on the given day of October 2026, as a UTC instant.
+    fn local_on(day: u32, hour: u32, minute: u32) -> chrono::DateTime<chrono::Utc> {
         Local
-            .with_ymd_and_hms(2026, 10, 19, hour, minute, 0)
+            .with_ymd_and_hms(2026, 10, day, hour, minute, 0)
             .unwrap()
             .with_timezone(&chrono::Utc)
     }
 
+    /// The fixed "today" the day-separator tests pass, as Qt's test hook does.
+    fn today() -> NaiveDate {
+        october(22)
+    }
+
+    fn october(day: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 10, day).unwrap()
+    }
+
+    /// A line replayed from history rather than received live.
+    fn replayed(mut message: Message) -> Message {
+        message.origin = Origin::Replay;
+        message
+    }
+
     /// One transcript line of the given kind.
-    fn line(kind: MessageKind, author: &str, body: &str, time: chrono::DateTime<chrono::Utc>, sequence: i64) -> Message {
+    fn line(
+        kind: MessageKind,
+        author: &str,
+        body: &str,
+        time: chrono::DateTime<chrono::Utc>,
+        sequence: i64,
+    ) -> Message {
         Message {
             kind,
             author: author.to_string(),
@@ -610,7 +668,13 @@ mod tests {
     }
 
     fn chat(author: &str, body: &str, hour: u32, minute: u32, sequence: i64) -> Message {
-        line(MessageKind::Message, author, body, local(hour, minute), sequence)
+        line(
+            MessageKind::Message,
+            author,
+            body,
+            local(hour, minute),
+            sequence,
+        )
     }
 
     /// The row kinds of a transcript, without its day separators.
@@ -676,7 +740,13 @@ mod tests {
     fn a_stored_whois_line_becomes_a_whois_row_and_breaks_a_group() {
         let messages = [
             chat("anna", "hello", 9, 41, 1),
-            line(MessageKind::Whois, "", "VERSION reply from anna: https://omairc.app", local(0, 0), 2),
+            line(
+                MessageKind::Whois,
+                "",
+                "VERSION reply from anna: https://omairc.app",
+                local(0, 0),
+                2,
+            ),
             chat("anna", "again", 9, 41, 3),
         ];
         let rows = rows_from_messages(&messages, None);
@@ -764,7 +834,10 @@ mod tests {
             chat("fred", "c", 9, 47, 3),
         ];
         let rows = rows_from_messages(&messages, None);
-        let chats: Vec<&Row> = rows.iter().filter(|row| row.kind == RowKind::Message).collect();
+        let chats: Vec<&Row> = rows
+            .iter()
+            .filter(|row| row.kind == RowKind::Message)
+            .collect();
         assert_eq!(chats.len(), 3);
         assert!(!chats[0].continues);
         assert!(chats[1].continues, "same author, same minute");
@@ -793,26 +866,49 @@ mod tests {
     }
 
     #[test]
-    fn a_line_with_no_time_starts_no_day() {
-        let untimed = line(MessageKind::Event, "", "nora joined", DateTime::<Utc>::MIN_UTC, 1);
-        let rows = rows_from_messages(&[untimed], None);
+    fn an_untimed_replayed_line_with_no_day_above_starts_no_day() {
+        let untimed = replayed(line(
+            MessageKind::Event,
+            "",
+            "nora joined",
+            DateTime::<Utc>::MIN_UTC,
+            1,
+        ));
+        let rows = rows_from_messages_on(&[untimed], None, today());
+        assert_eq!(kinds(&rows), [RowKind::Event]);
+        assert!(rows.iter().all(|row| row.kind != RowKind::DaySeparator));
+    }
+
+    #[test]
+    fn a_live_untimed_line_with_no_day_above_is_today_and_starts_no_rule() {
+        let untimed = line(
+            MessageKind::Event,
+            "",
+            "nora joined",
+            DateTime::<Utc>::MIN_UTC,
+            1,
+        );
+        let rows = rows_from_messages_on(&[untimed], None, today());
         assert_eq!(kinds(&rows), [RowKind::Event]);
         assert!(rows.iter().all(|row| row.kind != RowKind::DaySeparator));
     }
 
     #[test]
     fn rows_from_messages_breaks_on_event_and_day() {
-        let next_day = Local
-            .with_ymd_and_hms(2026, 10, 20, 9, 0, 0)
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let next_day = local_on(20, 9, 0);
         let messages = [
             chat("anna", "one", 9, 0, 1),
-            line(MessageKind::Event, "", "dax joined #omarchy", local(9, 0), 2),
+            line(
+                MessageKind::Event,
+                "",
+                "dax joined #omarchy",
+                local(9, 0),
+                2,
+            ),
             chat("anna", "two", 9, 0, 3),
             line(MessageKind::Message, "anna", "three", next_day, 4),
         ];
-        let rows = rows_from_messages(&messages, None);
+        let rows = rows_from_messages_on(&messages, None, today());
         let plain: Vec<RowKind> = rows.iter().map(|row| row.kind).collect();
         assert_eq!(
             plain,
@@ -826,10 +922,112 @@ mod tests {
             ]
         );
         assert!(!rows[3].continues, "an event row ends the group");
-        assert_eq!(
-            rows[4].separator_text.as_deref(),
-            Some("— October 20, 2026 —")
-        );
+        let short = short_date(october(20));
+        assert_eq!(rows[4].separator_text.as_deref(), Some(short.as_str()));
+    }
+
+    #[test]
+    fn a_leading_backlog_day_is_labelled_when_it_is_not_today() {
+        let messages = [
+            replayed(line(
+                MessageKind::Message,
+                "anna",
+                "one",
+                local_on(19, 9, 41),
+                1,
+            )),
+            replayed(line(
+                MessageKind::Message,
+                "anna",
+                "two",
+                local_on(19, 9, 43),
+                2,
+            )),
+        ];
+        let rows = rows_from_messages_on(&messages, None, today());
+        assert_eq!(rows.len(), 3, "one rule, then both lines of that day");
+        assert_eq!(rows[0].kind, RowKind::DaySeparator);
+        let backlog = short_date(october(19));
+        assert_eq!(rows[0].separator_text.as_deref(), Some(backlog.as_str()));
+        assert!(rows[1..].iter().all(|row| row.kind == RowKind::Message));
+    }
+
+    #[test]
+    fn a_leading_today_gets_no_separator() {
+        let messages = [replayed(line(
+            MessageKind::Message,
+            "anna",
+            "hi",
+            local_on(22, 9, 41),
+            1,
+        ))];
+        let rows = rows_from_messages_on(&messages, None, today());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(kinds(&rows), [RowKind::Message]);
+    }
+
+    #[test]
+    fn a_live_untimed_line_after_a_backlog_day_is_labelled_today() {
+        let messages = [
+            replayed(line(
+                MessageKind::Message,
+                "anna",
+                "old",
+                local_on(19, 9, 41),
+                1,
+            )),
+            line(
+                MessageKind::Event,
+                "",
+                "nora joined",
+                DateTime::<Utc>::MIN_UTC,
+                2,
+            ),
+        ];
+        let rows = rows_from_messages_on(&messages, None, today());
+        let backlog = short_date(october(19));
+        let captions: Vec<&str> = rows
+            .iter()
+            .filter(|row| row.kind == RowKind::DaySeparator)
+            .filter_map(|row| row.separator_text.as_deref())
+            .collect();
+        assert_eq!(captions, [backlog.as_str(), "Today"]);
+        assert_eq!(rows.last().map(|row| row.kind), Some(RowKind::Event));
+    }
+
+    #[test]
+    fn the_day_before_today_is_labelled_yesterday() {
+        let messages = [replayed(line(
+            MessageKind::Message,
+            "anna",
+            "late",
+            local_on(21, 23, 50),
+            1,
+        ))];
+        let rows = rows_from_messages_on(&messages, None, today());
+        assert_eq!(rows[0].separator_text.as_deref(), Some("Yesterday"));
+    }
+
+    #[test]
+    fn day_caption_names_today_yesterday_and_other_days() {
+        assert_eq!(day_caption(october(22), today()), "Today");
+        assert_eq!(day_caption(october(21), today()), "Yesterday");
+        assert_eq!(day_caption(october(20), today()), short_date(october(20)));
+    }
+
+    #[test]
+    fn a_whois_line_takes_its_day_like_any_other_line() {
+        let messages = [replayed(line(
+            MessageKind::Whois,
+            "",
+            "alice is a user",
+            local_on(19, 9, 0),
+            1,
+        ))];
+        let rows = rows_from_messages_on(&messages, None, today());
+        assert_eq!(rows.len(), 2, "a day rule, then the whois line");
+        assert_eq!(rows[0].kind, RowKind::DaySeparator);
+        assert_eq!(kinds(&rows), [RowKind::Whois]);
     }
 
     #[test]
