@@ -107,6 +107,7 @@ impl Shell {
             .into_iter()
             .map(|id| {
                 let nick = self.controller.current_nick_for(&id);
+                let account = self.controller.display_account(&id, &nick);
                 let avatar = self
                     .controller
                     .nick_facts(&id)
@@ -121,6 +122,7 @@ impl Shell {
                 NetworkHeader {
                     name: self.controller.network_name(&id),
                     nick,
+                    account,
                     avatar,
                     icon_color,
                     icon: self.controller.features(&id).icon_url().map(str::to_owned),

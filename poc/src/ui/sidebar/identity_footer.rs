@@ -1,4 +1,4 @@
-use gpui::{div, prelude::*, MouseButton};
+use gpui::{div, prelude::*, relative, MouseButton};
 
 use crate::model::presence::{photo_for, SelfPresence};
 use crate::model::{mix_colors, sidebar::NetworkHeader, Color, Style};
@@ -67,17 +67,7 @@ pub fn identity_footer(
                 .flex()
                 .flex_col()
                 .gap(scaled_px(style, 1.))
-                .child(
-                    div()
-                        .overflow_hidden()
-                        .whitespace_nowrap()
-                        .text_ellipsis()
-                        .text_size(scaled_px(style, 13.))
-                        .font_weight(gpui::FontWeight::BOLD)
-                        .text_color(to_gpui(ink))
-                        .font_family(FONT_FAMILY)
-                        .child(network.nick.clone()),
-                )
+                .child(nick_and_account(network, style))
                 .child(
                     div()
                         .text_size(scaled_px(style, 10.))
@@ -106,6 +96,45 @@ pub fn identity_footer(
                     style,
                 )),
         )
+}
+
+/// The nick in bold, then the account in muted 13px on the same line (Qt's `selfNickLabel`
+/// and `selfAccountLabel`). The account takes at most 40% of the row, and both elide. The
+/// account is empty when the network reports none, or it only repeats the nick.
+fn nick_and_account(network: &NetworkHeader, style: &Style) -> impl IntoElement {
+    let ink = style.ink_color();
+    div()
+        .w_full()
+        .min_w_0()
+        .flex()
+        .items_center()
+        .gap(scaled_px(style, 4.))
+        .child(
+            div()
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_ellipsis()
+                .text_size(scaled_px(style, 13.))
+                .font_weight(gpui::FontWeight::BOLD)
+                .text_color(to_gpui(ink))
+                .font_family(FONT_FAMILY)
+                .child(network.nick.clone()),
+        )
+        .when(!network.account.is_empty(), |this| {
+            this.child(
+                div()
+                    .max_w(relative(0.4))
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_ellipsis()
+                    .text_size(scaled_px(style, 13.))
+                    .text_color(to_gpui(style.muted_color()))
+                    .font_family(FONT_FAMILY)
+                    .child(network.account.clone()),
+            )
+        })
 }
 
 /// The version link under `inbox`. A press opens the About sheet. Hover turns

@@ -436,10 +436,12 @@ impl NetworkPresence {
 
 /// What the transcript shows for one nick, folded from its member records across
 /// the channels of a network. For each field the first non-empty value wins, so a
-/// nick listed in several channels keeps its real name and avatar even where one
-/// record leaves them out. `bot` is sticky once any record marks it.
+/// nick listed in several channels keeps its real name, account and avatar even
+/// where one record leaves them out. `bot` is sticky once any record marks it.
+/// `account` is the display account (`DisplayAccount`): empty when it adds nothing.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct NickFacts {
+    pub account: String,
     pub realname: String,
     pub bot: bool,
     pub avatar: Option<String>,
@@ -447,7 +449,10 @@ pub struct NickFacts {
 
 impl NickFacts {
     /// Folds one member record in.
-    pub fn absorb(&mut self, realname: &str, bot: bool, avatar: Option<&str>) {
+    pub fn absorb(&mut self, account: &str, realname: &str, bot: bool, avatar: Option<&str>) {
+        if self.account.is_empty() {
+            self.account = account.to_owned();
+        }
         if self.realname.is_empty() {
             self.realname = realname.to_owned();
         }
@@ -726,13 +731,22 @@ mod tests {
     }
 
     #[test]
-    fn nick_facts_keep_the_first_name_and_avatar_and_a_sticky_bot() {
+    fn nick_facts_keep_the_first_account_name_and_avatar_and_a_sticky_bot() {
         let mut facts = NickFacts::default();
-        facts.absorb("", false, None);
-        facts.absorb("Ann Lee", true, Some("qrc:/ann.png"));
-        facts.absorb("Other", false, Some("qrc:/two.png"));
+        facts.absorb("", "", false, None);
+        facts.absorb("fredm", "Ann Lee", true, Some("qrc:/ann.png"));
+        facts.absorb("other", "Other", false, Some("qrc:/two.png"));
+        assert_eq!(facts.account, "fredm");
         assert_eq!(facts.realname, "Ann Lee");
         assert_eq!(facts.avatar.as_deref(), Some("qrc:/ann.png"));
         assert!(facts.bot);
+    }
+
+    #[test]
+    fn a_later_record_fills_in_an_account_an_earlier_one_left_out() {
+        let mut facts = NickFacts::default();
+        facts.absorb("", "", false, None);
+        facts.absorb("kaidev", "", false, None);
+        assert_eq!(facts.account, "kaidev");
     }
 }

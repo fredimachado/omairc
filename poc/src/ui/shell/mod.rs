@@ -24,6 +24,7 @@ use gpui::{
 };
 
 use crate::controller::controller::Controller;
+use crate::irc::plaintext::plain_irc_text;
 use crate::irc::viewnotify::ViewNotify;
 use crate::model::composer::ComposerState;
 use crate::model::connect::{ConnectState, Stop};
@@ -37,7 +38,7 @@ use crate::model::title::{conversation_title, window_title, TitleView};
 use crate::model::update_check::UpdateCheck;
 use crate::model::ConversationRef;
 use crate::session::clock::RealClock;
-use crate::ui::center::header::{people_pill, HeaderView, Subtitle};
+use crate::ui::center::header::{people_pill, HeaderView, QueryIdentity, Subtitle};
 use crate::ui::center::header_actions::{HeaderActions, HeaderOffers};
 use crate::ui::center::render_center;
 use crate::ui::center::slash_popup::render_slash_popup;
@@ -378,8 +379,7 @@ impl Render for Shell {
         }
 
         // The header reads the Status pane's title and its connection line, or the
-        // conversation's title, people count, and topic. A conversation's second line is
-        // its topic (Qt's `currentTopic`). Status shows the connection line from the
+        // conversation's title and people count. Status shows the connection line from the
         // controller: the network's last error while one is set, else its connection word.
         let (title, people, actions) = match &status {
             Some(network_id) => (
@@ -408,9 +408,25 @@ impl Render for Shell {
                 )
             }
         };
-        // The topic is the second line of a conversation. Its URLs and channel names are
-        // clickable, against the network's CHANTYPES. Status has no topic.
-        let topic = status.is_none().then(|| {
+        // A direct message's header names its peer: the presence dot and labels beside the
+        // nick, and the peer's real name as the second line (Qt's `queryPeerHeader`). A
+        // channel's second line is its topic, with clickable URLs and channel names, checked
+        // against the network's CHANTYPES. Status has neither.
+        let peer = status
+            .is_none()
+            .then(|| self.controller.peer_header())
+            .flatten();
+        let away_visible = self.controller.has_away_presence();
+        let query = peer.as_ref().map(|peer| QueryIdentity {
+            presence: peer.presence,
+            labels: &peer.labels,
+            away_visible,
+        });
+        let peer_realname = peer
+            .as_ref()
+            .map(|peer| plain_irc_text(&peer.realname))
+            .unwrap_or_default();
+        let topic = (status.is_none() && peer.is_none()).then(|| {
             let features = self.features_of(&selected.network_id);
             let text = format_irc(&self.controller.topic());
             let hits = text_hits(&text, &features);
@@ -420,13 +436,14 @@ impl Render for Shell {
             .as_deref()
             .map(|network_id| connection_line(&self.controller, network_id))
             .unwrap_or_default();
-        let subtitle = match &topic {
-            Some((text, hits)) => Subtitle::Topic {
+        let subtitle = match (&peer, &topic) {
+            (Some(_), _) => Subtitle::Plain(&peer_realname),
+            (None, Some((text, hits))) => Subtitle::Topic {
                 text,
                 hits,
                 on_hit: topic_handler(entity.clone()),
             },
-            None => Subtitle::Plain(&connection),
+            (None, None) => Subtitle::Plain(&connection),
         };
         // The slash popup hangs over the composer while it shows.
         let slash_popup = self.slash_popup_showing().then(|| {
@@ -494,8 +511,10 @@ impl Render for Shell {
         let header = HeaderView {
             title: &title,
             subtitle,
+            query,
             people,
             actions,
+            members_visible: show_members,
         };
         // The composer shell takes the accent border while its draft has focus in an
         // active window, and SEND lights only when the draft has text (Qt's `composerShell`).

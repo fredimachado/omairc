@@ -79,25 +79,18 @@ impl Controller {
             .is_channel(self.selected_target())
     }
 
-    /// The selected conversation's topic (`Topic`). A direct message reads as its
-    /// header line.
+    /// The selected conversation's topic (`Topic`). Only a channel has one: a direct
+    /// message's header line is the peer's real name (`peer_header`), and it is empty
+    /// when the peer has none.
     pub fn topic(&self) -> String {
         let Some(key) = self.selected.as_ref() else {
             return String::new();
         };
-        match self.reducer.find(key) {
-            None => {
-                if self.is_channel() {
-                    String::new()
-                } else {
-                    "Direct message".to_owned()
-                }
-            }
-            Some(conversation) => match conversation.channel.as_ref() {
-                Some(channel) => channel.topic.clone(),
-                None => format!("Direct message with {}", conversation.target),
-            },
-        }
+        self.reducer
+            .find(key)
+            .and_then(|conversation| conversation.channel.as_ref())
+            .map(|channel| channel.topic.clone())
+            .unwrap_or_default()
     }
 
     /// The people count the header and the member toggle show (`PeopleCount`).
@@ -136,9 +129,11 @@ impl Controller {
             };
             for nick in nicks {
                 let presence = self.reducer.nick_presence(network_id, &nick);
+                let account = self.display_account(network_id, &nick);
                 let realname = self.reducer.meaningful_realname(network_id, &nick);
                 let avatar = presence.avatar();
                 facts.entry(nick.clone()).or_default().absorb(
+                    &account,
                     &realname,
                     presence.is_bot(),
                     (!avatar.is_empty()).then_some(avatar),
@@ -146,6 +141,13 @@ impl Controller {
             }
         }
         facts
+    }
+
+    /// The account a nick shows beside its name, on the network: empty when unknown,
+    /// logged out, or equal to the nick (`DisplayAccount`). The transcript and the
+    /// identity footer both read it.
+    pub fn display_account(&self, network_id: &str, nick: &str) -> String {
+        self.reducer.display_account(network_id, nick)
     }
 
     /// The nicks typing in the selected conversation right now (`TypingNicks`).
@@ -183,8 +185,6 @@ impl Controller {
 
     /// The direct-message header for the selection (`SelectedPeerHeader`). `None`
     /// while Status shows, for a channel, or when nothing is selected.
-    // Phase 6: the direct-message header reads the peer's presence
-    #[allow(dead_code)]
     pub fn peer_header(&self) -> Option<PeerHeader> {
         if self.console_open || self.is_channel() {
             return None;
@@ -204,7 +204,6 @@ impl Controller {
             PeerPresence::Unknown => "offline",
         };
         Some(PeerHeader {
-            nick: nick.to_owned(),
             presence,
             realname: self.reducer.meaningful_realname(&key.network_id, nick),
             labels: self.reducer.peer_fact_labels(&key.network_id, nick),
@@ -324,8 +323,9 @@ impl Controller {
         self.last_error_for(self.focused_network_id())
     }
 
-    /// Whether the selected channel's members can show away state
-    /// (`HasAwayPresence`).
+    /// Whether the selected conversation can show away state (`HasAwayPresence`): the
+    /// selection's network sends away-notify. The direct-message header's presence dot
+    /// reads it.
     pub fn has_away_presence(&self) -> bool {
         self.selected_network_id()
             .is_some_and(|network| self.caps(network).contains(IrcCapability::AwayNotify))
