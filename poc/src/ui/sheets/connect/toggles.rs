@@ -71,17 +71,22 @@ pub fn tls_switch(view: &ConnectView<'_>) -> impl IntoElement {
         .child(switch(view, Stop::Tls, view.state.tls()))
 }
 
-/// The Preferences tab: its title, then one row per toggle, 8px apart.
+/// The Preferences tab: its title, then one row per toggle, 8px apart. It fills the
+/// body the Connection tab sets (`ConnectView` lays it over that body), sits at the top
+/// of it, and scrolls if a small window leaves it too short.
 pub fn preferences_panel(view: &ConnectView<'_>) -> impl IntoElement {
     let style = view.style;
     let mut panel = div()
-        .flex_1()
+        .id("connect-preferences")
+        .size_full()
         .min_h_0()
         .flex()
         .flex_col()
         .gap(scaled_px(style, 8.))
         .px(scaled_px(style, 18.))
         .pt(scaled_px(style, 18.))
+        .pb(scaled_px(style, 18.))
+        .overflow_y_scroll()
         .child(
             div()
                 .text_size(scaled_px(style, 15.))

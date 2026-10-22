@@ -108,7 +108,7 @@ impl<'a> ConnectView<'a> {
 /// says which stop has it.
 pub fn render_connect(view: &ConnectView<'_>) -> AnyElement {
     let style = view.style;
-    let mut card = div()
+    let card = div()
         .key_context(CONTEXT)
         .track_focus(view.card_focus)
         .w(scaled_px(style, 860.))
@@ -124,11 +124,8 @@ pub fn render_connect(view: &ConnectView<'_>) -> AnyElement {
         .flex_col()
         .overflow_hidden()
         .child(tabs::tab_strip(view))
-        .child(divider(style));
-    card = match view.state.tab() {
-        ConnectTab::Connection => card.child(connection_body(view)),
-        ConnectTab::Preferences => card.child(toggles::preferences_panel(view)),
-    };
+        .child(divider(style))
+        .child(tab_body(view));
     let dismiss = view.on_dismiss.clone();
     veil_frame(style, card, move |window, cx| dismiss((), window, cx)).into_any_element()
 }
@@ -156,6 +153,36 @@ fn connection_body(view: &ConnectView<'_>) -> impl IntoElement {
         )
         .child(divider(style))
         .child(footer::render_footer(view))
+}
+
+/// The body under the tab strip. The Connection tab lays it out, and Preferences is
+/// laid over it, so the sheet keeps one size as the tabs switch. A shared constant
+/// would not track the Connection tab at every text scale: its height sums rounded
+/// parts and text lines. While Preferences shows, the Connection tab stays in the
+/// layout but is not painted, so it still sets the height and takes no focus or clicks.
+fn tab_body(view: &ConnectView<'_>) -> impl IntoElement {
+    let preferences = view.state.tab() == ConnectTab::Preferences;
+    let mut body = div().relative().flex_1().min_h_0().flex().flex_col().child(
+        div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .when(preferences, |sizer| sizer.invisible())
+            .child(connection_body(view)),
+    );
+    if preferences {
+        body = body.child(
+            div()
+                .absolute()
+                .top_0()
+                .left_0()
+                .right_0()
+                .bottom_0()
+                .child(toggles::preferences_panel(view)),
+        );
+    }
+    body
 }
 
 /// A 1px rule in the divider colour.
