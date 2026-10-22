@@ -2,7 +2,7 @@ use gpui::{div, prelude::*, Entity, FocusHandle, MouseButton, ScrollHandle};
 
 use crate::irc::reducer::MemberView;
 use crate::model::Style;
-use crate::ui::members::member_row::member_row;
+use crate::ui::members::member_row::{member_row, RowState};
 use crate::ui::scrollbar::{div_vertical_scrollbar, ScrollbarDragCell};
 use crate::ui::widgets::avatar::AvatarPhotos;
 use crate::ui::Handler;
@@ -27,6 +27,13 @@ pub struct MembersData<'a> {
     pub avatars: bool,
     /// The photos this frame draws, by avatar reference (`ui::shell::avatars`).
     pub photos: &'a AvatarPhotos,
+    /// The nicks typing in the channel now (`Controller::typing_nicks`), empty when
+    /// the network cannot show typing. A member whose nick is listed shows the dots.
+    pub typing: &'a [String],
+    /// The shell's typing pulse, which lights one dot at a time.
+    pub typing_phase: u8,
+    /// Whether away-notify is on for the channel's network (`HasAwayPresence`).
+    pub away_visible: bool,
 }
 
 /// The right-hand member panel for a channel (`MembersColumn.qml`). `host` is
@@ -50,6 +57,9 @@ pub fn render_members<V: 'static>(
         cursor,
         avatars,
         photos,
+        typing,
+        typing_phase,
+        away_visible,
     } = data;
     let heading_color = to_gpui(style.muted_color());
     let ink = to_gpui(style.ink_color());
@@ -96,15 +106,15 @@ pub fn render_members<V: 'static>(
                         .track_focus(focus)
                         .key_context("MemberList")
                         .children(members.iter().enumerate().map(|(ix, member)| {
-                            member_row(
-                                member,
-                                style,
+                            let row = RowState {
                                 self_nick,
-                                on_nick.clone(),
-                                cursor == Some(ix),
+                                current: cursor == Some(ix),
                                 avatars,
-                                photos,
-                            )
+                                away_visible,
+                                typing: typing.contains(&member.nick),
+                                typing_phase,
+                            };
+                            member_row(member, ix, style, on_nick.clone(), photos, row)
                         })),
                 )
                 .child(div_vertical_scrollbar(scroll, style, host, drag.clone())),

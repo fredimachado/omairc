@@ -326,8 +326,6 @@ impl Controller {
 
     /// Whether the selected channel's members can show away state
     /// (`HasAwayPresence`).
-    // Phase 6: the member panel shows away presence
-    #[allow(dead_code)]
     pub fn has_away_presence(&self) -> bool {
         self.selected_network_id()
             .is_some_and(|network| self.caps(network).contains(IrcCapability::AwayNotify))

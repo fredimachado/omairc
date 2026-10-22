@@ -450,6 +450,14 @@ impl Render for Shell {
         } else {
             Vec::new()
         };
+        // The member rows' typing dots read the controller only while the panel shows, and
+        // only on a network that can show typing (`HasTyping`). Away is gated by away-notify.
+        let typing_nicks = if show_members && self.controller.has_typing() {
+            self.controller.typing_nicks()
+        } else {
+            Vec::new()
+        };
+        let away_visible = self.controller.has_away_presence();
         let photos = self.avatar_photos_for_frame(&networks, &conversations, &members, cx);
         self.push_photos(&photos, cx);
         // The footer is the focused network's identity (Qt's `identityNetworkId`): its nick,
@@ -555,6 +563,9 @@ impl Render for Shell {
                         cursor: members_cursor,
                         avatars: self.controller.preferences().avatars,
                         photos: &photos,
+                        typing: &typing_nicks,
+                        typing_phase: self.typing_phase,
+                        away_visible,
                     },
                     &app_style,
                     &self.members_scroll,

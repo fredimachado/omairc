@@ -3,10 +3,12 @@ use gpui::{prelude::*, div};
 use crate::model::Style;
 use crate::util::{scaled_px, to_gpui};
 
-/// The sidebar's dots: sized for a 12px face, so each dot is 4px apart by 3px.
+/// The sidebar's and member list's dots: sized for a 12px face, so each dot is 4px
+/// apart by 3px.
 const SIDEBAR_FACE_PX: f32 = 12.;
 
-/// Three dots with one lit, advanced by the shell's typing pulse. The sidebar size.
+/// Three dots with one lit, advanced by the shell's typing pulse. The sidebar and
+/// member-list size.
 pub fn typing_dots(style: &Style, phase: u8) -> impl IntoElement {
     typing_dots_sized(style, phase, SIDEBAR_FACE_PX)
 }
