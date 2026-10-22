@@ -20,3 +20,9 @@ use gpui::{App, Window};
 /// A callback handed to rows and widgets in place of the `Shell`. Rows call it
 /// with their own data; the owner decides what happens.
 pub type Handler<A> = Rc<dyn Fn(A, &mut Window, &mut App)>;
+
+/// The height of both bottom bars: the identity footer under the sidebar
+/// (`sidebar::identity_footer`) and the composer strip under the transcript
+/// (`center::composer`). Both are border-box at this height, so their top
+/// dividers land on the same line at any text scale.
+pub const BOTTOM_BAR_HEIGHT: f32 = 66.;

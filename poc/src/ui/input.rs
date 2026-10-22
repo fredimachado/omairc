@@ -85,6 +85,12 @@ pub struct SingleLineInput {
     /// Draws each character as a bullet, as Qt's password echo does. Copy and cut
     /// do nothing, so the secret stays in the field.
     mask: bool,
+    /// The field's height in logical pixels. The text inside is always 32 tall and
+    /// sits centred in it.
+    height: f32,
+    /// Whether the field draws its own panel, border and corners. A frameless field
+    /// sits inside a frame its owner draws, such as the composer's SEND shell.
+    framed: bool,
 }
 
 /// The bullet a masked field draws for each character.
@@ -134,12 +140,26 @@ impl SingleLineInput {
             send_limit: None,
             input_serial: 0,
             mask: false,
+            height: 32.,
+            framed: true,
         }
     }
 
     /// Draws the text as bullets. Used by the Connect sheet's secret fields.
     pub fn masked(mut self) -> Self {
         self.mask = true;
+        self
+    }
+
+    /// Sets the field's height in logical pixels. The default is 32.
+    pub fn height(mut self, px: f32) -> Self {
+        self.height = px;
+        self
+    }
+
+    /// Draws no panel, border or corners, so the owner's frame shows through.
+    pub fn frameless(mut self) -> Self {
+        self.framed = false;
         self
     }
 
@@ -911,12 +931,16 @@ impl Render for SingleLineInput {
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .w_full()
-            .h(crate::util::scaled_px(&app_style, 32.))
+            .h(crate::util::scaled_px(&app_style, self.height))
+            .flex()
+            .items_center()
             .px(crate::util::scaled_px(&app_style, 8.))
-            .bg(to_gpui(app_style.panel_color()))
-            .border_1()
-            .border_color(border)
-            .rounded(crate::util::scaled_px(&app_style, 7.))
+            .when(self.framed, |this| {
+                this.bg(to_gpui(app_style.panel_color()))
+                    .border_1()
+                    .border_color(border)
+                    .rounded(crate::util::scaled_px(&app_style, 7.))
+            })
             .child(SingleLineInputElement {
                 input: cx.entity(),
             })

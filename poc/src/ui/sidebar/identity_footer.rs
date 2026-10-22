@@ -3,7 +3,7 @@ use gpui::{div, prelude::*, MouseButton};
 use crate::model::presence::{photo_for, SelfPresence};
 use crate::model::{mix_colors, sidebar::NetworkHeader, Color, Style};
 use crate::ui::widgets::avatar::{avatar_disc, AvatarPhotos};
-use crate::ui::Handler;
+use crate::ui::{Handler, BOTTOM_BAR_HEIGHT};
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 use crate::version::version;
 
@@ -33,7 +33,7 @@ pub fn identity_footer(
 
     div()
         .w_full()
-        .h(scaled_px(style, 66.))
+        .h(scaled_px(style, BOTTOM_BAR_HEIGHT))
         .flex_shrink_0()
         .px(scaled_px(style, 17.))
         .flex()
