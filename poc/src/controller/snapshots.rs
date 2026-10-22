@@ -42,14 +42,13 @@ pub struct ConversationRow {
     pub detail: String,
 }
 
-/// The direct-message header (`PeerHeader`).
+/// The direct-message header (`PeerHeader`). Its title is the conversation's title, so
+/// it carries only what the header adds to it.
 #[derive(Clone, Debug, PartialEq, Eq)]
-// Phase 6: the direct-message header and the connection footer read these
-#[allow(dead_code)]
 pub struct PeerHeader {
-    pub nick: String,
     /// `online`, `away` or `offline`.
     pub presence: &'static str,
+    /// The peer's real name when it is worth showing, else empty.
     pub realname: String,
     /// The account, operator and bot labels.
     pub labels: Vec<String>,

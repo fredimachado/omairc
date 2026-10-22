@@ -6,7 +6,7 @@ use std::rc::Rc;
 use gpui::{
     App, Bounds, Div, Element, ElementId, GlobalElementId, Hsla, IntoElement, MouseButton,
     PaintQuad, Pixels, SharedString, Stateful, StyledText, TextLayout, Window, div, fill,
-    prelude::*, px, size,
+    prelude::*, px, relative, size,
 };
 use crate::model::mention::{is_mention_row, mention_wash};
 use crate::model::presence::{photo_for, NickFacts};
@@ -241,12 +241,7 @@ fn render_message_row(
         .then(|| author.to_string());
     let nick_color = to_gpui(style.nick_color(author));
     let facts = peers.facts.get(author);
-    let realname = facts.map_or("", |facts| facts.realname.as_str());
-    let realname_suffix = if realname.is_empty() {
-        String::new()
-    } else {
-        format!(" · {realname}")
-    };
+    let account = facts.map_or("", |facts| facts.account.as_str());
     let bot = facts.is_some_and(|facts| facts.bot);
     let photo = photo_for(facts.and_then(|facts| facts.avatar.as_deref()), peers.avatars)
         .and_then(|reference| peers.photos.get(reference));
@@ -325,13 +320,22 @@ fn render_message_row(
                                     .flex()
                                     .items_center()
                                     .gap(scaled_px(style, 6.))
+                                    // The author group takes the row but the time, so the
+                                    // account's 40% cap reads the row's width, as Qt's
+                                    // `authorRow` does.
                                     .child(
                                         div()
+                                            .flex_grow()
+                                            .min_w_0()
                                             .flex()
                                             .items_baseline()
                                             .gap_0()
                                             .child(
                                                 div()
+                                                    .min_w_0()
+                                                    .overflow_hidden()
+                                                    .whitespace_nowrap()
+                                                    .text_ellipsis()
                                                     .text_size(scaled_px(style, 12.))
                                                     .font_weight(gpui::FontWeight::BOLD)
                                                     .text_color(nick_color)
@@ -339,15 +343,19 @@ fn render_message_row(
                                                     .child(author.to_string())
                                                     .nick_click(nick_target.clone(), &callbacks.on_nick),
                                             )
-                                            .when(!realname_suffix.is_empty(), |this| {
+                                            .when(!account.is_empty(), |this| {
                                                 this.child(
                                                     div()
+                                                        .ml(scaled_px(style, 4.))
+                                                        .max_w(relative(0.4))
+                                                        .min_w_0()
+                                                        .overflow_hidden()
+                                                        .whitespace_nowrap()
+                                                        .text_ellipsis()
                                                         .text_size(scaled_px(style, 12.))
-                                                        .text_color(to_gpui(
-                                                            style.muted_color(),
-                                                        ))
+                                                        .text_color(to_gpui(style.muted_color()))
                                                         .font_family(FONT_FAMILY)
-                                                        .child(realname_suffix),
+                                                        .child(account.to_string()),
                                                 )
                                             })
                                             .when(bot, |this| {
@@ -360,17 +368,13 @@ fn render_message_row(
                                     )
                                     .child(
                                         div()
-                                            .flex_grow()
+                                            .flex_shrink_0()
                                             .flex()
-                                            .justify_end()
                                             .text_size(scaled_px(style, 9.))
                                             .text_color(to_gpui(style.muted_color()))
                                             .font_family(FONT_FAMILY)
                                             .child(
-                                                row.time
-                                                    .as_deref()
-                                                    .unwrap_or("--:--")
-                                                    .to_string(),
+                                                row.time.as_deref().unwrap_or("--:--").to_string(),
                                             ),
                                     ),
                             )

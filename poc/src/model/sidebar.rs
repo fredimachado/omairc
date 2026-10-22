@@ -48,6 +48,9 @@ pub struct NetworkHeader {
     pub name: String,
     /// The nick the network's session holds.
     pub nick: String,
+    /// The account beside the nick in the identity footer, empty when it adds nothing
+    /// (`Controller::display_account`).
+    pub account: String,
     /// The nick's avatar reference, from the presence facts.
     pub avatar: Option<String>,
     /// Index into the nick palette, if the profile has one.
