@@ -15,7 +15,9 @@ use crate::util::to_gpui;
 
 /// The centre column: header, transcript, composer. The header is the
 /// conversation's or the Status pane's, so the caller builds `header`. `popup`
-/// is the slash-complete popup, when it shows.
+/// is the slash-complete popup, when it shows. `focused` and `has_text` drive the
+/// composer's border and SEND (see `render_composer`).
+#[allow(clippy::too_many_arguments)]
 pub fn render_center(
     header: HeaderView<'_>,
     transcript: Entity<TranscriptView>,
@@ -24,6 +26,8 @@ pub fn render_center(
     on_toggle_members: Handler<()>,
     on_send: Handler<()>,
     popup: Option<AnyElement>,
+    focused: bool,
+    has_text: bool,
 ) -> impl IntoElement {
     div()
         .flex_grow()
@@ -41,5 +45,7 @@ pub fn render_center(
                 .flex_col()
                 .child(transcript),
         )
-        .child(render_composer(composer, style, on_send, popup))
+        .child(render_composer(
+            composer, style, on_send, popup, focused, has_text,
+        ))
 }

@@ -13,6 +13,7 @@ pub mod httpfetch;
 pub mod installer;
 pub mod ipc;
 pub mod ipchandler;
+pub mod locale;
 pub mod notifier;
 pub mod singleinstance;
 pub mod systemtheme;

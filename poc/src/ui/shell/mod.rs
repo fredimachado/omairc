@@ -158,7 +158,11 @@ impl Shell {
         });
         let update_observe = cx.observe(&update, |_, _, cx| cx.notify());
         let scrollbar_drag: ScrollbarDragCell = Default::default();
-        let composer = cx.new(|cx| SingleLineInput::new("", "Composer", cx.focus_handle()));
+        let composer = cx.new(|cx| {
+            SingleLineInput::new("", "Composer", cx.focus_handle())
+                .height(46.)
+                .frameless()
+        });
         let composer_focus = composer.read(cx).focus_handle(cx);
         let transcript = cx.new(|_| TranscriptView::new(composer_focus, scrollbar_drag.clone()));
 
@@ -485,6 +489,11 @@ impl Render for Shell {
             people,
             actions,
         };
+        // The composer shell takes the accent border while its draft has focus in an
+        // active window, and SEND lights only when the draft has text (Qt's `composerShell`).
+        let composer_focused =
+            self.composer.read(cx).focus_handle(cx).is_focused(window) && window.is_window_active();
+        let has_text = !self.composer.read(cx).text().trim().is_empty();
         let center = render_center(
             header,
             self.transcript.clone(),
@@ -493,6 +502,8 @@ impl Render for Shell {
             toggle_members_handler(entity.clone()),
             send_handler(entity.clone()),
             slash_popup,
+            composer_focused,
+            has_text,
         );
 
         // The member cursor is drawn only while the list holds keyboard focus.
