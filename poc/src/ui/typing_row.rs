@@ -32,9 +32,12 @@ pub fn render_typing_row(
         .and_then(|reference| peers.photos.get(reference));
     let left_pad = scaled_px(style, 24.);
     let top_pad = scaled_px(style, 9.);
+    // The same slot a message takes (`render_message_row`): the header 9 down, the
+    // dots' line 29 down (4 in a group), and the row's minimum height.
     div()
         .w_full()
         .relative()
+        .min_h(scaled_px(style, if continues { 22. } else { 58. }))
         .when(!continues, |this| {
             this.child(
                 avatar_disc(style, nick, 34., 13., photo)
@@ -47,21 +50,22 @@ pub fn render_typing_row(
             div()
                 .pl(scaled_px(style, 70.))
                 .pr(scaled_px(style, 34.))
-                .pt(scaled_px(style, if continues { 4. } else { 6. }))
-                .pb(scaled_px(style, 6.))
+                .pt(scaled_px(style, if continues { 4. } else { 9. }))
+                .pb(scaled_px(style, if continues { 4. } else { 10. }))
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .gap(scaled_px(style, 2.))
                         .when(!continues, |this| {
                             this.child(nick_header(nick, bot, style))
                         })
                         .child(
                             div()
+                                .when(!continues, |this| this.pt(scaled_px(style, 4.)))
                                 .flex()
                                 .items_center()
-                                .h(scaled_px(style, 18.))
+                                // The dots centre in one message line, 17 tall.
+                                .h(scaled_px(style, 17.))
                                 .child(typing_dots_sized(style, phase, DOTS_FACE_PX)),
                         ),
                 ),
@@ -69,9 +73,11 @@ pub fn render_typing_row(
 }
 
 /// The nick over the dots, in its bold nick colour: a message header without a time.
-/// A bot gets its mark after the nick.
+/// A bot gets its mark after the nick. It is the header's 16-tall line.
 fn nick_header(nick: &str, bot: bool, style: &Style) -> Div {
     div()
+        .h(scaled_px(style, 16.))
+        .line_height(scaled_px(style, 16.))
         .flex()
         .items_center()
         .child(

@@ -274,9 +274,12 @@ fn render_message_row(
     let mention = is_mention_row(row, &callbacks.self_nick);
     let (wash, wash_bar) = mention_wash(style);
 
+    // Qt's `transcriptRowHeight`: a message is at least 58 tall, a group's continuation
+    // at least 22. The body's own box (below) adds the rest.
     div()
         .w_full()
         .relative()
+        .min_h(scaled_px(style, if row.continues { 22. } else { 58. }))
         .when(mention, |this| this.bg(to_gpui(wash)))
         .when(mention, |this| {
             this.child(
@@ -303,23 +306,34 @@ fn render_message_row(
             div()
                 .pl(body_left)
                 .pr(body_right)
+                // The body sits 29 down (4 in a group), as Qt's `MessageRow`. The header
+                // sits 9 down, not Qt's 8: at 150% GPUI sets the 12px line about a point
+                // higher in its box than Qt does, so one more point lines the name up.
+                // A row keeps 10 below its body (4 in a group).
                 .pt(if row.continues {
                     scaled_px(style, 4.)
                 } else {
-                    scaled_px(style, 6.)
+                    scaled_px(style, 9.)
                 })
-                .pb(scaled_px(style, 6.))
+                .pb(if row.continues {
+                    scaled_px(style, 4.)
+                } else {
+                    scaled_px(style, 10.)
+                })
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .gap(scaled_px(style, 2.))
                         .when(!row.continues, |this| {
                             this.child(
                                 div()
+                                    // The header is one 12px line, 16 tall, as Qt's
+                                    // `authorLabel`. The stamp shares that line.
+                                    .h(scaled_px(style, 16.))
+                                    .line_height(scaled_px(style, 16.))
                                     .flex()
-                                    .items_center()
-                                    .gap(scaled_px(style, 6.))
+                                    .items_start()
+                                    .gap(scaled_px(style, 9.))
                                     // The author group takes the row but the time, so the
                                     // account's 40% cap reads the row's width, as Qt's
                                     // `authorRow` does.
@@ -379,10 +393,14 @@ fn render_message_row(
                                     ),
                             )
                         })
-                        // StyledText takes its size from the ancestor text style and
-                        // TextRun carries none, so the body sets Qt's 13px here.
+                        // The body is Qt's TextEdit, whose line is the font's own height: 1.3 em,
+                        // which is 17 at 13px (Qt's 26 physical pixels at 150%). StyledText
+                        // takes its size from the ancestor text style and TextRun carries none,
+                        // so the body sets Qt's 13px and that line height here.
                         .child(
                             div()
+                                .when(!row.continues, |this| this.pt(scaled_px(style, 4.)))
+                                .line_height(scaled_px(style, 17.))
                                 .text_size(scaled_px(style, 13.))
                                 .font_family(FONT_FAMILY)
                                 .child(BodyTextElement {

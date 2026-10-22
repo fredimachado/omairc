@@ -7,16 +7,23 @@
 use gpui::{div, prelude::*, transparent_black, MouseButton};
 
 use crate::model::slash_complete::{usage_hint, SlashHit};
-use crate::model::Style;
+use crate::model::{mix_colors, Style};
+use crate::ui::center::composer::SHELL_INSET;
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
 /// One row's height in logical pixels (Qt `slashHit` height 28).
 const ROW_HEIGHT: f32 = 28.;
 
-/// The popup as an overlay over the transcript, anchored to the top of the
-/// composer's input. It is absolute, so it does not push the transcript, and it
+/// The gap between the popup's bottom edge and the composer shell's top (Qt's
+/// `slashCompleteList` `anchors.bottomMargin`).
+const SHELL_GAP: f32 = 6.;
+
+/// The popup as an overlay over the transcript, standing `SHELL_GAP` above the
+/// composer shell and spanning its edges (Qt's `slashCompleteList`, anchored to
+/// `composerShell`). It is absolute, so it does not push the transcript, and it
 /// occludes the mouse so a click on a row does not start a transcript selection.
+/// `render_composer` places it in the composer strip.
 pub fn render_slash_popup(
     hits: &[SlashHit],
     selected: usize,
@@ -26,10 +33,18 @@ pub fn render_slash_popup(
     let ink = to_gpui(style.ink_color());
     let muted = to_gpui(style.muted_color());
     let hover = to_gpui(style.hover_color());
+    // Qt's selected row: the selection colour mixed toward the raised panel, a little
+    // stronger on a dark theme (`slashCompleteList` in ConversationColumn.qml).
+    let selected_fill = to_gpui(mix_colors(
+        style.selection_color(),
+        style.raised_color(),
+        if style.dark_mode() { 0.45 } else { 0.35 },
+    ));
 
     let rows = hits.iter().enumerate().map(|(index, hit)| {
         let on_pick = on_pick.clone();
         let hint = usage_hint(&hit.label, &hit.usage).to_string();
+        let is_selected = index == selected;
         div()
             .id(("slash-hit", index))
             .h(scaled_px(style, ROW_HEIGHT))
@@ -42,12 +57,13 @@ pub fn render_slash_popup(
             .font_family(FONT_FAMILY)
             .text_size(scaled_px(style, 12.))
             .cursor_pointer()
-            .bg(if index == selected {
-                hover
+            .bg(if is_selected {
+                selected_fill
             } else {
                 transparent_black()
             })
-            .hover(move |row| row.bg(hover))
+            // The selected row keeps its fill under the pointer; only the others take the hover.
+            .hover(move |row| if is_selected { row } else { row.bg(hover) })
             .child(
                 div()
                     .flex_shrink_0()
@@ -71,10 +87,10 @@ pub fn render_slash_popup(
 
     div()
         .absolute()
-        .left_0()
-        .right_0()
+        .left(scaled_px(style, SHELL_INSET))
+        .right(scaled_px(style, SHELL_INSET))
         .bottom_full()
-        .mb(scaled_px(style, 6.))
+        .mb(scaled_px(style, SHELL_GAP))
         .p(scaled_px(style, 6.))
         .rounded(scaled_px(style, 10.))
         .bg(to_gpui(style.raised_color()))
