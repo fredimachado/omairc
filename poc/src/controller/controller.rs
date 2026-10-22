@@ -41,7 +41,7 @@ use crate::irc::translator::{translate, translate_history, HistoryBatch};
 use crate::irc::viewnotify::{self, ViewNotify};
 use crate::irc::wiretext::wire_text;
 use crate::session::clock::Clock;
-use crate::session::events::{Severity, SessionEvent};
+use crate::session::events::{SessionEvent, SessionState, Severity};
 use crate::session::loopback::LoopbackTransport;
 use crate::session::session::Session;
 use crate::session::sessionmanager::{SessionManager, SessionManagerError};
@@ -57,7 +57,7 @@ use crate::storage::Backing;
 use super::autoawayruntime::AutoawayState;
 use super::avatars::AvatarFetches;
 use super::channellist::{ChannelListRequests, ChannelListView};
-use super::console::StatusConsole;
+use super::console::{self, StatusConsole};
 use super::monitorcoordinator::MonitorState;
 use super::replyrouter::ReplyWatches;
 use super::scrollplace::ScrollPlaceStore;
@@ -412,16 +412,51 @@ impl Controller {
     /// Dispatches one session event. The arms follow the Go `Handler` methods.
     fn handle_session_event(&mut self, event: SessionEvent) {
         match event {
-            SessionEvent::StateChanged { .. } | SessionEvent::ReconnectScheduled { .. } => {
-                self.queue(vec![ViewNotify::Status]);
+            SessionEvent::StateChanged { network_id, state } => {
+                let severity = if state == SessionState::Failed {
+                    LogSeverity::Alert
+                } else {
+                    LogSeverity::Info
+                };
+                let entry = statusentry::lifecycle(
+                    &network_id,
+                    severity,
+                    console::state_label(state),
+                    console::state_text(state),
+                    self.clock.now(),
+                );
+                self.append_status(entry);
+            }
+            SessionEvent::ReconnectScheduled {
+                network_id,
+                delay_ms,
+                attempt,
+            } => {
+                let text = format!("Reconnect attempt {attempt} in {delay_ms} ms");
+                let entry = statusentry::lifecycle(
+                    &network_id,
+                    LogSeverity::Info,
+                    "reconnect",
+                    &text,
+                    self.clock.now(),
+                );
+                self.append_status(entry);
             }
             SessionEvent::ErrorOccurred {
                 network_id,
                 message,
                 ..
             } => {
+                // The session's message is already presentable and redacted.
+                let entry = statusentry::lifecycle(
+                    &network_id,
+                    LogSeverity::Alert,
+                    "error",
+                    &message,
+                    self.clock.now(),
+                );
                 self.set_last_error(&network_id, Some(message));
-                self.queue(vec![ViewNotify::Status]);
+                self.append_status(entry);
             }
             SessionEvent::Registered { network_id } => self.on_registered(&network_id),
             SessionEvent::Inbound {
@@ -512,9 +547,16 @@ impl Controller {
         self.monitor_forget_presence(network_id);
         self.apply(Event::Welcome(WelcomeEvent {
             network_id: network_id.to_owned(),
-            current_nick: nick,
+            current_nick: nick.clone(),
         }));
-        self.queue(vec![ViewNotify::Status]);
+        let entry = statusentry::lifecycle(
+            network_id,
+            LogSeverity::Info,
+            "registered",
+            &format!("Registered as {nick}"),
+            self.clock.now(),
+        );
+        self.append_status(entry);
         self.autoaway_on_registered(network_id);
     }
 

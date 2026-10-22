@@ -8,9 +8,43 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use crate::irc::statusentry::StatusEntry;
+use crate::session::events::SessionState;
 
 /// The per-network Status cap (`IrcStatusConsole`'s default, 2000 lines).
 pub const DEFAULT_CAPACITY: usize = 2000;
+
+/// The word a connection-state line opens with (`stateLabel` in
+/// `src/irc/ircstatusconsole.cpp`). Capability discovery, capability requests and
+/// SASL all read as `negotiating`.
+pub(super) fn state_label(state: SessionState) -> &'static str {
+    match state {
+        SessionState::Idle => "offline",
+        SessionState::Connecting => "connecting",
+        SessionState::CapLs | SessionState::CapReq | SessionState::Sasl => "negotiating",
+        SessionState::Registering => "registering",
+        SessionState::Registered => "registered",
+        SessionState::Closing => "closing",
+        SessionState::Reconnecting => "reconnecting",
+        SessionState::Failed => "failed",
+    }
+}
+
+/// The sentence a connection-state line says (`stateText` in
+/// `src/irc/ircstatusconsole.cpp`).
+pub(super) fn state_text(state: SessionState) -> &'static str {
+    match state {
+        SessionState::Idle => "Disconnected",
+        SessionState::Connecting => "Connecting",
+        SessionState::CapLs => "Capability discovery",
+        SessionState::CapReq => "Requesting capabilities",
+        SessionState::Sasl => "Authenticating",
+        SessionState::Registering => "Registering",
+        SessionState::Registered => "Registered",
+        SessionState::Closing => "Disconnecting",
+        SessionState::Reconnecting => "Reconnecting",
+        SessionState::Failed => "Connection failed",
+    }
+}
 
 /// The per-network ring buffers of Status lines.
 #[derive(Debug)]

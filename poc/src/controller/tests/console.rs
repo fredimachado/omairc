@@ -76,3 +76,30 @@ fn the_bench_channel_is_refused_without_a_demo() {
     let mut controller = crate::controller::controller::Controller::new(clock);
     assert!(!controller.bench_channel(10));
 }
+
+#[test]
+fn the_connection_states_read_as_the_qt_status_console_words() {
+    use crate::controller::console::{state_label, state_text};
+    use crate::session::events::SessionState;
+
+    let words = [
+        (SessionState::Idle, "offline", "Disconnected"),
+        (SessionState::Connecting, "connecting", "Connecting"),
+        (SessionState::CapLs, "negotiating", "Capability discovery"),
+        (
+            SessionState::CapReq,
+            "negotiating",
+            "Requesting capabilities",
+        ),
+        (SessionState::Sasl, "negotiating", "Authenticating"),
+        (SessionState::Registering, "registering", "Registering"),
+        (SessionState::Registered, "registered", "Registered"),
+        (SessionState::Closing, "closing", "Disconnecting"),
+        (SessionState::Reconnecting, "reconnecting", "Reconnecting"),
+        (SessionState::Failed, "failed", "Connection failed"),
+    ];
+    for (state, label, text) in words {
+        assert_eq!(state_label(state), label, "{state:?}");
+        assert_eq!(state_text(state), text, "{state:?}");
+    }
+}
