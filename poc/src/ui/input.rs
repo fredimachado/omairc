@@ -814,8 +814,10 @@ impl Element for SingleLineInputElement {
         let cursor_pos = line.x_for_index(input.drawn_at(cursor));
         let selection_color = to_gpui(app_style.selection_color());
         // The glyph box that `paint_line` draws: ascent + descent, centred in the
-        // line height. The caret and the selection span that, not the whole field.
-        let line_height = window.line_height();
+        // element's own height. The caret and the selection span that, not the whole
+        // field. The window's line height is not used: it is 1.618 em of the window's
+        // 16px default, which put the 13px text about 3px above the middle of the field.
+        let line_height = bounds.size.height;
         let glyph_height = line.ascent + line.descent;
         let glyph_top = bounds.top() + (line_height - glyph_height) / 2.;
         let (selection, cursor_quad) = if selected_range.is_empty() {
@@ -876,7 +878,7 @@ impl Element for SingleLineInputElement {
             window.paint_quad(selection);
         }
         let line = prepaint.line.take().unwrap();
-        line.paint(bounds.origin, window.line_height(), window, cx)
+        line.paint(bounds.origin, bounds.size.height, window, cx)
             .unwrap();
         if focus_handle.is_focused(window) && window.is_window_active() {
             if let Some(cursor) = prepaint.cursor.take() {

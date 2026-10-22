@@ -1,4 +1,4 @@
-use gpui::{div, prelude::*, AnyElement, CursorStyle, Entity, MouseButton};
+use gpui::{div, prelude::*, px, AnyElement, CursorStyle, Entity, MouseButton};
 
 use crate::model::{mix_colors, Color, Style};
 use crate::ui::input::SingleLineInput;
@@ -14,17 +14,19 @@ pub const SHELL_INSET: f32 = 20.;
 
 /// The composer strip under the transcript, a port of `composerShell` in
 /// `ConversationColumn.qml`. The strip is `BOTTOM_BAR_HEIGHT` tall, the same as the
-/// identity footer. The shell sits at its top, `SHELL_INSET` in from the sides and
-/// the bottom, so the shell's top lands on the footer's divider line as Qt's does.
-/// The strip draws no rule of its own: Qt has none above the composer. Inside it sits
-/// the 46px shell that holds the single-line draft and the SEND button. The shell's
-/// border is the accent while the draft has focus (`focused`), else the divider.
+/// identity footer, and its top rule is drawn on the footer's divider row, so the two
+/// rules line up across the window. The shell sits at the strip's top, `SHELL_INSET` in
+/// from the sides and the bottom, so the shell's top edge shares that row too, as Qt's
+/// does. The rule is an absolute child, not the strip's own border, so the shell keeps
+/// its place at the top. Inside the strip sits the 46px shell that holds the single-line
+/// draft and the SEND button. The shell's border is the accent while the draft has focus
+/// (`focused`), else the divider.
 ///
 /// `has_text` says whether the draft has anything to send. A click on SEND calls
 /// `on_send`. Enter is handled by the shell root (`ComposerSubmit`), which checks
 /// header focus. `popup` is the slash-complete popup, if it shows. It is a child of
 /// the strip, not the shell, so it can hang above the shell's top edge with the shell's
-/// side edges.
+/// side edges, and it stands above the rule.
 pub fn render_composer(
     composer: Entity<SingleLineInput>,
     style: &Style,
@@ -47,6 +49,20 @@ pub fn render_composer(
         .flex_shrink_0()
         .flex()
         .items_start()
+        // The rule on the footer's divider row, drawn as the footer draws its rule: a
+        // 1px top border. A filled 1px bar snaps to two device rows at 150%, the border
+        // to one. It comes before the shell, so the shell's own border paints over it
+        // while the draft has focus.
+        .child(
+            div()
+                .absolute()
+                .top_0()
+                .left_0()
+                .w_full()
+                .h(px(1.))
+                .border_t_1()
+                .border_color(to_gpui(style.divider_color())),
+        )
         .child(
             div()
                 .flex_grow()

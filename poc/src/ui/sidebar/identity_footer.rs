@@ -37,7 +37,8 @@ pub fn identity_footer(
 
     // Qt's identity column: the avatar sits 17 in, the text 63 in (17, the 34 avatar and a
     // 12 gap), and the text stops 8 short of the inbox column. The inbox column ends 8 in
-    // from the right, and its labels sit 9 further in, so the text ends 17 from the edge.
+    // from the right. Its labels are right-aligned to that edge, not 9 further in as Qt's
+    // are, so the nick and account get those 9 px.
     div()
         .w_full()
         .h(scaled_px(style, BOTTOM_BAR_HEIGHT))
@@ -166,7 +167,6 @@ fn account_floor(account: &str, style: &Style) -> Pixels {
 fn version_link(version: &str, on_about: Handler<()>, style: &Style) -> impl IntoElement {
     let ink = style.ink_color();
     div()
-        .pr(scaled_px(style, 9.))
         .cursor_pointer()
         .text_size(scaled_px(style, 10.))
         .text_color(to_gpui(style.muted_color()))
@@ -187,7 +187,6 @@ fn inbox_link(count: u32, on_inbox: Handler<()>, style: &Style) -> impl IntoElem
         .flex()
         .items_center()
         .gap(scaled_px(style, 4.))
-        .pr(scaled_px(style, 9.))
         .cursor_pointer()
         .group("footer-inbox")
         .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
