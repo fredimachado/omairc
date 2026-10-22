@@ -474,7 +474,6 @@ impl Render for Shell {
         } else {
             Vec::new()
         };
-        let away_visible = self.controller.has_away_presence();
         let photos = self.avatar_photos_for_frame(&networks, &conversations, &members, cx);
         self.push_photos(&photos, cx);
         // The footer is the focused network's identity (Qt's `identityNetworkId`): its nick,
