@@ -18,6 +18,16 @@ nucleo-matcher = "=0.3.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
+# SCRAM-SHA-256 (`src/session/saslscram.rs`). hmac and pbkdf2 are already in Cargo.lock,
+# through oo7 on Linux, so nothing is fetched for them; a Windows or macOS build compiles
+# these two small RustCrypto crates once. base64 0.22.1 is the release usvg and gpui
+# already build on every target, so nothing new compiles for it.
+hmac = "=0.12.1"
+pbkdf2 = { version = "=0.12.2", default-features = false, features = ["hmac"] }
+base64 = "=0.22.1"
+# The SCRAM client nonce is 16 OS random bytes. getrandom 0.3.4 is the backend rand 0.9,
+# which gpui builds, so nothing new compiles for it.
+getrandom = "=0.3.4"
 unicode-segmentation = "1.12"
 ureq = "=3.4.2"
 url = "2.5"

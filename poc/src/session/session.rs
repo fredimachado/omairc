@@ -14,14 +14,14 @@
 //!
 //! Submodules hold the state machine's parts: `connection` (disconnect intent,
 //! reconnect backoff and retry dedup), `watchdog` (the ping watchdog), `caps` (CAP
-//! and SASL PLAIN), `registration` (NICK/USER, ISUPPORT, 001 and refusals), `batch`
-//! (the batch ledger), `history` (CHATHISTORY), `labels` (labeled requests),
-//! `readmarker`, `typing`, `metadata`, `autojoin`, `ctcp`, `outbound` (the public
-//! writers), `malformed` (protocol-error previews) and `wire` (message field helpers).
+//! and SASL: PLAIN, and SCRAM-SHA-256 through `saslscram`), `registration` (NICK/USER,
+//! ISUPPORT, 001 and refusals), `batch` (the batch ledger), `history` (CHATHISTORY),
+//! `labels` (labeled requests), `readmarker`, `typing`, `metadata`, `autojoin`, `ctcp`,
+//! `outbound` (the public writers), `malformed` (protocol-error previews) and `wire`
+//! (message field helpers).
 //!
-//! Out of scope until Phase 11: STS (`sts.go`), SASL SCRAM (`saslscram.go`) and
-//! the socket transport (`transport_net.go`). The state machine refuses SCRAM
-//! rather than fall back to PLAIN.
+//! Out of scope until Phase 11: STS (`sts.go`) and the socket transport
+//! (`transport_net.go`). A failed SCRAM exchange is never retried with PLAIN.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -40,6 +40,7 @@ use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::irc::wiretext::wire_text;
 
 use super::batch::BatchLedger;
+use super::caps::SaslState;
 use super::clock::Clock;
 use super::config::SessionConfig;
 use super::connection::{Connection, DisconnectOutcome};
@@ -100,16 +101,6 @@ pub(crate) enum RegistrationNick {
     Configured,
     Underscore,
     Digit,
-}
-
-/// The SASL bookkeeping of one connection (the `saslX` fields of Go).
-#[derive(Clone, Debug, Default)]
-pub(crate) struct SaslState {
-    pub(crate) requested: bool,
-    pub(crate) pending: bool,
-    pub(crate) succeeded: bool,
-    pub(crate) mechanism: Option<&'static str>,
-    pub(crate) exchange_started: bool,
 }
 
 /// The timers the session owns. Each slot holds at most one armed timer.

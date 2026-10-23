@@ -2,26 +2,47 @@
 //! `src/irc/ircsession.cpp` (C++) and `tui/internal/irc/capabilitynegotiation.go`.
 //!
 //! The session sends `CAP LS 302`, requests what `IrcCapabilityNegotiation`
-//! wants, acts on `ACK` / `NAK` / `NEW` / `DEL`, runs SASL PLAIN when it was
-//! granted, and ends negotiation with `CAP END` once every request has settled.
-//! Late replies after a timeout are ignored by the negotiation itself.
+//! wants, acts on `ACK` / `NAK` / `NEW` / `DEL`, runs SASL when it was granted
+//! (PLAIN, or SCRAM-SHA-256 through `saslscram`), and ends negotiation with
+//! `CAP END` once every request has settled. Late replies after a timeout are
+//! ignored by the negotiation itself.
 //!
-//! SCRAM-SHA-256 is Phase 11. When the server would pick it, the session fails
-//! the authentication instead of falling back to PLAIN.
+//! A SCRAM-SHA-256 exchange that fails is never retried with PLAIN.
 
 use std::time::Duration;
 
 use super::events::{ErrorKind, SessionEvent, SessionState};
+use super::saslscram::{encode_sasl_frames, ScramExchange, ScramReply};
 use super::session::{Core, TimerSlot};
 use super::wire;
 use crate::irc::capability::{IrcCapability, IrcCapabilitySet};
 use crate::irc::message::IrcMessage;
 
-/// The SCRAM mechanism name. The session names it only to refuse it.
+/// The SCRAM mechanism name. The negotiation chooses it when the server lists it, and
+/// the session drives it through `saslscram`.
 pub(crate) const SASL_SCRAM: &str = "SCRAM-SHA-256";
 
-/// The longest AUTHENTICATE payload per frame (SASL 1.0 section 4.3).
-const SASL_AUTHENTICATE_CHUNK: usize = 400;
+/// The SASL bookkeeping of one connection (the `saslX` fields of Go). `scram` holds the
+/// exchange while a SCRAM-SHA-256 dialogue is open.
+#[derive(Debug, Default)]
+pub(crate) struct SaslState {
+    pub(crate) requested: bool,
+    pub(crate) pending: bool,
+    pub(crate) succeeded: bool,
+    pub(crate) mechanism: Option<&'static str>,
+    pub(crate) exchange_started: bool,
+    pub(crate) scram: Option<ScramExchange>,
+}
+
+impl SaslState {
+    /// Whether SCRAM-SHA-256 is the mechanism and the server has not verified its signature
+    /// yet. A 903 in that state is not success (`saslScramExchange` with `saslScramStep`
+    /// short of verified in Go).
+    fn scram_unverified(&self) -> bool {
+        self.mechanism == Some(SASL_SCRAM)
+            && !self.scram.as_ref().is_some_and(ScramExchange::is_verified)
+    }
+}
 
 impl Core {
     /// Starts capability negotiation after the socket opens (`beginCapabilityNegotiationLocked`).
@@ -169,11 +190,8 @@ impl Core {
                 self.sasl.exchange_started = true;
                 self.set_state(SessionState::Sasl);
                 if self.sasl.mechanism == Some(SASL_SCRAM) {
-                    self.fail(
-                        ErrorKind::Authentication,
-                        "SASL SCRAM-SHA-256 is not built yet",
-                        false,
-                    );
+                    self.sasl.scram = Some(ScramExchange::default());
+                    self.send_line(b"AUTHENTICATE SCRAM-SHA-256\r\n");
                     return;
                 }
                 self.send_line(b"AUTHENTICATE PLAIN\r\n");
@@ -223,8 +241,8 @@ impl Core {
         }
     }
 
-    /// Handles an `AUTHENTICATE` challenge. Only PLAIN is answered; the `+` after
-    /// `AUTHENTICATE PLAIN` asks for the credential (`handleAuthenticateLocked`).
+    /// Handles an `AUTHENTICATE` challenge. PLAIN and SCRAM-SHA-256 are answered. For PLAIN,
+    /// the `+` after `AUTHENTICATE PLAIN` asks for the credential (`handleAuthenticateLocked`).
     pub(crate) fn handle_authenticate(&mut self, message: &IrcMessage) {
         if self.state != SessionState::Sasl || message.params.is_empty() {
             return;
@@ -239,11 +257,7 @@ impl Core {
             return;
         }
         if self.sasl.mechanism == Some(SASL_SCRAM) {
-            self.fail(
-                ErrorKind::Authentication,
-                "SASL SCRAM-SHA-256 is not built yet",
-                false,
-            );
+            self.handle_scram_authenticate(front.as_bytes());
             return;
         }
         if front != "+" {
@@ -260,13 +274,44 @@ impl Core {
         self.send_sasl_response(&plain);
     }
 
+    /// Drives the SCRAM dialogue one AUTHENTICATE payload at a time
+    /// (`handleScramAuthenticateLocked`). A payload with no open exchange is ignored.
+    fn handle_scram_authenticate(&mut self, payload: &[u8]) {
+        let Some(exchange) = self.sasl.scram.as_mut() else {
+            return;
+        };
+        let reply = exchange.take_payload(
+            payload,
+            self.config.sasl_account_name(),
+            self.config.sasl_secret(),
+        );
+        match reply {
+            ScramReply::Send(raw) => self.send_sasl_response(&raw),
+            ScramReply::Continue => {}
+            ScramReply::Fail => self.fail(
+                ErrorKind::Authentication,
+                "SASL authentication failed",
+                false,
+            ),
+        }
+    }
+
     /// Handles `903`, SASL success (`handleCapLocked` / the 903 branch of
-    /// `handleMessageLocked`). A 903 before the exchange started is ignored.
+    /// `handleMessageLocked`). A 903 before the exchange started is ignored, and a 903
+    /// before a SCRAM exchange verified its server signature fails authentication.
     pub(crate) fn handle_sasl_success(&mut self, _message: &IrcMessage) {
         if self.state != SessionState::Sasl {
             return;
         }
         if self.sasl.pending {
+            if self.sasl.scram_unverified() {
+                self.fail(
+                    ErrorKind::Authentication,
+                    "SASL authentication failed",
+                    false,
+                );
+                return;
+            }
             self.sasl.pending = false;
             self.sasl.succeeded = true;
             self.end_capability_negotiation();
@@ -281,51 +326,4 @@ impl Core {
             self.send_line(&frame);
         }
     }
-}
-
-/// The AUTHENTICATE frames for `raw`: base64, 400 bytes a frame. A payload whose
-/// encoding is an exact multiple of 400 ends with a bare `+`, so the server knows
-/// the message is complete (`encodeSASLFrames`).
-pub(crate) fn encode_sasl_frames(raw: &[u8]) -> Vec<Vec<u8>> {
-    let encoded = base64_encode(raw);
-    if encoded.is_empty() {
-        return vec![b"AUTHENTICATE +\r\n".to_vec()];
-    }
-    let mut frames = Vec::new();
-    for chunk in encoded.as_bytes().chunks(SASL_AUTHENTICATE_CHUNK) {
-        let mut frame = b"AUTHENTICATE ".to_vec();
-        frame.extend_from_slice(chunk);
-        frame.extend_from_slice(b"\r\n");
-        frames.push(frame);
-    }
-    if encoded.len() % SASL_AUTHENTICATE_CHUNK == 0 {
-        frames.push(b"AUTHENTICATE +\r\n".to_vec());
-    }
-    frames
-}
-
-/// Standard base64 with padding. Written out here so the session stays free of a
-/// codec dependency.
-fn base64_encode(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let b0 = u32::from(chunk[0]);
-        let b1 = u32::from(chunk.get(1).copied().unwrap_or(0));
-        let b2 = u32::from(chunk.get(2).copied().unwrap_or(0));
-        let word = (b0 << 16) | (b1 << 8) | b2;
-        out.push(char::from(ALPHABET[(word >> 18) as usize & 63]));
-        out.push(char::from(ALPHABET[(word >> 12) as usize & 63]));
-        out.push(if chunk.len() > 1 {
-            char::from(ALPHABET[(word >> 6) as usize & 63])
-        } else {
-            '='
-        });
-        out.push(if chunk.len() > 2 {
-            char::from(ALPHABET[word as usize & 63])
-        } else {
-            '='
-        });
-    }
-    out
 }

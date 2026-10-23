@@ -12,5 +12,6 @@ mod outbound;
 mod portability;
 mod readmarker;
 mod reconnect;
+mod scram;
 mod transport;
 mod typing;

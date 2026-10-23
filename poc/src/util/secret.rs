@@ -18,6 +18,14 @@ impl Secret {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+
+    /// Overwrites the text and leaves the secret empty. The buffer is zeroed before it is
+    /// freed, so a copy the caller no longer needs does not keep the plaintext in memory.
+    pub fn wipe(&mut self) {
+        let mut bytes = std::mem::take(&mut self.0).into_bytes();
+        bytes.fill(0);
+        std::hint::black_box(&mut bytes);
+    }
 }
 
 impl From<String> for Secret {
@@ -56,5 +64,13 @@ mod tests {
         assert!(Secret::default().is_empty());
         assert_eq!(Secret::default().expose(), "");
         assert!(!Secret::from("x".to_owned()).is_empty());
+    }
+
+    #[test]
+    fn wipe_empties_the_secret() {
+        let mut secret = Secret::from("hunter2".to_owned());
+        secret.wipe();
+        assert!(secret.is_empty());
+        assert_eq!(secret.expose(), "");
     }
 }
