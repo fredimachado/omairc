@@ -5,7 +5,6 @@
 //! the Go `iota` list and the C++ enum.
 
 /// One IRCv3 capability the client knows about (`IrcCapability`).
-#[allow(dead_code)] // The capability negotiation (Phase 2) is the first consumer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum IrcCapability {
     Sasl,
@@ -35,7 +34,6 @@ impl IrcCapability {
 }
 
 /// A bitmask over `IrcCapability` (`IrcCapabilitySet`). The default is empty.
-#[allow(dead_code)] // The capability negotiation (Phase 2) is the first consumer.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct IrcCapabilitySet(u32);
 

@@ -4,7 +4,6 @@
 //! events.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -171,20 +170,6 @@ impl Fixture {
             .collect()
     }
 
-    // test fixture: not every test module uses this helper
-    #[allow(dead_code)]
-    pub fn autojoin_changes(&self) -> Vec<(Vec<String>, BTreeMap<String, String>)> {
-        self.events()
-            .into_iter()
-            .filter_map(|event| match event {
-                SessionEvent::AutojoinChannelsChanged { channels, keys, .. } => {
-                    Some((channels, keys))
-                }
-                _ => None,
-            })
-            .collect()
-    }
-
     /// Feeds raw inbound bytes, as the socket would.
     pub fn inject(&self, text: &str) {
         self.transport.inject_bytes(text.as_bytes());
@@ -192,14 +177,6 @@ impl Fixture {
 
     /// Starts the session and completes the TLS connect (`connectTLS`).
     pub fn connect_tls(&self) {
-        self.session.start();
-        self.transport.complete_connect();
-    }
-
-    /// Starts the session and completes a plaintext connect.
-    // test fixture: not every test module uses this helper
-    #[allow(dead_code)]
-    pub fn connect_plaintext(&self) {
         self.session.start();
         self.transport.complete_connect();
     }
@@ -268,12 +245,4 @@ pub fn joins(frames: &[String]) -> Vec<String> {
         .filter(|frame| frame.starts_with("JOIN "))
         .cloned()
         .collect()
-}
-
-/// Parses a line that must be valid IRC, for building inbound fixtures.
-#[track_caller]
-// test fixture: not every test module uses this helper
-#[allow(dead_code)]
-pub fn parse(line: &str) -> IrcMessage {
-    crate::irc::parser::parse(line.as_bytes()).expect("test line must parse")
 }

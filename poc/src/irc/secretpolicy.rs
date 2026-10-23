@@ -18,7 +18,6 @@
 use super::servicenick::looks_like_channel;
 
 /// A redacted command: the upper-cased verb and the parameters after masking.
-#[allow(dead_code)] // The Status recorder (Phase 3) is the first consumer.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MaskedCommand {
     pub verb: String,
@@ -561,7 +560,6 @@ fn later_command_preview_mask(line: &str, channel_types: &str) -> Option<String>
 /// Masks a wire line that carries a secret. `None` when the line is not redacted
 /// (it did not tokenize, or it matched no mask), and the caller keeps the line.
 /// `channel_types` is the network's CHANTYPES, and the empty string means none.
-#[allow(dead_code)] // The Status recorder for outgoing lines (Phase 3) is the first consumer.
 pub fn redact_wire_line(line: &str, channel_types: &str) -> Option<String> {
     let parsed = tokenize(line)?;
     let masked = secret_mask(&parsed, channel_types)?;
@@ -584,7 +582,6 @@ pub fn redact_wire_line(line: &str, channel_types: &str) -> Option<String> {
 ///
 /// Mirrors `RedactPreviewLine` in `tui/internal/irc/secretpolicy.go` and
 /// `IrcSecretPolicy::redactPreviewLine` in `src/irc/ircsecretpolicy.cpp`.
-#[allow(dead_code)] // The protocol-error preview (Phase 2) is the first consumer.
 pub fn redact_preview_line(line: &str, channel_types: &str) -> Option<String> {
     if let Some(safe) = redact_wire_line(line, channel_types) {
         return Some(safe);
@@ -603,7 +600,6 @@ pub fn redact_preview_line(line: &str, channel_types: &str) -> Option<String> {
 /// Masks a parsed message's command and parameters. `None` when no mask applies,
 /// which leaves the message untouched. A PRIVMSG or NOTICE is masked only when its
 /// target is a person; the command is upper-cased before the rule lookup.
-#[allow(dead_code)] // The Status recorder for incoming lines (Phase 3) is the first consumer.
 pub fn redact_message<C, P>(
     command: C,
     parameters: &[P],
@@ -640,7 +636,6 @@ where
 /// Whether `text` is safe to keep in a transcript. It fails closed: a wire command
 /// that redaction would mask, or a service request body that `redact_message`
 /// would mask, is not allowed.
-#[allow(dead_code)] // The transcript recorder (Phase 3) is the first consumer.
 pub fn allows_transcript(text: &str, channel_types: &str) -> bool {
     if text.is_empty() {
         return true;

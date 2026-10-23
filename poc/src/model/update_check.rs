@@ -141,9 +141,6 @@ pub struct UpdateCheck {
     generation: u64,
 }
 
-// The accessors and the test latch below are read by the tests and by the
-// product CLI's status verb in Phase 9, not by the window yet.
-#[allow(dead_code)]
 impl UpdateCheck {
     /// `current` is the running version. `installed_copy` says the running exe
     /// sits in the Inno install location, so only that copy may self-update.
@@ -173,14 +170,6 @@ impl UpdateCheck {
     #[cfg(test)]
     pub fn latest(&self) -> Option<&Release> {
         self.latest.as_ref()
-    }
-
-    pub fn installed_copy(&self) -> bool {
-        self.installed_copy
-    }
-
-    pub fn set_installed_copy(&mut self, installed: bool) {
-        self.installed_copy = installed;
     }
 
     /// The verified installer on disk, once a download has committed.

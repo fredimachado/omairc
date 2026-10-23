@@ -535,11 +535,6 @@ impl EventReducer {
             .contains(&self.conversation_key(network_id, target))
     }
 
-    /// Takes the replay lines kept since the last call (`TakeKeptReplay`).
-    pub fn take_kept_replay(&mut self) -> Vec<KeptReplay> {
-        std::mem::take(&mut self.facts.kept_replay)
-    }
-
     /// Takes the bouncer queries worth remembering since the last call
     /// (`TakeRememberedQueries`).
     pub fn take_remembered_queries(&mut self) -> Vec<RememberedQuery> {

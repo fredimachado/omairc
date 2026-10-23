@@ -24,7 +24,8 @@ pub enum ConnectionState {
     /// An open TLS socket.
     Encrypted,
     /// A shutdown in progress.
-    // Phase 11: the socket transport reports its lifecycle
+    // Nothing enters Closing yet: `shutdown` moves straight to Disconnected. The
+    // net transport matches on it, so the variant stays until a shutdown reports it.
     #[allow(dead_code)]
     Closing,
     /// A cleanly ended connection.
@@ -35,7 +36,7 @@ pub enum ConnectionState {
 
 impl ConnectionState {
     /// The C++ enumerator name, for logs and tests.
-    // Phase 11: the socket transport reports its lifecycle
+    // No log line prints the transport state yet, so nothing calls this name.
     #[allow(dead_code)]
     pub fn name(self) -> &'static str {
         match self {

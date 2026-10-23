@@ -33,14 +33,12 @@ mod transcript;
 #[cfg(test)]
 mod tests;
 
-pub use log::{ConversationLog, TranscriptLine};
-pub use notify::{channel_names_syncing, classify_view_notify};
+pub use notify::classify_view_notify;
 #[cfg(test)]
 pub use readmarker::latest_server_message_time;
-pub use state::{
-    zero_time, ChannelState, ConversationState, MemberState, MemberView, OrderedMember,
-    PeerPresence, Store, TranscriptAnchor, MAX_MESSAGES, STALE_NAMES_SYNC_MS,
-};
+pub use state::{zero_time, MemberView, PeerPresence, Store};
+#[cfg(test)]
+pub use state::{ConversationState, MAX_MESSAGES};
 
 use chrono::{DateTime, Utc};
 

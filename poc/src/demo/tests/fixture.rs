@@ -128,12 +128,7 @@ pub fn errors_of(events: &[SessionEvent]) -> Vec<String> {
 }
 
 /// Both seeded networks, attached and seeded.
-// test fixture: not every test module uses this helper
-#[allow(dead_code)]
 pub struct Harness {
-    // test fixture: not every test module uses this helper
-    #[allow(dead_code)]
-    pub clock: Rc<FakeClock>,
     pub demo: DemoServer,
     pub omarchy: Lane,
     pub oftc: Lane,
@@ -162,7 +157,6 @@ impl Harness {
         omarchy.pump();
         oftc.pump();
         Self {
-            clock,
             demo,
             omarchy,
             oftc,

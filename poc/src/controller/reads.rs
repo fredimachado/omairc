@@ -34,13 +34,6 @@ impl Controller {
         self.selected.as_ref().map(|key| key.network_id.as_str())
     }
 
-    /// The selected conversation's stable id, as the sidebar keys its row.
-    // The header and the CLI read it (Phases 5, 6 and 9); the allow comes off with the first consumer.
-    #[allow(dead_code)]
-    pub fn selected_conversation_id(&self) -> Option<String> {
-        self.selected.as_ref().map(conversation_id)
-    }
-
     /// The selected conversation's display target: the channel name, or the peer's
     /// nick. Empty when nothing is selected.
     pub fn selected_target(&self) -> &str {
@@ -176,13 +169,6 @@ impl Controller {
             .and_then(|conversation| conversation.unread_mark)
     }
 
-    /// The join, part, quit and nick display setting (`/pref joins`).
-    // The header and the CLI read it (Phases 5, 6 and 9); the allow comes off with the first consumer.
-    #[allow(dead_code)]
-    pub fn membership_noise(&self) -> crate::irc::membershipnoise::MembershipNoise {
-        self.reducer.membership_noise()
-    }
-
     /// The direct-message header for the selection (`SelectedPeerHeader`). `None`
     /// while Status shows, for a channel, or when nothing is selected.
     pub fn peer_header(&self) -> Option<PeerHeader> {
@@ -316,29 +302,12 @@ impl Controller {
         !network_id.is_empty() && self.reducer.self_away(network_id)
     }
 
-    /// The last error for the focused network (`LastError`).
-    // The header and the CLI read it (Phases 5, 6 and 9); the allow comes off with the first consumer.
-    #[allow(dead_code)]
-    pub fn last_error(&self) -> Option<&str> {
-        self.last_error_for(self.focused_network_id())
-    }
-
     /// Whether the selected conversation can show away state (`HasAwayPresence`): the
     /// selection's network sends away-notify. The direct-message header's presence dot
     /// reads it.
     pub fn has_away_presence(&self) -> bool {
         self.selected_network_id()
             .is_some_and(|network| self.caps(network).contains(IrcCapability::AwayNotify))
-    }
-
-    /// Whether the member panel can show status prefixes (`HasMemberStatus`).
-    // Phase 6: the member panel shows status prefixes
-    #[allow(dead_code)]
-    pub fn has_member_status(&self) -> bool {
-        self.selected_network_id().is_some_and(|network| {
-            let caps = self.caps(network);
-            caps.contains(IrcCapability::MemberMetadata) && caps.contains(IrcCapability::Batch)
-        })
     }
 
     /// Whether typing indicators can be sent and shown (`HasTyping`).

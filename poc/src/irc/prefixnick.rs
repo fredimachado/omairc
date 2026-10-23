@@ -9,7 +9,6 @@ use super::wiretext::{contains_dot, wire_text};
 /// The nick that sent `message`, or empty when the message has no source or the
 /// source is a server name. Parsed `nick` wins; otherwise the bare source is the
 /// nick, unless it contains a dot.
-#[allow(dead_code)] // The reducer (Phase 3) is the first consumer.
 pub fn prefix_nick(message: &IrcMessage) -> String {
     let Some(prefix) = message.prefix.as_ref() else {
         return String::new();

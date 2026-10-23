@@ -21,7 +21,6 @@ use super::capability::{IrcCapability, IrcCapabilitySet};
 
 /// One CAP REQ outcome: the lines to send, whether SASL is being requested, and
 /// the chosen SASL mechanism (`IrcCapabilityNegotiation::Request`).
-#[allow(dead_code)] // The session handshake (Phase 2) is the first consumer.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct IrcCapabilityRequest {
     pub lines: Vec<String>,
@@ -131,7 +130,6 @@ const WANTED: &[Wanted] = &[
 
 /// Tracks one CAP exchange (`IrcCapabilityNegotiation`). Build one with `new`,
 /// and call `reset` when a connection starts over.
-#[allow(dead_code)] // The session handshake (Phase 2) is the first consumer.
 #[derive(Clone, Debug, Default)]
 pub struct IrcCapabilityNegotiation {
     /// Keyed by the wanted table's lowercase token.
@@ -140,7 +138,6 @@ pub struct IrcCapabilityNegotiation {
     sasl_credentials_available: bool,
 }
 
-#[allow(dead_code)] // The session handshake (Phase 2) is the first consumer.
 impl IrcCapabilityNegotiation {
     /// A negotiation with nothing advertised. `sasl_credentials_available` says
     /// whether an account and password are configured, so SASL can be requested.

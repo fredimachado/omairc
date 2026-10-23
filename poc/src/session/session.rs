@@ -352,21 +352,6 @@ impl Session {
         !self.shared.core.borrow().history.pending.is_empty()
     }
 
-    /// Whether a CHATHISTORY request is outstanding on `target`, for the current
-    /// membership generation.
-    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
-    #[allow(dead_code)]
-    pub fn history_inflight_for(&self, target: &str) -> bool {
-        self.shared.core.borrow().history_inflight(target)
-    }
-
-    /// The CHATHISTORY page size: 100, capped by ISUPPORT `CHATHISTORY=`.
-    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
-    #[allow(dead_code)]
-    pub fn history_limit(&self) -> usize {
-        self.shared.core.borrow().history_limit
-    }
-
     /// A copy of the autojoin channel list.
     pub fn autojoin_channels(&self) -> Vec<String> {
         self.shared.core.borrow().autojoin_channels.clone()

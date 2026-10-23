@@ -11,7 +11,6 @@ const DELIMITER: char = '\u{1}';
 const DAY_MILLIS: i64 = 24 * 60 * 60 * 1000;
 
 /// A parsed CTCP payload. `command` is upper-cased; `argument` keeps its spaces.
-#[allow(dead_code)] // The CTCP dispatcher (Phase 2/4) is the first consumer.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CtcpRequest {
     pub command: String,
@@ -20,7 +19,6 @@ pub struct CtcpRequest {
 
 /// Parses a body wrapped in `\x01` delimiters. `None` when it is not delimited or
 /// carries no command.
-#[allow(dead_code)] // The CTCP dispatcher (Phase 2/4) is the first consumer.
 pub fn parse_ctcp_request(body: &str) -> Option<CtcpRequest> {
     let payload = body.strip_prefix(DELIMITER)?.strip_suffix(DELIMITER)?;
     let (raw_command, argument) = match payload.split_once(' ') {
@@ -38,7 +36,6 @@ pub fn parse_ctcp_request(body: &str) -> Option<CtcpRequest> {
 }
 
 /// Wraps a request back into its `\x01`-delimited payload.
-#[allow(dead_code)] // The CTCP dispatcher (Phase 2/4) is the first consumer.
 pub fn ctcp_payload(request: &CtcpRequest) -> String {
     let body = if request.argument.is_empty() {
         request.command.clone()
@@ -49,7 +46,6 @@ pub fn ctcp_payload(request: &CtcpRequest) -> String {
 }
 
 /// The argument of our CTCP VERSION reply on the desktop.
-#[allow(dead_code)] // The CTCP dispatcher (Phase 2/4) is the first consumer.
 pub fn ctcp_version_reply_text() -> &'static str {
     "https://omairc.app"
 }
@@ -57,7 +53,6 @@ pub fn ctcp_version_reply_text() -> &'static str {
 /// The local Status line for one CTCP reply. `now_unix_millis` is the clock
 /// reading; a PING whose argument is a millisecond timestamp reports its lag when
 /// the lag is within a day.
-#[allow(dead_code)] // The Status recorder (Phase 3) is the first consumer.
 pub fn format_ctcp_reply_text(
     command: &str,
     nick: &str,

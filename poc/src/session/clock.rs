@@ -78,8 +78,6 @@ struct RealEntry {
     callback: Box<dyn FnOnce()>,
 }
 
-// test seam: FakeClock drives the timers in the tests
-#[allow(dead_code)]
 impl RealClock {
     /// A clock with no timers armed.
     pub fn new() -> Self {
@@ -112,17 +110,6 @@ impl RealClock {
             fired += 1;
         }
         fired
-    }
-
-    /// How many timers are still armed.
-    // Phase 8: the reconnect schedule shows the pending timers
-    #[allow(dead_code)]
-    pub fn pending(&self) -> usize {
-        self.pending
-            .borrow()
-            .iter()
-            .filter(|entry| entry.state.pending())
-            .count()
     }
 }
 

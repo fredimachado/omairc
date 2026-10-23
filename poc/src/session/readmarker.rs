@@ -37,8 +37,6 @@ pub(crate) struct ReadMarkerLedger {
     pub(crate) in_flight: BTreeMap<String, DateTime<Utc>>,
 }
 
-// Phase 8: read markers persist with the open-direct store
-#[allow(dead_code)]
 impl Core {
     /// The read-marker verb for the acknowledged token: `MARKREAD` for
     /// `draft/read-marker`, `READ` for `soju.im/read`, empty when neither.

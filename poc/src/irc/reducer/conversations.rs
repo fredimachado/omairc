@@ -21,9 +21,11 @@ use crate::irc::presence::{
 };
 use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::irc::typing::typing_shows_indicator;
+#[cfg(test)]
 use crate::irc::world::MessageKind;
 
 use super::facts::is_visible;
+#[cfg(test)]
 use super::log::ConversationLog;
 use super::state::{
     ChannelState, ConversationState, MemberView, OrderedMember, PeerPresence, STALE_NAMES_SYNC_MS,
@@ -145,6 +147,9 @@ impl EventReducer {
     /// Wires the mark that survives a welcome: `persist` records or forgets a
     /// key, and `contains` reports a mark welcome already dropped from memory
     /// (`SetClosedPersistence`).
+    // Phase 8 wires the persisted closed marks here. Nothing calls it yet, so the
+    // persisted refusal in `Facts::persisted_closed` never fires.
+    #[allow(dead_code)]
     pub fn set_closed_persistence(
         &mut self,
         persist: impl Fn(&ConversationKey, bool) + Send + 'static,
@@ -350,20 +355,10 @@ impl EventReducer {
         self.facts.membership_noise = noise;
     }
 
-    /// The join, part, quit and nick display (`MembershipNoise`).
-    pub fn membership_noise(&self) -> MembershipNoise {
-        self.facts.membership_noise
-    }
-
     /// Records whether the window has focus. It is a flag only: consuming unread on
     /// focus regain belongs to the controller (`SetWindowActive`).
     pub fn set_window_active(&mut self, active: bool) {
         self.facts.window_inactive = !active;
-    }
-
-    /// Whether the window has focus (`WindowActive`).
-    pub fn window_active(&self) -> bool {
-        !self.facts.window_inactive
     }
 
     /// Wires the transcript log used for hydration and persistence. `None`

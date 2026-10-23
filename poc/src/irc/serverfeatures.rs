@@ -16,12 +16,6 @@ use super::message::MAX_CLASSIC_FRAME_BYTES;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct IrcPrefixSet(u32);
 
-impl IrcPrefixSet {
-    pub const fn is_empty(self) -> bool {
-        self.0 == 0
-    }
-}
-
 /// One mode-driven rank grant or revoke (`IrcPrefixChange`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IrcPrefixChange {
@@ -33,15 +27,6 @@ pub struct IrcPrefixChange {
 impl IrcPrefixChange {
     pub fn nick(&self) -> &str {
         &self.nick
-    }
-
-    /// The rank letter, lowercased.
-    pub fn letter(&self) -> char {
-        char::from(self.letter)
-    }
-
-    pub fn grant(&self) -> bool {
-        self.grant
     }
 }
 

@@ -13,6 +13,7 @@
 //! so a test module belongs at the end of its file. A test-only seam inside an `impl`
 //! (a `#[cfg(test)]` on a `fn` or a field) is not a cut, so its lines stay in the count.
 
+// This gate reports no line numbers, so `common::line_of` is unused in this crate.
 #[allow(dead_code)]
 mod common;
 

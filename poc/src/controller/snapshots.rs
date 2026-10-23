@@ -56,8 +56,6 @@ pub struct PeerHeader {
 }
 
 /// The connection word the footer and the subtitles show (`stateText`).
-// Phase 6: the direct-message header and the connection footer read these
-#[allow(dead_code)]
 pub fn state_text(state: SessionState) -> &'static str {
     match state {
         SessionState::Idle | SessionState::Failed => "Offline",

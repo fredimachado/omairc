@@ -26,7 +26,6 @@ const ME_PREFIX_BYTES: usize = 4;
 
 /// Appends CRLF to `command`, rejecting an empty line, embedded CR, LF or NUL, and
 /// any line past the frame. The frame is `features.line_length()`, CRLF included.
-#[allow(dead_code)] // The session's outbound path (Phase 2) is the first consumer.
 pub fn line(command: &str, features: &IrcServerFeatures) -> Result<String, IrcError> {
     let frame = features.line_length();
     if command.is_empty() {
@@ -45,7 +44,6 @@ pub fn line(command: &str, features: &IrcServerFeatures) -> Result<String, IrcEr
 /// target is Status: a raw line, excluding CRLF. Any other target is the PRIVMSG
 /// trailing body that fits, `PRIVMSG <target> :<body>\r\n`. Tags are not
 /// subtracted.
-#[allow(dead_code)] // The session's outbound path (Phase 2) is the first consumer.
 pub fn composer_byte_budget(target: &str, features: &IrcServerFeatures) -> usize {
     let frame = features.line_length();
     if frame < CRLF_BYTES {
@@ -64,7 +62,6 @@ pub fn composer_byte_budget(target: &str, features: &IrcServerFeatures) -> usize
 
 /// The composer cap for a `/me` draft: a CTCP ACTION is 9 bytes beyond a PRIVMSG,
 /// and the 4-byte `/me ` counts toward the draft.
-#[allow(dead_code)] // The session's outbound path (Phase 2) is the first consumer.
 pub fn action_composer_byte_budget(target: &str, features: &IrcServerFeatures) -> usize {
     let privmsg = composer_byte_budget(target, features);
     if privmsg < ACTION_WRAPPER_BYTES {
@@ -75,7 +72,6 @@ pub fn action_composer_byte_budget(target: &str, features: &IrcServerFeatures) -
 
 /// The composer cap for a draft: the action cap when the draft is `/me` plus a
 /// body on a conversation, otherwise the plain cap. Status stays a raw line.
-#[allow(dead_code)] // The session's outbound path (Phase 2) is the first consumer.
 pub fn composer_byte_budget_for_draft(
     target: &str,
     draft: &str,
@@ -105,7 +101,6 @@ fn draft_is_action(draft: &str) -> bool {
 
 /// The longest prefix of `text` whose UTF-8 encoding fits in `max_bytes`. A scalar
 /// is kept whole or dropped, so the result is always valid UTF-8.
-#[allow(dead_code)] // The session's outbound path (Phase 2) is the first consumer.
 pub fn clamp_utf8_prefix(text: &str, max_bytes: usize) -> &str {
     let mut end = 0;
     for (index, character) in text.char_indices() {
@@ -123,7 +118,6 @@ pub fn clamp_utf8_prefix(text: &str, max_bytes: usize) -> &str {
 /// sequence. An empty result means the input cannot be sent: an empty body, a
 /// forbidden byte, a frame too small for the wrapper, or a token that cannot be
 /// split at a scalar boundary.
-#[allow(dead_code)] // The session's outbound path (Phase 2) is the first consumer.
 pub fn split_trailing_param<'body>(
     prefix: &str,
     body: &'body str,
@@ -178,7 +172,6 @@ pub fn split_trailing_param<'body>(
 }
 
 /// Builds a NICK line.
-#[allow(dead_code)] // The session's outbound path (Phase 2) is the first consumer.
 pub fn nick(nickname: &str, features: &IrcServerFeatures) -> Result<String, IrcError> {
     if !is_single_field(nickname) {
         return Err(IrcError::InvalidField);
@@ -187,7 +180,6 @@ pub fn nick(nickname: &str, features: &IrcServerFeatures) -> Result<String, IrcE
 }
 
 /// Builds the USER line with the fixed `<user> 8 * :<realname>` shape.
-#[allow(dead_code)] // The session's outbound path (Phase 2) is the first consumer.
 pub fn user(
     username: &str,
     realname: &str,
@@ -201,7 +193,6 @@ pub fn user(
 }
 
 /// Builds a PASS line.
-#[allow(dead_code)] // The session's outbound path (Phase 2) is the first consumer.
 pub fn pass(password: &str, features: &IrcServerFeatures) -> Result<String, IrcError> {
     if !is_single_field(password) {
         return Err(IrcError::InvalidField);
@@ -210,7 +201,6 @@ pub fn pass(password: &str, features: &IrcServerFeatures) -> Result<String, IrcE
 }
 
 /// Builds a JOIN line. An empty key omits the key parameter.
-#[allow(dead_code)] // The session's outbound path (Phase 2) is the first consumer.
 pub fn join(channel: &str, key: &str, features: &IrcServerFeatures) -> Result<String, IrcError> {
     if !is_join_field(channel) {
         return Err(IrcError::InvalidField);

@@ -28,7 +28,6 @@ pub fn is_network_notice_target(target: &str) -> bool {
 /// ending in `serv` that is not a channel, or a host folding to `services` or
 /// `services.*`. `channel_types` is the advertised CHANTYPES; when it is empty, a
 /// target whose first character cannot start a nick counts as a channel.
-#[allow(dead_code)] // Reducer and translator (Phase 3) are the first consumers.
 pub fn is_service_identity(nick: &str, host: &str, channel_types: &str) -> bool {
     if !nick.is_empty() && !looks_like_channel(nick, channel_types) && ends_with_fold(nick, "serv")
     {
@@ -44,7 +43,6 @@ pub fn is_service_identity(nick: &str, host: &str, channel_types: &str) -> bool 
 /// Whether a PRIVMSG to this nick reaches a person, so a conversation opened for
 /// it is one the user can reply in. This is not a nick-grammar test: a leading
 /// digit stays routable, and a bouncer pseudo-client such as `*status` does not.
-#[allow(dead_code)] // Controller conversation opening (Phase 3) is the first consumer.
 pub fn nick_is_routable(nick: &str) -> bool {
     !nick.is_empty()
         && !nick

@@ -204,18 +204,6 @@ impl Controller {
         }
     }
 
-    /// Mutes or unmutes a conversation (`SetMuted`).
-    // The header's mute toggle (Phase 5) sets it; the allow comes off with it.
-    #[allow(dead_code)]
-    pub fn set_muted(&mut self, network_id: &str, target: &str, muted: bool) {
-        if network_id.is_empty() || target.is_empty() {
-            return;
-        }
-        let key = self.reducer.conversation_key(network_id, target);
-        self.reducer.set_muted(&key, muted);
-        self.queue(vec![ViewNotify::Conversations]);
-    }
-
     /// The selection as the reducer keeps it, applied without pumping. `select_conversation`
     /// and the join path both come here. Selecting a row clears its network's last
     /// command error, so the header shows the topic again (the PoC's selection rule).
