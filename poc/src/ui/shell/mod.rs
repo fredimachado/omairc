@@ -38,7 +38,7 @@ use crate::model::sidebar::SidebarState;
 use crate::model::slash_complete::SlashSession;
 use crate::model::status::{connection_line, status_title};
 use crate::controller::notify::Arrival;
-use crate::model::title::{conversation_title, window_title, TitleMark, TitleView};
+use crate::model::title::{conversation_title, note_title_mark, window_title, TitleMark, TitleView};
 use crate::model::update_check::UpdateCheck;
 use crate::model::ConversationRef;
 use crate::net::{NetHub, NetTransports};
@@ -290,9 +290,14 @@ impl Shell {
         for arrival in self.controller.take_arrivals() {
             match arrival {
                 Arrival::Mention(mention) => {
-                    if let Some(mark) = TitleMark::from_mention(self.window_active, &mention) {
-                        self.title_mark = Some(mark);
-                    }
+                    note_title_mark(
+                        &mut self.title_mark,
+                        self.window_active,
+                        &mention.author,
+                        &plain_irc_text(&mention.body),
+                        &mention.network_id,
+                        &mention.target,
+                    );
                 }
                 Arrival::Monitor { .. } => {}
             }
