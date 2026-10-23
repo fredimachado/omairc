@@ -44,7 +44,7 @@ mod linux {
     use std::time::Duration;
 
     use futures::StreamExt;
-    use zbus::{proxy, Connection};
+    use zbus::{proxy, zvariant, Connection};
 
     use super::sanitized_text_scale;
 
