@@ -10,6 +10,7 @@ mod chrome;
 mod commands;
 mod composer;
 mod console;
+mod fileupload;
 mod fixture;
 mod inbox;
 mod keychain;

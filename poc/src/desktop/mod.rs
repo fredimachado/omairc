@@ -9,6 +9,7 @@ pub mod cli;
 pub mod cli_cursor;
 pub mod endpoint;
 pub mod filelog;
+pub mod fileupload;
 pub mod httpfetch;
 pub mod installer;
 pub mod ipc;

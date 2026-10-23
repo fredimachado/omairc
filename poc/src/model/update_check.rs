@@ -1075,7 +1075,8 @@ mod tests {
         let (url, server) = serve_once("200 OK", "", LATEST_RELEASE.as_bytes().to_vec());
         let release = check_latest(&crate::desktop::httpfetch::UreqFetch, "1.10.3", &url)
             .expect("release over loopback");
-        let head = server.join().expect("server thread").to_ascii_lowercase();
+        let (head, _) = server.join().expect("server thread");
+        let head = head.to_ascii_lowercase();
         assert_eq!(release.version, "1.11.0");
         assert!(
             head.contains("user-agent: omairc/1.10.3 (+https://github.com/fredimachado/omairc)"),

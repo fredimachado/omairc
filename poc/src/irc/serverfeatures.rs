@@ -266,7 +266,6 @@ impl IrcServerFeatures {
 
     /// The upload URI this connection may use. An encrypted connection refuses a
     /// plain `http://` URI, and a server may list several.
-    #[cfg(test)]
     pub fn file_host(&self, encrypted: bool) -> Option<&str> {
         let mut cleartext = None;
         for uri in &self.file_hosts {

@@ -3,7 +3,9 @@ pub mod header;
 pub mod header_actions;
 pub mod slash_popup;
 
-use gpui::{div, prelude::*, AnyElement, Entity};
+use std::rc::Rc;
+
+use gpui::{div, prelude::*, AnyElement, App, Entity, ExternalPaths, Window};
 
 use crate::model::Style;
 use crate::ui::center::composer::render_composer;
@@ -34,10 +36,18 @@ pub fn render_center(
     style: &Style,
     on_toggle_members: Handler<()>,
     on_send: Handler<()>,
+    on_file: Option<Handler<()>>,
     popup: Option<AnyElement>,
     focused: bool,
     has_text: bool,
+    file_drag_over: bool,
+    on_external_paths: Rc<dyn Fn(&ExternalPaths, &mut Window, &mut App)>,
 ) -> impl IntoElement {
+    let drag_border = if file_drag_over {
+        style.accent_color()
+    } else {
+        style.page_color()
+    };
     div()
         .flex_grow()
         .min_w_0()
@@ -47,6 +57,10 @@ pub fn render_center(
         .flex()
         .flex_col()
         .bg(to_gpui(style.page_color()))
+        .border_2()
+        .border_color(to_gpui(drag_border))
+        .drag_over::<ExternalPaths>(|style, _, _, _| style)
+        .on_drop(move |paths, window, cx| on_external_paths(paths, window, cx))
         .child(render_header(header, style, on_toggle_members))
         .child(
             div()
@@ -58,6 +72,6 @@ pub fn render_center(
                 .child(transcript),
         )
         .child(render_composer(
-            composer, style, on_send, popup, focused, has_text,
+            composer, style, on_send, on_file, popup, focused, has_text,
         ))
 }

@@ -32,6 +32,7 @@ getrandom = "=0.3.4"
 unicode-segmentation = "1.12"
 ureq = "=3.4.2"
 url = "2.5"
+mime_guess = "=2.0.5"
 # The net layer (src/net/ only). gpui already builds these exact releases through its
 # reqwest client, so nothing new compiles. Cancellation is JoinHandle::abort, so the
 # tokio macros feature stays off. If a gpui upgrade drops reqwest, these become real

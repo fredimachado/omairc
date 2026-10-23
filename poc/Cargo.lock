@@ -3854,6 +3854,7 @@ dependencies = [
  "hmac",
  "image",
  "log",
+ "mime_guess",
  "notify",
  "nucleo-matcher",
  "objc2",
