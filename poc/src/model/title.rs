@@ -10,8 +10,6 @@ use std::collections::HashSet;
 use super::ids::ConversationRef;
 use super::status::status_title;
 use crate::controller::controller::Controller;
-use crate::irc::event::MentionArrival;
-use crate::irc::plaintext::plain_irc_text;
 
 /// An unfocused mention or direct message held in the window title. Body is plain
 /// IRC text; [`attention_title`] collapses leftover controls. Opening that
@@ -58,9 +56,6 @@ pub fn conversation_title(controller: &Controller, target: &ConversationRef) -> 
     }
 }
 
-/// The window title for the view. A conversation reads `<title> - Omairc`, or
-/// just `Omairc` with nothing selected. A Status title has no ` - Omairc`
-/// suffix, as Qt's `statusTitleText` does.
 /// Drops C0, C1, and DEL (ESC, BEL, newlines) and folds the gap into one space.
 /// IRC formatting is stripped before this runs.
 pub fn collapse_title_space(text: &str) -> String {
@@ -164,19 +159,6 @@ pub fn clear_title_mark_if_opened(
 }
 
 impl TitleMark {
-    /// Builds a mark from a mention arrival when the window is unfocused.
-    pub fn from_mention(window_active: bool, arrival: &MentionArrival) -> Option<Self> {
-        if window_active || arrival.target.is_empty() {
-            return None;
-        }
-        Some(Self {
-            author: arrival.author.clone(),
-            plain_body: plain_irc_text(&arrival.body),
-            network_id: arrival.network_id.clone(),
-            target: arrival.target.clone(),
-        })
-    }
-
     /// The OSC window title while this mark is set.
     pub fn window_title(&self, controller: &Controller) -> String {
         attention_title(
@@ -187,6 +169,9 @@ impl TitleMark {
     }
 }
 
+/// The window title for the view. A conversation reads `<title> - Omairc`, or
+/// just `Omairc` with nothing selected. A Status title has no ` - Omairc`
+/// suffix, as Qt's `statusTitleText` does.
 pub fn window_title(controller: &Controller, view: TitleView<'_>) -> String {
     match view {
         TitleView::Conversation(target) => {
