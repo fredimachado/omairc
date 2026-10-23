@@ -30,7 +30,6 @@ const LIMIT: usize = 800;
 /// count may only fall, and an entry leaves this list once its file is within `LIMIT`.
 const ALLOWLIST: &[(&str, usize)] = &[
     ("controller/commanddispatcher.rs", 972),
-    ("controller/controller.rs", 825),
     ("controller/replyrouter.rs", 1007),
     ("ui/input.rs", 824),
 ];

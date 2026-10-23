@@ -10,8 +10,9 @@
 
 use std::rc::Rc;
 
-use crate::demo::seed::{OFTC_WORLD, OMARCHY_NETWORK_ID, OMARCHY_WORLD};
+use crate::demo::seed::{OFTC_WORLD, OMARCHY_NETWORK_ID, OMARCHY_WORLD, SeedNetwork};
 use crate::demo::server::{session_config, DemoServer, SeedControls};
+use crate::irc::statusentry::{self, LogSeverity};
 use crate::demo::wire::{bench_channel_bytes, BENCH_CHANNEL};
 use crate::desktop::notifier::{Notifier, NullNotifier};
 use crate::session::clock::{Clock, RealClock};
@@ -64,6 +65,65 @@ impl Controller {
         self.pump();
         self.select_conversation(OMARCHY_NETWORK_ID, BENCH_CHANNEL);
         true
+    }
+}
+
+impl Controller {
+    /// Starts a seeded demo network on a fresh loopback, with its registration burst
+    /// and its auto-answers (`DemoServer::restart`).
+    pub(super) fn restart_demo(&mut self, network: &'static SeedNetwork) -> bool {
+        let Some(demo) = self.demo.clone() else {
+            return self.refuse_start(network.network_id);
+        };
+        self.manager.discard(network.network_id);
+        self.autoaway_forget_network(network.network_id);
+        self.monitor_forget_presence(network.network_id);
+        self.forget_channel_list(network.network_id);
+        self.forget_replies(network.network_id);
+        self.cancelled_joins.retain(|key| key.network_id != network.network_id);
+        let transport = Rc::new(LoopbackTransport::new());
+        let session = match self.manager.create(
+            session_config(network),
+            transport.clone(),
+            self.clock.clone(),
+        ) {
+            Ok(session) => session,
+            Err(error) => {
+                self.refuse_with(network.network_id, &error.to_string());
+                return false;
+            }
+        };
+        self.attach_store_hooks(network.network_id);
+        if let Err(error) = demo.restart(&session, &transport) {
+            self.refuse_with(network.network_id, &error.to_string());
+            return false;
+        }
+        true
+    }
+
+    /// A start the build cannot honour. The transport factory gives the reason, and
+    /// the reason becomes the network's last error and a Status line.
+    pub(super) fn refuse_start(&mut self, network_id: &str) -> bool {
+        let message = match self.transports.open(network_id) {
+            Err(message) => message,
+            // A transport opened, but no profile exists to build a session from.
+            Ok(_) => "That network is not configured".to_owned(),
+        };
+        self.refuse_with(network_id, &message);
+        false
+    }
+
+    /// Records a refused start as the network's last error and writes it to Status.
+    /// With no selection, Status is what the window shows, so it moves to this network
+    /// (the first-run Apply case). A selected conversation stays on screen.
+    pub(super) fn refuse_with(&mut self, network_id: &str, message: &str) {
+        self.set_last_error(network_id, Some(message.to_owned()));
+        let now = self.clock.now();
+        let entry = statusentry::lifecycle(network_id, LogSeverity::Alert, "error", message, now);
+        self.append_status(entry);
+        if self.selected.is_none() {
+            self.console_network = network_id.to_owned();
+        }
     }
 }
 

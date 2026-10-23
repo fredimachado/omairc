@@ -7,8 +7,8 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use crate::irc::statusentry::StatusEntry;
-use crate::session::events::SessionState;
+use crate::irc::statusentry::{LogSeverity, StatusEntry};
+use crate::session::events::{SessionState, Severity};
 
 /// The per-network Status cap (`IrcStatusConsole`'s default, 2000 lines).
 pub const DEFAULT_CAPACITY: usize = 2000;
@@ -31,6 +31,14 @@ pub(super) fn state_label(state: SessionState) -> &'static str {
 
 /// The sentence a connection-state line says (`stateText` in
 /// `src/irc/ircstatusconsole.cpp`).
+/// The Status severity for a session notice (`Severity` to `LogSeverity`).
+pub(super) fn log_severity(severity: Severity) -> LogSeverity {
+    match severity {
+        Severity::Info => LogSeverity::Info,
+        Severity::Alert => LogSeverity::Alert,
+    }
+}
+
 pub(super) fn state_text(state: SessionState) -> &'static str {
     match state {
         SessionState::Idle => "Disconnected",

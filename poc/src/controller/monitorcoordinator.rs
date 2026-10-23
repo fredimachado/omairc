@@ -22,6 +22,7 @@ use crate::irc::wiretext::wire_text;
 use crate::session::events::SessionState;
 
 use super::controller::Controller;
+use super::notify::Arrival;
 use super::stores::ignore_nick_is_usable;
 
 /// One watched nick's last observed state (`IrcMonitorCoordinator::Presence`).
@@ -154,6 +155,11 @@ impl Controller {
             if self.monitor_notify_muted(network_id, &nick) {
                 continue;
             }
+            self.arrivals.push(Arrival::Monitor {
+                display: display.clone(),
+                body: body.to_owned(),
+                network_id: network_id.to_owned(),
+            });
             if online && previous != MonitorPresence::Online {
                 self.append_inbox(InboxItem {
                     kind: InboxKind::MonitorOnline,

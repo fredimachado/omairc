@@ -19,6 +19,7 @@ pub mod credentialstore;
 pub mod geometry;
 pub mod lists;
 pub mod opendirect;
+pub mod playbacktime;
 pub mod paths;
 pub mod preferences;
 pub mod profilestore;

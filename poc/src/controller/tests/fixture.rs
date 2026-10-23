@@ -29,7 +29,6 @@ impl Notifier for Mentions {
 pub struct Fixture {
     pub clock: Rc<FakeClock>,
     pub controller: Controller,
-    pub mentions: Mentions,
 }
 
 impl Fixture {
@@ -40,16 +39,13 @@ impl Fixture {
         ));
         let mentions = Mentions::default();
         let dyn_clock: Rc<dyn Clock> = clock.clone();
-        let controller = Controller::new_demo_with(dyn_clock, Box::new(mentions.clone()))
+        let mut controller = Controller::new_demo_with(dyn_clock, Box::new(mentions.clone()))
             .expect("the demo starts");
         // The seed's own transcript raises mention arrivals. Tests start from a quiet
         // log, so each one counts only what it sends or injects.
         mentions.0.borrow_mut().clear();
-        Self {
-            clock,
-            controller,
-            mentions,
-        }
+        controller.take_arrivals();
+        Self { clock, controller }
     }
 
     /// Every frame the client wrote to `network_id`, as text, oldest first.

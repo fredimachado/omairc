@@ -3,7 +3,21 @@
 //! highlight word raises a mention. Ports the behaviour `IrcController` gives these
 //! lists (`src/irc/ircignore.cpp`, `src/irc/ircmute.cpp`, `src/irc/irchighlight.cpp`).
 
+use crate::controller::notify::Arrival;
+
 use super::fixture::{Fixture, OMARCHY};
+
+fn mention_arrivals(fixture: &mut Fixture) -> Vec<crate::irc::event::MentionArrival> {
+    fixture
+        .controller
+        .take_arrivals()
+        .into_iter()
+        .filter_map(|arrival| match arrival {
+            Arrival::Mention(mention) => Some(mention),
+            Arrival::Monitor { .. } => None,
+        })
+        .collect()
+}
 
 /// Whether the controller holds a conversation for `target` on the seeded network.
 fn has_conversation(fixture: &Fixture, target: &str) -> bool {
@@ -92,14 +106,13 @@ fn muting_a_channel_flags_it_and_unmuting_clears_the_flag() {
 fn a_muted_channel_does_not_mention_but_an_unmuted_one_does() {
     let mut fixture = Fixture::seeded();
     fixture.controller.apply_mute(OMARCHY, "#omarchy", true);
-    let mentions = fixture.mentions.0.borrow().len();
-
     fixture.deliver(OMARCHY, ":anna!u@h PRIVMSG #omarchy :fred: ping");
-    assert_eq!(fixture.mentions.0.borrow().len(), mentions, "muted, no mention");
+    assert!(mention_arrivals(&mut fixture).is_empty(), "muted, no mention");
 
     fixture.controller.apply_mute(OMARCHY, "#omarchy", false);
     fixture.deliver(OMARCHY, ":anna!u@h PRIVMSG #omarchy :fred: ping again");
-    assert_eq!(fixture.mentions.0.borrow().len(), mentions + 1, "unmuted, mentions again");
+    let mentions = mention_arrivals(&mut fixture);
+    assert_eq!(mentions.len(), 1, "unmuted, mentions again");
 }
 
 #[test]
@@ -108,12 +121,10 @@ fn a_highlight_word_mentions_like_a_nick_until_it_is_removed() {
     assert!(fixture.controller.add_highlight_word(OMARCHY, "chowder"));
     assert!(!fixture.controller.add_highlight_word(OMARCHY, "CHOWDER"), "case-mapped duplicate");
     assert_eq!(fixture.controller.highlight_words(OMARCHY), ["chowder"]);
-    let mentions = fixture.mentions.0.borrow().len();
-
     fixture.deliver(OMARCHY, ":anna!u@h PRIVMSG #omarchy :the chowder is ready");
-    assert_eq!(fixture.mentions.0.borrow().len(), mentions + 1, "the word mentions");
+    assert_eq!(mention_arrivals(&mut fixture).len(), 1, "the word mentions");
 
     assert!(fixture.controller.remove_highlight_word(OMARCHY, "chowder"));
     fixture.deliver(OMARCHY, ":anna!u@h PRIVMSG #omarchy :more chowder");
-    assert_eq!(fixture.mentions.0.borrow().len(), mentions + 1, "removed, no mention");
+    assert!(mention_arrivals(&mut fixture).is_empty(), "removed, no mention");
 }

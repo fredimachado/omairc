@@ -24,12 +24,12 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 
-use crate::demo::seed::{world_for, SeedNetwork};
-use crate::demo::server::{session_config, DemoError, DemoServer};
+use crate::demo::seed::world_for;
+use crate::demo::server::{DemoError, DemoServer};
 use crate::desktop::httpfetch::UreqFetch;
 use crate::desktop::notifier::Notifier;
 use crate::irc::capability::{IrcCapability, IrcCapabilitySet};
-use crate::irc::event::{ConversationKey, Event, HistoryKind, NickEvent, WelcomeEvent};
+use crate::irc::event::{ConversationKey, Event, NickEvent, WelcomeEvent};
 use crate::irc::inbox::{Inbox, InboxItem, InboxKind};
 use crate::irc::message::IrcMessage;
 use crate::irc::pref::Preferences;
@@ -37,12 +37,11 @@ use crate::irc::prefixnick::prefix_nick;
 use crate::irc::reducer::EventReducer;
 use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::irc::statusentry::{self, LogSeverity, StatusEntry};
-use crate::irc::translator::{translate, translate_history, HistoryBatch};
+use crate::irc::translator::translate;
 use crate::irc::viewnotify::{self, ViewNotify};
 use crate::irc::wiretext::wire_text;
 use crate::session::clock::Clock;
-use crate::session::events::{SessionEvent, SessionState, Severity};
-use crate::session::loopback::LoopbackTransport;
+use crate::session::events::{SessionEvent, SessionState};
 use crate::session::session::Session;
 use crate::session::sessionmanager::{SessionManager, SessionManagerError};
 
@@ -51,10 +50,13 @@ use crate::storage::lists::{CaseListStore, IniListBacking};
 use crate::storage::opendirect::OpenDirectStore;
 use crate::storage::preferences::PreferenceStore;
 use crate::storage::profilestore::{Profile, ProfileStore};
+use crate::storage::playbacktime::PlaybackTimeStore;
 use crate::storage::scrollplace::ScrollPlaceFile;
 use crate::storage::Backing;
 
 use super::autoawayruntime::AutoawayState;
+use super::notify::Arrival;
+use super::playback::PlaybackCoordinator;
 use super::avatars::AvatarFetches;
 use super::channellist::{ChannelListRequests, ChannelListView};
 use super::console::{self, StatusConsole};
@@ -100,7 +102,7 @@ impl From<DemoError> for ControllerError {
 /// The controller. The UI thread owns it; it is not `Send`.
 pub struct Controller {
     pub(super) clock: Rc<dyn Clock>,
-    notifier: Box<dyn Notifier>,
+    pub(super) notifier: Box<dyn Notifier>,
     pub(super) transports: Box<dyn TransportFactory>,
     /// The demo peers, when the controller runs `--demo-server`.
     pub(super) demo: Option<Rc<DemoServer>>,
@@ -166,6 +168,15 @@ pub struct Controller {
     pub(super) open_directs_motd_seen: BTreeSet<String>,
     /// The avatar cache, its in-flight slots and the seam its jobs fetch through (`avatars.rs`).
     pub(super) avatars: AvatarFetches,
+    /// Channels and directs the user closed (`closedConversations` / `targets`).
+    pub(super) closed: Rc<RefCell<CaseListStore>>,
+    /// Bouncer playback books (Gap 5).
+    pub(super) playback: PlaybackCoordinator,
+    pub(super) playback_times: Rc<RefCell<PlaybackTimeStore>>,
+    /// Whether the transcript viewport follows the end after new lines.
+    pub(super) transcript_follow_end: bool,
+    /// Mention and monitor arrivals waiting for the shell (`notify.rs`).
+    pub(super) arrivals: Vec<Arrival>,
     pumping: bool,
 }
 
@@ -203,6 +214,8 @@ impl Controller {
         let list = |group: &'static str, key: &'static str| {
             CaseListStore::new(Box::new(IniListBacking::new(backing.clone(), group, key)))
         };
+        let playback_times = Rc::new(RefCell::new(PlaybackTimeStore));
+        let playback = PlaybackCoordinator::new(Rc::clone(&playback_times));
         Self {
             clock,
             notifier,
@@ -248,6 +261,11 @@ impl Controller {
             open_directs: OpenDirectStore::new(&backing),
             open_directs_motd_seen: BTreeSet::new(),
             avatars: AvatarFetches::new(Arc::new(UreqFetch)),
+            closed: Rc::new(RefCell::new(list("closedConversations", "targets"))),
+            playback,
+            playback_times,
+            transcript_follow_end: true,
+            arrivals: Vec::new(),
             pumping: false,
         }
     }
@@ -496,17 +514,22 @@ impl Controller {
                 text,
                 at,
             } => {
-                let entry =
-                    statusentry::lifecycle(&network_id, log_severity(severity), kind, &text, at);
+                let entry = statusentry::lifecycle(
+                    &network_id,
+                    console::log_severity(severity),
+                    kind,
+                    &text,
+                    at,
+                );
                 self.status_entry(entry);
             }
             SessionEvent::MessageReceived {
                 network_id,
                 message,
             } => self.handle_message(&network_id, &message),
-            SessionEvent::HistoryBatchReceived { network_id, batch } => {
-                self.handle_history_batch(&network_id, &batch);
-            }
+            SessionEvent::HistoryBatchReceived { .. }
+            | SessionEvent::ChatHistoryRequestFinished { .. }
+            | SessionEvent::ChatHistoryFailed { .. } => self.on_history_event(event),
             SessionEvent::CapabilitiesChanged {
                 network_id,
                 capabilities,
@@ -530,9 +553,6 @@ impl Controller {
                 channels,
                 keys,
             } => self.persist_autojoin(&network_id, channels, keys),
-            // Playback resume arrives with the chathistory port (Phase 11).
-            SessionEvent::ChatHistoryRequestFinished { .. }
-            | SessionEvent::ChatHistoryFailed { .. } => {}
         }
     }
 
@@ -755,50 +775,6 @@ impl Controller {
         self.queue(vec![ViewNotify::Conversations]);
     }
 
-    /// Our own JOIN consumes the channel's invite row, and selects the channel when
-    /// it answers the session's pending invite.
-    fn on_self_join(&mut self, network_id: &str, channel: &str) {
-        let mapping = self.reducer.server_features(network_id).case_mapping();
-        self.inbox.consume_invite(network_id, channel, mapping);
-        self.queue(vec![ViewNotify::Inbox]);
-        let Some(session) = self.manager.find(network_id) else {
-            return;
-        };
-        if let Some(pending) = session.pending_invite() {
-            if mapping.equals(channel, &pending.channel) {
-                self.select(network_id, channel);
-            }
-        }
-    }
-
-    /// Replays one history batch. A TARGETS answer discovers directs, which the chathistory
-    /// port (Phase 11) turns into queries, so it splices nothing here.
-    fn handle_history_batch(&mut self, network_id: &str, batch: &HistoryBatch) {
-        if batch.kind == Some(HistoryKind::Targets) {
-            return;
-        }
-        let features = self.reducer.server_features(network_id).clone();
-        let current_nick = self.current_nick(network_id);
-        let now = self.clock.now();
-        let event = {
-            let reducer = &self.reducer;
-            let joined = |channel: &str, sender: &str| {
-                reducer.joined_member_channel(network_id, channel, sender)
-            };
-            translate_history(
-                network_id,
-                &current_nick,
-                &features,
-                batch,
-                now,
-                Some(&joined),
-            )
-        };
-        if let Some(event) = event {
-            self.apply(Event::History(event));
-        }
-    }
-
     /// Stores a network's capabilities, and clears the presence and typing facts a
     /// dropped capability can no longer maintain (`handleCapabilities`).
     fn handle_capabilities(&mut self, network_id: &str, capabilities: IrcCapabilitySet) {
@@ -825,7 +801,7 @@ impl Controller {
 
     /// Folds one translated event into the reducer and handles what it hands up: the
     /// first conversation claims the selection, a stale NAMES sync is released, a
-    /// mention reaches the notifier, and an inbox arrival lands in the inbox.
+    /// mention queues an arrival, and an inbox arrival lands in the inbox.
     pub(super) fn apply(&mut self, event: Event) {
         let now = self.clock.now();
         let metadata_reply = match &event {
@@ -901,7 +877,7 @@ impl Controller {
         }
 
         if let Some(mention) = self.reducer.take_mention_arrival() {
-            self.notifier.mention(&mention);
+            self.arrivals.push(Arrival::Mention(mention));
         }
         if let Some(arrival) = self.reducer.take_inbox_arrival() {
             self.append_inbox(InboxItem {
@@ -938,68 +914,4 @@ impl Controller {
         }
     }
 
-    /// Starts a seeded demo network on a fresh loopback, with its registration burst
-    /// and its auto-answers (`DemoServer::restart`).
-    fn restart_demo(&mut self, network: &'static SeedNetwork) -> bool {
-        let Some(demo) = self.demo.clone() else {
-            return self.refuse_start(network.network_id);
-        };
-        self.manager.discard(network.network_id);
-        self.autoaway_forget_network(network.network_id);
-        self.monitor_forget_presence(network.network_id);
-        self.forget_channel_list(network.network_id);
-        self.forget_replies(network.network_id);
-        self.cancelled_joins.retain(|key| key.network_id != network.network_id);
-        let transport = Rc::new(LoopbackTransport::new());
-        let session = match self.manager.create(
-            session_config(network),
-            transport.clone(),
-            self.clock.clone(),
-        ) {
-            Ok(session) => session,
-            Err(error) => {
-                self.refuse_with(network.network_id, &error.to_string());
-                return false;
-            }
-        };
-        self.attach_store_hooks(network.network_id);
-        if let Err(error) = demo.restart(&session, &transport) {
-            self.refuse_with(network.network_id, &error.to_string());
-            return false;
-        }
-        true
-    }
-
-    /// A start the build cannot honour. The transport factory gives the reason, and
-    /// the reason becomes the network's last error and a Status line.
-    pub(super) fn refuse_start(&mut self, network_id: &str) -> bool {
-        let message = match self.transports.open(network_id) {
-            Err(message) => message,
-            // A transport opened, but no profile exists to build a session from.
-            Ok(_) => "That network is not configured".to_owned(),
-        };
-        self.refuse_with(network_id, &message);
-        false
-    }
-
-    /// Records a refused start as the network's last error and writes it to Status.
-    /// With no selection, Status is what the window shows, so it moves to this network
-    /// (the first-run Apply case). A selected conversation stays on screen.
-    pub(super) fn refuse_with(&mut self, network_id: &str, message: &str) {
-        self.set_last_error(network_id, Some(message.to_owned()));
-        let now = self.clock.now();
-        let entry = statusentry::lifecycle(network_id, LogSeverity::Alert, "error", message, now);
-        self.append_status(entry);
-        if self.selected.is_none() {
-            self.console_network = network_id.to_owned();
-        }
-    }
-}
-
-/// The Status severity for a session notice (`Severity` to `LogSeverity`).
-fn log_severity(severity: Severity) -> LogSeverity {
-    match severity {
-        Severity::Info => LogSeverity::Info,
-        Severity::Alert => LogSeverity::Alert,
-    }
 }
