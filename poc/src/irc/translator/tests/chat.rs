@@ -148,7 +148,16 @@ fn channel_context_private_line_is_only_visible_to_you() {
         }
         other => panic!("want NoticeEvent, got {other:?}"),
     }
-    assert!(translate_line(":alice!u@h NOTICE omairc :dm notice").is_empty());
+    let dm_notice = translate_line(":alice!u@h NOTICE omairc :dm notice");
+    assert_eq!(dm_notice.len(), 1);
+    match &dm_notice[0] {
+        Event::Notice(value) => {
+            assert_eq!(value.author, "alice");
+            assert_eq!(value.target, "alice");
+            assert_eq!(value.body, "dm notice");
+        }
+        other => panic!("want NoticeEvent, got {other:?}"),
+    }
 
     let replay = batch(
         "#room",

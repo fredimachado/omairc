@@ -543,7 +543,7 @@ fn a_reopened_direct_is_remembered_across_restart() {
              :rio!u@h PRIVMSG fred :\x01ACTION waves\x01\r\n\
              :kai!u@h PRIVMSG fred :once",
         );
-        feed(&mut first, &loopbacks, LIBERA, ":nia!u@h PRIVMSG fred :psst");
+        feed(&mut first, &loopbacks, LIBERA, ":nia!u@h NOTICE fred :psst");
         for nick in ["lena", "nia", "rio", "kai"] {
             assert!(has_conversation(&first, LIBERA, nick), "{nick} was not opened");
             assert!(
@@ -562,9 +562,9 @@ fn a_reopened_direct_is_remembered_across_restart() {
             &loopbacks,
             LIBERA,
             ":lena!u@h PRIVMSG fred :again\r\n\
-             :rio!u@h PRIVMSG fred :\x01ACTION waves again\x01\r\n\
-             :nia!u@h PRIVMSG fred :again",
+             :rio!u@h PRIVMSG fred :\x01ACTION waves again\x01",
         );
+        feed(&mut first, &loopbacks, LIBERA, ":nia!u@h NOTICE fred :again");
         for nick in ["lena", "nia", "rio"] {
             assert!(has_conversation(&first, LIBERA, nick), "live line did not reopen {nick}");
             assert!(!closed_has(&first, LIBERA, nick), "reopen left {nick} closed");
