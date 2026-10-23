@@ -13,8 +13,9 @@ use std::time::Duration;
 
 use super::events::{ErrorKind, SessionEvent, SessionState};
 use super::saslscram::{encode_sasl_frames, ScramExchange, ScramReply};
-use super::session::{Core, TimerSlot};
+use super::session::Core;
 use super::sts::parse_sts_advertisement;
+use super::timers::TimerSlot;
 use super::wire;
 use crate::irc::capability::{IrcCapability, IrcCapabilitySet};
 use crate::irc::message::IrcMessage;

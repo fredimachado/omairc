@@ -578,7 +578,7 @@ pub fn redact_wire_line(line: &str, channel_types: &str) -> Option<String> {
 /// - the protocol-error preview (`session::malformed`'s `preview_wire`) shows the
 ///   printable text unmasked;
 /// - a refusal reason on Status (`statusentry`'s `nick_refusal_tail`) and the
-///   server sentence (`session::session::Core::server_sentence_or`) show the
+///   server sentence (`session::dispatch::Core::server_sentence_or`) show the
 ///   unmasked reason only when `allows_transcript` also passes, and omit it
 ///   otherwise.
 ///

@@ -132,7 +132,7 @@ impl Core {
         }
 
         self.connection.reset_retries();
-        self.cancel_timer(super::session::TimerSlot::Capability);
+        self.cancel_timer(super::timers::TimerSlot::Capability);
         self.caps.abandon_outstanding();
         self.set_state(SessionState::Registered);
         let network_id = self.network_id();

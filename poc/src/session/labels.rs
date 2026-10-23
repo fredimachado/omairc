@@ -9,7 +9,8 @@
 use chrono::{DateTime, Utc};
 
 use super::events::SessionEvent;
-use super::session::{Core, TimerSlot};
+use super::session::Core;
+use super::timers::TimerSlot;
 
 impl Core {
     /// Starts a labeled request and returns its label (`beginLabeledRequestLocked`).

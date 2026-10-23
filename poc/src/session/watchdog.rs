@@ -8,7 +8,8 @@
 use std::time::Duration;
 
 use super::events::{ErrorKind, SessionState};
-use super::session::{Core, TimerSlot};
+use super::session::Core;
+use super::timers::TimerSlot;
 use crate::irc::message::IrcMessage;
 
 /// The PING token the watchdog sends, and expects back in PONG.

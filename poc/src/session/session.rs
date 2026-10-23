@@ -17,9 +17,11 @@
 //! and SASL: PLAIN, and SCRAM-SHA-256 through `saslscram`), `registration` (NICK/USER,
 //! ISUPPORT, 001 and refusals), `batch` (the batch ledger), `history` (CHATHISTORY),
 //! `labels` (labeled requests), `readmarker`, `typing`, `metadata`, `autojoin`, `ctcp`,
-//! `outbound` (the public writers), `malformed` (protocol-error previews), `wire`
-//! (message field helpers), `sink` (the transport's callbacks), `sts` (the STS cache) and
-//! `stsflow` (the STS upgrade and reconnect).
+//! `outbound` (the public writers), `send` (the line writers every write goes
+//! through), `dispatch` (inbound bytes and message dispatch), `timers` (the timer
+//! slots), `malformed` (protocol-error previews), `wire` (message field helpers),
+//! `sink` (the transport's callbacks), `sts` (the STS cache) and `stsflow` (the STS
+//! upgrade and reconnect).
 //!
 //! Out of scope until Phase 11: the socket transport (`transport_net.go`). A failed SCRAM
 //! exchange is never retried with PLAIN.
@@ -31,12 +33,10 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 
-use crate::irc::capability::{IrcCapability, IrcCapabilitySet};
+use crate::irc::capability::IrcCapabilitySet;
 use crate::irc::capabilitynegotiation::IrcCapabilityNegotiation;
 use crate::irc::framer::IrcFramer;
 use crate::irc::message::IrcMessage;
-use crate::irc::parser::parse;
-use crate::irc::prefixnick::prefix_nick;
 use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::irc::wiretext::wire_text;
 
@@ -51,6 +51,7 @@ use super::metadata::MetadataCapability;
 use super::readmarker::ReadMarkerLedger;
 use super::sink::SinkAdapter;
 use super::sts::{StsAdvertisement, StsStore};
+use super::timers::{ArmedTimer, TimerSlot};
 use super::transport::{ConnectionState, Transport, TransportSink};
 use super::typing::TypingPublisher;
 use super::watchdog::PingWatchdog;
@@ -102,28 +103,6 @@ pub(crate) enum RegistrationNick {
     Configured,
     Underscore,
     Digit,
-}
-
-/// The timers the session owns. Each slot holds at most one armed timer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum TimerSlot {
-    Reconnect,
-    Capability,
-    Ping,
-    Label,
-}
-
-impl TimerSlot {
-    const COUNT: usize = 4;
-
-    fn index(self) -> usize {
-        self as usize
-    }
-}
-
-struct ArmedTimer {
-    id: u64,
-    handle: Box<dyn super::clock::ClockTimer>,
 }
 
 /// Everything the state machine mutates, behind the `RefCell`.
@@ -186,8 +165,8 @@ pub(crate) struct Core {
     pub(crate) pending_invite: Option<PendingInvite>,
     pub(crate) history_resume: Option<HistoryResume>,
 
-    timers: [Option<ArmedTimer>; TimerSlot::COUNT],
-    timer_sequence: u64,
+    pub(crate) timers: [Option<ArmedTimer>; TimerSlot::COUNT],
+    pub(crate) timer_sequence: u64,
     pub(crate) events: Vec<SessionEvent>,
     pub(crate) effects: Vec<Effect>,
 }
@@ -733,75 +712,6 @@ impl Core {
         self.publish_capabilities();
     }
 
-    // ---- Writers --------------------------------------------------------
-
-    /// Queues one already-built line (`sendLineLocked`). It emits the outbound
-    /// event, then writes the frame.
-    pub(crate) fn send_line(&mut self, line: &[u8]) {
-        if line.is_empty() {
-            return;
-        }
-        let line: Rc<[u8]> = Rc::from(line);
-        let event = SessionEvent::Outbound {
-            network_id: self.network_id(),
-            line: Rc::clone(&line),
-            channel_types: self.channel_types.clone(),
-            at: self.now(),
-        };
-        self.emit(event);
-        self.effects.push(Effect::Write(line));
-    }
-
-    /// Builds a command as a line, optionally labeled, and sends it. A command
-    /// is written only while registered (`sendCommandLocked`).
-    pub(crate) fn send_command(&mut self, command: &str, request_label: &str) -> bool {
-        if self.state != SessionState::Registered {
-            return false;
-        }
-        let wire = if request_label.is_empty() {
-            command.to_owned()
-        } else {
-            if !is_tag_safe_label(request_label) {
-                return false;
-            }
-            format!("@label={request_label} {command}")
-        };
-        let Ok(line) = crate::irc::commandbuilder::line(&wire, &self.features) else {
-            return false;
-        };
-        self.send_line(line.as_bytes());
-        true
-    }
-
-    /// Sends a body that may need several frames, each a `prefix`, a chunk, and a
-    /// `suffix` (`sendTrailingBodyLocked`). A labeled request must fit one frame.
-    pub(crate) fn send_trailing_body(
-        &mut self,
-        prefix: &str,
-        body: &str,
-        suffix: &str,
-        request_label: &str,
-    ) -> bool {
-        let chunks: Vec<String> =
-            crate::irc::commandbuilder::split_trailing_param(prefix, body, suffix, &self.features)
-                .into_iter()
-                .map(str::to_owned)
-                .collect();
-        if chunks.is_empty() {
-            return false;
-        }
-        if !request_label.is_empty() && chunks.len() != 1 {
-            return false;
-        }
-        for chunk in &chunks {
-            let command = format!("{prefix}{chunk}{suffix}");
-            if !self.send_command(&command, request_label) {
-                return false;
-            }
-        }
-        true
-    }
-
     /// Queues an inbound message for the translator (`emitMessageReceived`).
     pub(crate) fn emit_message_received(&mut self, message: IrcMessage) {
         let network_id = self.network_id();
@@ -809,325 +719,6 @@ impl Core {
             network_id,
             message,
         });
-    }
-
-    /// Records the one-shot handle for `slot`, cancelling any armed predecessor.
-    /// The callback is ignored when a newer arm replaced it.
-    pub(crate) fn arm_timer(&mut self, slot: TimerSlot, delay: Duration) {
-        self.cancel_timer(slot);
-        self.timer_sequence += 1;
-        let id = self.timer_sequence;
-        let weak = self.weak.clone();
-        let handle = self.clock.after(
-            delay,
-            Box::new(move || {
-                if let Some(shared) = weak.upgrade() {
-                    Session::from_shared(shared).locked(|core| core.timer_fired(slot, id));
-                }
-            }),
-        );
-        self.timers[slot.index()] = Some(ArmedTimer { id, handle });
-    }
-
-    pub(crate) fn cancel_timer(&mut self, slot: TimerSlot) {
-        if let Some(armed) = self.timers[slot.index()].take() {
-            armed.handle.stop();
-        }
-    }
-
-    pub(crate) fn timer_fired(&mut self, slot: TimerSlot, id: u64) {
-        let current = matches!(&self.timers[slot.index()], Some(armed) if armed.id == id);
-        if !current {
-            return;
-        }
-        self.timers[slot.index()] = None;
-        match slot {
-            TimerSlot::Reconnect => self.begin_reconnect_attempt(),
-            TimerSlot::Capability => self.on_capability_timeout(),
-            TimerSlot::Ping => self.on_ping_watchdog_fired(),
-            TimerSlot::Label => self.on_label_timer_fired(),
-        }
-    }
-
-    // ---- Inbound bytes and dispatch -------------------------------------
-
-    /// Feeds raw bytes to the framer and dispatches each complete frame
-    /// (`handleBytesLocked`). Protocol faults are reported and never fail the
-    /// session.
-    pub(crate) fn handle_bytes(&mut self, bytes: &[u8]) {
-        if self.ping.is_watching() {
-            self.arm_ping_watchdog();
-        }
-        let result = self.framer.feed(bytes);
-        for fault in result.faults {
-            self.emit_protocol_error("frame", &fault.error, &fault.preview, fault.byte_count);
-        }
-        for frame in result.frames {
-            if self.state == SessionState::StsUpgrading {
-                break;
-            }
-            match parse(&frame) {
-                Ok(message) => self.handle_message(message),
-                Err(error) => {
-                    self.emit_protocol_error("message", &error, &frame, frame.len());
-                }
-            }
-        }
-    }
-
-    pub(crate) fn emit_protocol_error(
-        &mut self,
-        kind: &str,
-        error: &crate::irc::message::IrcError,
-        preview: &[u8],
-        byte_count: usize,
-    ) {
-        let message = super::malformed::describe_malformed(
-            kind,
-            error,
-            preview,
-            byte_count,
-            &self.channel_types,
-        );
-        self.emit(SessionEvent::ErrorOccurred {
-            network_id: self.network_id(),
-            kind: ErrorKind::Protocol,
-            message,
-        });
-    }
-
-    /// Dispatches one inbound message (`handleMessageLocked`). The order is the
-    /// Go order, which the tests pin.
-    pub(crate) fn handle_message(&mut self, message: IrcMessage) {
-        if let Some(filter) = &self.ignore_filter {
-            if filter(&message, &self.config.network_id, &self.nickname) {
-                return;
-            }
-        }
-
-        let command = message.command.clone();
-        if command == "INVITE" && message.params.len() >= 2 {
-            let nick = prefix_nick(&message);
-            let channel = message.text_param(message.params.len() - 1);
-            if !nick.is_empty() && !channel.is_empty() {
-                self.pending_invite = Some(PendingInvite { nick, channel });
-            }
-        }
-
-        let request_label = self.correlation_label(&message);
-        let inbound = SessionEvent::Inbound {
-            network_id: self.network_id(),
-            message: message.clone(),
-            request_label,
-            nick: self.nickname.clone(),
-            channel_types: self.channel_types.clone(),
-            at: self.now(),
-        };
-        self.emit(inbound);
-
-        self.apply_isupport(&message);
-        if command == "376" || command == "422" {
-            self.features.mark_case_mapping_known();
-        }
-
-        if command == "BATCH" {
-            self.handle_batch(&message);
-            return;
-        }
-        if self.capture_in_batch(&message) {
-            return;
-        }
-
-        if command == "ACK" {
-            self.finish_request_label(&message.tag_text("label").unwrap_or_default());
-            return;
-        }
-
-        if command == "PING" {
-            let Some(token) = message.params.last() else {
-                let network_id = self.network_id();
-                self.emit(SessionEvent::ErrorOccurred {
-                    network_id,
-                    kind: ErrorKind::Protocol,
-                    message: "PING message has no token".to_owned(),
-                });
-                return;
-            };
-            let mut line = b"PONG :".to_vec();
-            line.extend_from_slice(token);
-            line.extend_from_slice(b"\r\n");
-            self.send_line(&line);
-            return;
-        }
-
-        if command == "PONG" && self.ping.answers_probe(&message) {
-            self.arm_ping_watchdog();
-            return;
-        }
-
-        if self.deliver_read_marker(&message) {
-            return;
-        }
-
-        if command == "PRIVMSG"
-            && message.params.len() >= 2
-            && self.nicks_equal(&message.text_param(0), &self.nickname.clone())
-        {
-            if self.answer_ctcp(&message) {
-                return;
-            }
-        }
-
-        match command.as_str() {
-            "CAP" => {
-                self.handle_cap(&message);
-                return;
-            }
-            "AUTHENTICATE" => {
-                self.handle_authenticate(&message);
-                return;
-            }
-            "001" => {
-                self.handle_welcome(&message);
-                return;
-            }
-            "903" => {
-                self.handle_sasl_success(&message);
-                return;
-            }
-            "774" => {
-                self.handle_metadata_sync_later(&message);
-                return;
-            }
-            "904" | "905" => {
-                self.fail(
-                    ErrorKind::Authentication,
-                    "SASL authentication failed",
-                    false,
-                );
-                return;
-            }
-            "421" if message.param_index("CAP").is_some() && self.state == SessionState::CapLs => {
-                self.capability_negotiation_ended = true;
-                self.cancel_timer(TimerSlot::Capability);
-                self.send_registration();
-                return;
-            }
-            "464" => {
-                self.fail(
-                    ErrorKind::Authentication,
-                    "Server password or authentication was rejected",
-                    false,
-                );
-                return;
-            }
-            _ => {}
-        }
-
-        if is_registration_refusal(&command) && self.state != SessionState::Registered {
-            if command == "433" && self.try_registration_nick_fallback() {
-                return;
-            }
-            let fallback = format!(
-                "IRC registration was refused ({})",
-                wire_text(command.as_bytes())
-            );
-            let text = self.server_sentence_or(&message, &fallback);
-            self.fail(ErrorKind::Registration, &text, false);
-            return;
-        }
-
-        if command == "ERROR" {
-            self.emit_message_received(message.clone());
-            let text = self.server_sentence_or(&message, "IRC server reported an error");
-            if self.registration_handshake() {
-                self.fail(ErrorKind::Registration, &text, false);
-                return;
-            }
-            self.fail(ErrorKind::Network, &text, true);
-            return;
-        }
-
-        if command == "NICK" {
-            let old_nick = wire::claimed_nick(&message);
-            let new_nick = message.text_param(0);
-            if !old_nick.is_empty()
-                && !new_nick.is_empty()
-                && self.nicks_equal(&old_nick, &self.nickname.clone())
-            {
-                self.nickname = new_nick;
-            }
-        }
-
-        if command == "FAIL" {
-            self.handle_chat_history_fail(&message);
-            self.handle_read_marker_fail(&message);
-        }
-        if command == "366" && message.params.len() >= 2 {
-            self.probe_channel_away(&message.text_param(1));
-        }
-
-        self.emit_message_received(message.clone());
-
-        let self_prefixed = self.self_prefixed(&message);
-        match command.as_str() {
-            "JOIN" if self_prefixed => {
-                let channel = message.text_param(0);
-                if !channel.is_empty() {
-                    self.bump_history_generation(&channel);
-                    self.request_channel_history(&channel);
-                    self.record_autojoin(&channel, true);
-                    if let Some(invite) = self.pending_invite.clone() {
-                        if self.fold_channel(&channel) == self.fold_channel(&invite.channel) {
-                            self.pending_invite = None;
-                        }
-                    }
-                }
-            }
-            "PART" if self_prefixed => {
-                let channel = message.text_param(0);
-                if !channel.is_empty() {
-                    self.bump_history_generation(&channel);
-                    self.forget_channel_history(&channel);
-                    self.record_autojoin(&channel, false);
-                }
-            }
-            "KICK" if self.is_self(&message.text_param(1)) => {
-                let channel = message.text_param(0);
-                if !channel.is_empty() {
-                    self.bump_history_generation(&channel);
-                    self.forget_channel_history(&channel);
-                    self.record_autojoin(&channel, false);
-                }
-            }
-            "475" if message.params.len() >= 2 => {
-                self.drop_stored_autojoin_key(&message.text_param(1));
-            }
-            _ => {}
-        }
-
-        let carried_label = message.tag_text("label").unwrap_or_default();
-        if !carried_label.is_empty() {
-            self.finish_request_label(&carried_label);
-        }
-    }
-
-    /// The label that correlates an inbound line with a request: its own
-    /// `@label`, else the label of the batch it sits in.
-    pub(crate) fn correlation_label(&self, message: &IrcMessage) -> String {
-        let label = message.tag_text("label").unwrap_or_default();
-        if !label.is_empty() {
-            return label;
-        }
-        let batch = message.tag_text("batch").unwrap_or_default();
-        if batch.is_empty() {
-            return String::new();
-        }
-        self.batches
-            .open
-            .get(&batch)
-            .map(|frame| frame.request_label.clone())
-            .unwrap_or_default()
     }
 
     /// Whether the message's source is this session's own nick.
@@ -1146,57 +737,6 @@ impl Core {
     pub(crate) fn fold_channel(&self, channel: &str) -> String {
         wire_text(self.features.case_mapping().normalize(channel).as_bytes())
     }
-
-    pub(crate) fn registration_handshake(&self) -> bool {
-        matches!(
-            self.state,
-            SessionState::Connecting
-                | SessionState::StsUpgrading
-                | SessionState::CapLs
-                | SessionState::CapReq
-                | SessionState::Sasl
-                | SessionState::Registering
-        )
-    }
-
-    pub(crate) fn probe_channel_away(&mut self, channel: &str) {
-        if channel.is_empty() || !self.caps.enabled().contains(IrcCapability::AwayNotify) {
-            return;
-        }
-        self.send_command(&format!("WHO {channel}"), "");
-    }
-
-    /// The server's trailing sentence on a refusal or ERROR, when it is safe to
-    /// show. Either redactor vetoes it, and the fallback stays.
-    pub(crate) fn server_sentence_or(&self, message: &IrcMessage, fallback: &str) -> String {
-        let Some(reason) = super::malformed::registration_sentence(message) else {
-            return fallback.to_owned();
-        };
-        if !crate::irc::secretpolicy::allows_transcript(&reason, &self.channel_types) {
-            return fallback.to_owned();
-        }
-        if crate::irc::secretpolicy::redact_preview_line(&reason, &self.channel_types).is_some() {
-            return fallback.to_owned();
-        }
-        reason
-    }
-}
-
-/// The numerics that refuse registration (`isRegistrationRefusalNumeric`).
-fn is_registration_refusal(command: &str) -> bool {
-    matches!(
-        command,
-        "432" | "433" | "436" | "437" | "451" | "462" | "465"
-    )
-}
-
-/// A label may carry only tag-safe characters, at most 64 of them.
-pub(crate) fn is_tag_safe_label(label: &str) -> bool {
-    !label.is_empty()
-        && label.len() <= 64
-        && label
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
 }
 
 /// Whether a target can take PRIVMSG: non-empty, no leading colon, no whitespace

@@ -29,7 +29,6 @@ const ALLOWLIST: &[(&str, usize)] = &[
     ("controller/commanddispatcher.rs", 972),
     ("controller/controller.rs", 825),
     ("controller/replyrouter.rs", 1007),
-    ("session/session.rs", 971),
     ("ui/input.rs", 824),
 ];
 
