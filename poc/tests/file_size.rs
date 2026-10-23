@@ -31,7 +31,6 @@ const ALLOWLIST: &[(&str, usize)] = &[
     ("controller/replyrouter.rs", 1007),
     ("irc/command.rs", 831),
     ("irc/statusentry.rs", 1105),
-    ("irc/translator.rs", 961),
     ("model/connect.rs", 1018),
     ("session/session.rs", 1095),
     ("ui/input.rs", 824),
