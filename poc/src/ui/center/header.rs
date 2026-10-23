@@ -264,7 +264,6 @@ mod tests {
 
     use super::people_pill;
     use crate::controller::controller::Controller;
-    use crate::desktop::notifier::NullNotifier;
     use crate::session::clock::FakeClock;
 
     #[test]
@@ -281,7 +280,7 @@ mod tests {
             Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap(),
         ));
         let mut controller =
-            Controller::new_demo_with(clock, Box::new(NullNotifier)).expect("the demo starts");
+            Controller::new_demo_with(clock).expect("the demo starts");
         controller.select_conversation("omarchy", "#omarchy");
         let pill = |controller: &Controller| {
             people_pill(

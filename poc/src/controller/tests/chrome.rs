@@ -11,7 +11,6 @@ use chrono::{TimeZone, Utc};
 
 use crate::controller::controller::Controller;
 use crate::controller::transports::{NoTransports, LIVE_IRC_UNAVAILABLE};
-use crate::desktop::notifier::NullNotifier;
 use crate::irc::command::ComposerSurface;
 use crate::model::presence::{footer_presence, SelfPresence};
 use crate::model::status::{connection_line, network_mark_online};
@@ -46,11 +45,7 @@ fn fake_clock() -> Rc<dyn Clock> {
 
 /// A controller with no demo and no live transport, as a first run starts.
 fn bare_controller() -> Controller {
-    Controller::with_parts(
-        fake_clock(),
-        Box::new(NullNotifier),
-        Box::new(NoTransports),
-    )
+    Controller::with_parts(fake_clock(), Box::new(NoTransports))
 }
 
 /// A session the test drives by hand on a loopback, named `lab`. It starts connecting, and

@@ -63,6 +63,7 @@ mod tests {
             separator_text: None,
             event_text: None,
             status: None,
+            msgid: String::new(),
         }
     }
 

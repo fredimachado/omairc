@@ -27,7 +27,7 @@ use common::{code_only, crate_root, line_of, read_code, rust_files_under};
 use regex::Regex;
 
 /// The `dead_code` silencers the tree holds. The count may only fall.
-const MAX_ALLOWS: usize = 4;
+const MAX_ALLOWS: usize = 3;
 
 /// The lints whose `allow` or `expect` silences `dead_code`: `dead_code` itself, the
 /// `unused` group that contains it, and `warnings`, which silences every warning.

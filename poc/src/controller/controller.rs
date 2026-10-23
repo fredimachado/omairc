@@ -27,7 +27,6 @@ use chrono::{DateTime, Utc};
 use crate::demo::seed::world_for;
 use crate::demo::server::{DemoError, DemoServer};
 use crate::desktop::httpfetch::UreqFetch;
-use crate::desktop::notifier::Notifier;
 use crate::irc::capability::{IrcCapability, IrcCapabilitySet};
 use crate::irc::event::{ConversationKey, Event, NickEvent, WelcomeEvent};
 use crate::irc::inbox::{Inbox, InboxItem, InboxKind};
@@ -102,7 +101,6 @@ impl From<DemoError> for ControllerError {
 /// The controller. The UI thread owns it; it is not `Send`.
 pub struct Controller {
     pub(super) clock: Rc<dyn Clock>,
-    pub(super) notifier: Box<dyn Notifier>,
     pub(super) transports: Box<dyn TransportFactory>,
     /// The demo peers, when the controller runs `--demo-server`.
     pub(super) demo: Option<Rc<DemoServer>>,
@@ -188,28 +186,18 @@ impl Controller {
     /// nothing between runs.
     #[cfg(test)]
     pub fn new(clock: Rc<dyn Clock>) -> Self {
-        Self::with_parts(
-            clock,
-            Box::new(crate::desktop::notifier::NullNotifier),
-            Box::new(super::transports::NoTransports),
-        )
+        Self::with_parts(clock, Box::new(super::transports::NoTransports))
     }
 
-    /// A controller with the given notifier and transport factory, keeping nothing between
-    /// runs.
-    pub fn with_parts(
-        clock: Rc<dyn Clock>,
-        notifier: Box<dyn Notifier>,
-        transports: Box<dyn TransportFactory>,
-    ) -> Self {
-        Self::with_backing(clock, notifier, transports, Backing::Ephemeral)
+    /// A controller with the given transport factory, keeping nothing between runs.
+    pub fn with_parts(clock: Rc<dyn Clock>, transports: Box<dyn TransportFactory>) -> Self {
+        Self::with_backing(clock, transports, Backing::Ephemeral)
     }
 
     /// A controller whose stores live in `backing`. Nothing is loaded here: `load_stored`
     /// reads what an earlier run saved.
     pub fn with_backing(
         clock: Rc<dyn Clock>,
-        notifier: Box<dyn Notifier>,
         transports: Box<dyn TransportFactory>,
         backing: Backing,
     ) -> Self {
@@ -224,7 +212,6 @@ impl Controller {
         let playback = Rc::new(RefCell::new(PlaybackCoordinator::new(Rc::clone(&playback_times))));
         Self {
             clock,
-            notifier,
             transports,
             demo: None,
             manager: SessionManager::new(backing.sts_store()),

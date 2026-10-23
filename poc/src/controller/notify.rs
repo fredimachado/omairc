@@ -20,13 +20,6 @@ pub enum Arrival {
 impl Controller {
     /// Drains mention and monitor arrivals raised since the last call.
     pub fn take_arrivals(&mut self) -> Vec<Arrival> {
-        let _ = (
-            &self.notifier,
-            &self.closed,
-            &self.playback_times,
-            &self.playback,
-            self.transcript_follow_end,
-        );
         std::mem::take(&mut self.arrivals)
     }
 }

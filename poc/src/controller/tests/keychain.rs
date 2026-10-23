@@ -12,7 +12,6 @@ use chrono::{TimeZone, Utc};
 use crate::controller::controller::Controller;
 use crate::controller::persistence::SecretEdits;
 use crate::controller::transports::NoTransports;
-use crate::desktop::notifier::NullNotifier;
 use crate::session::clock::{Clock, FakeClock};
 use crate::storage::credentialstore::{
     CredentialKey, CredentialState, CredentialStore, MemoryCredentialStore, PendingRemovals,
@@ -91,12 +90,7 @@ fn clock() -> Rc<dyn Clock> {
 
 /// An ephemeral controller whose secrets go to a [`ScriptedStore`] over `ledger`.
 fn controller(ledger: &Ledger) -> Controller {
-    let mut controller = Controller::with_backing(
-        clock(),
-        Box::new(NullNotifier),
-        Box::new(NoTransports),
-        Backing::Ephemeral,
-    );
+    let mut controller = Controller::with_backing(clock(), Box::new(NoTransports), Backing::Ephemeral);
     controller.credentials = Box::new(ScriptedStore {
         memory: MemoryCredentialStore::default(),
         ledger: ledger.clone(),

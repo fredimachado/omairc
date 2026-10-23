@@ -14,7 +14,6 @@ use crate::controller::controller::Controller;
 use crate::controller::tests::fixture::OMARCHY;
 use crate::controller::persistence::{SaveOutcome, SecretEdits};
 use crate::controller::transports::{TransportFactory, LIVE_IRC_UNAVAILABLE};
-use crate::desktop::notifier::NullNotifier;
 use crate::irc::autoaway::AutoawayConfig;
 use crate::irc::command::ComposerSurface;
 use crate::irc::event::IrcConversationCause;
@@ -72,12 +71,7 @@ fn disk(dir: &TempDir) -> Backing {
 
 /// A controller over `backing`, loaded the way a launch loads it.
 fn launch(backing: &Backing, transports: Box<dyn TransportFactory>) -> Controller {
-    let mut controller = Controller::with_backing(
-        clock(),
-        Box::new(NullNotifier),
-        transports,
-        backing.clone(),
-    );
+    let mut controller = Controller::with_backing(clock(), transports, backing.clone());
     // A disk launch would use the OS keychain. A test keeps secrets in memory, so it never
     // writes to the user's Credential Manager, Keychain or Secret Service.
     controller.credentials = Box::new(MemoryCredentialStore::default());
@@ -90,12 +84,7 @@ fn launch_with_transcript(
     transports: Box<dyn TransportFactory>,
     transcript_root: std::path::PathBuf,
 ) -> Controller {
-    let mut controller = Controller::with_backing(
-        clock(),
-        Box::new(NullNotifier),
-        transports,
-        backing.clone(),
-    );
+    let mut controller = Controller::with_backing(clock(), transports, backing.clone());
     controller.credentials = Box::new(MemoryCredentialStore::default());
     controller.reducer.set_conversation_log(Some(Box::new(
         crate::storage::conversationlog::FileConversationLog::new(transcript_root),
@@ -446,7 +435,6 @@ fn an_ephemeral_controller_keeps_nothing_on_disk() {
     let dir = TempDir::new("ephemeral");
     let mut controller = Controller::with_backing(
         clock(),
-        Box::new(NullNotifier),
         Box::new(Loopbacks::default()),
         Backing::Ephemeral,
     );

@@ -12,6 +12,7 @@ pub mod find;
 pub mod inbox;
 pub mod modal;
 pub mod net;
+pub mod notifications;
 pub mod readmarker;
 pub mod slash;
 pub mod unread;
@@ -28,7 +29,6 @@ use gpui::{
 use crate::controller::controller::Controller;
 use crate::controller::transports::{NoTransports, TransportFactory};
 use crate::irc::plaintext::plain_irc_text;
-use crate::irc::viewnotify::ViewNotify;
 use crate::model::composer::ComposerState;
 use crate::model::connect::{ConnectState, Stop};
 use crate::model::find::Find;
@@ -37,8 +37,8 @@ use crate::model::presence::footer_presence;
 use crate::model::sidebar::SidebarState;
 use crate::model::slash_complete::SlashSession;
 use crate::model::status::{connection_line, status_title};
-use crate::controller::notify::Arrival;
-use crate::model::title::{conversation_title, note_title_mark, window_title, TitleMark, TitleView};
+use crate::desktop::notifier::{platform_notifier, Notifier};
+use crate::model::title::{conversation_title, window_title, TitleMark, TitleView};
 use crate::model::update_check::UpdateCheck;
 use crate::model::ConversationRef;
 use crate::net::{NetHub, NetTransports};
@@ -120,6 +120,8 @@ pub struct Shell {
     pub avatar_memo: avatars::AvatarMemo,
     /// The Windows installer update's state. The About sheet and the footer observe it.
     pub update: Entity<UpdateCheck>,
+    /// Raises desktop notifications for mention and monitor arrivals.
+    notifier: Box<dyn Notifier>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -135,7 +137,9 @@ impl Shell {
         bench: bool,
         demo: bool,
         net: Option<Rc<NetHub>>,
+        activation_tx: async_channel::Sender<crate::desktop::notifier::Activation>,
     ) -> Self {
+        let notifier = platform_notifier(demo, activation_tx);
         let mut controller = if demo {
             // The demo keeps nothing: it never reads or writes the user's files.
             Controller::new_demo().expect("the demo controller starts")
@@ -249,6 +253,7 @@ impl Shell {
             },
             avatar_memo: Default::default(),
             update,
+            notifier,
             _subscriptions: [transcript_events, composer_events, update_observe]
                 .into_iter()
                 .chain(connect_edits)
@@ -280,42 +285,6 @@ impl Shell {
     pub fn tick(&mut self, cx: &mut Context<Self>) {
         self.controller.tick();
         self.drain_notifications(cx);
-    }
-
-    /// Drains the surfaces the controller raised and brings the shell up to them. A
-    /// selection the controller made on its own (a join, a close, a removal) is followed
-    /// the same way a click is. The transcript rebuilds for changed lines, and the window
-    /// repaints.
-    pub fn drain_notifications(&mut self, cx: &mut Context<Self>) {
-        for arrival in self.controller.take_arrivals() {
-            match arrival {
-                Arrival::Mention(mention) => {
-                    note_title_mark(
-                        &mut self.title_mark,
-                        self.window_active,
-                        &mention.author,
-                        &plain_irc_text(&mention.body),
-                        &mention.network_id,
-                        &mention.target,
-                    );
-                }
-                Arrival::Monitor { .. } => {}
-            }
-        }
-        let surfaces = self.controller.take_notifications();
-        self.sync_view(cx);
-        let status = self.status_showing();
-        let rebuild = surfaces.iter().any(|surface| match surface {
-            ViewNotify::Messages | ViewNotify::MemberReset => !status,
-            ViewNotify::Status => status,
-            _ => false,
-        });
-        if rebuild {
-            self.rebuild_view_keeping_place(cx);
-        }
-        if !surfaces.is_empty() {
-            cx.notify();
-        }
     }
 }
 

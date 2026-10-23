@@ -55,6 +55,9 @@ struct Args {
     /// Run the seeded in-process demo server: the controller starts on its networks.
     #[arg(long)]
     demo_server: bool,
+    /// Internal: started by a Windows toast activation (`LocalServer32` appends it).
+    #[arg(long = "Embedding", hide = true)]
+    embedding: bool,
 }
 
 /// Windows GUI-subsystem builds have no console. Attach to the parent's console
@@ -142,10 +145,7 @@ fn main() {
     console::attach_parent_console();
 
     // A control command talks to the running window and exits before clap or gpui start.
-    let raw_args: Vec<String> = std::env::args_os()
-        .skip(1)
-        .map(|arg| arg.to_string_lossy().into_owned())
-        .collect();
+    let raw_args: Vec<String> = normalize_windows_args(std::env::args_os().skip(1));
     if desktop::cli::is_control_invocation(&raw_args) {
         std::process::exit(desktop::cli::run(&raw_args));
     }
@@ -160,6 +160,7 @@ fn main() {
     let lines = args.lines;
     let bench = args.bench;
     let demo_server = args.demo_server;
+    let _embedding = args.embedding;
 
     // One window per user: a second launch raises the first and exits, as Qt's guard does.
     let ipc = match desktop::singleinstance::acquire_for_app() {
@@ -210,6 +211,11 @@ fn main() {
         // The socket hub runs its net thread for a live launch. The demo's peers are in-process,
         // so the demo has none.
         let net = (!demo_server).then(|| Rc::new(NetHub::new()));
+        let (activation_tx, activation_rx) = async_channel::unbounded();
+        #[cfg(windows)]
+        let pending_activation = desktop::notifier::activation_from_args(&raw_args);
+        #[cfg(not(windows))]
+        let pending_activation: Option<desktop::notifier::Activation> = None;
         let window = cx
             .open_window(
                 WindowOptions {
@@ -222,7 +228,18 @@ fn main() {
                     ..Default::default()
                 },
                 |window, cx| {
-                    let shell = cx.new(|cx| Shell::new(cx, lines, bench, demo_server, net.clone()));
+                    let shell = cx.new(|cx| {
+                        Shell::new(cx, lines, bench, demo_server, net.clone(), activation_tx.clone())
+                    });
+                    if let Some(activation) = pending_activation {
+                        let _ = activation_tx.send_blocking(activation);
+                    }
+                    start_notification_activation(
+                        shell.clone(),
+                        window.window_handle(),
+                        activation_rx,
+                        cx,
+                    );
                     if let Some(hub) = &net {
                         start_net_delivery(shell.clone(), hub, cx);
                     }
@@ -363,6 +380,41 @@ fn refresh_theme(
     });
     shell.update(cx, |_, cx| cx.notify());
     cx.refresh_windows();
+}
+
+#[cfg(windows)]
+fn normalize_windows_args(args: impl Iterator<Item = std::ffi::OsString>) -> Vec<String> {
+    args.map(|arg| {
+        let text = arg.to_string_lossy();
+        if text == "-Embedding" {
+            "--Embedding".to_owned()
+        } else {
+            text.into_owned()
+        }
+    })
+    .collect()
+}
+
+#[cfg(not(windows))]
+fn normalize_windows_args(args: impl Iterator<Item = std::ffi::OsString>) -> Vec<String> {
+    args.map(|arg| arg.to_string_lossy().into_owned()).collect()
+}
+
+fn start_notification_activation(
+    shell: Entity<Shell>,
+    window: AnyWindowHandle,
+    activation_rx: async_channel::Receiver<desktop::notifier::Activation>,
+    cx: &mut App,
+) {
+    cx.spawn(async move |cx| {
+        while let Ok(activation) = activation_rx.recv().await {
+            cx.update_window(window, |_, window, cx| {
+                shell.update(cx, |shell, cx| shell.activate_notification(activation, window, cx));
+            })
+            .ok();
+        }
+    })
+    .detach();
 }
 
 fn start_typing_pulse(shell: Entity<Shell>, cx: &mut App) {

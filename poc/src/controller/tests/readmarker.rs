@@ -296,14 +296,13 @@ fn first_conversation_claim_requests_read_marker_get_for_direct() {
 
     use crate::controller::controller::Controller;
     use crate::controller::transports::NoTransports;
-    use crate::desktop::notifier::NullNotifier;
     use crate::session::clock::FakeClock;
     use crate::session::config::SessionConfig;
     use crate::session::loopback::LoopbackTransport;
 
     const LAB: &str = "lab";
     let clock = Rc::new(FakeClock::new(Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap()));
-    let mut controller = Controller::with_parts(clock.clone(), Box::new(NullNotifier), Box::new(NoTransports));
+    let mut controller = Controller::with_parts(clock.clone(), Box::new(NoTransports));
     let transport = Rc::new(LoopbackTransport::new());
     let config = SessionConfig::with_defaults(LAB, "", "irc.example", "omairc");
     let session = controller

@@ -78,7 +78,6 @@ impl crate::controller::transports::TransportFactory for Refusing {
 #[test]
 fn the_transport_factory_supplies_the_reason_a_live_start_is_refused() {
     use crate::controller::controller::Controller;
-    use crate::desktop::notifier::NullNotifier;
     use crate::session::clock::FakeClock;
 
     let clock = std::rc::Rc::new(FakeClock::new(
@@ -86,7 +85,6 @@ fn the_transport_factory_supplies_the_reason_a_live_start_is_refused() {
     ));
     let mut controller = Controller::with_parts(
         clock,
-        Box::new(NullNotifier),
         Box::new(Refusing("no route to the socket layer")),
     );
     assert!(!controller.start("freenode"));
