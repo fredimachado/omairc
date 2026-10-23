@@ -5,7 +5,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::session::loopback::LoopbackTransport;
-use crate::session::transport::{ConnectionState, Transport, TransportSink};
+use crate::session::transport::{
+    ConnectionState, Transport, TransportError, TransportErrorKind, TransportSink,
+};
 
 /// Records every sink callback, standing in for the Go `recordingSink`.
 #[derive(Default)]
@@ -14,7 +16,7 @@ struct RecordingSink {
     encrypted: RefCell<usize>,
     disconnected: RefCell<usize>,
     received: RefCell<Vec<Vec<u8>>>,
-    errors: RefCell<Vec<String>>,
+    errors: RefCell<Vec<TransportError>>,
 }
 
 impl TransportSink for RecordingSink {
@@ -30,8 +32,8 @@ impl TransportSink for RecordingSink {
     fn bytes_received(&self, bytes: &[u8]) {
         self.received.borrow_mut().push(bytes.to_vec());
     }
-    fn error(&self, message: &str) {
-        self.errors.borrow_mut().push(message.to_owned());
+    fn error(&self, error: &TransportError) {
+        self.errors.borrow_mut().push(error.clone());
     }
 }
 
@@ -155,9 +157,30 @@ fn transport_tls_certificate_failure_surfaces_error() {
     let details = "TLS certificate error: The certificate has expired (CN=irc.example)";
     transport.fail_tls(details);
     assert_eq!(transport.state(), ConnectionState::Failed);
-    assert_eq!(sink.errors.borrow().as_slice(), [details.to_owned()]);
+    assert_eq!(
+        sink.errors.borrow().as_slice(),
+        [TransportError {
+            kind: TransportErrorKind::Tls,
+            message: details.to_owned(),
+        }]
+    );
     assert_eq!(transport.last_error(), details);
     assert_eq!(*sink.encrypted.borrow(), 0);
+}
+
+#[test]
+fn transport_connect_failure_surfaces_network_error() {
+    let (transport, sink, _keep) = wired();
+    transport.connect("irc.example", 6667, false);
+    transport.fail_connect("no route to host");
+    assert_eq!(transport.state(), ConnectionState::Failed);
+    assert_eq!(
+        sink.errors.borrow().as_slice(),
+        [TransportError {
+            kind: TransportErrorKind::Network,
+            message: "no route to host".to_owned(),
+        }]
+    );
 }
 
 #[test]
@@ -179,5 +202,6 @@ fn transport_timeout_fails_without_sleep() {
     assert_eq!(transport.state(), ConnectionState::Failed);
     let errors = sink.errors.borrow();
     assert_eq!(errors.len(), 1);
-    assert!(errors[0].contains("timed out"), "{:?}", errors[0]);
+    assert_eq!(errors[0].kind, TransportErrorKind::Timeout);
+    assert!(errors[0].message.contains("timed out"), "{:?}", errors[0]);
 }

@@ -69,8 +69,6 @@ impl SessionState {
 pub enum ErrorKind {
     Protocol,
     Authentication,
-    // Phase 11: the socket transport reports the TLS handshake
-    #[allow(dead_code)]
     Tls,
     Network,
     Registration,

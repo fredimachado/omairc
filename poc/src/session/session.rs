@@ -45,7 +45,9 @@ use super::events::{ErrorKind, HistoryKind, PendingInvite, SessionEvent, Session
 use super::history::HistoryLedger;
 use super::metadata::MetadataCapability;
 use super::readmarker::ReadMarkerLedger;
-use super::transport::{ConnectionState, Transport, TransportSink};
+use super::transport::{
+    ConnectionState, Transport, TransportError, TransportErrorKind, TransportSink,
+};
 use super::typing::TypingPublisher;
 use super::wire;
 
@@ -247,9 +249,9 @@ impl TransportSink for SinkAdapter {
         self.with_session(|session| session.locked(|core| core.handle_bytes(&bytes)));
     }
 
-    fn error(&self, message: &str) {
-        let message = message.to_owned();
-        self.with_session(|session| session.locked(|core| core.error_occurred(&message)));
+    fn error(&self, error: &TransportError) {
+        let error = error.clone();
+        self.with_session(|session| session.locked(|core| core.error_occurred(&error)));
     }
 }
 
@@ -642,22 +644,21 @@ impl Core {
         self.fail(ErrorKind::Network, "Connection closed by the server", true);
     }
 
-    /// A transport failure (`IrcTransport::errorOccurred`). A TLS or certificate
-    /// message is classified as a TLS failure.
+    /// A transport failure (`IrcTransport::errorOccurred`). The transport names
+    /// the kind, so the session classifies it without reading the message.
     // Phase 11: the socket transport reports its errors
     #[allow(dead_code)]
-    pub(crate) fn error_occurred(&mut self, message: &str) {
+    pub(crate) fn error_occurred(&mut self, error: &TransportError) {
         if self.expected_disconnect {
             return;
         }
-        let lowered = message.to_lowercase();
-        let tls_failure = lowered.contains("tls") || lowered.contains("certificate");
-        let kind = if tls_failure {
-            ErrorKind::Tls
-        } else {
-            ErrorKind::Network
+        let kind = match error.kind {
+            TransportErrorKind::Tls | TransportErrorKind::Certificate => ErrorKind::Tls,
+            TransportErrorKind::Resolve
+            | TransportErrorKind::Network
+            | TransportErrorKind::Timeout => ErrorKind::Network,
         };
-        self.fail(kind, message, true);
+        self.fail(kind, &error.message, true);
     }
 
     pub(crate) fn start(&mut self) {

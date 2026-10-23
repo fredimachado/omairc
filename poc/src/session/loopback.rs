@@ -10,7 +10,9 @@
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
-use super::transport::{ConnectionState, Transport, TransportSink};
+use super::transport::{
+    ConnectionState, Transport, TransportError, TransportErrorKind, TransportSink,
+};
 
 /// Runs for every frame passed to `write`, with the recorded copy.
 pub type FrameWrittenHook = Rc<dyn Fn(&[u8])>;
@@ -80,7 +82,11 @@ impl LoopbackTransport {
     // test seam: the loopback transport is driven by the tests
     #[allow(dead_code)]
     pub fn fail_connect(&self, message: &str) {
-        self.fail(message, &[ConnectionState::Connecting]);
+        self.fail(
+            TransportErrorKind::Network,
+            message,
+            &[ConnectionState::Connecting],
+        );
     }
 
     /// Fails a connection during the TLS phase: while connecting, or after the
@@ -89,6 +95,7 @@ impl LoopbackTransport {
     #[allow(dead_code)]
     pub fn fail_tls(&self, message: &str) {
         self.fail(
+            TransportErrorKind::Tls,
             message,
             &[ConnectionState::Connecting, ConnectionState::Connected],
         );
@@ -98,7 +105,11 @@ impl LoopbackTransport {
     // test seam: the loopback transport is driven by the tests
     #[allow(dead_code)]
     pub fn timeout_connect(&self) {
-        self.fail("Connection timed out", &[ConnectionState::Connecting]);
+        self.fail(
+            TransportErrorKind::Timeout,
+            "Connection timed out",
+            &[ConnectionState::Connecting],
+        );
     }
 
     /// Delivers inbound bytes to the sink while the connection is open. Empty
@@ -186,10 +197,10 @@ impl LoopbackTransport {
     }
 
     /// Moves to `Failed` from one of `from`, recording `message`, and reports it
-    /// to the sink. A transport already failed keeps its first error.
+    /// to the sink with `kind`. A transport already failed keeps its first error.
     // test seam: the loopback transport is driven by the tests
     #[allow(dead_code)]
-    fn fail(&self, message: &str, from: &[ConnectionState]) {
+    fn fail(&self, kind: TransportErrorKind, message: &str, from: &[ConnectionState]) {
         {
             let mut state = self.state.borrow_mut();
             if !from.contains(&state.state) {
@@ -199,7 +210,10 @@ impl LoopbackTransport {
             state.state = ConnectionState::Failed;
         }
         if let Some(sink) = self.live_sink() {
-            sink.error(message);
+            sink.error(&TransportError {
+                kind,
+                message: message.to_owned(),
+            });
         }
     }
 }

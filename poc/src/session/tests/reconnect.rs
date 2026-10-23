@@ -11,8 +11,8 @@ use crate::session::clock::FakeClock;
 use crate::session::events::{ErrorKind, SessionState};
 use crate::session::loopback::LoopbackTransport;
 use crate::session::sessionmanager::{SessionManager, SessionManagerError};
-use crate::session::transport::ConnectionState;
 use crate::session::transport::Transport;
+use crate::session::transport::{ConnectionState, TransportError, TransportErrorKind};
 
 fn delays(fx: &Fixture) -> Vec<u64> {
     fx.reconnects()
@@ -202,7 +202,7 @@ fn retryable_errors_stay_deduped_across_kinds_until_welcome() {
     assert_eq!(errors[0].0, ErrorKind::Network);
 
     fx.fire_reconnect();
-    fx.transport.fail_connect("TLS handshake failed");
+    fx.transport.fail_tls("TLS handshake failed");
     let errors = fx.errors();
     assert_eq!(errors.len(), 2);
     assert_eq!(errors[1].0, ErrorKind::Tls);
@@ -217,6 +217,28 @@ fn retryable_errors_stay_deduped_across_kinds_until_welcome() {
         (errors[0].0, errors[1].0),
         (ErrorKind::Network, ErrorKind::Tls)
     );
+}
+
+#[test]
+fn transport_error_kind_decides_the_session_error_kind() {
+    let cases = [
+        (TransportErrorKind::Network, ErrorKind::Network),
+        (TransportErrorKind::Resolve, ErrorKind::Network),
+        (TransportErrorKind::Timeout, ErrorKind::Network),
+        (TransportErrorKind::Tls, ErrorKind::Tls),
+        (TransportErrorKind::Certificate, ErrorKind::Tls),
+    ];
+    for (kind, want) in cases {
+        let fx = Fixture::new(test_config());
+        fx.connect_tls();
+        // The text is TLS-flavored on purpose: only the kind may classify it.
+        let error = TransportError {
+            kind,
+            message: "TLS certificate error".to_owned(),
+        };
+        fx.session.locked(|core| core.error_occurred(&error));
+        assert_eq!(fx.errors()[0].0, want, "{kind:?}");
+    }
 }
 
 #[test]

@@ -56,6 +56,33 @@ impl ConnectionState {
     }
 }
 
+/// Why a transport failed. The session maps each kind to its `ErrorKind`:
+/// `Tls` and `Certificate` are TLS failures, the rest are network failures.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransportErrorKind {
+    /// The host name did not resolve.
+    // Phase 11: the socket transport reports its errors
+    #[allow(dead_code)]
+    Resolve,
+    /// The connection could not be made, or dropped.
+    Network,
+    /// The connect did not finish in time.
+    Timeout,
+    /// The TLS handshake failed.
+    Tls,
+    /// The server certificate did not verify.
+    // Phase 11: the socket transport reports its errors
+    #[allow(dead_code)]
+    Certificate,
+}
+
+/// A transport failure: its kind, and a message that is already presentable.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TransportError {
+    pub kind: TransportErrorKind,
+    pub message: String,
+}
+
 /// Receives transport lifecycle and data events (`Sink` in Go,
 /// `IrcTransport` signals in C++). Implementations must not block. A loopback
 /// transport calls these synchronously, on the caller's stack, so a sink may
@@ -71,10 +98,10 @@ pub trait TransportSink {
     fn disconnected(&self);
     /// Raw inbound bytes, in order, unframed.
     fn bytes_received(&self, bytes: &[u8]);
-    /// A transport failure, already presentable.
+    /// A transport failure, with its kind.
     // Phase 11: the socket transport reports its lifecycle
     #[allow(dead_code)]
-    fn error(&self, message: &str);
+    fn error(&self, error: &TransportError);
 }
 
 /// The duplex byte pipe the session drives (`Transport` in Go).

@@ -29,7 +29,7 @@ const ALLOWLIST: &[(&str, usize)] = &[
     ("irc/command.rs", 831),
     ("irc/statusentry.rs", 1105),
     ("irc/translator.rs", 961),
-    ("session/session.rs", 1094),
+    ("session/session.rs", 1095),
     ("ui/input.rs", 824),
 ];
 
