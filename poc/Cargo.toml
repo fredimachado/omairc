@@ -21,6 +21,20 @@ sha2 = "0.10"
 unicode-segmentation = "1.12"
 ureq = "=3.4.2"
 url = "2.5"
+# The net layer (src/net/ only). gpui already builds these exact releases through its
+# reqwest client, so nothing new compiles. Cancellation is JoinHandle::abort, so the
+# tokio macros feature stays off. If a gpui upgrade drops reqwest, these become real
+# compiles; nothing else changes.
+tokio = { version = "=1.53.3", default-features = false, features = ["rt", "net", "io-util", "time", "sync"] }
+# gpui already builds this ring-backed rustls and tokio-rustls pair.
+tokio-rustls = { version = "=0.26.6", default-features = false, features = ["ring", "tls12"] }
+rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+# The OS trust store first; webpki-roots is the fallback when that store is empty.
+# gpui builds rustls-native-certs, and ureq already builds webpki-roots.
+rustls-native-certs = "=0.8.5"
+webpki-roots = "=1.0.10"
+# gpui already builds this release (through async-global-executor), so nothing new compiles.
+async-channel = "=2.5.0"
 
 # The installed-copy probe reads the Inno uninstall key from the registry.
 [target.'cfg(windows)'.dependencies]

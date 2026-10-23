@@ -8,10 +8,13 @@
 //! `session/`, `storage/` and `desktop/`.
 
 mod common;
+#[path = "common/forbidden.rs"]
+mod forbidden;
 
 use std::path::Path;
 
 use common::{code_only, crate_root, line_of, read_code, rust_files_under};
+use forbidden::{group_heads, segment_offsets};
 
 /// Paths whose use is forbidden anywhere in `src/irc/`. `crate::session` is the
 /// layer above the protocol core, so the core never imports from it.
@@ -31,10 +34,8 @@ const FORBIDDEN_STD_MODULES: &[&str] = &["net", "fs", "thread", "process"];
 fn violations(code: &str) -> Vec<(usize, String)> {
     let mut found = Vec::new();
     for token in FORBIDDEN_PATHS.iter().chain(FORBIDDEN_CRATES) {
-        for (offset, _) in code.match_indices(token) {
-            if bounded(code, offset, token.len()) {
-                found.push((line_of(code, offset), (*token).to_string()));
-            }
+        for offset in segment_offsets(code, token) {
+            found.push((line_of(code, offset), (*token).to_string()));
         }
     }
     found.extend(std_group_violations(code));
@@ -42,53 +43,14 @@ fn violations(code: &str) -> Vec<(usize, String)> {
     found
 }
 
-/// True when the match at `offset` is a whole path segment, not part of a longer name.
-fn bounded(code: &str, offset: usize, len: usize) -> bool {
-    let before = code[..offset].chars().next_back();
-    let after = code[offset + len..].chars().next();
-    !before.is_some_and(is_ident) && !after.is_some_and(is_ident)
-}
-
-fn is_ident(c: char) -> bool {
-    c.is_alphanumeric() || c == '_'
-}
-
 /// `use std::{io, net::TcpStream};` names `net` inside the braces. Each element's
 /// first path segment is checked against the forbidden `std` modules.
 fn std_group_violations(code: &str) -> Vec<(usize, String)> {
-    let mut found = Vec::new();
-    for (offset, _) in code.match_indices("std::{") {
-        if !bounded(code, offset, "std".len()) {
-            continue;
-        }
-        let body = &code[offset + "std::{".len()..];
-        let mut depth = 1usize;
-        let mut elements = vec![String::new()];
-        for c in body.chars() {
-            match c {
-                '{' => depth += 1,
-                '}' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        break;
-                    }
-                }
-                ',' if depth == 1 => {
-                    elements.push(String::new());
-                    continue;
-                }
-                _ => {}
-            }
-            elements.last_mut().expect("one element").push(c);
-        }
-        for element in elements {
-            let head: String = element.trim().chars().take_while(|c| is_ident(*c)).collect();
-            if FORBIDDEN_STD_MODULES.contains(&head.as_str()) {
-                found.push((line_of(code, offset), format!("std::{{{head}}}")));
-            }
-        }
-    }
-    found
+    group_heads(code, "std")
+        .into_iter()
+        .filter(|(_, head)| FORBIDDEN_STD_MODULES.contains(&head.as_str()))
+        .map(|(line, head)| (line, format!("std::{{{head}}}")))
+        .collect()
 }
 
 fn relative(path: &Path) -> String {

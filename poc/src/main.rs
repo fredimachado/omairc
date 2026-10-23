@@ -6,6 +6,7 @@ mod demo;
 mod desktop;
 mod irc;
 mod model;
+mod net;
 mod session;
 mod storage;
 mod ui;
