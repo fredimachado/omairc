@@ -7,25 +7,30 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 
 use async_channel::Sender;
-use windows::core::{GUID, HSTRING, Interface, PCWSTR};
+use std::mem::ManuallyDrop;
+use std::path::{Path, PathBuf};
+
+use windows::core::{GUID, HSTRING, Interface, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{CLASS_E_NOAGGREGATION, HANDLE, WAIT_OBJECT_0};
 use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_ID;
 use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_ToastActivatorCLSID;
 use windows::Win32::System::Com::{
-    CoAddRefServerProcess, CoCreateInstance, CoInitializeEx, CoRegisterClassObject,
-    CoReleaseServerProcess, CoRevokeClassObject, CLSCTX_INPROC_SERVER, CLSCTX_LOCAL_SERVER,
-    COINIT_MULTITHREADED, IClassFactory, IClassFactory_Impl, IPersistFile, REGCLS_MULTIPLEUSE,
+    CoAddRefServerProcess, CoCreateInstance, CoRegisterClassObject, CoReleaseServerProcess,
+    CoRevokeClassObject, CLSCTX_INPROC_SERVER, CLSCTX_LOCAL_SERVER, IClassFactory,
+    IClassFactory_Impl, IPersistFile, STGM_READ, REGCLS_MULTIPLEUSE,
 };
 use windows::Win32::System::Com::StructuredStorage::{
-    InitPropVariantFromCLSID, InitPropVariantFromStringAsVector, PropVariantClear,
+    InitPropVariantFromCLSID, PropVariantClear, PROPVARIANT, PROPVARIANT_0_0, PROPVARIANT_0_0_0,
 };
+use windows::Win32::System::Variant::{VT_CLSID, VT_LPWSTR};
+use windows::Win32::System::WinRT::{RoInitialize, RoUninitialize, RO_INIT_MULTITHREADED};
 use windows::Win32::System::Registry::{RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ};
 use windows::Win32::System::Threading::{CreateEventW, SetEvent};
 use windows::Win32::UI::Notifications::{
     INotificationActivationCallback, INotificationActivationCallback_Impl,
     NOTIFICATION_USER_INPUT_DATA,
 };
-use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
+use windows::Win32::UI::Shell::{IShellLinkW, ShellLink, SLGP_RAWPATH};
 use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, MsgWaitForMultipleObjects, PeekMessageW, QS_ALLINPUT, TranslateMessage,
@@ -89,6 +94,150 @@ fn wide(value: &str) -> Vec<u16> {
     OsStr::new(value).encode_wide().chain([0]).collect()
 }
 
+fn propvariant_inner(prop: &PROPVARIANT) -> &PROPVARIANT_0_0 {
+    unsafe { &*(std::ptr::from_ref(prop) as *const PROPVARIANT_0_0) }
+}
+
+fn aumid_propvariant(aumid_wide: &[u16]) -> PROPVARIANT {
+    let mut prop = PROPVARIANT::default();
+    unsafe {
+        prop.Anonymous.Anonymous = ManuallyDrop::new(PROPVARIANT_0_0 {
+            vt: VT_LPWSTR,
+            wReserved1: 0,
+            wReserved2: 0,
+            wReserved3: 0,
+            Anonymous: std::mem::transmute(PROPVARIANT_0_0_0 {
+                pwszVal: PWSTR(aumid_wide.as_ptr() as *mut u16),
+            }),
+        });
+    }
+    prop
+}
+
+fn same_exe_path(left: &str, right: &str) -> bool {
+    let left = Path::new(left);
+    let right = Path::new(right);
+    match (left.canonicalize(), right.canonicalize()) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => left
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&right.to_string_lossy()),
+    }
+}
+
+fn start_menu_program_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(home) = dirs::home_dir() {
+        dirs.push(
+            home.join("AppData/Roaming/Microsoft/Windows/Start Menu/Programs"),
+        );
+    }
+    if let Ok(program_data) = std::env::var("ProgramData") {
+        dirs.push(
+            PathBuf::from(program_data).join("Microsoft/Windows/Start Menu/Programs"),
+        );
+    }
+    dirs
+}
+
+fn shortcut_target(link_path: &str) -> Option<String> {
+    let shell_link: IShellLinkW = match unsafe {
+        CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)
+    } {
+        Ok(link) => link,
+        Err(_) => return None,
+    };
+    let persist: IPersistFile = match unsafe { shell_link.cast() } {
+        Ok(persist) => persist,
+        Err(_) => return None,
+    };
+    let link_wide = wide(link_path);
+    if unsafe { persist.Load(PCWSTR(link_wide.as_ptr()), STGM_READ) }.is_err() {
+        return None;
+    }
+    let mut target = [0u16; 260];
+    if unsafe {
+        shell_link.GetPath(&mut target, std::ptr::null_mut(), SLGP_RAWPATH.0 as u32)
+    }
+    .is_err()
+    {
+        return None;
+    }
+    let len = target.iter().position(|&ch| ch == 0).unwrap_or(target.len());
+    Some(String::from_utf16_lossy(&target[..len]))
+}
+
+fn shortcut_is_stamped(link_path: &str) -> bool {
+    let shell_link: IShellLinkW = match unsafe {
+        CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)
+    } {
+        Ok(link) => link,
+        Err(_) => return false,
+    };
+    let persist: IPersistFile = match unsafe { shell_link.cast() } {
+        Ok(persist) => persist,
+        Err(_) => return false,
+    };
+    let link_wide = wide(link_path);
+    if unsafe { persist.Load(PCWSTR(link_wide.as_ptr()), STGM_READ) }.is_err() {
+        return false;
+    }
+    let store: IPropertyStore = match unsafe { shell_link.cast() } {
+        Ok(store) => store,
+        Err(_) => return false,
+    };
+
+    let mut id = match unsafe { store.GetValue(&PKEY_AppUserModel_ID) } {
+        Ok(id) => id,
+        Err(_) => return false,
+    };
+    let id_inner = propvariant_inner(&id);
+    let aumid_matches = unsafe {
+        id_inner.vt == VT_LPWSTR
+            && !id_inner.Anonymous.pwszVal.is_null()
+            && id_inner.Anonymous.pwszVal.to_string().is_ok_and(|value| value == AUMID)
+    };
+    unsafe {
+        let _ = PropVariantClear(&mut id);
+    }
+    if !aumid_matches {
+        return false;
+    }
+
+    let mut clsid = match unsafe { store.GetValue(&PKEY_AppUserModel_ToastActivatorCLSID) } {
+        Ok(clsid) => clsid,
+        Err(_) => return false,
+    };
+    let clsid_inner = propvariant_inner(&clsid);
+    let clsid_matches = unsafe {
+        clsid_inner.vt == VT_CLSID
+            && !clsid_inner.Anonymous.puuid.is_null()
+            && *clsid_inner.Anonymous.puuid == ACTIVATOR_CLSID
+    };
+    unsafe {
+        let _ = PropVariantClear(&mut clsid);
+    }
+    clsid_matches
+}
+
+fn installed_shortcut_paths(exe_path: &str) -> Vec<PathBuf> {
+    let mut links = Vec::new();
+    for dir in start_menu_program_dirs() {
+        let link = dir.join("Omairc.lnk");
+        if !link.is_file() {
+            continue;
+        }
+        let link_path = link.to_string_lossy();
+        let Some(target) = shortcut_target(&link_path) else {
+            continue;
+        };
+        if same_exe_path(&target, exe_path) {
+            links.push(link);
+        }
+    }
+    links
+}
+
 fn register_com_server(exe: &str) {
     let subkey =
         "SOFTWARE\\Classes\\CLSID\\{DBE38477-5F87-42A1-AFA1-11FA12F2E5E5}\\LocalServer32";
@@ -125,11 +274,9 @@ fn install_shortcut(link_path: &str, exe_path: &str) -> Result<(), windows::core
 
     let store: IPropertyStore = unsafe { shell_link.cast()? };
     let aumid_wide = wide(AUMID);
-    let mut aumid_prop =
-        unsafe { InitPropVariantFromStringAsVector(PCWSTR(aumid_wide.as_ptr()))? };
+    let aumid_prop = aumid_propvariant(&aumid_wide);
     unsafe {
         store.SetValue(&PKEY_AppUserModel_ID, &aumid_prop)?;
-        PropVariantClear(&mut aumid_prop)?;
     }
     let mut clsid_prop = unsafe { InitPropVariantFromCLSID(&ACTIVATOR_CLSID)? };
     unsafe {
@@ -145,17 +292,37 @@ fn install_shortcut(link_path: &str, exe_path: &str) -> Result<(), windows::core
 
 fn ensure_notification_registration(exe_path: &str) {
     register_com_server(exe_path);
-    let programs = dirs::home_dir()
-        .map(|home| home.join("AppData/Roaming/Microsoft/Windows/Start Menu/Programs"));
-    let Some(programs) = programs else {
+
+    let installed = installed_shortcut_paths(exe_path);
+    for link in &installed {
+        if shortcut_is_stamped(&link.to_string_lossy()) {
+            return;
+        }
+    }
+    for link in &installed {
+        let link_path = link.to_string_lossy();
+        if install_shortcut(&link_path, exe_path).is_ok() {
+            return;
+        }
+        log::warn!(
+            "Windows notifier: could not stamp installed Start Menu shortcut {:?}",
+            link
+        );
+    }
+
+    let Some(programs) = dirs::home_dir().map(|home| {
+        home.join("AppData/Roaming/Microsoft/Windows/Start Menu/Programs")
+    }) else {
         return;
     };
-    let link = programs.join("Omairc.lnk");
-    if link.exists() {
-        return;
-    }
     let _ = std::fs::create_dir_all(&programs);
-    let _ = install_shortcut(&link.to_string_lossy(), exe_path);
+    let link = programs.join("Omairc.lnk");
+    if let Err(error) = install_shortcut(&link.to_string_lossy(), exe_path) {
+        log::warn!(
+            "Windows notifier: could not write Start Menu shortcut for toasts: {:?}",
+            error
+        );
+    }
 }
 
 fn show_toast(work: &ToastWork) -> Result<(), windows::core::Error> {
@@ -243,26 +410,31 @@ fn pump_com_messages() {
 fn run_notification_thread(stop: usize, toast_event: usize, enabled: Arc<std::sync::atomic::AtomicBool>) {
     let stop = HANDLE(stop as *mut std::ffi::c_void);
     let toast_event = HANDLE(toast_event as *mut std::ffi::c_void);
-    let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
-    if let Ok(exe) = std::env::current_exe() {
-        ensure_notification_registration(&exe.to_string_lossy());
-    }
-    let factory: IClassFactory = ActivatorFactory.into();
-    let cookie = unsafe {
-        CoRegisterClassObject(
-            &ACTIVATOR_CLSID,
-            &factory,
-            CLSCTX_LOCAL_SERVER,
-            REGCLS_MULTIPLEUSE,
-        )
+    let ro_initialized = unsafe { RoInitialize(RO_INIT_MULTITHREADED).is_ok() };
+    let class_cookie = if ro_initialized {
+        if let Ok(exe) = std::env::current_exe() {
+            ensure_notification_registration(&exe.to_string_lossy());
+        }
+        let factory: IClassFactory = ActivatorFactory.into();
+        let cookie = unsafe {
+            CoRegisterClassObject(
+                &ACTIVATOR_CLSID,
+                &factory,
+                CLSCTX_LOCAL_SERVER,
+                REGCLS_MULTIPLEUSE,
+            )
+        };
+        if cookie.is_ok() {
+            unsafe { CoAddRefServerProcess() };
+            enabled.store(true, std::sync::atomic::Ordering::Release);
+        }
+        cookie.ok()
+    } else {
+        log::warn!("Windows notifier: RoInitialize failed, so Windows toasts are unavailable");
+        None
     };
-    if cookie.is_ok() {
-        unsafe { CoAddRefServerProcess() };
-        enabled.store(true, std::sync::atomic::Ordering::Release);
-    }
     let queue = TOAST_QUEUE.get_or_init(|| Mutex::new(VecDeque::new()));
     let handles = [stop, toast_event];
-    let class_cookie = cookie.ok();
     loop {
         let wait = unsafe {
             MsgWaitForMultipleObjects(Some(&handles), false, u32::MAX, QS_ALLINPUT)
@@ -285,6 +457,9 @@ fn run_notification_thread(stop: usize, toast_event: usize, enabled: Arc<std::sy
             CoRevokeClassObject(class_cookie);
             CoReleaseServerProcess();
         }
+    }
+    if ro_initialized {
+        unsafe { RoUninitialize() };
     }
 }
 
