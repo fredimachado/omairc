@@ -56,8 +56,8 @@ fn remember_id(
     if network_id.is_empty() || target.is_empty() || id == 0 {
         return;
     }
-    let key = conversation_key(network_id, target);
     let mut state = state.lock().expect("notify state");
+    let key = conversation_key(network_id, target);
     let previous = state.conversation_ids.get(&key).copied().unwrap_or(0);
     if previous != 0 && previous != id {
         state.by_id.remove(&previous);

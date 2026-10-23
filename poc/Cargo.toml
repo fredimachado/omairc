@@ -57,12 +57,17 @@ windows = { version = "=0.61.3", features = [
     "Data_Xml_Dom",
     "Win32_UI_Notifications",
     "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
     "Win32_System_WinRT",
     "Win32_System_Threading",
     "Win32_System_Registry",
+    "Win32_Storage_EnhancedStorage",
     "Win32_UI_Shell",
+    "Win32_UI_Shell_PropertiesSystem",
     "Win32_UI_WindowsAndMessaging",
 ] }
+windows-core = "=0.61.2"
+windows-implement = "=0.60.2"
 # The product CLI's named pipe: std has no pipe server, so the few kernel32 calls come from here.
 # Pinned to the 0.61.2 that winreg already builds on Windows, so no new crate is fetched.
 windows-sys = { version = "=0.61.2", features = [
@@ -79,6 +84,17 @@ windows-sys = { version = "=0.61.2", features = [
 # The macOS login keychain: generic passwords, through the Security framework the lock already holds.
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "=3.7.0"
+objc2 = "=0.6.5"
+objc2-foundation = { version = "=0.3.2", features = [
+    "NSArray",
+    "NSDictionary",
+    "NSError",
+    "NSBundle",
+    "NSObject",
+    "NSString",
+] }
+objc2-user-notifications = "=0.3.2"
+block2 = "=0.6.2"
 
 # The Secret Service on Linux. `futures` only supplies `block_on`, which drives oo7 on the calling thread.
 [target.'cfg(target_os = "linux")'.dependencies]

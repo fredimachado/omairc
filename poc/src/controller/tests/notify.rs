@@ -44,6 +44,18 @@ fn muted_monitor_does_not_queue_an_arrival() {
 }
 
 #[test]
+fn direct_message_arrival_queues_a_mention() {
+    let mut fixture = Fixture::seeded();
+    fixture.deliver(OMARCHY, ":anna!u@h PRIVMSG fred :hello there");
+    let mentions = mention_arrivals(&mut fixture);
+    assert_eq!(mentions.len(), 1);
+    assert_eq!(mentions[0].author, "anna");
+    assert_eq!(mentions[0].target, "anna");
+    assert_eq!(mentions[0].network_id, OMARCHY);
+    assert!(mention_arrivals(&mut fixture).is_empty());
+}
+
+#[test]
 fn monitor_presence_change_queues_an_arrival() {
     let mut fixture = Fixture::seeded();
     fixture.controller.monitor_add(OMARCHY, "ghost");

@@ -17,12 +17,6 @@ pub use windows::activation_from_args;
 
 use async_channel::Sender;
 
-#[cfg(test)]
-pub use util::{
-    build_launch_url, build_toast_xml, conversation_key, conversation_tag, escape_xml,
-    parse_launch_url, sanitize_xml_text,
-};
-
 /// Identifies the conversation a notification belongs to when the user activates it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Activation {
