@@ -1,41 +1,16 @@
 //! Port of `tui/internal/session/transport_test.go`: the loopback transport on its
-//! own, without a session.
+//! own, without a session. The shared conformance cases run through
+//! `LoopbackHarness` at the bottom; the tests above keep what only the loopback
+//! exposes (the frame hook, recorded frames, its host and port, its error text).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use crate::session::conformance::{RecordingSink, TransportHarness};
 use crate::session::loopback::LoopbackTransport;
 use crate::session::transport::{
     ConnectionState, Transport, TransportError, TransportErrorKind, TransportSink,
 };
-
-/// Records every sink callback, standing in for the Go `recordingSink`.
-#[derive(Default)]
-struct RecordingSink {
-    connected: RefCell<usize>,
-    encrypted: RefCell<usize>,
-    disconnected: RefCell<usize>,
-    received: RefCell<Vec<Vec<u8>>>,
-    errors: RefCell<Vec<TransportError>>,
-}
-
-impl TransportSink for RecordingSink {
-    fn connected(&self) {
-        *self.connected.borrow_mut() += 1;
-    }
-    fn encrypted(&self) {
-        *self.encrypted.borrow_mut() += 1;
-    }
-    fn disconnected(&self) {
-        *self.disconnected.borrow_mut() += 1;
-    }
-    fn bytes_received(&self, bytes: &[u8]) {
-        self.received.borrow_mut().push(bytes.to_vec());
-    }
-    fn error(&self, error: &TransportError) {
-        self.errors.borrow_mut().push(error.clone());
-    }
-}
 
 /// A loopback with `sink` installed. The sink is returned too, so the caller
 /// keeps it alive for the weak reference the transport holds.
@@ -119,37 +94,6 @@ fn transport_on_frame_written_hook() {
 }
 
 #[test]
-fn transport_injects_inbound_bytes() {
-    let (transport, sink, _keep) = wired();
-    transport.connect("irc.example", 6667, false);
-    transport.complete_connect();
-    transport.inject_bytes(b"PONG :x\r\n");
-    assert_eq!(sink.received.borrow().len(), 1);
-    assert_eq!(sink.received.borrow()[0], b"PONG :x\r\n");
-}
-
-#[test]
-fn transport_remote_close_ends_connection() {
-    let (transport, sink, _keep) = wired();
-    transport.connect("irc.example", 6667, false);
-    transport.complete_connect();
-    transport.remote_close();
-    assert_eq!(transport.state(), ConnectionState::Disconnected);
-    assert_eq!(*sink.disconnected.borrow(), 1);
-    assert!(sink.errors.borrow().is_empty());
-}
-
-#[test]
-fn transport_shutdown_while_connecting() {
-    let (transport, sink, _keep) = wired();
-    transport.connect("irc.example", 6697, true);
-    assert_eq!(transport.state(), ConnectionState::Connecting);
-    transport.shutdown();
-    assert_eq!(transport.state(), ConnectionState::Disconnected);
-    assert_eq!(*sink.disconnected.borrow(), 1);
-}
-
-#[test]
 fn transport_tls_certificate_failure_surfaces_error() {
     let (transport, sink, _keep) = wired();
     transport.connect("irc.example", 6697, true);
@@ -184,17 +128,6 @@ fn transport_connect_failure_surfaces_network_error() {
 }
 
 #[test]
-fn transport_second_shutdown_is_safe() {
-    let (transport, sink, _keep) = wired();
-    transport.connect("irc.example", 6667, false);
-    transport.shutdown();
-    transport.shutdown();
-    transport.shutdown();
-    assert_eq!(transport.state(), ConnectionState::Disconnected);
-    assert_eq!(*sink.disconnected.borrow(), 1);
-}
-
-#[test]
 fn transport_timeout_fails_without_sleep() {
     let (transport, sink, _keep) = wired();
     transport.connect("irc.example", 6667, false);
@@ -204,4 +137,90 @@ fn transport_timeout_fails_without_sleep() {
     assert_eq!(errors.len(), 1);
     assert_eq!(errors[0].kind, TransportErrorKind::Timeout);
     assert!(errors[0].message.contains("timed out"), "{:?}", errors[0]);
+}
+
+/// The loopback as a conformance harness. Its peer is the loopback's own record:
+/// `accept` takes the pending connect, `peer_send` injects bytes, and
+/// `peer_received` reads the frames written while the pipe is open. Delivery is
+/// synchronous, so nothing is ever pending for `settle` to wait on.
+struct LoopbackHarness {
+    transport: Rc<LoopbackTransport>,
+    refuse_next: Cell<bool>,
+    break_tls_next: Cell<bool>,
+    /// How many written frames the peer has already read.
+    frames_read: Cell<usize>,
+}
+
+impl LoopbackHarness {
+    fn new() -> Self {
+        Self {
+            transport: Rc::new(LoopbackTransport::new()),
+            refuse_next: Cell::new(false),
+            break_tls_next: Cell::new(false),
+            frames_read: Cell::new(0),
+        }
+    }
+}
+
+impl TransportHarness for LoopbackHarness {
+    fn transport(&self) -> Rc<dyn Transport> {
+        self.transport.clone()
+    }
+
+    fn accept(&self) {
+        if self.transport.state() != ConnectionState::Connecting {
+            return;
+        }
+        if self.refuse_next.replace(false) {
+            self.transport.fail_connect("Connection refused");
+        } else if self.break_tls_next.get() && self.transport.tls_requested() {
+            self.break_tls_next.set(false);
+            self.transport.fail_tls("TLS handshake failed");
+        } else {
+            self.transport.complete_connect();
+        }
+    }
+
+    fn peer_send(&self, bytes: &[u8]) {
+        self.transport.inject_bytes(bytes);
+    }
+
+    fn peer_received(&self) -> Vec<u8> {
+        if !matches!(
+            self.transport.state(),
+            ConnectionState::Connected | ConnectionState::Encrypted
+        ) {
+            return Vec::new();
+        }
+        let frames = self.transport.written_frames();
+        let unread = self.frames_read.replace(frames.len());
+        frames[unread..].concat()
+    }
+
+    fn peer_close(&self) {
+        self.transport.remote_close();
+    }
+
+    fn refuse_next_connect(&self) {
+        self.refuse_next.set(true);
+    }
+
+    fn break_tls(&self) {
+        self.break_tls_next.set(true);
+    }
+
+    fn settle(&self) {
+        // Every loopback event runs on the caller's stack, so none is ever pending.
+    }
+
+    fn wire_is_real(&self) -> bool {
+        false
+    }
+}
+
+mod loopback_suite {
+    use super::LoopbackHarness;
+    use crate::session::conformance::conformance_suite;
+
+    conformance_suite!(LoopbackHarness::new);
 }

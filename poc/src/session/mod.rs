@@ -32,4 +32,6 @@ pub mod watchdog;
 pub mod wire;
 
 #[cfg(test)]
+pub(crate) mod conformance;
+#[cfg(test)]
 mod tests;
