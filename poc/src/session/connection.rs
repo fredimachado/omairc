@@ -122,6 +122,7 @@ impl Connection {
     }
 
     /// How many reconnects have been scheduled since the last reset.
+    #[cfg(test)]
     pub(crate) fn reconnect_attempt(&self) -> u32 {
         self.reconnect_attempt
     }

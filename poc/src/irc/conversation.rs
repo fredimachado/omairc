@@ -21,6 +21,7 @@ pub fn conversation_id(key: &ConversationKey) -> String {
 
 /// Parses a `conversation_id` back into its key. `None` unless the id holds
 /// exactly one newline with both sides non-empty (`ircParseConversationId`).
+#[cfg(test)]
 pub fn parse_conversation_id(id: &str) -> Option<ConversationKey> {
     let (network_id, normalized_target) = id.split_once('\n')?;
     if network_id.is_empty() || normalized_target.is_empty() || normalized_target.contains('\n') {

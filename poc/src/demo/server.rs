@@ -239,7 +239,7 @@ impl DemoServer {
     /// Replays the last client PRIVMSG on `network_id` as a self echo. False when
     /// there is no such frame (`echoLastPrivmsg`).
     // Phase 4: the catalog tests check the PRIVMSG echo
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn echo_last_privmsg(&self, network_id: &str, nick: &str) -> bool {
         if nick.is_empty() {
             return false;

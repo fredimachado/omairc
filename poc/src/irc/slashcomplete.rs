@@ -48,6 +48,7 @@ impl SlashProbe {
 
     /// Whether a row has exactly this label (Go `SlashProbe.HasLabel`, C++
     /// `IrcSlashProbe::containsLabel`).
+    #[cfg(test)]
     pub fn has_label(&self, label: &str) -> bool {
         self.hits.iter().any(|hit| hit.label == label)
     }

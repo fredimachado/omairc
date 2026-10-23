@@ -35,6 +35,7 @@ fn group_rank(conversation: Option<&ConversationState>) -> u8 {
 impl EventReducer {
     /// Every conversation in sidebar order, with the networks sorted by id
     /// (`SidebarOrder`).
+    #[cfg(test)]
     pub fn sidebar_order(&self) -> Vec<ConversationKey> {
         self.sidebar_order_with_networks(&[])
     }

@@ -13,18 +13,20 @@
 //! The shell resumes a transcript by its own rows (`model::scroll_place`) and stores the
 //! result through `remember_place` and `place_for`. The message-anchor reads below are the
 //! Qt-format path over the controller's messages. Nothing calls them outside the tests yet,
-//! so their dead-code allow stays until the transcript reads through this module.
+//! so they are `cfg(test)` until the transcript reads through this module.
 
-#![allow(dead_code)]
-
+#[cfg(test)]
 use chrono::{DateTime, Utc};
 
 use crate::irc::casemapping::IrcCaseMapping;
+#[cfg(test)]
 use crate::irc::reducer::zero_time;
+#[cfg(test)]
 use crate::irc::world::Message;
 use crate::storage::scrollplace::{PlaceRows, ScrollPlace, ScrollPlaceFile};
 
 use super::controller::Controller;
+#[cfg(test)]
 use super::snapshots::message_kind_name;
 
 /// The selected conversation's saved place, resolved against the transcript
@@ -32,6 +34,7 @@ use super::snapshots::message_kind_name;
 /// when the anchor is not in the loaded transcript yet, and `known` stays true, so the
 /// caller does not fall through to opening at unread.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg(test)]
 pub struct ScrollView {
     pub known: bool,
     pub follow: bool,
@@ -118,6 +121,7 @@ impl Controller {
     /// (`RememberScrollPlace`). `follow_end` pins the bottom. Otherwise `anchor_row` is
     /// the first visible message. Nothing is saved for the Status console, with no
     /// selection, or for an anchor outside the transcript.
+    #[cfg(test)]
     pub fn remember_scroll_place(&mut self, follow_end: bool, anchor_row: Option<usize>) {
         if self.console_open {
             return;
@@ -156,6 +160,7 @@ impl Controller {
 
     /// The selected conversation's saved place, resolved against its transcript
     /// (`CurrentScrollPlace`).
+    #[cfg(test)]
     pub fn current_scroll_place(&self) -> ScrollView {
         let mut view = ScrollView::default();
         if self.console_open {
@@ -189,6 +194,7 @@ impl Controller {
 
 /// The anchor a message names: its msgid, or its kind, author, body and time
 /// (`scrollPlaceFor`).
+#[cfg(test)]
 fn anchor_of(message: &Message) -> ScrollPlace {
     let mut place = ScrollPlace {
         msg_id: message.msgid.value.clone(),
@@ -207,6 +213,7 @@ fn anchor_of(message: &Message) -> ScrollPlace {
 /// Whether `message` is the anchor `place` names (`scrollPlaceMatches`). A msgid is the
 /// whole test when the place has one. Otherwise the kind, author and body must match,
 /// and the time when the place recorded one.
+#[cfg(test)]
 fn anchor_matches(place: &ScrollPlace, message: &Message) -> bool {
     if !place.msg_id.is_empty() {
         return message.msgid.value == place.msg_id;
@@ -227,6 +234,7 @@ fn anchor_matches(place: &ScrollPlace, message: &Message) -> bool {
 }
 
 /// A time as milliseconds since the epoch, in UTC.
+#[cfg(test)]
 fn millis(time: DateTime<Utc>) -> i64 {
     time.timestamp_millis()
 }

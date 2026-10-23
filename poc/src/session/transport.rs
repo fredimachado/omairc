@@ -3,7 +3,7 @@
 //! `Transport` is the duplex byte pipe the session drives. It takes commands
 //! (`connect`, `write`, `shutdown`) and reports through a `TransportSink`. The
 //! trait has no socket in it: this crate's `session/` stays portable, and the
-//! TCP and TLS transport (`transport_net.go` in Go) waits for Phase 11. Methods
+//! TCP and TLS transport (`transport_net.go` in Go) lives in `net/`. Methods
 //! take `&self` so the transport can be shared between the session and its
 //! owner, with interior mutability inside each implementation.
 

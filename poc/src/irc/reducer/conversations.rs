@@ -319,6 +319,7 @@ impl EventReducer {
 
     /// Arms tail-first trimming for the next CHATHISTORY splice into `key`
     /// (`MarkHistoryPageCapTail`).
+    #[cfg(test)]
     pub fn mark_history_page_cap_tail(&mut self, key: &ConversationKey) {
         if let Some(conv) = self.conversations.get_mut(key) {
             conv.history_page_cap_tail = true;
@@ -326,6 +327,7 @@ impl EventReducer {
     }
 
     /// Drops tail-first trimming for the transcript (`ClearHistoryPageCapTail`).
+    #[cfg(test)]
     pub fn clear_history_page_cap_tail(&mut self, key: &ConversationKey) {
         if let Some(conv) = self.conversations.get_mut(key) {
             conv.history_page_cap_tail = false;
@@ -366,6 +368,7 @@ impl EventReducer {
 
     /// Wires the transcript log used for hydration and persistence. `None`
     /// disables both (`SetConversationLog`).
+    #[cfg(test)]
     pub fn set_conversation_log(&mut self, log: Option<Box<dyn ConversationLog>>) {
         self.facts.log = log;
     }
@@ -563,6 +566,7 @@ impl EventReducer {
     /// Whether a transcript row should be washed: another author's chat line that
     /// names the user. A direct message is not tagged on that basis alone
     /// (`IsTranscriptHighlight`).
+    #[cfg(test)]
     pub fn is_transcript_highlight(
         &self,
         network_id: &str,

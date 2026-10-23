@@ -304,7 +304,7 @@ impl Controller {
 
     /// The demo peers, when the controller runs `--demo-server`.
     // test seam: the controller tests reach the demo peers
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn demo(&self) -> Option<&DemoServer> {
         self.demo.as_deref()
     }

@@ -8,14 +8,16 @@
 
 use std::ops::Range;
 
+#[cfg(test)]
+use super::plaintext::plain_irc_text;
 use super::plaintext::{
-    consume_hex_color, consume_mirc_color, plain_irc_text, BOLD, COLOR, HEX_COLOR, ITALIC,
-    MONOSPACE, RESET, REVERSE, STRIKETHROUGH, UNDERLINE,
+    consume_hex_color, consume_mirc_color, BOLD, COLOR, HEX_COLOR, ITALIC, MONOSPACE, RESET,
+    REVERSE, STRIKETHROUGH, UNDERLINE,
 };
 
 /// A run of TUI-visible text. The TUI never renders mIRC colors, so only the
 /// three emphasis flags survive.
-#[allow(dead_code)] // The TUI port's renderer is the consumer; tests exercise it now.
+#[cfg(test)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Segment {
     pub bold: bool,
@@ -56,7 +58,7 @@ pub struct StyledRun {
 
 /// Whether the raw text carries a bold, italic or underline code. Colors are not
 /// stripped first, so a color-only string reports false.
-#[allow(dead_code)] // Qt's hasIrcEmphasis; the PoC has no consumer yet.
+#[cfg(test)]
 pub fn has_irc_emphasis(text: &str) -> bool {
     text.chars()
         .any(|code| matches!(code, BOLD | ITALIC | UNDERLINE))
@@ -67,7 +69,7 @@ pub fn has_irc_emphasis(text: &str) -> bool {
 /// Adjacent runs with equal flags are merged, so an unchanged flag set reads as
 /// one run. Go would split at a toggle that leaves the flags unchanged; the text
 /// and the flags a reader sees are the same either way.
-#[allow(dead_code)] // Qt's emphasizedIrcText; the PoC has no consumer yet.
+#[cfg(test)]
 pub fn emphasized_segments(text: &str) -> Vec<Segment> {
     let plain = plain_irc_text(text);
     let mut segments: Vec<Segment> = Vec::new();

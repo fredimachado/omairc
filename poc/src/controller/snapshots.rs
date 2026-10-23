@@ -4,12 +4,13 @@
 //! this module keeps the shapes the sidebar and the header draw from in one place.
 
 use crate::irc::event::ConversationKey;
+#[cfg(test)]
 use crate::irc::world::MessageKind;
 use crate::session::events::SessionState;
 
 /// The transcript kind's name (`messageKindName`), as the saved scroll anchor records it.
 // The scroll anchor is the Qt-format path, which nothing outside the tests drives yet.
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn message_kind_name(kind: MessageKind) -> &'static str {
     match kind {
         MessageKind::Action => "action",

@@ -218,6 +218,7 @@ impl IrcServerFeatures {
     }
 
     /// The advertised NICKLEN, if any.
+    #[cfg(test)]
     pub fn nick_length(&self) -> Option<usize> {
         self.nick_length
     }
@@ -239,6 +240,7 @@ impl IrcServerFeatures {
     }
 
     /// The advertised PREFIX mode letters, highest rank first.
+    #[cfg(test)]
     pub fn prefix_modes(&self) -> &str {
         &self.prefix_modes
     }
@@ -249,21 +251,25 @@ impl IrcServerFeatures {
     }
 
     /// CHANMODES group A, the list modes.
+    #[cfg(test)]
     pub fn chan_modes_a(&self) -> &str {
         &self.chan_modes[0]
     }
 
     /// CHANMODES group B, the modes that always take a parameter.
+    #[cfg(test)]
     pub fn chan_modes_b(&self) -> &str {
         &self.chan_modes[1]
     }
 
     /// CHANMODES group C, the modes that take a parameter only when set.
+    #[cfg(test)]
     pub fn chan_modes_c(&self) -> &str {
         &self.chan_modes[2]
     }
 
     /// CHANMODES group D, the modes that take no parameter.
+    #[cfg(test)]
     pub fn chan_modes_d(&self) -> &str {
         &self.chan_modes[3]
     }
@@ -275,6 +281,7 @@ impl IrcServerFeatures {
 
     /// The upload URI this connection may use. An encrypted connection refuses a
     /// plain `http://` URI, and a server may list several.
+    #[cfg(test)]
     pub fn file_host(&self, encrypted: bool) -> Option<&str> {
         let mut cleartext = None;
         for uri in &self.file_hosts {

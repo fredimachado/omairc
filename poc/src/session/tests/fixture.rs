@@ -44,8 +44,6 @@ pub fn test_config() -> SessionConfig {
 }
 
 /// The Go `sessionTestPlaintextConfig`: port 6667, no TLS, no autojoin.
-// test fixture: not every test module uses this helper
-#[allow(dead_code)]
 pub fn plaintext_config() -> SessionConfig {
     let mut config = test_config();
     config.port = 6667;
@@ -103,8 +101,6 @@ impl Fixture {
             .collect()
     }
 
-    // test fixture: not every test module uses this helper
-    #[allow(dead_code)]
     pub fn states(&self) -> Vec<SessionState> {
         self.events()
             .into_iter()

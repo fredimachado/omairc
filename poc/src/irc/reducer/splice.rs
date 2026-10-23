@@ -525,6 +525,7 @@ impl EventReducer {
 
     /// Whether a bouncer playback batch for this channel was spliced or deduped
     /// on the current connection (`PlaybackBatchKept`).
+    #[cfg(test)]
     pub fn playback_batch_kept(&self, network_id: &str, target: &str) -> bool {
         if network_id.is_empty() || target.is_empty() {
             return false;

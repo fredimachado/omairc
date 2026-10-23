@@ -99,8 +99,8 @@ impl SessionManager {
     }
 
     /// Stops the session for `network_id`. A missing network is a no-op.
-    // Phase 11: the socket transport starts and stops its sessions
-    #[allow(dead_code)]
+    // Test-only: no non-test caller stops a session through the manager yet.
+    #[cfg(test)]
     pub fn stop(&self, network_id: &str) {
         if let Some(session) = self.find(network_id) {
             session.stop();

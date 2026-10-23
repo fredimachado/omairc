@@ -7,6 +7,7 @@
 //! master plan). A method returns false when nothing was sent, and it leaves no
 //! pending state behind when it refuses.
 
+#[cfg(test)]
 use chrono::{DateTime, Utc};
 
 use super::events::SessionState;
@@ -228,8 +229,8 @@ impl Session {
 
     /// Asks for one page older than `msgid`, or older than `timestamp` when no
     /// msgid is given (`requestOlderHistory`).
-    // Chat history and read-marker sync wait for the playback phase; the allow comes off with it.
-    #[allow(dead_code)]
+    // Chat history and read-marker sync wait for the playback phase; cfg(test) comes off with it.
+    #[cfg(test)]
     pub fn request_older_history(
         &self,
         target: &str,
@@ -240,23 +241,23 @@ impl Session {
     }
 
     /// Asks for lines strictly after `after` (`requestHistoryAfter`).
-    // Chat history and read-marker sync wait for the playback phase; the allow comes off with it.
-    #[allow(dead_code)]
+    // Chat history and read-marker sync wait for the playback phase; cfg(test) comes off with it.
+    #[cfg(test)]
     pub fn request_history_after(&self, target: &str, after: DateTime<Utc>) -> bool {
         self.locked(|core| core.request_history_after(target, after))
     }
 
     /// Asks for the newest page of `target` (`requestHistoryLatest`).
-    // Chat history and read-marker sync wait for the playback phase; the allow comes off with it.
-    #[allow(dead_code)]
+    // Chat history and read-marker sync wait for the playback phase; cfg(test) comes off with it.
+    #[cfg(test)]
     pub fn request_history_latest(&self, target: &str) -> bool {
         self.locked(|core| core.request_history_latest(target))
     }
 
     /// Asks which targets have messages between `from` and `until`
     /// (`requestHistoryTargets`).
-    // Chat history and read-marker sync wait for the playback phase; the allow comes off with it.
-    #[allow(dead_code)]
+    // Chat history and read-marker sync wait for the playback phase; cfg(test) comes off with it.
+    #[cfg(test)]
     pub fn request_history_targets(&self, from: DateTime<Utc>, until: DateTime<Utc>) -> bool {
         self.locked(|core| core.request_history_targets(from, until))
     }
@@ -268,8 +269,8 @@ impl Session {
 
     /// Records a read marker to publish once the target is caught up
     /// (`queueReadMarkerSet`).
-    // Chat history and read-marker sync wait for the playback phase; the allow comes off with it.
-    #[allow(dead_code)]
+    // Chat history and read-marker sync wait for the playback phase; cfg(test) comes off with it.
+    #[cfg(test)]
     pub fn queue_read_marker_set(&self, target: &str, when: DateTime<Utc>) {
         self.locked(|core| core.queue_read_marker_set(target, when));
     }

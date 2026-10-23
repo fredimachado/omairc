@@ -11,6 +11,7 @@ pub enum VerbScope {
     /// Only in a conversation.
     Conversation,
     /// Only on Status.
+    #[cfg(test)]
     Status,
     /// On either surface.
     Either,
@@ -90,6 +91,7 @@ impl VerbSpec {
     pub fn allowed_on(&self, surface: ComposerSurface) -> bool {
         match self.scope {
             VerbScope::Conversation => surface == ComposerSurface::Conversation,
+            #[cfg(test)]
             VerbScope::Status => surface == ComposerSurface::Status,
             VerbScope::Either => true,
         }
@@ -489,6 +491,7 @@ pub static VERB_TABLE: [VerbSpec; 47] = [
 
 /// The full ordered catalog (`IrcVerbTable::all`). It is a static table, so a caller
 /// cannot change a row.
+#[cfg(test)]
 pub fn verb_table() -> &'static [VerbSpec] {
     &VERB_TABLE
 }

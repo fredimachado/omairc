@@ -125,6 +125,7 @@ impl ConversationState {
     }
 
     /// The stored channel members, or 0 for a direct message (`PeopleCount`).
+    #[cfg(test)]
     pub fn people_count(&self) -> usize {
         self.channel
             .as_ref()

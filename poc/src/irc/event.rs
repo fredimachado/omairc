@@ -18,6 +18,7 @@ use super::typing::TypingPhase;
 
 /// The alternative an `Event` carries (`EventKind`). The order matches the Go.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(test)]
 pub enum EventKind {
     Welcome,
     Message,
@@ -70,6 +71,7 @@ pub enum Event {
 
 impl Event {
     /// The alternative this event carries (`KindOf`).
+    #[cfg(test)]
     pub fn kind(&self) -> EventKind {
         match self {
             Self::Welcome(_) => EventKind::Welcome,
@@ -150,6 +152,7 @@ impl ConversationKey {
     }
 
     /// True when either component is empty (`IsZero`).
+    #[cfg(test)]
     pub fn is_zero(&self) -> bool {
         self.network_id.is_empty() || self.normalized_target.is_empty()
     }

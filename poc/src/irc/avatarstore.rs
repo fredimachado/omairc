@@ -53,6 +53,7 @@ pub fn decoded_size_within_budget(width: u32, height: u32) -> bool {
 
 /// The URL a redirect's `Location` names, resolved against the request URL. Qt
 /// `redirectTarget`.
+#[cfg(test)]
 pub fn redirect_target(base: &Url, location: &str) -> Option<Url> {
     base.join(location).ok()
 }
@@ -114,10 +115,12 @@ impl<V> BoundedCache<V> {
         self.values.contains_key(key)
     }
 
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.order.len()
     }
 
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.order.is_empty()
     }
@@ -199,19 +202,23 @@ impl<V> AvatarStore<V> {
     }
 
     /// Drops every in-flight slot and refuses later fetches. Go `Close`.
+    #[cfg(test)]
     pub fn close(&mut self) {
         self.closed = true;
         self.pending.clear();
     }
 
+    #[cfg(test)]
     pub fn is_closed(&self) -> bool {
         self.closed
     }
 
+    #[cfg(test)]
     pub fn pending_count(&self) -> usize {
         self.pending.len()
     }
 
+    #[cfg(test)]
     pub fn cached_count(&self) -> usize {
         self.images.len()
     }

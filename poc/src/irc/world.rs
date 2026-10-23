@@ -72,6 +72,7 @@ pub struct Message {
 
 /// One channel member as the panel shows it (`Member`).
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg(test)]
 pub struct Member {
     pub nick: String,
     /// The rank glyphs, highest first (`@`, `+`, ...).
@@ -88,6 +89,7 @@ pub struct Member {
 
 /// One conversation: a channel or a direct message (`Conversation`).
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg(test)]
 pub struct Conversation {
     pub name: String,
     pub channel: bool,
@@ -101,6 +103,7 @@ pub struct Conversation {
     pub messages: Vec<Message>,
 }
 
+#[cfg(test)]
 impl Conversation {
     pub fn is_channel(&self) -> bool {
         self.channel
@@ -121,6 +124,7 @@ impl Conversation {
 /// One network: its identity, its channel prefixes and its conversations
 /// (`Network`).
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg(test)]
 pub struct Network {
     pub id: String,
     pub display_name: String,
@@ -138,6 +142,7 @@ pub struct Network {
     pub conversations: Vec<Conversation>,
 }
 
+#[cfg(test)]
 impl Network {
     /// A network with no conversations yet. The reducer adds one when a
     /// connection is first seen.

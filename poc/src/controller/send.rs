@@ -41,7 +41,7 @@ impl Controller {
 
     /// Sends a `/me` action to `target` on `network_id` (a CTCP ACTION PRIVMSG). The
     /// refusals are the same as `send_to_target`'s.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn send_action(&mut self, network_id: &str, target: &str, text: &str) -> bool {
         self.pump();
         let sent = self.send_now(network_id, target, text, Outgoing::Action);

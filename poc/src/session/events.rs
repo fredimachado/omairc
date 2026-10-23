@@ -48,7 +48,7 @@ pub enum SessionState {
 impl SessionState {
     /// The C++ enumerator name, for logs and tests.
     // Phase 8: the Connect sheet reads the session's display name
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn name(self) -> &'static str {
         match self {
             Self::Idle => "Idle",

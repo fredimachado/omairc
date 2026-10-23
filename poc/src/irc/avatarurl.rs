@@ -338,6 +338,7 @@ pub fn select_safe_avatar_address(addresses: &[IpLiteral]) -> Option<IpLiteral> 
 /// `url` with its host replaced by `address`, so the fetch connects to that IP
 /// without a second DNS lookup. The port and path stay. Go
 /// `AvatarURLPinnedToAddress`, Qt `ircAvatarUrlPinnedToAddress`.
+#[cfg(test)]
 pub fn avatar_url_pinned_to_address(url: &Url, address: IpLiteral) -> Option<Url> {
     let literal = match address {
         IpLiteral::V4([a, b, c, d]) => format!("{a}.{b}.{c}.{d}"),

@@ -172,6 +172,7 @@ pub fn outcome(network_id: &str, text: &str, now: DateTime<Utc>) -> StatusEntry 
 /// A CTCP reply line written on Status, labelled `CTCP`, such as the `/version`
 /// answer `VERSION reply from anna: https://omairc.app`. It reads as a server
 /// line, as the reply branch of a NOTICE does.
+#[cfg(test)]
 pub fn ctcp_reply(network_id: &str, text: &str, now: DateTime<Utc>) -> StatusEntry {
     StatusEntry::new(
         network_id,

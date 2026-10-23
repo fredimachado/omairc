@@ -204,6 +204,7 @@ impl NickPresence {
     }
 
     /// Whether a metadata key is present, whatever its value (`HasKey`).
+    #[cfg(test)]
     pub fn has_key(&self, key: &str) -> bool {
         canonical_key(key).is_some_and(|stored| self.keys.contains_key(stored))
     }

@@ -4,12 +4,14 @@
 //! prefix set comes from the server's CHANTYPES and the rank glyphs from PREFIX,
 //! never from a hard-coded `#` or `@`.
 
+#[cfg(test)]
 use super::serverfeatures::IrcServerFeatures;
 
 /// One channel name inside a message or a topic (`IrcChannelNameSpan`). `start`
 /// and `end` are byte offsets, with `end` exclusive. `name` is the trimmed token,
 /// so trailing sentence punctuation sits outside the span.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg(test)]
 pub struct IrcChannelNameSpan {
     pub start: usize,
     pub end: usize,
@@ -25,6 +27,7 @@ pub struct IrcChannelNameSpan {
 /// one mark at a time. An unmatched trailing `)`, `]`, `}` or `>` is stripped too,
 /// and `>` pairs with `<`. The result is kept only when `is_channel` accepts it
 /// and it is at least two characters.
+#[cfg(test)]
 pub fn channel_name_spans(text: &str, features: &IrcServerFeatures) -> Vec<IrcChannelNameSpan> {
     let types = features.channel_types();
     if text.is_empty() || types.is_empty() {
@@ -63,6 +66,7 @@ pub fn channel_name_spans(text: &str, features: &IrcServerFeatures) -> Vec<IrcCh
 }
 
 /// The channel name whose span contains byte offset `index`, if any.
+#[cfg(test)]
 pub fn channel_name_at(text: &str, index: usize, features: &IrcServerFeatures) -> Option<String> {
     if text.is_empty() || index >= text.len() {
         return None;
@@ -73,6 +77,7 @@ pub fn channel_name_at(text: &str, index: usize, features: &IrcServerFeatures) -
         .map(|span| span.name)
 }
 
+#[cfg(test)]
 fn rank_before(text: &str, index: usize, symbols: &str) -> bool {
     if index == 0 || symbols.is_empty() {
         return false;
@@ -84,24 +89,29 @@ fn rank_before(text: &str, index: usize, symbols: &str) -> bool {
 }
 
 /// True when `character` is one of the ASCII channel-type or rank bytes in `types`.
+#[cfg(test)]
 fn is_channel_prefix(character: char, types: &str) -> bool {
     character.is_ascii() && types.as_bytes().contains(&(character as u8))
 }
 
 /// A space, a control character, or one of `,` and `:`. Such a character ends a name.
+#[cfg(test)]
 fn stops_channel_name(character: char) -> bool {
     character < ' ' || character == '\u{7F}' || character.is_whitespace() || character == ',' || character == ':'
 }
 
+#[cfg(test)]
 fn channel_boundary_before(text: &str, index: usize) -> bool {
     text[..index].chars().next_back().is_some_and(is_channel_boundary)
 }
 
+#[cfg(test)]
 fn is_channel_boundary(character: char) -> bool {
     character.is_whitespace() || matches!(character, '(' | '[' | '{' | '<' | '"' | '\'' | ',')
 }
 
 /// Strips trailing sentence punctuation and unmatched closing brackets from `raw`.
+#[cfg(test)]
 fn trim_channel_name(raw: &str) -> &str {
     let mut end = raw.len();
     while let Some(character) = raw[..end].chars().next_back() {

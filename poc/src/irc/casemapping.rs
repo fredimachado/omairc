@@ -37,6 +37,7 @@ impl IrcCaseMapping {
         Some(Self::new(kind))
     }
 
+    #[cfg(test)]
     pub fn kind(self) -> IrcCaseMappingKind {
         self.kind
     }

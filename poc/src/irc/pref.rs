@@ -27,6 +27,7 @@ pub enum PrefName {
 
 impl PrefName {
     /// Catalog order, which the slash popup and the bare `/pref` list follow.
+    #[cfg(test)]
     pub const ALL: [PrefName; 4] = [
         PrefName::Directs,
         PrefName::Avatars,
@@ -35,6 +36,7 @@ impl PrefName {
     ];
 
     /// The word typed after `/pref`.
+    #[cfg(test)]
     pub fn token(self) -> &'static str {
         self.spec().token
     }
@@ -45,6 +47,7 @@ impl PrefName {
     }
 
     /// The name for a typed word, ignoring ASCII case (`PrefFind`).
+    #[cfg(test)]
     pub fn from_token(token: &str) -> Option<Self> {
         pref_find(token).map(|spec| spec.name)
     }
@@ -118,6 +121,7 @@ pub fn pref_find(token: &str) -> Option<&'static PrefSpec> {
 }
 
 /// The `/pref` usage line (`ircPrefUsage`).
+#[cfg(test)]
 pub fn pref_usage() -> &'static str {
     "/pref [directs|avatars|unread] [on|off] | joins [folded|every|hidden]"
 }
@@ -248,6 +252,7 @@ pub enum PrefValue {
 impl PrefValue {
     /// The value `word` sets for `name`, or `None` if the word does not fit.
     /// Toggles take `on` or `off`. `joins` takes folded, every or hidden.
+    #[cfg(test)]
     pub fn parse(name: PrefName, word: &str) -> Option<Self> {
         if name == PrefName::Joins {
             return MembershipNoise::from_token(word).map(PrefValue::Noise);

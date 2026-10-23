@@ -324,6 +324,7 @@ pub fn incoming_all(
 
 /// Classifies one incoming message into its first Status entry
 /// (`IrcStatusEntry::incoming`).
+#[cfg(test)]
 pub fn incoming(
     network_id: &str,
     message: &IrcMessage,

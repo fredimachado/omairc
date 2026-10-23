@@ -39,7 +39,6 @@ impl IrcCapability {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct IrcCapabilitySet(u32);
 
-#[allow(dead_code)] // The capability negotiation (Phase 2) is the first consumer.
 impl IrcCapabilitySet {
     pub fn contains(self, capability: IrcCapability) -> bool {
         self.0 & capability.bit() != 0
@@ -49,10 +48,12 @@ impl IrcCapabilitySet {
         self.0 |= capability.bit();
     }
 
+    #[cfg(test)]
     pub fn remove(&mut self, capability: IrcCapability) {
         self.0 &= !capability.bit();
     }
 
+    #[cfg(test)]
     pub fn is_empty(self) -> bool {
         self.0 == 0
     }

@@ -23,7 +23,7 @@
 //! `sink` (the transport's callbacks), `sts` (the STS cache) and `stsflow` (the STS
 //! upgrade and reconnect).
 //!
-//! Out of scope until Phase 11: the socket transport (`transport_net.go`). A failed SCRAM
+//! The socket transport (`transport_net.go`) lives in `net/`. A failed SCRAM
 //! exchange is never retried with PLAIN.
 
 use std::cell::RefCell;
@@ -267,15 +267,15 @@ impl Session {
     }
 
     /// Installs the self-JOIN resume lookup. `None` keeps LATEST.
-    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
-    #[allow(dead_code)]
+    // Read by the socket transport and the later phases; cfg(test) comes off with its first consumer.
+    #[cfg(test)]
     pub fn set_history_resume(&self, resume: Option<HistoryResume>) {
         self.shared.core.borrow_mut().history_resume = resume;
     }
 
     /// Lowers the AFTER page cap, for tests. Production keeps the default.
-    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
-    #[allow(dead_code)]
+    // Read by the socket transport and the later phases; cfg(test) comes off with its first consumer.
+    #[cfg(test)]
     pub fn set_history_after_page_cap(&self, cap: u32) {
         if cap == 0 {
             return;
@@ -315,8 +315,8 @@ impl Session {
     }
 
     /// The CHANTYPES the server advertised, or empty before ISUPPORT.
-    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
-    #[allow(dead_code)]
+    // Read by the socket transport and the later phases; cfg(test) comes off with its first consumer.
+    #[cfg(test)]
     pub fn channel_types(&self) -> String {
         self.shared.core.borrow().channel_types.clone()
     }
@@ -327,15 +327,15 @@ impl Session {
     }
 
     /// How many reconnect attempts have been scheduled since the last success.
-    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
-    #[allow(dead_code)]
+    // Read by the socket transport and the later phases; cfg(test) comes off with its first consumer.
+    #[cfg(test)]
     pub fn reconnect_attempt(&self) -> u32 {
         self.shared.core.borrow().connection.reconnect_attempt()
     }
 
     /// The capabilities the server acknowledged.
-    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
-    #[allow(dead_code)]
+    // Read by the socket transport and the later phases; cfg(test) comes off with its first consumer.
+    #[cfg(test)]
     pub fn capabilities(&self) -> IrcCapabilitySet {
         self.shared.core.borrow().caps.enabled()
     }
@@ -346,8 +346,8 @@ impl Session {
     }
 
     /// Whether a CHATHISTORY request is outstanding on any target.
-    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
-    #[allow(dead_code)]
+    // Read by the socket transport and the later phases; cfg(test) comes off with its first consumer.
+    #[cfg(test)]
     pub fn history_pending(&self) -> bool {
         !self.shared.core.borrow().history.pending.is_empty()
     }
@@ -378,30 +378,30 @@ impl Session {
     }
 
     /// How many batches are open.
-    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
-    #[allow(dead_code)]
+    // Read by the socket transport and the later phases; cfg(test) comes off with its first consumer.
+    #[cfg(test)]
     pub fn open_batch_count(&self) -> usize {
         self.shared.core.borrow().batches.open.len()
     }
 
     /// How many labeled requests are outstanding.
-    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
-    #[allow(dead_code)]
+    // Read by the socket transport and the later phases; cfg(test) comes off with its first consumer.
+    #[cfg(test)]
     pub fn pending_request_label_count(&self) -> usize {
         self.shared.core.borrow().pending_labels.len()
     }
 
     /// Whether `label` names an outstanding labeled request.
-    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
-    #[allow(dead_code)]
+    // Read by the socket transport and the later phases; cfg(test) comes off with its first consumer.
+    #[cfg(test)]
     pub fn has_pending_request_label(&self, label: &str) -> bool {
         self.shared.core.borrow().pending_labels.contains_key(label)
     }
 
     /// Credentials for a file upload: the account, the secret SASL sent (or the
     /// server password until SASL succeeds), the host and the TLS state.
-    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
-    #[allow(dead_code)]
+    // Read by the socket transport and the later phases; cfg(test) comes off with its first consumer.
+    #[cfg(test)]
     pub fn upload_credential(&self) -> (String, String, String, bool) {
         let core = self.shared.core.borrow();
         let user = core.config.sasl_account_name().to_owned();
@@ -450,8 +450,8 @@ impl Session {
 
     /// Reports that the host is reachable again. A scheduled reconnect starts
     /// now instead of waiting out the backoff; otherwise this does nothing.
-    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
-    #[allow(dead_code)]
+    // Read by the socket transport and the later phases; cfg(test) comes off with its first consumer.
+    #[cfg(test)]
     pub fn notify_reachable(&self) {
         self.locked(Core::begin_reconnect_attempt);
     }

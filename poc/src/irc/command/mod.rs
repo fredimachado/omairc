@@ -18,6 +18,7 @@ mod verbs;
 pub use parse::parse;
 pub use verbs::{lookup, spec_for, visible_on, Verb, VerbSpec, VERB_TABLE};
 
+#[cfg(test)]
 use crate::irc::ctcp::{ctcp_version_reply_text, format_ctcp_reply_text};
 use crate::irc::pref::{
     format_pref_list, format_pref_noise, format_pref_query, format_pref_state, PrefKind, PrefName,
@@ -259,6 +260,7 @@ impl Command {
     /// return before it runs anything. `None` means it may run. Blank input never
     /// fails. Plain text is wrong scope on Status. An empty `/me` is refused, as
     /// `IrcSession::sendAction` refuses an empty body.
+    #[cfg(test)]
     pub fn rejection(&self, surface: ComposerSurface) -> Option<CommandOutcome> {
         match self {
             Command::Empty => None,
@@ -321,6 +323,7 @@ pub fn help_text() -> String {
 
 /// What the selected view is, for a CTCP verb typed without a nick.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(test)]
 pub enum SelectedView<'a> {
     /// A direct message with this peer. A bare `/ping`, `/time` or `/version` asks the peer.
     Direct(&'a str),
@@ -330,6 +333,7 @@ pub enum SelectedView<'a> {
 
 /// A CTCP query that may be sent (`/ping`, `/time`, `/version`).
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg(test)]
 pub struct CtcpTarget {
     /// The nick to ask.
     pub nick: String,
@@ -345,6 +349,7 @@ pub struct CtcpTarget {
 ///   wrong-scope refusal), and no selection refuses.
 /// - A channel name is refused. `chantypes` lists the network's channel prefixes.
 /// - With a nick but no selection on a conversation, the command is wrong scope.
+#[cfg(test)]
 pub fn ctcp_target(
     words: &Words,
     surface: ComposerSurface,
@@ -381,6 +386,7 @@ pub fn ctcp_target(
 
 /// The VERSION reply line, `VERSION reply from <nick>: https://omairc.app`
 /// (`formatCtcpReplyText` with the VERSION payload).
+#[cfg(test)]
 pub fn version_reply_text(nick: &str) -> String {
     format_ctcp_reply_text("VERSION", nick, ctcp_version_reply_text(), 0)
 }

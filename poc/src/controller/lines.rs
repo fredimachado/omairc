@@ -5,6 +5,7 @@
 //! rows. Ports `Outcome`, `Clear` and the reply paths of `tui/internal/controller/`
 //! (Go) and `src/irc/irccontroller.cpp` (C++).
 
+#[cfg(test)]
 use crate::irc::event::{Event, WhoisTranscriptEvent};
 use crate::irc::statusentry;
 use crate::irc::viewnotify::ViewNotify;
@@ -23,7 +24,7 @@ impl Controller {
     }
 
     // Test seam: the shell writes CTCP replies through the dispatcher, so only the tests call this.
-    #[allow(dead_code)]
+    #[cfg(test)]
     /// Writes a CTCP reply line to a network's Status log, labelled `CTCP`.
     pub fn log_ctcp_reply(&mut self, network_id: &str, text: &str) {
         self.pump();
@@ -33,7 +34,7 @@ impl Controller {
     }
 
     // Test seam: the shell writes whois rows through the dispatcher, so only the tests call this.
-    #[allow(dead_code)]
+    #[cfg(test)]
     /// Writes one whois-style line into the selected conversation. Returns false
     /// when Status is the selection, so the caller writes to Status instead.
     pub fn reply_in_selection(&mut self, text: &str) -> bool {

@@ -226,7 +226,7 @@ pub fn join(channel: &str, key: &str, features: &IrcServerFeatures) -> Result<St
 
 /// The registration burst: an optional PASS, then NICK and USER. An empty password
 /// sends no PASS.
-#[allow(dead_code)] // The session's outbound path (Phase 2) is the first consumer.
+#[cfg(test)]
 pub fn registration(
     nickname: &str,
     username: &str,

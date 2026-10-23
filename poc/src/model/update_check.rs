@@ -165,10 +165,12 @@ impl UpdateCheck {
         &self.current
     }
 
+    #[cfg(test)]
     pub fn status(&self) -> UpdateStatus {
         self.status
     }
 
+    #[cfg(test)]
     pub fn latest(&self) -> Option<&Release> {
         self.latest.as_ref()
     }
@@ -187,6 +189,7 @@ impl UpdateCheck {
     }
 
     /// Installer launches attempted this session. Qt `launchAttempts`.
+    #[cfg(test)]
     pub fn launch_attempts(&self) -> u32 {
         self.launch_attempts
     }
@@ -361,6 +364,7 @@ impl UpdateCheck {
 
     /// Makes launches count without starting a process, so tests never run an
     /// installer. Qt `suppressInstallerLaunch`.
+    #[cfg(test)]
     pub fn suppress_installer_launch(&mut self) {
         self.launch_process = false;
     }

@@ -95,6 +95,7 @@ impl IrcMessage {
     }
 
     /// The first tag named `name`, matched exactly (`+typing` keeps its plus).
+    #[cfg(test)]
     pub fn tag(&self, name: &str) -> Option<&IrcTag> {
         self.tags.iter().find(|tag| tag.name == name)
     }

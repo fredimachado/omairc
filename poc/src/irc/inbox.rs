@@ -38,6 +38,7 @@ pub enum InboxKind {
 
 impl InboxKind {
     /// The stable wire name (`IrcInboxModel::kindName`).
+    #[cfg(test)]
     pub fn name(self) -> &'static str {
         match self {
             InboxKind::Mention => "mention",
@@ -101,16 +102,19 @@ impl Inbox {
     }
 
     /// The number of waiting entries (`Count`).
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
     /// Whether nothing is waiting.
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 
     /// The entry at `index`, or `None` when it is out of range (`At`).
+    #[cfg(test)]
     pub fn at(&self, index: usize) -> Option<&InboxItem> {
         self.items.get(index)
     }

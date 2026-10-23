@@ -62,6 +62,7 @@ pub fn parse(line: &[u8]) -> Result<IrcMessage, IrcError> {
 /// Builds the line for `message`, without CRLF. The source is written from
 /// `prefix.raw`, and every field is checked against the grammar `parse` reads, so
 /// `parse(serialize(m))` returns `m` for any message this accepts.
+#[cfg(test)]
 pub fn serialize(message: &IrcMessage) -> Result<Vec<u8>, IrcError> {
     if message.params.len() > MAX_PARAMETERS {
         return Err(IrcError::InvalidField);
@@ -171,6 +172,7 @@ fn unescape_tag_value(value: &[u8]) -> Vec<u8> {
     result
 }
 
+#[cfg(test)]
 fn escape_tag_value(value: &[u8]) -> Vec<u8> {
     let mut escaped = Vec::with_capacity(value.len());
     for &byte in value {
