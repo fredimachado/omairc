@@ -46,10 +46,20 @@ windows-sys = { version = "=0.61.2", features = [
     "Win32_Globalization",
     "Win32_Security",
     "Win32_Security_Authorization",
+    "Win32_Security_Credentials",
     "Win32_Storage_FileSystem",
     "Win32_System_IO",
     "Win32_System_Pipes",
 ] }
+
+# The macOS login keychain: generic passwords, through the Security framework the lock already holds.
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "=3.7.0"
+
+# The Secret Service on Linux. `futures` only supplies `block_on`, which drives oo7 on the calling thread.
+[target.'cfg(target_os = "linux")'.dependencies]
+futures = { version = "=0.3.34", default-features = false, features = ["executor"] }
+oo7 = "=0.5.0"
 
 # Windows build script only: compiles the icon and version resource that build.rs
 # embeds. The pin is the copy gpui already builds with, so no new crate is added.

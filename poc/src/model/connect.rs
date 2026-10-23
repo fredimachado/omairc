@@ -8,10 +8,10 @@
 //! `src/irc/ircnetworkprofile.cpp`.
 //!
 //! Nothing here connects. Apply returns the saved profile, and the shell hands it to
-//! `Controller::start`. The server and NickServ passwords live in the draft for the
-//! session only: the PoC has no keychain, so they are never saved, written to
-//! the world or sent. Like Qt, the draft drops them on select, add, discard and
-//! a successful apply.
+//! `Controller::start`. The server and NickServ passwords live in the draft until Apply.
+//! Apply gives them to the OS keychain (`Controller::save_profile`), never to the settings
+//! file, and the sheet words where each one landed. Like Qt, the draft drops them on select,
+//! add, discard and a successful apply.
 //!
 //! The window owns one `ConnectState` for its whole life, so an unapplied draft
 //! survives closing the sheet, as Qt's does. `Shell::connect_open` says whether
@@ -260,9 +260,9 @@ pub struct Profile {
     pub icon_color: Option<u8>,
     /// The network's CHANTYPES, which decide what an autojoin token is. Not edited.
     pub chantypes: String,
-    /// The server password. Session only: never saved, written or sent.
+    /// The server password, held until Apply. Apply gives it to the keychain, never the file.
     pub password: String,
-    /// The NickServ password. Session only, as `password`.
+    /// The NickServ password, held until Apply as `password`.
     pub nickserv_password: String,
 }
 
@@ -551,7 +551,7 @@ pub struct ConnectState {
 }
 
 /// One secret slot of a network, as the sheet words it.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SecretStates {
     pub password: CredentialState,
     pub nickserv: CredentialState,
@@ -578,12 +578,14 @@ impl SecretSlot {
         !self.held && !self.edited
     }
 
-    /// One slot's sentence (`IrcConnection::secretStatus`, without the durable states).
+    /// One slot's sentence (`IrcConnection::secretStatus`).
     fn sentence(&self) -> String {
-        if self.edited && self.held && self.state == CredentialState::Missing {
+        let stored = matches!(self.state, CredentialState::Missing | CredentialState::Available);
+        if self.edited && self.held && stored {
             return format!("{} changed; apply to save securely", self.noun);
         }
-        match self.state {
+        match &self.state {
+            CredentialState::Available => format!("{} saved securely", self.noun),
             CredentialState::Missing if self.held => {
                 format!("{} is session-only until applied", self.noun)
             }
@@ -591,6 +593,10 @@ impl SecretSlot {
             CredentialState::SessionOnly => {
                 format!("secure storage unavailable; {} is session-only", self.noun)
             }
+            CredentialState::Error(_) if self.held => {
+                format!("secure storage error; {} is session-only", self.noun)
+            }
+            CredentialState::Error(_) => format!("secure storage error; {} is not saved", self.noun),
         }
     }
 }
@@ -717,7 +723,7 @@ impl ConnectState {
 
     /// Where the selected network's secret slots stand.
     pub fn secret_states(&self) -> SecretStates {
-        self.secrets.get(&self.selected).copied().unwrap_or_default()
+        self.secrets.get(&self.selected).cloned().unwrap_or_default()
     }
 
     /// The credential sentence under the form for the selected network (`credentialStatus`).
@@ -1798,6 +1804,30 @@ mod tests {
         let line = state.credential_status();
         assert!(line.starts_with("secure storage unavailable; password is session-only; "), "{line}");
         assert!(line.ends_with("NickServ changed; apply to save securely"), "{line}");
+    }
+
+    #[test]
+    fn the_credential_line_says_when_the_keychain_holds_a_secret() {
+        let mut state = ConnectState::from_stored(&[stored("network-1", "irc.libera.chat", "fred")]);
+        state.set_text(ConnectField::ServerPassword, "hunter2");
+        state.apply().expect("complete");
+        state.record_apply(Status::Written, CredentialState::Available, CredentialState::Missing, true);
+        state.clear_secret_text();
+        assert_eq!(state.credential_status(), "password saved securely");
+        state.set_text(ConnectField::ServerPassword, "swordfish");
+        assert_eq!(state.credential_status(), "password changed; apply to save securely");
+    }
+
+    #[test]
+    fn a_refused_keychain_write_is_said_and_the_secret_is_not_called_saved() {
+        let mut state = ConnectState::from_stored(&[stored("network-1", "irc.libera.chat", "fred")]);
+        state.set_text(ConnectField::ServerPassword, "hunter2");
+        state.apply().expect("complete");
+        let refused = CredentialState::Error("Access is denied.".to_owned());
+        state.record_apply(Status::Written, refused.clone(), CredentialState::Missing, false);
+        assert_eq!(state.credential_status(), "secure storage error; password is session-only");
+        state.clear_secret_text();
+        assert_eq!(state.credential_status(), "secure storage error; password is not saved");
     }
 
     #[test]

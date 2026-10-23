@@ -46,7 +46,7 @@ use crate::session::loopback::LoopbackTransport;
 use crate::session::session::Session;
 use crate::session::sessionmanager::{SessionManager, SessionManagerError};
 
-use crate::storage::credentialstore::{CredentialStore, MemoryCredentialStore};
+use crate::storage::credentialstore::{platform_store, CredentialStore, MemoryCredentialStore};
 use crate::storage::lists::{CaseListStore, IniListBacking};
 use crate::storage::opendirect::OpenDirectStore;
 use crate::storage::preferences::PreferenceStore;
@@ -156,7 +156,7 @@ pub struct Controller {
     pub(super) profiles: BTreeMap<String, Profile>,
     pub(super) profile_store: ProfileStore,
     pub(super) preference_store: PreferenceStore,
-    /// The network secrets. Only the in-memory store exists until the keychain (Phase 11).
+    /// The network secrets: the OS keychain for a saved network, memory for an ephemeral one.
     pub(super) credentials: Box<dyn CredentialStore>,
     /// The profile each network's session was built from, so Apply rebuilds only a changed one.
     pub(super) applied_profiles: BTreeMap<String, Profile>,
@@ -239,7 +239,11 @@ impl Controller {
             profiles: BTreeMap::new(),
             profile_store: ProfileStore::new(backing.clone()),
             preference_store: PreferenceStore::new(backing.clone()),
-            credentials: Box::new(MemoryCredentialStore::default()),
+            credentials: if backing.is_ephemeral() {
+                Box::new(MemoryCredentialStore::default())
+            } else {
+                platform_store()
+            },
             applied_profiles: BTreeMap::new(),
             open_directs: OpenDirectStore::new(&backing),
             open_directs_motd_seen: BTreeSet::new(),

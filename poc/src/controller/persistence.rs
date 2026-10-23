@@ -40,7 +40,7 @@ pub struct SecretEdits {
 }
 
 /// What saving a profile did: the file's outcome, and where each secret now lives.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SaveOutcome {
     pub status: Status,
     pub password: CredentialState,
@@ -116,12 +116,11 @@ impl Controller {
     /// are written first, then the profile file. The controller keeps the profile even when
     /// the file refuses, so the session sees the edit.
     pub fn save_profile(&mut self, mut profile: Profile, edits: SecretEdits) -> SaveOutcome {
-        let password = self.store_secret(&profile.network_id, PURPOSE_PASSWORD, edits.password);
-        let nickserv = self.store_secret(&profile.network_id, PURPOSE_NICKSERV, edits.nickserv);
-        // Only durable storage can say a secret is saved. The memory store never can.
-        let durable = self.credentials.durable();
-        profile.secret_saved = durable && password != CredentialState::Missing;
-        profile.nickserv_saved = durable && nickserv != CredentialState::Missing;
+        let password = self.store_secret(&profile, PURPOSE_PASSWORD, edits.password);
+        let nickserv = self.store_secret(&profile, PURPOSE_NICKSERV, edits.nickserv);
+        // Only a secret the keychain holds is saved. A session-only or refused write is not.
+        profile.secret_saved = password == CredentialState::Available;
+        profile.nickserv_saved = nickserv == CredentialState::Available;
         let status = self.profile_store.save(&profile);
         self.profiles.insert(profile.network_id.clone(), profile.clone());
         self.queue(vec![ViewNotify::Conversations, ViewNotify::Status]);
@@ -135,8 +134,11 @@ impl Controller {
     /// Forgets a network's profile and its secrets (`forgetNetwork`'s store half).
     pub(super) fn remove_profile(&mut self, network_id: &str) -> Status {
         self.applied_profiles.remove(network_id);
-        for purpose in [PURPOSE_PASSWORD, PURPOSE_NICKSERV] {
-            self.credentials.remove(&CredentialKey::new(network_id, purpose));
+        // The entry names come from the profile's username and host, so the profile is read first.
+        if let Some(profile) = self.profiles.get(network_id).cloned() {
+            for purpose in [PURPOSE_PASSWORD, PURPOSE_NICKSERV] {
+                self.credentials.remove(&CredentialKey::for_profile(&profile, purpose));
+            }
         }
         self.profiles.remove(network_id);
         self.profile_store.remove(network_id)
@@ -354,10 +356,16 @@ impl Controller {
 
     /// Writes one secret slot and reports where it now is. `None` leaves the slot as it is,
     /// and reports whether the store already holds it.
-    fn store_secret(&mut self, network_id: &str, purpose: &'static str, edit: Option<String>) -> CredentialState {
-        let key = CredentialKey::new(network_id, purpose);
+    fn store_secret(&mut self, profile: &Profile, purpose: &'static str, edit: Option<String>) -> CredentialState {
+        let key = CredentialKey::for_profile(profile, purpose);
         match edit {
-            None if self.credentials.read(&key).is_some() => CredentialState::SessionOnly,
+            None if self.credentials.read(&key).is_some() => {
+                if self.credentials.durable() {
+                    CredentialState::Available
+                } else {
+                    CredentialState::SessionOnly
+                }
+            }
             None => CredentialState::Missing,
             Some(text) if text.is_empty() => self.credentials.remove(&key),
             Some(text) => self.credentials.write(&key, &text),
@@ -402,17 +410,17 @@ impl Controller {
         if !profile.realname.trim().is_empty() {
             config.realname = profile.realname.trim().to_owned();
         }
-        config.password = self.secret_text(&profile.network_id, PURPOSE_PASSWORD);
-        config.nickserv_password = self.secret_text(&profile.network_id, PURPOSE_NICKSERV);
+        config.password = self.secret_text(profile, PURPOSE_PASSWORD);
+        config.nickserv_password = self.secret_text(profile, PURPOSE_NICKSERV);
         config.sasl_account = profile.account.clone();
         config.autojoin_channels = profile.autojoin_channels.clone();
         config.autojoin_keys = profile.autojoin_keys.clone();
         config
     }
 
-    fn secret_text(&self, network_id: &str, purpose: &'static str) -> String {
+    fn secret_text(&self, profile: &Profile, purpose: &'static str) -> String {
         self.credentials
-            .read(&CredentialKey::new(network_id, purpose))
+            .read(&CredentialKey::for_profile(profile, purpose))
             .unwrap_or_default()
     }
 }

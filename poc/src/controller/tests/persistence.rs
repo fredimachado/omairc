@@ -20,7 +20,7 @@ use crate::irc::pref::{PrefName, PrefValue};
 use crate::session::clock::{Clock, FakeClock};
 use crate::session::loopback::LoopbackTransport;
 use crate::session::transport::Transport;
-use crate::storage::credentialstore::CredentialState;
+use crate::storage::credentialstore::{CredentialState, MemoryCredentialStore};
 use crate::storage::profilestore::Profile;
 use crate::storage::scrollplace::ScrollPlace;
 use crate::storage::settings::Status;
@@ -74,6 +74,9 @@ fn launch(backing: &Backing, transports: Box<dyn TransportFactory>) -> Controlle
         transports,
         backing.clone(),
     );
+    // A disk launch would use the OS keychain. A test keeps secrets in memory, so it never
+    // writes to the user's Credential Manager, Keychain or Secret Service.
+    controller.credentials = Box::new(MemoryCredentialStore::default());
     controller.load_stored();
     controller
 }
