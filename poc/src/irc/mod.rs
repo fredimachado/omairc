@@ -35,6 +35,7 @@ pub mod serverfeatures;
 pub mod servicenick;
 pub mod slashcomplete;
 pub mod statusentry;
+pub mod storagepath;
 pub mod textformat;
 pub mod translator;
 pub mod typing;

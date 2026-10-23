@@ -11,10 +11,13 @@ use std::rc::Rc;
 use chrono::{TimeZone, Utc};
 
 use crate::controller::controller::Controller;
+use crate::controller::tests::fixture::OMARCHY;
 use crate::controller::persistence::{SaveOutcome, SecretEdits};
 use crate::controller::transports::{TransportFactory, LIVE_IRC_UNAVAILABLE};
 use crate::desktop::notifier::NullNotifier;
 use crate::irc::autoaway::AutoawayConfig;
+use crate::irc::event::IrcConversationCause;
+use crate::irc::reducer::ConversationLog;
 use crate::irc::membershipnoise::MembershipNoise;
 use crate::irc::pref::{PrefName, PrefValue};
 use crate::session::clock::{Clock, FakeClock};
@@ -81,6 +84,25 @@ fn launch(backing: &Backing, transports: Box<dyn TransportFactory>) -> Controlle
     controller
 }
 
+fn launch_with_transcript(
+    backing: &Backing,
+    transports: Box<dyn TransportFactory>,
+    transcript_root: std::path::PathBuf,
+) -> Controller {
+    let mut controller = Controller::with_backing(
+        clock(),
+        Box::new(NullNotifier),
+        transports,
+        backing.clone(),
+    );
+    controller.credentials = Box::new(MemoryCredentialStore::default());
+    controller.reducer.set_conversation_log(Some(Box::new(
+        crate::storage::conversationlog::FileConversationLog::new(transcript_root),
+    )));
+    controller.load_stored();
+    controller
+}
+
 /// A complete profile on `libera.chat`, with one autojoin channel.
 fn libera(id: &str) -> Profile {
     Profile {
@@ -94,6 +116,14 @@ fn libera(id: &str) -> Profile {
 
 fn save(controller: &mut Controller, profile: Profile) -> SaveOutcome {
     controller.save_profile(profile, SecretEdits::default())
+}
+
+fn message_bodies(controller: &Controller) -> Vec<String> {
+    controller
+        .messages()
+        .into_iter()
+        .map(|row| row.body.clone())
+        .collect()
 }
 
 fn conversation_targets(controller: &Controller) -> Vec<String> {
@@ -396,6 +426,74 @@ fn an_ephemeral_controller_keeps_nothing_on_disk() {
     controller.set_preference(PrefName::Avatars, PrefValue::Toggle(false));
     assert!(std::fs::read_dir(dir.path()).unwrap().next().is_none());
     assert!(!controller.preferences().avatars, "the process keeps its own values");
+}
+
+#[test]
+fn a_transcript_line_survives_a_relaunch() {
+    let dir = TempDir::new("transcript-relaunch");
+    let backing = disk(&dir);
+    let transcript_root = dir.path().join("logs");
+    let loopbacks = Loopbacks::default();
+    let unique = "persisted-on-disk-42";
+    {
+        let mut first = launch_with_transcript(
+            &backing,
+            Box::new(loopbacks.clone()),
+            transcript_root.clone(),
+        );
+        save(&mut first, libera(LIBERA));
+        assert!(first.start(LIBERA));
+        feed(&mut first, &loopbacks, LIBERA, ":irc.libera.chat 001 fred :Welcome");
+        first.select_conversation(LIBERA, "#omarchy");
+        feed(
+            &mut first,
+            &loopbacks,
+            LIBERA,
+            &format!(":alice!u@h PRIVMSG #omarchy :{unique}"),
+        );
+        assert!(
+            message_bodies(&first).iter().any(|body| body == unique),
+            "the line is in the first run"
+        );
+        let log = crate::storage::conversationlog::FileConversationLog::new(transcript_root.clone());
+        let mapping = first.reducer.server_features(LIBERA).case_mapping();
+        let stored = log.read_tail(LIBERA, "#omarchy", mapping, 10);
+        assert!(
+            stored.iter().any(|line| line.body == unique),
+            "the line is on disk: {:?}",
+            stored
+        );
+    }
+
+    let mut second = launch_with_transcript(
+        &backing,
+        Box::new(loopbacks.clone()),
+        transcript_root.clone(),
+    );
+    let key = second.reducer.conversation_key(LIBERA, "#omarchy");
+    assert!(
+        second
+            .reducer
+            .ensure_conversation(&key, "#omarchy", IrcConversationCause::InboundOther)
+            .is_some(),
+        "opening the channel hydrates from disk"
+    );
+    second.select_conversation(LIBERA, "#omarchy");
+    assert!(
+        message_bodies(&second).iter().any(|body| body == unique),
+        "the line hydrates on relaunch"
+    );
+}
+
+#[test]
+fn the_demo_writes_no_transcript_files() {
+    let mut fixture = crate::controller::tests::fixture::Fixture::seeded();
+    assert!(
+        fixture.controller.backing.is_ephemeral(),
+        "the demo must not install a disk transcript log"
+    );
+    fixture.controller.select_conversation(OMARCHY, "#omarchy");
+    assert!(fixture.controller.send_to_target(OMARCHY, "#omarchy", "demo line"));
 }
 
 #[test]
