@@ -1,5 +1,6 @@
-//! Mention and monitor arrivals queued for the shell. Gap 1 turns these into desktop
-//! notifications and title marks; the shell drains them from `take_arrivals`.
+//! Mention and monitor arrivals queued for the shell. The shell drains them from
+//! `take_arrivals` for unfocused title marks (mentions) and, in Gap 1, desktop
+//! notifications.
 
 use crate::irc::event::MentionArrival;
 

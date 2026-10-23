@@ -18,6 +18,9 @@ impl Shell {
         }
         self.window_active = active;
         self.controller.set_window_active(active);
+        if active {
+            self.title_mark = None;
+        }
         if active && !self.status_showing() {
             self.transcript.update(cx, |t, _| t.land_on_unread_mark());
         }
