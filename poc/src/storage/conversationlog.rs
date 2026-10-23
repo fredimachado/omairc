@@ -8,7 +8,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::irc::casemapping::IrcCaseMapping;
-use crate::irc::reducer::{ConversationLog, TranscriptLine};
+use crate::irc::reducer::{zero_time, ConversationLog, TranscriptLine};
 use crate::irc::secretpolicy::allows_transcript;
 use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::irc::storagepath::{
@@ -146,7 +146,7 @@ fn iso_date_with_ms(when: DateTime<Utc>) -> String {
 }
 
 fn format_line(line: &TranscriptLine) -> Vec<u8> {
-    let when = if line.timestamp.timestamp() == 0 && line.timestamp.timestamp_subsec_nanos() == 0 {
+    let when = if line.timestamp == zero_time() {
         Utc::now()
     } else {
         line.timestamp
@@ -279,7 +279,11 @@ fn prepend_bytes(path: &Path, lines: &[Vec<u8>]) -> bool {
     if !prepare_tree(path) {
         return false;
     }
-    let existing = std::fs::read(path).unwrap_or_default();
+    let existing = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(_) => return false,
+    };
     let mut buffer = Vec::new();
     for line in lines {
         buffer.extend_from_slice(line);
@@ -538,7 +542,7 @@ mod tests {
     use crate::irc::serverfeatures::IrcServerFeatures;
     use crate::irc::storagepath::target_segment;
     use crate::util::testdir::TempDir;
-    use chrono::TimeZone;
+    use chrono::{Datelike, TimeZone};
 
     fn test_line(body: &str) -> TranscriptLine {
         TranscriptLine {
@@ -577,6 +581,32 @@ mod tests {
             "json {:?}",
             String::from_utf8_lossy(&bytes)
         );
+    }
+
+    #[test]
+    fn format_line_replaces_reducer_zero_time_with_now() {
+        let before = Utc::now();
+        let line = TranscriptLine {
+            timestamp: zero_time(),
+            author: "alice".to_owned(),
+            kind: "message".to_owned(),
+            body: "live".to_owned(),
+            msgid: String::new(),
+            only_visible_to_you: false,
+        };
+        let bytes = format_line(&line);
+        let text = String::from_utf8_lossy(&bytes);
+        let record: ConversationLogRecord =
+            serde_json::from_str(text.trim_end()).expect("json");
+        let written = parse_timestamp(&record.timestamp);
+        let after = Utc::now();
+        assert!(
+            written >= before - chrono::Duration::seconds(1)
+                && written <= after + chrono::Duration::seconds(1),
+            "expected near-now stamp, got {}",
+            record.timestamp
+        );
+        assert!(written.year() >= 2020, "ancient year in {}", record.timestamp);
     }
 
     #[test]
