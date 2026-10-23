@@ -123,7 +123,10 @@ impl Notifier for MacNotifier {
             NSString::from_str(msgid),
         ];
         let user_info = NSDictionary::from_retained_objects(&keys, &values);
-        content.setUserInfo(&user_info);
+        // SAFETY: plist-compatible NSString keys/values, same payload as Qt.
+        unsafe {
+            content.setUserInfo(&user_info);
+        }
 
         let identifier = NSString::from_str(&conversation_key(network_id, target));
         let request = UNNotificationRequest::requestWithIdentifier_content_trigger(
