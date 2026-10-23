@@ -93,9 +93,10 @@ fn nick_row(
     let hover = to_gpui(style.hover_color());
     let status = (!member.status.is_empty()).then(|| member.status.clone());
 
-    // Same as the member row: `flex_1` gives the nick the leftover width. Sized
-    // from its text, this nested flex item collapsed to nothing, so the nick
-    // vanished from the sheet.
+    // Same as the member row: the nick sizes from its text (`flex_none`), gives
+    // way when the row runs out of room (`flex_shrink`), and never wraps. A
+    // `flex_1` nick has a zero basis, so inside a column that does not grow the
+    // whole label collapsed to nothing and only the avatar showed.
     let label = div()
         .min_w_0()
         .flex()
@@ -103,9 +104,11 @@ fn nick_row(
         .gap(scaled_px(style, 4.))
         .child(
             div()
-                .flex_1()
+                .flex_none()
+                .flex_shrink()
                 .min_w_0()
                 .overflow_hidden()
+                .whitespace_nowrap()
                 .text_ellipsis()
                 .font_family(FONT_FAMILY)
                 .text_size(scaled_px(style, 12.))
@@ -139,10 +142,17 @@ fn nick_row(
                     gpui::transparent_black()
                 })
                 .hover(move |s| s.bg(hover))
-                .child(div().when(away, |this| this.opacity(AWAY_GLYPH_OPACITY)).child(glyph))
                 .child(
                     div()
+                        .flex_shrink_0()
+                        .when(away, |this| this.opacity(AWAY_GLYPH_OPACITY))
+                        .child(glyph),
+                )
+                .child(
+                    div()
+                        .flex_grow()
                         .min_w_0()
+                        .mr(scaled_px(style, 10.))
                         .flex()
                         .flex_col()
                         .child(label)
