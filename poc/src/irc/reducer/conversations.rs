@@ -25,7 +25,6 @@ use crate::irc::typing::typing_shows_indicator;
 use crate::irc::world::MessageKind;
 
 use super::facts::is_visible;
-#[cfg(test)]
 use super::log::ConversationLog;
 use super::state::{
     ChannelState, ConversationState, MemberView, OrderedMember, PeerPresence, STALE_NAMES_SYNC_MS,
@@ -363,7 +362,6 @@ impl EventReducer {
 
     /// Wires the transcript log used for hydration and persistence. `None`
     /// disables both (`SetConversationLog`).
-    #[cfg(test)]
     pub fn set_conversation_log(&mut self, log: Option<Box<dyn ConversationLog>>) {
         self.facts.log = log;
     }

@@ -21,6 +21,8 @@ pub const STS_FILE: &str = "sts";
 pub const LOG_FILE: &str = "omairc.log";
 /// Moves the config and state roots under one directory.
 pub const HOME_OVERRIDE_VAR: &str = "OMAIRC_POC_HOME";
+/// Overrides the on-disk transcript log root (`OMAIRC_TRANSCRIPT_ROOT`).
+pub const TRANSCRIPT_ROOT_VAR: &str = "OMAIRC_TRANSCRIPT_ROOT";
 
 /// The layout family. Only the root directories differ between them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,6 +55,7 @@ pub struct Env {
     pub xdg_config_home: Option<PathBuf>,
     pub xdg_state_home: Option<PathBuf>,
     pub poc_home: Option<PathBuf>,
+    pub transcript_root: Option<PathBuf>,
     /// Where the log goes when no state root is known, as Qt's `TempLocation`.
     pub temp_dir: PathBuf,
 }
@@ -85,6 +88,7 @@ impl Env {
             xdg_config_home: path("XDG_CONFIG_HOME"),
             xdg_state_home: path("XDG_STATE_HOME"),
             poc_home: path(HOME_OVERRIDE_VAR),
+            transcript_root: path(TRANSCRIPT_ROOT_VAR),
             temp_dir,
         }
     }
@@ -122,6 +126,19 @@ pub fn sts_path_beside(settings_file: &Path) -> PathBuf {
 
 pub fn log_path_for(env: &Env, platform: Platform) -> PathBuf {
     state_dir_for(env, platform).join(LOG_FILE)
+}
+
+/// The conversation transcript folder (`<state>/logs`), or the override when set.
+pub fn transcript_root_for(env: &Env, platform: Platform) -> PathBuf {
+    if let Some(root) = &env.transcript_root {
+        return root.clone();
+    }
+    state_dir_for(env, platform).join("logs")
+}
+
+/// The transcript root on this machine.
+pub fn transcript_root() -> PathBuf {
+    transcript_root_for(&Env::from_process(), Platform::current())
 }
 
 /// The INI settings file on this machine, or `None` when there is no config root.
@@ -312,6 +329,7 @@ mod tests {
             let paths = [
                 settings_path_for(&env, platform).unwrap(),
                 log_path_for(&env, platform),
+                transcript_root_for(&env, platform),
             ];
             for path in paths {
                 assert!(
@@ -319,9 +337,41 @@ mod tests {
                     "{} names the Qt folder",
                     path.display()
                 );
-                assert!(path.components().any(|part| part.as_os_str() == APP_FOLDER));
+                assert!(
+                    path.components().any(|part| part.as_os_str() == APP_FOLDER)
+                        || path.ends_with("logs"),
+                    "{} should stay under the PoC folder",
+                    path.display()
+                );
             }
         }
+    }
+
+    #[test]
+    fn transcript_root_honours_override() {
+        let env = Env {
+            transcript_root: Some(PathBuf::from("transcripts")),
+            home: Some(home()),
+            temp_dir: PathBuf::from("tmp"),
+            ..Env::default()
+        };
+        assert_eq!(
+            transcript_root_for(&env, Platform::Linux),
+            PathBuf::from("transcripts")
+        );
+    }
+
+    #[test]
+    fn transcript_root_defaults_under_state() {
+        let env = env_with_home();
+        assert_eq!(
+            transcript_root_for(&env, Platform::Linux),
+            home()
+                .join(".local")
+                .join("state")
+                .join(APP_FOLDER)
+                .join("logs")
+        );
     }
 
     #[test]

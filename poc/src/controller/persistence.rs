@@ -24,7 +24,9 @@ use crate::irc::viewnotify::ViewNotify;
 use crate::session::clock::Clock;
 use crate::session::config::SessionConfig;
 use crate::session::events::SessionState;
+use crate::storage::conversationlog::FileConversationLog;
 use crate::storage::credentialstore::{CredentialKey, CredentialState, PURPOSE_NICKSERV, PURPOSE_PASSWORD};
+use crate::storage::paths;
 use crate::storage::profilestore::Profile;
 use crate::storage::settings::Status;
 use crate::storage::Backing;
@@ -59,6 +61,11 @@ impl Controller {
             transports,
             Backing::user(),
         );
+        if !controller.backing.is_ephemeral() {
+            controller.reducer.set_conversation_log(Some(Box::new(
+                FileConversationLog::new(paths::transcript_root()),
+            )));
+        }
         controller.load_stored();
         controller
     }
