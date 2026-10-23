@@ -51,7 +51,9 @@ impl Controller {
                 self.select(network_id, channel);
             }
         }
-        self.playback.borrow_mut().note_joined_channel(network_id, channel);
+        self.playback
+            .borrow_mut()
+            .note_joined_channel(&self.reducer, network_id, channel);
         self.request_channel_playback(&session, channel);
     }
 

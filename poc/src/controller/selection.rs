@@ -214,8 +214,14 @@ impl Controller {
         self.set_last_error(network_id, None);
         self.console_network = network_id.to_owned();
         self.console_open = false;
+        let previous = self.selected.clone();
         let key = self.reducer.conversation_key(network_id, target);
         if self.selected.as_ref() != Some(&key) {
+            if let Some(previous) = previous {
+                if previous != key {
+                    self.reducer.clear_history_page_cap_tail(&previous);
+                }
+            }
             self.withdraw_typing();
         }
         self.selected = Some(key.clone());
