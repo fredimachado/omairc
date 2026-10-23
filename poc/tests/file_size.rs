@@ -9,9 +9,11 @@
 //! - an unlisted file over `LIMIT` fails, and so does a listed file that no longer exists.
 //!
 //! The count is production code only: non-blank lines with comments blanked, up to the
-//! first `#[cfg(test)]` that introduces a test module (`#[cfg(test)]` followed by `mod`),
-//! so a test module belongs at the end of its file. A test-only seam inside an `impl`
-//! (a `#[cfg(test)]` on a `fn` or a field) is not a cut, so its lines stay in the count.
+//! first `#[cfg(test)]` that introduces an inline test module (`#[cfg(test)] mod name {`),
+//! so an inline test module belongs at the end of its file. An out-of-line
+//! `#[cfg(test)] mod name;` keeps its body in a file of its own, so it is not a cut and
+//! the lines after it still count. A test-only seam inside an `impl` (a `#[cfg(test)]` on
+//! a `fn` or a field) is not a cut either, so its lines stay in the count.
 
 // This gate reports no line numbers, so `common::line_of` is unused in this crate.
 #[allow(dead_code)]
@@ -34,7 +36,7 @@ const ALLOWLIST: &[(&str, usize)] = &[
 ];
 
 /// Non-blank production lines in `code` (comments already blanked): every line before
-/// the first `#[cfg(test)]` that introduces a test module.
+/// the first `#[cfg(test)]` that introduces an inline test module, or the whole file.
 fn production_lines(code: &str) -> usize {
     let lines: Vec<&str> = code.lines().collect();
     let cut = (0..lines.len())
@@ -46,28 +48,54 @@ fn production_lines(code: &str) -> usize {
         .count()
 }
 
-/// Whether `lines[index]` is a `#[cfg(test)]` that directly introduces a test module:
-/// the next item, past blank lines and other attributes, is `mod`.
+/// Whether `lines[index]` is a `#[cfg(test)]` that introduces an inline test module: the
+/// next item, past blank lines and other attributes, is `mod name {`. The item may span
+/// lines, so the text after the attribute is read to the end of the file.
 fn opens_test_module(lines: &[&str], index: usize) -> bool {
     let Some(rest) = lines[index].trim_start().strip_prefix("#[cfg(test)]") else {
         return false;
     };
-    let mut item = rest.trim();
-    let mut following = lines[index + 1..].iter();
+    let mut text = String::from(rest);
+    for line in &lines[index + 1..] {
+        text.push('\n');
+        text.push_str(line);
+    }
+    is_inline_mod(skip_attributes(&text))
+}
+
+/// `text` past its leading whitespace and `#[...]` attributes, which may span lines. An
+/// attribute that never closes leaves nothing, so the caller sees no item.
+fn skip_attributes(mut text: &str) -> &str {
     loop {
-        if item.is_empty() || item.starts_with("#[") {
-            match following.next() {
-                Some(line) => item = line.trim(),
-                None => return false,
+        text = text.trim_start();
+        let Some(body) = text.strip_prefix("#[") else {
+            return text;
+        };
+        let mut depth = 1usize;
+        let mut close = None;
+        for (at, c) in body.char_indices() {
+            match c {
+                '[' => depth += 1,
+                ']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close = Some(at + 1);
+                        break;
+                    }
+                }
+                _ => {}
             }
-        } else {
-            return is_mod_item(item);
+        }
+        match close {
+            Some(end) => text = &body[end..],
+            None => return "",
         }
     }
 }
 
-/// Whether `item` begins a module item: `mod name`, optionally with a visibility.
-fn is_mod_item(item: &str) -> bool {
+/// Whether `item` begins an inline module, `mod name {`, optionally with a visibility.
+/// `mod name;` is an out-of-line declaration, so it is not one.
+fn is_inline_mod(item: &str) -> bool {
     let after_vis = match item.strip_prefix("pub") {
         Some(rest) => {
             let rest = rest.trim_start();
@@ -81,9 +109,17 @@ fn is_mod_item(item: &str) -> bool {
         }
         None => item,
     };
-    after_vis
-        .strip_prefix("mod")
-        .is_some_and(|tail| tail.starts_with(char::is_whitespace))
+    let Some(after_mod) = after_vis.strip_prefix("mod") else {
+        return false;
+    };
+    if !after_mod.starts_with(char::is_whitespace) {
+        return false;
+    }
+    let after_mod = after_mod.trim_start();
+    let name_len = after_mod
+        .find(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .unwrap_or(after_mod.len());
+    name_len > 0 && after_mod[name_len..].trim_start().starts_with('{')
 }
 
 /// A file's path under `src/`, with `/` separators, as `ALLOWLIST` spells it.
@@ -165,6 +201,15 @@ fn the_counter_counts_production_lines_only() {
         ("fn a() {}\n#[cfg(test)]\n", 2),
         ("let s = \"#[cfg(test)]\";\nfn a() {}\n", 2),
         ("let s = \"#[cfg(test)]\nmod tests {}\";\nfn a() {}\n", 3),
+        ("#[cfg(test)] mod tests { fn b() {} }\nfn a() {}\n", 0),
+        ("fn a() {}\n#[cfg(test)]\nmod tests\n{}\nfn b() {}\n", 1),
+        ("#[cfg(test)]\nfn b() {}\nmod tests {}\n", 3),
+        ("#[cfg(test)]\nmod tests;\nfn a() {}\n", 3),
+        ("mod a;\n#[cfg(test)]\nmod tests;\nfn b() {}\n", 4),
+        ("fn a() {}\n#[cfg(test)]\npub(crate) mod tests;\nfn b() {}\n", 4),
+        ("fn a() {}\n#[cfg(test)]\n#[path = \"x.rs\"]\nmod tests;\nfn b() {}\n", 5),
+        ("fn a() {}\n#[cfg(test)]\nmod tests\n;\nfn b() {}\n", 5),
+        ("fn a() {}\n#[cfg(test)]\nmod tests;\n#[cfg(test)]\nmod more {}\nfn c() {}\n", 3),
     ];
     for (source, expected) in counted {
         assert_eq!(production_lines(&code_only(source)), expected, "counting {source:?}");

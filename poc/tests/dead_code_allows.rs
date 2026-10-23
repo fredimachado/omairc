@@ -1,14 +1,18 @@
-//! The dead-code ratchet. A `#[allow(dead_code)]` silences the compiler's proof that an
-//! item has no caller, so each one under `src/` and `tests/` must say why it stays, and
-//! the total may only fall:
+//! The dead-code ratchet. A lint attribute that silences `dead_code` silences the
+//! compiler's proof that an item has no caller, so each one under `src/` and `tests/`
+//! must say why it stays, and the total may only fall. The counted attributes are
+//! `allow` and `expect`, outer or inner (`#[...]`, `#![...]`), and one inside `cfg_attr`,
+//! that name `dead_code` or a lint that silences it: the `unused` group and `warnings`.
+//! A specific lint such as `unused_imports` does not silence `dead_code`, so it is not
+//! counted:
 //!
-//! - every allow (`#[allow(dead_code)]`, the same with more lints, the inner
-//!   `#![allow(dead_code)]`, or one inside `cfg_attr`) needs a plain `//` line comment
+//! - every such attribute (`#[allow(dead_code)]`, `#[expect(unused)]`, `#![allow(unused)]`,
+//!   the same with more lints, or one inside `cfg_attr`) needs a plain `//` line comment
 //!   directly above it, skipping other attribute lines, or after its `]` on the same
 //!   line. A doc comment does not count: it describes the item, not the lint;
-//! - `MAX_ALLOWS` is the count the tree holds. A new allow pushes the count past it and
-//!   fails. A removed allow leaves the count under it and fails until `MAX_ALLOWS` is
-//!   lowered, so the slack cannot be spent on a later allow.
+//! - `MAX_ALLOWS` is the count the tree holds. A new one pushes the count past it and
+//!   fails. A removed one leaves the count under it and fails until `MAX_ALLOWS` is
+//!   lowered, so the slack cannot be spent on a later one.
 //!
 //! The scan reads code with comments blanked (`common::read_code`), then blanks the
 //! contents of string, raw string and char literals, so an attribute named in a string
@@ -22,10 +26,14 @@ use std::path::Path;
 use common::{code_only, crate_root, line_of, read_code, rust_files_under};
 use regex::Regex;
 
-/// The `dead_code` allows the tree holds. The count may only fall.
+/// The `dead_code` silencers the tree holds. The count may only fall.
 const MAX_ALLOWS: usize = 4;
 
-/// One `allow(...)` attribute that names `dead_code`.
+/// The lints whose `allow` or `expect` silences `dead_code`: `dead_code` itself, the
+/// `unused` group that contains it, and `warnings`, which silences every warning.
+const SILENCERS: &[&str] = &["dead_code", "unused", "warnings"];
+
+/// One `allow(...)` or `expect(...)` attribute that silences `dead_code`.
 #[derive(Debug, PartialEq, Eq)]
 struct Allow {
     /// The 1-based line where the attribute starts.
@@ -60,7 +68,7 @@ fn allows_in(source: &str, code: &str) -> Vec<Allow> {
     let raw: Vec<&str> = source.lines().collect();
     attribute_pattern()
         .captures_iter(&masked)
-        .filter(|caps| caps[1].split(',').any(|lint| lint.trim() == "dead_code"))
+        .filter(|caps| caps[1].split(',').any(silences_dead_code))
         .map(|caps| {
             let whole = caps.get(0).expect("whole match");
             let start_line = line_of(&masked, whole.start());
@@ -79,10 +87,19 @@ fn allows_in(source: &str, code: &str) -> Vec<Allow> {
         .collect()
 }
 
-/// An `allow(...)` attribute, inner or outer, and its argument list. `[^\]]` stops at the
-/// attribute's own `]`, so one match never runs into the next attribute.
+/// An `allow(...)` or `expect(...)` attribute, inner or outer, and its argument list.
+/// `[^\]]` stops at the attribute's own `]`, so one match never runs into the next
+/// attribute.
 fn attribute_pattern() -> Regex {
-    Regex::new(r"#!?\[[^\]]*\ballow\s*\(([^)]*)\)[^\]]*\]").expect("attribute pattern compiles")
+    Regex::new(r"#!?\[[^\]]*\b(?:allow|expect)\s*\(([^)]*)\)[^\]]*\]")
+        .expect("attribute pattern compiles")
+}
+
+/// Whether one entry of an attribute's lint list silences `dead_code`. A path counts by
+/// its last segment, so `clippy::unused` is still the `unused` group.
+fn silences_dead_code(lint: &str) -> bool {
+    let name = lint.trim().rsplit("::").next().unwrap_or("");
+    SILENCERS.contains(&name)
 }
 
 /// Whether `text` is a plain `//` line comment with words in it. A doc comment (`///`,
@@ -223,7 +240,7 @@ fn unexplained(found: &[(String, Allow)]) -> Vec<String> {
         .filter(|(_, allow)| !allow.explained)
         .map(|(file, allow)| {
             format!(
-                "{file}:{}: `allow(dead_code)` has no reason. Put a `//` comment directly above it, or after its `]`, that says why the item stays.",
+                "{file}:{}: this `allow` or `expect` silences `dead_code` but has no reason. Put a `//` comment directly above it, or after its `]`, that says why the item stays.",
                 allow.line
             )
         })
@@ -239,12 +256,12 @@ fn count_violations(total: usize, max: usize, found: &[(String, Allow)]) -> Vec<
             .map(|(file, allow)| format!("{file}:{}", allow.line))
             .collect();
         vec![format!(
-            "{total} `dead_code` allows, up from MAX_ALLOWS = {max}. Remove the new allow, or make the item used or `#[cfg(test)]`. Allows at: {}",
+            "{total} `dead_code` silencers, up from MAX_ALLOWS = {max}. Remove the new one, or make the item used or `#[cfg(test)]`. Silencers at: {}",
             places.join(", ")
         )]
     } else if total < max {
         vec![format!(
-            "{total} `dead_code` allows, under MAX_ALLOWS = {max}. Lower MAX_ALLOWS to {total} so the ratchet keeps the gain."
+            "{total} `dead_code` silencers, under MAX_ALLOWS = {max}. Lower MAX_ALLOWS to {total} so the ratchet keeps the gain."
         )]
     } else {
         Vec::new()
@@ -307,6 +324,34 @@ fn the_scanner_finds_each_form_of_the_allow() {
         Vec::<usize>::new()
     );
     assert_eq!(found("#[cfg(test)]\nfn a() {}\n"), Vec::<usize>::new());
+    assert_eq!(found("#[allow(unused)]\nfn a() {}\n"), [1]);
+    assert_eq!(found("#![allow(unused)]\n"), [1]);
+    assert_eq!(found("#[allow(warnings)]\nfn a() {}\n"), [1]);
+    assert_eq!(found("#[expect(dead_code)]\nfn a() {}\n"), [1]);
+    assert_eq!(found("#[expect(unused)]\nfn a() {}\n"), [1]);
+    assert_eq!(found("fn a() {}\n#![expect(dead_code)]\n"), [2]);
+    assert_eq!(
+        found("#[expect(dead_code, reason = \"the harness calls it\")]\nfn a() {}\n"),
+        [1]
+    );
+    assert_eq!(
+        found("#[cfg_attr(test, expect(unused))]\nfn a() {}\n"),
+        [1]
+    );
+    assert_eq!(
+        found("#[allow(clippy::unused)]\nfn a() {}\n"),
+        [1],
+        "a path counts by its last segment"
+    );
+    assert_eq!(
+        found("#[allow(unused_mut, unused_imports)]\nfn a() {}\n"),
+        Vec::<usize>::new(),
+        "a specific unused_ lint does not silence dead_code"
+    );
+    assert_eq!(
+        found("#[expect(unused_variables)]\nfn a() {}\n"),
+        Vec::<usize>::new()
+    );
 }
 
 #[test]
@@ -318,6 +363,9 @@ fn the_scanner_skips_strings_and_comments_that_name_one() {
     assert_eq!(found("// #[allow(dead_code)]\n"), 0);
     assert_eq!(found("/* #[allow(dead_code)] */\n"), 0);
     assert_eq!(found("//! #[allow(dead_code)]\n"), 0);
+    assert_eq!(found("let s = \"#[expect(unused)]\";\n"), 0);
+    assert_eq!(found("// #[expect(dead_code)]\n"), 0);
+    assert_eq!(found("/// #[allow(unused)]\nfn a() {}\n"), 0);
     assert_eq!(
         found("fn a() {}\n#[cfg(test)]\n#[allow(dead_code)]\n\nmod tests {}\n"),
         1,
@@ -367,6 +415,19 @@ fn the_scanner_reads_the_reason_from_plain_comments_only() {
         reason("// Why it stays.\n\n#[allow(dead_code)]\nfn a() {}\n"),
         Some(false),
         "a blank line breaks the link"
+    );
+    assert_eq!(
+        reason("// Why it stays.\n#[expect(unused)]\nfn a() {}\n"),
+        Some(true)
+    );
+    assert_eq!(
+        reason("#[expect(dead_code)]\nfn a() {}\n"),
+        Some(false),
+        "expect needs the same comment as allow"
+    );
+    assert_eq!(
+        reason("//! Module doc.\n#![expect(dead_code)]\n"),
+        Some(false)
     );
 }
 
