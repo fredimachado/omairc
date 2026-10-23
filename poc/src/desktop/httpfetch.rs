@@ -97,12 +97,23 @@ impl fmt::Display for FetchError {
 /// The seam. `get` makes one request and does not follow redirects. The bytes
 /// of a 2xx body go to `on_body` in order; returning false stops the transfer
 /// and the call fails with `Stopped`. Any other status delivers no body.
+/// One POST with a body already in memory.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PostRequest {
+    pub url: String,
+    pub headers: Vec<(String, String)>,
+    pub timeout: Duration,
+    pub body: Vec<u8>,
+}
+
 pub trait HttpFetch: Send + Sync {
     fn get(
         &self,
         request: &FetchRequest,
         on_body: &mut dyn FnMut(&[u8]) -> bool,
     ) -> Result<FetchReply, FetchError>;
+
+    fn post(&self, request: &PostRequest) -> Result<FetchReply, FetchError>;
 }
 
 /// Where a `get_following` call finished, the status it got there, and the
@@ -224,6 +235,34 @@ impl HttpFetch for UreqFetch {
             content_type,
         })
     }
+
+    fn post(&self, request: &PostRequest) -> Result<FetchReply, FetchError> {
+        let builder = Agent::config_builder()
+            .timeout_global(Some(request.timeout))
+            .max_redirects(0)
+            .http_status_as_error(false);
+        let agent = Agent::new_with_config(builder.build());
+        let mut builder = agent.post(request.url.as_str());
+        for (name, value) in &request.headers {
+            builder = builder.header(name.as_str(), value.as_str());
+        }
+        let mut response = builder
+            .send(request.body.as_slice())
+            .map_err(|err| FetchError::Transport(err.to_string()))?;
+        let status = response.status().as_u16();
+        let header_text = |name: &str| {
+            response
+                .headers()
+                .get(name)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string)
+        };
+        Ok(FetchReply {
+            status,
+            location: header_text("location"),
+            content_type: header_text("content-type"),
+        })
+    }
 }
 
 /// The address the pinned agent connects to. The system resolver answers the host,
@@ -281,6 +320,8 @@ mod fake {
     pub struct FakeFetch {
         routes: Mutex<HashMap<String, Route>>,
         requests: Mutex<Vec<FetchRequest>>,
+        post_routes: Mutex<HashMap<String, PostRoute>>,
+        post_requests: Mutex<Vec<PostRequest>>,
     }
 
     #[derive(Clone)]
@@ -288,6 +329,13 @@ mod fake {
         reply: FetchReply,
         body: Vec<u8>,
         chunk: usize,
+        failure: Option<String>,
+    }
+
+    #[derive(Clone)]
+    struct PostRoute {
+        reply: FetchReply,
+        response_body: Vec<u8>,
         failure: Option<String>,
     }
 
@@ -360,9 +408,30 @@ mod fake {
             );
         }
 
-        /// Every request the seam received, in order.
+        /// Answers `url` to a POST with `status`, optional `Location`, and a response body.
+        pub fn serve_post(&self, url: &str, status: u16, location: Option<&str>, response_body: &[u8]) {
+            self.post_routes.lock().unwrap().insert(
+                url.to_string(),
+                PostRoute {
+                    reply: FetchReply {
+                        status,
+                        location: location.map(str::to_string),
+                        content_type: None,
+                    },
+                    response_body: response_body.to_vec(),
+                    failure: None,
+                },
+            );
+        }
+
+        /// Every GET request the seam received, in order.
         pub fn requests(&self) -> Vec<FetchRequest> {
             self.requests.lock().unwrap().clone()
+        }
+
+        /// Every POST request the seam received, in order.
+        pub fn post_requests(&self) -> Vec<PostRequest> {
+            self.post_requests.lock().unwrap().clone()
         }
 
         fn insert(&self, url: &str, route: Route) {
@@ -371,6 +440,21 @@ mod fake {
     }
 
     impl HttpFetch for FakeFetch {
+        fn post(&self, request: &PostRequest) -> Result<FetchReply, FetchError> {
+            self.post_requests.lock().unwrap().push(request.clone());
+            let route = self.post_routes.lock().unwrap().get(&request.url).cloned();
+            let Some(route) = route else {
+                return Err(FetchError::Transport(format!(
+                    "no post route for {}",
+                    request.url
+                )));
+            };
+            if let Some(message) = route.failure {
+                return Err(FetchError::Transport(message));
+            }
+            Ok(route.reply)
+        }
+
         fn get(
             &self,
             request: &FetchRequest,
@@ -410,7 +494,7 @@ pub(crate) fn serve_once(
     status_line: &'static str,
     extra_headers: &'static str,
     body: Vec<u8>,
-) -> (String, std::thread::JoinHandle<String>) {
+) -> (String, std::thread::JoinHandle<(String, Vec<u8>)>) {
     use std::io::{Read, Write};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback");
     let url = format!("http://{}/", listener.local_addr().expect("local addr"));
@@ -432,7 +516,14 @@ pub(crate) fn serve_once(
         // A client that stops reading early (an oversized body) makes a write fail.
         let _ = stream.write_all(reply.as_bytes());
         let _ = stream.write_all(&body);
-        String::from_utf8_lossy(&head).into_owned()
+        let request = String::from_utf8_lossy(&head).into_owned();
+        let body_start = head
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+            .map(|index| index + 4)
+            .unwrap_or(head.len());
+        let request_body = head[body_start..].to_vec();
+        (request, request_body)
     });
     (url, handle)
 }
@@ -601,7 +692,7 @@ mod tests {
                 true
             })
             .expect("served");
-        server.join().expect("server thread");
+        let _ = server.join().expect("server thread");
         assert_eq!(reply.status, 200);
         assert_eq!(body, b"hello");
     }
@@ -613,7 +704,8 @@ mod tests {
         UreqFetch
             .get(&fetch_request, &mut |_| true)
             .expect("served");
-        let head = server.join().expect("server thread").to_ascii_lowercase();
+        let (head, _) = server.join().expect("server thread");
+        let head = head.to_ascii_lowercase();
         assert!(head.contains("x-test: 1"), "head was {head}");
     }
 
@@ -631,7 +723,7 @@ mod tests {
                 true
             })
             .expect("reply");
-        server.join().expect("server thread");
+        let _ = server.join().expect("server thread");
         assert_eq!(reply.status, 302);
         assert_eq!(reply.location.as_deref(), Some("https://elsewhere.example/x"));
         assert!(!delivered);
@@ -643,7 +735,7 @@ mod tests {
         let reply = UreqFetch
             .get(&request(&url), &mut |_| true)
             .expect("a 404 is a reply");
-        server.join().expect("server thread");
+        let _ = server.join().expect("server thread");
         assert_eq!(reply.status, 404);
     }
 
@@ -668,7 +760,7 @@ mod tests {
         let reply = UreqFetch
             .get(&request(&url), &mut |_| true)
             .expect("served");
-        server.join().expect("server thread");
+        let _ = server.join().expect("server thread");
         assert_eq!(reply.content_type.as_deref(), Some("image/png"));
     }
 

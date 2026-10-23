@@ -31,6 +31,7 @@ pub fn render_composer(
     composer: Entity<SingleLineInput>,
     style: &Style,
     on_send: Handler<()>,
+    on_file: Option<Handler<()>>,
     popup: Option<AnyElement>,
     focused: bool,
     has_text: bool,
@@ -81,9 +82,39 @@ pub fn render_composer(
                         .pl(scaled_px(style, 8.))
                         .child(composer),
                 )
+                .when_some(on_file, |this, on_file| {
+                    this.child(file_button(style, on_file))
+                })
                 .child(send_button(style, has_text, on_send)),
         )
         .when_some(popup, |this, popup| this.child(popup))
+}
+
+/// FILE: 46 by 30 with a 7px radius, left of SEND. Hover mixes the raised panel
+/// toward the ink; a press calls `on_file`.
+fn file_button(style: &Style, on_file: Handler<()>) -> impl IntoElement {
+    let raised = style.raised_color();
+    let hover = mix_colors(raised, style.ink_color(), 0.08);
+    div()
+        .w(scaled_px(style, 46.))
+        .h(scaled_px(style, 30.))
+        .mr(scaled_px(style, 8.))
+        .flex_shrink_0()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(scaled_px(style, 7.))
+        .bg(to_gpui(raised))
+        .font_family(FONT_FAMILY)
+        .font_weight(gpui::FontWeight::BOLD)
+        .text_size(scaled_px(style, 9.))
+        .text_color(to_gpui(style.muted_color()))
+        .cursor_pointer()
+        .hover(move |button| button.bg(to_gpui(hover)))
+        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+            on_file((), window, cx);
+        })
+        .child("FILE")
 }
 
 /// SEND: 54 by 30 with a 7px radius, 8px in from the shell's right edge. With text

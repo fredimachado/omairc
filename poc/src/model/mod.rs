@@ -11,6 +11,7 @@ pub mod composer;
 pub mod connect;
 pub mod cursor;
 pub mod filter_list;
+pub mod filelink;
 pub mod find;
 pub mod format;
 pub mod fuzzy;

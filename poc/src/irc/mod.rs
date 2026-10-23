@@ -18,6 +18,7 @@ pub mod conversation;
 mod corpus;
 pub mod ctcp;
 pub mod event;
+pub mod filelink;
 pub mod framer;
 pub mod inbox;
 pub mod jointarget;

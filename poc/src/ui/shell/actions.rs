@@ -6,7 +6,7 @@
 use gpui::{actions, App, Context, Div, KeyBinding, prelude::*};
 
 use crate::model::chords::Chord;
-use crate::ui::input::Copy as CopySelection;
+use crate::ui::input::{Copy as CopySelection, Paste};
 use crate::ui::sheets::about::bind_about_keys;
 use crate::ui::sheets::channel_open::bind_channel_open_keys;
 use crate::ui::sheets::connect::{
@@ -73,6 +73,7 @@ actions!(
         ConnectCycleTab,
         ConnectAdd,
         ConnectRemove,
+        InsertFile,
     ]
 );
 
@@ -96,6 +97,7 @@ pub fn bind_shell_keys(cx: &mut App) {
         KeyBinding::new("secondary-k", OpenJump, None),
         KeyBinding::new("secondary-shift-a", OpenInbox, None),
         KeyBinding::new("secondary-shift-o", OpenLink, None),
+        KeyBinding::new("secondary-shift-u", InsertFile, None),
         KeyBinding::new("secondary-shift-k", OpenNick, None),
         KeyBinding::new("escape", CloseSheet, None),
         KeyBinding::new("secondary-shift-s", ToggleSidebarRail, None),
@@ -376,5 +378,18 @@ pub fn wire_shell_actions(root: Div, cx: &mut Context<Shell>) -> Div {
         if !shell.connect_rail_edge(true, window, cx) {
             cx.propagate();
         }
+    }))
+    .on_action(cx.listener(|shell, _: &InsertFile, window, cx| {
+        if !shell.chord_live(Chord::InsertFile, window, cx) || !shell.file_upload_offered() {
+            cx.propagate();
+            return;
+        }
+        shell.prompt_for_file(window, cx);
+    }))
+    .capture_action(cx.listener(|shell, action: &Paste, window, cx| {
+        if shell.handle_composer_paste(action, window, cx) {
+            return;
+        }
+        cx.propagate();
     }))
 }

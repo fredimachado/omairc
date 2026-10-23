@@ -136,6 +136,8 @@ pub enum Chord {
     /// Ctrl+Shift+Delete while Connect is open: arms the selected network's removal,
     /// and removes it on the next press.
     ConnectRemove,
+    /// Ctrl+Shift+U: opens the file picker when the server offers FILEHOST.
+    InsertFile,
 }
 
 /// Whether the chord is live in `ctx`. "No overlay" chords need no sheet and no
@@ -162,6 +164,7 @@ pub fn chord_enabled(chord: Chord, ctx: &ChordContext) -> bool {
         // a click in the transcript moves focus to the composer.
         Chord::Copy => no_sheet && (ctx.transcript_selection || ctx.members_focused),
         Chord::ComposerFocus => no_sheet,
+        Chord::InsertFile => no_sheet && !ctx.find_active,
         // Toggles Jump, and is blocked by every other sheet.
         Chord::Jump => no_sheet || sheet_is(Sheet::Jump),
         // Toggles Link, and is blocked by every other sheet.

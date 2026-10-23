@@ -333,7 +333,7 @@ fn upload_credential_uses_the_server_password_until_sasl() {
     let fx = Fixture::new(config);
 
     let (user, secret, _, _) = fx.session.upload_credential();
-    assert_eq!((user.as_str(), secret.as_str()), ("acct", "server-secret"));
+    assert_eq!((user.as_str(), secret.expose()), ("acct", "server-secret"));
 
     fx.connect_tls();
     fx.inject(
@@ -343,5 +343,5 @@ fn upload_credential_uses_the_server_password_until_sasl() {
          :server 903 omairc :SASL successful\r\n",
     );
     let (user, secret, _, _) = fx.session.upload_credential();
-    assert_eq!((user.as_str(), secret.as_str()), ("acct", "nick-secret"));
+    assert_eq!((user.as_str(), secret.expose()), ("acct", "nick-secret"));
 }

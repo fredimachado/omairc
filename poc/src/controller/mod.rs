@@ -33,6 +33,7 @@ pub mod composertyping;
 pub mod console;
 pub mod controller;
 pub mod demo;
+pub mod fileupload;
 pub mod history;
 pub mod lines;
 pub mod monitorcoordinator;

@@ -399,15 +399,13 @@ impl Session {
 
     /// Credentials for a file upload: the account, the secret SASL sent (or the
     /// server password until SASL succeeds), the host and the TLS state.
-    // Read by the socket transport and the later phases; cfg(test) comes off with its first consumer.
-    #[cfg(test)]
-    pub fn upload_credential(&self) -> (String, String, String, bool) {
+    pub fn upload_credential(&self) -> (String, crate::util::Secret, String, bool) {
         let core = self.shared.core.borrow();
         let user = core.config.sasl_account_name().to_owned();
         let secret = if core.sasl.succeeded {
-            core.config.sasl_secret().expose().to_owned()
+            core.config.sasl_secret().clone()
         } else {
-            core.config.password.expose().to_owned()
+            core.config.password.clone()
         };
         (user, secret, core.config.host.clone(), core.tls_enabled)
     }

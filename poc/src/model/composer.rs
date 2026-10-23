@@ -206,6 +206,41 @@ impl ComposerState {
         text
     }
 
+    /// Routes a finished upload link to the draft that queued it.
+    pub fn append_file_link(
+        &mut self,
+        current_key: &DraftKey,
+        queued_key: &DraftKey,
+        find_active: bool,
+        composer_text: &str,
+        cursor: usize,
+        url: &str,
+    ) -> Option<Edit> {
+        use super::filelink::{append_stored, insert_file_link_at_caret};
+        use super::format::is_allowed_http_url;
+        if !is_allowed_http_url(url) {
+            return None;
+        }
+        if queued_key == current_key && !find_active && !self.is_browsing() {
+            return insert_file_link_at_caret(composer_text, cursor, url);
+        }
+        if queued_key == current_key && find_active {
+            if let Some(draft) = &mut self.find {
+                append_stored(draft, url);
+            }
+            return None;
+        }
+        if queued_key == current_key && self.is_browsing() {
+            if let Some(browse) = &mut self.browse {
+                append_stored(&mut browse.draft, url);
+            }
+            return None;
+        }
+        let stored = self.drafts.entry(queued_key.clone()).or_default();
+        append_stored(stored, url);
+        None
+    }
+
     /// Records a line sent to the current target. The line joins that target's
     /// history, the stored draft clears, and any walk or cycle ends.
     pub fn record_sent(&mut self, line: &str) {

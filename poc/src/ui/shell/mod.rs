@@ -8,6 +8,7 @@ pub mod avatars;
 pub mod bench;
 pub mod commands;
 pub mod connect;
+pub mod fileupload;
 pub mod find;
 pub mod inbox;
 pub mod modal;
@@ -118,6 +119,7 @@ pub struct Shell {
     pub bench: BenchState,
     /// The decoded avatar images the frame draws, by reference (`avatars.rs`).
     pub avatar_memo: avatars::AvatarMemo,
+    pub(super) file_upload: fileupload::FileUploadQueue,
     /// The Windows installer update's state. The About sheet and the footer observe it.
     pub update: Entity<UpdateCheck>,
     /// Raises desktop notifications for mention and monitor arrivals.
@@ -252,6 +254,7 @@ impl Shell {
                 ..Default::default()
             },
             avatar_memo: Default::default(),
+            file_upload: fileupload::FileUploadQueue::new(),
             update,
             notifier,
             _subscriptions: [transcript_events, composer_events, update_observe]
@@ -537,6 +540,9 @@ impl Render for Shell {
         let composer_focused =
             self.composer.read(cx).focus_handle(cx).is_focused(window) && window.is_window_active();
         let has_text = !self.composer.read(cx).text().trim().is_empty();
+        let file_offered = self.file_upload_offered() && !self.connect_open && self.find.is_none();
+        let file_drag_over = cx.has_active_drag() && file_offered;
+        let on_file = file_offered.then(|| file_handler(entity.clone()));
         let center = render_center(
             header,
             self.transcript.clone(),
@@ -544,9 +550,12 @@ impl Render for Shell {
             &app_style,
             toggle_members_handler(entity.clone()),
             send_handler(entity.clone()),
+            on_file,
             slash_popup,
             composer_focused,
             has_text,
+            file_drag_over,
+            external_drop_handler(entity.clone()),
         );
 
         // The member cursor is drawn only while the list holds keyboard focus.
@@ -707,6 +716,20 @@ fn collapse_handler(entity: Entity<Shell>) -> Handler<String> {
 /// SEND: send the draft, then focus the composer. In find mode SEND moves to the next
 /// match instead, as Qt's `sendMessage` does. A command that opens a sheet (`/list`)
 /// keeps the focus there.
+fn file_handler(entity: Entity<Shell>) -> Handler<()> {
+    Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
+        entity.update(cx, |shell, cx| shell.prompt_for_file(window, cx));
+    })
+}
+
+fn external_drop_handler(
+    entity: Entity<Shell>,
+) -> Rc<dyn Fn(&gpui::ExternalPaths, &mut Window, &mut App)> {
+    Rc::new(move |paths: &gpui::ExternalPaths, window: &mut Window, cx: &mut App| {
+        entity.update(cx, |shell, cx| shell.handle_external_drop(paths, window, cx));
+    })
+}
+
 fn send_handler(entity: Entity<Shell>) -> Handler<()> {
     Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
         entity.update(cx, |shell, cx| {
