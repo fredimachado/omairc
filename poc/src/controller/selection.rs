@@ -24,6 +24,34 @@ fn selection_surfaces() -> Vec<ViewNotify> {
 }
 
 impl Controller {
+    /// Opens or creates a conversation and selects it, clearing any monitor row for a
+    /// direct message (`RevealConversation`).
+    pub fn reveal_conversation(&mut self, network_id: &str, target: &str) {
+        self.pump();
+        if network_id.is_empty() || target.is_empty() {
+            return;
+        }
+        let key = self.reducer.conversation_key(network_id, target);
+        if self.reducer.find(&key).is_none() {
+            if self
+                .reducer
+                .ensure_conversation(&key, target, IrcConversationCause::UserOpen)
+                .is_none()
+            {
+                return;
+            }
+            self.remember_open_direct(network_id, target);
+            self.queue(vec![ViewNotify::Conversations]);
+        }
+        let features = self.reducer.server_features(network_id);
+        if !features.is_channel(&key.normalized_target) {
+            self.inbox.consume_monitor(network_id, target, features.case_mapping());
+            self.queue(vec![ViewNotify::Inbox]);
+        }
+        self.select(network_id, target);
+        self.pump();
+    }
+
     /// Selects a conversation and leaves Status (`SelectConversation`). The
     /// conversation's inbox rows clear, its read marker is requested for a direct
     /// message, and the transcript follows it. An empty network or target is a no-op.

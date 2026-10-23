@@ -6,7 +6,6 @@ use crate::controller::notify::Arrival;
 use crate::desktop::notifier::Activation;
 use crate::irc::plaintext::plain_irc_text;
 use crate::model::title::note_title_mark;
-use crate::model::ConversationRef;
 use crate::ui::shell::Shell;
 
 impl Shell {
@@ -69,24 +68,31 @@ impl Shell {
         }
         window.activate_window();
         self.title_mark = None;
-        let key = self
+        let was_same = self
             .controller
-            .conversations()
-            .into_iter()
-            .find(|row| {
-                row.key.network_id == activation.network_id
-                    && row.target.eq_ignore_ascii_case(&activation.target)
-            })
-            .map(|row| ConversationRef::from_key(&row.key));
-        if let Some(target) = key {
-            self.reveal(target, cx);
+            .selected_network_id()
+            .is_some_and(|network_id| network_id == activation.network_id)
+            && self
+                .controller
+                .selected_target()
+                .eq_ignore_ascii_case(&activation.target);
+        self.controller
+            .set_network_collapsed(&activation.network_id, false);
+        self.controller
+            .reveal_conversation(&activation.network_id, &activation.target);
+        self.sync_view(cx);
+        if !self.status_showing() {
             let open_at_unread = self.controller.preferences().unread;
             let msgid = activation.msgid.clone();
             self.transcript.update(cx, |transcript, cx| {
-                if open_at_unread {
+                if !was_same && open_at_unread {
                     transcript.land_on_unread_mark();
-                } else if !msgid.is_empty() {
-                    transcript.scroll_to_msgid(&msgid);
+                } else if !open_at_unread {
+                    if !msgid.is_empty() && transcript.scroll_to_msgid(&msgid) {
+                        // The notification's msgid wins over a saved scroll place.
+                    } else if !was_same {
+                        transcript.scroll_to_bottom();
+                    }
                 }
                 cx.notify();
             });

@@ -96,6 +96,30 @@ pub fn parse_launch_url(launch: &str) -> Option<(String, String, String)> {
     Some((network_id, target, msgid))
 }
 
+/// Records a freedesktop notification id for a conversation, replacing any prior id.
+pub fn remember_conversation_notify_id(
+    conversation_ids: &mut std::collections::HashMap<String, u32>,
+    by_id: &mut std::collections::HashMap<u32, (String, String, String)>,
+    network_id: &str,
+    target: &str,
+    msgid: &str,
+    id: u32,
+) {
+    if network_id.is_empty() || target.is_empty() || id == 0 {
+        return;
+    }
+    let key = conversation_key(network_id, target);
+    let previous = conversation_ids.get(&key).copied().unwrap_or(0);
+    if previous != 0 && previous != id {
+        by_id.remove(&previous);
+    }
+    conversation_ids.insert(key, id);
+    by_id.insert(
+        id,
+        (network_id.to_owned(), target.to_owned(), msgid.to_owned()),
+    );
+}
+
 /// Generic toast XML for Windows (`ToastGeneric` template).
 pub fn build_toast_xml(summary: &str, body: &str, launch: &str) -> String {
     format!(
@@ -108,6 +132,8 @@ pub fn build_toast_xml(summary: &str, body: &str, launch: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
 
     #[test]
@@ -142,5 +168,33 @@ mod tests {
     #[test]
     fn parse_launch_url_requires_network_and_target() {
         assert!(parse_launch_url("omairc://notify?msgid=x").is_none());
+    }
+
+    #[test]
+    fn remember_conversation_notify_id_replaces_prior_id() {
+        let mut conversation_ids = HashMap::new();
+        let mut by_id = HashMap::new();
+        remember_conversation_notify_id(
+            &mut conversation_ids,
+            &mut by_id,
+            "net",
+            "#chan",
+            "a",
+            1,
+        );
+        remember_conversation_notify_id(
+            &mut conversation_ids,
+            &mut by_id,
+            "net",
+            "#chan",
+            "b",
+            2,
+        );
+        assert_eq!(conversation_ids.get("net\n#chan"), Some(&2));
+        assert!(!by_id.contains_key(&1));
+        assert_eq!(
+            by_id.get(&2),
+            Some(&("net".to_owned(), "#chan".to_owned(), "b".to_owned()))
+        );
     }
 }
