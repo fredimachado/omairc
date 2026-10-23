@@ -14,7 +14,6 @@ use crate::demo::seed::{OFTC_WORLD, OMARCHY_NETWORK_ID, OMARCHY_WORLD, SeedNetwo
 use crate::demo::server::{session_config, DemoServer, SeedControls};
 use crate::irc::statusentry::{self, LogSeverity};
 use crate::demo::wire::{bench_channel_bytes, BENCH_CHANNEL};
-use crate::desktop::notifier::{Notifier, NullNotifier};
 use crate::session::clock::{Clock, RealClock};
 use crate::session::loopback::LoopbackTransport;
 
@@ -24,16 +23,13 @@ use super::transports::NoTransports;
 impl Controller {
     /// The `--demo-server` controller, on the wall clock.
     pub fn new_demo() -> Result<Self, ControllerError> {
-        Self::new_demo_with(Rc::new(RealClock::new()), Box::new(NullNotifier))
+        Self::new_demo_with(Rc::new(RealClock::new()))
     }
 
-    /// The demo controller on `clock`, with `notifier` for mentions. Tests pass a fake
-    /// clock so the demo's TIME reply and the timers are deterministic.
-    pub fn new_demo_with(
-        clock: Rc<dyn Clock>,
-        notifier: Box<dyn Notifier>,
-    ) -> Result<Self, ControllerError> {
-        let mut controller = Self::with_parts(clock.clone(), notifier, Box::new(NoTransports));
+    /// The demo controller on `clock`. Tests pass a fake clock so the demo's TIME
+    /// reply and the timers are deterministic.
+    pub fn new_demo_with(clock: Rc<dyn Clock>) -> Result<Self, ControllerError> {
+        let mut controller = Self::with_parts(clock.clone(), Box::new(NoTransports));
         let demo = Rc::new(DemoServer::new(clock.clone()));
         for network in [&OMARCHY_WORLD, &OFTC_WORLD] {
             let transport = Rc::new(LoopbackTransport::new());
@@ -139,9 +135,8 @@ impl SeedControls for Controller {
 
 #[cfg(test)]
 impl Controller {
-    /// The seeded demo on a fixed clock with the no-op notifier, for the presentation
-    /// tests in `model/` and `ui/`. Frame-level tests use `tests/fixture.rs`, which
-    /// also records the mentions the seed raises.
+    /// The seeded demo on a fixed clock for the presentation tests in `model/` and `ui/`.
+    /// Frame-level tests use `tests/fixture.rs`.
     pub fn seeded_for_tests() -> Self {
         use chrono::{TimeZone, Utc};
         use crate::session::clock::FakeClock;
@@ -149,6 +144,6 @@ impl Controller {
         let clock: Rc<dyn Clock> = Rc::new(FakeClock::new(
             Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap(),
         ));
-        Self::new_demo_with(clock, Box::new(NullNotifier)).expect("the demo starts")
+        Self::new_demo_with(clock).expect("the demo starts")
     }
 }

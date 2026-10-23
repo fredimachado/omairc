@@ -16,7 +16,6 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use crate::desktop::notifier::NullNotifier;
 use crate::irc::conversation::target_looks_like_service;
 use crate::irc::event::IrcConversationCause;
 use crate::irc::pref::PrefName;
@@ -56,12 +55,7 @@ impl Controller {
     /// complete profile's session registered. `transports` opens each network's transport.
     /// Call `activate_startup` after it.
     pub fn new_user(clock: Rc<dyn Clock>, transports: Box<dyn TransportFactory>) -> Self {
-        let mut controller = Self::with_backing(
-            clock,
-            Box::new(NullNotifier),
-            transports,
-            Backing::user(),
-        );
+        let mut controller = Self::with_backing(clock, transports, Backing::user());
         if !controller.backing.is_ephemeral() {
             controller.reducer.set_conversation_log(Some(Box::new(
                 FileConversationLog::new(paths::transcript_root()),

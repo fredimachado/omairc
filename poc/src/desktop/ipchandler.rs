@@ -242,7 +242,6 @@ mod tests {
     use crate::controller::cli::CliCursor;
     use crate::desktop::cli;
     use crate::desktop::endpoint::Endpoint;
-    use crate::desktop::notifier::NullNotifier;
     use crate::desktop::singleinstance::{self, Startup};
     use crate::session::clock::FakeClock;
     use chrono::TimeZone;
@@ -259,7 +258,7 @@ mod tests {
         let clock = Rc::new(FakeClock::new(
             chrono::Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap(),
         ));
-        Controller::new_demo_with(clock, Box::new(NullNotifier)).expect("the demo starts")
+        Controller::new_demo_with(clock).expect("the demo starts")
     }
 
     /// A folder under the temp directory for one test's cursors, removed when the test ends.

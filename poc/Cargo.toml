@@ -18,6 +18,7 @@ nucleo-matcher = "=0.3.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
+sha1_smol = "=1.0.1"
 # SCRAM-SHA-256 (`src/session/saslscram.rs`). hmac and pbkdf2 are already in Cargo.lock,
 # through oo7 on Linux, so nothing is fetched for them; a Windows or macOS build compiles
 # these two small RustCrypto crates once. base64 0.22.1 is the release usvg and gpui
@@ -51,6 +52,17 @@ socket2 = "=0.6.5"
 # The installed-copy probe reads the Inno uninstall key from the registry.
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56"
+windows = { version = "=0.61.3", features = [
+    "UI_Notifications",
+    "Data_Xml_Dom",
+    "Win32_UI_Notifications",
+    "Win32_System_Com",
+    "Win32_System_WinRT",
+    "Win32_System_Threading",
+    "Win32_System_Registry",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
 # The product CLI's named pipe: std has no pipe server, so the few kernel32 calls come from here.
 # Pinned to the 0.61.2 that winreg already builds on Windows, so no new crate is fetched.
 windows-sys = { version = "=0.61.2", features = [

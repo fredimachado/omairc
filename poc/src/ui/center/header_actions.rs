@@ -113,7 +113,6 @@ mod tests {
 
     use super::HeaderOffers;
     use crate::controller::controller::Controller;
-    use crate::desktop::notifier::NullNotifier;
     use crate::session::clock::FakeClock;
 
     const LEAVE_ONLY: HeaderOffers = HeaderOffers {
@@ -161,7 +160,7 @@ mod tests {
         let clock = Rc::new(FakeClock::new(
             Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap(),
         ));
-        Controller::new_demo_with(clock, Box::new(NullNotifier)).expect("the demo starts")
+        Controller::new_demo_with(clock).expect("the demo starts")
     }
 
     fn offers_of(controller: &Controller) -> HeaderOffers {

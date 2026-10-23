@@ -1,31 +1,17 @@
-//! The shared fixture: the demo controller on a fake clock, with a notifier that
-//! records each mention. The Go equivalent is `attachController` in
-//! `tui/internal/demo/demo_test.go`.
+//! The shared fixture: the demo controller on a fake clock. The Go equivalent is
+//! `attachController` in `tui/internal/demo/demo_test.go`.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use chrono::{TimeZone, Utc};
 
 use crate::controller::controller::Controller;
-use crate::desktop::notifier::Notifier;
-use crate::irc::event::MentionArrival;
-use crate::session::clock::{Clock, FakeClock};
+use crate::session::clock::FakeClock;
 
 pub const OMARCHY: &str = "omarchy";
 pub const OFTC: &str = "oftc";
 
-/// Records every mention the controller hands to the notifier.
-#[derive(Clone, Default)]
-pub struct Mentions(pub Rc<RefCell<Vec<MentionArrival>>>);
-
-impl Notifier for Mentions {
-    fn mention(&self, arrival: &MentionArrival) {
-        self.0.borrow_mut().push(arrival.clone());
-    }
-}
-
-/// The seeded demo controller, its clock and its mention log.
+/// The seeded demo controller and its clock.
 pub struct Fixture {
     pub clock: Rc<FakeClock>,
     pub controller: Controller,
@@ -37,13 +23,10 @@ impl Fixture {
         let clock = Rc::new(FakeClock::new(
             Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap(),
         ));
-        let mentions = Mentions::default();
-        let dyn_clock: Rc<dyn Clock> = clock.clone();
-        let mut controller = Controller::new_demo_with(dyn_clock, Box::new(mentions.clone()))
-            .expect("the demo starts");
+        let dyn_clock: Rc<dyn crate::session::clock::Clock> = clock.clone();
+        let mut controller = Controller::new_demo_with(dyn_clock).expect("the demo starts");
         // The seed's own transcript raises mention arrivals. Tests start from a quiet
         // log, so each one counts only what it sends or injects.
-        mentions.0.borrow_mut().clear();
         controller.take_arrivals();
         Self { clock, controller }
     }

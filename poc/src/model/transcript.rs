@@ -36,6 +36,8 @@ pub struct Row {
     pub event_text: Option<String>,
     /// Set on `RowKind::Status` rows only.
     pub status: Option<StatusMark>,
+    /// The IRCv3 `msgid` for a chat line, empty elsewhere.
+    pub msgid: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -458,6 +460,14 @@ pub fn rows_from_messages(messages: &[Message], mark: Option<i64>) -> Vec<Row> {
 
 /// `rows_from_messages` with `today` given, so a test can fix the day as Qt's
 /// `setTranscriptTodayForTest` does.
+/// The row index of a chat line with `msgid`, if the transcript holds one.
+pub fn row_for_msgid(rows: &[Row], msgid: &str) -> Option<usize> {
+    if msgid.is_empty() {
+        return None;
+    }
+    rows.iter().position(|row| row.msgid == msgid)
+}
+
 pub fn rows_from_messages_on(
     messages: &[Message],
     mark: Option<i64>,
@@ -515,6 +525,7 @@ fn day_separator_row(id: u64, day: NaiveDate, today: NaiveDate) -> Row {
         separator_text: Some(text),
         event_text: None,
         status: None,
+        msgid: String::new(),
     }
 }
 
@@ -530,6 +541,7 @@ fn unread_mark_row_for(id: u64) -> Row {
         separator_text: None,
         event_text: None,
         status: None,
+        msgid: String::new(),
     }
 }
 
@@ -559,6 +571,7 @@ fn row_from_chat_line(id: u64, message: &Message, minute: &str, continues: bool)
         separator_text: None,
         event_text: None,
         status: None,
+        msgid: message.msgid.value.clone(),
     }
 }
 
@@ -575,6 +588,7 @@ fn row_from_event(id: u64, caption: &str) -> Row {
         separator_text: None,
         event_text: Some(caption.to_owned()),
         status: None,
+        msgid: String::new(),
     }
 }
 
@@ -591,6 +605,7 @@ pub fn row_from_whois(id: u64, text: &str) -> Row {
         separator_text: None,
         event_text: None,
         status: None,
+        msgid: String::new(),
     }
 }
 
@@ -606,6 +621,7 @@ pub fn row_from_message(id: u64, author: &str, time: &str, body: &str, continues
         separator_text: None,
         event_text: None,
         status: None,
+        msgid: String::new(),
     }
 }
 

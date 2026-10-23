@@ -18,6 +18,7 @@ mod lifecycle;
 mod matrices;
 mod metadata;
 mod monitor;
+mod notify;
 mod networks;
 mod parity;
 mod peers;
