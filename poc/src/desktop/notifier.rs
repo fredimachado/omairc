@@ -9,13 +9,13 @@ use crate::irc::event::MentionArrival;
 /// Raises a desktop notification for an arrival the reducer hands up.
 pub trait Notifier {
     /// Called once per mention, after the reducer has folded the line in.
-    fn mention(&self, arrival: &MentionArrival);
+    // Gap 1 wires desktop notifications through this seam.
+    #[allow(dead_code)]
+    fn mention(&self, _arrival: &MentionArrival) {}
 }
 
 /// The notifier that does nothing.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NullNotifier;
 
-impl Notifier for NullNotifier {
-    fn mention(&self, _arrival: &MentionArrival) {}
-}
+impl Notifier for NullNotifier {}

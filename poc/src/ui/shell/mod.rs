@@ -279,6 +279,7 @@ impl Shell {
     /// the same way a click is. The transcript rebuilds for changed lines, and the window
     /// repaints.
     pub fn drain_notifications(&mut self, cx: &mut Context<Self>) {
+        let _arrivals = self.controller.take_arrivals();
         let surfaces = self.controller.take_notifications();
         self.sync_view(cx);
         let status = self.status_showing();

@@ -3,11 +3,24 @@
 //! (`TestInboxMentionArrivalAppendsSnapshot`, `TestInboxConsumedOnSelect`,
 //! `TestInboxInviteAppendActivateJoins`) and `TestBackgroundChatBumpsConversationEpoch`.
 
+use crate::controller::notify::Arrival;
 use crate::irc::inbox::InboxKind;
 use crate::irc::viewnotify::ViewNotify;
 use crate::session::clock::Clock;
 
 use super::fixture::{Fixture, OMARCHY};
+
+fn mention_arrivals(fixture: &mut Fixture) -> Vec<crate::irc::event::MentionArrival> {
+    fixture
+        .controller
+        .take_arrivals()
+        .into_iter()
+        .filter_map(|arrival| match arrival {
+            Arrival::Mention(mention) => Some(mention),
+            Arrival::Monitor { .. } => None,
+        })
+        .collect()
+}
 
 fn unread(fixture: &Fixture, target: &str) -> (u32, bool) {
     fixture
@@ -28,7 +41,7 @@ fn a_background_line_bumps_the_unread_count_without_a_mention() {
         ":kai!u@h PRIVMSG #help :anyone around for a quick question",
     );
     assert_eq!(unread(&fixture, "#help"), (1, false));
-    assert!(fixture.mentions.0.borrow().is_empty());
+    assert!(mention_arrivals(&mut fixture).is_empty());
 }
 
 #[test]
@@ -38,8 +51,8 @@ fn a_line_naming_me_raises_a_mention_and_notifies_once() {
     let (count, mention) = unread(&fixture, "#help");
     assert_eq!(count, 1);
     assert!(mention);
-    let mentions = fixture.mentions.0.borrow();
-    assert_eq!(mentions.len(), 1, "one notification per mention");
+    let mentions = mention_arrivals(&mut fixture);
+    assert_eq!(mentions.len(), 1, "one arrival per mention");
     assert_eq!(mentions[0].body, "fred, can you look?");
     assert_eq!(mentions[0].target, "#help");
     assert_eq!(mentions[0].author, "kai");
