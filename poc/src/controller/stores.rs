@@ -173,6 +173,7 @@ impl Controller {
             let key = self.reducer.conversation_key(network_id, &target);
             self.reducer.set_muted(&key, true);
         }
+        self.install_history_resume(network_id);
     }
 
     /// Installs the inbound drop predicate on `network_id`'s session. The list is read
@@ -187,6 +188,22 @@ impl Controller {
         session.set_ignore_filter(Some(Box::new(move |message: &IrcMessage, _: &str, self_nick: &str| {
             let nicks = ignores.borrow().entries(&network);
             ignore_drops_inbound(message, self_nick, &nicks, &features)
+        })));
+        self.install_history_resume(network_id);
+    }
+
+    /// Wires CHATHISTORY self-JOIN resume for `network_id`.
+    pub(super) fn install_history_resume(&self, network_id: &str) {
+        let Some(session) = self.manager.find(network_id) else {
+            return;
+        };
+        let mapping = self.reducer.server_features(network_id).case_mapping();
+        let playback = Rc::clone(&self.playback);
+        let times = Rc::clone(&self.playback_times);
+        let net = network_id.to_owned();
+        session.set_history_resume(Some(Box::new(move |target| {
+            let coordinator = playback.borrow();
+            coordinator.history_resume_instant(&net, target, mapping, &times.borrow())
         })));
     }
 }

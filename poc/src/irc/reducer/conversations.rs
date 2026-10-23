@@ -339,7 +339,6 @@ impl EventReducer {
 
     /// Arms tail-first trimming for the next CHATHISTORY splice into `key`
     /// (`MarkHistoryPageCapTail`).
-    #[cfg(test)]
     pub fn mark_history_page_cap_tail(&mut self, key: &ConversationKey) {
         if let Some(conv) = self.conversations.get_mut(key) {
             conv.history_page_cap_tail = true;
@@ -347,7 +346,6 @@ impl EventReducer {
     }
 
     /// Drops tail-first trimming for the transcript (`ClearHistoryPageCapTail`).
-    #[cfg(test)]
     pub fn clear_history_page_cap_tail(&mut self, key: &ConversationKey) {
         if let Some(conv) = self.conversations.get_mut(key) {
             conv.history_page_cap_tail = false;

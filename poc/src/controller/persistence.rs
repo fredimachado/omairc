@@ -264,8 +264,14 @@ impl Controller {
             return;
         }
         self.restore_open_directs(network_id);
-        if self.reducer.release_pending_query_playback(network_id) {
+        let spliced = self.reducer.release_pending_query_playback(network_id);
+        self.note_kept_replay();
+        if spliced {
             self.queue(vec![ViewNotify::Conversations, ViewNotify::Messages]);
+        }
+        if let Some(session) = self.manager.find(network_id) {
+            self.request_znc_playback(&session);
+            self.request_chat_history_catch_up(&session);
         }
     }
 
@@ -366,6 +372,12 @@ impl Controller {
         self.open_directs.rekey_dismissed(network_id, old, new, mapping);
         self.closed.borrow_mut().rekey(network_id, old, new, mapping);
         self.scroll_places.rekey(network_id, old, new, mapping);
+        self.playback_times
+            .borrow_mut()
+            .rekey(network_id, old, new, mapping);
+        self.playback
+            .borrow_mut()
+            .rekey(&self.reducer, network_id, old, new);
     }
 
     /// A live message, notice, or action from someone else that is about to
@@ -416,7 +428,7 @@ impl Controller {
 
     /// Whether `target` is a direct message worth keeping: a name that is not a channel and
     /// does not look like a network service (`persistableDirectTarget`).
-    fn persistable_direct_target(&self, network_id: &str, target: &str) -> bool {
+    pub(super) fn persistable_direct_target(&self, network_id: &str, target: &str) -> bool {
         if network_id.is_empty() || target.is_empty() {
             return false;
         }

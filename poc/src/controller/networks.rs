@@ -124,6 +124,8 @@ impl Controller {
         self.forget_channel_list(network_id);
         self.scroll_places.forget(network_id);
         self.open_directs.forget(network_id);
+        self.playback_times.borrow_mut().forget(network_id);
+        self.playback.borrow_mut().drop_snapshot(network_id);
         self.closed.borrow_mut().forget(network_id);
         self.open_directs_motd_seen.remove(network_id);
         self.remove_profile(network_id);

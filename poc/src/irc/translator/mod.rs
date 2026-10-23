@@ -22,7 +22,7 @@ mod membership;
 mod messages;
 mod numerics;
 
-pub use context::{parse_history_target_time, server_time_of, JoinedMemberLookup};
+pub use context::{conversation_for, parse_history_target_time, server_time_of, JoinedMemberLookup};
 pub use history::{translate_history, HistoryBatch, HistoryTarget};
 
 use chrono::{DateTime, Utc};

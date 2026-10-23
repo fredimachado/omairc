@@ -171,7 +171,7 @@ pub struct Controller {
     /// Channels and directs the user closed (`closedConversations` / `targets`).
     pub(super) closed: Rc<RefCell<CaseListStore>>,
     /// Bouncer playback books (Gap 5).
-    pub(super) playback: PlaybackCoordinator,
+    pub(super) playback: Rc<RefCell<PlaybackCoordinator>>,
     pub(super) playback_times: Rc<RefCell<PlaybackTimeStore>>,
     /// Whether the transcript viewport follows the end after new lines.
     pub(super) transcript_follow_end: bool,
@@ -217,8 +217,8 @@ impl Controller {
         let closed = Rc::new(RefCell::new(list("closedConversations", "targets")));
         let mut reducer = EventReducer::new();
         reducer.set_closed_persistence(Rc::clone(&closed));
-        let playback_times = Rc::new(RefCell::new(PlaybackTimeStore));
-        let playback = PlaybackCoordinator::new(Rc::clone(&playback_times));
+        let playback_times = Rc::new(RefCell::new(PlaybackTimeStore::new(&backing)));
+        let playback = Rc::new(RefCell::new(PlaybackCoordinator::new(Rc::clone(&playback_times))));
         Self {
             clock,
             notifier,
@@ -438,6 +438,9 @@ impl Controller {
     fn handle_session_event(&mut self, event: SessionEvent) {
         match event {
             SessionEvent::StateChanged { network_id, state } => {
+                if network_id != "" && state != SessionState::Registered {
+                    self.playback.borrow_mut().on_left_registration(&network_id);
+                }
                 let severity = if state == SessionState::Failed {
                     LogSeverity::Alert
                 } else {
@@ -565,6 +568,10 @@ impl Controller {
         let Some(session) = self.manager.find(network_id) else {
             return;
         };
+        self.playback
+            .borrow_mut()
+            .on_registered(network_id, &session.autojoin_channels());
+        self.open_directs_motd_seen.remove(network_id);
         let nick = session.nick();
         self.current_nicks
             .insert(network_id.to_owned(), nick.clone());
@@ -654,6 +661,7 @@ impl Controller {
     /// Translates one inbound message and folds each event in. A self JOIN that
     /// answers the session's pending invite selects that channel.
     fn handle_message(&mut self, network_id: &str, message: &IrcMessage) {
+        self.note_playback_clock(network_id, message);
         if message.command == "FAIL" {
             self.route_own_metadata_fail(network_id, message);
         }
@@ -800,6 +808,11 @@ impl Controller {
             self.reducer.clear_typing_facts(network_id);
         }
         self.queue(vec![ViewNotify::Status]);
+        if let Some(session) = self.manager.find(network_id) {
+            if session.state() == SessionState::Registered {
+                self.request_znc_playback(&session);
+            }
+        }
     }
 
     /// Folds one translated event into the reducer and handles what it hands up: the
@@ -854,15 +867,7 @@ impl Controller {
                 self.remember_open_direct(&network_id, &target);
             }
         }
-        for query in self.reducer.take_remembered_queries() {
-            if self
-                .reducer
-                .find(&self.reducer.conversation_key(&query.network_id, &query.target))
-                .is_some()
-            {
-                self.remember_open_direct(&query.network_id, &query.target);
-            }
-        }
+        self.note_kept_replay();
         if self.selected.is_none() && !typing_only {
             self.claim_first_conversation();
         }

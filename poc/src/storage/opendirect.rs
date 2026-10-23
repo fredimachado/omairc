@@ -54,6 +54,11 @@ impl OpenDirectStore {
         self.open.listed(network_id, mapping)
     }
 
+    /// The dismissed queries with case-variant duplicates removed (`DismissedListed`).
+    pub fn dismissed_listed(&self, network_id: &str, mapping: IrcCaseMapping) -> Vec<String> {
+        self.dismissed.listed(network_id, mapping)
+    }
+
     /// Records a query as open (`Add`). False when it already is.
     pub fn add(&mut self, network_id: &str, target: &str, mapping: IrcCaseMapping) -> bool {
         self.open.add(network_id, target, mapping)

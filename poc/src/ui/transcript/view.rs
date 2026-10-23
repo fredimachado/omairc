@@ -210,10 +210,16 @@ impl TranscriptView {
 
     /// Whether the list shows its end. The scrollbar's offset is measured in
     /// pixels, and a list that follows the tail reports past its maximum.
-    fn at_end(&self) -> bool {
+    pub fn at_end(&self) -> bool {
         let max = f32::from(self.list_state.max_offset_for_scrollbar().height);
         let current = -f32::from(self.list_state.scroll_px_offset_for_scrollbar().y);
         current >= max - 1.
+    }
+
+    /// Whether the list shows its top row.
+    pub fn at_top(&self) -> bool {
+        let current = -f32::from(self.list_state.scroll_px_offset_for_scrollbar().y);
+        current <= 1.
     }
 
     /// Focus returns to the window: the list lands on its open mark, and keeps its

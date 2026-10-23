@@ -439,8 +439,26 @@ impl Shell {
             return;
         }
         let half = matches!(chord, Chord::HalfPageUp | Chord::HalfPageDown);
+        if !down {
+            let at_top = self.transcript.read(cx).at_top();
+            if at_top && self.controller.chat_history_enabled() && !self.controller.shows_status() {
+                if self.controller.request_older_transcript_history()
+                    || self.controller.older_transcript_history_inflight()
+                {
+                    self.rebuild_view_keeping_place(cx);
+                    return;
+                }
+            }
+        }
         self.transcript.update(cx, |t, cx| {
+            let was_at_end = t.at_end();
             t.scroll_page(down, half);
+            if was_at_end && !t.at_end() {
+                self.controller.clear_history_page_cap_tail();
+            }
+            if !was_at_end && t.at_end() {
+                self.controller.clear_history_page_cap_tail();
+            }
             cx.notify();
         });
     }
