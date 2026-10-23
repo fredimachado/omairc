@@ -475,9 +475,9 @@ impl Session {
         let core = self.shared.core.borrow();
         let user = core.config.sasl_account_name().to_owned();
         let secret = if core.sasl.succeeded {
-            core.config.sasl_secret().to_owned()
+            core.config.sasl_secret().expose().to_owned()
         } else {
-            core.config.password.clone()
+            core.config.password.expose().to_owned()
         };
         (user, secret, core.config.host.clone(), core.tls_enabled)
     }

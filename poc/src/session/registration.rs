@@ -24,7 +24,7 @@ impl Core {
         let send_pass = !self.config.password.is_empty()
             && (!self.sasl.requested || !self.config.nickserv_password.is_empty());
         let pass = if send_pass {
-            commandbuilder::pass(&self.config.password, &self.features).ok()
+            commandbuilder::pass(self.config.password.expose(), &self.features).ok()
         } else {
             None
         };
@@ -157,7 +157,7 @@ impl Core {
                     at,
                 ));
             }
-            let identify = format!("IDENTIFY {}", self.config.nickserv_password);
+            let identify = format!("IDENTIFY {}", self.config.nickserv_password.expose());
             self.send_privmsg_locked("NickServ", &identify);
         }
 

@@ -28,15 +28,16 @@ use crate::storage::credentialstore::{CredentialKey, CredentialState, PURPOSE_NI
 use crate::storage::profilestore::Profile;
 use crate::storage::settings::Status;
 use crate::storage::Backing;
+use crate::util::Secret;
 
 use super::controller::Controller;
 use super::transports::LiveTransports;
 
-/// The secrets an Apply hands over. `None` leaves a slot as it is; `Some("")` removes it.
+/// The secrets an Apply hands over. `None` leaves a slot as it is; an empty `Secret` removes it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SecretEdits {
-    pub password: Option<String>,
-    pub nickserv: Option<String>,
+    pub password: Option<Secret>,
+    pub nickserv: Option<Secret>,
 }
 
 /// What saving a profile did: the file's outcome, and where each secret now lives.
@@ -356,7 +357,7 @@ impl Controller {
 
     /// Writes one secret slot and reports where it now is. `None` leaves the slot as it is,
     /// and reports whether the store already holds it.
-    fn store_secret(&mut self, profile: &Profile, purpose: &'static str, edit: Option<String>) -> CredentialState {
+    fn store_secret(&mut self, profile: &Profile, purpose: &'static str, edit: Option<Secret>) -> CredentialState {
         let key = CredentialKey::for_profile(profile, purpose);
         match edit {
             None if self.credentials.read(&key).is_some() => {
@@ -367,8 +368,9 @@ impl Controller {
                 }
             }
             None => CredentialState::Missing,
-            Some(text) if text.is_empty() => self.credentials.remove(&key),
-            Some(text) => self.credentials.write(&key, &text),
+            Some(secret) if secret.is_empty() => self.credentials.remove(&key),
+            // The credential store takes the plaintext: it is the edge the secret is written to.
+            Some(secret) => self.credentials.write(&key, secret.expose()),
         }
     }
 
@@ -418,9 +420,11 @@ impl Controller {
         config
     }
 
-    fn secret_text(&self, profile: &Profile, purpose: &'static str) -> String {
+    /// A profile's stored secret, or an empty one when the store has none.
+    fn secret_text(&self, profile: &Profile, purpose: &'static str) -> Secret {
         self.credentials
             .read(&CredentialKey::for_profile(profile, purpose))
+            .map(Secret::from)
             .unwrap_or_default()
     }
 }

@@ -250,7 +250,7 @@ impl Core {
             return;
         }
         let account = self.config.sasl_account_name().to_owned();
-        let secret = self.config.sasl_secret().to_owned();
+        let secret = self.config.sasl_secret().expose();
         let mut plain = Vec::with_capacity(account.len() * 2 + secret.len() + 2);
         plain.extend_from_slice(account.as_bytes());
         plain.push(0);

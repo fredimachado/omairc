@@ -159,7 +159,7 @@ fn a_secret_is_held_for_the_run_and_never_written_to_the_file() {
     let outcome = first.save_profile(
         libera(LIBERA),
         SecretEdits {
-            password: Some("hunter2".to_owned()),
+            password: Some("hunter2".to_owned().into()),
             nickserv: None,
         },
     );

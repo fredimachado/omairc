@@ -55,7 +55,7 @@ fn registers_and_autojoins() {
 #[test]
 fn negotiates_presence_capabilities() {
     let mut config = test_config();
-    config.password = "secret".to_owned();
+    config.password = "secret".to_owned().into();
     let fx = Fixture::new(config);
     fx.connect_tls();
     fx.inject(
@@ -115,7 +115,7 @@ fn negotiates_presence_capabilities() {
 #[test]
 fn negotiates_message_tags_on_own_line() {
     let mut config = test_config();
-    config.password = "secret".to_owned();
+    config.password = "secret".to_owned().into();
     let fx = Fixture::new(config);
     fx.connect_tls();
     fx.inject(
@@ -246,7 +246,7 @@ fn late_cap_ack_after_timeout_is_ignored() {
 #[test]
 fn late_cap_nak_after_timeout_is_ignored() {
     let mut config = test_config();
-    config.password = "s3cret".to_owned();
+    config.password = "s3cret".to_owned().into();
     let fx = Fixture::new(config);
     fx.connect_tls();
     fx.inject(":server CAP omairc LS :sasl\r\n");
@@ -327,8 +327,8 @@ fn withdrawn_capability_is_published() {
 #[test]
 fn upload_credential_uses_the_server_password_until_sasl() {
     let mut config = test_config();
-    config.password = "server-secret".to_owned();
-    config.nickserv_password = "nick-secret".to_owned();
+    config.password = "server-secret".to_owned().into();
+    config.nickserv_password = "nick-secret".to_owned().into();
     config.sasl_account = "acct".to_owned();
     let fx = Fixture::new(config);
 

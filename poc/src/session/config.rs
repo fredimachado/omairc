@@ -8,6 +8,8 @@
 
 use std::collections::BTreeMap;
 
+use crate::util::Secret;
+
 /// The per-network session settings.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SessionConfig {
@@ -21,9 +23,9 @@ pub struct SessionConfig {
     pub username: String,
     pub realname: String,
     /// The server password (`PASS`).
-    pub password: String,
+    pub password: Secret,
     /// The NickServ password, sent as `IDENTIFY` after registration.
-    pub nickserv_password: String,
+    pub nickserv_password: Secret,
     /// The SASL account, or empty to use the nick.
     pub sasl_account: String,
 
@@ -81,7 +83,7 @@ impl SessionConfig {
 
     /// The credential SASL sends: the NickServ password when both are set,
     /// otherwise the server password (`saslSecret` in `src/irc/ircsession.cpp`).
-    pub(crate) fn sasl_secret(&self) -> &str {
+    pub(crate) fn sasl_secret(&self) -> &Secret {
         if self.nickserv_password.is_empty() {
             &self.password
         } else {
@@ -98,5 +100,30 @@ impl SessionConfig {
         } else {
             trimmed.to_owned()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_never_prints_a_seeded_password() {
+        let mut config = SessionConfig::with_defaults("net", "Net", "irc.example", "fred");
+        config.password = "server-pass-7".to_owned().into();
+        config.nickserv_password = "nickserv-pass-9".to_owned().into();
+        let text = format!("{config:?}");
+        assert!(!text.contains("server-pass-7"), "{text}");
+        assert!(!text.contains("nickserv-pass-9"), "{text}");
+        assert!(text.contains("Secret(<redacted>)"), "{text}");
+    }
+
+    #[test]
+    fn sasl_uses_the_nickserv_password_when_both_are_set() {
+        let mut config = SessionConfig::with_defaults("net", "Net", "irc.example", "fred");
+        config.password = "server-pass".to_owned().into();
+        assert_eq!(config.sasl_secret().expose(), "server-pass");
+        config.nickserv_password = "nick-pass".to_owned().into();
+        assert_eq!(config.sasl_secret().expose(), "nick-pass");
     }
 }

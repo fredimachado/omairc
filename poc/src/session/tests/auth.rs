@@ -76,7 +76,7 @@ fn index_of(frames: &[String], want: &str) -> Option<usize> {
 #[test]
 fn negotiates_sasl_plain() {
     let mut config = test_config();
-    config.password = "secret".to_owned();
+    config.password = "secret".to_owned().into();
     let fx = Fixture::new(config);
     fx.connect_tls();
     fx.inject(":server CAP omairc LS :sasl=PLAIN,EXTERNAL\r\n");
@@ -108,7 +108,7 @@ fn negotiates_sasl_plain() {
 fn sasl_plain_reassembles_multi_chunk_messages() {
     let secret = "x".repeat(287);
     let mut config = test_config();
-    config.password = secret.clone();
+    config.password = secret.clone().into();
     let fx = Fixture::new(config);
     fx.connect_tls();
     fx.inject(":server CAP omairc LS :sasl=PLAIN\r\n:server CAP omairc ACK :sasl\r\n");
@@ -144,7 +144,7 @@ fn sasl_plain_exact_chunk_boundary_requires_plus() {
     for secret_length in [286, 586] {
         let secret = "x".repeat(secret_length);
         let mut config = test_config();
-        config.password = secret.clone();
+        config.password = secret.clone().into();
         let fx = Fixture::new(config);
         fx.connect_tls();
         fx.inject(":server CAP omairc LS :sasl=PLAIN\r\n:server CAP omairc ACK :sasl\r\n");
@@ -181,7 +181,7 @@ fn sasl_plain_exact_chunk_boundary_requires_plus() {
 fn sasl_account_authenticates_as_the_bouncer_name() {
     let mut config = test_config();
     config.sasl_account = "joe/freenode".to_owned();
-    config.password = "secret".to_owned();
+    config.password = "secret".to_owned().into();
     let fx = Fixture::new(config);
     fx.connect_tls();
     fx.inject(
@@ -197,7 +197,7 @@ fn sasl_account_authenticates_as_the_bouncer_name() {
 #[test]
 fn empty_sasl_account_authenticates_as_the_nick() {
     let mut config = test_config();
-    config.password = "secret".to_owned();
+    config.password = "secret".to_owned().into();
     let fx = Fixture::new(config);
     fx.connect_tls();
     fx.inject(
@@ -212,7 +212,7 @@ fn empty_sasl_account_authenticates_as_the_nick() {
 #[test]
 fn sends_pass_when_sasl_is_unavailable() {
     let mut config = test_config();
-    config.password = "secret".to_owned();
+    config.password = "secret".to_owned().into();
     let fx = Fixture::new(config);
     fx.connect_tls();
     fx.inject(":server CAP omairc LS :invite-notify\r\n");
@@ -230,7 +230,7 @@ fn sends_pass_when_sasl_is_unavailable() {
 #[test]
 fn nickserv_only_sasl_plain_uses_nickserv_secret() {
     let mut config = test_config();
-    config.nickserv_password = "nick-secret".to_owned();
+    config.nickserv_password = "nick-secret".to_owned().into();
     let fx = Fixture::new(config);
     fx.connect_tls();
     fx.inject(":server CAP omairc LS :sasl=PLAIN\r\n");
@@ -265,7 +265,7 @@ fn nickserv_only_sasl_plain_uses_nickserv_secret() {
 #[test]
 fn nickserv_only_without_sasl_identifies_before_join() {
     let mut config = test_config();
-    config.nickserv_password = "nick-secret".to_owned();
+    config.nickserv_password = "nick-secret".to_owned().into();
     let fx = Fixture::new(config);
     fx.connect_tls();
     fx.inject(":server CAP omairc LS :invite-notify\r\n:server 001 omairc :Welcome\r\n");
@@ -285,8 +285,8 @@ fn nickserv_only_without_sasl_identifies_before_join() {
 #[test]
 fn both_secrets_sasl_sends_pass_and_plain_from_nickserv() {
     let mut config = test_config();
-    config.password = "server-secret".to_owned();
-    config.nickserv_password = "nick-secret".to_owned();
+    config.password = "server-secret".to_owned().into();
+    config.nickserv_password = "nick-secret".to_owned().into();
     let fx = Fixture::new(config);
     fx.connect_tls();
     fx.inject(":server CAP omairc LS :sasl=PLAIN\r\n");
@@ -309,8 +309,8 @@ fn both_secrets_sasl_sends_pass_and_plain_from_nickserv() {
 #[test]
 fn both_secrets_without_sasl_pass_then_identify_before_join() {
     let mut config = test_config();
-    config.password = "server-secret".to_owned();
-    config.nickserv_password = "nick-secret".to_owned();
+    config.password = "server-secret".to_owned().into();
+    config.nickserv_password = "nick-secret".to_owned().into();
     let fx = Fixture::new(config);
     fx.connect_tls();
     fx.inject(":server CAP omairc LS :invite-notify\r\n:server 001 omairc :Welcome\r\n");
@@ -330,8 +330,8 @@ fn both_secrets_without_sasl_pass_then_identify_before_join() {
 #[test]
 fn sasl_success_does_not_identify() {
     let mut config = test_config();
-    config.password = "server-secret".to_owned();
-    config.nickserv_password = "nick-secret".to_owned();
+    config.password = "server-secret".to_owned().into();
+    config.nickserv_password = "nick-secret".to_owned().into();
     let fx = Fixture::new(config);
     fx.connect_tls();
     fx.inject(
@@ -348,7 +348,7 @@ fn sasl_success_does_not_identify() {
 #[test]
 fn sasl_failure_does_not_fall_through_to_identify() {
     let mut config = test_config();
-    config.nickserv_password = "nick-secret".to_owned();
+    config.nickserv_password = "nick-secret".to_owned().into();
     let fx = Fixture::new(config);
     fx.connect_tls();
     fx.inject(
@@ -367,7 +367,7 @@ fn sasl_failure_does_not_fall_through_to_identify() {
 #[test]
 fn authentication_failure_is_explicit() {
     let mut config = test_config();
-    config.password = "secret".to_owned();
+    config.password = "secret".to_owned().into();
     let fx = Fixture::new(config);
     fx.connect_tls();
     fx.inject(":server CAP omairc LS :sasl\r\n:server CAP omairc ACK :sasl\r\n:server 904 omairc :SASL failed\r\n");

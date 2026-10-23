@@ -23,6 +23,7 @@ use super::prefs::PrefName;
 use crate::storage::credentialstore::CredentialState;
 use crate::storage::profilestore::Profile as StoredProfile;
 use crate::storage::settings::Status;
+use crate::util::Secret as SecretText;
 
 /// The icon colour slots Qt's `IrcNetworkProfile::iconColorCount` offers.
 pub const ICON_COLOR_COUNT: u8 = 5;
@@ -261,9 +262,9 @@ pub struct Profile {
     /// The network's CHANTYPES, which decide what an autojoin token is. Not edited.
     pub chantypes: String,
     /// The server password, held until Apply. Apply gives it to the keychain, never the file.
-    pub password: String,
+    pub password: SecretText,
     /// The NickServ password, held until Apply as `password`.
-    pub nickserv_password: String,
+    pub nickserv_password: SecretText,
 }
 
 impl Profile {
@@ -282,8 +283,8 @@ impl Profile {
             connect_on_startup: false,
             icon_color: None,
             chantypes: DEFAULT_CHANTYPES.to_string(),
-            password: String::new(),
-            nickserv_password: String::new(),
+            password: SecretText::default(),
+            nickserv_password: SecretText::default(),
         }
     }
 
@@ -304,8 +305,8 @@ impl Profile {
             connect_on_startup: false,
             icon_color: seed.icon_color,
             chantypes: seed.chantypes.clone(),
-            password: String::new(),
-            nickserv_password: String::new(),
+            password: SecretText::default(),
+            nickserv_password: SecretText::default(),
         }
     }
 
@@ -340,8 +341,8 @@ impl Profile {
             connect_on_startup: self.connect_on_startup,
             icon_color: self.icon_color,
             chantypes: self.chantypes.clone(),
-            password: String::new(),
-            nickserv_password: String::new(),
+            password: SecretText::default(),
+            nickserv_password: SecretText::default(),
         }
     }
 
@@ -404,8 +405,8 @@ impl Profile {
             connect_on_startup: stored.connect_on_startup,
             icon_color: stored.icon_color,
             chantypes: DEFAULT_CHANTYPES.to_string(),
-            password: String::new(),
-            nickserv_password: String::new(),
+            password: SecretText::default(),
+            nickserv_password: SecretText::default(),
         }
     }
 
@@ -713,7 +714,7 @@ impl ConnectState {
 
     /// The text the draft's secret slot was given since the last Apply, or `None` when the slot
     /// was not typed in. Apply hands this to the credential store.
-    pub fn secret_edit(&self, slot: Secret) -> Option<String> {
+    pub fn secret_edit(&self, slot: Secret) -> Option<SecretText> {
         match slot {
             Secret::Password if self.password_edited => Some(self.draft.password.clone()),
             Secret::NickServ if self.nickserv_edited => Some(self.draft.nickserv_password.clone()),
@@ -789,8 +790,8 @@ impl ConnectState {
     /// Forgets the secret text in the draft, as the sheet does once it closes after a
     /// successful Apply (`clearConnectionPassword`).
     pub fn clear_secret_text(&mut self) {
-        self.draft.password.clear();
-        self.draft.nickserv_password.clear();
+        self.draft.password = SecretText::default();
+        self.draft.nickserv_password = SecretText::default();
         self.password_edited = false;
         self.nickserv_edited = false;
     }
@@ -841,8 +842,8 @@ impl ConnectState {
             ConnectField::Username => &self.draft.username,
             ConnectField::RealName => &self.draft.realname,
             ConnectField::Autojoin => &self.draft.autojoin,
-            ConnectField::ServerPassword => &self.draft.password,
-            ConnectField::NickServPassword => &self.draft.nickserv_password,
+            ConnectField::ServerPassword => self.draft.password.expose(),
+            ConnectField::NickServPassword => self.draft.nickserv_password.expose(),
         }
     }
 
@@ -858,11 +859,11 @@ impl ConnectState {
             ConnectField::RealName => self.draft.realname = value,
             ConnectField::Autojoin => self.draft.autojoin = value,
             ConnectField::ServerPassword => {
-                self.draft.password = value;
+                self.draft.password = SecretText::from(value);
                 self.password_edited = true;
             }
             ConnectField::NickServPassword => {
-                self.draft.nickserv_password = value;
+                self.draft.nickserv_password = SecretText::from(value);
                 self.nickserv_edited = true;
             }
         }
@@ -1592,16 +1593,16 @@ mod tests {
         profile.port = " 6667 ".into();
         profile.nick = " fred ".into();
         profile.autojoin = "omarchy,  lab".into();
-        profile.password = "hunter2".into();
-        profile.nickserv_password = "secret".into();
+        profile.password = "hunter2".to_owned().into();
+        profile.nickserv_password = "secret".to_owned().into();
         let saved = profile.normalized();
         assert_eq!(saved.name, "libera");
         assert_eq!(saved.host, "irc.libera.chat");
         assert_eq!(saved.port, "6667");
         assert_eq!(saved.nick, "fred");
         assert_eq!(saved.autojoin, "#omarchy #lab");
-        assert_eq!(saved.password, "");
-        assert_eq!(saved.nickserv_password, "");
+        assert!(saved.password.is_empty());
+        assert!(saved.nickserv_password.is_empty());
     }
 
     // --- Dirty and text editing --------------------------------------------
@@ -1705,11 +1706,11 @@ mod tests {
     fn apply_keeps_the_secret_text_until_the_sheet_closes() {
         let (_populated, mut state) = seeded();
         state.set_text(ConnectField::ServerPassword, "hunter2");
-        assert_eq!(state.secret_edit(Secret::Password).as_deref(), Some("hunter2"));
+        assert_eq!(state.secret_edit(Secret::Password).as_ref().map(SecretText::expose), Some("hunter2"));
         state.apply().unwrap();
         // The saved network never holds the secret, and the sheet keeps the typed text.
         assert_eq!(state.text(ConnectField::ServerPassword), "hunter2");
-        assert_eq!(state.saved()[0].password, "");
+        assert!(state.saved()[0].password.is_empty());
         assert_eq!(state.secret_edit(Secret::Password), None, "Apply took the edit");
         state.clear_secret_text();
         assert_eq!(state.text(ConnectField::ServerPassword), "");
@@ -1793,7 +1794,7 @@ mod tests {
         let mut state = ConnectState::from_stored(&[stored("network-1", "irc.libera.chat", "fred")]);
         state.set_text(ConnectField::ServerPassword, "hunter2");
         assert_eq!(state.credential_status(), "password changed; apply to save securely");
-        assert_eq!(state.secret_edit(Secret::Password).as_deref(), Some("hunter2"));
+        assert_eq!(state.secret_edit(Secret::Password).as_ref().map(SecretText::expose), Some("hunter2"));
         state.apply().expect("complete");
         state.record_apply(Status::Written, CredentialState::SessionOnly, CredentialState::Missing, false);
         assert_eq!(

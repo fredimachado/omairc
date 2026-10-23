@@ -1,6 +1,10 @@
 use gpui::{Hsla, px, Pixels, Rgba};
 use crate::model::Style;
 
+pub mod secret;
+
+pub use secret::Secret;
+
 pub const FONT_FAMILY: &str = "iA Writer Mono S";
 
 pub struct OmaircStyleGlobal {
