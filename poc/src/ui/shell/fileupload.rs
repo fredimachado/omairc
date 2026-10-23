@@ -106,10 +106,10 @@ impl Shell {
     pub(super) fn handle_external_drop(
         &mut self,
         paths: &ExternalPaths,
-        window: &Window,
+        _window: &Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.file_upload_gate(window, cx) {
+        if !self.file_upload_drop_gate() {
             return;
         }
         let draft_key = self.shown.draft_key();
@@ -120,11 +120,8 @@ impl Shell {
         self.enqueue_paths(paths.paths().to_vec(), draft_key, network_id, cx);
     }
 
-    fn file_upload_gate(&self, window: &Window, cx: &Context<Self>) -> bool {
-        self.file_upload_offered()
-            && !self.connect_open
-            && self.find.is_none()
-            && self.composer_focused(window, cx)
+    fn file_upload_drop_gate(&self) -> bool {
+        self.file_upload_offered() && !self.connect_open && self.find.is_none()
     }
 
     fn swallow_file_paste(&mut self, cx: &mut Context<Self>) -> bool {

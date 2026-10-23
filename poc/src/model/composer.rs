@@ -728,6 +728,51 @@ mod tests {
     }
 
     #[test]
+    fn append_file_link_inserts_at_the_caret_for_the_visible_draft() {
+        let key = conversation("#omarchy");
+        let mut state = ComposerState::starting_at(key.clone());
+        let edit = state
+            .append_file_link(&key, &key, false, "hello world", 5, "https://example.org/a.png")
+            .expect("edit");
+        assert_eq!(edit.text, "hello https://example.org/a.png world");
+        assert!(state
+            .append_file_link(&key, &key, false, "hello", 5, "javascript:alert(1)")
+            .is_none());
+    }
+
+    #[test]
+    fn append_file_link_routes_other_drafts_find_and_history() {
+        let key = conversation("#omarchy");
+        let other = conversation("bob");
+        let url_a = "https://example.org/a.png";
+        let url_b = "https://example.org/b.png";
+        let url_c = "https://example.org/c.png";
+
+        let mut state = ComposerState::starting_at(key.clone());
+        state.record_sent("hist");
+        state.recall("stashed", -1);
+        assert!(state.is_browsing());
+        assert!(state
+            .append_file_link(&key, &key, false, "hist", 4, url_a)
+            .is_none());
+        assert_eq!(state.unsent_text("hist"), format!("stashed {url_a}"));
+        let stashed = format!("stashed {url_a}");
+        assert_eq!(state.recall("hist", 1).as_deref(), Some(stashed.as_str()));
+
+        assert!(state
+            .append_file_link(&key, &other, false, "visible", 0, url_b)
+            .is_none());
+        assert_eq!(state.drafts.get(&other), Some(&url_b.to_string()));
+
+        state.begin_find("query");
+        assert!(state
+            .append_file_link(&key, &key, true, "query", 5, url_c)
+            .is_none());
+        let find_draft = format!("query {url_c}");
+        assert_eq!(state.end_find().as_deref(), Some(find_draft.as_str()));
+    }
+
+    #[test]
     fn tab_during_a_walk_completes_the_recalled_line_and_the_walk_goes_on() {
         let candidates = names(&["alan"]);
         let mut state = ComposerState::starting_at(conversation("#omarchy"));
