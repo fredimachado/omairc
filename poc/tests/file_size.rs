@@ -40,7 +40,10 @@ fn production_lines(code: &str) -> usize {
     let cut = (0..lines.len())
         .find(|&index| opens_test_module(&lines, index))
         .unwrap_or(lines.len());
-    lines[..cut].iter().filter(|line| !line.trim().is_empty()).count()
+    lines[..cut]
+        .iter()
+        .filter(|line| !line.trim().is_empty())
+        .count()
 }
 
 /// Whether `lines[index]` is a `#[cfg(test)]` that directly introduces a test module:
@@ -69,7 +72,10 @@ fn is_mod_item(item: &str) -> bool {
         Some(rest) => {
             let rest = rest.trim_start();
             match rest.strip_prefix('(') {
-                Some(inner) => inner.split_once(')').map_or("", |(_, tail)| tail).trim_start(),
+                Some(inner) => inner
+                    .split_once(')')
+                    .map_or("", |(_, tail)| tail)
+                    .trim_start(),
                 None => rest,
             }
         }
