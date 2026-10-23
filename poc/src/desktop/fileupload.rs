@@ -34,21 +34,29 @@ pub enum UploadSource {
     Bytes(Vec<u8>),
 }
 
+fn wipe_upload_credentials(job: &mut UploadJob) {
+    job.target.secret.wipe();
+    job.target.user.clear();
+}
+
 /// Posts the file and returns the absolute http(s) link, or a fixed failure string.
-pub fn upload(fetch: &dyn HttpFetch, job: UploadJob) -> Result<String, &'static str> {
+pub fn upload(fetch: &dyn HttpFetch, mut job: UploadJob) -> Result<String, &'static str> {
     let (body, file_name, content_type) = read_source(&job)?;
-    let endpoint = job.target.endpoint.as_str();
-    if url::Url::parse(endpoint)
+    let endpoint = job.target.endpoint.clone();
+    let endpoint_ref = endpoint.as_str();
+    if url::Url::parse(endpoint_ref)
         .ok()
         .is_none_or(|parsed| parsed.scheme().is_empty())
     {
+        wipe_upload_credentials(&mut job);
         return Err(COULD_NOT_UPLOAD);
     }
     if job.target.server_encrypted
-        && !endpoint
+        && !endpoint_ref
             .to_ascii_lowercase()
             .starts_with("https://")
     {
+        wipe_upload_credentials(&mut job);
         return Err(COULD_NOT_UPLOAD);
     }
     let file_name = if file_name.is_empty() {
@@ -61,7 +69,6 @@ pub fn upload(fetch: &dyn HttpFetch, job: UploadJob) -> Result<String, &'static 
     } else {
         content_type
     };
-    let mut secret = job.target.secret.clone();
     let mut headers = vec![
         ("Content-Type".to_owned(), content_type),
         (
@@ -71,16 +78,18 @@ pub fn upload(fetch: &dyn HttpFetch, job: UploadJob) -> Result<String, &'static 
     ];
     if file_host_sends_basic_auth(
         &job.target.server_host,
-        endpoint,
+        endpoint_ref,
         job.target.server_encrypted,
     ) {
-        if let Some(header) = basic_authorization_value(&job.target.user, secret.expose()) {
+        if let Some(header) =
+            basic_authorization_value(&job.target.user, job.target.secret.expose())
+        {
             headers.push(("Authorization".to_owned(), header));
         }
     }
-    secret.wipe();
+    wipe_upload_credentials(&mut job);
     let request = PostRequest {
-        url: endpoint.to_owned(),
+        url: endpoint.clone(),
         headers,
         timeout: TRANSFER_TIMEOUT,
         body,
@@ -90,7 +99,7 @@ pub fn upload(fetch: &dyn HttpFetch, job: UploadJob) -> Result<String, &'static 
         return Err(COULD_NOT_UPLOAD);
     }
     let location = reply.location.as_deref().unwrap_or("");
-    absolute_file_link(endpoint, location).ok_or(COULD_NOT_UPLOAD)
+    absolute_file_link(&endpoint, location).ok_or(COULD_NOT_UPLOAD)
 }
 
 fn read_source(job: &UploadJob) -> Result<(Vec<u8>, String, String), &'static str> {
@@ -296,6 +305,38 @@ mod tests {
     }
 
     #[test]
+    fn upload_redirect_is_not_followed() {
+        let fake = FakeFetch::new();
+        let url = "http://127.0.0.1/upload";
+        fake.serve_post(url, 302, Some("https://elsewhere.example/secret-path"), b"");
+        let dir = TempDir::new("fileupload");
+        let path = dir.path().join("note.txt");
+        fs::write(&path, b"x").expect("write");
+        let err = upload(
+            &fake,
+            UploadJob {
+                source: UploadSource::Path(path),
+                file_name: String::new(),
+                content_type: String::new(),
+                target: UploadTarget {
+                    endpoint: url.to_owned(),
+                    user: "alice".to_owned(),
+                    secret: Secret::from("s3cret-token".to_owned()),
+                    server_host: "irc.example".to_owned(),
+                    server_encrypted: false,
+                },
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err, COULD_NOT_UPLOAD);
+        let requests = fake.post_requests();
+        assert_eq!(requests.len(), 1);
+        let joined = format!("{requests:?}");
+        assert!(!joined.contains("s3cret-token"));
+        assert!(!joined.contains("secret-path"));
+    }
+
+    #[test]
     fn failure_text_never_contains_the_secret() {
         let fake = FakeFetch::new();
         let url = "http://127.0.0.1/upload";
@@ -323,5 +364,58 @@ mod tests {
         let requests = fake.post_requests();
         let joined = format!("{requests:?}");
         assert!(!joined.contains("s3cret-token"));
+    }
+
+    #[test]
+    fn ureq_upload_reads_created_location() {
+        use crate::desktop::httpfetch::{serve_once, UreqFetch};
+        let (url, server) = serve_once(
+            "201 Created",
+            "Location: /files/note.txt\r\n",
+            Vec::new(),
+        );
+        let dir = TempDir::new("fileupload-ureq");
+        let path = dir.path().join("note.txt");
+        fs::write(&path, b"payload").expect("write");
+        let link = upload(
+            &UreqFetch,
+            UploadJob {
+                source: UploadSource::Path(path),
+                file_name: String::new(),
+                content_type: String::new(),
+                target: target(&url, false),
+            },
+        )
+        .expect("uploaded");
+        let (head, body) = server.join().expect("server thread");
+        assert!(head.starts_with("POST "));
+        assert_eq!(body, b"payload");
+        assert_eq!(link, format!("{url}files/note.txt"));
+    }
+
+    #[test]
+    fn ureq_upload_does_not_follow_post_redirect() {
+        use crate::desktop::httpfetch::{serve_once, UreqFetch};
+        let (url, server) = serve_once(
+            "302 Found",
+            "Location: https://elsewhere.example/x\r\n",
+            Vec::new(),
+        );
+        let dir = TempDir::new("fileupload-ureq-redirect");
+        let path = dir.path().join("note.txt");
+        fs::write(&path, b"x").expect("write");
+        let err = upload(
+            &UreqFetch,
+            UploadJob {
+                source: UploadSource::Path(path),
+                file_name: String::new(),
+                content_type: String::new(),
+                target: target(&url, false),
+            },
+        )
+        .unwrap_err();
+        let (head, _) = server.join().expect("server thread");
+        assert!(head.starts_with("POST "));
+        assert_eq!(err, COULD_NOT_UPLOAD);
     }
 }

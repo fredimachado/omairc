@@ -522,7 +522,27 @@ pub(crate) fn serve_once(
             .position(|window| window == b"\r\n\r\n")
             .map(|index| index + 4)
             .unwrap_or(head.len());
-        let request_body = head[body_start..].to_vec();
+        let mut request_body = head[body_start..].to_vec();
+        let content_length = request
+            .lines()
+            .find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                if name.trim().eq_ignore_ascii_case("content-length") {
+                    value.trim().parse::<usize>().ok()
+                } else {
+                    None
+                }
+            });
+        if let Some(length) = content_length {
+            while request_body.len() < length {
+                let read = stream.read(&mut chunk).expect("read request body");
+                if read == 0 {
+                    break;
+                }
+                request_body.extend_from_slice(&chunk[..read]);
+            }
+            request_body.truncate(length);
+        }
         (request, request_body)
     });
     (url, handle)
@@ -707,6 +727,53 @@ mod tests {
         let (head, _) = server.join().expect("server thread");
         let head = head.to_ascii_lowercase();
         assert!(head.contains("x-test: 1"), "head was {head}");
+    }
+
+    #[test]
+    fn ureq_fetch_post_reads_created_location() {
+        let (url, server) = serve_once(
+            "201 Created",
+            "Location: /files/note.txt\r\n",
+            Vec::new(),
+        );
+        let reply = UreqFetch
+            .post(
+                &PostRequest {
+                    url,
+                    headers: Vec::new(),
+                    timeout: Duration::from_secs(5),
+                    body: b"hello".to_vec(),
+                },
+            )
+            .expect("created");
+        let (head, body) = server.join().expect("server thread");
+        assert!(head.starts_with("POST "));
+        assert_eq!(body, b"hello");
+        assert_eq!(reply.status, 201);
+        assert_eq!(reply.location.as_deref(), Some("/files/note.txt"));
+    }
+
+    #[test]
+    fn ureq_fetch_post_does_not_follow_a_redirect() {
+        let (url, server) = serve_once(
+            "302 Found",
+            "Location: https://elsewhere.example/x\r\n",
+            Vec::new(),
+        );
+        let reply = UreqFetch
+            .post(
+                &PostRequest {
+                    url,
+                    headers: Vec::new(),
+                    timeout: Duration::from_secs(5),
+                    body: Vec::new(),
+                },
+            )
+            .expect("redirect reply");
+        let (head, _) = server.join().expect("server thread");
+        assert!(head.starts_with("POST "));
+        assert_eq!(reply.status, 302);
+        assert_eq!(reply.location.as_deref(), Some("https://elsewhere.example/x"));
     }
 
     #[test]
