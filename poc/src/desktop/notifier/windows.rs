@@ -10,7 +10,7 @@ use async_channel::Sender;
 use std::mem::ManuallyDrop;
 use std::path::{Path, PathBuf};
 
-use windows::core::{GUID, HSTRING, Interface, PCWSTR, PWSTR};
+use windows::core::{GUID, HSTRING, Interface, PCWSTR};
 use windows::Win32::Foundation::{CLASS_E_NOAGGREGATION, HANDLE, WAIT_OBJECT_0};
 use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_ID;
 use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_ToastActivatorCLSID;
@@ -30,7 +30,7 @@ use windows::Win32::UI::Notifications::{
     INotificationActivationCallback, INotificationActivationCallback_Impl,
     NOTIFICATION_USER_INPUT_DATA,
 };
-use windows::Win32::UI::Shell::{IShellLinkW, ShellLink, SLGP_RAWPATH};
+use windows::Win32::UI::Shell::{IShellLinkW, SHStrDupW, ShellLink, SLGP_RAWPATH};
 use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, MsgWaitForMultipleObjects, PeekMessageW, QS_ALLINPUT, TranslateMessage,
@@ -98,7 +98,9 @@ fn propvariant_inner(prop: &PROPVARIANT) -> &PROPVARIANT_0_0 {
     unsafe { &*(std::ptr::from_ref(prop) as *const PROPVARIANT_0_0) }
 }
 
-fn aumid_propvariant(aumid_wide: &[u16]) -> PROPVARIANT {
+fn init_propvariant_from_string(value: &str) -> Result<PROPVARIANT, windows::core::Error> {
+    let value_wide = wide(value);
+    let pwsz = unsafe { SHStrDupW(PCWSTR(value_wide.as_ptr()))? };
     let mut prop = PROPVARIANT::default();
     unsafe {
         prop.Anonymous.Anonymous = ManuallyDrop::new(PROPVARIANT_0_0 {
@@ -106,12 +108,10 @@ fn aumid_propvariant(aumid_wide: &[u16]) -> PROPVARIANT {
             wReserved1: 0,
             wReserved2: 0,
             wReserved3: 0,
-            Anonymous: std::mem::transmute(PROPVARIANT_0_0_0 {
-                pwszVal: PWSTR(aumid_wide.as_ptr() as *mut u16),
-            }),
+            Anonymous: std::mem::transmute(PROPVARIANT_0_0_0 { pwszVal: pwsz }),
         });
     }
-    prop
+    Ok(prop)
 }
 
 fn same_exe_path(left: &str, right: &str) -> bool {
@@ -273,10 +273,10 @@ fn install_shortcut(link_path: &str, exe_path: &str) -> Result<(), windows::core
     unsafe { shell_link.SetIconLocation(PCWSTR(icon_wide.as_ptr()), 0)? };
 
     let store: IPropertyStore = unsafe { shell_link.cast()? };
-    let aumid_wide = wide(AUMID);
-    let aumid_prop = aumid_propvariant(&aumid_wide);
+    let mut aumid_prop = init_propvariant_from_string(AUMID)?;
     unsafe {
         store.SetValue(&PKEY_AppUserModel_ID, &aumid_prop)?;
+        PropVariantClear(&mut aumid_prop)?;
     }
     let mut clsid_prop = unsafe { InitPropVariantFromCLSID(&ACTIVATOR_CLSID)? };
     unsafe {
