@@ -5,7 +5,9 @@ use super::*;
 #[test]
 fn corpus_frames_translate_to_the_expected_events() {
     // 01: a classic line. The corpus file carries CRLF, which the framer strips.
-    let classic = corpus_frame(include_bytes!("../../testdata/corpus/01-classic-privmsg.txt"));
+    let classic = corpus_frame(include_bytes!(
+        "../../testdata/corpus/01-classic-privmsg.txt"
+    ));
     let events = translate(
         NETWORK_A,
         "omairc",
@@ -21,7 +23,9 @@ fn corpus_frames_translate_to_the_expected_events() {
     assert_eq!(message.msgid, Id::default());
 
     // 02: a tagged line. msgid survives and the +typing tag adds no event.
-    let tagged = corpus_frame(include_bytes!("../../testdata/corpus/02-tagged-privmsg.txt"));
+    let tagged = corpus_frame(include_bytes!(
+        "../../testdata/corpus/02-tagged-privmsg.txt"
+    ));
     let events = translate(
         NETWORK_A,
         "omairc",
@@ -40,7 +44,9 @@ fn corpus_frames_translate_to_the_expected_events() {
     assert_eq!(message.body, "tagged");
 
     // 03: the Latin-1 body decodes byte for byte as the scalar it names.
-    let latin1 = corpus_frame(include_bytes!("../../testdata/corpus/03-latin1-e9-body.txt"));
+    let latin1 = corpus_frame(include_bytes!(
+        "../../testdata/corpus/03-latin1-e9-body.txt"
+    ));
     let events = translate(
         NETWORK_A,
         "omairc",
@@ -54,7 +60,9 @@ fn corpus_frames_translate_to_the_expected_events() {
 
 #[test]
 fn corpus_tagged_line_replays_as_chat_with_its_msgid() {
-    let tagged = corpus_frame(include_bytes!("../../testdata/corpus/02-tagged-privmsg.txt"));
+    let tagged = corpus_frame(include_bytes!(
+        "../../testdata/corpus/02-tagged-privmsg.txt"
+    ));
     let history = history_of(
         &HistoryBatch {
             target: "#c".to_owned(),

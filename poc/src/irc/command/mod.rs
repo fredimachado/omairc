@@ -15,9 +15,6 @@
 mod parse;
 mod verbs;
 
-#[cfg(test)]
-mod tests;
-
 pub use parse::parse;
 pub use verbs::{lookup, spec_for, visible_on, Verb, VerbSpec, VERB_TABLE};
 
@@ -441,3 +438,6 @@ pub fn pref_reply(request: PrefRequest, prefs: &mut Preferences) -> PrefReply {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

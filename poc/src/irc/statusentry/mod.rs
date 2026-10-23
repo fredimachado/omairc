@@ -25,9 +25,6 @@ mod notice;
 mod outgoing;
 mod whois;
 
-#[cfg(test)]
-mod tests;
-
 pub use incoming::incoming_all;
 pub use keep::{keeps_incoming, keeps_outgoing};
 pub use outgoing::outgoing;
@@ -185,3 +182,6 @@ pub fn ctcp_reply(network_id: &str, text: &str, now: DateTime<Utc>) -> StatusEnt
         text.to_owned(),
     )
 }
+
+#[cfg(test)]
+mod tests;
