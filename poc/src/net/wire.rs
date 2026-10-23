@@ -12,7 +12,8 @@ use crate::session::transport::TransportError;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ConnId(pub(super) u64);
 
-/// A request from the UI thread to the net thread.
+/// A request to the net thread. The UI thread sends all of them except `Finished`, which
+/// a worker sends about itself.
 pub(super) enum Command {
     /// Start a connect. Any older task for `conn` is abandoned first.
     Connect {
@@ -28,12 +29,22 @@ pub(super) enum Command {
         epoch: u64,
         frame: Vec<u8>,
     },
-    /// Abandon the connection, or the connect in flight. Commands run in order, so the task
-    /// torn down is the connection's current one. The transport has already moved its epoch on,
-    /// which is what keeps the abandoned task's late events out.
+    /// Close the connection, or abandon the connect in flight. Commands run in order, so the
+    /// task closed is the connection's current one. The transport has already moved its epoch
+    /// on, which keeps the closed task's late events out. An open pipe drains the frames already
+    /// queued before it closes.
     Close { conn: ConnId },
-    /// Tear down every task and end the net thread. Sent from `NetHub::drop`.
+    /// A worker's task ended on its own, not by abort, under the epoch it ran for. The hub
+    /// forgets the task only while the connection still runs that epoch.
+    Finished { conn: ConnId, epoch: u64 },
+    /// Close every connection the way `Close` does, then end the net thread. Sent from
+    /// `NetHub::drop`.
     Stop,
+    /// Reports how many tasks the hub holds. Tests only.
+    #[cfg(test)]
+    Census {
+        reply: std::sync::mpsc::Sender<usize>,
+    },
 }
 
 /// One event from the net thread, tagged with the connection and epoch that made it.

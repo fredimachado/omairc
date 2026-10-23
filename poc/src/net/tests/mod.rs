@@ -4,10 +4,13 @@
 //! session driving a real wire (`session.rs`), and the live factory's transports
 //! (`factory.rs`).
 
+mod dial;
 mod factory;
 mod harness;
+mod hub;
 mod peer;
 mod session;
+mod worker;
 
 use std::time::Duration;
 
@@ -131,4 +134,56 @@ fn pinned_certificate_encrypts() {
     assert_eq!(transport.state(), ConnectionState::Encrypted);
     assert_eq!(*sink.encrypted.borrow(), 1);
     assert!(sink.errors.borrow().is_empty());
+}
+
+/// A TLS peer that drops the socket without close-notify is a clean remote close. Many
+/// ircds end the connection this way right after `ERROR :Closing link`.
+#[test]
+fn tls_peer_that_drops_without_close_notify_is_a_clean_disconnect() {
+    let rig = Rig::new(NetOptions {
+        tls: peer::pinned_client_config(),
+        ..NetOptions::default()
+    });
+    let transport = rig.hub.register();
+    let (sink, _keep) = record(transport.as_ref());
+
+    transport.connect("127.0.0.1", rig.peer.port(), true);
+    rig.peer
+        .accept(Mode::Tls)
+        .expect("the peer completes the handshake");
+    rig.settle(&|| awaiting_peer(&transport, true));
+    assert_eq!(transport.state(), ConnectionState::Encrypted);
+
+    rig.peer.abandon();
+    rig.settle(&|| false);
+
+    assert_eq!(transport.state(), ConnectionState::Disconnected);
+    assert_eq!(*sink.disconnected.borrow(), 1);
+    assert!(
+        sink.errors.borrow().is_empty(),
+        "{:?}",
+        sink.errors.borrow()
+    );
+}
+
+/// The session writes QUIT and then stops, so a frame queued just before `shutdown` must
+/// reach the peer. The disconnect is still reported during the call.
+#[test]
+fn a_frame_queued_before_shutdown_reaches_the_peer() {
+    let rig = Rig::new(NetOptions::default());
+    let transport = rig.hub.register();
+    let (sink, _keep) = record(transport.as_ref());
+
+    transport.connect("127.0.0.1", rig.peer.port(), false);
+    rig.peer.accept(Mode::Plain).expect("the peer accepts");
+    rig.settle(&|| awaiting_peer(&transport, false));
+    assert_eq!(transport.state(), ConnectionState::Connected);
+
+    transport.write(b"QUIT :bye\r\n");
+    transport.shutdown();
+    assert_eq!(*sink.disconnected.borrow(), 1);
+
+    rig.settle(&|| false);
+    assert_eq!(rig.peer.received(), b"QUIT :bye\r\n");
+    assert_eq!(*sink.disconnected.borrow(), 1);
 }

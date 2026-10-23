@@ -42,7 +42,7 @@ fn system_roots() -> RootCertStore {
     }
     let mut roots = RootCertStore::empty();
     let (added, ignored) = roots.add_parsable_certificates(native.certs);
-    log::warn!("loaded {added} system root certificates, {ignored} unparsable");
+    log::info!("loaded {added} system root certificates, {ignored} unparsable");
     if roots.is_empty() {
         log::warn!("the system trust store is empty; trusting the bundled Mozilla roots");
         roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());

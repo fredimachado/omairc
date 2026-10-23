@@ -8,8 +8,13 @@
 //! Every event carries the `(conn, epoch)` the task started with. The UI side drops
 //! an event whose epoch is stale, so a task that outlives its connection cannot
 //! speak for the next one.
+//!
+//! Closing is the hub's call, made through the write queue. Once the pipe is open, the
+//! writer drains what is queued, says goodbye, and stops the reader. See `hub::wind_down`.
 
 use std::io;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use async_channel::Sender;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -42,11 +47,13 @@ pub(super) struct Target {
 }
 
 /// Connects, handshakes when asked, then runs the reader and the writer until the
-/// connection ends. Aborting the task tears down its I/O too.
+/// connection ends. Aborting the task tears down its I/O too. `open` is set once the
+/// pipe is open, which is when a close starts draining the queue instead of aborting.
 pub(super) async fn run(
     tag: Tag,
     target: Target,
     writes: UnboundedReceiver<Vec<u8>>,
+    open: Arc<AtomicBool>,
     options: NetOptions,
     events: Sender<Delivery>,
 ) {
@@ -59,7 +66,7 @@ pub(super) async fn run(
     };
     report(&events, tag, IoEvent::Connected);
     if !target.tls {
-        pump(tag, tcp, writes, events).await;
+        pump(tag, tcp, writes, open, events, false).await;
         return;
     }
 
@@ -73,7 +80,7 @@ pub(super) async fn run(
     match timeout(options.handshake_timeout, handshake).await {
         Ok(Ok(stream)) => {
             report(&events, tag, IoEvent::Encrypted);
-            pump(tag, stream, writes, events).await;
+            pump(tag, stream, writes, open, events, true).await;
         }
         Ok(Err(error)) => report(&events, tag, IoEvent::Failed(error)),
         Err(_elapsed) => report(&events, tag, IoEvent::Failed(dial::timed_out())),
@@ -81,13 +88,21 @@ pub(super) async fn run(
 }
 
 /// Runs the reader and the writer over an open stream until the reader ends. A write
-/// error aborts the reader, so the worker ends either way.
-async fn pump<S>(tag: Tag, stream: S, writes: UnboundedReceiver<Vec<u8>>, events: Sender<Delivery>)
-where
+/// error aborts the reader, so the worker ends either way. A close drains the writer's
+/// queue and then ends the reader too.
+async fn pump<S>(
+    tag: Tag,
+    stream: S,
+    writes: UnboundedReceiver<Vec<u8>>,
+    open: Arc<AtomicBool>,
+    events: Sender<Delivery>,
+    tls: bool,
+) where
     S: AsyncRead + AsyncWrite + Send + 'static,
 {
+    open.store(true, Ordering::Release);
     let (read, write) = tokio::io::split(stream);
-    let reader = tokio::spawn(read_loop(tag, read, events.clone()));
+    let reader = tokio::spawn(read_loop(tag, read, events.clone(), tls));
     let writer = tokio::spawn(write_loop(
         tag,
         write,
@@ -100,8 +115,10 @@ where
     let _ = reader.await;
 }
 
-/// Forwards inbound bytes until the peer closes or the read fails.
-async fn read_loop<R>(tag: Tag, mut read: R, events: Sender<Delivery>)
+/// Forwards inbound bytes until the peer closes or the read fails. On TLS, an end of
+/// stream without close-notify is still a clean remote close: many ircds drop the socket
+/// right after `ERROR :Closing link`. Any other read error is a network failure.
+pub(super) async fn read_loop<R>(tag: Tag, mut read: R, events: Sender<Delivery>, tls: bool)
 where
     R: AsyncRead + Unpin + Send + 'static,
 {
@@ -113,6 +130,10 @@ where
                 return;
             }
             Ok(count) => report(&events, tag, IoEvent::Bytes(buffer[..count].to_vec())),
+            Err(error) if tls && error.kind() == io::ErrorKind::UnexpectedEof => {
+                report(&events, tag, IoEvent::Closed);
+                return;
+            }
             Err(error) => {
                 report(&events, tag, IoEvent::Failed(network(&error)));
                 return;
@@ -122,6 +143,8 @@ where
 }
 
 /// Writes queued frames in order. A failed write reports once and aborts the reader.
+/// When the queue's sender is gone (a close), the frames already queued are written
+/// first. Then the writer says goodbye (TLS close-notify, or FIN) and aborts the reader.
 async fn write_loop<W>(
     tag: Tag,
     mut write: W,
@@ -132,16 +155,22 @@ async fn write_loop<W>(
     W: AsyncWrite + Unpin + Send + 'static,
 {
     while let Some(frame) = frames.recv().await {
-        let sent = match write.write_all(&frame).await {
-            Ok(()) => write.flush().await,
-            Err(error) => Err(error),
-        };
-        if let Err(error) = sent {
+        if let Err(error) = write_frame(&mut write, &frame).await {
             report(&events, tag, IoEvent::Failed(network(&error)));
             reader.abort();
             return;
         }
     }
+    let _ = write.shutdown().await;
+    reader.abort();
+}
+
+async fn write_frame<W>(write: &mut W, frame: &[u8]) -> io::Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    write.write_all(frame).await?;
+    write.flush().await
 }
 
 /// Aborts the tasks it holds when dropped, so a worker's end or abort ends its I/O.

@@ -9,7 +9,9 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::future::Future;
 use std::rc::{Rc, Weak};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -19,6 +21,7 @@ use rustls::ClientConfig;
 use tokio::runtime::Builder;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle as TaskHandle;
+use tokio::time::{timeout_at, Instant};
 
 use super::tls;
 use super::transport::NetTransport;
@@ -31,6 +34,9 @@ const RUNTIME_SHUTDOWN: Duration = Duration::from_secs(1);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 /// The default TLS handshake budget, counted from the end of the TCP connect.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(20);
+/// How long a closed connection with an open pipe may take to write its queued frames and
+/// say goodbye before its task is aborted. Stop shares one such period across every connection.
+const CLOSE_GRACE: Duration = Duration::from_millis(500);
 
 /// The knobs a hub's connections run under. `Default` is production: 20 s for the
 /// connect and for the handshake, and the process-wide TLS config.
@@ -64,6 +70,9 @@ pub struct NetHub {
 struct ConnTask {
     epoch: u64,
     writes: UnboundedSender<Vec<u8>>,
+    /// Set by the worker once its pipe is open. Before that nothing has been written, so a
+    /// close can abort the task at once.
+    open: Arc<AtomicBool>,
     task: TaskHandle<()>,
 }
 
@@ -76,10 +85,11 @@ impl NetHub {
     /// A hub with `options`. Spawns the net thread, which runs until the hub drops.
     pub fn with_options(options: NetOptions) -> Self {
         let (commands, command_rx) = unbounded_channel();
+        let self_tx = commands.clone();
         let (event_tx, events) = async_channel::unbounded();
         let thread = std::thread::Builder::new()
             .name("omairc-net".to_owned())
-            .spawn(move || run_thread(command_rx, event_tx, options))
+            .spawn(move || run_thread(command_rx, self_tx, event_tx, options))
             .expect("the net thread starts");
         Self {
             commands,
@@ -129,6 +139,20 @@ impl NetHub {
     pub fn receiver(&self) -> Receiver<Delivery> {
         self.events.clone()
     }
+
+    /// How many connection tasks the net thread holds, read in command order.
+    #[cfg(test)]
+    pub(super) fn open_tasks(&self) -> usize {
+        let (reply, answer) = std::sync::mpsc::channel();
+        let _ = self.commands.send(Command::Census { reply });
+        answer.recv().unwrap_or(0)
+    }
+
+    /// Sends a worker's finish notice by hand, to test a stale one.
+    #[cfg(test)]
+    pub(super) fn finish(&self, conn: ConnId, epoch: u64) {
+        let _ = self.commands.send(Command::Finished { conn, epoch });
+    }
 }
 
 impl Drop for NetHub {
@@ -142,21 +166,28 @@ impl Drop for NetHub {
 }
 
 /// The net thread's body: a current-thread runtime that runs until `Stop`.
-fn run_thread(commands: UnboundedReceiver<Command>, events: Sender<Delivery>, options: NetOptions) {
+fn run_thread(
+    commands: UnboundedReceiver<Command>,
+    self_tx: UnboundedSender<Command>,
+    events: Sender<Delivery>,
+    options: NetOptions,
+) {
     let runtime = Builder::new_current_thread()
         .enable_io()
         .enable_time()
         .build()
         .expect("the net runtime builds");
-    runtime.block_on(pump(commands, events, options));
+    runtime.block_on(pump(commands, self_tx, events, options));
     runtime.shutdown_timeout(RUNTIME_SHUTDOWN);
 }
 
 /// Serves commands until `Stop`. A connect replaces any task still open for its
 /// connection. A write reaches the task only when its epoch is the task's. Close
-/// tears the task down. On stop every task is aborted.
+/// winds the task down: an open pipe drains its queue first. A task that ends on its
+/// own reports `Finished`, and the hub forgets it. Stop winds every task down.
 async fn pump(
     mut commands: UnboundedReceiver<Command>,
+    self_tx: UnboundedSender<Command>,
     events: Sender<Delivery>,
     options: NetOptions,
 ) {
@@ -173,19 +204,27 @@ async fn pump(
                 if let Some(old) = tasks.remove(&conn) {
                     old.task.abort();
                 }
+                let tag = Tag { conn, epoch };
                 let (writes, frames) = unbounded_channel();
-                let task = tokio::spawn(worker::run(
-                    Tag { conn, epoch },
-                    Target { host, port, tls },
-                    frames,
-                    options.clone(),
-                    events.clone(),
+                let open = Arc::new(AtomicBool::new(false));
+                let task = tokio::spawn(supervise(
+                    tag,
+                    worker::run(
+                        tag,
+                        Target { host, port, tls },
+                        frames,
+                        open.clone(),
+                        options.clone(),
+                        events.clone(),
+                    ),
+                    self_tx.clone(),
                 ));
                 tasks.insert(
                     conn,
                     ConnTask {
                         epoch,
                         writes,
+                        open,
                         task,
                     },
                 );
@@ -200,13 +239,55 @@ async fn pump(
             }
             Command::Close { conn } => {
                 if let Some(task) = tasks.remove(&conn) {
-                    task.task.abort();
+                    tokio::spawn(wind_down(task, Instant::now() + CLOSE_GRACE));
                 }
+            }
+            Command::Finished { conn, epoch } => {
+                // A notice from an epoch the connection has left must not remove the task it runs now.
+                if tasks.get(&conn).is_some_and(|task| task.epoch == epoch) {
+                    tasks.remove(&conn);
+                }
+            }
+            #[cfg(test)]
+            Command::Census { reply } => {
+                let _ = reply.send(tasks.len());
             }
             Command::Stop => break,
         }
     }
+    // Stop closes every connection the way Close does. The grace period is shared, so the
+    // whole shutdown waits at most CLOSE_GRACE.
+    let deadline = Instant::now() + CLOSE_GRACE;
     for (_, task) in tasks {
-        task.task.abort();
+        wind_down(task, deadline).await;
+    }
+}
+
+/// Runs one worker and, when it ends on its own rather than by abort, tells the hub under
+/// the epoch it ran for. An aborted worker never reaches the notice.
+async fn supervise(tag: Tag, work: impl Future<Output = ()>, hub: UnboundedSender<Command>) {
+    work.await;
+    let _ = hub.send(Command::Finished {
+        conn: tag.conn,
+        epoch: tag.epoch,
+    });
+}
+
+/// Ends a connection's task. A task whose pipe is not open has written nothing, so it is
+/// aborted at once. An open task stops taking frames, drains the ones already queued,
+/// says goodbye and closes. If it has not finished by `deadline`, it is aborted.
+async fn wind_down(task: ConnTask, deadline: Instant) {
+    let ConnTask {
+        writes, open, task, ..
+    } = task;
+    if !open.load(Ordering::Acquire) {
+        task.abort();
+        return;
+    }
+    // The worker's queue ends once this last sender is gone and the frames queued before it are written.
+    drop(writes);
+    let abort = task.abort_handle();
+    if timeout_at(deadline, task).await.is_err() {
+        abort.abort();
     }
 }

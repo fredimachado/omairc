@@ -4,6 +4,7 @@
 //! budget: each takes an equal share of what is left, so an address that hangs cannot
 //! starve the ones after it. Expiry of the whole budget reads as a timeout.
 
+use std::io;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
@@ -38,14 +39,11 @@ async fn dial(host: &str, port: u16, deadline: Instant) -> Result<TcpStream, Tra
         Ok(found) => found.collect(),
         Err(error) => {
             log::debug!("resolving {host} failed: {error}");
-            Vec::new()
+            return Err(resolve_failure(host, &error));
         }
     };
     if addresses.is_empty() {
-        return Err(TransportError {
-            kind: TransportErrorKind::Resolve,
-            message: format!("lookup {host}: no such host"),
-        });
+        return Err(resolve_failure(host, &io::ErrorKind::NotFound.into()));
     }
 
     let mut last_failure = None;
@@ -67,6 +65,28 @@ async fn dial(host: &str, port: u16, deadline: Instant) -> Result<TcpStream, Tra
         }
     }
     Err(last_failure.unwrap_or_else(timed_out))
+}
+
+/// The resolver failed for `host`. A name that does not exist reads as Go's
+/// `lookup HOST: no such host`. Any other failure keeps the OS's own text, so a DNS
+/// outage is not reported as a missing host.
+pub(super) fn resolve_failure(host: &str, error: &io::Error) -> TransportError {
+    let detail = if is_not_found(error) {
+        "no such host".to_owned()
+    } else {
+        error.to_string()
+    };
+    TransportError {
+        kind: TransportErrorKind::Resolve,
+        message: format!("lookup {host}: {detail}"),
+    }
+}
+
+/// Whether a resolver error means the name does not exist. Windows reports that as
+/// WSAHOST_NOT_FOUND, and no errno shares the number.
+fn is_not_found(error: &io::Error) -> bool {
+    const WSAHOST_NOT_FOUND: i32 = 11001;
+    error.kind() == io::ErrorKind::NotFound || error.raw_os_error() == Some(WSAHOST_NOT_FOUND)
 }
 
 /// Turns on `TCP_NODELAY` and keepalive. A socket that refuses either still works, so

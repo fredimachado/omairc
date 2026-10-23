@@ -69,6 +69,9 @@ enum Command {
     Close {
         reply: Sender<()>,
     },
+    Abandon {
+        reply: Sender<()>,
+    },
     Shutdown,
 }
 
@@ -138,6 +141,14 @@ impl Peer {
         answer.recv().expect("the peer thread answers");
     }
 
+    /// Drops the connection the peer holds without closing it: no TLS close-notify and
+    /// no shutdown, so the client sees the socket end in the middle of a session.
+    pub(super) fn abandon(&self) {
+        let (reply, answer) = mpsc::channel();
+        self.ask(Command::Abandon { reply });
+        answer.recv().expect("the peer thread answers");
+    }
+
     fn ask(&self, command: Command) {
         self.commands
             .send(command)
@@ -202,6 +213,10 @@ fn serve(listener: StdListener, commands: Receiver<Command>) {
             }
             Command::Close { reply } => {
                 runtime.block_on(server.close());
+                let _ = reply.send(());
+            }
+            Command::Abandon { reply } => {
+                runtime.block_on(server.abandon());
                 let _ = reply.send(());
             }
             Command::Shutdown => break,
@@ -269,6 +284,11 @@ impl Server {
         if let Some(mut stream) = self.stream.take() {
             let _ = stream.shutdown().await;
         }
+    }
+
+    /// Drops the held stream as it stands. For TLS that sends no close-notify.
+    async fn abandon(&mut self) {
+        self.stream = None;
     }
 }
 
