@@ -14,6 +14,7 @@ use std::time::Duration;
 use super::events::{ErrorKind, SessionEvent, SessionState};
 use super::saslscram::{encode_sasl_frames, ScramExchange, ScramReply};
 use super::session::{Core, TimerSlot};
+use super::sts::parse_sts_advertisement;
 use super::wire;
 use crate::irc::capability::{IrcCapability, IrcCapabilitySet};
 use crate::irc::message::IrcMessage;
@@ -128,12 +129,21 @@ impl Core {
             self.capability_list_seen = true;
             let tokens = wire::capability_tokens(message, ls_index);
             self.caps.advertise(&tokens);
+            if let Some(advertisement) = parse_sts_advertisement(&tokens) {
+                self.pending_sts = Some(advertisement);
+            }
             if let Some(metadata) = super::metadata::parse_metadata_capability(&tokens) {
                 self.metadata = metadata;
             }
             let continuation =
                 message.params.len() > ls_index + 1 && message.text_param(ls_index + 1) == "*";
             if continuation {
+                return;
+            }
+            // The STS advertisement, if any, is acted on once the list is complete. An upgrade
+            // ends this connection, so nothing else is requested here.
+            self.handle_sts_advertisement(self.pending_sts.clone());
+            if self.state == SessionState::StsUpgrading {
                 return;
             }
             self.request_capabilities();
@@ -149,8 +159,14 @@ impl Core {
         if let Some(new_index) = message.param_index("NEW") {
             let tokens = wire::capability_tokens(message, new_index);
             self.caps.advertise(&tokens);
+            if let Some(advertisement) = parse_sts_advertisement(&tokens) {
+                self.handle_sts_advertisement(Some(advertisement));
+            }
             if let Some(metadata) = super::metadata::parse_metadata_capability(&tokens) {
                 self.metadata = metadata;
+            }
+            if self.state == SessionState::StsUpgrading {
+                return;
             }
             self.request_capabilities();
             return;

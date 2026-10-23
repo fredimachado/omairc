@@ -21,6 +21,7 @@ use crate::session::config::SessionConfig;
 use crate::session::events::{PendingInvite, SessionEvent, SessionState};
 use crate::session::loopback::LoopbackTransport;
 use crate::session::session::Session;
+use crate::session::sts::MemoryStsStore;
 
 use super::fixture::{
     errors_of, expect_err, inbound_of, nick_of, params_of, tag_of, with_command, Harness, Lane,
@@ -288,6 +289,7 @@ fn attach_refuses_a_network_the_demo_does_not_seed() {
         SessionConfig::with_defaults("freenode", "", "irc.example", "fred"),
         transport.clone(),
         clock.clone(),
+        Rc::new(MemoryStsStore::default()),
     );
     let demo = DemoServer::new(clock);
     let error = expect_err(demo.attach(&session, &transport));

@@ -17,11 +17,12 @@
 //! and SASL: PLAIN, and SCRAM-SHA-256 through `saslscram`), `registration` (NICK/USER,
 //! ISUPPORT, 001 and refusals), `batch` (the batch ledger), `history` (CHATHISTORY),
 //! `labels` (labeled requests), `readmarker`, `typing`, `metadata`, `autojoin`, `ctcp`,
-//! `outbound` (the public writers), `malformed` (protocol-error previews) and `wire`
-//! (message field helpers).
+//! `outbound` (the public writers), `malformed` (protocol-error previews), `wire`
+//! (message field helpers), `sink` (the transport's callbacks), `sts` (the STS cache) and
+//! `stsflow` (the STS upgrade and reconnect).
 //!
-//! Out of scope until Phase 11: STS (`sts.go`) and the socket transport
-//! (`transport_net.go`). A failed SCRAM exchange is never retried with PLAIN.
+//! Out of scope until Phase 11: the socket transport (`transport_net.go`). A failed SCRAM
+//! exchange is never retried with PLAIN.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -43,14 +44,14 @@ use super::batch::BatchLedger;
 use super::caps::SaslState;
 use super::clock::Clock;
 use super::config::SessionConfig;
-use super::connection::{Connection, DisconnectOutcome};
+use super::connection::Connection;
 use super::events::{ErrorKind, HistoryKind, PendingInvite, SessionEvent, SessionState, Severity};
 use super::history::HistoryLedger;
 use super::metadata::MetadataCapability;
 use super::readmarker::ReadMarkerLedger;
-use super::transport::{
-    ConnectionState, Transport, TransportError, TransportErrorKind, TransportSink,
-};
+use super::sink::SinkAdapter;
+use super::sts::{StsAdvertisement, StsStore};
+use super::transport::{ConnectionState, Transport, TransportSink};
 use super::typing::TypingPublisher;
 use super::watchdog::PingWatchdog;
 use super::wire;
@@ -173,6 +174,12 @@ pub(crate) struct Core {
 
     pub(crate) capability_negotiation_ended: bool,
     pub(crate) capability_list_seen: bool,
+    /// The STS advertisement a CAP LS carried, held until its last line (`pendingSTS`).
+    pub(crate) pending_sts: Option<StsAdvertisement>,
+    /// The duration last advertised over TLS, re-stored on disconnect (`stsDuration`).
+    pub(crate) sts_duration: Option<i64>,
+    /// The STS policy cache, shared with every session of the manager (`sts`).
+    pub(crate) sts: Rc<dyn StsStore>,
 
     pub(crate) state: SessionState,
     pub(crate) ignore_filter: Option<IgnoreFilter>,
@@ -198,51 +205,21 @@ pub struct Session {
     pub(crate) shared: Rc<Shared>,
 }
 
-/// Receives the transport's callbacks and forwards them to the session. Holds a
-/// weak reference, so a dropped session stops receiving.
-struct SinkAdapter {
-    session: Weak<Shared>,
-}
-
-impl SinkAdapter {
-    fn with_session(&self, action: impl FnOnce(&Session)) {
-        if let Some(shared) = self.session.upgrade() {
-            action(&Session { shared });
-        }
-    }
-}
-
-impl TransportSink for SinkAdapter {
-    fn connected(&self) {
-        self.with_session(|session| session.locked(Core::on_connected));
-    }
-
-    fn encrypted(&self) {
-        self.with_session(|session| session.locked(Core::on_encrypted));
-    }
-
-    fn disconnected(&self) {
-        self.with_session(|session| session.locked(Core::on_disconnected));
-    }
-
-    fn bytes_received(&self, bytes: &[u8]) {
-        self.with_session(|session| session.locked(|core| core.handle_bytes(bytes)));
-    }
-
-    fn error(&self, error: &TransportError) {
-        self.with_session(|session| session.locked(|core| core.error_occurred(error)));
-    }
-}
-
 impl Session {
     /// Builds a session and installs it as the transport's sink. `transport` and
-    /// `clock` are shared with the owner, so tests keep a handle to drive them.
-    pub fn new(config: SessionConfig, transport: Rc<dyn Transport>, clock: Rc<dyn Clock>) -> Self {
+    /// `clock` are shared with the owner, so tests keep a handle to drive them. `sts` is the
+    /// policy cache, shared with the other sessions of the manager.
+    pub fn new(
+        config: SessionConfig,
+        transport: Rc<dyn Transport>,
+        clock: Rc<dyn Clock>,
+        sts: Rc<dyn StsStore>,
+    ) -> Self {
         let shared = Rc::new_cyclic(|weak: &Weak<Shared>| {
             let sink: Rc<dyn TransportSink> = Rc::new(SinkAdapter {
                 session: weak.clone(),
             });
-            let core = Core::new(config, clock, transport.clone(), weak.clone());
+            let core = Core::new(config, clock, transport.clone(), weak.clone(), sts);
             Shared {
                 core: RefCell::new(core),
                 _sink: sink,
@@ -344,7 +321,7 @@ impl Session {
         self.shared.core.borrow().config.host.clone()
     }
 
-    /// The active port, as configured until STS (Phase 11) changes it.
+    /// The active port: the configured one, or the one an STS upgrade or a cached policy chose.
     // Read by the socket transport and the later phases; the allow comes off with its first consumer.
     #[allow(dead_code)]
     pub fn port(&self) -> u16 {
@@ -513,6 +490,7 @@ impl Core {
         clock: Rc<dyn Clock>,
         transport: Rc<dyn Transport>,
         weak: Weak<Shared>,
+        sts: Rc<dyn StsStore>,
     ) -> Self {
         let sasl_available = !config.sasl_secret().is_empty();
         let port = config.port;
@@ -553,6 +531,9 @@ impl Core {
             sasl: SaslState::default(),
             capability_negotiation_ended: false,
             capability_list_seen: false,
+            pending_sts: None,
+            sts_duration: None,
+            sts,
             state: SessionState::Idle,
             ignore_filter: None,
             pending_invite: None,
@@ -592,47 +573,6 @@ impl Core {
         self.emit(SessionEvent::StateChanged { network_id, state });
     }
 
-    pub(crate) fn on_connected(&mut self) {
-        if !self.tls_enabled && self.state == SessionState::Connecting {
-            self.begin_capability_negotiation();
-        }
-    }
-
-    pub(crate) fn on_encrypted(&mut self) {
-        if self.tls_enabled && self.state == SessionState::Connecting {
-            self.begin_capability_negotiation();
-        }
-    }
-
-    /// The connection ended (`IrcTransport::disconnected`).
-    pub(crate) fn on_disconnected(&mut self) {
-        match self.connection.on_disconnect(self.state) {
-            DisconnectOutcome::ScheduleReconnect => self.schedule_reconnect(),
-            DisconnectOutcome::SettleIdle => self.set_state(SessionState::Idle),
-            DisconnectOutcome::FailUnexpected => {
-                self.fail(ErrorKind::Network, "Connection closed by the server", true);
-            }
-            DisconnectOutcome::Ignore => {}
-        }
-    }
-
-    /// A transport failure (`IrcTransport::errorOccurred`). The transport names
-    /// the kind, so the session classifies it without reading the message.
-    // Phase 11: the socket transport reports its errors
-    #[allow(dead_code)]
-    pub(crate) fn error_occurred(&mut self, error: &TransportError) {
-        if self.connection.is_stopping() {
-            return;
-        }
-        let kind = match error.kind {
-            TransportErrorKind::Tls | TransportErrorKind::Certificate => ErrorKind::Tls,
-            TransportErrorKind::Resolve
-            | TransportErrorKind::Network
-            | TransportErrorKind::Timeout => ErrorKind::Network,
-        };
-        self.fail(kind, &error.message, true);
-    }
-
     pub(crate) fn start(&mut self) {
         if self.state != SessionState::Idle && self.state != SessionState::Failed {
             return;
@@ -655,6 +595,8 @@ impl Core {
         self.connection.begin_start();
         self.port = self.config.port;
         self.tls_enabled = self.config.tls_enabled;
+        self.sts_duration = None;
+        self.apply_cached_sts();
         self.reset_for_connection();
         self.set_state(SessionState::Connecting);
         self.connect_transport();
@@ -663,6 +605,7 @@ impl Core {
     /// Ends the session the way `IrcSession::stop` does: cancels every timer,
     /// clears labels, and shuts the transport down.
     pub(crate) fn stop(&mut self) {
+        self.reschedule_sts_expiry();
         self.connection.begin_stop();
         self.cancel_timer(TimerSlot::Reconnect);
         self.cancel_timer(TimerSlot::Capability);
@@ -756,6 +699,7 @@ impl Core {
             return;
         }
         self.cancel_timer(TimerSlot::Reconnect);
+        self.apply_cached_sts();
         self.reset_for_connection();
         self.set_state(SessionState::Connecting);
         self.connect_transport();
@@ -775,6 +719,7 @@ impl Core {
         self.sasl = SaslState::default();
         self.capability_negotiation_ended = false;
         self.capability_list_seen = false;
+        self.pending_sts = None;
         self.pending_invite = None;
         self.pending_join_keys.clear();
         self.channel_types.clear();
@@ -918,6 +863,9 @@ impl Core {
             self.emit_protocol_error("frame", &fault.error, &fault.preview, fault.byte_count);
         }
         for frame in result.frames {
+            if self.state == SessionState::StsUpgrading {
+                break;
+            }
             match parse(&frame) {
                 Ok(message) => self.handle_message(message),
                 Err(error) => {
@@ -1203,6 +1151,7 @@ impl Core {
         matches!(
             self.state,
             SessionState::Connecting
+                | SessionState::StsUpgrading
                 | SessionState::CapLs
                 | SessionState::CapReq
                 | SessionState::Sasl

@@ -19,7 +19,7 @@ pub const DEFAULT_CAPACITY: usize = 2000;
 pub(super) fn state_label(state: SessionState) -> &'static str {
     match state {
         SessionState::Idle => "offline",
-        SessionState::Connecting => "connecting",
+        SessionState::Connecting | SessionState::StsUpgrading => "connecting",
         SessionState::CapLs | SessionState::CapReq | SessionState::Sasl => "negotiating",
         SessionState::Registering => "registering",
         SessionState::Registered => "registered",
@@ -34,7 +34,7 @@ pub(super) fn state_label(state: SessionState) -> &'static str {
 pub(super) fn state_text(state: SessionState) -> &'static str {
     match state {
         SessionState::Idle => "Disconnected",
-        SessionState::Connecting => "Connecting",
+        SessionState::Connecting | SessionState::StsUpgrading => "Connecting",
         SessionState::CapLs => "Capability discovery",
         SessionState::CapReq => "Requesting capabilities",
         SessionState::Sasl => "Authenticating",

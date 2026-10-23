@@ -11,6 +11,7 @@ use crate::session::clock::FakeClock;
 use crate::session::events::{ErrorKind, SessionState};
 use crate::session::loopback::LoopbackTransport;
 use crate::session::sessionmanager::{SessionManager, SessionManagerError};
+use crate::session::sts::MemoryStsStore;
 use crate::session::transport::Transport;
 use crate::session::transport::{ConnectionState, TransportError, TransportErrorKind};
 
@@ -262,8 +263,12 @@ fn quit_rejects_invalid_reason_while_registered() {
 #[test]
 fn destruction_while_connecting_is_safe() {
     let transport = Rc::new(LoopbackTransport::new());
-    let session =
-        crate::session::session::Session::new(test_config(), transport.clone(), clock_at_epoch());
+    let session = crate::session::session::Session::new(
+        test_config(),
+        transport.clone(),
+        clock_at_epoch(),
+        Rc::new(MemoryStsStore::default()),
+    );
     session.start();
     assert_eq!(transport.state(), ConnectionState::Connecting);
     drop(session);
@@ -274,7 +279,7 @@ fn destruction_while_connecting_is_safe() {
 
 #[test]
 fn manager_starts_two_live_networks() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::new(Rc::new(MemoryStsStore::default()));
     let first_transport = Rc::new(LoopbackTransport::new());
     let second_transport = Rc::new(LoopbackTransport::new());
     let first = manager
@@ -311,7 +316,7 @@ fn manager_starts_two_live_networks() {
 
 #[test]
 fn manager_create_stays_add_only() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::new(Rc::new(MemoryStsStore::default()));
     let config = || crate::session::config::SessionConfig {
         network_id: "network-a".to_owned(),
         ..test_config()
@@ -342,7 +347,7 @@ fn manager_create_stays_add_only() {
 
 #[test]
 fn manager_discard_unregisters_immediately() {
-    let manager = SessionManager::new();
+    let manager = SessionManager::new(Rc::new(MemoryStsStore::default()));
     let config = || crate::session::config::SessionConfig {
         network_id: "network-a".to_owned(),
         ..test_config()

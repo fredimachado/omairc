@@ -84,6 +84,11 @@ impl Settings {
         self.text(group, key).unwrap_or_default().to_string()
     }
 
+    /// Whether the key is present, whatever its value.
+    pub fn contains(&self, group: &str, key: &str) -> bool {
+        self.values.contains_key(&settings_key(group, key))
+    }
+
     /// Parses the value as a QSettings bool: `true`/`1` or `false`/`0`, in any case.
     /// Returns `fallback` for an absent key or any other text.
     pub fn bool_value(&self, group: &str, key: &str, fallback: bool) -> bool {

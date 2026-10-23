@@ -208,7 +208,7 @@ impl Controller {
             notifier,
             transports,
             demo: None,
-            manager: SessionManager::new(),
+            manager: SessionManager::new(backing.sts_store()),
             reducer: EventReducer::new(),
             console: StatusConsole::default(),
             inbox: Inbox::new(),

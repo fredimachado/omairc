@@ -9,12 +9,14 @@
 //! directory, so tests and manual runs can stay out of the user's profile.
 
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The folder the PoC owns under each root.
 pub const APP_FOLDER: &str = "omairc-poc";
 /// The QSettings-compatible INI file, the same name the Qt client uses.
 pub const SETTINGS_FILE: &str = "omairc.conf";
+/// The STS policy cache, beside the settings file (`IrcStsStore::filePath`, same name as Qt).
+pub const STS_FILE: &str = "sts";
 /// The application log, the same name the Qt client uses.
 pub const LOG_FILE: &str = "omairc.log";
 /// Moves the config and state roots under one directory.
@@ -110,6 +112,12 @@ pub fn state_dir_for(env: &Env, platform: Platform) -> PathBuf {
 
 pub fn settings_path_for(env: &Env, platform: Platform) -> Option<PathBuf> {
     config_dir_for(env, platform).map(|dir| dir.join(SETTINGS_FILE))
+}
+
+/// The STS cache file in the folder that holds `settings_file`, so the cache and the
+/// settings always live together.
+pub fn sts_path_beside(settings_file: &Path) -> PathBuf {
+    settings_file.with_file_name(STS_FILE)
 }
 
 pub fn log_path_for(env: &Env, platform: Platform) -> PathBuf {
@@ -241,6 +249,16 @@ mod tests {
         assert_eq!(
             state_dir_for(&env, Platform::MacOs),
             prefs.join("State").join(APP_FOLDER)
+        );
+    }
+
+    #[test]
+    fn the_sts_cache_sits_beside_the_settings_file() {
+        let env = env_with_home();
+        let settings = settings_path_for(&env, Platform::Linux).expect("a config root");
+        assert_eq!(
+            sts_path_beside(&settings),
+            home().join(".config").join(APP_FOLDER).join(STS_FILE)
         );
     }
 

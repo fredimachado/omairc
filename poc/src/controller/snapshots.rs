@@ -61,6 +61,7 @@ pub fn state_text(state: SessionState) -> &'static str {
     match state {
         SessionState::Idle | SessionState::Failed => "Offline",
         SessionState::Connecting
+        | SessionState::StsUpgrading
         | SessionState::CapLs
         | SessionState::CapReq
         | SessionState::Sasl

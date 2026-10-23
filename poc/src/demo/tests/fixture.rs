@@ -15,6 +15,7 @@ use crate::session::clock::FakeClock;
 use crate::session::events::SessionEvent;
 use crate::session::loopback::LoopbackTransport;
 use crate::session::session::Session;
+use crate::session::sts::MemoryStsStore;
 use crate::session::transport::Transport;
 
 use crate::demo::seed::{SeedNetwork, OFTC_WORLD, OMARCHY_WORLD};
@@ -50,7 +51,13 @@ impl Lane {
     /// A session for `network` over a fresh loopback. Nothing is started.
     pub fn new(network: &SeedNetwork, clock: &Rc<FakeClock>) -> Self {
         let transport = Rc::new(LoopbackTransport::new());
-        let session = Session::new(session_config(network), transport.clone(), clock.clone());
+        let sts = Rc::new(MemoryStsStore::default());
+        let session = Session::new(
+            session_config(network),
+            transport.clone(),
+            clock.clone(),
+            sts,
+        );
         Self {
             session,
             transport,

@@ -85,6 +85,7 @@ fn the_connection_states_read_as_the_qt_status_console_words() {
     let words = [
         (SessionState::Idle, "offline", "Disconnected"),
         (SessionState::Connecting, "connecting", "Connecting"),
+        (SessionState::StsUpgrading, "connecting", "Connecting"),
         (SessionState::CapLs, "negotiating", "Capability discovery"),
         (
             SessionState::CapReq,

@@ -34,6 +34,9 @@ pub(crate) enum DisconnectOutcome {
     SettleIdle,
     /// The server closed the connection on its own: fail with a network error.
     FailUnexpected,
+    /// The plaintext socket closed for an STS upgrade: connect again at once on the
+    /// upgraded port.
+    FinishStsUpgrade,
     /// A stopping session that is not closing, such as one that already failed,
     /// keeps its state.
     Ignore,
@@ -94,6 +97,9 @@ impl Connection {
                 DisconnectOutcome::SettleIdle
             }
             DisconnectIntent::Stopping => DisconnectOutcome::Ignore,
+            DisconnectIntent::Unexpected if state == SessionState::StsUpgrading => {
+                DisconnectOutcome::FinishStsUpgrade
+            }
             DisconnectIntent::Unexpected => DisconnectOutcome::FailUnexpected,
         }
     }
@@ -296,6 +302,34 @@ mod tests {
             DisconnectOutcome::FailUnexpected
         );
         assert!(!connection.is_stopping());
+    }
+
+    #[test]
+    fn an_sts_upgrade_disconnect_reconnects_at_once() {
+        let mut connection = Connection::default();
+        connection.begin_start();
+        assert_eq!(
+            connection.on_disconnect(SessionState::StsUpgrading),
+            DisconnectOutcome::FinishStsUpgrade
+        );
+        assert!(!connection.is_stopping());
+    }
+
+    #[test]
+    fn a_reconnect_request_or_a_stop_outranks_an_sts_upgrade() {
+        let mut connection = Connection::default();
+        connection.begin_start();
+        connection.reconnect_on_disconnect();
+        assert_eq!(
+            connection.on_disconnect(SessionState::StsUpgrading),
+            DisconnectOutcome::ScheduleReconnect
+        );
+
+        connection.begin_stop();
+        assert_eq!(
+            connection.on_disconnect(SessionState::StsUpgrading),
+            DisconnectOutcome::Ignore
+        );
     }
 
     #[test]

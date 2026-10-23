@@ -13,5 +13,6 @@ mod portability;
 mod readmarker;
 mod reconnect;
 mod scram;
+mod sts;
 mod transport;
 mod typing;

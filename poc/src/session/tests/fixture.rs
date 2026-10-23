@@ -17,6 +17,7 @@ use crate::session::config::SessionConfig;
 use crate::session::events::{ErrorKind, HistoryBatch, SessionEvent, SessionState};
 use crate::session::loopback::LoopbackTransport;
 use crate::session::session::Session;
+use crate::session::sts::MemoryStsStore;
 
 pub const NETWORK_ID: &str = "network-a";
 
@@ -58,6 +59,8 @@ pub fn plaintext_config() -> SessionConfig {
 pub struct Fixture {
     pub transport: Rc<LoopbackTransport>,
     pub clock: Rc<FakeClock>,
+    /// The STS cache the session reads and writes, kept here so a test can prime it.
+    pub sts: Rc<MemoryStsStore>,
     pub session: Session,
     log: RefCell<Vec<SessionEvent>>,
 }
@@ -66,10 +69,12 @@ impl Fixture {
     pub fn new(config: SessionConfig) -> Self {
         let transport = Rc::new(LoopbackTransport::new());
         let clock = Rc::new(FakeClock::new(Utc.timestamp_opt(0, 0).single().unwrap()));
-        let session = Session::new(config, transport.clone(), clock.clone());
+        let sts = Rc::new(MemoryStsStore::default());
+        let session = Session::new(config, transport.clone(), clock.clone(), sts.clone());
         Self {
             transport,
             clock,
+            sts,
             session,
             log: RefCell::new(Vec::new()),
         }

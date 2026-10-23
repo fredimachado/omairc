@@ -15,6 +15,7 @@ use super::clock::Clock;
 use super::config::SessionConfig;
 use super::events::SessionState;
 use super::session::Session;
+use super::sts::StsStore;
 use super::transport::Transport;
 
 /// Why `SessionManager::create` refused a session.
@@ -39,16 +40,20 @@ impl fmt::Display for SessionManagerError {
 
 impl std::error::Error for SessionManagerError {}
 
-/// The registry of sessions, keyed by network id.
-#[derive(Default)]
+/// The registry of sessions, keyed by network id. It holds the one STS policy cache its
+/// sessions share, so a policy learned on one network is kept for the next start.
 pub struct SessionManager {
     sessions: RefCell<BTreeMap<String, Session>>,
+    sts: Rc<dyn StsStore>,
 }
 
 impl SessionManager {
-    /// An empty manager.
-    pub fn new() -> Self {
-        Self::default()
+    /// An empty manager whose sessions share `sts`.
+    pub fn new(sts: Rc<dyn StsStore>) -> Self {
+        Self {
+            sessions: RefCell::new(BTreeMap::new()),
+            sts,
+        }
     }
 
     /// Builds a session and registers it. Rejects an empty network id and a
@@ -68,7 +73,7 @@ impl SessionManager {
             return Err(SessionManagerError::DuplicateNetworkId(config.network_id));
         }
         let network_id = config.network_id.clone();
-        let session = Session::new(config, transport, clock);
+        let session = Session::new(config, transport, clock, self.sts.clone());
         sessions.insert(network_id, session.clone());
         Ok(session)
     }

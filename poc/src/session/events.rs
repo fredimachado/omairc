@@ -27,13 +27,14 @@ use crate::irc::message::IrcMessage;
 pub use crate::irc::event::{HistoryKind, PendingInvite, Severity};
 pub use crate::irc::translator::{HistoryBatch, HistoryTarget};
 
-/// The connection state machine (`IrcSession::State`, src/irc/ircsession.h). The
-/// STS upgrade state of Go is absent: STS is Phase 11.
+/// The connection state machine (`IrcSession::State`, src/irc/ircsession.h). `StsUpgrading`
+/// is the plaintext socket closing for an STS upgrade (`stsflow.rs`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SessionState {
     #[default]
     Idle,
     Connecting,
+    StsUpgrading,
     CapLs,
     CapReq,
     Sasl,
@@ -52,6 +53,7 @@ impl SessionState {
         match self {
             Self::Idle => "Idle",
             Self::Connecting => "Connecting",
+            Self::StsUpgrading => "StsUpgrading",
             Self::CapLs => "CapLs",
             Self::CapReq => "CapReq",
             Self::Sasl => "Sasl",

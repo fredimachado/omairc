@@ -1,8 +1,8 @@
 //! The session layer. It mirrors `tui/internal/session/` (Go) and the session
 //! parts of `src/irc/` (C++: `ircsession`, `ircsessionmanager`,
-//! `ircloopbacktransport`). SCRAM-SHA-256 (`saslscram.go`) is in `saslscram`. The
-//! socket transport (`transport_net.go`) and STS (`sts.go`) are out of scope until
-//! Phase 11.
+//! `ircloopbacktransport`). SCRAM-SHA-256 (`saslscram.go`) is in `saslscram`, and STS
+//! (`sts.go`) is in `sts` and `stsflow`. The socket transport (`transport_net.go`) is
+//! out of scope until Phase 11.
 //!
 //! Nothing here opens a socket or reads the wall clock directly: time comes
 //! through `Clock`, bytes through `Transport`, and the owner drains
@@ -28,6 +28,9 @@ pub mod registration;
 pub mod saslscram;
 pub mod session;
 pub mod sessionmanager;
+pub mod sink;
+pub mod sts;
+pub mod stsflow;
 pub mod transport;
 pub mod typing;
 pub mod watchdog;

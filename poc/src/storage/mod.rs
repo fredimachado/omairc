@@ -8,8 +8,12 @@
 //! store never reads the real environment itself: the caller picks the backing.
 
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use settings::{Settings, Status};
+use stspolicies::IniStsStore;
+
+use crate::session::sts::{MemoryStsStore, StsStore};
 
 pub mod credentialstore;
 pub mod geometry;
@@ -20,6 +24,7 @@ pub mod preferences;
 pub mod profilestore;
 pub mod scrollplace;
 pub mod settings;
+pub mod stspolicies;
 
 /// Where a store keeps its data.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -48,6 +53,15 @@ impl Backing {
         }
     }
 
+    /// The STS policy cache for this backing: the `sts` file beside the settings file, or memory
+    /// for an ephemeral backing. The controller builds one and shares it across its sessions.
+    pub fn sts_store(&self) -> Rc<dyn StsStore> {
+        match self {
+            Backing::Disk(path) => Rc::new(IniStsStore::new(paths::sts_path_beside(path))),
+            Backing::Ephemeral => Rc::new(MemoryStsStore::default()),
+        }
+    }
+
     /// Reads the store, applies `edit`, and writes it back. The write refuses first
     /// when the file is malformed or read-only, so a bad file is left alone. An
     /// ephemeral backing applies the edit and reports success.
@@ -58,5 +72,34 @@ impl Backing {
             return Status::Written;
         }
         settings.sync()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::testdir::TempDir;
+    use chrono::{TimeZone, Utc};
+
+    #[test]
+    fn a_disk_backing_keeps_its_sts_cache_beside_its_settings() {
+        let dir = TempDir::new("sts-backing");
+        let settings = dir.path().join("omairc.conf");
+        let now = Utc.timestamp_opt(0, 0).single().unwrap();
+        Backing::Disk(settings.clone())
+            .sts_store()
+            .store("irc.example", 6697, 60, now);
+
+        let restarted = Backing::Disk(settings).sts_store();
+        assert!(restarted.lookup("irc.example", now).is_some());
+        assert!(dir.path().join(paths::STS_FILE).exists());
+    }
+
+    #[test]
+    fn an_ephemeral_backing_keeps_the_sts_cache_in_memory() {
+        let now = Utc.timestamp_opt(0, 0).single().unwrap();
+        let store = Backing::Ephemeral.sts_store();
+        store.store("irc.example", 6697, 60, now);
+        assert!(store.lookup("irc.example", now).is_some());
     }
 }
