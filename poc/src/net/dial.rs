@@ -14,8 +14,12 @@ use tokio::time::timeout;
 
 use crate::session::transport::{TransportError, TransportErrorKind};
 
-/// The keepalive idle time, the same value Go's dialer leaves on by default.
-const KEEPALIVE_IDLE: Duration = Duration::from_secs(60);
+/// The keepalive idle time and probe interval, the values Go's dialer leaves on by
+/// default. The interval must be set: socket2 sends an unset one to Windows as 0 ms, so
+/// every probe went out back to back once the socket had been quiet for the idle time,
+/// and Windows reset the connection before the first ACK could come back.
+const KEEPALIVE_IDLE: Duration = Duration::from_secs(15);
+const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);
 
 /// The text of a connect that ran out of time, the same as the loopback's.
 pub(super) const TIMED_OUT: &str = "Connection timed out";
@@ -95,7 +99,9 @@ fn tune(stream: &TcpStream) {
     if let Err(error) = stream.set_nodelay(true) {
         log::warn!("setting TCP_NODELAY failed: {error}");
     }
-    let keepalive = TcpKeepalive::new().with_time(KEEPALIVE_IDLE);
+    let keepalive = TcpKeepalive::new()
+        .with_time(KEEPALIVE_IDLE)
+        .with_interval(KEEPALIVE_INTERVAL);
     if let Err(error) = SockRef::from(stream).set_tcp_keepalive(&keepalive) {
         log::warn!("setting TCP keepalive failed: {error}");
     }
