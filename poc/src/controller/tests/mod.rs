@@ -23,6 +23,7 @@ mod parity;
 mod peers;
 mod persistence;
 mod playback;
+mod readmarker;
 mod replies;
 mod scrollplace;
 mod selection;

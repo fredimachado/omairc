@@ -193,6 +193,7 @@ impl Controller {
     pub fn set_window_active(&mut self, active: bool) {
         self.pump();
         self.reducer.set_window_active(active);
+        self.transcript_focused = active;
         if !active {
             return;
         }
@@ -238,9 +239,7 @@ impl Controller {
         viewnotify::merge(&mut surfaces, vec![ViewNotify::Inbox, ViewNotify::Status]);
         self.queue(surfaces);
         if self.reducer.find(&key).is_some() && !is_channel {
-            if let Some(session) = self.manager.find(network_id) {
-                session.request_read_marker_get(target);
-            }
+            self.request_read_marker_get_once(network_id, target);
         }
     }
 
@@ -341,6 +340,7 @@ impl Controller {
         if is_channel {
             self.reducer.drop_channel(&key);
         } else {
+            self.read_markers.forget_conversation(&key);
             self.reducer.drop_direct_message(&key);
         }
         self.queue(viewnotify::reset_all());

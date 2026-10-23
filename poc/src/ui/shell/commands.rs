@@ -461,6 +461,8 @@ impl Shell {
             }
             cx.notify();
         });
+        let at_end = self.transcript.read(cx).at_end();
+        self.report_transcript_viewport(at_end, window, cx);
     }
 
     /// Ctrl+Home (top) and Ctrl+End (bottom) of the transcript.

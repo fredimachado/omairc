@@ -374,6 +374,11 @@ impl EventReducer {
         self.facts.window_inactive = !active;
     }
 
+    /// Whether the window is focused (`WindowActive`).
+    pub fn window_active(&self) -> bool {
+        !self.facts.window_inactive
+    }
+
     /// Wires the transcript log used for hydration and persistence. `None`
     /// disables both (`SetConversationLog`).
     pub fn set_conversation_log(&mut self, log: Option<Box<dyn ConversationLog>>) {

@@ -175,6 +175,9 @@ pub struct Controller {
     pub(super) playback_times: Rc<RefCell<PlaybackTimeStore>>,
     /// Whether the transcript viewport follows the end after new lines.
     pub(super) transcript_follow_end: bool,
+    /// Whether the shell reports the transcript as focused for read-marker sync.
+    pub(super) transcript_focused: bool,
+    pub(super) read_markers: super::readmarker::ReadMarkerState,
     /// Mention and monitor arrivals waiting for the shell (`notify.rs`).
     pub(super) arrivals: Vec<Arrival>,
     pumping: bool,
@@ -268,6 +271,8 @@ impl Controller {
             playback,
             playback_times,
             transcript_follow_end: true,
+            transcript_focused: true,
+            read_markers: super::readmarker::ReadMarkerState::new(),
             arrivals: Vec::new(),
             pumping: false,
         }
@@ -544,12 +549,7 @@ impl Controller {
                 network_id,
                 target,
                 marker,
-            } => {
-                let key = self.reducer.conversation_key(&network_id, &target);
-                if self.reducer.apply_server_read_marker(&key, marker) {
-                    self.queue(vec![ViewNotify::Conversations]);
-                }
-            }
+            } => self.read_marker_received(&network_id, &target, marker),
             SessionEvent::RequestLabelFinished {
                 network_id,
                 label,
@@ -909,6 +909,7 @@ impl Controller {
                 msgid: arrival.msgid,
             });
         }
+        self.sync_read_marker_for_selection();
     }
 
     /// The first conversation the reducer holds claims the selection and takes the
@@ -927,9 +928,7 @@ impl Controller {
         self.reducer.mark_selected(&key);
         self.console_open = false;
         if !is_channel {
-            if let Some(session) = self.manager.find(&key.network_id) {
-                session.request_read_marker_get(&target);
-            }
+            self.request_read_marker_get_once(&key.network_id, &target);
         }
     }
 

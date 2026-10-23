@@ -40,7 +40,6 @@ pub(super) fn covered_by_read_marker(
 /// when no chat line carries one (`LatestServerMessageTime`). A wall-clock
 /// fallback never counts, so a line without a server time cannot advance the
 /// marker.
-#[cfg(test)]
 pub fn latest_server_message_time(conv: &ConversationState) -> Option<DateTime<Utc>> {
     conv.messages.iter().rev().find_map(|message| {
         let server_time = message.server_time?;
