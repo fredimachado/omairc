@@ -45,6 +45,8 @@ rustls-native-certs = "=0.8.5"
 webpki-roots = "=1.0.10"
 # gpui already builds this release (through async-global-executor), so nothing new compiles.
 async-channel = "=2.5.0"
+# TCP keepalive needs the socket itself; tokio's net feature already builds this release.
+socket2 = "=0.6.5"
 
 # The installed-copy probe reads the Inno uninstall key from the registry.
 [target.'cfg(windows)'.dependencies]
