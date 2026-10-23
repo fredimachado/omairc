@@ -5,7 +5,9 @@
 use crate::irc::ctcp::parse_ctcp_request;
 use crate::irc::event::{ActionEvent, Event, MessageEvent, MsgId, NoticeEvent, TypingEvent};
 use crate::irc::message::IrcMessage;
+use crate::irc::conversation::target_looks_like_service;
 use crate::irc::serverfeatures::IrcServerFeatures;
+use crate::irc::servicenick::is_network_notice_target;
 use crate::irc::typing::typing_phase_from_tag;
 
 use super::context::{conversation_for, key, same, Inbound};
@@ -24,26 +26,69 @@ struct ChannelDelivery {
     only_visible_to_you: bool,
 }
 
-/// `NOTICE`. Only a channel-context notice produces a transcript event; the rest
-/// only updated the account, which `translate` has already recorded.
+/// `NOTICE`. A channel-context notice or a nick-targeted direct notice produces a
+/// transcript event; channel notices without context and CTCP only update the account,
+/// which `translate` has already recorded.
 pub(super) fn notice(inbound: &Inbound<'_>) -> Vec<Event> {
     let message = inbound.message;
     let body = message.text_param(1);
     if parse_ctcp_request(&body).is_some() {
         return Vec::new();
     }
-    let Some(delivery) = nick_targeted_channel_delivery(&message.text_param(0), inbound) else {
+    let wire_target = message.text_param(0);
+    let features = inbound.features;
+    let msgid = MsgId::new(message.msgid());
+    let sender = &inbound.sender;
+    if let Some(delivery) = nick_targeted_channel_delivery(&wire_target, inbound) {
+        return vec![NoticeEvent {
+            conversation: key(inbound.network_id, &delivery.channel, features),
+            author: sender.clone(),
+            body,
+            timestamp: inbound.timestamp,
+            server_time: inbound.server_time,
+            target: delivery.channel,
+            msgid,
+            only_visible_to_you: delivery.only_visible_to_you,
+        }
+        .into()];
+    }
+    if features.is_channel(&wire_target) {
+        return Vec::new();
+    }
+    for name in ["+draft/channel-context", "draft/channel-context"] {
+        if message.has_tag(name) {
+            return Vec::new();
+        }
+    }
+    let Some(conversation) = conversation_for(
+        inbound.network_id,
+        &wire_target,
+        message,
+        inbound.current_nick,
+        features,
+    ) else {
         return Vec::new();
     };
+    let display_target =
+        if !features.is_channel(&wire_target) && !same(features, sender, inbound.current_nick) {
+            sender.clone()
+        } else {
+            wire_target.clone()
+        };
+    if is_network_notice_target(&display_target)
+        || target_looks_like_service(&display_target, features)
+    {
+        return Vec::new();
+    }
     vec![NoticeEvent {
-        conversation: key(inbound.network_id, &delivery.channel, inbound.features),
-        author: inbound.sender.clone(),
+        conversation,
+        author: sender.clone(),
         body,
         timestamp: inbound.timestamp,
         server_time: inbound.server_time,
-        target: delivery.channel,
-        msgid: MsgId::new(message.msgid()),
-        only_visible_to_you: delivery.only_visible_to_you,
+        target: display_target,
+        msgid,
+        only_visible_to_you: false,
     }
     .into()]
 }
