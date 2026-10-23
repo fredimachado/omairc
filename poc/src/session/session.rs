@@ -225,6 +225,10 @@ impl Session {
         result
     }
 
+    pub(crate) fn case_mapping(&self) -> crate::irc::casemapping::IrcCaseMapping {
+        self.shared.core.borrow().features.case_mapping()
+    }
+
     pub(crate) fn run_effects(&self, effects: Vec<Effect>) {
         for effect in effects {
             match effect {

@@ -230,12 +230,13 @@ impl PlaybackCoordinator {
         let _ = sent;
     }
 
-    pub fn note_joined_channel(&mut self, network_id: &str, channel: &str) {
+    pub fn note_joined_channel(&mut self, reducer: &EventReducer, network_id: &str, channel: &str) {
         if network_id.is_empty() || channel.is_empty() {
             return;
         }
+        let mapping = reducer.server_features(network_id).case_mapping();
         let channels = self.znc_joined_channels.entry(network_id.to_owned()).or_default();
-        if channels.iter().any(|existing| existing == channel) {
+        if channels.iter().any(|existing| mapping.equals(existing, channel)) {
             return;
         }
         channels.push(channel.to_owned());
@@ -373,7 +374,8 @@ impl PlaybackCoordinator {
         self.mark_target(&network_id, &normalized);
     }
 
-    pub fn resume_time(
+    #[cfg(test)]
+    pub(crate) fn resume_time(
         &self,
         reducer: &EventReducer,
         network_id: &str,

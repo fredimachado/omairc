@@ -53,6 +53,7 @@ impl PlaybackTimeStore {
     }
 
     /// Switches between disk and an in-memory-only cache. Turning it on clears the cache.
+    #[cfg(test)]
     pub fn set_ephemeral(&mut self, ephemeral: bool) {
         self.ephemeral = ephemeral;
         if ephemeral {
@@ -61,6 +62,7 @@ impl PlaybackTimeStore {
     }
 
     /// The maximum stamp across all targets, or `None` when the network holds none.
+    #[cfg(test)]
     pub fn newest(&self, network_id: &str) -> Option<DateTime<Utc>> {
         let rows = self.playback_entries(network_id);
         rows.iter()
@@ -284,11 +286,6 @@ fn playback_index_of_target(
     mapping: IrcCaseMapping,
 ) -> Option<usize> {
     rows.iter().position(|row| mapping.equals(&row.target, target))
-}
-
-/// A ZNC PLAY "from" stamp: Unix seconds plus a 3-digit millisecond fraction, or `"0"`.
-pub fn play_stamp(when: Option<DateTime<Utc>>) -> String {
-    play_stamp_with_ok(when, when.is_some()).unwrap_or_else(|| "0".to_owned())
 }
 
 fn play_stamp_with_ok(when: Option<DateTime<Utc>>, ok: bool) -> Option<String> {
