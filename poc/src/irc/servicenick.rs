@@ -2,6 +2,28 @@
 //! (C++). Neither source has a test of its own; the cases below follow the
 //! documented contract and the session cases that depend on it.
 
+use crate::irc::message::IrcMessage;
+use crate::irc::serverfeatures::IrcServerFeatures;
+use crate::irc::wiretext::wire_text;
+
+/// Whether the source of `message` is a network service. A line with no source is
+/// never a service. The source nick and host go through `is_service_identity`
+/// with the network's advertised CHANTYPES.
+pub fn is_service_source(message: &IrcMessage, features: &IrcServerFeatures) -> bool {
+    message.prefix.as_ref().is_some_and(|prefix| {
+        is_service_identity(
+            &wire_text(&prefix.nick),
+            &wire_text(&prefix.host),
+            features.channel_types(),
+        )
+    })
+}
+
+/// Targets that name the network rather than a person: empty, `*` or `AUTH`.
+pub fn is_network_notice_target(target: &str) -> bool {
+    target.is_empty() || target == "*" || target.eq_ignore_ascii_case("AUTH")
+}
+
 /// Whether a message source is a network service rather than a person: a nick
 /// ending in `serv` that is not a channel, or a host folding to `services` or
 /// `services.*`. `channel_types` is the advertised CHANTYPES; when it is empty, a
@@ -62,6 +84,7 @@ fn ends_with_fold(text: &str, suffix: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::irc::message::IrcPrefix;
 
     #[test]
     fn a_serv_nick_is_a_service_when_it_is_not_a_channel() {
@@ -106,5 +129,44 @@ mod tests {
         ] {
             assert!(!nick_is_routable(unroutable), "{unroutable:?}");
         }
+    }
+
+    fn sourced(nick: &str, user: &str, host: &str) -> IrcMessage {
+        IrcMessage {
+            prefix: Some(IrcPrefix {
+                raw: format!("{nick}!{user}@{host}").into_bytes(),
+                nick: nick.into(),
+                user: user.into(),
+                host: host.into(),
+            }),
+            ..IrcMessage::default()
+        }
+    }
+
+    #[test]
+    fn a_service_source_is_judged_by_its_nick_and_host() {
+        let features = IrcServerFeatures::new();
+        assert!(is_service_source(
+            &sourced("NickServ", "svc", "irc.example.net"),
+            &features
+        ));
+        assert!(is_service_source(
+            &sourced("bob", "b", "services.example.net"),
+            &features
+        ));
+        assert!(!is_service_source(
+            &sourced("bob", "b", "example.org"),
+            &features
+        ));
+        assert!(!is_service_source(&IrcMessage::default(), &features));
+    }
+
+    #[test]
+    fn network_notice_targets_are_empty_star_or_auth() {
+        assert!(is_network_notice_target(""));
+        assert!(is_network_notice_target("*"));
+        assert!(is_network_notice_target("auth"));
+        assert!(!is_network_notice_target("#auth"));
+        assert!(!is_network_notice_target("bob"));
     }
 }

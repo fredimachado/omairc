@@ -15,8 +15,8 @@ use chrono::{DateTime, Utc};
 
 use super::events::{HistoryBatch, HistoryKind, SessionEvent};
 use super::session::{Core, HISTORY_AFTER_PAGE_CAP};
-use super::wire;
 use crate::irc::message::IrcMessage;
+use crate::irc::translator::server_time_of;
 
 /// The CHATHISTORY subcommand a pending request was sent as.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -227,14 +227,14 @@ impl Core {
     /// Handles a `FAIL CHATHISTORY` line (`handleChatHistoryFailLocked`). The
     /// request it answers is found by its channel argument, never by position.
     pub(crate) fn handle_chat_history_fail(&mut self, message: &IrcMessage) {
-        if !wire::param(message, 0).eq_ignore_ascii_case("CHATHISTORY") {
+        if !message.text_param(0).eq_ignore_ascii_case("CHATHISTORY") {
             return;
         }
         if message.params.len() < 4 {
             return;
         }
         let network_id = self.network_id();
-        if wire::param(message, 2).eq_ignore_ascii_case("TARGETS") {
+        if message.text_param(2).eq_ignore_ascii_case("TARGETS") {
             self.history.targets_pending = false;
             self.emit(SessionEvent::ChatHistoryFailed {
                 network_id,
@@ -247,7 +247,7 @@ impl Core {
         // The description is skipped, so a channel named in prose cannot cancel
         // a different request.
         for index in 2..message.params.len().saturating_sub(1) {
-            let channel = wire::param(message, index);
+            let channel = message.text_param(index);
             if !self.answers_pending_history(&channel) {
                 continue;
             }
@@ -553,11 +553,11 @@ fn cursor_from_after_page(lines: &[IrcMessage]) -> HistoryCursor {
     };
     let last_msgid = lines
         .iter()
-        .map(wire::msgid)
+        .map(IrcMessage::msgid)
         .filter(|id| !id.is_empty())
         .last()
         .unwrap_or_default();
-    let tail_msgid = wire::msgid(last);
+    let tail_msgid = last.msgid();
     if !tail_msgid.is_empty() {
         return HistoryCursor {
             msgid: tail_msgid,
@@ -570,7 +570,7 @@ fn cursor_from_after_page(lines: &[IrcMessage]) -> HistoryCursor {
             when: None,
         };
     }
-    if let Some(when) = wire::server_time_of(last) {
+    if let Some(when) = server_time_of(last) {
         return HistoryCursor {
             msgid: String::new(),
             when: Some(when),
@@ -579,7 +579,7 @@ fn cursor_from_after_page(lines: &[IrcMessage]) -> HistoryCursor {
     lines
         .iter()
         .rev()
-        .find_map(wire::server_time_of)
+        .find_map(server_time_of)
         .map(|when| HistoryCursor {
             msgid: String::new(),
             when: Some(when),

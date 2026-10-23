@@ -9,7 +9,6 @@
 
 use super::events::{ErrorKind, SessionEvent, SessionState, Severity};
 use super::session::{lifecycle_event, Core, RegistrationNick, HISTORY_LIMIT};
-use super::wire;
 use crate::irc::commandbuilder;
 use crate::irc::jointarget::IrcJoinTarget;
 use crate::irc::message::IrcMessage;
@@ -88,7 +87,7 @@ impl Core {
         const CHATHISTORY: &str = "CHATHISTORY=";
         let last = message.params.len() - 1;
         for index in 1..last {
-            let token = wire::param(message, index);
+            let token = message.text_param(index);
             self.features.apply_token(&token);
             if let Some(value) = token.strip_prefix(CHANTYPES) {
                 self.channel_types = value.to_owned();
@@ -127,7 +126,7 @@ impl Core {
             return;
         }
 
-        let assigned = wire::param(message, 0);
+        let assigned = message.text_param(0);
         if !assigned.is_empty() {
             self.nickname = assigned;
         }

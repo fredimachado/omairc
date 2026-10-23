@@ -10,7 +10,6 @@
 //! `774` retry.
 
 use super::session::Core;
-use super::wire;
 use crate::irc::capability::IrcCapability;
 use crate::irc::message::MAX_CLASSIC_FRAME_BYTES;
 
@@ -81,11 +80,12 @@ impl Core {
     /// Handles `774`, which asks the client to retry a metadata sync later. The
     /// retry is capped at 60 seconds (`handleMetadataSyncLaterLocked`).
     pub(crate) fn handle_metadata_sync_later(&mut self, message: &crate::irc::message::IrcMessage) {
-        let target = wire::param(message, 1);
+        let target = message.text_param(1);
         if target.is_empty() {
             return;
         }
-        let retry_after = wire::param(message, 2)
+        let retry_after = message
+            .text_param(2)
             .trim()
             .parse::<i64>()
             .unwrap_or(0)

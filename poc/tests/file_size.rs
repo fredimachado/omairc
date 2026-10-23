@@ -27,9 +27,9 @@ const LIMIT: usize = 800;
 const ALLOWLIST: &[(&str, usize)] = &[
     ("controller/commanddispatcher.rs", 972),
     ("irc/command.rs", 831),
-    ("irc/statusentry.rs", 1121),
-    ("irc/translator.rs", 997),
-    ("session/session.rs", 1097),
+    ("irc/statusentry.rs", 1105),
+    ("irc/translator.rs", 961),
+    ("session/session.rs", 1094),
     ("ui/input.rs", 824),
 ];
 

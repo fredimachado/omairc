@@ -21,7 +21,6 @@ pub(crate) use crate::irc::readmarker::{
 
 use super::events::SessionEvent;
 use super::session::Core;
-use super::wire;
 use crate::irc::message::IrcMessage;
 
 /// A marker waiting to be sent (`readMarkerQueue`).
@@ -67,7 +66,7 @@ impl Core {
         if message.params.is_empty() {
             return true;
         }
-        let target = wire::param(message, 0);
+        let target = message.text_param(0);
         if target.is_empty() {
             return true;
         }
@@ -81,7 +80,7 @@ impl Core {
             });
             return true;
         }
-        let Some(parsed) = parse_read_marker_parameter(&wire::param(message, 1)) else {
+        let Some(parsed) = parse_read_marker_parameter(&message.text_param(1)) else {
             self.read_markers.in_flight.remove(&folded);
             self.flush_read_marker_set(&folded);
             return true;
@@ -116,7 +115,7 @@ impl Core {
 
     /// Handles a `FAIL` that names a read-marker command (`handleReadMarkerFailLocked`).
     pub(crate) fn handle_read_marker_fail(&mut self, message: &IrcMessage) {
-        let command = wire::param(message, 0);
+        let command = message.text_param(0);
         if !command.eq_ignore_ascii_case("MARKREAD") && !command.eq_ignore_ascii_case("READ") {
             return;
         }
@@ -128,7 +127,7 @@ impl Core {
             }
             return;
         }
-        let target = wire::param(message, 2);
+        let target = message.text_param(2);
         let folded = self.fold_read_marker_target(&target);
         if folded.is_empty() {
             return;

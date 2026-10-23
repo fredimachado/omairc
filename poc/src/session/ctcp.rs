@@ -21,7 +21,7 @@ impl Core {
     /// a non-ACTION CTCP and has been consumed, even when no reply went out
     /// (`handleMessageLocked`, the CTCP block).
     pub(crate) fn answer_ctcp(&mut self, message: &IrcMessage) -> bool {
-        let body = wire::param(message, 1);
+        let body = message.text_param(1);
         let Some(request) = parse_ctcp_request(&body) else {
             return false;
         };

@@ -103,7 +103,7 @@ impl Core {
 
     /// Handles an inbound `CAP` line (`handleCapLocked`).
     pub(crate) fn handle_cap(&mut self, message: &IrcMessage) {
-        if let Some(ls_index) = wire::param_index(message, "LS") {
+        if let Some(ls_index) = message.param_index("LS") {
             self.capability_list_seen = true;
             let tokens = wire::capability_tokens(message, ls_index);
             self.caps.advertise(&tokens);
@@ -111,7 +111,7 @@ impl Core {
                 self.metadata = metadata;
             }
             let continuation =
-                message.params.len() > ls_index + 1 && wire::param(message, ls_index + 1) == "*";
+                message.params.len() > ls_index + 1 && message.text_param(ls_index + 1) == "*";
             if continuation {
                 return;
             }
@@ -125,7 +125,7 @@ impl Core {
             return;
         }
 
-        if let Some(new_index) = wire::param_index(message, "NEW") {
+        if let Some(new_index) = message.param_index("NEW") {
             let tokens = wire::capability_tokens(message, new_index);
             self.caps.advertise(&tokens);
             if let Some(metadata) = super::metadata::parse_metadata_capability(&tokens) {
@@ -135,7 +135,7 @@ impl Core {
             return;
         }
 
-        if let Some(del_index) = wire::param_index(message, "DEL") {
+        if let Some(del_index) = message.param_index("DEL") {
             let tokens = wire::capability_tokens(message, del_index);
             self.caps.withdraw(&tokens);
             if let Some(token) = self.read_marker_token {
@@ -154,7 +154,7 @@ impl Core {
             return;
         }
 
-        if let Some(ack_index) = wire::param_index(message, "ACK") {
+        if let Some(ack_index) = message.param_index("ACK") {
             let tokens = wire::capability_tokens(message, ack_index);
             let granted = self.caps.acknowledge(&tokens);
             self.note_read_marker_ack(&tokens, granted);
@@ -186,7 +186,7 @@ impl Core {
             return;
         }
 
-        if let Some(nak_index) = wire::param_index(message, "NAK") {
+        if let Some(nak_index) = message.param_index("NAK") {
             let tokens = wire::capability_tokens(message, nak_index);
             let refused = self.caps.reject(&tokens);
             if refused.contains(IrcCapability::Sasl) {
@@ -229,7 +229,7 @@ impl Core {
         if self.state != SessionState::Sasl || message.params.is_empty() {
             return;
         }
-        let front = wire::param(message, 0);
+        let front = message.text_param(0);
         if front == "*" {
             self.fail(
                 ErrorKind::Authentication,

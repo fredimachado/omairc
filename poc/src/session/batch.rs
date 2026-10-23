@@ -15,7 +15,6 @@ use super::history::HistoryRequestKind;
 use super::session::{
     replay_kind_for, Core, HISTORY_BUFFER_CEILING, MAX_IGNORED_BATCHES, MAX_OPEN_BATCHES,
 };
-use super::wire;
 use crate::irc::capability::IrcCapability;
 use crate::irc::message::IrcMessage;
 
@@ -53,7 +52,7 @@ impl Core {
         if message.params.is_empty() {
             return;
         }
-        let token = wire::param(message, 0);
+        let token = message.text_param(0);
         if token.len() < 2 {
             return;
         }
@@ -71,9 +70,9 @@ impl Core {
             return;
         }
 
-        let parent = wire::tag_value(message, "batch");
-        let batch_type = wire::param(message, 1);
-        let carried_label = wire::tag_value(message, "label");
+        let parent = message.tag_text("batch").unwrap_or_default();
+        let batch_type = message.text_param(1);
+        let carried_label = message.tag_text("label").unwrap_or_default();
         let labeled_response = batch_type.eq_ignore_ascii_case("labeled-response");
         if self.batches.open.contains_key(&reference) {
             return;
@@ -90,7 +89,7 @@ impl Core {
         // A history batch that answers a request still outstanding, or a
         // labeled-response batch whose opening label is pending, is never
         // crowded out. Everything else shares the open-batch budget.
-        let target_arg = wire::param(message, 2);
+        let target_arg = message.text_param(2);
         let solicited_targets = kind == Some(HistoryKind::Targets) && self.history.targets_pending;
         let solicited = solicited_targets
             || (kind == Some(HistoryKind::Chat) && self.answers_pending_history(&target_arg));
@@ -134,7 +133,7 @@ impl Core {
         }
         if frame.replay_root == reference {
             frame.kind = kind;
-            frame.history_ended = wire::tag_present(message, "draft/chathistory-end");
+            frame.history_ended = message.has_tag("draft/chathistory-end");
             frame.collected.target = target_arg.clone();
             frame.generation = self.history_generation(&frame.collected.target);
             if kind == Some(HistoryKind::Chat) && self.answers_pending_history(&target_arg) {
@@ -228,7 +227,7 @@ impl Core {
     /// Collects a tagged line into its replay root, when its batch is one
     /// (`captureInBatchLocked`). Returns true when the line was swallowed.
     pub(crate) fn capture_in_batch(&mut self, message: &IrcMessage) -> bool {
-        let batch = wire::tag_value(message, "batch");
+        let batch = message.tag_text("batch").unwrap_or_default();
         if batch.is_empty() {
             return false;
         }
@@ -309,15 +308,15 @@ fn history_targets_from(lines: &[IrcMessage]) -> Vec<HistoryTarget> {
     lines
         .iter()
         .filter(|line| line.command.eq_ignore_ascii_case("CHATHISTORY"))
-        .filter(|line| wire::param(line, 0).eq_ignore_ascii_case("TARGETS"))
+        .filter(|line| line.text_param(0).eq_ignore_ascii_case("TARGETS"))
         .filter_map(|line| {
-            let name = wire::param(line, 1);
+            let name = line.text_param(1);
             if name.is_empty() {
                 return None;
             }
             Some(HistoryTarget {
                 name,
-                latest: super::history::parse_history_target_time(&wire::param(line, 2)),
+                latest: super::history::parse_history_target_time(&line.text_param(2)),
             })
         })
         .collect()

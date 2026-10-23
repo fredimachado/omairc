@@ -1009,7 +1009,7 @@ impl Core {
         let command = message.command.clone();
         if command == "INVITE" && message.params.len() >= 2 {
             let nick = prefix_nick(&message);
-            let channel = wire::param(&message, message.params.len() - 1);
+            let channel = message.text_param(message.params.len() - 1);
             if !nick.is_empty() && !channel.is_empty() {
                 self.pending_invite = Some(PendingInvite { nick, channel });
             }
@@ -1040,7 +1040,7 @@ impl Core {
         }
 
         if command == "ACK" {
-            self.finish_request_label(&wire::tag_value(&message, "label"));
+            self.finish_request_label(&message.tag_text("label").unwrap_or_default());
             return;
         }
 
@@ -1072,7 +1072,7 @@ impl Core {
 
         if command == "PRIVMSG"
             && message.params.len() >= 2
-            && self.nicks_equal(&wire::param(&message, 0), &self.nickname.clone())
+            && self.nicks_equal(&message.text_param(0), &self.nickname.clone())
         {
             if self.answer_ctcp(&message) {
                 return;
@@ -1108,10 +1108,7 @@ impl Core {
                 );
                 return;
             }
-            "421"
-                if wire::param_index(&message, "CAP").is_some()
-                    && self.state == SessionState::CapLs =>
-            {
+            "421" if message.param_index("CAP").is_some() && self.state == SessionState::CapLs => {
                 self.capability_negotiation_ended = true;
                 self.cancel_timer(TimerSlot::Capability);
                 self.send_registration();
@@ -1154,7 +1151,7 @@ impl Core {
 
         if command == "NICK" {
             let old_nick = wire::claimed_nick(&message);
-            let new_nick = wire::param(&message, 0);
+            let new_nick = message.text_param(0);
             if !old_nick.is_empty()
                 && !new_nick.is_empty()
                 && self.nicks_equal(&old_nick, &self.nickname.clone())
@@ -1168,7 +1165,7 @@ impl Core {
             self.handle_read_marker_fail(&message);
         }
         if command == "366" && message.params.len() >= 2 {
-            self.probe_channel_away(&wire::param(&message, 1));
+            self.probe_channel_away(&message.text_param(1));
         }
 
         self.emit_message_received(message.clone());
@@ -1176,7 +1173,7 @@ impl Core {
         let self_prefixed = self.self_prefixed(&message);
         match command.as_str() {
             "JOIN" if self_prefixed => {
-                let channel = wire::param(&message, 0);
+                let channel = message.text_param(0);
                 if !channel.is_empty() {
                     self.bump_history_generation(&channel);
                     self.request_channel_history(&channel);
@@ -1189,15 +1186,15 @@ impl Core {
                 }
             }
             "PART" if self_prefixed => {
-                let channel = wire::param(&message, 0);
+                let channel = message.text_param(0);
                 if !channel.is_empty() {
                     self.bump_history_generation(&channel);
                     self.forget_channel_history(&channel);
                     self.record_autojoin(&channel, false);
                 }
             }
-            "KICK" if self.is_self(&wire::param(&message, 1)) => {
-                let channel = wire::param(&message, 0);
+            "KICK" if self.is_self(&message.text_param(1)) => {
+                let channel = message.text_param(0);
                 if !channel.is_empty() {
                     self.bump_history_generation(&channel);
                     self.forget_channel_history(&channel);
@@ -1205,12 +1202,12 @@ impl Core {
                 }
             }
             "475" if message.params.len() >= 2 => {
-                self.drop_stored_autojoin_key(&wire::param(&message, 1));
+                self.drop_stored_autojoin_key(&message.text_param(1));
             }
             _ => {}
         }
 
-        let carried_label = wire::tag_value(&message, "label");
+        let carried_label = message.tag_text("label").unwrap_or_default();
         if !carried_label.is_empty() {
             self.finish_request_label(&carried_label);
         }
@@ -1219,11 +1216,11 @@ impl Core {
     /// The label that correlates an inbound line with a request: its own
     /// `@label`, else the label of the batch it sits in.
     pub(crate) fn correlation_label(&self, message: &IrcMessage) -> String {
-        let label = wire::tag_value(message, "label");
+        let label = message.tag_text("label").unwrap_or_default();
         if !label.is_empty() {
             return label;
         }
-        let batch = wire::tag_value(message, "batch");
+        let batch = message.tag_text("batch").unwrap_or_default();
         if batch.is_empty() {
             return String::new();
         }

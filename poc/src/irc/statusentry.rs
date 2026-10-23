@@ -17,13 +17,15 @@
 use chrono::{DateTime, Utc};
 
 use super::ctcp::{format_ctcp_reply_text, parse_ctcp_request};
-use super::message::IrcMessage;
+use super::message::{IrcMessage, IrcPrefix};
 use super::prefixnick::prefix_nick;
 use super::secretpolicy::{
     allows_transcript, redact_message, redact_preview_line, redact_wire_line,
 };
 use super::serverfeatures::IrcServerFeatures;
-use super::servicenick::{is_service_identity, nick_is_routable};
+use super::servicenick::{
+    is_network_notice_target, is_service_identity, is_service_source, nick_is_routable,
+};
 use super::wiretext::wire_text;
 
 /// The label a command-outcome line carries (`IrcStatusEntry::outcome`).
@@ -902,30 +904,6 @@ fn features_for_channel_types(channel_types: &str) -> IrcServerFeatures {
     features
 }
 
-/// Targets that name the network rather than a conversation.
-fn is_network_notice_target(target: &str) -> bool {
-    target.is_empty() || target == "*" || target.eq_ignore_ascii_case("AUTH")
-}
-
-/// Whether the source names a nick and a user (`statusHasUserPrefix`).
-fn has_user_prefix(message: &IrcMessage) -> bool {
-    message
-        .prefix
-        .as_ref()
-        .is_some_and(|prefix| !prefix.nick.is_empty() && !prefix.user.is_empty())
-}
-
-/// Whether the source is a services identity (`statusIsServiceUser`).
-fn is_service_user(message: &IrcMessage, features: &IrcServerFeatures) -> bool {
-    message.prefix.as_ref().is_some_and(|prefix| {
-        is_service_identity(
-            &wire_text(&prefix.nick),
-            &wire_text(&prefix.host),
-            features.channel_types(),
-        )
-    })
-}
-
 /// Whether a direct message belongs to a conversation the user is in
 /// (`statusConversationEngaged`, the part of `ircConversationFor` that Status
 /// consults).
@@ -944,8 +922,8 @@ fn conversation_engaged(
         return true;
     }
     if is_network_notice_target(target)
-        || !has_user_prefix(message)
-        || is_service_user(message, features)
+        || !message.prefix.as_ref().is_some_and(IrcPrefix::is_user)
+        || is_service_source(message, features)
     {
         return false;
     }

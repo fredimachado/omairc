@@ -20,11 +20,11 @@ use super::event::{
     QuitEvent, ReplayLine, SelfAwayEvent, TopicEvent, TypingEvent,
 };
 use super::membershipnoise::{join_line, nick_line, part_line, quit_line, shown_account};
-use super::message::IrcMessage;
+use super::message::{IrcMessage, IrcPrefix};
 use super::prefixnick::prefix_nick;
 use super::presence::{canonical_key, clamped, Away};
 use super::serverfeatures::IrcServerFeatures;
-use super::servicenick::{is_service_identity, nick_is_routable};
+use super::servicenick::{is_network_notice_target, is_service_source, nick_is_routable};
 use super::typing::typing_phase_from_tag;
 use super::wiretext::wire_text;
 
@@ -86,7 +86,7 @@ pub fn translate(
     // The account tag names the sender. Record it before command handling so
     // NOTICE, which produces no transcript event, still updates the nick.
     if let Some(account) = present_tag_value(message, "account") {
-        if has_user_prefix(message) && !sender.is_empty() {
+        if message.prefix.as_ref().is_some_and(IrcPrefix::is_user) && !sender.is_empty() {
             events.push(
                 AccountEvent {
                     network_id: network_id.to_owned(),
@@ -100,10 +100,10 @@ pub fn translate(
 
     if command == "NOTICE" {
         if message.params.len() >= 2 {
-            let body = param(message, 1);
+            let body = message.text_param(1);
             if parse_ctcp_request(&body).is_none() {
                 if let Some(delivery) = nick_targeted_channel_delivery(
-                    &param(message, 0),
+                    &message.text_param(0),
                     message,
                     current_nick,
                     features,
@@ -117,7 +117,7 @@ pub fn translate(
                             timestamp,
                             server_time,
                             target: delivery.channel,
-                            msgid: MsgId::new(tag_value_or_empty(message, "msgid")),
+                            msgid: MsgId::new(message.msgid()),
                             only_visible_to_you: delivery.only_visible_to_you,
                         }
                         .into(),
@@ -129,14 +129,14 @@ pub fn translate(
     }
 
     if command == "PRIVMSG" && message.params.len() >= 2 {
-        let wire_target = param(message, 0);
-        let body = param(message, 1);
+        let wire_target = message.text_param(0);
+        let body = message.text_param(1);
         if let Some(ctcp) = parse_ctcp_request(&body) {
             if ctcp.command != "ACTION" {
                 return events;
             }
         }
-        let msgid = MsgId::new(tag_value_or_empty(message, "msgid"));
+        let msgid = MsgId::new(message.msgid());
         let action = action_text(&body);
         if let Some(delivery) =
             nick_targeted_channel_delivery(&wire_target, message, current_nick, features, joined)
@@ -215,7 +215,7 @@ pub fn translate(
     }
 
     if command == "TAGMSG" && !message.params.is_empty() {
-        let Some(value) = tag_value(message, "+typing") else {
+        let Some(value) = message.tag_text("+typing") else {
             return events;
         };
         if sender.is_empty() {
@@ -226,7 +226,7 @@ pub fn translate(
         };
         let Some(conversation) = conversation_for(
             network_id,
-            &param(message, 0),
+            &message.text_param(0),
             message,
             current_nick,
             features,
@@ -246,12 +246,12 @@ pub fn translate(
     }
 
     if command == "JOIN" && !message.params.is_empty() {
-        let account = (message.params.len() >= 2).then(|| param(message, 1));
-        let realname = (message.params.len() >= 3).then(|| param(message, 2));
+        let account = (message.params.len() >= 2).then(|| message.text_param(1));
+        let realname = (message.params.len() >= 3).then(|| message.text_param(2));
         events.push(
             JoinEvent {
                 network_id: network_id.to_owned(),
-                channel: param(message, 0),
+                channel: message.text_param(0),
                 nick: sender,
                 account,
                 realname,
@@ -265,7 +265,7 @@ pub fn translate(
         let account = if message.params.is_empty() {
             String::new()
         } else {
-            param(message, 0)
+            message.text_param(0)
         };
         events.push(
             AccountEvent {
@@ -279,13 +279,13 @@ pub fn translate(
     }
 
     if command == "330" && message.params.len() >= 3 {
-        let nick = param(message, 1);
+        let nick = message.text_param(1);
         if !nick.is_empty() {
             events.push(
                 AccountEvent {
                     network_id: network_id.to_owned(),
                     nick,
-                    account: param(message, 2),
+                    account: message.text_param(2),
                 }
                 .into(),
             );
@@ -297,9 +297,9 @@ pub fn translate(
         events.push(
             PartEvent {
                 network_id: network_id.to_owned(),
-                channel: param(message, 0),
+                channel: message.text_param(0),
                 nick: sender,
-                reason: param(message, 1),
+                reason: message.text_param(1),
             }
             .into(),
         );
@@ -311,7 +311,7 @@ pub fn translate(
             QuitEvent {
                 network_id: network_id.to_owned(),
                 nick: sender,
-                reason: param(message, 0),
+                reason: message.text_param(0),
             }
             .into(),
         );
@@ -323,7 +323,7 @@ pub fn translate(
             NickEvent {
                 network_id: network_id.to_owned(),
                 old_nick: sender,
-                new_nick: param(message, 0),
+                new_nick: message.text_param(0),
             }
             .into(),
         );
@@ -334,10 +334,10 @@ pub fn translate(
         events.push(
             KickEvent {
                 network_id: network_id.to_owned(),
-                channel: param(message, 0),
-                target: param(message, 1),
+                channel: message.text_param(0),
+                target: message.text_param(1),
                 author: sender,
-                reason: param(message, 2),
+                reason: message.text_param(2),
             }
             .into(),
         );
@@ -348,8 +348,8 @@ pub fn translate(
         events.push(
             TopicEvent {
                 network_id: network_id.to_owned(),
-                channel: param(message, 0),
-                topic: param(message, 1),
+                channel: message.text_param(0),
+                topic: message.text_param(1),
                 author: sender,
             }
             .into(),
@@ -361,8 +361,8 @@ pub fn translate(
         events.push(
             TopicEvent {
                 network_id: network_id.to_owned(),
-                channel: param(message, 1),
-                topic: param(message, 2),
+                channel: message.text_param(1),
+                topic: message.text_param(2),
                 author: String::new(),
             }
             .into(),
@@ -371,7 +371,8 @@ pub fn translate(
     }
 
     if command == "353" && message.params.len() >= 4 {
-        let names = param(message, 3)
+        let names = message
+            .text_param(3)
             .split(' ')
             .filter(|token| !token.is_empty())
             .filter_map(|token| features.parse_names_token(token))
@@ -383,7 +384,7 @@ pub fn translate(
         events.push(
             NamesEvent {
                 network_id: network_id.to_owned(),
-                channel: param(message, 2),
+                channel: message.text_param(2),
                 names,
                 complete: false,
             }
@@ -396,7 +397,7 @@ pub fn translate(
         events.push(
             NamesEvent {
                 network_id: network_id.to_owned(),
-                channel: param(message, 1),
+                channel: message.text_param(1),
                 names: Vec::new(),
                 complete: true,
             }
@@ -409,9 +410,9 @@ pub fn translate(
         events.push(
             ModeEvent {
                 network_id: network_id.to_owned(),
-                target: param(message, 0),
+                target: message.text_param(0),
                 author: sender,
-                mode: param(message, 1),
+                mode: message.text_param(1),
                 arguments: remaining_params(message, 2),
             }
             .into(),
@@ -421,7 +422,7 @@ pub fn translate(
 
     if command == "AWAY" && !sender.is_empty() {
         let away = (!message.params.is_empty()).then(|| Away {
-            reason: param(message, 0),
+            reason: message.text_param(0),
         });
         events.push(
             AwayEvent {
@@ -459,11 +460,11 @@ pub fn translate(
     }
 
     if command == "352" && message.params.len() >= 7 {
-        let nick = param(message, 5);
-        let flags = param(message, 6);
+        let nick = message.text_param(5);
+        let flags = message.text_param(6);
         let away = flags.starts_with('G');
         if !nick.is_empty() {
-            let trailing = param(message, 7);
+            let trailing = message.text_param(7);
             let mut realname = who_reply_realname(&trailing);
             if realname.is_empty() {
                 realname = realname_from_who(&trailing);
@@ -494,8 +495,8 @@ pub fn translate(
     }
 
     if command == "311" && message.params.len() >= 6 {
-        let nick = param(message, 1);
-        let realname = param(message, 5).trim().to_owned();
+        let nick = message.text_param(1);
+        let realname = message.text_param(5).trim().to_owned();
         if !nick.is_empty() && !realname.is_empty() {
             events.push(
                 AwayEvent {
@@ -512,7 +513,7 @@ pub fn translate(
     }
 
     if command == "313" && message.params.len() >= 2 {
-        let nick = param(message, 1);
+        let nick = message.text_param(1);
         if !nick.is_empty() {
             events.push(
                 NickFactsEvent {
@@ -550,13 +551,13 @@ pub fn translate(
     if (is_join_failure_numeric(&command) || is_ambiguous_join_failure_numeric(&command))
         && message.params.len() >= 3
     {
-        let channel = param(message, 1);
+        let channel = message.text_param(1);
         if !is_ambiguous_join_failure_numeric(&command) || features.is_channel(&channel) {
             events.push(
                 ChannelErrorEvent {
                     network_id: network_id.to_owned(),
                     channel,
-                    body: param(message, 2),
+                    body: message.text_param(2),
                 }
                 .into(),
             );
@@ -670,7 +671,7 @@ pub fn translate_history(
 /// The IRCv3 `time` tag, parsed to UTC. `None` when the tag is absent, empty or
 /// unparseable (`ircServerTimeOf`, `ServerTimeOf`).
 pub fn server_time_of(message: &IrcMessage) -> Option<DateTime<Utc>> {
-    let raw = tag_value(message, "time")?;
+    let raw = message.tag_text("time")?;
     if raw.is_empty() {
         return None;
     }
@@ -711,8 +712,8 @@ pub fn conversation_for(
         return Some(key(network_id, target, features));
     }
     if is_network_notice_target(target)
-        || !has_user_prefix(message)
-        || is_service_user(message, features)
+        || !message.prefix.as_ref().is_some_and(IrcPrefix::is_user)
+        || is_service_source(message, features)
     {
         return None;
     }
@@ -769,7 +770,7 @@ fn nick_targeted_channel_delivery(
 /// when the value is one channel name (`channelContextChannel`).
 fn channel_context_channel(message: &IrcMessage, features: &IrcServerFeatures) -> Option<String> {
     for name in ["+draft/channel-context", "draft/channel-context"] {
-        if let Some(value) = tag_value(message, name) {
+        if let Some(value) = message.tag_text(name) {
             if channel_context_text(&value, features) {
                 return Some(value);
             }
@@ -808,7 +809,7 @@ fn channel_membership_replay_line(
     if !features.is_channel(batch_target) {
         return None;
     }
-    let msgid = MsgId::new(tag_value_or_empty(message, "msgid"));
+    let msgid = MsgId::new(message.msgid());
     let timestamp = timestamp_for(message, now);
     let line = |body: String| ReplayLine {
         author: String::new(),
@@ -875,11 +876,11 @@ fn bouncer_query_replay_line(
     if !routable_source(message) {
         return None;
     }
-    let wire_target = param(message, 0);
+    let wire_target = message.text_param(0);
     if features.is_channel(&wire_target)
         || is_network_notice_target(&wire_target)
-        || !has_user_prefix(message)
-        || is_service_user(message, features)
+        || !message.prefix.as_ref().is_some_and(IrcPrefix::is_user)
+        || is_service_source(message, features)
     {
         return None;
     }
@@ -889,13 +890,13 @@ fn bouncer_query_replay_line(
     {
         return None;
     }
-    let body = param(message, 1);
+    let body = message.text_param(1);
     if let Some(ctcp) = parse_ctcp_request(&body) {
         if ctcp.command != "ACTION" {
             return None;
         }
     }
-    let msgid = MsgId::new(tag_value_or_empty(message, "msgid"));
+    let msgid = MsgId::new(message.msgid());
     let timestamp = timestamp_for(message, now);
     let (kind, body) = match action_text(&body) {
         Some(text) => (MessageKindTag::Emote, text.to_owned()),
@@ -975,13 +976,13 @@ fn member_metadata(
     if message.params.len() < target_index + 3 {
         return None;
     }
-    let target = param(message, target_index);
-    let key_text = param(message, target_index + 1);
+    let target = message.text_param(target_index);
+    let key_text = message.text_param(target_index + 1);
     if target.is_empty() || features.is_channel(&target) {
         return None;
     }
     let canonical = canonical_key(&key_text)?;
-    let value = clamped(&param(message, target_index + 3));
+    let value = clamped(&message.text_param(target_index + 3));
     if value.is_empty() {
         return None;
     }
@@ -1008,8 +1009,8 @@ fn key_not_set(
     if message.params.len() < TARGET_INDEX + 2 {
         return None;
     }
-    let target = param(message, TARGET_INDEX);
-    let key_text = param(message, TARGET_INDEX + 1);
+    let target = message.text_param(TARGET_INDEX);
+    let key_text = message.text_param(TARGET_INDEX + 1);
     if target.is_empty() || features.is_channel(&target) {
         return None;
     }
@@ -1047,34 +1048,16 @@ fn is_ambiguous_join_failure_numeric(command: &str) -> bool {
     matches!(command, "437" | "480" | "485")
 }
 
-/// One message parameter as display text, or "" past the end (`ircParameter`).
-/// The Go decoded parameters once; the Rust core keeps raw bytes until here.
-fn param(message: &IrcMessage, index: usize) -> String {
-    message
-        .params
-        .get(index)
-        .map(|raw| wire_text(raw))
-        .unwrap_or_default()
-}
-
 /// Every parameter from `start` on, as display text (`ircRemainingParameters`).
 fn remaining_params(message: &IrcMessage, start: usize) -> Vec<String> {
     (start..message.params.len())
-        .map(|index| param(message, index))
+        .map(|index| message.text_param(index))
         .collect()
 }
 
 /// The source nick, through the same rule every handler uses (`ircAuthor`).
 fn author(message: &IrcMessage) -> String {
     prefix_nick(message)
-}
-
-/// Whether the source carries both a nick and a user. A bare server name does not.
-fn has_user_prefix(message: &IrcMessage) -> bool {
-    message
-        .prefix
-        .as_ref()
-        .is_some_and(|prefix| !prefix.nick.is_empty() && !prefix.user.is_empty())
 }
 
 /// False when the source nick is a bouncer pseudo-client that cannot take a reply.
@@ -1085,23 +1068,6 @@ fn routable_source(message: &IrcMessage) -> bool {
     }
 }
 
-/// Whether the source is a network service (`ircIsServiceUser`).
-fn is_service_user(message: &IrcMessage, features: &IrcServerFeatures) -> bool {
-    match &message.prefix {
-        None => false,
-        Some(prefix) => is_service_identity(
-            &wire_text(&prefix.nick),
-            &wire_text(&prefix.host),
-            features.channel_types(),
-        ),
-    }
-}
-
-/// The targets that name the network rather than a person (`ircIsNetworkNoticeTarget`).
-fn is_network_notice_target(target: &str) -> bool {
-    target.is_empty() || target == "*" || target.eq_ignore_ascii_case("AUTH")
-}
-
 /// The conversation key for `target` on `network_id` (`ircKey`).
 fn key(network_id: &str, target: &str, features: &IrcServerFeatures) -> ConversationKey {
     ConversationKey::new(network_id, features.case_mapping().normalize(target))
@@ -1110,22 +1076,6 @@ fn key(network_id: &str, target: &str, features: &IrcServerFeatures) -> Conversa
 /// Whether two identifiers name the same thing under the network's case mapping.
 fn same(features: &IrcServerFeatures, left: &str, right: &str) -> bool {
     features.case_mapping().equals(left, right)
-}
-
-/// The value of the first tag named `name` that carries one (`ircTagValue`). A
-/// valueless tag is absent here.
-fn tag_value(message: &IrcMessage, name: &str) -> Option<String> {
-    message
-        .tags
-        .iter()
-        .filter(|tag| tag.name == name)
-        .find_map(|tag| tag.value.as_ref())
-        .map(|raw| wire_text(raw))
-}
-
-/// The tag value, or "" when it is absent or valueless (`tagValue(...).value_or`).
-fn tag_value_or_empty(message: &IrcMessage, name: &str) -> String {
-    tag_value(message, name).unwrap_or_default()
 }
 
 /// Distinguishes "the server omitted the tag" (`None`) from "the server sent it"
