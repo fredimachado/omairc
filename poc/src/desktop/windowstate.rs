@@ -14,6 +14,7 @@ use gpui::{point, px, size, App, Bounds, Entity, Window, WindowBounds};
 
 use crate::storage::geometry::{self, GeometryTracker, WindowGeometry};
 use crate::storage::settings::Status;
+use crate::util::OmaircStyleGlobal;
 
 /// The size of a first launch, with no stored geometry.
 const DEFAULT_SIZE: (f32, f32) = (1180.0, 760.0);
@@ -24,7 +25,11 @@ pub fn initial_bounds(stored: Option<WindowGeometry>, cx: &App) -> WindowBounds 
     match stored {
         Some(geometry) => restore_bounds(geometry),
         None => {
-            let default = size(px(DEFAULT_SIZE.0), px(DEFAULT_SIZE.1));
+            let text_scale = cx.global::<OmaircStyleGlobal>().style.text_scale;
+            let default = size(
+                px(DEFAULT_SIZE.0 * text_scale),
+                px(DEFAULT_SIZE.1 * text_scale),
+            );
             WindowBounds::Windowed(Bounds::centered(None, default, cx))
         }
     }
