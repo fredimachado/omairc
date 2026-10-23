@@ -267,8 +267,6 @@ impl Session {
     }
 
     /// Installs the self-JOIN resume lookup. `None` keeps LATEST.
-    // Read by the socket transport and the later phases; cfg(test) comes off with its first consumer.
-    #[cfg(test)]
     pub fn set_history_resume(&self, resume: Option<HistoryResume>) {
         self.shared.core.borrow_mut().history_resume = resume;
     }
@@ -355,6 +353,16 @@ impl Session {
     /// A copy of the autojoin channel list.
     pub fn autojoin_channels(&self) -> Vec<String> {
         self.shared.core.borrow().autojoin_channels.clone()
+    }
+
+    /// The CHATHISTORY page size for this connection.
+    pub fn history_limit(&self) -> usize {
+        self.shared.core.borrow().history_limit
+    }
+
+    /// Whether a CHATHISTORY request is in flight for `target`.
+    pub fn history_inflight_for(&self, target: &str) -> bool {
+        self.locked(|core| core.history_inflight(target))
     }
 
     /// The last unhandled INVITE, if one is still pending.

@@ -525,7 +525,6 @@ impl EventReducer {
 
     /// Whether a bouncer playback batch for this channel was spliced or deduped
     /// on the current connection (`PlaybackBatchKept`).
-    #[cfg(test)]
     pub fn playback_batch_kept(&self, network_id: &str, target: &str) -> bool {
         if network_id.is_empty() || target.is_empty() {
             return false;
@@ -539,5 +538,10 @@ impl EventReducer {
     /// (`TakeRememberedQueries`).
     pub fn take_remembered_queries(&mut self) -> Vec<RememberedQuery> {
         std::mem::take(&mut self.facts.remembered_queries)
+    }
+
+    /// Takes kept replay lines since the last call (`TakeKeptReplay`).
+    pub fn take_kept_replay(&mut self) -> Vec<KeptReplay> {
+        std::mem::take(&mut self.facts.kept_replay)
     }
 }

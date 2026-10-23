@@ -22,6 +22,7 @@ mod networks;
 mod parity;
 mod peers;
 mod persistence;
+mod playback;
 mod replies;
 mod scrollplace;
 mod selection;
