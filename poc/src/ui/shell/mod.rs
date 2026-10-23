@@ -105,6 +105,8 @@ pub struct Shell {
     /// Whether the window is the active one. While it is not, a line that arrives in the
     /// open conversation counts as unread (Qt `m_windowActive`).
     pub window_active: bool,
+    /// The follow-end bit last reported to the controller for read-marker publishing.
+    transcript_viewport_follow_end: bool,
     /// The window's activation observer is registered. It needs a window, so it is set up
     /// on the first render.
     activation_watched: bool,
@@ -233,6 +235,7 @@ impl Shell {
             connect_focus: cx.focus_handle(),
             connect_ui,
             window_active: true,
+            transcript_viewport_follow_end: true,
             activation_watched: false,
             focus_handle: cx.focus_handle(),
             typing_phase: 0,
@@ -338,6 +341,7 @@ impl Render for Shell {
             );
             self._subscriptions.push(subscription);
         }
+        self.sync_transcript_viewport_if_at_end_changed(window, cx);
 
         let populated = self.populated_networks();
         let disconnectable = self.connect_disconnectable();

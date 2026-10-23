@@ -81,12 +81,18 @@ impl Controller {
             return;
         }
         let key = self.reducer.conversation_key(network_id, target);
-        if !self.read_markers.note_get_sent(&key) {
+        if self.read_markers.get_sent.contains(&key) {
             return;
         }
-        if let Some(session) = self.manager.find(network_id) {
-            session.request_read_marker_get(target);
+        let Some(session) = self.manager.find(network_id) else {
+            return;
+        };
+        let ready = session.locked(|core| !core.read_marker_command().is_empty());
+        if !ready {
+            return;
         }
+        self.read_markers.note_get_sent(&key);
+        session.request_read_marker_get(target);
     }
 
     pub(super) fn read_marker_forget_network(&mut self, network_id: &str) {
