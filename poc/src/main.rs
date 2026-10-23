@@ -156,6 +156,7 @@ fn main() {
         .scale
         .or_else(desktop::textscale::read_portal_text_scale)
         .unwrap_or(1.0);
+    let cli_scale_override = args.scale.is_some();
     let lines = args.lines;
     let bench = args.bench;
     let demo_server = args.demo_server;
@@ -246,19 +247,27 @@ fn main() {
                     start_caret_blink(shell.clone(), cx);
                     start_drag_autoscroll(transcript.clone(), cx);
 
-                    if let Some(portal_scale) = desktop::textscale::start_portal_text_scale_watcher()
-                    {
-                        let shell_portal = shell.clone();
-                        let transcript_portal = transcript.clone();
-                        cx.spawn(async move |cx| {
-                            while let Ok(scale) = portal_scale.recv().await {
-                                cx.update(|cx| {
-                                    apply_portal_text_scale(scale, &shell_portal, &transcript_portal, cx);
-                                })
-                                .ok();
-                            }
-                        })
-                        .detach();
+                    if !cli_scale_override {
+                        if let Some(portal_scale) =
+                            desktop::textscale::start_portal_text_scale_watcher()
+                        {
+                            let shell_portal = shell.clone();
+                            let transcript_portal = transcript.clone();
+                            cx.spawn(async move |cx| {
+                                while let Ok(scale) = portal_scale.recv().await {
+                                    cx.update(|cx| {
+                                        apply_portal_text_scale(
+                                            scale,
+                                            &shell_portal,
+                                            &transcript_portal,
+                                            cx,
+                                        );
+                                    })
+                                    .ok();
+                                }
+                            })
+                            .detach();
+                        }
                     }
 
                     // The system light or dark mode can change while the app runs.
