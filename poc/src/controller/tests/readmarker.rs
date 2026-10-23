@@ -246,6 +246,51 @@ fn open_existing_direct_requests_read_marker_get() {
 }
 
 #[test]
+fn direct_markread_get_waits_for_read_marker_cap() {
+    let mut fixture = Fixture::seeded();
+    let alice = fixture.controller.reducer.conversation_key(NET, "alice");
+    fixture
+        .controller
+        .reducer
+        .ensure_conversation(&alice, "alice", IrcConversationCause::InboundOther);
+    fixture.controller.select_conversation(NET, "alice");
+    assert!(
+        !frames_contain(&fixture.frames(NET), "MARKREAD alice\r\n"),
+        "must not mark get sent before the cap is available"
+    );
+    enable_read_marker(&mut fixture);
+    fixture.controller.select_conversation(NET, "#omarchy");
+    fixture.controller.select_conversation(NET, "alice");
+    assert!(
+        frames_contain(&fixture.frames(NET), "MARKREAD alice\r\n"),
+        "must retry MARKREAD get once the cap is available"
+    );
+}
+
+#[test]
+fn gaining_focus_holds_read_marker_until_viewport_reports_caught_up() {
+    let mut fixture = Fixture::seeded();
+    enable_read_marker(&mut fixture);
+    fixture.controller.note_transcript_viewport(true, true);
+    ensure_room(&mut fixture, "#room");
+    fixture.controller.select_conversation(NET, "#room");
+    fixture.clear_frames(NET);
+    fixture.controller.set_window_active(false);
+    fixture.controller.set_window_active(true);
+    let at = when(2024, 6, 1, 12, 0, 0, 123);
+    deliver_privmsg(&mut fixture, "#room", "peer", "after focus", at);
+    assert!(
+        !frames_contain(&fixture.frames(NET), "MARKREAD #room timestamp="),
+        "focus gain must not publish until the shell reports follow-end"
+    );
+    fixture.controller.note_transcript_viewport(true, true);
+    assert!(
+        frames_contain(&fixture.frames(NET), "MARKREAD #room timestamp=2024-06-01T12:00:00.123Z\r\n"),
+        "caught-up viewport must publish the read marker"
+    );
+}
+
+#[test]
 fn first_conversation_claim_requests_read_marker_get_for_direct() {
     use std::rc::Rc;
 

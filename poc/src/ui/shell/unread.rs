@@ -18,12 +18,12 @@ impl Shell {
         }
         self.window_active = active;
         self.controller.set_window_active(active);
-        let at_end = self.transcript.read(cx).at_end();
-        self.report_transcript_viewport_from_shell(at_end, cx);
-        self.drain_notifications(cx);
         if active && !self.status_showing() {
             self.transcript.update(cx, |t, _| t.land_on_unread_mark());
         }
+        let at_end = self.transcript.read(cx).at_end();
+        self.report_transcript_viewport_from_shell(at_end, cx);
+        self.drain_notifications(cx);
         cx.notify();
     }
 

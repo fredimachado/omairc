@@ -193,10 +193,12 @@ impl Controller {
     pub fn set_window_active(&mut self, active: bool) {
         self.pump();
         self.reducer.set_window_active(active);
-        self.transcript_focused = active;
         if !active {
+            self.transcript_focused = false;
             return;
         }
+        self.transcript_focused = true;
+        self.transcript_follow_end = false;
         let Some(key) = self.selected.clone() else {
             return;
         };
