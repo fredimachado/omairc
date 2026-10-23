@@ -9,8 +9,9 @@
 //! - an unlisted file over `LIMIT` fails, and so does a listed file that no longer exists.
 //!
 //! The count is production code only: non-blank lines with comments blanked, up to the
-//! first `#[cfg(test)]`. The cut is at the first such attribute wherever it sits, so a
-//! test-only seam inside an `impl` ends the count there too.
+//! first `#[cfg(test)]` that introduces a test module (`#[cfg(test)]` followed by `mod`),
+//! so a test module belongs at the end of its file. A test-only seam inside an `impl`
+//! (a `#[cfg(test)]` on a `fn` or a field) is not a cut, so its lines stay in the count.
 
 #[allow(dead_code)]
 mod common;
@@ -26,20 +27,61 @@ const LIMIT: usize = 800;
 /// count may only fall, and an entry leaves this list once its file is within `LIMIT`.
 const ALLOWLIST: &[(&str, usize)] = &[
     ("controller/commanddispatcher.rs", 972),
+    ("controller/controller.rs", 825),
+    ("controller/replyrouter.rs", 1007),
     ("irc/command.rs", 831),
     ("irc/statusentry.rs", 1105),
     ("irc/translator.rs", 961),
+    ("model/connect.rs", 1018),
     ("session/session.rs", 1095),
     ("ui/input.rs", 824),
 ];
 
 /// Non-blank production lines in `code` (comments already blanked): every line before
-/// the first `#[cfg(test)]`, which opens the test module.
+/// the first `#[cfg(test)]` that introduces a test module.
 fn production_lines(code: &str) -> usize {
-    code.lines()
-        .take_while(|line| !line.trim_start().starts_with("#[cfg(test)]"))
-        .filter(|line| !line.trim().is_empty())
-        .count()
+    let lines: Vec<&str> = code.lines().collect();
+    let cut = (0..lines.len())
+        .find(|&index| opens_test_module(&lines, index))
+        .unwrap_or(lines.len());
+    lines[..cut].iter().filter(|line| !line.trim().is_empty()).count()
+}
+
+/// Whether `lines[index]` is a `#[cfg(test)]` that directly introduces a test module:
+/// the next item, past blank lines and other attributes, is `mod`.
+fn opens_test_module(lines: &[&str], index: usize) -> bool {
+    let Some(rest) = lines[index].trim_start().strip_prefix("#[cfg(test)]") else {
+        return false;
+    };
+    let mut item = rest.trim();
+    let mut following = lines[index + 1..].iter();
+    loop {
+        if item.is_empty() || item.starts_with("#[") {
+            match following.next() {
+                Some(line) => item = line.trim(),
+                None => return false,
+            }
+        } else {
+            return is_mod_item(item);
+        }
+    }
+}
+
+/// Whether `item` begins a module item: `mod name`, optionally with a visibility.
+fn is_mod_item(item: &str) -> bool {
+    let after_vis = match item.strip_prefix("pub") {
+        Some(rest) => {
+            let rest = rest.trim_start();
+            match rest.strip_prefix('(') {
+                Some(inner) => inner.split_once(')').map_or("", |(_, tail)| tail).trim_start(),
+                None => rest,
+            }
+        }
+        None => item,
+    };
+    after_vis
+        .strip_prefix("mod")
+        .is_some_and(|tail| tail.starts_with(char::is_whitespace))
 }
 
 /// A file's path under `src/`, with `/` separators, as `ALLOWLIST` spells it.
@@ -112,8 +154,15 @@ fn the_counter_counts_production_lines_only() {
         ("let x = 1; // a trailing comment keeps the line\n", 1),
         ("fn a() {}\n#[cfg(test)]\nmod tests { fn b() {} }\n", 1),
         ("fn a() {}\n    #[cfg(test)]\nmod tests {}\n", 1),
-        ("fn a() {}\nfn b() {}\n#[cfg(test)]\n\n// later\nfn c() {}\n", 2),
+        ("fn a() {}\n#[cfg(test)]\n#[allow(dead_code)]\n\nmod tests {}\n", 1),
+        ("fn a() {}\n#[cfg(test)]\npub(crate) mod tests {}\n", 1),
+        ("fn a() {}\n#[cfg(test)]\nfn b() {}\n#[cfg(test)]\nmod tests {}\n", 3),
+        ("fn a() {}\n#[cfg(test)]\n\n// later\nmod tests {}\n", 1),
+        ("impl A {\n    #[cfg(test)]\n    fn seam() {}\n}\n", 4),
+        ("fn a() {}\nfn b() {}\n#[cfg(test)]\n\n// later\nfn c() {}\n", 4),
+        ("fn a() {}\n#[cfg(test)]\n", 2),
         ("let s = \"#[cfg(test)]\";\nfn a() {}\n", 2),
+        ("let s = \"#[cfg(test)]\nmod tests {}\";\nfn a() {}\n", 3),
     ];
     for (source, expected) in counted {
         assert_eq!(production_lines(&code_only(source)), expected, "counting {source:?}");
