@@ -294,10 +294,11 @@ impl Core {
         if self.history.asked.contains(&key) {
             return;
         }
+        let mapping = self.features.case_mapping();
         let resumed = self
             .history_resume
             .as_ref()
-            .and_then(|resume| resume(channel));
+            .and_then(|resume| resume(channel, mapping));
         if let Some(when) = resumed {
             if self.request_history_after(channel, when) {
                 return;
