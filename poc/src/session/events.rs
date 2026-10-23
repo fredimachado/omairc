@@ -14,6 +14,7 @@
 //! Go `StatusEntry` and translator do.
 
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 use chrono::{DateTime, Utc};
 
@@ -64,7 +65,7 @@ impl SessionState {
 }
 
 /// Why a session failed (`IrcSession::ErrorKind`). The order is significant:
-/// `reported_retry_errors` keeps one dedup bit per kind, in this order.
+/// `Connection` keeps one retry-dedup bit per kind, in this order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorKind {
     Protocol,
@@ -72,13 +73,6 @@ pub enum ErrorKind {
     Tls,
     Network,
     Registration,
-}
-
-impl ErrorKind {
-    /// The bit this kind occupies in the retry-error dedup mask.
-    pub(crate) fn bit(self) -> u32 {
-        1 << (self as u32)
-    }
 }
 
 /// One event from a session. The owner drains them in order.
@@ -115,10 +109,11 @@ pub enum SessionEvent {
         at: DateTime<Utc>,
     },
     /// An outbound line as written, CRLF included. The Status recorder masks
-    /// secrets (`secretpolicy`) before anything is shown.
+    /// secrets (`secretpolicy`) before anything is shown. The bytes are shared
+    /// with the write that carries them.
     Outbound {
         network_id: String,
-        line: Vec<u8>,
+        line: Rc<[u8]>,
         channel_types: String,
         at: DateTime<Utc>,
     },

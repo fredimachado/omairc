@@ -12,11 +12,12 @@
 //! plan). Inbound notifications are queued as `SessionEvent`s and returned by
 //! `drain_events`.
 //!
-//! Submodules hold the state machine's parts: `caps` (CAP and SASL PLAIN),
-//! `registration` (NICK/USER, ISUPPORT, 001 and refusals), `batch` (the batch
-//! ledger), `history` (CHATHISTORY), `labels` (labeled requests), `readmarker`,
-//! `typing`, `metadata`, `autojoin`, `ctcp`, `outbound` (the public writers),
-//! `malformed` (protocol-error previews) and `wire` (message field helpers).
+//! Submodules hold the state machine's parts: `connection` (disconnect intent,
+//! reconnect backoff and retry dedup), `watchdog` (the ping watchdog), `caps` (CAP
+//! and SASL PLAIN), `registration` (NICK/USER, ISUPPORT, 001 and refusals), `batch`
+//! (the batch ledger), `history` (CHATHISTORY), `labels` (labeled requests),
+//! `readmarker`, `typing`, `metadata`, `autojoin`, `ctcp`, `outbound` (the public
+//! writers), `malformed` (protocol-error previews) and `wire` (message field helpers).
 //!
 //! Out of scope until Phase 11: STS (`sts.go`), SASL SCRAM (`saslscram.go`) and
 //! the socket transport (`transport_net.go`). The state machine refuses SCRAM
@@ -41,6 +42,7 @@ use crate::irc::wiretext::wire_text;
 use super::batch::BatchLedger;
 use super::clock::Clock;
 use super::config::SessionConfig;
+use super::connection::{Connection, DisconnectOutcome};
 use super::events::{ErrorKind, HistoryKind, PendingInvite, SessionEvent, SessionState, Severity};
 use super::history::HistoryLedger;
 use super::metadata::MetadataCapability;
@@ -49,6 +51,7 @@ use super::transport::{
     ConnectionState, Transport, TransportError, TransportErrorKind, TransportSink,
 };
 use super::typing::TypingPublisher;
+use super::watchdog::PingWatchdog;
 use super::wire;
 
 /// The CHATHISTORY page size before ISUPPORT caps it (`kHistoryLimit`).
@@ -61,8 +64,6 @@ pub(crate) const HISTORY_BUFFER_CEILING: usize = 256;
 pub(crate) const MAX_OPEN_BATCHES: usize = 16;
 /// Ignored batch references remembered before new ones are forgotten.
 pub(crate) const MAX_IGNORED_BATCHES: usize = 32;
-/// The PING token the watchdog sends, and expects back in PONG.
-pub(crate) const PING_WATCHDOG_TOKEN: &str = "omairc-watchdog";
 /// The longest CTCP PING argument that is answered.
 pub(crate) const CTCP_PING_PAYLOAD_MAX_BYTES: usize = 32;
 /// The minimum spacing of CTCP replies to one nick.
@@ -80,7 +81,8 @@ pub type HistoryResume = Box<dyn Fn(&str) -> Option<DateTime<Utc>>>;
 /// One deferred transport call, run after the state borrow is released.
 #[derive(Debug)]
 pub(crate) enum Effect {
-    Write(Vec<u8>),
+    /// One framed line, shared with the `Outbound` event that reports it.
+    Write(Rc<[u8]>),
     Connect {
         host: String,
         port: u16,
@@ -90,14 +92,6 @@ pub(crate) enum Effect {
     /// After a shutdown, move a Closing session to Idle once the transport has
     /// settled (the `post` in Go `stopLocked`).
     SettleStop,
-}
-
-/// Where the ping watchdog stands (`pingWatchdogState`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PingWatchdog {
-    Off,
-    Watching,
-    Probing,
 }
 
 /// Which nick the registration tries next (`registrationNickState`).
@@ -180,8 +174,7 @@ pub(crate) struct Core {
     pub(crate) ctcp_reply_clock: BTreeMap<String, DateTime<Utc>>,
 
     pub(crate) ping: PingWatchdog,
-    pub(crate) reconnect_attempt: u32,
-    pub(crate) reported_retry_errors: u32,
+    pub(crate) connection: Connection,
 
     pub(crate) registration_sent: bool,
     pub(crate) registration_nick: RegistrationNick,
@@ -189,9 +182,6 @@ pub(crate) struct Core {
 
     pub(crate) capability_negotiation_ended: bool,
     pub(crate) capability_list_seen: bool,
-
-    pub(crate) expected_disconnect: bool,
-    pub(crate) reconnect_after_disconnect: bool,
 
     pub(crate) state: SessionState,
     pub(crate) ignore_filter: Option<IgnoreFilter>,
@@ -245,13 +235,11 @@ impl TransportSink for SinkAdapter {
     }
 
     fn bytes_received(&self, bytes: &[u8]) {
-        let bytes = bytes.to_vec();
-        self.with_session(|session| session.locked(|core| core.handle_bytes(&bytes)));
+        self.with_session(|session| session.locked(|core| core.handle_bytes(bytes)));
     }
 
     fn error(&self, error: &TransportError) {
-        let error = error.clone();
-        self.with_session(|session| session.locked(|core| core.error_occurred(&error)));
+        self.with_session(|session| session.locked(|core| core.error_occurred(error)));
     }
 }
 
@@ -401,7 +389,7 @@ impl Session {
     // Read by the socket transport and the later phases; the allow comes off with its first consumer.
     #[allow(dead_code)]
     pub fn reconnect_attempt(&self) -> u32 {
-        self.shared.core.borrow().reconnect_attempt
+        self.shared.core.borrow().connection.reconnect_attempt()
     }
 
     /// The capabilities the server acknowledged.
@@ -567,16 +555,13 @@ impl Core {
             pending_labels: BTreeMap::new(),
             next_request_label: 0,
             ctcp_reply_clock: BTreeMap::new(),
-            ping: PingWatchdog::Off,
-            reconnect_attempt: 0,
-            reported_retry_errors: 0,
+            ping: PingWatchdog::default(),
+            connection: Connection::default(),
             registration_sent: false,
             registration_nick: RegistrationNick::Configured,
             sasl: SaslState::default(),
             capability_negotiation_ended: false,
             capability_list_seen: false,
-            expected_disconnect: false,
-            reconnect_after_disconnect: false,
             state: SessionState::Idle,
             ignore_filter: None,
             pending_invite: None,
@@ -630,18 +615,14 @@ impl Core {
 
     /// The connection ended (`IrcTransport::disconnected`).
     pub(crate) fn on_disconnected(&mut self) {
-        if self.reconnect_after_disconnect {
-            self.reconnect_after_disconnect = false;
-            self.schedule_reconnect();
-            return;
-        }
-        if self.expected_disconnect {
-            if self.state == SessionState::Closing {
-                self.set_state(SessionState::Idle);
+        match self.connection.on_disconnect(self.state) {
+            DisconnectOutcome::ScheduleReconnect => self.schedule_reconnect(),
+            DisconnectOutcome::SettleIdle => self.set_state(SessionState::Idle),
+            DisconnectOutcome::FailUnexpected => {
+                self.fail(ErrorKind::Network, "Connection closed by the server", true);
             }
-            return;
+            DisconnectOutcome::Ignore => {}
         }
-        self.fail(ErrorKind::Network, "Connection closed by the server", true);
     }
 
     /// A transport failure (`IrcTransport::errorOccurred`). The transport names
@@ -649,7 +630,7 @@ impl Core {
     // Phase 11: the socket transport reports its errors
     #[allow(dead_code)]
     pub(crate) fn error_occurred(&mut self, error: &TransportError) {
-        if self.expected_disconnect {
+        if self.connection.is_stopping() {
             return;
         }
         let kind = match error.kind {
@@ -680,10 +661,7 @@ impl Core {
             );
             return;
         }
-        self.expected_disconnect = false;
-        self.reconnect_after_disconnect = false;
-        self.reconnect_attempt = 0;
-        self.reported_retry_errors = 0;
+        self.connection.begin_start();
         self.port = self.config.port;
         self.tls_enabled = self.config.tls_enabled;
         self.reset_for_connection();
@@ -694,14 +672,11 @@ impl Core {
     /// Ends the session the way `IrcSession::stop` does: cancels every timer,
     /// clears labels, and shuts the transport down.
     pub(crate) fn stop(&mut self) {
-        self.expected_disconnect = true;
-        self.reconnect_after_disconnect = false;
+        self.connection.begin_stop();
         self.cancel_timer(TimerSlot::Reconnect);
         self.cancel_timer(TimerSlot::Capability);
         self.cancel_ping_watchdog();
         self.clear_pending_request_labels(true);
-        self.reconnect_attempt = 0;
-        self.reported_retry_errors = 0;
 
         if self.state == SessionState::Idle {
             return;
@@ -732,9 +707,7 @@ impl Core {
 
         let network_id = self.network_id();
         if reconnect {
-            let bit = kind.bit();
-            if self.reported_retry_errors & bit == 0 {
-                self.reported_retry_errors |= bit;
+            if self.connection.first_report_of(kind) {
                 self.emit(SessionEvent::ErrorOccurred {
                     network_id,
                     kind,
@@ -748,7 +721,7 @@ impl Core {
                     | ConnectionState::Encrypted
                     | ConnectionState::Closing
             ) {
-                self.reconnect_after_disconnect = true;
+                self.connection.reconnect_on_disconnect();
                 self.effects.push(Effect::Shutdown);
                 return;
             }
@@ -761,7 +734,7 @@ impl Core {
             kind,
             message: message.to_owned(),
         });
-        self.expected_disconnect = true;
+        self.connection.end_on_disconnect();
         self.cancel_timer(TimerSlot::Reconnect);
         self.set_state(SessionState::Failed);
         self.effects.push(Effect::Shutdown);
@@ -775,15 +748,14 @@ impl Core {
         if self.state == SessionState::Reconnecting {
             return;
         }
-        self.reconnect_attempt += 1;
-        let delay = self.reconnect_delay_ms();
+        let attempt = self.connection.count_scheduled_reconnect();
+        let delay = self.connection.next_delay(&self.config);
         self.set_state(SessionState::Reconnecting);
-        self.arm_timer(TimerSlot::Reconnect, Duration::from_millis(delay));
+        self.arm_timer(TimerSlot::Reconnect, delay);
         let network_id = self.network_id();
-        let attempt = self.reconnect_attempt;
         self.emit(SessionEvent::ReconnectScheduled {
             network_id,
-            delay_ms: delay,
+            delay_ms: delay.as_millis() as u64,
             attempt,
         });
     }
@@ -796,20 +768,6 @@ impl Core {
         self.reset_for_connection();
         self.set_state(SessionState::Connecting);
         self.connect_transport();
-    }
-
-    /// The backoff for the current attempt: the base, doubled per attempt, capped
-    /// at the maximum (`reconnectDelayLocked`).
-    pub(crate) fn reconnect_delay_ms(&self) -> u64 {
-        let base = self.config.reconnect_base_delay_ms;
-        let maximum = self.config.reconnect_maximum_delay_ms.max(base);
-        let mut delay = base;
-        let mut step = 1;
-        while step < self.reconnect_attempt && delay < maximum {
-            delay = (delay * 2).min(maximum);
-            step += 1;
-        }
-        delay.min(i32::MAX as u64)
     }
 
     /// Clears everything one connection learned: the framer, batches, history
@@ -847,14 +805,15 @@ impl Core {
         if line.is_empty() {
             return;
         }
+        let line: Rc<[u8]> = Rc::from(line);
         let event = SessionEvent::Outbound {
             network_id: self.network_id(),
-            line: line.to_vec(),
+            line: Rc::clone(&line),
             channel_types: self.channel_types.clone(),
             at: self.now(),
         };
         self.emit(event);
-        self.effects.push(Effect::Write(line.to_vec()));
+        self.effects.push(Effect::Write(line));
     }
 
     /// Builds a command as a line, optionally labeled, and sends it. A command
@@ -960,7 +919,7 @@ impl Core {
     /// (`handleBytesLocked`). Protocol faults are reported and never fail the
     /// session.
     pub(crate) fn handle_bytes(&mut self, bytes: &[u8]) {
-        if self.ping == PingWatchdog::Watching {
+        if self.ping.is_watching() {
             self.arm_ping_watchdog();
         }
         let result = self.framer.feed(bytes);
@@ -1062,7 +1021,7 @@ impl Core {
             return;
         }
 
-        if command == "PONG" && self.pong_matches_watchdog(&message) {
+        if command == "PONG" && self.ping.answers_probe(&message) {
             self.arm_ping_watchdog();
             return;
         }
@@ -1280,54 +1239,6 @@ impl Core {
             return fallback.to_owned();
         }
         reason
-    }
-
-    // ---- Ping watchdog --------------------------------------------------
-
-    pub(crate) fn arm_ping_watchdog(&mut self) {
-        if self.state != SessionState::Registered {
-            return;
-        }
-        self.ping = PingWatchdog::Watching;
-        self.arm_timer(
-            TimerSlot::Ping,
-            Duration::from_millis(self.config.ping_timeout_ms),
-        );
-    }
-
-    pub(crate) fn cancel_ping_watchdog(&mut self) {
-        self.ping = PingWatchdog::Off;
-        self.cancel_timer(TimerSlot::Ping);
-    }
-
-    pub(crate) fn on_ping_watchdog_fired(&mut self) {
-        if self.state != SessionState::Registered {
-            return;
-        }
-        match self.ping {
-            PingWatchdog::Watching => {
-                self.ping = PingWatchdog::Probing;
-                self.send_line(format!("PING :{PING_WATCHDOG_TOKEN}\r\n").as_bytes());
-                self.arm_timer(
-                    TimerSlot::Ping,
-                    Duration::from_millis(self.config.ping_timeout_ms),
-                );
-            }
-            PingWatchdog::Probing => {
-                self.fail(ErrorKind::Network, "Ping timeout", true);
-            }
-            PingWatchdog::Off => {}
-        }
-    }
-
-    pub(crate) fn pong_matches_watchdog(&self, message: &IrcMessage) -> bool {
-        if self.ping != PingWatchdog::Probing {
-            return false;
-        }
-        message
-            .params
-            .last()
-            .is_some_and(|token| token.as_slice() == PING_WATCHDOG_TOKEN.as_bytes())
     }
 }
 

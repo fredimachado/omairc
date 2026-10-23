@@ -326,6 +326,30 @@ fn registration_error_after_welcome_reconnects_with_reason() {
     assert_eq!(fx.reconnects().len(), 1);
 }
 
+/// The ERROR asks for a reconnect and the 464 in the same read is fatal. Both lines
+/// are handled before the transport disconnects, so the fatal failure must end the
+/// connection and no reconnect may follow.
+#[test]
+fn fatal_failure_in_the_same_read_as_a_retryable_error_does_not_reconnect() {
+    let fx = Fixture::new(test_config());
+    fx.register_with_welcome();
+    fx.inject(":server ERROR :bye\r\n:server 464 omairc :Password incorrect\r\n");
+    assert_eq!(fx.session.state(), SessionState::Failed);
+    assert!(fx.reconnects().is_empty(), "{:?}", fx.reconnects());
+    assert_eq!(
+        fx.error_messages(),
+        vec!["bye", "Server password or authentication was rejected"]
+    );
+
+    advance_ms(&fx, 60000);
+    assert_eq!(
+        fx.session.state(),
+        SessionState::Failed,
+        "no reconnect may fire after the fatal failure"
+    );
+    assert!(fx.reconnects().is_empty());
+}
+
 #[test]
 fn ping_reconnect_event_carries_delay_and_attempt() {
     let fx = Fixture::new(test_config());

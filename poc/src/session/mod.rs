@@ -13,6 +13,7 @@ pub mod batch;
 pub mod caps;
 pub mod clock;
 pub mod config;
+pub mod connection;
 pub mod ctcp;
 pub mod events;
 pub mod history;
@@ -27,6 +28,7 @@ pub mod session;
 pub mod sessionmanager;
 pub mod transport;
 pub mod typing;
+pub mod watchdog;
 pub mod wire;
 
 #[cfg(test)]

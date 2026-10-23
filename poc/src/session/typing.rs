@@ -96,7 +96,7 @@ impl Core {
             return false;
         };
         self.effects
-            .push(super::session::Effect::Write(line.into_bytes()));
+            .push(super::session::Effect::Write(line.into_bytes().into()));
         self.typing.record_sent(target, phase, now);
         true
     }

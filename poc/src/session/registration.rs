@@ -131,8 +131,7 @@ impl Core {
             self.nickname = assigned;
         }
 
-        self.reconnect_attempt = 0;
-        self.reported_retry_errors = 0;
+        self.connection.reset_retries();
         self.cancel_timer(super::session::TimerSlot::Capability);
         self.caps.abandon_outstanding();
         self.set_state(SessionState::Registered);
