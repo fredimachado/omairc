@@ -1,8 +1,12 @@
 //! Conversation creation under its cause, drops, closed marks, the cap, clearing,
 //! and the network-wide forget. Ports of `reducer_test.go`.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use super::*;
 use crate::irc::event::{HistoryKind, IrcConversationCause, MsgId};
+use crate::storage::lists::CaseListStore;
 
 #[test]
 fn direct_messages_use_composite_keys() {
@@ -140,6 +144,24 @@ fn closed_channel_stays_closed_until_join() {
     welcome_omairc(&mut reducer, NETWORK_A);
     fold(&mut reducer, join(NETWORK_A, "#room", "omairc"));
     assert!(reducer.find(&channel).is_some(), "welcome lets autojoin back");
+}
+
+#[test]
+fn persisted_refusal_survives_welcome() {
+    let mut reducer = EventReducer::new();
+    reducer.set_closed_persistence(Rc::new(RefCell::new(CaseListStore::in_memory())));
+    welcome_omairc(&mut reducer, NETWORK_A);
+    let channel = reducer.conversation_key(NETWORK_A, "#room");
+    fold(&mut reducer, join(NETWORK_A, "#room", "omairc"));
+    reducer.note_closed(&channel);
+    assert!(reducer.drop_channel(&channel), "drop closed");
+    welcome_omairc(&mut reducer, NETWORK_A);
+    fold(&mut reducer, join(NETWORK_A, "#room", "Alice"));
+    fold(&mut reducer, message(&channel, "Alice", "back", "#room"));
+    assert!(
+        reducer.find(&channel).is_none(),
+        "catch-up stayed closed after welcome dropped memory"
+    );
 }
 
 #[test]

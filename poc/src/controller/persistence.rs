@@ -25,6 +25,7 @@ use crate::session::clock::Clock;
 use crate::session::config::SessionConfig;
 use crate::session::events::SessionState;
 use crate::storage::conversationlog::FileConversationLog;
+use crate::irc::event::Event;
 use crate::storage::credentialstore::{CredentialKey, CredentialState, PURPOSE_NICKSERV, PURPOSE_PASSWORD};
 use crate::storage::paths;
 use crate::storage::profilestore::Profile;
@@ -323,6 +324,9 @@ impl Controller {
         let mapping = self.reducer.server_features(network_id).case_mapping();
         self.open_directs.undismiss(network_id, &stored, mapping);
         self.open_directs.add(network_id, &stored, mapping);
+        self.closed
+            .borrow_mut()
+            .remove(network_id, &stored, mapping);
     }
 
     /// Forgets a direct message the user closed, and dismisses it so a message from it does
@@ -334,6 +338,7 @@ impl Controller {
         let mapping = self.reducer.server_features(network_id).case_mapping();
         self.open_directs.remove(network_id, target, mapping);
         self.open_directs.dismiss(network_id, target, mapping);
+        self.closed.borrow_mut().add(network_id, target, mapping);
     }
 
     /// A line we sent into an existing direct message means the user engaged the query, so
@@ -359,7 +364,54 @@ impl Controller {
         let mapping = self.reducer.server_features(network_id).case_mapping();
         self.open_directs.rekey(network_id, old, new, mapping);
         self.open_directs.rekey_dismissed(network_id, old, new, mapping);
+        self.closed.borrow_mut().rekey(network_id, old, new, mapping);
         self.scroll_places.rekey(network_id, old, new, mapping);
+    }
+
+    /// A live message, notice, or action from someone else that is about to
+    /// recreate a direct message the user closed (`otherReopenedDirect`).
+    pub(super) fn other_reopened_direct(&self, event: &Event) -> Option<(String, String)> {
+        let (key, author, stored) = match event {
+            Event::Message(line) => (
+                line.conversation.clone(),
+                line.author.clone(),
+                line.target.clone(),
+            ),
+            Event::Notice(line) => (
+                line.conversation.clone(),
+                line.author.clone(),
+                line.target.clone(),
+            ),
+            Event::Action(line) => (
+                line.conversation.clone(),
+                line.author.clone(),
+                line.target.clone(),
+            ),
+            _ => return None,
+        };
+        let features = self.reducer.server_features(&key.network_id);
+        if features.is_channel(&key.normalized_target) {
+            return None;
+        }
+        let mapping = features.case_mapping();
+        if mapping.equals(&author, &self.current_nick(&key.network_id)) {
+            return None;
+        }
+        if self.reducer.find(&key).is_some() {
+            return None;
+        }
+        let stored = if stored.is_empty() {
+            key.normalized_target.clone()
+        } else {
+            stored
+        };
+        let closed = self.closed.borrow();
+        if !closed.contains(&key.network_id, &stored, mapping)
+            && !closed.contains(&key.network_id, &key.normalized_target, mapping)
+        {
+            return None;
+        }
+        Some((key.network_id, stored))
     }
 
     /// Whether `target` is a direct message worth keeping: a name that is not a channel and
