@@ -3,6 +3,7 @@
 
 use sha2::{Digest, Sha256};
 
+#[cfg(test)]
 use crate::irc::casemapping::IrcCaseMapping;
 use crate::irc::wiretext::wire_text;
 
@@ -131,6 +132,7 @@ pub fn wire_storage_segment(text: &str, extension_for_device_check: Option<&str>
 }
 
 /// Normalizes `target` through `mapping`, then encodes with wire semantics.
+#[cfg(test)]
 pub(crate) fn target_segment(
     target: &str,
     mapping: IrcCaseMapping,
@@ -154,6 +156,7 @@ pub fn legacy_storage_segment(text: &str) -> String {
 }
 
 /// Reverses [`legacy_storage_segment`].
+#[cfg(test)]
 pub(crate) fn decode_legacy_segment(text: &str) -> String {
     text.replace("%00", "\0")
         .replace("%5c", "\\")
@@ -172,12 +175,14 @@ pub fn storage_segment_is_hash(segment: &str) -> bool {
     })
 }
 
+#[cfg(test)]
 fn hex_byte_value(high: u8, low: u8) -> Option<u8> {
     let high_value = hex_digit_value(high)?;
     let low_value = hex_digit_value(low)?;
     Some(high_value << 4 | low_value)
 }
 
+#[cfg(test)]
 fn hex_digit_value(character: u8) -> Option<u8> {
     match character {
         b'0'..=b'9' => Some(character - b'0'),
@@ -187,11 +192,13 @@ fn hex_digit_value(character: u8) -> Option<u8> {
     }
 }
 
+#[cfg(test)]
 fn latin1_bytes_to_string(raw: &[u8]) -> String {
     raw.iter().map(|&value| char::from(value)).collect()
 }
 
 /// Reverses [`storage_segment`] (hashes decode to themselves).
+#[cfg(test)]
 pub(crate) fn decode_storage_segment(segment: &str) -> String {
     if storage_segment_is_hash(segment) {
         return segment.to_owned();
