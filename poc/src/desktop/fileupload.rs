@@ -164,8 +164,9 @@ pub fn safe_file_name(name: &str) -> String {
     if out.is_empty() {
         return "file".to_owned();
     }
-    if out.len() > 180 {
-        out = out.chars().skip(out.len() - 180).collect();
+    let char_count = out.chars().count();
+    if char_count > 180 {
+        out = out.chars().skip(char_count - 180).collect();
     }
     out
 }
@@ -197,6 +198,14 @@ mod tests {
     fn safe_file_name_sanitizes() {
         assert_eq!(safe_file_name("note.txt"), "note.txt");
         assert_eq!(safe_file_name("bad\"chars;.txt"), "bad_chars_.txt");
+    }
+
+    #[test]
+    fn safe_file_name_truncates_by_character_count() {
+        let long = "あ".repeat(200);
+        let truncated = safe_file_name(&long);
+        assert_eq!(truncated.chars().count(), 180);
+        assert_eq!(truncated, "あ".repeat(180));
     }
 
     #[test]
