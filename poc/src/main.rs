@@ -46,8 +46,8 @@ use crate::util::OmaircStyleGlobal;
 struct Args {
     #[arg(long)]
     theme: Option<PathBuf>,
-    #[arg(long, default_value_t = 1.0)]
-    scale: f32,
+    #[arg(long)]
+    scale: Option<f32>,
     #[arg(long)]
     lines: Option<usize>,
     #[arg(long)]
@@ -152,7 +152,11 @@ fn main() {
 
     let args = Args::parse();
     let theme_path = args.theme.clone();
-    let scale = args.scale;
+    let scale = args
+        .scale
+        .or_else(desktop::textscale::read_portal_text_scale)
+        .unwrap_or(1.0);
+    let cli_scale_override = args.scale.is_some();
     let lines = args.lines;
     let bench = args.bench;
     let demo_server = args.demo_server;
@@ -243,6 +247,29 @@ fn main() {
                     start_caret_blink(shell.clone(), cx);
                     start_drag_autoscroll(transcript.clone(), cx);
 
+                    if !cli_scale_override {
+                        if let Some(portal_scale) =
+                            desktop::textscale::start_portal_text_scale_watcher()
+                        {
+                            let shell_portal = shell.clone();
+                            let transcript_portal = transcript.clone();
+                            cx.spawn(async move |cx| {
+                                while let Ok(scale) = portal_scale.recv().await {
+                                    cx.update(|cx| {
+                                        apply_portal_text_scale(
+                                            scale,
+                                            &shell_portal,
+                                            &transcript_portal,
+                                            cx,
+                                        );
+                                    })
+                                    .ok();
+                                }
+                            })
+                            .detach();
+                        }
+                    }
+
                     // The system light or dark mode can change while the app runs.
                     let appearance_path = theme_path.clone();
                     let shell_appearance = shell.clone();
@@ -253,7 +280,6 @@ fn main() {
                             refresh_theme(
                                 cx,
                                 appearance_path.as_deref(),
-                                scale,
                                 &shell_appearance,
                                 &transcript_appearance,
                             );
@@ -273,7 +299,6 @@ fn main() {
                                     refresh_theme(
                                         cx,
                                         path.as_deref(),
-                                        scale,
                                         &shell_watch,
                                         &transcript_watch,
                                     );
@@ -303,14 +328,31 @@ fn main() {
 
 /// Re-reads the palette for the current system appearance and repaints the shell.
 /// Runs on a `colors.toml` change and on a system light or dark switch.
+fn apply_portal_text_scale(
+    scale: f32,
+    shell: &Entity<Shell>,
+    transcript: &Entity<TranscriptView>,
+    cx: &mut App,
+) {
+    cx.update_global::<OmaircStyleGlobal, _>(|global, _| {
+        global.style.text_scale = scale;
+    });
+    transcript.update(cx, |t, cx| {
+        t.invalidate_all();
+        cx.notify();
+    });
+    shell.update(cx, |_, cx| cx.notify());
+    cx.refresh_windows();
+}
+
 fn refresh_theme(
     cx: &mut App,
     theme_path: Option<&Path>,
-    scale: f32,
     shell: &Entity<Shell>,
     transcript: &Entity<TranscriptView>,
 ) {
     let dark = cx.global::<SystemAppearance>().dark;
+    let scale = cx.global::<OmaircStyleGlobal>().style.text_scale;
     let theme = Theme::load(theme_path, dark).unwrap_or_else(|_| Theme::defaults(dark));
     cx.update_global::<OmaircStyleGlobal, _>(|global, _| {
         global.style = Style::new(theme, scale);
