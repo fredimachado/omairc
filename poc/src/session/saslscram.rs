@@ -175,7 +175,9 @@ impl SaslScram {
         else {
             return Err(ScramFailure::MissingAttributes);
         };
-        if !nonce.starts_with(&self.client_nonce) {
+        // RFC 5802: the server appends its own part to the client nonce. A nonce equal to
+        // the client's carries none, so it is refused as well as a nonce that is not a prefix.
+        if nonce.len() <= self.client_nonce.len() || !nonce.starts_with(&self.client_nonce) {
             return Err(ScramFailure::NonceNotContinued);
         }
         let iterations = parse_iterations(iterations)?;

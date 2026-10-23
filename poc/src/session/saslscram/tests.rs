@@ -75,6 +75,36 @@ fn server_nonce_must_continue_client_nonce() {
     );
 }
 
+/// A server nonce equal to the client nonce has no server-added part, which RFC 5802
+/// requires, so it fails. The failed step leaves nothing to continue.
+#[test]
+fn server_nonce_equal_to_client_nonce_is_rejected() {
+    let mut scram = SaslScram::default();
+    scram
+        .start("user", &pencil(), Some(NONCE.as_bytes()))
+        .expect("start");
+    let server_first = format!("r={NONCE},s={SALT},i=4096");
+    let rejected = scram.take_server_first(server_first.as_bytes());
+    assert_eq!(rejected, Err(ScramFailure::NonceNotContinued));
+    assert!(hides_password(&rejected));
+    assert_eq!(
+        scram.take_server_first(SERVER_FIRST.as_bytes()),
+        Err(ScramFailure::NotAwaitingFirst),
+        "a refused server-first leaves nothing to continue"
+    );
+}
+
+/// The shortest server nonce that counts: the client nonce plus one server-added byte.
+#[test]
+fn server_nonce_one_byte_longer_than_client_nonce_is_accepted() {
+    let mut scram = SaslScram::default();
+    scram.start("user", &pencil(), Some(b"abc")).expect("start");
+    let client_final = scram
+        .take_server_first(format!("r=abcd,s={SALT},i=4096").as_bytes())
+        .expect("client-final");
+    assert!(client_final.starts_with(b"c=biws,r=abcd,p="));
+}
+
 /// Ports `ScramTest::nonceEqualsSignsBelongToTheValue`.
 #[test]
 fn nonce_equals_signs_belong_to_the_value() {
