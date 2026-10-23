@@ -16,8 +16,11 @@ use crate::storage::profilestore::Profile;
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
+mod pending;
 #[cfg(windows)]
 mod windows;
+
+pub use pending::PendingRemovals;
 
 /// Where a secret stands after a write or a delete (`CredentialStore::State`), as the Connect
 /// sheet words it. `Error` carries the OS's reason; it never holds the password.
@@ -98,15 +101,24 @@ pub trait CredentialStore {
     /// must not be reported as "saved".
     fn durable(&self) -> bool;
 
-    /// The stored secret, or `None` when there is none. A backend that fails to read
-    /// reads as none; the write and delete paths report their failures as `Error`.
-    fn read(&self, key: &CredentialKey) -> Option<String>;
+    /// The stored secret: `Ok(None)` when there is none, and `Err` with the backend's reason
+    /// when it could not answer, such as a call that timed out. A caller must not read an
+    /// `Err` as a missing secret.
+    fn read(&self, key: &CredentialKey) -> Result<Option<String>, String>;
 
     /// Stores a secret and reports where it now lives.
     fn write(&mut self, key: &CredentialKey, password: &str) -> CredentialState;
 
-    /// Deletes a secret and reports the state after the delete.
+    /// Deletes a secret and reports the state after the delete. `Missing` is a delete that
+    /// is done, whether or not there was anything to delete.
     fn remove(&mut self, key: &CredentialKey) -> CredentialState;
+
+    /// The deletes this store still owes (Qt's obsolete keys). The controller records a key
+    /// here when a rename leaves it behind, and forgets it once its delete succeeds.
+    fn pending(&self) -> &PendingRemovals;
+
+    /// The same set, for recording and forgetting keys.
+    fn pending_mut(&mut self) -> &mut PendingRemovals;
 }
 
 /// The OS keychain for this platform, or [`MemoryCredentialStore`] when its backend does not
@@ -135,10 +147,12 @@ fn platform_backend() -> Option<Box<dyn CredentialStore>> {
     None
 }
 
-/// The in-memory store: secrets live in a map for this run only.
+/// The in-memory store: secrets live in a map for this run only. It never refuses a delete,
+/// so it owes none, unless a test wraps it in a store that does.
 #[derive(Debug, Default)]
 pub struct MemoryCredentialStore {
     secrets: BTreeMap<CredentialKey, String>,
+    pending: PendingRemovals,
 }
 
 impl CredentialStore for MemoryCredentialStore {
@@ -146,8 +160,8 @@ impl CredentialStore for MemoryCredentialStore {
         false
     }
 
-    fn read(&self, key: &CredentialKey) -> Option<String> {
-        self.secrets.get(key).cloned()
+    fn read(&self, key: &CredentialKey) -> Result<Option<String>, String> {
+        Ok(self.secrets.get(key).cloned())
     }
 
     fn write(&mut self, key: &CredentialKey, password: &str) -> CredentialState {
@@ -158,6 +172,14 @@ impl CredentialStore for MemoryCredentialStore {
     fn remove(&mut self, key: &CredentialKey) -> CredentialState {
         self.secrets.remove(key);
         CredentialState::Missing
+    }
+
+    fn pending(&self) -> &PendingRemovals {
+        &self.pending
+    }
+
+    fn pending_mut(&mut self) -> &mut PendingRemovals {
+        &mut self.pending
     }
 }
 
@@ -249,18 +271,18 @@ mod tests {
     fn the_memory_store_keeps_secrets_for_the_run_and_never_claims_durability() {
         let mut store = MemoryCredentialStore::default();
         assert!(!store.durable());
-        assert_eq!(store.read(&key("a", PURPOSE_PASSWORD)), None);
+        assert_eq!(store.read(&key("a", PURPOSE_PASSWORD)), Ok(None));
         assert_eq!(
             store.write(&key("a", PURPOSE_PASSWORD), "hunter2"),
             CredentialState::SessionOnly
         );
         assert_eq!(
-            store.read(&key("a", PURPOSE_PASSWORD)).as_deref(),
-            Some("hunter2")
+            store.read(&key("a", PURPOSE_PASSWORD)),
+            Ok(Some("hunter2".to_owned()))
         );
         assert_eq!(
             store.read(&key("a", PURPOSE_NICKSERV)),
-            None,
+            Ok(None),
             "slots are separate"
         );
     }
@@ -274,10 +296,18 @@ mod tests {
             store.remove(&key("a", PURPOSE_PASSWORD)),
             CredentialState::Missing
         );
-        assert_eq!(store.read(&key("a", PURPOSE_PASSWORD)), None);
+        assert_eq!(store.read(&key("a", PURPOSE_PASSWORD)), Ok(None));
         assert_eq!(
-            store.read(&key("a", PURPOSE_NICKSERV)).as_deref(),
-            Some("two")
+            store.read(&key("a", PURPOSE_NICKSERV)),
+            Ok(Some("two".to_owned()))
         );
+    }
+
+    #[test]
+    fn the_memory_store_owes_no_delete_until_a_caller_records_one() {
+        let mut store = MemoryCredentialStore::default();
+        assert!(store.pending().network("a").is_empty());
+        store.pending_mut().add(key("a", PURPOSE_PASSWORD));
+        assert_eq!(store.pending().network("a"), [key("a", PURPOSE_PASSWORD)]);
     }
 }

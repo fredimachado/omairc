@@ -118,11 +118,18 @@ impl Controller {
     /// are written first, then the profile file. The controller keeps the profile even when
     /// the file refuses, so the session sees the edit.
     pub fn save_profile(&mut self, mut profile: Profile, edits: SecretEdits) -> SaveOutcome {
-        let password = self.store_secret(&profile, PURPOSE_PASSWORD, edits.password);
-        let nickserv = self.store_secret(&profile, PURPOSE_NICKSERV, edits.nickserv);
-        // Only a secret the keychain holds is saved. A session-only or refused write is not.
-        profile.secret_saved = password == CredentialState::Available;
-        profile.nickserv_saved = nickserv == CredentialState::Available;
+        // The saved profile still names the keys the secrets are under, so a changed host,
+        // username or nick moves them (`IrcConnection::apply`'s rekey).
+        let stored = self.profiles.get(&profile.network_id).cloned();
+        let (was_saved, was_nickserv_saved) = stored
+            .as_ref()
+            .map_or((false, false), |stored| (stored.secret_saved, stored.nickserv_saved));
+        let password =
+            self.store_secret(stored.as_ref(), &profile, PURPOSE_PASSWORD, edits.password);
+        let nickserv =
+            self.store_secret(stored.as_ref(), &profile, PURPOSE_NICKSERV, edits.nickserv);
+        profile.secret_saved = saved_flag(&password, was_saved);
+        profile.nickserv_saved = saved_flag(&nickserv, was_nickserv_saved);
         let status = self.profile_store.save(&profile);
         self.profiles.insert(profile.network_id.clone(), profile.clone());
         self.queue(vec![ViewNotify::Conversations, ViewNotify::Status]);
@@ -133,14 +140,19 @@ impl Controller {
         }
     }
 
-    /// Forgets a network's profile and its secrets (`forgetNetwork`'s store half).
+    /// Forgets a network's profile and its secrets (`forgetNetwork`'s store half). The current
+    /// keys and every obsolete key of the network are deleted; one the store refuses stays owed.
     pub(super) fn remove_profile(&mut self, network_id: &str) -> Status {
         self.applied_profiles.remove(network_id);
         // The entry names come from the profile's username and host, so the profile is read first.
         if let Some(profile) = self.profiles.get(network_id).cloned() {
             for purpose in [PURPOSE_PASSWORD, PURPOSE_NICKSERV] {
-                self.credentials.remove(&CredentialKey::for_profile(&profile, purpose));
+                let key = CredentialKey::for_profile(&profile, purpose);
+                self.credentials.pending_mut().add(key);
             }
+        }
+        for key in self.credentials.pending().network(network_id) {
+            self.delete_key(&key);
         }
         self.profiles.remove(network_id);
         self.profile_store.remove(network_id)
@@ -356,22 +368,112 @@ impl Controller {
         !target_looks_like_service(target, features)
     }
 
-    /// Writes one secret slot and reports where it now is. `None` leaves the slot as it is,
-    /// and reports whether the store already holds it.
-    fn store_secret(&mut self, profile: &Profile, purpose: &'static str, edit: Option<Secret>) -> CredentialState {
+    /// Writes one secret slot of `profile` and reports where it now is. `stored` is the saved
+    /// profile the slot came from. When its key differs from the new one, the old key is owed a
+    /// delete (`IrcConnection::applySecret`'s rememberObsoleteKey). A typed secret replaces the
+    /// slot, a blank one clears it, and `None` moves the secret from the old key, or leaves the
+    /// slot as it is when the key did not change.
+    fn store_secret(
+        &mut self,
+        stored: Option<&Profile>,
+        profile: &Profile,
+        purpose: &'static str,
+        edit: Option<Secret>,
+    ) -> CredentialState {
         let key = CredentialKey::for_profile(profile, purpose);
-        match edit {
-            None if self.credentials.read(&key).is_some() => {
+        let previous = stored
+            .map(|stored| CredentialKey::for_profile(stored, purpose))
+            .filter(|previous| *previous != key);
+        if let Some(previous) = &previous {
+            self.credentials.pending_mut().add(previous.clone());
+        }
+        match (edit, previous) {
+            (None, Some(previous)) => self.carry_secret(&previous, profile, purpose),
+            (None, None) => self.settled_state(&key),
+            (Some(secret), _) => {
+                let state = if secret.is_empty() {
+                    self.credentials.remove(&key)
+                } else {
+                    // The credential store takes the plaintext: it is the edge the secret is written to.
+                    self.credentials.write(&key, secret.expose())
+                };
+                if is_settled(&state) {
+                    self.retire_obsolete(profile, purpose);
+                }
+                state
+            }
+        }
+    }
+
+    /// Moves a secret from the key a profile had to the key it has now, when Apply left the
+    /// secret blank. The old key is deleted once the new one holds the secret. An old key that
+    /// holds nothing is only deleted. A read the store cannot answer leaves both keys alone.
+    fn carry_secret(
+        &mut self,
+        from: &CredentialKey,
+        profile: &Profile,
+        purpose: &'static str,
+    ) -> CredentialState {
+        let key = CredentialKey::for_profile(profile, purpose);
+        match self.credentials.read(from) {
+            Ok(Some(text)) => {
+                let mut carried = Secret::from(text);
+                let state = self.credentials.write(&key, carried.expose());
+                carried.wipe();
+                if is_settled(&state) {
+                    self.retire_obsolete(profile, purpose);
+                }
+                state
+            }
+            Ok(None) => {
+                let state = self.settled_state(&key);
+                if is_settled(&state) {
+                    self.delete_key(from);
+                }
+                state
+            }
+            Err(message) => CredentialState::Error(message),
+        }
+    }
+
+    /// Deletes the owed keys of one slot once the slot's secret sits under its current key, or
+    /// was cleared on purpose (`flushObsoleteKeys`). The current key itself is never deleted,
+    /// even when an earlier rename left it owed.
+    fn retire_obsolete(&mut self, profile: &Profile, purpose: &'static str) {
+        let current = CredentialKey::for_profile(profile, purpose);
+        let owed = self.credentials.pending().slot(&profile.network_id, purpose);
+        for key in owed {
+            if key == current {
+                self.credentials.pending_mut().forget(&key);
+            } else {
+                self.delete_key(&key);
+            }
+        }
+    }
+
+    /// Deletes one key. A key the store refuses stays owed, so a later save or the profile's
+    /// removal tries it again.
+    fn delete_key(&mut self, key: &CredentialKey) {
+        match self.credentials.remove(key) {
+            CredentialState::Missing => self.credentials.pending_mut().forget(key),
+            _ => self.credentials.pending_mut().add(key.clone()),
+        }
+    }
+
+    /// Where a slot stands when nothing is written: held when its key has a secret, missing when
+    /// it has none, and the store's error when it cannot say.
+    fn settled_state(&self, key: &CredentialKey) -> CredentialState {
+        match self.credentials.read(key) {
+            Ok(Some(text)) => {
+                Secret::from(text).wipe();
                 if self.credentials.durable() {
                     CredentialState::Available
                 } else {
                     CredentialState::SessionOnly
                 }
             }
-            None => CredentialState::Missing,
-            Some(secret) if secret.is_empty() => self.credentials.remove(&key),
-            // The credential store takes the plaintext: it is the edge the secret is written to.
-            Some(secret) => self.credentials.write(&key, secret.expose()),
+            Ok(None) => CredentialState::Missing,
+            Err(message) => CredentialState::Error(message),
         }
     }
 
@@ -421,11 +523,34 @@ impl Controller {
         config
     }
 
-    /// A profile's stored secret, or an empty one when the store has none.
+    /// A profile's stored secret, or an empty one when the store has none or cannot answer. A
+    /// session starts without the password in that case, and the Connect sheet says why.
     fn secret_text(&self, profile: &Profile, purpose: &'static str) -> Secret {
         self.credentials
             .read(&CredentialKey::for_profile(profile, purpose))
+            .ok()
+            .flatten()
             .map(Secret::from)
             .unwrap_or_default()
     }
+}
+
+/// Whether a slot's saved flag says its secret is in the keychain. Only a secret the keychain
+/// holds is saved, and a session-only one is not. A refused read or write says nothing about the
+/// secret, so the flag keeps what the profile had (`IrcConnection::handleCredentialWrite`).
+fn saved_flag(state: &CredentialState, was_saved: bool) -> bool {
+    match state {
+        CredentialState::Available => true,
+        CredentialState::SessionOnly | CredentialState::Missing => false,
+        CredentialState::Error(_) => was_saved,
+    }
+}
+
+/// Whether a slot's secret has a settled place: held in the store or in memory, or known to be
+/// absent. A refused write or delete is not settled, so no old key is deleted behind it.
+fn is_settled(state: &CredentialState) -> bool {
+    matches!(
+        state,
+        CredentialState::Available | CredentialState::SessionOnly | CredentialState::Missing
+    )
 }

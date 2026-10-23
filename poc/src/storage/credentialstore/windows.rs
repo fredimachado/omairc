@@ -2,6 +2,10 @@
 //! `tui/internal/storage/secretservice_windows.go`: generic credentials at the target
 //! `<key name>@omairc`, the name QtKeychain 0.17+ writes. A read or delete also tries the bare
 //! key name, for entries older QtKeychain builds wrote.
+//!
+//! The password is held as bytes, never as text, and every copy this module makes of it is
+//! overwritten after use: the blob copied out of a `CREDENTIALW`, the blob the OS returned
+//! (before `CredFree` releases it), and the buffer handed to `CredWriteW`.
 
 use std::ffi::c_void;
 use std::io;
@@ -14,21 +18,26 @@ use windows_sys::Win32::Security::Credentials::{
     CRED_TYPE_GENERIC,
 };
 
-use super::{CredentialKey, CredentialState, CredentialStore};
+use super::{CredentialKey, CredentialState, CredentialStore, PendingRemovals};
 
 /// QtKeychain's service name, the suffix of every target.
 const SERVICE: &str = "omairc";
 /// An entry no client writes, for the availability probe.
 const PROBE_TARGET: &str = "omairc/probe@omairc";
 
-/// The Credential Manager store. The OS holds the entries, so the struct has no state.
-pub struct WindowsCredentialStore;
+/// The Credential Manager store. The OS holds the entries; the struct keeps only the deletes it
+/// owes.
+pub struct WindowsCredentialStore {
+    pending: PendingRemovals,
+}
 
 /// The store, when the Credential Manager answers. A read of an absent probe entry is an
 /// answer; any other failure means the manager is not usable.
 pub fn open() -> Option<Box<dyn CredentialStore>> {
     match read_blob(PROBE_TARGET) {
-        Ok(_) => Some(Box::new(WindowsCredentialStore)),
+        Ok(_) => Some(Box::new(WindowsCredentialStore {
+            pending: PendingRemovals::default(),
+        })),
         Err(_) => None,
     }
 }
@@ -49,8 +58,25 @@ fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(once(0)).collect()
 }
 
+/// A copy of a secret's bytes. Dropping it overwrites the bytes, so the plaintext does not
+/// outlive its use in this process.
+struct WipedBytes(Vec<u8>);
+
+impl Drop for WipedBytes {
+    fn drop(&mut self) {
+        wipe(&mut self.0);
+    }
+}
+
+/// Overwrites `bytes` with zeros. The black box keeps the optimizer from dropping writes to
+/// memory nothing reads again, the same approach `Secret::wipe` takes.
+fn wipe(bytes: &mut [u8]) {
+    bytes.fill(0);
+    std::hint::black_box(bytes);
+}
+
 /// The blob of the generic credential at `target`. `Ok(None)` when there is no such entry.
-fn read_blob(target: &str) -> io::Result<Option<Vec<u8>>> {
+fn read_blob(target: &str) -> io::Result<Option<WipedBytes>> {
     let target = wide(target);
     let mut credential: *mut CREDENTIALW = null_mut();
     // SAFETY: `target` is NUL-terminated and outlives the call. On success `credential` points
@@ -64,15 +90,19 @@ fn read_blob(target: &str) -> io::Result<Option<Vec<u8>>> {
             Err(error)
         };
     }
-    // SAFETY: CredReadW succeeded, so `credential` is a live CREDENTIALW. Its blob is copied
-    // before CredFree, after which nothing points into the freed buffer.
+    // SAFETY: CredReadW succeeded, so `credential` is a live CREDENTIALW and its blob is memory
+    // this call owns until CredFree. The blob is copied out, then the OS's copy is overwritten
+    // before CredFree frees it, so the plaintext is left in neither buffer. Nothing points into
+    // the freed buffer afterwards.
     let blob = unsafe {
         let entry = &*credential;
+        let size = entry.CredentialBlobSize as usize;
         let blob = if entry.CredentialBlob.is_null() {
-            Vec::new()
+            WipedBytes(Vec::new())
         } else {
-            std::slice::from_raw_parts(entry.CredentialBlob, entry.CredentialBlobSize as usize)
-                .to_vec()
+            let copy = WipedBytes(std::slice::from_raw_parts(entry.CredentialBlob, size).to_vec());
+            wipe(std::slice::from_raw_parts_mut(entry.CredentialBlob, size));
+            copy
         };
         CredFree(credential as *const c_void);
         blob
@@ -83,17 +113,17 @@ fn read_blob(target: &str) -> io::Result<Option<Vec<u8>>> {
 /// Stores `password` as the generic credential at `target`, replacing any entry there.
 fn write_blob(target: &str, password: &[u8]) -> io::Result<()> {
     let mut name = wide(target);
-    let mut blob = password.to_vec();
+    let mut blob = WipedBytes(password.to_vec());
     let entry = CREDENTIALW {
         Type: CRED_TYPE_GENERIC,
         TargetName: name.as_mut_ptr(),
-        CredentialBlobSize: blob.len() as u32,
-        CredentialBlob: blob.as_mut_ptr(),
+        CredentialBlobSize: blob.0.len() as u32,
+        CredentialBlob: blob.0.as_mut_ptr(),
         Persist: CRED_PERSIST_ENTERPRISE,
         ..Default::default()
     };
     // SAFETY: `entry` and the buffers it points at (`name`, `blob`) live across the call, and
-    // CredWriteW only reads them.
+    // CredWriteW only reads them. `blob` is overwritten when this function returns.
     if unsafe { CredWriteW(&entry, 0) } == 0 {
         return Err(io::Error::last_os_error());
     }
@@ -120,15 +150,17 @@ impl CredentialStore for WindowsCredentialStore {
         true
     }
 
-    fn read(&self, key: &CredentialKey) -> Option<String> {
-        targets(key)
-            .iter()
-            .find_map(|target| match read_blob(target) {
-                Ok(Some(blob)) if !blob.is_empty() => {
-                    Some(String::from_utf8_lossy(&blob).into_owned())
+    fn read(&self, key: &CredentialKey) -> Result<Option<String>, String> {
+        for target in targets(key) {
+            match read_blob(&target) {
+                Ok(Some(blob)) if !blob.0.is_empty() => {
+                    return Ok(Some(String::from_utf8_lossy(&blob.0).into_owned()));
                 }
-                _ => None,
-            })
+                Ok(_) => {}
+                Err(error) => return Err(error.to_string()),
+            }
+        }
+        Ok(None)
     }
 
     fn write(&mut self, key: &CredentialKey, password: &str) -> CredentialState {
@@ -145,6 +177,14 @@ impl CredentialStore for WindowsCredentialStore {
             }
         }
         CredentialState::Missing
+    }
+
+    fn pending(&self) -> &PendingRemovals {
+        &self.pending
+    }
+
+    fn pending_mut(&mut self) -> &mut PendingRemovals {
+        &mut self.pending
     }
 }
 
@@ -171,6 +211,13 @@ mod tests {
         );
     }
 
+    #[test]
+    fn wiping_a_secret_copy_leaves_no_plaintext_bytes() {
+        let mut bytes = b"hunter2".to_vec();
+        wipe(&mut bytes);
+        assert_eq!(bytes, [0; 7]);
+    }
+
     /// Writes, reads and removes a real Credential Manager entry, and the bare-name fallback.
     /// Run with `cargo test -- --ignored` on Windows.
     #[test]
@@ -183,17 +230,17 @@ mod tests {
             purpose: PURPOSE_PASSWORD,
         };
         let mut store = open().expect("the Credential Manager answers");
-        assert_eq!(store.read(&key), None);
+        assert_eq!(store.read(&key), Ok(None));
         assert_eq!(store.write(&key, "hunter2"), CredentialState::Available);
-        assert_eq!(store.read(&key).as_deref(), Some("hunter2"));
+        assert_eq!(store.read(&key), Ok(Some("hunter2".to_owned())));
         assert_eq!(store.remove(&key), CredentialState::Missing);
-        assert_eq!(store.read(&key), None);
+        assert_eq!(store.read(&key), Ok(None));
 
         // An entry under the bare key name, as older QtKeychain builds wrote it, is read and
         // removed the same way.
         write_blob(&key.key_name(), b"legacy").expect("bare entry");
-        assert_eq!(store.read(&key).as_deref(), Some("legacy"));
+        assert_eq!(store.read(&key), Ok(Some("legacy".to_owned())));
         assert_eq!(store.remove(&key), CredentialState::Missing);
-        assert_eq!(store.read(&key), None);
+        assert_eq!(store.read(&key), Ok(None));
     }
 }

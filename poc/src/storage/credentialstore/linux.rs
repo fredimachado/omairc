@@ -2,7 +2,13 @@
 //! `tui/internal/storage/secretservice.go`: items in the default collection, carrying the
 //! attributes `service=omairc` and `username=<key name>` that QtKeychain writes. Each call is
 //! synchronous: `futures::executor::block_on` drives the oo7 future on a worker thread, and the
-//! caller waits at most `CALL_TIMEOUT`, as the Go client bounds its D-Bus calls.
+//! caller waits at most a bounded time for it.
+//!
+//! Two bounds apply. The startup probe only connects to the bus, so it waits `PROBE_TIMEOUT`,
+//! and a service that does not answer in that time falls back to the in-memory store for the
+//! run. Every read, write and delete unlocks the keyring, which can wait on the user at the
+//! keyring's prompt, so it waits `CALL_TIMEOUT`. An overrun is an `Error`, never a missing
+//! secret.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -13,36 +19,51 @@ use std::time::Duration;
 use futures::executor::block_on;
 use oo7::{Keyring, Secret};
 
-use super::{CredentialKey, CredentialState, CredentialStore};
+use super::{CredentialKey, CredentialState, CredentialStore, PendingRemovals};
 
 /// The attribute names and the service value QtKeychain and the TUI search by.
 const ATTRIBUTE_SERVICE: &str = "service";
 const ATTRIBUTE_USERNAME: &str = "username";
 const SERVICE: &str = "omairc";
 
-/// How long one Secret Service call may take, as Go's `secretServiceCallTimeout`. A call that
-/// overruns is abandoned on its worker thread, so a hung service cannot block the app.
-const CALL_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long one call that unlocks the keyring may wait, the unlock prompt included. A call
+/// that overruns is abandoned on its worker thread, so a hung service cannot block the app
+/// forever. Thirty seconds is long enough for a person to answer the prompt.
+const CALL_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// The Secret Service store. Each call connects to the bus, so the struct has no state.
-pub struct SecretServiceStore;
+/// How long the startup probe waits for the bus to answer. The probe never unlocks, so a
+/// service that is not answering quickly is treated as absent for this run.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// The store, when a Secret Service answers on the session bus within `CALL_TIMEOUT`. Without
-/// one the caller falls back to memory.
-pub fn open() -> Option<Box<dyn CredentialStore>> {
-    let answered = bounded(async { Keyring::new().await.is_ok() }) == Some(true);
-    answered.then(|| Box::new(SecretServiceStore) as Box<dyn CredentialStore>)
+/// The Secret Service store. Each call connects to the bus; the struct keeps only the deletes
+/// it owes.
+pub struct SecretServiceStore {
+    pending: PendingRemovals,
 }
 
-/// Runs `call` to completion on a worker thread and waits at most `CALL_TIMEOUT` for it.
-/// `None` when the call overran.
-fn bounded<T: Send + 'static>(call: impl Future<Output = T> + Send + 'static) -> Option<T> {
+/// The store, when a Secret Service answers on the session bus within `PROBE_TIMEOUT`. Without
+/// one the caller falls back to memory.
+pub fn open() -> Option<Box<dyn CredentialStore>> {
+    let answered = bounded(PROBE_TIMEOUT, async { Keyring::new().await.is_ok() }) == Some(true);
+    answered.then(|| {
+        Box::new(SecretServiceStore {
+            pending: PendingRemovals::default(),
+        }) as Box<dyn CredentialStore>
+    })
+}
+
+/// Runs `call` to completion on a worker thread and waits at most `timeout` for it. `None` when
+/// the call overran; the worker is left to finish on its own, and a late result is dropped.
+fn bounded<T: Send + 'static>(
+    timeout: Duration,
+    call: impl Future<Output = T> + Send + 'static,
+) -> Option<T> {
     let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
         // The receiver is gone when the caller gave up, so a late result is dropped.
         let _ = sender.send(block_on(call));
     });
-    receiver.recv_timeout(CALL_TIMEOUT).ok()
+    receiver.recv_timeout(timeout).ok()
 }
 
 /// The attributes that find one entry: the service, and the key name as the username.
@@ -57,19 +78,19 @@ async fn unlocked_keyring() -> oo7::Result<Keyring> {
     Ok(keyring)
 }
 
-/// The first non-empty secret among the entries for `key_name`.
-async fn read_password(key_name: String) -> Option<String> {
-    let keyring = unlocked_keyring().await.ok()?;
-    let items = keyring.search_items(&attributes(&key_name)).await.ok()?;
-    for item in items {
-        item.unlock().await.ok()?;
-        let secret = item.secret().await.ok()?;
+/// The first non-empty secret among the entries for `key_name`. `Ok(None)` when there is none;
+/// an error the service reports is `Err`, and is never read as a missing secret.
+async fn read_password(key_name: String) -> oo7::Result<Option<String>> {
+    let keyring = unlocked_keyring().await?;
+    for item in keyring.search_items(&attributes(&key_name)).await? {
+        item.unlock().await?;
+        let secret = item.secret().await?;
         let text = String::from_utf8_lossy(secret.as_bytes()).into_owned();
         if !text.is_empty() {
-            return Some(text);
+            return Ok(Some(text));
         }
     }
-    None
+    Ok(None)
 }
 
 /// Stores `password` under `key_name`, replacing the entry that is there.
@@ -91,9 +112,9 @@ async fn delete_password(key_name: String) -> oo7::Result<()> {
     keyring.delete(&attributes(&key_name)).await
 }
 
-/// The state a call that did not answer in time reports.
-fn timed_out() -> CredentialState {
-    CredentialState::Error("secret service did not answer in time".to_owned())
+/// The reason a call that did not answer in time reports.
+fn timed_out_reason() -> String {
+    "timed out waiting for the secret service".to_owned()
 }
 
 impl CredentialStore for SecretServiceStore {
@@ -101,24 +122,38 @@ impl CredentialStore for SecretServiceStore {
         true
     }
 
-    fn read(&self, key: &CredentialKey) -> Option<String> {
-        bounded(read_password(key.key_name())).flatten()
+    fn read(&self, key: &CredentialKey) -> Result<Option<String>, String> {
+        match bounded(CALL_TIMEOUT, read_password(key.key_name())) {
+            Some(answer) => answer.map_err(|error| error.to_string()),
+            None => Err(timed_out_reason()),
+        }
     }
 
     fn write(&mut self, key: &CredentialKey, password: &str) -> CredentialState {
-        match bounded(store_password(key.key_name(), password.to_owned())) {
+        match bounded(
+            CALL_TIMEOUT,
+            store_password(key.key_name(), password.to_owned()),
+        ) {
             Some(Ok(())) => CredentialState::Available,
             Some(Err(error)) => CredentialState::Error(error.to_string()),
-            None => timed_out(),
+            None => CredentialState::Error(timed_out_reason()),
         }
     }
 
     fn remove(&mut self, key: &CredentialKey) -> CredentialState {
-        match bounded(delete_password(key.key_name())) {
+        match bounded(CALL_TIMEOUT, delete_password(key.key_name())) {
             Some(Ok(())) => CredentialState::Missing,
             Some(Err(error)) => CredentialState::Error(error.to_string()),
-            None => timed_out(),
+            None => CredentialState::Error(timed_out_reason()),
         }
+    }
+
+    fn pending(&self) -> &PendingRemovals {
+        &self.pending
+    }
+
+    fn pending_mut(&mut self) -> &mut PendingRemovals {
+        &mut self.pending
     }
 }
 
@@ -126,6 +161,18 @@ impl CredentialStore for SecretServiceStore {
 mod tests {
     use super::*;
     use crate::storage::credentialstore::PURPOSE_PASSWORD;
+
+    #[test]
+    fn a_call_that_overruns_its_timeout_yields_no_answer() {
+        // A call that never answers is a timeout, not a result: `read` maps it to `Err`, and
+        // a write or delete maps it to `Error`, so it never reads as a missing secret.
+        assert_eq!(
+            bounded(Duration::from_millis(20), std::future::pending::<u8>()),
+            None
+        );
+        assert_eq!(bounded(Duration::from_secs(5), async { 7u8 }), Some(7));
+        assert!(timed_out_reason().starts_with("timed out"));
+    }
 
     /// Writes, reads and removes a real Secret Service entry. Run with `cargo test -- --ignored`
     /// on a session with a running keyring (GNOME Keyring or KWallet).
@@ -139,17 +186,17 @@ mod tests {
             purpose: PURPOSE_PASSWORD,
         };
         let mut store = open().expect("a Secret Service answers on the session bus");
-        assert_eq!(store.read(&key), None);
+        assert_eq!(store.read(&key), Ok(None));
         assert_eq!(store.write(&key, "hunter2"), CredentialState::Available);
-        assert_eq!(store.read(&key).as_deref(), Some("hunter2"));
+        assert_eq!(store.read(&key), Ok(Some("hunter2".to_owned())));
         assert_eq!(
             store.write(&key, "swordfish"),
             CredentialState::Available,
             "an update"
         );
-        assert_eq!(store.read(&key).as_deref(), Some("swordfish"));
+        assert_eq!(store.read(&key), Ok(Some("swordfish".to_owned())));
         assert_eq!(store.remove(&key), CredentialState::Missing);
-        assert_eq!(store.read(&key), None);
+        assert_eq!(store.read(&key), Ok(None));
         assert_eq!(
             store.remove(&key),
             CredentialState::Missing,
