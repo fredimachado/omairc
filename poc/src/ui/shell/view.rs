@@ -16,6 +16,7 @@ use crate::model::composer::DraftKey;
 use crate::model::sidebar::{sidebar_rows, NetworkHeader, SidebarRow};
 use crate::model::status::{connection_line, status_rows};
 use crate::model::scroll_place::SavedPlace;
+use crate::model::title::clear_title_mark_if_opened;
 use crate::model::ConversationRef;
 use crate::ui::shell::Shell;
 use crate::ui::transcript::view::ConversationLines;
@@ -172,6 +173,12 @@ impl Shell {
             return;
         }
         let previous = std::mem::replace(&mut self.shown, view.clone());
+        clear_title_mark_if_opened(
+            &mut self.title_mark,
+            view.status.is_some(),
+            self.controller.focused_network_id(),
+            self.controller.selected_target(),
+        );
         if previous.status.is_none() {
             let place = self.transcript.update(cx, |t, _| t.capture_scroll_place());
             self.remember_place(previous.conversation, place);

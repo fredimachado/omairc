@@ -423,6 +423,7 @@ impl Shell {
         if !self.chord_live(Chord::MarkAllRead, window, cx) {
             return;
         }
+        self.title_mark = None;
         self.controller.mark_all_read();
         cx.notify();
     }

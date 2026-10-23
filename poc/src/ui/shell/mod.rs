@@ -37,7 +37,8 @@ use crate::model::presence::footer_presence;
 use crate::model::sidebar::SidebarState;
 use crate::model::slash_complete::SlashSession;
 use crate::model::status::{connection_line, status_title};
-use crate::model::title::{conversation_title, window_title, TitleView};
+use crate::controller::notify::Arrival;
+use crate::model::title::{conversation_title, window_title, TitleMark, TitleView};
 use crate::model::update_check::UpdateCheck;
 use crate::model::ConversationRef;
 use crate::net::{NetHub, NetTransports};
@@ -74,6 +75,8 @@ pub struct Shell {
     pub shown: ShownView,
     pub sidebar: SidebarState,
     pub window_title: String,
+    /// Unfocused mention or direct message shown in the window title (`TitleMark.qml`).
+    pub title_mark: Option<TitleMark>,
     pub members_open: bool,
     /// The member list's keyboard cursor, an index into the channel's members.
     pub member_cursor: usize,
@@ -218,6 +221,7 @@ impl Shell {
             shown,
             sidebar: SidebarState::default(),
             window_title: String::new(),
+            title_mark: None,
             members_open: true,
             member_cursor: 0,
             member_focus: cx.focus_handle(),
@@ -283,7 +287,16 @@ impl Shell {
     /// the same way a click is. The transcript rebuilds for changed lines, and the window
     /// repaints.
     pub fn drain_notifications(&mut self, cx: &mut Context<Self>) {
-        let _arrivals = self.controller.take_arrivals();
+        for arrival in self.controller.take_arrivals() {
+            match arrival {
+                Arrival::Mention(mention) => {
+                    if let Some(mark) = TitleMark::from_mention(self.window_active, &mention) {
+                        self.title_mark = Some(mark);
+                    }
+                }
+                Arrival::Monitor { .. } => {}
+            }
+        }
         let surfaces = self.controller.take_notifications();
         self.sync_view(cx);
         let status = self.status_showing();
@@ -393,9 +406,15 @@ impl Render for Shell {
         }
         let selected = self.selected_ref();
         let status = self.status_network();
-        let wanted_window_title = match &status {
-            Some(network_id) => window_title(&self.controller, TitleView::Status(&self.network_name(network_id))),
-            None => window_title(&self.controller, TitleView::Conversation(Some(&selected))),
+        let wanted_window_title = if let Some(mark) = &self.title_mark {
+            mark.window_title(&self.controller)
+        } else {
+            match &status {
+                Some(network_id) => {
+                    window_title(&self.controller, TitleView::Status(&self.network_name(network_id)))
+                }
+                None => window_title(&self.controller, TitleView::Conversation(Some(&selected))),
+            }
         };
         if wanted_window_title != self.window_title {
             window.set_window_title(&wanted_window_title);
