@@ -742,3 +742,48 @@ fn the_profile_is_the_sidebar_name_before_any_session_starts() {
     );
     assert_eq!(first.network_name(OFTC), "irc.libera.chat", "a blank name is the host");
 }
+
+#[test]
+fn self_join_history_resume_does_not_reenter_session() {
+    let dir = TempDir::new("history-resume-reenter");
+    let backing = disk(&dir);
+    let loopbacks = Loopbacks::default();
+    let mut controller = launch(&backing, Box::new(loopbacks.clone()));
+    save(&mut controller, libera(LIBERA));
+
+    let mapping = controller.reducer.server_features(LIBERA).case_mapping();
+    let when = Utc.with_ymd_and_hms(2024, 3, 9, 16, 0, 0).unwrap()
+        + chrono::Duration::milliseconds(620);
+    assert!(controller
+        .playback_times
+        .borrow_mut()
+        .note(LIBERA, "#omarchy", when, mapping));
+
+    assert!(controller.start(LIBERA));
+    feed(
+        &mut controller,
+        &loopbacks,
+        LIBERA,
+        ":irc.libera.chat CAP fred LS :batch chathistory\r\n\
+         :irc.libera.chat CAP fred ACK :batch chathistory\r\n\
+         :irc.libera.chat 001 fred :Welcome\r\n\
+         :fred!u@h JOIN :#omarchy",
+    );
+
+    assert!(
+        frame_count(&loopbacks, LIBERA, "CHATHISTORY AFTER #omarchy timestamp=2024-03-09T16:00:00.620Z")
+            >= 1,
+        "frames: {:?}",
+        loopbacks
+            .get(LIBERA)
+            .written_frames()
+            .iter()
+            .map(|frame| String::from_utf8_lossy(frame))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        frame_count(&loopbacks, LIBERA, "CHATHISTORY LATEST #omarchy"),
+        0,
+        "resume must not fall back to LATEST"
+    );
+}

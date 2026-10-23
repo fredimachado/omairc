@@ -200,9 +200,7 @@ impl Controller {
         let playback = Rc::clone(&self.playback);
         let times = Rc::clone(&self.playback_times);
         let net = network_id.to_owned();
-        let session_handle = session.clone();
-        session.set_history_resume(Some(Box::new(move |target| {
-            let mapping = session_handle.case_mapping();
+        session.set_history_resume(Some(Box::new(move |target, mapping| {
             let coordinator = playback.borrow();
             coordinator.history_resume_instant(&net, target, mapping, &times.borrow())
         })));

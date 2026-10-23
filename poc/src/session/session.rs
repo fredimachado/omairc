@@ -35,6 +35,7 @@ use chrono::{DateTime, Utc};
 
 use crate::irc::capability::IrcCapabilitySet;
 use crate::irc::capabilitynegotiation::IrcCapabilityNegotiation;
+use crate::irc::casemapping::IrcCaseMapping;
 use crate::irc::framer::IrcFramer;
 use crate::irc::message::IrcMessage;
 use crate::irc::serverfeatures::IrcServerFeatures;
@@ -78,8 +79,9 @@ pub(crate) const CTCP_REPLY_INTERVAL: Duration = Duration::from_millis(5000);
 pub type IgnoreFilter = Box<dyn Fn(&IrcMessage, &str, &str) -> bool>;
 
 /// The registration-snapshot lookup a self-JOIN uses as the CHATHISTORY AFTER
-/// bound (`setChatHistoryResume`). It must not call the session.
-pub type HistoryResume = Box<dyn Fn(&str) -> Option<DateTime<Utc>>>;
+/// bound (`setChatHistoryResume`). `Core` passes the live ISUPPORT case mapping;
+/// the callback must not call the session.
+pub type HistoryResume = Box<dyn Fn(&str, IrcCaseMapping) -> Option<DateTime<Utc>>>;
 
 /// One deferred transport call, run after the state borrow is released.
 #[derive(Debug)]

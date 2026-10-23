@@ -31,7 +31,7 @@ fn resume_time() -> DateTime<Utc> {
 
 /// Resumes `#omarchy` at `when`, and no other target (`resumeOmarchy`).
 fn resume_omarchy(fx: &Fixture, when: DateTime<Utc>) {
-    fx.session.set_history_resume(Some(Box::new(move |target| {
+    fx.session.set_history_resume(Some(Box::new(move |target, _| {
         (target == "#omarchy").then_some(when)
     })));
 }
@@ -105,7 +105,7 @@ fn self_join_resumes_chat_history_after() {
 fn empty_after_does_not_exhaust_before() {
     let fx = Fixture::new(history_config());
     fx.session
-        .set_history_resume(Some(Box::new(|_| Some(resume_time()))));
+        .set_history_resume(Some(Box::new(|_, _| Some(resume_time()))));
     fx.connect_tls();
     fx.inject(
         ":server CAP omairc LS :batch chathistory\r\n\
@@ -130,7 +130,7 @@ fn empty_after_does_not_exhaust_before() {
 fn fail_after_does_not_exhaust_before() {
     let fx = Fixture::new(history_config());
     fx.session
-        .set_history_resume(Some(Box::new(|_| Some(resume_time()))));
+        .set_history_resume(Some(Box::new(|_, _| Some(resume_time()))));
     fx.connect_tls();
     fx.inject(
         ":server CAP omairc LS :batch chathistory\r\n\
