@@ -10,7 +10,7 @@ use std::rc::Rc;
 use chrono::{TimeZone, Utc};
 
 use crate::controller::controller::Controller;
-use crate::controller::transports::{LiveTransports, LIVE_IRC_UNAVAILABLE};
+use crate::controller::transports::{NoTransports, LIVE_IRC_UNAVAILABLE};
 use crate::desktop::notifier::NullNotifier;
 use crate::irc::command::ComposerSurface;
 use crate::model::presence::{footer_presence, SelfPresence};
@@ -49,7 +49,7 @@ fn bare_controller() -> Controller {
     Controller::with_parts(
         fake_clock(),
         Box::new(NullNotifier),
-        Box::new(LiveTransports),
+        Box::new(NoTransports),
     )
 }
 

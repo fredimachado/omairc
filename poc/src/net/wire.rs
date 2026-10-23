@@ -1,9 +1,10 @@
 //! The messages between the UI thread and the net thread.
 //!
 //! `Command`s travel from the UI thread to the net thread, and `Delivery`s travel back.
-//! Each one names its connection and the epoch it belongs to. A connection bumps its
-//! epoch on every connect and shutdown, so a stale event or write is dropped by the
-//! side that holds the newer epoch. Nothing here carries a frame's contents in a log.
+//! Each one names its connection, and a connect, a write or an event also names the epoch
+//! it belongs to. A connection bumps its epoch on every connect and shutdown, so a stale
+//! event or write is dropped by the side that holds the newer epoch. Nothing here carries
+//! a frame's contents in a log.
 
 use crate::session::transport::TransportError;
 
@@ -27,10 +28,10 @@ pub(super) enum Command {
         epoch: u64,
         frame: Vec<u8>,
     },
-    /// Abandon the connection, or the connect in flight. `epoch` is the one the
-    /// transport moved to. Commands run in order, so the task torn down is the
-    /// connection's current one, whatever its epoch.
-    Close { conn: ConnId, epoch: u64 },
+    /// Abandon the connection, or the connect in flight. Commands run in order, so the task
+    /// torn down is the connection's current one. The transport has already moved its epoch on,
+    /// which is what keeps the abandoned task's late events out.
+    Close { conn: ConnId },
     /// Tear down every task and end the net thread. Sent from `NetHub::drop`.
     Stop,
 }

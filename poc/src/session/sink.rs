@@ -92,8 +92,6 @@ impl Core {
 
     /// A transport failure (`IrcTransport::errorOccurred`). The transport names the kind, so the
     /// session classifies it without reading the message.
-    // Phase 11: the socket transport reports its errors
-    #[allow(dead_code)]
     pub(crate) fn error_occurred(&mut self, error: &TransportError) {
         if self.connection.is_stopping() {
             return;

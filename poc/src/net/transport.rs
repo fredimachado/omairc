@@ -170,7 +170,7 @@ impl Transport for NetTransport {
     /// Abandons the connect or closes the open pipe, then reports `disconnected` once.
     /// It does nothing once the transport has finished.
     fn shutdown(&self) {
-        let epoch = {
+        {
             let mut inner = self.inner.borrow_mut();
             if matches!(
                 inner.state,
@@ -183,12 +183,8 @@ impl Transport for NetTransport {
             }
             inner.epoch += 1;
             inner.state = ConnectionState::Disconnected;
-            inner.epoch
-        };
-        self.send(Command::Close {
-            conn: self.conn,
-            epoch,
-        });
+        }
+        self.send(Command::Close { conn: self.conn });
         if let Some(sink) = self.live_sink() {
             sink.disconnected();
         }

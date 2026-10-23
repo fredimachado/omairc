@@ -18,7 +18,7 @@ use crate::session::clock::{Clock, RealClock};
 use crate::session::loopback::LoopbackTransport;
 
 use super::controller::{Controller, ControllerError};
-use super::transports::LiveTransports;
+use super::transports::NoTransports;
 
 impl Controller {
     /// The `--demo-server` controller, on the wall clock.
@@ -32,7 +32,7 @@ impl Controller {
         clock: Rc<dyn Clock>,
         notifier: Box<dyn Notifier>,
     ) -> Result<Self, ControllerError> {
-        let mut controller = Self::with_parts(clock.clone(), notifier, Box::new(LiveTransports));
+        let mut controller = Self::with_parts(clock.clone(), notifier, Box::new(NoTransports));
         let demo = Rc::new(DemoServer::new(clock.clone()));
         for network in [&OMARCHY_WORLD, &OFTC_WORLD] {
             let transport = Rc::new(LoopbackTransport::new());

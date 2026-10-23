@@ -14,13 +14,12 @@
 //!
 //! The socket transport: `NetHub` owns the `omairc-net` thread, `NetTransport` is the
 //! UI-side `Transport` registered with it, and `worker` runs one connection on that
-//! thread. The wire between them is `wire`. Client certificates are out of scope.
-
-// Phase 11: wired in step 8. Until the controller opens a socket, nothing outside the
-// tests reaches this module, so its items and re-exports look unused to a plain build.
-#![allow(dead_code, unused_imports)]
+//! thread. The wire between them is `wire`. `NetTransports` is the factory the shell
+//! hands the controller, and it opens each network's transport on the hub. Client
+//! certificates are out of scope.
 
 mod dial;
+mod factory;
 mod hub;
 mod tls;
 mod transport;
@@ -30,6 +29,13 @@ mod worker;
 #[cfg(test)]
 mod tests;
 
-pub use hub::{NetHub, NetOptions};
+pub use factory::NetTransports;
+pub use hub::NetHub;
+pub use wire::Delivery;
+
+// The tests build hubs with other options and name the transport type; nothing outside
+// `net/` needs either name.
+#[cfg(test)]
+pub use hub::NetOptions;
+#[cfg(test)]
 pub use transport::NetTransport;
-pub use wire::{ConnId, Delivery};

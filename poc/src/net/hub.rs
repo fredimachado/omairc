@@ -198,7 +198,7 @@ async fn pump(
                     }
                 }
             }
-            Command::Close { conn, .. } => {
+            Command::Close { conn } => {
                 if let Some(task) = tasks.remove(&conn) {
                     task.task.abort();
                 }

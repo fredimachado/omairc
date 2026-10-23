@@ -294,22 +294,16 @@ impl Session {
     }
 
     /// The configured host.
-    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
-    #[allow(dead_code)]
     pub fn host(&self) -> String {
         self.shared.core.borrow().config.host.clone()
     }
 
     /// The active port: the configured one, or the one an STS upgrade or a cached policy chose.
-    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
-    #[allow(dead_code)]
     pub fn port(&self) -> u16 {
         self.shared.core.borrow().port
     }
 
     /// Whether the active connection uses TLS.
-    // Read by the socket transport and the later phases; the allow comes off with its first consumer.
-    #[allow(dead_code)]
     pub fn tls_enabled(&self) -> bool {
         self.shared.core.borrow().tls_enabled
     }

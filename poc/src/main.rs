@@ -16,6 +16,7 @@ mod version;
 use std::borrow::Cow;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 const BENCH_LOG: &str = "results/gpui-bench-stderr.txt";
@@ -27,6 +28,7 @@ use gpui::{
 use crate::desktop::systemtheme::SystemAppearance;
 use crate::desktop::windowstate::{self, GeometryKeeper};
 use crate::model::{Style, Theme, ThemeWatcher};
+use crate::net::NetHub;
 use crate::storage::{geometry, paths};
 use ui::shell::{BenchState, Shell, CONTROLLER_TICK};
 
@@ -201,6 +203,9 @@ fn main() {
             .filter(|_| !demo_server && !bench)
             .map(|path| GeometryKeeper::new(path, stored));
         let window_bounds = windowstate::initial_bounds(stored, cx);
+        // The socket hub runs its net thread for a live launch. The demo's peers are in-process,
+        // so the demo has none.
+        let net = (!demo_server).then(|| Rc::new(NetHub::new()));
         let window = cx
             .open_window(
                 WindowOptions {
@@ -213,7 +218,10 @@ fn main() {
                     ..Default::default()
                 },
                 |window, cx| {
-                    let shell = cx.new(|cx| Shell::new(cx, lines, bench, demo_server));
+                    let shell = cx.new(|cx| Shell::new(cx, lines, bench, demo_server, net.clone()));
+                    if let Some(hub) = &net {
+                        start_net_delivery(shell.clone(), hub, cx);
+                    }
                     // The first window close starts a ready installer, as Qt's onClosing does.
                     let close_shell = shell.clone();
                     window.on_window_should_close(cx, move |_, cx| {
@@ -344,6 +352,20 @@ fn start_controller_tick(shell: Entity<Shell>, cx: &mut App) {
         loop {
             cx.background_executor().timer(CONTROLLER_TICK).await;
             shell.update(cx, |shell, cx| shell.tick(cx)).ok();
+        }
+    })
+    .detach();
+}
+
+/// Hands the net thread's results to the shell as each one arrives, so a reply lands without
+/// waiting for the next tick. The tick keeps to the timers the clock runs.
+fn start_net_delivery(shell: Entity<Shell>, hub: &NetHub, cx: &mut App) {
+    let results = hub.receiver();
+    cx.spawn(async move |cx| {
+        while let Ok(delivery) = results.recv().await {
+            shell
+                .update(cx, |shell, cx| shell.deliver_net(delivery, cx))
+                .ok();
         }
     })
     .detach();

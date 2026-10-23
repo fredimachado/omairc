@@ -10,8 +10,8 @@
 //! demo, the tests) writes nothing.
 //!
 //! A profile that is complete registers a session at load. `start` activates it through the
-//! transport factory: the build without a socket refuses, and the refusal is the network's
-//! Status line, as any other start failure.
+//! transport factory the shell hands in: the live one dials through the net hub, and a refusal
+//! is the network's Status line, as any other start failure.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -31,7 +31,7 @@ use crate::storage::Backing;
 use crate::util::Secret;
 
 use super::controller::Controller;
-use super::transports::LiveTransports;
+use super::transports::TransportFactory;
 
 /// The secrets an Apply hands over. `None` leaves a slot as it is; an empty `Secret` removes it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -50,12 +50,13 @@ pub struct SaveOutcome {
 
 impl Controller {
     /// A controller over the user's settings file, with the saved state loaded and each
-    /// complete profile's session registered. Call `activate_startup` after it.
-    pub fn new_user(clock: Rc<dyn Clock>) -> Self {
+    /// complete profile's session registered. `transports` opens each network's transport.
+    /// Call `activate_startup` after it.
+    pub fn new_user(clock: Rc<dyn Clock>, transports: Box<dyn TransportFactory>) -> Self {
         let mut controller = Self::with_backing(
             clock,
             Box::new(NullNotifier),
-            Box::new(LiveTransports),
+            transports,
             Backing::user(),
         );
         controller.load_stored();

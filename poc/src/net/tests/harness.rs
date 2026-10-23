@@ -53,14 +53,14 @@ impl Pump {
 
 /// A hub, its peer, and the pump between them.
 pub(super) struct Rig {
-    pub(super) hub: NetHub,
+    pub(super) hub: Rc<NetHub>,
     pub(super) peer: Peer,
     pub(super) pump: Pump,
 }
 
 impl Rig {
     pub(super) fn new(options: NetOptions) -> Self {
-        let hub = NetHub::with_options(options);
+        let hub = Rc::new(NetHub::with_options(options));
         let pump = Pump::new(hub.receiver());
         Self {
             hub,

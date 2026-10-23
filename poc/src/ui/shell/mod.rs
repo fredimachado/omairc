@@ -11,6 +11,7 @@ pub mod connect;
 pub mod find;
 pub mod inbox;
 pub mod modal;
+pub mod net;
 pub mod slash;
 pub mod unread;
 pub mod view;
@@ -24,6 +25,7 @@ use gpui::{
 };
 
 use crate::controller::controller::Controller;
+use crate::controller::transports::{NoTransports, TransportFactory};
 use crate::irc::plaintext::plain_irc_text;
 use crate::irc::viewnotify::ViewNotify;
 use crate::model::composer::ComposerState;
@@ -37,6 +39,7 @@ use crate::model::status::{connection_line, status_title};
 use crate::model::title::{conversation_title, window_title, TitleView};
 use crate::model::update_check::UpdateCheck;
 use crate::model::ConversationRef;
+use crate::net::{NetHub, NetTransports};
 use crate::session::clock::RealClock;
 use crate::ui::center::header::{people_pill, HeaderView, QueryIdentity, Subtitle};
 use crate::ui::center::header_actions::{HeaderActions, HeaderOffers};
@@ -63,6 +66,9 @@ pub struct Shell {
     /// The live IRC state: sessions, conversations, Status, the inbox and the selection.
     /// The shell reads it and calls its intents; it never writes it.
     pub controller: Controller,
+    /// The socket hub the live sessions dial through, and whose results `deliver_net` takes.
+    /// `None` for the demo, which has no sockets (`net.rs`).
+    pub net: Option<Rc<NetHub>>,
     /// The view the transcript was last built for (Status of a network, or a conversation).
     pub shown: ShownView,
     pub sidebar: SidebarState,
@@ -115,15 +121,26 @@ impl Shell {
     /// The window. `demo` runs the seeded `--demo-server` controller, which reads and writes
     /// nothing. Otherwise the controller loads the user's saved networks and preferences; with no
     /// complete network saved yet, the Connect sheet opens and stays open until one is.
-    /// `lines` replaces the selection with the `#bench` channel of that many lines.
-    pub fn new(cx: &mut Context<Self>, lines: Option<usize>, bench: bool, demo: bool) -> Self {
+    /// `lines` replaces the selection with the `#bench` channel of that many lines. `net` is the
+    /// socket hub a live launch dials through; without one, every network's start is refused.
+    pub fn new(
+        cx: &mut Context<Self>,
+        lines: Option<usize>,
+        bench: bool,
+        demo: bool,
+        net: Option<Rc<NetHub>>,
+    ) -> Self {
         let mut controller = if demo {
             // The demo keeps nothing: it never reads or writes the user's files.
             Controller::new_demo().expect("the demo controller starts")
         } else {
             // The saved networks, preferences and open queries come back, and each complete
-            // network that asks to connect on launch starts.
-            let mut controller = Controller::new_user(Rc::new(RealClock::new()));
+            // network that asks to connect on launch starts through the socket hub.
+            let transports: Box<dyn TransportFactory> = match &net {
+                Some(hub) => Box::new(NetTransports::new(hub.clone())),
+                None => Box::new(NoTransports),
+            };
+            let mut controller = Controller::new_user(Rc::new(RealClock::new()), transports);
             controller.activate_startup();
             controller
         };
@@ -194,6 +211,7 @@ impl Shell {
 
         let mut shell = Self {
             controller,
+            net,
             shown,
             sidebar: SidebarState::default(),
             window_title: String::new(),

@@ -177,7 +177,7 @@ impl Controller {
         Self::with_parts(
             clock,
             Box::new(crate::desktop::notifier::NullNotifier),
-            Box::new(super::transports::LiveTransports),
+            Box::new(super::transports::NoTransports),
         )
     }
 

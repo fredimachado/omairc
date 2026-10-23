@@ -141,12 +141,12 @@ fn a_refused_start_keeps_the_profile_and_says_why() {
     let dir = TempDir::new("relaunch-refused");
     let backing = disk(&dir);
     {
-        let mut first = launch(&backing, Box::new(crate::controller::transports::LiveTransports));
+        let mut first = launch(&backing, Box::new(crate::controller::transports::NoTransports));
         save(&mut first, libera(LIBERA));
         assert!(!first.start(LIBERA));
         assert_eq!(first.last_error_for(LIBERA), Some(LIVE_IRC_UNAVAILABLE));
     }
-    let second = launch(&backing, Box::new(crate::controller::transports::LiveTransports));
+    let second = launch(&backing, Box::new(crate::controller::transports::NoTransports));
     assert_eq!(second.stored_profiles().len(), 1, "the refusal does not remove the profile");
     assert!(second.session(LIBERA).is_none(), "no transport, so no session");
 }
@@ -402,7 +402,7 @@ fn an_ephemeral_controller_keeps_nothing_on_disk() {
 fn the_profile_is_the_sidebar_name_before_any_session_starts() {
     let dir = TempDir::new("name");
     let backing = disk(&dir);
-    let mut first = launch(&backing, Box::new(crate::controller::transports::LiveTransports));
+    let mut first = launch(&backing, Box::new(crate::controller::transports::NoTransports));
     save(&mut first, libera(LIBERA));
     assert_eq!(first.network_name(LIBERA), "Libera");
     save(

@@ -90,8 +90,6 @@ impl SessionManager {
 
     /// Starts the session for `network_id`, and reports whether it is live
     /// afterwards (`IrcSessionManager::activateSession`).
-    // Phase 11: the socket transport starts and stops its sessions
-    #[allow(dead_code)]
     pub fn activate(&self, network_id: &str) -> bool {
         let Some(session) = self.find(network_id) else {
             return false;

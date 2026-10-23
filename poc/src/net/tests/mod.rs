@@ -1,8 +1,10 @@
 //! Tests for the socket transport. The shared conformance suite runs over a real TCP
 //! socket and a real TLS handshake against the in-process peer. The cases below cover
 //! what only the socket transport has: certificate trust, timeouts, refusal, and the
-//! session driving a real wire (`session.rs`).
+//! session driving a real wire (`session.rs`), and the live factory's transports
+//! (`factory.rs`).
 
+mod factory;
 mod harness;
 mod peer;
 mod session;
