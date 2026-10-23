@@ -35,7 +35,6 @@ mod tests;
 
 pub use log::{ConversationLog, TranscriptLine};
 pub use notify::classify_view_notify;
-#[cfg(test)]
 pub use readmarker::latest_server_message_time;
 pub use state::{zero_time, MemberView, PeerPresence, Store};
 #[cfg(test)]

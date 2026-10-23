@@ -12,6 +12,7 @@ pub mod find;
 pub mod inbox;
 pub mod modal;
 pub mod net;
+pub mod readmarker;
 pub mod slash;
 pub mod unread;
 pub mod view;

@@ -245,5 +245,7 @@ impl Shell {
                 });
             }
         }
+        let at_end = self.transcript.read(cx).at_end();
+        self.report_transcript_viewport_from_shell(at_end, cx);
     }
 }

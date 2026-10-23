@@ -260,8 +260,6 @@ impl Session {
 
     /// Records a read marker to publish once the target is caught up
     /// (`queueReadMarkerSet`).
-    // Chat history and read-marker sync wait for the playback phase; cfg(test) comes off with it.
-    #[cfg(test)]
     pub fn queue_read_marker_set(&self, target: &str, when: DateTime<Utc>) {
         self.locked(|core| core.queue_read_marker_set(target, when));
     }

@@ -120,6 +120,7 @@ impl Controller {
         }
         self.manager.discard(network_id);
         self.autoaway_forget_network(network_id);
+        self.read_marker_forget_network(network_id);
         self.monitor_forget_presence(network_id);
         self.forget_channel_list(network_id);
         self.scroll_places.forget(network_id);

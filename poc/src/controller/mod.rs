@@ -38,6 +38,7 @@ pub mod lines;
 pub mod monitorcoordinator;
 pub mod notify;
 pub mod playback;
+pub mod readmarker;
 pub mod networks;
 pub mod persistence;
 pub mod reads;
