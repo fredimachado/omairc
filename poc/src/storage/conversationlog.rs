@@ -25,6 +25,7 @@ impl FileConversationLog {
         Self { root }
     }
 
+    #[cfg(test)]
     pub fn root(&self) -> &Path {
         &self.root
     }
@@ -284,7 +285,15 @@ fn prepend_bytes(path: &Path, lines: &[Vec<u8>]) -> bool {
         buffer.extend_from_slice(line);
     }
     buffer.extend_from_slice(&existing);
-    std::fs::write(path, &buffer).is_ok()
+    if std::fs::write(path, &buffer).is_err() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    }
+    true
 }
 
 fn read_tail_file(mut file: File, max_lines: usize) -> Vec<TranscriptLine> {
@@ -365,14 +374,21 @@ fn canonical_path(path: &Path) -> PathBuf {
 }
 
 fn paths_same_file(left: &Path, right: &Path) -> bool {
-    match (std::fs::metadata(left), std::fs::metadata(right)) {
-        (Ok(left_meta), Ok(right_meta)) => same_file_metadata(&left_meta, &right_meta),
-        _ => {
-            let left_canon = canonical_path(left);
-            let right_canon = canonical_path(right);
-            !left_canon.as_os_str().is_empty() && left_canon == right_canon
+    #[cfg(windows)]
+    {
+        if let (Some(left_id), Some(right_id)) = (windows_file_id(left), windows_file_id(right)) {
+            return left_id == right_id;
         }
     }
+    #[cfg(unix)]
+    {
+        if let (Ok(left_meta), Ok(right_meta)) = (std::fs::metadata(left), std::fs::metadata(right)) {
+            return same_file_metadata(&left_meta, &right_meta);
+        }
+    }
+    let left_canon = canonical_path(left);
+    let right_canon = canonical_path(right);
+    !left_canon.as_os_str().is_empty() && left_canon == right_canon
 }
 
 #[cfg(unix)]
@@ -381,9 +397,74 @@ fn same_file_metadata(left: &std::fs::Metadata, right: &std::fs::Metadata) -> bo
     left.dev() == right.dev() && left.ino() == right.ino()
 }
 
-#[cfg(not(unix))]
-fn same_file_metadata(_left: &std::fs::Metadata, _right: &std::fs::Metadata) -> bool {
-    false
+/// Volume serial + file index (`os.SameFile` on Windows).
+#[cfg(windows)]
+fn windows_file_id(path: &Path) -> Option<(u32, u64)> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_GENERIC_READ, FILE_SHARE_DELETE,
+        FILE_SHARE_READ, FILE_SHARE_WRITE, GetFileInformationByHandle, OPEN_EXISTING,
+    };
+
+    let wide: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let handle = unsafe {
+        CreateFileW(
+            wide.as_ptr(),
+            FILE_GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            std::ptr::null_mut(),
+        )
+    };
+    if handle == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
+        return None;
+    }
+    let _guard = HandleGuard(handle);
+    let mut info = windows_sys::Win32::Storage::FileSystem::BY_HANDLE_FILE_INFORMATION {
+        dwFileAttributes: 0,
+        ftCreationTime: windows_sys::Win32::Foundation::FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        },
+        ftLastAccessTime: windows_sys::Win32::Foundation::FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        },
+        ftLastWriteTime: windows_sys::Win32::Foundation::FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        },
+        dwVolumeSerialNumber: 0,
+        nFileSizeHigh: 0,
+        nFileSizeLow: 0,
+        nNumberOfLinks: 0,
+        nFileIndexHigh: 0,
+        nFileIndexLow: 0,
+    };
+    if unsafe { GetFileInformationByHandle(handle, &mut info) } == 0 {
+        return None;
+    }
+    let index = (info.nFileIndexHigh as u64) << 32 | info.nFileIndexLow as u64;
+    Some((info.dwVolumeSerialNumber, index))
+}
+
+#[cfg(windows)]
+struct HandleGuard(windows_sys::Win32::Foundation::HANDLE);
+
+#[cfg(windows)]
+impl Drop for HandleGuard {
+    fn drop(&mut self) {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        unsafe {
+            let _ = CloseHandle(self.0);
+        }
+    }
 }
 
 fn dir_segments_share_location(root: &Path, left_segment: &str, right_segment: &str) -> bool {
@@ -693,19 +774,30 @@ mod tests {
         let mapping = IrcCaseMapping::default();
         assert!(log.append("net", "#room", mapping, &test_line("hello")));
         #[cfg(unix)]
-        let path = log.path_for("net", "#room", mapping);
+        assert_transcript_permissions(&log.path_for("net", "#room", mapping));
+    }
+
+    #[test]
+    fn prepend_tightens_permissions() {
+        let dir = TempDir::new("prepend-permissions");
+        let log = FileConversationLog::new(dir.path().to_path_buf());
+        let mapping = IrcCaseMapping::default();
+        assert!(log.prepend("net", "#room", mapping, &[test_line("history")]));
         #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let file_mode = std::fs::metadata(&path).expect("stat").permissions().mode() & 0o777;
-            assert_eq!(file_mode, 0o600);
-            let dir_mode = std::fs::metadata(path.parent().expect("parent"))
-                .expect("stat")
-                .permissions()
-                .mode()
-                & 0o777;
-            assert_eq!(dir_mode, 0o700);
-        }
+        assert_transcript_permissions(&log.path_for("net", "#room", mapping));
+    }
+
+    #[cfg(unix)]
+    fn assert_transcript_permissions(path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        let file_mode = std::fs::metadata(path).expect("stat").permissions().mode() & 0o777;
+        assert_eq!(file_mode, 0o600);
+        let dir_mode = std::fs::metadata(path.parent().expect("parent"))
+            .expect("stat")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(dir_mode, 0o700);
     }
 
     #[test]
