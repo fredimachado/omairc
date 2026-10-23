@@ -11,7 +11,12 @@
 //! `ReleaseStaleNamesSync`, `JoinedMemberChannel`, `SetServerFeatures`,
 //! `SetHighlightWords`) and of `src/irc/irceventreducer.cpp` (C++).
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use chrono::{DateTime, TimeDelta, Utc};
+
+use crate::storage::lists::CaseListStore;
 
 use crate::irc::conversation::target_looks_like_service;
 use crate::irc::event::{ConversationKey, InboxArrival, IrcConversationCause, MentionArrival};
@@ -65,7 +70,7 @@ impl EventReducer {
         if !cause.inserts(target_is_channel, looks_like_service) {
             return false;
         }
-        if target_is_channel && (self.facts.is_closed(key) || self.facts.persisted_closed(key)) {
+        if target_is_channel && (self.facts.is_closed(key) || self.persisted_closed(key)) {
             return false;
         }
         let mut conv = ConversationState::new(key.clone(), display_target);
@@ -143,19 +148,24 @@ impl EventReducer {
         self.conversations.remove(key);
     }
 
-    /// Wires the mark that survives a welcome: `persist` records or forgets a
-    /// key, and `contains` reports a mark welcome already dropped from memory
-    /// (`SetClosedPersistence`).
-    // Phase 8 wires the persisted closed marks here. Nothing calls it yet, so the
-    // persisted refusal in `Facts::persisted_closed` never fires.
-    #[allow(dead_code)]
-    pub fn set_closed_persistence(
-        &mut self,
-        persist: impl Fn(&ConversationKey, bool) + Send + 'static,
-        contains: impl Fn(&ConversationKey) -> bool + Send + 'static,
-    ) {
-        self.facts.persist_closed = Some(Box::new(persist));
-        self.facts.contains_closed = Some(Box::new(contains));
+    /// Wires the closed list that survives welcome (`setClosedConversations`).
+    pub fn set_closed_persistence(&mut self, store: Rc<RefCell<CaseListStore>>) {
+        self.facts.closed_store = Some(store);
+    }
+
+    /// Whether a close recorded in the persisted store still refuses a channel
+    /// (`persistedClosed`).
+    pub(super) fn persisted_closed(&self, key: &ConversationKey) -> bool {
+        let Some(store) = self.facts.closed_store.as_ref() else {
+            return false;
+        };
+        if key.network_id.is_empty() || key.normalized_target.is_empty() {
+            return false;
+        }
+        let mapping = self.server_features(&key.network_id).case_mapping();
+        store
+            .borrow()
+            .contains(&key.network_id, &key.normalized_target, mapping)
     }
 
     /// Records that the user closed this channel, so catch-up cannot bring the row
@@ -165,16 +175,22 @@ impl EventReducer {
             return;
         }
         self.facts.closed_channels.insert(key.clone());
-        if let Some(persist) = &self.facts.persist_closed {
-            persist(key, true);
+        if let Some(store) = &self.facts.closed_store {
+            let mapping = self.server_features(&key.network_id).case_mapping();
+            store
+                .borrow_mut()
+                .add(&key.network_id, &key.normalized_target, mapping);
         }
     }
 
     /// Forgets a closed channel so an explicit join may open it (`ClearClosed`).
     pub fn clear_closed(&mut self, key: &ConversationKey) {
         self.facts.closed_channels.remove(key);
-        if let Some(persist) = &self.facts.persist_closed {
-            persist(key, false);
+        if let Some(store) = &self.facts.closed_store {
+            let mapping = self.server_features(&key.network_id).case_mapping();
+            store
+                .borrow_mut()
+                .remove(&key.network_id, &key.normalized_target, mapping);
         }
     }
 

@@ -19,7 +19,11 @@
 //! to undo a byte-level decode, and a Rust `&str` is already valid UTF-8, so the
 //! wrap is the identity here.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::rc::Rc;
+
+use crate::storage::lists::CaseListStore;
 
 use crate::irc::casemapping::IrcCaseMapping;
 use crate::irc::event::{
@@ -33,12 +37,6 @@ use crate::irc::world::MessageKind;
 
 use super::log::ConversationLog;
 use super::state::{Store, MAX_MESSAGES};
-
-/// Called when a channel's closed mark is written or cleared (`persistClosed`).
-pub(super) type PersistClosed = Box<dyn Fn(&ConversationKey, bool) + Send>;
-
-/// Whether a channel's closed mark survives a welcome (`containsClosed`).
-pub(super) type ContainsClosed = Box<dyn Fn(&ConversationKey) -> bool + Send>;
 
 /// Everything the reducer knows about the networks it folds events for. Handlers
 /// read it while a conversation is borrowed, and write the arrivals and kept
@@ -69,8 +67,8 @@ pub(super) struct Facts {
     pub(super) query_restore_pending: HashSet<String>,
     /// Channels the user closed. Catch-up must not recreate them.
     pub(super) closed_channels: HashSet<ConversationKey>,
-    pub(super) persist_closed: Option<PersistClosed>,
-    pub(super) contains_closed: Option<ContainsClosed>,
+    /// The closed list that survives welcome (`setClosedConversations`).
+    pub(super) closed_store: Option<Rc<RefCell<CaseListStore>>>,
     pub(super) mention_arrival: Option<MentionArrival>,
     pub(super) inbox_arrival: Option<InboxArrival>,
 }
@@ -96,8 +94,7 @@ impl Facts {
             remembered_queries: Vec::new(),
             query_restore_pending: HashSet::new(),
             closed_channels: HashSet::new(),
-            persist_closed: None,
-            contains_closed: None,
+            closed_store: None,
             mention_arrival: None,
             inbox_arrival: None,
         }
@@ -298,14 +295,6 @@ impl Facts {
     /// Whether a channel is in the closed set (`isClosed`).
     pub(super) fn is_closed(&self, key: &ConversationKey) -> bool {
         self.closed_channels.contains(key)
-    }
-
-    /// Whether the persisted closed mark still refuses a channel
-    /// (`containsClosed`).
-    pub(super) fn persisted_closed(&self, key: &ConversationKey) -> bool {
-        self.contains_closed
-            .as_ref()
-            .is_some_and(|contains| contains(key))
     }
 
     /// Records a nick this network has welcomed or changed away from

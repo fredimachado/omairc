@@ -214,6 +214,9 @@ impl Controller {
         let list = |group: &'static str, key: &'static str| {
             CaseListStore::new(Box::new(IniListBacking::new(backing.clone(), group, key)))
         };
+        let closed = Rc::new(RefCell::new(list("closedConversations", "targets")));
+        let mut reducer = EventReducer::new();
+        reducer.set_closed_persistence(Rc::clone(&closed));
         let playback_times = Rc::new(RefCell::new(PlaybackTimeStore));
         let playback = PlaybackCoordinator::new(Rc::clone(&playback_times));
         Self {
@@ -222,7 +225,7 @@ impl Controller {
             transports,
             demo: None,
             manager: SessionManager::new(backing.sts_store()),
-            reducer: EventReducer::new(),
+            reducer,
             console: StatusConsole::default(),
             inbox: Inbox::new(),
             last_errors: BTreeMap::new(),
@@ -261,7 +264,7 @@ impl Controller {
             open_directs: OpenDirectStore::new(&backing),
             open_directs_motd_seen: BTreeSet::new(),
             avatars: AvatarFetches::new(Arc::new(UreqFetch)),
-            closed: Rc::new(RefCell::new(list("closedConversations", "targets"))),
+            closed,
             playback,
             playback_times,
             transcript_follow_end: true,
@@ -833,12 +836,23 @@ impl Controller {
             Event::Action(line) => Some((line.conversation.network_id.clone(), line.author.clone(), line.target.clone())),
             _ => None,
         };
+        let reopened_direct = self.other_reopened_direct(&event);
         let mut surfaces = self.reducer.apply(event, now);
         if let Some((network_id, old, new)) = renamed {
             self.rekey_nick_lists(&network_id, &old, &new);
         }
         if let Some((network_id, author, target)) = self_authored {
             self.note_self_authored_direct(&network_id, &author, &target);
+        }
+        if let Some((network_id, target)) = reopened_direct {
+            let key = self.reducer.conversation_key(&network_id, &target);
+            if self
+                .reducer
+                .find(&key)
+                .is_some_and(|conversation| !conversation.is_channel())
+            {
+                self.remember_open_direct(&network_id, &target);
+            }
         }
         for query in self.reducer.take_remembered_queries() {
             if self
