@@ -225,6 +225,11 @@ pub trait CredentialStore {
     /// Settles in-flight [`read_deferred`] calls. The UI loop calls this on each tick.
     fn poll_reads(&self) {}
 
+    /// Drops a settled read error for `key` and starts one new deferred read. Observing an
+    /// error must not retry; only this method, [`write`], or [`remove`] may. The default is a
+    /// no-op so stores that answer immediately still compile.
+    fn retry_read(&self, _key: &CredentialKey) {}
+
     /// Whether a deferred read is in flight for `key`, without starting a new one.
     fn deferred_read_inflight(&self, _key: &CredentialKey) -> bool {
         false

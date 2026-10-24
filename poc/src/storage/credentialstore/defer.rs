@@ -15,10 +15,8 @@ pub struct DeferringCredentialStore {
     inner: Box<dyn CredentialStore>,
     worker_read: WorkerRead,
     cache: RefCell<BTreeMap<CredentialKey, Result<Option<String>, String>>>,
-    /// Settled read errors stay visible until write/remove or an explicit retry read.
+    /// Settled read errors stay visible until write/remove or [`CredentialStore::retry_read`].
     failed: RefCell<BTreeMap<CredentialKey, String>>,
-    /// How many times [`read_deferred`] returned a settled error this poll generation.
-    failed_returns: RefCell<BTreeMap<CredentialKey, u32>>,
     inflight: RefCell<BTreeMap<CredentialKey, mpsc::Receiver<Result<Option<String>, String>>>>,
 }
 
@@ -32,7 +30,6 @@ impl DeferringCredentialStore {
             worker_read: Arc::new(worker_read),
             cache: RefCell::new(BTreeMap::new()),
             failed: RefCell::new(BTreeMap::new()),
-            failed_returns: RefCell::new(BTreeMap::new()),
             inflight: RefCell::new(BTreeMap::new()),
         })
     }
@@ -40,32 +37,11 @@ impl DeferringCredentialStore {
     fn drop_cached(&self, key: &CredentialKey) {
         self.cache.borrow_mut().remove(key);
         self.failed.borrow_mut().remove(key);
-        self.failed_returns.borrow_mut().remove(key);
         self.inflight.borrow_mut().remove(key);
     }
 
     fn record_failed(&self, key: &CredentialKey, message: String) {
         self.failed.borrow_mut().insert(key.clone(), message);
-        self.failed_returns.borrow_mut().remove(key);
-    }
-
-    fn return_failed(&self, key: &CredentialKey) -> ReadSlot {
-        let message = self
-            .failed
-            .borrow()
-            .get(key)
-            .cloned()
-            .expect("return_failed without a settled error");
-        let mut returns = self.failed_returns.borrow_mut();
-        let count = returns.entry(key.clone()).or_insert(0);
-        *count += 1;
-        if *count >= 2 {
-            self.failed.borrow_mut().remove(key);
-            returns.remove(key);
-            self.start_read(key);
-            return ReadSlot::Loading;
-        }
-        ReadSlot::Ready(Err(message))
     }
 
     fn settle_inflight(&self, key: &CredentialKey) -> Option<Result<Option<String>, String>> {
@@ -116,15 +92,12 @@ impl CredentialStore for DeferringCredentialStore {
         if let Some(cached) = self.cache.borrow().get(key) {
             return ReadSlot::Ready(cached.clone());
         }
-        if self.failed.borrow().contains_key(key) {
-            return self.return_failed(key);
+        if let Some(message) = self.failed.borrow().get(key) {
+            return ReadSlot::Ready(Err(message.clone()));
         }
         if let Some(answer) = self.settle_inflight(key) {
             if let Err(message) = &answer {
                 self.record_failed(key, message.clone());
-                self.failed_returns
-                    .borrow_mut()
-                    .insert(key.clone(), 1);
             }
             return ReadSlot::Ready(answer);
         }
@@ -135,7 +108,6 @@ impl CredentialStore for DeferringCredentialStore {
     }
 
     fn poll_reads(&self) {
-        self.failed_returns.borrow_mut().clear();
         let keys: Vec<CredentialKey> = self.inflight.borrow().keys().cloned().collect();
         for key in keys {
             if let Some(answer) = self.settle_inflight(&key) {
@@ -143,6 +115,13 @@ impl CredentialStore for DeferringCredentialStore {
                     self.record_failed(&key, message);
                 }
             }
+        }
+    }
+
+    fn retry_read(&self, key: &CredentialKey) {
+        self.failed.borrow_mut().remove(key);
+        if !self.inflight.borrow().contains_key(key) {
+            self.start_read(key);
         }
     }
 
