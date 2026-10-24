@@ -246,15 +246,20 @@ fn main() {
                     if let Some(hub) = &net {
                         start_net_delivery(shell.clone(), hub, cx);
                     }
-                    // The first window close starts a ready installer, as Qt's onClosing does.
-                    let close_shell = shell.clone();
-                    window.on_window_should_close(cx, move |_, cx| {
-                        close_shell.update(cx, |shell, cx| shell.launch_update_on_close(cx));
-                        true
-                    });
                     let transcript = shell.read(cx).transcript.clone();
                     if let Some(keeper) = &keeper {
-                        windowstate::attach(keeper, &shell, window, cx);
+                        // Geometry save and a ready installer launch share one close
+                        // handler; GPUI replaces an earlier registration.
+                        let close_shell = shell.clone();
+                        windowstate::attach(keeper, &shell, window, cx, move |_, cx| {
+                            close_shell.update(cx, |shell, cx| shell.launch_update_on_close(cx));
+                        });
+                    } else {
+                        let close_shell = shell.clone();
+                        window.on_window_should_close(cx, move |_, cx| {
+                            close_shell.update(cx, |shell, cx| shell.launch_update_on_close(cx));
+                            true
+                        });
                     }
                     if let Some(server) = ipc {
                         desktop::ipchandler::serve(shell.clone(), window.window_handle(), server, cx);

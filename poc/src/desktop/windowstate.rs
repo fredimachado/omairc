@@ -107,18 +107,32 @@ impl GeometryKeeper {
     }
 }
 
+/// Saves geometry and runs `also` when the window closes. GPUI keeps one close
+/// callback, so every close side effect must go through here.
+pub fn run_close_handlers(
+    keeper: &GeometryKeeper,
+    window_bounds: WindowBounds,
+    also: impl FnOnce(),
+) -> bool {
+    keeper.save(window_bounds);
+    also();
+    true
+}
+
 /// Saves the window's geometry on close, and on every move or resize that `entity`
-/// observes. Call once after the window is open.
+/// observes. `on_close` runs after the geometry save (Qt `onClosing` order:
+/// remember geometry, then launch a ready installer). Call once after the window
+/// is open.
 pub fn attach<T: 'static>(
     keeper: &GeometryKeeper,
     entity: &Entity<T>,
     window: &mut Window,
     cx: &mut App,
+    on_close: impl Fn(&mut Window, &mut App) + 'static,
 ) {
-    let on_close = keeper.clone();
-    window.on_window_should_close(cx, move |window, _| {
-        on_close.save(window.window_bounds());
-        true
+    let on_close_keeper = keeper.clone();
+    window.on_window_should_close(cx, move |window, cx| {
+        run_close_handlers(&on_close_keeper, window.window_bounds(), || on_close(window, cx))
     });
 
     let on_bounds = keeper.clone();
@@ -174,6 +188,30 @@ mod tests {
         let maximized = geometry::load_from(&path).expect("saved geometry");
         assert!(maximized.maximized);
         assert_eq!(probe_ini(&path), IniProbe::Ok);
+    }
+
+    #[test]
+    fn geometry_close_saves_and_runs_the_also_hook() {
+        let dir = TempDir::new("windowstate-close");
+        let path = dir.path().join("omairc.conf");
+        let keeper = GeometryKeeper::new(path.clone(), None);
+        let bounds = WindowBounds::Windowed(bounds(40.0, 50.0, 900.0, 700.0));
+        let also_ran = std::cell::Cell::new(false);
+
+        assert!(run_close_handlers(&keeper, bounds, || also_ran.set(true)));
+        assert!(path.exists(), "close must persist geometry");
+        assert!(also_ran.get(), "close must run the chained hook");
+    }
+
+    #[test]
+    fn geometry_close_skipping_the_hook_still_saves() {
+        let dir = TempDir::new("windowstate-close-save-only");
+        let path = dir.path().join("omairc.conf");
+        let keeper = GeometryKeeper::new(path.clone(), None);
+        let bounds = WindowBounds::Windowed(bounds(40.0, 50.0, 900.0, 700.0));
+
+        assert!(run_close_handlers(&keeper, bounds, || {}));
+        assert!(path.exists());
     }
 
     #[test]
