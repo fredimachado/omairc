@@ -7,7 +7,7 @@ use gpui::{
 use crate::model::format::{FormattedText, TextHit};
 use crate::model::topic_line::{clipped_hit_ranges, ellipsis_width};
 use crate::model::Style;
-use crate::ui::center::header_actions::{render_header_actions, HeaderActions};
+use crate::ui::center::header_actions::{render_header_actions, HeaderActions, HeaderOffers};
 use crate::ui::format_ui::{gpui_text_style, irc_runs_to_gpui};
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
@@ -73,6 +73,56 @@ const EDGE: f32 = 24.;
 const CHROME_EDGE: f32 = 19.;
 /// The gap between the title column and the buttons and pill.
 const CHROME_GAP: f32 = 18.;
+const ACTION_WIDTH_LEAVE_JOIN: f32 = 58.;
+const ACTION_WIDTH_CLOSE: f32 = 64.;
+const CHROME_INNER_GAP: f32 = 8.;
+const PEOPLE_PILL_WIDTH: f32 = 74.;
+
+/// Trailing chrome width: action buttons, gaps, and the people pill (`headerChrome`).
+pub fn header_chrome_trailing_width(style: &Style, offers: HeaderOffers, has_people: bool) -> f32 {
+    let gap = f32::from(scaled_px(style, CHROME_INNER_GAP));
+    let mut width = 0.;
+    let mut buttons = 0u32;
+    if offers.leave {
+        width += f32::from(scaled_px(style, ACTION_WIDTH_LEAVE_JOIN));
+        buttons += 1;
+    }
+    if offers.join {
+        width += f32::from(scaled_px(style, ACTION_WIDTH_LEAVE_JOIN));
+        buttons += 1;
+    }
+    if offers.close {
+        width += f32::from(scaled_px(style, ACTION_WIDTH_CLOSE));
+        buttons += 1;
+    }
+    if buttons > 1 {
+        width += gap * (buttons as f32 - 1.);
+    }
+    if has_people {
+        if buttons > 0 {
+            width += gap;
+        }
+        width += f32::from(scaled_px(style, PEOPLE_PILL_WIDTH));
+    }
+    width
+}
+
+/// Width for topic hit clipping: the subtitle column inside the header (`TopicLine.qml`).
+pub fn header_subtitle_clip_width(
+    style: &Style,
+    center_column_width: f32,
+    chrome: bool,
+    chrome_trailing_width: f32,
+) -> f32 {
+    let left = f32::from(scaled_px(style, EDGE));
+    let right = f32::from(scaled_px(style, if chrome { CHROME_EDGE } else { EDGE }));
+    let gap = if chrome {
+        f32::from(scaled_px(style, CHROME_GAP))
+    } else {
+        0.
+    };
+    (center_column_width - left - right - gap - chrome_trailing_width).max(0.)
+}
 
 /// The title, the subtitle line, the action buttons, and the `N PEOPLE` pill when there is
 /// a count. A direct message's title row also carries its presence dot and labels.
@@ -276,9 +326,48 @@ mod tests {
 
     use chrono::{TimeZone, Utc};
 
-    use super::people_pill;
+    use super::{
+        header_chrome_trailing_width, header_subtitle_clip_width, people_pill, EDGE, CHROME_EDGE,
+        CHROME_GAP,
+    };
     use crate::controller::controller::Controller;
+    use crate::model::theme::Theme;
+    use crate::model::Style;
     use crate::session::clock::FakeClock;
+    use crate::ui::center::header_actions::HeaderOffers;
+    use crate::ui::members::column::MEMBERS_PANEL_WIDTH;
+    use crate::ui::sidebar::column::SIDEBAR_RAIL_WIDTH;
+    use crate::util::scaled_px;
+
+    #[test]
+    fn subtitle_clip_width_matches_header_chrome_not_viewport_fraction() {
+        let style = Style::new(Theme::defaults_dark(), 1.0);
+        let viewport = 1000.;
+        let sidebar = f32::from(scaled_px(&style, SIDEBAR_RAIL_WIDTH));
+        let members = f32::from(scaled_px(&style, MEMBERS_PANEL_WIDTH));
+        let center = viewport - sidebar - members;
+        let offers = HeaderOffers {
+            leave: true,
+            join: false,
+            close: false,
+        };
+        let chrome = true;
+        let trailing = header_chrome_trailing_width(&style, offers, true);
+        let width = header_subtitle_clip_width(&style, center, chrome, trailing);
+
+        let viewport_guess = viewport * 0.42;
+        assert_ne!(
+            width,
+            viewport_guess,
+            "topic hits must not clip against a viewport fraction"
+        );
+
+        let left = f32::from(scaled_px(&style, EDGE));
+        let right = f32::from(scaled_px(&style, CHROME_EDGE));
+        let gap = f32::from(scaled_px(&style, CHROME_GAP));
+        let expected = center - left - right - gap - trailing;
+        assert_eq!(width, expected.max(0.));
+    }
 
     #[test]
     fn the_pill_shows_the_count_only_on_a_joined_channel() {

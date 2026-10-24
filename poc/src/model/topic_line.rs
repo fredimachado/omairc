@@ -109,7 +109,7 @@ pub fn pointing_hand_at(
 }
 
 pub fn ellipsis_width(char_width: f32) -> f32 {
-    char_width * ELLIPSIS.len_utf8() as f32
+    char_width
 }
 
 #[cfg(test)]
@@ -130,6 +130,17 @@ mod tests {
         assert!(
             pointing_hand_at(40., text, &[url], width, cw, ew),
             "the URL under the pointer still counts as a hit"
+        );
+    }
+
+    #[test]
+    fn ellipsis_width_is_one_mono_cell_not_utf8_bytes() {
+        let cw = 10.;
+        assert_eq!(ellipsis_width(cw), cw, "Qt advanceWidth for … is one cell");
+        assert_ne!(
+            ellipsis_width(cw),
+            cw * ELLIPSIS.len_utf8() as f32,
+            "UTF-8 byte length must not set the dead zone"
         );
     }
 

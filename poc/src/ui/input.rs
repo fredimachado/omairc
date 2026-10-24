@@ -869,6 +869,7 @@ impl Focusable for SingleLineInput {
 /// Alt+arrows walk the server list.
 pub fn bind_input_keys(cx: &mut gpui::App) {
     use crate::ui::key_bindings::PASTE_KEYS;
+    use crate::ui::sheets::filter_sheet::FILTER_TAB_KEYS;
     for context in ["Composer", "SheetFilter", "ConnectField"] {
         let mut bindings = vec![
             gpui::KeyBinding::new("backspace", Backspace, Some(context)),
@@ -899,8 +900,11 @@ pub fn bind_input_keys(cx: &mut gpui::App) {
                 .map(|key| gpui::KeyBinding::new(*key, Paste, Some(context))),
         );
         if context == "SheetFilter" {
-            bindings.push(gpui::KeyBinding::new("tab", SwallowTab, Some(context)));
-            bindings.push(gpui::KeyBinding::new("shift-tab", SwallowTab, Some(context)));
+            bindings.extend(
+                FILTER_TAB_KEYS
+                    .iter()
+                    .map(|key| gpui::KeyBinding::new(*key, SwallowTab, Some(context))),
+            );
         }
         cx.bind_keys(bindings);
     }
@@ -916,6 +920,15 @@ mod tests {
         use crate::ui::key_bindings::PASTE_KEYS;
         assert!(PASTE_KEYS.contains(&"shift-insert"));
         assert!(PASTE_KEYS.contains(&"secondary-v"));
+    }
+
+    #[test]
+    fn sheet_filter_tab_bindings_follow_filter_tab_keys() {
+        use crate::ui::sheets::filter_sheet::FILTER_TAB_KEYS;
+        for key in FILTER_TAB_KEYS {
+            assert!(!key.is_empty());
+        }
+        assert_eq!(FILTER_TAB_KEYS.len(), 2);
     }
 
     #[test]

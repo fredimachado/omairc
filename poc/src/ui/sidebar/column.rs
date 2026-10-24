@@ -13,6 +13,9 @@ use crate::ui::widgets::section_heading::{channels_heading, directs_heading};
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui};
 
+/// The expanded rail width in logical pixels (`ConversationColumn.qml` sidebar).
+pub const SIDEBAR_RAIL_WIDTH: f32 = 244.;
+
 /// What the sidebar shows: every network, the rail and focus state, the selection, and
 /// the identity footer's numbers.
 pub struct SidebarData<'a> {
@@ -68,7 +71,7 @@ pub fn render_sidebar<V: 'static>(
     drag: &ScrollbarDragCell,
 ) -> impl IntoElement {
     let visible = data.state.rail_visible;
-    let width = if visible { 244. } else { 0. };
+    let width = if visible { SIDEBAR_RAIL_WIDTH } else { 0. };
     div()
         .w(scaled_px(style, width))
         .h_full()
