@@ -10,7 +10,7 @@ use gpui::{
     Hsla, SharedString, StyledText, UnderlineStyle,
 };
 
-use crate::controller::channellist::ListedChannel;
+use crate::controller::channellist::{ChannelListView, ListedChannel};
 use crate::model::channel_list::{channel_list_rows, listing_status, ListRow};
 use crate::model::{Style, StyleRun};
 use crate::ui::sheets::filter_sheet::{match_highlights, match_text, FilterSource};
@@ -26,6 +26,24 @@ const ROW_HEIGHT: f32 = 28.;
 /// What the sheet lists, captured when it opens: the `LIST` answer for its mask.
 pub struct ChannelListSource {
     pub listing: Vec<ListedChannel>,
+    pub loading: bool,
+    pub error: String,
+}
+
+impl ChannelListSource {
+    pub fn from_view(view: &ChannelListView) -> Self {
+        Self {
+            listing: view.rows.clone(),
+            loading: view.loading,
+            error: view.error.clone(),
+        }
+    }
+
+    pub fn sync_from_view(&mut self, view: &ChannelListView) {
+        self.listing = view.rows.clone();
+        self.loading = view.loading;
+        self.error = view.error.clone();
+    }
 }
 
 impl FilterSource for ChannelListSource {
@@ -52,7 +70,13 @@ impl FilterSource for ChannelListSource {
     }
 
     fn footer(&self, query: &str, visible: usize) -> Option<String> {
-        Some(listing_status(self.listing.len(), visible, query))
+        Some(listing_status(
+            self.listing.len(),
+            visible,
+            query,
+            self.loading,
+            &self.error,
+        ))
     }
 
     fn render_row(&self, item: &ListRow, selected: bool, style: &Style) -> AnyElement {

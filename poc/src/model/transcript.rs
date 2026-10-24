@@ -215,6 +215,45 @@ impl Transcript {
         self.set_rows(rows_from_messages(messages, mark));
     }
 
+    /// Replaces a conversation's rows while keeping scroll and selection when they
+    /// still apply. Used when the same buffer grows on the wire.
+    pub fn replace_conversation(&mut self, messages: &[Message], mark: Option<i64>) {
+        let scroll = self.scroll;
+        let selection = self.selection;
+        let rows = rows_from_messages(messages, mark);
+        self.rows = rows;
+        self.measured = vec![false; self.rows.len()];
+        self.heights = Fenwick::new(self.rows.len());
+        for i in 0..self.rows.len() {
+            self.heights.add(i, self.estimate_height as i64);
+        }
+        self.selection = selection
+            .filter(|sel| sel.anchor.row < self.rows.len() && sel.focus.row < self.rows.len())
+            .map(|sel| Selection {
+                anchor: snap_pos(&self.rows, sel.anchor),
+                focus: snap_pos(&self.rows, sel.focus),
+            });
+        self.scroll = if self.rows.is_empty() {
+            ScrollAnchor {
+                row: 0,
+                offset_px: 0,
+                pinned_to_bottom: true,
+            }
+        } else if scroll.pinned_to_bottom {
+            ScrollAnchor {
+                row: self.rows.len() - 1,
+                offset_px: 0,
+                pinned_to_bottom: true,
+            }
+        } else {
+            ScrollAnchor {
+                row: scroll.row.min(self.rows.len() - 1),
+                offset_px: scroll.offset_px,
+                pinned_to_bottom: false,
+            }
+        };
+    }
+
     /// Appends one row, as the test fixtures build a transcript line by line.
     #[cfg(test)]
     pub fn append(&mut self, row: Row) {
@@ -1055,5 +1094,24 @@ mod tests {
         assert!(t.selection().is_none());
         assert!(t.rows().iter().any(|row| row.body.plain == "fresh"));
         assert!(!t.rows().iter().any(|row| row.body.plain == "hello"));
+    }
+
+    #[test]
+    fn replace_conversation_keeps_selection_and_scroll() {
+        let mut t = Transcript::new(72);
+        t.set_conversation(&[chat("anna", "one", 9, 50, 1), chat("bob", "two", 9, 51, 2)], None);
+        t.begin(Pos { row: 0, offset: 0 });
+        t.set_scroll_anchor(0, 4);
+        t.replace_conversation(
+            &[
+                chat("anna", "one", 9, 50, 1),
+                chat("bob", "two", 9, 51, 2),
+                chat("carl", "three", 9, 52, 3),
+            ],
+            None,
+        );
+        assert!(t.selection().is_some());
+        assert_eq!(t.scroll().row, 0);
+        assert_eq!(t.scroll().offset_px, 4);
     }
 }

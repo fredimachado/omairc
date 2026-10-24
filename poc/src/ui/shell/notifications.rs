@@ -5,6 +5,7 @@ use gpui::{Context, Window};
 use crate::controller::notify::Arrival;
 use crate::desktop::notifier::Activation;
 use crate::irc::plaintext::plain_irc_text;
+use crate::irc::viewnotify::ViewNotify;
 use crate::model::title::note_title_mark;
 use crate::ui::shell::Shell;
 
@@ -41,15 +42,24 @@ impl Shell {
         }
         let surfaces = self.controller.take_notifications();
         self.sync_view(cx);
+        self.sync_channel_list_sheet(cx);
         let status = self.status_showing();
-        let rebuild = surfaces.iter().any(|surface| match surface {
-            crate::irc::viewnotify::ViewNotify::Messages
-            | crate::irc::viewnotify::ViewNotify::MemberReset => !status,
-            crate::irc::viewnotify::ViewNotify::Status => status,
+        let refresh_messages = surfaces.iter().any(|surface| match surface {
+            ViewNotify::Messages | ViewNotify::MemberReset => !status,
+            ViewNotify::Status => status,
             _ => false,
         });
-        if rebuild {
-            self.rebuild_view_keeping_place(cx);
+        let refresh_typing = !status
+            && surfaces.iter().any(|surface| {
+                matches!(surface, ViewNotify::Typing | ViewNotify::RearmTyping)
+            });
+        if surfaces.iter().any(|surface| *surface == ViewNotify::Inbox) {
+            self.sync_inbox_sheet(cx);
+        }
+        if refresh_messages {
+            self.refresh_shown_conversation(cx);
+        } else if refresh_typing {
+            self.refresh_shown_typing(cx);
         }
         if !surfaces.is_empty() {
             cx.notify();

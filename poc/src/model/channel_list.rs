@@ -72,14 +72,29 @@ fn list_topic(topic: &str) -> FormattedText {
 
 /// The sheet's status line (`channelListStatus`): what the filter kept out of
 /// what the mask returned.
-pub fn listing_status(listed: usize, shown: usize, query: &str) -> String {
+pub fn listing_status(
+    listed: usize,
+    shown: usize,
+    query: &str,
+    loading: bool,
+    error: &str,
+) -> String {
+    if !error.is_empty() {
+        return error.to_owned();
+    }
+    if loading && listed == 0 {
+        return "Loading channels…".to_owned();
+    }
+    if loading {
+        return format!("Loading… {listed} channels");
+    }
     if shown == 0 {
         let text = if query.is_empty() {
             "No channels"
         } else {
             "No matches"
         };
-        return text.to_string();
+        return text.to_owned();
     }
     if shown != listed {
         return format!("{shown} of {listed} channels");
@@ -118,6 +133,22 @@ mod tests {
     }
 
     #[test]
+    fn the_status_line_reports_loading_and_errors() {
+        assert_eq!(
+            listing_status(0, 0, "", true, ""),
+            "Loading channels…"
+        );
+        assert_eq!(
+            listing_status(12, 12, "", true, ""),
+            "Loading… 12 channels"
+        );
+        assert_eq!(
+            listing_status(3, 3, "", false, "Channel list failed."),
+            "Channel list failed."
+        );
+    }
+
+    #[test]
     fn the_topic_drops_colours_and_keeps_emphasis() {
         let listing = [channel("#x", 1, "\u{3}4red\u{3} \u{2}bold\u{2}")];
         let row = &channel_list_rows(&listing, "")[0];
@@ -127,10 +158,10 @@ mod tests {
 
     #[test]
     fn the_status_line_counts_what_the_filter_kept() {
-        assert_eq!(listing_status(0, 0, ""), "No channels");
-        assert_eq!(listing_status(3, 0, "zzz"), "No matches");
-        assert_eq!(listing_status(3, 1, "x"), "1 of 3 channels");
-        assert_eq!(listing_status(3, 3, ""), "3 channels");
+        assert_eq!(listing_status(0, 0, "", false, ""), "No channels");
+        assert_eq!(listing_status(3, 0, "zzz", false, ""), "No matches");
+        assert_eq!(listing_status(3, 1, "x", false, ""), "1 of 3 channels");
+        assert_eq!(listing_status(3, 3, "", false, ""), "3 channels");
     }
 
 }

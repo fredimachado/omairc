@@ -645,6 +645,19 @@ impl Controller {
         item
     }
 
+    /// Removes one inbox row by its stable identity and hands it back.
+    pub fn take_inbox_item_by_identity(
+        &mut self,
+        identity: &crate::irc::inbox::InboxIdentity,
+    ) -> Option<InboxItem> {
+        self.pump();
+        let item = self.inbox.remove_identity(identity);
+        if item.is_some() {
+            self.queue(vec![ViewNotify::Inbox]);
+        }
+        item
+    }
+
     /// Translates one inbound message and folds each event in. A self JOIN that
     /// answers the session's pending invite selects that channel.
     fn handle_message(&mut self, network_id: &str, message: &IrcMessage) {

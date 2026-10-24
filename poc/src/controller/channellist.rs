@@ -348,6 +348,25 @@ impl ChannelListView {
         self.error = text.to_owned();
     }
 
+    /// Appends or replaces one streamed row while a load is in flight (`appendRow`).
+    fn append_row(&mut self, row: ListedChannel, replaced: bool) {
+        if replaced {
+            if let Some(index) = self
+                .rows
+                .iter()
+                .position(|existing| existing.name.eq_ignore_ascii_case(&row.name))
+            {
+                self.rows[index] = row;
+            }
+            return;
+        }
+        if self.rows.len() >= CHANNEL_LIST_MAX_ROWS {
+            return;
+        }
+        self.rows.push(row);
+        self.rows.sort_by(channel_order);
+    }
+
     /// Forgets the overlay's network and rows (`Clear`). It is a no-op when already empty.
     fn clear(&mut self) {
         if self.rows.is_empty()
@@ -568,7 +587,13 @@ impl Controller {
                         users,
                         topic,
                     };
-                    self.channel_lists.row(network_id, row);
+                    let replaced = self.channel_lists.row(network_id, row.clone());
+                    if self.channel_view.open
+                        && self.channel_view.network_id == network_id
+                        && self.channel_view.loading
+                    {
+                        self.channel_view.append_row(row, replaced);
+                    }
                 }
                 true
             }

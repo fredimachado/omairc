@@ -218,6 +218,45 @@ impl Shell {
         self.show_shown_view(Some(place), cx);
     }
 
+    /// Refreshes the open transcript from the controller without resetting interaction.
+    pub fn refresh_shown_conversation(&mut self, cx: &mut Context<Self>) {
+        if self.status_showing() {
+            let network_id = self.shown.status.clone().expect("status");
+            let lines = self.controller.status_lines(&network_id);
+            let rows = status_rows(&lines);
+            self.transcript.update(cx, |t, _| t.set_status(rows));
+        } else {
+            let network_id = self.shown.conversation.network_id.clone();
+            let features = self.features_of(&network_id);
+            let self_nick = self.controller.current_nick_for(&network_id);
+            let typing_peer = (!self.controller.is_channel()
+                && !self.controller.typing_nicks().is_empty())
+            .then(|| self.controller.selected_target().to_owned());
+            let lines = ConversationLines {
+                messages: self.controller.messages(),
+                mark: self.controller.unread_mark(),
+                facts: self.controller.nick_facts(&network_id),
+                self_nick: &self_nick,
+                features: &features,
+                typing_peer,
+            };
+            self.transcript.update(cx, |t, cx| t.refresh_conversation(lines, cx));
+        }
+        let at_end = self.transcript.read(cx).at_end();
+        self.report_transcript_viewport_from_shell(at_end, cx);
+    }
+
+    /// Updates only the typing dots on the open direct message.
+    pub fn refresh_shown_typing(&mut self, cx: &mut Context<Self>) {
+        if self.status_showing() || self.controller.is_channel() {
+            return;
+        }
+        let peer = (!self.controller.typing_nicks().is_empty())
+            .then(|| self.controller.selected_target().to_owned());
+        self.transcript
+            .update(cx, |t, cx| t.refresh_typing_peer(peer, cx));
+    }
+
     /// Fills the transcript with the shown view's rows. A Status view shows its log. A
     /// conversation shows its lines, its "New messages" mark and its people's presence,
     /// and the list lands at `place`, or at the mark or the end.

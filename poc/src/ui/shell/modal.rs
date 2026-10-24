@@ -77,6 +77,25 @@ impl ActiveModal {
 }
 
 impl Shell {
+    /// Pushes the live `/list` overlay into an open channel-list sheet.
+    pub(super) fn sync_inbox_sheet(&mut self, cx: &mut Context<Self>) {
+        if let Some(ActiveModal::Inbox { sheet, .. }) = &self.modal {
+            let items = self.controller.inbox_items().to_vec();
+            sheet.update(cx, |sheet, cx| sheet.sync(items, None, cx));
+        }
+    }
+
+    pub(super) fn sync_channel_list_sheet(&mut self, cx: &mut Context<Self>) {
+        let view = self.controller.channel_list();
+        if !view.open {
+            return;
+        }
+        if let Some(ActiveModal::ChannelList { sheet, .. }) = &self.modal {
+            let source = ChannelListSource::from_view(view);
+            sheet.update(cx, |sheet, cx| sheet.sync_source(source, cx));
+        }
+    }
+
     /// Ctrl+K: opens Jump, or closes it when it is already open.
     pub fn toggle_jump(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.chord_live(Chord::Jump, window, cx) {
@@ -200,8 +219,8 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let listing = self.controller.channel_list().rows.clone();
-        let sheet = cx.new(|cx| FilterSheet::new(ChannelListSource { listing }, cx));
+        let view = self.controller.channel_list();
+        let sheet = cx.new(|cx| FilterSheet::new(ChannelListSource::from_view(view), cx));
         let subscriptions = vec![
             track(cx, &sheet),
             cx.subscribe_in(
@@ -433,8 +452,12 @@ impl Shell {
                 &sheet,
                 window,
                 |shell: &mut Shell, _, event: &InboxEvent, window, cx| match event {
-                    InboxEvent::Activated(index) => shell.activate_inbox(*index, window, cx),
-                    InboxEvent::Dismissed(index) => shell.dismiss_inbox(*index, cx),
+                    InboxEvent::Activated(identity) => {
+                        shell.activate_inbox(identity.clone(), window, cx);
+                    }
+                    InboxEvent::Dismissed(identity) => {
+                        shell.dismiss_inbox(identity.clone(), cx);
+                    }
                     InboxEvent::Closed => shell.close_modal(window, cx),
                 },
             ),

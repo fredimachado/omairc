@@ -174,6 +174,54 @@ impl TranscriptView {
         self.row_layouts.borrow_mut().clear();
     }
 
+    /// Reloads the open conversation without clearing selection, find, or unseen
+    /// state. The list follows the end when the reader was already there.
+    pub fn refresh_conversation(&mut self, lines: ConversationLines, cx: &mut Context<Self>) {
+        let previous_rows = self.model.rows().len();
+        let was_at_end = self.at_end();
+        let saved = (!was_at_end).then(|| self.capture_scroll_place());
+        self.peers.facts = lines.facts;
+        self.self_nick = lines.self_nick.to_owned();
+        self.features = lines.features.clone();
+        self.typing_peer = lines.typing_peer;
+        self.model
+            .replace_conversation(lines.messages, lines.mark);
+        unread::note_row_growth(
+            previous_rows,
+            self.model.rows().len(),
+            was_at_end,
+            &mut self.first_unseen,
+        );
+        self.list_state.reset(self.list_len());
+        self.row_layouts.borrow_mut().clear();
+        if was_at_end {
+            self.model.set_pinned_to_bottom(true);
+            self.list_state
+                .scroll_to_reveal_item(self.list_len().saturating_sub(1));
+            self.note_scroll_end(cx);
+        } else if let Some(place) = saved {
+            self.restore_scroll_place(Some(&place), false);
+        }
+        cx.notify();
+    }
+
+    /// Updates only the typing footer for the open direct message.
+    pub fn refresh_typing_peer(&mut self, peer: Option<String>, cx: &mut Context<Self>) {
+        if self.typing_peer == peer {
+            return;
+        }
+        let was_at_end = self.at_end();
+        self.typing_peer = peer;
+        self.list_state.reset(self.list_len());
+        if was_at_end {
+            self.model.set_pinned_to_bottom(true);
+            self.list_state
+                .scroll_to_reveal_item(self.list_len().saturating_sub(1));
+            self.note_scroll_end(cx);
+        }
+        cx.notify();
+    }
+
     /// The `avatars` preference. Off, the rows show initials. The rows are drawn
     /// again on the next frame, so a change shows at once.
     pub fn set_avatars(&mut self, on: bool) {
