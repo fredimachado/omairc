@@ -518,18 +518,20 @@ fn poll_credential_reads_refuses_two_failed_startup_connects() {
         connect_on_startup: true,
         ..Profile::new(net_b)
     };
+    let key_a = CredentialKey::for_profile(&profile_a, PURPOSE_PASSWORD);
+    let key_b = CredentialKey::for_profile(&profile_b, PURPOSE_PASSWORD);
     let attempts = Arc::new(Mutex::new(BTreeMap::<String, u32>::new()));
     let store = DeferringCredentialStore::new(
         Box::new(MemoryCredentialStore::default()),
         {
             let attempts = Arc::clone(&attempts);
             move |key| {
-                thread::sleep(Duration::from_millis(400));
                 *attempts
                     .lock()
                     .expect("lock")
                     .entry(key.network_id.clone())
                     .or_insert(0) += 1;
+                thread::sleep(Duration::from_millis(400));
                 Err("timed out".to_owned())
             }
         },
@@ -573,7 +575,14 @@ fn poll_credential_reads_refuses_two_failed_startup_connects() {
     assert_eq!(attempt_counts.get(net_a), Some(&1));
     assert_eq!(attempt_counts.get(net_b), Some(&1));
     controller.poll_credential_reads();
-    thread::sleep(Duration::from_millis(50));
+    assert!(
+        !controller.credentials.deferred_read_inflight(&key_a),
+        "settled Err must not leave a password read in flight for net-a"
+    );
+    assert!(
+        !controller.credentials.deferred_read_inflight(&key_b),
+        "settled Err must not leave a password read in flight for net-b"
+    );
     let attempt_counts = attempts.lock().expect("lock").clone();
     assert_eq!(attempt_counts.get(net_a), Some(&1));
     assert_eq!(attempt_counts.get(net_b), Some(&1));
