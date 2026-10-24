@@ -198,15 +198,25 @@ fn canonical_exe(path: &Path) -> PathBuf {
 fn read_link_state(link: &Path) -> LinkState {
     match link.try_exists() {
         Ok(false) => LinkState::Missing,
-        Ok(true) => match link_state_from_target(
-            shortcut_target(&link.to_string_lossy()).as_deref(),
-            expand_environment,
-        ) {
-            LinkState::Targets(target) => LinkState::Targets(canonical_exe(&target)),
-            unreadable => unreadable,
-        },
+        Ok(true) => target_state(shortcut_target(&link.to_string_lossy()).as_deref()),
         Err(_) => LinkState::Unreadable,
     }
+}
+
+/// The state of a link whose raw target is `raw`, the value `shortcut_target` read (`None` when
+/// that read failed). A `%VAR%` target is expanded first. Both `read_link_state` and
+/// `names_this_exe` judge a link here, so they cannot disagree about its target.
+fn target_state(raw: Option<&str>) -> LinkState {
+    match link_state_from_target(raw, expand_environment) {
+        LinkState::Targets(target) => LinkState::Targets(canonical_exe(&target)),
+        unreadable => unreadable,
+    }
+}
+
+/// Whether a link whose raw target is `raw` names `this_exe`, judged by `target_state`. A target
+/// that does not expand, or that is empty or unreadable, names nothing, so it is never installed.
+fn names_this_exe(raw: Option<&str>, this_exe: &Path) -> bool {
+    matches!(target_state(raw), LinkState::Targets(target) if same_exe(&target, this_exe))
 }
 
 /// Expands `%VAR%` text in a raw link target with `ExpandEnvironmentStringsW`. `None` when the
@@ -370,7 +380,8 @@ fn shortcut_is_stamped(link_path: &str) -> bool {
     clsid_matches
 }
 
-/// The readable per-user and all-users `Omairc.lnk` links whose target is this exe.
+/// The readable per-user and all-users `Omairc.lnk` links whose target is this exe. A target is
+/// judged by `names_this_exe`, the same expansion `read_link_state` applies.
 fn installed_shortcut_paths(exe_path: &str) -> Vec<PathBuf> {
     let this_exe = canonical_exe(Path::new(exe_path));
     let mut links = Vec::new();
@@ -380,10 +391,7 @@ fn installed_shortcut_paths(exe_path: &str) -> Vec<PathBuf> {
             continue;
         }
         let link_path = link.to_string_lossy();
-        let Some(target) = shortcut_target(&link_path) else {
-            continue;
-        };
-        if same_exe(&canonical_exe(Path::new(&target)), &this_exe) {
+        if names_this_exe(shortcut_target(&link_path).as_deref(), &this_exe) {
             links.push(link);
         }
     }
@@ -764,9 +772,12 @@ pub fn activation_from_args(args: &[String]) -> Option<Activation> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
-    use super::{expand_environment, link_state_from_target, per_user_programs_dir, LinkState};
+    use super::{
+        expand_environment, link_state_from_target, names_this_exe, per_user_programs_dir,
+        LinkState,
+    };
 
     #[test]
     fn the_per_user_start_menu_folder_comes_from_the_known_folder_api() {
@@ -800,5 +811,28 @@ mod tests {
             link_state_from_target(Some(raw), expand_environment),
             LinkState::Unreadable,
         );
+    }
+
+    #[test]
+    fn a_variable_target_expanding_to_this_exe_is_installed() {
+        let root = std::env::var("SystemRoot").expect("SystemRoot is set on Windows");
+        let this_exe = PathBuf::from(format!(r"{root}\omairc.exe"));
+        assert!(names_this_exe(Some(r"%SystemRoot%\omairc.exe"), &this_exe));
+    }
+
+    #[test]
+    fn a_variable_target_that_does_not_expand_is_not_installed() {
+        // The raw text equals this exe's path, which a raw comparison would count. A target
+        // that keeps a `%` after expansion names no exe, so it is not installed.
+        let raw = r"%OMAIRC_TEST_NO_SUCH_VARIABLE%\omairc.exe";
+        assert!(!names_this_exe(Some(raw), Path::new(raw)));
+    }
+
+    #[test]
+    fn a_plain_target_is_installed_only_when_it_names_this_exe() {
+        let this_exe = Path::new(r"C:\OMAIRC_TEST_NO_SUCH_DIR\omairc.exe");
+        assert!(names_this_exe(Some(r"C:\OMAIRC_TEST_NO_SUCH_DIR\omairc.exe"), this_exe));
+        assert!(!names_this_exe(Some(r"C:\OMAIRC_TEST_NO_SUCH_DIR\other.exe"), this_exe));
+        assert!(!names_this_exe(None, this_exe));
     }
 }
