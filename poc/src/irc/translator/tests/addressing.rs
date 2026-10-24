@@ -55,11 +55,25 @@ fn the_time_tag_reader_takes_only_a_parseable_value() {
         server_time_of(&must_parse("@time=not-a-time :a!u@h PRIVMSG #c :x")),
         None
     );
+    let want = Utc.with_ymd_and_hms(2024, 3, 9, 16, 0, 0).unwrap();
     assert_eq!(
         server_time_of(&must_parse(
             "@time=2024-03-09T16:00:00Z :a!u@h PRIVMSG #c :x"
         )),
-        Some(Utc.with_ymd_and_hms(2024, 3, 9, 16, 0, 0).unwrap())
+        Some(want)
+    );
+    assert_eq!(
+        server_time_of(&must_parse(
+            "@time=2024-03-09T16:00:00.620Z :a!u@h PRIVMSG #c :x"
+        )),
+        Some(want + chrono::Duration::milliseconds(620))
+    );
+    assert_eq!(
+        server_time_of(&must_parse(
+            "@time=2024-03-09T16:00:00+0000 :a!u@h PRIVMSG #c :x"
+        )),
+        Some(want),
+        "Qt accepts offsets without a colon; RFC3339 alone does not"
     );
 }
 
@@ -71,6 +85,10 @@ fn chathistory_targets_times_accept_the_prefix_or_the_bare_value() {
         want
     );
     assert_eq!(parse_history_target_time("2024-03-09T16:00:00Z"), want);
+    assert_eq!(
+        parse_history_target_time("timestamp=2024-03-09T16:00:00+0000"),
+        want
+    );
     assert_eq!(parse_history_target_time("timestamp="), None);
     assert_eq!(parse_history_target_time(""), None);
     assert_eq!(parse_history_target_time("yesterday"), None);
