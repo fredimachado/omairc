@@ -47,18 +47,21 @@ fn remote_close_schedules_reconnect() {
     assert_eq!(fx.reconnects(), vec![(250, 1)]);
 }
 
-/// The reachability signal of Go is `notify_reachable` here: the scheduled
+/// The reachability source of Go is `set_reachability_source` here: the scheduled
 /// reconnect starts without waiting out the backoff.
 #[test]
-fn reachability_starts_reconnect_without_waiting() {
+fn reachable_starts_reconnect_without_waiting() {
     let fx = Fixture::new(test_config());
+    let (sender, receiver) = async_channel::unbounded();
+    fx.session.set_reachability_source(Some(receiver));
     fx.connect_tls();
     fx.transport.remote_close();
     assert_eq!(fx.session.state(), SessionState::Reconnecting);
     assert_eq!(fx.reconnects(), vec![(250, 1)]);
     assert_eq!(fx.session.reconnect_attempt(), 1);
 
-    fx.session.notify_reachable();
+    sender.send_blocking(()).expect("reachable signal");
+    fx.session.drain_reachability();
     assert_eq!(fx.session.state(), SessionState::Connecting);
     assert_eq!(fx.transport.state(), ConnectionState::Connecting);
     assert_eq!(fx.reconnects().len(), 1);
@@ -66,7 +69,7 @@ fn reachability_starts_reconnect_without_waiting() {
 }
 
 #[test]
-fn reachability_ignored_unless_reconnecting() {
+fn reachable_ignored_unless_reconnecting() {
     let fx = Fixture::new(test_config());
     fx.register_with_welcome();
     assert_eq!(fx.session.state(), SessionState::Registered);

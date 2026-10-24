@@ -272,9 +272,29 @@ impl Controller {
     /// Runs the timers that are due, then pumps what they queued. The UI loop calls
     /// this on each tick. Returns how many timers fired.
     pub fn tick(&mut self) -> usize {
+        self.drain_reachability();
         let fired = self.clock.fire_due();
         self.pump();
         fired
+    }
+
+    /// Starts every reconnecting session without waiting out the backoff. The host
+    /// network reachability watcher calls this when connectivity returns.
+    pub fn notify_network_reachable(&mut self) {
+        for network_id in self.manager.network_ids() {
+            if let Some(session) = self.manager.find(&network_id) {
+                session.notify_reachable();
+            }
+        }
+        self.pump();
+    }
+
+    fn drain_reachability(&mut self) {
+        for network_id in self.manager.network_ids() {
+            if let Some(session) = self.manager.find(&network_id) {
+                session.drain_reachability();
+            }
+        }
     }
 
     /// Drains every session's queued events and folds them in, in order, until no

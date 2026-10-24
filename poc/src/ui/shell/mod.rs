@@ -123,6 +123,8 @@ pub struct Shell {
     pub update: Entity<UpdateCheck>,
     /// Raises desktop notifications for mention and monitor arrivals.
     notifier: Box<dyn Notifier>,
+    /// Host network reachability (NetworkManager on Linux). Live launches only.
+    network_reachability: Option<async_channel::Receiver<()>>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -141,6 +143,11 @@ impl Shell {
         activation_tx: async_channel::Sender<crate::desktop::notifier::Activation>,
     ) -> Self {
         let notifier = platform_notifier(activation_tx);
+        let network_reachability = if demo || net.is_none() {
+            None
+        } else {
+            crate::desktop::reachability::start_network_reachability_watcher()
+        };
         let mut controller = if demo {
             // The demo keeps nothing: it never reads or writes the user's files.
             Controller::new_demo().expect("the demo controller starts")
@@ -263,6 +270,7 @@ impl Shell {
             file_upload: fileupload::FileUploadQueue::new(),
             update,
             notifier,
+            network_reachability,
             _subscriptions: [transcript_events, transcript_scrolls, composer_events, update_observe]
                 .into_iter()
                 .chain(connect_edits)
@@ -292,6 +300,15 @@ impl Shell {
     /// One controller tick: the timers that are due fire, and the shell follows what they
     /// changed. The UI loop calls this on each interval.
     pub fn tick(&mut self, cx: &mut Context<Self>) {
+        if let Some(receiver) = &self.network_reachability {
+            let mut reachable = false;
+            while receiver.try_recv().is_ok() {
+                reachable = true;
+            }
+            if reachable {
+                self.controller.notify_network_reachable();
+            }
+        }
         self.controller.tick();
         self.drain_notifications(cx);
     }
