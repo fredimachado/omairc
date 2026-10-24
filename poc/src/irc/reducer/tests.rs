@@ -319,6 +319,7 @@ pub(super) fn topic(network_id: &str, channel: &str, text: &str, author: &str) -
         channel: channel.to_owned(),
         topic: text.to_owned(),
         author: author.to_owned(),
+        keep_existing_topic: false,
     }
 }
 

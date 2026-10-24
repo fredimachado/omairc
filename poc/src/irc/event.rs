@@ -333,13 +333,19 @@ pub struct KickEvent {
     pub reason: String,
 }
 
-/// A topic change or `332` (`TopicEvent`). `author` is empty for `332`.
+/// A topic change, `332`, or `333` (`TopicEvent`). `author` is empty for `332`.
+///
+/// `keep_existing_topic` is set for RPL_TOPICWHOTIME (`333`): invent the channel
+/// and record the setter, but do not assign `topic`. Qt fills the current topic
+/// into the event in the controller before apply; the PoC uses this flag so a
+/// real `TOPIC` with empty text can still clear the topic.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TopicEvent {
     pub network_id: String,
     pub channel: String,
     pub topic: String,
     pub author: String,
+    pub keep_existing_topic: bool,
 }
 
 /// One NAMES entry: a nick and its rank letters (`Name`).

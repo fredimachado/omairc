@@ -356,7 +356,7 @@ mod tests {
             });
         });
         let (shell, vcx) = cx.add_window_view(|_window, cx| {
-            Shell::new(cx, Some(60), true, true, None, activation_tx)
+            Shell::new(cx, Some(60), true, false, true, None, activation_tx)
         });
         shell.update(vcx, |shell, cx| {
             inject_line(

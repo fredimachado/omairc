@@ -442,6 +442,12 @@ impl EventReducer {
         if !self.ensure_key(&key, &event.channel, IrcConversationCause::ChannelState) {
             return;
         }
+        // RPL_TOPICWHOTIME (`333`) sets `keep_existing_topic` so inventing the
+        // channel cannot clear a prior `332`/`TOPIC`. A real TOPIC with empty
+        // text still clears (keep is false).
+        if event.keep_existing_topic {
+            return;
+        }
         if let Some(channel) = self
             .conversations
             .get_mut(&key)
