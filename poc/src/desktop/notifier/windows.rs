@@ -7,14 +7,15 @@
 //!
 //! - An installed copy, one under `%LOCALAPPDATA%\Programs\Omairc` or `%ProgramFiles%\Omairc`,
 //!   takes the activator registration and the per-user link even from an exe that still exists.
-//!   A record it cannot read is left alone (see below).
+//!   It also overwrites an activator registration that it cannot read (see below).
 //! - Any other build, such as a dev or portable build, takes them only when nothing is
 //!   registered, when the registered exe is itself, or when the registered exe is gone. It does
 //!   not displace an exe that still exists (`util::should_claim`).
 //!
 //! Two installed copies take turns: each launch overwrites the other's registration and link,
-//! and this is intended. A registration or link that cannot be read is left alone, for any
-//! build, because its owner is unknown.
+//! and this is intended. An activator registration that cannot be read is overwritten by an
+//! installed copy and left alone by any other build. A link that cannot be read is left alone,
+//! for any build, because its owner is unknown.
 //!
 //! The shortcut fallback reads two Start Menu `Omairc.lnk` links, the per-user one and the
 //! all-users one under `FOLDERID_CommonPrograms`, and writes only the per-user link. It writes
@@ -92,7 +93,8 @@ use super::util::{
 };
 use super::windows_ownership::{
     activator_claim, canonical_with, check_existing_links, found_after_repair, is_installed_exe,
-    link_state_from_target, repair_ends_registration, LinkRefusal, LinkSlot, LinkState,
+    link_state_from_target, repair_ends_registration, ActivatorRegistration, LinkRefusal,
+    LinkSlot, LinkState,
 };
 use super::{Activation, Notifier};
 
@@ -382,41 +384,46 @@ fn installed_shortcut_paths(exe_path: &str) -> Vec<PathBuf> {
 }
 
 /// Points the toast activator at this exe, when `activator_claim` allows it. An installed copy
-/// always may. Any other build may only when `should_claim` allows it. A registration that cannot
-/// be read is left unchanged, so the write is skipped.
+/// may always, including over a registration it cannot read. Any other build may only when
+/// `should_claim` allows it, and it leaves a registration it cannot read unchanged.
 fn register_com_server(exe: &str, install_roots: &[PathBuf]) {
     let subkey_wide = wide(COM_SERVER_SUBKEY);
-    let existing = match read_registered_command(&subkey_wide) {
-        Ok(command) => command
-            .as_deref()
-            .and_then(command_exe)
-            .map(|owner| canonical_exe(&owner)),
-        Err(status) => {
+    let read = read_registered_command(&subkey_wide);
+    let existing = match &read {
+        Ok(command) => match command.as_deref().and_then(command_exe) {
+            Some(owner) => ActivatorRegistration::Names(canonical_exe(&owner)),
+            None => ActivatorRegistration::Absent,
+        },
+        Err(_) => ActivatorRegistration::Unreadable,
+    };
+    let this_exe = canonical_exe(Path::new(exe));
+    let claimed = activator_claim(&this_exe, install_roots, &existing, resolve_path, Path::exists);
+    match (&read, claimed) {
+        (Err(status), true) => log::warn!(
+            "Windows notifier: could not read HKCU\\{} ({:?}), overwriting it because this copy is installed",
+            COM_SERVER_SUBKEY,
+            status
+        ),
+        (Err(status), false) => {
             log::warn!(
                 "Windows notifier: could not read the toast activator registration ({:?}), leaving it unchanged",
                 status
             );
             return;
         }
-    };
-    let this_exe = canonical_exe(Path::new(exe));
-    if !activator_claim(
-        &this_exe,
-        install_roots,
-        existing.as_deref(),
-        resolve_path,
-        Path::exists,
-    ) {
-        if let Some(owner) = existing.as_deref() {
-            log::info!(
-                "Windows notifier: {} owns toast activation, so this build leaves it registered",
-                owner.display()
-            );
+        (Ok(_), false) => {
+            if let ActivatorRegistration::Names(owner) = &existing {
+                log::info!(
+                    "Windows notifier: {} owns toast activation, so this build leaves it registered",
+                    owner.display()
+                );
+            }
+            return;
         }
-        return;
+        (Ok(_), true) => {}
     }
-    if let Some(owner) = existing.as_deref() {
-        if !should_claim(Some(owner), &this_exe, Path::exists) {
+    if let ActivatorRegistration::Names(owner) = &existing {
+        if !should_claim(Some(owner.as_path()), &this_exe, Path::exists) {
             log::info!(
                 "Windows notifier: this installed copy replaces the toast activation registration owned by {}",
                 owner.display()

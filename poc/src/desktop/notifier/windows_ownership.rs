@@ -173,17 +173,35 @@ pub fn repair_ends_registration(
     }
 }
 
-/// Whether this build may point the toast activator at `this_exe`. `existing` is the exe the
-/// registration names, or `None` when nothing is registered. An installed copy may always, even
-/// when `existing` still exists. Any other build may only when `should_claim` allows it.
+/// What the toast activator registration says, as read from its `LocalServer32` default value.
+/// `Absent` is a missing value, or one that names no exe. `Unreadable` is a read that failed for
+/// any other reason, such as a value of the wrong type or one too large to read.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ActivatorRegistration {
+    Absent,
+    /// The exe the registration names, in the canonical form `canonical_with` gives.
+    Names(PathBuf),
+    Unreadable,
+}
+
+/// Whether this build may point the toast activator at `this_exe`, as `installed || the current
+/// rule`. The current rule is `should_claim` for a registration that is absent or names an exe.
+/// An unreadable registration is claimed only by an installed copy, because its owner is unknown.
 pub fn activator_claim(
     this_exe: &Path,
     install_roots: &[PathBuf],
-    existing: Option<&Path>,
+    existing: &ActivatorRegistration,
     resolve: impl Fn(&Path) -> Option<PathBuf>,
     exists: impl Fn(&Path) -> bool,
 ) -> bool {
-    is_installed_exe(this_exe, install_roots, resolve) || should_claim(existing, this_exe, exists)
+    is_installed_exe(this_exe, install_roots, &resolve)
+        || match existing {
+            ActivatorRegistration::Absent => should_claim(None, this_exe, exists),
+            ActivatorRegistration::Names(owner) => {
+                should_claim(Some(owner.as_path()), this_exe, exists)
+            }
+            ActivatorRegistration::Unreadable => false,
+        }
 }
 
 #[cfg(test)]
@@ -317,7 +335,7 @@ mod tests {
         assert!(activator_claim(
             installed,
             &test_roots(),
-            Some(other),
+            &ActivatorRegistration::Names(other.to_path_buf()),
             no_resolve,
             |path| path == other,
         ));
@@ -329,7 +347,7 @@ mod tests {
         assert!(!activator_claim(
             Path::new(THIS_EXE),
             &test_roots(),
-            Some(installed),
+            &ActivatorRegistration::Names(installed.to_path_buf()),
             no_resolve,
             |path| path == installed,
         ));
@@ -341,7 +359,7 @@ mod tests {
         assert!(activator_claim(
             Path::new(THIS_EXE),
             &test_roots(),
-            Some(gone),
+            &ActivatorRegistration::Names(gone.to_path_buf()),
             no_resolve,
             |_| false,
         ));
@@ -352,7 +370,40 @@ mod tests {
         assert!(activator_claim(
             Path::new(THIS_EXE),
             &test_roots(),
-            None,
+            &ActivatorRegistration::Absent,
+            no_resolve,
+            |_| false,
+        ));
+    }
+
+    #[test]
+    fn an_installed_copy_takes_an_unregistered_activator() {
+        assert!(activator_claim(
+            Path::new(INSTALLED_EXE),
+            &test_roots(),
+            &ActivatorRegistration::Absent,
+            no_resolve,
+            |_| false,
+        ));
+    }
+
+    #[test]
+    fn an_installed_copy_takes_an_unreadable_activator() {
+        assert!(activator_claim(
+            Path::new(INSTALLED_EXE),
+            &test_roots(),
+            &ActivatorRegistration::Unreadable,
+            no_resolve,
+            |_| false,
+        ));
+    }
+
+    #[test]
+    fn a_dev_build_leaves_an_unreadable_activator_alone() {
+        assert!(!activator_claim(
+            Path::new(THIS_EXE),
+            &test_roots(),
+            &ActivatorRegistration::Unreadable,
             no_resolve,
             |_| false,
         ));
