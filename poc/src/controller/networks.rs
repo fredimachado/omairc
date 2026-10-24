@@ -150,6 +150,7 @@ impl Controller {
         self.console.clear(network_id);
         self.last_errors.remove(network_id);
         self.capabilities.remove(network_id);
+        self.applied_profile_avatars.remove(network_id);
         self.current_nicks.remove(network_id);
         self.inbox.purge_network(network_id);
         self.network_order.retain(|id| id != network_id);

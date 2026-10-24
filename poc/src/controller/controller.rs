@@ -165,6 +165,8 @@ pub struct Controller {
     pub(super) open_directs: OpenDirectStore,
     /// The networks whose MOTD-end restore has run (`openDirectsMotdSeen`).
     pub(super) open_directs_motd_seen: BTreeSet<String>,
+    /// Networks whose saved avatar was published this registration (`appliedProfileAvatars`).
+    pub(super) applied_profile_avatars: BTreeSet<String>,
     /// The avatar cache, its in-flight slots and the seam its jobs fetch through (`avatars.rs`).
     pub(super) avatars: AvatarFetches,
     /// Channels and directs the user closed (`closedConversations` / `targets`).
@@ -254,6 +256,7 @@ impl Controller {
             applied_sessions: BTreeMap::new(),
             open_directs: OpenDirectStore::new(&backing),
             open_directs_motd_seen: BTreeSet::new(),
+            applied_profile_avatars: BTreeSet::new(),
             avatars: AvatarFetches::new(Arc::new(UreqFetch)),
             closed,
             playback,
@@ -433,6 +436,7 @@ impl Controller {
             SessionEvent::StateChanged { network_id, state } => {
                 if !network_id.is_empty() && state != SessionState::Registered {
                     self.playback.borrow_mut().on_left_registration(&network_id);
+                    self.applied_profile_avatars.remove(&network_id);
                 }
                 let severity = if state == SessionState::Failed {
                     LogSeverity::Alert
@@ -580,6 +584,7 @@ impl Controller {
         );
         self.append_status(entry);
         self.autoaway_on_registered(network_id);
+        self.apply_profile_avatar_on_connect(network_id);
     }
 
     /// Classifies one inbound line for Status, and raises an inbox row for an
@@ -804,6 +809,9 @@ impl Controller {
             self.reducer
                 .clear_presence_facts(network_id, away_dropped, metadata_dropped);
             self.queue(viewnotify::reset_all());
+            if metadata_dropped {
+                self.applied_profile_avatars.remove(network_id);
+            }
         }
         if dropped(IrcCapability::MessageTags) {
             self.reducer.clear_typing_facts(network_id);
@@ -811,6 +819,7 @@ impl Controller {
         self.queue(vec![ViewNotify::Status]);
         if let Some(session) = self.manager.find(network_id) {
             if session.state() == SessionState::Registered {
+                self.apply_profile_avatar_on_connect(network_id);
                 self.request_znc_playback(&session);
             }
         }

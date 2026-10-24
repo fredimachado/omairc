@@ -16,9 +16,12 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
+use crate::irc::avatarurl::avatar_metadata_value;
+use crate::irc::capability::IrcCapability;
 use crate::irc::conversation::target_looks_like_service;
 use crate::irc::event::IrcConversationCause;
 use crate::irc::pref::PrefName;
+use crate::irc::presence::AVATAR_KEY;
 use crate::irc::viewnotify::ViewNotify;
 use crate::session::clock::Clock;
 use crate::session::config::SessionConfig;
@@ -207,6 +210,7 @@ impl Controller {
             && self.manager.find(network_id).is_some();
         if !reusable {
             self.manager.discard(network_id);
+            self.applied_profile_avatars.remove(network_id);
             self.autoaway_forget_network(network_id);
             self.monitor_forget_presence(network_id);
             let transport = match self.transports.open(network_id) {
@@ -247,6 +251,58 @@ impl Controller {
             return false;
         }
         self.startup_connect_allowed(profile)
+    }
+
+    /// Stores the avatar URL the server confirmed into the network's profile
+    /// (`IrcConnection::persistAvatarUrl`).
+    pub(super) fn persist_avatar_url(&mut self, network_id: &str, url: &str) {
+        if network_id.is_empty() {
+            return;
+        }
+        let Some(profile) = self.profiles.get_mut(network_id) else {
+            return;
+        };
+        if profile.avatar_url == url {
+            return;
+        }
+        profile.avatar_url = url.to_owned();
+        let saved = profile.clone();
+        self.profile_store.save(&saved);
+        if let Some(applied) = self.applied_sessions.get_mut(network_id) {
+            applied.profile.avatar_url = url.to_owned();
+        }
+    }
+
+    /// Publishes the saved avatar once per registration when metadata caps are ready
+    /// (`IrcController::applyProfileAvatarOnConnect`).
+    pub(super) fn apply_profile_avatar_on_connect(&mut self, network_id: &str) {
+        if network_id.is_empty() || self.applied_profile_avatars.contains(network_id) {
+            return;
+        }
+        let avatar_url = self
+            .profiles
+            .get(network_id)
+            .and_then(|profile| avatar_metadata_value(&profile.avatar_url))
+            .unwrap_or_default();
+        if avatar_url.is_empty() {
+            return;
+        }
+        let capabilities = self
+            .capabilities
+            .get(network_id)
+            .cloned()
+            .unwrap_or_default();
+        if !capabilities.contains(IrcCapability::MemberMetadata)
+            || !capabilities.contains(IrcCapability::Batch)
+        {
+            return;
+        }
+        let Some(session) = self.manager.find(network_id) else {
+            return;
+        };
+        if session.set_own_metadata(AVATAR_KEY, &avatar_url).is_some() {
+            self.applied_profile_avatars.insert(network_id.to_owned());
+        }
     }
 
     /// Records the channels a session autojoins, and saves them to the network's profile

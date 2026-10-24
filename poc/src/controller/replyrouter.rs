@@ -1056,10 +1056,10 @@ impl Controller {
         self.remove_own_metadata_watch(&entry.network_id, canonical);
     }
 
-    /// Stores the own avatar URL the server confirmed. The avatar store lands with the
-    /// persistence phase; until then the reducer already holds the server's value for this
-    /// nick, so this changes nothing.
-    fn persist_own_avatar(&mut self, _network_id: &str, _url: &str) {}
+    /// Stores the own avatar URL the server confirmed (`persistProfileAvatarUrl`).
+    fn persist_own_avatar(&mut self, network_id: &str, url: &str) {
+        self.persist_avatar_url(network_id, url);
+    }
 
     /// The selected conversation's target for a bare CTCP or WHOIS: a direct message's peer
     /// with its session, or the outcome that refuses it (`dispatchCtcp` and `dispatchWhois`).

@@ -15,7 +15,7 @@ use crate::controller::tests::fixture::OMARCHY;
 use crate::controller::persistence::{SaveOutcome, SecretEdits};
 use crate::controller::transports::{TransportFactory, LIVE_IRC_UNAVAILABLE};
 use crate::irc::autoaway::AutoawayConfig;
-use crate::irc::command::ComposerSurface;
+use crate::irc::command::{parse, CommandOutcome, ComposerSurface};
 use crate::irc::event::IrcConversationCause;
 use crate::irc::reducer::ConversationLog;
 use crate::irc::membershipnoise::MembershipNoise;
@@ -260,6 +260,122 @@ fn only_the_networks_that_ask_connect_on_launch() {
     assert_eq!(second.activate_startup(), 1, "only oftc asked");
     assert!(second.can_disconnect(OFTC));
     assert!(!second.can_disconnect(LIBERA));
+}
+
+const SAVED_AVATAR: &str = "https://example.com/saved.png";
+
+/// Registers `network_id` with metadata caps, as Qt `welcomeMetadata` does.
+fn feed_metadata_registered(
+    controller: &mut Controller,
+    loopbacks: &Loopbacks,
+    network_id: &str,
+) {
+    feed(
+        controller,
+        loopbacks,
+        network_id,
+        ":irc.libera.chat CAP fred LS :away-notify batch draft/metadata-2",
+    );
+    feed(
+        controller,
+        loopbacks,
+        network_id,
+        ":irc.libera.chat CAP fred ACK :away-notify batch draft/metadata-2",
+    );
+    feed(controller, loopbacks, network_id, ":irc.libera.chat 001 fred :Welcome");
+}
+
+#[test]
+fn a_confirmed_avatar_change_is_saved_to_the_profile() {
+    let dir = TempDir::new("avatar-save");
+    let backing = disk(&dir);
+    let loopbacks = Loopbacks::default();
+    let url = "https://omairc.app/omairc128.png";
+    {
+        let mut first = launch(&backing, Box::new(loopbacks.clone()));
+        save(&mut first, libera(LIBERA));
+        assert!(first.start(LIBERA));
+        feed_metadata_registered(&mut first, &loopbacks, LIBERA);
+        first.open_status(LIBERA);
+        assert_eq!(
+            first.dispatch(ComposerSurface::Status, &parse(&format!("/avatar {url}"))),
+            CommandOutcome::Sent
+        );
+        feed(
+            &mut first,
+            &loopbacks,
+            LIBERA,
+            &format!(":server 761 fred fred avatar * :{url}"),
+        );
+    }
+    let second = launch(&backing, Box::new(Loopbacks::default()));
+    assert_eq!(second.stored_profiles()[0].avatar_url, url);
+}
+
+#[test]
+fn connect_applies_the_saved_avatar_when_metadata_caps_arrive() {
+    let dir = TempDir::new("avatar-apply");
+    let backing = disk(&dir);
+    let loopbacks = Loopbacks::default();
+    {
+        let mut first = launch(&backing, Box::new(loopbacks.clone()));
+        save(
+            &mut first,
+            Profile {
+                avatar_url: SAVED_AVATAR.to_owned(),
+                ..libera(LIBERA)
+            },
+        );
+        assert!(first.start(LIBERA));
+        feed_metadata_registered(&mut first, &loopbacks, LIBERA);
+    }
+    assert!(
+        frame_count(
+            &loopbacks,
+            LIBERA,
+            &format!("METADATA * SET avatar :{SAVED_AVATAR}"),
+        ) >= 1,
+        "frames: {:?}",
+        loopbacks
+            .get(LIBERA)
+            .written_frames()
+            .iter()
+            .map(|frame| String::from_utf8_lossy(frame))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn a_cleared_avatar_clears_the_saved_profile() {
+    let dir = TempDir::new("avatar-clear");
+    let backing = disk(&dir);
+    let loopbacks = Loopbacks::default();
+    let url = "https://omairc.app/omairc128.png";
+    {
+        let mut first = launch(&backing, Box::new(loopbacks.clone()));
+        save(
+            &mut first,
+            Profile {
+                avatar_url: url.to_owned(),
+                ..libera(LIBERA)
+            },
+        );
+        assert!(first.start(LIBERA));
+        feed_metadata_registered(&mut first, &loopbacks, LIBERA);
+        first.open_status(LIBERA);
+        assert_eq!(
+            first.dispatch(ComposerSurface::Status, &parse("/avatar clear")),
+            CommandOutcome::Sent
+        );
+        feed(
+            &mut first,
+            &loopbacks,
+            LIBERA,
+            ":server 766 fred fred avatar :unset",
+        );
+    }
+    let second = launch(&backing, Box::new(Loopbacks::default()));
+    assert!(second.stored_profiles()[0].avatar_url.is_empty());
 }
 
 #[test]
