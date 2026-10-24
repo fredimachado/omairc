@@ -4,7 +4,9 @@
 #[cfg(any(windows, test))]
 use std::path::{Path, PathBuf};
 
+#[cfg(any(windows, test))]
 use sha1_smol::Sha1;
+#[cfg(any(windows, test))]
 use url::form_urlencoded;
 
 /// `network_id` and `target` joined the way Qt and the TUI store notification keys.
@@ -13,6 +15,7 @@ pub fn conversation_key(network_id: &str, target: &str) -> String {
 }
 
 /// The first sixteen hex digits of SHA-1(`conversation_key`), for toast tag/group.
+#[cfg(any(windows, test))]
 pub fn conversation_tag(network_id: &str, target: &str) -> String {
     let digest = Sha1::from(conversation_key(network_id, target).as_bytes()).digest();
     digest
@@ -23,6 +26,7 @@ pub fn conversation_tag(network_id: &str, target: &str) -> String {
 }
 
 /// XML 1.0 text content allowed in toast bodies (C0 controls stripped).
+#[cfg(any(windows, test))]
 pub fn sanitize_xml_text(value: &str) -> String {
     let mut sanitized = String::with_capacity(value.len());
     let chars: Vec<char> = value.chars().collect();
@@ -33,8 +37,8 @@ pub fn sanitize_xml_text(value: &str) -> String {
         let allowed = scalar == 0x09
             || scalar == 0x0A
             || scalar == 0x0D
-            || (scalar >= 0x20 && scalar <= 0xD7FF)
-            || (scalar >= 0xE000 && scalar <= 0xFFFD);
+            || (0x20..=0xD7FF).contains(&scalar)
+            || (0xE000..=0xFFFD).contains(&scalar);
         if allowed {
             sanitized.push(code);
             index += 1;
@@ -55,6 +59,7 @@ pub fn sanitize_xml_text(value: &str) -> String {
 }
 
 /// Escapes `value` for a toast XML attribute or text node.
+#[cfg(any(windows, test))]
 pub fn escape_xml(value: &str) -> String {
     let mut escaped = sanitize_xml_text(value);
     escaped = escaped.replace('&', "&amp;");
@@ -68,6 +73,7 @@ pub fn escape_xml(value: &str) -> String {
 }
 
 /// The `launch` attribute for a Windows toast (`omairc://notify?...`).
+#[cfg(any(windows, test))]
 pub fn build_launch_url(network_id: &str, target: &str, msgid: &str) -> String {
     let mut serializer = form_urlencoded::Serializer::new(String::from("omairc://notify?"));
     serializer.append_pair("network", network_id);
@@ -77,6 +83,7 @@ pub fn build_launch_url(network_id: &str, target: &str, msgid: &str) -> String {
 }
 
 /// Parses `launch` from a toast activation or foreground launch.
+#[cfg(any(windows, test))]
 pub fn parse_launch_url(launch: &str) -> Option<(String, String, String)> {
     let url = url::Url::parse(launch).ok()?;
     if url.scheme() != "omairc" || url.host_str() != Some("notify") {
@@ -99,10 +106,12 @@ pub fn parse_launch_url(launch: &str) -> Option<(String, String, String)> {
     Some((network_id, target, msgid))
 }
 
-/// Records a freedesktop notification id for a conversation, replacing any prior id.
+/// Records a freedesktop notification id for a conversation, replacing any prior id. The
+/// Linux notifier keeps both maps here, so a click finds the conversation it came from.
+#[cfg(any(target_os = "linux", test))]
 pub fn remember_conversation_notify_id(
     conversation_ids: &mut std::collections::HashMap<String, u32>,
-    by_id: &mut std::collections::HashMap<u32, (String, String, String)>,
+    by_id: &mut std::collections::HashMap<u32, super::Activation>,
     network_id: &str,
     target: &str,
     msgid: &str,
@@ -119,11 +128,16 @@ pub fn remember_conversation_notify_id(
     conversation_ids.insert(key, id);
     by_id.insert(
         id,
-        (network_id.to_owned(), target.to_owned(), msgid.to_owned()),
+        super::Activation {
+            network_id: network_id.to_owned(),
+            target: target.to_owned(),
+            msgid: msgid.to_owned(),
+        },
     );
 }
 
 /// Generic toast XML for Windows (`ToastGeneric` template).
+#[cfg(any(windows, test))]
 pub fn build_toast_xml(summary: &str, body: &str, launch: &str) -> String {
     format!(
         "<toast activationType=\"foreground\" launch=\"{}\"><visual><binding template=\"ToastGeneric\"><text>{}</text><text>{}</text></binding></visual></toast>",
@@ -243,6 +257,8 @@ mod tests {
 
     #[test]
     fn remember_conversation_notify_id_replaces_prior_id() {
+        use crate::desktop::notifier::Activation;
+
         let mut conversation_ids = HashMap::new();
         let mut by_id = HashMap::new();
         remember_conversation_notify_id(
@@ -265,7 +281,11 @@ mod tests {
         assert!(!by_id.contains_key(&1));
         assert_eq!(
             by_id.get(&2),
-            Some(&("net".to_owned(), "#chan".to_owned(), "b".to_owned()))
+            Some(&Activation {
+                network_id: "net".to_owned(),
+                target: "#chan".to_owned(),
+                msgid: "b".to_owned(),
+            })
         );
     }
 }
