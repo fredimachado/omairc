@@ -1,7 +1,7 @@
 //! Channel membership and channel state: JOIN, PART, KICK, QUIT and NICK; ACCOUNT and
-//! AWAY; the user's own away state (305, 306); TOPIC with its 332 reply; NAMES (353,
-//! 366); and MODE. Each handler's parameter guard lives in `translate`'s `match`, so
-//! these run only on a message that has the parameters they read.
+//! AWAY; the user's own away state (305, 306); TOPIC with its 332 and 333 replies;
+//! NAMES (353, 366); and MODE. Each handler's parameter guard lives in `translate`'s
+//! `match`, so these run only on a message that has the parameters they read.
 
 use crate::irc::event::{
     AccountEvent, AwayEvent, Event, JoinEvent, KickEvent, ModeEvent, Name, NamesEvent, NickEvent,
@@ -96,6 +96,7 @@ pub(super) fn topic(inbound: &Inbound<'_>) -> Vec<Event> {
         channel: message.text_param(0),
         topic: message.text_param(1),
         author: inbound.sender.clone(),
+        keep_existing_topic: false,
     }
     .into()]
 }
@@ -108,6 +109,21 @@ pub(super) fn topic_reply(inbound: &Inbound<'_>) -> Vec<Event> {
         channel: message.text_param(1),
         topic: message.text_param(2),
         author: String::new(),
+        keep_existing_topic: false,
+    }
+    .into()]
+}
+
+/// `333` RPL_TOPICWHOTIME: the channel and who set the topic. The topic text is
+/// not on the wire; `keep_existing_topic` tells the reducer not to wipe it.
+pub(super) fn topic_who_time(inbound: &Inbound<'_>) -> Vec<Event> {
+    let message = inbound.message;
+    vec![TopicEvent {
+        network_id: inbound.network_id.to_owned(),
+        channel: message.text_param(1),
+        topic: String::new(),
+        author: message.text_param(2),
+        keep_existing_topic: true,
     }
     .into()]
 }

@@ -426,3 +426,41 @@ fn nick_shaped_join_does_not_invent_direct() {
     fold(&mut reducer, join(NETWORK_A, "lena", "omairc"));
     assert!(reducer.find(&reducer.conversation_key(NETWORK_A, "lena")).is_none(), "no direct invented");
 }
+
+#[test]
+fn topic_who_time_invents_channel_and_keeps_prior_topic() {
+    let mut reducer = EventReducer::new();
+    welcome_omairc(&mut reducer, NETWORK_A);
+    apply_wire(&mut reducer, ":server 333 omairc #room alice!u@h 1710000000");
+    let room = reducer.conversation_key(NETWORK_A, "#room");
+    {
+        let state = state_of(&reducer, &room);
+        assert!(state.is_channel(), "333 invents with ChannelState");
+        assert_eq!(
+            state.channel.as_ref().expect("a channel").topic,
+            "",
+            "333 alone leaves an empty topic"
+        );
+    }
+
+    apply_wire(&mut reducer, ":server 332 omairc #room :prior topic");
+    assert_eq!(
+        state_of(&reducer, &room).channel.as_ref().expect("a channel").topic,
+        "prior topic",
+        "332 sets the topic"
+    );
+    apply_wire(&mut reducer, ":server 333 omairc #room alice!u@h 1710000000");
+    assert_eq!(
+        state_of(&reducer, &room).channel.as_ref().expect("a channel").topic,
+        "prior topic",
+        "333 must not wipe a prior topic"
+    );
+
+    // Empty TOPIC still clears; keep_existing_topic is only for 333.
+    fold(&mut reducer, topic(NETWORK_A, "#room", "", "op"));
+    assert_eq!(
+        state_of(&reducer, &room).channel.as_ref().expect("a channel").topic,
+        "",
+        "empty TOPIC clears the topic"
+    );
+}

@@ -87,6 +87,7 @@ pub fn translate(
         "KICK" if message.params.len() >= 2 => membership::kick(&inbound),
         "TOPIC" if message.params.len() >= 2 => membership::topic(&inbound),
         "332" if message.params.len() >= 3 => membership::topic_reply(&inbound),
+        "333" if message.params.len() >= 3 => membership::topic_who_time(&inbound),
         "353" if message.params.len() >= 4 => membership::names(&inbound),
         "366" if message.params.len() >= 2 => membership::names_end(&inbound),
         "MODE" if message.params.len() >= 2 => membership::mode(&inbound),

@@ -40,17 +40,17 @@ use crate::util::OmaircStyleGlobal;
 #[derive(Parser, Debug)]
 #[command(
     name = "omairc-poc-gpui",
-    about = "Omairc GPUI visual shell PoC",
+    about = "A simple IRC client for Omarchy.",
     version = version::version()
 )]
 struct Args {
-    #[arg(long)]
+    #[arg(long, hide = true)]
     theme: Option<PathBuf>,
-    #[arg(long)]
+    #[arg(long, hide = true)]
     scale: Option<f32>,
-    #[arg(long)]
+    #[arg(long, hide = true)]
     lines: Option<usize>,
-    #[arg(long)]
+    #[arg(long, hide = true)]
     bench: bool,
     /// Run the seeded in-process demo server: the controller starts on its networks.
     #[arg(long)]
@@ -161,6 +161,8 @@ fn main() {
     let bench = args.bench;
     let demo_server = args.demo_server;
     let _embedding = args.embedding;
+    // Match Qt `OMAIRC_SMOKE`: non-empty means prove a window opened, then quit.
+    let smoke = std::env::var_os("OMAIRC_SMOKE").is_some_and(|value| !value.is_empty());
 
     // One window per user: a second launch raises the first and exits, as Qt's guard does.
     let ipc = match desktop::singleinstance::acquire_for_app() {
@@ -216,8 +218,7 @@ fn main() {
         let pending_activation = desktop::notifier::activation_from_args(&raw_args);
         #[cfg(not(windows))]
         let pending_activation: Option<desktop::notifier::Activation> = None;
-        let window = cx
-            .open_window(
+        let window = match cx.open_window(
                 WindowOptions {
                     window_bounds: Some(window_bounds),
                     window_min_size: Some(size(px(760.), px(540.))),
@@ -232,7 +233,15 @@ fn main() {
                 },
                 |window, cx| {
                     let shell = cx.new(|cx| {
-                        Shell::new(cx, lines, bench, demo_server, net.clone(), activation_tx.clone())
+                        Shell::new(
+                            cx,
+                            lines,
+                            bench,
+                            smoke,
+                            demo_server,
+                            net.clone(),
+                            activation_tx.clone(),
+                        )
                     });
                     if let Some(activation) = pending_activation {
                         let _ = activation_tx.send_blocking(activation);
@@ -343,8 +352,14 @@ fn main() {
 
                     shell
                 },
-            )
-            .expect("open window");
+            ) {
+            Ok(window) => window,
+            Err(_) if smoke => {
+                eprintln!("Omairc smoke: could not open a window");
+                std::process::exit(1);
+            }
+            Err(error) => panic!("open window: {error:?}"),
+        };
 
         window
             .update(cx, |shell, window, cx| {

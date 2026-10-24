@@ -139,10 +139,12 @@ impl Shell {
     /// complete network saved yet, the Connect sheet opens and stays open until one is.
     /// `lines` replaces the selection with the `#bench` channel of that many lines. `net` is the
     /// socket hub a live launch dials through; without one, every network's start is refused.
+    /// `smoke` is set when `OMAIRC_SMOKE` is non-empty: quit shortly after the first frame.
     pub fn new(
         cx: &mut Context<Self>,
         lines: Option<usize>,
         bench: bool,
+        smoke: bool,
         demo: bool,
         net: Option<Rc<NetHub>>,
         activation_tx: async_channel::Sender<crate::desktop::notifier::Activation>,
@@ -269,6 +271,7 @@ impl Shell {
             typing_phase: 0,
             bench: BenchState {
                 enabled: bench,
+                smoke,
                 ..Default::default()
             },
             avatar_memo: Default::default(),
@@ -343,8 +346,19 @@ fn connect_seeds(controller: &Controller) -> Vec<crate::model::connect::NetworkS
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if self.bench.enabled && self.bench.first_frame.is_none() {
+        if (self.bench.enabled || self.bench.smoke) && self.bench.first_frame.is_none() {
             self.bench.first_frame = Some(self.bench.started.elapsed());
+            // Match Qt `OMAIRC_SMOKE`: once a window frame exists, quit ~500 ms later.
+            if self.bench.smoke && !self.bench.smoke_quit_armed {
+                self.bench.smoke_quit_armed = true;
+                cx.spawn(async move |_shell, cx| {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_millis(500))
+                        .await;
+                    cx.update(|cx| cx.quit()).ok();
+                })
+                .detach();
+            }
         }
         // Window focus drives the unread rules. The observer needs the window, so it is
         // registered here, once, and reads the starting focus from it.

@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn numeric_and_command_table_yields_the_expected_first_kind() {
-    let cases: [(&str, &str, EventKind); 21] = [
+    let cases: [(&str, &str, EventKind); 22] = [
         (
             "self away",
             ":server 306 omairc :marked away",
@@ -24,6 +24,11 @@ fn numeric_and_command_table_yields_the_expected_first_kind() {
         (
             "channel topic reply",
             ":server 332 omairc #room :topic",
+            EventKind::Topic,
+        ),
+        (
+            "topic who time",
+            ":server 333 omairc #room alice!u@h 1710000000",
             EventKind::Topic,
         ),
         (
