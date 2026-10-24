@@ -50,8 +50,9 @@ fn target(key_name: &str) -> String {
     format!("{key_name}@{SERVICE}")
 }
 
-/// Every Credential Manager target a key may be stored under, canonical names first.
-fn targets(key: &CredentialKey) -> Vec<String> {
+/// Credential Manager targets for reads: both `@omairc` and bare forms, and for the server
+/// password slot both empty-purpose and `/password` key names so older entries are found.
+fn read_targets(key: &CredentialKey) -> Vec<String> {
     let names = if key.purpose == PURPOSE_PASSWORD || key.purpose == LEGACY_PURPOSE_PASSWORD {
         let canonical = CredentialKey {
             network_id: key.network_id.clone(),
@@ -74,6 +75,17 @@ fn targets(key: &CredentialKey) -> Vec<String> {
     } else {
         vec![key.key_name()]
     };
+    targets_for_names(names)
+}
+
+/// Targets for one key name only (`<name>@omairc` and bare `name`). Used for write and
+/// remove so deleting a legacy `/password` entry cannot clear the canonical empty-purpose
+/// key written in the same `write_slot` call.
+fn exact_targets(key: &CredentialKey) -> Vec<String> {
+    targets_for_names(vec![key.key_name()])
+}
+
+fn targets_for_names(names: Vec<String>) -> Vec<String> {
     let mut out = Vec::new();
     for name in names {
         out.push(target(&name));
@@ -180,7 +192,7 @@ impl CredentialStore for WindowsCredentialStore {
     }
 
     fn read(&self, key: &CredentialKey) -> Result<Option<String>, String> {
-        for target in targets(key) {
+        for target in read_targets(key) {
             match read_blob(&target) {
                 Ok(Some(blob)) if !blob.0.is_empty() => {
                     return Ok(Some(String::from_utf8_lossy(&blob.0).into_owned()));
@@ -200,7 +212,7 @@ impl CredentialStore for WindowsCredentialStore {
     }
 
     fn remove(&mut self, key: &CredentialKey) -> CredentialState {
-        for target in targets(key) {
+        for target in exact_targets(key) {
             if let Err(error) = delete_blob(&target) {
                 return CredentialState::Error(error.to_string());
             }
@@ -220,31 +232,53 @@ impl CredentialStore for WindowsCredentialStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::credentialstore::PURPOSE_PASSWORD;
+    use crate::storage::credentialstore::{LEGACY_PURPOSE_PASSWORD, PURPOSE_PASSWORD};
 
-    #[test]
-    fn the_target_is_the_key_name_with_the_service_suffix() {
-        let key = CredentialKey {
+    fn sample_password_key() -> CredentialKey {
+        CredentialKey {
             network_id: "nid".to_owned(),
             username: "user".to_owned(),
             host: "irc.example".to_owned(),
             purpose: PURPOSE_PASSWORD,
+        }
+    }
+
+    #[test]
+    fn read_targets_include_legacy_password_aliases() {
+        let key = sample_password_key();
+        assert_eq!(
+            read_targets(&key),
+            [
+                "omairc/v1/3:nid/4:user/11:irc.example@omairc",
+                "omairc/v1/3:nid/4:user/11:irc.example",
+                "omairc/v1/3:nid/4:user/11:irc.example/8:password@omairc",
+                "omairc/v1/3:nid/4:user/11:irc.example/8:password",
+            ]
+        );
+    }
+
+    #[test]
+    fn exact_targets_touch_only_one_key_name() {
+        let canonical = sample_password_key();
+        let legacy = CredentialKey {
+            network_id: canonical.network_id.clone(),
+            username: canonical.username.clone(),
+            host: canonical.host.clone(),
+            purpose: LEGACY_PURPOSE_PASSWORD,
         };
         assert_eq!(
-            targets(&key)[0],
-            "omairc/v1/3:nid/4:user/11:irc.example@omairc"
+            exact_targets(&canonical),
+            [
+                "omairc/v1/3:nid/4:user/11:irc.example@omairc",
+                "omairc/v1/3:nid/4:user/11:irc.example",
+            ]
         );
         assert_eq!(
-            targets(&key)[1],
-            "omairc/v1/3:nid/4:user/11:irc.example"
-        );
-        assert_eq!(
-            targets(&key)[2],
-            "omairc/v1/3:nid/4:user/11:irc.example/8:password@omairc"
-        );
-        assert_eq!(
-            targets(&key)[3],
-            "omairc/v1/3:nid/4:user/11:irc.example/8:password"
+            exact_targets(&legacy),
+            [
+                "omairc/v1/3:nid/4:user/11:irc.example/8:password@omairc",
+                "omairc/v1/3:nid/4:user/11:irc.example/8:password",
+            ]
         );
     }
 
@@ -279,5 +313,30 @@ mod tests {
         assert_eq!(store.read(&key), Ok(Some("legacy".to_owned())));
         assert_eq!(store.remove(&key), CredentialState::Missing);
         assert_eq!(store.read(&key), Ok(None));
+    }
+
+    /// Mirrors `write_slot`: canonical write then legacy remove must not delete the new secret.
+    /// Run with `cargo test -- --ignored` on Windows.
+    #[test]
+    #[ignore = "writes to the Windows Credential Manager"]
+    fn removing_the_legacy_key_after_a_canonical_write_leaves_the_secret() {
+        let canonical = CredentialKey {
+            network_id: format!("omairc-test-{}", std::process::id()),
+            username: "test".to_owned(),
+            host: "irc.example".to_owned(),
+            purpose: PURPOSE_PASSWORD,
+        };
+        let legacy = CredentialKey {
+            network_id: canonical.network_id.clone(),
+            username: canonical.username.clone(),
+            host: canonical.host.clone(),
+            purpose: LEGACY_PURPOSE_PASSWORD,
+        };
+        let mut store = open().expect("the Credential Manager answers");
+        assert_eq!(store.write(&canonical, "hunter2"), CredentialState::Available);
+        assert_eq!(store.remove(&legacy), CredentialState::Missing);
+        assert_eq!(store.read(&canonical), Ok(Some("hunter2".to_owned())));
+        assert_eq!(store.remove(&canonical), CredentialState::Missing);
+        assert_eq!(store.read(&canonical), Ok(None));
     }
 }
