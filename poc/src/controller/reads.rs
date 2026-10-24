@@ -263,6 +263,18 @@ impl Controller {
             .sum()
     }
 
+    /// Unseen alert-severity Status lines for `network_id` (`alertsFor`). Zero while
+    /// that network's Status is open, as in Qt.
+    pub fn alerts_for(&self, network_id: &str) -> u32 {
+        if network_id.is_empty() {
+            return 0;
+        }
+        if self.console_open && self.console_network == network_id {
+            return 0;
+        }
+        self.console.alerts_since_seen(network_id) as u32
+    }
+
     /// Whether any of a network's conversations holds an unread mention
     /// (`MentionFor`).
     pub fn mention_for(&self, network_id: &str) -> bool {

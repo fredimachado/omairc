@@ -7,6 +7,16 @@ use crate::ui::widgets::avatar::{embedded_photo, photo_layer};
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
+/// Whether the status-row dot uses the accent colour (`liveAlerts > 0`).
+pub fn status_dot_accent(alerts: u32) -> bool {
+    alerts > 0
+}
+
+/// Whether the header shows the `edit` label (`showEdit`: a live session exists).
+pub fn network_show_edit(show_edit: bool) -> bool {
+    show_edit
+}
+
 /// The network header, a port of `NetworkSection.qml`: 64 tall, with the
 /// collapse chevron, the icon, the name with an unread dot, and the status.
 /// The header itself is inert. `on_toggle` receives the network id when the
@@ -48,6 +58,12 @@ pub fn network_header(
     } else {
         "offline"
     };
+    let status_dot = if status_dot_accent(network.alerts) {
+        accent
+    } else {
+        to_gpui(style.presence_color(mark))
+    };
+    let show_edit = network_show_edit(network.show_edit);
     let id = network.id.clone();
     let open_id = id.clone();
     let edit_id = id.clone();
@@ -186,7 +202,7 @@ pub fn network_header(
                                 .flex_shrink_0()
                                 .size(scaled_px(style, 7.))
                                 .rounded_full()
-                                .bg(to_gpui(style.presence_color(mark))),
+                                .bg(status_dot),
                         )
                         .child(
                             div()
@@ -201,24 +217,44 @@ pub fn network_header(
                 ),
         )
         // The `edit` label at the right edge. A click opens Connect on this network.
-        .child(
-            div()
-                .absolute()
-                .right(scaled_px(style, 10.))
-                .top(scaled_px(style, 18.))
-                .w(scaled_px(style, 28.))
-                .h(scaled_px(style, 28.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_size(scaled_px(style, 9.))
-                .text_color(muted)
-                .font_family(FONT_FAMILY)
-                .cursor_pointer()
-                .hover(|s| s.text_color(ink))
-                .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                    on_edit(edit_id.clone(), window, cx);
-                })
-                .child("edit"),
-        )
+        .when(show_edit, |this| {
+            this.child(
+                div()
+                    .absolute()
+                    .right(scaled_px(style, 10.))
+                    .top(scaled_px(style, 18.))
+                    .w(scaled_px(style, 28.))
+                    .h(scaled_px(style, 28.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_size(scaled_px(style, 9.))
+                    .text_color(muted)
+                    .font_family(FONT_FAMILY)
+                    .cursor_pointer()
+                    .hover(|s| s.text_color(ink))
+                    .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                        on_edit(edit_id.clone(), window, cx);
+                    })
+                    .child("edit"),
+            )
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_status_dot_uses_accent_only_when_alerts_are_present() {
+        assert!(status_dot_accent(1));
+        assert!(status_dot_accent(3));
+        assert!(!status_dot_accent(0));
+    }
+
+    #[test]
+    fn the_edit_label_hides_without_a_live_session() {
+        assert!(network_show_edit(true));
+        assert!(!network_show_edit(false));
+    }
 }

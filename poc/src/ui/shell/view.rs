@@ -129,6 +129,8 @@ impl Shell {
                     icon: self.controller.features(&id).icon_url().map(str::to_owned),
                     unread: self.controller.unread_count_for(&id) > 0,
                     mention: self.controller.mention_for(&id),
+                    alerts: self.controller.alerts_for(&id),
+                    show_edit: self.controller.session(&id).is_some(),
                     has_directs: rows.iter().any(|row| row.key.network_id == id && row.direct),
                     collapsed: self.controller.is_network_collapsed(&id),
                     status: connection_line(&self.controller, &id),
