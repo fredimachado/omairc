@@ -387,9 +387,10 @@ pub fn wire_shell_actions(root: Div, cx: &mut Context<Shell>) -> Div {
         shell.prompt_for_file(window, cx);
     }))
     .capture_action(cx.listener(|shell, action: &Paste, window, cx| {
+        // gpui's capture phase runs on unless a listener stops it, so a consumed file
+        // paste must stop here or the composer pastes the path as well.
         if shell.handle_composer_paste(action, window, cx) {
-            return;
+            cx.stop_propagation();
         }
-        cx.propagate();
     }))
 }

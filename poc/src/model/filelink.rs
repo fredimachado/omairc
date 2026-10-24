@@ -46,6 +46,13 @@ pub fn non_regular_paste_paths(text: &str, stat: &dyn Fn(&Path) -> Option<PathSt
     }
 }
 
+/// Whether a clipboard text paste is file paths the upload takes: every line is an
+/// existing absolute path, regular or not. A consumed paste never lands as text, so
+/// a directory counts too; the upload refuses it with `NOT_A_FILE`.
+pub fn paste_consumes(text: &str, stat: &dyn Fn(&Path) -> Option<PathStat>) -> bool {
+    local_file_lines(text, stat).is_some() || non_regular_paste_paths(text, stat).is_some()
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PathStat {
     pub regular: bool,
@@ -225,6 +232,21 @@ mod tests {
         assert!(local_file_lines("note.txt", &stat).is_none());
         let mixed = format!("{}\nhello", path.display());
         assert!(local_file_lines(&mixed, &stat).is_none());
+    }
+
+    #[test]
+    fn paste_consumes_only_existing_paths() {
+        let dir = TempDir::new("paste");
+        let file = dir.path().join("note.txt");
+        fs::write(&file, b"x").expect("write");
+        let folder = dir.path().join("folder");
+        fs::create_dir(&folder).expect("mkdir");
+        let stat = |path: &Path| stat_of(path);
+        assert!(paste_consumes(&file.display().to_string(), &stat));
+        assert!(paste_consumes(&folder.display().to_string(), &stat));
+        assert!(!paste_consumes("hello world", &stat));
+        let mixed = format!("{}\nhello", file.display());
+        assert!(!paste_consumes(&mixed, &stat));
     }
 
     #[test]
