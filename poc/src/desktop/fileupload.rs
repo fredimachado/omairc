@@ -97,7 +97,7 @@ pub fn upload(fetch: &dyn HttpFetch, mut job: UploadJob) -> Result<String, &'sta
 
 fn read_source(job: &UploadJob) -> Result<(Vec<u8>, String, String), &'static str> {
     match &job.source {
-        UploadSource::Path(path) => read_path(path),
+        UploadSource::Path(path) => read_path(path, &job.content_type),
         UploadSource::Bytes(bytes) => {
             if bytes.is_empty() {
                 return Err(FILE_EMPTY);
@@ -105,16 +105,21 @@ fn read_source(job: &UploadJob) -> Result<(Vec<u8>, String, String), &'static st
             if bytes.len() as u64 > MAXIMUM_BYTES {
                 return Err(FILE_TOO_LARGE);
             }
+            let content_type = if job.content_type.is_empty() {
+                "application/octet-stream".to_owned()
+            } else {
+                job.content_type.clone()
+            };
             Ok((
                 bytes.clone(),
                 safe_file_name(&job.file_name),
-                job.content_type.clone(),
+                content_type,
             ))
         }
     }
 }
 
-fn read_path(path: &Path) -> Result<(Vec<u8>, String, String), &'static str> {
+fn read_path(path: &Path, override_type: &str) -> Result<(Vec<u8>, String, String), &'static str> {
     let info = fs::metadata(path).map_err(|_| NOT_A_FILE)?;
     if !info.is_file() {
         return Err(NOT_A_FILE);
@@ -138,7 +143,9 @@ fn read_path(path: &Path) -> Result<(Vec<u8>, String, String), &'static str> {
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| "file".to_owned());
-    Ok((body, safe_file_name(&name), content_type_for(path)))
+    let file_name = safe_file_name(&name);
+    let content_type = content_type_for(override_type, Path::new(&file_name), &body);
+    Ok((body, file_name, content_type))
 }
 
 pub fn safe_file_name(name: &str) -> String {
@@ -164,9 +171,46 @@ pub fn safe_file_name(name: &str) -> String {
     out
 }
 
-fn content_type_for(path: &Path) -> String {
-    let guessed = from_path(path).first_raw().unwrap_or("application/octet-stream");
-    guessed.to_string()
+fn content_type_for(override_type: &str, path: &Path, body: &[u8]) -> String {
+    if !override_type.is_empty() {
+        return override_type.to_owned();
+    }
+    if let Some(sniffed) = sniff_content_type(body) {
+        return sniffed.to_owned();
+    }
+    from_path(path)
+        .first_raw()
+        .unwrap_or("application/octet-stream")
+        .to_owned()
+}
+
+/// Magic-byte sniff for the upload types that matter without a new crate.
+fn sniff_content_type(body: &[u8]) -> Option<&'static str> {
+    if body.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]) {
+        return Some("image/png");
+    }
+    if body.len() >= 3 && body[0] == 0xff && body[1] == 0xd8 && body[2] == 0xff {
+        return Some("image/jpeg");
+    }
+    if body.starts_with(b"GIF87a") || body.starts_with(b"GIF89a") {
+        return Some("image/gif");
+    }
+    if body.starts_with(b"%PDF") {
+        return Some("application/pdf");
+    }
+    if body.len() >= 12 && body.starts_with(b"RIFF") && &body[8..12] == b"WEBP" {
+        return Some("image/webp");
+    }
+    if body.starts_with(b"PK\x03\x04")
+        || body.starts_with(b"PK\x05\x06")
+        || body.starts_with(b"PK\x07\x08")
+    {
+        return Some("application/zip");
+    }
+    if body.starts_with(&[0x1f, 0x8b]) {
+        return Some("application/gzip");
+    }
+    None
 }
 
 #[cfg(test)]
@@ -427,5 +471,120 @@ mod tests {
         let (head, _) = server.join().expect("server thread");
         assert!(head.starts_with("POST "));
         assert_eq!(err, COULD_NOT_UPLOAD);
+    }
+
+    const PNG_MAGIC: &[u8] = &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+
+    fn content_type_header(fake: &FakeFetch) -> String {
+        let posts = fake.post_requests();
+        assert_eq!(posts.len(), 1);
+        posts[0]
+            .headers
+            .iter()
+            .find(|(name, _)| name == "Content-Type")
+            .map(|(_, value)| value.clone())
+            .expect("Content-Type")
+    }
+
+    #[test]
+    fn upload_sniffs_extensionless_png_bytes() {
+        let fake = FakeFetch::new();
+        let url = "http://127.0.0.1/upload";
+        fake.serve_post(url, 201, Some("/files/blob"));
+        let dir = TempDir::new("fileupload-sniff");
+        let path = dir.path().join("blob");
+        fs::write(&path, PNG_MAGIC).expect("write");
+        upload(
+            &fake,
+            UploadJob {
+                source: UploadSource::Path(path),
+                file_name: String::new(),
+                content_type: String::new(),
+                target: target(url, false),
+            },
+        )
+        .expect("uploaded");
+        assert_eq!(content_type_header(&fake), "image/png");
+    }
+
+    #[test]
+    fn upload_sniffs_png_bytes_over_txt_extension() {
+        let fake = FakeFetch::new();
+        let url = "http://127.0.0.1/upload";
+        fake.serve_post(url, 201, Some("/files/note.txt"));
+        let dir = TempDir::new("fileupload-sniff-txt");
+        let path = dir.path().join("note.txt");
+        fs::write(&path, PNG_MAGIC).expect("write");
+        upload(
+            &fake,
+            UploadJob {
+                source: UploadSource::Path(path),
+                file_name: String::new(),
+                content_type: String::new(),
+                target: target(url, false),
+            },
+        )
+        .expect("uploaded");
+        assert_eq!(content_type_header(&fake), "image/png");
+    }
+
+    #[test]
+    fn upload_keeps_path_content_type_override() {
+        let fake = FakeFetch::new();
+        let url = "http://127.0.0.1/upload";
+        fake.serve_post(url, 201, Some("/files/note.png"));
+        let dir = TempDir::new("fileupload-override");
+        let path = dir.path().join("note.png");
+        fs::write(&path, PNG_MAGIC).expect("write");
+        upload(
+            &fake,
+            UploadJob {
+                source: UploadSource::Path(path),
+                file_name: String::new(),
+                content_type: "text/plain".to_owned(),
+                target: target(url, false),
+            },
+        )
+        .expect("uploaded");
+        assert_eq!(content_type_header(&fake), "text/plain");
+    }
+
+    #[test]
+    fn upload_bytes_empty_content_type_is_octet_stream_not_sniffed() {
+        let fake = FakeFetch::new();
+        let url = "http://127.0.0.1/upload";
+        fake.serve_post(url, 201, Some("/files/blob"));
+        upload(
+            &fake,
+            UploadJob {
+                source: UploadSource::Bytes(PNG_MAGIC.to_vec()),
+                file_name: "blob".to_owned(),
+                content_type: String::new(),
+                target: target(url, false),
+            },
+        )
+        .expect("uploaded");
+        assert_eq!(content_type_header(&fake), "application/octet-stream");
+    }
+
+    #[test]
+    fn upload_png_name_with_png_bytes_stays_image_png() {
+        let fake = FakeFetch::new();
+        let url = "http://127.0.0.1/upload";
+        fake.serve_post(url, 201, Some("/files/photo.png"));
+        let dir = TempDir::new("fileupload-png");
+        let path = dir.path().join("photo.png");
+        fs::write(&path, PNG_MAGIC).expect("write");
+        upload(
+            &fake,
+            UploadJob {
+                source: UploadSource::Path(path),
+                file_name: String::new(),
+                content_type: String::new(),
+                target: target(url, false),
+            },
+        )
+        .expect("uploaded");
+        assert_eq!(content_type_header(&fake), "image/png");
     }
 }
