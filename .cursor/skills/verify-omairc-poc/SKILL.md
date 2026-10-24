@@ -1,0 +1,184 @@
+---
+name: verify-omairc-poc
+description: Drive the Omairc Rust GPUI PoC as a user would (isolated Xvfb + compiled binary). Use when proving the seeded demo shell, window title, conversation switching, Status console, composer, or keyboard chords against poc/target/debug/omairc-poc-gpui.
+metadata:
+  internal: true
+---
+
+# Verify Omairc PoC (GPUI)
+
+The Rust PoC is a GPUI desktop app in `poc/`. `--demo-server` seeds the same
+two-network demo world as Qt. This skill drives the compiled
+`poc/target/debug/omairc-poc-gpui` window under an isolated X server with
+`xdotool`, the same way `control-omairc` drives Qt. The shared feature map
+`.cursor/skills/verify-omairc/features/*.md` is the contract. Do not point
+`control-omairc` at the PoC binary, and do not invent a new control protocol.
+In-process `#[gpui::test]` input is a separate path; it does not press keys
+into a real window.
+
+## Launch
+
+Prefer a private X server when `Xvfb`, `xauth`, `xdotool`, `import`, `magick`,
+`cargo`, and lavapipe (`vulkan-swrast`) are available. Do not launch on the
+user's live display.
+
+```sh
+.cursor/skills/verify-omairc-poc/control-omairc-poc launch
+.cursor/skills/verify-omairc-poc/control-omairc-poc launch --demo-server
+```
+
+Ready when stdout includes a title ending in ` - Omairc` or ` Status`, and
+`doctor` exits 0. Default launch is first-run Connect
+(`chat.freenode.net Status`). `--demo-server` is
+`#omarchy · irc.example · fred - Omairc` with the seeded sidebar.
+
+This launch:
+
+- runs `cargo build` in `poc/`
+- picks the next free X display from `:110`
+- uses a disposable `XDG_*` tree so window geometry is the default 1180×760
+- points `DBUS_SESSION_BUS_ADDRESS` at a missing socket
+- sets `OMAIRC_ALLOW_MULTI=1` so the isolated window does not take the user socket
+- **unsets `WAYLAND_DISPLAY` / `WAYLAND_SOCKET`** and sets `XDG_SESSION_TYPE=x11`
+  (GPUI prefers Wayland whenever `WAYLAND_DISPLAY` is set; without this the
+  window opens on the live session and Xvfb `xdotool` never sees it)
+- forces lavapipe via `VK_ICD_FILENAMES` (Xvfb has no GPU; Blade needs a
+  software Vulkan ICD). Override discovery with `OMAIRC_LAVAPIPE_ICD=/path/to/lvp_icd.json`
+  when the system package is not installed
+- passes `--demo-server` when requested
+- writes run state to `/tmp/omairc-verify-poc-$USER/state`
+
+Never attach to a window you did not start. Never send `xdotool` to the
+session `$DISPLAY`.
+
+Teardown:
+
+```sh
+.cursor/skills/verify-omairc-poc/control-omairc-poc cleanup
+```
+
+Keep `test-artifacts/verify-poc/`.
+
+## Doctor
+
+```sh
+.cursor/skills/verify-omairc-poc/control-omairc-poc doctor
+```
+
+Require all of:
+
+- `ok isolated Omairc PoC`
+- `binary=` is `$ROOT/poc/target/debug/omairc-poc-gpui` (or `release`)
+- `display=` is the isolated Xvfb from launch, not the user's session
+- `app_pid=` and `xvfb_pid=` are alive
+- `title=` ends with ` - Omairc` or ` Status`
+- `lavapipe=` is a real `lvp_icd*.json` path
+- `xdg=` is the disposable state directory from this run
+- `demo=yes` after `launch --demo-server`, otherwise `demo=no`
+
+If doctor fails, cleanup, then launch again. Do not continue against a shared
+or stale instance.
+
+On Arch/Omarchy, install lavapipe with `vulkan-swrast` when doctor reports it
+missing. Without it the process panics on `Failed to create surface` under
+Xvfb.
+
+## Drive
+
+Use `control-omairc-poc` against the isolated window. Shortcuts and the
+composer first. Pointer verbs are unsupported.
+
+Agents should `launch` (if needed) then `run <feature>` instead of assembling
+raw `key --key` chords. `run <feature>` plays the same
+`## Driving it with control-omairc` / `desktop-recipe` fence in
+`.cursor/skills/verify-omairc/features/<feature>.md` that Qt and the TUI use.
+`run <feature> --dry-run` prints the fence and exits without launching.
+
+`run` skips a fence `launch` when `doctor` is already healthy and the demo
+flag matches. A healthy instance in the other mode is an error. Any command
+failure stops the recipe. Fence paths under `test-artifacts/verify/` are
+remapped to `test-artifacts/verify-poc/` for `compare`.
+
+Named chord verbs wrap the same keysym path as `key` (including the
+`Control_L+k` rewrite):
+
+| Handle | Meaning |
+|---|---|
+| Window title `{name} - Omairc` | Current conversation. Duplicate names use `{name} · {displayName} - Omairc`. |
+| `jump --query TEXT` | `Ctrl+K`, wait, type, Return. |
+| `walk --down` / `walk --up` | `Alt+Down` / `Alt+Up`. `--times N` repeats. |
+| `unread` | `Alt+A`. |
+| `toggle-members` | `Ctrl+Shift+M` on a channel. |
+| `focus-members` | `Ctrl+Shift+P`. |
+| `nick-jump --query TEXT` | `Ctrl+Shift+K`, wait, type, Return. |
+| `status` | `Ctrl+grave`. |
+| `connect` | `Ctrl+,`. |
+| `composer` / `focus-composer` | `Ctrl+L`, then wait before a later `type`. |
+| `send --text "..."` | Focus the composer, type, `Enter`. |
+
+Chords without a named verb still use `key --key` (same map as
+`control-omairc`: `ctrl+shift+s`, `ctrl+w`, `ctrl+slash`, network walk /
+collapse, paging, Tab, history, `ctrl+q`, …).
+
+### Pointer verbs (rejected)
+
+GPUI on X11 reads keyboard input from core `KeyPress` events, so
+`xdotool key --window` works. Pointer input is XInput2 only.
+`xdotool` clicks with `--window` are core button events and GPUI drops them.
+Named pixel clicks also assume the Qt layout.
+
+These verbs fail with a reason instead of being faked as a key:
+
+`click`, `click-conversation`, `click-member`, `click-people`,
+`click-network`, `click-edit`, `click-version`, `click-send`.
+
+`qml-suite` and `doctor-qml` are Qt-only and are rejected. Recipes that need
+a pointer verb (for example `send-message`'s `click-send`, or `about`'s
+`click-version`) fail closed at that line. Prefer keyboard-only fences
+(`switch-conversation`, `keyboard`, …) for PoC proof.
+
+Typical drive:
+
+```sh
+.cursor/skills/verify-omairc-poc/control-omairc-poc launch --demo-server
+.cursor/skills/verify-omairc-poc/control-omairc-poc run switch-conversation
+```
+
+## Evidence
+
+Proof lives in `test-artifacts/verify-poc/<feature-id>/`. Cleanup must not
+delete it.
+
+Standards match `verify-omairc`: exercise the real window with shortcuts and
+the composer; capture action and result; window title is conversation
+identity; `compare` requires a visible pixel change (AE > 100).
+
+## Cleanup
+
+```sh
+.cursor/skills/verify-omairc-poc/control-omairc-poc cleanup
+```
+
+Kills only the `APP_PID` and `XVFB_PID` from the state file, then removes the
+disposable XDG/Xauth directory and the state file. It does not remove
+`test-artifacts/verify-poc/`.
+
+## Helpers
+
+`control-omairc-poc` is executable. Invoke it from the repo root.
+
+```text
+launch [--demo-server] | doctor | title | wait-title --exact TITLE
+run FEATURE [--dry-run]
+jump --query TEXT | nick-jump --query TEXT
+walk --down | walk --up [--times N]
+unread | toggle-members | focus-members | status | connect | composer
+focus-composer | type --text TEXT | key --key KEY | send --text TEXT
+screenshot --feature ID --name STEM
+compare --before PATH --after PATH
+cleanup
+```
+
+If Xvfb tools are missing, install
+`xorg-server-xvfb xorg-xauth xdotool imagemagick`. If lavapipe is missing,
+install `vulkan-swrast`. Do not invent a drive against the user's session.

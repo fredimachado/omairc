@@ -1,0 +1,890 @@
+#!/usr/bin/env sh
+set -eu
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../../.." && pwd)"
+SELF=$SCRIPT_DIR/$(basename -- "$0")
+STATE_FILE="${OMAIRC_VERIFY_POC_STATE:-${TMPDIR:-/tmp}/omairc-verify-poc-$USER/state}"
+EVIDENCE_DIR="${OMAIRC_VERIFY_POC_EVIDENCE:-$ROOT/test-artifacts/verify-poc}"
+# Jump, nick-jump, and composer focus need a pause after the chord before
+# type. The chord's own pause is not always enough on this Xvfb.
+JUMP_FIELD_DELAY=0.4
+# import can return a flat Xvfb frame before GPUI has painted, or fail and
+# leave the previous PNG in place. Drop that destination before each grab
+# and retry. Near-solid means a non-finite or tiny standard deviation, or
+# very few colors. File size is not the test: a sparse painted window can
+# be a small PNG.
+SCREENSHOT_GRAB_ATTEMPTS=5
+SCREENSHOT_GRAB_DELAY=0.3
+SCREENSHOT_FLAT_STDDEV=0.005
+SCREENSHOT_FLAT_COLORS=16
+
+usage() {
+  cat <<'EOF'
+control-omairc-poc - isolated driver for the Rust GPUI Omairc PoC
+
+Usage:
+  control-omairc-poc launch [--demo-server]
+  control-omairc-poc doctor
+  control-omairc-poc title
+  control-omairc-poc wait-title --exact "<title>"
+  control-omairc-poc focus-composer
+  control-omairc-poc composer
+  control-omairc-poc jump --query "<text>"
+  control-omairc-poc walk --down|--up [--times N]
+  control-omairc-poc unread
+  control-omairc-poc toggle-members
+  control-omairc-poc focus-members
+  control-omairc-poc nick-jump --query "<text>"
+  control-omairc-poc status
+  control-omairc-poc connect
+  control-omairc-poc type --text "<text>"
+  control-omairc-poc key --key <xdotool-key>
+  control-omairc-poc send --text "<text>"
+  control-omairc-poc screenshot --feature <id> --name <stem>
+  control-omairc-poc compare --before <path> --after <path>
+  control-omairc-poc run <feature> [--dry-run]
+  control-omairc-poc cleanup
+
+Keyboard-first. Pointer verbs (click, click-*) are rejected: GPUI on X11
+reads only XInput2 pointer events, and xdotool --window clicks are core
+button events. qml-suite / doctor-qml are Qt-only.
+Requires lavapipe (vulkan-swrast) for Blade on Xvfb.
+Never point this helper at the user's interactive display.
+EOF
+}
+
+die() {
+  echo "control-omairc-poc: $*" >&2
+  exit 1
+}
+
+# First lavapipe ICD on disk, or empty. Blade needs a software Vulkan driver
+# under Xvfb (no GPU). Prefer an explicit ICD over the host's NVIDIA/Intel.
+# OMAIRC_LAVAPIPE_ICD overrides discovery (absolute path to an lvp ICD JSON).
+find_lavapipe_icd() {
+  if [ -n "${OMAIRC_LAVAPIPE_ICD:-}" ] && [ -f "$OMAIRC_LAVAPIPE_ICD" ]; then
+    printf '%s' "$OMAIRC_LAVAPIPE_ICD"
+    return 0
+  fi
+  for candidate in \
+    /usr/share/vulkan/icd.d/lvp_icd.x86_64.json \
+    /usr/share/vulkan/icd.d/lvp_icd.json \
+    /usr/local/share/vulkan/icd.d/lvp_icd.x86_64.json \
+    /usr/local/share/vulkan/icd.d/lvp_icd.json
+  do
+    if [ -f "$candidate" ]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+  # shellcheck disable=SC2012
+  ls /usr/share/vulkan/icd.d/lvp_icd*.json 2>/dev/null | head -1 || true
+}
+
+require_lavapipe() {
+  LAVAPIPE_ICD=$(find_lavapipe_icd)
+  [ -n "$LAVAPIPE_ICD" ] || die "missing lavapipe ICD (software Vulkan). On Arch/Omarchy install: vulkan-swrast. Xvfb has no GPU; Blade cannot open a surface without it."
+}
+
+require_tools() {
+  missing=
+  for command_name in Xvfb xauth xdotool import magick cargo; do
+    if ! command -v "$command_name" >/dev/null 2>&1; then
+      missing="$missing $command_name"
+    fi
+  done
+  if [ -n "$missing" ]; then
+    die "missing desktop tools:$missing. On Arch/Omarchy install: xorg-server-xvfb xorg-xauth xdotool imagemagick rust"
+  fi
+  require_lavapipe
+}
+
+load_state() {
+  [ -f "$STATE_FILE" ] || die "no active instance. Run: $SCRIPT_DIR/control-omairc-poc launch [--demo-server]"
+  # shellcheck disable=SC1090
+  . "$STATE_FILE"
+  [ -n "${DISPLAY:-}" ] || die "state file is missing DISPLAY"
+  [ -n "${XAUTHORITY:-}" ] || die "state file is missing XAUTHORITY"
+  [ -n "${APP_PID:-}" ] || die "state file is missing APP_PID"
+  [ -n "${XVFB_PID:-}" ] || die "state file is missing XVFB_PID"
+  [ -n "${WINDOW:-}" ] || die "state file is missing WINDOW"
+  export DISPLAY XAUTHORITY
+}
+
+write_state() {
+  mkdir -p "$(dirname -- "$STATE_FILE")"
+  cat > "$STATE_FILE" <<EOF
+ROOT=$ROOT
+STATE_DIR=$STATE_DIR
+EVIDENCE_DIR=$EVIDENCE_DIR
+DISPLAY=$DISPLAY
+XAUTHORITY=$XAUTHORITY
+XVFB_PID=$XVFB_PID
+APP_PID=$APP_PID
+WINDOW=$WINDOW
+BINARY=$BINARY
+DEMO=$DEMO
+LAVAPIPE_ICD=$LAVAPIPE_ICD
+EOF
+}
+
+process_alive() {
+  kill -0 "$1" 2>/dev/null
+}
+
+stop_pid() {
+  pid=$1
+  if [ -n "$pid" ] && process_alive "$pid"; then
+    kill "$pid"
+    wait "$pid" 2>/dev/null || true
+  fi
+}
+
+
+window_title() {
+  xdotool getwindowname "$WINDOW"
+}
+
+
+cmd_launch() {
+  DEMO=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --demo-server) DEMO=1; shift ;;
+      *) die "unknown launch argument: $1. Use launch or launch --demo-server." ;;
+    esac
+  done
+
+  require_tools
+  if [ -f "$STATE_FILE" ]; then
+    if "$SELF" doctor >/dev/null 2>&1; then
+      die "an isolated PoC instance is already running. Run cleanup first, or doctor to inspect it."
+    fi
+    echo "control-omairc-poc: clearing stale run state" >&2
+    cmd_cleanup >/dev/null 2>&1 || true
+  fi
+
+  (cd "$ROOT/poc" && cargo build)
+  STATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/omairc-verify-poc.XXXXXX")"
+  BINARY="$ROOT/poc/target/debug/omairc-poc-gpui"
+  [ -x "$BINARY" ] || die "missing $BINARY after cargo build"
+
+  display_number=110
+  while [ -e "/tmp/.X11-unix/X$display_number" ]; do
+    display_number=$((display_number + 1))
+  done
+  DISPLAY=":$display_number"
+  export DISPLAY
+  XAUTHORITY="$STATE_DIR/Xauthority"
+  export XAUTHORITY
+  cookie="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+  xauth -f "$XAUTHORITY" add "$DISPLAY" . "$cookie"
+
+  mkdir -p "$EVIDENCE_DIR" "$STATE_DIR/logs"
+  Xvfb "$DISPLAY" -screen 0 1280x800x24 -nolisten tcp -auth "$XAUTHORITY" \
+    >"$STATE_DIR/logs/xvfb.log" 2>&1 &
+  XVFB_PID=$!
+
+  attempt=0
+  while ! xdotool getmouselocation >/dev/null 2>&1; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 50 ] || ! process_alive "$XVFB_PID"; then
+      die "isolated X server did not start; see $STATE_DIR/logs/xvfb.log"
+    fi
+    sleep 0.1
+  done
+
+  export XDG_CONFIG_HOME="$STATE_DIR/config"
+  export XDG_CACHE_HOME="$STATE_DIR/cache"
+  export XDG_DATA_HOME="$STATE_DIR/data"
+  export XDG_STATE_HOME="$STATE_DIR/state"
+  export DBUS_SESSION_BUS_ADDRESS="unix:path=$STATE_DIR/no-session-bus"
+  # GPUI prefers Wayland whenever WAYLAND_DISPLAY is set. Clear it so the
+  # window opens on this Xvfb, where xdotool can see it.
+  unset WAYLAND_DISPLAY
+  unset WAYLAND_SOCKET
+  export XDG_SESSION_TYPE=x11
+  # Force lavapipe: a host NVIDIA/Intel ICD cannot present on Xvfb.
+  export VK_ICD_FILENAMES="$LAVAPIPE_ICD"
+  export OMAIRC_ALLOW_MULTI=1
+  if [ "$DEMO" = 1 ]; then
+    "$BINARY" --demo-server >"$STATE_DIR/logs/omairc.log" 2>&1 &
+  else
+    "$BINARY" >"$STATE_DIR/logs/omairc.log" 2>&1 &
+  fi
+  APP_PID=$!
+
+  attempt=0
+  WINDOW=
+  while [ -z "$WINDOW" ]; do
+    WINDOW="$(xdotool search --onlyvisible --pid "$APP_PID" 2>/dev/null | head -1 || true)"
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 50 ] || ! process_alive "$APP_PID"; then
+      die "Omairc PoC did not open; see $STATE_DIR/logs/omairc.log"
+    fi
+    sleep 0.1
+  done
+
+  write_state
+  xdotool windowfocus --sync "$WINDOW"
+  echo "launched isolated Omairc PoC"
+  if [ "$DEMO" = 1 ]; then
+    echo "demo=yes"
+  else
+    echo "demo=no"
+  fi
+  echo "display=$DISPLAY"
+  echo "pid=$APP_PID"
+  echo "window=$WINDOW"
+  echo "title=$(window_title)"
+  echo "state=$STATE_FILE"
+}
+
+cmd_doctor() {
+  load_state
+  process_alive "$XVFB_PID" || die "Xvfb pid $XVFB_PID is not running"
+  process_alive "$APP_PID" || die "Omairc PoC pid $APP_PID is not running"
+  [ -x "$BINARY" ] || die "binary missing: $BINARY"
+  [ -e "/tmp/.X11-unix/X${DISPLAY#:}" ] || die "display $DISPLAY is gone"
+  found="$(xdotool search --onlyvisible --pid "$APP_PID" 2>/dev/null | head -1 || true)"
+  [ "$found" = "$WINDOW" ] || die "window $WINDOW is not the Omairc PoC window for pid $APP_PID"
+  title="$(window_title)"
+  case $title in
+    *" - Omairc"|*" Status"|Status) ;;
+    *) die "unexpected window title '$title'" ;;
+  esac
+  case $BINARY in
+    */poc/target/debug/omairc-poc-gpui|*/poc/target/release/omairc-poc-gpui) ;;
+    *) die "binary is not the PoC binary: $BINARY" ;;
+  esac
+  require_lavapipe
+  echo "ok isolated Omairc PoC"
+  echo "binary=$BINARY"
+  echo "display=$DISPLAY"
+  echo "app_pid=$APP_PID"
+  echo "xvfb_pid=$XVFB_PID"
+  echo "window=$WINDOW"
+  echo "title=$title"
+  echo "xdg=$STATE_DIR"
+  echo "evidence=$EVIDENCE_DIR"
+  echo "lavapipe=$LAVAPIPE_ICD"
+  if [ "${DEMO:-}" = 1 ]; then
+    echo "demo=yes"
+  else
+    echo "demo=no"
+  fi
+}
+
+cmd_title() {
+  load_state
+  window_title
+}
+
+cmd_wait_title() {
+  exact=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --exact) exact=$2; shift 2 ;;
+      *) die "unknown wait-title argument: $1" ;;
+    esac
+  done
+  [ -n "$exact" ] || die "wait-title requires --exact"
+  load_state
+  attempt=0
+  while [ "$(window_title)" != "$exact" ]; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 30 ]; then
+      die "expected title '$exact', got '$(window_title)'"
+    fi
+    sleep 0.1
+  done
+  window_title
+}
+
+
+reject_pointer_verb() {
+  die "pointer verb '$1' is unsupported: GPUI on X11 reads only XInput2 pointer events; xdotool --window sends core button events that GPUI drops. Use a chord verb (jump, walk, send, …)."
+}
+
+reject_qt_only_verb() {
+  die "verb '$1' is Qt-only (offscreen QML suite). Use control-omairc for that path."
+}
+
+cmd_click() { reject_pointer_verb click; }
+cmd_click_conversation() { reject_pointer_verb click-conversation; }
+cmd_click_member() { reject_pointer_verb click-member; }
+cmd_click_people() { reject_pointer_verb click-people; }
+cmd_click_network() { reject_pointer_verb click-network; }
+cmd_click_edit() { reject_pointer_verb click-edit; }
+cmd_click_version() { reject_pointer_verb click-version; }
+cmd_click_send() { reject_pointer_verb click-send; }
+
+cmd_focus_composer() {
+  require_no_args focus-composer "$@"
+  cmd_key --key ctrl+l
+  # Same settle jump uses before type, so a later type is not racing focus.
+  sleep "$JUMP_FIELD_DELAY"
+}
+
+cmd_type() {
+  text=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --text) text=$2; shift 2 ;;
+      *) die "unknown type argument: $1" ;;
+    esac
+  done
+  [ -n "$text" ] || die "type requires --text"
+  load_state
+  xdotool windowfocus --sync "$WINDOW"
+  xdotool type --window "$WINDOW" --delay 20 -- "$text"
+}
+
+cmd_key() {
+  key=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --key) key=$2; shift 2 ;;
+      *) die "unknown key argument: $1" ;;
+    esac
+  done
+  [ -n "$key" ] || die "key requires --key"
+  # xdotool's ctrl+* / ctrl+shift+* tokens do not reach ApplicationShortcuts
+  # on this isolated Xvfb. The explicit modifier keysyms do (same rewrite as
+  # control-omairc).
+  case $key in
+    ctrl+slash) key=Control_L+slash ;;
+    ctrl+k) key=Control_L+k ;;
+    ctrl+l) key=Control_L+l ;;
+    ctrl+grave) key=Control_L+grave ;;
+    ctrl+comma) key=Control_L+comma ;;
+    ctrl+shift+k) key=Control_L+Shift_L+k ;;
+    ctrl+shift+m) key=Control_L+Shift_L+m ;;
+    ctrl+shift+p) key=Control_L+Shift_L+p ;;
+    ctrl+shift+s) key=Control_L+Shift_L+s ;;
+    alt+shift+a) key=Alt_L+Shift_L+a ;;
+    alt+shift+Left) key=Alt_L+Shift_L+Left ;;
+    alt+shift+Right) key=Alt_L+Shift_L+Right ;;
+    alt+shift+Up) key=Alt_L+Shift_L+Up ;;
+    alt+shift+Down) key=Alt_L+Shift_L+Down ;;
+    ctrl+alt+shift+Left) key=Control_L+Alt_L+Shift_L+Left ;;
+    ctrl+alt+shift+Right) key=Control_L+Alt_L+Shift_L+Right ;;
+  esac
+  load_state
+  xdotool windowfocus --sync "$WINDOW"
+  xdotool key --window "$WINDOW" "$key"
+  sleep 0.2
+}
+
+cmd_send() {
+  text=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --text) text=$2; shift 2 ;;
+      *) die "unknown send argument: $1" ;;
+    esac
+  done
+  [ -n "$text" ] || die "send requires --text"
+  cmd_key --key ctrl+l
+  sleep "$JUMP_FIELD_DELAY"
+  cmd_type --text "$text"
+  cmd_key --key Return
+}
+
+require_no_args() {
+  verb=$1
+  shift
+  [ $# -eq 0 ] || die "$verb does not take arguments"
+}
+
+cmd_composer() {
+  require_no_args composer "$@"
+  cmd_key --key ctrl+l
+  # Same settle jump uses before type, so a later type is not racing focus.
+  sleep "$JUMP_FIELD_DELAY"
+}
+
+cmd_query_chord() {
+  verb=$1
+  chord=$2
+  shift 2
+  query=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --query)
+        [ $# -ge 2 ] || die "$verb requires --query"
+        query=$2
+        shift 2
+        ;;
+      *) die "unknown $verb argument: $1" ;;
+    esac
+  done
+  [ -n "$query" ] || die "$verb requires --query"
+  cmd_key --key "$chord"
+  sleep "$JUMP_FIELD_DELAY"
+  cmd_type --text "$query"
+  cmd_key --key Return
+}
+
+cmd_jump() {
+  cmd_query_chord jump ctrl+k "$@"
+}
+
+cmd_nick_jump() {
+  cmd_query_chord nick-jump ctrl+shift+k "$@"
+}
+
+cmd_walk() {
+  direction=
+  times=1
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --down|--up)
+        [ -z "$direction" ] || die "walk accepts only one of --down or --up"
+        direction=${1#--}
+        shift
+        ;;
+      --times)
+        [ $# -ge 2 ] || die "walk requires --times N"
+        times=$2
+        shift 2
+        ;;
+      *) die "unknown walk argument: $1" ;;
+    esac
+  done
+  [ -n "$direction" ] || die "walk requires --down or --up"
+  case $times in
+    *[!0-9]*|"") die "walk --times requires a positive integer" ;;
+  esac
+  times=$(printf '%s' "$times" | sed 's/^0*//')
+  [ -n "$times" ] || die "walk --times requires a positive integer"
+  if [ "$direction" = down ]; then
+    key=alt+Down
+  else
+    key=alt+Up
+  fi
+  step=0
+  while [ "$step" -lt "$times" ]; do
+    cmd_key --key "$key"
+    step=$((step + 1))
+  done
+}
+
+cmd_unread() {
+  require_no_args unread "$@"
+  cmd_key --key alt+a
+}
+
+cmd_toggle_members() {
+  require_no_args toggle-members "$@"
+  cmd_key --key ctrl+shift+m
+}
+
+cmd_focus_members() {
+  require_no_args focus-members "$@"
+  cmd_key --key ctrl+shift+p
+}
+
+cmd_status() {
+  require_no_args status "$@"
+  cmd_key --key ctrl+grave
+}
+
+cmd_connect() {
+  require_no_args connect "$@"
+  cmd_key --key ctrl+comma
+}
+
+# Print "stddev colors" or nothing when magick cannot read the file.
+screenshot_metrics() {
+  magick "$1" -format '%[fx:standard_deviation] %k' info: 2>/dev/null || true
+}
+
+# Missing, empty, unreadable, or near-solid. ImageMagick 6 prints "-nan"
+# for a low-variance frame. mawk treats that token as ordered, so match
+# nan/inf as text before the numeric test. A flat frame is also one color,
+# a handful of colors, or a field whose spread is ~0.
+screenshot_is_near_solid() {
+  _path=$1
+  [ -s "$_path" ] || return 0
+  _stats=$(screenshot_metrics "$_path")
+  [ -n "$_stats" ] || return 0
+  _std=$(printf '%s\n' "$_stats" | awk '{ print $1; exit }')
+  _colors=$(printf '%s\n' "$_stats" | awk '{ print $2; exit }')
+  awk -v std="$_std" -v colors="$_colors" \
+    -v max_std="$SCREENSHOT_FLAT_STDDEV" -v max_colors="$SCREENSHOT_FLAT_COLORS" \
+    'BEGIN {
+      token = tolower(std "")
+      sub(/^[+-]/, "", token)
+      if (token ~ /^(nan|inf)/)
+        exit 0
+      std += 0
+      colors += 0
+      max_std += 0
+      max_colors += 0
+      if (std != std || std < max_std || colors < max_colors)
+        exit 0
+      exit 1
+    }'
+}
+
+cmd_screenshot() {
+  feature=
+  name=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --feature) feature=$2; shift 2 ;;
+      --name) name=$2; shift 2 ;;
+      *) die "unknown screenshot argument: $1" ;;
+    esac
+  done
+  [ -n "$feature" ] && [ -n "$name" ] || die "screenshot requires --feature and --name"
+  load_state
+  dest="$EVIDENCE_DIR/$feature"
+  mkdir -p "$dest"
+  path="$dest/$name.png"
+  _attempt=1
+  while :; do
+    # A failed import must not classify the previous PNG as this grab.
+    rm -f -- "$path"
+    if import -display "$DISPLAY" -window "$WINDOW" "$path"; then
+      if ! screenshot_is_near_solid "$path"; then
+        echo "$path"
+        return 0
+      fi
+    else
+      rm -f -- "$path"
+    fi
+    [ "$_attempt" -lt "$SCREENSHOT_GRAB_ATTEMPTS" ] || break
+    _attempt=$((_attempt + 1))
+    sleep "$SCREENSHOT_GRAB_DELAY"
+  done
+  # Latest grab failed, or it succeeded and is still near-solid.
+  _stats=$(screenshot_metrics "$path")
+  die "screenshot is missing, empty, or still a flat frame: $path${_stats:+ ($_stats)}"
+}
+
+remap_verify_path() {
+  # Shared desktop-recipe fences write test-artifacts/verify/; this driver
+  # keeps evidence under test-artifacts/verify-poc/.
+  case $1 in
+    test-artifacts/verify/*)
+      printf 'test-artifacts/verify-poc/%s' "${1#test-artifacts/verify/}"
+      ;;
+    *)
+      printf '%s' "$1"
+      ;;
+  esac
+}
+
+cmd_compare() {
+  before=
+  after=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --before) before=$2; shift 2 ;;
+      --after) after=$2; shift 2 ;;
+      *) die "unknown compare argument: $1" ;;
+    esac
+  done
+  [ -n "$before" ] && [ -n "$after" ] || die "compare requires --before and --after"
+  before=$(remap_verify_path "$before")
+  after=$(remap_verify_path "$after")
+  [ -s "$before" ] || die "missing before image: $before"
+  [ -s "$after" ] || die "missing after image: $after"
+  difference="$(magick compare -metric AE "$before" "$after" null: 2>&1 || true)"
+  ae="$(printf '%s\n' "$difference" | awk '{ print $1; exit }')"
+  if ! awk -v ae="$ae" 'BEGIN { exit !(ae + 0 > 100) }'; then
+    die "expected a visible UI change between $before and $after (AE=$difference)"
+  fi
+  echo "changed AE=$ae"
+}
+
+cmd_doctor_qml() { reject_qt_only_verb doctor-qml; }
+cmd_qml_suite() { reject_qt_only_verb qml-suite; }
+
+cmd_cleanup() {
+  if [ -f "$STATE_FILE" ]; then
+    # shellcheck disable=SC1090
+    . "$STATE_FILE"
+    stop_pid "${APP_PID:-}"
+    stop_pid "${XVFB_PID:-}"
+    if [ -n "${STATE_DIR:-}" ] && [ -d "$STATE_DIR" ]; then
+      rm -rf -- "$STATE_DIR"
+    fi
+    rm -f -- "$STATE_FILE"
+  fi
+  echo "cleaned isolated instance"
+  echo "evidence kept at $EVIDENCE_DIR"
+}
+
+# Print one eval-safe word. Single quotes keep "#desktop" from becoming a comment.
+shell_quote_word() {
+  _word=$1
+  _escaped=$(printf '%s' "$_word" | sed "s/'/'\\\\''/g")
+  printf "'%s'" "$_escaped"
+}
+
+# Print the recipe line as eval-safe words for `eval "set -- ..."`.
+# Unbalanced quotes exit 1 after a message. A trailing unquoted # is a comment.
+shell_quote_line() {
+  _rest=$1
+  _built=
+  while :; do
+    while :; do
+      case $_rest in
+        "") break 2 ;;
+        " "*) _rest=${_rest# } ;;
+        "	"*) _rest=${_rest#	} ;;
+        *) break ;;
+      esac
+    done
+    case $_rest in
+      \#*) break ;;
+    esac
+    _token=
+    _mode=none
+    _skip_token=0
+    while [ -n "$_rest" ]; do
+      _char=${_rest%"${_rest#?}"}
+      _rest=${_rest#?}
+      case $_mode in
+        none)
+          case $_char in
+            " "|"	") break ;;
+            "'") _mode=single ;;
+            '"') _mode=double ;;
+            \#)
+              if [ -z "$_token" ]; then
+                _skip_token=1
+                _rest=
+              else
+                _token=$_token$_char
+              fi
+              ;;
+            *) _token=$_token$_char ;;
+          esac
+          ;;
+        single)
+          case $_char in
+            "'") _mode=none ;;
+            *) _token=$_token$_char ;;
+          esac
+          ;;
+        double)
+          case $_char in
+            '"') _mode=none ;;
+            *) _token=$_token$_char ;;
+          esac
+          ;;
+      esac
+    done
+    if [ "$_mode" != none ]; then
+      die "unbalanced quotes in desktop recipe"
+    fi
+    if [ "$_skip_token" -eq 1 ]; then
+      break
+    fi
+    _built="$_built $(shell_quote_word "$_token")"
+  done
+  printf '%s' "$_built"
+}
+
+trim_line() {
+  printf '%s' "$1" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
+}
+
+read_desktop_recipe() {
+  _feature_file=$1
+  awk '
+    in_fence && /^```[[:space:]]*$/ { in_fence = 0; closed = 1; next }
+    in_fence { print; next }
+    /^## Driving it with control-omairc[[:space:]]*$/ { section = 1; next }
+    /^## / { if (section) section = 0; next }
+    section && /^```desktop-recipe[[:space:]]*$/ { in_fence = 1; found = 1; next }
+    END {
+      if (!found || !closed)
+        exit 3
+    }
+  ' "$_feature_file"
+}
+
+# Reject only Qt-offscreen verbs while loading a fence. Pointer verbs stay in
+# the printed dry-run (shared with Qt/TUI) and fail when executed, as the TUI
+# driver does for click-version / click-send.
+reject_offscreen_recipe_line() {
+  _verb=$(printf '%s' "$1" | awk '{ print $1; exit }')
+  case $_verb in
+    qml-suite|doctor-qml)
+      die "desktop recipe cannot run '$_verb': it is Qt-only (offscreen QML suite)"
+      ;;
+  esac
+}
+
+load_recipe_commands() {
+  _feature=$1
+  case $_feature in
+    *[!A-Za-z0-9_-]*|"") die "invalid feature id '$_feature'" ;;
+  esac
+  _file=$SCRIPT_DIR/../verify-omairc/features/$_feature.md
+  [ -f "$_file" ] || die "no feature file for '$_feature'"
+  if ! _recipe=$(read_desktop_recipe "$_file"); then
+    die "no desktop-recipe fence in $_file. Put it under ## Driving it with control-omairc, before ## Gotchas."
+  fi
+  _commands=$(mktemp)
+  _raw=$(mktemp)
+  printf '%s\n' "$_recipe" > "$_raw"
+  while IFS= read -r _line || [ -n "$_line" ]; do
+    _trimmed=$(trim_line "$_line")
+    [ -n "$_trimmed" ] || continue
+    case $_trimmed in
+      \#*) continue ;;
+    esac
+    reject_offscreen_recipe_line "$_trimmed"
+    if ! _quoted=$(shell_quote_line "$_trimmed"); then
+      rm -f "$_commands" "$_raw"
+      exit 1
+    fi
+    eval "set -- $_quoted"
+    [ $# -gt 0 ] || die "empty command in desktop recipe: $_trimmed"
+    case $1 in
+      qml-suite|doctor-qml)
+        die "desktop recipe cannot run '$1': it is Qt-only (offscreen QML suite)"
+        ;;
+    esac
+    printf '%s\n' "$_trimmed" >> "$_commands"
+  done < "$_raw"
+  rm -f "$_raw"
+  if [ ! -s "$_commands" ]; then
+    rm -f "$_commands"
+    die "desktop-recipe fence is empty in $_file"
+  fi
+  RECIPE_COMMANDS=$_commands
+  RECIPE_FILE=$_file
+}
+
+# Skip launch when doctor is already healthy and DEMO matches.
+# Exit non-zero on a healthy instance in the other mode. Do not clean it up.
+# Return 0 to skip, 1 to launch.
+launch_should_skip() {
+  _want_demo=
+  shift
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --demo-server) _want_demo=1; shift ;;
+      *) die "unknown launch argument: $1. Use launch or launch --demo-server." ;;
+    esac
+  done
+  if ! _doctor=$("$SELF" doctor 2>/dev/null); then
+    return 1
+  fi
+  _running=$(printf '%s\n' "$_doctor" | awk -F= '/^demo=/{ print $2; exit }')
+  if [ "$_want_demo" = 1 ]; then
+    if [ "$_running" != yes ]; then
+      die "isolated instance is already running without --demo-server. Refusing to cleanup a healthy instance."
+    fi
+  else
+    if [ "$_running" != no ]; then
+      die "isolated instance is already running with --demo-server. Refusing to cleanup a healthy instance."
+    fi
+  fi
+  echo "launch skipped; isolated instance already matches" >&2
+  return 0
+}
+
+cmd_run() {
+  _feature=
+  _dry=0
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --dry-run) _dry=1; shift ;;
+      -*) die "unknown run argument: $1" ;;
+      *)
+        [ -z "$_feature" ] || die "unexpected argument: $1"
+        _feature=$1
+        shift
+        ;;
+    esac
+  done
+  [ -n "$_feature" ] || die "run requires a feature id"
+  load_recipe_commands "$_feature"
+  if [ "$_dry" -eq 1 ]; then
+    cat "$RECIPE_COMMANDS"
+    rm -f "$RECIPE_COMMANDS"
+    return 0
+  fi
+
+  cd "$ROOT"
+  _shots=$(mktemp)
+  while IFS= read -r _line || [ -n "$_line" ]; do
+    if ! _quoted=$(shell_quote_line "$_line"); then
+      exit 1
+    fi
+    eval "set -- $_quoted"
+    [ $# -gt 0 ] || die "empty command in desktop recipe: $_line"
+    if [ "$1" = launch ] && launch_should_skip "$@"; then
+      continue
+    fi
+    if [ "$1" = screenshot ]; then
+      set +e
+      _path=$("$SELF" "$@")
+      _status=$?
+      set -e
+      [ "$_status" -eq 0 ] || exit "$_status"
+      [ -n "$_path" ] || die "screenshot printed an empty path"
+      [ -s "$_path" ] || die "screenshot missing or empty: $_path"
+      printf '%s\n' "$_path"
+      printf '%s\n' "$_path" >> "$_shots"
+    else
+      "$SELF" "$@"
+    fi
+  done < "$RECIPE_COMMANDS"
+
+  while IFS= read -r _path || [ -n "$_path" ]; do
+    [ -n "$_path" ] || die "screenshot path is empty"
+    [ -s "$_path" ] || die "screenshot missing or empty: $_path"
+  done < "$_shots"
+  rm -f "$RECIPE_COMMANDS" "$_shots"
+}
+
+cmd=${1:-}
+if [ -n "$cmd" ]; then
+  shift
+fi
+
+case $cmd in
+  launch) cmd_launch "$@" ;;
+  doctor) cmd_doctor ;;
+  title) cmd_title ;;
+  wait-title) cmd_wait_title "$@" ;;
+  click) cmd_click "$@" ;;
+  click-conversation) cmd_click_conversation "$@" ;;
+  click-member) cmd_click_member "$@" ;;
+  click-people) cmd_click_people "$@" ;;
+  click-network) cmd_click_network ;;
+  click-edit) cmd_click_edit ;;
+  click-version) cmd_click_version ;;
+  click-send) cmd_click_send ;;
+  focus-composer) cmd_focus_composer ;;
+  composer) cmd_composer "$@" ;;
+  jump) cmd_jump "$@" ;;
+  walk) cmd_walk "$@" ;;
+  unread) cmd_unread "$@" ;;
+  toggle-members) cmd_toggle_members "$@" ;;
+  focus-members) cmd_focus_members "$@" ;;
+  nick-jump) cmd_nick_jump "$@" ;;
+  status) cmd_status "$@" ;;
+  connect) cmd_connect "$@" ;;
+  type) cmd_type "$@" ;;
+  key) cmd_key "$@" ;;
+  send) cmd_send "$@" ;;
+  screenshot) cmd_screenshot "$@" ;;
+  compare) cmd_compare "$@" ;;
+  run) cmd_run "$@" ;;
+  qml-suite) cmd_qml_suite ;;
+  doctor-qml) cmd_doctor_qml ;;
+  cleanup) cmd_cleanup ;;
+  -h|--help|help|"") usage ;;
+  *) die "unknown command '$cmd'. Try --help." ;;
+esac

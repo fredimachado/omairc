@@ -38,7 +38,9 @@
 - Use the bundled `iA Writer Mono S` font for all custom interface text.
 - The public CLI skill lives in `skills/omairc/`. Install it with
   `npx skills add fredimachado/omairc/skills -g`. Proving the GUI uses
-  `.cursor/skills/verify-omairc`; that skill is internal. Load
+  `.cursor/skills/verify-omairc`; that skill is internal. The Rust GPUI PoC
+  uses `.cursor/skills/verify-omairc-poc` (`control-omairc-poc`: same Xvfb
+  + xdotool path, clears `WAYLAND_DISPLAY`, requires lavapipe). Load
   `.cursor/skills/change-qml` when adding or moving UI,
   `.cursor/skills/conversation-cause` when touching `ensureConversation`,
   conversation creation, or `/msg`, and `.cursor/skills/redact-secrets`
@@ -46,9 +48,11 @@
 
 `.cursor/skills/verify-omairc/features/*.md` is the map of how a user
 reaches a behavior: shortcuts, preconditions, and observables.
-`control-omairc` already drives that map against the isolated window.
-Proof of the GUI stays that window: title, screenshots, and chords. Do
-not compile the map into the binary, the product CLI, or a C++ catalog.
+`control-omairc` drives that map against the Qt window;
+`control-omairc-poc` and `control-omairc-tui` replay the same fences
+against the GPUI PoC and the TUI. Proof of each GUI stays that window:
+title, screenshots, and chords. Do not compile the map into the binary,
+the product CLI, or a C++ catalog.
 Do not add `objectName` queries or a debug command so an agent can read
 the map from a running window. The product CLI is the existing `omairc`
 commands that control a user's running window: `connections`, `status`,
