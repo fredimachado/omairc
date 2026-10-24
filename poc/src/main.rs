@@ -199,6 +199,8 @@ fn main() {
 
         bind_input_keys(cx);
         bind_shell_keys(cx);
+        #[cfg(target_os = "macos")]
+        ui::macos_menu::register_menus(cx);
 
         // Demo and bench runs restore the window but never save over the user's
         // geometry, as the Qt client's demo mode is ephemeral.
