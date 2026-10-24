@@ -239,6 +239,35 @@ impl Controller {
         }
     }
 
+    /// Deletes one secret slot from the keychain immediately (`removeStoredPassword` /
+    /// `removeStoredNickServ`). Clears the profile's saved flag once the key is gone.
+    /// Returns `Missing` when gone, or `Error` when a delete failed so forget stays up.
+    pub fn forget_secret(&mut self, network_id: &str, purpose: &'static str) -> CredentialState {
+        let Some(mut profile) = self.profiles.get(network_id).cloned() else {
+            return CredentialState::Missing;
+        };
+        self.queue_slot_removals(&profile, purpose);
+        let mut remove_error = None;
+        for key in self.credentials.pending().slot(network_id, purpose) {
+            if let CredentialState::Error(message) = self.delete_key(&key) {
+                remove_error = Some(message);
+            }
+        }
+        let settled = remove_error
+            .map(CredentialState::Error)
+            .unwrap_or_else(|| self.credential_slot_state(&profile, purpose));
+        if matches!(settled, CredentialState::Missing) {
+            match purpose {
+                PURPOSE_PASSWORD => profile.secret_saved = false,
+                PURPOSE_NICKSERV => profile.nickserv_saved = false,
+                _ => {}
+            }
+            let _ = self.profile_store.save(&profile);
+            self.profiles.insert(network_id.to_owned(), profile);
+        }
+        settled
+    }
+
     /// Forgets a network's profile and its secrets (`forgetNetwork`'s store half). The current
     /// keys and every obsolete key of the network are deleted; one the store refuses stays owed.
     pub(super) fn remove_profile(&mut self, network_id: &str) -> Status {
@@ -721,13 +750,14 @@ impl Controller {
         }
     }
 
-    /// Deletes one key. A key the store refuses stays owed, so a later save or the profile's
-    /// removal tries it again.
-    fn delete_key(&mut self, key: &CredentialKey) {
-        match self.credentials.remove(key) {
+    /// Deletes one key. A refused delete stays owed. Returns the store settle state.
+    fn delete_key(&mut self, key: &CredentialKey) -> CredentialState {
+        let state = self.credentials.remove(key);
+        match &state {
             CredentialState::Missing => self.credentials.pending_mut().forget(key),
             _ => self.credentials.pending_mut().add(key.clone()),
         }
+        state
     }
 
     /// Where a slot stands when nothing is written: held when its key has a secret, missing when
