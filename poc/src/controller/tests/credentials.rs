@@ -16,7 +16,7 @@ use crate::session::transport::Transport;
 use crate::storage::credentialstore::{
     read_slot, read_slot_sync, CredentialKey, CredentialState, CredentialStore,
     DeferringCredentialStore, LEGACY_PURPOSE_PASSWORD, MemoryCredentialStore, PendingRemovals,
-    PURPOSE_PASSWORD, ReadSlot,
+    PURPOSE_NICKSERV, PURPOSE_PASSWORD, ReadSlot,
 };
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -664,4 +664,95 @@ fn connect_allowed_after_save_refuses_a_credential_error() {
         nickserv: CredentialState::Missing,
     };
     assert!(!controller.connect_allowed_after_save(&profile, &outcome));
+}
+
+#[test]
+fn forget_secret_deletes_the_keychain_entry_immediately() {
+    use crate::model::connect::{ConnectField, ConnectState, Secret};
+    use crate::storage::profilestore::Profile as StoredProfile;
+
+    let mut controller =
+        Controller::with_backing(clock(), Box::new(NoTransports), Backing::Ephemeral);
+    controller.credentials = Box::new(MemoryCredentialStore::default());
+    let profile = complete_profile();
+    controller.save_profile(
+        profile.clone(),
+        SecretEdits {
+            password: Some("hunter2".to_owned().into()),
+            nickserv: Some("nickpw".to_owned().into()),
+        },
+    );
+    // MemoryCredentialStore is session-only, so pin the flags a durable keychain would leave.
+    {
+        let mut pinned = controller.profile(NET).expect("profile").clone();
+        pinned.secret_saved = true;
+        pinned.nickserv_saved = true;
+        controller.profiles.insert(NET.to_owned(), pinned);
+    }
+    assert_eq!(
+        read_slot_sync(controller.credentials.as_ref(), &profile, PURPOSE_PASSWORD),
+        Ok(Some("hunter2".to_owned()))
+    );
+    assert_eq!(
+        read_slot_sync(controller.credentials.as_ref(), &profile, PURPOSE_NICKSERV),
+        Ok(Some("nickpw".to_owned()))
+    );
+
+    let mut stored = StoredProfile {
+        host: profile.host.clone(),
+        nick: profile.nick.clone(),
+        secret_saved: true,
+        nickserv_saved: true,
+        ..StoredProfile::new(NET)
+    };
+    stored.port = profile.port;
+    let mut state = ConnectState::from_stored(&[stored]);
+    assert!(state.can_forget(Secret::Password));
+    assert_eq!(
+        state.credential_status(),
+        "password saved securely; NickServ saved securely"
+    );
+
+    let network_id = state.forget(Secret::Password).expect("saved network");
+    controller.forget_secret(&network_id, PURPOSE_PASSWORD);
+    assert_eq!(
+        read_slot_sync(controller.credentials.as_ref(), &profile, PURPOSE_PASSWORD),
+        Ok(None),
+        "server password is gone from the store"
+    );
+    assert_eq!(
+        read_slot_sync(controller.credentials.as_ref(), &profile, PURPOSE_NICKSERV),
+        Ok(Some("nickpw".to_owned())),
+        "NickServ is untouched"
+    );
+    assert!(!controller.profile(NET).expect("profile").secret_saved);
+    assert!(controller.profile(NET).expect("profile").nickserv_saved);
+    assert_eq!(state.credential_status(), "NickServ saved securely");
+
+    let network_id = state.forget(Secret::NickServ).expect("saved network");
+    controller.forget_secret(&network_id, PURPOSE_NICKSERV);
+    assert_eq!(
+        read_slot_sync(controller.credentials.as_ref(), &profile, PURPOSE_NICKSERV),
+        Ok(None)
+    );
+    assert_eq!(state.credential_status(), "");
+    assert!(!controller.profile(NET).expect("profile").nickserv_saved);
+
+    state.set_text(ConnectField::ServerPassword, "again");
+    controller.credentials.write(
+        &CredentialKey::for_profile(&profile, PURPOSE_PASSWORD),
+        "again",
+    );
+    {
+        let mut pinned = controller.profile(NET).expect("profile").clone();
+        pinned.secret_saved = true;
+        controller.profiles.insert(NET.to_owned(), pinned);
+    }
+    let network_id = state.forget(Secret::Password).expect("held");
+    controller.forget_secret(&network_id, PURPOSE_PASSWORD);
+    assert_eq!(
+        read_slot_sync(controller.credentials.as_ref(), &profile, PURPOSE_PASSWORD),
+        Ok(None)
+    );
+    assert_eq!(state.text(ConnectField::ServerPassword), "");
 }
