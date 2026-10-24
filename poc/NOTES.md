@@ -26,7 +26,8 @@ Surfaces to restore later (from `src/qml/`):
   file”.
 - **Sheets** — Connect (network rail, Add network, Connection/Preferences
   tabs, preference toggles, forget-password actions, Discard / Disconnect /
-  Apply, shortcuts entry); Jump / Open channel / Filter channels / Nick /
+  Apply / Remove (Confirm remove … when armed), shortcuts entry); Jump /
+  Open channel / Filter channels / Nick /
   Link; About (updates, GitHub link, OK).
 - **Other** — members panel (“Members of …”, jump, member rows);
   show/hide members; leave / join / close header actions; field help marks.
