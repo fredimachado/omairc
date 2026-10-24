@@ -4,8 +4,11 @@
 
 use gpui::{div, prelude::*, AnyElement, FontWeight};
 
+use crate::controller::controller::Controller;
 use crate::model::nick_pick::{can_open_direct, first_selectable, nick_targets, NickTarget};
-use crate::model::presence::photo_for;
+use crate::model::presence::{
+    member_away_chrome_visible, member_presence_dot_visible, photo_for,
+};
 use crate::irc::reducer::MemberView;
 use crate::model::Style;
 use crate::ui::sheets::filter_sheet::{match_text, FilterSource};
@@ -25,6 +28,27 @@ pub struct NickSource {
     pub avatars: bool,
     /// The photos the frame draws, by avatar reference. The shell keeps them current.
     pub photos: AvatarPhotos,
+    /// Whether away-notify is on for the selected network (`NickSheet.qml`
+    /// `awayPresenceVisible`), from `Controller::has_away_presence()` when the sheet opens.
+    pub away_visible: bool,
+}
+
+impl NickSource {
+    /// Snapshot the shell passes when opening the nick sheet (`present_nick`).
+    pub fn for_open(
+        controller: &Controller,
+        members: Vec<MemberView>,
+        self_nick: String,
+        photos: AvatarPhotos,
+    ) -> Self {
+        Self {
+            members,
+            self_nick,
+            avatars: controller.preferences().avatars,
+            photos,
+            away_visible: controller.has_away_presence(),
+        }
+    }
 }
 
 impl FilterSource for NickSource {
@@ -55,7 +79,16 @@ impl FilterSource for NickSource {
     }
 
     fn render_row(&self, item: &NickTarget, selected: bool, style: &Style) -> AnyElement {
-        nick_row(style, item, &self.self_nick, selected, self.avatars, &self.photos).into_any_element()
+        nick_row(
+            style,
+            item,
+            &self.self_nick,
+            selected,
+            self.avatars,
+            self.away_visible,
+            &self.photos,
+        )
+        .into_any_element()
     }
 }
 
@@ -69,11 +102,13 @@ fn nick_row(
     self_nick: &str,
     selected: bool,
     avatars: bool,
+    away_visible: bool,
     photos: &AvatarPhotos,
 ) -> impl IntoElement {
     let member: &MemberView = &target.member;
     let is_self = member.nick == self_nick;
     let away = member.away.is_some();
+    let away_chrome = member_away_chrome_visible(away, away_visible, is_self);
     let presence = if away { "away" } else { "online" };
     let photo = photo_for((!member.avatar.is_empty()).then_some(member.avatar.as_str()), avatars)
         .and_then(|reference| photos.get(reference));
@@ -84,9 +119,9 @@ fn nick_row(
         11.,
         photo,
         presence,
-        true,
+        member_presence_dot_visible(away_visible, is_self),
     );
-    let label_color = if away {
+    let label_color = if away_chrome {
         to_gpui(style.muted_color())
     } else {
         to_gpui(style.ink_color())
@@ -146,7 +181,7 @@ fn nick_row(
                 .child(
                     div()
                         .flex_shrink_0()
-                        .when(away, |this| this.opacity(AWAY_GLYPH_OPACITY))
+                        .when(away_chrome, |this| this.opacity(AWAY_GLYPH_OPACITY))
                         .child(glyph),
                 )
                 .child(
@@ -171,4 +206,36 @@ fn nick_row(
                         }),
                 ),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NickSource;
+    use crate::controller::controller::Controller;
+    use crate::demo::seed::OMARCHY_NETWORK_ID;
+    use crate::model::presence::member_presence_dot_visible;
+
+    #[test]
+    fn opening_the_nick_sheet_reads_away_presence_from_the_controller() {
+        let controller = Controller::seeded_for_tests();
+        let source = NickSource::for_open(
+            &controller,
+            vec![],
+            controller.current_nick_for(OMARCHY_NETWORK_ID),
+            Default::default(),
+        );
+        assert_eq!(source.away_visible, controller.has_away_presence());
+    }
+
+    #[test]
+    fn another_members_dot_stays_off_when_away_notify_is_off() {
+        let source = NickSource {
+            members: vec![],
+            self_nick: "fred".to_owned(),
+            avatars: true,
+            photos: Default::default(),
+            away_visible: false,
+        };
+        assert!(!member_presence_dot_visible(source.away_visible, false));
+    }
 }

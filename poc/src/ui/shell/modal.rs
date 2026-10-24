@@ -411,13 +411,13 @@ impl Shell {
     }
 
     fn present_nick(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let source = NickSource {
-            members: self.controller.members(),
-            self_nick: self.current_nick(),
-            avatars: self.controller.preferences().avatars,
+        let source = NickSource::for_open(
+            &self.controller,
+            self.controller.members(),
+            self.current_nick(),
             // The shell fills the photos in on its next frame (`avatars.rs`).
-            photos: Default::default(),
-        };
+            Default::default(),
+        );
         let sheet = cx.new(|cx| FilterSheet::new(source, cx));
         let subscriptions = vec![
             track(cx, &sheet),
