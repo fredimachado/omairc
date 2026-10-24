@@ -70,6 +70,17 @@ pub fn conversation_for(
     None
 }
 
+/// Qt `ISODateWithMs`, then `ISODate`, normalized to UTC (`serverTimeOf`,
+/// `parseHistoryTargetTime`).
+fn parse_qt_iso_time(raw: &str) -> Option<DateTime<Utc>> {
+    const WITH_MS: &str = "%Y-%m-%dT%H:%M:%S%.3f%#z";
+    const WITHOUT_MS: &str = "%Y-%m-%dT%H:%M:%S%#z";
+    DateTime::parse_from_str(raw, WITH_MS)
+        .or_else(|_| DateTime::parse_from_str(raw, WITHOUT_MS))
+        .ok()
+        .map(|parsed| parsed.with_timezone(&Utc))
+}
+
 /// The IRCv3 `time` tag, parsed to UTC. `None` when the tag is absent, empty or
 /// unparseable (`ircServerTimeOf`, `ServerTimeOf`).
 pub fn server_time_of(message: &IrcMessage) -> Option<DateTime<Utc>> {
@@ -77,9 +88,7 @@ pub fn server_time_of(message: &IrcMessage) -> Option<DateTime<Utc>> {
     if raw.is_empty() {
         return None;
     }
-    DateTime::parse_from_rfc3339(&raw)
-        .ok()
-        .map(|parsed| parsed.with_timezone(&Utc))
+    parse_qt_iso_time(&raw)
 }
 
 /// Parses the time of a `CHATHISTORY TARGETS` row, with or without `timestamp=`
@@ -89,9 +98,7 @@ pub fn parse_history_target_time(raw: &str) -> Option<DateTime<Utc>> {
     if raw.is_empty() {
         return None;
     }
-    DateTime::parse_from_rfc3339(raw)
-        .ok()
-        .map(|parsed| parsed.with_timezone(&Utc))
+    parse_qt_iso_time(raw)
 }
 
 /// The source nick, through the same rule every handler uses (`ircAuthor`).
