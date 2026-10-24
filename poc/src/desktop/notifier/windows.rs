@@ -1,11 +1,18 @@
 //! Windows Toast notifications. Port of `windowsnotifications.cpp`.
 //!
-//! Toasts use the AUMID `FrediMachado.Omairc`, which resolves through whichever Start Menu
-//! `Omairc.lnk` is present. Ownership of the activator registration (`LocalServer32`) goes
-//! to whichever exe registered it. A build rewrites that value or the shortcut only when
-//! nothing is registered, when the registered exe is itself, or when the registered exe no
-//! longer exists. So an exe that still exists is not displaced by a later one from this
-//! code path.
+//! Toasts use the AUMID `FrediMachado.Omairc`. Activation goes through the activator
+//! registration (`LocalServer32`) and a Start Menu `Omairc.lnk` that carries the AUMID.
+//! Which exe those point at is decided by two rules:
+//!
+//! - An installed copy, one under `%LOCALAPPDATA%\Programs\Omairc` or `%ProgramFiles%\Omairc`,
+//!   may take the activator registration and the per-user shortcut from another exe, even one
+//!   that still exists.
+//! - Any other build, such as a dev or portable build, may take them only when nothing is
+//!   registered, when the registered exe is itself, or when the registered exe no longer
+//!   exists. So it does not displace an exe that still exists.
+//!
+//! This code decides what it writes. It does not establish which copy receives a click while
+//! more than one copy is registered.
 
 use std::collections::VecDeque;
 use std::ffi::OsStr;
@@ -15,7 +22,7 @@ use std::thread;
 
 use async_channel::Sender;
 use std::mem::ManuallyDrop;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use windows::core::{GUID, HSTRING, Interface, PCWSTR};
 use windows::Win32::Foundation::{
@@ -26,7 +33,7 @@ use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_ID;
 use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_ToastActivatorCLSID;
 use windows::Win32::System::Com::{
     CoAddRefServerProcess, CoCreateInstance, CoRegisterClassObject, CoReleaseServerProcess,
-    CoRevokeClassObject, CLSCTX_INPROC_SERVER, CLSCTX_LOCAL_SERVER, IClassFactory,
+    CoRevokeClassObject, CoTaskMemFree, CLSCTX_INPROC_SERVER, CLSCTX_LOCAL_SERVER, IClassFactory,
     IClassFactory_Impl, IPersistFile, STGM_READ, REGCLS_MULTIPLEUSE,
 };
 use windows::Win32::System::Com::StructuredStorage::{
@@ -42,7 +49,10 @@ use windows::Win32::UI::Notifications::{
     INotificationActivationCallback, INotificationActivationCallback_Impl,
     NOTIFICATION_USER_INPUT_DATA,
 };
-use windows::Win32::UI::Shell::{IShellLinkW, SHStrDupW, ShellLink, SLGP_RAWPATH};
+use windows::Win32::UI::Shell::{
+    FOLDERID_ProgramFiles, FOLDERID_UserProgramFiles, IShellLinkW, KF_FLAG_DEFAULT,
+    SHGetKnownFolderPath, SHStrDupW, ShellLink, SLGP_RAWPATH,
+};
 use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, MsgWaitForMultipleObjects, PeekMessageW, QS_ALLINPUT, TranslateMessage,
@@ -163,6 +173,24 @@ fn should_claim(
     }
 }
 
+/// Whether `this_exe` lies inside one of `install_roots`. Path components are compared one at
+/// a time, ignoring ASCII case, so `...\Omairc-dev\x.exe` is not inside `...\Omairc`. A `..`
+/// in the exe path is refused, since it could leave the root without changing the prefix.
+fn is_installed_exe(this_exe: &Path, install_roots: &[PathBuf]) -> bool {
+    let exe_parts: Vec<Component<'_>> = this_exe.components().collect();
+    if exe_parts.contains(&Component::ParentDir) {
+        return false;
+    }
+    install_roots.iter().any(|root| {
+        let root_parts: Vec<Component<'_>> = root.components().collect();
+        !root_parts.is_empty()
+            && root_parts.len() < exe_parts.len()
+            && root_parts.iter().zip(&exe_parts).all(|(root_part, exe_part)| {
+                root_part.as_os_str().eq_ignore_ascii_case(exe_part.as_os_str())
+            })
+    })
+}
+
 /// Reads the default value of the activator's `LocalServer32` key. `Ok(None)` means the
 /// value is absent. Any other failure is an error, so the caller can fail closed.
 fn read_registered_command(subkey: &[u16]) -> Result<Option<String>, WIN32_ERROR> {
@@ -187,6 +215,25 @@ fn read_registered_command(subkey: &[u16]) -> Result<Option<String>, WIN32_ERROR
     }
     let len = data.iter().position(|&ch| ch == 0).unwrap_or(data.len());
     Ok(Some(String::from_utf16_lossy(&data[..len])))
+}
+
+/// Resolves a known folder through the shell.
+fn known_folder(id: &GUID) -> Option<PathBuf> {
+    let raw = unsafe { SHGetKnownFolderPath(id, KF_FLAG_DEFAULT, None) }.ok()?;
+    let path = unsafe { raw.to_string() }.ok().map(PathBuf::from);
+    unsafe { CoTaskMemFree(Some(raw.as_ptr().cast_const().cast())) };
+    path
+}
+
+/// The roots an installed copy lives under. These match `DefaultDirName={autopf}\Omairc` in
+/// `packaging/windows/omairc.iss`: the per-user `Programs` folder and the all-users Program
+/// Files folder. A root whose folder cannot be resolved is left out, so nothing matches it.
+fn install_roots() -> Vec<PathBuf> {
+    [known_folder(&FOLDERID_UserProgramFiles), known_folder(&FOLDERID_ProgramFiles)]
+        .into_iter()
+        .flatten()
+        .map(|folder| folder.join("Omairc"))
+        .collect()
 }
 
 fn start_menu_program_dirs() -> Vec<PathBuf> {
@@ -302,8 +349,9 @@ fn installed_shortcut_paths(exe_path: &str) -> Vec<PathBuf> {
     links
 }
 
-/// Claims the toast activator registration unless another exe still owns it.
-fn register_com_server(exe: &str) {
+/// Claims the toast activator registration. An installed copy always may. Any other build may
+/// only when `should_claim` allows it.
+fn register_com_server(exe: &str, install_roots: &[PathBuf]) {
     let subkey =
         "SOFTWARE\\Classes\\CLSID\\{DBE38477-5F87-42A1-AFA1-11FA12F2E5E5}\\LocalServer32";
     let subkey_wide = wide(subkey);
@@ -318,14 +366,24 @@ fn register_com_server(exe: &str) {
         }
     };
     let this_exe = Path::new(exe);
-    if !should_claim(existing.as_deref(), this_exe, Path::exists) {
-        if let Some(owner) = existing {
+    let from_install = is_installed_exe(this_exe, install_roots);
+    let claimed_by_rule = should_claim(existing.as_deref(), this_exe, Path::exists);
+    if !from_install && !claimed_by_rule {
+        if let Some(owner) = existing.as_deref() {
             log::info!(
                 "Windows notifier: {} owns toast activation, so this build leaves it registered",
                 owner.display()
             );
         }
         return;
+    }
+    if from_install && !claimed_by_rule {
+        if let Some(owner) = existing.as_deref() {
+            log::info!(
+                "Windows notifier: this installed copy replaces the toast activation registration owned by {}",
+                owner.display()
+            );
+        }
     }
     let command = format!("\"{}\"", exe.replace('/', "\\"));
     let command_wide = wide(&command);
@@ -382,7 +440,8 @@ fn install_shortcut(link_path: &str, exe_path: &str) -> Result<(), windows::core
 }
 
 fn ensure_notification_registration(exe_path: &str) {
-    register_com_server(exe_path);
+    let roots = install_roots();
+    register_com_server(exe_path, &roots);
 
     let installed = installed_shortcut_paths(exe_path);
     for link in &installed {
@@ -417,13 +476,24 @@ fn ensure_notification_registration(exe_path: &str) {
             );
             return;
         };
-        if !should_claim(Some(Path::new(&target)), Path::new(exe_path), Path::exists) {
+        let target_path = Path::new(&target);
+        let this_exe = Path::new(exe_path);
+        let from_install = is_installed_exe(this_exe, &roots);
+        let claimed_by_rule = should_claim(Some(target_path), this_exe, Path::exists);
+        if !from_install && !claimed_by_rule {
             log::info!(
                 "Windows notifier: {:?} already names {}, so this build leaves it alone",
                 link,
                 target
             );
             return;
+        }
+        if from_install && !claimed_by_rule {
+            log::info!(
+                "Windows notifier: this installed copy replaces the Start Menu shortcut {:?}, which names {}",
+                link,
+                target
+            );
         }
     }
     if let Err(error) = install_shortcut(&link_path, exe_path) {
@@ -609,9 +679,9 @@ pub fn activation_from_args(args: &[String]) -> Option<Activation> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
-    use super::{registered_exe, should_claim};
+    use super::{is_installed_exe, registered_exe, should_claim};
 
     const THIS_EXE: &str = r"C:\dev\omairc\omairc-poc-gpui.exe";
 
@@ -669,5 +739,55 @@ mod tests {
             Path::new(THIS_EXE),
             |_| false,
         ));
+    }
+
+    const PER_USER_ROOT: &str = r"C:\Users\Fredi\AppData\Local\Programs\Omairc";
+    const ALL_USERS_ROOT: &str = r"C:\Program Files\Omairc";
+
+    fn test_roots() -> Vec<PathBuf> {
+        vec![PathBuf::from(PER_USER_ROOT), PathBuf::from(ALL_USERS_ROOT)]
+    }
+
+    #[test]
+    fn an_exe_under_the_per_user_root_is_installed() {
+        let exe = Path::new(r"C:\Users\Fredi\AppData\Local\Programs\Omairc\omairc.exe");
+        assert!(is_installed_exe(exe, &test_roots()));
+    }
+
+    #[test]
+    fn an_exe_under_the_all_users_root_is_installed() {
+        let exe = Path::new(r"C:\Program Files\Omairc\omairc.exe");
+        assert!(is_installed_exe(exe, &test_roots()));
+    }
+
+    #[test]
+    fn a_dev_build_in_the_checkout_is_not_installed() {
+        let exe = Path::new(r"D:\code\omairc\poc\target\debug\omairc-poc-gpui.exe");
+        assert!(!is_installed_exe(exe, &test_roots()));
+    }
+
+    #[test]
+    fn a_lookalike_root_is_not_installed() {
+        let exe = Path::new(r"C:\Users\Fredi\AppData\Local\Programs\Omairc-dev\x.exe");
+        assert!(!is_installed_exe(exe, &test_roots()));
+    }
+
+    #[test]
+    fn root_matching_ignores_ascii_case() {
+        let exe = Path::new(r"c:\users\fredi\appdata\local\programs\OMAIRC\omairc.exe");
+        assert!(is_installed_exe(exe, &test_roots()));
+    }
+
+    #[test]
+    fn a_parent_dir_cannot_leave_the_root() {
+        let exe = Path::new(r"C:\Users\Fredi\AppData\Local\Programs\Omairc\..\..\dev\omairc.exe");
+        assert!(!is_installed_exe(exe, &test_roots()));
+    }
+
+    #[test]
+    fn no_roots_or_an_empty_root_matches_nothing() {
+        let exe = Path::new(THIS_EXE);
+        assert!(!is_installed_exe(exe, &[]));
+        assert!(!is_installed_exe(exe, &[PathBuf::new()]));
     }
 }
