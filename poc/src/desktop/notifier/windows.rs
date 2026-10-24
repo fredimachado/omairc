@@ -98,7 +98,12 @@ impl Notifier for WindowsNotifier {
             });
             if let Some(event) = TOAST_EVENT.get() {
                 let handle = HANDLE(*event as *mut std::ffi::c_void);
-                unsafe { SetEvent(handle) };
+                if let Err(error) = unsafe { SetEvent(handle) } {
+                    log::warn!(
+                        "Windows notifier: could not signal the toast thread, so a queued toast may stay queued: {:?}",
+                        error
+                    );
+                }
             }
         }
     }
@@ -116,15 +121,13 @@ fn init_propvariant_from_string(value: &str) -> Result<PROPVARIANT, windows::cor
     let value_wide = wide(value);
     let pwsz = unsafe { SHStrDupW(PCWSTR(value_wide.as_ptr()))? };
     let mut prop = PROPVARIANT::default();
-    unsafe {
-        prop.Anonymous.Anonymous = ManuallyDrop::new(PROPVARIANT_0_0 {
-            vt: VT_LPWSTR,
-            wReserved1: 0,
-            wReserved2: 0,
-            wReserved3: 0,
-            Anonymous: std::mem::transmute(PROPVARIANT_0_0_0 { pwszVal: pwsz }),
-        });
-    }
+    prop.Anonymous.Anonymous = ManuallyDrop::new(PROPVARIANT_0_0 {
+        vt: VT_LPWSTR,
+        wReserved1: 0,
+        wReserved2: 0,
+        wReserved3: 0,
+        Anonymous: PROPVARIANT_0_0_0 { pwszVal: pwsz },
+    });
     Ok(prop)
 }
 
@@ -210,7 +213,7 @@ fn shortcut_target(link_path: &str) -> Option<String> {
         Ok(link) => link,
         Err(_) => return None,
     };
-    let persist: IPersistFile = match unsafe { shell_link.cast() } {
+    let persist: IPersistFile = match shell_link.cast() {
         Ok(persist) => persist,
         Err(_) => return None,
     };
@@ -237,7 +240,7 @@ fn shortcut_is_stamped(link_path: &str) -> bool {
         Ok(link) => link,
         Err(_) => return false,
     };
-    let persist: IPersistFile = match unsafe { shell_link.cast() } {
+    let persist: IPersistFile = match shell_link.cast() {
         Ok(persist) => persist,
         Err(_) => return false,
     };
@@ -245,7 +248,7 @@ fn shortcut_is_stamped(link_path: &str) -> bool {
     if unsafe { persist.Load(PCWSTR(link_wide.as_ptr()), STGM_READ) }.is_err() {
         return false;
     }
-    let store: IPropertyStore = match unsafe { shell_link.cast() } {
+    let store: IPropertyStore = match shell_link.cast() {
         Ok(store) => store,
         Err(_) => return false,
     };
@@ -356,7 +359,7 @@ fn install_shortcut(link_path: &str, exe_path: &str) -> Result<(), windows::core
     let icon_wide = wide(exe_path);
     unsafe { shell_link.SetIconLocation(PCWSTR(icon_wide.as_ptr()), 0)? };
 
-    let store: IPropertyStore = unsafe { shell_link.cast()? };
+    let store: IPropertyStore = shell_link.cast()?;
     let mut aumid_prop = init_propvariant_from_string(AUMID)?;
     unsafe {
         store.SetValue(&PKEY_AppUserModel_ID, &aumid_prop)?;
@@ -369,7 +372,7 @@ fn install_shortcut(link_path: &str, exe_path: &str) -> Result<(), windows::core
         store.Commit()?;
     }
 
-    let persist: IPersistFile = unsafe { shell_link.cast()? };
+    let persist: IPersistFile = shell_link.cast()?;
     let link_wide = wide(link_path);
     unsafe { persist.Save(PCWSTR(link_wide.as_ptr()), true) }
 }
@@ -503,7 +506,8 @@ fn pump_com_messages() {
     unsafe {
         let mut msg = MSG::default();
         while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
-            TranslateMessage(&msg);
+            // Zero means no character message was posted, not an error, so the BOOL is ignored.
+            let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
     }
@@ -556,7 +560,12 @@ fn run_notification_thread(stop: usize, toast_event: usize, enabled: Arc<std::sy
     }
     if let Some(class_cookie) = class_cookie {
         unsafe {
-            CoRevokeClassObject(class_cookie);
+            if let Err(error) = CoRevokeClassObject(class_cookie) {
+                log::warn!(
+                    "Windows notifier: could not revoke the toast activator class: {:?}",
+                    error
+                );
+            }
             CoReleaseServerProcess();
         }
     }

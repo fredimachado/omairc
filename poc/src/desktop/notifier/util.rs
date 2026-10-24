@@ -30,8 +30,8 @@ pub fn sanitize_xml_text(value: &str) -> String {
         let allowed = scalar == 0x09
             || scalar == 0x0A
             || scalar == 0x0D
-            || (scalar >= 0x20 && scalar <= 0xD7FF)
-            || (scalar >= 0xE000 && scalar <= 0xFFFD);
+            || (0x20..=0xD7FF).contains(&scalar)
+            || (0xE000..=0xFFFD).contains(&scalar);
         if allowed {
             sanitized.push(code);
             index += 1;
@@ -97,6 +97,7 @@ pub fn parse_launch_url(launch: &str) -> Option<(String, String, String)> {
 }
 
 /// Records a freedesktop notification id for a conversation, replacing any prior id.
+#[cfg(test)]
 pub fn remember_conversation_notify_id(
     conversation_ids: &mut std::collections::HashMap<String, u32>,
     by_id: &mut std::collections::HashMap<u32, (String, String, String)>,
