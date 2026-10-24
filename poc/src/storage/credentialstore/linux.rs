@@ -1,7 +1,8 @@
 //! The Secret Service (`org.freedesktop.secrets`) on Linux, through `oo7`. Port of
-//! `tui/internal/storage/secretservice.go`: items in the default collection, carrying the
-//! attributes `service=omairc` and `username=<key name>` that QtKeychain writes. UI-thread reads
-//! go through [`DeferringCredentialStore`]; blocking oo7 work runs on a worker with at most
+//! `tui/internal/storage/secretservice.go`: items in the default collection. A read finds
+//! both the items QtKeychain wrote for the Qt client and the ones the TUI wrote, and a write
+//! stores one item both of them can read ([`super::secretattrs`]). UI-thread reads go through
+//! [`DeferringCredentialStore`]; blocking oo7 work runs on a worker with at most
 //! [`CALL_TIMEOUT`] per call.
 //!
 //! Two bounds apply. The startup probe only connects to the bus, so it waits `PROBE_TIMEOUT`,
@@ -10,7 +11,6 @@
 //! keyring's prompt, so it waits `CALL_TIMEOUT`. An overrun is an `Error`, never a missing
 //! secret.
 
-use std::collections::HashMap;
 use std::future::Future;
 use std::sync::mpsc;
 use std::thread;
@@ -20,12 +20,8 @@ use futures::executor::block_on;
 use oo7::{Keyring, Secret};
 
 use super::defer::DeferringCredentialStore;
+use super::secretattrs;
 use super::{CredentialKey, CredentialState, CredentialStore, PendingRemovals};
-
-/// The attribute names and the service value QtKeychain and the TUI search by.
-const ATTRIBUTE_SERVICE: &str = "service";
-const ATTRIBUTE_USERNAME: &str = "username";
-const SERVICE: &str = "omairc";
 
 /// How long one call that unlocks the keyring may wait, the unlock prompt included. A call
 /// that overruns is abandoned on its worker thread, so a hung service cannot block the app
@@ -78,11 +74,6 @@ fn bounded<T: Send + 'static>(
     receiver.recv_timeout(timeout).ok()
 }
 
-/// The attributes that find one entry: the service, and the key name as the username.
-fn attributes(key_name: &str) -> HashMap<&str, &str> {
-    HashMap::from([(ATTRIBUTE_SERVICE, SERVICE), (ATTRIBUTE_USERNAME, key_name)])
-}
-
 /// The default collection, unlocked. Every operation starts here.
 async fn unlocked_keyring() -> oo7::Result<Keyring> {
     let keyring = Keyring::new().await?;
@@ -90,38 +81,57 @@ async fn unlocked_keyring() -> oo7::Result<Keyring> {
     Ok(keyring)
 }
 
-/// The first non-empty secret among the entries for `key_name`. `Ok(None)` when there is none;
-/// an error the service reports is `Err`, and is never read as a missing secret.
+/// The first non-empty secret among the entries for `key_name`, with the item this client
+/// writes ahead of the older single-set items. `Ok(None)` when there is none; an error the
+/// service reports is `Err`, and is never read as a missing secret.
 async fn read_password(key_name: String) -> oo7::Result<Option<String>> {
     let keyring = unlocked_keyring().await?;
-    for item in keyring.search_items(&attributes(&key_name)).await? {
-        item.unlock().await?;
-        let secret = item.secret().await?;
-        let text = String::from_utf8_lossy(secret.as_bytes()).into_owned();
-        if !text.is_empty() {
-            return Ok(Some(text));
+    let mut candidates = Vec::new();
+    for search in secretattrs::lookups(&key_name) {
+        for item in keyring.search_items(&search).await? {
+            item.unlock().await?;
+            let attributes = item.attributes().await?;
+            let secret = item.secret().await?;
+            let text = secretattrs::decode_secret(secret.as_bytes(), &attributes);
+            if !text.is_empty() {
+                candidates.push((secretattrs::is_written(&attributes, &key_name), text));
+            }
         }
     }
-    Ok(None)
+    // A stable sort keeps the search order inside each group.
+    candidates.sort_by_key(|(written, _)| !written);
+    Ok(candidates.into_iter().next().map(|(_, text)| text))
 }
 
-/// Stores `password` under `key_name`, replacing the entry that is there.
+/// Stores `password` under `key_name` in one item every client can read, replacing the entry
+/// that is there, then drops the older single-set items so none of them is read stale.
 async fn store_password(key_name: String, password: String) -> oo7::Result<()> {
     let keyring = unlocked_keyring().await?;
     keyring
         .create_item(
             &key_name,
-            &attributes(&key_name),
+            &secretattrs::written(&key_name),
             Secret::text(password),
             true,
         )
-        .await
+        .await?;
+    for search in secretattrs::lookups(&key_name) {
+        for item in keyring.search_items(&search).await? {
+            if !secretattrs::is_written(&item.attributes().await?, &key_name) {
+                item.delete().await?;
+            }
+        }
+    }
+    Ok(())
 }
 
-/// Deletes every entry for `key_name`. Deleting nothing succeeds.
+/// Deletes every entry for `key_name`, whichever client wrote it. Deleting nothing succeeds.
 async fn delete_password(key_name: String) -> oo7::Result<()> {
     let keyring = unlocked_keyring().await?;
-    keyring.delete(&attributes(&key_name)).await
+    for search in secretattrs::lookups(&key_name) {
+        keyring.delete(&search).await?;
+    }
+    Ok(())
 }
 
 /// The reason a call that did not answer in time reports.

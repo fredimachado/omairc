@@ -346,6 +346,8 @@ mod tests {
         path
     }
 
+    // Omarchy switches themes by repointing a symlink, which needs Unix symlinks.
+    #[cfg(unix)]
     #[test]
     fn consecutive_theme_switch_updates_watch_paths() {
         let base = tempfile_dir();

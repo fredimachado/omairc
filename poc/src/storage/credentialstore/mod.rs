@@ -19,6 +19,8 @@ mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
 mod pending;
+#[cfg(any(test, target_os = "linux"))]
+mod secretattrs;
 #[cfg(windows)]
 mod windows;
 

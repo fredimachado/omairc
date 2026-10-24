@@ -1,10 +1,13 @@
 //! One-shot import of Qt's Windows registry settings into the product INI.
 //!
 //! On Windows, Qt's `QSettings::NativeFormat` stores main settings under
-//! `HKCU\Software\omairc\omairc` (subkey = group). Product mode writes the same
-//! data once into `%LOCALAPPDATA%\omairc\omairc.conf` when that file is missing
-//! and the registry key exists. The registry is never modified, so a Qt client
-//! can still roll back.
+//! `HKCU\Software\omairc\omairc` (subkey = group). Product mode copies that data
+//! once into `%LOCALAPPDATA%\omairc\omairc.conf`. The TUI keeps its settings in
+//! that same file, so it can already exist: the import then merges. A value the
+//! file already holds wins, a string list gains the registry's missing items,
+//! and everything else is added. The `migration/qtRegistryImported` marker
+//! records that the import ran, so a network removed later does not come back.
+//! The registry is never modified, so a Qt client can still roll back.
 //!
 //! Product startup calls [`import_if_needed`] after the file log is installed
 //! (`migrate::run_at_startup`). Tests drive the same mapping through
@@ -18,14 +21,22 @@ use super::settings::{Settings, Status};
 /// Registry path under `HKEY_CURRENT_USER` for the installed Qt client's settings.
 pub const QT_REGISTRY_SUBKEY: &str = r"Software\omairc\omairc";
 
+/// The group and key of the marker a finished import leaves in the INI.
+pub const MIGRATION_GROUP: &str = "migration";
+pub const REGISTRY_IMPORTED_KEY: &str = "qtRegistryImported";
+
+/// QMetaType id of `QStringList`, the type a `@Variant(...)` string list carries.
+const QSTRINGLIST_TYPE_ID: u32 = 11;
+
 /// Outcome of [`import_if_needed`] or [`import_from_reader`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ImportOutcome {
-    /// Not product+Windows, INI already present, or nothing to do.
+    /// Not product+Windows, the import already ran, or nothing to do.
     Skipped,
     /// The Qt registry key is absent.
     NoRegistry,
-    /// Wrote the INI from the registry (or a fake reader).
+    /// Wrote the INI from the registry (or a fake reader). `values` counts the
+    /// values added or merged; ones the INI already held are not counted.
     Imported { values: usize },
     /// Could not read the registry or write the INI.
     Failed(&'static str),
@@ -63,11 +74,17 @@ pub trait RegistryReader {
     fn list(&self, group: &str) -> Result<RegistryKeyContents, ()>;
 }
 
+/// Whether the INI at `settings_path` records a finished import.
+pub fn already_imported(settings_path: &Path) -> bool {
+    settings_path.is_file()
+        && Settings::open(settings_path).bool_value(MIGRATION_GROUP, REGISTRY_IMPORTED_KEY, false)
+}
+
 /// Product Windows startup entry. Called from `migrate::run_at_startup` once the
-/// file log is installed. Elsewhere (non-Windows, non-product, or INI already
-/// present) this is a no-op.
+/// file log is installed. Elsewhere (non-Windows, non-product, or an import that
+/// already ran) this is a no-op.
 pub fn import_if_needed(settings_path: &Path) -> ImportOutcome {
-    if settings_path.is_file() {
+    if already_imported(settings_path) {
         return ImportOutcome::Skipped;
     }
     #[cfg(all(windows, feature = "product"))]
@@ -81,8 +98,9 @@ pub fn import_if_needed(settings_path: &Path) -> ImportOutcome {
     }
 }
 
-/// Walks `reader` into a new [`Settings`] file at `settings_path`. Leaves the
-/// registry (or fake tree) untouched.
+/// Walks `reader` into the [`Settings`] file at `settings_path`, merging into what
+/// the file already holds, and records the marker. Leaves the registry (or fake
+/// tree) untouched. A malformed or read-only file is left alone and reported.
 pub fn import_from_reader(reader: &dyn RegistryReader, settings_path: &Path) -> ImportOutcome {
     if !reader.root_exists() {
         return ImportOutcome::NoRegistry;
@@ -92,6 +110,7 @@ pub fn import_from_reader(reader: &dyn RegistryReader, settings_path: &Path) -> 
     if walk_into(reader, "", &mut settings, &mut values).is_err() {
         return ImportOutcome::Failed("could not read the Qt registry settings");
     }
+    settings.set_bool(MIGRATION_GROUP, REGISTRY_IMPORTED_KEY, true);
     match settings.sync() {
         Status::Written => {
             log::warn!(
@@ -117,8 +136,9 @@ fn walk_into(
         if key.is_empty() {
             continue;
         }
-        apply_value(settings, group, &key, &value);
-        *values += 1;
+        if merge_value(settings, group, &key, &value) {
+            *values += 1;
+        }
     }
     for subkey in contents.subkeys {
         if subkey.is_empty() {
@@ -132,6 +152,94 @@ fn walk_into(
         walk_into(reader, &child, settings, values)?;
     }
     Ok(())
+}
+
+/// Adds one registry value unless the INI already holds that key. A string list
+/// the INI already holds keeps its order and gains the registry's missing items.
+/// Returns whether the INI changed.
+fn merge_value(settings: &mut Settings, group: &str, key: &str, value: &RegistryValue) -> bool {
+    let value = qt_list_value(value);
+    if !settings.contains(group, key) {
+        apply_value(settings, group, key, &value);
+        return true;
+    }
+    let RegistryValue::MultiSz(items) = &value else {
+        return false;
+    };
+    let mut merged = settings.string_list(group, key).unwrap_or_default();
+    let before = merged.len();
+    for item in items {
+        if !merged.contains(item) {
+            merged.push(item.clone());
+        }
+    }
+    if merged.len() == before {
+        return false;
+    }
+    settings.set_string_list(group, key, &merged);
+    true
+}
+
+/// The value as Qt reads it back when it is a string list. Qt writes a list item
+/// that starts with `@` as `@@…`, and a list holding an empty item as UTF-16
+/// `@Variant(...)` text in a `REG_BINARY`. Other values pass through.
+fn qt_list_value(value: &RegistryValue) -> RegistryValue {
+    match value {
+        RegistryValue::MultiSz(items) => RegistryValue::MultiSz(
+            items
+                .iter()
+                .map(|item| item.strip_prefix('@').filter(|rest| rest.starts_with('@')).unwrap_or(item))
+                .map(str::to_owned)
+                .collect(),
+        ),
+        RegistryValue::Sz(text) => match decode_variant_string_list(text) {
+            Some(items) => RegistryValue::MultiSz(items),
+            None => value.clone(),
+        },
+        other => other.clone(),
+    }
+}
+
+/// Decodes `@Variant(...)` text holding a `QStringList`, as `QSettings` writes it:
+/// each byte of a `QDataStream` (version `Qt_4_0`) is one character. The stream is
+/// the type id, the item count, then each `QString` as a byte length (`0xFFFFFFFF`
+/// for a null string) and UTF-16BE. `None` for any other variant.
+fn decode_variant_string_list(text: &str) -> Option<Vec<String>> {
+    let body = text.strip_prefix("@Variant(")?.strip_suffix(')')?;
+    let bytes = body
+        .chars()
+        .map(|ch| u8::try_from(u32::from(ch)).ok())
+        .collect::<Option<Vec<u8>>>()?;
+    let mut stream = bytes.as_slice();
+    fn next_u32(stream: &mut &[u8]) -> Option<u32> {
+        let (head, rest) = stream.split_first_chunk::<4>()?;
+        *stream = rest;
+        Some(u32::from_be_bytes(*head))
+    }
+    if next_u32(&mut stream)? != QSTRINGLIST_TYPE_ID {
+        return None;
+    }
+    let count = next_u32(&mut stream)?;
+    let mut items = Vec::new();
+    for _ in 0..count {
+        let length = next_u32(&mut stream)?;
+        if length == u32::MAX {
+            items.push(String::new());
+            continue;
+        }
+        let length = usize::try_from(length).ok()?;
+        if length % 2 != 0 || stream.len() < length {
+            return None;
+        }
+        let (raw, rest) = stream.split_at(length);
+        stream = rest;
+        let units: Vec<u16> = raw
+            .chunks_exact(2)
+            .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+            .collect();
+        items.push(String::from_utf16(&units).ok()?);
+    }
+    stream.is_empty().then_some(items)
 }
 
 fn apply_value(settings: &mut Settings, group: &str, key: &str, value: &RegistryValue) {
@@ -485,6 +593,7 @@ mod tests {
     use crate::storage::paths::{self, Env, Platform};
     use crate::storage::scrollplace::SCROLL_PLACES_GROUP;
     use crate::storage::stspolicies::IniStsStore;
+    use crate::storage::Backing;
     use crate::util::testdir::TempDir;
     use chrono::{TimeZone, Utc};
     use std::fs;
@@ -638,11 +747,166 @@ mod tests {
     }
 
     #[test]
-    fn existing_ini_skips_import_if_needed() {
+    fn a_finished_import_skips_import_if_needed() {
         let dir = TempDir::new("reg-import-skip");
         let path = dir.path().join("omairc.conf");
-        fs::write(&path, b"[preferences]\ndirects=true\n").unwrap();
+        fs::write(&path, b"[migration]\nqtRegistryImported=true\n").unwrap();
+        assert!(already_imported(&path));
         assert_eq!(import_if_needed(&path), ImportOutcome::Skipped);
+    }
+
+    #[test]
+    fn an_ini_without_the_marker_is_not_imported_yet() {
+        let dir = TempDir::new("reg-import-unmarked");
+        let path = dir.path().join("omairc.conf");
+        assert!(!already_imported(&path), "no file");
+        fs::write(&path, b"[preferences]\ndirects=true\n").unwrap();
+        assert!(!already_imported(&path), "a TUI file without the marker");
+    }
+
+    #[test]
+    fn the_import_merges_into_the_tui_settings_file() {
+        let dir = TempDir::new("reg-import-merge");
+        let path = dir.path().join("omairc.conf");
+        // What the TUI leaves in %LOCALAPPDATA%\omairc\omairc.conf on Windows.
+        let mut tui = Settings::open(&path);
+        tui.set_value("networks/tui1", "host", "irc.libera.chat");
+        tui.set_string_list("preferences", "networkOrder", &["tui1".into()]);
+        tui.set_bool("preferences", "reopenDirectMessages", false);
+        tui.set_string_list("highlights", "words", &["fred".into()]);
+        assert_eq!(tui.sync(), Status::Written);
+
+        let mut reg = fixture_registry();
+        reg.insert(
+            "preferences",
+            "networkOrder",
+            RegistryValue::MultiSz(vec!["freenode".into(), "tui1".into()]),
+        );
+        reg.insert("preferences", "reopenDirectMessages", RegistryValue::Sz("true".into()));
+        reg.insert("preferences", "loadPeerAvatars", RegistryValue::Sz("false".into()));
+        reg.insert(
+            "highlights",
+            "words",
+            RegistryValue::MultiSz(vec!["omarchy".into(), "fred".into()]),
+        );
+        assert!(matches!(
+            import_from_reader(&reg, &path),
+            ImportOutcome::Imported { .. }
+        ));
+
+        let settings = Settings::open(&path);
+        assert_eq!(settings.value("networks/tui1", "host"), "irc.libera.chat");
+        assert_eq!(settings.value("networks/freenode", "host"), "chat.freenode.net");
+        assert_eq!(
+            settings.string_list("preferences", "networkOrder"),
+            Some(vec!["tui1".into(), "freenode".into()]),
+            "the TUI order first, then the Qt networks it lacked"
+        );
+        assert!(
+            !settings.bool_value("preferences", "reopenDirectMessages", true),
+            "a value the file already holds wins"
+        );
+        assert!(!settings.bool_value("preferences", "loadPeerAvatars", true));
+        assert_eq!(
+            settings.string_list("highlights", "words"),
+            Some(vec!["fred".into(), "omarchy".into()])
+        );
+        assert!(already_imported(&path));
+    }
+
+    #[test]
+    fn a_second_import_does_not_bring_back_a_removed_network() {
+        let dir = TempDir::new("reg-import-once");
+        let path = dir.path().join("omairc.conf");
+        assert!(matches!(
+            import_from_reader(&fixture_registry(), &path),
+            ImportOutcome::Imported { .. }
+        ));
+        assert_eq!(
+            Backing::Disk(path.clone()).edit(|settings| settings.remove_group("networks/freenode")),
+            Status::Written
+        );
+        assert_eq!(import_if_needed(&path), ImportOutcome::Skipped);
+        assert!(Settings::open(&path).child_groups("networks").is_empty());
+    }
+
+    #[test]
+    fn a_malformed_ini_is_left_alone() {
+        let dir = TempDir::new("reg-import-malformed");
+        let path = dir.path().join("omairc.conf");
+        fs::write(&path, b"[unclosed\nkey=x\n").unwrap();
+        assert!(matches!(
+            import_from_reader(&fixture_registry(), &path),
+            ImportOutcome::Failed(_)
+        ));
+        assert_eq!(fs::read(&path).unwrap(), b"[unclosed\nkey=x\n");
+    }
+
+    /// `@Variant(...)` text as `QSettings::variantToString` writes a `QStringList`:
+    /// a `Qt_4_0` `QDataStream`, one character per byte.
+    fn variant_text(items: &[Option<&str>]) -> String {
+        let mut bytes = Vec::new();
+        bytes.extend(QSTRINGLIST_TYPE_ID.to_be_bytes());
+        bytes.extend((items.len() as u32).to_be_bytes());
+        for item in items {
+            match item {
+                None => bytes.extend(u32::MAX.to_be_bytes()),
+                Some(text) => {
+                    let units: Vec<u8> = text.encode_utf16().flat_map(u16::to_be_bytes).collect();
+                    bytes.extend((units.len() as u32).to_be_bytes());
+                    bytes.extend(units);
+                }
+            }
+        }
+        let body: String = bytes.into_iter().map(char::from).collect();
+        format!("@Variant({body})")
+    }
+
+    #[test]
+    fn a_binary_string_list_with_an_empty_item_imports_as_a_list() {
+        let dir = TempDir::new("reg-import-variant");
+        let path = dir.path().join("omairc.conf");
+        let mut reg = FakeRegistry::new();
+        reg.insert(
+            "networks/freenode",
+            "autojoinKeyValues",
+            RegistryValue::Sz(variant_text(&[Some("sekrit"), Some(""), None, Some("é")])),
+        );
+        reg.insert("window", "color", RegistryValue::Sz("@Variant(\u{0}\u{0}\u{0}\u{43})".into()));
+        reg.insert(
+            "networks/freenode",
+            "autojoin",
+            RegistryValue::MultiSz(vec!["@@op".into(), "#plain".into()]),
+        );
+        import_from_reader(&reg, &path);
+
+        let settings = Settings::open(&path);
+        assert_eq!(
+            settings.string_list("networks/freenode", "autojoinKeyValues"),
+            Some(vec!["sekrit".into(), String::new(), String::new(), "é".into()])
+        );
+        assert_eq!(
+            settings.string_list("networks/freenode", "autojoin"),
+            Some(vec!["@op".into(), "#plain".into()]),
+            "Qt escapes a leading @ in a list item as @@"
+        );
+        assert_eq!(
+            settings.value("window", "color"),
+            "@Variant(\u{0}\u{0}\u{0}\u{43})",
+            "a variant that is not a string list stays verbatim"
+        );
+    }
+
+    #[test]
+    fn variant_decoding_refuses_other_shapes() {
+        assert_eq!(decode_variant_string_list("@Rect(0 0 1 1)"), None);
+        assert_eq!(decode_variant_string_list("@Variant(\u{0}\u{0}\u{0}\u{b})"), None, "truncated");
+        assert_eq!(
+            decode_variant_string_list(&format!("{})", variant_text(&[Some("a")]).trim_end_matches(')').to_owned() + "x")),
+            None,
+            "trailing bytes"
+        );
+        assert_eq!(decode_variant_string_list(&variant_text(&[])), Some(Vec::new()));
     }
 
     #[cfg(not(all(windows, feature = "product")))]
