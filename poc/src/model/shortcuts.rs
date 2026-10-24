@@ -44,27 +44,11 @@ pub const GROUPS: &[ShortcutGroup] = &[
     ShortcutGroup {
         title: "MOVE",
         rows: &[
-            row_win(
-                "Alt+Down / Alt+Up",
-                "Ctrl+Alt+Down / Up",
-                "walk conversations",
-            ),
-            row_win(
-                "Alt+Left / Alt+Right",
-                "Ctrl+Alt+Left / Right",
-                "walk networks",
-            ),
-            row_win(
-                "Alt+Shift+Left / Right",
-                "Ctrl+Shift+Left / Right",
-                "collapse / expand network",
-            ),
+            row("Alt+Down / Alt+Up", "walk conversations"),
+            row("Alt+Left / Alt+Right", "walk networks"),
+            row("Alt+Shift+Left / Right", "collapse / expand network"),
             row("Ctrl+Alt+Shift+Left / Right", "collapse / expand all"),
-            row_win(
-                "Alt+Shift+Up / Down",
-                "Ctrl+Alt+Shift+Up / Down",
-                "move network",
-            ),
+            row("Alt+Shift+Up / Down", "move network"),
             row("Alt+A", "next unread"),
             row("Alt+Shift+A", "mark all read"),
         ],
@@ -185,13 +169,20 @@ mod tests {
     }
 
     #[test]
-    fn windows_appends_the_terminal_aliases() {
-        let walk = find_row("Alt+Down / Alt+Up");
+    fn windows_appends_aliases_only_for_chords_the_binary_binds() {
+        let connect = find_row("Ctrl+,");
         assert_eq!(
-            chord_label(walk, Platform::Windows),
-            "Alt+Down / Alt+Up / Ctrl+Alt+Down / Up"
+            chord_label(connect, Platform::Windows),
+            "Ctrl+, / Ctrl+]"
         );
-        // Rows without an alias keep their text on Windows.
+        let tabs = find_row("Ctrl+Tab");
+        assert_eq!(
+            chord_label(tabs, Platform::Windows),
+            "Ctrl+Tab / Ctrl+PgDn"
+        );
+        // MOVE chords have no Windows-only bindings in the PoC binary.
+        let walk = find_row("Alt+Down / Alt+Up");
+        assert_eq!(chord_label(walk, Platform::Windows), "Alt+Down / Alt+Up");
         let quit = find_row("Ctrl+Q");
         assert_eq!(chord_label(quit, Platform::Windows), "Ctrl+Q");
     }
