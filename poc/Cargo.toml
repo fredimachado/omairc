@@ -95,6 +95,10 @@ objc2-foundation = { version = "=0.3.2", features = [
     "NSObject",
     "NSString",
 ] }
+# The macOS notification centre. objc2-user-notifications pulls in objc2-core-location, and
+# both are the objc2 0.3.2 framework bindings matching the objc2-foundation 0.3.2 above, which
+# gpui already builds. The pin is exact. Together they are the only packages the notification
+# bindings add to Cargo.lock; objc2-core-location is transitive and not listed here.
 objc2-user-notifications = "=0.3.2"
 block2 = "=0.6.2"
 
