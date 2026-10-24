@@ -31,7 +31,6 @@ const LIMIT: usize = 800;
 const ALLOWLIST: &[(&str, usize)] = &[
     ("controller/commanddispatcher.rs", 972),
     ("controller/replyrouter.rs", 1007),
-    ("ui/input.rs", 824),
 ];
 
 /// Non-blank production lines in `code` (comments already blanked): every line before
