@@ -36,8 +36,8 @@ pub fn conversation_row(
     let ink = to_gpui(style.ink_color());
     let muted = to_gpui(style.muted_color());
     let unread = conv.unread > 0;
-    let emphasized = look.selected || unread;
-    let label_color = if emphasized { ink } else { muted };
+    let label_emphasized = sidebar_label_emphasized(look.selected, conv.muted, conv.unread);
+    let label_color = if label_emphasized { ink } else { muted };
     let label = if !conv.direct {
         format!("#  {}", conv.target.replace('#', ""))
     } else {
@@ -128,7 +128,7 @@ pub fn conversation_row(
                         .overflow_hidden()
                         .text_ellipsis()
                         .text_size(scaled_px(style, 13.))
-                        .when(emphasized, |this| {
+                        .when(label_emphasized, |this| {
                             this.font_weight(gpui::FontWeight::BOLD)
                         })
                         .text_color(label_color)
@@ -148,7 +148,48 @@ pub fn conversation_row(
                 .gap(scaled_px(style, 6.))
                 .when(typing, |this| this.child(typing_dots(style, look.typing_phase)))
                 .when(unread, |this| {
-                    this.child(unread_badge(style, conv.unread, conv.mention))
+                    this.child(unread_badge(
+                        style,
+                        conv.unread,
+                        sidebar_badge_mention(conv.mention, conv.muted),
+                    ))
                 }),
         )
+}
+
+/// Ink and bold when selected, or when the conversation is not muted and has unread — Qt
+/// `ConversationRow.qml` label `color` and `font.bold`.
+pub(crate) fn sidebar_label_emphasized(selected: bool, muted: bool, unread: u32) -> bool {
+    selected || (!muted && unread > 0)
+}
+
+/// Accent mention badge only when the conversation is not muted — Qt `unreadBadge` colors.
+pub(crate) fn sidebar_badge_mention(mention: bool, muted: bool) -> bool {
+    mention && !muted
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{sidebar_badge_mention, sidebar_label_emphasized};
+
+    #[test]
+    fn muted_unread_row_is_dim_and_not_bold() {
+        assert!(!sidebar_label_emphasized(false, true, 3));
+    }
+
+    #[test]
+    fn unmuted_unread_row_is_emphasized() {
+        assert!(sidebar_label_emphasized(false, false, 1));
+    }
+
+    #[test]
+    fn selected_muted_row_stays_emphasized() {
+        assert!(sidebar_label_emphasized(true, true, 0));
+    }
+
+    #[test]
+    fn muted_demotes_mention_badge() {
+        assert!(!sidebar_badge_mention(true, true));
+        assert!(sidebar_badge_mention(true, false));
+    }
 }
