@@ -12,7 +12,7 @@ use unicode_segmentation::UnicodeSegmentation as _;
 
 use crate::model::byte_budget::SendLimit;
 use crate::model::text_edit::{
-    next_word_end, previous_word_start, EditSnapshot, UndoStack,
+    next_word_end, previous_word_start, snap_grapheme, EditSnapshot, UndoStack,
 };
 use crate::util::{to_gpui, FONT_FAMILY};
 
@@ -114,6 +114,40 @@ pub fn content_offset(text: &str, drawn: usize) -> usize {
     text.char_indices()
         .nth(index)
         .map_or(text.len(), |(at, _)| at)
+}
+
+/// Byte offset in `text` for a UTF-16 code-unit offset. Past the end clamps to
+/// `text.len()`.
+fn utf16_offset_in(text: &str, utf16: usize) -> usize {
+    let mut utf8_offset = 0;
+    let mut utf16_count = 0;
+    for ch in text.chars() {
+        if utf16_count >= utf16 {
+            break;
+        }
+        utf16_count += ch.len_utf16();
+        utf8_offset += ch.len_utf8();
+    }
+    utf8_offset
+}
+
+/// IME composition selection is UTF-16 relative to the inserted composition,
+/// not the whole field. Offset both ends from the replacement start.
+fn composition_selected_range(
+    replacement_start: usize,
+    composition: &str,
+    selected_utf16: &Range<usize>,
+) -> Range<usize> {
+    let start = utf16_offset_in(composition, selected_utf16.start);
+    let end = utf16_offset_in(composition, selected_utf16.end);
+    replacement_start + start..replacement_start + end
+}
+
+/// Clamp a byte range into `text` and onto character (grapheme) boundaries.
+fn clamp_char_range(text: &str, range: Range<usize>) -> Range<usize> {
+    let start = snap_grapheme(text, range.start.min(text.len()));
+    let end = snap_grapheme(text, range.end.min(text.len()));
+    start..end.max(start)
 }
 
 impl SingleLineInput {
@@ -527,16 +561,7 @@ impl SingleLineInput {
     }
 
     fn offset_from_utf16(&self, offset: usize) -> usize {
-        let mut utf8_offset = 0;
-        let mut utf16_count = 0;
-        for ch in self.content.chars() {
-            if utf16_count >= offset {
-                break;
-            }
-            utf16_count += ch.len_utf16();
-            utf8_offset += ch.len_utf8();
-        }
-        utf8_offset
+        utf16_offset_in(&self.content, offset)
     }
 
     fn offset_to_utf16(&self, offset: usize) -> usize {
@@ -672,14 +697,15 @@ impl EntityInputHandler for SingleLineInput {
         } else {
             self.marked_range = None;
         }
+        // selected_range is relative to the composition (Apple setMarkedText /
+        // Windows GCS_CURSORPOS), not the whole field. Converting against
+        // content and then adding range.end mixed two coordinate systems and
+        // could land inside a multi-byte character after an ASCII prefix.
         self.selected_range = new_selected_range_utf16
             .as_ref()
-            .map(|range_utf16| self.range_from_utf16(range_utf16))
-            .map(|new_range| new_range.start + range.start..new_range.end + range.end)
+            .map(|sel| composition_selected_range(range.start, new_text, sel))
             .unwrap_or_else(|| range.start + new_text.len()..range.start + new_text.len());
-        // A composition can report offsets past a cut, so keep them inside the text.
-        let len = self.content.len();
-        self.selected_range = self.selected_range.start.min(len)..self.selected_range.end.min(len);
+        self.selected_range = clamp_char_range(&self.content, self.selected_range.clone());
         self.restart_caret();
         cx.notify();
     }
@@ -1040,5 +1066,40 @@ mod tests {
             let drawn = drawn_offset("é€x", offset);
             assert_eq!(content_offset("é€x", drawn), offset);
         }
+    }
+
+    #[test]
+    fn ime_composition_selection_is_relative_to_the_insert() {
+        // ASCII prefix + CJK composition: UTF-16 0..2 selects the whole
+        // composition. Converting against the whole field would land on "hi".
+        let prefix = "hi ";
+        let composition = "世界";
+        let sel = composition_selected_range(prefix.len(), composition, &(0..2));
+        assert_eq!(sel, prefix.len()..prefix.len() + composition.len());
+        let content = format!("{prefix}{composition}");
+        assert!(content.is_char_boundary(sel.start));
+        assert!(content.is_char_boundary(sel.end));
+        assert_eq!(&content[sel], composition);
+    }
+
+    #[test]
+    fn ime_composition_caret_stays_on_char_boundaries() {
+        let prefix = "ab";
+        let composition = "あい";
+        // Caret after the first composed character (one UTF-16 unit).
+        let sel = composition_selected_range(prefix.len(), composition, &(1..1));
+        assert_eq!(sel.start, prefix.len() + "あ".len());
+        assert_eq!(sel.end, sel.start);
+        let content = format!("{prefix}{composition}");
+        assert!(content.is_char_boundary(sel.start));
+        // Both ends offset from replacement start — not the old mark's end.
+        let old_mark_end = prefix.len() + 3;
+        assert_ne!(
+            sel.end,
+            old_mark_end + utf16_offset_in(composition, 1),
+            "end must not use the prior replacement range end"
+        );
+        let clamped = clamp_char_range(&content, sel);
+        assert_eq!(clamped, prefix.len() + "あ".len()..prefix.len() + "あ".len());
     }
 }
