@@ -145,7 +145,7 @@ mod linux {
                 Ok(args) => args,
                 Err(_) => continue,
             };
-            if args.namespace() != GNOME_INTERFACE_NS || args.key() != TEXT_SCALING_KEY {
+            if *args.namespace() != GNOME_INTERFACE_NS || *args.key() != TEXT_SCALING_KEY {
                 continue;
             }
             if let Some(scale) = portal_value_to_f64(args.value()).and_then(sanitized_text_scale)
@@ -159,7 +159,7 @@ mod linux {
 
     /// Unwraps nested `QDBusVariant`-style values, then reads a scalar double.
     fn portal_value_to_f64(value: &zvariant::OwnedValue) -> Option<f64> {
-        let mut current = value.value();
+        let mut current: &zvariant::Value<'_> = value;
         for _ in 0..8 {
             if let Some(scale) = scalar_f64(current) {
                 return Some(scale);

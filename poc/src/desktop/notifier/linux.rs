@@ -130,14 +130,14 @@ async fn run_signal_loop(connection: Connection, tx: Sender<Activation>, state: 
             Err(_) => continue,
         };
         let action = args.action_key();
-        if action != "default" && !action.is_empty() {
+        if *action != "default" && !action.is_empty() {
             continue;
         }
         let activation = state
             .lock()
             .expect("notify state")
             .by_id
-            .get(&args.id())
+            .get(args.id())
             .cloned();
         if let Some(activation) = activation {
             let _ = tx.send_blocking(activation);
