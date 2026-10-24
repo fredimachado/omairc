@@ -34,22 +34,6 @@ pub enum UploadSource {
     Bytes(Vec<u8>),
 }
 
-/// Clears the password and user name. `Drop` runs it on every path out of `upload`,
-/// and `upload` runs it once the headers are built, so the plaintext is not held
-/// across the post.
-fn wipe_credentials(target: &mut UploadTarget) {
-    target.secret.wipe();
-    target.user.clear();
-}
-
-/// `upload` consumes its job, so every return drops the target, including a refused
-/// pre-check, and that drop clears the credentials. No exit has to remember to wipe.
-impl Drop for UploadTarget {
-    fn drop(&mut self) {
-        wipe_credentials(self);
-    }
-}
-
 /// Posts the file and returns the absolute http(s) link, or a fixed failure string.
 pub fn upload(fetch: &dyn HttpFetch, mut job: UploadJob) -> Result<String, &'static str> {
     let (body, file_name, content_type) = read_source(&job)?;
@@ -96,7 +80,7 @@ pub fn upload(fetch: &dyn HttpFetch, mut job: UploadJob) -> Result<String, &'sta
             headers.push(("Authorization".to_owned(), header));
         }
     }
-    wipe_credentials(&mut job.target);
+    job.target.wipe_credentials();
     let request = PostRequest {
         url: endpoint.clone(),
         headers,
@@ -206,7 +190,7 @@ mod tests {
     #[test]
     fn wiping_clears_the_secret_and_user_name_that_drop_runs() {
         let mut target = target("http://127.0.0.1/upload", false);
-        wipe_credentials(&mut target);
+        target.wipe_credentials();
         assert!(target.secret.is_empty());
         assert!(target.user.is_empty());
     }
