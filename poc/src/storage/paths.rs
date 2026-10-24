@@ -13,6 +13,8 @@ use std::path::{Path, PathBuf};
 
 /// The folder the PoC owns under each root.
 pub const APP_FOLDER: &str = "omairc-poc";
+/// The folder the Qt client and the TUI use under each root (`QSettings` org/app name).
+pub const QT_APP_FOLDER: &str = "omairc";
 /// The QSettings-compatible INI file, the same name the Qt client uses.
 pub const SETTINGS_FILE: &str = "omairc.conf";
 /// The STS policy cache, beside the settings file (`IrcStsStore::filePath`, same name as Qt).
@@ -100,7 +102,13 @@ pub fn config_dir_for(env: &Env, platform: Platform) -> Option<PathBuf> {
     if let Some(home) = &env.poc_home {
         return Some(home.join("config"));
     }
-    config_root(env, platform).map(|root| root.join(APP_FOLDER))
+    config_dir_for_folder(env, platform, APP_FOLDER)
+}
+
+/// The Qt client's config folder (`<config root>/omairc`). `OMAIRC_POC_HOME` does not
+/// apply; cutover reads the install the Qt client already wrote.
+pub fn qt_config_dir_for(env: &Env, platform: Platform) -> Option<PathBuf> {
+    config_dir_for_folder(env, platform, QT_APP_FOLDER)
 }
 
 /// The state folder (`<state root>/omairc-poc`). Falls back to the temp dir when
@@ -116,6 +124,12 @@ pub fn state_dir_for(env: &Env, platform: Platform) -> PathBuf {
 
 pub fn settings_path_for(env: &Env, platform: Platform) -> Option<PathBuf> {
     config_dir_for(env, platform).map(|dir| dir.join(SETTINGS_FILE))
+}
+
+/// The Qt client's INI settings file (`<config root>/omairc/omairc.conf`). On macOS the
+/// client forces `QSettings::IniFormat`, so the name matches Linux and Windows.
+pub fn qt_settings_path_for(env: &Env, platform: Platform) -> Option<PathBuf> {
+    qt_config_dir_for(env, platform).map(|dir| dir.join(SETTINGS_FILE))
 }
 
 /// The STS cache file in the folder that holds `settings_file`, so the cache and the
@@ -136,6 +150,21 @@ pub fn transcript_root_for(env: &Env, platform: Platform) -> PathBuf {
     state_dir_for(env, platform).join("logs")
 }
 
+/// The state folder of an installed Qt client (`<state root>/omairc`).
+pub fn qt_state_dir_for(env: &Env, platform: Platform) -> PathBuf {
+    state_root(env, platform)
+        .unwrap_or_else(|| env.temp_dir.clone())
+        .join(QT_APP_FOLDER)
+}
+
+/// The Qt client's transcript folder (`<state root>/omairc/logs`), or the override when set.
+pub fn qt_transcript_root_for(env: &Env, platform: Platform) -> PathBuf {
+    if let Some(root) = &env.transcript_root {
+        return root.clone();
+    }
+    qt_state_dir_for(env, platform).join("logs")
+}
+
 /// The transcript root on this machine.
 pub fn transcript_root() -> PathBuf {
     transcript_root_for(&Env::from_process(), Platform::current())
@@ -149,6 +178,10 @@ pub fn settings_path() -> Option<PathBuf> {
 /// The application log on this machine.
 pub fn log_path() -> PathBuf {
     log_path_for(&Env::from_process(), Platform::current())
+}
+
+fn config_dir_for_folder(env: &Env, platform: Platform, folder: &str) -> Option<PathBuf> {
+    config_root(env, platform).map(|root| root.join(folder))
 }
 
 fn config_root(env: &Env, platform: Platform) -> Option<PathBuf> {
@@ -370,6 +403,60 @@ mod tests {
                 .join("state")
                 .join(APP_FOLDER)
                 .join("logs")
+        );
+    }
+
+    #[test]
+    fn qt_linux_paths_use_the_installed_omairc_folder() {
+        let env = env_with_home();
+        assert_eq!(
+            qt_settings_path_for(&env, Platform::Linux),
+            Some(home().join(".config").join(QT_APP_FOLDER).join(SETTINGS_FILE))
+        );
+        assert_eq!(
+            qt_transcript_root_for(&env, Platform::Linux),
+            home()
+                .join(".local")
+                .join("state")
+                .join(QT_APP_FOLDER)
+                .join("logs")
+        );
+        let settings = qt_settings_path_for(&env, Platform::Linux).expect("settings");
+        assert_eq!(
+            sts_path_beside(&settings),
+            home().join(".config").join(QT_APP_FOLDER).join(STS_FILE)
+        );
+    }
+
+    #[test]
+    fn qt_macos_paths_use_library_preferences_ini_layout() {
+        let env = env_with_home();
+        let prefs = home().join("Library").join("Preferences");
+        assert_eq!(
+            qt_config_dir_for(&env, Platform::MacOs),
+            Some(prefs.join(QT_APP_FOLDER))
+        );
+        assert_eq!(
+            qt_settings_path_for(&env, Platform::MacOs),
+            Some(prefs.join(QT_APP_FOLDER).join(SETTINGS_FILE))
+        );
+        assert_eq!(
+            qt_state_dir_for(&env, Platform::MacOs),
+            prefs.join("State").join(QT_APP_FOLDER)
+        );
+    }
+
+    #[test]
+    fn qt_paths_ignore_poc_home_override() {
+        let env = Env {
+            poc_home: Some(PathBuf::from("scratch")),
+            home: Some(home()),
+            temp_dir: PathBuf::from("tmp"),
+            ..Env::default()
+        };
+        assert_eq!(
+            qt_settings_path_for(&env, Platform::Linux),
+            Some(home().join(".config").join(QT_APP_FOLDER).join(SETTINGS_FILE))
         );
     }
 
