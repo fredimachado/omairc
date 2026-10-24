@@ -83,10 +83,12 @@ pub enum LinkRefusal {
 }
 
 /// Decides whether the shortcut fallback may write the per-user link, given both links as
-/// read from disk. An unreadable link refuses. Any other link allows when this exe is an
-/// installed copy, or when `should_claim` allows it: the link names this exe, or an exe that is
-/// gone. The all-users link is checked first and the first refusal wins, so when both links
-/// refuse, the all-users refusal is returned. `this_exe` and each `Targets` path are canonical.
+/// read from disk. An unreadable all-users link refuses for every build. An unreadable per-user
+/// link refuses for any build except an installed copy, which overwrites it. Any other link
+/// allows when this exe is an installed copy, or when `should_claim` allows it: the link names
+/// this exe, or an exe that is gone. The all-users link is checked first and the first refusal
+/// wins, so when both links refuse, the all-users refusal is returned. `this_exe` and each
+/// `Targets` path are canonical.
 pub fn check_existing_links(
     this_exe: &Path,
     install_roots: &[PathBuf],
@@ -99,7 +101,11 @@ pub fn check_existing_links(
     for (slot, state) in [(LinkSlot::AllUsers, all_users), (LinkSlot::PerUser, per_user)] {
         match state {
             LinkState::Missing => {}
-            LinkState::Unreadable => return Err(LinkRefusal::Unreadable(slot)),
+            LinkState::Unreadable => {
+                if slot == LinkSlot::AllUsers || !from_install {
+                    return Err(LinkRefusal::Unreadable(slot));
+                }
+            }
             LinkState::Targets(target) => {
                 if !from_install && !should_claim(Some(target.as_path()), this_exe, &exists) {
                     return Err(LinkRefusal::NamesOtherExe(slot, target.clone()));
@@ -152,9 +158,9 @@ pub fn found_after_repair(
 /// is stamped (see `found_after_repair`). When it is false, nothing stops here and the fallback
 /// runs as it always has. When it is true, a build that is not installed stops, portable builds
 /// included, so it does not overwrite a link it did not own. An installed copy goes on only when
-/// its per-user link is readable and names another exe, which it may replace. A missing per-user
-/// link, an unreadable one, or one that names this exe stops, so after a repair a per-user link is
-/// replaced, never created.
+/// its per-user link is unreadable or names another exe, which it may replace. A missing per-user
+/// link, or one that names this exe, stops there, so after a repair a per-user link is replaced,
+/// never created.
 pub fn repair_ends_registration(
     repaired: bool,
     from_install: bool,
@@ -169,21 +175,65 @@ pub fn repair_ends_registration(
     }
     match per_user {
         LinkState::Targets(target) => same_exe(target, this_exe),
-        LinkState::Missing | LinkState::Unreadable => true,
+        LinkState::Missing => true,
+        LinkState::Unreadable => false,
     }
 }
 
-/// Whether this build may point the toast activator at `this_exe`. `existing` is the exe the
-/// registration names, or `None` when nothing is registered. An installed copy may always, even
-/// when `existing` still exists. Any other build may only when `should_claim` allows it.
+/// What the toast activator registration says, as read from its `LocalServer32` default value.
+/// `Absent` is a missing value, or one that names no exe. `Unreadable` is a read that failed for
+/// any other reason, such as a value of the wrong type or one too large to read.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ActivatorRegistration {
+    Absent,
+    /// The exe the registration names, in the canonical form `canonical_with` gives.
+    Names(PathBuf),
+    Unreadable,
+}
+
+/// Whether this build may point the toast activator at `this_exe`, as `installed || the current
+/// rule`. The current rule is `should_claim` for a registration that is absent or names an exe.
+/// An unreadable registration is claimed only by an installed copy, because its owner is unknown.
 pub fn activator_claim(
     this_exe: &Path,
     install_roots: &[PathBuf],
-    existing: Option<&Path>,
+    existing: &ActivatorRegistration,
     resolve: impl Fn(&Path) -> Option<PathBuf>,
     exists: impl Fn(&Path) -> bool,
 ) -> bool {
-    is_installed_exe(this_exe, install_roots, resolve) || should_claim(existing, this_exe, exists)
+    is_installed_exe(this_exe, install_roots, &resolve)
+        || match existing {
+            ActivatorRegistration::Absent => should_claim(None, this_exe, exists),
+            ActivatorRegistration::Names(owner) => {
+                should_claim(Some(owner.as_path()), this_exe, exists)
+            }
+            ActivatorRegistration::Unreadable => false,
+        }
+}
+
+/// What the toast activator registration does in this build: write it, or leave it as it is.
+/// `windows.rs` matches on this for every registration it reads, so the decision that the tests
+/// cover is the decision that runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RegistrationWrite {
+    Write,
+    Skip,
+}
+
+/// The write decision for the toast activator registration. It calls `activator_claim` with the
+/// same inputs, so `Write` is returned exactly when `activator_claim` returns true.
+pub fn registration_write(
+    registration: &ActivatorRegistration,
+    install_roots: &[PathBuf],
+    this_exe: &Path,
+    resolve: impl Fn(&Path) -> Option<PathBuf>,
+    exists: impl Fn(&Path) -> bool,
+) -> RegistrationWrite {
+    if activator_claim(this_exe, install_roots, registration, resolve, exists) {
+        RegistrationWrite::Write
+    } else {
+        RegistrationWrite::Skip
+    }
 }
 
 #[cfg(test)]
@@ -317,7 +367,7 @@ mod tests {
         assert!(activator_claim(
             installed,
             &test_roots(),
-            Some(other),
+            &ActivatorRegistration::Names(other.to_path_buf()),
             no_resolve,
             |path| path == other,
         ));
@@ -329,7 +379,7 @@ mod tests {
         assert!(!activator_claim(
             Path::new(THIS_EXE),
             &test_roots(),
-            Some(installed),
+            &ActivatorRegistration::Names(installed.to_path_buf()),
             no_resolve,
             |path| path == installed,
         ));
@@ -341,7 +391,7 @@ mod tests {
         assert!(activator_claim(
             Path::new(THIS_EXE),
             &test_roots(),
-            Some(gone),
+            &ActivatorRegistration::Names(gone.to_path_buf()),
             no_resolve,
             |_| false,
         ));
@@ -352,10 +402,117 @@ mod tests {
         assert!(activator_claim(
             Path::new(THIS_EXE),
             &test_roots(),
-            None,
+            &ActivatorRegistration::Absent,
             no_resolve,
             |_| false,
         ));
+    }
+
+    #[test]
+    fn an_installed_copy_takes_an_unregistered_activator() {
+        assert!(activator_claim(
+            Path::new(INSTALLED_EXE),
+            &test_roots(),
+            &ActivatorRegistration::Absent,
+            no_resolve,
+            |_| false,
+        ));
+    }
+
+    #[test]
+    fn an_installed_copy_takes_an_unreadable_activator() {
+        assert!(activator_claim(
+            Path::new(INSTALLED_EXE),
+            &test_roots(),
+            &ActivatorRegistration::Unreadable,
+            no_resolve,
+            |_| false,
+        ));
+    }
+
+    #[test]
+    fn a_dev_build_leaves_an_unreadable_activator_alone() {
+        assert!(!activator_claim(
+            Path::new(THIS_EXE),
+            &test_roots(),
+            &ActivatorRegistration::Unreadable,
+            no_resolve,
+            |_| false,
+        ));
+    }
+
+    /// The decision the caller matches on, for an exe in the given registration state. It uses the
+    /// same roots and `Path::exists` that `register_com_server` passes.
+    fn write_decision(exe: &Path, registration: &ActivatorRegistration) -> RegistrationWrite {
+        registration_write(registration, &test_roots(), exe, no_resolve, Path::exists)
+    }
+
+    #[test]
+    fn an_installed_copy_writes_over_an_unreadable_registration() {
+        assert_eq!(
+            write_decision(Path::new(INSTALLED_EXE), &ActivatorRegistration::Unreadable),
+            RegistrationWrite::Write,
+        );
+    }
+
+    #[test]
+    fn a_dev_build_skips_an_unreadable_registration() {
+        assert_eq!(
+            write_decision(Path::new(THIS_EXE), &ActivatorRegistration::Unreadable),
+            RegistrationWrite::Skip,
+        );
+    }
+
+    #[test]
+    fn an_installed_copy_writes_over_another_existing_exe() {
+        let scratch = ScratchDir::new("decision_installed_existing");
+        let other = scratch.exe("Other", true);
+        assert_eq!(
+            write_decision(Path::new(INSTALLED_EXE), &ActivatorRegistration::Names(other)),
+            RegistrationWrite::Write,
+        );
+    }
+
+    #[test]
+    fn a_dev_build_skips_another_existing_exe() {
+        let scratch = ScratchDir::new("decision_dev_existing");
+        let other = scratch.exe("Other", true);
+        assert_eq!(
+            write_decision(Path::new(THIS_EXE), &ActivatorRegistration::Names(other)),
+            RegistrationWrite::Skip,
+        );
+    }
+
+    #[test]
+    fn a_dev_build_writes_over_its_own_registration() {
+        let this_exe = Path::new(THIS_EXE);
+        assert_eq!(
+            write_decision(this_exe, &ActivatorRegistration::Names(this_exe.to_path_buf())),
+            RegistrationWrite::Write,
+        );
+    }
+
+    #[test]
+    fn an_absent_registration_is_written_by_an_installed_copy_and_a_dev_build() {
+        assert_eq!(
+            write_decision(Path::new(INSTALLED_EXE), &ActivatorRegistration::Absent),
+            RegistrationWrite::Write,
+        );
+        assert_eq!(
+            write_decision(Path::new(THIS_EXE), &ActivatorRegistration::Absent),
+            RegistrationWrite::Write,
+        );
+    }
+
+    #[test]
+    fn an_installed_copy_writes_over_a_gone_exe() {
+        let scratch = ScratchDir::new("decision_installed_gone");
+        let gone = scratch.exe("Other", false);
+        assert!(!gone.exists(), "the other exe must be absent");
+        assert_eq!(
+            write_decision(Path::new(INSTALLED_EXE), &ActivatorRegistration::Names(gone)),
+            RegistrationWrite::Write,
+        );
     }
 
     #[test]
@@ -582,7 +739,7 @@ mod tests {
     }
 
     #[test]
-    fn an_installed_copy_refused_by_an_unreadable_link_does_not_overwrite() {
+    fn an_installed_copy_overwrites_an_unreadable_per_user_link() {
         let other = Path::new(OTHER_EXE);
         assert_eq!(
             check_existing_links(
@@ -591,6 +748,54 @@ mod tests {
                 &targets(OTHER_EXE),
                 &LinkState::Unreadable,
                 |path| path == other,
+                no_resolve,
+            ),
+            Ok(()),
+        );
+    }
+
+    #[test]
+    fn an_installed_copy_overwrites_an_unreadable_per_user_link_when_the_all_users_link_is_missing() {
+        assert_eq!(
+            check_existing_links(
+                Path::new(INSTALLED_EXE),
+                &test_roots(),
+                &LinkState::Missing,
+                &LinkState::Unreadable,
+                |_| false,
+                no_resolve,
+            ),
+            Ok(()),
+        );
+    }
+
+    #[test]
+    fn an_installed_copy_refuses_an_unreadable_all_users_link_whatever_the_per_user_link() {
+        assert_eq!(
+            check_existing_links(
+                Path::new(INSTALLED_EXE),
+                &test_roots(),
+                &LinkState::Unreadable,
+                &LinkState::Unreadable,
+                |_| false,
+                no_resolve,
+            ),
+            Err(LinkRefusal::Unreadable(LinkSlot::AllUsers)),
+        );
+    }
+
+    #[test]
+    fn a_dev_build_still_refuses_an_unreadable_per_user_link_after_its_own_repair() {
+        // Its own all-users link names it, so the repair ran. The dev build stops at the gate,
+        // and the fallback's check would refuse the unreadable per-user link anyway.
+        assert!(stops_after_repair(THIS_EXE, true, &LinkState::Unreadable));
+        assert_eq!(
+            check_existing_links(
+                Path::new(THIS_EXE),
+                &[],
+                &targets(THIS_EXE),
+                &LinkState::Unreadable,
+                |_| false,
                 no_resolve,
             ),
             Err(LinkRefusal::Unreadable(LinkSlot::PerUser)),
@@ -706,6 +911,14 @@ mod tests {
     }
 
     #[test]
+    fn an_installed_copy_replaces_an_unreadable_per_user_link_through_the_fallback() {
+        let scratch = ScratchDir::new("replace_unreadable");
+        let installed = scratch.exe("Omairc", true);
+        let roots = [scratch.path().join("Omairc")];
+        assert_installed_copy_replaces(&installed, &roots, &LinkState::Unreadable);
+    }
+
+    #[test]
     fn an_installed_copy_whose_per_user_link_names_its_existing_exe_stops_with_no_write() {
         let scratch = ScratchDir::new("stop_named");
         let installed = scratch.exe("Omairc", true);
@@ -786,8 +999,8 @@ mod tests {
     }
 
     #[test]
-    fn an_installed_copy_stops_after_a_repair_when_its_per_user_link_is_unreadable() {
-        assert!(stops_after_repair(INSTALLED_EXE, true, &LinkState::Unreadable));
+    fn an_installed_copy_goes_on_after_a_repair_when_its_per_user_link_is_unreadable() {
+        assert!(!stops_after_repair(INSTALLED_EXE, true, &LinkState::Unreadable));
     }
 
     #[test]

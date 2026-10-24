@@ -213,7 +213,7 @@ mod tests {
     fn upload_posts_with_auth_headers_and_body() {
         let fake = FakeFetch::new();
         let url = "http://127.0.0.1/upload";
-        fake.serve_post(url, 201, Some("/files/note.txt"), b"stored");
+        fake.serve_post(url, 201, Some("/files/note.txt"));
         let dir = TempDir::new("fileupload");
         let path = dir.path().join("note.txt");
         fs::write(&path, b"hello file").expect("write");
@@ -246,7 +246,7 @@ mod tests {
     fn upload_refuses_cleartext_on_tls_irc() {
         let fake = FakeFetch::new();
         let url = "http://127.0.0.1/upload";
-        fake.serve_post(url, 201, Some("/x"), b"");
+        fake.serve_post(url, 201, Some("/x"));
         let dir = TempDir::new("fileupload");
         let path = dir.path().join("note.txt");
         fs::write(&path, b"x").expect("write");
@@ -318,7 +318,7 @@ mod tests {
     fn upload_redirect_is_not_followed() {
         let fake = FakeFetch::new();
         let url = "http://127.0.0.1/upload";
-        fake.serve_post(url, 302, Some("https://elsewhere.example/secret-path"), b"");
+        fake.serve_post(url, 302, Some("https://elsewhere.example/secret-path"));
         let dir = TempDir::new("fileupload");
         let path = dir.path().join("note.txt");
         fs::write(&path, b"x").expect("write");
@@ -350,7 +350,7 @@ mod tests {
     fn failure_text_never_contains_the_secret() {
         let fake = FakeFetch::new();
         let url = "http://127.0.0.1/upload";
-        fake.serve_post(url, 403, None, b"no");
+        fake.serve_post(url, 403, None);
         let dir = TempDir::new("fileupload");
         let path = dir.path().join("note.txt");
         fs::write(&path, b"x").expect("write");

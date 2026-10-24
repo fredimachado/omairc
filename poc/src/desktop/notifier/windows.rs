@@ -7,32 +7,35 @@
 //!
 //! - An installed copy, one under `%LOCALAPPDATA%\Programs\Omairc` or `%ProgramFiles%\Omairc`,
 //!   takes the activator registration and the per-user link even from an exe that still exists.
-//!   A record it cannot read is left alone (see below).
+//!   It also overwrites an activator registration or a per-user link that it cannot read (see
+//!   below).
 //! - Any other build, such as a dev or portable build, takes them only when nothing is
 //!   registered, when the registered exe is itself, or when the registered exe is gone. It does
 //!   not displace an exe that still exists (`util::should_claim`).
 //!
 //! Two installed copies take turns: each launch overwrites the other's registration and link,
-//! and this is intended. A registration or link that cannot be read is left alone, for any
-//! build, because its owner is unknown.
+//! and this is intended. An installed copy overwrites an unreadable activator registration and an
+//! unreadable per-user link. Other builds leave them alone. An unreadable all-users link refuses
+//! the shortcut fallback for every build, because its owner is unknown.
 //!
-//! The shortcut fallback reads two Start Menu `Omairc.lnk` links, the per-user one and the
-//! all-users one under `FOLDERID_CommonPrograms`, and writes only the per-user link. It writes
-//! only when neither link refuses. A link refuses when it cannot be read, when its target cannot
-//! be expanded, when the target is empty or not valid UTF-16, or when `%` survives `%VAR%`
-//! expansion (a literal `%` in a real path refuses too). For a build that is not installed, a
-//! link also refuses when it names an exe that still exists and is not this one. The fallback
-//! never creates an all-users link. If the all-users Start Menu folder cannot be resolved, the
-//! fallback writes nothing for any build.
+//! The shortcut fallback reads two Start Menu `Omairc.lnk` links, the per-user one under
+//! `FOLDERID_Programs` and the all-users one under `FOLDERID_CommonPrograms`, and writes only the
+//! per-user link. It writes only when neither link refuses. A link refuses when it cannot be read,
+//! when its target cannot be expanded, when the target is empty or not valid UTF-16, or when `%`
+//! survives `%VAR%` expansion (a literal `%` in a real path refuses too). An installed copy does
+//! not refuse an unreadable per-user link; it overwrites it. For a build that is not installed, a
+//! link also refuses when it names an exe that still exists and is not this one. The fallback never
+//! creates an all-users link. If either Start Menu folder cannot be resolved, the fallback writes
+//! nothing for any build.
 //!
 //! Before the fallback, the repair path re-stamps a link that already names this exe, in either
 //! location, but only when no such link is stamped yet. A readable link that names this exe
 //! counts as found whether or not its stamp takes, and the post-repair gate reads that finding,
 //! not the stamp. After a repair, a build that is not installed stops there, portable builds
-//! included. An installed copy goes on only when its per-user link is readable and names another
+//! included. An installed copy goes on only when its per-user link is unreadable or names another
 //! exe. The fallback then replaces that per-user link, unless the all-users link is unreadable.
-//! A missing or unreadable per-user link, or one that names this exe, stops there. So after a
-//! repair, a per-user link is replaced, never created.
+//! A missing per-user link, or one that names this exe, stops there. So after a repair, a
+//! per-user link is replaced, never created.
 //!
 //! This code decides what it writes. It does not establish which copy receives a click while
 //! more than one copy is registered.
@@ -74,8 +77,8 @@ use windows::Win32::UI::Notifications::{
     NOTIFICATION_USER_INPUT_DATA,
 };
 use windows::Win32::UI::Shell::{
-    FOLDERID_CommonPrograms, FOLDERID_ProgramFiles, FOLDERID_UserProgramFiles, IShellLinkW,
-    KF_FLAG_DEFAULT, SHGetKnownFolderPath, SHStrDupW, ShellLink, SLGP_RAWPATH,
+    FOLDERID_CommonPrograms, FOLDERID_ProgramFiles, FOLDERID_Programs, FOLDERID_UserProgramFiles,
+    IShellLinkW, KF_FLAG_DEFAULT, SHGetKnownFolderPath, SHStrDupW, ShellLink, SLGP_RAWPATH,
 };
 use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -91,8 +94,9 @@ use super::util::{
     should_claim,
 };
 use super::windows_ownership::{
-    activator_claim, canonical_with, check_existing_links, found_after_repair, is_installed_exe,
-    link_state_from_target, repair_ends_registration, LinkRefusal, LinkSlot, LinkState,
+    canonical_with, check_existing_links, found_after_repair, is_installed_exe,
+    link_state_from_target, registration_write, repair_ends_registration, ActivatorRegistration,
+    LinkRefusal, LinkSlot, LinkState, RegistrationWrite,
 };
 use super::{Activation, Notifier};
 
@@ -194,15 +198,25 @@ fn canonical_exe(path: &Path) -> PathBuf {
 fn read_link_state(link: &Path) -> LinkState {
     match link.try_exists() {
         Ok(false) => LinkState::Missing,
-        Ok(true) => match link_state_from_target(
-            shortcut_target(&link.to_string_lossy()).as_deref(),
-            expand_environment,
-        ) {
-            LinkState::Targets(target) => LinkState::Targets(canonical_exe(&target)),
-            unreadable => unreadable,
-        },
+        Ok(true) => target_state(shortcut_target(&link.to_string_lossy()).as_deref()),
         Err(_) => LinkState::Unreadable,
     }
+}
+
+/// The state of a link whose raw target is `raw`, the value `shortcut_target` read (`None` when
+/// that read failed). A `%VAR%` target is expanded first. Both `read_link_state` and
+/// `names_this_exe` judge a link here, so they cannot disagree about its target.
+fn target_state(raw: Option<&str>) -> LinkState {
+    match link_state_from_target(raw, expand_environment) {
+        LinkState::Targets(target) => LinkState::Targets(canonical_exe(&target)),
+        unreadable => unreadable,
+    }
+}
+
+/// Whether a link whose raw target is `raw` names `this_exe`, judged by `target_state`. A target
+/// that does not expand, or that is empty or unreadable, names nothing, so it is never installed.
+fn names_this_exe(raw: Option<&str>, this_exe: &Path) -> bool {
+    matches!(target_state(raw), LinkState::Targets(target) if same_exe(&target, this_exe))
 }
 
 /// Expands `%VAR%` text in a raw link target with `ExpandEnvironmentStringsW`. `None` when the
@@ -265,19 +279,24 @@ fn install_roots() -> Vec<PathBuf> {
         .collect()
 }
 
+/// The per-user Start Menu `Programs` folder, `FOLDERID_Programs`. The Inno installer's
+/// `{autoprograms}` resolves to it for a per-user install. `None` when the shell cannot resolve it.
+fn per_user_programs_dir() -> Option<PathBuf> {
+    known_folder(&FOLDERID_Programs)
+}
+
+/// The all-users Start Menu `Programs` folder, `FOLDERID_CommonPrograms`. `None` when the shell
+/// cannot resolve it.
+fn all_users_programs_dir() -> Option<PathBuf> {
+    known_folder(&FOLDERID_CommonPrograms)
+}
+
+/// The two Start Menu folders the repair path reads. A folder the shell cannot resolve is left out.
 fn start_menu_program_dirs() -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-    if let Some(home) = dirs::home_dir() {
-        dirs.push(
-            home.join("AppData/Roaming/Microsoft/Windows/Start Menu/Programs"),
-        );
-    }
-    if let Ok(program_data) = std::env::var("ProgramData") {
-        dirs.push(
-            PathBuf::from(program_data).join("Microsoft/Windows/Start Menu/Programs"),
-        );
-    }
-    dirs
+    [per_user_programs_dir(), all_users_programs_dir()]
+        .into_iter()
+        .flatten()
+        .collect()
 }
 
 fn shortcut_target(link_path: &str) -> Option<String> {
@@ -361,7 +380,8 @@ fn shortcut_is_stamped(link_path: &str) -> bool {
     clsid_matches
 }
 
-/// The readable per-user and all-users `Omairc.lnk` links whose target is this exe.
+/// The readable per-user and all-users `Omairc.lnk` links whose target is this exe. A target is
+/// judged by `names_this_exe`, the same expansion `read_link_state` applies.
 fn installed_shortcut_paths(exe_path: &str) -> Vec<PathBuf> {
     let this_exe = canonical_exe(Path::new(exe_path));
     let mut links = Vec::new();
@@ -371,75 +391,77 @@ fn installed_shortcut_paths(exe_path: &str) -> Vec<PathBuf> {
             continue;
         }
         let link_path = link.to_string_lossy();
-        let Some(target) = shortcut_target(&link_path) else {
-            continue;
-        };
-        if same_exe(&canonical_exe(Path::new(&target)), &this_exe) {
+        if names_this_exe(shortcut_target(&link_path).as_deref(), &this_exe) {
             links.push(link);
         }
     }
     links
 }
 
-/// Points the toast activator at this exe, when `activator_claim` allows it. An installed copy
-/// always may. Any other build may only when `should_claim` allows it. A registration that cannot
-/// be read is left unchanged, so the write is skipped.
+/// Points the toast activator at this exe, when `registration_write` says to write. An installed
+/// copy writes even over a registration it cannot read. Any other build writes only when
+/// `should_claim` allows it, and it leaves a registration it cannot read unchanged.
 fn register_com_server(exe: &str, install_roots: &[PathBuf]) {
     let subkey_wide = wide(COM_SERVER_SUBKEY);
-    let existing = match read_registered_command(&subkey_wide) {
-        Ok(command) => command
-            .as_deref()
-            .and_then(command_exe)
-            .map(|owner| canonical_exe(&owner)),
-        Err(status) => {
-            log::warn!(
-                "Windows notifier: could not read the toast activator registration ({:?}), leaving it unchanged",
-                status
-            );
-            return;
-        }
+    let read = read_registered_command(&subkey_wide);
+    let existing = match &read {
+        Ok(command) => match command.as_deref().and_then(command_exe) {
+            Some(owner) => ActivatorRegistration::Names(canonical_exe(&owner)),
+            None => ActivatorRegistration::Absent,
+        },
+        Err(_) => ActivatorRegistration::Unreadable,
     };
     let this_exe = canonical_exe(Path::new(exe));
-    if !activator_claim(
-        &this_exe,
-        install_roots,
-        existing.as_deref(),
-        resolve_path,
-        Path::exists,
-    ) {
-        if let Some(owner) = existing.as_deref() {
-            log::info!(
-                "Windows notifier: {} owns toast activation, so this build leaves it registered",
-                owner.display()
-            );
+    match registration_write(&existing, install_roots, &this_exe, resolve_path, Path::exists) {
+        RegistrationWrite::Skip => {
+            if let Err(status) = &read {
+                log::warn!(
+                    "Windows notifier: could not read the toast activator registration ({:?}), leaving it unchanged",
+                    status
+                );
+            }
+            if let ActivatorRegistration::Names(owner) = &existing {
+                log::info!(
+                    "Windows notifier: {} owns toast activation, so this build leaves it registered",
+                    owner.display()
+                );
+            }
         }
-        return;
-    }
-    if let Some(owner) = existing.as_deref() {
-        if !should_claim(Some(owner), &this_exe, Path::exists) {
-            log::info!(
-                "Windows notifier: this installed copy replaces the toast activation registration owned by {}",
-                owner.display()
-            );
+        RegistrationWrite::Write => {
+            if let Err(status) = &read {
+                log::warn!(
+                    "Windows notifier: could not read HKCU\\{} ({:?}), overwriting it because this copy is installed",
+                    COM_SERVER_SUBKEY,
+                    status
+                );
+            }
+            if let ActivatorRegistration::Names(owner) = &existing {
+                if !should_claim(Some(owner.as_path()), &this_exe, Path::exists) {
+                    log::info!(
+                        "Windows notifier: this installed copy replaces the toast activation registration owned by {}",
+                        owner.display()
+                    );
+                }
+            }
+            let command = format!("\"{}\"", exe.replace('/', "\\"));
+            let command_wide = wide(&command);
+            let status = unsafe {
+                RegSetKeyValueW(
+                    HKEY_CURRENT_USER,
+                    PCWSTR(subkey_wide.as_ptr()),
+                    None,
+                    REG_SZ.0,
+                    Some(command_wide.as_ptr() as *const _),
+                    (command_wide.len() * 2) as u32,
+                )
+            };
+            if status != ERROR_SUCCESS {
+                log::warn!(
+                    "Windows notifier: could not write the toast activator registration: {:?}",
+                    status
+                );
+            }
         }
-    }
-    let command = format!("\"{}\"", exe.replace('/', "\\"));
-    let command_wide = wide(&command);
-    let status = unsafe {
-        RegSetKeyValueW(
-            HKEY_CURRENT_USER,
-            PCWSTR(subkey_wide.as_ptr()),
-            None,
-            REG_SZ.0,
-            Some(command_wide.as_ptr() as *const _),
-            (command_wide.len() * 2) as u32,
-        )
-    };
-    if status != ERROR_SUCCESS {
-        log::warn!(
-            "Windows notifier: could not write the toast activator registration: {:?}",
-            status
-        );
     }
 }
 
@@ -504,12 +526,10 @@ fn ensure_notification_registration(exe_path: &str) {
     let installed = installed_shortcut_paths(exe_path);
     let repaired = repair_installed_links(exe_path, &installed);
 
-    let Some(programs) = dirs::home_dir().map(|home| {
-        home.join("AppData/Roaming/Microsoft/Windows/Start Menu/Programs")
-    }) else {
+    let Some(programs) = per_user_programs_dir() else {
         return;
     };
-    let Some(all_users_programs) = known_folder(&FOLDERID_CommonPrograms) else {
+    let Some(all_users_programs) = all_users_programs_dir() else {
         log::info!(
             "Windows notifier: could not resolve the all-users Start Menu folder, so no toast shortcut is written"
         );
@@ -523,12 +543,6 @@ fn ensure_notification_registration(exe_path: &str) {
     let this_exe = canonical_exe(Path::new(exe_path));
     let from_install = is_installed_exe(&this_exe, &roots, resolve_path);
     if repair_ends_registration(repaired, from_install, &this_exe, &per_user_state) {
-        if from_install && matches!(per_user_state, LinkState::Unreadable) {
-            log::warn!(
-                "Windows notifier: could not read {:?} to see which exe it names, leaving it unchanged",
-                link
-            );
-        }
         return;
     }
     if let Err(refusal) = check_existing_links(
@@ -569,6 +583,12 @@ fn ensure_notification_registration(exe_path: &str) {
                 target.display()
             );
         }
+    }
+    if from_install && matches!(per_user_state, LinkState::Unreadable) {
+        log::warn!(
+            "Windows notifier: could not read {:?} to see which exe it names, overwriting it because this copy is installed",
+            link
+        );
     }
     let _ = std::fs::create_dir_all(&programs);
     if let Err(error) = install_shortcut(&link_path, exe_path) {
@@ -752,7 +772,27 @@ pub fn activation_from_args(args: &[String]) -> Option<Activation> {
 
 #[cfg(test)]
 mod tests {
-    use super::{expand_environment, link_state_from_target, LinkState};
+    use std::path::{Path, PathBuf};
+
+    use super::{
+        expand_environment, link_state_from_target, names_this_exe, per_user_programs_dir,
+        LinkState,
+    };
+
+    #[test]
+    fn the_per_user_start_menu_folder_comes_from_the_known_folder_api() {
+        // Only the shell's answer is checked. Nothing is created, so no file is written.
+        let folder = per_user_programs_dir().unwrap_or_else(|| {
+            panic!(
+                "the shell did not resolve FOLDERID_Programs, so the per-user Start Menu folder is unchecked"
+            )
+        });
+        assert!(
+            folder.ends_with(Path::new(r"Microsoft\Windows\Start Menu\Programs")),
+            "FOLDERID_Programs resolved to {}, which is not under Microsoft\\Windows\\Start Menu\\Programs",
+            folder.display()
+        );
+    }
 
     #[test]
     fn expand_environment_expands_a_defined_variable() {
@@ -771,5 +811,28 @@ mod tests {
             link_state_from_target(Some(raw), expand_environment),
             LinkState::Unreadable,
         );
+    }
+
+    #[test]
+    fn a_variable_target_expanding_to_this_exe_is_installed() {
+        let root = std::env::var("SystemRoot").expect("SystemRoot is set on Windows");
+        let this_exe = PathBuf::from(format!(r"{root}\omairc.exe"));
+        assert!(names_this_exe(Some(r"%SystemRoot%\omairc.exe"), &this_exe));
+    }
+
+    #[test]
+    fn a_variable_target_that_does_not_expand_is_not_installed() {
+        // The raw text equals this exe's path, which a raw comparison would count. A target
+        // that keeps a `%` after expansion names no exe, so it is not installed.
+        let raw = r"%OMAIRC_TEST_NO_SUCH_VARIABLE%\omairc.exe";
+        assert!(!names_this_exe(Some(raw), Path::new(raw)));
+    }
+
+    #[test]
+    fn a_plain_target_is_installed_only_when_it_names_this_exe() {
+        let this_exe = Path::new(r"C:\OMAIRC_TEST_NO_SUCH_DIR\omairc.exe");
+        assert!(names_this_exe(Some(r"C:\OMAIRC_TEST_NO_SUCH_DIR\omairc.exe"), this_exe));
+        assert!(!names_this_exe(Some(r"C:\OMAIRC_TEST_NO_SUCH_DIR\other.exe"), this_exe));
+        assert!(!names_this_exe(None, this_exe));
     }
 }
