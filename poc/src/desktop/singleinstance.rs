@@ -250,7 +250,11 @@ mod tests {
     /// A unique endpoint, so parallel tests never meet each other's window or lock.
     fn endpoint() -> Endpoint {
         let serial = NEXT.fetch_add(1, Ordering::SeqCst);
-        Endpoint::named(&format!("omairc-poc-test-{}-{serial}", std::process::id()))
+        Endpoint::named(&format!(
+            "{}-test-{}-{serial}",
+            crate::identity::APP_FOLDER,
+            std::process::id()
+        ))
     }
 
     fn primary(endpoint: &Endpoint) -> IpcServer {

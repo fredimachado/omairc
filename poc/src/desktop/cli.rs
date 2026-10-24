@@ -944,7 +944,11 @@ Examples:
 
     #[test]
     fn a_send_whose_reply_is_lost_is_uncertain_and_exits_two() {
-        let endpoint = Endpoint::named(&format!("omairc-poc-cli-uncertain-{}", std::process::id()));
+        let endpoint = Endpoint::named(&format!(
+            "{}-cli-uncertain-{}",
+            crate::identity::APP_FOLDER,
+            std::process::id()
+        ));
         let mut listener = endpoint::Listener::bind(&endpoint).expect("the test endpoint is free");
         let server = std::thread::spawn(move || {
             let mut stream = listener.accept().expect("a client connects");
@@ -979,7 +983,11 @@ Examples:
 
     #[test]
     fn a_window_that_is_not_running_is_reported_as_such() {
-        let endpoint = Endpoint::named(&format!("omairc-poc-cli-absent-{}", std::process::id()));
+        let endpoint = Endpoint::named(&format!(
+            "{}-cli-absent-{}",
+            crate::identity::APP_FOLDER,
+            std::process::id()
+        ));
         let mut out = Vec::new();
         let mut err = Vec::new();
         let code = execute(&args(&["connections"]), &endpoint, &mut out, &mut err);

@@ -3,6 +3,12 @@ name = "omairc-poc-gpui"
 version = "0.1.0"
 edition = "2021"
 
+# Off by default: a normal `cargo run` / `cargo test` never writes under a real
+# install's `omairc/` folder or claims its IPC endpoint. Enable for cutover builds.
+[features]
+default = []
+product = []
+
 [dependencies]
 gpui = "0.2.2"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }

@@ -1,6 +1,7 @@
 //! Port of `tui/internal/storage/paths*.go` (Go) and `src/omaircpaths.cpp` (C++),
-//! under the PoC's own `omairc-poc` folder. The Qt client and the TUI write to
-//! `omairc/`, so nothing the PoC writes can land in a real install.
+//! under this build's app folder ([`crate::identity::APP_FOLDER`]). Without the
+//! `product` feature that folder is separate from the Qt/TUI `omairc/` tree, so a
+//! default build never writes into a real install.
 //!
 //! The roots follow `$XDG_CONFIG_HOME` and `$XDG_STATE_HOME` when set. Otherwise
 //! they are the platform's generic locations: `%LOCALAPPDATA%` on Windows,
@@ -11,12 +12,8 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-/// The folder the PoC owns under each root.
-pub const APP_FOLDER: &str = "omairc-poc";
-/// The folder the Qt client and the TUI use under each root (`QSettings` org/app name).
-pub const QT_APP_FOLDER: &str = "omairc";
-/// The QSettings-compatible INI file, the same name the Qt client uses.
-pub const SETTINGS_FILE: &str = "omairc.conf";
+pub use crate::identity::{APP_FOLDER, QT_APP_FOLDER, SETTINGS_FILE};
+
 /// The STS policy cache, beside the settings file (`IrcStsStore::filePath`, same name as Qt).
 pub const STS_FILE: &str = "sts";
 /// The application log, the same name the Qt client uses.
@@ -96,7 +93,7 @@ impl Env {
     }
 }
 
-/// The config folder (`<config root>/omairc-poc`), or `None` when the platform
+/// The config folder (`<config root>/<APP_FOLDER>`), or `None` when the platform
 /// config root is unknown.
 pub fn config_dir_for(env: &Env, platform: Platform) -> Option<PathBuf> {
     if let Some(home) = &env.poc_home {
@@ -111,7 +108,7 @@ pub fn qt_config_dir_for(env: &Env, platform: Platform) -> Option<PathBuf> {
     config_dir_for_folder(env, platform, QT_APP_FOLDER)
 }
 
-/// The state folder (`<state root>/omairc-poc`). Falls back to the temp dir when
+/// The state folder (`<state root>/<APP_FOLDER>`). Falls back to the temp dir when
 /// the platform state root is unknown, as the Qt log does.
 pub fn state_dir_for(env: &Env, platform: Platform) -> PathBuf {
     if let Some(home) = &env.poc_home {
@@ -348,6 +345,8 @@ mod tests {
         );
     }
 
+    /// Without `product`, this build must not share the installed client's folder.
+    #[cfg(not(feature = "product"))]
     #[test]
     fn the_qt_folder_is_never_used() {
         let env = Env {
@@ -366,14 +365,15 @@ mod tests {
             ];
             for path in paths {
                 assert!(
-                    !path.components().any(|part| part.as_os_str() == "omairc"),
+                    !path.components().any(|part| part.as_os_str() == QT_APP_FOLDER),
                     "{} names the Qt folder",
                     path.display()
                 );
                 assert!(
                     path.components().any(|part| part.as_os_str() == APP_FOLDER),
-                    "{} should stay under the PoC folder",
-                    path.display()
+                    "{} should stay under {}",
+                    path.display(),
+                    APP_FOLDER
                 );
             }
         }

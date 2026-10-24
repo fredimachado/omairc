@@ -1,7 +1,8 @@
 //! The `read --unread` cursor store: one JSON file per network, or per network and target, holding the
-//! newest line the CLI returned. Port of `src/omaircclipcursor.{h,cpp}` (C++). The PoC keeps its own
-//! folder, `omairc-poc/cli-cursors`, so it never shares a cursor with an installed Qt client. Qt's
-//! migration from older layouts does not apply to a folder the PoC creates.
+//! newest line the CLI returned. Port of `src/omaircclipcursor.{h,cpp}` (C++). Cursors live under
+//! `<state>/<APP_FOLDER>/cli-cursors` ([`crate::identity::APP_FOLDER`]), so a default build never
+//! shares a cursor with an installed Qt client. Qt's migration from older layouts does not apply to
+//! a folder this build creates.
 //!
 //! A target's file name comes from its name folded by the network's CASEMAPPING, so `#Omarchy` and
 //! `#omarchy` share one cursor. Without a known CASEMAPPING the fold is ASCII, as Qt's is.
@@ -112,7 +113,7 @@ fn fold_mapping(mapping: IrcCaseMapping, known: bool) -> IrcCaseMapping {
     }
 }
 
-/// `$OMAIRC_CURSOR_ROOT`, else `omairc-poc/cli-cursors` under the platform state directory.
+/// `$OMAIRC_CURSOR_ROOT`, else `<APP_FOLDER>/cli-cursors` under the platform state directory.
 pub fn default_root() -> PathBuf {
     if let Some(root) = std::env::var_os(ROOT_VAR).filter(|value| !value.is_empty()) {
         return PathBuf::from(root);
@@ -171,7 +172,8 @@ mod tests {
                 .map(|elapsed| elapsed.as_nanos())
                 .unwrap_or_default();
             let path = std::env::temp_dir().join(format!(
-                "omairc-poc-cursor-{tag}-{}-{nanos}",
+                "{}-cursor-{tag}-{}-{nanos}",
+                crate::identity::APP_FOLDER,
                 std::process::id()
             ));
             Self(path)

@@ -1,5 +1,5 @@
-//! Persistence under the PoC's own `omairc-poc` folder, so it never touches a
-//! real install. It mirrors `tui/internal/storage/` (Go) and `src/omaircpaths.cpp`
+//! Persistence under this build's app folder ([`crate::identity::APP_FOLDER`]), so a
+//! default build never touches a real install. It mirrors `tui/internal/storage/` (Go) and `src/omaircpaths.cpp`
 //! plus the stores in `src/irc/` (C++). The formats match Qt and the TUI: a
 //! QSettings-compatible INI file, with the JSON that Qt keeps inside a string value.
 //!

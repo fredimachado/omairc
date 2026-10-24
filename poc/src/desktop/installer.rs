@@ -50,13 +50,14 @@ impl InstallerLauncher for ProcessLauncher {
     }
 }
 
-/// The directory a download lands in. Qt keeps it under the state root. The PoC
-/// uses `omairc-poc` so it never shares a real install's files.
+/// The directory a download lands in. Qt keeps it under the state root. This
+/// build uses [`crate::identity::APP_FOLDER`] so a default build never shares a
+/// real install's files.
 pub fn default_updates_dir() -> PathBuf {
     dirs::state_dir()
         .or_else(dirs::data_local_dir)
         .unwrap_or_else(std::env::temp_dir)
-        .join("omairc-poc")
+        .join(crate::identity::APP_FOLDER)
         .join("updates")
 }
 
@@ -385,9 +386,12 @@ mod tests {
     }
 
     #[test]
-    fn the_updates_directory_is_under_omairc_poc() {
+    fn the_updates_directory_is_under_the_app_folder() {
         let dir = default_updates_dir();
-        assert!(dir.ends_with(Path::new("omairc-poc").join("updates")), "{dir:?}");
+        assert!(
+            dir.ends_with(Path::new(crate::identity::APP_FOLDER).join("updates")),
+            "{dir:?}"
+        );
     }
 
     #[test]
