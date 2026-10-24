@@ -210,6 +210,85 @@ std::vector<std::string> parseParameters(std::string_view input)
 
     return parameters;
 }
+
+bool equalsFoldedAscii(std::string_view left, std::string_view right)
+{
+    if (left.size() != right.size())
+        return false;
+    for (std::size_t index = 0; index < left.size(); ++index) {
+        const auto fold = [](unsigned char ch) {
+            return ch >= 'A' && ch <= 'Z'
+                ? static_cast<char>(ch - 'A' + 'a')
+                : static_cast<char>(ch);
+        };
+        if (fold(static_cast<unsigned char>(left[index]))
+            != fold(static_cast<unsigned char>(right[index]))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::optional<IrcBouncerSubcommand> bouncerSubcommand(std::string_view name)
+{
+    if (equalsFoldedAscii(name, "bind"))
+        return IrcBouncerSubcommand::Bind;
+    if (equalsFoldedAscii(name, "listnetworks"))
+        return IrcBouncerSubcommand::ListNetworks;
+    if (equalsFoldedAscii(name, "addnetwork"))
+        return IrcBouncerSubcommand::AddNetwork;
+    if (equalsFoldedAscii(name, "changenetwork"))
+        return IrcBouncerSubcommand::ChangeNetwork;
+    if (equalsFoldedAscii(name, "delnetwork"))
+        return IrcBouncerSubcommand::DelNetwork;
+    if (equalsFoldedAscii(name, "network"))
+        return IrcBouncerSubcommand::Network;
+    return std::nullopt;
+}
+
+std::vector<std::string_view> splitUnescapedSemicolons(std::string_view blob)
+{
+    std::vector<std::string_view> pieces;
+    std::size_t start = 0;
+    int slashes = 0;
+    for (std::size_t index = 0; index < blob.size(); ++index) {
+        if (blob[index] == '\\') {
+            ++slashes;
+            continue;
+        }
+        if (blob[index] == ';' && slashes % 2 == 0) {
+            pieces.push_back(blob.substr(start, index - start));
+            start = index + 1;
+        }
+        slashes = 0;
+    }
+    pieces.push_back(blob.substr(start));
+    return pieces;
+}
+
+std::vector<IrcBouncerAttribute> parseAttributeBlob(std::string_view blob)
+{
+    std::vector<IrcBouncerAttribute> attributes;
+    if (blob.empty())
+        return attributes;
+    for (const std::string_view piece : splitUnescapedSemicolons(blob)) {
+        if (piece.empty())
+            continue;
+        const std::size_t equals = piece.find('=');
+        IrcBouncerAttribute attribute;
+        attribute.key = std::string(piece.substr(0, equals));
+        if (attribute.key.empty())
+            continue;
+        if (equals == std::string_view::npos || equals + 1 == piece.size()) {
+            attribute.removed = true;
+        } else {
+            attribute.value = unescapeTagValue(piece.substr(equals + 1));
+            attribute.removed = attribute.value.empty();
+        }
+        attributes.push_back(std::move(attribute));
+    }
+    return attributes;
+}
 }
 
 IrcParseResult IrcParser::parse(std::string_view line)
@@ -262,4 +341,59 @@ IrcParseResult IrcParser::parse(std::string_view line)
         message.parameters = parseParameters(line.substr(commandEnd + 1));
 
     return IrcParseResult::success(std::move(message));
+}
+
+std::optional<IrcParsedBouncer> parseBouncerCommand(const IrcMessage& message)
+{
+    if (!equalsFoldedAscii(message.command, "BOUNCER") || message.parameters.empty())
+        return std::nullopt;
+    const std::optional<IrcBouncerSubcommand> subcommand =
+        bouncerSubcommand(message.parameters.front());
+    if (!subcommand)
+        return std::nullopt;
+
+    IrcParsedBouncer parsed;
+    parsed.subcommand = *subcommand;
+    const auto parameterAt = [&](std::size_t index) -> std::string_view {
+        if (index >= message.parameters.size())
+            return {};
+        return message.parameters[index];
+    };
+
+    switch (*subcommand) {
+    case IrcBouncerSubcommand::Bind:
+    case IrcBouncerSubcommand::DelNetwork:
+        parsed.netId = std::string(parameterAt(1));
+        break;
+    case IrcBouncerSubcommand::ListNetworks:
+        break;
+    case IrcBouncerSubcommand::AddNetwork:
+        if (message.parameters.size() >= 2) {
+            const std::string_view blob = parameterAt(1);
+            if (blob.find('=') != std::string_view::npos
+                || blob.find(';') != std::string_view::npos) {
+                parsed.attributes = parseAttributeBlob(blob);
+            } else {
+                parsed.netId = std::string(blob);
+            }
+        }
+        break;
+    case IrcBouncerSubcommand::ChangeNetwork:
+        parsed.netId = std::string(parameterAt(1));
+        if (message.parameters.size() >= 3)
+            parsed.attributes = parseAttributeBlob(parameterAt(2));
+        break;
+    case IrcBouncerSubcommand::Network:
+        if (message.parameters.size() < 2)
+            return std::nullopt;
+        parsed.netId = std::string(parameterAt(1));
+        if (message.parameters.size() >= 3) {
+            if (parameterAt(2) == "*")
+                parsed.removed = true;
+            else
+                parsed.attributes = parseAttributeBlob(parameterAt(2));
+        }
+        break;
+    }
+    return parsed;
 }

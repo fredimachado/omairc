@@ -19,6 +19,9 @@ type SessionConfig struct {
 	Password         string
 	NickServPassword string
 	SASLAccount      string
+	// BouncerBindNetID, when set, is sent as BOUNCER BIND after SASL and
+	// before CAP END. Empty leaves the connection unbound.
+	BouncerBindNetID string
 
 	AutojoinChannels []string
 	AutojoinKeys     map[string]string

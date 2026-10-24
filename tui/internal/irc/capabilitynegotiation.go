@@ -266,6 +266,8 @@ var wantedTable = []wantedCapability{
 	{CapabilityExtendedJoin, "extended-join", 0, false, false, false, acceptsAnyValue},
 	{CapabilityReadMarker, "draft/read-marker", 0, false, false, false, acceptsAnyValue},
 	{CapabilityReadMarker, "soju.im/read", 0, false, false, false, acceptsAnyValue},
+	{CapabilityBouncerNetworks, "soju.im/bouncer-networks", 0, false, false, true, acceptsAnyValue},
+	{CapabilityBouncerNetworksNotify, "soju.im/bouncer-networks-notify", 0, false, false, true, acceptsAnyValue},
 }
 
 func wantedFor(name string) *wantedCapability {

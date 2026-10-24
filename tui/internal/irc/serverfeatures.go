@@ -68,6 +68,8 @@ type ServerFeatures struct {
 	iconURL           string
 	fileHosts         []string
 	modeRules         [256]ModeParamRule
+	hasBouncerNetID   bool
+	bouncerNetID      string
 }
 
 // NewServerFeatures returns features with the same defaults as the C++
@@ -218,6 +220,10 @@ func (f *ServerFeatures) ApplyToken(token string) {
 		if name == "LINELEN" {
 			f.lineLength = MaxClassicFrameBytes
 		}
+		if name == "BOUNCER_NETID" {
+			f.hasBouncerNetID = false
+			f.bouncerNetID = ""
+		}
 		return
 	}
 
@@ -276,6 +282,9 @@ func (f *ServerFeatures) ApplyToken(token string) {
 		}
 	case "soju.im/FILEHOST", "draft/FILEHOST":
 		f.fileHosts = parseFileHostList(value)
+	case "BOUNCER_NETID":
+		f.hasBouncerNetID = true
+		f.bouncerNetID = value
 	}
 }
 
@@ -394,6 +403,18 @@ func (f *ServerFeatures) ChanModesD() string {
 // IconURL returns the advertised draft/ICON template, or "".
 func (f *ServerFeatures) IconURL() string {
 	return f.iconURL
+}
+
+// HasBouncerNetID reports whether 005 advertised BOUNCER_NETID.
+// BouncerNetID is empty when the token had no value.
+func (f *ServerFeatures) HasBouncerNetID() bool {
+	return f.hasBouncerNetID
+}
+
+// BouncerNetID returns the network id bound to this connection, or "" when
+// the token was present without a value or has not been advertised.
+func (f *ServerFeatures) BouncerNetID() string {
+	return f.bouncerNetID
 }
 
 // FileHost returns the upload URI this connection may use, or "". An

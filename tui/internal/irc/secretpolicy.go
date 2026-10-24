@@ -487,9 +487,77 @@ func maskServiceRequestBody(command secretWireCommand, channelTypes string) (sec
 	return masked, true
 }
 
+func isTagNameCharacter(character byte) bool {
+	return (character >= 'A' && character <= 'Z') ||
+		(character >= 'a' && character <= 'z') ||
+		(character >= '0' && character <= '9') ||
+		character == '-' || character == '.' || character == '/' || character == '+'
+}
+
+func maskPassAttributesInParameter(parameter string) (string, bool) {
+	var builder strings.Builder
+	builder.Grow(len(parameter))
+	changed := false
+	for index := 0; index < len(parameter); {
+		boundary := index == 0 || !isTagNameCharacter(parameter[index-1])
+		if boundary && index+5 <= len(parameter) && strings.EqualFold(parameter[index:index+5], "pass=") {
+			builder.WriteString(parameter[index : index+4])
+			builder.WriteString("=***")
+			index += 5
+			for index < len(parameter) {
+				character := parameter[index]
+				if character == ';' || character == ' ' || character == '\t' {
+					break
+				}
+				if character == '\\' && index+1 < len(parameter) {
+					index += 2
+					continue
+				}
+				index++
+			}
+			changed = true
+			continue
+		}
+		builder.WriteByte(parameter[index])
+		index++
+	}
+	if !changed {
+		return parameter, false
+	}
+	return builder.String(), true
+}
+
+func maskPassAttributes(command secretWireCommand) (secretWireCommand, bool) {
+	masked := command
+	masked.parameters = append([]string(nil), command.parameters...)
+	changed := false
+	for index, parameter := range masked.parameters {
+		next, did := maskPassAttributesInParameter(parameter)
+		if did {
+			masked.parameters[index] = next
+			changed = true
+		}
+	}
+	if !changed {
+		return secretWireCommand{}, false
+	}
+	return masked, true
+}
+
+func bouncerPassCommand(command secretWireCommand) bool {
+	if command.verb == "BOUNCER" {
+		return true
+	}
+	return command.verb == "FAIL" && len(command.parameters) > 0 &&
+		strings.EqualFold(command.parameters[0], "BOUNCER")
+}
+
 func secretMask(command secretWireCommand, channelTypes string) (secretWireCommand, bool) {
 	rule := secretRuleFor(command.verb)
 	if rule == nil {
+		if bouncerPassCommand(command) {
+			return maskPassAttributes(command)
+		}
 		return secretWireCommand{}, false
 	}
 	switch rule.shape {
@@ -615,6 +683,12 @@ func redactMessage(message Message, channelTypes string) (MaskedCommand, bool) {
 	verb := strings.ToUpper(WireText([]byte(message.Command)))
 	rule := secretRuleFor(verb)
 	if rule == nil {
+		view := secretViewOf(message)
+		if bouncerPassCommand(view) {
+			if masked, ok := maskPassAttributes(view); ok {
+				return MaskedCommand{Verb: masked.verb, Parameters: masked.parameters}, true
+			}
+		}
 		return MaskedCommand{}, false
 	}
 	if rule.shape == secretShapeServiceRequestBody {

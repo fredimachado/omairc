@@ -278,6 +278,10 @@ type Session struct {
 	framer irc.Framer
 
 	openBatches           map[string]*openBatch
+	bouncerBatches        map[string][]irc.ParsedBouncer
+	bouncerNetworks       irc.BouncerNetworkTable
+	pendingBouncer        []string
+	bouncerResults        []irc.BouncerCommandResult
 	ignoredBatches        map[string]struct{}
 	historyGeneration     map[string]int
 	historyAsked          map[string]struct{}
@@ -368,6 +372,7 @@ func NewSession(config SessionConfig, transport Transport, clock Clock) *Session
 		capabilities:         irc.NewCapabilityNegotiation(config.saslSecret() != ""),
 		typing:               newTypingPublisher(),
 		openBatches:          map[string]*openBatch{},
+		bouncerBatches:       map[string][]irc.ParsedBouncer{},
 		ignoredBatches:       map[string]struct{}{},
 		historyGeneration:    map[string]int{},
 		historyAsked:         map[string]struct{}{},
@@ -1470,6 +1475,11 @@ func (s *Session) handleMessageLocked(message irc.Message) {
 	if message.Command == "FAIL" {
 		s.handleChatHistoryFailLocked(message)
 		s.handleReadMarkerFailLocked(message)
+		s.handleBouncerFailLocked(message)
+	}
+	if message.Command == "BOUNCER" {
+		s.handleBouncerLocked(message)
+		return
 	}
 	if message.Command == "366" && len(message.Params) >= 2 {
 		s.probeChannelAwayLocked(parameter(message, 1))
@@ -1573,6 +1583,7 @@ func (s *Session) endCapabilityNegotiationLocked() {
 	if !s.registrationSent || !s.capabilities.Settled() || s.saslPending {
 		return
 	}
+	s.sendBouncerBindLocked()
 	s.capabilityNegotiationEnded = true
 	s.cancelTimer(&s.capabilityTimer)
 	s.sendLineLocked([]byte("CAP END\r\n"))
@@ -2013,6 +2024,168 @@ func (s *Session) sendSaslResponseLocked(raw []byte) {
 	}
 }
 
+func (s *Session) sendBouncerBindLocked() {
+	if s.sessionState == StateRegistered || s.config.BouncerBindNetID == "" {
+		return
+	}
+	if !s.capabilities.Enabled().Contains(irc.CapabilityBouncerNetworks) {
+		return
+	}
+	command, ok := irc.BouncerBindCommand(s.config.BouncerBindNetID)
+	if !ok {
+		return
+	}
+	line, err := irc.Line(command)
+	if err != nil {
+		return
+	}
+	s.sendLineLocked([]byte(line))
+}
+
+func (s *Session) sendBouncerCommandLocked(line, pending string) bool {
+	if s.sessionState != StateRegistered ||
+		!s.capabilities.Enabled().Contains(irc.CapabilityBouncerNetworks) {
+		return false
+	}
+	wire, err := irc.Line(line, s.features.LineLength())
+	if err != nil {
+		return false
+	}
+	if pending != "" {
+		s.pendingBouncer = append(s.pendingBouncer, pending)
+	}
+	s.sendLineLocked([]byte(wire))
+	return true
+}
+
+// ListBouncerNetworks writes BOUNCER LISTNETWORKS once the capability is on.
+func (s *Session) ListBouncerNetworks() bool {
+	var sent bool
+	s.locked(func() {
+		sent = s.sendBouncerCommandLocked(irc.BouncerListCommand(), "")
+	})
+	return sent
+}
+
+// AddBouncerNetwork writes BOUNCER ADDNETWORK.
+func (s *Session) AddBouncerNetwork(attributes []irc.BouncerAttributeValue) bool {
+	command, ok := irc.BouncerAddCommand(attributes)
+	if !ok {
+		return false
+	}
+	var sent bool
+	s.locked(func() {
+		sent = s.sendBouncerCommandLocked(command, "ADDNETWORK")
+	})
+	return sent
+}
+
+// ChangeBouncerNetwork writes BOUNCER CHANGENETWORK.
+func (s *Session) ChangeBouncerNetwork(netID string, attributes []irc.BouncerAttributeValue) bool {
+	command, ok := irc.BouncerChangeCommand(netID, attributes)
+	if !ok {
+		return false
+	}
+	var sent bool
+	s.locked(func() {
+		sent = s.sendBouncerCommandLocked(command, "CHANGENETWORK")
+	})
+	return sent
+}
+
+// DeleteBouncerNetwork writes BOUNCER DELNETWORK.
+func (s *Session) DeleteBouncerNetwork(netID string) bool {
+	command, ok := irc.BouncerDeleteCommand(netID)
+	if !ok {
+		return false
+	}
+	var sent bool
+	s.locked(func() {
+		sent = s.sendBouncerCommandLocked(command, "DELNETWORK")
+	})
+	return sent
+}
+
+// BouncerNetworks returns the netid table in first-seen order.
+func (s *Session) BouncerNetworks() []irc.BouncerNetwork {
+	var networks []irc.BouncerNetwork
+	s.locked(func() {
+		networks = s.bouncerNetworks.List()
+	})
+	return networks
+}
+
+// BouncerCommandResults returns matched ADD/CHANGE/DEL replies and failures.
+func (s *Session) BouncerCommandResults() []irc.BouncerCommandResult {
+	var results []irc.BouncerCommandResult
+	s.locked(func() {
+		results = append([]irc.BouncerCommandResult(nil), s.bouncerResults...)
+	})
+	return results
+}
+
+func takePendingBouncer(pending []string, subcommand string) []string {
+	for index, candidate := range pending {
+		if strings.EqualFold(candidate, subcommand) {
+			return append(pending[:index], pending[index+1:]...)
+		}
+	}
+	return pending
+}
+
+func (s *Session) noteBouncerSuccessLocked(subcommand, netID string) {
+	s.pendingBouncer = takePendingBouncer(s.pendingBouncer, subcommand)
+	s.bouncerResults = append(s.bouncerResults, irc.BouncerCommandResult{
+		Subcommand: subcommand,
+		OK:         true,
+		NetID:      netID,
+	})
+}
+
+func (s *Session) handleBouncerFailLocked(message irc.Message) {
+	failure, ok := irc.ParseBouncerFailure(message)
+	if !ok {
+		return
+	}
+	s.pendingBouncer = takePendingBouncer(s.pendingBouncer, failure.Subcommand)
+	s.bouncerResults = append(s.bouncerResults, irc.BouncerCommandResult{
+		Subcommand:  failure.Subcommand,
+		NetID:       failure.NetID,
+		Code:        failure.CodeName,
+		Attribute:   failure.Attribute,
+		Description: failure.Description,
+	})
+}
+
+func (s *Session) handleBouncerLocked(message irc.Message) {
+	parsed, ok := irc.ParseBouncerCommand(message)
+	if !ok {
+		return
+	}
+	switch parsed.Subcommand {
+	case irc.BouncerSubcommandNetwork:
+		s.bouncerNetworks.Apply(parsed)
+	case irc.BouncerAddNetwork:
+		if parsed.NetID != "" {
+			s.noteBouncerSuccessLocked("ADDNETWORK", parsed.NetID)
+		}
+	case irc.BouncerChangeNetwork:
+		if parsed.NetID != "" {
+			s.noteBouncerSuccessLocked("CHANGENETWORK", parsed.NetID)
+		}
+	case irc.BouncerDelNetwork:
+		if parsed.NetID != "" {
+			s.noteBouncerSuccessLocked("DELNETWORK", parsed.NetID)
+		}
+	}
+}
+
+func (s *Session) finishBouncerBatchLocked(reference string) {
+	lines := s.bouncerBatches[reference]
+	delete(s.bouncerBatches, reference)
+	s.bouncerNetworks.ReplaceSnapshot(lines)
+}
+
 // --- History batches ------------------------------------------------------
 
 func (s *Session) handleBatchLocked(message irc.Message) {
@@ -2028,8 +2201,14 @@ func (s *Session) handleBatchLocked(message irc.Message) {
 		return
 	}
 	if token[0] == '+' {
-		parent := tagValue(message, "batch")
 		batchType := parameter(message, 1)
+		if strings.EqualFold(batchType, "soju.im/bouncer-networks") && len(message.Params) == 2 {
+			if _, exists := s.bouncerBatches[reference]; !exists {
+				s.bouncerBatches[reference] = nil
+			}
+			return
+		}
+		parent := tagValue(message, "batch")
 		carriedLabel := tagValue(message, "label")
 		labeledResponse := strings.EqualFold(batchType, "labeled-response")
 		if _, exists := s.openBatches[reference]; exists {
@@ -2100,6 +2279,10 @@ func (s *Session) handleBatchLocked(message irc.Message) {
 		return
 	}
 	if token[0] == '-' {
+		if _, ok := s.bouncerBatches[reference]; ok {
+			s.finishBouncerBatchLocked(reference)
+			return
+		}
 		s.closeBatchLocked(reference)
 	}
 }
@@ -2188,6 +2371,13 @@ func (s *Session) captureInBatchLocked(message irc.Message) bool {
 	batch := tagValue(message, "batch")
 	if batch == "" {
 		return false
+	}
+	if _, ok := s.bouncerBatches[batch]; ok {
+		if parsed, parsedOK := irc.ParseBouncerCommand(message); parsedOK &&
+			parsed.Subcommand == irc.BouncerSubcommandNetwork {
+			s.bouncerBatches[batch] = append(s.bouncerBatches[batch], parsed)
+		}
+		return true
 	}
 	if _, ignored := s.ignoredBatches[batch]; ignored {
 		return true
@@ -3073,6 +3263,10 @@ func (s *Session) reconnectDelayLocked() int {
 func (s *Session) resetForConnectionLocked() {
 	s.framer = irc.Framer{}
 	s.openBatches = map[string]*openBatch{}
+	s.bouncerBatches = map[string][]irc.ParsedBouncer{}
+	s.bouncerNetworks.Clear()
+	s.pendingBouncer = nil
+	s.bouncerResults = nil
 	s.ignoredBatches = map[string]struct{}{}
 	s.historyAsked = map[string]struct{}{}
 	s.historyPending = map[string]int{}

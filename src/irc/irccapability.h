@@ -22,6 +22,8 @@ enum class IrcCapability {
     ExtendedJoin,
     ReadMarker,
     ZncPlayback,
+    BouncerNetworks,
+    BouncerNetworksNotify,
 };
 
 class IrcCapabilitySet

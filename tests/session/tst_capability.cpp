@@ -48,6 +48,7 @@ private slots:
     void accountCapAckEnablesMatchingBits();
     void zncPlaybackNeedsBatchAndItsOwnLine();
     void zncPlaybackAbsentIsNotRequested();
+    void bouncerNetworksKeepTheirOwnLines();
 };
 
 void CapabilityTest::unwantedAdvertisementProducesNoRequest()
@@ -565,6 +566,24 @@ void CapabilityTest::zncPlaybackAbsentIsNotRequested()
     QVERIFY(!lines.contains(QStringLiteral("znc.in/playback")));
     negotiation.acknowledge(tokens(QStringLiteral("batch server-time multi-prefix")));
     QVERIFY(!negotiation.enabled().contains(IrcCapability::ZncPlayback));
+}
+
+void CapabilityTest::bouncerNetworksKeepTheirOwnLines()
+{
+    IrcCapabilityNegotiation negotiation(false);
+    negotiation.advertise(tokens(QStringLiteral(
+        "soju.im/bouncer-networks soju.im/bouncer-networks-notify")));
+    QCOMPARE(negotiation.takeRequest().lines,
+             QStringList({QStringLiteral("soju.im/bouncer-networks"),
+                          QStringLiteral("soju.im/bouncer-networks-notify")}));
+
+    IrcCapabilityNegotiation withNeighbor(false);
+    withNeighbor.advertise(tokens(QStringLiteral(
+        "soju.im/bouncer-networks soju.im/bouncer-networks-notify multi-prefix")));
+    QCOMPARE(withNeighbor.takeRequest().lines,
+             QStringList({QStringLiteral("soju.im/bouncer-networks"),
+                          QStringLiteral("soju.im/bouncer-networks-notify"),
+                          QStringLiteral("multi-prefix")}));
 }
 
 void CapabilityTest::labeledResponseNeedsMessageTags()

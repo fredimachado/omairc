@@ -227,6 +227,73 @@ func TestConversationLogDoesNotOverwriteExistingTranscriptDuringMigration(t *tes
 	}
 }
 
+func TestChannelPrivmsgPassAttributeReloadsFromHistory(t *testing.T) {
+	log := NewConversationLog(t.TempDir())
+	reducer := irc.NewEventReducer()
+	room := reducer.ConversationKey("net", "#chan")
+	planted := "hi pass=x"
+	record := `{"timestamp":"2026-09-04T00:00:00.000Z","author":"alice","kind":"message","body":"hi pass=x"}` + "\n"
+	path := log.PathFor(room.NetworkID, room.NormalizedTarget, irc.CaseMapping{})
+	conversationLogTestWrite(t, path, record)
+
+	when := time.Date(2026, 9, 4, 0, 0, 0, 0, time.UTC)
+	reducer.SetConversationLog(log)
+	reducer.Apply(irc.WelcomeEvent{NetworkID: "net", CurrentNick: "omairc"}, when)
+	reducer.Apply(irc.JoinEvent{NetworkID: "net", Channel: "#chan", Nick: "omairc"}, when)
+	hydrated := reducer.Find(room)
+	if hydrated == nil || !conversationLogHasBody(hydrated.Messages, planted) {
+		t.Fatalf("hydrated = %+v", hydrated)
+	}
+
+	live := "hi pass=y"
+	reducer.Apply(irc.MessageEvent{
+		Conversation: room,
+		Author:       "bob",
+		Body:         live,
+		Timestamp:    when,
+		Target:       "#chan",
+	}, when)
+	disk, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(disk), planted) || !strings.Contains(string(disk), live) {
+		t.Fatalf("log = %s", disk)
+	}
+	tail := log.ReadTail(room.NetworkID, room.NormalizedTarget, irc.CaseMapping{}, 10)
+	if !conversationLogTailHasBody(tail, planted) || !conversationLogTailHasBody(tail, live) {
+		t.Fatalf("tail = %+v", tail)
+	}
+
+	again := irc.NewEventReducer()
+	again.SetConversationLog(log)
+	again.Apply(irc.WelcomeEvent{NetworkID: "net", CurrentNick: "omairc"}, when)
+	again.Apply(irc.JoinEvent{NetworkID: "net", Channel: "#chan", Nick: "omairc"}, when)
+	reloaded := again.Find(room)
+	if reloaded == nil || !conversationLogHasBody(reloaded.Messages, planted) ||
+		!conversationLogHasBody(reloaded.Messages, live) {
+		t.Fatalf("reloaded = %+v", reloaded)
+	}
+}
+
+func conversationLogHasBody(messages []irc.ReducedMessage, body string) bool {
+	for _, message := range messages {
+		if message.Body == body {
+			return true
+		}
+	}
+	return false
+}
+
+func conversationLogTailHasBody(lines []irc.TranscriptLine, body string) bool {
+	for _, line := range lines {
+		if line.Body == body {
+			return true
+		}
+	}
+	return false
+}
+
 func TestConversationLogSkipsRejectedTranscriptLines(t *testing.T) {
 	features := irc.NewServerFeatures()
 	channelTypes := features.ChannelTypes()

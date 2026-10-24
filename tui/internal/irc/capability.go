@@ -22,6 +22,8 @@ const (
 	CapabilityExtendedJoin
 	CapabilityReadMarker
 	CapabilityZncPlayback
+	CapabilityBouncerNetworks
+	CapabilityBouncerNetworksNotify
 )
 
 // CapabilitySet is a bitmask of Capability values. It mirrors IrcCapabilitySet.

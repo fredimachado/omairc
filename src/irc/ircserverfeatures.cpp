@@ -202,6 +202,10 @@ void IrcServerFeatures::applyToken(std::string_view token)
         }
         if (name == "LINELEN")
             m_lineLength = IrcProtocol::maxClassicFrameBytes;
+        if (name == "BOUNCER_NETID") {
+            m_hasBouncerNetId = false;
+            m_bouncerNetId.clear();
+        }
         return;
     }
 
@@ -299,6 +303,11 @@ void IrcServerFeatures::applyToken(std::string_view token)
 
     if (name == "soju.im/FILEHOST" || name == "draft/FILEHOST")
         m_fileHosts = parseFileHostList(value);
+
+    if (name == "BOUNCER_NETID") {
+        m_hasBouncerNetId = true;
+        m_bouncerNetId.assign(value);
+    }
 }
 
 void IrcServerFeatures::applyTokens(const std::vector<std::string>& tokens)

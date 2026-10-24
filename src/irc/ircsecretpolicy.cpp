@@ -460,11 +460,78 @@ std::optional<IrcWireCommand> maskServiceRequestBody(const IrcWireCommand& comma
     return masked;
 }
 
+bool isTagNameCharacter(QChar ch)
+{
+    return (ch >= QLatin1Char('A') && ch <= QLatin1Char('Z'))
+        || (ch >= QLatin1Char('a') && ch <= QLatin1Char('z'))
+        || (ch >= QLatin1Char('0') && ch <= QLatin1Char('9'))
+        || ch == QLatin1Char('-') || ch == QLatin1Char('.')
+        || ch == QLatin1Char('/') || ch == QLatin1Char('+');
+}
+
+QString maskPassAttributesInParameter(const QString& parameter, bool *changed)
+{
+    QString result;
+    result.reserve(parameter.size());
+    for (int index = 0; index < parameter.size();) {
+        const bool boundary = index == 0
+            || !isTagNameCharacter(parameter.at(index - 1));
+        if (boundary
+            && parameter.mid(index, 5).compare(QLatin1String("pass="),
+                                               Qt::CaseInsensitive) == 0) {
+            result += parameter.mid(index, 4);
+            result += QLatin1String("=***");
+            index += 5;
+            while (index < parameter.size()) {
+                const QChar ch = parameter.at(index);
+                if (ch == QLatin1Char(';') || ch == QLatin1Char(' ')
+                    || ch == QLatin1Char('\t')) {
+                    break;
+                }
+                if (ch == QLatin1Char('\\') && index + 1 < parameter.size()) {
+                    index += 2;
+                    continue;
+                }
+                ++index;
+            }
+            *changed = true;
+            continue;
+        }
+        result += parameter.at(index);
+        ++index;
+    }
+    return result;
+}
+
+std::optional<IrcWireCommand> maskPassAttributes(const IrcWireCommand& command)
+{
+    IrcWireCommand masked = command;
+    bool changed = false;
+    for (QString& parameter : masked.parameters)
+        parameter = maskPassAttributesInParameter(parameter, &changed);
+    if (!changed)
+        return std::nullopt;
+    return masked;
+}
+
+bool bouncerPassCommand(const IrcWireCommand& command)
+{
+    if (command.verb == QLatin1String("BOUNCER"))
+        return true;
+    return command.verb == QLatin1String("FAIL")
+        && !command.parameters.isEmpty()
+        && command.parameters.front().compare(QLatin1String("BOUNCER"),
+                                              Qt::CaseInsensitive) == 0;
+}
+
 std::optional<IrcWireCommand> mask(const IrcWireCommand& command, QStringView channelTypes)
 {
     const IrcSecretRule *rule = ruleFor(command.verb);
-    if (!rule)
+    if (!rule) {
+        if (bouncerPassCommand(command))
+            return maskPassAttributes(command);
         return std::nullopt;
+    }
     switch (rule->shape) {
     case IrcSecretShape::TailAfterParameters:
         return maskTailAfterParameters(command, rule->visibleParameters);
@@ -597,8 +664,14 @@ std::optional<IrcMaskedCommand> IrcSecretPolicy::redactMessage(const IrcMessage&
 {
     const QString verb = ircWireText(message.command).toUpper();
     const IrcSecretRule *rule = ruleFor(verb);
-    if (!rule)
+    if (!rule) {
+        const IrcWireCommand view = viewOf(message);
+        if (bouncerPassCommand(view)) {
+            if (const auto pass = maskPassAttributes(view))
+                return IrcMaskedCommand{pass->verb, pass->parameters};
+        }
         return std::nullopt;
+    }
     if (rule->shape == IrcSecretShape::ServiceRequestBody) {
         if (message.parameters.size() < 2)
             return std::nullopt;

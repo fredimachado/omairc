@@ -417,6 +417,22 @@ void CaseMappingTest::parsesFileHostFromIsupport()
     cleared.applyToken("soju.im/FILEHOST=https://uploads.example/upload");
     cleared.applyToken("soju.im/FILEHOST=");
     QVERIFY(cleared.fileHost(false).empty());
+
+    IrcServerFeatures bouncer;
+    QVERIFY(!bouncer.hasBouncerNetId());
+    QVERIFY(bouncer.bouncerNetId().empty());
+    bouncer.applyToken("BOUNCER_NETID");
+    QVERIFY(bouncer.hasBouncerNetId());
+    QVERIFY(bouncer.bouncerNetId().empty());
+    bouncer.applyToken("BOUNCER_NETID=42");
+    QVERIFY(bouncer.hasBouncerNetId());
+    QCOMPARE(bouncer.bouncerNetId(), std::string("42"));
+    bouncer.applyToken("-BOUNCER_NETID");
+    QVERIFY(!bouncer.hasBouncerNetId());
+    QVERIFY(bouncer.bouncerNetId().empty());
+    bouncer.applyToken("BOUNCER_NETID=42");
+    bouncer.applyToken("-BOUNCER_NETID=42");
+    QVERIFY(!bouncer.hasBouncerNetId());
 }
 
 int runCaseMappingTests(int argc, char **argv)
