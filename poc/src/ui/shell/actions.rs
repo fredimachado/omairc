@@ -148,14 +148,25 @@ pub fn bind_shell_keys(cx: &mut App) {
         KeyBinding::new("tab", CompleteNickForward, Some("Composer")),
         KeyBinding::new("shift-tab", CompleteNickBackward, Some("Composer")),
     ];
-    // Windows Terminal keeps Ctrl+, for its Settings, and Ctrl+PgDn for its tabs, so
-    // Qt adds Ctrl+] and Ctrl+PgDn on Windows only.
-    #[cfg(target_os = "windows")]
-    {
-        bindings.push(KeyBinding::new("secondary-]", OpenConnect, None));
-        bindings.push(KeyBinding::new("secondary-pagedown", ConnectCycleTab, None));
-    }
+    bindings.extend(windows_bindings());
     cx.bind_keys(bindings);
+}
+
+/// Windows-only chords. Windows Terminal keeps Ctrl+, for its Settings, and
+/// Ctrl+PgDn for its tabs, so Qt adds Ctrl+] and Ctrl+PgDn on Windows only.
+#[cfg(target_os = "windows")]
+fn windows_bindings() -> Vec<KeyBinding> {
+    vec![
+        KeyBinding::new("secondary-]", OpenConnect, None),
+        KeyBinding::new("secondary-pagedown", ConnectCycleTab, None),
+    ]
+}
+
+/// Other platforms add no extra chords. `bind_shell_keys` extends its table with
+/// this on every target, so the function is used everywhere.
+#[cfg(not(target_os = "windows"))]
+fn windows_bindings() -> Vec<KeyBinding> {
+    Vec::new()
 }
 
 /// Attaches every shell action to the window root. Each listener defers to a
