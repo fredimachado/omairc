@@ -1,13 +1,11 @@
 //! Windows Toast notifications. Port of `windowsnotifications.cpp`.
 //!
-//! An installed copy owns toast activation. Clicks go to the exe in the activator's
-//! `LocalServer32` value, and the toast AUMID resolves through the Start Menu
-//! `Omairc.lnk`. A build rewrites either one only when nothing is registered, when the
-//! registered exe is itself, or when the registered exe no longer exists. A dev build
-//! therefore leaves an installed copy's registration and shortcut alone. It still shows
-//! toasts, because the AUMID resolves through that shortcut, but clicks go to the
-//! installed app. Once the Rust installer ships, its exe is the registered one and the
-//! two match.
+//! Toasts use the AUMID `FrediMachado.Omairc`, which resolves through whichever Start Menu
+//! `Omairc.lnk` is present. Ownership of the activator registration (`LocalServer32`) goes
+//! to whichever exe registered it. A build rewrites that value or the shortcut only when
+//! nothing is registered, when the registered exe is itself, or when the registered exe no
+//! longer exists. So an exe that still exists is not displaced by a later one from this
+//! code path.
 
 use std::collections::VecDeque;
 use std::ffi::OsStr;
@@ -331,14 +329,20 @@ fn register_com_server(exe: &str) {
     }
     let command = format!("\"{}\"", exe.replace('/', "\\"));
     let command_wide = wide(&command);
-    unsafe {
-        let _ = RegSetKeyValueW(
+    let status = unsafe {
+        RegSetKeyValueW(
             HKEY_CURRENT_USER,
             PCWSTR(subkey_wide.as_ptr()),
             None,
             REG_SZ.0,
             Some(command_wide.as_ptr() as *const _),
             (command_wide.len() * 2) as u32,
+        )
+    };
+    if status != ERROR_SUCCESS {
+        log::warn!(
+            "Windows notifier: could not write the toast activator registration: {:?}",
+            status
         );
     }
 }
@@ -613,30 +617,32 @@ mod tests {
 
     #[test]
     fn nothing_registered_is_claimed() {
-        assert!(should_claim(None, Path::new(THIS_EXE), |_| true));
+        assert!(should_claim(None, Path::new(THIS_EXE), |_| false));
     }
 
     #[test]
-    fn the_same_exe_is_claimed_even_while_it_exists() {
+    fn the_same_exe_is_claimed_regardless_of_existence() {
         let this_exe = Path::new(THIS_EXE);
-        assert!(should_claim(Some(this_exe), this_exe, |_| true));
+        assert!(should_claim(Some(this_exe), this_exe, |_| false));
     }
 
     #[test]
     fn a_different_exe_that_still_exists_is_not_claimed() {
+        let installed = Path::new(r"C:\Program Files\Omairc\omairc.exe");
         assert!(!should_claim(
-            Some(Path::new(r"C:\Program Files\Omairc\omairc.exe")),
+            Some(installed),
             Path::new(THIS_EXE),
-            |_| true,
+            |path| path == installed,
         ));
     }
 
     #[test]
     fn a_different_exe_that_is_gone_is_claimed() {
+        let gone = Path::new(r"C:\old\omairc\omairc.exe");
         assert!(should_claim(
-            Some(Path::new(r"C:\old\omairc\omairc.exe")),
+            Some(gone),
             Path::new(THIS_EXE),
-            |_| false,
+            |path| path != gone,
         ));
     }
 
@@ -644,10 +650,15 @@ mod tests {
     fn a_quoted_registry_value_is_compared_by_its_exe() {
         let this_exe = Path::new(THIS_EXE);
         let same = registered_exe(&format!("\"{THIS_EXE}\""));
-        assert!(should_claim(same.as_deref(), this_exe, |_| true));
+        assert!(should_claim(same.as_deref(), this_exe, |_| false));
 
+        let installed_exe = Path::new(r"C:\Program Files\Omairc\omairc.exe");
         let installed = registered_exe(r#""C:\Program Files\Omairc\omairc.exe" -Embedding"#);
-        assert!(!should_claim(installed.as_deref(), this_exe, |_| true));
+        assert!(!should_claim(
+            installed.as_deref(),
+            this_exe,
+            |path| path == installed_exe,
+        ));
     }
 
     #[test]
@@ -656,7 +667,7 @@ mod tests {
         assert!(should_claim(
             registered_exe("\"\"").as_deref(),
             Path::new(THIS_EXE),
-            |_| true,
+            |_| false,
         ));
     }
 }
