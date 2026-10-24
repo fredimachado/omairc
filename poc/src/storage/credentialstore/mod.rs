@@ -12,6 +12,8 @@ use std::collections::BTreeMap;
 
 use crate::storage::profilestore::Profile;
 
+pub(crate) mod defer;
+pub(crate) use defer::DeferringCredentialStore;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "macos")]
@@ -21,6 +23,14 @@ mod pending;
 mod windows;
 
 pub use pending::PendingRemovals;
+
+/// The outcome of a slot read on the UI thread. `Loading` means a worker still has the
+/// keyring call in flight; the caller must poll and try again.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ReadSlot {
+    Loading,
+    Ready(Result<Option<String>, String>),
+}
 
 /// Where a secret stands after a write or a delete (`CredentialStore::State`), as the Connect
 /// sheet words it. `Error` carries the OS's reason; it never holds the password.
@@ -69,20 +79,34 @@ pub fn key_names_for_slot(profile: &Profile, purpose: &'static str) -> Vec<Strin
     names
 }
 
-/// Reads one slot, including a legacy server-password key when the canonical one is empty.
+/// Reads one slot without blocking on the keyring. When the answer is [`ReadSlot::Loading`],
+/// call [`CredentialStore::poll_reads`] and try again.
 pub fn read_slot(
     store: &dyn CredentialStore,
     profile: &Profile,
     purpose: &'static str,
-) -> Result<Option<String>, String> {
+) -> ReadSlot {
     let primary = CredentialKey::for_profile(profile, purpose);
-    match store.read(&primary)? {
-        Some(text) => Ok(Some(text)),
-        None if purpose == PURPOSE_PASSWORD => {
+    match store.read_deferred(&primary) {
+        ReadSlot::Loading => ReadSlot::Loading,
+        ReadSlot::Ready(Ok(Some(text))) => ReadSlot::Ready(Ok(Some(text))),
+        ReadSlot::Ready(Ok(None)) if purpose == PURPOSE_PASSWORD => {
             let legacy = CredentialKey::for_profile(profile, LEGACY_PURPOSE_PASSWORD);
-            store.read(&legacy)
+            store.read_deferred(&legacy)
         }
-        None => Ok(None),
+        ReadSlot::Ready(answer) => ReadSlot::Ready(answer),
+    }
+}
+
+/// Reads one slot synchronously. Only for tests and for stores that answer immediately.
+pub fn read_slot_sync(
+    store: &dyn CredentialStore,
+    profile: &Profile,
+    purpose: &'static str,
+) -> Result<Option<String>, String> {
+    match read_slot(store, profile, purpose) {
+        ReadSlot::Ready(answer) => answer,
+        ReadSlot::Loading => Err("checking secure storage".to_owned()),
     }
 }
 
@@ -190,6 +214,14 @@ pub trait CredentialStore {
     /// when it could not answer, such as a call that timed out. A caller must not read an
     /// `Err` as a missing secret.
     fn read(&self, key: &CredentialKey) -> Result<Option<String>, String>;
+
+    /// Like [`read`], but never waits on a slow keyring. The default answers immediately.
+    fn read_deferred(&self, key: &CredentialKey) -> ReadSlot {
+        ReadSlot::Ready(self.read(key))
+    }
+
+    /// Settles in-flight [`read_deferred`] calls. The UI loop calls this on each tick.
+    fn poll_reads(&self) {}
 
     /// Stores a secret and reports where it now lives.
     fn write(&mut self, key: &CredentialKey, password: &str) -> CredentialState;
@@ -404,7 +436,7 @@ mod tests {
         let legacy = CredentialKey::for_profile(&profile, LEGACY_PURPOSE_PASSWORD);
         store.write(&legacy, "hunter2");
         assert_eq!(
-            read_slot(&store, &profile, PURPOSE_PASSWORD),
+            read_slot_sync(&store, &profile, PURPOSE_PASSWORD),
             Ok(Some("hunter2".to_owned()))
         );
         assert_eq!(
