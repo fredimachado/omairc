@@ -11,7 +11,8 @@ use crate::demo::seed::{
 };
 use crate::demo::wire::{
     account_lines, bench_channel_bytes, bench_channel_lines, identity_lines, live_account_lines,
-    names_tokens, presence_lines, registration_lines, transcript_lines, typing_lines, world_lines,
+    names_tokens, presence_lines, registration_lines, rtl_seed_lines, transcript_lines,
+    typing_lines, world_lines,
 };
 use crate::irc::parser::parse;
 
@@ -215,6 +216,20 @@ fn the_typing_hint_is_for_anna_only() {
         ]
     );
     assert!(typing_lines(&OFTC_WORLD).is_empty());
+}
+
+#[test]
+fn the_rtl_seed_lines_are_one_arabic_and_one_hebrew_privmsg() {
+    let lines = rtl_seed_lines();
+    assert_eq!(lines.len(), 2);
+    assert!(lines[0].contains("PRIVMSG #omarchy :"));
+    assert!(lines[0].contains("مرحبا"));
+    assert!(lines[1].contains("PRIVMSG #omarchy :"));
+    assert!(lines[1].contains("שלום"));
+    // Not part of the parity transcript.
+    assert!(!transcript_lines(&OMARCHY_WORLD)
+        .iter()
+        .any(|line| line.contains("مرحبا") || line.contains("שלום")));
 }
 
 #[test]

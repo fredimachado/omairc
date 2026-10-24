@@ -6,9 +6,10 @@
 //! starts a session and completes its connect, as `IrcDemoServer::startNetwork`
 //! does. `seed` then plays Qt's seeding order: the network order, the
 //! registration burst, the world, the transcript, the seeded reads, the typing
-//! hint, the live account change, and the OFTC INVITE. Once the seed is in,
-//! `seed` can install the auto-answer hook, so the client's own frames get
-//! server replies.
+//! hint, the live account change, and the OFTC INVITE. When `OMAIRC_RTL_SEED`
+//! is set, one Arabic and one Hebrew PRIVMSG are injected before the INVITE.
+//! Once the seed is in, `seed` can install the auto-answer hook, so the
+//! client's own frames get server replies.
 //!
 //! The demo never touches `World` or the controller. Two of the seed's steps are
 //! controller intents, the network order and conversation selection. They come
@@ -37,8 +38,8 @@ use super::seed::{
 };
 use super::wire::{
     account_lines, autojoin_names, bytes, channel_state_lines_with, live_account_lines,
-    oftc_invite_line, presence_lines, present_names_tokens, registration_lines, transcript_lines,
-    typing_lines, world_lines,
+    oftc_invite_line, presence_lines, present_names_tokens, registration_lines, rtl_seed_enabled,
+    rtl_seed_lines, transcript_lines, typing_lines, world_lines,
 };
 
 /// One step of Qt's seeding order (`IrcDemoServer::attach`). `Inject` bytes go to
@@ -306,6 +307,11 @@ impl DemoServer {
         steps.push(select(omarchy, "#omarchy"));
         steps.push(inject(omarchy, typing_lines(omarchy)));
         steps.push(inject(omarchy, live_account_lines(omarchy)));
+        // Optional RTL spike: two live PRIVMSGs after the parity seed. Gated by
+        // OMAIRC_RTL_SEED so normal --demo-server stays unchanged.
+        if rtl_seed_enabled() {
+            steps.push(inject(omarchy, rtl_seed_lines()));
+        }
         // A live background INVITE, not replayed history. It leaves one inbox row
         // at launch, and it lands on OFTC so the omarchy Status link sheet keeps
         // only what a test injects.
