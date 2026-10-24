@@ -115,6 +115,8 @@ impl Controller {
     /// Drains in-flight keychain reads and finishes session registration or startup connects
     /// that were waiting on them.
     pub(super) fn poll_credential_reads(&mut self) {
+        self.polling_credential_reads.set(true);
+        self.credential_slot_cache.borrow_mut().clear();
         self.credentials.poll_reads();
         let register: Vec<String> = self
             .profiles
@@ -171,6 +173,8 @@ impl Controller {
                 );
             }
         }
+        self.polling_credential_reads.set(false);
+        self.credential_slot_cache.borrow_mut().clear();
     }
 
     /// Starts each saved profile that asks to connect on startup, and returns how many
@@ -777,6 +781,19 @@ impl Controller {
     }
 
     fn credential_slot_state(&self, profile: &Profile, purpose: &'static str) -> CredentialState {
+        let cache_key = (profile.network_id.clone(), purpose.to_owned());
+        if self.polling_credential_reads.get() {
+            if let Some(state) = self.credential_slot_cache.borrow().get(&cache_key) {
+                return state.clone();
+            }
+            let state = self.credential_slot_state_from_read(
+                read_slot(self.credentials.as_ref(), profile, purpose),
+            );
+            self.credential_slot_cache
+                .borrow_mut()
+                .insert(cache_key, state.clone());
+            return state;
+        }
         self.credential_slot_state_from_read(
             read_slot(self.credentials.as_ref(), profile, purpose),
         )

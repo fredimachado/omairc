@@ -162,6 +162,10 @@ pub struct Controller {
     pub(super) pending_session_registrations: BTreeSet<String>,
     /// Networks that asked to connect on startup while a keychain read was still in flight.
     pub(super) pending_startup_connects: BTreeSet<String>,
+    /// One settled credential-slot answer per profile purpose while [`poll_credential_reads`] runs.
+    pub(super) credential_slot_cache:
+        std::cell::RefCell<BTreeMap<(String, String), crate::storage::credentialstore::CredentialState>>,
+    pub(super) polling_credential_reads: std::cell::Cell<bool>,
     /// The profile and secrets each network's session was built from, so Apply rebuilds when
     /// either changes (`IrcConnection::reconcile`).
     pub(super) applied_sessions: BTreeMap<String, super::persistence::AppliedSession>,
@@ -266,6 +270,8 @@ impl Controller {
             },
             pending_session_registrations: BTreeSet::new(),
             pending_startup_connects: BTreeSet::new(),
+            credential_slot_cache: std::cell::RefCell::new(BTreeMap::new()),
+            polling_credential_reads: std::cell::Cell::new(false),
             applied_sessions: BTreeMap::new(),
             open_directs: OpenDirectStore::new(&backing),
             open_directs_motd_seen: BTreeSet::new(),
