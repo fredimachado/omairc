@@ -219,6 +219,16 @@ pub fn click_selection(click_count: u32, text: &str, offset: usize) -> Range<usi
     }
 }
 
+/// The text covered by a byte `range` in `content`. Empty when the range is
+/// empty or not a valid slice of `content`.
+pub fn selection_text(content: &str, range: Range<usize>) -> &str {
+    if range.is_empty() {
+        ""
+    } else {
+        content.get(range).unwrap_or("")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -410,5 +420,14 @@ mod tests {
         assert_eq!(click_selection(2, "foo bar", 5), 4..7);
         assert_eq!(click_selection(1, "foo bar", 5), 5..5);
         assert_eq!(click_selection(3, "foo bar", 5), 0..7);
+    }
+
+    #[test]
+    fn selection_text_returns_the_covered_slice() {
+        assert_eq!(selection_text("hello", 1..4), "ell");
+        assert_eq!(selection_text("hello", 2..2), "");
+        assert_eq!(selection_text("hello", 0..5), "hello");
+        assert_eq!(selection_text("aéx", 1..3), "é");
+        assert_eq!(selection_text("hello", 3..99), "");
     }
 }
