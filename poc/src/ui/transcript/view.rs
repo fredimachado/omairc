@@ -211,6 +211,7 @@ impl TranscriptView {
             return;
         }
         let was_at_end = self.at_end();
+        let saved = (!was_at_end).then(|| self.capture_scroll_place());
         self.typing_peer = peer;
         self.list_state.reset(self.list_len());
         if was_at_end {
@@ -218,6 +219,8 @@ impl TranscriptView {
             self.list_state
                 .scroll_to_reveal_item(self.list_len().saturating_sub(1));
             self.note_scroll_end(cx);
+        } else if let Some(place) = saved {
+            self.restore_scroll_place(Some(&place), false);
         }
         cx.notify();
     }
@@ -796,4 +799,63 @@ pub struct ConversationLines<'a> {
     pub self_nick: &'a str,
     pub features: &'a IrcServerFeatures,
     pub typing_peer: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{TimeZone, Utc};
+
+    use gpui::{AppContext, TestAppContext};
+
+    use crate::irc::event::MsgId;
+    use crate::irc::world::{MessageKind, Origin};
+
+    fn chat(author: &str, body: &str, sequence: i64) -> Message {
+        Message {
+            kind: MessageKind::Message,
+            author: author.to_owned(),
+            body: body.to_owned(),
+            time: Utc.with_ymd_and_hms(2026, 1, 1, 12, 0, 0).unwrap(),
+            server_time: None,
+            msgid: MsgId::default(),
+            origin: Origin::Live,
+            mentioned: false,
+            collapsible: false,
+            sequence,
+            only_visible_to_you: false,
+        }
+    }
+
+    #[gpui::test]
+    fn refresh_typing_peer_keeps_scroll_when_not_at_end(cx: &mut TestAppContext) {
+        let cxw = cx.add_empty_window();
+        let drag = ScrollbarDragCell::default();
+        let transcript = cxw.update(|_, cx| {
+            let focus = cx.focus_handle();
+            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+        });
+        let messages: Vec<Message> = (0..20)
+            .map(|i| chat("peer", &format!("line {i}"), i as i64 + 1))
+            .collect();
+        let features = IrcServerFeatures::new();
+        let lines = ConversationLines {
+            messages: &messages,
+            mark: None,
+            facts: HashMap::new(),
+            self_nick: "me",
+            features: &features,
+            typing_peer: None,
+        };
+        transcript.update(cx, |view, cx| {
+            view.set_conversation(lines);
+            view.scroll_to_top(cx);
+            assert!(view.at_top(), "reader starts at the top");
+            view.refresh_typing_peer(Some("peer".into()), cx);
+            assert!(
+                view.at_top(),
+                "typing-only refresh must not jump to the end"
+            );
+        });
+    }
 }

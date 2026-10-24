@@ -115,6 +115,7 @@ embed-resource = "=3.0.12"
 
 # Test-only: the architecture gates in tests/ match source text with it.
 [dev-dependencies]
+gpui = { version = "0.2.2", features = ["test-support"] }
 regex = "=1.13.1"
 
 # xattr 0.2.3 reads libc::ENOATTR on Linux, which current libc no longer
