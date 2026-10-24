@@ -132,7 +132,7 @@ fn can_forget_when_the_keychain_holds_a_secret_or_the_draft_does() {
 }
 
 #[test]
-fn forget_clears_the_draft_and_marks_the_slot_missing() {
+fn forget_clears_the_draft_and_keeps_the_slot_until_settled() {
     let mut state = ConnectState::from_stored(&[stored("network-1", "irc.libera.chat", "fred")]);
     state.set_text(ConnectField::ServerPassword, "hunter2");
     state.apply().expect("complete");
@@ -150,17 +150,58 @@ fn forget_clears_the_draft_and_marks_the_slot_missing() {
         Some("network-1")
     );
     assert_eq!(state.text(ConnectField::ServerPassword), "");
-    assert_eq!(state.secret_states().password, CredentialState::Missing);
+    assert_eq!(
+        state.secret_states().password,
+        CredentialState::Available,
+        "slot stays Available until the store settle is applied"
+    );
+    assert!(
+        state.can_forget(Secret::Password),
+        "forget stays available until Missing settles"
+    );
     assert_eq!(
         state.secret_edit(Secret::Password).as_ref().map(SecretText::expose),
         Some("")
     );
+
+    state.apply_forget_result(Secret::Password, CredentialState::Missing);
+    assert_eq!(state.secret_states().password, CredentialState::Missing);
     assert_eq!(state.credential_status(), "");
     assert!(!state.can_forget(Secret::Password));
     assert_eq!(
         state.forget(Secret::Password),
         None,
         "already empty and Missing is a no-op"
+    );
+}
+
+#[test]
+fn a_refused_forget_keeps_the_link_and_shows_the_error() {
+    let mut profile = stored("network-1", "irc.libera.chat", "fred");
+    profile.secret_saved = true;
+    let mut state = ConnectState::from_stored(&[profile]);
+    assert!(state.can_forget(Secret::Password));
+
+    assert_eq!(
+        state.forget(Secret::Password).as_deref(),
+        Some("network-1")
+    );
+    state.apply_forget_result(
+        Secret::Password,
+        CredentialState::Error("remove failed".to_owned()),
+    );
+    assert!(
+        state.can_forget(Secret::Password),
+        "Error after refuse keeps mayBeStored-equivalent"
+    );
+    assert_eq!(
+        state.credential_status(),
+        "secure storage error; password is not saved"
+    );
+    assert_eq!(
+        state.forget(Secret::Password).as_deref(),
+        Some("network-1"),
+        "retry is still offered"
     );
 }
 
@@ -175,6 +216,22 @@ fn emptying_a_held_secret_through_set_text_is_refused() {
         "forget is the only clearing path"
     );
     assert!(state.secret_edit(Secret::Password).is_some());
+}
+
+#[test]
+fn empty_to_empty_set_text_does_not_mark_edited_when_secret_is_available() {
+    let mut profile = stored("network-1", "irc.libera.chat", "fred");
+    profile.secret_saved = true;
+    let mut state = ConnectState::from_stored(&[profile]);
+    assert!(state.secret_edit(Secret::Password).is_none());
+    assert_eq!(state.credential_status(), "password saved securely");
+
+    state.set_text(ConnectField::ServerPassword, "");
+    assert!(
+        state.secret_edit(Secret::Password).is_none(),
+        "empty→empty must not set password_edited"
+    );
+    assert_eq!(state.credential_status(), "password saved securely");
 }
 
 #[test]
