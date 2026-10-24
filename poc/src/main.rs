@@ -179,6 +179,11 @@ fn main() {
     // Demo mode keeps no log file, as the Qt client does.
     if !demo_server {
         let _ = desktop::filelog::install(paths::log_path());
+        // Product builds probe the install layout (and import Windows registry
+        // settings once) after the file log is installed so the lines land in
+        // omairc.log.
+        #[cfg(feature = "product")]
+        storage::migrate::run_at_startup();
     }
 
     Application::new().with_assets(assets::OmaircAssets).run(move |cx: &mut App| {

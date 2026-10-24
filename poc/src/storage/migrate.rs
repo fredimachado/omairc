@@ -1,12 +1,15 @@
-//! Locates an installed Qt client's settings and state for a future cutover. This build
-//! still writes under [`crate::identity::APP_FOLDER`]; this module only maps and reads the
-//! installed client's [`crate::identity::QT_APP_FOLDER`] tree.
+//! Locates settings and state for an in-place cutover from the Qt client.
 //!
-//! On Windows, Qt stores main settings in the registry (`HKCU\Software\omairc\omairc`);
-//! [`QtInstallLayout::settings`] is `None` for the live Qt tree. Product mode imports
-//! that key once into `%LOCALAPPDATA%\omairc\omairc.conf` via
-//! [`super::registryimport`]. STS remains an INI under `%LOCALAPPDATA%\omairc\sts`,
-//! and transcripts under `%LOCALAPPDATA%\State\omairc\logs`.
+//! Without the `product` feature this maps the installed client's
+//! [`crate::identity::QT_APP_FOLDER`] tree (separate from this build's folder).
+//! With `product`, [`QtInstallLayout`] is this build's own layout — the same
+//! folder the Qt client already used — so startup can report what is present and
+//! trigger Windows registry import ([`super::registryimport`]).
+//!
+//! On Windows, Qt stores main settings in the registry (`HKCU\Software\omairc\omairc`).
+//! Product mode imports that key once into `%LOCALAPPDATA%\omairc\omairc.conf`.
+//! STS remains an INI under `%LOCALAPPDATA%\omairc\sts`, and transcripts under
+//! `%LOCALAPPDATA%\State\omairc\logs`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,26 +19,40 @@ use super::paths::{self, Env, Platform};
 use super::scrollplace::ScrollPlaceFile;
 use super::settings::{probe_ini, IniProbe, Settings};
 use super::Backing;
-/// The on-disk layout of an installed Qt client on this machine.
+
+/// On-disk layout probed at cutover: the Qt install without `product`, or this
+/// build's own paths (same folder) when `product` is on.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct QtInstallLayout {
-    /// INI settings path on Linux/macOS. `None` on Windows (registry
-    /// `HKCU\Software\omairc\omairc`).
+    /// INI settings path. Without `product`, `None` on Windows (registry). With
+    /// `product`, the product INI on every platform (Windows included).
     pub settings: Option<PathBuf>,
     pub sts: PathBuf,
     pub transcript_root: PathBuf,
 }
 
 impl QtInstallLayout {
-    /// Resolves the Qt install paths from `env` and `platform`. Returns `None` when the
-    /// platform config root is unknown (STS cannot be located).
+    /// Resolves layout paths from `env` and `platform`. Returns `None` when the
+    /// platform config root is unknown.
     pub fn for_env(env: &Env, platform: Platform) -> Option<Self> {
-        let sts = paths::qt_sts_path_for(env, platform)?;
-        Some(Self {
-            settings: paths::qt_settings_path_for(env, platform),
-            sts,
-            transcript_root: paths::qt_transcript_root_for(env, platform),
-        })
+        #[cfg(feature = "product")]
+        {
+            let settings = paths::settings_path_for(env, platform)?;
+            Some(Self {
+                sts: paths::sts_path_beside(&settings),
+                settings: Some(settings),
+                transcript_root: paths::transcript_root_for(env, platform),
+            })
+        }
+        #[cfg(not(feature = "product"))]
+        {
+            let sts = paths::qt_sts_path_for(env, platform)?;
+            Some(Self {
+                settings: paths::qt_settings_path_for(env, platform),
+                sts,
+                transcript_root: paths::qt_transcript_root_for(env, platform),
+            })
+        }
     }
 
     /// Whether any file migration must preserve exists under this layout.
@@ -75,8 +92,10 @@ impl QtMigrationProbe {
 }
 
 /// Reads `layout` through the same stores this build uses at runtime, without writing.
-/// On Windows, pass the imported INI path in [`QtInstallLayout::settings`] after
-/// [`super::registryimport::import_from_reader`]; the live registry is not opened here.
+/// On Windows without `product`, pass the imported INI path in
+/// [`QtInstallLayout::settings`] after [`super::registryimport::import_from_reader`];
+/// the live registry is not opened here. With `product`, [`QtInstallLayout::for_env`]
+/// already points at the product INI.
 pub fn probe_qt_migration(layout: &QtInstallLayout) -> QtMigrationProbe {
     let Some(settings_path) = layout.settings.as_ref() else {
         return QtMigrationProbe {
@@ -115,6 +134,42 @@ pub fn probe_qt_migration(layout: &QtInstallLayout) -> QtMigrationProbe {
         sts_policies,
         transcript_files,
     }
+}
+
+/// Calm one-line summary of whether settings, STS, and transcripts are present.
+pub fn summarize_probe(layout: &QtInstallLayout, probe: &QtMigrationProbe) -> String {
+    let settings = if probe.settings_ok { "present" } else { "absent" };
+    let sts = if layout.sts.is_file() { "present" } else { "absent" };
+    let transcripts = if probe.transcript_files > 0 {
+        "present"
+    } else {
+        "absent"
+    };
+    format!("Install data: settings {settings}, sts {sts}, transcripts {transcripts}")
+}
+
+/// Product startup: import Windows registry settings when needed, then log what
+/// was found under this build's layout. Call after [`crate::desktop::filelog::install`]
+/// so the lines land in `omairc.log`.
+#[cfg(feature = "product")]
+pub fn run_at_startup() {
+    run_for_env(&Env::from_process(), Platform::current());
+}
+
+/// Same as [`run_at_startup`] for a chosen env/platform (tests).
+#[cfg(feature = "product")]
+pub fn run_for_env(env: &Env, platform: Platform) {
+    let Some(layout) = QtInstallLayout::for_env(env, platform) else {
+        return;
+    };
+    if let Some(settings) = &layout.settings {
+        use super::registryimport::ImportOutcome;
+        if let ImportOutcome::Failed(msg) = super::registryimport::import_if_needed(settings) {
+            log::warn!("Qt registry import failed: {msg}");
+        }
+    }
+    let probe = probe_qt_migration(&layout);
+    log::warn!("{}", summarize_probe(&layout, &probe));
 }
 
 fn count_sts_groups(path: &Path) -> usize {
@@ -284,8 +339,10 @@ mod tests {
         assert!(probe.retains_fixture(), "probe dropped Qt data: {probe:?}");
     }
 
+    /// Without `product`, Windows Qt settings are the registry, so the layout has
+    /// no INI path. With `product`, the layout is the product INI (import target).
     #[test]
-    fn migration_windows_layout_skips_ini_settings() {
+    fn migration_windows_layout_settings_match_product_mode() {
         let dir = TempDir::new("qt-migrate-windows-paths");
         let env = Env {
             local_app_data: Some(dir.path().join("lad")),
@@ -293,19 +350,38 @@ mod tests {
             ..Env::default()
         };
         let layout = QtInstallLayout::for_env(&env, Platform::Windows).expect("layout");
-        assert_eq!(layout.settings, None, "Windows Qt settings are the registry");
+        #[cfg(feature = "product")]
+        let folder = paths::APP_FOLDER;
+        #[cfg(not(feature = "product"))]
+        let folder = paths::QT_APP_FOLDER;
         assert_eq!(
             layout.sts,
-            dir.path().join("lad").join(paths::QT_APP_FOLDER).join(paths::STS_FILE)
+            dir.path().join("lad").join(folder).join(paths::STS_FILE)
         );
         assert_eq!(
             layout.transcript_root,
             dir.path()
                 .join("lad")
                 .join("State")
-                .join(paths::QT_APP_FOLDER)
+                .join(folder)
                 .join("logs")
         );
+        #[cfg(feature = "product")]
+        {
+            assert_eq!(
+                layout.settings,
+                Some(
+                    dir.path()
+                        .join("lad")
+                        .join(paths::APP_FOLDER)
+                        .join(paths::SETTINGS_FILE)
+                )
+            );
+        }
+        #[cfg(not(feature = "product"))]
+        {
+            assert_eq!(layout.settings, None, "Windows Qt settings are the registry");
+        }
         fs::create_dir_all(layout.sts.parent().expect("parent")).expect("config");
         fs::write(&layout.sts, "[stub]\n").expect("sts");
         assert!(layout.has_user_data());
@@ -369,5 +445,41 @@ mod tests {
         let ini = fs::read_to_string(layout.settings.as_ref().expect("settings"))
             .expect("settings");
         assert!(ini.contains(DISMISSED_DIRECTS_GROUP), "{ini}");
+    }
+
+    #[test]
+    fn summarize_probe_reports_present_or_absent() {
+        let dir = TempDir::new("qt-migrate-summary");
+        let env = fixture_env(&dir);
+        let empty = QtInstallLayout::for_env(&env, Platform::Linux).expect("layout");
+        let empty_probe = probe_qt_migration(&empty);
+        assert_eq!(
+            summarize_probe(&empty, &empty_probe),
+            "Install data: settings absent, sts absent, transcripts absent"
+        );
+
+        let layout = write_qt_fixture_tree(&env, Platform::Linux);
+        let probe = probe_qt_migration(&layout);
+        assert_eq!(
+            summarize_probe(&layout, &probe),
+            "Install data: settings present, sts present, transcripts present"
+        );
+    }
+
+    #[cfg(feature = "product")]
+    #[test]
+    fn product_layout_matches_this_builds_paths() {
+        let dir = TempDir::new("qt-migrate-product-layout");
+        let env = fixture_env(&dir);
+        let layout = QtInstallLayout::for_env(&env, Platform::Linux).expect("layout");
+        assert_eq!(layout.settings, paths::settings_path_for(&env, Platform::Linux));
+        assert_eq!(
+            layout.sts,
+            paths::sts_path_beside(layout.settings.as_ref().expect("settings"))
+        );
+        assert_eq!(
+            layout.transcript_root,
+            paths::transcript_root_for(&env, Platform::Linux)
+        );
     }
 }

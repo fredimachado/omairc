@@ -6,8 +6,9 @@
 //! and the registry key exists. The registry is never modified, so a Qt client
 //! can still roll back.
 //!
-//! Phase 2.4 calls [`import_if_needed`] at product startup. Tests drive the same
-//! mapping through [`RegistryReader`] with an in-memory tree.
+//! Product startup calls [`import_if_needed`] after the file log is installed
+//! (`migrate::run_at_startup`). Tests drive the same mapping through
+//! [`RegistryReader`] with an in-memory tree.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -62,9 +63,9 @@ pub trait RegistryReader {
     fn list(&self, group: &str) -> Result<RegistryKeyContents, ()>;
 }
 
-/// Product Windows startup entry. Phase 2.4 will call this once the file log is
-/// installed. Elsewhere (non-Windows, non-product, or INI already present) this
-/// is a no-op.
+/// Product Windows startup entry. Called from `migrate::run_at_startup` once the
+/// file log is installed. Elsewhere (non-Windows, non-product, or INI already
+/// present) this is a no-op.
 pub fn import_if_needed(settings_path: &Path) -> ImportOutcome {
     if settings_path.is_file() {
         return ImportOutcome::Skipped;
