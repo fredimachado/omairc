@@ -62,7 +62,8 @@ pub mod testdir {
                 .map(|elapsed| elapsed.as_nanos())
                 .unwrap_or_default();
             let path = std::env::temp_dir().join(format!(
-                "omairc-poc-test-{label}-{}-{n}-{stamp}",
+                "{}-test-{label}-{}-{n}-{stamp}",
+                crate::identity::APP_FOLDER,
                 std::process::id()
             ));
             std::fs::create_dir_all(&path).expect("create test dir");

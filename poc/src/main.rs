@@ -4,6 +4,7 @@ mod assets;
 mod controller;
 mod demo;
 mod desktop;
+mod identity;
 mod irc;
 mod model;
 mod net;

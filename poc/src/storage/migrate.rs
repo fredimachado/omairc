@@ -1,6 +1,6 @@
-//! Locates an installed Qt client's settings and state for a future cutover. The PoC
-//! still writes under `omairc-poc`; this module only maps and reads the `omairc/` tree
-//! Qt already uses.
+//! Locates an installed Qt client's settings and state for a future cutover. This build
+//! still writes under [`crate::identity::APP_FOLDER`]; this module only maps and reads the
+//! installed client's [`crate::identity::QT_APP_FOLDER`] tree.
 
 use std::fs;
 use std::path::{Path, PathBuf};

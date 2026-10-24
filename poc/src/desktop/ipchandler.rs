@@ -251,7 +251,11 @@ mod tests {
     /// A unique endpoint, so parallel tests never meet each other's window.
     fn endpoint() -> Endpoint {
         let serial = NEXT.fetch_add(1, Ordering::SeqCst);
-        Endpoint::named(&format!("omairc-poc-loop-{}-{serial}", std::process::id()))
+        Endpoint::named(&format!(
+            "{}-loop-{}-{serial}",
+            crate::identity::APP_FOLDER,
+            std::process::id()
+        ))
     }
 
     fn demo() -> Controller {
@@ -272,7 +276,8 @@ mod tests {
 
     fn scratch_handler(tag: &str) -> (CliHandler, Scratch) {
         let root = std::env::temp_dir().join(format!(
-            "omairc-poc-loop-{tag}-{}-{}",
+            "{}-loop-{tag}-{}-{}",
+            crate::identity::APP_FOLDER,
             std::process::id(),
             NEXT.fetch_add(1, Ordering::SeqCst)
         ));
