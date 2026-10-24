@@ -7,6 +7,7 @@ use gpui::{actions, App, Context, Div, KeyBinding, prelude::*};
 
 use crate::model::chords::Chord;
 use crate::ui::input::{Copy as CopySelection, Paste};
+use crate::ui::key_bindings::{bind_return, RETURN_KEYS, SECONDARY_RETURN_KEYS};
 use crate::ui::sheets::about::bind_about_keys;
 use crate::ui::sheets::channel_open::bind_channel_open_keys;
 use crate::ui::sheets::connect::{
@@ -86,7 +87,6 @@ pub fn bind_shell_keys(cx: &mut App) {
     let mut bindings = vec![
         KeyBinding::new("secondary-,", OpenConnect, None),
         // Ctrl+Enter applies while Connect shows. The listener checks that.
-        KeyBinding::new("secondary-enter", ConnectApply, None),
         KeyBinding::new("secondary-tab", ConnectCycleTab, None),
         KeyBinding::new("secondary-n", ConnectAdd, None),
         KeyBinding::new("secondary-shift-delete", ConnectRemove, None),
@@ -135,12 +135,10 @@ pub fn bind_shell_keys(cx: &mut App) {
         KeyBinding::new("shift-pagedown", MemberHalfPageDown, Some("MemberList")),
         KeyBinding::new("home", MemberTop, Some("MemberList")),
         KeyBinding::new("end", MemberBottom, Some("MemberList")),
-        KeyBinding::new("enter", MemberActivate, Some("MemberList")),
         // The composer binds secondary-c to `Copy` itself (bind_input_keys). When its
         // draft has no selection it propagates, and the shell's listener below
         // copies the transcript or member nick. The member list uses the same key.
         KeyBinding::new("secondary-c", CopySelection, Some("MemberList")),
-        KeyBinding::new("enter", ComposerSubmit, Some("Composer")),
         // Up and Down walk the sent lines. With none they fall through to the field.
         KeyBinding::new("up", ComposerHistoryUp, Some("Composer")),
         KeyBinding::new("down", ComposerHistoryDown, Some("Composer")),
@@ -149,6 +147,9 @@ pub fn bind_shell_keys(cx: &mut App) {
         KeyBinding::new("shift-tab", CompleteNickBackward, Some("Composer")),
     ];
     bindings.extend(windows_bindings());
+    bindings.extend(bind_return(RETURN_KEYS, MemberActivate, Some("MemberList")));
+    bindings.extend(bind_return(RETURN_KEYS, ComposerSubmit, Some("Composer")));
+    bindings.extend(bind_return(SECONDARY_RETURN_KEYS, ConnectApply, None));
     cx.bind_keys(bindings);
 }
 

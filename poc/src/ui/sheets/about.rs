@@ -12,6 +12,7 @@ use gpui::{
 
 use crate::model::update_check::{StatusAction, UpdateCheck, REPO_URL};
 use crate::model::Style;
+use crate::ui::key_bindings::{bind_return, RETURN_KEYS};
 use crate::ui::sheets::frame::veil_frame;
 use crate::ui::update::{activate_status, start_check};
 use crate::ui::widgets::text_button::text_button;
@@ -25,12 +26,13 @@ actions!(about_sheet, [AboutNextButton, AboutActivate]);
 /// Tab and Shift+Tab move between the two buttons; Enter and Space activate.
 /// Scoped to the sheet's key context, so the composer keeps its own keys.
 pub fn bind_about_keys(cx: &mut App) {
-    cx.bind_keys([
+    let mut bindings = vec![
         KeyBinding::new("tab", AboutNextButton, Some("AboutSheet")),
         KeyBinding::new("shift-tab", AboutNextButton, Some("AboutSheet")),
-        KeyBinding::new("enter", AboutActivate, Some("AboutSheet")),
         KeyBinding::new("space", AboutActivate, Some("AboutSheet")),
-    ]);
+    ];
+    bindings.extend(bind_return(RETURN_KEYS, AboutActivate, Some("AboutSheet")));
+    cx.bind_keys(bindings);
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -270,6 +270,7 @@ fn main() {
                     start_typing_pulse(shell.clone(), cx);
                     start_controller_tick(shell.clone(), cx);
                     start_caret_blink(shell.clone(), cx);
+                    start_unseen_bounce(transcript.clone(), cx);
                     start_drag_autoscroll(transcript.clone(), cx);
 
                     if !cli_scale_override {
@@ -489,6 +490,23 @@ fn start_caret_blink(shell: Entity<Shell>, cx: &mut App) {
                 .update(cx, |shell, cx| {
                     shell.composer.update(cx, |_, cx| cx.notify());
                 })
+                .ok();
+        }
+    })
+    .detach();
+}
+
+fn start_unseen_bounce(transcript: Entity<TranscriptView>, cx: &mut App) {
+    cx.spawn(async move |cx| {
+        loop {
+            let wait = transcript
+                .update(cx, |view, _| view.unseen_bounce_next_frame())
+                .ok()
+                .flatten()
+                .unwrap_or(Duration::from_millis(200));
+            cx.background_executor().timer(wait).await;
+            transcript
+                .update(cx, |_, cx| cx.notify())
                 .ok();
         }
     })

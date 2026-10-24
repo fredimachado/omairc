@@ -33,6 +33,12 @@ pub enum UnseenLanding {
 /// What the unseen jump does from this view (Qt `jumpArmed` and `jumpToUnseen`).
 /// Nothing while the reader follows the end. A waiting arrival wins over the mark.
 /// Arms or clears the first-unseen row when the message row count changes.
+/// True when a new line landed while the reader was not following the end
+/// (`TranscriptList.detachedArrival`).
+pub fn detached_arrival(previous: usize, new: usize, was_at_end: bool) -> bool {
+    !was_at_end && new > previous
+}
+
 pub fn note_row_growth(
     previous: usize,
     new: usize,
@@ -91,6 +97,13 @@ mod tests {
             mentioned: false,
             origin: crate::irc::world::Origin::Live,
         }
+    }
+
+    #[test]
+    fn detached_arrival_fires_only_when_growth_while_scrolled_up() {
+        assert!(detached_arrival(4, 6, false));
+        assert!(!detached_arrival(4, 6, true));
+        assert!(!detached_arrival(4, 4, false));
     }
 
     #[test]

@@ -19,6 +19,7 @@ use gpui::{actions, div, prelude::*, AnyElement, App, FocusHandle, KeyBinding};
 use crate::model::connect::{ConnectState, ConnectTab, Stop};
 use crate::model::prefs::Preferences;
 use crate::model::Style;
+use crate::ui::key_bindings::{bind_return, RETURN_KEYS};
 use crate::ui::sheets::connect::controls::ConnectControls;
 use crate::ui::sheets::frame::veil_frame;
 use crate::ui::Handler;
@@ -50,10 +51,9 @@ actions!(
 /// through the rail. Each action passes on a key it does not use, so a text field
 /// still types a space and an arrow still moves its caret.
 pub fn bind_connect_keys(cx: &mut App) {
-    cx.bind_keys([
+    let mut bindings = vec![
         KeyBinding::new("tab", ConnectNextStop, Some(CONTEXT)),
         KeyBinding::new("shift-tab", ConnectPrevStop, Some(CONTEXT)),
-        KeyBinding::new("enter", ConnectEnter, Some(CONTEXT)),
         KeyBinding::new("space", ConnectSpace, Some(CONTEXT)),
         KeyBinding::new("left", ConnectArrowLeft, Some(CONTEXT)),
         KeyBinding::new("right", ConnectArrowRight, Some(CONTEXT)),
@@ -61,7 +61,9 @@ pub fn bind_connect_keys(cx: &mut App) {
         KeyBinding::new("down", ConnectRailDown, Some(CONTEXT)),
         KeyBinding::new("home", ConnectRailHome, Some(CONTEXT)),
         KeyBinding::new("end", ConnectRailEnd, Some(CONTEXT)),
-    ]);
+    ];
+    bindings.extend(bind_return(RETURN_KEYS, ConnectEnter, Some(CONTEXT)));
+    cx.bind_keys(bindings);
 }
 
 /// Everything the card draws in one frame, read from the shell.

@@ -15,18 +15,25 @@ use crate::model::filter_list::{clamp_after_filter, step};
 use crate::model::fuzzy::char_ranges;
 use crate::model::Style;
 use crate::ui::input::SingleLineInput;
+use crate::ui::key_bindings::{bind_return, RETURN_KEYS};
 use crate::ui::sheets::frame::popup_frame;
 use crate::util::{scaled_px, style, to_gpui, FONT_FAMILY};
 
-actions!(filter_sheet, [FilterUp, FilterDown, FilterActivate]);
+actions!(filter_sheet, [FilterUp, FilterDown, FilterActivate, FilterSwallowTab]);
+
+/// Tab chords the filter field swallows (`LinkSheet.qml` `Key_Tab`).
+pub const FILTER_TAB_KEYS: &[&str] = &["tab", "shift-tab"];
 
 /// Up / Down / Enter inside the sheet. Escape is the shell's `CloseSheet`.
 pub fn bind_filter_keys(cx: &mut App) {
-    cx.bind_keys([
+    let mut bindings = vec![
         KeyBinding::new("up", FilterUp, Some("FilterSheet")),
         KeyBinding::new("down", FilterDown, Some("FilterSheet")),
-        KeyBinding::new("enter", FilterActivate, Some("FilterSheet")),
-    ]);
+        KeyBinding::new("tab", FilterSwallowTab, Some("FilterSheet")),
+        KeyBinding::new("shift-tab", FilterSwallowTab, Some("FilterSheet")),
+    ];
+    bindings.extend(bind_return(RETURN_KEYS, FilterActivate, Some("FilterSheet")));
+    cx.bind_keys(bindings);
 }
 
 /// The visible list is capped at this height in logical pixels (Qt `252`).
@@ -211,6 +218,7 @@ pub fn render_filter_sheet<S: FilterSource>(sheet: &Entity<FilterSheet<S>>, cx: 
         .on_action(move |_: &FilterActivate, _, cx| {
             enter.update(cx, |sheet, cx| sheet.activate(cx));
         })
+        .on_action(|_: &FilterSwallowTab, _, _| {})
         .child(state.filter.clone())
         .child(
             div()
@@ -295,4 +303,21 @@ pub fn text_row(
             to_gpui(style.muted_color())
         })
         .child(match_text(label, highlights, to_gpui(style.ink_color())))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::key_bindings::RETURN_KEYS;
+
+    #[test]
+    fn filter_enter_includes_keypad_enter() {
+        assert!(RETURN_KEYS.contains(&"numpadenter"));
+    }
+
+    #[test]
+    fn filter_tab_keys_cover_tab_and_shift_tab() {
+        assert!(FILTER_TAB_KEYS.contains(&"tab"));
+        assert!(FILTER_TAB_KEYS.contains(&"shift-tab"));
+    }
 }

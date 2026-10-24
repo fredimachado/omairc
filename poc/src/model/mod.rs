@@ -33,6 +33,7 @@ pub mod style;
 pub mod text_edit;
 pub mod theme;
 pub mod title;
+pub mod topic_line;
 pub mod transcript;
 pub mod typing_tail;
 pub mod unread;

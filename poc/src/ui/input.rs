@@ -45,6 +45,7 @@ actions!(
         Paste,
         Cut,
         Copy,
+        SwallowTab,
     ]
 );
 
@@ -511,6 +512,8 @@ impl SingleLineInput {
         }
     }
 
+    fn swallow_tab(&mut self, _: &SwallowTab, _: &mut Window, _: &mut Context<Self>) {}
+
     fn cut(&mut self, _: &Cut, window: &mut Window, cx: &mut Context<Self>) {
         if self.mask {
             return;
@@ -829,6 +832,9 @@ impl Render for SingleLineInput {
             .on_action(cx.listener(Self::paste))
             .on_action(cx.listener(Self::cut))
             .on_action(cx.listener(Self::copy))
+            .when(self.key_context == "SheetFilter", |this| {
+                this.on_action(cx.listener(Self::swallow_tab))
+            })
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
@@ -862,8 +868,9 @@ impl Focusable for SingleLineInput {
 /// undo follow the platform. Word movement uses Ctrl+arrows on every platform:
 /// Alt+arrows walk the server list.
 pub fn bind_input_keys(cx: &mut gpui::App) {
+    use crate::ui::key_bindings::PASTE_KEYS;
     for context in ["Composer", "SheetFilter", "ConnectField"] {
-        cx.bind_keys([
+        let mut bindings = vec![
             gpui::KeyBinding::new("backspace", Backspace, Some(context)),
             gpui::KeyBinding::new("delete", Delete, Some(context)),
             gpui::KeyBinding::new("left", Left, Some(context)),
@@ -877,7 +884,6 @@ pub fn bind_input_keys(cx: &mut gpui::App) {
             gpui::KeyBinding::new("ctrl-backspace", DeleteWordBackward, Some(context)),
             gpui::KeyBinding::new("ctrl-delete", DeleteWordForward, Some(context)),
             gpui::KeyBinding::new("secondary-a", SelectAll, Some(context)),
-            gpui::KeyBinding::new("secondary-v", Paste, Some(context)),
             gpui::KeyBinding::new("secondary-c", Copy, Some(context)),
             gpui::KeyBinding::new("secondary-x", Cut, Some(context)),
             gpui::KeyBinding::new("secondary-z", Undo, Some(context)),
@@ -886,7 +892,17 @@ pub fn bind_input_keys(cx: &mut gpui::App) {
             gpui::KeyBinding::new("end", End, Some(context)),
             gpui::KeyBinding::new("shift-home", SelectHome, Some(context)),
             gpui::KeyBinding::new("shift-end", SelectEnd, Some(context)),
-        ]);
+        ];
+        bindings.extend(
+            PASTE_KEYS
+                .iter()
+                .map(|key| gpui::KeyBinding::new(*key, Paste, Some(context))),
+        );
+        if context == "SheetFilter" {
+            bindings.push(gpui::KeyBinding::new("tab", SwallowTab, Some(context)));
+            bindings.push(gpui::KeyBinding::new("shift-tab", SwallowTab, Some(context)));
+        }
+        cx.bind_keys(bindings);
     }
 }
 
@@ -894,6 +910,13 @@ pub fn bind_input_keys(cx: &mut gpui::App) {
 mod tests {
     use super::input_ime::{clamp_char_range, composition_selected_range, utf16_offset_in};
     use super::*;
+
+    #[test]
+    fn paste_bindings_include_shift_insert() {
+        use crate::ui::key_bindings::PASTE_KEYS;
+        assert!(PASTE_KEYS.contains(&"shift-insert"));
+        assert!(PASTE_KEYS.contains(&"secondary-v"));
+    }
 
     #[test]
     fn caret_is_solid_then_hidden_in_half_periods() {
