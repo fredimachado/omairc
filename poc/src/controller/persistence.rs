@@ -401,10 +401,20 @@ impl Controller {
         if profile.autojoin_channels == channels && profile.autojoin_keys == keys {
             return;
         }
-        profile.autojoin_channels = channels;
-        profile.autojoin_keys = keys;
+        profile.autojoin_channels = channels.clone();
+        profile.autojoin_keys = keys.clone();
         let saved = profile.clone();
         self.profile_store.save(&saved);
+        if let Some(applied) = self.applied_sessions.get_mut(network_id) {
+            applied.profile.autojoin_channels = channels;
+            applied.profile.autojoin_keys = keys;
+        }
+        self.background_profile_syncs.insert(network_id.to_owned());
+    }
+
+    /// Network ids whose saved profile changed in the background since the last take.
+    pub fn take_background_profile_syncs(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.background_profile_syncs).into_iter().collect()
     }
 
     /// Saves the `/pref` values. An ephemeral controller keeps them in memory only.

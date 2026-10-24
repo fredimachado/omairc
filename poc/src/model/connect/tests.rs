@@ -8,6 +8,7 @@ mod credentials;
 mod fields;
 mod focus;
 mod rail;
+mod stale;
 
 fn seeded() -> (Vec<String>, ConnectState) {
     let state = ConnectState::seed(&demo_seeds());

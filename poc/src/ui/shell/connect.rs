@@ -108,7 +108,11 @@ impl Shell {
             nickserv: self.connect.secret_edit(Secret::NickServ),
         };
         if let Ok(profile) = self.connect.apply() {
-            let stored = profile.to_stored(self.controller.profile(&profile.network_id));
+            let case_mapping = self
+                .controller
+                .features(&profile.network_id)
+                .case_mapping();
+            let stored = profile.to_stored(self.controller.profile(&profile.network_id), case_mapping);
             let network_id = profile.network_id.clone();
             let saved = self.controller.save_profile(stored, edits);
             let applied_profile = self

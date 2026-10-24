@@ -192,7 +192,10 @@ fn saving_keeps_the_fields_the_sheet_does_not_edit() {
         ]),
         ..stored("network-1", "irc.libera.chat", "fred")
     };
-    let saved = Profile::from_stored(&existing).to_stored(Some(&existing));
+    let saved = Profile::from_stored(&existing).to_stored(
+        Some(&existing),
+        crate::irc::casemapping::IrcCaseMapping::default(),
+    );
     assert_eq!(saved.account, "fred-acct");
     assert_eq!(saved.bouncer_network, "bnc");
     assert_eq!(saved.avatar_url, "https://omairc.app/omairc128.png");

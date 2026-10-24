@@ -41,6 +41,16 @@ impl Shell {
             }
         }
         let surfaces = self.controller.take_notifications();
+        let mut connect_synced = false;
+        for network_id in self.controller.take_background_profile_syncs() {
+            if let Some(profile) = self.controller.profile(&network_id) {
+                self.connect.sync_background_profile(profile);
+                connect_synced = true;
+            }
+        }
+        if connect_synced {
+            self.sync_connect_inputs(cx);
+        }
         self.sync_view(cx);
         self.sync_channel_list_sheet(cx);
         let status = self.status_showing();
