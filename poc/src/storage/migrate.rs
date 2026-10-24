@@ -1,31 +1,37 @@
 //! Locates an installed Qt client's settings and state for a future cutover. This build
 //! still writes under [`crate::identity::APP_FOLDER`]; this module only maps and reads the
 //! installed client's [`crate::identity::QT_APP_FOLDER`] tree.
+//!
+//! On Windows, Qt stores main settings in the registry (`HKCU\Software\omairc\omairc`);
+//! [`QtInstallLayout::settings`] is `None` there until registry import lands. STS remains
+//! an INI under `%LOCALAPPDATA%\omairc\sts`, and transcripts under
+//! `%LOCALAPPDATA%\State\omairc\logs`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::opendirect::{OPEN_DIRECTS_GROUP, TARGETS_KEY};
-use super::paths::{self, sts_path_beside, Env, Platform};
+use super::paths::{self, Env, Platform};
 use super::scrollplace::ScrollPlaceFile;
 use super::settings::{probe_ini, IniProbe, Settings};
 use super::Backing;
 /// The on-disk layout of an installed Qt client on this machine.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct QtInstallLayout {
-    pub settings: PathBuf,
+    /// INI settings path on Linux/macOS. `None` on Windows (registry
+    /// `HKCU\Software\omairc\omairc`).
+    pub settings: Option<PathBuf>,
     pub sts: PathBuf,
     pub transcript_root: PathBuf,
 }
 
 impl QtInstallLayout {
     /// Resolves the Qt install paths from `env` and `platform`. Returns `None` when the
-    /// platform config root is unknown.
+    /// platform config root is unknown (STS cannot be located).
     pub fn for_env(env: &Env, platform: Platform) -> Option<Self> {
-        let settings = paths::qt_settings_path_for(env, platform)?;
-        let sts = sts_path_beside(&settings);
+        let sts = paths::qt_sts_path_for(env, platform)?;
         Some(Self {
-            settings,
+            settings: paths::qt_settings_path_for(env, platform),
             sts,
             transcript_root: paths::qt_transcript_root_for(env, platform),
         })
@@ -33,7 +39,9 @@ impl QtInstallLayout {
 
     /// Whether any file migration must preserve exists under this layout.
     pub fn has_user_data(&self) -> bool {
-        self.settings.is_file()
+        self.settings
+            .as_ref()
+            .is_some_and(|path| path.is_file())
             || self.sts.is_file()
             || count_transcript_files(&self.transcript_root) > 0
     }
@@ -65,11 +73,18 @@ impl QtMigrationProbe {
     }
 }
 
-/// Reads `layout` through the same stores the PoC uses at runtime, without writing.
+/// Reads `layout` through the same stores this build uses at runtime, without writing.
+/// Windows registry settings are not probed here (cutover phase 2.3).
 pub fn probe_qt_migration(layout: &QtInstallLayout) -> QtMigrationProbe {
-    let settings_ok = probe_ini(&layout.settings) == IniProbe::Ok
-        && layout.settings.is_file();
-    let settings = Settings::open(&layout.settings);
+    let Some(settings_path) = layout.settings.as_ref() else {
+        return QtMigrationProbe {
+            sts_policies: count_sts_groups(&layout.sts),
+            transcript_files: count_transcript_files(&layout.transcript_root),
+            ..QtMigrationProbe::default()
+        };
+    };
+    let settings_ok = probe_ini(settings_path) == IniProbe::Ok && settings_path.is_file();
+    let settings = Settings::open(settings_path);
     let network_ids = settings.child_groups("networks").len();
     let open_networks = settings.child_groups(OPEN_DIRECTS_GROUP);
     let open_direct_networks = open_networks.len();
@@ -82,7 +97,7 @@ pub fn probe_qt_migration(layout: &QtInstallLayout) -> QtMigrationProbe {
                 .unwrap_or(0)
         })
         .sum();
-    let scroll = ScrollPlaceFile::new(Backing::Disk(layout.settings.clone()));
+    let scroll = ScrollPlaceFile::new(Backing::Disk(settings_path.clone()));
     let scroll_all = scroll.load_all();
     let scroll_place_networks = scroll_all.len();
     let scroll_place_rows = scroll_all.values().map(|rows| rows.len()).sum();
@@ -139,7 +154,7 @@ mod tests {
     use crate::storage::opendirect::{DISMISSED_DIRECTS_GROUP, OpenDirectStore};
     #[cfg(not(feature = "product"))]
     use crate::storage::paths::QT_APP_FOLDER;
-    use crate::storage::paths::SETTINGS_FILE;
+    use crate::storage::paths::SETTINGS_FILE_MACOS;
     use crate::storage::scrollplace::PlaceRows;
     use crate::storage::profilestore::{Profile, ProfileStore};
     use crate::storage::scrollplace::{ScrollPlace, ScrollPlaceFile};
@@ -162,10 +177,14 @@ mod tests {
 
     fn write_qt_fixture_tree(env: &Env, platform: Platform) -> QtInstallLayout {
         let layout = QtInstallLayout::for_env(env, platform).expect("layout");
-        fs::create_dir_all(layout.settings.parent().expect("parent")).expect("config dir");
+        let settings = layout
+            .settings
+            .clone()
+            .expect("INI fixture platforms need a settings path");
+        fs::create_dir_all(settings.parent().expect("parent")).expect("config dir");
         fs::create_dir_all(&layout.transcript_root).expect("logs dir");
 
-        let profile_store = ProfileStore::new(Backing::Disk(layout.settings.clone()));
+        let profile_store = ProfileStore::new(Backing::Disk(settings.clone()));
         let profile = {
             let mut profile = Profile::new("freenode");
             profile.host = "chat.freenode.net".into();
@@ -176,14 +195,14 @@ mod tests {
         };
         assert_eq!(profile_store.save(&profile), Status::Written);
 
-        let mut open = OpenDirectStore::new(&Backing::Disk(layout.settings.clone()));
+        let mut open = OpenDirectStore::new(&Backing::Disk(settings.clone()));
         use crate::irc::casemapping::{IrcCaseMapping, IrcCaseMappingKind};
         let mapping = IrcCaseMapping::new(IrcCaseMappingKind::Rfc1459);
         open.add("freenode", "anna", mapping);
         open.add("freenode", "dax", mapping);
         open.dismiss("freenode", "dax", mapping);
 
-        let scroll = ScrollPlaceFile::new(Backing::Disk(layout.settings.clone()));
+        let scroll = ScrollPlaceFile::new(Backing::Disk(settings));
         let rows: PlaceRows = vec![(
             "#omarchy".into(),
             ScrollPlace {
@@ -221,7 +240,8 @@ mod tests {
             "probe dropped Qt data: {probe:?}"
         );
         assert!(layout.has_user_data());
-        let ini = fs::read_to_string(&layout.settings).expect("settings");
+        let ini = fs::read_to_string(layout.settings.as_ref().expect("settings"))
+            .expect("settings");
         assert!(ini.contains("[networks]"), "{ini}");
         assert!(ini.contains("[openDirects]"), "{ini}");
         assert!(ini.contains("[scrollPlaces]"), "{ini}");
@@ -241,21 +261,55 @@ mod tests {
         let dir = TempDir::new("qt-migrate-macos-paths");
         let env = macos_env(&dir);
         let layout = QtInstallLayout::for_env(&env, Platform::MacOs).expect("layout");
+        let settings = layout.settings.as_ref().expect("macos ini settings");
         assert!(
-            layout
-                .settings
+            settings
                 .components()
                 .any(|part| part.as_os_str() == "Preferences"),
             "macOS Qt settings live under Library/Preferences: {}",
-            layout.settings.display()
+            settings.display()
         );
         assert_eq!(
-            layout.settings.file_name().and_then(|name| name.to_str()),
-            Some(SETTINGS_FILE)
+            layout
+                .settings
+                .as_ref()
+                .and_then(|path| path.file_name())
+                .and_then(|name| name.to_str()),
+            Some(SETTINGS_FILE_MACOS)
         );
         let written = write_qt_fixture_tree(&env, Platform::MacOs);
         let probe = probe_qt_migration(&written);
         assert!(probe.retains_fixture(), "probe dropped Qt data: {probe:?}");
+    }
+
+    #[test]
+    fn migration_windows_layout_skips_ini_settings() {
+        let dir = TempDir::new("qt-migrate-windows-paths");
+        let env = Env {
+            local_app_data: Some(dir.path().join("lad")),
+            temp_dir: dir.path().join("tmp"),
+            ..Env::default()
+        };
+        let layout = QtInstallLayout::for_env(&env, Platform::Windows).expect("layout");
+        assert_eq!(layout.settings, None, "Windows Qt settings are the registry");
+        assert_eq!(
+            layout.sts,
+            dir.path().join("lad").join(paths::QT_APP_FOLDER).join(paths::STS_FILE)
+        );
+        assert_eq!(
+            layout.transcript_root,
+            dir.path()
+                .join("lad")
+                .join("State")
+                .join(paths::QT_APP_FOLDER)
+                .join("logs")
+        );
+        fs::create_dir_all(layout.sts.parent().expect("parent")).expect("config");
+        fs::write(&layout.sts, "[stub]\n").expect("sts");
+        assert!(layout.has_user_data());
+        let probe = probe_qt_migration(&layout);
+        assert!(!probe.settings_ok);
+        assert_eq!(probe.sts_policies, 1);
     }
 
     /// Without `product`, Qt migration paths must not share the PoC folder.
@@ -265,7 +319,8 @@ mod tests {
         let dir = TempDir::new("qt-migrate-separate");
         let env = fixture_env(&dir);
         let layout = write_qt_fixture_tree(&env, Platform::Linux);
-        for path in [&layout.settings, &layout.sts, &layout.transcript_root] {
+        let settings = layout.settings.as_ref().expect("linux settings");
+        for path in [settings, &layout.sts, &layout.transcript_root] {
             assert!(
                 path.components().any(|part| part.as_os_str() == QT_APP_FOLDER),
                 "{} should stay under the Qt folder",
@@ -278,7 +333,7 @@ mod tests {
             );
         }
         let poc_settings = paths::settings_path_for(&env, Platform::Linux);
-        assert_ne!(Some(layout.settings.clone()), poc_settings);
+        assert_ne!(layout.settings, poc_settings);
     }
 
     #[test]
@@ -286,13 +341,14 @@ mod tests {
         let dir = TempDir::new("qt-migrate-readonly");
         let env = fixture_env(&dir);
         let layout = write_qt_fixture_tree(&env, Platform::Linux);
-        let before_settings = fs::read(&layout.settings).expect("settings");
+        let settings = layout.settings.as_ref().expect("settings");
+        let before_settings = fs::read(settings).expect("settings");
         let before_sts = fs::read(&layout.sts).expect("sts");
         let before_logs = fs::read_dir(&layout.transcript_root)
             .expect("logs")
             .count();
         let _ = probe_qt_migration(&layout);
-        assert_eq!(fs::read(&layout.settings).expect("settings"), before_settings);
+        assert_eq!(fs::read(settings).expect("settings"), before_settings);
         assert_eq!(fs::read(&layout.sts).expect("sts"), before_sts);
         assert_eq!(
             fs::read_dir(&layout.transcript_root).expect("logs").count(),
@@ -308,7 +364,8 @@ mod tests {
         let probe = probe_qt_migration(&layout);
         assert!(probe.open_direct_networks > 0, "{probe:?}");
         assert!(probe.open_direct_targets > 0, "{probe:?}");
-        let ini = fs::read_to_string(&layout.settings).expect("settings");
+        let ini = fs::read_to_string(layout.settings.as_ref().expect("settings"))
+            .expect("settings");
         assert!(ini.contains(DISMISSED_DIRECTS_GROUP), "{ini}");
     }
 }

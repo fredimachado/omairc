@@ -17,10 +17,27 @@ pub const APP_FOLDER: &str = "omairc-poc";
 /// Same string as [`APP_FOLDER`].
 pub const APP_NAME: &str = APP_FOLDER;
 
-/// QSettings-compatible INI file name (same as the Qt client).
+/// QSettings IniFormat leaf on Linux (and this build's own Windows INI).
+/// Darwin uses [`SETTINGS_FILE_MACOS`]. Windows Qt keeps main settings in the
+/// registry (`HKCU\Software\omairc\omairc`), not this file.
 pub const SETTINGS_FILE: &str = "omairc.conf";
+
+/// QSettings IniFormat leaf on macOS (`settingsFileMissingOnDisk` in
+/// `src/irc/ircprofilestore.cpp` always appends `.ini` on Darwin).
+pub const SETTINGS_FILE_MACOS: &str = "omairc.ini";
 
 /// Folder the installed Qt client and the TUI use. Migration reads from this tree;
 /// this build only writes there when the `product` feature is on (then it matches
 /// [`APP_FOLDER`]).
 pub const QT_APP_FOLDER: &str = "omairc";
+
+/// QSettings-compatible INI file name for `platform`: `.ini` on macOS, `.conf`
+/// elsewhere. Product mode on macOS uses the same leaf as the Qt client so an
+/// install can take over the file in place.
+pub fn settings_file_name(macos: bool) -> &'static str {
+    if macos {
+        SETTINGS_FILE_MACOS
+    } else {
+        SETTINGS_FILE
+    }
+}
