@@ -322,14 +322,16 @@ impl Shell {
     }
 
     /// A forget link: clears the draft slot, then deletes the keychain entry for the
-    /// saved network immediately (`forgetPassword` + `removeStoredPassword`).
+    /// saved network immediately (`forgetPassword` + `removeStoredPassword`). The sheet
+    /// slot follows the store settle so a refused delete keeps the forget link.
     fn connect_forget(&mut self, slot: Secret, cx: &mut Context<Self>) {
         if let Some(network_id) = self.connect.forget(slot) {
             let purpose = match slot {
                 Secret::Password => PURPOSE_PASSWORD,
                 Secret::NickServ => PURPOSE_NICKSERV,
             };
-            self.controller.forget_secret(&network_id, purpose);
+            let settled = self.controller.forget_secret(&network_id, purpose);
+            self.connect.apply_forget_result(slot, settled);
         }
         self.sync_connect_inputs(cx);
     }

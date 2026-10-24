@@ -260,8 +260,12 @@ impl ConnectState {
             ConnectField::Autojoin => self.draft.autojoin = value,
             ConnectField::ServerPassword => {
                 // Emptying a held secret is refused: forget is the only clearing path
-                // (`IrcConnection::setPassword`).
+                // (`IrcConnection::setPassword`). Same value is a no-op so empty→empty
+                // does not mark edited while a keychain secret stays Available.
                 if value.is_empty() && !self.draft.password.is_empty() {
+                    return;
+                }
+                if value == self.draft.password.expose() {
                     return;
                 }
                 self.draft.password = SecretText::from(value);
@@ -271,6 +275,9 @@ impl ConnectState {
                 if value.is_empty() && !self.draft.nickserv_password.is_empty() {
                     return;
                 }
+                if value == self.draft.nickserv_password.expose() {
+                    return;
+                }
                 self.draft.nickserv_password = SecretText::from(value);
                 self.nickserv_edited = true;
             }
@@ -278,7 +285,8 @@ impl ConnectState {
     }
 
     /// Whether the forget link for `slot` shows (`canForgetPassword` / `canForgetNickServ`).
-    /// True for a saved network when that slot is in the keychain or the draft still holds text.
+    /// True for a saved network when that slot may still be in the keychain (`Available` or a
+    /// failed remove's `Error`, like Qt's `mayBeStored`) or the draft still holds text.
     pub fn can_forget(&self, slot: Secret) -> bool {
         if !self.is_saved(&self.selected) {
             return false;
@@ -288,13 +296,13 @@ impl ConnectState {
             Secret::Password => (states.password, !self.draft.password.is_empty()),
             Secret::NickServ => (states.nickserv, !self.draft.nickserv_password.is_empty()),
         };
-        state == CredentialState::Available || held
+        matches!(state, CredentialState::Available | CredentialState::Error(_)) || held
     }
 
-    /// Clears the draft text for `slot`, marks it edited, and sets the slot to Missing
-    /// (`forgetPassword` / `forgetNickServ`). Returns the selected saved network's id so the
-    /// shell can delete the keychain entry immediately. No-op (returns `None`) when the slot
-    /// is already empty and Missing.
+    /// Clears the draft text for `slot` and marks it edited (`forgetPassword` / `forgetNickServ`).
+    /// Does not mark the slot gone; the shell applies the store settle via
+    /// [`Self::apply_forget_result`]. Returns the selected saved network's id so the shell can
+    /// delete the keychain entry. No-op when the slot is already empty and Missing.
     pub fn forget(&mut self, slot: Secret) -> Option<String> {
         let states = self.secret_states();
         let (empty, missing) = match slot {
@@ -314,22 +322,24 @@ impl ConnectState {
             Secret::Password => {
                 self.draft.password = SecretText::default();
                 self.password_edited = true;
-                self.secrets
-                    .entry(self.selected.clone())
-                    .or_default()
-                    .password = CredentialState::Missing;
             }
             Secret::NickServ => {
                 self.draft.nickserv_password = SecretText::default();
                 self.nickserv_edited = true;
-                self.secrets
-                    .entry(self.selected.clone())
-                    .or_default()
-                    .nickserv = CredentialState::Missing;
             }
         }
         self.is_saved(&self.selected)
             .then(|| self.selected.clone())
+    }
+
+    /// Applies what the keychain reported after a forget delete (`handleCredentialWrite` for
+    /// Remove). `Missing` hides the link; `Error` keeps it so the user can retry.
+    pub fn apply_forget_result(&mut self, slot: Secret, settled: CredentialState) {
+        let entry = self.secrets.entry(self.selected.clone()).or_default();
+        match slot {
+            Secret::Password => entry.password = settled,
+            Secret::NickServ => entry.nickserv = settled,
+        }
     }
 
     pub fn tls(&self) -> bool {
