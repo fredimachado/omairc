@@ -18,14 +18,13 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 
 use crate::demo::seed::world_for;
-use crate::demo::server::{DemoError, DemoServer};
+use crate::demo::server::DemoServer;
 use crate::desktop::httpfetch::UreqFetch;
 use crate::irc::capability::{IrcCapability, IrcCapabilitySet};
 use crate::irc::event::{ConversationKey, Event, NickEvent, WelcomeEvent};
@@ -42,7 +41,7 @@ use crate::irc::wiretext::wire_text;
 use crate::session::clock::Clock;
 use crate::session::events::{SessionEvent, SessionState};
 use crate::session::session::Session;
-use crate::session::sessionmanager::{SessionManager, SessionManagerError};
+use crate::session::sessionmanager::SessionManager;
 
 use crate::storage::credentialstore::{platform_store, CredentialStore, MemoryCredentialStore};
 use crate::storage::lists::{CaseListStore, IniListBacking};
@@ -66,37 +65,7 @@ use super::snapshots::state_text;
 use super::stores::{HighlightStore, IgnoreStore, MonitorStore, MuteStore};
 use super::transports::TransportFactory;
 
-/// Why the controller could not be built.
-#[derive(Debug)]
-pub enum ControllerError {
-    /// A seeded session could not be registered.
-    Session(SessionManagerError),
-    /// The demo could not attach or seed a network.
-    Demo(DemoError),
-}
-
-impl fmt::Display for ControllerError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Session(error) => write!(formatter, "{error}"),
-            Self::Demo(error) => write!(formatter, "{error}"),
-        }
-    }
-}
-
-impl std::error::Error for ControllerError {}
-
-impl From<SessionManagerError> for ControllerError {
-    fn from(error: SessionManagerError) -> Self {
-        Self::Session(error)
-    }
-}
-
-impl From<DemoError> for ControllerError {
-    fn from(error: DemoError) -> Self {
-        Self::Demo(error)
-    }
-}
+pub use super::error::ControllerError;
 
 /// The controller. The UI thread owns it; it is not `Send`.
 pub struct Controller {
