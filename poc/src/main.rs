@@ -497,7 +497,7 @@ fn start_drag_autoscroll(transcript: Entity<TranscriptView>, cx: &mut App) {
                 .update(cx, |t, cx| {
                     if t.is_dragging() {
                         let app_style = cx.global::<OmaircStyleGlobal>().style.clone();
-                        t.tick_drag_autoscroll(&app_style);
+                        t.tick_drag_autoscroll(&app_style, cx);
                         cx.notify();
                     }
                 })
@@ -548,7 +548,7 @@ fn run_bench(shell: Entity<Shell>, window: AnyWindowHandle, cx: &mut App) {
             let row_ix = (step * row_count / SCROLL_STEPS).min(row_count.saturating_sub(1));
             shell_weak
                 .update(cx, |shell, cx| {
-                    shell.transcript.update(cx, |t, _| t.scroll_to_row(row_ix));
+                    shell.transcript.update(cx, |t, cx| t.scroll_to_row(row_ix, cx));
                     shell.bench.scroll_frames += 1;
                     cx.notify();
                 })

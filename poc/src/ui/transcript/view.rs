@@ -123,8 +123,9 @@ impl TranscriptView {
             first_unseen: None,
             reported_at_end: true,
         };
-        // gpui calls the list's scroll handler while the list is still borrowed, so the
-        // at-end read waits for the effect cycle to finish. Only wheel scrolling calls it.
+        // gpui calls the list's scroll handler only for wheel scrolling, and while the list
+        // is still borrowed, so the at-end read waits for the effect cycle to finish. Every
+        // other move of the list calls `note_scroll_end` itself, after the move.
         let transcript = cx.weak_entity();
         view.list_state.set_scroll_handler(move |_, _, cx| {
             let transcript = transcript.clone();
@@ -143,8 +144,12 @@ impl TranscriptView {
         self.reported_at_end = at_end;
     }
 
-    /// Emits `TranscriptScrolled` when a wheel scroll changed the at-end bit.
-    fn note_scroll_end(&mut self, cx: &mut Context<Self>) {
+    /// Emits `TranscriptScrolled` when the at-end bit differs from the bit last reported.
+    /// Every move of the list calls this after moving it: the wheel handler, and the key,
+    /// scrollbar, find, link, unseen and notification moves. `restore_scroll_place` does
+    /// not, because the list has just been reset and is not measured yet; the shell
+    /// reports that viewport itself.
+    pub fn note_scroll_end(&mut self, cx: &mut Context<Self>) {
         let at_end = self.at_end();
         if at_end != self.reported_at_end {
             self.reported_at_end = at_end;
@@ -240,7 +245,7 @@ impl TranscriptView {
         let mark = unread::opening_row(rows, open_at_unread);
         match resume(place, rows) {
             Resume::End => match mark {
-                Some(row) => self.scroll_to_row(row),
+                Some(row) => self.reveal_row(row),
                 None => self.model.set_pinned_to_bottom(true),
             },
             Resume::Line { row, offset_px } => {
@@ -269,10 +274,10 @@ impl TranscriptView {
 
     /// Focus returns to the window: the list lands on its open mark, and keeps its
     /// place when there is none (Qt `pinTranscriptOnFocusReturn`).
-    pub fn land_on_unread_mark(&mut self) {
+    pub fn land_on_unread_mark(&mut self, cx: &mut Context<Self>) {
         let mark = unread::unread_mark_row(self.model.rows());
         if let Some(row) = mark {
-            self.scroll_to_row(row);
+            self.scroll_to_row(row, cx);
         }
     }
 
@@ -285,16 +290,16 @@ impl TranscriptView {
     /// while the reader was scrolled up, else to the end while a mark is open.
     /// Returns whether the view moved. It does nothing while the reader follows the
     /// end.
-    pub fn jump_to_unseen(&mut self) -> bool {
+    pub fn jump_to_unseen(&mut self, cx: &mut Context<Self>) -> bool {
         match self.unseen_target() {
             Some(UnseenLanding::Row(row)) => {
                 self.first_unseen = None;
-                self.scroll_to_row(row);
+                self.scroll_to_row(row, cx);
                 true
             }
             Some(UnseenLanding::End) => {
                 self.first_unseen = None;
-                self.scroll_to_bottom();
+                self.scroll_to_bottom(cx);
                 true
             }
             None => false,
@@ -302,10 +307,10 @@ impl TranscriptView {
     }
 
     /// Scrolls to the chat row whose `msgid` matches, when the transcript holds one.
-    pub fn scroll_to_msgid(&mut self, msgid: &str) -> bool {
+    pub fn scroll_to_msgid(&mut self, msgid: &str, cx: &mut Context<Self>) -> bool {
         let rows = self.model.rows();
         if let Some(row) = crate::model::transcript::row_for_msgid(rows, msgid) {
-            self.scroll_to_row(row);
+            self.scroll_to_row(row, cx);
             true
         } else {
             false
@@ -314,7 +319,13 @@ impl TranscriptView {
 
     /// Reveals `row_ix` at the top of the list and leaves follow-the-end, as Qt's
     /// `revealRow` does for a find or link match. The caller notifies.
-    pub fn scroll_to_row(&mut self, row_ix: usize) {
+    pub fn scroll_to_row(&mut self, row_ix: usize, cx: &mut Context<Self>) {
+        self.reveal_row(row_ix);
+        self.note_scroll_end(cx);
+    }
+
+    /// The move behind `scroll_to_row`, without the at-end note.
+    fn reveal_row(&mut self, row_ix: usize) {
         self.model.set_pinned_to_bottom(false);
         self.list_state.scroll_to(ListOffset {
             item_ix: row_ix,
@@ -330,13 +341,13 @@ impl TranscriptView {
 
     /// PgUp/PgDn (or the half-page chords): scrolls by `page_amount` of the
     /// viewport height. Scrolling up releases the bottom pin.
-    pub fn scroll_page(&mut self, down: bool, half: bool) {
+    pub fn scroll_page(&mut self, down: bool, half: bool, cx: &mut Context<Self>) {
         let viewport = f32::from(self.list_state.viewport_bounds().size.height);
         let amount = page_amount(viewport, half);
         if amount <= 0. {
             return;
         }
-        self.scroll_by_px(if down { amount } else { -amount });
+        self.scroll_by_px(if down { amount } else { -amount }, cx);
     }
 
     /// Moves the list by `delta` pixels from its real top. `ListState::scroll_by`
@@ -344,32 +355,35 @@ impl TranscriptView {
     /// height, so a relative move from there lands past the bottom and the next
     /// layout snaps back. Clamping to the real range and setting the absolute
     /// offset avoids that, and reaching the bottom re-pins the tail.
-    fn scroll_by_px(&mut self, delta: f32) {
+    fn scroll_by_px(&mut self, delta: f32, cx: &mut Context<Self>) {
         let list = &self.list_state;
         let max = f32::from(list.max_offset_for_scrollbar().height);
         let current = -f32::from(list.scroll_px_offset_for_scrollbar().y);
         let target = scroll_target(current, max, delta);
         self.model.set_pinned_to_bottom(target >= max);
         list.set_offset_from_scrollbar(Point::new(px(0.), px(target)));
+        self.note_scroll_end(cx);
     }
 
     /// Ctrl+Home: the first row.
-    pub fn scroll_to_top(&mut self) {
+    pub fn scroll_to_top(&mut self, cx: &mut Context<Self>) {
         self.model.set_pinned_to_bottom(false);
         self.list_state.scroll_to(ListOffset {
             item_ix: 0,
             offset_in_item: px(0.),
         });
+        self.note_scroll_end(cx);
     }
 
     /// Ctrl+End: the last row, and the list follows new lines again.
-    pub fn scroll_to_bottom(&mut self) {
+    pub fn scroll_to_bottom(&mut self, cx: &mut Context<Self>) {
         let count = self.list_len();
         if count == 0 {
             return;
         }
         self.model.set_pinned_to_bottom(true);
         self.list_state.scroll_to_reveal_item(count - 1);
+        self.note_scroll_end(cx);
     }
 
     pub fn has_selection(&self) -> bool {
@@ -452,14 +466,14 @@ impl TranscriptView {
         link_click(&self.model.rows()[row_ix], &range, &self.features)
     }
 
-    pub fn tick_drag_autoscroll(&mut self, app_style: &Style) {
+    pub fn tick_drag_autoscroll(&mut self, app_style: &Style, cx: &mut Context<Self>) {
         if !self.dragging || !self.drag_autoscroll {
             return;
         }
         let Some(edge) = self.drag_edge else {
             return;
         };
-        self.scroll_by_px(if edge < 0 { -8. } else { 8. });
+        self.scroll_by_px(if edge < 0 { -8. } else { 8. }, cx);
         if let Some(position) = self.drag_pointer {
             self.extend_drag_autoscroll(position, app_style);
         }
@@ -557,7 +571,7 @@ impl Render for TranscriptView {
         }
         let unseen = self.unseen_target().is_some();
         let on_unseen = cx.listener(|view, _: &MouseDownEvent, _, cx| {
-            if view.jump_to_unseen() {
+            if view.jump_to_unseen(cx) {
                 cx.notify();
             }
         });
@@ -598,6 +612,7 @@ impl Render for TranscriptView {
                 if view.scrollbar_drag.borrow().is_some() {
                     let app_style = style(cx);
                     move_scrollbar_drag(&view.scrollbar_drag, ev.position, &app_style);
+                    view.note_scroll_end(cx);
                     cx.notify();
                 } else if !view.dragging {
                     view.hovered_link = view.link_at(ev.position);
@@ -694,6 +709,7 @@ impl Render for TranscriptView {
                 &app_style,
                 entity,
                 drag,
+                TranscriptView::note_scroll_end,
             ))
             .when(unseen, |this| {
                 this.child(render_unseen_jump(&app_style, on_unseen))

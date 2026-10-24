@@ -22,7 +22,8 @@ impl Shell {
             self.title_mark = None;
         }
         if active && !self.status_showing() {
-            self.transcript.update(cx, |t, _| t.land_on_unread_mark());
+            self.transcript
+                .update(cx, |t, cx| t.land_on_unread_mark(cx));
         }
         let at_end = self.transcript.read(cx).at_end();
         self.report_transcript_viewport_from_shell(at_end, cx);
@@ -35,7 +36,7 @@ impl Shell {
         if !self.chord_live(Chord::Unseen, window, cx) {
             return;
         }
-        if self.transcript.update(cx, |t, _| t.jump_to_unseen()) {
+        if self.transcript.update(cx, |t, cx| t.jump_to_unseen(cx)) {
             cx.notify();
         }
     }

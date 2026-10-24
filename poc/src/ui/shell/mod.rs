@@ -575,6 +575,9 @@ impl Render for Shell {
                 let app_style = style(cx);
                 if shell.scrollbar_drag.borrow().is_some() {
                     move_scrollbar_drag(&shell.scrollbar_drag, ev.position, &app_style);
+                    // The dragged thumb may be the transcript's, moved outside its own
+                    // handler. The note emits only when the at-end bit changed.
+                    shell.transcript.update(cx, |t, cx| t.note_scroll_end(cx));
                     cx.notify();
                 } else {
                     shell.transcript.update(cx, |t, cx| {

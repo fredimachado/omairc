@@ -313,7 +313,7 @@ impl Shell {
             return;
         };
         self.transcript.update(cx, |t, cx| {
-            t.scroll_to_row(row);
+            t.scroll_to_row(row, cx);
             cx.notify();
         });
     }

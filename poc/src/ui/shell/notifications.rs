@@ -86,12 +86,12 @@ impl Shell {
             let msgid = activation.msgid.clone();
             self.transcript.update(cx, |transcript, cx| {
                 if !was_same && open_at_unread {
-                    transcript.land_on_unread_mark();
+                    transcript.land_on_unread_mark(cx);
                 } else if !open_at_unread {
-                    if !msgid.is_empty() && transcript.scroll_to_msgid(&msgid) {
+                    if !msgid.is_empty() && transcript.scroll_to_msgid(&msgid, cx) {
                         // The notification's msgid wins over a saved scroll place.
                     } else if !was_same {
-                        transcript.scroll_to_bottom();
+                        transcript.scroll_to_bottom(cx);
                     }
                 }
                 cx.notify();

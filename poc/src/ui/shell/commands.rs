@@ -451,14 +451,10 @@ impl Shell {
                 }
             }
         }
+        // The page scroll emits `TranscriptScrolled` like a wheel scroll, and the shell's
+        // subscriber clears the cap tail on the return to the end.
         self.transcript.update(cx, |t, cx| {
-            let was_at_end = t.at_end();
-            t.scroll_page(down, half);
-            // A key scroll does not reach the list's scroll handler, so the return to the
-            // end clears here. A wheel scroll clears on `TranscriptScrolled`.
-            if !was_at_end && t.at_end() {
-                self.controller.clear_history_page_cap_tail();
-            }
+            t.scroll_page(down, half, cx);
             cx.notify();
         });
         let at_end = self.transcript.read(cx).at_end();
@@ -477,9 +473,9 @@ impl Shell {
         }
         self.transcript.update(cx, |t, cx| {
             if bottom {
-                t.scroll_to_bottom();
+                t.scroll_to_bottom(cx);
             } else {
-                t.scroll_to_top();
+                t.scroll_to_top(cx);
             }
             cx.notify();
         });

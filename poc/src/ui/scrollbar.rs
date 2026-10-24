@@ -2,7 +2,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gpui::{
-    div, point, px, Entity, MouseButton, MouseDownEvent, Pixels, Point, ScrollHandle, prelude::*,
+    div, point, px, Context, Entity, MouseButton, MouseDownEvent, Pixels, Point, ScrollHandle,
+    prelude::*,
 };
 use crate::model::Style;
 
@@ -88,11 +89,14 @@ pub fn div_vertical_scrollbar<V: 'static>(
         .into_any_element()
 }
 
+/// `after_move` runs on the owner after a track click moves the list, so the owner can
+/// note the move the way it notes a wheel scroll.
 pub fn list_vertical_scrollbar<V: 'static>(
     list_state: gpui::ListState,
     style: &Style,
     entity: Entity<V>,
     drag: ScrollbarDragCell,
+    after_move: fn(&mut V, &mut Context<V>),
 ) -> impl IntoElement {
     let viewport = list_state.viewport_bounds();
     let viewport_h = viewport.size.height;
@@ -154,8 +158,9 @@ pub fn list_vertical_scrollbar<V: 'static>(
                     if local_y >= metrics.top && local_y <= metrics.top + metrics.height {
                         return;
                     }
-                    entity.update(cx, |_, cx| {
+                    entity.update(cx, |view, cx| {
                         jump_list_scroll(&list, max_scroll, local_y, min_thumb);
+                        after_move(view, cx);
                         cx.notify();
                     });
                 }
