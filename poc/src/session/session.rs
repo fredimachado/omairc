@@ -178,6 +178,8 @@ pub(crate) struct Shared {
     core: RefCell<Core>,
     /// Keeps the transport's weak sink alive for as long as the session lives.
     _sink: Rc<dyn TransportSink>,
+    /// Optional reachability source (`SetReachabilitySource` in Go).
+    reachability: RefCell<Option<async_channel::Receiver<()>>>,
 }
 
 /// A handle to one network's session (`Session` in Go). Cheap to clone.
@@ -204,6 +206,7 @@ impl Session {
             Shared {
                 core: RefCell::new(core),
                 _sink: sink,
+                reachability: RefCell::new(None),
             }
         });
         let sink: Weak<dyn TransportSink> = Rc::downgrade(&shared._sink);
@@ -271,6 +274,26 @@ impl Session {
     /// Installs the self-JOIN resume lookup. `None` keeps LATEST.
     pub fn set_history_resume(&self, resume: Option<HistoryResume>) {
         self.shared.core.borrow_mut().history_resume = resume;
+    }
+
+    /// Installs the optional reachability source. A reachable signal starts a
+    /// scheduled reconnect without waiting out the backoff. Pass `None` to remove
+    /// the source (`SetReachabilitySource` in Go).
+    pub fn set_reachability_source(&self, source: Option<async_channel::Receiver<()>>) {
+        *self.shared.reachability.borrow_mut() = source;
+    }
+
+    /// Drains a reachability source installed with `set_reachability_source`.
+    pub fn drain_reachability(&self) {
+        let mut reachable = false;
+        if let Some(receiver) = self.shared.reachability.borrow().as_ref() {
+            while receiver.try_recv().is_ok() {
+                reachable = true;
+            }
+        }
+        if reachable {
+            self.notify_reachable();
+        }
     }
 
     /// Lowers the AFTER page cap, for tests. Production keeps the default.
@@ -443,8 +466,6 @@ impl Session {
 
     /// Reports that the host is reachable again. A scheduled reconnect starts
     /// now instead of waiting out the backoff; otherwise this does nothing.
-    // Read by the socket transport and the later phases; cfg(test) comes off with its first consumer.
-    #[cfg(test)]
     pub fn notify_reachable(&self) {
         self.locked(Core::begin_reconnect_attempt);
     }

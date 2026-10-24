@@ -16,6 +16,7 @@ pub mod ipc;
 pub mod ipchandler;
 pub mod locale;
 pub mod notifier;
+pub mod reachability;
 pub mod singleinstance;
 pub mod systemtheme;
 pub mod textscale;
