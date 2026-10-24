@@ -72,6 +72,20 @@ fn presentation_color(color: IrcColor) -> Option<Color> {
     }
 }
 
+/// Byte length of a leading `http://` or `https://`, matched case-insensitively.
+fn http_scheme_prefix_len(rest: &str) -> Option<usize> {
+    const HTTPS: &[u8] = b"https://";
+    const HTTP: &[u8] = b"http://";
+    let bytes = rest.as_bytes();
+    if bytes.len() >= HTTPS.len() && bytes[..HTTPS.len()].eq_ignore_ascii_case(HTTPS) {
+        return Some(HTTPS.len());
+    }
+    if bytes.len() >= HTTP.len() && bytes[..HTTP.len()].eq_ignore_ascii_case(HTTP) {
+        return Some(HTTP.len());
+    }
+    None
+}
+
 fn advance_one_code_unit(text: &str, i: usize) -> usize {
     if i >= text.len() {
         return i;
@@ -93,13 +107,12 @@ pub fn http_link_ranges(text: &str) -> Vec<Range<usize>> {
     let mut i = 0;
     while i + 7 < bytes.len() {
         let rest = &text[i..];
-        let start_scheme = if rest.starts_with("https://") {
-            8
-        } else if rest.starts_with("http://") {
-            7
-        } else {
-            i = advance_one_code_unit(text, i);
-            continue;
+        let start_scheme = match http_scheme_prefix_len(rest) {
+            Some(len) => len,
+            None => {
+                i = advance_one_code_unit(text, i);
+                continue;
+            }
         };
         let start = i;
         let mut j = i + start_scheme;
@@ -137,7 +150,7 @@ pub fn is_allowed_http_url(url: &str) -> bool {
         return false;
     }
     let scheme = &url[..colon];
-    if scheme != "http" && scheme != "https" {
+    if !scheme.eq_ignore_ascii_case("http") && !scheme.eq_ignore_ascii_case("https") {
         return false;
     }
     if !url[colon..].starts_with("://") {
@@ -145,6 +158,22 @@ pub fn is_allowed_http_url(url: &str) -> bool {
     }
     let rest = &url[(colon + 3)..];
     !rest.is_empty() && !rest.contains(['\n', '\r', ' '])
+}
+
+/// Lowercases the scheme for browser open, like Qt's `isAllowedHttpUrl` check.
+pub fn normalize_http_url_for_open(url: &str) -> Option<String> {
+    if !is_allowed_http_url(url) {
+        return None;
+    }
+    let colon = url.find(':').expect("is_allowed_http_url implies a colon");
+    let scheme = &url[..colon];
+    let tail = &url[colon..];
+    let normalized = if scheme.eq_ignore_ascii_case("https") {
+        "https"
+    } else {
+        "http"
+    };
+    Some(format!("{normalized}{tail}"))
 }
 
 /// A channel name found in a line: its byte range in the line, and the name
@@ -373,6 +402,38 @@ mod tests {
         let links = http_link_ranges(text);
         assert_eq!(links.len(), 1);
         assert_eq!(&text[links[0].clone()], "https://ci.example.com/omairc/42");
+    }
+
+    #[test]
+    fn link_range_case_insensitive_scheme() {
+        let cases = [
+            ("HTTPS://example.com/x", "HTTPS://example.com/x"),
+            ("Http://example.com", "Http://example.com"),
+            ("hTTpS://ExAmPlE.CoM/path", "hTTpS://ExAmPlE.CoM/path"),
+        ];
+        for (text, expected) in cases {
+            let links = http_link_ranges(text);
+            assert_eq!(links.len(), 1, "text: {text}");
+            assert_eq!(&text[links[0].clone()], expected);
+            assert!(is_allowed_http_url(expected));
+        }
+    }
+
+    #[test]
+    fn normalize_http_url_for_open_lowercases_scheme() {
+        assert_eq!(
+            normalize_http_url_for_open("HTTPS://example.com"),
+            Some("https://example.com".to_string())
+        );
+        assert_eq!(
+            normalize_http_url_for_open("Http://a.example/b"),
+            Some("http://a.example/b".to_string())
+        );
+        assert_eq!(
+            normalize_http_url_for_open("hTTpS://ExAmPlE.CoM"),
+            Some("https://ExAmPlE.CoM".to_string())
+        );
+        assert!(normalize_http_url_for_open("ftp://x").is_none());
     }
 
     #[test]
