@@ -1,0 +1,121 @@
+//! Atomic file replacement: write a temp sibling, sync, then rename over the target.
+//! Same approach as Qt `QSaveFile` and the INI settings writer.
+
+use std::fs;
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Writes through a temporary file in the same folder and renames it over the
+/// target, so an interrupted write cannot leave a half-written or truncated file.
+/// The folder is created owner-only, and the file is owner read/write only.
+pub(crate) fn write_atomic(path: &Path, data: &[u8]) -> io::Result<()> {
+    let dir = match path.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir,
+        _ => Path::new("."),
+    };
+    create_private_dir(dir)?;
+
+    let (temp, mut file) = create_temp_file(dir)?;
+    let written = (|| -> io::Result<()> {
+        set_owner_only(&file)?;
+        file.write_all(data)?;
+        file.sync_all()
+    })();
+    drop(file);
+
+    let result = written.and_then(|()| fs::rename(&temp, path));
+    if result.is_err() {
+        let _ = fs::remove_file(&temp);
+    }
+    result
+}
+
+fn create_private_dir(dir: &Path) -> io::Result<()> {
+    if dir.is_dir() {
+        return Ok(());
+    }
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(dir)
+}
+
+fn create_temp_file(dir: &Path) -> io::Result<(PathBuf, fs::File)> {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let mut last_error = None;
+    for _ in 0..16 {
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let candidate = dir.join(format!(".omairc-write-{}-{n}.tmp", std::process::id()));
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&candidate)
+        {
+            Ok(file) => return Ok((candidate, file)),
+            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => last_error = Some(err),
+            Err(err) => return Err(err),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| io::Error::other("no free temporary name")))
+}
+
+#[cfg(unix)]
+fn set_owner_only(file: &fs::File) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    file.set_permissions(fs::Permissions::from_mode(0o600))
+}
+
+#[cfg(not(unix))]
+fn set_owner_only(_file: &fs::File) -> io::Result<()> {
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::testdir::TempDir;
+
+    #[test]
+    fn write_atomic_replaces_the_target() {
+        let dir = TempDir::new("atomic-replace");
+        let path = dir.path().join("transcript");
+        fs::write(&path, b"old\n").unwrap();
+        write_atomic(&path, b"new\n").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"new\n");
+        assert_no_tmp_siblings(dir.path());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_atomic_leaves_the_target_when_the_temp_cannot_be_created() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new("atomic-preserve");
+        let path = dir.path().join("transcript");
+        fs::write(&path, b"keep me\n").unwrap();
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o555)).unwrap();
+
+        let err = write_atomic(&path, b"should not land\n");
+        assert!(err.is_err(), "expected create in a read-only folder to fail");
+        assert_eq!(fs::read(&path).unwrap(), b"keep me\n");
+
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        assert_no_tmp_siblings(dir.path());
+    }
+
+    fn assert_no_tmp_siblings(dir: &Path) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let name = entry.unwrap().file_name();
+            let name = name.to_string_lossy();
+            assert!(
+                !name.ends_with(".tmp"),
+                "leftover temporary file: {name}"
+            );
+        }
+    }
+}
