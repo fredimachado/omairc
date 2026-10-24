@@ -323,3 +323,107 @@ impl Shell {
         let _ = launch_on_close(&self.update, cx);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use async_channel;
+    use gpui::{px, size, TestAppContext};
+
+    use crate::model::{Style, theme::Theme};
+    use crate::util::OmaircStyleGlobal;
+
+    use super::Shell;
+
+    const OMARCHY: &str = "omarchy";
+
+    fn inject_line(shell: &mut Shell, line: &str) {
+        let mut bytes = line.as_bytes().to_vec();
+        bytes.extend_from_slice(b"\r\n");
+        shell
+            .controller
+            .demo()
+            .expect("demo controller")
+            .inject(OMARCHY, &bytes);
+        shell.controller.tick();
+    }
+
+    #[gpui::test]
+    fn closing_persists_the_open_conversation_scroll_anchor(cx: &mut TestAppContext) {
+        let (activation_tx, _) = async_channel::unbounded();
+        cx.update(|app| {
+            app.set_global(OmaircStyleGlobal {
+                style: Style::new(Theme::defaults_dark(), 1.0),
+            });
+        });
+        let (shell, vcx) = cx.add_window_view(|_window, cx| {
+            Shell::new(cx, Some(60), true, true, None, activation_tx)
+        });
+        shell.update(vcx, |shell, cx| {
+            inject_line(
+                shell,
+                "@msgid=close-anchor :user0!u@h PRIVMSG #bench :anchored",
+            );
+            for index in 0..25 {
+                inject_line(
+                    shell,
+                    &format!(":user1!u@h PRIVMSG #bench :filler {index}"),
+                );
+            }
+            shell.refresh_shown_conversation(cx);
+        });
+        vcx.simulate_resize(size(px(1024.), px(768.)));
+        vcx.run_until_parked();
+        shell.update(vcx, |shell, cx| {
+            assert!(
+                shell
+                    .controller
+                    .messages()
+                    .iter()
+                    .any(|message| message.msgid.value == "close-anchor"),
+                "the injected line keeps its msgid"
+            );
+            shell.transcript.update(cx, |transcript, cx| {
+                for _ in 0..8 {
+                    if !transcript.at_end() {
+                        break;
+                    }
+                    transcript.scroll_page(false, false, cx);
+                }
+                assert!(
+                    !transcript.at_end(),
+                    "the bench transcript must scroll off the tail"
+                );
+                assert!(
+                    transcript.scroll_to_msgid("close-anchor", cx),
+                    "the tagged line is on screen"
+                );
+            });
+        });
+        vcx.update(|window, _| window.refresh());
+        vcx.run_until_parked();
+        shell.update(vcx, |shell, cx| {
+            shell.transcript.update(cx, |transcript, _| {
+                assert!(
+                    !transcript.at_end(),
+                    "refresh must keep the reader off the tail"
+                );
+                let saved = transcript.capture_scroll_place();
+                assert_eq!(
+                    saved.to_stored().msg_id,
+                    "close-anchor",
+                    "capture must read the msgid row before close"
+                );
+            });
+            shell.launch_update_on_close(cx);
+            let place = shell
+                .controller
+                .place_for(OMARCHY, "#bench")
+                .expect("close path must remember the open transcript");
+            assert_eq!(place.msg_id, "close-anchor");
+            assert!(
+                !place.follow_end,
+                "close must not save follow_end when scrolled off the tail"
+            );
+        });
+    }
+}
