@@ -3,6 +3,8 @@
 //! `TestNetworkCollapsedRoundTrip`, `TestSetAllNetworksCollapsed`, `TestMoveNetwork`,
 //! `TestCollapseDoesNotMutateConversationsOrder`).
 
+use crate::irc::serverfeatures::IrcServerFeatures;
+
 use super::fixture::{Fixture, OFTC, OMARCHY};
 
 fn ids(values: &[&str]) -> Vec<String> {
@@ -63,6 +65,33 @@ fn every_network_collapses_at_once_and_expands_again() {
     fixture.controller.set_all_networks_collapsed(false);
     assert!(!fixture.controller.is_network_collapsed(OMARCHY));
     assert!(!fixture.controller.is_network_collapsed(OFTC));
+}
+
+#[test]
+fn forgetting_a_registered_network_clears_monitor_before_quit() {
+    let mut fixture = Fixture::seeded();
+    fixture.controller.monitor_add(OMARCHY, "anna");
+    fixture.clear_frames(OMARCHY);
+
+    assert!(fixture.controller.forget_network(OMARCHY));
+    assert_eq!(
+        fixture.frames(OMARCHY),
+        ["MONITOR C\r\n", "QUIT\r\n"],
+        "MONITOR C clears the server list before teardown"
+    );
+}
+
+#[test]
+fn forgetting_a_network_without_monitor_skips_monitor_c() {
+    let mut fixture = Fixture::seeded();
+    fixture
+        .controller
+        .reducer
+        .set_server_features(OMARCHY, IrcServerFeatures::new());
+    fixture.clear_frames(OMARCHY);
+
+    assert!(fixture.controller.forget_network(OMARCHY));
+    assert_eq!(fixture.frames(OMARCHY), ["QUIT\r\n"]);
 }
 
 #[test]
