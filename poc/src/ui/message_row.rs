@@ -9,7 +9,9 @@ use gpui::{
     prelude::*, px, relative, size,
 };
 use crate::model::mention::{is_mention_row, mention_wash};
-use crate::model::transcript::shows_only_visible_to_you_caption;
+use crate::model::transcript::{
+    chat_author_uses_muted_ink, chat_body_uses_muted_ink, shows_only_visible_to_you_caption,
+};
 use crate::model::presence::{photo_for, NickFacts};
 use crate::model::{mix_colors, Row, RowKind, Style};
 
@@ -240,7 +242,11 @@ fn render_message_row(
     // Only the first row of a group has a clickable author. Self is inert.
     let nick_target = (!row.continues && !author.is_empty() && author != callbacks.self_nick)
         .then(|| author.to_string());
-    let nick_color = to_gpui(style.nick_color(author));
+    let nick_color = if chat_author_uses_muted_ink(row) {
+        to_gpui(style.muted_color())
+    } else {
+        to_gpui(style.nick_color(author))
+    };
     let facts = peers.facts.get(author);
     let account = facts.map_or("", |facts| facts.account.as_str());
     let bot = facts.is_some_and(|facts| facts.bot);
@@ -256,6 +262,8 @@ fn render_message_row(
     let mut base_body_style = gpui_text_style(style, 13., false);
     if row.action {
         base_body_style.font_style = gpui::FontStyle::Italic;
+    }
+    if chat_body_uses_muted_ink(row) {
         base_body_style.color = to_gpui(style.muted_color());
     }
     let mut runs = irc_runs_to_gpui(

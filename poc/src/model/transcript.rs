@@ -43,11 +43,23 @@ pub struct Row {
     /// Whether the reducer classified this chat line as a transcript highlight
     /// (nick or `/highlight` word hit from someone else).
     pub mentioned: bool,
+    /// Live or replay (`MessageRow.qml` `origin` / `replayed`).
+    pub origin: Origin,
 }
 
 /// Whether a transcript row draws Qt's "only visible to you" caption.
 pub fn shows_only_visible_to_you_caption(row: &Row) -> bool {
     row.kind == RowKind::Message && row.only_visible_to_you
+}
+
+/// Qt mutes the author label when `origin === "replay"`.
+pub fn chat_author_uses_muted_ink(row: &Row) -> bool {
+    row.kind == RowKind::Message && row.origin == Origin::Replay
+}
+
+/// Qt mutes the body on replay and on `/me` lines.
+pub fn chat_body_uses_muted_ink(row: &Row) -> bool {
+    row.kind == RowKind::Message && (row.origin == Origin::Replay || row.action)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -553,7 +565,7 @@ pub fn row_for_message(id: u64, message: &Message, previous: Option<&Row>) -> Ro
     match message.kind {
         MessageKind::Message | MessageKind::Notice | MessageKind::Action => {
             let minute = minute_of(message.time);
-            let continues = continues_group(previous, &message.author, &minute);
+            let continues = continues_group(previous, &message.author, &minute, message.origin);
             row_from_chat_line(id, message, &minute, continues)
         }
         MessageKind::Whois => row_from_whois(id, &message.body),
@@ -577,6 +589,7 @@ fn day_separator_row(id: u64, day: NaiveDate, today: NaiveDate) -> Row {
         msgid: String::new(),
         only_visible_to_you: false,
         mentioned: false,
+        origin: Origin::Live,
     }
 }
 
@@ -595,17 +608,19 @@ fn unread_mark_row_for(id: u64) -> Row {
         msgid: String::new(),
         only_visible_to_you: false,
         mentioned: false,
+        origin: Origin::Live,
     }
 }
 
 /// Qt folds a chat line under the one above when both are chat lines from the same
-/// author in the same minute (`continuesMessageGroup`).
-pub fn continues_group(previous: Option<&Row>, author: &str, time: &str) -> bool {
+/// author in the same minute and origin (`continuesMessageGroup`).
+pub fn continues_group(previous: Option<&Row>, author: &str, time: &str, origin: Origin) -> bool {
     if author.is_empty() || time.is_empty() {
         return false;
     }
     previous.is_some_and(|prev| {
         prev.kind == RowKind::Message
+            && prev.origin == origin
             && prev.author.as_deref() == Some(author)
             && prev.time.as_deref() == Some(time)
     })
@@ -627,6 +642,7 @@ fn row_from_chat_line(id: u64, message: &Message, minute: &str, continues: bool)
         msgid: message.msgid.value.clone(),
         only_visible_to_you: message.only_visible_to_you,
         mentioned: message.mentioned,
+        origin: message.origin,
     }
 }
 
@@ -646,6 +662,7 @@ fn row_from_event(id: u64, caption: &str) -> Row {
         msgid: String::new(),
         only_visible_to_you: false,
         mentioned: false,
+        origin: Origin::Live,
     }
 }
 
@@ -665,6 +682,7 @@ pub fn row_from_whois(id: u64, text: &str) -> Row {
         msgid: String::new(),
         only_visible_to_you: false,
         mentioned: false,
+        origin: Origin::Live,
     }
 }
 
@@ -683,6 +701,7 @@ pub fn row_from_message(id: u64, author: &str, time: &str, body: &str, continues
         msgid: String::new(),
         only_visible_to_you: false,
         mentioned: false,
+        origin: Origin::Live,
     }
 }
 
@@ -924,11 +943,52 @@ mod tests {
     #[test]
     fn continues_group_needs_same_author_and_minute() {
         let prev = row_from_message(1, "anna", "09:00", "hi", false);
-        assert!(continues_group(Some(&prev), "anna", "09:00"));
-        assert!(!continues_group(Some(&prev), "dax", "09:00"));
-        assert!(!continues_group(Some(&prev), "anna", "09:01"));
-        assert!(!continues_group(None, "anna", "09:00"));
-        assert!(!continues_group(Some(&prev), "", ""));
+        assert!(continues_group(Some(&prev), "anna", "09:00", Origin::Live));
+        assert!(!continues_group(Some(&prev), "dax", "09:00", Origin::Live));
+        assert!(!continues_group(Some(&prev), "anna", "09:01", Origin::Live));
+        assert!(!continues_group(None, "anna", "09:00", Origin::Live));
+        assert!(!continues_group(Some(&prev), "", "", Origin::Live));
+    }
+
+    #[test]
+    fn a_replayed_chat_row_is_dimmed() {
+        let messages = [replayed(chat("anna", "backlog", 9, 41, 1))];
+        let rows = rows_from_messages(&messages, None);
+        let row = rows
+            .iter()
+            .find(|row| row.kind == RowKind::Message)
+            .expect("a chat row");
+        assert_eq!(row.origin, Origin::Replay);
+        assert!(chat_author_uses_muted_ink(row));
+        assert!(chat_body_uses_muted_ink(row));
+    }
+
+    #[test]
+    fn a_live_chat_row_is_not_dimmed_for_replay() {
+        let messages = [chat("anna", "live", 9, 41, 1)];
+        let rows = rows_from_messages(&messages, None);
+        let row = rows
+            .iter()
+            .find(|row| row.kind == RowKind::Message)
+            .expect("a chat row");
+        assert_eq!(row.origin, Origin::Live);
+        assert!(!chat_author_uses_muted_ink(row));
+        assert!(!chat_body_uses_muted_ink(row));
+    }
+
+    #[test]
+    fn a_live_line_after_a_replay_does_not_continue_the_group() {
+        let messages = [
+            replayed(chat("anna", "old", 9, 41, 1)),
+            chat("anna", "new", 9, 41, 2),
+        ];
+        let rows = rows_from_messages(&messages, None);
+        let chats: Vec<&Row> = rows
+            .iter()
+            .filter(|row| row.kind == RowKind::Message)
+            .collect();
+        assert_eq!(chats.len(), 2);
+        assert!(!chats[1].continues);
     }
 
     #[test]
