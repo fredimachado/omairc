@@ -12,9 +12,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+
+use super::atomicwrite::write_atomic;
 
 /// The result of a fail-closed probe of the raw bytes (`probeSettingsIni`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -341,75 +342,6 @@ fn file_not_writable(path: &Path) -> bool {
         return true;
     }
     fs::OpenOptions::new().write(true).open(path).is_err()
-}
-
-/// Writes through a temporary file in the same folder and renames it over the
-/// target, so an interrupted write cannot leave a half-written INI. The folder is
-/// created owner-only, and the file is owner read/write only.
-fn write_atomic(path: &Path, data: &[u8]) -> io::Result<()> {
-    let dir = match path.parent() {
-        Some(dir) if !dir.as_os_str().is_empty() => dir,
-        _ => Path::new("."),
-    };
-    create_private_dir(dir)?;
-
-    let (temp, mut file) = create_temp_file(dir)?;
-    let written = (|| -> io::Result<()> {
-        set_owner_only(&file)?;
-        file.write_all(data)?;
-        file.sync_all()
-    })();
-    drop(file);
-
-    let result = written.and_then(|()| fs::rename(&temp, path));
-    if result.is_err() {
-        let _ = fs::remove_file(&temp);
-    }
-    result
-}
-
-fn create_private_dir(dir: &Path) -> io::Result<()> {
-    if dir.is_dir() {
-        return Ok(());
-    }
-    let mut builder = fs::DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
-    }
-    builder.create(dir)
-}
-
-fn create_temp_file(dir: &Path) -> io::Result<(PathBuf, fs::File)> {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let mut last_error = None;
-    for _ in 0..16 {
-        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let candidate = dir.join(format!(".omairc-settings-{}-{n}.tmp", std::process::id()));
-        match fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&candidate)
-        {
-            Ok(file) => return Ok((candidate, file)),
-            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => last_error = Some(err),
-            Err(err) => return Err(err),
-        }
-    }
-    Err(last_error.unwrap_or_else(|| io::Error::other("no free temporary name")))
-}
-
-#[cfg(unix)]
-fn set_owner_only(file: &fs::File) -> io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    file.set_permissions(fs::Permissions::from_mode(0o600))
-}
-
-#[cfg(not(unix))]
-fn set_owner_only(_file: &fs::File) -> io::Result<()> {
-    Ok(())
 }
 
 /// The byte positions of one logical line. `equals` is the absolute offset of the

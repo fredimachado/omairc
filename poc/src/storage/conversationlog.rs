@@ -289,15 +289,8 @@ fn prepend_bytes(path: &Path, lines: &[Vec<u8>]) -> bool {
         buffer.extend_from_slice(line);
     }
     buffer.extend_from_slice(&existing);
-    if std::fs::write(path, &buffer).is_err() {
-        return false;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-    }
-    true
+    // Atomic replace (temp + rename), like Qt QSaveFile — never truncate in place.
+    crate::storage::atomicwrite::write_atomic(path, &buffer).is_ok()
 }
 
 fn read_tail_file(mut file: File, max_lines: usize) -> Vec<TranscriptLine> {
@@ -640,6 +633,14 @@ mod tests {
         assert_eq!(lines.len(), 2);
         assert_eq!(lines[0].body, "older");
         assert_eq!(lines[1].body, "live");
+        let network_dir = log.path_for("net", "#room", mapping).parent().unwrap().to_path_buf();
+        for entry in std::fs::read_dir(&network_dir).unwrap() {
+            let name = entry.unwrap().file_name();
+            assert!(
+                !name.to_string_lossy().ends_with(".tmp"),
+                "atomic prepend left a temporary sibling"
+            );
+        }
     }
 
     #[test]

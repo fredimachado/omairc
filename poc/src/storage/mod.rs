@@ -15,6 +15,7 @@ use stspolicies::IniStsStore;
 
 use crate::session::sts::{MemoryStsStore, StsStore};
 
+pub mod atomicwrite;
 pub mod conversationlog;
 pub mod credentialstore;
 pub mod geometry;
