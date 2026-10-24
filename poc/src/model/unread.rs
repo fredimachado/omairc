@@ -89,6 +89,7 @@ mod tests {
             msgid: String::new(),
             only_visible_to_you: false,
             mentioned: false,
+            origin: crate::irc::world::Origin::Live,
         }
     }
 
