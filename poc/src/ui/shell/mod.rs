@@ -31,7 +31,7 @@ use crate::controller::controller::Controller;
 use crate::controller::transports::{NoTransports, TransportFactory};
 use crate::irc::plaintext::plain_irc_text;
 use crate::model::composer::ComposerState;
-use crate::model::connect::{ConnectState, Stop};
+use crate::model::connect::{ConnectField, ConnectState, Stop};
 use crate::model::find::Find;
 use crate::model::format::{format_irc, text_hits, TextHit};
 use crate::model::presence::footer_presence;
@@ -55,6 +55,7 @@ use crate::ui::shell::actions::wire_shell_actions;
 use crate::ui::shell::view::{shown_view, ShownView};
 use crate::ui::sheets::connect::controls::ConnectControls;
 use crate::ui::sheets::connect::{render_connect, ConnectView};
+use crate::ui::sidebar::identity_footer::{footer_identity_nick, footer_self_bot};
 use crate::ui::sidebar::{render_sidebar, SidebarData};
 use crate::ui::transcript::view::{NickClicked, TranscriptScrolled};
 use crate::ui::transcript::TranscriptView;
@@ -503,6 +504,22 @@ impl Render for Shell {
         // The footer is the focused network's identity (Qt's `identityNetworkId`): its nick,
         // and the presence the controller reads for that network.
         let footer_network = self.focused_network();
+        let live_nick = self.controller.current_nick_for(&footer_network);
+        let connect_nick = self.connect.text(ConnectField::Nick);
+        let footer_nick = footer_identity_nick(&live_nick, connect_nick);
+        let footer_account = self.controller.display_account(&footer_network, &footer_nick);
+        let footer_facts = self
+            .controller
+            .nick_facts(&footer_network)
+            .get(&footer_nick)
+            .cloned();
+        let footer_avatar = footer_facts
+            .as_ref()
+            .and_then(|facts| facts.avatar.as_deref());
+        let footer_bot = footer_self_bot(
+            &footer_nick,
+            footer_facts.as_ref().is_some_and(|facts| facts.bot),
+        );
         let presence = footer_presence(&self.controller);
         let sidebar = render_sidebar(
             SidebarData {
@@ -511,7 +528,10 @@ impl Render for Shell {
                 conversations: &conversations,
                 state: &self.sidebar,
                 selected: &selected,
-                footer_network: &footer_network,
+                footer_nick: &footer_nick,
+                footer_account: &footer_account,
+                footer_avatar,
+                footer_bot,
                 presence,
                 status_open: status.is_some(),
                 inbox_count: self.controller.inbox_items().len() as u32,

@@ -22,8 +22,11 @@ pub struct SidebarData<'a> {
     pub conversations: &'a [ConversationRow],
     pub state: &'a SidebarState,
     pub selected: &'a ConversationRef,
-    /// The focused network: the footer shows its nick, and `presence` is its presence.
-    pub footer_network: &'a str,
+    /// The nick, account, avatar and bot mark the identity footer draws (Qt `selfNick`).
+    pub footer_nick: &'a str,
+    pub footer_account: &'a str,
+    pub footer_avatar: Option<&'a str>,
+    pub footer_bot: bool,
     /// The footer's presence, read from the controller for `footer_network`.
     pub presence: SelfPresence,
     /// Status is showing, so no conversation row is the current one (Qt `current`).
@@ -66,14 +69,6 @@ pub fn render_sidebar<V: 'static>(
 ) -> impl IntoElement {
     let visible = data.state.rail_visible;
     let width = if visible { 244. } else { 0. };
-    // With no network the footer shows the blank identity, as a first run does.
-    let footer_header = data
-        .networks
-        .iter()
-        .find(|network| network.id == data.footer_network)
-        .cloned()
-        .unwrap_or_default();
-
     div()
         .w(scaled_px(style, width))
         .h_full()
@@ -103,7 +98,10 @@ pub fn render_sidebar<V: 'static>(
                 .child(div_vertical_scrollbar(scroll, style, host, drag.clone())),
         )
         .child(identity_footer(
-            &footer_header,
+            data.footer_nick,
+            data.footer_account,
+            data.footer_avatar,
+            data.footer_bot,
             data.presence,
             data.inbox_count,
             data.on_inbox.clone(),

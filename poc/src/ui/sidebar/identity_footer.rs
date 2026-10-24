@@ -1,8 +1,9 @@
 use gpui::{div, prelude::*, px, relative, MouseButton, Pixels};
 
 use crate::model::presence::{photo_for, SelfPresence};
-use crate::model::{mix_colors, sidebar::NetworkHeader, Color, Style};
+use crate::model::{mix_colors, Color, Style};
 use crate::ui::widgets::avatar::{avatar_disc, AvatarPhotos};
+use crate::ui::widgets::bot_mark::bot_mark;
 use crate::ui::{Handler, BOTTOM_BAR_HEIGHT};
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 use crate::version::version;
@@ -15,6 +16,21 @@ const MONO_ADVANCE_EM: f32 = 0.6;
 /// right-aligned labels do not sit against that edge.
 const INBOX_RIGHT_INSET: f32 = 16.;
 
+/// The nick the identity footer shows (Qt `selfNick`): the live session nick when set,
+/// otherwise the Connect profile nick being typed.
+pub fn footer_identity_nick(live_nick: &str, connect_nick: &str) -> String {
+    let live = live_nick.trim();
+    if !live.is_empty() {
+        return live.to_owned();
+    }
+    connect_nick.trim().to_owned()
+}
+
+/// Whether the footer draws the bot mark beside the nick (Qt `peerBot(selfNick)`).
+pub fn footer_self_bot(nick: &str, peer_bot: bool) -> bool {
+    !nick.is_empty() && peer_bot
+}
+
 /// The identity footer, a port of the bottom of `ServerListColumn.qml`: 66 tall,
 /// the focused network's avatar, nick and presence, then the `inbox` link with
 /// its count and the version. The presence word and the mark come from the
@@ -22,7 +38,10 @@ const INBOX_RIGHT_INSET: f32 = 16.;
 /// offline. The avatar is the operator's own member record, and `avatars` is the
 /// `avatars` preference.
 pub fn identity_footer(
-    network: &NetworkHeader,
+    footer_nick: &str,
+    footer_account: &str,
+    footer_avatar: Option<&str>,
+    footer_bot: bool,
     presence: SelfPresence,
     inbox_count: u32,
     on_inbox: Handler<()>,
@@ -35,8 +54,7 @@ pub fn identity_footer(
     let ink = style.ink_color();
     let muted = to_gpui(style.muted_color());
     let amount = if style.dark_mode() { 0.025 } else { 0.018 };
-    let photo = photo_for(network.avatar.as_deref(), avatars)
-        .and_then(|reference| photos.get(reference));
+    let photo = photo_for(footer_avatar, avatars).and_then(|reference| photos.get(reference));
     let mark = to_gpui(style.presence_color(presence.mark()));
 
     // Qt's identity column: the avatar sits 17 in, the text 63 in (17, the 34 avatar and a
@@ -59,7 +77,7 @@ pub fn identity_footer(
                 .relative()
                 .size(scaled_px(style, 34.))
                 .flex_shrink_0()
-                .child(avatar_disc(style, &network.nick, 34., 14., photo))
+                .child(avatar_disc(style, footer_nick, 34., 14., photo))
                 .child(
                     div()
                         .absolute()
@@ -81,7 +99,7 @@ pub fn identity_footer(
                 .flex()
                 .flex_col()
                 .gap(scaled_px(style, 1.))
-                .child(nick_and_account(network, style))
+                .child(nick_and_account(footer_nick, footer_account, footer_bot, style))
                 .child(
                     div()
                         // Qt's 10px line is 14 tall, so the column keeps Qt's rhythm.
@@ -118,7 +136,12 @@ pub fn identity_footer(
 /// keeps its whole width when it fits, and it never shrinks, so the nick takes the rest
 /// and elides first. The account elides past its cap. It is empty when the network reports
 /// none, or it only repeats the nick.
-fn nick_and_account(network: &NetworkHeader, style: &Style) -> impl IntoElement {
+fn nick_and_account(
+    nick: &str,
+    account: &str,
+    bot: bool,
+    style: &Style,
+) -> impl IntoElement {
     let ink = style.ink_color();
     div()
         .w_full()
@@ -138,13 +161,13 @@ fn nick_and_account(network: &NetworkHeader, style: &Style) -> impl IntoElement 
                 .font_weight(gpui::FontWeight::BOLD)
                 .text_color(to_gpui(ink))
                 .font_family(FONT_FAMILY)
-                .child(network.nick.clone()),
+                .child(nick.to_owned()),
         )
-        .when(!network.account.is_empty(), |this| {
+        .when(!account.is_empty(), |this| {
             this.child(
                 div()
                     .flex_shrink_0()
-                    .min_w(account_floor(&network.account, style))
+                    .min_w(account_floor(account, style))
                     .max_w(relative(0.4))
                     .overflow_hidden()
                     .whitespace_nowrap()
@@ -152,9 +175,10 @@ fn nick_and_account(network: &NetworkHeader, style: &Style) -> impl IntoElement 
                     .text_size(scaled_px(style, 13.))
                     .text_color(to_gpui(style.muted_color()))
                     .font_family(FONT_FAMILY)
-                    .child(network.account.clone()),
+                    .child(account.to_owned()),
             )
         })
+        .when(bot, |this| this.child(bot_mark(style)))
 }
 
 /// Qt's floor on the account: `max(48, 40%)` caps it from below at 48, but never past the
@@ -223,4 +247,27 @@ fn inbox_link(count: u32, on_inbox: Handler<()>, style: &Style) -> impl IntoElem
                 .group_hover("footer-inbox", |s| s.text_color(to_gpui(ink)).underline())
                 .child("inbox"),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{footer_identity_nick, footer_self_bot};
+
+    #[test]
+    fn identity_footer_nick_prefers_live_over_connect() {
+        assert_eq!(footer_identity_nick("oak", "draft"), "oak");
+    }
+
+    #[test]
+    fn identity_footer_nick_falls_back_to_connect_draft() {
+        assert_eq!(footer_identity_nick("", "draft"), "draft");
+        assert_eq!(footer_identity_nick("  ", " draft "), "draft");
+    }
+
+    #[test]
+    fn identity_footer_bot_follows_peer_facts_with_a_nick() {
+        assert!(!footer_self_bot("", true));
+        assert!(!footer_self_bot("me", false));
+        assert!(footer_self_bot("me", true));
+    }
 }
