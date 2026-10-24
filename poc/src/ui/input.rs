@@ -2,12 +2,11 @@ use std::ops::Range;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
-    Entity, EntityInputHandler, FocusHandle, Focusable, GlobalElementId, IntoElement, LayoutId,
-    MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point, ShapedLine,
-    SharedString, Style, TextRun, Window, actions, div, fill, point, prelude::*, px, relative,
-    size,
+    App, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, Element, ElementId,
+    ElementInputHandler, Entity, EntityInputHandler, FocusHandle, Focusable, GlobalElementId,
+    IntoElement, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
+    Pixels, Point, ShapedLine, SharedString, Style, TextRun, Window, actions, div, fill, point,
+    prelude::*, px, relative, size,
 };
 use unicode_segmentation::UnicodeSegmentation as _;
 
@@ -16,7 +15,8 @@ mod input_ime;
 
 use crate::model::byte_budget::SendLimit;
 use crate::model::text_edit::{
-    next_word_end, previous_word_start, EditSnapshot, UndoStack,
+    click_selection, horizontal_scroll_offset, next_word_end, previous_word_start, EditSnapshot,
+    UndoStack,
 };
 use crate::util::{to_gpui, FONT_FAMILY};
 
@@ -41,6 +41,7 @@ actions!(
         DeleteWordBackward,
         DeleteWordForward,
         Undo,
+        Redo,
         Paste,
         Cut,
         Copy,
@@ -78,8 +79,11 @@ pub struct SingleLineInput {
     is_selecting: bool,
     /// When the text or cursor last changed; the caret blinks from here.
     caret_edit: Instant,
-    /// The single-level undo step for Ctrl+Z.
     undo_stack: UndoStack,
+    /// Horizontal scroll in pixels so long drafts stay inside the field.
+    horizontal_offset: f32,
+    /// Repeated-click tracking for word and select-all, like the transcript.
+    last_click: (Instant, u32, usize),
     /// The send limit a draft must fit. `None` on fields that send nothing,
     /// such as sheet filters, so their text is never cut.
     send_limit: Option<SendLimit>,
@@ -141,6 +145,8 @@ impl SingleLineInput {
             is_selecting: false,
             caret_edit: Instant::now(),
             undo_stack: UndoStack::default(),
+            horizontal_offset: 0.,
+            last_click: (Instant::now(), 0, 0),
             send_limit: None,
             input_serial: 0,
             mask: false,
@@ -399,9 +405,23 @@ impl SingleLineInput {
     /// Ctrl+Z: restores the text and selection from before the last step. The
     /// restored text is cut to the send limit, which may have changed since.
     fn undo(&mut self, _: &Undo, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(step) = self.undo_stack.undo() else {
+        let current = self.snapshot();
+        let Some(step) = self.undo_stack.undo(current) else {
             return;
         };
+        self.apply_snapshot(step, cx);
+    }
+
+    /// Ctrl+Shift+Z / secondary-shift-z: restores the snapshot undone last.
+    fn redo(&mut self, _: &Redo, _: &mut Window, cx: &mut Context<Self>) {
+        let current = self.snapshot();
+        let Some(step) = self.undo_stack.redo(current) else {
+            return;
+        };
+        self.apply_snapshot(step, cx);
+    }
+
+    fn apply_snapshot(&mut self, step: EditSnapshot, cx: &mut Context<Self>) {
         self.note_input();
         let keep = self.fit_len("", &step.text, "");
         self.content = step.text[..keep].to_string().into();
@@ -433,10 +453,30 @@ impl SingleLineInput {
         cx: &mut Context<Self>,
     ) {
         self.is_selecting = true;
+        let offset = self.index_for_mouse_position(event.position);
         if event.modifiers.shift {
-            self.select_to(self.index_for_mouse_position(event.position), cx);
+            self.select_to(offset, cx);
+            return;
+        }
+        let now = Instant::now();
+        if now.duration_since(self.last_click.0) < Duration::from_millis(400)
+            && self.last_click.2 == offset
+        {
+            self.last_click.1 += 1;
         } else {
-            self.move_to(self.index_for_mouse_position(event.position), cx);
+            self.last_click.1 = 1;
+        }
+        self.last_click.0 = now;
+        self.last_click.2 = offset;
+        let selection = click_selection(self.last_click.1, &self.content, offset);
+        if selection.is_empty() {
+            self.move_to(offset, cx);
+        } else {
+            self.note_input();
+            self.selected_range = selection;
+            self.selection_reversed = false;
+            self.restart_caret();
+            cx.notify();
         }
     }
 
@@ -512,7 +552,22 @@ impl SingleLineInput {
         if position.y > bounds.bottom() {
             return self.content.len();
         }
-        self.content_at(line.closest_index_for_x(position.x - bounds.left()))
+        self.content_at(line.closest_index_for_x(
+            position.x - bounds.left() + px(self.horizontal_offset),
+        ))
+    }
+
+    /// Scroll offset after shaping, keeping the selection or caret in view.
+    fn scroll_for_line(&self, line: &ShapedLine, viewport_width: Pixels) -> f32 {
+        let focus_start = f32::from(line.x_for_index(self.drawn_at(self.selected_range.start)));
+        let focus_end = f32::from(line.x_for_index(self.drawn_at(self.selected_range.end)));
+        horizontal_scroll_offset(
+            f32::from(line.width),
+            f32::from(viewport_width),
+            focus_start,
+            focus_end,
+            self.horizontal_offset,
+        )
     }
 
     fn select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
@@ -564,6 +619,7 @@ struct InputPrepaint {
     line: Option<ShapedLine>,
     cursor: Option<PaintQuad>,
     selection: Option<PaintQuad>,
+    horizontal_offset: f32,
 }
 
 impl Element for SingleLineInputElement {
@@ -641,7 +697,9 @@ impl Element for SingleLineInputElement {
             .text_system()
             .shape_line(display_text, font_size, &[run], None);
 
-        let cursor_pos = line.x_for_index(input.drawn_at(cursor));
+        let horizontal_offset = input.scroll_for_line(&line, bounds.size.width);
+        let scroll = px(horizontal_offset);
+        let cursor_pos = line.x_for_index(input.drawn_at(cursor)) - scroll;
         let selection_color = to_gpui(app_style.selection_color());
         // The glyph box that `paint_line` draws: ascent + descent, centred in the
         // element's own height. The caret and the selection span that, not the whole
@@ -668,11 +726,15 @@ impl Element for SingleLineInputElement {
                 Some(fill(
                     Bounds::from_corners(
                         point(
-                            bounds.left() + line.x_for_index(input.drawn_at(selected_range.start)),
+                            bounds.left()
+                                + line.x_for_index(input.drawn_at(selected_range.start))
+                                - scroll,
                             glyph_top,
                         ),
                         point(
-                            bounds.left() + line.x_for_index(input.drawn_at(selected_range.end)),
+                            bounds.left()
+                                + line.x_for_index(input.drawn_at(selected_range.end))
+                                - scroll,
                             glyph_top + glyph_height,
                         ),
                     ),
@@ -685,6 +747,7 @@ impl Element for SingleLineInputElement {
             line: Some(line),
             cursor: cursor_quad,
             selection,
+            horizontal_offset,
         }
     }
 
@@ -704,20 +767,27 @@ impl Element for SingleLineInputElement {
             ElementInputHandler::new(bounds, self.input.clone()),
             cx,
         );
-        if let Some(selection) = prepaint.selection.take() {
-            window.paint_quad(selection);
-        }
-        let line = prepaint.line.take().unwrap();
-        line.paint(bounds.origin, bounds.size.height, window, cx)
-            .unwrap();
-        if focus_handle.is_focused(window) && window.is_window_active() {
-            if let Some(cursor) = prepaint.cursor.take() {
-                window.paint_quad(cursor);
+        let horizontal_offset = prepaint.horizontal_offset;
+        window.with_content_mask(Some(ContentMask { bounds }), |window| {
+            if let Some(selection) = prepaint.selection.take() {
+                window.paint_quad(selection);
             }
-        }
-        self.input.update(cx, |input, _| {
-            input.last_layout = Some(line);
-            input.last_bounds = Some(bounds);
+            let line = prepaint.line.take().unwrap();
+            let origin = point(
+                bounds.origin.x - px(horizontal_offset),
+                bounds.origin.y,
+            );
+            line.paint(origin, bounds.size.height, window, cx).unwrap();
+            if focus_handle.is_focused(window) && window.is_window_active() {
+                if let Some(cursor) = prepaint.cursor.take() {
+                    window.paint_quad(cursor);
+                }
+            }
+            self.input.update(cx, |input, _| {
+                input.last_layout = Some(line);
+                input.last_bounds = Some(bounds);
+                input.horizontal_offset = horizontal_offset;
+            });
         });
     }
 }
@@ -755,6 +825,7 @@ impl Render for SingleLineInput {
             .on_action(cx.listener(Self::delete_word_backward))
             .on_action(cx.listener(Self::delete_word_forward))
             .on_action(cx.listener(Self::undo))
+            .on_action(cx.listener(Self::redo))
             .on_action(cx.listener(Self::paste))
             .on_action(cx.listener(Self::cut))
             .on_action(cx.listener(Self::copy))
@@ -764,6 +835,7 @@ impl Render for SingleLineInput {
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .w_full()
             .h(crate::util::scaled_px(&app_style, self.height))
+            .overflow_x_hidden()
             .flex()
             .items_center()
             .px(crate::util::scaled_px(&app_style, 8.))
@@ -809,6 +881,7 @@ pub fn bind_input_keys(cx: &mut gpui::App) {
             gpui::KeyBinding::new("secondary-c", Copy, Some(context)),
             gpui::KeyBinding::new("secondary-x", Cut, Some(context)),
             gpui::KeyBinding::new("secondary-z", Undo, Some(context)),
+            gpui::KeyBinding::new("secondary-shift-z", Redo, Some(context)),
             gpui::KeyBinding::new("home", Home, Some(context)),
             gpui::KeyBinding::new("end", End, Some(context)),
             gpui::KeyBinding::new("shift-home", SelectHome, Some(context)),

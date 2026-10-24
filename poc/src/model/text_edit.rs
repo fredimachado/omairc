@@ -1,5 +1,6 @@
 //! Toolkit-free text editing for the single-line fields (the composer and the
-//! sheet filters): word boundaries and word movement, and single-level undo.
+//! sheet filters): word boundaries and word movement, undo and redo, and
+//! horizontal scroll for long single-line drafts.
 //! Every offset is a byte offset into the text, and every result lands on a
 //! grapheme boundary.
 
@@ -126,12 +127,13 @@ pub struct EditSnapshot {
     pub selected: Range<usize>,
 }
 
-/// Single-level undo for a line field. Consecutive typed characters at the same
+/// Undo and redo for a line field. Consecutive typed characters at the same
 /// place share one step, so Ctrl+Z after typing a word removes the word. Every
-/// other edit is a step of its own. Undo takes the step, and there is no redo.
+/// other edit is a step of its own.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct UndoStack {
-    step: Option<EditSnapshot>,
+    undo_steps: Vec<EditSnapshot>,
+    redo_steps: Vec<EditSnapshot>,
     /// Where the last typed character ended. The next typed character joins the
     /// open step only when it lands here.
     typing_end: Option<usize>,
@@ -144,21 +146,76 @@ impl UndoStack {
         let typed = range.is_empty() && inserted.chars().count() == 1;
         let joins = typed && self.typing_end == Some(range.start);
         if !joins {
-            self.step = Some(before);
+            self.undo_steps.push(before);
+            self.redo_steps.clear();
         }
         self.typing_end = typed.then(|| range.start + inserted.len());
     }
 
-    /// Takes the step to restore, or `None` when there is nothing to undo. A
-    /// second undo returns `None`.
-    pub fn undo(&mut self) -> Option<EditSnapshot> {
+    /// Takes the prior snapshot to restore, or `None` when there is nothing to
+    /// undo. `current` is pushed onto the redo stack.
+    pub fn undo(&mut self, current: EditSnapshot) -> Option<EditSnapshot> {
         self.typing_end = None;
-        self.step.take()
+        let Some(prev) = self.undo_steps.pop() else {
+            return None;
+        };
+        self.redo_steps.push(current);
+        Some(prev)
+    }
+
+    /// Restores a snapshot from redo, or `None` when the redo stack is empty.
+    /// `current` is pushed back onto undo.
+    pub fn redo(&mut self, current: EditSnapshot) -> Option<EditSnapshot> {
+        self.typing_end = None;
+        let Some(next) = self.redo_steps.pop() else {
+            return None;
+        };
+        self.undo_steps.push(current);
+        Some(next)
     }
 
     /// Forgets every step. Used after a change that did not come from typing.
     pub fn clear(&mut self) {
         *self = Self::default();
+    }
+}
+
+/// Keeps `focus_start_x`..`focus_end_x` visible inside a viewport of
+/// `viewport_width` when `line_width` exceeds it.
+pub fn horizontal_scroll_offset(
+    line_width: f32,
+    viewport_width: f32,
+    focus_start_x: f32,
+    focus_end_x: f32,
+    current_offset: f32,
+) -> f32 {
+    if line_width <= viewport_width {
+        return 0.;
+    }
+    let max_offset = line_width - viewport_width;
+    let mut offset = current_offset;
+    let visible_start = focus_start_x - offset;
+    let visible_end = focus_end_x - offset;
+    if visible_end > viewport_width {
+        offset += visible_end - viewport_width;
+    }
+    if visible_start < 0. {
+        offset += visible_start;
+    }
+    offset.clamp(0., max_offset)
+}
+
+/// Selection after repeated clicks at `offset`, matching the transcript's
+/// double-click word and triple-click line convention. A single-line field
+/// treats a third click as select-all.
+pub fn click_selection(click_count: u32, text: &str, offset: usize) -> Range<usize> {
+    if click_count >= 3 {
+        0..text.len()
+    } else if click_count == 2 {
+        let (start, end) = word_bounds(text, offset);
+        start..end
+    } else {
+        offset..offset
     }
 }
 
@@ -269,9 +326,9 @@ mod tests {
         }
         assert_eq!(text, "abc");
 
-        let step = undo.undo().expect("a step");
+        let step = undo.undo(snapshot("abc", 3..3)).expect("a step");
         assert_eq!(step, snapshot("", 0..0));
-        assert_eq!(undo.undo(), None, "undo is single-level");
+        assert_eq!(undo.undo(snapshot("", 0..0)), None);
     }
 
     #[test]
@@ -284,8 +341,8 @@ mod tests {
         edit(&mut text, &mut undo, 1..2, "");
         assert_eq!(text, "a");
 
-        assert_eq!(undo.undo(), Some(snapshot("ab", 1..2)));
-        assert_eq!(undo.undo(), None);
+        assert_eq!(undo.undo(snapshot("a", 1..1)), Some(snapshot("ab", 1..2)));
+        assert_eq!(undo.undo(snapshot("ab", 1..2)), Some(snapshot("", 0..0)));
     }
 
     #[test]
@@ -296,7 +353,7 @@ mod tests {
         edit(&mut text, &mut undo, 0..0, "b");
         assert_eq!(text, "ba");
         // The second "b" landed at 0, not at the typing end (1), so it stands alone.
-        assert_eq!(undo.undo(), Some(snapshot("a", 0..0)));
+        assert_eq!(undo.undo(snapshot("ba", 1..1)), Some(snapshot("a", 0..0)));
     }
 
     #[test]
@@ -305,7 +362,7 @@ mod tests {
         let mut undo = UndoStack::default();
         edit(&mut text, &mut undo, 0..0, "a");
         edit(&mut text, &mut undo, 1..1, "pasted");
-        assert_eq!(undo.undo(), Some(snapshot("a", 1..1)));
+        assert_eq!(undo.undo(snapshot("apasted", 7..7)), Some(snapshot("a", 1..1)));
     }
 
     #[test]
@@ -314,7 +371,7 @@ mod tests {
         let mut undo = UndoStack::default();
         edit(&mut text, &mut undo, 0..0, "a");
         undo.clear();
-        assert_eq!(undo.undo(), None);
+        assert_eq!(undo.undo(snapshot("a", 1..1)), None);
     }
 
     #[test]
@@ -322,6 +379,36 @@ mod tests {
         let mut text = "abc".to_string();
         let mut undo = UndoStack::default();
         edit(&mut text, &mut undo, 0..3, "x");
-        assert_eq!(undo.undo(), Some(snapshot("abc", 0..3)));
+        assert_eq!(undo.undo(snapshot("x", 1..1)), Some(snapshot("abc", 0..3)));
+    }
+
+    #[test]
+    fn two_distinct_edits_undo_twice_then_redo() {
+        let mut text = String::new();
+        let mut undo = UndoStack::default();
+        edit(&mut text, &mut undo, 0..0, "a");
+        // Inserts at 0, not at the typing end after "a", so this is its own step.
+        edit(&mut text, &mut undo, 0..0, "b");
+        assert_eq!(text, "ba");
+
+        assert_eq!(undo.undo(snapshot("ba", 1..1)), Some(snapshot("a", 0..0)));
+        assert_eq!(undo.redo(snapshot("a", 0..0)), Some(snapshot("ba", 1..1)));
+    }
+
+    #[test]
+    fn long_line_scrolls_when_caret_passes_viewport() {
+        let viewport = 100.;
+        let line = 300.;
+        let caret = 250.;
+        let offset = horizontal_scroll_offset(line, viewport, caret, caret, 0.);
+        assert!(offset > 0., "caret past the viewport must scroll");
+        assert!(caret - offset <= viewport);
+    }
+
+    #[test]
+    fn double_click_selects_the_word_under_the_offset() {
+        assert_eq!(click_selection(2, "foo bar", 5), 4..7);
+        assert_eq!(click_selection(1, "foo bar", 5), 5..5);
+        assert_eq!(click_selection(3, "foo bar", 5), 0..7);
     }
 }

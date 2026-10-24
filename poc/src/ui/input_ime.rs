@@ -185,13 +185,14 @@ impl EntityInputHandler for SingleLineInput {
 
         let last_layout = self.last_layout.as_ref()?;
         let range = self.range_from_utf16(&range_utf16);
+        let scroll = gpui::px(self.horizontal_offset);
         Some(Bounds::from_corners(
             point(
-                bounds.left() + last_layout.x_for_index(self.drawn_at(range.start)),
+                bounds.left() + last_layout.x_for_index(self.drawn_at(range.start)) - scroll,
                 bounds.top(),
             ),
             point(
-                bounds.left() + last_layout.x_for_index(self.drawn_at(range.end)),
+                bounds.left() + last_layout.x_for_index(self.drawn_at(range.end)) - scroll,
                 bounds.bottom(),
             ),
         ))
@@ -205,7 +206,7 @@ impl EntityInputHandler for SingleLineInput {
     ) -> Option<usize> {
         let line_point = self.last_bounds?.localize(&point)?;
         let last_layout = self.last_layout.as_ref()?;
-        let drawn = last_layout.index_for_x(point.x - line_point.x)?;
+        let drawn = last_layout.index_for_x(point.x - line_point.x + gpui::px(self.horizontal_offset))?;
         Some(self.offset_to_utf16(self.content_at(drawn)))
     }
 }
