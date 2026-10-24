@@ -38,10 +38,95 @@ pub enum CredentialState {
     Error(String),
 }
 
-/// The slot a secret belongs to, under one network (`CredentialKey::purpose`).
-pub const PURPOSE_PASSWORD: &str = "password";
+/// The server-password slot of a network. Qt and the TUI omit the purpose segment
+/// for this slot; an empty purpose is the canonical key name.
+pub const PURPOSE_PASSWORD: &str = "";
+/// The Rust PoC once wrote server passwords under this suffix. Reads and deletes still
+/// reach those entries until a successful write migrates them.
+pub const LEGACY_PURPOSE_PASSWORD: &str = "password";
 /// The NickServ slot of a network.
 pub const PURPOSE_NICKSERV: &str = "nickserv";
+
+/// Whether `key` belongs to the secret slot named by `purpose`.
+pub fn purpose_matches_slot(purpose: &str, key: &CredentialKey) -> bool {
+    if purpose == PURPOSE_PASSWORD {
+        key.purpose == PURPOSE_PASSWORD || key.purpose == LEGACY_PURPOSE_PASSWORD
+    } else {
+        key.purpose == purpose
+    }
+}
+
+/// Every key name a slot may be stored under, canonical first.
+pub fn key_names_for_slot(profile: &Profile, purpose: &'static str) -> Vec<String> {
+    let primary = CredentialKey::for_profile(profile, purpose);
+    let mut names = vec![primary.key_name()];
+    if purpose == PURPOSE_PASSWORD {
+        let legacy = CredentialKey::for_profile(profile, LEGACY_PURPOSE_PASSWORD);
+        if legacy.key_name() != names[0] {
+            names.push(legacy.key_name());
+        }
+    }
+    names
+}
+
+/// Reads one slot, including a legacy server-password key when the canonical one is empty.
+pub fn read_slot(
+    store: &dyn CredentialStore,
+    profile: &Profile,
+    purpose: &'static str,
+) -> Result<Option<String>, String> {
+    let primary = CredentialKey::for_profile(profile, purpose);
+    match store.read(&primary)? {
+        Some(text) => Ok(Some(text)),
+        None if purpose == PURPOSE_PASSWORD => {
+            let legacy = CredentialKey::for_profile(profile, LEGACY_PURPOSE_PASSWORD);
+            store.read(&legacy)
+        }
+        None => Ok(None),
+    }
+}
+
+/// Writes one slot under the canonical key and drops a legacy server-password entry when
+/// the write settles.
+pub fn write_slot(
+    store: &mut dyn CredentialStore,
+    profile: &Profile,
+    purpose: &'static str,
+    password: &str,
+) -> CredentialState {
+    let key = CredentialKey::for_profile(profile, purpose);
+    let state = store.write(&key, password);
+    if purpose == PURPOSE_PASSWORD && slot_write_settled(&state) {
+        let legacy = CredentialKey::for_profile(profile, LEGACY_PURPOSE_PASSWORD);
+        let _ = store.remove(&legacy);
+    }
+    state
+}
+
+/// Deletes every key a slot may occupy.
+pub fn remove_slot(
+    store: &mut dyn CredentialStore,
+    profile: &Profile,
+    purpose: &'static str,
+) -> CredentialState {
+    let key = CredentialKey::for_profile(profile, purpose);
+    let mut state = store.remove(&key);
+    if purpose == PURPOSE_PASSWORD {
+        let legacy = CredentialKey::for_profile(profile, LEGACY_PURPOSE_PASSWORD);
+        match store.remove(&legacy) {
+            CredentialState::Error(message) => state = CredentialState::Error(message),
+            _ => {}
+        }
+    }
+    state
+}
+
+fn slot_write_settled(state: &CredentialState) -> bool {
+    matches!(
+        state,
+        CredentialState::Available | CredentialState::SessionOnly | CredentialState::Missing
+    )
+}
 
 /// One secret: the network it belongs to, the account it is for (username and host), and
 /// which slot of it. The same fields Go's `CredentialKey` and Qt's `CredentialKey` carry,
@@ -235,6 +320,11 @@ mod tests {
         let password = named("nid", "user", "irc.example", PURPOSE_PASSWORD);
         assert_eq!(
             password.key_name(),
+            "omairc/v1/3:nid/4:user/11:irc.example"
+        );
+        let legacy_password = named("nid", "user", "irc.example", LEGACY_PURPOSE_PASSWORD);
+        assert_eq!(
+            legacy_password.key_name(),
             "omairc/v1/3:nid/4:user/11:irc.example/8:password"
         );
         let nickserv = named("nid", "user", "irc.example", PURPOSE_NICKSERV);
@@ -300,6 +390,31 @@ mod tests {
         assert_eq!(
             store.read(&key("a", PURPOSE_NICKSERV)),
             Ok(Some("two".to_owned()))
+        );
+    }
+
+    #[test]
+    fn a_legacy_server_password_is_read_and_migrated_on_write() {
+        let mut store = MemoryCredentialStore::default();
+        let profile = Profile {
+            host: "irc.example".to_owned(),
+            nick: "fred".to_owned(),
+            ..Profile::new("nid")
+        };
+        let legacy = CredentialKey::for_profile(&profile, LEGACY_PURPOSE_PASSWORD);
+        store.write(&legacy, "hunter2");
+        assert_eq!(
+            read_slot(&store, &profile, PURPOSE_PASSWORD),
+            Ok(Some("hunter2".to_owned()))
+        );
+        assert_eq!(
+            write_slot(&mut store, &profile, PURPOSE_PASSWORD, "hunter2"),
+            CredentialState::SessionOnly
+        );
+        assert_eq!(store.read(&legacy), Ok(None));
+        assert_eq!(
+            store.read(&CredentialKey::for_profile(&profile, PURPOSE_PASSWORD)),
+            Ok(Some("hunter2".to_owned()))
         );
     }
 

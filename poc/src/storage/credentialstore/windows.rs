@@ -18,7 +18,10 @@ use windows_sys::Win32::Security::Credentials::{
     CRED_TYPE_GENERIC,
 };
 
-use super::{CredentialKey, CredentialState, CredentialStore, PendingRemovals};
+use super::{
+    CredentialKey, CredentialState, CredentialStore, LEGACY_PURPOSE_PASSWORD, PendingRemovals,
+    PURPOSE_PASSWORD,
+};
 
 /// QtKeychain's service name, the suffix of every target.
 const SERVICE: &str = "omairc";
@@ -47,10 +50,36 @@ fn target(key_name: &str) -> String {
     format!("{key_name}@{SERVICE}")
 }
 
-/// Both targets a key may be stored under, the current one first.
-fn targets(key: &CredentialKey) -> [String; 2] {
-    let name = key.key_name();
-    [target(&name), name]
+/// Every Credential Manager target a key may be stored under, canonical names first.
+fn targets(key: &CredentialKey) -> Vec<String> {
+    let names = if key.purpose == PURPOSE_PASSWORD || key.purpose == LEGACY_PURPOSE_PASSWORD {
+        let canonical = CredentialKey {
+            network_id: key.network_id.clone(),
+            username: key.username.clone(),
+            host: key.host.clone(),
+            purpose: PURPOSE_PASSWORD,
+        };
+        let legacy = CredentialKey {
+            network_id: key.network_id.clone(),
+            username: key.username.clone(),
+            host: key.host.clone(),
+            purpose: LEGACY_PURPOSE_PASSWORD,
+        };
+        let mut names = vec![canonical.key_name()];
+        let legacy_name = legacy.key_name();
+        if legacy_name != names[0] {
+            names.push(legacy_name);
+        }
+        names
+    } else {
+        vec![key.key_name()]
+    };
+    let mut out = Vec::new();
+    for name in names {
+        out.push(target(&name));
+        out.push(name);
+    }
+    out
 }
 
 /// A NUL-terminated UTF-16 copy of `text`, as the wide Win32 entry points take it.
@@ -203,10 +232,18 @@ mod tests {
         };
         assert_eq!(
             targets(&key)[0],
-            "omairc/v1/3:nid/4:user/11:irc.example/8:password@omairc"
+            "omairc/v1/3:nid/4:user/11:irc.example@omairc"
         );
         assert_eq!(
             targets(&key)[1],
+            "omairc/v1/3:nid/4:user/11:irc.example"
+        );
+        assert_eq!(
+            targets(&key)[2],
+            "omairc/v1/3:nid/4:user/11:irc.example/8:password@omairc"
+        );
+        assert_eq!(
+            targets(&key)[3],
             "omairc/v1/3:nid/4:user/11:irc.example/8:password"
         );
     }

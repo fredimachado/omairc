@@ -7,7 +7,7 @@
 
 use std::collections::BTreeSet;
 
-use super::CredentialKey;
+use super::{purpose_matches_slot, CredentialKey};
 
 /// The keys whose delete is still owed. A key is here from the moment it stops being the
 /// network's current key, until a delete of it succeeds.
@@ -31,7 +31,7 @@ impl PendingRemovals {
     pub fn slot(&self, network_id: &str, purpose: &str) -> Vec<CredentialKey> {
         self.keys
             .iter()
-            .filter(|key| key.network_id == network_id && key.purpose == purpose)
+            .filter(|key| key.network_id == network_id && purpose_matches_slot(purpose, key))
             .cloned()
             .collect()
     }

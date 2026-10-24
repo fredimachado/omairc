@@ -25,9 +25,12 @@ use crate::session::config::SessionConfig;
 use crate::session::events::SessionState;
 use crate::storage::conversationlog::FileConversationLog;
 use crate::irc::event::Event;
-use crate::storage::credentialstore::{CredentialKey, CredentialState, PURPOSE_NICKSERV, PURPOSE_PASSWORD};
+use crate::storage::credentialstore::{
+    read_slot, remove_slot, write_slot, CredentialKey, CredentialState, LEGACY_PURPOSE_PASSWORD,
+    PURPOSE_NICKSERV, PURPOSE_PASSWORD,
+};
 use crate::storage::paths;
-use crate::storage::profilestore::Profile;
+use crate::storage::profilestore::{Profile, DEFAULT_PORT};
 use crate::storage::settings::Status;
 use crate::storage::Backing;
 use crate::util::Secret;
@@ -40,6 +43,14 @@ use super::transports::TransportFactory;
 pub struct SecretEdits {
     pub password: Option<Secret>,
     pub nickserv: Option<Secret>,
+}
+
+/// The profile and secrets a live session was built from (`IrcAppliedSession`).
+#[derive(Clone, PartialEq, Eq)]
+pub struct AppliedSession {
+    pub profile: Profile,
+    pub password: Secret,
+    pub nickserv_password: Secret,
 }
 
 /// What saving a profile did: the file's outcome, and where each secret now lives.
@@ -100,7 +111,17 @@ impl Controller {
             .filter(|profile| profile.connect_on_startup && profile.is_complete())
             .map(|profile| profile.network_id.clone())
             .collect();
-        ids.iter().filter(|id| self.start(id)).count()
+        let mut started = 0;
+        for id in ids {
+            let allowed = self
+                .profiles
+                .get(&id)
+                .is_some_and(|profile| self.startup_connect_allowed(profile));
+            if allowed && self.start(&id) {
+                started += 1;
+            }
+        }
+        started
     }
 
     /// The saved profile of a network, if it has one.
@@ -145,19 +166,24 @@ impl Controller {
     /// Forgets a network's profile and its secrets (`forgetNetwork`'s store half). The current
     /// keys and every obsolete key of the network are deleted; one the store refuses stays owed.
     pub(super) fn remove_profile(&mut self, network_id: &str) -> Status {
-        self.applied_profiles.remove(network_id);
-        // The entry names come from the profile's username and host, so the profile is read first.
-        if let Some(profile) = self.profiles.get(network_id).cloned() {
-            for purpose in [PURPOSE_PASSWORD, PURPOSE_NICKSERV] {
-                let key = CredentialKey::for_profile(&profile, purpose);
-                self.credentials.pending_mut().add(key);
-            }
+        let profile = self.profiles.get(network_id).cloned();
+        if profile.is_none() {
+            return Status::Absent;
+        }
+        let status = self.profile_store.remove(network_id);
+        if matches!(status, Status::AccessError | Status::FormatError) {
+            return status;
+        }
+        self.applied_sessions.remove(network_id);
+        if let Some(profile) = profile {
+            self.queue_slot_removals(&profile, PURPOSE_PASSWORD);
+            self.queue_slot_removals(&profile, PURPOSE_NICKSERV);
         }
         for key in self.credentials.pending().network(network_id) {
             self.delete_key(&key);
         }
         self.profiles.remove(network_id);
-        self.profile_store.remove(network_id)
+        status
     }
 
     /// Starts a saved network (`Start`, for a network that is not a seeded demo). A session
@@ -169,7 +195,15 @@ impl Controller {
             // No usable profile: the build's answer for an unknown network decides the reason.
             _ => return self.refuse_start(network_id),
         };
-        let reusable = self.applied_profiles.get(network_id) == Some(&profile)
+        if !self.startup_connect_allowed(&profile) {
+            self.refuse_with(
+                network_id,
+                "The saved password could not be read from secure storage.",
+            );
+            return false;
+        }
+        let candidate = self.applied_session_for(&profile);
+        let reusable = self.applied_sessions.get(network_id) == Some(&candidate)
             && self.manager.find(network_id).is_some();
         if !reusable {
             self.manager.discard(network_id);
@@ -178,7 +212,7 @@ impl Controller {
             let transport = match self.transports.open(network_id) {
                 Ok(transport) => transport,
                 Err(message) => {
-                    self.applied_profiles.remove(network_id);
+                    self.applied_sessions.remove(network_id);
                     self.refuse_with(network_id, &message);
                     return false;
                 }
@@ -188,10 +222,31 @@ impl Controller {
                 self.refuse_with(network_id, &error.to_string());
                 return false;
             }
-            self.applied_profiles.insert(network_id.to_owned(), profile);
+            self.applied_sessions.insert(network_id.to_owned(), candidate);
             self.attach_store_hooks(network_id);
         }
         self.manager.activate(network_id)
+    }
+
+    /// Whether a saved network may connect with its declared secrets (`startupConnectAllowed`).
+    pub(super) fn startup_connect_allowed(&self, profile: &Profile) -> bool {
+        !self.secret_unreadable(profile, PURPOSE_PASSWORD, profile.secret_saved, true)
+            && !self.secret_unreadable(
+                profile,
+                PURPOSE_NICKSERV,
+                profile.nickserv_saved,
+                false,
+            )
+    }
+
+    /// Whether Apply may start a network after `save_profile` (`submitConnection`).
+    pub fn connect_allowed_after_save(&self, profile: &Profile, saved: &SaveOutcome) -> bool {
+        if matches!(saved.password, CredentialState::Error(_))
+            || matches!(saved.nickserv, CredentialState::Error(_))
+        {
+            return false;
+        }
+        self.startup_connect_allowed(profile)
     }
 
     /// Records the channels a session autojoins, and saves them to the network's profile
@@ -457,10 +512,10 @@ impl Controller {
             (None, None) => self.settled_state(&key),
             (Some(secret), _) => {
                 let state = if secret.is_empty() {
-                    self.credentials.remove(&key)
+                    remove_slot(self.credentials.as_mut(), profile, purpose)
                 } else {
                     // The credential store takes the plaintext: it is the edge the secret is written to.
-                    self.credentials.write(&key, secret.expose())
+                    write_slot(self.credentials.as_mut(), profile, purpose, secret.expose())
                 };
                 if is_settled(&state) {
                     self.retire_obsolete(profile, purpose);
@@ -480,10 +535,11 @@ impl Controller {
         purpose: &'static str,
     ) -> CredentialState {
         let key = CredentialKey::for_profile(profile, purpose);
-        match self.credentials.read(from) {
+        let from_profile = profile_for_credential_key(from);
+        match read_slot(self.credentials.as_ref(), &from_profile, from.purpose) {
             Ok(Some(text)) => {
                 let mut carried = Secret::from(text);
-                let state = self.credentials.write(&key, carried.expose());
+                let state = write_slot(self.credentials.as_mut(), profile, purpose, carried.expose());
                 carried.wipe();
                 if is_settled(&state) {
                     self.retire_obsolete(profile, purpose);
@@ -528,7 +584,57 @@ impl Controller {
     /// Where a slot stands when nothing is written: held when its key has a secret, missing when
     /// it has none, and the store's error when it cannot say.
     fn settled_state(&self, key: &CredentialKey) -> CredentialState {
-        match self.credentials.read(key) {
+        let profile = profile_for_credential_key(key);
+        match read_slot(self.credentials.as_ref(), &profile, key.purpose) {
+            Ok(Some(text)) => {
+                Secret::from(text).wipe();
+                if self.credentials.durable() {
+                    CredentialState::Available
+                } else {
+                    CredentialState::SessionOnly
+                }
+            }
+            Ok(None) => CredentialState::Missing,
+            Err(message) => CredentialState::Error(message),
+        }
+    }
+
+    fn applied_session_for(&self, profile: &Profile) -> AppliedSession {
+        AppliedSession {
+            profile: profile.clone(),
+            password: self.secret_text(profile, PURPOSE_PASSWORD),
+            nickserv_password: self.secret_text(profile, PURPOSE_NICKSERV),
+        }
+    }
+
+    fn queue_slot_removals(&mut self, profile: &Profile, purpose: &'static str) {
+        self.credentials
+            .pending_mut()
+            .add(CredentialKey::for_profile(profile, purpose));
+        if purpose == PURPOSE_PASSWORD {
+            self.credentials.pending_mut().add(
+                CredentialKey::for_profile(profile, LEGACY_PURPOSE_PASSWORD),
+            );
+        }
+    }
+
+    fn secret_unreadable(
+        &self,
+        profile: &Profile,
+        purpose: &'static str,
+        saved: bool,
+        required: bool,
+    ) -> bool {
+        let tracked = required || saved;
+        match self.credential_slot_state(profile, purpose) {
+            CredentialState::Error(_) => tracked,
+            CredentialState::Missing | CredentialState::SessionOnly if saved => true,
+            _ => false,
+        }
+    }
+
+    fn credential_slot_state(&self, profile: &Profile, purpose: &'static str) -> CredentialState {
+        match read_slot(self.credentials.as_ref(), profile, purpose) {
             Ok(Some(text)) => {
                 Secret::from(text).wipe();
                 if self.credentials.durable() {
@@ -557,8 +663,8 @@ impl Controller {
             .create(config, transport, self.clock.clone())
             .is_ok()
         {
-            self.applied_profiles
-                .insert(profile.network_id.clone(), profile.clone());
+            self.applied_sessions
+                .insert(profile.network_id.clone(), self.applied_session_for(profile));
             self.attach_store_hooks(&profile.network_id);
         }
     }
@@ -591,12 +697,33 @@ impl Controller {
     /// A profile's stored secret, or an empty one when the store has none or cannot answer. A
     /// session starts without the password in that case, and the Connect sheet says why.
     fn secret_text(&self, profile: &Profile, purpose: &'static str) -> Secret {
-        self.credentials
-            .read(&CredentialKey::for_profile(profile, purpose))
+        read_slot(self.credentials.as_ref(), profile, purpose)
             .ok()
             .flatten()
             .map(Secret::from)
             .unwrap_or_default()
+    }
+}
+
+fn profile_for_credential_key(key: &CredentialKey) -> Profile {
+    Profile {
+        network_id: key.network_id.clone(),
+        name: String::new(),
+        host: key.host.clone(),
+        port: DEFAULT_PORT,
+        tls: true,
+        connect_on_startup: false,
+        secret_saved: false,
+        nickserv_saved: false,
+        nick: key.username.clone(),
+        username: key.username.clone(),
+        realname: String::new(),
+        account: String::new(),
+        bouncer_network: String::new(),
+        autojoin_channels: Vec::new(),
+        autojoin_keys: BTreeMap::new(),
+        icon_color: None,
+        avatar_url: String::new(),
     }
 }
 
