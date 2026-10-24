@@ -105,7 +105,8 @@ block2 = "=0.6.2"
 # The Secret Service on Linux. `futures` only supplies `block_on`, which drives oo7 on the calling thread.
 [target.'cfg(target_os = "linux")'.dependencies]
 futures = { version = "=0.3.34", default-features = false, features = ["executor"] }
-oo7 = "=0.5.0"
+# gpui enables oo7's async-std feature, and ashpd refuses tokio next to async-std, so oo7 keeps tokio off.
+oo7 = { version = "=0.5.0", default-features = false, features = ["native_crypto"] }
 zbus = { version = "=5.19.0", default-features = false, features = ["async-io"] }
 
 # Windows build script only: compiles the icon and version resource that build.rs
