@@ -94,9 +94,9 @@ use super::util::{
     should_claim,
 };
 use super::windows_ownership::{
-    activator_claim, canonical_with, check_existing_links, found_after_repair, is_installed_exe,
-    link_state_from_target, repair_ends_registration, ActivatorRegistration, LinkRefusal,
-    LinkSlot, LinkState,
+    canonical_with, check_existing_links, found_after_repair, is_installed_exe,
+    link_state_from_target, registration_write, repair_ends_registration, ActivatorRegistration,
+    LinkRefusal, LinkSlot, LinkState, RegistrationWrite,
 };
 use super::{Activation, Notifier};
 
@@ -385,8 +385,8 @@ fn installed_shortcut_paths(exe_path: &str) -> Vec<PathBuf> {
     links
 }
 
-/// Points the toast activator at this exe, when `activator_claim` allows it. An installed copy
-/// may always, including over a registration it cannot read. Any other build may only when
+/// Points the toast activator at this exe, when `registration_write` says to write. An installed
+/// copy writes even over a registration it cannot read. Any other build writes only when
 /// `should_claim` allows it, and it leaves a registration it cannot read unchanged.
 fn register_com_server(exe: &str, install_roots: &[PathBuf]) {
     let subkey_wide = wide(COM_SERVER_SUBKEY);
@@ -399,56 +399,56 @@ fn register_com_server(exe: &str, install_roots: &[PathBuf]) {
         Err(_) => ActivatorRegistration::Unreadable,
     };
     let this_exe = canonical_exe(Path::new(exe));
-    let claimed = activator_claim(&this_exe, install_roots, &existing, resolve_path, Path::exists);
-    match (&read, claimed) {
-        (Err(status), true) => log::warn!(
-            "Windows notifier: could not read HKCU\\{} ({:?}), overwriting it because this copy is installed",
-            COM_SERVER_SUBKEY,
-            status
-        ),
-        (Err(status), false) => {
-            log::warn!(
-                "Windows notifier: could not read the toast activator registration ({:?}), leaving it unchanged",
-                status
-            );
-            return;
-        }
-        (Ok(_), false) => {
+    match registration_write(&existing, install_roots, &this_exe, resolve_path, Path::exists) {
+        RegistrationWrite::Skip => {
+            if let Err(status) = &read {
+                log::warn!(
+                    "Windows notifier: could not read the toast activator registration ({:?}), leaving it unchanged",
+                    status
+                );
+            }
             if let ActivatorRegistration::Names(owner) = &existing {
                 log::info!(
                     "Windows notifier: {} owns toast activation, so this build leaves it registered",
                     owner.display()
                 );
             }
-            return;
         }
-        (Ok(_), true) => {}
-    }
-    if let ActivatorRegistration::Names(owner) = &existing {
-        if !should_claim(Some(owner.as_path()), &this_exe, Path::exists) {
-            log::info!(
-                "Windows notifier: this installed copy replaces the toast activation registration owned by {}",
-                owner.display()
-            );
+        RegistrationWrite::Write => {
+            if let Err(status) = &read {
+                log::warn!(
+                    "Windows notifier: could not read HKCU\\{} ({:?}), overwriting it because this copy is installed",
+                    COM_SERVER_SUBKEY,
+                    status
+                );
+            }
+            if let ActivatorRegistration::Names(owner) = &existing {
+                if !should_claim(Some(owner.as_path()), &this_exe, Path::exists) {
+                    log::info!(
+                        "Windows notifier: this installed copy replaces the toast activation registration owned by {}",
+                        owner.display()
+                    );
+                }
+            }
+            let command = format!("\"{}\"", exe.replace('/', "\\"));
+            let command_wide = wide(&command);
+            let status = unsafe {
+                RegSetKeyValueW(
+                    HKEY_CURRENT_USER,
+                    PCWSTR(subkey_wide.as_ptr()),
+                    None,
+                    REG_SZ.0,
+                    Some(command_wide.as_ptr() as *const _),
+                    (command_wide.len() * 2) as u32,
+                )
+            };
+            if status != ERROR_SUCCESS {
+                log::warn!(
+                    "Windows notifier: could not write the toast activator registration: {:?}",
+                    status
+                );
+            }
         }
-    }
-    let command = format!("\"{}\"", exe.replace('/', "\\"));
-    let command_wide = wide(&command);
-    let status = unsafe {
-        RegSetKeyValueW(
-            HKEY_CURRENT_USER,
-            PCWSTR(subkey_wide.as_ptr()),
-            None,
-            REG_SZ.0,
-            Some(command_wide.as_ptr() as *const _),
-            (command_wide.len() * 2) as u32,
-        )
-    };
-    if status != ERROR_SUCCESS {
-        log::warn!(
-            "Windows notifier: could not write the toast activator registration: {:?}",
-            status
-        );
     }
 }
 

@@ -211,6 +211,31 @@ pub fn activator_claim(
         }
 }
 
+/// What the toast activator registration does in this build: write it, or leave it as it is.
+/// `windows.rs` matches on this for every registration it reads, so the decision that the tests
+/// cover is the decision that runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RegistrationWrite {
+    Write,
+    Skip,
+}
+
+/// The write decision for the toast activator registration. It calls `activator_claim` with the
+/// same inputs, so `Write` is returned exactly when `activator_claim` returns true.
+pub fn registration_write(
+    registration: &ActivatorRegistration,
+    install_roots: &[PathBuf],
+    this_exe: &Path,
+    resolve: impl Fn(&Path) -> Option<PathBuf>,
+    exists: impl Fn(&Path) -> bool,
+) -> RegistrationWrite {
+    if activator_claim(this_exe, install_roots, registration, resolve, exists) {
+        RegistrationWrite::Write
+    } else {
+        RegistrationWrite::Skip
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
@@ -414,6 +439,80 @@ mod tests {
             no_resolve,
             |_| false,
         ));
+    }
+
+    /// The decision the caller matches on, for an exe in the given registration state. It uses the
+    /// same roots and `Path::exists` that `register_com_server` passes.
+    fn write_decision(exe: &Path, registration: &ActivatorRegistration) -> RegistrationWrite {
+        registration_write(registration, &test_roots(), exe, no_resolve, Path::exists)
+    }
+
+    #[test]
+    fn an_installed_copy_writes_over_an_unreadable_registration() {
+        assert_eq!(
+            write_decision(Path::new(INSTALLED_EXE), &ActivatorRegistration::Unreadable),
+            RegistrationWrite::Write,
+        );
+    }
+
+    #[test]
+    fn a_dev_build_skips_an_unreadable_registration() {
+        assert_eq!(
+            write_decision(Path::new(THIS_EXE), &ActivatorRegistration::Unreadable),
+            RegistrationWrite::Skip,
+        );
+    }
+
+    #[test]
+    fn an_installed_copy_writes_over_another_existing_exe() {
+        let scratch = ScratchDir::new("decision_installed_existing");
+        let other = scratch.exe("Other", true);
+        assert_eq!(
+            write_decision(Path::new(INSTALLED_EXE), &ActivatorRegistration::Names(other)),
+            RegistrationWrite::Write,
+        );
+    }
+
+    #[test]
+    fn a_dev_build_skips_another_existing_exe() {
+        let scratch = ScratchDir::new("decision_dev_existing");
+        let other = scratch.exe("Other", true);
+        assert_eq!(
+            write_decision(Path::new(THIS_EXE), &ActivatorRegistration::Names(other)),
+            RegistrationWrite::Skip,
+        );
+    }
+
+    #[test]
+    fn a_dev_build_writes_over_its_own_registration() {
+        let this_exe = Path::new(THIS_EXE);
+        assert_eq!(
+            write_decision(this_exe, &ActivatorRegistration::Names(this_exe.to_path_buf())),
+            RegistrationWrite::Write,
+        );
+    }
+
+    #[test]
+    fn an_absent_registration_is_written_by_an_installed_copy_and_a_dev_build() {
+        assert_eq!(
+            write_decision(Path::new(INSTALLED_EXE), &ActivatorRegistration::Absent),
+            RegistrationWrite::Write,
+        );
+        assert_eq!(
+            write_decision(Path::new(THIS_EXE), &ActivatorRegistration::Absent),
+            RegistrationWrite::Write,
+        );
+    }
+
+    #[test]
+    fn an_installed_copy_writes_over_a_gone_exe() {
+        let scratch = ScratchDir::new("decision_installed_gone");
+        let gone = scratch.exe("Other", false);
+        assert!(!gone.exists(), "the other exe must be absent");
+        assert_eq!(
+            write_decision(Path::new(INSTALLED_EXE), &ActivatorRegistration::Names(gone)),
+            RegistrationWrite::Write,
+        );
     }
 
     #[test]
