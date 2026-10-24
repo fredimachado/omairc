@@ -15,6 +15,8 @@ pub struct DeferringCredentialStore {
     inner: Box<dyn CredentialStore>,
     worker_read: WorkerRead,
     cache: RefCell<BTreeMap<CredentialKey, Result<Option<String>, String>>>,
+    /// Answers that finished but are not cached, so a later read can retry after an error.
+    completed: RefCell<BTreeMap<CredentialKey, Result<Option<String>, String>>>,
     inflight: RefCell<BTreeMap<CredentialKey, mpsc::Receiver<Result<Option<String>, String>>>>,
 }
 
@@ -27,12 +29,14 @@ impl DeferringCredentialStore {
             inner,
             worker_read: Arc::new(worker_read),
             cache: RefCell::new(BTreeMap::new()),
+            completed: RefCell::new(BTreeMap::new()),
             inflight: RefCell::new(BTreeMap::new()),
         })
     }
 
     fn drop_cached(&self, key: &CredentialKey) {
         self.cache.borrow_mut().remove(key);
+        self.completed.borrow_mut().remove(key);
         self.inflight.borrow_mut().remove(key);
     }
 
@@ -44,7 +48,9 @@ impl DeferringCredentialStore {
         match receiver.try_recv() {
             Ok(answer) => {
                 inflight.remove(key);
-                self.cache.borrow_mut().insert(key.clone(), answer.clone());
+                if answer.is_ok() {
+                    self.cache.borrow_mut().insert(key.clone(), answer.clone());
+                }
                 Some(answer)
             }
             Err(mpsc::TryRecvError::Empty) => None,
@@ -82,6 +88,9 @@ impl CredentialStore for DeferringCredentialStore {
         if let Some(cached) = self.cache.borrow().get(key) {
             return ReadSlot::Ready(cached.clone());
         }
+        if let Some(answer) = self.completed.borrow_mut().remove(key) {
+            return ReadSlot::Ready(answer);
+        }
         if let Some(answer) = self.settle_inflight(key) {
             return ReadSlot::Ready(answer);
         }
@@ -94,8 +103,16 @@ impl CredentialStore for DeferringCredentialStore {
     fn poll_reads(&self) {
         let keys: Vec<CredentialKey> = self.inflight.borrow().keys().cloned().collect();
         for key in keys {
-            let _ = self.settle_inflight(&key);
+            if let Some(answer) = self.settle_inflight(&key) {
+                if answer.is_err() {
+                    self.completed.borrow_mut().insert(key, answer);
+                }
+            }
         }
+    }
+
+    fn deferred_read_inflight(&self, key: &CredentialKey) -> bool {
+        self.inflight.borrow().contains_key(key)
     }
 
     fn write(&mut self, key: &CredentialKey, password: &str) -> CredentialState {

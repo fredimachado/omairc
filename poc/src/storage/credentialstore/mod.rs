@@ -44,6 +44,8 @@ pub enum CredentialState {
     SessionOnly,
     /// The secret is in the OS keychain.
     Available,
+    /// A deferred keychain read is still in flight on another thread.
+    Loading,
     /// The keychain refused the operation, with the reason it gave.
     Error(String),
 }
@@ -222,6 +224,11 @@ pub trait CredentialStore {
 
     /// Settles in-flight [`read_deferred`] calls. The UI loop calls this on each tick.
     fn poll_reads(&self) {}
+
+    /// Whether a deferred read is in flight for `key`, without starting a new one.
+    fn deferred_read_inflight(&self, _key: &CredentialKey) -> bool {
+        false
+    }
 
     /// Stores a secret and reports where it now lives.
     fn write(&mut self, key: &CredentialKey, password: &str) -> CredentialState;

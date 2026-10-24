@@ -171,12 +171,13 @@ fn activate_startup_waits_for_a_deferred_keychain_read() {
         "activate_startup blocked on the keyring"
     );
     assert!(controller.session(NET).is_none());
+    assert_eq!(
+        controller.pending_startup_connect_ids(),
+        vec![NET.to_owned()],
+        "startup connect waits on the keychain"
+    );
     let deadline = Instant::now() + Duration::from_secs(3);
-    while matches!(
-        read_slot(controller.credentials.as_ref(), &profile, PURPOSE_PASSWORD),
-        ReadSlot::Loading
-    ) && Instant::now() < deadline
-    {
+    while controller.session(NET).is_none() && Instant::now() < deadline {
         controller.poll_credential_reads();
         thread::sleep(Duration::from_millis(5));
     }
@@ -185,8 +186,8 @@ fn activate_startup_waits_for_a_deferred_keychain_read() {
         ReadSlot::Ready(Ok(Some("hunter2".to_owned())))
     );
     assert!(
-        controller.start(NET),
-        "connect once the keychain read has settled"
+        controller.session(NET).is_some(),
+        "poll resumes startup connect after the keychain settles"
     );
     assert_eq!(
         controller
@@ -197,6 +198,7 @@ fn activate_startup_waits_for_a_deferred_keychain_read() {
             .expose(),
         "hunter2"
     );
+    assert!(controller.pending_startup_connect_ids().is_empty());
 }
 
 #[test]
@@ -238,6 +240,124 @@ fn activate_startup_skips_a_profile_whose_saved_password_cannot_be_read() {
     controller.profiles.insert(NET.to_owned(), complete_profile());
     assert_eq!(controller.activate_startup(), 0);
     assert!(controller.session(NET).is_none());
+    assert!(controller.pending_startup_connect_ids().is_empty());
+}
+
+#[test]
+fn poll_credential_reads_clears_a_failed_startup_connect() {
+    let mut controller =
+        Controller::with_backing(clock(), Box::new(NoTransports), Backing::Ephemeral);
+    controller.credentials = DeferringCredentialStore::new(
+        Box::new(MemoryCredentialStore::default()),
+        |_key| Err("timed out".to_owned()),
+    );
+    controller.profiles.insert(NET.to_owned(), complete_profile());
+    assert_eq!(controller.activate_startup(), 0);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !controller.pending_startup_connect_ids().is_empty()
+        && Instant::now() < deadline
+    {
+        controller.poll_credential_reads();
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(controller.pending_startup_connect_ids().is_empty());
+    assert!(controller.session(NET).is_none());
+}
+
+#[test]
+fn save_profile_reports_loading_instead_of_refusing_apply() {
+    let profile = complete_profile();
+    let key = CredentialKey::for_profile(&profile, PURPOSE_PASSWORD);
+    let secrets = Arc::new(Mutex::new(MemoryCredentialStore::default()));
+    secrets
+        .lock()
+        .expect("lock")
+        .write(&key, "hunter2");
+    let store = DeferringCredentialStore::new(
+        Box::new(SlowMemoryStore {
+            secrets: Arc::clone(&secrets),
+            delay: Duration::from_secs(2),
+            pending: PendingRemovals::default(),
+        }),
+        {
+            let secrets = Arc::clone(&secrets);
+            move |key| {
+                thread::sleep(Duration::from_secs(2));
+                secrets.lock().expect("lock").read(key)
+            }
+        },
+    );
+    let mut controller =
+        Controller::with_backing(clock(), Box::new(NoTransports), Backing::Ephemeral);
+    controller.credentials = store;
+    controller.profiles.insert(NET.to_owned(), profile.clone());
+    let outcome = controller.save_profile(profile.clone(), SecretEdits::default());
+    assert_eq!(outcome.password, CredentialState::Loading);
+    assert!(controller.connect_allowed_after_save(&profile, &outcome));
+}
+
+#[test]
+fn a_deferred_read_error_is_not_cached_forever() {
+    let profile = complete_profile();
+    let key = CredentialKey::for_profile(&profile, PURPOSE_PASSWORD);
+    let secrets = Arc::new(Mutex::new(MemoryCredentialStore::default()));
+    secrets
+        .lock()
+        .expect("lock")
+        .write(&key, "hunter2");
+    let attempts = Arc::new(Mutex::new(0_u32));
+    let store = DeferringCredentialStore::new(
+        Box::new(MemoryCredentialStore::default()),
+        {
+            let secrets = Arc::clone(&secrets);
+            let attempts = Arc::clone(&attempts);
+            move |key| {
+                let mut count = attempts.lock().expect("lock");
+                *count += 1;
+                if *count == 1 {
+                    Err("timed out".to_owned())
+                } else {
+                    secrets.lock().expect("lock").read(key)
+                }
+            }
+        },
+    );
+    assert_eq!(
+        read_slot(store.as_ref(), &profile, PURPOSE_PASSWORD),
+        ReadSlot::Loading
+    );
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut first_answer = ReadSlot::Loading;
+    while Instant::now() < deadline {
+        first_answer = read_slot(store.as_ref(), &profile, PURPOSE_PASSWORD);
+        if matches!(first_answer, ReadSlot::Ready(Err(_))) {
+            break;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        first_answer,
+        ReadSlot::Ready(Err("timed out".to_owned()))
+    );
+    assert_eq!(
+        read_slot(store.as_ref(), &profile, PURPOSE_PASSWORD),
+        ReadSlot::Loading,
+        "a failed read may be retried"
+    );
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while matches!(
+        read_slot(store.as_ref(), &profile, PURPOSE_PASSWORD),
+        ReadSlot::Loading
+    ) && Instant::now() < deadline
+    {
+        store.poll_reads();
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        read_slot(store.as_ref(), &profile, PURPOSE_PASSWORD),
+        ReadSlot::Ready(Ok(Some("hunter2".to_owned())))
+    );
+    assert_eq!(*attempts.lock().expect("lock"), 2);
 }
 
 #[test]

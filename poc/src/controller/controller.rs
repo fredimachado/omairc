@@ -196,6 +196,11 @@ impl Controller {
         Self::with_parts(clock, Box::new(super::transports::NoTransports))
     }
 
+    #[cfg(test)]
+    pub(crate) fn pending_startup_connect_ids(&self) -> Vec<String> {
+        self.pending_startup_connects.iter().cloned().collect()
+    }
+
     /// A controller with the given transport factory, keeping nothing between runs.
     pub fn with_parts(clock: Rc<dyn Clock>, transports: Box<dyn TransportFactory>) -> Self {
         Self::with_backing(clock, transports, Backing::Ephemeral)
