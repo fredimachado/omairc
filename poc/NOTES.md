@@ -1,4 +1,4 @@
-# PoC / Rust desktop notes
+# Rust desktop notes
 
 Notes for the GPUI client cutover. Keep this short; product history still
 lives in root `CHANGELOG.md` (Phase 7 will copy accepted regressions there).
