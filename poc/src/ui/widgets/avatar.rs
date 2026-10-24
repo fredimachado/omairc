@@ -101,15 +101,24 @@ pub fn avatar_with_presence(
     initials_px: f32,
     photo: Option<ImageSource>,
     presence: &str,
+    show_dot: bool,
 ) -> impl IntoElement {
     let avatar_sz = scaled_px(style, size);
+    let disc = avatar_disc(style, nick, size, initials_px, photo);
+    if !show_dot {
+        return div()
+            .relative()
+            .size(avatar_sz)
+            .flex_shrink_0()
+            .child(disc);
+    }
     let dot_sz = scaled_px(style, 7.);
     let inset = avatar_sz - dot_sz;
     div()
         .relative()
         .size(avatar_sz)
         .flex_shrink_0()
-        .child(avatar_disc(style, nick, size, initials_px, photo))
+        .child(disc)
         .child(
             div()
                 .absolute()

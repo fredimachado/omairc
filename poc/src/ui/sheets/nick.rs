@@ -84,6 +84,7 @@ fn nick_row(
         11.,
         photo,
         presence,
+        true,
     );
     let label_color = if away {
         to_gpui(style.muted_color())

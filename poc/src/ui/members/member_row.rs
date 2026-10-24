@@ -2,7 +2,9 @@ use gpui::{div, prelude::*, relative, MouseButton};
 
 use crate::irc::plaintext::plain_irc_text;
 use crate::irc::reducer::MemberView;
-use crate::model::presence::photo_for;
+use crate::model::presence::{
+    member_away_chrome_visible, member_presence_dot_visible, photo_for,
+};
 use crate::model::Style;
 use crate::ui::widgets::avatar::{avatar_with_presence, AvatarPhotos};
 use crate::ui::widgets::bot_mark::bot_mark;
@@ -77,6 +79,8 @@ pub fn member_row(
 ) -> impl IntoElement {
     let is_self = member.nick == row.self_nick;
     let away = member.away.is_some();
+    let away_chrome =
+        member_away_chrome_visible(away, row.away_visible, is_self);
     let presence = if away { "away" } else { "online" };
     let clickable = !is_self;
     let nick = member.nick.clone();
@@ -89,8 +93,9 @@ pub fn member_row(
         11.,
         photo,
         presence,
+        member_presence_dot_visible(row.away_visible, is_self),
     );
-    let label_color = if away {
+    let label_color = if away_chrome {
         to_gpui(style.muted_color())
     } else {
         to_gpui(style.ink_color())
@@ -170,7 +175,7 @@ pub fn member_row(
                 .child(
                     div()
                         .flex_shrink_0()
-                        .when(away, |this| this.opacity(AWAY_GLYPH_OPACITY))
+                        .when(away_chrome, |this| this.opacity(AWAY_GLYPH_OPACITY))
                         .child(glyph),
                 )
                 .child(

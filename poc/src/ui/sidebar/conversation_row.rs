@@ -1,6 +1,7 @@
 use gpui::{div, prelude::*, ImageSource, MouseButton};
 
 use crate::controller::snapshots::ConversationRow;
+use crate::model::presence::sidebar_dm_presence_dot_visible;
 use crate::model::{ConversationRef, Style};
 use crate::ui::widgets::avatar::avatar_with_presence;
 use crate::ui::widgets::badge::unread_badge;
@@ -15,6 +16,9 @@ use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 pub struct RowLook {
     pub selected: bool,
     pub typing_phase: u8,
+    /// Whether away-notify is on for the selection (`HasAwayPresence`), like Qt's
+    /// `awayPresenceVisible` on the sidebar.
+    pub away_visible: bool,
     /// The peer's photo, when the `avatars` preference allows it and its image is ready.
     pub photo: Option<ImageSource>,
     /// The peer is a bot, so its row gets the bot mark.
@@ -109,6 +113,7 @@ pub fn conversation_row(
                         11.,
                         look.photo,
                         presence,
+                        sidebar_dm_presence_dot_visible(look.away_visible),
                     )),
             )
         })

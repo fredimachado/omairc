@@ -87,6 +87,24 @@ pub fn photo_for(reference: Option<&str>, avatars_on: bool) -> Option<&str> {
     reference.filter(|reference| !reference.is_empty())
 }
 
+/// Whether a member row draws another member's presence dot (`MembersColumn.qml`:
+/// `awayPresenceVisible || isSelf`). Our own away state comes from `305`/`306`, not
+/// away-notify.
+pub fn member_presence_dot_visible(away_notify: bool, is_self: bool) -> bool {
+    away_notify || is_self
+}
+
+/// Whether away dimming applies on a member row (`memberDelegate.away` in Qt).
+pub fn member_away_chrome_visible(away: bool, away_notify: bool, is_self: bool) -> bool {
+    away && member_presence_dot_visible(away_notify, is_self)
+}
+
+/// Whether a sidebar direct-message row draws the avatar presence dot
+/// (`ConversationRow.qml`: `direct && awayPresenceVisible`).
+pub fn sidebar_dm_presence_dot_visible(away_notify: bool) -> bool {
+    away_notify
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,6 +133,23 @@ mod tests {
     fn a_missing_or_empty_avatar_falls_back_to_initials() {
         assert_eq!(photo_for(None, true), None);
         assert_eq!(photo_for(Some(""), true), None);
+    }
+
+    #[test]
+    fn presence_dots_follow_away_notify_like_qt() {
+        use super::{
+            member_away_chrome_visible, member_presence_dot_visible,
+            sidebar_dm_presence_dot_visible,
+        };
+        assert!(!member_presence_dot_visible(false, false));
+        assert!(member_presence_dot_visible(false, true));
+        assert!(member_presence_dot_visible(true, false));
+        assert!(!sidebar_dm_presence_dot_visible(false));
+        assert!(sidebar_dm_presence_dot_visible(true));
+        assert!(!member_away_chrome_visible(true, false, false));
+        assert!(member_away_chrome_visible(true, false, true));
+        assert!(member_away_chrome_visible(true, true, false));
+        assert!(!member_away_chrome_visible(false, true, false));
     }
 
     #[test]

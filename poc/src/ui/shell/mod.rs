@@ -517,6 +517,7 @@ impl Render for Shell {
                 inbox_count: self.controller.inbox_items().len() as u32,
                 typing_phase: self.typing_phase,
                 avatars: self.controller.preferences().avatars,
+                away_visible,
                 photos: &photos,
                 on_status: status_handler(entity.clone()),
                 on_edit: edit_handler(entity.clone()),
