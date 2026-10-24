@@ -206,7 +206,78 @@ impl EntityInputHandler for SingleLineInput {
     ) -> Option<usize> {
         let line_point = self.last_bounds?.localize(&point)?;
         let last_layout = self.last_layout.as_ref()?;
-        let drawn = last_layout.index_for_x(point.x - line_point.x + gpui::px(self.horizontal_offset))?;
+        let drawn = last_layout.index_for_x(line_point.x + gpui::px(self.horizontal_offset))?;
         Some(self.offset_to_utf16(self.content_at(drawn)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::{
+        AppContext as _, Bounds, EntityInputHandler, ShapedLine, TestAppContext, TextRun, point,
+        px, size,
+    };
+
+    fn shape_line(window: &mut Window, text: &str) -> ShapedLine {
+        let text_style = window.text_style();
+        let font_size = text_style.font_size.to_pixels(window.rem_size());
+        let run = TextRun {
+            len: text.len(),
+            font: text_style.font(),
+            color: gpui::Hsla::default(),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        window
+            .text_system()
+            .shape_line(text.to_string().into(), font_size, &[run], None)
+    }
+
+    #[gpui::test]
+    fn ime_character_index_respects_horizontal_scroll(cx: &mut TestAppContext) {
+        let cxw = cx.add_empty_window();
+        let text = "0123456789";
+        let input = cxw.update(|window, cx| {
+            let focus = cx.focus_handle();
+            let line = shape_line(window, text);
+            let bounds = Bounds::new(point(px(100.), px(0.)), size(px(80.), px(20.)));
+            let scroll = 40.;
+            cx.new(|_| {
+                let mut input = SingleLineInput::new("", "test", focus);
+                input.content = text.into();
+                input.last_layout = Some(line);
+                input.last_bounds = Some(bounds);
+                input.horizontal_offset = scroll;
+                input
+            })
+        });
+
+        let (near_end, near_start) = cxw.update(|window, cx| {
+            input.update(cx, |input, cx| {
+                let y = input.last_bounds.unwrap().center().y;
+                let near_start = EntityInputHandler::character_index_for_point(
+                    input,
+                    point(px(110.), y),
+                    window,
+                    cx,
+                )
+                .unwrap();
+                let near_end = EntityInputHandler::character_index_for_point(
+                    input,
+                    point(px(130.), y),
+                    window,
+                    cx,
+                )
+                .expect("click inside the scrolled field");
+                (near_end, near_start)
+            })
+        });
+
+        assert!(
+            near_end > near_start,
+            "IME point mapping must follow local x through scroll (got start={near_start}, end={near_end})"
+        );
     }
 }
