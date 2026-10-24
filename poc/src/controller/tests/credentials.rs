@@ -463,10 +463,19 @@ fn a_deferred_read_error_is_not_cached_forever() {
         first_answer,
         ReadSlot::Ready(Err("timed out".to_owned()))
     );
+    for _ in 0..5 {
+        assert_eq!(
+            read_slot(store.as_ref(), &profile, PURPOSE_PASSWORD),
+            ReadSlot::Ready(Err("timed out".to_owned())),
+            "a settled Err stays until retry_read"
+        );
+    }
+    assert_eq!(*attempts.lock().expect("lock"), 1);
+    store.retry_read(&key);
     assert_eq!(
         read_slot(store.as_ref(), &profile, PURPOSE_PASSWORD),
         ReadSlot::Loading,
-        "a failed read may be retried"
+        "retry_read starts one new worker"
     );
     let deadline = Instant::now() + Duration::from_secs(3);
     while matches!(
@@ -482,6 +491,92 @@ fn a_deferred_read_error_is_not_cached_forever() {
         ReadSlot::Ready(Ok(Some("hunter2".to_owned())))
     );
     assert_eq!(*attempts.lock().expect("lock"), 2);
+    assert_eq!(
+        read_slot(store.as_ref(), &profile, PURPOSE_PASSWORD),
+        ReadSlot::Ready(Ok(Some("hunter2".to_owned()))),
+        "a second read_slot alone must not be the retry"
+    );
+    assert_eq!(*attempts.lock().expect("lock"), 2);
+}
+
+#[test]
+fn poll_credential_reads_refuses_two_failed_startup_connects() {
+    let loopbacks = Loopbacks::default();
+    let net_a = "net-a";
+    let net_b = "net-b";
+    let profile_a = Profile {
+        host: "irc.a.example".to_owned(),
+        nick: "fred".to_owned(),
+        secret_saved: true,
+        connect_on_startup: true,
+        ..Profile::new(net_a)
+    };
+    let profile_b = Profile {
+        host: "irc.b.example".to_owned(),
+        nick: "fred".to_owned(),
+        secret_saved: true,
+        connect_on_startup: true,
+        ..Profile::new(net_b)
+    };
+    let attempts = Arc::new(Mutex::new(BTreeMap::<String, u32>::new()));
+    let store = DeferringCredentialStore::new(
+        Box::new(MemoryCredentialStore::default()),
+        {
+            let attempts = Arc::clone(&attempts);
+            move |key| {
+                thread::sleep(Duration::from_millis(400));
+                *attempts
+                    .lock()
+                    .expect("lock")
+                    .entry(key.network_id.clone())
+                    .or_insert(0) += 1;
+                Err("timed out".to_owned())
+            }
+        },
+    );
+    let mut controller =
+        Controller::with_backing(clock(), Box::new(loopbacks), Backing::Ephemeral);
+    controller.credentials = store;
+    controller.profiles.insert(net_a.to_owned(), profile_a);
+    controller.profiles.insert(net_b.to_owned(), profile_b);
+    controller
+        .pending_session_registrations
+        .insert(net_a.to_owned());
+    controller
+        .pending_session_registrations
+        .insert(net_b.to_owned());
+    assert_eq!(controller.activate_startup(), 0, "reads still in flight");
+    let mut pending = controller.pending_startup_connect_ids();
+    pending.sort();
+    assert_eq!(
+        pending,
+        vec![net_a.to_owned(), net_b.to_owned()],
+        "startup connect waits on both keychains"
+    );
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !controller.pending_startup_connect_ids().is_empty() && Instant::now() < deadline {
+        controller.poll_credential_reads();
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(controller.pending_startup_connect_ids().is_empty());
+    assert!(controller.session(net_a).is_none());
+    assert!(controller.session(net_b).is_none());
+    assert_eq!(
+        controller.last_error_for(net_a),
+        Some("The saved password could not be read from secure storage.")
+    );
+    assert_eq!(
+        controller.last_error_for(net_b),
+        Some("The saved password could not be read from secure storage.")
+    );
+    let attempt_counts = attempts.lock().expect("lock").clone();
+    assert_eq!(attempt_counts.get(net_a), Some(&1));
+    assert_eq!(attempt_counts.get(net_b), Some(&1));
+    controller.poll_credential_reads();
+    thread::sleep(Duration::from_millis(50));
+    let attempt_counts = attempts.lock().expect("lock").clone();
+    assert_eq!(attempt_counts.get(net_a), Some(&1));
+    assert_eq!(attempt_counts.get(net_b), Some(&1));
 }
 
 #[test]
