@@ -34,9 +34,20 @@ pub enum UploadSource {
     Bytes(Vec<u8>),
 }
 
-fn wipe_upload_credentials(job: &mut UploadJob) {
-    job.target.secret.wipe();
-    job.target.user.clear();
+/// Clears the password and user name. `Drop` runs it on every path out of `upload`,
+/// and `upload` runs it once the headers are built, so the plaintext is not held
+/// across the post.
+fn wipe_credentials(target: &mut UploadTarget) {
+    target.secret.wipe();
+    target.user.clear();
+}
+
+/// `upload` consumes its job, so every return drops the target, including a refused
+/// pre-check, and that drop clears the credentials. No exit has to remember to wipe.
+impl Drop for UploadTarget {
+    fn drop(&mut self) {
+        wipe_credentials(self);
+    }
 }
 
 /// Posts the file and returns the absolute http(s) link, or a fixed failure string.
@@ -48,7 +59,6 @@ pub fn upload(fetch: &dyn HttpFetch, mut job: UploadJob) -> Result<String, &'sta
         .ok()
         .is_none_or(|parsed| parsed.scheme().is_empty())
     {
-        wipe_upload_credentials(&mut job);
         return Err(COULD_NOT_UPLOAD);
     }
     if job.target.server_encrypted
@@ -56,7 +66,6 @@ pub fn upload(fetch: &dyn HttpFetch, mut job: UploadJob) -> Result<String, &'sta
             .to_ascii_lowercase()
             .starts_with("https://")
     {
-        wipe_upload_credentials(&mut job);
         return Err(COULD_NOT_UPLOAD);
     }
     let file_name = if file_name.is_empty() {
@@ -87,7 +96,7 @@ pub fn upload(fetch: &dyn HttpFetch, mut job: UploadJob) -> Result<String, &'sta
             headers.push(("Authorization".to_owned(), header));
         }
     }
-    wipe_upload_credentials(&mut job);
+    wipe_credentials(&mut job.target);
     let request = PostRequest {
         url: endpoint.clone(),
         headers,
@@ -192,6 +201,14 @@ mod tests {
             server_host: "irc.example".to_owned(),
             server_encrypted: encrypted,
         }
+    }
+
+    #[test]
+    fn wiping_clears_the_secret_and_user_name_that_drop_runs() {
+        let mut target = target("http://127.0.0.1/upload", false);
+        wipe_credentials(&mut target);
+        assert!(target.secret.is_empty());
+        assert!(target.user.is_empty());
     }
 
     #[test]
