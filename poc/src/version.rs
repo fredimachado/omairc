@@ -1,10 +1,11 @@
-//! The app version: `VERSION` from `version.pri`, read by `build.rs` into
-//! `OMAIRC_VERSION`. `--version`, the About sheet, the sidebar footer and a
-//! future CTCP VERSION reply all read it through `version()`, so there is one
-//! source. Go twin: `tui/internal/version`. C++ twin: `omaircversion.h`, which
+//! The app version: `build.rs` sets `OMAIRC_VERSION` from `OMAIRC_BUILD_VERSION`
+//! when packaging/CI pass that env, otherwise from `VERSION` in `version.pri`.
+//! `--version`, the About sheet, the sidebar footer and a future CTCP VERSION
+//! reply all read it through `version()`, so there is one source. Go twin:
+//! `tui/internal/version`. C++ twin: `omaircversion.h`, which
 //! `bin/gen-omaircversion-h.py` generates from `version.pri`.
 
-/// The `VERSION` from `version.pri`, as `build.rs` read it at compile time.
+/// The version `build.rs` baked in at compile time.
 pub fn version() -> &'static str {
     env!("OMAIRC_VERSION")
 }

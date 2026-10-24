@@ -9,36 +9,39 @@ url='https://github.com/fredimachado/omairc'
 license=('MIT' 'LGPL-3.0-or-later' 'OFL-1.1')
 options=(!debug)
 depends=(
+  'fontconfig'
+  'freetype2'
   'hicolor-icon-theme'
-  'qt6-base>=6.11'
-  'qt6-declarative>=6.11'
-  'qt6-svg>=6.11'
-  'qt6-wayland>=6.11'
-  'qtkeychain-qt6'
+  'libxcb'
+  'libxkbcommon'
+  'libxkbcommon-x11'
+  'vulkan-icd-loader'
+  'wayland'
   'xdg-desktop-portal'
 )
 makedepends=(
-  'qt6-base>=6.11'
-  'qt6-declarative>=6.11'
-  'qt6-svg>=6.11'
-  'qt6-wayland>=6.11'
-  'qtkeychain-qt6'
   'base-devel'
+  'cargo'
+  'rust'
 )
 source=("$pkgname-$pkgver.tar.gz::https://github.com/fredimachado/omairc/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')
 
 build() {
   cd "$srcdir/$pkgname-$pkgver"
-  local -a qmake_args=(PREFIX=/usr)
-  if [ -n "${OMAIRC_BUILD_VERSION:-}" ]; then
-    qmake_args+=(OMAIRC_BUILD_VERSION="$OMAIRC_BUILD_VERSION")
-  fi
-  qmake6 "${qmake_args[@]}"
-  make
+  export OMAIRC_BUILD_VERSION="${OMAIRC_BUILD_VERSION:-$pkgver}"
+  cargo build --release --locked --features product --manifest-path poc/Cargo.toml
 }
 
 package() {
   cd "$srcdir/$pkgname-$pkgver"
-  make INSTALL_ROOT="$pkgdir" install
+  install -Dm755 poc/target/release/omairc "$pkgdir/usr/bin/omairc"
+  install -Dm644 data/omairc.desktop "$pkgdir/usr/share/applications/omairc.desktop"
+  install -Dm644 data/icons/hicolor/scalable/apps/omairc.svg \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/omairc.svg"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 fonts/OFL.txt "$pkgdir/usr/share/licenses/$pkgname/OFL.txt"
+  install -Dm644 src/irc/COPYING "$pkgdir/usr/share/licenses/$pkgname/COPYING-LGPL"
+  install -Dm644 data/bash-completion/omairc \
+    "$pkgdir/usr/share/bash-completion/completions/omairc"
 }
