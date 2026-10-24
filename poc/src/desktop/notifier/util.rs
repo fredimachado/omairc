@@ -215,7 +215,7 @@ mod tests {
 
     /// Windows-style exe paths. Only the string comparison runs on these, so they are not
     /// resolved against a disk.
-    const THIS_EXE: &str = r"C:\dev\omairc\omairc-poc-gpui.exe";
+    const THIS_EXE: &str = r"C:\dev\omairc\omairc.exe";
     const INSTALLED_EXE: &str = r"C:\Program Files\Omairc\omairc.exe";
 
     #[test]

@@ -3917,7 +3917,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "omairc-poc-gpui"
+name = "omairc"
 version = "0.1.0"
 dependencies = [
  "async-channel 2.5.0",

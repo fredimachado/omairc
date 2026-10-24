@@ -40,7 +40,7 @@ use crate::util::OmaircStyleGlobal;
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "omairc-poc-gpui",
+    name = "omairc",
     about = "A simple IRC client for Omarchy.",
     version = version::version()
 )]
@@ -171,7 +171,7 @@ fn main() {
         Ok(desktop::singleinstance::Startup::Unguarded) => None,
         Ok(desktop::singleinstance::Startup::Secondary) => return,
         Err(error) => {
-            eprintln!("omairc-poc-gpui: {error}");
+            eprintln!("omairc: {error}");
             std::process::exit(1);
         }
     };

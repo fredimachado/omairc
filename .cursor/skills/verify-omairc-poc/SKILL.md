@@ -1,6 +1,6 @@
 ---
 name: verify-omairc-poc
-description: Drive the Omairc Rust GPUI PoC as a user would (isolated Xvfb + compiled binary). Use when proving the seeded demo shell, window title, conversation switching, Status console, composer, or keyboard chords against poc/target/debug/omairc-poc-gpui.
+description: Drive the Omairc Rust GPUI PoC as a user would (isolated Xvfb + compiled binary). Use when proving the seeded demo shell, window title, conversation switching, Status console, composer, or keyboard chords against poc/target/debug/omairc.
 metadata:
   internal: true
 ---
@@ -9,7 +9,7 @@ metadata:
 
 The Rust PoC is a GPUI desktop app in `poc/`. `--demo-server` seeds the same
 two-network demo world as Qt. This skill drives the compiled
-`poc/target/debug/omairc-poc-gpui` window under an isolated X server with
+`poc/target/debug/omairc` window under an isolated X server with
 `xdotool`, the same way `control-omairc` drives Qt. The shared feature map
 `.cursor/skills/verify-omairc/features/*.md` is the contract. Do not point
 `control-omairc` at the PoC binary, and do not invent a new control protocol.
@@ -92,7 +92,7 @@ Keep `test-artifacts/verify-poc/`.
 Require all of:
 
 - `ok isolated Omairc PoC`
-- `binary=` is `$ROOT/poc/target/debug/omairc-poc-gpui` (or `release`)
+- `binary=` is `$ROOT/poc/target/debug/omairc` (or `release`)
 - `display=` is the nested X server from launch, not the user's session
 - `app_pid=` and `xserver_pid=` are alive
 - `xserver=` is `Xvfb` (default) or `Xephyr` (`--visible`)
