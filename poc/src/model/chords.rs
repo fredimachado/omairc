@@ -145,35 +145,61 @@ pub enum Chord {
 /// (Ctrl+K, Ctrl+Shift+O, Ctrl+Shift+A, Ctrl+`) stay live while their own sheet or
 /// Status is open, so the same chord closes it.
 pub fn chord_enabled(chord: Chord, ctx: &ChordContext) -> bool {
-    // No overlay of any kind: no sheet, and not the Connect layer.
-    let no_sheet = ctx.sheet.is_none() && !ctx.connect_open;
+    let sheet_is = |sheet: Sheet| ctx.sheet == Some(sheet);
+    // Qt `!shortcutOverlayOpen`.
+    let shortcuts_clear = !sheet_is(Sheet::Shortcuts);
+    // Qt `!connectionOverlayVisible && !shortcutOverlayOpen`.
+    let base_live = shortcuts_clear && !ctx.connect_open;
     // No sheet at all, Connect included. Shortcuts and About open above Connect.
     let sheet_free = ctx.sheet.is_none();
-    let sheet_is = |sheet: Sheet| ctx.sheet == Some(sheet);
     // The Connect keys work while Connect shows and no sheet sits above it.
     let connect_keys = ctx.connect_open && sheet_free;
-    // Status hides the member panel and the conversation, so these need a
-    // conversation view as well as no sheet (Qt `!consoleVisible`).
-    let on_conversation = no_sheet && !ctx.status_open;
+    // Status hides the member panel and the conversation (Qt `!consoleVisible`).
+    let on_conversation = base_live && !ctx.status_open;
+    // Qt Ctrl+K: blocked under Connect, Shortcuts, and every other sheet except Jump.
+    let jump_live = base_live
+        && !sheet_is(Sheet::Link)
+        && !sheet_is(Sheet::Inbox)
+        && !sheet_is(Sheet::Nick)
+        && !sheet_is(Sheet::About)
+        && !sheet_is(Sheet::ChannelList)
+        && !sheet_is(Sheet::ChannelOpen)
+        && (ctx.sheet.is_none() || sheet_is(Sheet::Jump));
+    // Qt Ctrl+Shift+O.
+    let link_live = base_live
+        && !sheet_is(Sheet::Shortcuts)
+        && !sheet_is(Sheet::Jump)
+        && !sheet_is(Sheet::Inbox)
+        && !sheet_is(Sheet::Nick)
+        && !sheet_is(Sheet::About)
+        && !sheet_is(Sheet::ChannelList)
+        && !sheet_is(Sheet::ChannelOpen)
+        && (ctx.sheet.is_none() || sheet_is(Sheet::Link));
+    // Qt Ctrl+Shift+A.
+    let inbox_live = base_live
+        && !sheet_is(Sheet::Shortcuts)
+        && !sheet_is(Sheet::Jump)
+        && !sheet_is(Sheet::Link)
+        && !sheet_is(Sheet::Nick)
+        && !sheet_is(Sheet::About)
+        && !sheet_is(Sheet::ChannelOpen)
+        && (ctx.sheet.is_none() || sheet_is(Sheet::Inbox) || sheet_is(Sheet::ChannelList));
     match chord {
-        // Qt's Ctrl+Q is disabled while any sheet is open.
-        Chord::Quit => no_sheet,
+        // Qt's Ctrl+Q is disabled only while the shortcuts overlay is open.
+        Chord::Quit => shortcuts_clear,
         // Copies the transcript selection, or the member list's selection.
         // The composer's own selection is copied by the composer first, so this
         // only sees Ctrl+C when the draft has none. Focus does not matter here:
         // a click in the transcript moves focus to the composer.
-        Chord::Copy => no_sheet && (ctx.transcript_selection || ctx.members_focused),
-        Chord::ComposerFocus => no_sheet,
-        Chord::InsertFile => no_sheet && !ctx.find_active,
-        // Toggles Jump, and is blocked by every other sheet.
-        Chord::Jump => no_sheet || sheet_is(Sheet::Jump),
-        // Toggles Link, and is blocked by every other sheet.
-        Chord::Link => no_sheet || sheet_is(Sheet::Link),
-        // Toggles Inbox, and is blocked by every other sheet.
-        Chord::Inbox => no_sheet || sheet_is(Sheet::Inbox),
+        Chord::Copy => base_live && (ctx.transcript_selection || ctx.members_focused),
+        Chord::ComposerFocus => base_live,
+        Chord::InsertFile => base_live && !ctx.find_active,
+        Chord::Jump => jump_live,
+        Chord::Link => link_live,
+        Chord::Inbox => inbox_live,
         Chord::NickSheet => ctx.channel && ctx.joined && on_conversation,
         Chord::MembersToggle | Chord::MembersFocus => ctx.channel && ctx.joined && on_conversation,
-        Chord::ServerListToggle => no_sheet,
+        Chord::ServerListToggle => base_live,
         // Qt's closeDirectMessage, Ctrl+W. It closes a direct message or a channel the user
         // has left, and a joined channel is refused.
         Chord::CloseDirect => ctx.can_close && on_conversation,
@@ -183,9 +209,9 @@ pub fn chord_enabled(chord: Chord, ctx: &ChordContext) -> bool {
         Chord::Shortcuts => sheet_free || sheet_is(Sheet::Shortcuts),
         // Opens above Connect too.
         Chord::About => sheet_free,
-        // Qt binds Ctrl+` with no sheet gate (only the connect and shortcut
-        // overlays), so it also closes Status while Status is the view.
-        Chord::StatusToggle => no_sheet,
+        // Qt binds Ctrl+` with only the connect and shortcut overlays gated, so it
+        // also closes Status while Status is the view.
+        Chord::StatusToggle => base_live,
         // Qt's Ctrl+, and Ctrl+] open Connect, and its handler re-selects the
         // focused network when it is already open. A sheet above Connect blocks it.
         Chord::Connect => sheet_free,
@@ -195,24 +221,24 @@ pub fn chord_enabled(chord: Chord, ctx: &ChordContext) -> bool {
         | Chord::ConnectWalkNetworkLeft
         | Chord::ConnectAdd
         | Chord::ConnectRemove => connect_keys,
-        // Qt's Ctrl+F is off only under its two overlays. Here any open sheet blocks
-        // it, so a search never runs behind a sheet. A press while finding moves to
-        // the next match. Status has a transcript too, so it is live there.
-        Chord::Find => no_sheet,
+        // Qt's Ctrl+F is off only under Connect and Shortcuts. Status has a
+        // transcript too, so it is live there.
+        Chord::Find => base_live,
         // Qt's composer walks history on Up and Down whichever view is open, so
-        // Status keeps its own history. A sheet owns those keys, and so does find,
-        // which ignores them.
-        Chord::ComposerHistory => no_sheet && !ctx.find_active,
+        // Status keeps its own history. Find mode consumes those keys.
+        Chord::ComposerHistory => base_live && !ctx.find_active,
         // Tab completes on a conversation only. Status has no nicks. The key is
         // still consumed there, so focus never leaves the composer. Find mode
         // consumes it too, and completes nothing.
         Chord::NickComplete => on_conversation && !ctx.find_active,
-        // The popup owns these keys while it shows and no sheet is open. Status
-        // does not hide it: `/` on Status completes Status's verbs.
-        Chord::SlashPopup | Chord::SlashDismiss => ctx.slash_open && no_sheet,
-        // Qt binds Alt+Shift+A unconditionally and returns early while an
-        // overlay is open, so the net gate is "no overlay".
-        Chord::MarkAllRead => no_sheet,
+        // The popup owns these keys while it shows under Connect and Shortcuts.
+        // Status does not hide it: `/` on Status completes Status's verbs.
+        Chord::SlashPopup | Chord::SlashDismiss => {
+            ctx.slash_open && base_live && ctx.sheet.is_none()
+        }
+        // Qt binds Alt+Shift+A unconditionally and returns early while Connect
+        // or Shortcuts is open.
+        Chord::MarkAllRead => base_live,
         // The unseen jump moves a transcript, so it needs a conversation on screen.
         Chord::Unseen => on_conversation,
         Chord::WalkConversationDown
@@ -231,11 +257,11 @@ pub fn chord_enabled(chord: Chord, ctx: &ChordContext) -> bool {
         | Chord::HalfPageUp
         | Chord::HalfPageDown
         | Chord::TranscriptTop
-        | Chord::TranscriptBottom => no_sheet,
+        | Chord::TranscriptBottom => base_live,
         // Return and Enter activate a focused header, which opens that network's
         // Status. The composer must not send while a header is focused. Find mode
         // takes Enter for the next match instead (Qt's Return shortcut is off then).
-        Chord::HeaderActivate => ctx.header_focused && no_sheet && !ctx.find_active,
+        Chord::HeaderActivate => ctx.header_focused && base_live && !ctx.find_active,
         Chord::MembersTop
         | Chord::MembersBottom
         | Chord::MembersStep
@@ -243,8 +269,8 @@ pub fn chord_enabled(chord: Chord, ctx: &ChordContext) -> bool {
         | Chord::MembersHalfPage
         | Chord::MembersActivate => ctx.members_focused && on_conversation,
         // Escape closes the top layer: a sheet, then Connect, then find mode, then
-        // Status for the last conversation. `!no_sheet` covers a sheet and Connect.
-        Chord::Escape => !no_sheet || ctx.status_open || ctx.find_active,
+        // Status for the last conversation.
+        Chord::Escape => ctx.sheet.is_some() || ctx.connect_open || ctx.status_open || ctx.find_active,
     }
 }
 
@@ -268,13 +294,13 @@ mod tests {
         (None, false, true),
     ];
 
-    /// Live with no overlay, on a conversation or on Status. Not under Connect.
-    const NO_SHEET: [bool; 11] = [
-        true, false, false, false, false, false, false, false, false, true, false,
+    /// Live with Connect and Shortcuts closed, on a conversation or on Status.
+    const BASE_LIVE: [bool; 11] = [
+        true, false, true, true, true, true, true, true, true, true, false,
     ];
-    /// Live with no overlay, but only on a conversation (Status hides it).
+    /// `BASE_LIVE` on a conversation only (Status hides channel chords).
     const CONVERSATION_ONLY: [bool; 11] = [
-        true, false, false, false, false, false, false, false, false, false, false,
+        true, false, true, true, true, true, true, true, true, false, false,
     ];
     /// Live only while Connect shows and no sheet sits above it.
     const CONNECT_ONLY: [bool; 11] = [
@@ -352,28 +378,60 @@ mod tests {
     // Status open, Connect open.
 
     #[test]
-    fn no_overlay_chords_are_live_without_a_sheet_and_on_status() {
-        check(Chord::Quit, nothing, NO_SHEET);
-        check(Chord::ComposerFocus, nothing, NO_SHEET);
-        check(Chord::ServerListToggle, nothing, NO_SHEET);
-        check(Chord::MarkAllRead, nothing, NO_SHEET);
-        check(Chord::WalkConversationDown, nothing, NO_SHEET);
-        check(Chord::WalkConversationUp, nothing, NO_SHEET);
-        check(Chord::WalkNetworkRight, nothing, NO_SHEET);
-        check(Chord::WalkNetworkLeft, nothing, NO_SHEET);
-        check(Chord::CollapseHeader, nothing, NO_SHEET);
-        check(Chord::ExpandHeader, nothing, NO_SHEET);
-        check(Chord::CollapseAll, nothing, NO_SHEET);
-        check(Chord::ExpandAll, nothing, NO_SHEET);
-        check(Chord::MoveNetworkUp, nothing, NO_SHEET);
-        check(Chord::MoveNetworkDown, nothing, NO_SHEET);
-        check(Chord::NextUnread, nothing, NO_SHEET);
-        check(Chord::PageUp, nothing, NO_SHEET);
-        check(Chord::PageDown, nothing, NO_SHEET);
-        check(Chord::HalfPageUp, nothing, NO_SHEET);
-        check(Chord::HalfPageDown, nothing, NO_SHEET);
-        check(Chord::TranscriptTop, nothing, NO_SHEET);
-        check(Chord::TranscriptBottom, nothing, NO_SHEET);
+    fn base_live_chords_match_qt_connect_and_shortcuts_gates() {
+        check(Chord::ComposerFocus, nothing, BASE_LIVE);
+        check(Chord::ServerListToggle, nothing, BASE_LIVE);
+        check(Chord::MarkAllRead, nothing, BASE_LIVE);
+        check(Chord::WalkConversationDown, nothing, BASE_LIVE);
+        check(Chord::WalkConversationUp, nothing, BASE_LIVE);
+        check(Chord::WalkNetworkRight, nothing, BASE_LIVE);
+        check(Chord::WalkNetworkLeft, nothing, BASE_LIVE);
+        check(Chord::CollapseHeader, nothing, BASE_LIVE);
+        check(Chord::ExpandHeader, nothing, BASE_LIVE);
+        check(Chord::CollapseAll, nothing, BASE_LIVE);
+        check(Chord::ExpandAll, nothing, BASE_LIVE);
+        check(Chord::MoveNetworkUp, nothing, BASE_LIVE);
+        check(Chord::MoveNetworkDown, nothing, BASE_LIVE);
+        check(Chord::NextUnread, nothing, BASE_LIVE);
+        check(Chord::PageUp, nothing, BASE_LIVE);
+        check(Chord::PageDown, nothing, BASE_LIVE);
+        check(Chord::HalfPageUp, nothing, BASE_LIVE);
+        check(Chord::HalfPageDown, nothing, BASE_LIVE);
+        check(Chord::TranscriptTop, nothing, BASE_LIVE);
+        check(Chord::TranscriptBottom, nothing, BASE_LIVE);
+    }
+
+    #[test]
+    fn ctrl_q_is_blocked_only_by_the_shortcuts_sheet() {
+        const QUIT: [bool; 11] = [
+            true, false, true, true, true, true, true, true, true, true, true,
+        ];
+        check(Chord::Quit, nothing, QUIT);
+    }
+
+    #[test]
+    fn ctrl_l_and_ctrl_f_stay_live_behind_other_sheets() {
+        let jump = ChordContext {
+            sheet: Some(Sheet::Jump),
+            ..ChordContext::default()
+        };
+        assert!(chord_enabled(Chord::ComposerFocus, &jump));
+        assert!(chord_enabled(Chord::Find, &jump));
+        assert!(chord_enabled(Chord::Quit, &jump));
+        assert!(!chord_enabled(
+            Chord::ComposerFocus,
+            &ChordContext {
+                sheet: Some(Sheet::Shortcuts),
+                ..ChordContext::default()
+            }
+        ));
+        assert!(!chord_enabled(
+            Chord::Find,
+            &ChordContext {
+                connect_open: true,
+                ..ChordContext::default()
+            }
+        ));
     }
 
     #[test]
@@ -391,7 +449,7 @@ mod tests {
         check(
             Chord::Inbox,
             nothing,
-            [true, false, false, false, false, true, false, false, false, true, false],
+            [true, false, false, false, false, true, false, false, true, true, false],
         );
     }
 
@@ -414,19 +472,19 @@ mod tests {
 
     #[test]
     fn status_toggle_is_live_without_a_sheet_so_it_can_close_status() {
-        check(Chord::StatusToggle, nothing, NO_SHEET);
+        check(Chord::StatusToggle, nothing, BASE_LIVE);
     }
 
     #[test]
     fn composer_history_is_live_without_a_sheet_and_on_status() {
-        check(Chord::ComposerHistory, nothing, NO_SHEET);
+        check(Chord::ComposerHistory, nothing, BASE_LIVE);
     }
 
     #[test]
     fn find_is_live_without_a_sheet_on_a_conversation_or_status_and_while_finding() {
-        check(Chord::Find, nothing, NO_SHEET);
-        check(Chord::Find, finding, NO_SHEET);
-        check(Chord::Find, joined_channel, NO_SHEET);
+        check(Chord::Find, nothing, BASE_LIVE);
+        check(Chord::Find, finding, BASE_LIVE);
+        check(Chord::Find, joined_channel, BASE_LIVE);
     }
 
     #[test]
@@ -457,13 +515,15 @@ mod tests {
             ..ChordContext::default()
         };
         assert!(chord_enabled(Chord::Escape, &ctx));
-        assert!(!chord_enabled(Chord::Find, &ctx));
     }
 
     #[test]
-    fn the_slash_popup_keys_need_an_open_popup_and_no_sheet() {
-        check(Chord::SlashPopup, slash_popup, NO_SHEET);
-        check(Chord::SlashDismiss, slash_popup, NO_SHEET);
+    fn the_slash_popup_keys_need_an_open_popup_and_no_other_sheet() {
+        const SLASH_POPUP: [bool; 11] = [
+            true, false, false, false, false, false, false, false, false, true, false,
+        ];
+        check(Chord::SlashPopup, slash_popup, SLASH_POPUP);
+        check(Chord::SlashDismiss, slash_popup, SLASH_POPUP);
         check(Chord::SlashPopup, nothing, NOWHERE);
         check(Chord::SlashDismiss, nothing, NOWHERE);
     }
@@ -527,7 +587,7 @@ mod tests {
 
     #[test]
     fn header_activation_needs_header_focus() {
-        check(Chord::HeaderActivate, header, NO_SHEET);
+        check(Chord::HeaderActivate, header, BASE_LIVE);
         check(Chord::HeaderActivate, nothing, NOWHERE);
     }
 
@@ -550,9 +610,9 @@ mod tests {
 
     #[test]
     fn copy_needs_a_transcript_selection_or_a_focused_member_list() {
-        check(Chord::Copy, selection, NO_SHEET);
+        check(Chord::Copy, selection, BASE_LIVE);
         check(Chord::Copy, nothing, NOWHERE);
-        check(Chord::Copy, members, NO_SHEET);
+        check(Chord::Copy, members, BASE_LIVE);
     }
 
     #[test]
@@ -567,13 +627,13 @@ mod tests {
     }
 
     #[test]
-    fn a_sheet_blocks_copy_even_with_a_selection() {
+    fn copy_stays_live_behind_sheets_except_connect_and_shortcuts() {
         check(
             Chord::Copy,
             |ctx| {
                 ctx.transcript_selection = true;
             },
-            NO_SHEET,
+            BASE_LIVE,
         );
     }
 
@@ -604,66 +664,59 @@ mod tests {
         }
     }
 
-    /// Asserts that `sheet` holds the keyboard: every chord in the list waits for
-    /// it, and only Escape gets through.
-    fn blocks_every_chord_but_escape(sheet: Sheet) {
+    /// Qt keeps the toggle sheets off while ChannelOpen is up, but most other
+    /// chords (including Ctrl+Q, Ctrl+F, and Ctrl+L) stay live.
+    #[test]
+    fn the_channel_open_sheet_blocks_toggle_sheets_not_quit_or_find() {
         let ctx = ChordContext {
-            sheet: Some(sheet),
+            sheet: Some(Sheet::ChannelOpen),
             channel: true,
             joined: true,
             can_close: true,
-            members_focused: true,
             transcript_selection: true,
             ..ChordContext::default()
         };
+        for chord in [Chord::Jump, Chord::Link, Chord::Inbox] {
+            assert!(!chord_enabled(chord, &ctx), "{chord:?} must wait for ChannelOpen");
+        }
         for chord in [
             Chord::Quit,
-            Chord::Copy,
             Chord::ComposerFocus,
-            Chord::Jump,
-            Chord::Link,
-            Chord::NickSheet,
-            Chord::Inbox,
+            Chord::Find,
+            Chord::Copy,
             Chord::MembersToggle,
             Chord::MembersFocus,
-            Chord::ServerListToggle,
-            Chord::CloseDirect,
-            Chord::Shortcuts,
-            Chord::About,
-            Chord::StatusToggle,
-            Chord::Find,
-            Chord::ComposerHistory,
-            Chord::NickComplete,
-            Chord::NextUnread,
-            Chord::MarkAllRead,
-            Chord::Unseen,
-            Chord::MembersStep,
-            Chord::Connect,
-            Chord::ConnectApply,
-            Chord::ConnectTabCycle,
-            Chord::ConnectWalkNetworkRight,
-            Chord::ConnectWalkNetworkLeft,
-            Chord::ConnectAdd,
-            Chord::ConnectRemove,
         ] {
-            assert!(
-                !chord_enabled(chord, &ctx),
-                "{chord:?} must wait for {sheet:?}"
-            );
+            assert!(chord_enabled(chord, &ctx), "{chord:?} stays live over ChannelOpen");
         }
         assert!(chord_enabled(Chord::Escape, &ctx));
     }
 
     #[test]
-    fn the_channel_open_sheet_blocks_every_chord_but_escape() {
-        // Enter confirms and Escape cancels; the other keys wait for the sheet.
-        blocks_every_chord_but_escape(Sheet::ChannelOpen);
-    }
-
-    #[test]
-    fn the_channel_list_sheet_blocks_every_chord_but_escape() {
-        // Enter joins and Escape closes; the other keys wait for the sheet.
-        blocks_every_chord_but_escape(Sheet::ChannelList);
+    fn the_channel_list_sheet_blocks_jump_and_link_not_inbox() {
+        let ctx = ChordContext {
+            sheet: Some(Sheet::ChannelList),
+            channel: true,
+            joined: true,
+            can_close: true,
+            transcript_selection: true,
+            ..ChordContext::default()
+        };
+        for chord in [Chord::Jump, Chord::Link] {
+            assert!(!chord_enabled(chord, &ctx), "{chord:?} must wait for ChannelList");
+        }
+        assert!(chord_enabled(Chord::Inbox, &ctx));
+        for chord in [
+            Chord::Quit,
+            Chord::ComposerFocus,
+            Chord::Find,
+            Chord::Copy,
+            Chord::MembersToggle,
+            Chord::MembersFocus,
+        ] {
+            assert!(chord_enabled(chord, &ctx), "{chord:?} stays live over ChannelList");
+        }
+        assert!(chord_enabled(Chord::Escape, &ctx));
     }
 
     #[test]
@@ -681,7 +734,6 @@ mod tests {
             ..ChordContext::default()
         };
         for chord in [
-            Chord::Quit,
             Chord::Copy,
             Chord::ComposerFocus,
             Chord::Jump,
@@ -722,6 +774,7 @@ mod tests {
             assert!(!chord_enabled(chord, &ctx), "{chord:?} must wait for Connect");
         }
         for chord in [
+            Chord::Quit,
             Chord::Escape,
             Chord::Shortcuts,
             Chord::About,
@@ -777,7 +830,7 @@ mod tests {
     fn the_header_walk_keys_stay_with_the_header_when_connect_is_closed() {
         // Alt+Left and Alt+Right are the header walk with Connect closed, and the
         // Connect walk with it open: never both at once.
-        check(Chord::WalkNetworkLeft, nothing, NO_SHEET);
+        check(Chord::WalkNetworkLeft, nothing, BASE_LIVE);
         check(Chord::ConnectWalkNetworkLeft, nothing, CONNECT_ONLY);
     }
 
