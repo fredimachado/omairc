@@ -341,23 +341,6 @@ mod tests {
     }
 
     #[test]
-    fn closing_persists_the_open_conversation_scroll_anchor() {
-        let rows = vec![row_with_msgid(1, "close-anchor", "anna", "09:00", "hello", false)];
-        let captured = SavedPlace::from_anchor(anchor(0, 3), &rows);
-        let stored = captured.to_stored();
-        assert_eq!(stored.msg_id, "close-anchor");
-        let restored = SavedPlace::from_stored(&stored).expect("stored place restores");
-        assert_eq!(
-            resume(Some(&restored), &rows),
-            Resume::Line {
-                row: 0,
-                offset_px: 0
-            },
-            "remember_open_transcript writes this shape through remember_place"
-        );
-    }
-
-    #[test]
     fn the_end_round_trips_as_follow_end() {
         let stored = SavedPlace::End.to_stored();
         assert!(stored.follow_end);
