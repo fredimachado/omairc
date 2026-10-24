@@ -172,9 +172,9 @@ fn parse_line(raw: &[u8]) -> Option<TranscriptLine> {
     let timestamp = parse_timestamp(&record.timestamp);
     Some(TranscriptLine {
         timestamp,
-        author: sanitize(&record.author),
+        author: record.author,
         kind: record.kind,
-        body: sanitize(&record.body),
+        body: record.body,
         msgid: record.msgid,
         only_visible_to_you: record.only_visible_to_you,
     })
@@ -188,47 +188,6 @@ fn parse_timestamp(text: &str) -> DateTime<Utc> {
         return naive.and_utc();
     }
     DateTime::UNIX_EPOCH
-}
-
-fn kept_control(code: char) -> bool {
-    matches!(
-        code,
-        '\u{0001}'
-            | '\u{0002}'
-            | '\u{0003}'
-            | '\u{0004}'
-            | '\u{000f}'
-            | '\u{0011}'
-            | '\u{0016}'
-            | '\u{001d}'
-            | '\u{001e}'
-            | '\u{001f}'
-            | '\t'
-            | '\r'
-            | '\n'
-    )
-}
-
-fn dropped_terminal(code: char) -> bool {
-    if code < '\u{0020}' {
-        return !kept_control(code);
-    }
-    if code == '\u{007f}' {
-        return true;
-    }
-    ('\u{0080}'..='\u{009f}').contains(&code)
-}
-
-/// Strips terminal control bytes from disk text (`termtext.Sanitize`).
-fn sanitize(text: &str) -> String {
-    if text.is_ascii() {
-        if !text.chars().any(dropped_terminal) {
-            return text.to_owned();
-        }
-    } else if !text.chars().any(dropped_terminal) {
-        return text.to_owned();
-    }
-    text.chars().filter(|&ch| !dropped_terminal(ch)).collect()
 }
 
 fn prepare_tree(file_path: &Path) -> bool {
@@ -644,23 +603,37 @@ mod tests {
     }
 
     #[test]
-    fn read_tail_drops_terminal_escapes() {
-        let dir = TempDir::new("terminal-escapes");
+    fn parse_keeps_control_bytes_like_qt() {
+        let raw = br#"{"author":"nick\u0002","body":"\u001b]8;;https://example\u0007link\u0002bold\u0002","kind":"message","timestamp":"2026-09-04T00:00:00.000Z"}"#;
+        let line = parse_line(raw).expect("parse");
+        assert_eq!(line.author, "nick\u{0002}");
+        assert_eq!(
+            line.body,
+            "\u{001b}]8;;https://example\u{0007}link\u{0002}bold\u{0002}"
+        );
+    }
+
+    #[test]
+    fn prepend_read_tail_keeps_control_bytes() {
+        let dir = TempDir::new("control-bytes");
         let log = FileConversationLog::new(dir.path().to_path_buf());
         let mapping = IrcCaseMapping::default();
-        let path = log.path_for("net", "#room", mapping);
-        write_file(
-            &path,
-            r#"{"author":"ev\u001b[1mil","body":"\u001b]8;;https://evil.example\u0007click\u001b]8;;\u0007 \u009b2J \u0002bold\u0002","kind":"message","timestamp":"2026-09-04T00:00:00.000Z"}
-"#,
-        );
+        let body = "\u{001b}]8;;https://example\u{0007}link\u{0002}bold\u{0002}";
+        assert!(log.prepend(
+            "net",
+            "#room",
+            mapping,
+            &[TranscriptLine {
+                kind: "message".to_owned(),
+                author: "nick\u{0002}".to_owned(),
+                body: body.to_owned(),
+                ..test_line("")
+            }],
+        ));
         let lines = log.read_tail("net", "#room", mapping, 10);
         assert_eq!(lines.len(), 1);
-        assert_eq!(lines[0].author, "ev[1mil");
-        assert_eq!(
-            lines[0].body,
-            "]8;;https://evil.exampleclick]8;; 2J \u{0002}bold\u{0002}"
-        );
+        assert_eq!(lines[0].author, "nick\u{0002}");
+        assert_eq!(lines[0].body, body);
     }
 
     #[test]
