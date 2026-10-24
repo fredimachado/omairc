@@ -235,6 +235,45 @@ fn empty_to_empty_set_text_does_not_mark_edited_when_secret_is_available() {
 }
 
 #[test]
+fn focus_rehomes_when_a_forget_link_leaves_the_walk() {
+    let populated = vec!["network-1".to_string()];
+    let mut profile = stored("network-1", "irc.libera.chat", "fred");
+    profile.secret_saved = true;
+    profile.nickserv_saved = true;
+    let mut state = ConnectState::from_stored(&[profile]);
+
+    state.forget(Secret::Password);
+    state.apply_forget_result(Secret::Password, CredentialState::Missing);
+    assert_eq!(
+        state.focus_after_forget(Secret::Password, &populated, false),
+        Some(Stop::ForgetNickServ),
+        "prefer the remaining forget link"
+    );
+
+    state.forget(Secret::NickServ);
+    state.apply_forget_result(Secret::NickServ, CredentialState::Missing);
+    assert_eq!(
+        state.focus_after_forget(Secret::NickServ, &populated, false),
+        Some(Stop::Discard),
+        "with one network Remove is gone, so Discard is next"
+    );
+
+    let mut kept = stored("network-1", "irc.libera.chat", "fred");
+    kept.secret_saved = true;
+    let mut refused = ConnectState::from_stored(&[kept]);
+    refused.forget(Secret::Password);
+    refused.apply_forget_result(
+        Secret::Password,
+        CredentialState::Error("remove failed".to_owned()),
+    );
+    assert_eq!(
+        refused.focus_after_forget(Secret::Password, &populated, false),
+        None,
+        "a refused delete keeps the link and does not rehome"
+    );
+}
+
+#[test]
 fn forget_stops_sit_after_the_password_fields_when_visible() {
     let populated = vec!["network-1".to_string()];
     let mut state = ConnectState::from_stored(&[stored("network-1", "irc.libera.chat", "fred")]);

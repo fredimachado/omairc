@@ -342,6 +342,36 @@ impl ConnectState {
         }
     }
 
+    /// Where keyboard focus should land after a successful forget removes that slot's link
+    /// from the walk. Prefers the remaining forget link when still listed; else the next
+    /// footer stop among Remove, Discard, and Apply. Returns `None` when the activated link
+    /// is still in `stops` (a refused delete) or no candidate remains.
+    pub fn focus_after_forget(
+        &self,
+        slot: Secret,
+        populated: &[String],
+        disconnectable: bool,
+    ) -> Option<Stop> {
+        let vanished = match slot {
+            Secret::Password => Stop::ForgetPassword,
+            Secret::NickServ => Stop::ForgetNickServ,
+        };
+        let stops = self.stops(populated, disconnectable);
+        if stops.contains(&vanished) {
+            return None;
+        }
+        let other = match slot {
+            Secret::Password => Stop::ForgetNickServ,
+            Secret::NickServ => Stop::ForgetPassword,
+        };
+        if stops.contains(&other) {
+            return Some(other);
+        }
+        stops
+            .into_iter()
+            .find(|stop| matches!(stop, Stop::Remove | Stop::Discard | Stop::Apply))
+    }
+
     pub fn tls(&self) -> bool {
         self.draft.tls
     }
