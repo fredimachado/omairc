@@ -1,4 +1,12 @@
 //! Windows Toast notifications. Port of `windowsnotifications.cpp`.
+//!
+//! Toasts rest on two per-user records that every build of Omairc shares: an AUMID-stamped
+//! Start Menu shortcut, and the COM activator registered to the exe that handles a click.
+//! The installed copy owns both. A launch takes them only when nothing is recorded, when the
+//! record already names this exe, or when the recorded exe no longer exists (see
+//! `util::should_claim`). A `cargo run` build therefore still shows toasts through the
+//! installed shortcut, but it leaves the activator and the Start Menu link to that copy, so
+//! clicking a toast raises the installed app rather than the dev build.
 
 use std::collections::VecDeque;
 use std::ffi::OsStr;
@@ -40,7 +48,10 @@ use windows_implement::implement;
 use windows::Data::Xml::Dom::XmlDocument;
 use windows::UI::Notifications::{ToastNotification, ToastNotificationManager, ToastNotifier};
 
-use super::util::{build_launch_url, build_toast_xml, conversation_tag, parse_launch_url};
+use super::util::{
+    build_launch_url, build_toast_xml, command_exe, conversation_tag, parse_launch_url,
+    should_claim,
+};
 use super::{Activation, Notifier};
 
 const AUMID: &str = "FrediMachado.Omairc";
@@ -238,11 +249,31 @@ fn installed_shortcut_paths(exe_path: &str) -> Vec<PathBuf> {
     links
 }
 
+/// The activator's `LocalServer32` value, which Windows launches when a toast is clicked.
+const COM_SERVER_SUBKEY: &str =
+    "SOFTWARE\\Classes\\CLSID\\{DBE38477-5F87-42A1-AFA1-11FA12F2E5E5}\\LocalServer32";
+
+/// The exe the activator's `LocalServer32` value names, if it names one.
+fn registered_com_server() -> Option<PathBuf> {
+    let key = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER)
+        .open_subkey(COM_SERVER_SUBKEY)
+        .ok()?;
+    let command: String = key.get_value("").ok()?;
+    command_exe(&command)
+}
+
+/// Points the activator at `exe`, unless another exe that is still on disk owns it.
 fn register_com_server(exe: &str) {
-    let subkey =
-        "SOFTWARE\\Classes\\CLSID\\{DBE38477-5F87-42A1-AFA1-11FA12F2E5E5}\\LocalServer32";
+    let existing = registered_com_server();
+    if !should_claim(existing.as_deref(), Path::new(exe), Path::exists) {
+        log::info!(
+            "Windows notifier: the toast activator stays registered to {:?}",
+            existing
+        );
+        return;
+    }
     let command = format!("\"{}\"", exe.replace('/', "\\"));
-    let subkey_wide = wide(subkey);
+    let subkey_wide = wide(COM_SERVER_SUBKEY);
     let command_wide = wide(&command);
     unsafe {
         let _ = RegSetKeyValueW(
@@ -317,6 +348,19 @@ fn ensure_notification_registration(exe_path: &str) {
     };
     let _ = std::fs::create_dir_all(&programs);
     let link = programs.join("Omairc.lnk");
+    let owner = if link.is_file() {
+        shortcut_target(&link.to_string_lossy()).map(PathBuf::from)
+    } else {
+        None
+    };
+    if !should_claim(owner.as_deref(), Path::new(exe_path), Path::exists) {
+        log::info!(
+            "Windows notifier: {:?} stays with the copy it names, {:?}",
+            link,
+            owner
+        );
+        return;
+    }
     if let Err(error) = install_shortcut(&link.to_string_lossy(), exe_path) {
         log::warn!(
             "Windows notifier: could not write Start Menu shortcut for toasts: {:?}",

@@ -1,6 +1,9 @@
 //! Shared helpers for toast XML and activation URLs. Ports the free functions in
 //! `src/windowsnotifications.cpp`.
 
+#[cfg(any(windows, test))]
+use std::path::{Path, PathBuf};
+
 use sha1_smol::Sha1;
 use url::form_urlencoded;
 
@@ -130,6 +133,43 @@ pub fn build_toast_xml(summary: &str, body: &str, launch: &str) -> String {
     )
 }
 
+/// Whether `this_exe` may take the shared toast record (the activator's `LocalServer32`
+/// value, or the Start Menu link) away from `existing`. A missing record is claimed, and so
+/// is one that already names `this_exe` or an exe that no longer exists. Any other exe still
+/// on disk keeps it, so an installed copy keeps its toasts and clicks.
+#[cfg(any(windows, test))]
+pub fn should_claim(
+    existing: Option<&Path>,
+    this_exe: &Path,
+    exists: impl Fn(&Path) -> bool,
+) -> bool {
+    match existing {
+        None => true,
+        Some(existing) => same_exe(existing, this_exe) || !exists(existing),
+    }
+}
+
+/// Whether two exe paths name one file. Windows paths ignore case, so the match does too.
+#[cfg(any(windows, test))]
+fn same_exe(left: &Path, right: &Path) -> bool {
+    left == right
+        || left
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&right.to_string_lossy())
+}
+
+/// The exe a `LocalServer32` command line names: the quoted first word, or the whole value
+/// when it is unquoted. `None` when the value names nothing.
+#[cfg(any(windows, test))]
+pub fn command_exe(command: &str) -> Option<PathBuf> {
+    let command = command.trim();
+    let exe = match command.strip_prefix('"') {
+        Some(quoted) => quoted.split('"').next().unwrap_or(""),
+        None => command,
+    };
+    (!exe.is_empty()).then(|| PathBuf::from(exe))
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -168,6 +208,37 @@ mod tests {
     #[test]
     fn parse_launch_url_requires_network_and_target() {
         assert!(parse_launch_url("omairc://notify?msgid=x").is_none());
+    }
+
+    #[test]
+    fn should_claim_takes_missing_or_stale_records_and_keeps_a_live_owner() {
+        let this_exe = Path::new("/dev/omairc");
+        let installed = Path::new("/opt/omairc");
+        assert!(should_claim(None, this_exe, |_| true));
+        assert!(should_claim(Some(this_exe), this_exe, |_| true));
+        assert!(should_claim(Some(installed), this_exe, |_| false));
+        assert!(!should_claim(Some(installed), this_exe, |_| true));
+    }
+
+    #[test]
+    fn should_claim_matches_windows_paths_without_case() {
+        let this_exe = Path::new("C:\\Apps\\omairc.exe");
+        let recorded = Path::new("c:\\apps\\OMAIRC.exe");
+        assert!(should_claim(Some(recorded), this_exe, |_| true));
+    }
+
+    #[test]
+    fn command_exe_reads_quoted_and_bare_commands() {
+        assert_eq!(
+            command_exe("\"C:\\Program Files\\Omairc\\omairc.exe\""),
+            Some(PathBuf::from("C:\\Program Files\\Omairc\\omairc.exe"))
+        );
+        assert_eq!(
+            command_exe("C:\\Omairc\\omairc.exe"),
+            Some(PathBuf::from("C:\\Omairc\\omairc.exe"))
+        );
+        assert_eq!(command_exe("  \"\"  "), None);
+        assert_eq!(command_exe(""), None);
     }
 
     #[test]
