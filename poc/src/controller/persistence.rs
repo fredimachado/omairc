@@ -239,6 +239,33 @@ impl Controller {
         }
     }
 
+    /// Deletes one secret slot of a saved network from the keychain immediately
+    /// (`removeStoredPassword` / `removeStoredNickServ`). The Connect forget links call this
+    /// when activated; Apply is not involved. Clears the profile's saved flag for that slot
+    /// once the current key is gone.
+    pub fn forget_secret(&mut self, network_id: &str, purpose: &'static str) {
+        let Some(mut profile) = self.profiles.get(network_id).cloned() else {
+            return;
+        };
+        self.queue_slot_removals(&profile, purpose);
+        for key in self.credentials.pending().slot(network_id, purpose) {
+            self.delete_key(&key);
+        }
+        if !matches!(
+            self.credential_slot_state(&profile, purpose),
+            CredentialState::Missing
+        ) {
+            return;
+        }
+        match purpose {
+            PURPOSE_PASSWORD => profile.secret_saved = false,
+            PURPOSE_NICKSERV => profile.nickserv_saved = false,
+            _ => {}
+        }
+        let _ = self.profile_store.save(&profile);
+        self.profiles.insert(network_id.to_owned(), profile);
+    }
+
     /// Forgets a network's profile and its secrets (`forgetNetwork`'s store half). The current
     /// keys and every obsolete key of the network are deleted; one the store refuses stays owed.
     pub(super) fn remove_profile(&mut self, network_id: &str) -> Status {

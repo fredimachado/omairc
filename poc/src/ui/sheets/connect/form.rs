@@ -8,7 +8,8 @@
 use gpui::{div, prelude::*};
 
 use crate::model::connect::{
-    ConnectField, Stop, CONNECT_ON_STARTUP_LABEL, SWITCH_REFUSED_TEXT, TITLE,
+    ConnectField, Secret, Stop, CONNECT_ON_STARTUP_LABEL, FORGET_NICKSERV_LABEL,
+    FORGET_PASSWORD_LABEL, SWITCH_REFUSED_TEXT, TITLE,
 };
 use crate::ui::sheets::connect::field::text_field;
 use crate::ui::sheets::connect::toggles::{switch, tls_switch};
@@ -83,6 +84,7 @@ pub fn form_row_of(stop: &Stop) -> Option<usize> {
         },
         Stop::Tls => Some(1),
         Stop::ConnectOnStartup => Some(5),
+        Stop::ForgetPassword | Stop::ForgetNickServ => Some(8),
         _ => None,
     }
 }
@@ -156,9 +158,9 @@ fn startup_row(view: &ConnectView<'_>) -> impl IntoElement {
         )
 }
 
-/// The lines under the form, in Qt's order: where the password is kept, why Apply is off, why a
-/// switch was refused, and what the last Apply saved. The credential line is muted, and the rest
-/// are accent-coloured, as Qt's are.
+/// The lines under the form, in Qt's order: where the password is kept, the forget links,
+/// why Apply is off, why a switch was refused, and what the last Apply saved. The credential
+/// line is muted, the forget links are accent, and the rest are accent-coloured, as Qt's are.
 fn notices(view: &ConnectView<'_>) -> impl IntoElement {
     let style = view.style;
     let accent = to_gpui(style.accent_color());
@@ -178,6 +180,9 @@ fn notices(view: &ConnectView<'_>) -> impl IntoElement {
                 .child(credential),
         );
     }
+    if view.state.can_forget(Secret::Password) || view.state.can_forget(Secret::NickServ) {
+        column = column.child(forget_links(view));
+    }
     if let Some(problem) = view.state.problem() {
         column = column.child(div().text_color(accent).child(problem.text()));
     }
@@ -189,6 +194,57 @@ fn notices(view: &ConnectView<'_>) -> impl IntoElement {
         column = column.child(div().text_color(accent).child(persistence));
     }
     column
+}
+
+/// The forget links under the credential line (`connectionForgetPassword` /
+/// `connectionForgetNickServ`). Each is a Tab stop when `can_forget` allows it; Enter and
+/// Space activate through the sheet's card keys.
+fn forget_links(view: &ConnectView<'_>) -> impl IntoElement {
+    let style = view.style;
+    let mut row = div()
+        .w_full()
+        .flex()
+        .flex_row()
+        .gap(scaled_px(style, 16.));
+    if view.state.can_forget(Secret::Password) {
+        row = row.child(forget_link(
+            view,
+            Stop::ForgetPassword,
+            FORGET_PASSWORD_LABEL,
+        ));
+    }
+    if view.state.can_forget(Secret::NickServ) {
+        row = row.child(forget_link(
+            view,
+            Stop::ForgetNickServ,
+            FORGET_NICKSERV_LABEL,
+        ));
+    }
+    row
+}
+
+/// One accent text link. Focus underlines it, as Qt's does.
+fn forget_link(view: &ConnectView<'_>, stop: Stop, label: &'static str) -> impl IntoElement {
+    let style = view.style;
+    let focused = view.is_focused(&stop);
+    let accent = to_gpui(style.accent_color());
+    let mut link = div()
+        .id(gpui::SharedString::from(format!("forget-link-{stop:?}")))
+        .flex_shrink_0()
+        .cursor_pointer()
+        .font_family(FONT_FAMILY)
+        .text_size(scaled_px(style, 10.))
+        .text_color(accent)
+        .when(focused, |s| s.underline())
+        .on_mouse_down(gpui::MouseButton::Left, {
+            let click = view.click(stop.clone());
+            move |_, window, cx| click(window, cx)
+        })
+        .child(label);
+    if let Some(handle) = view.handle(&stop) {
+        link = link.track_focus(handle);
+    }
+    link
 }
 
 #[cfg(test)]
@@ -207,7 +263,12 @@ mod tests {
             .iter()
             .filter(|stop| !matches!(stop, Stop::Tab(_)))
             .filter_map(|stop| match stop {
-                Stop::Field(_) | Stop::FieldHelp(_) | Stop::Tls | Stop::ConnectOnStartup => {
+                Stop::Field(_)
+                | Stop::FieldHelp(_)
+                | Stop::Tls
+                | Stop::ConnectOnStartup
+                | Stop::ForgetPassword
+                | Stop::ForgetNickServ => {
                     Some(form_row_of(stop).expect("every form stop has a row"))
                 }
                 _ => None,

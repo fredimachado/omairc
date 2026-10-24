@@ -13,6 +13,7 @@ use crate::model::chords::Chord;
 use crate::controller::persistence::SecretEdits;
 use crate::model::connect::{ConnectField, RailEnter, RemoveOutcome, Secret, Stop};
 use crate::model::prefs::{PrefName, PrefValue};
+use crate::storage::credentialstore::{PURPOSE_NICKSERV, PURPOSE_PASSWORD};
 use crate::ui::sheets::connect::form_row_of;
 use crate::ui::shell::Shell;
 
@@ -309,6 +310,8 @@ impl Shell {
             }
             Stop::Remove => self.connect_remove(window, cx),
             Stop::Discard => self.connect.discard(),
+            Stop::ForgetPassword => self.connect_forget(Secret::Password, cx),
+            Stop::ForgetNickServ => self.connect_forget(Secret::NickServ, cx),
             Stop::Disconnect => self.connect_disconnect(window, cx),
             Stop::Apply => self.connect_apply(window, cx),
             stop @ (Stop::Field(_) | Stop::FieldHelp(_) | Stop::PreferenceHelp(_)) => {
@@ -316,6 +319,19 @@ impl Shell {
             }
         }
         cx.notify();
+    }
+
+    /// A forget link: clears the draft slot, then deletes the keychain entry for the
+    /// saved network immediately (`forgetPassword` + `removeStoredPassword`).
+    fn connect_forget(&mut self, slot: Secret, cx: &mut Context<Self>) {
+        if let Some(network_id) = self.connect.forget(slot) {
+            let purpose = match slot {
+                Secret::Password => PURPOSE_PASSWORD,
+                Secret::NickServ => PURPOSE_NICKSERV,
+            };
+            self.controller.forget_secret(&network_id, purpose);
+        }
+        self.sync_connect_inputs(cx);
     }
 
     /// Enter on the card. A rail row selects and arms, and a second Enter applies
@@ -336,6 +352,8 @@ impl Shell {
                 | Stop::ShortcutsHint
                 | Stop::Remove
                 | Stop::Discard
+                | Stop::ForgetPassword
+                | Stop::ForgetNickServ
                 | Stop::Disconnect
                 | Stop::Apply),
             ) => self.connect_click(stop, window, cx),

@@ -55,6 +55,10 @@ pub const REMOVE_LABEL: &str = "Remove";
 pub const DISCARD_LABEL: &str = "Discard";
 pub const DISCONNECT_LABEL: &str = "Disconnect";
 pub const APPLY_LABEL: &str = "Apply";
+/// Under the password fields when a saved server password can be cleared (`ConnectionSheet.qml`).
+pub const FORGET_PASSWORD_LABEL: &str = "forget saved server password";
+/// Under the password fields when a saved NickServ password can be cleared.
+pub const FORGET_NICKSERV_LABEL: &str = "forget saved NickServ password";
 
 /// Why Apply is refused. The rules live with the stored profile, so the draft and the
 /// saved network are checked the same way (`storage::profilestore::ProfileProblem`).
@@ -186,6 +190,10 @@ pub enum Stop {
     PreferenceHelp(PrefName),
     Remove,
     Discard,
+    /// Clears the draft server password and deletes its keychain entry (`forgetPassword`).
+    ForgetPassword,
+    /// Clears the draft NickServ password and deletes its keychain entry (`forgetNickServ`).
+    ForgetNickServ,
     /// Stops the selected network's live or reconnecting session. Shown only while
     /// that session exists (`stops`), and it leaves the profile as it is.
     Disconnect,
@@ -604,8 +612,10 @@ struct SecretSlot {
 }
 
 impl SecretSlot {
+    /// Whether this slot adds nothing to the credential line (`idleSecret`). A keychain-held
+    /// secret (`Available`) is never idle, matching Qt's `!mayBeStored`.
     fn idle(&self) -> bool {
-        !self.held && !self.edited
+        !self.held && !self.edited && self.state != CredentialState::Available
     }
 
     /// One slot's sentence (`IrcConnection::secretStatus`).

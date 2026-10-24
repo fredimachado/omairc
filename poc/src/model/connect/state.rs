@@ -24,6 +24,8 @@ impl ConnectState {
 
     /// The sheet for the networks the controller saved (`IrcConnection`'s start). The first
     /// complete network is selected, or the first one. With none saved, the first run starts.
+    /// A network whose file says a secret is saved starts that slot as [`CredentialState::Available`],
+    /// so the forget links and the credential line match a relaunch after Apply.
     pub fn from_stored(stored: &[StoredProfile]) -> Self {
         let saved: Vec<Profile> = stored.iter().map(Profile::from_stored).collect();
         if saved.is_empty() {
@@ -34,7 +36,26 @@ impl ConnectState {
             .find(|profile| profile.problem().is_none())
             .unwrap_or(&saved[0])
             .clone();
-        Self::assembled(saved, chosen.network_id.clone(), chosen)
+        let mut state = Self::assembled(saved, chosen.network_id.clone(), chosen);
+        for profile in stored {
+            let password = if profile.secret_saved {
+                CredentialState::Available
+            } else {
+                CredentialState::Missing
+            };
+            let nickserv = if profile.nickserv_saved {
+                CredentialState::Available
+            } else {
+                CredentialState::Missing
+            };
+            if password != CredentialState::Missing || nickserv != CredentialState::Missing {
+                state.secrets.insert(
+                    profile.network_id.clone(),
+                    SecretStates { password, nickserv },
+                );
+            }
+        }
+        state
     }
 
     /// The sheet for a first run with nothing saved: the suggested Freenode network, as a new
@@ -238,14 +259,77 @@ impl ConnectState {
             ConnectField::RealName => self.draft.realname = value,
             ConnectField::Autojoin => self.draft.autojoin = value,
             ConnectField::ServerPassword => {
+                // Emptying a held secret is refused: forget is the only clearing path
+                // (`IrcConnection::setPassword`).
+                if value.is_empty() && !self.draft.password.is_empty() {
+                    return;
+                }
                 self.draft.password = SecretText::from(value);
                 self.password_edited = true;
             }
             ConnectField::NickServPassword => {
+                if value.is_empty() && !self.draft.nickserv_password.is_empty() {
+                    return;
+                }
                 self.draft.nickserv_password = SecretText::from(value);
                 self.nickserv_edited = true;
             }
         }
+    }
+
+    /// Whether the forget link for `slot` shows (`canForgetPassword` / `canForgetNickServ`).
+    /// True for a saved network when that slot is in the keychain or the draft still holds text.
+    pub fn can_forget(&self, slot: Secret) -> bool {
+        if !self.is_saved(&self.selected) {
+            return false;
+        }
+        let states = self.secret_states();
+        let (state, held) = match slot {
+            Secret::Password => (states.password, !self.draft.password.is_empty()),
+            Secret::NickServ => (states.nickserv, !self.draft.nickserv_password.is_empty()),
+        };
+        state == CredentialState::Available || held
+    }
+
+    /// Clears the draft text for `slot`, marks it edited, and sets the slot to Missing
+    /// (`forgetPassword` / `forgetNickServ`). Returns the selected saved network's id so the
+    /// shell can delete the keychain entry immediately. No-op (returns `None`) when the slot
+    /// is already empty and Missing.
+    pub fn forget(&mut self, slot: Secret) -> Option<String> {
+        let states = self.secret_states();
+        let (empty, missing) = match slot {
+            Secret::Password => (
+                self.draft.password.is_empty(),
+                states.password == CredentialState::Missing,
+            ),
+            Secret::NickServ => (
+                self.draft.nickserv_password.is_empty(),
+                states.nickserv == CredentialState::Missing,
+            ),
+        };
+        if empty && missing {
+            return None;
+        }
+        match slot {
+            Secret::Password => {
+                self.draft.password = SecretText::default();
+                self.password_edited = true;
+                self.secrets
+                    .entry(self.selected.clone())
+                    .or_default()
+                    .password = CredentialState::Missing;
+            }
+            Secret::NickServ => {
+                self.draft.nickserv_password = SecretText::default();
+                self.nickserv_edited = true;
+                self.secrets
+                    .entry(self.selected.clone())
+                    .or_default()
+                    .nickserv = CredentialState::Missing;
+            }
+        }
+        self.is_saved(&self.selected)
+            .then(|| self.selected.clone())
     }
 
     pub fn tls(&self) -> bool {
@@ -541,6 +625,13 @@ impl ConnectState {
                         stops.push(Stop::FieldHelp(field));
                     }
                     stops.push(Stop::Field(field));
+                }
+                // After both password fields, as Qt's Row under the credential line.
+                if self.can_forget(Secret::Password) {
+                    stops.push(Stop::ForgetPassword);
+                }
+                if self.can_forget(Secret::NickServ) {
+                    stops.push(Stop::ForgetNickServ);
                 }
                 if self.can_remove(populated) {
                     stops.push(Stop::Remove);
