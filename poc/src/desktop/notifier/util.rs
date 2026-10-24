@@ -151,7 +151,8 @@ pub fn build_toast_xml(summary: &str, body: &str, launch: &str) -> String {
 /// value, or the Start Menu link) away from `existing`. A missing record is claimed, and so
 /// is one that already names `this_exe` or an exe that no longer exists. Any other exe still
 /// on disk keeps it, so a build that is not an installed copy does not displace a live owner.
-/// An installed copy does not ask this question (see `windows_ownership`).
+/// For an installed copy, `windows_ownership` decides the write and does not call this.
+/// `windows.rs` still calls it there, but only to choose which log line to write.
 #[cfg(any(windows, test))]
 pub fn should_claim(
     existing: Option<&Path>,
@@ -231,16 +232,6 @@ mod tests {
     }
 
     #[test]
-    fn should_claim_takes_missing_or_stale_records_and_keeps_a_live_owner() {
-        let this_exe = Path::new("/dev/omairc");
-        let installed = Path::new("/opt/omairc");
-        assert!(should_claim(None, this_exe, |_| true));
-        assert!(should_claim(Some(this_exe), this_exe, |_| true));
-        assert!(should_claim(Some(installed), this_exe, |_| false));
-        assert!(!should_claim(Some(installed), this_exe, |_| true));
-    }
-
-    #[test]
     fn should_claim_matches_windows_paths_without_case() {
         let this_exe = Path::new("C:\\Apps\\omairc.exe");
         let recorded = Path::new("c:\\apps\\OMAIRC.exe");
@@ -255,6 +246,8 @@ mod tests {
     #[test]
     fn the_same_exe_is_claimed_regardless_of_existence() {
         let this_exe = Path::new(THIS_EXE);
+        // The exe is on disk, so only the `same_exe` arm can claim it.
+        assert!(should_claim(Some(this_exe), this_exe, |_| true));
         assert!(should_claim(Some(this_exe), this_exe, |_| false));
     }
 
@@ -282,7 +275,8 @@ mod tests {
     fn a_quoted_registry_value_is_compared_by_its_exe() {
         let this_exe = Path::new(THIS_EXE);
         let same = command_exe(&format!("\"{THIS_EXE}\""));
-        assert!(should_claim(same.as_deref(), this_exe, |_| false));
+        // The exe is on disk. A value that failed to parse would not match it, and would be kept.
+        assert!(should_claim(same.as_deref(), this_exe, |_| true));
 
         let installed_exe = Path::new(INSTALLED_EXE);
         let installed = command_exe(r#""C:\Program Files\Omairc\omairc.exe" -Embedding"#);
@@ -296,10 +290,12 @@ mod tests {
     #[test]
     fn an_empty_registry_value_names_no_exe_and_is_claimed() {
         assert_eq!(command_exe("   "), None);
+        // The claim has to come from `command_exe` returning None. If it returned `Some("")`, the
+        // closure would say that path is on disk, and the claim would fail.
         assert!(should_claim(
             command_exe("\"\"").as_deref(),
             Path::new(THIS_EXE),
-            |_| false,
+            |_| true,
         ));
     }
 

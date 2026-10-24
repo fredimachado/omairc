@@ -22,7 +22,8 @@
 //! be expanded, when the target is empty or not valid UTF-16, or when `%` survives `%VAR%`
 //! expansion (a literal `%` in a real path refuses too). For a build that is not installed, a
 //! link also refuses when it names an exe that still exists and is not this one. The fallback
-//! never creates an all-users link.
+//! never creates an all-users link. If the all-users Start Menu folder cannot be resolved, the
+//! fallback writes nothing for any build.
 //!
 //! Before the fallback, the repair path re-stamps a link that already names this exe, in either
 //! location, but only when no such link is stamped yet. A readable link that names this exe
@@ -391,7 +392,7 @@ fn register_com_server(exe: &str, install_roots: &[PathBuf]) {
             .and_then(command_exe)
             .map(|owner| canonical_exe(&owner)),
         Err(status) => {
-            log::info!(
+            log::warn!(
                 "Windows notifier: could not read the toast activator registration ({:?}), leaving it unchanged",
                 status
             );
@@ -523,7 +524,7 @@ fn ensure_notification_registration(exe_path: &str) {
     let from_install = is_installed_exe(&this_exe, &roots, resolve_path);
     if repair_ends_registration(repaired, from_install, &this_exe, &per_user_state) {
         if from_install && matches!(per_user_state, LinkState::Unreadable) {
-            log::info!(
+            log::warn!(
                 "Windows notifier: could not read {:?} to see which exe it names, leaving it unchanged",
                 link
             );
@@ -539,11 +540,11 @@ fn ensure_notification_registration(exe_path: &str) {
         resolve_path,
     ) {
         match refusal {
-            LinkRefusal::Unreadable(LinkSlot::AllUsers) => log::info!(
+            LinkRefusal::Unreadable(LinkSlot::AllUsers) => log::warn!(
                 "Windows notifier: could not read {:?} to see which exe it names, leaving it unchanged",
                 all_users_link
             ),
-            LinkRefusal::Unreadable(LinkSlot::PerUser) => log::info!(
+            LinkRefusal::Unreadable(LinkSlot::PerUser) => log::warn!(
                 "Windows notifier: could not read {:?} to see which exe it names, leaving it unchanged",
                 link
             ),
