@@ -1,9 +1,10 @@
 //! The Windows installer update's file and process half. The release rules and
 //! the state machine are in `model::update_check`. This module downloads the
 //! setup into the updates directory and verifies it, checks that an existing
-//! copy still matches, starts the installer, and probes whether the running exe
-//! is the Inno-installed copy. Go twin: none. C++: the file and process parts of
-//! `src/omaircupdatecheck.cpp` (`commitDownloadedInstaller`,
+//! copy still matches, and starts the installer. The PoC does not probe for an
+//! installed copy (`running_copy_is_installed` is always false) until it has
+//! its own setup asset and uninstall key. Go twin: none. C++: the file and
+//! process parts of `src/omaircupdatecheck.cpp` (`commitDownloadedInstaller`,
 //! `downloadedInstallerMatches`, `launchInstaller`, `runningCopyIsInstalled`).
 
 use std::fs::{self, File};
@@ -14,11 +15,9 @@ use sha2::{Digest, Sha256};
 use url::Url;
 
 use crate::desktop::httpfetch::{get_following, FetchRequest, HttpFetch};
-#[cfg(windows)]
-use crate::model::update_check::WINDOWS_UNINSTALL_KEY;
 use crate::model::update_check::{
-    install_location_matches, windows_setup_name, windows_setup_redirect_is_safe, WindowsSetup,
-    INSTALLER_TRANSFER_TIMEOUT, MAXIMUM_REDIRECTS,
+    windows_setup_name, windows_setup_redirect_is_safe, WindowsSetup, INSTALLER_TRANSFER_TIMEOUT,
+    MAXIMUM_REDIRECTS,
 };
 
 /// Starts the setup. A seam so the state machine can run without a process.
@@ -174,47 +173,15 @@ fn set_owner_executable(path: &Path) {
 #[cfg(not(unix))]
 fn set_owner_executable(_path: &Path) {}
 
-/// Whether the running exe sits in the Inno install location. The uninstall
-/// entry is read from HKCU, then HKLM, then the WOW6432Node view of HKLM. Qt
-/// `runningCopyIsInstalled`. Off Windows there is no installed copy.
+/// Whether the running exe may self-update through the Windows installer path.
+///
+/// Always false for the PoC. Qt probes the Inno uninstall key
+/// `{37400F83-8332-4043-8DFF-1F69E51F6555}_is1`; this binary never registers
+/// that key, and must not treat a Qt install as its own — a green probe would
+/// download `omairc-<v>-windows-x64-setup.exe` and install Qt over the PoC.
+/// Revisit when Rust ships its own setup asset and uninstall key.
 pub fn running_copy_is_installed() -> bool {
-    let Some(app_dir) = std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.to_string_lossy().into_owned()))
-    else {
-        return false;
-    };
-    install_locations()
-        .iter()
-        .any(|location| install_location_matches(location, &app_dir))
-}
-
-#[cfg(windows)]
-fn install_locations() -> Vec<String> {
-    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ};
-    use winreg::RegKey;
-    let entry = format!(r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{WINDOWS_UNINSTALL_KEY}");
-    let wow_entry = format!(
-        r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{WINDOWS_UNINSTALL_KEY}"
-    );
-    [
-        (HKEY_CURRENT_USER, entry.as_str()),
-        (HKEY_LOCAL_MACHINE, entry.as_str()),
-        (HKEY_LOCAL_MACHINE, wow_entry.as_str()),
-    ]
-    .into_iter()
-    .filter_map(|(hive, path)| {
-        RegKey::predef(hive)
-            .open_subkey_with_flags(path, KEY_READ)
-            .ok()
-    })
-    .filter_map(|key| key.get_value::<String, _>("InstallLocation").ok())
-    .collect()
-}
-
-#[cfg(not(windows))]
-fn install_locations() -> Vec<String> {
-    Vec::new()
+    false
 }
 
 /// Records each start and reports the result it was told to return, so tests
@@ -421,5 +388,13 @@ mod tests {
     fn the_updates_directory_is_under_omairc_poc() {
         let dir = default_updates_dir();
         assert!(dir.ends_with(Path::new("omairc-poc").join("updates")), "{dir:?}");
+    }
+
+    #[test]
+    fn the_poc_never_claims_to_be_an_installed_copy() {
+        assert!(
+            !running_copy_is_installed(),
+            "must not probe the Qt Inno uninstall key or offer its setup"
+        );
     }
 }
