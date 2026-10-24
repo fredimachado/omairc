@@ -34,3 +34,30 @@ Surfaces to restore later (from `src/qml/`):
 
 When AccessKit lands upstream, reintroduce equivalent names and roles on
 the GPUI views that replace these QML surfaces.
+
+## RTL / bidirectional text
+
+**Spike (P1):** when `OMAIRC_RTL_SEED=1` is set with `--demo-server`, the
+demo appends one Arabic and one Hebrew PRIVMSG to `#omarchy` after the
+parity seed (`demo::wire::rtl_seed_lines`). Off by default. Same GPUI
+`StyledText` / cosmic-text path as the composer and topic.
+
+**Outcome: RTL looks OK** (closed for the spike). GPUI 0.2.2 shapes through
+cosmic-text, which uses `unicode-bidi` and rustybuzz. On Linux, cosmic-text’s
+script fallbacks include `Noto Sans Arabic` and `Noto Sans Hebrew` when the
+bundled `iA Writer Mono S` face has no coverage (it does not). No GPUI fork.
+
+Visual proof was not taken on this host: `control-omairc-poc` needs lavapipe
+(`vulkan-swrast` / `lvp_icd.json`) for Xvfb, and that ICD was not installed
+(no passwordless sudo). Re-check when lavapipe is available:
+
+```sh
+OMAIRC_RTL_SEED=1 .cursor/skills/verify-omairc-poc/control-omairc-poc launch --demo-server
+.cursor/skills/verify-omairc-poc/control-omairc-poc screenshot --feature rtl-spike --name arabic-hebrew
+.cursor/skills/verify-omairc-poc/control-omairc-poc cleanup
+```
+
+Evidence (when taken) lives under `test-artifacts/verify-poc/rtl-spike/`.
+
+TODO: if a visual check shows wrong glyph order or missing glyphs despite
+Noto fallbacks, track upstream GPUI/cosmic-text; do not fork GPUI.

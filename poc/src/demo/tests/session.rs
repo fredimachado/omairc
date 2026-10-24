@@ -5,13 +5,14 @@
 //! session's own writers.
 
 use std::rc::Rc;
+use std::sync::{Mutex, OnceLock};
 
 use chrono::{TimeZone, Utc};
 
 use crate::demo::answers::demo_server_features;
 use crate::demo::seed::OMARCHY_WORLD;
 use crate::demo::server::{DemoError, DemoServer, SeedStep};
-use crate::demo::wire::{bench_channel_bytes, bench_channel_lines};
+use crate::demo::wire::{bench_channel_bytes, bench_channel_lines, rtl_seed_lines, RTL_SEED_VAR};
 use crate::irc::capability::IrcCapability;
 use crate::irc::jointarget::IrcJoinTarget;
 use crate::irc::message::IrcMessage;
@@ -236,8 +237,17 @@ fn the_seed_plays_the_selections_in_qt_order() {
     );
 }
 
+fn rtl_seed_env_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 #[test]
 fn the_seed_steps_are_the_qt_order_as_data() {
+    let _guard = rtl_seed_env_lock().lock().unwrap();
+    let previous = std::env::var_os(RTL_SEED_VAR);
+    std::env::remove_var(RTL_SEED_VAR);
+
     let steps = DemoServer::seed_steps();
     let kinds: Vec<&str> = steps
         .iter()
@@ -261,6 +271,45 @@ fn the_seed_steps_are_the_qt_order_as_data() {
             assert_eq!(bytes, b":rio!u@h INVITE oak :#debian\r\n");
         }
         other => panic!("the INVITE comes last, got {other:?}"),
+    }
+
+    match previous {
+        Some(value) => std::env::set_var(RTL_SEED_VAR, value),
+        None => std::env::remove_var(RTL_SEED_VAR),
+    }
+}
+
+#[test]
+fn the_rtl_seed_appends_before_the_invite_when_env_is_set() {
+    let _guard = rtl_seed_env_lock().lock().unwrap();
+    let previous = std::env::var_os(RTL_SEED_VAR);
+    std::env::set_var(RTL_SEED_VAR, "1");
+
+    let steps = DemoServer::seed_steps();
+    let rtl = rtl_seed_lines();
+    let expected = crate::demo::wire::bytes(&rtl);
+    let rtl_step = steps.iter().rev().nth(1).expect("RTL inject before invite");
+    match rtl_step {
+        SeedStep::Inject { network_id, bytes } => {
+            assert_eq!(network_id, "omarchy");
+            assert_eq!(bytes, &expected);
+            let text = String::from_utf8_lossy(bytes);
+            assert!(text.contains("مرحبا"));
+            assert!(text.contains("שלום"));
+        }
+        other => panic!("expected RTL inject, got {other:?}"),
+    }
+    match steps.last() {
+        Some(SeedStep::Inject { network_id, bytes }) => {
+            assert_eq!(network_id, "oftc");
+            assert_eq!(bytes, b":rio!u@h INVITE oak :#debian\r\n");
+        }
+        other => panic!("the INVITE comes last, got {other:?}"),
+    }
+
+    match previous {
+        Some(value) => std::env::set_var(RTL_SEED_VAR, value),
+        None => std::env::remove_var(RTL_SEED_VAR),
     }
 }
 

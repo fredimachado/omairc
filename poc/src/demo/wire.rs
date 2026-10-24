@@ -22,6 +22,39 @@ use super::seed::{
 /// The bench channel's name (`--lines`).
 pub const BENCH_CHANNEL: &str = "#bench";
 
+/// When set to a non-empty value, `--demo-server` appends one Arabic and one
+/// Hebrew PRIVMSG to `#omarchy` after the normal seed. Off by default so
+/// everyday demo users are not surprised.
+pub const RTL_SEED_VAR: &str = "OMAIRC_RTL_SEED";
+
+/// Whether [`rtl_seed_lines`] should be injected (`OMAIRC_RTL_SEED` non-empty).
+pub fn rtl_seed_enabled() -> bool {
+    std::env::var(RTL_SEED_VAR).is_ok_and(|value| !value.is_empty())
+}
+
+/// One Arabic and one Hebrew chat line for `#omarchy`. Used only when
+/// [`rtl_seed_enabled`] is true; not part of the Qt/Go parity seed.
+pub fn rtl_seed_lines() -> Vec<String> {
+    vec![
+        privmsg_line(
+            "mira",
+            "#omarchy",
+            "مرحبا! هل جرب أحد تثبيت Omarchy الجديد؟",
+            TODAY,
+            "10:05",
+            "",
+        ),
+        privmsg_line(
+            "dax",
+            "#omarchy",
+            "שלום! הלקוח מרגיש רגוע ונקי.",
+            TODAY,
+            "10:06",
+            "",
+        ),
+    ]
+}
+
 /// One line as wire bytes, CRLF included (`line`).
 pub fn line(text: &str) -> Vec<u8> {
     let mut out = Vec::with_capacity(text.len() + 2);
