@@ -158,9 +158,51 @@ fn resolve_mode(theme_mode: &str, background: Color) -> (bool, bool) {
     }
 }
 
+/// Paths to register with the filesystem watcher, matching Qt `Backend::watchOmarchyTheme`.
+pub fn theme_watch_paths(override_path: Option<&Path>) -> Vec<PathBuf> {
+    let home = dirs::home_dir().expect("home directory");
+    theme_watch_paths_in_home(&home, override_path)
+}
+
+fn push_watch_path(paths: &mut Vec<PathBuf>, path: PathBuf) {
+    if path.is_dir() || path.is_file() {
+        let resolved = path.canonicalize().unwrap_or(path);
+        paths.push(resolved);
+    }
+}
+
+pub fn theme_watch_paths_in_home(home: &Path, override_path: Option<&Path>) -> Vec<PathBuf> {
+    if let Some(path) = override_path {
+        let mut paths = Vec::new();
+        push_watch_path(&mut paths, path.to_path_buf());
+        if let Some(parent) = path.parent() {
+            push_watch_path(&mut paths, parent.to_path_buf());
+        }
+        return paths;
+    }
+
+    let current = home.join(".local/state/omarchy/current");
+    let theme_dir = current.join("theme");
+    let colors = theme_dir.join("colors.toml");
+    let mut paths = Vec::new();
+    push_watch_path(&mut paths, current);
+    push_watch_path(&mut paths, theme_dir);
+    push_watch_path(&mut paths, colors);
+    paths
+}
+
+fn register_watch_paths(watcher: &mut RecommendedWatcher, paths: &[PathBuf]) {
+    for path in paths {
+        if path.is_dir() || path.is_file() {
+            let _ = watcher.watch(path, RecursiveMode::NonRecursive);
+        }
+    }
+}
+
 pub struct ThemeWatcher {
-    _watcher: RecommendedWatcher,
+    watcher: RecommendedWatcher,
     receiver: Receiver<()>,
+    watched: Vec<PathBuf>,
 }
 
 impl ThemeWatcher {
@@ -180,39 +222,33 @@ impl ThemeWatcher {
             notify::Config::default().with_poll_interval(Duration::from_millis(500)),
         )?;
 
-        if let Some(path) = override_path {
-            if path.is_file() {
-                let _ = watcher.watch(path, RecursiveMode::NonRecursive);
-            }
-            if let Some(parent) = path.parent() {
-                if parent.is_dir() {
-                    let _ = watcher.watch(parent, RecursiveMode::NonRecursive);
-                }
-            }
-        } else {
-            let home = dirs::home_dir().expect("home directory");
-            let current = home.join(".local/state/omarchy/current");
-            let theme_dir = current.join("theme");
-            let colors = theme_dir.join("colors.toml");
-            if current.is_dir() {
-                let _ = watcher.watch(&current, RecursiveMode::NonRecursive);
-            }
-            if theme_dir.is_dir() {
-                let _ = watcher.watch(&theme_dir, RecursiveMode::NonRecursive);
-            }
-            if colors.is_file() {
-                let _ = watcher.watch(&colors, RecursiveMode::NonRecursive);
-            }
-        }
+        let watched = theme_watch_paths(override_path);
+        register_watch_paths(&mut watcher, &watched);
 
         Ok(Self {
-            _watcher: watcher,
+            watcher,
             receiver: rx,
+            watched,
         })
+    }
+
+    /// Re-register watches after the Omarchy `current` symlink or theme file moves.
+    pub fn rearm(&mut self, override_path: Option<&Path>) -> notify::Result<()> {
+        for path in &self.watched {
+            let _ = self.watcher.unwatch(path);
+        }
+        self.watched = theme_watch_paths(override_path);
+        register_watch_paths(&mut self.watcher, &self.watched);
+        Ok(())
     }
 
     pub fn receiver(&self) -> &Receiver<()> {
         &self.receiver
+    }
+
+    #[cfg(test)]
+    pub fn watched_paths(&self) -> &[PathBuf] {
+        &self.watched
     }
 }
 
@@ -308,5 +344,66 @@ mod tests {
         let path = std::env::temp_dir().join(format!("omairc-theme-{}", std::process::id()));
         std::fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    #[test]
+    fn consecutive_theme_switch_updates_watch_paths() {
+        let base = tempfile_dir();
+        let home = base.join("home");
+        let omarchy = home.join(".local/state/omarchy");
+        let bundle_a = omarchy.join("bundles/a");
+        let bundle_b = omarchy.join("bundles/b");
+        let theme_a = bundle_a.join("theme");
+        let theme_b = bundle_b.join("theme");
+        std::fs::create_dir_all(&theme_a).unwrap();
+        std::fs::create_dir_all(&theme_b).unwrap();
+        std::fs::write(theme_a.join("colors.toml"), "mode = dark\n").unwrap();
+        std::fs::write(theme_b.join("colors.toml"), "mode = light\n").unwrap();
+
+        let current = omarchy.join("current");
+        std::os::unix::fs::symlink(&bundle_a, &current).unwrap();
+
+        let colors_a = theme_a.join("colors.toml").canonicalize().unwrap();
+        let colors_b = theme_b.join("colors.toml").canonicalize().unwrap();
+
+        let paths_a = theme_watch_paths_in_home(&home, None);
+        assert!(paths_a.contains(&colors_a));
+        assert!(!paths_a.contains(&colors_b));
+
+        std::fs::remove_file(&current).unwrap();
+        std::os::unix::fs::symlink(&bundle_b, &current).unwrap();
+
+        let paths_b = theme_watch_paths_in_home(&home, None);
+        assert!(paths_b.contains(&colors_b));
+        assert!(!paths_b.contains(&colors_a));
+
+        let prev_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", home.as_os_str());
+
+        std::fs::remove_file(&current).unwrap();
+        std::os::unix::fs::symlink(&bundle_a, &current).unwrap();
+
+        let mut watcher = ThemeWatcher::start(None).expect("theme watcher");
+        assert!(watcher.watched_paths().contains(&colors_a));
+
+        std::fs::remove_file(&current).unwrap();
+        std::os::unix::fs::symlink(&bundle_b, &current).unwrap();
+        watcher.rearm(None).expect("rearm after first switch");
+        assert!(
+            watcher.watched_paths().contains(&colors_b),
+            "second theme file must be watched after rearm: {:?}",
+            watcher.watched_paths()
+        );
+        assert!(!watcher.watched_paths().contains(&colors_a));
+
+        std::fs::remove_file(&current).unwrap();
+        std::os::unix::fs::symlink(&bundle_a, &current).unwrap();
+        watcher.rearm(None).expect("rearm after second switch");
+        assert!(watcher.watched_paths().contains(&colors_a));
+        assert!(!watcher.watched_paths().contains(&colors_b));
+
+        if let Some(prev) = prev_home {
+            std::env::set_var("HOME", prev);
+        }
     }
 }
