@@ -38,6 +38,13 @@ pub struct Row {
     pub status: Option<StatusMark>,
     /// The IRCv3 `msgid` for a chat line, empty elsewhere.
     pub msgid: String,
+    /// Channel-context delivery: Qt's `onlyVisibleToYou` caption under the body.
+    pub only_visible_to_you: bool,
+}
+
+/// Whether a transcript row draws Qt's "only visible to you" caption.
+pub fn shows_only_visible_to_you_caption(row: &Row) -> bool {
+    row.kind == RowKind::Message && row.only_visible_to_you
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -565,6 +572,7 @@ fn day_separator_row(id: u64, day: NaiveDate, today: NaiveDate) -> Row {
         event_text: None,
         status: None,
         msgid: String::new(),
+        only_visible_to_you: false,
     }
 }
 
@@ -581,6 +589,7 @@ fn unread_mark_row_for(id: u64) -> Row {
         event_text: None,
         status: None,
         msgid: String::new(),
+        only_visible_to_you: false,
     }
 }
 
@@ -611,6 +620,7 @@ fn row_from_chat_line(id: u64, message: &Message, minute: &str, continues: bool)
         event_text: None,
         status: None,
         msgid: message.msgid.value.clone(),
+        only_visible_to_you: message.only_visible_to_you,
     }
 }
 
@@ -628,6 +638,7 @@ fn row_from_event(id: u64, caption: &str) -> Row {
         event_text: Some(caption.to_owned()),
         status: None,
         msgid: String::new(),
+        only_visible_to_you: false,
     }
 }
 
@@ -645,6 +656,7 @@ pub fn row_from_whois(id: u64, text: &str) -> Row {
         event_text: None,
         status: None,
         msgid: String::new(),
+        only_visible_to_you: false,
     }
 }
 
@@ -661,6 +673,7 @@ pub fn row_from_message(id: u64, author: &str, time: &str, body: &str, continues
         event_text: None,
         status: None,
         msgid: String::new(),
+        only_visible_to_you: false,
     }
 }
 
@@ -1068,6 +1081,21 @@ mod tests {
         assert_eq!(day_caption(october(22), today()), "Today");
         assert_eq!(day_caption(october(21), today()), "Yesterday");
         assert_eq!(day_caption(october(20), today()), short_date(october(20)));
+    }
+
+    #[test]
+    fn only_visible_to_you_carried_onto_row() {
+        let mut private = chat("nick", "psst", 9, 0, 1);
+        private.only_visible_to_you = true;
+        let rows = rows_from_messages(&[private, chat("nick", "public", 9, 1, 2)], None);
+        let chat_rows: Vec<_> = rows
+            .iter()
+            .filter(|row| row.kind == RowKind::Message)
+            .collect();
+        assert!(shows_only_visible_to_you_caption(&chat_rows[0]));
+        assert!(!shows_only_visible_to_you_caption(&chat_rows[1]));
+        assert!(chat_rows[0].only_visible_to_you);
+        assert!(!chat_rows[1].only_visible_to_you);
     }
 
     #[test]

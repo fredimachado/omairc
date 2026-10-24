@@ -9,6 +9,7 @@ use gpui::{
     prelude::*, px, relative, size,
 };
 use crate::model::mention::{is_mention_row, mention_wash};
+use crate::model::transcript::shows_only_visible_to_you_caption;
 use crate::model::presence::{photo_for, NickFacts};
 use crate::model::{mix_colors, Row, RowKind, Style};
 
@@ -412,7 +413,17 @@ fn render_message_row(
                                     selection_range,
                                     selection_color,
                                 }),
-                        ),
+                        )
+                        .when(shows_only_visible_to_you_caption(row), |this| {
+                            this.child(
+                                div()
+                                    .pt(scaled_px(style, 2.))
+                                    .text_size(scaled_px(style, 9.))
+                                    .text_color(to_gpui(style.muted_color()))
+                                    .font_family(FONT_FAMILY)
+                                    .child("only visible to you"),
+                            )
+                        }),
                 ),
         )
 }

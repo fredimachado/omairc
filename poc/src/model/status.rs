@@ -87,6 +87,7 @@ pub fn row_from_status_entry(id: u64, entry: &StatusEntry) -> Row {
             severity: entry.severity,
         }),
         msgid: String::new(),
+        only_visible_to_you: false,
     }
 }
 
