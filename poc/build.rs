@@ -1,6 +1,7 @@
-//! Build script. Reads `../version.pri`, the repository's single VERSION source,
-//! and exports it to the crate as `OMAIRC_VERSION` (see `src/version.rs`). The
-//! parser is shared with the app's test build through `src/version_pri.rs`.
+//! Build script. Exports `OMAIRC_VERSION` (see `src/version.rs`): prefers the
+//! `OMAIRC_BUILD_VERSION` env when packaging/CI set it, otherwise reads
+//! `../version.pri`, the repository's single VERSION source. The parser is
+//! shared with the app's test build through `src/version_pri.rs`.
 //!
 //! On a Windows target it also embeds `data/icons/omairc.ico` and a version
 //! resource in the exe, as the Qt client does through `RC_ICONS`. The icon is
@@ -16,10 +17,18 @@ fn main() {
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let pri = manifest.join("..").join("version.pri");
     println!("cargo:rerun-if-changed={}", pri.display());
-    let body = std::fs::read_to_string(&pri)
-        .unwrap_or_else(|err| panic!("cannot read {}: {err}", pri.display()));
-    let version = version_pri::parse_version(&body)
-        .unwrap_or_else(|| panic!("{} has no VERSION = value", pri.display()));
+    println!("cargo:rerun-if-env-changed=OMAIRC_BUILD_VERSION");
+    // Packaging and CI pass OMAIRC_BUILD_VERSION (display version). Otherwise
+    // read VERSION from version.pri, the repository's single release source.
+    let version = match std::env::var("OMAIRC_BUILD_VERSION") {
+        Ok(value) if !value.is_empty() => value,
+        _ => {
+            let body = std::fs::read_to_string(&pri)
+                .unwrap_or_else(|err| panic!("cannot read {}: {err}", pri.display()));
+            version_pri::parse_version(&body)
+                .unwrap_or_else(|| panic!("{} has no VERSION = value", pri.display()))
+        }
+    };
     println!("cargo:rustc-env=OMAIRC_VERSION={version}");
 
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
