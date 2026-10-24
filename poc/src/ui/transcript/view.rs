@@ -8,6 +8,8 @@ use gpui::{
     div, list, px, App, Context, EventEmitter, FocusHandle, ListAlignment, ListOffset, ListState,
     MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, Render, Window, prelude::*,
 };
+#[cfg(target_os = "linux")]
+use gpui::ClipboardItem;
 
 use crate::model::cursor::{page_amount, scroll_target};
 use crate::model::links::{conversation_channel_hits, invite_hit};
@@ -491,11 +493,17 @@ impl TranscriptView {
             self.model.select_word(pos);
         }
         self.dragging = true;
+        self.write_primary_selection(cx);
     }
 
     /// Extends the selection while the button is held. Returns false when no
     /// drag is in progress.
-    pub fn drag_move(&mut self, position: Point<Pixels>, app_style: &Style) -> bool {
+    pub fn drag_move(
+        &mut self,
+        position: Point<Pixels>,
+        app_style: &Style,
+        cx: &mut Context<Self>,
+    ) -> bool {
         if !self.dragging {
             return false;
         }
@@ -504,6 +512,7 @@ impl TranscriptView {
             if let Some(row_ix) = self.row_at_position(position) {
                 if let Some(pos) = self.pos_from_pointer(position, row_ix, app_style) {
                     self.model.extend(pos);
+                    self.write_primary_selection(cx);
                 }
             }
         }
@@ -512,7 +521,11 @@ impl TranscriptView {
 
     /// Ends a drag on mouse-up. Returns what a release over a link asks for, or
     /// None for a release anywhere else or with no drag in progress.
-    pub fn finish_drag(&mut self, position: Point<Pixels>) -> Option<LinkClick> {
+    pub fn finish_drag(
+        &mut self,
+        position: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) -> Option<LinkClick> {
         if !self.dragging {
             return None;
         }
@@ -520,6 +533,7 @@ impl TranscriptView {
         self.drag_autoscroll = false;
         self.drag_edge = None;
         self.drag_pointer = None;
+        self.write_primary_selection(cx);
         let (row_ix, range) = self.link_at(position)?;
         link_click(&self.model.rows()[row_ix], &range, &self.features)
     }
@@ -534,6 +548,22 @@ impl TranscriptView {
         self.scroll_by_px(if edge < 0 { -8. } else { 8. }, cx);
         if let Some(position) = self.drag_pointer {
             self.extend_drag_autoscroll(position, app_style);
+            self.write_primary_selection(cx);
+        }
+    }
+
+    /// Writes the transcript selection to the Linux primary buffer.
+    fn write_primary_selection(&self, cx: &mut Context<Self>) {
+        #[cfg(target_os = "linux")]
+        {
+            let text = self.model.copy_text();
+            if !text.is_empty() {
+                cx.write_to_primary(ClipboardItem::new_string(text));
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = cx;
         }
     }
 
