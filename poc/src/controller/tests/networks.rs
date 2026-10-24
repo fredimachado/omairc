@@ -4,6 +4,7 @@
 //! `TestCollapseDoesNotMutateConversationsOrder`).
 
 use crate::irc::serverfeatures::IrcServerFeatures;
+use crate::session::events::SessionState;
 
 use super::fixture::{Fixture, OFTC, OMARCHY};
 
@@ -78,6 +79,21 @@ fn forgetting_a_registered_network_clears_monitor_before_quit() {
         fixture.frames(OMARCHY),
         ["MONITOR C\r\n", "QUIT\r\n"],
         "MONITOR C clears the server list before teardown"
+    );
+}
+
+#[test]
+fn forgetting_a_connecting_network_skips_monitor_c_and_quit() {
+    let mut fixture = Fixture::seeded();
+    fixture.controller.monitor_add(OMARCHY, "anna");
+    let session = fixture.controller.session(OMARCHY).expect("demo network");
+    session.locked(|core| core.set_state(SessionState::Connecting));
+    fixture.clear_frames(OMARCHY);
+
+    assert!(fixture.controller.forget_network(OMARCHY));
+    assert!(
+        fixture.frames(OMARCHY).is_empty(),
+        "MONITOR C and QUIT run only while registered"
     );
 }
 
