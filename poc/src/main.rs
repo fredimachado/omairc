@@ -309,7 +309,7 @@ fn main() {
                     let watch_path = theme_path.clone();
                     let shell_watch = shell.clone();
                     let transcript_watch = transcript;
-                    let watcher =
+                    let mut watcher =
                         ThemeWatcher::start(theme_path.as_deref()).expect("theme watcher");
                     cx.spawn(async move |cx| {
                         loop {
@@ -324,6 +324,9 @@ fn main() {
                                     );
                                 })
                                 .ok();
+                                watcher
+                                    .rearm(watch_path.as_deref())
+                                    .expect("re-arm theme watcher");
                             }
                             cx.background_executor()
                                 .timer(Duration::from_millis(250))
