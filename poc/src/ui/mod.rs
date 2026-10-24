@@ -2,6 +2,8 @@ pub mod center;
 pub mod format_ui;
 pub mod input;
 pub mod key_bindings;
+#[cfg(target_os = "macos")]
+pub mod macos_menu;
 pub mod members;
 pub mod message_row;
 pub mod scrollbar;
