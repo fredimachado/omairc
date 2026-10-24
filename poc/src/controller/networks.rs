@@ -10,6 +10,7 @@
 use std::collections::BTreeSet;
 
 use crate::irc::viewnotify::{self, ViewNotify};
+use crate::session::events::SessionState;
 
 use super::controller::Controller;
 
@@ -120,6 +121,14 @@ impl Controller {
             if matches!(status, crate::storage::settings::Status::AccessError | crate::storage::settings::Status::FormatError) {
                 self.pump();
                 return false;
+            }
+        }
+        if let Some(session) = self.manager.find(network_id) {
+            if session.state() == SessionState::Registered
+                && self.reducer.server_features(network_id).monitor_advertised()
+            {
+                session.send_monitor('C', &[]);
+                self.pump();
             }
         }
         if self.manager.is_live(network_id) {
