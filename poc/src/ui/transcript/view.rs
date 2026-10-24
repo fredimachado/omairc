@@ -301,8 +301,6 @@ impl TranscriptView {
         }
     }
 
-    /// Reveals `row_ix` at the top of the list and leaves follow-the-end, as Qt's
-    /// `revealRow` does for a find or link match. The caller notifies.
     /// Scrolls to the chat row whose `msgid` matches, when the transcript holds one.
     pub fn scroll_to_msgid(&mut self, msgid: &str) -> bool {
         let rows = self.model.rows();
@@ -314,6 +312,8 @@ impl TranscriptView {
         }
     }
 
+    /// Reveals `row_ix` at the top of the list and leaves follow-the-end, as Qt's
+    /// `revealRow` does for a find or link match. The caller notifies.
     pub fn scroll_to_row(&mut self, row_ix: usize) {
         self.model.set_pinned_to_bottom(false);
         self.list_state.scroll_to(ListOffset {

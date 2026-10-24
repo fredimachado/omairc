@@ -717,15 +717,14 @@ fn collapse_handler(entity: Entity<Shell>) -> Handler<String> {
     })
 }
 
-/// SEND: send the draft, then focus the composer. In find mode SEND moves to the next
-/// match instead, as Qt's `sendMessage` does. A command that opens a sheet (`/list`)
-/// keeps the focus there.
+/// The composer's FILE button: opens the file picker.
 fn file_handler(entity: Entity<Shell>) -> Handler<()> {
     Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
         entity.update(cx, |shell, cx| shell.prompt_for_file(window, cx));
     })
 }
 
+/// Files dropped on the center column queue for upload, as a pick does.
 fn external_drop_handler(
     entity: Entity<Shell>,
 ) -> Rc<dyn Fn(&gpui::ExternalPaths, &mut Window, &mut App)> {
@@ -734,6 +733,9 @@ fn external_drop_handler(
     })
 }
 
+/// SEND: send the draft, then focus the composer. In find mode SEND moves to the next
+/// match instead, as Qt's `sendMessage` does. A command that opens a sheet (`/list`)
+/// keeps the focus there.
 fn send_handler(entity: Entity<Shell>) -> Handler<()> {
     Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
         entity.update(cx, |shell, cx| {
