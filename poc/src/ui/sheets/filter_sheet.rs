@@ -148,6 +148,12 @@ impl<S: FilterSource> FilterSheet<S> {
     pub fn dismiss(&mut self, cx: &mut Context<Self>) {
         cx.emit(SheetEvent::Dismissed);
     }
+
+    /// Replaces the listing snapshot after the controller's overlay changed.
+    pub fn sync_source(&mut self, source: S, cx: &mut Context<Self>) {
+        self.source = source;
+        cx.notify();
+    }
 }
 
 /// Renders the sheet as a popup over the window. Rows and the card need the
