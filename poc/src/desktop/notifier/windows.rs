@@ -48,6 +48,7 @@ use windows::Win32::System::Com::StructuredStorage::{
 };
 use windows::Win32::System::Variant::{VT_CLSID, VT_LPWSTR};
 use windows::Win32::System::WinRT::{RoInitialize, RoUninitialize, RO_INIT_MULTITHREADED};
+use windows::Win32::System::Environment::ExpandEnvironmentStringsW;
 use windows::Win32::System::Registry::{
     RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ,
 };
@@ -74,6 +75,8 @@ use super::{Activation, Notifier};
 
 const AUMID: &str = "FrediMachado.Omairc";
 const ACTIVATOR_CLSID: GUID = GUID::from_u128(0xDBE38477_5F87_42A1_AFA1_11FA12F2E5E5);
+/// Wide-character buffer for a path up to the long-path limit (32767 characters) and its NUL.
+const LONG_PATH_BUFFER: usize = 32_768;
 
 struct ToastWork {
     summary: String,
@@ -180,15 +183,48 @@ fn should_claim(
     }
 }
 
-/// Whether `this_exe` lies inside one of `install_roots`. Path components are compared one at
-/// a time, ignoring ASCII case, so `...\Omairc-dev\x.exe` is not inside `...\Omairc`. A `..`
-/// in the exe path is refused, since it could leave the root without changing the prefix.
-fn is_installed_exe(this_exe: &Path, install_roots: &[PathBuf]) -> bool {
-    let exe_parts: Vec<Component<'_>> = this_exe.components().collect();
+/// The canonical form of `path`, which resolves 8.3 short names and junctions. `None` when the
+/// disk cannot resolve it, as when it does not exist.
+fn resolve_path(path: &Path) -> Option<PathBuf> {
+    std::fs::canonicalize(path).ok()
+}
+
+/// Drops the `\\?\` verbatim prefix that `canonicalize` adds on Windows, so `\\?\C:\x` and
+/// `C:\x` compare equal. `\\?\UNC\server\share` becomes `\\server\share`.
+fn strip_verbatim(path: &Path) -> PathBuf {
+    let Some(text) = path.to_str() else {
+        return path.to_path_buf();
+    };
+    if let Some(unc) = text.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{unc}"))
+    } else if let Some(plain) = text.strip_prefix(r"\\?\") {
+        PathBuf::from(plain)
+    } else {
+        path.to_path_buf()
+    }
+}
+
+/// Whether `this_exe` lies inside one of `install_roots`. `resolve` names the path the disk
+/// gives, or `None` when there is none, and a path with no resolution is compared as given. The
+/// exe and each root are resolved, then stripped of the verbatim prefix, before the comparison.
+/// Path components are compared one at a time, ignoring ASCII case, so `...\Omairc-dev\x.exe`
+/// is not inside `...\Omairc`. A `..` left in the compared exe path is refused, since it could
+/// leave the root without changing the prefix.
+fn is_installed_exe(
+    this_exe: &Path,
+    install_roots: &[PathBuf],
+    resolve: impl Fn(&Path) -> Option<PathBuf>,
+) -> bool {
+    let resolved = |path: &Path| {
+        strip_verbatim(&resolve(path).unwrap_or_else(|| path.to_path_buf()))
+    };
+    let exe = resolved(this_exe);
+    let exe_parts: Vec<Component<'_>> = exe.components().collect();
     if exe_parts.contains(&Component::ParentDir) {
         return false;
     }
     install_roots.iter().any(|root| {
+        let root = resolved(root);
         let root_parts: Vec<Component<'_>> = root.components().collect();
         !root_parts.is_empty()
             && root_parts.len() < exe_parts.len()
@@ -232,8 +268,9 @@ fn check_existing_links(
     all_users: &LinkState,
     per_user: &LinkState,
     exists: impl Fn(&Path) -> bool,
+    resolve: impl Fn(&Path) -> Option<PathBuf>,
 ) -> Result<(), LinkRefusal> {
-    let from_install = is_installed_exe(this_exe, install_roots);
+    let from_install = is_installed_exe(this_exe, install_roots, resolve);
     for (slot, state) in [(LinkSlot::AllUsers, all_users), (LinkSlot::PerUser, per_user)] {
         match state {
             LinkState::Missing => {}
@@ -248,15 +285,47 @@ fn check_existing_links(
     Ok(())
 }
 
+/// Decides what a link's raw target means. `raw` is what `shortcut_target` read, or `None` when
+/// that read failed. `expand` turns `%VAR%` text into a path, and returns `None` when it fails.
+/// The link is `Unreadable` when the read or the expansion fails, when the result is empty
+/// (an empty target names no exe), or when `%` survives expansion. A variable this session cannot
+/// resolve leaves its text in place, and that text is not a path to test against the disk.
+fn link_state_from_target(
+    raw: Option<&str>,
+    expand: impl Fn(&str) -> Option<String>,
+) -> LinkState {
+    match raw.and_then(expand) {
+        Some(path) if !path.is_empty() && !path.contains('%') => {
+            LinkState::Targets(PathBuf::from(path))
+        }
+        _ => LinkState::Unreadable,
+    }
+}
+
+/// Expands `%VAR%` text in a raw link target with `ExpandEnvironmentStringsW`. `None` when the
+/// call fails or the result does not fit the long-path buffer.
+fn expand_environment(raw: &str) -> Option<String> {
+    let source = wide(raw);
+    let mut buffer = vec![0u16; LONG_PATH_BUFFER];
+    let written = unsafe {
+        ExpandEnvironmentStringsW(PCWSTR(source.as_ptr()), Some(buffer.as_mut_slice()))
+    } as usize;
+    if written == 0 || written > buffer.len() {
+        return None;
+    }
+    // The count includes the terminating NUL.
+    String::from_utf16(&buffer[..written - 1]).ok()
+}
+
 /// Reads one Start Menu `Omairc.lnk`. Only a confirmed absence counts as `Missing`, so a
 /// failure to check the folder leaves the link `Unreadable`.
 fn read_link_state(link: &Path) -> LinkState {
     match link.try_exists() {
         Ok(false) => LinkState::Missing,
-        Ok(true) => match shortcut_target(&link.to_string_lossy()) {
-            Some(target) => LinkState::Targets(PathBuf::from(target)),
-            None => LinkState::Unreadable,
-        },
+        Ok(true) => link_state_from_target(
+            shortcut_target(&link.to_string_lossy()).as_deref(),
+            expand_environment,
+        ),
         Err(_) => LinkState::Unreadable,
     }
 }
@@ -336,7 +405,7 @@ fn shortcut_target(link_path: &str) -> Option<String> {
     if unsafe { persist.Load(PCWSTR(link_wide.as_ptr()), STGM_READ) }.is_err() {
         return None;
     }
-    let mut target = [0u16; 260];
+    let mut target = vec![0u16; LONG_PATH_BUFFER];
     if unsafe {
         shell_link.GetPath(&mut target, std::ptr::null_mut(), SLGP_RAWPATH.0 as u32)
     }
@@ -344,8 +413,9 @@ fn shortcut_target(link_path: &str) -> Option<String> {
     {
         return None;
     }
-    let len = target.iter().position(|&ch| ch == 0).unwrap_or(target.len());
-    Some(String::from_utf16_lossy(&target[..len]))
+    // A target with no NUL inside the buffer was cut short, so it is not read as a path.
+    let len = target.iter().position(|&ch| ch == 0)?;
+    String::from_utf16(&target[..len]).ok()
 }
 
 fn shortcut_is_stamped(link_path: &str) -> bool {
@@ -436,7 +506,7 @@ fn register_com_server(exe: &str, install_roots: &[PathBuf]) {
         }
     };
     let this_exe = Path::new(exe);
-    let from_install = is_installed_exe(this_exe, install_roots);
+    let from_install = is_installed_exe(this_exe, install_roots, resolve_path);
     let claimed_by_rule = should_claim(existing.as_deref(), this_exe, Path::exists);
     if !from_install && !claimed_by_rule {
         if let Some(owner) = existing.as_deref() {
@@ -553,6 +623,7 @@ fn ensure_notification_registration(exe_path: &str) {
         &all_users_state,
         &per_user_state,
         Path::exists,
+        resolve_path,
     ) {
         match refusal {
             LinkRefusal::Unreadable(LinkSlot::AllUsers) => log::info!(
@@ -577,7 +648,7 @@ fn ensure_notification_registration(exe_path: &str) {
         return;
     }
     if let LinkState::Targets(target) = &per_user_state {
-        if is_installed_exe(this_exe, &roots)
+        if is_installed_exe(this_exe, &roots, resolve_path)
             && !should_claim(Some(target.as_path()), this_exe, Path::exists)
         {
             log::info!(
@@ -774,11 +845,27 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::{
-        check_existing_links, is_installed_exe, registered_exe, should_claim, LinkRefusal,
-        LinkSlot, LinkState,
+        check_existing_links, expand_environment, is_installed_exe, link_state_from_target,
+        registered_exe, should_claim, strip_verbatim, LinkRefusal, LinkSlot, LinkState,
     };
 
     const THIS_EXE: &str = r"C:\dev\omairc\omairc-poc-gpui.exe";
+
+    /// Stands in for the disk where a test needs no resolution: nothing has a canonical form.
+    fn no_resolve(_: &Path) -> Option<PathBuf> {
+        None
+    }
+
+    /// Stands in for `canonicalize` on a machine where `C:\PROGRA~1` names `C:\Program Files`.
+    fn expand_8_3(path: &Path) -> Option<PathBuf> {
+        let rest = path.to_str()?.strip_prefix(r"C:\PROGRA~1\")?;
+        Some(PathBuf::from(format!(r"C:\Program Files\{rest}")))
+    }
+
+    /// Stands in for `canonicalize` by adding the verbatim prefix it returns on Windows.
+    fn verbatim(path: &Path) -> Option<PathBuf> {
+        Some(PathBuf::from(format!(r"\\?\{}", path.display())))
+    }
 
     #[test]
     fn nothing_registered_is_claimed() {
@@ -846,44 +933,82 @@ mod tests {
     #[test]
     fn an_exe_under_the_per_user_root_is_installed() {
         let exe = Path::new(r"C:\Users\Fredi\AppData\Local\Programs\Omairc\omairc.exe");
-        assert!(is_installed_exe(exe, &test_roots()));
+        assert!(is_installed_exe(exe, &test_roots(), no_resolve));
     }
 
     #[test]
     fn an_exe_under_the_all_users_root_is_installed() {
         let exe = Path::new(r"C:\Program Files\Omairc\omairc.exe");
-        assert!(is_installed_exe(exe, &test_roots()));
+        assert!(is_installed_exe(exe, &test_roots(), no_resolve));
     }
 
     #[test]
     fn a_dev_build_in_the_checkout_is_not_installed() {
         let exe = Path::new(r"D:\code\omairc\poc\target\debug\omairc-poc-gpui.exe");
-        assert!(!is_installed_exe(exe, &test_roots()));
+        assert!(!is_installed_exe(exe, &test_roots(), no_resolve));
     }
 
     #[test]
     fn a_lookalike_root_is_not_installed() {
         let exe = Path::new(r"C:\Users\Fredi\AppData\Local\Programs\Omairc-dev\x.exe");
-        assert!(!is_installed_exe(exe, &test_roots()));
+        assert!(!is_installed_exe(exe, &test_roots(), no_resolve));
     }
 
     #[test]
     fn root_matching_ignores_ascii_case() {
         let exe = Path::new(r"c:\users\fredi\appdata\local\programs\OMAIRC\omairc.exe");
-        assert!(is_installed_exe(exe, &test_roots()));
+        assert!(is_installed_exe(exe, &test_roots(), no_resolve));
+    }
+
+    #[test]
+    fn a_verbatim_exe_path_matches_the_plain_root() {
+        let exe = Path::new(r"\\?\C:\Users\Fredi\AppData\Local\Programs\Omairc\omairc.exe");
+        assert!(is_installed_exe(exe, &test_roots(), no_resolve));
+    }
+
+    #[test]
+    fn a_verbatim_root_matches_the_plain_exe_path() {
+        let roots = [PathBuf::from(r"\\?\C:\Program Files\Omairc")];
+        let exe = Path::new(r"C:\Program Files\Omairc\omairc.exe");
+        assert!(is_installed_exe(exe, &roots, no_resolve));
+    }
+
+    #[test]
+    fn a_resolved_verbatim_path_matches_the_plain_root() {
+        // `canonicalize` returns the verbatim form, so the strip must run after resolution.
+        let exe = Path::new(r"C:\Program Files\Omairc\omairc.exe");
+        assert!(is_installed_exe(exe, &test_roots(), verbatim));
+    }
+
+    #[test]
+    fn an_8_3_exe_path_matches_its_long_path_through_resolution() {
+        let short = Path::new(r"C:\PROGRA~1\Omairc\omairc.exe");
+        assert!(is_installed_exe(short, &test_roots(), expand_8_3));
+        assert!(
+            !is_installed_exe(short, &test_roots(), no_resolve),
+            "without resolution the short name is refused, which fails safe"
+        );
+    }
+
+    #[test]
+    fn a_unc_verbatim_path_strips_to_a_unc_path() {
+        assert_eq!(
+            strip_verbatim(Path::new(r"\\?\UNC\server\share\omairc.exe")),
+            PathBuf::from(r"\\server\share\omairc.exe"),
+        );
     }
 
     #[test]
     fn a_parent_dir_cannot_leave_the_root() {
         let exe = Path::new(r"C:\Users\Fredi\AppData\Local\Programs\Omairc\..\..\dev\omairc.exe");
-        assert!(!is_installed_exe(exe, &test_roots()));
+        assert!(!is_installed_exe(exe, &test_roots(), no_resolve));
     }
 
     #[test]
     fn no_roots_or_an_empty_root_matches_nothing() {
         let exe = Path::new(THIS_EXE);
-        assert!(!is_installed_exe(exe, &[]));
-        assert!(!is_installed_exe(exe, &[PathBuf::new()]));
+        assert!(!is_installed_exe(exe, &[], no_resolve));
+        assert!(!is_installed_exe(exe, &[PathBuf::new()], no_resolve));
     }
 
     const OTHER_EXE: &str = r"C:\Program Files\Other\omairc.exe";
@@ -892,13 +1017,29 @@ mod tests {
         LinkState::Targets(PathBuf::from(path))
     }
 
+    fn identity(raw: &str) -> Option<String> {
+        Some(raw.to_owned())
+    }
+
+    /// Expands the one variable these tests use, `%ROOT%`, to the other install's folder.
+    fn expand_root(raw: &str) -> Option<String> {
+        Some(raw.replace("%ROOT%", r"C:\Program Files\Other"))
+    }
+
+    const ROOT_TARGET: &str = r"%ROOT%\omairc.exe";
+
     #[test]
     fn with_no_links_the_fallback_may_write() {
         let this_exe = Path::new(THIS_EXE);
         assert_eq!(
-            check_existing_links(this_exe, &[], &LinkState::Missing, &LinkState::Missing, |_| {
-                false
-            }),
+            check_existing_links(
+                this_exe,
+                &[],
+                &LinkState::Missing,
+                &LinkState::Missing,
+                |_| false,
+                no_resolve,
+            ),
             Ok(()),
         );
     }
@@ -907,7 +1048,14 @@ mod tests {
     fn an_all_users_link_naming_this_exe_allows() {
         let this_exe = Path::new(THIS_EXE);
         assert_eq!(
-            check_existing_links(this_exe, &[], &targets(THIS_EXE), &LinkState::Missing, |_| true),
+            check_existing_links(
+                this_exe,
+                &[],
+                &targets(THIS_EXE),
+                &LinkState::Missing,
+                |_| true,
+                no_resolve,
+            ),
             Ok(()),
         );
     }
@@ -923,6 +1071,7 @@ mod tests {
                 &targets(OTHER_EXE),
                 &LinkState::Missing,
                 |path| path == other,
+                no_resolve,
             ),
             Err(LinkRefusal::NamesOtherExe(LinkSlot::AllUsers, PathBuf::from(OTHER_EXE))),
         );
@@ -938,6 +1087,7 @@ mod tests {
                 &targets(OTHER_EXE),
                 &LinkState::Missing,
                 |_| false,
+                no_resolve,
             ),
             Ok(()),
         );
@@ -953,6 +1103,7 @@ mod tests {
                 &LinkState::Unreadable,
                 &LinkState::Missing,
                 |_| false,
+                no_resolve,
             ),
             Err(LinkRefusal::Unreadable(LinkSlot::AllUsers)),
         );
@@ -969,6 +1120,7 @@ mod tests {
                 &LinkState::Missing,
                 &targets(OTHER_EXE),
                 |path| path == other,
+                no_resolve,
             ),
             Err(LinkRefusal::NamesOtherExe(LinkSlot::PerUser, PathBuf::from(OTHER_EXE))),
         );
@@ -985,8 +1137,93 @@ mod tests {
                 &targets(OTHER_EXE),
                 &LinkState::Missing,
                 |path| path == other,
+                no_resolve,
             ),
             Ok(()),
+        );
+    }
+
+    #[test]
+    fn an_empty_target_is_unreadable() {
+        assert_eq!(link_state_from_target(Some(""), identity), LinkState::Unreadable);
+    }
+
+    #[test]
+    fn a_failed_target_read_is_unreadable() {
+        assert_eq!(link_state_from_target(None, identity), LinkState::Unreadable);
+    }
+
+    #[test]
+    fn an_unexpanded_variable_is_unreadable() {
+        assert_eq!(link_state_from_target(Some(ROOT_TARGET), identity), LinkState::Unreadable);
+    }
+
+    #[test]
+    fn a_target_expanding_to_another_existing_exe_refuses() {
+        let state = link_state_from_target(Some(ROOT_TARGET), expand_root);
+        assert_eq!(state, targets(OTHER_EXE));
+        let other = Path::new(OTHER_EXE);
+        assert_eq!(
+            check_existing_links(
+                Path::new(THIS_EXE),
+                &[],
+                &LinkState::Missing,
+                &state,
+                |path| path == other,
+                no_resolve,
+            ),
+            Err(LinkRefusal::NamesOtherExe(LinkSlot::PerUser, PathBuf::from(OTHER_EXE))),
+        );
+    }
+
+    #[test]
+    fn a_target_expanding_to_a_gone_exe_is_claimed() {
+        let state = link_state_from_target(Some(ROOT_TARGET), expand_root);
+        assert_eq!(
+            check_existing_links(
+                Path::new(THIS_EXE),
+                &[],
+                &LinkState::Missing,
+                &state,
+                |_| false,
+                no_resolve,
+            ),
+            Ok(()),
+        );
+    }
+
+    #[test]
+    fn an_expansion_failure_refuses() {
+        let state = link_state_from_target(Some(ROOT_TARGET), |_| None);
+        assert_eq!(
+            check_existing_links(
+                Path::new(THIS_EXE),
+                &[],
+                &LinkState::Missing,
+                &state,
+                |_| false,
+                no_resolve,
+            ),
+            Err(LinkRefusal::Unreadable(LinkSlot::PerUser)),
+        );
+    }
+
+    #[test]
+    fn expand_environment_expands_a_defined_variable() {
+        let root = std::env::var("SystemRoot").expect("SystemRoot is set on Windows");
+        assert_eq!(
+            expand_environment(r"%SystemRoot%\omairc.exe"),
+            Some(format!(r"{root}\omairc.exe")),
+        );
+    }
+
+    #[test]
+    fn expand_environment_leaves_an_undefined_variable_in_place_and_it_is_unreadable() {
+        let raw = r"%OMAIRC_TEST_NO_SUCH_VARIABLE%\omairc.exe";
+        assert_eq!(expand_environment(raw), Some(raw.to_owned()));
+        assert_eq!(
+            link_state_from_target(Some(raw), expand_environment),
+            LinkState::Unreadable,
         );
     }
 }
