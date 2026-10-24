@@ -40,6 +40,9 @@ pub struct Row {
     pub msgid: String,
     /// Channel-context delivery: Qt's `onlyVisibleToYou` caption under the body.
     pub only_visible_to_you: bool,
+    /// Whether the reducer classified this chat line as a transcript highlight
+    /// (nick or `/highlight` word hit from someone else).
+    pub mentioned: bool,
 }
 
 /// Whether a transcript row draws Qt's "only visible to you" caption.
@@ -573,6 +576,7 @@ fn day_separator_row(id: u64, day: NaiveDate, today: NaiveDate) -> Row {
         status: None,
         msgid: String::new(),
         only_visible_to_you: false,
+        mentioned: false,
     }
 }
 
@@ -590,6 +594,7 @@ fn unread_mark_row_for(id: u64) -> Row {
         status: None,
         msgid: String::new(),
         only_visible_to_you: false,
+        mentioned: false,
     }
 }
 
@@ -621,6 +626,7 @@ fn row_from_chat_line(id: u64, message: &Message, minute: &str, continues: bool)
         status: None,
         msgid: message.msgid.value.clone(),
         only_visible_to_you: message.only_visible_to_you,
+        mentioned: message.mentioned,
     }
 }
 
@@ -639,6 +645,7 @@ fn row_from_event(id: u64, caption: &str) -> Row {
         status: None,
         msgid: String::new(),
         only_visible_to_you: false,
+        mentioned: false,
     }
 }
 
@@ -657,6 +664,7 @@ pub fn row_from_whois(id: u64, text: &str) -> Row {
         status: None,
         msgid: String::new(),
         only_visible_to_you: false,
+        mentioned: false,
     }
 }
 
@@ -674,6 +682,7 @@ pub fn row_from_message(id: u64, author: &str, time: &str, body: &str, continues
         status: None,
         msgid: String::new(),
         only_visible_to_you: false,
+        mentioned: false,
     }
 }
 

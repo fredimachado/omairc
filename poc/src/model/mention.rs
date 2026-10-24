@@ -1,8 +1,9 @@
-//! Mention washes: a chat line whose body names the local nick is tinted, and
-//! its left edge gets a bar. Port of `containsWord` and `isNickMention` in
-//! `src/irc/irceventreducer.cpp`, and the look of `src/qml/MentionWash.qml`.
-//! The washed rows are the chat lines that someone else wrote; a whois or an
-//! event line never washes, and a DM washes only on a body hit.
+//! Mention washes: a chat line the reducer marked `mentioned` is tinted, and its
+//! left edge gets a bar. That flag is nick or `/highlight` word hits from someone
+//! else (`isTranscriptHighlight` in `src/irc/irceventreducer.cpp`). Word matching
+//! lives in the reducer; `mentions_nick` here is for tests of `containsWord`.
+//! The look is `src/qml/MentionWash.qml`. A whois or event line never washes,
+//! and a DM washes only when the reducer set `mentioned`.
 
 use super::color::Color;
 use super::style::{mix_colors, Style};
@@ -36,17 +37,11 @@ pub fn mentions_nick(body: &str, nick: &str) -> bool {
     })
 }
 
-/// Whether a transcript row is washed for `self_nick`. Only a message or action
-/// from someone else can be washed, and only when its body names the nick.
+/// Whether a transcript row is washed. The reducer's `mentioned` flag on the row
+/// is the single source of truth; `self_nick` is kept for call sites that already
+/// pass it and to treat an unset local nick as no wash.
 pub fn is_mention_row(row: &Row, self_nick: &str) -> bool {
-    if row.kind != RowKind::Message || self_nick.is_empty() {
-        return false;
-    }
-    let from_self = row
-        .author
-        .as_deref()
-        .is_some_and(|author| author.eq_ignore_ascii_case(self_nick));
-    !from_self && mentions_nick(&row.body.plain, self_nick)
+    !self_nick.is_empty() && row.kind == RowKind::Message && row.mentioned
 }
 
 /// The wash fill and the left bar for a mention row (`MentionWash.qml`): the
@@ -111,7 +106,8 @@ mod tests {
 
     #[test]
     fn only_chat_lines_from_someone_else_wash() {
-        let message = row_from_message(1, "mira", "09:41", "hi fred", false);
+        let mut message = row_from_message(1, "mira", "09:41", "hi fred", false);
+        message.mentioned = true;
         assert!(is_mention_row(&message, "fred"));
 
         let own = row_from_message(2, "fred", "09:42", "hi fred", false);
@@ -119,6 +115,7 @@ mod tests {
 
         let mut action = row_from_message(3, "mira", "09:43", "waves at fred", false);
         action.action = true;
+        action.mentioned = true;
         assert!(
             is_mention_row(&action, "fred"),
             "an action washes like a message"
@@ -126,13 +123,45 @@ mod tests {
 
         let mut whois = row_from_message(4, "mira", "09:44", "fred", false);
         whois.kind = RowKind::Whois;
+        whois.mentioned = true;
         assert!(!is_mention_row(&whois, "fred"));
 
         let mut event = row_from_message(5, "mira", "", "fred", false);
         event.kind = RowKind::Event;
+        event.mentioned = true;
         assert!(!is_mention_row(&event, "fred"));
 
         assert!(!is_mention_row(&message, ""), "no nick, no wash");
+    }
+
+    #[test]
+    fn a_highlight_word_hit_washes_without_naming_the_nick() {
+        let at = |minute: u32| {
+            Local
+                .with_ymd_and_hms(2026, 10, 19, 9, minute, 0)
+                .unwrap()
+                .with_timezone(&Utc)
+        };
+        let line = Message {
+            kind: MessageKind::Message,
+            author: "mira".to_string(),
+            body: "ship omairc today".to_string(),
+            time: at(0),
+            server_time: None,
+            msgid: MsgId::default(),
+            origin: Origin::Live,
+            mentioned: true,
+            collapsible: false,
+            sequence: 0,
+            only_visible_to_you: false,
+        };
+        let rows = rows_from_messages(&[line], None);
+        let chat = rows
+            .iter()
+            .find(|row| row.kind == RowKind::Message)
+            .expect("one chat row");
+        assert!(!mentions_nick(&chat.body.plain, "fred"));
+        assert!(is_mention_row(chat, "fred"));
     }
 
     #[test]
@@ -156,7 +185,7 @@ mod tests {
                 .unwrap()
                 .with_timezone(&Utc)
         };
-        let line = |body: &str, minute: u32| Message {
+        let line = |body: &str, minute: u32, mentioned: bool| Message {
             kind: MessageKind::Message,
             author: "anna".to_string(),
             body: body.to_string(),
@@ -164,12 +193,15 @@ mod tests {
             server_time: None,
             msgid: MsgId::default(),
             origin: Origin::Live,
-            mentioned: false,
+            mentioned,
             collapsible: false,
             sequence: minute as i64,
             only_visible_to_you: false,
         };
-        let rows = rows_from_messages(&[line("plain dm", 0), line("fred, you there?", 1)], None);
+        let rows = rows_from_messages(
+            &[line("plain dm", 0, false), line("fred, you there?", 1, true)],
+            None,
+        );
         let chats: Vec<&Row> = rows.iter().filter(|row| row.kind == RowKind::Message).collect();
         assert!(!is_mention_row(chats[0], "fred"));
         assert!(is_mention_row(chats[1], "fred"));
