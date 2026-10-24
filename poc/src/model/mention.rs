@@ -65,7 +65,8 @@ pub fn mention_wash(style: &Style) -> (Color, Color) {
 mod tests {
     use super::*;
     use crate::controller::controller::Controller;
-    use crate::irc::event::MsgId;
+    use crate::irc::event::{Event, MessageEvent, MsgId, WelcomeEvent};
+    use crate::irc::reducer::EventReducer;
     use crate::irc::world::{Message, MessageKind, Origin};
     use chrono::{Local, TimeZone, Utc};
     use crate::model::transcript::{row_from_message, rows_from_messages};
@@ -136,31 +137,42 @@ mod tests {
 
     #[test]
     fn a_highlight_word_hit_washes_without_naming_the_nick() {
-        let at = |minute: u32| {
-            Local
-                .with_ymd_and_hms(2026, 10, 19, 9, minute, 0)
-                .unwrap()
-                .with_timezone(&Utc)
-        };
-        let line = Message {
-            kind: MessageKind::Message,
-            author: "mira".to_string(),
-            body: "ship omairc today".to_string(),
-            time: at(0),
-            server_time: None,
-            msgid: MsgId::default(),
-            origin: Origin::Live,
-            mentioned: true,
-            collapsible: false,
-            sequence: 0,
-            only_visible_to_you: false,
-        };
-        let rows = rows_from_messages(&[line], None);
+        let at = Utc.with_ymd_and_hms(2026, 9, 4, 0, 0, 0).unwrap();
+        let network = "network-a";
+        let mut reducer = EventReducer::new();
+        reducer.apply(
+            Event::Welcome(WelcomeEvent {
+                network_id: network.to_owned(),
+                current_nick: "fred".to_owned(),
+            }),
+            at,
+        );
+        reducer.set_highlight_words(network, &["omairc".to_owned()]);
+        let room = reducer.conversation_key(network, "#room");
+        let body = "ship omairc today";
+        reducer.apply(
+            Event::Message(MessageEvent {
+                conversation: room.clone(),
+                author: "mira".to_owned(),
+                body: body.to_owned(),
+                timestamp: at,
+                server_time: None,
+                target: "#room".to_owned(),
+                msgid: MsgId::default(),
+                only_visible_to_you: false,
+            }),
+            at,
+        );
+        let messages = &reducer.find(&room).expect("conversation").messages;
+        let message = messages.last().expect("one message");
+        assert!(message.mentioned, "the reducer must flag highlight words");
+        assert!(!mentions_nick(&message.body, "fred"));
+        let rows = rows_from_messages(messages, None);
         let chat = rows
             .iter()
             .find(|row| row.kind == RowKind::Message)
             .expect("one chat row");
-        assert!(!mentions_nick(&chat.body.plain, "fred"));
+        assert_eq!(chat.body.plain, body);
         assert!(is_mention_row(chat, "fred"));
     }
 
