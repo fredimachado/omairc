@@ -36,6 +36,16 @@ pub struct NickClicked(pub String);
 
 impl EventEmitter<NickClicked> for TranscriptView {}
 
+/// The reader crossed the end of the transcript by a wheel scroll. Emitted only when
+/// `at_end` differs from the bit last reported, so the shell publishes the read marker
+/// on a change and not on every tick.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TranscriptScrolled {
+    pub at_end: bool,
+}
+
+impl EventEmitter<TranscriptScrolled> for TranscriptView {}
+
 /// What a release over a transcript link asks of the shell. The shell acts on it
 /// with its window, so a channel can open its sheet.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -78,11 +88,18 @@ pub struct TranscriptView {
     /// The unseen jump lands there. It clears when the reader reaches the end, or
     /// jumps (Qt `firstUnseenIndex`).
     first_unseen: Option<usize>,
+    /// The at-end bit the shell last reported. A wheel scroll emits `TranscriptScrolled`
+    /// only when the list's at-end bit differs from it.
+    reported_at_end: bool,
 }
 
 impl TranscriptView {
-    pub fn new(composer_focus: FocusHandle, scrollbar_drag: ScrollbarDragCell) -> Self {
-        Self {
+    pub fn new(
+        composer_focus: FocusHandle,
+        scrollbar_drag: ScrollbarDragCell,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let view = Self {
             model: Transcript::new(72),
             // Measure every row so the scrollbar spans the whole transcript, not just
             // the rows rendered so far.
@@ -104,6 +121,34 @@ impl TranscriptView {
             typing_peer: None,
             typing_phase: 0,
             first_unseen: None,
+            reported_at_end: true,
+        };
+        // gpui calls the list's scroll handler while the list is still borrowed, so the
+        // at-end read waits for the effect cycle to finish. Only wheel scrolling calls it.
+        let transcript = cx.weak_entity();
+        view.list_state.set_scroll_handler(move |_, _, cx| {
+            let transcript = transcript.clone();
+            cx.defer(move |cx| {
+                transcript
+                    .update(cx, |view, cx| view.note_scroll_end(cx))
+                    .ok();
+            });
+        });
+        view
+    }
+
+    /// Records the at-end bit the shell has just reported, so the next scroll emits only
+    /// a change from it.
+    pub fn note_reported_at_end(&mut self, at_end: bool) {
+        self.reported_at_end = at_end;
+    }
+
+    /// Emits `TranscriptScrolled` when a wheel scroll changed the at-end bit.
+    fn note_scroll_end(&mut self, cx: &mut Context<Self>) {
+        let at_end = self.at_end();
+        if at_end != self.reported_at_end {
+            self.reported_at_end = at_end;
+            cx.emit(TranscriptScrolled { at_end });
         }
     }
 

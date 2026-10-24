@@ -56,7 +56,7 @@ use crate::ui::shell::view::{shown_view, ShownView};
 use crate::ui::sheets::connect::controls::ConnectControls;
 use crate::ui::sheets::connect::{render_connect, ConnectView};
 use crate::ui::sidebar::{render_sidebar, SidebarData};
-use crate::ui::transcript::view::NickClicked;
+use crate::ui::transcript::view::{NickClicked, TranscriptScrolled};
 use crate::ui::transcript::TranscriptView;
 use crate::ui::Handler;
 use crate::util::{style, to_gpui};
@@ -109,8 +109,6 @@ pub struct Shell {
     /// Whether the window is the active one. While it is not, a line that arrives in the
     /// open conversation counts as unread (Qt `m_windowActive`).
     pub window_active: bool,
-    /// The follow-end bit last reported to the controller for read-marker publishing.
-    transcript_viewport_follow_end: bool,
     /// The window's activation observer is registered. It needs a window, so it is set up
     /// on the first render.
     activation_watched: bool,
@@ -194,10 +192,18 @@ impl Shell {
                 .frameless()
         });
         let composer_focus = composer.read(cx).focus_handle(cx);
-        let transcript = cx.new(|_| TranscriptView::new(composer_focus, scrollbar_drag.clone()));
+        let transcript = cx.new(|cx| TranscriptView::new(composer_focus, scrollbar_drag.clone(), cx));
 
         let transcript_events = cx.subscribe(&transcript, |shell: &mut Shell, _, event: &NickClicked, cx| {
             shell.open_direct_nick(&event.0, cx);
+        });
+        // A wheel scroll that crosses the end publishes the read marker, and returning to the
+        // live end drops tail-first trimming (Qt's `ClearHistoryPageCapTail`).
+        let transcript_scrolls = cx.subscribe(&transcript, |shell: &mut Shell, _, event: &TranscriptScrolled, cx| {
+            shell.report_transcript_viewport_from_shell(event.at_end, cx);
+            if event.at_end {
+                shell.controller.clear_history_page_cap_tail();
+            }
         });
         // Every composer edit, caret move and history step re-reads the slash popup. The
         // popup only re-renders when its rows or highlight changed. A changed find query
@@ -245,7 +251,6 @@ impl Shell {
             connect_focus: cx.focus_handle(),
             connect_ui,
             window_active: true,
-            transcript_viewport_follow_end: true,
             activation_watched: false,
             focus_handle: cx.focus_handle(),
             typing_phase: 0,
@@ -257,7 +262,7 @@ impl Shell {
             file_upload: fileupload::FileUploadQueue::new(),
             update,
             notifier,
-            _subscriptions: [transcript_events, composer_events, update_observe]
+            _subscriptions: [transcript_events, transcript_scrolls, composer_events, update_observe]
                 .into_iter()
                 .chain(connect_edits)
                 .collect(),
@@ -331,7 +336,6 @@ impl Render for Shell {
             );
             self._subscriptions.push(subscription);
         }
-        self.sync_transcript_viewport_if_at_end_changed(window, cx);
 
         let populated = self.populated_networks();
         let disconnectable = self.connect_disconnectable();

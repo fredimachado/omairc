@@ -454,9 +454,8 @@ impl Shell {
         self.transcript.update(cx, |t, cx| {
             let was_at_end = t.at_end();
             t.scroll_page(down, half);
-            if was_at_end && !t.at_end() {
-                self.controller.clear_history_page_cap_tail();
-            }
+            // A key scroll does not reach the list's scroll handler, so the return to the
+            // end clears here. A wheel scroll clears on `TranscriptScrolled`.
             if !was_at_end && t.at_end() {
                 self.controller.clear_history_page_cap_tail();
             }
