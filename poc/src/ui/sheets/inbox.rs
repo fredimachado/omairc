@@ -78,19 +78,9 @@ impl InboxSheet {
     /// does: a removal above the selection moves it up one row.
     pub fn sync(&mut self, items: Vec<InboxItem>, removed: Option<InboxIdentity>, cx: &mut Context<Self>) {
         let previous = self.items.get(self.selected).map(|item| item.identity());
+        let selected = self.selected;
         self.items = items;
-        self.selected = if self.items.is_empty() {
-            0
-        } else if removed.as_ref() == previous.as_ref() {
-            0
-        } else if let Some(id) = previous {
-            self.items
-                .iter()
-                .position(|item| item.identity() == id)
-                .unwrap_or_else(|| self.selected.min(self.items.len() - 1))
-        } else {
-            self.selected.min(self.items.len() - 1)
-        };
+        self.selected = selected_after_sync(selected, previous.as_ref(), &self.items, removed.as_ref());
         cx.notify();
     }
 
@@ -316,4 +306,63 @@ fn inbox_row(
         .child(text)
         .child(button)
         .into_any_element()
+}
+
+/// The row index after `sync` replaces the item list. Qt keeps the same index when
+/// the selected row goes away (the next row slides into it), or clamps on the last.
+fn selected_after_sync(
+    selected: usize,
+    previous: Option<&InboxIdentity>,
+    items: &[InboxItem],
+    removed: Option<&InboxIdentity>,
+) -> usize {
+    if items.is_empty() {
+        0
+    } else if removed == previous {
+        selected.min(items.len() - 1)
+    } else if let Some(id) = previous {
+        items
+            .iter()
+            .position(|item| item.identity() == *id)
+            .unwrap_or_else(|| selected.min(items.len() - 1))
+    } else {
+        selected.min(items.len() - 1)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{DateTime, Utc};
+
+    use crate::irc::event::MsgId;
+    use crate::irc::inbox::InboxKind;
+
+    fn direct(actor: &str) -> InboxItem {
+        InboxItem {
+            kind: InboxKind::Direct,
+            timestamp: DateTime::<Utc>::UNIX_EPOCH,
+            network_id: "net".to_owned(),
+            actor: actor.to_owned(),
+            target: actor.to_owned(),
+            preview: String::new(),
+            msgid: MsgId::default(),
+        }
+    }
+
+    #[test]
+    fn selected_after_sync_keeps_index_when_the_selected_row_is_removed() {
+        let items = [direct("a"), direct("c")];
+        let removed = direct("b").identity();
+        let previous = removed.clone();
+        assert_eq!(selected_after_sync(1, Some(&previous), &items, Some(&removed)), 1);
+    }
+
+    #[test]
+    fn selected_after_sync_clamps_when_the_last_row_is_removed() {
+        let items = [direct("a")];
+        let removed = direct("b").identity();
+        let previous = removed.clone();
+        assert_eq!(selected_after_sync(1, Some(&previous), &items, Some(&removed)), 0);
+    }
 }
