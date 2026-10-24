@@ -83,10 +83,12 @@ pub enum LinkRefusal {
 }
 
 /// Decides whether the shortcut fallback may write the per-user link, given both links as
-/// read from disk. An unreadable link refuses. Any other link allows when this exe is an
-/// installed copy, or when `should_claim` allows it: the link names this exe, or an exe that is
-/// gone. The all-users link is checked first and the first refusal wins, so when both links
-/// refuse, the all-users refusal is returned. `this_exe` and each `Targets` path are canonical.
+/// read from disk. An unreadable all-users link refuses for every build. An unreadable per-user
+/// link refuses for any build except an installed copy, which overwrites it. Any other link
+/// allows when this exe is an installed copy, or when `should_claim` allows it: the link names
+/// this exe, or an exe that is gone. The all-users link is checked first and the first refusal
+/// wins, so when both links refuse, the all-users refusal is returned. `this_exe` and each
+/// `Targets` path are canonical.
 pub fn check_existing_links(
     this_exe: &Path,
     install_roots: &[PathBuf],
@@ -99,7 +101,11 @@ pub fn check_existing_links(
     for (slot, state) in [(LinkSlot::AllUsers, all_users), (LinkSlot::PerUser, per_user)] {
         match state {
             LinkState::Missing => {}
-            LinkState::Unreadable => return Err(LinkRefusal::Unreadable(slot)),
+            LinkState::Unreadable => {
+                if slot == LinkSlot::AllUsers || !from_install {
+                    return Err(LinkRefusal::Unreadable(slot));
+                }
+            }
             LinkState::Targets(target) => {
                 if !from_install && !should_claim(Some(target.as_path()), this_exe, &exists) {
                     return Err(LinkRefusal::NamesOtherExe(slot, target.clone()));
@@ -152,9 +158,9 @@ pub fn found_after_repair(
 /// is stamped (see `found_after_repair`). When it is false, nothing stops here and the fallback
 /// runs as it always has. When it is true, a build that is not installed stops, portable builds
 /// included, so it does not overwrite a link it did not own. An installed copy goes on only when
-/// its per-user link is readable and names another exe, which it may replace. A missing per-user
-/// link, an unreadable one, or one that names this exe stops, so after a repair a per-user link is
-/// replaced, never created.
+/// its per-user link is unreadable or names another exe, which it may replace. A missing per-user
+/// link, or one that names this exe, stops there, so after a repair a per-user link is replaced,
+/// never created.
 pub fn repair_ends_registration(
     repaired: bool,
     from_install: bool,
@@ -169,7 +175,8 @@ pub fn repair_ends_registration(
     }
     match per_user {
         LinkState::Targets(target) => same_exe(target, this_exe),
-        LinkState::Missing | LinkState::Unreadable => true,
+        LinkState::Missing => true,
+        LinkState::Unreadable => false,
     }
 }
 
@@ -633,7 +640,7 @@ mod tests {
     }
 
     #[test]
-    fn an_installed_copy_refused_by_an_unreadable_link_does_not_overwrite() {
+    fn an_installed_copy_overwrites_an_unreadable_per_user_link() {
         let other = Path::new(OTHER_EXE);
         assert_eq!(
             check_existing_links(
@@ -642,6 +649,54 @@ mod tests {
                 &targets(OTHER_EXE),
                 &LinkState::Unreadable,
                 |path| path == other,
+                no_resolve,
+            ),
+            Ok(()),
+        );
+    }
+
+    #[test]
+    fn an_installed_copy_overwrites_an_unreadable_per_user_link_when_the_all_users_link_is_missing() {
+        assert_eq!(
+            check_existing_links(
+                Path::new(INSTALLED_EXE),
+                &test_roots(),
+                &LinkState::Missing,
+                &LinkState::Unreadable,
+                |_| false,
+                no_resolve,
+            ),
+            Ok(()),
+        );
+    }
+
+    #[test]
+    fn an_installed_copy_refuses_an_unreadable_all_users_link_whatever_the_per_user_link() {
+        assert_eq!(
+            check_existing_links(
+                Path::new(INSTALLED_EXE),
+                &test_roots(),
+                &LinkState::Unreadable,
+                &LinkState::Unreadable,
+                |_| false,
+                no_resolve,
+            ),
+            Err(LinkRefusal::Unreadable(LinkSlot::AllUsers)),
+        );
+    }
+
+    #[test]
+    fn a_dev_build_still_refuses_an_unreadable_per_user_link_after_its_own_repair() {
+        // Its own all-users link names it, so the repair ran. The dev build stops at the gate,
+        // and the fallback's check would refuse the unreadable per-user link anyway.
+        assert!(stops_after_repair(THIS_EXE, true, &LinkState::Unreadable));
+        assert_eq!(
+            check_existing_links(
+                Path::new(THIS_EXE),
+                &[],
+                &targets(THIS_EXE),
+                &LinkState::Unreadable,
+                |_| false,
                 no_resolve,
             ),
             Err(LinkRefusal::Unreadable(LinkSlot::PerUser)),
@@ -757,6 +812,14 @@ mod tests {
     }
 
     #[test]
+    fn an_installed_copy_replaces_an_unreadable_per_user_link_through_the_fallback() {
+        let scratch = ScratchDir::new("replace_unreadable");
+        let installed = scratch.exe("Omairc", true);
+        let roots = [scratch.path().join("Omairc")];
+        assert_installed_copy_replaces(&installed, &roots, &LinkState::Unreadable);
+    }
+
+    #[test]
     fn an_installed_copy_whose_per_user_link_names_its_existing_exe_stops_with_no_write() {
         let scratch = ScratchDir::new("stop_named");
         let installed = scratch.exe("Omairc", true);
@@ -837,8 +900,8 @@ mod tests {
     }
 
     #[test]
-    fn an_installed_copy_stops_after_a_repair_when_its_per_user_link_is_unreadable() {
-        assert!(stops_after_repair(INSTALLED_EXE, true, &LinkState::Unreadable));
+    fn an_installed_copy_goes_on_after_a_repair_when_its_per_user_link_is_unreadable() {
+        assert!(!stops_after_repair(INSTALLED_EXE, true, &LinkState::Unreadable));
     }
 
     #[test]

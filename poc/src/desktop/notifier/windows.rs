@@ -7,21 +7,23 @@
 //!
 //! - An installed copy, one under `%LOCALAPPDATA%\Programs\Omairc` or `%ProgramFiles%\Omairc`,
 //!   takes the activator registration and the per-user link even from an exe that still exists.
-//!   It also overwrites an activator registration that it cannot read (see below).
+//!   It also overwrites an activator registration or a per-user link that it cannot read (see
+//!   below).
 //! - Any other build, such as a dev or portable build, takes them only when nothing is
 //!   registered, when the registered exe is itself, or when the registered exe is gone. It does
 //!   not displace an exe that still exists (`util::should_claim`).
 //!
 //! Two installed copies take turns: each launch overwrites the other's registration and link,
-//! and this is intended. An activator registration that cannot be read is overwritten by an
-//! installed copy and left alone by any other build. A link that cannot be read is left alone,
-//! for any build, because its owner is unknown.
+//! and this is intended. An installed copy overwrites an unreadable activator registration and an
+//! unreadable per-user link. Other builds leave them alone. An unreadable all-users link refuses
+//! the shortcut fallback for every build, because its owner is unknown.
 //!
 //! The shortcut fallback reads two Start Menu `Omairc.lnk` links, the per-user one and the
 //! all-users one under `FOLDERID_CommonPrograms`, and writes only the per-user link. It writes
 //! only when neither link refuses. A link refuses when it cannot be read, when its target cannot
 //! be expanded, when the target is empty or not valid UTF-16, or when `%` survives `%VAR%`
-//! expansion (a literal `%` in a real path refuses too). For a build that is not installed, a
+//! expansion (a literal `%` in a real path refuses too). An installed copy does not refuse an
+//! unreadable per-user link; it overwrites it. For a build that is not installed, a
 //! link also refuses when it names an exe that still exists and is not this one. The fallback
 //! never creates an all-users link. If the all-users Start Menu folder cannot be resolved, the
 //! fallback writes nothing for any build.
@@ -30,10 +32,10 @@
 //! location, but only when no such link is stamped yet. A readable link that names this exe
 //! counts as found whether or not its stamp takes, and the post-repair gate reads that finding,
 //! not the stamp. After a repair, a build that is not installed stops there, portable builds
-//! included. An installed copy goes on only when its per-user link is readable and names another
+//! included. An installed copy goes on only when its per-user link is unreadable or names another
 //! exe. The fallback then replaces that per-user link, unless the all-users link is unreadable.
-//! A missing or unreadable per-user link, or one that names this exe, stops there. So after a
-//! repair, a per-user link is replaced, never created.
+//! A missing per-user link, or one that names this exe, stops there. So after a repair, a
+//! per-user link is replaced, never created.
 //!
 //! This code decides what it writes. It does not establish which copy receives a click while
 //! more than one copy is registered.
@@ -530,12 +532,6 @@ fn ensure_notification_registration(exe_path: &str) {
     let this_exe = canonical_exe(Path::new(exe_path));
     let from_install = is_installed_exe(&this_exe, &roots, resolve_path);
     if repair_ends_registration(repaired, from_install, &this_exe, &per_user_state) {
-        if from_install && matches!(per_user_state, LinkState::Unreadable) {
-            log::warn!(
-                "Windows notifier: could not read {:?} to see which exe it names, leaving it unchanged",
-                link
-            );
-        }
         return;
     }
     if let Err(refusal) = check_existing_links(
@@ -576,6 +572,12 @@ fn ensure_notification_registration(exe_path: &str) {
                 target.display()
             );
         }
+    }
+    if from_install && matches!(per_user_state, LinkState::Unreadable) {
+        log::warn!(
+            "Windows notifier: could not read {:?} to see which exe it names, overwriting it because this copy is installed",
+            link
+        );
     }
     let _ = std::fs::create_dir_all(&programs);
     if let Err(error) = install_shortcut(&link_path, exe_path) {
