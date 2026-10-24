@@ -137,7 +137,9 @@ mod tests {
     use crate::irc::storagepath::storage_segment;
     use crate::session::sts::StsStore;
     use crate::storage::opendirect::{DISMISSED_DIRECTS_GROUP, OpenDirectStore};
-    use crate::storage::paths::{QT_APP_FOLDER, SETTINGS_FILE};
+    #[cfg(not(feature = "product"))]
+    use crate::storage::paths::QT_APP_FOLDER;
+    use crate::storage::paths::SETTINGS_FILE;
     use crate::storage::scrollplace::PlaceRows;
     use crate::storage::profilestore::{Profile, ProfileStore};
     use crate::storage::scrollplace::{ScrollPlace, ScrollPlaceFile};
@@ -256,6 +258,8 @@ mod tests {
         assert!(probe.retains_fixture(), "probe dropped Qt data: {probe:?}");
     }
 
+    /// Without `product`, Qt migration paths must not share the PoC folder.
+    #[cfg(not(feature = "product"))]
     #[test]
     fn migration_paths_stay_outside_the_poc_folder() {
         let dir = TempDir::new("qt-migrate-separate");
