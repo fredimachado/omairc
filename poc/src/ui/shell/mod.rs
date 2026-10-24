@@ -656,7 +656,7 @@ impl Render for Shell {
                     cx.notify();
                 } else {
                     shell.transcript.update(cx, |t, cx| {
-                        if t.drag_move(ev.position, &app_style) {
+                        if t.drag_move(ev.position, &app_style, cx) {
                             cx.notify();
                         }
                     });

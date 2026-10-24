@@ -12,11 +12,13 @@ use unicode_segmentation::UnicodeSegmentation as _;
 
 #[path = "input_ime.rs"]
 mod input_ime;
+#[path = "input_primary.rs"]
+mod input_primary;
 
 use crate::model::byte_budget::SendLimit;
 use crate::model::text_edit::{
-    click_selection, horizontal_scroll_offset, next_word_end, previous_word_start, EditSnapshot,
-    UndoStack,
+    click_selection, horizontal_scroll_offset, next_word_end, previous_word_start, selection_text,
+    EditSnapshot, UndoStack,
 };
 use crate::util::{to_gpui, FONT_FAMILY};
 
@@ -315,6 +317,7 @@ impl SingleLineInput {
     pub fn select_all_text(&mut self, cx: &mut Context<Self>) {
         self.move_to(0, cx);
         self.select_to(self.content.len(), cx);
+        self.write_primary_selection(cx);
     }
 
     fn left(&mut self, _: &Left, _: &mut Window, cx: &mut Context<Self>) {
@@ -335,10 +338,12 @@ impl SingleLineInput {
 
     fn select_left(&mut self, _: &SelectLeft, _: &mut Window, cx: &mut Context<Self>) {
         self.select_to(self.previous_boundary(self.cursor_offset()), cx);
+        self.write_primary_selection(cx);
     }
 
     fn select_right(&mut self, _: &SelectRight, _: &mut Window, cx: &mut Context<Self>) {
         self.select_to(self.next_boundary(self.cursor_offset()), cx);
+        self.write_primary_selection(cx);
     }
 
     fn select_all(&mut self, _: &SelectAll, _: &mut Window, cx: &mut Context<Self>) {
@@ -355,10 +360,12 @@ impl SingleLineInput {
 
     fn select_home(&mut self, _: &SelectHome, _: &mut Window, cx: &mut Context<Self>) {
         self.select_to(0, cx);
+        self.write_primary_selection(cx);
     }
 
     fn select_end(&mut self, _: &SelectEnd, _: &mut Window, cx: &mut Context<Self>) {
         self.select_to(self.content.len(), cx);
+        self.write_primary_selection(cx);
     }
 
     /// Ctrl+Left: the start of the word before the cursor.
@@ -373,10 +380,12 @@ impl SingleLineInput {
 
     fn select_word_left(&mut self, _: &SelectWordLeft, _: &mut Window, cx: &mut Context<Self>) {
         self.select_to(previous_word_start(&self.content, self.cursor_offset()), cx);
+        self.write_primary_selection(cx);
     }
 
     fn select_word_right(&mut self, _: &SelectWordRight, _: &mut Window, cx: &mut Context<Self>) {
         self.select_to(next_word_end(&self.content, self.cursor_offset()), cx);
+        self.write_primary_selection(cx);
     }
 
     fn delete_word_backward(
@@ -457,6 +466,7 @@ impl SingleLineInput {
         let offset = self.index_for_mouse_position(event.position);
         if event.modifiers.shift {
             self.select_to(offset, cx);
+            self.write_primary_selection(cx);
             return;
         }
         let now = Instant::now();
@@ -477,17 +487,20 @@ impl SingleLineInput {
             self.selected_range = selection;
             self.selection_reversed = false;
             self.restart_caret();
+            self.write_primary_selection(cx);
             cx.notify();
         }
     }
 
-    fn on_mouse_up(&mut self, _: &MouseUpEvent, _window: &mut Window, _: &mut Context<Self>) {
+    fn on_mouse_up(&mut self, _: &MouseUpEvent, _window: &mut Window, cx: &mut Context<Self>) {
         self.is_selecting = false;
+        self.write_primary_selection(cx);
     }
 
     fn on_mouse_move(&mut self, event: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
         if self.is_selecting {
             self.select_to(self.index_for_mouse_position(event.position), cx);
+            self.write_primary_selection(cx);
         }
     }
 
@@ -502,10 +515,9 @@ impl SingleLineInput {
             // A secret is never copied. Nothing else takes the key either.
             return;
         }
-        if !self.selected_range.is_empty() {
-            cx.write_to_clipboard(ClipboardItem::new_string(
-                self.content[self.selected_range.clone()].to_string(),
-            ));
+        let text = selection_text(&self.content, self.selected_range.clone());
+        if !text.is_empty() {
+            cx.write_to_clipboard(ClipboardItem::new_string(text.to_string()));
         } else {
             // No draft selection: let the transcript's Ctrl+C take it.
             cx.propagate();
@@ -518,10 +530,9 @@ impl SingleLineInput {
         if self.mask {
             return;
         }
-        if !self.selected_range.is_empty() {
-            cx.write_to_clipboard(ClipboardItem::new_string(
-                self.content[self.selected_range.clone()].to_string(),
-            ));
+        let text = selection_text(&self.content, self.selected_range.clone());
+        if !text.is_empty() {
+            cx.write_to_clipboard(ClipboardItem::new_string(text.to_string()));
             self.replace_text_in_range(None, "", window, cx);
         }
     }
@@ -839,6 +850,9 @@ impl Render for SingleLineInput {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
+            .when(cfg!(target_os = "linux"), |this| {
+                this.on_mouse_down(MouseButton::Middle, cx.listener(Self::on_middle_mouse_down))
+            })
             .w_full()
             .h(crate::util::scaled_px(&app_style, self.height))
             .overflow_x_hidden()

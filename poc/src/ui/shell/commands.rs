@@ -566,7 +566,7 @@ impl Shell {
         if !self.transcript.read(cx).is_dragging() {
             return;
         }
-        let click = self.transcript.update(cx, |t, _| t.finish_drag(position));
+        let click = self.transcript.update(cx, |t, cx| t.finish_drag(position, cx));
         cx.notify();
         match click {
             Some(LinkClick::Url(url)) => {
