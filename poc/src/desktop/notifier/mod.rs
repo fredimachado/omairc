@@ -1,7 +1,8 @@
 //! Port of `tui/internal/notify` and `Backend::notifyDesktop` in `src/backend.cpp`.
 //!
 //! The shell owns the platform notifier; the controller only queues `Arrival`s for
-//! `take_arrivals`.
+//! `take_arrivals`. `--demo-server` raises notifications like a live launch, as the Qt client
+//! does. Setting `OMAIRC_SKIP_NOTIFICATIONS` to a non-empty value turns them off.
 
 mod util;
 
@@ -53,45 +54,38 @@ impl Notifier for NullNotifier {
     }
 }
 
-/// Whether desktop notifications may run for this launch.
-pub fn notifications_allowed(demo_server: bool) -> bool {
-    if std::env::var("OMAIRC_SKIP_NOTIFICATIONS").is_ok_and(|value| !value.is_empty()) {
-        return false;
-    }
-    if demo_server && std::env::var("OMAIRC_FORCE_NOTIFICATIONS").is_err() {
-        return false;
-    }
-    true
+/// Whether desktop notifications may run for this launch. `OMAIRC_SKIP_NOTIFICATIONS`, when
+/// set to a non-empty value, turns them off.
+pub fn notifications_allowed() -> bool {
+    !std::env::var("OMAIRC_SKIP_NOTIFICATIONS").is_ok_and(|value| !value.is_empty())
 }
 
 /// The platform notifier, or [`NullNotifier`] when notifications are skipped or unavailable.
 /// Activations are sent on `tx` from a background thread or delegate.
-pub fn platform_notifier(
-    demo_server: bool,
-    tx: Sender<Activation>,
-) -> Box<dyn Notifier> {
-    if !notifications_allowed(demo_server) {
+pub fn platform_notifier(tx: Sender<Activation>) -> Box<dyn Notifier> {
+    if !notifications_allowed() {
         return Box::new(NullNotifier);
     }
     platform_notifier_inner(tx)
 }
 
+#[cfg(target_os = "linux")]
 fn platform_notifier_inner(tx: Sender<Activation>) -> Box<dyn Notifier> {
-    #[cfg(target_os = "linux")]
-    {
-        return linux::open(tx);
-    }
-    #[cfg(target_os = "macos")]
-    {
-        return macos::open(tx);
-    }
-    #[cfg(windows)]
-    {
-        return windows::open(tx);
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
-    {
-        let _ = tx;
-        Box::new(NullNotifier)
-    }
+    linux::open(tx)
+}
+
+#[cfg(target_os = "macos")]
+fn platform_notifier_inner(tx: Sender<Activation>) -> Box<dyn Notifier> {
+    macos::open(tx)
+}
+
+#[cfg(windows)]
+fn platform_notifier_inner(tx: Sender<Activation>) -> Box<dyn Notifier> {
+    windows::open(tx)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+fn platform_notifier_inner(tx: Sender<Activation>) -> Box<dyn Notifier> {
+    drop(tx);
+    Box::new(NullNotifier)
 }

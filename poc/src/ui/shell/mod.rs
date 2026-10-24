@@ -141,7 +141,7 @@ impl Shell {
         net: Option<Rc<NetHub>>,
         activation_tx: async_channel::Sender<crate::desktop::notifier::Activation>,
     ) -> Self {
-        let notifier = platform_notifier(demo, activation_tx);
+        let notifier = platform_notifier(activation_tx);
         let mut controller = if demo {
             // The demo keeps nothing: it never reads or writes the user's files.
             Controller::new_demo().expect("the demo controller starts")
