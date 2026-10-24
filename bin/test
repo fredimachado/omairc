@@ -12,6 +12,7 @@ if command -v go >/dev/null 2>&1; then
 else
   echo "Skipping tui/bin/test: go is not on PATH." >&2
 fi
+# poc/ cargo test links libxkbcommon; Linux CI installs libxkbcommon-dev.
 if command -v cargo >/dev/null 2>&1; then
   (cd "$ROOT/poc" && cargo test)
 else
