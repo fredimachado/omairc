@@ -1,6 +1,6 @@
 //! Rule 3 of the GPUI plan: `src/irc/` stays portable. It holds no socket, no
-//! filesystem, no thread, no process and no gpui or tokio, so the same protocol
-//! core can run under any transport and any toolkit.
+//! filesystem, no thread, no process, no storage and no gpui or tokio, so the same
+//! protocol core can run under any transport, store and toolkit.
 //!
 //! This mirrors the Go gate in `bin/check-conventions`
 //! (`check_go_irc_platform_neutrality`), which keeps `tui/internal/irc` free of
@@ -16,14 +16,17 @@ use std::path::Path;
 use common::{code_only, crate_root, line_of, read_code, rust_files_under};
 use forbidden::{group_heads, segment_offsets};
 
-/// Paths whose use is forbidden anywhere in `src/irc/`. `crate::session` is the
-/// layer above the protocol core, so the core never imports from it.
+/// Paths whose use is forbidden anywhere in `src/irc/`. `crate::session` and
+/// `crate::storage` are layers above the protocol core, so the core never imports
+/// from them. The reducer takes its closed list through a trait the storage layer
+/// implements.
 const FORBIDDEN_PATHS: &[&str] = &[
     "std::net",
     "std::fs",
     "std::thread",
     "std::process",
     "crate::session",
+    "crate::storage",
 ];
 /// Crate roots that are forbidden anywhere in `src/irc/`.
 const FORBIDDEN_CRATES: &[&str] = &["gpui", "tokio"];
@@ -71,7 +74,7 @@ fn irc_sources_stay_portable() {
     }
     assert!(
         problems.is_empty(),
-        "src/irc/ must stay portable (no std::net, std::fs, std::thread, std::process, gpui, tokio, crate::session):\n{}",
+        "src/irc/ must stay portable (no std::net, std::fs, std::thread, std::process, gpui, tokio, crate::session, crate::storage):\n{}",
         problems.join("\n")
     );
 }
@@ -87,6 +90,7 @@ fn the_gate_flags_each_forbidden_form() {
         "use gpui::App;",
         "use tokio::spawn;",
         "use crate::session::typing::TypingPhase;",
+        "use crate::storage::lists::CaseListStore;",
         "use std::{io, fs};",
         "use std::{io::{self, Read}, thread};",
         "let url = \"https://x\"; use std::process;",
