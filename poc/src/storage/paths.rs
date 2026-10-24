@@ -4,15 +4,24 @@
 //! default build never writes into a real install.
 //!
 //! The roots follow `$XDG_CONFIG_HOME` and `$XDG_STATE_HOME` when set. Otherwise
-//! they are the platform's generic locations: `%LOCALAPPDATA%` on Windows,
-//! `~/Library/Preferences` (state under `State/`) on macOS, and `~/.config` and
-//! `~/.local/state` elsewhere. `OMAIRC_POC_HOME` moves both roots under one
-//! directory, so tests and manual runs can stay out of the user's profile.
+//! they are the platform's generic locations:
+//! - Windows: `%LOCALAPPDATA%` for config (`GenericConfigLocation`); state is
+//!   `%LOCALAPPDATA%\State` (`GenericStateLocation` in Qt 6 — see
+//!   `qstandardpaths_win.cpp`).
+//! - macOS: `~/Library/Preferences` and `~/Library/Preferences/State`.
+//! - Linux: `~/.config` and `~/.local/state`.
+//!
+//! Qt on Windows stores main settings in the registry
+//! (`HKCU\Software\omairc\omairc`), not an INI under LocalAppData. The STS
+//! cache stays an INI at `%LOCALAPPDATA%\omairc\sts`. `OMAIRC_POC_HOME` moves
+//! both roots under one directory, so tests and manual runs can stay out of the
+//! user's profile.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-pub use crate::identity::{APP_FOLDER, QT_APP_FOLDER, SETTINGS_FILE};
+pub use crate::identity::{APP_FOLDER, QT_APP_FOLDER, SETTINGS_FILE, SETTINGS_FILE_MACOS};
+use crate::identity::settings_file_name;
 
 /// The STS policy cache, beside the settings file (`IrcStsStore::filePath`, same name as Qt).
 pub const STS_FILE: &str = "sts";
@@ -120,19 +129,39 @@ pub fn state_dir_for(env: &Env, platform: Platform) -> PathBuf {
 }
 
 pub fn settings_path_for(env: &Env, platform: Platform) -> Option<PathBuf> {
-    config_dir_for(env, platform).map(|dir| dir.join(SETTINGS_FILE))
+    config_dir_for(env, platform).map(|dir| dir.join(ini_settings_file(platform)))
 }
 
-/// The Qt client's INI settings file (`<config root>/omairc/omairc.conf`). On macOS the
-/// client forces `QSettings::IniFormat`, so the name matches Linux and Windows.
+/// The Qt client's INI settings file, when one exists.
+///
+/// - Linux: `<config root>/omairc/omairc.conf`
+/// - macOS: `<config root>/omairc/omairc.ini` (Darwin `QSettings::IniFormat` always
+///   uses `.ini`; see `settingsFileMissingOnDisk` in `ircprofilestore.cpp`)
+/// - Windows: `None` — main settings are `HKCU\Software\omairc\omairc`
+///   (`QSettings::NativeFormat`). STS still lives under the config folder; use
+///   [`qt_sts_path_for`].
 pub fn qt_settings_path_for(env: &Env, platform: Platform) -> Option<PathBuf> {
-    qt_config_dir_for(env, platform).map(|dir| dir.join(SETTINGS_FILE))
+    if platform == Platform::Windows {
+        return None;
+    }
+    qt_config_dir_for(env, platform).map(|dir| dir.join(ini_settings_file(platform)))
+}
+
+/// The Qt client's STS cache (`<config root>/omairc/sts`), including on Windows
+/// where main settings are in the registry and this file sits beside where an
+/// INI would live.
+pub fn qt_sts_path_for(env: &Env, platform: Platform) -> Option<PathBuf> {
+    qt_config_dir_for(env, platform).map(|dir| dir.join(STS_FILE))
 }
 
 /// The STS cache file in the folder that holds `settings_file`, so the cache and the
 /// settings always live together.
 pub fn sts_path_beside(settings_file: &Path) -> PathBuf {
     settings_file.with_file_name(STS_FILE)
+}
+
+fn ini_settings_file(platform: Platform) -> &'static str {
+    settings_file_name(platform == Platform::MacOs)
 }
 
 pub fn log_path_for(env: &Env, platform: Platform) -> PathBuf {
@@ -200,7 +229,13 @@ fn state_root(env: &Env, platform: Platform) -> Option<PathBuf> {
         return Some(xdg.clone());
     }
     match platform {
-        Platform::Windows => env.local_app_data.clone(),
+        // Qt 6 `GenericStateLocation` on Windows is `%LOCALAPPDATA%\State`
+        // (`qstandardpaths_win.cpp`), not bare LocalAppData. Transcripts and
+        // `omairc.log` from the Qt client live under that tree.
+        Platform::Windows => env
+            .local_app_data
+            .as_ref()
+            .map(|root| root.join("State")),
         Platform::MacOs => env
             .home
             .as_deref()
@@ -268,7 +303,7 @@ mod tests {
     }
 
     #[test]
-    fn windows_uses_local_app_data_for_both_roots() {
+    fn windows_uses_local_app_data_config_and_state_subdir() {
         let env = Env {
             local_app_data: Some(PathBuf::from("lad")),
             home: Some(home()),
@@ -281,7 +316,10 @@ mod tests {
         );
         assert_eq!(
             log_path_for(&env, Platform::Windows),
-            PathBuf::from("lad").join(APP_FOLDER).join(LOG_FILE)
+            PathBuf::from("lad")
+                .join("State")
+                .join(APP_FOLDER)
+                .join(LOG_FILE)
         );
     }
 
@@ -292,6 +330,10 @@ mod tests {
         assert_eq!(
             config_dir_for(&env, Platform::MacOs),
             Some(prefs.join(APP_FOLDER))
+        );
+        assert_eq!(
+            settings_path_for(&env, Platform::MacOs),
+            Some(prefs.join(APP_FOLDER).join(SETTINGS_FILE_MACOS))
         );
         assert_eq!(
             state_dir_for(&env, Platform::MacOs),
@@ -322,7 +364,11 @@ mod tests {
         for platform in [Platform::Windows, Platform::MacOs, Platform::Linux] {
             assert_eq!(
                 settings_path_for(&env, platform),
-                Some(PathBuf::from("scratch").join("config").join(SETTINGS_FILE))
+                Some(
+                    PathBuf::from("scratch")
+                        .join("config")
+                        .join(ini_settings_file(platform))
+                )
             );
             assert_eq!(
                 log_path_for(&env, platform),
@@ -421,10 +467,9 @@ mod tests {
                 .join(QT_APP_FOLDER)
                 .join("logs")
         );
-        let settings = qt_settings_path_for(&env, Platform::Linux).expect("settings");
         assert_eq!(
-            sts_path_beside(&settings),
-            home().join(".config").join(QT_APP_FOLDER).join(STS_FILE)
+            qt_sts_path_for(&env, Platform::Linux),
+            Some(home().join(".config").join(QT_APP_FOLDER).join(STS_FILE))
         );
     }
 
@@ -438,11 +483,41 @@ mod tests {
         );
         assert_eq!(
             qt_settings_path_for(&env, Platform::MacOs),
-            Some(prefs.join(QT_APP_FOLDER).join(SETTINGS_FILE))
+            Some(prefs.join(QT_APP_FOLDER).join(SETTINGS_FILE_MACOS))
+        );
+        assert_eq!(
+            qt_sts_path_for(&env, Platform::MacOs),
+            Some(prefs.join(QT_APP_FOLDER).join(STS_FILE))
         );
         assert_eq!(
             qt_state_dir_for(&env, Platform::MacOs),
             prefs.join("State").join(QT_APP_FOLDER)
+        );
+    }
+
+    #[test]
+    fn qt_windows_settings_are_registry_not_ini() {
+        let env = Env {
+            local_app_data: Some(PathBuf::from("lad")),
+            home: Some(home()),
+            temp_dir: PathBuf::from("tmp"),
+            ..Env::default()
+        };
+        assert_eq!(qt_settings_path_for(&env, Platform::Windows), None);
+        assert_eq!(
+            qt_sts_path_for(&env, Platform::Windows),
+            Some(PathBuf::from("lad").join(QT_APP_FOLDER).join(STS_FILE))
+        );
+        assert_eq!(
+            qt_state_dir_for(&env, Platform::Windows),
+            PathBuf::from("lad").join("State").join(QT_APP_FOLDER)
+        );
+        assert_eq!(
+            qt_transcript_root_for(&env, Platform::Windows),
+            PathBuf::from("lad")
+                .join("State")
+                .join(QT_APP_FOLDER)
+                .join("logs")
         );
     }
 
@@ -457,6 +532,24 @@ mod tests {
         assert_eq!(
             qt_settings_path_for(&env, Platform::Linux),
             Some(home().join(".config").join(QT_APP_FOLDER).join(SETTINGS_FILE))
+        );
+    }
+
+    /// With `product`, macOS settings match the Qt `.ini` path for in-place takeover.
+    #[cfg(feature = "product")]
+    #[test]
+    fn product_macos_settings_match_qt_ini() {
+        let env = env_with_home();
+        assert_eq!(
+            settings_path_for(&env, Platform::MacOs),
+            qt_settings_path_for(&env, Platform::MacOs)
+        );
+        assert_eq!(
+            settings_path_for(&env, Platform::MacOs)
+                .unwrap()
+                .file_name()
+                .and_then(|name| name.to_str()),
+            Some(SETTINGS_FILE_MACOS)
         );
     }
 
