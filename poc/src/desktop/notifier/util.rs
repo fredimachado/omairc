@@ -1,6 +1,9 @@
 //! Shared helpers for toast XML and activation URLs. Ports the free functions in
 //! `src/windowsnotifications.cpp`.
 
+#[cfg(any(target_os = "macos", test))]
+use std::sync::atomic::{AtomicU64, Ordering};
+
 #[cfg(any(windows, test))]
 use std::path::{Path, PathBuf};
 
@@ -9,9 +12,27 @@ use sha1_smol::Sha1;
 #[cfg(any(windows, test))]
 use url::form_urlencoded;
 
+/// Serial for blank macOS request identifiers. Never appears in a real `conversation_key`
+/// (those always contain a newline).
+#[cfg(any(target_os = "macos", test))]
+static BLANK_MACOS_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
+
 /// `network_id` and `target` joined the way Qt and the TUI store notification keys.
 pub fn conversation_key(network_id: &str, target: &str) -> String {
     format!("{network_id}\n{target}")
+}
+
+/// Identifier for a macOS `UNNotificationRequest`. A real conversation keeps the stable
+/// [`conversation_key`] so later toasts replace earlier ones; both fields empty yields a
+/// fresh id each call so blank toasts stack instead of colliding on `"\n"`.
+#[cfg(any(target_os = "macos", test))]
+pub fn macos_request_identifier(network_id: &str, target: &str) -> String {
+    if network_id.is_empty() && target.is_empty() {
+        let n = BLANK_MACOS_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+        // No newline: cannot equal `conversation_key` for any pair.
+        return format!("{n}");
+    }
+    conversation_key(network_id, target)
 }
 
 /// The first sixteen hex digits of SHA-1(`conversation_key`), for toast tag/group.
@@ -215,6 +236,23 @@ mod tests {
         assert_eq!(tag.len(), 16);
         assert!(tag.chars().all(|c| c.is_ascii_hexdigit()));
         assert_eq!(tag, conversation_tag("net", "#chan"));
+    }
+
+    #[test]
+    fn macos_request_identifier_unique_when_blank() {
+        let first = macos_request_identifier("", "");
+        let second = macos_request_identifier("", "");
+        assert_ne!(first, second);
+        assert_ne!(first, conversation_key("", ""));
+        assert_ne!(second, conversation_key("", ""));
+    }
+
+    #[test]
+    fn macos_request_identifier_stable_for_conversation() {
+        let first = macos_request_identifier("libera", "#omarchy");
+        let second = macos_request_identifier("libera", "#omarchy");
+        assert_eq!(first, second);
+        assert_eq!(first, conversation_key("libera", "#omarchy"));
     }
 
     #[test]

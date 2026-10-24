@@ -17,7 +17,7 @@ use objc2_user_notifications::{
     UNUserNotificationCenter, UNUserNotificationCenterDelegate,
 };
 
-use super::util::conversation_key;
+use super::util::macos_request_identifier;
 use super::{Activation, Notifier, NullNotifier};
 
 static ACTIVATION_TX: OnceLock<Sender<Activation>> = OnceLock::new();
@@ -128,7 +128,7 @@ impl Notifier for MacNotifier {
             content.setUserInfo(&user_info);
         }
 
-        let identifier = NSString::from_str(&conversation_key(network_id, target));
+        let identifier = NSString::from_str(&macos_request_identifier(network_id, target));
         let request = UNNotificationRequest::requestWithIdentifier_content_trigger(
             &identifier,
             &content,
