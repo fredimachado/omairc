@@ -11,12 +11,17 @@
 //!   registered, when the registered exe is itself, or when the registered exe no longer
 //!   exists. So it does not displace an exe that still exists.
 //!
+//! Two installed copies take turns: each launch overwrites the other's registration and link,
+//! and this is intended.
+//!
 //! The shortcut fallback reads two Start Menu `Omairc.lnk` links: the per-user one and the
 //! all-users one, under `FOLDERID_CommonPrograms`. It writes only the per-user link, and only
-//! when neither link refuses. A link refuses when it cannot be read, or when it names an exe
-//! this build may not take. The installed-copy repair path runs before the fallback and is
-//! unchanged. It can re-stamp an existing link in either location when that link already names
-//! this exe. It never creates an all-users link.
+//! when neither link refuses. A link refuses when it cannot be read, when its target does not
+//! resolve to a path (an empty target, or `%VAR%` text that does not expand), or when it names
+//! an exe this build may not take. Before the fallback, the repair path re-stamps a link that
+//! already names this exe, but only when no such link is stamped yet, in either location. It
+//! never creates an all-users link. An installed copy then reaches the per-user decision, unless
+//! its per-user link already names this exe and is stamped.
 //!
 //! This code decides what it writes. It does not establish which copy receives a click while
 //! more than one copy is registered.
@@ -259,9 +264,10 @@ enum LinkRefusal {
 }
 
 /// Decides whether the shortcut fallback may write the per-user link, given both links as
-/// read from disk. The all-users link is checked first, and the first refusal wins. An
-/// unreadable link refuses. Any other link allows when this exe is an installed copy, or when
-/// `should_claim` allows it: the link names this exe, or an exe that is gone.
+/// read from disk. An unreadable link refuses. Any other link allows when this exe is an
+/// installed copy, or when `should_claim` allows it: the link names this exe, or an exe that is
+/// gone. The all-users link is checked first and the first refusal wins, so when both links
+/// refuse, the all-users refusal is returned.
 fn check_existing_links(
     this_exe: &Path,
     install_roots: &[PathBuf],
@@ -579,26 +585,43 @@ fn install_shortcut(link_path: &str, exe_path: &str) -> Result<(), windows::core
     unsafe { persist.Save(PCWSTR(link_wide.as_ptr()), true) }
 }
 
-fn ensure_notification_registration(exe_path: &str) {
-    let roots = install_roots();
-    register_com_server(exe_path, &roots);
-
-    let installed = installed_shortcut_paths(exe_path);
-    for link in &installed {
+/// Repairs the Start Menu links that already name this exe. When one is stamped, nothing is
+/// written. Otherwise the first link that takes a stamp is re-stamped. Returns whether a link
+/// naming this exe is stamped afterwards.
+fn repair_installed_links(exe_path: &str, installed: &[PathBuf]) -> bool {
+    for link in installed {
         if shortcut_is_stamped(&link.to_string_lossy()) {
-            return;
+            return true;
         }
     }
-    for link in &installed {
+    for link in installed {
         let link_path = link.to_string_lossy();
         if install_shortcut(&link_path, exe_path).is_ok() {
-            return;
+            return true;
         }
         log::warn!(
             "Windows notifier: could not stamp installed Start Menu shortcut {:?}",
             link
         );
     }
+    false
+}
+
+/// Whether the registration stops once the repair path has run, before the per-user link
+/// decision. A build that repaired a link and is not an installed copy stops, so a dev build
+/// never overwrites a link it did not own. An installed copy stops only when its per-user link
+/// already names this exe and is stamped, since nothing is left to write. Without a repair,
+/// nothing stops here.
+fn repair_ends_registration(repaired: bool, from_install: bool, per_user_settled: bool) -> bool {
+    repaired && (!from_install || per_user_settled)
+}
+
+fn ensure_notification_registration(exe_path: &str) {
+    let roots = install_roots();
+    register_com_server(exe_path, &roots);
+
+    let installed = installed_shortcut_paths(exe_path);
+    let repaired = repair_installed_links(exe_path, &installed);
 
     let Some(programs) = dirs::home_dir().map(|home| {
         home.join("AppData/Roaming/Microsoft/Windows/Start Menu/Programs")
@@ -617,6 +640,13 @@ fn ensure_notification_registration(exe_path: &str) {
     let all_users_state = read_link_state(&all_users_link);
     let per_user_state = read_link_state(&link);
     let this_exe = Path::new(exe_path);
+    let from_install = is_installed_exe(this_exe, &roots, resolve_path);
+    // A per-user link that names this exe and is stamped after the repair needs no write.
+    let per_user_settled =
+        repaired && installed.contains(&link) && shortcut_is_stamped(&link_path);
+    if repair_ends_registration(repaired, from_install, per_user_settled) {
+        return;
+    }
     if let Err(refusal) = check_existing_links(
         this_exe,
         &roots,
@@ -846,7 +876,8 @@ mod tests {
 
     use super::{
         check_existing_links, expand_environment, is_installed_exe, link_state_from_target,
-        registered_exe, should_claim, strip_verbatim, LinkRefusal, LinkSlot, LinkState,
+        registered_exe, repair_ends_registration, should_claim, strip_verbatim, LinkRefusal,
+        LinkSlot, LinkState,
     };
 
     const THIS_EXE: &str = r"C:\dev\omairc\omairc-poc-gpui.exe";
@@ -1206,6 +1237,118 @@ mod tests {
             ),
             Err(LinkRefusal::Unreadable(LinkSlot::PerUser)),
         );
+    }
+
+    const INSTALLED_EXE: &str = r"C:\Program Files\Omairc\omairc.exe";
+    /// A dev exe in another checkout, which still exists.
+    const DEV_EXE: &str = r"D:\other-checkout\poc\target\debug\omairc-poc-gpui.exe";
+
+    #[test]
+    fn an_unreadable_per_user_link_refuses() {
+        assert_eq!(
+            check_existing_links(
+                Path::new(THIS_EXE),
+                &[],
+                &LinkState::Missing,
+                &LinkState::Unreadable,
+                |_| false,
+                no_resolve,
+            ),
+            Err(LinkRefusal::Unreadable(LinkSlot::PerUser)),
+        );
+    }
+
+    #[test]
+    fn an_installed_copy_refused_by_an_unreadable_link_does_not_overwrite() {
+        let other = Path::new(OTHER_EXE);
+        assert_eq!(
+            check_existing_links(
+                Path::new(INSTALLED_EXE),
+                &test_roots(),
+                &targets(OTHER_EXE),
+                &LinkState::Unreadable,
+                |path| path == other,
+                no_resolve,
+            ),
+            Err(LinkRefusal::Unreadable(LinkSlot::PerUser)),
+        );
+    }
+
+    #[test]
+    fn when_both_links_refuse_the_all_users_refusal_is_reported() {
+        let this_exe = Path::new(THIS_EXE);
+        let other = Path::new(OTHER_EXE);
+        assert_eq!(
+            check_existing_links(
+                this_exe,
+                &[],
+                &LinkState::Unreadable,
+                &LinkState::Unreadable,
+                |_| false,
+                no_resolve,
+            ),
+            Err(LinkRefusal::Unreadable(LinkSlot::AllUsers)),
+        );
+        assert_eq!(
+            check_existing_links(
+                this_exe,
+                &[],
+                &targets(OTHER_EXE),
+                &LinkState::Unreadable,
+                |path| path == other,
+                no_resolve,
+            ),
+            Err(LinkRefusal::NamesOtherExe(LinkSlot::AllUsers, PathBuf::from(OTHER_EXE))),
+        );
+    }
+
+    #[test]
+    fn an_installed_copy_overwrites_a_dev_per_user_link_past_its_own_all_users_link() {
+        let dev = Path::new(DEV_EXE);
+        assert_eq!(
+            check_existing_links(
+                Path::new(INSTALLED_EXE),
+                &test_roots(),
+                &targets(INSTALLED_EXE),
+                &targets(DEV_EXE),
+                |path| path == dev,
+                no_resolve,
+            ),
+            Ok(()),
+        );
+    }
+
+    #[test]
+    fn a_dev_build_does_not_overwrite_a_dev_per_user_link_past_its_own_all_users_link() {
+        let dev = Path::new(DEV_EXE);
+        assert_eq!(
+            check_existing_links(
+                Path::new(THIS_EXE),
+                &test_roots(),
+                &targets(THIS_EXE),
+                &targets(DEV_EXE),
+                |path| path == dev,
+                no_resolve,
+            ),
+            Err(LinkRefusal::NamesOtherExe(LinkSlot::PerUser, PathBuf::from(DEV_EXE))),
+        );
+    }
+
+    #[test]
+    fn without_a_repair_nothing_stops_the_registration() {
+        assert!(!repair_ends_registration(false, false, false));
+        assert!(!repair_ends_registration(false, true, false));
+    }
+
+    #[test]
+    fn a_dev_build_stops_after_a_repair() {
+        assert!(repair_ends_registration(true, false, false));
+    }
+
+    #[test]
+    fn an_installed_copy_goes_on_after_a_repair_until_its_per_user_link_is_settled() {
+        assert!(!repair_ends_registration(true, true, false));
+        assert!(repair_ends_registration(true, true, true));
     }
 
     #[test]
