@@ -26,6 +26,7 @@ fn main() {
             let body = std::fs::read_to_string(&pri)
                 .unwrap_or_else(|err| panic!("cannot read {}: {err}", pri.display()));
             version_pri::parse_version(&body)
+                .map(str::to_owned)
                 .unwrap_or_else(|| panic!("{} has no VERSION = value", pri.display()))
         }
     };
@@ -38,7 +39,7 @@ fn main() {
             .join("icons")
             .join("omairc.ico");
         println!("cargo:rerun-if-changed={}", icon.display());
-        embed_windows_resources(&icon, version);
+        embed_windows_resources(&icon, &version);
     }
 }
 
