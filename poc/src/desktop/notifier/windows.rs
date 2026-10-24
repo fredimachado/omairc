@@ -1,4 +1,13 @@
 //! Windows Toast notifications. Port of `windowsnotifications.cpp`.
+//!
+//! An installed copy owns toast activation. Clicks go to the exe in the activator's
+//! `LocalServer32` value, and the toast AUMID resolves through the Start Menu
+//! `Omairc.lnk`. A build rewrites either one only when nothing is registered, when the
+//! registered exe is itself, or when the registered exe no longer exists. A dev build
+//! therefore leaves an installed copy's registration and shortcut alone. It still shows
+//! toasts, because the AUMID resolves through that shortcut, but clicks go to the
+//! installed app. Once the Rust installer ships, its exe is the registered one and the
+//! two match.
 
 use std::collections::VecDeque;
 use std::ffi::OsStr;
@@ -11,7 +20,10 @@ use std::mem::ManuallyDrop;
 use std::path::{Path, PathBuf};
 
 use windows::core::{GUID, HSTRING, Interface, PCWSTR};
-use windows::Win32::Foundation::{CLASS_E_NOAGGREGATION, HANDLE, WAIT_OBJECT_0};
+use windows::Win32::Foundation::{
+    CLASS_E_NOAGGREGATION, ERROR_FILE_NOT_FOUND, ERROR_SUCCESS, HANDLE, WAIT_OBJECT_0,
+    WIN32_ERROR,
+};
 use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_ID;
 use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_ToastActivatorCLSID;
 use windows::Win32::System::Com::{
@@ -24,7 +36,9 @@ use windows::Win32::System::Com::StructuredStorage::{
 };
 use windows::Win32::System::Variant::{VT_CLSID, VT_LPWSTR};
 use windows::Win32::System::WinRT::{RoInitialize, RoUninitialize, RO_INIT_MULTITHREADED};
-use windows::Win32::System::Registry::{RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ};
+use windows::Win32::System::Registry::{
+    RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ,
+};
 use windows::Win32::System::Threading::{CreateEventW, SetEvent};
 use windows::Win32::UI::Notifications::{
     INotificationActivationCallback, INotificationActivationCallback_Impl,
@@ -114,15 +128,64 @@ fn init_propvariant_from_string(value: &str) -> Result<PROPVARIANT, windows::cor
     Ok(prop)
 }
 
-fn same_exe_path(left: &str, right: &str) -> bool {
-    let left = Path::new(left);
-    let right = Path::new(right);
+fn same_exe_path(left: &Path, right: &Path) -> bool {
     match (left.canonicalize(), right.canonicalize()) {
         (Ok(left), Ok(right)) => left == right,
         _ => left
             .to_string_lossy()
             .eq_ignore_ascii_case(&right.to_string_lossy()),
     }
+}
+
+/// Pulls the exe out of a `LocalServer32` command line: the quoted path, then any
+/// arguments. An empty value names no exe.
+fn registered_exe(command: &str) -> Option<PathBuf> {
+    let command = command.trim();
+    let exe = match command.strip_prefix('"') {
+        Some(rest) => rest.split('"').next()?,
+        None => command,
+    };
+    (!exe.is_empty()).then(|| PathBuf::from(exe))
+}
+
+/// Whether this exe may take a registration or shortcut. It may when nothing is
+/// registered, when the registered exe is itself, or when the registered exe is gone.
+/// A registered exe that still exists belongs to another install, so it is left alone.
+fn should_claim(
+    existing: Option<&Path>,
+    this_exe: &Path,
+    exists: impl Fn(&Path) -> bool,
+) -> bool {
+    match existing {
+        None => true,
+        Some(existing) => same_exe_path(existing, this_exe) || !exists(existing),
+    }
+}
+
+/// Reads the default value of the activator's `LocalServer32` key. `Ok(None)` means the
+/// value is absent. Any other failure is an error, so the caller can fail closed.
+fn read_registered_command(subkey: &[u16]) -> Result<Option<String>, WIN32_ERROR> {
+    let mut data = vec![0u16; 32_768];
+    let mut bytes = (data.len() * 2) as u32;
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            PCWSTR(subkey.as_ptr()),
+            None,
+            RRF_RT_REG_SZ,
+            None,
+            Some(data.as_mut_ptr().cast()),
+            Some(&mut bytes),
+        )
+    };
+    if status == ERROR_FILE_NOT_FOUND {
+        return Ok(None);
+    }
+    if status != ERROR_SUCCESS {
+        return Err(status);
+    }
+    let len = data.iter().position(|&ch| ch == 0).unwrap_or(data.len());
+    Ok(Some(String::from_utf16_lossy(&data[..len])))
 }
 
 fn start_menu_program_dirs() -> Vec<PathBuf> {
@@ -231,18 +294,39 @@ fn installed_shortcut_paths(exe_path: &str) -> Vec<PathBuf> {
         let Some(target) = shortcut_target(&link_path) else {
             continue;
         };
-        if same_exe_path(&target, exe_path) {
+        if same_exe_path(Path::new(&target), Path::new(exe_path)) {
             links.push(link);
         }
     }
     links
 }
 
+/// Claims the toast activator registration unless another exe still owns it.
 fn register_com_server(exe: &str) {
     let subkey =
         "SOFTWARE\\Classes\\CLSID\\{DBE38477-5F87-42A1-AFA1-11FA12F2E5E5}\\LocalServer32";
-    let command = format!("\"{}\"", exe.replace('/', "\\"));
     let subkey_wide = wide(subkey);
+    let existing = match read_registered_command(&subkey_wide) {
+        Ok(command) => command.as_deref().and_then(registered_exe),
+        Err(status) => {
+            log::info!(
+                "Windows notifier: could not read the toast activator registration ({:?}), leaving it unchanged",
+                status
+            );
+            return;
+        }
+    };
+    let this_exe = Path::new(exe);
+    if !should_claim(existing.as_deref(), this_exe, Path::exists) {
+        if let Some(owner) = existing {
+            log::info!(
+                "Windows notifier: {} owns toast activation, so this build leaves it registered",
+                owner.display()
+            );
+        }
+        return;
+    }
+    let command = format!("\"{}\"", exe.replace('/', "\\"));
     let command_wide = wide(&command);
     unsafe {
         let _ = RegSetKeyValueW(
@@ -317,7 +401,25 @@ fn ensure_notification_registration(exe_path: &str) {
     };
     let _ = std::fs::create_dir_all(&programs);
     let link = programs.join("Omairc.lnk");
-    if let Err(error) = install_shortcut(&link.to_string_lossy(), exe_path) {
+    let link_path = link.to_string_lossy();
+    if link.exists() {
+        let Some(target) = shortcut_target(&link_path) else {
+            log::info!(
+                "Windows notifier: could not read {:?} to see which exe it names, leaving it unchanged",
+                link
+            );
+            return;
+        };
+        if !should_claim(Some(Path::new(&target)), Path::new(exe_path), Path::exists) {
+            log::info!(
+                "Windows notifier: {:?} already names {}, so this build leaves it alone",
+                link,
+                target
+            );
+            return;
+        }
+    }
+    if let Err(error) = install_shortcut(&link_path, exe_path) {
         log::warn!(
             "Windows notifier: could not write Start Menu shortcut for toasts: {:?}",
             error
@@ -490,4 +592,62 @@ pub fn activation_from_args(args: &[String]) -> Option<Activation> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::{registered_exe, should_claim};
+
+    const THIS_EXE: &str = r"C:\dev\omairc\omairc-poc-gpui.exe";
+
+    #[test]
+    fn nothing_registered_is_claimed() {
+        assert!(should_claim(None, Path::new(THIS_EXE), |_| true));
+    }
+
+    #[test]
+    fn the_same_exe_is_claimed_even_while_it_exists() {
+        let this_exe = Path::new(THIS_EXE);
+        assert!(should_claim(Some(this_exe), this_exe, |_| true));
+    }
+
+    #[test]
+    fn a_different_exe_that_still_exists_is_not_claimed() {
+        assert!(!should_claim(
+            Some(Path::new(r"C:\Program Files\Omairc\omairc.exe")),
+            Path::new(THIS_EXE),
+            |_| true,
+        ));
+    }
+
+    #[test]
+    fn a_different_exe_that_is_gone_is_claimed() {
+        assert!(should_claim(
+            Some(Path::new(r"C:\old\omairc\omairc.exe")),
+            Path::new(THIS_EXE),
+            |_| false,
+        ));
+    }
+
+    #[test]
+    fn a_quoted_registry_value_is_compared_by_its_exe() {
+        let this_exe = Path::new(THIS_EXE);
+        let same = registered_exe(&format!("\"{THIS_EXE}\""));
+        assert!(should_claim(same.as_deref(), this_exe, |_| true));
+
+        let installed = registered_exe(r#""C:\Program Files\Omairc\omairc.exe" -Embedding"#);
+        assert!(!should_claim(installed.as_deref(), this_exe, |_| true));
+    }
+
+    #[test]
+    fn an_empty_registry_value_names_no_exe_and_is_claimed() {
+        assert_eq!(registered_exe("   "), None);
+        assert!(should_claim(
+            registered_exe("\"\"").as_deref(),
+            Path::new(THIS_EXE),
+            |_| true,
+        ));
+    }
 }
