@@ -12,8 +12,8 @@
 //!
 //! The shell resumes a transcript by its own rows (`model::scroll_place`) and stores the
 //! result through `remember_place` and `place_for`. The message-anchor reads below are the
-//! Qt-format path over the controller's messages. Nothing calls them outside the tests yet,
-//! so they are `cfg(test)` until the transcript reads through this module.
+//! Qt-format path over the controller's messages; the GUI uses row msgids through
+//! `SavedPlace::to_stored`.
 
 #[cfg(test)]
 use chrono::{DateTime, Utc};

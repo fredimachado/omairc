@@ -20,7 +20,7 @@ use crate::ui::sheets::link::LinkSource;
 use crate::ui::sheets::nick::NickSource;
 use crate::ui::sheets::shortcuts::{ShortcutsEvent, ShortcutsSheet};
 use crate::ui::shell::Shell;
-use crate::ui::update::{launch_installer, launch_on_close};
+use crate::ui::update::launch_installer;
 use crate::util::open_web_link;
 
 /// The open sheet and the subscriptions that keep it wired to the shell. The
@@ -493,11 +493,6 @@ impl Shell {
             return;
         }
         self.open_about(window, cx);
-    }
-
-    /// The window's first close starts a ready installer. Qt `onClosing`.
-    pub fn launch_update_on_close(&self, cx: &mut App) {
-        let _ = launch_on_close(&self.update, cx);
     }
 
     fn present_about(&mut self, window: &mut Window, cx: &mut Context<Self>) {
