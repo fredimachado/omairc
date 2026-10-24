@@ -246,7 +246,7 @@ impl HttpFetch for UreqFetch {
         for (name, value) in &request.headers {
             builder = builder.header(name.as_str(), value.as_str());
         }
-        let mut response = builder
+        let response = builder
             .send(request.body.as_slice())
             .map_err(|err| FetchError::Transport(err.to_string()))?;
         let status = response.status().as_u16();
@@ -335,7 +335,6 @@ mod fake {
     #[derive(Clone)]
     struct PostRoute {
         reply: FetchReply,
-        response_body: Vec<u8>,
         failure: Option<String>,
     }
 
@@ -408,8 +407,9 @@ mod fake {
             );
         }
 
-        /// Answers `url` to a POST with `status`, optional `Location`, and a response body.
-        pub fn serve_post(&self, url: &str, status: u16, location: Option<&str>, response_body: &[u8]) {
+        /// Answers `url` to a POST with `status` and an optional `Location`. The POST seam
+        /// reads no reply body, so none is served.
+        pub fn serve_post(&self, url: &str, status: u16, location: Option<&str>) {
             self.post_routes.lock().unwrap().insert(
                 url.to_string(),
                 PostRoute {
@@ -418,7 +418,6 @@ mod fake {
                         location: location.map(str::to_string),
                         content_type: None,
                     },
-                    response_body: response_body.to_vec(),
                     failure: None,
                 },
             );
