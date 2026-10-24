@@ -50,9 +50,7 @@ async-channel = "=2.5.0"
 # TCP keepalive needs the socket itself; tokio's net feature already builds this release.
 socket2 = "=0.6.5"
 
-# The installed-copy probe reads the Inno uninstall key from the registry.
 [target.'cfg(windows)'.dependencies]
-winreg = "0.56"
 windows = { version = "=0.61.3", features = [
     "UI_Notifications",
     "Data_Xml_Dom",
@@ -72,7 +70,7 @@ windows = { version = "=0.61.3", features = [
 windows-core = "=0.61.2"
 windows-implement = "=0.60.2"
 # The product CLI's named pipe: std has no pipe server, so the few kernel32 calls come from here.
-# Pinned to the 0.61.2 that winreg already builds on Windows, so no new crate is fetched.
+# Pinned so Windows builds share one windows-sys release with the rest of the graph.
 windows-sys = { version = "=0.61.2", features = [
     "Win32_Foundation",
     "Win32_Globalization",

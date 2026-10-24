@@ -179,10 +179,10 @@ impl Shell {
         let shown = shown_view(&controller);
         let composer_state = ComposerState::starting_at(shown.draft_key());
         let update = cx.new(|_| {
-            UpdateCheck::new(
-                version(),
-                crate::desktop::installer::running_copy_is_installed(),
-            )
+            // PoC: never the installer self-update path. The only Windows setup
+            // asset and uninstall key in tree are Qt's; see update_check /
+            // desktop::installer.
+            UpdateCheck::new(version(), false)
         });
         let update_observe = cx.observe(&update, |_, _, cx| cx.notify());
         let scrollbar_drag: ScrollbarDragCell = Default::default();
