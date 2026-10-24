@@ -1,11 +1,10 @@
 //! The Windows installer update's file and process half. The release rules and
 //! the state machine are in `model::update_check`. This module downloads the
-//! setup into the updates directory and verifies it, checks that an existing
-//! copy still matches, and starts the installer. The PoC does not probe for an
-//! installed copy (`running_copy_is_installed` is always false) until it has
-//! its own setup asset and uninstall key. Go twin: none. C++: the file and
-//! process parts of `src/omaircupdatecheck.cpp` (`commitDownloadedInstaller`,
-//! `downloadedInstallerMatches`, `launchInstaller`, `runningCopyIsInstalled`).
+//! setup into the updates directory and verifies it, probes whether the running
+//! exe is the Inno-installed copy, and starts the installer. Go twin: none.
+//! C++: the file and process parts of `src/omaircupdatecheck.cpp`
+//! (`commitDownloadedInstaller`, `downloadedInstallerMatches`,
+//! `launchInstaller`, `runningCopyIsInstalled`).
 
 use std::fs::{self, File};
 use std::io::{Read, Write};
@@ -16,8 +15,8 @@ use url::Url;
 
 use crate::desktop::httpfetch::{get_following, FetchRequest, HttpFetch};
 use crate::model::update_check::{
-    windows_setup_name, windows_setup_redirect_is_safe, WindowsSetup, INSTALLER_TRANSFER_TIMEOUT,
-    MAXIMUM_REDIRECTS,
+    install_location_matches, windows_setup_name, windows_setup_redirect_is_safe, WindowsSetup,
+    INSTALLER_TRANSFER_TIMEOUT, MAXIMUM_REDIRECTS, WINDOWS_UNINSTALL_KEY,
 };
 
 /// Starts the setup. A seam so the state machine can run without a process.
@@ -174,15 +173,126 @@ fn set_owner_executable(path: &Path) {
 #[cfg(not(unix))]
 fn set_owner_executable(_path: &Path) {}
 
-/// Whether the running exe may self-update through the Windows installer path.
-///
-/// Always false for the PoC. Qt probes the Inno uninstall key
-/// `{37400F83-8332-4043-8DFF-1F69E51F6555}_is1`; this binary never registers
-/// that key, and must not treat a Qt install as its own — a green probe would
-/// download `omairc-<v>-windows-x64-setup.exe` and install Qt over the PoC.
-/// Revisit when Rust ships its own setup asset and uninstall key.
+/// The three Uninstall roots Qt walks for [`WINDOWS_UNINSTALL_KEY`], in order.
+/// Each is `Software\…\Uninstall\` under HKCU, HKLM, or HKLM WOW6432Node.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(usize)]
+pub enum UninstallRoot {
+    CurrentUser = 0,
+    LocalMachine = 1,
+    LocalMachineWow64 = 2,
+}
+
+/// Roots probed by [`running_copy_is_installed`], matching Qt's `QStringList`.
+pub const UNINSTALL_ROOTS: [UninstallRoot; 3] = [
+    UninstallRoot::CurrentUser,
+    UninstallRoot::LocalMachine,
+    UninstallRoot::LocalMachineWow64,
+];
+
+impl UninstallRoot {
+    /// Registry path under the hive, including the Inno uninstall key.
+    fn subkey(self) -> String {
+        let prefix = match self {
+            UninstallRoot::CurrentUser | UninstallRoot::LocalMachine => {
+                r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
+            }
+            UninstallRoot::LocalMachineWow64 => {
+                r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+            }
+        };
+        format!(r"{prefix}\{WINDOWS_UNINSTALL_KEY}")
+    }
+}
+
+/// Reads `InstallLocation` for the Omairc uninstall key under one root. The
+/// Windows build opens the real registry; tests supply a fake.
+pub trait InstallLocationReader {
+    fn install_location(&self, root: UninstallRoot) -> Option<String>;
+}
+
+/// Whether the running exe sits in an Inno install location. Qt
+/// `runningCopyIsInstalled`: probe each uninstall root and compare
+/// `InstallLocation` with the exe's folder. Non-Windows has no uninstall
+/// registry, so the platform reader always misses.
 pub fn running_copy_is_installed() -> bool {
-    false
+    let Some(app_dir) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.to_string_lossy().into_owned()))
+    else {
+        return false;
+    };
+    running_copy_is_installed_with(&app_dir, &PlatformInstallLocationReader)
+}
+
+/// Same rules as [`running_copy_is_installed`], with an injected app directory
+/// and registry reader so tests can cover the matcher without the real hive.
+pub fn running_copy_is_installed_with(app_dir: &str, reader: &dyn InstallLocationReader) -> bool {
+    UNINSTALL_ROOTS.iter().any(|&root| {
+        reader
+            .install_location(root)
+            .is_some_and(|location| install_location_matches(&location, app_dir))
+    })
+}
+
+/// Platform reader: real registry on Windows, always empty elsewhere.
+struct PlatformInstallLocationReader;
+
+impl InstallLocationReader for PlatformInstallLocationReader {
+    fn install_location(&self, root: UninstallRoot) -> Option<String> {
+        #[cfg(windows)]
+        {
+            read_install_location(root)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = root.subkey();
+            None
+        }
+    }
+}
+
+#[cfg(windows)]
+fn read_install_location(root: UninstallRoot) -> Option<String> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::ERROR_SUCCESS;
+    use windows::Win32::System::Registry::{
+        RegGetValueW, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ,
+    };
+
+    let hive = match root {
+        UninstallRoot::CurrentUser => HKEY_CURRENT_USER,
+        UninstallRoot::LocalMachine | UninstallRoot::LocalMachineWow64 => HKEY_LOCAL_MACHINE,
+    };
+    let subkey: Vec<u16> = OsStr::new(&root.subkey())
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let value_name: Vec<u16> = OsStr::new("InstallLocation")
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let mut data = vec![0u16; 1024];
+    let mut bytes = (data.len() * 2) as u32;
+    let status = unsafe {
+        RegGetValueW(
+            hive,
+            PCWSTR(subkey.as_ptr()),
+            PCWSTR(value_name.as_ptr()),
+            RRF_RT_REG_SZ,
+            None,
+            Some(data.as_mut_ptr().cast()),
+            Some(&mut bytes),
+        )
+    };
+    if status != ERROR_SUCCESS {
+        return None;
+    }
+    let len = data.iter().position(|&ch| ch == 0).unwrap_or(data.len());
+    Some(String::from_utf16_lossy(&data[..len]))
 }
 
 /// Records each start and reports the result it was told to return, so tests
@@ -395,10 +505,92 @@ mod tests {
     }
 
     #[test]
-    fn the_poc_never_claims_to_be_an_installed_copy() {
-        assert!(
-            !running_copy_is_installed(),
-            "must not probe the Qt Inno uninstall key or offer its setup"
+    fn a_non_windows_build_is_never_an_installed_copy() {
+        #[cfg(not(windows))]
+        assert!(!running_copy_is_installed());
+    }
+
+    /// In-memory InstallLocation values for the three Uninstall roots.
+    struct FakeInstallLocations {
+        locations: [Option<&'static str>; 3],
+    }
+
+    impl FakeInstallLocations {
+        fn at(root: UninstallRoot, location: &'static str) -> Self {
+            let mut locations = [None, None, None];
+            locations[root as usize] = Some(location);
+            Self { locations }
+        }
+
+        fn empty() -> Self {
+            Self {
+                locations: [None, None, None],
+            }
+        }
+    }
+
+    impl InstallLocationReader for FakeInstallLocations {
+        fn install_location(&self, root: UninstallRoot) -> Option<String> {
+            self.locations[root as usize].map(str::to_string)
+        }
+    }
+
+    #[test]
+    fn uninstall_subkeys_name_the_shared_inno_key() {
+        assert_eq!(
+            WINDOWS_UNINSTALL_KEY,
+            "{37400F83-8332-4043-8DFF-1F69E51F6555}_is1"
         );
+        assert!(UninstallRoot::CurrentUser
+            .subkey()
+            .ends_with(WINDOWS_UNINSTALL_KEY));
+        assert!(UninstallRoot::LocalMachineWow64
+            .subkey()
+            .contains(r"WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"));
+    }
+
+    #[test]
+    fn a_matching_install_location_under_hkcu_marks_the_copy_installed() {
+        // Mirrors tests/tst_omaircupdatecheck.cpp install-location cases.
+        let reader = FakeInstallLocations::at(
+            UninstallRoot::CurrentUser,
+            "C:/Users/Fredi/AppData/Local/Programs/Omairc/",
+        );
+        assert!(running_copy_is_installed_with(
+            "C:/Users/Fredi/AppData/Local/Programs/Omairc",
+            &reader
+        ));
+    }
+
+    #[test]
+    fn a_matching_location_under_hklm_or_wow64_is_enough() {
+        let hklm = FakeInstallLocations::at(
+            UninstallRoot::LocalMachine,
+            r"C:\Users\Fredi\AppData\Local\Programs\Omairc\",
+        );
+        assert!(running_copy_is_installed_with(
+            "C:/Users/Fredi/AppData/Local/Programs/Omairc",
+            &hklm
+        ));
+        let wow = FakeInstallLocations::at(
+            UninstallRoot::LocalMachineWow64,
+            "C:/Users/Fredi/AppData/Local/Programs/Omairc",
+        );
+        assert!(running_copy_is_installed_with(
+            "C:/Users/Fredi/AppData/Local/Programs/Omairc/",
+            &wow
+        ));
+    }
+
+    #[test]
+    fn a_mismatched_or_missing_install_location_is_not_installed() {
+        let elsewhere = FakeInstallLocations::at(UninstallRoot::CurrentUser, "C:/elsewhere");
+        assert!(!running_copy_is_installed_with("C:/Omairc", &elsewhere));
+        assert!(!running_copy_is_installed_with(
+            "C:/Omairc",
+            &FakeInstallLocations::empty()
+        ));
+        let blank = FakeInstallLocations::at(UninstallRoot::CurrentUser, "   ");
+        assert!(!running_copy_is_installed_with("C:/Omairc", &blank));
     }
 }

@@ -38,6 +38,7 @@ use crate::model::presence::footer_presence;
 use crate::model::sidebar::SidebarState;
 use crate::model::slash_complete::SlashSession;
 use crate::model::status::{connection_line, status_title};
+use crate::desktop::installer::running_copy_is_installed;
 use crate::desktop::notifier::{platform_notifier, Notifier};
 use crate::model::title::{conversation_title, window_title, TitleMark, TitleView};
 use crate::model::update_check::UpdateCheck;
@@ -193,12 +194,7 @@ impl Shell {
         }
         let shown = shown_view(&controller);
         let composer_state = ComposerState::starting_at(shown.draft_key());
-        let update = cx.new(|_| {
-            // PoC: never the installer self-update path. The only Windows setup
-            // asset and uninstall key in tree are Qt's; see update_check /
-            // desktop::installer.
-            UpdateCheck::new(version(), false)
-        });
+        let update = cx.new(|_| UpdateCheck::new(version(), running_copy_is_installed()));
         let update_observe = cx.observe(&update, |_, _, cx| cx.notify());
         let scrollbar_drag: ScrollbarDragCell = Default::default();
         let composer = cx.new(|cx| {
