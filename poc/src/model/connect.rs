@@ -20,6 +20,7 @@
 use std::collections::BTreeMap;
 
 use super::prefs::PrefName;
+use crate::irc::casemapping::IrcCaseMapping;
 use crate::storage::credentialstore::CredentialState;
 use crate::storage::profilestore::Profile as StoredProfile;
 use crate::storage::settings::Status;
@@ -355,23 +356,21 @@ impl Profile {
 
     /// The first reason this profile cannot be applied, or `None` when it can.
     pub fn problem(&self) -> Option<Problem> {
-        self.to_stored(None).problem()
+        self.to_stored(None, IrcCaseMapping::default())
+            .problem()
     }
 
     /// The profile as the file keeps it. The fields the sheet does not edit (account,
     /// bouncer network, avatar, and the keys of channels that stay) come from `existing`, so
     /// saving a network keeps what the Qt client or the TUI wrote there.
-    pub fn to_stored(&self, existing: Option<&StoredProfile>) -> StoredProfile {
+    pub fn to_stored(
+        &self,
+        existing: Option<&StoredProfile>,
+        case_mapping: IrcCaseMapping,
+    ) -> StoredProfile {
         let autojoin_channels = self.channels();
         let autojoin_keys = existing
-            .map(|stored| {
-                stored
-                    .autojoin_keys
-                    .iter()
-                    .filter(|(channel, _)| autojoin_channels.contains(channel))
-                    .map(|(channel, key)| (channel.clone(), key.clone()))
-                    .collect()
-            })
+            .map(|stored| retain_autojoin_keys(&stored.autojoin_keys, &autojoin_channels, case_mapping))
             .unwrap_or_default();
         StoredProfile {
             network_id: self.network_id.clone(),
@@ -442,6 +441,25 @@ impl Profile {
 /// The autojoin text as channel names (Qt `splitAutojoin`). Tokens split on
 /// commas and whitespace. A token with a channel prefix is kept as it is, and any
 /// other token gets `#`. A token that follows a channel is a key, and is dropped.
+/// Keeps the keys whose channel survived normalization, matched with the network case
+/// mapping and re-keyed to the canonical channel name (Qt `retainAutojoinKeys`).
+pub fn retain_autojoin_keys(
+    keys: &BTreeMap<String, String>,
+    channels: &[String],
+    mapping: IrcCaseMapping,
+) -> BTreeMap<String, String> {
+    let mut retained = BTreeMap::new();
+    for channel in channels {
+        for (key, value) in keys {
+            if mapping.equals(key, channel) {
+                retained.insert(channel.clone(), value.clone());
+                break;
+            }
+        }
+    }
+    retained
+}
+
 pub fn parse_autojoin(text: &str, chantypes: &str) -> Vec<String> {
     let mut channels = Vec::new();
     let mut previous_was_channel = false;

@@ -171,6 +171,8 @@ pub struct Controller {
     pub(super) open_directs_motd_seen: BTreeSet<String>,
     /// Networks whose saved avatar was published this registration (`appliedProfileAvatars`).
     pub(super) applied_profile_avatars: BTreeSet<String>,
+    /// Networks whose saved profile changed outside Apply (`persistAutojoin`, and the like).
+    pub(super) background_profile_syncs: BTreeSet<String>,
     /// The avatar cache, its in-flight slots and the seam its jobs fetch through (`avatars.rs`).
     pub(super) avatars: AvatarFetches,
     /// Channels and directs the user closed (`closedConversations` / `targets`).
@@ -268,6 +270,7 @@ impl Controller {
             open_directs: OpenDirectStore::new(&backing),
             open_directs_motd_seen: BTreeSet::new(),
             applied_profile_avatars: BTreeSet::new(),
+            background_profile_syncs: BTreeSet::new(),
             avatars: AvatarFetches::new(Arc::new(UreqFetch)),
             closed,
             playback,

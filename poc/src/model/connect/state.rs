@@ -3,6 +3,7 @@
 //! focus. `ConnectState` and the types it holds stay in the parent module.
 
 use super::*;
+use crate::storage::profilestore::Profile as StoredProfile;
 
 impl ConnectState {
     /// The sheet state for the networks the controller holds: one saved profile per
@@ -161,6 +162,22 @@ impl ConnectState {
     /// The saved profiles in rail order. The sheet reads the rail through `rows`.
     pub fn saved(&self) -> &[Profile] {
         &self.saved
+    }
+
+    /// Copies a background profile edit into the saved network and the draft when it is
+    /// selected (`IrcConnection::persistAutojoin` / `persistAvatarUrl` on the draft).
+    pub fn sync_background_profile(&mut self, stored: &StoredProfile) {
+        let autojoin = stored.autojoin_channels.join(" ");
+        if let Some(index) = self
+            .saved
+            .iter()
+            .position(|profile| profile.network_id == stored.network_id)
+        {
+            self.saved[index].autojoin = autojoin.clone();
+        }
+        if self.selected == stored.network_id && self.draft.autojoin != autojoin {
+            self.draft.autojoin = autojoin;
+        }
     }
 
     /// The profile the form shows. The sheet reads the fields through `text`.
