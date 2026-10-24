@@ -20,7 +20,7 @@ use super::event::MsgId;
 pub const MAX_INBOX_ITEMS: usize = 50;
 
 /// What one inbox entry is (`InboxKind`, `IrcInboxKind`). The order follows Qt.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum InboxKind {
     /// A channel line naming the user.
     Mention,
@@ -61,6 +61,17 @@ impl InboxKind {
     }
 }
 
+/// Stable identity for one inbox row. A msgid wins when the server gave one.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct InboxIdentity {
+    pub kind: InboxKind,
+    pub network_id: String,
+    pub actor: String,
+    pub target: String,
+    pub msgid: String,
+    pub timestamp: DateTime<Utc>,
+}
+
 /// One inbox entry (`InboxItem`, `IrcInboxItem`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InboxItem {
@@ -76,6 +87,18 @@ pub struct InboxItem {
 }
 
 impl InboxItem {
+    /// The row's stable identity for sheet actions while the list shifts.
+    pub fn identity(&self) -> InboxIdentity {
+        InboxIdentity {
+            kind: self.kind,
+            network_id: self.network_id.clone(),
+            actor: self.actor.clone(),
+            target: self.target.clone(),
+            msgid: self.msgid.value.clone(),
+            timestamp: self.timestamp,
+        }
+    }
+
     /// The one-line text the row shows (`IrcInboxModel::labelFor`).
     pub fn label(&self) -> String {
         match self.kind {
@@ -154,6 +177,15 @@ impl Inbox {
     /// (`ConsumeAt`).
     pub fn remove_at(&mut self, index: usize) -> Option<InboxItem> {
         (index < self.items.len()).then(|| self.items.remove(index))
+    }
+
+    /// Removes and returns the entry named by `identity`, if it is still waiting.
+    pub fn remove_identity(&mut self, identity: &InboxIdentity) -> Option<InboxItem> {
+        let index = self
+            .items
+            .iter()
+            .position(|item| item.identity() == *identity)?;
+        Some(self.items.remove(index))
     }
 
     /// Removes every mention, highlight, direct or kick row for `target` on
@@ -241,6 +273,20 @@ mod tests {
             "the oldest kept row"
         );
         assert_eq!(inbox.at(MAX_INBOX_ITEMS), None);
+    }
+
+    #[test]
+    fn remove_identity_finds_the_row_after_a_prepend() {
+        let mut inbox = Inbox::new();
+        let first = item(InboxKind::Direct, "net", "alice", "alice");
+        let second = item(InboxKind::Direct, "net", "bob", "bob");
+        inbox.append(first.clone(), rfc1459());
+        inbox.append(second.clone(), rfc1459());
+        let id = inbox.at(0).expect("bob").identity();
+        inbox.append(item(InboxKind::Direct, "net", "carl", "carl"), rfc1459());
+        let removed = inbox.remove_identity(&id).expect("bob");
+        assert_eq!(removed.actor, "bob");
+        assert_eq!(inbox.len(), 2);
     }
 
     #[test]

@@ -15,7 +15,7 @@ use gpui::{
 };
 
 use crate::model::filter_list::step;
-use crate::irc::inbox::InboxItem;
+use crate::irc::inbox::{InboxIdentity, InboxItem};
 use crate::model::Style;
 use crate::ui::sheets::frame::popup_frame;
 use crate::ui::Handler;
@@ -43,9 +43,9 @@ const LIST_CAP: f32 = 252.;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InboxEvent {
     /// Enter or a click on a row: act on it, then close.
-    Activated(usize),
+    Activated(InboxIdentity),
     /// The delete button, or Delete on the selected row.
-    Dismissed(usize),
+    Dismissed(InboxIdentity),
     /// A press outside the card.
     Closed,
 }
@@ -76,13 +76,20 @@ impl InboxSheet {
     /// Replaces the snapshot after the shell changed the inbox. `removed` is
     /// the row that went away, if any, so the selection keeps its place as Qt
     /// does: a removal above the selection moves it up one row.
-    pub fn sync(&mut self, items: Vec<InboxItem>, removed: Option<usize>, cx: &mut Context<Self>) {
-        let previous = self.selected;
+    pub fn sync(&mut self, items: Vec<InboxItem>, removed: Option<InboxIdentity>, cx: &mut Context<Self>) {
+        let previous = self.items.get(self.selected).map(|item| item.identity());
         self.items = items;
-        self.selected = match removed {
-            _ if self.items.is_empty() => 0,
-            Some(row) if row < previous => previous - 1,
-            _ => previous.min(self.items.len() - 1),
+        self.selected = if self.items.is_empty() {
+            0
+        } else if removed.as_ref() == previous.as_ref() {
+            0
+        } else if let Some(id) = previous {
+            self.items
+                .iter()
+                .position(|item| item.identity() == id)
+                .unwrap_or_else(|| self.selected.min(self.items.len() - 1))
+        } else {
+            self.selected.min(self.items.len() - 1)
         };
         cx.notify();
     }
@@ -97,17 +104,17 @@ impl InboxSheet {
     }
 
     fn activate_at(&mut self, ix: usize, cx: &mut Context<Self>) {
-        if ix < self.items.len() {
+        if let Some(item) = self.items.get(ix) {
             self.selected = ix;
-            cx.emit(InboxEvent::Activated(ix));
+            cx.emit(InboxEvent::Activated(item.identity()));
         }
     }
 
     /// Delete on the selected row, or the delete button on any row. The
     /// selection does not move here; `sync` settles it once the shell has acted.
     fn dismiss_at(&mut self, ix: usize, cx: &mut Context<Self>) {
-        if ix < self.items.len() {
-            cx.emit(InboxEvent::Dismissed(ix));
+        if let Some(item) = self.items.get(ix) {
+            cx.emit(InboxEvent::Dismissed(item.identity()));
         }
     }
 
