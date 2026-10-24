@@ -608,6 +608,7 @@ impl SecretSlot {
             CredentialState::SessionOnly => {
                 format!("secure storage unavailable; {} is session-only", self.noun)
             }
+            CredentialState::Loading => String::new(),
             CredentialState::Error(_) if self.held => {
                 format!("secure storage error; {} is session-only", self.noun)
             }

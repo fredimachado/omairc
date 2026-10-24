@@ -101,7 +101,9 @@ impl Controller {
             .cloned()
             .collect();
         for profile in complete {
-            if self.profile_credentials_loading(&profile) {
+            if self.profile_credentials_loading(&profile)
+                || !self.startup_connect_allowed(&profile)
+            {
                 self.pending_session_registrations
                     .insert(profile.network_id.clone());
             } else {
@@ -121,6 +123,7 @@ impl Controller {
                 profile.is_complete()
                     && self.manager.find(&profile.network_id).is_none()
                     && !self.profile_credentials_loading(profile)
+                    && self.startup_connect_allowed(profile)
             })
             .map(|profile| profile.network_id.clone())
             .collect();
@@ -133,9 +136,10 @@ impl Controller {
             .pending_session_registrations
             .iter()
             .filter(|network_id| {
-                self.profiles
-                    .get(*network_id)
-                    .is_some_and(|profile| !self.profile_credentials_loading(profile))
+                self.profiles.get(*network_id).is_some_and(|profile| {
+                    !self.profile_credentials_loading(profile)
+                        && self.startup_connect_allowed(profile)
+                })
             })
             .cloned()
             .collect();
@@ -145,20 +149,27 @@ impl Controller {
                 self.register_session(&profile);
             }
         }
-        let startup: Vec<String> = self
-            .pending_startup_connects
-            .iter()
-            .filter(|network_id| {
-                self.profiles.get(*network_id).is_some_and(|profile| {
-                    !self.profile_credentials_loading(profile)
-                        && self.startup_connect_allowed(profile)
-                })
-            })
-            .cloned()
-            .collect();
+        let startup: Vec<String> = self.pending_startup_connects.iter().cloned().collect();
         for network_id in startup {
+            let profile = match self.profiles.get(&network_id) {
+                Some(profile) if profile.is_complete() => profile.clone(),
+                _ => {
+                    self.pending_startup_connects.remove(&network_id);
+                    continue;
+                }
+            };
+            if self.profile_credentials_loading(&profile) {
+                continue;
+            }
             self.pending_startup_connects.remove(&network_id);
-            let _ = self.start(&network_id);
+            if self.startup_connect_allowed(&profile) {
+                let _ = self.start(&network_id);
+            } else {
+                self.refuse_with(
+                    &network_id,
+                    "The saved password could not be read from secure storage.",
+                );
+            }
         }
     }
 
@@ -174,16 +185,12 @@ impl Controller {
             .collect();
         let mut started = 0;
         for id in ids {
-            let allowed = self
-                .profiles
-                .get(&id)
-                .is_some_and(|profile| self.startup_connect_allowed(profile));
-            if !allowed {
-                continue;
-            }
             let profile = self.profiles.get(&id).expect("filtered above");
             if self.profile_credentials_loading(profile) {
                 self.pending_startup_connects.insert(id);
+                continue;
+            }
+            if !self.startup_connect_allowed(profile) {
                 continue;
             }
             if self.start(&id) {
@@ -319,6 +326,11 @@ impl Controller {
             || matches!(saved.nickserv, CredentialState::Error(_))
         {
             return false;
+        }
+        if matches!(saved.password, CredentialState::Loading)
+            || matches!(saved.nickserv, CredentialState::Loading)
+        {
+            return true;
         }
         self.startup_connect_allowed(profile)
     }
@@ -663,7 +675,7 @@ impl Controller {
         let key = CredentialKey::for_profile(profile, purpose);
         let from_profile = profile_for_credential_key(from);
         match read_slot(self.credentials.as_ref(), &from_profile, from.purpose) {
-            ReadSlot::Loading => CredentialState::Error("checking secure storage".to_owned()),
+            ReadSlot::Loading => CredentialState::Loading,
             ReadSlot::Ready(Ok(Some(text))) => {
                 let mut carried = Secret::from(text);
                 let state = write_slot(self.credentials.as_mut(), profile, purpose, carried.expose());
@@ -748,7 +760,7 @@ impl Controller {
             return true;
         }
         match self.credential_slot_state(profile, purpose) {
-            CredentialState::Error(_) => tracked,
+            CredentialState::Error(_) | CredentialState::Loading => tracked,
             CredentialState::Missing | CredentialState::SessionOnly if saved => true,
             _ => false,
         }
@@ -762,7 +774,7 @@ impl Controller {
 
     fn credential_slot_state_from_read(&self, read: ReadSlot) -> CredentialState {
         match read {
-            ReadSlot::Loading => CredentialState::Error("checking secure storage".to_owned()),
+            ReadSlot::Loading => CredentialState::Loading,
             ReadSlot::Ready(Ok(Some(text))) => {
                 Secret::from(text).wipe();
                 if self.credentials.durable() {
@@ -777,10 +789,15 @@ impl Controller {
     }
 
     fn slot_read_loading(&self, profile: &Profile, purpose: &'static str) -> bool {
-        matches!(
-            read_slot(self.credentials.as_ref(), profile, purpose),
-            ReadSlot::Loading
-        )
+        let primary = CredentialKey::for_profile(profile, purpose);
+        if self.credentials.deferred_read_inflight(&primary) {
+            return true;
+        }
+        if purpose == PURPOSE_PASSWORD {
+            let legacy = CredentialKey::for_profile(profile, LEGACY_PURPOSE_PASSWORD);
+            return self.credentials.deferred_read_inflight(&legacy);
+        }
+        false
     }
 
     fn profile_credentials_loading(&self, profile: &Profile) -> bool {
@@ -874,7 +891,7 @@ fn saved_flag(state: &CredentialState, was_saved: bool) -> bool {
     match state {
         CredentialState::Available => true,
         CredentialState::SessionOnly | CredentialState::Missing => false,
-        CredentialState::Error(_) => was_saved,
+        CredentialState::Loading | CredentialState::Error(_) => was_saved,
     }
 }
 
