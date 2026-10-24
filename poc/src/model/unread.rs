@@ -87,6 +87,7 @@ mod tests {
             event_text: None,
             status: None,
             msgid: String::new(),
+            only_visible_to_you: false,
         }
     }
 
