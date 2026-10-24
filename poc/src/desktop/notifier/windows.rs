@@ -20,11 +20,13 @@
 //! expanded, when the target is empty or is not valid UTF-16, when any `%` remains after
 //! `%VAR%` expansion (a literal `%` in a real path refuses too), or when it names an exe this
 //! build may not take. Before the fallback, the repair path re-stamps a link that already names
-//! this exe, but only when no such link is stamped yet, in either location. It never creates an
-//! all-users link. After a repair, only an installed copy whose per-user link is readable and
-//! names another exe reaches the per-user decision, which replaces that link. A dev build, and an
-//! installed copy whose per-user link is missing, unreadable, or names this exe, stops there, so
-//! after a repair a per-user link is replaced, never created.
+//! this exe, in either location, but only when no such link is stamped yet. It never creates an
+//! all-users link. A readable link that names this exe counts as found whether or not its stamp
+//! takes, and the post-repair gate reads that finding, not the stamp. After a repair, a build that
+//! is not installed stops there, portable builds included. An installed copy goes on only when its
+//! per-user link is readable and names another exe, and then it replaces that link. A missing
+//! per-user link, an unreadable one, or one that names this exe stops there, so after a repair a
+//! per-user link is replaced, never created.
 //!
 //! This code decides what it writes. It does not establish which copy receives a click while
 //! more than one copy is registered.
@@ -588,34 +590,54 @@ fn install_shortcut(link_path: &str, exe_path: &str) -> Result<(), windows::core
     unsafe { persist.Save(PCWSTR(link_wide.as_ptr()), true) }
 }
 
-/// Repairs the Start Menu links that already name this exe. When one is stamped, nothing is
-/// written. Otherwise the first link that takes a stamp is re-stamped. Returns whether a link
-/// naming this exe is stamped afterwards.
-fn repair_installed_links(exe_path: &str, installed: &[PathBuf]) -> bool {
-    for link in installed {
-        if shortcut_is_stamped(&link.to_string_lossy()) {
-            return true;
+/// Decides what the repair reports for the links that name this exe. `is_stamped` says whether a
+/// link already carries the stamp, and `stamp` writes it and says whether the write took. When a
+/// link is stamped, nothing is written. Otherwise `stamp` is tried on each link in order, and the
+/// first that takes ends the attempts. The result is whether `installed` has any link, whatever
+/// the stamps did, so a link found by name counts even when no stamp takes.
+fn found_after_repair(
+    installed: &[PathBuf],
+    is_stamped: impl Fn(&Path) -> bool,
+    stamp: impl Fn(&Path) -> bool,
+) -> bool {
+    if !installed.iter().any(|link| is_stamped(link)) {
+        for link in installed {
+            if stamp(link) {
+                break;
+            }
         }
     }
-    for link in installed {
-        let link_path = link.to_string_lossy();
-        if install_shortcut(&link_path, exe_path).is_ok() {
-            return true;
-        }
-        log::warn!(
-            "Windows notifier: could not stamp installed Start Menu shortcut {:?}",
-            link
-        );
-    }
-    false
+    !installed.is_empty()
 }
 
-/// Whether the registration stops after the repair path, before the per-user link decision.
-/// Without a repair nothing stops here, so the decision runs as it always has. After a repair,
-/// a dev build stops, so it does not overwrite a link it did not own. An installed copy goes on
-/// only when its per-user link is readable and names another exe, which it may replace. A
-/// missing per-user link, an unreadable one, or one that names this exe stops, so after a
-/// repair a per-user link is replaced, never created.
+/// Repairs the Start Menu links that already name this exe. `installed` lists the readable links
+/// that name it, in either location. The result is true when one of them is there, stamped or
+/// not. A failed stamp is logged and does not change the result. See `found_after_repair`.
+fn repair_installed_links(exe_path: &str, installed: &[PathBuf]) -> bool {
+    found_after_repair(
+        installed,
+        |link| shortcut_is_stamped(&link.to_string_lossy()),
+        |link| {
+            let stamped = install_shortcut(&link.to_string_lossy(), exe_path).is_ok();
+            if !stamped {
+                log::warn!(
+                    "Windows notifier: could not stamp installed Start Menu shortcut {:?}",
+                    link
+                );
+            }
+            stamped
+        },
+    )
+}
+
+/// Whether `ensure_notification_registration` stops after the repair, before the fallback runs.
+/// `repaired` is true when a readable link in either location names this exe, whether or not it
+/// is stamped (see `repair_installed_links`). When it is false, nothing stops here and the fallback
+/// runs as it always has. When it is true, a build that is not installed stops, portable builds
+/// included, so it does not overwrite a link it did not own. An installed copy goes on only when
+/// its per-user link is readable and names another exe, which it may replace. A missing per-user
+/// link, an unreadable one, or one that names this exe stops, so after a repair a per-user link is
+/// replaced, never created.
 fn repair_ends_registration(
     repaired: bool,
     from_install: bool,
@@ -660,6 +682,12 @@ fn ensure_notification_registration(exe_path: &str) {
     let this_exe = Path::new(exe_path);
     let from_install = is_installed_exe(this_exe, &roots, resolve_path);
     if repair_ends_registration(repaired, from_install, this_exe, &per_user_state) {
+        if from_install && matches!(per_user_state, LinkState::Unreadable) {
+            log::info!(
+                "Windows notifier: could not read {:?} to see which exe it names, leaving it unchanged",
+                link
+            );
+        }
         return;
     }
     if let Err(refusal) = check_existing_links(
@@ -885,12 +913,13 @@ pub fn activation_from_args(args: &[String]) -> Option<Activation> {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
     use std::path::{Path, PathBuf};
 
     use super::{
-        check_existing_links, expand_environment, is_installed_exe, link_state_from_target,
-        registered_exe, repair_ends_registration, should_claim, strip_verbatim, LinkRefusal,
-        LinkSlot, LinkState,
+        check_existing_links, expand_environment, found_after_repair, is_installed_exe,
+        link_state_from_target, registered_exe, repair_ends_registration, should_claim,
+        strip_verbatim, LinkRefusal, LinkSlot, LinkState,
     };
 
     const THIS_EXE: &str = r"C:\dev\omairc\omairc-poc-gpui.exe";
@@ -1256,8 +1285,45 @@ mod tests {
     }
 
     const INSTALLED_EXE: &str = r"C:\Program Files\Omairc\omairc.exe";
-    /// A dev exe in another checkout, which still exists.
+    /// A dev exe in another checkout. No test puts it on disk.
     const DEV_EXE: &str = r"D:\other-checkout\poc\target\debug\omairc-poc-gpui.exe";
+
+    /// A scratch folder under the system temp folder, removed when the test ends. Each test makes
+    /// its own, so tests stay isolated, and none touches the Start Menu, the registry, or an
+    /// install folder.
+    struct ScratchDir(PathBuf);
+
+    impl ScratchDir {
+        fn new(name: &str) -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("omairc-notifier-{}-{name}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).expect("create scratch folder");
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+
+        /// The path of `<folder>\omairc.exe` under this folder. The file is written when
+        /// `present`, so the path is a real exe or a real absence.
+        fn exe(&self, folder: &str, present: bool) -> PathBuf {
+            let dir = self.0.join(folder);
+            let exe = dir.join("omairc.exe");
+            if present {
+                std::fs::create_dir_all(&dir).expect("create scratch exe folder");
+                std::fs::write(&exe, b"").expect("write scratch exe");
+            }
+            exe
+        }
+    }
+
+    impl Drop for ScratchDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
 
     #[test]
     fn an_unreadable_per_user_link_refuses() {
@@ -1318,24 +1384,63 @@ mod tests {
         );
     }
 
-    #[test]
-    fn an_installed_copy_overwrites_a_dev_per_user_link_past_its_own_all_users_link() {
-        // Its own all-users link is stamped, so the repair runs. The gate then lets the copy on
-        // to the per-user decision, which may replace the dev link.
-        let per_user = targets(DEV_EXE);
-        assert!(!stops_after_repair(INSTALLED_EXE, true, &per_user));
-        let dev = Path::new(DEV_EXE);
+    /// Runs an installed copy at `exe` through the post-repair gate and the fallback's check, with
+    /// `roots` as its install roots and its own all-users link stamped, so the repair ran. The gate
+    /// must go on, and the check must allow the per-user link to be replaced.
+    fn assert_installed_copy_replaces(exe: &Path, roots: &[PathBuf], per_user: &LinkState) {
+        let from_install = is_installed_exe(exe, roots, no_resolve);
+        assert!(from_install, "{} must count as installed", exe.display());
+        assert!(
+            !repair_ends_registration(true, from_install, exe, per_user),
+            "the gate stopped for {per_user:?}"
+        );
         assert_eq!(
             check_existing_links(
-                Path::new(INSTALLED_EXE),
-                &test_roots(),
-                &targets(INSTALLED_EXE),
-                &per_user,
-                |path| path == dev,
+                exe,
+                roots,
+                &LinkState::Targets(exe.to_path_buf()),
+                per_user,
+                Path::exists,
                 no_resolve,
             ),
             Ok(()),
         );
+    }
+
+    #[test]
+    fn an_installed_copy_replaces_a_per_user_link_naming_a_still_existing_exe() {
+        let scratch = ScratchDir::new("replace_existing");
+        let installed = scratch.exe("Omairc", true);
+        let roots = [scratch.path().join("Omairc")];
+        let other = scratch.exe("Other", true);
+        assert!(other.exists(), "the other exe must be on disk");
+        assert_installed_copy_replaces(&installed, &roots, &LinkState::Targets(other));
+    }
+
+    #[test]
+    fn an_installed_copy_replaces_a_per_user_link_naming_a_gone_exe() {
+        let scratch = ScratchDir::new("replace_gone");
+        let installed = scratch.exe("Omairc", true);
+        let roots = [scratch.path().join("Omairc")];
+        let gone = scratch.exe("Other", false);
+        assert!(!gone.exists(), "the other exe must be absent");
+        assert_installed_copy_replaces(&installed, &roots, &LinkState::Targets(gone));
+    }
+
+    #[test]
+    fn an_installed_copy_whose_per_user_link_names_its_existing_exe_stops_with_no_write() {
+        let scratch = ScratchDir::new("stop_named");
+        let installed = scratch.exe("Omairc", true);
+        let roots = [scratch.path().join("Omairc")];
+        assert!(installed.exists(), "the installed exe must be on disk");
+        let from_install = is_installed_exe(&installed, &roots, no_resolve);
+        assert!(from_install, "the copy must count as installed");
+        assert!(repair_ends_registration(
+            true,
+            from_install,
+            &installed,
+            &LinkState::Targets(installed.clone()),
+        ));
     }
 
     #[test]
@@ -1408,10 +1513,114 @@ mod tests {
     }
 
     #[test]
-    fn an_installed_copy_continues_after_a_repair_when_its_per_user_link_names_another_exe() {
-        // The gate does not ask whether the other exe still exists, so both cases continue.
-        assert!(!stops_after_repair(INSTALLED_EXE, true, &targets(OTHER_EXE)));
-        assert!(!stops_after_repair(INSTALLED_EXE, true, &targets(DEV_EXE)));
+    fn found_after_repair_with_no_links_is_false_and_writes_nothing() {
+        let attempts = RefCell::new(Vec::new());
+        let found = found_after_repair(
+            &[],
+            |_| false,
+            |link| {
+                attempts.borrow_mut().push(link.to_path_buf());
+                true
+            },
+        );
+        assert!(!found);
+        assert!(attempts.borrow().is_empty());
+    }
+
+    #[test]
+    fn a_stamped_link_is_found_and_nothing_is_written() {
+        let link = PathBuf::from("all-users.lnk");
+        let attempts = RefCell::new(Vec::new());
+        let found = found_after_repair(
+            std::slice::from_ref(&link),
+            |_| true,
+            |path| {
+                attempts.borrow_mut().push(path.to_path_buf());
+                true
+            },
+        );
+        assert!(found);
+        assert!(attempts.borrow().is_empty());
+    }
+
+    #[test]
+    fn a_link_found_by_name_counts_even_when_its_stamp_fails() {
+        let link = PathBuf::from("all-users.lnk");
+        let attempts = RefCell::new(Vec::new());
+        let found = found_after_repair(
+            std::slice::from_ref(&link),
+            |_| false,
+            |path| {
+                attempts.borrow_mut().push(path.to_path_buf());
+                false
+            },
+        );
+        assert!(found, "a failed stamp must not make the link disappear");
+        assert_eq!(attempts.into_inner(), vec![link]);
+    }
+
+    #[test]
+    fn a_stamped_link_among_unstamped_ones_stops_the_writes() {
+        let first = PathBuf::from("all-users.lnk");
+        let second = PathBuf::from("per-user.lnk");
+        let attempts = RefCell::new(Vec::new());
+        let found = found_after_repair(
+            &[first.clone(), second.clone()],
+            |path| path == second.as_path(),
+            |path| {
+                attempts.borrow_mut().push(path.to_path_buf());
+                true
+            },
+        );
+        assert!(found);
+        assert!(attempts.borrow().is_empty(), "no stamp is written when one link is stamped");
+    }
+
+    #[test]
+    fn the_first_stamp_that_takes_ends_the_attempts() {
+        let first = PathBuf::from("all-users.lnk");
+        let second = PathBuf::from("per-user.lnk");
+        let attempts = RefCell::new(Vec::new());
+        let found = found_after_repair(
+            &[first.clone(), second],
+            |_| false,
+            |path| {
+                attempts.borrow_mut().push(path.to_path_buf());
+                true
+            },
+        );
+        assert!(found);
+        assert_eq!(attempts.into_inner(), vec![first]);
+    }
+
+    #[test]
+    fn a_failed_stamp_moves_on_to_the_next_link() {
+        let first = PathBuf::from("all-users.lnk");
+        let second = PathBuf::from("per-user.lnk");
+        let attempts = RefCell::new(Vec::new());
+        let found = found_after_repair(
+            &[first.clone(), second.clone()],
+            |_| false,
+            |path| {
+                attempts.borrow_mut().push(path.to_path_buf());
+                path == second.as_path()
+            },
+        );
+        assert!(found);
+        assert_eq!(attempts.into_inner(), vec![first, second]);
+    }
+
+    #[test]
+    fn an_unstamped_all_users_link_naming_this_exe_blocks_the_per_user_fallback_when_its_stamp_fails() {
+        // The all-users install's link names this exe, but stamping it needs admin rights and the
+        // stamp fails. The link is still found, so the installed copy stops and makes no per-user
+        // link.
+        let all_users = PathBuf::from(
+            r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Omairc.lnk",
+        );
+        let repaired = found_after_repair(&[all_users], |_| false, |_| false);
+        assert!(repaired);
+        assert!(stops_after_repair(INSTALLED_EXE, repaired, &LinkState::Missing));
     }
 
     #[test]
