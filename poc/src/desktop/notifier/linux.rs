@@ -109,16 +109,19 @@ impl Notifier for LinuxNotifier {
                 };
                 let hints = HashMap::new();
                 let actions = ["default", "Open"];
-                let id = match proxy.notify(
-                    "Omairc",
-                    replaces_id,
-                    "omairc",
-                    &summary,
-                    &body,
-                    &actions,
-                    hints,
-                    -1,
-                ) {
+                let id = match proxy
+                    .notify(
+                        "Omairc",
+                        replaces_id,
+                        "omairc",
+                        &summary,
+                        &body,
+                        &actions,
+                        hints,
+                        -1,
+                    )
+                    .await
+                {
                     Ok(id) => id,
                     Err(_) => return,
                 };

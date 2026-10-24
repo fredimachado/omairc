@@ -178,7 +178,6 @@ mod linux {
     fn scalar_f64(value: &zvariant::Value<'_>) -> Option<f64> {
         match value {
             zvariant::Value::F64(scale) => Some(*scale),
-            zvariant::Value::F32(scale) => Some(f64::from(*scale)),
             zvariant::Value::I16(scale) => Some(f64::from(*scale)),
             zvariant::Value::U16(scale) => Some(f64::from(*scale)),
             zvariant::Value::I32(scale) => Some(f64::from(*scale)),
