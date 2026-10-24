@@ -11,6 +11,13 @@
 //!   registered, when the registered exe is itself, or when the registered exe no longer
 //!   exists. So it does not displace an exe that still exists.
 //!
+//! The shortcut fallback reads two Start Menu `Omairc.lnk` links: the per-user one and the
+//! all-users one, under `FOLDERID_CommonPrograms`. It writes only the per-user link, and only
+//! when neither link refuses. A link refuses when it cannot be read, or when it names an exe
+//! this build may not take. The installed-copy repair path runs before the fallback and is
+//! unchanged. It can re-stamp an existing link in either location when that link already names
+//! this exe. It never creates an all-users link.
+//!
 //! This code decides what it writes. It does not establish which copy receives a click while
 //! more than one copy is registered.
 
@@ -50,8 +57,8 @@ use windows::Win32::UI::Notifications::{
     NOTIFICATION_USER_INPUT_DATA,
 };
 use windows::Win32::UI::Shell::{
-    FOLDERID_ProgramFiles, FOLDERID_UserProgramFiles, IShellLinkW, KF_FLAG_DEFAULT,
-    SHGetKnownFolderPath, SHStrDupW, ShellLink, SLGP_RAWPATH,
+    FOLDERID_CommonPrograms, FOLDERID_ProgramFiles, FOLDERID_UserProgramFiles, IShellLinkW,
+    KF_FLAG_DEFAULT, SHGetKnownFolderPath, SHStrDupW, ShellLink, SLGP_RAWPATH,
 };
 use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -189,6 +196,69 @@ fn is_installed_exe(this_exe: &Path, install_roots: &[PathBuf]) -> bool {
                 root_part.as_os_str().eq_ignore_ascii_case(exe_part.as_os_str())
             })
     })
+}
+
+/// Where a Start Menu `Omairc.lnk` lives. Only `PerUser` is ever written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LinkSlot {
+    AllUsers,
+    PerUser,
+}
+
+/// One Start Menu `Omairc.lnk`, as read from disk. Only a confirmed absence is `Missing`.
+#[derive(Debug, PartialEq, Eq)]
+enum LinkState {
+    Missing,
+    /// The link exists, but its target cannot be read. Fail closed.
+    Unreadable,
+    /// The link names an exe path.
+    Targets(PathBuf),
+}
+
+/// Why the shortcut fallback must not write the per-user link.
+#[derive(Debug, PartialEq, Eq)]
+enum LinkRefusal {
+    Unreadable(LinkSlot),
+    NamesOtherExe(LinkSlot, PathBuf),
+}
+
+/// Decides whether the shortcut fallback may write the per-user link, given both links as
+/// read from disk. The all-users link is checked first, and the first refusal wins. An
+/// unreadable link refuses. Any other link allows when this exe is an installed copy, or when
+/// `should_claim` allows it: the link names this exe, or an exe that is gone.
+fn check_existing_links(
+    this_exe: &Path,
+    install_roots: &[PathBuf],
+    all_users: &LinkState,
+    per_user: &LinkState,
+    exists: impl Fn(&Path) -> bool,
+) -> Result<(), LinkRefusal> {
+    let from_install = is_installed_exe(this_exe, install_roots);
+    for (slot, state) in [(LinkSlot::AllUsers, all_users), (LinkSlot::PerUser, per_user)] {
+        match state {
+            LinkState::Missing => {}
+            LinkState::Unreadable => return Err(LinkRefusal::Unreadable(slot)),
+            LinkState::Targets(target) => {
+                if !from_install && !should_claim(Some(target.as_path()), this_exe, &exists) {
+                    return Err(LinkRefusal::NamesOtherExe(slot, target.clone()));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Reads one Start Menu `Omairc.lnk`. Only a confirmed absence counts as `Missing`, so a
+/// failure to check the folder leaves the link `Unreadable`.
+fn read_link_state(link: &Path) -> LinkState {
+    match link.try_exists() {
+        Ok(false) => LinkState::Missing,
+        Ok(true) => match shortcut_target(&link.to_string_lossy()) {
+            Some(target) => LinkState::Targets(PathBuf::from(target)),
+            None => LinkState::Unreadable,
+        },
+        Err(_) => LinkState::Unreadable,
+    }
 }
 
 /// Reads the default value of the activator's `LocalServer32` key. `Ok(None)` means the
@@ -465,37 +535,59 @@ fn ensure_notification_registration(exe_path: &str) {
     }) else {
         return;
     };
-    let _ = std::fs::create_dir_all(&programs);
+    let Some(all_users_programs) = known_folder(&FOLDERID_CommonPrograms) else {
+        log::info!(
+            "Windows notifier: could not resolve the all-users Start Menu folder, so no toast shortcut is written"
+        );
+        return;
+    };
     let link = programs.join("Omairc.lnk");
+    let all_users_link = all_users_programs.join("Omairc.lnk");
     let link_path = link.to_string_lossy();
-    if link.exists() {
-        let Some(target) = shortcut_target(&link_path) else {
-            log::info!(
+    let all_users_state = read_link_state(&all_users_link);
+    let per_user_state = read_link_state(&link);
+    let this_exe = Path::new(exe_path);
+    if let Err(refusal) = check_existing_links(
+        this_exe,
+        &roots,
+        &all_users_state,
+        &per_user_state,
+        Path::exists,
+    ) {
+        match refusal {
+            LinkRefusal::Unreadable(LinkSlot::AllUsers) => log::info!(
+                "Windows notifier: could not read {:?} to see which exe it names, leaving it unchanged",
+                all_users_link
+            ),
+            LinkRefusal::Unreadable(LinkSlot::PerUser) => log::info!(
                 "Windows notifier: could not read {:?} to see which exe it names, leaving it unchanged",
                 link
-            );
-            return;
-        };
-        let target_path = Path::new(&target);
-        let this_exe = Path::new(exe_path);
-        let from_install = is_installed_exe(this_exe, &roots);
-        let claimed_by_rule = should_claim(Some(target_path), this_exe, Path::exists);
-        if !from_install && !claimed_by_rule {
-            log::info!(
+            ),
+            LinkRefusal::NamesOtherExe(LinkSlot::AllUsers, target) => log::info!(
+                "Windows notifier: {:?} already names {}, so this build leaves it alone",
+                all_users_link,
+                target.display()
+            ),
+            LinkRefusal::NamesOtherExe(LinkSlot::PerUser, target) => log::info!(
                 "Windows notifier: {:?} already names {}, so this build leaves it alone",
                 link,
-                target
-            );
-            return;
+                target.display()
+            ),
         }
-        if from_install && !claimed_by_rule {
+        return;
+    }
+    if let LinkState::Targets(target) = &per_user_state {
+        if is_installed_exe(this_exe, &roots)
+            && !should_claim(Some(target.as_path()), this_exe, Path::exists)
+        {
             log::info!(
                 "Windows notifier: this installed copy replaces the Start Menu shortcut {:?}, which names {}",
                 link,
-                target
+                target.display()
             );
         }
     }
+    let _ = std::fs::create_dir_all(&programs);
     if let Err(error) = install_shortcut(&link_path, exe_path) {
         log::warn!(
             "Windows notifier: could not write Start Menu shortcut for toasts: {:?}",
@@ -681,7 +773,10 @@ pub fn activation_from_args(args: &[String]) -> Option<Activation> {
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use super::{is_installed_exe, registered_exe, should_claim};
+    use super::{
+        check_existing_links, is_installed_exe, registered_exe, should_claim, LinkRefusal,
+        LinkSlot, LinkState,
+    };
 
     const THIS_EXE: &str = r"C:\dev\omairc\omairc-poc-gpui.exe";
 
@@ -789,5 +884,109 @@ mod tests {
         let exe = Path::new(THIS_EXE);
         assert!(!is_installed_exe(exe, &[]));
         assert!(!is_installed_exe(exe, &[PathBuf::new()]));
+    }
+
+    const OTHER_EXE: &str = r"C:\Program Files\Other\omairc.exe";
+
+    fn targets(path: &str) -> LinkState {
+        LinkState::Targets(PathBuf::from(path))
+    }
+
+    #[test]
+    fn with_no_links_the_fallback_may_write() {
+        let this_exe = Path::new(THIS_EXE);
+        assert_eq!(
+            check_existing_links(this_exe, &[], &LinkState::Missing, &LinkState::Missing, |_| {
+                false
+            }),
+            Ok(()),
+        );
+    }
+
+    #[test]
+    fn an_all_users_link_naming_this_exe_allows() {
+        let this_exe = Path::new(THIS_EXE);
+        assert_eq!(
+            check_existing_links(this_exe, &[], &targets(THIS_EXE), &LinkState::Missing, |_| true),
+            Ok(()),
+        );
+    }
+
+    #[test]
+    fn an_all_users_link_naming_another_existing_exe_refuses() {
+        let this_exe = Path::new(THIS_EXE);
+        let other = Path::new(OTHER_EXE);
+        assert_eq!(
+            check_existing_links(
+                this_exe,
+                &[],
+                &targets(OTHER_EXE),
+                &LinkState::Missing,
+                |path| path == other,
+            ),
+            Err(LinkRefusal::NamesOtherExe(LinkSlot::AllUsers, PathBuf::from(OTHER_EXE))),
+        );
+    }
+
+    #[test]
+    fn an_all_users_link_naming_a_gone_exe_allows() {
+        let this_exe = Path::new(THIS_EXE);
+        assert_eq!(
+            check_existing_links(
+                this_exe,
+                &[],
+                &targets(OTHER_EXE),
+                &LinkState::Missing,
+                |_| false,
+            ),
+            Ok(()),
+        );
+    }
+
+    #[test]
+    fn an_unreadable_all_users_link_refuses() {
+        let this_exe = Path::new(THIS_EXE);
+        assert_eq!(
+            check_existing_links(
+                this_exe,
+                &[],
+                &LinkState::Unreadable,
+                &LinkState::Missing,
+                |_| false,
+            ),
+            Err(LinkRefusal::Unreadable(LinkSlot::AllUsers)),
+        );
+    }
+
+    #[test]
+    fn a_per_user_link_naming_another_existing_exe_refuses() {
+        let this_exe = Path::new(THIS_EXE);
+        let other = Path::new(OTHER_EXE);
+        assert_eq!(
+            check_existing_links(
+                this_exe,
+                &[],
+                &LinkState::Missing,
+                &targets(OTHER_EXE),
+                |path| path == other,
+            ),
+            Err(LinkRefusal::NamesOtherExe(LinkSlot::PerUser, PathBuf::from(OTHER_EXE))),
+        );
+    }
+
+    #[test]
+    fn an_installed_copy_is_allowed_past_another_exes_link() {
+        let installed = Path::new(r"C:\Users\Fredi\AppData\Local\Programs\Omairc\omairc.exe");
+        let other = Path::new(OTHER_EXE);
+        assert_eq!(
+            check_existing_links(
+                installed,
+                &test_roots(),
+                &targets(OTHER_EXE),
+                &LinkState::Missing,
+                |path| path == other,
+            ),
+            Ok(()),
+        );
     }
 }
