@@ -32,6 +32,9 @@ Ready when stdout includes a title ending in ` - Omairc` or ` Status`, and
 (`chat.freenode.net Status`). `--demo-server` is
 `#omarchy · irc.example · fred - Omairc` with the seeded sidebar.
 
+**Agents always use the default (Xvfb).** Do not pass `--visible` from a
+recipe or an agent drive. That flag is only for a human who wants to watch.
+
 This launch:
 
 - runs `cargo build` in `poc/`
@@ -41,8 +44,8 @@ This launch:
 - sets `OMAIRC_ALLOW_MULTI=1` so the isolated window does not take the user socket
 - **unsets `WAYLAND_DISPLAY` / `WAYLAND_SOCKET`** and sets `XDG_SESSION_TYPE=x11`
   (GPUI prefers Wayland whenever `WAYLAND_DISPLAY` is set; without this the
-  window opens on the live session and Xvfb `xdotool` never sees it)
-- forces lavapipe via `VK_ICD_FILENAMES` (Xvfb has no GPU; Blade needs a
+  window opens on the live session and nested-X `xdotool` never sees it)
+- forces lavapipe via `VK_ICD_FILENAMES` (nested X has no GPU; Blade needs a
   software Vulkan ICD). Override discovery with `OMAIRC_LAVAPIPE_ICD=/path/to/lvp_icd.json`
   when the system package is not installed
 - passes `--demo-server` when requested
@@ -50,6 +53,27 @@ This launch:
 
 Never attach to a window you did not start. Never send `xdotool` to the
 session `$DISPLAY`.
+
+### Watching a run (`--visible`)
+
+When *you* want to see the driven window on your desktop, launch with
+`--visible`. That starts **Xephyr** (a nested X server) as a normal window
+on your session; the PoC and `xdotool` still talk only to that nested
+display. Control verbs are unchanged.
+
+```sh
+.cursor/skills/verify-omairc-poc/control-omairc-poc launch --demo-server --visible
+.cursor/skills/verify-omairc-poc/control-omairc-poc run switch-conversation
+```
+
+Needs `xorg-server-xephyr` and a host `DISPLAY` (XWayland on Omarchy).
+On Hyprland the host window is floated and centered under the reserved
+top bar at 1600×1000 logical pixels. The nested framebuffer matches the
+physical size (logical × host scale), the PoC is launched with matching
+`--scale`, and its window is resized to fill Xephyr so fonts stay
+readable on HiDPI.
+`doctor` reports `visible=yes` and `xserver=Xephyr`. Cleanup closes the
+Xephyr window. Do not put `--visible` in `desktop-recipe` fences.
 
 Teardown:
 
@@ -69,8 +93,10 @@ Require all of:
 
 - `ok isolated Omairc PoC`
 - `binary=` is `$ROOT/poc/target/debug/omairc-poc-gpui` (or `release`)
-- `display=` is the isolated Xvfb from launch, not the user's session
-- `app_pid=` and `xvfb_pid=` are alive
+- `display=` is the nested X server from launch, not the user's session
+- `app_pid=` and `xserver_pid=` are alive
+- `xserver=` is `Xvfb` (default) or `Xephyr` (`--visible`)
+- `visible=no` for agent launches; `visible=yes` only after `--visible`
 - `title=` ends with ` - Omairc` or ` Status`
 - `lavapipe=` is a real `lvp_icd*.json` path
 - `xdg=` is the disposable state directory from this run
@@ -168,7 +194,7 @@ disposable XDG/Xauth directory and the state file. It does not remove
 `control-omairc-poc` is executable. Invoke it from the repo root.
 
 ```text
-launch [--demo-server] | doctor | title | wait-title --exact TITLE
+launch [--demo-server] [--visible] | doctor | title | wait-title --exact TITLE
 run FEATURE [--dry-run]
 jump --query TEXT | nick-jump --query TEXT
 walk --down | walk --up [--times N]

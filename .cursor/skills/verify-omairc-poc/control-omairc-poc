@@ -18,13 +18,22 @@ SCREENSHOT_GRAB_ATTEMPTS=5
 SCREENSHOT_GRAB_DELAY=0.3
 SCREENSHOT_FLAT_STDDEV=0.005
 SCREENSHOT_FLAT_COLORS=16
+# Headless Xvfb framebuffer. --visible overrides these after reading the
+# host scale so the nested size matches the physical Xephyr window (on a
+# 2x panel, logical 1600x1000 → nested 3200x2000).
+NESTED_WIDTH=1600
+NESTED_HEIGHT=1000
+# Logical size of the Xephyr window on the desktop (Hyprland layout px).
+VISIBLE_LOGICAL_WIDTH=1600
+VISIBLE_LOGICAL_HEIGHT=1000
+VISIBLE_TITLE="Omairc PoC verify"
 
 usage() {
   cat <<'EOF'
 control-omairc-poc - isolated driver for the Rust GPUI Omairc PoC
 
 Usage:
-  control-omairc-poc launch [--demo-server]
+  control-omairc-poc launch [--demo-server] [--visible]
   control-omairc-poc doctor
   control-omairc-poc title
   control-omairc-poc wait-title --exact "<title>"
@@ -46,11 +55,15 @@ Usage:
   control-omairc-poc run <feature> [--dry-run]
   control-omairc-poc cleanup
 
+Default launch uses headless Xvfb (what agents should use). --visible uses
+Xephyr so a nested window appears on your desktop; same xdotool control
+path. Do not put --visible in feature recipes.
+
 Keyboard-first. Pointer verbs (click, click-*) are rejected: GPUI on X11
 reads only XInput2 pointer events, and xdotool --window clicks are core
 button events. qml-suite / doctor-qml are Qt-only.
-Requires lavapipe (vulkan-swrast) for Blade on Xvfb.
-Never point this helper at the user's interactive display.
+Requires lavapipe (vulkan-swrast) for Blade on the nested X server.
+Never point xdotool at the user's interactive display.
 EOF
 }
 
@@ -88,13 +101,25 @@ require_lavapipe() {
 }
 
 require_tools() {
+  # $1 = visible (1) or empty. Xephyr is only required for --visible.
+  _want_visible=${1:-}
   missing=
-  for command_name in Xvfb xauth xdotool import magick cargo; do
+  for command_name in xauth xdotool import magick cargo; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
       missing="$missing $command_name"
     fi
   done
+  if [ "$_want_visible" = 1 ]; then
+    if ! command -v Xephyr >/dev/null 2>&1; then
+      missing="$missing Xephyr"
+    fi
+  elif ! command -v Xvfb >/dev/null 2>&1; then
+    missing="$missing Xvfb"
+  fi
   if [ -n "$missing" ]; then
+    if [ "$_want_visible" = 1 ]; then
+      die "missing desktop tools:$missing. On Arch/Omarchy install: xorg-server-xephyr xorg-xauth xdotool imagemagick rust"
+    fi
     die "missing desktop tools:$missing. On Arch/Omarchy install: xorg-server-xvfb xorg-xauth xdotool imagemagick rust"
   fi
   require_lavapipe
@@ -125,6 +150,8 @@ APP_PID=$APP_PID
 WINDOW=$WINDOW
 BINARY=$BINARY
 DEMO=$DEMO
+VISIBLE=$VISIBLE
+XSERVER=$XSERVER
 LAVAPIPE_ICD=$LAVAPIPE_ICD
 EOF
 }
@@ -141,6 +168,106 @@ stop_pid() {
   fi
 }
 
+# Host placement for a VISIBLE_LOGICAL_* window.
+# Prints: "NESTED_W NESTED_H LOGIC_X LOGIC_Y SCALE" or nothing.
+# NESTED_* is physical (logical × scale) so Xephyr matches the XWayland
+# buffer; SCALE is passed to the PoC as --scale so fonts match HiDPI.
+visible_host_placement() {
+  if ! command -v hyprctl >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
+    return 1
+  fi
+  WIDTH="$VISIBLE_LOGICAL_WIDTH" HEIGHT="$VISIBLE_LOGICAL_HEIGHT" python3 - <<'PY'
+import json, os, subprocess
+
+width = int(os.environ["WIDTH"])
+height = int(os.environ["HEIGHT"])
+
+def hypr(args):
+    return subprocess.check_output(["hyprctl", *args], text=True)
+
+monitors = json.loads(hypr(["monitors", "-j"]))
+mon = next((m for m in monitors if m.get("focused")), monitors[0])
+scale = float(mon.get("scale") or 1) or 1
+lw = int(mon["width"] / scale)
+lh = int(mon["height"] / scale)
+reserved = mon.get("reserved") or [0, 0, 0, 0]
+top = int(reserved[1]) if len(reserved) > 1 else 0
+x = max(0, (lw - width) // 2)
+usable = lh - top
+y = top if usable < height else top + (usable - height) // 2
+nested_w = max(width, int(round(width * scale)))
+nested_h = max(height, int(round(height * scale)))
+print(f"{nested_w} {nested_h} {x} {y} {scale:g}")
+PY
+}
+
+# Place the Xephyr host window centered under the Omarchy top bar.
+# Nested framebuffer already matches physical pixels (logical * scale), so
+# we only float + move — do not resize the host larger than Xephyr's root
+# (that left the client as a small corner inside a black frame).
+place_visible_host_window() {
+  _host_display=$1
+  _host_xauth=$2
+  _xephyr_pid=$3
+  _logic_x=$4
+  _logic_y=$5
+  (
+    export DISPLAY="$_host_display"
+    if [ -n "$_host_xauth" ]; then
+      export XAUTHORITY="$_host_xauth"
+    else
+      unset XAUTHORITY
+    fi
+
+    _win=
+    _attempt=0
+    while [ -z "$_win" ] && [ "$_attempt" -lt 40 ]; do
+      _win=$(xdotool search --name "$VISIBLE_TITLE" 2>/dev/null | head -1 || true)
+      [ -n "$_win" ] || _win=$(xdotool search --pid "$_xephyr_pid" 2>/dev/null | head -1 || true)
+      _attempt=$((_attempt + 1))
+      [ -n "$_win" ] || sleep 0.1
+    done
+    [ -n "$_win" ] || return 0
+
+    _attempt=0
+    while [ "$_attempt" -lt 8 ]; do
+      xdotool windowactivate --sync "$_win" 2>/dev/null || true
+      sleep 0.05
+      if command -v hyprctl >/dev/null 2>&1; then
+        hyprctl dispatch "hl.dsp.window.float()" >/dev/null 2>&1 || true
+        # Keep native size (nested = physical). Only move to the logical origin.
+        hyprctl dispatch "hl.dsp.window.move({ x = $_logic_x, y = $_logic_y })" >/dev/null 2>&1 || true
+        _got=$(hyprctl clients -j 2>/dev/null | TITLE="$VISIBLE_TITLE" PID="$_xephyr_pid" \
+          X="$_logic_x" Y="$_logic_y" W="$VISIBLE_LOGICAL_WIDTH" H="$VISIBLE_LOGICAL_HEIGHT" python3 - <<'PY'
+import json, os, sys
+title, pid = os.environ["TITLE"], int(os.environ["PID"])
+x, y = int(os.environ["X"]), int(os.environ["Y"])
+w, h = int(os.environ["W"]), int(os.environ["H"])
+for c in json.load(sys.stdin):
+    if c.get("title") == title or c.get("pid") == pid:
+        at = c.get("at") or [0, 0]
+        size = c.get("size") or [0, 0]
+        if abs(at[0] - x) <= 4 and abs(at[1] - y) <= 4 and size[0] >= w - 2 and size[1] >= h - 2:
+            print("ok")
+        else:
+            print(f"at={at} size={size}")
+        break
+PY
+        ) || true
+        if [ "$_got" = ok ]; then
+          return 0
+        fi
+      fi
+      # Physical xdotool fallback (logical * scale for HiDPI XWayland).
+      _scale_int=$((NESTED_WIDTH / VISIBLE_LOGICAL_WIDTH))
+      [ "$_scale_int" -ge 1 ] || _scale_int=1
+      xdotool windowmove "$_win" "$((_logic_x * _scale_int))" "$((_logic_y * _scale_int))" 2>/dev/null || true
+      _attempt=$((_attempt + 1))
+      sleep 0.15
+    done
+  )
+}
+
 
 window_title() {
   xdotool getwindowname "$WINDOW"
@@ -149,14 +276,37 @@ window_title() {
 
 cmd_launch() {
   DEMO=
+  VISIBLE=
   while [ $# -gt 0 ]; do
     case $1 in
       --demo-server) DEMO=1; shift ;;
-      *) die "unknown launch argument: $1. Use launch or launch --demo-server." ;;
+      --visible) VISIBLE=1; shift ;;
+      *) die "unknown launch argument: $1. Use launch [--demo-server] [--visible]." ;;
     esac
   done
 
-  require_tools
+  require_tools "$VISIBLE"
+  VISIBLE_LOGIC_X=80
+  VISIBLE_LOGIC_Y=40
+  HOST_SCALE=
+  if [ "$VISIBLE" = 1 ]; then
+    # Xephyr paints a window on the caller's session. Keep that DISPLAY
+    # (usually XWayland on Omarchy) before we point at the nested server.
+    HOST_DISPLAY="${DISPLAY:-}"
+    HOST_XAUTHORITY="${XAUTHORITY:-}"
+    [ -n "$HOST_DISPLAY" ] || die "--visible needs a host DISPLAY (XWayland) so Xephyr can show a window on your desktop"
+    # Nested framebuffer = physical host window (logical × scale). Pass the
+    # same scale to the PoC so text is not 1x inside a 2x buffer.
+    _place=$(visible_host_placement) || _place=
+    if [ -n "$_place" ]; then
+      set -- $_place
+      NESTED_WIDTH=$1
+      NESTED_HEIGHT=$2
+      VISIBLE_LOGIC_X=$3
+      VISIBLE_LOGIC_Y=$4
+      HOST_SCALE=$5
+    fi
+  fi
   if [ -f "$STATE_FILE" ]; then
     if "$SELF" doctor >/dev/null 2>&1; then
       die "an isolated PoC instance is already running. Run cleanup first, or doctor to inspect it."
@@ -174,23 +324,50 @@ cmd_launch() {
   while [ -e "/tmp/.X11-unix/X$display_number" ]; do
     display_number=$((display_number + 1))
   done
-  DISPLAY=":$display_number"
-  export DISPLAY
-  XAUTHORITY="$STATE_DIR/Xauthority"
-  export XAUTHORITY
+  NESTED_DISPLAY=":$display_number"
+  NESTED_XAUTHORITY="$STATE_DIR/Xauthority"
   cookie="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
-  xauth -f "$XAUTHORITY" add "$DISPLAY" . "$cookie"
+  xauth -f "$NESTED_XAUTHORITY" add "$NESTED_DISPLAY" . "$cookie"
 
   mkdir -p "$EVIDENCE_DIR" "$STATE_DIR/logs"
-  Xvfb "$DISPLAY" -screen 0 1280x800x24 -nolisten tcp -auth "$XAUTHORITY" \
-    >"$STATE_DIR/logs/xvfb.log" 2>&1 &
-  XVFB_PID=$!
+  if [ "$VISIBLE" = 1 ]; then
+    XSERVER=Xephyr
+    # Host DISPLAY opens the nested window on your desktop (XWayland on
+    # Omarchy). App and xdotool use NESTED_DISPLAY only. Physical origin
+    # is a hint; place_visible_host_window moves to the logical center.
+    _phys_x=$((VISIBLE_LOGIC_X * NESTED_WIDTH / VISIBLE_LOGICAL_WIDTH))
+    _phys_y=$((VISIBLE_LOGIC_Y * NESTED_HEIGHT / VISIBLE_LOGICAL_HEIGHT))
+    (
+      export DISPLAY="$HOST_DISPLAY"
+      if [ -n "$HOST_XAUTHORITY" ]; then
+        export XAUTHORITY="$HOST_XAUTHORITY"
+      else
+        unset XAUTHORITY
+      fi
+      unset WAYLAND_DISPLAY
+      unset WAYLAND_SOCKET
+      exec Xephyr "$NESTED_DISPLAY" \
+        -screen "${NESTED_WIDTH}x${NESTED_HEIGHT}+${_phys_x}+${_phys_y}x24" \
+        -nolisten tcp -auth "$NESTED_XAUTHORITY" -title "$VISIBLE_TITLE"
+    ) >"$STATE_DIR/logs/xserver.log" 2>&1 &
+    XVFB_PID=$!
+  else
+    XSERVER=Xvfb
+    Xvfb "$NESTED_DISPLAY" -screen 0 "${NESTED_WIDTH}x${NESTED_HEIGHT}x24" -nolisten tcp \
+      -auth "$NESTED_XAUTHORITY" \
+      >"$STATE_DIR/logs/xserver.log" 2>&1 &
+    XVFB_PID=$!
+  fi
+
+  DISPLAY="$NESTED_DISPLAY"
+  XAUTHORITY="$NESTED_XAUTHORITY"
+  export DISPLAY XAUTHORITY
 
   attempt=0
   while ! xdotool getmouselocation >/dev/null 2>&1; do
     attempt=$((attempt + 1))
     if [ "$attempt" -ge 50 ] || ! process_alive "$XVFB_PID"; then
-      die "isolated X server did not start; see $STATE_DIR/logs/xvfb.log"
+      die "isolated X server ($XSERVER) did not start; see $STATE_DIR/logs/xserver.log"
     fi
     sleep 0.1
   done
@@ -201,18 +378,21 @@ cmd_launch() {
   export XDG_STATE_HOME="$STATE_DIR/state"
   export DBUS_SESSION_BUS_ADDRESS="unix:path=$STATE_DIR/no-session-bus"
   # GPUI prefers Wayland whenever WAYLAND_DISPLAY is set. Clear it so the
-  # window opens on this Xvfb, where xdotool can see it.
+  # window opens on the nested X server, where xdotool can see it.
   unset WAYLAND_DISPLAY
   unset WAYLAND_SOCKET
   export XDG_SESSION_TYPE=x11
-  # Force lavapipe: a host NVIDIA/Intel ICD cannot present on Xvfb.
+  # Force lavapipe: a host NVIDIA/Intel ICD cannot present on Xvfb/Xephyr.
   export VK_ICD_FILENAMES="$LAVAPIPE_ICD"
   export OMAIRC_ALLOW_MULTI=1
+  set -- "$BINARY"
   if [ "$DEMO" = 1 ]; then
-    "$BINARY" --demo-server >"$STATE_DIR/logs/omairc.log" 2>&1 &
-  else
-    "$BINARY" >"$STATE_DIR/logs/omairc.log" 2>&1 &
+    set -- "$@" --demo-server
   fi
+  if [ -n "$HOST_SCALE" ]; then
+    set -- "$@" --scale "$HOST_SCALE"
+  fi
+  "$@" >"$STATE_DIR/logs/omairc.log" 2>&1 &
   APP_PID=$!
 
   attempt=0
@@ -226,6 +406,15 @@ cmd_launch() {
     sleep 0.1
   done
 
+  # Place after the app maps so the Xephyr host window is fully on-screen.
+  # Grow the PoC window to fill the nested framebuffer (default 1180x760).
+  if [ "$VISIBLE" = 1 ]; then
+    place_visible_host_window "$HOST_DISPLAY" "$HOST_XAUTHORITY" "$XVFB_PID" \
+      "$VISIBLE_LOGIC_X" "$VISIBLE_LOGIC_Y"
+    xdotool windowmove --sync "$WINDOW" 0 0
+    xdotool windowsize --sync "$WINDOW" "$NESTED_WIDTH" "$NESTED_HEIGHT"
+  fi
+
   write_state
   xdotool windowfocus --sync "$WINDOW"
   echo "launched isolated Omairc PoC"
@@ -234,6 +423,15 @@ cmd_launch() {
   else
     echo "demo=no"
   fi
+  if [ "$VISIBLE" = 1 ]; then
+    echo "visible=yes"
+  else
+    echo "visible=no"
+  fi
+  if [ -n "$HOST_SCALE" ]; then
+    echo "scale=$HOST_SCALE"
+  fi
+  echo "xserver=$XSERVER"
   echo "display=$DISPLAY"
   echo "pid=$APP_PID"
   echo "window=$WINDOW"
@@ -243,7 +441,7 @@ cmd_launch() {
 
 cmd_doctor() {
   load_state
-  process_alive "$XVFB_PID" || die "Xvfb pid $XVFB_PID is not running"
+  process_alive "$XVFB_PID" || die "X server pid $XVFB_PID is not running"
   process_alive "$APP_PID" || die "Omairc PoC pid $APP_PID is not running"
   [ -x "$BINARY" ] || die "binary missing: $BINARY"
   [ -e "/tmp/.X11-unix/X${DISPLAY#:}" ] || die "display $DISPLAY is gone"
@@ -263,7 +461,8 @@ cmd_doctor() {
   echo "binary=$BINARY"
   echo "display=$DISPLAY"
   echo "app_pid=$APP_PID"
-  echo "xvfb_pid=$XVFB_PID"
+  echo "xserver_pid=$XVFB_PID"
+  echo "xserver=${XSERVER:-Xvfb}"
   echo "window=$WINDOW"
   echo "title=$title"
   echo "xdg=$STATE_DIR"
@@ -273,6 +472,11 @@ cmd_doctor() {
     echo "demo=yes"
   else
     echo "demo=no"
+  fi
+  if [ "${VISIBLE:-}" = 1 ]; then
+    echo "visible=yes"
+  else
+    echo "visible=no"
   fi
 }
 
@@ -768,12 +972,15 @@ load_recipe_commands() {
 # Exit non-zero on a healthy instance in the other mode. Do not clean it up.
 # Return 0 to skip, 1 to launch.
 launch_should_skip() {
+  # Match demo mode only. --visible is a human watch opt-in and is not part of
+  # desktop-recipe fences; a healthy instance in either xserver mode is reused.
   _want_demo=
   shift
   while [ $# -gt 0 ]; do
     case $1 in
       --demo-server) _want_demo=1; shift ;;
-      *) die "unknown launch argument: $1. Use launch or launch --demo-server." ;;
+      --visible) shift ;;
+      *) die "unknown launch argument: $1. Use launch [--demo-server] [--visible]." ;;
     esac
   done
   if ! _doctor=$("$SELF" doctor 2>/dev/null); then
