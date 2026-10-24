@@ -21,6 +21,7 @@ mod matrices;
 mod metadata;
 mod monitor;
 mod notify;
+mod network_header;
 mod networks;
 mod parity;
 mod peers;

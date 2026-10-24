@@ -252,9 +252,4 @@ mod tests {
         assert!(!status_dot_accent(0));
     }
 
-    #[test]
-    fn the_edit_label_hides_without_a_live_session() {
-        assert!(network_show_edit(true));
-        assert!(!network_show_edit(false));
-    }
 }

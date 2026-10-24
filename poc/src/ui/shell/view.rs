@@ -11,6 +11,7 @@ use gpui::Context;
 
 use crate::controller::controller::Controller;
 use crate::controller::snapshots::ConversationRow;
+use crate::model::connect::ConnectState;
 use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::model::composer::DraftKey;
 use crate::model::sidebar::{sidebar_rows, NetworkHeader, SidebarRow};
@@ -51,6 +52,47 @@ pub fn shown_view(controller: &Controller) -> ShownView {
             .then(|| controller.focused_network_id().to_owned()),
         conversation,
     }
+}
+
+/// The sidebar network headers the shell renders (`NetworkSection.qml` inputs).
+pub(crate) fn build_network_headers(
+    controller: &Controller,
+    connect: &ConnectState,
+    rows: &[ConversationRow],
+) -> Vec<NetworkHeader> {
+    controller
+        .network_order()
+        .into_iter()
+        .map(|id| {
+            let nick = controller.current_nick_for(&id);
+            let account = controller.display_account(&id, &nick);
+            let avatar = controller
+                .nick_facts(&id)
+                .get(&nick)
+                .and_then(|facts| facts.avatar.clone());
+            let icon_color = connect
+                .saved()
+                .iter()
+                .find(|profile| profile.network_id == id)
+                .and_then(|profile| profile.icon_color);
+            NetworkHeader {
+                name: controller.network_name(&id),
+                nick,
+                account,
+                avatar,
+                icon_color,
+                icon: controller.features(&id).icon_url().map(str::to_owned),
+                unread: controller.unread_count_for(&id) > 0,
+                mention: controller.mention_for(&id),
+                alerts: controller.alerts_for(&id),
+                show_edit: controller.session(&id).is_some(),
+                has_directs: rows.iter().any(|row| row.key.network_id == id && row.direct),
+                collapsed: controller.is_network_collapsed(&id),
+                status: connection_line(controller, &id),
+                id,
+            }
+        })
+        .collect()
 }
 
 impl Shell {
@@ -103,41 +145,7 @@ impl Shell {
 
     /// The networks in sidebar order, each with its header and badges.
     pub fn network_headers(&self, rows: &[ConversationRow]) -> Vec<NetworkHeader> {
-        self.controller
-            .network_order()
-            .into_iter()
-            .map(|id| {
-                let nick = self.controller.current_nick_for(&id);
-                let account = self.controller.display_account(&id, &nick);
-                let avatar = self
-                    .controller
-                    .nick_facts(&id)
-                    .get(&nick)
-                    .and_then(|facts| facts.avatar.clone());
-                let icon_color = self
-                    .connect
-                    .saved()
-                    .iter()
-                    .find(|profile| profile.network_id == id)
-                    .and_then(|profile| profile.icon_color);
-                NetworkHeader {
-                    name: self.controller.network_name(&id),
-                    nick,
-                    account,
-                    avatar,
-                    icon_color,
-                    icon: self.controller.features(&id).icon_url().map(str::to_owned),
-                    unread: self.controller.unread_count_for(&id) > 0,
-                    mention: self.controller.mention_for(&id),
-                    alerts: self.controller.alerts_for(&id),
-                    show_edit: self.controller.session(&id).is_some(),
-                    has_directs: rows.iter().any(|row| row.key.network_id == id && row.direct),
-                    collapsed: self.controller.is_network_collapsed(&id),
-                    status: connection_line(&self.controller, &id),
-                    id,
-                }
-            })
-            .collect()
+        build_network_headers(&self.controller, &self.connect, rows)
     }
 
     /// The networks that hold at least one conversation (the Connect sheet's Remove

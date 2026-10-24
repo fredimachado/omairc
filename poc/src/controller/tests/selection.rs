@@ -5,7 +5,9 @@
 //! and the open-direct cases in `tui/internal/controller/`.
 
 use crate::irc::event::ConversationKey;
+use crate::irc::statusentry::{lifecycle, LogSeverity};
 use crate::irc::viewnotify::ViewNotify;
+use crate::session::clock::Clock;
 
 use super::fixture::{Fixture, OMARCHY};
 
@@ -34,6 +36,31 @@ fn selecting_a_conversation_consumes_its_inbox_rows() {
     assert_eq!(items.len(), 2, "the #ricing mention is consumed: {items:?}");
     assert!(items.iter().all(|item| item.target != "#ricing"));
     assert!(items.iter().any(|item| item.target == "#debian"));
+}
+
+#[test]
+fn opening_status_marks_alert_lines_seen_when_you_leave() {
+    let mut fixture = Fixture::seeded();
+    fixture.controller.status_entry(lifecycle(
+        OMARCHY,
+        LogSeverity::Alert,
+        "error",
+        "refused",
+        fixture.clock.now(),
+    ));
+    assert_eq!(fixture.controller.alerts_for(OMARCHY), 1);
+    fixture.controller.open_status(OMARCHY);
+    assert_eq!(
+        fixture.controller.alerts_for(OMARCHY),
+        0,
+        "alerts hide while Status is open"
+    );
+    fixture.controller.leave_status();
+    assert_eq!(
+        fixture.controller.alerts_for(OMARCHY),
+        0,
+        "open_status must mark console alerts seen"
+    );
 }
 
 #[test]
