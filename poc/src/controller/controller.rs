@@ -623,7 +623,11 @@ impl Controller {
 
     /// Stores one Status line and wakes the Status surface.
     pub(super) fn append_status(&mut self, entry: StatusEntry) {
+        let network_id = entry.network_id.clone();
         self.console.append(entry);
+        if self.console_open && self.console_network == network_id {
+            self.console.mark_seen(&network_id);
+        }
         self.queue(vec![ViewNotify::Status]);
     }
 

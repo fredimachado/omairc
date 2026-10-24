@@ -70,6 +70,7 @@ impl Controller {
         }
         self.console_network = network_id.to_owned();
         self.console_open = true;
+        self.console.mark_seen(network_id);
         self.queue(vec![ViewNotify::Selection, ViewNotify::Status]);
         self.pump();
     }

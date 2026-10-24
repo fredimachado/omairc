@@ -59,6 +59,10 @@ pub struct NetworkHeader {
     pub icon: Option<String>,
     pub unread: bool,
     pub mention: bool,
+    /// Unseen alert-severity Status lines (`liveAlerts`).
+    pub alerts: u32,
+    /// Whether the `edit` label shows (`showEdit`: the network has a session).
+    pub show_edit: bool,
     /// Whether the network has a direct message, so the DM heading shows.
     pub has_directs: bool,
     pub collapsed: bool,

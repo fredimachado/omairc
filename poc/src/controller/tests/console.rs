@@ -44,6 +44,19 @@ fn a_line_with_no_network_is_dropped() {
 }
 
 #[test]
+fn alerts_since_seen_counts_only_unseen_alert_lines() {
+    let at = Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap();
+    let mut console = StatusConsole::default();
+    console.append(line("omarchy", "info"));
+    console.append(lifecycle("omarchy", LogSeverity::Alert, "error", "refused", at));
+    assert_eq!(console.alerts_since_seen("omarchy"), 1);
+    console.mark_seen("omarchy");
+    assert_eq!(console.alerts_since_seen("omarchy"), 0);
+    console.append(lifecycle("omarchy", LogSeverity::Alert, "error", "again", at));
+    assert_eq!(console.alerts_since_seen("omarchy"), 1);
+}
+
+#[test]
 fn clear_empties_one_network_only() {
     let mut console = StatusConsole::default();
     console.append(line("omarchy", "gone"));
