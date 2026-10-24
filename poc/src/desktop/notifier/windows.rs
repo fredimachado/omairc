@@ -20,8 +20,10 @@
 //! resolve to a path (an empty target, or `%VAR%` text that does not expand), or when it names
 //! an exe this build may not take. Before the fallback, the repair path re-stamps a link that
 //! already names this exe, but only when no such link is stamped yet, in either location. It
-//! never creates an all-users link. An installed copy then reaches the per-user decision, unless
-//! its per-user link already names this exe and is stamped.
+//! never creates an all-users link. After a repair, only an installed copy whose per-user link is
+//! readable and names another exe reaches the per-user decision, which replaces that link. A dev
+//! build, and an installed copy whose per-user link is missing, unreadable, or names this exe,
+//! stops there, so after a repair a per-user link is replaced, never created.
 //!
 //! This code decides what it writes. It does not establish which copy receives a click while
 //! more than one copy is registered.
@@ -607,13 +609,28 @@ fn repair_installed_links(exe_path: &str, installed: &[PathBuf]) -> bool {
     false
 }
 
-/// Whether the registration stops once the repair path has run, before the per-user link
-/// decision. A build that repaired a link and is not an installed copy stops, so a dev build
-/// never overwrites a link it did not own. An installed copy stops only when its per-user link
-/// already names this exe and is stamped, since nothing is left to write. Without a repair,
-/// nothing stops here.
-fn repair_ends_registration(repaired: bool, from_install: bool, per_user_settled: bool) -> bool {
-    repaired && (!from_install || per_user_settled)
+/// Whether the registration stops after the repair path, before the per-user link decision.
+/// Without a repair nothing stops here, so the decision runs as it always has. After a repair,
+/// a dev build stops, so it does not overwrite a link it did not own. An installed copy goes on
+/// only when its per-user link is readable and names another exe, which it may replace. A
+/// missing per-user link, an unreadable one, or one that names this exe stops, so after a
+/// repair a per-user link is replaced, never created.
+fn repair_ends_registration(
+    repaired: bool,
+    from_install: bool,
+    this_exe: &Path,
+    per_user: &LinkState,
+) -> bool {
+    if !repaired {
+        return false;
+    }
+    if !from_install {
+        return true;
+    }
+    match per_user {
+        LinkState::Targets(target) => same_exe_path(target, this_exe),
+        LinkState::Missing | LinkState::Unreadable => true,
+    }
 }
 
 fn ensure_notification_registration(exe_path: &str) {
@@ -641,10 +658,7 @@ fn ensure_notification_registration(exe_path: &str) {
     let per_user_state = read_link_state(&link);
     let this_exe = Path::new(exe_path);
     let from_install = is_installed_exe(this_exe, &roots, resolve_path);
-    // A per-user link that names this exe and is stamped after the repair needs no write.
-    let per_user_settled =
-        repaired && installed.contains(&link) && shortcut_is_stamped(&link_path);
-    if repair_ends_registration(repaired, from_install, per_user_settled) {
+    if repair_ends_registration(repaired, from_install, this_exe, &per_user_state) {
         return;
     }
     if let Err(refusal) = check_existing_links(
@@ -678,9 +692,7 @@ fn ensure_notification_registration(exe_path: &str) {
         return;
     }
     if let LinkState::Targets(target) = &per_user_state {
-        if is_installed_exe(this_exe, &roots, resolve_path)
-            && !should_claim(Some(target.as_path()), this_exe, Path::exists)
-        {
+        if from_install && !should_claim(Some(target.as_path()), this_exe, Path::exists) {
             log::info!(
                 "Windows notifier: this installed copy replaces the Start Menu shortcut {:?}, which names {}",
                 link,
@@ -1334,21 +1346,73 @@ mod tests {
         );
     }
 
-    #[test]
-    fn without_a_repair_nothing_stops_the_registration() {
-        assert!(!repair_ends_registration(false, false, false));
-        assert!(!repair_ends_registration(false, true, false));
+    /// Runs the post-repair gate as `ensure_notification_registration` does, with
+    /// `from_install` taken from the exe's location.
+    fn stops_after_repair(exe: &str, repaired: bool, per_user: &LinkState) -> bool {
+        let this_exe = Path::new(exe);
+        let from_install = is_installed_exe(this_exe, &test_roots(), no_resolve);
+        repair_ends_registration(repaired, from_install, this_exe, per_user)
+    }
+
+    /// The per-user link states a copy at `exe` can meet: missing, unreadable, naming `exe`
+    /// itself, and naming another exe.
+    fn per_user_states_for(exe: &str) -> [LinkState; 4] {
+        [
+            LinkState::Missing,
+            LinkState::Unreadable,
+            targets(exe),
+            targets(OTHER_EXE),
+        ]
     }
 
     #[test]
-    fn a_dev_build_stops_after_a_repair() {
-        assert!(repair_ends_registration(true, false, false));
+    fn without_a_repair_nothing_stops_for_any_per_user_link() {
+        for exe in [THIS_EXE, INSTALLED_EXE] {
+            for state in per_user_states_for(exe) {
+                assert!(
+                    !stops_after_repair(exe, false, &state),
+                    "{exe} with {state:?} stopped without a repair"
+                );
+            }
+        }
     }
 
     #[test]
-    fn an_installed_copy_goes_on_after_a_repair_until_its_per_user_link_is_settled() {
-        assert!(!repair_ends_registration(true, true, false));
-        assert!(repair_ends_registration(true, true, true));
+    fn a_dev_build_stops_after_a_repair_for_any_per_user_link() {
+        for state in per_user_states_for(THIS_EXE) {
+            assert!(
+                stops_after_repair(THIS_EXE, true, &state),
+                "dev build with {state:?} went on after a repair"
+            );
+        }
+    }
+
+    #[test]
+    fn an_installed_copy_stops_after_a_repair_when_its_per_user_link_is_missing() {
+        assert!(stops_after_repair(INSTALLED_EXE, true, &LinkState::Missing));
+    }
+
+    #[test]
+    fn an_installed_copy_stops_after_a_repair_when_its_per_user_link_names_this_exe() {
+        assert!(stops_after_repair(INSTALLED_EXE, true, &targets(INSTALLED_EXE)));
+        // The comparison is by path, so another letter case of the same exe also stops.
+        assert!(stops_after_repair(
+            INSTALLED_EXE,
+            true,
+            &targets(r"c:\program files\omairc\omairc.exe"),
+        ));
+    }
+
+    #[test]
+    fn an_installed_copy_stops_after_a_repair_when_its_per_user_link_is_unreadable() {
+        assert!(stops_after_repair(INSTALLED_EXE, true, &LinkState::Unreadable));
+    }
+
+    #[test]
+    fn an_installed_copy_continues_after_a_repair_when_its_per_user_link_names_another_exe() {
+        // The gate does not ask whether the other exe still exists, so both cases continue.
+        assert!(!stops_after_repair(INSTALLED_EXE, true, &targets(OTHER_EXE)));
+        assert!(!stops_after_repair(INSTALLED_EXE, true, &targets(DEV_EXE)));
     }
 
     #[test]
