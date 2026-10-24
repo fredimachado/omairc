@@ -8,6 +8,9 @@ use crate::ui::widgets::avatar::AvatarPhotos;
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
+/// Panel width in logical pixels (`MembersColumn.qml`).
+pub const MEMBERS_PANEL_WIDTH: f32 = 216.;
+
 /// What the member panel shows and answers, for the current channel.
 pub struct MembersData<'a> {
     /// The channel's members in panel order (`Controller::members`).
@@ -64,7 +67,7 @@ pub fn render_members<V: 'static>(
     let heading_color = to_gpui(style.muted_color());
     let ink = to_gpui(style.ink_color());
     div()
-        .w(scaled_px(style, 216.))
+        .w(scaled_px(style, MEMBERS_PANEL_WIDTH))
         .min_w(scaled_px(style, 196.))
         .h_full()
         .bg(to_gpui(style.panel_color()))

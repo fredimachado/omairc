@@ -29,9 +29,12 @@ pub fn bind_filter_keys(cx: &mut App) {
     let mut bindings = vec![
         KeyBinding::new("up", FilterUp, Some("FilterSheet")),
         KeyBinding::new("down", FilterDown, Some("FilterSheet")),
-        KeyBinding::new("tab", FilterSwallowTab, Some("FilterSheet")),
-        KeyBinding::new("shift-tab", FilterSwallowTab, Some("FilterSheet")),
     ];
+    bindings.extend(
+        FILTER_TAB_KEYS
+            .iter()
+            .map(|key| KeyBinding::new(*key, FilterSwallowTab, Some("FilterSheet"))),
+    );
     bindings.extend(bind_return(RETURN_KEYS, FilterActivate, Some("FilterSheet")));
     cx.bind_keys(bindings);
 }
@@ -319,5 +322,10 @@ mod tests {
     fn filter_tab_keys_cover_tab_and_shift_tab() {
         assert!(FILTER_TAB_KEYS.contains(&"tab"));
         assert!(FILTER_TAB_KEYS.contains(&"shift-tab"));
+        assert_eq!(
+            FILTER_TAB_KEYS.len(),
+            2,
+            "bind_filter_keys must bind every FILTER_TAB_KEYS entry"
+        );
     }
 }

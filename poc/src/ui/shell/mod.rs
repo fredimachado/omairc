@@ -44,11 +44,15 @@ use crate::model::update_check::UpdateCheck;
 use crate::model::ConversationRef;
 use crate::net::{NetHub, NetTransports};
 use crate::session::clock::RealClock;
-use crate::ui::center::header::{people_pill, HeaderView, QueryIdentity, Subtitle};
+use crate::ui::center::header::{
+    header_chrome_trailing_width, header_subtitle_clip_width, people_pill, HeaderView, QueryIdentity,
+    Subtitle,
+};
 use crate::ui::center::header_actions::{HeaderActions, HeaderOffers};
 use crate::ui::center::render_center;
 use crate::ui::center::slash_popup::render_slash_popup;
 use crate::ui::input::SingleLineInput;
+use crate::ui::members::column::MEMBERS_PANEL_WIDTH;
 use crate::ui::members::{render_members, MembersData};
 use crate::ui::scrollbar::{end_scrollbar_drag, move_scrollbar_drag, ScrollbarDragCell};
 use crate::ui::shell::actions::wire_shell_actions;
@@ -56,11 +60,12 @@ use crate::ui::shell::view::{shown_view, ShownView};
 use crate::ui::sheets::connect::controls::ConnectControls;
 use crate::ui::sheets::connect::{render_connect, ConnectView};
 use crate::ui::sidebar::identity_footer::{footer_identity_nick, footer_self_bot};
+use crate::ui::sidebar::column::SIDEBAR_RAIL_WIDTH;
 use crate::ui::sidebar::{render_sidebar, SidebarData};
 use crate::ui::transcript::view::{NickClicked, TranscriptScrolled};
 use crate::ui::transcript::TranscriptView;
 use crate::ui::Handler;
-use crate::util::{style, to_gpui};
+use crate::util::{scaled_px, style, to_gpui};
 use crate::version::version;
 
 pub use actions::bind_shell_keys;
@@ -569,7 +574,37 @@ impl Render for Shell {
             entity.clone(),
             &self.scrollbar_drag,
         );
-        let subtitle_width = f32::from(window.viewport_size().width) * 0.42;
+        let viewport_w = f32::from(window.viewport_size().width);
+        let sidebar_w = f32::from(scaled_px(
+            &app_style,
+            if self.sidebar.rail_visible {
+                SIDEBAR_RAIL_WIDTH
+            } else {
+                0.
+            },
+        ));
+        let members_w = if show_members {
+            f32::from(scaled_px(&app_style, MEMBERS_PANEL_WIDTH))
+        } else {
+            0.
+        };
+        let center_w = viewport_w - sidebar_w - members_w;
+        let offers = actions
+            .as_ref()
+            .map(|actions| actions.offers)
+            .unwrap_or(HeaderOffers {
+                leave: false,
+                join: false,
+                close: false,
+            });
+        let chrome = offers.any() || people.is_some();
+        let chrome_trailing = if chrome {
+            header_chrome_trailing_width(&app_style, offers, people.is_some())
+        } else {
+            0.
+        };
+        let subtitle_width =
+            header_subtitle_clip_width(&app_style, center_w, chrome, chrome_trailing);
         let header = HeaderView {
             title: &title,
             subtitle,
