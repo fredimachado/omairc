@@ -4,12 +4,6 @@
 //! portable copy opens the release page. An installed copy with a verified
 //! setup asset downloads it in the background and offers `Restart to update`.
 //!
-//! Production PoC builds never take that installer path: the only setup asset
-//! name and uninstall key in this tree are Qt's, and running that installer
-//! would replace this binary with the Qt app. Until Rust ships its own assets
-//! and key, Check for Updates only opens the release page. Unit tests still
-//! exercise the download/restart machine.
-//!
 //! This module is state and policy only. The network goes through the
 //! `HttpFetch` seam and the installer file and process go through
 //! `desktop::installer`, so every transition here is testable without a socket.
@@ -45,17 +39,9 @@ pub const MAXIMUM_RELEASE_BYTES: u64 = 256 * 1024;
 pub const MAXIMUM_SETUP_BYTES: u64 = 80 * 1024 * 1024;
 /// Redirects a download may follow, one hop at a time.
 pub const MAXIMUM_REDIRECTS: u32 = 5;
-/// Qt's Inno uninstall key. Do not probe it for the PoC: a match would let the
-/// updater treat a Qt install as this binary and offer the Qt setup. Keep the
-/// constant only so a future Rust key can replace it explicitly.
+/// Inno uninstall key shared with the Windows setup (`AppId`). Qt
+/// `kWindowsUninstallKey`. Probed by `desktop::installer::running_copy_is_installed`.
 pub const WINDOWS_UNINSTALL_KEY: &str = "{37400F83-8332-4043-8DFF-1F69E51F6555}_is1";
-
-/// Whether the PoC may download and run a Windows setup. Off in production
-/// until this crate has its own asset name and uninstall key; on under
-/// `cfg(test)` so the Qt-ported state machine stays covered.
-fn installer_self_update_allowed() -> bool {
-    cfg!(test)
-}
 
 /// The latest release, reduced to what the sheet and the installer need.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -204,12 +190,9 @@ impl UpdateCheck {
     }
 
     /// An installed copy with a setup asset can download and restart. Qt
-    /// `installerUpdateAvailable`. Production PoC builds always return false;
-    /// see [`installer_self_update_allowed`].
+    /// `installerUpdateAvailable`.
     pub fn installer_update_available(&self) -> bool {
-        installer_self_update_allowed()
-            && self.installed_copy
-            && self.latest.as_ref().is_some_and(|r| r.setup.is_some())
+        self.installed_copy && self.latest.as_ref().is_some_and(|r| r.setup.is_some())
     }
 
     /// The status line text, or `None` when the line is hidden. Qt
@@ -1307,15 +1290,14 @@ mod tests {
     }
 
     #[test]
-    fn the_qt_uninstall_key_is_documented_and_unused_by_the_poc() {
-        // The PoC must not probe this. Retargeting means a new key, not reusing Qt's.
+    fn the_windows_uninstall_key_matches_the_inno_app_id() {
         assert_eq!(
             WINDOWS_UNINSTALL_KEY,
             "{37400F83-8332-4043-8DFF-1F69E51F6555}_is1"
         );
-        assert!(
-            installer_self_update_allowed(),
-            "unit tests cover the download machine; production builds gate it off"
+        assert_eq!(
+            windows_setup_name("1.0.0"),
+            "omairc-1.0.0-windows-x64-setup.exe"
         );
     }
 }
