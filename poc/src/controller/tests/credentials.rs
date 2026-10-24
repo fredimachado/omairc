@@ -245,14 +245,39 @@ fn activate_startup_skips_a_profile_whose_saved_password_cannot_be_read() {
 
 #[test]
 fn poll_credential_reads_clears_a_failed_startup_connect() {
-    let mut controller =
-        Controller::with_backing(clock(), Box::new(NoTransports), Backing::Ephemeral);
-    controller.credentials = DeferringCredentialStore::new(
+    let loopbacks = Loopbacks::default();
+    let profile = complete_profile();
+    let attempts = Arc::new(Mutex::new(0_u32));
+    let store = DeferringCredentialStore::new(
         Box::new(MemoryCredentialStore::default()),
-        |_key| Err("timed out".to_owned()),
+        {
+            let attempts = Arc::clone(&attempts);
+            move |_key| {
+                thread::sleep(Duration::from_millis(400));
+                *attempts.lock().expect("lock") += 1;
+                Err("timed out".to_owned())
+            }
+        },
     );
-    controller.profiles.insert(NET.to_owned(), complete_profile());
-    assert_eq!(controller.activate_startup(), 0);
+    let mut controller =
+        Controller::with_backing(clock(), Box::new(loopbacks), Backing::Ephemeral);
+    controller.credentials = store;
+    controller.profiles.insert(NET.to_owned(), profile);
+    controller
+        .pending_session_registrations
+        .insert(NET.to_owned());
+    assert_eq!(controller.activate_startup(), 0, "read still in flight");
+    assert!(
+        controller
+            .pending_session_registrations
+            .contains(NET),
+        "load_stored leaves the network pending until credentials settle"
+    );
+    assert_eq!(
+        controller.pending_startup_connect_ids(),
+        vec![NET.to_owned()],
+        "startup connect waits on the keychain"
+    );
     let deadline = Instant::now() + Duration::from_secs(3);
     while !controller.pending_startup_connect_ids().is_empty()
         && Instant::now() < deadline
@@ -262,6 +287,75 @@ fn poll_credential_reads_clears_a_failed_startup_connect() {
     }
     assert!(controller.pending_startup_connect_ids().is_empty());
     assert!(controller.session(NET).is_none());
+    assert_eq!(
+        controller.last_error_for(NET),
+        Some("The saved password could not be read from secure storage.")
+    );
+    assert_eq!(*attempts.lock().expect("lock"), 1);
+}
+
+#[test]
+fn poll_credential_reads_starts_a_startup_connect_after_a_deferred_read() {
+    let loopbacks = Loopbacks::default();
+    let profile = complete_profile();
+    let key = CredentialKey::for_profile(&profile, PURPOSE_PASSWORD);
+    let secrets = Arc::new(Mutex::new(MemoryCredentialStore::default()));
+    secrets
+        .lock()
+        .expect("lock")
+        .write(&key, "hunter2");
+    let attempts = Arc::new(Mutex::new(0_u32));
+    let store = DeferringCredentialStore::new(
+        Box::new(SlowMemoryStore {
+            secrets: Arc::clone(&secrets),
+            delay: Duration::from_millis(400),
+            pending: PendingRemovals::default(),
+        }),
+        {
+            let secrets = Arc::clone(&secrets);
+            let attempts = Arc::clone(&attempts);
+            move |key| {
+                thread::sleep(Duration::from_millis(400));
+                *attempts.lock().expect("lock") += 1;
+                secrets.lock().expect("lock").read(key)
+            }
+        },
+    );
+    let mut controller =
+        Controller::with_backing(clock(), Box::new(loopbacks.clone()), Backing::Ephemeral);
+    controller.credentials = store;
+    controller.profiles.insert(NET.to_owned(), profile.clone());
+    controller
+        .pending_session_registrations
+        .insert(NET.to_owned());
+    assert_eq!(controller.activate_startup(), 0, "read still in flight");
+    assert_eq!(
+        controller.pending_startup_connect_ids(),
+        vec![NET.to_owned()]
+    );
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while controller.session(NET).is_none() && Instant::now() < deadline {
+        controller.poll_credential_reads();
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        controller.pending_startup_connect_ids().is_empty(),
+        "startup connect leaves the pending set once settled"
+    );
+    assert!(
+        controller.session(NET).is_some(),
+        "poll resumes startup connect after the keychain settles"
+    );
+    assert_eq!(
+        controller
+            .session(NET)
+            .expect("session")
+            .upload_credential()
+            .1
+            .expose(),
+        "hunter2"
+    );
+    assert_eq!(*attempts.lock().expect("lock"), 1);
 }
 
 #[test]
@@ -287,13 +381,43 @@ fn save_profile_reports_loading_instead_of_refusing_apply() {
             }
         },
     );
+    let loopbacks = Loopbacks::default();
     let mut controller =
-        Controller::with_backing(clock(), Box::new(NoTransports), Backing::Ephemeral);
+        Controller::with_backing(clock(), Box::new(loopbacks), Backing::Ephemeral);
     controller.credentials = store;
     controller.profiles.insert(NET.to_owned(), profile.clone());
     let outcome = controller.save_profile(profile.clone(), SecretEdits::default());
     assert_eq!(outcome.password, CredentialState::Loading);
     assert!(controller.connect_allowed_after_save(&profile, &outcome));
+    let started = Instant::now();
+    assert!(
+        !controller.start(NET),
+        "start must not open a session while the keychain read is in flight"
+    );
+    assert!(
+        started.elapsed() < Duration::from_millis(50),
+        "start blocked on the keyring"
+    );
+    assert!(controller.session(NET).is_none());
+    assert_eq!(controller.last_error_for(NET), None);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while controller.session(NET).is_none() && Instant::now() < deadline {
+        controller.poll_credential_reads();
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        controller.session(NET).is_some(),
+        "poll opens the session after the deferred read settles"
+    );
+    assert_eq!(
+        controller
+            .session(NET)
+            .expect("session")
+            .upload_credential()
+            .1
+            .expose(),
+        "hunter2"
+    );
 }
 
 #[test]
