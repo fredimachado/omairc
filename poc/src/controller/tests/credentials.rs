@@ -14,9 +14,13 @@ use crate::session::clock::{Clock, FakeClock};
 use crate::session::loopback::LoopbackTransport;
 use crate::session::transport::Transport;
 use crate::storage::credentialstore::{
-    read_slot, CredentialKey, CredentialState, CredentialStore, LEGACY_PURPOSE_PASSWORD,
-    MemoryCredentialStore, PURPOSE_PASSWORD,
+    read_slot, read_slot_sync, CredentialKey, CredentialState, CredentialStore,
+    DeferringCredentialStore, LEGACY_PURPOSE_PASSWORD, MemoryCredentialStore, PendingRemovals,
+    PURPOSE_PASSWORD, ReadSlot,
 };
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
 use crate::storage::profilestore::Profile;
 use crate::storage::settings::Status;
 use crate::storage::Backing;
@@ -94,9 +98,136 @@ fn qt_server_password_keys_are_read_through_the_legacy_suffix() {
     let legacy = CredentialKey::for_profile(&profile, LEGACY_PURPOSE_PASSWORD);
     store.write(&legacy, "hunter2");
     assert_eq!(
-        read_slot(&store, &profile, PURPOSE_PASSWORD),
+        read_slot_sync(&store, &profile, PURPOSE_PASSWORD),
         Ok(Some("hunter2".to_owned()))
     );
+}
+
+struct SlowMemoryStore {
+    secrets: Arc<Mutex<MemoryCredentialStore>>,
+    delay: Duration,
+    pending: PendingRemovals,
+}
+
+impl CredentialStore for SlowMemoryStore {
+    fn durable(&self) -> bool {
+        true
+    }
+
+    fn read(&self, key: &CredentialKey) -> Result<Option<String>, String> {
+        thread::sleep(self.delay);
+        self.secrets.lock().expect("lock").read(key)
+    }
+
+    fn write(&mut self, key: &CredentialKey, password: &str) -> CredentialState {
+        self.secrets.lock().expect("lock").write(key, password)
+    }
+
+    fn remove(&mut self, key: &CredentialKey) -> CredentialState {
+        self.secrets.lock().expect("lock").remove(key)
+    }
+
+    fn pending(&self) -> &PendingRemovals {
+        &self.pending
+    }
+
+    fn pending_mut(&mut self) -> &mut PendingRemovals {
+        &mut self.pending
+    }
+}
+
+#[test]
+fn activate_startup_waits_for_a_deferred_keychain_read() {
+    let loopbacks = Loopbacks::default();
+    let profile = complete_profile();
+    let key = CredentialKey::for_profile(&profile, PURPOSE_PASSWORD);
+    let secrets = Arc::new(Mutex::new(MemoryCredentialStore::default()));
+    secrets
+        .lock()
+        .expect("lock")
+        .write(&key, "hunter2");
+    let store = DeferringCredentialStore::new(
+        Box::new(SlowMemoryStore {
+            secrets: Arc::clone(&secrets),
+            delay: Duration::from_millis(400),
+            pending: PendingRemovals::default(),
+        }),
+        {
+            let secrets = Arc::clone(&secrets);
+            move |key| {
+                thread::sleep(Duration::from_millis(400));
+                secrets.lock().expect("lock").read(key)
+            }
+        },
+    );
+    let mut controller =
+        Controller::with_backing(clock(), Box::new(loopbacks.clone()), Backing::Ephemeral);
+    controller.credentials = store;
+    controller.profiles.insert(NET.to_owned(), profile.clone());
+    let started = Instant::now();
+    assert_eq!(controller.activate_startup(), 0, "read still in flight");
+    assert!(
+        started.elapsed() < Duration::from_millis(50),
+        "activate_startup blocked on the keyring"
+    );
+    assert!(controller.session(NET).is_none());
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while matches!(
+        read_slot(controller.credentials.as_ref(), &profile, PURPOSE_PASSWORD),
+        ReadSlot::Loading
+    ) && Instant::now() < deadline
+    {
+        controller.poll_credential_reads();
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        read_slot(controller.credentials.as_ref(), &profile, PURPOSE_PASSWORD),
+        ReadSlot::Ready(Ok(Some("hunter2".to_owned())))
+    );
+    assert!(
+        controller.start(NET),
+        "connect once the keychain read has settled"
+    );
+    assert_eq!(
+        controller
+            .session(NET)
+            .expect("session")
+            .upload_credential()
+            .1
+            .expose(),
+        "hunter2"
+    );
+}
+
+#[test]
+fn read_slot_returns_loading_without_waiting_on_the_keyring() {
+    let profile = complete_profile();
+    let key = CredentialKey::for_profile(&profile, PURPOSE_PASSWORD);
+    let secrets = Arc::new(Mutex::new(MemoryCredentialStore::default()));
+    secrets
+        .lock()
+        .expect("lock")
+        .write(&key, "hunter2");
+    let store = DeferringCredentialStore::new(
+        Box::new(SlowMemoryStore {
+            secrets: Arc::clone(&secrets),
+            delay: Duration::from_secs(2),
+            pending: PendingRemovals::default(),
+        }),
+        {
+            let secrets = Arc::clone(&secrets);
+            move |key| {
+                thread::sleep(Duration::from_secs(2));
+                secrets.lock().expect("lock").read(key)
+            }
+        },
+    );
+    let started = Instant::now();
+    assert_eq!(
+        read_slot(store.as_ref(), &profile, PURPOSE_PASSWORD),
+        ReadSlot::Loading
+    );
+    assert!(started.elapsed() < Duration::from_millis(50));
 }
 
 #[test]
@@ -127,7 +258,7 @@ fn a_failed_profile_removal_leaves_credentials_in_place() {
 
     assert!(!controller.forget_network(NET));
     assert_eq!(
-        read_slot(controller.credentials.as_ref(), &profile, PURPOSE_PASSWORD),
+        read_slot_sync(controller.credentials.as_ref(), &profile, PURPOSE_PASSWORD),
         Ok(Some("hunter2".to_owned()))
     );
     assert!(controller.profile(NET).is_some());

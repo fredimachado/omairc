@@ -158,6 +158,10 @@ pub struct Controller {
     pub(super) preference_store: PreferenceStore,
     /// The network secrets: the OS keychain for a saved network, memory for an ephemeral one.
     pub(super) credentials: Box<dyn CredentialStore>,
+    /// Networks waiting for a keychain read before their session is registered at load.
+    pub(super) pending_session_registrations: BTreeSet<String>,
+    /// Networks that asked to connect on startup while a keychain read was still in flight.
+    pub(super) pending_startup_connects: BTreeSet<String>,
     /// The profile and secrets each network's session was built from, so Apply rebuilds when
     /// either changes (`IrcConnection::reconcile`).
     pub(super) applied_sessions: BTreeMap<String, super::persistence::AppliedSession>,
@@ -253,6 +257,8 @@ impl Controller {
             } else {
                 platform_store()
             },
+            pending_session_registrations: BTreeSet::new(),
+            pending_startup_connects: BTreeSet::new(),
             applied_sessions: BTreeMap::new(),
             open_directs: OpenDirectStore::new(&backing),
             open_directs_motd_seen: BTreeSet::new(),
@@ -273,6 +279,7 @@ impl Controller {
     /// this on each tick. Returns how many timers fired.
     pub fn tick(&mut self) -> usize {
         self.drain_reachability();
+        self.poll_credential_reads();
         let fired = self.clock.fire_due();
         self.pump();
         fired
@@ -358,6 +365,7 @@ impl Controller {
     /// becomes the network's last error and a Status line. An empty id does nothing.
     /// Returns whether the connection began.
     pub fn start(&mut self, network_id: &str) -> bool {
+        self.poll_credential_reads();
         self.pump();
         if network_id.is_empty() {
             return false;

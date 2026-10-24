@@ -1,8 +1,8 @@
 //! The Secret Service (`org.freedesktop.secrets`) on Linux, through `oo7`. Port of
 //! `tui/internal/storage/secretservice.go`: items in the default collection, carrying the
-//! attributes `service=omairc` and `username=<key name>` that QtKeychain writes. Each call is
-//! synchronous: `futures::executor::block_on` drives the oo7 future on a worker thread, and the
-//! caller waits at most a bounded time for it.
+//! attributes `service=omairc` and `username=<key name>` that QtKeychain writes. UI-thread reads
+//! go through [`DeferringCredentialStore`]; blocking oo7 work runs on a worker with at most
+//! [`CALL_TIMEOUT`] per call.
 //!
 //! Two bounds apply. The startup probe only connects to the bus, so it waits `PROBE_TIMEOUT`,
 //! and a service that does not answer in that time falls back to the in-memory store for the
@@ -19,6 +19,7 @@ use std::time::Duration;
 use futures::executor::block_on;
 use oo7::{Keyring, Secret};
 
+use super::defer::DeferringCredentialStore;
 use super::{CredentialKey, CredentialState, CredentialStore, PendingRemovals};
 
 /// The attribute names and the service value QtKeychain and the TUI search by.
@@ -46,10 +47,21 @@ pub struct SecretServiceStore {
 pub fn open() -> Option<Box<dyn CredentialStore>> {
     let answered = bounded(PROBE_TIMEOUT, async { Keyring::new().await.is_ok() }) == Some(true);
     answered.then(|| {
-        Box::new(SecretServiceStore {
-            pending: PendingRemovals::default(),
-        }) as Box<dyn CredentialStore>
+        DeferringCredentialStore::new(
+            Box::new(SecretServiceStore {
+                pending: PendingRemovals::default(),
+            }),
+            blocking_read_key,
+        )
     })
+}
+
+/// Blocks on the keyring worker thread only. The UI path uses [`DeferringCredentialStore`].
+pub fn blocking_read_key(key: &CredentialKey) -> Result<Option<String>, String> {
+    match bounded(CALL_TIMEOUT, read_password(key.key_name())) {
+        Some(answer) => answer.map_err(|error| error.to_string()),
+        None => Err(timed_out_reason()),
+    }
 }
 
 /// Runs `call` to completion on a worker thread and waits at most `timeout` for it. `None` when
@@ -123,10 +135,7 @@ impl CredentialStore for SecretServiceStore {
     }
 
     fn read(&self, key: &CredentialKey) -> Result<Option<String>, String> {
-        match bounded(CALL_TIMEOUT, read_password(key.key_name())) {
-            Some(answer) => answer.map_err(|error| error.to_string()),
-            None => Err(timed_out_reason()),
-        }
+        blocking_read_key(key)
     }
 
     fn write(&mut self, key: &CredentialKey, password: &str) -> CredentialState {

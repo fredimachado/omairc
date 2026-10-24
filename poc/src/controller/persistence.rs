@@ -29,8 +29,8 @@ use crate::session::events::SessionState;
 use crate::storage::conversationlog::FileConversationLog;
 use crate::irc::event::Event;
 use crate::storage::credentialstore::{
-    read_slot, remove_slot, write_slot, CredentialKey, CredentialState, LEGACY_PURPOSE_PASSWORD,
-    PURPOSE_NICKSERV, PURPOSE_PASSWORD,
+    read_slot, read_slot_sync, remove_slot, write_slot, CredentialKey, CredentialState,
+    LEGACY_PURPOSE_PASSWORD, PURPOSE_NICKSERV, PURPOSE_PASSWORD, ReadSlot,
 };
 use crate::storage::paths;
 use crate::storage::profilestore::{Profile, DEFAULT_PORT};
@@ -101,13 +101,71 @@ impl Controller {
             .cloned()
             .collect();
         for profile in complete {
-            self.register_session(&profile);
+            if self.profile_credentials_loading(&profile) {
+                self.pending_session_registrations
+                    .insert(profile.network_id.clone());
+            } else {
+                self.register_session(&profile);
+            }
+        }
+    }
+
+    /// Drains in-flight keychain reads and finishes session registration or startup connects
+    /// that were waiting on them.
+    pub(super) fn poll_credential_reads(&mut self) {
+        self.credentials.poll_reads();
+        let register: Vec<String> = self
+            .profiles
+            .values()
+            .filter(|profile| {
+                profile.is_complete()
+                    && self.manager.find(&profile.network_id).is_none()
+                    && !self.profile_credentials_loading(profile)
+            })
+            .map(|profile| profile.network_id.clone())
+            .collect();
+        for network_id in register {
+            if let Some(profile) = self.profiles.get(&network_id).cloned() {
+                self.register_session(&profile);
+            }
+        }
+        let waiting: Vec<String> = self
+            .pending_session_registrations
+            .iter()
+            .filter(|network_id| {
+                self.profiles
+                    .get(*network_id)
+                    .is_some_and(|profile| !self.profile_credentials_loading(profile))
+            })
+            .cloned()
+            .collect();
+        for network_id in waiting {
+            self.pending_session_registrations.remove(&network_id);
+            if let Some(profile) = self.profiles.get(&network_id).cloned() {
+                self.register_session(&profile);
+            }
+        }
+        let startup: Vec<String> = self
+            .pending_startup_connects
+            .iter()
+            .filter(|network_id| {
+                self.profiles.get(*network_id).is_some_and(|profile| {
+                    !self.profile_credentials_loading(profile)
+                        && self.startup_connect_allowed(profile)
+                })
+            })
+            .cloned()
+            .collect();
+        for network_id in startup {
+            self.pending_startup_connects.remove(&network_id);
+            let _ = self.start(&network_id);
         }
     }
 
     /// Starts each saved profile that asks to connect on startup, and returns how many
     /// started (`ActivateStartup`). A refused start shows on that network's Status.
     pub fn activate_startup(&mut self) -> usize {
+        self.poll_credential_reads();
         let ids: Vec<String> = self
             .profiles
             .values()
@@ -120,7 +178,15 @@ impl Controller {
                 .profiles
                 .get(&id)
                 .is_some_and(|profile| self.startup_connect_allowed(profile));
-            if allowed && self.start(&id) {
+            if !allowed {
+                continue;
+            }
+            let profile = self.profiles.get(&id).expect("filtered above");
+            if self.profile_credentials_loading(profile) {
+                self.pending_startup_connects.insert(id);
+                continue;
+            }
+            if self.start(&id) {
                 started += 1;
             }
         }
@@ -198,6 +264,10 @@ impl Controller {
             // No usable profile: the build's answer for an unknown network decides the reason.
             _ => return self.refuse_start(network_id),
         };
+        if self.profile_credentials_loading(&profile) {
+            self.pending_startup_connects.insert(network_id.to_owned());
+            return false;
+        }
         if !self.startup_connect_allowed(&profile) {
             self.refuse_with(
                 network_id,
@@ -593,7 +663,8 @@ impl Controller {
         let key = CredentialKey::for_profile(profile, purpose);
         let from_profile = profile_for_credential_key(from);
         match read_slot(self.credentials.as_ref(), &from_profile, from.purpose) {
-            Ok(Some(text)) => {
+            ReadSlot::Loading => CredentialState::Error("checking secure storage".to_owned()),
+            ReadSlot::Ready(Ok(Some(text))) => {
                 let mut carried = Secret::from(text);
                 let state = write_slot(self.credentials.as_mut(), profile, purpose, carried.expose());
                 carried.wipe();
@@ -602,14 +673,14 @@ impl Controller {
                 }
                 state
             }
-            Ok(None) => {
+            ReadSlot::Ready(Ok(None)) => {
                 let state = self.settled_state(&key);
                 if is_settled(&state) {
                     self.delete_key(from);
                 }
                 state
             }
-            Err(message) => CredentialState::Error(message),
+            ReadSlot::Ready(Err(message)) => CredentialState::Error(message),
         }
     }
 
@@ -641,18 +712,9 @@ impl Controller {
     /// it has none, and the store's error when it cannot say.
     fn settled_state(&self, key: &CredentialKey) -> CredentialState {
         let profile = profile_for_credential_key(key);
-        match read_slot(self.credentials.as_ref(), &profile, key.purpose) {
-            Ok(Some(text)) => {
-                Secret::from(text).wipe();
-                if self.credentials.durable() {
-                    CredentialState::Available
-                } else {
-                    CredentialState::SessionOnly
-                }
-            }
-            Ok(None) => CredentialState::Missing,
-            Err(message) => CredentialState::Error(message),
-        }
+        self.credential_slot_state_from_read(
+            read_slot(self.credentials.as_ref(), &profile, key.purpose),
+        )
     }
 
     fn applied_session_for(&self, profile: &Profile) -> AppliedSession {
@@ -682,6 +744,9 @@ impl Controller {
         required: bool,
     ) -> bool {
         let tracked = required || saved;
+        if tracked && self.slot_read_loading(profile, purpose) {
+            return true;
+        }
         match self.credential_slot_state(profile, purpose) {
             CredentialState::Error(_) => tracked,
             CredentialState::Missing | CredentialState::SessionOnly if saved => true,
@@ -690,8 +755,15 @@ impl Controller {
     }
 
     fn credential_slot_state(&self, profile: &Profile, purpose: &'static str) -> CredentialState {
-        match read_slot(self.credentials.as_ref(), profile, purpose) {
-            Ok(Some(text)) => {
+        self.credential_slot_state_from_read(
+            read_slot(self.credentials.as_ref(), profile, purpose),
+        )
+    }
+
+    fn credential_slot_state_from_read(&self, read: ReadSlot) -> CredentialState {
+        match read {
+            ReadSlot::Loading => CredentialState::Error("checking secure storage".to_owned()),
+            ReadSlot::Ready(Ok(Some(text))) => {
                 Secret::from(text).wipe();
                 if self.credentials.durable() {
                     CredentialState::Available
@@ -699,9 +771,21 @@ impl Controller {
                     CredentialState::SessionOnly
                 }
             }
-            Ok(None) => CredentialState::Missing,
-            Err(message) => CredentialState::Error(message),
+            ReadSlot::Ready(Ok(None)) => CredentialState::Missing,
+            ReadSlot::Ready(Err(message)) => CredentialState::Error(message),
         }
+    }
+
+    fn slot_read_loading(&self, profile: &Profile, purpose: &'static str) -> bool {
+        matches!(
+            read_slot(self.credentials.as_ref(), profile, purpose),
+            ReadSlot::Loading
+        )
+    }
+
+    fn profile_credentials_loading(&self, profile: &Profile) -> bool {
+        (profile.secret_saved && self.slot_read_loading(profile, PURPOSE_PASSWORD))
+            || (profile.nickserv_saved && self.slot_read_loading(profile, PURPOSE_NICKSERV))
     }
 
     /// Builds and registers a session for a profile through the transport factory. A
@@ -753,7 +837,7 @@ impl Controller {
     /// A profile's stored secret, or an empty one when the store has none or cannot answer. A
     /// session starts without the password in that case, and the Connect sheet says why.
     fn secret_text(&self, profile: &Profile, purpose: &'static str) -> Secret {
-        read_slot(self.credentials.as_ref(), profile, purpose)
+        read_slot_sync(self.credentials.as_ref(), profile, purpose)
             .ok()
             .flatten()
             .map(Secret::from)
