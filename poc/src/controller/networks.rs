@@ -115,6 +115,13 @@ impl Controller {
             || self.profiles.contains_key(network_id)
             || !self.console.lines(network_id).is_empty()
             || self.reducer.conversations().keys().any(|key| key.network_id == network_id);
+        if self.profiles.contains_key(network_id) {
+            let status = self.remove_profile(network_id);
+            if matches!(status, crate::storage::settings::Status::AccessError | crate::storage::settings::Status::FormatError) {
+                self.pump();
+                return false;
+            }
+        }
         if self.manager.is_live(network_id) {
             self.disconnect(network_id);
         }
@@ -129,7 +136,6 @@ impl Controller {
         self.playback.borrow_mut().drop_snapshot(network_id);
         self.closed.borrow_mut().forget(network_id);
         self.open_directs_motd_seen.remove(network_id);
-        self.remove_profile(network_id);
         self.reducer.forget_network(network_id);
         self.cancelled_joins.retain(|key| key.network_id != network_id);
         self.console.clear(network_id);

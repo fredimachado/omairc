@@ -109,8 +109,17 @@ impl Shell {
         };
         if let Ok(profile) = self.connect.apply() {
             let stored = profile.to_stored(self.controller.profile(&profile.network_id));
+            let network_id = profile.network_id.clone();
             let saved = self.controller.save_profile(stored, edits);
-            let started = self.controller.start(&profile.network_id);
+            let applied_profile = self
+                .controller
+                .profile(&network_id)
+                .cloned()
+                .expect("save_profile keeps the profile");
+            let started = self
+                .controller
+                .connect_allowed_after_save(&applied_profile, &saved)
+                && self.controller.start(&network_id);
             let close = self
                 .connect
                 .record_apply(saved.status, saved.password, saved.nickserv, started);

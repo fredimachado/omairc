@@ -9,6 +9,7 @@ mod channellist;
 mod chrome;
 mod commands;
 mod composer;
+mod credentials;
 mod console;
 mod fileupload;
 mod fixture;

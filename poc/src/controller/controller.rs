@@ -158,8 +158,9 @@ pub struct Controller {
     pub(super) preference_store: PreferenceStore,
     /// The network secrets: the OS keychain for a saved network, memory for an ephemeral one.
     pub(super) credentials: Box<dyn CredentialStore>,
-    /// The profile each network's session was built from, so Apply rebuilds only a changed one.
-    pub(super) applied_profiles: BTreeMap<String, Profile>,
+    /// The profile and secrets each network's session was built from, so Apply rebuilds when
+    /// either changes (`IrcConnection::reconcile`).
+    pub(super) applied_sessions: BTreeMap<String, super::persistence::AppliedSession>,
     /// The direct messages to reopen, and the ones the user closed (`IrcOpenDirectStore`).
     pub(super) open_directs: OpenDirectStore,
     /// The networks whose MOTD-end restore has run (`openDirectsMotdSeen`).
@@ -250,7 +251,7 @@ impl Controller {
             } else {
                 platform_store()
             },
-            applied_profiles: BTreeMap::new(),
+            applied_sessions: BTreeMap::new(),
             open_directs: OpenDirectStore::new(&backing),
             open_directs_motd_seen: BTreeSet::new(),
             avatars: AvatarFetches::new(Arc::new(UreqFetch)),
@@ -339,14 +340,14 @@ impl Controller {
             return false;
         }
         self.set_last_error(network_id, None);
-        let started = if self.manager.is_live(network_id) {
-            // A connecting or registered session already holds the connection.
-            true
-        } else {
-            match world_for(network_id) {
-                Some(network) if self.demo.is_some() => self.restart_demo(network),
-                _ => self.start_profile(network_id),
-            }
+        let started = match (
+            self.manager.is_live(network_id),
+            world_for(network_id),
+            self.demo.is_some(),
+        ) {
+            (true, Some(_), true) => true,
+            (_, Some(network), true) => self.restart_demo(network),
+            _ => self.start_profile(network_id),
         };
         self.queue(vec![ViewNotify::Status]);
         self.pump();
