@@ -24,7 +24,7 @@ use crate::ui::message_row::{
 };
 use crate::ui::scrollbar::{list_vertical_scrollbar, move_scrollbar_drag, ScrollbarDragCell};
 use crate::ui::transcript::pointer::{self, RowBounds};
-use crate::ui::transcript::unseen_jump::render_unseen_jump;
+use crate::ui::transcript::unseen_jump::{render_unseen_jump, UnseenBounce};
 use crate::ui::typing_row::render_typing_row;
 use crate::ui::widgets::avatar::AvatarPhotos;
 use crate::ui::Handler;
@@ -88,6 +88,8 @@ pub struct TranscriptView {
     /// The unseen jump lands there. It clears when the reader reaches the end, or
     /// jumps (Qt `firstUnseenIndex`).
     first_unseen: Option<usize>,
+    /// The `↓` chip bounce after a detached arrival (`UnseenJumpButton.bounceBurst`).
+    unseen_bounce: UnseenBounce,
     /// The at-end bit the shell last reported. A wheel scroll emits `TranscriptScrolled`
     /// only when the list's at-end bit differs from it.
     reported_at_end: bool,
@@ -121,6 +123,7 @@ impl TranscriptView {
             typing_peer: None,
             typing_phase: 0,
             first_unseen: None,
+            unseen_bounce: UnseenBounce::default(),
             reported_at_end: true,
         };
         // gpui calls the list's scroll handler only for wheel scrolling, and while the list
@@ -186,12 +189,11 @@ impl TranscriptView {
         self.typing_peer = lines.typing_peer;
         self.model
             .replace_conversation(lines.messages, lines.mark);
-        unread::note_row_growth(
-            previous_rows,
-            self.model.rows().len(),
-            was_at_end,
-            &mut self.first_unseen,
-        );
+        let new_rows = self.model.rows().len();
+        unread::note_row_growth(previous_rows, new_rows, was_at_end, &mut self.first_unseen);
+        if unread::detached_arrival(previous_rows, new_rows, was_at_end) {
+            self.unseen_bounce.restart();
+        }
         self.list_state.reset(self.list_len());
         self.row_layouts.borrow_mut().clear();
         if was_at_end {
@@ -341,6 +343,11 @@ impl TranscriptView {
     /// while the reader was scrolled up, else to the end while a mark is open.
     /// Returns whether the view moved. It does nothing while the reader follows the
     /// end.
+    /// When the unseen chip should repaint for its bounce animation.
+    pub fn unseen_bounce_next_frame(&self) -> Option<std::time::Duration> {
+        self.unseen_bounce.next_frame_in()
+    }
+
     pub fn jump_to_unseen(&mut self, cx: &mut Context<Self>) -> bool {
         match self.unseen_target() {
             Some(UnseenLanding::Row(row)) => {
@@ -621,6 +628,12 @@ impl Render for TranscriptView {
             self.first_unseen = None;
         }
         let unseen = self.unseen_target().is_some();
+        if !unseen {
+            self.unseen_bounce.stop();
+        }
+        let bounce_y = self
+            .unseen_bounce
+            .offset_y(f32::from(crate::util::scaled_px(&app_style, 1.)));
         let on_unseen = cx.listener(|view, _: &MouseDownEvent, _, cx| {
             if view.jump_to_unseen(cx) {
                 cx.notify();
@@ -763,7 +776,7 @@ impl Render for TranscriptView {
                 TranscriptView::note_scroll_end,
             ))
             .when(unseen, |this| {
-                this.child(render_unseen_jump(&app_style, on_unseen))
+                this.child(render_unseen_jump(&app_style, bounce_y, on_unseen))
             })
     }
 }

@@ -569,6 +569,7 @@ impl Render for Shell {
             entity.clone(),
             &self.scrollbar_drag,
         );
+        let subtitle_width = f32::from(window.viewport_size().width) * 0.42;
         let header = HeaderView {
             title: &title,
             subtitle,
@@ -576,6 +577,7 @@ impl Render for Shell {
             people,
             actions,
             members_visible: show_members,
+            subtitle_width,
         };
         // The composer shell takes the accent border while its draft has focus in an
         // active window, and SEND lights only when the draft has text (Qt's `composerShell`).

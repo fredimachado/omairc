@@ -1,6 +1,7 @@
 pub mod center;
 pub mod format_ui;
 pub mod input;
+pub mod key_bindings;
 pub mod members;
 pub mod message_row;
 pub mod scrollbar;

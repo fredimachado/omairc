@@ -3,8 +3,9 @@
 //! Escape cancels (the shell's `CloseSheet`), and a press outside the card
 //! cancels too. The card holds focus, so the composer does not take the keys.
 
-use gpui::{actions, div, prelude::*, App, Context, EventEmitter, FocusHandle, KeyBinding, Window};
+use gpui::{actions, div, prelude::*, App, Context, EventEmitter, FocusHandle, Window};
 
+use crate::ui::key_bindings::{bind_return, RETURN_KEYS};
 use crate::ui::sheets::frame::popup_frame;
 use crate::util::{scaled_px, style, to_gpui, FONT_FAMILY};
 
@@ -12,11 +13,11 @@ actions!(channel_open_sheet, [ChannelOpenConfirm]);
 
 /// Enter confirms while the sheet's card has focus.
 pub fn bind_channel_open_keys(cx: &mut App) {
-    cx.bind_keys([KeyBinding::new(
-        "enter",
+    cx.bind_keys(bind_return(
+        RETURN_KEYS,
         ChannelOpenConfirm,
         Some("ChannelOpenSheet"),
-    )]);
+    ));
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

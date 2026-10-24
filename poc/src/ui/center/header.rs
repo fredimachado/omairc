@@ -5,6 +5,7 @@ use gpui::{
 };
 
 use crate::model::format::{FormattedText, TextHit};
+use crate::model::topic_line::{clipped_hit_ranges, ellipsis_width};
 use crate::model::Style;
 use crate::ui::center::header_actions::{render_header_actions, HeaderActions};
 use crate::ui::format_ui::{gpui_text_style, irc_runs_to_gpui};
@@ -52,6 +53,8 @@ pub struct HeaderView<'a> {
     pub actions: Option<HeaderActions>,
     /// Whether the member panel shows. The people pill is lit while it does.
     pub members_visible: bool,
+    /// Width available to the subtitle row, for topic hit clipping (`TopicLine.qml`).
+    pub subtitle_width: f32,
 }
 
 /// The count the `N PEOPLE` pill shows for the selection. Only a channel the user is in
@@ -85,6 +88,7 @@ pub fn render_header(
         people,
         actions,
         members_visible,
+        subtitle_width,
     } = view;
     let offers = actions.as_ref().is_some_and(|actions| actions.offers.any());
     let chrome = offers || people.is_some();
@@ -107,7 +111,7 @@ pub fn render_header(
                 .flex_col()
                 .gap(scaled_px(style, 3.))
                 .child(title_line(style, title, query))
-                .child(subtitle_line(style, subtitle)),
+                .child(subtitle_line(style, subtitle, subtitle_width)),
         )
         .when(chrome, |this| {
             this.child(
@@ -225,7 +229,7 @@ fn title_text(style: &Style, title: &str) -> gpui::Div {
 
 /// The subtitle row, one line that elides (Qt's `TopicLine`). A topic is drawn formatted,
 /// and each of its hits is a clickable range of the text.
-fn subtitle_line(style: &Style, subtitle: Subtitle<'_>) -> impl IntoElement {
+fn subtitle_line(style: &Style, subtitle: Subtitle<'_>, subtitle_width: f32) -> impl IntoElement {
     let line = div()
         .min_w_0()
         .overflow_hidden()
@@ -242,10 +246,20 @@ fn subtitle_line(style: &Style, subtitle: Subtitle<'_>) -> impl IntoElement {
             base.color = to_gpui(style.muted_color());
             let runs = irc_runs_to_gpui(&text.plain, &text.runs, style, &base, None);
             let styled = StyledText::new(SharedString::from(text.plain.clone())).with_runs(runs);
-            let ranges: Vec<Range<usize>> = hits.iter().map(|(range, _)| range.clone()).collect();
-            let targets: Vec<TextHit> = hits.iter().map(|(_, hit)| hit.clone()).collect();
+            let font_px = f32::from(scaled_px(style, 11.));
+            let char_width = font_px * 0.55;
+            let ew = ellipsis_width(char_width);
+            let mut clickable = Vec::new();
+            let mut targets = Vec::new();
+            for (range, hit) in hits.iter() {
+                let clips = clipped_hit_ranges(&[range.clone()], &text.plain, subtitle_width, char_width, ew);
+                if let Some(clip) = clips.first() {
+                    clickable.push(clip.clone());
+                    targets.push(hit.clone());
+                }
+            }
             line.child(InteractiveText::new("header-topic", styled).on_click(
-                ranges,
+                clickable,
                 move |index, window, cx| {
                     if let Some(hit) = targets.get(index) {
                         on_hit(hit.clone(), window, cx);

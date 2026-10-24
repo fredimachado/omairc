@@ -17,6 +17,7 @@ use gpui::{
 use crate::model::filter_list::step;
 use crate::irc::inbox::{InboxIdentity, InboxItem};
 use crate::model::Style;
+use crate::ui::key_bindings::{bind_return, RETURN_KEYS};
 use crate::ui::sheets::frame::popup_frame;
 use crate::ui::Handler;
 use crate::util::{scaled_px, style, to_gpui, FONT_FAMILY};
@@ -25,12 +26,13 @@ actions!(inbox_sheet, [InboxUp, InboxDown, InboxActivate, InboxDelete]);
 
 /// Up / Down / Enter / Delete inside the sheet.
 pub fn bind_inbox_keys(cx: &mut App) {
-    cx.bind_keys([
+    let mut bindings = vec![
         KeyBinding::new("up", InboxUp, Some("InboxSheet")),
         KeyBinding::new("down", InboxDown, Some("InboxSheet")),
-        KeyBinding::new("enter", InboxActivate, Some("InboxSheet")),
         KeyBinding::new("delete", InboxDelete, Some("InboxSheet")),
-    ]);
+    ];
+    bindings.extend(bind_return(RETURN_KEYS, InboxActivate, Some("InboxSheet")));
+    cx.bind_keys(bindings);
 }
 
 /// Sheet width in logical pixels (Qt `404`).
