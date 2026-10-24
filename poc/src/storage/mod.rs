@@ -26,6 +26,7 @@ pub mod playbacktime;
 pub mod paths;
 pub mod preferences;
 pub mod profilestore;
+pub mod registryimport;
 pub mod scrollplace;
 pub mod settings;
 pub mod stspolicies;
