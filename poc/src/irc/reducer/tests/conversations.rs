@@ -2,11 +2,38 @@
 //! and the network-wide forget. Ports of `reducer_test.go`.
 
 use std::cell::RefCell;
+use std::collections::BTreeSet;
 use std::rc::Rc;
 
 use super::*;
+use crate::irc::casemapping::IrcCaseMapping;
 use crate::irc::event::{HistoryKind, IrcConversationCause, MsgId};
-use crate::storage::lists::CaseListStore;
+use crate::irc::reducer::ClosedStore;
+
+/// An in-memory closed list. It keeps the `(network, normalized target)` pairs the way
+/// the controller's list does, without reaching into `storage/`.
+#[derive(Clone, Default)]
+struct MemoryClosed(Rc<RefCell<BTreeSet<(String, String)>>>);
+
+impl ClosedStore for MemoryClosed {
+    fn contains(&self, network_id: &str, target: &str, mapping: IrcCaseMapping) -> bool {
+        self.0
+            .borrow()
+            .contains(&(network_id.to_owned(), mapping.normalize(target)))
+    }
+
+    fn add(&self, network_id: &str, target: &str, mapping: IrcCaseMapping) {
+        self.0
+            .borrow_mut()
+            .insert((network_id.to_owned(), mapping.normalize(target)));
+    }
+
+    fn remove(&self, network_id: &str, target: &str, mapping: IrcCaseMapping) {
+        self.0
+            .borrow_mut()
+            .remove(&(network_id.to_owned(), mapping.normalize(target)));
+    }
+}
 
 #[test]
 fn direct_messages_use_composite_keys() {
@@ -149,7 +176,7 @@ fn closed_channel_stays_closed_until_join() {
 #[test]
 fn persisted_refusal_survives_welcome() {
     let mut reducer = EventReducer::new();
-    reducer.set_closed_persistence(Rc::new(RefCell::new(CaseListStore::in_memory())));
+    reducer.set_closed_persistence(Box::new(MemoryClosed::default()));
     welcome_omairc(&mut reducer, NETWORK_A);
     let channel = reducer.conversation_key(NETWORK_A, "#room");
     fold(&mut reducer, join(NETWORK_A, "#room", "omairc"));

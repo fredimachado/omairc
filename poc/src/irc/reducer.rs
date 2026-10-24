@@ -33,6 +33,7 @@ mod transcript;
 #[cfg(test)]
 mod tests;
 
+pub use conversations::ClosedStore;
 pub use log::{ConversationLog, TranscriptLine};
 pub use notify::classify_view_notify;
 pub use readmarker::latest_server_message_time;

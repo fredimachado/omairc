@@ -34,11 +34,6 @@ pub enum UploadSource {
     Bytes(Vec<u8>),
 }
 
-fn wipe_upload_credentials(job: &mut UploadJob) {
-    job.target.secret.wipe();
-    job.target.user.clear();
-}
-
 /// Posts the file and returns the absolute http(s) link, or a fixed failure string.
 pub fn upload(fetch: &dyn HttpFetch, mut job: UploadJob) -> Result<String, &'static str> {
     let (body, file_name, content_type) = read_source(&job)?;
@@ -48,7 +43,6 @@ pub fn upload(fetch: &dyn HttpFetch, mut job: UploadJob) -> Result<String, &'sta
         .ok()
         .is_none_or(|parsed| parsed.scheme().is_empty())
     {
-        wipe_upload_credentials(&mut job);
         return Err(COULD_NOT_UPLOAD);
     }
     if job.target.server_encrypted
@@ -56,7 +50,6 @@ pub fn upload(fetch: &dyn HttpFetch, mut job: UploadJob) -> Result<String, &'sta
             .to_ascii_lowercase()
             .starts_with("https://")
     {
-        wipe_upload_credentials(&mut job);
         return Err(COULD_NOT_UPLOAD);
     }
     let file_name = if file_name.is_empty() {
@@ -87,7 +80,7 @@ pub fn upload(fetch: &dyn HttpFetch, mut job: UploadJob) -> Result<String, &'sta
             headers.push(("Authorization".to_owned(), header));
         }
     }
-    wipe_upload_credentials(&mut job);
+    job.target.wipe_credentials();
     let request = PostRequest {
         url: endpoint.clone(),
         headers,
@@ -192,6 +185,14 @@ mod tests {
             server_host: "irc.example".to_owned(),
             server_encrypted: encrypted,
         }
+    }
+
+    #[test]
+    fn wiping_clears_the_secret_and_user_name_that_drop_runs() {
+        let mut target = target("http://127.0.0.1/upload", false);
+        target.wipe_credentials();
+        assert!(target.secret.is_empty());
+        assert!(target.user.is_empty());
     }
 
     #[test]

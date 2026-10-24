@@ -207,7 +207,7 @@ impl Controller {
         };
         let closed = Rc::new(RefCell::new(list("closedConversations", "targets")));
         let mut reducer = EventReducer::new();
-        reducer.set_closed_persistence(Rc::clone(&closed));
+        reducer.set_closed_persistence(Box::new(Rc::clone(&closed)));
         let playback_times = Rc::new(RefCell::new(PlaybackTimeStore::new(&backing)));
         let playback = Rc::new(RefCell::new(PlaybackCoordinator::new(Rc::clone(&playback_times))));
         Self {
@@ -430,7 +430,7 @@ impl Controller {
     fn handle_session_event(&mut self, event: SessionEvent) {
         match event {
             SessionEvent::StateChanged { network_id, state } => {
-                if network_id != "" && state != SessionState::Registered {
+                if !network_id.is_empty() && state != SessionState::Registered {
                     self.playback.borrow_mut().on_left_registration(&network_id);
                 }
                 let severity = if state == SessionState::Failed {

@@ -10,11 +10,12 @@
 //! `ListBacking` when it is built and saves them after each change. `IniListBacking`
 //! writes `<group>/<network>/<key>` string lists, the layout Qt and the TUI use.
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
-#[cfg(test)]
-use std::{cell::RefCell, rc::Rc};
+use std::rc::Rc;
 
 use crate::irc::casemapping::IrcCaseMapping;
+use crate::irc::reducer::ClosedStore;
 
 use super::settings::Settings;
 use super::Backing;
@@ -233,6 +234,23 @@ impl CaseListStore {
         true
     }
 }
+
+/// The controller's closed list, shared with the reducer. The controller keeps one
+/// handle and gives the reducer a clone, so both see the same lists.
+impl ClosedStore for Rc<RefCell<CaseListStore>> {
+    fn contains(&self, network_id: &str, target: &str, mapping: IrcCaseMapping) -> bool {
+        self.borrow().contains(network_id, target, mapping)
+    }
+
+    fn add(&self, network_id: &str, target: &str, mapping: IrcCaseMapping) {
+        self.borrow_mut().add(network_id, target, mapping);
+    }
+
+    fn remove(&self, network_id: &str, target: &str, mapping: IrcCaseMapping) {
+        self.borrow_mut().remove(network_id, target, mapping);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

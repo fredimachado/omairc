@@ -12,13 +12,15 @@ use crate::controller::fileupload::UploadTarget;
 use crate::desktop::fileupload::{UploadJob, UploadSource, COULD_NOT_UPLOAD};
 use crate::desktop::httpfetch::UreqFetch;
 use crate::model::composer::DraftKey;
-use crate::model::filelink::{local_file_lines, non_regular_paste_paths, PathStat};
+use crate::model::filelink::{
+    local_file_lines, non_regular_paste_paths, paste_consumes, PathStat,
+};
 use crate::ui::input::Paste;
 
 use super::Shell;
 
 #[derive(Clone, Debug)]
-pub(super) struct QueuedFile {
+pub(crate) struct QueuedFile {
     pub source: UploadSource,
     pub file_name: String,
     pub content_type: String,
@@ -26,7 +28,7 @@ pub(super) struct QueuedFile {
     pub network_id: String,
 }
 
-pub(super) struct FileUploadQueue {
+pub(crate) struct FileUploadQueue {
     pub queue: VecDeque<QueuedFile>,
     pub active: Option<QueuedFile>,
 }
@@ -45,7 +47,7 @@ impl Shell {
         self.controller.file_host().is_some()
     }
 
-    pub(super) fn prompt_for_file(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn prompt_for_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.file_upload_offered() || self.find.is_some() || self.connect_open {
             return;
         }
@@ -60,7 +62,7 @@ impl Shell {
             multiple: false,
             prompt: Some("Choose a file".into()),
         });
-        cx.spawn(async move |shell, cx| {
+        cx.spawn_in(window, async move |shell, cx| {
             let paths = rx
                 .await
                 .ok()
@@ -68,8 +70,8 @@ impl Shell {
                 .flatten();
             if let Some(paths) = paths {
                 shell
-                    .update(cx, |shell, cx| {
-                        shell.enqueue_paths(paths, draft_key, network_id, cx);
+                    .update_in(cx, |shell, window, cx| {
+                        shell.enqueue_paths(paths, draft_key, network_id, window, cx);
                     })
                     .ok();
             }
@@ -77,6 +79,8 @@ impl Shell {
         .detach();
     }
 
+    /// A composer paste of file paths queues them. Returns true only when the paste was
+    /// consumed, so the capture listener stops it before the composer pastes the text.
     pub(super) fn handle_composer_paste(
         &mut self,
         _: &Paste,
@@ -91,12 +95,12 @@ impl Shell {
         }
         let item = cx.read_from_clipboard();
         if let Some(text) = item.as_ref().and_then(|item| item.text()) {
-            if self.try_enqueue_pasted_text(&text, cx) {
+            if self.try_enqueue_pasted_text(&text, window, cx) {
                 return true;
             }
         } else if let Some(item) = item {
             if let Some(bytes) = clipboard_png(item) {
-                self.enqueue_bytes(bytes, "image.png", "image/png", cx);
+                self.enqueue_bytes(bytes, "image.png", "image/png", window, cx);
                 return true;
             }
         }
@@ -106,7 +110,7 @@ impl Shell {
     pub(super) fn handle_external_drop(
         &mut self,
         paths: &ExternalPaths,
-        _window: &Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if !self.file_upload_drop_gate() {
@@ -117,48 +121,42 @@ impl Shell {
             .controller
             .upload_network_id()
             .unwrap_or_else(|| self.shown.conversation.network_id.clone());
-        self.enqueue_paths(paths.paths().to_vec(), draft_key, network_id, cx);
+        self.enqueue_paths(paths.paths().to_vec(), draft_key, network_id, window, cx);
     }
 
     fn file_upload_drop_gate(&self) -> bool {
         self.file_upload_offered() && !self.connect_open && self.find.is_none()
     }
 
+    /// A paste into a Connect field. A file path is swallowed, so its text never reaches
+    /// the field; any other text is left for the field to paste.
     fn swallow_file_paste(&mut self, cx: &mut Context<Self>) -> bool {
-        let item = cx.read_from_clipboard();
-        let text = item.as_ref().and_then(|item| item.text());
-        if let Some(text) = text {
-            let stat = path_stat;
-            if local_file_lines(&text, &stat).is_some()
-                || non_regular_paste_paths(&text, &stat).is_some()
-            {
-                return true;
-            }
-        }
-        false
+        let text = cx.read_from_clipboard().and_then(|item| item.text());
+        text.is_some_and(|text| paste_consumes(&text, &path_stat))
     }
 
-    fn try_enqueue_pasted_text(&mut self, text: &str, cx: &mut Context<Self>) -> bool {
+    /// Queues the clipboard text when it names file paths. Any other text returns false
+    /// and pastes as text.
+    fn try_enqueue_pasted_text(
+        &mut self,
+        text: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
         let stat = path_stat;
-        if let Some(paths) = local_file_lines(text, &stat) {
-            let draft_key = self.shown.draft_key();
-            let network_id = self
-                .controller
-                .upload_network_id()
-                .unwrap_or_else(|| self.shown.conversation.network_id.clone());
-            self.enqueue_paths(paths, draft_key, network_id, cx);
-            return true;
+        if !paste_consumes(text, &stat) {
+            return false;
         }
-        if let Some(bad) = non_regular_paste_paths(text, &stat) {
-            let draft_key = self.shown.draft_key();
-            let network_id = self
-                .controller
-                .upload_network_id()
-                .unwrap_or_else(|| self.shown.conversation.network_id.clone());
-            self.enqueue_paths(bad, draft_key, network_id, cx);
-            return true;
-        }
-        false
+        let paths = local_file_lines(text, &stat)
+            .or_else(|| non_regular_paste_paths(text, &stat))
+            .unwrap_or_default();
+        let draft_key = self.shown.draft_key();
+        let network_id = self
+            .controller
+            .upload_network_id()
+            .unwrap_or_else(|| self.shown.conversation.network_id.clone());
+        self.enqueue_paths(paths, draft_key, network_id, window, cx);
+        true
     }
 
     fn enqueue_paths(
@@ -166,6 +164,7 @@ impl Shell {
         paths: Vec<PathBuf>,
         draft_key: DraftKey,
         network_id: String,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         for path in paths {
@@ -185,7 +184,7 @@ impl Shell {
                 network_id: network_id.clone(),
             });
         }
-        self.pump_file_uploads(cx);
+        self.pump_file_uploads(window, cx);
     }
 
     fn enqueue_bytes(
@@ -193,6 +192,7 @@ impl Shell {
         bytes: Vec<u8>,
         file_name: &str,
         content_type: &str,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let draft_key = self.shown.draft_key();
@@ -207,10 +207,10 @@ impl Shell {
             draft_key,
             network_id,
         });
-        self.pump_file_uploads(cx);
+        self.pump_file_uploads(window, cx);
     }
 
-    fn pump_file_uploads(&mut self, cx: &mut Context<Self>) {
+    fn pump_file_uploads(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.file_upload.active.is_some() {
             return;
         }
@@ -220,7 +220,7 @@ impl Shell {
                     .note_file_upload_failure(&entry.network_id, COULD_NOT_UPLOAD);
                 continue;
             };
-            self.start_upload_job(entry, target, cx);
+            self.start_upload_job(entry, target, window, cx);
             break;
         }
         cx.notify();
@@ -230,6 +230,7 @@ impl Shell {
         &mut self,
         entry: QueuedFile,
         target: UploadTarget,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.file_upload.active = Some(entry.clone());
@@ -239,14 +240,14 @@ impl Shell {
             content_type: entry.content_type.clone(),
             target,
         };
-        cx.spawn(async move |shell, cx| {
+        cx.spawn_in(window, async move |shell, cx| {
             let outcome = cx
                 .background_executor()
                 .spawn(async move { crate::desktop::fileupload::upload(&UreqFetch, job) })
                 .await;
             shell
-                .update(cx, |shell, cx| {
-                    shell.finish_upload(entry, outcome, cx);
+                .update_in(cx, |shell, window, cx| {
+                    shell.finish_upload(entry, outcome, window, cx);
                 })
                 .ok();
         })
@@ -257,19 +258,28 @@ impl Shell {
         &mut self,
         entry: QueuedFile,
         outcome: Result<String, &'static str>,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.file_upload.active = None;
         match outcome {
-            Ok(url) => self.insert_uploaded_link(&entry, &url, cx),
+            Ok(url) => self.insert_uploaded_link(&entry, &url, window, cx),
             Err(message) => self
                 .controller
                 .note_file_upload_failure(&entry.network_id, message),
         }
-        self.pump_file_uploads(cx);
+        self.pump_file_uploads(window, cx);
     }
 
-    fn insert_uploaded_link(&mut self, entry: &QueuedFile, url: &str, cx: &mut Context<Self>) {
+    /// Writes the link into the draft that queued it. Only a visible draft takes the
+    /// caret, so the composer is focused only then, as Qt's `insertFileLink` does.
+    fn insert_uploaded_link(
+        &mut self,
+        entry: &QueuedFile,
+        url: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let current = self.shown.draft_key();
         let find_active = self.find.is_some();
         let (text, cursor) = self
@@ -289,6 +299,7 @@ impl Shell {
                 cx.notify();
             });
             self.composer_state.stash(&draft);
+            self.focus_composer(window, cx);
         }
         cx.notify();
     }

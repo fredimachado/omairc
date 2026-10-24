@@ -1,7 +1,12 @@
 //! Shared helpers for toast XML and activation URLs. Ports the free functions in
 //! `src/windowsnotifications.cpp`.
 
+#[cfg(any(windows, test))]
+use std::path::{Path, PathBuf};
+
+#[cfg(any(windows, test))]
 use sha1_smol::Sha1;
+#[cfg(any(windows, test))]
 use url::form_urlencoded;
 
 /// `network_id` and `target` joined the way Qt and the TUI store notification keys.
@@ -10,6 +15,7 @@ pub fn conversation_key(network_id: &str, target: &str) -> String {
 }
 
 /// The first sixteen hex digits of SHA-1(`conversation_key`), for toast tag/group.
+#[cfg(any(windows, test))]
 pub fn conversation_tag(network_id: &str, target: &str) -> String {
     let digest = Sha1::from(conversation_key(network_id, target).as_bytes()).digest();
     digest
@@ -20,6 +26,7 @@ pub fn conversation_tag(network_id: &str, target: &str) -> String {
 }
 
 /// XML 1.0 text content allowed in toast bodies (C0 controls stripped).
+#[cfg(any(windows, test))]
 pub fn sanitize_xml_text(value: &str) -> String {
     let mut sanitized = String::with_capacity(value.len());
     let chars: Vec<char> = value.chars().collect();
@@ -52,6 +59,7 @@ pub fn sanitize_xml_text(value: &str) -> String {
 }
 
 /// Escapes `value` for a toast XML attribute or text node.
+#[cfg(any(windows, test))]
 pub fn escape_xml(value: &str) -> String {
     let mut escaped = sanitize_xml_text(value);
     escaped = escaped.replace('&', "&amp;");
@@ -65,6 +73,7 @@ pub fn escape_xml(value: &str) -> String {
 }
 
 /// The `launch` attribute for a Windows toast (`omairc://notify?...`).
+#[cfg(any(windows, test))]
 pub fn build_launch_url(network_id: &str, target: &str, msgid: &str) -> String {
     let mut serializer = form_urlencoded::Serializer::new(String::from("omairc://notify?"));
     serializer.append_pair("network", network_id);
@@ -74,6 +83,7 @@ pub fn build_launch_url(network_id: &str, target: &str, msgid: &str) -> String {
 }
 
 /// Parses `launch` from a toast activation or foreground launch.
+#[cfg(any(windows, test))]
 pub fn parse_launch_url(launch: &str) -> Option<(String, String, String)> {
     let url = url::Url::parse(launch).ok()?;
     if url.scheme() != "omairc" || url.host_str() != Some("notify") {
@@ -96,11 +106,12 @@ pub fn parse_launch_url(launch: &str) -> Option<(String, String, String)> {
     Some((network_id, target, msgid))
 }
 
-/// Records a freedesktop notification id for a conversation, replacing any prior id.
-#[cfg(test)]
+/// Records a freedesktop notification id for a conversation, replacing any prior id. The
+/// Linux notifier keeps both maps here, so a click finds the conversation it came from.
+#[cfg(any(target_os = "linux", test))]
 pub fn remember_conversation_notify_id(
     conversation_ids: &mut std::collections::HashMap<String, u32>,
-    by_id: &mut std::collections::HashMap<u32, (String, String, String)>,
+    by_id: &mut std::collections::HashMap<u32, super::Activation>,
     network_id: &str,
     target: &str,
     msgid: &str,
@@ -117,11 +128,16 @@ pub fn remember_conversation_notify_id(
     conversation_ids.insert(key, id);
     by_id.insert(
         id,
-        (network_id.to_owned(), target.to_owned(), msgid.to_owned()),
+        super::Activation {
+            network_id: network_id.to_owned(),
+            target: target.to_owned(),
+            msgid: msgid.to_owned(),
+        },
     );
 }
 
 /// Generic toast XML for Windows (`ToastGeneric` template).
+#[cfg(any(windows, test))]
 pub fn build_toast_xml(summary: &str, body: &str, launch: &str) -> String {
     format!(
         "<toast activationType=\"foreground\" launch=\"{}\"><visual><binding template=\"ToastGeneric\"><text>{}</text><text>{}</text></binding></visual></toast>",
@@ -131,11 +147,54 @@ pub fn build_toast_xml(summary: &str, body: &str, launch: &str) -> String {
     )
 }
 
+/// Whether `this_exe` may take the shared toast record (the activator's `LocalServer32`
+/// value, or the Start Menu link) away from `existing`. A missing record is claimed, and so
+/// is one that already names `this_exe` or an exe that no longer exists. Any other exe still
+/// on disk keeps it, so a build that is not an installed copy does not displace a live owner.
+/// An installed copy does not ask this question (see `windows_ownership`).
+#[cfg(any(windows, test))]
+pub fn should_claim(
+    existing: Option<&Path>,
+    this_exe: &Path,
+    exists: impl Fn(&Path) -> bool,
+) -> bool {
+    match existing {
+        None => true,
+        Some(existing) => same_exe(existing, this_exe) || !exists(existing),
+    }
+}
+
+/// Whether two exe paths name one file. Windows paths ignore case, so the match does too.
+#[cfg(any(windows, test))]
+pub fn same_exe(left: &Path, right: &Path) -> bool {
+    left == right
+        || left
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&right.to_string_lossy())
+}
+
+/// The exe a `LocalServer32` command line names: the quoted first word, or the whole value
+/// when it is unquoted. `None` when the value names nothing.
+#[cfg(any(windows, test))]
+pub fn command_exe(command: &str) -> Option<PathBuf> {
+    let command = command.trim();
+    let exe = match command.strip_prefix('"') {
+        Some(quoted) => quoted.split('"').next().unwrap_or(""),
+        None => command,
+    };
+    (!exe.is_empty()).then(|| PathBuf::from(exe))
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
     use super::*;
+
+    /// Windows-style exe paths. Only the string comparison runs on these, so they are not
+    /// resolved against a disk.
+    const THIS_EXE: &str = r"C:\dev\omairc\omairc-poc-gpui.exe";
+    const INSTALLED_EXE: &str = r"C:\Program Files\Omairc\omairc.exe";
 
     #[test]
     fn sanitize_xml_text_strips_controls() {
@@ -172,7 +231,96 @@ mod tests {
     }
 
     #[test]
+    fn should_claim_takes_missing_or_stale_records_and_keeps_a_live_owner() {
+        let this_exe = Path::new("/dev/omairc");
+        let installed = Path::new("/opt/omairc");
+        assert!(should_claim(None, this_exe, |_| true));
+        assert!(should_claim(Some(this_exe), this_exe, |_| true));
+        assert!(should_claim(Some(installed), this_exe, |_| false));
+        assert!(!should_claim(Some(installed), this_exe, |_| true));
+    }
+
+    #[test]
+    fn should_claim_matches_windows_paths_without_case() {
+        let this_exe = Path::new("C:\\Apps\\omairc.exe");
+        let recorded = Path::new("c:\\apps\\OMAIRC.exe");
+        assert!(should_claim(Some(recorded), this_exe, |_| true));
+    }
+
+    #[test]
+    fn nothing_registered_is_claimed() {
+        assert!(should_claim(None, Path::new(THIS_EXE), |_| false));
+    }
+
+    #[test]
+    fn the_same_exe_is_claimed_regardless_of_existence() {
+        let this_exe = Path::new(THIS_EXE);
+        assert!(should_claim(Some(this_exe), this_exe, |_| false));
+    }
+
+    #[test]
+    fn a_different_exe_that_still_exists_is_not_claimed() {
+        let installed = Path::new(INSTALLED_EXE);
+        assert!(!should_claim(
+            Some(installed),
+            Path::new(THIS_EXE),
+            |path| path == installed,
+        ));
+    }
+
+    #[test]
+    fn a_different_exe_that_is_gone_is_claimed() {
+        let gone = Path::new(r"C:\old\omairc\omairc.exe");
+        assert!(should_claim(
+            Some(gone),
+            Path::new(THIS_EXE),
+            |path| path != gone,
+        ));
+    }
+
+    #[test]
+    fn a_quoted_registry_value_is_compared_by_its_exe() {
+        let this_exe = Path::new(THIS_EXE);
+        let same = command_exe(&format!("\"{THIS_EXE}\""));
+        assert!(should_claim(same.as_deref(), this_exe, |_| false));
+
+        let installed_exe = Path::new(INSTALLED_EXE);
+        let installed = command_exe(r#""C:\Program Files\Omairc\omairc.exe" -Embedding"#);
+        assert!(!should_claim(
+            installed.as_deref(),
+            this_exe,
+            |path| path == installed_exe,
+        ));
+    }
+
+    #[test]
+    fn an_empty_registry_value_names_no_exe_and_is_claimed() {
+        assert_eq!(command_exe("   "), None);
+        assert!(should_claim(
+            command_exe("\"\"").as_deref(),
+            Path::new(THIS_EXE),
+            |_| false,
+        ));
+    }
+
+    #[test]
+    fn command_exe_reads_quoted_and_bare_commands() {
+        assert_eq!(
+            command_exe("\"C:\\Program Files\\Omairc\\omairc.exe\""),
+            Some(PathBuf::from("C:\\Program Files\\Omairc\\omairc.exe"))
+        );
+        assert_eq!(
+            command_exe("C:\\Omairc\\omairc.exe"),
+            Some(PathBuf::from("C:\\Omairc\\omairc.exe"))
+        );
+        assert_eq!(command_exe("  \"\"  "), None);
+        assert_eq!(command_exe(""), None);
+    }
+
+    #[test]
     fn remember_conversation_notify_id_replaces_prior_id() {
+        use crate::desktop::notifier::Activation;
+
         let mut conversation_ids = HashMap::new();
         let mut by_id = HashMap::new();
         remember_conversation_notify_id(
@@ -195,7 +343,11 @@ mod tests {
         assert!(!by_id.contains_key(&1));
         assert_eq!(
             by_id.get(&2),
-            Some(&("net".to_owned(), "#chan".to_owned(), "b".to_owned()))
+            Some(&Activation {
+                network_id: "net".to_owned(),
+                target: "#chan".to_owned(),
+                msgid: "b".to_owned(),
+            })
         );
     }
 }

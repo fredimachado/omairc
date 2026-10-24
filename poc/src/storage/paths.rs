@@ -338,8 +338,7 @@ mod tests {
                     path.display()
                 );
                 assert!(
-                    path.components().any(|part| part.as_os_str() == APP_FOLDER)
-                        || path.ends_with("logs"),
+                    path.components().any(|part| part.as_os_str() == APP_FOLDER),
                     "{} should stay under the PoC folder",
                     path.display()
                 );

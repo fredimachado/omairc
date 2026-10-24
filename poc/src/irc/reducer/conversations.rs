@@ -11,13 +11,9 @@
 //! `ReleaseStaleNamesSync`, `JoinedMemberChannel`, `SetServerFeatures`,
 //! `SetHighlightWords`) and of `src/irc/irceventreducer.cpp` (C++).
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use chrono::{DateTime, TimeDelta, Utc};
 
-use crate::storage::lists::CaseListStore;
-
+use crate::irc::casemapping::IrcCaseMapping;
 use crate::irc::conversation::target_looks_like_service;
 use crate::irc::event::{ConversationKey, InboxArrival, IrcConversationCause, MentionArrival};
 use crate::irc::membershipnoise::MembershipNoise;
@@ -35,6 +31,20 @@ use super::state::{
     ChannelState, ConversationState, MemberView, OrderedMember, PeerPresence, STALE_NAMES_SYNC_MS,
 };
 use super::EventReducer;
+
+/// The closed-channel list that survives a welcome (`setClosedConversations`). The
+/// controller owns the store and gives the reducer a handle, so the reducer reads and
+/// writes it through this seam and `irc/` never names the storage layer. An
+/// implementor keeps its own handle behind interior mutability, as `ConversationLog`
+/// does.
+pub trait ClosedStore {
+    /// Whether `target` is closed on `network_id` under `mapping`.
+    fn contains(&self, network_id: &str, target: &str, mapping: IrcCaseMapping) -> bool;
+    /// Records `target` as closed on `network_id`.
+    fn add(&self, network_id: &str, target: &str, mapping: IrcCaseMapping);
+    /// Forgets `target` on `network_id`.
+    fn remove(&self, network_id: &str, target: &str, mapping: IrcCaseMapping);
+}
 
 /// Marks a channel's NAMES sync as running from `now` (`startNamesSync`). It
 /// clears the members, which the sync refills.
@@ -149,7 +159,7 @@ impl EventReducer {
     }
 
     /// Wires the closed list that survives welcome (`setClosedConversations`).
-    pub fn set_closed_persistence(&mut self, store: Rc<RefCell<CaseListStore>>) {
+    pub fn set_closed_persistence(&mut self, store: Box<dyn ClosedStore>) {
         self.facts.closed_store = Some(store);
     }
 
@@ -163,9 +173,7 @@ impl EventReducer {
             return false;
         }
         let mapping = self.server_features(&key.network_id).case_mapping();
-        store
-            .borrow()
-            .contains(&key.network_id, &key.normalized_target, mapping)
+        store.contains(&key.network_id, &key.normalized_target, mapping)
     }
 
     /// Records that the user closed this channel, so catch-up cannot bring the row
@@ -177,9 +185,7 @@ impl EventReducer {
         self.facts.closed_channels.insert(key.clone());
         if let Some(store) = &self.facts.closed_store {
             let mapping = self.server_features(&key.network_id).case_mapping();
-            store
-                .borrow_mut()
-                .add(&key.network_id, &key.normalized_target, mapping);
+            store.add(&key.network_id, &key.normalized_target, mapping);
         }
     }
 
@@ -188,9 +194,7 @@ impl EventReducer {
         self.facts.closed_channels.remove(key);
         if let Some(store) = &self.facts.closed_store {
             let mapping = self.server_features(&key.network_id).case_mapping();
-            store
-                .borrow_mut()
-                .remove(&key.network_id, &key.normalized_target, mapping);
+            store.remove(&key.network_id, &key.normalized_target, mapping);
         }
     }
 

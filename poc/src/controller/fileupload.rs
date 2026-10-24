@@ -15,6 +15,23 @@ pub struct UploadTarget {
     pub server_encrypted: bool,
 }
 
+impl UploadTarget {
+    /// Clears the password and user name. The `Drop` impl runs it, and the upload runs it
+    /// once the headers are built, so the plaintext is not held across the post.
+    pub fn wipe_credentials(&mut self) {
+        self.secret.wipe();
+        self.user.clear();
+    }
+}
+
+/// `upload` consumes its job, so every return drops the target, including a refused
+/// pre-check, and that drop clears the credentials. No exit has to remember to wipe.
+impl Drop for UploadTarget {
+    fn drop(&mut self) {
+        self.wipe_credentials();
+    }
+}
+
 impl Controller {
     /// The upload URI for the selected network, or `None`. An encrypted IRC
     /// connection refuses a plain http URI. With no live session the connection

@@ -11,7 +11,7 @@ use futures::executor::block_on;
 use futures::StreamExt;
 use zbus::{proxy, zvariant, Connection};
 
-use super::util::conversation_key;
+use super::util::{conversation_key, remember_conversation_notify_id};
 use super::{Activation, Notifier, NullNotifier};
 
 #[proxy(
@@ -20,6 +20,8 @@ use super::{Activation, Notifier, NullNotifier};
     default_path = "/org/freedesktop/Notifications"
 )]
 trait Notifications {
+    // The freedesktop Notify signature is fixed by the spec: eight wire arguments.
+    #[allow(clippy::too_many_arguments)]
     fn notify(
         &self,
         app_name: &str,
@@ -44,33 +46,6 @@ struct NotifyState {
 struct LinuxNotifier {
     connection: Connection,
     state: Arc<Mutex<NotifyState>>,
-}
-
-fn remember_id(
-    state: &Arc<Mutex<NotifyState>>,
-    network_id: &str,
-    target: &str,
-    msgid: &str,
-    id: u32,
-) {
-    if network_id.is_empty() || target.is_empty() || id == 0 {
-        return;
-    }
-    let mut state = state.lock().expect("notify state");
-    let key = conversation_key(network_id, target);
-    let previous = state.conversation_ids.get(&key).copied().unwrap_or(0);
-    if previous != 0 && previous != id {
-        state.by_id.remove(&previous);
-    }
-    state.conversation_ids.insert(key, id);
-    state.by_id.insert(
-        id,
-        Activation {
-            network_id: network_id.to_owned(),
-            target: target.to_owned(),
-            msgid: msgid.to_owned(),
-        },
-    );
 }
 
 impl Notifier for LinuxNotifier {
@@ -109,20 +84,32 @@ impl Notifier for LinuxNotifier {
                 };
                 let hints = HashMap::new();
                 let actions = ["default", "Open"];
-                let id = match proxy.notify(
-                    "Omairc",
-                    replaces_id,
-                    "omairc",
-                    &summary,
-                    &body,
-                    &actions,
-                    hints,
-                    -1,
-                ) {
+                let id = match proxy
+                    .notify(
+                        "Omairc",
+                        replaces_id,
+                        "omairc",
+                        &summary,
+                        &body,
+                        &actions,
+                        hints,
+                        -1,
+                    )
+                    .await
+                {
                     Ok(id) => id,
                     Err(_) => return,
                 };
-                remember_id(&state, &network_id, &target, &msgid, id);
+                let mut guard = state.lock().expect("notify state");
+                let notify_state = &mut *guard;
+                remember_conversation_notify_id(
+                    &mut notify_state.conversation_ids,
+                    &mut notify_state.by_id,
+                    &network_id,
+                    &target,
+                    &msgid,
+                    id,
+                );
             });
         });
     }
@@ -143,14 +130,14 @@ async fn run_signal_loop(connection: Connection, tx: Sender<Activation>, state: 
             Err(_) => continue,
         };
         let action = args.action_key();
-        if action != "default" && !action.is_empty() {
+        if *action != "default" && !action.is_empty() {
             continue;
         }
         let activation = state
             .lock()
             .expect("notify state")
             .by_id
-            .get(&args.id())
+            .get(args.id())
             .cloned();
         if let Some(activation) = activation {
             let _ = tx.send_blocking(activation);

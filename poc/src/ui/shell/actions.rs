@@ -83,7 +83,7 @@ pub fn bind_shell_keys(cx: &mut App) {
     bind_about_keys(cx);
     bind_channel_open_keys(cx);
     bind_connect_keys(cx);
-    let mut bindings = vec![
+    let bindings = vec![
         KeyBinding::new("secondary-,", OpenConnect, None),
         // Ctrl+Enter applies while Connect shows. The listener checks that.
         KeyBinding::new("secondary-enter", ConnectApply, None),
@@ -387,9 +387,10 @@ pub fn wire_shell_actions(root: Div, cx: &mut Context<Shell>) -> Div {
         shell.prompt_for_file(window, cx);
     }))
     .capture_action(cx.listener(|shell, action: &Paste, window, cx| {
+        // gpui's capture phase runs on unless a listener stops it, so a consumed file
+        // paste must stop here or the composer pastes the path as well.
         if shell.handle_composer_paste(action, window, cx) {
-            return;
+            cx.stop_propagation();
         }
-        cx.propagate();
     }))
 }

@@ -1,32 +1,37 @@
 //! Windows Toast notifications. Port of `windowsnotifications.cpp`.
 //!
-//! Toasts use the AUMID `FrediMachado.Omairc`. Activation goes through the activator
-//! registration (`LocalServer32`) and a Start Menu `Omairc.lnk` that carries the AUMID.
-//! Which exe those point at is decided by two rules:
+//! Toasts use the AUMID `FrediMachado.Omairc`. Activation goes through two per-user records:
+//! the activator registration (`LocalServer32`) and a Start Menu `Omairc.lnk` that carries the
+//! AUMID. Which exe those records name is decided by two rules, both implemented in
+//! `windows_ownership`:
 //!
 //! - An installed copy, one under `%LOCALAPPDATA%\Programs\Omairc` or `%ProgramFiles%\Omairc`,
-//!   may take the activator registration and the per-user shortcut from another exe, even one
-//!   that still exists.
-//! - Any other build, such as a dev or portable build, may take them only when nothing is
-//!   registered, when the registered exe is itself, or when the registered exe no longer
-//!   exists. So it does not displace an exe that still exists.
+//!   takes the activator registration and the per-user link even from an exe that still exists.
+//!   A record it cannot read is left alone (see below).
+//! - Any other build, such as a dev or portable build, takes them only when nothing is
+//!   registered, when the registered exe is itself, or when the registered exe is gone. It does
+//!   not displace an exe that still exists (`util::should_claim`).
 //!
 //! Two installed copies take turns: each launch overwrites the other's registration and link,
-//! and this is intended.
+//! and this is intended. A registration or link that cannot be read is left alone, for any
+//! build, because its owner is unknown.
 //!
-//! The shortcut fallback reads two Start Menu `Omairc.lnk` links: the per-user one and the
-//! all-users one, under `FOLDERID_CommonPrograms`. It writes only the per-user link, and only
-//! when neither link refuses. A link refuses when it cannot be read or its target cannot be
-//! expanded, when the target is empty or is not valid UTF-16, when any `%` remains after
-//! `%VAR%` expansion (a literal `%` in a real path refuses too), or when it names an exe this
-//! build may not take. Before the fallback, the repair path re-stamps a link that already names
-//! this exe, in either location, but only when no such link is stamped yet. It never creates an
-//! all-users link. A readable link that names this exe counts as found whether or not its stamp
-//! takes, and the post-repair gate reads that finding, not the stamp. After a repair, a build that
-//! is not installed stops there, portable builds included. An installed copy goes on only when its
-//! per-user link is readable and names another exe, and then it replaces that link. A missing
-//! per-user link, an unreadable one, or one that names this exe stops there, so after a repair a
-//! per-user link is replaced, never created.
+//! The shortcut fallback reads two Start Menu `Omairc.lnk` links, the per-user one and the
+//! all-users one under `FOLDERID_CommonPrograms`, and writes only the per-user link. It writes
+//! only when neither link refuses. A link refuses when it cannot be read, when its target cannot
+//! be expanded, when the target is empty or not valid UTF-16, or when `%` survives `%VAR%`
+//! expansion (a literal `%` in a real path refuses too). For a build that is not installed, a
+//! link also refuses when it names an exe that still exists and is not this one. The fallback
+//! never creates an all-users link.
+//!
+//! Before the fallback, the repair path re-stamps a link that already names this exe, in either
+//! location, but only when no such link is stamped yet. A readable link that names this exe
+//! counts as found whether or not its stamp takes, and the post-repair gate reads that finding,
+//! not the stamp. After a repair, a build that is not installed stops there, portable builds
+//! included. An installed copy goes on only when its per-user link is readable and names another
+//! exe. The fallback then replaces that per-user link, unless the all-users link is unreadable.
+//! A missing or unreadable per-user link, or one that names this exe, stops there. So after a
+//! repair, a per-user link is replaced, never created.
 //!
 //! This code decides what it writes. It does not establish which copy receives a click while
 //! more than one copy is registered.
@@ -39,7 +44,7 @@ use std::thread;
 
 use async_channel::Sender;
 use std::mem::ManuallyDrop;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use windows::core::{GUID, HSTRING, Interface, PCWSTR};
 use windows::Win32::Foundation::{
@@ -56,13 +61,13 @@ use windows::Win32::System::Com::{
 use windows::Win32::System::Com::StructuredStorage::{
     InitPropVariantFromCLSID, PropVariantClear, PROPVARIANT, PROPVARIANT_0_0, PROPVARIANT_0_0_0,
 };
-use windows::Win32::System::Variant::{VT_CLSID, VT_LPWSTR};
-use windows::Win32::System::WinRT::{RoInitialize, RoUninitialize, RO_INIT_MULTITHREADED};
 use windows::Win32::System::Environment::ExpandEnvironmentStringsW;
 use windows::Win32::System::Registry::{
     RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ,
 };
 use windows::Win32::System::Threading::{CreateEventW, SetEvent};
+use windows::Win32::System::Variant::{VT_CLSID, VT_LPWSTR};
+use windows::Win32::System::WinRT::{RoInitialize, RoUninitialize, RO_INIT_MULTITHREADED};
 use windows::Win32::UI::Notifications::{
     INotificationActivationCallback, INotificationActivationCallback_Impl,
     NOTIFICATION_USER_INPUT_DATA,
@@ -80,13 +85,23 @@ use windows_implement::implement;
 use windows::Data::Xml::Dom::XmlDocument;
 use windows::UI::Notifications::{ToastNotification, ToastNotificationManager, ToastNotifier};
 
-use super::util::{build_launch_url, build_toast_xml, conversation_tag, parse_launch_url};
+use super::util::{
+    build_launch_url, build_toast_xml, command_exe, conversation_tag, parse_launch_url, same_exe,
+    should_claim,
+};
+use super::windows_ownership::{
+    activator_claim, canonical_with, check_existing_links, found_after_repair, is_installed_exe,
+    link_state_from_target, repair_ends_registration, LinkRefusal, LinkSlot, LinkState,
+};
 use super::{Activation, Notifier};
 
 const AUMID: &str = "FrediMachado.Omairc";
 const ACTIVATOR_CLSID: GUID = GUID::from_u128(0xDBE38477_5F87_42A1_AFA1_11FA12F2E5E5);
 /// Wide-character buffer for a path up to the long-path limit (32767 characters) and its NUL.
 const LONG_PATH_BUFFER: usize = 32_768;
+/// The activator's `LocalServer32` value, which Windows launches when a toast is clicked.
+const COM_SERVER_SUBKEY: &str =
+    "SOFTWARE\\Classes\\CLSID\\{DBE38477-5F87-42A1-AFA1-11FA12F2E5E5}\\LocalServer32";
 
 struct ToastWork {
     summary: String,
@@ -159,157 +174,33 @@ fn init_propvariant_from_string(value: &str) -> Result<PROPVARIANT, windows::cor
     Ok(prop)
 }
 
-fn same_exe_path(left: &Path, right: &Path) -> bool {
-    match (left.canonicalize(), right.canonicalize()) {
-        (Ok(left), Ok(right)) => left == right,
-        _ => left
-            .to_string_lossy()
-            .eq_ignore_ascii_case(&right.to_string_lossy()),
-    }
-}
-
-/// Pulls the exe out of a `LocalServer32` command line: the quoted path, then any
-/// arguments. An empty value names no exe.
-fn registered_exe(command: &str) -> Option<PathBuf> {
-    let command = command.trim();
-    let exe = match command.strip_prefix('"') {
-        Some(rest) => rest.split('"').next()?,
-        None => command,
-    };
-    (!exe.is_empty()).then(|| PathBuf::from(exe))
-}
-
-/// Whether this exe may take a registration or shortcut. It may when nothing is
-/// registered, when the registered exe is itself, or when the registered exe is gone.
-/// A registered exe that still exists belongs to another install, so it is left alone.
-fn should_claim(
-    existing: Option<&Path>,
-    this_exe: &Path,
-    exists: impl Fn(&Path) -> bool,
-) -> bool {
-    match existing {
-        None => true,
-        Some(existing) => same_exe_path(existing, this_exe) || !exists(existing),
-    }
-}
-
 /// The canonical form of `path`, which resolves 8.3 short names and junctions. `None` when the
 /// disk cannot resolve it, as when it does not exist.
 fn resolve_path(path: &Path) -> Option<PathBuf> {
     std::fs::canonicalize(path).ok()
 }
 
-/// Drops the `\\?\` verbatim prefix that `canonicalize` adds on Windows, so `\\?\C:\x` and
-/// `C:\x` compare equal. `\\?\UNC\server\share` becomes `\\server\share`.
-fn strip_verbatim(path: &Path) -> PathBuf {
-    let Some(text) = path.to_str() else {
-        return path.to_path_buf();
-    };
-    if let Some(unc) = text.strip_prefix(r"\\?\UNC\") {
-        PathBuf::from(format!(r"\\{unc}"))
-    } else if let Some(plain) = text.strip_prefix(r"\\?\") {
-        PathBuf::from(plain)
-    } else {
-        path.to_path_buf()
-    }
+/// The spelling of `path` that the ownership rules compare: its canonical form, with the verbatim
+/// prefix stripped (see `windows_ownership::canonical_with`). Every exe read from disk or the
+/// registry goes through here before a rule sees it, so `util::same_exe` compares like with like.
+fn canonical_exe(path: &Path) -> PathBuf {
+    canonical_with(path, resolve_path)
 }
 
-/// Whether `this_exe` lies inside one of `install_roots`. `resolve` names the path the disk
-/// gives, or `None` when there is none, and a path with no resolution is compared as given. The
-/// exe and each root are resolved, then stripped of the verbatim prefix, before the comparison.
-/// Path components are compared one at a time, ignoring ASCII case, so `...\Omairc-dev\x.exe`
-/// is not inside `...\Omairc`. A `..` left in the compared exe path is refused, since it could
-/// leave the root without changing the prefix.
-fn is_installed_exe(
-    this_exe: &Path,
-    install_roots: &[PathBuf],
-    resolve: impl Fn(&Path) -> Option<PathBuf>,
-) -> bool {
-    let resolved = |path: &Path| {
-        strip_verbatim(&resolve(path).unwrap_or_else(|| path.to_path_buf()))
-    };
-    let exe = resolved(this_exe);
-    let exe_parts: Vec<Component<'_>> = exe.components().collect();
-    if exe_parts.contains(&Component::ParentDir) {
-        return false;
-    }
-    install_roots.iter().any(|root| {
-        let root = resolved(root);
-        let root_parts: Vec<Component<'_>> = root.components().collect();
-        !root_parts.is_empty()
-            && root_parts.len() < exe_parts.len()
-            && root_parts.iter().zip(&exe_parts).all(|(root_part, exe_part)| {
-                root_part.as_os_str().eq_ignore_ascii_case(exe_part.as_os_str())
-            })
-    })
-}
-
-/// Where a Start Menu `Omairc.lnk` lives. Only `PerUser` is ever written.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum LinkSlot {
-    AllUsers,
-    PerUser,
-}
-
-/// One Start Menu `Omairc.lnk`, as read from disk. Only a confirmed absence is `Missing`.
-#[derive(Debug, PartialEq, Eq)]
-enum LinkState {
-    Missing,
-    /// The link exists, but its target cannot be read. Fail closed.
-    Unreadable,
-    /// The link names an exe path.
-    Targets(PathBuf),
-}
-
-/// Why the shortcut fallback must not write the per-user link.
-#[derive(Debug, PartialEq, Eq)]
-enum LinkRefusal {
-    Unreadable(LinkSlot),
-    NamesOtherExe(LinkSlot, PathBuf),
-}
-
-/// Decides whether the shortcut fallback may write the per-user link, given both links as
-/// read from disk. An unreadable link refuses. Any other link allows when this exe is an
-/// installed copy, or when `should_claim` allows it: the link names this exe, or an exe that is
-/// gone. The all-users link is checked first and the first refusal wins, so when both links
-/// refuse, the all-users refusal is returned.
-fn check_existing_links(
-    this_exe: &Path,
-    install_roots: &[PathBuf],
-    all_users: &LinkState,
-    per_user: &LinkState,
-    exists: impl Fn(&Path) -> bool,
-    resolve: impl Fn(&Path) -> Option<PathBuf>,
-) -> Result<(), LinkRefusal> {
-    let from_install = is_installed_exe(this_exe, install_roots, resolve);
-    for (slot, state) in [(LinkSlot::AllUsers, all_users), (LinkSlot::PerUser, per_user)] {
-        match state {
-            LinkState::Missing => {}
-            LinkState::Unreadable => return Err(LinkRefusal::Unreadable(slot)),
-            LinkState::Targets(target) => {
-                if !from_install && !should_claim(Some(target.as_path()), this_exe, &exists) {
-                    return Err(LinkRefusal::NamesOtherExe(slot, target.clone()));
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Decides what a link's raw target means. `raw` is what `shortcut_target` read, or `None` when
-/// that read failed. `expand` turns `%VAR%` text into a path, and returns `None` when it fails.
-/// The link is `Unreadable` when the read or the expansion fails, when the result is empty
-/// (an empty target names no exe), or when `%` survives expansion. A variable this session cannot
-/// resolve leaves its text in place, and that text is not a path to test against the disk.
-fn link_state_from_target(
-    raw: Option<&str>,
-    expand: impl Fn(&str) -> Option<String>,
-) -> LinkState {
-    match raw.and_then(expand) {
-        Some(path) if !path.is_empty() && !path.contains('%') => {
-            LinkState::Targets(PathBuf::from(path))
-        }
-        _ => LinkState::Unreadable,
+/// Reads one Start Menu `Omairc.lnk`. Only a confirmed absence counts as `Missing`, so a
+/// failure to check the folder leaves the link `Unreadable`. A target that names an exe is
+/// returned in canonical form.
+fn read_link_state(link: &Path) -> LinkState {
+    match link.try_exists() {
+        Ok(false) => LinkState::Missing,
+        Ok(true) => match link_state_from_target(
+            shortcut_target(&link.to_string_lossy()).as_deref(),
+            expand_environment,
+        ) {
+            LinkState::Targets(target) => LinkState::Targets(canonical_exe(&target)),
+            unreadable => unreadable,
+        },
+        Err(_) => LinkState::Unreadable,
     }
 }
 
@@ -328,23 +219,10 @@ fn expand_environment(raw: &str) -> Option<String> {
     String::from_utf16(&buffer[..written - 1]).ok()
 }
 
-/// Reads one Start Menu `Omairc.lnk`. Only a confirmed absence counts as `Missing`, so a
-/// failure to check the folder leaves the link `Unreadable`.
-fn read_link_state(link: &Path) -> LinkState {
-    match link.try_exists() {
-        Ok(false) => LinkState::Missing,
-        Ok(true) => link_state_from_target(
-            shortcut_target(&link.to_string_lossy()).as_deref(),
-            expand_environment,
-        ),
-        Err(_) => LinkState::Unreadable,
-    }
-}
-
 /// Reads the default value of the activator's `LocalServer32` key. `Ok(None)` means the
 /// value is absent. Any other failure is an error, so the caller can fail closed.
 fn read_registered_command(subkey: &[u16]) -> Result<Option<String>, WIN32_ERROR> {
-    let mut data = vec![0u16; 32_768];
+    let mut data = vec![0u16; LONG_PATH_BUFFER];
     let mut bytes = (data.len() * 2) as u32;
     let status = unsafe {
         RegGetValueW(
@@ -482,7 +360,9 @@ fn shortcut_is_stamped(link_path: &str) -> bool {
     clsid_matches
 }
 
+/// The readable per-user and all-users `Omairc.lnk` links whose target is this exe.
 fn installed_shortcut_paths(exe_path: &str) -> Vec<PathBuf> {
+    let this_exe = canonical_exe(Path::new(exe_path));
     let mut links = Vec::new();
     for dir in start_menu_program_dirs() {
         let link = dir.join("Omairc.lnk");
@@ -493,21 +373,23 @@ fn installed_shortcut_paths(exe_path: &str) -> Vec<PathBuf> {
         let Some(target) = shortcut_target(&link_path) else {
             continue;
         };
-        if same_exe_path(Path::new(&target), Path::new(exe_path)) {
+        if same_exe(&canonical_exe(Path::new(&target)), &this_exe) {
             links.push(link);
         }
     }
     links
 }
 
-/// Claims the toast activator registration. An installed copy always may. Any other build may
-/// only when `should_claim` allows it.
+/// Points the toast activator at this exe, when `activator_claim` allows it. An installed copy
+/// always may. Any other build may only when `should_claim` allows it. A registration that cannot
+/// be read is left unchanged, so the write is skipped.
 fn register_com_server(exe: &str, install_roots: &[PathBuf]) {
-    let subkey =
-        "SOFTWARE\\Classes\\CLSID\\{DBE38477-5F87-42A1-AFA1-11FA12F2E5E5}\\LocalServer32";
-    let subkey_wide = wide(subkey);
+    let subkey_wide = wide(COM_SERVER_SUBKEY);
     let existing = match read_registered_command(&subkey_wide) {
-        Ok(command) => command.as_deref().and_then(registered_exe),
+        Ok(command) => command
+            .as_deref()
+            .and_then(command_exe)
+            .map(|owner| canonical_exe(&owner)),
         Err(status) => {
             log::info!(
                 "Windows notifier: could not read the toast activator registration ({:?}), leaving it unchanged",
@@ -516,10 +398,14 @@ fn register_com_server(exe: &str, install_roots: &[PathBuf]) {
             return;
         }
     };
-    let this_exe = Path::new(exe);
-    let from_install = is_installed_exe(this_exe, install_roots, resolve_path);
-    let claimed_by_rule = should_claim(existing.as_deref(), this_exe, Path::exists);
-    if !from_install && !claimed_by_rule {
+    let this_exe = canonical_exe(Path::new(exe));
+    if !activator_claim(
+        &this_exe,
+        install_roots,
+        existing.as_deref(),
+        resolve_path,
+        Path::exists,
+    ) {
         if let Some(owner) = existing.as_deref() {
             log::info!(
                 "Windows notifier: {} owns toast activation, so this build leaves it registered",
@@ -528,8 +414,8 @@ fn register_com_server(exe: &str, install_roots: &[PathBuf]) {
         }
         return;
     }
-    if from_install && !claimed_by_rule {
-        if let Some(owner) = existing.as_deref() {
+    if let Some(owner) = existing.as_deref() {
+        if !should_claim(Some(owner), &this_exe, Path::exists) {
             log::info!(
                 "Windows notifier: this installed copy replaces the toast activation registration owned by {}",
                 owner.display()
@@ -590,26 +476,6 @@ fn install_shortcut(link_path: &str, exe_path: &str) -> Result<(), windows::core
     unsafe { persist.Save(PCWSTR(link_wide.as_ptr()), true) }
 }
 
-/// Decides what the repair reports for the links that name this exe. `is_stamped` says whether a
-/// link already carries the stamp, and `stamp` writes it and says whether the write took. When a
-/// link is stamped, nothing is written. Otherwise `stamp` is tried on each link in order, and the
-/// first that takes ends the attempts. The result is whether `installed` has any link, whatever
-/// the stamps did, so a link found by name counts even when no stamp takes.
-fn found_after_repair(
-    installed: &[PathBuf],
-    is_stamped: impl Fn(&Path) -> bool,
-    stamp: impl Fn(&Path) -> bool,
-) -> bool {
-    if !installed.iter().any(|link| is_stamped(link)) {
-        for link in installed {
-            if stamp(link) {
-                break;
-            }
-        }
-    }
-    !installed.is_empty()
-}
-
 /// Repairs the Start Menu links that already name this exe. `installed` lists the readable links
 /// that name it, in either location. The result is true when one of them is there, stamped or
 /// not. A failed stamp is logged and does not change the result. See `found_after_repair`.
@@ -628,32 +494,6 @@ fn repair_installed_links(exe_path: &str, installed: &[PathBuf]) -> bool {
             stamped
         },
     )
-}
-
-/// Whether `ensure_notification_registration` stops after the repair, before the fallback runs.
-/// `repaired` is true when a readable link in either location names this exe, whether or not it
-/// is stamped (see `repair_installed_links`). When it is false, nothing stops here and the fallback
-/// runs as it always has. When it is true, a build that is not installed stops, portable builds
-/// included, so it does not overwrite a link it did not own. An installed copy goes on only when
-/// its per-user link is readable and names another exe, which it may replace. A missing per-user
-/// link, an unreadable one, or one that names this exe stops, so after a repair a per-user link is
-/// replaced, never created.
-fn repair_ends_registration(
-    repaired: bool,
-    from_install: bool,
-    this_exe: &Path,
-    per_user: &LinkState,
-) -> bool {
-    if !repaired {
-        return false;
-    }
-    if !from_install {
-        return true;
-    }
-    match per_user {
-        LinkState::Targets(target) => same_exe_path(target, this_exe),
-        LinkState::Missing | LinkState::Unreadable => true,
-    }
 }
 
 fn ensure_notification_registration(exe_path: &str) {
@@ -679,9 +519,9 @@ fn ensure_notification_registration(exe_path: &str) {
     let link_path = link.to_string_lossy();
     let all_users_state = read_link_state(&all_users_link);
     let per_user_state = read_link_state(&link);
-    let this_exe = Path::new(exe_path);
-    let from_install = is_installed_exe(this_exe, &roots, resolve_path);
-    if repair_ends_registration(repaired, from_install, this_exe, &per_user_state) {
+    let this_exe = canonical_exe(Path::new(exe_path));
+    let from_install = is_installed_exe(&this_exe, &roots, resolve_path);
+    if repair_ends_registration(repaired, from_install, &this_exe, &per_user_state) {
         if from_install && matches!(per_user_state, LinkState::Unreadable) {
             log::info!(
                 "Windows notifier: could not read {:?} to see which exe it names, leaving it unchanged",
@@ -691,7 +531,7 @@ fn ensure_notification_registration(exe_path: &str) {
         return;
     }
     if let Err(refusal) = check_existing_links(
-        this_exe,
+        &this_exe,
         &roots,
         &all_users_state,
         &per_user_state,
@@ -721,7 +561,7 @@ fn ensure_notification_registration(exe_path: &str) {
         return;
     }
     if let LinkState::Targets(target) = &per_user_state {
-        if from_install && !should_claim(Some(target.as_path()), this_exe, Path::exists) {
+        if from_install && !should_claim(Some(target.as_path()), &this_exe, Path::exists) {
             log::info!(
                 "Windows notifier: this installed copy replaces the Start Menu shortcut {:?}, which names {}",
                 link,
@@ -899,729 +739,19 @@ pub fn open(tx: Sender<Activation>) -> Box<dyn Notifier> {
 
 /// Parses a toast foreground `launch` argument from the process command line, if present.
 pub fn activation_from_args(args: &[String]) -> Option<Activation> {
-    for arg in args {
-        if let Some((network_id, target, msgid)) = parse_launch_url(arg) {
-            return Some(Activation {
-                network_id,
-                target,
-                msgid,
-            });
-        }
-    }
-    None
+    args.iter().find_map(|arg| {
+        let (network_id, target, msgid) = parse_launch_url(arg)?;
+        Some(Activation {
+            network_id,
+            target,
+            msgid,
+        })
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
-    use std::path::{Path, PathBuf};
-
-    use super::{
-        check_existing_links, expand_environment, found_after_repair, is_installed_exe,
-        link_state_from_target, registered_exe, repair_ends_registration, should_claim,
-        strip_verbatim, LinkRefusal, LinkSlot, LinkState,
-    };
-
-    const THIS_EXE: &str = r"C:\dev\omairc\omairc-poc-gpui.exe";
-
-    /// Stands in for the disk where a test needs no resolution: nothing has a canonical form.
-    fn no_resolve(_: &Path) -> Option<PathBuf> {
-        None
-    }
-
-    /// Stands in for `canonicalize` on a machine where `C:\PROGRA~1` names `C:\Program Files`.
-    fn expand_8_3(path: &Path) -> Option<PathBuf> {
-        let rest = path.to_str()?.strip_prefix(r"C:\PROGRA~1\")?;
-        Some(PathBuf::from(format!(r"C:\Program Files\{rest}")))
-    }
-
-    /// Stands in for `canonicalize` on the exe only: it adds the verbatim prefix it returns on
-    /// Windows, and the roots resolve to nothing, so they stay plain.
-    fn verbatim_exe_only(path: &Path) -> Option<PathBuf> {
-        let is_exe = path.extension().and_then(|ext| ext.to_str()) == Some("exe");
-        is_exe.then(|| PathBuf::from(format!(r"\\?\{}", path.display())))
-    }
-
-    #[test]
-    fn nothing_registered_is_claimed() {
-        assert!(should_claim(None, Path::new(THIS_EXE), |_| false));
-    }
-
-    #[test]
-    fn the_same_exe_is_claimed_regardless_of_existence() {
-        let this_exe = Path::new(THIS_EXE);
-        assert!(should_claim(Some(this_exe), this_exe, |_| false));
-    }
-
-    #[test]
-    fn a_different_exe_that_still_exists_is_not_claimed() {
-        let installed = Path::new(r"C:\Program Files\Omairc\omairc.exe");
-        assert!(!should_claim(
-            Some(installed),
-            Path::new(THIS_EXE),
-            |path| path == installed,
-        ));
-    }
-
-    #[test]
-    fn a_different_exe_that_is_gone_is_claimed() {
-        let gone = Path::new(r"C:\old\omairc\omairc.exe");
-        assert!(should_claim(
-            Some(gone),
-            Path::new(THIS_EXE),
-            |path| path != gone,
-        ));
-    }
-
-    #[test]
-    fn a_quoted_registry_value_is_compared_by_its_exe() {
-        let this_exe = Path::new(THIS_EXE);
-        let same = registered_exe(&format!("\"{THIS_EXE}\""));
-        assert!(should_claim(same.as_deref(), this_exe, |_| false));
-
-        let installed_exe = Path::new(r"C:\Program Files\Omairc\omairc.exe");
-        let installed = registered_exe(r#""C:\Program Files\Omairc\omairc.exe" -Embedding"#);
-        assert!(!should_claim(
-            installed.as_deref(),
-            this_exe,
-            |path| path == installed_exe,
-        ));
-    }
-
-    #[test]
-    fn an_empty_registry_value_names_no_exe_and_is_claimed() {
-        assert_eq!(registered_exe("   "), None);
-        assert!(should_claim(
-            registered_exe("\"\"").as_deref(),
-            Path::new(THIS_EXE),
-            |_| false,
-        ));
-    }
-
-    const PER_USER_ROOT: &str = r"C:\Users\Fredi\AppData\Local\Programs\Omairc";
-    const ALL_USERS_ROOT: &str = r"C:\Program Files\Omairc";
-
-    fn test_roots() -> Vec<PathBuf> {
-        vec![PathBuf::from(PER_USER_ROOT), PathBuf::from(ALL_USERS_ROOT)]
-    }
-
-    #[test]
-    fn an_exe_under_the_per_user_root_is_installed() {
-        let exe = Path::new(r"C:\Users\Fredi\AppData\Local\Programs\Omairc\omairc.exe");
-        assert!(is_installed_exe(exe, &test_roots(), no_resolve));
-    }
-
-    #[test]
-    fn an_exe_under_the_all_users_root_is_installed() {
-        let exe = Path::new(r"C:\Program Files\Omairc\omairc.exe");
-        assert!(is_installed_exe(exe, &test_roots(), no_resolve));
-    }
-
-    #[test]
-    fn a_dev_build_in_the_checkout_is_not_installed() {
-        let exe = Path::new(r"D:\code\omairc\poc\target\debug\omairc-poc-gpui.exe");
-        assert!(!is_installed_exe(exe, &test_roots(), no_resolve));
-    }
-
-    #[test]
-    fn a_lookalike_root_is_not_installed() {
-        let exe = Path::new(r"C:\Users\Fredi\AppData\Local\Programs\Omairc-dev\x.exe");
-        assert!(!is_installed_exe(exe, &test_roots(), no_resolve));
-    }
-
-    #[test]
-    fn root_matching_ignores_ascii_case() {
-        let exe = Path::new(r"c:\users\fredi\appdata\local\programs\OMAIRC\omairc.exe");
-        assert!(is_installed_exe(exe, &test_roots(), no_resolve));
-    }
-
-    #[test]
-    fn a_verbatim_exe_path_matches_the_plain_root() {
-        let exe = Path::new(r"\\?\C:\Users\Fredi\AppData\Local\Programs\Omairc\omairc.exe");
-        assert!(is_installed_exe(exe, &test_roots(), no_resolve));
-    }
-
-    #[test]
-    fn a_verbatim_root_matches_the_plain_exe_path() {
-        let roots = [PathBuf::from(r"\\?\C:\Program Files\Omairc")];
-        let exe = Path::new(r"C:\Program Files\Omairc\omairc.exe");
-        assert!(is_installed_exe(exe, &roots, no_resolve));
-    }
-
-    #[test]
-    fn a_resolved_verbatim_path_matches_the_plain_root() {
-        // Only the exe resolves to the verbatim form. The root stays plain, so the strip must
-        // run on the resolved exe for the two to compare equal.
-        let exe = Path::new(r"C:\Program Files\Omairc\omairc.exe");
-        assert!(is_installed_exe(exe, &test_roots(), verbatim_exe_only));
-    }
-
-    #[test]
-    fn an_8_3_exe_path_matches_its_long_path_through_resolution() {
-        let short = Path::new(r"C:\PROGRA~1\Omairc\omairc.exe");
-        assert!(is_installed_exe(short, &test_roots(), expand_8_3));
-        assert!(
-            !is_installed_exe(short, &test_roots(), no_resolve),
-            "without resolution the short name is refused, which fails safe"
-        );
-    }
-
-    #[test]
-    fn a_unc_verbatim_path_strips_to_a_unc_path() {
-        assert_eq!(
-            strip_verbatim(Path::new(r"\\?\UNC\server\share\omairc.exe")),
-            PathBuf::from(r"\\server\share\omairc.exe"),
-        );
-    }
-
-    #[test]
-    fn a_parent_dir_cannot_leave_the_root() {
-        let exe = Path::new(r"C:\Users\Fredi\AppData\Local\Programs\Omairc\..\..\dev\omairc.exe");
-        assert!(!is_installed_exe(exe, &test_roots(), no_resolve));
-    }
-
-    #[test]
-    fn no_roots_or_an_empty_root_matches_nothing() {
-        let exe = Path::new(THIS_EXE);
-        assert!(!is_installed_exe(exe, &[], no_resolve));
-        assert!(!is_installed_exe(exe, &[PathBuf::new()], no_resolve));
-    }
-
-    const OTHER_EXE: &str = r"C:\Program Files\Other\omairc.exe";
-
-    fn targets(path: &str) -> LinkState {
-        LinkState::Targets(PathBuf::from(path))
-    }
-
-    fn identity(raw: &str) -> Option<String> {
-        Some(raw.to_owned())
-    }
-
-    /// Expands the one variable these tests use, `%ROOT%`, to the other install's folder.
-    fn expand_root(raw: &str) -> Option<String> {
-        Some(raw.replace("%ROOT%", r"C:\Program Files\Other"))
-    }
-
-    const ROOT_TARGET: &str = r"%ROOT%\omairc.exe";
-
-    #[test]
-    fn with_no_links_the_fallback_may_write() {
-        let this_exe = Path::new(THIS_EXE);
-        assert_eq!(
-            check_existing_links(
-                this_exe,
-                &[],
-                &LinkState::Missing,
-                &LinkState::Missing,
-                |_| false,
-                no_resolve,
-            ),
-            Ok(()),
-        );
-    }
-
-    #[test]
-    fn an_all_users_link_naming_this_exe_allows() {
-        let this_exe = Path::new(THIS_EXE);
-        assert_eq!(
-            check_existing_links(
-                this_exe,
-                &[],
-                &targets(THIS_EXE),
-                &LinkState::Missing,
-                |_| true,
-                no_resolve,
-            ),
-            Ok(()),
-        );
-    }
-
-    #[test]
-    fn an_all_users_link_naming_another_existing_exe_refuses() {
-        let this_exe = Path::new(THIS_EXE);
-        let other = Path::new(OTHER_EXE);
-        assert_eq!(
-            check_existing_links(
-                this_exe,
-                &[],
-                &targets(OTHER_EXE),
-                &LinkState::Missing,
-                |path| path == other,
-                no_resolve,
-            ),
-            Err(LinkRefusal::NamesOtherExe(LinkSlot::AllUsers, PathBuf::from(OTHER_EXE))),
-        );
-    }
-
-    #[test]
-    fn an_all_users_link_naming_a_gone_exe_allows() {
-        let this_exe = Path::new(THIS_EXE);
-        assert_eq!(
-            check_existing_links(
-                this_exe,
-                &[],
-                &targets(OTHER_EXE),
-                &LinkState::Missing,
-                |_| false,
-                no_resolve,
-            ),
-            Ok(()),
-        );
-    }
-
-    #[test]
-    fn an_unreadable_all_users_link_refuses() {
-        let this_exe = Path::new(THIS_EXE);
-        assert_eq!(
-            check_existing_links(
-                this_exe,
-                &[],
-                &LinkState::Unreadable,
-                &LinkState::Missing,
-                |_| false,
-                no_resolve,
-            ),
-            Err(LinkRefusal::Unreadable(LinkSlot::AllUsers)),
-        );
-    }
-
-    #[test]
-    fn a_per_user_link_naming_another_existing_exe_refuses() {
-        let this_exe = Path::new(THIS_EXE);
-        let other = Path::new(OTHER_EXE);
-        assert_eq!(
-            check_existing_links(
-                this_exe,
-                &[],
-                &LinkState::Missing,
-                &targets(OTHER_EXE),
-                |path| path == other,
-                no_resolve,
-            ),
-            Err(LinkRefusal::NamesOtherExe(LinkSlot::PerUser, PathBuf::from(OTHER_EXE))),
-        );
-    }
-
-    #[test]
-    fn an_installed_copy_is_allowed_past_another_exes_link() {
-        let installed = Path::new(r"C:\Users\Fredi\AppData\Local\Programs\Omairc\omairc.exe");
-        let other = Path::new(OTHER_EXE);
-        assert_eq!(
-            check_existing_links(
-                installed,
-                &test_roots(),
-                &targets(OTHER_EXE),
-                &LinkState::Missing,
-                |path| path == other,
-                no_resolve,
-            ),
-            Ok(()),
-        );
-    }
-
-    #[test]
-    fn an_empty_target_is_unreadable() {
-        assert_eq!(link_state_from_target(Some(""), identity), LinkState::Unreadable);
-    }
-
-    #[test]
-    fn a_failed_target_read_is_unreadable() {
-        assert_eq!(link_state_from_target(None, identity), LinkState::Unreadable);
-    }
-
-    #[test]
-    fn an_unexpanded_variable_is_unreadable() {
-        assert_eq!(link_state_from_target(Some(ROOT_TARGET), identity), LinkState::Unreadable);
-    }
-
-    #[test]
-    fn a_target_expanding_to_another_existing_exe_refuses() {
-        let state = link_state_from_target(Some(ROOT_TARGET), expand_root);
-        assert_eq!(state, targets(OTHER_EXE));
-        let other = Path::new(OTHER_EXE);
-        assert_eq!(
-            check_existing_links(
-                Path::new(THIS_EXE),
-                &[],
-                &LinkState::Missing,
-                &state,
-                |path| path == other,
-                no_resolve,
-            ),
-            Err(LinkRefusal::NamesOtherExe(LinkSlot::PerUser, PathBuf::from(OTHER_EXE))),
-        );
-    }
-
-    #[test]
-    fn a_target_expanding_to_a_gone_exe_is_claimed() {
-        let state = link_state_from_target(Some(ROOT_TARGET), expand_root);
-        assert_eq!(
-            check_existing_links(
-                Path::new(THIS_EXE),
-                &[],
-                &LinkState::Missing,
-                &state,
-                |_| false,
-                no_resolve,
-            ),
-            Ok(()),
-        );
-    }
-
-    #[test]
-    fn an_expansion_failure_refuses() {
-        let state = link_state_from_target(Some(ROOT_TARGET), |_| None);
-        assert_eq!(
-            check_existing_links(
-                Path::new(THIS_EXE),
-                &[],
-                &LinkState::Missing,
-                &state,
-                |_| false,
-                no_resolve,
-            ),
-            Err(LinkRefusal::Unreadable(LinkSlot::PerUser)),
-        );
-    }
-
-    const INSTALLED_EXE: &str = r"C:\Program Files\Omairc\omairc.exe";
-    /// A dev exe in another checkout. No test puts it on disk.
-    const DEV_EXE: &str = r"D:\other-checkout\poc\target\debug\omairc-poc-gpui.exe";
-
-    /// A scratch folder under the system temp folder, removed when the test ends. Each test makes
-    /// its own, so tests stay isolated, and none touches the Start Menu, the registry, or an
-    /// install folder.
-    struct ScratchDir(PathBuf);
-
-    impl ScratchDir {
-        fn new(name: &str) -> Self {
-            let path = std::env::temp_dir()
-                .join(format!("omairc-notifier-{}-{name}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&path);
-            std::fs::create_dir_all(&path).expect("create scratch folder");
-            Self(path)
-        }
-
-        fn path(&self) -> &Path {
-            &self.0
-        }
-
-        /// The path of `<folder>\omairc.exe` under this folder. The file is written when
-        /// `present`, so the path is a real exe or a real absence.
-        fn exe(&self, folder: &str, present: bool) -> PathBuf {
-            let dir = self.0.join(folder);
-            let exe = dir.join("omairc.exe");
-            if present {
-                std::fs::create_dir_all(&dir).expect("create scratch exe folder");
-                std::fs::write(&exe, b"").expect("write scratch exe");
-            }
-            exe
-        }
-    }
-
-    impl Drop for ScratchDir {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
-    #[test]
-    fn an_unreadable_per_user_link_refuses() {
-        assert_eq!(
-            check_existing_links(
-                Path::new(THIS_EXE),
-                &[],
-                &LinkState::Missing,
-                &LinkState::Unreadable,
-                |_| false,
-                no_resolve,
-            ),
-            Err(LinkRefusal::Unreadable(LinkSlot::PerUser)),
-        );
-    }
-
-    #[test]
-    fn an_installed_copy_refused_by_an_unreadable_link_does_not_overwrite() {
-        let other = Path::new(OTHER_EXE);
-        assert_eq!(
-            check_existing_links(
-                Path::new(INSTALLED_EXE),
-                &test_roots(),
-                &targets(OTHER_EXE),
-                &LinkState::Unreadable,
-                |path| path == other,
-                no_resolve,
-            ),
-            Err(LinkRefusal::Unreadable(LinkSlot::PerUser)),
-        );
-    }
-
-    #[test]
-    fn when_both_links_refuse_the_all_users_refusal_is_reported() {
-        let this_exe = Path::new(THIS_EXE);
-        let other = Path::new(OTHER_EXE);
-        assert_eq!(
-            check_existing_links(
-                this_exe,
-                &[],
-                &LinkState::Unreadable,
-                &LinkState::Unreadable,
-                |_| false,
-                no_resolve,
-            ),
-            Err(LinkRefusal::Unreadable(LinkSlot::AllUsers)),
-        );
-        assert_eq!(
-            check_existing_links(
-                this_exe,
-                &[],
-                &targets(OTHER_EXE),
-                &LinkState::Unreadable,
-                |path| path == other,
-                no_resolve,
-            ),
-            Err(LinkRefusal::NamesOtherExe(LinkSlot::AllUsers, PathBuf::from(OTHER_EXE))),
-        );
-    }
-
-    /// Runs an installed copy at `exe` through the post-repair gate and the fallback's check, with
-    /// `roots` as its install roots and its own all-users link stamped, so the repair ran. The gate
-    /// must go on, and the check must allow the per-user link to be replaced.
-    fn assert_installed_copy_replaces(exe: &Path, roots: &[PathBuf], per_user: &LinkState) {
-        let from_install = is_installed_exe(exe, roots, no_resolve);
-        assert!(from_install, "{} must count as installed", exe.display());
-        assert!(
-            !repair_ends_registration(true, from_install, exe, per_user),
-            "the gate stopped for {per_user:?}"
-        );
-        assert_eq!(
-            check_existing_links(
-                exe,
-                roots,
-                &LinkState::Targets(exe.to_path_buf()),
-                per_user,
-                Path::exists,
-                no_resolve,
-            ),
-            Ok(()),
-        );
-    }
-
-    #[test]
-    fn an_installed_copy_replaces_a_per_user_link_naming_a_still_existing_exe() {
-        let scratch = ScratchDir::new("replace_existing");
-        let installed = scratch.exe("Omairc", true);
-        let roots = [scratch.path().join("Omairc")];
-        let other = scratch.exe("Other", true);
-        assert!(other.exists(), "the other exe must be on disk");
-        assert_installed_copy_replaces(&installed, &roots, &LinkState::Targets(other));
-    }
-
-    #[test]
-    fn an_installed_copy_replaces_a_per_user_link_naming_a_gone_exe() {
-        let scratch = ScratchDir::new("replace_gone");
-        let installed = scratch.exe("Omairc", true);
-        let roots = [scratch.path().join("Omairc")];
-        let gone = scratch.exe("Other", false);
-        assert!(!gone.exists(), "the other exe must be absent");
-        assert_installed_copy_replaces(&installed, &roots, &LinkState::Targets(gone));
-    }
-
-    #[test]
-    fn an_installed_copy_whose_per_user_link_names_its_existing_exe_stops_with_no_write() {
-        let scratch = ScratchDir::new("stop_named");
-        let installed = scratch.exe("Omairc", true);
-        let roots = [scratch.path().join("Omairc")];
-        assert!(installed.exists(), "the installed exe must be on disk");
-        let from_install = is_installed_exe(&installed, &roots, no_resolve);
-        assert!(from_install, "the copy must count as installed");
-        assert!(repair_ends_registration(
-            true,
-            from_install,
-            &installed,
-            &LinkState::Targets(installed.clone()),
-        ));
-    }
-
-    #[test]
-    fn a_dev_build_does_not_overwrite_a_dev_per_user_link_past_its_own_all_users_link() {
-        // Its own all-users link is stamped, so the repair runs. A dev build stops there,
-        // before the per-user decision.
-        assert!(stops_after_repair(THIS_EXE, true, &targets(DEV_EXE)));
-    }
-
-    /// Runs the post-repair gate as `ensure_notification_registration` does, with
-    /// `from_install` taken from the exe's location.
-    fn stops_after_repair(exe: &str, repaired: bool, per_user: &LinkState) -> bool {
-        let this_exe = Path::new(exe);
-        let from_install = is_installed_exe(this_exe, &test_roots(), no_resolve);
-        repair_ends_registration(repaired, from_install, this_exe, per_user)
-    }
-
-    /// The per-user link states a copy at `exe` can meet: missing, unreadable, naming `exe`
-    /// itself, and naming another exe.
-    fn per_user_states_for(exe: &str) -> [LinkState; 4] {
-        [
-            LinkState::Missing,
-            LinkState::Unreadable,
-            targets(exe),
-            targets(OTHER_EXE),
-        ]
-    }
-
-    #[test]
-    fn without_a_repair_nothing_stops_for_any_per_user_link() {
-        for exe in [THIS_EXE, INSTALLED_EXE] {
-            for state in per_user_states_for(exe) {
-                assert!(
-                    !stops_after_repair(exe, false, &state),
-                    "{exe} with {state:?} stopped without a repair"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn a_dev_build_stops_after_a_repair_for_any_per_user_link() {
-        for state in per_user_states_for(THIS_EXE) {
-            assert!(
-                stops_after_repair(THIS_EXE, true, &state),
-                "dev build with {state:?} went on after a repair"
-            );
-        }
-    }
-
-    #[test]
-    fn an_installed_copy_stops_after_a_repair_when_its_per_user_link_is_missing() {
-        assert!(stops_after_repair(INSTALLED_EXE, true, &LinkState::Missing));
-    }
-
-    #[test]
-    fn an_installed_copy_stops_after_a_repair_when_its_per_user_link_names_this_exe() {
-        assert!(stops_after_repair(INSTALLED_EXE, true, &targets(INSTALLED_EXE)));
-        // The comparison is by path, so another letter case of the same exe also stops.
-        assert!(stops_after_repair(
-            INSTALLED_EXE,
-            true,
-            &targets(r"c:\program files\omairc\omairc.exe"),
-        ));
-    }
-
-    #[test]
-    fn an_installed_copy_stops_after_a_repair_when_its_per_user_link_is_unreadable() {
-        assert!(stops_after_repair(INSTALLED_EXE, true, &LinkState::Unreadable));
-    }
-
-    #[test]
-    fn found_after_repair_with_no_links_is_false_and_writes_nothing() {
-        let attempts = RefCell::new(Vec::new());
-        let found = found_after_repair(
-            &[],
-            |_| false,
-            |link| {
-                attempts.borrow_mut().push(link.to_path_buf());
-                true
-            },
-        );
-        assert!(!found);
-        assert!(attempts.borrow().is_empty());
-    }
-
-    #[test]
-    fn a_stamped_link_is_found_and_nothing_is_written() {
-        let link = PathBuf::from("all-users.lnk");
-        let attempts = RefCell::new(Vec::new());
-        let found = found_after_repair(
-            std::slice::from_ref(&link),
-            |_| true,
-            |path| {
-                attempts.borrow_mut().push(path.to_path_buf());
-                true
-            },
-        );
-        assert!(found);
-        assert!(attempts.borrow().is_empty());
-    }
-
-    #[test]
-    fn a_link_found_by_name_counts_even_when_its_stamp_fails() {
-        let link = PathBuf::from("all-users.lnk");
-        let attempts = RefCell::new(Vec::new());
-        let found = found_after_repair(
-            std::slice::from_ref(&link),
-            |_| false,
-            |path| {
-                attempts.borrow_mut().push(path.to_path_buf());
-                false
-            },
-        );
-        assert!(found, "a failed stamp must not make the link disappear");
-        assert_eq!(attempts.into_inner(), vec![link]);
-    }
-
-    #[test]
-    fn a_stamped_link_among_unstamped_ones_stops_the_writes() {
-        let first = PathBuf::from("all-users.lnk");
-        let second = PathBuf::from("per-user.lnk");
-        let attempts = RefCell::new(Vec::new());
-        let found = found_after_repair(
-            &[first.clone(), second.clone()],
-            |path| path == second.as_path(),
-            |path| {
-                attempts.borrow_mut().push(path.to_path_buf());
-                true
-            },
-        );
-        assert!(found);
-        assert!(attempts.borrow().is_empty(), "no stamp is written when one link is stamped");
-    }
-
-    #[test]
-    fn the_first_stamp_that_takes_ends_the_attempts() {
-        let first = PathBuf::from("all-users.lnk");
-        let second = PathBuf::from("per-user.lnk");
-        let attempts = RefCell::new(Vec::new());
-        let found = found_after_repair(
-            &[first.clone(), second],
-            |_| false,
-            |path| {
-                attempts.borrow_mut().push(path.to_path_buf());
-                true
-            },
-        );
-        assert!(found);
-        assert_eq!(attempts.into_inner(), vec![first]);
-    }
-
-    #[test]
-    fn a_failed_stamp_moves_on_to_the_next_link() {
-        let first = PathBuf::from("all-users.lnk");
-        let second = PathBuf::from("per-user.lnk");
-        let attempts = RefCell::new(Vec::new());
-        let found = found_after_repair(
-            &[first.clone(), second.clone()],
-            |_| false,
-            |path| {
-                attempts.borrow_mut().push(path.to_path_buf());
-                path == second.as_path()
-            },
-        );
-        assert!(found);
-        assert_eq!(attempts.into_inner(), vec![first, second]);
-    }
-
-    #[test]
-    fn an_unstamped_all_users_link_naming_this_exe_blocks_the_per_user_fallback_when_its_stamp_fails() {
-        // The all-users install's link names this exe, but stamping it needs admin rights and the
-        // stamp fails. The link is still found, so the installed copy stops and makes no per-user
-        // link.
-        let all_users = PathBuf::from(
-            r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Omairc.lnk",
-        );
-        let repaired = found_after_repair(&[all_users], |_| false, |_| false);
-        assert!(repaired);
-        assert!(stops_after_repair(INSTALLED_EXE, repaired, &LinkState::Missing));
-    }
+    use super::{expand_environment, link_state_from_target, LinkState};
 
     #[test]
     fn expand_environment_expands_a_defined_variable() {

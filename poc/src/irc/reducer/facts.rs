@@ -19,11 +19,7 @@
 //! to undo a byte-level decode, and a Rust `&str` is already valid UTF-8, so the
 //! wrap is the identity here.
 
-use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::rc::Rc;
-
-use crate::storage::lists::CaseListStore;
 
 use crate::irc::casemapping::IrcCaseMapping;
 use crate::irc::event::{
@@ -35,6 +31,7 @@ use crate::irc::presence::{self, Away, NetworkPresence, NickPresence};
 use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::irc::world::MessageKind;
 
+use super::conversations::ClosedStore;
 use super::log::ConversationLog;
 use super::state::{Store, MAX_MESSAGES};
 
@@ -68,7 +65,7 @@ pub(super) struct Facts {
     /// Channels the user closed. Catch-up must not recreate them.
     pub(super) closed_channels: HashSet<ConversationKey>,
     /// The closed list that survives welcome (`setClosedConversations`).
-    pub(super) closed_store: Option<Rc<RefCell<CaseListStore>>>,
+    pub(super) closed_store: Option<Box<dyn ClosedStore>>,
     pub(super) mention_arrival: Option<MentionArrival>,
     pub(super) inbox_arrival: Option<InboxArrival>,
 }
