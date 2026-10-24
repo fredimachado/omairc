@@ -2,12 +2,12 @@
 //! same line (Qt `IrcScrollPlaceStore`, `rememberOpenTranscript` and
 //! `restoreRememberedTranscript`).
 //!
-//! Qt keys the place on the top line's content and persists it. The PoC keeps
-//! the anchor row and pixel offset from `Transcript::scroll()` in memory, and
-//! checks the line's content on return, so a row inserted or hidden above it
-//! (a `/pref joins` change, say) does not move the view to a different line.
+//! Qt keys the place on the first visible message's msgid when the server gave
+//! one, else on its kind, author, body and time. The PoC keeps the anchor row
+//! and pixel offset from `Transcript::scroll()` in memory while a conversation
+//! is open, and persists through the same JSON shape Qt uses.
 
-use super::transcript::{Row, RowKind, ScrollAnchor};
+use super::transcript::{row_for_msgid, Row, RowKind, ScrollAnchor};
 use crate::storage::scrollplace::ScrollPlace as StoredPlace;
 
 /// What a transcript looked like when it was left.
@@ -31,6 +31,7 @@ pub struct LineKey {
     author: Option<String>,
     time: Option<String>,
     text: String,
+    msgid: String,
 }
 
 impl LineKey {
@@ -40,10 +41,14 @@ impl LineKey {
             author: row.author.clone(),
             time: row.time.clone(),
             text: row.body.plain.clone(),
+            msgid: row.msgid.clone(),
         }
     }
 
     fn is_row(&self, row: &Row) -> bool {
+        if !self.msgid.is_empty() {
+            return row.msgid == self.msgid;
+        }
         self.kind == row.kind
             && self.author == row.author
             && self.time == row.time
@@ -91,7 +96,10 @@ pub fn resume(place: Option<&SavedPlace>, rows: &[Row]) -> Resume {
     if rows.is_empty() {
         return Resume::End;
     }
-    let found = if rows.get(*row).is_some_and(|candidate| line.is_row(candidate)) {
+    let found = if !line.msgid.is_empty() {
+        row_for_msgid(rows, &line.msgid)
+            .unwrap_or_else(|| (*row).min(rows.len() - 1))
+    } else if rows.get(*row).is_some_and(|candidate| line.is_row(candidate)) {
         *row
     } else {
         rows.iter()
@@ -127,12 +135,17 @@ fn kind_from_name(name: &str) -> Option<RowKind> {
 }
 
 impl SavedPlace {
-    /// The place as the settings file keeps it. A line is stored by its content, which is
-    /// what `resume` matches on after a restart. Its pixel offset is not kept.
+    /// The place as the settings file keeps it. A chat line with a msgid is stored by
+    /// that id alone, as Qt does. Other lines fall back to content. Pixel offset is not
+    /// kept on disk.
     pub fn to_stored(&self) -> StoredPlace {
         match self {
             SavedPlace::End => StoredPlace {
                 follow_end: true,
+                ..StoredPlace::default()
+            },
+            SavedPlace::Line { line, .. } if !line.msgid.is_empty() => StoredPlace {
+                msg_id: line.msgid.clone(),
                 ..StoredPlace::default()
             },
             SavedPlace::Line { line, .. } => StoredPlace {
@@ -151,6 +164,19 @@ impl SavedPlace {
         if place.follow_end {
             return Some(SavedPlace::End);
         }
+        if !place.msg_id.is_empty() {
+            return Some(SavedPlace::Line {
+                row: 0,
+                offset_px: 0,
+                line: LineKey {
+                    kind: RowKind::Message,
+                    author: None,
+                    time: None,
+                    text: String::new(),
+                    msgid: place.msg_id.clone(),
+                },
+            });
+        }
         let kind = kind_from_name(&place.kind)?;
         Some(SavedPlace::Line {
             row: 0,
@@ -160,6 +186,7 @@ impl SavedPlace {
                 author: (!place.author.is_empty()).then(|| place.author.clone()),
                 time: (!place.shown_time.is_empty()).then(|| place.shown_time.clone()),
                 text: place.body.clone(),
+                msgid: String::new(),
             },
         })
     }
@@ -174,6 +201,12 @@ mod tests {
         (1..=count)
             .map(|n| row_from_message(n, "anna", "09:00", &format!("line {n}"), false))
             .collect()
+    }
+
+    fn row_with_msgid(id: u64, msgid: &str, author: &str, time: &str, body: &str, continues: bool) -> Row {
+        let mut row = row_from_message(id, author, time, body, continues);
+        row.msgid = msgid.to_owned();
+        row
     }
 
     fn anchor(row: usize, offset_px: i32) -> ScrollAnchor {
@@ -279,6 +312,49 @@ mod tests {
         let restored = SavedPlace::from_stored(&stored).expect("a message restores");
         // The restored line has no row of its own, so it is found by its content.
         assert_eq!(resume(Some(&restored), &rows), Resume::Line { row: 2, offset_px: 0 });
+    }
+
+    #[test]
+    fn a_msgid_anchor_restores_the_same_message_when_two_lines_share_a_minute() {
+        let rows = vec![
+            row_with_msgid(1, "m1", "anna", "09:00", "same text", false),
+            row_with_msgid(2, "m2", "anna", "09:00", "same text", true),
+        ];
+        let place = SavedPlace::from_anchor(anchor(1, 4), &rows);
+        let restored = SavedPlace::from_stored(&place.to_stored()).expect("msgid restores");
+        assert_eq!(
+            resume(Some(&restored), &rows),
+            Resume::Line {
+                row: 1,
+                offset_px: 0
+            },
+            "content alone would land on row 0"
+        );
+    }
+
+    #[test]
+    fn the_gui_stored_place_carries_msgid_not_text_only() {
+        let rows = vec![row_with_msgid(1, "mid-9", "anna", "09:00", "hello", false)];
+        let stored = SavedPlace::from_anchor(anchor(0, 0), &rows).to_stored();
+        assert_eq!(stored.msg_id, "mid-9");
+        assert!(stored.body.is_empty() && stored.author.is_empty());
+    }
+
+    #[test]
+    fn closing_persists_the_open_conversation_scroll_anchor() {
+        let rows = vec![row_with_msgid(1, "close-anchor", "anna", "09:00", "hello", false)];
+        let captured = SavedPlace::from_anchor(anchor(0, 3), &rows);
+        let stored = captured.to_stored();
+        assert_eq!(stored.msg_id, "close-anchor");
+        let restored = SavedPlace::from_stored(&stored).expect("stored place restores");
+        assert_eq!(
+            resume(Some(&restored), &rows),
+            Resume::Line {
+                row: 0,
+                offset_px: 0
+            },
+            "remember_open_transcript writes this shape through remember_place"
+        );
     }
 
     #[test]

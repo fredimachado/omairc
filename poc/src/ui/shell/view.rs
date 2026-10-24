@@ -7,7 +7,7 @@
 //! surface, so a selection the controller makes on its own (a join, a close, a removal)
 //! shows the same way a click does.
 
-use gpui::Context;
+use gpui::{App, Context};
 
 use crate::controller::controller::Controller;
 use crate::controller::snapshots::ConversationRow;
@@ -20,6 +20,7 @@ use crate::model::title::clear_title_mark_if_opened;
 use crate::model::ConversationRef;
 use crate::ui::shell::Shell;
 use crate::ui::transcript::view::ConversationLines;
+use crate::ui::update::launch_on_close;
 
 /// The view the transcript was last built for: a network's Status, or a conversation.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -295,5 +296,22 @@ impl Shell {
         }
         let at_end = self.transcript.read(cx).at_end();
         self.report_transcript_viewport_from_shell(at_end, cx);
+    }
+
+    /// Qt `rememberOpenTranscript`: stores where the open conversation's transcript
+    /// was left. Status saves nothing.
+    pub fn remember_open_transcript(&mut self, cx: &mut App) {
+        if self.status_showing() {
+            return;
+        }
+        let conversation = self.shown.conversation.clone();
+        let place = self.transcript.update(cx, |t, _| t.capture_scroll_place());
+        self.remember_place(conversation, place);
+    }
+
+    /// Qt `onClosing`: remembers the open transcript, then may start a ready installer.
+    pub fn launch_update_on_close(&mut self, cx: &mut App) {
+        self.remember_open_transcript(cx);
+        let _ = launch_on_close(&self.update, cx);
     }
 }
