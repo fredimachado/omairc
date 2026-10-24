@@ -13,6 +13,7 @@ use crate::model::chords::Chord;
 use crate::controller::persistence::SecretEdits;
 use crate::model::connect::{ConnectField, RailEnter, RemoveOutcome, Secret, Stop};
 use crate::model::prefs::{PrefName, PrefValue};
+use crate::storage::credentialstore::{PURPOSE_NICKSERV, PURPOSE_PASSWORD};
 use crate::ui::sheets::connect::form_row_of;
 use crate::ui::shell::Shell;
 
@@ -309,6 +310,8 @@ impl Shell {
             }
             Stop::Remove => self.connect_remove(window, cx),
             Stop::Discard => self.connect.discard(),
+            Stop::ForgetPassword => self.connect_forget(Secret::Password, window, cx),
+            Stop::ForgetNickServ => self.connect_forget(Secret::NickServ, window, cx),
             Stop::Disconnect => self.connect_disconnect(window, cx),
             Stop::Apply => self.connect_apply(window, cx),
             stop @ (Stop::Field(_) | Stop::FieldHelp(_) | Stop::PreferenceHelp(_)) => {
@@ -316,6 +319,38 @@ impl Shell {
             }
         }
         cx.notify();
+    }
+
+    /// A forget link: clears the draft slot, then deletes the keychain entry for the
+    /// saved network immediately (`forgetPassword` + `removeStoredPassword`). The sheet
+    /// slot follows the store settle so a refused delete keeps the forget link. Focus that
+    /// was on the link moves when it leaves the walk: the remaining forget link if still
+    /// visible, else Remove / Discard / Apply, as Disconnect rehomes to Apply.
+    fn connect_forget(&mut self, slot: Secret, window: &mut Window, cx: &mut Context<Self>) {
+        let stop = match slot {
+            Secret::Password => Stop::ForgetPassword,
+            Secret::NickServ => Stop::ForgetNickServ,
+        };
+        let was_focused = self.connect_focused(window) == Some(stop);
+        if let Some(network_id) = self.connect.forget(slot) {
+            let purpose = match slot {
+                Secret::Password => PURPOSE_PASSWORD,
+                Secret::NickServ => PURPOSE_NICKSERV,
+            };
+            let settled = self.controller.forget_secret(&network_id, purpose);
+            self.connect.apply_forget_result(slot, settled);
+        }
+        if was_focused {
+            let populated = self.populated_networks();
+            let disconnectable = self.connect_disconnectable();
+            if let Some(target) =
+                self.connect
+                    .focus_after_forget(slot, &populated, disconnectable)
+            {
+                self.focus_connect(target, window, cx);
+            }
+        }
+        self.sync_connect_inputs(cx);
     }
 
     /// Enter on the card. A rail row selects and arms, and a second Enter applies
@@ -336,6 +371,8 @@ impl Shell {
                 | Stop::ShortcutsHint
                 | Stop::Remove
                 | Stop::Discard
+                | Stop::ForgetPassword
+                | Stop::ForgetNickServ
                 | Stop::Disconnect
                 | Stop::Apply),
             ) => self.connect_click(stop, window, cx),
