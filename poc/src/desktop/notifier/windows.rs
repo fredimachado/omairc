@@ -16,14 +16,15 @@
 //!
 //! The shortcut fallback reads two Start Menu `Omairc.lnk` links: the per-user one and the
 //! all-users one, under `FOLDERID_CommonPrograms`. It writes only the per-user link, and only
-//! when neither link refuses. A link refuses when it cannot be read, when its target does not
-//! resolve to a path (an empty target, or `%VAR%` text that does not expand), or when it names
-//! an exe this build may not take. Before the fallback, the repair path re-stamps a link that
-//! already names this exe, but only when no such link is stamped yet, in either location. It
-//! never creates an all-users link. After a repair, only an installed copy whose per-user link is
-//! readable and names another exe reaches the per-user decision, which replaces that link. A dev
-//! build, and an installed copy whose per-user link is missing, unreadable, or names this exe,
-//! stops there, so after a repair a per-user link is replaced, never created.
+//! when neither link refuses. A link refuses when it cannot be read or its target cannot be
+//! expanded, when the target is empty or is not valid UTF-16, when any `%` remains after
+//! `%VAR%` expansion (a literal `%` in a real path refuses too), or when it names an exe this
+//! build may not take. Before the fallback, the repair path re-stamps a link that already names
+//! this exe, but only when no such link is stamped yet, in either location. It never creates an
+//! all-users link. After a repair, only an installed copy whose per-user link is readable and
+//! names another exe reaches the per-user decision, which replaces that link. A dev build, and an
+//! installed copy whose per-user link is missing, unreadable, or names this exe, stops there, so
+//! after a repair a per-user link is replaced, never created.
 //!
 //! This code decides what it writes. It does not establish which copy receives a click while
 //! more than one copy is registered.
@@ -905,9 +906,11 @@ mod tests {
         Some(PathBuf::from(format!(r"C:\Program Files\{rest}")))
     }
 
-    /// Stands in for `canonicalize` by adding the verbatim prefix it returns on Windows.
-    fn verbatim(path: &Path) -> Option<PathBuf> {
-        Some(PathBuf::from(format!(r"\\?\{}", path.display())))
+    /// Stands in for `canonicalize` on the exe only: it adds the verbatim prefix it returns on
+    /// Windows, and the roots resolve to nothing, so they stay plain.
+    fn verbatim_exe_only(path: &Path) -> Option<PathBuf> {
+        let is_exe = path.extension().and_then(|ext| ext.to_str()) == Some("exe");
+        is_exe.then(|| PathBuf::from(format!(r"\\?\{}", path.display())))
     }
 
     #[test]
@@ -1018,9 +1021,10 @@ mod tests {
 
     #[test]
     fn a_resolved_verbatim_path_matches_the_plain_root() {
-        // `canonicalize` returns the verbatim form, so the strip must run after resolution.
+        // Only the exe resolves to the verbatim form. The root stays plain, so the strip must
+        // run on the resolved exe for the two to compare equal.
         let exe = Path::new(r"C:\Program Files\Omairc\omairc.exe");
-        assert!(is_installed_exe(exe, &test_roots(), verbatim));
+        assert!(is_installed_exe(exe, &test_roots(), verbatim_exe_only));
     }
 
     #[test]
@@ -1316,13 +1320,17 @@ mod tests {
 
     #[test]
     fn an_installed_copy_overwrites_a_dev_per_user_link_past_its_own_all_users_link() {
+        // Its own all-users link is stamped, so the repair runs. The gate then lets the copy on
+        // to the per-user decision, which may replace the dev link.
+        let per_user = targets(DEV_EXE);
+        assert!(!stops_after_repair(INSTALLED_EXE, true, &per_user));
         let dev = Path::new(DEV_EXE);
         assert_eq!(
             check_existing_links(
                 Path::new(INSTALLED_EXE),
                 &test_roots(),
                 &targets(INSTALLED_EXE),
-                &targets(DEV_EXE),
+                &per_user,
                 |path| path == dev,
                 no_resolve,
             ),
@@ -1332,18 +1340,9 @@ mod tests {
 
     #[test]
     fn a_dev_build_does_not_overwrite_a_dev_per_user_link_past_its_own_all_users_link() {
-        let dev = Path::new(DEV_EXE);
-        assert_eq!(
-            check_existing_links(
-                Path::new(THIS_EXE),
-                &test_roots(),
-                &targets(THIS_EXE),
-                &targets(DEV_EXE),
-                |path| path == dev,
-                no_resolve,
-            ),
-            Err(LinkRefusal::NamesOtherExe(LinkSlot::PerUser, PathBuf::from(DEV_EXE))),
-        );
+        // Its own all-users link is stamped, so the repair runs. A dev build stops there,
+        // before the per-user decision.
+        assert!(stops_after_repair(THIS_EXE, true, &targets(DEV_EXE)));
     }
 
     /// Runs the post-repair gate as `ensure_notification_registration` does, with
