@@ -55,6 +55,26 @@ commands that control a user's running window: `connections`, `status`,
 `send`, `read`, `names`, and `raise`. It is not a test harness. Do not
 add a command that dumps the map. `bin/test` stays the offscreen gate.
 
+## Intentional Qt↔Rust diffs
+
+Kept on purpose between the Qt app and the Rust PoC (`poc/`) so parity
+checks do not chase them. Not part of the shared feature map under
+`.cursor/skills/verify-omairc/features/`.
+
+- `/pref` multi-line feedback: Qt echoes one Status or transcript row with
+  embedded newlines; Rust splits into one row per line (declared
+  deliberate). Kept.
+- Direct NOTICE delivery: Qt leaves nick-targeted non-service NOTICEs on
+  Status only; Rust also files them into the DM. Kept.
+- Error text: Qt TLS failures may append `(CN=…)`, and DNS uses the
+  socket's `errorString()`; Rust omits the CN suffix and uses Go-style
+  `lookup HOST: no such host`. Kept.
+- MONITOR when disconnected: Qt returns `NotConnected` before reading
+  server features; Rust resolves features first, then `NotConnected`.
+  Kept.
+- Locale short dates: Qt uses `QLocale::ShortFormat`; Rust uses a
+  hand-rolled approximation of that format. Kept.
+
 ## QML extraction / window growth
 
 Do not keep adding code to `src/OmaircWindow.qml`. New UI goes outside it.
