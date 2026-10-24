@@ -40,7 +40,7 @@ fn main() {
 #[cfg(windows)]
 fn embed_windows_resources(icon: &Path, version: &str) {
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
-    let script = out_dir.join("omairc-poc-gpui.rc");
+    let script = out_dir.join("omairc.rc");
     std::fs::write(&script, resource_script(icon, version))
         .unwrap_or_else(|err| panic!("cannot write {}: {err}", script.display()));
     embed_resource::compile(&script, embed_resource::NONE)
@@ -53,7 +53,7 @@ fn embed_windows_resources(icon: &Path, version: &str) {
 #[cfg(not(windows))]
 fn embed_windows_resources(_icon: &Path, _version: &str) {
     println!(
-        "cargo:warning=omairc-poc-gpui: the Windows icon is not embedded when cross-compiling"
+        "cargo:warning=omairc: the Windows icon is not embedded when cross-compiling"
     );
 }
 
@@ -79,10 +79,10 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "FileDescription", "Omairc GPUI PoC"
+            VALUE "FileDescription", "Omairc"
             VALUE "FileVersion", "{version}"
-            VALUE "InternalName", "omairc-poc-gpui"
-            VALUE "OriginalFilename", "omairc-poc-gpui.exe"
+            VALUE "InternalName", "omairc"
+            VALUE "OriginalFilename", "omairc.exe"
             VALUE "ProductName", "Omairc"
             VALUE "ProductVersion", "{version}"
         END

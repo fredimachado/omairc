@@ -242,11 +242,11 @@ mod tests {
 
     use super::*;
 
-    const THIS_EXE: &str = r"C:\dev\omairc\omairc-poc-gpui.exe";
+    const THIS_EXE: &str = r"C:\dev\omairc\omairc.exe";
     const INSTALLED_EXE: &str = r"C:\Program Files\Omairc\omairc.exe";
     const OTHER_EXE: &str = r"C:\Program Files\Other\omairc.exe";
     /// A dev exe in another checkout. No test puts it on disk.
-    const DEV_EXE: &str = r"D:\other-checkout\poc\target\debug\omairc-poc-gpui.exe";
+    const DEV_EXE: &str = r"D:\other-checkout\poc\target\debug\omairc.exe";
     const PER_USER_ROOT: &str = r"C:\Users\Fredi\AppData\Local\Programs\Omairc";
     const ALL_USERS_ROOT: &str = r"C:\Program Files\Omairc";
     const ROOT_TARGET: &str = r"%ROOT%\omairc.exe";
@@ -286,7 +286,7 @@ mod tests {
 
     #[test]
     fn a_dev_build_in_the_checkout_is_not_installed() {
-        let exe = Path::new(r"D:\code\omairc\poc\target\debug\omairc-poc-gpui.exe");
+        let exe = Path::new(r"D:\code\omairc\poc\target\debug\omairc.exe");
         assert!(!is_installed_exe(exe, &test_roots(), no_resolve));
     }
 
