@@ -18,15 +18,15 @@
 //! unreadable per-user link. Other builds leave them alone. An unreadable all-users link refuses
 //! the shortcut fallback for every build, because its owner is unknown.
 //!
-//! The shortcut fallback reads two Start Menu `Omairc.lnk` links, the per-user one and the
-//! all-users one under `FOLDERID_CommonPrograms`, and writes only the per-user link. It writes
-//! only when neither link refuses. A link refuses when it cannot be read, when its target cannot
-//! be expanded, when the target is empty or not valid UTF-16, or when `%` survives `%VAR%`
-//! expansion (a literal `%` in a real path refuses too). An installed copy does not refuse an
-//! unreadable per-user link; it overwrites it. For a build that is not installed, a
-//! link also refuses when it names an exe that still exists and is not this one. The fallback
-//! never creates an all-users link. If the all-users Start Menu folder cannot be resolved, the
-//! fallback writes nothing for any build.
+//! The shortcut fallback reads two Start Menu `Omairc.lnk` links, the per-user one under
+//! `FOLDERID_Programs` and the all-users one under `FOLDERID_CommonPrograms`, and writes only the
+//! per-user link. It writes only when neither link refuses. A link refuses when it cannot be read,
+//! when its target cannot be expanded, when the target is empty or not valid UTF-16, or when `%`
+//! survives `%VAR%` expansion (a literal `%` in a real path refuses too). An installed copy does
+//! not refuse an unreadable per-user link; it overwrites it. For a build that is not installed, a
+//! link also refuses when it names an exe that still exists and is not this one. The fallback never
+//! creates an all-users link. If either Start Menu folder cannot be resolved, the fallback writes
+//! nothing for any build.
 //!
 //! Before the fallback, the repair path re-stamps a link that already names this exe, in either
 //! location, but only when no such link is stamped yet. A readable link that names this exe
@@ -77,8 +77,8 @@ use windows::Win32::UI::Notifications::{
     NOTIFICATION_USER_INPUT_DATA,
 };
 use windows::Win32::UI::Shell::{
-    FOLDERID_CommonPrograms, FOLDERID_ProgramFiles, FOLDERID_UserProgramFiles, IShellLinkW,
-    KF_FLAG_DEFAULT, SHGetKnownFolderPath, SHStrDupW, ShellLink, SLGP_RAWPATH,
+    FOLDERID_CommonPrograms, FOLDERID_ProgramFiles, FOLDERID_Programs, FOLDERID_UserProgramFiles,
+    IShellLinkW, KF_FLAG_DEFAULT, SHGetKnownFolderPath, SHStrDupW, ShellLink, SLGP_RAWPATH,
 };
 use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -269,19 +269,24 @@ fn install_roots() -> Vec<PathBuf> {
         .collect()
 }
 
+/// The per-user Start Menu `Programs` folder, `FOLDERID_Programs`. The Inno installer's
+/// `{autoprograms}` resolves to it for a per-user install. `None` when the shell cannot resolve it.
+fn per_user_programs_dir() -> Option<PathBuf> {
+    known_folder(&FOLDERID_Programs)
+}
+
+/// The all-users Start Menu `Programs` folder, `FOLDERID_CommonPrograms`. `None` when the shell
+/// cannot resolve it.
+fn all_users_programs_dir() -> Option<PathBuf> {
+    known_folder(&FOLDERID_CommonPrograms)
+}
+
+/// The two Start Menu folders the repair path reads. A folder the shell cannot resolve is left out.
 fn start_menu_program_dirs() -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-    if let Some(home) = dirs::home_dir() {
-        dirs.push(
-            home.join("AppData/Roaming/Microsoft/Windows/Start Menu/Programs"),
-        );
-    }
-    if let Ok(program_data) = std::env::var("ProgramData") {
-        dirs.push(
-            PathBuf::from(program_data).join("Microsoft/Windows/Start Menu/Programs"),
-        );
-    }
-    dirs
+    [per_user_programs_dir(), all_users_programs_dir()]
+        .into_iter()
+        .flatten()
+        .collect()
 }
 
 fn shortcut_target(link_path: &str) -> Option<String> {
@@ -513,12 +518,10 @@ fn ensure_notification_registration(exe_path: &str) {
     let installed = installed_shortcut_paths(exe_path);
     let repaired = repair_installed_links(exe_path, &installed);
 
-    let Some(programs) = dirs::home_dir().map(|home| {
-        home.join("AppData/Roaming/Microsoft/Windows/Start Menu/Programs")
-    }) else {
+    let Some(programs) = per_user_programs_dir() else {
         return;
     };
-    let Some(all_users_programs) = known_folder(&FOLDERID_CommonPrograms) else {
+    let Some(all_users_programs) = all_users_programs_dir() else {
         log::info!(
             "Windows notifier: could not resolve the all-users Start Menu folder, so no toast shortcut is written"
         );
@@ -761,7 +764,24 @@ pub fn activation_from_args(args: &[String]) -> Option<Activation> {
 
 #[cfg(test)]
 mod tests {
-    use super::{expand_environment, link_state_from_target, LinkState};
+    use std::path::Path;
+
+    use super::{expand_environment, link_state_from_target, per_user_programs_dir, LinkState};
+
+    #[test]
+    fn the_per_user_start_menu_folder_comes_from_the_known_folder_api() {
+        // Only the shell's answer is checked. Nothing is created, so no file is written.
+        let folder = per_user_programs_dir().unwrap_or_else(|| {
+            panic!(
+                "the shell did not resolve FOLDERID_Programs, so the per-user Start Menu folder is unchecked"
+            )
+        });
+        assert!(
+            folder.ends_with(Path::new(r"Microsoft\Windows\Start Menu\Programs")),
+            "FOLDERID_Programs resolved to {}, which is not under Microsoft\\Windows\\Start Menu\\Programs",
+            folder.display()
+        );
+    }
 
     #[test]
     fn expand_environment_expands_a_defined_variable() {
