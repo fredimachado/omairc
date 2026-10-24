@@ -430,7 +430,7 @@ impl Controller {
     fn handle_session_event(&mut self, event: SessionEvent) {
         match event {
             SessionEvent::StateChanged { network_id, state } => {
-                if network_id != "" && state != SessionState::Registered {
+                if !network_id.is_empty() && state != SessionState::Registered {
                     self.playback.borrow_mut().on_left_registration(&network_id);
                 }
                 let severity = if state == SessionState::Failed {

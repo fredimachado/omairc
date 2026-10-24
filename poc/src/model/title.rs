@@ -63,7 +63,7 @@ pub fn collapse_title_space(text: &str) -> String {
     let mut pending_space = false;
     for ch in text.chars() {
         let code = ch as u32;
-        if code <= 0x20 || code == 0x7f || (code >= 0x80 && code <= 0x9f) {
+        if code <= 0x20 || code == 0x7f || (0x80..=0x9f).contains(&code) {
             if !out.is_empty() {
                 pending_space = true;
             }

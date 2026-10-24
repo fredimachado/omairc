@@ -20,7 +20,7 @@ use crate::ui::input::Paste;
 use super::Shell;
 
 #[derive(Clone, Debug)]
-pub(super) struct QueuedFile {
+pub(crate) struct QueuedFile {
     pub source: UploadSource,
     pub file_name: String,
     pub content_type: String,
@@ -28,7 +28,7 @@ pub(super) struct QueuedFile {
     pub network_id: String,
 }
 
-pub(super) struct FileUploadQueue {
+pub(crate) struct FileUploadQueue {
     pub queue: VecDeque<QueuedFile>,
     pub active: Option<QueuedFile>,
 }
