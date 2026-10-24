@@ -73,18 +73,34 @@ impl Profile {
     }
 }
 
-/// Why a profile cannot be applied (`IrcNetworkProfile::Problem`, without the account and
-/// bouncer checks the PoC does not edit). The first failing check wins, in this order.
+/// Why a profile cannot be applied (`IrcNetworkProfile::Problem`). The first failing check
+/// wins, in this order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProfileProblem {
     MissingHost,
     InvalidPort,
     MissingNick,
     UnsendableIdentity,
+    UnsendableAccount,
+    UnsendableBouncerNetwork,
     UnsendableChannel,
 }
 
 impl Profile {
+    /// The SASL login name: trimmed account, else nick, with an optional `account/network`
+    /// suffix when a bouncer upstream is set (`IrcNetworkProfile::saslAccount`).
+    pub fn sasl_account(&self) -> String {
+        let account = self.account.trim();
+        let nick = self.nick.trim();
+        let name = if account.is_empty() { nick } else { account };
+        let bouncer = self.bouncer_network.trim();
+        if bouncer.is_empty() {
+            name.to_owned()
+        } else {
+            format!("{name}/{bouncer}")
+        }
+    }
+
     /// The name the sidebar and the title show: the trimmed name, or the host when the name
     /// is blank (`IrcNetworkProfile::resolvedName`).
     pub fn resolved_name(&self) -> String {
@@ -122,6 +138,12 @@ impl Profile {
                 return Some(ProfileProblem::UnsendableIdentity);
             }
         }
+        if !fits_one_login_field(self.account.trim()) {
+            return Some(ProfileProblem::UnsendableAccount);
+        }
+        if !fits_one_login_field(self.bouncer_network.trim()) {
+            return Some(ProfileProblem::UnsendableBouncerNetwork);
+        }
         if self.autojoin_channels.iter().any(|channel| !join_field(channel)) {
             return Some(ProfileProblem::UnsendableChannel);
         }
@@ -141,6 +163,13 @@ fn single_field(text: &str) -> bool {
 
 fn contains_forbidden(text: &str) -> bool {
     text.chars().any(|c| matches!(c, '\r' | '\n' | '\0'))
+}
+
+/// Qt's `fitsOneLoginField`: no whitespace, NUL, or slash (`ircnetworkprofile.cpp`).
+fn fits_one_login_field(value: &str) -> bool {
+    !value
+        .chars()
+        .any(|c| c.is_whitespace() || c == '\0' || c == '/')
 }
 
 /// Qt's `isJoinField`: non-empty, no leading colon, and no whitespace, comma or NUL.
@@ -350,6 +379,36 @@ mod tests {
         profile.port = DEFAULT_PORT;
         profile.autojoin_channels = vec!["lab,omarchy".to_owned()];
         assert_eq!(profile.problem(), Some(ProfileProblem::UnsendableChannel));
+    }
+
+    #[test]
+    fn stored_bouncer_network_becomes_account_slash_network_for_sasl() {
+        let mut profile = Profile::new("znc");
+        profile.nick = "omairc".to_owned();
+        profile.account = "acct".to_owned();
+        profile.bouncer_network = "freenode".to_owned();
+        assert_eq!(profile.sasl_account(), "acct/freenode");
+
+        profile.account.clear();
+        assert_eq!(profile.sasl_account(), "omairc/freenode");
+
+        profile.bouncer_network.clear();
+        assert_eq!(profile.sasl_account(), "omairc");
+
+        profile.account = " acct ".to_owned();
+        profile.bouncer_network = " net ".to_owned();
+        assert_eq!(profile.sasl_account(), "acct/net");
+    }
+
+    #[test]
+    fn bouncer_network_with_a_slash_is_unsendable() {
+        let mut profile = Profile::new("znc");
+        profile.host = "znc.example".to_owned();
+        profile.nick = "omairc".to_owned();
+        profile.bouncer_network = "bad/network".to_owned();
+        assert_eq!(profile.problem(), Some(ProfileProblem::UnsendableBouncerNetwork));
+        profile.bouncer_network = "bad network".to_owned();
+        assert_eq!(profile.problem(), Some(ProfileProblem::UnsendableBouncerNetwork));
     }
 
     #[test]

@@ -67,6 +67,8 @@ impl Problem {
             Problem::InvalidPort => "Port is required",
             Problem::MissingNick => "Nick is required",
             Problem::UnsendableIdentity => "Nick, username, or real name cannot be sent",
+            Problem::UnsendableAccount => "Account cannot contain a space or a slash",
+            Problem::UnsendableBouncerNetwork => "Bouncer network cannot contain a space or a slash",
             Problem::UnsendableChannel => "An autojoin channel cannot be sent",
         }
     }

@@ -688,7 +688,7 @@ impl Controller {
         }
         config.password = self.secret_text(profile, PURPOSE_PASSWORD);
         config.nickserv_password = self.secret_text(profile, PURPOSE_NICKSERV);
-        config.sasl_account = profile.account.clone();
+        config.sasl_account = profile.sasl_account();
         config.autojoin_channels = profile.autojoin_channels.clone();
         config.autojoin_keys = profile.autojoin_keys.clone();
         config
