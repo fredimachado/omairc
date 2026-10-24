@@ -12,6 +12,11 @@ if command -v go >/dev/null 2>&1; then
 else
   echo "Skipping tui/bin/test: go is not on PATH." >&2
 fi
+if command -v cargo >/dev/null 2>&1; then
+  (cd "$ROOT/poc" && cargo test)
+else
+  echo "Skipping poc cargo test: cargo is not on PATH." >&2
+fi
 python3 -m unittest -v tests.test_derive_build_versions tests.test_omarchy_qt_binary
 TEST_STATE="$(mktemp -d "${TMPDIR:-/tmp}/omairc-tests.XXXXXX")"
 STALE_VERSION_HEADER="$ROOT/omaircversion.h"

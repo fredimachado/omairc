@@ -20,6 +20,7 @@ pub mod conversationlog;
 pub mod credentialstore;
 pub mod geometry;
 pub mod lists;
+pub mod migrate;
 pub mod opendirect;
 pub mod playbacktime;
 pub mod paths;
