@@ -32,6 +32,8 @@ pub struct SidebarData<'a> {
     pub typing_phase: u8,
     /// The `avatars` preference: off, rows and the footer show initials.
     pub avatars: bool,
+    /// Whether away-notify is on for the selection (`HasAwayPresence`).
+    pub away_visible: bool,
     /// The photos this frame draws, by avatar reference (`ui::shell::avatars`).
     pub photos: &'a AvatarPhotos,
     /// A network icon or name click: opens that network's Status.
@@ -167,6 +169,7 @@ fn conversation_groups(
         let look = RowLook {
             selected,
             typing_phase: data.typing_phase,
+            away_visible: data.away_visible,
             photo: photo_for(Some(conv.avatar.as_str()).filter(|a| !a.is_empty()), data.avatars)
                 .and_then(|reference| data.photos.get(reference)),
             bot: conv.bot,
