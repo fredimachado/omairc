@@ -107,12 +107,27 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: poc
           key: windows-rust-${{ hashFiles('poc/Cargo.lock') }}
+
+      # Same product clippy as Linux test.yml so Windows-only unused_imports
+      # cannot regress green. Style/complexity groups stay allowed until a
+      # cleanup slice; correctness and suspicious stay denied.
+      - name: Clippy
+        run: >
+          cargo clippy --locked --all-targets --features product --
+          -D warnings
+          -A clippy::style
+          -A clippy::complexity
+          -A clippy::pedantic
+          -A clippy::nursery
+          -A clippy::perf
 
       - name: Build product release
         run: cargo build --release --locked --features product

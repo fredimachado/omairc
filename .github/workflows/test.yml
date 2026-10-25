@@ -2,10 +2,17 @@ name: Test
 
 on:
   pull_request:
+    # Ignore other .github paths, but not workflows/test.yml: a blanket
+    # `.github/**` skip would let workflow-only PRs miss the Linux rust gate.
     paths-ignore:
       - '**/*.md'
       - 'LICENSE'
-      - '.github/**'
+      - '.github/workflows/windows.yml'
+      - '.github/workflows/macos.yml'
+      - '.github/workflows/tui.yml'
+      - '.github/workflows/release-package.yml'
+      - '.github/workflows/rebuild-website.yml'
+      - '.github/ISSUE_TEMPLATE/**'
       - '.cursor/**'
       - 'omairc.gif'
       - 'omairc.png'
@@ -16,7 +23,12 @@ on:
     paths-ignore:
       - '**/*.md'
       - 'LICENSE'
-      - '.github/**'
+      - '.github/workflows/windows.yml'
+      - '.github/workflows/macos.yml'
+      - '.github/workflows/tui.yml'
+      - '.github/workflows/release-package.yml'
+      - '.github/workflows/rebuild-website.yml'
+      - '.github/ISSUE_TEMPLATE/**'
       - '.cursor/**'
       - 'omairc.gif'
       - 'omairc.png'
@@ -92,7 +104,7 @@ jobs:
       - name: Clippy
         working-directory: poc
         run: >
-          cargo clippy --all-targets --
+          cargo clippy --locked --all-targets --features product --
           -D warnings
           -A clippy::style
           -A clippy::complexity
