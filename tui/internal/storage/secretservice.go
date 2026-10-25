@@ -12,10 +12,10 @@ import (
 )
 
 // This file implements the Secret Service credential backend over the session
-// bus. It mirrors the intent of SecretServiceCredentialStore, which uses
-// QtKeychain's ReadPasswordJob("omairc"): the service name is the attribute
-// service=omairc on items in the user's collection. QtKeychain stores the key
-// name in the username attribute, so a lookup here matches both attributes.
+// bus. It mirrors the dual-attribute contract in poc/.../secretattrs.rs and
+// the Linux Rust store: a read finds both the items QtKeychain wrote for the
+// Qt client (user/server) and the ones the TUI wrote (service/username), a
+// write stores one item both of them can read, and a delete removes both sets.
 //
 // Every call is synchronous and bounded by secretServiceCallTimeout so a hung
 // or unresponsive secret service can never block the terminal indefinitely.
@@ -27,10 +27,7 @@ const (
 
 	secretCollectionInterface = "org.freedesktop.Secret.Collection"
 	secretItemInterface       = "org.freedesktop.Secret.Item"
-
-	secretServiceAttributeService  = "service"
-	secretServiceAttributeUsername = "username"
-	secretServiceServiceValue      = "omairc"
+	secretPropertiesInterface = "org.freedesktop.DBus.Properties"
 
 	secretServiceLoginCollection = dbus.ObjectPath("/org/freedesktop/secrets/collection/login")
 	secretServiceContentType     = "text/plain"
@@ -98,6 +95,8 @@ func (b *secretServiceBackend) connection() (*dbus.Conn, error) {
 }
 
 // read returns the stored secret for keyName, or Missing when none exists.
+// Both attribute sets are searched; a dual-set item this client wrote wins
+// over older single-set copies.
 func (b *secretServiceBackend) read(keyName string) CredentialResult {
 	conn, err := b.connection()
 	if err != nil {
@@ -110,7 +109,7 @@ func (b *secretServiceBackend) read(keyName string) CredentialResult {
 	if err != nil {
 		return secretServiceResultForError(err)
 	}
-	items, err := secretServiceSearchItems(ctx, conn, keyName)
+	items, err := secretServiceSearchAllItems(ctx, conn, keyName)
 	if err != nil {
 		return secretServiceResultForError(err)
 	}
@@ -121,27 +120,51 @@ func (b *secretServiceBackend) read(keyName string) CredentialResult {
 	if err != nil {
 		return secretServiceResultForError(err)
 	}
+
+	type candidate struct {
+		written  bool
+		password string
+	}
+	var candidates []candidate
 	var lastErr error
 	for _, item := range unlocked {
+		attributes, err := secretServiceGetAttributes(ctx, conn, item)
+		if err != nil {
+			lastErr = err
+			continue
+		}
 		secret, err := secretServiceGetSecret(ctx, conn, item, session)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		password := string(secret.Value)
+		password := secretAttrsDecodeSecret(secret.Value, attributes)
 		if password == "" {
-			return CredentialResult{State: CredentialMissing}
+			continue
 		}
-		return CredentialResult{State: CredentialAvailable, Password: password}
+		candidates = append(candidates, candidate{
+			written:  secretAttrsIsWritten(attributes, keyName),
+			password: password,
+		})
 	}
-	if lastErr != nil {
-		return secretServiceResultForError(lastErr)
+	if len(candidates) == 0 {
+		if lastErr != nil {
+			return secretServiceResultForError(lastErr)
+		}
+		return CredentialResult{State: CredentialMissing}
 	}
-	return CredentialResult{State: CredentialMissing}
+	// Prefer the dual-set item; keep search order inside each group.
+	chosen := candidates[0]
+	for _, c := range candidates[1:] {
+		if c.written && !chosen.written {
+			chosen = c
+		}
+	}
+	return CredentialResult{State: CredentialAvailable, Password: chosen.password}
 }
 
-// write stores password for keyName, updating an existing item when one
-// matches and creating one in the default collection otherwise.
+// write stores password for keyName in one dual-set item every client can
+// read, then drops older single-set copies so none of them is read stale.
 func (b *secretServiceBackend) write(keyName, password string) CredentialResult {
 	if password == "" {
 		return CredentialResult{State: CredentialError, Message: "secret service: empty password"}
@@ -157,26 +180,6 @@ func (b *secretServiceBackend) write(keyName, password string) CredentialResult 
 	if err != nil {
 		return secretServiceResultForError(err)
 	}
-	items, err := secretServiceSearchItems(ctx, conn, keyName)
-	if err != nil {
-		return secretServiceResultForError(err)
-	}
-	if len(items) > 0 {
-		unlocked, err := secretServiceUnlock(ctx, conn, items)
-		if err != nil {
-			return secretServiceResultForError(err)
-		}
-		if len(unlocked) == 0 {
-			return secretServiceResultForError(errSecretServicePrompt)
-		}
-		for _, item := range unlocked {
-			if err := secretServiceSetSecret(ctx, conn, item, session, password); err != nil {
-				return secretServiceResultForError(err)
-			}
-		}
-		return CredentialResult{State: CredentialAvailable}
-	}
-
 	collection, err := secretServiceDefaultCollection(ctx, conn)
 	if err != nil {
 		return secretServiceResultForError(err)
@@ -184,11 +187,36 @@ func (b *secretServiceBackend) write(keyName, password string) CredentialResult 
 	if err := secretServiceCreateItem(ctx, conn, collection, session, keyName, password); err != nil {
 		return secretServiceResultForError(err)
 	}
+
+	items, err := secretServiceSearchAllItems(ctx, conn, keyName)
+	if err != nil {
+		return secretServiceResultForError(err)
+	}
+	if len(items) == 0 {
+		return CredentialResult{State: CredentialAvailable}
+	}
+	unlocked, err := secretServiceUnlock(ctx, conn, items)
+	if err != nil {
+		return secretServiceResultForError(err)
+	}
+	for _, item := range unlocked {
+		attributes, err := secretServiceGetAttributes(ctx, conn, item)
+		if err != nil {
+			return secretServiceResultForError(err)
+		}
+		if secretAttrsIsWritten(attributes, keyName) {
+			continue
+		}
+		if err := secretServiceDeleteItem(ctx, conn, item); err != nil {
+			return secretServiceResultForError(err)
+		}
+	}
 	return CredentialResult{State: CredentialAvailable}
 }
 
-// remove deletes every item matching keyName. Deleting nothing succeeds and
-// reports Missing, mirroring the Qt store's delete-of-nothing path.
+// remove deletes every item matching keyName under either attribute set.
+// Deleting nothing succeeds and reports Missing, mirroring the Qt store's
+// delete-of-nothing path.
 func (b *secretServiceBackend) remove(keyName string) CredentialResult {
 	conn, err := b.connection()
 	if err != nil {
@@ -197,7 +225,7 @@ func (b *secretServiceBackend) remove(keyName string) CredentialResult {
 	ctx, cancel := context.WithTimeout(context.Background(), secretServiceCallTimeout)
 	defer cancel()
 
-	items, err := secretServiceSearchItems(ctx, conn, keyName)
+	items, err := secretServiceSearchAllItems(ctx, conn, keyName)
 	if err != nil {
 		return secretServiceResultForError(err)
 	}
@@ -219,15 +247,6 @@ func (b *secretServiceBackend) remove(keyName string) CredentialResult {
 	return CredentialResult{State: CredentialAvailable}
 }
 
-// secretServiceAttributes is the QtKeychain-compatible search/label attribute
-// set: service=omairc plus the key name in username.
-func secretServiceAttributes(keyName string) map[string]string {
-	return map[string]string{
-		secretServiceAttributeService:  secretServiceServiceValue,
-		secretServiceAttributeUsername: keyName,
-	}
-}
-
 // secretServiceOpenSession opens a plain (unencrypted) session and returns its
 // object path.
 func secretServiceOpenSession(ctx context.Context, conn *dbus.Conn) (dbus.ObjectPath, error) {
@@ -244,11 +263,32 @@ func secretServiceOpenSession(ctx context.Context, conn *dbus.Conn) (dbus.Object
 	return session, nil
 }
 
-// secretServiceSearchItems returns every item whose attributes match keyName,
-// whether the service reports it unlocked or locked.
-func secretServiceSearchItems(ctx context.Context, conn *dbus.Conn, keyName string) ([]dbus.ObjectPath, error) {
+// secretServiceSearchAllItems returns every unique item matching either
+// attribute set for keyName, whether the service reports it unlocked or locked.
+func secretServiceSearchAllItems(ctx context.Context, conn *dbus.Conn, keyName string) ([]dbus.ObjectPath, error) {
+	seen := make(map[dbus.ObjectPath]struct{})
+	var items []dbus.ObjectPath
+	for _, attributes := range secretAttrsLookups(keyName) {
+		found, err := secretServiceSearchItems(ctx, conn, attributes)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range found {
+			if _, ok := seen[item]; ok {
+				continue
+			}
+			seen[item] = struct{}{}
+			items = append(items, item)
+		}
+	}
+	return items, nil
+}
+
+// secretServiceSearchItems returns every item whose attributes match the given
+// set, whether the service reports it unlocked or locked.
+func secretServiceSearchItems(ctx context.Context, conn *dbus.Conn, attributes map[string]string) ([]dbus.ObjectPath, error) {
 	obj := conn.Object(secretServiceBusName, secretServicePath)
-	call := obj.CallWithContext(ctx, secretServiceInterface+".SearchItems", 0, secretServiceAttributes(keyName))
+	call := obj.CallWithContext(ctx, secretServiceInterface+".SearchItems", 0, attributes)
 	if call.Err != nil {
 		return nil, call.Err
 	}
@@ -282,6 +322,35 @@ func secretServiceUnlock(ctx context.Context, conn *dbus.Conn, items []dbus.Obje
 	return unlocked, nil
 }
 
+// secretServiceGetAttributes reads one item's Attributes property.
+func secretServiceGetAttributes(ctx context.Context, conn *dbus.Conn, item dbus.ObjectPath) (map[string]string, error) {
+	obj := conn.Object(secretServiceBusName, item)
+	call := obj.CallWithContext(ctx, secretPropertiesInterface+".Get", 0, secretItemInterface, "Attributes")
+	if call.Err != nil {
+		return nil, call.Err
+	}
+	var value dbus.Variant
+	if err := call.Store(&value); err != nil {
+		return nil, err
+	}
+	switch attributes := value.Value().(type) {
+	case map[string]string:
+		return attributes, nil
+	case map[string]any:
+		out := make(map[string]string, len(attributes))
+		for name, raw := range attributes {
+			text, ok := raw.(string)
+			if !ok {
+				continue
+			}
+			out[name] = text
+		}
+		return out, nil
+	default:
+		return nil, errors.New("secret service: unexpected Attributes type")
+	}
+}
+
 // secretServiceGetSecret reads one item's secret through session.
 func secretServiceGetSecret(ctx context.Context, conn *dbus.Conn, item, session dbus.ObjectPath) (secretServiceSecret, error) {
 	obj := conn.Object(secretServiceBusName, item)
@@ -294,18 +363,6 @@ func secretServiceGetSecret(ctx context.Context, conn *dbus.Conn, item, session 
 		return secretServiceSecret{}, err
 	}
 	return secret, nil
-}
-
-// secretServiceSetSecret replaces one item's secret through session.
-func secretServiceSetSecret(ctx context.Context, conn *dbus.Conn, item, session dbus.ObjectPath, password string) error {
-	obj := conn.Object(secretServiceBusName, item)
-	secret := secretServiceSecret{
-		Session:     session,
-		Parameters:  []byte{},
-		Value:       []byte(password),
-		ContentType: secretServiceContentType,
-	}
-	return obj.CallWithContext(ctx, secretItemInterface+".SetSecret", 0, secret).Err
 }
 
 // secretServiceDeleteItem deletes one item. A non-empty prompt path means the
@@ -329,13 +386,13 @@ func secretServiceDeleteItem(ctx context.Context, conn *dbus.Conn, item dbus.Obj
 	return nil
 }
 
-// secretServiceCreateItem creates a new item in collection. The item label and
-// attributes mirror what QtKeychain writes.
+// secretServiceCreateItem creates (or replaces) a dual-set item in collection.
+// The attributes match secretAttrsWritten so QtKeychain and the TUI both find it.
 func secretServiceCreateItem(ctx context.Context, conn *dbus.Conn, collection, session dbus.ObjectPath, keyName, password string) error {
 	obj := conn.Object(secretServiceBusName, collection)
 	properties := map[string]dbus.Variant{
 		secretItemInterface + ".Label":      dbus.MakeVariant(keyName),
-		secretItemInterface + ".Attributes": dbus.MakeVariant(secretServiceAttributes(keyName)),
+		secretItemInterface + ".Attributes": dbus.MakeVariant(secretAttrsWritten(keyName)),
 	}
 	secret := secretServiceSecret{
 		Session:     session,

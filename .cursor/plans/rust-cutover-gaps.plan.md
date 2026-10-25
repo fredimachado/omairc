@@ -7,7 +7,7 @@ todos:
     status: in_progress
   - id: m0-tui-keyring
     content: "M0b: port the dual-attribute Secret Service lookup to tui/internal/storage/secretservice.go (same contract)"
-    status: pending
+    status: completed
   - id: m1-windows-ci
     content: "M1: Windows + macOS cargo build/test in CI, cfg(unix) hygiene, product-feature builds"
     status: pending
