@@ -198,7 +198,8 @@ this order:
 Pick a GitHub issue, branch off `main`, run `bin/test`, and open the
 pull request against `main`. Also run `bin/test-san` when the change
 touches sanitizers, and `bin/test-live` when it touches real IRCd
-behavior. CI rejects a pull request whose base is not `main`. No new
+behavior. CI rejects a pull request whose base is not `main`, a
+`tui-phase-*` branch, or a `slice/rust-cutover-*` stack base. No new
 bot, workflow, or notification sink.
 
 ## Release versioning
@@ -235,7 +236,8 @@ new tip, and `git push origin vX.Y.Z --force` (and the same for
 checks CLI help and version, runs the C++ suite, and runs the offscreen QML
 tests. CI runs `bin/test`, `bin/test-san`, and `bin/test-live` on every pull
 request that touches anything outside `tui/**`, and rejects a pull request
-whose base is not `main`. A pull request whose whole diff is TUI-only is
+whose base is not `main`, a `tui-phase-*` branch, or a
+`slice/rust-cutover-*` stack base. A pull request whose whole diff is TUI-only is
 gated by the TUI workflow alone: `test.yml` ignores `tui/**`, and `tui/bin/test`
 runs the shared `bin/check-conventions` so the TUI checks still hold. Paths are
 filtered over the whole pull-request diff, so a pull request that also changes

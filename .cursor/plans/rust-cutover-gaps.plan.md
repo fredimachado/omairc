@@ -24,8 +24,8 @@ todos:
     content: "M5: Rust live tests against Ergo, Solanum, ngIRCd (bin/test-live parity)"
     status: completed
   - id: m6-ui-tests
-    content: "M6: GPUI view tests for the QML-only behaviors (scroll, typing row, focus, sheets)"
-    status: pending
+    content: "M6: GPUI view tests for the QML-only behaviors (scroll, typing row, focus, sheets) - first wave + checklist landed; URL click / file-drop / transcript-nick / middle-click close pending (wave 2: real pointer through the view)"
+    status: in_progress
   - id: m7-poc-driver
     content: "M7: pointer verbs in control-omairc-poc, keyboard fallbacks for about/send-message recipes"
     status: pending
@@ -273,7 +273,8 @@ in `ui/`, not `model/`:
 - Focus and sheets: `connectionSheetCloseRestoresComposerFocus`,
   `aboutSheetLeftClickDimmerDismisses`, `aboutSheetIgnoresRightClickAndCardClick`,
   `connectionSheetBlocksSidebarAndMembers`, `memberListPageDownMovesByVisiblePage`.
-- Pointer: `messageBodyClickOpensHttpsUrl`, `openDirectMessageFromTranscriptNick`,
+- Pointer (wave 2 - real hits through the view, not shell-API stubs):
+  `messageBodyClickOpensHttpsUrl`, `openDirectMessageFromTranscriptNick`,
   `droppedFileUploadsAndInsertsTheLink`, middle-click close.
 - Harness: one `poc/src/ui/tests/fixture.rs` that builds the shell over the
   seeded demo controller in a `TestAppContext` with a fixed window size, plus

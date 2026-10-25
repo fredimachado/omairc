@@ -407,8 +407,9 @@ commit and toolchain produce byte-identical archives.
 
 ## CI and review
 
-- Base every pull request on `main`, or on another `tui-phase-*` branch when
-  stacking phases in order; CI rejects any other base.
+- Base every pull request on `main`, on another `tui-phase-*` branch when
+  stacking phases in order, or on a `slice/rust-cutover-*` branch when
+  stacking Rust cutover slices; CI rejects any other base.
 - Run `tui/bin/test` (conventions, vet, tests, build, CLI contract) and the
   root `bin/test` before opening a pull request. `tui/bin/test` is also wired
   into root `bin/test` and skipped when `go` is absent.

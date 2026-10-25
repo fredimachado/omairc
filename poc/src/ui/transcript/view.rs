@@ -249,6 +249,31 @@ impl TranscriptView {
         self.model.rows()
     }
 
+    /// The DM peer whose typing dots end the list, when they show.
+    pub fn typing_peer(&self) -> Option<&str> {
+        self.typing_peer.as_deref()
+    }
+
+    /// The row of the first line that arrived while the reader was scrolled up.
+    pub fn first_unseen_index(&self) -> Option<usize> {
+        self.first_unseen
+    }
+
+    /// The list's logical top: which item and how far into that item.
+    pub fn logical_scroll_top(&self) -> ListOffset {
+        self.list_state.logical_scroll_top()
+    }
+
+    /// The list's items: every row, then the typing dots when they show.
+    pub fn list_item_count(&self) -> usize {
+        self.list_len()
+    }
+
+    /// Whether the content is taller than the viewport (the scrollbar can move).
+    pub fn content_overflows_viewport(&self) -> bool {
+        f32::from(self.list_state.max_offset_for_scrollbar().height) > 1.
+    }
+
     /// Shows a network's Status rows with a fresh selection. Status opens at the end
     /// and has no typing dots.
     pub fn set_status(&mut self, rows: Vec<Row>) {
@@ -653,8 +678,11 @@ impl Render for TranscriptView {
         let app_style = style(cx);
         // Heights measured by the last frame's prepaint feed the transcript model.
         self.sync_measured_heights();
-        // A reader who has reached the end has seen what arrived while scrolled up.
-        if self.at_end() {
+        // A reader who follows the end has seen what arrived while scrolled up.
+        // `at_end()` alone is not enough: after `list_state.reset` the scrollbar max
+        // is 0 until the next measure, so a detached restore looks like the end for
+        // one frame. The bottom pin is the real follow-the-end bit.
+        if self.at_end() && self.model.scroll().pinned_to_bottom {
             self.first_unseen = None;
         }
         let unseen = self.unseen_target().is_some();
