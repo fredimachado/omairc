@@ -113,11 +113,13 @@ pub struct Shell {
     pub connect_focus: FocusHandle,
     /// The Connect sheet's text fields, focus handles and scroll handles.
     pub connect_ui: ConnectControls,
-    /// Whether the window is the active one. While it is not, a line that arrives in the
-    /// open conversation counts as unread (Qt `m_windowActive`).
-    pub window_active: bool,
-    /// The window's activation observer is registered. It needs a window, so it is set up
-    /// on the first render.
+    /// OS focus and minimize/hide. Effective activity (`arrival_active`) is what the
+    /// controller and mention notify see (Qt `arrivalWindowActive`).
+    pub activity: crate::desktop::windowvisibility::TranscriptActivity,
+    /// Last effective activity pushed to the controller.
+    applied_arrival_active: bool,
+    /// The window's activation and bounds observers are registered. They need a window,
+    /// so they are set up on the first render.
     activation_watched: bool,
     pub focus_handle: FocusHandle,
     pub typing_phase: u8,
@@ -261,7 +263,8 @@ impl Shell {
             connect_open: required,
             connect_focus: cx.focus_handle(),
             connect_ui,
-            window_active: true,
+            activity: crate::desktop::windowvisibility::TranscriptActivity::default(),
+            applied_arrival_active: true,
             activation_watched: false,
             focus_handle: cx.focus_handle(),
             typing_phase: 0,
@@ -356,19 +359,9 @@ impl Render for Shell {
                 .detach();
             }
         }
-        // Window focus drives the unread rules. The observer needs the window, so it is
-        // registered here, once, and reads the starting focus from it.
-        if !self.activation_watched {
-            self.activation_watched = true;
-            self.window_active = window.is_window_active();
-            let subscription = cx.observe_window_activation(
-                window,
-                |shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>| {
-                    shell.set_window_active(window.is_window_active(), cx);
-                },
-            );
-            self._subscriptions.push(subscription);
-        }
+        // Window focus and minimize/hide drive the unread rules. The observers need the
+        // window, so they are registered here, once.
+        self.watch_window_activity(window, cx);
 
         let populated = self.populated_networks();
         let disconnectable = self.connect_disconnectable();

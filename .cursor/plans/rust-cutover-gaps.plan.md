@@ -13,7 +13,7 @@ todos:
     status: completed
   - id: m2-minimize
     content: "M2: minimized/hidden window suspension (transcriptSuspended port)"
-    status: pending
+    status: completed
   - id: m3-windows-packaging
     content: "M3: Windows build script, static CRT, Inno installer from cargo output, Qt-to-Rust upgrade path"
     status: pending
@@ -166,35 +166,14 @@ About 3k lines of Windows-only code and the macOS code never compiled in CI.
 
 ## M2 — Minimized and hidden window counts as away
 
-Qt (`OmaircWindow.qml` `transcriptSuspended`, `onVisibilityChanged`,
-`finishTranscriptSuspension`, `windowFocusGained`) treats Minimized or Hidden
-as away even while `Window.active` stays true. A focus report while suspended
-does not consume unread, and a burst while minimized still plants the
-`New messages` mark. Rust only follows `observe_window_activation`.
-
-- `ui/shell/unread.rs`: track `suspended` beside `window_active`. The
-  effective activity passed to `controller.set_window_active` is
-  `active && !suspended`.
-- Source of `suspended`, per platform, behind one `desktop/windowvisibility.rs`
-  seam returning `Visible | Minimized | Hidden`:
-  - Windows: `IsIconic(hwnd)` on activation and resize events
-    (`WM_SIZE`/`SIZE_MINIMIZED` through gpui's raw window handle);
-  - macOS: `NSWindow.isMiniaturized` / `occlusionState`
-    (`NSWindowDidMiniaturizeNotification`);
-  - X11: `_NET_WM_STATE_HIDDEN`;
-  - Wayland: no minimize state, so report `Visible`. Hyprland special
-    workspaces are not observable; document it.
-  - Check first whether gpui 0.2.2 exposes `window.is_minimized()` or
-    `observe_window_bounds` with a minimized flag. If it does, use that.
-- On leaving suspension, mirror `finishTranscriptSuspension`: re-apply focus
-  only if the window is actually active.
-- Tests (controller level, pure): port `focusWhileMinimizedDoesNotConsumeUnread`,
-  `restoreWhileInactiveKeepsCatchUpOff`, `minimizedActiveWindowNotifiesMention`,
-  `minimizedChannelFollowEndLandsOnMark`, `minimizedDirectFollowEndLandsOnMark`,
-  and `hiddenWindowFollowEndLandsOnMark` from `tests/ui/tst_omairc.qml`
-  against a shell state struct with the visibility seam faked.
-- Feature map: add the minimize rule to `mention-notify.md` /
-  `title-mention.md` Gotchas.
+**Done on this branch.** gpui 0.2.2 has no minimize API, so
+`desktop/windowvisibility` reads the native handle (Windows `IsIconic` /
+`IsWindowVisible`, macOS `NSWindow.isMiniaturized` / `isVisible`, X11
+`_NET_WM_STATE_HIDDEN`; Wayland always `Visible`). The shell keeps
+`TranscriptActivity` (`window_active` + `suspended`) and pushes
+`active && !suspended` to the controller. Pure tests in
+`controller/tests/suspension.rs` and `windowvisibility` cover the Qt cases;
+feature-map Gotchas note the minimize rule and the Wayland/Hyprland limit.
 
 ## M3 — Windows build and installer from cargo
 

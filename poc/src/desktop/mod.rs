@@ -21,3 +21,4 @@ pub mod singleinstance;
 pub mod systemtheme;
 pub mod textscale;
 pub mod windowstate;
+pub mod windowvisibility;

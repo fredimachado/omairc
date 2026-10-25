@@ -8,12 +8,12 @@ impl Shell {
     pub(super) fn report_transcript_viewport(
         &mut self,
         follow_end: bool,
-        window: &Window,
+        _window: &Window,
         cx: &mut Context<Self>,
     ) {
         self.transcript.update(cx, |t, _| t.note_reported_at_end(follow_end));
-        let focused = window.is_window_active();
-        self.controller.note_transcript_viewport(focused, follow_end);
+        self.controller
+            .note_transcript_viewport(self.arrival_active(), follow_end);
     }
 
     /// Reports the at-end bit the shell read. The transcript keeps the same bit, so its
@@ -25,6 +25,6 @@ impl Shell {
     ) {
         self.transcript.update(cx, |t, _| t.note_reported_at_end(follow_end));
         self.controller
-            .note_transcript_viewport(self.window_active, follow_end);
+            .note_transcript_viewport(self.arrival_active(), follow_end);
     }
 }

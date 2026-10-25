@@ -55,6 +55,9 @@ webpki-roots = "=1.0.10"
 async-channel = "=2.5.0"
 # TCP keepalive needs the socket itself; tokio's net feature already builds this release.
 socket2 = "=0.6.5"
+# gpui already builds this exact release; the window-visibility seam reads HWND /
+# NSView / X11 / Wayland handles through it.
+raw-window-handle = "=0.6.2"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "=0.61.3", features = [
@@ -106,6 +109,9 @@ objc2-foundation = { version = "=0.3.2", features = [
 # bindings add to Cargo.lock; objc2-core-location is transitive and not listed here.
 objc2-user-notifications = "=0.3.2"
 block2 = "=0.6.2"
+# Window minimize/hide (`NSWindow.isMiniaturized` / `isVisible`). Same objc2 0.3.2
+# line gpui already builds.
+objc2-app-kit = { version = "=0.3.2", features = ["NSView", "NSWindow"] }
 
 # The Secret Service on Linux. `futures` only supplies `block_on`, which drives oo7 on the calling thread.
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -113,6 +119,8 @@ futures = { version = "=0.3.34", default-features = false, features = ["executor
 # gpui enables oo7's async-std feature, and ashpd refuses tokio next to async-std, so oo7 keeps tokio off.
 oo7 = { version = "=0.5.0", default-features = false, features = ["native_crypto"] }
 zbus = { version = "=5.19.0", default-features = false, features = ["async-io"] }
+# X11 `_NET_WM_STATE_HIDDEN`. gpui already builds this release for its X11 backend.
+x11rb = "=0.13.2"
 
 # Windows build script only: compiles the icon and version resource that build.rs
 # embeds. The pin is the copy gpui already builds with, so no new crate is added.
