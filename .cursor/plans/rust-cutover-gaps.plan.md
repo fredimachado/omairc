@@ -247,7 +247,8 @@ compose/certs/env and drives the controller through the real `net` transport
   snapshot, peer away/typing/metadata, chat history on join, SASL PLAIN,
   conversation invention matrix, folded nick collision, ASCII DM restore,
   join multiple channels, member prefix ranks, reconnect autojoin, and a
-  controller-level status/same-nick isolation check.
+  controller-level dual-session same-nick DM isolation proof (one Controller,
+  two `connect_session`s against two daemons; Status and transcript asserts).
 - Remaining vs Qt live-UI: fuller dual-network UI proofs
   (`inboundSameNickDirectsStayIsolated` screenshots,
   `bouncerQueryReplayRendersDirectMessageInSidebar`, and the other QML-only

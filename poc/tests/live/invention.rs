@@ -169,24 +169,135 @@ fn status_isolation_and_same_nick_directs() {
     require_live();
     let daemons = live_daemons();
     if daemons.len() < 2 {
+        // Dual-network proof needs two daemons in the live profile (default compose has them).
         return;
     }
     let left = &daemons[0];
     let right = &daemons[1];
-    let nick = unique_nick(left.nick_length.min(right.nick_length));
-    let mut a = LiveClient::connect(left, &nick, left.use_tls(), LiveClientOptions::default());
-    let mut b = LiveClient::connect(right, &nick, right.use_tls(), LiveClientOptions::default());
-    assert!(a.wait_registered());
-    assert!(b.wait_registered());
-    a.controller.open_status(&a.network_id);
-    b.controller.open_status(&b.network_id);
-    let body = "cross-net status probe";
-    let a_net = a.network_id.clone();
-    let b_net = b.network_id.clone();
-    assert!(a.controller.send_to_target(&a_net, &b.nick(), body));
-    a.pump();
-    // Same nick on another network must not invent a DM on this network from Status noise.
-    assert!(conversation_row(&a.controller, &a_net, &b.nick()).is_none()
-        || a.controller.selected_target() != b.nick());
-    let _ = b_net;
+    let nick_len = left.nick_length.min(right.nick_length);
+    let client_nick = unique_nick(nick_len);
+    let peer_nick = unique_nick(nick_len);
+    let left_mark = format!("inbound-left-{peer_nick}");
+    let right_mark = format!("inbound-right-{peer_nick}");
+
+    let left_net_id = "live-left".to_owned();
+    let right_net_id = "live-right".to_owned();
+    let mut client = LiveClient::connect(
+        left,
+        &client_nick,
+        left.use_tls(),
+        LiveClientOptions {
+            network_id: left_net_id.clone(),
+            ..LiveClientOptions::default()
+        },
+    );
+    let right_net = client.connect_additional(
+        right,
+        &client_nick,
+        right.use_tls(),
+        LiveClientOptions {
+            network_id: right_net_id.clone(),
+            ..LiveClientOptions::default()
+        },
+    );
+    assert!(
+        client.wait_registered(),
+        "{}",
+        client.last_error().unwrap_or("no error")
+    );
+    assert!(
+        client.wait_registered_network(&right_net),
+        "{}",
+        client
+            .controller
+            .last_error_for(&right_net)
+            .unwrap_or("no error")
+    );
+    let left_self = client.nick();
+    let right_self = client
+        .controller
+        .session(&right_net)
+        .expect("right session")
+        .nick();
+
+    let mut peer_left = LiveClient::connect(
+        left,
+        &peer_nick,
+        left.use_tls(),
+        LiveClientOptions::default(),
+    );
+    let mut peer_right = LiveClient::connect(
+        right,
+        &peer_nick,
+        right.use_tls(),
+        LiveClientOptions::default(),
+    );
+    assert!(peer_left.wait_registered());
+    assert!(peer_right.wait_registered());
+    let peer_left_net = peer_left.network_id.clone();
+    let peer_right_net = peer_right.network_id.clone();
+
+    assert!(peer_left
+        .controller
+        .send_to_target(&peer_left_net, &left_self, &left_mark));
+    peer_left.pump();
+    assert!(peer_right
+        .controller
+        .send_to_target(&peer_right_net, &right_self, &right_mark));
+    peer_right.pump();
+
+    assert!(client.wait_until(|client| {
+        conversation_row(&client.controller, &left_net_id, &peer_nick).is_some()
+            && conversation_row(&client.controller, &right_net, &peer_nick).is_some()
+    }));
+
+    // Status on one network must not surface the other network's inbound DM body.
+    client.controller.open_status(&left_net_id);
+    client.pump();
+    assert!(
+        !client
+            .controller
+            .status_lines(&left_net_id)
+            .iter()
+            .any(|entry| entry.text.contains(&right_mark)),
+        "left Status must not carry the right-network DM body"
+    );
+    client.controller.open_status(&right_net);
+    client.pump();
+    assert!(
+        !client
+            .controller
+            .status_lines(&right_net)
+            .iter()
+            .any(|entry| entry.text.contains(&left_mark)),
+        "right Status must not carry the left-network DM body"
+    );
+
+    // Same peer nick on both networks: each transcript stays network-scoped.
+    client
+        .controller
+        .select_conversation(&left_net_id, &peer_nick);
+    client.pump();
+    assert!(client.wait_until(|client| channel_has_body(client, &left_mark)));
+    assert!(
+        !channel_has_body(&client, &right_mark),
+        "left DM must not show the right-network mark"
+    );
+
+    client
+        .controller
+        .select_conversation(&right_net, &peer_nick);
+    client.pump();
+    assert!(client.wait_until(|client| channel_has_body(client, &right_mark)));
+    assert!(
+        !channel_has_body(&client, &left_mark),
+        "right DM must not show the left-network mark"
+    );
+
+    client
+        .controller
+        .select_conversation(&left_net_id, &peer_nick);
+    client.pump();
+    assert!(channel_has_body(&client, &left_mark));
+    assert!(!channel_has_body(&client, &right_mark));
 }

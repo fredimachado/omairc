@@ -59,6 +59,8 @@ pub struct LiveClient {
     pub hub: Rc<NetHub>,
     pub controller: Controller,
     pub network_id: String,
+    /// Extra sessions started with [`Self::connect_additional`] (disconnected on drop).
+    extra_network_ids: Vec<String>,
     _clock: Rc<dyn Clock>,
 }
 
@@ -73,54 +75,54 @@ impl LiveClient {
         }));
         let clock: Rc<dyn Clock> = Rc::new(RealClock::new());
         let transports = Box::new(NetTransports::new(hub.clone()));
-        let backing = match options.settings_file {
-            Some(path) => Backing::Disk(path),
+        let backing = match &options.settings_file {
+            Some(path) => Backing::Disk(path.clone()),
             None => Backing::Ephemeral,
         };
         let mut controller = Controller::with_backing(clock.clone(), transports, backing);
-        if let Some(root) = options.transcript_root {
-            controller.set_transcript_root(root);
+        if let Some(root) = &options.transcript_root {
+            controller.set_transcript_root(root.clone());
         }
 
         let network_id = if options.network_id.is_empty() {
             format!("live-{}", unique_id())
         } else {
-            options.network_id
+            options.network_id.clone()
         };
-        let use_tls = tls || daemon.use_tls();
-        let port = daemon.port(use_tls);
-        assert!(port != 0, "{} has no port for tls={use_tls}", daemon.name);
-
-        let mut config = SessionConfig::with_defaults(
-            &network_id,
-            &daemon.name,
-            &live_host(),
-            nick,
-        );
-        config.port = port;
-        config.tls_enabled = use_tls;
-        config.username = "omairc".to_owned();
-        config.realname = "Omairc live".to_owned();
-        if !options.password.is_empty() {
-            config.password = Secret::from(options.password);
-        }
-        config.reconnect_enabled = options.reconnect_enabled;
-        config.autojoin_channels = options.autojoin_channels;
-        config.capability_timeout_ms = 8000;
-
-        controller
-            .connect_session(config)
-            .unwrap_or_else(|error| panic!("connect_session: {error}"));
-        if let Some(session) = controller.session(&network_id) {
-            session.enable_received_log();
-        }
+        start_session(&mut controller, daemon, nick, tls, &network_id, &options);
 
         Self {
             hub,
             controller,
             network_id,
+            extra_network_ids: Vec::new(),
             _clock: clock,
         }
+    }
+
+    /// Dials another daemon on this controller (same hub). Returns the new network id.
+    pub fn connect_additional(
+        &mut self,
+        daemon: &DaemonInfo,
+        nick: &str,
+        tls: bool,
+        options: LiveClientOptions,
+    ) -> String {
+        let network_id = if options.network_id.is_empty() {
+            format!("live-{}", unique_id())
+        } else {
+            options.network_id.clone()
+        };
+        start_session(
+            &mut self.controller,
+            daemon,
+            nick,
+            tls,
+            &network_id,
+            &options,
+        );
+        self.extra_network_ids.push(network_id.clone());
+        network_id
     }
 
     /// Drains net deliveries and runs controller timers.
@@ -163,10 +165,14 @@ impl LiveClient {
 
     pub fn wait_registered(&mut self) -> bool {
         let network_id = self.network_id.clone();
+        self.wait_registered_network(&network_id)
+    }
+
+    pub fn wait_registered_network(&mut self, network_id: &str) -> bool {
         wait_until(
             || {
                 self.pump();
-                self.controller.session(&network_id).is_some_and(|session| {
+                self.controller.session(network_id).is_some_and(|session| {
                     session.state() == SessionState::Registered
                 })
             },
@@ -289,8 +295,43 @@ impl LiveClient {
 
 impl Drop for LiveClient {
     fn drop(&mut self) {
+        for network_id in self.extra_network_ids.drain(..).rev() {
+            let _ = self.controller.disconnect(&network_id);
+        }
         let _ = self.controller.disconnect(&self.network_id);
         self.pump();
+    }
+}
+
+fn start_session(
+    controller: &mut Controller,
+    daemon: &DaemonInfo,
+    nick: &str,
+    tls: bool,
+    network_id: &str,
+    options: &LiveClientOptions,
+) {
+    let use_tls = tls || daemon.use_tls();
+    let port = daemon.port(use_tls);
+    assert!(port != 0, "{} has no port for tls={use_tls}", daemon.name);
+
+    let mut config = SessionConfig::with_defaults(network_id, &daemon.name, &live_host(), nick);
+    config.port = port;
+    config.tls_enabled = use_tls;
+    config.username = "omairc".to_owned();
+    config.realname = "Omairc live".to_owned();
+    if !options.password.is_empty() {
+        config.password = Secret::from(options.password.clone());
+    }
+    config.reconnect_enabled = options.reconnect_enabled;
+    config.autojoin_channels = options.autojoin_channels.clone();
+    config.capability_timeout_ms = 8000;
+
+    controller
+        .connect_session(config)
+        .unwrap_or_else(|error| panic!("connect_session: {error}"));
+    if let Some(session) = controller.session(network_id) {
+        session.enable_received_log();
     }
 }
 

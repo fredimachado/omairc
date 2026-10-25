@@ -1,13 +1,17 @@
 use omairc::controller::controller::Controller;
 use omairc::irc::message::IrcMessage;
 use omairc::irc::wiretext::wire_text;
-use omairc::live::{live_enabled, LiveClient};
+use omairc::live::{live_daemons, live_enabled, LiveClient};
 
 /// Fails closed when someone runs `--ignored` without the compose runner.
 pub fn require_live() {
     assert!(
         live_enabled(),
         "Run bin/test-live. Live tests need OMAIRC_LIVE_DAEMONS and published ports."
+    );
+    assert!(
+        !live_daemons().is_empty(),
+        "OMAIRC_LIVE_DAEMONS was set but no daemon ports were exported."
     );
 }
 

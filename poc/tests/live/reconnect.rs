@@ -3,7 +3,7 @@ use omairc::live::{
     live_daemons, unique_channel, unique_nick, LiveClient, LiveClientOptions,
 };
 
-use super::helpers::{channel_has_body, require_live, wait_names_end};
+use super::helpers::{channel_has_body, names_end_count, require_live, wait_names_end};
 
 #[test]
 #[ignore = "requires bin/test-live (OMAIRC_LIVE_DAEMONS)"]
@@ -67,19 +67,7 @@ fn reconnect_autojoin_keeps_channel_state() {
     client.select_channel(&channel);
     let peer_nick = peer.nick();
     assert!(client.wait_until(|client| client.member(&peer_nick).is_some()));
-
-    assert!(client.force_disconnect());
-    assert!(client.wait_reconnecting());
-    assert!(
-        peer.controller
-            .send_to_target(&peer_network, &channel, &replay_seed)
-    );
-    peer.pump();
-    assert!(client.wait_registered_again());
-    client.select_channel(&channel);
-    assert!(client.wait_until(|client| channel_has_body(client, &initial_seed)
-        || channel_has_body(client, &replay_seed)
-        || client.member(&peer_nick).is_some()));
+    assert!(client.wait_until(|client| channel_has_body(client, &initial_seed)));
     assert_eq!(
         client
             .controller
@@ -89,4 +77,40 @@ fn reconnect_autojoin_keeps_channel_state() {
             .count(),
         1
     );
+    assert_eq!(client.controller.selected_target(), channel);
+
+    let names_before = names_end_count(&client.incoming(), &channel);
+    assert!(client.force_disconnect());
+    assert!(client.wait_reconnecting());
+    assert!(
+        peer.controller
+            .send_to_target(&peer_network, &channel, &replay_seed)
+    );
+    peer.pump();
+    assert!(client.wait_registered_again());
+    assert!(client.wait_until(|client| {
+        names_end_count(&client.incoming(), &channel) > names_before
+    }));
+    assert_eq!(
+        client
+            .controller
+            .conversations()
+            .iter()
+            .filter(|row| row.target.eq_ignore_ascii_case(&channel))
+            .count(),
+        1
+    );
+    if !client
+        .controller
+        .selected_target()
+        .eq_ignore_ascii_case(&channel)
+    {
+        client.select_channel(&channel);
+    }
+    assert_eq!(client.controller.selected_target(), channel);
+    assert!(client.wait_until(|client| client.member(&peer_nick).is_some()));
+    assert!(!client.controller.members().is_empty());
+    assert!(client.wait_until(|client| {
+        channel_has_body(client, &initial_seed) && channel_has_body(client, &replay_seed)
+    }));
 }
