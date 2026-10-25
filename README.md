@@ -111,17 +111,19 @@ Or install a [release package](https://github.com/fredimachado/omairc/releases/l
 sudo pacman -U omairc-<version>-1-x86_64.pkg.tar.zst
 ```
 
-Depends on `hicolor-icon-theme`, `qt6-base`, `qt6-declarative`, `qt6-svg`, `qt6-wayland`, `qtkeychain-qt6`, and `xdg-desktop-portal`.
+Depends on `fontconfig`, `freetype2`, `hicolor-icon-theme`, `libxcb`,
+`libxkbcommon`, `libxkbcommon-x11`, `vulkan-icd-loader`, `wayland`, and
+`xdg-desktop-portal` (see `PKGBUILD`).
 
-Packagers stage with qmake `INSTALL_ROOT`:
+Packagers build the Rust client and stage the seven paths `bin/test-install`
+checks (binary, desktop file, SVG, bash completion, LICENSE, OFL, COPYING-LGPL):
 
 ```sh
-qmake6 PREFIX=/usr
-make
-make INSTALL_ROOT="$pkgdir" install
+cargo build --release --locked --features product --manifest-path poc/Cargo.toml
+install -Dm755 poc/target/release/omairc "$pkgdir/usr/bin/omairc"
 ```
 
-Default `PREFIX` is `/usr/local`. `version.pri` is the only version string. Tag a release as `v` plus that value.
+`version.pri` is the only version string. Tag a release as `v` plus that value.
 
 Omairc is MIT. See `LICENSE`. IRC protocol code in `src/irc/` is LGPL-3.0-or-later. The bundled iA Writer Mono font is OFL-1.1.
 
@@ -159,7 +161,9 @@ bin/test-live
 
 `bin/test` is the default gate. CI also runs `bin/test-san` and `bin/test-live`.
 
-`bin/test-desktop` needs Xvfb, Xauthority, xdotool, and ImageMagick. `bin/test-live` needs Docker.
+`bin/test-desktop` needs Xvfb, Xauthority, xdotool, xinput, ImageMagick,
+cargo, and lavapipe; it drives the Rust release binary through
+`control-omairc-poc`. `bin/test-live` needs Docker.
 
 ## Windows
 

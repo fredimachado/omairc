@@ -1,8 +1,17 @@
-//! System light or dark mode. Port of `SystemTheme` (`src/systemtheme.cpp`). The Qt
-//! client reads the color scheme hint and the portal. gpui reports the appearance of
-//! each window, so the PoC asks the window and follows `observe_window_appearance`.
-//! The value drives the base palette when there is no Omarchy `colors.toml`, as
-//! `Backend::loadOmarchyTheme` does.
+//! System light or dark mode. Port of `SystemTheme` (`src/systemtheme.cpp`).
+//!
+//! On Linux, GPUI already subscribes to the XDG Desktop Portal
+//! `org.freedesktop.appearance` / `color-scheme` setting (via ashpd in
+//! `gpui::platform::linux::xdg_desktop_portal`) and pushes updates into
+//! `WindowAppearance`. This crate does **not** open a second portal
+//! subscription next to [`crate::desktop::textscale`]: that would race GPUI.
+//! The app asks `cx.window_appearance()` at open and follows
+//! `observe_window_appearance` so Omarchy `colors.toml` base colours flip
+//! without a restart, as Qt's portal `SettingChanged` path does.
+//!
+//! Hyprland / live portal flip is a host check (needs a session bus and a
+//! portal). CI Xvfb points `DBUS_SESSION_BUS_ADDRESS` at a missing socket, so
+//! that path is not proven there - only the GPUI wiring and this global.
 
 use gpui::{Global, WindowAppearance};
 

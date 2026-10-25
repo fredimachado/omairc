@@ -1,152 +1,63 @@
 #!/usr/bin/env sh
+# Black-box desktop smoke against the Rust client via control-omairc-poc.
+# Needs Xvfb, xauth, xdotool, xinput, ImageMagick, cargo, and lavapipe
+# (vulkan-swrast). Not in CI; verify-poc covers the feature-map recipes.
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-TEST_STATE="$(mktemp -d "${TMPDIR:-/tmp}/omairc-desktop-tests.XXXXXX")"
-XVFB_PID=
-APP_PID=
+CONTROL="$ROOT/.cursor/skills/verify-omairc-poc/control-omairc-poc"
+# Screenshots land at test-artifacts/desktop/<name>.png (feature id = desktop).
+ARTIFACTS="$ROOT/test-artifacts"
+DESKTOP_SHOTS="$ARTIFACTS/desktop"
 
 cleanup() {
-  if [ -n "$APP_PID" ] && kill -0 "$APP_PID" 2>/dev/null; then
-    kill "$APP_PID"
-    wait "$APP_PID" 2>/dev/null || true
-  fi
-  if [ -n "$XVFB_PID" ] && kill -0 "$XVFB_PID" 2>/dev/null; then
-    kill "$XVFB_PID"
-    wait "$XVFB_PID" 2>/dev/null || true
-  fi
-  rm -rf -- "$TEST_STATE"
+  "$CONTROL" cleanup >/dev/null 2>&1 || true
 }
 trap cleanup EXIT HUP INT TERM
 
-missing=
-for command_name in Xvfb xauth xdotool import magick; do
-  if ! command -v "$command_name" >/dev/null 2>&1; then
-    missing="$missing $command_name"
-  fi
-done
-
-if [ -n "$missing" ]; then
-  echo "Missing desktop test tools:$missing" >&2
-  echo "On Arch/Omarchy, install: xorg-server-xvfb xorg-xauth xdotool imagemagick" >&2
+test -x "$CONTROL" || {
+  echo "missing $CONTROL" >&2
   exit 1
-fi
-
-"$ROOT/bin/build"
-mkdir -p "$ROOT/test-artifacts/desktop"
-
-display_number=100
-while [ -e "/tmp/.X11-unix/X$display_number" ]; do
-  display_number=$((display_number + 1))
-done
-DISPLAY=":$display_number"
-export DISPLAY
-XAUTHORITY="$TEST_STATE/Xauthority"
-export XAUTHORITY
-cookie="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
-xauth -f "$XAUTHORITY" add "$DISPLAY" . "$cookie"
-
-Xvfb "$DISPLAY" -screen 0 1280x800x24 -nolisten tcp -auth "$XAUTHORITY" \
-  >"$ROOT/test-artifacts/desktop/xvfb.log" 2>&1 &
-XVFB_PID=$!
-
-attempt=0
-while ! xdotool getmouselocation >/dev/null 2>&1; do
-  attempt=$((attempt + 1))
-  if [ "$attempt" -ge 50 ] || ! kill -0 "$XVFB_PID" 2>/dev/null; then
-    echo "The isolated X server did not start; see test-artifacts/desktop/xvfb.log." >&2
-    exit 1
-  fi
-  sleep 0.1
-done
-
-XDG_CONFIG_HOME="$TEST_STATE/config" \
-XDG_CACHE_HOME="$TEST_STATE/cache" \
-XDG_DATA_HOME="$TEST_STATE/data" \
-XDG_STATE_HOME="$TEST_STATE/state" \
-DBUS_SESSION_BUS_ADDRESS="unix:path=$TEST_STATE/no-session-bus" \
-OMAIRC_ALLOW_MULTI=1 \
-QT_QPA_PLATFORM=xcb \
-"$ROOT/build/omairc" --demo-server >"$ROOT/test-artifacts/desktop/omairc.log" 2>&1 &
-APP_PID=$!
-
-attempt=0
-window=
-while [ -z "$window" ]; do
-  window="$(xdotool search --onlyvisible --pid "$APP_PID" --name 'Omairc' 2>/dev/null | head -1 || true)"
-  attempt=$((attempt + 1))
-  if [ "$attempt" -ge 50 ] || ! kill -0 "$APP_PID" 2>/dev/null; then
-    echo "Omairc did not open; see test-artifacts/desktop/omairc.log." >&2
-    exit 1
-  fi
-  sleep 0.1
-done
-
-wait_for_title() {
-  expected=$1
-  attempt=0
-  while [ "$(xdotool getwindowname "$window")" != "$expected" ]; do
-    attempt=$((attempt + 1))
-    if [ "$attempt" -ge 30 ]; then
-      echo "Expected window title '$expected', got '$(xdotool getwindowname "$window")'." >&2
-      exit 1
-    fi
-    sleep 0.1
-  done
 }
 
-capture() {
-  import -display "$DISPLAY" -window "$window" \
-    "$ROOT/test-artifacts/desktop/$1.png"
-}
+# Product release binary, same profile PKGBUILD / bin/test-install ship.
+export OMAIRC_POC_PROFILE=release
+export OMAIRC_POC_FEATURES=product
+export OMAIRC_VERIFY_POC_EVIDENCE="$ARTIFACTS"
 
-assert_images_differ() {
-  before=$1
-  after=$2
-  difference="$(magick compare -metric AE "$before" "$after" null: 2>&1 || true)"
-  if ! awk -v difference="$difference" 'BEGIN { exit !(difference > 100) }'; then
-    echo "Expected a visible UI change between $before and $after." >&2
-    exit 1
-  fi
-}
+mkdir -p "$DESKTOP_SHOTS"
+cleanup
 
-xdotool windowfocus --sync "$window"
-wait_for_title "#omarchy · irc.example · fred - Omairc"
+"$CONTROL" launch --demo-server
+"$CONTROL" wait-title --exact "#omarchy · irc.example · fred - Omairc"
 
-# Switch to #desktop through the first channel row.
-xdotool mousemove --window "$window" 120 124 click 1
-wait_for_title "#desktop - Omairc"
-capture "switch-channel"
+# Switch to #desktop (keyboard path; pixel coords differ from the Qt layout).
+"$CONTROL" jump --query "#desktop"
+"$CONTROL" wait-title --exact "#desktop - Omairc"
+"$CONTROL" screenshot --feature desktop --name switch-channel
 
-# Compose and submit a message with keyboard input.
-xdotool mousemove --window "$window" 520 717 click 1
-xdotool type --window "$window" --delay 20 "Hello from the desktop test"
-xdotool key --window "$window" Return
-capture "send-message"
-assert_images_differ \
-  "$ROOT/test-artifacts/desktop/switch-channel.png" \
-  "$ROOT/test-artifacts/desktop/send-message.png"
+# Compose and submit a message.
+"$CONTROL" send --text "Hello from the desktop test"
+"$CONTROL" screenshot --feature desktop --name send-message
+"$CONTROL" compare \
+  --before "$DESKTOP_SHOTS/switch-channel.png" \
+  --after "$DESKTOP_SHOTS/send-message.png"
 
 # Open mira's direct message from the seeded #desktop member list.
-xdotool mousemove --window "$window" 1070 243 click 1
-wait_for_title "mira - Omairc"
-capture "open-direct-message"
+"$CONTROL" click-member --name mira
+"$CONTROL" wait-title --exact "mira - Omairc"
+"$CONTROL" screenshot --feature desktop --name open-direct-message
 
-# Return to a channel and verify the application shortcut changes the layout.
-xdotool mousemove --window "$window" 120 124 click 1
-wait_for_title "#desktop - Omairc"
-capture "members-before-toggle"
-xdotool windowfocus --sync "$window"
-xdotool key --clearmodifiers ctrl+shift+m
-sleep 0.2
-capture "toggle-members"
-assert_images_differ \
-  "$ROOT/test-artifacts/desktop/members-before-toggle.png" \
-  "$ROOT/test-artifacts/desktop/toggle-members.png"
+# Return to a channel and toggle the member panel.
+"$CONTROL" jump --query "#desktop"
+"$CONTROL" wait-title --exact "#desktop - Omairc"
+"$CONTROL" screenshot --feature desktop --name members-before-toggle
+"$CONTROL" toggle-members
+"$CONTROL" screenshot --feature desktop --name toggle-members
+"$CONTROL" compare \
+  --before "$DESKTOP_SHOTS/members-before-toggle.png" \
+  --after "$DESKTOP_SHOTS/toggle-members.png"
 
-if ! kill -0 "$APP_PID" 2>/dev/null; then
-  echo "Omairc exited during desktop automation." >&2
-  exit 1
-fi
+"$CONTROL" doctor >/dev/null
 
 echo "Desktop UI tests passed. Screenshots: test-artifacts/desktop/"

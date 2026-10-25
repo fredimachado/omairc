@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or `OMAIRC_TUI_MOUSE=1`. The pointer path stays off by default, so the
   terminal keeps its own text selection.
 
+<!-- Cutover draft (M8): promote under the cutover release in M9. Full a11y
+     surface list lives in poc/NOTES.md. -->
+
+### Known regressions
+
+- Draft for the Rust desktop cutover: GPUI has no AccessKit tree yet, so
+  screen-reader names and roles from the Qt shell are lost until upstream
+  GPUI gains AccessKit. See `poc/NOTES.md`.
+
 ### Fixed
 
 - Transcripts label the first day when it is not today, in the desktop and

@@ -263,8 +263,12 @@ single version source, and `IrcConversationCause`, `IrcServerFeatures`,
 `.cursor/skills/verify-omairc/features/*.md` must stay identical between Qt
 and TUI. TUI-scoped rules live in `tui/AGENTS.md`.
 
-`bin/test-desktop` needs Xvfb, Xauthority, xdotool, and ImageMagick. It
-launches `./build/omairc --demo-server` as a black box and is not in CI.
+`bin/test-desktop` needs Xvfb, Xauthority, xdotool, xinput, ImageMagick,
+cargo, and lavapipe (`vulkan-swrast`). It drives
+`poc/target/release/omairc` (`--features product`) through
+`control-omairc-poc` as a black box and is not in CI. `bin/test-install`
+stages the same seven packager paths from that release binary (keeps
+`COPYING-LGPL` while `src/irc/` remains).
 `bin/test-live` needs Docker. It drives Ergo, Solanum, and ngIRCd, then the
 dual-network production-QML proof. It fails if `docker` or `docker compose`
 is missing.

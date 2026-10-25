@@ -6,6 +6,16 @@ ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../../.." && pwd)"
 SELF=$SCRIPT_DIR/$(basename -- "$0")
 STATE_FILE="${OMAIRC_VERIFY_POC_STATE:-${TMPDIR:-/tmp}/omairc-verify-poc-$USER/state}"
 EVIDENCE_DIR="${OMAIRC_VERIFY_POC_EVIDENCE:-$ROOT/test-artifacts/verify-poc}"
+# Default debug. bin/test-desktop sets release + product to match PKGBUILD.
+POC_PROFILE="${OMAIRC_POC_PROFILE:-debug}"
+case $POC_PROFILE in
+  debug|release) ;;
+  *)
+    echo "control-omairc-poc: OMAIRC_POC_PROFILE must be debug or release (got $POC_PROFILE)" >&2
+    exit 1
+    ;;
+esac
+POC_FEATURES="${OMAIRC_POC_FEATURES:-}"
 # Jump, nick-jump, and composer focus need a pause after the chord before
 # type. The chord's own pause is not always enough on this Xvfb.
 JUMP_FIELD_DELAY=0.4
@@ -377,10 +387,17 @@ cmd_launch() {
     cmd_cleanup >/dev/null 2>&1 || true
   fi
 
-  (cd "$ROOT/poc" && cargo build)
+  set -- build
+  if [ "$POC_PROFILE" = release ]; then
+    set -- "$@" --release
+  fi
+  if [ -n "$POC_FEATURES" ]; then
+    set -- "$@" --features "$POC_FEATURES"
+  fi
+  (cd "$ROOT/poc" && cargo "$@")
   STATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/omairc-verify-poc.XXXXXX")"
-  BINARY="$ROOT/poc/target/debug/omairc"
-  [ -x "$BINARY" ] || die "missing $BINARY after cargo build"
+  BINARY="$ROOT/poc/target/$POC_PROFILE/omairc"
+  [ -x "$BINARY" ] || die "missing $BINARY after cargo build ($POC_PROFILE)"
 
   display_number=110
   while [ -e "/tmp/.X11-unix/X$display_number" ]; do

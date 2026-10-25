@@ -298,20 +298,18 @@ in `ui/`, not `model/`:
 
 ## M8 — Smaller items
 
-- **Dark mode on Linux:** Rust takes appearance from gpui. Verify on
-  Hyprland that switching `color-scheme` through the portal flips it without
-  a restart. If gpui misses it, subscribe to the portal `SettingChanged` for
-  `color-scheme` next to `desktop/textscale.rs`.
-- **RTL:** take the screenshots `poc/NOTES.md` describes once lavapipe is
-  available in CI (M7). Close the TODO or file the upstream issue.
-- **Accessibility:** keep the NOTES.md regression list. Add it to the release
-  notes of the cutover release. Watch gpui for AccessKit.
-- **`bin/test-install`:** it still builds Qt with qmake while `PKGBUILD` builds
-  Rust. Rewrite it around `cargo build --release --features product` and the
-  same seven installed paths. Drop `COPYING-LGPL` only if `src/irc/` (the LGPL
-  code) is gone and no Rust file derives from it; check the headers first.
-- **`bin/test-desktop`:** point at `poc/target/release/omairc` through
-  `control-omairc-poc`, or retire it once M7 runs in CI.
+- **Dark mode on Linux:** Done (document). GPUI already watches portal
+  `color-scheme` via ashpd; app follows `observe_window_appearance`. No
+  second subscription next to `textscale.rs`. Hyprland flip not proven on
+  Windows / CI Xvfb (no session bus); host check noted in `poc/NOTES.md`.
+- **RTL:** Done. Spike closed; lavapipe in CI verify-poc; no upstream issue
+  (optional screenshot recipe kept in NOTES).
+- **Accessibility:** Done. NOTES list kept; Unreleased CHANGELOG draft +
+  NOTES cutover draft for M9.
+- **`bin/test-install`:** Done. Cargo product release + PKGBUILD seven
+  paths; keep `COPYING-LGPL` while `src/irc/` remains.
+- **`bin/test-desktop`:** Done. Drives release+product via
+  `control-omairc-poc` (`OMAIRC_POC_PROFILE` / `OMAIRC_POC_FEATURES`).
 
 ## M9 — Cutover
 
