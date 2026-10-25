@@ -97,13 +97,16 @@ jobs:
           echo "rust=${{ steps.filter.outputs.rust }}" >> "$GITHUB_OUTPUT"
           echo "qt=${{ steps.filter.outputs.qt }}" >> "$GITHUB_OUTPUT"
 
-  # Rust product client. No Qt. Stages build\release and packages the same
-  # omairc-<v>-windows-x64-setup.exe name so Qt installs can upgrade later.
+  # Rust product client. No Qt. Stages build\release, packages the Inno
+  # setup, and on tags/dispatch uploads setup + zip and publishes release
+  # assets (Qt no longer ships Windows releases).
   rust:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: windows-2022
     timeout-minutes: 60
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     defaults:
       run:
         shell: pwsh
@@ -125,6 +128,22 @@ jobs:
           # bin\build-rust.bat gets OMAIRC_BUILD_VERSION only on the Build step.
           Add-Content $env:GITHUB_ENV "OMAIRC_BUILD_VERSION="
           Get-Content $env:GITHUB_ENV | Select-String '^OMAIRC_'
+
+      - name: Assert tag version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if (-not $tag.StartsWith('v')) { throw "Expected v* tag, got $tag" }
+          $expected = $tag.Substring(1)
+          if ($expected -ne $env:OMAIRC_VERSION) {
+            throw "Tag $tag does not match version.pri $($env:OMAIRC_VERSION)"
+          }
+          if ($env:OMAIRC_DISPLAY_VERSION -ne $env:OMAIRC_VERSION) {
+            throw "Tag builds must keep unsuffixed display version"
+          }
+          if ($env:OMAIRC_ARTIFACT_VERSION -ne $env:OMAIRC_VERSION) {
+            throw "Tag builds must keep unsuffixed artifact version"
+          }
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -217,8 +236,8 @@ jobs:
             throw "demo-server smoke exited $($p.ExitCode)"
           }
 
-      # Distinct step names from the Qt job so check-conventions keeps that
-      # job's package-only-on-tag gate. Rust proves the installer on every run.
+      # Proves the installer on every run. Upload and GitHub Release publish
+      # stay gated to workflow_dispatch and v* tags below.
       - name: Install Inno Setup for rust
         run: choco install innosetup --no-progress -y
 
@@ -399,6 +418,72 @@ jobs:
           $mb = [math]::Round(((Get-Item $setup).Length) / 1MB, 2)
           Write-Host "Rust installer smoke ok: $setup ($mb MB); InstallDelete cleared Qt leftovers; config survived uninstall"
 
+      - name: Upload rust installer
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: omairc-${{ env.OMAIRC_ARTIFACT_VERSION }}-windows-x64-setup
+          path: dist/omairc-${{ env.OMAIRC_ARTIFACT_VERSION }}-windows-x64-setup.exe
+          if-no-files-found: error
+
+      - name: Package rust release zip
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          $ver = $env:OMAIRC_VERSION
+          $name = "omairc-$ver-windows-x64"
+          $stage = Join-Path $env:RUNNER_TEMP $name
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          Copy-Item -Path 'build\release\*' -Destination $stage -Recurse
+          $zip = Join-Path (Get-Location) "$name.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path $stage -DestinationPath $zip
+          $mb = [math]::Round((Get-Item $zip).Length / 1MB, 2)
+          Write-Host "Release zip: $zip ($mb MB)"
+
+      - name: Publish GitHub Release asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = $env:GITHUB_REF_NAME
+          $ver = $env:OMAIRC_VERSION
+          $zipName = "omairc-$ver-windows-x64.zip"
+          $setupName = "omairc-$ver-windows-x64-setup.exe"
+          $setupPath = Join-Path 'dist' $setupName
+          if (-not (Test-Path $zipName)) { throw "Missing $zipName" }
+          if (-not (Test-Path $setupPath)) { throw "Missing $setupPath" }
+
+          # Release package creates the GitHub Release; wait if this job finishes first.
+          $deadline = (Get-Date).AddMinutes(30)
+          while ($true) {
+            gh release view $tag 1>$null 2>$null
+            if ($LASTEXITCODE -eq 0) { break }
+            if ((Get-Date) -gt $deadline) {
+              throw "Timed out waiting for GitHub Release $tag (created by Release package)"
+            }
+            Write-Host "Waiting for release $tag..."
+            Start-Sleep -Seconds 15
+          }
+
+          $assetList = gh release view $tag --json assets --jq '.assets[].name'
+          if ($LASTEXITCODE -ne 0) { throw "gh release view $tag failed" }
+          foreach ($asset in @($assetList)) {
+            if (-not $asset) { continue }
+            if ($asset -like 'omairc-[0-9]*-windows-x64.zip' -and $asset -ne $zipName) {
+              gh release delete-asset $tag $asset --yes
+              if ($LASTEXITCODE -ne 0) { throw "Failed to delete stale asset $asset" }
+            }
+            if ($asset -like 'omairc-[0-9]*-windows-x64-setup.exe' -and $asset -ne $setupName) {
+              gh release delete-asset $tag $asset --yes
+              if ($LASTEXITCODE -ne 0) { throw "Failed to delete stale asset $asset" }
+            }
+          }
+
+          gh release upload $tag $zipName $setupPath --clobber
+          if ($LASTEXITCODE -ne 0) { throw "Failed to upload Windows assets" }
+
+  # Qt compile + portable smoke until M9 cutover. Packaging and GitHub Release
+  # assets ship from the rust job above; this job never uploads release assets.
   windows:
     needs: changes
     if: needs.changes.outputs.qt == 'true'
@@ -407,7 +492,6 @@ jobs:
     env:
       QT_VERSION: 6.8.3
       QTKEYCHAIN_VERSION: 0.15.0
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     defaults:
       run:
         shell: pwsh
@@ -556,176 +640,3 @@ jobs:
           $files = Get-ChildItem 'build\release' -Recurse -File
           $mb = [math]::Round((($files | Measure-Object Length -Sum).Sum) / 1MB, 2)
           Write-Host "Portable tree: $($files.Count) files, $mb MB"
-
-      # Compile and smoke on every push and PR. Package and upload only on
-      # version tags and a manual workflow_dispatch when someone needs the
-      # zip/setup. Master merges skip that work.
-      - name: Upload portable tree
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
-        with:
-          name: omairc-${{ env.OMAIRC_ARTIFACT_VERSION }}-windows-x64
-          path: |
-            build/release/**
-            !build/release/*.obj
-            !build/release/*.pdb
-            !build/release/*.res
-            !build/release/*.ilk
-            !build/release/moc_*
-            !build/release/qrc_*
-          if-no-files-found: error
-
-      - name: Install Inno Setup
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
-        run: choco install innosetup --no-progress -y
-
-      - name: Package installer
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
-        shell: cmd
-        run: bin\package-windows.bat
-
-      - name: Smoke installer
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $setup = "dist\omairc-$($env:OMAIRC_ARTIFACT_VERSION)-windows-x64-setup.exe"
-          if (-not (Test-Path $setup)) { throw "Expected $setup" }
-
-          $envKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
-          $pathBefore = $null
-          if ($null -ne $envKey -and $null -ne $envKey.GetValue('Path')) {
-            $pathBefore = $envKey.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-          }
-
-          $dest = Join-Path $env:RUNNER_TEMP 'omairc-inst'
-          $log = Join-Path $env:RUNNER_TEMP 'omairc-setup.log'
-          $setupArgs = @(
-            '/VERYSILENT',
-            '/SUPPRESSMSGBOXES',
-            '/NORESTART',
-            '/CURRENTUSER',
-            "/DIR=$dest",
-            "/LOG=$log"
-          )
-          $p = Start-Process -FilePath (Resolve-Path $setup).Path -ArgumentList $setupArgs -Wait -PassThru
-          if ($p.ExitCode -ne 0) {
-            if (Test-Path $log) { Get-Content $log }
-            throw "Installer exited $($p.ExitCode)"
-          }
-          $exe = Join-Path $dest 'omairc.exe'
-          if (-not (Test-Path $exe)) { throw "Expected $exe after install" }
-          if (-not (Test-Path (Join-Path $dest 'LICENSE.txt'))) {
-            throw 'LICENSE.txt was not installed'
-          }
-          if (-not (Test-Path (Join-Path $dest 'msvcp140.dll'))) {
-            throw 'msvcp140.dll was not installed'
-          }
-          $version = (& $exe --version 2>&1 | Out-String).Trim()
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $expected = "omairc $($env:OMAIRC_DISPLAY_VERSION)"
-          if ($version -ne $expected) { throw "Expected '$expected', got: $version" }
-          $mb = [math]::Round(((Get-Item $setup).Length) / 1MB, 2)
-          Write-Host "Installer: $setup ($mb MB)"
-
-          $unins = Join-Path $dest 'unins000.exe'
-          if (-not (Test-Path $unins)) { throw "Expected $unins" }
-          $shortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Omairc.lnk'
-          $uninsLog = Join-Path $env:RUNNER_TEMP 'omairc-unins.log'
-          $uninsArgs = @(
-            '/VERYSILENT',
-            '/SUPPRESSMSGBOXES',
-            '/NORESTART',
-            "/LOG=$uninsLog"
-          )
-          Start-Process -FilePath $unins -ArgumentList $uninsArgs | Out-Null
-          $deadline = (Get-Date).AddMinutes(2)
-          while (Test-Path $dest) {
-            if ((Get-Date) -gt $deadline) {
-              if (Test-Path $uninsLog) { Get-Content $uninsLog }
-              if (Test-Path $log) { Get-Content $log }
-              throw "Uninstall did not remove $dest"
-            }
-            Start-Sleep -Milliseconds 500
-          }
-          if (Test-Path $exe) { throw 'omairc.exe still present after uninstall' }
-          if (Test-Path $shortcut) { throw 'Start Menu shortcut still present after uninstall' }
-
-          $pathDeadline = (Get-Date).AddSeconds(15)
-          do {
-            $envKeyAfter = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
-            $pathAfter = $null
-            if ($null -ne $envKeyAfter -and $null -ne $envKeyAfter.GetValue('Path')) {
-              $pathAfter = $envKeyAfter.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-            }
-            if ($pathBefore -ceq $pathAfter) { break }
-            if ((Get-Date) -gt $pathDeadline) {
-              if (Test-Path $uninsLog) { Get-Content $uninsLog }
-              throw "Path mutated by install/uninstall. before=[$pathBefore] after=[$pathAfter]"
-            }
-            Start-Sleep -Milliseconds 200
-          } while ($true)
-          Write-Host 'Uninstall removed the install dir and Start Menu shortcut; Path is unchanged'
-
-      - name: Upload installer
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
-        with:
-          name: omairc-${{ env.OMAIRC_ARTIFACT_VERSION }}-windows-x64-setup
-          path: dist/omairc-${{ env.OMAIRC_ARTIFACT_VERSION }}-windows-x64-setup.exe
-          if-no-files-found: error
-
-      - name: Package release zip
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          $ver = $env:OMAIRC_VERSION
-          $name = "omairc-$ver-windows-x64"
-          $stage = Join-Path $env:RUNNER_TEMP $name
-          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
-          New-Item -ItemType Directory -Path $stage | Out-Null
-          Copy-Item -Path 'build\release\*' -Destination $stage -Recurse
-          $zip = Join-Path (Get-Location) "$name.zip"
-          if (Test-Path $zip) { Remove-Item $zip -Force }
-          Compress-Archive -Path $stage -DestinationPath $zip
-          $mb = [math]::Round((Get-Item $zip).Length / 1MB, 2)
-          Write-Host "Release zip: $zip ($mb MB)"
-
-      - name: Publish GitHub Release asset
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $tag = $env:GITHUB_REF_NAME
-          $ver = $env:OMAIRC_VERSION
-          $zipName = "omairc-$ver-windows-x64.zip"
-          $setupName = "omairc-$ver-windows-x64-setup.exe"
-          $setupPath = Join-Path 'dist' $setupName
-          if (-not (Test-Path $zipName)) { throw "Missing $zipName" }
-          if (-not (Test-Path $setupPath)) { throw "Missing $setupPath" }
-
-          # Release package creates the GitHub Release; wait if this job finishes first.
-          $deadline = (Get-Date).AddMinutes(30)
-          while ($true) {
-            gh release view $tag 1>$null 2>$null
-            if ($LASTEXITCODE -eq 0) { break }
-            if ((Get-Date) -gt $deadline) {
-              throw "Timed out waiting for GitHub Release $tag (created by Release package)"
-            }
-            Write-Host "Waiting for release $tag..."
-            Start-Sleep -Seconds 15
-          }
-
-          $assetList = gh release view $tag --json assets --jq '.assets[].name'
-          if ($LASTEXITCODE -ne 0) { throw "gh release view $tag failed" }
-          foreach ($asset in @($assetList)) {
-            if (-not $asset) { continue }
-            if ($asset -like 'omairc-[0-9]*-windows-x64.zip' -and $asset -ne $zipName) {
-              gh release delete-asset $tag $asset --yes
-              if ($LASTEXITCODE -ne 0) { throw "Failed to delete stale asset $asset" }
-            }
-            if ($asset -like 'omairc-[0-9]*-windows-x64-setup.exe' -and $asset -ne $setupName) {
-              gh release delete-asset $tag $asset --yes
-              if ($LASTEXITCODE -ne 0) { throw "Failed to delete stale asset $asset" }
-            }
-          }
-
-          gh release upload $tag $zipName $setupPath --clobber
-          if ($LASTEXITCODE -ne 0) { throw "Failed to upload Windows assets" }

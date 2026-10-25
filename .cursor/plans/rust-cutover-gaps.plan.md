@@ -19,7 +19,7 @@ todos:
     status: completed
   - id: m4-macos-packaging
     content: "M4: macOS .app bundle, signing, notarization, cask from cargo output"
-    status: pending
+    status: completed
   - id: m5-live-tests
     content: "M5: Rust live tests against Ergo, Solanum, ngIRCd (bin/test-live parity)"
     status: pending
@@ -199,25 +199,33 @@ feature-map Gotchas note the minimize rule and the Wayland/Hyprland limit.
   JSON.
 - `windows.yml` smoke-installs the setup, runs `omairc.exe --version`, checks
   the shortcut AUMID, uninstalls, and checks `%LOCALAPPDATA%\omairc` survives.
+  On tags/dispatch the rust job uploads the setup artifact, builds the
+  portable zip, and publishes both to the GitHub Release; the Qt job no
+  longer packages or uploads.
 - Ship order: one release where the setup contains Rust, with M0 already in.
 
 ## M4 — macOS app bundle from cargo
 
+**Done on this branch.** Rust owns tag/dispatch release zips (notarize + cask
+artifacts). Qt `macos` CI still compiles and runs portable tests when the `qt`
+path filter matches; it no longer packages, notarizes, or publishes.
+
 - `bin/build-macos-rust`: `cargo build --release --locked --features product`
-  for `aarch64-apple-darwin` and `x86_64-apple-darwin`. Assemble
-  `build/omairc.app` with the existing `packaging/macos/Info.plist`
-  (`CFBundleIdentifier` stays `app.omairc.Omairc`, see M0), `omairc.icns`,
-  `Contents/MacOS/omairc`. No `qt.conf`, no frameworks.
-- Reuse `bin/sign-macos`, `bin/notarize-macos`, `bin/package-macos`,
-  `bin/check-macos-bundle`, `bin/check-macos-syspolicy`. Drop the
-  macdeployqt/Qt-pruning parts. Keep hardened runtime and
-  `Omairc.entitlements`.
-- `Casks/omairc.rb`: same zip names, so `bin/bump-homebrew-cask` is unchanged.
-  The PATH helper still execs `Contents/MacOS/omairc`; `zap` paths stay the
-  same because settings and state paths match Qt.
-- macOS notifications need the signed bundle. Add a CI step that launches
-  the bundle with `OMAIRC_SMOKE=1`, and a manual checklist item for a real
-  toast.
+  for the host triple (`aarch64-apple-darwin` / `x86_64-apple-darwin`).
+  Assembles `build/omairc.app` from `packaging/macos/Info.plist`
+  (`CFBundleIdentifier` stays `app.omairc.Omairc`), `omairc.icns`,
+  `Contents/MacOS/omairc`. No `qt.conf`, no frameworks. Signs through
+  `bin/sign-macos` (hardened runtime + `Omairc.entitlements`) and runs
+  `bin/check-macos-bundle`.
+- Reuse `bin/package-macos`, `bin/notarize-macos`, `bin/check-macos-syspolicy`
+  against the rust-built app (`OMAIRC_CLIENT=rust` for error text). On
+  tags/dispatch the rust job uploads cask zip names, notarizes when secrets
+  exist, and publishes GitHub Release assets. `macos-zips` / `bump-cask`
+  consume rust artifacts.
+- `Casks/omairc.rb`: unchanged zip names / PATH helper / zap paths.
+- `macos.yml` rust job: assemble, assert layout + Mach-O arch, smoke the
+  bundle with `OMAIRC_SMOKE=1`, prove `bin/package-macos` zip names. Developer
+  ID is optional on pull requests; v* tags fail closed without signing secrets.
 
 ## M5 — Live tests against real IRC daemons
 

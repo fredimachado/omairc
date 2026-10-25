@@ -25,7 +25,11 @@ if [ "$(uname -s)" != "Darwin" ]; then
 fi
 
 if [ ! -d "$APP" ]; then
-  echo "Expected $APP. Run bin/build-macos first." >&2
+  if [ "${OMAIRC_CLIENT:-}" = "rust" ]; then
+    echo "Expected $APP. Run bin/build-macos-rust first." >&2
+  else
+    echo "Expected $APP. Run bin/build-macos or bin/build-macos-rust first." >&2
+  fi
   exit 1
 fi
 
