@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/windows.yml'
       - 'bin/build.bat'
+      - 'bin/build-rust.bat'
       - 'bin/derive-build-versions.py'
       - 'bin/gen-omaircversion-h.py'
       - 'bin/package-windows.bat'
@@ -26,6 +27,7 @@ on:
     paths:
       - '.github/workflows/windows.yml'
       - 'bin/build.bat'
+      - 'bin/build-rust.bat'
       - 'bin/derive-build-versions.py'
       - 'bin/gen-omaircversion-h.py'
       - 'bin/package-windows.bat'
@@ -65,6 +67,9 @@ jobs:
               - 'poc/**'
               - 'version.pri'
               - 'fonts/**'
+              - 'bin/build-rust.bat'
+              - 'bin/package-windows.bat'
+              - 'packaging/windows/**'
               - '.github/workflows/windows.yml'
             qt:
               - '.github/workflows/windows.yml'
@@ -92,18 +97,30 @@ jobs:
           echo "rust=${{ steps.filter.outputs.rust }}" >> "$GITHUB_OUTPUT"
           echo "qt=${{ steps.filter.outputs.qt }}" >> "$GITHUB_OUTPUT"
 
-  # Rust product client. No Qt.
+  # Rust product client. No Qt. Stages build\release and packages the same
+  # omairc-<v>-windows-x64-setup.exe name so Qt installs can upgrade later.
   rust:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: windows-2022
-    timeout-minutes: 45
+    timeout-minutes: 60
     defaults:
       run:
         shell: pwsh
-        working-directory: poc
     steps:
       - uses: actions/checkout@v4
+
+      - name: Derive versions
+        run: |
+          python bin/derive-build-versions.py `
+            --git-ref "$env:GITHUB_REF" `
+            --sha "$env:GITHUB_SHA" `
+            --run-number "$env:GITHUB_RUN_NUMBER" `
+            --run-attempt "$env:GITHUB_RUN_ATTEMPT" `
+            --format github-env `
+            --github-env "$env:GITHUB_ENV"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Content $env:GITHUB_ENV | Select-String '^OMAIRC_'
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -116,10 +133,15 @@ jobs:
           workspaces: poc
           key: windows-rust-${{ hashFiles('poc/Cargo.lock') }}
 
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       # Same product clippy as Linux test.yml so Windows-only unused_imports
       # cannot regress green. Style/complexity groups stay allowed until a
       # cleanup slice; correctness and suspicious stay denied.
       - name: Clippy
+        working-directory: poc
         run: >
           cargo clippy --locked --all-targets --features product --
           -D warnings
@@ -129,19 +151,37 @@ jobs:
           -A clippy::nursery
           -A clippy::perf
 
-      - name: Build product release
-        run: cargo build --release --locked --features product
+      - name: Build and stage product release
+        shell: cmd
+        run: bin\build-rust.bat
+
+      - name: Assert static CRT
+        run: |
+          $exe = 'build\release\omairc.exe'
+          if (-not (Test-Path $exe)) { throw "Expected $exe" }
+          $deps = & dumpbin /dependents $exe | Out-String
+          if ($LASTEXITCODE -ne 0) { throw 'dumpbin /dependents failed' }
+          Write-Host $deps
+          if ($deps -match '(?i)VCRUNTIME|MSVCP') {
+            throw 'Static CRT check failed: exe depends on VCRUNTIME or MSVCP'
+          }
+          foreach ($name in @('LICENSE', 'OFL.txt', 'COPYING-LGPL')) {
+            if (-not (Test-Path (Join-Path 'build\release' $name))) {
+              throw "Expected build\release\$name"
+            }
+          }
 
       - name: Test
+        working-directory: poc
         run: cargo test --locked
 
       - name: Test with product features
+        working-directory: poc
         run: cargo test --locked --features product
 
       - name: Smoke
-        working-directory: .
         run: |
-          $exe = 'poc\target\release\omairc.exe'
+          $exe = 'build\release\omairc.exe'
           if (-not (Test-Path $exe)) { throw "Expected $exe" }
           $version = (& $exe --version 2>&1 | Out-String).Trim()
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -168,6 +208,128 @@ jobs:
             if (Test-Path $smokeErr) { Get-Content $smokeErr -ErrorAction SilentlyContinue }
             throw "demo-server smoke exited $($p.ExitCode)"
           }
+
+      # Distinct step names from the Qt job so check-conventions keeps that
+      # job's package-only-on-tag gate. Rust proves the installer on every run.
+      - name: Install Inno Setup for rust
+        run: choco install innosetup --no-progress -y
+
+      - name: Package rust installer
+        shell: cmd
+        env:
+          OMAIRC_CLIENT: rust
+        run: bin\package-windows.bat
+
+      - name: Smoke rust installer
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = "dist\omairc-$($env:OMAIRC_ARTIFACT_VERSION)-windows-x64-setup.exe"
+          if (-not (Test-Path $setup)) { throw "Expected $setup" }
+
+          $configDir = Join-Path $env:LOCALAPPDATA 'omairc'
+          New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+          $configPath = Join-Path $configDir 'omairc.conf'
+          Set-Content -Path $configPath -Value "[preferences]`r`nmarker=rust-m3-smoke`r`n" -NoNewline
+
+          $envKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
+          $pathBefore = $null
+          if ($null -ne $envKey -and $null -ne $envKey.GetValue('Path')) {
+            $pathBefore = $envKey.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+          }
+
+          $dest = Join-Path $env:RUNNER_TEMP 'omairc-rust-inst'
+          $log = Join-Path $env:RUNNER_TEMP 'omairc-rust-setup.log'
+          $setupArgs = @(
+            '/VERYSILENT',
+            '/SUPPRESSMSGBOXES',
+            '/NORESTART',
+            '/CURRENTUSER',
+            "/DIR=$dest",
+            "/LOG=$log"
+          )
+          $p = Start-Process -FilePath (Resolve-Path $setup).Path -ArgumentList $setupArgs -Wait -PassThru
+          if ($p.ExitCode -ne 0) {
+            if (Test-Path $log) { Get-Content $log }
+            throw "Installer exited $($p.ExitCode)"
+          }
+          $exe = Join-Path $dest 'omairc.exe'
+          if (-not (Test-Path $exe)) { throw "Expected $exe after install" }
+          if (-not (Test-Path (Join-Path $dest 'LICENSE.txt'))) {
+            throw 'LICENSE.txt was not installed'
+          }
+          if (-not (Test-Path (Join-Path $dest 'OFL.txt'))) {
+            throw 'OFL.txt was not installed'
+          }
+          if (-not (Test-Path (Join-Path $dest 'COPYING-LGPL'))) {
+            throw 'COPYING-LGPL was not installed'
+          }
+          if (Test-Path (Join-Path $dest 'msvcp140.dll')) {
+            throw 'Rust install must not ship msvcp140.dll'
+          }
+          if (Test-Path (Join-Path $dest 'Qt6Core.dll')) {
+            throw 'Rust install must not ship Qt DLLs'
+          }
+          $version = (& $exe --version 2>&1 | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $expected = "omairc $($env:OMAIRC_DISPLAY_VERSION)"
+          if ($version -ne $expected) { throw "Expected '$expected', got: $version" }
+
+          $shortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Omairc.lnk'
+          if (-not (Test-Path $shortcut)) { throw "Expected Start Menu shortcut $shortcut" }
+          $lnkBytes = [System.IO.File]::ReadAllBytes($shortcut)
+          $lnkText = [System.Text.Encoding]::Unicode.GetString($lnkBytes)
+          if ($lnkText -notlike '*FrediMachado.Omairc*') {
+            throw 'Start Menu shortcut is missing AppUserModelID FrediMachado.Omairc'
+          }
+          if ($lnkText -notlike '*DBE38477-5F87-42A1-AFA1-11FA12F2E5E5*') {
+            throw 'Start Menu shortcut is missing toast activator CLSID'
+          }
+
+          $unins = Join-Path $dest 'unins000.exe'
+          if (-not (Test-Path $unins)) { throw "Expected $unins" }
+          $uninsLog = Join-Path $env:RUNNER_TEMP 'omairc-rust-unins.log'
+          $uninsArgs = @(
+            '/VERYSILENT',
+            '/SUPPRESSMSGBOXES',
+            '/NORESTART',
+            "/LOG=$uninsLog"
+          )
+          Start-Process -FilePath $unins -ArgumentList $uninsArgs | Out-Null
+          $deadline = (Get-Date).AddMinutes(2)
+          while (Test-Path $dest) {
+            if ((Get-Date) -gt $deadline) {
+              if (Test-Path $uninsLog) { Get-Content $uninsLog }
+              if (Test-Path $log) { Get-Content $log }
+              throw "Uninstall did not remove $dest"
+            }
+            Start-Sleep -Milliseconds 500
+          }
+          if (Test-Path $exe) { throw 'omairc.exe still present after uninstall' }
+          if (Test-Path $shortcut) { throw 'Start Menu shortcut still present after uninstall' }
+          if (-not (Test-Path $configPath)) {
+            throw "%LOCALAPPDATA%\omairc\omairc.conf was removed by uninstall"
+          }
+          $configText = Get-Content -Raw $configPath
+          if ($configText -notmatch 'rust-m3-smoke') {
+            throw '%LOCALAPPDATA%\omairc did not keep the smoke marker'
+          }
+
+          $pathDeadline = (Get-Date).AddSeconds(15)
+          do {
+            $envKeyAfter = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
+            $pathAfter = $null
+            if ($null -ne $envKeyAfter -and $null -ne $envKeyAfter.GetValue('Path')) {
+              $pathAfter = $envKeyAfter.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+            }
+            if ($pathBefore -ceq $pathAfter) { break }
+            if ((Get-Date) -gt $pathDeadline) {
+              if (Test-Path $uninsLog) { Get-Content $uninsLog }
+              throw "Path mutated by install/uninstall. before=[$pathBefore] after=[$pathAfter]"
+            }
+            Start-Sleep -Milliseconds 200
+          } while ($true)
+          $mb = [math]::Round(((Get-Item $setup).Length) / 1MB, 2)
+          Write-Host "Rust installer smoke ok: $setup ($mb MB); config survived uninstall"
 
   windows:
     needs: changes

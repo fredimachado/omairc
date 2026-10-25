@@ -809,6 +809,62 @@ mod tests {
         assert_eq!(release.setup, None, "an asset with no digest offers no installer");
     }
 
+    /// GitHub still publishes `omairc-<v>-windows-x64-setup.exe` after the Rust
+    /// cutover, so a Qt install can download and upgrade. The release JSON shape
+    /// (name, digest, size, browser_download_url) must stay accepted.
+    #[test]
+    fn github_release_json_accepts_the_windows_setup_asset_name() {
+        let body = r#"{
+            "url": "https://api.github.com/repos/fredimachado/omairc/releases/99",
+            "html_url": "https://github.com/fredimachado/omairc/releases/tag/v1.0.4",
+            "tag_name": "v1.0.4",
+            "name": "Omairc 1.0.4",
+            "draft": false,
+            "prerelease": false,
+            "published_at": "2026-10-20T12:00:00Z",
+            "assets": [
+                {
+                    "name": "omairc-1.0.4-macos-arm64.zip",
+                    "size": 11111111,
+                    "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                    "browser_download_url": "https://github.com/fredimachado/omairc/releases/download/v1.0.4/omairc-1.0.4-macos-arm64.zip"
+                },
+                {
+                    "name": "omairc-1.0.4-windows-x64-setup.exe",
+                    "size": 22222222,
+                    "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                    "browser_download_url": "https://github.com/fredimachado/omairc/releases/download/v1.0.4/omairc-1.0.4-windows-x64-setup.exe"
+                },
+                {
+                    "name": "omairc-1.0.4-windows-x64.zip",
+                    "size": 33333333,
+                    "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+                    "browser_download_url": "https://github.com/fredimachado/omairc/releases/download/v1.0.4/omairc-1.0.4-windows-x64.zip"
+                }
+            ]
+        }"#;
+        let release = parse_release(body).expect("release JSON parses");
+        assert_eq!(release.version, "1.0.4");
+        assert_eq!(release.tag, "v1.0.4");
+        assert_eq!(windows_setup_name(&release.version), "omairc-1.0.4-windows-x64-setup.exe");
+        let setup = release.setup.as_ref().expect("the windows-x64-setup asset is offered");
+        assert_eq!(
+            setup.url,
+            "https://github.com/fredimachado/omairc/releases/download/v1.0.4/omairc-1.0.4-windows-x64-setup.exe"
+        );
+        assert_eq!(
+            setup.sha256,
+            "2222222222222222222222222222222222222222222222222222222222222222"
+        );
+        assert_eq!(setup.size, 22_222_222);
+
+        let mut state = UpdateCheck::new("1.0.3", true);
+        let ticket = state.begin_check().expect("check starts");
+        assert!(state.finish_check(ticket, Some(release)));
+        assert!(state.installer_update_available());
+        assert_eq!(state.action(), StatusAction::Download);
+    }
+
     #[test]
     fn falls_back_to_the_latest_page_without_html_url() {
         let release = parse_release(r#"{"tag_name":"v1.0.0"}"#).expect("tag is enough");
