@@ -4,7 +4,7 @@ cd /d "%~dp0.."
 set "ROOT=%CD%"
 set "BUILD_DIR=%ROOT%\build"
 set "REL=%BUILD_DIR%\release"
-set "POC=%ROOT%\poc"
+set "CLIENT=%ROOT%\client"
 
 where cargo >nul 2>&1
 if errorlevel 1 (
@@ -15,10 +15,10 @@ if errorlevel 1 (
 call :ensure_msvc
 if errorlevel 1 exit /b 1
 
-rem Run from poc so poc\.cargo\config.toml applies for static CRT rustflags.
+rem Run from client so client\.cargo\config.toml applies for static CRT rustflags.
 rem Cargo only walks .cargo from the current directory, not the manifest path.
 echo Building Rust product client - release, locked, features=product
-pushd "!POC!"
+pushd "!CLIENT!"
 if errorlevel 1 exit /b 1
 cargo build --release --locked --features product
 if errorlevel 1 (
@@ -27,7 +27,7 @@ if errorlevel 1 (
 )
 popd
 
-set "EXE=!POC!\target\release\omairc.exe"
+set "EXE=!CLIENT!\target\release\omairc.exe"
 if not exist "!EXE!" (
   echo Expected !EXE! after cargo build. >&2
   exit /b 1
@@ -42,17 +42,12 @@ copy /Y "!EXE!" "!REL!\omairc.exe" >nul
 if errorlevel 1 exit /b 1
 copy /Y "!ROOT!\LICENSE" "!REL!\LICENSE" >nul
 copy /Y "!ROOT!\fonts\OFL.txt" "!REL!\OFL.txt" >nul
-copy /Y "!ROOT!\src\irc\COPYING" "!REL!\COPYING-LGPL" >nul
 if not exist "!REL!\LICENSE" (
   echo Failed to stage LICENSE into !REL!. >&2
   exit /b 1
 )
 if not exist "!REL!\OFL.txt" (
   echo Failed to stage OFL.txt into !REL!. >&2
-  exit /b 1
-)
-if not exist "!REL!\COPYING-LGPL" (
-  echo Failed to stage COPYING-LGPL into !REL!. >&2
   exit /b 1
 )
 

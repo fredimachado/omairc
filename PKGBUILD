@@ -6,7 +6,7 @@ pkgrel=1
 pkgdesc='Simple IRC client for Omarchy'
 arch=('x86_64')
 url='https://github.com/fredimachado/omairc'
-license=('MIT' 'LGPL-3.0-or-later' 'OFL-1.1')
+license=('MIT' 'OFL-1.1')
 options=(!debug)
 depends=(
   'fontconfig'
@@ -30,18 +30,17 @@ sha256sums=('SKIP')
 build() {
   cd "$srcdir/$pkgname-$pkgver"
   export OMAIRC_BUILD_VERSION="${OMAIRC_BUILD_VERSION:-$pkgver}"
-  cargo build --release --locked --features product --manifest-path poc/Cargo.toml
+  cargo build --release --locked --features product --manifest-path client/Cargo.toml
 }
 
 package() {
   cd "$srcdir/$pkgname-$pkgver"
-  install -Dm755 poc/target/release/omairc "$pkgdir/usr/bin/omairc"
+  install -Dm755 client/target/release/omairc "$pkgdir/usr/bin/omairc"
   install -Dm644 data/omairc.desktop "$pkgdir/usr/share/applications/omairc.desktop"
   install -Dm644 data/icons/hicolor/scalable/apps/omairc.svg \
     "$pkgdir/usr/share/icons/hicolor/scalable/apps/omairc.svg"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 fonts/OFL.txt "$pkgdir/usr/share/licenses/$pkgname/OFL.txt"
-  install -Dm644 src/irc/COPYING "$pkgdir/usr/share/licenses/$pkgname/COPYING-LGPL"
   install -Dm644 data/bash-completion/omairc \
     "$pkgdir/usr/share/bash-completion/completions/omairc"
 }

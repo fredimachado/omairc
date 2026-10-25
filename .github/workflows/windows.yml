@@ -5,17 +5,12 @@ on:
   pull_request:
     paths:
       - '.github/workflows/windows.yml'
-      - 'bin/build.bat'
       - 'bin/build-rust.bat'
       - 'bin/derive-build-versions.py'
-      - 'bin/gen-omaircversion-h.py'
       - 'bin/package-windows.bat'
       - 'packaging/windows/**'
-      - 'omairc.pro'
-      - 'qtkeychain.pri'
       - 'version.pri'
-      - 'src/**'
-      - 'poc/**'
+      - 'client/**'
       - 'fonts/**'
       - 'data/icons/**'
       - 'LICENSE'
@@ -26,17 +21,12 @@ on:
       - 'v*'
     paths:
       - '.github/workflows/windows.yml'
-      - 'bin/build.bat'
       - 'bin/build-rust.bat'
       - 'bin/derive-build-versions.py'
-      - 'bin/gen-omaircversion-h.py'
       - 'bin/package-windows.bat'
       - 'packaging/windows/**'
-      - 'omairc.pro'
-      - 'qtkeychain.pri'
       - 'version.pri'
-      - 'src/**'
-      - 'poc/**'
+      - 'client/**'
       - 'fonts/**'
       - 'data/icons/**'
       - 'LICENSE'
@@ -49,13 +39,10 @@ permissions:
   contents: write
 
 jobs:
-  # Split path filters so a poc-only change does not pay for the Qt toolchain.
-  # Tags and workflow_dispatch run both jobs.
   changes:
     runs-on: ubuntu-latest
     outputs:
       rust: ${{ steps.select.outputs.rust }}
-      qt: ${{ steps.select.outputs.qt }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -64,26 +51,15 @@ jobs:
         with:
           filters: |
             rust:
-              - 'poc/**'
+              - 'client/**'
               - 'version.pri'
-              - 'fonts/**'
-              - 'bin/build-rust.bat'
-              - 'bin/package-windows.bat'
-              - 'packaging/windows/**'
-              - '.github/workflows/windows.yml'
-            qt:
-              - '.github/workflows/windows.yml'
-              - 'bin/build.bat'
-              - 'bin/derive-build-versions.py'
-              - 'bin/gen-omaircversion-h.py'
-              - 'bin/package-windows.bat'
-              - 'packaging/windows/**'
-              - 'omairc.pro'
-              - 'qtkeychain.pri'
-              - 'version.pri'
-              - 'src/**'
               - 'fonts/**'
               - 'data/icons/**'
+              - 'bin/build-rust.bat'
+              - 'bin/package-windows.bat'
+              - 'bin/derive-build-versions.py'
+              - 'packaging/windows/**'
+              - '.github/workflows/windows.yml'
               - 'LICENSE'
       - name: Select jobs
         id: select
@@ -91,15 +67,10 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [[ "${{ github.ref }}" == refs/tags/* ]]; then
             echo "rust=true" >> "$GITHUB_OUTPUT"
-            echo "qt=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "rust=${{ steps.filter.outputs.rust }}" >> "$GITHUB_OUTPUT"
-          echo "qt=${{ steps.filter.outputs.qt }}" >> "$GITHUB_OUTPUT"
 
-  # Rust product client. No Qt. Stages build\release, packages the Inno
-  # setup, and on tags/dispatch uploads setup + zip and publishes release
-  # assets (Qt no longer ships Windows releases).
   rust:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
@@ -153,8 +124,8 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: poc
-          key: windows-rust-${{ hashFiles('poc/Cargo.lock') }}
+          workspaces: client
+          key: windows-rust-${{ hashFiles('client/Cargo.lock') }}
 
       - uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -164,7 +135,7 @@ jobs:
       # cannot regress green. Style/complexity groups stay allowed until a
       # cleanup slice; correctness and suspicious stay denied.
       - name: Clippy
-        working-directory: poc
+        working-directory: client
         run: >
           cargo clippy --locked --all-targets --features product --
           -D warnings
@@ -177,11 +148,11 @@ jobs:
       # Unit tests before the staged stamp so compiled_version_is_the_version_pri_value
       # sees version.pri, not a PR display suffix.
       - name: Test
-        working-directory: poc
+        working-directory: client
         run: cargo test --locked
 
       - name: Test with product features
-        working-directory: poc
+        working-directory: client
         run: cargo test --locked --features product
 
       - name: Build and stage product release
@@ -200,7 +171,7 @@ jobs:
           if ($deps -match '(?i)VCRUNTIME|MSVCP') {
             throw 'Static CRT check failed: exe depends on VCRUNTIME or MSVCP'
           }
-          foreach ($name in @('LICENSE', 'OFL.txt', 'COPYING-LGPL')) {
+          foreach ($name in @('LICENSE', 'OFL.txt')) {
             if (-not (Test-Path (Join-Path 'build\release' $name))) {
               throw "Expected build\release\$name"
             }
@@ -302,9 +273,6 @@ jobs:
           if (-not (Test-Path (Join-Path $dest 'OFL.txt'))) {
             throw 'OFL.txt was not installed'
           }
-          if (-not (Test-Path (Join-Path $dest 'COPYING-LGPL'))) {
-            throw 'COPYING-LGPL was not installed'
-          }
           foreach ($leftover in @(
             'Qt6Core.dll',
             'Qt6Gui.dll',
@@ -384,7 +352,6 @@ jobs:
               'omairc.exe',
               'LICENSE.txt',
               'OFL.txt',
-              'COPYING-LGPL',
               'unins000.exe',
               'unins000.dat'
             )) {
@@ -481,162 +448,3 @@ jobs:
 
           gh release upload $tag $zipName $setupPath --clobber
           if ($LASTEXITCODE -ne 0) { throw "Failed to upload Windows assets" }
-
-  # Qt compile + portable smoke until M9 cutover. Packaging and GitHub Release
-  # assets ship from the rust job above; this job never uploads release assets.
-  windows:
-    needs: changes
-    if: needs.changes.outputs.qt == 'true'
-    runs-on: windows-2022
-    timeout-minutes: 45
-    env:
-      QT_VERSION: 6.8.3
-      QTKEYCHAIN_VERSION: 0.15.0
-    defaults:
-      run:
-        shell: pwsh
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Derive versions
-        run: |
-          python bin/derive-build-versions.py `
-            --git-ref "$env:GITHUB_REF" `
-            --sha "$env:GITHUB_SHA" `
-            --run-number "$env:GITHUB_RUN_NUMBER" `
-            --run-attempt "$env:GITHUB_RUN_ATTEMPT" `
-            --format github-env `
-            --github-env "$env:GITHUB_ENV"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Add-Content $env:GITHUB_ENV "OMAIRC_BUILD_NUMBER=$env:GITHUB_RUN_NUMBER"
-          Get-Content $env:GITHUB_ENV | Select-String '^OMAIRC_'
-
-      - name: Assert tag version
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          $tag = $env:GITHUB_REF_NAME
-          if (-not $tag.StartsWith('v')) { throw "Expected v* tag, got $tag" }
-          $expected = $tag.Substring(1)
-          if ($expected -ne $env:OMAIRC_VERSION) {
-            throw "Tag $tag does not match version.pri $($env:OMAIRC_VERSION)"
-          }
-          if ($env:OMAIRC_DISPLAY_VERSION -ne $env:OMAIRC_VERSION) {
-            throw "Tag builds must keep unsuffixed display version"
-          }
-          if ($env:OMAIRC_ARTIFACT_VERSION -ne $env:OMAIRC_VERSION) {
-            throw "Tag builds must keep unsuffixed artifact version"
-          }
-
-      - uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
-      - name: Cache Qt
-        id: qt-cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/Qt
-          key: qt-${{ env.QT_VERSION }}-win64_msvc2022_64-qtkeychain-${{ env.QTKEYCHAIN_VERSION }}
-
-      - name: Install Qt 6
-        if: steps.qt-cache.outputs.cache-hit != 'true'
-        run: |
-          python -m venv "$env:RUNNER_TEMP\aqt"
-          & "$env:RUNNER_TEMP\aqt\Scripts\pip" install aqtinstall
-          & "$env:RUNNER_TEMP\aqt\Scripts\aqt" install-qt windows desktop $env:QT_VERSION win64_msvc2022_64 `
-            -O "$env:RUNNER_TEMP\Qt"
-
-      - name: Add Qt to PATH
-        run: |
-          $qtBin = Join-Path $env:RUNNER_TEMP "Qt\$env:QT_VERSION\msvc2022_64\bin"
-          if (-not (Test-Path (Join-Path $qtBin 'qmake.exe'))) {
-            throw "qmake not found at $qtBin"
-          }
-          Add-Content $env:GITHUB_PATH $qtBin
-          Add-Content $env:GITHUB_ENV "QMAKE=$qtBin\qmake.exe"
-
-      - name: Install QtKeychain
-        run: |
-          $qmake = $env:QMAKE
-          $qtPrefix = & $qmake -query QT_INSTALL_PREFIX
-          $pri = Join-Path (& $qmake -query QT_INSTALL_ARCHDATA) 'mkspecs\modules\qt_Qt6Keychain.pri'
-          if (Test-Path $pri) {
-            Write-Host "QtKeychain already at $pri"
-            exit 0
-          }
-          $src = Join-Path $env:RUNNER_TEMP 'qtkeychain-src'
-          $build = Join-Path $env:RUNNER_TEMP 'qtkeychain-build'
-          git clone --depth 1 --branch $env:QTKEYCHAIN_VERSION `
-            https://github.com/frankosterfeld/qtkeychain.git $src
-          cmake -S $src -B $build -G "NMake Makefiles" `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_PREFIX_PATH="$qtPrefix" `
-            -DCMAKE_INSTALL_PREFIX="$qtPrefix" `
-            -DBUILD_WITH_QT6=ON `
-            -DBUILD_TRANSLATIONS=OFF `
-            -DBUILD_TEST_APPLICATION=OFF `
-            -DBUILD_TESTING=OFF
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cmake --build $build
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cmake --install $build
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path $pri)) {
-            throw "QtKeychain installed but $pri is missing."
-          }
-
-      - name: Build
-        shell: cmd
-        run: bin\build.bat
-
-      - name: Smoke
-        run: |
-          $exe = 'build\release\omairc.exe'
-          if (-not (Test-Path $exe)) { throw "Expected $exe" }
-          $keychain = Get-ChildItem 'build\release' -Filter '*qt6keychain.dll' -File
-          if (-not $keychain) { throw 'qt6keychain.dll was not deployed next to the exe' }
-          if (-not (Test-Path 'build\release\msvcp140.dll')) {
-            throw 'msvcp140.dll was not deployed next to the exe'
-          }
-          $svg = Get-ChildItem 'build\release' -Recurse -Filter 'qsvg.dll' -File
-          if (-not $svg) { throw 'qsvg.dll was not deployed (About overlay SVG)' }
-          $dialogs = Get-ChildItem 'build\release\qml\QtQuick\Dialogs' -Recurse -Filter '*.dll' -File -ErrorAction SilentlyContinue
-          if (-not $dialogs) { throw 'QtQuick.Dialogs was not deployed (file picker)' }
-          $version = (& $exe --version 2>&1 | Out-String).Trim()
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $expected = "omairc $($env:OMAIRC_DISPLAY_VERSION)"
-          if ($version -ne $expected) { throw "Expected '$expected', got: $version" }
-          $help = & $exe --help 2>&1 | Out-String
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if ($help -notmatch 'Usage:') { throw "Expected help text, got: $help" }
-
-          $env:OMAIRC_ALLOW_MULTI = '1'
-          $env:OMAIRC_SMOKE = '1'
-          $env:QT_QPA_PLATFORM = 'offscreen'
-          $env:QT_QUICK_BACKEND = 'software'
-          $qtPlugins = Join-Path $env:RUNNER_TEMP "Qt\$env:QT_VERSION\msvc2022_64\plugins"
-          if (Test-Path $qtPlugins) { $env:QT_PLUGIN_PATH = $qtPlugins }
-          $full = (Resolve-Path $exe).Path
-          $smokeOut = Join-Path $env:RUNNER_TEMP 'omairc-smoke-out.txt'
-          $smokeErr = Join-Path $env:RUNNER_TEMP 'omairc-smoke-err.txt'
-          $p = Start-Process -FilePath $full -ArgumentList '--demo-server' -PassThru -RedirectStandardOutput $smokeOut -RedirectStandardError $smokeErr
-          if (-not $p.WaitForExit(30000)) {
-            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-            throw 'demo-server smoke did not exit within 30s'
-          }
-          if ($p.ExitCode -ne 0) {
-            Write-Host '--- demo-server stdout ---'
-            if (Test-Path $smokeOut) { Get-Content $smokeOut -ErrorAction SilentlyContinue }
-            Write-Host '--- demo-server stderr ---'
-            if (Test-Path $smokeErr) { Get-Content $smokeErr -ErrorAction SilentlyContinue }
-            throw "demo-server smoke exited $($p.ExitCode)"
-          }
-
-          $junk = @('*.obj','*.pdb','*.res','*.ilk','moc_*.cpp','moc_predefs.h','qrc_*.cpp')
-          Get-ChildItem 'build\release' -File | Where-Object {
-            foreach ($pat in $junk) { if ($_.Name -like $pat) { return $true } }
-            $false
-          } | Remove-Item -Force
-          $files = Get-ChildItem 'build\release' -Recurse -File
-          $mb = [math]::Round((($files | Measure-Object Length -Sum).Sum) / 1MB, 2)
-          Write-Host "Portable tree: $($files.Count) files, $mb MB"

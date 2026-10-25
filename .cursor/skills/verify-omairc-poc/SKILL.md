@@ -1,20 +1,23 @@
 ---
 name: verify-omairc-poc
-description: Drive the Omairc Rust GPUI PoC as a user would (isolated Xvfb + compiled binary). Use when proving the seeded demo shell, window title, conversation switching, Status console, composer, or keyboard chords against poc/target/debug/omairc.
+description: Drive the Omairc Rust GPUI product client as a user would (isolated Xvfb + compiled binary). Use when proving the seeded demo shell, window title, conversation switching, Status console, composer, or keyboard chords against client/target/*/omairc.
 metadata:
   internal: true
 ---
 
-# Verify Omairc PoC (GPUI)
+# Verify Omairc desktop (Rust GPUI)
 
-The Rust PoC is a GPUI desktop app in `poc/`. `--demo-server` seeds the same
-two-network demo world as Qt. This skill drives the compiled
-`poc/target/debug/omairc` window under an isolated X server with
-`xdotool`, the same way `control-omairc` drives Qt. The shared feature map
-`.cursor/skills/verify-omairc/features/*.md` is the contract. Do not point
-`control-omairc` at the PoC binary, and do not invent a new control protocol.
-In-process `#[gpui::test]` input is a separate path; it does not press keys
-into a real window.
+The **product desktop client** lives in `client/`. It is a GPUI app shipped as
+the `omairc` binary (`product` is the default Cargo feature for install
+identity; `dev` uses a separate `omairc-poc` folder for local runs). This
+skill is the official black-box driver for that window, not a throwaway PoC.
+
+`--demo-server` seeds the same two-network demo world as the retired Qt client.
+Drive the compiled binary under an isolated X server with `xdotool`. The shared
+feature map `.cursor/skills/verify-omairc/features/*.md` is the contract. Do not
+point the legacy Qt `control-omairc` script at this binary, and do not invent
+a new control protocol. In-process `#[gpui::test]` input is a separate path; it
+does not press keys into a real window.
 
 ## Launch
 
@@ -37,9 +40,12 @@ recipe or an agent drive. That flag is only for a human who wants to watch.
 
 This launch:
 
-- runs `cargo build` in `poc/` (default debug). Set `OMAIRC_POC_PROFILE=release`
-  and optionally `OMAIRC_POC_FEATURES=product` (as `bin/test-desktop` does) for
-  the packager binary under `poc/target/release/omairc`
+- runs `cargo build` in `client/` (debug profile by default). Set
+  `OMAIRC_POC_PROFILE=release` and optionally `OMAIRC_POC_FEATURES=product`
+  (as `bin/test-desktop` does) for the packager binary under
+  `client/target/release/omairc`. Default Cargo features already include
+  `product`; pass `--features dev` only when you intentionally need the
+  `omairc-poc` home folder.
 - picks the next free X display from `:110`
 - uses a disposable `XDG_*` tree so window geometry is the default 1180×760
 - points `DBUS_SESSION_BUS_ADDRESS` at a missing socket
@@ -60,7 +66,7 @@ session `$DISPLAY`.
 
 When *you* want to see the driven window on your desktop, launch with
 `--visible`. That starts **Xephyr** (a nested X server) as a normal window
-on your session; the PoC and `xdotool` still talk only to that nested
+on your session; the client and `xdotool` still talk only to that nested
 display. Control verbs are unchanged.
 
 ```sh
@@ -71,7 +77,7 @@ display. Control verbs are unchanged.
 Needs `xorg-server-xephyr` and a host `DISPLAY` (XWayland on Omarchy).
 On Hyprland the host window is floated and centered under the reserved
 top bar at 1600×1000 logical pixels. The nested framebuffer matches the
-physical size (logical × host scale), the PoC is launched with matching
+physical size (logical × host scale), the client is launched with matching
 `--scale`, and its window is resized to fill Xephyr so fonts stay
 readable on HiDPI.
 `doctor` reports `visible=yes` and `xserver=Xephyr`. Cleanup closes the
@@ -94,7 +100,7 @@ Keep `test-artifacts/verify-poc/`.
 Require all of:
 
 - `ok isolated Omairc PoC`
-- `binary=` is `$ROOT/poc/target/debug/omairc` (or `release`)
+- `binary=` is `$ROOT/client/target/debug/omairc` (or `release`)
 - `display=` is the nested X server from launch, not the user's session
 - `app_pid=` and `xserver_pid=` are alive
 - `xserver=` is `Xvfb` (default) or `Xephyr` (`--visible`)
@@ -119,7 +125,7 @@ composer first. Pointer verbs use an XTEST/XI2 click path (below).
 Agents should `launch` (if needed) then `run <feature>` instead of assembling
 raw `key --key` chords. `run <feature>` plays the same
 `## Driving it with control-omairc` / `desktop-recipe` fence in
-`.cursor/skills/verify-omairc/features/<feature>.md` that Qt and the TUI use.
+`.cursor/skills/verify-omairc/features/<feature>.md` that the TUI uses.
 `run <feature> --dry-run` prints the fence and exits without launching.
 `bin/verify-poc-recipes` runs every feature with a `desktop-recipe` fence
 under Xvfb + lavapipe and keeps evidence in `test-artifacts/verify-poc/`.
@@ -146,8 +152,8 @@ Named chord verbs wrap the same keysym path as `key` (including the
 | `composer` / `focus-composer` | `Ctrl+L`, then wait before a later `type`. |
 | `send --text "..."` | Focus the composer, type, `Enter`. |
 
-Chords without a named verb still use `key --key` (same map as
-`control-omairc`: `ctrl+shift+s`, `ctrl+w`, `ctrl+slash`,
+Chords without a named verb still use `key --key` (same map as the retired Qt
+driver: `ctrl+shift+s`, `ctrl+w`, `ctrl+slash`,
 `ctrl+shift+slash` for About, network walk / collapse, paging, Tab,
 history, `ctrl+q`, …).
 
@@ -164,11 +170,9 @@ Pointer verbs instead:
 3. `xdotool click --window 0 1` (XTEST button events delivered as XI2)
 
 Named pixel clicks assume the isolated 1180×760 window at textScale 1.0
-(same coordinates as `control-omairc`). Prefer chord verbs when a recipe
+(same coordinates as the retired Qt driver). Prefer chord verbs when a recipe
 has one. Escape hatch for About is `key --key ctrl+shift+slash`; for SEND,
 `send --text` / Enter.
-
-`qml-suite` and `doctor-qml` are Qt-only and are rejected.
 
 Typical drive:
 
@@ -182,7 +186,7 @@ Typical drive:
 Proof lives in `test-artifacts/verify-poc/<feature-id>/`. Cleanup must not
 delete it.
 
-Standards match `verify-omairc`: exercise the real window with shortcuts and
+Standards match the feature map: exercise the real window with shortcuts and
 the composer; capture action and result; window title is conversation
 identity; `compare` requires a visible pixel change (AE > 100).
 

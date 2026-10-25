@@ -59,7 +59,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -79,58 +79,24 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: poc
-          key: linux-rust-${{ hashFiles('poc/Cargo.lock') }}
+          workspaces: client
+          key: linux-rust-${{ hashFiles('client/Cargo.lock') }}
 
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential python3 python3-venv \
-            cmake ninja-build pkg-config libsecret-1-dev \
-            libgl1-mesa-dev libegl1-mesa-dev libdbus-1-dev \
+            build-essential python3 \
+            pkg-config libsecret-1-dev \
             libfontconfig1 libxkbcommon0 libxkbcommon-x11-0 \
-            libxkbcommon-dev libxkbcommon-x11-dev libdbus-1-3 \
+            libxkbcommon-dev libxkbcommon-x11-dev libdbus-1-3 libdbus-1-dev \
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
             libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-util1 \
             libxcb-glx0 libxcb-shm0 libxcb-sync1 libxcb-xfixes0 libx11-xcb1
 
-      # Fail fast on the Rust client before the Qt install. bin/test below still
-      # runs plain `cargo test` (default features); product features and clippy
-      # are the M1 extras that only this job owns.
-      # -D warnings catches unused_imports (the Windows break class). Style and
-      # complexity groups are pre-existing noise; allow them until a cleanup
-      # slice. correctness and suspicious stay denied.
-      - name: Clippy
-        working-directory: poc
-        run: >
-          cargo clippy --locked --all-targets --features product --
-          -D warnings
-          -A clippy::style
-          -A clippy::complexity
-          -A clippy::pedantic
-          -A clippy::nursery
-          -A clippy::perf
-
-      - name: Cargo test with product features
-        working-directory: poc
-        run: cargo test --locked --features product
-
-      - name: Install Qt 6
-        run: |
-          python3 -m venv "$RUNNER_TEMP/aqt"
-          "$RUNNER_TEMP/aqt/bin/pip" install aqtinstall
-          "$RUNNER_TEMP/aqt/bin/aqt" install-qt linux desktop 6.8.3 linux_gcc_64 -O "$HOME/Qt"
-          echo "$HOME/Qt/6.8.3/gcc_64/bin" >> "$GITHUB_PATH"
-          {
-            echo "LD_LIBRARY_PATH=$HOME/Qt/6.8.3/gcc_64/lib:${LD_LIBRARY_PATH:-}"
-            echo "QT_PLUGIN_PATH=$HOME/Qt/6.8.3/gcc_64/plugins"
-            echo "QML2_IMPORT_PATH=$HOME/Qt/6.8.3/gcc_64/qml"
-          } >> "$GITHUB_ENV"
-
-      - name: Install QtKeychain
-        run: bin/install-qtkeychain "$HOME/Qt/6.8.3/gcc_64"
-
+      # bin/test runs conventions, cargo test + clippy, version/help smoke, and
+      # the TUI gate. -D warnings catches unused_imports. Style and complexity
+      # groups stay allowed until a cleanup slice.
       - name: Run bin/test
         run: bin/test
 
@@ -140,26 +106,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: client
+          key: linux-san-${{ hashFiles('client/Cargo.lock') }}
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential python3 python3-venv \
-            cmake ninja-build pkg-config libsecret-1-dev \
-            libgl1-mesa-dev libdbus-1-dev
+            build-essential pkg-config libsecret-1-dev \
+            libfontconfig1 libxkbcommon0 libxkbcommon-x11-0 \
+            libxkbcommon-dev libxkbcommon-x11-dev libdbus-1-dev \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
+            libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-util1 \
+            libxcb-glx0 libxcb-shm0 libxcb-sync1 libxcb-xfixes0 libx11-xcb1
 
-      - name: Install Qt 6
-        run: |
-          python3 -m venv "$RUNNER_TEMP/aqt"
-          "$RUNNER_TEMP/aqt/bin/pip" install aqtinstall
-          "$RUNNER_TEMP/aqt/bin/aqt" install-qt linux desktop 6.8.3 linux_gcc_64 -O "$HOME/Qt"
-          echo "$HOME/Qt/6.8.3/gcc_64/bin" >> "$GITHUB_PATH"
-          echo "LD_LIBRARY_PATH=$HOME/Qt/6.8.3/gcc_64/lib:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
-
-      - name: Install QtKeychain
-        run: bin/install-qtkeychain "$HOME/Qt/6.8.3/gcc_64"
-
-      - name: Build protocol_tests with ASan and UBSan
+      - name: Run bin/test-san
         run: bin/test-san
 
   live:
@@ -172,10 +139,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential python3 python3-venv \
-            libgl1-mesa-dev libegl1-mesa-dev libdbus-1-dev \
+            build-essential python3 \
             libfontconfig1 libxkbcommon0 libxkbcommon-x11-0 \
-            libxkbcommon-dev libxkbcommon-x11-dev libdbus-1-3 \
+            libxkbcommon-dev libxkbcommon-x11-dev libdbus-1-3 libdbus-1-dev \
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
             libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-util1 \
             libxcb-glx0 libxcb-shm0 libxcb-sync1 libxcb-xfixes0 libx11-xcb1 \
@@ -185,32 +151,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: poc -> target
-
-      - name: Install Qt 6 with Quick
-        run: |
-          python3 -m venv "$RUNNER_TEMP/aqt"
-          "$RUNNER_TEMP/aqt/bin/pip" install aqtinstall
-          "$RUNNER_TEMP/aqt/bin/aqt" install-qt linux desktop 6.8.3 linux_gcc_64 -O "$HOME/Qt"
-          echo "$HOME/Qt/6.8.3/gcc_64/bin" >> "$GITHUB_PATH"
-          {
-            echo "LD_LIBRARY_PATH=$HOME/Qt/6.8.3/gcc_64/lib:${LD_LIBRARY_PATH:-}"
-            echo "QT_PLUGIN_PATH=$HOME/Qt/6.8.3/gcc_64/plugins"
-            echo "QML2_IMPORT_PATH=$HOME/Qt/6.8.3/gcc_64/qml"
-          } >> "$GITHUB_ENV"
+          workspaces: client -> target
 
       - name: Run bin/test-live
         env:
           OMAIRC_LIVE_PROFILE: l1
         run: bin/test-live
-
-      - name: Upload live UI artifacts
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: live-ui
-          path: test-artifacts/live-ui/
-          if-no-files-found: ignore
 
   # Feature-map recipes against the Rust client (Xvfb + lavapipe). Non-blocking
   # until the XI2 click path and recipe set are stable enough to gate merges.
@@ -227,8 +173,8 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: poc
-          key: linux-verify-poc-${{ hashFiles('poc/Cargo.lock') }}
+          workspaces: client
+          key: linux-verify-poc-${{ hashFiles('client/Cargo.lock') }}
 
       - name: Install desktop and lavapipe dependencies
         run: |

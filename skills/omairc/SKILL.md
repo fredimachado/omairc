@@ -34,9 +34,11 @@ the same text). If present, stop; if absent, send once.
 
 ## Binary
 
-Use `omairc` from `PATH`. In this source tree, `./build/omairc` after
-`bin/build` on Linux and Windows. On macOS, qmake builds an app bundle:
-`./build/omairc.app/Contents/MacOS/omairc`. Do not speak the local socket
+Use `omairc` from `PATH`. In this source tree, build the Rust client in
+`client/` (`cargo build --release --locked`, default `product` features) and
+run `client/target/release/omairc`. On Windows, `bin\build-rust.bat` stages
+`build\release\omairc.exe`. On macOS, `bin/build-macos-rust` produces
+`build/omairc.app/Contents/MacOS/omairc`. Do not speak the local socket
 yourself.
 
 Before inventing flags, run `omairc --help` and `omairc <command> --help`.
@@ -114,10 +116,10 @@ on this machine share one cursor per network, or per network and target.
 
 ## Local socket and secrets
 
-The running window listens on a filesystem socket named `omairc.sock` under
-Qt `RuntimeLocation` (on macOS this is usually under `$TMPDIR`, not your
-home directory). Network passwords use the platform secret store (Keychain
-on macOS, libsecret on Linux, Credential Manager on Windows).
+The running window listens on a local endpoint named for the install identity
+(`omairc` for product builds): a filesystem socket on Linux and macOS, a named
+pipe on Windows. Network passwords use the platform secret store (Keychain on
+macOS, libsecret on Linux, Credential Manager on Windows).
 
 ## Do not
 

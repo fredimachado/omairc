@@ -36,7 +36,7 @@ NESTED_HEIGHT=1000
 # Logical size of the Xephyr window on the desktop (Hyprland layout px).
 VISIBLE_LOGICAL_WIDTH=1600
 VISIBLE_LOGICAL_HEIGHT=1000
-VISIBLE_TITLE="Omairc PoC verify"
+VISIBLE_TITLE="Omairc verify"
 
 usage() {
   cat <<'EOF'
@@ -394,9 +394,9 @@ cmd_launch() {
   if [ -n "$POC_FEATURES" ]; then
     set -- "$@" --features "$POC_FEATURES"
   fi
-  (cd "$ROOT/poc" && cargo "$@")
+  (cd "$ROOT/client" && cargo "$@")
   STATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/omairc-verify-poc.XXXXXX")"
-  BINARY="$ROOT/poc/target/$POC_PROFILE/omairc"
+  BINARY="$ROOT/client/target/$POC_PROFILE/omairc"
   [ -x "$BINARY" ] || die "missing $BINARY after cargo build ($POC_PROFILE)"
 
   display_number=110
@@ -532,7 +532,7 @@ cmd_doctor() {
     *) die "unexpected window title '$title'" ;;
   esac
   case $BINARY in
-    */poc/target/debug/omairc|*/poc/target/release/omairc) ;;
+    */client/target/debug/omairc|*/client/target/release/omairc) ;;
     *) die "binary is not the desktop binary: $BINARY" ;;
   esac
   require_lavapipe

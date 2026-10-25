@@ -28,7 +28,7 @@
 ; Stamp the Start Menu shortcut so Windows can deliver a toast and route a
 ; click back to the app. Keep these in sync with kAumid /
 ; kActivatorClsidText in src/windowsnotifications.cpp and AUMID /
-; ACTIVATOR_CLSID in poc/src/desktop/notifier/windows.rs. Inno expects the
+; ACTIVATOR_CLSID in client/src/desktop/notifier/windows.rs. Inno expects the
 ; CLSID without braces.
 #define MyAppUserModelID "FrediMachado.Omairc"
 #define MyAppToastActivatorCLSID "DBE38477-5F87-42A1-AFA1-11FA12F2E5E5"

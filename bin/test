@@ -1,4 +1,6 @@
 #!/usr/bin/env sh
+# Default gate for the Rust desktop client and the TUI.
+# Conventions, cargo test + clippy, version/help smoke, and tui/bin/test.
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
@@ -12,68 +14,42 @@ if command -v go >/dev/null 2>&1; then
 else
   echo "Skipping tui/bin/test: go is not on PATH." >&2
 fi
-# poc/ cargo test links libxkbcommon; Linux CI installs libxkbcommon-dev.
-# --locked matches the Windows/macOS rust jobs. Product-feature coverage and
-# clippy live in .github/workflows/test.yml so a local bin/test stays one suite.
-if command -v cargo >/dev/null 2>&1; then
-  (cd "$ROOT/poc" && cargo test --locked)
-else
-  echo "Skipping poc cargo test: cargo is not on PATH." >&2
-fi
-python3 -m unittest -v tests.test_derive_build_versions tests.test_omarchy_qt_binary
-TEST_STATE="$(mktemp -d "${TMPDIR:-/tmp}/omairc-tests.XXXXXX")"
-STALE_VERSION_HEADER="$ROOT/omaircversion.h"
-STALE_VERSION_BACKUP=""
-if [ -f "$STALE_VERSION_HEADER" ]; then
-  STALE_VERSION_BACKUP="$TEST_STATE/omaircversion.h.saved"
-  cp -- "$STALE_VERSION_HEADER" "$STALE_VERSION_BACKUP"
-fi
 
-cleanup() {
-  if [ -n "$STALE_VERSION_BACKUP" ]; then
-    mv -- "$STALE_VERSION_BACKUP" "$STALE_VERSION_HEADER"
-  else
-    rm -f -- "$STALE_VERSION_HEADER"
-  fi
-  rm -rf -- "$TEST_STATE"
-}
-trap cleanup EXIT HUP INT TERM
-
-# An in-source build, such as Arch makepkg, leaves this header next to the
-# .pro file. Shadow builds must still compile the copy written for OUT_PWD.
-cat > "$STALE_VERSION_HEADER" << 'EOF'
-#ifndef OMAIRC_VERSION_H
-#define OMAIRC_VERSION_H
-#define OMAIRC_VERSION "stale-insource"
-#endif
-EOF
-
-if command -v qmake6 >/dev/null 2>&1; then
-  QMAKE=qmake6
-elif command -v qmake >/dev/null 2>&1 && qmake -query QT_VERSION | grep -q '^6\.'; then
-  QMAKE=qmake
-else
-  echo "A Qt 6 qmake (qmake6) is required to test omairc." >&2
+command -v cargo >/dev/null 2>&1 || {
+  echo "cargo is required to test omairc." >&2
   exit 1
-fi
-
-JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)"
-
-omairc_binary() {
-  if [ -x "$ROOT/build/omairc" ]; then
-    printf '%s\n' "$ROOT/build/omairc"
-  elif [ -x "$ROOT/build/omairc.app/Contents/MacOS/omairc" ]; then
-    printf '%s\n' "$ROOT/build/omairc.app/Contents/MacOS/omairc"
-  else
-    echo "Could not find omairc binary under $ROOT/build." >&2
-    exit 1
-  fi
 }
 
-"$ROOT/bin/build"
-OMAIRC_BIN="$(omairc_binary)"
+# Default features include product. Clippy matches CI: deny warnings, allow the
+# noisy style/complexity groups until a cleanup slice.
+(
+  cd "$ROOT/client"
+  cargo test --locked
+  cargo clippy --locked --all-targets --
+    -D warnings \
+    -A clippy::style \
+    -A clippy::complexity \
+    -A clippy::pedantic \
+    -A clippy::nursery \
+    -A clippy::perf
+  # Side-by-side omairc-poc identity still compiles and its cfg(dev) tests run.
+  cargo test --locked --features dev
+)
+
+python3 -m unittest -v tests.test_derive_build_versions
 
 VERSION="$("$ROOT/bin/version")"
+export OMAIRC_BUILD_VERSION="$VERSION"
+(
+  cd "$ROOT/client"
+  cargo build --locked
+)
+OMAIRC_BIN="$ROOT/client/target/debug/omairc"
+test -x "$OMAIRC_BIN" || {
+  echo "missing $OMAIRC_BIN after cargo build" >&2
+  exit 1
+}
+
 got="$(DISPLAY= "$OMAIRC_BIN" --version)"
 test "$got" = "omairc $VERSION" || {
   echo "--version must print exactly omairc $VERSION" >&2
@@ -81,41 +57,24 @@ test "$got" = "omairc $VERSION" || {
   exit 1
 }
 
-BUILD_OVERRIDE_DIR="$ROOT/build-version-override"
-rm -rf "$BUILD_OVERRIDE_DIR"
-mkdir -p "$BUILD_OVERRIDE_DIR"
 OVERRIDE_VERSION="${VERSION}+main.gdeadbeef"
-cd "$BUILD_OVERRIDE_DIR"
-"$QMAKE" "OMAIRC_BUILD_VERSION=$OVERRIDE_VERSION" "$ROOT/omairc.pro"
-make -j"$JOBS"
-OVERRIDE_BIN="$BUILD_OVERRIDE_DIR/omairc"
-if [ ! -x "$OVERRIDE_BIN" ]; then
-  OVERRIDE_BIN="$BUILD_OVERRIDE_DIR/omairc.app/Contents/MacOS/omairc"
-fi
-HEADER="$BUILD_OVERRIDE_DIR/omaircversion.h"
-test -f "$HEADER" || {
-  echo "expected generated header at $HEADER" >&2
-  exit 1
-}
-grep -Fq "\"$OVERRIDE_VERSION\"" "$HEADER" || {
-  echo "omaircversion.h must embed OMAIRC_BUILD_VERSION" >&2
-  exit 1
-}
-override_got="$(DISPLAY= "$OVERRIDE_BIN" --version)"
+export OMAIRC_BUILD_VERSION="$OVERRIDE_VERSION"
+(
+  cd "$ROOT/client"
+  cargo build --locked
+)
+override_got="$(DISPLAY= "$OMAIRC_BIN" --version)"
 test "$override_got" = "omairc $OVERRIDE_VERSION" || {
   echo "OMAIRC_BUILD_VERSION must appear in omairc --version" >&2
   printf 'got: %s\n' "$override_got" >&2
   exit 1
 }
-HEADER_MTIME="$(stat -c %Y "$HEADER" 2>/dev/null || stat -f %m "$HEADER")"
-sleep 1
-make -j"$JOBS" omairc
-HEADER_MTIME_AFTER="$(stat -c %Y "$HEADER" 2>/dev/null || stat -f %m "$HEADER")"
-test "$HEADER_MTIME" = "$HEADER_MTIME_AFTER" || {
-  echo "unchanged OMAIRC_BUILD_VERSION must not rewrite omaircversion.h" >&2
-  exit 1
-}
-cd "$ROOT"
+# Restore the clean bake for any follow-on local use of this tree.
+export OMAIRC_BUILD_VERSION="$VERSION"
+(
+  cd "$ROOT/client"
+  cargo build --locked
+) >/dev/null
 
 assert_not_version_line() {
   first_line=$(printf '%s\n' "$1" | head -n 1)
@@ -251,106 +210,4 @@ if [ "$CLI_STATUS" -eq 0 ]; then
   exit 1
 fi
 
-mkdir -p "$ROOT/build-tests"
-cd "$ROOT/build-tests"
-"$QMAKE" "$ROOT/tests/tests.pro"
-make -j"$JOBS"
-if [ "$(uname -s)" = Darwin ]; then
-  # SecureTransport otherwise imports the loopback TLS key into the login keychain.
-  export QT_SSL_USE_TEMPORARY_KEYCHAIN=1
-fi
-./protocol_tests
-
-mkdir -p "$ROOT/build-seeded-qml-tests"
-cd "$ROOT/build-seeded-qml-tests"
-"$QMAKE" "$ROOT/tests/ui/seeded-qml.pro"
-make -j"$JOBS"
-
-mkdir -p "$ROOT/test-artifacts"
-SCREENSHOTS="switch-channel send-message toggle-members open-direct-message"
-for screenshot in $SCREENSHOTS; do
-  rm -f -- "$ROOT/test-artifacts/$screenshot.png"
-done
-
-cd "$ROOT"
-XDG_CONFIG_HOME="$TEST_STATE/config" \
-XDG_CACHE_HOME="$TEST_STATE/cache" \
-XDG_DATA_HOME="$TEST_STATE/data" \
-XDG_STATE_HOME="$TEST_STATE/state" \
-QT_QPA_PLATFORM=offscreen \
-QT_QPA_PLATFORMTHEME= \
-QT_QUICK_BACKEND=software \
-"$ROOT/build-seeded-qml-tests/seeded_qml_tests" -input "$ROOT/tests/ui/tst_omairc.qml"
-
-cd "$ROOT"
-XDG_CONFIG_HOME="$TEST_STATE/config" \
-XDG_CACHE_HOME="$TEST_STATE/cache" \
-XDG_DATA_HOME="$TEST_STATE/data" \
-XDG_STATE_HOME="$TEST_STATE/state" \
-QT_QPA_PLATFORM=offscreen \
-QT_QPA_PLATFORMTHEME= \
-QT_QUICK_BACKEND=software \
-"$ROOT/build-seeded-qml-tests/seeded_qml_tests" -input "$ROOT/tests/ui/tst_seeded_window.qml"
-
-cd "$ROOT"
-XDG_CONFIG_HOME="$TEST_STATE/config" \
-XDG_CACHE_HOME="$TEST_STATE/cache" \
-XDG_DATA_HOME="$TEST_STATE/data" \
-XDG_STATE_HOME="$TEST_STATE/state" \
-QT_QPA_PLATFORM=offscreen \
-QT_QPA_PLATFORMTHEME= \
-QT_QUICK_BACKEND=software \
-"$ROOT/build-seeded-qml-tests/seeded_qml_tests" -input "$ROOT/tests/ui/tst_seeded_profiles.qml"
-
-mkdir -p "$ROOT/build-live-ui-tests"
-cd "$ROOT/build-live-ui-tests"
-"$QMAKE" "$ROOT/tests/live-ui/live-ui.pro"
-make -j"$JOBS"
-
-mkdir -p "$ROOT/test-artifacts/live-ui"
-rm -f -- "$ROOT/test-artifacts/live-ui/live-ui-grouped-messages.png"
-rm -f -- "$ROOT/test-artifacts/live-ui/live-ui-replay-history.png"
-rm -f -- "$ROOT/test-artifacts/live-ui/live-ui-bouncer-direct.png"
-rm -f -- "$ROOT/test-artifacts/live-ui/live-ui-find.png"
-rm -f -- "$ROOT/test-artifacts/live-ui/live-ui-seeded-demo-world.png"
-for screenshot in $SCREENSHOTS; do
-  rm -f -- "$ROOT/test-artifacts/$screenshot.png"
-done
-
-cd "$ROOT"
-XDG_CONFIG_HOME="$TEST_STATE/config" \
-XDG_CACHE_HOME="$TEST_STATE/cache" \
-XDG_DATA_HOME="$TEST_STATE/data" \
-QT_QPA_PLATFORM=offscreen \
-QT_QPA_PLATFORMTHEME= \
-QT_QUICK_BACKEND=software \
-OMAIRC_LIVE_UI_ARTIFACTS="$ROOT/test-artifacts/live-ui" \
-OMAIRC_UI_ARTIFACTS="$ROOT/test-artifacts" \
-"$ROOT/build-live-ui-tests/live_ui_tests" consecutiveSameAuthorMinuteGroupsThroughIrcEvent memberJoinPartModeUpdatesWithoutReset replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent bouncerQueryReplayRendersDirectMessageInSidebar ctrlFFindsLiveTranscriptAndStatus seededIrcFixtureFurnishesDemoWorld selfAwayShowsOnEveryChannelRow directMessagePresenceFollowsAwayAndOffline
-
-if [ ! -s "$ROOT/test-artifacts/live-ui/live-ui-grouped-messages.png" ]; then
-  echo "live_ui_tests did not create test-artifacts/live-ui/live-ui-grouped-messages.png." >&2
-  exit 1
-fi
-if [ ! -s "$ROOT/test-artifacts/live-ui/live-ui-replay-history.png" ]; then
-  echo "live_ui_tests did not create test-artifacts/live-ui/live-ui-replay-history.png." >&2
-  exit 1
-fi
-if [ ! -s "$ROOT/test-artifacts/live-ui/live-ui-bouncer-direct.png" ]; then
-  echo "live_ui_tests did not create test-artifacts/live-ui/live-ui-bouncer-direct.png." >&2
-  exit 1
-fi
-if [ ! -s "$ROOT/test-artifacts/live-ui/live-ui-find.png" ]; then
-  echo "live_ui_tests did not create test-artifacts/live-ui/live-ui-find.png." >&2
-  exit 1
-fi
-if [ ! -s "$ROOT/test-artifacts/live-ui/live-ui-seeded-demo-world.png" ]; then
-  echo "live_ui_tests did not create test-artifacts/live-ui/live-ui-seeded-demo-world.png." >&2
-  exit 1
-fi
-for screenshot in $SCREENSHOTS; do
-  if [ ! -s "$ROOT/test-artifacts/$screenshot.png" ]; then
-    echo "live_ui_tests did not create test-artifacts/$screenshot.png." >&2
-    exit 1
-  fi
-done
+echo "bin/test: ok"

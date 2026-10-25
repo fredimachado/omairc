@@ -1,6 +1,6 @@
 ---
 name: Rust client cutover gaps
-overview: "Close every gap between the Qt client and the Rust GPUI client (poc/) so Qt can be removed: window-state behavior, settings and credential migration, Windows and macOS build/packaging/CI, test layers, and the repository's Qt-centric gates and docs. Work lands as small slices off main, one PR each, in the order below."
+overview: "Close every gap between the Qt client and the Rust GPUI client (client/) so Qt can be removed: window-state behavior, settings and credential migration, Windows and macOS build/packaging/CI, test layers, and the repository's Qt-centric gates and docs. Work lands as small slices off main, one PR each, in the order below."
 todos:
   - id: m0-migration-fixes
     content: "M0 (done in this branch, needs Linux proof): Linux keyring reads QtKeychain items; Windows registry import merges into the TUI INI with a one-time marker; QStringList @Variant and @@ decoding"
@@ -31,10 +31,10 @@ todos:
     status: completed
   - id: m8-smaller
     content: "M8: dark-mode portal check on Linux, RTL visual proof, accessibility tracking"
-    status: pending
+    status: completed
   - id: m9-cutover
-    content: "M9: rename poc/ to the product crate, retarget gates/docs/AGENTS.md, delete Qt"
-    status: pending
+    content: "M9: rename poc/ to client/, retarget gates/docs/AGENTS.md, delete Qt"
+    status: completed
 isProject: false
 ---
 
@@ -87,16 +87,16 @@ Problems found and fixed in M0:
 
 ### Changes (this branch)
 
-- `poc/src/storage/credentialstore/secretattrs.rs` (new, compiles on every
+- `client/src/storage/credentialstore/secretattrs.rs` (new, compiles on every
   platform so its tests run everywhere): the two attribute sets, the written
   set (both sets + `type=plaintext` + `xdg:schema=org.qt.keychain`), and base64
   decoding for QtKeychain binary-mode items.
-- `poc/src/storage/credentialstore/linux.rs`:
+- `client/src/storage/credentialstore/linux.rs`:
   - read searches both sets and prefers the dual-set item;
   - write creates one dual-set item (readable by Qt after a rollback and by
     the TUI), then deletes older single-set copies so none is read stale;
   - delete removes both sets.
-- `poc/src/storage/registryimport.rs`:
+- `client/src/storage/registryimport.rs`:
   - import runs until the INI holds `migration/qtRegistryImported=true`, not
     only when the INI is missing;
   - it merges: a key the INI holds wins; a string list the INI holds keeps
@@ -106,7 +106,7 @@ Problems found and fixed in M0:
     `sync`);
   - `@@` list items and `@Variant` `QStringList` values decode as Qt reads
     them.
-- `poc/src/model/theme.rs`: the symlink test is `#[cfg(unix)]`, so `cargo test`
+- `client/src/model/theme.rs`: the symlink test is `#[cfg(unix)]`, so `cargo test`
   compiles on Windows. The full suite (2,189 unit tests plus the gates) passes
   on Windows with `--features product` storage tests included.
 
@@ -160,9 +160,9 @@ About 3k lines of Windows-only code and the macOS code never compiled in CI.
 - `test.yml`: `cargo test --locked --features product`, clippy with
   `-D warnings` (style/complexity/pedantic/nursery/perf allowed until a cleanup
   slice; unused_imports and correctness stay denied), `Swatinem/rust-cache`.
-- `poc/tests/os_cfg_hygiene.rs`: no `std::os::unix` / `std::os::windows` outside
+- `client/tests/os_cfg_hygiene.rs`: no `std::os::unix` / `std::os::windows` outside
   a matching cfg (or a `windows.rs` / `linux.rs` / `macos.rs` module file).
-- Path filters include `poc/**`, `version.pri`, and the workflow files.
+- Path filters include `client/**`, `version.pri`, and the workflow files.
 
 ## M2 — Minimized and hidden window counts as away
 
@@ -180,9 +180,9 @@ feature-map Gotchas note the minimize rule and the Wayland/Hyprland limit.
 - `bin\build-rust.bat` (or extend `bin\build.bat` with `OMAIRC_CLIENT=rust`):
   locate `vcvars64.bat` the same way, run
   `cargo build --release --locked --features product`, stage
-  `poc\target\release\omairc.exe` plus `LICENSE`, `OFL.txt`, `COPYING-LGPL`
+  `client\target\release\omairc.exe` plus `LICENSE`, `OFL.txt`, `COPYING-LGPL`
   into `build\release`.
-- C runtime: add `poc/.cargo/config.toml` with
+- C runtime: add `client/.cargo/config.toml` with
   `[target.x86_64-pc-windows-msvc] rustflags = ["-C", "target-feature=+crt-static"]`
   so the exe needs no `vcruntime140.dll`. Verify with `dumpbin /dependents`
   in CI; fail if `VCRUNTIME` or `MSVCP` appears.
@@ -236,13 +236,13 @@ interoperability with Ergo, Solanum, and ngIRCd. The Rust suite reuses the same
 compose/certs/env and drives the controller through the real `net` transport
 (no GPUI).
 
-- Library surface: `poc/src/lib.rs` (binary calls `omairc::run()`),
+- Library surface: `client/src/lib.rs` (binary calls `omairc::run()`),
   `NetOptions` / `client_config_trusting_pem` for `live.pem`,
   `Controller::connect_session` / `set_transcript_root`, session received-log
   and `force_transport_shutdown`.
-- Harness: `poc/src/live/` reads `OMAIRC_LIVE_*` the same way as Qt
+- Harness: `client/src/live/` reads `OMAIRC_LIVE_*` the same way as Qt
   `liveharness`.
-- Cases: `poc/tests/live/` (20 `#[ignore]`d tests) covering register plain/TLS,
+- Cases: `client/tests/live/` (20 `#[ignore]`d tests) covering register plain/TLS,
   capability flags, ISUPPORT, classic traffic, nick in use / length, WHO
   snapshot, peer away/typing/metadata, chat history on join, SASL PLAIN,
   conversation invention matrix, folded nick collision, ASCII DM restore,
@@ -276,7 +276,7 @@ in `ui/`, not `model/`:
 - Pointer (wave 2 - real hits through the view, not shell-API stubs):
   `messageBodyClickOpensHttpsUrl`, `openDirectMessageFromTranscriptNick`,
   `droppedFileUploadsAndInsertsTheLink`, middle-click close.
-- Harness: one `poc/src/ui/tests/fixture.rs` that builds the shell over the
+- Harness: one `client/src/ui/tests/fixture.rs` that builds the shell over the
   seeded demo controller in a `TestAppContext` with a fixed window size, plus
   helpers for key chords, clicks at element bounds, and reading
   `ListState` offsets. Keep each file under the 800-line gate.
@@ -301,7 +301,7 @@ in `ui/`, not `model/`:
 - **Dark mode on Linux:** Done (document). GPUI already watches portal
   `color-scheme` via ashpd; app follows `observe_window_appearance`. No
   second subscription next to `textscale.rs`. Hyprland flip not proven on
-  Windows / CI Xvfb (no session bus); host check noted in `poc/NOTES.md`.
+  Windows / CI Xvfb (no session bus); host check noted in `client/NOTES.md`.
 - **RTL:** Done. Spike closed; lavapipe in CI verify-poc; no upstream issue
   (optional screenshot recipe kept in NOTES).
 - **Accessibility:** Done. NOTES list kept; Unreleased CHANGELOG draft +
@@ -313,7 +313,7 @@ in `ui/`, not `model/`:
 
 ## M9 — Cutover
 
-1. Rename `poc/` to the product crate (`client/` or the repo root). Make
+1. Rename `client/` to the product crate (`client/` or the repo root). Make
    `product` the default feature, and add a `dev` feature for the separate
    `omairc-poc` folder. Set the crate version from `version.pri` in
    `build.rs` (already exported) and assert it in a test.

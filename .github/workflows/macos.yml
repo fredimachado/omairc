@@ -5,21 +5,16 @@ on:
   pull_request:
     paths:
       - '.github/workflows/macos.yml'
-      - 'bin/build-macos'
       - 'bin/build-macos-rust'
       - 'bin/derive-build-versions.py'
-      - 'bin/gen-omaircversion-h.py'
       - 'bin/package-macos'
       - 'bin/sign-macos'
       - 'bin/notarize-macos'
       - 'bin/check-macos-bundle'
       - 'bin/check-macos-syspolicy'
       - 'packaging/macos/**'
-      - 'omairc.pro'
-      - 'qtkeychain.pri'
       - 'version.pri'
-      - 'src/**'
-      - 'poc/**'
+      - 'client/**'
       - 'fonts/**'
       - 'data/icons/**'
       - 'LICENSE'
@@ -30,21 +25,16 @@ on:
       - 'v*'
     paths:
       - '.github/workflows/macos.yml'
-      - 'bin/build-macos'
       - 'bin/build-macos-rust'
       - 'bin/derive-build-versions.py'
-      - 'bin/gen-omaircversion-h.py'
       - 'bin/package-macos'
       - 'bin/sign-macos'
       - 'bin/notarize-macos'
       - 'bin/check-macos-bundle'
       - 'bin/check-macos-syspolicy'
       - 'packaging/macos/**'
-      - 'omairc.pro'
-      - 'qtkeychain.pri'
       - 'version.pri'
-      - 'src/**'
-      - 'poc/**'
+      - 'client/**'
       - 'fonts/**'
       - 'data/icons/**'
       - 'LICENSE'
@@ -57,13 +47,10 @@ permissions:
   contents: write
 
 jobs:
-  # Split path filters so a poc-only change does not pay for the Qt toolchain.
-  # Tags and workflow_dispatch run both jobs.
   changes:
     runs-on: ubuntu-latest
     outputs:
       rust: ${{ steps.select.outputs.rust }}
-      qt: ${{ steps.select.outputs.qt }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v3
@@ -72,7 +59,7 @@ jobs:
         with:
           filters: |
             rust:
-              - 'poc/**'
+              - 'client/**'
               - 'version.pri'
               - 'fonts/**'
               - 'data/icons/**'
@@ -83,24 +70,8 @@ jobs:
               - 'bin/notarize-macos'
               - 'bin/check-macos-bundle'
               - 'bin/check-macos-syspolicy'
-              - '.github/workflows/macos.yml'
-            qt:
-              - '.github/workflows/macos.yml'
-              - 'bin/build-macos'
               - 'bin/derive-build-versions.py'
-              - 'bin/gen-omaircversion-h.py'
-              - 'bin/package-macos'
-              - 'bin/sign-macos'
-              - 'bin/notarize-macos'
-              - 'bin/check-macos-bundle'
-              - 'bin/check-macos-syspolicy'
-              - 'packaging/macos/**'
-              - 'omairc.pro'
-              - 'qtkeychain.pri'
-              - 'version.pri'
-              - 'src/**'
-              - 'fonts/**'
-              - 'data/icons/**'
+              - '.github/workflows/macos.yml'
               - 'LICENSE'
       - name: Select jobs
         id: select
@@ -108,16 +79,10 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [[ "${{ github.ref }}" == refs/tags/* ]]; then
             echo "rust=true" >> "$GITHUB_OUTPUT"
-            echo "qt=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "rust=${{ steps.filter.outputs.rust }}" >> "$GITHUB_OUTPUT"
-          echo "qt=${{ steps.filter.outputs.qt }}" >> "$GITHUB_OUTPUT"
 
-  # Rust product client. No Qt. Same runners as the Qt matrix so Apple Silicon
-  # and Intel both assemble omairc.app. On tags/dispatch this job notarizes,
-  # uploads the cask zip names, and publishes GitHub Release assets. Developer
-  # ID is optional on pull requests; v* tags fail closed without signing secrets.
   rust:
     name: Rust ${{ matrix.suffix }}
     needs: changes
@@ -128,16 +93,25 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # macos-latest is macOS 26 and no longer ships Xcode 16. macos-15
+          # ARM64 and macos-15-intel both install Xcode 16.4.
           - os: macos-15
             suffix: macos-arm64
             macho: arm64
+            xcode: "16.4"
           - os: macos-15-intel
             suffix: macos-x64
             macho: x86_64
+            xcode: "16.4"
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: ${{ matrix.xcode }}
 
       - name: Derive versions
         run: |
@@ -205,14 +179,14 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: poc
-          key: macos-rust-${{ matrix.suffix }}-${{ hashFiles('poc/Cargo.lock') }}
+          workspaces: client
+          key: macos-rust-${{ matrix.suffix }}-${{ hashFiles('client/Cargo.lock') }}
 
       # Same product clippy as Linux test.yml so platform-only unused_imports
       # cannot regress green. Style/complexity groups stay allowed until a
       # cleanup slice; correctness and suspicious stay denied.
       - name: Clippy
-        working-directory: poc
+        working-directory: client
         run: >
           cargo clippy --locked --all-targets --features product --
           -D warnings
@@ -225,11 +199,11 @@ jobs:
       # Unit tests before the staged stamp so compiled_version_is_the_version_pri_value
       # sees version.pri, not a PR display suffix.
       - name: Test
-        working-directory: poc
+        working-directory: client
         run: cargo test --locked
 
       - name: Test with product features
-        working-directory: poc
+        working-directory: client
         run: cargo test --locked --features product
 
       # Developer ID + notary credentials. Pull requests stay ad-hoc when secrets
@@ -516,418 +490,6 @@ jobs:
 
           gh release upload "$tag" "$zip" --clobber
 
-  # Qt compile + portable tests until M9 cutover. Zip upload, notarization,
-  # and GitHub Release assets ship from the rust job above.
-  macos:
-    name: macOS ${{ matrix.suffix }}
-    needs: changes
-    if: needs.changes.outputs.qt == 'true'
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # macos-latest is macOS 26 and no longer ships Xcode 16. macos-15
-          # ARM64 and macos-15-intel both install Xcode 16.4, which Qt 6.8.3
-          # targets. macos-15-intel is the last GitHub-hosted x86_64 image
-          # (through 2027).
-          - os: macos-15
-            suffix: macos-arm64
-            macho: arm64
-            xcode: "16.4"
-          - os: macos-15-intel
-            suffix: macos-x64
-            macho: x86_64
-            xcode: "16.4"
-    env:
-      QT_VERSION: 6.8.3
-      QTKEYCHAIN_VERSION: 0.15.0
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Select Xcode
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: ${{ matrix.xcode }}
-
-      - name: Derive versions
-        run: |
-          set -euo pipefail
-          python3 bin/derive-build-versions.py \
-            --git-ref "$GITHUB_REF" \
-            --sha "$GITHUB_SHA" \
-            --run-number "$GITHUB_RUN_NUMBER" \
-            --run-attempt "$GITHUB_RUN_ATTEMPT" \
-            --format github-env \
-            --github-env "$GITHUB_ENV"
-          echo "OMAIRC_BUILD_NUMBER=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
-          grep '^OMAIRC_' "$GITHUB_ENV" | tail -6
-
-      - name: Assert tag version
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          set -euo pipefail
-          tag="${GITHUB_REF_NAME#v}"
-          test "$tag" = "$OMAIRC_VERSION"
-          test "$OMAIRC_DISPLAY_VERSION" = "$OMAIRC_VERSION"
-          test "$OMAIRC_ARTIFACT_VERSION" = "$OMAIRC_VERSION"
-
-      - name: Select Qt arch
-        env:
-          MATRIX_MACHO: ${{ matrix.macho }}
-          MATRIX_SUFFIX: ${{ matrix.suffix }}
-        run: |
-          set -euo pipefail
-          host="$(uname -m)"
-          if [ "$host" != "$MATRIX_MACHO" ]; then
-            echo "Runner architecture $host does not match matrix $MATRIX_MACHO" >&2
-            exit 1
-          fi
-          case "$host" in
-            arm64)
-              # Prefer aqt's Apple Silicon kit when published. Qt 6.8.x currently
-              # only lists universal clang_64; install falls back and Smoke
-              # asserts the Mach-O contains arm64. Artifact stays macos-arm64.
-              qt_aqt_arch=clang_arm64
-              qt_install_dir=macos
-              omairc_mac_suffix=macos-arm64
-              expected_macho_arch=arm64
-              ;;
-            x86_64)
-              qt_aqt_arch=clang_64
-              qt_install_dir=macos
-              omairc_mac_suffix=macos-x64
-              expected_macho_arch=x86_64
-              ;;
-            *)
-              echo "Unsupported runner architecture: $host" >&2
-              exit 1
-              ;;
-          esac
-          if [ "$omairc_mac_suffix" != "$MATRIX_SUFFIX" ]; then
-            echo "Derived suffix $omairc_mac_suffix does not match matrix $MATRIX_SUFFIX" >&2
-            exit 1
-          fi
-          echo "QT_AQT_ARCH=$qt_aqt_arch" >> "$GITHUB_ENV"
-          echo "QT_INSTALL_DIR=$qt_install_dir" >> "$GITHUB_ENV"
-          echo "OMAIRC_MAC_SUFFIX=$omairc_mac_suffix" >> "$GITHUB_ENV"
-          echo "EXPECTED_MACHO_ARCH=$expected_macho_arch" >> "$GITHUB_ENV"
-          echo "Qt arch: $qt_aqt_arch (install: $qt_install_dir, artifact: $omairc_mac_suffix, macho: $expected_macho_arch)"
-
-      - name: Cache Qt
-        id: qt-cache
-        uses: actions/cache@v6
-        with:
-          path: ${{ runner.temp }}/Qt
-          key: qt-${{ env.QT_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}-${{ env.QT_AQT_ARCH }}-qtkeychain-${{ env.QTKEYCHAIN_VERSION }}
-
-      - name: Install Qt 6
-        if: steps.qt-cache.outputs.cache-hit != 'true'
-        run: |
-          set -euo pipefail
-          python3 -m venv "$RUNNER_TEMP/aqt"
-          "$RUNNER_TEMP/aqt/bin/pip" install aqtinstall
-          aqt="$RUNNER_TEMP/aqt/bin/aqt"
-          arch="$QT_AQT_ARCH"
-          available=$("$aqt" list-qt mac desktop --arch "$QT_VERSION")
-          if ! printf '%s\n' $available | grep -qx "$arch"; then
-            if [ "$arch" = clang_arm64 ]; then
-              echo "aqt has no clang_arm64 for $QT_VERSION (have: $available); using universal clang_64"
-              arch=clang_64
-            else
-              echo "aqt arch $arch unavailable for $QT_VERSION (have: $available)" >&2
-              exit 1
-            fi
-          fi
-          "$aqt" install-qt mac desktop "$QT_VERSION" "$arch" \
-            -O "$RUNNER_TEMP/Qt"
-          echo "QT_AQT_ARCH=$arch" >> "$GITHUB_ENV"
-
-      - name: Add Qt to PATH
-        run: |
-          set -euo pipefail
-          qt_root="$RUNNER_TEMP/Qt/$QT_VERSION"
-          qt_dir=
-          for candidate in "$QT_INSTALL_DIR" macos clang_arm64 clang_64; do
-            if [ -x "$qt_root/$candidate/bin/qmake" ]; then
-              qt_dir=$candidate
-              break
-            fi
-          done
-          if [ -z "$qt_dir" ]; then
-            echo "Could not find qmake under $qt_root" >&2
-            ls -la "$qt_root" >&2 || true
-            exit 1
-          fi
-          qt_bin="$qt_root/$qt_dir/bin"
-          test -x "$qt_bin/qmake"
-          echo "QT_INSTALL_DIR=$qt_dir" >> "$GITHUB_ENV"
-          echo "$qt_bin" >> "$GITHUB_PATH"
-          echo "QMAKE=$qt_bin/qmake" >> "$GITHUB_ENV"
-          {
-            echo "DYLD_LIBRARY_PATH=$qt_root/$qt_dir/lib:${DYLD_LIBRARY_PATH:-}"
-            echo "QT_PLUGIN_PATH=$qt_root/$qt_dir/plugins"
-            echo "QML2_IMPORT_PATH=$qt_root/$qt_dir/qml"
-          } >> "$GITHUB_ENV"
-          echo "Using Qt at $qt_bin (aqt arch $QT_AQT_ARCH)"
-
-      - name: Install QtKeychain
-        run: |
-          set -euo pipefail
-          qmake="$QMAKE"
-          qt_prefix="$("$qmake" -query QT_INSTALL_PREFIX)"
-          pri="$("$qmake" -query QT_INSTALL_ARCHDATA)/mkspecs/modules/qt_Qt6Keychain.pri"
-          if [ -f "$pri" ]; then
-            echo "QtKeychain already at $pri"
-            exit 0
-          fi
-          src="$RUNNER_TEMP/qtkeychain-src"
-          build="$RUNNER_TEMP/qtkeychain-build"
-          git clone --depth 1 --branch "$QTKEYCHAIN_VERSION" \
-            https://github.com/frankosterfeld/qtkeychain.git "$src"
-          cmake -S "$src" -B "$build" -G "Unix Makefiles" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_CXX_COMPILER=clang++ \
-            -DCMAKE_PREFIX_PATH="$qt_prefix" \
-            -DCMAKE_INSTALL_PREFIX="$qt_prefix" \
-            -DBUILD_WITH_QT6=ON \
-            -DBUILD_TRANSLATIONS=OFF \
-            -DBUILD_TEST_APPLICATION=OFF \
-            -DBUILD_TESTING=OFF
-          cmake --build "$build"
-          cmake --install "$build"
-          test -f "$pri"
-
-      # Optional Developer ID so Qt PR/main builds can still exercise signing.
-      # Tag release notarization and fail-closed secrets live on the rust job.
-      - name: Import Developer ID certificate
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          set -euo pipefail
-          if [ -z "${APPLE_CERTIFICATE:-}" ] || [ -z "${APPLE_CERTIFICATE_PASSWORD:-}" ]; then
-            echo "No Developer ID certificate; Qt omairc.app will stay ad-hoc."
-            exit 0
-          fi
-
-          cert_path="$RUNNER_TEMP/developer-id.p12"
-          python3 -c 'import base64, os, pathlib, sys; pathlib.Path(sys.argv[1]).write_bytes(base64.b64decode(os.environ["APPLE_CERTIFICATE"]))' "$cert_path"
-
-          keychain_path="$RUNNER_TEMP/omairc-signing.keychain-db"
-          keychain_password=$(uuidgen)
-          security delete-keychain "$keychain_path" 2>/dev/null || true
-          security create-keychain -p "$keychain_password" "$keychain_path"
-          security set-keychain-settings -lut 21600 "$keychain_path"
-          security unlock-keychain -p "$keychain_password" "$keychain_path"
-          curl -fsSL "https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer" \
-            -o "$RUNNER_TEMP/DeveloperIDG2CA.cer"
-          security import "$RUNNER_TEMP/DeveloperIDG2CA.cer" -k "$keychain_path" \
-            -T /usr/bin/codesign -T /usr/bin/security >/dev/null
-          security import "$cert_path" \
-            -P "$APPLE_CERTIFICATE_PASSWORD" \
-            -A -t cert -f pkcs12 -k "$keychain_path" \
-            -T /usr/bin/codesign -T /usr/bin/security >/dev/null
-          security set-key-partition-list -S apple-tool:,apple: \
-            -k "$keychain_password" "$keychain_path" >/dev/null
-          existing=$(security list-keychains -d user | sed 's/"//g')
-          # shellcheck disable=SC2086
-          security list-keychains -d user -s "$keychain_path" $existing
-
-          identity=$(security find-identity -v -p codesigning "$keychain_path" \
-            | awk -F '"' '/Developer ID Application/{print $2; exit}')
-          if [ -z "$identity" ]; then
-            echo "No Developer ID Application identity in the imported certificate." >&2
-            security find-identity -v -p codesigning "$keychain_path" >&2 || true
-            exit 1
-          fi
-          if [ -n "${APPLE_TEAM_ID:-}" ]; then
-            case "$identity" in
-              *"$APPLE_TEAM_ID"*) ;;
-              *)
-                echo "Imported identity does not contain APPLE_TEAM_ID=$APPLE_TEAM_ID: $identity" >&2
-                exit 1
-                ;;
-            esac
-          fi
-
-          {
-            echo "CODESIGN_IDENTITY=$identity"
-            echo "APPLE_TEAM_ID=${APPLE_TEAM_ID:-}"
-            echo "MACOS_SIGNING_KEYCHAIN=$keychain_path"
-          } >> "$GITHUB_ENV"
-
-          rm -f "$cert_path"
-          echo "Imported $identity for Qt compile smoke (release assets ship from rust)"
-
-      - name: Build
-        run: bin/build-macos
-
-      - name: Smoke
-        run: |
-          set -euo pipefail
-          exe="$GITHUB_WORKSPACE/build/omairc.app/Contents/MacOS/omairc"
-          test -x "$exe"
-          archs=$(lipo -archs "$exe" 2>/dev/null || true)
-          if [ -z "$archs" ]; then
-            archs=$(file -b "$exe")
-          fi
-          echo "Mach-O archs: $archs (expect $EXPECTED_MACHO_ARCH, artifact $OMAIRC_MAC_SUFFIX)"
-          case "$archs" in
-            *"$EXPECTED_MACHO_ARCH"*) ;;
-            *)
-              echo "Binary missing $EXPECTED_MACHO_ARCH (got: $archs); refusing $OMAIRC_MAC_SUFFIX artifact" >&2
-              exit 1
-              ;;
-          esac
-          case "$OMAIRC_MAC_SUFFIX" in
-            macos-arm64)
-              test "$EXPECTED_MACHO_ARCH" = arm64
-              ;;
-            macos-x64)
-              test "$EXPECTED_MACHO_ARCH" = x86_64
-              ;;
-            *)
-              echo "Unexpected artifact suffix $OMAIRC_MAC_SUFFIX" >&2
-              exit 1
-              ;;
-          esac
-          app="$GITHUB_WORKSPACE/build/omairc.app"
-          gui="$app/Contents/Frameworks/QtGui.framework/Versions/A/QtGui"
-          test -f "$gui"
-          gui_archs=$(lipo -archs "$gui")
-          echo "QtGui archs: $gui_archs"
-          test "$gui_archs" = "$EXPECTED_MACHO_ARCH"
-          test ! -d "$app/Contents/Frameworks/QtWidgets.framework"
-          test ! -d "$app/Contents/PlugIns/sqldrivers"
-          test ! -f "$app/Contents/PlugIns/quick/libqtquickcontrols2nativestyleplugin.dylib"
-          version=$("$exe" --version 2>&1)
-          expected="omairc $OMAIRC_DISPLAY_VERSION"
-          test "$version" = "$expected" || {
-            echo "Expected '$expected', got: $version" >&2
-            exit 1
-          }
-          short_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
-            "$GITHUB_WORKSPACE/build/omairc.app/Contents/Info.plist")
-          build_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
-            "$GITHUB_WORKSPACE/build/omairc.app/Contents/Info.plist")
-          test "$short_version" = "$OMAIRC_VERSION"
-          test "$build_version" = "$OMAIRC_BUILD_NUMBER"
-          help=$("$exe" --help 2>&1)
-          case "$help" in
-            *Usage:*) ;;
-            *) echo "Expected help text, got: $help" >&2; exit 1 ;;
-          esac
-          export OMAIRC_ALLOW_MULTI=1
-          export OMAIRC_SMOKE=1
-          export QT_QPA_PLATFORM=offscreen
-          export QT_QUICK_BACKEND=software
-          smoke() {
-            local bin="$1"
-            "$bin" --demo-server &
-            local pid=$!
-            for _ in $(seq 1 60); do
-              if ! kill -0 "$pid" 2>/dev/null; then
-                wait "$pid"
-                return $?
-              fi
-              sleep 0.5
-            done
-            kill "$pid" 2>/dev/null || true
-            wait "$pid" 2>/dev/null || true
-            echo "demo-server smoke did not exit within 30s ($bin)" >&2
-            return 1
-          }
-          smoke "$exe"
-          link="$GITHUB_WORKSPACE/build/omairc"
-          test -L "$link"
-          smoke "$link"
-
-      # Linux CI already runs check-conventions, protocol_tests, and the seeded
-      # QML suite. Apple Silicon PRs still rebuild those on macOS; Intel PRs
-      # skip them so the wall clock is the Linux test job (~8 min) instead of
-      # the Intel portable rebuild (~5 min on top of a 6 min compile).
-      - name: Portable tests
-        if: github.event_name != 'pull_request' || matrix.suffix == 'macos-arm64'
-        run: |
-          set -euo pipefail
-          bin/check-conventions
-          run_test_bin() {
-            if [ -x "./$1" ]; then
-              "./$1" "${@:2}"
-            elif [ -x "./$1.app/Contents/MacOS/$1" ]; then
-              "./$1.app/Contents/MacOS/$1" "${@:2}"
-            else
-              echo "Could not find $1 under $(pwd)" >&2
-              ls -la
-              exit 1
-            fi
-          }
-          run_test_bin_timed() {
-            local timeout_secs="$1"
-            local name="$2"
-            shift 2
-            if [ -x "./$name" ]; then
-              perl -e 'alarm shift; exec @ARGV' "$timeout_secs" "./$name" "$@"
-            elif [ -x "./$name.app/Contents/MacOS/$name" ]; then
-              perl -e 'alarm shift; exec @ARGV' "$timeout_secs" \
-                "./$name.app/Contents/MacOS/$name" "$@"
-            else
-              echo "Could not find $name under $(pwd)" >&2
-              ls -la
-              exit 1
-            fi
-          }
-          jobs=$(sysctl -n hw.ncpu)
-          mkdir -p build-tests
-          cd build-tests
-          qmake "$GITHUB_WORKSPACE/tests/tests.pro"
-          # Qt 6.8 still emits -framework AGL; SDK 26 removed it.
-          find . -name Makefile -print0 | xargs -0 sed -i '' 's/-framework AGL//g'
-          make -j"$jobs"
-          # SecureTransport otherwise imports the loopback TLS key into the
-          # login keychain and can hang protocol_tests on a permission dialog.
-          QT_SSL_USE_TEMPORARY_KEYCHAIN=1 run_test_bin_timed 180 protocol_tests
-          cd "$GITHUB_WORKSPACE"
-          mkdir -p build-seeded-qml-tests
-          cd build-seeded-qml-tests
-          qmake "$GITHUB_WORKSPACE/tests/ui/seeded-qml.pro"
-          # Qt 6.8 still emits -framework AGL; SDK 26 removed it.
-          find . -name Makefile -print0 | xargs -0 sed -i '' 's/-framework AGL//g'
-          make -j"$jobs"
-          mkdir -p "$GITHUB_WORKSPACE/test-artifacts"
-          test_state=$(mktemp -d "${RUNNER_TEMP}/omairc-tests.XXXXXX")
-          XDG_CONFIG_HOME="$test_state/config" \
-          XDG_CACHE_HOME="$test_state/cache" \
-          XDG_DATA_HOME="$test_state/data" \
-          XDG_STATE_HOME="$test_state/state" \
-          QT_QPA_PLATFORM=offscreen \
-          QT_QPA_PLATFORMTHEME= \
-          QT_QUICK_BACKEND=software \
-          run_test_bin seeded_qml_tests \
-            -input "$GITHUB_WORKSPACE/tests/ui/tst_omairc.qml"
-          XDG_CONFIG_HOME="$test_state/config" \
-          XDG_CACHE_HOME="$test_state/cache" \
-          XDG_DATA_HOME="$test_state/data" \
-          XDG_STATE_HOME="$test_state/state" \
-          QT_QPA_PLATFORM=offscreen \
-          QT_QPA_PLATFORMTHEME= \
-          QT_QUICK_BACKEND=software \
-          run_test_bin seeded_qml_tests \
-            -input "$GITHUB_WORKSPACE/tests/ui/tst_seeded_window.qml"
-          rm -rf "$test_state"
-
-      - name: Delete signing keychain
-        if: always()
-        run: |
-          set -euo pipefail
-          if [ -n "${MACOS_SIGNING_KEYCHAIN:-}" ]; then
-            security delete-keychain "$MACOS_SIGNING_KEYCHAIN" || true
-          fi
-
-  # Consumes rust job zips (cask release names). No-op on PRs/main.
   macos-zips:
     name: Both macOS zips
     needs: rust

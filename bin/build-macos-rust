@@ -9,7 +9,7 @@ set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 BUILD_DIR="$ROOT/build"
-POC="$ROOT/poc"
+CLIENT="$ROOT/client"
 APP="$BUILD_DIR/omairc.app"
 RELEASE_VERSION="$("$ROOT/bin/version")"
 BUILD_NUMBER="${OMAIRC_BUILD_NUMBER:-$RELEASE_VERSION}"
@@ -50,11 +50,11 @@ sed \
 
 echo "Building Rust product client ($RUST_TARGET) - release, locked, features=product"
 (
-  cd "$POC"
+  cd "$CLIENT"
   cargo build --release --locked --features product --target "$RUST_TARGET"
 )
 
-EXE_SRC="$POC/target/$RUST_TARGET/release/omairc"
+EXE_SRC="$CLIENT/target/$RUST_TARGET/release/omairc"
 if [ ! -x "$EXE_SRC" ]; then
   echo "Expected $EXE_SRC after cargo build." >&2
   exit 1

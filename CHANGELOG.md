@@ -16,14 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or `OMAIRC_TUI_MOUSE=1`. The pointer path stays off by default, so the
   terminal keeps its own text selection.
 
-<!-- Cutover draft (M8): promote under the cutover release in M9. Full a11y
-     surface list lives in poc/NOTES.md. -->
-
 ### Known regressions
 
-- Draft for the Rust desktop cutover: GPUI has no AccessKit tree yet, so
-  screen-reader names and roles from the Qt shell are lost until upstream
-  GPUI gains AccessKit. See `poc/NOTES.md`.
+- Screen readers: GPUI has no AccessKit tree yet, so Accessible names and
+  roles from the retired Qt shell are gone until upstream GPUI gains
+  AccessKit. Surfaces to restore are listed in `client/NOTES.md`.
+- KWallet / Secret Service password items created by QtKeychain stay readable
+  through the dual-attribute Linux lookup, but a fresh Rust-only install does
+  not write QtKeychain-shaped attributes; older third-party readers may not
+  see new secrets.
+- Wayland minimize / hide: `_NET_WM_STATE_HIDDEN` suspension matches X11;
+  some compositors still disagree on when a Wayland surface counts as
+  minimized, so background suspension can lag the Qt shell on those setups.
 
 ### Fixed
 
@@ -44,14 +48,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not fully visible. Another press steps to that row, and the view follows
   the end once that landing reaches it. Scrolling back into history already
   read hides the marker until `Alt+U` returns to the unseen run.
-- Upload tests accept the canonical HTTP header names Qt 6.12 writes, and
-  the lowercase names from Qt 6.11 and earlier.
-- The channel Leave and Close clicks in the UI tests wait until those
-  buttons have rendered. Qt 6.12 offscreen delivery misses a click on a
-  button that was just shown again from width 0.
 
 ### Changed
 
+- The desktop client is the Rust GPUI binary in `client/` (default `product`
+  feature). Arch `PKGBUILD`, `bin/test`, `bin/test-install`, and
+  `bin/test-desktop` build and drive that binary. The Qt/qmake tree is gone;
+  shared contracts compare the Rust client with the TUI.
 - The Arch package depends on `hicolor-icon-theme`, matching the official
   Omarchy package.
 - Omarchy edge installs with `omarchy pkg add omairc`. The GitHub releases
