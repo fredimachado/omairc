@@ -347,17 +347,33 @@ jobs:
             "/LOG=$uninsLog"
           )
           Start-Process -FilePath $unins -ArgumentList $uninsArgs | Out-Null
+          # Inno does not remove {app} when the smoke pre-created it for
+          # InstallDelete; wait for product files to leave, not the directory.
           $deadline = (Get-Date).AddMinutes(2)
-          while (Test-Path $dest) {
+          while ((Test-Path $exe) -or (Test-Path $unins)) {
             if ((Get-Date) -gt $deadline) {
               if (Test-Path $uninsLog) { Get-Content $uninsLog }
               if (Test-Path $log) { Get-Content $log }
-              throw "Uninstall did not remove $dest"
+              throw "Uninstall did not remove $exe (or unins stub still present)"
             }
             Start-Sleep -Milliseconds 500
           }
           if (Test-Path $exe) { throw 'omairc.exe still present after uninstall' }
           if (Test-Path $shortcut) { throw 'Start Menu shortcut still present after uninstall' }
+          if (Test-Path $dest) {
+            foreach ($product in @(
+              'omairc.exe',
+              'LICENSE.txt',
+              'OFL.txt',
+              'COPYING-LGPL',
+              'unins000.exe',
+              'unins000.dat'
+            )) {
+              if (Test-Path (Join-Path $dest $product)) {
+                throw "Uninstall left product file: $product"
+              }
+            }
+          }
           if (-not (Test-Path $configPath)) {
             throw "%LOCALAPPDATA%\omairc\omairc.conf was removed by uninstall"
           }
