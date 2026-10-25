@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 use async_channel::Sender;
 use block2::RcBlock;
 use objc2::rc::Retained;
-use objc2::runtime::ProtocolObject;
+use objc2::runtime::{Bool, ProtocolObject};
 use objc2::{define_class, msg_send, AnyThread};
 use objc2_foundation::{
     ns_string, NSArray, NSDictionary, NSError, NSObject, NSObjectProtocol, NSBundle, NSString,
@@ -90,8 +90,8 @@ define_class!(
 
 impl NotificationDelegate {
     fn new() -> Retained<Self> {
-        let allocated = Self::alloc();
-        unsafe { msg_send![super(allocated), init] }
+        let this = Self::alloc().set_ivars(());
+        unsafe { msg_send![super(this), init] }
     }
 }
 
@@ -152,7 +152,7 @@ pub fn open(tx: Sender<Activation>) -> Box<dyn Notifier> {
     let delegate = NotificationDelegate::new();
     center.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
     let options = UNAuthorizationOptions::Alert | UNAuthorizationOptions::Sound;
-    let block = RcBlock::new(|_granted: bool, _error: *mut NSError| {});
+    let block = RcBlock::new(|_granted: Bool, _error: *mut NSError| {});
     center.requestAuthorizationWithOptions_completionHandler(options, &block);
     Box::new(MacNotifier { delegate })
 }
