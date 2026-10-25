@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/macos.yml'
       - 'bin/build-macos'
+      - 'bin/build-macos-rust'
       - 'bin/derive-build-versions.py'
       - 'bin/gen-omaircversion-h.py'
       - 'bin/package-macos'
@@ -30,6 +31,7 @@ on:
     paths:
       - '.github/workflows/macos.yml'
       - 'bin/build-macos'
+      - 'bin/build-macos-rust'
       - 'bin/derive-build-versions.py'
       - 'bin/gen-omaircversion-h.py'
       - 'bin/package-macos'
@@ -73,6 +75,14 @@ jobs:
               - 'poc/**'
               - 'version.pri'
               - 'fonts/**'
+              - 'data/icons/**'
+              - 'packaging/macos/**'
+              - 'bin/build-macos-rust'
+              - 'bin/package-macos'
+              - 'bin/sign-macos'
+              - 'bin/notarize-macos'
+              - 'bin/check-macos-bundle'
+              - 'bin/check-macos-syspolicy'
               - '.github/workflows/macos.yml'
             qt:
               - '.github/workflows/macos.yml'
@@ -105,7 +115,10 @@ jobs:
           echo "qt=${{ steps.filter.outputs.qt }}" >> "$GITHUB_OUTPUT"
 
   # Rust product client. No Qt. Same runners as the Qt matrix so Apple Silicon
-  # and Intel both compile the macOS-only paths (keychain, menus, notifications).
+  # and Intel both assemble omairc.app (keychain, menus, notifications).
+  # Release zip upload / notarization stay on the Qt job until cutover; this
+  # job proves the cargo bundle, ad-hoc sign, check-macos-bundle, and smoke.
+  # Developer ID is optional here and never required on pull requests.
   rust:
     name: Rust ${{ matrix.suffix }}
     needs: changes
@@ -118,13 +131,61 @@ jobs:
         include:
           - os: macos-15
             suffix: macos-arm64
+            macho: arm64
           - os: macos-15-intel
             suffix: macos-x64
-    defaults:
-      run:
-        working-directory: poc
+            macho: x86_64
     steps:
       - uses: actions/checkout@v7
+
+      - name: Derive versions
+        run: |
+          set -euo pipefail
+          python3 bin/derive-build-versions.py \
+            --git-ref "$GITHUB_REF" \
+            --sha "$GITHUB_SHA" \
+            --run-number "$GITHUB_RUN_NUMBER" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --format github-env \
+            --github-env "$GITHUB_ENV"
+          echo "OMAIRC_BUILD_NUMBER=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          # Keep display/artifact for packaging names. Clear the cargo stamp so
+          # Clippy/Test read version.pri (build.rs treats empty as unset).
+          # bin/build-macos-rust gets OMAIRC_BUILD_VERSION only on the Build step.
+          echo "OMAIRC_BUILD_VERSION=" >> "$GITHUB_ENV"
+          grep '^OMAIRC_' "$GITHUB_ENV" | tail -8
+
+      - name: Select host arch
+        env:
+          MATRIX_MACHO: ${{ matrix.macho }}
+          MATRIX_SUFFIX: ${{ matrix.suffix }}
+        run: |
+          set -euo pipefail
+          host="$(uname -m)"
+          if [ "$host" != "$MATRIX_MACHO" ]; then
+            echo "Runner architecture $host does not match matrix $MATRIX_MACHO" >&2
+            exit 1
+          fi
+          case "$host" in
+            arm64)
+              omairc_mac_suffix=macos-arm64
+              expected_macho_arch=arm64
+              ;;
+            x86_64)
+              omairc_mac_suffix=macos-x64
+              expected_macho_arch=x86_64
+              ;;
+            *)
+              echo "Unsupported runner architecture: $host" >&2
+              exit 1
+              ;;
+          esac
+          if [ "$omairc_mac_suffix" != "$MATRIX_SUFFIX" ]; then
+            echo "Derived suffix $omairc_mac_suffix does not match matrix $MATRIX_SUFFIX" >&2
+            exit 1
+          fi
+          echo "OMAIRC_MAC_SUFFIX=$omairc_mac_suffix" >> "$GITHUB_ENV"
+          echo "EXPECTED_MACHO_ARCH=$expected_macho_arch" >> "$GITHUB_ENV"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -141,6 +202,7 @@ jobs:
       # cannot regress green. Style/complexity groups stay allowed until a
       # cleanup slice; correctness and suspicious stay denied.
       - name: Clippy
+        working-directory: poc
         run: >
           cargo clippy --locked --all-targets --features product --
           -D warnings
@@ -150,46 +212,176 @@ jobs:
           -A clippy::nursery
           -A clippy::perf
 
-      - name: Build product release
-        run: cargo build --release --locked --features product
-
+      # Unit tests before the staged stamp so compiled_version_is_the_version_pri_value
+      # sees version.pri, not a PR display suffix.
       - name: Test
+        working-directory: poc
         run: cargo test --locked
 
       - name: Test with product features
+        working-directory: poc
         run: cargo test --locked --features product
 
-      - name: Smoke
-        working-directory: ${{ github.workspace }}
+      # Optional Developer ID for tag/main when secrets exist. Pull requests
+      # stay ad-hoc; do not set OMAIRC_REQUIRE_DEVELOPER_ID without a cert.
+      - name: Import Developer ID certificate for rust
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
-          exe="$GITHUB_WORKSPACE/poc/target/release/omairc"
+          if [ -z "${APPLE_CERTIFICATE:-}" ] || [ -z "${APPLE_CERTIFICATE_PASSWORD:-}" ]; then
+            echo "No Developer ID certificate; rust omairc.app will stay ad-hoc."
+            exit 0
+          fi
+
+          cert_path="$RUNNER_TEMP/developer-id-rust.p12"
+          python3 -c 'import base64, os, pathlib, sys; pathlib.Path(sys.argv[1]).write_bytes(base64.b64decode(os.environ["APPLE_CERTIFICATE"]))' "$cert_path"
+
+          keychain_path="$RUNNER_TEMP/omairc-rust-signing.keychain-db"
+          keychain_password=$(uuidgen)
+          security delete-keychain "$keychain_path" 2>/dev/null || true
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          curl -fsSL "https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer" \
+            -o "$RUNNER_TEMP/DeveloperIDG2CA-rust.cer"
+          security import "$RUNNER_TEMP/DeveloperIDG2CA-rust.cer" -k "$keychain_path" \
+            -T /usr/bin/codesign -T /usr/bin/security >/dev/null
+          security import "$cert_path" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$keychain_path" \
+            -T /usr/bin/codesign -T /usr/bin/security >/dev/null
+          security set-key-partition-list -S apple-tool:,apple: \
+            -k "$keychain_password" "$keychain_path" >/dev/null
+          existing=$(security list-keychains -d user | sed 's/"//g')
+          # shellcheck disable=SC2086
+          security list-keychains -d user -s "$keychain_path" $existing
+
+          identity=$(security find-identity -v -p codesigning "$keychain_path" \
+            | awk -F '"' '/Developer ID Application/{print $2; exit}')
+          if [ -z "$identity" ]; then
+            echo "No Developer ID Application identity in the imported certificate." >&2
+            security find-identity -v -p codesigning "$keychain_path" >&2 || true
+            exit 1
+          fi
+          if [ -n "${APPLE_TEAM_ID:-}" ]; then
+            case "$identity" in
+              *"$APPLE_TEAM_ID"*) ;;
+              *)
+                echo "Imported identity does not contain APPLE_TEAM_ID=$APPLE_TEAM_ID: $identity" >&2
+                exit 1
+                ;;
+            esac
+          fi
+
+          {
+            echo "CODESIGN_IDENTITY=$identity"
+            echo "APPLE_TEAM_ID=${APPLE_TEAM_ID:-}"
+            echo "MACOS_RUST_SIGNING_KEYCHAIN=$keychain_path"
+          } >> "$GITHUB_ENV"
+          rm -f "$cert_path"
+          echo "Imported $identity for rust bundle (not required on pull requests)"
+
+      - name: Build rust app bundle
+        env:
+          OMAIRC_BUILD_VERSION: ${{ env.OMAIRC_DISPLAY_VERSION }}
+          OMAIRC_CLIENT: rust
+        run: bin/build-macos-rust
+
+      - name: Smoke rust app bundle
+        env:
+          OMAIRC_CLIENT: rust
+        run: |
+          set -euo pipefail
+          app="$GITHUB_WORKSPACE/build/omairc.app"
+          exe="$app/Contents/MacOS/omairc"
           test -x "$exe"
-          version=$("$exe" --version 2>&1)
-          case "$version" in
-            omairc\ *) ;;
-            *) echo "Expected omairc version, got: $version" >&2; exit 1 ;;
+          test ! -e "$app/Contents/Frameworks"
+          test ! -e "$app/Contents/PlugIns"
+          test ! -e "$app/Contents/Resources/qml"
+          test ! -e "$app/Contents/Resources/qt.conf"
+          test ! -e "$app/Contents/MacOS/qt.conf"
+          test -f "$app/Contents/Resources/omairc.icns"
+          bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
+            "$app/Contents/Info.plist")
+          test "$bundle_id" = "app.omairc.Omairc"
+          short_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+            "$app/Contents/Info.plist")
+          build_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
+            "$app/Contents/Info.plist")
+          test "$short_version" = "$OMAIRC_VERSION"
+          test "$build_version" = "$OMAIRC_BUILD_NUMBER"
+          archs=$(lipo -archs "$exe" 2>/dev/null || true)
+          if [ -z "$archs" ]; then
+            archs=$(file -b "$exe")
+          fi
+          echo "Mach-O archs: $archs (expect $EXPECTED_MACHO_ARCH, artifact $OMAIRC_MAC_SUFFIX)"
+          case "$archs" in
+            *"$EXPECTED_MACHO_ARCH"*) ;;
+            *)
+              echo "Binary missing $EXPECTED_MACHO_ARCH (got: $archs); refusing $OMAIRC_MAC_SUFFIX" >&2
+              exit 1
+              ;;
           esac
+          version=$("$exe" --version 2>&1)
+          expected="omairc $OMAIRC_DISPLAY_VERSION"
+          test "$version" = "$expected" || {
+            echo "Expected '$expected', got: $version" >&2
+            exit 1
+          }
           help=$("$exe" --help 2>&1)
           case "$help" in
             *Usage:*) ;;
             *) echo "Expected help text, got: $help" >&2; exit 1 ;;
           esac
+          bin/check-macos-bundle "$app"
           export OMAIRC_ALLOW_MULTI=1
           export OMAIRC_SMOKE=1
-          "$exe" --demo-server &
-          pid=$!
-          for _ in $(seq 1 120); do
-            if ! kill -0 "$pid" 2>/dev/null; then
-              wait "$pid"
-              exit $?
-            fi
-            sleep 0.5
-          done
-          kill "$pid" 2>/dev/null || true
-          wait "$pid" 2>/dev/null || true
-          echo "demo-server smoke did not exit within 60s" >&2
-          exit 1
+          smoke() {
+            local bin="$1"
+            "$bin" --demo-server &
+            local pid=$!
+            for _ in $(seq 1 120); do
+              if ! kill -0 "$pid" 2>/dev/null; then
+                wait "$pid"
+                return $?
+              fi
+              sleep 0.5
+            done
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            echo "demo-server smoke did not exit within 60s ($bin)" >&2
+            return 1
+          }
+          smoke "$exe"
+          link="$GITHUB_WORKSPACE/build/omairc"
+          test -L "$link"
+          smoke "$link"
+
+      # Distinct step name from the Qt job so check-conventions keeps that
+      # job's package-only-on-tag gate. Rust proves the zip layout on every run.
+      # Do not upload as the release artifact name; Qt still ships those zips.
+      - name: Package rust app zip
+        env:
+          OMAIRC_CLIENT: rust
+        run: bin/package-macos
+
+      - name: Assert rust app zip
+        run: |
+          set -euo pipefail
+          zip="$GITHUB_WORKSPACE/dist/omairc-${OMAIRC_ARTIFACT_VERSION}-${OMAIRC_MAC_SUFFIX}.zip"
+          test -f "$zip"
+          echo "Rust app zip ok: $zip ($(wc -c <"$zip") bytes)"
+
+      - name: Delete rust signing keychain
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -n "${MACOS_RUST_SIGNING_KEYCHAIN:-}" ]; then
+            security delete-keychain "$MACOS_RUST_SIGNING_KEYCHAIN" || true
+          fi
 
   macos:
     name: macOS ${{ matrix.suffix }}

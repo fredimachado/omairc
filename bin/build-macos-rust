@@ -1,0 +1,90 @@
+#!/usr/bin/env sh
+set -eu
+
+# Build the Rust product client and stage build/omairc.app without Qt
+# frameworks or qt.conf. Same CFBundleIdentifier and layout as bin/build-macos
+# so keychain trust and the Homebrew cask stay valid. Signs through
+# bin/sign-macos (Developer ID when CODESIGN_IDENTITY is set; otherwise
+# ad-hoc) and runs bin/check-macos-bundle.
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+BUILD_DIR="$ROOT/build"
+POC="$ROOT/poc"
+APP="$BUILD_DIR/omairc.app"
+RELEASE_VERSION="$("$ROOT/bin/version")"
+BUILD_NUMBER="${OMAIRC_BUILD_NUMBER:-$RELEASE_VERSION}"
+
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "bin/build-macos-rust must run on macOS." >&2
+  exit 1
+fi
+
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "cargo is required to build the Rust product client." >&2
+  exit 1
+fi
+
+host="$(uname -m)"
+case "$host" in
+  arm64) RUST_TARGET=aarch64-apple-darwin ;;
+  x86_64) RUST_TARGET=x86_64-apple-darwin ;;
+  *)
+    echo "Unsupported macOS architecture: $host" >&2
+    exit 1
+    ;;
+esac
+
+"$ROOT/packaging/macos/generate-icns"
+ICNS="$ROOT/data/icons/omairc.icns"
+if [ ! -f "$ICNS" ]; then
+  echo "Expected $ICNS after packaging/macos/generate-icns." >&2
+  exit 1
+fi
+
+INFO_PLIST="$BUILD_DIR/Info.plist"
+mkdir -p "$BUILD_DIR"
+sed \
+  -e "s/@OMAIRC_RELEASE_VERSION@/$RELEASE_VERSION/g" \
+  -e "s/@OMAIRC_BUILD_NUMBER@/$BUILD_NUMBER/g" \
+  "$ROOT/packaging/macos/Info.plist" >"$INFO_PLIST"
+
+echo "Building Rust product client ($RUST_TARGET) - release, locked, features=product"
+(
+  cd "$POC"
+  cargo build --release --locked --features product --target "$RUST_TARGET"
+)
+
+EXE_SRC="$POC/target/$RUST_TARGET/release/omairc"
+if [ ! -x "$EXE_SRC" ]; then
+  echo "Expected $EXE_SRC after cargo build." >&2
+  exit 1
+fi
+
+rm -rf -- "$APP"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+cp -f "$EXE_SRC" "$APP/Contents/MacOS/omairc"
+chmod 755 "$APP/Contents/MacOS/omairc"
+cp -f "$INFO_PLIST" "$APP/Contents/Info.plist"
+cp -f "$ICNS" "$APP/Contents/Resources/omairc.icns"
+
+# Fail closed if a Qt leftover slipped into the staging tree.
+if [ -e "$APP/Contents/Frameworks" ] || [ -e "$APP/Contents/PlugIns" ] \
+  || [ -e "$APP/Contents/Resources/qml" ] || [ -e "$APP/Contents/Resources/qt.conf" ] \
+  || [ -e "$APP/Contents/MacOS/qt.conf" ]; then
+  echo "Rust app bundle must not contain Qt frameworks, plugins, qml, or qt.conf." >&2
+  exit 1
+fi
+
+bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
+  "$APP/Contents/Info.plist" 2>/dev/null || true)
+if [ "$bundle_id" != "app.omairc.Omairc" ]; then
+  echo "CFBundleIdentifier must stay app.omairc.Omairc (got: ${bundle_id:-missing})." >&2
+  exit 1
+fi
+
+"$ROOT/bin/sign-macos" "$APP"
+"$ROOT/bin/check-macos-bundle" "$APP"
+
+ln -sf "omairc.app/Contents/MacOS/omairc" "$BUILD_DIR/omairc"
+
+echo "Built $APP"

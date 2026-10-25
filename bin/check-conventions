@@ -758,10 +758,19 @@ def check_macos_ci_arch_selection():
         problems.append(
             ".github/workflows/macos.yml: Smoke must lipo-check the binary "
             "against EXPECTED_MACHO_ARCH so macos-arm64/macos-x64 match")
-    arm64_case = text.split("arm64)", 1)
-    if len(arm64_case) > 1:
-        arm64_body = arm64_case[1].split("x86_64)", 1)[0]
-        if "clang_arm64" not in arm64_body:
+    # Scope to the Qt kit step. The Rust job also branches on arm64/x86_64
+    # without aqt, so a whole-file split on "arm64)" is no longer enough.
+    qt_arch_match = re.search(
+        r"(?m)^      - name: Select Qt arch\n(?:.*\n)*?(?=^      - name: |\Z)",
+        text,
+    )
+    if not qt_arch_match:
+        problems.append(".github/workflows/macos.yml: missing step 'Select Qt arch'")
+    else:
+        qt_arch = qt_arch_match.group(0)
+        arm64_case = qt_arch.split("arm64)", 1)
+        if len(arm64_case) <= 1 or "clang_arm64" not in arm64_case[1].split(
+                "x86_64)", 1)[0]:
             problems.append(
                 ".github/workflows/macos.yml: arm64 case must prefer "
                 "clang_arm64 before any clang_64 fallback")
