@@ -46,9 +46,9 @@ const NO_SOCKET_DIRS: &[&str] = &[
     "util",
     "demo",
 ];
-/// The files under `src/` that must run without a socket. `main.rs` is the binary's entry
-/// point, and it reaches the sockets only through `src/net/`.
-const NO_SOCKET_FILES: &[&str] = &["main.rs"];
+/// The files under `src/` that must run without a socket. `app.rs` is the process entry
+/// (called from the thin `main.rs`), and it reaches the sockets only through `src/net/`.
+const NO_SOCKET_FILES: &[&str] = &["main.rs", "app.rs"];
 /// Paths `src/net/` must not name: the toolkit, and the app layers above the transport,
 /// written from the crate root (`crate::`) or relative to the net module (`super::`).
 const NET_FORBIDDEN_PATHS: &[&str] = &[
@@ -153,7 +153,7 @@ fn net_crates_appear_only_under_src_net() {
     assert!(!files.is_empty(), "no production sources under src/");
     // The scan covers all of src/, so the binary and the layers without socket code of
     // their own are named here: a change to the walk must not drop them unnoticed.
-    for pinned in ["main.rs", "util", "demo"] {
+    for pinned in ["main.rs", "app.rs", "util", "demo"] {
         assert!(
             files.iter().any(|file| file.starts_with(src_dir().join(pinned))),
             "src/{pinned} is missing from the net-crate scan"
@@ -200,7 +200,7 @@ fn std_net_stays_out_of_the_layers_that_run_without_sockets() {
     }
     assert!(
         problems.is_empty(),
-        "std::net is forbidden in irc, session, controller, model, ui, storage, util, demo and main.rs; sockets belong in src/net/:\n{}",
+        "std::net is forbidden in irc, session, controller, model, ui, storage, util, demo, app.rs and main.rs; sockets belong in src/net/:\n{}",
         problems.join("\n")
     );
 }
@@ -359,7 +359,7 @@ fn the_gate_reports_line_numbers() {
 #[test]
 fn the_socket_scans_reach_util_demo_and_main() {
     let files = no_socket_sources();
-    for pinned in ["main.rs", "util", "demo"] {
+    for pinned in ["main.rs", "app.rs", "util", "demo"] {
         assert!(
             files.iter().any(|file| file.starts_with(src_dir().join(pinned))),
             "src/{pinned} is missing from the no-socket scan"

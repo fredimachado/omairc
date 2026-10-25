@@ -1,6 +1,6 @@
 //! Window close must persist geometry and still launch a ready installer. GPUI
 //! stores one `on_window_should_close` callback, so the PoC chains both effects in
-//! `windowstate::attach` instead of registering them separately in `main.rs`.
+//! `windowstate::attach` instead of registering them separately in `app.rs`.
 
 mod common;
 
@@ -8,21 +8,20 @@ use common::{code_only, crate_root, read_code};
 
 #[test]
 fn main_chains_geometry_save_with_update_launch_on_close() {
-    let main = read_code(&crate_root().join("src/main.rs"));
+    let app = read_code(&crate_root().join("src/app.rs"));
     let windowstate = read_code(&crate_root().join("src/desktop/windowstate.rs"));
 
     assert!(
-        main.contains("windowstate::attach")
-            && main.contains("launch_update_on_close"),
-        "main.rs must wire geometry attach and the update launch together"
+        app.contains("windowstate::attach") && app.contains("launch_update_on_close"),
+        "app.rs must wire geometry attach and the update launch together"
     );
-    let attach = main
+    let attach = app
         .find("windowstate::attach")
-        .expect("windowstate::attach in main.rs");
-    let before_attach = &main[..attach];
+        .expect("windowstate::attach in app.rs");
+    let before_attach = &app[..attach];
     assert!(
         !before_attach.contains("launch_update_on_close"),
-        "main.rs must not register update launch before attach replaces the close handler"
+        "app.rs must not register update launch before attach replaces the close handler"
     );
     assert!(
         windowstate.contains("run_close_handlers")

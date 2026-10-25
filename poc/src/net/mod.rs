@@ -30,12 +30,10 @@ mod worker;
 mod tests;
 
 pub use factory::NetTransports;
-pub use hub::NetHub;
+pub use hub::{NetHub, NetOptions};
+pub use tls::client_config_trusting_pem;
 pub use wire::Delivery;
 
-// The tests build hubs with other options and name the transport type; nothing outside
-// `net/` needs either name.
-#[cfg(test)]
-pub use hub::NetOptions;
+// The unit tests name the transport type; nothing outside `net/` needs it.
 #[cfg(test)]
 pub use transport::NetTransport;
