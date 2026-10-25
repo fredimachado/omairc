@@ -120,6 +120,10 @@ jobs:
             --format github-env `
             --github-env "$env:GITHUB_ENV"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Keep display/artifact for packaging names. Clear the cargo stamp so
+          # Clippy/Test read version.pri (build.rs treats empty as unset).
+          # bin\build-rust.bat gets OMAIRC_BUILD_VERSION only on the Build step.
+          Add-Content $env:GITHUB_ENV "OMAIRC_BUILD_VERSION="
           Get-Content $env:GITHUB_ENV | Select-String '^OMAIRC_'
 
       - name: Install Rust
@@ -151,8 +155,20 @@ jobs:
           -A clippy::nursery
           -A clippy::perf
 
+      # Unit tests before the staged stamp so compiled_version_is_the_version_pri_value
+      # sees version.pri, not a PR display suffix.
+      - name: Test
+        working-directory: poc
+        run: cargo test --locked
+
+      - name: Test with product features
+        working-directory: poc
+        run: cargo test --locked --features product
+
       - name: Build and stage product release
         shell: cmd
+        env:
+          OMAIRC_BUILD_VERSION: ${{ env.OMAIRC_DISPLAY_VERSION }}
         run: bin\build-rust.bat
 
       - name: Assert static CRT
@@ -170,14 +186,6 @@ jobs:
               throw "Expected build\release\$name"
             }
           }
-
-      - name: Test
-        working-directory: poc
-        run: cargo test --locked
-
-      - name: Test with product features
-        working-directory: poc
-        run: cargo test --locked --features product
 
       - name: Smoke
         run: |
@@ -238,6 +246,21 @@ jobs:
           }
 
           $dest = Join-Path $env:RUNNER_TEMP 'omairc-rust-inst'
+          # Seed a prior Qt tree so [InstallDelete] is exercised on upgrade.
+          if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path (Join-Path $dest 'platforms') | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $dest 'qml\QtQuick') | Out-Null
+          Set-Content -Path (Join-Path $dest 'Qt6Core.dll') -Value 'fake-qt-core'
+          Set-Content -Path (Join-Path $dest 'Qt6Gui.dll') -Value 'fake-qt-gui'
+          Set-Content -Path (Join-Path $dest 'qt6keychain.dll') -Value 'fake-keychain'
+          Set-Content -Path (Join-Path $dest 'msvcp140.dll') -Value 'fake-crt'
+          Set-Content -Path (Join-Path $dest 'msvcp140_1.dll') -Value 'fake-crt'
+          Set-Content -Path (Join-Path $dest 'vcruntime140.dll') -Value 'fake-crt'
+          Set-Content -Path (Join-Path $dest 'vcruntime140_1.dll') -Value 'fake-crt'
+          Set-Content -Path (Join-Path $dest 'platforms\qwindows.dll') -Value 'fake-platform'
+          Set-Content -Path (Join-Path $dest 'qml\QtQuick\qmldir') -Value 'fake-qml'
+          Set-Content -Path (Join-Path $dest 'qt.conf') -Value '[Paths]'
+
           $log = Join-Path $env:RUNNER_TEMP 'omairc-rust-setup.log'
           $setupArgs = @(
             '/VERYSILENT',
@@ -263,11 +286,21 @@ jobs:
           if (-not (Test-Path (Join-Path $dest 'COPYING-LGPL'))) {
             throw 'COPYING-LGPL was not installed'
           }
-          if (Test-Path (Join-Path $dest 'msvcp140.dll')) {
-            throw 'Rust install must not ship msvcp140.dll'
-          }
-          if (Test-Path (Join-Path $dest 'Qt6Core.dll')) {
-            throw 'Rust install must not ship Qt DLLs'
+          foreach ($leftover in @(
+            'Qt6Core.dll',
+            'Qt6Gui.dll',
+            'qt6keychain.dll',
+            'msvcp140.dll',
+            'msvcp140_1.dll',
+            'vcruntime140.dll',
+            'vcruntime140_1.dll',
+            'qt.conf',
+            'platforms',
+            'qml'
+          )) {
+            if (Test-Path (Join-Path $dest $leftover)) {
+              throw "InstallDelete left Qt leftover: $leftover"
+            }
           }
           $version = (& $exe --version 2>&1 | Out-String).Trim()
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -329,7 +362,7 @@ jobs:
             Start-Sleep -Milliseconds 200
           } while ($true)
           $mb = [math]::Round(((Get-Item $setup).Length) / 1MB, 2)
-          Write-Host "Rust installer smoke ok: $setup ($mb MB); config survived uninstall"
+          Write-Host "Rust installer smoke ok: $setup ($mb MB); InstallDelete cleared Qt leftovers; config survived uninstall"
 
   windows:
     needs: changes
