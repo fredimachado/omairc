@@ -309,9 +309,9 @@ jobs:
 
           $shortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Omairc.lnk'
           if (-not (Test-Path $shortcut)) { throw "Expected Start Menu shortcut $shortcut" }
-          # Inno writes AppUserModel_* into the .lnk property store. Those
-          # strings are often UTF-8/ASCII (or non-contiguous as UTF-16), so a
-          # whole-file Unicode.GetString scan misses a correctly written AUMID.
+          # Inno writes AppUserModel_* into the .lnk property store. AUMID is
+          # often UTF-16LE (or ASCII); ToastActivatorCLSID is typically the
+          # 16-byte Windows GUID layout, not the braced/text GUID string.
           $lnkBytes = [System.IO.File]::ReadAllBytes($shortcut)
           $lnkHex = [System.BitConverter]::ToString($lnkBytes).Replace('-', '')
           function Test-LnkContains([string]$text) {
@@ -326,7 +326,14 @@ jobs:
           if (-not (Test-LnkContains 'FrediMachado.Omairc')) {
             throw 'Start Menu shortcut is missing AppUserModelID FrediMachado.Omairc'
           }
-          if (-not (Test-LnkContains 'DBE38477-5F87-42A1-AFA1-11FA12F2E5E5')) {
+          # DBE38477-5F87-42A1-AFA1-11FA12F2E5E5 as mixed-endian GUID bytes.
+          $toastClsidBlob = '7784E3DB875FA142AFA111FA12F2E5E5'
+          $toastClsidText = 'DBE38477-5F87-42A1-AFA1-11FA12F2E5E5'
+          if (-not (
+            ($lnkHex -like "*$toastClsidBlob*") -or
+            (Test-LnkContains $toastClsidText) -or
+            (Test-LnkContains "{$toastClsidText}")
+          )) {
             throw 'Start Menu shortcut is missing toast activator CLSID'
           }
 
