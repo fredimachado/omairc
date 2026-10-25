@@ -24,8 +24,8 @@ todos:
     content: "M5: Rust live tests against Ergo, Solanum, ngIRCd (bin/test-live parity)"
     status: completed
   - id: m6-ui-tests
-    content: "M6: GPUI view tests for the QML-only behaviors (scroll, typing row, focus, sheets)"
-    status: pending
+    content: "M6: GPUI view tests for the QML-only behaviors (scroll, typing row, focus, sheets) - first wave + checklist landed; URL click / file-drop pending"
+    status: in_progress
   - id: m7-poc-driver
     content: "M7: pointer verbs in control-omairc-poc, keyboard fallbacks for about/send-message recipes"
     status: pending

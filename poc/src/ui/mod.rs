@@ -11,6 +11,8 @@ pub mod sheets;
 pub mod shell;
 pub mod sidebar;
 pub mod status_row;
+#[cfg(test)]
+mod tests;
 pub mod transcript;
 pub mod typing_row;
 pub mod update;
