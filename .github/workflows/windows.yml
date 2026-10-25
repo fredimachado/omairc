@@ -309,12 +309,24 @@ jobs:
 
           $shortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Omairc.lnk'
           if (-not (Test-Path $shortcut)) { throw "Expected Start Menu shortcut $shortcut" }
+          # Inno writes AppUserModel_* into the .lnk property store. Those
+          # strings are often UTF-8/ASCII (or non-contiguous as UTF-16), so a
+          # whole-file Unicode.GetString scan misses a correctly written AUMID.
           $lnkBytes = [System.IO.File]::ReadAllBytes($shortcut)
-          $lnkText = [System.Text.Encoding]::Unicode.GetString($lnkBytes)
-          if ($lnkText -notlike '*FrediMachado.Omairc*') {
+          $lnkHex = [System.BitConverter]::ToString($lnkBytes).Replace('-', '')
+          function Test-LnkContains([string]$text) {
+            $asciiHex = [System.BitConverter]::ToString(
+              [System.Text.Encoding]::ASCII.GetBytes($text)
+            ).Replace('-', '')
+            $utf16Hex = [System.BitConverter]::ToString(
+              [System.Text.Encoding]::Unicode.GetBytes($text)
+            ).Replace('-', '')
+            return ($lnkHex -like "*$asciiHex*") -or ($lnkHex -like "*$utf16Hex*")
+          }
+          if (-not (Test-LnkContains 'FrediMachado.Omairc')) {
             throw 'Start Menu shortcut is missing AppUserModelID FrediMachado.Omairc'
           }
-          if ($lnkText -notlike '*DBE38477-5F87-42A1-AFA1-11FA12F2E5E5*') {
+          if (-not (Test-LnkContains 'DBE38477-5F87-42A1-AFA1-11FA12F2E5E5')) {
             throw 'Start Menu shortcut is missing toast activator CLSID'
           }
 
