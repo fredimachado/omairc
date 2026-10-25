@@ -14,15 +14,16 @@ impl Shell {
         for arrival in self.controller.take_arrivals() {
             match arrival {
                 Arrival::Mention(mention) => {
+                    let arrival_active = self.arrival_active();
                     note_title_mark(
                         &mut self.title_mark,
-                        self.window_active,
+                        arrival_active,
                         &mention.author,
                         &plain_irc_text(&mention.body),
                         &mention.network_id,
                         &mention.target,
                     );
-                    if !self.window_active {
+                    if !arrival_active {
                         let msgid = mention.msgid.value.clone();
                         self.notifier.notify(
                             &mention.author,

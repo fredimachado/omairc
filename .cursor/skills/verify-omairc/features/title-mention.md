@@ -38,5 +38,6 @@ Preconditions:
 - Desktop notifications are a separate feature. This one is only the window title. The terminal client uses the same words in the title it already sets.
 - A muted conversation does not change the title. Chat in that conversation still arrives.
 - An invite does not change the title. It stays in the session inbox.
+- Minimized and hidden count as away even when the window stays OS-active (`arrivalWindowActive` / Rust `TranscriptActivity`). A mention while minimized still retitles. A focus report while still minimized must not clear the mark. Wayland cannot report minimize, so arrivals look focused there (Hyprland special workspaces included).
 - Opening Status does not clear the mark. Returning to the marked conversation does.
 - The plain title is still `{conversation} - Omairc`, `{conversation} · {displayName} - Omairc` when that name is on more than one network, or `{displayName} Status`.

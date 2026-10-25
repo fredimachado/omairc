@@ -1,7 +1,10 @@
 //! Linux primary-selection write and middle-click paste for [`SingleLineInput`].
 
-use gpui::{ClipboardItem, Context, EntityInputHandler, MouseDownEvent, Window};
+use gpui::{Context, MouseDownEvent, Window};
+#[cfg(target_os = "linux")]
+use gpui::{ClipboardItem, EntityInputHandler};
 
+#[cfg(target_os = "linux")]
 use crate::model::text_edit::selection_text;
 
 use super::SingleLineInput;

@@ -13,6 +13,8 @@ use std::collections::BTreeMap;
 use crate::storage::profilestore::Profile;
 
 pub(crate) mod defer;
+// Re-exported for controller tests; production backends import `defer` directly.
+#[cfg(test)]
 pub(crate) use defer::DeferringCredentialStore;
 #[cfg(target_os = "linux")]
 mod linux;

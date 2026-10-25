@@ -7,13 +7,13 @@ todos:
     status: in_progress
   - id: m0-tui-keyring
     content: "M0b: port the dual-attribute Secret Service lookup to tui/internal/storage/secretservice.go (same contract)"
-    status: pending
+    status: completed
   - id: m1-windows-ci
     content: "M1: Windows + macOS cargo build/test in CI, cfg(unix) hygiene, product-feature builds"
-    status: pending
+    status: completed
   - id: m2-minimize
     content: "M2: minimized/hidden window suspension (transcriptSuspended port)"
-    status: pending
+    status: completed
   - id: m3-windows-packaging
     content: "M3: Windows build script, static CRT, Inno installer from cargo output, Qt-to-Rust upgrade path"
     status: pending
@@ -120,8 +120,9 @@ Problems found and fixed in M0:
      connects;
   3. change it in Rust, then start Qt: Qt reads the new value;
   4. confirm `secret-tool search --all server omairc` shows one item per key.
-  Make it a `#[ignore]`d test beside `the_secret_service_round_trips_a_secret`
-  that seeds a QtKeychain-shaped item through oo7.
+- [x] `#[ignore]`d test beside `the_secret_service_round_trips_a_secret`
+  that seeds a QtKeychain-shaped item through oo7
+  (`a_qtkeychain_shaped_secret_is_readable` in `linux.rs`).
 - [ ] Windows end-to-end: a machine with Qt registry settings plus a TUI
   `omairc.conf` gets both sets of networks after first Rust start; a second
   start changes nothing.
@@ -148,57 +149,31 @@ read, write, and delete there, with Go tests that mirror `secretattrs.rs`.
 
 ## M1 — Cross-platform CI for the Rust client
 
-Today only Linux runs `cargo test` (inside `bin/test`). About 3k lines of
-Windows-only code (toast ownership, named pipe, registry import, Credential
-Manager) and the macOS code (keychain, notifications, menus) never compile in
-CI. This branch shows the test suite did not compile on Windows before the
-`theme.rs` fix.
+**Done on this branch.** Today only Linux ran `cargo test` (inside `bin/test`).
+About 3k lines of Windows-only code and the macOS code never compiled in CI.
 
-- `.github/workflows/windows.yml`: add a `rust` job on `windows-latest`
-  - `cargo build --release --locked --features product`;
-  - `cargo test --locked` and `cargo test --locked --features product`;
-  - smoke `omairc.exe --version`, `--help`, `OMAIRC_SMOKE=1`.
+- `.github/workflows/windows.yml`: `rust` job on `windows-2022` (same image as
+  the Qt job): release product build, both test suites, smoke
+  (`--version` / `--help` / `OMAIRC_SMOKE=1 --demo-server`). A `changes` job
+  skips the Qt job on poc-only diffs.
 - `.github/workflows/macos.yml`: the same on `macos-15` and `macos-15-intel`.
-- `test.yml`: also run `cargo test --features product` on Linux, and
-  `cargo clippy --all-targets -- -D warnings` (two unused-import warnings in
-  `ui/input_primary.rs` show up on Windows today).
-- Add `Swatinem/rust-cache` keyed on `poc/Cargo.lock`.
-- Add `poc/tests/` gate: no `std::os::unix` / `std::os::windows` outside a
-  matching `cfg`, so the Windows break cannot come back.
-- Path filters: trigger these jobs on `poc/**`, `version.pri`, and the
-  workflow files.
+- `test.yml`: `cargo test --locked --features product`, clippy with
+  `-D warnings` (style/complexity/pedantic/nursery/perf allowed until a cleanup
+  slice; unused_imports and correctness stay denied), `Swatinem/rust-cache`.
+- `poc/tests/os_cfg_hygiene.rs`: no `std::os::unix` / `std::os::windows` outside
+  a matching cfg (or a `windows.rs` / `linux.rs` / `macos.rs` module file).
+- Path filters include `poc/**`, `version.pri`, and the workflow files.
 
 ## M2 — Minimized and hidden window counts as away
 
-Qt (`OmaircWindow.qml` `transcriptSuspended`, `onVisibilityChanged`,
-`finishTranscriptSuspension`, `windowFocusGained`) treats Minimized or Hidden
-as away even while `Window.active` stays true. A focus report while suspended
-does not consume unread, and a burst while minimized still plants the
-`New messages` mark. Rust only follows `observe_window_activation`.
-
-- `ui/shell/unread.rs`: track `suspended` beside `window_active`. The
-  effective activity passed to `controller.set_window_active` is
-  `active && !suspended`.
-- Source of `suspended`, per platform, behind one `desktop/windowvisibility.rs`
-  seam returning `Visible | Minimized | Hidden`:
-  - Windows: `IsIconic(hwnd)` on activation and resize events
-    (`WM_SIZE`/`SIZE_MINIMIZED` through gpui's raw window handle);
-  - macOS: `NSWindow.isMiniaturized` / `occlusionState`
-    (`NSWindowDidMiniaturizeNotification`);
-  - X11: `_NET_WM_STATE_HIDDEN`;
-  - Wayland: no minimize state, so report `Visible`. Hyprland special
-    workspaces are not observable; document it.
-  - Check first whether gpui 0.2.2 exposes `window.is_minimized()` or
-    `observe_window_bounds` with a minimized flag. If it does, use that.
-- On leaving suspension, mirror `finishTranscriptSuspension`: re-apply focus
-  only if the window is actually active.
-- Tests (controller level, pure): port `focusWhileMinimizedDoesNotConsumeUnread`,
-  `restoreWhileInactiveKeepsCatchUpOff`, `minimizedActiveWindowNotifiesMention`,
-  `minimizedChannelFollowEndLandsOnMark`, `minimizedDirectFollowEndLandsOnMark`,
-  and `hiddenWindowFollowEndLandsOnMark` from `tests/ui/tst_omairc.qml`
-  against a shell state struct with the visibility seam faked.
-- Feature map: add the minimize rule to `mention-notify.md` /
-  `title-mention.md` Gotchas.
+**Done on this branch.** gpui 0.2.2 has no minimize API, so
+`desktop/windowvisibility` reads the native handle (Windows `IsIconic` /
+`IsWindowVisible`, macOS `NSWindow.isMiniaturized` / `isVisible`, X11
+`_NET_WM_STATE_HIDDEN`; Wayland always `Visible`). The shell keeps
+`TranscriptActivity` (`window_active` + `suspended`) and pushes
+`active && !suspended` to the controller. Pure tests in
+`controller/tests/suspension.rs` and `windowvisibility` cover the Qt cases;
+feature-map Gotchas note the minimize rule and the Wayland/Hyprland limit.
 
 ## M3 — Windows build and installer from cargo
 

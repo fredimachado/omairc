@@ -36,3 +36,4 @@ mod shell;
 mod sends;
 mod source;
 mod stores;
+mod suspension;
