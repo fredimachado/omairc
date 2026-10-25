@@ -829,16 +829,12 @@ def check_ci_package_triggers():
         "if: github.event_name == 'workflow_dispatch' || "
         "startsWith(github.ref, 'refs/tags/v')"
     )
+    # Rust owns tag/dispatch release artifacts. Qt jobs compile/smoke only.
     for relative, text, names in (
         (".github/workflows/windows.yml", windows_text, (
-            "Upload portable tree",
-            "Install Inno Setup",
-            "Package installer",
-            "Smoke installer",
-            "Upload installer",
+            "Upload rust installer",
         )),
         (".github/workflows/macos.yml", macos_text, (
-            "Package app zip",
             "Upload app zip",
             "Download architecture zips",
             "Assert both architecture zips",
@@ -853,7 +849,33 @@ def check_ci_package_triggers():
                 problems.append(
                     f"{relative}: {name} must package only on workflow_dispatch "
                     "and v* tags; pull requests and main skip artifacts")
-
+    if "Publish GitHub Release asset" not in windows_text:
+        problems.append(
+            ".github/workflows/windows.yml: rust job must publish the setup "
+            "and zip to the GitHub Release on v* tags")
+    if "Package rust release zip" not in windows_text:
+        problems.append(
+            ".github/workflows/windows.yml: rust job must build "
+            "omairc-<v>-windows-x64.zip for the GitHub Release")
+    if re.search(
+            r"(?m)^      - name: (Package installer|Upload installer|"
+            r"Package release zip|Upload portable tree)$",
+            windows_text,
+    ):
+        problems.append(
+            ".github/workflows/windows.yml: Qt windows job must not package "
+            "or upload release assets; rust owns those steps")
+    if "needs: rust" not in macos_text:
+        problems.append(
+            ".github/workflows/macos.yml: macos-zips must consume rust job "
+            "artifacts, not the Qt macos job")
+    if re.search(
+            r"(?m)^      - name: Package app zip$",
+            macos_text,
+    ):
+        problems.append(
+            ".github/workflows/macos.yml: Qt macos job must not package the "
+            "release zip; rust owns Package rust app zip / Upload app zip")
     portable = _named_step_header(macos_text, "Portable tests")
     if not portable:
         problems.append(".github/workflows/macos.yml: missing step 'Portable tests'")

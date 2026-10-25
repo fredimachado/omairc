@@ -199,12 +199,16 @@ feature-map Gotchas note the minimize rule and the Wayland/Hyprland limit.
   JSON.
 - `windows.yml` smoke-installs the setup, runs `omairc.exe --version`, checks
   the shortcut AUMID, uninstalls, and checks `%LOCALAPPDATA%\omairc` survives.
+  On tags/dispatch the rust job uploads the setup artifact, builds the
+  portable zip, and publishes both to the GitHub Release; the Qt job no
+  longer packages or uploads.
 - Ship order: one release where the setup contains Rust, with M0 already in.
 
 ## M4 — macOS app bundle from cargo
 
-**Done on this branch.** Qt `bin/build-macos` and its CI job stay the release
-path; Rust lands beside them.
+**Done on this branch.** Rust owns tag/dispatch release zips (notarize + cask
+artifacts). Qt `macos` CI still compiles and runs portable tests when the `qt`
+path filter matches; it no longer packages, notarizes, or publishes.
 
 - `bin/build-macos-rust`: `cargo build --release --locked --features product`
   for the host triple (`aarch64-apple-darwin` / `x86_64-apple-darwin`).
@@ -214,12 +218,14 @@ path; Rust lands beside them.
   `bin/sign-macos` (hardened runtime + `Omairc.entitlements`) and runs
   `bin/check-macos-bundle`.
 - Reuse `bin/package-macos`, `bin/notarize-macos`, `bin/check-macos-syspolicy`
-  against the rust-built app (`OMAIRC_CLIENT=rust` for error text). Release
-  zip upload and notarization stay on the Qt job until cutover.
+  against the rust-built app (`OMAIRC_CLIENT=rust` for error text). On
+  tags/dispatch the rust job uploads cask zip names, notarizes when secrets
+  exist, and publishes GitHub Release assets. `macos-zips` / `bump-cask`
+  consume rust artifacts.
 - `Casks/omairc.rb`: unchanged zip names / PATH helper / zap paths.
 - `macos.yml` rust job: assemble, assert layout + Mach-O arch, smoke the
   bundle with `OMAIRC_SMOKE=1`, prove `bin/package-macos` zip names. Developer
-  ID is optional and never required on pull requests.
+  ID is optional on pull requests; v* tags fail closed without signing secrets.
 
 ## M5 — Live tests against real IRC daemons
 

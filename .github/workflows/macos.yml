@@ -115,16 +115,15 @@ jobs:
           echo "qt=${{ steps.filter.outputs.qt }}" >> "$GITHUB_OUTPUT"
 
   # Rust product client. No Qt. Same runners as the Qt matrix so Apple Silicon
-  # and Intel both assemble omairc.app (keychain, menus, notifications).
-  # Release zip upload / notarization stay on the Qt job until cutover; this
-  # job proves the cargo bundle, ad-hoc sign, check-macos-bundle, and smoke.
-  # Developer ID is optional here and never required on pull requests.
+  # and Intel both assemble omairc.app. On tags/dispatch this job notarizes,
+  # uploads the cask zip names, and publishes GitHub Release assets. Developer
+  # ID is optional on pull requests; v* tags fail closed without signing secrets.
   rust:
     name: Rust ${{ matrix.suffix }}
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 45 || 90 }}
     strategy:
       fail-fast: false
       matrix:
@@ -135,6 +134,8 @@ jobs:
           - os: macos-15-intel
             suffix: macos-x64
             macho: x86_64
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7
 
@@ -154,6 +155,15 @@ jobs:
           # bin/build-macos-rust gets OMAIRC_BUILD_VERSION only on the Build step.
           echo "OMAIRC_BUILD_VERSION=" >> "$GITHUB_ENV"
           grep '^OMAIRC_' "$GITHUB_ENV" | tail -8
+
+      - name: Assert tag version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          test "$tag" = "$OMAIRC_VERSION"
+          test "$OMAIRC_DISPLAY_VERSION" = "$OMAIRC_VERSION"
+          test "$OMAIRC_ARTIFACT_VERSION" = "$OMAIRC_VERSION"
 
       - name: Select host arch
         env:
@@ -222,18 +232,40 @@ jobs:
         working-directory: poc
         run: cargo test --locked --features product
 
-      # Optional Developer ID for tag/main when secrets exist. Pull requests
-      # stay ad-hoc; do not set OMAIRC_REQUIRE_DEVELOPER_ID without a cert.
+      # Developer ID + notary credentials. Pull requests stay ad-hoc when secrets
+      # are absent. Tag releases require APPLE_CERTIFICATE (and notary keys).
       - name: Import Developer ID certificate for rust
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
         run: |
           set -euo pipefail
+          is_tag=0
+          case "${GITHUB_REF:-}" in
+            refs/tags/v*) is_tag=1 ;;
+          esac
+
           if [ -z "${APPLE_CERTIFICATE:-}" ] || [ -z "${APPLE_CERTIFICATE_PASSWORD:-}" ]; then
+            if [ "$is_tag" -eq 1 ]; then
+              echo "Tag releases require APPLE_CERTIFICATE and APPLE_CERTIFICATE_PASSWORD." >&2
+              exit 1
+            fi
             echo "No Developer ID certificate; rust omairc.app will stay ad-hoc."
             exit 0
+          fi
+
+          if [ -z "${APP_STORE_CONNECT_PRIVATE_KEY:-}" ] || \
+             [ -z "${APP_STORE_CONNECT_KEY_ID:-}" ] || \
+             [ -z "${APP_STORE_CONNECT_ISSUER_ID:-}" ]; then
+            if [ "$is_tag" -eq 1 ]; then
+              echo "Tag releases require App Store Connect API key, key id, and issuer." >&2
+              exit 1
+            fi
+            echo "Developer ID present without notary credentials; the zip will be signed but not notarized."
           fi
 
           cert_path="$RUNNER_TEMP/developer-id-rust.p12"
@@ -279,10 +311,25 @@ jobs:
           {
             echo "CODESIGN_IDENTITY=$identity"
             echo "APPLE_TEAM_ID=${APPLE_TEAM_ID:-}"
+            echo "OMAIRC_REQUIRE_DEVELOPER_ID=1"
             echo "MACOS_RUST_SIGNING_KEYCHAIN=$keychain_path"
           } >> "$GITHUB_ENV"
+
+          if [ -n "${APP_STORE_CONNECT_PRIVATE_KEY:-}" ] && \
+             [ -n "${APP_STORE_CONNECT_KEY_ID:-}" ] && \
+             [ -n "${APP_STORE_CONNECT_ISSUER_ID:-}" ]; then
+            key_path="$RUNNER_TEMP/AuthKey-rust.p8"
+            python3 -c 'import os, pathlib, sys; text = os.environ["APP_STORE_CONNECT_PRIVATE_KEY"].replace("\\n", "\n"); pathlib.Path(sys.argv[1]).write_text(text if text.endswith("\n") else text + "\n", encoding="utf-8")' "$key_path"
+            chmod 600 "$key_path"
+            {
+              echo "APP_STORE_CONNECT_API_KEY_PATH=$key_path"
+              echo "APP_STORE_CONNECT_KEY_ID=$APP_STORE_CONNECT_KEY_ID"
+              echo "APP_STORE_CONNECT_ISSUER_ID=$APP_STORE_CONNECT_ISSUER_ID"
+            } >> "$GITHUB_ENV"
+          fi
+
           rm -f "$cert_path"
-          echo "Imported $identity for rust bundle (not required on pull requests)"
+          echo "Imported $identity for rust release bundle"
 
       - name: Build rust app bundle
         env:
@@ -360,9 +407,8 @@ jobs:
           test -L "$link"
           smoke "$link"
 
-      # Distinct step name from the Qt job so check-conventions keeps that
-      # job's package-only-on-tag gate. Rust proves the zip layout on every run.
-      # Do not upload as the release artifact name; Qt still ships those zips.
+      # Prove the zip layout on every run. Upload / notarize / publish stay
+      # gated to workflow_dispatch and v* tags (cask names match Qt's).
       - name: Package rust app zip
         env:
           OMAIRC_CLIENT: rust
@@ -375,6 +421,54 @@ jobs:
           test -f "$zip"
           echo "Rust app zip ok: $zip ($(wc -c <"$zip") bytes)"
 
+      - name: Verify Developer ID signature
+        if: env.CODESIGN_IDENTITY != ''
+        run: |
+          set -euo pipefail
+          app="$GITHUB_WORKSPACE/build/omairc.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dvv "$app"
+          codesign -d --entitlements :- "$app"
+          bin/check-macos-bundle "$app"
+          bin/check-macos-syspolicy notary-submission "$app"
+
+      - name: Upload app zip
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v7
+        with:
+          name: omairc-${{ env.OMAIRC_ARTIFACT_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}
+          path: dist/omairc-${{ env.OMAIRC_ARTIFACT_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}.zip
+          if-no-files-found: error
+
+      - name: Notarize app zip
+        if: env.APP_STORE_CONNECT_API_KEY_PATH != '' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+        env:
+          OMAIRC_REQUIRE_NOTARIZE: ${{ startsWith(github.ref, 'refs/tags/v') && '1' || '0' }}
+        run: bin/notarize-macos
+
+      - name: Verify notarization ticket
+        if: env.OMAIRC_NOTARIZED == '1'
+        run: |
+          set -euo pipefail
+          xcrun stapler validate "$GITHUB_WORKSPACE/build/omairc.app"
+
+      - name: Assess Gatekeeper
+        if: env.OMAIRC_NOTARIZED == '1'
+        run: |
+          set -euo pipefail
+          app="$GITHUB_WORKSPACE/build/omairc.app"
+          bin/check-macos-syspolicy distribution "$app"
+          spctl --assess --type execute --verbose=4 "$app"
+
+      - name: Replace zip with stapled app
+        if: env.OMAIRC_NOTARIZED == '1'
+        uses: actions/upload-artifact@v7
+        with:
+          name: omairc-${{ env.OMAIRC_ARTIFACT_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}
+          path: dist/omairc-${{ env.OMAIRC_ARTIFACT_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}.zip
+          if-no-files-found: error
+          overwrite: true
+
       - name: Delete rust signing keychain
         if: always()
         run: |
@@ -382,13 +476,54 @@ jobs:
           if [ -n "${MACOS_RUST_SIGNING_KEYCHAIN:-}" ]; then
             security delete-keychain "$MACOS_RUST_SIGNING_KEYCHAIN" || true
           fi
+          if [ -n "${APP_STORE_CONNECT_API_KEY_PATH:-}" ]; then
+            rm -f "$APP_STORE_CONNECT_API_KEY_PATH"
+          fi
 
+      - name: Publish GitHub Release asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          zip="dist/omairc-${OMAIRC_ARTIFACT_VERSION}-${OMAIRC_MAC_SUFFIX}.zip"
+          zip_name=$(basename "$zip")
+          test -f "$zip"
+
+          deadline=$(( $(date +%s) + 1800 ))
+          while ! gh release view "$tag" >/dev/null 2>&1; do
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "Timed out waiting for GitHub Release $tag (created by Release package)" >&2
+              exit 1
+            fi
+            echo "Waiting for release $tag..."
+            sleep 15
+          done
+
+          # Only replace this architecture's zip so a parallel Intel/ARM
+          # job cannot delete the sibling release asset.
+          # macOS /bin/bash is 3.2; mapfile is Bash 4+.
+          assets=$(gh release view "$tag" --json assets --jq '.assets[].name')
+          while IFS= read -r asset || [ -n "$asset" ]; do
+            [ -n "$asset" ] || continue
+            case "$asset" in
+              omairc-[0-9]*-"$OMAIRC_MAC_SUFFIX".zip)
+                if [ "$asset" != "$zip_name" ]; then
+                  gh release delete-asset "$tag" "$asset" --yes
+                fi
+                ;;
+            esac
+          done <<< "$assets"
+
+          gh release upload "$tag" "$zip" --clobber
+
+  # Qt compile + portable tests until M9 cutover. Zip upload, notarization,
+  # and GitHub Release assets ship from the rust job above.
   macos:
     name: macOS ${{ matrix.suffix }}
     needs: changes
     if: needs.changes.outputs.qt == 'true'
     runs-on: ${{ matrix.os }}
-    timeout-minutes: ${{ github.event_name == 'pull_request' && 45 || 90 }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -408,7 +543,6 @@ jobs:
     env:
       QT_VERSION: 6.8.3
       QTKEYCHAIN_VERSION: 0.15.0
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7
 
@@ -565,38 +699,18 @@ jobs:
           cmake --install "$build"
           test -f "$pri"
 
+      # Optional Developer ID so Qt PR/main builds can still exercise signing.
+      # Tag release notarization and fail-closed secrets live on the rust job.
       - name: Import Developer ID certificate
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          is_tag=0
-          case "${GITHUB_REF:-}" in
-            refs/tags/v*) is_tag=1 ;;
-          esac
-
           if [ -z "${APPLE_CERTIFICATE:-}" ] || [ -z "${APPLE_CERTIFICATE_PASSWORD:-}" ]; then
-            if [ "$is_tag" -eq 1 ]; then
-              echo "Tag releases require APPLE_CERTIFICATE and APPLE_CERTIFICATE_PASSWORD." >&2
-              exit 1
-            fi
-            echo "No Developer ID certificate; the zip will stay ad-hoc."
+            echo "No Developer ID certificate; Qt omairc.app will stay ad-hoc."
             exit 0
-          fi
-
-          if [ -z "${APP_STORE_CONNECT_PRIVATE_KEY:-}" ] || \
-             [ -z "${APP_STORE_CONNECT_KEY_ID:-}" ] || \
-             [ -z "${APP_STORE_CONNECT_ISSUER_ID:-}" ]; then
-            if [ "$is_tag" -eq 1 ]; then
-              echo "Tag releases require App Store Connect API key, key id, and issuer." >&2
-              exit 1
-            fi
-            echo "Developer ID present without notary credentials; the zip will be signed but not notarized."
           fi
 
           cert_path="$RUNNER_TEMP/developer-id.p12"
@@ -642,25 +756,11 @@ jobs:
           {
             echo "CODESIGN_IDENTITY=$identity"
             echo "APPLE_TEAM_ID=${APPLE_TEAM_ID:-}"
-            echo "OMAIRC_REQUIRE_DEVELOPER_ID=1"
             echo "MACOS_SIGNING_KEYCHAIN=$keychain_path"
           } >> "$GITHUB_ENV"
 
-          if [ -n "${APP_STORE_CONNECT_PRIVATE_KEY:-}" ] && \
-             [ -n "${APP_STORE_CONNECT_KEY_ID:-}" ] && \
-             [ -n "${APP_STORE_CONNECT_ISSUER_ID:-}" ]; then
-            key_path="$RUNNER_TEMP/AuthKey.p8"
-            python3 -c 'import os, pathlib, sys; text = os.environ["APP_STORE_CONNECT_PRIVATE_KEY"].replace("\\n", "\n"); pathlib.Path(sys.argv[1]).write_text(text if text.endswith("\n") else text + "\n", encoding="utf-8")' "$key_path"
-            chmod 600 "$key_path"
-            {
-              echo "APP_STORE_CONNECT_API_KEY_PATH=$key_path"
-              echo "APP_STORE_CONNECT_KEY_ID=$APP_STORE_CONNECT_KEY_ID"
-              echo "APP_STORE_CONNECT_ISSUER_ID=$APP_STORE_CONNECT_ISSUER_ID"
-            } >> "$GITHUB_ENV"
-          fi
-
           rm -f "$cert_path"
-          echo "Imported $identity"
+          echo "Imported $identity for Qt compile smoke (release assets ship from rust)"
 
       - name: Build
         run: bin/build-macos
@@ -819,61 +919,6 @@ jobs:
             -input "$GITHUB_WORKSPACE/tests/ui/tst_seeded_window.qml"
           rm -rf "$test_state"
 
-      # Compile and smoke on every push and PR. Zip and upload only on
-      # version tags and a manual workflow_dispatch when someone needs the
-      # zip. Master merges skip that work.
-      - name: Package app zip
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
-        run: bin/package-macos
-
-      - name: Verify Developer ID signature
-        if: env.CODESIGN_IDENTITY != ''
-        run: |
-          set -euo pipefail
-          app="$GITHUB_WORKSPACE/build/omairc.app"
-          codesign --verify --deep --strict --verbose=2 "$app"
-          codesign -dvv "$app"
-          codesign -d --entitlements :- "$app"
-          bin/check-macos-bundle "$app"
-          bin/check-macos-syspolicy notary-submission "$app"
-
-      - name: Upload app zip
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v7
-        with:
-          name: omairc-${{ env.OMAIRC_ARTIFACT_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}
-          path: dist/omairc-${{ env.OMAIRC_ARTIFACT_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}.zip
-          if-no-files-found: error
-
-      - name: Notarize app zip
-        if: env.APP_STORE_CONNECT_API_KEY_PATH != '' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
-        env:
-          OMAIRC_REQUIRE_NOTARIZE: ${{ startsWith(github.ref, 'refs/tags/v') && '1' || '0' }}
-        run: bin/notarize-macos
-
-      - name: Verify notarization ticket
-        if: env.OMAIRC_NOTARIZED == '1'
-        run: |
-          set -euo pipefail
-          xcrun stapler validate "$GITHUB_WORKSPACE/build/omairc.app"
-
-      - name: Assess Gatekeeper
-        if: env.OMAIRC_NOTARIZED == '1'
-        run: |
-          set -euo pipefail
-          app="$GITHUB_WORKSPACE/build/omairc.app"
-          bin/check-macos-syspolicy distribution "$app"
-          spctl --assess --type execute --verbose=4 "$app"
-
-      - name: Replace zip with stapled app
-        if: env.OMAIRC_NOTARIZED == '1'
-        uses: actions/upload-artifact@v7
-        with:
-          name: omairc-${{ env.OMAIRC_ARTIFACT_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}
-          path: dist/omairc-${{ env.OMAIRC_ARTIFACT_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}.zip
-          if-no-files-found: error
-          overwrite: true
-
       - name: Delete signing keychain
         if: always()
         run: |
@@ -881,49 +926,11 @@ jobs:
           if [ -n "${MACOS_SIGNING_KEYCHAIN:-}" ]; then
             security delete-keychain "$MACOS_SIGNING_KEYCHAIN" || true
           fi
-          if [ -n "${APP_STORE_CONNECT_API_KEY_PATH:-}" ]; then
-            rm -f "$APP_STORE_CONNECT_API_KEY_PATH"
-          fi
 
-      - name: Publish GitHub Release asset
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          set -euo pipefail
-          tag="$GITHUB_REF_NAME"
-          zip="dist/omairc-${OMAIRC_ARTIFACT_VERSION}-${OMAIRC_MAC_SUFFIX}.zip"
-          zip_name=$(basename "$zip")
-          test -f "$zip"
-
-          deadline=$(( $(date +%s) + 1800 ))
-          while ! gh release view "$tag" >/dev/null 2>&1; do
-            if [ "$(date +%s)" -ge "$deadline" ]; then
-              echo "Timed out waiting for GitHub Release $tag (created by Release package)" >&2
-              exit 1
-            fi
-            echo "Waiting for release $tag..."
-            sleep 15
-          done
-
-          # Only replace this architecture's zip so a parallel Intel/ARM
-          # job cannot delete the sibling release asset.
-          # macOS /bin/bash is 3.2; mapfile is Bash 4+.
-          assets=$(gh release view "$tag" --json assets --jq '.assets[].name')
-          while IFS= read -r asset || [ -n "$asset" ]; do
-            [ -n "$asset" ] || continue
-            case "$asset" in
-              omairc-[0-9]*-"$OMAIRC_MAC_SUFFIX".zip)
-                if [ "$asset" != "$zip_name" ]; then
-                  gh release delete-asset "$tag" "$asset" --yes
-                fi
-                ;;
-            esac
-          done <<< "$assets"
-
-          gh release upload "$tag" "$zip" --clobber
-
+  # Consumes rust job zips (cask release names). No-op on PRs/main.
   macos-zips:
     name: Both macOS zips
-    needs: macos
+    needs: rust
     if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
