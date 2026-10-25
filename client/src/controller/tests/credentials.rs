@@ -502,22 +502,24 @@ fn a_deferred_read_error_is_not_cached_forever() {
     }
     assert_eq!(*attempts.lock().expect("lock"), 1);
     store.retry_read(&key);
-    assert_eq!(
-        read_slot(store.as_ref(), &profile, PURPOSE_PASSWORD),
-        ReadSlot::Loading,
+    // Inflight is the race-free stand-in for Loading: read_slot may settle a
+    // finished worker before this thread observes Loading.
+    assert!(
+        store.deferred_read_inflight(&key),
         "retry_read starts one new worker"
     );
     let deadline = Instant::now() + Duration::from_secs(3);
-    while matches!(
-        read_slot(store.as_ref(), &profile, PURPOSE_PASSWORD),
-        ReadSlot::Loading
-    ) && Instant::now() < deadline
-    {
+    let mut answer = ReadSlot::Loading;
+    while Instant::now() < deadline {
+        answer = read_slot(store.as_ref(), &profile, PURPOSE_PASSWORD);
+        if !matches!(answer, ReadSlot::Loading) {
+            break;
+        }
         store.poll_reads();
         thread::sleep(Duration::from_millis(5));
     }
     assert_eq!(
-        read_slot(store.as_ref(), &profile, PURPOSE_PASSWORD),
+        answer,
         ReadSlot::Ready(Ok(Some("hunter2".to_owned())))
     );
     assert_eq!(*attempts.lock().expect("lock"), 2);
