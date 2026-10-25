@@ -24,7 +24,7 @@ Status values:
 - `test_connectionSheetCloseRestoresComposerFocus` -> rust: `ui::tests::sheets::connection_sheet_close_restores_composer_focus`
 - `test_aboutSheetLeftClickDimmerDismisses` -> rust: `ui::tests::sheets::about_sheet_left_click_dimmer_dismisses`
 - `test_aboutSheetIgnoresRightClickAndCardClick` -> rust: `ui::tests::sheets::about_sheet_ignores_right_click_and_card_click`
-- `test_connectionSheetBlocksSidebarAndMembers` -> rust: `ui::tests::sheets::connection_sheet_blocks_sidebar_and_members` (chords + veiled sidebar/member clicks)
+- `test_connectionSheetBlocksSidebarAndMembers` -> rust: `ui::tests::sheets::connection_sheet_blocks_sidebar_and_members (chords + veiled sidebar/member clicks)`
 - `test_memberListPageDownMovesByVisiblePage` -> rust: `ui::tests::sheets::member_list_page_down_moves_by_visible_page`
 - `test_openDirectMessageFromTranscriptNick` -> pending (M6 wave 2: real pointer hit through the view)
 - middle-click close (sidebar) -> pending (M6 wave 2: real middle-click through the view)
@@ -217,7 +217,7 @@ Status values:
 - `test_ctrlShiftKIgnoredOnDirectMessage` -> pending (cutover inventory)
 - `test_ctrlShiftKIgnoredOnStatus` -> pending (cutover inventory)
 - `test_ctrlShiftKIgnoredWhenConnectIsVisible` -> model: model/connect/*; remaining Connect view cases pending
-- `test_connectionSheetBlocksSidebarAndMembers` -> rust: `ui::tests::sheets::connection_sheet_blocks_sidebar_and_members` (chords + veiled sidebar/member clicks)
+- `test_connectionSheetBlocksSidebarAndMembers` -> rust: `ui::tests::sheets::connection_sheet_blocks_sidebar_and_members (chords + veiled sidebar/member clicks)`
 - `test_connectionSheetFirstRunIgnoresSidebarClicks` -> model: model/connect/*; remaining Connect view cases pending
 - `test_membersHeadingOpensNickSheet` -> pending (member list view variants)
 - `test_openDirectMessageFromMember` -> pending (member list view variants)

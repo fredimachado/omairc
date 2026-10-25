@@ -47,17 +47,18 @@ M6 = {
         "ui::tests::sheets::about_sheet_ignores_right_click_and_card_click"
     ),
     "connectionSheetBlocksSidebarAndMembers": (
-        "ui::tests::sheets::connection_sheet_blocks_sidebar_and_members"
+        "ui::tests::sheets::connection_sheet_blocks_sidebar_and_members "
+        "(chords + veiled sidebar/member clicks)"
     ),
     "memberListPageDownMovesByVisiblePage": (
         "ui::tests::sheets::member_list_page_down_moves_by_visible_page"
     ),
-    "openDirectMessageFromTranscriptNick": (
-        "ui::tests::pointer::open_direct_message_from_transcript_nick"
-    ),
 }
 
 PENDING = {
+    "openDirectMessageFromTranscriptNick": (
+        "pending (M6 wave 2: real pointer hit through the view)"
+    ),
     "messageBodyClickOpensHttpsUrl": "pending (M6 wave 2: observe TestApp open_url)",
     "messageBodyClickOpensHttpsUrlInsideEmphasis": "pending (M6 wave 2)",
     "droppedFileUploadsAndInsertsTheLink": "pending (M6 wave 2: demo file host)",
@@ -113,11 +114,18 @@ def main() -> None:
     ]
     for key, value in M6.items():
         lines.append(f"- `test_{key}` -> rust: `{value}`")
+    # Pointer cases stay pending; deleted ui::tests::pointer stubs must not return.
     lines.append(
-        "- middle-click close (sidebar) -> rust: "
-        "`ui::tests::pointer::middle_click_closes_a_direct`"
+        "- `test_openDirectMessageFromTranscriptNick` -> "
+        f"{PENDING['openDirectMessageFromTranscriptNick']}"
+    )
+    lines.append(
+        "- middle-click close (sidebar) -> pending "
+        "(M6 wave 2: real middle-click through the view)"
     )
     for key, value in PENDING.items():
+        if key == "openDirectMessageFromTranscriptNick":
+            continue
         lines.append(f"- `test_{key}` -> {value}")
     lines.extend(["", "## Full inventory", ""])
     for name in names:
