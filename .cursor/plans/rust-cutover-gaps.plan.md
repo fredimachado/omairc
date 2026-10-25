@@ -27,8 +27,8 @@ todos:
     content: "M6: GPUI view tests for the QML-only behaviors (scroll, typing row, focus, sheets) - first wave + checklist landed; URL click / file-drop / transcript-nick / middle-click close pending (wave 2: real pointer through the view)"
     status: in_progress
   - id: m7-poc-driver
-    content: "M7: pointer verbs in control-omairc-poc, keyboard fallbacks for about/send-message recipes"
-    status: pending
+    content: "M7: XI2 click verbs in control-omairc-poc + non-blocking verify-poc CI (bin/verify-poc-recipes)"
+    status: completed
   - id: m8-smaller
     content: "M8: dark-mode portal check on Linux, RTL visual proof, accessibility tracking"
     status: pending
@@ -285,16 +285,16 @@ in `ui/`, not `model/`:
 
 ## M7 — Feature-map recipes on the Rust client
 
-- `control-omairc-poc`: pointer input is XInput2-only under GPUI, so core
-  `xdotool click` is dropped. Implement `click-*` verbs with `xdotool`
-  `--sync mousemove` + `xinput`-based XTest clicks, which do produce XI2
-  events. Confirm under Xvfb + lavapipe.
-- If that fails, give `about.md` and `send-message.md` keyboard-only fences
-  (`Ctrl+Shift+/` opens About; Enter sends) and move the click to a separate
-  "Mouse path" bullet, as `keyboard.md` already does.
-- Run every recipe on Linux CI with lavapipe (`vulkan-swrast`), store
-  `test-artifacts/verify-poc/` as a workflow artifact. Add it to `test.yml` as a
-  non-blocking job first, then make it blocking.
+- Done: `control-omairc-poc` `click-*` verbs use `xdotool mousemove --sync`
+  then `xdotool click --window 0` through the `Virtual core XTEST pointer`
+  (`xinput`), so GPUI sees XI2 ButtonPress. Named pixels stay on the
+  1180×760 layout. `ctrl+shift+slash` maps About if a recipe needs the
+  keyboard escape hatch; shared `about.md` / `send-message.md` fences keep
+  `click-version` / `click-send`.
+- Done: `bin/verify-poc-recipes` runs every `desktop-recipe` fence under
+  Xvfb + lavapipe. `test.yml` job `verify-poc` is non-blocking
+  (`continue-on-error: true`) and uploads `test-artifacts/verify-poc/`.
+  Make that job blocking once green is stable.
 
 ## M8 — Smaller items
 

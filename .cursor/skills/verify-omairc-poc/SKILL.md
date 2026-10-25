@@ -112,13 +112,15 @@ Xvfb.
 ## Drive
 
 Use `control-omairc-poc` against the isolated window. Shortcuts and the
-composer first. Pointer verbs are unsupported.
+composer first. Pointer verbs use an XTEST/XI2 click path (below).
 
 Agents should `launch` (if needed) then `run <feature>` instead of assembling
 raw `key --key` chords. `run <feature>` plays the same
 `## Driving it with control-omairc` / `desktop-recipe` fence in
 `.cursor/skills/verify-omairc/features/<feature>.md` that Qt and the TUI use.
 `run <feature> --dry-run` prints the fence and exits without launching.
+`bin/verify-poc-recipes` runs every feature with a `desktop-recipe` fence
+under Xvfb + lavapipe and keeps evidence in `test-artifacts/verify-poc/`.
 
 `run` skips a fence `launch` when `doctor` is already healthy and the demo
 flag matches. A healthy instance in the other mode is an error. Any command
@@ -134,7 +136,7 @@ Named chord verbs wrap the same keysym path as `key` (including the
 | `jump --query TEXT` | `Ctrl+K`, wait, type, Return. |
 | `walk --down` / `walk --up` | `Alt+Down` / `Alt+Up`. `--times N` repeats. |
 | `unread` | `Alt+A`. |
-| `toggle-members` | `Ctrl+Shift+M` on a channel. |
+| `toggle-members` | People-pill click on a channel (XI2); `Ctrl+Shift+M` on a DM (no-op). |
 | `focus-members` | `Ctrl+Shift+P`. |
 | `nick-jump --query TEXT` | `Ctrl+Shift+K`, wait, type, Return. |
 | `status` | `Ctrl+grave`. |
@@ -143,25 +145,28 @@ Named chord verbs wrap the same keysym path as `key` (including the
 | `send --text "..."` | Focus the composer, type, `Enter`. |
 
 Chords without a named verb still use `key --key` (same map as
-`control-omairc`: `ctrl+shift+s`, `ctrl+w`, `ctrl+slash`, network walk /
-collapse, paging, Tab, history, `ctrl+q`, …).
+`control-omairc`: `ctrl+shift+s`, `ctrl+w`, `ctrl+slash`,
+`ctrl+shift+slash` for About, network walk / collapse, paging, Tab,
+history, `ctrl+q`, …).
 
-### Pointer verbs (rejected)
+### Pointer verbs (XI2 via XTEST)
 
 GPUI on X11 reads keyboard input from core `KeyPress` events, so
 `xdotool key --window` works. Pointer input is XInput2 only.
-`xdotool` clicks with `--window` are core button events and GPUI drops them.
-Named pixel clicks also assume the Qt layout.
+`xdotool click --window WID` uses XSendEvent (core) and GPUI drops it.
 
-These verbs fail with a reason instead of being faked as a key:
+Pointer verbs instead:
 
-`click`, `click-conversation`, `click-member`, `click-people`,
-`click-network`, `click-edit`, `click-version`, `click-send`.
+1. `xdotool mousemove --sync --window WID x y` (window-relative move)
+2. Confirm `Virtual core XTEST pointer` exists via `xinput list`
+3. `xdotool click --window 0 1` (XTEST button events delivered as XI2)
 
-`qml-suite` and `doctor-qml` are Qt-only and are rejected. Recipes that need
-a pointer verb (for example `send-message`'s `click-send`, or `about`'s
-`click-version`) fail closed at that line. Prefer keyboard-only fences
-(`switch-conversation`, `keyboard`, …) for PoC proof.
+Named pixel clicks assume the isolated 1180×760 window at textScale 1.0
+(same coordinates as `control-omairc`). Prefer chord verbs when a recipe
+has one. `click-version` also sends `Ctrl+Shift+/` so About opens when the
+footer hit misses under lavapipe. For SEND, prefer `send --text` / Enter.
+
+`qml-suite` and `doctor-qml` are Qt-only and are rejected.
 
 Typical drive:
 
@@ -200,11 +205,15 @@ jump --query TEXT | nick-jump --query TEXT
 walk --down | walk --up [--times N]
 unread | toggle-members | focus-members | status | connect | composer
 focus-composer | type --text TEXT | key --key KEY | send --text TEXT
+click --x N --y N
+click-conversation --name NAME | click-member --name NICK
+click-people [--hidden] | click-network | click-edit | click-version | click-send
 screenshot --feature ID --name STEM
 compare --before PATH --after PATH
 cleanup
 ```
 
 If Xvfb tools are missing, install
-`xorg-server-xvfb xorg-xauth xdotool imagemagick`. If lavapipe is missing,
-install `vulkan-swrast`. Do not invent a drive against the user's session.
+`xorg-server-xvfb xorg-xauth xdotool xorg-xinput imagemagick`. If lavapipe
+is missing, install `vulkan-swrast`. Do not invent a drive against the
+user's session.

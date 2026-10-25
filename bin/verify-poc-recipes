@@ -1,0 +1,54 @@
+#!/usr/bin/env sh
+# Run every feature-map desktop-recipe against the Rust client under
+# control-omairc-poc (Xvfb + lavapipe). Evidence stays in
+# test-artifacts/verify-poc/. Cleanup between features so unread / drafts
+# do not poison the next fence.
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+CTRL="$ROOT/.cursor/skills/verify-omairc-poc/control-omairc-poc"
+FEATURES_DIR="$ROOT/.cursor/skills/verify-omairc/features"
+
+[ -x "$CTRL" ] || {
+  echo "verify-poc-recipes: missing $CTRL" >&2
+  exit 1
+}
+[ -d "$FEATURES_DIR" ] || {
+  echo "verify-poc-recipes: missing $FEATURES_DIR" >&2
+  exit 1
+}
+
+cd "$ROOT"
+failed=0
+ran=0
+
+# shellcheck disable=SC2012
+for feature_file in "$FEATURES_DIR"/*.md; do
+  feature=$(basename -- "$feature_file" .md)
+  [ "$feature" != README ] || continue
+  grep -q '^```desktop-recipe' "$feature_file" || continue
+
+  ran=$((ran + 1))
+  echo "verify-poc-recipes: run $feature" >&2
+  "$CTRL" cleanup >/dev/null 2>&1 || true
+  if "$CTRL" run "$feature"; then
+    echo "verify-poc-recipes: ok $feature" >&2
+  else
+    echo "verify-poc-recipes: FAIL $feature" >&2
+    failed=1
+  fi
+  "$CTRL" cleanup >/dev/null 2>&1 || true
+done
+
+if [ "$ran" -eq 0 ]; then
+  echo "verify-poc-recipes: no desktop-recipe fences found" >&2
+  exit 1
+fi
+
+if [ "$failed" -ne 0 ]; then
+  echo "verify-poc-recipes: $ran feature(s) attempted; at least one failed" >&2
+  exit 1
+fi
+
+echo "verify-poc-recipes: all $ran feature(s) ok" >&2
+echo "evidence=$ROOT/test-artifacts/verify-poc"
