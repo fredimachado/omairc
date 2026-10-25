@@ -1266,6 +1266,8 @@ mod tests {
     }
 
     #[test]
+    // Restores writability after the read-only probe; the false bit is intentional cleanup.
+    #[allow(clippy::permissions_set_readonly_false)]
     fn sync_refuses_read_only_file() {
         let dir = TempDir::new("settings-readonly");
         let path = settings_in(&dir);

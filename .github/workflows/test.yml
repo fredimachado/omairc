@@ -61,6 +61,14 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: poc
+          key: linux-rust-${{ hashFiles('poc/Cargo.lock') }}
 
       - name: Install build dependencies
         run: |
@@ -74,6 +82,27 @@ jobs:
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
             libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-util1 \
             libxcb-glx0 libxcb-shm0 libxcb-sync1 libxcb-xfixes0 libx11-xcb1
+
+      # Fail fast on the Rust client before the Qt install. bin/test below still
+      # runs plain `cargo test` (default features); product features and clippy
+      # are the M1 extras that only this job owns.
+      # -D warnings catches unused_imports (the Windows break class). Style and
+      # complexity groups are pre-existing noise; allow them until a cleanup
+      # slice. correctness and suspicious stay denied.
+      - name: Clippy
+        working-directory: poc
+        run: >
+          cargo clippy --all-targets --
+          -D warnings
+          -A clippy::style
+          -A clippy::complexity
+          -A clippy::pedantic
+          -A clippy::nursery
+          -A clippy::perf
+
+      - name: Cargo test with product features
+        working-directory: poc
+        run: cargo test --locked --features product
 
       - name: Install Qt 6
         run: |

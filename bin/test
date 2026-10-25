@@ -13,8 +13,10 @@ else
   echo "Skipping tui/bin/test: go is not on PATH." >&2
 fi
 # poc/ cargo test links libxkbcommon; Linux CI installs libxkbcommon-dev.
+# --locked matches the Windows/macOS rust jobs. Product-feature coverage and
+# clippy live in .github/workflows/test.yml so a local bin/test stays one suite.
 if command -v cargo >/dev/null 2>&1; then
-  (cd "$ROOT/poc" && cargo test)
+  (cd "$ROOT/poc" && cargo test --locked)
 else
   echo "Skipping poc cargo test: cargo is not on PATH." >&2
 fi

@@ -124,6 +124,12 @@ embed-resource = "=3.0.12"
 gpui = { version = "0.2.2", features = ["test-support"] }
 regex = "=1.13.1"
 
+# dead_code is common for cfg-gated and waiting items. The dead_code_allows
+# ratchet owns intentional silencers in source. Clippy CI still fails on
+# unused_imports and correctness/suspicious (see .github/workflows/test.yml).
+[lints.rust]
+dead_code = "allow"
+
 # xattr 0.2.3 reads libc::ENOATTR on Linux, which current libc no longer
 # exports there. The vendored copy maps it to ENODATA on Linux only; the
 # other targets keep libc::ENOATTR, and Windows never builds xattr.

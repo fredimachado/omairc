@@ -10,7 +10,7 @@ todos:
     status: completed
   - id: m1-windows-ci
     content: "M1: Windows + macOS cargo build/test in CI, cfg(unix) hygiene, product-feature builds"
-    status: pending
+    status: completed
   - id: m2-minimize
     content: "M2: minimized/hidden window suspension (transcriptSuspended port)"
     status: pending
@@ -149,25 +149,20 @@ read, write, and delete there, with Go tests that mirror `secretattrs.rs`.
 
 ## M1 — Cross-platform CI for the Rust client
 
-Today only Linux runs `cargo test` (inside `bin/test`). About 3k lines of
-Windows-only code (toast ownership, named pipe, registry import, Credential
-Manager) and the macOS code (keychain, notifications, menus) never compile in
-CI. This branch shows the test suite did not compile on Windows before the
-`theme.rs` fix.
+**Done on this branch.** Today only Linux ran `cargo test` (inside `bin/test`).
+About 3k lines of Windows-only code and the macOS code never compiled in CI.
 
-- `.github/workflows/windows.yml`: add a `rust` job on `windows-latest`
-  - `cargo build --release --locked --features product`;
-  - `cargo test --locked` and `cargo test --locked --features product`;
-  - smoke `omairc.exe --version`, `--help`, `OMAIRC_SMOKE=1`.
+- `.github/workflows/windows.yml`: `rust` job on `windows-2022` (same image as
+  the Qt job): release product build, both test suites, smoke
+  (`--version` / `--help` / `OMAIRC_SMOKE=1 --demo-server`). A `changes` job
+  skips the Qt job on poc-only diffs.
 - `.github/workflows/macos.yml`: the same on `macos-15` and `macos-15-intel`.
-- `test.yml`: also run `cargo test --features product` on Linux, and
-  `cargo clippy --all-targets -- -D warnings` (two unused-import warnings in
-  `ui/input_primary.rs` show up on Windows today).
-- Add `Swatinem/rust-cache` keyed on `poc/Cargo.lock`.
-- Add `poc/tests/` gate: no `std::os::unix` / `std::os::windows` outside a
-  matching `cfg`, so the Windows break cannot come back.
-- Path filters: trigger these jobs on `poc/**`, `version.pri`, and the
-  workflow files.
+- `test.yml`: `cargo test --locked --features product`, clippy with
+  `-D warnings` (style/complexity/pedantic/nursery/perf allowed until a cleanup
+  slice; unused_imports and correctness stay denied), `Swatinem/rust-cache`.
+- `poc/tests/os_cfg_hygiene.rs`: no `std::os::unix` / `std::os::windows` outside
+  a matching cfg (or a `windows.rs` / `linux.rs` / `macos.rs` module file).
+- Path filters include `poc/**`, `version.pri`, and the workflow files.
 
 ## M2 — Minimized and hidden window counts as away
 

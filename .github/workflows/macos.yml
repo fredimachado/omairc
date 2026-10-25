@@ -18,6 +18,7 @@ on:
       - 'qtkeychain.pri'
       - 'version.pri'
       - 'src/**'
+      - 'poc/**'
       - 'fonts/**'
       - 'data/icons/**'
       - 'LICENSE'
@@ -41,6 +42,7 @@ on:
       - 'qtkeychain.pri'
       - 'version.pri'
       - 'src/**'
+      - 'poc/**'
       - 'fonts/**'
       - 'data/icons/**'
       - 'LICENSE'
@@ -53,8 +55,131 @@ permissions:
   contents: write
 
 jobs:
+  # Split path filters so a poc-only change does not pay for the Qt toolchain.
+  # Tags and workflow_dispatch run both jobs.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.select.outputs.rust }}
+      qt: ${{ steps.select.outputs.qt }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        if: github.event_name != 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/')
+        with:
+          filters: |
+            rust:
+              - 'poc/**'
+              - 'version.pri'
+              - 'fonts/**'
+              - '.github/workflows/macos.yml'
+            qt:
+              - '.github/workflows/macos.yml'
+              - 'bin/build-macos'
+              - 'bin/derive-build-versions.py'
+              - 'bin/gen-omaircversion-h.py'
+              - 'bin/package-macos'
+              - 'bin/sign-macos'
+              - 'bin/notarize-macos'
+              - 'bin/check-macos-bundle'
+              - 'bin/check-macos-syspolicy'
+              - 'packaging/macos/**'
+              - 'omairc.pro'
+              - 'qtkeychain.pri'
+              - 'version.pri'
+              - 'src/**'
+              - 'fonts/**'
+              - 'data/icons/**'
+              - 'LICENSE'
+      - name: Select jobs
+        id: select
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+            echo "qt=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "rust=${{ steps.filter.outputs.rust }}" >> "$GITHUB_OUTPUT"
+          echo "qt=${{ steps.filter.outputs.qt }}" >> "$GITHUB_OUTPUT"
+
+  # Rust product client. No Qt. Same runners as the Qt matrix so Apple Silicon
+  # and Intel both compile the macOS-only paths (keychain, menus, notifications).
+  rust:
+    name: Rust ${{ matrix.suffix }}
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            suffix: macos-arm64
+          - os: macos-15-intel
+            suffix: macos-x64
+    defaults:
+      run:
+        working-directory: poc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: poc
+          key: macos-rust-${{ matrix.suffix }}-${{ hashFiles('poc/Cargo.lock') }}
+
+      - name: Build product release
+        run: cargo build --release --locked --features product
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Test with product features
+        run: cargo test --locked --features product
+
+      - name: Smoke
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          exe="$GITHUB_WORKSPACE/poc/target/release/omairc"
+          test -x "$exe"
+          version=$("$exe" --version 2>&1)
+          case "$version" in
+            omairc\ *) ;;
+            *) echo "Expected omairc version, got: $version" >&2; exit 1 ;;
+          esac
+          help=$("$exe" --help 2>&1)
+          case "$help" in
+            *Usage:*) ;;
+            *) echo "Expected help text, got: $help" >&2; exit 1 ;;
+          esac
+          export OMAIRC_ALLOW_MULTI=1
+          export OMAIRC_SMOKE=1
+          "$exe" --demo-server &
+          pid=$!
+          for _ in $(seq 1 120); do
+            if ! kill -0 "$pid" 2>/dev/null; then
+              wait "$pid"
+              exit $?
+            fi
+            sleep 0.5
+          done
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          echo "demo-server smoke did not exit within 60s" >&2
+          exit 1
+
   macos:
     name: macOS ${{ matrix.suffix }}
+    needs: changes
+    if: needs.changes.outputs.qt == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: ${{ github.event_name == 'pull_request' && 45 || 90 }}
     strategy:

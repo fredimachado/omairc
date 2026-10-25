@@ -20,7 +20,9 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-pub use crate::identity::{APP_FOLDER, QT_APP_FOLDER, SETTINGS_FILE, SETTINGS_FILE_MACOS};
+pub use crate::identity::{APP_FOLDER, QT_APP_FOLDER};
+#[cfg(test)]
+pub use crate::identity::{SETTINGS_FILE, SETTINGS_FILE_MACOS};
 use crate::identity::settings_file_name;
 
 /// The STS policy cache, beside the settings file (`IrcStsStore::filePath`, same name as Qt).
