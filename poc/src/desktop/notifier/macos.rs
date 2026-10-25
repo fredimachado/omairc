@@ -7,9 +7,9 @@ use async_channel::Sender;
 use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2::{define_class, msg_send, Allocated};
+use objc2::{define_class, msg_send, AnyThread};
 use objc2_foundation::{
-    ns_string, NSArray, NSDictionary, NSObject, NSObjectProtocol, NSBundle, NSString,
+    ns_string, NSArray, NSDictionary, NSError, NSObject, NSObjectProtocol, NSBundle, NSString,
 };
 use objc2_user_notifications::{
     UNAuthorizationOptions, UNMutableNotificationContent, UNNotification,
@@ -66,9 +66,9 @@ define_class!(
             _notification: &UNNotification,
             completion_handler: &block2::DynBlock<dyn Fn(UNNotificationPresentationOptions)>,
         ) {
-            completion_handler.call(
+            completion_handler.call((
                 UNNotificationPresentationOptions::Banner | UNNotificationPresentationOptions::Sound,
-            );
+            ));
         }
 
         #[unsafe(method(userNotificationCenter:didReceiveNotificationResponse:withCompletionHandler:))]
@@ -90,7 +90,7 @@ define_class!(
 
 impl NotificationDelegate {
     fn new() -> Retained<Self> {
-        let allocated = NotificationDelegate::alloc();
+        let allocated = Self::alloc();
         unsafe { msg_send![super(allocated), init] }
     }
 }
@@ -124,8 +124,9 @@ impl Notifier for MacNotifier {
         ];
         let user_info = NSDictionary::from_retained_objects(&keys, &values);
         // SAFETY: plist-compatible NSString keys/values, same payload as Qt.
+        // cast_unchecked: setUserInfo takes untyped NSDictionary.
         unsafe {
-            content.setUserInfo(&user_info);
+            content.setUserInfo(user_info.cast_unchecked());
         }
 
         let identifier = NSString::from_str(&macos_request_identifier(network_id, target));
@@ -134,10 +135,10 @@ impl Notifier for MacNotifier {
             &content,
             None,
         );
-        let identifiers = NSArray::from_retained_objects(&[&identifier]);
+        let identifiers = NSArray::from_retained_slice(&[identifier]);
         center.removePendingNotificationRequestsWithIdentifiers(&identifiers);
         center.removeDeliveredNotificationsWithIdentifiers(&identifiers);
-        let block = RcBlock::new(|_error: *mut objc2_foundation::NSError| {});
+        let block = RcBlock::new(|_error: *mut NSError| {});
         center.addNotificationRequest_withCompletionHandler(&request, Some(&block));
     }
 }
@@ -151,9 +152,7 @@ pub fn open(tx: Sender<Activation>) -> Box<dyn Notifier> {
     let delegate = NotificationDelegate::new();
     center.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
     let options = UNAuthorizationOptions::Alert | UNAuthorizationOptions::Sound;
-    let block = RcBlock::new(
-        |_granted: objc2_foundation::Bool, _error: *mut objc2_foundation::NSError| {},
-    );
+    let block = RcBlock::new(|_granted: bool, _error: *mut NSError| {});
     center.requestAuthorizationWithOptions_completionHandler(options, &block);
     Box::new(MacNotifier { delegate })
 }

@@ -4,7 +4,6 @@ use std::sync::OnceLock;
 
 use gpui::Window;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, Window as XWindow};
 use x11rb::rust_connection::RustConnection;
 
@@ -19,7 +18,7 @@ pub(super) fn visibility(window: &Window) -> WindowVisibility {
     match handle.as_raw() {
         RawWindowHandle::Wayland(_) => WindowVisibility::Visible,
         RawWindowHandle::Xlib(xlib) => x11_visibility(xlib.window as XWindow),
-        RawWindowHandle::Xcb(xcb) => x11_visibility(xcb.window),
+        RawWindowHandle::Xcb(xcb) => x11_visibility(xcb.window.get()),
         _ => WindowVisibility::Visible,
     }
 }
@@ -52,7 +51,7 @@ fn net_wm_state_hidden(conn: &RustConnection, window: XWindow) -> Result<bool, x
     let prop = conn
         .get_property(false, window, net_wm_state, AtomEnum::ATOM, 0, 64)?
         .reply()?;
-    let Some(values) = prop.value32() else {
+    let Some(mut values) = prop.value32() else {
         return Ok(false);
     };
     Ok(values.any(|atom| atom == hidden))

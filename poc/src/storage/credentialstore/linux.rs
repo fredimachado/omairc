@@ -269,7 +269,7 @@ mod tests {
         );
         assert_eq!(store.read(&key), Ok(Some("rust-swordfish".to_owned())));
 
-        let dual = bounded(CALL_TIMEOUT, {
+        let dual: Option<oo7::Result<bool>> = bounded(CALL_TIMEOUT, {
             let key_name = key_name.clone();
             async move {
                 let keyring = unlocked_keyring().await?;
@@ -292,7 +292,7 @@ mod tests {
         assert_eq!(store.remove(&key), CredentialState::Missing);
         assert_eq!(store.read(&key), Ok(None));
 
-        let leftovers = bounded(CALL_TIMEOUT, {
+        let leftovers: Option<oo7::Result<bool>> = bounded(CALL_TIMEOUT, {
             let key_name = key_name.clone();
             async move {
                 let keyring = unlocked_keyring().await?;
