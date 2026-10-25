@@ -211,3 +211,46 @@ jobs:
           name: live-ui
           path: test-artifacts/live-ui/
           if-no-files-found: ignore
+
+  # Feature-map recipes against the Rust client (Xvfb + lavapipe). Non-blocking
+  # until the XI2 click path and recipe set are stable enough to gate merges.
+  verify-poc:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: poc
+          key: linux-verify-poc-${{ hashFiles('poc/Cargo.lock') }}
+
+      - name: Install desktop and lavapipe dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config \
+            libfontconfig1 libxkbcommon0 libxkbcommon-x11-0 \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
+            libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-util1 \
+            libxcb-glx0 libxcb-shm0 libxcb-sync1 libxcb-xfixes0 libx11-xcb1 \
+            libdbus-1-dev libssl-dev \
+            xvfb xauth xdotool xinput imagemagick \
+            mesa-vulkan-drivers
+
+      - name: Run feature-map recipes (control-omairc-poc)
+        run: bin/verify-poc-recipes
+
+      - name: Upload verify-poc artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-poc
+          path: test-artifacts/verify-poc/
+          if-no-files-found: ignore

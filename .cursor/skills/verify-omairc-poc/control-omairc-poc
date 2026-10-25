@@ -50,6 +50,14 @@ Usage:
   control-omairc-poc type --text "<text>"
   control-omairc-poc key --key <xdotool-key>
   control-omairc-poc send --text "<text>"
+  control-omairc-poc click --x N --y N
+  control-omairc-poc click-conversation --name <#channel|nick>
+  control-omairc-poc click-member --name <nick>
+  control-omairc-poc click-people [--hidden]
+  control-omairc-poc click-network
+  control-omairc-poc click-edit
+  control-omairc-poc click-version
+  control-omairc-poc click-send
   control-omairc-poc screenshot --feature <id> --name <stem>
   control-omairc-poc compare --before <path> --after <path>
   control-omairc-poc run <feature> [--dry-run]
@@ -59,11 +67,12 @@ Default launch uses headless Xvfb (what agents should use). --visible uses
 Xephyr so a nested window appears on your desktop; same xdotool control
 path. Do not put --visible in feature recipes.
 
-Keyboard-first. Pointer verbs (click, click-*) are rejected: GPUI on X11
-reads only XInput2 pointer events, and xdotool --window clicks are core
-button events. qml-suite / doctor-qml are Qt-only.
-Requires lavapipe (vulkan-swrast) for Blade on the nested X server.
-Never point xdotool at the user's interactive display.
+Keyboard-first. Pointer verbs move with xdotool --sync mousemove, then
+click through the Virtual core XTEST pointer (xinput + xdotool --window 0)
+so GPUI sees XI2 ButtonPress. Do not use xdotool click --window WID:
+that is XSendEvent/core and GPUI drops it. qml-suite / doctor-qml are
+Qt-only. Requires lavapipe (vulkan-swrast) for Blade on the nested X
+server. Never point xdotool at the user's interactive display.
 EOF
 }
 
@@ -104,7 +113,7 @@ require_tools() {
   # $1 = visible (1) or empty. Xephyr is only required for --visible.
   _want_visible=${1:-}
   missing=
-  for command_name in xauth xdotool import magick cargo; do
+  for command_name in xauth xdotool xinput import magick cargo; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
       missing="$missing $command_name"
     fi
@@ -118,9 +127,9 @@ require_tools() {
   fi
   if [ -n "$missing" ]; then
     if [ "$_want_visible" = 1 ]; then
-      die "missing desktop tools:$missing. On Arch/Omarchy install: xorg-server-xephyr xorg-xauth xdotool imagemagick rust"
+      die "missing desktop tools:$missing. On Arch/Omarchy install: xorg-server-xephyr xorg-xauth xdotool xorg-xinput imagemagick rust"
     fi
-    die "missing desktop tools:$missing. On Arch/Omarchy install: xorg-server-xvfb xorg-xauth xdotool imagemagick rust"
+    die "missing desktop tools:$missing. On Arch/Omarchy install: xorg-server-xvfb xorg-xauth xdotool xorg-xinput imagemagick rust"
   fi
   require_lavapipe
 }
@@ -166,6 +175,59 @@ stop_pid() {
     kill "$pid"
     wait "$pid" 2>/dev/null || true
   fi
+}
+
+conversation_y() {
+  case $1 in
+    "#desktop") echo 124 ;;
+    "#help") echo 160 ;;
+    "#omarchy") echo 196 ;;
+    "#ricing") echo 232 ;;
+    anna) echo 276 ;;
+    dax) echo 312 ;;
+    *) die "unknown conversation '$1'. Use #desktop, #help, #omarchy, #ricing, anna, or dax." ;;
+  esac
+}
+
+member_y() {
+  # Rows are ordered by server PREFIX rank, highest first, then nick
+  # (IrcEventReducer::orderedMembers). Seeded #omarchy settles as:
+  # ~fred, &anna, @dax, @mira, %kai, +teo, ivy, lena, max, nora, sam, sol.
+  case $1 in
+    fred) echo 71 ;;
+    anna) echo 114 ;;
+    dax) echo 157 ;;
+    mira) echo 200 ;;
+    kai) echo 243 ;;
+    teo) echo 286 ;;
+    ivy) echo 329 ;;
+    lena) echo 372 ;;
+    max) echo 415 ;;
+    nora) echo 458 ;;
+    sam) echo 501 ;;
+    sol) echo 544 ;;
+    *) die "unknown member '$1'." ;;
+  esac
+}
+
+# XTEST pointer id from xinput, or empty. GPUI on X11 only handles XI2
+# ButtonPress; the Virtual core XTEST pointer is what bare XTEST clicks use.
+xtest_pointer_id() {
+  xinput list --id-only "Virtual core XTEST pointer" 2>/dev/null | head -1 || true
+}
+
+# Move with xdotool (window-relative), then click via XTEST (--window 0).
+# Never pass the app window to click: that uses XSendEvent/core events GPUI drops.
+click_xy() {
+  x=$1
+  y=$2
+  xtest_id=$(xtest_pointer_id)
+  [ -n "$xtest_id" ] || die "missing Virtual core XTEST pointer (xinput list). GPUI needs XI2 clicks through XTEST."
+  xdotool windowfocus --sync "$WINDOW"
+  xdotool mousemove --sync --window "$WINDOW" "$x" "$y"
+  # --window 0 forces XTEST even if a prior search left a window on the stack.
+  xdotool click --window 0 1
+  sleep 0.2
 }
 
 # Host placement for a VISIBLE_LOGICAL_* window.
@@ -507,22 +569,90 @@ cmd_wait_title() {
 }
 
 
-reject_pointer_verb() {
-  die "pointer verb '$1' is unsupported: GPUI on X11 reads only XInput2 pointer events; xdotool --window sends core button events that GPUI drops. Use a chord verb (jump, walk, send, …)."
-}
-
 reject_qt_only_verb() {
   die "verb '$1' is Qt-only (offscreen QML suite). Use control-omairc for that path."
 }
 
-cmd_click() { reject_pointer_verb click; }
-cmd_click_conversation() { reject_pointer_verb click-conversation; }
-cmd_click_member() { reject_pointer_verb click-member; }
-cmd_click_people() { reject_pointer_verb click-people; }
-cmd_click_network() { reject_pointer_verb click-network; }
-cmd_click_edit() { reject_pointer_verb click-edit; }
-cmd_click_version() { reject_pointer_verb click-version; }
-cmd_click_send() { reject_pointer_verb click-send; }
+cmd_click() {
+  x=
+  y=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --x) x=$2; shift 2 ;;
+      --y) y=$2; shift 2 ;;
+      *) die "unknown click argument: $1" ;;
+    esac
+  done
+  [ -n "$x" ] && [ -n "$y" ] || die "click requires --x and --y"
+  load_state
+  click_xy "$x" "$y"
+}
+
+cmd_click_conversation() {
+  name=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --name) name=$2; shift 2 ;;
+      *) die "unknown click-conversation argument: $1" ;;
+    esac
+  done
+  [ -n "$name" ] || die "click-conversation requires --name"
+  load_state
+  click_xy 120 "$(conversation_y "$name")"
+}
+
+cmd_click_member() {
+  name=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --name) name=$2; shift 2 ;;
+      *) die "unknown click-member argument: $1" ;;
+    esac
+  done
+  [ -n "$name" ] || die "click-member requires --name"
+  load_state
+  click_xy 1070 "$(member_y "$name")"
+}
+
+cmd_click_people() {
+  hidden=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --hidden) hidden=1; shift ;;
+      *) die "unknown click-people argument: $1. Use click-people or click-people --hidden." ;;
+    esac
+  done
+  load_state
+  # Same 1180-wide layout as control-omairc / Qt. The people control is
+  # right-anchored; the member column is 216 CSS px.
+  if [ "$hidden" = 1 ]; then
+    click_xy 1124 36
+  else
+    click_xy 908 36
+  fi
+}
+
+cmd_click_network() {
+  load_state
+  click_xy 120 36
+}
+
+cmd_click_edit() {
+  load_state
+  click_xy 220 36
+}
+
+cmd_click_version() {
+  load_state
+  # Footer is 66 CSS px at the bottom of the 244 CSS px sidebar. The version
+  # sits on the presence baseline, right-padded 17 CSS px.
+  click_xy 214 734
+}
+
+cmd_click_send() {
+  load_state
+  click_xy 909 717
+}
 
 cmd_focus_composer() {
   require_no_args focus-composer "$@"
@@ -563,6 +693,7 @@ cmd_key() {
     ctrl+l) key=Control_L+l ;;
     ctrl+grave) key=Control_L+grave ;;
     ctrl+comma) key=Control_L+comma ;;
+    ctrl+shift+slash) key=Control_L+Shift_L+slash ;;
     ctrl+shift+k) key=Control_L+Shift_L+k ;;
     ctrl+shift+m) key=Control_L+Shift_L+m ;;
     ctrl+shift+p) key=Control_L+Shift_L+p ;;
@@ -914,9 +1045,8 @@ read_desktop_recipe() {
   ' "$_feature_file"
 }
 
-# Reject only Qt-offscreen verbs while loading a fence. Pointer verbs stay in
-# the printed dry-run (shared with Qt/TUI) and fail when executed, as the TUI
-# driver does for click-version / click-send.
+# Reject only Qt-offscreen verbs while loading a fence. Pointer verbs run
+# through the XI2/XTEST click path (mousemove --sync + xdotool --window 0).
 reject_offscreen_recipe_line() {
   _verb=$(printf '%s' "$1" | awk '{ print $1; exit }')
   case $_verb in

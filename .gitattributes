@@ -1,0 +1,4 @@
+# Shell drivers must stay LF: continued lines (`\` + CRLF) break `sh -n` and
+# Xvfb recipes when a Windows checkout is mounted into WSL or CI-like shells.
+bin/** text eol=lf
+.cursor/skills/**/control-omairc* text eol=lf

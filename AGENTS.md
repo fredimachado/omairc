@@ -40,7 +40,10 @@
   `npx skills add fredimachado/omairc/skills -g`. Proving the GUI uses
   `.cursor/skills/verify-omairc`; that skill is internal. The Rust GPUI PoC
   uses `.cursor/skills/verify-omairc-poc` (`control-omairc-poc`: same Xvfb
-  + xdotool path, clears `WAYLAND_DISPLAY`, requires lavapipe). Load
+  + xdotool path, clears `WAYLAND_DISPLAY`, requires lavapipe; pointer
+  verbs use XTEST/XI2 clicks). `bin/verify-poc-recipes` and the
+  non-blocking `verify-poc` job in `test.yml` drive the feature map.
+  Load
   `.cursor/skills/change-qml` when adding or moving UI,
   `.cursor/skills/conversation-cause` when touching `ensureConversation`,
   conversation creation, or `/msg`, and `.cursor/skills/redact-secrets`
