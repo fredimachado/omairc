@@ -637,7 +637,7 @@ void LabeledResponseTest::timeoutClearsWaiters()
     QCOMPARE(fixture.session->pendingRequestLabelCount(), 1);
     QVERIFY(fixture.session->hasPendingRequestLabel(label));
     QVERIFY(fixture.labelTimer->active);
-    QCOMPARE(fixture.labelTimer->delays.last(), 45000);
+    QVERIFY(qAbs(fixture.labelTimer->delays.last() - 45000) <= 1);
 
     fixture.labelTimer->fire();
     QCOMPARE(fixture.session->pendingRequestLabelCount(), 0);

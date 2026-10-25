@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: m3-windows-packaging
     content: "M3: Windows build script, static CRT, Inno installer from cargo output, Qt-to-Rust upgrade path"
-    status: pending
+    status: completed
   - id: m4-macos-packaging
     content: "M4: macOS .app bundle, signing, notarization, cask from cargo output"
     status: pending

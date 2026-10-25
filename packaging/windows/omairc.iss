@@ -1,6 +1,11 @@
-; Inno Setup 6.1+ script for the Windows tree produced by bin\build.bat.
-; Compile through bin\package-windows.bat so MyAppVersion comes from version.pri.
+; Inno Setup 6.1+ script for the Windows tree from bin\build.bat (Qt) or
+; bin\build-rust.bat (Rust, OMAIRC_CLIENT=rust). Compile through
+; bin\package-windows.bat so MyAppVersion comes from version.pri.
 ; The 6.1 floor is for the [Icons] AppUserModelToastActivatorCLSID parameter.
+;
+; AppId, MyAppUserModelID, and MyAppToastActivatorCLSID must stay stable so
+; upgrades, Start Menu toasts, and the updater's installed-copy detection keep
+; working. OutputBaseFilename stays omairc-<v>-windows-x64-setup.
 ;
 ; Per-user is the default (no UAC). {autopf} is %LOCALAPPDATA%\Programs\Omairc
 ; then, or Program Files when the user picks "all users".
@@ -21,9 +26,10 @@
 #define MyAppExeName "omairc.exe"
 
 ; Stamp the Start Menu shortcut so Windows can deliver a toast and route a
-; click back to the app. Keep these in sync with kAumid and
-; kActivatorClsidText in src/windowsnotifications.cpp. Inno expects the CLSID
-; without braces.
+; click back to the app. Keep these in sync with kAumid /
+; kActivatorClsidText in src/windowsnotifications.cpp and AUMID /
+; ACTIVATOR_CLSID in poc/src/desktop/notifier/windows.rs. Inno expects the
+; CLSID without braces.
 #define MyAppUserModelID "FrediMachado.Omairc"
 #define MyAppToastActivatorCLSID "DBE38477-5F87-42A1-AFA1-11FA12F2E5E5"
 
@@ -57,6 +63,31 @@ OutputBaseFilename=omairc-{#MyArtifactVersion}-windows-x64-setup
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
+
+; Drop every Qt deploy leftover when upgrading over a Qt install. The Rust
+; tree is only omairc.exe plus license files; without this, platforms\, qml\,
+; and the CRT DLLs would stay beside the new exe.
+[InstallDelete]
+Type: files; Name: "{app}\Qt6*.dll"
+Type: files; Name: "{app}\qt6keychain.dll"
+Type: files; Name: "{app}\libqt6keychain.dll"
+Type: files; Name: "{app}\msvcp140*.dll"
+Type: files; Name: "{app}\vcruntime140*.dll"
+Type: files; Name: "{app}\vc_redist*.exe"
+Type: files; Name: "{app}\opengl32sw.dll"
+Type: files; Name: "{app}\D3Dcompiler_47.dll"
+Type: files; Name: "{app}\dxcompiler.dll"
+Type: files; Name: "{app}\dxil.dll"
+Type: files; Name: "{app}\qt.conf"
+Type: filesandordirs; Name: "{app}\platforms"
+Type: filesandordirs; Name: "{app}\imageformats"
+Type: filesandordirs; Name: "{app}\iconengines"
+Type: filesandordirs; Name: "{app}\networkinformation"
+Type: filesandordirs; Name: "{app}\qml"
+Type: filesandordirs; Name: "{app}\tls"
+Type: filesandordirs; Name: "{app}\translations"
+Type: filesandordirs; Name: "{app}\qmltooling"
+Type: filesandordirs; Name: "{app}\generic"
 
 [Files]
 Source: "{#MyAppSource}\*"; DestDir: "{app}"; \

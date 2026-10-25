@@ -5,14 +5,21 @@ set "ROOT=%CD%"
 
 set "EXE=%ROOT%\build\release\omairc.exe"
 if not exist "!EXE!" (
-  echo Expected !EXE!. Run bin\build.bat first. >&2
+  if /i "!OMAIRC_CLIENT!"=="rust" (
+    echo Expected !EXE!. Run bin\build-rust.bat first. >&2
+  ) else (
+    echo Expected !EXE!. Run bin\build.bat first. >&2
+  )
   exit /b 1
 )
-if not exist "%ROOT%\build\release\msvcp140.dll" (
-  echo msvcp140.dll is missing next to omairc.exe. >&2
-  echo The installer needs the MSVC CRT DLLs. Rebuild from an x64 Native Tools >&2
-  echo prompt so VCToolsRedistDir is set, then rerun bin\package-windows.bat. >&2
-  exit /b 1
+rem The Rust product build links the CRT statically. Qt still ships msvcp140.
+if /i not "!OMAIRC_CLIENT!"=="rust" (
+  if not exist "%ROOT%\build\release\msvcp140.dll" (
+    echo msvcp140.dll is missing next to omairc.exe. >&2
+    echo The installer needs the MSVC CRT DLLs. Rebuild from an x64 Native Tools >&2
+    echo prompt so VCToolsRedistDir is set, then rerun bin\package-windows.bat. >&2
+    exit /b 1
+  )
 )
 
 set "DISPLAY_VERSION="
