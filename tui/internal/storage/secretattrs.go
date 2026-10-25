@@ -82,6 +82,12 @@ func secretAttrsIsWritten(attributes map[string]string, keyName string) bool {
 	return true
 }
 
+// secretAttrsIsAsciiWhitespace matches Rust u8::is_ascii_whitespace: space,
+// tab, LF, form feed (\x0c), and CR. Vertical tab is not included.
+func secretAttrsIsAsciiWhitespace(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\n' || b == '\f' || b == '\r'
+}
+
 // secretAttrsDecodeSecret returns the password an item holds. A QtKeychain
 // item saved in binary mode keeps base64 text; any other item keeps the UTF-8
 // password itself.
@@ -89,7 +95,7 @@ func secretAttrsDecodeSecret(secret []byte, attributes map[string]string) string
 	if attributes[secretAttrsQtAttributeType] == secretAttrsQtTypeBase64 {
 		trimmed := make([]byte, 0, len(secret))
 		for _, b := range secret {
-			if b == ' ' || b == '\t' || b == '\n' || b == '\r' {
+			if secretAttrsIsAsciiWhitespace(b) {
 				continue
 			}
 			trimmed = append(trimmed, b)

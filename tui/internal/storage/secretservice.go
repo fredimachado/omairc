@@ -116,7 +116,7 @@ func (b *secretServiceBackend) read(keyName string) CredentialResult {
 	if len(items) == 0 {
 		return CredentialResult{State: CredentialMissing}
 	}
-	unlocked, err := secretServiceUnlock(ctx, conn, items)
+	unlocked, _, err := secretServiceUnlock(ctx, conn, items)
 	if err != nil {
 		return secretServiceResultForError(err)
 	}
@@ -195,9 +195,12 @@ func (b *secretServiceBackend) write(keyName, password string) CredentialResult 
 	if len(items) == 0 {
 		return CredentialResult{State: CredentialAvailable}
 	}
-	unlocked, err := secretServiceUnlock(ctx, conn, items)
+	unlocked, prompt, err := secretServiceUnlock(ctx, conn, items)
 	if err != nil {
 		return secretServiceResultForError(err)
+	}
+	if secretServiceUnlockIncomplete(secretServicePathStrings(items), secretServicePathStrings(unlocked), string(prompt)) {
+		return secretServiceResultForError(errSecretServicePrompt)
 	}
 	for _, item := range unlocked {
 		attributes, err := secretServiceGetAttributes(ctx, conn, item)
@@ -232,11 +235,11 @@ func (b *secretServiceBackend) remove(keyName string) CredentialResult {
 	if len(items) == 0 {
 		return CredentialResult{State: CredentialMissing}
 	}
-	unlocked, err := secretServiceUnlock(ctx, conn, items)
+	unlocked, prompt, err := secretServiceUnlock(ctx, conn, items)
 	if err != nil {
 		return secretServiceResultForError(err)
 	}
-	if len(unlocked) == 0 {
+	if secretServiceUnlockIncomplete(secretServicePathStrings(items), secretServicePathStrings(unlocked), string(prompt)) {
 		return secretServiceResultForError(errSecretServicePrompt)
 	}
 	for _, item := range unlocked {
@@ -299,27 +302,37 @@ func secretServiceSearchItems(ctx context.Context, conn *dbus.Conn, attributes m
 	return append(unlocked, locked...), nil
 }
 
-// secretServiceUnlock unlocks items and returns the paths that are now usable.
-// A non-empty prompt path with nothing unlocked means the service wants
-// interaction, which fails closed as an error.
-func secretServiceUnlock(ctx context.Context, conn *dbus.Conn, items []dbus.ObjectPath) ([]dbus.ObjectPath, error) {
+// secretServiceUnlock unlocks items and returns the paths that are now usable
+// plus any prompt path. A non-empty prompt with nothing unlocked fails closed.
+// Callers that must touch every searched item (write cleanup, remove) also
+// check secretServiceUnlockIncomplete so a partial unlock cannot report success.
+func secretServiceUnlock(ctx context.Context, conn *dbus.Conn, items []dbus.ObjectPath) ([]dbus.ObjectPath, dbus.ObjectPath, error) {
 	if len(items) == 0 {
-		return nil, nil
+		return nil, "/", nil
 	}
 	obj := conn.Object(secretServiceBusName, secretServicePath)
 	call := obj.CallWithContext(ctx, secretServiceInterface+".Unlock", 0, items)
 	if call.Err != nil {
-		return nil, call.Err
+		return nil, "", call.Err
 	}
 	var unlocked []dbus.ObjectPath
 	var prompt dbus.ObjectPath
 	if err := call.Store(&unlocked, &prompt); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if len(unlocked) == 0 && prompt != "" && prompt != "/" {
-		return nil, errSecretServicePrompt
+		return nil, prompt, errSecretServicePrompt
 	}
-	return unlocked, nil
+	return unlocked, prompt, nil
+}
+
+// secretServicePathStrings converts object paths for the incomplete-unlock check.
+func secretServicePathStrings(paths []dbus.ObjectPath) []string {
+	out := make([]string, len(paths))
+	for i, path := range paths {
+		out[i] = string(path)
+	}
+	return out
 }
 
 // secretServiceGetAttributes reads one item's Attributes property.

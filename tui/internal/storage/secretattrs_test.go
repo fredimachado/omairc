@@ -86,6 +86,10 @@ func TestSecretAttrsDecodeBase64AndPlaintext(t *testing.T) {
 	if got := secretAttrsDecodeSecret([]byte("aHVudGVyMg==\n"), binary); got != "hunter2" {
 		t.Fatalf("base64 decode = %q, want hunter2", got)
 	}
+	// Form feed is ASCII whitespace in Rust; trim it like space/tab/CR/LF.
+	if got := secretAttrsDecodeSecret([]byte("aHVudGVyMg==\x0c"), binary); got != "hunter2" {
+		t.Fatalf("base64 with form feed = %q, want hunter2", got)
+	}
 	if got := secretAttrsDecodeSecret([]byte("hunter2"), secretAttrsQtItem()); got != "hunter2" {
 		t.Fatalf("plaintext decode = %q, want hunter2", got)
 	}
