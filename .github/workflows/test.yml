@@ -53,8 +53,8 @@ jobs:
       - name: Require main or a phase branch as the pull request base
         run: |
           case "${{ github.base_ref }}" in
-            main|tui-phase-*) ;;
-            *) echo "This pull request targets ${{ github.base_ref }}, not main or a tui-phase branch." >&2; exit 1 ;;
+            main|tui-phase-*|slice/rust-cutover-*) ;;
+            *) echo "This pull request targets ${{ github.base_ref }}, not main, a tui-phase branch, or a slice/rust-cutover branch." >&2; exit 1 ;;
           esac
 
   test:

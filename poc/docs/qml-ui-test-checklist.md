@@ -24,10 +24,10 @@ Status values:
 - `test_connectionSheetCloseRestoresComposerFocus` -> rust: `ui::tests::sheets::connection_sheet_close_restores_composer_focus`
 - `test_aboutSheetLeftClickDimmerDismisses` -> rust: `ui::tests::sheets::about_sheet_left_click_dimmer_dismisses`
 - `test_aboutSheetIgnoresRightClickAndCardClick` -> rust: `ui::tests::sheets::about_sheet_ignores_right_click_and_card_click`
-- `test_connectionSheetBlocksSidebarAndMembers` -> rust: `ui::tests::sheets::connection_sheet_blocks_sidebar_and_members`
+- `test_connectionSheetBlocksSidebarAndMembers` -> rust: `ui::tests::sheets::connection_sheet_blocks_sidebar_and_members` (chords + veiled sidebar/member clicks)
 - `test_memberListPageDownMovesByVisiblePage` -> rust: `ui::tests::sheets::member_list_page_down_moves_by_visible_page`
-- `test_openDirectMessageFromTranscriptNick` -> rust: `ui::tests::pointer::open_direct_message_from_transcript_nick`
-- middle-click close (sidebar) -> rust: `ui::tests::pointer::middle_click_closes_a_direct`
+- `test_openDirectMessageFromTranscriptNick` -> pending (M6 wave 2: real pointer hit through the view)
+- middle-click close (sidebar) -> pending (M6 wave 2: real middle-click through the view)
 - `test_messageBodyClickOpensHttpsUrl` -> pending (M6 wave 2: observe TestApp open_url)
 - `test_messageBodyClickOpensHttpsUrlInsideEmphasis` -> pending (M6 wave 2)
 - `test_droppedFileUploadsAndInsertsTheLink` -> pending (M6 wave 2: demo file host)
@@ -217,11 +217,11 @@ Status values:
 - `test_ctrlShiftKIgnoredOnDirectMessage` -> pending (cutover inventory)
 - `test_ctrlShiftKIgnoredOnStatus` -> pending (cutover inventory)
 - `test_ctrlShiftKIgnoredWhenConnectIsVisible` -> model: model/connect/*; remaining Connect view cases pending
-- `test_connectionSheetBlocksSidebarAndMembers` -> rust: `ui::tests::sheets::connection_sheet_blocks_sidebar_and_members`
+- `test_connectionSheetBlocksSidebarAndMembers` -> rust: `ui::tests::sheets::connection_sheet_blocks_sidebar_and_members` (chords + veiled sidebar/member clicks)
 - `test_connectionSheetFirstRunIgnoresSidebarClicks` -> model: model/connect/*; remaining Connect view cases pending
 - `test_membersHeadingOpensNickSheet` -> pending (member list view variants)
 - `test_openDirectMessageFromMember` -> pending (member list view variants)
-- `test_openDirectMessageFromTranscriptNick` -> rust: `ui::tests::pointer::open_direct_message_from_transcript_nick`
+- `test_openDirectMessageFromTranscriptNick` -> pending (M6 wave 2: real pointer hit through the view)
 - `test_connectionSheetCtrlEnterAppliesFromAnyFocus` -> model: model/connect/*; remaining Connect view cases pending
 - `test_connectionSheetCtrlEnterDoesNotApplyWhileShortcutsOpen` -> model: model/connect/*; remaining Connect view cases pending
 - `test_connectionSheetCtrlTabSwitchesTabsFromAnywhere` -> model: model/connect/*; remaining Connect view cases pending

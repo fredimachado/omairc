@@ -4,7 +4,6 @@
 //! `tests/ui/tst_omairc.qml` case lives in `poc/docs/qml-ui-test-checklist.md`.
 
 mod fixture;
-mod pointer;
 mod sheets;
 mod transcript;
 mod typing;

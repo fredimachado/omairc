@@ -59,6 +59,29 @@ fn connection_sheet_blocks_sidebar_and_members(cx: &mut gpui::TestAppContext) {
             );
         });
     });
+
+    // Veil swallows presses behind the card (Qt clicks the sidebar / members
+    // under the dimmer). A dismiss may close Connect; selection must not move.
+    let before = ui.selected_key();
+    ui.click(40., 124.);
+    assert_eq!(
+        ui.selected_key(),
+        before,
+        "veiled sidebar click must not change selection"
+    );
+    if !ui.connect_open() {
+        ui.cx.update(|window, cx| {
+            ui.shell
+                .update(cx, |shell, cx| shell.open_connect(window, cx));
+        });
+        ui.settle();
+    }
+    ui.click(super::fixture::WINDOW_WIDTH - 40., 200.);
+    assert_eq!(
+        ui.selected_key(),
+        before,
+        "veiled members click must not change selection"
+    );
 }
 
 #[gpui::test]
