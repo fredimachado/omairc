@@ -4,18 +4,18 @@
 
 | | Live | Demo |
 |---|---|---|
-| Binary | `/usr/bin/omairc` | `$ROOT/build/omairc --demo-server` |
+| Binary | `/usr/bin/omairc` | `$ROOT/client/target/release/omairc --demo-server` |
 | Title | real network names | contains `irc.example` |
 | Config | `~/.config/omairc` | temp XDG **only if `XDG_CONFIG_HOME` is unset** |
 | Socket | default user socket | `OMAIRC_ALLOW_MULTI=1` so it does not steal it |
 
-`src/main.cpp` isolates XDG for `--demo-server` only when `XDG_CONFIG_HOME` is empty. Omarchy exports `XDG_CONFIG_HOME=$HOME/.config`, so the launch line must be:
+`--demo-server` isolates XDG only when `XDG_CONFIG_HOME` is empty. Omarchy exports `XDG_CONFIG_HOME=$HOME/.config`, so the launch line must be:
 
 ```sh
-env -u XDG_CONFIG_HOME OMAIRC_ALLOW_MULTI=1 ./build/omairc --demo-server
+env -u XDG_CONFIG_HOME OMAIRC_ALLOW_MULTI=1 ./client/target/release/omairc --demo-server
 ```
 
-Theme still comes from `$HOME/.local/state/omarchy/current/theme/colors.toml` (home is unchanged). Window default size in QML is 1180×760; on a live workspace it is a normal Hyprland client.
+Theme still comes from `$HOME/.local/state/omarchy/current/theme/colors.toml` (home is unchanged). Window default size is 1180×760; on a live workspace it is a normal Hyprland client.
 
 After a leak, demo `omarchy` / `oftc` blocks appeared in `~/.config/omairc/omairc.conf`. `record-demo` fails if those stanzas appear after a run. Do not delete the user's other networks.
 
@@ -62,7 +62,7 @@ pass `--device` for the correct node.
 
 ## Isolated Xvfb is the wrong path
 
-`verify-omairc` / `control-omairc` records 1180×760 on a private X display. It cannot show the Omarchy bar, workspace 1, or Omakeycast. Use it for feature proof, not this GIF.
+`verify-omairc-poc` / `control-omairc-poc` records 1180×760 on a private X display. It cannot show the Omarchy bar, workspace 1, or Omakeycast. Use it for feature proof, not this GIF.
 
 ## Monitor setup
 

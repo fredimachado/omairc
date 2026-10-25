@@ -1,7 +1,7 @@
-; Inno Setup 6.1+ script for the Windows tree from bin\build.bat (Qt) or
-; bin\build-rust.bat (Rust, OMAIRC_CLIENT=rust). Compile through
-; bin\package-windows.bat so MyAppVersion comes from version.pri.
-; The 6.1 floor is for the [Icons] AppUserModelToastActivatorCLSID parameter.
+; Inno Setup 6.1+ script for the Windows tree from bin\build-rust.bat
+; (static-CRT Rust product). Compile through bin\package-windows.bat so
+; MyAppVersion comes from version.pri. The 6.1 floor is for the [Icons]
+; AppUserModelToastActivatorCLSID parameter.
 ;
 ; AppId, MyAppUserModelID, and MyAppToastActivatorCLSID must stay stable so
 ; upgrades, Start Menu toasts, and the updater's installed-copy detection keep
@@ -26,10 +26,8 @@
 #define MyAppExeName "omairc.exe"
 
 ; Stamp the Start Menu shortcut so Windows can deliver a toast and route a
-; click back to the app. Keep these in sync with kAumid /
-; kActivatorClsidText in src/windowsnotifications.cpp and AUMID /
-; ACTIVATOR_CLSID in client/src/desktop/notifier/windows.rs. Inno expects the
-; CLSID without braces.
+; click back to the app. Keep these in sync with AUMID / ACTIVATOR_CLSID in
+; client/src/desktop/notifier/windows.rs. Inno expects the CLSID without braces.
 #define MyAppUserModelID "FrediMachado.Omairc"
 #define MyAppToastActivatorCLSID "DBE38477-5F87-42A1-AFA1-11FA12F2E5E5"
 

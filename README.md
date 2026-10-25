@@ -116,7 +116,7 @@ Depends on `fontconfig`, `freetype2`, `hicolor-icon-theme`, `libxcb`,
 `libxkbcommon`, `libxkbcommon-x11`, `vulkan-icd-loader`, `wayland`, and
 `xdg-desktop-portal` (see `PKGBUILD`).
 
-Packagers build the Rust client and stage the seven paths `bin/test-install`
+Packagers build the Rust client and stage the six paths `bin/test-install`
 checks (binary, desktop file, SVG, bash completion, LICENSE, OFL):
 
 ```sh
@@ -126,8 +126,7 @@ install -Dm755 client/target/release/omairc "$pkgdir/usr/bin/omairc"
 
 `version.pri` is the only version string. Tag a release as `v` plus that value.
 
-Omairc is MIT. See `LICENSE`. Shared IRC protocol code is LGPL-3.0-or-later
-where noted in `client/` and `tui/`. The bundled iA Writer Mono font is OFL-1.1.
+Omairc is MIT. See `LICENSE`. The bundled iA Writer Mono font is OFL-1.1.
 
 ## Agent skill
 

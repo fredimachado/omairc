@@ -1,23 +1,25 @@
 # Omairc verification map
 
-This directory is the maintained source for verifying the user-facing behavior of the Omairc desktop prototype. Read the index before driving the app, then use the matching feature file as the recipe.
+This directory is the maintained source for verifying the user-facing behavior of the Omairc desktop client and TUI. Read the index before driving the app, then use the matching feature file as the recipe.
+
+Desktop window proof uses **verify-omairc-poc**. The TUI uses **verify-omairc-tui**. The Qt `control-omairc` driver, `doctor-qml`, and `qml-suite` are retired; do not treat them as living paths.
 
 ## Baseline preconditions
 
-- Prefer `.cursor/skills/verify-omairc/control-omairc launch` for Connect, or `control-omairc launch --demo-server` for seeded conversations.
-- Require `control-omairc doctor` to report `ok isolated Omairc`, display owned by this run, and a title that ends with ` - Omairc` or ` Status`.
-- A default compiled window opens the connection sheet. Title is `{displayName} Status` until a conversation exists. `launch --demo-server` skips Connect and shows `#omarchy · irc.example · fred - Omairc`. Conversation recipes that assume that seeded window use `launch --demo-server` or `qml-suite` (seeded `IrcController`). Saved profiles do not connect unless `Connect automatically on startup` was enabled; Apply on the Connect sheet starts the live session. It does not restore the seeded sidebar.
-- If desktop tools are missing, require `control-omairc doctor-qml` and drive with `control-omairc qml-suite`. That suite is only the missing-tools fallback. It is not compiled-window proof. Do not send input to the user's live window.
+- Prefer `.cursor/skills/verify-omairc-poc/control-omairc-poc launch` for Connect, or `control-omairc-poc launch --demo-server` for seeded conversations. The product binary is `client/target/*/omairc` (debug by default; release + `product` for packager proof).
+- Require `control-omairc-poc doctor` to report `ok isolated Omairc`, display owned by this run, and a title that ends with ` - Omairc` or ` Status`.
+- A default compiled window opens the connection sheet. Title is `{displayName} Status` until a conversation exists. `launch --demo-server` skips Connect and shows `#omarchy · irc.example · fred - Omairc`. Conversation recipes that assume that seeded window use `launch --demo-server`. Saved profiles do not connect unless `Connect automatically on startup` was enabled; Apply on the Connect sheet starts the live session. It does not restore the seeded sidebar.
+- If desktop tools (Xvfb, xdotool, lavapipe, ImageMagick) are missing, do not invent a fallback suite. Report the unmet precondition. Do not send input to the user's live window.
 - Start every desktop recipe from that baseline unless its preconditions say otherwise.
-- Never drive a window that this run did not start. The user's interactive `./build/omairc` is off limits.
+- Never drive a window that this run did not start. The user's interactive `client/target/*/omairc` is off limits.
 
 ## Driving conventions
 
 - Treat every command as literal. Keep quoted names and flags unchanged.
 - Prefer chord verbs (`jump`, `walk`, `unread`, `toggle-members`, `focus-members`, `nick-jump`, `status`, `connect`, `composer`, `send`) over `click-conversation` / `click-member`.
 - Pixel clicks (`click-version`, `click-people`, `click-edit`, `click-network`, `click-send`, and raw `--x/--y`) are the fallback for mouse-only chrome.
-- `control-omairc run <feature>` plays the `desktop-recipe` fence inside `## Driving it with control-omairc`. `run <feature> --dry-run` prints that fence and does not launch.
-- `qml-suite` is only the fallback when Xvfb tools are missing. It is not compiled-window proof.
+- `control-omairc-poc run <feature>` plays the `desktop-recipe` fence inside `## Driving it with control-omairc`. `run <feature> --dry-run` prints that fence and does not launch. Feature files keep that H2 title for map stability; the living driver is `control-omairc-poc`.
+- Desktop evidence lands under `test-artifacts/verify-poc/`. `bin/verify-poc-recipes` and `bin/test-desktop` replay the same fences.
 - Window title `{conversation} - Omairc` is the conversation identity. Duplicate names use `{conversation} · {displayName} - Omairc`.
 - Named clicks assume the isolated 1180x760 window at textScale 1.0. They are invalid off that window.
 - Restore the baseline conversation (`#omarchy`) after a mutation if another recipe will reuse the instance.
@@ -38,10 +40,10 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 
 1. `Sub-features` lists short IDs with one line for each behavior.
 2. `How to get to it (user POV)` lists every user entry point.
-3. `Driving it with control-omairc` starts with `Preconditions:` and uses labeled bullets that pair each user action with an exact command and observable result. A `desktop-recipe` fence in that section (not a fifth H2) is the executable form `run <feature>` plays.
+3. `Driving it with control-omairc` starts with `Preconditions:` and uses labeled bullets that pair each user action with an exact command and observable result. A `desktop-recipe` fence in that section (not a fifth H2) is the executable form `run <feature>` plays. Drive those commands with `control-omairc-poc` (or `control-omairc-tui` where the TUI shares the fence).
 4. `Gotchas` lists traps that can waste or invalidate a verification run.
 
-Keep implementation details out of the map. Name only user paths, stable handles, required state, commands, and observable proof.
+Keep implementation details out of the map. Name only user paths, stable handles, required state, commands, and observable proof. Mentions of `qml-suite` / `doctor-qml` in older feature bullets are historical; they are not a fallback.
 
 ## Features
 

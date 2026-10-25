@@ -15,7 +15,7 @@ SKILL_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 ROOT="$(CDPATH= cd -- "$SKILL_DIR/../../.." && pwd)"
 INJECT=(python3 "$SCRIPT_DIR/inject-evdev.py")
 
-BINARY="${OMAIRC_DEMO_BINARY:-$ROOT/build/omairc}"
+BINARY="${OMAIRC_DEMO_BINARY:-$ROOT/client/target/release/omairc}"
 OUTDIR="${OMAIRC_DEMO_OUTDIR:-${TMPDIR:-/tmp}/omairc-demo-rec}"
 OUTPUT="${OMAIRC_DEMO_GIF:-$ROOT/omairc.gif}"
 RECORD_WORKSPACE="${OMAIRC_DEMO_WORKSPACE:-1}"
@@ -65,7 +65,10 @@ require_tools() {
 ensure_binary() {
   if [[ ! -x "$BINARY" ]]; then
     echo "record-demo: building $BINARY" >&2
-    "$ROOT/bin/build"
+    (
+      cd "$ROOT/client"
+      cargo build --release --locked --features product
+    )
   fi
   [[ -x "$BINARY" ]] || die "no demo binary at $BINARY"
   if [[ "$BINARY" == *"/usr/bin/omairc" ]]; then
@@ -352,7 +355,7 @@ so it can call press, type_slow, and sleep:
 Env:
   OMAIRC_DEMO_GIF        output path (default: $ROOT/omairc.gif)
   OMAIRC_DEMO_OUTDIR     capture dir (default: $OUTDIR)
-  OMAIRC_DEMO_BINARY     demo binary (default: $ROOT/build/omairc)
+  OMAIRC_DEMO_BINARY     demo binary (default: $ROOT/client/target/release/omairc)
   OMAIRC_DEMO_SCENARIO   scenario file (same as --scenario)
   GIF_WIDTH/GIF_HEIGHT   default 1600x900
   GIF_FPS                default 15

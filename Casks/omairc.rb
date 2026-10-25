@@ -20,8 +20,8 @@ cask "omairc" do
   app "omairc.app"
   binary "omairc"
 
-  # Do not symlink Contents/MacOS/omairc into bin/. Qt then treats that path as
-  # the executable, skips the bundle qt.conf, and fails to load Quick Controls.
+  # Do not symlink Contents/MacOS/omairc into bin/. Keep a small exec wrapper
+  # so the Mach-O still runs from inside the .app bundle.
   preflight_steps do
     write_file "omairc", <<~SH
       #!/bin/sh

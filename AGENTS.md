@@ -212,10 +212,9 @@ under `.cursor/skills/verify-omairc/features/*.md` must stay aligned between
 cargo, and lavapipe (`vulkan-swrast`). It drives
 `client/target/release/omairc` (`--features product`) through
 `control-omairc-poc` as a black box and is not in CI. `bin/verify-poc-recipes`
-replays every feature fence the same way. `bin/test-install` stages the seven
+replays every feature fence the same way. `bin/test-install` stages the six
 packager paths from that release binary (binary, desktop file, SVG, bash
-completion, LICENSE, OFL; LGPL notice while shared IRC sources remain dual-
-licensed).
+completion, LICENSE, OFL).
 `bin/test-live` needs Docker. It drives Ergo, Solanum, and ngIRCd, then the
 Rust live suite under `tests/live/`. It fails if `docker` or `docker compose`
 is missing.
@@ -246,8 +245,7 @@ Set `OMAIRC_BUILD_VERSION` when packaging needs an exact `--version` string
 is not on `PATH` (see `vswhere` / `vcvars64.bat` in prior Qt docs; the Rust
 script uses the same MSVC expectation).
 
-`bin/build`, `bin/test`, `bin/test-desktop`, and `bin/test-live` stay Unix
-scripts. `--help` and the local CLI attach to a parent Windows console with
+`bin/test`, `bin/test-desktop`, and `bin/test-live` stay Unix scripts. `--help` and the local CLI attach to a parent Windows console with
 `AttachConsole` (cmd/PowerShell, not Git Bash/mintty). Redirected stdout/stderr
 stay on the pipe or file. Local CLI IPC uses a named pipe (`omairc`), not a
 filesystem socket. Portal text-scale stays 1.0, desktop notifications use the

@@ -998,16 +998,15 @@ def check_homebrew_cask():
         problems.append('Casks/omairc.rb: install omairc.app')
     if 'binary "#{appdir}/omairc.app/Contents/MacOS/omairc"' in text:
         problems.append(
-            "Casks/omairc.rb: do not symlink Contents/MacOS/omairc; Qt then "
-            "misses the bundle qt.conf")
+            "Casks/omairc.rb: do not symlink Contents/MacOS/omairc; keep an "
+            "exec wrapper so the Mach-O runs from the .app bundle")
     if 'binary "omairc"' not in text:
         problems.append(
             "Casks/omairc.rb: expose the CLI binary on PATH")
     if "preflight_steps" not in text \
             or 'exec "{{appdir}}/omairc.app/Contents/MacOS/omairc"' not in text:
         problems.append(
-            "Casks/omairc.rb: PATH helper must exec the bundle Mach-O so Qt "
-            "reads qt.conf")
+            "Casks/omairc.rb: PATH helper must exec the bundle Mach-O")
     if "caveats" not in text or "Start Omairc first" not in text:
         problems.append(
             "Casks/omairc.rb: caveats must say the CLI needs a running window")

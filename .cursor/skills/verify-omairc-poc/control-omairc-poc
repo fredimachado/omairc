@@ -587,7 +587,7 @@ cmd_wait_title() {
 
 
 reject_qt_only_verb() {
-  die "verb '$1' is Qt-only (offscreen QML suite). Use control-omairc for that path."
+  die "verb '$1' is retired (Qt offscreen QML suite). Desktop proof uses control-omairc-poc only."
 }
 
 cmd_click() {
