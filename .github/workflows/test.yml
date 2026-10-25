@@ -243,6 +243,27 @@ jobs:
             libdbus-1-dev libssl-dev \
             xvfb xauth xdotool xinput imagemagick \
             mesa-vulkan-drivers
+          # Ubuntu ships ImageMagick 6 without the unified `magick` entrypoint
+          # that ImageMagick 7 / Omarchy provide and that control-omairc-poc
+          # doctor / screenshots require (same shim as .cursor/install.sh).
+          sudo tee /usr/local/bin/magick >/dev/null <<'EOF'
+          #!/usr/bin/env sh
+          set -eu
+          case "${1:-}" in
+            convert|mogrify|identify|composite|montage|compare|import|conjure|stream|display|animate)
+              cmd="$1"; shift; exec "$cmd" "$@" ;;
+            *)
+              exec convert "$@" ;;
+          esac
+          EOF
+          sudo chmod +x /usr/local/bin/magick
+          command -v magick
+          command -v xdotool
+          command -v xinput
+          command -v Xvfb
+          command -v import
+          ls /usr/share/vulkan/icd.d/*lvp* /usr/share/vulkan/icd.d/*lavapipe* 2>/dev/null \
+            || ls /usr/share/vulkan/icd.d/*.json
 
       - name: Run feature-map recipes (control-omairc-poc)
         run: bin/verify-poc-recipes
