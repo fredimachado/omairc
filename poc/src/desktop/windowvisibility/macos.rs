@@ -16,8 +16,10 @@ pub(super) fn visibility(window: &Window) -> WindowVisibility {
     let RawWindowHandle::AppKit(appkit) = handle.as_raw() else {
         return WindowVisibility::Visible;
     };
+    // Match Windows/Linux: a missing handle is Visible (skip), not Hidden.
+    // Only a real NSWindow's !isVisible() reports Hidden.
     let Some(ns_window) = ns_window_from_view(appkit.ns_view) else {
-        return WindowVisibility::Hidden;
+        return WindowVisibility::Visible;
     };
     if ns_window.isMiniaturized() {
         return WindowVisibility::Minimized;

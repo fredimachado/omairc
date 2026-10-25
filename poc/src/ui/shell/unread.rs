@@ -7,7 +7,7 @@
 use gpui::{Context, Window};
 
 use super::Shell;
-use crate::desktop::windowvisibility::{TranscriptActivity, WindowVisibility};
+use crate::desktop::windowvisibility::{self, WindowVisibility, VISIBILITY_POLL};
 use crate::model::chords::Chord;
 
 impl Shell {
@@ -55,28 +55,53 @@ impl Shell {
     }
 
     /// Seeds focus and visibility from the live window, then watches both.
+    /// Visibility is refreshed on activation (before focus), on bounds change
+    /// when that fires, and on a short poll while reportedly active or
+    /// suspended - minimize often never reaches the bounds observer.
     pub(super) fn watch_window_activity(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.activation_watched {
             return;
         }
         self.activation_watched = true;
-        self.activity = TranscriptActivity {
+        self.activity = windowvisibility::TranscriptActivity {
             window_active: window.is_window_active(),
-            suspended: crate::desktop::windowvisibility::of(window).is_suspended(),
+            suspended: windowvisibility::of(window).is_suspended(),
         };
         self.apply_arrival_active(self.activity.effective(), cx);
 
         let activation = cx.observe_window_activation(
             window,
             |shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>| {
+                // Visibility before focus so FocusIn-while-iconic cannot consume.
+                shell.set_window_visibility(windowvisibility::of(window), cx);
                 shell.set_window_active(window.is_window_active(), cx);
             },
         );
+        // Fast path when a resize does fire; not reliable alone for minimize.
         let bounds = cx.observe_window_bounds(window, |shell: &mut Shell, window: &mut Window, cx| {
-            shell.set_window_visibility(crate::desktop::windowvisibility::of(window), cx);
+            shell.set_window_visibility(windowvisibility::of(window), cx);
         });
         self._subscriptions.push(activation);
         self._subscriptions.push(bounds);
+
+        // Bounds and activation miss minimize while OS focus stays true. Poll
+        // native show state while focused or already suspended.
+        cx.spawn_in(window, async move |shell, cx| {
+            loop {
+                cx.background_executor().timer(VISIBILITY_POLL).await;
+                let alive = shell
+                    .update_in(cx, |shell, window, cx| {
+                        if windowvisibility::should_poll_visibility(shell.activity) {
+                            shell.set_window_visibility(windowvisibility::of(window), cx);
+                        }
+                    })
+                    .is_ok();
+                if !alive {
+                    break;
+                }
+            }
+        })
+        .detach();
     }
 
     /// Alt+U: the unseen jump. It is live on a conversation with no sheet open.

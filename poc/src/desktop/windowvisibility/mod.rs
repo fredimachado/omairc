@@ -6,6 +6,11 @@
 //! count as away for unread and mention notify (`OmaircWindow.qml`
 //! `transcriptSuspended`).
 //!
+//! Minimize often does not fire `observe_window_bounds` while OS focus stays
+//! true, so the shell refreshes [`of`] on activation (visibility before focus)
+//! and polls while reportedly active or already suspended. Bounds remain a
+//! fast path only.
+//!
 //! Wayland has no minimize state clients can read, so this module always
 //! reports [`WindowVisibility::Visible`] there. Hyprland special workspaces
 //! are not observable either.
@@ -83,6 +88,45 @@ impl TranscriptActivity {
         self.suspended = false;
         Some(self.effective())
     }
+}
+
+/// How often the shell re-reads native minimize/hide while focus stays true
+/// (or while already suspended, so restore clears the flag without a bounds
+/// event). Bounds observers alone miss that transition on every platform.
+pub const VISIBILITY_POLL: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// Focus plus show-state inputs for one watch tick. Unit tests use a fake;
+/// the shell reads the live window.
+pub trait ActivityProbe {
+    fn focus_active(&self) -> bool;
+    fn visibility(&self) -> WindowVisibility;
+}
+
+/// Whether the short visibility poll should run. Minimize while focused and
+/// restore while suspended both need a sample that is not bounds-driven.
+pub const fn should_poll_visibility(activity: TranscriptActivity) -> bool {
+    activity.window_active || activity.suspended
+}
+
+/// Activation sample: refresh visibility before focus so FocusIn-while-iconic
+/// cannot consume unread. Returns the last effective change, if any.
+pub fn apply_activation_sample(
+    activity: &mut TranscriptActivity,
+    probe: &impl ActivityProbe,
+) -> Option<bool> {
+    let after_visibility = activity.set_visibility(probe.visibility());
+    match activity.set_focus(probe.focus_active()) {
+        Some(effective) => Some(effective),
+        None => after_visibility,
+    }
+}
+
+/// Visibility-only sample used by the poll and bounds paths.
+pub fn apply_visibility_sample(
+    activity: &mut TranscriptActivity,
+    probe: &impl ActivityProbe,
+) -> Option<bool> {
+    activity.set_visibility(probe.visibility())
 }
 
 /// Reads the platform show state. gpui has no minimize flag, so this uses the
@@ -190,5 +234,110 @@ mod tests {
             Some(false)
         );
         assert!(activity.suspended);
+    }
+
+    #[derive(Clone, Copy)]
+    struct FakeProbe {
+        focus: bool,
+        visibility: WindowVisibility,
+    }
+
+    impl ActivityProbe for FakeProbe {
+        fn focus_active(&self) -> bool {
+            self.focus
+        }
+
+        fn visibility(&self) -> WindowVisibility {
+            self.visibility
+        }
+    }
+
+    #[test]
+    fn activation_refreshes_visibility_before_focus_can_consume() {
+        // FocusIn while iconic: OS focus is true and the window is minimized.
+        // Visibility must land first or set_focus would briefly consume.
+        let mut activity = TranscriptActivity {
+            window_active: false,
+            suspended: false,
+        };
+        let probe = FakeProbe {
+            focus: true,
+            visibility: WindowVisibility::Minimized,
+        };
+        assert_eq!(apply_activation_sample(&mut activity, &probe), Some(false));
+        assert!(activity.window_active);
+        assert!(activity.suspended);
+        assert!(!activity.effective());
+    }
+
+    #[test]
+    fn focus_before_visibility_would_consume_while_iconic() {
+        // Documents why apply_activation_sample orders visibility first.
+        let mut activity = TranscriptActivity {
+            window_active: false,
+            suspended: false,
+        };
+        assert_eq!(activity.set_focus(true), Some(true));
+        assert!(activity.effective(), "focus-first wrongly turns catch-up on");
+        assert_eq!(
+            activity.set_visibility(WindowVisibility::Minimized),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn poll_observes_minimize_while_os_focus_stays_true() {
+        // The live bug: minimize with focus still true and no bounds event.
+        // A bounds-only watch never calls set_visibility; the poll must.
+        let mut activity = TranscriptActivity::default();
+        let mut probe = FakeProbe {
+            focus: true,
+            visibility: WindowVisibility::Visible,
+        };
+        assert!(activity.effective());
+        assert!(should_poll_visibility(activity));
+
+        probe.visibility = WindowVisibility::Minimized;
+        // No activation change (focus stays true). Only the visibility sample.
+        assert_eq!(
+            apply_visibility_sample(&mut activity, &probe),
+            Some(false),
+            "minimize must be observed without a focus or bounds event"
+        );
+        assert!(activity.window_active);
+        assert!(activity.suspended);
+        assert!(!activity.effective());
+        // A later FocusIn-while-iconic must refresh visibility first and not consume.
+        assert_eq!(apply_activation_sample(&mut activity, &probe), Some(false));
+        assert_eq!(activity.set_focus(true), None);
+        assert!(!activity.effective());
+    }
+
+    #[test]
+    fn poll_clears_suspension_on_restore_while_inactive() {
+        let mut activity = TranscriptActivity {
+            window_active: false,
+            suspended: true,
+        };
+        assert!(should_poll_visibility(activity));
+        let probe = FakeProbe {
+            focus: false,
+            visibility: WindowVisibility::Visible,
+        };
+        assert_eq!(
+            apply_visibility_sample(&mut activity, &probe),
+            Some(false)
+        );
+        assert!(!activity.suspended);
+        assert!(!activity.effective());
+    }
+
+    #[test]
+    fn idle_unfocused_visible_skips_visibility_poll() {
+        let activity = TranscriptActivity {
+            window_active: false,
+            suspended: false,
+        };
+        assert!(!should_poll_visibility(activity));
     }
 }

@@ -118,8 +118,8 @@ pub struct Shell {
     pub activity: crate::desktop::windowvisibility::TranscriptActivity,
     /// Last effective activity pushed to the controller.
     applied_arrival_active: bool,
-    /// The window's activation and bounds observers are registered. They need a window,
-    /// so they are set up on the first render.
+    /// The window's activation, bounds, and visibility-poll watchers are armed.
+    /// They need a window, so they are set up on the first render.
     activation_watched: bool,
     pub focus_handle: FocusHandle,
     pub typing_phase: u8,
