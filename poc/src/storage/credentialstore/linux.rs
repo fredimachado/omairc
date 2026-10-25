@@ -222,4 +222,93 @@ mod tests {
             "removing nothing is fine"
         );
     }
+
+    /// Seeds a QtKeychain/libsecret-shaped item through oo7, then reads it on the product path
+    /// and rewrites it as the dual-set item. Run with `cargo test -- --ignored` on a session
+    /// with a running keyring.
+    #[test]
+    #[ignore = "needs a Secret Service on the session bus"]
+    fn a_qtkeychain_shaped_secret_is_readable() {
+        let key = CredentialKey {
+            network_id: format!("omairc-qt-test-{}", std::process::id()),
+            username: "test".to_owned(),
+            host: "irc.example".to_owned(),
+            purpose: PURPOSE_PASSWORD,
+        };
+        let key_name = key.key_name();
+        // Drop leftovers from a previous ignored run that was interrupted.
+        let _ = bounded(CALL_TIMEOUT, delete_password(key_name.clone()));
+
+        let seeded = bounded(CALL_TIMEOUT, {
+            let key_name = key_name.clone();
+            async move {
+                let keyring = unlocked_keyring().await?;
+                // What QtKeychain's secret_password_store leaves (qtkeychain/libsecret.cpp).
+                let mut attributes = secretattrs::qtkeychain(&key_name);
+                attributes.insert("type", "plaintext");
+                attributes.insert("xdg:schema", "org.qt.keychain");
+                keyring
+                    .create_item(&key_name, &attributes, Secret::text("qt-hunter2"), true)
+                    .await
+            }
+        });
+        seeded
+            .expect("seed timed out waiting for the secret service")
+            .expect("seed a QtKeychain-shaped item through oo7");
+
+        assert_eq!(
+            blocking_read_key(&key),
+            Ok(Some("qt-hunter2".to_owned())),
+            "the product path finds the Qt-shaped item"
+        );
+
+        let mut store = open().expect("a Secret Service answers on the session bus");
+        assert_eq!(
+            store.write(&key, "rust-swordfish"),
+            CredentialState::Available
+        );
+        assert_eq!(store.read(&key), Ok(Some("rust-swordfish".to_owned())));
+
+        let dual = bounded(CALL_TIMEOUT, {
+            let key_name = key_name.clone();
+            async move {
+                let keyring = unlocked_keyring().await?;
+                for search in secretattrs::lookups(&key_name) {
+                    for item in keyring.search_items(&search).await? {
+                        if secretattrs::is_written(&item.attributes().await?, &key_name) {
+                            return Ok(true);
+                        }
+                    }
+                }
+                Ok(false)
+            }
+        });
+        assert!(
+            dual.expect("dual-set check timed out")
+                .expect("dual-set search"),
+            "a write leaves the dual-set item"
+        );
+
+        assert_eq!(store.remove(&key), CredentialState::Missing);
+        assert_eq!(store.read(&key), Ok(None));
+
+        let leftovers = bounded(CALL_TIMEOUT, {
+            let key_name = key_name.clone();
+            async move {
+                let keyring = unlocked_keyring().await?;
+                for search in secretattrs::lookups(&key_name) {
+                    if !keyring.search_items(&search).await?.is_empty() {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+        });
+        assert!(
+            !leftovers
+                .expect("cleanup check timed out")
+                .expect("cleanup search"),
+            "both attribute sets are gone"
+        );
+    }
 }

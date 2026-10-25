@@ -120,8 +120,9 @@ Problems found and fixed in M0:
      connects;
   3. change it in Rust, then start Qt: Qt reads the new value;
   4. confirm `secret-tool search --all server omairc` shows one item per key.
-  Make it a `#[ignore]`d test beside `the_secret_service_round_trips_a_secret`
-  that seeds a QtKeychain-shaped item through oo7.
+- [x] `#[ignore]`d test beside `the_secret_service_round_trips_a_secret`
+  that seeds a QtKeychain-shaped item through oo7
+  (`a_qtkeychain_shaped_secret_is_readable` in `linux.rs`).
 - [ ] Windows end-to-end: a machine with Qt registry settings plus a TUI
   `omairc.conf` gets both sets of networks after first Rust start; a second
   start changes nothing.
