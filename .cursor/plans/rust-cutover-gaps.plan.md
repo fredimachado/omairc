@@ -22,7 +22,7 @@ todos:
     status: completed
   - id: m5-live-tests
     content: "M5: Rust live tests against Ergo, Solanum, ngIRCd (bin/test-live parity)"
-    status: pending
+    status: completed
   - id: m6-ui-tests
     content: "M6: GPUI view tests for the QML-only behaviors (scroll, typing row, focus, sheets)"
     status: pending
@@ -229,23 +229,32 @@ path filter matches; it no longer packages, notarizes, or publishes.
 
 ## M5 — Live tests against real IRC daemons
 
-Rust's network tests use a scripted peer. Qt's `bin/test-live` proves
-interoperability with Ergo, Solanum, and ngIRCd (31 cases + 16 live-UI).
+**Done on this branch (code + CI wiring; green against daemons needs Linux+Docker).**
 
-- `poc/tests/live.rs`, `#[ignore]` unless `OMAIRC_LIVE_DAEMONS` is set, reusing
-  `tests/live/compose.yml`, configs, and certs unchanged.
-- Drive the controller through the real `net` transport (no GPUI). Port, in
-  this order: `registerPlain`, `registerTls`, `capabilityFlags`, `isupport`,
-  `classicTraffic`, `nickInUse`, `nickLength`, `whoSnapshot`, `peerAway`,
-  `peerTyping`, `peerMetadata`, `chatHistoryOnJoin`, `saslPlain`,
-  `conversationInventionMatrix`, `foldedNickCollision`, `asciiDirectRestore`,
-  `joinMultipleChannels`, `memberPrefixRanks`,
-  `reconnectAutojoinKeepsChannelState`, and the member suite.
-- Live-UI cases that are really controller cases (`statusIsolation`,
-  `inboundSameNickDirectsStayIsolated`, `bouncerQueryReplayRendersDirectMessageInSidebar`,
-  …) go here too, asserting controller reads instead of QML.
-- `bin/test-live` runs `cargo test --test live -- --ignored` after the Qt
-  suite; CI's live job installs Rust.
+Rust's network tests use a scripted peer. Qt's `bin/test-live` proves
+interoperability with Ergo, Solanum, and ngIRCd. The Rust suite reuses the same
+compose/certs/env and drives the controller through the real `net` transport
+(no GPUI).
+
+- Library surface: `poc/src/lib.rs` (binary calls `omairc::run()`),
+  `NetOptions` / `client_config_trusting_pem` for `live.pem`,
+  `Controller::connect_session` / `set_transcript_root`, session received-log
+  and `force_transport_shutdown`.
+- Harness: `poc/src/live/` reads `OMAIRC_LIVE_*` the same way as Qt
+  `liveharness`.
+- Cases: `poc/tests/live/` (20 `#[ignore]`d tests) covering register plain/TLS,
+  capability flags, ISUPPORT, classic traffic, nick in use / length, WHO
+  snapshot, peer away/typing/metadata, chat history on join, SASL PLAIN,
+  conversation invention matrix, folded nick collision, ASCII DM restore,
+  join multiple channels, member prefix ranks, reconnect autojoin, and a
+  controller-level status/same-nick isolation check.
+- Remaining vs Qt live-UI: fuller dual-network UI proofs
+  (`inboundSameNickDirectsStayIsolated` screenshots,
+  `bouncerQueryReplayRendersDirectMessageInSidebar`, and the other QML-only
+  live-UI cases) stay for M6 or a follow-up once the window is under test.
+- `bin/test-live` runs `cargo test --test live --locked -- --ignored
+  --test-threads=1` after the Qt suite when `cargo` is on `PATH`.
+- CI `live` job installs the stable Rust toolchain and rust-cache.
 
 ## M6 — GPUI view tests
 

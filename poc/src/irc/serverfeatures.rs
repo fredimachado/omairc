@@ -203,7 +203,6 @@ impl IrcServerFeatures {
     }
 
     /// The advertised NICKLEN, if any.
-    #[cfg(test)]
     pub fn nick_length(&self) -> Option<usize> {
         self.nick_length
     }
@@ -225,7 +224,6 @@ impl IrcServerFeatures {
     }
 
     /// The advertised PREFIX mode letters, highest rank first.
-    #[cfg(test)]
     pub fn prefix_modes(&self) -> &str {
         &self.prefix_modes
     }

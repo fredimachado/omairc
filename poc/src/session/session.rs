@@ -171,6 +171,8 @@ pub(crate) struct Core {
     pub(crate) timer_sequence: u64,
     pub(crate) events: Vec<SessionEvent>,
     pub(crate) effects: Vec<Effect>,
+    /// When set, every inbound `IrcMessage` is appended for the live harness.
+    pub(crate) received_log: Option<Vec<IrcMessage>>,
 }
 
 /// The shared allocation behind every `Session` handle.
@@ -357,10 +359,29 @@ impl Session {
     }
 
     /// The capabilities the server acknowledged.
-    // Read by the socket transport and the later phases; cfg(test) comes off with its first consumer.
-    #[cfg(test)]
     pub fn capabilities(&self) -> IrcCapabilitySet {
         self.shared.core.borrow().caps.enabled()
+    }
+
+    /// Starts recording every inbound IRC message for the live harness.
+    pub fn enable_received_log(&self) {
+        self.shared.core.borrow_mut().received_log = Some(Vec::new());
+    }
+
+    /// Inbound messages recorded since [`Self::enable_received_log`], oldest first.
+    pub fn received_messages(&self) -> Vec<IrcMessage> {
+        self.shared
+            .core
+            .borrow()
+            .received_log
+            .clone()
+            .unwrap_or_default()
+    }
+
+    /// Closes the transport without a QUIT, so reconnect (when enabled) can run.
+    pub fn force_transport_shutdown(&self) {
+        let transport = self.shared.core.borrow().transport.clone();
+        transport.shutdown();
     }
 
     /// The draft/metadata-2 limits the server last advertised.
@@ -529,6 +550,7 @@ impl Core {
             timer_sequence: 0,
             events: Vec::new(),
             effects: Vec::new(),
+            received_log: None,
         }
     }
 
@@ -722,6 +744,9 @@ impl Core {
 
     /// Queues an inbound message for the translator (`emitMessageReceived`).
     pub(crate) fn emit_message_received(&mut self, message: IrcMessage) {
+        if let Some(log) = &mut self.received_log {
+            log.push(message.clone());
+        }
         let network_id = self.network_id();
         self.emit(SessionEvent::MessageReceived {
             network_id,

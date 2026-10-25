@@ -14,14 +14,10 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::ring::default_provider;
-use rustls::crypto::{verify_tls12_signature, verify_tls13_signature, WebPkiSupportedAlgorithms};
 use rustls::pki_types::pem::PemObject;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime};
-use rustls::{
-    CertificateError, ClientConfig, DigitallySignedStruct, ServerConfig, SignatureScheme,
-};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::{ClientConfig, ServerConfig};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Builder;
@@ -336,76 +332,9 @@ fn server_config() -> Arc<ServerConfig> {
     Arc::new(config)
 }
 
-/// Trusts exactly one server certificate, the test one, by its bytes. The handshake
-/// signatures are still checked with the provider's algorithms, so the server must hold
-/// the key. Chain validation is skipped: webpki refuses a leaf with `CA:TRUE`, and the
-/// checked-in certificate is one (openssl's default for a self-signed certificate).
-#[derive(Debug)]
-struct PinnedCertificate {
-    pinned: CertificateDer<'static>,
-    algorithms: WebPkiSupportedAlgorithms,
-}
-
-impl ServerCertVerifier for PinnedCertificate {
-    fn verify_server_cert(
-        &self,
-        end_entity: &CertificateDer<'_>,
-        _intermediates: &[CertificateDer<'_>],
-        _server_name: &ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: UnixTime,
-    ) -> Result<ServerCertVerified, rustls::Error> {
-        if end_entity.as_ref() == self.pinned.as_ref() {
-            Ok(ServerCertVerified::assertion())
-        } else {
-            Err(rustls::Error::InvalidCertificate(
-                CertificateError::UnknownIssuer,
-            ))
-        }
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        message: &[u8],
-        cert: &CertificateDer<'_>,
-        dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        verify_tls12_signature(message, cert, dss, &self.algorithms)
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        message: &[u8],
-        cert: &CertificateDer<'_>,
-        dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        verify_tls13_signature(message, cert, dss, &self.algorithms)
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        self.algorithms.supported_schemes()
-    }
-}
-
-/// A client config that trusts the test certificate and nothing else. The server name
-/// is not checked against the certificate; the pin is the trust decision.
+/// A client config that trusts the test certificate and nothing else.
 pub(super) fn pinned_client_config() -> Arc<ClientConfig> {
-    let provider = default_provider();
-    let pinned = CertificateDer::pem_slice_iter(LIVE_CERT)
-        .next()
-        .expect("the test certificate is present")
-        .expect("the test certificate parses");
-    let verifier = PinnedCertificate {
-        pinned,
-        algorithms: provider.signature_verification_algorithms,
-    };
-    let config = ClientConfig::builder_with_provider(Arc::new(default_provider()))
-        .with_safe_default_protocol_versions()
-        .expect("the ring provider supports the default protocol versions")
-        .dangerous()
-        .with_custom_certificate_verifier(Arc::new(verifier))
-        .with_no_client_auth();
-    Arc::new(config)
+    crate::net::client_config_trusting_pem(LIVE_CERT).expect("the test certificate pins")
 }
 
 /// A loopback address nothing listens on: the port of a socket bound and then dropped.

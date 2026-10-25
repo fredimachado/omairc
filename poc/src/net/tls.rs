@@ -8,9 +8,15 @@
 use std::io;
 use std::sync::{Arc, OnceLock};
 
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::ring::default_provider;
-use rustls::pki_types::ServerName;
-use rustls::{ClientConfig, Error as RustlsError, RootCertStore};
+use rustls::crypto::{verify_tls12_signature, verify_tls13_signature, WebPkiSupportedAlgorithms};
+use rustls::pki_types::pem::PemObject;
+use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+use rustls::{
+    CertificateError, ClientConfig, DigitallySignedStruct, Error as RustlsError, RootCertStore,
+    SignatureScheme,
+};
 
 use crate::session::transport::{TransportError, TransportErrorKind};
 
@@ -32,6 +38,78 @@ pub(super) fn config_with_roots(roots: RootCertStore) -> Arc<ClientConfig> {
         .with_root_certificates(roots)
         .with_no_client_auth();
     Arc::new(config)
+}
+
+/// A client config that trusts exactly the first certificate in `pem` by its bytes.
+/// The server name is not checked; the pin is the trust decision. Used by live ircd
+/// tests (and the net test peer) for `tests/live/certs/live.pem`: webpki refuses that
+/// self-signed leaf as a CA root, so chain validation is skipped.
+pub fn client_config_trusting_pem(pem: &[u8]) -> Result<Arc<ClientConfig>, String> {
+    let pinned = CertificateDer::pem_slice_iter(pem)
+        .next()
+        .ok_or_else(|| "PEM has no certificate".to_owned())?
+        .map_err(|error| format!("PEM certificate: {error}"))?;
+    let provider = default_provider();
+    let verifier = PinnedCertificate {
+        pinned,
+        algorithms: provider.signature_verification_algorithms,
+    };
+    let config = ClientConfig::builder_with_provider(Arc::new(default_provider()))
+        .with_safe_default_protocol_versions()
+        .map_err(|error| format!("TLS protocol versions: {error}"))?
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(verifier))
+        .with_no_client_auth();
+    Ok(Arc::new(config))
+}
+
+/// Trusts exactly one server certificate by its bytes. Handshake signatures are still
+/// checked with the provider's algorithms.
+#[derive(Debug)]
+struct PinnedCertificate {
+    pinned: CertificateDer<'static>,
+    algorithms: WebPkiSupportedAlgorithms,
+}
+
+impl ServerCertVerifier for PinnedCertificate {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        if end_entity.as_ref() == self.pinned.as_ref() {
+            Ok(ServerCertVerified::assertion())
+        } else {
+            Err(rustls::Error::InvalidCertificate(
+                CertificateError::UnknownIssuer,
+            ))
+        }
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        verify_tls12_signature(message, cert, dss, &self.algorithms)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        verify_tls13_signature(message, cert, dss, &self.algorithms)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.algorithms.supported_schemes()
+    }
 }
 
 /// The system trust store, with the bundled roots as the fallback for an empty store.

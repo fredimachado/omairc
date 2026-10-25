@@ -191,6 +191,24 @@ if [ "$status" -ne 0 ]; then
   exit "$status"
 fi
 
+if command -v cargo >/dev/null 2>&1; then
+  echo "Running Rust live tests (controller + net transport)..."
+  set +e
+  (
+    cd "$ROOT/poc"
+    cargo test --test live --locked -- --ignored --test-threads=1
+  )
+  rust_status=$?
+  set -e
+  if [ "$rust_status" -ne 0 ]; then
+    echo "Rust live tests failed; compose logs follow." >&2
+    compose logs >&2 || true
+    exit "$rust_status"
+  fi
+else
+  echo "cargo not found; skipping Rust live tests." >&2
+fi
+
 plain=0
 [ -n "${OMAIRC_LIVE_ERGO_PLAIN_PORT:-}" ] && plain=$((plain + 1))
 [ -n "${OMAIRC_LIVE_SOLANUM_PLAIN_PORT:-}" ] && plain=$((plain + 1))

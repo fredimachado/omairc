@@ -328,6 +328,13 @@ impl Controller {
             .is_some_and(|network| self.caps(network).contains(IrcCapability::MessageTags))
     }
 
+    /// Whether the selected conversation can show member metadata status
+    /// (`HasMemberStatus`): the selection's network negotiated member metadata.
+    pub fn has_member_status(&self) -> bool {
+        self.selected_network_id()
+            .is_some_and(|network| self.caps(network).contains(IrcCapability::MemberMetadata))
+    }
+
     /// The session inbox, newest first (`InboxItems`).
     pub fn inbox_items(&self) -> &[InboxItem] {
         self.inbox.items()
