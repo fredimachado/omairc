@@ -162,6 +162,7 @@ DEMO=$DEMO
 VISIBLE=$VISIBLE
 XSERVER=$XSERVER
 LAVAPIPE_ICD=$LAVAPIPE_ICD
+MEMBERS_OPEN=${MEMBERS_OPEN:-1}
 EOF
 }
 
@@ -477,6 +478,8 @@ cmd_launch() {
     xdotool windowsize --sync "$WINDOW" "$NESTED_WIDTH" "$NESTED_HEIGHT"
   fi
 
+  # Demo channels start with the member panel open (Shell::members_open).
+  MEMBERS_OPEN=1
   write_state
   xdotool windowfocus --sync "$WINDOW"
   echo "launched isolated Omairc PoC"
@@ -647,6 +650,12 @@ cmd_click_version() {
   # Footer is 66 CSS px at the bottom of the 244 CSS px sidebar. The version
   # sits on the presence baseline, right-padded 17 CSS px.
   click_xy 214 734
+  # The version hit is easy to miss under Xvfb+lavapipe (CI about AE~64).
+  # Ctrl+Shift+/ opens About; when the layout reports Shift+/ as "?", GPUI
+  # matches secondary-?. Safe if the click already opened it: About is not a
+  # toggle, and the chord is gated while the sheet is open.
+  cmd_key --key ctrl+shift+slash
+  sleep "$JUMP_FIELD_DELAY"
 }
 
 cmd_click_send() {
@@ -813,7 +822,31 @@ cmd_unread() {
 
 cmd_toggle_members() {
   require_no_args toggle-members "$@"
-  cmd_key --key ctrl+shift+m
+  load_state
+  # Ctrl+Shift+M does not reliably reach ToggleMembers under Xvfb+lavapipe
+  # (CI toggle-members AE=0 while the panel stays open). On a channel title
+  # the people pill does toggle via the XI2 click path. Track open/hidden so
+  # the pill's two x positions stay correct. Direct messages keep the chord
+  # (a no-op, as the product does).
+  title=$(window_title)
+  case $title in
+    *\#*)
+      members_open=${MEMBERS_OPEN:-1}
+      if [ "$members_open" = 1 ]; then
+        click_xy 908 36
+        MEMBERS_OPEN=0
+      else
+        click_xy 1124 36
+        MEMBERS_OPEN=1
+      fi
+      write_state
+      ;;
+    *)
+      cmd_key --key ctrl+shift+m
+      ;;
+  esac
+  # Let the column collapse/expand before a later screenshot compare.
+  sleep "$JUMP_FIELD_DELAY"
 }
 
 cmd_focus_members() {
