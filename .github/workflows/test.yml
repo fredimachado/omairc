@@ -240,7 +240,7 @@ jobs:
             usr/share/icons/hicolor/scalable/apps/omairc.svg \
             usr/share/licenses/omairc/LICENSE \
             usr/share/licenses/omairc/OFL.txt | sort)"
-          got_files="$(bsdtar -tf "${pkgs[0]}" | grep -v '^\.' | sort)"
+          got_files="$(bsdtar -tf "${pkgs[0]}" | grep -v '^\.' | grep -v '/$' | sort)"
           test "$got_files" = "$expected" || {
             echo "package file list must match bin/test-install's six paths" >&2
             printf 'got:\n%s\n' "$got_files" >&2
