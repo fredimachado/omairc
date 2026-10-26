@@ -236,14 +236,27 @@ func (c *Controller) initSlashSubsystems() {
 
 // rebindClocks recreates the subsystems that hold a clock, so SetClock lands
 // after construction. The session manager owns per-session clocks, so only the
-// channel-list timeout and the auto-away timers are rebound here.
+// channel-list timeout and the auto-away timers are rebound here. Auto-away
+// keeps its in-memory config (including a one-shot reason), tripped flag, and
+// network sets so a SetClock after LoadStoredPreferences does not silently
+// clear restored /autoaway; idle is re-armed on the new clock when not tripped.
 func (c *Controller) rebindClocks() {
 	if c.channelLists != nil {
 		c.channelLists = NewChannelListRequest(c.clock)
 	}
 	if c.autoaway != nil {
-		c.autoaway = NewAutoawayRuntime(autoawayAdapter{ctrlHost{c: c}}, c.clock)
-		c.autoaway.SetEphemeral(c.ephemeral)
+		prior := c.autoaway
+		prior.autoawayStopTimers()
+		next := NewAutoawayRuntime(autoawayAdapter{ctrlHost{c: c}}, c.clock)
+		next.SetEphemeral(c.ephemeral)
+		next.config = prior.config
+		next.tripped = prior.tripped
+		next.autoAwayNetworks = prior.autoAwayNetworks
+		next.manualAwayNetworks = prior.manualAwayNetworks
+		if !next.tripped {
+			next.autoawayArmIdle()
+		}
+		c.autoaway = next
 	}
 }
 
