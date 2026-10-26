@@ -7,7 +7,10 @@ pkgdesc='Simple IRC client for Omarchy'
 arch=('x86_64')
 url='https://github.com/fredimachado/omairc'
 license=('MIT' 'OFL-1.1')
-options=(!debug)
+# !lto: makepkg's default -flto reaches ring's cc/asm build; those objects
+# become GIMPLE bitcode that rustc's final link never resolves (undefined
+# ring_core_*). The visible -fuse-ld=lld is a red herring.
+options=(!debug !lto)
 depends=(
   'fontconfig'
   'freetype2'
@@ -39,9 +42,6 @@ build() {
   export OMAIRC_BUILD_VERSION="${OMAIRC_BUILD_VERSION:-$pkgver}"
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
-  # makepkg's LDFLAGS inject -fuse-ld=lld; ring's asm objects then fail to link
-  # (undefined ring_core_*). Prefer the default bfd/gold path through gcc.
-  export LDFLAGS="${LDFLAGS//-fuse-ld=lld/}"
   cargo build --release --frozen --features product --manifest-path client/Cargo.toml
 }
 
