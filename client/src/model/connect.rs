@@ -199,8 +199,8 @@ pub enum Stop {
     Apply,
 }
 
-/// One toggle on the Preferences tab. Qt shows these three; `joins` has no row
-/// there and stays a `/pref` setting.
+/// One toggle on the Preferences tab. The sheet shows these four; `joins` has no
+/// row there and stays a `/pref` setting.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PreferenceRow {
     pub name: PrefName,
@@ -208,8 +208,8 @@ pub struct PreferenceRow {
     pub help: &'static str,
 }
 
-/// The Preferences tab rows, in Qt's order.
-pub fn preference_rows() -> [PreferenceRow; 3] {
+/// The Preferences tab rows, in display order.
+pub fn preference_rows() -> [PreferenceRow; 4] {
     [
         PreferenceRow {
             name: PrefName::Directs,
@@ -225,6 +225,11 @@ pub fn preference_rows() -> [PreferenceRow; 3] {
             name: PrefName::Unread,
             label: PrefName::Unread.label(),
             help: "Scrolls to the New messages marker when you switch conversations. Already-focused buffers and Status are left at the end.",
+        },
+        PreferenceRow {
+            name: PrefName::Colors,
+            label: PrefName::Colors.label(),
+            help: "Paints the foreground and background colors other clients send in messages and topics. Off, text takes your theme's colors; bold, italic, underline, and strikethrough still show. Applies to lines already on screen.",
         },
     ]
 }

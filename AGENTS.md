@@ -78,7 +78,7 @@ builds).
 - The Connect sheet is tabbed: `Connection` holds the per-network profile and
   `Preferences` holds global settings such as reopening direct messages on
   startup. `/pref` reads and sets those toggles from the composer
-  (`directs`, `avatars`, `unread`). Open conversations at unread starts on.
+  (`directs`, `avatars`, `unread`, `colors`). Open conversations at unread starts on.
   Only queries the user opened or replied to are restored, and restore waits
   until after ISUPPORT (`376` / `422`). Keep the `Ctrl+/` shortcut hint in its
   rail so new users find the shortcuts sheet.
