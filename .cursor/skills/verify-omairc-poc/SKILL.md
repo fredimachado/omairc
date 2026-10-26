@@ -144,7 +144,7 @@ Named chord verbs wrap the same keysym path as `key` (including the
 | `jump --query TEXT` | `Ctrl+K`, wait, type, Return. |
 | `walk --down` / `walk --up` | `Alt+Down` / `Alt+Up`. `--times N` repeats. |
 | `unread` | `Alt+A`. |
-| `toggle-members` | `Ctrl+Shift+M` on a channel. |
+| `toggle-members` | People-pill click on a channel (XI2); `Ctrl+Shift+M` on a DM (no-op). |
 | `focus-members` | `Ctrl+Shift+P`. |
 | `nick-jump --query TEXT` | `Ctrl+Shift+K`, wait, type, Return. |
 | `status` | `Ctrl+grave`. |
@@ -171,8 +171,8 @@ Pointer verbs instead:
 
 Named pixel clicks assume the isolated 1180×760 window at textScale 1.0
 (same coordinates as the retired Qt driver). Prefer chord verbs when a recipe
-has one. Escape hatch for About is `key --key ctrl+shift+slash`; for SEND,
-`send --text` / Enter.
+has one. `click-version` also sends `Ctrl+Shift+/` so About opens when the
+footer hit misses under lavapipe. For SEND, prefer `send --text` / Enter.
 
 Typical drive:
 

@@ -506,7 +506,7 @@ fn a_deferred_read_error_is_not_cached_forever() {
     // finished worker before this thread observes Loading.
     assert!(
         store.deferred_read_inflight(&key),
-        "retry_read starts one new worker"
+        "retry_read starts one new worker before settle"
     );
     let deadline = Instant::now() + Duration::from_secs(3);
     let mut answer = ReadSlot::Loading;

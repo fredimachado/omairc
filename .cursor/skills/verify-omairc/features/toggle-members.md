@@ -58,6 +58,7 @@ screenshot --feature toggle-members --name after-toggle
 - `screenshot` retries a near-solid grab and fails the run if the frame stays flat. The open-panel shot is the first grab. Compare it to `members-hidden` only after that retry has a real frame.
 - `Ctrl+Shift+M` is disabled on direct messages. A no-op there is correct, not a broken shortcut.
 - `control-omairc toggle-members` sends `Control_L+Shift_L+m`. xdotool's `ctrl+shift+m` token does not reach the Qt shortcut on the isolated Xvfb.
+- `control-omairc-poc toggle-members` clicks the header people pill on a channel title (XI2) and tracks open/hidden for the two pill x positions. `Ctrl+Shift+M` alone has been AE=0 under Xvfb+lavapipe while the panel stayed open. On a direct message it still sends the chord (a no-op).
 - The panel also stays hidden when the window is narrower than 980 CSS pixels. Isolated launch stays at 1180 wide so this does not apply unless geometry isolation failed.
 - The people control label is the count plus ` PEOPLE`, not the words Hide/Show. Those names exist only as the control's accessible name.
 - `click-people` aims at `908,36` while the member column is open. After the column hides, use `click-people --hidden` (`1124,36`). The default click misses the shifted control.
