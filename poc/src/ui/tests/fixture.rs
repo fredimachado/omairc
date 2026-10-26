@@ -39,8 +39,7 @@ pub fn open(cx: &mut TestAppContext) -> SeededShell<'_> {
         Shell::new(cx, None, false, false, true, None, activation_tx)
     });
     vcx.simulate_resize(size(px(WINDOW_WIDTH), px(WINDOW_HEIGHT)));
-    // Drop seed mention arrivals so the shell never calls activate_window on the
-    // test platform (no real window handle).
+    // Drop seed mention arrivals so settle does not raise desktop notifications.
     shell.update(vcx, |shell, _| {
         shell.controller.take_arrivals();
     });
