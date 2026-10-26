@@ -3,6 +3,29 @@ use crate::model::{Style, StyleRun, TextStyle as IrcStyle};
 
 use crate::util::{to_gpui, FONT_FAMILY};
 
+/// Whether mIRC colors paint (`/pref colors`). Off, runs keep their formatting and take the theme ink.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IrcColors {
+    Shown,
+    Stripped,
+}
+
+impl IrcColors {
+    pub fn from_pref(on: bool) -> Self {
+        if on {
+            Self::Shown
+        } else {
+            Self::Stripped
+        }
+    }
+}
+
+impl Default for IrcColors {
+    fn default() -> Self {
+        Self::Shown
+    }
+}
+
 pub fn gpui_text_style(style: &Style, size_px: f32, bold: bool) -> TextStyle {
     let mut ts = TextStyle {
         font_family: FONT_FAMILY.into(),
@@ -21,6 +44,7 @@ pub fn irc_runs_to_gpui(
     runs: &[StyleRun],
     style: &Style,
     base: &TextStyle,
+    colors: IrcColors,
     selection: Option<std::ops::Range<usize>>,
 ) -> Vec<TextRun> {
     let mut gpui_runs = Vec::new();
@@ -36,7 +60,7 @@ pub fn irc_runs_to_gpui(
                 continue;
             }
             let len = run.range.end - ix;
-            gpui_runs.push(irc_run_to_gpui(&run.style, style, base, len));
+            gpui_runs.push(irc_run_to_gpui(&run.style, style, base, colors, len));
             ix = run.range.end;
         }
     }
@@ -53,7 +77,13 @@ pub fn irc_runs_to_gpui(
     gpui_runs
 }
 
-fn irc_run_to_gpui(irc: &IrcStyle, style: &Style, base: &TextStyle, len: usize) -> TextRun {
+fn irc_run_to_gpui(
+    irc: &IrcStyle,
+    style: &Style,
+    base: &TextStyle,
+    colors: IrcColors,
+    len: usize,
+) -> TextRun {
     let mut ts = base.clone();
     if irc.bold {
         ts.font_weight = gpui::FontWeight::BOLD;
@@ -74,11 +104,13 @@ fn irc_run_to_gpui(irc: &IrcStyle, style: &Style, base: &TextStyle, len: usize) 
             wavy: false,
         });
     }
-    if let Some(fg) = irc.fg {
-        ts.color = to_gpui(fg);
-    }
-    if let Some(bg) = irc.bg {
-        ts.background_color = Some(to_gpui(bg));
+    if colors == IrcColors::Shown {
+        if let Some(fg) = irc.fg {
+            ts.color = to_gpui(fg);
+        }
+        if let Some(bg) = irc.bg {
+            ts.background_color = Some(to_gpui(bg));
+        }
     }
     if irc.reverse {
         let fg = ts.color;
@@ -171,4 +203,51 @@ pub fn link_underline_run(
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::format::format_irc;
+    use crate::model::theme::Theme;
+    use crate::model::{Color, Style};
+    use crate::util::to_gpui;
+
+    #[test]
+    fn stripped_keeps_bold_and_theme_ink_shown_paints_mirc_red() {
+        let style = Style::new(Theme::defaults_dark(), 1.0);
+        let formatted = format_irc("\x02\x0304bold red");
+        let base = gpui_text_style(&style, 13., false);
+
+        let stripped = irc_runs_to_gpui(
+            &formatted.plain,
+            &formatted.runs,
+            &style,
+            &base,
+            IrcColors::Stripped,
+            None,
+        );
+        let stripped_run = stripped
+            .iter()
+            .find(|run| run.len == formatted.plain.len())
+            .expect("one run covers the plain text");
+        assert_eq!(stripped_run.color, base.color);
+        assert_eq!(stripped_run.font.weight, gpui::FontWeight::BOLD);
+
+        let shown = irc_runs_to_gpui(
+            &formatted.plain,
+            &formatted.runs,
+            &style,
+            &base,
+            IrcColors::Shown,
+            None,
+        );
+        let shown_run = shown
+            .iter()
+            .find(|run| run.len == formatted.plain.len())
+            .expect("one run covers the plain text");
+        let red = Color::from_hex("#FF0000").expect("palette red");
+        assert_eq!(shown_run.color, to_gpui(red));
+        assert_eq!(shown_run.font.weight, gpui::FontWeight::BOLD);
+    }
 }

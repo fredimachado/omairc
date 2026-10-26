@@ -8,7 +8,7 @@ use crate::model::format::{FormattedText, TextHit};
 use crate::model::topic_line::{clipped_hit_ranges, ellipsis_width};
 use crate::model::Style;
 use crate::ui::center::header_actions::{render_header_actions, HeaderActions, HeaderOffers};
-use crate::ui::format_ui::{gpui_text_style, irc_runs_to_gpui};
+use crate::ui::format_ui::{gpui_text_style, irc_runs_to_gpui, IrcColors};
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
@@ -19,10 +19,12 @@ pub enum Subtitle<'a> {
     /// direct message passes the peer's real name, and an empty line when it has none.
     Plain(&'a str),
     /// A conversation's topic. It is formatted, its URLs and channel names are
-    /// clickable, and `on_hit` gets the hit that was clicked.
+    /// clickable, and `on_hit` gets the hit that was clicked. `colors` follows
+    /// `/pref colors`.
     Topic {
         text: &'a FormattedText,
         hits: &'a [(Range<usize>, TextHit)],
+        colors: IrcColors,
         on_hit: Handler<TextHit>,
     },
 }
@@ -291,10 +293,15 @@ fn subtitle_line(style: &Style, subtitle: Subtitle<'_>, subtitle_width: f32) -> 
         Subtitle::Plain(text) => line
             .text_color(to_gpui(style.muted_color()))
             .child(text.to_string()),
-        Subtitle::Topic { text, hits, on_hit } => {
+        Subtitle::Topic {
+            text,
+            hits,
+            colors,
+            on_hit,
+        } => {
             let mut base = gpui_text_style(style, 11., false);
             base.color = to_gpui(style.muted_color());
-            let runs = irc_runs_to_gpui(&text.plain, &text.runs, style, &base, None);
+            let runs = irc_runs_to_gpui(&text.plain, &text.runs, style, &base, colors, None);
             let styled = StyledText::new(SharedString::from(text.plain.clone())).with_runs(runs);
             let font_px = f32::from(scaled_px(style, 11.));
             let char_width = font_px * 0.55;

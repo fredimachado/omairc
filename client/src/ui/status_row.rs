@@ -10,7 +10,7 @@ use gpui::{div, prelude::*, px, SharedString, Stateful, StyledText};
 use crate::irc::statusentry::LogSeverity;
 use crate::model::status::{body_is_muted, label_tone, LabelTone};
 use crate::model::{mix_colors, Row, Style};
-use crate::ui::format_ui::{gpui_text_style, irc_runs_to_gpui, link_underline_run};
+use crate::ui::format_ui::{gpui_text_style, irc_runs_to_gpui, link_underline_run, IrcColors};
 use crate::ui::message_row::{BodyTextElement, RowLayoutMap};
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
@@ -23,6 +23,7 @@ pub fn render_status_row(
     selection_range: Option<Range<usize>>,
     hovered_link: Option<Range<usize>>,
     layouts: RowLayoutMap,
+    colors: IrcColors,
 ) -> Stateful<gpui::Div> {
     let severity = row
         .status
@@ -51,6 +52,7 @@ pub fn render_status_row(
         &row.body.runs,
         style,
         &base,
+        colors,
         selection_range.clone(),
     );
     if let Some(link) = hovered_link {
