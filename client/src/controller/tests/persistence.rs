@@ -490,13 +490,14 @@ fn preferences_and_the_sidebar_layout_survive_a_relaunch() {
         save(&mut first, libera(OFTC));
         first.set_preference(PrefName::Avatars, PrefValue::Toggle(false));
         first.set_preference(PrefName::Unread, PrefValue::Toggle(false));
+        first.set_preference(PrefName::Colors, PrefValue::Toggle(false));
         first.set_preference(PrefName::Joins, PrefValue::parse(PrefName::Joins, "every").unwrap());
         first.set_network_order(&[OFTC.to_owned(), LIBERA.to_owned()]);
         first.set_network_collapsed(LIBERA, true);
     }
     let second = launch(&backing, Box::new(Loopbacks::default()));
     let prefs = second.preferences();
-    assert!(!prefs.avatars && !prefs.unread);
+    assert!(!prefs.avatars && !prefs.unread && !prefs.colors);
     assert_eq!(prefs.joins, MembershipNoise::Every);
     assert_eq!(second.network_order(), [OFTC, LIBERA]);
     assert!(second.is_network_collapsed(LIBERA));

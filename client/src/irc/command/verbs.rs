@@ -227,7 +227,7 @@ pub static VERB_TABLE: [VerbSpec; 47] = [
         verb: Verb::Pref,
         name: "pref",
         aliases: &[],
-        usage: "/pref [directs|avatars|unread] [on|off] | joins [folded|every|hidden]",
+        usage: "/pref [directs|avatars|unread|colors] [on|off] | joins [folded|every|hidden]",
         scope: VerbScope::Either,
         wrong_scope_text: "",
     },

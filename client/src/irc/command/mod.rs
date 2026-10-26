@@ -414,7 +414,13 @@ pub fn pref_reply(request: PrefRequest, prefs: &mut Preferences) -> PrefReply {
             changed: false,
         },
         PrefKind::QueryAll => PrefReply {
-            text: format_pref_list(prefs.directs, prefs.avatars, prefs.unread, prefs.joins),
+            text: format_pref_list(
+                prefs.directs,
+                prefs.avatars,
+                prefs.unread,
+                prefs.colors,
+                prefs.joins,
+            ),
             changed: false,
         },
         PrefKind::QueryOne => PrefReply {

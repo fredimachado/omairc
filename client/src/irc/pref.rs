@@ -21,6 +21,8 @@ pub enum PrefName {
     Avatars,
     /// Opens conversations at their unread mark.
     Unread,
+    /// Paints mIRC foreground and background colors.
+    Colors,
     /// How join, part, quit and nick lines show.
     Joins,
 }
@@ -28,10 +30,11 @@ pub enum PrefName {
 impl PrefName {
     /// Catalog order, which the slash popup and the bare `/pref` list follow.
     #[cfg(test)]
-    pub const ALL: [PrefName; 4] = [
+    pub const ALL: [PrefName; 5] = [
         PrefName::Directs,
         PrefName::Avatars,
         PrefName::Unread,
+        PrefName::Colors,
         PrefName::Joins,
     ];
 
@@ -81,7 +84,7 @@ pub struct PrefSpec {
 }
 
 /// The static, ordered `/pref` table (`ircPrefCatalog`).
-pub const PREF_CATALOG: [PrefSpec; 4] = [
+pub const PREF_CATALOG: [PrefSpec; 5] = [
     PrefSpec {
         name: PrefName::Directs,
         token: "directs",
@@ -98,6 +101,12 @@ pub const PREF_CATALOG: [PrefSpec; 4] = [
         name: PrefName::Unread,
         token: "unread",
         label: "Open conversations at unread",
+        value_kind: PrefValueKind::Toggle,
+    },
+    PrefSpec {
+        name: PrefName::Colors,
+        token: "colors",
+        label: "Show mIRC colors",
         value_kind: PrefValueKind::Toggle,
     },
     PrefSpec {
@@ -123,7 +132,7 @@ pub fn pref_find(token: &str) -> Option<&'static PrefSpec> {
 /// The `/pref` usage line (`ircPrefUsage`).
 #[cfg(test)]
 pub fn pref_usage() -> &'static str {
-    "/pref [directs|avatars|unread] [on|off] | joins [folded|every|hidden]"
+    "/pref [directs|avatars|unread|colors] [on|off] | joins [folded|every|hidden]"
 }
 
 /// The avatar privacy note (`ircPrefAvatarNote`).
@@ -158,12 +167,14 @@ pub fn format_pref_list(
     directs: bool,
     avatars: bool,
     unread: bool,
+    colors: bool,
     noise: MembershipNoise,
 ) -> String {
     [
         format_pref_state(PrefName::Directs, directs),
         format_pref_state(PrefName::Avatars, avatars),
         format_pref_state(PrefName::Unread, unread),
+        format_pref_state(PrefName::Colors, colors),
         format_pref_noise(noise),
     ]
     .join("\n")
@@ -276,6 +287,8 @@ pub struct Preferences {
     pub avatars: bool,
     /// Open conversations at their unread mark.
     pub unread: bool,
+    /// Show mIRC foreground and background colors.
+    pub colors: bool,
     /// How join, part, quit and nick lines show.
     pub joins: MembershipNoise,
 }
@@ -286,6 +299,7 @@ impl Default for Preferences {
             directs: true,
             avatars: true,
             unread: true,
+            colors: true,
             joins: MembershipNoise::Folded,
         }
     }
@@ -298,6 +312,7 @@ impl Preferences {
             PrefName::Directs => self.directs,
             PrefName::Avatars => self.avatars,
             PrefName::Unread => self.unread,
+            PrefName::Colors => self.colors,
             PrefName::Joins => false,
         }
     }
@@ -309,6 +324,7 @@ impl Preferences {
             (PrefName::Directs, PrefValue::Toggle(on)) => self.directs = on,
             (PrefName::Avatars, PrefValue::Toggle(on)) => self.avatars = on,
             (PrefName::Unread, PrefValue::Toggle(on)) => self.unread = on,
+            (PrefName::Colors, PrefValue::Toggle(on)) => self.colors = on,
             (PrefName::Joins, PrefValue::Noise(level)) => self.joins = level,
             _ => return false,
         }
@@ -332,7 +348,7 @@ mod tests {
     #[test]
     fn the_catalog_is_ordered_and_complete() {
         let catalog = pref_catalog();
-        assert_eq!(catalog.len(), 4);
+        assert_eq!(catalog.len(), 5);
         assert_eq!(
             catalog[0],
             PrefSpec {
@@ -344,8 +360,12 @@ mod tests {
         );
         assert_eq!(catalog[1].token, "avatars");
         assert_eq!(catalog[2].label, "Open conversations at unread");
-        assert_eq!(catalog[3].name, PrefName::Joins);
-        assert_eq!(catalog[3].value_kind, PrefValueKind::Noise);
+        assert_eq!(catalog[3].name, PrefName::Colors);
+        assert_eq!(catalog[3].token, "colors");
+        assert_eq!(catalog[3].label, "Show mIRC colors");
+        assert_eq!(catalog[3].value_kind, PrefValueKind::Toggle);
+        assert_eq!(catalog[4].name, PrefName::Joins);
+        assert_eq!(catalog[4].value_kind, PrefValueKind::Noise);
     }
 
     #[test]
@@ -367,7 +387,7 @@ mod tests {
     fn the_usage_and_note_strings_are_fixed() {
         assert_eq!(
             pref_usage(),
-            "/pref [directs|avatars|unread] [on|off] | joins [folded|every|hidden]"
+            "/pref [directs|avatars|unread|colors] [on|off] | joins [folded|every|hidden]"
         );
         assert_eq!(
             pref_avatar_note(),
@@ -406,10 +426,11 @@ mod tests {
             "Join, part, quit, and nick lines: every"
         );
         assert_eq!(
-            format_pref_list(true, false, true, MembershipNoise::Every),
+            format_pref_list(true, false, true, true, MembershipNoise::Every),
             "Reopen direct messages on startup: on\n\
              Show peer avatars: off\n\
              Open conversations at unread: on\n\
+             Show mIRC colors: on\n\
              Join, part, quit, and nick lines: every"
         );
     }
@@ -433,6 +454,13 @@ mod tests {
                 PrefRequest {
                     enabled: false,
                     ..request(PrefKind::Set, PrefName::Unread)
+                },
+            ),
+            (
+                "colors off",
+                PrefRequest {
+                    enabled: false,
+                    ..request(PrefKind::Set, PrefName::Colors)
                 },
             ),
             ("directs maybe", request(PrefKind::Usage, PrefName::Directs)),
@@ -496,7 +524,7 @@ mod tests {
     #[test]
     fn defaults_are_all_on_with_folded_joins() {
         let prefs = Preferences::default();
-        assert!(prefs.directs && prefs.avatars && prefs.unread);
+        assert!(prefs.directs && prefs.avatars && prefs.unread && prefs.colors);
         assert_eq!(prefs.joins, MembershipNoise::Folded);
     }
 
@@ -505,6 +533,8 @@ mod tests {
         let mut prefs = Preferences::default();
         assert!(prefs.set(PrefName::Avatars, PrefValue::Toggle(false)));
         assert!(!prefs.avatars);
+        assert!(prefs.set(PrefName::Colors, PrefValue::Toggle(false)));
+        assert!(!prefs.colors);
         assert!(prefs.set(PrefName::Joins, PrefValue::Noise(MembershipNoise::Every)));
         assert_eq!(prefs.joins, MembershipNoise::Every);
         assert!(!prefs.set(PrefName::Joins, PrefValue::Toggle(true)));
@@ -516,8 +546,11 @@ mod tests {
     fn enabled_reads_toggles_and_is_false_for_joins() {
         let mut prefs = Preferences::default();
         assert!(prefs.enabled(PrefName::Directs));
+        assert!(prefs.enabled(PrefName::Colors));
         prefs.set(PrefName::Directs, PrefValue::Toggle(false));
+        prefs.set(PrefName::Colors, PrefValue::Toggle(false));
         assert!(!prefs.enabled(PrefName::Directs));
+        assert!(!prefs.enabled(PrefName::Colors));
         assert!(!prefs.enabled(PrefName::Joins));
     }
 
@@ -528,6 +561,6 @@ mod tests {
             assert_eq!(PrefName::from_token(spec.token), Some(spec.name));
         }
         let tokens: Vec<&str> = PrefName::ALL.iter().map(|name| name.token()).collect();
-        assert_eq!(tokens, ["directs", "avatars", "unread", "joins"]);
+        assert_eq!(tokens, ["directs", "avatars", "unread", "colors", "joins"]);
     }
 }

@@ -20,6 +20,7 @@ pub const PREFERENCES_GROUP: &str = "preferences";
 const REOPEN_DIRECTS_KEY: &str = "reopenDirectMessages";
 const LOAD_AVATARS_KEY: &str = "loadPeerAvatars";
 const OPEN_AT_UNREAD_KEY: &str = "openConversationsAtUnread";
+const SHOW_IRC_COLORS_KEY: &str = "showIrcColors";
 const MEMBERSHIP_NOISE_KEY: &str = "membershipNoise";
 const NETWORK_ORDER_KEY: &str = "networkOrder";
 const COLLAPSED_NETWORKS_KEY: &str = "collapsedNetworks";
@@ -45,6 +46,7 @@ impl PreferenceStore {
             directs: settings.bool_value(PREFERENCES_GROUP, REOPEN_DIRECTS_KEY, defaults.directs),
             avatars: settings.bool_value(PREFERENCES_GROUP, LOAD_AVATARS_KEY, defaults.avatars),
             unread: settings.bool_value(PREFERENCES_GROUP, OPEN_AT_UNREAD_KEY, defaults.unread),
+            colors: settings.bool_value(PREFERENCES_GROUP, SHOW_IRC_COLORS_KEY, defaults.colors),
             joins: MembershipNoise::from_token(&settings.value(PREFERENCES_GROUP, MEMBERSHIP_NOISE_KEY))
                 .unwrap_or(defaults.joins),
         }
@@ -56,6 +58,7 @@ impl PreferenceStore {
             settings.set_bool(PREFERENCES_GROUP, REOPEN_DIRECTS_KEY, prefs.directs);
             settings.set_bool(PREFERENCES_GROUP, LOAD_AVATARS_KEY, prefs.avatars);
             settings.set_bool(PREFERENCES_GROUP, OPEN_AT_UNREAD_KEY, prefs.unread);
+            settings.set_bool(PREFERENCES_GROUP, SHOW_IRC_COLORS_KEY, prefs.colors);
             settings.set_value(PREFERENCES_GROUP, MEMBERSHIP_NOISE_KEY, prefs.joins.token());
         })
     }
@@ -139,6 +142,7 @@ mod tests {
         let store = store(&dir);
         let mut prefs = Preferences::default();
         prefs.directs = false;
+        prefs.colors = false;
         prefs.joins = MembershipNoise::Every;
         assert_eq!(store.save_preferences(&prefs), Status::Written);
         assert_eq!(store.preferences(), prefs);
@@ -146,6 +150,7 @@ mod tests {
         let text = std::fs::read_to_string(dir.path().join("omairc.conf")).expect("written");
         assert!(text.contains("[preferences]"), "{text}");
         assert!(text.contains("reopenDirectMessages=false"), "{text}");
+        assert!(text.contains("showIrcColors=false"), "{text}");
         assert!(text.contains("membershipNoise=every"), "{text}");
     }
 
