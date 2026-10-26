@@ -50,7 +50,6 @@ pub enum RegistryValue {
     MultiSz(Vec<String>),
 }
 
-/// Contents of one registry key (one QSettings group).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RegistryKeyContents {
     pub values: Vec<(String, RegistryValue)>,

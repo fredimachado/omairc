@@ -14,7 +14,6 @@ use crate::irc::message::IrcMessage;
 /// The PING token the watchdog sends, and expects back in PONG.
 const PING_WATCHDOG_TOKEN: &str = "omairc-watchdog";
 
-/// Where the watchdog stands.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum PingState {
     #[default]
@@ -36,7 +35,6 @@ enum PingExpiry {
     Nothing,
 }
 
-/// The ping watchdog's state.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct PingWatchdog {
     state: PingState,

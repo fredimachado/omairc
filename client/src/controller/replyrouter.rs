@@ -54,7 +54,6 @@ struct CtcpKey {
     command: String,
 }
 
-/// The key of a labeled request.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct LabeledKey {
     network_id: String,
@@ -148,7 +147,6 @@ impl Controller {
     /// Sends a WHOIS for `nick` on `network_id` and arms its watch, with `destination` as
     /// the transcript the replies copy to (`sendWhois`). Returns false when the nick is
     /// empty or the write is refused.
-    // The product CLI (Phase 9) calls these; the dispatcher reaches the same watches through its own verbs.
     #[cfg(test)]
     pub fn whois(&mut self, network_id: &str, nick: &str, destination: Option<ConversationKey>) -> bool {
         self.pump();
@@ -162,7 +160,6 @@ impl Controller {
 
     /// Sends a CTCP query (`PING`, `TIME` or `VERSION`) to `nick` and arms its watch, with
     /// `destination` as the transcript the reply copies to (`sendCtcpQuery`).
-    // The product CLI (Phase 9) calls these; the dispatcher reaches the same watches through its own verbs.
     #[cfg(test)]
     pub fn ctcp_query(
         &mut self,

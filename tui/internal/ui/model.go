@@ -145,7 +145,7 @@ type Model struct {
 
 	jump jumpState
 
-	// Phase 6 keyboard state. Every field is a mirror of an `client/src/ui/shell`
+	// Keyboard/nav state. Every field is a mirror of an `client/src/ui/shell`
 	// property; the controller owns the network collapse/reorder facts.
 	sidebarNetworkFocusID string
 	serverListVisible     bool
@@ -247,7 +247,7 @@ type Model struct {
 	slash                slashSession
 	list                 channelListState
 
-	// Phase 9 desktop-notification state. notifier is the nil-able desktop
+	// Desktop-notification state. notifier is the nil-able desktop
 	// seam (mirroring backend.notifyDesktop); windowActive mirrors win.active
 	// lastNotification mirrors `client/src/ui/shell`'s lastNotification
 	// suppressDesktopNotification is the test latch mirroring the QML
@@ -268,7 +268,7 @@ type Model struct {
 	// statusReturnID is the conversation Escape returns to after Status.
 	statusReturnID string
 
-	// Phase 10 URL policy state. lastOpenedURL mirrors `client/src/ui/shell`'s
+	// URL policy state. lastOpenedURL mirrors `client/src/ui/shell`'s
 	// lastOpenedUrl (the most recent URL openAllowedURL allowed)
 	// suppressExternalOpen mirrors suppressExternalUrlOpen, the latch that
 	// keeps tests from launching a real OS handler while still exercising the

@@ -212,8 +212,6 @@ func (c *client) healthy() bool {
 	return err == nil
 }
 
-// ---- daemon ----
-
 type daemon struct {
 	opts     ServeOptions
 	proc     *Process
@@ -539,8 +537,6 @@ func waitForExit(p *Process, d time.Duration) {
 }
 
 func failure(err error) Response { return Response{OK: false, Error: err.Error()} }
-
-// ---- client verbs ----
 
 // Run dispatches one control-omairc-tui invocation. It is the whole CLI; the
 // command's main is a thin os.Exit(run(os.Args[1:])).
@@ -1483,8 +1479,6 @@ func stopSpawnedDaemon(pidHint int) {
 	removeStateFiles()
 }
 
-// ---- recipe replay ----
-
 func cmdRun(args []string, stdout, stderr io.Writer) error {
 	feature := ""
 	dry := false
@@ -1766,8 +1760,6 @@ func splitRecipeLine(line string) ([]string, error) {
 	}
 	return tokens, nil
 }
-
-// ---- small helpers ----
 
 var segmentRE = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 

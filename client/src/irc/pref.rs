@@ -51,7 +51,6 @@ impl PrefName {
         pref_find(token).map(|spec| spec.name)
     }
 
-    /// The catalog row for this name.
     pub fn spec(self) -> &'static PrefSpec {
         PREF_CATALOG
             .iter()

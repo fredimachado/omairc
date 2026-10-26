@@ -10,8 +10,6 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/irc"
 )
 
-// --- STS ------------------------------------------------------------------
-
 // TestSessionPlaintextStsPortReconnectsWithTlsAndCachesOnSecureDuration.
 // SessionTest::plaintextStsPortReconnectsWithTlsAndCachesOnSecureDuration.
 // The C++ test also checks the on-disk STS cache; file persistence is deferred
@@ -192,8 +190,6 @@ func TestSessionCapDelStsDoesNotClearCache(t *testing.T) {
 	}
 }
 
-// --- Ping watchdog --------------------------------------------------------
-
 // TestSessionAnswersPingImmediately.
 // SessionTest::answersPingImmediately.
 func TestSessionAnswersPingImmediately(t *testing.T) {
@@ -305,8 +301,6 @@ func TestSessionAnswersServerPingAfterWelcome(t *testing.T) {
 		t.Fatal("a server ping must not trigger the watchdog")
 	}
 }
-
-// --- Registration refusals ------------------------------------------------
 
 // TestSessionRegistrationRefusalFailsVisibly.
 // SessionTest::registrationRefusalFailsVisibly.
@@ -774,8 +768,6 @@ func TestSessionRegistrationErrorAfterWelcomeReconnectsWithReason(t *testing.T) 
 	}
 }
 
-// --- Reconnect ------------------------------------------------------------
-
 // TestSessionConnectionTimeoutSchedulesReconnect.
 // SessionTest::connectionTimeoutSchedulesReconnect.
 func TestSessionConnectionTimeoutSchedulesReconnect(t *testing.T) {
@@ -1151,8 +1143,6 @@ func TestSessionDestructionWhileConnectingIsSafe(t *testing.T) {
 	runtime.GC()
 }
 
-// --- Session manager ------------------------------------------------------
-
 // TestSessionManagerStartsTwoLiveNetworks.
 // SessionTest::managerStartsTwoLiveNetworks.
 func TestSessionManagerStartsTwoLiveNetworks(t *testing.T) {
@@ -1238,8 +1228,6 @@ func TestSessionManagerDiscardUnregistersImmediately(t *testing.T) {
 		t.Fatalf("discarded session state = %v, want Idle", session.State())
 	}
 }
-
-// --- Malformed input ------------------------------------------------------
 
 // TestSessionMalformedInputSurfacesProtocolError.
 // SessionTest::malformedInputSurfacesProtocolError.

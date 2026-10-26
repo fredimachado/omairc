@@ -15,7 +15,6 @@ import (
 // `client/src/ui/sheets/connect/` as a file-based component and reads the
 // internal/connection model, never internal/irc.
 
-// connectTab names the two sheet tabs.
 type connectTab int
 
 const (
@@ -592,8 +591,6 @@ func (m *Model) handleConnectKey(key string, msg tea.KeyPressMsg) (tea.Model, te
 	}
 	return m, nil
 }
-
-// --- Rendering ------------------------------------------------------------
 
 // connectCard renders the Connect sheet as one card block through the shared
 // overlay frame in model.go.

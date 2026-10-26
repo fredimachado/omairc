@@ -1,14 +1,14 @@
 //! What the controller keeps between runs, and what each intent saves.
-//! Phase 8 parts of `tui/internal/controller/controller.go` (`LoadStoredPreferences`
-//! `SetReopenDirects`, `AddSession`, `restoreOpenDirects`, `noteOpenDirectsMotd`
-//! `rememberOpenDirect`) and of `tui/internal/connection/connection.go`.
-//! The controller owns the state. The Connect sheet asks for a save (`save_profile`) and a
-//! start (`Controller::start`), and reads what was saved (`stored_profiles`). Every write
-//! goes through a store bound to the controller's `Backing`, so an ephemeral controller (the
-//! demo, the tests) writes nothing.
-//! A profile that is complete registers a session at load. `start` activates it through the
-//! transport factory the shell hands the live one dials through the net hub, and a refusal
-//! is the network's Status line, as any other start failure.
+//! Mirrors persistence in `tui/internal/controller/controller.go` and
+//! `tui/internal/connection/connection.go`. The controller owns the state. The
+//! Connect sheet asks for a save (`save_profile`) and a start
+//! (`Controller::start`), and reads what was saved (`stored_profiles`). Every
+//! write goes through a store bound to the controller's `Backing`, so an
+//! ephemeral controller (the demo, the tests) writes nothing.
+//! A profile that is complete registers a session at load. `start` activates it
+//! through the transport factory; the shell's live factory dials through the
+//! net hub, and a refusal is the network's Status line, as any other start
+//! failure.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;

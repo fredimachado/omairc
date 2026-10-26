@@ -773,7 +773,6 @@ func (s *Screen) eraseInLine(mode int) {
 	case 1:
 		to = s.curX + 1 // inclusive of the cursor per VT510
 	case 2:
-		// whole line
 	default:
 		return
 	}

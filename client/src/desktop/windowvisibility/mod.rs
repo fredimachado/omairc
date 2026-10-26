@@ -42,7 +42,6 @@ impl WindowVisibility {
 pub struct TranscriptActivity {
     /// OS focus (`Window.active`). Can stay true while minimized.
     pub window_active: bool,
-    /// Minimized or hidden.
     pub suspended: bool,
 }
 

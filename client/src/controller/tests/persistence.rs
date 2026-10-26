@@ -1,8 +1,9 @@
-//! The Phase 8 persistence tests. Each one builds a controller over a settings file in a
-//! scratch folder, drops it, and builds another over the same file, as a relaunch does. The
-//! transports are loopbacks the test can read and feed, and the factory keeps them by network
-//! so a test reaches the connection a session got. The Go cases these port are the profile
-//! open-direct, preference and network-order tests under `tui/internal/`.
+//! Persistence tests. Each one builds a controller over a settings file in a
+//! scratch folder, drops it, and builds another over the same file, as a relaunch
+//! does. The transports are loopbacks the test can read and feed, and the
+//! factory keeps them by network so a test reaches the connection a session
+//! got. The Go cases these port are the profile, open-direct, preference and
+//! network-order tests under `tui/internal/`.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;

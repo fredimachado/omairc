@@ -32,7 +32,6 @@ pub struct ChordContext {
     /// it hides the member panel and the conversation, so the channel and DM
     /// chords are off.
     pub status_open: bool,
-    /// The selected conversation is a channel.
     pub channel: bool,
     /// The selected channel is one the user is in. Ctrl+Shift+K
     /// (the nick sheet), Ctrl+Shift+M (the member panel) and Ctrl+Shift+P (member focus) need
@@ -43,7 +42,6 @@ pub struct ChordContext {
     pub can_close: bool,
     /// A network header in the server list has keyboard focus.
     pub header_focused: bool,
-    /// The member list has keyboard focus.
     pub members_focused: bool,
     /// The transcript has a non-empty text selection.
     pub transcript_selection: bool,
@@ -342,7 +340,6 @@ mod tests {
     }
 
     fn nothing(_: &mut ChordContext) {}
-    /// A channel the user is in.
     fn joined_channel(ctx: &mut ChordContext) {
         ctx.channel = true;
         ctx.joined = true;

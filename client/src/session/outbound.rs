@@ -296,7 +296,6 @@ impl super::session::Core {
     }
 
     /// `setAwayLocked`: AWAY with a trimmed reason, or a bare AWAY to clear.
-    // Phase 4: the slash catalog sends these frames
     pub(crate) fn set_away_locked(&mut self, reason: &str) -> bool {
         let trimmed = reason.trim();
         if trimmed.is_empty() {
@@ -306,7 +305,6 @@ impl super::session::Core {
     }
 
     /// `sendMonitorLocked`: packs nicks into MONITOR lines that each fit one frame.
-    // Phase 4: the slash catalog sends these frames
     pub(crate) fn send_monitor_locked(&mut self, modifier: char, nicks: &[String]) -> bool {
         let mark = modifier.to_ascii_uppercase();
         match mark {

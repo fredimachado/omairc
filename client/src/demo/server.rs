@@ -55,7 +55,6 @@ pub enum SeedStep {
 /// The controller intents the seed interleaves with its bytes. The controller
 /// implements this. The demo calls it and never reads or writes controller state.
 pub trait SeedControls {
-    /// Sets the sidebar's network order.
     fn set_network_order(&mut self, network_ids: &[String]);
     /// Selects a conversation. The seed uses it for the transcript and the reads.
     fn select_conversation(&mut self, network_id: &str, target: &str);
@@ -236,7 +235,6 @@ impl DemoServer {
 
     /// Replays the last client PRIVMSG on `network_id` as a self echo. False when
     /// there is no such frame (`echoLastPrivmsg`).
-    // Phase 4: the catalog tests check the PRIVMSG echo
     #[cfg(test)]
     pub fn echo_last_privmsg(&self, network_id: &str, nick: &str) -> bool {
         if nick.is_empty() {

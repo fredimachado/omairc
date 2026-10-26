@@ -6,8 +6,6 @@ import (
 	"time"
 )
 
-// --- SASL PLAIN -----------------------------------------------------------
-
 // TestSessionNegotiatesSaslPlain.
 func TestSessionNegotiatesSaslPlain(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -404,8 +402,6 @@ func TestSessionAuthenticationFailureIsExplicit(t *testing.T) {
 		t.Fatalf("error kind = %v, want Authentication", last.kind)
 	}
 }
-
-// --- SASL SCRAM-SHA-256 ---------------------------------------------------
 
 // TestSessionNegotiatesSaslScramSha256.
 // SessionTest::negotiatesSaslScramSha256.

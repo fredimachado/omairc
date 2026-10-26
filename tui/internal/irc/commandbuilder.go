@@ -152,7 +152,6 @@ func SplitTrailingParam(prefix, body, suffix string, frameBytes ...int) []string
 	return chunks
 }
 
-// Nick builds a NICK line.
 func Nick(nickname string) (string, error) {
 	if !isSingleField(nickname) {
 		return "", ErrorInvalidField
@@ -168,7 +167,6 @@ func User(username, realname string) (string, error) {
 	return Line("USER " + username + " 8 * :" + realname)
 }
 
-// Pass builds a PASS line.
 func Pass(password string) (string, error) {
 	if !isSingleField(password) {
 		return "", ErrorInvalidField

@@ -25,7 +25,6 @@ fn channel(fixture: &Fixture, name: &str) -> ConversationKey {
     fixture.controller.reducer.conversation_key(OMARCHY, name)
 }
 
-/// The last frame the loopback wrote.
 fn last_frame(fixture: &Fixture) -> String {
     fixture.frames(OMARCHY).last().cloned().expect("a frame was written")
 }

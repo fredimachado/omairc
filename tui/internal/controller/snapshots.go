@@ -174,8 +174,8 @@ func (c *Controller) conversationSnapshot(key irc.ConversationKey,
 // paints a dot when the network negotiated away-notify, the same gate that
 // hides another member's away dot; without it the server never pushes AWAY, so
 // a visible peer would look permanently online. It mirrors conversationPresence
-// in `client/src/controller/snapshots.rs`, whose PeerUnknown case is the zero value here
-// because Phase 2 leaves an unreachable peer unpainted.
+// in `client/src/controller/snapshots.rs`, whose PeerUnknown case is the zero
+// value here so an unreachable peer stays unpainted.
 func conversationPresence(reducer *irc.EventReducer, conversation *irc.ConversationState, awayNotify bool) string {
 	if conversation.IsChannel() || !awayNotify {
 		return ""

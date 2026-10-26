@@ -1,13 +1,11 @@
 package controller
 
-// This file.
-// and expectations, dropping only the parts that belong to later phases
-// (slash-command dispatch, persistence, playback, inbox, monitors
-// ignore/mute, avatars, preferences, channel list). Where a C++ slot drove
-// the controller through a slash command, the Go port drives the same
-// underlying seam directly (SendToTarget for the QuietSend cause, the
+// Controller port tests: fixtures and expectations for traffic routing,
+// conversation creation, echo-message, nick retargeting, and selection.
+// Where a C++ slot drove the controller through a slash command, the Go port
+// drives the same underlying seam directly (SendToTarget for QuietSend, the
 // session's SendAction/SendNotice for the frame-split contract, the reducer's
-// ClearMessages for /clear) and says so in a comment.
+// ClearMessages for /clear).
 
 import (
 	"fmt"
@@ -19,8 +17,6 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/irc"
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
-
-// --- Fixtures and assertion helpers ---------------------------------------
 
 // newController returns a controller on a deterministic FakeClock. No test
 // sleeps or reads the wall clock.
@@ -140,8 +136,6 @@ func consoleContains(c *Controller, networkID, needle string) bool {
 	return false
 }
 
-// --- reducesTrafficAndRoutesOutboundByNetwork -----------------------------
-
 func TestReducesTrafficAndRoutesOutboundByNetwork(t *testing.T) {
 	c, clock := newController(t)
 	transportA := addAndStart(t, c, clock, baseConfig("network-a", "omairc"))
@@ -206,8 +200,7 @@ func TestReducesTrafficAndRoutesOutboundByNetwork(t *testing.T) {
 		t.Fatalf("CurrentNick = %q", c.CurrentNick())
 	}
 
-	// The /me ACTION branch is a Phase 7 command; Phase 2 only routes it
-	// literally, so the port keeps the plain-PRIVMSG routing contract.
+	// Plain-PRIVMSG routing contract: /me ACTION is not rewritten here.
 	inject(t, transportA, ":op!u@h MODE #chan +o Alice\r\n"+
 		":op!u@h MODE #chan -o Alice\r\n")
 	members = c.Members()
@@ -229,8 +222,6 @@ func TestReducesTrafficAndRoutesOutboundByNetwork(t *testing.T) {
 		t.Fatalf("network-a received network-b's frame")
 	}
 }
-
-// --- conversationCreateMatrix ---------------------------------------------
 
 func TestConversationCreateMatrix(t *testing.T) {
 	c, clock := newController(t)
@@ -302,8 +293,6 @@ func TestConversationCreateMatrix(t *testing.T) {
 	}
 }
 
-// --- selectedPrivmsgInsertsMessageRow -------------------------------------
-
 func TestSelectedPrivmsgInsertsMessageRow(t *testing.T) {
 	c, clock := newController(t)
 	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
@@ -341,8 +330,6 @@ func TestSelectedPrivmsgInsertsMessageRow(t *testing.T) {
 		t.Fatalf("own echo = %+v", c.Messages()[rowsAfterJoin+1])
 	}
 }
-
-// --- isupportBurstDoesNotResetModels --------------------------------------
 
 func TestIsupportBurstDoesNotResetModels(t *testing.T) {
 	c, clock := newController(t)
@@ -434,8 +421,6 @@ func memberSnapshotEqual(left, right MemberSnapshot) bool {
 		slices.Equal(left.Labels, right.Labels)
 }
 
-// --- incomingNickRetargetsSelectedDirect ----------------------------------
-
 func TestIncomingNickRetargetsSelectedDirect(t *testing.T) {
 	c, clock := newController(t)
 	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
@@ -496,8 +481,6 @@ func TestIncomingNickRetargetsSelectedDirect(t *testing.T) {
 	}
 }
 
-// --- incomingNickCaseOnlyRetargetsDirect ----------------------------------
-
 func TestIncomingNickCaseOnlyRetargetsDirect(t *testing.T) {
 	c, clock := newController(t)
 	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
@@ -521,8 +504,6 @@ func TestIncomingNickCaseOnlyRetargetsDirect(t *testing.T) {
 		t.Fatalf("frame = %q", got)
 	}
 }
-
-// --- welcomeAssignedNickRoutesDirectMessages ------------------------------
 
 func TestWelcomeAssignedNickRoutesDirectMessages(t *testing.T) {
 	c, clock := newController(t)
@@ -548,8 +529,6 @@ func TestWelcomeAssignedNickRoutesDirectMessages(t *testing.T) {
 		t.Fatalf("Bob row invented for a stale nick: %v", conversationTargets(c))
 	}
 }
-
-// --- echoMessageAckSkipsLocalPrivmsg --------------------------------------
 
 func TestEchoMessageAckSkipsLocalPrivmsg(t *testing.T) {
 	c, clock := newController(t)
@@ -585,8 +564,6 @@ func TestEchoMessageAckSkipsLocalPrivmsg(t *testing.T) {
 	}
 }
 
-// --- echoMessageAbsentStillEchoesLocally ----------------------------------
-
 func TestEchoMessageAbsentStillEchoesLocally(t *testing.T) {
 	c, clock := newController(t)
 	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
@@ -611,8 +588,6 @@ func TestEchoMessageAbsentStillEchoesLocally(t *testing.T) {
 	}
 }
 
-// --- echoMessageAckSkipsMsgEcho (adapted: SendToTarget) -------------------
-
 func TestEchoMessageAckSkipsSendToTargetEcho(t *testing.T) {
 	c, clock := newController(t)
 	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
@@ -626,8 +601,7 @@ func TestEchoMessageAckSkipsSendToTargetEcho(t *testing.T) {
 	c.SelectConversation("freenode", "lena")
 	rowsBeforeMsg := len(c.Messages())
 
-	// The C++ slot drove /msg; SendToTarget is the same QuietSend + echoIfPresent
-	// seam without the Phase 7 slash layer.
+	// SendToTarget is the QuietSend + echoIfPresent seam without the slash layer.
 	if !c.SendToTarget("freenode", "lena", "later") {
 		t.Fatalf("SendToTarget = false")
 	}
@@ -646,8 +620,6 @@ func TestEchoMessageAckSkipsSendToTargetEcho(t *testing.T) {
 		t.Fatalf("server echo row = %+v", row)
 	}
 }
-
-// --- echoMessageLongPrivmsgShowsEachChunkOnce -----------------------------
 
 func TestEchoMessageLongPrivmsgShowsEachChunkOnce(t *testing.T) {
 	c, clock := newController(t)
@@ -683,8 +655,6 @@ func TestEchoMessageLongPrivmsgShowsEachChunkOnce(t *testing.T) {
 		t.Fatalf("chunk 2 row = %+v", got)
 	}
 }
-
-// --- longMeAndNoticeSplitAcrossFrames (adapted: session send seams) -------
 
 func TestLongMeAndNoticeSplitAcrossFrames(t *testing.T) {
 	c, clock := newController(t)
@@ -747,8 +717,6 @@ func assertSplitFrame(t *testing.T, frame []byte) {
 	}
 }
 
-// --- incomingNickservPrivmsgDoesNotOpenDirect -----------------------------
-
 func TestIncomingNickservPrivmsgDoesNotOpenDirect(t *testing.T) {
 	c, clock := newController(t)
 	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
@@ -764,8 +732,6 @@ func TestIncomingNickservPrivmsgDoesNotOpenDirect(t *testing.T) {
 	}
 }
 
-// --- zncQuietSendDoesNotOpenDirect (adapted: SendToTarget) ----------------
-
 func TestQuietSendDoesNotOpenDirect(t *testing.T) {
 	c, clock := newController(t)
 	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
@@ -776,7 +742,6 @@ func TestQuietSendDoesNotOpenDirect(t *testing.T) {
 	}
 	c.SelectConversation("freenode", "#omarchy")
 
-	// The C++ slot drove /znc; SendToTarget is the same QuietSend seam.
 	if !c.SendToTarget("freenode", "*status", "ListMods") {
 		t.Fatalf("SendToTarget = false")
 	}
@@ -800,8 +765,6 @@ func TestQuietSendDoesNotOpenDirect(t *testing.T) {
 	}
 }
 
-// --- statusMsgNickservIdentifyDoesNotOpenDirect (adapted) -----------------
-
 func TestStatusMsgNickservIdentifyDoesNotOpenDirect(t *testing.T) {
 	c, clock := newController(t)
 	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
@@ -812,8 +775,6 @@ func TestStatusMsgNickservIdentifyDoesNotOpenDirect(t *testing.T) {
 	}
 	c.SelectConversation("freenode", "#omarchy")
 
-	// The C++ slot drove /msg nickserv identify through the console
-	// SendToTarget is the same QuietSend path without the slash layer.
 	if !c.SendToTarget("freenode", "nickserv", "identify my_nick s3cret") {
 		t.Fatalf("SendToTarget = false")
 	}
@@ -840,8 +801,6 @@ func TestStatusMsgNickservIdentifyDoesNotOpenDirect(t *testing.T) {
 	}
 }
 
-// --- conversationClearWipesMessages (adapted: reducer seam) ---------------
-
 func TestConversationClearWipesMessages(t *testing.T) {
 	c, clock := newController(t)
 	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
@@ -856,8 +815,7 @@ func TestConversationClearWipesMessages(t *testing.T) {
 	}
 	framesBefore := len(transport.WrittenFrames())
 
-	// The C++ slot drove /clear; the Phase 2 equivalent is the reducer's
-	// ClearMessages followed by a republish. Nothing is sent on the wire.
+	// ClearMessages + republish; nothing is sent on the wire.
 	key := c.Reducer().ConversationKey("freenode", "#omarchy")
 	c.Reducer().ClearMessages(key)
 	c.Publish(irc.ViewNotify{Messages: true, Conversations: true})
@@ -889,8 +847,6 @@ func TestConversationClearWipesMessages(t *testing.T) {
 			c.LastError(), c.SelectedTarget(), len(c.Messages()))
 	}
 }
-
-// --- twoSessionsStartTogether ---------------------------------------------
 
 func TestTwoSessionsStartTogether(t *testing.T) {
 	c, clock := newController(t)
@@ -924,8 +880,6 @@ func TestTwoSessionsStartTogether(t *testing.T) {
 	}
 }
 
-// --- quitWhileReconnecting ------------------------------------------------
-
 func TestQuitWhileReconnecting(t *testing.T) {
 	c, clock := newController(t)
 	config := baseConfig("freenode", "omairc")
@@ -943,7 +897,6 @@ func TestQuitWhileReconnecting(t *testing.T) {
 		t.Fatalf("reconnect timer not armed")
 	}
 
-	// The C++ slot drove /quit; Phase 7 wires that command to Session.Stop.
 	c.Session("freenode").Stop()
 	if c.Session("freenode").State() != session.StateIdle {
 		t.Fatalf("state = %v, want Idle", c.Session("freenode").State())
@@ -952,8 +905,6 @@ func TestQuitWhileReconnecting(t *testing.T) {
 		t.Fatalf("timers still pending after Stop: %d", clock.Pending())
 	}
 }
-
-// --- disconnectLeavesOtherNetworkLive -------------------------------------
 
 func TestDisconnectLeavesOtherNetworkLive(t *testing.T) {
 	c, clock := newController(t)
@@ -965,9 +916,7 @@ func TestDisconnectLeavesOtherNetworkLive(t *testing.T) {
 	inject(t, transportB, ":omairc!u@h JOIN :#lab\r\n")
 	c.SelectConversation("network-a", "#alpha")
 
-	// The C++ slot drove /disconnect; Phase 7 wires that command to
-	// Session.Stop. Phase 2's session Stop does not write QUIT, so that one
-	// C++ frame assertion is deferred with the command layer.
+	// Session.Stop does not write QUIT.
 	c.Session("network-a").Stop()
 	if c.Session("network-a").State() != session.StateIdle {
 		t.Fatalf("network-a state = %v", c.Session("network-a").State())
@@ -1004,8 +953,6 @@ func TestDisconnectLeavesOtherNetworkLive(t *testing.T) {
 	}
 }
 
-// --- backgroundChatBumpsConversationEpoch ---------------------------------
-
 func TestBackgroundChatBumpsConversationEpoch(t *testing.T) {
 	c, clock := newController(t)
 	transportA := addAndStart(t, c, clock, baseConfig("network-a", "omairc"))
@@ -1036,8 +983,6 @@ func TestBackgroundChatBumpsConversationEpoch(t *testing.T) {
 		t.Fatalf("MentionFor(network-b) = true")
 	}
 }
-
-// --- selectConversationRefreshesSidebarUnread -----------------------------
 
 // TestSelectConversationRefreshesSidebarUnread pins that selecting a
 // conversation republishes the sidebar snapshot. ConversationListModel::select
@@ -1079,8 +1024,6 @@ func TestSelectConversationRefreshesSidebarUnread(t *testing.T) {
 		t.Fatalf("UnreadCountFor(network-b) after select = %d, want 0", got)
 	}
 }
-
-// --- firstConversationClaimsOffStatus -------------------------------------
 
 // TestFirstConversationClaimsOffStatus pins the real-server connect order. The
 // shell opens the Status console when a profile is applied; the server then
@@ -1170,8 +1113,6 @@ func TestExplicitSelectionStillClosesConsole(t *testing.T) {
 	}
 }
 
-// --- typingEventRefreshesSidebarTyping ------------------------------------
-
 // TestTypingEventRefreshesSidebarTyping pins that a typing notification
 // repaints the sidebar's typing role. Qt emits typingChanged and calls
 // ConversationListModel::invalidateTyping when the conversation list was not
@@ -1203,8 +1144,6 @@ func TestTypingEventRefreshesSidebarTyping(t *testing.T) {
 		t.Fatalf("lena sidebar typing after TAGMSG = %v (found=%v), want true", typing, found)
 	}
 }
-
-// --- OnViewChanged --------------------------------------------------------
 
 // TestOnViewChangedFiresForViewSurfaces. A chat.
 // line or a membership change has no dedicated callback, so Publish must call

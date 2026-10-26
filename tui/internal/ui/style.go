@@ -59,7 +59,7 @@ type Styles struct {
 	// to stay background.
 	TopicBar lipgloss.Style
 
-	// Phase 8 member chrome. The presence dot is green when available and
+	// Member chrome. The presence dot is green when available and
 	// amber when away; the bot mark, account, status subline, and typing
 	// ellipsis stay muted so the nick remains the loudest thing in the row.
 	MemberPresenceOnline lipgloss.Style

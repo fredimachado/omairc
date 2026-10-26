@@ -11,7 +11,6 @@ import (
 type MessageKind int
 
 const (
-	// KindMessage is a normal chat line.
 	KindMessage MessageKind = iota
 	// KindNotice is a NOTICE line.
 	KindNotice

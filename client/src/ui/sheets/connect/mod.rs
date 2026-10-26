@@ -184,7 +184,6 @@ fn tab_body(view: &ConnectView<'_>) -> impl IntoElement {
     body
 }
 
-/// A 1px rule in the divider colour.
 fn divider(style: &Style) -> impl IntoElement {
     div()
         .h(scaled_px(style, 1.))

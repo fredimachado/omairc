@@ -46,7 +46,6 @@ pub enum ReadWindow {
     Unread,
 }
 
-/// One parsed control request.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Request {
     pub command: Command,

@@ -10,17 +10,14 @@ import (
 
 // Every slash-verb decision, with side effects it cannot own performed
 // through CommandHost. Twin: `client/src/controller/commanddispatcher.rs`.
-// `client/src/controller/commanddispatcher.rs`: every slash-verb decision, with the
-// side effects it cannot own performed through CommandHost. Join, part, mode
-// away, pref, ignore/mute/highlight, and query decisions stay here; the
-// controller performs them and owns the stores this reads.
+// Join, part, mode, away, pref, ignore/mute/highlight, and query decisions
+// stay here; the controller performs them and owns the stores this reads.
 
 // QuietWire selects the outbound command used by a quiet send. It mirrors
 // IrcCommandDispatcher::QuietWire.
 type QuietWire int
 
 const (
-	// QuietWirePrivmsg sends PRIVMSG.
 	QuietWirePrivmsg QuietWire = iota
 	// QuietWireNotice sends NOTICE.
 	QuietWireNotice

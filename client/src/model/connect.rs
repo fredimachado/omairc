@@ -151,7 +151,6 @@ impl ConnectField {
         }
     }
 
-    /// The small chip beside the label.
     pub fn badge(self) -> Option<&'static str> {
         match self {
             ConnectField::ServerPassword => Some("PASS"),
@@ -159,7 +158,6 @@ impl ConnectField {
         }
     }
 
-    /// Whether the text is masked.
     pub fn secret(self) -> bool {
         matches!(
             self,
@@ -519,7 +517,6 @@ fn fresh_network_id_among(saved: &[Profile]) -> String {
         .unwrap_or_default()
 }
 
-/// One rail row.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RailRow {
     pub network_id: String,
@@ -530,7 +527,6 @@ pub struct RailRow {
     pub icon_color: Option<u8>,
 }
 
-/// What Enter did on a rail row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RailEnter {
     /// The row was selected and armed. A second Enter on it applies.
@@ -539,7 +535,6 @@ pub enum RailEnter {
     Apply,
 }
 
-/// What Remove did.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RemoveOutcome {
     /// The first press arms the button. Nothing is removed yet.

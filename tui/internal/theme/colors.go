@@ -27,7 +27,6 @@ const (
 // clients stay in step with `client/src/model/style.rs`; deriving it would break parity.
 // Every field is an opaque image/color value; Hex formats one for lipgloss.
 type Colors struct {
-	// Derived structural colors.
 	Background    color.Color
 	Foreground    color.Color
 	Accent        color.Color

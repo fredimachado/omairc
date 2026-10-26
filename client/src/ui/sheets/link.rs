@@ -11,7 +11,6 @@ use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::model::{Row, Style};
 use crate::ui::sheets::filter_sheet::{text_row, FilterSource};
 
-/// Sheet width in logical pixels.
 const WIDTH: f32 = 420.;
 /// Padding on the card (16 each side) and the row's 8px inset, both sides.
 const HORIZONTAL_INSET: f32 = 48.;

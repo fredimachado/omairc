@@ -9,14 +9,12 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
-// This file wires the Phase 7 slash subsystems into the controller. The
-// subsystems own their decisions (commanddispatcher.go, replyrouter.go
-// monitorcoordinator.go, autoawayruntime.go, channellist.go); the controller
-// owns the side effects they cannot: session and selection lookup, model
-// application, the Status console, and the stores. The adapters below are the
-// Go equivalent of the Host callback structs.
-
-// --- Host adapters --------------------------------------------------------
+// Slash subsystem wiring. The subsystems own their decisions
+// (commanddispatcher.go, replyrouter.go, monitorcoordinator.go,
+// autoawayruntime.go, channellist.go); the controller owns the side effects
+// they cannot: session and selection lookup, model application, the Status
+// console, and the stores. The adapters below are the Go equivalent of the
+// Host callback structs.
 
 // ctrlHost implements CommandHost, ReplyHost, and MonitorHost over one
 // controller. AutoawayHost's RecordStatus(networkID, text) collides with the
@@ -211,7 +209,7 @@ func (h autoawayAdapter) RecordStatus(networkID, text string) {
 	h.c.statusConsole.Append(irc.Outcome(networkID, text, h.c.now()))
 }
 
-// initSlashSubsystems builds the Phase 7 subsystems. It runs once from New
+// initSlashSubsystems builds the slash subsystems. It runs once from New
 // after the clock is set.
 func (c *Controller) initSlashSubsystems() {
 	c.ignores = NewIgnoreStore()
@@ -242,8 +240,6 @@ func (c *Controller) rebindClocks() {
 		c.autoaway = NewAutoawayRuntime(autoawayAdapter{ctrlHost{c: c}}, c.clock)
 	}
 }
-
-// --- Selection and session lookup -----------------------------------------
 
 func (c *Controller) queryNetworkID(surface irc.ComposerSurface) string {
 	if surface == irc.SurfaceStatus {
@@ -322,8 +318,6 @@ func (c *Controller) markChannelLeft(networkID, channel string) {
 	c.reloadModels()
 }
 
-// --- Composer typing ------------------------------------------------------
-
 // NotifyComposerText records one composer text change and publishes an outbound
 // typing hint for the selected conversation. A live message (plain text or
 // me) sends typing=active and remembers the target; anything else withdraws a
@@ -350,8 +344,6 @@ func (c *Controller) NotifyComposerText(text string) {
 	s.SendTyping(target, irc.TypingDone)
 	c.typingTarget = ""
 }
-
-// --- Send and submit ------------------------------------------------------
 
 // SendMessage parses one composer submission and dispatches it on the
 // conversation surface. It reports whether the command was sent: a refused
@@ -483,8 +475,6 @@ func (c *Controller) unawayAfterChat(s *session.Session) {
 	}
 }
 
-// --- Conversation effects -------------------------------------------------
-
 func (c *Controller) openJoinedChannel(networkID, channel string) {
 	if networkID == "" || channel == "" {
 		return
@@ -563,8 +553,6 @@ func (c *Controller) hydrateMutes(networkID string) {
 		c.reducer.SetMuted(c.reducer.ConversationKey(networkID, target), true)
 	}
 }
-
-// --- Channel list ---------------------------------------------------------
 
 // ChannelListSnapshot is the /list overlay's view state.
 type ChannelListSnapshot struct {

@@ -48,7 +48,6 @@ pub enum LabelTone {
     Mixed,
 }
 
-/// The label colour for a severity.
 pub fn label_tone(severity: LogSeverity) -> LabelTone {
     match severity {
         LogSeverity::Alert => LabelTone::Accent,

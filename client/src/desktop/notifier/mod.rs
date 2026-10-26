@@ -38,7 +38,6 @@ pub trait Notifier: Send {
     );
 }
 
-/// The notifier that does nothing.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NullNotifier;
 

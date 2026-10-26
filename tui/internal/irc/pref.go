@@ -26,7 +26,6 @@ const (
 type PrefValueKind int
 
 const (
-	// PrefValueToggle is on or off.
 	PrefValueToggle PrefValueKind = iota
 	// PrefValueNoise is folded, every, or hidden.
 	PrefValueNoise

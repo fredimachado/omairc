@@ -36,7 +36,6 @@ pub fn parse(input: &str) -> Command {
     }
 }
 
-/// Builds the typed command for a verb from its trimmed argument.
 fn command_for(verb: Verb, argument: &str) -> Command {
     match verb {
         Verb::Action => Command::Action(argument.to_string()),

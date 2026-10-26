@@ -7,17 +7,11 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
-// The idle and grace timers, the tripped state, the per-network auto/manual
-// away sets, and the /autoaway dispatch. Twin:
-// `client/src/controller/autoawayruntime.rs`.
-// `client/src/controller/autoawayruntime.rs`: the idle and grace timers, the tripped
-// state, the per-network auto/manual away sets, and the /autoaway dispatch.
+// Idle and grace timers, tripped state, per-network auto/manual away sets, and
+// /autoaway dispatch. Twin: `client/src/controller/autoawayruntime.rs`.
 // Away decisions stay here; the controller only records Status lines and keeps
-// its own unaway bookkeeping.
-// Persistence (QSettings) is deferred to phase 11. LoadStored initializes a
-// zero config and arms the idle timer, SetEphemeral is stored, and a
-// persist-worthy change calls autoawaySave, which is a no-op for now. Every
-// timer goes through the injected session.Clock.
+// its own unaway bookkeeping. Every timer goes through the injected
+// session.Clock.
 
 // AutoawayHost is the surface IrcAutoawayRuntime drives. It mirrors
 // IrcAutoawayRuntime::Host.
@@ -77,15 +71,12 @@ func NewAutoawayRuntime(host AutoawayHost, clock session.Clock) *AutoawayRuntime
 	}
 }
 
-// SetEphemeral records whether this run must not persist preferences. The flag
-// is stored now; autoawaySave already honors it when phase 11 fills in the
-// QSettings half.
+// SetEphemeral records whether this run must not persist preferences.
 func (a *AutoawayRuntime) SetEphemeral(ephemeral bool) {
 	a.ephemeral = ephemeral
 }
 
-// LoadStored loads the persisted configuration and arms the idle timer. The
-// QSettings read is deferred, so the config starts zeroed.
+// LoadStored arms the idle timer. Config starts zeroed until a store is wired.
 func (a *AutoawayRuntime) LoadStored() {
 	a.config = irc.AutoawayConfig{}
 	a.autoawayArmIdle()
@@ -219,8 +210,6 @@ func (a *AutoawayRuntime) IdleIntervalForTest() time.Duration { return a.idleInt
 // GraceIntervalForTest returns the last grace interval, or 0 when never armed.
 func (a *AutoawayRuntime) GraceIntervalForTest() time.Duration { return a.graceInterval }
 
-// autoawaySave persists the configuration. QSettings is deferred, so this is
-// the no-op seam phase 11 fills in; the ephemeral flag is already honored.
 func (a *AutoawayRuntime) autoawaySave() {
 	if a.ephemeral {
 		return

@@ -1,7 +1,8 @@
 //! SCRAM-SHA-256 cases of `tui/internal/session/session_auth_test.go`:
-//! `TestSessionNegotiatesSaslScramSha256` and the `TestSessionScram*`
-//! `TestSessionAbandonedScram*` family. The Status-entry checks wait for the Phase 3
-//! Status recorder, as in `auth.rs`; the secrecy checks read the session's errors instead.
+//! `TestSessionNegotiatesSaslScramSha256` and the `TestSessionScram*` /
+//! `TestSessionAbandonedScram*` family. Status-entry text checks live with the
+//! Status recorder elsewhere, as in `auth.rs`; secrecy checks here read the
+//! session's errors instead.
 
 use std::time::Duration;
 

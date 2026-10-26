@@ -6,7 +6,6 @@
 use super::fuzzy::rank;
 use crate::irc::reducer::MemberView;
 
-/// One row of the nick sheet.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NickTarget {
     pub member: MemberView,

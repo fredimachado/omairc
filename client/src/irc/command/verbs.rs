@@ -74,7 +74,6 @@ pub enum Verb {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct VerbSpec {
     pub verb: Verb,
-    /// The name, without the slash.
     pub name: &'static str,
     /// Alternate names that resolve to this verb, without the slash.
     pub aliases: &'static [&'static str],

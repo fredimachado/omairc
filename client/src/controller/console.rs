@@ -147,7 +147,6 @@ impl StatusConsole {
     }
 
     /// The display text of each line, oldest first (`ConsoleText`).
-    // The product CLI's read verb (Phase 9) prints the Status text; cfg(test) comes off with it.
     #[cfg(test)]
     pub fn text(&self, network_id: &str) -> Vec<String> {
         self.lines(network_id)

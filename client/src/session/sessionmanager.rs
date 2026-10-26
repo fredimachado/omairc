@@ -78,7 +78,6 @@ impl SessionManager {
         self.sessions.borrow().get(network_id).cloned()
     }
 
-    /// Every registered network id, sorted.
     pub fn network_ids(&self) -> Vec<String> {
         self.sessions.borrow().keys().cloned().collect()
     }

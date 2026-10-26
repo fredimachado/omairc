@@ -28,7 +28,6 @@ use crate::session::session::Session;
 
 use super::controller::Controller;
 
-/// Which timer fired.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Expiry {
     Idle,
@@ -48,7 +47,6 @@ pub(super) struct AutoawayState {
     /// Bumped by every stop; a queued expiry from an older generation is dropped.
     generation: u64,
     expiries: ExpiryQueue,
-    /// The networks auto-away marked away.
     auto_away: BTreeSet<String>,
     /// The networks the user took away by hand with `/away`.
     manual_away: BTreeSet<String>,
@@ -85,7 +83,6 @@ impl Default for AutoawayState {
 
 impl AutoawayState {
     /// Whether auto-away has tripped and not been cleared.
-    // A test seam: the auto-away tests read the timer state; cfg(test) comes off with a consumer.
     #[cfg(test)]
     pub(super) fn tripped(&self) -> bool {
         self.tripped
@@ -96,15 +93,12 @@ impl AutoawayState {
         self.auto_away.contains(network_id)
     }
 
-    /// Whether the idle timer is scheduled.
-    // A test seam: the auto-away tests read the timer state; cfg(test) comes off with a consumer.
     #[cfg(test)]
     pub(super) fn idle_scheduled(&self) -> bool {
         self.idle_timer.is_some()
     }
 
     /// Whether the grace timer is scheduled.
-    // A test seam: the auto-away tests read the timer state; cfg(test) comes off with a consumer.
     #[cfg(test)]
     pub(super) fn grace_scheduled(&self) -> bool {
         self.grace_timer.is_some()
@@ -443,7 +437,6 @@ impl Controller {
     /// `/away reason` on `network_id`: an empty reason clears away, anything else marks
     /// the user away by hand. Returns false when the session refuses the line
     /// (`VerbAway`).
-    // The product CLI (Phase 9) calls these; the dispatcher writes the same frames for /away and /back.
     #[cfg(test)]
     pub fn away(&mut self, network_id: &str, reason: &str) -> bool {
         self.pump();
@@ -464,7 +457,6 @@ impl Controller {
 
     /// `/back` on `network_id`: clears away. Returns false when the session refuses the
     /// line (`VerbBack`).
-    // The product CLI (Phase 9) calls these; the dispatcher writes the same frames for /away and /back.
     #[cfg(test)]
     pub fn back(&mut self, network_id: &str) -> bool {
         self.pump();

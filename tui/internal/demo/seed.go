@@ -35,7 +35,6 @@ const (
 type SeedKind int
 
 const (
-	// SeedChat is a PRIVMSG row.
 	SeedChat SeedKind = iota
 	// SeedJoin is a JOIN row; only Nick and Account are meaningful.
 	SeedJoin

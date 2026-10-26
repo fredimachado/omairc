@@ -16,11 +16,9 @@ use crate::model::{Style, StyleRun};
 use crate::ui::sheets::filter_sheet::{match_highlights, match_text, FilterSource};
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
-/// Sheet width in logical pixels.
 const WIDTH: f32 = 480.;
 /// The list stops growing at this height in logical pixels, then scrolls.
 const LIST_CAP: f32 = 280.;
-/// One row's height in logical pixels.
 const ROW_HEIGHT: f32 = 28.;
 
 /// What the sheet lists, captured when it opens: the `LIST` answer for its mask.

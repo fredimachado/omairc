@@ -56,7 +56,6 @@ pub struct SidebarData<'a> {
     pub on_select: Handler<ConversationRef>,
     /// A direct message row's close control.
     pub on_close: Handler<ConversationRef>,
-    /// A network header's collapse toggle.
     pub on_toggle: Handler<String>,
 }
 

@@ -92,7 +92,6 @@ impl Controller {
 
     /// Clears the selection, so the transcript falls back to Status
     /// (`ClearConversationSelection`).
-    // Phase 5: the header's CLOSE falls back to Status
     #[cfg(test)]
     pub fn clear_selection(&mut self) {
         self.pump();

@@ -58,7 +58,6 @@ impl SeededShell<'_> {
         self.cx.run_until_parked();
     }
 
-    /// Resizes the window and settles layout.
     pub fn resize(&mut self, width: f32, height: f32) {
         self.cx.simulate_resize(size(px(width), px(height)));
         self.settle();

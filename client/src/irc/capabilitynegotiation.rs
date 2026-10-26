@@ -286,7 +286,6 @@ impl IrcCapabilityNegotiation {
             .any(|state| *state == TokenState::Requested)
     }
 
-    /// The capabilities the server has acknowledged.
     pub fn enabled(&self) -> IrcCapabilitySet {
         let mut set = IrcCapabilitySet::default();
         for wanted in WANTED {

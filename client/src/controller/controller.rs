@@ -83,7 +83,6 @@ pub struct Controller {
     /// The display target of the selection, kept for a conversation that does
     /// not exist yet (`selectedTarget`).
     pub(super) selected_target: String,
-    /// The network the Status console points at.
     pub(super) console_network: String,
     /// The Status console's own open flag (`consoleOpen`).
     pub(super) console_open: bool,
@@ -142,7 +141,6 @@ pub struct Controller {
     pub(super) avatars: AvatarFetches,
     /// Channels and directs the user closed (`closedConversations` / `targets`).
     pub(super) closed: Rc<RefCell<CaseListStore>>,
-    /// Bouncer playback books (Gap 5).
     pub(super) playback: Rc<RefCell<PlaybackCoordinator>>,
     pub(super) playback_times: Rc<RefCell<PlaybackTimeStore>>,
     /// Whether the transcript viewport follows the end after new lines.
@@ -320,7 +318,6 @@ impl Controller {
     }
 
     /// The demo peers, when the controller runs `--demo-server`.
-    // test seam: the controller tests reach the demo peers
     #[cfg(test)]
     pub fn demo(&self) -> Option<&DemoServer> {
         self.demo.as_deref()

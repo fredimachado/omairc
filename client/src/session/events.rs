@@ -4,11 +4,11 @@
 //! through a Handler; here the session queues `SessionEvent`s, and its owner
 //! drains them with `Session::drain_events` once an entry point returns. That
 //! keeps the session free of callbacks into the controller, so `session/` never
-//! depends on `controller/` or `World` (the Phase 3 translator consumes these).
-//! Status and transcript text is not built here. Phase 3 classifies the raw
-//! `Inbound` and `Outbound` lines into Status entries (`irc/statusentry`) and
-//! the translator turns `MessageReceived` into transcript rows, exactly as the
-//! Go `StatusEntry` and translator do.
+//! depends on `controller/` or `World` (the translator consumes these).
+//! Status and transcript text is not built here. Classification of raw
+//! `Inbound` and `Outbound` lines into Status entries lives in
+//! `irc/statusentry`, and the translator turns `MessageReceived` into
+//! transcript rows, exactly as the Go `StatusEntry` and translator do.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -43,8 +43,7 @@ pub enum SessionState {
 }
 
 impl SessionState {
- /// The C++ enumerator name, for logs and tests.
-    // Phase 8: the Connect sheet reads the session's display name
+    /// The C++ enumerator name, for logs and tests.
     #[cfg(test)]
     pub fn name(self) -> &'static str {
         match self {

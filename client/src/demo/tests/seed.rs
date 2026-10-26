@@ -1,7 +1,7 @@
 //! The seed data and the lines it builds, checked without a session. These are
 //! the wire-level halves of `TestSeeds*` in `demo_test.go`. The reducer-level
-//! halves (the sidebar rows, the unread counts, the ordered members, the peer
-//! labels) run in the Phase 3 controller tests, which read this same seed.
+//! halves (sidebar rows, unread counts, ordered members, peer labels) run in
+//! the controller tests, which read this same seed.
 
 use std::collections::BTreeSet;
 

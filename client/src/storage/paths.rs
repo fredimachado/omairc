@@ -68,7 +68,6 @@ pub struct Env {
 }
 
 impl Env {
-    /// Reads the live process environment.
     pub fn from_process() -> Self {
         Self::from_lookup(
             |name| std::env::var_os(name),
@@ -189,7 +188,6 @@ pub fn qt_transcript_root_for(env: &Env, platform: Platform) -> PathBuf {
     qt_state_dir_for(env, platform).join("logs")
 }
 
-/// The transcript root on this machine.
 pub fn transcript_root() -> PathBuf {
     transcript_root_for(&Env::from_process(), Platform::current())
 }
@@ -199,7 +197,6 @@ pub fn settings_path() -> Option<PathBuf> {
     settings_path_for(&Env::from_process(), Platform::current())
 }
 
-/// The application log on this machine.
 pub fn log_path() -> PathBuf {
     log_path_for(&Env::from_process(), Platform::current())
 }

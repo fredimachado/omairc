@@ -181,7 +181,6 @@ struct CfgAttr {
     after: usize,
     /// True for `#![cfg(...)]`.
     inner: bool,
-    /// Platforms the predicate allows.
     platforms: u8,
 }
 

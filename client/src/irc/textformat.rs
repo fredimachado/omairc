@@ -23,7 +23,6 @@ pub struct Segment {
     pub text: String,
 }
 
-/// One color from a color code.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IrcColor {
     /// A mIRC palette entry, 0 to 15.

@@ -18,7 +18,6 @@ impl ConversationRef {
         }
     }
 
-    /// The reference for a controller key.
     pub fn from_key(key: &ConversationKey) -> Self {
         Self::new(key.network_id.clone(), key.normalized_target.clone())
     }

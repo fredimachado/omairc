@@ -1,9 +1,9 @@
 package ui
 
-// This file is the Phase 9 desktop-notification glue and the notification
-// activation handler. It mirrors `client/src/ui/shell`'s notifyMentionIfUnfocused
-// msgidRow, and activateNotifiedConversation. It reads only controller
-// snapshots and plain strings, never internal/irc.
+// Desktop-notification glue and the notification activation handler. It
+// mirrors `client/src/ui/shell`'s notifyMentionIfUnfocused, msgidRow, and
+// activateNotifiedConversation. It reads only controller snapshots and plain
+// strings, never internal/irc.
 
 // notificationRecord mirrors `client/src/ui/shell`'s lastNotification object: the
 // most recent arrival the shell recorded, plain-text body included.

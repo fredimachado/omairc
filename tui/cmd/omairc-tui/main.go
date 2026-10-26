@@ -105,7 +105,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 	} else {
-		// Phase 11 disk stores. New starts ephemeral so unit tests and the
+		// Disk stores. New starts ephemeral so unit tests and the
 		// demo never touch the config; the shell opts in and wires the stores
 		// before the first session is applied.
 		profiles := storage.NewProfileStore()

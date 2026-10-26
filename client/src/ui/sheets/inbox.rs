@@ -34,9 +34,7 @@ pub fn bind_inbox_keys(cx: &mut App) {
     cx.bind_keys(bindings);
 }
 
-/// Sheet width in logical pixels.
 const WIDTH: f32 = 404.;
-/// One row's height in logical pixels.
 const ROW_HEIGHT: f32 = 36.;
 /// The list is capped at this height.
 const LIST_CAP: f32 = 252.;

@@ -58,7 +58,6 @@ pub const PURPOSE_PASSWORD: &str = "";
 /// The Rust PoC once wrote server passwords under this suffix. Reads and deletes still
 /// reach those entries until a successful write migrates them.
 pub const LEGACY_PURPOSE_PASSWORD: &str = "password";
-/// The NickServ slot of a network.
 pub const PURPOSE_NICKSERV: &str = "nickserv";
 
 /// Whether `key` belongs to the secret slot named by `purpose`.

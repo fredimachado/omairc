@@ -42,7 +42,6 @@ pub(crate) enum DisconnectOutcome {
     Ignore,
 }
 
-/// The lifecycle bookkeeping of one connection.
 #[derive(Debug, Default)]
 pub(crate) struct Connection {
     intent: DisconnectIntent,

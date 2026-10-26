@@ -79,8 +79,6 @@ fn page(fx: &Fixture, reference: &str, msgid: &str) {
     ));
 }
 
-// ---- history_after_test.go ------------------------------------------------
-
 #[test]
 fn self_join_resumes_chat_history_after() {
     let fx = Fixture::new(history_config());
@@ -379,8 +377,6 @@ fn fail_targets_can_be_asked_again() {
         .count();
     assert_eq!(count, 2);
 }
-
-// ---- history_before_test.go -----------------------------------------------
 
 #[test]
 fn page_up_at_top_sends_before_with_oldest_msgid() {

@@ -165,8 +165,6 @@ const fn rank(nick: &'static str, value: &'static str) -> RankPair {
     RankPair { nick, value }
 }
 
-// ---- omarchy ------------------------------------------------------------
-
 const OMARCHY_MAIN_LINES: &[SeedLine] = &[
     chat(
         "anna",
@@ -431,8 +429,6 @@ pub static OMARCHY_WORLD: SeedNetwork = SeedNetwork {
     directs: OMARCHY_DIRECTS,
     directory: OMARCHY_DIRECTORY,
 };
-
-// ---- oftc ----------------------------------------------------------------
 
 const OFTC_OMARCHY_LINES: &[SeedLine] = &[
     chat(

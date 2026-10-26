@@ -17,7 +17,6 @@ pub use crate::storage::lists::{HighlightStore, IgnoreStore, MonitorStore, MuteS
 
 use super::controller::Controller;
 
-
 /// Whether `nick` is a plausible `/ignore` or `/monitor` target: non-empty, not a
 /// channel, and free of the wildcard and mask punctuation `!`, `@`, `*` and `,`
 /// (`ignoreNickIsUsable`).
@@ -84,7 +83,6 @@ impl Controller {
         self.ignores.borrow_mut().add(network_id, nick, mapping)
     }
 
-    /// Removes a nick from the ignore list and reports whether anything changed.
     pub fn unignore_nick(&mut self, network_id: &str, nick: &str) -> bool {
         let mapping = self.reducer.server_features(network_id).case_mapping();
         self.ignores.borrow_mut().remove(network_id, nick, mapping)
@@ -109,7 +107,6 @@ impl Controller {
     }
 
     /// Whether `target` is on the mute list of `network_id`.
-    // The sidebar's mute mark and the product CLI read these (Phases 5 and 9); cfg(test) comes off with the first reader.
     #[cfg(test)]
     pub fn is_muted_target(&self, network_id: &str, target: &str) -> bool {
         let mapping = self.reducer.server_features(network_id).case_mapping();
@@ -141,7 +138,6 @@ impl Controller {
     }
 
     /// The `/monitor` nicks of `network_id`, deduplicated under its case mapping.
-    // The sidebar's mute mark and the product CLI read these (Phases 5 and 9); cfg(test) comes off with the first reader.
     #[cfg(test)]
     pub fn watched_nicks(&self, network_id: &str) -> Vec<String> {
         let mapping = self.reducer.server_features(network_id).case_mapping();

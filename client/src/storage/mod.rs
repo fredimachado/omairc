@@ -30,7 +30,6 @@ pub mod scrollplace;
 pub mod settings;
 pub mod stspolicies;
 
-/// Where a store keeps its data.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Backing {
     /// The QSettings-compatible INI file at this path.

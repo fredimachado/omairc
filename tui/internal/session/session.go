@@ -1167,8 +1167,6 @@ func (s *Session) SendRaw(line string) bool {
 	return sent
 }
 
-// --- Transport Sink -------------------------------------------------------
-
 // Connected fires after the socket opens. For plaintext it begins capability
 // negotiation. It mirrors the IrcTransport::connected lambda
 // (`client/src/session/session.rs`).
@@ -1241,8 +1239,6 @@ func (s *Session) errorOccurredLocked(message string) {
 	s.failLocked(kind, message, true)
 }
 
-// --- Bytes and frames -----------------------------------------------------
-
 func (s *Session) handleBytesLocked(bytes []byte) {
 	if s.pingWatchdog == watchdogWatching {
 		s.armPingWatchdogLocked()
@@ -1281,8 +1277,6 @@ func (s *Session) emitProtocolError(kind string, err error, preview string, byte
 		handler.ErrorOccurred(networkID, ErrorProtocol, message)
 	})
 }
-
-// --- Message dispatch -----------------------------------------------------
 
 func (s *Session) handleMessageLocked(message irc.Message) {
 	if s.ignoreFilter != nil && s.ignoreFilter(message, s.config.NetworkID) {
@@ -1509,8 +1503,6 @@ func (s *Session) handleMessageLocked(message irc.Message) {
 	}
 }
 
-// --- Capability negotiation ----------------------------------------------
-
 func (s *Session) setStateLocked(state SessionState) {
 	if s.sessionState == state {
 		return
@@ -1620,8 +1612,6 @@ func (s *Session) handleMetadataSyncLaterLocked(message irc.Message) {
 	})
 }
 
-// --- Registration ---------------------------------------------------------
-
 func (s *Session) sendRegistrationLocked() {
 	if s.registrationSent {
 		return
@@ -1677,8 +1667,6 @@ func (s *Session) tryRegistrationNickFallbackLocked() bool {
 	s.sendLineLocked([]byte(line))
 	return true
 }
-
-// --- Welcome and ISUPPORT ------------------------------------------------
 
 func (s *Session) applyISupportLocked(message irc.Message) {
 	if message.Command != "005" || len(message.Params) <= 2 {
@@ -1761,8 +1749,6 @@ func (s *Session) handleWelcomeLocked(message irc.Message) {
 	}
 }
 
-// --- STS ------------------------------------------------------------------
-
 func (s *Session) applyCachedStsLocked() {
 	cached, ok := s.sts.Lookup(s.config.Host)
 	if !ok {
@@ -1816,8 +1802,6 @@ func (s *Session) rescheduleStsExpiryLocked() {
 	}
 	s.sts.Store(s.config.Host, s.portNumber, *s.stsDuration)
 }
-
-// --- CAP / AUTHENTICATE ---------------------------------------------------
 
 func (s *Session) handleCapLocked(message irc.Message) {
 	lsIndex := parameterIndex(message, "LS")
@@ -1967,7 +1951,6 @@ func (s *Session) handleScramAuthenticateLocked(payload []byte) {
 		s.sendSaslResponseLocked(started.Message)
 		return
 	case saslScramAwaitServerFirst, saslScramAwaitServerFinal:
-		// fall through to chunk reassembly
 	default:
 		return
 	}
@@ -2008,8 +1991,6 @@ func (s *Session) sendSaslResponseLocked(raw []byte) {
 		s.sendLineLocked(frame)
 	}
 }
-
-// --- History batches ------------------------------------------------------
 
 func (s *Session) handleBatchLocked(message irc.Message) {
 	if len(message.Params) == 0 {
@@ -2703,8 +2684,6 @@ func (s *Session) handleChatHistoryFailLocked(message irc.Message) {
 	}
 }
 
-// --- Autojoin -------------------------------------------------------------
-
 func (s *Session) recordAutojoinLocked(channel string, joined bool) {
 	if channel == "" {
 		return
@@ -2811,8 +2790,6 @@ func eraseAutojoinKey(keys map[string]string, mapping irc.CaseMapping, channel s
 	return false
 }
 
-// --- Identity helpers -----------------------------------------------------
-
 func (s *Session) selfPrefixedLocked(message irc.Message) bool {
 	return s.selfIsLocked(claimedNick(message))
 }
@@ -2850,8 +2827,6 @@ func (s *Session) allowCtcpReplyLocked(nick string) bool {
 	s.ctcpReplyClock[key] = s.clock.Now()
 	return true
 }
-
-// --- Labeled requests -----------------------------------------------------
 
 func (s *Session) beginLabeledRequestLocked() string {
 	s.nextRequestLabel++
@@ -2953,8 +2928,6 @@ func (s *Session) onLabelTimerFiredLocked() {
 	s.armLabelTimerLocked()
 }
 
-// --- Ping watchdog --------------------------------------------------------
-
 func (s *Session) armPingWatchdogLocked() {
 	if s.sessionState != StateRegistered {
 		return
@@ -2988,8 +2961,6 @@ func (s *Session) pongMatchesWatchdogLocked(message irc.Message) bool {
 	}
 	return message.Params[len(message.Params)-1] == kPingWatchdogToken
 }
-
-// --- Failure and reconnect ------------------------------------------------
 
 func (s *Session) failLocked(kind ErrorKind, message string, reconnect bool) {
 	s.cancelPingWatchdogLocked()
@@ -3107,8 +3078,6 @@ func (s *Session) resetForConnectionLocked() {
 	s.publishCapabilitiesLocked()
 }
 
-// --- Command writers ------------------------------------------------------
-
 func (s *Session) sendLineLocked(line []byte) {
 	if len(line) == 0 {
 		return
@@ -3161,8 +3130,6 @@ func (s *Session) emitMessageReceived(message irc.Message) {
 	s.emit(func(handler Handler) { handler.MessageReceived(networkID, message) })
 }
 
-// --- Timers ---------------------------------------------------------------
-
 // armTimer restarts the one-shot timer in slot with a delay of delayMs. The
 // callback runs under the session mutex and is ignored if a newer timer has
 // replaced this one.
@@ -3189,8 +3156,6 @@ func (s *Session) cancelTimer(slot *Timer) {
 		*slot = nil
 	}
 }
-
-// --- Package helpers ------------------------------------------------------
 
 func msDuration(milliseconds int) time.Duration {
 	if milliseconds < 0 {
@@ -3466,8 +3431,6 @@ func describeMalformed(kind string, err error, preview string, byteCount int, ch
 	}
 	return text + ". Preview: " + shown
 }
-
-// --- Typing publisher -----------------------------------------------------
 
 // typingTargetClock is one target's outbound typing pace.
 type typingTargetClock struct {

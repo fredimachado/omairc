@@ -99,7 +99,6 @@ pub struct ComposerState {
     histories: HashMap<DraftKey, Vec<String>>,
     /// An Up/Down walk in progress.
     browse: Option<Browse>,
-    /// A Tab cycle in progress.
     completion: Option<Completion>,
     /// The draft Ctrl+F saved when find mode began. While find is active the
     /// field holds the query, so this copy is the unsent text.

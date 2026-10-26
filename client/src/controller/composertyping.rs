@@ -63,7 +63,6 @@ impl Controller {
 
     /// The network and target the composer's typing hint is held on, if any: the last
     /// target a `typing=active` went to and no `done` has followed yet.
-    // A test seam: the typing tests read the held target; cfg(test) comes off with a consumer.
     #[cfg(test)]
     pub fn typing_target(&self) -> Option<(&str, &str)> {
         self.typing_target

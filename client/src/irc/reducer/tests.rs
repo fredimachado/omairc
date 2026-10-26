@@ -174,7 +174,6 @@ pub(super) fn state_of<'a>(reducer: &'a EventReducer, key: &ConversationKey) -> 
         .unwrap_or_else(|| panic!("conversation {key:?} is missing"))
 }
 
-/// The bodies of a transcript, in order.
 pub(super) fn bodies(conv: &ConversationState) -> Vec<String> {
     conv.messages.iter().map(|message| message.body.clone()).collect()
 }

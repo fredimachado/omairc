@@ -29,7 +29,6 @@ use chrono::{DateTime, Utc};
 pub const OUTCOME_LABEL: &str = "command";
 /// The label a CTCP reply or request line carries.
 pub const CTCP_LABEL: &str = "CTCP";
-/// The label a notice carries.
 pub const NOTICE_LABEL: &str = "NOTICE";
 
 /// Who produced a Status line (`LogSource`, `IrcLogSource`).

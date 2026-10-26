@@ -492,7 +492,6 @@ impl Render for Shell {
             },
             (None, None) => Subtitle::Plain(&connection),
         };
-        // The slash popup hangs over the composer while it shows.
         let slash_popup = self.slash_popup_showing().then(|| {
             render_slash_popup(
                 self.slash.hits(),
@@ -857,21 +856,18 @@ fn close_handler(entity: Entity<Shell>) -> Handler<ConversationRef> {
     })
 }
 
-/// A click on the header's LEAVE button.
 fn leave_handler(entity: Entity<Shell>) -> Handler<()> {
     Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
         entity.update(cx, |shell, cx| shell.leave_selected_channel(window, cx));
     })
 }
 
-/// A click on the header's JOIN button.
 fn join_handler(entity: Entity<Shell>) -> Handler<()> {
     Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
         entity.update(cx, |shell, cx| shell.join_selected_channel(window, cx));
     })
 }
 
-/// A click on the header's CLOSE button.
 fn close_selection_handler(entity: Entity<Shell>) -> Handler<()> {
     Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
         entity.update(cx, |shell, cx| shell.close_selection(window, cx));

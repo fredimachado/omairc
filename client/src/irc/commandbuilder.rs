@@ -167,7 +167,6 @@ pub fn split_trailing_param<'body>(
     chunks
 }
 
-/// Builds a NICK line.
 pub fn nick(nickname: &str, features: &IrcServerFeatures) -> Result<String, IrcError> {
     if !is_single_field(nickname) {
         return Err(IrcError::InvalidField);
@@ -188,7 +187,6 @@ pub fn user(
     line(&format!("USER {username} 8 * :{realname}"), features)
 }
 
-/// Builds a PASS line.
 pub fn pass(password: &str, features: &IrcServerFeatures) -> Result<String, IrcError> {
     if !is_single_field(password) {
         return Err(IrcError::InvalidField);

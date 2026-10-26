@@ -6,12 +6,10 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/irc"
 )
 
-// This file holds the in-memory stores the Phase 7 slash catalog reads and
-// writes. The Qt stores (IrcIgnoreStore, IrcMuteStore, IrcMonitorStore
-// IrcHighlightStore, IrcAvatarStore, and the QSettings preferences) persist to
-// disk; Phase 7 keeps the same case-mapped list semantics in memory and defers
-// persistence to a later phase. The seams in seams.go name what is still
-// deferred.
+// In-memory stores the slash catalog reads and writes. The Qt stores
+// (IrcIgnoreStore, IrcMuteStore, IrcMonitorStore, IrcHighlightStore,
+// IrcAvatarStore, and the QSettings preferences) persist to disk; these keep
+// the same case-mapped list semantics in memory.
 
 // caseListStore is the shared case-mapped string list behind the ignore, mute
 // monitor, and highlight stores. It mirrors the list half of IrcIgnoreStore

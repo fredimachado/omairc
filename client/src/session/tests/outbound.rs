@@ -1,7 +1,6 @@
-//! the outbound writers
-//! the metadata limits, and the CTCP answers.
-//! The Status-entry assertions (`handler.status`, `hasLabel`, `anyFieldContains`)
-//! wait for the Phase 3 recorder. The CTCP reply text is this app's
+//! Outbound writers, metadata limits, and CTCP answers.
+//! Status-entry assertions (`handler.status`, `hasLabel`, `anyFieldContains`)
+//! live with the Status recorder elsewhere. The CTCP reply text is this app's
 //! `https://omairc.app` (no build number), as in `ctcp_version_reply_text`.
 
 use std::time::Duration;

@@ -43,7 +43,6 @@ pub enum TypingPhase {
 }
 
 impl TypingPhase {
-    /// The tag value on the wire.
     pub fn tag_value(self) -> &'static str {
         match self {
             Self::Active => "active",

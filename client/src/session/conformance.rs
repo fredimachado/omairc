@@ -27,7 +27,6 @@ pub(crate) trait TransportHarness {
     /// The bytes the peer has read since the last call, in order. Nothing is
     /// readable before the pipe opens.
     fn peer_received(&self) -> Vec<u8>;
-    /// The peer closes the connection.
     fn peer_close(&self);
     /// Arms the peer to refuse the next connect. Call it before `connect`; the
     /// refusal lands at `accept`.
@@ -44,7 +43,6 @@ pub(crate) trait TransportHarness {
     fn wire_is_real(&self) -> bool;
 }
 
-/// The host and.
 const HOST: &str = "irc.example";
 const PLAIN_PORT: u16 = 6667;
 const TLS_PORT: u16 = 6697;

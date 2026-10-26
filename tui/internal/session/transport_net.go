@@ -43,7 +43,6 @@ type NetTransport struct {
 	tlsConfig *tls.Config
 }
 
-// NetTransport satisfies Transport.
 var _ Transport = (*NetTransport)(nil)
 
 // NewNetTransport returns a NetTransport with net.Dialer defaults.

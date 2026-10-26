@@ -78,7 +78,6 @@ pub(super) struct Peer {
 }
 
 impl Peer {
-    /// A peer listening on an ephemeral.
     pub(super) fn spawn() -> Self {
         let listener = StdListener::bind("127.0.0.1:0").expect("the peer binds a port");
         let port = listener

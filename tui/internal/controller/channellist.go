@@ -9,13 +9,10 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
-// The per-network /list request state machine, the row cache, and the /list
-// overlay model. Twin: `client/src/controller/channellist.rs`.
-// `client/src/controller/channellist.rs`: the per-network /list request state
-// machine, the row cache, and the /list overlay model. The topic strip it
-// needs is irc.PlainIrcText.
-// All timers go through the injected session.Clock so tests drive the 30s idle
-// timeout with session.FakeClock.
+// Per-network /list request state machine, row cache, and /list overlay model.
+// Twin: `client/src/controller/channellist.rs`. Topic strip uses
+// irc.PlainIrcText. All timers go through the injected session.Clock so tests
+// drive the 30s idle timeout with session.FakeClock.
 
 // ChannelListMaxRows is the cap on cached channel-list rows. It mirrors
 // IrcChannelListRequest's use of ChannelListModel::kMaxRows in the C++

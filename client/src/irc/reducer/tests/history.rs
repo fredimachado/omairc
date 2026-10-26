@@ -268,8 +268,6 @@ fn channel_context_direct_message_survives_when_untrusted() {
     );
 }
 
-// --- history_page_test.go ---------------------------------------------------
-
 #[test]
 fn history_page_cap_tail_splices_older_chat_at_head() {
     let mut reducer = EventReducer::new();

@@ -170,7 +170,6 @@ impl PlaybackTimeStore {
         true
     }
 
-    /// Drops the cache entry and removes the persisted group.
     pub fn forget(&mut self, network_id: &str) {
         if network_id.is_empty() {
             return;

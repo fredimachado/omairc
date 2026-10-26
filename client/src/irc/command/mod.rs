@@ -294,10 +294,6 @@ pub fn help_text() -> String {
     )
 }
 
-// ---------------------------------------------------------------------------
-// The CTCP target rule (`IrcReplyRouter::dispatchCtcp`)
-// ---------------------------------------------------------------------------
-
 /// What the selected view is, for a CTCP verb typed without a nick.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg(test)]
@@ -312,7 +308,6 @@ pub enum SelectedView<'a> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg(test)]
 pub struct CtcpTarget {
-    /// The nick to ask.
     pub nick: String,
     /// True when the reply is a whois-style row in the asking conversation. On
     /// Status the reply stays on Status.
@@ -366,10 +361,6 @@ pub fn ctcp_target(
 pub fn version_reply_text(nick: &str) -> String {
     format_ctcp_reply_text("VERSION", nick, ctcp_version_reply_text(), 0)
 }
-
-// ---------------------------------------------------------------------------
-// pref replies (`IrcCommandDispatcher::dispatchPref`)
-// ---------------------------------------------------------------------------
 
 /// The lines one `/pref` prints, and whether it changed a value. The caller saves
 /// the preferences when it did.

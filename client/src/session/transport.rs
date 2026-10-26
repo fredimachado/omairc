@@ -79,9 +79,7 @@ pub struct TransportError {
 pub trait TransportSink {
     /// The socket is open. For TLS this fires before `encrypted`.
     fn connected(&self);
-    /// The TLS handshake finished.
     fn encrypted(&self);
-    /// The connection ended cleanly.
     fn disconnected(&self);
     /// Raw inbound bytes, in order, unframed.
     fn bytes_received(&self, bytes: &[u8]);
@@ -99,7 +97,6 @@ pub trait Transport {
     fn write(&self, frame: &[u8]);
     /// Closes an open connection, or abandons a connect in flight.
     fn shutdown(&self);
-    /// The current lifecycle state.
     fn state(&self) -> ConnectionState;
     /// Installs the receiver. The transport keeps only a weak reference, so the
     /// session owns the sink and no cycle forms.

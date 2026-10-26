@@ -232,7 +232,6 @@ impl ConnectState {
             .any(|profile| profile.network_id == network_id)
     }
 
-    /// The text a field shows.
     pub fn text(&self, field: ConnectField) -> &str {
         match field {
             ConnectField::Name => &self.draft.name,

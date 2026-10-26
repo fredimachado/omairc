@@ -486,7 +486,6 @@ impl Shell {
         self.controller.members().get(self.member_cursor).cloned()
     }
 
-    /// Up / Down in the member list.
     pub fn member_move(&mut self, delta: isize, window: &mut Window, cx: &mut Context<Self>) {
         if !self.chord_live(Chord::MembersStep, window, cx) {
             return;

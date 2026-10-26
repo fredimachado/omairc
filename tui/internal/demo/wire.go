@@ -10,12 +10,9 @@ import (
 )
 
 // Wire builders for the demo server: line assembly, inbound frame parsing,
-// the registration burst, channel state, presence, account, transcript, and
-// typing bytes, plus the world/transcript injectors. Twin:
+// registration burst, channel state, presence, account, transcript, and
+// typing bytes, plus world/transcript injectors. Twin:
 // `client/src/demo/server.rs`.
-// `client/src/demo/server.rs`: line assembly, inbound frame parsing, the
-// registration burst, channel state, presence, account, transcript, and typing
-// bytes, plus the world/transcript injectors.
 
 // line appends CRLF to text, mirroring the anonymous line helper.
 func line(text string) []byte {
@@ -107,7 +104,6 @@ func joinLine(nick, channel, account string) []byte {
 	return line(":" + nick + "!u@h JOIN :" + channel)
 }
 
-// accountLine renders an account-notify ACCOUNT line.
 func accountLine(nick, account string) []byte {
 	return line(":" + nick + "!u@h ACCOUNT " + account)
 }

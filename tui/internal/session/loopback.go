@@ -25,10 +25,8 @@ type LoopbackTransport struct {
 	OnFrameWritten func(frame []byte)
 }
 
-// LoopbackTransport satisfies Transport.
 var _ Transport = (*LoopbackTransport)(nil)
 
-// NewLoopbackTransport returns an idle loopback transport.
 func NewLoopbackTransport() *LoopbackTransport {
 	return &LoopbackTransport{}
 }

@@ -27,7 +27,6 @@ struct LoopbackState {
     last_error: String,
 }
 
-/// The in-memory `Transport`.
 #[derive(Default)]
 pub struct LoopbackTransport {
     state: RefCell<LoopbackState>,
@@ -36,19 +35,17 @@ pub struct LoopbackTransport {
 }
 
 impl LoopbackTransport {
-    /// An idle loopback with no sink and no hook.
     pub fn new() -> Self {
         Self::default()
     }
 
- /// Installs the hook that runs after every `write` (`frameWritten`).
+    /// Installs the hook that runs after every `write` (`frameWritten`).
     /// It runs with no borrow held, so it may call `inject_bytes`.
     pub fn set_frame_written_hook(&self, hook: FrameWrittenHook) {
         *self.frame_written.borrow_mut() = Some(hook);
     }
 
     /// Removes the frame-written hook. Writes still record their frames.
-    // test seam: the loopback transport is driven by the tests
     #[cfg(test)]
     pub fn clear_frame_written_hook(&self) {
         *self.frame_written.borrow_mut() = None;
@@ -79,7 +76,6 @@ impl LoopbackTransport {
     }
 
     /// Fails a connection that is still connecting.
-    // test seam: the loopback transport is driven by the tests
     #[cfg(test)]
     pub fn fail_connect(&self, message: &str) {
         self.fail(
@@ -91,7 +87,6 @@ impl LoopbackTransport {
 
     /// Fails a connection during the TLS phase: while connecting, or after the
     /// plaintext socket opened but before encryption.
-    // test seam: the loopback transport is driven by the tests
     #[cfg(test)]
     pub fn fail_tls(&self, message: &str) {
         self.fail(
@@ -102,7 +97,6 @@ impl LoopbackTransport {
     }
 
     /// Fails a pending connection with the timeout message.
-    // test seam: the loopback transport is driven by the tests
     #[cfg(test)]
     pub fn timeout_connect(&self) {
         self.fail(
@@ -125,7 +119,6 @@ impl LoopbackTransport {
 
     /// Ends an open connection as if the peer hung up. Emits `disconnected`
     /// not `error`.
-    // test seam: the loopback transport is driven by the tests
     #[cfg(test)]
     pub fn remote_close(&self) {
         {
@@ -144,42 +137,35 @@ impl LoopbackTransport {
     }
 
     /// Every frame passed to `write`, in order.
-    // test seam: the loopback transport is driven by the tests
     #[cfg(test)]
     pub fn written_frames(&self) -> Vec<Vec<u8>> {
         self.state.borrow().written.clone()
     }
 
     /// Forgets the recorded frames.
-    // test seam: the loopback transport is driven by the tests
     #[cfg(test)]
     pub fn clear_written_frames(&self) {
         self.state.borrow_mut().written.clear();
     }
 
-    /// The message recorded by the most recent failure.
-    // test seam: the loopback transport is driven by the tests
     #[cfg(test)]
     pub fn last_error(&self) -> String {
         self.state.borrow().last_error.clone()
     }
 
     /// The host from the most recent `connect`.
-    // test seam: the loopback transport is driven by the tests
     #[cfg(test)]
     pub fn connected_host(&self) -> String {
         self.state.borrow().host.clone()
     }
 
     /// The port from the most recent `connect`.
-    // test seam: the loopback transport is driven by the tests
     #[cfg(test)]
     pub fn connected_port(&self) -> u16 {
         self.state.borrow().port
     }
 
     /// Whether the most recent `connect` asked for TLS.
-    // test seam: the loopback transport is driven by the tests
     #[cfg(test)]
     pub fn tls_requested(&self) -> bool {
         self.state.borrow().tls_on
@@ -198,7 +184,6 @@ impl LoopbackTransport {
 
     /// Moves to `Failed` from one of `from`, recording `message`, and reports it
     /// to the sink with `kind`. A transport already failed keeps its first error.
-    // test seam: the loopback transport is driven by the tests
     #[cfg(test)]
     fn fail(&self, kind: TransportErrorKind, message: &str, from: &[ConnectionState]) {
         {

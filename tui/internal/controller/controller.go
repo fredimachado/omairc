@@ -52,7 +52,7 @@ type Controller struct {
 	networkCollapsed map[string]bool
 	connectionStatus string
 
-	// Phase 7 slash subsystems and their stores. commands, replies, monitor
+	// Slash subsystems and their stores. commands, replies, monitor
 	// and autoaway own their decisions; the controller owns the side effects.
 	ignores         *IgnoreStore
 	mutes           *MuteStore
@@ -62,7 +62,7 @@ type Controller struct {
 	prefs           *Preferences
 	membershipNoise irc.MembershipNoise
 
-	// Phase 11 persistence. New starts ephemeral so unit tests never touch the
+	// Persistence. New starts ephemeral so unit tests never touch the
 	// user's config; the shell opts in with SetEphemeral(false) and then loads
 	// the persisted stores and preferences.
 	ephemeral           bool
@@ -97,7 +97,7 @@ type Controller struct {
 	members       []MemberSnapshot
 
 	// OnMentionArrived is called for each mention the reducer hands up. It is
-	// nil-able; Phase 9 wires the inbox and notifications.
+	// nil-able; the shell wires the inbox and notifications.
 	OnMentionArrived func(author, body, networkID, target, msgid string)
 	// OnFileLink is called from the upload goroutine when a file upload
 	// finishes. It must not touch the controller. The shell turns it into a
@@ -115,7 +115,7 @@ type Controller struct {
 	// Nil-able; the shell wires it to the profile store.
 	OnAutojoinChanged func(networkID string, channels []string, keys map[string]string)
 	// OnMonitorArrived is called for each MONITOR presence change the monitor
-	// coordinator reports. It is nil-able; Phase 9 owns the inbox append and
+	// coordinator reports. It is nil-able; the shell owns the inbox append and
 	// the desktop notification.
 	OnMonitorArrived func(networkID, display, body string, newlyOnline bool)
 	// OnSelectionChanged fires when the selected conversation, the focused
@@ -210,8 +210,6 @@ func (c *Controller) displayLocation() *time.Location {
 	}
 	return time.Local
 }
-
-// --- Phase 11 persistence -------------------------------------------------
 
 // Group and key names match `client/src/storage/preferences.rs` so
 // the desktop client and the terminal client share one INI section.
@@ -544,8 +542,6 @@ func (c *Controller) NetworkOrder() []string {
 	return order
 }
 
-// --- Session handler ------------------------------------------------------
-
 // StateChanged refreshes the focused connection status. A non-Registered
 // transition also tells the playback coordinator that the connection ended, so
 // a reconnect replays as if it never happened. It mirrors
@@ -761,8 +757,6 @@ func (c *Controller) AutojoinChannelsChanged(networkID string, channels []string
 	}
 }
 
-// --- Apply / Publish ------------------------------------------------------
-
 // Apply folds one translated event into the reducer and republishes the
 // surfaces it dirtied. It mirrors IrcController::apply
 // (`client/src/controller/controller.rs`).
@@ -937,8 +931,7 @@ func (c *Controller) Publish(notify irc.ViewNotify) {
 	// A typing event repaints the sidebar's typing role. Qt emits
 	// typingChanged and calls ConversationListModel::invalidateTyping only
 	// when the conversation list was not already reloaded. The Go snapshot
-	// materializes that role, so rebuild it here; the typing-changed
-	// notification itself is the Phase 8 seam.
+	// materializes that role, so rebuild it here.
 	if notify.Typing && !notify.Conversations {
 		c.rebuildConversations()
 		c.conversationEpoch++
@@ -951,8 +944,6 @@ func (c *Controller) Publish(notify irc.ViewNotify) {
 		c.OnViewChanged()
 	}
 }
-
-// --- Session inbox --------------------------------------------------------
 
 // appendInbox stores one arrival stamped with the controller clock, then
 // wakes the UI. It mirrors IrcController::appendInbox/syncInbox.
@@ -1110,8 +1101,6 @@ func (c *Controller) reloadModels() {
 	}
 	c.Publish(irc.ViewNotifyResetAll())
 }
-
-// --- Selection ------------------------------------------------------------
 
 // SelectedNetworkID returns the selected conversation's network, or "".
 func (c *Controller) SelectedNetworkID() string {
@@ -1421,8 +1410,6 @@ func (c *Controller) dropSelectedDirectAndReselect() {
 	c.DropConversationAndReselect(*c.selected, true)
 }
 
-// --- Send ----------------------------------------------------------------
-
 // SendToTarget sends a plain PRIVMSG to an arbitrary network and target. It
 // uses the QuietSend cause, so it never invents a conversation. It mirrors
 // IrcController::sendToTarget (`client/src/controller/send.rs`).
@@ -1490,8 +1477,6 @@ func (c *Controller) echoIfPresent(s *session.Session, target, body string) {
 	}
 	c.Apply(irc.MessageEvent{Conversation: key, Author: s.Nick(), Body: body, Timestamp: c.now(), Target: target})
 }
-
-// --- Status and identity --------------------------------------------------
 
 // ConnectionStatus returns the focused network's connection status.
 func (c *Controller) ConnectionStatus() string {
@@ -1721,8 +1706,7 @@ func (c *Controller) SetWindowActive(active bool) {
 	}
 }
 
-// SetMuted records the muted flag for one conversation. Persistence is the
-// Phase 8 MuteStore seam.
+// SetMuted records the muted flag for one conversation.
 func (c *Controller) SetMuted(networkID, target string, muted bool) {
 	if networkID == "" || target == "" {
 		return
@@ -1730,8 +1714,6 @@ func (c *Controller) SetMuted(networkID, target string, muted bool) {
 	c.reducer.SetMuted(c.reducer.ConversationKey(networkID, target), muted)
 	c.Publish(irc.ViewNotify{Conversations: true})
 }
-
-// --- Lifecycle ------------------------------------------------------------
 
 // Start activates one network's session and reports whether it ended up live.
 // A missing network sets its last error. It mirrors IrcController::start
@@ -1992,8 +1974,6 @@ func (c *Controller) MoveNetwork(networkID string, delta int) bool {
 	return true
 }
 
-// --- Message handling -----------------------------------------------------
-
 func (c *Controller) handleMessage(networkID string, message irc.Message) {
 	// The playback clock reads every inbound PRIVMSG before routing, so a line
 	// that only lands on another client's transcript still resumes there.
@@ -2146,8 +2126,6 @@ func (c *Controller) notePlaybackClock(networkID string, message irc.Message) {
 		c.currentNicks[networkID],
 		c.capabilities[networkID].Contains(irc.CapabilityZncPlayback))
 }
-
-// --- Open directs and playback --------------------------------------------
 
 // persistableDirectTarget reports whether target is a direct message worth
 // persisting: non-empty, not a channel, and not a network service. It mirrors
@@ -2389,8 +2367,6 @@ func (c *Controller) requestChannelPlayback(s *session.Session, channel string) 
 		c.openDirectsMotdSeen[networkID])
 }
 
-// --- Status callbacks -----------------------------------------------------
-
 func (c *Controller) refreshConnectionStatus() {
 	if s := c.manager.Find(c.FocusedNetworkID()); s != nil {
 		c.connectionStatus = stateText(s.State())
@@ -2429,8 +2405,6 @@ func (c *Controller) notifyViewChanged() {
 		c.OnViewChanged()
 	}
 }
-
-// --- Helpers --------------------------------------------------------------
 
 // stateText maps a session state to the footer text. It mirrors the anonymous
 // stateText in `client/src/controller/snapshots.rs`.

@@ -153,7 +153,7 @@ func (m *Model) transcriptRowTotal() int {
 // then either the Status console lines when the console is open or the live
 // transcript. The header stays put while the rows scroll, mirroring
 // `client/src/ui/center/`'s fixed conversationHeader above its scrolling
-// Flickable. The viewport honors the Phase 6 scroll offset and the find
+// Flickable. The viewport honors the scroll offset and the find
 // highlight; it pins to the tail while follow-the-end is on. The console is
 // read through the controller's text accessor so this package never imports
 // internal/irc.

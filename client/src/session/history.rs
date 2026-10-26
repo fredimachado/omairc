@@ -166,7 +166,6 @@ impl Core {
         self.drop_history_batches(channel);
     }
 
-    /// Drops the open replay batches of one channel and their children.
     fn drop_history_batches(&mut self, channel: &str) {
         let folded = self.fold_channel(channel);
         let roots: BTreeSet<String> = self

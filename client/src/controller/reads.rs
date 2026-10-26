@@ -28,7 +28,6 @@ impl Controller {
         self.selected.as_ref()
     }
 
-    /// The selected conversation's network id.
     pub fn selected_network_id(&self) -> Option<&str> {
         self.selected.as_ref().map(|key| key.network_id.as_str())
     }

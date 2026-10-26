@@ -71,9 +71,8 @@ func TestPTYSmokeDemoShell(t *testing.T) {
 		if !proc.Alive() {
 			waitErr := proc.Wait()
 			if title == "" {
-				// The Phase 3 build prints a demo summary and exits 0; it is
-				// not the shell this smoke test proves. Skip rather than
-				// failing the gate before the shell lands.
+				// A pre-shell build prints a demo summary and exits 0 without
+				// an OSC title. Skip rather than failing the gate.
 				var exitErr *exec.ExitError
 				if waitErr == nil || (errors.As(waitErr, &exitErr) && exitErr.ExitCode() == 0) {
 					t.Skipf("omairc-tui is a pre-shell build (exited without an OSC title)")

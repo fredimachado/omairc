@@ -112,7 +112,6 @@ fn host_row(view: &ConnectView<'_>) -> impl IntoElement {
         .child(tls_switch(view))
 }
 
-/// Nick and Username side by side.
 fn nick_row(view: &ConnectView<'_>) -> impl IntoElement {
     let style = view.style;
     div()

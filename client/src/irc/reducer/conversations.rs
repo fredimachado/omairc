@@ -201,7 +201,6 @@ impl EventReducer {
         self.facts.is_closed(key)
     }
 
-    /// Drops every closed channel on one network.
     pub(super) fn clear_closed_network(&mut self, network_id: &str) {
         if network_id.is_empty() {
             return;

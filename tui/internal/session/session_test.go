@@ -417,8 +417,6 @@ func startScramExchange(t *testing.T, fixture *sessionFixture) []byte {
 	return decodeAuthenticatePayload(t, fixture.lastFrame())
 }
 
-// --- Registration and capability negotiation ------------------------------
-
 // TestSessionRegistersAndAutojoins.
 // SessionTest::registersAndAutojoins.
 func TestSessionRegistersAndAutojoins(t *testing.T) {

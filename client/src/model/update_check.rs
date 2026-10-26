@@ -47,7 +47,6 @@ pub const WINDOWS_UNINSTALL_KEY: &str = "{37400F83-8332-4043-8DFF-1F69E51F6555}_
 pub struct Release {
     /// The tag without its leading `v`.
     pub version: String,
-    /// The tag as GitHub names it.
     pub tag: String,
     /// The release page. Always on the repository.
     pub html_url: String,
@@ -663,7 +662,6 @@ pub fn compare_versions(left: &str, right: &str) -> Ordering {
         .then_with(|| a.suffix.cmp(&b.suffix))
 }
 
-/// The parts of one version string.
 struct Parsed {
     numeric: Vec<u64>,
     suffix: String,

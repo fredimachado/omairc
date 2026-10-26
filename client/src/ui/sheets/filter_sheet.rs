@@ -60,7 +60,6 @@ pub trait FilterSource: 'static {
     }
     /// The sheet's width in logical pixels.
     fn width(&self) -> f32;
-    /// One row's height in logical pixels.
     fn row_height(&self) -> f32;
     /// The list's height cap in logical pixels. Longer lists scroll.
     fn list_cap(&self) -> f32 {

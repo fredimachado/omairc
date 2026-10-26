@@ -18,7 +18,6 @@ use std::path::PathBuf;
 /// The name the window listens on: the pipe leaf on Windows, the socket file stem elsewhere.
 pub use crate::identity::APP_NAME;
 
-/// Where one window listens.
 #[cfg(windows)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Endpoint {
@@ -145,7 +144,6 @@ mod imp {
             Ok(Self(listener))
         }
 
-        /// Waits for the next client.
         pub fn accept(&mut self) -> io::Result<Stream> {
             self.0.accept().map(|(stream, _)| Stream(stream))
         }

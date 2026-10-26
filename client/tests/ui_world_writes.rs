@@ -6,9 +6,9 @@
 //! - a call to a `&mut self` method on the world or a collection mutator on one of its
 //! fields, such as `self.world.push_status(..)` or `.networks.retain(..)`
 //! - an assignment into the world, `self.world.x =..` or `world.x +=..`.
-//! The Phase 3 rewire took the allowlist to zero. The UI now holds no world at all, so
-//! the gate asserts that the scan finds nothing. A write that appears again is a new
-//! failure: route it through a `Controller` intent instead of an allowlist entry.
+//! The UI holds no world at all, so the gate asserts that the scan finds
+//! nothing. A write that appears again is a new failure: route it through a
+//! `Controller` intent instead of an allowlist entry.
 
 mod common;
 

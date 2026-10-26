@@ -30,7 +30,6 @@ func (s *recordingSink) Error(message string) {
 	s.errors = append(s.errors, message)
 }
 
-// TestTransportSucceedsConnect.
 func TestTransportSucceedsConnect(t *testing.T) {
 	transport := NewLoopbackTransport()
 	sink := &recordingSink{}
@@ -65,7 +64,6 @@ func TestTransportSucceedsConnect(t *testing.T) {
 	}
 }
 
-// TestTransportRecordsWrites.
 func TestTransportRecordsWrites(t *testing.T) {
 	transport := NewLoopbackTransport()
 	transport.Connect("irc.example", 6667, false)

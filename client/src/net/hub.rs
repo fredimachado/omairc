@@ -75,7 +75,6 @@ struct ConnTask {
 }
 
 impl NetHub {
-    /// A hub with the production options.
     pub fn new() -> Self {
         Self::with_options(NetOptions::default())
     }

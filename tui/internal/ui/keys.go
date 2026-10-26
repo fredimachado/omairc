@@ -5,7 +5,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// This file is the Phase 6 chord map: every window chord from
+// Chord map: every window chord from
 // `.cursor/skills/verify-omairc/features/keyboard.md`, plus the modal gating
 // that disables the chords while Connect or the shortcuts sheet is open.
 // The pure navigation chords live in chordTable, keyed by bubbletea's

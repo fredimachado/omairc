@@ -23,8 +23,6 @@ func countFrame(frames []string, frame string) int {
 	return count
 }
 
-// --- Outbound writers -----------------------------------------------------
-
 // TestSessionSendPrivmsgValidatesTarget.
 // SessionTest::sendPrivmsgValidatesTarget.
 func TestSessionSendPrivmsgValidatesTarget(t *testing.T) {
@@ -514,8 +512,6 @@ func TestSessionWhoisWritesDoubledNick(t *testing.T) {
 	}
 }
 
-// --- CTCP handling --------------------------------------------------------
-
 // TestSessionCtcpFromServerPrefixGetsNoReply.
 // SessionTest::ctcpFromServerPrefixGetsNoReply.
 func TestSessionCtcpFromServerPrefixGetsNoReply(t *testing.T) {
@@ -675,8 +671,6 @@ func TestSessionDoesNotAnswerChannelCtcpRequests(t *testing.T) {
 		t.Fatal("a channel CTCP must not be answered")
 	}
 }
-
-// --- Nick handling --------------------------------------------------------
 
 // TestSessionWelcomeAssignsNickFrom001.
 // SessionTest::welcomeAssignsNickFrom001.

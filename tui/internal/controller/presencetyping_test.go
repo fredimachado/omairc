@@ -1,9 +1,9 @@
 package controller_test
 
-// This file proves the Phase 8 members/presence/typing reads on the demo seed.
-// It is an external test package: an in-package controller_test.go cannot
-// import internal/demo, because demo imports internal/controller and Go
-// rejects that as an import cycle in an internal test.
+// Members/presence/typing reads on the demo seed.
+// External test package: an in-package controller_test.go cannot import
+// internal/demo, because demo imports internal/controller and Go rejects that
+// as an import cycle in an internal test.
 
 import (
 	"testing"

@@ -10,7 +10,6 @@ import (
 	"time"
 )
 
-// Options describes one PTY child.
 type Options struct {
 	Binary string
 	Args   []string
