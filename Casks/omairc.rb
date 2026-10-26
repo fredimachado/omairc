@@ -20,8 +20,8 @@ cask "omairc" do
   app "omairc.app"
   binary "omairc"
 
-  # Do not symlink Contents/MacOS/omairc into bin/. Keep a small exec wrapper
-  # so the Mach-O still runs from inside the .app bundle.
+  # Exec wrapper, not a symlink: the binary must run from inside the bundle so
+  # NSBundle.mainBundle and notifications resolve.
   preflight_steps do
     write_file "omairc", <<~SH
       #!/bin/sh

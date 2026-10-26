@@ -356,9 +356,13 @@ mod tests {
             });
         });
         let (shell, vcx) = cx.add_window_view(|_window, cx| {
-            Shell::new(cx, Some(60), true, false, true, None, activation_tx)
+            Shell::new(cx, false, true, None, activation_tx)
         });
         shell.update(vcx, |shell, cx| {
+            assert!(
+                shell.controller.bench_channel(60),
+                "the #bench seed must inject on the demo controller"
+            );
             inject_line(
                 shell,
                 "@msgid=close-anchor :user0!u@h PRIVMSG #bench :anchored",

@@ -1,27 +1,12 @@
 /build/
-/build-install/
-/build-tests/
-/build-tests-san/
-/build-live-tests/
-/build-live-ui-tests/
-/build-seeded-qml-tests/
-/build-version-override/
-/.deps/
-*.o
-*.moc
 __pycache__/
 *.pyc
-moc_*.cpp
-qrc_*.cpp
-.qmake.stash
-Makefile
 test-artifacts/
 /dist/
 .audit/
 .worktrees/
 
 .arena-omairc-pacman/
-aqtinstall.log
 
 # tui/bin/package writes release archives here. tui/bin/package-macos writes
 # its local .app here too.

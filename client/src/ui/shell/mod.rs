@@ -5,7 +5,6 @@
 
 pub mod actions;
 pub mod avatars;
-pub mod bench;
 pub mod commands;
 pub mod connect;
 pub mod fileupload;
@@ -70,7 +69,6 @@ use crate::util::{scaled_px, style, to_gpui};
 use crate::version::version;
 
 pub use actions::bind_shell_keys;
-pub use bench::BenchState;
 
 pub struct Shell {
     /// The live IRC state: sessions, conversations, Status, the inbox and the selection.
@@ -123,7 +121,9 @@ pub struct Shell {
     activation_watched: bool,
     pub focus_handle: FocusHandle,
     pub typing_phase: u8,
-    pub bench: BenchState,
+    /// Set when `OMAIRC_SMOKE` is non-empty: quit shortly after the first frame.
+    smoke: bool,
+    smoke_quit_armed: bool,
     /// The decoded avatar images the frame draws, by reference (`avatars.rs`).
     pub avatar_memo: avatars::AvatarMemo,
     pub(super) file_upload: fileupload::FileUploadQueue,
@@ -140,13 +140,10 @@ impl Shell {
     /// The window. `demo` runs the seeded `--demo-server` controller, which reads and writes
     /// nothing. Otherwise the controller loads the user's saved networks and preferences; with no
     /// complete network saved yet, the Connect sheet opens and stays open until one is.
-    /// `lines` replaces the selection with the `#bench` channel of that many lines. `net` is the
-    /// socket hub a live launch dials through; without one, every network's start is refused.
-    /// `smoke` is set when `OMAIRC_SMOKE` is non-empty: quit shortly after the first frame.
+    /// `net` is the socket hub a live launch dials through; without one, every network's start is
+    /// refused. `smoke` is set when `OMAIRC_SMOKE` is non-empty: quit shortly after the first frame.
     pub fn new(
         cx: &mut Context<Self>,
-        lines: Option<usize>,
-        bench: bool,
         smoke: bool,
         demo: bool,
         net: Option<Rc<NetHub>>,
@@ -181,9 +178,6 @@ impl Shell {
             controller.activate_startup();
             controller
         };
-        if let Some(n) = lines {
-            controller.bench_channel(n);
-        }
 
         let connect = if demo {
             ConnectState::seed(&connect_seeds(&controller))
@@ -277,11 +271,8 @@ impl Shell {
             activation_watched: false,
             focus_handle: cx.focus_handle(),
             typing_phase: 0,
-            bench: BenchState {
-                enabled: bench,
-                smoke,
-                ..Default::default()
-            },
+            smoke,
+            smoke_quit_armed: false,
             avatar_memo: Default::default(),
             file_upload: fileupload::FileUploadQueue::new(),
             update,
@@ -354,19 +345,16 @@ fn connect_seeds(controller: &Controller) -> Vec<crate::model::connect::NetworkS
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if (self.bench.enabled || self.bench.smoke) && self.bench.first_frame.is_none() {
-            self.bench.first_frame = Some(self.bench.started.elapsed());
-            // Match Qt `OMAIRC_SMOKE`: once a window frame exists, quit ~500 ms later.
-            if self.bench.smoke && !self.bench.smoke_quit_armed {
-                self.bench.smoke_quit_armed = true;
-                cx.spawn(async move |_shell, cx| {
-                    cx.background_executor()
-                        .timer(std::time::Duration::from_millis(500))
-                        .await;
-                    cx.update(|cx| cx.quit()).ok();
-                })
-                .detach();
-            }
+        // Match Qt `OMAIRC_SMOKE`: once a window frame exists, quit ~500 ms later.
+        if self.smoke && !self.smoke_quit_armed {
+            self.smoke_quit_armed = true;
+            cx.spawn(async move |_shell, cx| {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(500))
+                    .await;
+                cx.update(|cx| cx.quit()).ok();
+            })
+            .detach();
         }
         // Window focus and minimize/hide drive the unread rules. The observers need the
         // window, so they are registered here, once.

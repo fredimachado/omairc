@@ -1,6 +1,6 @@
 //! The Status ring and the bench path. Ports `tui/internal/controller/console_test.go`
-//! (`TestConsoleText`), the capacity rule in `console.go`, and the `--lines` bench
-//! channel the shell used to build from the mock world.
+//! (`TestConsoleText`), the capacity rule in `console.go`, and the test-only `#bench`
+//! channel seed.
 
 use chrono::{TimeZone, Utc};
 

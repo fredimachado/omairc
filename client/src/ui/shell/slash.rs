@@ -6,8 +6,6 @@
 //! shell repaints from the surfaces the controller raises. The slash-complete popup's
 //! state and keys live here too, since they edit the same line.
 
-use std::time::Instant;
-
 use gpui::{App, Context, Window};
 
 use crate::model::chords::Chord;
@@ -135,14 +133,9 @@ impl Shell {
             return;
         }
 
-        let append_start = (self.bench.enabled && matches!(command, Command::Say(_)))
-            .then(Instant::now);
         let before = *self.controller.preferences();
         let surface = self.surface();
         let accepted = self.controller.submit(surface, &text);
-        if let Some(start) = append_start {
-            self.bench.append_latency = Some(start.elapsed());
-        }
         self.apply_preference_changes(before, cx);
         if accepted {
             self.finish_command(&text, cx);

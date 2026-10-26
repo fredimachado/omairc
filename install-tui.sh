@@ -9,7 +9,7 @@ set -eu
 # the newest release.
 #
 # This is the package-manager-free path; pacman, Homebrew, and Scoop each have
-# their own package. install.sh still installs the Qt client only.
+# their own package. install.sh still installs the desktop client only.
 
 RELEASES_URL="https://github.com/fredimachado/omairc/releases"
 BIN_NAME=omairc-tui

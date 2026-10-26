@@ -1,10 +1,7 @@
 use std::borrow::Cow;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::{Duration, Instant};
-
-const BENCH_LOG: &str = "results/gpui-bench-stderr.txt";
+use std::time::Duration;
 
 use clap::Parser;
 use gpui::{
@@ -15,7 +12,7 @@ use crate::desktop::windowstate::{self, GeometryKeeper};
 use crate::model::{Style, Theme, ThemeWatcher};
 use crate::net::NetHub;
 use crate::storage::{geometry, paths};
-use crate::ui::shell::{BenchState, Shell, CONTROLLER_TICK};
+use crate::ui::shell::{Shell, CONTROLLER_TICK};
 
 use crate::ui::input::bind_input_keys;
 use crate::ui::shell::bind_shell_keys;
@@ -33,10 +30,6 @@ struct Args {
     theme: Option<PathBuf>,
     #[arg(long, hide = true)]
     scale: Option<f32>,
-    #[arg(long, hide = true)]
-    lines: Option<usize>,
-    #[arg(long, hide = true)]
-    bench: bool,
     /// Run the seeded in-process demo server: the controller starts on its networks.
     #[arg(long)]
     demo_server: bool,
@@ -142,8 +135,6 @@ pub fn run() {
         .or_else(crate::desktop::textscale::read_portal_text_scale)
         .unwrap_or(1.0);
     let cli_scale_override = args.scale.is_some();
-    let lines = args.lines;
-    let bench = args.bench;
     let demo_server = args.demo_server;
     let _embedding = args.embedding;
     // Match Qt `OMAIRC_SMOKE`: non-empty means prove a window opened, then quit.
@@ -199,7 +190,7 @@ pub fn run() {
         let settings_path = paths::settings_path();
         let stored = settings_path.as_deref().and_then(geometry::load_from);
         let keeper = settings_path
-            .filter(|_| !demo_server && !bench)
+            .filter(|_| !demo_server)
             .map(|path| GeometryKeeper::new(path, stored));
         let window_bounds = windowstate::initial_bounds(stored, cx);
         // The socket hub runs its net thread for a live launch. The demo's peers are in-process,
@@ -227,8 +218,6 @@ pub fn run() {
                     let shell = cx.new(|cx| {
                         Shell::new(
                             cx,
-                            lines,
-                            bench,
                             smoke,
                             demo_server,
                             net.clone(),
@@ -264,9 +253,6 @@ pub fn run() {
                     }
                     if let Some(server) = ipc {
                         crate::desktop::ipchandler::serve(shell.clone(), window.window_handle(), server, cx);
-                    }
-                    if bench {
-                        run_bench(shell.clone(), window.window_handle(), cx);
                     }
                     start_typing_pulse(shell.clone(), cx);
                     start_controller_tick(shell.clone(), cx);
@@ -538,143 +524,4 @@ fn start_drag_autoscroll(transcript: Entity<TranscriptView>, cx: &mut App) {
         }
     })
     .detach();
-}
-
-fn bench_log(line: &str) {
-    eprintln!("{line}");
-    let _ = (|| {
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(BENCH_LOG)?;
-        writeln!(file, "{line}")?;
-        file.flush()?;
-        Ok::<(), std::io::Error>(())
-    })();
-}
-
-fn run_bench(shell: Entity<Shell>, window: AnyWindowHandle, cx: &mut App) {
-    let _ = std::fs::create_dir_all("results");
-    let _ = std::fs::write(BENCH_LOG, "");
-    let shell_weak = shell.downgrade();
-    cx.spawn(async move |cx| {
-        cx.background_executor().timer(Duration::from_millis(500)).await;
-        let row_count = shell_weak
-            .update(cx, |s, cx| s.transcript.read(cx).rows().len())
-            .ok()
-            .unwrap_or(0);
-        if row_count == 0 {
-            return;
-        }
-
-        const SCROLL_STEPS: usize = 200;
-        const FRAME_MS: u64 = 16;
-
-        shell_weak
-            .update(cx, |shell, _| {
-                shell.bench.scroll_start = Some(Instant::now());
-                shell.bench.scroll_frames = 0;
-            })
-            .ok();
-
-        for step in 0..SCROLL_STEPS {
-            let row_ix = (step * row_count / SCROLL_STEPS).min(row_count.saturating_sub(1));
-            shell_weak
-                .update(cx, |shell, cx| {
-                    shell.transcript.update(cx, |t, cx| t.scroll_to_row(row_ix, cx));
-                    shell.bench.scroll_frames += 1;
-                    cx.notify();
-                })
-                .ok();
-            cx.background_executor()
-                .timer(Duration::from_millis(FRAME_MS))
-                .await;
-        }
-
-        shell_weak
-            .update(cx, |shell, _| {
-                if let Some(start) = shell.bench.scroll_start.take() {
-                    let secs = start.elapsed().as_secs_f64().max(0.001);
-                    let fps = shell.bench.scroll_frames as f64 / secs;
-                    bench_log(&format!(
-                        "bench scroll fps: {fps:.1} ({} frames, {} rows open)",
-                        shell.bench.scroll_frames, row_count
-                    ));
-                }
-            })
-            .ok();
-
-        shell_weak
-            .update(cx, |shell, _| {
-                shell.bench.reflow_start = Some(Instant::now());
-            })
-            .ok();
-        cx.update(|app| {
-            if let Some(window) = app.active_window() {
-                window
-                    .update(app, |_, window, _| {
-                        window.resize(size(px(960.), px(640.)));
-                    })
-                    .ok();
-            }
-        })
-        .ok();
-        cx.background_executor()
-            .timer(Duration::from_millis(300))
-            .await;
-        shell_weak
-            .update(cx, |shell, _| {
-                if let Some(start) = shell.bench.reflow_start.take() {
-                    shell.bench.reflow_done = Some(start.elapsed());
-                }
-            })
-            .ok();
-
-        shell_weak
-            .update(cx, |shell, cx| {
-                shell.composer.update(cx, |c, cx| {
-                    c.set_text("bench ping");
-                    cx.notify();
-                });
-            })
-            .ok();
-        // A command needs the window, as `/list` opens a sheet that takes focus.
-        cx.update_window(window, |_, window, cx| {
-            shell_weak
-                .update(cx, |shell, cx| shell.send_message(window, cx))
-                .ok();
-        })
-        .ok();
-
-        cx.background_executor()
-            .timer(Duration::from_millis(200))
-            .await;
-
-        shell_weak
-            .update(cx, |shell, _| {
-                print_bench_summary(&shell.bench, row_count);
-                shell.bench.finished = true;
-            })
-            .ok();
-    })
-    .detach();
-}
-
-fn print_bench_summary(bench: &BenchState, row_count: usize) {
-    bench_log(&format!("bench transcript rows: {row_count}"));
-    if let Some(t) = bench.first_frame {
-        bench_log(&format!(
-            "bench first frame: {:.2} ms",
-            t.as_secs_f64() * 1000.0
-        ));
-    }
-    if let Some(t) = bench.reflow_done {
-        bench_log(&format!("bench reflow: {:.2} ms", t.as_secs_f64() * 1000.0));
-    }
-    if let Some(t) = bench.append_latency {
-        bench_log(&format!(
-            "bench append latency: {:.2} ms",
-            t.as_secs_f64() * 1000.0
-        ));
-    }
 }

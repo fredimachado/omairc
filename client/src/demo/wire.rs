@@ -1,7 +1,7 @@
 //! Port of `tui/internal/demo/wire.go` (Go) and the wire part of
 //! `src/irc/ircdemoserver.cpp` (C++): line assembly, client-frame parsing, the
 //! registration burst, channel state, presence, accounts, transcript and typing
-//! lines, and the `--lines` bench channel.
+//! lines, and the test-only `#bench` channel seed.
 //!
 //! Each builder returns IRC lines without their CRLF, so the text reads as the
 //! Go and C++ does. `bytes` joins a batch into the wire bytes a transport
@@ -19,7 +19,7 @@ use super::seed::{
     OMARCHY_NETWORK_ID, TODAY,
 };
 
-/// The bench channel's name (`--lines`).
+/// The test-only bench channel's name.
 pub const BENCH_CHANNEL: &str = "#bench";
 
 /// When set to a non-empty value, `--demo-server` appends one Arabic and one
@@ -421,7 +421,7 @@ pub fn oftc_invite_line() -> String {
     ":rio!u@h INVITE oak :#debian".to_owned()
 }
 
-/// The `--lines` bench channel. It is `count` mixed lines after the channel's
+/// The test-only `#bench` channel. It is `count` mixed lines after the channel's
 /// JOIN, topic and NAMES: a join every tenth roll, and otherwise a PRIVMSG in
 /// one of three shapes. The lines use the same deterministic generator as the
 /// Go and Rust mock, so a run is reproducible. Day separators come from the
@@ -466,7 +466,7 @@ pub fn bench_channel_lines(self_nick: &str, count: usize) -> Vec<String> {
 }
 
 /// The bench channel as wire bytes. Feed it through `DemoServer::inject` (or any
-/// loopback) to seed a channel with `count` lines in place of the `--lines` world.
+/// loopback) to seed a channel with `count` lines for controller and demo tests.
 pub fn bench_channel_bytes(self_nick: &str, count: usize) -> Vec<u8> {
     bytes(&bench_channel_lines(self_nick, count))
 }

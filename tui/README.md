@@ -1,12 +1,12 @@
 # Omairc TUI
 
-The Go terminal client. Same behavior, chords, and window title as the Qt app.
+The Go terminal client. Same behavior, chords, and window title as the desktop app.
 
 ![Omairc TUI in demo mode](omairc-tui.gif)
 
 ## Install
 
-`omairc-tui` ships as a static binary on the same GitHub release as the Qt app. These installs need a release that carries `omairc-tui` assets, so check the [latest release](https://github.com/fredimachado/omairc/releases/latest) first.
+`omairc-tui` ships as a static binary on the same GitHub release as the desktop app. These installs need a release that carries `omairc-tui` assets, so check the [latest release](https://github.com/fredimachado/omairc/releases/latest) first.
 
 On Linux or macOS, without a package manager:
 
@@ -16,7 +16,7 @@ curl -fsSL https://raw.githubusercontent.com/fredimachado/omairc/main/install-tu
 
 That resolves the latest release, downloads the static binary for your OS and architecture, checks its version, and installs it to `~/.local/bin`. Re-running upgrades. `install-tui.sh` is also attached to each release.
 
-Arch, after the omairc pacman repository is configured. `install.sh` installs the Qt client only:
+Arch, after the omairc pacman repository is configured. `install.sh` installs the desktop client only:
 
 ```sh
 sudo pacman -S omairc-tui

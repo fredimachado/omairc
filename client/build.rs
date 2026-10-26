@@ -4,9 +4,9 @@
 //! shared with the app's test build through `src/version_pri.rs`.
 //!
 //! On a Windows target it also embeds `data/icons/omairc.ico` and a version
-//! resource in the exe, as the Qt client does through `RC_ICONS`. The icon is
-//! resource 1: gpui's window class loads `MAKEINTRESOURCE(1)` for its icon, so
-//! the title bar and taskbar show the mark without any window-side change.
+//! resource in the exe. The icon is resource 1: gpui's window class loads
+//! `MAKEINTRESOURCE(1)` for its icon, so the title bar and taskbar show the
+//! mark without any window-side change.
 
 #[path = "src/version_pri.rs"]
 mod version_pri;

@@ -31,7 +31,7 @@ When the two disagree about the shared contract, the root file wins.
   credential store), `internal/demo/` (the `IrcDemoServer` seed
   harness behind `--demo-server`, mirrors `src/irc/ircdemoserver.cpp`),
   `internal/ui/`
-  (Bubble Tea shell, mirrors `src/qml/` plus `OmaircWindow.qml`),
+  (Bubble Tea shell, mirrors `client/src/ui/`),
   `internal/theme/` (the Omarchy palette: `colors.toml` parsing, the derived
   structural colors plus the fixed semantic/nick block, `Fallback`, and the
   live mtime-poll `Watcher`; lipgloss-free, wrapped by `internal/ui` at the
@@ -72,7 +72,7 @@ When the two disagree about the shared contract, the root file wins.
   chords, the window title, and the controller contract stay identical; only
   presentation may diverge. `internal/theme` encodes the split: the semantic
   colors (`good` / `warning` / `danger` / `mention` / `unread`) and the nick
-  palette are fixed and shared with `OmaircStyle.qml`, while the surfaces,
+  palette are fixed and shared with `client/src/model/style.rs`, while the surfaces,
   borders, and secondary text are derived from the live theme's
   background/foreground/accent. `Fallback()` pins the dark Tokyo-Night palette
   for a missing or unreadable `colors.toml`, so the TUI keeps its exact old
@@ -208,7 +208,7 @@ platform-neutral and defer OS specifics behind `//go:build` files in
 
 Nothing in Phase 0 hardcodes a Linux-only assumption into `internal/irc`.
 
-## Shared contract (must not drift from Qt)
+## Shared contract (must not drift from the desktop client)
 
 The four invariants are ported verbatim, not re-derived:
 
@@ -227,7 +227,7 @@ The four invariants are ported verbatim, not re-derived:
   never sorts, and the member panel and the CLI names order must match.
 - Title parity: `internal/irc.RosterDisplayName` mirrors
   `IrcConnection::rosterDisplayName`, and `internal/ui/title.go`'s `Title`
-  mirrors `OmaircWindow.qml`'s `conversationTitleText` / `statusTitleText`.
+  mirrors `client/src/model/title.rs`'s `conversation_title` / `status_title`.
   An unfocused mention or direct message replaces that title until the
   window is focused or that conversation is opened. Muted conversations
   stay on the plain title. The terminal title is emitted as OSC 2 from the
@@ -242,10 +242,9 @@ never stores an unredacted secret). The session reuses Phase 1's
 `CapabilityNegotiation` for CAP LS/REQ/ACK/NAK and SASL; do not duplicate
 capability policy in the session or the controller.
 
-`internal/ui` mirrors `src/qml/` plus `OmaircWindow.qml` as a thin shell over
-the Go controller. Keep the window-growth discipline: extract file-based
-components instead of growing one god-object, and keep protocol policy out of
-the view.
+`internal/ui` mirrors `client/src/ui/` as a thin shell over the Go controller.
+Keep the window-growth discipline: extract file-based components instead of
+growing one god-object, and keep protocol policy out of the view.
 
 ## Feature map
 
@@ -347,8 +346,9 @@ Connect sheet surfaces persistence and credential status.
 The transcript carries the reducer's `New messages` boundary: `internal/ui`
 reads the mark through `Controller.UnreadMarkRow` (which mirrors
 `MessageListModel::unreadMarkRow`, including its needs-a-row-above guard) and
-attaches `UnreadMark.qml`'s accent-mixed rule to the marked row's block, so the
-rendered row count keeps matching the message count find and copy index by.
+attaches `client/src/ui/message_row.rs`'s accent-mixed unread-mark rule to the
+marked row's block, so the rendered row count keeps matching the message count
+find and copy index by.
 `Open conversations at unread` places the viewport like
 `placeTranscriptAfterSelect` when the conversation has no saved scroll place:
 Status follows the end, a first visit lands on its mark, and re-selecting the
@@ -407,9 +407,7 @@ commit and toolchain produce byte-identical archives.
 
 ## CI and review
 
-- Base every pull request on `main`, on another `tui-phase-*` branch when
-  stacking phases in order, or on a `slice/rust-cutover-*` branch when
-  stacking Rust cutover slices; CI rejects any other base.
+- Base every pull request on `main`; CI rejects any other base.
 - Run `tui/bin/test` (conventions, vet, tests, build, CLI contract) and the
   root `bin/test` before opening a pull request. `tui/bin/test` is also wired
   into root `bin/test` and skipped when `go` is absent.
@@ -425,12 +423,12 @@ commit and toolchain produce byte-identical archives.
   the tag job that also creates the release. Do not add a notification
   sink, a new workflow, or a bot.
 - A pull request whose whole diff is TUI-only is gated by `tui.yml` alone:
-  `test.yml` ignores `tui/**`, so the Qt app is not rebuilt and the C++ suite
-  does not run for the Go port. That holds because `tui/bin/test` runs the
-  shared `bin/check-conventions`, which carries the TUI checks (the
-  `internal/irc` platform-neutrality rule). Path filters are evaluated over the
-  entire pull-request diff, not the last commit, so a pull request that also
-  changes the shared `bin/check-conventions` or `bin/test` still runs the Qt
+  `test.yml` ignores `tui/**`, so the desktop client is not rebuilt for the Go
+  port. That holds because `tui/bin/test` runs the shared
+  `bin/check-conventions`, which carries the TUI checks (the `internal/irc`
+  platform-neutrality rule). Path filters are evaluated over the entire
+  pull-request diff, not the last commit, so a pull request that also changes
+  the shared `bin/check-conventions` or `bin/test` still runs the desktop
   workflow. That is intended: changing the shared gate must validate it. Root
   `bin/test` exports `OMAIRC_CONVENTIONS_RAN` so the gate runs the shared
   checks only once.

@@ -10,15 +10,19 @@
 
 use std::rc::Rc;
 
-use crate::demo::seed::{OFTC_WORLD, OMARCHY_NETWORK_ID, OMARCHY_WORLD, SeedNetwork};
+use crate::demo::seed::{OFTC_WORLD, OMARCHY_WORLD, SeedNetwork};
 use crate::demo::server::{session_config, DemoServer, SeedControls};
 use crate::irc::statusentry::{self, LogSeverity};
-use crate::demo::wire::{bench_channel_bytes, BENCH_CHANNEL};
 use crate::session::clock::{Clock, RealClock};
 use crate::session::loopback::LoopbackTransport;
 
 use super::controller::{Controller, ControllerError};
 use super::transports::NoTransports;
+
+#[cfg(test)]
+use crate::demo::seed::OMARCHY_NETWORK_ID;
+#[cfg(test)]
+use crate::demo::wire::{bench_channel_bytes, BENCH_CHANNEL};
 
 impl Controller {
     /// The `--demo-server` controller, on the wall clock.
@@ -44,23 +48,6 @@ impl Controller {
         demo.seed(&mut controller, true)?;
         controller.pump();
         Ok(controller)
-    }
-
-    /// The `--lines` bench channel: `count` mixed lines after its JOIN, topic and
-    /// NAMES, injected as frames on the omarchy network, and then selected. False when
-    /// the controller is not running the demo.
-    pub fn bench_channel(&mut self, count: usize) -> bool {
-        self.pump();
-        let Some(demo) = self.demo.clone() else {
-            return false;
-        };
-        let nick = self.current_nick(OMARCHY_NETWORK_ID);
-        if !demo.inject(OMARCHY_NETWORK_ID, &bench_channel_bytes(&nick, count)) {
-            return false;
-        }
-        self.pump();
-        self.select_conversation(OMARCHY_NETWORK_ID, BENCH_CHANNEL);
-        true
     }
 }
 
@@ -145,5 +132,22 @@ impl Controller {
             Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap(),
         ));
         Self::new_demo_with(clock).expect("the demo starts")
+    }
+
+    /// Test-only `#bench` seed: `count` mixed lines after its JOIN, topic and NAMES,
+    /// injected as frames on the omarchy network, then selected. False when the
+    /// controller is not running the demo.
+    pub fn bench_channel(&mut self, count: usize) -> bool {
+        self.pump();
+        let Some(demo) = self.demo.clone() else {
+            return false;
+        };
+        let nick = self.current_nick(OMARCHY_NETWORK_ID);
+        if !demo.inject(OMARCHY_NETWORK_ID, &bench_channel_bytes(&nick, count)) {
+            return false;
+        }
+        self.pump();
+        self.select_conversation(OMARCHY_NETWORK_ID, BENCH_CHANNEL);
+        true
     }
 }

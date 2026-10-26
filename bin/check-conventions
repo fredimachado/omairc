@@ -628,7 +628,7 @@ def check_ci_package_triggers():
         "if: github.event_name == 'workflow_dispatch' || "
         "startsWith(github.ref, 'refs/tags/v')"
     )
-    # Rust owns tag/dispatch release artifacts. Qt jobs compile/smoke only.
+    # Rust owns tag/dispatch release artifacts.
     for relative, text, names in (
         (".github/workflows/windows.yml", windows_text, (
             "Upload rust installer",
@@ -656,25 +656,6 @@ def check_ci_package_triggers():
         problems.append(
             ".github/workflows/windows.yml: rust job must build "
             "omairc-<v>-windows-x64.zip for the GitHub Release")
-    if re.search(
-            r"(?m)^      - name: (Package installer|Upload installer|"
-            r"Package release zip|Upload portable tree)$",
-            windows_text,
-    ):
-        problems.append(
-            ".github/workflows/windows.yml: Qt windows job must not package "
-            "or upload release assets; rust owns those steps")
-    if "needs: rust" not in macos_text:
-        problems.append(
-            ".github/workflows/macos.yml: macos-zips must consume rust job "
-            "artifacts, not the Qt macos job")
-    if re.search(
-            r"(?m)^      - name: Package app zip$",
-            macos_text,
-    ):
-        problems.append(
-            ".github/workflows/macos.yml: Qt macos job must not package the "
-            "release zip; rust owns Package rust app zip / Upload app zip")
     if "cargo test --locked" not in macos_text:
         problems.append(
             ".github/workflows/macos.yml: rust job must run cargo test --locked")
@@ -1162,9 +1143,6 @@ def check_homebrew_cask():
             "Casks/omairc.rb: uninstall must leave config; put user files in zap")
     if "no-quarantine" in text or "xattr" in text:
         problems.append("Casks/omairc.rb: do not teach --no-quarantine")
-    if "bin/build-macos" in text or "qt@6" in text:
-        problems.append(
-            "Casks/omairc.rb: do not cask a Homebrew-Qt from-source tree")
 
     if not bump.is_file():
         problems.append(
@@ -1219,8 +1197,6 @@ def check_homebrew_cask():
     official = re.search(r"(?m)^brew install --cask omairc$", section)
     zip_pos = section.find("omairc-<version>-macos-arm64.zip")
     source_pos = section.find("bin/build-macos-rust")
-    if source_pos < 0:
-        source_pos = section.find("bin/build-macos")
     if tap_pos < 0:
         problems.append(
             "README.md: macOS section must tap fredimachado/omairc with the "

@@ -147,9 +147,8 @@ this order:
 
 Pick a GitHub issue, branch off `main`, run `bin/test`, and open the
 pull request against `main`. Also run `bin/test-live` when it touches
-real IRCd behavior. CI rejects a pull request whose base is not `main`, a
-`tui-phase-*` branch, or a `slice/rust-cutover-*` stack base. No new
-bot, workflow, or notification sink.
+real IRCd behavior. CI rejects a pull request whose base is not `main`.
+No new bot, workflow, or notification sink.
 
 ## Release versioning
 
@@ -195,8 +194,7 @@ and `clippy` in `client/` (default `product` features, plus a `dev` feature
 pass), version/help smoke on the built `omairc` binary, and `tui/bin/test`
 when `go` is on `PATH`. CI runs `bin/test` and `bin/test-live`
 on every pull request that touches anything outside `tui/**`, and rejects a pull
-request whose base is not `main`, a `tui-phase-*` branch, or a
-`slice/rust-cutover-*` stack base. A pull request whose whole diff is TUI-only is
+request whose base is not `main`. A pull request whose whole diff is TUI-only is
 gated by the TUI workflow alone: `test.yml` ignores `tui/**`, and `tui/bin/test`
 runs the shared `bin/check-conventions` so the TUI checks still hold. Paths are
 filtered over the whole pull-request diff, so a pull request that also changes

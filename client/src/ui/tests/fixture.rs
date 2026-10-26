@@ -36,7 +36,7 @@ pub fn open(cx: &mut TestAppContext) -> SeededShell<'_> {
     });
     let (activation_tx, _) = async_channel::unbounded();
     let (shell, vcx) = cx.add_window_view(|_window, cx| {
-        Shell::new(cx, None, false, false, true, None, activation_tx)
+        Shell::new(cx, false, true, None, activation_tx)
     });
     vcx.simulate_resize(size(px(WINDOW_WIDTH), px(WINDOW_HEIGHT)));
     // Drop seed mention arrivals so settle does not raise desktop notifications.

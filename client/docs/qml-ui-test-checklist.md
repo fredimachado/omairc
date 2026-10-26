@@ -1,5 +1,7 @@
 # QML to Rust UI test checklist
 
+Historical cutover record; no longer generated.
+
 Cutover evidence for M6. Source: `tests/ui/tst_omairc.qml` (345 tests).
 Harness: `client/src/ui/tests/fixture.rs`.
 

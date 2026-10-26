@@ -10,7 +10,8 @@
 //! Submodules: `controller` (the struct, the pump and the session handlers),
 //! `selection` (which conversation shows), `send` (the outbound intent), `networks`
 //! (sidebar order and collapse), `reads` (what the shell draws), `demo` (the
-//! `--demo-server` wiring and `--lines`), `transports` (the transport seam), and
+//! `--demo-server` wiring and the test-only `#bench` seed), `transports` (the
+//! transport seam), and
 //! `console` and `snapshots` (the Status ring and the row shapes). The slash path is
 //! `commanddispatcher` (every verb's decision, and the composer's submit rule), with the
 //! modules it calls: `stores` (ignore, mute, monitor and highlight lists),
