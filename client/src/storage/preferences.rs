@@ -140,10 +140,12 @@ mod tests {
     fn preferences_round_trip_under_the_qt_keys() {
         let dir = TempDir::new("prefs-round");
         let store = store(&dir);
-        let mut prefs = Preferences::default();
-        prefs.directs = false;
-        prefs.colors = false;
-        prefs.joins = MembershipNoise::Every;
+        let prefs = Preferences {
+            directs: false,
+            colors: false,
+            joins: MembershipNoise::Every,
+            ..Default::default()
+        };
         assert_eq!(store.save_preferences(&prefs), Status::Written);
         assert_eq!(store.preferences(), prefs);
 

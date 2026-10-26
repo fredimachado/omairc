@@ -4,8 +4,9 @@ use crate::model::{Style, StyleRun, TextStyle as IrcStyle};
 use crate::util::{to_gpui, FONT_FAMILY};
 
 /// Whether mIRC colors paint (`/pref colors`). Off, runs keep their formatting and take the theme ink.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum IrcColors {
+    #[default]
     Shown,
     Stripped,
 }
@@ -17,12 +18,6 @@ impl IrcColors {
         } else {
             Self::Stripped
         }
-    }
-}
-
-impl Default for IrcColors {
-    fn default() -> Self {
-        Self::Shown
     }
 }
 
