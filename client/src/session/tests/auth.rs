@@ -1,7 +1,6 @@
-//! Port of the PLAIN and non-SCRAM cases of `tui/internal/session/session_auth_test.go`.
-//!
+//! PLAIN and non-SCRAM cases of `tui/internal/session/session_auth_test.go`.
 //! The SCRAM-SHA-256 cases (`TestSessionNegotiatesSaslScramSha256` and the
-//! `TestSessionScram*` / `TestSessionAbandonedScram*` family) are in `scram.rs`,
+//! `TestSessionScram*` / `TestSessionAbandonedScram*` family) are in `scram.rs`
 //! beside this file. The Status-entry assertions wait for the Phase 3 Status
 //! recorder; the AUTHENTICATE secrecy check is kept as a check that the
 //! outbound event carries the masked-free wire line only where Go does.

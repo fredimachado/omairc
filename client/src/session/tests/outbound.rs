@@ -1,6 +1,5 @@
-//! Port of `tui/internal/session/session_outbound_test.go`: the outbound writers,
+//! the outbound writers
 //! the metadata limits, and the CTCP answers.
-//!
 //! The Status-entry assertions (`handler.status`, `hasLabel`, `anyFieldContains`)
 //! wait for the Phase 3 recorder. The CTCP reply text is this app's
 //! `https://omairc.app` (no build number), as in `ctcp_version_reply_text`.
@@ -462,7 +461,7 @@ fn rate_limits_ctcp_version_replies_per_nick() {
     fx.inject(other_probe);
     assert_eq!(count_frame(&fx.frames(), &other_reply), 1, "alice replies");
 
-    // The C++ test sleeps 5500 ms; the fake clock is advanced instead.
+ // The C++ test sleeps 5500 ms; the fake clock is advanced instead.
     fx.clock.advance(Duration::from_millis(5500));
     fx.inject(probe);
     assert_eq!(

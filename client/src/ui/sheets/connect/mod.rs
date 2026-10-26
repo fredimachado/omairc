@@ -1,7 +1,6 @@
 //! The Connect sheet: the veil and the tabbed card.
-//! The card is the keyboard's home while Connect shows. Its key context owns Tab,
+//! The card is the keyboard's home while Connect shows. Its key context owns Tab
 //! Enter, Space and the rail keys, and the fields under it keep their text keys.
-//!
 //! The model (`model/connect.rs`) holds the state and the focus walk. The shell
 //! (`ui/shell/connect.rs`) acts on it. This module only draws, and reports clicks
 //! as a `Stop` through `ConnectView::on_stop`.
@@ -46,7 +45,7 @@ actions!(
     ]
 );
 
-/// The card's keys. Tab and Shift+Tab walk every stop, Enter walks or activates,
+/// The card's keys. Tab and Shift+Tab walk every stop, Enter walks or activates
 /// and Space activates. Left and Right step the tabs. Up, Down, Home and End move
 /// through the rail. Each action passes on a key it does not use, so a text field
 /// still types a space and an arrow still moves its caret.

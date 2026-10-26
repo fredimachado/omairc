@@ -1,6 +1,6 @@
-//! Sidebar network order and collapse. Ports `tui/internal/controller/networkorder_test.go`
-//! (`TestNetworkOrderRecordedOrderWins`, `TestNetworkOrderDeduplicates`,
-//! `TestNetworkCollapsedRoundTrip`, `TestSetAllNetworksCollapsed`, `TestMoveNetwork`,
+//! Sidebar network order and collapse.
+//! (`TestNetworkOrderRecordedOrderWins`, `TestNetworkOrderDeduplicates`
+//! `TestNetworkCollapsedRoundTrip`, `TestSetAllNetworksCollapsed`, `TestMoveNetwork`
 //! `TestCollapseDoesNotMutateConversationsOrder`).
 
 use crate::irc::serverfeatures::IrcServerFeatures;

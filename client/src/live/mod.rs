@@ -1,5 +1,5 @@
 //! Live ircd harness: env from `bin/test-live`, a controller over the real net
-//! transport, and wait helpers. Integration tests in `tests/live/` drive the cases;
+//! transport, and wait helpers. Integration tests in `tests/live/` drive the cases
 //! the raw second peer (TLS) lives in that test crate so `rustls` stays under `net/`
 //! for production sources.
 

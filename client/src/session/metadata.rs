@@ -1,6 +1,4 @@
-//! Port of the draft/metadata-2 writers of `tui/internal/session/session.go`,
 //! including `IrcSession::setOwnMetadata`.
-//!
 //! The vocabulary the session reads (the subscribed keys, the limits the server
 //! advertised, the value clamp, the CAP token parse) is pure and lives in
 //! `irc/presence`. It is re-exported here so the session and its tests keep their

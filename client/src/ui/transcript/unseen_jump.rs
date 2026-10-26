@@ -1,5 +1,5 @@
 //! The floating `↓` chip over the transcript (`UnseenJumpButton`). It shows
-//! while an unseen jump is armed: a line arrived while the reader was scrolled up,
+//! while an unseen jump is armed: a line arrived while the reader was scrolled up
 //! or a "New messages" mark is open above the end. A press runs the jump. The
 //! shell draws nothing here, so the chip is part of the transcript view.
 

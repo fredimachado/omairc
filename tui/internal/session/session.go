@@ -14,27 +14,23 @@ import (
 )
 
 // Twin of `client/src/session/session.rs`: the
-// connection state machine, CAP/SASL/registration driver, ping watchdog,
+// connection state machine, CAP/SASL/registration driver, ping watchdog
 // reconnect backoff, labeled requests, the history-batch ledger, and the
 // outbound command writers.
-//
 // Concurrency model
-//
-// The C++ session is single-threaded: Qt delivers transport signals, QTimer
+// The session is single-threaded: the runtime delivers transport signals, timers
 // firings, and public slot calls on one event loop, and IrcSession emits its
 // own signals re-entrantly. The Go transport may call the Sink from a reader
 // goroutine, and the timer seam fires on its own goroutine, so all session
 // state is guarded by one mutex.
-//
-// To preserve the C++ ordering of signals and to never re-enter the mutex,
-// every entry point runs its body under locked(), which queues handler
+// To preserve the C++ ordering of signals and to never re-enter the mutex
+// every entry point runs its body under locked, which queues handler
 // notifications and transport calls that can synchronously call back into the
 // session (transport.Shutdown -> Sink.Disconnected, transport.Write ->
 // Sink.Error, transport.Connect -> Sink.Connected). The queue is drained in
 // order after the mutex is released. A queued transport call that re-enters
 // the session runs inline, exactly like the synchronous Qt signal, and may
 // queue and drain its own work.
-//
 // One divergence remains: notifications are delivered after the current entry
 // point finishes mutating state rather than re-entrantly in the middle of it.
 // Handler order is preserved, and handlers never run while the lock is held.
@@ -122,7 +118,7 @@ type PendingInvite struct {
 	Channel string
 }
 
-// IgnoreFilter drops an inbound message before translation, history capture,
+// IgnoreFilter drops an inbound message before translation, history capture
 // or status classification. networkID is the session's network id (the C++
 // callback passed the current nick; the Go contract uses the network id).
 type IgnoreFilter func(message irc.Message, networkID string) bool
@@ -152,7 +148,7 @@ type Handler interface {
 	ReadMarkerReceived(networkID, target string, marker *time.Time)
 }
 
-// ReachabilitySource reports when the host's network becomes reachable again,
+// ReachabilitySource reports when the host's network becomes reachable again
 // so a scheduled reconnect can start early. It mirrors IrcReachabilitySource.
 // Set it with SetReachabilitySource; nil disables it.
 type ReachabilitySource interface {
@@ -232,7 +228,7 @@ type openBatch struct {
 	requestLabel string
 	// historyEnded is draft/chathistory-end on the opening BATCH.
 	historyEnded bool
-	// historyRequestKind is the CHATHISTORY subcommand this batch answers,
+	// historyRequestKind is the CHATHISTORY subcommand this batch answers
 	// captured when the batch opens. hasHistoryRequest is false for a batch
 	// that was not a request we were waiting on. Latest is the zero value, so
 	// the bool is what distinguishes "we asked" from "no request".
@@ -1096,7 +1092,7 @@ func (s *Session) CancelRequestLabel(label string) {
 	s.locked(func() { s.dropRequestLabelLocked(label) })
 }
 
-// SendMonitor writes a MONITOR command. Modifier is one of '+', '-', 'C', 'L',
+// SendMonitor writes a MONITOR command. Modifier is one of '+', '-', 'C', 'L'
 // or 'S'. It mirrors IrcSession::sendMonitor (`client/src/session/session.rs`).
 func (s *Session) SendMonitor(modifier rune, nicks []string) bool {
 	var sent bool
@@ -2228,7 +2224,7 @@ func replayKindFor(batchType string) (irc.HistoryKind, bool) {
 }
 
 // replayEnabledLocked mirrors IrcSession::replayEnabled
-// (`client/src/session/session.rs`): bouncer playback needs only `batch`,
+// (`client/src/session/session.rs`): bouncer playback needs only `batch`
 // while a CHATHISTORY answer also needs `chathistory`.
 func (s *Session) replayEnabledLocked(kind irc.HistoryKind) bool {
 	enabled := s.capabilities.Enabled()
@@ -2269,7 +2265,7 @@ func (s *Session) requestChannelHistoryLocked(channel string) {
 		// The callback reads the controller. Drop mu first so a shell turn
 		// holding the controller lock can take mu without inverting the order.
 		// The deferred queue is parked so that gap cannot steal it. Lines
-		// after this JOIN in the same read are parsed only once mu is back,
+		// after this JOIN in the same read are parsed only once mu is back
 		// so an empty CHATHISTORY batch still sees the AFTER already asked.
 		when, ok := s.historyResumeOutsideLock(channel)
 		if _, asked := s.historyAsked[key]; asked {
@@ -2675,7 +2671,7 @@ func (s *Session) handleChatHistoryFailLocked(message irc.Message) {
 		})
 		return
 	}
-	// FAIL CHATHISTORY <code> <subcommand> [<target>] [<context>] :description.
+	// FAIL CHATHISTORY <code> <subcommand> [<target>] [<context>]:description.
 	// The target's position moves with the code, so look for the request this
 	// answers instead of indexing. The trailing description is skipped so a
 	// channel named in prose cannot cancel a different request.
@@ -3348,7 +3344,7 @@ func registrationHandshake(state SessionState) bool {
 }
 
 // registrationSentence reports the trailing reason. 432/433/436/437 carry
-// <client> <nick> :<reason>. 451/462/465 carry <client> :<reason>. ERROR's
+// <client> <nick>:<reason>. 451/462/465 carry <client>:<reason>. ERROR's
 // sentence is whatever parameter it has. A nick with no trailing sentence
 // is not the reason.
 func registrationSentence(message irc.Message) (string, bool) {
@@ -3371,7 +3367,7 @@ func registrationSentence(message irc.Message) (string, bool) {
 }
 
 // serverSentenceOr returns the server's trailing sentence. Either existing
-// check drops it: AllowsTranscript rejects a service body such as IDENTIFY,
+// check drops it: AllowsTranscript rejects a service body such as IDENTIFY
 // and RedactPreviewLine catches a near-miss, a later command, or a leading
 // secret verb. The fallback stays. No third redactor.
 func serverSentenceOr(message irc.Message, channelTypes, fallback string) string {
@@ -3473,8 +3469,7 @@ func describeMalformed(kind string, err error, preview string, byteCount int, ch
 
 // --- Typing publisher -----------------------------------------------------
 
-// typingTargetClock is one target's outbound typing pace. It mirrors
-// IrcTypingPublisher::TargetClock (`irctypingpublisher`:22-28).
+// typingTargetClock is one target's outbound typing pace.
 type typingTargetClock struct {
 	lastSentAt   time.Time
 	hasLastSent  bool
@@ -3482,9 +3477,8 @@ type typingTargetClock struct {
 	suppressDone bool
 }
 
-// typingPublisher implements the outbound typing gate and pacing of
-// IrcTypingPublisher (`irctypingpublisher`), inlined into the
-// session so no external wiring is needed.
+// typingPublisher implements the outbound typing gate and pacing,
+// inlined into the session so no external wiring is needed.
 type typingPublisher struct {
 	targets map[string]*typingTargetClock
 }

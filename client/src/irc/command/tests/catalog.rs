@@ -89,7 +89,7 @@ fn command_allowed_on_follows_the_catalog_scope() {
     assert!(!say("hi").allowed_on(STATUS));
     // Join is Either.
     assert!(Command::Join(String::new()).allowed_on(STATUS));
-    // /me (Action) is conversation-only.
+    // me (Action) is conversation-only.
     let me = parse("/me waves");
     assert!(!me.allowed_on(STATUS));
     assert!(me.allowed_on(CONVERSATION));

@@ -1,4 +1,4 @@
-//! Controller + NetHub client that dials a live ircd (Qt `LiveClient`).
+//! Controller + NetHub client that dials a live ircd.
 
 use std::path::PathBuf;
 use std::rc::Rc;

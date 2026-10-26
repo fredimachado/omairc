@@ -1,6 +1,4 @@
-//! Port of the ping, registration-refusal and nick-collision cases of
-//! `tui/internal/session/session_lifecycle_test.go`.
-//!
+//! ping, registration-refusal and nick-collision cases of
 //! The Go tests also assert on Status text (`textFor`, `anyFieldContains`). Status
 //! is Phase 3's recorder, so those assertions are left out here; each test keeps
 //! its state, error, reconnect and frame checks.

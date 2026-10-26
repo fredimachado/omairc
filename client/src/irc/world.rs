@@ -1,12 +1,10 @@
 //! The World-facing shapes the UI reads: `Network`, `Conversation`, `Member`
 //! and `Message`. They replace the mock world in `model/mock.rs` once the
 //! reducer fills them.
-//!
 //! `Message` is the Go `IrcReducedMessage` (`reducer.go`), with the `mentioned`
 //! flag the present `MockMessage` UI already reads. `Network`, `Conversation`
-//! and `Member` keep the field names and types of the mock structs they replace,
+//! and `Member` keep the field names and types of the mock structs they replace
 //! except for the time fields, which are real instants now.
-//!
 //! Two present fields are not here yet: a network's Status log (`status`, from
 //! `statusentry.go`) and its `/list` directory (`directory`, from the channel
 //! list controller). Each arrives with its own leaf module. Nothing in this file
@@ -75,7 +73,7 @@ pub struct Message {
 #[cfg(test)]
 pub struct Member {
     pub nick: String,
-    /// The rank glyphs, highest first (`@`, `+`, ...).
+    /// The rank glyphs, highest first (`@`, `+`,...).
     pub prefix: String,
     pub realname: String,
     /// `online`, `away`, or another presence word.

@@ -2,7 +2,7 @@ package controller
 
 import "github.com/fredimachado/omairc/tui/internal/irc"
 
-// NetworkDisplayName returns the roster display name for one network,
+// NetworkDisplayName returns the roster display name for one network
 // mirroring IrcConnection::rosterDisplayName over the registered sessions.
 // An unknown or empty network id returns "".
 func (c *Controller) NetworkDisplayName(networkID string) string {

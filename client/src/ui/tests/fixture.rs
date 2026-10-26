@@ -1,5 +1,5 @@
 //! One harness for GPUI view tests: the seeded `--demo-server` shell in a
-//! `TestAppContext`, fixed window size, and helpers for settle, inject, select,
+//! `TestAppContext`, fixed window size, and helpers for settle, inject, select
 //! scroll, and chords. Every view test that needs a live shell uses this.
 
 use gpui::{

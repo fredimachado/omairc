@@ -1,7 +1,7 @@
 package ui
 
 // This file is the Phase 8 member-panel parity suite for the Bubble Tea shell:
-// the Online count on the top border, the Ctrl+Shift+M toggle, presence dots, away dimming,
+// the Online count on the top border, the Ctrl+Shift+M toggle, presence dots, away dimming
 // the bot mark, typing ellipsis, status sublines, and Enter-on-member opening a
 // direct message. It reuses the demo-seeded harness in phase5_test.go and the
 // key helpers in phase6_test.go.

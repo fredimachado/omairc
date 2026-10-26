@@ -1,7 +1,7 @@
 package ui
 
-// This file ports the URL policy and Ctrl+Shift+O link sheet tests: the
-// isAllowedHttpUrl allowlist, the trailing-punctuation trim, span offsets,
+// This file. The.
+// isAllowedHttpUrl allowlist, the trailing-punctuation trim, span offsets
 // INVITE channel extraction, the newest-first link sheet ordering, and the
 // openAllowedURL suppression latch.
 

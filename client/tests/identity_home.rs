@@ -1,6 +1,5 @@
 //! On-disk and IPC identity strings live only in `src/identity.rs`. A hardcoded
 //! `omairc-poc` elsewhere under `src/` means a second home for the same name.
-//!
 //! `omairc-poc` may remain in `identity.rs` (and this test) when the `dev`
 //! feature is enabled. The cargo binary is `omairc` and is not an exception.
 

@@ -1,5 +1,4 @@
 //! Posts one local file to a FILEHOST endpoint and returns the absolute link.
-//! Ports `tui/internal/filehost/upload.go`.
 
 use std::fs;
 use std::io::Read;

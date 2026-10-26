@@ -8,7 +8,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
-// This file ports the auto-away runtime behavior. It drives the runtime with
+// This file.
 // a recording AutoawayHost and a FakeClock, and uses real registered sessions
 // on loopback transports so AWAY/ClearAway frames are observable.
 

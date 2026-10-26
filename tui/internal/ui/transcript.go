@@ -13,7 +13,7 @@ import (
 
 // headerTailGutter is the blank band left between the transcript header's
 // right-aligned tail and the member column joined immediately after it. The band
-// spans transcriptWidth(), so the tail stops short of the member panel's border.
+// spans transcriptWidth, so the tail stops short of the member panel's border.
 const headerTailGutter = 2
 
 // isMentionRow reports whether a message renders as a full-width wash band. Only
@@ -149,7 +149,7 @@ func (m *Model) transcriptRowTotal() int {
 	return len(m.ctrl.Messages())
 }
 
-// transcriptView renders the selected conversation: its pinned header,
+// transcriptView renders the selected conversation: its pinned header
 // then either the Status console lines when the console is open or the live
 // transcript. The header stays put while the rows scroll, mirroring
 // `client/src/ui/center/`'s fixed conversationHeader above its scrolling
@@ -306,9 +306,9 @@ func (m *Model) transcriptLines() ([]string, int) {
 // a surface rather than a banner.
 const topicBarTint = 0.20
 
-// topicHeaderLine renders one topic band: the plain topic on the left and,
+// topicHeaderLine renders one topic band: the plain topic on the left and
 // right-aligned, the "↓ new" jump marker while a jump is armed. The band spans
-// transcriptWidth(), so the tail ends headerTailGutter cells short of the member
+// transcriptWidth, so the tail ends headerTailGutter cells short of the member
 // column that follows instead of touching it. A long topic is truncated so the
 // tail stays visible.
 func (m *Model) topicHeaderLine(topic string) string {
@@ -347,7 +347,7 @@ func (m *Model) headerBand(content string, withMarker bool) string {
 		}
 	}
 	content = ellipsizeLine(content, width)
-	// The band is the block's own background, so it covers the caption, the gap,
+	// The band is the block's own background, so it covers the caption, the gap
 	// and the padding out to the column edge rather than stopping at the text.
 	return m.styles.TopicBar.Width(width).Render(content)
 }
@@ -358,7 +358,6 @@ func (m *Model) headerBand(content string, withMarker bool) string {
 // their own line at the body column. It is display-only: transcriptRowTexts
 // keeps one entry per controller message, and the footer sits past every
 // message index.
-//
 // The dots never extend the peer's message line. A message row is one entry
 // that can hold several physical lines once the body wraps, so appending to it
 // left the dots glued to the last word of the body. Qt's typingRow hides the
@@ -381,7 +380,7 @@ func (m *Model) appendTranscriptTypingFooter(area transcriptRows) transcriptRows
 	return area
 }
 
-// transcriptWindow returns the [start, end) slice of lines the viewport shows,
+// transcriptWindow returns the [start, end) slice of lines the viewport shows
 // counting transcriptScroll as the number of lines hidden below the window.
 func (m *Model) transcriptWindow(n, height int) (int, int) {
 	maxOffset := n - height
@@ -707,7 +706,7 @@ func (m *Model) pinTranscriptToRow(row int) {
 
 // pinTranscriptToText scrolls so the message text stays lead lines below the
 // viewport start. lead is the chrome that was above that text when the reader
-// stopped: a date rule removed from this row, or inserted above the view,
+// stopped: a date rule removed from this row, or inserted above the view
 // changes where the text line sits, and subtracting the saved lead keeps the
 // text on the same screen line. A lead equal to the row's current prefix puts
 // the block itself at the top, which is what pinTranscriptToRow asks for.
@@ -994,7 +993,7 @@ func shiftedResumeRow(messages []controller.MessageSnapshot, sequence int64, row
 	return shifted
 }
 
-// firstRowBelowViewport is the first message row that is not fully on screen,
+// firstRowBelowViewport is the first message row that is not fully on screen
 // or -1 when every row already fits. A row taller than the viewport is already
 // the top line, so the advance is the row after it. The typing footer is not
 // a row.
@@ -1056,7 +1055,7 @@ func (m *Model) unseenMarker() string {
 	return m.styles.UnseenJump.Render("↓ new")
 }
 
-// renderMessageBody renders a message body with its IRC emphasis (bold,
+// renderMessageBody renders a message body with its IRC emphasis (bold
 // italic, underline) applied to the body portion only. The author/timestamp
 // prefix is rendered by the caller, so a bold run can never leak into it.
 // Control codes never reach the output: a body with no emphasis just renders

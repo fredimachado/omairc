@@ -1,8 +1,6 @@
 //! Which surfaces an event dirtied: the reducer maps each event to the
 //! `ViewNotify` set the shell repaints, reading presence and membership after the
 //! fold.
-//!
-//! Port of `tui/internal/irc/viewnotify.go` `ClassifyViewNotify` and its helpers
 //! (`classifyViewNotifyUnchecked`, `ChannelNamesSyncing`).
 //! The surface presets are in `irc/viewnotify.rs`.
 
@@ -53,7 +51,7 @@ fn classify_unchecked(event: &Event, reducer: &EventReducer) -> Vec<ViewNotify> 
             }
             let key = reducer.conversation_key(&away.network_id, &away.nick);
             let mut notify = member_row(&key.normalized_target);
-            // A direct message row paints this peer's presence from the same facts,
+            // A direct message row paints this peer's presence from the same facts
             // so the sidebar repaints when their away state lands. Skip the reload
             // when nothing can change.
             let direct_row = reducer

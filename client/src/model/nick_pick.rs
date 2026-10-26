@@ -1,6 +1,6 @@
 //! Nick sheet rows: the channel's members, fuzzy-matched on the nick. Ties
 //! keep panel (PREFIX) order, which is the order `Conversation::members`
-//! already holds. Port of `refreshNickMatches`, `canOpenDirectMessage`, and
+//! already holds.
 //! `firstOpenableNickIndex` in `client/src/ui/shell`.
 
 use super::fuzzy::rank;
@@ -38,7 +38,7 @@ pub fn can_open_direct(nick: &str, self_nick: &str) -> bool {
     !nick.is_empty() && nick != self_nick
 }
 
-/// Where the selection starts when the sheet opens: the first openable row,
+/// Where the selection starts when the sheet opens: the first openable row
 /// or row 0 when none is openable.
 pub fn first_selectable(targets: &[NickTarget], self_nick: &str) -> usize {
     targets

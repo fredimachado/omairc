@@ -37,10 +37,9 @@ type playbackJSONRow struct {
 	Target string `json:"target"`
 }
 
-// PlaybackTimeStore persists the newest server-time per target per network,
+// PlaybackTimeStore persists the newest server-time per target per network
 // mirroring IrcPlaybackTimeStore. Group "playbackTimes/<networkId>", key
 // "times" (a compact JSON array of {"ms":"<millis>","target":"..."}).
-//
 // Like IrcOpenDirectStore it caches loaded rows per network and, when
 // ephemeral, never touches disk. SetEphemeral(true) clears the cache.
 type PlaybackTimeStore struct {
@@ -86,7 +85,7 @@ func (s *PlaybackTimeStore) playbackLoad(networkID string) []playbackEntry {
 	for _, raw := range rawRows {
 		var object map[string]json.RawMessage
 		if err := json.Unmarshal(raw, &object); err != nil {
-			// Not a JSON object; skip it like QJsonValue::isObject().
+			// Not a JSON object; skip it like QJsonValue::isObject.
 			continue
 		}
 		var target string
@@ -141,7 +140,7 @@ func (s *PlaybackTimeStore) playbackSave(networkID string, rows []playbackEntry)
 	settings.Sync()
 }
 
-// playbackEncodeRows renders the compact JSON QJsonDocument::Compact produces,
+// playbackEncodeRows renders the compact JSON QJsonDocument::Compact produces
 // without Go's HTML escaping so the bytes stay close to Qt's.
 func playbackEncodeRows(rows []playbackJSONRow) string {
 	var buffer bytes.Buffer

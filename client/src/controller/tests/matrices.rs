@@ -1,5 +1,5 @@
 //! The feature matrices the verify skill walks, held at frame level. Each test names the
-//! feature row it mirrors in `.cursor/skills/verify-omairc/features/slash-commands.md`,
+//! feature row it mirrors in `.cursor/skills/verify-omairc/features/slash-commands.md`
 //! `slash-complete.md`, or the conversation-cause rules (`.cursor/skills/conversation-cause`).
 //! The typing frames are the composer's `+typing` TAGMSG. Frames come from the loopback, and
 //! the demo answers the way a server would.

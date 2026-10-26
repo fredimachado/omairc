@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// ConversationID builds the stable id for a conversation key: the network id,
+// ConversationID builds the stable id for a conversation key: the network id
 // a newline, then the normalized target. It mirrors ircConversationId.
 func ConversationID(key ConversationKey) string {
 	return key.NetworkID + "\n" + key.NormalizedTarget
@@ -35,7 +35,7 @@ func ParseConversationID(id string) (ConversationKey, bool) {
 // ConversationCauseInserts reports whether a cause may create a conversation.
 // It is ported verbatim from ircConversationCauseInserts: the user opening a
 // query inserts, channel state inserts channels, inbound lines from others
-// insert channels and non-service queries, restore inserts non-service queries,
+// insert channels and non-service queries, restore inserts non-service queries
 // and a local send or a self-authored inbound line never invents anything.
 func ConversationCauseInserts(cause ConversationCause, targetIsChannel, targetLooksLikeService bool) bool {
 	switch cause {

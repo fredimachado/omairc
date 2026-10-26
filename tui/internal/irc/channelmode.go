@@ -1,6 +1,7 @@
 package irc
 
-// This file is the Go port of IrcChannelModeRequest in
+// Parsing a /mode argument into a query or a change, validated against the
+// server's channel types. Twin: `client/src/irc/channelmode.rs`.
 // `client/src/irc/channelmode.rs`: parsing a /mode argument into a query or a
 // change, validated against the server's channel types.
 

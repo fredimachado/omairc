@@ -6,13 +6,11 @@ import "strings"
 // IrcConnection::rosterDisplayName does (`client/src/controller/networks.rs`):
 // the resolved label stands alone unless another network resolves to the same
 // label case-insensitively, in which case a non-empty nick disambiguates it.
-//
 // label is the already-resolved (trimmed) name; callers pass
 // IrcNetworkProfile::resolvedName equivalent. otherLabels holds every other
 // registered network's resolved label; the label's own network must be
 // excluded by the caller, exactly as the C++ loop skips the profile's own
 // networkId.
-//
 // The middle dot is U+00B7, the same separator the Qt roster uses.
 func RosterDisplayName(label, nick string, otherLabels []string) string {
 	if label == "" {

@@ -1,10 +1,7 @@
-//! Port of `tui/internal/irc/conversation.go`
 //! and the conversation-cause rules of `tui/internal/irc/reducer.go`.
-//!
 //! The stable conversation id, the cause table behind `ensure_conversation`, the
 //! service-target test, and the neighbor pick after a row is dropped. The sidebar
 //! order (`SidebarOrder`) reads reducer state, so it lands with the reducer.
-//!
 //! The cause table is the contract. `.cursor/skills/conversation-cause` states it
 //! for the Qt side, and `IrcConversationCause::inserts` is the only place this
 //! port decides whether a cause may create a row.
@@ -38,7 +35,6 @@ pub fn target_looks_like_service(target: &str, features: &IrcServerFeatures) -> 
 
 impl IrcConversationCause {
     /// Whether this cause may create a conversation (`ircConversationCauseInserts`).
-    ///
     /// | cause | inserts |
     /// |---|---|
     /// | `QuietSend`, `InboundSelf` | never |

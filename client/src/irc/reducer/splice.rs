@@ -1,11 +1,9 @@
 //! The replay half of the reducer: where a bouncer or CHATHISTORY batch lands in
 //! a transcript, the msgid and membership dedup it runs, and the queue that holds
 //! a batch until its conversation (or its join) exists.
-//!
-//! Port of `tui/internal/irc/reducer.go` (Go: `spliceHistory`, `peekSpliceIndex`,
-//! `takeSpliceIndex`, `holdPendingPlayback`, `absorbPendingQueryPlayback`,
-//! `releasePendingPlayback`, `dropPendingPlayback`, `dropKeptPlayback`,
-//! `ReleasePendingQueryPlayback`, `PlaybackBatchKept`, `reduceHistory`,
+//! `takeSpliceIndex`, `holdPendingPlayback`, `absorbPendingQueryPlayback`
+//! `releasePendingPlayback`, `dropPendingPlayback`, `dropKeptPlayback`
+//! `ReleasePendingQueryPlayback`, `PlaybackBatchKept`, `reduceHistory`
 //! `insertMessages`) and of `tui/internal/irc/reducer.go`.
 
 use chrono::{DateTime, Utc};
@@ -42,7 +40,7 @@ struct PendingNote {
 }
 
 /// Where a batch's next line lands without consuming the anchor
-/// (`peekSpliceIndex`). A direct message, or a joined channel with no anchor,
+/// (`peekSpliceIndex`). A direct message, or a joined channel with no anchor
 /// splices at the tail. An unjoined channel with no anchor cannot splice.
 pub(super) fn peek_splice_index(conv: &ConversationState) -> Option<usize> {
     let len = conv.messages.len();

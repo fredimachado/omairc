@@ -1,7 +1,6 @@
-//! Port of `tui/internal/session/loopback.go`. The deterministic in-memory
+//! `tui/internal/session/loopback.go`. The deterministic in-memory
 //! `LoopbackTransport` used by the session transport tests
 //! (`client/src/session/tests/transport.rs`).
-//!
 //! The deterministic in-memory transport. Nothing happens on its own: the test
 //! (or, in the PoC, the in-process demo peer) drives every transition through
 //! the control methods below. Delivery is synchronous (rule 10 of the master
@@ -42,7 +41,7 @@ impl LoopbackTransport {
         Self::default()
     }
 
-    /// Installs the hook that runs after every `write` (`frameWritten` in C++).
+ /// Installs the hook that runs after every `write` (`frameWritten`).
     /// It runs with no borrow held, so it may call `inject_bytes`.
     pub fn set_frame_written_hook(&self, hook: FrameWrittenHook) {
         *self.frame_written.borrow_mut() = Some(hook);
@@ -124,7 +123,7 @@ impl LoopbackTransport {
         }
     }
 
-    /// Ends an open connection as if the peer hung up. Emits `disconnected`,
+    /// Ends an open connection as if the peer hung up. Emits `disconnected`
     /// not `error`.
     // test seam: the loopback transport is driven by the tests
     #[cfg(test)]
@@ -264,7 +263,7 @@ impl Transport for LoopbackTransport {
             ) {
                 return;
             }
-            // The C++ loopback passes through Closing, but sets Disconnected in the
+ // The C++ loopback passes through Closing, but sets Disconnected in the
             // same synchronous step before it emits, so no observer sees Closing.
             state.state = ConnectionState::Disconnected;
         }

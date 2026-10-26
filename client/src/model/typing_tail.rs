@@ -1,6 +1,5 @@
 //! Where a DM's typing dots sit, after its last line (`typingFollowsPeerChat`
-//! / `typing_continues`).
-//!
+//! `typing_continues`).
 //! The dots ride under the peer's last line, with no avatar or header, when that
 //! line is a chat line from the peer stamped with the current minute. Otherwise
 //! the dots take an avatar and a nick header of their own.

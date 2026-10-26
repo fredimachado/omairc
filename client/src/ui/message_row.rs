@@ -29,7 +29,7 @@ pub struct RowCallbacks {
     pub self_nick: String,
 }
 
-/// What a row reads about the nicks it names: each nick's facts on the network,
+/// What a row reads about the nicks it names: each nick's facts on the network
 /// whether peer photos show (the `avatars` preference), and the photos the frame draws.
 #[derive(Clone, Default)]
 pub struct RowPeers {
@@ -402,9 +402,9 @@ fn render_message_row(
                                     ),
                             )
                         })
-                        // The body is Qt's TextEdit, whose line is the font's own height: 1.3 em,
+                        // The body is Qt's TextEdit, whose line is the font's own height: 1.3 em
                         // which is 17 at 13px (Qt's 26 physical pixels at 150%). StyledText
-                        // takes its size from the ancestor text style and TextRun carries none,
+                        // takes its size from the ancestor text style and TextRun carries none
                         // so the body sets Qt's 13px and that line height here.
                         .child(
                             div()

@@ -1,13 +1,12 @@
-//! Port of the protocol-error preview of `tui/internal/session/session.go` (Go),
+//! protocol-error preview of `tui/internal/session/session.go` (Go)
 //! `previewWire` and `describeMalformed` in `tui/internal/session/session.go`, and
 //! the registration-sentence reader that feeds server refusals to Status.
-//!
 //! A malformed frame is reported as a protocol error, never a failed session.
 //! Its preview shows printable bytes and '?' for controls. The preview then goes
 //! through `secretpolicy::redact_preview_line`, twice: once with the controls
 //! removed (so a `PASS\x00hunter2` still masks) and once with them as spaces. A
 //! line the redactor masks shows the masked form; one it does not mask shows the
-//! preview as is, which is what the Go and C++ ports do.
+//! preview as is, which is what the Go and C++.
 
 use crate::irc::message::{IrcError, IrcMessage};
 use crate::irc::secretpolicy::redact_preview_line;
@@ -63,7 +62,7 @@ fn preview_wire(preview: &[u8], byte_count: usize, channel_types: &str) -> Strin
 }
 
 /// The trailing sentence of a registration refusal or ERROR, trimmed. A refusal
-/// carries `<client> <nick> :<reason>` (432, 433, 436, 437), `<client> :<reason>`
+/// carries `<client> <nick>:<reason>` (432, 433, 436, 437), `<client>:<reason>`
 /// (451, 462, 465), or any trailing parameter (ERROR). `None` when the sentence
 /// is missing or blank (`registrationSentence`).
 pub(crate) fn registration_sentence(message: &IrcMessage) -> Option<String> {

@@ -37,7 +37,7 @@ impl Controller {
         }
     }
 
-    /// Our own JOIN consumes the channel's invite row, requests channel playback,
+    /// Our own JOIN consumes the channel's invite row, requests channel playback
     /// and selects the channel when it answers the session's pending invite.
     pub(super) fn on_self_join(&mut self, network_id: &str, channel: &str) {
         let mapping = self.reducer.server_features(network_id).case_mapping();

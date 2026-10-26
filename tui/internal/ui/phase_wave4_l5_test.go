@@ -102,7 +102,7 @@ func TestListOverlayKeepsRowCap(t *testing.T) {
 	}
 }
 
-// TestShortcutsSheetRendersKeycaps pins the sheet restyle: every group header,
+// TestShortcutsSheetRendersKeycaps pins the sheet restyle: every group header
 // chord, and action from the source table is still rendered, with the chord in
 // a keycap chip (a raised-surface fill).
 func TestShortcutsSheetRendersKeycaps(t *testing.T) {
@@ -133,8 +133,8 @@ func TestShortcutsSheetRendersKeycaps(t *testing.T) {
 	}
 }
 
-// TestSlashMenuFloatsWithSelectedFill pins the inline slash menu's bordered,
-// filled look: the framed menu is one row per hit plus a top and bottom border,
+// TestSlashMenuFloatsWithSelectedFill pins the inline slash menu's bordered
+// filled look: the framed menu is one row per hit plus a top and bottom border
 // the highlighted row carries the selection fill, and every label and usage is
 // still present.
 func TestSlashMenuFloatsWithSelectedFill(t *testing.T) {
@@ -193,7 +193,7 @@ func TestSlashMenuDropsFrameWhenCramped(t *testing.T) {
 }
 
 // TestSlashMenuCapsRowsToTheGrid pins the cap itself: a window too short for
-// every hit shows only what fits above the composer block and one body row,
+// every hit shows only what fits above the composer block and one body row
 // instead of overflowing the frame and scrolling its top off-screen.
 func TestSlashMenuCapsRowsToTheGrid(t *testing.T) {
 	m := resizeModel(t, seededModel(t), defaultWidth, TerminalMinHeight())

@@ -1,5 +1,5 @@
 //! Newest server-time per target per network (`IrcPlaybackTimeStore`). Group
-//! `playbackTimes/<networkId>`, key `times`. Port of `tui/internal/storage/playbacktime.go`.
+//! `playbackTimes/<networkId>`, key `times`.
 
 use std::cell::RefCell;
 use std::collections::HashMap;

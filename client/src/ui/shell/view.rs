@@ -1,7 +1,6 @@
 //! The shell's reads of the controller, and the view the transcript shows. Every value
-//! here comes from `Controller` or from presentation state the shell owns (the composer,
+//! here comes from `Controller` or from presentation state the shell owns (the composer
 //! the sidebar focus, the Connect model). Nothing here writes controller state.
-//!
 //! `sync_view` is the one place the transcript and the composer follow the controller's
 //! selection. Every intent calls it, and so does every change the controller raises as a
 //! surface, so a selection the controller makes on its own (a join, a close, a removal)
@@ -269,7 +268,7 @@ impl Shell {
     }
 
     /// Fills the transcript with the shown view's rows. A Status view shows its log. A
-    /// conversation shows its lines, its "New messages" mark and its people's presence,
+    /// conversation shows its lines, its "New messages" mark and its people's presence
     /// and the list lands at `place`, or at the mark or the end.
     pub fn show_shown_view(&mut self, place: Option<crate::model::scroll_place::SavedPlace>, cx: &mut Context<Self>) {
         match self.shown.status.clone() {

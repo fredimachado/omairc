@@ -101,14 +101,12 @@ type sidebarSlot struct {
 // connection roster and controller snapshots, never a scan of rendered
 // children. A collapsed network keeps its header and hides its groups; the
 // focused header is highlighted so Alt+Left / Alt+Right land somewhere visible.
-//
 // A roster taller than the column scrolls as one window: the focused network
-// header, or else the selected conversation, is kept on screen so a walk,
+// header, or else the selected conversation, is kept on screen so a walk
 // unread jump, or header focus never lands on a clipped row. It mirrors
 // `client/src/ui/shell`'s revealSidebarRow / revealNamedSidebarItem over the
 // sidebarScroll Flickable. A wheel scroll pins sidebarScroll instead, and the
 // next selection change releases that pin so the reveal returns.
-//
 // The view returns inner content lines only: the outer panel card (border and
 // title) is drawn by the frame that embeds this column. The lines are the
 // sidebarVisibleSlots texts, so a click uses the same rows.
@@ -158,7 +156,7 @@ func (m *Model) sidebarVisibleSlots(width, height int) []sidebarSlot {
 			networkID: networkID,
 			line:      m.networkHeader(name, networkID, width),
 		})
-		// A refused nick or registration ERROR is that network's status line,
+		// A refused nick or registration ERROR is that network's status line
 		// the same slot as `NetworkSection`'s liveStatus.
 		if reason := m.ctrl.LastErrorFor(networkID); reason != "" {
 			roster = append(roster, sidebarSlot{
@@ -323,7 +321,7 @@ func (m *Model) sidebarRevealStart(total, height int, headerSpans, rowSpans map[
 // its own row leaves the status room to breathe instead of pushing the inbox pill
 // past the column edge. The chip shows "?" for an empty nick, matching the
 // direct-message identicon. It mirrors `client/src/ui/sidebar/`'s identityFooter
-// (selfNickLabel, selfPresenceLabel, inboxBadge). The footer is visual only;
+// (selfNickLabel, selfPresenceLabel, inboxBadge). The footer is visual only
 // Ctrl+Shift+A reaches the sheet. The build version is not here: it sits at the
 // bottom right of the shell footer, after the shortcut list.
 func (m *Model) identityFooterLines(width int) []string {
@@ -392,7 +390,7 @@ func (m *Model) sidebarDivider(width int) string {
 	return m.styles.Divider.Render(strings.Repeat("─", width))
 }
 
-// networkHeader names a network and carries its collapse chevron, mention pill,
+// networkHeader names a network and carries its collapse chevron, mention pill
 // and unread total pill. A name that does not fit the column ends with an
 // ellipsis; the focused header uses the focus style.
 func (m *Model) networkHeader(name, networkID string, width int) string {
@@ -556,7 +554,7 @@ func (m *Model) conversationRowWidth(row controller.ConversationSnapshot, width 
 }
 
 // avatarGlyph is the sidebar's direct-message avatar. The cell box stays two
-// columns: a Kitty Unicode placeholder when that image has been transmitted,
+// columns: a Kitty Unicode placeholder when that image has been transmitted
 // otherwise the half-block raster, otherwise the nick identicon. Avatars off
 // stays on the identicon. A channel row has no glyph. The glyph is rendered
 // separately from the row text so its trailing reset cannot clear the row style.
@@ -579,7 +577,7 @@ func (m *Model) avatarGlyph(row controller.ConversationSnapshot) string {
 	return m.identiconGlyph(row.Conversation) + " "
 }
 
-// identiconGlyph is the fallback avatar: one cell showing the nick initial,
+// identiconGlyph is the fallback avatar: one cell showing the nick initial
 // nickColor on an avatarFill background, followed by a separating space.
 func (m *Model) identiconGlyph(nick string) string {
 	return lipgloss.NewStyle().

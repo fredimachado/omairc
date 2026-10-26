@@ -28,7 +28,7 @@ func TerminalMinWidth() int {
 }
 
 // TerminalMinHeight returns the smallest terminal height that still renders the
-// normal shell. It reserves a topic header, three scrolling transcript rows,
+// normal shell. It reserves a topic header, three scrolling transcript rows
 // the composer block, and the footer so a topic still leaves three rows to
 // scroll.
 func TerminalMinHeight() int {

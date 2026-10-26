@@ -19,7 +19,7 @@ const deviceAttributesQuery = "\x1b[c"
 
 // probeResult is what one graphics probe learned. replay is keystrokes typed
 // while the probe was reading. dropLate is set only when the wait ends on the
-// timeout without a DA1, and arms a filter for one late graphics reply, DA1,
+// timeout without a DA1, and arms a filter for one late graphics reply, DA1
 // or XTVERSION. partial is the start of one of those sequences the probe
 // already consumed and the filter must finish.
 type probeResult struct {
@@ -43,7 +43,7 @@ type probeScan struct {
 }
 
 // feed reports whether the probe has its DA1 sentinel or has grown past the
-// response budget. A graphics OK does not stop the wait: DA1 is the sentinel,
+// response budget. A graphics OK does not stop the wait: DA1 is the sentinel
 // and the timeout remains the backstop when DA1 never arrives.
 func (s *probeScan) feed(chunk []byte) bool {
 	s.hold = append(s.hold, chunk...)
@@ -210,7 +210,7 @@ func probeID(control string) bool {
 }
 
 // readProbeDeadline writes the probe and reads r until DA1 or the deadline.
-// r must honor SetReadDeadline. Real terminals reject that deadline;
+// r must honor SetReadDeadline. Real terminals reject that deadline
 // ProbeGraphics polls instead.
 func readProbeDeadline(w io.Writer, r interface {
 	io.Reader

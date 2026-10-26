@@ -1,4 +1,4 @@
-//! Polling helpers for the live harness (Qt `waitUntil`).
+//! Polling helpers for the live harness.
 
 use std::thread;
 use std::time::{Duration, Instant};

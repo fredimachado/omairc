@@ -48,7 +48,7 @@ type graphicsOp struct {
 	remove bool
 }
 
-// QueryEscape is the startup graphics probe: a 1x1 black RGB pixel with a=q,
+// QueryEscape is the startup graphics probe: a 1x1 black RGB pixel with a=q
 // which a supporting terminal answers with OK and does not store.
 func QueryEscape() string {
 	return apc(fmt.Sprintf("i=%d,s=1,v=1,a=q,t=d,f=24", probeImageID), "AAAA")
@@ -100,7 +100,7 @@ func DeleteImage(id uint32) string {
 
 // Placeholder renders rows*cols Unicode placeholder cells for id. The image id's
 // low 24 bits are the foreground color. Each cell is U+10EEEE plus the row
-// diacritic and the column diacritic. A multi-row result contains newlines;
+// diacritic and the column diacritic. A multi-row result contains newlines
 // the sidebar glyph uses a single row.
 func Placeholder(id uint32, cols, rows int) string {
 	if id == 0 || cols <= 0 || rows <= 0 {
@@ -176,7 +176,6 @@ func splitBase64(payload string, size int) []string {
 // rejects SetReadDeadline, and a blocked read would steal later input.
 // Support is never inferred from TERM. WezTerm is a separate opt-out:
 // it answers a=q and does not draw Unicode placeholders.
-//
 // The second result replaces stdin when the probe has keystrokes to replay
 // or a late Kitty reply to discard. That reader is a pipe, so this function
 // keeps the real terminal in raw mode until the reader is closed. A nil
@@ -222,7 +221,7 @@ func ReadGraphicsSupport(w io.Writer, r interface {
 	return readProbeDeadline(w, r, timeout).supported
 }
 
-// probeQueries is the startup write: XTVERSION, then the graphics query,
+// probeQueries is the startup write: XTVERSION, then the graphics query
 // then DA1. One write keeps the replies inside the probe. XTVERSION goes
 // first so a terminal that answers in order has identified itself before
 // the graphics OK is complete. DA1 is the sentinel: when it arrives, the

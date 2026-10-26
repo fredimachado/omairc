@@ -1,12 +1,10 @@
-//! Port of `tui/internal/session/sts.go`: the
+//! the
 //! `sts` capability value, the policy cache's contract and its group key.
-//!
 //! A server advertises `sts=port=N,duration=S` in CAP. A plaintext session that sees a port
 //! upgrades to TLS on it; a TLS session caches the policy for `duration` seconds, so the next
 //! start connects securely even when the profile says plaintext. The cache is a `StsStore`:
 //! `MemoryStsStore` here, and the Qt-compatible INI file in `storage/stspolicies.rs`. The
 //! store takes `now` as a parameter, so expiry is deterministic under a fake clock.
-//!
 //! The session side (upgrade, reconnect, expiry on disconnect) is in `stsflow.rs`.
 
 use std::cell::RefCell;

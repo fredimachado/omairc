@@ -1,5 +1,5 @@
 //! Replay splicing, msgid dedup, channel-context delivery, the log round trip, and
-//! the CHATHISTORY page rules. Ports of `reducer_test.go` and `history_page_test.go`.
+//! the CHATHISTORY page rules.
 
 use super::*;
 use crate::irc::event::{HistoryKind, MessageKindTag, MsgId, ReplayLine};

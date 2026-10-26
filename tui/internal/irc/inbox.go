@@ -205,7 +205,7 @@ func (in *Inbox) consumeMatching(match func(InboxItem) bool) {
 	in.items = kept
 }
 
-// trimToCap drops the oldest entries until the list fits MaxInboxItems,
+// trimToCap drops the oldest entries until the list fits MaxInboxItems
 // mirroring IrcInbox::trimToCap.
 func (in *Inbox) trimToCap() {
 	for len(in.items) > MaxInboxItems {

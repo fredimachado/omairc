@@ -2,7 +2,6 @@
 //! `IrcStsStore` writes in Qt (`tui/internal/session/sts.go`). Each host is one group, named by its
 //! `sts_group_key`, holding `port`, `duration` and `expiry` (epoch seconds). Qt and the PoC read
 //! and write the same entries.
-//!
 //! The file goes through `Settings`, so a malformed or unreadable file is never overwritten. Each
 //! write then restricts the file to its owner, as `restrictPermissions` does.
 

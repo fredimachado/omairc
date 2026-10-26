@@ -7,8 +7,8 @@ import (
 )
 
 // ConversationSnapshot is one sidebar row. The fields mirror the roles
-// ConversationListModel exposes (`client/src/controller/snapshots.rs`): conversation,
-// unread, mention, direct, networkId, conversationId, conversationName, typing,
+// ConversationListModel exposes (`client/src/controller/snapshots.rs`): conversation
+// unread, mention, direct, networkId, conversationId, conversationName, typing
 // muted, presence, avatar, bot.
 type ConversationSnapshot struct {
 	Conversation     string
@@ -41,7 +41,7 @@ type MessageSnapshot struct {
 }
 
 // MemberSnapshot is one member-panel row of the selected channel. The fields
-// mirror the roles MemberListModel exposes (`client/src/controller/snapshots.rs`),
+// mirror the roles MemberListModel exposes (`client/src/controller/snapshots.rs`)
 // including BotRole.
 type MemberSnapshot struct {
 	Nick    string
@@ -55,7 +55,7 @@ type MemberSnapshot struct {
 	Labels   []string
 }
 
-// PeerHeader is the direct-message header: presence, meaningful real name,
+// PeerHeader is the direct-message header: presence, meaningful real name
 // and the short account, operator, and bot labels. Nick is the display nick.
 type PeerHeader struct {
 	Nick     string
@@ -92,11 +92,11 @@ func (c *Controller) Messages() []MessageSnapshot {
 }
 
 // UnreadMarkRow reports the transcript row the "New messages" boundary sits
-// above: the index into Messages() of the message whose sequence equals the
+// above: the index into Messages of the message whose sequence equals the
 // conversation's unread mark. It returns -1 when there is no mark, or when the
 // mark is on the first row and that row has no date rule above it. A leading
 // date gives the boundary something to separate from, matching
-// MessageListModel::buildView's !view.empty() guard.
+// MessageListModel::buildView's !view.empty guard.
 func (c *Controller) UnreadMarkRow() int {
 	if c.selected == nil {
 		return -1

@@ -1,19 +1,17 @@
 //! The dead-code ratchet. A lint attribute that silences `dead_code` silences the
 //! compiler's proof that an item has no caller, so each one under `src/` and `tests/`
 //! must say why it stays, and the total may only fall. The counted attributes are
-//! `allow` and `expect`, outer or inner (`#[...]`, `#![...]`), and one inside `cfg_attr`,
+//! `allow` and `expect`, outer or inner (`#[...]`, `#![...]`), and one inside `cfg_attr`
 //! that name `dead_code` or a lint that silences it: the `unused` group and `warnings`.
 //! A specific lint such as `unused_imports` does not silence `dead_code`, so it is not
 //! counted:
-//!
-//! - every such attribute (`#[allow(dead_code)]`, `#[expect(unused)]`, `#![allow(unused)]`,
+//! - every such attribute (`#[allow(dead_code)]`, `#[expect(unused)]`, `#![allow(unused)]`
 //!   the same with more lints, or one inside `cfg_attr`) needs a plain `//` line comment
 //!   directly above it, skipping other attribute lines, or after its `]` on the same
-//!   line. A doc comment does not count: it describes the item, not the lint;
+//! line. A doc comment does not count: it describes the item, not the lint
 //! - `MAX_ALLOWS` is the count the tree holds. A new one pushes the count past it and
 //!   fails. A removed one leaves the count under it and fails until `MAX_ALLOWS` is
 //!   lowered, so the slack cannot be spent on a later one.
-//!
 //! The scan reads code with comments blanked (`common::read_code`), then blanks the
 //! contents of string, raw string and char literals, so an attribute named in a string
 //! or a comment is not an allow. `vendor/` is third-party code and is not scanned.
@@ -102,7 +100,7 @@ fn silences_dead_code(lint: &str) -> bool {
     SILENCERS.contains(&name)
 }
 
-/// Whether `text` is a plain `//` line comment with words in it. A doc comment (`///`,
+/// Whether `text` is a plain `//` line comment with words in it. A doc comment (`///`
 /// `//!`) and an empty `//` do not give a reason.
 fn plain_comment(text: &str) -> bool {
     text.strip_prefix("//").is_some_and(|rest| {

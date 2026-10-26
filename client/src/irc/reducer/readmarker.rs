@@ -1,9 +1,7 @@
 //! The reducer's use of the server read marker: a newer marker clears the unread
 //! badges it covers, and the newest server-stamped line stands in for a marker
 //! the server did not send.
-//!
-//! Port of `tui/internal/irc/readmarker.go` (Go: `coveredByReadMarker`,
-//! `ApplyServerReadMarker`, `LatestServerMessageTime`,
+//! `ApplyServerReadMarker`, `LatestServerMessageTime`
 //! `recountUnreadFromReadMarker`) and of `tui/internal/irc/reducer.go`.
 //! The pure time helpers live in `irc/readmarker.rs`.
 

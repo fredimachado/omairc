@@ -24,7 +24,7 @@ func pidAlive(pid int) bool {
 		if err != nil {
 			return false
 		}
-		// "pid (comm) state ...": comm may contain spaces and parens, so read
+		// "pid (comm) state...": comm may contain spaces and parens, so read
 		// the state field after the last ')'.
 		if i := strings.LastIndexByte(string(data), ')'); i >= 0 && i+2 < len(data) {
 			return data[i+2] != 'Z'

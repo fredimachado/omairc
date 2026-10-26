@@ -1,5 +1,5 @@
 //! The Channel open sheet: a click on a channel name the network does not have
-//! yet asks before it joins (`ChannelOpenSheet`). Enter joins the channel,
+//! yet asks before it joins (`ChannelOpenSheet`). Enter joins the channel
 //! Escape cancels (the shell's `CloseSheet`), and a press outside the card
 //! cancels too. The card holds focus, so the composer does not take the keys.
 

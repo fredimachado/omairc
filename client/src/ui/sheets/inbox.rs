@@ -1,8 +1,7 @@
-//! The Inbox sheet (`Ctrl+Shift+A`, and the footer `inbox` link). Port of
+//! The Inbox sheet (`Ctrl+Shift+A`, and the footer `inbox` link).
 //! `InboxSheet`: no filter, `Nothing waiting` when empty, 36px rows with a
-//! label, an optional muted preview, and a `delete` button. Keys are Up, Down,
+//! label, an optional muted preview, and a `delete` button. Keys are Up, Down
 //! Enter and Delete; Escape is the shell's `CloseSheet`.
-//!
 //! The sheet keeps a snapshot of the shell's inbox for its rows and keys. It
 //! never edits the inbox: it emits `InboxEvent`s, the shell applies them to the
 //! real inbox, and then pushes the new snapshot back through `sync`.
@@ -35,11 +34,11 @@ pub fn bind_inbox_keys(cx: &mut App) {
     cx.bind_keys(bindings);
 }
 
-/// Sheet width in logical pixels (Qt `404`).
+/// Sheet width in logical pixels.
 const WIDTH: f32 = 404.;
-/// One row's height in logical pixels (Qt `36`).
+/// One row's height in logical pixels.
 const ROW_HEIGHT: f32 = 36.;
-/// The list is capped at this height (Qt `252`).
+/// The list is capped at this height.
 const LIST_CAP: f32 = 252.;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -211,7 +210,7 @@ pub fn render_inbox_sheet(sheet: &Entity<InboxSheet>, cx: &App) -> AnyElement {
     .into_any_element()
 }
 
-/// Qt's `delete` button: 44×24, radius 5, a divider border, a 10px muted label,
+/// Qt's `delete` button: 44×24, radius 5, a divider border, a 10px muted label
 /// and `hover` behind an ink label while the pointer is over it. It is not
 /// focusable, so pressing it leaves the keyboard on the sheet.
 fn delete_button(style: &Style) -> gpui::Div {

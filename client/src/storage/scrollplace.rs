@@ -1,7 +1,5 @@
-//! Port of `tui/internal/storage/scrollplace.go`
 //! Where each conversation's transcript was last left, stored per network as one
 //! JSON array in the `scrollPlaces/<network>` group, under the `places` key.
-//!
 //! A place is either "follow the end" or an anchor on the first visible message. The
 //! anchor is the message's msgid when the server gave one, else its author, kind, body
 //! and server time (`ms`). The JSON keys are sorted, as a `QJsonObject` writes them, so

@@ -1,7 +1,6 @@
 //! The single-instance guard and the server that answers the product CLI.
 //! Desktop-only (no Go twin). The first window owns the endpoint and serves it. A second
 //! launch sends the raise ping and exits, as Qt's `acquireOrNotify` does.
-//!
 //! The listener runs on background threads, one per client, and never touches the controller. Each
 //! request crosses to the UI thread as an `IpcJob` on a channel. The window drains that channel on its
 //! own gpui loop (`ipchandler::serve`), so every intent and read runs where the controller lives.
@@ -168,7 +167,6 @@ fn notify_running(endpoint: &Endpoint) -> io::Result<Startup> {
 }
 
 /// Sends the raise ping to the running window. True when the ping was written.
-///
 /// The notifier then holds the connection until the window answers or the wait runs out. A pipe can
 /// drop bytes that the writer closes before the reader takes them, so closing at once is not safe.
 pub fn notify_primary(endpoint: &Endpoint) -> bool {

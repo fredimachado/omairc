@@ -72,8 +72,8 @@ func TestComposerCursorRowMatchesFrame(t *testing.T) {
 
 // TestOverlayCardInterface pins the Wave 3 overlay contract: every overlay has
 // one <name>Card(width) block method that frames through the shared
-// overlayCardBlock, so every card shares one outer width and one panel border,
-// and overlayCard() returns that same block.
+// overlayCardBlock, so every card shares one outer width and one panel border
+// and overlayCard returns that same block.
 func TestOverlayCardInterface(t *testing.T) {
 	m := seededModel(t)
 	wantWidth := m.width - 2*overlayCardInset
@@ -97,7 +97,7 @@ func TestOverlayCardInterface(t *testing.T) {
 		}
 	}
 
-	// overlayCard() delegates to the open overlay's card method.
+	// overlayCard delegates to the open overlay's card method.
 	m.openJump()
 	card, ok := m.overlayCard()
 	if !ok || card != m.jumpCard(m.width) {

@@ -1,6 +1,6 @@
 //! Inbound lines over the real demo: unread and mention counts, the notifier, and
-//! the session inbox. Ports `tui/internal/controller/phase9_inbox_test.go`
-//! (`TestInboxMentionArrivalAppendsSnapshot`, `TestInboxConsumedOnSelect`,
+//! the session inbox.
+//! (`TestInboxMentionArrivalAppendsSnapshot`, `TestInboxConsumedOnSelect`
 //! `TestInboxInviteAppendActivateJoins`) and `TestBackgroundChatBumpsConversationEpoch`.
 
 use crate::controller::notify::Arrival;

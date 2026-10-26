@@ -1,5 +1,4 @@
-//! Port of `tui/internal/session/history_after_test.go` and
-//! `history_before_test.go`: the CHATHISTORY LATEST, AFTER and BEFORE requests,
+//! `history_before_test.go`: the CHATHISTORY LATEST, AFTER and BEFORE requests
 //! the AFTER chain, TARGETS, and the failure paths.
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};

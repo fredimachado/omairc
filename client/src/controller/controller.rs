@@ -1,8 +1,5 @@
-//! Port of `tui/internal/controller/controller.go`.
-//!
 //! The controller owns the session manager, the event reducer, the Status console
 //! and the session inbox. Its pipeline is one way:
-//!
 //! 1. A `Transport` delivers bytes to its `Session`, which parses them and queues
 //!    `SessionEvent`s.
 //! 2. `pump` drains every session's queue. Inbound lines go through the Status
@@ -10,8 +7,7 @@
 //!    the `EventReducer`.
 //! 3. The reducer's `ViewNotify` surfaces queue up. The shell drains them with
 //!    `take_notifications` and repaints.
-//!
-//! Intents (`select_conversation`, `send_to_target`, `start`, ...) run on the UI
+//! Intents (`select_conversation`, `send_to_target`, `start`,...) run on the UI
 //! thread, write to the session, and pump the events the write produced. The
 //! loopback delivers synchronously, so a demo reply is queued before the intent
 //! returns. Nothing here depends on gpui.
@@ -384,7 +380,7 @@ impl Controller {
     }
 
     /// Whether `network_id` can be disconnected: its session is live or reconnecting, so
-    /// Disconnect has something to stop (Qt `IrcConnection::canDisconnect`). Connecting
+    /// Disconnect has something to stop. Connecting
     /// counts as live, as it does in Qt. False for a network with no session.
     pub fn can_disconnect(&self, network_id: &str) -> bool {
         self.manager.is_live(network_id)

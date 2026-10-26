@@ -52,8 +52,7 @@ func (m *Model) memberFrameLabel() string {
 // sorts. A focused member row carries an accent bar and was chosen with
 // Ctrl+Shift+P. The count and the focused position live on the card's edges
 // (memberFrameTitle / memberFrameLabel), so this returns member rows only.
-//
-// A roster taller than the panel scrolls as one window: Page Up/Down, Home/End,
+// A roster taller than the panel scrolls as one window: Page Up/Down, Home/End
 // and the arrow keys move the member cursor, and the window slides to keep the
 // focused row visible, mirroring the QML ListView's highlightFollowsCurrentItem.
 // memberSlot is one inner line of the member column. index is the member the
@@ -174,7 +173,7 @@ func (m *Model) toggleMembers() {
 }
 
 // memberRow renders one member as one or two physical lines: the chrome line
-// (focus bar, presence dot, PREFIX label, bot mark, account, typing dots) and,
+// (focus bar, presence dot, PREFIX label, bot mark, account, typing dots) and
 // when the network advertises member status, a muted status subline indented
 // under the label. It mirrors `client/src/ui/members/member_row.rs`.
 // Each sub-line is its own entry so

@@ -1,10 +1,9 @@
-//! Port of `tui/internal/session/labeledresponse_test.go`, session-level half.
-//!
+//! `tui/internal/session/labeledresponse_test.go`, session-level half.
 //! The Go tests read the request label off each Status entry and assert the
 //! routed text ("No such nick: lena"). That routing is the Phase 3 Status
 //! recorder's job, so those text assertions are left out. What stays here: the
 //! label on each written frame, the pending-label count and membership, the
-//! `RequestLabelFinished` events, the batch that closes a label, the timeouts,
+//! `RequestLabelFinished` events, the batch that closes a label, the timeouts
 //! and the open-batch budget.
 
 use std::time::Duration;

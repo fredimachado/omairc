@@ -1,4 +1,4 @@
-//! The saved scroll place over the seeded transcript. Ports the controller cases behind
+//! The saved scroll place over the seeded transcript.
 //! `tui/internal/controller/scrollplace.go`: a place is remembered for the selected
 //! conversation and found again by its anchor, a bottom pin is kept as `follow`, the
 //! Status console saves nothing, and an anchor outside the transcript is not saved.

@@ -1,4 +1,4 @@
-//! The macOS login keychain, through `security-framework`'s generic passwords. Port of
+//! The macOS login keychain, through `security-framework`'s generic passwords.
 //! `tui/internal/storage/secretservice_darwin.go`, which shells out to the `security` tool: the
 //! service is `omairc` and the account is the key name, the entry QtKeychain writes.
 

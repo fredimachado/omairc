@@ -57,7 +57,7 @@ func AvatarHTTPTransferEncodingIsChunked(headerBlock []byte) bool {
 // bytes. It mirrors ircAvatarHttpDecodeChunkedBody (`client/src/irc/avatarhttp.rs`):
 // each chunk is a hex size line, the chunk bytes, and a trailing CRLF; a
 // zero-size chunk terminates the body. The bool is the C++ ok out-parameter:
-// false for a missing CRLF, an unparsable or negative size, a truncated chunk,
+// false for a missing CRLF, an unparsable or negative size, a truncated chunk
 // a missing chunk delimiter, or a body that never reaches a zero-size chunk.
 func AvatarHTTPDecodeChunkedBody(raw []byte) ([]byte, bool) {
 	output := []byte{}

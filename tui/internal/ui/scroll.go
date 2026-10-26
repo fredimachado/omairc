@@ -21,7 +21,7 @@ func (m *Model) rememberOpenTranscript() {
 	m.ctrl.RememberScrollPlace(false, row)
 }
 
-// firstVisibleMessageRow is the Messages() index at the top of the viewport.
+// firstVisibleMessageRow is the Messages index at the top of the viewport.
 func (m *Model) firstVisibleMessageRow() int {
 	if m == nil || m.ctrl == nil {
 		return 0
@@ -79,7 +79,7 @@ func (m *Model) applyRememberedTranscript() string {
 		m.pinTranscriptToRow(place.Row)
 		return "applied"
 	}
-	// The line is not loaded. Show the last page without entering follow,
+	// The line is not loaded. Show the last page without entering follow
 	// which would drop the history page cap, and without writing this
 	// interim page over the anchor.
 	m.scrollRestorePending = true

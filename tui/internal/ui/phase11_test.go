@@ -13,7 +13,7 @@ import (
 )
 
 // TestPreferencesTabSharesControllerPrefs proves the Connect sheet's
-// Preferences tab reads and writes the controller's single preference source,
+// Preferences tab reads and writes the controller's single preference source
 // so /pref and the sheet can never disagree. It mirrors the Phase 11 collapse
 // of the connection's duplicate preference bools.
 func TestPreferencesTabSharesControllerPrefs(t *testing.T) {

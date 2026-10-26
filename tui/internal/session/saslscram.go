@@ -61,7 +61,6 @@ const (
 // message, TakeServerFirst produces client-final, and TakeServerFinal verifies
 // the server signature. Messages are raw SCRAM bytes; encodeSASLFrames in this
 // file applies SASL base64 framing.
-//
 // The zero value is an idle client, but NewSASLScram is the documented
 // constructor.
 type SASLScram struct {
@@ -116,7 +115,7 @@ func (c *SASLScram) Start(account, password string, clientNonce []byte) ScramRes
 	return scramSuccess(response)
 }
 
-// TakeServerFirst consumes the server-first message and returns client-final,
+// TakeServerFirst consumes the server-first message and returns client-final
 // including the client proof.
 func (c *SASLScram) TakeServerFirst(message []byte) ScramResult {
 	if c.step != scramAwaitServerFirst {
@@ -336,7 +335,7 @@ func keyListed(allowed string, key byte) bool {
 }
 
 // parseIterationCount parses the 'i' attribute. All bytes must be digits, the
-// value must fit an int64, and it must fall inside [minIterations,
+// value must fit an int64, and it must fall inside [minIterations
 // maxIterations].
 func parseIterationCount(text []byte) (int, string) {
 	if len(text) == 0 {
@@ -392,7 +391,7 @@ func isBase64Byte(value byte) bool {
 
 // containsUnsendable reports whether a UTF-8 string carries NUL, CR, or LF.
 // Those cannot ride an IRC line, so the exchange is refused before any
-// credential is used. Ported from `client/src/session/saslscram.rs`.
+// credential is used.
 func containsUnsendable(text string) bool {
 	for index := 0; index < len(text); index++ {
 		switch text[index] {
@@ -417,7 +416,7 @@ func acceptableNonce(nonce []byte) bool {
 	return true
 }
 
-// generateNonce returns 16 random bytes base64-encoded. A failure returns nil,
+// generateNonce returns 16 random bytes base64-encoded. A failure returns nil
 // which acceptableNonce then rejects.
 func generateNonce() []byte {
 	raw := make([]byte, 16)
@@ -477,7 +476,7 @@ func scramSuccess(message []byte) ScramResult {
 
 // The AUTHENTICATE framing helpers mirror `encode_sasl_frames` and
 // `ChallengeBuffer` in `client/src/session/saslscram.rs`. The two helpers below
-// are unexported and are only a private mirror for the session wave to adopt;
+// are unexported and are only a private mirror for the session wave to adopt
 // they are not part of the cross-package contract yet.
 const (
 	saslAuthenticateChunk    = 400

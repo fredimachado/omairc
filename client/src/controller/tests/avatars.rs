@@ -1,7 +1,7 @@
 //! The avatar fetch, frame by frame. The demo's METADATA reaches the fetch decision,
 //! the job runs through the `HttpFetch` seam, and the outcome reaches the photo the
-//! controller answers. Go `tui/internal/avatar/avatar_test.go` and Qt
-//! `tests/tst_ircavatarstore.cpp` are the spec; the URLs are the demo's own.
+//! controller answers. Go `tui/internal/avatar/avatar_test.go` is the twin; the URLs
+//! are the demo's own.
 
 use std::io::Cursor;
 use std::sync::Arc;

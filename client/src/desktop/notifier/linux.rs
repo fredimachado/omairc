@@ -1,4 +1,4 @@
-//! freedesktop Notifications over the session D-Bus. Port of `notify_linux.go` and
+//! freedesktop Notifications over the session D-Bus.
 //! `Backend::notifyDesktop` on Linux.
 
 use std::collections::HashMap;

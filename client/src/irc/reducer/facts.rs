@@ -1,20 +1,15 @@
-//! The per-network facts the reducer folds events against: ISUPPORT features,
-//! the current and remembered nicks, highlight words, presence, the selection,
+//! The per-network facts the reducer folds events against: ISUPPORT features
+//! the current and remembered nicks, highlight words, presence, the selection
 //! the log and the mute and close marks. Plus the identity and mention queries
 //! that read them.
-//!
-//! Port of the `EventReducer` fields and their queries in `tui/internal/irc/reducer.go`
-//! (Go: `ensure`, `ServerFeatures`, `normalize`, `equals`, `isSelf`,
-//! `isMention`, `isNickMention`, `isHighlightHit`, `containsWord`,
-//! `presenceOf`, `NickPresence`, `DisplayAccount`, `PeerFactLabels`,
-//! `bouncerQueryOwnLine`, `bouncerChannelOwnLine`, `replayFromPeer`,
+//! (Go: `ensure`, `ServerFeatures`, `normalize`, `equals`, `isSelf`
+//! `isMention`, `isNickMention`, `isHighlightHit`, `containsWord`
+//! `presenceOf`, `NickPresence`, `DisplayAccount`, `PeerFactLabels`
+//! `bouncerQueryOwnLine`, `bouncerChannelOwnLine`, `replayFromPeer`
 //! `replayOnlyRepeatsPersistedIds`, `rememberSelfNick`) and of
-//! `tui/internal/irc/reducer.go`.
-//!
 //! Every field is `pub(super)`: the reducer's handlers borrow `Facts` next to a
 //! conversation (a disjoint field borrow of the same `EventReducer`), so they
 //! can mutate a row and read a fact in the same step.
-//!
 //! Normalization is `IrcCaseMapping::normalize` alone. Go wraps it in `WireText`
 //! to undo a byte-level decode, and a Rust `&str` is already valid UTF-8, so the
 //! wrap is the identity here.

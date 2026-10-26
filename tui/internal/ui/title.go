@@ -16,7 +16,7 @@ type TitleMark struct {
 }
 
 // Title reproduces the Qt window title byte-for-byte from `client/src/ui/shell`:
-// consoleVisible ? statusTitleText() : conversationTitleText(). ConsoleOpen
+// consoleVisible ? statusTitleText: conversationTitleText. ConsoleOpen
 // carries that derivation, including the fall back to Status when nothing is
 // selected, exactly as the Qt shell does on first run. A nil controller has no
 // selection and no focused network, so it renders "Omairc".

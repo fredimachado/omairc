@@ -1,14 +1,10 @@
 //! The Secret Service attributes of one saved secret, shared by the Linux store and
 //! its tests (the tests run on every platform).
-//!
 //! Two clients wrote these items before this one, with different attributes:
-//!
 //! - The Qt client goes through QtKeychain, whose libsecret backend stores
 //!   `user=<key name>`, `server=omairc` and `type=plaintext` (or `base64`) under the
 //!   `org.qt.keychain` schema (`qtkeychain/libsecret.cpp`).
 //! - The TUI and earlier builds of this client store `service=omairc` and
-//!   `username=<key name>`.
-//!
 //! A read tries both sets, so a password the Qt client saved survives the switch. A
 //! write stores one item that carries both sets, so the Qt client (after a rollback)
 //! and the TUI still find it, then drops the older single-set copies.
@@ -69,7 +65,7 @@ pub fn is_written(attributes: &HashMap<String, String>, key_name: &str) -> bool 
         .all(|(name, value)| attributes.get(*name).map(String::as_str) == Some(*value))
 }
 
-/// The password an item holds. A QtKeychain item saved in binary mode keeps base64 text;
+/// The password an item holds. A QtKeychain item saved in binary mode keeps base64 text
 /// any other item keeps the UTF-8 password itself.
 pub fn decode_secret(secret: &[u8], attributes: &HashMap<String, String>) -> String {
     if attributes.get(QT_ATTRIBUTE_TYPE).map(String::as_str) == Some(QT_TYPE_BASE64) {

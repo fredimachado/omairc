@@ -1,5 +1,5 @@
-//! Port of the SCRAM-SHA-256 cases of `tui/internal/session/session_auth_test.go`:
-//! `TestSessionNegotiatesSaslScramSha256` and the `TestSessionScram*` /
+//! SCRAM-SHA-256 cases of `tui/internal/session/session_auth_test.go`:
+//! `TestSessionNegotiatesSaslScramSha256` and the `TestSessionScram*`
 //! `TestSessionAbandonedScram*` family. The Status-entry checks wait for the Phase 3
 //! Status recorder, as in `auth.rs`; the secrecy checks read the session's errors instead.
 
@@ -79,7 +79,7 @@ fn server_first_for(nonce: &str, iterations: &str) -> String {
 }
 
 /// The RFC 7677 server signature for an exchange, recomputed independently of the machine
-/// (`scramServerFinalFor` in `session_test.go`, `scramServerFinal` in `tst_session`).
+/// (`scramServerFinalFor` in `session_test.go`, `scramServerFinal` ).
 fn server_final_for(client_first: &str, server_first: &str) -> String {
     let bare = client_first.strip_prefix("n,,").expect("the n,, prefix");
     let nonce_at = server_first.find("r=").expect("an r= attribute");
@@ -103,7 +103,6 @@ fn hmac_sha256(key: &[u8], message: &[u8]) -> Vec<u8> {
     mac.finalize().into_bytes().to_vec()
 }
 
-/// Ports `TestSessionNegotiatesSaslScramSha256`.
 #[test]
 fn negotiates_sasl_scram_sha_256() {
     assert_eq!(
@@ -177,7 +176,7 @@ fn negotiates_sasl_scram_sha_256() {
     assert!(fx.errors().is_empty(), "errors: {:?}", fx.error_messages());
 }
 
-/// Ports `TestSessionScramNumericBeforeServerFinalFails`. A 903 before the server signature
+/// `TestSessionScramNumericBeforeServerFinalFails`. A 903 before the server signature
 /// verifies is a failure, and nothing registers.
 #[test]
 fn scram_numeric_before_server_final_fails() {
@@ -204,7 +203,6 @@ fn scram_numeric_before_server_final_fails() {
     );
 }
 
-/// Ports `TestSessionScramFailureDoesNotFallThroughToPlain`.
 #[test]
 fn scram_failure_does_not_fall_through_to_plain() {
     let aborts = [
@@ -232,7 +230,7 @@ fn scram_failure_does_not_fall_through_to_plain() {
     }
 }
 
-/// Ports `TestSessionScramPlainReadvertisementDoesNotFinishExchange`. A re-advertised PLAIN
+/// `TestSessionScramPlainReadvertisementDoesNotFinishExchange`. A re-advertised PLAIN
 /// mechanism does not retarget an exchange that already started.
 #[test]
 fn scram_plain_readvertisement_does_not_finish_exchange() {
@@ -270,7 +268,7 @@ fn scram_plain_readvertisement_does_not_finish_exchange() {
     );
 }
 
-/// Ports `TestSessionScramServerFirstIllegalBase64Fails`. A byte outside the base64 alphabet
+/// `TestSessionScramServerFirstIllegalBase64Fails`. A byte outside the base64 alphabet
 /// in the server-first challenge fails the exchange before anything is written.
 #[test]
 fn scram_server_first_illegal_base64_fails() {
@@ -288,7 +286,7 @@ fn scram_server_first_illegal_base64_fails() {
     assert!(!fx.wrote("CAP END\r\n"), "a failed SCRAM must not register");
 }
 
-/// Ports `TestSessionScramSaslReassemblesChunkedMessages`. A client-final longer than one
+/// `TestSessionScramSaslReassemblesChunkedMessages`. A client-final longer than one
 /// chunk is sent as full 400-byte frames and then a bare `+`.
 #[test]
 fn scram_sasl_reassembles_chunked_messages() {
@@ -360,7 +358,7 @@ fn scram_sasl_reassembles_chunked_messages() {
     assert_eq!(fx.session.state(), SessionState::Registering);
 }
 
-/// Ports `TestSessionScramWelcomeBeforeVerifierFails`. A 001 while the exchange is still
+/// `TestSessionScramWelcomeBeforeVerifierFails`. A 001 while the exchange is still
 /// open fails authentication, and a later 903 does not revive it.
 #[test]
 fn scram_welcome_before_verifier_fails() {
@@ -381,7 +379,7 @@ fn scram_welcome_before_verifier_fails() {
     assert!(!fx.wrote("JOIN &local\r\n"));
 }
 
-/// Ports `TestSessionAbandonedScramBeforeAuthenticateRegisters`. A SCRAM exchange that never
+/// `TestSessionAbandonedScramBeforeAuthenticateRegisters`. A SCRAM exchange that never
 /// reached AUTHENTICATE times out with CAP END, registers, and does not IDENTIFY.
 #[test]
 fn abandoned_scram_before_authenticate_registers() {
@@ -420,7 +418,7 @@ fn abandoned_scram_before_authenticate_registers() {
     assert!(fx.wrote("JOIN #omarchy\r\n"), "autojoin missing");
 }
 
-/// Ports `TestSessionScramSaslChunkLimitFails`. An inbound challenge beyond the 4096-byte
+/// `TestSessionScramSaslChunkLimitFails`. An inbound challenge beyond the 4096-byte
 /// limit fails the exchange, and nothing is written.
 #[test]
 fn scram_sasl_chunk_limit_fails() {

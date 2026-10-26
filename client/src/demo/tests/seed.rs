@@ -44,7 +44,7 @@ fn both_networks_resolve_by_id_and_unknown_ids_do_not() {
 
 #[test]
 fn the_parity_channels_hold_their_unread_counts() {
-    // #desktop is three lines unread. #ricing holds twelve: three seeded lines,
+    // #desktop is three lines unread. #ricing holds twelve: three seeded lines
     // eight pads, and the line that mentions fred. The mention is the one
     // parity count that comes from the line text.
     let desktop = channel_named(&OMARCHY_WORLD, "#desktop").expect("#desktop");

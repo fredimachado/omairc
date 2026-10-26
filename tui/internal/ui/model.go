@@ -53,7 +53,7 @@ type MentionArrivalMsg struct{ Author, Body, NetworkID, Target, MsgID string }
 // and MsgID stay empty, mirroring the QML onMonitorArrived handler.
 type MonitorArrivalMsg struct{ NetworkID, Author, Body string }
 
-// NotificationActivatedMsg is a notification activation (body click or Open),
+// NotificationActivatedMsg is a notification activation (body click or Open)
 // mirroring Backend's notificationActivated signal.
 type NotificationActivatedMsg = notify.Activation
 
@@ -109,7 +109,7 @@ type Model struct {
 
 	composer textinput.Model
 
-	// Footer chrome. help renders the contextual chord hint from footerKeyMap;
+	// Footer chrome. help renders the contextual chord hint from footerKeyMap
 	// spinner animates while the focused network is disconnected. spinning
 	// latches the single tick chain so repeated starts cannot multiply frames.
 	help     help.Model
@@ -160,7 +160,7 @@ type Model struct {
 	sidebarWindowPage int
 	sidebarWindowMax  int
 	// membersHidden is the window-level Ctrl+Shift+M state. It survives
-	// channel switches and is moot on a direct message; membersVisible() also
+	// channel switches and is moot on a direct message; membersVisible also
 	// requires the column to fit and the target to be a channel.
 	membersHidden       bool
 	transcriptScroll    int
@@ -206,7 +206,7 @@ type Model struct {
 	// channel or direct message the marker shares an existing header line, so
 	// the height used for that measurement still matches.
 	withinResumeArmCheck bool
-	// transcriptLineCount is the rendered line count of transcriptArea(),
+	// transcriptLineCount is the rendered line count of transcriptArea
 	// including the typing footer. A detached append adds the increase to
 	// transcriptScroll so the top line stays put.
 	transcriptLineCount  int
@@ -248,8 +248,8 @@ type Model struct {
 	list                 channelListState
 
 	// Phase 9 desktop-notification state. notifier is the nil-able desktop
-	// seam (mirroring backend.notifyDesktop); windowActive mirrors win.active;
-	// lastNotification mirrors `client/src/ui/shell`'s lastNotification;
+	// seam (mirroring backend.notifyDesktop); windowActive mirrors win.active
+	// lastNotification mirrors `client/src/ui/shell`'s lastNotification
 	// suppressDesktopNotification is the test latch mirroring the QML
 	// property of the same name.
 	notifier                    notify.Notifier
@@ -269,7 +269,7 @@ type Model struct {
 	statusReturnID string
 
 	// Phase 10 URL policy state. lastOpenedURL mirrors `client/src/ui/shell`'s
-	// lastOpenedUrl (the most recent URL openAllowedURL allowed);
+	// lastOpenedUrl (the most recent URL openAllowedURL allowed)
 	// suppressExternalOpen mirrors suppressExternalUrlOpen, the latch that
 	// keeps tests from launching a real OS handler while still exercising the
 	// allowlist.
@@ -401,7 +401,7 @@ func (m *Model) applyStyles(styles Styles) {
 // filters and the Connect sheet. Those text inputs are built when their sheet
 // opens (or, for Connect, when a field takes focus), so without this a live
 // ThemeChangedMsg would restyle only the composer and leave an already-open
-// sheet on the previous palette. SetStyles keeps each input's value, width,
+// sheet on the previous palette. SetStyles keeps each input's value, width
 // and focus, so the call is behavior-neutral while the sheet is closed.
 func (m *Model) restyleOverlayInputs() {
 	input := m.styles.Input
@@ -492,7 +492,7 @@ func (m *Model) startBackgroundWork() tea.Cmd {
 	var cmds []tea.Cmd
 	if m.spinnerRunning() && !m.spinning {
 		m.spinning = true
-		// Tick is a method value: a func() tea.Msg, i.e. a tea.Cmd.
+		// Tick is a method value: a func tea.Msg, i.e. a tea.Cmd.
 		cmds = append(cmds, m.spinner.Tick)
 	}
 	if m.typingSpinnerRunning() && !m.typingSpinning {
@@ -743,7 +743,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// on top of it, Ctrl+Shift+/ opens About, and Ctrl+C still reaches the copy
 	// path; every other chord is owned by the sheet.
 	if m.connectVisible() {
-		// Apply is window-level, like `client/src/ui/shell`'s Ctrl+Enter shortcut,
+		// Apply is window-level, like `client/src/ui/shell`'s Ctrl+Enter shortcut
 		// not a per-control handler. Check it before the sheet walk consumes
 		// Enter or before Windows VT ctrl+j (Ctrl+Enter) reaches a text field.
 		if isConnectApplyKey(key, msg) {
@@ -941,7 +941,7 @@ func (m *Model) render() string {
 
 // framedColumn wraps one side column in a rounded card with no edge labels.
 // outerWidth and outerHeight are the invariant outer sizes the layout
-// arithmetic assumes (sidebarWidth() / membersColumnWidth() and bodyHeight);
+// arithmetic assumes (sidebarWidth / membersColumnWidth and bodyHeight)
 // the border consumes its frame, so the leaf renderer receives the remainder
 // and produces inner lines only. That keeps the transcript, which stays
 // unframed, on the same grid.
@@ -973,7 +973,7 @@ func (m *Model) framedColumnLabeled(render func(width, height int) string, outer
 // composer pinned under it. The composer is part of this column rather than a
 // window-level bar, so the side columns run the full body height beside it and
 // the field spans only the transcript width. The column stays unframed, so
-// transcriptWidth() remains the exact content width. height is the full body
+// transcriptWidth remains the exact content width. height is the full body
 // height; the transcript gets everything but the composer block.
 func (m *Model) transcriptColumn(height int) string {
 	content := height - composerFieldHeight
@@ -1019,7 +1019,7 @@ func (m *Model) bodyHeight() int {
 
 // transcriptHeight is the transcript's own row budget: the body minus the
 // composer block pinned under it. It spans the pinned header plus the scrolling
-// rows, so transcriptRowsHeight() subtracts the header before the scroll, find,
+// rows, so transcriptRowsHeight subtracts the header before the scroll, find
 // and copy arithmetic measures against it.
 func (m *Model) transcriptHeight() int {
 	height := m.bodyHeight() - composerFieldHeight
@@ -1038,8 +1038,8 @@ func (m *Model) transcriptRowsHeight() int {
 
 // composerRow is the composer input line's zero-based row in the rendered frame
 // — the text row inside the composer block, not the block's top row. The
-// composer is the last block of the middle column, directly above the footer;
-// the slash menu floats over the transcript above it rather than between them,
+// composer is the last block of the middle column, directly above the footer
+// the slash menu floats over the transcript above it rather than between them
 // so it adds no rows. The tiny-terminal path renders only the bare single-row
 // composer, so its row is 0.
 func (m *Model) composerRow() int {
@@ -1158,7 +1158,7 @@ func (m *Model) closeAllOverlays() {
 // The compositor centers the narrower card over the dimmed body.
 const overlayCardInset = 2
 
-// overlayCardTopInset is the fixed row the overlay card's top border occupies,
+// overlayCardTopInset is the fixed row the overlay card's top border occupies
 // the vertical counterpart to overlayCardInset. The card is anchored to this row
 // rather than centered on its own height, so a content-length change — a
 // narrowing jump filter, a shorter Connect tab, a taller network roster — cannot
@@ -1295,7 +1295,7 @@ func (m *Model) compositeOverlay(body, card string) string {
 	return fitBlock(rendered, width, height)
 }
 
-// compositeSlashMenu floats the open slash-completion menu over the transcript,
+// compositeSlashMenu floats the open slash-completion menu over the transcript
 // just above the composer block it belongs to, instead of taking rows from the
 // column budget. The composer is the middle column's last block, so the menu's
 // bottom edge sits composerFieldHeight rows above the body's bottom and never
@@ -1338,7 +1338,7 @@ func (m *Model) shadowBlock(width, height int) string {
 	return style.Render(strings.Join(rows, "\n"))
 }
 
-// fitBlock clamps a composited block to exactly width cells by height lines,
+// fitBlock clamps a composited block to exactly width cells by height lines
 // padding with spaces. It keeps the body box invariant when a card or its
 // shadow overhangs the edge.
 func fitBlock(content string, width, height int) string {

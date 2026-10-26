@@ -1,6 +1,3 @@
-//! Port of `tui/internal/irc/plaintext.go` /
-//! `stripIrcColors` in `irctextformatter` (C++).
-//!
 //! The mIRC control codes live here, with the color walkers that both the plain
 //! text and the styled runs in `textformat` share. Walking `char`s instead of
 //! bytes is equivalent: every consumed sequence is ASCII, and a UTF-8 continuation
@@ -45,7 +42,7 @@ fn strip_irc_colors(text: &str) -> String {
     out
 }
 
-/// Returns the last index of `\x03(\d{1,2}(,\d{1,2})?)?` starting at `index`,
+/// Returns the last index of `\x03(\d{1,2}(,\d{1,2})?)?` starting at `index`
 /// or `index` itself when no digit follows the code.
 pub(super) fn consume_mirc_color(chars: &[char], index: usize) -> usize {
     let size = chars.len();
@@ -90,7 +87,7 @@ fn six_hex_at(chars: &[char], start: usize) -> bool {
 mod tests {
     use super::*;
 
-    // Ported from tui/internal/irc/plaintext_test.go.
+    // tui/internal/irc/plaintext_test.go.
 
     #[test]
     fn bold_is_stripped() {

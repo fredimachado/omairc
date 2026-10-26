@@ -1,10 +1,7 @@
-//! Port of `tui/internal/irc/framer.go`.
-//!
 //! `IrcFramer` cuts a byte stream into CRLF-terminated frames. It keeps partial
 //! frames across `feed` calls, drops frames that break the NUL or length rules
 //! and reports each one as a fault. While it discards a bad frame it keeps a
 //! trailing '\r', so a CRLF split across two reads still ends the discard.
-//!
 //! Frames are raw bytes. Faults keep at most `FAULT_PREVIEW_BYTES` of the bad
 //! frame.
 

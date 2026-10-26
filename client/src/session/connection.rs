@@ -1,7 +1,7 @@
 //! The connection's lifecycle decisions: why the transport is going away, how many
 //! reconnects have been scheduled, and which retryable error kinds were already
 //! reported. These were the `expected_disconnect` and `reconnect_after_disconnect`
-//! flags of `Core` plus its retry counters. `session.rs` applies the outcomes;
+//! flags of `Core` plus its retry counters. `session.rs` applies the outcomes
 //! nothing here touches the transport, the timers or the state machine.
 
 use std::time::Duration;
@@ -37,7 +37,7 @@ pub(crate) enum DisconnectOutcome {
     /// The plaintext socket closed for an STS upgrade: connect again at once on the
     /// upgraded port.
     FinishStsUpgrade,
-    /// A stopping session that is not closing, such as one that already failed,
+    /// A stopping session that is not closing, such as one that already failed
     /// keeps its state.
     Ignore,
 }
@@ -141,7 +141,7 @@ impl Connection {
         Duration::from_millis(delay.min(i32::MAX as u64))
     }
 
-    /// Forgets the retry count and the reported kinds. A welcome (001) does this,
+    /// Forgets the retry count and the reported kinds. A welcome (001) does this
     /// and so do `start` and `stop`.
     pub(crate) fn reset_retries(&mut self) {
         self.reconnect_attempt = 0;

@@ -1,7 +1,6 @@
 //! The send intent over the real demo: the frame that reaches the loopback, the
 //! echo that comes back, the local echo when the server does not echo, and the
-//! refusals. Ports the Go `TestEchoMessage*` and `TestSelectedPrivmsg*` cases in
-//! `tui/internal/controller/controller_test.go`.
+//! refusals.
 
 use crate::irc::capability::IrcCapability;
 

@@ -9,11 +9,11 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// The composer's prompt and placeholder are rendered by the text input itself,
+// The composer's prompt and placeholder are rendered by the text input itself
 // so the shared styles.Input drives the accent prompt (dim when blurred), the
 // dim placeholder, and the accent caret in one place. composerPrompt is two
 // display cells wide, matching composerPrefixWidth in model.go, which is the
-// room resize() leaves for it.
+// room resize leaves for it.
 const (
 	composerPrompt      = "› "
 	composerPlaceholder = "Message"
@@ -23,7 +23,7 @@ const (
 // composerFrameRows is the border row the framed composer wears above and below
 // its input line. The frame replaced the blank fill rows the field used to
 // carry, so the block still spans composerFieldHeight rows and the input still
-// sits on composerRow().
+// sits on composerRow.
 const composerFrameRows = 1
 
 // composerFieldHeight is the composer block's total row span.
@@ -31,9 +31,9 @@ const composerFieldHeight = 1 + 2*composerFrameRows
 
 // newComposerInput builds the composer's text input from the shell styles.
 // model.go's New must build the composer with this instead of textinput.New. It
-// uses the shared input set (Input in style.go), so the composer's prompt,
+// uses the shared input set (Input in style.go), so the composer's prompt
 // placeholder, and caret follow the theme like every other field and the
-// interior stays unfilled. It also switches the input to a real terminal cursor;
+// interior stays unfilled. It also switches the input to a real terminal cursor
 // composerCursor returns nil while the virtual cursor is on, and View should
 // place the real one. The styles are a snapshot: model.go's SetTheme must
 // re-apply m.composer.SetStyles(m.styles.Input) after it rebuilds the
@@ -215,9 +215,9 @@ func (m *Model) recallHistory(delta int) {
 }
 
 // nickCompleteSession is the composer's Tab-completion cursor. It mirrors
-// `client/src/ui/shell`'s nickCompleteMatches / nickCompleteIndex /
+// `client/src/ui/shell`'s nickCompleteMatches / nickCompleteIndex
 // nickCompleteOrigin: the first Tab picks the alphabetically first matching
-// nick or channel, Shift+Tab starts at the last, and further presses cycle,
+// nick or channel, Shift+Tab starts at the last, and further presses cycle
 // wrapping. Any other key, a conversation switch, or a send resets it (see
 // resetNickComplete).
 type nickCompleteSession struct {
@@ -363,7 +363,7 @@ func (m *Model) nickMatchesForPrefix(prefix string) []string {
 	return matches
 }
 
-// clampComposer stops the composer at the current surface's send budget,
+// clampComposer stops the composer at the current surface's send budget
 // including a paste. A `/me` draft uses the expanded ACTION cap. Find reuses
 // the field and is not a send, so a query is left alone. It mirrors
 // `client/src/ui/shell`'s clampComposerToSendLimit.

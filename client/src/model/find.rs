@@ -1,4 +1,4 @@
-//! Find mode (Ctrl+F): the transcript search. Ports `findNextMatch`,
+//! Find mode (Ctrl+F): the transcript search.
 //! `advanceFind` and `transcriptRowText` in `client/src/ui/shell`. A match is a
 //! case-insensitive substring of the row's plain text, with the author or the
 //! Status label in front. Toolkit-free: the shell owns the composer and the
@@ -35,7 +35,6 @@ impl Find {
     /// Runs the search for `query` over `rows`. `from_start` searches from the
     /// top, as the first press of Ctrl+F does. Otherwise it searches after the
     /// current row and wraps, so the current row is only the last thing checked.
-    ///
     /// Returns the row to reveal when the search finds one. An empty query
     /// clears the current row. A query with no match leaves the current row where
     /// it was, as Qt does, so the last match stays highlighted.

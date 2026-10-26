@@ -28,7 +28,7 @@ type NetworkRow struct {
 }
 
 // draftSecret is the in-memory secret state for one network's password or
-// NickServ slot. It is the phase-11 simplification of C++ IrcDraftSecret: the
+// NickServ slot. It is the phase-11 simplification of IrcDraftSecret: the
 // held password, whether the user edited it this sheet session, whether the
 // stored profile declares it saved, and the credential state. The
 // revision/obsolete-key machinery is deliberately dropped because the Go
@@ -50,8 +50,8 @@ type appliedSession struct {
 	nickServPassword string
 }
 
-// Connection owns the Connect sheet's draft profile, the stored profile list,
-// the selection, and the in-memory secrets. It is the Go port of the
+// Connection owns the Connect sheet's draft profile, the stored profile list
+// the selection, and the in-memory secrets. It is the Go.
 // non-persistent half of IrcConnection, plus the phase-11 profile store and
 // credential-store wiring. It is not safe for concurrent use.
 type Connection struct {
@@ -163,7 +163,7 @@ func (c *Connection) SetEphemeral(ephemeral bool) {
 }
 
 // SetStoredProfiles seeds the stored list, mirroring
-// IrcConnection::setStoredProfiles. It selects the first complete profile,
+// IrcConnection::setStoredProfiles. It selects the first complete profile
 // else the first; with an empty list it falls back to the suggested profile.
 // The declared secrets of every seeded profile are read synchronously when a
 // credential store is installed.
@@ -333,7 +333,7 @@ func (c *Connection) Autojoin() string {
 	return strings.Join(c.draft.AutojoinChannels, " ")
 }
 
-// SetAutojoin parses the typed channels and recomputes the retained keys,
+// SetAutojoin parses the typed channels and recomputes the retained keys
 // mirroring IrcConnection::setAutojoin.
 func (c *Connection) SetAutojoin(channels string) {
 	next := ParseAutojoin(channels)
@@ -646,7 +646,7 @@ func (c *Connection) MoveNetwork(networkID string, delta int) bool {
 	return true
 }
 
-// Apply normalizes the draft, persists the profile and its edited secrets,
+// Apply normalizes the draft, persists the profile and its edited secrets
 // stores it, and reconciles its session. It reports whether a live session was
 // reached. An incomplete draft is normalized in place and rejected.
 func (c *Connection) Apply() bool {
@@ -820,7 +820,7 @@ func (c *Connection) ForgetNickServ() {
 // ActivateStartup reconciles every complete, connectOnStartup stored profile
 // whose declared secrets are readable (or already held in memory). It returns
 // how many sessions it started. It mirrors IrcConnection::activateStartup
-// without the asynchronous read wait: the Go credential store is synchronous,
+// without the asynchronous read wait: the Go credential store is synchronous
 // so this is safe to call once stores are installed.
 func (c *Connection) ActivateStartup() int {
 	started := 0
@@ -1226,7 +1226,7 @@ func (c *Connection) secretSlotTracked(secret *draftSecret, saved bool) bool {
 	return saved || secret.saved || secret.edited || secret.password != ""
 }
 
-// secretUnreadable ports IrcConnection::secretUnreadable: a tracked slot that
+// secretUnreadable.
 // is still loading or errored blocks, and a declared-but-unreadable saved slot
 // blocks.
 func (c *Connection) secretUnreadable(secret *draftSecret, saved, required bool) bool {

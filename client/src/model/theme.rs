@@ -1,21 +1,18 @@
 //! Omarchy `colors.toml` loading and live reload.
-//!
 //! The palette comes from Omarchy's `colors.toml`. Without that file, or for any
-//! key the file leaves out, the system light or dark mode decides the base colours,
+//! key the file leaves out, the system light or dark mode decides the base colours
 //! as `Backend::loadOmarchyTheme` does in the Qt client. A `mode` line, or a
 //! background to measure, overrides the system mode.
-//!
 //! Shells subscribe to theme changes by calling [`ThemeWatcher::start`] once at
 //! startup, then polling or blocking on [`ThemeWatcher::receiver`]:
-//!
 //! ```ignore
-//! let mut watcher = ThemeWatcher::start(None)?;
-//! let mut theme = Theme::load(None, system_dark)?;
+//! let mut watcher = ThemeWatcher::start(None)?
+//! let mut theme = Theme::load(None, system_dark)?
 //! loop {
-//!     while watcher.receiver().try_recv().is_ok() {
-//!         theme = Theme::load(None, system_dark)?;
+//! while watcher.receiver.try_recv.is_ok {
+//! theme = Theme::load(None, system_dark)?
 //!     }
-//!     // draw with `theme`
+//! draw with `theme`
 //! }
 //! ```
 

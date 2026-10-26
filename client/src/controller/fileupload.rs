@@ -1,5 +1,4 @@
 //! FILEHOST endpoint and credential snapshots for the shell's upload queue.
-//! Ports `tui/internal/controller/fileupload.go` without owning the HTTP work.
 
 use crate::util::Secret;
 

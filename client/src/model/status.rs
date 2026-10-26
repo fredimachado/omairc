@@ -1,7 +1,6 @@
 //! The Status pane: a network's server log, not a conversation. Its rows follow
-//! `NetworkLogModel` (`networklogmodel`), and the glyph rule follows
+//! the Status log model, and the glyph rule follows
 //! `client/src/ui/status_row.rs`. Toolkit-free: the UI draws the rows.
-//!
 //! The lines come from `Controller::status_lines`, already classified and redacted by
 //! `irc::statusentry`. This module only maps them to rows.
 
@@ -64,7 +63,7 @@ pub fn body_is_muted(severity: LogSeverity) -> bool {
     severity == LogSeverity::Trace
 }
 
-/// The local `HH:MM:SS` a Status line shows (Qt's `NetworkLogModel` stamps `hh:mm:ss`).
+/// The local `HH:MM:SS` a Status line shows (Qt's stamps `hh:mm:ss`).
 pub fn log_stamp(time: DateTime<Utc>) -> String {
     time.with_timezone(&Local).format("%H:%M:%S").to_string()
 }
@@ -104,7 +103,6 @@ pub fn status_rows(entries: &[&StatusEntry]) -> Vec<Row> {
 }
 
 /// The Status title, `{display name} Status`, such as `irc.example · fred Status`.
-///
 /// Qt names the pane from the network's display name (`statusTitleText`). That
 /// name already carries the clash suffix, so the conversation duplicate-name
 /// rule does not apply here. The window title does not add ` - Omairc`.
@@ -117,7 +115,7 @@ pub fn status_title(network_name: &str) -> String {
 
 /// The line under a network's name, in the sidebar's network row and under the Status
 /// title (Qt's `liveStatus` and `statusSubtitle`). It is the network's last error while one
-/// is set, else its connection word (`Connecting`, `Connected`, `Reconnecting`,
+/// is set, else its connection word (`Connecting`, `Connected`, `Reconnecting`
 /// `Disconnecting` or `Offline`), as the controller reads them.
 pub fn connection_line(controller: &Controller, network_id: &str) -> String {
     match controller.last_error_for(network_id) {

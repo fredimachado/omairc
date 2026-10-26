@@ -14,9 +14,8 @@ pub fn parse_version(pri: &str) -> Option<&str> {
 
 /// Arch pkgver cannot contain hyphens, so letter suffixes sit flush
 /// (`1.0.7alpha`). Cargo SemVer needs a pre-release separator (`1.0.7-alpha`).
-///
 /// Same algorithm as `bin/check-conventions` `version_pri_to_cargo_semver`:
-/// match `^(\d+(?:\.\d+)*)([A-Za-z].*)$` and insert `-` between the groups;
+/// match `^(\d+(?:\.\d+)*)([A-Za-z].*)$` and insert `-` between the groups
 /// otherwise return the input unchanged.
 pub fn to_cargo_semver(version: &str) -> String {
     let bytes = version.as_bytes();

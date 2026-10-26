@@ -342,7 +342,6 @@ func (m *Model) activateFooter(index int) {
 // chord. `client/src/ui/shell` binds Ctrl+Return and Ctrl+Enter separately; the
 // keystroke string can read ctrl+enter or ctrl+return, and the raw message
 // must be checked when a terminal strips the ctrl+ prefix from Enter.
-//
 // Windows Terminal and ConPTY have no distinct VT encoding for Ctrl+Enter:
 // they send LF (0x0a), which ultraviolet decodes as ctrl+j
 // (microsoft/terminal#6912). Treat that alias while the Connect sheet is

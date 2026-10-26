@@ -1,5 +1,3 @@
-//! Port of `tui/internal/controller/console.go`.
-//!
 //! The Status console keeps each network's classified lines in a bounded ring:
 //! the oldest line drops once a network passes its cap. The lines arrive already
 //! redacted (`irc::statusentry` masks secrets before it builds an entry), so the

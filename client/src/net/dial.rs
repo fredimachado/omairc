@@ -1,5 +1,4 @@
 //! Resolving and dialing a host, the TCP half of `DialContext` in Go's `transport_net.go`.
-//!
 //! Each resolved address gets one attempt, in order. The attempts share the connect
 //! budget: each takes an equal share of what is left, so an address that hangs cannot
 //! starve the ones after it. Expiry of the whole budget reads as a timeout.
@@ -16,7 +15,7 @@ use crate::session::transport::{TransportError, TransportErrorKind};
 
 /// The keepalive idle time and probe interval, the values Go's dialer leaves on by
 /// default. The interval must be set: socket2 sends an unset one to Windows as 0 ms, so
-/// every probe went out back to back once the socket had been quiet for the idle time,
+/// every probe went out back to back once the socket had been quiet for the idle time
 /// and Windows reset the connection before the first ACK could come back.
 const KEEPALIVE_IDLE: Duration = Duration::from_secs(15);
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);

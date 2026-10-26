@@ -79,7 +79,7 @@ func (m *Model) moveLink(delta int) {
 	m.revealTranscriptRow(matches[m.link.selected].row)
 }
 
-// activateLink opens the selected URL or joins the selected invite channel,
+// activateLink opens the selected URL or joins the selected invite channel
 // then dismisses the sheet. A URL row that is not allowed opens nothing.
 func (m *Model) activateLink() {
 	matches := m.linkMatches()

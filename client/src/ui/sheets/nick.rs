@@ -29,7 +29,7 @@ pub struct NickSource {
     /// The photos the frame draws, by avatar reference. The shell keeps them current.
     pub photos: AvatarPhotos,
     /// Whether away-notify is on for the selected network, from
-    /// `Controller::has_away_presence()` when the sheet opens.
+    /// `Controller::has_away_presence` when the sheet opens.
     pub away_visible: bool,
 }
 

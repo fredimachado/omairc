@@ -1,9 +1,7 @@
 //! The sidebar's conversation order: networks in the order the caller gives (or
 //! sorted), then within a network the channels, then the direct messages, each
 //! group by case-insensitive target and finally by key.
-//!
-//! Port of `tui/internal/irc/conversation.go` `SidebarOrder` /
-//! `SidebarOrderWithNetworks` and its helpers (Go: `networkRank`, `groupRank`,
+//! `SidebarOrderWithNetworks` and its helpers (Go: `networkRank`, `groupRank`
 //! `compareCaseInsensitive`), and of `ircSidebarOrder` in
 //! `tui/internal/irc/reducer.go` and `tui/internal/controller/snapshots.go`.
 

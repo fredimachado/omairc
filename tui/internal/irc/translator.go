@@ -143,7 +143,7 @@ func nickTargetedChannelDelivery(wireTarget string, message Message, currentNick
 
 // Translate turns one inbound IRC message into the events the reducer
 // consumes. now is the wall-clock fallback when the IRCv3 time tag is missing
-// or unparseable; it replaces QDateTime::currentDateTimeUtc(). It mirrors
+// or unparseable; it replaces QDateTime::currentDateTimeUtc. It mirrors
 // IrcEventTranslator::translate.
 func Translate(networkID, currentNick string, features ServerFeatures, message Message, now time.Time, joined ...JoinedMemberChannel) []Event {
 	var lookup JoinedMemberChannel
@@ -525,7 +525,7 @@ func TranslateHistory(networkID, currentNick string, features ServerFeatures, ba
 
 // ircParameter returns one message parameter, or "" when the index is past the
 // end. The Go Message already holds decoded UTF-8 strings, so no wire decode
-// happens here where the C++ parameter() called ircWireText.
+// happens here where the C++ parameter called ircWireText.
 func ircParameter(message Message, index int) string {
 	if index < len(message.Params) {
 		return message.Params[index]
@@ -608,7 +608,7 @@ func ircPresentTagValue(message Message, name string) (string, bool) {
 	return "", false
 }
 
-// ircServerTimeOf parses the IRCv3 time tag, or returns nil when it is absent,
+// ircServerTimeOf parses the IRCv3 time tag, or returns nil when it is absent
 // empty, or unparseable. The result is UTC.
 func ircServerTimeOf(message Message) *time.Time {
 	raw, ok := ircTagValue(message, "time")
@@ -626,7 +626,7 @@ func ircServerTimeOf(message Message) *time.Time {
 	return &utc
 }
 
-// ServerTimeOf parses the IRCv3 time tag, or reports false when it is absent,
+// ServerTimeOf parses the IRCv3 time tag, or reports false when it is absent
 // empty, or unparseable. The result is UTC. It wraps ircServerTimeOf for the
 // controller's playback clock.
 func ServerTimeOf(message Message) (time.Time, bool) {

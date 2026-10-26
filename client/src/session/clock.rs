@@ -1,6 +1,3 @@
-//! Port of `tui/internal/session/clock.go` and the QTimer injection in
-//! `tui/internal/session/session.go`.
-//!
 //! `Clock` is the only place a session reads time or arms a timer. Every
 //! timer the state machine needs (reconnect backoff, capability timeout, ping
 //! watchdog, labeled-response timeout, typing refresh) goes through `after`, so

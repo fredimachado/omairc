@@ -14,7 +14,6 @@ import (
 // value's surrounding single or double quotes are stripped. Only the keys
 // mode/background/foreground/accent/selection are read; unknown keys and
 // malformed values are ignored, exactly as the desktop client ignores them.
-//
 // The returned Spec.Mode is resolved: a recognized "mode" wins, otherwise the
 // mode is inferred from the background's luminance. An empty or missing file
 // yields a dark spec with no presence flags, which Derive turns into the Qt
@@ -80,8 +79,8 @@ func ParseColorsTOML(r io.Reader) (Spec, error) {
 	return spec, nil
 }
 
-// Load derives the palette from the current Omarchy colors.toml. A missing,
-// unreadable, or malformed file yields Fallback(), matching
+// Load derives the palette from the current Omarchy colors.toml. A missing
+// unreadable, or malformed file yields Fallback, matching
 // Backend::loadOmarchyTheme when no theme is installed.
 func Load() Colors {
 	colors, _ := loadColors(colorsPath())
@@ -89,7 +88,7 @@ func Load() Colors {
 }
 
 // loadColors reads path and derives the palette. found reports whether a theme
-// file was successfully read and parsed; when it is false, colors is Fallback().
+// file was successfully read and parsed; when it is false, colors is Fallback.
 func loadColors(path string) (colors Colors, found bool) {
 	if path == "" {
 		return Fallback(), false
@@ -120,7 +119,7 @@ func inferMode(c color.Color) string {
 	return ModeLight
 }
 
-// unquote strips one pair of matching surrounding single or double quotes,
+// unquote strips one pair of matching surrounding single or double quotes
 // matching the Qt loader. Unquoted values pass through unchanged.
 func unquote(value string) string {
 	if len(value) >= 2 {

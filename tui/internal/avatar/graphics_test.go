@@ -819,7 +819,7 @@ func TestTransmitPNGKeepsAlpha(t *testing.T) {
 	img.SetNRGBA(1, 1, color.NRGBA{G: 255, A: 64})
 
 	pngBytes := transmittedPNG(t, img)
-	// IHDR color type sits after the 8-byte signature, the length, "IHDR",
+	// IHDR color type sits after the 8-byte signature, the length, "IHDR"
 	// width, height, and bit depth.
 	if len(pngBytes) < 26 || pngBytes[25] != 6 {
 		got := 0

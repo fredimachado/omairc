@@ -1,4 +1,4 @@
-//! Port of `tui/internal/session/batch_test.go`: the batch ledger, replay
+//! the batch ledger, replay
 //! batches, the open-batch budget, and the bouncer playback cases.
 
 use super::fixture::{test_config, Fixture};

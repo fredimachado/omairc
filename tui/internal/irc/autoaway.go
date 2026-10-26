@@ -7,14 +7,15 @@ import (
 	"unicode"
 )
 
-// This file is the Go port of `client/src/irc/autoaway.rs`: the /autoaway
-// argument parser, the duration parser and formatter, and the query,
+// The /autoaway argument parser, the duration parser and formatter, and the
+// query, confirmation, and Status strings. Twin: `client/src/irc/autoaway.rs`.
+// argument parser, the duration parser and formatter, and the query
 // confirmation, and Status strings.
 
 // AutoawayMinTimeoutSeconds is the shortest accepted auto-away timeout.
 const AutoawayMinTimeoutSeconds = 30
 
-// AutoawayMaxTimeoutSeconds mirrors numeric_limits<int>::max()/1000.
+// AutoawayMaxTimeoutSeconds mirrors numeric_limits<int>::max/1000.
 const AutoawayMaxTimeoutSeconds = 2147483
 
 // AutoawayKind is the parsed shape of a /autoaway argument. It mirrors
@@ -226,7 +227,7 @@ func FormatAutoawayClearedStatus() string {
 	return "Auto-away cleared — back online."
 }
 
-// AutoawayGraceSeconds returns the grace period before auto-away fires,
+// AutoawayGraceSeconds returns the grace period before auto-away fires
 // clamped to [5, 10] and 0 for a non-positive timeout. It mirrors
 // ircAutoawayGraceSeconds.
 func AutoawayGraceSeconds(timeoutSeconds int) int {

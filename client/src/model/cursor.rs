@@ -1,5 +1,5 @@
 //! Keyboard cursor math shared by the transcript and the member list.
-//! Paging is `round(extent × 0.8)` for a page and `× 0.35` for a half page,
+//! Paging is `round(extent × 0.8)` for a page and `× 0.35` for a half page
 //! as in the GPUI plan's shortcut scope. Pure functions only.
 
 /// How far one page (or half page) moves across `extent`, rounded to whole

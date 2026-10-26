@@ -1,5 +1,4 @@
-//! Bouncer playback and chathistory catch-up (Gap 5). Port of
-//! `tui/internal/controller/playback.go`.
+//! Bouncer playback and chathistory catch-up (Gap 5).
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};

@@ -13,7 +13,6 @@ import (
 // used to keep: the registration snapshot, the ZNC PLAY requests already sent
 // this connection, and the autojoin and joined-channel books. It is the Go port
 // of IrcPlaybackCoordinator (`client/src/controller/playback.rs`).
-//
 // The controller forwards session events and passes the lookups it still owns
 // (ZNC playback capability, MOTD-seen, open directs) as arguments; this type
 // decides which PLAY requests go out and how a bouncer batch is trimmed.
@@ -206,7 +205,7 @@ func (p *PlaybackCoordinator) NotePlaybackClock(networkID string, message irc.Me
 		irc.TargetLooksLikeService(displayTarget, features)) {
 		return
 	}
-	// A self echo whose query or channel does not exist yet is InboundSelf,
+	// A self echo whose query or channel does not exist yet is InboundSelf
 	// so the reducer drops it. Each target's PLAY bound is exclusive, so
 	// noting that line would skip bouncer history that was never kept. An
 	// admitted line, or one that matches an existing row, may still move the
@@ -366,7 +365,7 @@ func (p *PlaybackCoordinator) Request(s *session.Session, zncPlaybackCap, motdSe
 			}
 			p.markTarget(networkID, normalized)
 		}
-		// Offline query buffers are absent from the snapshot, restored directs,
+		// Offline query buffers are absent from the snapshot, restored directs
 		// and autojoin. With znc.in/playback enabled the module suppresses
 		// automatic delivery, so PLAY * 0 discovers them. Known targets already
 		// got per-target PLAY with their resume bounds.

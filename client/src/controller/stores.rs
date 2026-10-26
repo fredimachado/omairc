@@ -1,10 +1,6 @@
-//! Port of `tui/internal/controller/stores.go` and the monitor list of
-//! `tui/internal/controller/monitorcoordinator.go`.
-//!
 //! The four lists are `CaseListStore`s, which live in `storage/lists.rs` with their
 //! persistence: a `ListBacking` loads them when a store is built and saves them after
 //! each change. The controller binds each one to the settings file.
-//!
 //! The inbound ignore predicate (`ignore_drops_inbound`) and the usability checks
 //! for `/ignore`, `/mute` and `/monitor` targets are pure functions here, so the
 //! dispatcher and the session filter share one rule.

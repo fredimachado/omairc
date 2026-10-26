@@ -12,7 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// quietStderr points os.Stderr at a scratch file for the duration of the test,
+// quietStderr points os.Stderr at a scratch file for the duration of the test
 // so the bytes the tee forwards to the terminal do not land in the test log.
 func quietStderr(t *testing.T) {
 	t.Helper()

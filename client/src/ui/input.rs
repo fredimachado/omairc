@@ -87,7 +87,7 @@ pub struct SingleLineInput {
     horizontal_offset: f32,
     /// Repeated-click tracking for word and select-all, like the transcript.
     last_click: (Instant, u32, usize),
-    /// The send limit a draft must fit. `None` on fields that send nothing,
+    /// The send limit a draft must fit. `None` on fields that send nothing
     /// such as sheet filters, so their text is never cut.
     send_limit: Option<SendLimit>,
     /// Counts the user's edits and caret moves. A nick completion cycle ends
@@ -199,7 +199,7 @@ impl SingleLineInput {
         }
     }
 
-    /// The caret as a byte offset into `text()`. With a selection, the end the
+    /// The caret as a byte offset into `text`. With a selection, the end the
     /// caret is on.
     pub fn cursor(&self) -> usize {
         self.cursor_offset()

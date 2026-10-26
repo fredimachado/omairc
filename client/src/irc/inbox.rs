@@ -1,11 +1,8 @@
-//! Port of `tui/internal/irc/inbox.go` (`IrcInbox` consume and append rules,
 //! `labelFor` / `kindName`).
-//!
-//! The session inbox is the waiting list of things that want the user: mentions,
+//! The session inbox is the waiting list of things that want the user: mentions
 //! highlights, direct messages, invites, monitored nicks coming online, and kicks.
 //! It is newest first and capped at `MAX_INBOX_ITEMS`. Names compare under the
 //! network's case mapping, which the caller passes in.
-//!
 //! Pure: the inbox holds rows and answers questions about them. The demo seed and
 //! the channel join that accepting an invite triggers are model and controller
 //! concerns; they stay outside this file.

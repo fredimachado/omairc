@@ -1,5 +1,4 @@
 //! On-disk and IPC product identity for this build.
-//!
 //! Every folder name, settings file name, and local endpoint leaf used for persistence
 //! or IPC lives here. The default `product` feature uses the installed client's names.
 //! The `dev` feature selects a separate `omairc-poc` tree so `cargo run` / `cargo test`

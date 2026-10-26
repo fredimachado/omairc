@@ -28,7 +28,7 @@ const (
 	// ProblemUnsendableIdentity means the nick, username, or realname cannot
 	// be encoded as a NICK/USER pair.
 	ProblemUnsendableIdentity
-	// ProblemUnsendableAccount means the SASL account contains a space, NUL,
+	// ProblemUnsendableAccount means the SASL account contains a space, NUL
 	// or slash.
 	ProblemUnsendableAccount
 	// ProblemUnsendableBouncerNetwork means the bouncer network contains a
@@ -46,7 +46,7 @@ const (
 	NoIconColor = -1
 )
 
-// NetworkProfile is the Go shape of IrcNetworkProfile: one network's identity,
+// NetworkProfile is the Go shape of IrcNetworkProfile: one network's identity
 // credentials metadata, autojoin state, and presentation fields.
 type NetworkProfile struct {
 	NetworkID        string
@@ -98,7 +98,7 @@ func SuggestedProfile() NetworkProfile {
 }
 
 // ParseAutojoin splits a typed autojoin string on runs of commas and
-// whitespace, drops an empty token and a channel key that follows a channel,
+// whitespace, drops an empty token and a channel key that follows a channel
 // and keeps the remaining tokens verbatim (without prefixing a missing '#').
 // It mirrors IrcNetworkProfile::parseAutojoin.
 func ParseAutojoin(channels string) []string {
@@ -344,7 +344,7 @@ func normalizedAutojoinChannels(channels []string) []string {
 	return result
 }
 
-// retainAutojoinKeys keeps the keys whose channel survived normalization,
+// retainAutojoinKeys keeps the keys whose channel survived normalization
 // matched with the server case mapping and re-keyed to the canonical channel
 // name. It mirrors the anonymous retainAutojoinKeys.
 func retainAutojoinKeys(keys map[string]string, channels []string) map[string]string {

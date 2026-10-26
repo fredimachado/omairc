@@ -1,6 +1,5 @@
 //! The ping watchdog (`pingWatchdogState` in Go). Once registered, a silent socket
 //! gets one PING probe, and a probe that stays unanswered fails the connection.
-//!
 //! `PingWatchdog` owns the Off / Watching / Probing state and its transitions.
 //! The Ping timer slot stays in `Core`, so the `Core` methods below pair each
 //! transition with its timer.

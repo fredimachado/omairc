@@ -1,6 +1,6 @@
-//! Selection, Status and direct messages over the real demo. Ports the Go cases
-//! `TestFirstConversationClaimsOffStatus`, `TestClearedSelectionFallsBackToStatus`,
-//! `TestExplicitSelectionStillClosesConsole`, `TestQuietSendDoesNotOpenDirect`,
+//! Selection, Status and direct messages over the real demo.
+//! `TestFirstConversationClaimsOffStatus`, `TestClearedSelectionFallsBackToStatus`
+//! `TestExplicitSelectionStillClosesConsole`, `TestQuietSendDoesNotOpenDirect`
 //! `TestConversationClearWipesMessages`, `TestSelectConversationRefreshesSidebarUnread`
 //! and the open-direct cases in `tui/internal/controller/`.
 

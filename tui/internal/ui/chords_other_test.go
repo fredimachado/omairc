@@ -11,7 +11,7 @@ import (
 )
 
 // TestUnixDoesNotReportAllKeys guards the shift+3 fix. Requesting report-all
-// keys without alternate/associated text makes a kitty terminal (foot, kitty,
+// keys without alternate/associated text makes a kitty terminal (foot, kitty
 // ghostty, alacritty) encode shift+3 as CSI 51;2u, the *unshifted* codepoint
 // plus a shift modifier, which ultraviolet upper-cases back to "3". The
 // composer then types "3" instead of "#", so `/join #omarchy` becomes

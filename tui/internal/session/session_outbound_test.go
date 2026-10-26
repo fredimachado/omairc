@@ -25,7 +25,7 @@ func countFrame(frames []string, frame string) int {
 
 // --- Outbound writers -----------------------------------------------------
 
-// TestSessionSendPrivmsgValidatesTarget ports
+// TestSessionSendPrivmsgValidatesTarget.
 // SessionTest::sendPrivmsgValidatesTarget.
 func TestSessionSendPrivmsgValidatesTarget(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -70,7 +70,7 @@ func TestSessionSendPrivmsgValidatesTarget(t *testing.T) {
 	}
 }
 
-// TestSessionSendCtcpWritesQuery ports SessionTest::sendCtcpWritesQuery.
+// TestSessionSendCtcpWritesQuery.
 func TestSessionSendCtcpWritesQuery(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
 	fixture.connectTLS()
@@ -111,7 +111,7 @@ func TestSessionSendCtcpWritesQuery(t *testing.T) {
 	}
 }
 
-// TestSessionSendPrivmsgSplitsNearTwoFrames ports
+// TestSessionSendPrivmsgSplitsNearTwoFrames.
 // SessionTest::sendPrivmsgSplitsNearTwoFrames.
 func TestSessionSendPrivmsgSplitsNearTwoFrames(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -142,7 +142,7 @@ func TestSessionSendPrivmsgSplitsNearTwoFrames(t *testing.T) {
 	}
 }
 
-// TestSessionSendPrivmsgSplitsEnormousToken ports
+// TestSessionSendPrivmsgSplitsEnormousToken.
 // SessionTest::sendPrivmsgSplitsEnormousToken.
 func TestSessionSendPrivmsgSplitsEnormousToken(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -176,7 +176,7 @@ func TestSessionSendPrivmsgSplitsEnormousToken(t *testing.T) {
 	}
 }
 
-// TestSessionSetTopicIsSetOnly ports SessionTest::setTopicIsSetOnly.
+// TestSessionSetTopicIsSetOnly.
 func TestSessionSetTopicIsSetOnly(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
 	fixture.connectTLS()
@@ -207,7 +207,7 @@ func TestSessionSetTopicIsSetOnly(t *testing.T) {
 	}
 }
 
-// TestSessionKickWritesOptionalReason ports
+// TestSessionKickWritesOptionalReason.
 // SessionTest::kickWritesOptionalReason.
 func TestSessionKickWritesOptionalReason(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -242,7 +242,7 @@ func TestSessionKickWritesOptionalReason(t *testing.T) {
 	}
 }
 
-// TestSessionInviteWritesNickThenChannel ports
+// TestSessionInviteWritesNickThenChannel.
 // SessionTest::inviteWritesNickThenChannel.
 func TestSessionInviteWritesNickThenChannel(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -271,7 +271,7 @@ func TestSessionInviteWritesNickThenChannel(t *testing.T) {
 	}
 }
 
-// TestSessionSetAwayEncodesOptionalReason ports
+// TestSessionSetAwayEncodesOptionalReason.
 // SessionTest::setAwayEncodesOptionalReason.
 func TestSessionSetAwayEncodesOptionalReason(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -301,7 +301,7 @@ func TestSessionSetAwayEncodesOptionalReason(t *testing.T) {
 	}
 }
 
-// TestSessionSetOwnMetadataWritesSetAndClear ports
+// TestSessionSetOwnMetadataWritesSetAndClear.
 // SessionTest::setOwnMetadataWritesSetAndClear.
 func TestSessionSetOwnMetadataWritesSetAndClear(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -353,7 +353,7 @@ func TestSessionSetOwnMetadataWritesSetAndClear(t *testing.T) {
 	}
 }
 
-// TestSessionMetadataCapabilityLimitsSubscriptionsAndValues ports
+// TestSessionMetadataCapabilityLimitsSubscriptionsAndValues.
 // SessionTest::metadataCapabilityLimitsSubscriptionsAndValues.
 func TestSessionMetadataCapabilityLimitsSubscriptionsAndValues(t *testing.T) {
 	limited := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -487,7 +487,7 @@ func TestSessionMetadataCapabilityLimitsSubscriptionsAndValues(t *testing.T) {
 	}
 }
 
-// TestSessionWhoisWritesDoubledNick ports
+// TestSessionWhoisWritesDoubledNick.
 // SessionTest::whoisWritesDoubledNick.
 func TestSessionWhoisWritesDoubledNick(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -516,7 +516,7 @@ func TestSessionWhoisWritesDoubledNick(t *testing.T) {
 
 // --- CTCP handling --------------------------------------------------------
 
-// TestSessionCtcpFromServerPrefixGetsNoReply ports
+// TestSessionCtcpFromServerPrefixGetsNoReply.
 // SessionTest::ctcpFromServerPrefixGetsNoReply.
 func TestSessionCtcpFromServerPrefixGetsNoReply(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -533,7 +533,7 @@ func TestSessionCtcpFromServerPrefixGetsNoReply(t *testing.T) {
 	}
 }
 
-// TestSessionCtcpToFoldedSelfNickIsAnswered ports
+// TestSessionCtcpToFoldedSelfNickIsAnswered.
 // SessionTest::ctcpToFoldedSelfNickIsAnswered.
 func TestSessionCtcpToFoldedSelfNickIsAnswered(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -550,7 +550,7 @@ func TestSessionCtcpToFoldedSelfNickIsAnswered(t *testing.T) {
 	}
 }
 
-// TestSessionAnswersCtcpRequests ports SessionTest::answersCtcpRequests.
+// TestSessionAnswersCtcpRequests.
 func TestSessionAnswersCtcpRequests(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
 	fixture.connectTLS()
@@ -577,7 +577,7 @@ func TestSessionAnswersCtcpRequests(t *testing.T) {
 	}
 }
 
-// TestSessionAnswersNickOnlyCtcpRequests ports
+// TestSessionAnswersNickOnlyCtcpRequests.
 // SessionTest::answersNickOnlyCtcpRequests.
 func TestSessionAnswersNickOnlyCtcpRequests(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -590,7 +590,7 @@ func TestSessionAnswersNickOnlyCtcpRequests(t *testing.T) {
 	}
 }
 
-// TestSessionRateLimitsCtcpVersionRepliesPerNick ports
+// TestSessionRateLimitsCtcpVersionRepliesPerNick.
 // SessionTest::rateLimitsCtcpVersionRepliesPerNick.
 func TestSessionRateLimitsCtcpVersionRepliesPerNick(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -636,7 +636,7 @@ func TestSessionRateLimitsCtcpVersionRepliesPerNick(t *testing.T) {
 	}
 }
 
-// TestSessionDropsOversizedCtcpPingPayload ports
+// TestSessionDropsOversizedCtcpPingPayload.
 // SessionTest::dropsOversizedCtcpPingPayload.
 func TestSessionDropsOversizedCtcpPingPayload(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -662,7 +662,7 @@ func TestSessionDropsOversizedCtcpPingPayload(t *testing.T) {
 	}
 }
 
-// TestSessionDoesNotAnswerChannelCtcpRequests ports
+// TestSessionDoesNotAnswerChannelCtcpRequests.
 // SessionTest::doesNotAnswerChannelCtcpRequests.
 func TestSessionDoesNotAnswerChannelCtcpRequests(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -678,7 +678,7 @@ func TestSessionDoesNotAnswerChannelCtcpRequests(t *testing.T) {
 
 // --- Nick handling --------------------------------------------------------
 
-// TestSessionWelcomeAssignsNickFrom001 ports
+// TestSessionWelcomeAssignsNickFrom001.
 // SessionTest::welcomeAssignsNickFrom001.
 func TestSessionWelcomeAssignsNickFrom001(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -699,7 +699,7 @@ func TestSessionWelcomeAssignsNickFrom001(t *testing.T) {
 	}
 }
 
-// TestSessionEmptyWelcomeKeepsConfigNick ports
+// TestSessionEmptyWelcomeKeepsConfigNick.
 // SessionTest::emptyWelcomeKeepsConfigNick.
 func TestSessionEmptyWelcomeKeepsConfigNick(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -718,7 +718,7 @@ func TestSessionEmptyWelcomeKeepsConfigNick(t *testing.T) {
 	}
 }
 
-// TestSessionSelfNickUpdatesSessionNick ports
+// TestSessionSelfNickUpdatesSessionNick.
 // SessionTest::selfNickUpdatesSessionNick.
 func TestSessionSelfNickUpdatesSessionNick(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)

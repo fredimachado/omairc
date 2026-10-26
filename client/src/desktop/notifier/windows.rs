@@ -1,42 +1,36 @@
 //! Windows Toast notifications (WinRT toast + Start Menu AUMID activation).
-//!
 //! Toasts use the AUMID `FrediMachado.Omairc`. Activation goes through two per-user records:
 //! the activator registration (`LocalServer32`) and a Start Menu `Omairc.lnk` that carries the
 //! AUMID. Which exe those records name is decided by two rules, both implemented in
 //! `windows_ownership`:
-//!
-//! - An installed copy, one under `%LOCALAPPDATA%\Programs\Omairc` or `%ProgramFiles%\Omairc`,
+//! - An installed copy, one under `%LOCALAPPDATA%\Programs\Omairc` or `%ProgramFiles%\Omairc`
 //!   takes the activator registration and the per-user link even from an exe that still exists.
 //!   It also overwrites an activator registration or a per-user link that it cannot read (see
 //!   below).
 //! - Any other build, such as a dev or portable build, takes them only when nothing is
 //!   registered, when the registered exe is itself, or when the registered exe is gone. It does
 //!   not displace an exe that still exists (`util::should_claim`).
-//!
-//! Two installed copies take turns: each launch overwrites the other's registration and link,
+//! Two installed copies take turns: each launch overwrites the other's registration and link
 //! and this is intended. An installed copy overwrites an unreadable activator registration and an
 //! unreadable per-user link. Other builds leave them alone. An unreadable all-users link refuses
 //! the shortcut fallback for every build, because its owner is unknown.
-//!
 //! The shortcut fallback reads two Start Menu `Omairc.lnk` links, the per-user one under
 //! `FOLDERID_Programs` and the all-users one under `FOLDERID_CommonPrograms`, and writes only the
-//! per-user link. It writes only when neither link refuses. A link refuses when it cannot be read,
+//! per-user link. It writes only when neither link refuses. A link refuses when it cannot be read
 //! when its target cannot be expanded, when the target is empty or not valid UTF-16, or when `%`
 //! survives `%VAR%` expansion (a literal `%` in a real path refuses too). An installed copy does
 //! not refuse an unreadable per-user link; it overwrites it. For a build that is not installed, a
 //! link also refuses when it names an exe that still exists and is not this one. The fallback never
 //! creates an all-users link. If either Start Menu folder cannot be resolved, the fallback writes
 //! nothing for any build.
-//!
 //! Before the fallback, the repair path re-stamps a link that already names this exe, in either
 //! location, but only when no such link is stamped yet. A readable link that names this exe
-//! counts as found whether or not its stamp takes, and the post-repair gate reads that finding,
+//! counts as found whether or not its stamp takes, and the post-repair gate reads that finding
 //! not the stamp. After a repair, a build that is not installed stops there, portable builds
 //! included. An installed copy goes on only when its per-user link is unreadable or names another
 //! exe. The fallback then replaces that per-user link, unless the all-users link is unreadable.
 //! A missing per-user link, or one that names this exe, stops there. So after a repair, a
 //! per-user link is replaced, never created.
-//!
 //! This code decides what it writes. It does not establish which copy receives a click while
 //! more than one copy is registered.
 

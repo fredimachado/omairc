@@ -82,7 +82,6 @@ pub struct VerbSpec {
     pub usage: &'static str,
     pub scope: VerbScope,
     /// The refusal text for a wrong scope or a missing target. Empty means
-    /// `NO_CONVERSATION_TEXT`.
     pub wrong_scope_text: &'static str,
 }
 
@@ -109,7 +108,6 @@ impl VerbSpec {
 
 /// The ordered catalog. The order is the completion ranking's tie order and the
 /// `/help` order, so rows are never re-sorted. Mirrors `IrcVerbTable::all` and
-/// `verbCatalog`.
 pub static VERB_TABLE: [VerbSpec; 47] = [
     VerbSpec {
         verb: Verb::Action,

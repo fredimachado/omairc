@@ -1,7 +1,7 @@
 package ui
 
-// This file covers the transcript's byline column: the timestamp at the left,
-// the right-aligned nick, the separator rule, wrapping under the body column,
+// This file covers the transcript's byline column: the timestamp at the left
+// the right-aligned nick, the separator rule, wrapping under the body column
 // and the grouping that blanks a continuation row's time and nick.
 
 import (
@@ -20,7 +20,7 @@ func plainText(line string) string {
 }
 
 // TestTranscriptNickColumnFitsChatRowsOnly pins that the right-aligned column is
-// measured from the widest plain chat nick, ignoring the shaped action, notice,
+// measured from the widest plain chat nick, ignoring the shaped action, notice
 // and event rows that do not carry it.
 func TestTranscriptNickColumnFitsChatRowsOnly(t *testing.T) {
 	messages := []controller.MessageSnapshot{
@@ -68,7 +68,7 @@ func TestTranscriptChatRowColumns(t *testing.T) {
 }
 
 // TestTranscriptChatRowWrapsUnderBody pins that a body wider than the column
-// wraps and every continuation line keeps the separator at the shared column,
+// wraps and every continuation line keeps the separator at the shared column
 // so the rule stays an unbroken line down the transcript while the body wraps
 // under the first line.
 func TestTranscriptChatRowWrapsUnderBody(t *testing.T) {

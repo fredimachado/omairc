@@ -21,7 +21,7 @@ impl CaseMappingExpect {
     }
 }
 
-/// One daemon from `OMAIRC_LIVE_DAEMONS` with published ports.
+/// One daemon from `OMAIRC_LIVE_DAEMONS` with published.
 #[derive(Clone, Debug)]
 pub struct DaemonInfo {
     pub name: String,
@@ -51,7 +51,7 @@ impl DaemonInfo {
     }
 }
 
-/// Whether `bin/test-live` (or an equivalent) exported daemon ports.
+/// Whether `bin/test-live` (or an equivalent) exported daemon.
 pub fn live_enabled() -> bool {
     std::env::var("OMAIRC_LIVE_DAEMONS")
         .map(|value| !value.trim().is_empty())

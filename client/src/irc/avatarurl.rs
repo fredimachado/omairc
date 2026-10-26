@@ -1,10 +1,8 @@
-//! Port of `tui/internal/irc/avatarurl.go`.
 //! `/avatar` accepts an HTTPS URL or an email address. An email becomes a Gravatar
 //! SHA-256 URL, and only a safe HTTPS URL is kept. The URL is parsed by the `url`
 //! crate, the same WHATWG parser behind QUrl's strict mode, and IP literals are
 //! judged from their canonical text. Nothing here uses `std::net`, so the
 //! portability gate holds. The fetch and the DNS pin are I/O and live in
-//! `desktop/`.
 
 use sha2::{Digest, Sha256};
 use url::Url;
@@ -77,7 +75,6 @@ fn strip_mailto(text: &str) -> Option<&str> {
 
 /// The Gravatar URL for an email, with the address lowercased and SHA-256 hashed.
 /// The `{size}` placeholder stays until a fetch size is known. Go
-/// `gravatarMetadataURL`.
 fn gravatar_metadata_url(email: &str) -> String {
     let mut normalized = email.trim();
     if let Some(rest) = strip_mailto(normalized) {
@@ -270,7 +267,6 @@ fn parse_groups(part: &str) -> Option<Vec<u16>> {
 /// as unsafe. IPv4-mapped IPv6 is judged by its IPv4 rules. IPv6 is safe only
 /// inside 2000::/3, minus the documentation, Teredo and 6to4 blocks. That check
 /// fails closed for anything the lists miss. Go `HostAddressIsUnsafe`, Qt
-/// `ircHostAddressIsUnsafe`.
 pub fn host_address_is_unsafe(address: IpLiteral) -> bool {
     match address {
         IpLiteral::V4(octets) => v4_is_unsafe(octets),
@@ -316,7 +312,7 @@ fn v4_is_unsafe(octets: [u8; 4]) -> bool {
         || a >= 224
 }
 
-/// IPv6 is global only inside 2000::/3, and not in the documentation (2001:db8::/32),
+/// IPv6 is global only inside 2000::/3, and not in the documentation (2001:db8::/32)
 /// Teredo (2001::/32) or 6to4 (2002::/16) blocks, which embed other addresses.
 fn is_global_v6(groups: [u16; 8]) -> bool {
     let in_global_unicast = groups[0] & 0xe000 == 0x2000;

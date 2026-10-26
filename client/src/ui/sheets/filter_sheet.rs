@@ -39,10 +39,10 @@ pub fn bind_filter_keys(cx: &mut App) {
     cx.bind_keys(bindings);
 }
 
-/// The visible list is capped at this height in logical pixels (Qt `252`).
+/// The visible list is capped at this height in logical pixels.
 const LIST_CAP: f32 = 252.;
 
-/// What a filter sheet lists. A source holds the snapshot it was opened with,
+/// What a filter sheet lists. A source holds the snapshot it was opened with
 /// so the sheet never reads the shell's state.
 pub trait FilterSource: 'static {
     type Item: Clone + 'static;

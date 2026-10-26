@@ -1,15 +1,12 @@
-//! Port of `tui/internal/controller/commanddispatcher.go`
-//! Every slash verb's decision. The UI never decides a verb: it parses the composer line,
+//! Every slash verb's decision. The UI never decides a verb: it parses the composer line
 //! calls `Controller::submit` (or `dispatch`), and reads back the outcome and the surfaces the
 //! intent raised. The side effects a verb needs (the wire, the reducer, the stores, the Status
 //! log, the transcript) are the controller's own, so the same path serves the composer, the
 //! Status console and the product CLI.
-//!
 //! The dispatcher owns the decisions: which surface a verb is valid on, which network and
 //! channel it names, what a refusal means, and the Status text of each outcome. Frames are
 //! written through `Session` (`irc::commandbuilder` rules), so a verb's frame is the one the
 //! session's tests pin.
-//!
 //! Two deliberate differences from the Go host seam: the selection is read from the controller
 //! (`dispatch` takes no selection argument), and `/pref` feedback on a conversation is one
 //! transcript row per line, since the transcript rows are single lines.
@@ -84,7 +81,6 @@ impl Controller {
     }
 
     /// Submits one composer line typed on `surface`, and returns whether the composer clears.
-    ///
     /// On the conversation surface (`IrcController::sendMessage`), a refused line records the
     /// reason as the network's last error and keeps the text, so the caller leaves it in the
     /// composer. On Status (`IrcStatusConsole::submit`), a refusal is a Status line and the line
@@ -125,7 +121,7 @@ impl Controller {
         outcome == CommandOutcome::Sent
     }
 
-    /// The subtitle for a refused command. Chat on a channel you have left names that state;
+    /// The subtitle for a refused command. Chat on a channel you have left names that state
     /// every other refusal keeps the shared outcome text.
     fn outcome_error(&self, outcome: CommandOutcome, command: &Command) -> String {
         let chat = matches!(command, Command::Say(_) | Command::Action(_));
@@ -153,7 +149,7 @@ impl Controller {
         }
     }
 
-    /// The network a verb reads its session from (`queryNetworkID`): Status's network on Status,
+    /// The network a verb reads its session from (`queryNetworkID`): Status's network on Status
     /// the selection's network on a conversation, and empty when nothing is selected.
     pub(super) fn surface_network(&self, surface: ComposerSurface) -> String {
         match surface {
@@ -523,7 +519,7 @@ impl Controller {
         outcome_of(!channel.is_empty() && active.kick(&channel, &words.first, &words.rest))
     }
 
-    /// `/invite <nick> [channel]` (`dispatchInvite`). Without a channel the selected one is used,
+    /// `/invite <nick> [channel]` (`dispatchInvite`). Without a channel the selected one is used
     /// and Status has none to name, so an invite there needs one.
     fn dispatch_invite(&mut self, active: &Session, argument: &str, surface: ComposerSurface) -> CommandOutcome {
         let words = Words::split(argument);
@@ -654,7 +650,7 @@ impl Controller {
         self.dispatch_quiet_send(QuietSend::Msg, &argument, surface)
     }
 
-    /// `/mode <target> ...` (`dispatchMode`). The argument is read against the network's channel
+    /// `/mode <target>...` (`dispatchMode`). The argument is read against the network's channel
     /// modes, so a query and a change both map to the frame the server expects.
     fn dispatch_mode(&mut self, argument: &str, surface: ComposerSurface) -> CommandOutcome {
         if argument.is_empty() {
@@ -1018,7 +1014,7 @@ impl Controller {
         CommandOutcome::Sent
     }
 
-    /// `/autoaway ...`. The timers and settings are the auto-away runtime's; the reply is one
+    /// `/autoaway...`. The timers and settings are the auto-away runtime's; the reply is one
     /// line (`dispatchAutoaway`).
     fn dispatch_autoaway(&mut self, argument: &str, surface: ComposerSurface) -> CommandOutcome {
         let request = parse_autoaway_argument(argument);

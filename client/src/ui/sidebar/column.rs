@@ -25,14 +25,14 @@ pub struct SidebarData<'a> {
     pub conversations: &'a [ConversationRow],
     pub state: &'a SidebarState,
     pub selected: &'a ConversationRef,
-    /// The nick, account, avatar and bot mark the identity footer draws (Qt `selfNick`).
+    /// The nick, account, avatar and bot mark the identity footer draws.
     pub footer_nick: &'a str,
     pub footer_account: &'a str,
     pub footer_avatar: Option<&'a str>,
     pub footer_bot: bool,
     /// The footer's presence, read from the controller for `footer_network`.
     pub presence: SelfPresence,
-    /// Status is showing, so no conversation row is the current one (Qt `current`).
+    /// Status is showing, so no conversation row is the current one.
     pub status_open: bool,
     pub inbox_count: u32,
     pub typing_phase: u8,

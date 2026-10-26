@@ -339,7 +339,7 @@ pub fn wire_shell_actions(root: Div, cx: &mut Context<Shell>) -> Div {
     .on_action(cx.listener(|shell, _: &ConnectRemove, window, cx| {
         shell.connect_remove(window, cx);
     }))
-    // The Connect card's own keys. Each one passes on when the focused stop does not use it,
+    // The Connect card's own keys. Each one passes on when the focused stop does not use it
     // so a field keeps Space and the arrows, and the composer keeps its keys.
     .on_action(cx.listener(|shell, _: &ConnectNextStop, window, cx| {
         if !shell.connect_step(false, window, cx) {

@@ -1,5 +1,4 @@
 //! The messages between the UI thread and the net thread.
-//!
 //! `Command`s travel from the UI thread to the net thread, and `Delivery`s travel back.
 //! Each one names its connection, and a connect, a write or an event also names the epoch
 //! it belongs to. A connection bumps its epoch on every connect and shutdown, so a stale
@@ -38,7 +37,6 @@ pub(super) enum Command {
     /// forgets the task only while the connection still runs that epoch.
     Finished { conn: ConnId, epoch: u64 },
     /// Close every connection the way `Close` does, then end the net thread. Sent from
-    /// `NetHub::drop`.
     Stop,
     /// Reports how many tasks the hub holds. Tests only.
     #[cfg(test)]

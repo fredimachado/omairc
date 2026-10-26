@@ -1,5 +1,5 @@
 //! Ported reducer tests and their fixtures. The Go suite
-//! (`tui/internal/irc/reducer_test.go`, `history_page_test.go`, `typing_test.go`,
+//! (`tui/internal/irc/reducer_test.go`, `history_page_test.go`, `typing_test.go`
 //! `readmarker_test.go`) builds its state the same way: a welcomed network, event
 //! structs or translated wire lines, and reads of the conversations it created.
 //! Each Go test keeps its name here in snake_case.

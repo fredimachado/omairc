@@ -17,7 +17,7 @@ pub(super) fn visibility(window: &Window) -> WindowVisibility {
         return WindowVisibility::Visible;
     };
     // Match Windows/Linux: a missing handle is Visible (skip), not Hidden.
-    // Only a real NSWindow's !isVisible() reports Hidden.
+    // Only a real NSWindow's !isVisible reports Hidden.
     let Some(ns_window) = ns_window_from_view(appkit.ns_view) else {
         return WindowVisibility::Visible;
     };

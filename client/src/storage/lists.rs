@@ -1,7 +1,5 @@
-//! The per-network lists the controller keeps across runs: `/ignore`, `/mute`,
-//! `/highlight` and the `/monitor` nicks. Port of the list stores in
-//! `tui/internal/controller/stores.go`.
-//!
+//! The per-network lists the controller keeps across runs: `/ignore`, `/mute`
+//! `/highlight` and the `/monitor` nicks.
 //! The lists share one shape: a per-network, insertion-ordered list where membership
 //! and removal compare through the network's case mapping, and adding a duplicate is
 //! a no-op. `CaseListStore` is that shape once. A store loads its lists from a
@@ -70,7 +68,7 @@ impl CaseListStore {
         Self::new(Box::new(MemoryBacking::default()))
     }
 
-    /// The stored values for `network_id`, in insertion order (`Nicks`, `Targets`,
+    /// The stored values for `network_id`, in insertion order (`Nicks`, `Targets`
     /// `Words`). Empty for an empty network id.
     pub fn entries(&self, network_id: &str) -> Vec<String> {
         if network_id.is_empty() {

@@ -8,9 +8,10 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
-// This file is the Go port of IrcCommandDispatcher in
+// Every slash-verb decision, with side effects it cannot own performed
+// through CommandHost. Twin: `client/src/controller/commanddispatcher.rs`.
 // `client/src/controller/commanddispatcher.rs`: every slash-verb decision, with the
-// side effects it cannot own performed through CommandHost. Join, part, mode,
+// side effects it cannot own performed through CommandHost. Join, part, mode
 // away, pref, ignore/mute/highlight, and query decisions stay here; the
 // controller performs them and owns the stores this reads.
 

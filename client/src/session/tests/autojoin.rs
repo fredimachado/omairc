@@ -1,4 +1,4 @@
-//! Port of `tui/internal/session/autojoin_test.go`: keyed JOINs, the stored key
+//! keyed JOINs, the stored key
 //! that survives a reconnect, and the key a 475 drops.
 
 use std::collections::BTreeMap;

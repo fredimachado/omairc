@@ -16,7 +16,6 @@ import (
 // TestPTYSmokeDemoShell starts the compiled omairc-tui under a PTY, feeds its
 // output into a Screen, and waits for the seeded demo shell to render and set
 // its OSC title. It then sends Ctrl+Q and waits for the child to exit.
-//
 // The test drives Start directly; it does not need the daemon.
 func TestPTYSmokeDemoShell(t *testing.T) {
 	binary, err := filepath.Abs(filepath.Join("..", "..", "bin", "omairc-tui"))

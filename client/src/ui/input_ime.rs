@@ -7,7 +7,6 @@ use crate::model::text_edit::snap_grapheme;
 use super::SingleLineInput;
 
 /// Byte offset in `text` for a UTF-16 code-unit offset. Past the end clamps to
-/// `text.len()`.
 pub(crate) fn utf16_offset_in(text: &str, utf16: usize) -> usize {
     let mut utf8_offset = 0;
     let mut utf16_count = 0;
@@ -21,7 +20,7 @@ pub(crate) fn utf16_offset_in(text: &str, utf16: usize) -> usize {
     utf8_offset
 }
 
-/// IME composition selection is UTF-16 relative to the inserted composition,
+/// IME composition selection is UTF-16 relative to the inserted composition
 /// not the whole field. Offset both ends from the replacement start.
 pub(crate) fn composition_selected_range(
     replacement_start: usize,
@@ -161,7 +160,7 @@ impl EntityInputHandler for SingleLineInput {
         } else {
             self.marked_range = None;
         }
-        // selected_range is relative to the composition (Apple setMarkedText /
+        // selected_range is relative to the composition (Apple setMarkedText
         // Windows GCS_CURSORPOS), not the whole field. Converting against
         // content and then adding range.end mixed two coordinate systems and
         // could land inside a multi-byte character after an ASCII prefix.

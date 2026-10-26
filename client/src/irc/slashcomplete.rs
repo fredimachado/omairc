@@ -1,12 +1,9 @@
-//! Port of `tui/internal/irc/slashcomplete.go`
 //! What the slash-complete popup shows for the composer text.
-//!
 //! Composer text becomes a probe. A bare `/word` gives the verb rows ranked against the
 //! catalog visible on the surface. `/pref` gives its names, then its values. Ranking is
-//! Qt's, not the fuzzy matcher the sheets use. A row must start with the typed letter,
+//! Qt's, not the fuzzy matcher the sheets use. A row must start with the typed letter
 //! then scores exact (100), prefix (80), substring (50), or an ordered subsequence (20
 //! plus a closeness term). A typed alias scores exact too.
-//!
 //! Pure. The popup's highlight, its Escape memory and the Tab and Enter insertions live
 //! in `model/slash_complete.rs`.
 
@@ -46,7 +43,7 @@ impl SlashProbe {
         &self.hits
     }
 
-    /// Whether a row has exactly this label (Go `SlashProbe.HasLabel`, C++
+ /// Whether a row has exactly this label (Go `SlashProbe.HasLabel`, C++
     /// `IrcSlashProbe::containsLabel`).
     #[cfg(test)]
     pub fn has_label(&self, label: &str) -> bool {
@@ -280,7 +277,7 @@ mod tests {
         hits.iter().map(|hit| hit.label.as_str()).collect()
     }
 
-    // Ported from tui/internal/irc/slashcomplete_test.go.
+    // tui/internal/irc/slashcomplete_test.go.
 
     #[test]
     fn openable_needle_takes_one_unspaced_word_after_a_single_slash() {
@@ -464,7 +461,7 @@ mod tests {
         assert!(open_probe("j".into(), Vec::new()).is_none());
     }
 
-    // Ported from `tst_command` (`slashProjectClosed`, `slashProjectOpen`).
+    // (`slashProjectClosed`, `slashProjectOpen`).
 
     #[test]
     fn slash_project_closed_matches_the_core_inputs() {

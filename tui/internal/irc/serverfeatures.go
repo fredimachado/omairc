@@ -434,7 +434,7 @@ func (f *ServerFeatures) ParseNamesToken(token string) (ParsedName, bool) {
 	return ParsedName{Nick: nick, Ranks: PrefixSet(bits)}, true
 }
 
-// PrefixChanges derives the rank grants and revokes from one MODE line,
+// PrefixChanges derives the rank grants and revokes from one MODE line
 // consuming non-prefix parameters as it walks the letters.
 func (f *ServerFeatures) PrefixChanges(mode string, arguments []string) []PrefixChange {
 	var changes []PrefixChange

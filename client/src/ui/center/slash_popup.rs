@@ -1,4 +1,4 @@
-//! The slash-complete popup: the verb and `/pref` rows above the composer, a port of
+//! The slash-complete popup: the verb and `/pref` rows above the composer, a.
 //! `slashCompleteList` in `client/src/ui/center/`. Its rows are styled
 //! like the Jump and Link lists' `text_row`: 12px, radius 7, and the selected row
 //! on the hover colour. The shell owns the rows and the highlight (`SlashSession`).
@@ -23,7 +23,7 @@ const SHELL_GAP: f32 = 6.;
 /// The popup as an overlay over the transcript, standing `SHELL_GAP` above the
 /// composer strip's rule and spanning the shell's side edges (Qt's
 /// `slashCompleteList`). Anchoring to the rule keeps the popup clear of it, so the
-/// popup never covers the divider. It is absolute, so it does not push the transcript,
+/// popup never covers the divider. It is absolute, so it does not push the transcript
 /// and it occludes the mouse so a click on a row does not start a transcript selection.
 /// `render_composer` places it in the composer strip.
 pub fn render_slash_popup(

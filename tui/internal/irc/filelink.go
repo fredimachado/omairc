@@ -6,10 +6,9 @@ import (
 	"strings"
 )
 
-// This file ports the upload-link rules from `client/src/irc/filelink.rs`.
+// This file.
 // absoluteFileLink resolves a successful upload's Location. The result is an
 // absolute http or https URL with no userinfo. Anything else is refused.
-//
 // net/url is the parser behind QUrl. bin/check-conventions exempts exactly
 // this file for that import.
 

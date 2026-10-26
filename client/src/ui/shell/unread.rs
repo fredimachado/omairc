@@ -1,5 +1,5 @@
 //! Window focus, minimize/hide, and the unseen jump, wired from the shell to the
-//! open transcript. The unread rules live in the controller (`set_window_active`,
+//! open transcript. The unread rules live in the controller (`set_window_active`
 //! `mark_all_read`); the transcript's landing rules live in `model::unread`.
 //! Minimized and hidden count as away even while OS focus stays true (Qt
 //! `transcriptSuspended` / `arrivalWindowActive`).

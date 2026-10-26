@@ -9,14 +9,16 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/irc"
 )
 
-// This file is the Go port of the anonymous auto-echo handlers in
+// Auto-echo handlers for the demo server. Each tryAnswer* returns the reply
+// bytes, or nil when it does not answer; the wiring in demo.go injects a
+// non-nil result. Twin: `client/src/demo/server.rs`.
 // `client/src/demo/server.rs`. Each tryAnswer* returns the reply bytes, or nil
 // when it does not answer; the wiring in demo.go injects a non-nil result. A
 // handled case that emits nothing returns a non-nil zero-length slice so the
 // caller can tell "answered" from "not mine".
 
 // demoServerFeatures builds the demo ISUPPORT set from kIsupport, mirroring
-// demoServerFeatures().
+// demoServerFeatures.
 func demoServerFeatures() irc.ServerFeatures {
 	features := irc.NewServerFeatures()
 	tokens := make([]string, 0, 3)
@@ -31,7 +33,7 @@ func demoServerFeatures() irc.ServerFeatures {
 
 // listMaskMatches applies a /list mask: comma-separated, an empty mask matches
 // all, and each part is a case-insensitive glob (`*` and `?`) or exact match.
-// It mirrors listMaskMatches().
+// It mirrors listMaskMatches.
 func listMaskMatches(name, mask string) bool {
 	if mask == "" {
 		return true
@@ -85,7 +87,7 @@ func wildcardMatches(pattern, text string) bool {
 }
 
 // listEntries is the /list source: seeded channels first, then the directory.
-// It mirrors listEntries().
+// It mirrors listEntries.
 func listEntries(network SeedNetwork) []SeedListed {
 	rows := make([]SeedListed, 0, len(network.Channels)+len(network.Directory))
 	for _, channel := range network.Channels {
@@ -99,7 +101,7 @@ func listEntries(network SeedNetwork) []SeedListed {
 	return rows
 }
 
-// tryAnswerPing answers a client PING with a PONG. It mirrors tryAnswerPing().
+// tryAnswerPing answers a client PING with a PONG. It mirrors tryAnswerPing.
 func (d *DemoServer) tryAnswerPing(frame []byte) []byte {
 	wire := stripCrlf(frame)
 	if !bytes.HasPrefix(wire, []byte("PING ")) {
@@ -114,7 +116,7 @@ func (d *DemoServer) tryAnswerPing(frame []byte) []byte {
 }
 
 // tryAnswerList answers a /list mask with 321/322/323 addressed to selfNick, the
-// network's current nick. It mirrors tryAnswerList().
+// network's current nick. It mirrors tryAnswerList.
 func (d *DemoServer) tryAnswerList(network SeedNetwork, selfNick string, frame []byte) []byte {
 	wire := stripCrlf(frame)
 	if !bytes.Equal(wire, []byte("LIST")) && !bytes.HasPrefix(wire, []byte("LIST ")) {
@@ -140,7 +142,7 @@ func (d *DemoServer) tryAnswerList(network SeedNetwork, selfNick string, frame [
 // tryAnswerNick answers our own NICK with an echo under the old nick, then moves
 // the network's self nick to the new one so later replies use it. A NICK that
 // does not carry exactly one new nick, with no space in it, gets no echo. It
-// mirrors tryAnswerNick().
+// mirrors tryAnswerNick.
 func (d *DemoServer) tryAnswerNick(networkID string, frame []byte) []byte {
 	oldNick := d.selfNicks[networkID]
 	if oldNick == "" || !bytes.HasPrefix(stripCrlf(frame), []byte("NICK ")) {
@@ -160,7 +162,7 @@ func (d *DemoServer) tryAnswerNick(networkID string, frame []byte) []byte {
 
 // tryAnswerPart echoes our own PART for any channel name, keeping the frame as
 // the client sent it under our own prefix, so a reason stays as written. A target
-// that is not a channel gets no echo. It mirrors tryAnswerPart().
+// that is not a channel gets no echo. It mirrors tryAnswerPart.
 func (d *DemoServer) tryAnswerPart(networkID string, frame []byte) []byte {
 	selfNick := d.selfNicks[networkID]
 	if selfNick == "" || !bytes.HasPrefix(stripCrlf(frame), []byte("PART ")) {
@@ -177,10 +179,10 @@ func (d *DemoServer) tryAnswerPart(networkID string, frame []byte) []byte {
 	return injectClientEcho(selfNick, frame)
 }
 
-// tryAnswerTopic echoes our own TOPIC on any channel name and keeps the new text,
+// tryAnswerTopic echoes our own TOPIC on any channel name and keeps the new text
 // so a later self JOIN reports it in 332. A bare TOPIC query has no text
 // parameter, and a target that is not a channel gets no echo. It mirrors
-// tryAnswerTopic().
+// tryAnswerTopic.
 func (d *DemoServer) tryAnswerTopic(networkID string, frame []byte) []byte {
 	selfNick := d.selfNicks[networkID]
 	if selfNick == "" || !bytes.HasPrefix(stripCrlf(frame), []byte("TOPIC ")) {
@@ -235,8 +237,8 @@ func (d *DemoServer) tryAnswerJoin(networkID, selfNick string, frame []byte) []b
 	return out
 }
 
-// tryAnswerCtcp answers a client-to-client CTCP query addressed to our nick,
-// never to a channel. It mirrors tryAnswerCtcp().
+// tryAnswerCtcp answers a client-to-client CTCP query addressed to our nick
+// never to a channel. It mirrors tryAnswerCtcp.
 func (d *DemoServer) tryAnswerCtcp(selfNick string, frame []byte) []byte {
 	if selfNick == "" {
 		return nil
@@ -282,7 +284,7 @@ func (d *DemoServer) tryAnswerCtcp(selfNick string, frame []byte) []byte {
 }
 
 // tryAnswerAway answers our own AWAY with 306 or 305. It mirrors
-// tryAnswerAway().
+// tryAnswerAway.
 func (d *DemoServer) tryAnswerAway(selfNick string, frame []byte) []byte {
 	if selfNick == "" {
 		return nil
@@ -298,7 +300,7 @@ func (d *DemoServer) tryAnswerAway(selfNick string, frame []byte) []byte {
 }
 
 // tryAnswerMetadata answers METADATA SET on our own nick with 761 or 766. It
-// mirrors tryAnswerMetadata().
+// mirrors tryAnswerMetadata.
 func (d *DemoServer) tryAnswerMetadata(selfNick string, frame []byte) []byte {
 	if selfNick == "" {
 		return nil
@@ -334,7 +336,7 @@ func (d *DemoServer) tryAnswerMetadata(selfNick string, frame []byte) []byte {
 // tryAnswerMonitor is the full MONITOR state machine: C clears, L lists, S
 // re-reports, and +/- add or remove with a 734 overflow. It returns a non-nil
 // zero-length slice when the command was handled but emits nothing. It mirrors
-// tryAnswerMonitor().
+// tryAnswerMonitor.
 func (d *DemoServer) tryAnswerMonitor(networkID, selfNick string, frame []byte, online []string) []byte {
 	if selfNick == "" || !bytes.HasPrefix(frame, []byte("MONITOR ")) {
 		return nil
@@ -414,13 +416,13 @@ func (d *DemoServer) tryAnswerMonitor(networkID, selfNick string, frame []byte, 
 }
 
 // injectMonitorNumeric renders one 730/731/732/733/734 numeric. It mirrors
-// injectMonitorNumeric().
+// injectMonitorNumeric.
 func injectMonitorNumeric(selfNick, code, trailing string) []byte {
 	return line(":server " + code + " " + selfNick + " :" + trailing)
 }
 
 // injectMonitorStates splits nicks into online (730, with a "!u@h" suffix) and
-// offline (731) batches. It mirrors injectMonitorStates().
+// offline (731) batches. It mirrors injectMonitorStates.
 func injectMonitorStates(selfNick string, nicks, online []string) []byte {
 	var on []string
 	var off []string
@@ -442,20 +444,20 @@ func injectMonitorStates(selfNick string, nicks, online []string) []byte {
 }
 
 // injectClientEcho wraps a client frame as if the server echoed it back. It
-// mirrors injectClientEcho().
+// mirrors injectClientEcho.
 func injectClientEcho(selfNick string, frame []byte) []byte {
 	out := []byte(":" + selfNick + "!u@h ")
 	return append(out, frame...)
 }
 
 // demoNickEquals is a case-insensitive nick comparison, mirroring
-// demoNickEquals().
+// demoNickEquals.
 func demoNickEquals(left, right string) bool {
 	return strings.EqualFold(left, right)
 }
 
 // demoMonitorIndex returns the watched index of nick, or -1. It mirrors
-// demoMonitorIndex().
+// demoMonitorIndex.
 func demoMonitorIndex(nicks []string, nick string) int {
 	for index, candidate := range nicks {
 		if demoNickEquals(candidate, nick) {
@@ -466,7 +468,7 @@ func demoMonitorIndex(nicks []string, nick string) int {
 }
 
 // demoNickIsOnline reports whether nick appears in online. It mirrors
-// demoNickIsOnline().
+// demoNickIsOnline.
 func demoNickIsOnline(online []string, nick string) bool {
 	return demoMonitorIndex(online, nick) >= 0
 }
@@ -474,8 +476,8 @@ func demoNickIsOnline(online []string, nick string) bool {
 // demoOnlineNicks is the nick the session answers as, every channel member, and
 // every direct peer. NICK may have renamed the session, so the seeded nick stops
 // counting as online once the self nick differs from it. The C++ returns
-// QSet::values() (unordered); this port sorts for determinism. It mirrors
-// demoOnlineNicks().
+// QSet::values (unordered); this port sorts for determinism. It mirrors
+// demoOnlineNicks.
 func demoOnlineNicks(network SeedNetwork, selfNick string) []string {
 	nicks := make(map[string]struct{})
 	nicks[selfNick] = struct{}{}
@@ -494,7 +496,7 @@ func demoOnlineNicks(network SeedNetwork, selfNick string) []string {
 }
 
 // echoLastPrivmsg replays the most recent client PRIVMSG back as a self echo.
-// It mirrors echoLastPrivmsg().
+// It mirrors echoLastPrivmsg.
 func (d *DemoServer) echoLastPrivmsg(networkID, nick string) bool {
 	transport := d.transportFor(networkID)
 	if transport == nil || nick == "" {

@@ -1,11 +1,10 @@
-//! The Secret Service (`org.freedesktop.secrets`) on Linux, through `oo7`. Port of
+//! The Secret Service (`org.freedesktop.secrets`) on Linux, through `oo7`.
 //! `tui/internal/storage/secretservice.go`: items in the default collection. A read finds
 //! both the items QtKeychain wrote for the Qt client and the ones the TUI wrote, and a write
 //! stores one item both of them can read ([`super::secretattrs`]). UI-thread reads go through
 //! [`DeferringCredentialStore`]; blocking oo7 work runs on a worker with at most
 //! [`CALL_TIMEOUT`] per call.
-//!
-//! Two bounds apply. The startup probe only connects to the bus, so it waits `PROBE_TIMEOUT`,
+//! Two bounds apply. The startup probe only connects to the bus, so it waits `PROBE_TIMEOUT`
 //! and a service that does not answer in that time falls back to the in-memory store for the
 //! run. Every read, write and delete unlocks the keyring, which can wait on the user at the
 //! keyring's prompt, so it waits `CALL_TIMEOUT`. An overrun is an `Error`, never a missing

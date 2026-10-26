@@ -1,5 +1,4 @@
 // Package crashlog keeps a durable record of omairc-tui crashes.
-//
 // The terminal holds the only copy of a crash. Bubble Tea recovers panics and
 // prints the message and stack to os.Stderr before restoring the terminal, and
 // the Go runtime prints unrecovered panics and fatal signals to the terminal
@@ -7,7 +6,6 @@
 // tees os.Stderr into <GenericStateRoot>/omairc/omairc-tui.log and points the
 // runtime's fatal crash output at the same file, so the next crash can be
 // diagnosed from disk instead of a terminal that no longer exists.
-//
 // The log is crash-only: a clean run writes nothing, so the file stays empty
 // until something actually dies, and its mtime is the crash time. It is
 // created owner-only (0600) and holds raw stderr, so never pass secret
@@ -31,7 +29,6 @@ func Path() string {
 // Install tees os.Stderr into the crash log and points the runtime's fatal
 // crash output at it. It returns a function that stops capturing and flushes
 // the log; the function is safe to call more than once.
-//
 // Install is best-effort. When the log cannot be reached the process keeps its
 // original stderr and Install reports the error, because a missing crash log
 // must never keep the shell from starting. A returned restore is always safe

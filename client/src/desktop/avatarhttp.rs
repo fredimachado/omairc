@@ -1,13 +1,11 @@
 //! The avatar fetch: one GET of a nick's avatar, judged at each step, decoded within
 //! budget and handed back as a PNG of its first frame. Go `tui/internal/avatar/fetch.go`
-//! (the download and the decode) and Qt `tui/internal/avatar/avatar.go` and
+//! (the download and the decode) and `tui/internal/avatar/avatar.go` and
 //! `tui/internal/irc/avatarhttp.go` (the redirects, the content type and the budgets).
-//!
 //! The controller decides whether an avatar is fetched (`controller/avatars.rs`). This
-//! module does the network and the image work. It runs on `cx.background_executor()`
+//! module does the network and the image work. It runs on `cx.background_executor`
 //! through the `HttpFetch` seam, and it never touches the controller. Every rule that
 //! can be checked without a socket lives in `irc/avatarurl.rs` and `irc/avatarstore.rs`.
-//!
 //! The image is decoded here, not by gpui. gpui's own loader decodes every GIF frame
 //! and has no size check, so the bytes it receives are already one frame and inside
 //! the budget: a PNG no wider or taller than `MAXIMUM_DECODED_EDGE`, scaled down to
@@ -139,7 +137,7 @@ pub fn fetch_avatar(fetch: &dyn HttpFetch, url: &Url) -> Result<Vec<u8>, AvatarF
     decode_avatar(&body)
 }
 
-/// Decodes an avatar body within the budget and returns its first frame as PNG,
+/// Decodes an avatar body within the budget and returns its first frame as PNG
 /// scaled down to `KEPT_EDGE` when it is larger. The declared size is checked from
 /// the header before any pixel is decoded, and the decoded size again after.
 pub fn decode_avatar(body: &[u8]) -> Result<Vec<u8>, AvatarFailure> {

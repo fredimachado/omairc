@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Fixed RFC 7677 test vector, mirroring the constants in `tst_scram`.
+// Fixed RFC 7677 test vector, mirroring the constants.
 const (
 	scramTestNonce       = "rOprNGfwEbeRWgbNEkqO"
 	scramTestClientFirst = "n,,n=user,r=rOprNGfwEbeRWgbNEkqO"
@@ -23,7 +23,7 @@ const (
 )
 
 // scramHidesPassword reports whether neither the error nor the message leaks
-// the test password, mirroring hidesPassword in `tst_scram`.
+// the test password, mirroring hidesPassword.
 func scramHidesPassword(result ScramResult) bool {
 	return !strings.Contains(result.Error, "pencil") &&
 		!strings.Contains(string(result.Message), "pencil")
@@ -49,7 +49,7 @@ func assertScramFailure(t *testing.T, result ScramResult) {
 	}
 }
 
-// TestScramRFC7677VectorVerifiesServerSignature ports
+// TestScramRFC7677VectorVerifiesServerSignature.
 // ScramTest::rfc7677VectorVerifiesServerSignature.
 func TestScramRFC7677VectorVerifiesServerSignature(t *testing.T) {
 	scram := NewSASLScram()
@@ -87,7 +87,7 @@ func TestScramRFC7677VectorVerifiesServerSignature(t *testing.T) {
 	}
 }
 
-// TestScramWrongServerSignatureFails ports
+// TestScramWrongServerSignatureFails.
 // ScramTest::wrongServerSignatureFails.
 func TestScramWrongServerSignatureFails(t *testing.T) {
 	scram := NewSASLScram()
@@ -103,7 +103,7 @@ func TestScramWrongServerSignatureFails(t *testing.T) {
 	assertScramFailure(t, rejected)
 }
 
-// TestScramServerNonceMustContinueClientNonce ports
+// TestScramServerNonceMustContinueClientNonce.
 // ScramTest::serverNonceMustContinueClientNonce.
 func TestScramServerNonceMustContinueClientNonce(t *testing.T) {
 	scram := NewSASLScram()
@@ -116,7 +116,7 @@ func TestScramServerNonceMustContinueClientNonce(t *testing.T) {
 	assertScramFailure(t, scram.TakeServerFirst([]byte(serverFirst)))
 }
 
-// TestScramNonceEqualsSignsBelongToTheValue ports
+// TestScramNonceEqualsSignsBelongToTheValue.
 // ScramTest::nonceEqualsSignsBelongToTheValue.
 func TestScramNonceEqualsSignsBelongToTheValue(t *testing.T) {
 	scram := NewSASLScram()
@@ -137,7 +137,7 @@ func TestScramNonceEqualsSignsBelongToTheValue(t *testing.T) {
 	}
 }
 
-// TestScramIterationCountBelowMinimumFails ports
+// TestScramIterationCountBelowMinimumFails.
 // ScramTest::iterationCountBelowMinimumFails.
 func TestScramIterationCountBelowMinimumFails(t *testing.T) {
 	scram := NewSASLScram()
@@ -149,7 +149,7 @@ func TestScramIterationCountBelowMinimumFails(t *testing.T) {
 	assertScramFailure(t, rejected)
 }
 
-// TestScramIterationCountAboveMaximumFailsWithoutPbkdf2 ports
+// TestScramIterationCountAboveMaximumFailsWithoutPbkdf2.
 // ScramTest::iterationCountAboveMaximumFailsWithoutPbkdf2.
 func TestScramIterationCountAboveMaximumFailsWithoutPbkdf2(t *testing.T) {
 	scram := NewSASLScram()
@@ -166,7 +166,7 @@ func TestScramIterationCountAboveMaximumFailsWithoutPbkdf2(t *testing.T) {
 	}
 }
 
-// TestScramUsernameEscapesEqualsAndComma ports
+// TestScramUsernameEscapesEqualsAndComma.
 // ScramTest::usernameEscapesEqualsAndComma.
 func TestScramUsernameEscapesEqualsAndComma(t *testing.T) {
 	scram := NewSASLScram()
@@ -182,7 +182,7 @@ func TestScramUsernameEscapesEqualsAndComma(t *testing.T) {
 	}
 }
 
-// TestScramAccountOrPasswordWithControlBytesIsRejected ports
+// TestScramAccountOrPasswordWithControlBytesIsRejected.
 // ScramTest::accountOrPasswordWithControlBytesIsRejected.
 func TestScramAccountOrPasswordWithControlBytesIsRejected(t *testing.T) {
 	accounts := []string{
@@ -228,7 +228,7 @@ func TestScramAccountOrPasswordWithControlBytesIsRejected(t *testing.T) {
 	}
 }
 
-// TestScramServerErrorAttributeFails ports
+// TestScramServerErrorAttributeFails.
 // ScramTest::serverErrorAttributeFails.
 func TestScramServerErrorAttributeFails(t *testing.T) {
 	scram := NewSASLScram()
@@ -247,7 +247,7 @@ func TestScramServerErrorAttributeFails(t *testing.T) {
 	assertScramFailure(t, again.TakeServerFinal([]byte("e=pencil")))
 }
 
-// TestScramMissingOrGarbageAttributeFails ports
+// TestScramMissingOrGarbageAttributeFails.
 // ScramTest::missingOrGarbageAttributeFails.
 func TestScramMissingOrGarbageAttributeFails(t *testing.T) {
 	missing := NewSASLScram()
@@ -273,7 +273,7 @@ func TestScramMissingOrGarbageAttributeFails(t *testing.T) {
 	}
 }
 
-// TestScramVerifierOrSaltWithTrailingJunkFails ports
+// TestScramVerifierOrSaltWithTrailingJunkFails.
 // ScramTest::verifierOrSaltWithTrailingJunkFails.
 func TestScramVerifierOrSaltWithTrailingJunkFails(t *testing.T) {
 	salt := NewSASLScram()
@@ -301,7 +301,7 @@ func TestScramVerifierOrSaltWithTrailingJunkFails(t *testing.T) {
 	assertScramFailure(t, rejected)
 }
 
-// TestScramServerFinalBeforeServerFirstFails ports
+// TestScramServerFinalBeforeServerFirstFails.
 // ScramTest::serverFinalBeforeServerFirstFails.
 func TestScramServerFinalBeforeServerFirstFails(t *testing.T) {
 	scram := NewSASLScram()
@@ -320,7 +320,7 @@ func TestScramServerFinalBeforeServerFirstFails(t *testing.T) {
 	}
 }
 
-// TestScramSecondCallInTheWrongStateFails ports
+// TestScramSecondCallInTheWrongStateFails.
 // ScramTest::secondCallInTheWrongStateFails.
 func TestScramSecondCallInTheWrongStateFails(t *testing.T) {
 	scram := NewSASLScram()
@@ -344,7 +344,7 @@ func TestScramSecondCallInTheWrongStateFails(t *testing.T) {
 	}
 }
 
-// TestScramGeneratedNonceIsPrintableAndHasNoComma ports
+// TestScramGeneratedNonceIsPrintableAndHasNoComma.
 // ScramTest::generatedNonceIsPrintableAndHasNoComma.
 func TestScramGeneratedNonceIsPrintableAndHasNoComma(t *testing.T) {
 	scram := NewSASLScram()

@@ -1,6 +1,6 @@
 //! What the Inbox does with a row. The sheet itself lives in `ui/sheets/inbox.rs` and
 //! the open and close paths in `modal.rs`; this file applies a chosen row to the shell.
-//! Ports Qt `IrcController::activateInboxItem` and `dismissInboxItem`: a conversation row
+//! a conversation row
 //! reveals its conversation, an invite joins the channel and selects it. The rows live in
 //! the controller, which removes them when the shell takes them.
 

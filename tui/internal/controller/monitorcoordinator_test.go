@@ -8,8 +8,8 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
-// This file ports the coordinator half of the MONITOR behavior. It drives the
-// coordinator through a recording MonitorHost and real MonitorStore/MuteStore/
+// This file.
+// coordinator through a recording MonitorHost and real MonitorStore/MuteStore
 // reducer instances; the session is a real registered session on a
 // LoopbackTransport so the MONITOR frames the coordinator writes are
 // observable.

@@ -9,8 +9,7 @@ import (
 // needs — reconnect backoff, capability negotiation timeout, ping watchdog, the
 // 45000ms labeled-response timeout, and the typing refresh — is armed through
 // AfterFunc so tests can drive it from a FakeClock instead of sleeping.
-//
-// It mirrors the QTimer/clock injection in `client/src/session/session.rs`, which takes
+// It mirrors the clock injection in `client/src/session/session.rs`, which takes
 // its timers as constructor arguments and reads the wall clock through one
 // monotonic source.
 type Clock interface {
@@ -48,7 +47,6 @@ func (RealClock) AfterFunc(d time.Duration, f func()) Timer {
 // that build on it. Advance moves virtual time forward and fires every timer
 // whose deadline has arrived, in deadline order (ties broken by scheduling
 // order). Timers are one-shot.
-//
 // It is safe for one goroutine to call Now/AfterFunc while another calls
 // Advance: a mutex guards the schedule and callbacks are invoked with the lock
 // released, so a callback may call back into the clock (for example to re-arm a
@@ -96,7 +94,7 @@ func (c *FakeClock) AfterFunc(d time.Duration, f func()) Timer {
 	return timer
 }
 
-// Advance moves virtual time forward by d and fires the timers that come due,
+// Advance moves virtual time forward by d and fires the timers that come due
 // earliest deadline first. A timer scheduled by a firing callback is eligible
 // to fire in the same Advance when its deadline also falls within d.
 func (c *FakeClock) Advance(d time.Duration) {

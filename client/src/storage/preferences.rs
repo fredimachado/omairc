@@ -1,10 +1,9 @@
-//! The `preferences` group of the settings file: the `/pref` toggles and the joins level,
-//! the sidebar's network order and collapse set, and the `/autoaway` settings. Port of
+//! The `preferences` group of the settings file: the `/pref` toggles and the joins level
+//! the sidebar's network order and collapse set, and the `/autoaway` settings.
 //! `IrcController::loadStoredPreferences`, `savePreferenceBool` and friends in
 //! `tui/internal/controller/controller.go` and `tui/internal/controller/autoawayruntime.go`, and of the
 //! group handling in `tui/internal/controller/controller.go` (Go). The keys are the Qt
 //! names, so the three clients share one section.
-//!
 //! This replaces the PoC's earlier JSON `prefs.json`. That file is not migrated, since the
 //! PoC never shipped it.
 

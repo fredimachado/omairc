@@ -61,7 +61,6 @@ pub fn veil_frame(
 /// percentage limits resolve against the window's height and width. A wrapper of
 /// auto size would leave them nothing to take a share of, and the card would run
 /// past the window's edges.
-///
 /// Presses on the card stop here, so they do not reach the dismissing backdrop. The
 /// listener sits on the card, not on a full-window shield, so presses outside the
 /// card still reach the backdrop.

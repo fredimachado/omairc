@@ -1,6 +1,6 @@
 //! The ignore, mute and highlight stores over the real demo: an ignored nick's
 //! traffic never reaches the transcript, a mute flags the conversation, and a
-//! highlight word raises a mention. Ports the behaviour `IrcController` gives these
+//! highlight word raises a mention.
 //! lists (`tui/internal/controller/stores.go`).
 
 use crate::controller::notify::Arrival;

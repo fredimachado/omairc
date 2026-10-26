@@ -1,8 +1,8 @@
 package controller
 
-// This file ports the Phase 2 controller suite. It keeps the C++ slot names
+// This file.
 // and expectations, dropping only the parts that belong to later phases
-// (slash-command dispatch, persistence, playback, inbox, monitors,
+// (slash-command dispatch, persistence, playback, inbox, monitors
 // ignore/mute, avatars, preferences, channel list). Where a C++ slot drove
 // the controller through a slash command, the Go port drives the same
 // underlying seam directly (SendToTarget for the QuietSend cause, the
@@ -32,7 +32,7 @@ func newController(t *testing.T) (*Controller, *session.FakeClock) {
 	return c, clock
 }
 
-// baseConfig mirrors the C++ config() helper: TLS on, reconnect off.
+// baseConfig mirrors the C++ config helper: TLS on, reconnect off.
 func baseConfig(networkID, nick string) session.SessionConfig {
 	config := session.DefaultSessionConfig(networkID, networkID, "irc.example", nick)
 	config.TLSEnabled = true
@@ -698,7 +698,7 @@ func TestLongMeAndNoticeSplitAcrossFrames(t *testing.T) {
 	second := strings.Repeat("b", 200)
 	body := first + " " + second
 
-	// /me becomes SendAction in the session; the split contract is the same.
+	// me becomes SendAction in the session; the split contract is the same.
 	before := len(transport.WrittenFrames())
 	if !s.SendAction("#omarchy", body) {
 		t.Fatalf("SendAction = false")
@@ -717,7 +717,7 @@ func TestLongMeAndNoticeSplitAcrossFrames(t *testing.T) {
 		assertSplitFrame(t, frame)
 	}
 
-	// /notice becomes SendNotice.
+	// notice becomes SendNotice.
 	before = len(transport.WrittenFrames())
 	if !s.SendNotice("#omarchy", body) {
 		t.Fatalf("SendNotice = false")
@@ -812,7 +812,7 @@ func TestStatusMsgNickservIdentifyDoesNotOpenDirect(t *testing.T) {
 	}
 	c.SelectConversation("freenode", "#omarchy")
 
-	// The C++ slot drove /msg nickserv identify through the console;
+	// The C++ slot drove /msg nickserv identify through the console
 	// SendToTarget is the same QuietSend path without the slash layer.
 	if !c.SendToTarget("freenode", "nickserv", "identify my_nick s3cret") {
 		t.Fatalf("SendToTarget = false")
@@ -1041,7 +1041,7 @@ func TestBackgroundChatBumpsConversationEpoch(t *testing.T) {
 
 // TestSelectConversationRefreshesSidebarUnread pins that selecting a
 // conversation republishes the sidebar snapshot. ConversationListModel::select
-// calls reload(), which repaints every row's roles, so a selection consumes its
+// calls reload, which repaints every row's roles, so a selection consumes its
 // unread and mention badge immediately instead of leaving the cached snapshot
 // stale until the next conversation-dirtying event.
 func TestSelectConversationRefreshesSidebarUnread(t *testing.T) {
@@ -1101,7 +1101,7 @@ func TestFirstConversationClaimsOffStatus(t *testing.T) {
 		t.Fatalf("SelectedTarget = %q before any conversation", c.SelectedTarget())
 	}
 
-	// The server auto-joins the configured channel; nothing was selected yet,
+	// The server auto-joins the configured channel; nothing was selected yet
 	// so this first conversation claims the selection.
 	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n"+
 		":server 353 omairc = #omarchy :@omairc anna\r\n"+
@@ -1173,8 +1173,8 @@ func TestExplicitSelectionStillClosesConsole(t *testing.T) {
 // --- typingEventRefreshesSidebarTyping ------------------------------------
 
 // TestTypingEventRefreshesSidebarTyping pins that a typing notification
-// repaints the sidebar's typing role. Qt emits typingChanged() and calls
-// ConversationListModel::invalidateTyping() when the conversation list was not
+// repaints the sidebar's typing role. Qt emits typingChanged and calls
+// ConversationListModel::invalidateTyping when the conversation list was not
 // already reloaded; the Go snapshot materializes that role, so the direct row
 // must repaint for the hint to show.
 func TestTypingEventRefreshesSidebarTyping(t *testing.T) {
@@ -1206,7 +1206,7 @@ func TestTypingEventRefreshesSidebarTyping(t *testing.T) {
 
 // --- OnViewChanged --------------------------------------------------------
 
-// TestOnViewChangedFiresForViewSurfaces ports the shell repaint wake-up: a chat
+// TestOnViewChangedFiresForViewSurfaces. A chat.
 // line or a membership change has no dedicated callback, so Publish must call
 // OnViewChanged for any non-empty notify. A no-op publish must not.
 func TestOnViewChangedFiresForViewSurfaces(t *testing.T) {
@@ -1230,7 +1230,7 @@ func TestOnViewChangedFiresForViewSurfaces(t *testing.T) {
 	}
 }
 
-// TestLeaveKeepsRowCloseDropsAndCatchupStaysClosed ports the leave/close
+// TestLeaveKeepsRowCloseDropsAndCatchupStaysClosed.
 // contract: /part keeps the row, /close drops a channel you have left, and
 // a later JOIN or PRIVMSG does not bring a closed channel back.
 func TestLeaveKeepsRowCloseDropsAndCatchupStaysClosed(t *testing.T) {
@@ -1312,7 +1312,7 @@ func channelOrder(c *Controller) string {
 	return strings.Join(names, " ")
 }
 
-// TestJoinClearsClosedOnEveryTarget ports a comma-separated /join after both
+// TestJoinClearsClosedOnEveryTarget.
 // channels were closed. Each successful JOIN clears that channel, so both
 // self-JOIN echoes can create a joined row. Selection stays on the last name.
 func TestJoinClearsClosedOnEveryTarget(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 )
 
 // recordingSink is a Sink that records the lifecycle and data events the
-// C++ QSignalSpy collected in `tst_transport`.
+// signal spy collected.
 type recordingSink struct {
 	connectedCount    int
 	encryptedCount    int
@@ -30,7 +30,7 @@ func (s *recordingSink) Error(message string) {
 	s.errors = append(s.errors, message)
 }
 
-// TestTransportSucceedsConnect ports TransportTest::succeedsConnect.
+// TestTransportSucceedsConnect.
 func TestTransportSucceedsConnect(t *testing.T) {
 	transport := NewLoopbackTransport()
 	sink := &recordingSink{}
@@ -65,7 +65,7 @@ func TestTransportSucceedsConnect(t *testing.T) {
 	}
 }
 
-// TestTransportRecordsWrites ports TransportTest::recordsWrites.
+// TestTransportRecordsWrites.
 func TestTransportRecordsWrites(t *testing.T) {
 	transport := NewLoopbackTransport()
 	transport.Connect("irc.example", 6667, false)
@@ -134,7 +134,7 @@ func TestTransportOnFrameWrittenHook(t *testing.T) {
 	}
 }
 
-// TestTransportInjectsInboundBytes ports
+// TestTransportInjectsInboundBytes.
 // TransportTest::injectsInboundBytes.
 func TestTransportInjectsInboundBytes(t *testing.T) {
 	transport := NewLoopbackTransport()
@@ -154,7 +154,7 @@ func TestTransportInjectsInboundBytes(t *testing.T) {
 	}
 }
 
-// TestTransportRemoteCloseEndsConnection ports
+// TestTransportRemoteCloseEndsConnection.
 // TransportTest::remoteCloseEndsConnection.
 func TestTransportRemoteCloseEndsConnection(t *testing.T) {
 	transport := NewLoopbackTransport()
@@ -176,7 +176,7 @@ func TestTransportRemoteCloseEndsConnection(t *testing.T) {
 	}
 }
 
-// TestTransportShutdownWhileConnecting ports
+// TestTransportShutdownWhileConnecting.
 // TransportTest::shutdownWhileConnecting.
 func TestTransportShutdownWhileConnecting(t *testing.T) {
 	transport := NewLoopbackTransport()
@@ -197,7 +197,7 @@ func TestTransportShutdownWhileConnecting(t *testing.T) {
 	}
 }
 
-// TestTransportTLSCertificateFailureSurfacesError ports
+// TestTransportTLSCertificateFailureSurfacesError.
 // TransportTest::tlsCertificateFailureSurfacesError.
 func TestTransportTLSCertificateFailureSurfacesError(t *testing.T) {
 	transport := NewLoopbackTransport()
@@ -228,7 +228,7 @@ func TestTransportTLSCertificateFailureSurfacesError(t *testing.T) {
 	}
 }
 
-// TestTransportSecondShutdownIsSafe ports
+// TestTransportSecondShutdownIsSafe.
 // TransportTest::secondShutdownIsSafe.
 func TestTransportSecondShutdownIsSafe(t *testing.T) {
 	transport := NewLoopbackTransport()
@@ -247,7 +247,7 @@ func TestTransportSecondShutdownIsSafe(t *testing.T) {
 	}
 }
 
-// TestTransportTimeoutFailsWithoutSleep ports
+// TestTransportTimeoutFailsWithoutSleep.
 // TransportTest::timeoutFailsWithoutSleep.
 func TestTransportTimeoutFailsWithoutSleep(t *testing.T) {
 	transport := NewLoopbackTransport()

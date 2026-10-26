@@ -2,11 +2,9 @@
 //! `TransportHarness`, the seam where a test drives the peer. The loopback harness
 //! lives beside its tests in `session/tests/transport.rs`; the socket harness runs
 //! these same cases over a real connection.
-//!
 //! A case never sleeps. `settle` waits for the transport's pending events, and
 //! `accept` is the peer's turn in a connect. A case asserts only what every
 //! transport guarantees; `wire_is_real` gates the one case that needs real bytes.
-//!
 //! `conformance_suite!` emits the cases as `#[test]`s over a harness factory.
 
 use std::cell::RefCell;
@@ -46,7 +44,7 @@ pub(crate) trait TransportHarness {
     fn wire_is_real(&self) -> bool;
 }
 
-/// The host and ports the cases connect to. A harness may ignore them.
+/// The host and.
 const HOST: &str = "irc.example";
 const PLAIN_PORT: u16 = 6667;
 const TLS_PORT: u16 = 6697;
@@ -217,7 +215,7 @@ pub(crate) fn shutdown_while_open_ends_quietly<H: TransportHarness>(harness: &H)
     assert_shutdown_is_final(harness, &sink, transport.as_ref());
 }
 
-/// The tail both shutdown cases share. `disconnected` fired once during the call,
+/// The tail both shutdown cases share. `disconnected` fired once during the call
 /// which returned before any settle. Afterwards the peer's late turn and bytes
 /// change nothing, and a second shutdown is a no-op.
 fn assert_shutdown_is_final<H: TransportHarness>(

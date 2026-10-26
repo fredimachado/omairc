@@ -17,7 +17,7 @@ func publisherWasPublishing(publisher *typingPublisher, target string) bool {
 	return ok && clock.lastPhase == irc.TypingActive
 }
 
-// TestTypingPublisherThrottlesPerTarget ports
+// TestTypingPublisherThrottlesPerTarget.
 // TypingTest::publisherThrottlesPerTarget.
 func TestTypingPublisherThrottlesPerTarget(t *testing.T) {
 	publisher := newTypingPublisher()
@@ -46,7 +46,7 @@ func TestTypingPublisherThrottlesPerTarget(t *testing.T) {
 	}
 }
 
-// TestTypingPublisherSuppressesDoneAfterChat ports
+// TestTypingPublisherSuppressesDoneAfterChat.
 // TypingTest::publisherSuppressesDoneAfterChat.
 func TestTypingPublisherSuppressesDoneAfterChat(t *testing.T) {
 	publisher := newTypingPublisher()
@@ -76,7 +76,7 @@ func TestTypingPublisherSuppressesDoneAfterChat(t *testing.T) {
 	}
 }
 
-// TestTypingPublisherRefusesPausedAndUnknownTargets ports
+// TestTypingPublisherRefusesPausedAndUnknownTargets.
 // TypingTest::publisherRefusesPausedAndUnknownTargets.
 func TestTypingPublisherRefusesPausedAndUnknownTargets(t *testing.T) {
 	publisher := newTypingPublisher()
@@ -98,7 +98,7 @@ func TestTypingPublisherRefusesPausedAndUnknownTargets(t *testing.T) {
 	}
 }
 
-// TestSessionSendTypingRequiresRegisteredAndMessageTags ports the session-level
+// TestSessionSendTypingRequiresRegisteredAndMessageTags.
 // gating of IrcSession::sendTyping.
 func TestSessionSendTypingRequiresRegisteredAndMessageTags(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -116,7 +116,7 @@ func TestSessionSendTypingRequiresRegisteredAndMessageTags(t *testing.T) {
 	}
 }
 
-// TestSessionSendTypingWritesTagmsgWhenRegistered ports the successful
+// TestSessionSendTypingWritesTagmsgWhenRegistered.
 // session-level typing send.
 func TestSessionSendTypingWritesTagmsgWhenRegistered(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -132,7 +132,7 @@ func TestSessionSendTypingWritesTagmsgWhenRegistered(t *testing.T) {
 	}
 }
 
-// TestSessionSendTypingThrottlesPerTarget ports the per-target pacing of
+// TestSessionSendTypingThrottlesPerTarget.
 // IrcSession::sendTyping.
 func TestSessionSendTypingThrottlesPerTarget(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -160,7 +160,7 @@ func TestSessionSendTypingThrottlesPerTarget(t *testing.T) {
 	}
 }
 
-// TestSessionSendTypingSuppressesDoneAfterChat ports the chat-then-done
+// TestSessionSendTypingSuppressesDoneAfterChat.
 // suppression of IrcSession::sendTyping.
 func TestSessionSendTypingSuppressesDoneAfterChat(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -192,7 +192,7 @@ func TestSessionSendTypingSuppressesDoneAfterChat(t *testing.T) {
 	}
 }
 
-// TestSessionSendTypingRefusesInvalidTargets ports the target validation of
+// TestSessionSendTypingRefusesInvalidTargets.
 // IrcSession::sendTyping.
 func TestSessionSendTypingRefusesInvalidTargets(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())

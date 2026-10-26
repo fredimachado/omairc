@@ -1,7 +1,7 @@
 //! Minimized and hidden windows count as away for unread and mention notify.
-//! Ports the controller-level parts of `tst_omairc`:
-//! `focusWhileMinimizedDoesNotConsumeUnread`, `restoreWhileInactiveKeepsCatchUpOff`,
-//! `minimizedActiveWindowNotifiesMention`, `minimizedChannelFollowEndLandsOnMark`,
+//! controller-level parts of:
+//! `focusWhileMinimizedDoesNotConsumeUnread`, `restoreWhileInactiveKeepsCatchUpOff`
+//! `minimizedActiveWindowNotifiesMention`, `minimizedChannelFollowEndLandsOnMark`
 //! `minimizedDirectFollowEndLandsOnMark`, and `hiddenWindowFollowEndLandsOnMark`.
 
 use crate::controller::notify::Arrival;

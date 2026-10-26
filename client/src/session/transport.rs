@@ -1,5 +1,3 @@
-//! Port of `tui/internal/session/transport.go`.
-//!
 //! `Transport` is the duplex byte pipe the session drives. It takes commands
 //! (`connect`, `write`, `shutdown`) and reports through a `TransportSink`. The
 //! trait has no socket in it: this crate's `session/` stays portable, and the
@@ -35,7 +33,7 @@ pub enum ConnectionState {
 }
 
 impl ConnectionState {
-    /// The C++ enumerator name, for logs and tests.
+ /// The C++ enumerator name, for logs and tests.
     // No log line prints the transport state yet, so nothing calls this name.
     #[allow(dead_code)]
     pub fn name(self) -> &'static str {
@@ -74,8 +72,8 @@ pub struct TransportError {
     pub message: String,
 }
 
-/// Receives transport lifecycle and data events (`Sink` in Go,
-/// `IrcTransport` signals in C++). Implementations must not block. A loopback
+/// Receives transport lifecycle and data events (`Sink` in Go
+/// `IrcTransport` signals). Implementations must not block. A loopback
 /// transport calls these synchronously, on the caller's stack, so a sink may
 /// call back into the transport.
 pub trait TransportSink {

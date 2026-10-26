@@ -11,7 +11,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/irc"
 )
 
-// This file ports the phase-2 session suite. It uses the loopback transport
+// This file.
 // and a FakeClock so every timer (capability timeout, ping watchdog, reconnect
 // backoff, labeled-response timeout) fires deterministically without sleeping.
 // The C++ suite injected four separate FakeReconnectTimer instances; here one
@@ -20,7 +20,7 @@ import (
 
 const sessionTestNetworkID = "network-a"
 
-// sessionTestConfig mirrors the anonymous config() helper in `tst_session`.
+// sessionTestConfig mirrors the anonymous config helper.
 func sessionTestConfig(networkID string) SessionConfig {
 	return SessionConfig{
 		NetworkID:                networkID,
@@ -40,7 +40,7 @@ func sessionTestConfig(networkID string) SessionConfig {
 	}
 }
 
-// sessionTestPlaintextConfig mirrors plaintextConfig() in `tst_session`.
+// sessionTestPlaintextConfig mirrors plaintextConfig.
 func sessionTestPlaintextConfig() SessionConfig {
 	config := sessionTestConfig(sessionTestNetworkID)
 	config.Port = 6667
@@ -68,7 +68,7 @@ type sessionRecordedAutojoin struct {
 }
 
 // sessionTestHandler records every Handler callback, standing in for the
-// QSignalSpy + StatusCollector helpers of the C++ fixture.
+// Signal-recording + StatusCollector helpers of the fixture.
 type sessionTestHandler struct {
 	states     []SessionState
 	errors     []sessionRecordedError
@@ -180,7 +180,7 @@ func (h *sessionTestHandler) statusTexts() []string {
 }
 
 // sessionFixture bundles one session, its loopback transport, and the fake
-// clock, mirroring the C++ Fixture struct.
+// clock, mirroring the Fixture struct.
 type sessionFixture struct {
 	t         *testing.T
 	transport *LoopbackTransport
@@ -365,7 +365,7 @@ func authenticateBody(frame string) string {
 }
 
 // scramServerFinalFor recomputes the RFC 7677 server-final signature, mirroring
-// the anonymous scramServerFinal helper in `tst_session`.
+// the anonymous scramServerFinal helper.
 func scramServerFinalFor(t *testing.T, clientFirst, serverFirst string) string {
 	t.Helper()
 	if !strings.HasPrefix(clientFirst, "n,,") {
@@ -397,7 +397,7 @@ func scramServerFinalFor(t *testing.T, clientFirst, serverFirst string) string {
 }
 
 // saslWire renders raw SASL bytes as the concatenated AUTHENTICATE frames a
-// server would send, mirroring saslWire in `tst_session`.
+// server would send, mirroring saslWire.
 func saslWire(raw []byte) string {
 	var builder strings.Builder
 	for _, frame := range encodeSASLFrames(raw) {
@@ -419,7 +419,7 @@ func startScramExchange(t *testing.T, fixture *sessionFixture) []byte {
 
 // --- Registration and capability negotiation ------------------------------
 
-// TestSessionRegistersAndAutojoins ports
+// TestSessionRegistersAndAutojoins.
 // SessionTest::registersAndAutojoins.
 func TestSessionRegistersAndAutojoins(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -472,7 +472,7 @@ func TestSessionRegistersAndAutojoins(t *testing.T) {
 	})
 }
 
-// TestSessionNegotiatesPresenceCapabilities ports
+// TestSessionNegotiatesPresenceCapabilities.
 // SessionTest::negotiatesPresenceCapabilities.
 func TestSessionNegotiatesPresenceCapabilities(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -525,7 +525,7 @@ func TestSessionNegotiatesPresenceCapabilities(t *testing.T) {
 	}
 }
 
-// TestSessionNegotiatesMessageTagsOnOwnLine ports
+// TestSessionNegotiatesMessageTagsOnOwnLine.
 // SessionTest::negotiatesMessageTagsOnOwnLine.
 func TestSessionNegotiatesMessageTagsOnOwnLine(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -545,7 +545,7 @@ func TestSessionNegotiatesMessageTagsOnOwnLine(t *testing.T) {
 	})
 }
 
-// TestSessionRefusedPresenceCapabilitiesStayOffWithoutFailing ports
+// TestSessionRefusedPresenceCapabilitiesStayOffWithoutFailing.
 // SessionTest::refusedPresenceCapabilitiesStayOffWithoutFailing.
 func TestSessionRefusedPresenceCapabilitiesStayOffWithoutFailing(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -582,7 +582,7 @@ func TestSessionRefusedPresenceCapabilitiesStayOffWithoutFailing(t *testing.T) {
 	}
 }
 
-// TestSessionRefusedMessageTagsStayOffWithoutFailing ports
+// TestSessionRefusedMessageTagsStayOffWithoutFailing.
 // SessionTest::refusedMessageTagsStayOffWithoutFailing.
 func TestSessionRefusedMessageTagsStayOffWithoutFailing(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -621,7 +621,7 @@ func TestSessionRefusedMessageTagsStayOffWithoutFailing(t *testing.T) {
 	}
 }
 
-// TestSessionUnansweredPresenceRequestStillRegisters ports
+// TestSessionUnansweredPresenceRequestStillRegisters.
 // SessionTest::unansweredPresenceRequestStillRegisters.
 func TestSessionUnansweredPresenceRequestStillRegisters(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -644,7 +644,7 @@ func TestSessionUnansweredPresenceRequestStillRegisters(t *testing.T) {
 	}
 }
 
-// TestSessionLateCapAckAfterTimeoutIsIgnored ports
+// TestSessionLateCapAckAfterTimeoutIsIgnored.
 // SessionTest::lateCapAckAfterTimeoutIsIgnored.
 func TestSessionLateCapAckAfterTimeoutIsIgnored(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -663,7 +663,7 @@ func TestSessionLateCapAckAfterTimeoutIsIgnored(t *testing.T) {
 	}
 }
 
-// TestSessionLateCapNakAfterTimeoutIsIgnored ports
+// TestSessionLateCapNakAfterTimeoutIsIgnored.
 // SessionTest::lateCapNakAfterTimeoutIsIgnored.
 func TestSessionLateCapNakAfterTimeoutIsIgnored(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -680,7 +680,7 @@ func TestSessionLateCapNakAfterTimeoutIsIgnored(t *testing.T) {
 	}
 }
 
-// TestSessionCapNakBeforeCapListIsIgnored ports
+// TestSessionCapNakBeforeCapListIsIgnored.
 // SessionTest::capNakBeforeCapListIsIgnored.
 func TestSessionCapNakBeforeCapListIsIgnored(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -701,7 +701,7 @@ func TestSessionCapNakBeforeCapListIsIgnored(t *testing.T) {
 	}
 }
 
-// TestSessionRegistersWhenCapIsUnsupported ports
+// TestSessionRegistersWhenCapIsUnsupported.
 // SessionTest::registersWhenCapIsUnsupported.
 func TestSessionRegistersWhenCapIsUnsupported(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -719,7 +719,7 @@ func TestSessionRegistersWhenCapIsUnsupported(t *testing.T) {
 	}
 }
 
-// TestSessionWithdrawnCapabilityIsPublished ports
+// TestSessionWithdrawnCapabilityIsPublished.
 // SessionTest::withdrawnCapabilityIsPublished.
 func TestSessionWithdrawnCapabilityIsPublished(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))

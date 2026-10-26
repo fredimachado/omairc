@@ -17,7 +17,7 @@ const (
 var reducerTimestamp = time.Date(2026, time.September, 4, 0, 0, 0, 0, time.UTC)
 
 // welcome seeds a registered network, defaulting the current nick to omairc
-// like the C++ welcome() helper.
+// like the C++ welcome helper.
 func welcome(reducer *EventReducer, networkID string, nicks ...string) {
 	nick := "omairc"
 	if len(nicks) > 0 {

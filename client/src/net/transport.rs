@@ -1,11 +1,9 @@
 //! The socket transport, the UI-side half of Go's `NetTransport` (`transport_net.go`).
-//!
 //! It lives on the UI thread, held as an `Rc` and registered with its `NetHub`. Commands
 //! go to the net thread over the hub's channel. Events come back through `apply`, which
 //! moves the lifecycle and calls the sink. Every call borrows the state only long
 //! enough to read or move it, so a sink may call back into the transport.
-//!
-//! Epochs make stale work harmless. Each connect and each shutdown moves the epoch on,
+//! Epochs make stale work harmless. Each connect and each shutdown moves the epoch on
 //! so an event from an abandoned connection fails the epoch check and is dropped.
 
 use std::cell::RefCell;
@@ -50,7 +48,7 @@ impl NetTransport {
         }
     }
 
-    /// Applies one event from the net thread. An event from an older epoch is dropped,
+    /// Applies one event from the net thread. An event from an older epoch is dropped
     /// and so is one that does not fit the current state. The sink runs with no borrow
     /// held.
     pub(super) fn apply(&self, epoch: u64, event: IoEvent) {

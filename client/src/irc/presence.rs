@@ -1,15 +1,12 @@
-//! Port of `tui/internal/irc/presence.go` (metadata vocabulary, per-nick facts,
 //! and network presence).
-//!
 //! Three layers share this file, all pure:
-//! - the draft/metadata-2 vocabulary: the subscribed keys, the value ceiling,
+//! - the draft/metadata-2 vocabulary: the subscribed keys, the value ceiling
 //!   the CAP token parse that reads the server's limits (the session's
-//!   `subscribe_to_member_metadata` and `set_own_metadata` read them);
+//! `subscribe_to_member_metadata` and `set_own_metadata` read them)
 //! - the per-nick facts a network keeps: away state, metadata values, the
 //!   services account, the GECOS and the operator flag (`NickPresence`), and the
-//!   per-network store that holds them (`NetworkPresence`);
+//! per-network store that holds them (`NetworkPresence`)
 //! - the display rules the query header and jump use over those facts.
-//!
 //! Nothing here reads a clock or a socket. Nick arguments are the normalized
 //! (folded) spelling the caller already produced with the network's case
 //! mapping, as the Go store expects.
@@ -86,7 +83,7 @@ pub fn clamped(value: &str) -> String {
 }
 
 /// `value`, cut from the end until its UTF-8 length fits `max_bytes`
-/// (`ClampedTo`). The cut is made in UTF-16 units, as the Go and C++ ports do,
+/// (`ClampedTo`). The cut is made in UTF-16 units, as the Go and C++.
 /// so a surrogate pair may be split and decodes to U+FFFD. A zero `max_bytes`
 /// yields the empty string.
 pub fn clamped_to(value: &str, max_bytes: usize) -> String {
@@ -256,10 +253,9 @@ pub fn meaningful_realname(realname: &str, nick: &str) -> bool {
     )
 }
 
-/// A realname worth showing on a query header (`DisplayedRealname`). Empty,
+/// A realname worth showing on a query header (`DisplayedRealname`). Empty
 /// equal to the nick, and the placeholders `realname`, `unknown` and `fullname`
 /// are hidden; comparison ignores case. Jump matching stays on
-/// `meaningful_realname`.
 pub fn displayed_realname<'a>(realname: &'a str, nick: &str) -> &'a str {
     let trimmed = realname.trim();
     if trimmed.is_empty() || trimmed.eq_ignore_ascii_case(nick) {
@@ -332,7 +328,7 @@ impl NetworkPresence {
             .insert(stored, value.to_owned());
     }
 
-    /// Stores the services account for `nick`. `*` and an empty value clear it,
+    /// Stores the services account for `nick`. `*` and an empty value clear it
     /// and the fact is recorded as known either way. A missing account tag must
     /// never call this (`SetAccount`).
     pub fn set_account(&mut self, nick: &str, account: &str) {

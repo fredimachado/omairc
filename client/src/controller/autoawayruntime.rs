@@ -1,13 +1,11 @@
-//! Port of `tui/internal/controller/autoawayruntime.go`: the idle and grace timers, the tripped
+//! the idle and grace timers, the tripped
 //! state, the per-network auto and manual away sets, and the `/autoaway` settings.
-//!
 //! The idle and grace steps run on the `Clock` seam. A timer's callback cannot reach
 //! the controller, so it queues an `Expiry` that `Controller::pump` runs on the UI
 //! thread, in order. Each expiry carries the timer generation it was armed under, and
 //! a stop bumps the generation, so a callback that fired just before a stop (local
 //! activity, a disable) is dropped instead of tripping away. Tests advance the fake
 //! clock and then pump, which is what the UI loop does on each tick.
-//!
 //! Away decisions stay here. The controller records the Status lines and the unaway
 //! bookkeeping the runtime asks for. A changed setting is also saved through the preference
 //! store (`persistence.rs`).

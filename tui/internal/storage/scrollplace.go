@@ -18,7 +18,7 @@ const (
 
 // ScrollPlace is where one conversation's transcript was last left. FollowEnd
 // means the viewport was pinned to the bottom. Otherwise the anchor is the
-// first visible message: its msgid when the server gave one, else the author,
+// first visible message: its msgid when the server gave one, else the author
 // kind, body, and server time.
 type ScrollPlace struct {
 	FollowEnd bool

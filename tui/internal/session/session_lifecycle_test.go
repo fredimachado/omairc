@@ -12,9 +12,9 @@ import (
 
 // --- STS ------------------------------------------------------------------
 
-// TestSessionPlaintextStsPortReconnectsWithTlsAndCachesOnSecureDuration ports
+// TestSessionPlaintextStsPortReconnectsWithTlsAndCachesOnSecureDuration.
 // SessionTest::plaintextStsPortReconnectsWithTlsAndCachesOnSecureDuration.
-// The C++ test also checks the on-disk STS cache; file persistence is deferred,
+// The C++ test also checks the on-disk STS cache; file persistence is deferred
 // so the in-session in-memory store is inspected instead.
 func TestSessionPlaintextStsPortReconnectsWithTlsAndCachesOnSecureDuration(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestPlaintextConfig())
@@ -67,7 +67,7 @@ func TestSessionPlaintextStsPortReconnectsWithTlsAndCachesOnSecureDuration(t *te
 	}
 }
 
-// TestSessionPlaintextStsWithoutPortStaysPlaintext ports
+// TestSessionPlaintextStsWithoutPortStaysPlaintext.
 // SessionTest::plaintextStsWithoutPortStaysPlaintext.
 func TestSessionPlaintextStsWithoutPortStaysPlaintext(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestPlaintextConfig())
@@ -86,7 +86,7 @@ func TestSessionPlaintextStsWithoutPortStaysPlaintext(t *testing.T) {
 	}
 }
 
-// TestSessionPlaintextCapNewStsPortReconnectsWithTls ports
+// TestSessionPlaintextCapNewStsPortReconnectsWithTls.
 // SessionTest::plaintextCapNewStsPortReconnectsWithTls.
 func TestSessionPlaintextCapNewStsPortReconnectsWithTls(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestPlaintextConfig())
@@ -105,7 +105,7 @@ func TestSessionPlaintextCapNewStsPortReconnectsWithTls(t *testing.T) {
 	}
 }
 
-// TestSessionTlsStsDurationRefreshesCacheWithoutReconnect ports
+// TestSessionTlsStsDurationRefreshesCacheWithoutReconnect.
 // SessionTest::tlsStsDurationRefreshesCacheWithoutReconnect.
 func TestSessionTlsStsDurationRefreshesCacheWithoutReconnect(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -132,7 +132,7 @@ func TestSessionTlsStsDurationRefreshesCacheWithoutReconnect(t *testing.T) {
 	}
 }
 
-// TestSessionTlsStsDurationZeroClearsCache ports
+// TestSessionTlsStsDurationZeroClearsCache.
 // SessionTest::tlsStsDurationZeroClearsCache.
 func TestSessionTlsStsDurationZeroClearsCache(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -150,7 +150,7 @@ func TestSessionTlsStsDurationZeroClearsCache(t *testing.T) {
 	}
 }
 
-// TestSessionCachedHostOpensTlsWhenProfileDisablesIt ports
+// TestSessionCachedHostOpensTlsWhenProfileDisablesIt.
 // SessionTest::cachedHostOpensTlsWhenProfileDisablesIt by priming the
 // session's in-memory store, since the on-disk store is deferred.
 func TestSessionCachedHostOpensTlsWhenProfileDisablesIt(t *testing.T) {
@@ -172,7 +172,7 @@ func TestSessionCachedHostOpensTlsWhenProfileDisablesIt(t *testing.T) {
 	}
 }
 
-// TestSessionCapDelStsDoesNotClearCache ports
+// TestSessionCapDelStsDoesNotClearCache.
 // SessionTest::capDelStsDoesNotClearCache.
 func TestSessionCapDelStsDoesNotClearCache(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -194,7 +194,7 @@ func TestSessionCapDelStsDoesNotClearCache(t *testing.T) {
 
 // --- Ping watchdog --------------------------------------------------------
 
-// TestSessionAnswersPingImmediately ports
+// TestSessionAnswersPingImmediately.
 // SessionTest::answersPingImmediately.
 func TestSessionAnswersPingImmediately(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -208,7 +208,7 @@ func TestSessionAnswersPingImmediately(t *testing.T) {
 	}
 }
 
-// TestSessionSilentSocketAfterWelcomeSendsClientPing ports
+// TestSessionSilentSocketAfterWelcomeSendsClientPing.
 // SessionTest::silentSocketAfterWelcomeSendsClientPing.
 func TestSessionSilentSocketAfterWelcomeSendsClientPing(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -233,7 +233,7 @@ func TestSessionSilentSocketAfterWelcomeSendsClientPing(t *testing.T) {
 	}
 }
 
-// TestSessionUnansweredClientPingReconnects ports
+// TestSessionUnansweredClientPingReconnects.
 // SessionTest::unansweredClientPingReconnects.
 func TestSessionUnansweredClientPingReconnects(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -260,7 +260,7 @@ func TestSessionUnansweredClientPingReconnects(t *testing.T) {
 	}
 }
 
-// TestSessionMatchingPongKeepsSessionRegistered ports
+// TestSessionMatchingPongKeepsSessionRegistered.
 // SessionTest::matchingPongKeepsSessionRegistered.
 func TestSessionMatchingPongKeepsSessionRegistered(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -289,7 +289,7 @@ func TestSessionMatchingPongKeepsSessionRegistered(t *testing.T) {
 	}
 }
 
-// TestSessionAnswersServerPingAfterWelcome ports
+// TestSessionAnswersServerPingAfterWelcome.
 // SessionTest::answersServerPingAfterWelcome.
 func TestSessionAnswersServerPingAfterWelcome(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -308,7 +308,7 @@ func TestSessionAnswersServerPingAfterWelcome(t *testing.T) {
 
 // --- Registration refusals ------------------------------------------------
 
-// TestSessionRegistrationRefusalFailsVisibly ports
+// TestSessionRegistrationRefusalFailsVisibly.
 // SessionTest::registrationRefusalFailsVisibly.
 func TestSessionRegistrationRefusalFailsVisibly(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -334,7 +334,7 @@ func TestSessionRegistrationRefusalFailsVisibly(t *testing.T) {
 	}
 }
 
-// TestSessionRegistrationRefusalWithoutSentenceKeepsNumeric ports
+// TestSessionRegistrationRefusalWithoutSentenceKeepsNumeric.
 // SessionTest::registrationRefusalWithoutSentenceKeepsNumeric.
 func TestSessionRegistrationRefusalWithoutSentenceKeepsNumeric(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -354,7 +354,7 @@ func TestSessionRegistrationRefusalWithoutSentenceKeepsNumeric(t *testing.T) {
 	}
 }
 
-// TestSessionRegistrationRefusalWithoutColonKeepsNumeric ports
+// TestSessionRegistrationRefusalWithoutColonKeepsNumeric.
 // SessionTest::registrationRefusalWithoutColonKeepsNumeric.
 func TestSessionRegistrationRefusalWithoutColonKeepsNumeric(t *testing.T) {
 	lines := []string{
@@ -390,7 +390,7 @@ func TestSessionRegistrationRefusalWithoutColonKeepsNumeric(t *testing.T) {
 	}
 }
 
-// TestSessionRegistrationRefusalKeepsOneWordSentence ports
+// TestSessionRegistrationRefusalKeepsOneWordSentence.
 // SessionTest::registrationRefusalKeepsOneWordSentence.
 func TestSessionRegistrationRefusalKeepsOneWordSentence(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -410,7 +410,7 @@ func TestSessionRegistrationRefusalKeepsOneWordSentence(t *testing.T) {
 	}
 }
 
-// TestSessionRegistrationRefusalDropsSecretSentence ports
+// TestSessionRegistrationRefusalDropsSecretSentence.
 // SessionTest::registrationRefusalDropsSecretSentence.
 func TestSessionRegistrationRefusalDropsSecretSentence(t *testing.T) {
 	sentences := []string{
@@ -454,7 +454,7 @@ func TestSessionRegistrationRefusalDropsSecretSentence(t *testing.T) {
 	}
 }
 
-// TestSessionNickInUseBeforeWelcomeRetriesThenRegisters ports
+// TestSessionNickInUseBeforeWelcomeRetriesThenRegisters.
 // SessionTest::nickInUseBeforeWelcomeRetriesThenRegisters.
 func TestSessionNickInUseBeforeWelcomeRetriesThenRegisters(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -507,7 +507,7 @@ func TestSessionNickInUseBeforeWelcomeRetriesThenRegisters(t *testing.T) {
 	}
 }
 
-// TestSessionNickInUseFallbacksExhaustedFails ports
+// TestSessionNickInUseFallbacksExhaustedFails.
 // SessionTest::nickInUseFallbacksExhaustedFails.
 func TestSessionNickInUseFallbacksExhaustedFails(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -538,7 +538,7 @@ func TestSessionNickInUseFallbacksExhaustedFails(t *testing.T) {
 	}
 }
 
-// TestSessionNickInUseAfterWelcomeKeepsSession ports
+// TestSessionNickInUseAfterWelcomeKeepsSession.
 // SessionTest::nickInUseAfterWelcomeKeepsSession.
 func TestSessionNickInUseAfterWelcomeKeepsSession(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -576,7 +576,7 @@ func TestSessionNickInUseAfterWelcomeKeepsSession(t *testing.T) {
 	}
 }
 
-// TestSessionNickInUseFallbackDropsSecretStatusSentence ports
+// TestSessionNickInUseFallbackDropsSecretStatusSentence.
 // SessionTest::nickInUseFallbackDropsSecretStatusSentence.
 func TestSessionNickInUseFallbackDropsSecretStatusSentence(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -603,7 +603,7 @@ func TestSessionNickInUseFallbackDropsSecretStatusSentence(t *testing.T) {
 	}
 }
 
-// TestSessionNickInUseAfterWelcomeDropsSecretStatusSentence ports
+// TestSessionNickInUseAfterWelcomeDropsSecretStatusSentence.
 // SessionTest::nickInUseAfterWelcomeDropsSecretStatusSentence.
 func TestSessionNickInUseAfterWelcomeDropsSecretStatusSentence(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -628,7 +628,7 @@ func TestSessionNickInUseAfterWelcomeDropsSecretStatusSentence(t *testing.T) {
 	}
 }
 
-// TestSessionUnavailableResourceAfterWelcomeKeepsSession ports
+// TestSessionUnavailableResourceAfterWelcomeKeepsSession.
 // SessionTest::unavailableResourceAfterWelcomeKeepsSession.
 func TestSessionUnavailableResourceAfterWelcomeKeepsSession(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -654,7 +654,7 @@ func TestSessionUnavailableResourceAfterWelcomeKeepsSession(t *testing.T) {
 	}
 }
 
-// TestSessionUnavailableResourceBeforeWelcomeFails ports
+// TestSessionUnavailableResourceBeforeWelcomeFails.
 // SessionTest::unavailableResourceBeforeWelcomeFails.
 func TestSessionUnavailableResourceBeforeWelcomeFails(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -677,7 +677,7 @@ func TestSessionUnavailableResourceBeforeWelcomeFails(t *testing.T) {
 	}
 }
 
-// TestSessionRegistrationErrorBeforeWelcomeShowsReasonAndStops ports
+// TestSessionRegistrationErrorBeforeWelcomeShowsReasonAndStops.
 // SessionTest::registrationErrorBeforeWelcomeShowsReasonAndStops.
 func TestSessionRegistrationErrorBeforeWelcomeShowsReasonAndStops(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -704,7 +704,7 @@ func TestSessionRegistrationErrorBeforeWelcomeShowsReasonAndStops(t *testing.T) 
 	}
 }
 
-// TestSessionRegistrationErrorBeforeWelcomeDropsSecretSentence ports
+// TestSessionRegistrationErrorBeforeWelcomeDropsSecretSentence.
 // SessionTest::registrationErrorBeforeWelcomeDropsSecretSentence.
 func TestSessionRegistrationErrorBeforeWelcomeDropsSecretSentence(t *testing.T) {
 	sentences := []string{
@@ -751,7 +751,7 @@ func TestSessionRegistrationErrorBeforeWelcomeDropsSecretSentence(t *testing.T) 
 	}
 }
 
-// TestSessionRegistrationErrorAfterWelcomeReconnectsWithReason ports
+// TestSessionRegistrationErrorAfterWelcomeReconnectsWithReason.
 // SessionTest::registrationErrorAfterWelcomeReconnectsWithReason.
 func TestSessionRegistrationErrorAfterWelcomeReconnectsWithReason(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -776,7 +776,7 @@ func TestSessionRegistrationErrorAfterWelcomeReconnectsWithReason(t *testing.T) 
 
 // --- Reconnect ------------------------------------------------------------
 
-// TestSessionConnectionTimeoutSchedulesReconnect ports
+// TestSessionConnectionTimeoutSchedulesReconnect.
 // SessionTest::connectionTimeoutSchedulesReconnect.
 func TestSessionConnectionTimeoutSchedulesReconnect(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -794,7 +794,7 @@ func TestSessionConnectionTimeoutSchedulesReconnect(t *testing.T) {
 	}
 }
 
-// TestSessionRemoteCloseSchedulesReconnect ports
+// TestSessionRemoteCloseSchedulesReconnect.
 // SessionTest::remoteCloseSchedulesReconnect.
 func TestSessionRemoteCloseSchedulesReconnect(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -831,7 +831,7 @@ func (r *fakeReachability) becomeReachable() { r.channel <- struct{}{} }
 // previous signal (it processes signals strictly in order).
 func (r *fakeReachability) barrier() { r.channel <- struct{}{} }
 
-// TestSessionReachabilityStartsReconnectWithoutWaiting ports
+// TestSessionReachabilityStartsReconnectWithoutWaiting.
 // SessionTest::reachabilityStartsReconnectWithoutWaiting.
 func TestSessionReachabilityStartsReconnectWithoutWaiting(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -867,7 +867,7 @@ func TestSessionReachabilityStartsReconnectWithoutWaiting(t *testing.T) {
 	}
 }
 
-// TestSessionReachabilityIgnoredUnlessReconnecting ports
+// TestSessionReachabilityIgnoredUnlessReconnecting.
 // SessionTest::reachabilityIgnoredUnlessReconnecting.
 func TestSessionReachabilityIgnoredUnlessReconnecting(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -900,7 +900,7 @@ func TestSessionReachabilityIgnoredUnlessReconnecting(t *testing.T) {
 	}
 }
 
-// TestSessionReconnectCanBeCancelled ports
+// TestSessionReconnectCanBeCancelled.
 // SessionTest::reconnectCanBeCancelled.
 func TestSessionReconnectCanBeCancelled(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -927,7 +927,7 @@ func TestSessionReconnectCanBeCancelled(t *testing.T) {
 	}
 }
 
-// TestSessionReconnectDelayIsBoundedExponential ports
+// TestSessionReconnectDelayIsBoundedExponential.
 // SessionTest::reconnectDelayIsBoundedExponential.
 func TestSessionReconnectDelayIsBoundedExponential(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -963,7 +963,7 @@ func TestSessionReconnectDelayIsBoundedExponential(t *testing.T) {
 	}
 }
 
-// TestSessionReconnectKeepsRetryingUntilStop ports
+// TestSessionReconnectKeepsRetryingUntilStop.
 // SessionTest::reconnectKeepsRetryingUntilStop.
 func TestSessionReconnectKeepsRetryingUntilStop(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -996,7 +996,7 @@ func TestSessionReconnectKeepsRetryingUntilStop(t *testing.T) {
 	}
 }
 
-// TestSessionQuitStopsReconnectWait ports
+// TestSessionQuitStopsReconnectWait.
 // SessionTest::quitStopsReconnectWait.
 func TestSessionQuitStopsReconnectWait(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -1031,7 +1031,7 @@ func TestSessionQuitStopsReconnectWait(t *testing.T) {
 	}
 }
 
-// TestSessionRetryableNetworkErrorIsEmittedOnceUntilWelcome ports
+// TestSessionRetryableNetworkErrorIsEmittedOnceUntilWelcome.
 // SessionTest::retryableNetworkErrorIsEmittedOnceUntilWelcome.
 func TestSessionRetryableNetworkErrorIsEmittedOnceUntilWelcome(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -1068,7 +1068,7 @@ func TestSessionRetryableNetworkErrorIsEmittedOnceUntilWelcome(t *testing.T) {
 	}
 }
 
-// TestSessionRetryableErrorsStayDedupedAcrossKindsUntilWelcome ports
+// TestSessionRetryableErrorsStayDedupedAcrossKindsUntilWelcome.
 // SessionTest::retryableErrorsStayDedupedAcrossKindsUntilWelcome.
 func TestSessionRetryableErrorsStayDedupedAcrossKindsUntilWelcome(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -1105,7 +1105,7 @@ func TestSessionRetryableErrorsStayDedupedAcrossKindsUntilWelcome(t *testing.T) 
 	}
 }
 
-// TestSessionQuitRejectsInvalidReasonWhileRegistered ports
+// TestSessionQuitRejectsInvalidReasonWhileRegistered.
 // SessionTest::quitRejectsInvalidReasonWhileRegistered.
 func TestSessionQuitRejectsInvalidReasonWhileRegistered(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -1136,8 +1136,8 @@ func TestSessionQuitRejectsInvalidReasonWhileRegistered(t *testing.T) {
 	}
 }
 
-// TestSessionDestructionWhileConnectingIsSafe ports
-// SessionTest::destructionWhileConnectingIsSafe. Go has no QObject parent/child
+// TestSessionDestructionWhileConnectingIsSafe.
+// Destruction while connecting must stay safe. Go has no parent/child
 // ownership, so the analogue is that dropping the last reference must not leave
 // a dangling callback.
 func TestSessionDestructionWhileConnectingIsSafe(t *testing.T) {
@@ -1153,7 +1153,7 @@ func TestSessionDestructionWhileConnectingIsSafe(t *testing.T) {
 
 // --- Session manager ------------------------------------------------------
 
-// TestSessionManagerStartsTwoLiveNetworks ports
+// TestSessionManagerStartsTwoLiveNetworks.
 // SessionTest::managerStartsTwoLiveNetworks.
 func TestSessionManagerStartsTwoLiveNetworks(t *testing.T) {
 	manager := NewManager()
@@ -1190,7 +1190,7 @@ func TestSessionManagerStartsTwoLiveNetworks(t *testing.T) {
 	}
 }
 
-// TestSessionManagerCreateStaysAddOnly ports
+// TestSessionManagerCreateStaysAddOnly.
 // SessionTest::managerCreateStaysAddOnly.
 func TestSessionManagerCreateStaysAddOnly(t *testing.T) {
 	manager := NewManager()
@@ -1206,7 +1206,7 @@ func TestSessionManagerCreateStaysAddOnly(t *testing.T) {
 	}
 }
 
-// TestSessionManagerDiscardUnregistersImmediately ports
+// TestSessionManagerDiscardUnregistersImmediately.
 // SessionTest::managerDiscardUnregistersImmediately.
 func TestSessionManagerDiscardUnregistersImmediately(t *testing.T) {
 	manager := NewManager()
@@ -1241,7 +1241,7 @@ func TestSessionManagerDiscardUnregistersImmediately(t *testing.T) {
 
 // --- Malformed input ------------------------------------------------------
 
-// TestSessionMalformedInputSurfacesProtocolError ports
+// TestSessionMalformedInputSurfacesProtocolError.
 // SessionTest::malformedInputSurfacesProtocolError.
 func TestSessionMalformedInputSurfacesProtocolError(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -1296,7 +1296,7 @@ func TestSessionMalformedInputSurfacesProtocolError(t *testing.T) {
 	check(12, []byte("@bad tag=foo PRIVMSG nickserv :identify my_nick s3cret\r\n"), "invalid command", "IDENTIFY ***")
 }
 
-// TestSessionOverlongFrameLogsPreviewWithoutSecrets ports
+// TestSessionOverlongFrameLogsPreviewWithoutSecrets.
 // SessionTest::overlongFrameLogsPreviewWithoutSecrets.
 func TestSessionOverlongFrameLogsPreviewWithoutSecrets(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))

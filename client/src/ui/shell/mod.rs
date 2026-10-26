@@ -112,7 +112,7 @@ pub struct Shell {
     /// The Connect sheet's text fields, focus handles and scroll handles.
     pub connect_ui: ConnectControls,
     /// OS focus and minimize/hide. Effective activity (`arrival_active`) is what the
-    /// controller and mention notify see (Qt `arrivalWindowActive`).
+    /// controller and mention notify see.
     pub activity: crate::desktop::windowvisibility::TranscriptActivity,
     /// Last effective activity pushed to the controller.
     applied_arrival_active: bool,
@@ -523,7 +523,7 @@ impl Render for Shell {
         };
         let photos = self.avatar_photos_for_frame(&networks, &conversations, &members, cx);
         self.push_photos(&photos, cx);
-        // The footer is the focused network's identity (Qt's `identityNetworkId`): its nick,
+        // The footer is the focused network's identity (Qt's `identityNetworkId`): its nick
         // and the presence the controller reads for that network.
         let footer_network = self.focused_network();
         let live_nick = self.controller.current_nick_for(&footer_network);

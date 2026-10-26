@@ -1,4 +1,4 @@
-//! Upload link resolution and FILEHOST Basic auth policy. Ports
+//! Upload link resolution and FILEHOST Basic auth policy.
 //! `tui/internal/irc/filelink.go`. The IRC core
 //! stays free of sockets; callers pass resolved URLs to the composer.
 

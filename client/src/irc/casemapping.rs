@@ -1,5 +1,3 @@
-//! Port of `tui/internal/irc/casemapping.go`.
-//!
 //! Identifier comparison under the CASEMAPPING rule a server advertises. The
 //! default is RFC 1459, where `[]\` fold to `{}|` and `^` folds to `~`.
 

@@ -1,5 +1,4 @@
-//! Read-marker publishing and MARKREAD get on direct messages. Ports
-//! `tui/internal/controller/readmarker_test.go`.
+//! Read-marker publishing and MARKREAD get on direct messages.
 
 use chrono::{TimeDelta, TimeZone, Utc};
 

@@ -1,11 +1,8 @@
-//! Port of `tui/internal/irc/event.go`.
-//!
 //! The translated facts a reducer consumes. `Event` is the closed taxonomy:
 //! each variant wraps one payload struct, and `Event::kind` names the
 //! alternative the way Go's `EventKind` does. Payloads hold decoded text and
 //! parsed times; no wire bytes survive translation.
-//!
-//! The small value types the session layer used to own (`HistoryKind`,
+//! The small value types the session layer used to own (`HistoryKind`
 //! `PendingInvite`, `Severity`) live here now, so `session/` imports them from
 //! the portable core instead of the other way round.
 
@@ -334,7 +331,6 @@ pub struct KickEvent {
 }
 
 /// A topic change, `332`, or `333` (`TopicEvent`). `author` is empty for `332`.
-///
 /// `keep_existing_topic` is set for RPL_TOPICWHOTIME (`333`): invent the channel
 /// and record the setter, but do not assign `topic`. Qt fills the current topic
 /// into the event in the controller before apply; the PoC uses this flag so a

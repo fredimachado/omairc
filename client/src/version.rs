@@ -1,8 +1,7 @@
 //! The app version: `build.rs` sets `OMAIRC_VERSION` from `OMAIRC_BUILD_VERSION`
 //! when packaging/CI pass that env, otherwise from `VERSION` in `version.pri`.
 //! `--version`, the About sheet, the sidebar footer, and CTCP VERSION all read
-//! it through `version()`, so there is one source. Go twin:
-//! `tui/internal/version`.
+//! it through `version`, so there is one source. Go twin:
 
 /// The version `build.rs` baked in at compile time.
 pub fn version() -> &'static str {

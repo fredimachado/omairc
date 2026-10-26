@@ -1,5 +1,3 @@
-//! Port of `tui/internal/notify` (desktop notification seam).
-//!
 //! The shell owns the platform notifier; the controller only queues `Arrival`s for
 //! `take_arrivals`. `--demo-server` raises notifications like a live launch, as the Qt client
 //! does. Setting `OMAIRC_SKIP_NOTIFICATIONS` to a non-empty value turns them off.

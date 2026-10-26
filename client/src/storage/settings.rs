@@ -1,12 +1,9 @@
-//! Port of `tui/internal/storage/settings.go` and the QSettings handling in
-//! `IrcProfileStore` (`tui/internal/storage/profilestore.go`, C++). The file is the INI that
-//! Qt's `QSettings` writes: the escaping, the `[section]` layout, the `@Invalid()`
+//! `IrcProfileStore` (`tui/internal/storage/profilestore.go`). The file is the INI that
+//! Qt's `QSettings` writes: the escaping, the `[section]` layout, the `@Invalid`
 //! sentinel and the `@@` escape all match, so a file written here reads back in the
 //! Qt client and the TUI.
-//!
 //! Writes fail closed. A malformed or unreadable file is never overwritten, so a
 //! corrupt store is not rebuilt from memory and silently loses its contents.
-//!
 //! The stores in this folder (profiles, open directs, lists, preferences, scroll places)
 //! read and write through this API.
 
@@ -41,9 +38,8 @@ pub enum Status {
 }
 
 /// One persisted value. QSettings stores a plain string, a string list, or an
-/// invalid QVariant written as `@Invalid()`. A one-item list is written without a
+/// invalid QVariant written as `@Invalid`. A one-item list is written without a
 /// comma, so it reads back as a string, exactly as in QSettings.
-///
 /// `Variant` is any other QVariant encoding (`@Rect(...)` and the like). It reads as
 /// text, but it is written verbatim: a plain string that starts with `@` is written
 /// with an extra `@`, and a `Variant` must not be.
@@ -80,7 +76,7 @@ impl Settings {
     }
 
     /// The stored string, or `""` when the key is absent. A string list and an
-    /// invalid value also read as `""`, matching `QVariant::toString()`.
+    /// invalid value also read as `""`, matching `QVariant::toString`.
     pub fn value(&self, group: &str, key: &str) -> String {
         self.text(group, key).unwrap_or_default().to_string()
     }
@@ -115,7 +111,7 @@ impl Settings {
     }
 
     /// The stored string list, or `None` when the key is absent. An empty string and
-    /// `@Invalid()` both read as an empty list. A plain string is a one-item list.
+    /// `@Invalid` both read as an empty list. A plain string is a one-item list.
     pub fn string_list(&self, group: &str, key: &str) -> Option<Vec<String>> {
         match self.values.get(&settings_key(group, key))? {
             IniValue::List(items) => Some(items.clone()),
@@ -154,7 +150,7 @@ impl Settings {
         self.set_value(group, key, &value.to_string());
     }
 
-    /// Stores a string list. An empty list is written as `@Invalid()`, which is
+    /// Stores a string list. An empty list is written as `@Invalid`, which is
     /// QSettings' sentinel, so it reads back distinct from a list holding one "".
     pub fn set_string_list(&mut self, group: &str, key: &str, values: &[String]) {
         self.values
@@ -184,7 +180,7 @@ impl Settings {
     }
 
     /// The direct child groups of `group`, sorted. Deeper groups collapse to their
-    /// first segment, as `QSettings::childGroups()` does.
+    /// first segment, as `QSettings::childGroups` does.
     pub fn child_groups(&self, group: &str) -> Vec<String> {
         let prefix = if group.is_empty() {
             String::new()
@@ -309,7 +305,7 @@ fn encode_value(value: &IniValue) -> String {
         IniValue::Invalid => "@Invalid()".to_string(),
         IniValue::Variant(encoded) => ini_escaped_string(encoded),
         // A string that starts with '@' gets one more '@', so it cannot be read
-        // back as a QVariant such as `@Invalid()` or `@Rect(...)`.
+        // back as a QVariant such as `@Invalid` or `@Rect(...)`.
         IniValue::Text(text) if text.starts_with('@') => ini_escaped_string(&format!("@{text}")),
         IniValue::Text(text) => ini_escaped_string(text),
     }
@@ -353,7 +349,6 @@ struct IniLine {
     equals: Option<usize>,
 }
 
-/// Port of `QConfFileSettingsPrivate::readIniLine` (Qt 6.8, as in the Go port). A
 /// leading `;` starts a comment, a `=` inside quotes is not a separator, and a
 /// backslash consumes the next byte, newline included.
 struct IniLines<'a> {
@@ -502,7 +497,7 @@ fn section_prefix(line: &[u8]) -> String {
     }
 }
 
-/// Port of `IrcProfileStore::iniBytesAreMalformed`: a `[section` with no `]` on its
+/// a `[section` with no `]` on its
 /// line, or a non-comment line with no `=`, is malformed.
 fn ini_bytes_are_malformed(data: &[u8]) -> bool {
     let raw = strip_bom(data);
@@ -524,7 +519,7 @@ fn ini_bytes_are_malformed(data: &[u8]) -> bool {
     false
 }
 
-/// Port of `QSettingsPrivate::iniUnescapedKey`. A backslash is `/`, and `%XX` or
+/// `QSettingsPrivate::iniUnescapedKey`. A backslash is `/`, and `%XX` or
 /// `%UXXXX` are hex code units. Anything else is literal.
 fn ini_unescaped_key(key: &[u8]) -> String {
     let text = String::from_utf8_lossy(key);
@@ -577,7 +572,7 @@ fn ini_unescaped_key(key: &[u8]) -> String {
     String::from_utf16_lossy(&out)
 }
 
-/// Port of `QSettingsPrivate::iniEscapedKey`. Letters, digits, `_`, `-` and `.` stay
+/// `QSettingsPrivate::iniEscapedKey`. Letters, digits, `_`, `-` and `.` stay
 /// literal, `/` becomes `\`, and other code units become `%XX` or `%UXXXX`.
 fn ini_escaped_key(key: &str) -> String {
     let mut out = String::new();
@@ -603,7 +598,6 @@ fn ini_escaped_key(key: &str) -> String {
     out
 }
 
-/// Port of `QSettingsPrivate::iniEscapedString` for the UTF-8 format. A `;`, `,` or
 /// `=` forces quotes. A leading or trailing space forces quotes. `\` and `"` are
 /// escaped, and control bytes use named or `\x` escapes. A hex digit after a
 /// `\0` or `\x` escape is itself escaped, so it cannot extend the escape.
@@ -655,7 +649,7 @@ fn ini_escaped_string(text: &str) -> String {
     }
 }
 
-/// Port of `QSettingsPrivate::iniEscapedStringList`: an empty list is `@Invalid()`,
+/// an empty list is `@Invalid`
 /// and items are escaped and joined with `, `.
 fn ini_escaped_string_list(items: &[String]) -> String {
     if items.is_empty() {
@@ -677,8 +671,8 @@ enum Step {
     End,
 }
 
-/// Port of `QSettingsPrivate::iniUnescapedStringList`. It decodes one value, splits
-/// top-level commas into a list, and applies the `@Invalid()` and `@@` sentinels. An
+/// `QSettingsPrivate::iniUnescapedStringList`. It decodes one value, splits
+/// top-level commas into a list, and applies the `@Invalid` and `@@` sentinels. An
 /// escape is decoded, and a quoted comma is literal.
 fn ini_unescaped_string_list(value: &[u8]) -> IniValue {
     let length = value.len();

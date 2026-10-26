@@ -5,8 +5,7 @@ package ui
 import tea "charm.land/bubbletea/v2"
 
 // keyboardEnhancements is the kitty keyboard mode Omairc asks for on Windows.
-//
-// ConPTY collapses ctrl+shift+letter to ctrl+letter and Ctrl+Enter to ctrl+j,
+// ConPTY collapses ctrl+shift+letter to ctrl+letter and Ctrl+Enter to ctrl+j
 // so request escape-coded keys to keep the shift chords (nick jump, server
 // list, inbox, …) and Connect Apply distinct on Windows Terminal. Report
 // alternate keys as well, so a terminal that supports it delivers the shifted

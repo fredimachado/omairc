@@ -9,11 +9,11 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
-// This file is the Go port of `client/src/controller/channellist.rs` and
+// The per-network /list request state machine, the row cache, and the /list
+// overlay model. Twin: `client/src/controller/channellist.rs`.
 // `client/src/controller/channellist.rs`: the per-network /list request state
 // machine, the row cache, and the /list overlay model. The topic strip it
 // needs is irc.PlainIrcText.
-//
 // All timers go through the injected session.Clock so tests drive the 30s idle
 // timeout with session.FakeClock.
 
@@ -30,7 +30,6 @@ const channelListDefaultIdleTimeout = 30 * time.Second
 const channelListMinIdleTimeout = time.Millisecond
 
 // channelListTimeoutText mirrors the fireIdleTimeout text in
-// `client/src/controller/channellist.rs`.
 const channelListTimeoutText = "Channel list timed out. Try /list again."
 
 // ChannelListRow is one channel-list entry. It mirrors IrcChannelListRow.
@@ -90,7 +89,6 @@ type channelListEntry struct {
 
 // ChannelListRequest owns per-network request state, the row cache, and the 30s
 // idle timeout. It mirrors IrcChannelListRequest.
-//
 // A ChannelListRequest is not safe for concurrent use; see the package doc.
 type ChannelListRequest struct {
 	clock       session.Clock
@@ -206,7 +204,7 @@ func (r *ChannelListRequest) Activity(networkID string) {
 
 // Finish ends a streamed load. It mirrors IrcChannelListRequest::finish: a
 // network that is not loading clears the drain flag and reports nothing; a
-// network draining a stale END clears the flag, re-arms, and reports nothing;
+// network draining a stale END clears the flag, re-arms, and reports nothing
 // otherwise the timer stops, the request completes, and a pending mask that
 // differs from the current mask is returned.
 func (r *ChannelListRequest) Finish(networkID string) ChannelListFinishResult {
@@ -278,14 +276,14 @@ func (r *ChannelListRequest) FireIdleTimeout(networkID string) bool {
 	return r.Fail(networkID, channelListTimeoutText, true)
 }
 
-// SameChannelListMask reports whether two masks are equal after trimming,
+// SameChannelListMask reports whether two masks are equal after trimming
 // case-insensitively. It mirrors IrcChannelListRequest::sameMask.
 func SameChannelListMask(left, right string) bool {
 	return strings.EqualFold(strings.TrimSpace(left), strings.TrimSpace(right))
 }
 
 // arm restarts one network's idle timer. The C++ original reuses a single
-// QTimer; session.Timer has no Reset, so the old timer is stopped and a fresh
+// timer; session.Timer has no Reset, so the old timer is stopped and a fresh
 // one is scheduled, which has the same one-shot deadline semantics.
 func (r *ChannelListRequest) arm(networkID string) {
 	if timer, ok := r.timers[networkID]; ok && timer != nil {
@@ -331,7 +329,6 @@ type ChannelListModelState struct {
 
 // ChannelListModel is the /list overlay source: a cached row set, a fuzzy
 // filter, and a users-descending sort. It mirrors ChannelListModel.
-//
 // A ChannelListModel is not safe for concurrent use; see the package doc.
 type ChannelListModel struct {
 	source        []ChannelListRow
@@ -391,7 +388,7 @@ func (m *ChannelListModel) BeginLoad(networkID, mask string) {
 	m.errorText = ""
 }
 
-// AppendRow stores one streamed row unless the cache is at ChannelListMaxRows,
+// AppendRow stores one streamed row unless the cache is at ChannelListMaxRows
 // adding it to the visible set only when it matches the current filter. It
 // mirrors ChannelListModel::appendRow.
 func (m *ChannelListModel) AppendRow(row ChannelListRow) {

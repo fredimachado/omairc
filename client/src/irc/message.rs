@@ -1,5 +1,3 @@
-//! Port of `tui/internal/irc/message.go`.
-//!
 //! Frame limits, the error taxonomy and the parsed line. Wire fields are bytes
 //! (`Vec<u8>`): the wire carries any octets, and `WireText` decodes them for
 //! display. The command and tag names are validated ASCII, so they are `String`.
@@ -32,7 +30,7 @@ pub enum IrcError {
 }
 
 impl IrcError {
-    /// The name `ircErrorName` gives in the C++ core.
+ /// The name `ircErrorName` gives in the C++ core.
     pub fn name(self) -> &'static str {
         match self {
             Self::EmptyInput => "empty input",

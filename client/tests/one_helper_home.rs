@@ -1,9 +1,8 @@
 //! One home for message helpers. The field readers over a parsed `IrcMessage` live
-//! on `IrcMessage` in `src/irc/message.rs` (`text_param`, `param_index`, `tag_text`,
+//! on `IrcMessage` in `src/irc/message.rs` (`text_param`, `param_index`, `tag_text`
 //! `has_tag`, `msgid`), the source test on `IrcPrefix::is_user` lives there too, and
 //! the service and notice-target tests live in `src/irc/servicenick.rs`. A second
 //! copy in any other file is the drift this gate stops: callers reach the home.
-//!
 //! The gate matches a definition, not a call. `fn name(` followed by a reference or a
 //! named argument is a function over a message or a text, so it is a copy. A method
 //! that takes `self` by value, such as the typing phase's `tag_value(self)`, is a

@@ -2,7 +2,7 @@
 //! left edge gets a bar. That flag is nick or `/highlight` word hits from someone
 //! else (`isTranscriptHighlight` in `tui/internal/irc/reducer.go`). Word matching
 //! lives in the reducer; `mentions_nick` here is for tests of `containsWord`.
-//! The look is the accent wash and left bar below. A whois or event line never washes,
+//! The look is the accent wash and left bar below. A whois or event line never washes
 //! and a DM washes only when the reducer set `mentioned`.
 
 use super::color::Color;

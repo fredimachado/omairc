@@ -1,5 +1,3 @@
-//! Port of `tui/internal/irc/prefixnick.go`.
-//!
 //! The source nick of a message. A server name (a dotted host with no
 //! `!user@host`) is not a nick, so it yields nothing.
 

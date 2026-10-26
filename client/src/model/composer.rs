@@ -1,9 +1,8 @@
 //! The composer's memory and keyboard helpers: a draft per target, the sent
-//! lines of each target for Up/Down, and Tab nick completion. Ports
-//! `stashComposerDraft`, `restoreComposerDraft`, `recallComposerHistory`,
+//! lines of each target for Up/Down, and Tab nick completion.
+//! `stashComposerDraft`, `restoreComposerDraft`, `recallComposerHistory`
 //! `rememberSentComposerLine`, `nickCompleteCandidates`, `nickMatchesForPrefix`
 //! and `completeNick` in `client/src/ui/shell`.
-//!
 //! Toolkit-free: the shell owns the text field and applies the `Edit`s these
 //! functions return. The field's text and caret are passed in, never read here.
 
@@ -138,7 +137,6 @@ impl ComposerState {
 
     /// The text the user has typed and not sent. While Up/Down walks history
     /// that is the draft saved when the walk began, not the recalled line.
-    ///
     /// Every stash goes through here. While find is active, the field holds the
     /// query, so the draft Ctrl+F saved is the unsent text.
     pub fn unsent_text(&self, composer_text: &str) -> String {
@@ -260,7 +258,7 @@ impl ComposerState {
 
     /// Up (`delta` -1) or Down (`delta` +1) in the composer, as
     /// `recallComposerHistory`. Returns the text to show, with the caret at its
-    /// end. `None` means the key falls through: there is no history to walk,
+    /// end. `None` means the key falls through: there is no history to walk
     /// or Down comes before any Up.
     pub fn recall(&mut self, composer_text: &str, delta: isize) -> Option<String> {
         self.completion = None;
@@ -284,10 +282,9 @@ impl ComposerState {
         Some(line)
     }
 
-    /// Tab (`backward` false) or Shift+Tab (`backward` true) in the composer,
+    /// Tab (`backward` false) or Shift+Tab (`backward` true) in the composer
     /// as `completeNick`. `text` and `cursor` are the field's, and `serial` is
     /// its input serial. `candidates` come from `nick_candidates`.
-    ///
     /// The first press matches the token before the caret. Repeats cycle
     /// through the matches while `serial` is unchanged, and any edit or caret
     /// move starts over. A token at the start of the line takes `: `, and any
@@ -348,7 +345,7 @@ impl ComposerState {
     }
 }
 
-/// Replaces the token from `origin` to `cursor` with `nick` and its suffix,
+/// Replaces the token from `origin` to `cursor` with `nick` and its suffix
 /// and keeps the text after the caret.
 fn insert_nick(text: &str, origin: usize, cursor: usize, nick: &str) -> Edit {
     let suffix = if origin == 0 { ": " } else { " " };

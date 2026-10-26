@@ -1,14 +1,12 @@
-//! Port of `tui/internal/irc/autoaway.go`
 //! The `/autoaway` argument parser, the duration parser and formatter, and
 //! the query, confirmation and Status strings. Pure: no clock, no session.
-//!
 //! The controller's auto-away runtime (`controller/autoawayruntime.rs`) holds the
 //! state and the timers; this module only reads the argument and words the reply.
 
 /// The shortest accepted auto-away timeout, in seconds.
 pub const AUTOAWAY_MIN_TIMEOUT_SECONDS: i64 = 30;
 
-/// The longest accepted auto-away timeout, in seconds (`numeric_limits<int>::max()/1000`).
+/// The longest accepted auto-away timeout, in seconds (`numeric_limits<int>::max/1000`).
 pub const AUTOAWAY_MAX_TIMEOUT_SECONDS: i64 = 2_147_483;
 
 /// The parsed shape of a `/autoaway` argument (`IrcAutoawayKind`).
@@ -280,7 +278,6 @@ fn rest_after_first_space_token(argument: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    //! Ports `tui/internal/irc/autoaway_test.go`.
     use super::*;
 
     #[test]

@@ -25,15 +25,13 @@ import (
 )
 
 // Why a daemon
-//
 // A recipe is a sequence of separate CLI invocations, but the child PTY, the
 // reconstructed Screen, and the OSC title must survive across them. So
 // `launch` starts one detached `serve` process that owns the PTY and serves a
 // Unix socket; every other verb is a short-lived client that connects, sends
 // one JSON request, and reads one JSON response. `cleanup` tells the daemon to
 // quit.
-//
-// State lives in $OMAIRC_TUI_STATE, or os.TempDir()/omairc-verify-tui-$USER:
+// State lives in $OMAIRC_TUI_STATE, or os.TempDir/omairc-verify-tui-$USER:
 // state.json (pid, socket, binary, root, demo, size, started), daemon.log, and
 // the socket itself.
 
@@ -286,7 +284,7 @@ func Serve(opts ServeOptions) error {
 	// The daemon must not outlive its PTY child. Watch the child and stop the
 	// accept loop the moment it exits, for any reason including a crash, so a
 	// dead child never leaves a daemon (and its socket) wedging the next
-	// launch. stop() is sync.Once-guarded, so this cannot race the `quit`
+	// launch. stop is sync.Once-guarded, so this cannot race the `quit`
 	// request.
 	go func() {
 		_ = proc.Wait()
@@ -1451,7 +1449,7 @@ func waitForPidExit(pid int, d time.Duration) {
 
 // stopDaemon asks the running daemon to quit, then waits for the process to
 // exit, which is when its shutdown-time socket and state-file removal is
-// complete. Waiting matters: stop() closes the listener as soon as quit
+// complete. Waiting matters: stop closes the listener as soon as quit
 // arrives, so a client that only watched the socket would start a new daemon
 // while the old one was still removing those same paths. It kills the pid if it
 // outlives the grace period. pidHint is a process this command spawned; a
@@ -1536,7 +1534,7 @@ func cmdRun(args []string, stdout, stderr io.Writer) error {
 		if len(tokens) == 0 {
 			continue
 		}
-		// Reject input this driver cannot deliver before any command runs,
+		// Reject input this driver cannot deliver before any command runs
 		// naming the offending verb. click, wheel, click-conversation, and
 		// click-member are the pointer verbs. Other click-* targets are Qt
 		// chrome with no TUI equivalent.
@@ -1641,7 +1639,7 @@ func runRecipeLaunch(args []string, stdout, stderr io.Writer, launchedByRun *boo
 	return nil
 }
 
-// rejectRecipeVerb names the verbs the TUI driver cannot run. click, wheel,
+// rejectRecipeVerb names the verbs the TUI driver cannot run. click, wheel
 // click-conversation, and click-member write SGR reports. The remaining
 // click-* verbs aim Qt chrome (the version label, the SEND button, the people
 // toggle, the network edit control) and are rejected instead of being faked
@@ -1707,7 +1705,7 @@ func extractDesktopRecipe(md string) ([]string, error) {
 }
 
 // splitRecipeLine tokenizes one recipe line the way a POSIX shell would for
-// the words that appear in the fence: single and double quotes group words,
+// the words that appear in the fence: single and double quotes group words
 // an unquoted # at the start of a word begins a comment, and an unquoted #
 // inside a word is literal ("#omarchy" stays one token).
 func splitRecipeLine(line string) ([]string, error) {

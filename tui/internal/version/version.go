@@ -1,11 +1,9 @@
 // Package version holds the single build version for omairc-tui.
-//
 // Value is injected at link time from the repository version.pri through
 // bin/version (see tui/bin/build and tui/bin/package). It must never be
 // hardcoded anywhere else in Go source; bin/check-conventions enforces that.
-//
 // go install does not run those scripts, so Value stays the sentinel below.
-// Only this file may call debug.ReadBuildInfo: when the sentinel remains,
+// Only this file may call debug.ReadBuildInfo: when the sentinel remains
 // Main.Version is the module version. A release tag v1.0.4 (the git tag
 // tui/v1.0.4) displays as 1.0.4, matching version.pri. A pseudo-version is
 // shown as-is. This file does not parse version.pri.

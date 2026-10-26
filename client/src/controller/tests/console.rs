@@ -1,4 +1,4 @@
-//! The Status ring and the bench path. Ports `tui/internal/controller/console_test.go`
+//! The Status ring and the bench path.
 //! (`TestConsoleText`), the capacity rule in `console.go`, and the test-only `#bench`
 //! channel seed.
 

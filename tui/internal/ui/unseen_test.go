@@ -2,7 +2,7 @@ package ui
 
 // This file covers the jump-to-first-new affordance: the "↓ new" header marker
 // that arms when rows arrive while the reader is scrolled up, and the Alt+U
-// chord that lands on them. It mirrors TranscriptList's firstUnseenIndex,
+// chord that lands on them. It mirrors TranscriptList's firstUnseenIndex
 // jumpArmed, and jumpToUnseen.
 
 import (

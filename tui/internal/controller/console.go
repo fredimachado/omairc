@@ -10,7 +10,6 @@ const DefaultStatusConsoleCapacity = 2000
 // buffer of classified irc.StatusEntry lines. It mirrors the storage half of
 // IrcStatusConsole; the open/network projection and the slash dispatch that
 // the Qt console also owns land in later phases.
-//
 // A StatusConsole is not safe for concurrent use; see the package doc.
 type StatusConsole struct {
 	capacity int

@@ -217,7 +217,7 @@ func (m *Model) activateJump() {
 	m.closeJump()
 }
 
-// handleJumpKey folds one key while the overlay is open. Escape dismisses,
+// handleJumpKey folds one key while the overlay is open. Escape dismisses
 // Up/Down highlight, Enter activates, and everything else filters.
 func (m *Model) handleJumpKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch key {
@@ -398,7 +398,6 @@ func (m *Model) openCurrentNetworkStatus() {
 
 // toggleStatus opens or closes the Status console. Opening remembers the
 // conversation id so Escape can return to it. It mirrors the Ctrl+` shortcut in
-// `client/src/ui/shell`.
 func (m *Model) toggleStatus() {
 	if m.ctrl == nil {
 		return
@@ -443,7 +442,7 @@ func (m *Model) dismissEscape() {
 
 // --- Network headers and the server list ----------------------------------
 
-// stepNetwork moves the network header focus with Alt+Left / Alt+Right,
+// stepNetwork moves the network header focus with Alt+Left / Alt+Right
 // wrapping. It restores the server list column so the highlight is visible.
 // It mirrors `client/src/ui/shell`'s stepNetwork.
 func (m *Model) stepNetwork(delta int) {
@@ -591,7 +590,6 @@ func indexOfString(values []string, needle string) int {
 // also drops find, the transcript cursor, and the member focus, matching the Qt
 // selection side effects. The previous conversation id is captured before apply
 // so the landing step can tell a real move from a re-select.
-//
 // It clears the network-header focus first. Qt's selectConversation and
 // openNetworkStatus both do this (`client/src/ui/shell`), so the composer's Enter
 // sends again after a walk. Leaving the header armed made Enter open Status
@@ -799,7 +797,7 @@ func (m *Model) jumpCardBody(inner int) []string {
 }
 
 // jumpOverlayLines is the jump card body. The filter is not a row. Each
-// following line is one jump entry. A list that fits the card is unchanged;
+// following line is one jump entry. A list that fits the card is unchanged
 // a longer list windows from jump.scroll, the same offset a click reads.
 func (m *Model) jumpOverlayLines(inner int) []overlayLine {
 	entries := m.jumpEntries()

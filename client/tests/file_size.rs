@@ -1,15 +1,13 @@
 //! The file-size ratchet. A production file under `src/` stays at or under `LIMIT`
-//! lines. A file already over it is recorded in `ALLOWLIST` at its current count,
+//! lines. A file already over it is recorded in `ALLOWLIST` at its current count
 //! and the count can only fall:
-//!
-//! - a listed file that grows past its recorded count fails, so growth is a split;
-//! - a listed file that drops to `LIMIT` or below fails until its entry is removed;
-//! - a listed file that drops but stays over `LIMIT` fails until its count is lowered,
-//!   so the slack cannot be spent later on growth;
+//! - a listed file that grows past its recorded count fails, so growth is a split
+//! - a listed file that drops to `LIMIT` or below fails until its entry is removed
+//! - a listed file that drops but stays over `LIMIT` fails until its count is lowered
+//! so the slack cannot be spent later on growth
 //! - an unlisted file over `LIMIT` fails, and so does a listed file that no longer exists.
-//!
 //! The count is production code only: non-blank lines with comments blanked, up to the
-//! first `#[cfg(test)]` that introduces an inline test module (`#[cfg(test)] mod name {`),
+//! first `#[cfg(test)]` that introduces an inline test module (`#[cfg(test)] mod name {`)
 //! so an inline test module belongs at the end of its file. An out-of-line
 //! `#[cfg(test)] mod name;` keeps its body in a file of its own, so it is not a cut and
 //! the lines after it still count. A test-only seam inside an `impl` (a `#[cfg(test)]` on

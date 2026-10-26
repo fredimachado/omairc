@@ -1,9 +1,8 @@
-//! Check for Updates and the Windows installer update, ported from
-//! `omaircupdatecheck`. It reads the latest GitHub release, orders its
+//! Check for Updates and the Windows installer update.
+//! Update check: reads the latest GitHub release, orders its
 //! version against the running one, and words the status line as Qt does. A
 //! portable copy opens the release page. An installed copy with a verified
 //! setup asset downloads it in the background and offers `Restart to update`.
-//!
 //! This module is state and policy only. The network goes through the
 //! `HttpFetch` seam and the installer file and process go through
 //! `desktop::installer`, so every transition here is testable without a socket.
@@ -20,9 +19,9 @@ use url::Url;
 use crate::desktop::httpfetch::{get_following, FetchRequest, HttpFetch};
 use crate::desktop::installer::InstallerLauncher;
 
-/// Qt `omaircGithubRepoUrl()`.
+/// Qt `omaircGithubRepoUrl`.
 pub const REPO_URL: &str = "https://github.com/fredimachado/omairc";
-/// Qt `omaircGithubLatestReleaseApiUrl()`.
+/// Qt `omaircGithubLatestReleaseApiUrl`.
 pub const LATEST_RELEASE_API_URL: &str =
     "https://api.github.com/repos/fredimachado/omairc/releases/latest";
 /// The page used when the reply has no `html_url`, as Qt's parser falls back.
@@ -67,7 +66,6 @@ pub struct WindowsSetup {
 }
 
 /// The update state the status line and the footer read. Qt
-/// `OmaircUpdateCheck::status`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UpdateStatus {
     /// No check has run, so the status line is hidden.
@@ -190,13 +188,11 @@ impl UpdateCheck {
     }
 
     /// An installed copy with a setup asset can download and restart. Qt
-    /// `installerUpdateAvailable`.
     pub fn installer_update_available(&self) -> bool {
         self.installed_copy && self.latest.as_ref().is_some_and(|r| r.setup.is_some())
     }
 
     /// The status line text, or `None` when the line is hidden. Qt
-    /// `OmaircUpdateCheck::message`.
     pub fn message(&self) -> Option<String> {
         Some(match self.status {
             UpdateStatus::Idle => return None,
@@ -241,7 +237,6 @@ impl UpdateCheck {
 
     /// Starts a check. Returns `None` while a check or a download is running, since
     /// the About sheet disables Check for Updates then. Qt `check`.
-    ///
     /// A check forgets the downloaded installer, as Qt does, and the caller
     /// removes that file. The path is read before this call.
     pub fn begin_check(&mut self) -> Option<CheckTicket> {
@@ -262,7 +257,6 @@ impl UpdateCheck {
 
     /// Applies a check reply. `None` is a failed check. The reply is ignored
     /// unless it is for the running check. Qt `finishWithBody` and
-    /// `finishFailed`.
     pub fn finish_check(&mut self, ticket: CheckTicket, release: Option<Release>) -> bool {
         if !self.current_check(ticket) {
             return false;
@@ -362,7 +356,6 @@ impl UpdateCheck {
     /// Starts the verified installer once per session. `verify` checks the
     /// downloaded file against the release digest and size. A successful spawn
     /// latches, so a later click or window close does nothing. Qt
-    /// `launchInstaller`.
     pub fn launch_installer(
         &mut self,
         launcher: &dyn InstallerLauncher,
@@ -494,7 +487,6 @@ pub fn parse_release(body: &str) -> Option<Release> {
 
 /// The one asset named `omairc-<version>-windows-x64-setup.exe` whose URL, digest
 /// and size pass. Two matches are ambiguous, so neither is offered. Qt
-/// `omaircParseGithubRelease`.
 fn windows_setup_for(assets: &[Value], tag: &str, version: &str) -> Option<WindowsSetup> {
     let expected = windows_setup_name(version);
     let mut found = None;
@@ -583,7 +575,6 @@ pub fn windows_setup_request_is_safe(url: &Url, tag: &str, version: &str) -> boo
 
 /// Where a redirect from the download may land: github.com or githubusercontent.com
 /// and their subdomains, over https, with no userinfo. Qt
-/// `omaircWindowsSetupRedirectIsSafe`.
 pub fn windows_setup_redirect_is_safe(url: &Url) -> bool {
     if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
         return false;
@@ -606,7 +597,6 @@ pub fn parse_sha256_digest(digest: &str) -> Option<String> {
 
 /// Whether an install location names the running app directory. Slashes and a
 /// trailing separator are ignored, and Windows compares case-insensitively. Qt
-/// `omaircInstallLocationMatches`.
 pub fn install_location_matches(install_location: &str, app_dir: &str) -> bool {
     let left = normalize_install_dir(install_location);
     let right = normalize_install_dir(app_dir);

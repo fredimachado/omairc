@@ -1,6 +1,5 @@
 //! Fuzzy filtering for the GPUI sheets (Jump, Link, Nick and the `/list`
 //! sheet). Qt and the TUI keep substring matching; only this PoC uses this.
-//!
 //! Matching is `nucleo-matcher`, so `omy` finds `#omarchy`. Hits report the
 //! matched characters as byte offsets into the haystack, so the UI can draw
 //! them bold without re-deriving anything.
@@ -90,7 +89,7 @@ pub struct Ranked<T, const N: usize> {
 
 /// Filters and ranks `items` by `query`. `fields` names each searchable text
 /// with its weight; an item's score is its best weighted field score. Items
-/// that match no field are dropped. The sort is stable by score, descending,
+/// that match no field are dropped. The sort is stable by score, descending
 /// so ties keep the order of `items`.
 pub fn rank<T, const N: usize>(
     query: &str,

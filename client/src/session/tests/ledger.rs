@@ -1,4 +1,4 @@
-//! Port of `tui/internal/session/batch_ledger_test.go`: batches that straddle a
+//! batches that straddle a
 //! PART, a JOIN, or a capability that never came.
 
 use super::batch::{bodies, history_config, register_with_history, since};

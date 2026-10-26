@@ -17,7 +17,7 @@ import (
 type ChannelListRowView = controller.ChannelListRow
 type ChannelListSnapshot = controller.ChannelListSnapshot
 
-// channelListState is the /list overlay: a filter input, a highlighted row,
+// channelListState is the /list overlay: a filter input, a highlighted row
 // and the rows streamed by the controller. It is modal while open.
 type channelListState struct {
 	open     bool
@@ -73,7 +73,7 @@ func (m *Model) closeChannelList() {
 }
 
 // syncChannelList opens the overlay when the controller reports an active
-// /list, and closes it when the controller cleared it.
+// list, and closes it when the controller cleared it.
 func (m *Model) syncChannelList() {
 	if m.ctrl == nil {
 		return

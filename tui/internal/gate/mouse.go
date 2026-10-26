@@ -7,7 +7,7 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// SGR mouse button codes (DEC 1006). Coordinates in the sequence are 1-based;
+// SGR mouse button codes (DEC 1006). Coordinates in the sequence are 1-based
 // the x and y arguments here are 0-based cells, matching Bubble Tea.
 const (
 	sgrButtonLeft      = 0

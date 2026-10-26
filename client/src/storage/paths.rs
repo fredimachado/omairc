@@ -1,8 +1,6 @@
-//! Port of `tui/internal/storage/paths*.go`,
 //! under this build's app folder ([`crate::identity::APP_FOLDER`]). With the
 //! `dev` feature that folder is `omairc-poc`, separate from the Qt/TUI `omairc/`
 //! tree, so local `cargo test --features dev` never writes into a real install.
-//!
 //! The roots follow `$XDG_CONFIG_HOME` and `$XDG_STATE_HOME` when set. Otherwise
 //! they are the platform's generic locations:
 //! - Windows: `%LOCALAPPDATA%` for config (`GenericConfigLocation`); state is
@@ -10,7 +8,6 @@
 //!   `platform paths`).
 //! - macOS: `~/Library/Preferences` and `~/Library/Preferences/State`.
 //! - Linux: `~/.config` and `~/.local/state`.
-//!
 //! Qt on Windows stores main settings in the registry
 //! (`HKCU\Software\omairc\omairc`), not an INI under LocalAppData. The STS
 //! cache stays an INI at `%LOCALAPPDATA%\omairc\sts`. `OMAIRC_POC_HOME` moves
@@ -80,7 +77,7 @@ impl Env {
         )
     }
 
-    /// Builds the inputs from any variable lookup. Empty values count as unset,
+    /// Builds the inputs from any variable lookup. Empty values count as unset
     /// as the XDG spec and Qt both treat them.
     pub fn from_lookup(
         lookup: impl Fn(&str) -> Option<OsString>,
@@ -135,7 +132,6 @@ pub fn settings_path_for(env: &Env, platform: Platform) -> Option<PathBuf> {
 }
 
 /// The Qt client's INI settings file, when one exists.
-///
 /// - Linux: `<config root>/omairc/omairc.conf`
 /// - macOS: `<config root>/omairc/omairc.ini` (Darwin `QSettings::IniFormat` always
 ///   uses `.ini`; see `settingsFileMissingOnDisk` in `tui/internal/storage/profilestore.go`)

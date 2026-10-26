@@ -10,10 +10,9 @@ import (
 	"sync"
 )
 
-// NetTransport is the production Transport. It dials TCP with net.Dialer and,
+// NetTransport is the production Transport. It dials TCP with net.Dialer and
 // when requested, wraps the socket with crypto/tls. It mirrors
 // `client/src/net/transport.rs`:
-//
 //   - Connect is asynchronous. A goroutine performs the dial and, for TLS, the
 //     handshake; Sink calls happen on that goroutine and on the read loop.
 //   - Write before the pipe is open is buffered. The buffer is flushed after
@@ -28,7 +27,6 @@ import (
 //     certificate/handshake problem from a socket problem.
 //   - A read end (EOF or a locally closed socket) maps to Sink.Disconnected; a
 //     more specific read failure maps to ConnectionFailed and Sink.Error.
-//
 // The zero value is usable; NewNetTransport is the intended constructor.
 type NetTransport struct {
 	mu        sync.Mutex
@@ -229,7 +227,7 @@ func tlsFailureMessage(err error) string {
 	return err.Error()
 }
 
-// attach publishes the open socket and emits Connected, then, for TLS,
+// attach publishes the open socket and emits Connected, then, for TLS
 // Encrypted. It reports false when Shutdown or a newer Connect superseded this
 // attempt. Pending writes flush after the pipe is genuinely open.
 func (t *NetTransport) attach(epoch uint64, conn net.Conn, tlsEnabled bool) bool {

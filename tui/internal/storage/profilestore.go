@@ -81,7 +81,7 @@ func (s *ProfileStore) Profiles() []Profile {
 			settings.StringList(group, "autojoinKeyValues"))
 		// An absent or unparsable key yields NoIconColor through Int's
 		// fallback, and a parsed value outside the palette fails the range
-		// check, so both collapse to NoIconColor exactly like the C++
+ // check, so both collapse to NoIconColor exactly like the C++
 		// toInt(&ok) + range test.
 		iconColor := settings.Int(group, "iconColor", NoIconColor)
 		if iconColor >= 0 && iconColor < IconColorCount {
@@ -127,7 +127,7 @@ func (s *ProfileStore) Save(profile Profile) Status {
 	settings.SetValue(group, "bouncerNetwork", profile.BouncerNetwork)
 	settings.SetStringList(group, "autojoin", profile.AutojoinChannels)
 	if len(profile.AutojoinKeys) > 0 {
-		// QMap::keys()/values() are sorted by key; reproduce that order so
+		// QMap::keys/values are sorted by key; reproduce that order so
 		// the channels and values stay positionally aligned on disk.
 		keys := make([]string, 0, len(profile.AutojoinKeys))
 		for key := range profile.AutojoinKeys {
@@ -192,7 +192,7 @@ func (s *ProfileStore) Remove(networkID string) Status {
 	return settings.Sync()
 }
 
-// profileStoreLoadAutojoinKeys ports loadAutojoinKeys: it pairs each channel
+// profileStoreLoadAutojoinKeys. It pairs each channel.
 // with the value at the first index whose name matches the channel
 // case-insensitively, skipping empty names and values. A length mismatch means
 // the persisted arrays are inconsistent, so no keys are returned. The map keys

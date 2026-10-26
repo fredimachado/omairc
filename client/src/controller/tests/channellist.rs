@@ -1,6 +1,6 @@
 //! `/list` through the wire over the real demo: the `LIST` frame, the 321, 322 and 323
 //! stream the demo answers, the cache a repeat reuses, the pending mask, and the idle
-//! timeout with its stale end. Ports the controller cases in
+//! timeout with its stale end.
 //! `tui/internal/controller/channellist_test.go` and `wiring.go`'s list path. The demo
 //! answers synchronously, so the timeout and pending cases stage a load by hand with
 //! `ChannelListRequests::request` (the state a `LIST` leaves in flight).

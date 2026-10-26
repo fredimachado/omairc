@@ -1,16 +1,12 @@
-//! The state the reducer keeps: one conversation transcript plus its live state,
+//! The state the reducer keeps: one conversation transcript plus its live state
 //! the channel half, the member view the panel reads, and the order a channel's
 //! members are listed in.
-//!
-//! Port of the state types at the top of `tui/internal/irc/reducer.go` (Go:
-//! `ConversationState`, `ChannelState`, `MemberState`, `MemberView`,
+//! state types at the top of `tui/internal/irc/reducer.go` (Go:
+//! `ConversationState`, `ChannelState`, `MemberState`, `MemberView`
 //! `OrderedMember`, `TranscriptAnchor`, `PeerPresence`) and of the
 //! `IrcEventReducer::Store` / `IrcConversationState` members in
-//! `tui/internal/irc/reducer.go`.
-//!
 //! Transcript rows are `world::Message`, the shape the Go `IrcReducedMessage`
 //! maps to. A row's zero time (Go's `time.Time{}`, which event lines carry) is
-//! `zero_time()`.
 
 use std::collections::{BTreeMap, HashSet};
 

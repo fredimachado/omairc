@@ -1,6 +1,5 @@
-//! Port of the labeled-request half of `tui/internal/session/session.go` (Go)
+//! labeled-request half of `tui/internal/session/session.go` (Go)
 //! and the request-label table of `tui/internal/session/session.go`.
-//!
 //! A labeled request carries an `@label=` tag the server echoes on each reply
 //! (`labeled-response`). Each outstanding label has a deadline; a reply, a
 //! `FAIL`, an `ACK`, a disconnect or the deadline finishes it, and each finish

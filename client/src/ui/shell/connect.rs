@@ -1,10 +1,8 @@
 //! The Connect sheet's shell side: opening and closing the layer, the keys and
 //! clicks it answers, the focus walk, and what Apply and Remove change in the rest
 //! of the window. The sheet UI lives in `ui/sheets/connect/`, and the model in
-//! `model/connect.rs`.
-//!
 //! Connect is a window-level layer, not a `Sheet`. It sits under Shortcuts and
-//! About, which open above it. Apply hands the saved profile to `Controller::start`,
+//! About, which open above it. Apply hands the saved profile to `Controller::start`
 //! and Disconnect calls `Controller::disconnect`; the sheet itself never connects.
 
 use gpui::{Context, Window};
@@ -19,7 +17,7 @@ use crate::ui::shell::Shell;
 
 impl Shell {
     /// Ctrl+, and Ctrl+] (Windows): opens Connect on the focused network, or the
-    /// network whose Status is showing, or the selected one (Qt `openConnectSheet`).
+    /// network whose Status is showing, or the selected one.
     /// While Connect is open it selects that network again, as Qt does.
     pub fn open_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.chord_live(Chord::Connect, window, cx) {
@@ -49,7 +47,7 @@ impl Shell {
     }
 
     /// Selects `network_id` in the rail, then shows the sheet. Opening asks for the
-    /// first field to take focus. The rail select is refused while a draft is dirty,
+    /// first field to take focus. The rail select is refused while a draft is dirty
     /// as Qt's is, so the sheet opens on the network that was being edited.
     fn present_connect(&mut self, network_id: &str, window: &mut Window, cx: &mut Context<Self>) {
         let was_open = self.connect_open;
@@ -94,7 +92,7 @@ impl Shell {
         cx.notify();
     }
 
-    /// Ctrl+Enter and Ctrl+Return, or the Apply button (Qt `submitConnection`). A complete
+    /// Ctrl+Enter and Ctrl+Return, or the Apply button. A complete
     /// draft is saved to the profile file and its secrets to the credential store, then the
     /// controller starts the network: a demo network reconnects, and any other is refused with
     /// the reason on its Status. The sheet closes when the session started and nothing needs
@@ -143,7 +141,7 @@ impl Shell {
         self.controller.can_disconnect(self.connect.selected())
     }
 
-    /// The Disconnect button (Qt `disconnectSelected`). It stops the selected network's
+    /// The Disconnect button. It stops the selected network's
     /// session through the controller, as `/disconnect` does, and the sheet stays open
     /// with the profile kept. Focus that was on the button moves to Apply, since the
     /// button leaves the walk.
@@ -161,7 +159,7 @@ impl Shell {
         cx.notify();
     }
 
-    /// Ctrl+N, or the `+ Add network` row (Qt `addSheetNetwork`).
+    /// Ctrl+N, or the `+ Add network` row.
     pub fn connect_add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.chord_live(Chord::ConnectAdd, window, cx) {
             return;
@@ -170,7 +168,7 @@ impl Shell {
         cx.notify();
     }
 
-    /// Ctrl+Shift+Delete, or the Remove button (Qt `removeSheetNetwork`). The first
+    /// Ctrl+Shift+Delete, or the Remove button. The first
     /// press arms it, and the second removes the selected network.
     pub fn connect_remove(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.chord_live(Chord::ConnectRemove, window, cx) {
@@ -279,7 +277,7 @@ impl Shell {
         }
     }
 
-    /// A click on a Connect control. A field or help mark takes focus, a tab shows,
+    /// A click on a Connect control. A field or help mark takes focus, a tab shows
     /// a row selects, a switch flips, a preference flips at once, and a button acts.
     pub fn connect_click(&mut self, stop: Stop, window: &mut Window, cx: &mut Context<Self>) {
         if !self.connect_open {
@@ -354,7 +352,7 @@ impl Shell {
     }
 
     /// Enter on the card. A rail row selects and arms, and a second Enter applies
-    /// (Qt's rail). A tab, the Add row, the hint and the buttons act. Anything else,
+    /// (Qt's rail). A tab, the Add row, the hint and the buttons act. Anything else
     /// a field, a switch, a help mark or no focus, walks to the next stop.
     pub fn connect_enter(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         if !self.connect_keys_live() {

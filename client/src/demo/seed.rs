@@ -1,19 +1,16 @@
-//! Port of `tui/internal/demo/seed.go` and the seed part of
 //! `tui/internal/demo/demo.go`: the two demo networks, omarchy and oftc.
-//!
 //! The data is content- and order-identical to the Go and C++ seeds. The
 //! containers differ only in shape: slices for QVector and QStringList, and
 //! `RankPair` for QPair. Everything is `'static` const data, so the seed costs
 //! nothing to build and every builder in `wire` and `server` reads it by
 //! reference.
-//!
 //! The one place the Go port computes a value is the `#ricing` unread pad. The
 //! pad lines are written out here instead, and a test checks that the channel
 //! still holds the twelve lines the parity world expects.
 
-/// The primary demo network's id (`omarchyNetworkId()`).
+/// The primary demo network's id (`omarchyNetworkId`).
 pub const OMARCHY_NETWORK_ID: &str = "omarchy";
-/// The secondary demo network's id (`oftcNetworkId()`).
+/// The secondary demo network's id (`oftcNetworkId`).
 pub const OFTC_NETWORK_ID: &str = "oftc";
 
 /// The demo clock's fixed day, used verbatim as the server-time tag date.
@@ -316,7 +313,6 @@ const OMARCHY_AWAY: &[&str] = &["teo", "lena", "sam", "ivy", "max"];
 // The demo ladder: founder, admin, two ops, halfop, voice, then the rest plain.
 // mira holds two ranks at once, which multi-prefix allows, and teo is away and
 // voiced, because rank and presence are independent.
-//
 // The late joiners arrive through the transcript, and an arriving member
 // carries no rank until a server says so, so they stay out of this list and out
 // of the initial NAMES.
@@ -425,7 +421,7 @@ const OMARCHY_DIRECTORY: &[SeedListed] = &[
     },
 ];
 
-/// The primary demo network (`omarchyWorld()`).
+/// The primary demo network (`omarchyWorld`).
 pub static OMARCHY_WORLD: SeedNetwork = SeedNetwork {
     network_id: OMARCHY_NETWORK_ID,
     nick: "fred",
@@ -539,7 +535,7 @@ const OFTC_DIRECTORY: &[SeedListed] = &[SeedListed {
     topic: "Debian GNU/Linux.",
 }];
 
-/// The secondary demo network (`oftcWorld()`). It advertises no icon.
+/// The secondary demo network (`oftcWorld`). It advertises no icon.
 pub static OFTC_WORLD: SeedNetwork = SeedNetwork {
     network_id: OFTC_NETWORK_ID,
     nick: "oak",

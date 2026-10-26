@@ -1,7 +1,6 @@
 //! The network rail on the left of the Connection tab (`client/src/ui/sheets/connect/`
 //! `networkRail`): the saved networks and the draft, the `+ Add network` row, and
 //! the `Shortcuts` hint at its foot.
-//!
 //! The rows scroll inside their own list. Its children are the rail stops in
 //! order, the rows and then the Add row, so `ScrollHandle::scroll_to_item` with a
 //! stop's index brings it into view (`Shell::reveal_connect`).

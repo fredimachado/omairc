@@ -1,4 +1,4 @@
-//! Port of `tui/internal/controller/snapshots.go`. The Go controller rebuilt these
+//! `tui/internal/controller/snapshots.go`. The Go controller rebuilt these
 //! snapshots on each publish; the Rust controller reads the reducer on demand, and
 //! this module keeps the shapes the sidebar and the header draw from in one place.
 

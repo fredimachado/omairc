@@ -1,9 +1,7 @@
-//! Port of the batch ledger in `tui/internal/session/session.go` (Go) and the
 //! `OpenBatch` bookkeeping of `tui/internal/session/session.go`.
-//!
 //! A `BATCH` opens a reference, its lines name it in `@batch=`, and `BATCH -ref`
 //! closes it. The ledger decides which batches are replay answers worth
-//! collecting (`chathistory`, `draft/chathistory-targets`, `znc.in/playback`),
+//! collecting (`chathistory`, `draft/chathistory-targets`, `znc.in/playback`)
 //! which are ignored, and which share one open-batch budget, so a hostile
 //! server cannot grow the ledger without bound. Lines inside a collected batch
 //! are swallowed; the completed batch is emitted as one `HistoryBatchReceived`.
@@ -253,7 +251,7 @@ impl Core {
         true
     }
 
-    /// Whether a replay kind may be collected: `batch` is needed for every kind,
+    /// Whether a replay kind may be collected: `batch` is needed for every kind
     /// and `chathistory` on top for a CHATHISTORY answer (`replayEnabledLocked`).
     /// Bouncer playback needs only `batch`.
     pub(crate) fn replay_enabled(&self, kind: HistoryKind) -> bool {

@@ -1,16 +1,14 @@
-//! Port of `tui/internal/irc/command.go`:
+//! `tui/internal/irc/command.go`:
 //! the slash catalog, the composer surface and verb scope, the parser into typed
 //! `Command` values, the refusal texts, `/help`, and the pure replies of the verbs
 //! that need no server state (`/pref`, the CTCP target rule).
-//!
 //! A verb's argument is split the way its usage line splits it. A verb that names one
 //! word first (`/query <nick> [text]`, `/kick [channel] <nick> [reason]`) carries a
 //! `Words`: the first word and the trimmed text after it, as Go's `firstToken` and
-//! `restAfterFirstToken`. A verb whose argument is one free text (`/away [reason]`,
+//! `restAfterFirstToken`. A verb whose argument is one free text (`/away [reason]`
 //! `/topic [text]`) carries a `String`. Which word is a channel, how a join list
-//! splits against CHANTYPES, and what a MODE request means all need `ServerFeatures`,
+//! splits against CHANTYPES, and what a MODE request means all need `ServerFeatures`
 //! so the dispatcher reads those, not this parser.
-//!
 //! Pure: no socket, file, thread or gpui. `tests/irc_portability.rs` enforces that.
 mod parse;
 mod verbs;
@@ -72,9 +70,8 @@ impl Words {
 
 /// One parsed composer line (Go `Command`, C++ `IrcCommand`), with the verb folded
 /// into the variant and its argument parsed to the shape the verb's usage implies.
-///
 /// A variant that is not `Words` keeps the whole trimmed argument. Where the
-/// dispatcher must refuse a stray argument (`/ignored`, `/muted`, `/highlights`,
+/// dispatcher must refuse a stray argument (`/ignored`, `/muted`, `/highlights`
 /// `/monitored`), the variant still holds that argument, so the refusal is the
 /// dispatcher's decision and not the parser's.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -100,17 +97,14 @@ pub enum Command {
     Clear,
     /// `/close`. Any argument is ignored.
     Close,
-    /// `/query <nick> [text]`.
     Query(Words),
-    /// `/msg <nick> <text>`.
     Msg(Words),
     /// `/topic [text]`. The whole argument.
     Topic(String),
-    /// `/notice <target> <text>`.
     Notice(Words),
     /// `/away [reason]`. The whole argument.
     Away(String),
-    /// `/back`. Any argument is dropped, as in the C++ core.
+ /// `/back`. Any argument is dropped, as in the C++ core.
     Back,
     /// `/autoaway [...]`. The raw argument; the autoaway parser reads it.
     Autoaway(String),
@@ -120,53 +114,36 @@ pub enum Command {
     Status(String),
     /// `/avatar [url|email|clear]`. The whole argument.
     Avatar(String),
-    /// `/whois [nick]`.
     Whois(Words),
-    /// `/ping [nick]`.
     Ping(Words),
-    /// `/time [nick]`.
     Time(Words),
-    /// `/version [nick]`.
     Version(Words),
     /// `/mode <channel> [...]`. The raw argument, read against ServerFeatures.
     Mode(String),
     /// `/kick [channel] <nick> [reason]`. The first word may name the channel.
     Kick(Words),
-    /// `/invite <nick> [channel]`.
     Invite(Words),
-    /// `/ignore <nick>`.
     Ignore(Words),
-    /// `/unignore <nick>`.
     Unignore(Words),
     /// `/ignored`. A non-empty argument is refused by the dispatcher.
     Ignored(String),
-    /// `/monitor <nick>`.
     Monitor(Words),
-    /// `/unmonitor <nick>`.
     Unmonitor(Words),
     /// `/monitored`. A non-empty argument is refused by the dispatcher.
     Monitored(String),
-    /// `/mute [target]`.
     Mute(Words),
-    /// `/unmute [target]`.
     Unmute(Words),
     /// `/muted`. A non-empty argument is refused by the dispatcher.
     Muted(String),
-    /// `/highlight <word>`.
     Highlight(Words),
-    /// `/unhighlight <word>`.
     Unhighlight(Words),
     /// `/highlights`. A non-empty argument is refused by the dispatcher.
     Highlights(String),
     /// `/op <nick>`. The first word; the dispatcher turns it into a MODE change.
     Op(Words),
-    /// `/deop <nick>`.
     Deop(Words),
-    /// `/voice <nick>`.
     Voice(Words),
-    /// `/devoice <nick>`.
     Devoice(Words),
-    /// `/ban <mask>`.
     Ban(Words),
     /// `/ns <text>`: a PRIVMSG to NickServ, with the text as its body.
     Ns(String),
@@ -343,7 +320,6 @@ pub struct CtcpTarget {
 }
 
 /// Picks the target for a CTCP verb's query (`IrcReplyRouter::dispatchCtcp`).
-///
 /// - The first word is the nick. Any text after it refuses the command.
 /// - With no nick: a direct message uses its peer, a channel needs a nick (a
 ///   wrong-scope refusal), and no selection refuses.
@@ -392,7 +368,7 @@ pub fn version_reply_text(nick: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// /pref replies (`IrcCommandDispatcher::dispatchPref`)
+// pref replies (`IrcCommandDispatcher::dispatchPref`)
 // ---------------------------------------------------------------------------
 
 /// The lines one `/pref` prints, and whether it changed a value. The caller saves

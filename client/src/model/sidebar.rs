@@ -1,8 +1,7 @@
 //! Sidebar rows and the sidebar's keyboard state. The order, the unread and mention
-//! counts, and the collapse set come from the controller (`conversations`,
+//! counts, and the collapse set come from the controller (`conversations`
 //! `network_order`, `is_network_collapsed`), so this module only shapes them into the
-//! rows the UI walks. Ports Qt's `ircSidebarOrder` for the walk.
-//!
+//! rows the UI walks.
 //! What stays here is what the window remembers between chords: the network the
 //! keyboard has on its header, and whether the server list is shown.
 

@@ -1,8 +1,6 @@
-//! Port of `tui/internal/session/session.go`
 //! The connection state machine, the CAP and registration driver, the
 //! ping watchdog, reconnect backoff, labeled requests, the batch ledger and the
 //! outbound command writers.
-//!
 //! Concurrency model: the session lives on the UI thread. `Session` is a cheap
 //! handle over `Rc<Shared>`, and all mutable state sits in one `RefCell<Core>`.
 //! Each entry point runs its body under `locked`, which holds the borrow only
@@ -10,19 +8,16 @@
 //! queued as `Effect`s and run after the borrow is released, so a loopback peer
 //! that answers synchronously can re-enter the session (rule 10 of the master
 //! plan). Inbound notifications are queued as `SessionEvent`s and returned by
-//! `drain_events`.
-//!
-//! Submodules hold the state machine's parts: `connection` (disconnect intent,
+//! Submodules hold the state machine's parts: `connection` (disconnect intent
 //! reconnect backoff and retry dedup), `watchdog` (the ping watchdog), `caps` (CAP
-//! and SASL: PLAIN, and SCRAM-SHA-256 through `saslscram`), `registration` (NICK/USER,
-//! ISUPPORT, 001 and refusals), `batch` (the batch ledger), `history` (CHATHISTORY),
-//! `labels` (labeled requests), `readmarker`, `typing`, `metadata`, `autojoin`, `ctcp`,
+//! and SASL: PLAIN, and SCRAM-SHA-256 through `saslscram`), `registration` (NICK/USER
+//! ISUPPORT, 001 and refusals), `batch` (the batch ledger), `history` (CHATHISTORY)
+//! `labels` (labeled requests), `readmarker`, `typing`, `metadata`, `autojoin`, `ctcp`
 //! `outbound` (the public writers), `send` (the line writers every write goes
 //! through), `dispatch` (inbound bytes and message dispatch), `timers` (the timer
-//! slots), `malformed` (protocol-error previews), `wire` (message field helpers),
+//! slots), `malformed` (protocol-error previews), `wire` (message field helpers)
 //! `sink` (the transport's callbacks), `sts` (the STS cache) and `stsflow` (the STS
 //! upgrade and reconnect).
-//!
 //! The socket transport (`transport_net.go`) lives in `net/`. A failed SCRAM
 //! exchange is never retried with PLAIN.
 
@@ -73,13 +68,13 @@ pub(crate) const CTCP_PING_PAYLOAD_MAX_BYTES: usize = 32;
 /// The minimum spacing of CTCP replies to one nick.
 pub(crate) const CTCP_REPLY_INTERVAL: Duration = Duration::from_millis(5000);
 
-/// The inbound filter (`IgnoreFilter`). It runs before any state change or event,
+/// The inbound filter (`IgnoreFilter`). It runs before any state change or event
 /// with the message, the network id and our own nick (the predicate needs the nick
 /// to tell a direct message from a channel line). It must not call the session.
 pub type IgnoreFilter = Box<dyn Fn(&IrcMessage, &str, &str) -> bool>;
 
 /// The registration-snapshot lookup a self-JOIN uses as the CHATHISTORY AFTER
-/// bound (`setChatHistoryResume`). `Core` passes the live ISUPPORT case mapping;
+/// bound (`setChatHistoryResume`). `Core` passes the live ISUPPORT case mapping
 /// the callback must not call the session.
 pub type HistoryResume = Box<dyn Fn(&str, IrcCaseMapping) -> Option<DateTime<Utc>>>;
 
@@ -611,7 +606,7 @@ impl Core {
         self.connect_transport();
     }
 
-    /// Ends the session the way `IrcSession::stop` does: cancels every timer,
+    /// Ends the session the way `IrcSession::stop` does: cancels every timer
     /// clears labels, and shuts the transport down.
     pub(crate) fn stop(&mut self) {
         self.reschedule_sts_expiry();

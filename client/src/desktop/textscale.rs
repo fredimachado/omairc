@@ -1,10 +1,9 @@
-//! Linux portal text scale. Port of `SystemTheme::requestPortalTextScale` and
+//! Linux portal text scale.
 //! `sanitizedTextScale`, with a session-bus guard before the portal call.
 //! Non-Linux builds expose only `sanitized_text_scale` and no-op portal entry
 //! points.
 
 /// Matches Qt `sanitizedTextScale`: invalid values are rejected; valid values clamp to
-/// `[0.5, 3.0]`.
 #[cfg(any(test, target_os = "linux"))]
 pub fn sanitized_text_scale(scale: f64) -> Option<f32> {
     if !scale.is_finite() || scale <= 0.0 {

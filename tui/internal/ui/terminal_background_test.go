@@ -26,7 +26,7 @@ func TestViewLeavesTerminalColorsUnset(t *testing.T) {
 
 // TestSeededRenderHasNoThemeBackgroundFill parses the demo frame and rejects
 // Colors.Background as an SGR background on any row. A page-wide lipgloss fill
-// would paint every line while deliberate surfaces (topic band, badges,
+// would paint every line while deliberate surfaces (topic band, badges
 // selection, mention wash, composer frame, overlay shadow) use other colors.
 func TestSeededRenderHasNoThemeBackgroundFill(t *testing.T) {
 	m := seededModel(t)

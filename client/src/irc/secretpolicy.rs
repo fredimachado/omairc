@@ -1,16 +1,13 @@
-//! Port of `tui/internal/irc/secretpolicy.go`.
-//!
 //! Redaction fails closed. A wire line that would reveal a password, a channel key
 //! or a service credential comes back masked. A preview with no mask to apply
 //! comes back as `None`. That is not a safety verdict, so each caller decides what
 //! to show (see `redact_preview_line`). When a case is unclear, drop the line or
 //! keep the masked form; do not add a well-formed bypass for one fixture.
-//!
 //! The Go port has no tests of its own. The tests below carry the policy-level
-//! expectations of `SessionTest::keyedJoinIsRedactedInStatusEntries`,
-//! `serviceIdentifyIsRedactedInStatusEntries`, `selfEchoToServiceIsRedacted`,
+//! expectations of `SessionTest::keyedJoinIsRedactedInStatusEntries`
+//! `serviceIdentifyIsRedactedInStatusEntries`, `selfEchoToServiceIsRedacted`
 //! `channelTalkAboutServicesStaysReadable` and the preview checks of
-//! `malformedInputSurfacesProtocolError`. Those tests drive status entries;
+//! `malformedInputSurfacesProtocolError`. Those tests drive status entries
 //! these drive the policy directly with the same lines.
 
 use super::servicenick::looks_like_channel;
@@ -269,7 +266,7 @@ fn drop_leading_word(text: &str) -> Option<&str> {
     (!rest.is_empty()).then_some(rest)
 }
 
-/// Splits a line the way `secretTokenize` does: skip the tags and the source,
+/// Splits a line the way `secretTokenize` does: skip the tags and the source
 /// upper-case the verb, and split the rest into parameters with the trailing
 /// parameter kept whole.
 fn tokenize(line: &str) -> Option<WireCommand> {
@@ -437,7 +434,6 @@ fn service_body_tokens(body: &str) -> Vec<&str> {
 
 /// The service password command a body opens with, or `None`. A near miss of a
 /// command counts (`identif` is `IDENTIFY`), and `SET` followed by `PASSWORD` is
-/// `SET PASSWORD`.
 fn matched_service_command(tokens: &[&str]) -> Option<&'static str> {
     if tokens.len() < 2 {
         return None;
@@ -567,17 +563,15 @@ pub fn redact_wire_line(line: &str, channel_types: &str) -> Option<String> {
 /// The fail-closed preview redactor for text that is not known to be a command:
 /// the wire mask, a near-miss verb, a later command in the fragment, then the
 /// conservative leading-verb mask.
-///
 /// `Some` is the masked text to show. `None` means no mask applied. It is not a
 /// verdict that the text is safe, and it does not tell the caller to drop it.
 /// Each caller decides what `None` leaves on screen:
 /// - the protocol-error preview (`session::malformed`'s `preview_wire`) shows the
-///   printable text unmasked;
+/// printable text unmasked
 /// - a refusal reason on Status (`statusentry`'s `nick_refusal_tail`) and the
 ///   server sentence (`session::dispatch::Core::server_sentence_or`) show the
 ///   unmasked reason only when `allows_transcript` also passes, and omit it
 ///   otherwise.
-///
 /// Mirrors `RedactPreviewLine` in `tui/internal/irc/secretpolicy.go` and
 /// `IrcSecretPolicy::redactPreviewLine` in `tui/internal/irc/secretpolicy.go`.
 pub fn redact_preview_line(line: &str, channel_types: &str) -> Option<String> {
@@ -595,7 +589,7 @@ pub fn redact_preview_line(line: &str, channel_types: &str) -> Option<String> {
     conservative_preview_mask(line)
 }
 
-/// Masks a parsed message's command and parameters. `None` when no mask applies,
+/// Masks a parsed message's command and parameters. `None` when no mask applies
 /// which leaves the message untouched. A PRIVMSG or NOTICE is masked only when its
 /// target is a person; the command is upper-cased before the rule lookup.
 pub fn redact_message<C, P>(
@@ -789,7 +783,7 @@ mod tests {
                 "MODE #omarchy +ko s3cret alice",
                 "MODE #omarchy +ko *** alice",
             ),
-            // An unknown letter (f, a) makes the argument positions unknowable,
+            // An unknown letter (f, a) makes the argument positions unknowable
             // so everything after the mode string is masked.
             ("MODE #omarchy +fk 10 s3cret", "MODE #omarchy +fk ***"),
             ("MODE #omarchy +ak s3cret", "MODE #omarchy +ak ***"),

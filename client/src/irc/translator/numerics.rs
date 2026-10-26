@@ -1,4 +1,4 @@
-//! Numerics and metadata: the WHO and WHOIS replies that fill a member's facts (352,
+//! Numerics and metadata: the WHO and WHOIS replies that fill a member's facts (352
 //! 311, 313, 330), METADATA with its 761 and 766 replies, and the numerics that refuse
 //! a join. A join refusal names a channel, so it becomes a `ChannelErrorEvent` on that
 //! channel.
@@ -36,7 +36,7 @@ pub(super) fn who_reply(inbound: &Inbound<'_>) -> Vec<Event> {
             realname_only: false,
         }
         .into(),
-        // Operator is a separate fact. The realname stays on the away event,
+        // Operator is a separate fact. The realname stays on the away event
         // so a placeholder cannot wipe a name a join already stored.
         NickFactsEvent {
             network_id: inbound.network_id.to_owned(),

@@ -10,7 +10,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/storage"
 )
 
-// This file ports the Phase 11 PlaybackCoordinator matrix from
+// This file.
 // `client/src/controller/playback.rs` and the controller wiring it.
 
 func recordZnc(sent *[]string) func(*session.Session, string, string) bool {

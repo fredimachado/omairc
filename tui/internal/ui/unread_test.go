@@ -62,8 +62,8 @@ func plantOmarchyUnread(t *testing.T, m *Model, d *demo.DemoServer) *Model {
 }
 
 // TestUnreadMarkRowSkipsFirstRow proves the boundary needs a row above it: a
-// conversation whose first message is unread renders no boundary and reports -1,
-// mirroring the !view.empty() guard in MessageListModel::buildView.
+// conversation whose first message is unread renders no boundary and reports -1
+// mirroring the !view.empty guard in MessageListModel::buildView.
 func TestUnreadMarkRowSkipsFirstRow(t *testing.T) {
 	m, d := unreadDemoModel(t)
 	m = plantOmarchyUnread(t, m, d)
@@ -204,7 +204,7 @@ func injectAwayLines(d *demo.DemoServer, target, prefix string) {
 	}
 }
 
-// focusReturnWhileFollowing leaves the transcript pinned to the end, blurs,
+// focusReturnWhileFollowing leaves the transcript pinned to the end, blurs
 // lets a burst arrive, then focuses again. It mirrors a reader who was caught
 // up, left the window, and came back.
 func focusReturnWhileFollowing(t *testing.T, m *Model, d *demo.DemoServer, target, prefix string) *Model {

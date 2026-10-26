@@ -1,7 +1,6 @@
-//! The sidebar's network order and collapse state. Port of `NetworkOrder`,
-//! `SetNetworkOrder`, `SetNetworkCollapsed`, `SetAllNetworksCollapsed`,
+//! The sidebar's network order and collapse state.
+//! `SetNetworkOrder`, `SetNetworkCollapsed`, `SetAllNetworksCollapsed`
 //! `IsNetworkCollapsed` and `MoveNetwork` in `tui/internal/controller/controller.go`.
-//!
 //! The order and the collapse set live on the controller, because the sidebar reads
 //! the controller's order rather than the connection's. Each change is saved through the
 //! preference store (`persistence.rs`), so the layout comes back on the next launch.
@@ -26,7 +25,7 @@ impl Controller {
         ids.into_iter().collect()
     }
 
-    /// The network ids in display order (`NetworkOrder`): the recorded order first,
+    /// The network ids in display order (`NetworkOrder`): the recorded order first
     /// keeping only known networks (`known_network_ids`), then any other known network
     /// in id order.
     pub fn network_order(&self) -> Vec<String> {
@@ -103,7 +102,7 @@ impl Controller {
     }
 
     /// Forgets a network the Connect sheet removed (`ForgetNetwork`). A live session
-    /// quits and stops; the network's conversations, Status log, last error, order,
+    /// quits and stops; the network's conversations, Status log, last error, order
     /// collapse state and inbox rows go with it. The selection leaves it when it held
     /// the selection. False when the network was never known.
     pub fn forget_network(&mut self, network_id: &str) -> bool {
@@ -174,7 +173,7 @@ impl Controller {
     }
 
     /// Moves a network `delta` places up (negative) or down (positive) in the
-    /// sidebar (`MoveNetwork`). False when the network is unknown, the move is zero,
+    /// sidebar (`MoveNetwork`). False when the network is unknown, the move is zero
     /// or it would leave the list.
     pub fn move_network(&mut self, network_id: &str, delta: isize) -> bool {
         let mut order = self.network_order();

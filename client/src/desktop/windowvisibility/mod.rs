@@ -1,16 +1,13 @@
 //! Whether the live window is shown, minimized, or hidden.
-//!
-//! gpui 0.2.2 exposes no `is_minimized()` and `WindowBounds` has no minimized
+//! gpui 0.2.2 exposes no `is_minimized` and `WindowBounds` has no minimized
 //! variant, so each platform reads the native handle (or reports Visible when
 //! the compositor cannot say). Qt's `Window.Minimized` / `Window.Hidden` both
 //! count as away for unread and mention notify (`client/src/ui/shell`
 //! `transcriptSuspended`).
-//!
 //! Minimize often does not fire `observe_window_bounds` while OS focus stays
 //! true, so the shell refreshes [`of`] on activation (visibility before focus)
 //! and polls while reportedly active or already suspended. Bounds remain a
 //! fast path only.
-//!
 //! Wayland has no minimize state clients can read, so this module always
 //! reports [`WindowVisibility::Visible`] there. Hyprland special workspaces
 //! are not observable either.
@@ -40,12 +37,12 @@ impl WindowVisibility {
 }
 
 /// Focus plus minimize/hide. Effective activity is `window_active && !suspended`
-/// (Qt `arrivalWindowActive`).
+/// .
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TranscriptActivity {
     /// OS focus (`Window.active`). Can stay true while minimized.
     pub window_active: bool,
-    /// Minimized or hidden (Qt `transcriptSuspended`).
+    /// Minimized or hidden.
     pub suspended: bool,
 }
 
@@ -95,7 +92,7 @@ impl TranscriptActivity {
 /// event). Bounds observers alone miss that transition on every platform.
 pub const VISIBILITY_POLL: std::time::Duration = std::time::Duration::from_millis(250);
 
-/// Focus plus show-state inputs for one watch tick. Unit tests use a fake;
+/// Focus plus show-state inputs for one watch tick. Unit tests use a fake
 /// the shell reads the live window.
 pub trait ActivityProbe {
     fn focus_active(&self) -> bool;

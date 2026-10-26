@@ -1,6 +1,6 @@
 // Package filehost uploads one local file to the HTTP endpoint a server
 // advertised and returns the absolute web link from the response. It is the
-// Go port of IrcFileUploader in `client/src/desktop/fileupload.rs`. The IRC core stays
+// Go.
 // free of net/http; this package owns the socket.
 package filehost
 

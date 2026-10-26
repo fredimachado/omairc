@@ -16,7 +16,6 @@ const (
 // after ISUPPORT, and the direct messages the user closed, mirroring
 // IrcOpenDirectStore. Open targets live in "openDirects/<networkId>"; dismissed
 // targets live in "dismissedDirects/<networkId>". Both use the key "targets".
-//
 // A store is a thin cache over disk: the first read of a network loads its list
 // and later calls reuse it, exactly like IrcOpenDirectStore's mutable QHash.
 // When ephemeral, nothing touches disk and SetEphemeral(true) drops the cache.

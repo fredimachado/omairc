@@ -1,6 +1,5 @@
 //! The public outbound writers of `tui/internal/session/session.go` (Go) and
 //! `IrcSession::send*` in `tui/internal/session/session.go`.
-//!
 //! Every method is a thin `locked` wrapper over a `Core` method, so the
 //! frame-level tests can drive each one against a `LoopbackTransport`. The
 //! controller calls these; no UI code writes a frame directly (rule 1 of the
@@ -138,7 +137,7 @@ impl Session {
         self.locked(|core| core.set_away_locked(reason))
     }
 
-    /// Writes `AWAY :` with no reason, which marks the user away with the server's
+    /// Writes `AWAY:` with no reason, which marks the user away with the server's
     /// default text. It differs from `set_away("")`, which clears
     /// (`IrcSession::markAway`).
     pub fn mark_away(&self, reason: &str) -> bool {

@@ -1,6 +1,6 @@
 //! Every `std::os::unix` / `std::os::windows` use under `src/` must sit under a
 //! matching `cfg`, so a Unix-only call cannot break the Windows build the way the
-//! theme symlink test once did. Platform module files (`windows.rs`, `linux.rs`,
+//! theme symlink test once did. Platform module files (`windows.rs`, `linux.rs`
 //! `macos.rs`) count as that cfg for the whole file. `vendor/` is not scanned.
 
 mod common;

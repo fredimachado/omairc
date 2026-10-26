@@ -87,7 +87,7 @@ func (s *slashSession) insertionAt(index int) string {
 	return s.probe.Hits[index].Label + " "
 }
 
-// replacedComposer replaces the whole slash query with one row's insertion,
+// replacedComposer replaces the whole slash query with one row's insertion
 // keeping any leading whitespace the composer had. It mirrors
 // IrcSlashSession::replacedComposer.
 func (s *slashSession) replacedComposer(index int) string {
@@ -195,7 +195,7 @@ const slashMenuBorderRows = 2
 // bordered menu: one row per hit with its label and usage, a filled band on the
 // highlighted row, and the theme's raised surface and focus border behind it.
 // It returns nil when the list is closed. The menu builds its own small frame
-// here rather than through overlayCardBlock, and render() floats it over the
+// here rather than through overlayCardBlock, and render floats it over the
 // transcript just above the composer through compositeSlashMenu, so opening it
 // never resizes the columns or covers the field.
 func (m *Model) slashLines() []string {

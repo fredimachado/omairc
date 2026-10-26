@@ -1,18 +1,14 @@
-//! Port of `tui/internal/irc/translator.go`.
-//!
 //! Turns one inbound `IrcMessage` into the `Event`s the reducer consumes, and a
 //! completed history or playback batch into one `HistoryEvent`. This is the one
 //! place inbound bytes become display text after the parser: every value goes
 //! through `wire_text`. The clock is a parameter. A missing or unparseable `time`
 //! tag falls back to `now` and never to the wall clock.
-//!
 //! The batch types the session hands over (`HistoryBatch`, `HistoryTarget`) and
 //! the two time readers (`server_time_of`, `parse_history_target_time`) live here
 //! too, so `session/` imports them from the portable core.
-//!
 //! `translate` is the dispatch: one arm per command, each arm's guard the parameter
 //! check its handler relies on. The handlers sit in the files beside this one:
-//! `messages` (NOTICE, PRIVMSG, TAGMSG), `membership` (JOIN and the channel state),
+//! `messages` (NOTICE, PRIVMSG, TAGMSG), `membership` (JOIN and the channel state)
 //! `numerics` (WHO, WHOIS, metadata and join refusals), `history` (batch replay) and
 //! `context` (the shared reads and the conversation an inbound line belongs to).
 

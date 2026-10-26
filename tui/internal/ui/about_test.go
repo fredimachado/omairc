@@ -2,7 +2,7 @@ package ui
 
 // This file covers the Ctrl+Shift+/ About sheet: the chord opens it from the
 // composer and over the Connect sheet, Escape/Enter/Space dismiss it, the chord
-// does not toggle it, and the content carries the name, version, source URL,
+// does not toggle it, and the content carries the name, version, source URL
 // and copyright from `client/src/ui/sheets/about.rs`.
 
 import (

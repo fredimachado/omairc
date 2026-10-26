@@ -6,7 +6,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/irc"
 )
 
-// TestSessionLeftoverHistoryBatchAfterPartDoesNotEmit ports
+// TestSessionLeftoverHistoryBatchAfterPartDoesNotEmit.
 // SessionTest::leftoverHistoryBatchAfterPartDoesNotEmit.
 func TestSessionLeftoverHistoryBatchAfterPartDoesNotEmit(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -22,7 +22,7 @@ func TestSessionLeftoverHistoryBatchAfterPartDoesNotEmit(t *testing.T) {
 	}
 }
 
-// TestSessionDelayedHistoryBatchAfterPartDoesNotEmit ports
+// TestSessionDelayedHistoryBatchAfterPartDoesNotEmit.
 // SessionTest::delayedHistoryBatchAfterPartDoesNotEmit.
 func TestSessionDelayedHistoryBatchAfterPartDoesNotEmit(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -52,7 +52,7 @@ func TestSessionDelayedHistoryBatchAfterPartDoesNotEmit(t *testing.T) {
 	}
 }
 
-// TestSessionLeftoverTaggedHistoryLineAfterPartIsSwallowed ports
+// TestSessionLeftoverTaggedHistoryLineAfterPartIsSwallowed.
 // SessionTest::leftoverTaggedHistoryLineAfterPartIsSwallowed.
 func TestSessionLeftoverTaggedHistoryLineAfterPartIsSwallowed(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -74,7 +74,7 @@ func TestSessionLeftoverTaggedHistoryLineAfterPartIsSwallowed(t *testing.T) {
 	}
 }
 
-// TestSessionChatHistoryBatchWithBatchAloneIsIgnored ports
+// TestSessionChatHistoryBatchWithBatchAloneIsIgnored.
 // SessionTest::chatHistoryBatchWithBatchAloneIsIgnored.
 func TestSessionChatHistoryBatchWithBatchAloneIsIgnored(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -99,7 +99,7 @@ func TestSessionChatHistoryBatchWithBatchAloneIsIgnored(t *testing.T) {
 	assertStringsEqual(t, messageBodies(fixture.handler.messages[start:]), []string{"after"})
 }
 
-// TestSessionSelfJoinKeepsOpenPlaybackAndDropsStaleChatHistory ports
+// TestSessionSelfJoinKeepsOpenPlaybackAndDropsStaleChatHistory.
 // SessionTest::selfJoinKeepsOpenPlaybackAndDropsStaleChatHistory.
 func TestSessionSelfJoinKeepsOpenPlaybackAndDropsStaleChatHistory(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())

@@ -1,13 +1,9 @@
-//! Port of `tui/internal/irc/typing.go` plus
-//! `irctypingpublisher` (C++).
-//!
 //! Two halves share this file. The phase type, the TAGMSG builder and the
 //! hold clocks are the wire vocabulary of the `+typing` client tag. The inbound
 //! hint (`TypingHint`) is what the reducer stores for a peer who is typing, and
 //! its expiry is computed from the clock the peer's phase selects. The outbound
 //! pacing gate lives in `session/typing.rs`, because it reads the session's
 //! state and clock.
-//!
 //! Pure: no clock is read here. Callers pass the receive time and `now`.
 
 use chrono::{DateTime, TimeDelta, Utc};
@@ -125,7 +121,7 @@ pub fn typing_phase_from_tag(value: &str) -> Option<TypingPhase> {
     }
 }
 
-/// Builds `@+typing=<phase> TAGMSG <target>` with its CRLF (`TypingTagmsg`,
+/// Builds `@+typing=<phase> TAGMSG <target>` with its CRLF (`TypingTagmsg`
 /// `ircTypingTagmsg`). `None` when the target is empty or carries a space, CR or
 /// LF.
 pub fn typing_tagmsg(target: &str, phase: TypingPhase) -> Option<String> {

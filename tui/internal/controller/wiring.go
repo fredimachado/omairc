@@ -10,11 +10,11 @@ import (
 )
 
 // This file wires the Phase 7 slash subsystems into the controller. The
-// subsystems own their decisions (commanddispatcher.go, replyrouter.go,
+// subsystems own their decisions (commanddispatcher.go, replyrouter.go
 // monitorcoordinator.go, autoawayruntime.go, channellist.go); the controller
 // owns the side effects they cannot: session and selection lookup, model
 // application, the Status console, and the stores. The adapters below are the
-// Go equivalent of the C++ Host callback structs.
+// Go equivalent of the Host callback structs.
 
 // --- Host adapters --------------------------------------------------------
 
@@ -211,7 +211,7 @@ func (h autoawayAdapter) RecordStatus(networkID, text string) {
 	h.c.statusConsole.Append(irc.Outcome(networkID, text, h.c.now()))
 }
 
-// initSlashSubsystems builds the Phase 7 subsystems. It runs once from New,
+// initSlashSubsystems builds the Phase 7 subsystems. It runs once from New
 // after the clock is set.
 func (c *Controller) initSlashSubsystems() {
 	c.ignores = NewIgnoreStore()
@@ -326,7 +326,7 @@ func (c *Controller) markChannelLeft(networkID, channel string) {
 
 // NotifyComposerText records one composer text change and publishes an outbound
 // typing hint for the selected conversation. A live message (plain text or
-// /me) sends typing=active and remembers the target; anything else withdraws a
+// me) sends typing=active and remembers the target; anything else withdraws a
 // hint that target was publishing with typing=done. It mirrors
 // IrcController::notifyComposerText (`client/src/controller/controller.rs`). The
 // Status console and a network without message-tags never publish.

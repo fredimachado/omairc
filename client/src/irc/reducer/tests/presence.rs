@@ -1,5 +1,5 @@
 //! Away, self-away, member metadata, bots, accounts and realnames, WHO and WHOIS
-//! facts, and the query-header labels. Ports of `reducer_test.go`.
+//! facts, and the query-header labels.
 
 use super::*;
 use crate::irc::event::SelfAwayEvent;

@@ -1,5 +1,5 @@
 //! Typing hints: the stored clock, the 30-second paused hold, and the nick and
-//! conversation remaps. Ports of the reducer tests in `typing_test.go`.
+//! conversation remaps.
 
 use super::*;
 use crate::irc::event::TypingEvent;

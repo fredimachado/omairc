@@ -1,6 +1,6 @@
 //! The MONITOR coordinator over the real demo: the frames `/monitor`, `/unmonitor`
-//! and the subscription write, the 730, 731 and 734 numerics that fold into presence,
-//! and the Status and inbox lines a change raises. Ports the Go cases in
+//! and the subscription write, the 730, 731 and 734 numerics that fold into presence
+//! and the Status and inbox lines a change raises.
 //! `tui/internal/controller/monitorcoordinator_test.go`. The demo answers MONITOR `+`
 //! and `-` the way the server does: `anna` is online in the seed, `ghost` is not.
 

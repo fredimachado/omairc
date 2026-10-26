@@ -1,8 +1,6 @@
 //! The composer's slash-complete popup state (Qt `IrcSlashSession`, without the Qt
 //! plumbing): the highlighted row, the needle Escape dismissed, and the text Tab and
 //! Enter insert. The projection of composer text onto rows, and the ranking, are
-//! `irc/slashcomplete`.
-//!
 //! Toolkit-free. The shell owns the field: it calls `sync` after each edit, asks `tab`
 //! and `enter` what to insert, and applies the text these return.
 
@@ -295,7 +293,7 @@ mod tests {
         let mut session = SlashSession::new();
         session.sync("/", Status, false);
         assert!(!session.is_open());
-        // `/m` still opens on Status for the verbs that start with it (`/mode`,
+        // `/m` still opens on Status for the verbs that start with it (`/mode`
         // `/monitor`), but `/me` is conversation-only and never a row there.
         session.sync("/m", Status, false);
         assert!(session.is_open());
@@ -319,7 +317,7 @@ mod tests {
         );
     }
 
-    // Ported from `tst_command` (`slashSessionKeys`): the keys on a verb, an alias, a
+    // (`slashSessionKeys`): the keys on a verb, an alias, a
     // prefix, a whole word and a dismissed needle.
 
     #[test]

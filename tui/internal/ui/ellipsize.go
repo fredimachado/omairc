@@ -36,7 +36,7 @@ func ellipsizeLine(line string, width int) string {
 	out, ellipsisIdx = dropExtraVisibleEllipses(out, ellipsisIdx)
 	out, ellipsisIdx = repairBareEllipsis(out, ellipsisIdx)
 	// lipgloss.Width is the widest line. A space on the ellipsis line can
-	// leave that max unchanged while the line is still short of the budget,
+	// leave that max unchanged while the line is still short of the budget
 	// so keep padding until the max matches. Cap the loop by the budget: a
 	// space that never adds a cell must not hang.
 	for n := 0; n < width && lipgloss.Width(out) < width; n++ {
@@ -127,8 +127,8 @@ func truncateWithEllipsis(s string, width int, tail string) (string, int) {
 	return buf.String(), ellipsisIdx
 }
 
-// stripNewlinesInSequences removes raw newlines that sit inside CSI, DCS,
-// OSC, SOS, PM, or APC. Terminating bytes stay. A ground-state newline stays,
+// stripNewlinesInSequences removes raw newlines that sit inside CSI, DCS
+// OSC, SOS, PM, or APC. Terminating bytes stay. A ground-state newline stays
 // so a real line break still pads on the ellipsis line.
 func stripNewlinesInSequences(s string) string {
 	if strings.IndexByte(s, '\n') < 0 {
@@ -156,7 +156,7 @@ func stripNewlinesInSequences(s string) string {
 // parserStateAfterByte is the VT state after consuming b. lipgloss.Width
 // splits on newlines and reparses each line from ground, so a newline kept
 // in Escape or EscapeIntermediate must not leave the walker there. A newline
-// already in ground stays in ground. A newline hidden inside CSI, DCS, OSC,
+// already in ground stays in ground. A newline hidden inside CSI, DCS, OSC
 // SOS, PM, or APC is not passed here: that join leaves the sequence state.
 func parserStateAfterByte(b byte, state parser.State) parser.State {
 	if b == '\n' {
@@ -189,7 +189,7 @@ func repairBareEllipsis(out string, ellipsisIdx int) (string, int) {
 	prefix := out[:ellipsisIdx]
 	suffix := out[ellipsisIdx+len(ellipsisRune):]
 	// The marker takes the style of the last positive-width kept grapheme.
-	// A trailing SGR run after that grapheme belongs to the discarded tail;
+	// A trailing SGR run after that grapheme belongs to the discarded tail
 	// leaving it in front wraps the marker (and any pad space) in the tail
 	// style. A prefix with no positive-width cell stays as it is, so an empty
 	// open/reset span stays bare and a style that only wraps a dropped glyph
@@ -398,7 +398,7 @@ func endsWithResetBareEllipsis(s string) bool {
 	return hasResetBareEllipsisAt(s[:idx])
 }
 
-// activeSGRReplay returns the original SGR bytes active after parsing s,
+// activeSGRReplay returns the original SGR bytes active after parsing s
 // replaying each non-reset sequence in order instead of re-encoding attributes.
 // A CSI sequence is recorded only when its final byte is 'm' (sgrLenAt). Any
 // other final, such as EL or CUU, is skipped so a following printable 'm' is

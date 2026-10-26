@@ -7,16 +7,14 @@ import (
 
 // keyNames maps the chord vocabulary control-omairc-tui accepts to the bytes a
 // terminal sends over the PTY.
-//
-// The shared recipes under .cursor/skills/verify-omairc/features/*.md are
+// The shared recipes under.cursor/skills/verify-omairc/features/*.md are
 // written for the Qt driver, which hands names to xdotool; this table (plus the
 // generic ctrl+<letter> and alt+<letter> families in KeySequence) is the TUI
 // driver's own vocabulary, not a verbatim mirror of every name a recipe may
 // use. A name outside it is rejected with a descriptive error instead of
 // silently sending nothing. Both the capitalised arrow/Home/End/Page spellings
 // and their lowercase aliases are accepted, because the skill uses both.
-//
-// Arrows with modifiers use the xterm form `CSI 1 ; modifier D/A/B/C`, where
+// Arrows with modifiers use the xterm form `CSI 1; modifier D/A/B/C`, where
 // the modifier is 1 + shift(1) + alt(2) + ctrl(4). Letters with ctrl+shift
 // use the kitty CSI-u form (see below), because their legacy control bytes
 // would collide.
@@ -90,7 +88,7 @@ var keyNames = map[string]string{
 	// these chords collide with other keys (Ctrl+` and Ctrl+, are NUL and
 	// Ctrl+L, Ctrl+Enter and Ctrl+Tab are CR and HT), so the terminal must
 	// disambiguate them. bubbletea v2's ultraviolet decoder parses CSI-u
-	// unconditionally: `CSI codepoint ; modifiers u`, where the modifier value
+	// unconditionally: `CSI codepoint; modifiers u`, where the modifier value
 	// is the kitty bitmask plus one (ctrl=5, ctrl+shift=6).
 	"ctrl+`":            "\x1b[96;5u",
 	"ctrl+,":            "\x1b[44;5u",
@@ -110,7 +108,6 @@ var keyNames = map[string]string{
 }
 
 // KeySequence encodes one chord name as terminal bytes.
-//
 // Beyond the static table it accepts a generic ctrl+<letter> (the control
 // byte letter-'a'+1) and alt+<letter> (ESC followed by the letter, case
 // preserved). Unknown names return a descriptive error so a recipe typo

@@ -15,7 +15,6 @@ import (
 // Styles is the shell's palette, built from the theme package's derived colors.
 // buildStyles wraps a theme.Colors in lipgloss at the rendering edge; the theme
 // package itself stays lipgloss-free and knows nothing about the widgets below.
-//
 // Colors is kept on the struct so leaf files can derive one-off styles (a
 // background here, a highlight there) without editing this file. Every style
 // below is a fixed render of those colors; a rebuild replaces the palette.
@@ -130,7 +129,7 @@ type Styles struct {
 
 // fixedColors is the fixed Tokyo-Night palette the TUI has always rendered.
 // Nick colors, the identicon page fill, and the avatar mix amount are fixed
-// presentation shared with `client/src/model/style.rs`, so they read Fallback() rather than
+// presentation shared with `client/src/model/style.rs`, so they read Fallback rather than
 // the live theme.
 var (
 	fixedColors   = theme.Fallback()

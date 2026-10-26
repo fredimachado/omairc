@@ -1,5 +1,5 @@
 // Command writezip packs a directory of release files into a zip.
-// tui/bin/package runs it (go run ./bin/writezip) for the Windows archive.
+// tui/bin/package runs it (go run./bin/writezip) for the Windows archive.
 // It is a release helper, not a shipped tool.
 package main
 

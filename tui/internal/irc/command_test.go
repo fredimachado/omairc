@@ -135,7 +135,7 @@ func TestCommandAllowedOn(t *testing.T) {
 	if !(Command{Verb: VerbJoin}).AllowedOn(SurfaceStatus) {
 		t.Error("Join should be allowed on the Status surface")
 	}
-	// /me (Action) is conversation-only.
+	// me (Action) is conversation-only.
 	me := ParseCommand("/me waves")
 	if me.AllowedOn(SurfaceStatus) {
 		t.Error("/me should not be allowed on the Status surface")
@@ -171,7 +171,7 @@ func TestVisibleVerbsOnSurface(t *testing.T) {
 	if len(conversation) != 47 {
 		t.Fatalf("conversation visible verbs = %d, want 47", len(conversation))
 	}
-	// Status drops the conversation-only verbs: me, close, topic, op, deop,
+	// Status drops the conversation-only verbs: me, close, topic, op, deop
 	// voice, devoice, ban.
 	if len(status) != 39 {
 		t.Fatalf("status visible verbs = %d, want 39", len(status))

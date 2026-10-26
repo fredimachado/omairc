@@ -48,7 +48,7 @@ func newPlatform(onActivated func(Activation)) Notifier {
 	}
 
 	// Register the signal match before subscribing so no ActionInvoked is
-	// missed between the two calls, mirroring Backend's connect().
+	// missed between the two calls, mirroring Backend's connect.
 	if err := conn.AddMatchSignal(
 		dbus.WithMatchObjectPath(notifyObject),
 		dbus.WithMatchInterface(notifyIface),

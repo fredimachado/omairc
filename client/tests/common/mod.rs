@@ -43,8 +43,7 @@ pub fn line_of(text: &str, offset: usize) -> usize {
 
 /// `source` with every comment replaced by a space. Line breaks survive, so
 /// line numbers still match the file. String, raw string and char literals are
-/// copied verbatim. Blanks around `::` are dropped, so `std :: net` reads as
-/// `std::net`.
+/// copied verbatim. Blanks around `::` are dropped, so `std:: net` reads as
 pub fn code_only(source: &str) -> String {
     let chars: Vec<char> = source.chars().collect();
     let mut out = String::with_capacity(source.len());

@@ -1,4 +1,4 @@
-//! Port of `tui/internal/session/transport_test.go`: the loopback transport on its
+//! the loopback transport on its
 //! own, without a session. The shared conformance cases run through
 //! `LoopbackHarness` at the bottom; the tests above keep what only the loopback
 //! exposes (the frame hook, recorded frames, its host and port, its error text).
