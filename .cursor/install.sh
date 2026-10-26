@@ -1,18 +1,12 @@
 #!/usr/bin/env bash
 # Idempotent Cloud Agent setup for Omairc.
 #
-# Omairc is a Qt 6 Quick application (qmake + C++17). It uses Qt APIs that
-# require Qt >= 6.5 (for example Qt::ColorScheme), which is newer than the
-# Qt 6.4 that Ubuntu 24.04 ships. This script installs a self-contained
-# official Qt 6 via aqtinstall into /opt/Qt, plus the system libraries and
-# optional black-box test tooling the repository's bin/ scripts expect.
+# Omairc's desktop client is a Rust GPUI app in client/. This script installs
+# a Rust toolchain, system libraries GPUI needs on Linux, Go for the TUI gate,
+# and optional black-box desktop tooling (Xvfb / xdotool / lavapipe).
 #
 # Safe to run repeatedly: every step checks for existing state first.
 set -euo pipefail
-
-QT_VERSION="6.8.3"
-QT_ROOT="/opt/Qt/${QT_VERSION}/gcc_64"
-PROFILE_SCRIPT="/etc/profile.d/omairc-qt.sh"
 
 if [ "$(id -u)" -eq 0 ]; then
   SUDO=""
@@ -25,61 +19,35 @@ log() { printf '\n=== %s ===\n' "$1"; }
 log "Installing system packages"
 export DEBIAN_FRONTEND=noninteractive
 $SUDO apt-get update -y
-# build-essential + Qt xcb runtime libraries + optional desktop-test tooling
-# (Xvfb/xauth/xdotool/imagemagick) used by bin/test-desktop, and python venv
-# tooling for aqtinstall.
 $SUDO apt-get install -y --no-install-recommends \
-  build-essential ca-certificates git \
-  cmake ninja-build pkg-config libsecret-1-dev libdbus-1-dev \
+  build-essential ca-certificates curl git \
+  pkg-config libsecret-1-dev libdbus-1-dev \
   python3 python3-venv python3-pip \
-  libgl1-mesa-dev libegl1-mesa-dev \
   libfontconfig1 libxkbcommon0 libxkbcommon-x11-0 \
   libxkbcommon-dev libxkbcommon-x11-dev libdbus-1-3 \
   libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
   libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-util1 \
   libxcb-glx0 libxcb-shm0 libxcb-sync1 libxcb-xfixes0 libx11-xcb1 \
-  xvfb x11-xserver-utils xauth xdotool imagemagick
+  xvfb x11-xserver-utils xauth xdotool xinput imagemagick \
+  mesa-vulkan-drivers
 
-log "Installing Qt ${QT_VERSION} via aqtinstall (if missing)"
-if [ ! -x "${QT_ROOT}/bin/qmake6" ]; then
-  AQT_VENV="/opt/aqt-venv"
-  if [ ! -x "${AQT_VENV}/bin/aqt" ]; then
-    $SUDO mkdir -p "${AQT_VENV}"
-    $SUDO chown "$(id -u):$(id -g)" "${AQT_VENV}"
-    python3 -m venv "${AQT_VENV}"
-    "${AQT_VENV}/bin/pip" install --upgrade pip aqtinstall
-  fi
-  $SUDO mkdir -p /opt/Qt
-  $SUDO chown "$(id -u):$(id -g)" /opt/Qt
-  "${AQT_VENV}/bin/aqt" install-qt linux desktop "${QT_VERSION}" linux_gcc_64 -O /opt/Qt
-else
-  echo "Qt ${QT_VERSION} already present at ${QT_ROOT}"
+log "Installing Rust (rustup) if missing"
+if ! command -v cargo >/dev/null 2>&1; then
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+  # shellcheck disable=SC1091
+  . "$HOME/.cargo/env"
+fi
+rustup component add clippy rustfmt >/dev/null
+
+log "Installing Go if missing"
+if ! command -v go >/dev/null 2>&1; then
+  $SUDO apt-get install -y --no-install-recommends golang-go || true
 fi
 
-log "Writing login-shell environment to ${PROFILE_SCRIPT}"
-$SUDO tee "${PROFILE_SCRIPT}" >/dev/null <<EOF
-# Qt ${QT_VERSION} (installed via aqtinstall) for the Omairc build.
-export PATH="${QT_ROOT}/bin:\$PATH"
-export LD_LIBRARY_PATH="${QT_ROOT}/lib:\${LD_LIBRARY_PATH:-}"
-export QT_PLUGIN_PATH="${QT_ROOT}/plugins"
-export QML2_IMPORT_PATH="${QT_ROOT}/qml"
-EOF
-$SUDO chmod +x "${PROFILE_SCRIPT}"
-
-log "Exposing qmake6 and the Qt libraries system-wide"
-# The profile.d script above only affects login shells. Symlink qmake6 onto the
-# default PATH and register the Qt libraries with the dynamic loader so bin/build
-# and bin/test work in any shell (login or not), however the agent invokes them.
-$SUDO ln -sf "${QT_ROOT}/bin/qmake6" /usr/local/bin/qmake6
-$SUDO ln -sf "${QT_ROOT}/bin/qmake6" /usr/local/bin/qmake
-echo "${QT_ROOT}/lib" | $SUDO tee /etc/ld.so.conf.d/omairc-qt.conf >/dev/null
-$SUDO ldconfig
-
-log "Installing ImageMagick 7 'magick' compatibility shim"
-# Ubuntu ships ImageMagick 6 (legacy per-command tools) without the unified
-# `magick` entrypoint that ImageMagick 7 / Omarchy provide and that
-# bin/test-desktop invokes. Provide a thin dispatcher.
-$SUDO tee /usr/local/bin/magick >/dev/null <<'EOF'
+# Ubuntu ImageMagick 6 often lacks the `magick` entrypoint ImageMagick 7 provides.
+if ! command -v magick >/dev/null 2>&1 && command -v convert >/dev/null 2>&1; then
+  log "Installing magick shim for ImageMagick 6"
+  $SUDO tee /usr/local/bin/magick >/dev/null <<'EOF'
 #!/usr/bin/env sh
 set -eu
 case "${1:-}" in
@@ -89,23 +57,19 @@ case "${1:-}" in
     exec convert "$@" ;;
 esac
 EOF
-$SUDO chmod +x /usr/local/bin/magick
-
-log "Installing QtKeychain against ${QT_ROOT} (if missing)"
-# shellcheck disable=SC1090
-. "${PROFILE_SCRIPT}"
-ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-if [ ! -f "${QT_ROOT}/mkspecs/modules/qt_Qt6Keychain.pri" ]; then
-  if [ ! -w "${QT_ROOT}" ]; then
-    $SUDO chown -R "$(id -u):$(id -g)" "${QT_ROOT}"
-  fi
-  "${ROOT}/bin/install-qtkeychain" "${QT_ROOT}"
-else
-  echo "QtKeychain already present at ${QT_ROOT}"
+  $SUDO chmod +x /usr/local/bin/magick
 fi
 
-log "Building Omairc to validate the toolchain"
-"${ROOT}/bin/build"
+log "Smoke"
+cargo --version
+command -v go >/dev/null 2>&1 && go version || echo "go not installed (tui/bin/test will skip)"
+command -v magick
+command -v Xvfb
+ls /usr/share/vulkan/icd.d/*lvp* /usr/share/vulkan/icd.d/*lavapipe* 2>/dev/null \
+  || ls /usr/share/vulkan/icd.d/*.json || true
 
-log "Setup complete"
-qmake6 -query QT_VERSION
+echo
+echo "Omairc agent environment ready. From the repo root:"
+echo "  bin/check-conventions"
+echo "  (cd client && cargo test --locked)"
+echo "  bin/test"

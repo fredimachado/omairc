@@ -6,8 +6,11 @@ pkgrel=1
 pkgdesc='Simple IRC client for Omarchy'
 arch=('x86_64')
 url='https://github.com/fredimachado/omairc'
-license=('MIT' 'LGPL-3.0-or-later' 'OFL-1.1')
-options=(!debug)
+license=('MIT' 'OFL-1.1')
+# !lto: makepkg's default -flto reaches ring's cc/asm build; those objects
+# become GIMPLE bitcode that rustc's final link never resolves (undefined
+# ring_core_*). The visible -fuse-ld=lld is a red herring.
+options=(!debug !lto)
 depends=(
   'fontconfig'
   'freetype2'
@@ -27,21 +30,29 @@ makedepends=(
 source=("$pkgname-$pkgver.tar.gz::https://github.com/fredimachado/omairc/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')
 
+prepare() {
+  cd "$srcdir/$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --manifest-path client/Cargo.toml \
+    --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
 build() {
   cd "$srcdir/$pkgname-$pkgver"
   export OMAIRC_BUILD_VERSION="${OMAIRC_BUILD_VERSION:-$pkgver}"
-  cargo build --release --locked --features product --manifest-path poc/Cargo.toml
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --release --frozen --features product --manifest-path client/Cargo.toml
 }
 
 package() {
   cd "$srcdir/$pkgname-$pkgver"
-  install -Dm755 poc/target/release/omairc "$pkgdir/usr/bin/omairc"
+  install -Dm755 target/release/omairc "$pkgdir/usr/bin/omairc"
   install -Dm644 data/omairc.desktop "$pkgdir/usr/share/applications/omairc.desktop"
   install -Dm644 data/icons/hicolor/scalable/apps/omairc.svg \
     "$pkgdir/usr/share/icons/hicolor/scalable/apps/omairc.svg"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 fonts/OFL.txt "$pkgdir/usr/share/licenses/$pkgname/OFL.txt"
-  install -Dm644 src/irc/COPYING "$pkgdir/usr/share/licenses/$pkgname/COPYING-LGPL"
   install -Dm644 data/bash-completion/omairc \
     "$pkgdir/usr/share/bash-completion/completions/omairc"
 }

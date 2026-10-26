@@ -3,181 +3,129 @@
 ## Product boundary
 
 - Keep Omairc simple, keyboard-friendly, and visually native to Omarchy.
-- Conversations are live through `IrcController`. `OmaircWindow` requires
-  `irc`. Binding it to null does not load a prototype sidebar.
-  `./build/omairc --demo-server` seeds that controller in-process and skips
-  Connect. UI tests use `SeededIrcFixture` or a small fake controller.
+- Conversations are live through the IRC controller (`client/src/controller/`).
+  `--demo-server` seeds that controller in-process and skips Connect. UI and
+  integration tests use the demo seed or a small fake controller.
 - Prefer a small, calm interface over adding controls for hypothetical future
   features.
 
 ## Architecture
 
-- This is a Qt 6 Quick application built with qmake and C++17.
-- `src/OmaircWindow.qml` is the shell: `irc` / `connection` / `backend`
-  bindings, window-owned `OmaircStyle` and `IrcTextFormatter`, window-level
-  `Shortcut`s (including the one `Ctrl+Enter` / `Ctrl+Return` pair that
-  applies Connect), submit/apply/focus helpers, conversation selection, send,
-  slash, find, overlay open/close, and aliases into extracted columns
-  (`sidebar.sidebarScroll`, `conversation.composer`,
-  `membersPanel.membersList`, ...). Presentation chrome lives in `src/qml/`
-  file-based components. Register new QML files in `src/resources.qrc` and
-  `import "qml"` from the window. Tests import `../../src`. The app loads
-  `qrc:/`.
-- Seed the demo world from `IrcDemoServer`, not from QML `ListModel`s.
-- Keep `Backend` limited to desktop integration: Omarchy theme colors, live
-  theme watching, text scale, window geometry, and desktop notifications.
-- Keep IRC networking, protocol, session, and model code in `src/irc/`.
-  IRC formatting is `IrcTextFormatter` (`src/irc/irctextformatter.*`). The
-  window forwards `plainIrcText` / `emphasizedIrcText` / `hasIrcEmphasis` so
-  QML tests and `bin/check-conventions` still see those names. Do not move
-  URL policy (`isAllowedHttpUrl`, `httpUrlAt`, `openAllowedUrl`) or
-  `inviteChannelAt()` into C++. Nick colors stay presentation
-  (`OmaircStyle.nickColor`).
+- The desktop client is a Rust GPUI application in `client/`. Cargo's default
+  features include `product` (install identity: `omairc` folder and IPC). The
+  `dev` feature uses a separate `omairc-poc` config/state tree so local
+  `cargo run` / `cargo test --features dev` never claim a real install.
+- `client/src/app.rs` is startup and window wiring. Shell behavior (shortcuts,
+  conversation selection, slash dispatch, overlays, and related helpers) lives
+  in `client/src/ui/shell/`. Presentation lives in `client/src/ui/`.
+- Seed the demo world from the in-process demo server, not from ad hoc UI list
+  models.
+- Keep `client/src/desktop/` limited to desktop integration: Omarchy theme
+  colors, live theme watching, text scale, window geometry, notifications, and
+  platform paths.
+- Keep IRC code split by layer: `client/src/irc/` (protocol, reducer),
+  `client/src/session/` (connection and session), `client/src/controller/`,
+  and `client/src/model/` (view models). IRC formatting stays in the IRC
+  layer; nick colors stay presentation (`client/src/ui/` style helpers). Do
+  not move URL policy or invite-channel parsing into unrelated modules.
 - Keep system light/dark mode and portal text-scale detection in
-  `SystemTheme`.
+  `client/src/desktop/`.
 - Use the bundled `iA Writer Mono S` font for all custom interface text.
 - The public CLI skill lives in `skills/omairc/`. Install it with
-  `npx skills add fredimachado/omairc/skills -g`. Proving the GUI uses
-  `.cursor/skills/verify-omairc`; that skill is internal. The Rust GPUI PoC
-  uses `.cursor/skills/verify-omairc-poc` (`control-omairc-poc`: same Xvfb
-  + xdotool path, clears `WAYLAND_DISPLAY`, requires lavapipe; pointer
-  verbs use XTEST/XI2 clicks). `bin/verify-poc-recipes` and the
-  non-blocking `verify-poc` job in `test.yml` drive the feature map.
-  Load
-  `.cursor/skills/change-qml` when adding or moving UI,
-  `.cursor/skills/conversation-cause` when touching `ensureConversation`,
-  conversation creation, or `/msg`, and `.cursor/skills/redact-secrets`
-  when touching Status lines, error previews, or `src/irc/ircsecretpolicy.cpp`.
+  `npx skills add fredimachado/omairc/skills -g`. Desktop proof uses
+  `.cursor/skills/verify-omairc-poc` (`control-omairc-poc`: isolated Xvfb +
+  xdotool, clears `WAYLAND_DISPLAY`, requires lavapipe; pointer verbs use
+  XTEST/XI2 clicks). `bin/verify-poc-recipes` and the non-blocking
+  `verify-poc` job in `test.yml` drive the feature map. Load
+  `.cursor/skills/conversation-cause` when touching Rust
+  `ensure_conversation` / Go `EnsureConversation`, conversation creation, or
+  `/msg`, and `.cursor/skills/redact-secrets` when touching Status lines,
+  error previews, or secret redaction in `client/src/irc/` and
+  `tui/internal/irc/`.
 
 `.cursor/skills/verify-omairc/features/*.md` is the map of how a user
 reaches a behavior: shortcuts, preconditions, and observables.
-`control-omairc` drives that map against the Qt window;
-`control-omairc-poc` and `control-omairc-tui` replay the same fences
-against the GPUI PoC and the TUI. Proof of each GUI stays that window:
-title, screenshots, and chords. Do not compile the map into the binary,
-the product CLI, or a C++ catalog.
-Do not add `objectName` queries or a debug command so an agent can read
-the map from a running window. The product CLI is the existing `omairc`
-commands that control a user's running window: `connections`, `status`,
-`send`, `read`, `names`, and `raise`. It is not a test harness. Do not
-add a command that dumps the map. `bin/test` stays the offscreen gate.
+`control-omairc-poc` drives that map against the Rust GPUI window;
+`control-omairc-tui` replays the same fences against the TUI. Proof of each
+GUI stays that window: title, screenshots, and chords. Do not compile the map
+into the binary, the product CLI, or a Rust catalog.
+Do not add debug queries or a debug command so an agent can read the map from a
+running window. The product CLI is the existing `omairc` commands that control
+a user's running window: `connections`, `status`, `send`, `read`, `names`, and
+`raise`. It is not a test harness. Do not add a command that dumps the map.
+`bin/test` stays the offscreen gate.
 
-## Intentional Qt↔Rust diffs
-
-Kept on purpose between the Qt app and the Rust PoC (`poc/`) so parity
-checks do not chase them. Not part of the shared feature map under
+Agents looking for the legacy `verify-omairc` desktop driver should use
+`.cursor/skills/verify-omairc-poc` instead; the feature map remains under
 `.cursor/skills/verify-omairc/features/`.
 
-- `/pref` multi-line feedback: Qt echoes one Status or transcript row with
-  embedded newlines; Rust splits into one row per line (declared
-  deliberate). Kept.
-- Direct NOTICE delivery: Qt leaves nick-targeted non-service NOTICEs on
-  Status only; Rust also files them into the DM. Kept.
-- Error text: Qt TLS failures may append `(CN=…)`, and DNS uses the
-  socket's `errorString()`; Rust omits the CN suffix and uses Go-style
-  `lookup HOST: no such host`. Kept.
-- MONITOR when disconnected: Qt returns `NotConnected` before reading
-  server features; Rust resolves features first, then `NotConnected`.
-  Kept.
-- Locale short dates: Qt uses `QLocale::ShortFormat`; Rust uses a
-  hand-rolled approximation of that format. Kept.
+## Intentional cutover diffs
 
-## QML extraction / window growth
+User-visible behavior that differs from the retired Qt client is recorded under
+`CHANGELOG.md` `[Unreleased]` → Changed (for example `/pref` row-per-line
+feedback, NOTICE filing into DMs, TLS/DNS error text, MONITOR while
+disconnected, short dates, and dropping Qt libraries from Windows/macOS
+builds).
 
-Do not keep adding code to `src/OmaircWindow.qml`. New UI goes outside it.
+## Desktop UI conventions
 
-- New rows, sheets, panels, buttons, glyphs, and form fields live in
-  `src/qml/` as their own file, registered in `src/resources.qrc`.
-- Do not add new column/overlay trees inside `OmaircWindow.qml`. Named
-  `component Name:` blocks besides `PlainUrlHit` are gated by
-  `bin/check-conventions`.
-- If a change would add a substantial chunk to the window, extract a file
-  (or extend an existing `src/qml/` type) in the same change, or as the first
-  follow-up. Do not park "we'll split it later" in the window.
-- Window wiring is allowed: instantiate the type with `style: win.style`,
-  explicit props, and signals. `style: style` is gated by
-  `bin/check-conventions`. Window JS may use `property alias` on the instance
-  for ids it already owns (`composer`, `sidebarScroll`, `membersList`,
-  `messageList`, `consoleList`).
-- Pass `OmaircStyle`, models/services, and callbacks/signals. `host: win` is
-  gated by `bin/check-conventions`.
-- Extract by coupling, not line count. Keep `objectName`s so recursive
-  `findChild` still works. File-based types stay QObject children of the same
-  parent.
-- Message and console delegates live in `src/qml/` (`MessageRow.qml`,
-  `ConsoleLine.qml`). The window passes `style: win.style`, formatter
-  callbacks (`plainIrcText`, `emphasizedIrcText`, `hasIrcEmphasis`), and
-  row helpers. Those formatter names stay on the window. A third delegate
-  tree in the window is gated by `bin/check-conventions`. New transcript
-  chrome (headers, avatars, hits) already lives in `src/qml/`. Do not add
-  new leaf visuals inline.
-
-## Visual conventions
-
-- Derive UI colors from `backend.themeBackground`, `themeForeground`,
-  `themeAccent`, and `themeSelection`; do not introduce a separate fixed
-  palette for structural UI.
-- Derive secondary surfaces and muted text with `mixColors()` /
-  `OmaircStyle` so new Omarchy themes continue to work.
-- Scale dimensions and text through `scaledSize()`, `backend.textScale`, and
-  `style.scaledSize`.
-- Keep conversation counts consistent between the header and member panel.
-
-## QML conventions
-
-- Dynamic conversation navigation uses an unambiguous `conversation` role.
-  Test the live `MessageListModel` and the compiled window. Confirm rendered
-  labels. A warning-free QML startup does not prove that bindings render
-  visible values.
-- Sidebar walk is model-driven. `sidebarConversationRows()` and
-  `sidebarNetworkSections()` read `irc.conversations` / `connection.networks`
-  through `get()` and `hasDirects()`. Transcript rows use `get()` / `field()`.
-  Do not scan QML children. `child.activate` / `.activate()` in QML is gated
-  by `bin/check-conventions`. Reveal by `objectName` + `visible` + `height`.
-  `ConversationRow` has `signal activated()`, not `function activate()`.
-- Collapse the server list by width, not `visible: false`.
+- Dynamic conversation navigation must use an unambiguous conversation identity
+  in models and tests. Confirm rendered labels in the live window or GPUI
+  tests; a clean compile does not prove visible text.
+- Sidebar and network lists are model-driven from the controller, not by
+  walking view children.
+- Collapse the server list by width, not by hiding it with zero size.
 - The Connect sheet is tabbed: `Connection` holds the per-network profile and
   `Preferences` holds global settings such as reopening direct messages on
   startup. `/pref` reads and sets those toggles from the composer
   (`directs`, `avatars`, `unread`). Open conversations at unread starts on.
-  Only queries the user opened or replied to are restored, and
-  restore waits until after ISUPPORT (`376` / `422`). Keep the
-  `Ctrl+/` shortcut hint in its rail so new users find the shortcuts sheet.
+  Only queries the user opened or replied to are restored, and restore waits
+  until after ISUPPORT (`376` / `422`). Keep the `Ctrl+/` shortcut hint in its
+  rail so new users find the shortcuts sheet.
 - The Connect sheet is a window-level modal. Sidebar servers, conversations,
-  and the member panel cannot be clicked, focused, or walked while it is
-  open. The dimmer is 50% transparent so those columns stay visible.
-  `Ctrl+/` still opens the shortcuts overlay on top of it.
+  and the member panel cannot be clicked, focused, or walked while it is open.
+  The dimmer is partly transparent so those columns stay visible. `Ctrl+/` still
+  opens the shortcuts overlay on top of it.
 - The Connect sheet is keyboard-first. `Enter` walks to the next field and
-  `Ctrl+Enter` applies, so a stray keypress cannot commit a half-typed
-  profile. `Ctrl+Enter` is one window-level `Shortcut`, not a branch inside
-  each control: wiring it per control meant it silently did nothing wherever
-  focus sat on something without its own handler. The network rail owns
-  `Up`/`Down`/`Home`/`End` and scrolls the focused row into view; focus does
-  not scroll a `Flickable` on its own. Focusable rows must stay reachable by
-  `Tab` as well. Closing the sheet returns focus to the composer.
+  `Ctrl+Enter` applies, so a stray keypress cannot commit a half-typed profile.
+  `Ctrl+Enter` is one window-level shortcut, not a branch inside each control.
+  The network rail owns `Up`/`Down`/`Home`/`End` and scrolls the focused row into
+  view. Focusable rows must stay reachable by `Tab` as well. Closing the sheet
+  returns focus to the composer.
 - Channel switching must update the topic, message model, people count, and
   member list together.
 - Show the people count, member toggle, and member panel only for channels.
-  Clicking another user in the member panel must open or create a direct
-  message with its own local message history.
+  Clicking another user in the member panel must open or create a direct message
+  with its own local message history.
 - Order member rows by the server's `PREFIX` rank, highest first, then nick.
-  Sort in `MemberListModel` through `IrcEventReducer::orderedMembers`, never in
-  QML, and keep the panel and `omairc names` in that same order.
+  Sort through Rust `ordered_members` / Go `OrderedMembers` in the IRC
+  reducer, never in the view layer, and keep the panel and `omairc names` in
+  that same order.
 - Keep the composer single-line. `Enter` sends the message.
+
+## Visual conventions
+
+- Derive UI colors from Omarchy theme background, foreground, accent, and
+  selection; do not introduce a separate fixed palette for structural UI.
+- Derive secondary surfaces and muted text with the shared style helpers so new
+  Omarchy themes continue to work.
+- Scale dimensions and text through the desktop text-scale path and UI scale
+  helpers.
+- Keep conversation counts consistent between the header and member panel.
 
 ## Review lessons
 
 `bin/check-conventions` already gates the mechanical repeats. These still
 need judgment.
 
-- Inventing a conversation requires `IrcConversationCause` on
-  `ensureConversation`. QuietSend and InboundSelf never invent; UserOpen
-  invents DMs; ChannelState invents channels; InboundOther invents
-  channels and non-service DMs; Restore invents non-service DMs after
-  ISUPPORT so engaged queries survive a restart. Persist only when the
-  user opened the query, sent in it, or a self-authored line arrives.
-  Cover `/msg` with `echo-message`, incoming NickServ PRIVMSG, and
-  incoming human PRIVMSG in the same test matrix.
+- Inventing a conversation requires `IrcConversationCause` on Rust
+  `ensure_conversation` / Go `EnsureConversation`. QuietSend and InboundSelf
+  never invent; UserOpen invents DMs; ChannelState invents channels;
+  InboundOther invents channels and non-service DMs; Restore invents
+  non-service DMs after ISUPPORT so engaged queries survive a restart.
+  Persist only when the user opened the query, sent in it, or a
+  self-authored line arrives. Cover `/msg` with `echo-message`, incoming
+  NickServ PRIVMSG, and incoming human PRIVMSG in the same test matrix.
 - Do not hard-code CHANTYPES, CHANMODES, or PREFIX. Call
   `IrcServerFeatures`.
 - Fail closed when redacting secrets for Status or error previews. Do not
@@ -193,34 +141,40 @@ this order:
    API that cannot express the mistake.
 2. Else add or extend a check in `bin/check-conventions`.
 3. Else add or adjust one of the internal playbooks:
-   `.cursor/skills/change-qml`, `.cursor/skills/conversation-cause`,
-   `.cursor/skills/redact-secrets`.
+   `.cursor/skills/conversation-cause`, `.cursor/skills/redact-secrets`.
 4. A sentence in `AGENTS.md` is the last place, and only for judgment the
    three layers cannot encode.
 
 Pick a GitHub issue, branch off `main`, run `bin/test`, and open the
-pull request against `main`. Also run `bin/test-san` when the change
-touches sanitizers, and `bin/test-live` when it touches real IRCd
-behavior. CI rejects a pull request whose base is not `main`, a
-`tui-phase-*` branch, or a `slice/rust-cutover-*` stack base. No new
-bot, workflow, or notification sink.
+pull request against `main`. Also run `bin/test-live` when it touches
+real IRCd behavior. CI rejects a pull request whose base is not `main`.
+No new bot, workflow, or notification sink.
 
 ## Release versioning
 
 `version.pri` is the single `VERSION` for `--version`, CTCP `VERSION`,
-tests, and packaging. A release bump touches at least these files:
+tests, and packaging. Cargo needs a literal `version` in
+`client/Cargo.toml` (and a matching `client/Cargo.lock` entry); those
+stay checked copies. Prefer `bin/set-version X.Y.Z` to rewrite
+`version.pri`, `client/Cargo.toml`, and the lock together.
+`bin/check-conventions` fails when they drift. A release bump touches at
+least these files:
 
-- `version.pri` — set `VERSION`.
-- `CHANGELOG.md` — move `[Unreleased]` into a dated `[x.y.z]` section and
+- `version.pri` - set `VERSION` (or run `bin/set-version`).
+- `client/Cargo.toml` and `client/Cargo.lock` - keep in lockstep with
+  `version.pri` (letter suffixes become SemVer pre-releases, e.g.
+  `1.0.7alpha` → `1.0.7-alpha`).
+- `CHANGELOG.md` - move `[Unreleased]` into a dated `[x.y.z]` section and
   update the compare links at the bottom.
-- `tests/test_derive_build_versions.py` — replace every hardcoded
+- `tests/test_derive_build_versions.py` - replace every hardcoded
   `1.0.x` string and `refs/tags/v1.0.x` ref with the new version.
-  `bin/test` runs this suite before the C++ build; forgetting it fails
-  CI immediately with `'1.0.4' != '1.0.3'`-style assertions.
+  `bin/test` runs this suite; forgetting it fails CI immediately with
+  `'1.0.4' != '1.0.3'`-style assertions.
 
 Run `bin/test` (or at least
 `python3 -m unittest -v tests.test_derive_build_versions`) before
-tagging. One bump of `version.pri`, `CHANGELOG.md`, and
+tagging. One bump of `version.pri`, `client/Cargo.toml`,
+`client/Cargo.lock`, `CHANGELOG.md`, and
 `tests/test_derive_build_versions.py` ships both binaries. Tag that
 commit as `v` plus the `version.pri` string, for example `v1.0.4`, and
 as `tui/v1.0.4` so `go install` sees the module version. GitHub's `v*`
@@ -235,132 +189,102 @@ new tip, and `git push origin vX.Y.Z --force` (and the same for
 
 ## Build and validation
 
-`bin/test` is the default gate. It runs `bin/check-conventions`, builds,
-checks CLI help and version, runs the C++ suite, and runs the offscreen QML
-tests. CI runs `bin/test`, `bin/test-san`, and `bin/test-live` on every pull
-request that touches anything outside `tui/**`, and rejects a pull request
-whose base is not `main`, a `tui-phase-*` branch, or a
-`slice/rust-cutover-*` stack base. A pull request whose whole diff is TUI-only is
+`bin/test` is the default gate. It runs `bin/check-conventions`, `cargo test`
+and `clippy` in `client/` (default `product` features, plus a `dev` feature
+pass), version/help smoke on the built `omairc` binary, and `tui/bin/test`
+when `go` is on `PATH`. CI runs `bin/test` and `bin/test-live`
+on every pull request that touches anything outside `tui/**`, and rejects a pull
+request whose base is not `main`. A pull request whose whole diff is TUI-only is
 gated by the TUI workflow alone: `test.yml` ignores `tui/**`, and `tui/bin/test`
 runs the shared `bin/check-conventions` so the TUI checks still hold. Paths are
 filtered over the whole pull-request diff, so a pull request that also changes
-`bin/check-conventions` or `bin/test` still runs the Qt workflow. See
+`bin/check-conventions` or `bin/test` still runs the desktop workflow. See
 `tui/AGENTS.md`.
 
 ```sh
 bin/test
-bin/test-san
 bin/test-install
 bin/test-desktop
 bin/test-live
+bin/verify-poc-recipes
 ```
 
 The TUI port lives in `tui/` as its own Go module; its gate is `tui/bin/test`
 (vet, tests, build, CLI contract), which root `bin/test` runs when `go` is on
-`PATH`. The shared contract now spans both binaries: `version.pri` stays the
-single version source, and `IrcConversationCause`, `IrcServerFeatures`,
-`IrcSecretPolicy`, `orderedMembers`, and the feature map under
-`.cursor/skills/verify-omairc/features/*.md` must stay identical between Qt
-and TUI. TUI-scoped rules live in `tui/AGENTS.md`.
+`PATH`. The shared contract spans the Rust desktop client and the TUI:
+`version.pri` stays the single version source, and `IrcConversationCause`,
+`IrcServerFeatures`, `IrcSecretPolicy`, Rust `ordered_members` / Go
+`OrderedMembers`, and the feature map under
+`.cursor/skills/verify-omairc/features/*.md` must stay aligned between
+`client/`, `tui/`, and the map. TUI-scoped rules live in `tui/AGENTS.md`.
 
 `bin/test-desktop` needs Xvfb, Xauthority, xdotool, xinput, ImageMagick,
 cargo, and lavapipe (`vulkan-swrast`). It drives
-`poc/target/release/omairc` (`--features product`) through
-`control-omairc-poc` as a black box and is not in CI. `bin/test-install`
-stages the same seven packager paths from that release binary (keeps
-`COPYING-LGPL` while `src/irc/` remains).
+`client/target/release/omairc` (`--features product`) through
+`control-omairc-poc` as a black box and is not in CI. `bin/verify-poc-recipes`
+replays every feature fence the same way. `bin/test-install` stages the six
+packager paths from that release binary (binary, desktop file, SVG, bash
+completion, LICENSE, OFL).
 `bin/test-live` needs Docker. It drives Ergo, Solanum, and ngIRCd, then the
-dual-network production-QML proof. It fails if `docker` or `docker compose`
+Rust live suite under `tests/live/`. It fails if `docker` or `docker compose`
 is missing.
 
 For visual changes, inspect the running window and the screenshots under
-`test-artifacts/`.
+`test-artifacts/verify-poc/`.
 
-`bin/test` used to print hundreds of `QQmlVMEMetaObject: Internal error -
-attempted to evaluate a function in an invalid context` warnings from the
-seeded QML and live-ui suites. Mechanism: reading a method-valued property on a
-QObject whose `QQmlContextData` is already destroyed makes Qt 6.10+ log the
-warning and hand back `undefined`. The backtrace is
-`QObjectWrapper::virtualResolveLookupGetter` into `QQmlVMEMetaObject::method()`,
-and the contexts are torn down by `QQmlDelegateModel::handleModelReset()` while
-released delegates await deletion.
+Judge desktop claims against the application log under the platform state
+location (`omairc.log` beside other state files). No CI job drives the full
+desktop window for every PR, so log lines are a manual observation when needed,
+not the default gate.
 
-Sidebar walk no longer scans QML children. `sidebarConversationRows()` and
-`sidebarNetworkSections()` read `irc.conversations` / `connection.networks`
-through `get()` and `hasDirects()`. `child.activate` is gated by
-`bin/check-conventions`. Reveal looks up rows by `objectName` and only reads
-`objectName`, `visible`, and `height`. Do not silence leftover warnings with a
-message handler.
+On Linux, build from the repo root:
 
-Judge compiled-window claims against `$XDG_STATE_HOME/omairc/omairc.log`, not
-stderr: `OmaircFileLog` replaces Qt's default handler, and `qWarning` output
-therefore never reaches the console. A `console.warn` positive control is how
-you prove the file is recording. No CI job drives the compiled window, so that
-log is a manual observation, not a gate.
+```sh
+cd client && cargo build --release --locked
+./target/release/omairc --demo-server
+```
 
-On Windows, `bin\build.bat` finds a Qt 6 kit, runs qmake and nmake (or jom,
-or mingw32-make), and deploys Qt next to `build\release\omairc.exe`. Set
-`QMAKE` to pick a kit. Prefer the MSVC kit (`C:\Qt\6.*\msvc*_64\bin\qmake.exe`)
-when Visual Studio or Build Tools is installed. `cl` is not on PATH until you
-load the toolchain: run
-`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find VC\Auxiliary\Build\vcvars64.bat`
-to locate `vcvars64.bat`, `call` it, then rerun `bin\build.bat`. The installer
-and `vswhere` live under `C:\Program Files (x86)\Microsoft Visual Studio\`;
-Community/Build Tools installs may be under `C:\Program Files\Microsoft Visual Studio\18\`
-or a year folder such as `2019`. QtKeychain must be installed for that kit
-(headers plus `mkspecs/modules/qt_Qt6Keychain.pri`); `bin\build.bat` copies
-`libqt6keychain.dll` / `qt6keychain.dll` next to the exe when present. Do not
-use a Linux `.deps` QtKeychain tree on Windows. `bin/build`, `bin/test`,
-`bin/test-desktop`, and `bin/test-live` stay Unix scripts. The C++ suite still
-builds from `tests/tests.pro` with the same kit. The Windows app uses the
-windows subsystem so Explorer and the Start Menu do not flash a console.
-`--help` and the local CLI attach to a parent Windows console with
-`AttachConsole` (cmd/PowerShell, not Git Bash/mintty). Redirected
-stdout/stderr stay on the pipe or file. Local CLI IPC
-uses a named pipe (`omairc`), not a filesystem socket. Portal text-scale
-stays 1.0, desktop notifications no-op without DBus, and the Omarchy
-`colors.toml` watch does nothing when that file is missing. Windows
-embeds `data/icons/omairc.ico` in the exe (`RC_ICONS`) and the same
-file in the window icon; regenerate it from the SVG with ImageMagick
-when the mark changes. `windeployqt --compiler-runtime` copies
-`vc_redist.x64.exe` on MSVC and does not copy the CRT DLLs, so
-`bin\build.bat` uses `--no-compiler-runtime` and copies `msvcp140*.dll`
-and `vcruntime140*.dll` from `VCToolsRedistDir` next to the exe so a
-per-user install does not need `vc_redist`. `:prune_qt_deploy` deletes a
-stale `vc_redist*.exe` left in an existing build directory. Keep
-`imageformats/qsvg.dll`: About loads `qrc:/icons/omairc.svg` through QML
-`Image`, which that plugin decodes. `iconengines/qsvgicon.dll` is not
-enough. Prune gif/ico like macOS; do not skip or rmdir the whole
-`imageformats` type.
-`bin\package-windows.bat` compiles
-`packaging/windows/omairc.iss` with Inno Setup 6 into
-`dist\omairc-*-windows-x64-setup.exe`. It stages a copy of `build\release`
-first so the script does not glob a live tree; still run it after a
-fresh `bin\build.bat` if you switched Qt kits, or leftover DLLs from the
-previous kit still ship. Privileges stay lowest by default
-(`{autopf}` is `%LOCALAPPDATA%\Programs\Omairc`); the wizard can elevate
-for all users. The installer uses `data/icons/omairc.ico`, adds a Start
-Menu shortcut and user PATH, and leaves config and logs alone on
-uninstall. Look for `ISCC.exe` under `%LOCALAPPDATA%\Programs\Inno Setup 6`
-as well as Program Files, or set `ISCC`. On macOS, `bin/build-macos` and
-`bin/package-macos` produce `build/omairc.app` and
+Set `OMAIRC_BUILD_VERSION` when packaging needs an exact `--version` string
+(CI and `bin/test` set it from `bin/version`).
+
+## Windows
+
+`bin\build-rust.bat` builds the product client with MSVC static CRT
+(`cargo build --release --locked --features product` in `client/`) and stages
+`build\release\omairc.exe`. Its `:ensure_msvc` step finds `vcvars64.bat`
+through `vswhere` when `cl` is not on `PATH`, or you can load
+`vcvars64.bat` yourself first.
+
+`bin/test`, `bin/test-desktop`, and `bin/test-live` stay Unix scripts. `--help` and the local CLI attach to a parent Windows console with
+`AttachConsole` (cmd/PowerShell, not Git Bash/mintty). Redirected stdout/stderr
+stay on the pipe or file. Local CLI IPC uses a named pipe (`omairc`), not a
+filesystem socket. Portal text-scale stays 1.0, desktop notifications use the
+Windows toast path, and the Omarchy `colors.toml` watch does nothing when that
+file is missing. Windows embeds `data/icons/omairc.ico` in the exe and the
+window icon; regenerate it from the SVG with ImageMagick when the mark changes.
+
+`bin\package-windows.bat` compiles `packaging/windows/omairc.iss` with Inno
+Setup 6 into `dist\omairc-*-windows-x64-setup.exe`. It expects a fresh
+`bin\build-rust.bat` tree under `build\release`. Privileges stay lowest by
+default (`{autopf}` is `%LOCALAPPDATA%\Programs\Omairc`); the wizard can
+elevate for all users. The installer uses `data/icons/omairc.ico`, adds a Start
+Menu shortcut and user PATH, and leaves config and logs alone on uninstall.
+Look for `ISCC.exe` under `%LOCALAPPDATA%\Programs\Inno Setup 6` as well as
+Program Files, or set `ISCC`.
+
+## macOS
+
+`bin/build-macos-rust` and `bin/package-macos` produce `build/omairc.app` and
 `dist/omairc-*-macos-*.zip`; CI runs `.github/workflows/macos.yml` on
-`macos-15` (Apple Silicon) and `macos-15-intel` with Qt 6.8.3 via
-aqtinstall (prefers `clang_arm64` on Apple Silicon, falls back to
-universal `clang_64` when aqt has not published an arm64-only kit;
-`clang_64` on Intel). `macos-latest` is macOS 26 and does not ship
-Xcode 16, so Apple Silicon stays on `macos-15`. CI selects Xcode 16.4
-with `maxim-lobanov/setup-xcode` (encoded on the matrix) rather than a
-best-effort `xcode-select` fallback. CI asserts the Mach-O contains
-`arm64` or `x86_64` to match the `macos-arm64` / `macos-x64` artifact
-name. Pull requests compile, smoke, and (on Apple Silicon) run portable
-tests; they do not zip or upload artifacts. `main` is the same for
-packaging. Version tags and `workflow_dispatch` package both zips, and tags
-attach both to the GitHub release. Intel pull requests skip the portable test
-rebuild. Build QtKeychain against the same Qt prefix with Apple
-`clang++` so passwords use the Keychain backend. There is no
-`qt6-wayland` dependency on macOS. Regenerate `data/icons/omairc.icns`
-from the SVG with `packaging/macos/generate-icns` when the mark changes.
+`macos-15` (Apple Silicon) and `macos-15-intel` with Rust toolchains. CI
+asserts the Mach-O contains `arm64` or `x86_64` to match the
+`macos-arm64` / `macos-x64` artifact name. Pull requests compile, smoke, and
+(on Apple Silicon) run portable tests; they do not zip or upload artifacts.
+`main` is the same for packaging. Version tags and `workflow_dispatch` package
+both zips, and tags attach both to the GitHub release. Intel pull requests skip
+the portable test rebuild. Passwords use the macOS Keychain. Regenerate
+`data/icons/omairc.icns` from the SVG with `packaging/macos/generate-icns`
+when the mark changes.
 CI imports a Developer ID certificate and signs with hardened runtime
 (`packaging/macos/Omairc.entitlements`; library validation stays on). Version
 tags and workflow_dispatch run `bin/notarize-macos` (`notarytool` + staple),
@@ -368,19 +292,17 @@ then `stapler validate`, `syspolicy_check distribution`, and
 `spctl --assess --type execute --verbose=4`. Pull requests sign only and run
 `syspolicy_check notary-submission`: Apple often holds the first Developer ID
 uploads In Progress for hours. Tag releases fail if the signing secrets are
-missing or Gatekeeper rejects the stapled app. Local `bin/build-macos` stays
-ad-hoc unless `CODESIGN_IDENTITY` is set. The Homebrew cask is
+missing or Gatekeeper rejects the stapled app. Local `bin/build-macos-rust`
+stays ad-hoc unless `CODESIGN_IDENTITY` is set. The Homebrew cask is
 `Casks/omairc.rb` so this repository is a tap (`brew tap fredimachado/omairc
 https://github.com/fredimachado/omairc`; the URL is required because the repo
 is not `homebrew-omairc`). It ships the GitHub `macos-arm64` / `macos-x64`
 zips, `livecheck` on the latest release, a PATH helper that execs
-`Contents/MacOS/omairc` (not a symlink of the Mach-O, so Qt still reads the
-bundle `qt.conf`) so `omairc connections` works from a terminal, and `zap` of
-`~/Library/Preferences/omairc` plus `~/Library/Preferences/State/omairc`
-(Qt `GenericConfigLocation` / `GenericStateLocation` on macOS). Version tags
-rewrite `version` and both `sha256`s through `bin/bump-homebrew-cask` after
-both zips land. The bump job fetches and rebases onto `origin/main` when
-that push is not a fast-forward; a conflict re-applies the generated cask
-on the new tip instead of leaving the tap on the prior version. Do not cask a Homebrew-Qt `bin/build-macos` tree. Do not
-install the cask from a raw GitHub URL. Uninstall leaves config; `--zap` is
-the wipe.
+`Contents/MacOS/omairc` so `omairc connections` works from a terminal, and
+`zap` of `~/Library/Preferences/omairc` plus
+`~/Library/Preferences/State/omairc`. Version tags rewrite `version` and both
+`sha256`s through `bin/bump-homebrew-cask` after both zips land. The bump job
+fetches and rebases onto `origin/main` when that push is not a fast-forward; a
+conflict re-applies the generated cask on the new tip instead of leaving the
+tap on the prior version. Do not install the cask from a raw GitHub URL.
+Uninstall leaves config; `--zap` is the wipe.

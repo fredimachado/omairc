@@ -12,11 +12,10 @@ on:
       - 'bin/version'
       - 'bin/derive-build-versions.py'
       - 'version.pri'
-      - 'poc/**'
+      - 'client/**'
       - 'fonts/**'
       - 'data/**'
       - 'LICENSE'
-      - 'src/irc/COPYING'
       - 'install.sh'
       - 'install-tui.sh'
       - 'tui/**'
@@ -73,6 +72,7 @@ jobs:
       - name: Assert versions
         run: |
           set -euo pipefail
+          python3 bin/check-conventions
           VER=$(./bin/version)
           PKG=$(bash -c 'source ./PKGBUILD && printf %s "$pkgver"')
           TUI_PKGVER=$(bash -c 'source ./packaging/tui/PKGBUILD && printf %s "$pkgver"')

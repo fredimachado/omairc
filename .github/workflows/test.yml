@@ -50,16 +50,16 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Require main or a phase branch as the pull request base
+      - name: Require main as the pull request base
         run: |
           case "${{ github.base_ref }}" in
-            main|tui-phase-*|slice/rust-cutover-*) ;;
-            *) echo "This pull request targets ${{ github.base_ref }}, not main, a tui-phase branch, or a slice/rust-cutover branch." >&2; exit 1 ;;
+            main) ;;
+            *) echo "This pull request targets ${{ github.base_ref }}, not main." >&2; exit 1 ;;
           esac
 
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -79,88 +79,26 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: poc
-          key: linux-rust-${{ hashFiles('poc/Cargo.lock') }}
+          workspaces: client
+          key: linux-rust-${{ hashFiles('client/Cargo.lock') }}
 
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential python3 python3-venv \
-            cmake ninja-build pkg-config libsecret-1-dev \
-            libgl1-mesa-dev libegl1-mesa-dev libdbus-1-dev \
+            build-essential python3 \
+            pkg-config libsecret-1-dev \
             libfontconfig1 libxkbcommon0 libxkbcommon-x11-0 \
-            libxkbcommon-dev libxkbcommon-x11-dev libdbus-1-3 \
+            libxkbcommon-dev libxkbcommon-x11-dev libdbus-1-3 libdbus-1-dev \
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
             libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-util1 \
             libxcb-glx0 libxcb-shm0 libxcb-sync1 libxcb-xfixes0 libx11-xcb1
 
-      # Fail fast on the Rust client before the Qt install. bin/test below still
-      # runs plain `cargo test` (default features); product features and clippy
-      # are the M1 extras that only this job owns.
-      # -D warnings catches unused_imports (the Windows break class). Style and
-      # complexity groups are pre-existing noise; allow them until a cleanup
-      # slice. correctness and suspicious stay denied.
-      - name: Clippy
-        working-directory: poc
-        run: >
-          cargo clippy --locked --all-targets --features product --
-          -D warnings
-          -A clippy::style
-          -A clippy::complexity
-          -A clippy::pedantic
-          -A clippy::nursery
-          -A clippy::perf
-
-      - name: Cargo test with product features
-        working-directory: poc
-        run: cargo test --locked --features product
-
-      - name: Install Qt 6
-        run: |
-          python3 -m venv "$RUNNER_TEMP/aqt"
-          "$RUNNER_TEMP/aqt/bin/pip" install aqtinstall
-          "$RUNNER_TEMP/aqt/bin/aqt" install-qt linux desktop 6.8.3 linux_gcc_64 -O "$HOME/Qt"
-          echo "$HOME/Qt/6.8.3/gcc_64/bin" >> "$GITHUB_PATH"
-          {
-            echo "LD_LIBRARY_PATH=$HOME/Qt/6.8.3/gcc_64/lib:${LD_LIBRARY_PATH:-}"
-            echo "QT_PLUGIN_PATH=$HOME/Qt/6.8.3/gcc_64/plugins"
-            echo "QML2_IMPORT_PATH=$HOME/Qt/6.8.3/gcc_64/qml"
-          } >> "$GITHUB_ENV"
-
-      - name: Install QtKeychain
-        run: bin/install-qtkeychain "$HOME/Qt/6.8.3/gcc_64"
-
+      # bin/test runs conventions, cargo test + clippy, version/help smoke, and
+      # the TUI gate. -D warnings catches unused_imports. Style and complexity
+      # groups stay allowed until a cleanup slice.
       - name: Run bin/test
         run: bin/test
-
-  sanitize:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential python3 python3-venv \
-            cmake ninja-build pkg-config libsecret-1-dev \
-            libgl1-mesa-dev libdbus-1-dev
-
-      - name: Install Qt 6
-        run: |
-          python3 -m venv "$RUNNER_TEMP/aqt"
-          "$RUNNER_TEMP/aqt/bin/pip" install aqtinstall
-          "$RUNNER_TEMP/aqt/bin/aqt" install-qt linux desktop 6.8.3 linux_gcc_64 -O "$HOME/Qt"
-          echo "$HOME/Qt/6.8.3/gcc_64/bin" >> "$GITHUB_PATH"
-          echo "LD_LIBRARY_PATH=$HOME/Qt/6.8.3/gcc_64/lib:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
-
-      - name: Install QtKeychain
-        run: bin/install-qtkeychain "$HOME/Qt/6.8.3/gcc_64"
-
-      - name: Build protocol_tests with ASan and UBSan
-        run: bin/test-san
 
   live:
     runs-on: ubuntu-latest
@@ -172,10 +110,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential python3 python3-venv \
-            libgl1-mesa-dev libegl1-mesa-dev libdbus-1-dev \
+            build-essential python3 \
             libfontconfig1 libxkbcommon0 libxkbcommon-x11-0 \
-            libxkbcommon-dev libxkbcommon-x11-dev libdbus-1-3 \
+            libxkbcommon-dev libxkbcommon-x11-dev libdbus-1-3 libdbus-1-dev \
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
             libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-util1 \
             libxcb-glx0 libxcb-shm0 libxcb-sync1 libxcb-xfixes0 libx11-xcb1 \
@@ -185,32 +122,102 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: poc -> target
-
-      - name: Install Qt 6 with Quick
-        run: |
-          python3 -m venv "$RUNNER_TEMP/aqt"
-          "$RUNNER_TEMP/aqt/bin/pip" install aqtinstall
-          "$RUNNER_TEMP/aqt/bin/aqt" install-qt linux desktop 6.8.3 linux_gcc_64 -O "$HOME/Qt"
-          echo "$HOME/Qt/6.8.3/gcc_64/bin" >> "$GITHUB_PATH"
-          {
-            echo "LD_LIBRARY_PATH=$HOME/Qt/6.8.3/gcc_64/lib:${LD_LIBRARY_PATH:-}"
-            echo "QT_PLUGIN_PATH=$HOME/Qt/6.8.3/gcc_64/plugins"
-            echo "QML2_IMPORT_PATH=$HOME/Qt/6.8.3/gcc_64/qml"
-          } >> "$GITHUB_ENV"
+          workspaces: client -> target
 
       - name: Run bin/test-live
         env:
           OMAIRC_LIVE_PROFILE: l1
         run: bin/test-live
 
-      - name: Upload live UI artifacts
-        if: failure()
-        uses: actions/upload-artifact@v4
+  # Dry-build the root PKGBUILD in an Arch container so a packaging regression
+  # fails the pull request instead of release-package.yml's tag job, which both
+  # builds this package and creates the GitHub Release. Tags skip it;
+  # release-package.yml builds the same package there.
+  arch-package:
+    name: Arch package
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 60
+    steps:
+      - name: Bootstrap pacman
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm base-devel git sudo python
+
+      - uses: actions/checkout@v4
+
+      - name: Create build user
+        run: |
+          useradd -m builder
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' >/etc/sudoers.d/builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
         with:
-          name: live-ui
-          path: test-artifacts/live-ui/
-          if-no-files-found: ignore
+          path: /home/builder/.cargo/registry
+          key: arch-package-cargo-${{ hashFiles('client/Cargo.lock') }}
+
+      - name: Fix cargo cache ownership
+        run: |
+          mkdir -p /home/builder/.cargo/registry
+          chown -R builder:builder /home/builder/.cargo
+
+      - name: Prepare dry-build source
+        run: |
+          set -euo pipefail
+          pkgver=$(./bin/version)
+          tag_source="omairc-${pkgver}.tar.gz::https://github.com/fredimachado/omairc/archive/refs/tags/v${pkgver}.tar.gz"
+          source0=$(bash -c 'source ./PKGBUILD; printf %s "${source[0]}"')
+          test "$source0" = "$tag_source" || {
+            echo "PKGBUILD must fetch the tag tarball $tag_source" >&2
+            printf 'got: %s\n' "$source0" >&2
+            exit 1
+          }
+          source_tar=$(mktemp "/tmp/omairc-${pkgver}.XXXXXX.tar.gz")
+          tar --exclude='.git' --exclude='.arena-omairc-pacman' \
+            -czf "$source_tar" \
+            --transform "s,^\.,omairc-${pkgver}," .
+          mv "$source_tar" "omairc-${pkgver}.tar.gz"
+          sed -i "s|^source=.*|source=(\"omairc-${pkgver}.tar.gz\")|" PKGBUILD
+          chown builder:builder "omairc-${pkgver}.tar.gz" PKGBUILD version.pri
+
+      - name: makepkg
+        run: |
+          set -euo pipefail
+          sudo -u builder env OMAIRC_BUILD_VERSION="$(./bin/version)" makepkg -s --noconfirm
+
+      - name: Verify package metadata
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          pkgs=(omairc-[0-9]*-x86_64.pkg.tar.zst)
+          test "${#pkgs[@]}" -eq 1
+          version=$(./bin/version)
+          meta=$(pacman -Qp "${pkgs[0]}")
+          test "$meta" = "omairc ${version}-1"
+          tmp=$(mktemp -d)
+          tar -xf "${pkgs[0]}" -C "$tmp" usr/bin/omairc
+          got=$("$tmp/usr/bin/omairc" --version)
+          rm -rf "$tmp"
+          test "$got" = "omairc $version"
+          expected="$(printf '%s\n' \
+            usr/bin/omairc \
+            usr/share/applications/omairc.desktop \
+            usr/share/bash-completion/completions/omairc \
+            usr/share/icons/hicolor/scalable/apps/omairc.svg \
+            usr/share/licenses/omairc/LICENSE \
+            usr/share/licenses/omairc/OFL.txt | sort)"
+          got_files="$(bsdtar -tf "${pkgs[0]}" | grep -v '^\.' | grep -v '/$' | sort)"
+          test "$got_files" = "$expected" || {
+            echo "package file list must match bin/test-install's six paths" >&2
+            printf 'got:\n%s\n' "$got_files" >&2
+            printf 'want:\n%s\n' "$expected" >&2
+            exit 1
+          }
 
   # Feature-map recipes against the Rust client (Xvfb + lavapipe). Non-blocking
   # until the XI2 click path and recipe set are stable enough to gate merges.
@@ -227,8 +234,8 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: poc
-          key: linux-verify-poc-${{ hashFiles('poc/Cargo.lock') }}
+          workspaces: client
+          key: linux-verify-poc-${{ hashFiles('client/Cargo.lock') }}
 
       - name: Install desktop and lavapipe dependencies
         run: |

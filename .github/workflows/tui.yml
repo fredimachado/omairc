@@ -2,9 +2,9 @@ name: TUI
 
 # A TUI-only change is gated by this workflow alone: tui/bin/test runs the
 # shared bin/check-conventions (which carries the TUI checks), so test.yml
-# ignores tui/** and does not rebuild the Qt app for the Go port. Path filters
-# are evaluated over the whole pull-request diff, so a pull request that also
-# changes bin/check-conventions or bin/test still triggers both workflows.
+# ignores tui/** and does not rebuild the desktop client for the Go port. Path
+# filters are evaluated over the whole pull-request diff, so a pull request that
+# also changes bin/check-conventions or bin/test still triggers both workflows.
 #
 # Version tags and workflow_dispatch also cross-compile static archives and
 # upload them onto the GitHub Release that release-package.yml creates.
@@ -58,11 +58,11 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Require main or a phase branch as the pull request base
+      - name: Require main as the pull request base
         run: |
           case "${{ github.base_ref }}" in
-            main|tui-phase-*|slice/rust-cutover-*) ;;
-            *) echo "This pull request targets ${{ github.base_ref }}, not main, a tui-phase branch, or a slice/rust-cutover branch." >&2; exit 1 ;;
+            main) ;;
+            *) echo "This pull request targets ${{ github.base_ref }}, not main." >&2; exit 1 ;;
           esac
 
   # No `needs: base`: `base` is skipped on push, and a skipped dependency skips
@@ -271,7 +271,7 @@ jobs:
           done
 
           # Replace only stale terminal archives. Leave omairc-tui *.pkg.tar.zst
-          # to the Arch publisher, and never touch omairc-<ver> Qt assets.
+          # to the Arch publisher, and never touch omairc-<ver> desktop assets.
           assets=$(gh release view "$tag" --json assets --jq '.assets[].name')
           while IFS= read -r asset || [ -n "$asset" ]; do
             [ -n "$asset" ] || continue

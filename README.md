@@ -1,6 +1,7 @@
 # Omairc
 
-A simple IRC client for Omarchy, built with Qt Quick and C++. The same binary is the window and a local CLI.
+A simple IRC client for Omarchy. The desktop app is a Rust GPUI client in
+`client/`; the same `omairc` binary is the window and a local CLI.
 
 ![Omairc in demo mode](omairc.gif)
 
@@ -33,7 +34,7 @@ On Omarchy edge:
 omarchy pkg add omairc
 ```
 
-That installs the official Omarchy package. It is published on the edge channel, built against that channel's Qt. Upgrades come with the usual Omarchy package updates.
+That installs the official Omarchy package. Upgrades come with the usual Omarchy package updates.
 
 On Omarchy stable, Omarchy rc, and other Arch-based systems:
 
@@ -53,7 +54,7 @@ Later upgrades from that repository:
 sudo pacman -Sy omairc
 ```
 
-The terminal client, `omairc-tui`, ships as a separate static binary on the same GitHub release as the Qt app; `install.sh` still installs the Qt client only. The installs below need a release that carries `omairc-tui` assets, so check the [latest release](https://github.com/fredimachado/omairc/releases/latest) first.
+The terminal client, `omairc-tui`, ships as a separate static binary on the same GitHub release as the desktop app; `install.sh` still installs the desktop client only. The installs below need a release that carries `omairc-tui` assets, so check the [latest release](https://github.com/fredimachado/omairc/releases/latest) first.
 
 On Linux or macOS, without a package manager:
 
@@ -115,17 +116,17 @@ Depends on `fontconfig`, `freetype2`, `hicolor-icon-theme`, `libxcb`,
 `libxkbcommon`, `libxkbcommon-x11`, `vulkan-icd-loader`, `wayland`, and
 `xdg-desktop-portal` (see `PKGBUILD`).
 
-Packagers build the Rust client and stage the seven paths `bin/test-install`
-checks (binary, desktop file, SVG, bash completion, LICENSE, OFL, COPYING-LGPL):
+Packagers build the Rust client and stage the six paths `bin/test-install`
+checks (binary, desktop file, SVG, bash completion, LICENSE, OFL):
 
 ```sh
-cargo build --release --locked --features product --manifest-path poc/Cargo.toml
-install -Dm755 poc/target/release/omairc "$pkgdir/usr/bin/omairc"
+cargo build --release --locked --features product --manifest-path client/Cargo.toml
+install -Dm755 client/target/release/omairc "$pkgdir/usr/bin/omairc"
 ```
 
 `version.pri` is the only version string. Tag a release as `v` plus that value.
 
-Omairc is MIT. See `LICENSE`. IRC protocol code in `src/irc/` is LGPL-3.0-or-later. The bundled iA Writer Mono font is OFL-1.1.
+Omairc is MIT. See `LICENSE`. The bundled iA Writer Mono font is OFL-1.1.
 
 ## Agent skill
 
@@ -137,29 +138,39 @@ Installs the local CLI skill. The window must already be running.
 
 ## Build
 
+From the repository root (default Cargo features include `product`):
+
 ```sh
-bin/build
-./build/omairc
-./build/omairc --demo-server
-./build/omairc --help
-./build/omairc send --network <id> '#channel' hello
-./build/omairc read '#channel' --since 5m
-./build/omairc read --unread
+cd client && cargo build --release --locked
+./target/release/omairc --demo-server
+./target/release/omairc --help
+./target/release/omairc send --network <id> '#channel' hello
+./target/release/omairc read '#channel' --since 5m
+./target/release/omairc read --unread
+```
+
+On Windows:
+
+```bat
+bin\build-rust.bat
+build\release\omairc.exe --demo-server
 ```
 
 `--demo-server` skips Connect. `--help` and `--version` exit without a window. Quote channel targets. Control commands need a running window. With one connection, `--network` may be omitted.
+
+Use `cargo build --features dev` when you need the separate `omairc-poc` config
+tree for local experiments; release packaging always uses `product`.
 
 ## Test
 
 ```sh
 bin/test
-bin/test-san
 bin/test-install
 bin/test-desktop
 bin/test-live
 ```
 
-`bin/test` is the default gate. CI also runs `bin/test-san` and `bin/test-live`.
+`bin/test` is the default gate. CI also runs `bin/test-live`.
 
 `bin/test-desktop` needs Xvfb, Xauthority, xdotool, xinput, ImageMagick,
 cargo, and lavapipe; it drives the Rust release binary through
@@ -172,18 +183,19 @@ A native Windows build works. It is not the focus.
 Each version tag publishes `omairc-<version>-windows-x64.zip` and `omairc-<version>-windows-x64-setup.exe` on the [GitHub release](https://github.com/fredimachado/omairc/releases/latest). The installer is per-user by default. Unzip and run `omairc.exe` for a portable tree.
 
 ```bat
-bin\build.bat
+bin\build-rust.bat
 build\release\omairc.exe
 build\release\omairc.exe --demo-server
 build\release\omairc.exe --help
 bin\package-windows.bat
 ```
 
-`bin\build.bat` finds a Qt 6 kit, builds into `build\release\`, and runs `windeployqt`. QtKeychain must be installed for that kit. `bin\package-windows.bat` needs Inno Setup 6.
+`bin\build-rust.bat` builds the product client into `build\release\`.
+`bin\package-windows.bat` needs Inno Setup 6.
 
 The same exe is the local CLI. Start the window first. `--help` and control commands print from cmd or PowerShell.
 
-Portal text scale, desktop notifications, and the Omarchy theme watch are Linux-only. Profiles use the Qt app config location.
+Portal text scale on Linux, desktop notifications, and the Omarchy theme watch follow platform support documented in `AGENTS.md`.
 
 ## macOS
 
@@ -207,9 +219,7 @@ Each version tag also publishes `omairc-<version>-macos-arm64.zip` and `omairc-<
 From the repo:
 
 ```sh
-brew install qt@6 qtkeychain cmake
-export PATH="$(brew --prefix qt@6)/bin:$PATH"
-bin/build-macos
+bin/build-macos-rust
 open build/omairc.app
 ```
 

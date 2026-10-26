@@ -1,0 +1,383 @@
+# QML to Rust UI test checklist
+
+Historical cutover record; no longer generated.
+
+Cutover evidence for M6. Source: `tests/ui/tst_omairc.qml` (345 tests).
+Harness: `client/src/ui/tests/fixture.rs`.
+
+Status values:
+- `rust:` GPUI view test path under `client/src/ui/tests/`
+- `model:` covered outside `ui/` (controller / model / irc)
+- `pending:` not yet ported to a GPUI view test
+
+## M6 named wave
+
+- `test_shortTranscriptSitsAtBottom` -> rust: `ui::tests::transcript::short_transcript_sits_at_bottom`
+- `test_shortTranscriptGrowsUpward` -> rust: `ui::tests::transcript::short_transcript_grows_upward`
+- `test_shortTranscriptResizeKeepsBottom` -> rust: `ui::tests::transcript::short_transcript_resize_keeps_bottom`
+- `test_followingAppendStaysPinnedThroughLayout` -> rust: `ui::tests::transcript::following_append_stays_pinned_through_layout`
+- `test_detachedArrivalKeepsViewportAndJumpsToFirstUnseen` -> rust: `ui::tests::transcript::detached_arrival_keeps_viewport_and_jumps_to_first_unseen`
+- `test_historyPrependKeepsAnchorMessageY` -> rust: `ui::tests::transcript::history_prepend_keeps_anchor_message (msgid/place; pixel Y is QML ListView-specific)`
+- `test_historySpliceKeepsTheReaderOnTheSameMessage` -> rust: `ui::tests::transcript::history_splice_keeps_the_reader_on_the_same_message`
+- `test_cappedTrimKeepsDetachedPlace` -> rust: `ui::tests::transcript::capped_trim_keeps_detached_place`
+- `test_typingIndicatorRidesTheTranscriptEnd` -> rust: `ui::tests::typing::typing_indicator_rides_the_transcript_end`
+- `test_typingIndicatorMovesBelowMyOwnMessage` -> rust: `ui::tests::typing::typing_indicator_moves_below_my_own_message`
+- `test_typingIndicatorKeepsScrollWhileReadingHistory` -> rust: `ui::tests::typing::typing_indicator_keeps_scroll_while_reading_history`
+- `test_connectionSheetCloseRestoresComposerFocus` -> rust: `ui::tests::sheets::connection_sheet_close_restores_composer_focus`
+- `test_aboutSheetLeftClickDimmerDismisses` -> rust: `ui::tests::sheets::about_sheet_left_click_dimmer_dismisses`
+- `test_aboutSheetIgnoresRightClickAndCardClick` -> rust: `ui::tests::sheets::about_sheet_ignores_right_click_and_card_click`
+- `test_connectionSheetBlocksSidebarAndMembers` -> rust: `ui::tests::sheets::connection_sheet_blocks_sidebar_and_members (chords + veiled sidebar/member clicks)`
+- `test_memberListPageDownMovesByVisiblePage` -> rust: `ui::tests::sheets::member_list_page_down_moves_by_visible_page`
+- `test_openDirectMessageFromTranscriptNick` -> pending (M6 wave 2: real pointer hit through the view)
+- middle-click close (sidebar) -> pending (M6 wave 2: real middle-click through the view)
+- `test_messageBodyClickOpensHttpsUrl` -> pending (M6 wave 2: observe TestApp open_url)
+- `test_messageBodyClickOpensHttpsUrlInsideEmphasis` -> pending (M6 wave 2)
+- `test_droppedFileUploadsAndInsertsTheLink` -> pending (M6 wave 2: demo file host)
+
+## Full inventory
+
+- `test_switchChannel` -> pending (cutover inventory)
+- `test_sendMessageWithKeyboard` -> model: controller/tests/sends.rs
+- `test_toggleStatusWithShortcut` -> pending (cutover inventory)
+- `test_toggleStatusWithShortcutOnLiveWindow` -> pending (cutover inventory)
+- `test_openConnectSheetWithShortcut` -> model: model/connect/*; remaining Connect view cases pending
+- `test_walkConversationsWithShortcut` -> model: model/navigation.rs
+- `test_queryHeaderShowsWhoYouAreTalkingTo` -> pending (cutover inventory)
+- `test_walkConversationsWrapsToLast` -> model: model/navigation.rs
+- `test_walkConversationsFromChannelToDirect` -> model: model/navigation.rs
+- `test_walkConversationsClosesStatus` -> model: model/navigation.rs
+- `test_jumpToNextUnreadPrefersMention` -> model: model/unread + controller notify/selection
+- `test_jumpToNextUnreadFromNonMentionPrefersMention` -> model: model/unread + controller notify/selection
+- `test_jumpToNextUnreadSkipsMutedMention` -> model: model/unread + controller notify/selection
+- `test_jumpToNextUnreadFallsBackToUnread` -> model: model/unread + controller notify/selection
+- `test_markAllReadClearsBadgesAndBackgroundTitle` -> model: model/unread + controller notify/selection
+- `test_jumpToNextUnreadLandsOnStatusWhenNothingIsUnread` -> model: model/unread + controller notify/selection
+- `test_shortcutsSheetBlocksMarkAllRead` -> pending (cutover inventory)
+- `test_connectSheetBlocksMarkAllRead` -> model: model/connect/*; remaining Connect view cases pending
+- `test_tabCompletesChannelNick` -> model: model/composer + controller/tests/composer.rs
+- `test_tabCompletesLiveNickIgnoringPrefixLabel` -> model: model/composer + controller/tests/composer.rs
+- `test_tabCompletesNickAfterText` -> model: model/composer + controller/tests/composer.rs
+- `test_shiftTabCyclesNicksBackward` -> pending (cutover inventory)
+- `test_tabCompletesChannelName` -> model: model/composer + controller/tests/composer.rs
+- `test_tabCompletesChannelAfterText` -> model: model/composer + controller/tests/composer.rs
+- `test_tabDoesNotCompleteAnotherNetworksChannel` -> pending (cutover inventory)
+- `test_composerStopsAtSendLimit` -> model: model/composer + controller/tests/composer.rs
+- `test_composerHonorsAdvertisedLineLength` -> model: model/composer + controller/tests/composer.rs
+- `test_composerActionFitsOneFrame` -> model: model/composer + controller/tests/composer.rs
+- `test_composerHistoryRecallsSentLines` -> model: model/composer + controller/tests/composer.rs
+- `test_composerDraftsStayWithConversation` -> model: model/composer + controller/tests/composer.rs
+- `test_ctrlFFindsTextInConversation` -> pending (cutover inventory)
+- `test_ctrlFFindsTextInStatus` -> pending (cutover inventory)
+- `test_shortRevealAdoptsViewportAfterGrowth` -> pending (cutover inventory)
+- `test_revealRowPreservesGrowthAndCancelsOnReset` -> pending (cutover inventory)
+- `test_statusRevealRowAdoptsViewportAfterGrowth` -> pending (cutover inventory)
+- `test_pageUpScrollsTranscript` -> pending (transcript chrome) or model: model/cursor.rs
+- `test_pageUpShowsStatusScrollbar` -> pending (transcript chrome) or model: model/cursor.rs
+- `test_shiftPageUpShowsStatusScrollbar` -> pending (transcript chrome) or model: model/cursor.rs
+- `test_shiftPageIgnoredWhenConnectOrShortcutsOpen` -> model: model/connect/*; remaining Connect view cases pending
+- `test_ctrlHomeEndJumpsTranscript` -> pending (transcript chrome) or model: model/cursor.rs
+- `test_findOnTheLastScreenKeepsFollowing` -> pending (cutover inventory)
+- `test_ctrlHomeEndJumpsStatus` -> pending (transcript chrome) or model: model/cursor.rs
+- `test_homeEndMoveComposerCaret` -> model: model/composer + controller/tests/composer.rs
+- `test_ctrlHomeEndIgnoredWhenConnectOrShortcutsOpen` -> model: model/connect/*; remaining Connect view cases pending
+- `test_shortTranscriptHidesScrollbar` -> pending (transcript chrome) or model: model/cursor.rs
+- `test_shortTranscriptSitsAtBottom` -> rust: `ui::tests::transcript::short_transcript_sits_at_bottom`
+- `test_shortTranscriptGrowsUpward` -> rust: `ui::tests::transcript::short_transcript_grows_upward`
+- `test_shortTranscriptResizeKeepsBottom` -> rust: `ui::tests::transcript::short_transcript_resize_keeps_bottom`
+- `test_shortTranscriptPageUpAnchorsHistory` -> pending (transcript chrome) or model: model/cursor.rs
+- `test_followingAppendAndSendKeepTranscriptPinned` -> pending (transcript chrome) or model: model/cursor.rs
+- `test_followingAppendStaysPinnedThroughLayout` -> rust: `ui::tests::transcript::following_append_stays_pinned_through_layout`
+- `test_detachedArrivalKeepsViewportAndJumpsToFirstUnseen` -> rust: `ui::tests::transcript::detached_arrival_keeps_viewport_and_jumps_to_first_unseen`
+- `test_consoleDetachedArrivalKeepsViewportAndJumpsToFirstUnseen` -> pending (cutover inventory)
+- `test_consecutiveSameAuthorMinuteGroupsTranscriptRows` -> pending (transcript chrome) or model: model/cursor.rs
+- `test_unreadMarkSitsBeforeFirstUnseenLine` -> model: model/unread + controller notify/selection
+- `test_unreadMarkBreaksSameAuthorMinuteGrouping` -> model: model/unread + controller notify/selection
+- `test_ctrlFSkipsUnreadMarkLabel` -> model: model/unread + controller notify/selection
+- `test_openAtUnreadOffSwitchWithUnreadPinsToEnd` -> model: model/unread + controller notify/selection
+- `test_unfocusedArrivalPinsToNewMessagesMarkOnReturn` -> pending (cutover inventory)
+- `test_unfocusedChannelFollowEndLandsOnMark` -> pending (cutover inventory)
+- `test_unfocusedDirectFollowEndLandsOnMark` -> pending (cutover inventory)
+- `test_minimizedChannelFollowEndLandsOnMark` -> pending (cutover inventory)
+- `test_minimizedDirectFollowEndLandsOnMark` -> pending (cutover inventory)
+- `test_hiddenWindowFollowEndLandsOnMark` -> pending (cutover inventory)
+- `test_focusWhileMinimizedDoesNotConsumeUnread` -> model: model/unread + controller notify/selection
+- `test_restoreWhileInactiveKeepsCatchUpOff` -> model: controller/tests/scrollplace.rs
+- `test_minimizedActiveWindowNotifiesMention` -> model: model/unread + controller notify/selection
+- `test_unreadMarkShowsScrollDownUntilBottom` -> model: model/unread + controller notify/selection
+- `test_openAtUnreadLandsOnMarkWhenSwitchingAwayAndBack` -> model: model/unread + controller notify/selection
+- `test_scrollPlaceRestoresDetachedLine` -> model: controller/tests/scrollplace.rs
+- `test_pendingScrollPlaceSurvivesSwitch` -> model: controller/tests/scrollplace.rs
+- `test_userScrollReplacesPendingScrollPlace` -> model: controller/tests/scrollplace.rs
+- `test_closeRowKeepsNeighborScrollPlace` -> model: controller/tests/scrollplace.rs
+- `test_openAtUnreadFirstVisitLandsOnMark` -> model: model/unread + controller notify/selection
+- `test_openAtUnreadLandsOnMarkWhenQuerySwitchesConversation` -> model: model/unread + controller notify/selection
+- `test_openAtUnreadWithoutMarkPinsToEnd` -> model: model/unread + controller notify/selection
+- `test_openAtUnreadLeavesAlreadyViewingViewport` -> model: model/unread + controller notify/selection
+- `test_replayAndLiveSameAuthorMinuteDoNotGroup` -> pending (cutover inventory)
+- `test_historyPrependKeepsAnchorMessageY` -> rust: `ui::tests::transcript::history_prepend_keeps_anchor_message (msgid/place; pixel Y is QML ListView-specific)`
+- `test_historySpliceKeepsTheReaderOnTheSameMessage` -> rust: `ui::tests::transcript::history_splice_keeps_the_reader_on_the_same_message`
+- `test_cappedTrimKeepsDetachedPlace` -> rust: `ui::tests::transcript::capped_trim_keeps_detached_place`
+- `test_historySpliceMovesTheUnseenMarkerWithItsRow` -> pending (cutover inventory)
+- `test_messageBodyIsSelectable` -> pending (cutover inventory)
+- `test_consoleBodyIsSelectable` -> pending (cutover inventory)
+- `test_copyTranscriptSelection` -> pending (transcript chrome) or model: model/cursor.rs
+- `test_copyRichTranscriptSelectionIsPlain` -> pending (transcript chrome) or model: model/cursor.rs
+- `test_composerSelectionWinsOverTranscript` -> model: model/composer + controller/tests/composer.rs
+- `test_copyComposerWhenTranscriptHasNoSelection` -> model: model/composer + controller/tests/composer.rs
+- `test_secondTranscriptSelectionReplacesTheFirst` -> pending (transcript chrome) or model: model/cursor.rs
+- `test_switchingConversationClearsTranscriptSelection` -> pending (transcript chrome) or model: model/cursor.rs
+- `test_copyConsoleSelection` -> pending (cutover inventory)
+- `test_copyWhoisSelection` -> pending (cutover inventory)
+- `test_copyTranscriptSelectionWhileMembersFocused` -> pending (member list view variants)
+- `test_consoleBodyStripsMircFormatting` -> pending (cutover inventory)
+- `test_emphasizedIrcText` -> pending (cutover inventory)
+- `test_emphasizedIrcTextFailClosed` -> pending (cutover inventory)
+- `test_messageBodyRendersIrcEmphasis` -> pending (cutover inventory)
+- `test_liveMessageBodyRendersIrcEmphasis` -> pending (cutover inventory)
+- `test_httpUrlAllowlist` -> pending (cutover inventory)
+- `test_httpUrlAtTrimCases` -> pending (cutover inventory)
+- `test_unfocusedMentionNotifiesOnce` -> model: model/unread + controller notify/selection
+- `test_unfocusedTitleMarksMention` -> model: model/unread + controller notify/selection
+- `test_mutedArrivalLeavesTitle` -> pending (cutover inventory)
+- `test_unfocusedStatusAndInviteLeaveTitle` -> pending (cutover inventory)
+- `test_statusThenDesktopKeepsUnderlyingMark` -> pending (cutover inventory)
+- `test_monitorArrivalLeavesTitle` -> pending (cutover inventory)
+- `test_focusedArrivalLeavesTitle` -> pending (cutover inventory)
+- `test_notificationActivateOpensLiveChannelMention` -> model: model/unread + controller notify/selection
+- `test_notificationActivateOpensDirectMessage` -> pending (cutover inventory)
+- `test_openAtUnreadNotificationActivateLandsOnMark` -> model: model/unread + controller notify/selection
+- `test_openAtUnreadNotificationActivateLeavesAlreadyViewingViewport` -> model: model/unread + controller notify/selection
+- `test_messageBodyClickOpensHttpsUrl` -> pending (M6 wave 2: observe TestApp open_url)
+- `test_whoisRowClickOpensHttpsUrl` -> pending (cutover inventory)
+- `test_whoisRowClickAsksBeforeJoiningChannel` -> pending (cutover inventory)
+- `test_ctrlFFindsEmphasizedVisibleText` -> pending (cutover inventory)
+- `test_actionRowRendersItalicAndEmphasis` -> pending (cutover inventory)
+- `test_messageBodyClickOpensHttpsUrlInsideEmphasis` -> pending (M6 wave 2)
+- `test_consoleBodyClickOpensHttpUrl` -> pending (cutover inventory)
+- `test_consoleInviteChannelClickJoins` -> pending (cutover inventory)
+- `test_channelNameUsesAdvertisedTypes` -> pending (cutover inventory)
+- `test_channelNameInMessageSwitchesOrAsks` -> pending (cutover inventory)
+- `test_channelNameInTopicAndLinkSheet` -> pending (cutover inventory)
+- `test_inboxSheetTogglesWithShortcut` -> pending (cutover inventory)
+- `test_inboxMarkShowsCountAndOpensSheet` -> pending (cutover inventory)
+- `test_inboxMentionEnterJumpsToMsgid` -> model: model/unread + controller notify/selection
+- `test_inboxInviteEnterJoinsChannel` -> pending (cutover inventory)
+- `test_inboxSelectingConversationClearsMatchingRows` -> pending (cutover inventory)
+- `test_inboxDeleteDismissesSelectedRow` -> pending (cutover inventory)
+- `test_inboxDismissAboveSelectionKeepsHighlight` -> pending (cutover inventory)
+- `test_eventRowAndTopicStripMirc` -> pending (cutover inventory)
+- `test_whoisRowWrapsLongBody` -> pending (cutover inventory)
+- `test_ctcpReplyCopiesIntoAskingTranscript` -> pending (transcript chrome) or model: model/cursor.rs
+- `test_toggleMembersWithShortcut` -> pending (member list view variants)
+- `test_toggleServerListWithShortcut` -> pending (cutover inventory)
+- `test_collapsedServerListKeepsWalking` -> pending (cutover inventory)
+- `test_collapsingServerListDropsNetworkSelection` -> pending (cutover inventory)
+- `test_focusMembersWithShortcut` -> pending (member list view variants)
+- `test_memberHighlightOnlyWhileListFocused` -> pending (member list view variants)
+- `test_memberRowsFollowRankOrder` -> pending (member list view variants)
+- `test_focusMembersReopensHiddenPanel` -> pending (member list view variants)
+- `test_memberListEnterOpensDirectMessage` -> pending (member list view variants)
+- `test_memberListScrollbarAppearsWhenOverflowing` -> pending (member list view variants)
+- `test_memberListPageDownMovesByVisiblePage` -> rust: `ui::tests::sheets::member_list_page_down_moves_by_visible_page`
+- `test_memberListPageUpRestoresPriorViewport` -> model: controller/tests/scrollplace.rs
+- `test_memberListPageDownUsesViewportNotSelection` -> pending (member list view variants)
+- `test_memberListShiftPageMovesHalfViewport` -> pending (member list view variants)
+- `test_memberListHomeEndJumpToEnds` -> pending (member list view variants)
+- `test_pageDownWithComposerStillScrollsTranscript` -> model: model/composer + controller/tests/composer.rs
+- `test_ctrlHomeEndWithMembersFocusedJumpsTranscript` -> pending (member list view variants)
+- `test_pageKeysWithHiddenMembersPanelStayHidden` -> pending (member list view variants)
+- `test_pageKeysOnDirectMessageScrollTranscript` -> pending (transcript chrome) or model: model/cursor.rs
+- `test_pageKeysOnStatusScrollTranscript` -> pending (transcript chrome) or model: model/cursor.rs
+- `test_memberEnterAfterSwitchingToSmallerChannel` -> pending (member list view variants)
+- `test_focusMembersShortcutIgnoredOnDirectMessage` -> pending (member list view variants)
+- `test_shortcutsSheetTogglesAndEscapeKeepsConversation` -> pending (cutover inventory)
+- `test_shortcutsSheetBlocksWindowShortcuts` -> pending (cutover inventory)
+- `test_shortcutsSheetEscapeDoesNotLeaveStatus` -> pending (cutover inventory)
+- `test_ctrlKJumpsToFilteredConversation` -> pending (cutover inventory)
+- `test_ctrlKJumpsFromStatus` -> pending (cutover inventory)
+- `test_ctrlKEscapeKeepsConversationAndDraft` -> model: model/composer + controller/tests/composer.rs
+- `test_ctrlKMatchesTopicAndRealname` -> pending (cutover inventory)
+- `test_ctrlKDisambiguatesDuplicateChannels` -> pending (cutover inventory)
+- `test_ctrlKCapsAfterRank` -> pending (cutover inventory)
+- `test_ctrlKIsNoOpWhenConnectIsVisible` -> model: model/connect/*; remaining Connect view cases pending
+- `test_ctrlKJumpFilterPlaceholder` -> pending (cutover inventory)
+- `test_ctrlShiftOLinkSheetListsAndOpensLinks` -> pending (cutover inventory)
+- `test_ctrlShiftOLinkSheetEscapeKeepsDraft` -> model: model/composer + controller/tests/composer.rs
+- `test_ctrlShiftOLinkSheetStatusInvite` -> pending (cutover inventory)
+- `test_ctrlShiftOIsNoOpWhenConnectIsVisible` -> model: model/connect/*; remaining Connect view cases pending
+- `test_ctrlShiftOLinkSheetBlocksWalkAndShortcuts` -> pending (cutover inventory)
+- `test_ctrlShiftOLinkSheetEmptyTranscript` -> pending (transcript chrome) or model: model/cursor.rs
+- `test_ctrlShiftOLinkSheetToggleClearsFilter` -> pending (cutover inventory)
+- `test_ctrlShiftOLinkSheetRevealScroll` -> pending (cutover inventory)
+- `test_ctrlShiftOLinkSheetChatNotInvite` -> pending (cutover inventory)
+- `test_ctrlShiftKOpensFilteredNickAndCreatesDm` -> pending (cutover inventory)
+- `test_ctrlShiftKSelectsExistingDirectMessage` -> pending (cutover inventory)
+- `test_ctrlShiftKEscapeKeepsConversationAndDraft` -> model: model/composer + controller/tests/composer.rs
+- `test_ctrlShiftKOrderMatchesMemberPanel` -> pending (member list view variants)
+- `test_ctrlShiftKWorksWithMembersHidden` -> pending (member list view variants)
+- `test_ctrlShiftKShowsAwayState` -> pending (cutover inventory)
+- `test_ctrlShiftKIgnoredOnDirectMessage` -> pending (cutover inventory)
+- `test_ctrlShiftKIgnoredOnStatus` -> pending (cutover inventory)
+- `test_ctrlShiftKIgnoredWhenConnectIsVisible` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetBlocksSidebarAndMembers` -> rust: `ui::tests::sheets::connection_sheet_blocks_sidebar_and_members (chords + veiled sidebar/member clicks)`
+- `test_connectionSheetFirstRunIgnoresSidebarClicks` -> model: model/connect/*; remaining Connect view cases pending
+- `test_membersHeadingOpensNickSheet` -> pending (member list view variants)
+- `test_openDirectMessageFromMember` -> pending (member list view variants)
+- `test_openDirectMessageFromTranscriptNick` -> pending (M6 wave 2: real pointer hit through the view)
+- `test_connectionSheetCtrlEnterAppliesFromAnyFocus` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetCtrlEnterDoesNotApplyWhileShortcutsOpen` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetCtrlTabSwitchesTabsFromAnywhere` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetAltArrowsWalkNetworksFromHost` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetAltArrowsMoveRailFocus` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetCtrlNAddsThenDiscardRestores` -> model: controller/tests/scrollplace.rs
+- `test_connectionSheetCtrlShiftDeleteRemovesOrLeavesPresent` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetLeftRightFromHostStayInField` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetCtrlNAndRemoveNoopOnFirstRun` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetOpensWhenSetupRequired` -> model: model/connect/*; remaining Connect view cases pending
+- `test_forgetPasswordShowsKeyboardFocus` -> model: irc secret policy / storage credential tests
+- `test_forgetPasswordRemovesStoredCredential` -> model: irc secret policy / storage credential tests
+- `test_nickServFieldAndForgetAreIndependent` -> pending (cutover inventory)
+- `test_focusNickServOpensSheetAndFocusesField` -> pending (cutover inventory)
+- `test_incompleteProfileEnterDoesNotCommitPassword` -> model: irc secret policy / storage credential tests
+- `test_connectionSheetTabOrderReachesApply` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetTabsSwitchWithArrowKeys` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetHelpShowsOnHoverAndFocus` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetTabsRespondToClicks` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionPreferencesReopenDirectsToggle` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionPreferencesOpenAtUnreadToggle` -> model: model/unread + controller notify/selection
+- `test_connectionSheetShortcutsHintOpensShortcuts` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetShortcutsHintIsKeyboardReachable` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetDistinguishesTheTwoSecrets` -> model: irc secret policy / storage credential tests
+- `test_connectionPreferencesHelpIsKeyboardReachable` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetHelpIsKeyboardReachable` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetRailArrowNavigation` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetRailKeepsFocusedRowVisible` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetCloseRestoresComposerFocus` -> rust: `ui::tests::sheets::connection_sheet_close_restores_composer_focus`
+- `test_connectionDisconnectSitsBesideApply` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetOpenedFromComposerKeepsTabInsideSheet` -> model: model/composer + controller/tests/composer.rs
+- `test_connectionSheetEnterFromHostAdvancesWithoutApplying` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetEnterFromNickAppliesAndCloses` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetEnterFromSwitchesAdvancesWithoutApplying` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetApplyDiscardReachableByTab` -> model: model/connect/*; remaining Connect view cases pending
+- `test_networkRowSecondEnterApplies` -> pending (cutover inventory)
+- `test_networkRowCtrlReturnApplies` -> pending (cutover inventory)
+- `test_connectionSheetFirstOpenFocusesNickWhenEmpty` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetFirstOpenEnterAppliesWithoutChangingNetwork` -> model: model/connect/*; remaining Connect view cases pending
+- `test_connectionSheetAddThenDiscardRestoresPriorNetwork` -> model: controller/tests/scrollplace.rs
+- `test_sheetFlickShowsScrollbarWhenFormOverflows` -> pending (transcript chrome) or model: model/cursor.rs
+- `test_networkListShowsScrollbarWhenItOverflows` -> pending (transcript chrome) or model: model/cursor.rs
+- `test_liveIrcWithoutConnectionHasNoSidebarConversations` -> model: model/connect/*; remaining Connect view cases pending
+- `test_nullIrcHasNoSidebarConversations` -> pending (cutover inventory)
+- `test_sidebarRowsComeFromTheConversationModel` -> pending (cutover inventory)
+- `test_liveSidebarClickSwitchesChannel` -> pending (cutover inventory)
+- `test_liveDmTypingIndicatorUsesProductionDelegate` -> pending (cutover inventory)
+- `test_liveDmPresenceFollowsAwayFacts` -> pending (cutover inventory)
+- `test_memberPresenceChromeFollowsCapabilities` -> pending (member list view variants)
+- `test_memberBotMarkShowsForDemoDaxNotAnna` -> pending (member list view variants)
+- `test_demoMiraAvatarReachesImageReady` -> pending (cutover inventory)
+- `test_demoOmarchyNetworkIconReachesImageReady` -> pending (cutover inventory)
+- `test_mockNetworkIconWithoutTokenKeepsInitial` -> pending (cutover inventory)
+- `test_loadPeerAvatarsPreferenceGatesStoreSource` -> pending (cutover inventory)
+- `test_memberBotMarkAppearsAfterLateMetadata` -> pending (member list view variants)
+- `test_identityFooterBotAndAvatarRefreshAfterSelfMetadata` -> pending (cutover inventory)
+- `test_transcriptBotAndAvatarRefreshAfterLateMetadata` -> pending (cutover inventory)
+- `test_transcriptMentionWashForNickAndHighlightWords` -> model: model/unread + controller notify/selection
+- `test_typingTranscriptBotRefreshesAfterLateMetadata` -> model: model/typing_tail.rs / session typing
+- `test_dmSidebarBotMarkAppearsAfterLateMetadata` -> pending (cutover inventory)
+- `test_memberPresenceShowsOurOwnAwayWithoutAwayNotify` -> pending (member list view variants)
+- `test_typingChromeFollowsCapabilities` -> model: model/typing_tail.rs / session typing
+- `test_mockTypingShowsMemberGlyphAndDmOverlay` -> pending (member list view variants)
+- `test_mockBackgroundDmTypingIndicatorPulses` -> pending (cutover inventory)
+- `test_typingIndicatorRidesTheTranscriptEnd` -> rust: `ui::tests::typing::typing_indicator_rides_the_transcript_end`
+- `test_typingIndicatorMovesBelowMyOwnMessage` -> rust: `ui::tests::typing::typing_indicator_moves_below_my_own_message`
+- `test_typingIndicatorKeepsScrollWhileReadingHistory` -> rust: `ui::tests::typing::typing_indicator_keeps_scroll_while_reading_history`
+- `test_typingIndicatorFollowsTheEndWhileFollowing` -> model: model/typing_tail.rs / session typing
+- `test_typingIndicatorSlotMatchesTheRowThatReplacesIt` -> model: model/typing_tail.rs / session typing
+- `test_typingIndicatorGoesUngroupedForANonChatLastRow` -> model: model/typing_tail.rs / session typing
+- `test_openStatusFromNetworkHeaderKeepsAuthOutOfDirects` -> pending (cutover inventory)
+- `test_mockStatusOpensFromNetworkHeader` -> pending (cutover inventory)
+- `test_mockIdentityFooterShowsFredAndDropsNotice` -> pending (cutover inventory)
+- `test_mockIdentityFooterShowsAvailable` -> pending (cutover inventory)
+- `test_identityFooterShowsAppVersion` -> pending (cutover inventory)
+- `test_aboutSheetOpensFromCtrlShiftSlashAndEscapeKeepsConversation` -> pending (About variants beyond dimmer/card)
+- `test_aboutSheetOpensFromCtrlShiftSlashLeavesConnectVisible` -> model: model/connect/*; remaining Connect view cases pending
+- `test_aboutSheetOpensFromCtrlShiftSlashWithConnectionSheetOpen` -> model: model/connect/*; remaining Connect view cases pending
+- `test_aboutSheetCtrlShiftSlashBlockedByShortcutsSheet` -> pending (About variants beyond dimmer/card)
+- `test_aboutSheetCtrlShiftSlashBlockedByJumpSheet` -> pending (About variants beyond dimmer/card)
+- `test_aboutSheetOpensFromVersionAndEscapeKeepsConversation` -> pending (About variants beyond dimmer/card)
+- `test_aboutSheetBlocksWindowShortcuts` -> pending (About variants beyond dimmer/card)
+- `test_aboutSheetBlocksCtrlQ` -> pending (About variants beyond dimmer/card)
+- `test_aboutSheetOkCloses` -> pending (About variants beyond dimmer/card)
+- `test_aboutSheetGithubLinkOpensRepo` -> pending (About variants beyond dimmer/card)
+- `test_aboutSheetCheckForUpdatesShowsLatest` -> pending (About variants beyond dimmer/card)
+- `test_aboutSheetInstalledCopyDownloadsSetup` -> pending (About variants beyond dimmer/card)
+- `test_aboutSheetQuitStartsReadyInstaller` -> pending (About variants beyond dimmer/card)
+- `test_aboutSheetOpensFromFirstRunVersion` -> pending (About variants beyond dimmer/card)
+- `test_aboutSheetLeftClickDimmerDismisses` -> rust: `ui::tests::sheets::about_sheet_left_click_dimmer_dismisses`
+- `test_aboutSheetIgnoresRightClickAndCardClick` -> rust: `ui::tests::sheets::about_sheet_ignores_right_click_and_card_click`
+- `test_liveIdentityFooterShowsCurrentNick` -> pending (cutover inventory)
+- `test_liveIdentityFooterShowsAwayWithoutMemberPresence` -> pending (member list view variants)
+- `test_liveIdentityFooterShowsOfflineWhenDisconnected` -> model: model/connect/*; remaining Connect view cases pending
+- `test_identityFooterFallsBackToConnectionNick` -> model: model/connect/*; remaining Connect view cases pending
+- `test_openDirectMessageClearsModelUnreadState` -> model: model/unread + controller notify/selection
+- `test_channelCtrlWIsNoOp` -> pending (cutover inventory)
+- `test_closeDirectMessageSelectsNext` -> pending (cutover inventory)
+- `test_closeDirectMessageSelectsPreviousWithoutWrapping` -> pending (cutover inventory)
+- `test_statusShortcutsUntouchedByClose` -> pending (cutover inventory)
+- `test_typedCloseStaysChatLine` -> pending (cutover inventory)
+- `test_leaveKeepsChannelRow` -> pending (cutover inventory)
+- `test_typedQueryOpensDirectAndClearsComposer` -> model: model/composer + controller/tests/composer.rs
+- `test_typedQueryFromStatusOpensDirectAndClearsComposer` -> model: model/composer + controller/tests/composer.rs
+- `test_typedQueryRestoresDestinationDraft` -> model: controller/tests/scrollplace.rs
+- `test_refusedQueryKeepsComposer` -> model: model/composer + controller/tests/composer.rs
+- `test_refusedQueryFromStatusKeepsComposer` -> model: model/composer + controller/tests/composer.rs
+- `test_typedQueryHistoryStaysOnSource` -> pending (cutover inventory)
+- `test_joinOpensChannelAndConsumesComposer` -> model: model/composer + controller/tests/composer.rs
+- `test_listOpensOverlayAndJoins` -> pending (cutover inventory)
+- `test_listUsesPerNetworkCache` -> pending (cutover inventory)
+- `test_slashCompleteListAppearsForSlashJ` -> pending (cutover inventory)
+- `test_slashCompleteTabInsertsCanonicalVerb` -> pending (cutover inventory)
+- `test_slashCompleteEscapeDismisses` -> pending (cutover inventory)
+- `test_slashCompleteUpDownMoveSelection` -> pending (cutover inventory)
+- `test_slashCompleteHistoryUpWalksPastCommand` -> pending (cutover inventory)
+- `test_mockTwoNetworkSectionsStaySeparated` -> pending (cutover inventory)
+- `test_mockNetworkIconsUseDistinctPaletteColors` -> pending (cutover inventory)
+- `test_duplicateOmarchyHighlightsIndependently` -> pending (cutover inventory)
+- `test_altWalkSkipsNetworkHeaders` -> pending (cutover inventory)
+- `test_walkNetworksWithShortcut` -> pending (cutover inventory)
+- `test_walkNetworksWraps` -> pending (cutover inventory)
+- `test_enterOnNetworkHeaderOpensStatus` -> pending (cutover inventory)
+- `test_altDownStaysConversationOnlyAfterNetworkWalk` -> pending (cutover inventory)
+- `test_shortcutsSheetListsNetworkWalk` -> pending (cutover inventory)
+- `test_walkNetworksFromComposerLeavesCaret` -> model: model/composer + controller/tests/composer.rs
+- `test_collapseFocusedNetworkWithShortcut` -> pending (cutover inventory)
+- `test_networkCollapseChordNeedsHeaderFocus` -> pending (cutover inventory)
+- `test_collapseAllNetworksWithoutHeaderFocus` -> pending (cutover inventory)
+- `test_collapseAllNetworksFromComposerLeavesCaret` -> model: model/composer + controller/tests/composer.rs
+- `test_altWalkSkipsCollapsedNetworkRows` -> pending (cutover inventory)
+- `test_altWalkFromCollapsedCurrentNetworkKeepsDirection` -> pending (cutover inventory)
+- `test_altWalkFromCollapsedMiddleNetworkKeepsDirection` -> pending (cutover inventory)
+- `test_jumpActivatesCollapsedNetworkConversation` -> pending (cutover inventory)
+- `test_unreadJumpExpandsCollapsedNetwork` -> model: model/unread + controller notify/selection
+- `test_moveFocusedNetworkWithShortcut` -> pending (cutover inventory)
+- `test_collapsedSectionKeepsHeaderWalkAndServerListToggle` -> pending (cutover inventory)
+- `test_emptyNetworkHeaderIsAKeyboardStop` -> pending (cutover inventory)
+- `test_connectionSheetAddSelectRemoveSurface` -> model: model/connect/*; remaining Connect view cases pending
+- `test_untouchedPasswordIsNotClearedOnApply` -> model: irc secret policy / storage credential tests
+- `test_mockStatusTitleIdentifiesNetwork` -> pending (cutover inventory)
+- `test_rejectedNetworkSelectKeepsPassword` -> model: irc secret policy / storage credential tests
+- `test_networkSwitchClearsPendingPassword` -> model: irc secret policy / storage credential tests
+- `test_openingRioDoesNotDuplicate` -> pending (cutover inventory)
+- `test_mockDirectStaysOnItsNetwork` -> pending (cutover inventory)
+- `test_liveUnreadFollowsConversationEpoch` -> model: model/unread + controller notify/selection
+- `test_statusDraftsStayWithNetwork` -> model: model/composer + controller/tests/composer.rs
+- `test_mockSendUsesSelfNick` -> pending (cutover inventory)
+- `test_oftcDirectHasOwnHistory` -> pending (cutover inventory)
+- `test_keyboardNavigationRevealsSidebarRow` -> pending (cutover inventory)
+- `test_networkChoiceIsKeyboardAccessible` -> pending (cutover inventory)
+- `test_filePickHiddenWithoutFileHost` -> pending (cutover inventory)
+- `test_fileLinkFollowsTheDraftItWasQueuedFor` -> model: model/composer + controller/tests/composer.rs
+- `test_droppedFileUploadsAndInsertsTheLink` -> pending (M6 wave 2: demo file host)
+- `test_fileUploadFailureStaysOnTheNetworkThatQueuedIt` -> pending (cutover inventory)
+- `test_filePickHiddenWhileConnectIsOpen` -> model: model/connect/*; remaining Connect view cases pending
+- `test_channelLineOnlyVisibleToYou` -> pending (cutover inventory)

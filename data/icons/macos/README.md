@@ -13,5 +13,5 @@ rsvg-convert -w 1024 -h 1024 ../hicolor/scalable/apps/omairc.svg -o omairc.icons
 packaging/macos/generate-icns
 ```
 
-CI and local macOS builds call `generate-icns` before `qmake` when
-`omairc.icns` is missing or older than the SVG.
+`bin/build-macos-rust` runs `generate-icns` at the start when `omairc.icns` is
+missing or older than the SVG.

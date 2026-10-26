@@ -5,11 +5,7 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 APP="$ROOT/build/omairc.app"
 
 if [ ! -d "$APP" ]; then
-  if [ "${OMAIRC_CLIENT:-}" = "rust" ]; then
-    echo "Expected $APP. Run bin/build-macos-rust first." >&2
-  else
-    echo "Expected $APP. Run bin/build-macos or bin/build-macos-rust first." >&2
-  fi
+  echo "Expected $APP. Run bin/build-macos-rust first." >&2
   exit 1
 fi
 

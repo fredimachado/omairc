@@ -12,7 +12,7 @@ import (
 )
 
 // This file implements the Secret Service credential backend over the session
-// bus. It mirrors the dual-attribute contract in poc/.../secretattrs.rs and
+// bus. It mirrors the dual-attribute contract in client/.../secretattrs.rs and
 // the Linux Rust store: a read finds both the items QtKeychain wrote for the
 // Qt client (user/server) and the ones the TUI wrote (service/username), a
 // write stores one item both of them can read, and a delete removes both sets.
