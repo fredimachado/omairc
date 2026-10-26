@@ -2,18 +2,19 @@
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-BUILD_DIR="$ROOT/build-install"
+DEST=
+FRESH=
 
-if command -v qmake6 >/dev/null 2>&1; then
-  QMAKE=qmake6
-elif command -v qmake >/dev/null 2>&1 && qmake -query QT_VERSION | grep -q '^6\.'; then
-  QMAKE=qmake
-else
-  echo "A Qt 6 qmake (qmake6) is required to build omairc." >&2
-  exit 1
-fi
+cleanup() {
+  if [ -n "$DEST" ]; then
+    rm -rf -- "$DEST"
+  fi
+  if [ -n "$FRESH" ]; then
+    rm -rf -- "$FRESH"
+  fi
+}
+trap cleanup EXIT HUP INT TERM
 
-JOBS="$(nproc 2>/dev/null || echo 1)"
 VERSION="$("$ROOT/bin/version")"
 pkgver_got="$(cd "$ROOT" && bash -c 'source ./PKGBUILD && printf %s "$pkgver"')"
 test "$pkgver_got" = "$VERSION" || {
@@ -28,6 +29,21 @@ printf '%s\n' "$install_help" | grep -q '^Usage: ./bin/install \[makepkg options
   exit 1
 }
 
+command -v cargo >/dev/null 2>&1 || {
+  echo "cargo is required to build the Rust client" >&2
+  exit 1
+}
+
+# Match PKGBUILD build(): product release binary from poc/.
+export OMAIRC_BUILD_VERSION="${OMAIRC_BUILD_VERSION:-$VERSION}"
+(cd "$ROOT/poc" && cargo build --release --locked --features product)
+
+BINARY="$ROOT/poc/target/release/omairc"
+test -x "$BINARY" || {
+  echo "missing $BINARY after cargo build --release --features product" >&2
+  exit 1
+}
+
 rel_tree() {
   find "$1" | sed "s|^$1||; s|^/||" | sort
 }
@@ -36,22 +52,33 @@ rel_files() {
   find "$1" -type f | sed "s|^$1/||" | sort
 }
 
-dest="$(mktemp -d "${TMPDIR:-/tmp}/omairc-install.XXXXXX")"
-fresh="$(mktemp -d "${TMPDIR:-/tmp}/omairc-install.XXXXXX")"
-trap 'rm -rf -- "$dest" "$fresh"' EXIT HUP INT TERM
+# Same seven paths as PKGBUILD package(). COPYING-LGPL stays while src/irc/
+# (LGPL-adapted protocol code) still ships in the tree; Rust irc has no LGPL
+# headers, but the license file covers the remaining C++ sources.
+stage_install() {
+  root=$1
+  install -Dm755 "$BINARY" "$root/usr/bin/omairc"
+  install -Dm644 "$ROOT/data/omairc.desktop" \
+    "$root/usr/share/applications/omairc.desktop"
+  install -Dm644 "$ROOT/data/icons/hicolor/scalable/apps/omairc.svg" \
+    "$root/usr/share/icons/hicolor/scalable/apps/omairc.svg"
+  install -Dm644 "$ROOT/LICENSE" "$root/usr/share/licenses/omairc/LICENSE"
+  install -Dm644 "$ROOT/fonts/OFL.txt" "$root/usr/share/licenses/omairc/OFL.txt"
+  install -Dm644 "$ROOT/src/irc/COPYING" \
+    "$root/usr/share/licenses/omairc/COPYING-LGPL"
+  install -Dm644 "$ROOT/data/bash-completion/omairc" \
+    "$root/usr/share/bash-completion/completions/omairc"
+}
 
-rm -rf "$BUILD_DIR"
-mkdir -p "$BUILD_DIR"
-cd "$BUILD_DIR"
+DEST="$(mktemp -d "${TMPDIR:-/tmp}/omairc-install.XXXXXX")"
+FRESH="$(mktemp -d "${TMPDIR:-/tmp}/omairc-install.XXXXXX")"
 
-"$QMAKE" PREFIX=/usr "$ROOT/omairc.pro"
-make -j"$JOBS"
-make INSTALL_ROOT="$dest" install
-make INSTALL_ROOT="$dest" install
-make INSTALL_ROOT="$fresh" install
+stage_install "$DEST"
+stage_install "$DEST"
+stage_install "$FRESH"
 
-dest_tree="$(rel_tree "$dest")"
-fresh_tree="$(rel_tree "$fresh")"
+dest_tree="$(rel_tree "$DEST")"
+fresh_tree="$(rel_tree "$FRESH")"
 test "$dest_tree" = "$fresh_tree" || {
   echo "repeat install and fresh install trees must match" >&2
   printf '%s\n' "$dest_tree" >&2
@@ -68,32 +95,32 @@ expected="$(printf '%s\n' \
   usr/share/licenses/omairc/COPYING-LGPL \
   usr/share/licenses/omairc/OFL.txt | sort)"
 
-dest_files="$(rel_files "$dest")"
+dest_files="$(rel_files "$DEST")"
 test "$dest_files" = "$expected" || {
   echo "dest files must be exactly the seven packager paths" >&2
   printf '%s\n' "$dest_files" >&2
   exit 1
 }
 
-if find "$dest" | grep '\.png$'; then
+if find "$DEST" | grep '\.png$'; then
   echo "dest must not contain a .png path" >&2
   exit 1
 fi
 
-svg="$dest/usr/share/icons/hicolor/scalable/apps/omairc.svg"
+svg="$DEST/usr/share/icons/hicolor/scalable/apps/omairc.svg"
 sig="$(od -An -tx1 -N4 "$svg" | tr -d ' \n' | tr 'A-F' 'a-f')"
 test "$sig" != "89504e47" || {
   echo "installed SVG must not start with PNG magic" >&2
   exit 1
 }
 
-count="$(find "$dest" -type f | awk 'END { print NR }')"
+count="$(find "$DEST" -type f | awk 'END { print NR }')"
 test "$count" = 7 || {
   echo "dest file count must be 7" >&2
   exit 1
 }
 
-desktop="$dest/usr/share/applications/omairc.desktop"
+desktop="$DEST/usr/share/applications/omairc.desktop"
 grep -qx 'Exec=omairc' "$desktop" || {
   echo "desktop Exec must be omairc" >&2
   exit 1
@@ -107,7 +134,7 @@ if command -v desktop-file-validate >/dev/null 2>&1; then
   desktop-file-validate "$desktop"
 fi
 
-got="$("$dest/usr/bin/omairc" --version)"
+got="$("$DEST/usr/bin/omairc" --version)"
 want="omairc $VERSION"
 test "$got" = "$want" || {
   echo "--version must print exactly $want" >&2

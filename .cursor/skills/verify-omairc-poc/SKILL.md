@@ -37,7 +37,9 @@ recipe or an agent drive. That flag is only for a human who wants to watch.
 
 This launch:
 
-- runs `cargo build` in `poc/`
+- runs `cargo build` in `poc/` (default debug). Set `OMAIRC_POC_PROFILE=release`
+  and optionally `OMAIRC_POC_FEATURES=product` (as `bin/test-desktop` does) for
+  the packager binary under `poc/target/release/omairc`
 - picks the next free X display from `:110`
 - uses a disposable `XDG_*` tree so window geometry is the default 1180×760
 - points `DBUS_SESSION_BUS_ADDRESS` at a missing socket

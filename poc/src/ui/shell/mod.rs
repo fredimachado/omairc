@@ -160,7 +160,16 @@ impl Shell {
         };
         let mut controller = if demo {
             // The demo keeps nothing: it never reads or writes the user's files.
-            Controller::new_demo().expect("the demo controller starts")
+            // Under test, freeze the clock so seeded +typing (6s active hold) does not
+            // expire while a slow GPUI settle runs.
+            #[cfg(test)]
+            {
+                Controller::seeded_for_tests()
+            }
+            #[cfg(not(test))]
+            {
+                Controller::new_demo().expect("the demo controller starts")
+            }
         } else {
             // The saved networks, preferences and open queries come back, and each complete
             // network that asks to connect on launch starts through the socket hub.

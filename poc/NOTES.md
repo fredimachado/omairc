@@ -1,7 +1,26 @@
 # Rust desktop notes
 
 Notes for the GPUI client cutover. Keep this short; product history still
-lives in root `CHANGELOG.md` (Phase 7 will copy accepted regressions there).
+lives in root `CHANGELOG.md` (Phase 7 / M9 will copy accepted regressions
+there).
+
+## Dark mode / portal color-scheme (Linux)
+
+GPUI 0.2.2 already reads and watches
+`org.freedesktop.appearance` / `color-scheme` through ashpd
+(`gpui::platform::linux::xdg_desktop_portal`) on both X11 and Wayland, and
+pushes `WindowAppearance` into every window. Omairc follows that with
+`cx.window_appearance()` at open and `observe_window_appearance` in
+`poc/src/app.rs` (see `poc/src/desktop/systemtheme.rs`). No second portal
+subscription next to `desktop/textscale.rs` - that would race GPUI.
+
+Portal text scale stays in `desktop/textscale.rs` (Qt parity);
+color-scheme does not.
+
+**Not proven here:** a live Hyprland / session-bus flip (this cutover host
+is Windows; CI Xvfb refuses the session bus). When checking on Omarchy,
+toggle the portal color-scheme and confirm the base palette flips without
+restart when `colors.toml` is absent.
 
 ## Known regressions
 
@@ -47,9 +66,8 @@ cosmic-text, which uses `unicode-bidi` and rustybuzz. On Linux, cosmic-text’s
 script fallbacks include `Noto Sans Arabic` and `Noto Sans Hebrew` when the
 bundled `iA Writer Mono S` face has no coverage (it does not). No GPUI fork.
 
-Visual proof was not taken on this host: `control-omairc-poc` needs lavapipe
-(`vulkan-swrast` / `lvp_icd.json`) for Xvfb, and that ICD was not installed
-(no passwordless sudo). Re-check when lavapipe is available:
+Lavapipe is available in CI’s non-blocking `verify-poc` job (M7). Optional
+visual grab when you want a PNG under `test-artifacts/verify-poc/rtl-spike/`:
 
 ```sh
 OMAIRC_RTL_SEED=1 .cursor/skills/verify-omairc-poc/control-omairc-poc launch --demo-server
@@ -57,7 +75,25 @@ OMAIRC_RTL_SEED=1 .cursor/skills/verify-omairc-poc/control-omairc-poc launch --d
 .cursor/skills/verify-omairc-poc/control-omairc-poc cleanup
 ```
 
-Evidence (when taken) lives under `test-artifacts/verify-poc/rtl-spike/`.
+No upstream GPUI/cosmic-text issue filed: the spike did not show wrong glyph
+order or missing glyphs when Noto fallbacks are installed. Re-open only if a
+later visual check fails despite those fonts.
 
-TODO: if a visual check shows wrong glyph order or missing glyphs despite
-Noto fallbacks, track upstream GPUI/cosmic-text; do not fork GPUI.
+## Cutover changelog draft (M9)
+
+Copy into root `CHANGELOG.md` under the cutover release (not a ship note
+until M9 lands). Draft text:
+
+### Changed
+
+- Desktop client is the Rust GPUI binary (`product` feature). Arch
+  `PKGBUILD`, `bin/test-install`, and `bin/test-desktop` build and drive
+  that binary.
+
+### Known regressions
+
+- Screen readers: GPUI has no AccessKit tree yet, so Accessible names and
+  roles from the Qt shell are gone until upstream GPUI gains AccessKit.
+  Surfaces to restore are listed in `poc/NOTES.md`.
+- Other known cutover gaps (KWallet passwords, Wayland minimize) stay in
+  the M9 release notes checklist.
