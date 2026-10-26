@@ -158,6 +158,96 @@ jobs:
           OMAIRC_LIVE_PROFILE: l1
         run: bin/test-live
 
+  # Dry-build the root PKGBUILD in an Arch container so a packaging regression
+  # fails the pull request instead of release-package.yml's tag job, which both
+  # builds this package and creates the GitHub Release. Tags skip it;
+  # release-package.yml builds the same package there.
+  arch-package:
+    name: Arch package
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 60
+    steps:
+      - name: Bootstrap pacman
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm base-devel git sudo python
+
+      - uses: actions/checkout@v4
+
+      - name: Create build user
+        run: |
+          useradd -m builder
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' >/etc/sudoers.d/builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: /home/builder/.cargo/registry
+          key: arch-package-cargo-${{ hashFiles('client/Cargo.lock') }}
+
+      - name: Fix cargo cache ownership
+        run: |
+          mkdir -p /home/builder/.cargo/registry
+          chown -R builder:builder /home/builder/.cargo
+
+      - name: Prepare dry-build source
+        run: |
+          set -euo pipefail
+          pkgver=$(./bin/version)
+          tag_source="omairc-${pkgver}.tar.gz::https://github.com/fredimachado/omairc/archive/refs/tags/v${pkgver}.tar.gz"
+          source0=$(bash -c 'source ./PKGBUILD; printf %s "${source[0]}"')
+          test "$source0" = "$tag_source" || {
+            echo "PKGBUILD must fetch the tag tarball $tag_source" >&2
+            printf 'got: %s\n' "$source0" >&2
+            exit 1
+          }
+          source_tar=$(mktemp "/tmp/omairc-${pkgver}.XXXXXX.tar.gz")
+          tar --exclude='.git' --exclude='.arena-omairc-pacman' \
+            -czf "$source_tar" \
+            --transform "s,^\.,omairc-${pkgver}," .
+          mv "$source_tar" "omairc-${pkgver}.tar.gz"
+          sed -i "s|^source=.*|source=(\"omairc-${pkgver}.tar.gz\")|" PKGBUILD
+          chown builder:builder "omairc-${pkgver}.tar.gz" PKGBUILD version.pri
+
+      - name: makepkg
+        run: |
+          set -euo pipefail
+          sudo -u builder env OMAIRC_BUILD_VERSION="$(./bin/version)" makepkg -s --noconfirm
+
+      - name: Verify package metadata
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          pkgs=(omairc-[0-9]*-x86_64.pkg.tar.zst)
+          test "${#pkgs[@]}" -eq 1
+          version=$(./bin/version)
+          meta=$(pacman -Qp "${pkgs[0]}")
+          test "$meta" = "omairc ${version}-1"
+          tmp=$(mktemp -d)
+          tar -xf "${pkgs[0]}" -C "$tmp" usr/bin/omairc
+          got=$("$tmp/usr/bin/omairc" --version)
+          rm -rf "$tmp"
+          test "$got" = "omairc $version"
+          expected="$(printf '%s\n' \
+            usr/bin/omairc \
+            usr/share/applications/omairc.desktop \
+            usr/share/bash-completion/completions/omairc \
+            usr/share/icons/hicolor/scalable/apps/omairc.svg \
+            usr/share/licenses/omairc/LICENSE \
+            usr/share/licenses/omairc/OFL.txt | sort)"
+          got_files="$(bsdtar -tf "${pkgs[0]}" | grep -v '^\.' | sort)"
+          test "$got_files" = "$expected" || {
+            echo "package file list must match bin/test-install's six paths" >&2
+            printf 'got:\n%s\n' "$got_files" >&2
+            printf 'want:\n%s\n' "$expected" >&2
+            exit 1
+          }
+
   # Feature-map recipes against the Rust client (Xvfb + lavapipe). Non-blocking
   # until the XI2 click path and recipe set are stable enough to gate merges.
   verify-poc:

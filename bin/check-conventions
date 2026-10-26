@@ -748,6 +748,25 @@ def check_ci_package_triggers():
                 ".github/workflows/tui.yml: the packaging/tui/PKGBUILD dry "
                 "build must skip tags; release-package.yml builds the package "
                 "there")
+
+    test_wf = ROOT / ".github" / "workflows" / "test.yml"
+    test_text = test_wf.read_text(encoding="utf-8", errors="replace") \
+        if test_wf.is_file() else ""
+    if not test_wf.is_file():
+        problems.append(".github/workflows/test.yml: missing Test workflow")
+    else:
+        if "makepkg" not in test_text or not re.search(
+                r"(?m)^  arch-package:\s*$", test_text,
+        ):
+            problems.append(
+                ".github/workflows/test.yml: dry-build PKGBUILD "
+                "on pull requests; release-package.yml's tag job must not be "
+                "its first build")
+        if "if: ${{ !startsWith(github.ref, 'refs/tags/v') }}" not in test_text:
+            problems.append(
+                ".github/workflows/test.yml: the PKGBUILD dry "
+                "build must skip tags; release-package.yml builds the package "
+                "there")
     return problems
 
 

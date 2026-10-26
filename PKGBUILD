@@ -27,15 +27,24 @@ makedepends=(
 source=("$pkgname-$pkgver.tar.gz::https://github.com/fredimachado/omairc/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')
 
+prepare() {
+  cd "$srcdir/$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --manifest-path client/Cargo.toml \
+    --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
 build() {
   cd "$srcdir/$pkgname-$pkgver"
   export OMAIRC_BUILD_VERSION="${OMAIRC_BUILD_VERSION:-$pkgver}"
-  cargo build --release --locked --features product --manifest-path client/Cargo.toml
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --release --frozen --features product --manifest-path client/Cargo.toml
 }
 
 package() {
   cd "$srcdir/$pkgname-$pkgver"
-  install -Dm755 client/target/release/omairc "$pkgdir/usr/bin/omairc"
+  install -Dm755 target/release/omairc "$pkgdir/usr/bin/omairc"
   install -Dm644 data/omairc.desktop "$pkgdir/usr/share/applications/omairc.desktop"
   install -Dm644 data/icons/hicolor/scalable/apps/omairc.svg \
     "$pkgdir/usr/share/icons/hicolor/scalable/apps/omairc.svg"
