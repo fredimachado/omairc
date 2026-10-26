@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/channelname.go` (Go) and `src/irc/ircchannelname.{h,cpp}` (C++).
+//! Port of `tui/internal/irc/channelname.go`.
 //!
 //! Finds channel names inside message text, so a transcript can link them. The
 //! prefix set comes from the server's CHANTYPES and the rank glyphs from PREFIX,

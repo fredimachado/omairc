@@ -1,7 +1,7 @@
 //! Persistence under this build's app folder ([`crate::identity::APP_FOLDER`]), so a
-//! default build never touches a real install. It mirrors `tui/internal/storage/` (Go) and `src/omaircpaths.cpp`
-//! plus the stores in `src/irc/` (C++). The formats match Qt and the TUI: a
-//! QSettings-compatible INI file, with the JSON that Qt keeps inside a string value.
+//! default build never touches a real install. It mirrors `tui/internal/storage/`.
+//! The formats match Qt and the TUI: a QSettings-compatible INI file, with the
+//! JSON that Qt keeps inside a string value.
 //!
 //! Every store takes a [`Backing`]. `Disk` is the INI file under the config folder;
 //! `Ephemeral` writes nothing, which is what `--demo-server` and the tests use. A

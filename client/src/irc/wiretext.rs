@@ -1,5 +1,4 @@
-//! Port of `tui/internal/irc/wiretext.go` (Go) and `ircWireText` in
-//! `src/irc/ircwiretext.cpp` (C++).
+//! Port of `tui/internal/irc/wiretext.go`.
 //!
 //! Valid UTF-8 passes through; anything else is decoded as Latin-1, one scalar
 //! per byte, so no U+FFFD is injected.

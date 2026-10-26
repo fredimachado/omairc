@@ -1,6 +1,6 @@
 //! The controller: one place for intents, state reads and view notifications.
-//! It mirrors `tui/internal/controller/` (Go) and `src/irc/irccontroller.cpp`
-//! (C++). The UI calls its intents and never writes world state.
+//! It mirrors `tui/internal/controller/`. The UI calls its intents and never
+//! writes world state.
 //!
 //! The pipeline is one way: a `Transport` delivers bytes, its `Session` queues
 //! `SessionEvent`s, `Controller::pump` folds them into the `EventReducer`, and the

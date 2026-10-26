@@ -169,7 +169,7 @@ func ParseMetadataCapability(tokens []string) (MetadataCapability, bool) {
 
 // metadataTokenName returns the capability name of a CAP token, dropping any
 // "=value" suffix. It deliberately does not drop a leading '-', matching the
-// anonymous tokenName in ircpresence.cpp.
+// anonymous tokenName in `client/src/irc/presence.rs`.
 func metadataTokenName(token string) string {
 	if separator := strings.IndexByte(token, '='); separator != -1 {
 		return token[:separator]
@@ -186,7 +186,7 @@ func metadataTokenValue(token string) string {
 }
 
 // parseNonNegativeInt mirrors the anonymous parseNonNegativeInt in
-// ircpresence.cpp: an empty, non-numeric, overflowing, or negative value fails.
+// `client/src/irc/presence.rs`: an empty, non-numeric, overflowing, or negative value fails.
 func parseNonNegativeInt(raw string) (int, bool) {
 	if raw == "" {
 		return 0, false

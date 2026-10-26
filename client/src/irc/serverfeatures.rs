@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/serverfeatures.go` (Go) and `src/irc/ircserverfeatures.{h,cpp}` (C++).
+//! Port of `tui/internal/irc/serverfeatures.go`.
 //!
 //! `IrcServerFeatures` holds one network's ISUPPORT state. PREFIX, CHANTYPES
 //! and CHANMODES are parsed, never hard-coded by callers. It also applies

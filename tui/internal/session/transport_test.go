@@ -7,7 +7,7 @@ import (
 )
 
 // recordingSink is a Sink that records the lifecycle and data events the
-// C++ QSignalSpy collected in tst_transport.cpp.
+// C++ QSignalSpy collected in `tst_transport`.
 type recordingSink struct {
 	connectedCount    int
 	encryptedCount    int

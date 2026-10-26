@@ -1,9 +1,9 @@
-//! Port of `tui/internal/session/saslscram_test.go`, which in turn mirrors `tst_scram.cpp`.
+//! Port of `tui/internal/session/saslscram_test.go`, which in turn mirrors `tst_scram`.
 //! The RFC 7677 vector is the one both suites pin.
 
 use super::*;
 
-/// The fixed nonce and messages of the RFC 7677 vector (`tst_scram.cpp`).
+/// The fixed nonce and messages of the RFC 7677 vector (`tst_scram`).
 const NONCE: &str = "rOprNGfwEbeRWgbNEkqO";
 const CLIENT_FIRST: &str = "n,,n=user,r=rOprNGfwEbeRWgbNEkqO";
 const SERVER_FIRST: &str =

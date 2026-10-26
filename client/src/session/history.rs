@@ -1,5 +1,5 @@
 //! Port of the CHATHISTORY half of `tui/internal/session/session.go` (Go) and
-//! the history requests of `src/irc/ircsession.cpp` (C++).
+//! the history requests of `tui/internal/session/session.go`.
 //!
 //! The session asks for history in four shapes (`LATEST`, `BEFORE`, `AFTER`,
 //! `TARGETS`), tracks each request until its batch or its `FAIL` arrives, and

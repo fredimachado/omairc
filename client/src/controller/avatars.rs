@@ -1,6 +1,6 @@
 //! Avatar photos, the controller's half. It decides whether an avatar is fetched and
 //! keeps what came back. Go `tui/internal/avatar/avatar.go` (the store, its `Ensure`
-//! and `Block`) and Qt `src/irc/ircavatarstore.cpp` (the pending slots and the
+//! and `Block`) and Qt `tui/internal/avatar/avatar.go` (the pending slots and the
 //! cache). The network and the decode run on the UI's background executor through
 //! `desktop::avatarhttp`, so this module has no gpui and no socket. It hands out an
 //! `AvatarJob` and takes back the outcome.

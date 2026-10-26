@@ -1,7 +1,7 @@
 package ui
 
 // Per-conversation scroll memory. The controller stores the place; this file
-// decides when to read and write it. It mirrors OmaircWindow.qml's
+// decides when to read and write it. It mirrors `client/src/ui/shell`'s
 // rememberOpenTranscript / restoreRememberedTranscript / finishTranscriptSwitch.
 // Status shares the viewport, so a Status scroll must not clobber the
 // conversation, and leaving Status must restore the saved line.

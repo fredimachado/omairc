@@ -1,6 +1,5 @@
-//! Port of the draft/metadata-2 writers of `tui/internal/session/session.go` (Go),
-//! `IrcSession::setOwnMetadata` in `src/irc/ircsession.cpp` and
-//! `src/irc/ircmetadata.*` (C++).
+//! Port of the draft/metadata-2 writers of `tui/internal/session/session.go`,
+//! including `IrcSession::setOwnMetadata`.
 //!
 //! The vocabulary the session reads (the subscribed keys, the limits the server
 //! advertised, the value clamp, the CAP token parse) is pure and lives in

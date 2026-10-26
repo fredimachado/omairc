@@ -1,4 +1,4 @@
-//! The Connection form (`ConnectionSheet.qml`'s `connectionFormArea`): the profile
+//! The Connection form (`client/src/ui/sheets/connect/` `connectionFormArea`): the profile
 //! fields in Qt's order, the switches, and the lines that say why Apply is off.
 //!
 //! The form scrolls in a list whose children are fixed rows, numbered by

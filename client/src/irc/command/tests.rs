@@ -29,9 +29,9 @@ const STATUS: ComposerSurface = ComposerSurface::Status;
 
 // Ported from tui/internal/irc/command_test.go.
 
-// Ported from tst_command.cpp (`parseVerbsAndAliases` through `parseWrappersAndHelp`).
+// Ported from `tst_command` (`parseVerbsAndAliases` through `parseWrappersAndHelp`).
 
-// The catalog's usage, scope and wrong-scope rows from tst_command.cpp
+// The catalog's usage, scope and wrong-scope rows from `tst_command`
 // (`catalogLookupAndScope`).
 
 // Feature map `.cursor/skills/verify-omairc/features/slash-commands.md`, catalog level.

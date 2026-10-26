@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/translator.go` (Go) and `src/irc/irceventtranslator.cpp` (C++).
+//! Port of `tui/internal/irc/translator.go`.
 //!
 //! Turns one inbound `IrcMessage` into the `Event`s the reducer consumes, and a
 //! completed history or playback batch into one `HistoryEvent`. This is the one

@@ -11,7 +11,7 @@ import (
 )
 
 // This file ports the Phase 11 PlaybackCoordinator matrix from
-// src/irc/ircplaybackcoordinator.cpp and the controller wiring it.
+// `client/src/controller/playback.rs` and the controller wiring it.
 
 func recordZnc(sent *[]string) func(*session.Session, string, string) bool {
 	return func(_ *session.Session, target, from string) bool {

@@ -1,5 +1,5 @@
 // Package controller is the Go port of IrcController from
-// src/irc/irccontroller.h and src/irc/irccontroller.cpp.
+// `client/src/controller/`.
 //
 // It is the single API the Bubble Tea shell calls: it owns the live IRC
 // sessions, folds translated irc.Events into the irc.EventReducer, decides the

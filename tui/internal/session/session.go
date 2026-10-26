@@ -13,7 +13,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/termtext"
 )
 
-// This file is the Go port of IrcSession in src/irc/ircsession.{h,cpp}: the
+// Twin of `client/src/session/session.rs`: the
 // connection state machine, CAP/SASL/registration driver, ping watchdog,
 // reconnect backoff, labeled requests, the history-batch ledger, and the
 // outbound command writers.
@@ -40,7 +40,7 @@ import (
 // Handler order is preserved, and handlers never run while the lock is held.
 
 // SessionState is the connection state machine. It mirrors IrcSession::State
-// in src/irc/ircsession.h:99-111.
+// in `client/src/session/session.rs`.
 type SessionState int
 
 const (
@@ -87,7 +87,7 @@ func (s SessionState) String() string {
 }
 
 // ErrorKind classifies a session failure. It mirrors IrcSession::ErrorKind in
-// src/irc/ircsession.h:114-120. The order is significant because
+// `client/src/session/session.rs`. The order is significant because
 // reportedRetryErrors packs one dedup bit per kind.
 type ErrorKind int
 
@@ -202,7 +202,7 @@ const (
 )
 
 // openBatch is the Go shape of IrcSession::OpenBatch
-// (src/irc/ircsession.h:328-336).
+// (`client/src/session/session.rs`).
 type historyRequestKind int
 
 const (
@@ -346,7 +346,7 @@ var _ Sink = (*Session)(nil)
 
 // NewSession builds a session. transport must be non-nil; clock may be nil, in
 // which case RealClock is used. It mirrors the IrcSession constructor
-// (src/irc/ircsession.cpp:293-407): the transport's sink is installed here and
+// (`client/src/session/session.rs`): the transport's sink is installed here and
 // the capability negotiation is primed with whether SASL credentials exist.
 func NewSession(config SessionConfig, transport Transport, clock Clock) *Session {
 	if clock == nil {
@@ -673,7 +673,7 @@ func (s *Session) HasPendingRequestLabel(label string) bool {
 
 // Start validates the config and begins connecting. A start is ignored unless
 // the session is Idle or Failed. It mirrors IrcSession::start
-// (src/irc/ircsession.cpp:514-539).
+// (`client/src/session/session.rs`).
 func (s *Session) Start() { s.locked(s.startLocked) }
 
 func (s *Session) startLocked() {
@@ -700,7 +700,7 @@ func (s *Session) startLocked() {
 }
 
 // Stop shuts the session down. It mirrors IrcSession::stop
-// (src/irc/ircsession.cpp:541-566).
+// (`client/src/session/session.rs`).
 func (s *Session) Stop() { s.locked(s.stopLocked) }
 
 func (s *Session) stopLocked() {
@@ -734,7 +734,7 @@ func (s *Session) stopLocked() {
 }
 
 // SendChannelMode writes a MODE query or change. It mirrors
-// IrcSession::sendChannelMode (src/irc/ircsession.cpp:586).
+// IrcSession::sendChannelMode (`client/src/session/session.rs`).
 func (s *Session) SendChannelMode(request irc.ChannelModeRequest) bool {
 	var sent bool
 	s.locked(func() { sent = s.sendChannelModeLocked(request) })
@@ -752,7 +752,7 @@ func (s *Session) sendChannelModeLocked(request irc.ChannelModeRequest) bool {
 }
 
 // SendPrivmsg writes a PRIVMSG, splitting an overlong body across frames. It
-// mirrors IrcSession::sendPrivmsg (src/irc/ircsession.cpp:568-576).
+// mirrors IrcSession::sendPrivmsg (`client/src/session/session.rs`).
 func (s *Session) SendPrivmsg(target, body string) bool {
 	var sent bool
 	s.locked(func() { sent = s.sendPrivmsgLocked(target, body) })
@@ -803,7 +803,7 @@ func (s *Session) sendActionLocked(target, body string) bool {
 }
 
 // SendCtcp writes a CTCP query, optionally under a request label. It mirrors
-// IrcSession::sendCtcp (src/irc/ircsession.cpp:612-622).
+// IrcSession::sendCtcp (`client/src/session/session.rs`).
 func (s *Session) SendCtcp(target, command, argument, requestLabel string) bool {
 	var sent bool
 	s.locked(func() { sent = s.sendCtcpLocked(target, command, argument, requestLabel) })
@@ -821,7 +821,7 @@ func (s *Session) sendCtcpLocked(target, command, argument, requestLabel string)
 
 // SendTyping writes a +typing TAGMSG when the message-tags capability is
 // enabled and the per-target pace allows it. It mirrors IrcSession::sendTyping
-// (src/irc/ircsession.cpp:624-640).
+// (`client/src/session/session.rs`).
 func (s *Session) SendTyping(target string, phase irc.TypingPhase) bool {
 	var sent bool
 	s.locked(func() { sent = s.sendTypingLocked(target, phase) })
@@ -850,7 +850,7 @@ func (s *Session) sendTypingLocked(target string, phase irc.TypingPhase) bool {
 }
 
 // Join writes a JOIN and remembers a keyed join for autojoin persistence. It
-// mirrors IrcSession::join (src/irc/ircsession.cpp:642-655).
+// mirrors IrcSession::join (`client/src/session/session.rs`).
 func (s *Session) Join(target irc.JoinTarget) bool {
 	var sent bool
 	s.locked(func() { sent = s.joinLocked(target) })
@@ -928,7 +928,7 @@ func (s *Session) SetTopic(channel, topic string) bool {
 }
 
 // SetAway writes AWAY, or clears it when the reason is empty. It mirrors
-// IrcSession::setAway (src/irc/ircsession.cpp:685-694).
+// IrcSession::setAway (`client/src/session/session.rs`).
 func (s *Session) SetAway(reason string) bool {
 	var sent bool
 	s.locked(func() { sent = s.setAwayLocked(reason) })
@@ -945,7 +945,7 @@ func (s *Session) setAwayLocked(reason string) bool {
 
 // MarkAway writes AWAY without a reason, which marks the user away with the
 // server's default message. It differs from SetAway(""), which clears away.
-// It mirrors IrcSession::markAway (src/irc/ircsession.cpp:696-702).
+// It mirrors IrcSession::markAway (`client/src/session/session.rs`).
 func (s *Session) MarkAway(reason string) bool {
 	var sent bool
 	s.locked(func() {
@@ -969,7 +969,7 @@ func (s *Session) ClearAway() bool {
 // SetOwnMetadata writes one metadata value and returns the value placed on the
 // wire. An empty value clears the key and returns ("", true) on success; a
 // false ok means nothing was sent. It mirrors IrcSession::setOwnMetadata
-// (src/irc/ircsession.cpp:704-741).
+// (`client/src/session/session.rs`).
 func (s *Session) SetOwnMetadata(key, value string) (string, bool) {
 	var wire string
 	var ok bool
@@ -1040,7 +1040,7 @@ func (s *Session) ChangeNick(nick string) bool {
 }
 
 // Quit writes QUIT when registered, then stops the session. It mirrors
-// IrcSession::quit (src/irc/ircsession.cpp:754-766).
+// IrcSession::quit (`client/src/session/session.rs`).
 func (s *Session) Quit(reason string) bool {
 	var sent bool
 	s.locked(func() {
@@ -1063,7 +1063,7 @@ func (s *Session) Quit(reason string) bool {
 }
 
 // Whois writes WHOIS <nick> <nick>, optionally under a request label. It
-// mirrors IrcSession::whois (src/irc/ircsession.cpp:811-817).
+// mirrors IrcSession::whois (`client/src/session/session.rs`).
 func (s *Session) Whois(nick, requestLabel string) bool {
 	var sent bool
 	s.locked(func() {
@@ -1097,7 +1097,7 @@ func (s *Session) CancelRequestLabel(label string) {
 }
 
 // SendMonitor writes a MONITOR command. Modifier is one of '+', '-', 'C', 'L',
-// or 'S'. It mirrors IrcSession::sendMonitor (src/irc/ircsession.cpp:768-806).
+// or 'S'. It mirrors IrcSession::sendMonitor (`client/src/session/session.rs`).
 func (s *Session) SendMonitor(modifier rune, nicks []string) bool {
 	var sent bool
 	s.locked(func() { sent = s.sendMonitorLocked(modifier, nicks) })
@@ -1175,7 +1175,7 @@ func (s *Session) SendRaw(line string) bool {
 
 // Connected fires after the socket opens. For plaintext it begins capability
 // negotiation. It mirrors the IrcTransport::connected lambda
-// (src/irc/ircsession.cpp:360-365).
+// (`client/src/session/session.rs`).
 func (s *Session) Connected() { s.locked(s.connectedLocked) }
 
 func (s *Session) connectedLocked() {
@@ -1185,7 +1185,7 @@ func (s *Session) connectedLocked() {
 }
 
 // Encrypted fires after the TLS handshake. It begins capability negotiation.
-// It mirrors the IrcTransport::encrypted lambda (src/irc/ircsession.cpp:366-370).
+// It mirrors the IrcTransport::encrypted lambda (`client/src/session/session.rs`).
 func (s *Session) Encrypted() { s.locked(s.encryptedLocked) }
 
 func (s *Session) encryptedLocked() {
@@ -1196,7 +1196,7 @@ func (s *Session) encryptedLocked() {
 
 // Disconnected fires when the connection ends. It drives the STS upgrade
 // reconnect, the scheduled reconnect, or a failure. It mirrors the
-// IrcTransport::disconnected lambda (src/irc/ircsession.cpp:380-399).
+// IrcTransport::disconnected lambda (`client/src/session/session.rs`).
 func (s *Session) Disconnected() { s.locked(s.disconnectedLocked) }
 
 func (s *Session) disconnectedLocked() {
@@ -1221,13 +1221,13 @@ func (s *Session) disconnectedLocked() {
 }
 
 // BytesReceived feeds raw inbound bytes to the framer. It mirrors the
-// IrcTransport::bytesReceived lambda (src/irc/ircsession.cpp:371-372).
+// IrcTransport::bytesReceived lambda (`client/src/session/session.rs`).
 func (s *Session) BytesReceived(bytes []byte) {
 	s.locked(func() { s.handleBytesLocked(bytes) })
 }
 
 // Error reports a transport failure. It mirrors the
-// IrcTransport::errorOccurred lambda (src/irc/ircsession.cpp:373-379).
+// IrcTransport::errorOccurred lambda (`client/src/session/session.rs`).
 func (s *Session) Error(message string) {
 	s.locked(func() { s.errorOccurredLocked(message) })
 }
@@ -2228,7 +2228,7 @@ func replayKindFor(batchType string) (irc.HistoryKind, bool) {
 }
 
 // replayEnabledLocked mirrors IrcSession::replayEnabled
-// (src/irc/ircsession.cpp:1562-1570): bouncer playback needs only `batch`,
+// (`client/src/session/session.rs`): bouncer playback needs only `batch`,
 // while a CHATHISTORY answer also needs `chathistory`.
 func (s *Session) replayEnabledLocked(kind irc.HistoryKind) bool {
 	enabled := s.capabilities.Enabled()
@@ -3426,7 +3426,7 @@ func parseIntOrZero(text string) int {
 }
 
 // previewWire renders a bounded, fail-closed preview of a malformed frame. It
-// mirrors the anonymous previewWire in src/irc/ircsession.cpp:60-92: printable
+// mirrors the anonymous previewWire in `client/src/session/session.rs`: printable
 // bytes are kept, controls become '?' in the display form and ' ' in the spaced
 // form, and the stripped form (no spaces) is offered to the secret redactor
 // first so a tab-separated PASS is still caught.
@@ -3474,7 +3474,7 @@ func describeMalformed(kind string, err error, preview string, byteCount int, ch
 // --- Typing publisher -----------------------------------------------------
 
 // typingTargetClock is one target's outbound typing pace. It mirrors
-// IrcTypingPublisher::TargetClock (src/irc/irctypingpublisher.h:22-28).
+// IrcTypingPublisher::TargetClock (`irctypingpublisher`:22-28).
 type typingTargetClock struct {
 	lastSentAt   time.Time
 	hasLastSent  bool
@@ -3483,7 +3483,7 @@ type typingTargetClock struct {
 }
 
 // typingPublisher implements the outbound typing gate and pacing of
-// IrcTypingPublisher (src/irc/irctypingpublisher.cpp), inlined into the
+// IrcTypingPublisher (`irctypingpublisher`), inlined into the
 // session so no external wiring is needed.
 type typingPublisher struct {
 	targets map[string]*typingTargetClock

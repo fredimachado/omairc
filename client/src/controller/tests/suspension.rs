@@ -1,5 +1,5 @@
 //! Minimized and hidden windows count as away for unread and mention notify.
-//! Ports the controller-level parts of `tst_omairc.qml`:
+//! Ports the controller-level parts of `tst_omairc`:
 //! `focusWhileMinimizedDoesNotConsumeUnread`, `restoreWhileInactiveKeepsCatchUpOff`,
 //! `minimizedActiveWindowNotifiesMention`, `minimizedChannelFollowEndLandsOnMark`,
 //! `minimizedDirectFollowEndLandsOnMark`, and `hiddenWindowFollowEndLandsOnMark`.

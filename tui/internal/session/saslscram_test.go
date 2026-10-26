@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Fixed RFC 7677 test vector, mirroring the constants in tst_scram.cpp.
+// Fixed RFC 7677 test vector, mirroring the constants in `tst_scram`.
 const (
 	scramTestNonce       = "rOprNGfwEbeRWgbNEkqO"
 	scramTestClientFirst = "n,,n=user,r=rOprNGfwEbeRWgbNEkqO"
@@ -23,7 +23,7 @@ const (
 )
 
 // scramHidesPassword reports whether neither the error nor the message leaks
-// the test password, mirroring hidesPassword in tst_scram.cpp.
+// the test password, mirroring hidesPassword in `tst_scram`.
 func scramHidesPassword(result ScramResult) bool {
 	return !strings.Contains(result.Error, "pencil") &&
 		!strings.Contains(string(result.Message), "pencil")

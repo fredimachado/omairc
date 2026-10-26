@@ -3,7 +3,7 @@
 //! writes the wire. A line the server did not send is a local line, as Qt's
 //! `IrcController` writes its own `IrcStatusEntry::outcome` and `IrcWhoisTranscript`
 //! rows. Ports `Outcome`, `Clear` and the reply paths of `tui/internal/controller/`
-//! (Go) and `src/irc/irccontroller.cpp` (C++).
+//! (Go) and `tui/internal/controller/controller.go`.
 
 #[cfg(test)]
 use crate::irc::event::{Event, WhoisTranscriptEvent};

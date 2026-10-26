@@ -145,7 +145,7 @@ type Model struct {
 
 	jump jumpState
 
-	// Phase 6 keyboard state. Every field is a mirror of an OmaircWindow.qml
+	// Phase 6 keyboard state. Every field is a mirror of an `client/src/ui/shell`
 	// property; the controller owns the network collapse/reorder facts.
 	sidebarNetworkFocusID string
 	serverListVisible     bool
@@ -249,7 +249,7 @@ type Model struct {
 
 	// Phase 9 desktop-notification state. notifier is the nil-able desktop
 	// seam (mirroring backend.notifyDesktop); windowActive mirrors win.active;
-	// lastNotification mirrors OmaircWindow.qml's lastNotification;
+	// lastNotification mirrors `client/src/ui/shell`'s lastNotification;
 	// suppressDesktopNotification is the test latch mirroring the QML
 	// property of the same name.
 	notifier                    notify.Notifier
@@ -268,7 +268,7 @@ type Model struct {
 	// statusReturnID is the conversation Escape returns to after Status.
 	statusReturnID string
 
-	// Phase 10 URL policy state. lastOpenedURL mirrors OmaircWindow.qml's
+	// Phase 10 URL policy state. lastOpenedURL mirrors `client/src/ui/shell`'s
 	// lastOpenedUrl (the most recent URL openAllowedURL allowed);
 	// suppressExternalOpen mirrors suppressExternalUrlOpen, the latch that
 	// keeps tests from launching a real OS handler while still exercising the
@@ -322,7 +322,7 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 		composerHistoryIndex:         -1,
 		drafts:                       make(map[string]string),
 		// The terminal starts focused until a Blur arrives, mirroring
-		// OmaircWindow.qml's win.active default.
+		// `client/src/ui/shell`'s win.active default.
 		windowActive: true,
 	}
 	// applyStyles also wires the help and spinner chrome, and defaults to the
@@ -743,7 +743,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// on top of it, Ctrl+Shift+/ opens About, and Ctrl+C still reaches the copy
 	// path; every other chord is owned by the sheet.
 	if m.connectVisible() {
-		// Apply is window-level, like OmaircWindow.qml's Ctrl+Enter shortcut,
+		// Apply is window-level, like `client/src/ui/shell`'s Ctrl+Enter shortcut,
 		// not a per-control handler. Check it before the sheet walk consumes
 		// Enter or before Windows VT ctrl+j (Ctrl+Enter) reaches a text field.
 		if isConnectApplyKey(key, msg) {
@@ -797,7 +797,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // sendComposer submits the composer text and clears it, along with its stored
 // draft, only when the controller accepted the submission. A refused command
 // (for example `/close` on a channel) stays in the composer. It mirrors
-// OmaircWindow.qml's sendMessage.
+// `client/src/ui/shell`'s sendMessage.
 func (m *Model) sendComposer() {
 	value := m.composer.Value()
 	if strings.TrimSpace(value) != "" && m.ctrl != nil {

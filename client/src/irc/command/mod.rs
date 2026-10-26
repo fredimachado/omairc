@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/command.go` (Go) and `src/irc/irccommand.{h,cpp}` (C++):
+//! Port of `tui/internal/irc/command.go`:
 //! the slash catalog, the composer surface and verb scope, the parser into typed
 //! `Command` values, the refusal texts, `/help`, and the pure replies of the verbs
 //! that need no server state (`/pref`, the CTCP target rule).

@@ -137,7 +137,7 @@ func (d *DemoServer) Attach(c *controller.Controller, autoEcho bool) bool {
 // connect. It mirrors IrcDemoServer::startNetwork.
 //
 // The profile name stays empty, exactly like the C++ seedProfile
-// (src/irc/ircdemoserver.cpp): resolvedName() then falls back to the host, so
+// (`client/src/demo/server.rs`): resolvedName() then falls back to the host, so
 // both demo networks resolve to "irc.example" and the roster disambiguates
 // them by nick.
 func (d *DemoServer) startNetwork(c *controller.Controller, networkID, nick string, autojoin []string) (*session.LoopbackTransport, bool) {

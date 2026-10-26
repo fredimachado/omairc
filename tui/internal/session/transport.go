@@ -1,7 +1,7 @@
 package session
 
 // ConnectionState is the transport lifecycle, mirroring
-// IrcTransport::ConnectionState in src/irc/irctransport.h. The names and the
+// IrcTransport::ConnectionState in `client/src/session/transport.rs`. The names and the
 // transition order are significant: the session reducer treats Encrypted as
 // "open and secure" and Connected as "open but plaintext".
 //
@@ -50,7 +50,7 @@ func (s ConnectionState) String() string {
 
 // Sink receives transport lifecycle and data events. It is the Go shape of the
 // IrcTransport signals connected/encrypted/disconnected/bytesReceived/
-// errorOccurred in src/irc/irctransport.h.
+// errorOccurred in `client/src/session/transport.rs`.
 //
 // Implementations must not block: NetTransport calls these from its connect and
 // read goroutines, which also means a Sink may call back into the Transport

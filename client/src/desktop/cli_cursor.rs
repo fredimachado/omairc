@@ -1,5 +1,5 @@
 //! The `read --unread` cursor store: one JSON file per network, or per network and target, holding the
-//! newest line the CLI returned. Port of `src/omaircclipcursor.{h,cpp}` (C++). Cursors live under
+//! newest line the CLI returned. Desktop-only (no Go twin). Cursors live under
 //! `<state>/<APP_FOLDER>/cli-cursors` ([`crate::identity::APP_FOLDER`]), so a default build never
 //! shares a cursor with an installed Qt client. Qt's migration from older layouts does not apply to
 //! a folder this build creates.

@@ -1,7 +1,6 @@
 //! The sidebar's network order and collapse state. Port of `NetworkOrder`,
 //! `SetNetworkOrder`, `SetNetworkCollapsed`, `SetAllNetworksCollapsed`,
-//! `IsNetworkCollapsed` and `MoveNetwork` in `tui/internal/controller/controller.go`
-//! (Go), and the sidebar's order roles in `src/irc/irccontroller.cpp` (C++).
+//! `IsNetworkCollapsed` and `MoveNetwork` in `tui/internal/controller/controller.go`.
 //!
 //! The order and the collapse set live on the controller, because the sidebar reads
 //! the controller's order rather than the connection's. Each change is saved through the

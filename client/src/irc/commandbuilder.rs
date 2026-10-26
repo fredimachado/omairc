@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/commandbuilder.go` (Go) and `src/irc/irccommandbuilder.{h,cpp}` (C++).
+//! Port of `tui/internal/irc/commandbuilder.go`.
 //!
 //! Builds the outbound lines the client writes, and the byte budgets the composer
 //! uses so one send stays inside one frame. Every frame size is the network's

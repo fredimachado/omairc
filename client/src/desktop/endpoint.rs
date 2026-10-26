@@ -1,6 +1,6 @@
 //! The local endpoint the product CLI and the single-instance guard share: the
 //! [`crate::identity::APP_NAME`] named pipe on Windows, a Unix socket under the runtime
-//! directory elsewhere. Port of the endpoint choice in `src/singleinstance.cpp`
+//! directory elsewhere. Port of the endpoint choice in `singleinstance`
 //! (`serverName`, `runtimeDir`), with Qt's `QLocalServer` and `QLocalSocket` as the
 //! reference behaviour.
 //!

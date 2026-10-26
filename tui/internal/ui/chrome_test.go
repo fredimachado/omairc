@@ -130,7 +130,7 @@ func TestSideColumnsRunBesideTheComposer(t *testing.T) {
 }
 
 // TestStatusConsoleHidesMembersColumn pins the Qt parity of MembersColumn's
-// !consoleVisible gate (src/OmaircWindow.qml). Opening Status keeps the last
+// !consoleVisible gate (`client/src/ui/shell`). Opening Status keeps the last
 // channel as the controller's selection, so IsChannel() stays true; the member
 // column must still hide. Connecting a second network was the visible symptom:
 // applying a profile opens Status while the previous channel's panel stayed on

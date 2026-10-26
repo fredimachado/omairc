@@ -1,5 +1,4 @@
-//! Port of `tui/internal/controller/monitorcoordinator.go` (Go) and
-//! `src/irc/ircmonitorcoordinator.{h,cpp}` (C++): the MONITOR subscription behind
+//! Port of `tui/internal/controller/monitorcoordinator.go`: the MONITOR subscription behind
 //! `/monitor`, `/unmonitor` and `/monitored`, and the session-scoped presence the
 //! 730, 731 and 734 numerics fold into.
 //!

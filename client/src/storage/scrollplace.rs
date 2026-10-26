@@ -1,5 +1,5 @@
-//! Port of `tui/internal/storage/scrollplace.go` (Go) and `src/irc/ircscrollplace.cpp`
-//! (C++): where each conversation's transcript was last left, stored per network as one
+//! Port of `tui/internal/storage/scrollplace.go`
+//! Where each conversation's transcript was last left, stored per network as one
 //! JSON array in the `scrollPlaces/<network>` group, under the `places` key.
 //!
 //! A place is either "follow the end" or an anchor on the first visible message. The

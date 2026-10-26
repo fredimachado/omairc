@@ -12,7 +12,7 @@ import (
 
 // This file is the Connect sheet: the first-run overlay, the Connection and
 // Preferences tabs, and the keyboard focus walk. It mirrors
-// src/qml/ConnectionSheet.qml as a file-based component and reads the
+// `client/src/ui/sheets/connect/` as a file-based component and reads the
 // internal/connection model, never internal/irc.
 
 // connectTab names the two sheet tabs.
@@ -134,7 +134,7 @@ func (m *Model) connectVisible() bool {
 // openConnect reopens the sheet for the focused network. A walked-to network
 // header (Alt+Left / Alt+Right) wins over the controller's focused network, so
 // the sheet opens on the row the user is standing on; it mirrors
-// OmaircWindow.qml's openConnectSheet.
+// `client/src/ui/shell`'s openConnectSheet.
 func (m *Model) openConnect() {
 	if m.conn == nil {
 		return
@@ -339,7 +339,7 @@ func (m *Model) activateFooter(index int) {
 }
 
 // isConnectApplyKey reports whether a key press is the window-level Apply
-// chord. OmaircWindow.qml binds Ctrl+Return and Ctrl+Enter separately; the
+// chord. `client/src/ui/shell` binds Ctrl+Return and Ctrl+Enter separately; the
 // keystroke string can read ctrl+enter or ctrl+return, and the raw message
 // must be checked when a terminal strips the ctrl+ prefix from Enter.
 //

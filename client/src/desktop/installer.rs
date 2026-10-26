@@ -2,9 +2,8 @@
 //! the state machine are in `model::update_check`. This module downloads the
 //! setup into the updates directory and verifies it, probes whether the running
 //! exe is the Inno-installed copy, and starts the installer. Go twin: none.
-//! C++: the file and process parts of `src/omaircupdatecheck.cpp`
-//! (`commitDownloadedInstaller`, `downloadedInstallerMatches`,
-//! `launchInstaller`, `runningCopyIsInstalled`).
+//! File and process helpers: `commitDownloadedInstaller`,
+//! `downloadedInstallerMatches`, `launchInstaller`, `runningCopyIsInstalled`.
 
 use std::fs::{self, File};
 use std::io::{Read, Write};

@@ -1,5 +1,5 @@
 //! The Inbox sheet (`Ctrl+Shift+A`, and the footer `inbox` link). Port of
-//! `InboxSheet.qml`: no filter, `Nothing waiting` when empty, 36px rows with a
+//! `InboxSheet`: no filter, `Nothing waiting` when empty, 36px rows with a
 //! label, an optional muted preview, and a `delete` button. Keys are Up, Down,
 //! Enter and Delete; Escape is the shell's `CloseSheet`.
 //!

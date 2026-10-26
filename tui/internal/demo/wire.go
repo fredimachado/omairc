@@ -10,7 +10,7 @@ import (
 )
 
 // This file is the Go port of the anonymous wire builders in
-// src/irc/ircdemoserver.cpp: line assembly, inbound frame parsing, the
+// `client/src/demo/server.rs`: line assembly, inbound frame parsing, the
 // registration burst, channel state, presence, account, transcript, and typing
 // bytes, plus the world/transcript injectors.
 

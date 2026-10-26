@@ -3,7 +3,7 @@ package irc
 import "time"
 
 // EventKind identifies one alternative of the sealed Event taxonomy. The order
-// matches the IrcEvent std::variant in src/irc/ircevent.h.
+// matches `Event` / `EventKind` in `client/src/irc/event.rs`.
 type EventKind int
 
 const (

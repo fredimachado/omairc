@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/capability.go` (Go) and `src/irc/irccapability.{h,cpp}` (C++).
+//! Port of `tui/internal/irc/capability.go`.
 //!
 //! One IRCv3 capability bit, and a set of them packed into a `u32`. The variant
 //! order is significant: each variant's discriminant is its bit position, as in

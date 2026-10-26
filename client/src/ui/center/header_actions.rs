@@ -1,4 +1,4 @@
-//! Port of `src/qml/ConversationHeaderActions.qml`: the LEAVE, JOIN and CLOSE buttons at
+//! The LEAVE, JOIN and CLOSE buttons at
 //! the right of the conversation header. A joined channel offers LEAVE. A channel you have
 //! left offers JOIN. A selection that can close (a direct message, or a channel you have
 //! left) offers CLOSE.

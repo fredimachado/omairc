@@ -1,5 +1,5 @@
-//! The single-instance guard and the server that answers the product CLI. Port of
-//! `src/singleinstance.{h,cpp}` (C++). The first window owns the endpoint and serves it. A second
+//! The single-instance guard and the server that answers the product CLI.
+//! Desktop-only (no Go twin). The first window owns the endpoint and serves it. A second
 //! launch sends the raise ping and exits, as Qt's `acquireOrNotify` does.
 //!
 //! The listener runs on background threads, one per client, and never touches the controller. Each

@@ -1,5 +1,4 @@
-//! Port of `tui/internal/irc/secretpolicy.go` (Go) and `src/irc/ircsecretpolicy.cpp`
-//! (C++).
+//! Port of `tui/internal/irc/secretpolicy.go`.
 //!
 //! Redaction fails closed. A wire line that would reveal a password, a channel key
 //! or a service credential comes back masked. A preview with no mask to apply
@@ -11,9 +10,8 @@
 //! expectations of `SessionTest::keyedJoinIsRedactedInStatusEntries`,
 //! `serviceIdentifyIsRedactedInStatusEntries`, `selfEchoToServiceIsRedacted`,
 //! `channelTalkAboutServicesStaysReadable` and the preview checks of
-//! `malformedInputSurfacesProtocolError` in `tests/session/tst_session.cpp`.
-//! Those tests drive `IrcStatusEntry`, which is a later phase; these drive the
-//! policy directly with the same lines.
+//! `malformedInputSurfacesProtocolError`. Those tests drive status entries;
+//! these drive the policy directly with the same lines.
 
 use super::servicenick::looks_like_channel;
 
@@ -42,7 +40,7 @@ struct SecretRule {
     visible_parameters: usize,
 }
 
-/// Mirrors `kSecretMap` in `src/irc/ircsecretpolicy.cpp`.
+/// Mirrors `kSecretMap` in `tui/internal/irc/secretpolicy.go`.
 const SECRET_MAP: &[SecretRule] = &[
     SecretRule {
         verb: "PASS",
@@ -581,7 +579,7 @@ pub fn redact_wire_line(line: &str, channel_types: &str) -> Option<String> {
 ///   otherwise.
 ///
 /// Mirrors `RedactPreviewLine` in `tui/internal/irc/secretpolicy.go` and
-/// `IrcSecretPolicy::redactPreviewLine` in `src/irc/ircsecretpolicy.cpp`.
+/// `IrcSecretPolicy::redactPreviewLine` in `tui/internal/irc/secretpolicy.go`.
 pub fn redact_preview_line(line: &str, channel_types: &str) -> Option<String> {
     if let Some(safe) = redact_wire_line(line, channel_types) {
         return Some(safe);

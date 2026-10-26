@@ -1,5 +1,5 @@
 //! Port of the CAP and SASL driver in `tui/internal/session/session.go` (Go),
-//! `src/irc/ircsession.cpp` (C++) and `tui/internal/irc/capabilitynegotiation.go`.
+//! `tui/internal/session/session.go` and `tui/internal/irc/capabilitynegotiation.go`.
 //!
 //! The session sends `CAP LS 302`, requests what `IrcCapabilityNegotiation`
 //! wants, acts on `ACK` / `NAK` / `NEW` / `DEL`, runs SASL when it was granted

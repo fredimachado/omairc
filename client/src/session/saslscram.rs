@@ -1,5 +1,5 @@
-//! Port of `tui/internal/session/saslscram.go` (Go) and `src/irc/ircsaslscram.{h,cpp}`
-//! (C++): SCRAM-SHA-256 (RFC 5802, RFC 7677) as the session's SASL mechanism.
+//! Port of `tui/internal/session/saslscram.go`
+//! SCRAM-SHA-256 (RFC 5802, RFC 7677) as the session's SASL mechanism.
 //!
 //! `SaslScram` is the client state machine. `start` returns client-first,
 //! `take_server_first` returns client-final with the proof, and `take_server_final`
@@ -34,7 +34,7 @@ const INCOMING_ENCODED_LIMIT: usize = 4096;
 /// SHA-256 output length: the size of the salted password and of every derived key.
 const KEY_LEN: usize = 32;
 
-/// Why a SCRAM step failed. The texts are the fixed ones from `ircsaslscram.cpp`, so the
+/// Why a SCRAM step failed. The texts are the fixed ones from `tui/internal/session/saslscram.go`, so the
 /// mirrored test matrix can match them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ScramFailure {
@@ -92,9 +92,9 @@ enum Step {
     AwaitServerFinal,
 }
 
-/// A stateful SCRAM-SHA-256 client (RFC 5802, RFC 7677). It mirrors `IrcSaslScram` in
-/// `src/irc/ircsaslscram.*`. Messages are raw SCRAM bytes, and the session applies the
-/// SASL framing.
+/// A stateful SCRAM-SHA-256 client (RFC 5802, RFC 7677). It mirrors `SASLScram` in
+/// `tui/internal/session/saslscram.go`. Messages are raw SCRAM bytes; `encode_sasl_frames`
+/// in this file applies the SASL framing.
 #[derive(Default)]
 pub(crate) struct SaslScram {
     step: Step,

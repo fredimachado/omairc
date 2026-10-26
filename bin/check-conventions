@@ -242,6 +242,147 @@ def check_shared_irc_contract():
     return problems
 
 
+# Deleted Qt tree paths. Built from parts so this file's own source is not a
+# hit if a future scan widens past client/ and tui/.
+_DELETED_QT_IRC = "src/" + "irc/"
+_DELETED_QT_QML = "src/" + "qml/"
+_DELETED_QT_WINDOW = "Omairc" + "Window.qml"
+_DELETED_QT_BACKEND = "src/" + "backend.cpp"
+_DELETED_QT_MAIN = "src/" + "main.cpp"
+_DELETED_QT_SESSIONBUS = "src/" + "linuxsessionbus.h"
+_DELETED_QT_WINNOTIFY = "src/" + "windowsnotifications.cpp"
+_DELETED_QT_OMAIRC = "src/" + "omairc"
+_DELETED_QT_SINGLE = "src/" + "singleinstance"
+_DELETED_QT_TST_SESSION = "tests/" + "session/tst_"
+_DELETED_QT_TST_CORPUS = "tests/" + "protocol/tst_corpus.cpp"
+_DELETED_QT_TST_QML = "tests/" + "ui/tst_omairc.qml"
+# File stem: a name, or a literal * (as in src/irc/*.cpp).
+_DELETED_QT_STEM = r"(?:[A-Za-z0-9_]+|\*)"
+# Extension: .cpp / .h, a brace pair (. {h,cpp}), or .* for a C++ pair.
+_DELETED_QT_EXT = r"(?:\.(?:cpp|h)|\.\{[^}]+\}|\.\*)"
+DELETED_QT_PATH = re.compile(
+    rf"{re.escape(_DELETED_QT_IRC)}{_DELETED_QT_STEM}{_DELETED_QT_EXT}"
+    rf"|{re.escape(_DELETED_QT_QML)}"
+    rf"|(?:src/)?{re.escape(_DELETED_QT_WINDOW)}"
+    rf"|{re.escape(_DELETED_QT_BACKEND)}"
+    rf"|{re.escape(_DELETED_QT_MAIN)}"
+    rf"|{re.escape(_DELETED_QT_SESSIONBUS)}"
+    rf"|{re.escape(_DELETED_QT_WINNOTIFY)}"
+    rf"|{re.escape(_DELETED_QT_OMAIRC)}[A-Za-z0-9_]*{_DELETED_QT_EXT}"
+    rf"|{re.escape(_DELETED_QT_SINGLE)}{_DELETED_QT_EXT}"
+    rf"|{re.escape(_DELETED_QT_TST_SESSION)}[A-Za-z0-9_]+\.cpp"
+    rf"|{re.escape(_DELETED_QT_TST_CORPUS)}"
+    rf"|{re.escape(_DELETED_QT_TST_QML)}"
+)
+
+# Live migration / historical records may still name the retired Qt layout.
+DELETED_QT_PATH_ALLOWLIST = frozenset({
+    "client/src/storage/registryimport.rs",
+    "client/src/storage/migrate.rs",
+    "client/src/storage/credentialstore/mod.rs",
+    "client/src/storage/credentialstore/secretattrs.rs",
+    "client/src/storage/credentialstore/linux.rs",
+    "client/src/storage/credentialstore/macos.rs",
+    "client/src/storage/credentialstore/windows.rs",
+    "client/docs/qml-ui-test-checklist.md",
+})
+
+
+def _deleted_qt_path_hits(relative_posix, source):
+    """Yield (line_number, matched_text) for deleted Qt path cites."""
+    for number, line in enumerate(source.splitlines(), 1):
+        match = DELETED_QT_PATH.search(line)
+        if match:
+            yield number, match.group(0)
+
+
+def _self_test_deleted_qt_path_scan():
+    """Negative and positive controls for the deleted-Qt-path detector."""
+    # Assemble forbidden samples without writing contiguous literals here.
+    bad_irc = _DELETED_QT_IRC + "ircsession.cpp"
+    bad_irc_star = _DELETED_QT_IRC + "*.cpp"
+    bad_qml = _DELETED_QT_QML + "Foo.qml"
+    bad_window = _DELETED_QT_WINDOW
+    bad_omairc = _DELETED_QT_OMAIRC + "ipc.{h,cpp}"
+    bad_single = _DELETED_QT_SINGLE + ".{h,cpp}"
+    bad_tst = _DELETED_QT_TST_SESSION + "controller.cpp"
+    samples = (
+        (f"Port of `{bad_irc}`\n", True),
+        (f"see {_DELETED_QT_IRC}ircsts.{{h,cpp}}\n", True),
+        (f"mirrors {_DELETED_QT_IRC}ircsaslscram.*\n", True),
+        (f"mirrors {bad_irc_star}\n", True),
+        (f"mirrors {bad_qml}\n", True),
+        (f"as in {bad_window}\n", True),
+        (f"src/{bad_window}\n", True),
+        (f"Backend in {_DELETED_QT_BACKEND}\n", True),
+        (f"entry in {_DELETED_QT_MAIN}\n", True),
+        (f"bus guard {_DELETED_QT_SESSIONBUS}\n", True),
+        (f"toasts in {_DELETED_QT_WINNOTIFY}\n", True),
+        (f"Port of `{bad_omairc}`\n", True),
+        (f"Port of `{bad_single}`\n", True),
+        (f"ports {bad_tst}\n", True),
+        (f"registry in {_DELETED_QT_TST_CORPUS}\n", True),
+        (f"cases in {_DELETED_QT_TST_QML}\n", True),
+        ("Port of `tui/internal/session/session.go`\n", False),
+        ("mirrors `client/src/ui/shell`\n", False),
+        ("QtKeychain Secret Service attrs\n", False),
+        ("client/src/irc/session.rs\n", False),
+        ("omaircfilelog without a src/ path\n", False),
+    )
+    for text, want_hit in samples:
+        hits = list(_deleted_qt_path_hits("sample.rs", text))
+        if bool(hits) != want_hit:
+            raise AssertionError(
+                f"deleted Qt path self-test failed for {text!r}: "
+                f"hits={hits!r}, want_hit={want_hit}")
+
+
+def check_no_deleted_qt_paths():
+    """Reject cites of deleted Qt src/ and tests/ paths in client/tui."""
+    try:
+        _self_test_deleted_qt_path_scan()
+    except AssertionError as exc:
+        return [f"deleted Qt path self-test failed: {exc}"]
+
+    problems = []
+    offenders = []
+    for relative, source in sources(
+        "client/**/*.rs",
+        "client/**/*.md",
+        "client/**/*.go",
+        "tui/**/*.go",
+        "tui/**/*.md",
+        "tui/**/*.rs",
+    ):
+        posix = relative.as_posix()
+        if posix in DELETED_QT_PATH_ALLOWLIST:
+            continue
+        # Skip build and vendored trees the glob might still walk.
+        parts = relative.parts
+        if "target" in parts or "node_modules" in parts:
+            continue
+        hits = list(_deleted_qt_path_hits(posix, source))
+        if not hits:
+            continue
+        offenders.append(posix)
+        for number, matched in hits[:5]:
+            problems.append(
+                f"{posix}:{number}: deleted Qt path {matched!r}; cite the "
+                f"Go/Rust twin or describe behavior "
+                f"(allowlist: storage migration + "
+                f"client/docs/qml-ui-test-checklist.md)")
+        if len(hits) > 5:
+            problems.append(
+                f"{posix}: ... and {len(hits) - 5} more deleted Qt path cite(s)")
+    if offenders:
+        problems.insert(
+            0,
+            "deleted Qt path cites in "
+            + ", ".join(offenders[:20])
+            + (f" (+{len(offenders) - 20} more)" if len(offenders) > 20 else ""))
+    return problems
+
+
 # A version-looking string literal: major.minor with an optional patch and an
 # optional letter or -/+ suffix (1.0.4, 1.0.4alpha, 1.0.4+main.g1). The
 # trailing negative lookahead rejects a further dotted group so an IP address
@@ -1231,6 +1372,7 @@ CHECKS = (
     ("Cargo version matches version.pri", check_cargo_version_matches_version_pri),
     ("Rust product crate at client/", check_client_crate),
     ("client/TUI shared IRC contract", check_shared_irc_contract),
+    ("no deleted Qt src/ or tests/ paths", check_no_deleted_qt_paths),
     ("Go version source", check_go_version_source),
     ("Go build reads version.pri", check_go_build_uses_version_pri),
     ("Go ReadBuildInfo version fallback", check_go_read_build_info),

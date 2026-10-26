@@ -1,5 +1,5 @@
 //! Port of the protocol-error preview of `tui/internal/session/session.go` (Go),
-//! `previewWire` and `describeMalformed` in `src/irc/ircsession.cpp` (C++), and
+//! `previewWire` and `describeMalformed` in `tui/internal/session/session.go`, and
 //! the registration-sentence reader that feeds server refusals to Status.
 //!
 //! A malformed frame is reported as a protocol error, never a failed session.

@@ -1,5 +1,5 @@
 //! Find mode (Ctrl+F): the transcript search. Ports `findNextMatch`,
-//! `advanceFind` and `transcriptRowText` in `OmaircWindow.qml`. A match is a
+//! `advanceFind` and `transcriptRowText` in `client/src/ui/shell`. A match is a
 //! case-insensitive substring of the row's plain text, with the author or the
 //! Status label in front. Toolkit-free: the shell owns the composer and the
 //! transcript, and passes the rows in.

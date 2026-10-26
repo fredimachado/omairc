@@ -8,16 +8,16 @@ import (
 )
 
 // This file ports the URL policy and the Ctrl+Shift+O link sheet from
-// OmaircWindow.qml: isAllowedHttpUrl, trimHttpUrlMatch, httpUrlSpans,
+// `client/src/ui/shell`: isAllowedHttpUrl, trimHttpUrlMatch, httpUrlSpans,
 // httpUrlAt, inviteChannelAt, refreshLinkMatches, appendLinkUrlsFromText, and
 // openAllowedUrl. It reads only controller snapshots and the OS opener seam,
 // never internal/irc.
 
 // allowedURLSchemes is the scheme allowlist. It mirrors allowedUrlSchemes in
-// src/OmaircWindow.qml.
+// `client/src/ui/shell`.
 var allowedURLSchemes = map[string]bool{"http": true, "https": true}
 
-// isAllowedHTTPURL mirrors isAllowedHttpUrl in src/OmaircWindow.qml: scheme
+// isAllowedHTTPURL mirrors isAllowedHttpUrl in `client/src/ui/shell`: scheme
 // http or https (case-insensitive) followed by "://", a non-empty remainder,
 // and no space, newline, or carriage return anywhere. A hostname is not
 // validated separately, so "https:///foo" is allowed.
@@ -45,7 +45,7 @@ func isAllowedHTTPURL(raw string) bool {
 	return true
 }
 
-// trimHTTPURLMatch mirrors trimHttpUrlMatch in src/OmaircWindow.qml: strip
+// trimHTTPURLMatch mirrors trimHttpUrlMatch in `client/src/ui/shell`: strip
 // trailing ".,;:!?" and a trailing ")" or "]" only while the close count
 // exceeds the open count inside the prefix, so balanced pairs such as
 // "IRC_(protocol)" stay intact.
@@ -127,7 +127,7 @@ func httpURLSpans(text string) []urlSpan {
 	return spans
 }
 
-// httpURLAt mirrors httpUrlAt in src/OmaircWindow.qml: the allowed URL span
+// httpURLAt mirrors httpUrlAt in `client/src/ui/shell`: the allowed URL span
 // containing index, else "".
 func httpURLAt(text string, index int) string {
 	if text == "" || index < 0 || index >= len(text) {
@@ -145,7 +145,7 @@ func httpURLAt(text string, index int) string {
 // IrcStatusEntry's "nick invited you to #channel".
 const inviteMarker = " invited you to "
 
-// inviteChannelAt mirrors inviteChannelAt in src/OmaircWindow.qml: the channel
+// inviteChannelAt mirrors inviteChannelAt in `client/src/ui/shell`: the channel
 // after the last " invited you to " when index falls inside that channel, else
 // "".
 func inviteChannelAt(text string, index int) string {
@@ -198,7 +198,7 @@ type linkMatch struct {
 	row   int
 }
 
-// appendLinkURLsFromText mirrors appendLinkUrlsFromText in src/OmaircWindow.qml:
+// appendLinkURLsFromText mirrors appendLinkUrlsFromText in `client/src/ui/shell`:
 // append the allowed URLs of text, last-in-text first. query filters on the
 // lower-cased URL when non-empty.
 func appendLinkURLsFromText(matches []linkMatch, text string, row int, query string) []linkMatch {
@@ -224,7 +224,7 @@ func appendLinkURLsFromText(matches []linkMatch, text string, row int, query str
 	return matches
 }
 
-// appendChannelNames mirrors appendChannelNamesFromText in src/OmaircWindow.qml.
+// appendChannelNames mirrors appendChannelNamesFromText in `client/src/ui/shell`.
 // Channel names come from the controller, which reads CHANTYPES from the
 // focused network. A name that sits on an allowed URL is left to that URL.
 // Names are appended last-in-text first.
@@ -251,7 +251,7 @@ func (m *Model) appendChannelNames(matches []linkMatch, text string, row int, qu
 	return matches
 }
 
-// linkMatches mirrors refreshLinkMatches in src/OmaircWindow.qml: the sheet's
+// linkMatches mirrors refreshLinkMatches in `client/src/ui/shell`: the sheet's
 // rows for the current surface, newest row first and last-in-text first within
 // a row. On Status the console lines are scanned; otherwise the transcript
 // rows are, skipping event rows. An invite channel on a Status line becomes an
@@ -298,7 +298,7 @@ func (m *Model) linkMatches() []linkMatch {
 	return matches
 }
 
-// openAllowedURL mirrors openAllowedUrl in src/OmaircWindow.qml: fail closed
+// openAllowedURL mirrors openAllowedUrl in `client/src/ui/shell`: fail closed
 // on a disallowed URL, record the last opened URL, and hand an allowed URL to
 // the OS opener unless the test/suppression latch is set. It reports whether
 // the URL was allowed.

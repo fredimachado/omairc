@@ -14,7 +14,7 @@ import (
 
 // ConversationLog persists and reads back conversation transcripts, one JSONL
 // file per conversation keyed by the network and target. It mirrors
-// IrcConversationLog in src/irc/ircconversationlog.cpp and satisfies
+// IrcConversationLog in `client/src/storage/conversationlog.rs` and satisfies
 // irc.ConversationLog.
 //
 // The on-disk layout is <root>/<OmaircStorageSegment(network)>/

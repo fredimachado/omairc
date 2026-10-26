@@ -8,7 +8,7 @@ import (
 )
 
 // historyConfig is the sessionTestConfig with no autojoin, mirroring the
-// per-test sessionConfig overrides in tst_session.cpp.
+// per-test sessionConfig overrides in `tst_session`.
 func historyConfig() SessionConfig {
 	config := sessionTestConfig(sessionTestNetworkID)
 	config.AutojoinChannels = nil

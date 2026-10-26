@@ -1,5 +1,5 @@
-//! Port of `tui/internal/irc/autoaway.go` (Go) and `src/irc/ircautoaway.{h,cpp}`
-//! (C++): the `/autoaway` argument parser, the duration parser and formatter, and
+//! Port of `tui/internal/irc/autoaway.go`
+//! The `/autoaway` argument parser, the duration parser and formatter, and
 //! the query, confirmation and Status strings. Pure: no clock, no session.
 //!
 //! The controller's auto-away runtime (`controller/autoawayruntime.rs`) holds the

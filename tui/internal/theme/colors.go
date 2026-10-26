@@ -1,10 +1,10 @@
 // Package theme derives the terminal palette from the Omarchy desktop theme.
 //
-// It mirrors Backend::loadOmarchyTheme in src/backend.cpp for reading
-// colors.toml and the derived colors in src/qml/OmaircStyle.qml for the
-// structural mixes. The fixed semantic colors are ported verbatim so the TUI
-// stays visually identical to the Qt client; only the surfaces, borders, and
-// secondary text are mixed from the theme's background, foreground, and accent.
+// It mirrors the Omarchy colors.toml load for reading the theme file and the
+// derived colors in `client/src/model/style.rs` for the structural mixes. The
+// fixed semantic colors are ported verbatim so the TUI stays visually identical
+// to the desktop client; only the surfaces, borders, and secondary text are
+// mixed from the theme's background, foreground, and accent.
 //
 // The package speaks image/color and stays lipgloss-free: internal/ui wraps
 // these values in lipgloss at the rendering edge.
@@ -28,7 +28,7 @@ const (
 //
 // The first block is derived from the theme: its values move with the theme's
 // background, foreground, and accent. The second block is fixed so the two
-// clients stay in step with OmaircStyle.qml; deriving it would break parity.
+// clients stay in step with `client/src/model/style.rs`; deriving it would break parity.
 // Every field is an opaque image/color value; Hex formats one for lipgloss.
 type Colors struct {
 	// Derived structural colors.
@@ -45,7 +45,7 @@ type Colors struct {
 	AvatarPage    color.Color
 
 	// UnreadMark and UnreadMarkRule paint the transcript's "New messages"
-	// boundary, mirroring UnreadMark.qml's markColor/lineColor: the caption
+	// boundary, mirroring `client/src/ui/transcript/`'s markColor/lineColor: the caption
 	// mixed from the theme ink toward the accent, and the rule mixed from the
 	// page toward the accent.
 	UnreadMark     color.Color
@@ -109,7 +109,7 @@ func Derive(spec Spec) Colors {
 	// In dark mode the foreground is lighter than the background, so mixing
 	// toward it lightens; in light mode it darkens. The identicon mix amount is
 	// likewise mode-specific (0.23 dark / 0.16 light), and the light mode swaps
-	// in OmaircStyle.qml's light nick palette.
+	// in `client/src/model/style.rs`'s light nick palette.
 	nickPalette := nickPaletteLight
 	nickAvatarMix := 0.16
 	if dark {
@@ -134,7 +134,7 @@ func Derive(spec Spec) Colors {
 			shadeAmount(dark, 0.34, 0.30), dimContrastRatio, fixedDim),
 		AvatarPage: background,
 
-		// UnreadMark.qml mixes ink toward the accent for the caption and the
+		// `client/src/ui/transcript/` mixes ink toward the accent for the caption and the
 		// page toward the accent for the rule, with mode-specific amounts.
 		UnreadMark:     mixColors(foreground, accent, shadeAmount(dark, 0.55, 0.42)),
 		UnreadMarkRule: mixColors(background, accent, shadeAmount(dark, 0.48, 0.36)),
@@ -263,7 +263,7 @@ func rgba(c color.Color) color.RGBA {
 }
 
 // mixColors linearly mixes tint into base by amount and returns the opaque
-// result. It mirrors mixColors in OmaircStyle.qml (and the copy still in
+// result. It mirrors mixColors in `client/src/model/style.rs` (and the copy still in
 // internal/ui/style.go) for opaque colors.
 func mixColors(base, tint color.Color, amount float64) color.RGBA {
 	baseR, baseG, baseB, _ := base.RGBA()
@@ -287,7 +287,7 @@ func mixColors(base, tint color.Color, amount float64) color.RGBA {
 
 // The fixed palette. The semantic colors and the dark nick palette are today's
 // internal/ui/style.go constants; deriving them would drift from
-// OmaircStyle.qml. fixedAccent/fixedMuted/fixedDim also seed Fallback.
+// `client/src/model/style.rs`. fixedAccent/fixedMuted/fixedDim also seed Fallback.
 var (
 	fixedAccent  = mustHex("#7aa2f7")
 	fixedMuted   = mustHex("#6c7086")
@@ -316,7 +316,7 @@ var (
 	lightSelectionDefault  = mustHex("#2077b2")
 )
 
-// Nick palette per mode, mirroring nickPalette in OmaircStyle.qml. The dark
+// Nick palette per mode, mirroring nickPalette in `client/src/model/style.rs`. The dark
 // entries are today's style.go constants. Eight fixed hue families; slot 0 is
 // the theme accent in QML but the fixed fallback accent here, and slots 5-7 are
 // the green/cyan/gold additions. Both modes stay parallel: slot i is the same

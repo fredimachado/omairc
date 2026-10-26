@@ -6,7 +6,7 @@ import "os"
 
 // GenericConfigRoot is the Windows config directory: %LOCALAPPDATA%, falling
 // back to $XDG_CONFIG_HOME when set. This mirrors QStandardPaths::
-// GenericConfigLocation and omaircConfigRoot() in src/omaircpaths.cpp.
+// GenericConfigLocation and omaircConfigRoot() in `omaircpaths`.
 func GenericConfigRoot() string {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		return xdg
@@ -16,7 +16,7 @@ func GenericConfigRoot() string {
 
 // GenericStateRoot is the Windows state directory: %LOCALAPPDATA%, falling
 // back to $XDG_STATE_HOME when set. This mirrors QStandardPaths::
-// GenericStateLocation and omaircStateRoot() in src/omaircpaths.cpp.
+// GenericStateLocation and omaircStateRoot() in `omaircpaths`.
 func GenericStateRoot() string {
 	if xdg := os.Getenv("XDG_STATE_HOME"); xdg != "" {
 		return xdg

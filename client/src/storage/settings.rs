@@ -1,5 +1,5 @@
-//! Port of `tui/internal/storage/settings.go` (Go) and the QSettings handling in
-//! `IrcProfileStore` (`src/irc/ircprofilestore.cpp`, C++). The file is the INI that
+//! Port of `tui/internal/storage/settings.go` and the QSettings handling in
+//! `IrcProfileStore` (`tui/internal/storage/profilestore.go`, C++). The file is the INI that
 //! Qt's `QSettings` writes: the escaping, the `[section]` layout, the `@Invalid()`
 //! sentinel and the `@@` escape all match, so a file written here reads back in the
 //! Qt client and the TUI.

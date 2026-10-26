@@ -75,7 +75,7 @@ func TestHeaderEnterOpensStatus(t *testing.T) {
 }
 
 // TestWalkClearsNetworkFocusSoEnterSends pins the Qt parity of selectConversation
-// clearing sidebarNetworkFocusId (src/OmaircWindow.qml). After walking a network
+// clearing sidebarNetworkFocusId (`client/src/ui/shell`). After walking a network
 // header (Alt+Left) and then a conversation (Alt+Down), Enter must send in the
 // composer. The old bug left the header armed, so Enter ran
 // openFocusedNetworkStatus instead: the transcript jumped to Status and the

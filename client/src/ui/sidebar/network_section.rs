@@ -17,7 +17,7 @@ pub fn network_show_edit(show_edit: bool) -> bool {
     show_edit
 }
 
-/// The network header, a port of `NetworkSection.qml`: 64 tall, with the
+/// The network header, a port of `NetworkSection`: 64 tall, with the
 /// collapse chevron, the icon, the name with an unread dot, and the status.
 /// The header itself is inert. `on_toggle` receives the network id when the
 /// chevron is clicked; `on_open` receives it when the icon or name is clicked,

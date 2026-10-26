@@ -572,7 +572,7 @@ func ircRemainingParameters(message Message, start int) []string {
 }
 
 // ircTagValue returns the value of a tag that carried one. A valueless tag is
-// absent, mirroring tagValue in irceventtranslator.cpp.
+// absent, mirroring tagValue in `client/src/irc/translator.rs`.
 func ircTagValue(message Message, name string) (string, bool) {
 	for _, tag := range message.Tags {
 		if tag.Name == name && tag.Value != nil {
@@ -832,7 +832,7 @@ func bouncerQueryReplayLine(batchTarget string, features ServerFeatures, message
 
 // realnameFromWho splits RPL_WHOREPLY's trailing "<hopcount> <real name>".
 // A numeric first token is the hop count. Anything else is the name itself.
-// It mirrors realnameFromWho in irceventtranslator.cpp.
+// It mirrors realnameFromWho in `client/src/irc/translator.rs`.
 func realnameFromWho(trailing string) string {
 	trimmed := strings.TrimSpace(trailing)
 	if trimmed == "" {

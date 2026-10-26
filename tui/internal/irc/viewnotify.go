@@ -1,7 +1,7 @@
 package irc
 
 // MemberSurface names which member-panel refresh a view notify asks for.
-// It mirrors IrcMemberSurface in src/irc/ircviewnotify.h.
+// It mirrors IrcMemberSurface in `client/src/irc/viewnotify.rs`.
 type MemberSurface int
 
 const (
@@ -100,7 +100,7 @@ func ViewNotifyMembership() ViewNotify {
 
 // ClassifyViewNotify maps one event to the surfaces it dirties, using the
 // reducer for the presence and metadata facts the mapping depends on. It
-// mirrors classifyViewNotify in ircviewnotify.h. selected is the currently
+// mirrors classifyViewNotify in `client/src/irc/viewnotify.rs`. selected is the currently
 // selected conversation, or nil.
 func ClassifyViewNotify(event Event, reducer *EventReducer, selected *ConversationKey) ViewNotify {
 	notify := classifyViewNotifyUnchecked(event, reducer)
@@ -189,7 +189,7 @@ func classifyViewNotifyUnchecked(event Event, reducer *EventReducer) ViewNotify 
 
 // ChannelNamesSyncing reports whether the selected conversation is a channel
 // whose NAMES burst is still syncing, so member refreshes stay suppressed.
-// It mirrors channelNamesSyncing in ircviewnotify.h.
+// It mirrors channelNamesSyncing in `client/src/irc/viewnotify.rs`.
 func ChannelNamesSyncing(reducer *EventReducer, key *ConversationKey) bool {
 	if key == nil {
 		return false

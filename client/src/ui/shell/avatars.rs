@@ -2,7 +2,7 @@
 //! the fetch of any https avatar that has none, and gives the views the decoded image of
 //! each one that is ready. The rules (what is fetched, when, and how long a failure
 //! waits) are in `controller::avatars`. The network and the decode run on the
-//! background executor, in `desktop::avatarhttp`. Qt equivalents: `NickGlyph.qml` for
+//! background executor, in `desktop::avatarhttp`. Qt equivalents: `NickGlyph` for
 //! the photo, and `IrcAvatarStore` for the fetch.
 
 use std::collections::{BTreeSet, HashMap};

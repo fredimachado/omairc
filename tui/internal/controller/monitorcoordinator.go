@@ -10,7 +10,7 @@ import (
 )
 
 // This file is the Go port of IrcMonitorCoordinator in
-// src/irc/ircmonitorcoordinator.{h,cpp}: the persisted MONITOR nick list and
+// `client/src/controller/monitorcoordinator.rs`: the persisted MONITOR nick list and
 // the session-scoped presence tracking behind /monitor, /unmonitor, and
 // /monitored. The coordinator reads the persisted MonitorStore and reports
 // presence through the host; notifications (signal plus inbox) stay on the

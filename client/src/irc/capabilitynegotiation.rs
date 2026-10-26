@@ -1,5 +1,4 @@
-//! Port of `tui/internal/irc/capabilitynegotiation.go` (Go) and
-//! `src/irc/irccapabilitynegotiation.{h,cpp}` (C++).
+//! Port of `tui/internal/irc/capabilitynegotiation.go`.
 //!
 //! Tracks the tokens of one CAP LS / REQ / ACK / NAK / END exchange: what the
 //! server advertised, what we asked for, what it granted and what it refused.

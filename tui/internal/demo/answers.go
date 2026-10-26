@@ -10,7 +10,7 @@ import (
 )
 
 // This file is the Go port of the anonymous auto-echo handlers in
-// src/irc/ircdemoserver.cpp. Each tryAnswer* returns the reply bytes, or nil
+// `client/src/demo/server.rs`. Each tryAnswer* returns the reply bytes, or nil
 // when it does not answer; the wiring in demo.go injects a non-nil result. A
 // handled case that emits nothing returns a non-nil zero-length slice so the
 // caller can tell "answered" from "not mine".

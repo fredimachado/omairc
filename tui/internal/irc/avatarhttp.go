@@ -7,7 +7,7 @@ import (
 
 // AvatarHTTPHeaderValue returns the value of the named header from a raw HTTP
 // header block, matching the header name case-insensitively. It mirrors
-// ircAvatarHttpHeaderValue (src/irc/ircavatarhttp.cpp): a leading blank line
+// ircAvatarHttpHeaderValue (`client/src/irc/avatarhttp.rs`): a leading blank line
 // (the CRLF that some callers leave in front of the block) is skipped, then
 // CRLF-terminated lines are walked until an empty line, and the matched
 // value is trimmed. An absent header yields an empty slice.
@@ -54,7 +54,7 @@ func AvatarHTTPTransferEncodingIsChunked(headerBlock []byte) bool {
 }
 
 // AvatarHTTPDecodeChunkedBody decodes an HTTP chunked-transfer body from raw
-// bytes. It mirrors ircAvatarHttpDecodeChunkedBody (src/irc/ircavatarhttp.cpp):
+// bytes. It mirrors ircAvatarHttpDecodeChunkedBody (`client/src/irc/avatarhttp.rs`):
 // each chunk is a hex size line, the chunk bytes, and a trailing CRLF; a
 // zero-size chunk terminates the body. The bool is the C++ ok out-parameter:
 // false for a missing CRLF, an unparsable or negative size, a truncated chunk,

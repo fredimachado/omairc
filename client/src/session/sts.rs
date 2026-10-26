@@ -1,4 +1,4 @@
-//! Port of `tui/internal/session/sts.go` (Go) and `src/irc/ircsts.{h,cpp}` (C++): the
+//! Port of `tui/internal/session/sts.go`: the
 //! `sts` capability value, the policy cache's contract and its group key.
 //!
 //! A server advertises `sts=port=N,duration=S` in CAP. A plaintext session that sees a port
@@ -96,7 +96,7 @@ fn token_value(token: &str) -> &str {
 
 /// The cache key for `host`: the SHA-256 of its trimmed, lowercased form, as lowercase hex.
 /// It is the group name in the Qt file, so both clients read the same entries. `None` for an
-/// empty host (`groupKey` in `ircsts.cpp`).
+/// empty host (`groupKey` in `tui/internal/session/sts.go`).
 pub fn sts_group_key(host: &str) -> Option<String> {
     let folded = host.trim().to_lowercase();
     if folded.is_empty() {

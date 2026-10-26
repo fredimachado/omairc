@@ -4,7 +4,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/irc"
 )
 
-// Group and key names must match src/irc/ircclosedconversation.cpp byte for
+// Group and key names must match `client/src/storage/closedconversation.rs` byte for
 // byte so the Qt client and the terminal client share one INI section.
 const (
 	closedConversationGroup      = "closedConversations"

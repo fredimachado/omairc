@@ -1,7 +1,7 @@
 //! Nick sheet rows: the channel's members, fuzzy-matched on the nick. Ties
 //! keep panel (PREFIX) order, which is the order `Conversation::members`
 //! already holds. Port of `refreshNickMatches`, `canOpenDirectMessage`, and
-//! `firstOpenableNickIndex` in OmaircWindow.qml.
+//! `firstOpenableNickIndex` in `client/src/ui/shell`.
 
 use super::fuzzy::rank;
 use crate::irc::reducer::MemberView;

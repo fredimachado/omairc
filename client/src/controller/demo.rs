@@ -1,6 +1,6 @@
 //! The `--demo-server` controller. Port of the demo start in `tui/internal/demo/`
 //! (`demo.go`, `attachController` in `demo_test.go`) and `IrcDemoServer` in
-//! `src/irc/ircdemoserver.cpp` (C++).
+//! `tui/internal/demo/demo.go`.
 //!
 //! The demo is only the peer behind each seeded network's loopback. The controller
 //! builds the two sessions, attaches the peers, and plays the seed in Qt's order.

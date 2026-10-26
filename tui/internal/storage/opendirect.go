@@ -4,7 +4,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/irc"
 )
 
-// Group and key names must match src/irc/ircopendirect.cpp byte for byte so the
+// Group and key names must match `client/src/storage/opendirect.rs` byte for byte so the
 // Qt client and the terminal client share one INI section.
 const (
 	openDirectGroup      = "openDirects"

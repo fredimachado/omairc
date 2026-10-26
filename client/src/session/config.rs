@@ -1,5 +1,5 @@
-//! Port of `tui/internal/session/config.go` (Go) and `IrcSessionConfig` in
-//! `src/irc/ircsession.h` (C++).
+//! Port of `tui/internal/session/config.go` in
+//! `tui/internal/session/session.go`.
 //!
 //! One network's identity, credentials, autojoin state and timer policy. Build
 //! the defaults with `SessionConfig::with_defaults`, adjust the fields, then pass
@@ -82,7 +82,7 @@ impl SessionConfig {
     }
 
     /// The credential SASL sends: the NickServ password when both are set,
-    /// otherwise the server password (`saslSecret` in `src/irc/ircsession.cpp`).
+    /// otherwise the server password (`saslSecret` in `tui/internal/session/session.go`).
     pub(crate) fn sasl_secret(&self) -> &Secret {
         if self.nickserv_password.is_empty() {
             &self.password

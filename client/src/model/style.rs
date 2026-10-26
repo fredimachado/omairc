@@ -88,7 +88,7 @@ impl Style {
     /// Qt's Material style draws `Material.backgroundDimColor`, read from Qt
     /// 6.11.2 with `qml.exe`: `#303030` at alpha 0.6 for the light theme and
     /// `#fafafa` at alpha 0.6 for the dark one. The Qt window picks the theme
-    /// from `darkMode` (`OmaircWindow.qml`), so this follows `dark_mode`.
+    /// from `darkMode` (`client/src/ui/shell`), so this follows `dark_mode`.
     pub fn popup_dim_color(&self) -> Color {
         let base = if self.dark_mode() {
             Color::from_rgb8(250, 250, 250)

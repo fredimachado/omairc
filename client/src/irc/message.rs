@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/message.go` (Go) and `src/irc/ircmessage.h` (C++).
+//! Port of `tui/internal/irc/message.go`.
 //!
 //! Frame limits, the error taxonomy and the parsed line. Wire fields are bytes
 //! (`Vec<u8>`): the wire carries any octets, and `WireText` decodes them for

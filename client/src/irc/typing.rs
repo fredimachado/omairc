@@ -1,5 +1,5 @@
-//! Port of `tui/internal/irc/typing.go` (Go) and `src/irc/irctyping.cpp` plus
-//! `src/irc/irctypingpublisher.cpp` (C++).
+//! Port of `tui/internal/irc/typing.go` plus
+//! `irctypingpublisher` (C++).
 //!
 //! Two halves share this file. The phase type, the TAGMSG builder and the
 //! hold clocks are the wire vocabulary of the `+typing` client tag. The inbound
@@ -12,14 +12,14 @@
 
 use chrono::{DateTime, TimeDelta, Utc};
 
-/// How long an active hint is retained, in milliseconds (`irctyping.h`).
+/// How long an active hint is retained, in milliseconds (`tui/internal/irc/typing.go`).
 pub const TYPING_ACTIVE_HOLD_MS: i64 = 6000;
 
 /// How long a paused hint is retained. The IRCv3 `typing` recommendation says
 /// to assume the sender is still typing for at least 30 s after `paused`.
 pub const TYPING_PAUSED_HOLD_MS: i64 = 30000;
 
-/// The per-target outbound throttle, in milliseconds (`irctyping.h`).
+/// The per-target outbound throttle, in milliseconds (`tui/internal/irc/typing.go`).
 pub const TYPING_SEND_INTERVAL_MS: i64 = 3000;
 
 /// Which hold a stored hint uses (`TypingClock`, `IrcTypingClock`). The zero

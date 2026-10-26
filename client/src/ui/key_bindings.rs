@@ -3,7 +3,7 @@
 
 use gpui::{Action, KeyBinding};
 
-/// Clipboard paste, including Shift+Insert (`OmaircWindow.qml` `isPasteChord`).
+/// Clipboard paste, including Shift+Insert (`client/src/ui/shell` `isPasteChord`).
 pub const PASTE_KEYS: &[&str] = &["secondary-v", "shift-insert"];
 
 /// Return and the keypad's Enter (`KP_Enter`), which Qt wires separately from Return.

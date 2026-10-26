@@ -1,4 +1,4 @@
-//! Port of `tui/internal/session/transport.go` (Go) and `src/irc/irctransport.h` (C++).
+//! Port of `tui/internal/session/transport.go`.
 //!
 //! `Transport` is the duplex byte pipe the session drives. It takes commands
 //! (`connect`, `write`, `shutdown`) and reports through a `TransportSink`. The

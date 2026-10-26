@@ -5,7 +5,7 @@
 //! Port of `tui/internal/irc/conversation.go` `SidebarOrder` /
 //! `SidebarOrderWithNetworks` and its helpers (Go: `networkRank`, `groupRank`,
 //! `compareCaseInsensitive`), and of `ircSidebarOrder` in
-//! `src/irc/irceventreducer.cpp` and `conversationlistmodel.cpp` (C++).
+//! `tui/internal/irc/reducer.go` and `tui/internal/controller/snapshots.go`.
 
 use std::cmp::Ordering;
 

@@ -1,4 +1,4 @@
-//! The network rail on the left of the Connection tab (`ConnectionSheet.qml`'s
+//! The network rail on the left of the Connection tab (`client/src/ui/sheets/connect/`
 //! `networkRail`): the saved networks and the draft, the `+ Add network` row, and
 //! the `Shortcuts` hint at its foot.
 //!

@@ -1,4 +1,4 @@
-//! Port of `tui/internal/storage/paths*.go` (Go) and `src/omaircpaths.cpp` (C++),
+//! Port of `tui/internal/storage/paths*.go`,
 //! under this build's app folder ([`crate::identity::APP_FOLDER`]). With the
 //! `dev` feature that folder is `omairc-poc`, separate from the Qt/TUI `omairc/`
 //! tree, so local `cargo test --features dev` never writes into a real install.
@@ -7,7 +7,7 @@
 //! they are the platform's generic locations:
 //! - Windows: `%LOCALAPPDATA%` for config (`GenericConfigLocation`); state is
 //!   `%LOCALAPPDATA%\State` (`GenericStateLocation` in Qt 6 — see
-//!   `qstandardpaths_win.cpp`).
+//!   `platform paths`).
 //! - macOS: `~/Library/Preferences` and `~/Library/Preferences/State`.
 //! - Linux: `~/.config` and `~/.local/state`.
 //!
@@ -138,7 +138,7 @@ pub fn settings_path_for(env: &Env, platform: Platform) -> Option<PathBuf> {
 ///
 /// - Linux: `<config root>/omairc/omairc.conf`
 /// - macOS: `<config root>/omairc/omairc.ini` (Darwin `QSettings::IniFormat` always
-///   uses `.ini`; see `settingsFileMissingOnDisk` in `ircprofilestore.cpp`)
+///   uses `.ini`; see `settingsFileMissingOnDisk` in `tui/internal/storage/profilestore.go`)
 /// - Windows: `None` — main settings are `HKCU\Software\omairc\omairc`
 ///   (`QSettings::NativeFormat`). STS still lives under the config folder; use
 ///   [`qt_sts_path_for`].
@@ -232,7 +232,7 @@ fn state_root(env: &Env, platform: Platform) -> Option<PathBuf> {
     }
     match platform {
         // Qt 6 `GenericStateLocation` on Windows is `%LOCALAPPDATA%\State`
-        // (`qstandardpaths_win.cpp`), not bare LocalAppData. Transcripts and
+        // (`platform paths`), not bare LocalAppData. Transcripts and
         // `omairc.log` from the Qt client live under that tree.
         Platform::Windows => env
             .local_app_data

@@ -9,7 +9,7 @@ import "github.com/fredimachado/omairc/tui/internal/irc"
 
 // NickIsTyping reports whether nick is one of the selected conversation's
 // typing peers, compared under the selected network's case mapping. It mirrors
-// IrcController::nickIsTyping (src/irc/irccontroller.cpp:820).
+// IrcController::nickIsTyping (`client/src/controller/reads.rs`).
 func (c *Controller) NickIsTyping(nick string) bool {
 	if c.selected == nil || nick == "" {
 		return false
@@ -26,9 +26,8 @@ func (c *Controller) NickIsTyping(nick string) bool {
 
 // TranscriptTypingIndicator returns the transcript footer's typing hint: the
 // first typing nick, whether the footer groups under the previous live chat
-// row, and whether the footer shows at all. It mirrors the typingRow footer in
-// src/OmaircWindow.qml:2948-2986 plus typingFollowsPeerChat
-// (src/OmaircWindow.qml:414-420).
+// row, and whether the footer shows at all. It mirrors the typing footer and
+// `typing_continues` in `client/src/model/typing_tail.rs`.
 func (c *Controller) TranscriptTypingIndicator() (nick string, grouped bool, show bool) {
 	if c.selected == nil {
 		return "", false, false
@@ -42,14 +41,14 @@ func (c *Controller) TranscriptTypingIndicator() (nick string, grouped bool, sho
 }
 
 // displayClockFormat is the footer comparison's HH:mm shape, matching
-// MessageListModel::displayTime and OmaircWindow.qml's currentTranscriptMinute.
+// MessageListModel::displayTime and the shell's current transcript minute.
 const displayClockFormat = "15:04"
 
 // typingFollowsPeerChat decides whether the typing footer groups under the
 // previous transcript row. The footer has no timestamp of its own, so it is
 // treated as the next live chat row from the peer arriving now, using the same
 // local HH:mm MessageListModel::displayTime would assign that row. It mirrors
-// typingFollowsPeerChat and continuesMessageGroup (src/OmaircWindow.qml:382-421).
+// typingFollowsPeerChat and continuesMessageGroup (`client/src/model/typing_tail.rs`).
 //
 // displayTime localizes with QDateTime::toLocalTime, and the reducer keeps a
 // parsed server-time tag in UTC (translator.go's ircServerTimeOf). Both sides

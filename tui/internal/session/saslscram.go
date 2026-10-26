@@ -10,7 +10,7 @@ import (
 	"strconv"
 )
 
-// SCRAM failure strings, ported verbatim from src/irc/ircsaslscram.cpp so the
+// SCRAM failure strings, ported verbatim from `client/src/session/saslscram.rs` so the
 // mirrored test matrix can match them. None of them may contain the password or
 // the server's free-form error text.
 const (
@@ -28,7 +28,7 @@ const (
 	errSignatureMismatch  = "server signature does not match"
 )
 
-// Iteration bounds from ircsaslscram.cpp. A count outside them is rejected
+// Iteration bounds from `client/src/session/saslscram.rs`. A count outside them is rejected
 // before PBKDF2 runs, so a hostile peer cannot burn CPU.
 const (
 	minIterations = 4096
@@ -57,10 +57,10 @@ const (
 )
 
 // SASLScram is a stateful SCRAM-SHA-256 client (RFC 5802, RFC 7677). It mirrors
-// IrcSaslScram in src/irc/ircsaslscram.*: Start produces the client-first
+// `SaslScram` in `client/src/session/saslscram.rs`: Start produces the client-first
 // message, TakeServerFirst produces client-final, and TakeServerFinal verifies
-// the server signature. Messages are raw SCRAM bytes; the IRC session applies
-// SASL base64 framing.
+// the server signature. Messages are raw SCRAM bytes; encodeSASLFrames in this
+// file applies SASL base64 framing.
 //
 // The zero value is an idle client, but NewSASLScram is the documented
 // constructor.
@@ -392,7 +392,7 @@ func isBase64Byte(value byte) bool {
 
 // containsUnsendable reports whether a UTF-8 string carries NUL, CR, or LF.
 // Those cannot ride an IRC line, so the exchange is refused before any
-// credential is used. Ported from ircsaslscram.cpp.
+// credential is used. Ported from `client/src/session/saslscram.rs`.
 func containsUnsendable(text string) bool {
 	for index := 0; index < len(text); index++ {
 		switch text[index] {
@@ -475,12 +475,10 @@ func scramSuccess(message []byte) ScramResult {
 	return ScramResult{Message: message}
 }
 
-// The AUTHENTICATE framing constants come from IrcSession in
-// src/irc/ircsession.cpp. The C++ framing is not a standalone helper there: it
-// lives in IrcSession::sendSaslResponse and IrcSession::takeSaslChunk beside the
-// session's own state. The two helpers below are therefore unexported and are
-// only a private mirror for the session wave to adopt; they are not part of the
-// cross-package contract yet.
+// The AUTHENTICATE framing helpers mirror `encode_sasl_frames` and
+// `ChallengeBuffer` in `client/src/session/saslscram.rs`. The two helpers below
+// are unexported and are only a private mirror for the session wave to adopt;
+// they are not part of the cross-package contract yet.
 const (
 	saslAuthenticateChunk    = 400
 	saslIncomingEncodedLimit = 4096

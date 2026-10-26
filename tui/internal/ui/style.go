@@ -130,7 +130,7 @@ type Styles struct {
 
 // fixedColors is the fixed Tokyo-Night palette the TUI has always rendered.
 // Nick colors, the identicon page fill, and the avatar mix amount are fixed
-// presentation shared with OmaircStyle.qml, so they read Fallback() rather than
+// presentation shared with `client/src/model/style.rs`, so they read Fallback() rather than
 // the live theme.
 var (
 	fixedColors   = theme.Fallback()
@@ -146,7 +146,7 @@ func avatarFill(nick string) color.Color {
 	return mixColors(colorPage, nickColor(nick), nickAvatarMix)
 }
 
-// nickPaletteIndex mirrors nickPaletteIndex in OmaircStyle.qml: the sum of the
+// nickPaletteIndex mirrors nickPaletteIndex in `client/src/model/style.rs`: the sum of the
 // nick's UTF-16 code units modulo the palette length. UTF-16 code units (not
 // runes) match JavaScript's charCodeAt for non-ASCII nicks.
 func nickPaletteIndex(nick string) int {
@@ -165,7 +165,7 @@ func nickColor(nick string) color.Color {
 }
 
 // initials is the identicon's single letter: the first rune upper-cased, or "?"
-// when the nick is empty. It mirrors initials in OmaircStyle.qml.
+// when the nick is empty. It mirrors initials in `client/src/model/style.rs`.
 func initials(nick string) string {
 	for _, r := range nick {
 		return string(unicode.ToUpper(r))
@@ -174,7 +174,7 @@ func initials(nick string) string {
 }
 
 // mixColors linearly mixes tint into base by amount and formats the result as
-// "#rrggbb". It mirrors mixColors in OmaircStyle.qml for opaque colors. The
+// "#rrggbb". It mirrors mixColors in `client/src/model/style.rs` for opaque colors. The
 // theme package keeps its own unexported copy; this thin local helper is only
 // for one-off presentation mixes such as the identicon fill.
 func mixColors(base, tint color.Color, amount float64) color.Color {

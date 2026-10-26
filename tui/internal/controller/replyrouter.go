@@ -9,7 +9,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
-// This file is the Go port of IrcReplyRouter in src/irc/ircreplyrouter.{h,cpp}.
+// Twin of `client/src/controller/replyrouter.rs`.
 // It owns WHOIS, CTCP, labeled-reply, and own-metadata watch state and the
 // routing of their replies. Arming a watch and routing the reply live in one
 // place; echoing a transcript line or a status outcome stays a callback into

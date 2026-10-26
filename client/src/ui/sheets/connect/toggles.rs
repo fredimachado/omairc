@@ -1,5 +1,5 @@
 //! The switches on the Connection tab (TLS, connect on startup) and the Preferences
-//! tab (`PreferenceToggleRow.qml`). A switch is a stop: a click or Space flips it,
+//! tab (`client/src/ui/sheets/connect/`). A switch is a stop: a click or Space flips it,
 //! and Enter walks on, as the model's focus walk says. A preference flips at once
 //! through `Shell::set_connect_preference`, with no Apply.
 

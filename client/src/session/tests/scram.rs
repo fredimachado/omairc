@@ -79,7 +79,7 @@ fn server_first_for(nonce: &str, iterations: &str) -> String {
 }
 
 /// The RFC 7677 server signature for an exchange, recomputed independently of the machine
-/// (`scramServerFinalFor` in `session_test.go`, `scramServerFinal` in `tst_session.cpp`).
+/// (`scramServerFinalFor` in `session_test.go`, `scramServerFinal` in `tst_session`).
 fn server_final_for(client_first: &str, server_first: &str) -> String {
     let bare = client_first.strip_prefix("n,,").expect("the n,, prefix");
     let nonce_at = server_first.find("r=").expect("an r= attribute");

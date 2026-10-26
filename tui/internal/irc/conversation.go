@@ -176,7 +176,7 @@ func networkRank(networkID string, order []string) int {
 
 // groupRank places every channel first (0), then direct messages (2). A channel
 // you have left stays with the other channels so the name sort keeps its place.
-// It mirrors the anonymous groupRank in conversationlistmodel.cpp.
+// It mirrors the anonymous groupRank in `client/src/controller/snapshots.rs`.
 func groupRank(conversation *ConversationState) int {
 	if conversation == nil || !conversation.IsChannel() {
 		return 2

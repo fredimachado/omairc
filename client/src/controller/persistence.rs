@@ -1,8 +1,7 @@
 //! What the controller keeps between runs, and what each intent saves. Port of the
 //! Phase 8 parts of `tui/internal/controller/controller.go` (`LoadStoredPreferences`,
 //! `SetReopenDirects`, `AddSession`, `restoreOpenDirects`, `noteOpenDirectsMotd`,
-//! `rememberOpenDirect`) and of `src/irc/irccontroller.cpp` and `src/irc/ircconnection.cpp`
-//! (C++).
+//! `rememberOpenDirect`) and of `tui/internal/connection/connection.go`.
 //!
 //! The controller owns the state. The Connect sheet asks for a save (`save_profile`) and a
 //! start (`Controller::start`), and reads what was saved (`stored_profiles`). Every write

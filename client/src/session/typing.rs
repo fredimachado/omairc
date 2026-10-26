@@ -1,5 +1,5 @@
 //! Port of the outbound typing gate in `tui/internal/session/session.go` (Go,
-//! `typingPublisher`) and `src/irc/irctypingpublisher.{h,cpp}` (C++).
+//! `typingPublisher`) and `irctypingpublisher` (C++).
 //!
 //! The composer's `+typing` TAGMSG is sent only when `message-tags` is enabled,
 //! at most once per target every `TYPING_SEND_INTERVAL` (3 s), and never as a

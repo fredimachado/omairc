@@ -22,7 +22,7 @@ const (
 
 // sidebarNetworkIDs returns the network ids shown in the left sidebar, in
 // display order. Stored profiles from the connection model are listed even
-// before a session exists, matching ServerListColumn.qml's connection.networks
+// before a session exists, matching `client/src/ui/sidebar/`'s connection.networks
 // repeater. The demo shell (conn == nil) falls back to registered sessions.
 func (m *Model) sidebarNetworkIDs() []string {
 	if m.conn != nil {
@@ -105,7 +105,7 @@ type sidebarSlot struct {
 // A roster taller than the column scrolls as one window: the focused network
 // header, or else the selected conversation, is kept on screen so a walk,
 // unread jump, or header focus never lands on a clipped row. It mirrors
-// OmaircWindow.qml's revealSidebarRow / revealNamedSidebarItem over the
+// `client/src/ui/shell`'s revealSidebarRow / revealNamedSidebarItem over the
 // sidebarScroll Flickable. A wheel scroll pins sidebarScroll instead, and the
 // next selection change releases that pin so the reveal returns.
 //
@@ -159,7 +159,7 @@ func (m *Model) sidebarVisibleSlots(width, height int) []sidebarSlot {
 			line:      m.networkHeader(name, networkID, width),
 		})
 		// A refused nick or registration ERROR is that network's status line,
-		// the same slot as NetworkSection.qml's liveStatus.
+		// the same slot as `NetworkSection`'s liveStatus.
 		if reason := m.ctrl.LastErrorFor(networkID); reason != "" {
 			roster = append(roster, sidebarSlot{
 				kind: sidebarSlotStatus,
@@ -205,7 +205,7 @@ func (m *Model) sidebarVisibleSlots(width, height int) []sidebarSlot {
 	// Reserve the bottom rows for the identity footer: clamp the roster to what
 	// is left and append the footer block, so the column is exactly height lines.
 	// The footer gives the nick its own row and, when the column can spare one
-	// more, draws a rule above the nick that mirrors ServerListColumn.qml's
+	// more, draws a rule above the nick that mirrors `client/src/ui/sidebar/`'s
 	// identityFooter divider. A sidebar too short for the rule drops it before
 	// the presence row; a tiny one keeps only the nick.
 	footerLines := m.identityFooterLines(width)
@@ -276,7 +276,7 @@ func fitSidebarSlots(slots []sidebarSlot, limit int) []sidebarSlot {
 
 // sidebarRevealStart returns the first roster line the sidebar shows, so the
 // focused network header, or else the selected conversation, stays on screen.
-// It mirrors OmaircWindow.qml's revealSidebarRow: the window slides the least it
+// It mirrors `client/src/ui/shell`'s revealSidebarRow: the window slides the least it
 // can, resting at the top while the target already fits the first page. With
 // neither a focused header nor a rendered selection it starts at the top, the
 // same resting state as the QML Flickable at contentY 0.
@@ -322,7 +322,7 @@ func (m *Model) sidebarRevealStart(total, height int, headerSpans, rowSpans map[
 // the "inbox N" pill on the second, indented under the nick. Keeping the nick on
 // its own row leaves the status room to breathe instead of pushing the inbox pill
 // past the column edge. The chip shows "?" for an empty nick, matching the
-// direct-message identicon. It mirrors ServerListColumn.qml's identityFooter
+// direct-message identicon. It mirrors `client/src/ui/sidebar/`'s identityFooter
 // (selfNickLabel, selfPresenceLabel, inboxBadge). The footer is visual only;
 // Ctrl+Shift+A reaches the sheet. The build version is not here: it sits at the
 // bottom right of the shell footer, after the shortcut list.

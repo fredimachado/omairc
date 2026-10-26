@@ -1,7 +1,6 @@
 package controller
 
-// This file ports the composer-typing boundary of
-// tests/session/tst_typing.cpp: IrcController::notifyComposerText and the
+// This file ports the composer-typing boundary: notifyComposerText and the
 // done-flush on a selection change. It is the outbound half of the typing
 // contract; presencetyping_test.go covers the inbound reads.
 

@@ -9,7 +9,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/irc"
 )
 
-// Group and key names must match src/irc/ircscrollplace.cpp byte for byte so
+// Group and key names must match `client/src/storage/scrollplace.rs` byte for byte so
 // the Qt client and the terminal client share one INI section.
 const (
 	scrollPlacesGroup = "scrollPlaces"

@@ -7,7 +7,7 @@
 //! `hydrateFromLog`, `persistMessage`, `persistMessagesPrepend`, `capMessages`,
 //! `dropLastTranscriptRow`, `classifyChatLine`, `inboxKindFor`, `kindToken`,
 //! `kindFromToken`, `persistableKind`, `admitMessage`) and of
-//! `src/irc/irceventreducer.cpp` (C++).
+//! `tui/internal/irc/reducer.go`.
 
 use std::collections::HashSet;
 

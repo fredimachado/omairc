@@ -29,7 +29,7 @@ type secretRule struct {
 	visibleParameters int
 }
 
-// secretMap mirrors kSecretMap in src/irc/ircsecretpolicy.cpp. Rows must stay
+// secretMap mirrors kSecretMap in `client/src/irc/secretpolicy.rs`. Rows must stay
 // uppercase, unique, and match their shape; the init below enforces what the
 // C++ static_assert covers at compile time.
 var secretMap = []secretRule{

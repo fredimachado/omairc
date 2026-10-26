@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/parser.go` (Go) and `src/irc/ircparser.{h,cpp}` (C++).
+//! Port of `tui/internal/irc/parser.go`.
 //!
 //! `parse` turns one line, without its CRLF, into an `IrcMessage`. `serialize`
 //! is the inverse, used by the in-process demo peer and the round-trip tests;

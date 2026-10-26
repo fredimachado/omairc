@@ -58,7 +58,7 @@ func (c *Controller) DateSeparators() []string {
 // assignedDisplayDate is the calendar day a row belongs to. A real timestamp
 // uses the display clock the snapshot already localized. A live row with no
 // timestamp is today, and a replay row with no timestamp keeps the previous
-// day. It mirrors assignedDate in messagelistmodel.cpp.
+// day. It mirrors assignedDate in `client/src/controller/snapshots.rs`.
 func assignedDisplayDate(message MessageSnapshot, previous time.Time, hasPrevious bool, today time.Time) (time.Time, bool) {
 	if !message.Time.IsZero() {
 		return message.Time, true

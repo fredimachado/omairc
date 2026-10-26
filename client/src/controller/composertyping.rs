@@ -1,7 +1,7 @@
 //! The composer's outbound typing hint: port of `IrcController::notifyComposerText`
 //! and the done flush of `selectConversation` and `clearConversationSelection`
 //! (`tui/internal/controller/wiring.go` `NotifyComposerText`, `controller.go`
-//! `SelectConversation`; `src/irc/irccontroller.cpp` (C++)).
+//! `SelectConversation`; `tui/internal/controller/controller.go`).
 //!
 //! The pace, the `message-tags` gate and the suppressed `done` after a sent message
 //! belong to the session's typing publisher (`session/typing.rs`). The controller

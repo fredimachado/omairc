@@ -53,7 +53,7 @@ pub struct HeaderView<'a> {
     pub actions: Option<HeaderActions>,
     /// Whether the member panel shows. The people pill is lit while it does.
     pub members_visible: bool,
-    /// Width available to the subtitle row, for topic hit clipping (`TopicLine.qml`).
+    /// Width available to the subtitle row, for topic hit clipping (`TopicLine`).
     pub subtitle_width: f32,
 }
 
@@ -107,7 +107,7 @@ pub fn header_chrome_trailing_width(style: &Style, offers: HeaderOffers, has_peo
     width
 }
 
-/// Width for topic hit clipping: the subtitle column inside the header (`TopicLine.qml`).
+/// Width for topic hit clipping: the subtitle column inside the header (`TopicLine`).
 pub fn header_subtitle_clip_width(
     style: &Style,
     center_column_width: f32,

@@ -25,7 +25,7 @@ pub struct RowLook {
     pub bot: bool,
 }
 
-/// One channel or direct message row, a port of `ConversationRow.qml`: 36 tall,
+/// One channel or direct message row: 36 tall,
 /// inset 8. A click reports `target` to `on_select`; a middle click, on a channel
 /// or a direct message alike, reports it to `on_close`. The controller decides
 /// whether the row closes: a joined channel does not.
@@ -163,7 +163,7 @@ pub fn conversation_row(
 }
 
 /// Ink and bold when selected, or when the conversation is not muted and has unread — Qt
-/// `ConversationRow.qml` label `color` and `font.bold`.
+/// `client/src/ui/sidebar/conversation_row.rs` label `color` and `font.bold`.
 pub(crate) fn sidebar_label_emphasized(selected: bool, muted: bool, unread: u32) -> bool {
     selected || (!muted && unread > 0)
 }

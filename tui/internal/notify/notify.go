@@ -1,7 +1,7 @@
 // Package notify is the desktop-notification seam, mirroring
-// Backend::notifyDesktop in src/backend.cpp. The platform notifier is chosen
-// at build time; the neutral file only defines the interface and a fail-closed
-// no-op so a caller always receives a usable Notifier.
+// `client/src/desktop/notifier`. The platform notifier is chosen at build
+// time; the neutral file only defines the interface and a fail-closed no-op so
+// a caller always receives a usable Notifier.
 package notify
 
 // Activation identifies the conversation a notification belongs to; it is

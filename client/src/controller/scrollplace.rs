@@ -1,5 +1,5 @@
-//! Port of `tui/internal/controller/scrollplace.go` (Go) and `src/irc/ircscrollplace.cpp`
-//! (C++): where each conversation's transcript was last left, as a message anchor.
+//! Port of `tui/internal/controller/scrollplace.go`
+//! Where each conversation's transcript was last left, as a message anchor.
 //!
 //! The anchor is the first visible message, named by its msgid when the server gave one
 //! and otherwise by its kind, author, body and server time. An anchor is found again

@@ -1,4 +1,4 @@
-//! The tab strip across the top of the card (`ConnectionTabButton.qml`). A tab is
+//! The tab strip across the top of the card (`ConnectionTabButton`). A tab is
 //! a stop: a click shows it, Enter and Space show it, and Left and Right step
 //! between the tabs from the keyboard (`ConnectArrowLeft` and `ConnectArrowRight`).
 

@@ -1,4 +1,4 @@
-//! The footer of the Connection tab (`ConnectionSheet.qml`'s `connectionFooter`):
+//! The footer of the Connection tab (`client/src/ui/sheets/connect/` `connectionFooter`):
 //! the selected network's name, then Remove, Discard, Disconnect and Apply. Apply is
 //! accent when the draft is complete, and muted while `problem` says why it is not.
 //! Remove is offered only when `can_remove` allows it, and its first press arms it.

@@ -11,7 +11,7 @@ import (
 )
 
 // This file is the Ctrl+/ shortcuts sheet. It lists the full chord map,
-// mirroring src/qml/ShortcutsSheet.qml, and is the only overlay that can open on
+// mirroring `client/src/ui/sheets/shortcuts.rs`, and is the only overlay that can open on
 // top of the Connect sheet. While it is open every navigation chord is gated.
 
 // shortcutRow is one keys/action pair in the sheet.
@@ -26,7 +26,7 @@ type shortcutGroup struct {
 	rows  []shortcutRow
 }
 
-// shortcutGroups is the sheet's content. It mirrors ShortcutsSheet.qml's
+// shortcutGroups is the sheet's content. It mirrors `client/src/ui/sheets/shortcuts.rs`'s
 // shortcutGroups, including Ctrl+Q as the only quit chord and Ctrl+C as copy.
 var shortcutGroups = []shortcutGroup{
 	{

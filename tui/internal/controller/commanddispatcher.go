@@ -9,7 +9,7 @@ import (
 )
 
 // This file is the Go port of IrcCommandDispatcher in
-// src/irc/irccommanddispatcher.{h,cpp}: every slash-verb decision, with the
+// `client/src/controller/commanddispatcher.rs`: every slash-verb decision, with the
 // side effects it cannot own performed through CommandHost. Join, part, mode,
 // away, pref, ignore/mute/highlight, and query decisions stay here; the
 // controller performs them and owns the stores this reads.

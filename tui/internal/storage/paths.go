@@ -6,8 +6,8 @@ import (
 )
 
 // ConfigPath is the shared QSettings INI path both clients use:
-// <GenericConfigRoot>/omairc/omairc.conf. src/main.cpp sets both the
-// organization and application name to "omairc", so QSettings writes
+// <GenericConfigRoot>/omairc/omairc.conf. Both clients use organization and
+// application name "omairc", so QSettings writes
 // <GenericConfigLocation>/omairc/omairc.conf on Linux. It returns "" when the
 // platform config root is unknown.
 func ConfigPath() string {
@@ -21,7 +21,7 @@ func ConfigPath() string {
 // TranscriptRoot returns $OMAIRC_TRANSCRIPT_ROOT when set, else
 // <GenericStateRoot>/omairc/logs. This mirrors
 // IrcConversationLog::defaultRoot and xdgLogsRoot in
-// src/irc/ircconversationlog.cpp, including the environment override.
+// `client/src/storage/conversationlog.rs`, including the environment override.
 func TranscriptRoot() string {
 	if scoped := os.Getenv("OMAIRC_TRANSCRIPT_ROOT"); scoped != "" {
 		return scoped

@@ -1,5 +1,5 @@
-//! The product CLI: `omairc <command>` talks to the running window and prints one JSON line. Port of
-//! `src/omairccli.{h,cpp}` (C++). The verbs are `connections` (alias `list`), `status`, `send`,
+//! The product CLI: `omairc <command>` talks to the running window and prints one JSON line.
+//! Desktop-only (no Go twin). The verbs are `connections` (alias `list`), `status`, `send`,
 //! `read`, `names`, `conversations`, and `raise`, and `skills/omairc` documents them. Help and parse
 //! errors are text; control answers are the JSON in `ipc`.
 //!

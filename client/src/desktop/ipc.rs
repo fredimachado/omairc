@@ -1,5 +1,5 @@
 //! The product CLI's JSON contract: the request line a control command sends to the running window,
-//! and the one JSON line the window answers with. Port of `src/omaircipc.{h,cpp}` (C++). The field
+//! and the one JSON line the window answers with. Desktop-only (no Go twin). The field
 //! lists are the ones `skills/omairc/reference.md` documents. The TUI has no local socket, so it has
 //! no twin here.
 //!

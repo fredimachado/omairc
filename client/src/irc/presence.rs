@@ -1,5 +1,5 @@
-//! Port of `tui/internal/irc/presence.go` (Go), `src/irc/ircmetadata.{h,cpp}`,
-//! `src/irc/ircpresence.{h,cpp}` and `src/irc/ircnetworkpresence.{h,cpp}` (C++).
+//! Port of `tui/internal/irc/presence.go` (metadata vocabulary, per-nick facts,
+//! and network presence).
 //!
 //! Three layers share this file, all pure:
 //! - the draft/metadata-2 vocabulary: the subscribed keys, the value ceiling,
@@ -145,7 +145,7 @@ pub fn parse_metadata_capability(tokens: &[String]) -> Option<MetadataCapability
 }
 
 /// The capability name of a CAP token, dropping any `=value` suffix. It does not
-/// drop a leading `-`, matching the anonymous `tokenName` in `ircpresence.cpp`.
+/// drop a leading `-`, matching the anonymous `tokenName` in `tui/internal/irc/presence.go`.
 fn token_name(token: &str) -> &str {
     token.split_once('=').map_or(token, |(name, _)| name)
 }
@@ -156,7 +156,7 @@ fn token_value(token: &str) -> &str {
 }
 
 /// A non-negative integer, or `None` for an empty, non-numeric, overflowing or
-/// negative value (`parseNonNegativeInt` in `ircpresence.cpp`).
+/// negative value (`parseNonNegativeInt` in `tui/internal/irc/presence.go`).
 fn parse_non_negative(raw: &str) -> Option<usize> {
     if raw.is_empty() {
         return None;

@@ -1,10 +1,10 @@
 package controller
 
-// This file ports the Phase 9 session-inbox subset of
-// tests/session/tst_controller.cpp: arrivals append a stamped row, selection
-// and self-join consume matching rows, dismiss/activate walk the waiting list,
-// an invite activates into a JOIN, a monitor-online edge appends, forgetting a
-// network purges it, and PlainIrcText passes through to the formatter.
+// This file ports the Phase 9 session-inbox subset: arrivals append a stamped
+// row, selection and self-join consume matching rows, dismiss/activate walk
+// the waiting list, an invite activates into a JOIN, a monitor-online edge
+// appends, forgetting a network purges it, and PlainIrcText passes through to
+// the formatter.
 
 import (
 	"testing"

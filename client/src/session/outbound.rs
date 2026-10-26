@@ -1,5 +1,5 @@
 //! The public outbound writers of `tui/internal/session/session.go` (Go) and
-//! `IrcSession::send*` in `src/irc/ircsession.cpp` (C++).
+//! `IrcSession::send*` in `tui/internal/session/session.go`.
 //!
 //! Every method is a thin `locked` wrapper over a `Core` method, so the
 //! frame-level tests can drive each one against a `LoopbackTransport`. The

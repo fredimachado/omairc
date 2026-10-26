@@ -1,5 +1,5 @@
-//! Port of `tui/internal/demo/seed.go` (Go) and the seed part of
-//! `src/irc/ircdemoserver.cpp` (C++): the two demo networks, omarchy and oftc.
+//! Port of `tui/internal/demo/seed.go` and the seed part of
+//! `tui/internal/demo/demo.go`: the two demo networks, omarchy and oftc.
 //!
 //! The data is content- and order-identical to the Go and C++ seeds. The
 //! containers differ only in shape: slices for QVector and QStringList, and

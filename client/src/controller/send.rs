@@ -1,6 +1,5 @@
 //! The send intents. Port of `SendToTarget`, `echoIfPresent`, the action path and
-//! the join path in `tui/internal/controller/controller.go` (Go), and the send path of
-//! `src/irc/irccontroller.cpp` (C++).
+//! the join path in `tui/internal/controller/controller.go`.
 //!
 //! One path for every line: the intent calls the session, the session builds the
 //! frame (`irc::commandbuilder` rules, sized by the network's LINELEN) and writes it

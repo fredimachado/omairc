@@ -12,7 +12,7 @@ import (
 // PlaybackCoordinator owns the per-connection playback state the controller
 // used to keep: the registration snapshot, the ZNC PLAY requests already sent
 // this connection, and the autojoin and joined-channel books. It is the Go port
-// of IrcPlaybackCoordinator (src/irc/ircplaybackcoordinator.cpp).
+// of IrcPlaybackCoordinator (`client/src/controller/playback.rs`).
 //
 // The controller forwards session events and passes the lookups it still owns
 // (ZNC playback capability, MOTD-seen, open directs) as arguments; this type

@@ -1,6 +1,5 @@
-//! The session layer. It mirrors `tui/internal/session/` (Go) and the session
-//! parts of `src/irc/` (C++: `ircsession`, `ircsessionmanager`,
-//! `ircloopbacktransport`). SCRAM-SHA-256 (`saslscram.go`) is in `saslscram`, and STS
+//! The session layer. It mirrors `tui/internal/session/`.
+//! SCRAM-SHA-256 (`saslscram.go`) is in `saslscram`, and STS
 //! (`sts.go`) is in `sts` and `stsflow`. The socket transport (`transport_net.go`) lives
 //! in `net/`, and it plugs in through `Transport`.
 //!

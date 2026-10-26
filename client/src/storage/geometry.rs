@@ -1,8 +1,8 @@
-//! Window geometry, the pure model behind `Backend::windowGeometry` and
-//! `Backend::saveWindowGeometry` (`src/backend.cpp`). The Qt client stores the
-//! normal (restore) rectangle as a `QRect` under `window/geometry` and the maximized
-//! flag under `window/maximized`. The INI file holds the rectangle as
-//! `@Rect(x y width height)`, so this module writes the same keys and value text.
+//! Window geometry, the pure model behind the saved normal (restore) rectangle
+//! and maximized flag. The Qt client stores the rectangle as a `QRect` under
+//! `window/geometry` and the maximized flag under `window/maximized`. The INI
+//! file holds the rectangle as `@Rect(x y width height)`, so this module writes
+//! the same keys and value text.
 //!
 //! The gpui glue that reads and applies the live window lives in
 //! `desktop::windowstate`. This module has no toolkit types.

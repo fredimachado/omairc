@@ -4,7 +4,7 @@
 //!
 //! Port of `tui/internal/irc/readmarker.go` (Go: `coveredByReadMarker`,
 //! `ApplyServerReadMarker`, `LatestServerMessageTime`,
-//! `recountUnreadFromReadMarker`) and of `src/irc/irceventreducer.cpp` (C++).
+//! `recountUnreadFromReadMarker`) and of `tui/internal/irc/reducer.go`.
 //! The pure time helpers live in `irc/readmarker.rs`.
 
 use chrono::{DateTime, Utc};

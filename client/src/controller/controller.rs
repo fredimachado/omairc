@@ -1,4 +1,4 @@
-//! Port of `tui/internal/controller/controller.go` (Go) and `src/irc/irccontroller.cpp` (C++).
+//! Port of `tui/internal/controller/controller.go`.
 //!
 //! The controller owns the session manager, the event reducer, the Status console
 //! and the session inbox. Its pipeline is one way:

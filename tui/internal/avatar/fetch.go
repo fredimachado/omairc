@@ -14,7 +14,7 @@ import (
 	"time"
 
 	// Register the decoders reachable through image.Decode. WebP is
-	// intentionally unsupported: src/irc/ircavatarstore.cpp decodes through
+	// intentionally unsupported: `client/src/irc/avatarstore.rs` decodes through
 	// QImageReader, while the terminal port ships only the stdlib formats and
 	// fails closed on anything else.
 	_ "image/gif"
@@ -153,7 +153,7 @@ func decodedConfigWithinBudget(config image.Config) bool {
 }
 
 // decodedSizeWithinBudget mirrors decodedSizeWithinBudget in
-// ircavatarstore.cpp: positive edges within the cap and a positive pixel count
+// `client/src/irc/avatarstore.rs`: positive edges within the cap and a positive pixel count
 // within the pixel budget.
 func decodedSizeWithinBudget(width, height int) bool {
 	if width <= 0 || height <= 0 {

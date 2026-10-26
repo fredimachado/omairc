@@ -1,5 +1,5 @@
 //! Port of the batch ledger in `tui/internal/session/session.go` (Go) and the
-//! `OpenBatch` bookkeeping of `src/irc/ircsession.{h,cpp}` (C++).
+//! `OpenBatch` bookkeeping of `tui/internal/session/session.go`.
 //!
 //! A `BATCH` opens a reference, its lines name it in `@batch=`, and `BATCH -ref`
 //! closes it. The ledger decides which batches are replay answers worth

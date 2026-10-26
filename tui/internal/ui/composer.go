@@ -145,7 +145,7 @@ func (m *Model) composerCursor(row int) *tea.Cursor {
 
 // notifyComposerTyping reports the composer's current text to the controller so
 // it can publish an outbound typing hint for the selected conversation. It
-// mirrors OmaircWindow.qml's handleComposerText -> irc.notifyComposerText, but
+// mirrors `client/src/ui/shell`'s handleComposerText -> irc.notifyComposerText, but
 // compares against the last value so it fires only on a real change, the way
 // QML's textChanged does. Update defers it, so no composer mutation needs its
 // own call site: a keystroke, history recall, nick completion, a restored
@@ -167,7 +167,7 @@ func (m *Model) notifyComposerTyping() {
 const composerHistoryLimit = 50
 
 // rememberSentLine records one sent composer line for Up/Down recall. It
-// mirrors OmaircWindow.qml's rememberSentComposerLine.
+// mirrors `client/src/ui/shell`'s rememberSentComposerLine.
 func (m *Model) rememberSentLine(text string) {
 	m.composerHistory = append(m.composerHistory, text)
 	if len(m.composerHistory) > composerHistoryLimit {
@@ -185,7 +185,7 @@ func (m *Model) resetHistoryBrowse() {
 
 // recallHistory recalls sent lines with Up (-1) and Down (+1), restoring the
 // in-progress draft when Down passes the newest line. It mirrors
-// OmaircWindow.qml's recallComposerHistory.
+// `client/src/ui/shell`'s recallComposerHistory.
 func (m *Model) recallHistory(delta int) {
 	lines := m.composerHistory
 	if m.composer.Value() == "" && len(lines) == 0 {
@@ -215,7 +215,7 @@ func (m *Model) recallHistory(delta int) {
 }
 
 // nickCompleteSession is the composer's Tab-completion cursor. It mirrors
-// OmaircWindow.qml's nickCompleteMatches / nickCompleteIndex /
+// `client/src/ui/shell`'s nickCompleteMatches / nickCompleteIndex /
 // nickCompleteOrigin: the first Tab picks the alphabetically first matching
 // nick or channel, Shift+Tab starts at the last, and further presses cycle,
 // wrapping. Any other key, a conversation switch, or a send resets it (see
@@ -228,13 +228,13 @@ type nickCompleteSession struct {
 }
 
 // resetNickComplete ends a nick-completion session. It mirrors
-// OmaircWindow.qml's resetNickComplete.
+// `client/src/ui/shell`'s resetNickComplete.
 func (m *Model) resetNickComplete() {
 	m.nickComplete = nickCompleteSession{}
 }
 
 // completeNick completes the composer's current word with Tab. It mirrors
-// OmaircWindow.qml's completeNick: a first Tab starts a session from the
+// `client/src/ui/shell`'s completeNick: a first Tab starts a session from the
 // matched nicks and channel names (even when the prefix is ambiguous) and
 // repeated Tabs cycle through them. backward starts at the last match and
 // walks toward the first. Shift+Tab is that direction.
@@ -286,7 +286,7 @@ func (m *Model) completeNick(backward bool) {
 // applyNickComplete replaces the in-progress word (from the session's origin
 // through the cursor) with the selected nick and a separator: a leading colon
 // and space when the completion opens the line, otherwise a trailing space. It
-// mirrors OmaircWindow.qml's applyNickComplete.
+// mirrors `client/src/ui/shell`'s applyNickComplete.
 func (m *Model) applyNickComplete() {
 	if !m.nickComplete.active || len(m.nickComplete.matches) == 0 {
 		return
@@ -366,7 +366,7 @@ func (m *Model) nickMatchesForPrefix(prefix string) []string {
 // clampComposer stops the composer at the current surface's send budget,
 // including a paste. A `/me` draft uses the expanded ACTION cap. Find reuses
 // the field and is not a send, so a query is left alone. It mirrors
-// OmaircWindow.qml's clampComposerToSendLimit.
+// `client/src/ui/shell`'s clampComposerToSendLimit.
 func (m *Model) clampComposer() {
 	if m == nil || m.ctrl == nil || m.find.active {
 		return

@@ -325,8 +325,8 @@ func (p *Preferences) SetEnabled(name irc.PrefName, enabled bool) {
 
 // ignoreNickIsUsable reports whether nick is a plausible /ignore or /monitor
 // target: non-empty, not a channel, and free of wildcard and mask punctuation.
-// It mirrors ignoreNickIsUsable in irccommanddispatcher.cpp and
-// ircmonitorcoordinator.cpp.
+// It mirrors ignoreNickIsUsable in `client/src/controller/commanddispatcher.rs` and
+// `client/src/controller/monitorcoordinator.rs`.
 func ignoreNickIsUsable(nick string, features irc.ServerFeatures) bool {
 	if nick == "" {
 		return false
@@ -345,7 +345,7 @@ func ignoreNickIsUsable(nick string, features irc.ServerFeatures) bool {
 
 // muteTargetIsUsable reports whether target may be muted: a channel, or a nick
 // that passes ignoreNickIsUsable. It mirrors muteTargetIsUsable in
-// irccommanddispatcher.cpp.
+// `client/src/controller/commanddispatcher.rs`.
 func muteTargetIsUsable(target string, features irc.ServerFeatures) bool {
 	if target == "" {
 		return false
@@ -358,7 +358,7 @@ func muteTargetIsUsable(target string, features irc.ServerFeatures) bool {
 
 // firstToken returns the first whitespace-separated token of argument, or the
 // whole argument when it carries none. It mirrors the anonymous firstToken
-// helpers in irccommanddispatcher.cpp and ircmonitorcoordinator.cpp.
+// helpers in `client/src/controller/commanddispatcher.rs` and `client/src/controller/monitorcoordinator.rs`.
 func firstToken(argument string) string {
 	if space := strings.IndexByte(argument, ' '); space >= 0 {
 		return argument[:space]

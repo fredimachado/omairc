@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/pref.go` (Go) and `src/irc/ircpref.{h,cpp}` (C++):
+//! Port of `tui/internal/irc/pref.go`:
 //! the `/pref` catalog, its usage and avatar note, the query, state and list
 //! formatting, the argument parser, and the in-memory preferences a session
 //! holds.

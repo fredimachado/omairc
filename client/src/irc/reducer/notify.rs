@@ -3,8 +3,7 @@
 //! fold.
 //!
 //! Port of `tui/internal/irc/viewnotify.go` `ClassifyViewNotify` and its helpers
-//! (Go: `classifyViewNotifyUnchecked`, `ChannelNamesSyncing`) and of
-//! `src/irc/ircviewnotify.h` `classifyViewNotify` / `channelNamesSyncing` (C++).
+//! (`classifyViewNotifyUnchecked`, `ChannelNamesSyncing`).
 //! The surface presets are in `irc/viewnotify.rs`.
 
 use crate::irc::event::{ConversationKey, Event};

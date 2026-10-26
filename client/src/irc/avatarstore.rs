@@ -1,4 +1,4 @@
-//! The pure half of the avatar store. It mirrors `src/irc/ircavatarstore.cpp` (C++)
+//! The pure half of the avatar store. It mirrors `tui/internal/avatar/avatar.go`
 //! and the bookkeeping in `tui/internal/avatar/avatar.go` (Go). The fetch, the
 //! decode, the DNS pin and the image itself are I/O and stay in `desktop/` and
 //! the UI. This module holds only the state: a bounded insertion-ordered cache,

@@ -20,7 +20,7 @@ When the two disagree about the shared contract, the root file wins.
   a second release.
 - Layout: `cmd/omairc-tui/` (flags and `main`) and
   `cmd/control-omairc-tui/` (its CLI), `internal/irc/` (portable core,
-  mirrors `src/irc/`), `internal/session/` (transport, SCRAM, the session
+  mirrors `client/src/irc/`), `internal/session/` (transport, SCRAM, the session
   state machine, the session manager, and the clock seam),
   `internal/controller/` (the Go `IrcController` core and its view
   snapshots),   `internal/connection/` (the `NetworkProfile` + `Connection` port of
@@ -29,7 +29,7 @@ When the two disagree about the shared contract, the root file wins.
   keychain leaf: a QSettings-compatible INI store, the profile store, the
   open-direct and playback-time stores, the on-disk conversation log, and the
   credential store), `internal/demo/` (the `IrcDemoServer` seed
-  harness behind `--demo-server`, mirrors `src/irc/ircdemoserver.cpp`),
+  harness behind `--demo-server`, mirrors `client/src/demo/server.rs`),
   `internal/ui/`
   (Bubble Tea shell, mirrors `client/src/ui/`),
   `internal/theme/` (the Omarchy palette: `colors.toml` parsing, the derived
@@ -55,7 +55,7 @@ When the two disagree about the shared contract, the root file wins.
   `crypto/tls`; sockets, the filesystem, and TLS live in `internal/session`.
   `bin/check-conventions` gates this mechanically (test files may read
   testdata with `os`). One documented exception: `internal/irc/avatarurl.go`
-  ports `src/irc/ircavatarurl.cpp` (QUrl + QHostAddress), so it may import
+  mirrors `client/src/irc/avatarurl.rs` (URL + IP literals), so it may import
   `net/url` and `net/netip` — pure URL and IP-literal parsing, not a socket.
   The gate lists that file explicitly; do not widen the exemption.
 - `internal/avatar`, `internal/openurl`, and `internal/theme` are integration
@@ -167,7 +167,7 @@ version the moment its package is first imported — never earlier, because
 - `github.com/aymanbagabas/go-pty` v0.2.3 — imported by `internal/gate`
   for Windows ConPTY (`pty_windows.go`).
 - `github.com/ergochat/irc-go` (`ircmsg`, `ircreader`, `ircfmt`, `ircutils`)
-  — still not imported. The wire layer stays a hand-port of `src/irc/` so the
+  — still not imported. The wire layer stays a hand-port of `client/src/irc/` so the
   byte-for-byte behavior and the mirrored test matrices stay the contract.
   Phase 10 hand-ported the emphasis half of `IrcTextFormatter` as well
   (`internal/irc/textformat.go`, consistent with `plaintext.go`), so `ircfmt`
@@ -198,7 +198,7 @@ platform-neutral and defer OS specifics behind `//go:build` files in
   URLs open through `cmd /c start` (`openurl_windows.go`). Windows Toast
   remains a no-op stub behind the same `Notifier`.
 - Platform behavior (notifications, clipboard, image raster, storage paths,
-  keychain) lives behind build tags in `internal/`, mirroring how `src/irc/`
+  keychain) lives behind build tags in `internal/`, mirroring how `client/src/irc/`
   stays portable while `Backend` owns desktop integration. D-Bus notifications
   are implemented in `internal/notify/notify_linux.go`. `internal/storage` ships
   Linux XDG paths (`paths_linux.go`) and a Linux Secret Service credential store

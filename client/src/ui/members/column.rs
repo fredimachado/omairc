@@ -8,7 +8,7 @@ use crate::ui::widgets::avatar::AvatarPhotos;
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
-/// Panel width in logical pixels (`MembersColumn.qml`).
+/// Panel width in logical pixels (`client/src/ui/members/`).
 pub const MEMBERS_PANEL_WIDTH: f32 = 216.;
 
 /// What the member panel shows and answers, for the current channel.
@@ -39,7 +39,7 @@ pub struct MembersData<'a> {
     pub away_visible: bool,
 }
 
-/// The right-hand member panel for a channel (`MembersColumn.qml`). `host` is
+/// The right-hand member panel for a channel (`client/src/ui/members/`). `host` is
 /// only notified by the scrollbar. The list is focusable with its own key
 /// context (`MemberList`). The `ONLINE - N` heading is clickable and calls
 /// `on_heading`, which opens the Nick sheet.

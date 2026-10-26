@@ -1,5 +1,5 @@
 //! The slash-complete popup: the verb and `/pref` rows above the composer, a port of
-//! `slashCompleteList` in `src/qml/ConversationColumn.qml`. Its rows are styled
+//! `slashCompleteList` in `client/src/ui/center/`. Its rows are styled
 //! like the Jump and Link lists' `text_row`: 12px, radius 7, and the selected row
 //! on the hover colour. The shell owns the rows and the highlight (`SlashSession`).
 //! A click reports the row's index through `on_pick`.
@@ -36,7 +36,7 @@ pub fn render_slash_popup(
     let muted = to_gpui(style.muted_color());
     let hover = to_gpui(style.hover_color());
     // Qt's selected row: the selection colour mixed toward the raised panel, a little
-    // stronger on a dark theme (`slashCompleteList` in ConversationColumn.qml).
+    // stronger on a dark theme (`slashCompleteList` in `client/src/ui/center/`).
     let selected_fill = to_gpui(mix_colors(
         style.selection_color(),
         style.raised_color(),

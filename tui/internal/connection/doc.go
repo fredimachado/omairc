@@ -1,12 +1,12 @@
-// Package connection is the Go port of IrcNetworkProfile
-// (src/irc/ircnetworkprofile.*) and IrcConnection (src/irc/ircconnection.*):
-// the profile model plus the draft/selection, apply, discard, add, remove, and
-// disconnect surface. Phase 11 adds the persisted profile store
-// (internal/storage.ProfileStore), the credential backend
-// (internal/storage.CredentialStore), the saved-password flags, startup
-// activation, and the Connect sheet's persistence and credential sentences. It
-// imports only internal/irc, internal/controller, internal/session, and
-// internal/storage.
+// Package connection owns the Connect sheet's draft and roster in Go, and
+// reconciles Apply with the live session. The draft/selection, apply, discard,
+// add, remove, and disconnect surface mirrors the sheet model in
+// `client/src/model/connect.rs` (that file does not connect). Phase 11 adds
+// the persisted profile store (internal/storage.ProfileStore), the credential
+// backend (internal/storage.CredentialStore), the saved-password flags,
+// startup activation, and the Connect sheet's persistence and credential
+// sentences. It imports only internal/irc, internal/controller,
+// internal/session, and internal/storage.
 //
 // The Go credential store is synchronous, so the C++ revision/obsolete-key
 // state machine is deliberately dropped: Apply writes or removes the current

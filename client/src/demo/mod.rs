@@ -1,5 +1,5 @@
 //! The in-process demo server, behind `--demo-server`. It mirrors
-//! `tui/internal/demo/` (Go) and `src/irc/ircdemoserver.cpp` (C++). It is only the
+//! `tui/internal/demo/` (Go) and `tui/internal/demo/demo.go`. It is only the
 //! peer at the far end of a loopback transport: it answers frames like a server
 //! and never writes `World` or the controller.
 //!

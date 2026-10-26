@@ -1,4 +1,4 @@
-//! The floating `↓` chip over the transcript (`UnseenJumpButton.qml`). It shows
+//! The floating `↓` chip over the transcript (`UnseenJumpButton`). It shows
 //! while an unseen jump is armed: a line arrived while the reader was scrolled up,
 //! or a "New messages" mark is open above the end. A press runs the jump. The
 //! shell draws nothing here, so the chip is part of the transcript view.
@@ -10,13 +10,13 @@ use gpui::{div, prelude::*, px, App, IntoElement, MouseButton, MouseDownEvent, W
 use crate::model::{mix_colors, Style};
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
-/// One half of the bounce (`UnseenJumpButton.qml` `NumberAnimation` duration).
+/// One half of the bounce (`UnseenJumpButton` `NumberAnimation` duration).
 const BOUNCE_HALF_MS: u64 = 700;
 /// Five up/down cycles before the arrow rests.
 const BOUNCE_LOOPS: u32 = 5;
 const BOUNCE_AMPLITUDE: f32 = 3.;
 
-/// The chip's diameter in logical pixels (`UnseenJumpButton.qml`).
+/// The chip's diameter in logical pixels (`UnseenJumpButton`).
 const CHIP_SIZE: f32 = 36.;
 /// The chip's inset from the transcript's bottom-right corner.
 const CHIP_INSET: f32 = 16.;

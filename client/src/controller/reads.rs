@@ -2,8 +2,8 @@
 //! `Members`, `Topic`, `PeopleCount`, `TypingNicks`, `SelectedPeerHeader`,
 //! `HasAwayPresence`, `HasMemberStatus`, `HasTyping`, `UnreadCountFor`,
 //! `MentionFor`, `CurrentNick`, `SelfAway`, `InboxItems` and `ConsoleText` in
-//! `tui/internal/controller/` (Go), and the `ConversationListModel`,
-//! `MessageListModel` and `MemberListModel` roles in `src/irc/` (C++).
+//! `tui/internal/controller/`, and the conversation / message / member
+//! snapshot roles the shell draws.
 //!
 //! Reads take `&self` and answer from the reducer as it stands. The UI calls
 //! `tick` or `pump` before it reads, so the answers include every queued event.
