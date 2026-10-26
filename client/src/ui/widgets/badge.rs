@@ -3,7 +3,7 @@ use gpui::{div, prelude::*, Hsla};
 use crate::model::{Color, Style};
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
-/// The unread pill, as `ConversationRow.qml`: accent with white text when the
+/// The unread pill, as `client/src/ui/sidebar/conversation_row.rs`: accent with white text when the
 /// conversation has a mention, raised with ink text otherwise.
 pub fn unread_badge(style: &Style, unread: u32, mention: bool) -> impl IntoElement {
     let (bg, fg): (Hsla, Hsla) = if mention {

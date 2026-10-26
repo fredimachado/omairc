@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/event.go` (Go) and `src/irc/ircevent.h` (C++).
+//! Port of `tui/internal/irc/event.go`.
 //!
 //! The translated facts a reducer consumes. `Event` is the closed taxonomy:
 //! each variant wraps one payload struct, and `Event::kind` names the

@@ -8,7 +8,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/irc"
 )
 
-// labeledConfig mirrors the sessionConfig() helper in tst_labeledresponse.cpp:
+// labeledConfig mirrors the sessionConfig() helper in `tst_labeledresponse`:
 // reconnect is off so a dropped connection never masks a labeling bug.
 func labeledConfig() SessionConfig {
 	config := sessionTestConfig(sessionTestNetworkID)

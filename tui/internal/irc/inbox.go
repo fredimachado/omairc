@@ -178,7 +178,7 @@ func (item InboxItem) Label() string {
 }
 
 // isConversationKind reports whether kind is cleared by consumeConversation.
-// It mirrors the anonymous isConversationKind in ircinbox.cpp.
+// It mirrors the anonymous isConversationKind in `client/src/irc/inbox.rs`.
 func isConversationKind(kind InboxKind) bool {
 	switch kind {
 	case InboxMention, InboxHighlight, InboxDirect, InboxKick:

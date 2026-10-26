@@ -323,7 +323,7 @@ func prefixChannel(token string) string {
 
 // normalizedAutojoinChannels prefixes a bare token with '#', keeps an explicit
 // channel, and drops a channel key that follows a channel. It mirrors the
-// anonymous splitAutojoin in ircnetworkprofile.cpp.
+// anonymous splitAutojoin in `client/src/storage/profilestore.rs`.
 func normalizedAutojoinChannels(channels []string) []string {
 	var result []string
 	previousWasChannel := false

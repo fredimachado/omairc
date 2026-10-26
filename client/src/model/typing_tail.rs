@@ -1,5 +1,5 @@
 //! Where a DM's typing dots sit, after its last line (Qt `typingFollowsPeerChat`
-//! in `OmaircWindow.qml`).
+//! in `client/src/ui/shell`).
 //!
 //! The dots ride under the peer's last line, with no avatar or header, when that
 //! line is a chat line from the peer stamped with the current minute. Otherwise

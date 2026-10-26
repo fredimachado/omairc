@@ -13,7 +13,7 @@ use crate::ui::widgets::section_heading::{channels_heading, directs_heading};
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui};
 
-/// The expanded rail width in logical pixels (`ConversationColumn.qml` sidebar).
+/// The expanded rail width in logical pixels (`client/src/ui/center/` sidebar).
 pub const SIDEBAR_RAIL_WIDTH: f32 = 244.;
 
 /// What the sidebar shows: every network, the rail and focus state, the selection, and

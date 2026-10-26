@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/framer.go` (Go) and `src/irc/ircframer.{h,cpp}` (C++).
+//! Port of `tui/internal/irc/framer.go`.
 //!
 //! `IrcFramer` cuts a byte stream into CRLF-terminated frames. It keeps partial
 //! frames across `feed` calls, drops frames that break the NUL or length rules

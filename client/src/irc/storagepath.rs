@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/storagepath.go` (Go) and `src/irc/ircstoragepath.cpp`
+//! Port of `tui/internal/irc/storagepath.go`
 //! (C++). Pure segment encoders and decoders; filesystem helpers live in `storage/`.
 
 use sha2::{Digest, Sha256};

@@ -1,8 +1,8 @@
 //! Mention washes: a chat line the reducer marked `mentioned` is tinted, and its
 //! left edge gets a bar. That flag is nick or `/highlight` word hits from someone
-//! else (`isTranscriptHighlight` in `src/irc/irceventreducer.cpp`). Word matching
+//! else (`isTranscriptHighlight` in `tui/internal/irc/reducer.go`). Word matching
 //! lives in the reducer; `mentions_nick` here is for tests of `containsWord`.
-//! The look is `src/qml/MentionWash.qml`. A whois or event line never washes,
+//! The look is `client/src/model/mention.rs`. A whois or event line never washes,
 //! and a DM washes only when the reducer set `mentioned`.
 
 use super::color::Color;
@@ -44,7 +44,7 @@ pub fn is_mention_row(row: &Row, self_nick: &str) -> bool {
     !self_nick.is_empty() && row.kind == RowKind::Message && row.mentioned
 }
 
-/// The wash fill and the left bar for a mention row (`MentionWash.qml`): the
+/// The wash fill and the left bar for a mention row (`client/src/model/mention.rs`): the
 /// accent mixed into the page, a little more of it in dark mode for the bar.
 pub fn mention_wash(style: &Style) -> (Color, Color) {
     let dark = style.dark_mode();

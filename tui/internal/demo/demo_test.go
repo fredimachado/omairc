@@ -14,7 +14,7 @@ import (
 
 // attachController seeds a fresh controller and returns it with the demo
 // server. Tests are in-package so they can drive the unexported tryAnswer*
-// handlers directly, matching tst_demoserver.cpp.
+// handlers directly, matching `tst_demoserver`.
 func attachController(t *testing.T, autoEcho bool) (*controller.Controller, *DemoServer) {
 	t.Helper()
 	c := controller.New()

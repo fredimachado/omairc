@@ -1,5 +1,5 @@
 //! Check for Updates and the Windows installer update, ported from
-//! `src/omaircupdatecheck.cpp`. It reads the latest GitHub release, orders its
+//! `omaircupdatecheck`. It reads the latest GitHub release, orders its
 //! version against the running one, and words the status line as Qt does. A
 //! portable copy opens the release page. An installed copy with a verified
 //! setup asset downloads it in the background and offers `Restart to update`.

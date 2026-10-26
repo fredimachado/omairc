@@ -3,7 +3,7 @@
 //! conversation. Port of `SelectConversation`, `OpenStatus`, `OpenDirectMessage`,
 //! `CloseDirectMessage`, `DropConversationAndReselect`, `ClearConversationSelection`
 //! and `CanCloseSelection` in `tui/internal/controller/controller.go` and
-//! `wiring.go` (Go), and `src/irc/irccontroller.cpp` (C++).
+//! `wiring.go` (Go), and `tui/internal/controller/controller.go`.
 
 use crate::irc::command::ComposerSurface;
 use crate::irc::conversation::neighbor_after_drop;

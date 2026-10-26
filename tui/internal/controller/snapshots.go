@@ -7,7 +7,7 @@ import (
 )
 
 // ConversationSnapshot is one sidebar row. The fields mirror the roles
-// ConversationListModel exposes (src/irc/conversationlistmodel.h): conversation,
+// ConversationListModel exposes (`client/src/controller/snapshots.rs`): conversation,
 // unread, mention, direct, networkId, conversationId, conversationName, typing,
 // muted, presence, avatar, bot.
 type ConversationSnapshot struct {
@@ -26,7 +26,7 @@ type ConversationSnapshot struct {
 }
 
 // MessageSnapshot is one transcript row of the selected conversation. The
-// fields mirror the roles MessageListModel exposes (src/irc/messagelistmodel.h)
+// fields mirror the roles MessageListModel exposes (`client/src/controller/snapshots.rs`)
 // minus the visual-only rows, which are a view concern.
 type MessageSnapshot struct {
 	Author           string
@@ -41,7 +41,7 @@ type MessageSnapshot struct {
 }
 
 // MemberSnapshot is one member-panel row of the selected channel. The fields
-// mirror the roles MemberListModel exposes (src/irc/memberlistmodel.h),
+// mirror the roles MemberListModel exposes (`client/src/controller/snapshots.rs`),
 // including BotRole.
 type MemberSnapshot struct {
 	Nick    string
@@ -174,7 +174,7 @@ func (c *Controller) conversationSnapshot(key irc.ConversationKey,
 // paints a dot when the network negotiated away-notify, the same gate that
 // hides another member's away dot; without it the server never pushes AWAY, so
 // a visible peer would look permanently online. It mirrors conversationPresence
-// in conversationlistmodel.cpp, whose PeerUnknown case is the zero value here
+// in `client/src/controller/snapshots.rs`, whose PeerUnknown case is the zero value here
 // because Phase 2 leaves an unreachable peer unpainted.
 func conversationPresence(reducer *irc.EventReducer, conversation *irc.ConversationState, awayNotify bool) string {
 	if conversation.IsChannel() || !awayNotify {
@@ -253,7 +253,7 @@ func (c *Controller) rebuildMembers() {
 }
 
 // messageKindName maps a reducer MessageKind to the transcript role string. It
-// mirrors kindString in messagelistmodel.cpp.
+// mirrors kindString in `client/src/controller/snapshots.rs`.
 func messageKindName(kind irc.MessageKind) string {
 	switch kind {
 	case irc.KindAction:
@@ -271,7 +271,7 @@ func messageKindName(kind irc.MessageKind) string {
 }
 
 // originName maps a reducer Origin to the transcript role string. It mirrors
-// the OriginRole mapping in messagelistmodel.cpp.
+// the OriginRole mapping in `client/src/controller/snapshots.rs`.
 func originName(origin irc.Origin) string {
 	if origin == irc.OriginReplay {
 		return "replay"

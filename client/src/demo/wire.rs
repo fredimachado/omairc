@@ -1,5 +1,5 @@
-//! Port of `tui/internal/demo/wire.go` (Go) and the wire part of
-//! `src/irc/ircdemoserver.cpp` (C++): line assembly, client-frame parsing, the
+//! Port of `tui/internal/demo/wire.go` and the wire part of
+//! `tui/internal/demo/demo.go`: line assembly, client-frame parsing, the
 //! registration burst, channel state, presence, accounts, transcript and typing
 //! lines, and the test-only `#bench` channel seed.
 //!

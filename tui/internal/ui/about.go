@@ -10,7 +10,7 @@ import (
 )
 
 // This file is the Ctrl+Shift+/ About sheet: the terminal counterpart of the
-// Qt AboutSheet (src/qml/AboutSheet.qml). It shows the app name, the running
+// Qt AboutSheet (`client/src/ui/sheets/about.rs`). It shows the app name, the running
 // version, a short description, the open-source line with the GitHub source
 // URL, an OK control, and the copyright footer.
 //
@@ -22,14 +22,14 @@ import (
 // terminal sheet is informational only for now.
 
 // aboutRepoURL is the source repository the open-source line names. It mirrors
-// omaircGithubRepoUrl() in src/omaircupdatecheck.cpp.
+// omaircGithubRepoUrl() in `omaircupdatecheck`.
 const aboutRepoURL = "https://github.com/fredimachado/omairc"
 
-// aboutCopyright is the footer line, mirroring AboutSheet.qml's aboutCopyright.
+// aboutCopyright is the footer line, mirroring `client/src/ui/sheets/about.rs`'s aboutCopyright.
 const aboutCopyright = "Copyright © 2026 Fredi Machado"
 
 // aboutDescription is the one-paragraph product blurb, verbatim from
-// AboutSheet.qml's aboutDescription.
+// `client/src/ui/sheets/about.rs`'s aboutDescription.
 const aboutDescription = "Omairc is an Internet Relay Chat client for Omarchy. " +
 	"People use it to communicate, share, play, and work with each other on " +
 	"IRC networks around the world."

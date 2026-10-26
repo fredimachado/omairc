@@ -1,5 +1,5 @@
 //! The transport's callbacks into the session: `connected`, `encrypted`, `disconnected` and
-//! `errorOccurred` (`IrcTransport`'s signals in `src/irc/ircsession.cpp`, and the Go `Connected`,
+//! `errorOccurred` (`IrcTransport`'s signals in `tui/internal/session/session.go`, and the Go `Connected`,
 //! `Encrypted`, `Disconnected` and `Error` entry points of `session.go`). The session's
 //! `Core` answers them here, so the lifecycle entry points sit in one file.
 

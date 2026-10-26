@@ -1,5 +1,5 @@
-//! Port of `tui/internal/irc/conversation.go` (Go) and `src/irc/ircconversation.{h,cpp}`
-//! and the conversation-cause rules of `src/irc/irceventreducer.cpp` (C++).
+//! Port of `tui/internal/irc/conversation.go`
+//! and the conversation-cause rules of `tui/internal/irc/reducer.go`.
 //!
 //! The stable conversation id, the cause table behind `ensure_conversation`, the
 //! service-target test, and the neighbor pick after a row is dropped. The sidebar

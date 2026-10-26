@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/avatarurl.go` (Go) and `src/irc/ircavatarurl.cpp` (C++).
+//! Port of `tui/internal/irc/avatarurl.go`.
 //! `/avatar` accepts an HTTPS URL or an email address. An email becomes a Gravatar
 //! SHA-256 URL, and only a safe HTTPS URL is kept. The URL is parsed by the `url`
 //! crate, the same WHATWG parser behind QUrl's strict mode, and IP literals are

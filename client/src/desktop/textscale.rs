@@ -1,5 +1,5 @@
 //! Linux portal text scale. Port of `SystemTheme::requestPortalTextScale` and
-//! `sanitizedTextScale` in `src/systemtheme.cpp`, with the session-bus guard from
+//! `sanitizedTextScale` in `systemtheme`, with the session-bus guard from
 //! `src/linuxsessionbus.h`. Non-Linux builds expose only `sanitized_text_scale` and
 //! no-op portal entry points.
 

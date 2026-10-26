@@ -43,7 +43,7 @@ pub struct Row {
     /// Whether the reducer classified this chat line as a transcript highlight
     /// (nick or `/highlight` word hit from someone else).
     pub mentioned: bool,
-    /// Live or replay (`MessageRow.qml` `origin` / `replayed`).
+    /// Live or replay (`client/src/ui/message_row.rs` `origin` / `replayed`).
     pub origin: Origin,
 }
 

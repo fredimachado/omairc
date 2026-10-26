@@ -177,7 +177,7 @@ func (m *Model) toggleMembers() {
 // (focus bar, presence dot, PREFIX label, bot mark, account, typing dots) and,
 // when the network advertises member status, a muted status subline indented
 // under the label. It mirrors the Row plus the status Text in
-// MembersColumn.qml:184-250. Each sub-line is its own entry so
+// `client/src/ui/members/`:184-250. Each sub-line is its own entry so
 // renderColumn keeps them from wrapping. membersView ellipsizes a line that
 // is wider than the column before that hard cut.
 func (m *Model) memberRow(index int, member controller.MemberSnapshot) []string {
@@ -187,7 +187,7 @@ func (m *Model) memberRow(index int, member controller.MemberSnapshot) []string 
 	}
 	// Our own away state arrives as the 305/306 numerics, so it is always
 	// shown; another member's needs away-notify. This is the exact compare
-	// MembersColumn.qml's isSelf uses for the presence dot.
+	// `client/src/ui/members/`'s isSelf uses for the presence dot.
 	self := member.Nick == m.ctrl.CurrentNick()
 	presenceShown := m.ctrl.HasAwayPresence() || self
 	away := member.Away && presenceShown
@@ -243,7 +243,7 @@ func (m *Model) memberRow(index int, member controller.MemberSnapshot) []string 
 // memberTooltip lists one fact per line: presence when the row shows it, then
 // the meaningful real name, then each short label. A listed member is online
 // or away, never offline. Presence is omitted when away-notify is off and the
-// row is not our own nick, matching MembersColumn.qml.
+// row is not our own nick, matching `client/src/ui/members/`.
 func (m *Model) memberTooltip(member controller.MemberSnapshot, presenceShown, away bool) []string {
 	var parts []string
 	if presenceShown {

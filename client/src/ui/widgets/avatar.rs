@@ -1,6 +1,6 @@
 //! A nick's avatar: the initials on the nick's palette fill, with a photo clipped into
 //! the circle over them once its image is ready, and the presence dot. Qt's
-//! `NickGlyph.qml` shows the photo when there is one and the initials until it loads
+//! `NickGlyph` shows the photo when there is one and the initials until it loads
 //! or when there is none. The photo is an `ImageSource` the shell resolved
 //! (`ui::shell::avatars`): a bundled asset, or a fetched avatar already decoded.
 

@@ -1,4 +1,4 @@
-//! Topic-line hit testing (`TopicLine.qml`). Clicks and the pointing-hand cursor
+//! Topic-line hit testing (`TopicLine`). Clicks and the pointing-hand cursor
 //! respect ellipsis per hit: a leading URL stays active when the tail is elided.
 
 use std::ops::Range;

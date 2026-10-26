@@ -1,6 +1,6 @@
-//! Port of `tui/internal/controller/channellist.go` (Go) and
-//! `src/irc/ircchannellistrequest.{h,cpp}` and `src/irc/channellistmodel.{h,cpp}`
-//! (C++): `/list` through the wire.
+//! Port of `tui/internal/controller/channellist.go` and
+//! `tui/internal/controller/channellist.go` and `tui/internal/controller/channellist.go`
+//! `/list` through the wire.
 //!
 //! `LIST mask` goes out as a session write. The server's answer streams back as 321
 //! (start), one 322 per channel, then 323 (end), and the controller folds those into a

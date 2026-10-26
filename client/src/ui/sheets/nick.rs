@@ -16,7 +16,7 @@ use crate::ui::widgets::avatar::{avatar_with_presence, AvatarPhotos};
 use crate::ui::widgets::bot_mark::bot_mark;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
-/// Qt's dimmed glyph for an away member (`NickSheet.qml` `opacity`).
+/// Qt's dimmed glyph for an away member (`client/src/ui/sheets/nick.rs` `opacity`).
 const AWAY_GLYPH_OPACITY: f32 = 0.62;
 
 pub struct NickSource {
@@ -28,7 +28,7 @@ pub struct NickSource {
     pub avatars: bool,
     /// The photos the frame draws, by avatar reference. The shell keeps them current.
     pub photos: AvatarPhotos,
-    /// Whether away-notify is on for the selected network (`NickSheet.qml`
+    /// Whether away-notify is on for the selected network (`client/src/ui/sheets/nick.rs`
     /// `awayPresenceVisible`), from `Controller::has_away_presence()` when the sheet opens.
     pub away_visible: bool,
 }

@@ -134,7 +134,7 @@ func TestTranscriptGroupBlanksTimeAndNick(t *testing.T) {
 	}
 }
 
-// TestContinuesChatGroup mirrors continuesMessageGroup in OmaircWindow.qml: a
+// TestContinuesChatGroup mirrors continuesMessageGroup in `client/src/ui/shell`: a
 // row groups only with a same-nick, same-minute, same-origin chat row above it.
 func TestContinuesChatGroup(t *testing.T) {
 	at := time.Date(2026, 9, 27, 12, 5, 0, 0, time.UTC)

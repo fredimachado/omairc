@@ -10,7 +10,7 @@ use crate::irc::command::ComposerSurface;
 pub use crate::irc::slashcomplete::SlashHit;
 use crate::irc::slashcomplete::{project_slash, SlashProbe};
 
-/// The muted text after a row's label (Qt `usageHint` in `ConversationColumn.qml`).
+/// The muted text after a row's label (Qt `usageHint` in `client/src/ui/center/`).
 /// A usage that starts with its label shows the rest, so `/version [nick]` shows
 /// ` [nick]`. Any other usage shows in full, as `Show peer avatars` does.
 pub fn usage_hint<'a>(label: &str, usage: &'a str) -> &'a str {
@@ -319,7 +319,7 @@ mod tests {
         );
     }
 
-    // Ported from tst_command.cpp (`slashSessionKeys`): the keys on a verb, an alias, a
+    // Ported from `tst_command` (`slashSessionKeys`): the keys on a verb, an alias, a
     // prefix, a whole word and a dismissed needle.
 
     #[test]

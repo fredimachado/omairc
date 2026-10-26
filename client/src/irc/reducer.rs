@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/reducer.go` (Go) and `src/irc/irceventreducer.{h,cpp}`
+//! Port of `tui/internal/irc/reducer.go`
 //! (C++). The reducer folds the translated events in `irc/event.rs` into
 //! conversation state and reports which surfaces each event dirtied.
 //!

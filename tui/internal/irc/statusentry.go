@@ -153,7 +153,7 @@ func statusCommandOf(message Message) string {
 
 // statusTimestamp stamps a Status entry. The Qt core stamps every entry with
 // the wall clock at classification time and never reads the IRCv3 time tag
-// (src/irc/ircstatusentry.cpp), so the injected now is the whole story. Time
+// (`client/src/irc/statusentry.rs`), so the injected now is the whole story. Time
 // is passed in rather than read from the clock to keep this package
 // deterministic, matching Translate and EventReducer.Apply.
 func statusTimestamp(now time.Time) time.Time {
@@ -710,7 +710,7 @@ type statusKeepRow struct {
 	outgoing statusKeep
 }
 
-// statusKeepRows mirrors kStatusKeep in src/irc/ircstatusentry.cpp.
+// statusKeepRows mirrors kStatusKeep in `client/src/irc/statusentry.rs`.
 var statusKeepRows = []statusKeepRow{
 	{"PING", statusKeepDrop, statusKeepDrop},
 	{"PONG", statusKeepDrop, statusKeepDrop},
@@ -804,7 +804,7 @@ func statusIsServiceUser(message Message, features ServerFeatures) bool {
 }
 
 // statusConversationEngaged mirrors the engaged outcome of ircConversationFor
-// in src/irc/irceventtranslator.cpp for the subset ircStatusKeepsIncoming
+// in `client/src/irc/translator.rs` for the subset ircStatusKeepsIncoming
 // consults. The full predicate lands with the reducer's conversation policy in
 // a later wave; keeping this private subset here keeps Status classification
 // exact until then.

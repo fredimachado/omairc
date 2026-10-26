@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/ctcp.go` (Go) and `src/irc/irctcp.cpp` (C++).
+//! Port of `tui/internal/irc/ctcp.go`.
 //!
 //! The VERSION reply is the desktop reply: the project URL alone, no build number,
 //! as in `ctcpVersionReplyText()` in the C++ core. The Go TUI names itself in its
@@ -86,7 +86,7 @@ mod tests {
     // Ported from tui/internal/irc/ctcp_test.go.
 
     /// Mirrors TestCtcpVersionReplyNamesTheTui. The Go reply names the TUI; the
-    /// desktop reply is the URL alone (`ctcpVersionReplyText` in irctcp.cpp).
+    /// desktop reply is the URL alone (`ctcpVersionReplyText` in `tui/internal/irc/ctcp.go`).
     #[test]
     fn version_reply_is_the_project_url_on_the_desktop() {
         assert_eq!(ctcp_version_reply_text(), "https://omairc.app");

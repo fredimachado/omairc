@@ -3,7 +3,7 @@
 //! intent (a slash line, a start, a disconnect), reads the frames the loopback wrote, and
 //! reads back what the footer and the rows show. The sessions here are the demo's, or a
 //! lab session the test drives by hand over a loopback for the states a demo never enters.
-//! The colours are the `presenceMarkColor` values in `src/qml/OmaircStyle.qml`.
+//! The colours are the `presenceMarkColor` values in `client/src/model/style.rs`.
 
 use std::rc::Rc;
 

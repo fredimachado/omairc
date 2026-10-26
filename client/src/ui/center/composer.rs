@@ -13,7 +13,7 @@ const SHELL_HEIGHT: f32 = 46.;
 pub const SHELL_INSET: f32 = 20.;
 
 /// The composer strip under the transcript, a port of `composerShell` in
-/// `ConversationColumn.qml`. The strip is `BOTTOM_BAR_HEIGHT` tall, the same as the
+/// `client/src/ui/center/`. The strip is `BOTTOM_BAR_HEIGHT` tall, the same as the
 /// identity footer, and its top rule is drawn on the footer's divider row, so the two
 /// rules line up across the window. The rule is an absolute child, not the strip's own
 /// border, so it stays on that row while the shell is centred. The 46px shell sits

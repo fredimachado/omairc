@@ -1,4 +1,4 @@
-//! The product CLI's reads on the controller. Port of the snapshot helpers in `src/irc/irccontroller.cpp`
+//! The product CLI's reads on the controller. Port of the snapshot helpers in `tui/internal/controller/controller.go`
 //! (`snapshotMessages`, `snapshotMembers`, `snapshotConversations`, and `sendToTarget`, which the send
 //! intent in `send.rs` already covers).
 //!

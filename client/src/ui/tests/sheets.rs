@@ -8,7 +8,7 @@ use crate::util::{scaled_px, style};
 
 use super::fixture;
 
-/// Matches `Shell::member_page` (`MembersColumn.qml` row height).
+/// Matches `Shell::member_page` (`client/src/ui/members/` row height).
 const MEMBER_ROW_HEIGHT: f32 = 43.;
 
 #[gpui::test]

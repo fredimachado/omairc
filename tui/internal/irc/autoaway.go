@@ -7,7 +7,7 @@ import (
 	"unicode"
 )
 
-// This file is the Go port of src/irc/ircautoaway.{h,cpp}: the /autoaway
+// This file is the Go port of `client/src/irc/autoaway.rs`: the /autoaway
 // argument parser, the duration parser and formatter, and the query,
 // confirmation, and Status strings.
 

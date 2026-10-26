@@ -120,7 +120,7 @@ func (m *Model) transcriptRowArea() transcriptRows {
 
 // unreadMarkLine renders the "New messages" boundary: a centered caption
 // between two accent-mixed rules sized to the transcript column, mirroring
-// UnreadMark.qml. A column too narrow for the caption plus a rule on each side
+// `client/src/ui/transcript/`. A column too narrow for the caption plus a rule on each side
 // shows the caption alone.
 func (m *Model) unreadMarkLine() string {
 	width := m.transcriptWidth()
@@ -152,7 +152,7 @@ func (m *Model) transcriptRowTotal() int {
 // transcriptView renders the selected conversation: its pinned header,
 // then either the Status console lines when the console is open or the live
 // transcript. The header stays put while the rows scroll, mirroring
-// ConversationColumn.qml's fixed conversationHeader above its scrolling
+// `client/src/ui/center/`'s fixed conversationHeader above its scrolling
 // Flickable. The viewport honors the Phase 6 scroll offset and the find
 // highlight; it pins to the tail while follow-the-end is on. The console is
 // read through the controller's text accessor so this package never imports
@@ -411,7 +411,7 @@ func (m *Model) transcriptWindow(n, height int) (int, int) {
 
 // transcriptRowTexts is the plain text find and copy match against: author and
 // body for a message row, the line itself for Status. It mirrors
-// OmaircWindow.qml's transcriptRowText.
+// `client/src/ui/shell`'s transcriptRowText.
 func (m *Model) transcriptRowTexts() []string {
 	if m.ctrl == nil {
 		return nil
@@ -1132,7 +1132,7 @@ func sameTranscriptDay(a, b time.Time) bool {
 
 // continuesChatGroup reports whether message continues previous as one group:
 // the same nick in the same minute of the same day from the same origin. It
-// mirrors continuesMessageGroup in OmaircWindow.qml, whose previous visual
+// mirrors continuesMessageGroup in `client/src/ui/shell`, whose previous visual
 // row is the date rule when the day changes. The later rows of a group blank
 // the timestamp and nick so the run reads as one block.
 func continuesChatGroup(previous *controller.MessageSnapshot, message controller.MessageSnapshot) bool {
@@ -1286,7 +1286,7 @@ func (m *Model) messageRowAt(messages []controller.MessageSnapshot, index int, m
 			m.styles.Action.Render(" ")+
 			m.renderMessageBody(message.Body, m.styles.Action)), "  ", message)
 	case "event":
-		// A dim, centered server event, mirroring MessageRow.qml's centered
+		// A dim, centered server event, mirroring `client/src/ui/message_row.rs`'s centered
 		// messageEvent.
 		return m.eventRow(message.Body)
 	case "notice":
@@ -1309,14 +1309,14 @@ func (m *Model) messageRowAt(messages []controller.MessageSnapshot, index int, m
 }
 
 // nickStyle is the transcript byline style: the nick's fixed NickPalette color
-// in bold, mirroring OmaircStyle.qml's nickColor and MessageHeader.qml's bold
-// author label. Nick colors never move with the theme.
+// in bold, mirroring `client/src/model/style.rs`'s nickColor and the message
+// header's bold author label. Nick colors never move with the theme.
 func (m *Model) nickStyle(nick string) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(nickColor(nick)).Bold(true)
 }
 
 // mentionWash is the background of a highlighted row: the page color mixed
-// toward the mention tint, mirroring MentionWash.qml's washColor. It is a
+// toward the mention tint, mirroring `client/src/model/mention.rs`'s washColor. It is a
 // one-off derivation from Styles.Colors, not a new style field.
 func (m *Model) mentionWash() lipgloss.Style {
 	return lipgloss.NewStyle().Background(
@@ -1355,7 +1355,7 @@ func (m *Model) clipTranscriptLine(line string) string {
 // mentionRow renders a highlighted message as a full-width wash band: the same
 // time/nick column as a plain chat row, the body in the mention tint, and every
 // cell carrying the wash background so the tint spans the column like
-// MentionWash.qml rather than stopping at the end of the text. Nick keeps its
+// `client/src/model/mention.rs` rather than stopping at the end of the text. Nick keeps its
 // palette color and the body keeps its IRC emphasis on top of the wash.
 func (m *Model) mentionRow(message controller.MessageSnapshot, grouped bool, nickWidth int) string {
 	wash := m.mentionWash()

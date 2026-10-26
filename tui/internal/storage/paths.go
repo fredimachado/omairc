@@ -21,7 +21,7 @@ func ConfigPath() string {
 // TranscriptRoot returns $OMAIRC_TRANSCRIPT_ROOT when set, else
 // <GenericStateRoot>/omairc/logs. This mirrors
 // IrcConversationLog::defaultRoot and xdgLogsRoot in
-// src/irc/ircconversationlog.cpp, including the environment override.
+// `client/src/storage/conversationlog.rs`, including the environment override.
 func TranscriptRoot() string {
 	if scoped := os.Getenv("OMAIRC_TRANSCRIPT_ROOT"); scoped != "" {
 		return scoped

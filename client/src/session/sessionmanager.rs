@@ -1,5 +1,5 @@
-//! Port of `tui/internal/session/sessionmanager.go` (Go) and
-//! `src/irc/ircsessionmanager.{h,cpp}` (C++).
+//! Port of `tui/internal/session/sessionmanager.go` and
+//! `ircsessionmanager` (C++).
 //!
 //! The manager owns the live sessions, one per network id. The Qt manager keeps
 //! its sessions as QObject children and tears them down with `deleteLater`; Rust

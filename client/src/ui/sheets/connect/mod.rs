@@ -1,4 +1,4 @@
-//! The Connect sheet: the veil and the tabbed card, a port of `ConnectionSheet.qml`.
+//! The Connect sheet: the veil and the tabbed card, a port of `client/src/ui/sheets/connect/`.
 //! The card is the keyboard's home while Connect shows. Its key context owns Tab,
 //! Enter, Space and the rail keys, and the fields under it keep their text keys.
 //!

@@ -15,7 +15,7 @@ import "github.com/fredimachado/omairc/tui/internal/irc"
 // implements the bouncer playback coordinator (playback.go) and wires the
 // on-disk stores, so what remains here is only the transcript log alias.
 // Desktop integration and the suppressDesktopNotification test latch live on
-// the shell (internal/ui), mirroring OmaircWindow.qml calling
+// the shell (internal/ui), mirroring `client/src/ui/shell` calling
 // backend.notifyDesktop; the controller only emits the arrival signals.
 
 // ConversationLog is the transcript persistence seam. It is the reducer's own

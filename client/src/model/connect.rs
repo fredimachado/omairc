@@ -3,9 +3,9 @@
 //!
 //! A port of the parts of `IrcConnection` the sheet drives (`select`, `add`,
 //! `discard`, `removeSelected`, `apply`, `dirty`, `rosterRows`), and of the
-//! strings and checks in `src/qml/ConnectionSheet.qml`, `ConnectionField.qml`,
-//! `FieldHelpMark.qml`, `PreferenceToggleRow.qml` and
-//! `src/irc/ircnetworkprofile.cpp`.
+//! strings and checks in `client/src/ui/sheets/connect/`, `client/src/ui/sheets/connect/field.rs`,
+//! `client/src/ui/sheets/connect/field.rs`, `client/src/ui/sheets/connect/` and
+//! `tui/internal/connection/profile.go`.
 //!
 //! Nothing here connects. Apply returns the saved profile, and the shell hands it to
 //! `Controller::start`. The server and NickServ passwords live in the draft until Apply.
@@ -41,7 +41,7 @@ const DEFAULT_CHANTYPES: &str = "#&";
 /// The host every demo network is seeded with (`seedProfile`).
 const SEED_HOST: &str = "irc.example";
 
-// Sheet strings, copied from `ConnectionSheet.qml`.
+// Sheet strings, copied from `client/src/ui/sheets/connect/`.
 pub const NEW_NETWORK_LABEL: &str = "New network";
 pub const NETWORKS_LABEL: &str = "Networks";
 pub const ADD_NETWORK_LABEL: &str = "+ Add network";
@@ -55,7 +55,7 @@ pub const REMOVE_LABEL: &str = "Remove";
 pub const DISCARD_LABEL: &str = "Discard";
 pub const DISCONNECT_LABEL: &str = "Disconnect";
 pub const APPLY_LABEL: &str = "Apply";
-/// Under the password fields when a saved server password can be cleared (`ConnectionSheet.qml`).
+/// Under the password fields when a saved server password can be cleared (`client/src/ui/sheets/connect/`).
 pub const FORGET_PASSWORD_LABEL: &str = "forget saved server password";
 /// Under the password fields when a saved NickServ password can be cleared.
 pub const FORGET_NICKSERV_LABEL: &str = "forget saved NickServ password";

@@ -8,7 +8,7 @@ import (
 )
 
 // This file is the Go port of IrcAutoawayRuntime in
-// src/irc/ircautoawayruntime.{h,cpp}: the idle and grace timers, the tripped
+// `client/src/controller/autoawayruntime.rs`: the idle and grace timers, the tripped
 // state, the per-network auto/manual away sets, and the /autoaway dispatch.
 // Away decisions stay here; the controller only records Status lines and keeps
 // its own unaway bookkeeping.

@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/channelmode.go` (Go) and `src/irc/ircchannelmode.{h,cpp}` (C++).
+//! Port of `tui/internal/irc/channelmode.go`.
 //!
 //! Parses a `/mode` argument into a query or a change. The channel must start
 //! with a type the server advertised, so CHANTYPES decides what counts as a channel.

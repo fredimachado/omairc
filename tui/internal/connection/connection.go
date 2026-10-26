@@ -1161,7 +1161,7 @@ func (c *Connection) notifyCredential() {
 }
 
 // settingsFileSentence renders the failure sentence for a store status. It
-// mirrors the anonymous settingsFileSentence in ircconnection.cpp.
+// mirrors the anonymous settingsFileSentence in `client/src/controller/networks.rs`.
 func settingsFileSentence(status storage.Status) string {
 	switch status {
 	case storage.StatusAccessError:

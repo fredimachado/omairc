@@ -2,7 +2,7 @@
 //! for its desktop features. The update check and the installer download use it
 //! now, and the avatar fetch will use it later. Go twin: none, since the TUI
 //! calls `net/http` directly. C++: `QNetworkAccessManager` as used in
-//! `src/omaircupdatecheck.cpp` and `src/irc/ircavatarstore.cpp`.
+//! `omaircupdatecheck` and `tui/internal/avatar/avatar.go`.
 //!
 //! `UreqFetch` is the one implementation that opens a socket. It blocks, so
 //! callers run it on `cx.background_executor()`. It never follows a redirect

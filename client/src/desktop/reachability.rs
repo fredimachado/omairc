@@ -1,5 +1,5 @@
 //! Host network reachability. Qt loads `QNetworkInformation` with the Reachability
-//! feature (`src/irc/ircsession.cpp`); on Linux that backend reads NetworkManager.
+//! feature (`tui/internal/session/session.go`); on Linux that backend reads NetworkManager.
 //! A reachable signal lets a session in `Reconnecting` start its attempt without
 //! waiting out the backoff.
 

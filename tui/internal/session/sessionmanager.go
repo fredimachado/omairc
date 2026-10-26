@@ -7,7 +7,7 @@ import (
 )
 
 // Manager owns the live sessions, one per network id. It is the Go shape of
-// IrcSessionManager in src/irc/ircsessionmanager.h: create an add-only
+// IrcSessionManager in `ircsessionmanager`: create an add-only
 // registry, look sessions up by network id, and activate/stop/discard them.
 //
 // The C++ manager keeps its sessions as QObject children and relies on
@@ -26,7 +26,7 @@ func NewManager() *Manager {
 
 // Create builds a session, installs it in the registry, and returns it. It
 // rejects an empty network id, a duplicate network id, and a nil transport,
-// mirroring IrcSessionManager::createSession (ircsessionmanager.cpp:8-26).
+// mirroring IrcSessionManager::createSession (`ircsessionmanager`:8-26).
 func (m *Manager) Create(config SessionConfig, transport Transport, clock Clock) (*Session, error) {
 	if transport == nil {
 		return nil, errors.New("session: transport is required")
@@ -70,7 +70,7 @@ func (m *Manager) NetworkIDs() []string {
 
 // Activate starts the session for networkID and reports whether it ended up
 // live (state neither Idle nor Failed). It mirrors
-// IrcSessionManager::activateSession (ircsessionmanager.cpp:41-48).
+// IrcSessionManager::activateSession (`ircsessionmanager`:41-48).
 func (m *Manager) Activate(networkID string) bool {
 	session := m.Find(networkID)
 	if session == nil {
@@ -90,7 +90,7 @@ func (m *Manager) Stop(networkID string) {
 // Discard removes the session for networkID from the registry and stops it.
 // The removal happens first so a concurrent Create for the same id sees a free
 // slot; the observable contract (Find returns nil once Discard returns) matches
-// IrcSessionManager::discardSession (ircsessionmanager.cpp:58-68). A missing
+// IrcSessionManager::discardSession (`ircsessionmanager`:58-68). A missing
 // network is a no-op.
 func (m *Manager) Discard(networkID string) {
 	m.mu.Lock()
@@ -109,7 +109,7 @@ func (m *Manager) IsLive(networkID string) bool {
 }
 
 // isLive reports whether the session is neither Idle nor Failed. It mirrors
-// IrcSessionManager::isLive (ircsessionmanager.cpp:70-74).
+// IrcSessionManager::isLive (`ircsessionmanager`:70-74).
 func (s *Session) isLive() bool {
 	state := s.State()
 	return state != StateIdle && state != StateFailed

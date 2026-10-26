@@ -5,7 +5,7 @@ import (
 )
 
 // This file is the Go port of the slash-command core in
-// src/irc/irccommand.{h,cpp}: the composer surface, the verb scope, the
+// `irccommand`: the composer surface, the verb scope, the
 // parsed command, the verb table, and the dispatch outcome text.
 
 // ComposerSurface selects which composer a command was typed into. It mirrors

@@ -3,7 +3,7 @@ package irc
 import "strings"
 
 // RosterDisplayName composes the network roster label the way
-// IrcConnection::rosterDisplayName does (src/irc/ircconnection.cpp:1901-1918):
+// IrcConnection::rosterDisplayName does (`client/src/controller/networks.rs`):
 // the resolved label stands alone unless another network resolves to the same
 // label case-insensitively, in which case a non-empty nick disambiguates it.
 //

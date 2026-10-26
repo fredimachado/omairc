@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/viewnotify.go` (Go) and `src/irc/ircviewnotify.h` (C++).
+//! Port of `tui/internal/irc/viewnotify.go`.
 //!
 //! Go reports what a reduced event dirtied as one struct of flags. Here the same
 //! facts are a list of `ViewNotify` surfaces. An event yields a `Vec`, an empty

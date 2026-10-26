@@ -1,5 +1,5 @@
-//! Port of `tui/internal/irc/textformat.go` (Go) and `emphasizedIrcText` /
-//! `hasIrcEmphasis` in `src/irc/irctextformatter.cpp` (C++).
+//! Port of `tui/internal/irc/textformat.go` /
+//! `hasIrcEmphasis` in `irctextformatter` (C++).
 //!
 //! One walker produces styled runs with the full attribute set (colors, reverse,
 //! monospace, strikethrough) for the GPUI transcript. `emphasized_segments` is the

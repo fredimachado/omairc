@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/jointarget.go` (Go) and `src/irc/ircjointarget.{h,cpp}` (C++).
+//! Port of `tui/internal/irc/jointarget.go`.
 //!
 //! A validated JOIN target: a channel name and an optional channel key. The
 //! `/join` argument parser turns user input into these, and the session sends

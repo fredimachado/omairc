@@ -1,4 +1,4 @@
-//! Windows Toast notifications. Port of `windowsnotifications.cpp`.
+//! Windows Toast notifications. Port of `client/src/desktop/notifier/windows.rs`.
 //!
 //! Toasts use the AUMID `FrediMachado.Omairc`. Activation goes through two per-user records:
 //! the activator registration (`LocalServer32`) and a Start Menu `Omairc.lnk` that carries the

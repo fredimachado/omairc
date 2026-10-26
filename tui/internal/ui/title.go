@@ -10,12 +10,12 @@ import (
 // TitleMark is an unfocused mention or direct message held in the window
 // title. Body is plain IRC text; attentionTitle collapses leftover controls.
 // Opening that conversation, or focusing the window, drops the mark. The
-// formatted string matches src/qml/TitleMark.qml.
+// formatted string matches `client/src/ui/center/header.rs`.
 type TitleMark struct {
 	Author, Body, NetworkID, Target string
 }
 
-// Title reproduces the Qt window title byte-for-byte from OmaircWindow.qml:
+// Title reproduces the Qt window title byte-for-byte from `client/src/ui/shell`:
 // consoleVisible ? statusTitleText() : conversationTitleText(). ConsoleOpen
 // carries that derivation, including the fall back to Status when nothing is
 // selected, exactly as the Qt shell does on first run. A nil controller has no
@@ -30,7 +30,7 @@ func Title(ctrl *controller.Controller, conn *connection.Connection) string {
 	return conversationTitleText(ctrl, conn)
 }
 
-// conversationTitleText mirrors OmaircWindow.qml's conversationTitleText. It
+// conversationTitleText mirrors `client/src/ui/shell`'s conversationTitleText. It
 // prefixes the focused network display name only when the selected target
 // appears on more than one network, so a duplicated #omarchy is never
 // ambiguous.
@@ -66,7 +66,7 @@ func attentionTitle(author, body, place string) string {
 }
 
 // collapseTitleSpace drops C0, C1, and DEL (ESC, BEL, newlines) and folds
-// the gap into one space. It matches TitleMark.qml's collapse. IRC formatting
+// the gap into one space. It matches `client/src/ui/center/header.rs`'s collapse. IRC formatting
 // is stripped before this runs.
 func collapseTitleSpace(text string) string {
 	var out strings.Builder
@@ -143,7 +143,7 @@ func (m *Model) windowTitle() string {
 	return attentionTitle(m.titleMark.Author, m.titleMark.Body, m.titleMarkPlace())
 }
 
-// statusTitleText mirrors OmaircWindow.qml's statusTitleText. When no session
+// statusTitleText mirrors `client/src/ui/shell`'s statusTitleText. When no session
 // is bound yet (first run, before Connect applies) it falls back to the
 // connection's draft display name, so a default launch is titled
 // "chat.freenode.net Status".

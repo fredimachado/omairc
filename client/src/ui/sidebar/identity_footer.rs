@@ -31,7 +31,7 @@ pub fn footer_self_bot(nick: &str, peer_bot: bool) -> bool {
     !nick.is_empty() && peer_bot
 }
 
-/// The identity footer, a port of the bottom of `ServerListColumn.qml`: 66 tall,
+/// The identity footer, a port of the bottom of `client/src/ui/sidebar/`: 66 tall,
 /// the focused network's avatar, nick and presence, then the `inbox` link with
 /// its count and the version. The presence word and the mark come from the
 /// controller through `presence`: green when available, amber when away, muted when

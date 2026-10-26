@@ -1,5 +1,5 @@
 //! Port of the CTCP paths of `tui/internal/session/session.go` (Go) and
-//! `src/irc/ircsession.cpp` (C++): answering a CTCP query sent to this user, and
+//! `tui/internal/session/session.go`: answering a CTCP query sent to this user, and
 //! sending a CTCP query.
 //!
 //! Only a direct query is answered. A channel query gets nothing, and neither

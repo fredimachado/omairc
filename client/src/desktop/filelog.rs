@@ -1,5 +1,5 @@
 //! The application log, `omairc.log` in the state folder. Port of
-//! `src/omaircfilelog.cpp`. The Go TUI has no twin: it keeps its crash record in
+//! `omaircfilelog`. The Go TUI has no twin: it keeps its crash record in
 //! `omairc-tui.log` through `internal/crashlog`.
 //!
 //! Like the Qt log, it records warnings and errors only, one line each:

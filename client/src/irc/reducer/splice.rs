@@ -6,7 +6,7 @@
 //! `takeSpliceIndex`, `holdPendingPlayback`, `absorbPendingQueryPlayback`,
 //! `releasePendingPlayback`, `dropPendingPlayback`, `dropKeptPlayback`,
 //! `ReleasePendingQueryPlayback`, `PlaybackBatchKept`, `reduceHistory`,
-//! `insertMessages`) and of `src/irc/irceventreducer.cpp` (C++).
+//! `insertMessages`) and of `tui/internal/irc/reducer.go`.
 
 use chrono::{DateTime, Utc};
 

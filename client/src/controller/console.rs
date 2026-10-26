@@ -1,4 +1,4 @@
-//! Port of `tui/internal/controller/console.go` (Go) and `src/irc/ircstatusconsole.cpp` (C++).
+//! Port of `tui/internal/controller/console.go`.
 //!
 //! The Status console keeps each network's classified lines in a bounded ring:
 //! the oldest line drops once a network passes its cap. The lines arrive already
@@ -14,7 +14,7 @@ use crate::session::events::{SessionState, Severity};
 pub const DEFAULT_CAPACITY: usize = 2000;
 
 /// The word a connection-state line opens with (`stateLabel` in
-/// `src/irc/ircstatusconsole.cpp`). Capability discovery, capability requests and
+/// `tui/internal/controller/console.go`). Capability discovery, capability requests and
 /// SASL all read as `negotiating`.
 pub(super) fn state_label(state: SessionState) -> &'static str {
     match state {
@@ -30,7 +30,7 @@ pub(super) fn state_label(state: SessionState) -> &'static str {
 }
 
 /// The sentence a connection-state line says (`stateText` in
-/// `src/irc/ircstatusconsole.cpp`).
+/// `tui/internal/controller/console.go`).
 /// The Status severity for a session notice (`Severity` to `LogSeverity`).
 pub(super) fn log_severity(severity: Severity) -> LogSeverity {
     match severity {

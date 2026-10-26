@@ -6,7 +6,7 @@
 //! `ConversationState`, `ChannelState`, `MemberState`, `MemberView`,
 //! `OrderedMember`, `TranscriptAnchor`, `PeerPresence`) and of the
 //! `IrcEventReducer::Store` / `IrcConversationState` members in
-//! `src/irc/irceventreducer.h` (C++).
+//! `tui/internal/irc/reducer.go`.
 //!
 //! Transcript rows are `world::Message`, the shape the Go `IrcReducedMessage`
 //! maps to. A row's zero time (Go's `time.Time{}`, which event lines carry) is

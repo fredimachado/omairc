@@ -1,5 +1,5 @@
-//! Port of `tui/internal/storage/profilestore.go` (Go) and `src/irc/ircprofilestore.cpp`
-//! (C++): the saved Connect profiles, one `networks/<id>` group each.
+//! Port of `tui/internal/storage/profilestore.go`
+//! The saved Connect profiles, one `networks/<id>` group each.
 //!
 //! The record keeps every field the file can hold, including the ones the PoC's Connect
 //! sheet does not edit (account, bouncer network, avatar). A profile the Qt client or the
@@ -165,7 +165,7 @@ fn contains_forbidden(text: &str) -> bool {
     text.chars().any(|c| matches!(c, '\r' | '\n' | '\0'))
 }
 
-/// Qt's `fitsOneLoginField`: no whitespace, NUL, or slash (`ircnetworkprofile.cpp`).
+/// Qt's `fitsOneLoginField`: no whitespace, NUL, or slash (`tui/internal/connection/profile.go`).
 fn fits_one_login_field(value: &str) -> bool {
     !value
         .chars()

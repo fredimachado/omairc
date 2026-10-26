@@ -3,7 +3,7 @@ package demo
 import "strconv"
 
 // This file is the Go port of the anonymous seed helpers and the omarchyWorld /
-// oftcWorld builders in src/irc/ircdemoserver.cpp. The data is content- and
+// oftcWorld builders in `client/src/demo/server.rs`. The data is content- and
 // order-identical to the C++; only the container types differ (slices for
 // QVector/QStringList, RankPair for QPair<QString, QString>).
 
@@ -124,7 +124,7 @@ func join(nick string, account ...string) SeedLine {
 }
 
 // omarchyWorld returns the primary demo network. It is ported verbatim from
-// omarchyWorld() in src/irc/ircdemoserver.cpp.
+// omarchyWorld() in `client/src/demo/server.rs`.
 func omarchyWorld() SeedNetwork {
 	network := SeedNetwork{
 		NetworkID: "omarchy",
@@ -262,7 +262,7 @@ func omarchyWorld() SeedNetwork {
 }
 
 // oftcWorld returns the secondary demo network. It is ported verbatim from
-// oftcWorld() in src/irc/ircdemoserver.cpp.
+// oftcWorld() in `client/src/demo/server.rs`.
 func oftcWorld() SeedNetwork {
 	network := SeedNetwork{
 		NetworkID: "oftc",

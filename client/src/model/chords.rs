@@ -1,5 +1,5 @@
 //! The in-scope chords and the conditions under which each one is live. The
-//! rules mirror each Qt `Shortcut.enabled` in `src/OmaircWindow.qml`
+//! rules mirror each Qt `Shortcut.enabled` in `client/src/ui/shell`
 //! (around lines 2650-3186), and the Gating paragraph of the GPUI plan.
 //! The UI asks `chord_enabled` before acting, so a chord can never fire
 //! behind a sheet that should own the keyboard.

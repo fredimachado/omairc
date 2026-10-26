@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/servicenick.go` (Go) and `src/irc/ircservicenick.cpp`
+//! Port of `tui/internal/irc/servicenick.go`
 //! (C++). Neither source has a test of its own; the cases below follow the
 //! documented contract and the session cases that depend on it.
 

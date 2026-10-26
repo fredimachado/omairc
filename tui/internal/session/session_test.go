@@ -20,7 +20,7 @@ import (
 
 const sessionTestNetworkID = "network-a"
 
-// sessionTestConfig mirrors the anonymous config() helper in tst_session.cpp.
+// sessionTestConfig mirrors the anonymous config() helper in `tst_session`.
 func sessionTestConfig(networkID string) SessionConfig {
 	return SessionConfig{
 		NetworkID:                networkID,
@@ -40,7 +40,7 @@ func sessionTestConfig(networkID string) SessionConfig {
 	}
 }
 
-// sessionTestPlaintextConfig mirrors plaintextConfig() in tst_session.cpp.
+// sessionTestPlaintextConfig mirrors plaintextConfig() in `tst_session`.
 func sessionTestPlaintextConfig() SessionConfig {
 	config := sessionTestConfig(sessionTestNetworkID)
 	config.Port = 6667
@@ -365,7 +365,7 @@ func authenticateBody(frame string) string {
 }
 
 // scramServerFinalFor recomputes the RFC 7677 server-final signature, mirroring
-// the anonymous scramServerFinal helper in tst_session.cpp.
+// the anonymous scramServerFinal helper in `tst_session`.
 func scramServerFinalFor(t *testing.T, clientFirst, serverFirst string) string {
 	t.Helper()
 	if !strings.HasPrefix(clientFirst, "n,,") {
@@ -397,7 +397,7 @@ func scramServerFinalFor(t *testing.T, clientFirst, serverFirst string) string {
 }
 
 // saslWire renders raw SASL bytes as the concatenated AUTHENTICATE frames a
-// server would send, mirroring saslWire in tst_session.cpp.
+// server would send, mirroring saslWire in `tst_session`.
 func saslWire(raw []byte) string {
 	var builder strings.Builder
 	for _, frame := range encodeSASLFrames(raw) {

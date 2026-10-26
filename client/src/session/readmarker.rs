@@ -1,5 +1,5 @@
-//! Port of `tui/internal/session/readmarker.go` (Go) and the outbound half of
-//! `src/irc/ircreadmarker.cpp` (C++).
+//! Port of `tui/internal/session/readmarker.go` and the outbound half of
+//! `tui/internal/session/readmarker.go`.
 //!
 //! The session publishes a read marker only when the server acknowledged
 //! `draft/read-marker` (`MARKREAD`) or `soju.im/read` (`READ`). One marker per

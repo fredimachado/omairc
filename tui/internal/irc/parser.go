@@ -4,7 +4,7 @@ import "strings"
 
 // Parse parses one IRC line (without its CRLF) into a Message. On failure it
 // returns a zero Message and an Error value; on success the error is nil. It
-// mirrors IrcParser::parse in src/irc/ircparser.cpp.
+// mirrors IrcParser::parse in `client/src/irc/parser.rs`.
 func Parse(line string) (Message, error) {
 	if line == "" {
 		return Message{}, ErrorEmptyInput

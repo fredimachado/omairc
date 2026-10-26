@@ -13,7 +13,7 @@ use crate::ui::shell::Shell;
 use crate::ui::transcript::view::LinkClick;
 use crate::util::{open_web_link, scaled_px, style};
 
-/// One member row's height in logical pixels (`MembersColumn.qml`).
+/// One member row's height in logical pixels (`client/src/ui/members/`).
 const MEMBER_ROW_HEIGHT: f32 = 43.;
 
 /// Shell behaviour: selection, sending, focus. Builds no elements. Every state change

@@ -13,7 +13,7 @@ use crate::controller::controller::Controller;
 
 /// An unfocused mention or direct message held in the window title. Body is plain
 /// IRC text; [`attention_title`] collapses leftover controls. Opening that
-/// conversation, or focusing the window, drops the mark. Matches `TitleMark.qml`
+/// conversation, or focusing the window, drops the mark. Matches `client/src/ui/center/header.rs`
 /// and `tui/internal/ui/title.go`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TitleMark {

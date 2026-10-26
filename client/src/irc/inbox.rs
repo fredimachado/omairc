@@ -1,6 +1,6 @@
-//! Port of `tui/internal/irc/inbox.go` (Go), `src/irc/ircinbox.{h,cpp}` (C++,
+//! Port of `tui/internal/irc/inbox.go`, `tui/internal/irc/inbox.go` (C++,
 //! `IrcInbox` consume and append rules) and `IrcInboxModel::labelFor` /
-//! `kindName` (`src/irc/ircinboxmodel.cpp`).
+//! `kindName` (`tui/internal/irc/inbox.go`).
 //!
 //! The session inbox is the waiting list of things that want the user: mentions,
 //! highlights, direct messages, invites, monitored nicks coming online, and kicks.

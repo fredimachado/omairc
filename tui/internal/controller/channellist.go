@@ -9,8 +9,8 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
-// This file is the Go port of src/irc/ircchannellistrequest.{h,cpp} and
-// src/irc/channellistmodel.{h,cpp}: the per-network /list request state
+// This file is the Go port of `client/src/controller/channellist.rs` and
+// `client/src/controller/channellist.rs`: the per-network /list request state
 // machine, the row cache, and the /list overlay model. The topic strip it
 // needs is irc.PlainIrcText.
 //
@@ -30,7 +30,7 @@ const channelListDefaultIdleTimeout = 30 * time.Second
 const channelListMinIdleTimeout = time.Millisecond
 
 // channelListTimeoutText mirrors the fireIdleTimeout text in
-// ircchannellistrequest.cpp.
+// `client/src/controller/channellist.rs`.
 const channelListTimeoutText = "Channel list timed out. Try /list again."
 
 // ChannelListRow is one channel-list entry. It mirrors IrcChannelListRow.
@@ -518,7 +518,7 @@ func (m *ChannelListModel) matches(row ChannelListRow) bool {
 }
 
 // channelListLess orders rows by users descending then channel
-// case-insensitively. It mirrors the anonymous rowLess in channellistmodel.cpp.
+// case-insensitively. It mirrors the anonymous rowLess in `client/src/controller/channellist.rs`.
 func channelListLess(left, right ChannelListRow) bool {
 	if left.Users != right.Users {
 		return left.Users > right.Users

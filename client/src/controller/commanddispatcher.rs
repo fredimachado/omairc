@@ -1,5 +1,5 @@
-//! Port of `tui/internal/controller/commanddispatcher.go` (Go) and `src/irc/irccommanddispatcher.{h,cpp}`
-//! (C++): every slash verb's decision. The UI never decides a verb: it parses the composer line,
+//! Port of `tui/internal/controller/commanddispatcher.go`
+//! Every slash verb's decision. The UI never decides a verb: it parses the composer line,
 //! calls `Controller::submit` (or `dispatch`), and reads back the outcome and the surfaces the
 //! intent raised. The side effects a verb needs (the wire, the reducer, the stores, the Status
 //! log, the transcript) are the controller's own, so the same path serves the composer, the

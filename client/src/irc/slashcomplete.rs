@@ -1,5 +1,5 @@
-//! Port of `tui/internal/irc/slashcomplete.go` (Go) and `src/irc/ircslashcomplete.{h,cpp}`
-//! (C++): what the slash-complete popup shows for the composer text.
+//! Port of `tui/internal/irc/slashcomplete.go`
+//! What the slash-complete popup shows for the composer text.
 //!
 //! Composer text becomes a probe. A bare `/word` gives the verb rows ranked against the
 //! catalog visible on the surface. `/pref` gives its names, then its values. Ranking is
@@ -464,7 +464,7 @@ mod tests {
         assert!(open_probe("j".into(), Vec::new()).is_none());
     }
 
-    // Ported from tst_command.cpp (`slashProjectClosed`, `slashProjectOpen`).
+    // Ported from `tst_command` (`slashProjectClosed`, `slashProjectOpen`).
 
     #[test]
     fn slash_project_closed_matches_the_core_inputs() {

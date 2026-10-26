@@ -1,4 +1,4 @@
-//! System light or dark mode. Port of `SystemTheme` (`src/systemtheme.cpp`).
+//! System light or dark mode. Port of `SystemTheme` (`systemtheme`).
 //!
 //! On Linux, GPUI already subscribes to the XDG Desktop Portal
 //! `org.freedesktop.appearance` / `color-scheme` setting (via ashpd in

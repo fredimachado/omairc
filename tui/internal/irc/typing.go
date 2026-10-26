@@ -29,7 +29,7 @@ const (
 	TypingDone
 )
 
-// Typing hold durations, mirrored from irctyping.h.
+// Typing hold durations, mirrored from `client/src/irc/typing.rs`.
 const (
 	// TypingActiveHoldMs is how long an active hint is retained.
 	TypingActiveHoldMs = 6000

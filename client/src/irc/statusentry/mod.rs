@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/statusentry.go` (Go), `src/irc/ircstatusentry.{h,cpp}`
+//! Port of `tui/internal/irc/statusentry.go`, `tui/internal/irc/statusentry.go`
 //! (C++, `IrcStatusEntry`).
 //!
 //! The entry types and the constructors every caller uses: `lifecycle`, `outcome` and

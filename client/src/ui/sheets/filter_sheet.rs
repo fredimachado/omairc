@@ -21,7 +21,7 @@ use crate::util::{scaled_px, style, to_gpui, FONT_FAMILY};
 
 actions!(filter_sheet, [FilterUp, FilterDown, FilterActivate, FilterSwallowTab]);
 
-/// Tab chords the filter field swallows (`LinkSheet.qml` `Key_Tab`).
+/// Tab chords the filter field swallows (`LinkSheet` `Key_Tab`).
 pub const FILTER_TAB_KEYS: &[&str] = &["tab", "shift-tab"];
 
 /// Up / Down / Enter inside the sheet. Escape is the shell's `CloseSheet`.

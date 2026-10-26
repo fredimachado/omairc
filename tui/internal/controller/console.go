@@ -3,7 +3,7 @@ package controller
 import "github.com/fredimachado/omairc/tui/internal/irc"
 
 // DefaultStatusConsoleCapacity is the per-network Status ring-buffer cap. It
-// matches IrcStatusConsole's default in src/irc/ircstatusconsole.h.
+// matches IrcStatusConsole's default in `client/src/controller/console.rs`.
 const DefaultStatusConsoleCapacity = 2000
 
 // StatusConsole is the minimal Phase 2 Status console: a per-network ring

@@ -20,7 +20,7 @@ type FrameResult struct {
 }
 
 // Framer reassembles IRC frames from a byte stream. It mirrors IrcFramer in
-// src/irc/ircframer.cpp, including the trailing-'\r' retention while a bad
+// `client/src/irc/framer.rs`, including the trailing-'\r' retention while a bad
 // frame is discarded.
 type Framer struct {
 	buffer     []byte

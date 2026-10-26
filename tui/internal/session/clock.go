@@ -10,7 +10,7 @@ import (
 // 45000ms labeled-response timeout, and the typing refresh — is armed through
 // AfterFunc so tests can drive it from a FakeClock instead of sleeping.
 //
-// It mirrors the QTimer/clock injection in src/irc/ircsession.h, which takes
+// It mirrors the QTimer/clock injection in `client/src/session/session.rs`, which takes
 // its timers as constructor arguments and reads the wall clock through one
 // monotonic source.
 type Clock interface {

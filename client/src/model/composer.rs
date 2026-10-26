@@ -2,7 +2,7 @@
 //! lines of each target for Up/Down, and Tab nick completion. Ports
 //! `stashComposerDraft`, `restoreComposerDraft`, `recallComposerHistory`,
 //! `rememberSentComposerLine`, `nickCompleteCandidates`, `nickMatchesForPrefix`
-//! and `completeNick` in OmaircWindow.qml.
+//! and `completeNick` in `client/src/ui/shell`.
 //!
 //! Toolkit-free: the shell owns the text field and applies the `Edit`s these
 //! functions return. The field's text and caret are passed in, never read here.

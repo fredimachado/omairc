@@ -9,7 +9,7 @@
 //! `MeaningfulRealname`, `PeerFactLabels`, `PeerPresence`, `OrderedMembers`,
 //! `TypingNicks`, `DirectPeerIsTyping`, `ClearTypingFacts`, `ClearPresenceFacts`,
 //! `ReleaseStaleNamesSync`, `JoinedMemberChannel`, `SetServerFeatures`,
-//! `SetHighlightWords`) and of `src/irc/irceventreducer.cpp` (C++).
+//! `SetHighlightWords`) and of `tui/internal/irc/reducer.go`.
 
 use chrono::{DateTime, TimeDelta, Utc};
 

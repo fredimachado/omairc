@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// This file ports the avatar URL policy from src/irc/ircavatarurl.cpp.
+// This file ports the avatar URL policy from `client/src/irc/avatarurl.rs`.
 // /avatar accepts an HTTPS URL or an email address; an email becomes a Gravatar
 // SHA-256 URL, and only safe HTTPS URLs are stored. The Qt code resolves and
 // pins a global-unicast address so QNAM cannot re-resolve the host; the fetch

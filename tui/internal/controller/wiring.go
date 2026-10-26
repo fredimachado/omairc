@@ -328,7 +328,7 @@ func (c *Controller) markChannelLeft(networkID, channel string) {
 // typing hint for the selected conversation. A live message (plain text or
 // /me) sends typing=active and remembers the target; anything else withdraws a
 // hint that target was publishing with typing=done. It mirrors
-// IrcController::notifyComposerText (src/irc/irccontroller.cpp:832-851). The
+// IrcController::notifyComposerText (`client/src/controller/controller.rs`). The
 // Status console and a network without message-tags never publish.
 func (c *Controller) NotifyComposerText(text string) {
 	if c.StatusConsoleOpen() {

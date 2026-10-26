@@ -1,5 +1,5 @@
 //! Sidebar network header fields the PoC reads from `build_network_headers`
-//! (`liveAlerts` and `showEdit` in `NetworkSection.qml`).
+//! (`liveAlerts` and `showEdit` in `NetworkSection`).
 
 use crate::irc::statusentry::{lifecycle, LogSeverity};
 use crate::model::connect::ConnectState;

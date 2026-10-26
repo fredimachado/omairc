@@ -2,7 +2,7 @@ package irc
 
 import "strings"
 
-// This file is the Go port of src/irc/ircpref.{h,cpp}: the /pref catalog, its
+// This file is the Go port of `ircpref`: the /pref catalog, its
 // usage and avatar note, the query/state/list formatting, and the argument
 // parser.
 

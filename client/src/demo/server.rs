@@ -1,5 +1,5 @@
-//! Port of `tui/internal/demo/demo.go` (Go) and `IrcDemoServer` in
-//! `src/irc/ircdemoserver.{h,cpp}` (C++): the demo peer for the two seeded
+//! Port of `tui/internal/demo/demo.go` in
+//! `tui/internal/demo/demo.go`: the demo peer for the two seeded
 //! networks, behind `--demo-server`.
 //!
 //! The demo is only the peer at the far end of a `LoopbackTransport`. `attach`

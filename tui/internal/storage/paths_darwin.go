@@ -9,7 +9,7 @@ import (
 
 // GenericConfigRoot is ~/Library/Preferences on macOS
 // (QStandardPaths::GenericConfigLocation). $XDG_CONFIG_HOME is honoured when
-// set, mirroring omaircConfigRoot in src/omaircpaths.cpp.
+// set, mirroring omaircConfigRoot in `omaircpaths`.
 func GenericConfigRoot() string {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		return xdg
@@ -19,7 +19,7 @@ func GenericConfigRoot() string {
 
 // GenericStateRoot is ~/Library/Preferences/State on macOS
 // (QStandardPaths::GenericStateLocation). $XDG_STATE_HOME is honoured when
-// set, mirroring omaircStateRoot in src/omaircpaths.cpp.
+// set, mirroring omaircStateRoot in `omaircpaths`.
 func GenericStateRoot() string {
 	if xdg := os.Getenv("XDG_STATE_HOME"); xdg != "" {
 		return xdg

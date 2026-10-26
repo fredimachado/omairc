@@ -1,5 +1,5 @@
-//! Port of `tui/internal/session/session.go` (Go) and `src/irc/ircsession.{h,cpp}`
-//! (C++): the connection state machine, the CAP and registration driver, the
+//! Port of `tui/internal/session/session.go`
+//! The connection state machine, the CAP and registration driver, the
 //! ping watchdog, reconnect backoff, labeled requests, the batch ledger and the
 //! outbound command writers.
 //!

@@ -1,6 +1,6 @@
 //! The SCRAM attribute parser and the base64 and iteration-count checks it shares with
 //! the machine. Port of `parseScramAttributes`, `parseIterationCount` and `decodeBase64`
-//! in `tui/internal/session/saslscram.go`, and of the bounds in `src/irc/ircsaslscram.cpp`.
+//! in `tui/internal/session/saslscram.go`, and of the bounds in `tui/internal/session/saslscram.go`.
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 

@@ -1,5 +1,5 @@
-//! Port of `tui/internal/demo/answers.go` (Go) and the anonymous auto-echo
-//! handlers in `src/irc/ircdemoserver.cpp` (C++): the replies the demo peer
+//! Port of `tui/internal/demo/answers.go` and the anonymous auto-echo
+//! handlers in `tui/internal/demo/demo.go`: the replies the demo peer
 //! sends for the client's own frames. The server answers PING, LIST, CTCP
 //! PING/TIME/VERSION, AWAY, METADATA SET, MONITOR, the PART, NICK and TOPIC
 //! echoes, and the JOIN and PRIVMSG/NOTICE echoes. It answers nothing else. The

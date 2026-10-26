@@ -5,7 +5,7 @@
 //! widgets draw what these functions return.
 //!
 //! It also holds the identity footer's presence (`SelfPresence`), read from the
-//! controller's connection word and our own away state (`ServerListColumn.qml`'s
+//! controller's connection word and our own away state (`client/src/ui/sidebar/`
 //! `selfPresence`).
 
 use crate::controller::controller::Controller;
@@ -87,7 +87,7 @@ pub fn photo_for(reference: Option<&str>, avatars_on: bool) -> Option<&str> {
     reference.filter(|reference| !reference.is_empty())
 }
 
-/// Whether a member row draws another member's presence dot (`MembersColumn.qml`:
+/// Whether a member row draws another member's presence dot (`client/src/ui/members/`:
 /// `awayPresenceVisible || isSelf`). Our own away state comes from `305`/`306`, not
 /// away-notify.
 pub fn member_presence_dot_visible(away_notify: bool, is_self: bool) -> bool {
@@ -100,7 +100,7 @@ pub fn member_away_chrome_visible(away: bool, away_notify: bool, is_self: bool) 
 }
 
 /// Whether a sidebar direct-message row draws the avatar presence dot
-/// (`ConversationRow.qml`: `direct && awayPresenceVisible`).
+/// (`client/src/ui/sidebar/conversation_row.rs`: `direct && awayPresenceVisible`).
 pub fn sidebar_dm_presence_dot_visible(away_notify: bool) -> bool {
     away_notify
 }

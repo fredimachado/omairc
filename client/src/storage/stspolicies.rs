@@ -1,5 +1,5 @@
 //! The STS policy cache on disk: the `sts` INI file beside the settings file, in the format
-//! `IrcStsStore` writes in Qt (`src/irc/ircsts.cpp`). Each host is one group, named by its
+//! `IrcStsStore` writes in Qt (`tui/internal/session/sts.go`). Each host is one group, named by its
 //! `sts_group_key`, holding `port`, `duration` and `expiry` (epoch seconds). Qt and the PoC read
 //! and write the same entries.
 //!

@@ -1,5 +1,5 @@
 //! Port of the draft/metadata-2 writers of `tui/internal/session/session.go` (Go),
-//! `IrcSession::setOwnMetadata` in `src/irc/ircsession.cpp` and
+//! `IrcSession::setOwnMetadata` in `tui/internal/session/session.go` and
 //! `src/irc/ircmetadata.*` (C++).
 //!
 //! The vocabulary the session reads (the subscribed keys, the limits the server

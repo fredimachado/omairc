@@ -2,7 +2,7 @@ package ui
 
 // This file covers the transcript "New messages" boundary and the
 // open-at-unread landing that the Preferences toggle controls. It mirrors
-// OmaircWindow.qml's placeTranscriptAfterSelect / pinTranscriptOnFocusReturn
+// `client/src/ui/shell`'s placeTranscriptAfterSelect / pinTranscriptOnFocusReturn
 // and MessageListModel::unreadMarkRow.
 
 import (

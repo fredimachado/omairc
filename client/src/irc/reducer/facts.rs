@@ -9,7 +9,7 @@
 //! `presenceOf`, `NickPresence`, `DisplayAccount`, `PeerFactLabels`,
 //! `bouncerQueryOwnLine`, `bouncerChannelOwnLine`, `replayFromPeer`,
 //! `replayOnlyRepeatsPersistedIds`, `rememberSelfNick`) and of
-//! `src/irc/irceventreducer.cpp` (C++).
+//! `tui/internal/irc/reducer.go`.
 //!
 //! Every field is `pub(super)`: the reducer's handlers borrow `Facts` next to a
 //! conversation (a disjoint field borrow of the same `EventReducer`), so they

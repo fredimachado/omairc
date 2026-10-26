@@ -3,7 +3,7 @@
 //! gpui 0.2.2 exposes no `is_minimized()` and `WindowBounds` has no minimized
 //! variant, so each platform reads the native handle (or reports Visible when
 //! the compositor cannot say). Qt's `Window.Minimized` / `Window.Hidden` both
-//! count as away for unread and mention notify (`OmaircWindow.qml`
+//! count as away for unread and mention notify (`client/src/ui/shell`
 //! `transcriptSuspended`).
 //!
 //! Minimize often does not fire `observe_window_bounds` while OS focus stays

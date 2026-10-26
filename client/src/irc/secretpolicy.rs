@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/secretpolicy.go` (Go) and `src/irc/ircsecretpolicy.cpp`
+//! Port of `tui/internal/irc/secretpolicy.go`
 //! (C++).
 //!
 //! Redaction fails closed. A wire line that would reveal a password, a channel key
@@ -42,7 +42,7 @@ struct SecretRule {
     visible_parameters: usize,
 }
 
-/// Mirrors `kSecretMap` in `src/irc/ircsecretpolicy.cpp`.
+/// Mirrors `kSecretMap` in `tui/internal/irc/secretpolicy.go`.
 const SECRET_MAP: &[SecretRule] = &[
     SecretRule {
         verb: "PASS",
@@ -581,7 +581,7 @@ pub fn redact_wire_line(line: &str, channel_types: &str) -> Option<String> {
 ///   otherwise.
 ///
 /// Mirrors `RedactPreviewLine` in `tui/internal/irc/secretpolicy.go` and
-/// `IrcSecretPolicy::redactPreviewLine` in `src/irc/ircsecretpolicy.cpp`.
+/// `IrcSecretPolicy::redactPreviewLine` in `tui/internal/irc/secretpolicy.go`.
 pub fn redact_preview_line(line: &str, channel_types: &str) -> Option<String> {
     if let Some(safe) = redact_wire_line(line, channel_types) {
         return Some(safe);

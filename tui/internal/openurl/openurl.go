@@ -28,7 +28,7 @@ func Open(rawURL string) error {
 	return platformOpen(rawURL)
 }
 
-// allowed mirrors isAllowedHttpUrl in src/OmaircWindow.qml: scheme http or
+// allowed mirrors isAllowedHttpUrl in `client/src/ui/shell`: scheme http or
 // https (case-insensitive) followed by "://", a non-empty remainder, and no
 // whitespace anywhere. It is a defence-in-depth guard for the OS handler, not
 // the link sheet's source of truth, so it stays self-contained and does not

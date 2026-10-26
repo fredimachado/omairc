@@ -7,7 +7,7 @@ import (
 
 // WireText converts raw wire bytes to display text. Valid UTF-8 passes through;
 // anything else is decoded as Latin-1, one rune per byte, so no U+FFFD is
-// injected. It mirrors ircWireText in src/irc/ircwiretext.cpp.
+// injected. It mirrors ircWireText in `client/src/irc/wiretext.rs`.
 func WireText(raw []byte) string {
 	if utf8.Valid(raw) {
 		return string(raw)

@@ -31,7 +31,7 @@ pub(super) struct KeepRow {
     pub(super) outgoing: Keep,
 }
 
-/// The keep table, mirroring `kStatusKeep` in `src/irc/ircstatusentry.cpp`. Each
+/// The keep table, mirroring `kStatusKeep` in `tui/internal/irc/statusentry.go`. Each
 /// command is uppercase and appears once; `keep_rows_are_well_formed` checks it.
 pub(super) static KEEP_ROWS: [KeepRow; 25] = [
     KeepRow {

@@ -1,6 +1,6 @@
 //! The Status pane: a network's server log, not a conversation. Its rows follow
-//! `NetworkLogModel` (`src/irc/networklogmodel.cpp`), and the glyph rule follows
-//! `src/qml/ConsoleLine.qml`. Toolkit-free: the UI draws the rows.
+//! `NetworkLogModel` (`networklogmodel`), and the glyph rule follows
+//! `client/src/ui/status_row.rs`. Toolkit-free: the UI draws the rows.
 //!
 //! The lines come from `Controller::status_lines`, already classified and redacted by
 //! `irc::statusentry`. This module only maps them to rows.
@@ -38,7 +38,7 @@ impl StatusMark {
     }
 }
 
-/// Which theme colour a Status label takes (`ConsoleLine.qml` `labelColor`).
+/// Which theme colour a Status label takes (`client/src/ui/status_row.rs` `labelColor`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LabelTone {
     /// Alerts: the accent colour.
@@ -59,7 +59,7 @@ pub fn label_tone(severity: LogSeverity) -> LabelTone {
 }
 
 /// Whether a severity mutes the body text. Only trace lines do; the rest use ink
-/// (`ConsoleLine.qml` `bodyColor`).
+/// (`client/src/ui/status_row.rs` `bodyColor`).
 pub fn body_is_muted(severity: LogSeverity) -> bool {
     severity == LogSeverity::Trace
 }

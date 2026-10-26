@@ -1,6 +1,6 @@
 //! Find mode (Ctrl+F) in the shell. The composer holds the query and the
 //! transcript shows its match. Ports `beginOrAdvanceFind`, `advanceFind`,
-//! `revealFindMatch` and `leaveFind` in `OmaircWindow.qml`. The search itself
+//! `revealFindMatch` and `leaveFind` in `client/src/ui/shell`. The search itself
 //! is `model::find`.
 //!
 //! Find mode starts in `begin_or_advance_find` and ends in `leave_find` (Escape)

@@ -1,7 +1,7 @@
 //! The avatar fetch: one GET of a nick's avatar, judged at each step, decoded within
 //! budget and handed back as a PNG of its first frame. Go `tui/internal/avatar/fetch.go`
-//! (the download and the decode) and Qt `src/irc/ircavatarstore.cpp` and
-//! `src/irc/ircavatarhttp.cpp` (the redirects, the content type and the budgets).
+//! (the download and the decode) and Qt `tui/internal/avatar/avatar.go` and
+//! `tui/internal/irc/avatarhttp.go` (the redirects, the content type and the budgets).
 //!
 //! The controller decides whether an avatar is fetched (`controller/avatars.rs`). This
 //! module does the network and the image work. It runs on `cx.background_executor()`

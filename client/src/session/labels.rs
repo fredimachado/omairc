@@ -1,5 +1,5 @@
 //! Port of the labeled-request half of `tui/internal/session/session.go` (Go)
-//! and the request-label table of `src/irc/ircsession.cpp` (C++).
+//! and the request-label table of `tui/internal/session/session.go`.
 //!
 //! A labeled request carries an `@label=` tag the server echoes on each reply
 //! (`labeled-response`). Each outstanding label has a deadline; a reply, a

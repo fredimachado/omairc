@@ -1,5 +1,5 @@
 //! Port of the wire helpers in `tui/internal/irc/readmarker.go` (Go) and
-//! `src/irc/ircreadmarker.{h,cpp}` (C++).
+//! `tui/internal/session/readmarker.go`.
 //!
 //! This file holds the timestamp and verb rules every read-marker line shares:
 //! millisecond truncation, the `timestamp=` format and parse, the `*` sentinel,

@@ -1,6 +1,6 @@
 package irc
 
-// Frame-size limits, mirrored from src/irc/ircmessage.h.
+// Frame-size limits, mirrored from `client/src/irc/message.rs`.
 const (
 	// MaxClassicFrameBytes is the RFC 1459 line ceiling, including CRLF.
 	MaxClassicFrameBytes = 512
@@ -13,7 +13,7 @@ const (
 )
 
 // Error is the protocol error taxonomy. It mirrors IrcError in
-// src/irc/ircmessage.h and implements error so Parse can return it.
+// `client/src/irc/message.rs` and implements error so Parse can return it.
 type Error int
 
 const (

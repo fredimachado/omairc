@@ -9,7 +9,7 @@ import (
 // This file is the Ctrl+F find session. Find reuses the composer as its query
 // box: the unsent draft is stashed on entry and restored on Escape. The current
 // match is highlighted in the transcript and the viewport is left un-pinned so
-// the match stays put, mirroring OmaircWindow.qml's beginOrAdvanceFind.
+// the match stays put, mirroring `client/src/ui/shell`'s beginOrAdvanceFind.
 
 // findState is the Ctrl+F query, its current match row, and the composer draft
 // stashed when find opened.

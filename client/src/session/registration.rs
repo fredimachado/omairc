@@ -1,5 +1,5 @@
 //! Port of the registration half of `tui/internal/session/session.go` (Go),
-//! `src/irc/ircsession.cpp` (C++): the PASS / NICK / USER burst, the nick
+//! `tui/internal/session/session.go`: the PASS / NICK / USER burst, the nick
 //! collision fallback, ISUPPORT (005) and welcome (001).
 //!
 //! Registration waits for CAP END (or a `421` for CAP), then sends PASS, NICK and

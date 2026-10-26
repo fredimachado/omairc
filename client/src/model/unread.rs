@@ -1,6 +1,6 @@
 //! The "New messages" mark row and the unseen jump, as the transcript shows them. Ports
-//! `unreadMarkRow` in `src/irc/messagelistmodel.cpp` and `jumpToUnseen` / `pinToUnread`
-//! in `src/qml/TranscriptList.qml`.
+//! `unreadMarkRow` in `tui/internal/controller/snapshots.go` and `jumpToUnseen` / `pinToUnread`
+//! in `TranscriptList`.
 //!
 //! The mark itself is the controller's: `ConversationState::unread_mark` holds the
 //! sequence of the line the boundary sits in front of, and the reducer moves it on

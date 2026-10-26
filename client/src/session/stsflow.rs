@@ -1,7 +1,7 @@
 //! The session's STS flow: the upgrade from plaintext, the reconnect on the upgraded port, the
 //! cached policy applied at start and reconnect, and the expiry refreshed on disconnect. Port of
 //! the `STS` section of `tui/internal/session/session.go` (Go) and of the STS methods of
-//! `src/irc/ircsession.cpp` (C++). The cache itself is `sts.rs`.
+//! `tui/internal/session/session.go`. The cache itself is `sts.rs`.
 
 use super::events::{SessionState, Severity};
 use super::session::{lifecycle_event, Core, Effect};

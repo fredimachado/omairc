@@ -87,7 +87,7 @@ func (m *Model) closeJump() {
 
 // jumpEntries builds the filtered overlay rows: every network's conversations
 // in sidebar order, then that network's Status row, matching
-// OmaircWindow.qml's refreshJumpMatches. A channel also matches its topic and
+// `client/src/ui/shell`'s refreshJumpMatches. A channel also matches its topic and
 // a direct message matches a meaningful real name. Name matches stay above
 // detail-only matches, and sidebar order holds inside each group. The list
 // stays short.
@@ -171,7 +171,7 @@ func (m *Model) jumpEntries() []jumpEntry {
 	return entries
 }
 
-// jumpConversationLabel mirrors OmaircWindow.qml's jumpTargetLabel for a
+// jumpConversationLabel mirrors `client/src/ui/shell`'s jumpTargetLabel for a
 // conversation: a duplicate channel name carries its network display name.
 func (m *Model) jumpConversationLabel(name, networkName string) string {
 	if name == "" {
@@ -264,7 +264,7 @@ func (m *Model) handleOverlayKey(key string, msg tea.KeyPressMsg) (tea.Model, te
 // walk moves to the next or previous visible conversation over the sidebar
 // order, wrapping. Status is not in the walk. Rows under a collapsed network
 // are skipped; a hidden current row still has a place in the full order, so
-// walking continues from there. It mirrors OmaircWindow.qml's stepConversation.
+// walking continues from there. It mirrors `client/src/ui/shell`'s stepConversation.
 func (m *Model) walk(delta int) {
 	if m.ctrl == nil {
 		return
@@ -312,7 +312,7 @@ func (m *Model) walk(delta int) {
 }
 
 // jumpUnread selects the next unread conversation, mentions first, skipping
-// muted rows while hunting a mention. It mirrors OmaircWindow.qml's
+// muted rows while hunting a mention. It mirrors `client/src/ui/shell`'s
 // jumpToNextUnread: rows hidden under a collapsed network still count, and
 // landing on one expands that network. When nothing is unread, Alt+A opens
 // Status for the selected conversation's network. When Status is already
@@ -368,7 +368,7 @@ func (m *Model) jumpUnread() {
 }
 
 // markAllRead marks every conversation read and drops the attention title.
-// It mirrors the Alt+Shift+A shortcut in OmaircWindow.qml.
+// It mirrors the Alt+Shift+A shortcut in `client/src/ui/shell`.
 func (m *Model) markAllRead() {
 	m.clearTitleMark()
 	if m.ctrl == nil {
@@ -379,7 +379,7 @@ func (m *Model) markAllRead() {
 
 // openCurrentNetworkStatus opens Status for the selected conversation's
 // network. When Status is already open, it opens that Status network. It
-// mirrors the empty-unread landing in OmaircWindow.qml's jumpToNextUnread.
+// mirrors the empty-unread landing in `client/src/ui/shell`'s jumpToNextUnread.
 func (m *Model) openCurrentNetworkStatus() {
 	if m.ctrl == nil {
 		return
@@ -398,7 +398,7 @@ func (m *Model) openCurrentNetworkStatus() {
 
 // toggleStatus opens or closes the Status console. Opening remembers the
 // conversation id so Escape can return to it. It mirrors the Ctrl+` shortcut in
-// OmaircWindow.qml.
+// `client/src/ui/shell`.
 func (m *Model) toggleStatus() {
 	if m.ctrl == nil {
 		return
@@ -445,7 +445,7 @@ func (m *Model) dismissEscape() {
 
 // stepNetwork moves the network header focus with Alt+Left / Alt+Right,
 // wrapping. It restores the server list column so the highlight is visible.
-// It mirrors OmaircWindow.qml's stepNetwork.
+// It mirrors `client/src/ui/shell`'s stepNetwork.
 func (m *Model) stepNetwork(delta int) {
 	if m.ctrl == nil {
 		return
@@ -593,7 +593,7 @@ func indexOfString(values []string, needle string) int {
 // so the landing step can tell a real move from a re-select.
 //
 // It clears the network-header focus first. Qt's selectConversation and
-// openNetworkStatus both do this (src/OmaircWindow.qml), so the composer's Enter
+// openNetworkStatus both do this (`client/src/ui/shell`), so the composer's Enter
 // sends again after a walk. Leaving the header armed made Enter open Status
 // instead: the walk was a no-op for the header focus, so the typed line stayed
 // in the composer as a draft while the transcript jumped away.
@@ -626,7 +626,7 @@ func (m *Model) selectedConversationID() string {
 // while "Open conversations at unread" is on keeps the reader's viewport.
 // wasConsole is true when the surface being left was Status, which shares this
 // viewport, so that return is not a re-select. A saved scroll place wins over
-// open-at-unread. It mirrors OmaircWindow.qml's finishTranscriptSwitch.
+// open-at-unread. It mirrors `client/src/ui/shell`'s finishTranscriptSwitch.
 func (m *Model) afterSelectionChange(previousID string, wasConsole bool) {
 	defer m.syncTranscriptLineCount()
 	// Every selection change, including a return from Status onto the
@@ -675,7 +675,7 @@ func (m *Model) afterSelectionChange(previousID string, wasConsole bool) {
 
 // keepsViewportOnReselect reports whether re-selecting the current conversation
 // must leave the transcript where it was. It mirrors the openConversationsAtUnread
-// guard at the head of OmaircWindow.qml's placeTranscriptAfterSelect; Status
+// guard at the head of `client/src/ui/shell`'s placeTranscriptAfterSelect; Status
 // always repositions.
 func (m *Model) keepsViewportOnReselect(previousID string) bool {
 	if m.ctrl == nil || !m.ctrl.OpenAtUnread() || m.ctrl.ConsoleOpen() {
@@ -687,7 +687,7 @@ func (m *Model) keepsViewportOnReselect(previousID string) bool {
 // placeTranscriptAfterSelect lands the transcript for a new selection: the
 // Status console follows the end, and a conversation follows the end unless
 // "Open conversations at unread" is on and a "New messages" mark exists, in
-// which case it lands on that mark. It mirrors OmaircWindow.qml's
+// which case it lands on that mark. It mirrors `client/src/ui/shell`'s
 // placeTranscriptAfterSelect and pinTranscriptToUnreadOr.
 func (m *Model) placeTranscriptAfterSelect() {
 	if m.ctrl == nil {
@@ -705,7 +705,7 @@ func (m *Model) placeTranscriptAfterSelect() {
 // focus: Status follows the end, and a conversation with a "New messages" mark
 // lands on it. A conversation without a mark keeps its place, so a focus regain
 // never yanks a reader who is scrolled up mid-history. It mirrors
-// OmaircWindow.qml's pinTranscriptOnFocusReturn.
+// `client/src/ui/shell`'s pinTranscriptOnFocusReturn.
 func (m *Model) pinTranscriptOnFocusReturn() {
 	if m.ctrl == nil {
 		return
@@ -759,7 +759,7 @@ func (m *Model) loadDraft() {
 
 // composerDraftKey is the stable key unsent text belongs to: the Status key for
 // the focused network, else the selected conversation id. It never follows the
-// user across targets. It mirrors OmaircWindow.qml's composerHistoryKey.
+// user across targets. It mirrors `client/src/ui/shell`'s composerHistoryKey.
 func (m *Model) composerDraftKey() string {
 	if m.ctrl == nil {
 		return ""

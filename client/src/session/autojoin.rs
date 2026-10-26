@@ -1,6 +1,6 @@
 //! Port of the autojoin bookkeeping in `tui/internal/session/session.go` (Go),
 //! `recordAutojoinLocked` and friends, and the matching code in
-//! `src/irc/ircsession.cpp` (C++).
+//! `tui/internal/session/session.go`.
 //!
 //! The session keeps the channels it should rejoin and their keys. A self JOIN
 //! records the channel (and a key the user typed), a self PART or KICK forgets

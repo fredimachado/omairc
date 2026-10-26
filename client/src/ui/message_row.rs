@@ -150,7 +150,7 @@ pub fn render_transcript_row(
     }
 }
 
-/// The "New messages" boundary (`UnreadMark.qml`): the caption between two rules.
+/// The "New messages" boundary (`client/src/ui/transcript/`): the caption between two rules.
 /// Both are tinted toward the accent, so the boundary reads as a boundary rather
 /// than as a join caption. It is not selectable and it does not take pointer hits.
 fn render_unread_mark_row(row_ix: usize, style: &Style) -> Stateful<Div> {
@@ -185,7 +185,7 @@ fn render_unread_mark_row(row_ix: usize, style: &Style) -> Stateful<Div> {
 }
 
 /// A whois-style line: left-aligned, muted, wrapping, and selectable. Qt's
-/// `MessageRow.qml` sets its TextEdit in the body column: 70 from the left and
+/// `client/src/ui/message_row.rs` sets its TextEdit in the body column: 70 from the left and
 /// 34 from the right. It has no time, label or avatar, so nothing sits beside it.
 /// Copy and search read `row.body.plain`, the same text the row draws.
 fn render_whois_row(

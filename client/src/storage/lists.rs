@@ -1,8 +1,8 @@
 //! The per-network lists the controller keeps across runs: `/ignore`, `/mute`,
 //! `/highlight` and the `/monitor` nicks. Port of the list stores in
-//! `tui/internal/controller/stores.go` (Go) and `src/irc/ircignore.cpp`,
-//! `src/irc/ircmute.cpp`, `src/irc/irchighlight.cpp` and the monitor list of
-//! `src/irc/ircmonitor.cpp` (C++).
+//! `tui/internal/controller/stores.go` (Go) and `tui/internal/controller/stores.go`,
+//! `tui/internal/controller/stores.go`, `tui/internal/controller/stores.go` and the monitor list of
+//! `tui/internal/controller/stores.go`.
 //!
 //! The lists share one shape: a per-network, insertion-ordered list where membership
 //! and removal compare through the network's case mapping, and adding a duplicate is

@@ -8,7 +8,7 @@ import (
 )
 
 // This file is the Go port of IrcSlashComplete and IrcSlashProbe in
-// src/irc/ircslashcomplete.{h,cpp}: projecting composer text into the slash
+// `ircslashcomplete`: projecting composer text into the slash
 // completion popup, and the /pref value completion shapes.
 
 // SlashHit is one completion row. It mirrors IrcSlashHit.

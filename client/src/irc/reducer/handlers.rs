@@ -9,7 +9,7 @@
 //! `reduceMemberMetadata`, `reduceAccount`, `reduceTyping`, `reduceWhoisTranscript`,
 //! `reduceChannelError`, `reduceNickFacts`, `clearTyping`, `clearTypingEverywhere`,
 //! `rekeyTyping`, `pruneExpiredTyping`, `forgetUnseen`) and of
-//! `src/irc/irceventreducer.cpp` (C++).
+//! `tui/internal/irc/reducer.go`.
 
 use chrono::{DateTime, Utc};
 

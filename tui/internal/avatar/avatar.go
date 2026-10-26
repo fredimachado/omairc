@@ -1,6 +1,6 @@
 // Package avatar is the terminal peer-avatar seam. It fetches, decodes,
 // caches, and half-block-rasterizes avatars for the TUI shell, mirroring the
-// safety model of src/irc/ircavatarstore.cpp (bounded body, bounded decode,
+// safety model of `client/src/irc/avatarstore.rs` (bounded body, bounded decode,
 // DNS pinning, fail closed, a small insertion-ordered cache). When a terminal
 // answers a Kitty graphics query, the same cache also builds Unicode
 // placeholder cells and the transmit/delete escapes for those images.
@@ -29,7 +29,7 @@ import (
 )
 
 // maximumCacheEntries bounds the decoded-image cache. It mirrors
-// kMaximumCacheEntries in ircavatarstore.cpp.
+// kMaximumCacheEntries in `client/src/irc/avatarstore.rs`.
 const maximumCacheEntries = 64
 
 // TruecolorSupported reports whether the environment advertises 24-bit color:

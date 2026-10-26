@@ -1,7 +1,7 @@
 //! The channel list sheet (`/list [mask]`): the answer for the mask, most users
 //! first, filtered by a fuzzy query. Enter or a click joins the channel, or
 //! focuses it when the network already has it (the shell decides). Escape
-//! closes. Port of `src/qml/ChannelListSheet.qml`.
+//! closes. This module.
 
 use std::ops::Range;
 
@@ -16,7 +16,7 @@ use crate::model::{Style, StyleRun};
 use crate::ui::sheets::filter_sheet::{match_highlights, match_text, FilterSource};
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
-/// Sheet width in logical pixels (`ChannelListSheet.qml`).
+/// Sheet width in logical pixels (`client/src/ui/sheets/channel_list.rs`).
 const WIDTH: f32 = 480.;
 /// The list stops growing at this height in logical pixels, then scrolls.
 const LIST_CAP: f32 = 280.;

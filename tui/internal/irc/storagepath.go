@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// This file ports the pure half of src/irc/ircstoragepath.cpp: the segment
+// This file ports the pure half of `client/src/irc/storagepath.rs`: the segment
 // encoders and decoders. The filesystem helpers (legacyStoragePathExists,
 // legacyStorageDirExists, storageCanonicalPath, storagePathsSameFile, and
 // storageDirSegmentsShareLocation) belong to a later internal/storage package

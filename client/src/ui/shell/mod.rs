@@ -81,7 +81,7 @@ pub struct Shell {
     pub shown: ShownView,
     pub sidebar: SidebarState,
     pub window_title: String,
-    /// Unfocused mention or direct message shown in the window title (`TitleMark.qml`).
+    /// Unfocused mention or direct message shown in the window title (`client/src/ui/center/header.rs`).
     pub title_mark: Option<TitleMark>,
     pub members_open: bool,
     /// The member list's keyboard cursor, an index into the channel's members.

@@ -1,5 +1,5 @@
-//! Port of `tui/internal/irc/plaintext.go` (Go) and `plainIrcText` /
-//! `stripIrcColors` in `src/irc/irctextformatter.cpp` (C++).
+//! Port of `tui/internal/irc/plaintext.go` /
+//! `stripIrcColors` in `irctextformatter` (C++).
 //!
 //! The mIRC control codes live here, with the color walkers that both the plain
 //! text and the styled runs in `textformat` share. Walking `char`s instead of

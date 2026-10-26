@@ -10,7 +10,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/irc"
 )
 
-// Group and key names must match src/irc/ircplaybacktime.cpp byte for byte so
+// Group and key names must match `client/src/storage/playbacktime.rs` byte for byte so
 // the Qt client and the terminal client share one INI section.
 const (
 	playbackTimesGroup = "playbackTimes"

@@ -10,7 +10,7 @@
 // This package mirrors the Qt transport and SCRAM files:
 //
 //   - Transport, Sink, and ConnectionState mirror IrcTransport in
-//     src/irc/irctransport.h.
+//     `client/src/session/transport.rs`.
 //   - NetTransport mirrors QtIrcTransport (src/irc/qtirctransport.*): async
 //     dial, buffer-until-encrypted write ordering, and distinct TLS failures.
 //     It imports net and crypto/tls.
@@ -21,7 +21,7 @@
 //     client per RFC 5802 / RFC 7677. It imports crypto/sha256, crypto/hmac,
 //     crypto/pbkdf2, and crypto/rand.
 //   - Clock is the timer seam (mirroring the QTimer injection in
-//     src/irc/ircsession.h). RealClock is production; FakeClock lets tests drive
+//     `client/src/session/session.rs`). RealClock is production; FakeClock lets tests drive
 //     reconnect backoff, capability timeouts, the ping watchdog, the 45000ms
 //     labeled-response timeout, and the typing refresh without sleeping.
 //

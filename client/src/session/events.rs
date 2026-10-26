@@ -2,7 +2,7 @@
 //! small value types those events carry.
 //!
 //! Port of the `Handler` interface in `tui/internal/session/session.go` and the
-//! `IrcSession` signals in `src/irc/ircsession.h`. Go delivers each callback
+//! `IrcSession` signals in `tui/internal/session/session.go`. Go delivers each callback
 //! through a Handler; here the session queues `SessionEvent`s, and its owner
 //! drains them with `Session::drain_events` once an entry point returns. That
 //! keeps the session free of callbacks into the controller, so `session/` never
@@ -27,7 +27,7 @@ use crate::irc::message::IrcMessage;
 pub use crate::irc::event::{HistoryKind, PendingInvite, Severity};
 pub use crate::irc::translator::{HistoryBatch, HistoryTarget};
 
-/// The connection state machine (`IrcSession::State`, src/irc/ircsession.h). `StsUpgrading`
+/// The connection state machine (`IrcSession::State`, `tui/internal/session/session.go`). `StsUpgrading`
 /// is the plaintext socket closing for an STS upgrade (`stsflow.rs`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SessionState {

@@ -1,7 +1,7 @@
 //! The `preferences` group of the settings file: the `/pref` toggles and the joins level,
 //! the sidebar's network order and collapse set, and the `/autoaway` settings. Port of
 //! `IrcController::loadStoredPreferences`, `savePreferenceBool` and friends in
-//! `src/irc/irccontroller.cpp` and `src/irc/ircautoawayruntime.cpp` (C++), and of the
+//! `tui/internal/controller/controller.go` and `tui/internal/controller/autoawayruntime.go`, and of the
 //! group handling in `tui/internal/controller/controller.go` (Go). The keys are the Qt
 //! names, so the three clients share one section.
 //!

@@ -55,7 +55,7 @@ pub fn shown_view(controller: &Controller) -> ShownView {
     }
 }
 
-/// The sidebar network headers the shell renders (`NetworkSection.qml` inputs).
+/// The sidebar network headers the shell renders (`NetworkSection` inputs).
 pub(crate) fn build_network_headers(
     controller: &Controller,
     connect: &ConnectState,

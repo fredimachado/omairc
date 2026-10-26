@@ -1,4 +1,4 @@
-//! The bot mark beside a bot's nick (Qt `BotMark.qml`): a short antenna over a
+//! The bot mark beside a bot's nick (Qt `BotMark`): a short antenna over a
 //! rounded box, drawn in the muted ink. It is 10 px square and never shrinks.
 
 use gpui::{div, prelude::*, Div};
