@@ -502,10 +502,9 @@ fn a_deferred_read_error_is_not_cached_forever() {
     }
     assert_eq!(*attempts.lock().expect("lock"), 1);
     store.retry_read(&key);
-    assert_eq!(
-        read_slot(store.as_ref(), &profile, PURPOSE_PASSWORD),
-        ReadSlot::Loading,
-        "retry_read starts one new worker"
+    assert!(
+        store.deferred_read_inflight(&key),
+        "retry_read starts one new worker before settle"
     );
     let deadline = Instant::now() + Duration::from_secs(3);
     while matches!(
