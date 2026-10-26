@@ -659,6 +659,10 @@ def check_ci_package_triggers():
     if "cargo test --locked" not in macos_text:
         problems.append(
             ".github/workflows/macos.yml: rust job must run cargo test --locked")
+    if "needs: rust" not in macos_text:
+        problems.append(
+            ".github/workflows/macos.yml: macos-zips must consume rust job "
+            "artifacts")
 
     skip = _named_step_header(macos_text, "Skip zip artifacts")
     if not skip:

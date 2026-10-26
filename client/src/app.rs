@@ -185,7 +185,7 @@ pub fn run() {
         #[cfg(target_os = "macos")]
         crate::ui::macos_menu::register_menus(cx);
 
-        // Demo and bench runs restore the window but never save over the user's
+        // Demo runs restore the window but never save over the user's
         // geometry, as the Qt client's demo mode is ephemeral.
         let settings_path = paths::settings_path();
         let stored = settings_path.as_deref().and_then(geometry::load_from);
