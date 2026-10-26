@@ -28,7 +28,7 @@ pub struct ScrollPlace {
     pub body: String,
     pub epoch_ms: i64,
     pub has_time: bool,
-    /// The time the line showed on screen, when the anchor has no epoch time. The PoC's
+    /// The time the line showed on screen, when the anchor has no epoch time. The client's
     /// transcript keeps the time as text. Qt ignores this key.
     pub shown_time: String,
 }

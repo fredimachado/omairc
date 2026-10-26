@@ -158,7 +158,7 @@ build\release\omairc.exe --demo-server
 
 `--demo-server` skips Connect. `--help` and `--version` exit without a window. Quote channel targets. Control commands need a running window. With one connection, `--network` may be omitted.
 
-Use `cargo build --features dev` when you need the separate `omairc-poc` config
+Use `cargo build --features dev` when you need the separate `omairc-dev` config
 tree for local experiments; release packaging always uses `product`.
 
 ## Test
@@ -174,7 +174,7 @@ bin/test-live
 
 `bin/test-desktop` needs Xvfb, Xauthority, xdotool, xinput, ImageMagick,
 cargo, and lavapipe; it drives the Rust release binary through
-`control-omairc-poc`. `bin/test-live` needs Docker.
+`control-omairc-desktop`. `bin/test-live` needs Docker.
 
 ## Windows
 

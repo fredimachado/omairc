@@ -5,13 +5,18 @@ import (
 
 	"github.com/fredimachado/omairc/tui/internal/irc"
 	"github.com/fredimachado/omairc/tui/internal/session"
+	"github.com/fredimachado/omairc/tui/internal/storage"
 )
 
 // Idle and grace timers, tripped state, per-network auto/manual away sets, and
 // /autoaway dispatch. Twin: `client/src/controller/autoawayruntime.rs`.
 // Away decisions stay here; the controller only records Status lines and keeps
-// its own unaway bookkeeping. Every timer goes through the injected
-// session.Clock.
+// its own unaway bookkeeping.
+//
+// LoadStored / autoawaySave read and write the shared preferences INI keys in
+// `client/src/storage/preferences.rs` (autoawayEnabled, autoawayTimeoutSeconds,
+// autoawayDefaultReason). The one-shot reason is never persisted. Ephemeral
+// runs skip disk. Every timer goes through the injected session.Clock.
 
 // AutoawayHost is the surface IrcAutoawayRuntime drives. It mirrors
 // IrcAutoawayRuntime::Host.
@@ -72,13 +77,28 @@ func NewAutoawayRuntime(host AutoawayHost, clock session.Clock) *AutoawayRuntime
 }
 
 // SetEphemeral records whether this run must not persist preferences.
+// autoawaySave and LoadStored honor the flag so ephemeral runs never touch disk.
 func (a *AutoawayRuntime) SetEphemeral(ephemeral bool) {
 	a.ephemeral = ephemeral
 }
 
-// LoadStored arms the idle timer. Config starts zeroed until a store is wired.
+// LoadStored loads the persisted /autoaway configuration and arms the idle
+// timer. Ephemeral runs keep a zero config. Missing keys match the Rust
+// PreferenceStore defaults (enabled false, timeout 0, empty default reason);
+// the one-shot reason is never loaded.
 func (a *AutoawayRuntime) LoadStored() {
-	a.config = irc.AutoawayConfig{}
+	if a.ephemeral {
+		a.config = irc.AutoawayConfig{}
+		a.autoawayArmIdle()
+		return
+	}
+	settings := storage.OpenSettings("")
+	a.config = irc.AutoawayConfig{
+		Enabled:        settings.Bool(preferencesGroup, autoawayEnabledKey, false),
+		TimeoutSeconds: settings.Int(preferencesGroup, autoawayTimeoutKey, 0),
+		DefaultReason:  settings.Value(preferencesGroup, autoawayReasonKey),
+		OneShotReason:  "",
+	}
 	a.autoawayArmIdle()
 }
 
@@ -210,10 +230,21 @@ func (a *AutoawayRuntime) IdleIntervalForTest() time.Duration { return a.idleInt
 // GraceIntervalForTest returns the last grace interval, or 0 when never armed.
 func (a *AutoawayRuntime) GraceIntervalForTest() time.Duration { return a.graceInterval }
 
+// autoawaySave persists enabled, timeout, and default reason under the twin
+// PreferenceStore keys. The one-shot reason is omitted. A malformed or
+// unwritable ini is left alone, matching savePreferenceBool.
 func (a *AutoawayRuntime) autoawaySave() {
 	if a.ephemeral {
 		return
 	}
+	settings := storage.OpenSettings("")
+	if settings.WriteBlocked() != storage.StatusWritten {
+		return
+	}
+	settings.SetBool(preferencesGroup, autoawayEnabledKey, a.config.Enabled)
+	settings.SetInt(preferencesGroup, autoawayTimeoutKey, a.config.TimeoutSeconds)
+	settings.SetValue(preferencesGroup, autoawayReasonKey, a.config.DefaultReason)
+	settings.Sync()
 }
 
 // autoawayWithinRange reports whether the configured timeout is in the

@@ -1,5 +1,6 @@
 //! The saved Connect profiles, one `networks/<id>` group each.
-//! The record keeps every field the file can hold, including the ones the PoC's Connect
+//!
+//! The record keeps every field the file can hold, including the ones this client's Connect
 //! sheet does not edit (account, bouncer network, avatar). A profile the Qt client or the
 //! TUI wrote therefore reads and writes back without losing anything.
 //! The store holds no state of its own: each call reads the file, so an outside edit is

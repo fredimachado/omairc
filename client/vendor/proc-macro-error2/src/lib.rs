@@ -274,7 +274,7 @@
 #![cfg_attr(feature = "nightly", feature(proc_macro_diagnostic))]
 #![forbid(unsafe_code)]
 
-// Omairc PoC patch on the vendored 2.0.1 copy: `pub` added so the
+// Omairc patch on the vendored 2.0.1 copy: `pub` added so the
 // `pub use proc_macro;` in `__export` no longer re-exports a private extern
 // crate (rustc E0365). Everything else is byte-identical to crates.io 2.0.1.
 pub extern crate proc_macro;

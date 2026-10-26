@@ -20,7 +20,7 @@ use crate::storage::paths::{self, Env, Platform};
 
 /// Overrides the cursor folder. Qt uses the same name, and its tests set it.
 pub const ROOT_VAR: &str = "OMAIRC_CURSOR_ROOT";
-/// The folder under the PoC's state directory.
+/// The folder under the client state directory.
 const FOLDER: &str = "cli-cursors";
 /// A file-name segment longer than this is replaced by a hash of its text.
 const MAX_SEGMENT_BYTES: usize = 96;

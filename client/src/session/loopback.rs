@@ -2,7 +2,7 @@
 //! `LoopbackTransport` used by the session transport tests
 //! (`client/src/session/tests/transport.rs`).
 //! The deterministic in-memory transport. Nothing happens on its own: the test
-//! (or, in the PoC, the in-process demo peer) drives every transition through
+//! (or the in-process demo peer) drives every transition through
 //! the control methods below. Delivery is synchronous (rule 10 of the master
 //! plan): `inject_bytes` calls straight into the session, so a frame written and
 //! answered is observable on the next line of the caller.

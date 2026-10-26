@@ -84,6 +84,8 @@ func newAutoawayFixture(t *testing.T) *autoawayFixture {
 		consoleNetworkID: "net",
 	}
 	runtime := NewAutoawayRuntime(host, clock)
+	// Behavioral tests must not touch the user's config once save is real.
+	runtime.SetEphemeral(true)
 	runtime.LoadStored()
 	return &autoawayFixture{clock: clock, host: host, runtime: runtime}
 }
@@ -448,11 +450,14 @@ func TestAutoawayForgetNetworkDropsAwaySets(t *testing.T) {
 
 func TestAutoawaySetEphemeralIsStored(t *testing.T) {
 	fixture := newAutoawayFixture(t)
+	if !fixture.runtime.ephemeral {
+		t.Fatalf("behavioral fixture must start ephemeral")
+	}
 	fixture.runtime.SetEphemeral(true)
 	if !fixture.runtime.ephemeral {
 		t.Fatalf("SetEphemeral did not store the flag")
 	}
-	// Saving is a no-op this phase, so a change still updates the live config.
+	// Ephemeral skips disk; the live config still updates.
 	fixture.enable(t, "5m")
 	if !fixture.runtime.config.Enabled {
 		t.Fatalf("ephemeral runtime did not apply the change")

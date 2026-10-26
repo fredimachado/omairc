@@ -13,7 +13,7 @@
 
 - The desktop client is a Rust GPUI application in `client/`. Cargo's default
   features include `product` (install identity: `omairc` folder and IPC). The
-  `dev` feature uses a separate `omairc-poc` config/state tree so local
+  `dev` feature uses a separate `omairc-dev` config/state tree so local
   `cargo run` / `cargo test --features dev` never claim a real install.
 - `client/src/app.rs` is startup and window wiring. Shell behavior (shortcuts,
   conversation selection, slash dispatch, overlays, and related helpers) lives
@@ -33,10 +33,10 @@
 - Use the bundled `iA Writer Mono S` font for all custom interface text.
 - The public CLI skill lives in `skills/omairc/`. Install it with
   `npx skills add fredimachado/omairc/skills -g`. Desktop proof uses
-  `.cursor/skills/verify-omairc-poc` (`control-omairc-poc`: isolated Xvfb +
+  `.cursor/skills/verify-omairc-desktop` (`control-omairc-desktop`: isolated Xvfb +
   xdotool, clears `WAYLAND_DISPLAY`, requires lavapipe; pointer verbs use
-  XTEST/XI2 clicks). `bin/verify-poc-recipes` and the non-blocking
-  `verify-poc` job in `test.yml` drive the feature map. Load
+  XTEST/XI2 clicks). `bin/verify-desktop-recipes` and the non-blocking
+  `verify-desktop` job in `test.yml` drive the feature map. Load
   `.cursor/skills/conversation-cause` when touching Rust
   `ensure_conversation` / Go `EnsureConversation`, conversation creation, or
   `/msg`, and `.cursor/skills/redact-secrets` when touching Status lines,
@@ -45,7 +45,7 @@
 
 `.cursor/skills/verify-omairc/features/*.md` is the map of how a user
 reaches a behavior: shortcuts, preconditions, and observables.
-`control-omairc-poc` drives that map against the Rust GPUI window;
+`control-omairc-desktop` drives that map against the Rust GPUI window;
 `control-omairc-tui` replays the same fences against the TUI. Proof of each
 GUI stays that window: title, screenshots, and chords. Do not compile the map
 into the binary, the product CLI, or a Rust catalog.
@@ -56,7 +56,7 @@ a user's running window: `connections`, `status`, `send`, `read`, `names`, and
 `bin/test` stays the offscreen gate.
 
 Agents looking for the legacy `verify-omairc` desktop driver should use
-`.cursor/skills/verify-omairc-poc` instead; the feature map remains under
+`.cursor/skills/verify-omairc-desktop` instead; the feature map remains under
 `.cursor/skills/verify-omairc/features/`.
 
 ## Intentional cutover diffs
@@ -78,7 +78,7 @@ builds).
 - The Connect sheet is tabbed: `Connection` holds the per-network profile and
   `Preferences` holds global settings such as reopening direct messages on
   startup. `/pref` reads and sets those toggles from the composer
-  (`directs`, `avatars`, `unread`). Open conversations at unread starts on.
+  (`directs`, `avatars`, `unread`, `colors`). Open conversations at unread starts on.
   Only queries the user opened or replied to are restored, and restore waits
   until after ISUPPORT (`376` / `422`). Keep the `Ctrl+/` shortcut hint in its
   rail so new users find the shortcuts sheet.
@@ -206,7 +206,7 @@ bin/test
 bin/test-install
 bin/test-desktop
 bin/test-live
-bin/verify-poc-recipes
+bin/verify-desktop-recipes
 ```
 
 The TUI port lives in `tui/` as its own Go module; its gate is `tui/bin/test`
@@ -221,7 +221,7 @@ The TUI port lives in `tui/` as its own Go module; its gate is `tui/bin/test`
 `bin/test-desktop` needs Xvfb, Xauthority, xdotool, xinput, ImageMagick,
 cargo, and lavapipe (`vulkan-swrast`). It drives
 `client/target/release/omairc` (`--features product`) through
-`control-omairc-poc` as a black box and is not in CI. `bin/verify-poc-recipes`
+`control-omairc-desktop` as a black box and is not in CI. `bin/verify-desktop-recipes`
 replays every feature fence the same way. `bin/test-install` stages the six
 packager paths from that release binary (binary, desktop file, SVG, bash
 completion, LICENSE, OFL).
@@ -230,7 +230,7 @@ Rust live suite under `tests/live/`. It fails if `docker` or `docker compose`
 is missing.
 
 For visual changes, inspect the running window and the screenshots under
-`test-artifacts/verify-poc/`.
+`test-artifacts/verify-desktop/`.
 
 Judge desktop claims against the application log under the platform state
 location (`omairc.log` beside other state files). No CI job drives the full

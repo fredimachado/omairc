@@ -20,7 +20,7 @@ Clicking the app version on the right of the sidebar identity footer opens a mod
 Preconditions:
 
 - A default compiled launch and `--demo-server` both show the version on the footer. The About sheet is the same either way. This fence uses `--demo-server`.
-- Named click `click-version` assumes the isolated 1180x760 window at textScale 1.0. `control-omairc-poc click-version` also sends `Ctrl+Shift+/` so About still opens when the footer hit misses under Xvfb+lavapipe.
+- Named click `click-version` assumes the isolated 1180x760 window at textScale 1.0. `control-omairc-desktop click-version` also sends `Ctrl+Shift+/` so About still opens when the footer hit misses under Xvfb+lavapipe.
 
 ```desktop-recipe
 launch --demo-server
@@ -33,14 +33,14 @@ key --key Escape
 wait-title --exact "#omarchy · irc.example · fred - Omairc"
 ```
 
-- **Open from the footer.** Capture the footer before the sheet. Run `control-omairc screenshot --feature about --name before-about`. Click the version (PoC also sends `Ctrl+Shift+/`). Run `control-omairc click-version` then `control-omairc screenshot --feature about --name after-open`. The sheet shows Omairc, the version, the logo, the open-source GitHub line, Check for Updates, OK, and the copyright footer. Run `control-omairc compare --before test-artifacts/verify/about/before-about.png --after test-artifacts/verify/about/after-open.png`. `compare` must report a pixel change. A missed open leaves the two frames the same and fails the run. Press Escape. Run `control-omairc key --key Escape` then `control-omairc wait-title --exact "#omarchy · irc.example · fred - Omairc"`. The sheet is gone and the conversation stays `#omarchy`.
+- **Open from the footer.** Capture the footer before the sheet. Run `control-omairc screenshot --feature about --name before-about`. Click the version (desktop driver also sends `Ctrl+Shift+/`). Run `control-omairc click-version` then `control-omairc screenshot --feature about --name after-open`. The sheet shows Omairc, the version, the logo, the open-source GitHub line, Check for Updates, OK, and the copyright footer. Run `control-omairc compare --before test-artifacts/verify/about/before-about.png --after test-artifacts/verify/about/after-open.png`. `compare` must report a pixel change. A missed open leaves the two frames the same and fails the run. Press Escape. Run `control-omairc key --key Escape` then `control-omairc wait-title --exact "#omarchy · irc.example · fred - Omairc"`. The sheet is gone and the conversation stays `#omarchy`.
 - **Offscreen suite.** Run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` clicks `selfVersionHit`, asserts the About labels, the GitHub link (`lastOpenedUrl`), Check for Updates against a fixture GitHub payload, a left-click on the dimmer dismissing the sheet, and Escape on first-run Connect. `qml-suite` copies `about-sheet.png` to `test-artifacts/verify/about/about-sheet.png`. This is not compiled-window proof.
 
 ## Gotchas
 
 - `run about` skips `launch` when `doctor` is already healthy and `demo=yes`. It does not close an About sheet left open by an earlier pass. Recipes that need the sheet closed on a fresh demo need `cleanup` before `run`.
 - `screenshot` retries a near-solid grab and fails the run if the frame stays flat. Escape after the sheet is open dismisses About. The leading grab does not send a key to force paint.
-- The nick, presence mark, and `available` / `away` / `offline` words are not the About entry point. The version on the right opens the sheet, and so does `Ctrl+Shift+/`. The recipe uses `click-version` (PoC pairs that with the chord).
+- The nick, presence mark, and `available` / `away` / `offline` words are not the About entry point. The version on the right opens the sheet, and so does `Ctrl+Shift+/`. The recipe uses `click-version` (desktop driver pairs that with the chord).
 - Check for Updates talks to `api.github.com`. The offscreen suite injects a JSON payload and does not treat a live GitHub round-trip as proof. The Windows installer download is proved with a staged payload and `installedCopy`, not a live GitHub asset. `suppressInstallerLaunch` keeps that test from starting the setup.
 - A compiled-window click on View the source on GitHub would call `Qt.openUrlExternally`. Do not use that as proof on the isolated display.
 - Escape closes About before Connect. On first-run Connect, the second Escape does not dismiss the required sheet.

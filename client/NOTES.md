@@ -64,13 +64,13 @@ cosmic-text, which uses `unicode-bidi` and rustybuzz. On Linux, cosmic-text's
 script fallbacks include `Noto Sans Arabic` and `Noto Sans Hebrew` when the
 bundled `iA Writer Mono S` face has no coverage (it does not). No GPUI fork.
 
-Lavapipe is available in CI's non-blocking `verify-poc` job. Optional
-visual grab when you want a PNG under `test-artifacts/verify-poc/rtl-spike/`:
+Lavapipe is available in CI's non-blocking `verify-desktop` job. Optional
+visual grab when you want a PNG under `test-artifacts/verify-desktop/rtl-spike/`:
 
 ```sh
-OMAIRC_RTL_SEED=1 .cursor/skills/verify-omairc-poc/control-omairc-poc launch --demo-server
-.cursor/skills/verify-omairc-poc/control-omairc-poc screenshot --feature rtl-spike --name arabic-hebrew
-.cursor/skills/verify-omairc-poc/control-omairc-poc cleanup
+OMAIRC_RTL_SEED=1 .cursor/skills/verify-omairc-desktop/control-omairc-desktop launch --demo-server
+.cursor/skills/verify-omairc-desktop/control-omairc-desktop screenshot --feature rtl-spike --name arabic-hebrew
+.cursor/skills/verify-omairc-desktop/control-omairc-desktop cleanup
 ```
 
 No upstream GPUI/cosmic-text issue filed: the spike did not show wrong glyph

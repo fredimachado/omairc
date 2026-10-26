@@ -7,8 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Dev builds use an `omairc-dev` config/state tree and `OMAIRC_DEV_HOME`
+  (was `omairc-poc` / `OMAIRC_POC_HOME`). Desktop proof scripts and the CI
+  recipe job use `verify-omairc-desktop` / `control-omairc-desktop` and
+  `test-artifacts/verify-desktop/` (was `*-poc`).
+
+## [1.11.0rc1] - 2026-10-26
+
 ### Added
 
+- `/pref colors` and a *Show mIRC colors* switch on the Preferences tab strip
+  mIRC foreground and background colors (formatting stays). Desktop client.
 - A channel line delivered only to you is marked "only visible to you" in the
   desktop and terminal clients. The mark is used when you have joined that
   channel and the sender is in it. A normal channel line stays unmarked.
@@ -31,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The terminal client's `/autoaway` settings survive a restart, matching the
+  desktop PreferenceStore keys and leaving the one-shot reason unpersisted.
 - Transcripts label the first day when it is not today, in the desktop and
   terminal clients. The mark matches a day change, and loading older history
   moves it so a date is not shown twice. On that first message the unread
@@ -835,7 +848,8 @@ First public release: a simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.10.3...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.11.0rc1...HEAD
+[1.11.0rc1]: https://github.com/fredimachado/omairc/compare/v1.10.3...v1.11.0rc1
 [1.10.3]: https://github.com/fredimachado/omairc/compare/v1.10.2...v1.10.3
 [1.10.2]: https://github.com/fredimachado/omairc/compare/v1.10.1...v1.10.2
 [1.10.1]: https://github.com/fredimachado/omairc/compare/v1.10.0...v1.10.1

@@ -1,4 +1,4 @@
-//! The network layer: the only place in the PoC that holds sockets, TLS sessions or
+//! The network layer: the only place in the client that holds sockets, TLS sessions or
 //! the async runtime. `tests/net_boundary.rs` keeps it that way.
 //! The gate enforces three rules:
 //! - `tokio`, `tokio_rustls`, `rustls`, `rustls_native_certs` and `webpki_roots` are

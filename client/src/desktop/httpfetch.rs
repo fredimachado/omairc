@@ -1,7 +1,7 @@
-//! The `HttpFetch` seam (plan rule 7): the one way the PoC reaches the network
-//! for its desktop features. The update check, the installer download, and the
-//! avatar fetch use it. The TUI calls `net/http` directly, so there is no Go
-//! twin of this seam.
+//! The `HttpFetch` seam (plan rule 7): the one way the client reaches the network
+//! for its desktop features. The update check and the installer download use it
+//! now, and the avatar fetch will use it later. The TUI calls `net/http` directly,
+//! so there is no Go twin of this seam.
 //!
 //! `UreqFetch` is the one implementation that opens a socket. It blocks, so
 //! callers run it on `cx.background_executor`. It never follows a redirect

@@ -375,6 +375,7 @@ mod tests {
                 "/pref directs",
                 "/pref avatars",
                 "/pref unread",
+                "/pref colors",
                 "/pref joins"
             ]
         );

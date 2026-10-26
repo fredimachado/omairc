@@ -4,18 +4,18 @@ set -eu
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../../.." && pwd)"
 SELF=$SCRIPT_DIR/$(basename -- "$0")
-STATE_FILE="${OMAIRC_VERIFY_POC_STATE:-${TMPDIR:-/tmp}/omairc-verify-poc-$USER/state}"
-EVIDENCE_DIR="${OMAIRC_VERIFY_POC_EVIDENCE:-$ROOT/test-artifacts/verify-poc}"
+STATE_FILE="${OMAIRC_VERIFY_DESKTOP_STATE:-${TMPDIR:-/tmp}/omairc-verify-desktop-$USER/state}"
+EVIDENCE_DIR="${OMAIRC_VERIFY_DESKTOP_EVIDENCE:-$ROOT/test-artifacts/verify-desktop}"
 # Default debug. bin/test-desktop sets release + product to match PKGBUILD.
-POC_PROFILE="${OMAIRC_POC_PROFILE:-debug}"
-case $POC_PROFILE in
+DESKTOP_PROFILE="${OMAIRC_DESKTOP_PROFILE:-debug}"
+case $DESKTOP_PROFILE in
   debug|release) ;;
   *)
-    echo "control-omairc-poc: OMAIRC_POC_PROFILE must be debug or release (got $POC_PROFILE)" >&2
+    echo "control-omairc-desktop: OMAIRC_DESKTOP_PROFILE must be debug or release (got $DESKTOP_PROFILE)" >&2
     exit 1
     ;;
 esac
-POC_FEATURES="${OMAIRC_POC_FEATURES:-}"
+DESKTOP_FEATURES="${OMAIRC_DESKTOP_FEATURES:-}"
 # Jump, nick-jump, and composer focus need a pause after the chord before
 # type. The chord's own pause is not always enough on this Xvfb.
 JUMP_FIELD_DELAY=0.4
@@ -40,38 +40,38 @@ VISIBLE_TITLE="Omairc verify"
 
 usage() {
   cat <<'EOF'
-control-omairc-poc - isolated driver for the Rust GPUI Omairc PoC
+control-omairc-desktop - isolated driver for the Rust GPUI Omairc desktop client
 
 Usage:
-  control-omairc-poc launch [--demo-server] [--visible]
-  control-omairc-poc doctor
-  control-omairc-poc title
-  control-omairc-poc wait-title --exact "<title>"
-  control-omairc-poc focus-composer
-  control-omairc-poc composer
-  control-omairc-poc jump --query "<text>"
-  control-omairc-poc walk --down|--up [--times N]
-  control-omairc-poc unread
-  control-omairc-poc toggle-members
-  control-omairc-poc focus-members
-  control-omairc-poc nick-jump --query "<text>"
-  control-omairc-poc status
-  control-omairc-poc connect
-  control-omairc-poc type --text "<text>"
-  control-omairc-poc key --key <xdotool-key>
-  control-omairc-poc send --text "<text>"
-  control-omairc-poc click --x N --y N
-  control-omairc-poc click-conversation --name <#channel|nick>
-  control-omairc-poc click-member --name <nick>
-  control-omairc-poc click-people [--hidden]
-  control-omairc-poc click-network
-  control-omairc-poc click-edit
-  control-omairc-poc click-version
-  control-omairc-poc click-send
-  control-omairc-poc screenshot --feature <id> --name <stem>
-  control-omairc-poc compare --before <path> --after <path>
-  control-omairc-poc run <feature> [--dry-run]
-  control-omairc-poc cleanup
+  control-omairc-desktop launch [--demo-server] [--visible]
+  control-omairc-desktop doctor
+  control-omairc-desktop title
+  control-omairc-desktop wait-title --exact "<title>"
+  control-omairc-desktop focus-composer
+  control-omairc-desktop composer
+  control-omairc-desktop jump --query "<text>"
+  control-omairc-desktop walk --down|--up [--times N]
+  control-omairc-desktop unread
+  control-omairc-desktop toggle-members
+  control-omairc-desktop focus-members
+  control-omairc-desktop nick-jump --query "<text>"
+  control-omairc-desktop status
+  control-omairc-desktop connect
+  control-omairc-desktop type --text "<text>"
+  control-omairc-desktop key --key <xdotool-key>
+  control-omairc-desktop send --text "<text>"
+  control-omairc-desktop click --x N --y N
+  control-omairc-desktop click-conversation --name <#channel|nick>
+  control-omairc-desktop click-member --name <nick>
+  control-omairc-desktop click-people [--hidden]
+  control-omairc-desktop click-network
+  control-omairc-desktop click-edit
+  control-omairc-desktop click-version
+  control-omairc-desktop click-send
+  control-omairc-desktop screenshot --feature <id> --name <stem>
+  control-omairc-desktop compare --before <path> --after <path>
+  control-omairc-desktop run <feature> [--dry-run]
+  control-omairc-desktop cleanup
 
 Default launch uses headless Xvfb (what agents should use). --visible uses
 Xephyr so a nested window appears on your desktop; same xdotool control
@@ -87,7 +87,7 @@ EOF
 }
 
 die() {
-  echo "control-omairc-poc: $*" >&2
+  echo "control-omairc-desktop: $*" >&2
   exit 1
 }
 
@@ -145,7 +145,7 @@ require_tools() {
 }
 
 load_state() {
-  [ -f "$STATE_FILE" ] || die "no active instance. Run: $SCRIPT_DIR/control-omairc-poc launch [--demo-server]"
+  [ -f "$STATE_FILE" ] || die "no active instance. Run: $SCRIPT_DIR/control-omairc-desktop launch [--demo-server]"
   # shellcheck disable=SC1090
   . "$STATE_FILE"
   [ -n "${DISPLAY:-}" ] || die "state file is missing DISPLAY"
@@ -244,7 +244,7 @@ click_xy() {
 # Host placement for a VISIBLE_LOGICAL_* window.
 # Prints: "NESTED_W NESTED_H LOGIC_X LOGIC_Y SCALE" or nothing.
 # NESTED_* is physical (logical × scale) so Xephyr matches the XWayland
-# buffer; SCALE is passed to the PoC as --scale so fonts match HiDPI.
+# buffer; SCALE is passed to the client as --scale so fonts match HiDPI.
 visible_host_placement() {
   if ! command -v hyprctl >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
     return 1
@@ -369,7 +369,7 @@ cmd_launch() {
     HOST_XAUTHORITY="${XAUTHORITY:-}"
     [ -n "$HOST_DISPLAY" ] || die "--visible needs a host DISPLAY (XWayland) so Xephyr can show a window on your desktop"
     # Nested framebuffer = physical host window (logical × scale). Pass the
-    # same scale to the PoC so text is not 1x inside a 2x buffer.
+    # same scale to the client so text is not 1x inside a 2x buffer.
     _place=$(visible_host_placement) || _place=
     if [ -n "$_place" ]; then
       set -- $_place
@@ -382,23 +382,23 @@ cmd_launch() {
   fi
   if [ -f "$STATE_FILE" ]; then
     if "$SELF" doctor >/dev/null 2>&1; then
-      die "an isolated PoC instance is already running. Run cleanup first, or doctor to inspect it."
+      die "an isolated Omairc instance is already running. Run cleanup first, or doctor to inspect it."
     fi
-    echo "control-omairc-poc: clearing stale run state" >&2
+    echo "control-omairc-desktop: clearing stale run state" >&2
     cmd_cleanup >/dev/null 2>&1 || true
   fi
 
   set -- build
-  if [ "$POC_PROFILE" = release ]; then
+  if [ "$DESKTOP_PROFILE" = release ]; then
     set -- "$@" --release
   fi
-  if [ -n "$POC_FEATURES" ]; then
-    set -- "$@" --features "$POC_FEATURES"
+  if [ -n "$DESKTOP_FEATURES" ]; then
+    set -- "$@" --features "$DESKTOP_FEATURES"
   fi
   (cd "$ROOT/client" && cargo "$@")
-  STATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/omairc-verify-poc.XXXXXX")"
-  BINARY="$ROOT/client/target/$POC_PROFILE/omairc"
-  [ -x "$BINARY" ] || die "missing $BINARY after cargo build ($POC_PROFILE)"
+  STATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/omairc-verify-desktop.XXXXXX")"
+  BINARY="$ROOT/client/target/$DESKTOP_PROFILE/omairc"
+  [ -x "$BINARY" ] || die "missing $BINARY after cargo build ($DESKTOP_PROFILE)"
 
   display_number=110
   while [ -e "/tmp/.X11-unix/X$display_number" ]; do
@@ -481,13 +481,13 @@ cmd_launch() {
     WINDOW="$(xdotool search --onlyvisible --pid "$APP_PID" 2>/dev/null | head -1 || true)"
     attempt=$((attempt + 1))
     if [ "$attempt" -ge 50 ] || ! process_alive "$APP_PID"; then
-      die "Omairc PoC did not open; see $STATE_DIR/logs/omairc.log"
+      die "Omairc did not open; see $STATE_DIR/logs/omairc.log"
     fi
     sleep 0.1
   done
 
   # Place after the app maps so the Xephyr host window is fully on-screen.
-  # Grow the PoC window to fill the nested framebuffer (default 1180x760).
+  # Grow the Omairc window to fill the nested framebuffer (default 1180x760).
   if [ "$VISIBLE" = 1 ]; then
     place_visible_host_window "$HOST_DISPLAY" "$HOST_XAUTHORITY" "$XVFB_PID" \
       "$VISIBLE_LOGIC_X" "$VISIBLE_LOGIC_Y"
@@ -499,7 +499,7 @@ cmd_launch() {
   MEMBERS_OPEN=1
   write_state
   xdotool windowfocus --sync "$WINDOW"
-  echo "launched isolated Omairc PoC"
+  echo "launched isolated Omairc"
   if [ "$DEMO" = 1 ]; then
     echo "demo=yes"
   else
@@ -524,11 +524,11 @@ cmd_launch() {
 cmd_doctor() {
   load_state
   process_alive "$XVFB_PID" || die "X server pid $XVFB_PID is not running"
-  process_alive "$APP_PID" || die "Omairc PoC pid $APP_PID is not running"
+  process_alive "$APP_PID" || die "Omairc pid $APP_PID is not running"
   [ -x "$BINARY" ] || die "binary missing: $BINARY"
   [ -e "/tmp/.X11-unix/X${DISPLAY#:}" ] || die "display $DISPLAY is gone"
   found="$(xdotool search --onlyvisible --pid "$APP_PID" 2>/dev/null | head -1 || true)"
-  [ "$found" = "$WINDOW" ] || die "window $WINDOW is not the Omairc PoC window for pid $APP_PID"
+  [ "$found" = "$WINDOW" ] || die "window $WINDOW is not the Omairc window for pid $APP_PID"
   title="$(window_title)"
   case $title in
     *" - Omairc"|*" Status"|Status) ;;
@@ -539,7 +539,7 @@ cmd_doctor() {
     *) die "binary is not the desktop binary: $BINARY" ;;
   esac
   require_lavapipe
-  echo "ok isolated Omairc PoC"
+  echo "ok isolated Omairc"
   echo "binary=$BINARY"
   echo "display=$DISPLAY"
   echo "app_pid=$APP_PID"
@@ -590,7 +590,7 @@ cmd_wait_title() {
 
 
 reject_qt_only_verb() {
-  die "verb '$1' is retired (Qt offscreen QML suite). Desktop proof uses control-omairc-poc only."
+  die "verb '$1' is retired (Qt offscreen QML suite). Desktop proof uses control-omairc-desktop only."
 }
 
 cmd_click() {
@@ -952,10 +952,10 @@ cmd_screenshot() {
 
 remap_verify_path() {
   # Shared desktop-recipe fences write test-artifacts/verify/; this driver
-  # keeps evidence under test-artifacts/verify-poc/.
+  # keeps evidence under test-artifacts/verify-desktop/.
   case $1 in
     test-artifacts/verify/*)
-      printf 'test-artifacts/verify-poc/%s' "${1#test-artifacts/verify/}"
+      printf 'test-artifacts/verify-desktop/%s' "${1#test-artifacts/verify/}"
       ;;
     *)
       printf '%s' "$1"

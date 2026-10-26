@@ -333,7 +333,7 @@ pub struct KickEvent {
 /// A topic change, `332`, or `333` (`TopicEvent`). `author` is empty for `332`.
 /// `keep_existing_topic` is set for RPL_TOPICWHOTIME (`333`): invent the channel
 /// and record the setter, but do not assign `topic`. Qt fills the current topic
-/// into the event in the controller before apply; the PoC uses this flag so a
+/// into the event in the controller before apply; the client uses this flag so a
 /// real `TOPIC` with empty text can still clear the topic.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TopicEvent {

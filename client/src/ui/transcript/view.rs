@@ -21,6 +21,7 @@ use crate::model::typing_tail::typing_continues;
 use crate::model::unread::{self, UnseenLanding};
 use crate::model::transcript::minute_of;
 use crate::model::{mix_colors, row_from_message, Pos, Row, Style, Transcript};
+use crate::ui::format_ui::IrcColors;
 use crate::ui::message_row::{
     render_transcript_row, RowCallbacks, RowContext, RowLayoutMap, RowPeers,
 };
@@ -233,6 +234,13 @@ impl TranscriptView {
     /// again on the next frame, so a change shows at once.
     pub fn set_avatars(&mut self, on: bool) {
         self.peers.avatars = on;
+    }
+
+    /// The `colors` preference. Off, mIRC foreground and background are stripped
+    /// at the GPUI chokepoint; bold and other formatting stay. The rows are drawn
+    /// again on the next frame, so a change shows at once.
+    pub fn set_colors(&mut self, on: bool) {
+        self.peers.colors = IrcColors::from_pref(on);
     }
 
     /// The photos the frame draws. Returns whether the references changed, so the

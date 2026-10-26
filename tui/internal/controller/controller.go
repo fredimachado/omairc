@@ -221,6 +221,9 @@ const (
 	membershipNoiseKey           = "membershipNoise"
 	networkOrderKey              = "networkOrder"
 	collapsedNetworksKey         = "collapsedNetworks"
+	autoawayEnabledKey           = "autoawayEnabled"
+	autoawayTimeoutKey           = "autoawayTimeoutSeconds"
+	autoawayReasonKey            = "autoawayDefaultReason"
 )
 
 // SetEphemeral turns disk persistence on/off. New starts ephemeral so unit
@@ -268,8 +271,9 @@ func (c *Controller) SetPlaybackTimeStore(store *storage.PlaybackTimeStore) {
 }
 
 // LoadStoredPreferences reads the preferences group into c.prefs and restores
-// the sidebar order and collapse set. It is a no-op when ephemeral. It mirrors
-// IrcController::loadStoredPreferences (`client/src/controller/persistence.rs`).
+// the sidebar order, collapse set, and /autoaway settings. It is a no-op when
+// ephemeral. It mirrors load_storedPreferences / preference_store.autoaway
+// (`client/src/controller/persistence.rs`).
 func (c *Controller) LoadStoredPreferences() {
 	if c.ephemeral {
 		return
@@ -283,6 +287,7 @@ func (c *Controller) LoadStoredPreferences() {
 	}
 	c.reducer.SetMembershipNoise(c.membershipNoise)
 	c.loadStoredNetworkOrder(settings)
+	c.autoaway.LoadStored()
 }
 
 // savePreferenceBool persists one preferences-group bool with the fail-closed
