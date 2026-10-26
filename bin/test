@@ -32,7 +32,7 @@ command -v cargo >/dev/null 2>&1 || {
     -A clippy::pedantic \
     -A clippy::nursery \
     -A clippy::perf
-  # Side-by-side omairc-poc identity still compiles and its cfg(dev) tests run.
+  # Side-by-side omairc-dev identity still compiles and its cfg(dev) tests run.
   cargo test --locked --features dev
 )
 

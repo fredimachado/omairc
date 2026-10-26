@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Dev builds use an `omairc-dev` config/state tree and `OMAIRC_DEV_HOME`
+  (was `omairc-poc` / `OMAIRC_POC_HOME`). Desktop proof scripts and the CI
+  recipe job use `verify-omairc-desktop` / `control-omairc-desktop` and
+  `test-artifacts/verify-desktop/` (was `*-poc`).
+
 ## [1.11.0rc1] - 2026-10-26
 
 ### Added

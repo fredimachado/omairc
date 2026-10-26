@@ -3,7 +3,7 @@
 //! `restoreRememberedTranscript`).
 //!
 //! Qt keys the place on the first visible message's msgid when the server gave
-//! one, else on its kind, author, body and time. The PoC keeps the anchor row
+//! one, else on its kind, author, body and time. The client keeps the anchor row
 //! and pixel offset from `Transcript::scroll()` in memory while a conversation
 //! is open, and persists through the same JSON shape Qt uses.
 

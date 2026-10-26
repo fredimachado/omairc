@@ -237,7 +237,7 @@ impl Controller {
 
     /// The selection as the reducer keeps it, applied without pumping. `select_conversation`
     /// and the join path both come here. Selecting a row clears its network's last
-    /// command error, so the header shows the topic again (the PoC's selection rule).
+    /// command error, so the header shows the topic again (the client's selection rule).
     pub(super) fn select(&mut self, network_id: &str, target: &str) {
         if network_id.is_empty() || target.is_empty() {
             return;

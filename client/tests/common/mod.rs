@@ -1,11 +1,11 @@
 //! Source scanning shared by the architecture gates in `tests/`. The gates read
-//! the PoC's own `.rs` files, so they need comments blanked out and nothing
+//! the client's own `.rs` files, so they need comments blanked out and nothing
 //! more: string literals stay, so a forbidden name inside one still counts.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// The PoC crate root, `client/`.
+/// The client crate root, `client/`.
 pub fn crate_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }

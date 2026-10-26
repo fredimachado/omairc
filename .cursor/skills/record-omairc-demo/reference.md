@@ -62,7 +62,7 @@ pass `--device` for the correct node.
 
 ## Isolated Xvfb is the wrong path
 
-`verify-omairc-poc` / `control-omairc-poc` records 1180×760 on a private X display. It cannot show the Omarchy bar, workspace 1, or Omakeycast. Use it for feature proof, not this GIF.
+`verify-omairc-desktop` / `control-omairc-desktop` records 1180×760 on a private X display. It cannot show the Omarchy bar, workspace 1, or Omakeycast. Use it for feature proof, not this GIF.
 
 ## Monitor setup
 

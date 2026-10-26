@@ -221,7 +221,7 @@ jobs:
 
   # Feature-map recipes against the Rust client (Xvfb + lavapipe). Non-blocking
   # until the XI2 click path and recipe set are stable enough to gate merges.
-  verify-poc:
+  verify-desktop:
     runs-on: ubuntu-latest
     continue-on-error: true
     timeout-minutes: 45
@@ -235,7 +235,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: client
-          key: linux-verify-poc-${{ hashFiles('client/Cargo.lock') }}
+          key: linux-verify-desktop-${{ hashFiles('client/Cargo.lock') }}
 
       - name: Install desktop and lavapipe dependencies
         run: |
@@ -251,7 +251,7 @@ jobs:
             xvfb xauth xdotool xinput imagemagick \
             mesa-vulkan-drivers
           # Ubuntu ships ImageMagick 6 without the unified `magick` entrypoint
-          # that ImageMagick 7 / Omarchy provide and that control-omairc-poc
+          # that ImageMagick 7 / Omarchy provide and that control-omairc-desktop
           # doctor / screenshots require (same shim as .cursor/install.sh).
           sudo tee /usr/local/bin/magick >/dev/null <<'EOF'
           #!/usr/bin/env sh
@@ -272,13 +272,13 @@ jobs:
           ls /usr/share/vulkan/icd.d/*lvp* /usr/share/vulkan/icd.d/*lavapipe* 2>/dev/null \
             || ls /usr/share/vulkan/icd.d/*.json
 
-      - name: Run feature-map recipes (control-omairc-poc)
-        run: bin/verify-poc-recipes
+      - name: Run feature-map recipes (control-omairc-desktop)
+        run: bin/verify-desktop-recipes
 
-      - name: Upload verify-poc artifacts
+      - name: Upload verify-desktop artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: verify-poc
-          path: test-artifacts/verify-poc/
+          name: verify-desktop
+          path: test-artifacts/verify-desktop/
           if-no-files-found: ignore

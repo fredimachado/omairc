@@ -395,7 +395,7 @@ mod tests {
     /// With `dev`, Qt migration paths must not share the product `omairc` folder.
     #[cfg(feature = "dev")]
     #[test]
-    fn migration_paths_stay_outside_the_poc_folder() {
+    fn migration_paths_stay_outside_the_dev_folder() {
         let dir = TempDir::new("qt-migrate-separate");
         let env = fixture_env(&dir);
         let layout = write_qt_fixture_tree(&env, Platform::Linux);
@@ -408,12 +408,12 @@ mod tests {
             );
             assert!(
                 !path.components().any(|part| part.as_os_str() == paths::APP_FOLDER),
-                "{} must not use the PoC folder",
+                "{} must not use the dev folder",
                 path.display()
             );
         }
-        let poc_settings = paths::settings_path_for(&env, Platform::Linux);
-        assert_ne!(layout.settings, poc_settings);
+        let dev_settings = paths::settings_path_for(&env, Platform::Linux);
+        assert_ne!(layout.settings, dev_settings);
     }
 
     #[test]

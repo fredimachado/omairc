@@ -1,11 +1,11 @@
 #!/usr/bin/env sh
-# Black-box desktop smoke against the Rust client via control-omairc-poc.
+# Black-box desktop smoke against the Rust client via control-omairc-desktop.
 # Needs Xvfb, xauth, xdotool, xinput, ImageMagick, cargo, and lavapipe
-# (vulkan-swrast). Not in CI; verify-poc covers the feature-map recipes.
+# (vulkan-swrast). Not in CI; verify-desktop covers the feature-map recipes.
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-CONTROL="$ROOT/.cursor/skills/verify-omairc-poc/control-omairc-poc"
+CONTROL="$ROOT/.cursor/skills/verify-omairc-desktop/control-omairc-desktop"
 # Screenshots land at test-artifacts/desktop/<name>.png (feature id = desktop).
 ARTIFACTS="$ROOT/test-artifacts"
 DESKTOP_SHOTS="$ARTIFACTS/desktop"
@@ -21,9 +21,9 @@ test -x "$CONTROL" || {
 }
 
 # Product release binary, same profile PKGBUILD / bin/test-install ship.
-export OMAIRC_POC_PROFILE=release
-export OMAIRC_POC_FEATURES=product
-export OMAIRC_VERIFY_POC_EVIDENCE="$ARTIFACTS"
+export OMAIRC_DESKTOP_PROFILE=release
+export OMAIRC_DESKTOP_FEATURES=product
+export OMAIRC_VERIFY_DESKTOP_EVIDENCE="$ARTIFACTS"
 
 mkdir -p "$DESKTOP_SHOTS"
 cleanup

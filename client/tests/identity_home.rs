@@ -1,7 +1,7 @@
 //! On-disk and IPC identity strings live only in `src/identity.rs`. A hardcoded
-//! `omairc-poc` elsewhere under `src/` means a second home for the same name.
+//! `omairc-dev` elsewhere under `src/` means a second home for the same name.
 //!
-//! `omairc-poc` may remain in `identity.rs` (and this test) when the `dev`
+//! `omairc-dev` may remain in `identity.rs` (and this test) when the `dev`
 //! feature is enabled. The cargo binary is `omairc` and is not an exception.
 
 mod common;
@@ -12,7 +12,7 @@ use common::{crate_root, line_of, read_code, rust_files_under};
 use regex::Regex;
 
 /// The folder / endpoint leaf that must not be copied outside `identity.rs`.
-const BANNED: &str = "omairc-poc";
+const BANNED: &str = "omairc-dev";
 
 /// The one file that may define the banned name.
 const HOME: &str = "identity.rs";
@@ -44,7 +44,7 @@ fn banned_hits(code: &str) -> Vec<(usize, String)> {
 }
 
 #[test]
-fn omairc_poc_lives_only_in_identity() {
+fn omairc_dev_lives_only_in_identity() {
     let src = crate_root().join("src");
     let files = rust_files_under(&src);
     assert!(!files.is_empty(), "no .rs files under {}", src.display());
@@ -69,7 +69,7 @@ fn omairc_poc_lives_only_in_identity() {
 
 #[test]
 fn the_gate_flags_a_hardcoded_folder() {
-    let code = r#"pub const APP_FOLDER: &str = "omairc-poc";"#;
+    let code = r#"pub const APP_FOLDER: &str = "omairc-dev";"#;
     let hits = banned_hits(code);
     assert_eq!(hits.len(), 1, "{hits:?}");
     assert_eq!(hits[0].1, BANNED);

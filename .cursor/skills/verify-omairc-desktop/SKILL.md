@@ -1,5 +1,5 @@
 ---
-name: verify-omairc-poc
+name: verify-omairc-desktop
 description: Drive the Omairc Rust GPUI product client as a user would (isolated Xvfb + compiled binary). Use when proving the seeded demo shell, window title, conversation switching, Status console, composer, or keyboard chords against client/target/*/omairc.
 metadata:
   internal: true
@@ -9,8 +9,8 @@ metadata:
 
 The **product desktop client** lives in `client/`. It is a GPUI app shipped as
 the `omairc` binary (`product` is the default Cargo feature for install
-identity; `dev` uses a separate `omairc-poc` folder for local runs). This
-skill is the official black-box driver for that window, not a throwaway PoC.
+identity; `dev` uses a separate `omairc-dev` folder for local runs). This
+skill is the official black-box driver for that window, not a throwaway harness.
 
 `--demo-server` seeds the same two-network demo world as the retired Qt client.
 Drive the compiled binary under an isolated X server with `xdotool`. The shared
@@ -26,8 +26,8 @@ Prefer a private X server when `Xvfb`, `xauth`, `xdotool`, `import`, `magick`,
 user's live display.
 
 ```sh
-.cursor/skills/verify-omairc-poc/control-omairc-poc launch
-.cursor/skills/verify-omairc-poc/control-omairc-poc launch --demo-server
+.cursor/skills/verify-omairc-desktop/control-omairc-desktop launch
+.cursor/skills/verify-omairc-desktop/control-omairc-desktop launch --demo-server
 ```
 
 Ready when stdout includes a title ending in ` - Omairc` or ` Status`, and
@@ -41,11 +41,11 @@ recipe or an agent drive. That flag is only for a human who wants to watch.
 This launch:
 
 - runs `cargo build` in `client/` (debug profile by default). Set
-  `OMAIRC_POC_PROFILE=release` and optionally `OMAIRC_POC_FEATURES=product`
+  `OMAIRC_DESKTOP_PROFILE=release` and optionally `OMAIRC_DESKTOP_FEATURES=product`
   (as `bin/test-desktop` does) for the packager binary under
   `client/target/release/omairc`. Default Cargo features already include
   `product`; pass `--features dev` only when you intentionally need the
-  `omairc-poc` home folder.
+  `omairc-dev` home folder.
 - picks the next free X display from `:110`
 - uses a disposable `XDG_*` tree so window geometry is the default 1180×760
 - points `DBUS_SESSION_BUS_ADDRESS` at a missing socket
@@ -57,7 +57,7 @@ This launch:
   software Vulkan ICD). Override discovery with `OMAIRC_LAVAPIPE_ICD=/path/to/lvp_icd.json`
   when the system package is not installed
 - passes `--demo-server` when requested
-- writes run state to `/tmp/omairc-verify-poc-$USER/state`
+- writes run state to `/tmp/omairc-verify-desktop-$USER/state`
 
 Never attach to a window you did not start. Never send `xdotool` to the
 session `$DISPLAY`.
@@ -70,8 +70,8 @@ on your session; the client and `xdotool` still talk only to that nested
 display. Control verbs are unchanged.
 
 ```sh
-.cursor/skills/verify-omairc-poc/control-omairc-poc launch --demo-server --visible
-.cursor/skills/verify-omairc-poc/control-omairc-poc run switch-conversation
+.cursor/skills/verify-omairc-desktop/control-omairc-desktop launch --demo-server --visible
+.cursor/skills/verify-omairc-desktop/control-omairc-desktop run switch-conversation
 ```
 
 Needs `xorg-server-xephyr` and a host `DISPLAY` (XWayland on Omarchy).
@@ -86,20 +86,20 @@ Xephyr window. Do not put `--visible` in `desktop-recipe` fences.
 Teardown:
 
 ```sh
-.cursor/skills/verify-omairc-poc/control-omairc-poc cleanup
+.cursor/skills/verify-omairc-desktop/control-omairc-desktop cleanup
 ```
 
-Keep `test-artifacts/verify-poc/`.
+Keep `test-artifacts/verify-desktop/`.
 
 ## Doctor
 
 ```sh
-.cursor/skills/verify-omairc-poc/control-omairc-poc doctor
+.cursor/skills/verify-omairc-desktop/control-omairc-desktop doctor
 ```
 
 Require all of:
 
-- `ok isolated Omairc PoC`
+- `ok isolated Omairc`
 - `binary=` is `$ROOT/client/target/debug/omairc` (or `release`)
 - `display=` is the nested X server from launch, not the user's session
 - `app_pid=` and `xserver_pid=` are alive
@@ -119,7 +119,7 @@ Xvfb.
 
 ## Drive
 
-Use `control-omairc-poc` against the isolated window. Shortcuts and the
+Use `control-omairc-desktop` against the isolated window. Shortcuts and the
 composer first. Pointer verbs use an XTEST/XI2 click path (below).
 
 Agents should `launch` (if needed) then `run <feature>` instead of assembling
@@ -127,13 +127,13 @@ raw `key --key` chords. `run <feature>` plays the same
 `## Driving it with control-omairc` / `desktop-recipe` fence in
 `.cursor/skills/verify-omairc/features/<feature>.md` that the TUI uses.
 `run <feature> --dry-run` prints the fence and exits without launching.
-`bin/verify-poc-recipes` runs every feature with a `desktop-recipe` fence
-under Xvfb + lavapipe and keeps evidence in `test-artifacts/verify-poc/`.
+`bin/verify-desktop-recipes` runs every feature with a `desktop-recipe` fence
+under Xvfb + lavapipe and keeps evidence in `test-artifacts/verify-desktop/`.
 
 `run` skips a fence `launch` when `doctor` is already healthy and the demo
 flag matches. A healthy instance in the other mode is an error. Any command
 failure stops the recipe. Fence paths under `test-artifacts/verify/` are
-remapped to `test-artifacts/verify-poc/` for `compare`.
+remapped to `test-artifacts/verify-desktop/` for `compare`.
 
 Named chord verbs wrap the same keysym path as `key` (including the
 `Control_L+k` rewrite):
@@ -177,13 +177,13 @@ footer hit misses under lavapipe. For SEND, prefer `send --text` / Enter.
 Typical drive:
 
 ```sh
-.cursor/skills/verify-omairc-poc/control-omairc-poc launch --demo-server
-.cursor/skills/verify-omairc-poc/control-omairc-poc run switch-conversation
+.cursor/skills/verify-omairc-desktop/control-omairc-desktop launch --demo-server
+.cursor/skills/verify-omairc-desktop/control-omairc-desktop run switch-conversation
 ```
 
 ## Evidence
 
-Proof lives in `test-artifacts/verify-poc/<feature-id>/`. Cleanup must not
+Proof lives in `test-artifacts/verify-desktop/<feature-id>/`. Cleanup must not
 delete it.
 
 Standards match the feature map: exercise the real window with shortcuts and
@@ -193,16 +193,16 @@ identity; `compare` requires a visible pixel change (AE > 100).
 ## Cleanup
 
 ```sh
-.cursor/skills/verify-omairc-poc/control-omairc-poc cleanup
+.cursor/skills/verify-omairc-desktop/control-omairc-desktop cleanup
 ```
 
 Kills only the `APP_PID` and `XVFB_PID` from the state file, then removes the
 disposable XDG/Xauth directory and the state file. It does not remove
-`test-artifacts/verify-poc/`.
+`test-artifacts/verify-desktop/`.
 
 ## Helpers
 
-`control-omairc-poc` is executable. Invoke it from the repo root.
+`control-omairc-desktop` is executable. Invoke it from the repo root.
 
 ```text
 launch [--demo-server] [--visible] | doctor | title | wait-title --exact TITLE

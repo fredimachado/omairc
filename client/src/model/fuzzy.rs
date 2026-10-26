@@ -1,5 +1,5 @@
 //! Fuzzy filtering for the GPUI sheets (Jump, Link, Nick and the `/list`
-//! sheet). Qt and the TUI keep substring matching; only this PoC uses this.
+//! sheet). Qt and the TUI keep substring matching; only this client uses this.
 //!
 //! Matching is `nucleo-matcher`, so `omy` finds `#omarchy`. Hits report the
 //! matched characters as byte offsets into the haystack, so the UI can draw

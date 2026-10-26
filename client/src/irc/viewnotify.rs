@@ -29,7 +29,7 @@ pub enum ViewNotify {
     /// facts that timer watches (`RearmTyping`).
     RearmTyping,
     /// The connection footer, the Status subtitle or the last error changed. Go
-    /// reports this through its own status callback; the PoC queues it beside the
+    /// reports this through its own status callback; the client queues it beside the
     /// reducer's surfaces so one drain feeds the shell.
     Status,
     /// The session inbox gained, lost or reordered a row.

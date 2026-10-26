@@ -1,4 +1,4 @@
-//! Toolkit-agnostic Omairc PoC model: theme, style, the presentation of controller
+//! Toolkit-agnostic Omairc model: theme, style, the presentation of controller
 //! reads (transcript rows, sidebar and jump walks, titles, Connect's form), IRC
 //! formatting for display, chords, and the URL policy. Nothing here owns IRC state:
 //! the `controller` does, and the UI reads it through `Controller` snapshots.

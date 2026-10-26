@@ -5,8 +5,8 @@
 //! group handling in `tui/internal/controller/controller.go` (Go). The keys are the Qt
 //! names, so the three clients share one section.
 //!
-//! This replaces the PoC's earlier JSON `prefs.json`. That file is not migrated, since the
-//! PoC never shipped it.
+//! This replaces an earlier JSON `prefs.json`. That file is not migrated, since it
+//! never shipped.
 
 use crate::irc::autoaway::AutoawayConfig;
 use crate::irc::membershipnoise::MembershipNoise;

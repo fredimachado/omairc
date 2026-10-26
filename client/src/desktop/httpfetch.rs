@@ -1,4 +1,4 @@
-//! The `HttpFetch` seam (plan rule 7): the one way the PoC reaches the network
+//! The `HttpFetch` seam (plan rule 7): the one way the client reaches the network
 //! for its desktop features. The update check and the installer download use it
 //! now, and the avatar fetch will use it later. Go twin: none, since the TUI
 //! calls `net/http` directly. C++: `QNetworkAccessManager` as used in

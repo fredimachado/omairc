@@ -57,7 +57,7 @@ pub enum CredentialState {
 /// The server-password slot of a network. Qt and the TUI omit the purpose segment
 /// for this slot; an empty purpose is the canonical key name.
 pub const PURPOSE_PASSWORD: &str = "";
-/// The Rust PoC once wrote server passwords under this suffix. Reads and deletes still
+/// An earlier Rust build once wrote server passwords under this suffix. Reads and deletes still
 /// reach those entries until a successful write migrates them.
 pub const LEGACY_PURPOSE_PASSWORD: &str = "password";
 /// The NickServ slot of a network.

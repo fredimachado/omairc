@@ -235,7 +235,7 @@ pub fn preference_rows() -> [PreferenceRow; 4] {
 }
 
 /// Shown under the form when a rail click or walk asks for another network while
-/// the draft is dirty. Qt refuses the switch silently; the PoC says why.
+/// the draft is dirty. Qt refuses the switch silently; the client says why.
 pub const SWITCH_REFUSED_TEXT: &str = "Apply or discard your edits before switching networks.";
 
 /// The label on the Remove button: `Remove`, or `Remove <name>?` once armed.

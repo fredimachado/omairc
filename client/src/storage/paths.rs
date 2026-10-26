@@ -1,6 +1,6 @@
 //! Port of `tui/internal/storage/paths*.go`,
 //! under this build's app folder ([`crate::identity::APP_FOLDER`]). With the
-//! `dev` feature that folder is `omairc-poc`, separate from the Qt/TUI `omairc/`
+//! `dev` feature that folder is `omairc-dev`, separate from the Qt/TUI `omairc/`
 //! tree, so local `cargo test --features dev` never writes into a real install.
 //!
 //! The roots follow `$XDG_CONFIG_HOME` and `$XDG_STATE_HOME` when set. Otherwise
@@ -13,7 +13,7 @@
 //!
 //! Qt on Windows stores main settings in the registry
 //! (`HKCU\Software\omairc\omairc`), not an INI under LocalAppData. The STS
-//! cache stays an INI at `%LOCALAPPDATA%\omairc\sts`. `OMAIRC_POC_HOME` moves
+//! cache stays an INI at `%LOCALAPPDATA%\omairc\sts`. `OMAIRC_DEV_HOME` moves
 //! both roots under one directory, so tests and manual runs can stay out of the
 //! user's profile.
 
@@ -30,7 +30,7 @@ pub const STS_FILE: &str = "sts";
 /// The application log, the same name the Qt client uses.
 pub const LOG_FILE: &str = "omairc.log";
 /// Moves the config and state roots under one directory.
-pub const HOME_OVERRIDE_VAR: &str = "OMAIRC_POC_HOME";
+pub const HOME_OVERRIDE_VAR: &str = "OMAIRC_DEV_HOME";
 /// Overrides the on-disk transcript log root (`OMAIRC_TRANSCRIPT_ROOT`).
 pub const TRANSCRIPT_ROOT_VAR: &str = "OMAIRC_TRANSCRIPT_ROOT";
 
@@ -64,7 +64,7 @@ pub struct Env {
     pub local_app_data: Option<PathBuf>,
     pub xdg_config_home: Option<PathBuf>,
     pub xdg_state_home: Option<PathBuf>,
-    pub poc_home: Option<PathBuf>,
+    pub dev_home: Option<PathBuf>,
     pub transcript_root: Option<PathBuf>,
     /// Where the log goes when no state root is known, as Qt's `TempLocation`.
     pub temp_dir: PathBuf,
@@ -97,7 +97,7 @@ impl Env {
             local_app_data: path("LOCALAPPDATA"),
             xdg_config_home: path("XDG_CONFIG_HOME"),
             xdg_state_home: path("XDG_STATE_HOME"),
-            poc_home: path(HOME_OVERRIDE_VAR),
+            dev_home: path(HOME_OVERRIDE_VAR),
             transcript_root: path(TRANSCRIPT_ROOT_VAR),
             temp_dir,
         }
@@ -107,13 +107,13 @@ impl Env {
 /// The config folder (`<config root>/<APP_FOLDER>`), or `None` when the platform
 /// config root is unknown.
 pub fn config_dir_for(env: &Env, platform: Platform) -> Option<PathBuf> {
-    if let Some(home) = &env.poc_home {
+    if let Some(home) = &env.dev_home {
         return Some(home.join("config"));
     }
     config_dir_for_folder(env, platform, APP_FOLDER)
 }
 
-/// The Qt client's config folder (`<config root>/omairc`). `OMAIRC_POC_HOME` does not
+/// The Qt client's config folder (`<config root>/omairc`). `OMAIRC_DEV_HOME` does not
 /// apply; cutover reads the install the Qt client already wrote.
 pub fn qt_config_dir_for(env: &Env, platform: Platform) -> Option<PathBuf> {
     config_dir_for_folder(env, platform, QT_APP_FOLDER)
@@ -122,7 +122,7 @@ pub fn qt_config_dir_for(env: &Env, platform: Platform) -> Option<PathBuf> {
 /// The state folder (`<state root>/<APP_FOLDER>`). Falls back to the temp dir when
 /// the platform state root is unknown, as the Qt log does.
 pub fn state_dir_for(env: &Env, platform: Platform) -> PathBuf {
-    if let Some(home) = &env.poc_home {
+    if let Some(home) = &env.dev_home {
         return home.join("state");
     }
     state_root(env, platform)
@@ -354,9 +354,9 @@ mod tests {
     }
 
     #[test]
-    fn poc_home_moves_both_roots_under_one_directory() {
+    fn dev_home_moves_both_roots_under_one_directory() {
         let env = Env {
-            poc_home: Some(PathBuf::from("scratch")),
+            dev_home: Some(PathBuf::from("scratch")),
             xdg_config_home: Some(PathBuf::from("cfg")),
             local_app_data: Some(PathBuf::from("lad")),
             home: Some(home()),
@@ -524,9 +524,9 @@ mod tests {
     }
 
     #[test]
-    fn qt_paths_ignore_poc_home_override() {
+    fn qt_paths_ignore_dev_home_override() {
         let env = Env {
-            poc_home: Some(PathBuf::from("scratch")),
+            dev_home: Some(PathBuf::from("scratch")),
             home: Some(home()),
             temp_dir: PathBuf::from("tmp"),
             ..Env::default()
@@ -561,7 +561,7 @@ mod tests {
             |name| match name {
                 "XDG_CONFIG_HOME" => Some(OsString::new()),
                 "LOCALAPPDATA" => Some(OsString::from("lad")),
-                "OMAIRC_POC_HOME" => Some(OsString::from("scratch")),
+                "OMAIRC_DEV_HOME" => Some(OsString::from("scratch")),
                 _ => None,
             },
             Some(home()),
@@ -569,7 +569,7 @@ mod tests {
         );
         assert_eq!(env.xdg_config_home, None);
         assert_eq!(env.local_app_data, Some(PathBuf::from("lad")));
-        assert_eq!(env.poc_home, Some(PathBuf::from("scratch")));
+        assert_eq!(env.dev_home, Some(PathBuf::from("scratch")));
         assert_eq!(env.xdg_state_home, None);
     }
 }

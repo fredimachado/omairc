@@ -9,7 +9,7 @@ version = "1.11.0-rc1"
 edition = "2021"
 
 # `product` is the default install identity (omairc folder + IPC). `dev` keeps
-# a separate omairc-poc home so local cargo run/test never claim a real install.
+# a separate omairc-dev home so local cargo run/test never claim a real install.
 # Enabling both prefers `dev` for the on-disk folder.
 [features]
 default = ["product"]

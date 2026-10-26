@@ -2,12 +2,12 @@
 //!
 //! Every folder name, settings file name, and local endpoint leaf used for persistence
 //! or IPC lives here. The default `product` feature uses the installed client's names.
-//! The `dev` feature selects a separate `omairc-poc` tree so `cargo run` / `cargo test`
+//! The `dev` feature selects a separate `omairc-dev` tree so `cargo run` / `cargo test`
 //! with `--features dev` never write under a real install or claim its socket.
 
 /// Folder under config and state roots for this build.
 #[cfg(feature = "dev")]
-pub const APP_FOLDER: &str = "omairc-poc";
+pub const APP_FOLDER: &str = "omairc-dev";
 
 /// Folder under config and state roots for this build.
 #[cfg(not(feature = "dev"))]

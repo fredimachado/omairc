@@ -180,7 +180,7 @@ mod tests {
             chord_label(tabs, Platform::Windows),
             "Ctrl+Tab / Ctrl+PgDn"
         );
-        // MOVE chords have no Windows-only bindings in the PoC binary.
+        // MOVE chords have no Windows-only bindings in this binary.
         let walk = find_row("Alt+Down / Alt+Up");
         assert_eq!(chord_label(walk, Platform::Windows), "Alt+Down / Alt+Up");
         let quit = find_row("Ctrl+Q");

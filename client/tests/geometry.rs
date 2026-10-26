@@ -1,5 +1,5 @@
 //! Window close must persist geometry and still launch a ready installer. GPUI
-//! stores one `on_window_should_close` callback, so the PoC chains both effects in
+//! stores one `on_window_should_close` callback, so the client chains both effects in
 //! `windowstate::attach` instead of registering them separately in `app.rs`.
 
 mod common;
