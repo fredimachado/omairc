@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The terminal client's `/autoaway` settings survive a restart, matching the
+  desktop PreferenceStore keys and leaving the one-shot reason unpersisted.
 - Transcripts label the first day when it is not today, in the desktop and
   terminal clients. The mark matches a day change, and loading older history
   moves it so a date is not shown twice. On that first message the unread

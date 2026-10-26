@@ -4,9 +4,12 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/fredimachado/omairc/tui/internal/irc"
+	"github.com/fredimachado/omairc/tui/internal/session"
 	"github.com/fredimachado/omairc/tui/internal/storage"
 )
 
@@ -95,11 +98,94 @@ func TestEphemeralControllerWritesNothing(t *testing.T) {
 	c.SetOpenAtUnread(false)
 	c.SetNetworkOrder([]string{"alpha", "zulu"})
 	c.SetNetworkCollapsed("alpha", true)
+	c.autoaway.DispatchAutoaway(irc.Command{Verb: irc.VerbAutoaway, Argument: "10m"}, irc.SurfaceStatus)
 
 	if path := storage.ConfigPath(); path != "" {
 		if _, err := os.Stat(path); err == nil {
 			t.Fatalf("ephemeral controller wrote %s", path)
 		}
+	}
+}
+
+// TestAutoawaySettingsSurviveARelaunch mirrors Rust
+// autoaway_settings_survive_a_relaunch: enabled, timeout, and default reason
+// round-trip through LoadStoredPreferences; one-shot reason does not.
+func TestAutoawaySettingsSurviveARelaunch(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	c := New()
+	c.SetEphemeral(false)
+	c.LoadStoredPreferences()
+	c.autoaway.DispatchAutoaway(irc.Command{Verb: irc.VerbAutoaway, Argument: "reason lunch"}, irc.SurfaceStatus)
+	c.autoaway.DispatchAutoaway(irc.Command{Verb: irc.VerbAutoaway, Argument: "10m gone"}, irc.SurfaceStatus)
+
+	settings := storage.OpenSettings("")
+	if !settings.Bool(preferencesGroup, autoawayEnabledKey, false) {
+		t.Fatalf("%s not persisted true", autoawayEnabledKey)
+	}
+	if got := settings.Int(preferencesGroup, autoawayTimeoutKey, 0); got != 600 {
+		t.Fatalf("%s = %d, want 600", autoawayTimeoutKey, got)
+	}
+	if got := settings.Value(preferencesGroup, autoawayReasonKey); got != "lunch" {
+		t.Fatalf("%s = %q, want lunch", autoawayReasonKey, got)
+	}
+	text, err := os.ReadFile(storage.ConfigPath())
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	ini := string(text)
+	for _, needle := range []string{"oneShot", "OneShot", "one_shot", "gone"} {
+		if strings.Contains(ini, needle) {
+			t.Fatalf("ini must not store one-shot reason material %q: %s", needle, ini)
+		}
+	}
+
+	fresh := New()
+	fresh.SetEphemeral(false)
+	fresh.LoadStoredPreferences()
+	got := fresh.autoaway.config
+	if !got.Enabled || got.TimeoutSeconds != 600 || got.DefaultReason != "lunch" {
+		t.Fatalf("reloaded autoaway = %+v, want enabled 600s lunch", got)
+	}
+	if got.OneShotReason != "" {
+		t.Fatalf("reloaded OneShotReason = %q, want empty", got.OneShotReason)
+	}
+	if !fresh.autoaway.IdleActiveForTest() {
+		t.Fatalf("idle timer not armed after reload with enabled in-range timeout")
+	}
+	if fresh.autoaway.IdleIntervalForTest() != 600*time.Second {
+		t.Fatalf("idle interval = %v, want 10m", fresh.autoaway.IdleIntervalForTest())
+	}
+}
+
+// TestSetClockKeepsLoadedAutoawayConfig ensures rebindClocks does not drop
+// restored /autoaway settings (or an in-memory one-shot reason) when the
+// shell installs a clock after LoadStoredPreferences.
+func TestSetClockKeepsLoadedAutoawayConfig(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	c := New()
+	c.SetEphemeral(false)
+	c.LoadStoredPreferences()
+	c.autoaway.DispatchAutoaway(irc.Command{Verb: irc.VerbAutoaway, Argument: "10m gone"}, irc.SurfaceStatus)
+
+	c.SetClock(session.NewFakeClock(time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)))
+
+	got := c.autoaway.config
+	if !got.Enabled || got.TimeoutSeconds != 600 {
+		t.Fatalf("after SetClock autoaway = %+v, want enabled 600s", got)
+	}
+	if got.OneShotReason != "gone" {
+		t.Fatalf("OneShotReason = %q, want gone preserved across SetClock", got.OneShotReason)
+	}
+	if c.autoaway.ephemeral {
+		t.Fatalf("SetClock cleared non-ephemeral autoaway")
+	}
+	if !c.autoaway.IdleActiveForTest() {
+		t.Fatalf("idle timer not armed after SetClock with enabled in-range timeout")
+	}
+	if c.autoaway.IdleIntervalForTest() != 600*time.Second {
+		t.Fatalf("idle interval = %v, want 10m", c.autoaway.IdleIntervalForTest())
 	}
 }
 
