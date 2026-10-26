@@ -227,6 +227,9 @@ func (c *Controller) initSlashSubsystems() {
 	c.replies = NewReplyRouter(c.reducer, host)
 	c.monitor = NewMonitorCoordinator(c.reducer, c.monitors, c.mutes, host)
 	c.autoaway = NewAutoawayRuntime(autoawayAdapter{host}, c.clock)
+	// New() starts ephemeral; keep the runtime from writing until the shell
+	// opts in with SetEphemeral(false).
+	c.autoaway.SetEphemeral(c.ephemeral)
 	c.channelLists = NewChannelListRequest(c.clock)
 	c.channelList = NewChannelListModel()
 }
@@ -240,6 +243,7 @@ func (c *Controller) rebindClocks() {
 	}
 	if c.autoaway != nil {
 		c.autoaway = NewAutoawayRuntime(autoawayAdapter{ctrlHost{c: c}}, c.clock)
+		c.autoaway.SetEphemeral(c.ephemeral)
 	}
 }
 
