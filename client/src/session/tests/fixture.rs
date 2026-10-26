@@ -197,7 +197,6 @@ impl Fixture {
             .collect()
     }
 
-    /// Whether one exact frame was written.
     pub fn wrote(&self, frame: &str) -> bool {
         self.frames().iter().any(|candidate| candidate == frame)
     }

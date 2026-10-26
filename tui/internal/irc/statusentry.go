@@ -78,8 +78,7 @@ func (l CtcpReplyLine) Command() string { return l.command }
 
 // StatusEntry is one classified Status line. It mirrors IrcStatusEntry: the
 // session emits the raw line, and the entry carries the redacted text.
-//
-// Timestamps are clock-free. The C++ stamps QDateTime::currentDateTimeUtc();
+// Timestamps are clock-free. The C++ stamps QDateTime::currentDateTimeUtc
 // the Go core never reads the clock, so message-backed entries use the IRCv3
 // server-time tag when present and the zero time otherwise. Local entries have
 // no message, so their timestamp is the zero time.
@@ -336,8 +335,8 @@ func nickRefusalStatusCommand(command string) bool {
 }
 
 // nickRefusalSentencePresent matches the session sentence rule.
-// 432/433/436/437 carry <client> <nick> :<reason>. 451/462/465 carry
-// <client> :<reason>. Fewer parameters means there is no sentence.
+// 432/433/436/437 carry <client> <nick>:<reason>. 451/462/465 carry
+// <client>:<reason>. Fewer parameters means there is no sentence.
 func nickRefusalSentencePresent(command string, count int) bool {
 	switch command {
 	case "432", "433", "436", "437":
@@ -1109,7 +1108,7 @@ func Outgoing(networkID string, line []byte, channelTypes string, now time.Time)
 		statusSeverityFor(verb), verb, text, nil, nil)
 }
 
-// Lifecycle builds a locally generated Status entry. now stamps the entry,
+// Lifecycle builds a locally generated Status entry. now stamps the entry
 // and the caller supplies it so the core stays deterministic. It mirrors
 // IrcStatusEntry::lifecycle.
 func Lifecycle(networkID string, severity LogSeverity, label, text string, now time.Time) StatusEntry {

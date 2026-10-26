@@ -1,9 +1,9 @@
 package controller_test
 
-// This file proves the Phase 8 members/presence/typing reads on the demo seed.
-// It is an external test package: an in-package controller_test.go cannot
-// import internal/demo, because demo imports internal/controller and Go
-// rejects that as an import cycle in an internal test.
+// Members/presence/typing reads on the demo seed.
+// External test package: an in-package controller_test.go cannot import
+// internal/demo, because demo imports internal/controller and Go rejects that
+// as an import cycle in an internal test.
 
 import (
 	"testing"
@@ -17,7 +17,7 @@ import (
 
 // seededDemo attaches the demo world on a frozen clock on a day far from the
 // seeded 2026-09-12 transcript minutes. The clock is not advanced, so typing
-// hints stay live, and c.now() never shares a HH:mm with the seeded anna DM row
+// hints stay live, and c.now never shares a HH:mm with the seeded anna DM row
 // (10:12), so the typing footer never groups by accident.
 func seededDemo(t *testing.T) (*controller.Controller, *demo.DemoServer) {
 	t.Helper()
@@ -81,12 +81,12 @@ func TestNickIsTypingSeededDemo(t *testing.T) {
 }
 
 // TestTranscriptTypingIndicatorSeededDemo covers the Qt typingRow footer on the
-// demo world: the anna DM shows the footer ungrouped, a channel never shows it,
+// demo world: the anna DM shows the footer ungrouped, a channel never shows it
 // Status never shows it, and no selection returns the zero values.
 func TestTranscriptTypingIndicatorSeededDemo(t *testing.T) {
 	c, _ := seededDemo(t)
 
-	// The anna DM's only seeded row is a live peer chat at 10:12 on 2026-09-12;
+	// The anna DM's only seeded row is a live peer chat at 10:12 on 2026-09-12
 	// the clock is 09:00 on 2026-09-26, so the footer does not group.
 	c.SelectConversation("omarchy", "anna")
 	nick, grouped, show := c.TranscriptTypingIndicator()
@@ -210,7 +210,7 @@ func TestMemberBotFlagSeededDemo(t *testing.T) {
 
 // TestDirectPresenceGatedOnAwayNotify covers the DM sidebar presence gate. The
 // demo negotiates away-notify, so the anna DM paints online from the shared
-// #omarchy; once the network no longer advertises away-notify the dot clears,
+// #omarchy; once the network no longer advertises away-notify the dot clears
 // matching the gate that hides another member's away dot.
 func TestDirectPresenceGatedOnAwayNotify(t *testing.T) {
 	c, _ := seededDemo(t)

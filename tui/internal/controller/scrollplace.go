@@ -6,7 +6,7 @@ import (
 )
 
 // ScrollView is the selected conversation's saved place, resolved to a row in
-// Messages(). Known is false when this conversation has no place. Follow means
+// Messages. Known is false when this conversation has no place. Follow means
 // the viewport was pinned to the bottom. Row is -1 when the anchor is not in
 // the loaded transcript yet; Known stays true so the caller does not fall
 // through to open-at-unread.
@@ -18,7 +18,7 @@ type ScrollView struct {
 
 // RememberScrollPlace records the open conversation's viewport. followEnd
 // pins the bottom. Otherwise anchorRow is the first visible message index in
-// Messages(). Status is not a saved conversation.
+// Messages. Status is not a saved conversation.
 func (c *Controller) RememberScrollPlace(followEnd bool, anchorRow int) {
 	if c == nil || c.consoleOpen || c.selected == nil || c.scrollPlaces == nil {
 		return

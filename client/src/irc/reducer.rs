@@ -1,22 +1,18 @@
-//! Port of `tui/internal/irc/reducer.go`.
 //! The reducer folds the translated events in `irc/event.rs` into
 //! conversation state and reports which surfaces each event dirtied.
-//!
 //! The state is owned here, in one `EventReducer`: a `Store` of conversations
 //! (`BTreeMap` keyed by network then normalized target, the order the C++
 //! `std::map` and the Go sort both use) and a `Facts` struct of per-network
 //! facts (features, nicks, presence, selection, log). A handler borrows one
 //! conversation and the facts together by disjoint field, so the fold never
 //! reads through `&self` while a row is borrowed.
-//!
 //! Time is an argument: `apply` takes the caller's `now`, which stands in for
 //! the Go `now` and the C++ wall-clock reads. Nothing here reads the clock, and
 //! nothing touches a socket, a file or a thread.
-//!
 //! The submodules follow the Go file split: `state` (the types), `facts` (the
 //! per-network facts and identity queries), `transcript` (rows, cap, log, live
 //! chat), `splice` (replay batches and the pending queue), `handlers` (one fold
-//! per event), `conversations` (creation, drop, close, selection, reads),
+//! per event), `conversations` (creation, drop, close, selection, reads)
 //! `readmarker`, `notify` (`ClassifyViewNotify`) and `sidebar` (`SidebarOrder`).
 
 mod conversations;

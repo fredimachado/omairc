@@ -27,14 +27,13 @@ pub enum Sheet {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ChordContext {
     pub sheet: Option<Sheet>,
-    /// The Status pane is showing in place of a conversation. Status is a view,
-    /// not an overlay: no-overlay chords stay live. Like Qt's `consoleVisible`,
+    /// The Status pane is showing in place of a conversation. Status is a view
+    /// not an overlay: no-overlay chords stay live. Like Qt's `consoleVisible`
     /// it hides the member panel and the conversation, so the channel and DM
     /// chords are off.
     pub status_open: bool,
-    /// The selected conversation is a channel.
     pub channel: bool,
-    /// The selected channel is one the user is in (Qt `currentChannelJoined`). Ctrl+Shift+K
+    /// The selected channel is one the user is in. Ctrl+Shift+K
     /// (the nick sheet), Ctrl+Shift+M (the member panel) and Ctrl+Shift+P (member focus) need
     /// one, so on a channel the user has left they do nothing.
     pub joined: bool,
@@ -43,7 +42,6 @@ pub struct ChordContext {
     pub can_close: bool,
     /// A network header in the server list has keyboard focus.
     pub header_focused: bool,
-    /// The member list has keyboard focus.
     pub members_focused: bool,
     /// The transcript has a non-empty text selection.
     pub transcript_selection: bool,
@@ -133,7 +131,7 @@ pub enum Chord {
     ConnectWalkNetworkLeft,
     /// Ctrl+N while Connect is open: adds a network.
     ConnectAdd,
-    /// Ctrl+Shift+Delete while Connect is open: arms the selected network's removal,
+    /// Ctrl+Shift+Delete while Connect is open: arms the selected network's removal
     /// and removes it on the next press.
     ConnectRemove,
     /// Ctrl+Shift+U: opens the file picker when the server offers FILEHOST.
@@ -154,7 +152,7 @@ pub fn chord_enabled(chord: Chord, ctx: &ChordContext) -> bool {
     let sheet_free = ctx.sheet.is_none();
     // The Connect keys work while Connect shows and no sheet sits above it.
     let connect_keys = ctx.connect_open && sheet_free;
-    // Status hides the member panel and the conversation (Qt `!consoleVisible`).
+    // Status hides the member panel and the conversation.
     let on_conversation = base_live && !ctx.status_open;
     // Qt Ctrl+K: blocked under Connect, Shortcuts, and every other sheet except Jump.
     let jump_live = base_live
@@ -342,7 +340,6 @@ mod tests {
     }
 
     fn nothing(_: &mut ChordContext) {}
-    /// A channel the user is in.
     fn joined_channel(ctx: &mut ChordContext) {
         ctx.channel = true;
         ctx.joined = true;
@@ -374,7 +371,7 @@ mod tests {
         ctx.find_active = true;
     }
 
-    // Columns: none, Shortcuts, About, Jump, Link, Inbox, Nick, ChannelOpen, ChannelList,
+    // Columns: none, Shortcuts, About, Jump, Link, Inbox, Nick, ChannelOpen, ChannelList
     // Status open, Connect open.
 
     #[test]

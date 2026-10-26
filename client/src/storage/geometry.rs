@@ -3,7 +3,6 @@
 //! `window/geometry` and the maximized flag under `window/maximized`. The INI
 //! file holds the rectangle as `@Rect(x y width height)`, so this module writes
 //! the same keys and value text.
-//!
 //! The gpui glue that reads and applies the live window lives in
 //! `desktop::windowstate`. This module has no toolkit types.
 

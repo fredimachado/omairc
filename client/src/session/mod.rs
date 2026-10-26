@@ -2,10 +2,9 @@
 //! SCRAM-SHA-256 (`saslscram.go`) is in `saslscram`, and STS
 //! (`sts.go`) is in `sts` and `stsflow`. The socket transport (`transport_net.go`) lives
 //! in `net/`, and it plugs in through `Transport`.
-//!
 //! Nothing here opens a socket or reads the wall clock directly: time comes
 //! through `Clock`, bytes through `Transport`, and the owner drains
-//! `SessionEvent`s. `tests/irc_portability.rs` keeps `std::net` out of `irc/`;
+//! `SessionEvent`s. `tests/irc_portability.rs` keeps `std::net` out of `irc/`
 //! this module is the seam the socket transport in `net/` plugs into.
 
 pub mod autojoin;

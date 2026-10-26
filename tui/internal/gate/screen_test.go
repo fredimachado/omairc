@@ -406,7 +406,7 @@ func TestScreenPNGReverseSwapsColors(t *testing.T) {
 	s.Feed([]byte("\x1b[7mO"))
 	img := decodePNG(t, s)
 
-	// With reverse video the cell background becomes the default foreground,
+	// With reverse video the cell background becomes the default foreground
 	// so the cell corner (background) is the foreground color and vice versa.
 	if got := pixelAt(img, 0, 0); got != pngDefaultFg {
 		t.Fatalf("reverse cell corner = %v, want reversed background %v", got, pngDefaultFg)

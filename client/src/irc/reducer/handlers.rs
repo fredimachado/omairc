@@ -1,15 +1,12 @@
 //! The per-event folds: one handler for each translated event the reducer
 //! consumes. `reduce` dispatches to them, and each handler mutates the
 //! conversation it names and the facts it reads, in the order Go does.
-//!
-//! Port of the `reduce(...)` methods of `tui/internal/irc/reducer.go` (Go:
-//! `reduceWelcome`, `reduceMessage`, `reduceNotice`, `reduceAction`,
-//! `reduceJoin`, `reducePart`, `reduceQuit`, `reduceNick`, `reduceKick`,
-//! `reduceTopic`, `reduceNames`, `reduceMode`, `reduceAway`, `reduceSelfAway`,
-//! `reduceMemberMetadata`, `reduceAccount`, `reduceTyping`, `reduceWhoisTranscript`,
-//! `reduceChannelError`, `reduceNickFacts`, `clearTyping`, `clearTypingEverywhere`,
+//! `reduceWelcome`, `reduceMessage`, `reduceNotice`, `reduceAction`
+//! `reduceJoin`, `reducePart`, `reduceQuit`, `reduceNick`, `reduceKick`
+//! `reduceTopic`, `reduceNames`, `reduceMode`, `reduceAway`, `reduceSelfAway`
+//! `reduceMemberMetadata`, `reduceAccount`, `reduceTyping`, `reduceWhoisTranscript`
+//! `reduceChannelError`, `reduceNickFacts`, `clearTyping`, `clearTypingEverywhere`
 //! `rekeyTyping`, `pruneExpiredTyping`, `forgetUnseen`) and of
-//! `tui/internal/irc/reducer.go`.
 
 use chrono::{DateTime, Utc};
 
@@ -32,7 +29,7 @@ use super::transcript::{
 };
 use super::EventReducer;
 
-/// The conversation a line is shown in: the event's target, or the normalized
+/// The conversation a line is shown the event's target, or the normalized
 /// target when the event carries none (`displayTarget`).
 fn display_target<'a>(key: &'a ConversationKey, target: &'a str) -> &'a str {
     if target.is_empty() {
@@ -533,7 +530,7 @@ impl EventReducer {
         }
     }
 
-    /// Records an away-notify change. The fact is one per nick on the network,
+    /// Records an away-notify change. The fact is one per nick on the network
     /// so every shared channel shows it (`reduceAway`).
     fn reduce_away(&mut self, event: &AwayEvent) {
         let network = event.network_id.as_str();

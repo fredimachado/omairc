@@ -1,8 +1,7 @@
-//! The Windows Credential Manager, through `CredWriteW`, `CredReadW` and `CredDeleteW`. Port of
+//! The Windows Credential Manager, through `CredWriteW`, `CredReadW` and `CredDeleteW`.
 //! `tui/internal/storage/secretservice_windows.go`: generic credentials at the target
 //! `<key name>@omairc`, the name QtKeychain 0.17+ writes. A read or delete also tries the bare
 //! key name, for entries older QtKeychain builds wrote.
-//!
 //! The password is held as bytes, never as text, and every copy this module makes of it is
 //! overwritten after use: the blob copied out of a `CREDENTIALW`, the blob the OS returned
 //! (before `CredFree` releases it), and the buffer handed to `CredWriteW`.

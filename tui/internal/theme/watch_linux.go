@@ -13,12 +13,11 @@ import (
 // Watcher polls the Omarchy theme tree for changes and emits a Change whenever
 // the on-disk theme changes. It follows the session.Clock seam so tests drive it
 // with session.FakeClock and never sleep.
-//
 // The watch covers both the "current" symlink and its "theme" directory:
 // repointing "current" changes the symlink's own mtime, while rewriting
 // colors.toml changes the theme directory's and the file's mtime. Missing the
 // symlink would leave the shell on the previous theme after a swap. A file that
-// appears or disappears is a change too, and a missing file yields Fallback().
+// appears or disappears is a change too, and a missing file yields Fallback.
 type Watcher struct {
 	clock    session.Clock
 	interval time.Duration

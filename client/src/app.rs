@@ -193,7 +193,7 @@ pub fn run() {
             .filter(|_| !demo_server)
             .map(|path| GeometryKeeper::new(path, stored));
         let window_bounds = windowstate::initial_bounds(stored, cx);
-        // The socket hub runs its net thread for a live launch. The demo's peers are in-process,
+        // The socket hub runs its net thread for a live launch. The demo's peers are in-process
         // so the demo has none.
         let net = (!demo_server).then(|| Rc::new(NetHub::new()));
         let (activation_tx, activation_rx) = async_channel::unbounded();

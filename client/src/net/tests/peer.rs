@@ -2,7 +2,6 @@
 //! current-thread runtime, so it can speak TLS through `tokio-rustls`. The test thread
 //! sends it commands and waits for each reply. The peer never shares a socket with the
 //! transport under test: the transport only ever sees bytes on the wire.
-//!
 //! The certificate is the checked-in `tests/live/certs/live.pem`, a self-signed
 //! `localhost` and `127.0.0.1` certificate. Test trust takes that file as a root, and
 //! nothing else in the crate does.
@@ -79,7 +78,6 @@ pub(super) struct Peer {
 }
 
 impl Peer {
-    /// A peer listening on an ephemeral port of `127.0.0.1`.
     pub(super) fn spawn() -> Self {
         let listener = StdListener::bind("127.0.0.1:0").expect("the peer binds a port");
         let port = listener
@@ -337,7 +335,7 @@ pub(super) fn pinned_client_config() -> Arc<ClientConfig> {
     crate::net::client_config_trusting_pem(LIVE_CERT).expect("the test certificate pins")
 }
 
-/// A loopback address nothing listens on: the port of a socket bound and then dropped.
+/// A loopback address nothing listens on: the.
 pub(super) fn dead_address() -> SocketAddr {
     let listener = StdListener::bind("127.0.0.1:0").expect("a probe port binds");
     listener.local_addr().expect("the probe has an address")

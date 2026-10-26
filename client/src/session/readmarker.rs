@@ -1,11 +1,8 @@
-//! Port of `tui/internal/session/readmarker.go` (outbound MARKREAD half).
-//!
 //! The session publishes a read marker only when the server acknowledged
 //! `draft/read-marker` (`MARKREAD`) or `soju.im/read` (`READ`). One marker per
 //! target is in flight at a time; a newer marker waits behind it, and the echo
 //! of the in-flight marker releases the next. A failed `FAIL` clears only the
 //! target it names.
-//!
 //! The timestamp and verb helpers are wire vocabulary and live in
 //! `irc/readmarker`; they are re-exported here for the session's callers.
 

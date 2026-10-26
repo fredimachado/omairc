@@ -26,7 +26,7 @@ func statusTextsOfLabel(handler *sessionTestHandler, label string) []string {
 	return texts
 }
 
-// TestSessionPingAndWelcomeProduceStatusEntries ports
+// TestSessionPingAndWelcomeProduceStatusEntries.
 // SessionTest::pingAndWelcomeProduceStatusEntries.
 func TestSessionPingAndWelcomeProduceStatusEntries(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -50,7 +50,7 @@ func TestSessionPingAndWelcomeProduceStatusEntries(t *testing.T) {
 	}
 }
 
-// TestSessionStatusKeepListOmitsProtocolDump ports
+// TestSessionStatusKeepListOmitsProtocolDump.
 // SessionTest::statusKeepListOmitsProtocolDump.
 func TestSessionStatusKeepListOmitsProtocolDump(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -114,7 +114,7 @@ func TestSessionStatusKeepListOmitsProtocolDump(t *testing.T) {
 	}
 }
 
-// TestSessionIncomingCapMyinfoAndLusersFormatting ports
+// TestSessionIncomingCapMyinfoAndLusersFormatting.
 // SessionTest::incomingCapMyinfoAndLusersFormatting.
 func TestSessionIncomingCapMyinfoAndLusersFormatting(t *testing.T) {
 	fourParam := irc.IncomingAll("freenode",
@@ -179,7 +179,7 @@ func statusTexts(entries []irc.StatusEntry) []string {
 	return texts
 }
 
-// TestSessionErgoHistoryReplayPrivmsgStaysOffStatus ports
+// TestSessionErgoHistoryReplayPrivmsgStaysOffStatus.
 // SessionTest::ergoHistoryReplayPrivmsgStaysOffStatus.
 func TestSessionErgoHistoryReplayPrivmsgStaysOffStatus(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -208,7 +208,7 @@ func TestSessionErgoHistoryReplayPrivmsgStaysOffStatus(t *testing.T) {
 	}
 }
 
-// TestSessionOutgoingCapReqKeptCapEndDropped ports
+// TestSessionOutgoingCapReqKeptCapEndDropped.
 // SessionTest::outgoingCapReqKeptCapEndDropped.
 func TestSessionOutgoingCapReqKeptCapEndDropped(t *testing.T) {
 	if !irc.StatusKeepsOutgoing([]byte("CAP REQ :multi-prefix\r\n")) {
@@ -230,7 +230,7 @@ func TestSessionOutgoingCapReqKeptCapEndDropped(t *testing.T) {
 	}
 }
 
-// TestSessionOutgoingWhoisAndCtcpQueriesStayOffStatus ports
+// TestSessionOutgoingWhoisAndCtcpQueriesStayOffStatus.
 // SessionTest::outgoingWhoisAndCtcpQueriesStayOffStatus.
 func TestSessionOutgoingWhoisAndCtcpQueriesStayOffStatus(t *testing.T) {
 	if irc.StatusKeepsOutgoing([]byte("WHOIS lena lena\r\n")) {
@@ -246,7 +246,7 @@ func TestSessionOutgoingWhoisAndCtcpQueriesStayOffStatus(t *testing.T) {
 	}
 }
 
-// TestSessionConfiguredPasswordNeverAppearsInStatusEntries ports
+// TestSessionConfiguredPasswordNeverAppearsInStatusEntries.
 // SessionTest::configuredPasswordNeverAppearsInStatusEntries.
 func TestSessionConfiguredPasswordNeverAppearsInStatusEntries(t *testing.T) {
 	passConfig := sessionTestConfig(sessionTestNetworkID)
@@ -297,7 +297,7 @@ func TestSessionConfiguredPasswordNeverAppearsInStatusEntries(t *testing.T) {
 	}
 }
 
-// TestSessionSaslAccountNeverAppearsInStatusEntries ports
+// TestSessionSaslAccountNeverAppearsInStatusEntries.
 // SessionTest::saslAccountNeverAppearsInStatusEntries.
 func TestSessionSaslAccountNeverAppearsInStatusEntries(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -326,7 +326,7 @@ func TestSessionSaslAccountNeverAppearsInStatusEntries(t *testing.T) {
 	}
 }
 
-// TestSessionKeyedJoinIsRedactedInStatusEntries ports
+// TestSessionKeyedJoinIsRedactedInStatusEntries.
 // SessionTest::keyedJoinIsRedactedInStatusEntries.
 func TestSessionKeyedJoinIsRedactedInStatusEntries(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -359,7 +359,7 @@ func TestSessionKeyedJoinIsRedactedInStatusEntries(t *testing.T) {
 	}
 }
 
-// TestSessionServiceIdentifyIsRedactedInStatusEntries ports
+// TestSessionServiceIdentifyIsRedactedInStatusEntries.
 // SessionTest::serviceIdentifyIsRedactedInStatusEntries.
 func TestSessionServiceIdentifyIsRedactedInStatusEntries(t *testing.T) {
 	assertOutgoing := func(want string, line, channelTypes string) {
@@ -434,7 +434,7 @@ func TestSessionServiceIdentifyIsRedactedInStatusEntries(t *testing.T) {
 	}
 }
 
-// TestSessionChannelTalkAboutServicesStaysReadable ports
+// TestSessionChannelTalkAboutServicesStaysReadable.
 // SessionTest::channelTalkAboutServicesStaysReadable.
 func TestSessionChannelTalkAboutServicesStaysReadable(t *testing.T) {
 	talk := irc.Outgoing(sessionTestNetworkID,
@@ -474,7 +474,7 @@ func TestSessionChannelTalkAboutServicesStaysReadable(t *testing.T) {
 	}
 }
 
-// TestSessionNegotiatedChannelTypesClassifyDollarTargets ports
+// TestSessionNegotiatedChannelTypesClassifyDollarTargets.
 // SessionTest::negotiatedChannelTypesClassifyDollarTargets.
 func TestSessionNegotiatedChannelTypesClassifyDollarTargets(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -512,7 +512,7 @@ func TestSessionNegotiatedChannelTypesClassifyDollarTargets(t *testing.T) {
 	}
 }
 
-// TestSessionServiceRepliesStayReadable ports
+// TestSessionServiceRepliesStayReadable.
 // SessionTest::serviceRepliesStayReadable.
 func TestSessionServiceRepliesStayReadable(t *testing.T) {
 	notice := irc.Incoming("freenode",
@@ -527,7 +527,7 @@ func TestSessionServiceRepliesStayReadable(t *testing.T) {
 	}
 }
 
-// TestSessionIncomingInviteNamesNickAndChannel ports
+// TestSessionIncomingInviteNamesNickAndChannel.
 // SessionTest::incomingInviteNamesNickAndChannel.
 func TestSessionIncomingInviteNamesNickAndChannel(t *testing.T) {
 	invite := irc.Incoming("freenode", mustParse(t, ":alice!u@h INVITE omairc :#lab"), "", statusTestNow)
@@ -540,7 +540,7 @@ func TestSessionIncomingInviteNamesNickAndChannel(t *testing.T) {
 	}
 }
 
-// TestSessionSelfEchoToServiceIsRedacted ports
+// TestSessionSelfEchoToServiceIsRedacted.
 // SessionTest::selfEchoToServiceIsRedacted.
 func TestSessionSelfEchoToServiceIsRedacted(t *testing.T) {
 	cases := []struct {
@@ -573,7 +573,7 @@ func TestSessionSelfEchoToServiceIsRedacted(t *testing.T) {
 	}
 }
 
-// TestSessionWhoisStatusLinesFormatKnownNumerics ports
+// TestSessionWhoisStatusLinesFormatKnownNumerics.
 // SessionTest::whoisStatusLinesFormatKnownNumerics.
 func TestSessionWhoisStatusLinesFormatKnownNumerics(t *testing.T) {
 	user := irc.Incoming("freenode", mustParse(t, ":irc 311 omairc lena ~lena user/host * :Lena"), "", statusTestNow)
@@ -655,7 +655,7 @@ func TestSessionWhoisStatusLinesFormatKnownNumerics(t *testing.T) {
 	}
 }
 
-// TestSessionIncomingNoticeStatusLinesWrapSpeaker ports
+// TestSessionIncomingNoticeStatusLinesWrapSpeaker.
 // SessionTest::incomingNoticeStatusLinesWrapSpeaker.
 func TestSessionIncomingNoticeStatusLinesWrapSpeaker(t *testing.T) {
 	nickserv := irc.Incoming("freenode", mustParse(t, ":NickServ!NickServ@services NOTICE omairc :Please identify"), "", statusTestNow)
@@ -684,7 +684,7 @@ func TestSessionIncomingNoticeStatusLinesWrapSpeaker(t *testing.T) {
 	}
 }
 
-// TestSessionIncomingCtcpNoticeStatusLines ports
+// TestSessionIncomingCtcpNoticeStatusLines.
 // SessionTest::incomingCtcpNoticeStatusLines.
 func TestSessionIncomingCtcpNoticeStatusLines(t *testing.T) {
 	version := irc.Incoming("freenode", mustParse(t, ":lena!u@h NOTICE omairc :\x01VERSION Omairc 0.4.0\x01"), "", statusTestNow)
@@ -725,7 +725,7 @@ func TestSessionIncomingCtcpNoticeStatusLines(t *testing.T) {
 	}
 }
 
-// TestSessionIncomingStandardRepliesShowDescriptionOnStatus ports
+// TestSessionIncomingStandardRepliesShowDescriptionOnStatus.
 // SessionTest::incomingStandardRepliesShowDescriptionOnStatus.
 func TestSessionIncomingStandardRepliesShowDescriptionOnStatus(t *testing.T) {
 	fail := irc.Incoming("freenode", mustParse(t, "FAIL * NEED_REGISTRATION :You need to be registered to continue"), "", statusTestNow)
@@ -759,7 +759,7 @@ func TestSessionIncomingStandardRepliesShowDescriptionOnStatus(t *testing.T) {
 	}
 }
 
-// TestSessionInboundFailDoesNotFailTheSession ports
+// TestSessionInboundFailDoesNotFailTheSession.
 // SessionTest::inboundFailDoesNotFailTheSession.
 func TestSessionInboundFailDoesNotFailTheSession(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
@@ -799,7 +799,7 @@ func TestSessionInboundFailDoesNotFailTheSession(t *testing.T) {
 	}
 }
 
-// TestSessionPseudoClientPrivmsgReachesStatus ports
+// TestSessionPseudoClientPrivmsgReachesStatus.
 // SessionTest::pseudoClientPrivmsgReachesStatus.
 func TestSessionPseudoClientPrivmsgReachesStatus(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -813,7 +813,7 @@ func TestSessionPseudoClientPrivmsgReachesStatus(t *testing.T) {
 		[]string{"You have 1 network attached"})
 }
 
-// TestSessionPlaintextIdentifyEmitsOneStatusWarning ports
+// TestSessionPlaintextIdentifyEmitsOneStatusWarning.
 // SessionTest::plaintextIdentifyEmitsOneStatusWarning.
 func TestSessionPlaintextIdentifyEmitsOneStatusWarning(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -855,7 +855,7 @@ func TestSessionPlaintextIdentifyEmitsOneStatusWarning(t *testing.T) {
 	}
 }
 
-// TestSessionAutomaticIdentifyDoesNotAppearInStatusAsSecret ports
+// TestSessionAutomaticIdentifyDoesNotAppearInStatusAsSecret.
 // SessionTest::automaticIdentifyDoesNotAppearInStatusAsSecret.
 func TestSessionAutomaticIdentifyDoesNotAppearInStatusAsSecret(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)

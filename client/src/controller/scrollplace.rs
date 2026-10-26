@@ -1,19 +1,14 @@
-//! Port of `tui/internal/controller/scrollplace.go`
 //! Where each conversation's transcript was last left, as a message anchor.
-//!
 //! The anchor is the first visible message, named by its msgid when the server gave one
 //! and otherwise by its kind, author, body and server time. An anchor is found again
 //! after the transcript changes, so a place survives a reload. A place that pins the
 //! bottom is stored as `follow_end`. The Status console has no place.
-//!
 //! The places live in the settings file under `scrollPlaces/<network>`, the group Qt uses
 //! (`storage::scrollplace`). Each network's list is loaded when the store is built and
 //! written again after each change.
-//!
 //! The shell resumes a transcript by its own rows (`model::scroll_place`) and stores the
 //! result through `remember_place` and `place_for`. The message-anchor reads below are the
 //! Qt-format path over the controller's messages; the GUI uses row msgids through
-//! `SavedPlace::to_stored`.
 
 #[cfg(test)]
 use chrono::{DateTime, Utc};
@@ -211,7 +206,7 @@ fn anchor_of(message: &Message) -> ScrollPlace {
 }
 
 /// Whether `message` is the anchor `place` names (`scrollPlaceMatches`). A msgid is the
-/// whole test when the place has one. Otherwise the kind, author and body must match,
+/// whole test when the place has one. Otherwise the kind, author and body must match
 /// and the time when the place recorded one.
 #[cfg(test)]
 fn anchor_matches(place: &ScrollPlace, message: &Message) -> bool {

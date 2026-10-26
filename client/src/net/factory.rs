@@ -1,7 +1,6 @@
 //! The live transport factory: the one place the controller's transport seam meets the net
 //! hub. Each network's session asks for a transport, and gets a socket transport the hub
 //! has registered, so the results of its connection come back to it.
-//!
 //! This file is the only one under `src/net/` that names the controller's seam, by the
 //! `TransportFactory` path `tests/net_boundary.rs` allows.
 

@@ -1,5 +1,5 @@
 //! Ported reducer tests and their fixtures. The Go suite
-//! (`tui/internal/irc/reducer_test.go`, `history_page_test.go`, `typing_test.go`,
+//! (`tui/internal/irc/reducer_test.go`, `history_page_test.go`, `typing_test.go`
 //! `readmarker_test.go`) builds its state the same way: a welcomed network, event
 //! structs or translated wire lines, and reads of the conversations it created.
 //! Each Go test keeps its name here in snake_case.
@@ -174,7 +174,6 @@ pub(super) fn state_of<'a>(reducer: &'a EventReducer, key: &ConversationKey) -> 
         .unwrap_or_else(|| panic!("conversation {key:?} is missing"))
 }
 
-/// The bodies of a transcript, in order.
 pub(super) fn bodies(conv: &ConversationState) -> Vec<String> {
     conv.messages.iter().map(|message| message.body.clone()).collect()
 }

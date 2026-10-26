@@ -1,5 +1,3 @@
-//! Port of `tui/internal/irc/channelmode.go`.
-//!
 //! Parses a `/mode` argument into a query or a change. The channel must start
 //! with a type the server advertised, so CHANTYPES decides what counts as a channel.
 
@@ -16,7 +14,7 @@ pub struct IrcChannelModeRequest {
     pub query: bool,
 }
 
-/// Parses a `/mode` argument against `features`. It splits on single spaces,
+/// Parses a `/mode` argument against `features`. It splits on single spaces
 /// rejects CR, LF and NUL, and requires the first token to be an advertised
 /// channel. `None` for empty input, a forbidden character, or a non-channel start.
 pub fn parse_channel_mode_request(argument: &str, features: &IrcServerFeatures) -> Option<IrcChannelModeRequest> {

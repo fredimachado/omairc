@@ -1,15 +1,11 @@
-//! Port of `tui/internal/irc/commandbuilder.go`.
-//!
 //! Builds the outbound lines the client writes, and the byte budgets the composer
 //! uses so one send stays inside one frame. Every frame size is the network's
 //! LINELEN (`IrcServerFeatures::line_length`), passed in as `features`. Nothing
-//! here assumes 512. Before ISUPPORT arrives, pass `IrcServerFeatures::new()`,
+//! here assumes 512. Before ISUPPORT arrives, pass `IrcServerFeatures::new`
 //! whose LINELEN is the classic 512.
-//!
 //! Frame sizes count CRLF and never count IRCv3 tags, as in Go and C++. The line
 //! builders return the whole line with its CRLF.
-//!
-//! No redaction happens here, as in Go. A builder error carries only its kind,
+//! No redaction happens here, as in Go. A builder error carries only its kind
 //! never the rejected text, so a password cannot leak through an error. The
 //! Status recorder masks the built line later with `secretpolicy`.
 
@@ -25,7 +21,7 @@ const ACTION_WRAPPER_BYTES: usize = 9;
 const ME_PREFIX_BYTES: usize = 4;
 
 /// Appends CRLF to `command`, rejecting an empty line, embedded CR, LF or NUL, and
-/// any line past the frame. The frame is `features.line_length()`, CRLF included.
+/// any line past the frame. The frame is `features.line_length`, CRLF included.
 pub fn line(command: &str, features: &IrcServerFeatures) -> Result<String, IrcError> {
     let frame = features.line_length();
     if command.is_empty() {
@@ -42,7 +38,7 @@ pub fn line(command: &str, features: &IrcServerFeatures) -> Result<String, IrcEr
 
 /// The bytes the composer may hold so one send stays inside the frame. An empty
 /// target is Status: a raw line, excluding CRLF. Any other target is the PRIVMSG
-/// trailing body that fits, `PRIVMSG <target> :<body>\r\n`. Tags are not
+/// trailing body that fits, `PRIVMSG <target>:<body>\r\n`. Tags are not
 /// subtracted.
 pub fn composer_byte_budget(target: &str, features: &IrcServerFeatures) -> usize {
     let frame = features.line_length();
@@ -60,7 +56,7 @@ pub fn composer_byte_budget(target: &str, features: &IrcServerFeatures) -> usize
     frame - prefix_len - CRLF_BYTES
 }
 
-/// The composer cap for a `/me` draft: a CTCP ACTION is 9 bytes beyond a PRIVMSG,
+/// The composer cap for a `/me` draft: a CTCP ACTION is 9 bytes beyond a PRIVMSG
 /// and the 4-byte `/me ` counts toward the draft.
 pub fn action_composer_byte_budget(target: &str, features: &IrcServerFeatures) -> usize {
     let privmsg = composer_byte_budget(target, features);
@@ -171,7 +167,6 @@ pub fn split_trailing_param<'body>(
     chunks
 }
 
-/// Builds a NICK line.
 pub fn nick(nickname: &str, features: &IrcServerFeatures) -> Result<String, IrcError> {
     if !is_single_field(nickname) {
         return Err(IrcError::InvalidField);
@@ -179,7 +174,7 @@ pub fn nick(nickname: &str, features: &IrcServerFeatures) -> Result<String, IrcE
     line(&format!("NICK {nickname}"), features)
 }
 
-/// Builds the USER line with the fixed `<user> 8 * :<realname>` shape.
+/// Builds the USER line with the fixed `<user> 8 *:<realname>` shape.
 pub fn user(
     username: &str,
     realname: &str,
@@ -192,7 +187,6 @@ pub fn user(
     line(&format!("USER {username} 8 * :{realname}"), features)
 }
 
-/// Builds a PASS line.
 pub fn pass(password: &str, features: &IrcServerFeatures) -> Result<String, IrcError> {
     if !is_single_field(password) {
         return Err(IrcError::InvalidField);
@@ -256,7 +250,7 @@ mod tests {
     use super::*;
     use crate::irc::message::MAX_CLASSIC_FRAME_BYTES;
 
-    // Ported from tui/internal/irc/commandbuilder_test.go. The Go tests pass a
+    // tui/internal/irc/commandbuilder_test.go. The Go tests pass a
     // frame size in each call; here each test builds the features that carry that
     // LINELEN, so the same path is exercised as in a live session.
 

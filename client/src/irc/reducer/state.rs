@@ -1,16 +1,12 @@
-//! The state the reducer keeps: one conversation transcript plus its live state,
+//! The state the reducer keeps: one conversation transcript plus its live state
 //! the channel half, the member view the panel reads, and the order a channel's
 //! members are listed in.
-//!
-//! Port of the state types at the top of `tui/internal/irc/reducer.go` (Go:
-//! `ConversationState`, `ChannelState`, `MemberState`, `MemberView`,
+//! state types at the top of `tui/internal/irc/reducer.go` (Go:
+//! `ConversationState`, `ChannelState`, `MemberState`, `MemberView`
 //! `OrderedMember`, `TranscriptAnchor`, `PeerPresence`) and of the
 //! `IrcEventReducer::Store` / `IrcConversationState` members in
-//! `tui/internal/irc/reducer.go`.
-//!
 //! Transcript rows are `world::Message`, the shape the Go `IrcReducedMessage`
 //! maps to. A row's zero time (Go's `time.Time{}`, which event lines carry) is
-//! `zero_time()`.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -58,7 +54,6 @@ pub struct TranscriptAnchor {
 /// none.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ChannelState {
-    /// Members by normalized nick.
     pub members: BTreeMap<String, MemberState>,
     pub topic: String,
     pub joined: bool,
@@ -75,7 +70,6 @@ pub struct ConversationState {
     /// The display target: the channel name, or the peer's current nick.
     pub target: String,
     pub messages: Vec<Message>,
-    /// Typing hints by normalized nick.
     pub typing: BTreeMap<String, TypingHint>,
     pub unread: u32,
     pub mentions: u32,

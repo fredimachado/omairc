@@ -203,7 +203,7 @@ func fieldBreak(text string) int {
 	return -1
 }
 
-// secretTokenize mirrors tokenize(): skip tags and prefix, upper the verb, and
+// secretTokenize mirrors tokenize: skip tags and prefix, upper the verb, and
 // split the rest into parameters with a single trailing parameter.
 func secretTokenize(line string) (secretWireCommand, bool) {
 	rest := skipFieldSpaces(line)
@@ -637,7 +637,7 @@ func redactMessage(message Message, channelTypes string) (MaskedCommand, bool) {
 }
 
 // RedactWireLine replaces a secret-bearing wire line with a masked form. ok is
-// false when the line is not redacted (it did not tokenize or matched no mask),
+// false when the line is not redacted (it did not tokenize or matched no mask)
 // in which case the caller keeps the original line. It mirrors
 // IrcSecretPolicy::redactWireLine.
 func RedactWireLine(line, channelTypes string) (string, bool) {

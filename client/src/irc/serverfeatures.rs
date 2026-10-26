@@ -1,10 +1,7 @@
-//! Port of `tui/internal/irc/serverfeatures.go`.
-//!
 //! `IrcServerFeatures` holds one network's ISUPPORT state. PREFIX, CHANTYPES
 //! and CHANMODES are parsed, never hard-coded by callers. It also applies
 //! NAMES tokens, MODE rank changes and member labels, and it resolves the
 //! draft/ICON and FILEHOST advertisements.
-//!
 //! One deliberate difference from Go: PREFIX modes and symbols must be ASCII. A
 //! PREFIX value with a non-ASCII byte is ignored, because a rank label is one
 //! ASCII glyph here. Every other rule follows the Go file.
@@ -83,7 +80,7 @@ impl Default for IrcServerFeatures {
 }
 
 impl IrcServerFeatures {
-    /// Features with the C++ constructor's defaults: PREFIX `(qaohv)~&@%+`,
+ /// Features with the C++ constructor's defaults: PREFIX `(qaohv)~&@%+`
     /// CHANTYPES `#&`, CHANMODES `b,k,l,imnpst`, and LINELEN 512.
     pub fn new() -> Self {
         let mut features = Self {

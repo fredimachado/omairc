@@ -1,8 +1,6 @@
 //! Rule 4 of the GPUI plan: sockets, TLS and the async runtime live in `src/net/`
 //! alone, and `src/net/` reaches no toolkit and no app layer above the transport seam.
-//!
 //! Three gates scan this crate's `src/` sources with comments blanked:
-//!
 //! - `tokio`, `tokio_rustls`, `rustls`, `rustls_native_certs` and `webpki_roots` appear
 //!   only under `src/net/`. Anywhere else they would be a second transport stack.
 //! - `std::net` is forbidden in `src/{irc,session,controller,model,ui,storage,util,demo}`
@@ -12,7 +10,6 @@
 //!   that reaches them: from the crate root (`crate::`), relative to the net module
 //!   (`super::`), inside a `{...}` group, or through a glob (`crate::*`, `super::*`). The
 //!   one exception is `controller::transports::TransportFactory` in `src/net/factory.rs`.
-//!
 //! `tests/` directories under `src/` are skipped. The session and controller gates
 //! keep forbidden names as string literals, and test code is not the production
 //! boundary. The matcher is `common/forbidden.rs`, shared with `irc_portability.rs`.
@@ -49,7 +46,7 @@ const NO_SOCKET_DIRS: &[&str] = &[
 /// The files under `src/` that must run without a socket. `app.rs` is the process entry
 /// (called from the thin `main.rs`), and it reaches the sockets only through `src/net/`.
 const NO_SOCKET_FILES: &[&str] = &["main.rs", "app.rs"];
-/// Paths `src/net/` must not name: the toolkit, and the app layers above the transport,
+/// Paths `src/net/` must not name: the toolkit, and the app layers above the transport
 /// written from the crate root (`crate::`) or relative to the net module (`super::`).
 const NET_FORBIDDEN_PATHS: &[&str] = &[
     "gpui",
@@ -61,7 +58,7 @@ const NET_FORBIDDEN_PATHS: &[&str] = &[
 /// Globs `src/net/` must not use. A glob brings the app layers into scope without naming
 /// them, so `use super::*;` in `src/net/mod.rs` would reach `ui` and `controller`.
 const NET_FORBIDDEN_GLOBS: &[&str] = &["crate::*", "super::*"];
-/// The `crate` and `super` modules above, by name, for `use crate::{ui::Shell, ...}`
+/// The `crate` and `super` modules above, by name, for `use crate::{ui::Shell,...}`
 /// and `use super::{controller}` groups.
 const NET_FORBIDDEN_CRATE_MODULES: &[&str] = &["ui", "controller"];
 /// The path prefixes whose `{...}` groups are checked for `NET_FORBIDDEN_CRATE_MODULES`.
@@ -81,7 +78,7 @@ fn net_crate_uses(code: &str) -> Vec<(usize, String)> {
     found
 }
 
-/// Every `std::net` use in `code`: the path form and the `std::{net, ..}` group form.
+/// Every `std::net` use in `code`: the path form and the `std::{net,..}` group form.
 fn std_net_uses(code: &str) -> Vec<(usize, String)> {
     let mut found: Vec<(usize, String)> = segment_offsets(code, "std::net")
         .into_iter()

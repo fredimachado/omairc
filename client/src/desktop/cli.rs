@@ -1,8 +1,7 @@
 //! The product CLI: `omairc <command>` talks to the running window and prints one JSON line.
-//! Desktop-only (no Go twin). The verbs are `connections` (alias `list`), `status`, `send`,
+//! Desktop-only (no Go twin). The verbs are `connections` (alias `list`), `status`, `send`
 //! `read`, `names`, `conversations`, and `raise`, and `skills/omairc` documents them. Help and parse
 //! errors are text; control answers are the JSON in `ipc`.
-//!
 //! The binary dispatches here before clap sees the arguments, as Qt's `main` does. `--version` stays
 //! with clap, which prints the version it already reads from `version.pri`.
 

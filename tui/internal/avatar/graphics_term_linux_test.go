@@ -27,7 +27,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// runStopHelper is a child process. It holds a pty the parent kept open,
+// runStopHelper is a child process. It holds a pty the parent kept open
 // signals readiness only after SIGTSTP is being watched, then waits to be
 // stopped.
 func runStopHelper() {

@@ -1,11 +1,11 @@
 //! The seam where a network's session gets its transport. It mirrors the
 //! transport choice in `tui/internal/controller/controller.go` (`AddSession`) and
-//! the connect path the Connect sheet drives in Phase 6. The live factory is
-//! `net::NetTransports`, which hands out socket transports from the net hub
-//! (`tui/internal/session/transport_net.go`). `NoTransports` refuses every network:
-//! the tests use it, and so does the demo for a network it does not seed. Seeded demo
-//! networks never reach this factory: `Controller::start` gives them a fresh loopback
-//! and the `DemoServer`.
+//! the Connect sheet connect path. The live factory is `net::NetTransports`,
+//! which hands out socket transports from the net hub
+//! (`tui/internal/session/transport_net.go`). `NoTransports` refuses every
+//! network: the tests use it, and so does the demo for a network it does not
+//! seed. Seeded demo networks never reach this factory: `Controller::start`
+//! gives them a fresh loopback and the `DemoServer`.
 
 use std::rc::Rc;
 

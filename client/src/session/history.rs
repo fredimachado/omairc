@@ -1,7 +1,5 @@
-//! Port of the CHATHISTORY half of `tui/internal/session/session.go` (Go) and
 //! the history requests of `tui/internal/session/session.go`.
-//!
-//! The session asks for history in four shapes (`LATEST`, `BEFORE`, `AFTER`,
+//! The session asks for history in four shapes (`LATEST`, `BEFORE`, `AFTER`
 //! `TARGETS`), tracks each request until its batch or its `FAIL` arrives, and
 //! chains AFTER pages through the gap after a self-JOIN. Membership changes bump
 //! a per-channel generation, so an answer that arrives after a PART or a
@@ -168,7 +166,6 @@ impl Core {
         self.drop_history_batches(channel);
     }
 
-    /// Drops the open replay batches of one channel and their children.
     fn drop_history_batches(&mut self, channel: &str) {
         let folded = self.fold_channel(channel);
         let roots: BTreeSet<String> = self
@@ -243,7 +240,7 @@ impl Core {
             });
             return;
         }
-        // FAIL CHATHISTORY <code> <subcommand> [<target>] [<context>] :description.
+        // FAIL CHATHISTORY <code> <subcommand> [<target>] [<context>]:description.
         // The description is skipped, so a channel named in prose cannot cancel
         // a different request.
         for index in 2..message.params.len().saturating_sub(1) {

@@ -1,7 +1,6 @@
-//! Header and window titles. Ports Qt's duplicate-name rule: a conversation
+//! Header and window titles.. A conversation.
 //! name shows its network only when that name exists on two networks, so
 //! `#omarchy` reads `#omarchy · irc.example · fred` while `#ricing` stays bare.
-//!
 //! The names and the conversation list come from the controller, so the titles
 //! follow the same state the header and the sidebar draw.
 
@@ -78,7 +77,7 @@ pub fn collapse_title_space(text: &str) -> String {
     out
 }
 
-/// Formats an unfocused mention or direct message. `place` is the conversation,
+/// Formats an unfocused mention or direct message. `place` is the conversation
 /// plus the network display name when that target is duplicated. An author that
 /// already is the place (a direct message) is not repeated.
 pub fn attention_title(author: &str, body: &str, place: &str) -> String {

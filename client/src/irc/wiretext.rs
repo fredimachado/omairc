@@ -1,5 +1,3 @@
-//! Port of `tui/internal/irc/wiretext.go`.
-//!
 //! Valid UTF-8 passes through; anything else is decoded as Latin-1, one scalar
 //! per byte, so no U+FFFD is injected.
 
@@ -21,7 +19,7 @@ pub fn contains_dot(text: &str) -> bool {
 mod tests {
     use super::*;
 
-    // Ported from tui/internal/irc/parser_test.go (TestDecodesValidUtf8WireText),
+    // tui/internal/irc/parser_test.go (TestDecodesValidUtf8WireText)
     // plus the Latin-1 body of the corpus, verbatim from testdata/corpus/.
 
     #[test]

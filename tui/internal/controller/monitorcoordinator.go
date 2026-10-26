@@ -9,16 +9,14 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
-// This file is the Go port of IrcMonitorCoordinator in
-// `client/src/controller/monitorcoordinator.rs`: the persisted MONITOR nick list and
-// the session-scoped presence tracking behind /monitor, /unmonitor, and
-// /monitored. The coordinator reads the persisted MonitorStore and reports
-// presence through the host; notifications (signal plus inbox) stay on the
-// controller.
-//
-// Presence is session-scoped: it clears when registration ends, on discard,
-// and on registration re-entry. The persisted nick list belongs to the store
-// and forgets only through MonitorStore.Forget.
+// Persisted MONITOR nick list and session-scoped presence tracking behind
+// /monitor, /unmonitor, and /monitored. Twin:
+// `client/src/controller/monitorcoordinator.rs`.
+// The coordinator reads MonitorStore and reports presence through the host;
+// notifications (signal plus inbox) stay on the controller. Presence is
+// session-scoped: it clears when registration ends, on discard, and on
+// registration re-entry. The persisted nick list belongs to the store and
+// forgets only through MonitorStore.Forget.
 
 // MonitorHost is the surface IrcMonitorCoordinator drives. It mirrors
 // IrcMonitorCoordinator::Host.
@@ -99,7 +97,7 @@ func (m *MonitorCoordinator) monitorDisplayNick(networkID, nick string) string {
 	return nick
 }
 
-// monitorNotifyMuted reports whether online notification for nick is muted,
+// monitorNotifyMuted reports whether online notification for nick is muted
 // either through the mute store or a muted conversation. It mirrors
 // monitorNotifyMuted.
 func (m *MonitorCoordinator) monitorNotifyMuted(networkID, nick string) bool {

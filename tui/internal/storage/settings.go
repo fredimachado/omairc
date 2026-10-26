@@ -41,8 +41,8 @@ const (
 )
 
 // iniValue is one persisted setting. QSettings stores a QString for a plain
-// value, a QStringList for a list, and an invalid QVariant for @Invalid(). A
-// single-element list is written without a comma, exactly as QSettings does,
+// value, a QStringList for a list, and an invalid QVariant for @Invalid. A
+// single-element list is written without a comma, exactly as QSettings does
 // so it is indistinguishable from a string once it round-trips through the
 // file; that matches QSettings.
 type iniValue struct {
@@ -56,7 +56,6 @@ type iniValue struct {
 // the Qt client uses: nested groups written as [group] sections with
 // backslash-escaped key paths, string keys, bool/int/uint keys, string-list
 // keys, and JSON string values.
-//
 // Group and key names are matched case-sensitively. The Qt client only uses
 // canonical names, and keeping the map case-sensitive makes writes
 // deterministic. A group path is the slash-joined Sprintf of its segments
@@ -68,7 +67,7 @@ type Settings struct {
 	dirty  bool
 }
 
-// OpenSettings loads path, or ConfigPath() when path is "". A missing or
+// OpenSettings loads path, or ConfigPath when path is "". A missing or
 // unreadable file yields an empty store; Sync refuses to overwrite a malformed
 // or unreadable file through WriteBlocked.
 func OpenSettings(path string) *Settings {
@@ -87,7 +86,7 @@ func (s *Settings) Path() string {
 
 // Value returns the string stored at group/key, or "" when absent. A stored
 // string list or an invalid value also returns "", matching
-// QVariant::toString() on those variants.
+// QVariant::toString on those variants.
 func (s *Settings) Value(group, key string) string {
 	v, ok := s.lookup(group, key)
 	if !ok || v.isList || v.invalid {
@@ -143,9 +142,9 @@ func (s *Settings) Int(group, key string, fallback int) int {
 }
 
 // StringList returns the stored string list, or nil when the key is absent. A
-// stored empty value and a stored @Invalid() both yield an empty, non-nil
+// stored empty value and a stored @Invalid both yield an empty, non-nil
 // list; a plain non-empty string yields a one-element list, matching
-// QVariant::toStringList(). (Qt returns one empty item for an empty string;
+// QVariant::toStringList. (Qt returns one empty item for an empty string
 // this store follows the phase-11 contract that an empty value is an empty
 // list.)
 func (s *Settings) StringList(group, key string) []string {
@@ -190,7 +189,7 @@ func (s *Settings) SetInt(group, key string, value int) {
 	s.SetValue(group, key, strconv.Itoa(value))
 }
 
-// SetStringList stores a string list. An empty list is written as @Invalid(),
+// SetStringList stores a string list. An empty list is written as @Invalid
 // the same sentinel QSettings uses so an empty list survives a round trip
 // distinctly from a one-item list containing an empty string.
 func (s *Settings) SetStringList(group, key string, values []string) {
@@ -226,7 +225,7 @@ func (s *Settings) RemoveGroup(group string) {
 }
 
 // ChildGroups returns the direct child group names of group, sorted, mirroring
-// QSettings::childGroups(): only the next path segment is returned, so deeper
+// QSettings::childGroups: only the next path segment is returned, so deeper
 // groups collapse to their first segment and duplicates collapse to one entry.
 func (s *Settings) ChildGroups(group string) []string {
 	prefix := ""
@@ -476,7 +475,7 @@ func iniSectionHeader(section string) string {
 	}
 }
 
-// encodeIniValue serializes one setting. An empty list is @Invalid(); a
+// encodeIniValue serializes one setting. An empty list is @Invalid; a
 // one-item list is written as a bare string, matching QSettings.
 func encodeIniValue(v iniValue) string {
 	switch {
@@ -541,8 +540,8 @@ func iniSectionPrefix(line []byte) string {
 	}
 }
 
-// iniBytesAreMalformed ports IrcProfileStore::iniBytesAreMalformed exactly: a
-// '[section' line with no closing ']' on the same line, or a non-empty,
+// iniBytesAreMalformed.
+// '[section' line with no closing ']' on the same line, or a non-empty
 // non-comment line with no '=', is malformed. It is the fail-closed gate that
 // keeps Sync from rewriting a corrupt file.
 func iniBytesAreMalformed(data []byte) bool {
@@ -567,7 +566,7 @@ func iniBytesAreMalformed(data []byte) bool {
 	return false
 }
 
-// nextIniLine ports Qt 6.8 QConfFileSettingsPrivate::readIniLine. A leading
+// nextIniLine.
 // ';' is a comment; '=' inside quotes does not count as the separator; and a
 // backslash consumes the next byte, including a newline, so an escaped
 // newline does not end the line. Positions are byte offsets into data.
@@ -648,7 +647,7 @@ func iniSpecial(ch byte) bool {
 	return ch == '\n' || ch == '\r' || ch == '"' || ch == ';' || ch == '=' || ch == '\\'
 }
 
-// iniUnescapedKey ports QSettingsPrivate::iniUnescapedKey. A backslash decodes
+// iniUnescapedKey.
 // to '/'; '%XX' and '%UXXXX' decode hex code units; anything else is literal.
 // Both section names and key paths use it, so a hand-written [a/b] and
 // QSettings' [a] + b\c decode to the same group path.
@@ -700,7 +699,7 @@ func iniUnescapedKey(key []byte) string {
 	return string(utf16.Decode(out))
 }
 
-// iniEscapedKey ports QSettingsPrivate::iniEscapedKey. Alphanumerics, '_', '-'
+// iniEscapedKey.
 // and '.' stay literal; '/' becomes a single backslash; other code units
 // become '%XX' or '%UXXXX'. It walks UTF-16 code units so a non-BMP rune is
 // written as its two surrogates, exactly as Qt does.
@@ -729,10 +728,9 @@ func iniEscapedKey(key string) string {
 	return out.String()
 }
 
-// iniEscapedString ports QSettingsPrivate::iniEscapedString for the UTF-8 ini
+// iniEscapedString.
 // format. Rules implemented:
-//
-//   - ';', ',' and '=' force the whole value to be wrapped in double quotes;
+// - ';', ',' and '=' force the whole value to be wrapped in double quotes
 //     they are not backslash-escaped.
 //   - '\' and '"' are backslash-escaped.
 //   - '\0', '\a', '\b', '\f', '\n', '\r', '\t', '\v' use their named escapes.
@@ -796,8 +794,8 @@ func iniEscapedString(str string) string {
 	return result
 }
 
-// iniEscapedStringList ports QSettingsPrivate::iniEscapedStringList: an empty
-// list is @Invalid(), otherwise items are escaped and joined with ", ".
+// iniEscapedStringList.
+// list is @Invalid, otherwise items are escaped and joined with ", ".
 func iniEscapedStringList(items []string) string {
 	if len(items) == 0 {
 		return "@Invalid()"
@@ -812,9 +810,9 @@ func iniEscapedStringList(items []string) string {
 	return out.String()
 }
 
-// iniUnescapedStringList ports QSettingsPrivate::iniUnescapedStringList. It
-// returns the parsed list (isList true when a top-level comma separated it),
-// the plain string otherwise, and applies QVariant's @Invalid()/@@ sentinels.
+// iniUnescapedStringList.
+// returns the parsed list (isList true when a top-level comma separated it)
+// the plain string otherwise, and applies QVariant's @Invalid/@@ sentinels.
 // The escape table, \x/octal escapes, quoted commas, and trailing-space
 // trimming all match Qt, so a QSettings file round-trips byte-for-byte in
 // meaning.

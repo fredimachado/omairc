@@ -1,10 +1,9 @@
 package ui
 
-// This file is the Phase 10 shell suite: transcript emphasis rendering, the
-// sidebar identicon/half-block avatar glyph, the AvatarReadyMsg/avatar seam,
-// and the Ctrl+Shift+O link sheet over the seeded and demo models. It reuses
-// seededModel (phase5_test.go), press/ctrlShiftKey (phase6_test.go), and
-// phase9DemoModel (phase9_inbox_test.go).
+// Transcript emphasis rendering, sidebar identicon/half-block avatar glyph,
+// AvatarReadyMsg/avatar seam, and Ctrl+Shift+O link sheet over seeded and
+// demo models. Reuses seededModel (phase5_test.go), press/ctrlShiftKey
+// (phase6_test.go), and phase9DemoModel (phase9_inbox_test.go).
 
 import (
 	"strings"

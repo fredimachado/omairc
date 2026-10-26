@@ -1,5 +1,5 @@
-//! `/status` and `/avatar` over the real demo, and the replies that answer them. Ports the
-//! cases in `tui/internal/controller/replyrouter_test.go` (`TestReplyOwnMetadataFail`,
+//! `/status` and `/avatar` over the real demo, and the replies that answer them.
+//! cases in `tui/internal/controller/replyrouter_test.go` (`TestReplyOwnMetadataFail`
 //! `TestReplyOwnMetadataReply`, `TestReplyOwnMetadataError`, `TestReplyDispatchStatusAndAvatar`).
 //! The demo answers a write with 761 or 766 at once. A test that needs the write unanswered
 //! clears the demo's answer hook, so the watch stays armed for the FAIL or the numeric it injects.

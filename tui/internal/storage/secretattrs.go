@@ -4,14 +4,11 @@ import "encoding/base64"
 
 // The Secret Service attributes of one saved secret, shared by the Linux store
 // and its tests (the tests run on every platform).
-//
 // Two clients wrote these items before this one, with different attributes:
-//
 //   - The Qt client goes through QtKeychain, whose libsecret backend stores
 //     user=<key name>, server=omairc and type=plaintext (or base64) under the
 //     org.qt.keychain schema (qtkeychain/libsecret.cpp).
 //   - The TUI and earlier builds store service=omairc and username=<key name>.
-//
 // A read tries both sets, so a password the Qt client saved survives the
 // switch. A write stores one item that carries both sets, so the Qt client
 // (after a rollback) and the TUI still find it, then drops the older
@@ -82,7 +79,7 @@ func secretAttrsIsWritten(attributes map[string]string, keyName string) bool {
 	return true
 }
 
-// secretAttrsIsAsciiWhitespace matches Rust u8::is_ascii_whitespace: space,
+// secretAttrsIsAsciiWhitespace matches Rust u8::is_ascii_whitespace: space
 // tab, LF, form feed (\x0c), and CR. Vertical tab is not included.
 func secretAttrsIsAsciiWhitespace(b byte) bool {
 	return b == ' ' || b == '\t' || b == '\n' || b == '\f' || b == '\r'

@@ -1,6 +1,5 @@
 //! The public outbound writers of `tui/internal/session/session.go` (Go) and
 //! `IrcSession::send*` in `tui/internal/session/session.go`.
-//!
 //! Every method is a thin `locked` wrapper over a `Core` method, so the
 //! frame-level tests can drive each one against a `LoopbackTransport`. The
 //! controller calls these; no UI code writes a frame directly (rule 1 of the
@@ -138,7 +137,7 @@ impl Session {
         self.locked(|core| core.set_away_locked(reason))
     }
 
-    /// Writes `AWAY :` with no reason, which marks the user away with the server's
+    /// Writes `AWAY:` with no reason, which marks the user away with the server's
     /// default text. It differs from `set_away("")`, which clears
     /// (`IrcSession::markAway`).
     pub fn mark_away(&self, reason: &str) -> bool {
@@ -297,7 +296,6 @@ impl super::session::Core {
     }
 
     /// `setAwayLocked`: AWAY with a trimmed reason, or a bare AWAY to clear.
-    // Phase 4: the slash catalog sends these frames
     pub(crate) fn set_away_locked(&mut self, reason: &str) -> bool {
         let trimmed = reason.trim();
         if trimmed.is_empty() {
@@ -307,7 +305,6 @@ impl super::session::Core {
     }
 
     /// `sendMonitorLocked`: packs nicks into MONITOR lines that each fit one frame.
-    // Phase 4: the slash catalog sends these frames
     pub(crate) fn send_monitor_locked(&mut self, modifier: char, nicks: &[String]) -> bool {
         let mark = modifier.to_ascii_uppercase();
         match mark {

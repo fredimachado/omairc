@@ -1,6 +1,3 @@
-//! Port of `tui/internal/session/config.go` in
-//! `tui/internal/session/session.go`.
-//!
 //! One network's identity, credentials, autojoin state and timer policy. Build
 //! the defaults with `SessionConfig::with_defaults`, adjust the fields, then pass
 //! the config to `Session::new`. The controller's persistence layer fills the fields
@@ -46,8 +43,8 @@ pub struct SessionConfig {
 }
 
 impl SessionConfig {
-    /// The defaults of `IrcSessionConfig`: port 6697, TLS on, reconnect on,
-    /// 1000 ms base backoff doubling to 30000 ms, a 10000 ms capability timeout,
+    /// The defaults of `IrcSessionConfig`: port 6697, TLS on, reconnect on
+    /// 1000 ms base backoff doubling to 30000 ms, a 10000 ms capability timeout
     /// a 60000 ms ping watchdog, and a 45000 ms labeled-response timeout.
     /// Username and realname fall back to the nick, as
     /// `IrcConnection::sessionConfigFor` does.
@@ -71,8 +68,8 @@ impl SessionConfig {
         }
     }
 
-    /// The SASL account name. An empty `sasl_account` falls back to the nick,
-    /// as `IrcNetworkProfile::saslAccount()` does.
+    /// The SASL account name. An empty `sasl_account` falls back to the nick
+    /// as `IrcNetworkProfile::saslAccount` does.
     pub fn sasl_account_name(&self) -> &str {
         if self.sasl_account.is_empty() {
             &self.nick
@@ -81,7 +78,7 @@ impl SessionConfig {
         }
     }
 
-    /// The credential SASL sends: the NickServ password when both are set,
+    /// The credential SASL sends: the NickServ password when both are set
     /// otherwise the server password (`saslSecret` in `tui/internal/session/session.go`).
     pub(crate) fn sasl_secret(&self) -> &Secret {
         if self.nickserv_password.is_empty() {

@@ -2,7 +2,8 @@ package irc
 
 import "strings"
 
-// This file is the Go port of `ircpref`: the /pref catalog, its
+// The /pref catalog, its usage and avatar note, the query/state/list
+// formatting, and the argument parser.
 // usage and avatar note, the query/state/list formatting, and the argument
 // parser.
 
@@ -25,7 +26,6 @@ const (
 type PrefValueKind int
 
 const (
-	// PrefValueToggle is on or off.
 	PrefValueToggle PrefValueKind = iota
 	// PrefValueNoise is folded, every, or hidden.
 	PrefValueNoise

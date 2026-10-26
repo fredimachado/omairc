@@ -1,8 +1,7 @@
 package ui
 
-// This file is the Phase 7 parity suite for the Bubble Tea shell: the slash
-// completion session, its Tab/Escape/Up/Down key semantics, and the composer
-// behavior of /close, /query, /join, and /list. It reuses the demo-seeded
+// Slash completion session, Tab/Escape/Up/Down key semantics, and composer
+// behavior of /close, /query, /join, and /list. Reuses the demo-seeded
 // harness in phase5_test.go.
 
 import (

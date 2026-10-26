@@ -1,7 +1,6 @@
 //! TLS client policy: the trust roots, the server name, and how a failed handshake maps
 //! to the transport's error kinds. The message text follows `tlsFailureMessage` in
 //! Go's `transport_net.go`.
-//!
 //! Client certificates (CertFP and SASL EXTERNAL) are out of scope here. The config
 //! offers no client identity, so a server that demands one fails the handshake.
 

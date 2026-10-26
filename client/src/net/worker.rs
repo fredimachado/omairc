@@ -1,14 +1,11 @@
-//! One connection's task on the net thread. Port of the connect and I/O goroutines in
+//! One connection's task on the net thread.
 //! Go's `transport_net.go`.
-//!
 //! `run` dials, then, for TLS, completes the handshake under its own deadline. Only
 //! after the pipe is open does it start the writer. Frames queued earlier waited in
 //! the channel, so none can reach the wire in cleartext ahead of the handshake.
-//!
 //! Every event carries the `(conn, epoch)` the task started with. The UI side drops
 //! an event whose epoch is stale, so a task that outlives its connection cannot
 //! speak for the next one.
-//!
 //! Closing is the hub's call, made through the write queue. Once the pipe is open, the
 //! writer drains what is queued, says goodbye, and stops the reader. See `hub::wind_down`.
 
@@ -117,7 +114,7 @@ async fn pump<S>(
 
 /// Forwards inbound bytes until the peer closes or the read fails. On TLS, an end of
 /// stream without close-notify is still a clean remote close: many ircds drop the socket
-/// right after `ERROR :Closing link`. Any other read error is a network failure.
+/// right after `ERROR:Closing link`. Any other read error is a network failure.
 pub(super) async fn read_loop<R>(tag: Tag, mut read: R, events: Sender<Delivery>, tls: bool)
 where
     R: AsyncRead + Unpin + Send + 'static,

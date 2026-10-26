@@ -1,11 +1,10 @@
 //! The `HttpFetch` seam (plan rule 7): the one way the client reaches the network
 //! for its desktop features. The update check and the installer download use it
-//! now, and the avatar fetch will use it later. Go twin: none, since the TUI
-//! calls `net/http` directly. C++: `QNetworkAccessManager` as used in
-//! `omaircupdatecheck` and `tui/internal/avatar/avatar.go`.
+//! now, and the avatar fetch will use it later. The TUI calls `net/http` directly,
+//! so there is no Go twin of this seam.
 //!
 //! `UreqFetch` is the one implementation that opens a socket. It blocks, so
-//! callers run it on `cx.background_executor()`. It never follows a redirect
+//! callers run it on `cx.background_executor`. It never follows a redirect
 //! itself: `get_following` walks each hop, so the caller's policy judges every
 //! target before it is requested. A request that sets `public_addresses_only`
 //! resolves its host itself, keeps one global address and connects to that
@@ -33,7 +32,7 @@ pub struct FetchRequest {
     pub headers: Vec<(String, String)>,
     pub timeout: Duration,
     pub max_body: u64,
-    /// Connect only to a global address, pinned to the first one the resolver gives,
+    /// Connect only to a global address, pinned to the first one the resolver gives
     /// and never through a proxy. The avatar fetch sets it. A request judged here
     /// is one hop, so each redirect target gets its own pin.
     pub public_addresses_only: bool,
@@ -265,7 +264,7 @@ impl HttpFetch for UreqFetch {
     }
 }
 
-/// The address the pinned agent connects to. The system resolver answers the host,
+/// The address the pinned agent connects to. The system resolver answers the host
 /// and the first global address is kept, so the connection cannot be steered to a
 /// private or loopback address by DNS. The check is on the address that will be
 /// dialled (DNS rebinding), not on the name. A host with no global address fails

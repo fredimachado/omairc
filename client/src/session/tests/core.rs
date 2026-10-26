@@ -1,4 +1,4 @@
-//! Port of `tui/internal/session/session_test.go`: registration, capability
+//! registration, capability
 //! negotiation, and the upload credential.
 
 use super::fixture::{assert_frames, test_config, Fixture};

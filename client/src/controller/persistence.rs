@@ -1,16 +1,14 @@
-//! What the controller keeps between runs, and what each intent saves. Port of the
-//! Phase 8 parts of `tui/internal/controller/controller.go` (`LoadStoredPreferences`,
-//! `SetReopenDirects`, `AddSession`, `restoreOpenDirects`, `noteOpenDirectsMotd`,
-//! `rememberOpenDirect`) and of `tui/internal/connection/connection.go`.
-//!
-//! The controller owns the state. The Connect sheet asks for a save (`save_profile`) and a
-//! start (`Controller::start`), and reads what was saved (`stored_profiles`). Every write
-//! goes through a store bound to the controller's `Backing`, so an ephemeral controller (the
-//! demo, the tests) writes nothing.
-//!
-//! A profile that is complete registers a session at load. `start` activates it through the
-//! transport factory the shell hands in: the live one dials through the net hub, and a refusal
-//! is the network's Status line, as any other start failure.
+//! What the controller keeps between runs, and what each intent saves.
+//! Mirrors persistence in `tui/internal/controller/controller.go` and
+//! `tui/internal/connection/connection.go`. The controller owns the state. The
+//! Connect sheet asks for a save (`save_profile`) and a start
+//! (`Controller::start`), and reads what was saved (`stored_profiles`). Every
+//! write goes through a store bound to the controller's `Backing`, so an
+//! ephemeral controller (the demo, the tests) writes nothing.
+//! A profile that is complete registers a session at load. `start` activates it
+//! through the transport factory; the shell's live factory dials through the
+//! net hub, and a refusal is the network's Status line, as any other start
+//! failure.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -216,7 +214,7 @@ impl Controller {
     /// are written first, then the profile file. The controller keeps the profile even when
     /// the file refuses, so the session sees the edit.
     pub fn save_profile(&mut self, mut profile: Profile, edits: SecretEdits) -> SaveOutcome {
-        // The saved profile still names the keys the secrets are under, so a changed host,
+        // The saved profile still names the keys the secrets are under, so a changed host
         // username or nick moves them (`IrcConnection::apply`'s rekey).
         let stored = self.profiles.get(&profile.network_id).cloned();
         let (was_saved, was_nickserv_saved) = stored
@@ -238,7 +236,7 @@ impl Controller {
         }
     }
 
-    /// Deletes one secret slot from the keychain immediately (`removeStoredPassword` /
+    /// Deletes one secret slot from the keychain immediately (`removeStoredPassword`
     /// `removeStoredNickServ`). Clears the profile's saved flag once the key is gone.
     /// Returns `Missing` when gone, or `Error` when a delete failed so forget stays up.
     pub fn forget_secret(&mut self, network_id: &str, purpose: &'static str) -> CredentialState {
@@ -735,7 +733,7 @@ impl Controller {
     }
 
     /// Deletes the owed keys of one slot once the slot's secret sits under its current key, or
-    /// was cleared on purpose (`flushObsoleteKeys`). The current key itself is never deleted,
+    /// was cleared on purpose (`flushObsoleteKeys`). The current key itself is never deleted
     /// even when an earlier rename left it owed.
     fn retire_obsolete(&mut self, profile: &Profile, purpose: &'static str) {
         let current = CredentialKey::for_profile(profile, purpose);

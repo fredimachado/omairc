@@ -1,4 +1,4 @@
-//! Conversation, network, and unread walks over `sidebar_rows`. Ports Qt's
+//! Conversation, network, and unread walks over `sidebar_rows`.
 //! `stepConversation`, `stepNetwork`, `jumpToNextUnread`, and
 //! `ircNeighborAfterDrop`. Pure functions: callers apply the result. The rows and
 //! the network order come from the controller, and the walks read nothing else.
@@ -33,7 +33,7 @@ pub fn step_conversation(
     None
 }
 
-/// Next network in sidebar order (`network_ids`), from the focused network if any,
+/// Next network in sidebar order (`network_ids`), from the focused network if any
 /// else the current one. Wraps. Returns the network id to focus.
 pub fn step_network(
     network_ids: &[String],
@@ -56,7 +56,7 @@ pub fn step_network(
     Some(network_ids[next].clone())
 }
 
-/// Alt+A: the first mention after `current` (wrapping, skipping `current`),
+/// Alt+A: the first mention after `current` (wrapping, skipping `current`)
 /// else the first unread. Collapsed networks count; the caller expands the
 /// network it lands in. `None` when nothing is unread.
 pub fn next_unread(

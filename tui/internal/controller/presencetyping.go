@@ -49,7 +49,6 @@ const displayClockFormat = "15:04"
 // treated as the next live chat row from the peer arriving now, using the same
 // local HH:mm MessageListModel::displayTime would assign that row. It mirrors
 // typingFollowsPeerChat and continuesMessageGroup (`client/src/model/typing_tail.rs`).
-//
 // displayTime localizes with QDateTime::toLocalTime, and the reducer keeps a
 // parsed server-time tag in UTC (translator.go's ircServerTimeOf). Both sides
 // are therefore formatted in the clock's location: a raw Format compared a UTC

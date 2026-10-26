@@ -2,8 +2,7 @@
 //! default build never touches a real install. It mirrors `tui/internal/storage/`.
 //! The formats match Qt and the TUI: a QSettings-compatible INI file, with the
 //! JSON that Qt keeps inside a string value.
-//!
-//! Every store takes a [`Backing`]. `Disk` is the INI file under the config folder;
+//! Every store takes a [`Backing`]. `Disk` is the INI file under the config folder
 //! `Ephemeral` writes nothing, which is what `--demo-server` and the tests use. A
 //! store never reads the real environment itself: the caller picks the backing.
 
@@ -31,7 +30,6 @@ pub mod scrollplace;
 pub mod settings;
 pub mod stspolicies;
 
-/// Where a store keeps its data.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Backing {
     /// The QSettings-compatible INI file at this path.

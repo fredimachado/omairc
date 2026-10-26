@@ -15,7 +15,7 @@ import (
 // TestSetThemeWatcherAdoptsCurrentAndArmsRead pins the L8 contract. The manual
 // SetTheme first makes the adoption observable even when no Omarchy theme is
 // installed (both palettes would otherwise be Fallback): SetThemeWatcher must
-// replace the manual palette with watcher.Current().
+// replace the manual palette with watcher.Current.
 func TestSetThemeWatcherAdoptsCurrentAndArmsRead(t *testing.T) {
 	m := seededModel(t)
 	m.SetTheme(theme.Derive(theme.Spec{Mode: theme.ModeLight}))
@@ -31,7 +31,7 @@ func TestSetThemeWatcherAdoptsCurrentAndArmsRead(t *testing.T) {
 		t.Fatal("SetThemeWatcher must adopt watcher.Current()")
 	}
 
-	// The blocking Changes() read is armed by the next background-work pass,
+	// The blocking Changes read is armed by the next background-work pass
 	// which is what WindowSizeMsg triggers in the running program.
 	cmd := m.startBackgroundWork()
 	if !m.themeArmed {

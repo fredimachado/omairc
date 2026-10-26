@@ -8,7 +8,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/irc"
 )
 
-// labeledConfig mirrors the sessionConfig() helper in `tst_labeledresponse`:
+// labeledConfig mirrors the sessionConfig helper:
 // reconnect is off so a dropped connection never masks a labeling bug.
 func labeledConfig() SessionConfig {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -86,7 +86,7 @@ func statusTextsWithRequestLabel(handler *sessionTestHandler, requestLabel strin
 	return texts
 }
 
-// TestLabeledRequestsLabeledResponseOnOwnLine ports
+// TestLabeledRequestsLabeledResponseOnOwnLine.
 // LabeledResponseTest::requestsLabeledResponseOnOwnLine.
 func TestLabeledRequestsLabeledResponseOnOwnLine(t *testing.T) {
 	fixture := newLabeledFixture(t)
@@ -100,7 +100,7 @@ func TestLabeledRequestsLabeledResponseOnOwnLine(t *testing.T) {
 	}
 }
 
-// TestLabeledDoesNotRequestLabeledResponseWithoutMessageTags ports
+// TestLabeledDoesNotRequestLabeledResponseWithoutMessageTags.
 // LabeledResponseTest::doesNotRequestLabeledResponseWithoutMessageTags.
 func TestLabeledDoesNotRequestLabeledResponseWithoutMessageTags(t *testing.T) {
 	fixture := newLabeledFixture(t)
@@ -115,7 +115,7 @@ func TestLabeledDoesNotRequestLabeledResponseWithoutMessageTags(t *testing.T) {
 	}
 }
 
-// TestLabeledWhoisStaysUntaggedWithoutCap ports
+// TestLabeledWhoisStaysUntaggedWithoutCap.
 // LabeledResponseTest::whoisStaysUntaggedWithoutCap.
 func TestLabeledWhoisStaysUntaggedWithoutCap(t *testing.T) {
 	fixture := newLabeledFixture(t)
@@ -138,7 +138,7 @@ func TestLabeledWhoisStaysUntaggedWithoutCap(t *testing.T) {
 	}
 }
 
-// TestLabeledWhoisAndCtcpGetUniqueLabels ports
+// TestLabeledWhoisAndCtcpGetUniqueLabels.
 // LabeledResponseTest::whoisAndCtcpGetUniqueLabels.
 func TestLabeledWhoisAndCtcpGetUniqueLabels(t *testing.T) {
 	fixture := newLabeledFixture(t)
@@ -194,7 +194,7 @@ func TestLabeledWhoisAndCtcpGetUniqueLabels(t *testing.T) {
 	}
 }
 
-// TestLabeledSingleNumericRoutesToAskingTranscript ports
+// TestLabeledSingleNumericRoutesToAskingTranscript.
 // LabeledResponseTest::singleLabeledNumericRoutesToAskingTranscript.
 func TestLabeledSingleNumericRoutesToAskingTranscript(t *testing.T) {
 	fixture := newLabeledFixture(t)
@@ -214,7 +214,7 @@ func TestLabeledSingleNumericRoutesToAskingTranscript(t *testing.T) {
 	}
 }
 
-// TestLabeledResponseBatchRoutesInnerLines ports
+// TestLabeledResponseBatchRoutesInnerLines.
 // LabeledResponseTest::labeledResponseBatchRoutesInnerLines.
 func TestLabeledResponseBatchRoutesInnerLines(t *testing.T) {
 	fixture := newLabeledFixture(t)
@@ -244,7 +244,7 @@ func TestLabeledResponseBatchRoutesInnerLines(t *testing.T) {
 	}
 }
 
-// TestLabeledUnlabeledLeftoverDoesNotStealLabeledWaiter ports
+// TestLabeledUnlabeledLeftoverDoesNotStealLabeledWaiter.
 // LabeledResponseTest::unlabeledLeftoverDoesNotStealLabeledWaiter.
 func TestLabeledUnlabeledLeftoverDoesNotStealLabeledWaiter(t *testing.T) {
 	fixture := newLabeledFixture(t)
@@ -274,7 +274,7 @@ func TestLabeledUnlabeledLeftoverDoesNotStealLabeledWaiter(t *testing.T) {
 	}
 }
 
-// TestLabeledUnsolicitedLabelDoesNotCrashOrSteal ports
+// TestLabeledUnsolicitedLabelDoesNotCrashOrSteal.
 // LabeledResponseTest::unsolicitedLabelDoesNotCrashOrSteal.
 func TestLabeledUnsolicitedLabelDoesNotCrashOrSteal(t *testing.T) {
 	fixture := newLabeledFixture(t)
@@ -301,7 +301,7 @@ func TestLabeledUnsolicitedLabelDoesNotCrashOrSteal(t *testing.T) {
 	}
 }
 
-// TestLabeledAckCompletesWaiterWithoutTranscript ports
+// TestLabeledAckCompletesWaiterWithoutTranscript.
 // LabeledResponseTest::ackCompletesWaiterWithoutTranscript.
 func TestLabeledAckCompletesWaiterWithoutTranscript(t *testing.T) {
 	fixture := newLabeledFixture(t)
@@ -333,7 +333,7 @@ func TestLabeledAckCompletesWaiterWithoutTranscript(t *testing.T) {
 	}
 }
 
-// TestLabeledFailCopiesIntoAskingTranscript ports
+// TestLabeledFailCopiesIntoAskingTranscript.
 // LabeledResponseTest::labeledFailCopiesIntoAskingTranscript.
 func TestLabeledFailCopiesIntoAskingTranscript(t *testing.T) {
 	fixture := newLabeledFixture(t)
@@ -356,7 +356,7 @@ func TestLabeledFailCopiesIntoAskingTranscript(t *testing.T) {
 	}
 }
 
-// TestLabeledCtcpReplyRoutesToAskingTranscript ports
+// TestLabeledCtcpReplyRoutesToAskingTranscript.
 // LabeledResponseTest::labeledCtcpReplyRoutesToAskingTranscript.
 func TestLabeledCtcpReplyRoutesToAskingTranscript(t *testing.T) {
 	fixture := newLabeledFixture(t)
@@ -376,7 +376,7 @@ func TestLabeledCtcpReplyRoutesToAskingTranscript(t *testing.T) {
 	}
 }
 
-// TestLabeledUnlabeledCtcpReplyAfterAckCopiesIntoAskingTranscript ports
+// TestLabeledUnlabeledCtcpReplyAfterAckCopiesIntoAskingTranscript.
 // LabeledResponseTest::unlabeledCtcpReplyAfterAckCopiesIntoAskingTranscript.
 func TestLabeledUnlabeledCtcpReplyAfterAckCopiesIntoAskingTranscript(t *testing.T) {
 	fixture := newLabeledFixture(t)
@@ -406,7 +406,7 @@ func TestLabeledUnlabeledCtcpReplyAfterAckCopiesIntoAskingTranscript(t *testing.
 	}
 }
 
-// TestLabeledUnlabeledCtcpReplyAfterEchoMessageCopiesIntoAskingTranscript ports
+// TestLabeledUnlabeledCtcpReplyAfterEchoMessageCopiesIntoAskingTranscript.
 // LabeledResponseTest::unlabeledCtcpReplyAfterEchoMessageCopiesIntoAskingTranscript.
 func TestLabeledUnlabeledCtcpReplyAfterEchoMessageCopiesIntoAskingTranscript(t *testing.T) {
 	fixture := newLabeledFixture(t)
@@ -431,7 +431,7 @@ func TestLabeledUnlabeledCtcpReplyAfterEchoMessageCopiesIntoAskingTranscript(t *
 	}
 }
 
-// TestLabeledCtcp401CopiesIntoAskingTranscript ports
+// TestLabeledCtcp401CopiesIntoAskingTranscript.
 // LabeledResponseTest::labeledCtcp401CopiesIntoAskingTranscript.
 func TestLabeledCtcp401CopiesIntoAskingTranscript(t *testing.T) {
 	fixture := newLabeledFixture(t)
@@ -465,7 +465,7 @@ func TestLabeledCtcp401CopiesIntoAskingTranscript(t *testing.T) {
 	}
 }
 
-// TestLabeledUnsolicitedBatchesShareTheOpenBatchBudget ports
+// TestLabeledUnsolicitedBatchesShareTheOpenBatchBudget.
 // LabeledResponseTest::unsolicitedLabeledResponseBatchesShareTheOpenBatchBudget.
 func TestLabeledUnsolicitedBatchesShareTheOpenBatchBudget(t *testing.T) {
 	fixture := newLabeledFixture(t)
@@ -516,7 +516,7 @@ func TestLabeledUnsolicitedBatchesShareTheOpenBatchBudget(t *testing.T) {
 	}
 }
 
-// TestLabeledTimeoutClearsWaiters ports
+// TestLabeledTimeoutClearsWaiters.
 // LabeledResponseTest::timeoutClearsWaiters.
 func TestLabeledTimeoutClearsWaiters(t *testing.T) {
 	fixture := newLabeledFixture(t)
@@ -545,7 +545,7 @@ func TestLabeledTimeoutClearsWaiters(t *testing.T) {
 	}
 }
 
-// TestLabeledTimeoutExpiresOnlyElapsedLabels ports
+// TestLabeledTimeoutExpiresOnlyElapsedLabels.
 // LabeledResponseTest::timeoutExpiresOnlyElapsedLabels.
 func TestLabeledTimeoutExpiresOnlyElapsedLabels(t *testing.T) {
 	fixture := newLabeledFixture(t)
@@ -604,7 +604,7 @@ func TestLabeledTimeoutExpiresOnlyElapsedLabels(t *testing.T) {
 	}
 }
 
-// TestLabeledTimeoutDropsElapsedWatchWithoutStealingNewer ports
+// TestLabeledTimeoutDropsElapsedWatchWithoutStealingNewer.
 // LabeledResponseTest::timeoutDropsElapsedWatchWithoutStealingNewer.
 func TestLabeledTimeoutDropsElapsedWatchWithoutStealingNewer(t *testing.T) {
 	fixture := newLabeledFixture(t)
@@ -652,7 +652,7 @@ func TestLabeledTimeoutDropsElapsedWatchWithoutStealingNewer(t *testing.T) {
 	}
 }
 
-// TestLabeledDisconnectClearsWaiters ports
+// TestLabeledDisconnectClearsWaiters.
 // LabeledResponseTest::disconnectClearsWaiters.
 func TestLabeledDisconnectClearsWaiters(t *testing.T) {
 	fixture := newLabeledFixture(t)
@@ -672,7 +672,7 @@ func TestLabeledDisconnectClearsWaiters(t *testing.T) {
 	}
 }
 
-// TestLabeledTwoWhoisForSameNickStayIndependent ports
+// TestLabeledTwoWhoisForSameNickStayIndependent.
 // LabeledResponseTest::twoLabeledWhoisForSameNickStayIndependent.
 func TestLabeledTwoWhoisForSameNickStayIndependent(t *testing.T) {
 	fixture := newLabeledFixture(t)

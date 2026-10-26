@@ -1,15 +1,13 @@
-//! The composer's outbound typing hint: port of `IrcController::notifyComposerText`
+//! The composer's outbound typing hint.
 //! and the done flush of `selectConversation` and `clearConversationSelection`
 //! (`tui/internal/controller/wiring.go` `NotifyComposerText`, `controller.go`
 //! `SelectConversation`; `tui/internal/controller/controller.go`).
-//!
 //! The pace, the `message-tags` gate and the suppressed `done` after a sent message
 //! belong to the session's typing publisher (`session/typing.rs`). The controller
 //! decides which composer edits count as typing and which target the hint is still
 //! open on, so a `done` is sent when the user clears the composer, moves away, or
 //! the selection changes. The Status console and a network without `message-tags`
 //! never publish.
-//!
 //! Inbound typing (who is typing to us) is the reads in `reads.rs`.
 
 use crate::irc::command::parse;
@@ -65,7 +63,6 @@ impl Controller {
 
     /// The network and target the composer's typing hint is held on, if any: the last
     /// target a `typing=active` went to and no `done` has followed yet.
-    // A test seam: the typing tests read the held target; cfg(test) comes off with a consumer.
     #[cfg(test)]
     pub fn typing_target(&self) -> Option<(&str, &str)> {
         self.typing_target

@@ -30,7 +30,7 @@ func scaleBox(src image.Image, dstW, dstH int) *image.NRGBA {
 	}
 }
 
-// scaleBoxNRGBA is the box filter on a straight-alpha buffer. RGBA, YCbCr,
+// scaleBoxNRGBA is the box filter on a straight-alpha buffer. RGBA, YCbCr
 // and Paletted images are converted into this layout first, so the average
 // reads bytes instead of image.Image.At.
 func scaleBoxNRGBA(src *image.NRGBA, dstW, dstH int) *image.NRGBA {

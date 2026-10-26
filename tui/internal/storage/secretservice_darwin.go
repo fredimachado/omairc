@@ -15,7 +15,6 @@ import (
 // This file implements the macOS Keychain credential backend through the
 // security CLI. It mirrors QtKeychain's ReadPasswordJob("omairc"): the
 // service name is omairc and the key name is stored in the account attribute.
-//
 // Every call is synchronous and bounded by keychainCallTimeout so a hung
 // security subprocess can never block the terminal indefinitely.
 

@@ -1,5 +1,5 @@
 //! Newest server-time per target per network (`IrcPlaybackTimeStore`). Group
-//! `playbackTimes/<networkId>`, key `times`. Port of `tui/internal/storage/playbacktime.go`.
+//! `playbackTimes/<networkId>`, key `times`.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -170,7 +170,6 @@ impl PlaybackTimeStore {
         true
     }
 
-    /// Drops the cache entry and removes the persisted group.
     pub fn forget(&mut self, network_id: &str) {
         if network_id.is_empty() {
             return;

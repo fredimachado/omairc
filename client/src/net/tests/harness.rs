@@ -1,7 +1,6 @@
 //! The test rig for the socket transport: a hub, the peer it dials, and the pump that
 //! delivers the hub's results on the test thread.
-//!
-//! The conformance cases name fixed host names and ports, so `NetHarness` routes every
+//! The conformance cases name fixed host names and.
 //! connect to its own peer. The redirect is the only departure from production: the
 //! transport, the hub, the worker and the TLS path all run unchanged.
 
@@ -118,7 +117,7 @@ pub(super) fn first_error(sink: &RecordingSink) -> TransportError {
 }
 
 /// The transport the conformance cases drive. It is the real transport, with the host
-/// and port of each connect replaced by the harness's peer, or by a dead address when
+/// and.
 /// a refusal is armed.
 pub(super) struct Redirect {
     inner: Rc<NetTransport>,

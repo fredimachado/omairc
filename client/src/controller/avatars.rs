@@ -1,10 +1,8 @@
 //! Avatar photos, the controller's half. It decides whether an avatar is fetched and
 //! keeps what came back. Go `tui/internal/avatar/avatar.go` (the store, its `Ensure`
-//! and `Block`) and Qt `tui/internal/avatar/avatar.go` (the pending slots and the
-//! cache). The network and the decode run on the UI's background executor through
+//! and `Block`). The network and the decode run on the UI's background executor through
 //! `desktop::avatarhttp`, so this module has no gpui and no socket. It hands out an
 //! `AvatarJob` and takes back the outcome.
-//!
 //! Three rules hold here. Nothing is fetched while the `avatars` preference is off.
 //! A URL is requested only when `resolve_avatar` accepts it, and each URL is in flight
 //! at most once. A failed fetch waits `FAILURE_COOLDOWN` on the clock before it is

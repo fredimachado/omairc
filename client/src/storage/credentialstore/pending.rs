@@ -2,7 +2,6 @@
 //! removal could not delete yet (Qt's `IrcDraftSecret::obsoleteKeys`). Each store keeps its
 //! own set, so the controller reaches them through [`CredentialStore::pending`] and the
 //! set outlives one save.
-//!
 //! [`CredentialStore::pending`]: super::CredentialStore::pending
 
 use std::collections::BTreeSet;

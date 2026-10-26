@@ -1,5 +1,5 @@
 //! One harness for GPUI view tests: the seeded `--demo-server` shell in a
-//! `TestAppContext`, fixed window size, and helpers for settle, inject, select,
+//! `TestAppContext`, fixed window size, and helpers for settle, inject, select
 //! scroll, and chords. Every view test that needs a live shell uses this.
 
 use gpui::{
@@ -58,7 +58,6 @@ impl SeededShell<'_> {
         self.cx.run_until_parked();
     }
 
-    /// Resizes the window and settles layout.
     pub fn resize(&mut self, width: f32, height: f32) {
         self.cx.simulate_resize(size(px(width), px(height)));
         self.settle();

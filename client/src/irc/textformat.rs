@@ -1,7 +1,4 @@
-//! Port of `tui/internal/irc/textformat.go` /
-//! `hasIrcEmphasis` in `irctextformatter` (C++).
-//!
-//! One walker produces styled runs with the full attribute set (colors, reverse,
+//! One walker produces styled runs with the full attribute set (colors, reverse
 //! monospace, strikethrough) for the GPUI transcript. `emphasized_segments` is the
 //! TUI's view: bold, italic and underline only, with colors and the other codes
 //! dropped, and adjacent runs that share those three flags merged.
@@ -26,7 +23,6 @@ pub struct Segment {
     pub text: String,
 }
 
-/// One color from a color code.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IrcColor {
     /// A mIRC palette entry, 0 to 15.
@@ -49,7 +45,6 @@ pub struct IrcStyle {
 }
 
 /// A styled stretch of the plain text. `range` is a byte range in
-/// `plain_irc_text(text)`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StyledRun {
     pub range: Range<usize>,
@@ -186,7 +181,7 @@ fn apply_mirc_color(chars: &[char], start: usize, style: &mut IrcStyle) {
     }
 }
 
-/// Applies the `\x04` hex color at `start`: six hex digits set the foreground,
+/// Applies the `\x04` hex color at `start`: six hex digits set the foreground
 /// and an optional `,` plus six more set the background.
 fn apply_hex_color(chars: &[char], start: usize, style: &mut IrcStyle) {
     let Some(fg) = rgb_at(chars, start + 1) else {
@@ -233,7 +228,7 @@ fn rgb_at(chars: &[char], start: usize) -> Option<IrcColor> {
 mod tests {
     use super::*;
 
-    // Ported from tui/internal/irc/textformat_test.go.
+    // tui/internal/irc/textformat_test.go.
 
     fn segment(bold: bool, italic: bool, underline: bool, text: &str) -> Segment {
         Segment {

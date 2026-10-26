@@ -28,7 +28,7 @@ type NetworkRow struct {
 }
 
 // draftSecret is the in-memory secret state for one network's password or
-// NickServ slot. It is the phase-11 simplification of C++ IrcDraftSecret: the
+// NickServ slot. It is the phase-11 simplification of IrcDraftSecret: the
 // held password, whether the user edited it this sheet session, whether the
 // stored profile declares it saved, and the credential state. The
 // revision/obsolete-key machinery is deliberately dropped because the Go
@@ -50,8 +50,8 @@ type appliedSession struct {
 	nickServPassword string
 }
 
-// Connection owns the Connect sheet's draft profile, the stored profile list,
-// the selection, and the in-memory secrets. It is the Go port of the
+// Connection owns the Connect sheet's draft profile, the stored profile list
+// the selection, and the in-memory secrets. It is the Go.
 // non-persistent half of IrcConnection, plus the phase-11 profile store and
 // credential-store wiring. It is not safe for concurrent use.
 type Connection struct {
@@ -163,7 +163,7 @@ func (c *Connection) SetEphemeral(ephemeral bool) {
 }
 
 // SetStoredProfiles seeds the stored list, mirroring
-// IrcConnection::setStoredProfiles. It selects the first complete profile,
+// IrcConnection::setStoredProfiles. It selects the first complete profile
 // else the first; with an empty list it falls back to the suggested profile.
 // The declared secrets of every seeded profile are read synchronously when a
 // credential store is installed.
@@ -194,12 +194,8 @@ func (c *Connection) SetStoredProfiles(profiles []NetworkProfile) {
 	}
 }
 
-// --- Draft accessors ------------------------------------------------------
-
-// Name returns the draft display name.
 func (c *Connection) Name() string { return c.draft.Name }
 
-// SetName replaces the draft display name.
 func (c *Connection) SetName(name string) {
 	if c.draft.Name == name {
 		return
@@ -209,10 +205,8 @@ func (c *Connection) SetName(name string) {
 	c.networksChanged()
 }
 
-// Host returns the draft host.
 func (c *Connection) Host() string { return c.draft.Host }
 
-// SetHost replaces the draft host.
 func (c *Connection) SetHost(host string) {
 	if c.draft.Host == host {
 		return
@@ -222,7 +216,6 @@ func (c *Connection) SetHost(host string) {
 	c.networksChanged()
 }
 
-// Port returns the draft port.
 func (c *Connection) Port() int { return int(c.draft.Port) }
 
 // SetPort replaces the draft port, bounded to a uint16 like the C++ setter.
@@ -242,10 +235,8 @@ func (c *Connection) SetPort(port int) {
 	c.draftChanged()
 }
 
-// TLSEnabled reports the draft TLS flag.
 func (c *Connection) TLSEnabled() bool { return c.draft.TLSEnabled }
 
-// SetTLSEnabled replaces the draft TLS flag.
 func (c *Connection) SetTLSEnabled(enabled bool) {
 	if c.draft.TLSEnabled == enabled {
 		return
@@ -257,7 +248,6 @@ func (c *Connection) SetTLSEnabled(enabled bool) {
 // ConnectOnStartup reports whether the draft network connects at launch.
 func (c *Connection) ConnectOnStartup() bool { return c.draft.ConnectOnStartup }
 
-// SetConnectOnStartup replaces the draft startup flag.
 func (c *Connection) SetConnectOnStartup(enabled bool) {
 	if c.draft.ConnectOnStartup == enabled {
 		return
@@ -266,10 +256,8 @@ func (c *Connection) SetConnectOnStartup(enabled bool) {
 	c.draftChanged()
 }
 
-// Nick returns the draft nick.
 func (c *Connection) Nick() string { return c.draft.Nick }
 
-// SetNick replaces the draft nick.
 func (c *Connection) SetNick(nick string) {
 	if c.draft.Nick == nick {
 		return
@@ -279,10 +267,8 @@ func (c *Connection) SetNick(nick string) {
 	c.networksChanged()
 }
 
-// Username returns the draft username.
 func (c *Connection) Username() string { return c.draft.Username }
 
-// SetUsername replaces the draft username.
 func (c *Connection) SetUsername(username string) {
 	if c.draft.Username == username {
 		return
@@ -291,10 +277,8 @@ func (c *Connection) SetUsername(username string) {
 	c.draftChanged()
 }
 
-// Realname returns the draft real name.
 func (c *Connection) Realname() string { return c.draft.Realname }
 
-// SetRealname replaces the draft real name.
 func (c *Connection) SetRealname(realname string) {
 	if c.draft.Realname == realname {
 		return
@@ -303,10 +287,8 @@ func (c *Connection) SetRealname(realname string) {
 	c.draftChanged()
 }
 
-// Account returns the draft SASL account.
 func (c *Connection) Account() string { return c.draft.Account }
 
-// SetAccount replaces the draft SASL account.
 func (c *Connection) SetAccount(account string) {
 	if c.draft.Account == account {
 		return
@@ -315,10 +297,8 @@ func (c *Connection) SetAccount(account string) {
 	c.draftChanged()
 }
 
-// BouncerNetwork returns the draft bouncer upstream network.
 func (c *Connection) BouncerNetwork() string { return c.draft.BouncerNetwork }
 
-// SetBouncerNetwork replaces the draft bouncer upstream network.
 func (c *Connection) SetBouncerNetwork(network string) {
 	if c.draft.BouncerNetwork == network {
 		return
@@ -333,7 +313,7 @@ func (c *Connection) Autojoin() string {
 	return strings.Join(c.draft.AutojoinChannels, " ")
 }
 
-// SetAutojoin parses the typed channels and recomputes the retained keys,
+// SetAutojoin parses the typed channels and recomputes the retained keys
 // mirroring IrcConnection::setAutojoin.
 func (c *Connection) SetAutojoin(channels string) {
 	next := ParseAutojoin(channels)
@@ -419,8 +399,6 @@ func (c *Connection) NickServSet() bool {
 	return c.nickServSecret(c.selectedNetworkID).password != ""
 }
 
-// --- Roster and status ----------------------------------------------------
-
 // Networks returns the roster rows: every stored profile in stored order, with
 // the draft shown for the selected row, then a non-stored row for the selected
 // draft when it is not stored. It mirrors IrcConnection::rosterRows.
@@ -449,10 +427,8 @@ func (c *Connection) Networks() []NetworkRow {
 	return rows
 }
 
-// SelectedNetworkID returns the selected network id.
 func (c *Connection) SelectedNetworkID() string { return c.selectedNetworkID }
 
-// DisplayName returns the draft's roster label.
 func (c *Connection) DisplayName() string { return c.rosterDisplayName(c.draft) }
 
 // Problem returns the draft's validation message, or "" when it is complete.
@@ -492,8 +468,6 @@ func (c *Connection) CanRemove() bool {
 func (c *Connection) CanDisconnect() bool {
 	return c.ctrl.SessionIsLive(c.selectedNetworkID)
 }
-
-// --- Draft and selection surface ------------------------------------------
 
 // Select activates a stored network, or the current non-stored draft. It is a
 // no-op when empty, already selected, dirty, or neither stored nor the draft.
@@ -646,7 +620,7 @@ func (c *Connection) MoveNetwork(networkID string, delta int) bool {
 	return true
 }
 
-// Apply normalizes the draft, persists the profile and its edited secrets,
+// Apply normalizes the draft, persists the profile and its edited secrets
 // stores it, and reconciles its session. It reports whether a live session was
 // reached. An incomplete draft is normalized in place and rejected.
 func (c *Connection) Apply() bool {
@@ -703,8 +677,6 @@ func (c *Connection) Apply() bool {
 	return sessionAccepted
 }
 
-// --- Preferences ----------------------------------------------------------
-
 // The Preferences tab and /pref share one source of truth: the controller's
 // preference store. The connection only forwards the reads and writes and
 // repaints its sheet, so the Connect sheet and /pref can never disagree.
@@ -735,8 +707,6 @@ func (c *Connection) SetOpenAtUnread(enabled bool) {
 	c.ctrl.SetOpenAtUnread(enabled)
 	c.draftChanged()
 }
-
-// --- Persistence and credentials ------------------------------------------
 
 // PersistenceStatus is the selected network's persistence sentence, or "".
 // It mirrors IrcConnection::persistenceStatus.
@@ -820,7 +790,7 @@ func (c *Connection) ForgetNickServ() {
 // ActivateStartup reconciles every complete, connectOnStartup stored profile
 // whose declared secrets are readable (or already held in memory). It returns
 // how many sessions it started. It mirrors IrcConnection::activateStartup
-// without the asynchronous read wait: the Go credential store is synchronous,
+// without the asynchronous read wait: the Go credential store is synchronous
 // so this is safe to call once stores are installed.
 func (c *Connection) ActivateStartup() int {
 	started := 0
@@ -1226,7 +1196,7 @@ func (c *Connection) secretSlotTracked(secret *draftSecret, saved bool) bool {
 	return saved || secret.saved || secret.edited || secret.password != ""
 }
 
-// secretUnreadable ports IrcConnection::secretUnreadable: a tracked slot that
+// secretUnreadable.
 // is still loading or errored blocks, and a declared-but-unreadable saved slot
 // blocks.
 func (c *Connection) secretUnreadable(secret *draftSecret, saved, required bool) bool {
@@ -1304,8 +1274,6 @@ func storageProfile(profile NetworkProfile) storage.Profile {
 		AvatarURL:        profile.AvatarURL,
 	}
 }
-
-// --- Internals ------------------------------------------------------------
 
 // reconcile builds the session config for profile and brings the matching
 // session live. An unchanged signature restarts the existing session; any

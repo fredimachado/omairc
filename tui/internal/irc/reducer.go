@@ -11,7 +11,6 @@ import (
 type MessageKind int
 
 const (
-	// KindMessage is a normal chat line.
 	KindMessage MessageKind = iota
 	// KindNotice is a NOTICE line.
 	KindNotice
@@ -222,7 +221,7 @@ type EventReducer struct {
 // It matches a default-constructed IrcServerFeatures.
 var defaultServerFeatures = NewServerFeatures()
 
-// NewEventReducer returns an empty reducer with the window treated as active,
+// NewEventReducer returns an empty reducer with the window treated as active
 // matching a default-constructed IrcEventReducer.
 func NewEventReducer() *EventReducer {
 	reducer := &EventReducer{}
@@ -369,7 +368,7 @@ func (r *EventReducer) MembershipNoise() MembershipNoise {
 	return r.membershipNoise
 }
 
-// SetWindowActive records whether the window has focus. It is flag-only;
+// SetWindowActive records whether the window has focus. It is flag-only
 // consuming unread on focus regain is the controller's job. It mirrors
 // IrcEventReducer::setWindowActive.
 func (r *EventReducer) SetWindowActive(active bool) {
@@ -652,7 +651,7 @@ func (r *EventReducer) MarkChannelLeft(key ConversationKey) bool {
 	return true
 }
 
-// ForgetNetwork drops every fact about one network: conversations, features,
+// ForgetNetwork drops every fact about one network: conversations, features
 // nicks, presence, mutes, and held playback. It mirrors
 // IrcEventReducer::forgetNetwork.
 func (r *EventReducer) ForgetNetwork(networkID string) {
@@ -908,7 +907,7 @@ func (r *EventReducer) PeerPresence(networkID, normalizedNick string) PeerPresen
 	return PeerOnline
 }
 
-// OrderedMembers returns the channel members sorted by PREFIX rank priority,
+// OrderedMembers returns the channel members sorted by PREFIX rank priority
 // then by normalized nick. It mirrors IrcEventReducer::orderedMembers.
 func (r *EventReducer) OrderedMembers(key ConversationKey) []OrderedMember {
 	conversation := r.Find(key)
@@ -949,7 +948,7 @@ func (r *EventReducer) IsTranscriptHighlight(networkID, author string, kind Mess
 	return r.Mentions(networkID, body)
 }
 
-// TypingNicks returns the display nicks whose typing indicator should paint,
+// TypingNicks returns the display nicks whose typing indicator should paint
 // ordered by normalized nick like the C++ std::map. It mirrors
 // IrcEventReducer::typingNicks.
 func (r *EventReducer) TypingNicks(key ConversationKey, now time.Time) []string {
@@ -1677,7 +1676,7 @@ func (r *EventReducer) absorbPendingQueryPlayback(event HistoryEvent) bool {
 	if len(event.Lines) > 0 {
 		held.Lines = append(held.Lines, event.Lines...)
 		// Keep the extended batch in the store for every path that does not
-		// erase it, exactly like the C++ reference into the map value.
+ // erase it, exactly like the C++ reference into the map value.
 		r.pendingPlayback[event.Conversation] = held
 	}
 	if !r.replayFromPeer(held) {
@@ -2375,7 +2374,7 @@ func (r *EventReducer) reduceAway(event AwayEvent) {
 		incoming := *event.Realname
 		stored := r.NickPresence(event.NetworkID, event.Nick).Realname
 		// A placeholder must not erase a name jump can already match. An
-		// empty or placeholder stored name still takes the incoming value,
+		// empty or placeholder stored name still takes the incoming value
 		// so a later real WHOIS can replace "unknown".
 		if MeaningfulRealname(incoming, event.Nick) || !MeaningfulRealname(stored, event.Nick) {
 			r.setPresenceRealname(event.NetworkID, normalized, incoming)

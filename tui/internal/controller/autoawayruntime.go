@@ -8,9 +8,8 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/storage"
 )
 
-// This file is the Go port of IrcAutoawayRuntime in
-// `client/src/controller/autoawayruntime.rs`: the idle and grace timers, the tripped
-// state, the per-network auto/manual away sets, and the /autoaway dispatch.
+// Idle and grace timers, tripped state, per-network auto/manual away sets, and
+// /autoaway dispatch. Twin: `client/src/controller/autoawayruntime.rs`.
 // Away decisions stay here; the controller only records Status lines and keeps
 // its own unaway bookkeeping.
 //

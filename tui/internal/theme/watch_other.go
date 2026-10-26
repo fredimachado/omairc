@@ -10,7 +10,7 @@ import (
 )
 
 // Watcher is a no-op off Linux: the Omarchy theme tree only exists on Omarchy.
-// It exposes the same API as the Linux watcher so the shell wires it unchanged,
+// It exposes the same API as the Linux watcher so the shell wires it unchanged
 // and it never emits.
 type Watcher struct {
 	mu     sync.Mutex

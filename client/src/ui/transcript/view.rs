@@ -89,7 +89,7 @@ pub struct TranscriptView {
     typing_phase: u8,
     /// The row of the first line that arrived while the reader was scrolled up.
     /// The unseen jump lands there. It clears when the reader reaches the end, or
-    /// jumps (Qt `firstUnseenIndex`).
+    /// jumps.
     first_unseen: Option<usize>,
     /// The `↓` chip bounce after a detached arrival (`UnseenJumpButton.bounceBurst`).
     unseen_bounce: UnseenBounce,
@@ -151,7 +151,7 @@ impl TranscriptView {
     }
 
     /// Emits `TranscriptScrolled` when the at-end bit differs from the bit last reported.
-    /// Every move of the list calls this after moving it: the wheel handler, and the key,
+    /// Every move of the list calls this after moving it: the wheel handler, and the key
     /// scrollbar, find, link, unseen and notification moves. `restore_scroll_place` does
     /// not, because the list has just been reset and is not measured yet; the shell
     /// reports that viewport itself.
@@ -174,7 +174,7 @@ impl TranscriptView {
         self.typing_peer = lines.typing_peer;
         self.model.clear_selection();
         self.find_row = None;
-        // Switching buffers drops any catch-up (Qt `resetPending`).
+        // Switching buffers drops any catch-up.
         self.first_unseen = None;
         self.list_state.reset(self.list_len());
         self.row_layouts.borrow_mut().clear();
@@ -310,7 +310,7 @@ impl TranscriptView {
     }
 
     /// Where the reader is now, for the scroll-place memory. The live list position
-    /// is written into `Transcript::scroll()`, and the place is read back from there.
+    /// is written into `Transcript::scroll`, and the place is read back from there.
     /// Pinned to the end, or scrolled onto the typing dots, is the end.
     pub fn capture_scroll_place(&mut self) -> SavedPlace {
         let rows = self.model.rows().len();
@@ -327,7 +327,7 @@ impl TranscriptView {
     /// Puts the list at `place`, once `set_conversation` or `set_status` has reset
     /// it. A missing or end place leaves the reset list following the tail, unless
     /// `open_at_unread` is on and the conversation holds a "New messages" mark: then
-    /// the mark is the top of the view (Qt `pinTranscriptToUnreadOr`).
+    /// the mark is the top of the view.
     pub fn restore_scroll_place(&mut self, place: Option<&SavedPlace>, open_at_unread: bool) {
         let rows = self.model.rows();
         let mark = unread::opening_row(rows, open_at_unread);
@@ -361,7 +361,7 @@ impl TranscriptView {
     }
 
     /// Focus returns to the window: the list lands on its open mark, and keeps its
-    /// place when there is none (Qt `pinTranscriptOnFocusReturn`).
+    /// place when there is none.
     pub fn land_on_unread_mark(&mut self, cx: &mut Context<Self>) {
         let mark = unread::unread_mark_row(self.model.rows());
         if let Some(row) = mark {
@@ -374,7 +374,7 @@ impl TranscriptView {
         unread::unseen_landing(!self.at_end(), self.first_unseen, self.model.rows())
     }
 
-    /// Alt+U and the `↓` chip (Qt `jumpToUnseen`): to the first line that arrived
+    /// Alt+U and the `↓` chip: to the first line that arrived
     /// while the reader was scrolled up, else to the end while a mark is open.
     /// Returns whether the view moved. It does nothing while the reader follows the
     /// end.
@@ -687,7 +687,7 @@ impl Render for TranscriptView {
         // Heights measured by the last frame's prepaint feed the transcript model.
         self.sync_measured_heights();
         // A reader who follows the end has seen what arrived while scrolled up.
-        // `at_end()` alone is not enough: after `list_state.reset` the scrollbar max
+        // `at_end` alone is not enough: after `list_state.reset` the scrollbar max
         // is 0 until the next measure, so a detached restore looks like the end for
         // one frame. The bottom pin is the real follow-the-end bit.
         if self.at_end() && self.model.scroll().pinned_to_bottom {
@@ -868,7 +868,7 @@ fn link_click(row: &Row, range: &Range<usize>, features: &IrcServerFeatures) -> 
         .map(|span| LinkClick::Channel(span.name))
 }
 
-/// What a conversation's transcript is built from: its lines, the "New messages" mark,
+/// What a conversation's transcript is built from: its lines, the "New messages" mark
 /// the nicks' facts, the local nick, the network's features, and the DM peer whose typing
 /// dots end the list.
 pub struct ConversationLines<'a> {

@@ -1,6 +1,5 @@
 //! The CLI's requests, answered on the UI thread. Desktop-only (no Go twin). Each
 //! request reads the controller or calls one of its intents, then answers with one JSON line.
-//!
 //! `serve` is the loop that runs on the window. It drains the `IpcServer` queue on a gpui task, the
 //! same way the controller tick runs, and borrows the shell's controller for each request. Nothing here
 //! holds the controller across requests, and nothing touches it from another thread.

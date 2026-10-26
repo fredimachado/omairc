@@ -4,7 +4,7 @@ package irc
 type Kind int
 
 const (
-	// KindRfc1459 is the default mapping: []\ are the lowercase forms of {}|,
+	// KindRfc1459 is the default mapping: []\ are the lowercase forms of {}|
 	// and ^ folds to ~.
 	KindRfc1459 Kind = iota
 	// KindAscii is ASCII-only case mapping; the special characters are kept.

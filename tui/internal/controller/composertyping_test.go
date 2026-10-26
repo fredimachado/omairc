@@ -1,6 +1,6 @@
 package controller
 
-// This file ports the composer-typing boundary: notifyComposerText and the
+// This file. NotifyComposerText and the.
 // done-flush on a selection change. It is the outbound half of the typing
 // contract; presencetyping_test.go covers the inbound reads.
 
@@ -39,7 +39,7 @@ func selectChannelWithTags(t *testing.T) (*Controller, *session.FakeClock, *sess
 	return c, clock, transport
 }
 
-// TestNotifyComposerTextThrottles ports
+// TestNotifyComposerTextThrottles.
 // TypingTest::controllerNotifyComposerTextThrottles: a live composer line
 // publishes typing=active once per target pace, and a non-live line withdraws
 // the hint without a second frame while the pace still throttles.
@@ -84,7 +84,7 @@ func TestNotifyComposerTextThrottles(t *testing.T) {
 	}
 }
 
-// TestNotifyComposerTextSuppressedDoneAfterChat ports the chat-then-clear path:
+// TestNotifyComposerTextSuppressedDoneAfterChat.
 // after a sent message the session suppresses the done, so clearing the
 // composer writes nothing extra.
 func TestNotifyComposerTextSuppressedDoneAfterChat(t *testing.T) {
@@ -108,7 +108,7 @@ func TestNotifyComposerTextSuppressedDoneAfterChat(t *testing.T) {
 	}
 }
 
-// TestNotifyComposerTextWithdrawsOnSelectionChange ports the done flush in
+// TestNotifyComposerTextWithdrawsOnSelectionChange.
 // IrcController::selectConversation.
 func TestNotifyComposerTextWithdrawsOnSelectionChange(t *testing.T) {
 	c, clock, transport := selectChannelWithTags(t)

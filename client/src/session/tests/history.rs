@@ -1,5 +1,4 @@
-//! Port of `tui/internal/session/history_after_test.go` and
-//! `history_before_test.go`: the CHATHISTORY LATEST, AFTER and BEFORE requests,
+//! `history_before_test.go`: the CHATHISTORY LATEST, AFTER and BEFORE requests
 //! the AFTER chain, TARGETS, and the failure paths.
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
@@ -79,8 +78,6 @@ fn page(fx: &Fixture, reference: &str, msgid: &str) {
          :irc.host BATCH -{reference}\r\n"
     ));
 }
-
-// ---- history_after_test.go ------------------------------------------------
 
 #[test]
 fn self_join_resumes_chat_history_after() {
@@ -380,8 +377,6 @@ fn fail_targets_can_be_asked_again() {
         .count();
     assert_eq!(count, 2);
 }
-
-// ---- history_before_test.go -----------------------------------------------
 
 #[test]
 fn page_up_at_top_sends_before_with_oldest_msgid() {

@@ -24,7 +24,7 @@ impl ConnectState {
 
     /// The sheet for the networks the controller saved (`IrcConnection`'s start). The first
     /// complete network is selected, or the first one. With none saved, the first run starts.
-    /// A network whose file says a secret is saved starts that slot as [`CredentialState::Available`],
+    /// A network whose file says a secret is saved starts that slot as [`CredentialState::Available`]
     /// so the forget links and the credential line match a relaunch after Apply.
     pub fn from_stored(stored: &[StoredProfile]) -> Self {
         let saved: Vec<Profile> = stored.iter().map(Profile::from_stored).collect();
@@ -232,7 +232,6 @@ impl ConnectState {
             .any(|profile| profile.network_id == network_id)
     }
 
-    /// The text a field shows.
     pub fn text(&self, field: ConnectField) -> &str {
         match field {
             ConnectField::Name => &self.draft.name,
@@ -388,7 +387,7 @@ impl ConnectState {
         self.draft.connect_on_startup = on;
     }
 
-    /// Whether the draft differs from the saved network it came from (Qt `dirty`).
+    /// Whether the draft differs from the saved network it came from.
     /// A draft that is not saved yet is always dirty. Secrets do not count.
     pub fn dirty(&self) -> bool {
         match self
@@ -491,7 +490,7 @@ impl ConnectState {
         Some(target)
     }
 
-    /// Enter on a rail row (Qt `rail row Return`): a selected row that is already
+    /// Enter on a rail row: a selected row that is already
     /// armed asks for Apply. Otherwise the row is selected and armed.
     pub fn rail_enter(&mut self, network_id: &str) -> RailEnter {
         if self.selected == network_id && self.rail_armed.as_deref() == Some(network_id) {
@@ -530,7 +529,7 @@ impl ConnectState {
         true
     }
 
-    /// Discard (Qt `discard`). An unsaved draft is dropped and the sheet returns to
+    /// Discard. An unsaved draft is dropped and the sheet returns to
     /// the network it was added from, or to the first saved one. A saved network's
     /// edits are reverted to the saved values.
     pub fn discard(&mut self) {
@@ -720,7 +719,7 @@ impl ConnectState {
 
     /// The Up and Down stops of the network rail: each saved row, then the Add row
     /// when it shows. Up and Down move focus along this list and stop at its ends
-    /// (Qt `focusNetworkChoiceStop`). They never change the selection.
+    /// . They never change the selection.
     pub fn rail_stops(&self) -> Vec<Stop> {
         let mut stops: Vec<Stop> = self
             .rows()
@@ -752,8 +751,8 @@ impl ConnectState {
         }
     }
 
-    /// The field focus starts on when the sheet opens: Nick when it is empty,
-    /// otherwise Name (Qt `focusConnectionSheetStart`).
+    /// The field focus starts on when the sheet opens: Nick when it is empty
+    /// otherwise Name.
     pub fn initial_focus(&self) -> Stop {
         if self.draft.nick.is_empty() {
             Stop::Field(ConnectField::Nick)

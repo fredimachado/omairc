@@ -3,7 +3,6 @@
 //! `<state>/<APP_FOLDER>/cli-cursors` ([`crate::identity::APP_FOLDER`]), so a default build never
 //! shares a cursor with an installed Qt client. Qt's migration from older layouts does not apply to
 //! a folder this build creates.
-//!
 //! A target's file name comes from its name folded by the network's CASEMAPPING, so `#Omarchy` and
 //! `#omarchy` share one cursor. Without a known CASEMAPPING the fold is ASCII, as Qt's is.
 

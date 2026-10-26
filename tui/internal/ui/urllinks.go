@@ -7,18 +7,17 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/openurl"
 )
 
-// This file ports the URL policy and the Ctrl+Shift+O link sheet from
-// `client/src/ui/shell`: isAllowedHttpUrl, trimHttpUrlMatch, httpUrlSpans,
+// This file.
+// `client/src/ui/shell`: isAllowedHttpUrl, trimHttpUrlMatch, httpUrlSpans
 // httpUrlAt, inviteChannelAt, refreshLinkMatches, appendLinkUrlsFromText, and
-// openAllowedUrl. It reads only controller snapshots and the OS opener seam,
+// openAllowedUrl. It reads only controller snapshots and the OS opener seam
 // never internal/irc.
 
 // allowedURLSchemes is the scheme allowlist. It mirrors allowedUrlSchemes in
-// `client/src/ui/shell`.
 var allowedURLSchemes = map[string]bool{"http": true, "https": true}
 
 // isAllowedHTTPURL mirrors isAllowedHttpUrl in `client/src/ui/shell`: scheme
-// http or https (case-insensitive) followed by "://", a non-empty remainder,
+// http or https (case-insensitive) followed by "://", a non-empty remainder
 // and no space, newline, or carriage return anywhere. A hostname is not
 // validated separately, so "https:///foo" is allowed.
 func isAllowedHTTPURL(raw string) bool {

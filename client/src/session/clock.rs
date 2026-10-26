@@ -1,6 +1,3 @@
-//! Port of `tui/internal/session/clock.go` and the QTimer injection in
-//! `tui/internal/session/session.go`.
-//!
 //! `Clock` is the only place a session reads time or arms a timer. Every
 //! timer the state machine needs (reconnect backoff, capability timeout, ping
 //! watchdog, labeled-response timeout, typing refresh) goes through `after`, so
@@ -39,7 +36,6 @@ pub trait ClockTimer {
     fn stop(&self) -> bool;
 }
 
-/// Shared state of one scheduled callback.
 #[derive(Default)]
 struct TimerState {
     fired: Cell<bool>,
@@ -52,7 +48,6 @@ impl TimerState {
     }
 }
 
-/// The handle returned by both clocks.
 struct Handle(Rc<TimerState>);
 
 impl ClockTimer for Handle {
@@ -79,7 +74,6 @@ struct RealEntry {
 }
 
 impl RealClock {
-    /// A clock with no timers armed.
     pub fn new() -> Self {
         Self::default()
     }
@@ -137,7 +131,6 @@ impl Clock for RealClock {
 /// runs the timers that come due, earliest deadline first, ties broken by
 /// scheduling order. A callback may arm another timer, which fires in the same
 /// `advance` when its deadline also falls inside the window.
-// test seam: FakeClock drives the timers in the tests
 #[cfg(test)]
 pub struct FakeClock {
     start: DateTime<Utc>,
@@ -146,7 +139,6 @@ pub struct FakeClock {
     timers: RefCell<Vec<FakeEntry>>,
 }
 
-// test seam: FakeClock drives the timers in the tests
 #[cfg(test)]
 struct FakeEntry {
     due: Duration,
@@ -155,11 +147,9 @@ struct FakeEntry {
     callback: Box<dyn FnOnce()>,
 }
 
-// test seam: FakeClock drives the timers in the tests
 #[cfg(test)]
 impl FakeClock {
     /// A fake clock whose virtual time starts at `start`.
-    // test seam: FakeClock drives the timers in the tests
     pub fn new(start: DateTime<Utc>) -> Self {
         Self {
             start,
@@ -170,7 +160,6 @@ impl FakeClock {
     }
 
     /// Moves virtual time forward by `delta`, running each timer that comes due.
-    // test seam: FakeClock drives the timers in the tests
     pub fn advance(&self, delta: Duration) {
         let target = self.elapsed.get() + delta;
         loop {
@@ -200,7 +189,6 @@ impl FakeClock {
     }
 
     /// How many timers are still armed. Fired and stopped timers do not count.
-    // Phase 8: the reconnect schedule shows the pending timers
     pub fn pending(&self) -> usize {
         self.timers
             .borrow()

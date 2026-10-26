@@ -1,13 +1,11 @@
-//! Port of `tui/internal/controller/channellist.go`:
+//! `tui/internal/controller/channellist.go`:
 //! `/list` through the wire.
-//!
 //! `LIST mask` goes out as a session write. The server's answer streams back as 321
 //! (start), one 322 per channel, then 323 (end), and the controller folds those into a
 //! per-network request: the rows, the loading and complete flags, the pending mask a
 //! second `/list` left behind, and the idle timeout. A stale 323 after a timeout is
 //! drained once, so it does not complete the next load. The overlay (`ChannelListView`)
 //! shows the rows of the request once it completes, most users first, then by name.
-//!
 //! The idle timer runs on the `Clock` seam. As in `autoawayruntime.rs`, a fired timer
 //! queues its network and generation, and `pump` runs the timeout on the UI thread.
 //! The fuzzy filter the sheet applies is presentation and lives in `model`.

@@ -205,7 +205,7 @@ func TestPhase8TranscriptDirectHeaderShowsPeerFacts(t *testing.T) {
 	}
 }
 
-// assertQueryHeader opens nick and checks the painted title, subtitle, labels,
+// assertQueryHeader opens nick and checks the painted title, subtitle, labels
 // and presence glyph.
 func assertQueryHeader(t *testing.T, m *Model, nick, realname string, labels []string, dot string) {
 	t.Helper()
@@ -337,7 +337,7 @@ func TestPhase8TranscriptDirectTypingFooterGrouped(t *testing.T) {
 // TestGroupedTypingFooterStaysOffTheWrappedBody proves the dots never share a
 // line with the peer's body. A message row is one entry that can hold several
 // physical lines once the body wraps, so folding the dots into it left them
-// glued to the last word of the body instead of standing on their own row,
+// glued to the last word of the body instead of standing on their own row
 // which is what Qt's typingRow renders (avatar and header hidden, dots still on
 // their own row).
 func TestGroupedTypingFooterStaysOffTheWrappedBody(t *testing.T) {
@@ -635,7 +635,7 @@ func TestPhase8TranscriptChannelHeaderWithoutTopic(t *testing.T) {
 }
 
 // TestPhase8TranscriptChannelHeaderDuplicateTarget proves a channel that exists
-// on more than one network disambiguates with the focused network display name,
+// on more than one network disambiguates with the focused network display name
 // matching the window title band.
 func TestPhase8TranscriptChannelHeaderDuplicateTarget(t *testing.T) {
 	m := seededModel(t)

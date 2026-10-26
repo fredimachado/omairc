@@ -3,7 +3,6 @@
 //! `Controller::nick_facts` answers them from the reducer. This module turns an
 //! avatar reference into the bundled image the UI draws. Toolkit-free: the GPUI
 //! widgets draw what these functions return.
-//!
 //! It also holds the identity footer's presence (`SelfPresence`), read from the
 //! controller's connection word and our own away state (`client/src/ui/sidebar/`
 //! `selfPresence`).

@@ -1,5 +1,4 @@
-//! Port of the reconnect, quit, manager and malformed-input cases of
-//! `tui/internal/session/session_lifecycle_test.go`.
+//! reconnect, quit, manager and malformed-input cases of
 
 use std::rc::Rc;
 

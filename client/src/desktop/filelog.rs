@@ -1,7 +1,6 @@
 //! The application log, `omairc.log` in the state folder. Desktop-only (no Go
 //! twin: the TUI keeps its crash record in `omairc-tui.log` through
 //! `internal/crashlog`).
-//!
 //! Like the Qt log, it records warnings and errors only, one line each:
 //! `<UTC time to the millisecond> <warning|error> <text>`, with line breaks in the
 //! text flattened to spaces. Lines are appended under an owner-only file mode.

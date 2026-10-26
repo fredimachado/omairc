@@ -2,7 +2,6 @@
 //! `OMAIRC_BUILD_VERSION` env when packaging/CI set it, otherwise reads
 //! `../version.pri`, the repository's single VERSION source. The parser is
 //! shared with the app's test build through `src/version_pri.rs`.
-//!
 //! On a Windows target it also embeds `data/icons/omairc.ico` and a version
 //! resource in the exe. The icon is resource 1: gpui's window class loads
 //! `MAKEINTRESOURCE(1)` for its icon, so the title bar and taskbar show the

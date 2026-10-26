@@ -1,13 +1,10 @@
-//! Port of `tui/internal/session/saslscram.go`
 //! SCRAM-SHA-256 (RFC 5802, RFC 7677) as the session's SASL mechanism.
-//!
-//! `SaslScram` is the client state machine. `start` returns client-first,
+//! `SaslScram` is the client state machine. `start` returns client-first
 //! `take_server_first` returns client-final with the proof, and `take_server_final`
 //! verifies the server signature. Those are raw SCRAM bytes. `encode_sasl_frames` applies
 //! the SASL base64 framing, `ChallengeBuffer` reassembles a challenge split over
 //! AUTHENTICATE chunks, and `ScramExchange` ties them to the AUTHENTICATE dialogue that
 //! the session drives (`saslScramStep` in Go).
-//!
 //! Nothing here logs or reads the clock. A failure is one of the fixed `ScramFailure`
 //! texts, which never carry the password or the server's own `e=` text. Key material is
 //! zeroed once it is no longer needed.

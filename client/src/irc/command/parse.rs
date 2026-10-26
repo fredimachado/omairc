@@ -1,4 +1,4 @@
-//! The parser: one composer line becomes a typed `Command`. Blank input, plain text,
+//! The parser: one composer line becomes a typed `Command`. Blank input, plain text
 //! `//x` and an unknown slash word are decided here. A known verb's argument is shaped
 //! by `command_for`, the way that verb's usage line splits it.
 
@@ -8,11 +8,10 @@ use crate::irc::pref::parse_pref_argument;
 
 /// Parses one composer line (`IrcCommand::parse`, Go `ParseCommand`). The line is
 /// trimmed first.
-///
 /// - Blank input is `Empty`.
 /// - Text without a leading `/` is `Say`.
 /// - `//x` is `Say` with the text `/x`.
-/// - `/word rest` looks `word` up in the catalog, ignoring case. A miss is `Unknown`,
+/// - `/word rest` looks `word` up in the catalog, ignoring case. A miss is `Unknown`
 ///   and the word keeps its slash.
 pub fn parse(input: &str) -> Command {
     let trimmed = input.trim();
@@ -37,7 +36,6 @@ pub fn parse(input: &str) -> Command {
     }
 }
 
-/// Builds the typed command for a verb from its trimmed argument.
 fn command_for(verb: Verb, argument: &str) -> Command {
     match verb {
         Verb::Action => Command::Action(argument.to_string()),

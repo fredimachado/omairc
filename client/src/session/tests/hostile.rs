@@ -1,5 +1,5 @@
 //! Hostile inbound input must never panic the session. Each line below reaches a
-//! different dispatch path (batch tokens, CAP subcommands, CHATHISTORY FAIL,
+//! different dispatch path (batch tokens, CAP subcommands, CHATHISTORY FAIL
 //! read markers, labels, CTCP, malformed frames) with inputs a server could send:
 //! multi-byte sigils, empty fields, bare CRLF, truncated tags and oversized values.
 

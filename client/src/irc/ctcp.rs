@@ -1,7 +1,5 @@
-//! Port of `tui/internal/irc/ctcp.go`.
-//!
-//! The VERSION reply is the desktop reply: the project URL alone, no build number,
-//! as in `ctcpVersionReplyText()` in the C++ core. The Go TUI names itself in its
+//! The VERSION reply is the desktop reply: the project URL alone, no build number
+//! as in `ctcpVersionReplyText` in the C++ core. The Go TUI names itself in its
 //! reply; the GPUI app does not.
 
 /// The `\x01` that brackets a CTCP payload.
@@ -83,7 +81,7 @@ pub fn format_ctcp_reply_text(
 mod tests {
     use super::*;
 
-    // Ported from tui/internal/irc/ctcp_test.go.
+    // tui/internal/irc/ctcp_test.go.
 
     /// Mirrors TestCtcpVersionReplyNamesTheTui. The Go reply names the TUI; the
     /// desktop reply is the URL alone (`ctcpVersionReplyText` in `tui/internal/irc/ctcp.go`).

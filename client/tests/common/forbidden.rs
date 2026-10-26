@@ -2,7 +2,6 @@
 //! a source tree must not use. This module finds them in comment-free code (see
 //! `common::code_only`), including the `prefix::{a, b::c}` group form that
 //! `use std::{io, net::TcpStream};` writes.
-//!
 //! Included by `irc_portability.rs` and `net_boundary.rs` with `#[path]`, not from
 //! `common/mod.rs`, so the gates that do not need it do not compile it.
 

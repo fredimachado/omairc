@@ -23,10 +23,9 @@ const TRANSCRIPT_GAP: f32 = 12.;
 /// conversation's or the Status pane's, so the caller builds `header`. `popup`
 /// is the slash-complete popup, when it shows. `focused` and `has_text` drive the
 /// composer's border and SEND (see `render_composer`).
-///
 /// The column takes the width the row leaves after the sidebar and the member
 /// panel. It may shrink below its content (`min_w_0`), so a long header subtitle or an
-/// unwrapped line elides or clips inside it instead of pushing the people pill, SEND,
+/// unwrapped line elides or clips inside it instead of pushing the people pill, SEND
 /// or the transcript's right edge past the window.
 #[allow(clippy::too_many_arguments)]
 pub fn render_center(

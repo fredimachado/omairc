@@ -1,11 +1,9 @@
-//! Port of `tui/internal/storage/credentialstore.go` (Go) and
-//! `src/storage/secretservicecredentialstore.cpp` (C++), behind a trait.
-//!
+//! `src/storage/secretservicecredentialstore.cpp`, behind a trait.
 //! A network's server and NickServ passwords live in the OS keychain, never in the
 //! settings file: Windows Credential Manager, the macOS login keychain, or the Secret
 //! Service on Linux. Each backend keeps the entry names Qt and the TUI write
 //! ([`CredentialKey::key_name`]), so a secret saved by one client is read by the others.
-//! When no backend answers, [`platform_store`] falls back to [`MemoryCredentialStore`],
+//! When no backend answers, [`platform_store`] falls back to [`MemoryCredentialStore`]
 //! which keeps secrets for this run only and reports `SessionOnly`.
 
 use std::collections::BTreeMap;
@@ -60,7 +58,6 @@ pub const PURPOSE_PASSWORD: &str = "";
 /// An earlier Rust build once wrote server passwords under this suffix. Reads and deletes still
 /// reach those entries until a successful write migrates them.
 pub const LEGACY_PURPOSE_PASSWORD: &str = "password";
-/// The NickServ slot of a network.
 pub const PURPOSE_NICKSERV: &str = "nickserv";
 
 /// Whether `key` belongs to the secret slot named by `purpose`.
@@ -85,7 +82,7 @@ pub fn key_names_for_slot(profile: &Profile, purpose: &'static str) -> Vec<Strin
     names
 }
 
-/// Reads one slot without blocking on the keyring. When the answer is [`ReadSlot::Loading`],
+/// Reads one slot without blocking on the keyring. When the answer is [`ReadSlot::Loading`]
 /// call [`CredentialStore::poll_reads`] and try again.
 pub fn read_slot(
     store: &dyn CredentialStore,
@@ -159,7 +156,7 @@ fn slot_write_settled(state: &CredentialState) -> bool {
 }
 
 /// One secret: the network it belongs to, the account it is for (username and host), and
-/// which slot of it. The same fields Go's `CredentialKey` and Qt's `CredentialKey` carry,
+/// which slot of it. The same fields Go's `CredentialKey` and Qt's `CredentialKey` carry
 /// so the entry name matches theirs.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CredentialKey {
@@ -280,7 +277,7 @@ fn platform_backend() -> Option<Box<dyn CredentialStore>> {
     None
 }
 
-/// The in-memory store: secrets live in a map for this run only. It never refuses a delete,
+/// The in-memory store: secrets live in a map for this run only. It never refuses a delete
 /// so it owes none, unless a test wraps it in a store that does.
 #[derive(Debug, Default)]
 pub struct MemoryCredentialStore {

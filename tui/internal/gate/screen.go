@@ -1,13 +1,10 @@
 // Package gate drives the compiled omairc-tui binary through a PTY.
-//
 // It owns three pieces:
-//
 //   - Screen, a small VT100/xterm emulator that reconstructs a width x height
 //     cell grid from the bytes the child writes, plus the OSC window title.
 //   - KeySequence, the chord-name to terminal-byte table the recipes use.
 //   - Process and the daemon/client in driver.go, which keep one live child
 //     across separate CLI invocations.
-//
 // The package deliberately stays free of internal/irc and internal/ui so the
 // gate never reaches into the product's model. It only speaks bytes and cells.
 package gate
@@ -25,8 +22,7 @@ import (
 )
 
 // Attrs is the subset of SGR state the gate tracks per cell.
-//
-// Text correctness is the contract; the attributes only exist so PNG()
+// Text correctness is the contract; the attributes only exist so PNG
 // can render colored blocks instead of a wall of uniform cells. Fg and Bg
 // are ANSI color indices, or -1 for the terminal default.
 type Attrs struct {
@@ -50,11 +46,10 @@ type Cell struct {
 }
 
 // Screen is a minimal VT emulator. It understands the escape sequences a
-// full-screen TUIs emits: cursor movement, absolute positioning, erase,
-// line/character insert and delete, SGR, private modes (alt screen clears),
-// and OSC window titles. Unknown CSI/ESC sequences are consumed and ignored,
+// full-screen TUIs emits: cursor movement, absolute positioning, erase
+// line/character insert and delete, SGR, private modes (alt screen clears)
+// and OSC window titles. Unknown CSI/ESC sequences are consumed and ignored
 // which is the safe default for a driver that only needs text and title.
-//
 // Screen is not safe for concurrent use; the daemon serializes access.
 type Screen struct {
 	width, height int
@@ -415,7 +410,7 @@ func (s *Screen) dispatchCSI(final byte, raw []byte) {
 }
 
 // applyMode handles private DEC modes. Only the alt-screen modes are acted on
-// (entering one clears the grid); cursor visibility, mouse, bracketed paste,
+// (entering one clears the grid); cursor visibility, mouse, bracketed paste
 // and the rest are ignored because they carry no cell state.
 func (s *Screen) applyMode(private byte, p []int, set bool) {
 	if private != '?' || !set {
@@ -439,7 +434,7 @@ func (s *Screen) clearGrid() {
 	s.resetScrollRegion()
 }
 
-// applyOSC records the window title for selectors 0 (icon + title), 1 (icon),
+// applyOSC records the window title for selectors 0 (icon + title), 1 (icon)
 // and 2 (title). Everything else (hyperlinks and friends) is ignored.
 func (s *Screen) applyOSC(payload []byte) {
 	semi := bytes.IndexByte(payload, ';')
@@ -778,7 +773,6 @@ func (s *Screen) eraseInLine(mode int) {
 	case 1:
 		to = s.curX + 1 // inclusive of the cursor per VT510
 	case 2:
-		// whole line
 	default:
 		return
 	}

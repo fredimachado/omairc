@@ -1,11 +1,8 @@
-//! Port of `tui/internal/irc/inbox.go` (`IrcInbox` consume and append rules,
 //! `labelFor` / `kindName`).
-//!
-//! The session inbox is the waiting list of things that want the user: mentions,
+//! The session inbox is the waiting list of things that want the user: mentions
 //! highlights, direct messages, invites, monitored nicks coming online, and kicks.
 //! It is newest first and capped at `MAX_INBOX_ITEMS`. Names compare under the
 //! network's case mapping, which the caller passes in.
-//!
 //! Pure: the inbox holds rows and answers questions about them. The demo seed and
 //! the channel join that accepting an invite triggers are model and controller
 //! concerns; they stay outside this file.
@@ -118,30 +115,26 @@ pub struct Inbox {
 }
 
 impl Inbox {
-    /// An empty waiting list (`NewInbox`).
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// The number of waiting entries (`Count`).
     #[cfg(test)]
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
-    /// Whether nothing is waiting.
     #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 
-    /// The entry at `index`, or `None` when it is out of range (`At`).
+    /// The entry at `index`, or `None` when out of range (`At`).
     #[cfg(test)]
     pub fn at(&self, index: usize) -> Option<&InboxItem> {
         self.items.get(index)
     }
 
-    /// The waiting list, newest first (`Items`).
     pub fn items(&self) -> &[InboxItem] {
         &self.items
     }

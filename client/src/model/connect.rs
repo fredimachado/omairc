@@ -1,17 +1,14 @@
 //! The Connect sheet's model: the saved networks, the draft being edited, the
 //! rail, the tabs and the keyboard walk.
-//!
-//! A port of the parts of `IrcConnection` the sheet drives (`select`, `add`,
+//! A.
 //! `discard`, `removeSelected`, `apply`, `dirty`, `rosterRows`), and of the
 //! strings and checks in `client/src/ui/sheets/connect/` (fields and
 //! `toggles.rs` preference rows) and `tui/internal/connection/profile.go`.
-//!
 //! Nothing here connects. Apply returns the saved profile, and the shell hands it to
 //! `Controller::start`. The server and NickServ passwords live in the draft until Apply.
 //! Apply gives them to the OS keychain (`Controller::save_profile`), never to the settings
-//! file, and the sheet words where each one landed. Like Qt, the draft drops them on select,
+//! file, and the sheet words where each one landed. Like Qt, the draft drops them on select
 //! add, discard and a successful apply.
-//!
 //! The window owns one `ConnectState` for its whole life, so an unapplied draft
 //! survives closing the sheet, as Qt's does. `Shell::connect_open` says whether
 //! the sheet is showing.
@@ -154,7 +151,6 @@ impl ConnectField {
         }
     }
 
-    /// The small chip beside the label.
     pub fn badge(self) -> Option<&'static str> {
         match self {
             ConnectField::ServerPassword => Some("PASS"),
@@ -162,7 +158,6 @@ impl ConnectField {
         }
     }
 
-    /// Whether the text is masked.
     pub fn secret(self) -> bool {
         matches!(
             self,
@@ -308,7 +303,7 @@ impl Profile {
         }
     }
 
-    /// A demo network's profile, seeded as `seedProfile` does: host `irc.example`,
+    /// A demo network's profile, seeded as `seedProfile` does: host `irc.example`
     /// TLS on, the nick as username and real name, and every channel joined as
     /// autojoin. The name is empty, so the roster label is the host.
     fn from_seed(seed: &NetworkSeed) -> Self {
@@ -340,7 +335,7 @@ impl Profile {
         }
     }
 
-    /// The profile as it is saved (Qt `normalized`): text trimmed, the port
+    /// The profile as it is saved: text trimmed, the port
     /// written as a number when it parses, autojoin reduced to its channels, and
     /// the secrets dropped.
     pub fn normalized(&self) -> Profile {
@@ -372,7 +367,7 @@ impl Profile {
             .problem()
     }
 
-    /// The profile as the file keeps it. The fields the sheet does not edit (account,
+    /// The profile as the file keeps it. The fields the sheet does not edit (account
     /// bouncer network, avatar, and the keys of channels that stay) come from `existing`, so
     /// saving a network keeps what the Qt client or the TUI wrote there.
     pub fn to_stored(
@@ -450,11 +445,11 @@ impl Profile {
     }
 }
 
-/// The autojoin text as channel names (Qt `splitAutojoin`). Tokens split on
+/// The autojoin text as channel names. Tokens split on
 /// commas and whitespace. A token with a channel prefix is kept as it is, and any
 /// other token gets `#`. A token that follows a channel is a key, and is dropped.
 /// Keeps the keys whose channel survived normalization, matched with the network case
-/// mapping and re-keyed to the canonical channel name (Qt `retainAutojoinKeys`).
+/// mapping and re-keyed to the canonical channel name.
 pub fn retain_autojoin_keys(
     keys: &BTreeMap<String, String>,
     channels: &[String],
@@ -493,13 +488,13 @@ pub fn parse_autojoin(text: &str, chantypes: &str) -> Vec<String> {
     channels
 }
 
-/// A port as Qt reads it: a whole number from 1 to 65535. Anything else is 0,
+/// A port as Qt reads it: a whole number from 1 to 65535. Anything else is 0
 /// which validation reports as "Port is required".
 pub fn port_number(text: &str) -> u16 {
     text.trim().parse::<u16>().unwrap_or(0)
 }
 
-/// The label a network shows in the rail and the sidebar (Qt `rosterDisplayName`).
+/// The label a network shows in the rail and the sidebar.
 /// The resolved name, with ` · <nick>` added when another saved network already
 /// has that name, ignoring case. A profile with no name at all reads `New network`.
 fn roster_label(profile: &Profile, saved: &[Profile]) -> String {
@@ -527,7 +522,6 @@ fn fresh_network_id_among(saved: &[Profile]) -> String {
         .unwrap_or_default()
 }
 
-/// One rail row.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RailRow {
     pub network_id: String,
@@ -538,7 +532,6 @@ pub struct RailRow {
     pub icon_color: Option<u8>,
 }
 
-/// What Enter did on a rail row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RailEnter {
     /// The row was selected and armed. A second Enter on it applies.
@@ -547,7 +540,6 @@ pub enum RailEnter {
     Apply,
 }
 
-/// What Remove did.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RemoveOutcome {
     /// The first press arms the button. Nothing is removed yet.

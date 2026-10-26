@@ -9,20 +9,17 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/version"
 )
 
-// This file is the Ctrl+Shift+/ About sheet: the terminal counterpart of the
-// Qt AboutSheet (`client/src/ui/sheets/about.rs`). It shows the app name, the running
-// version, a short description, the open-source line with the GitHub source
-// URL, an OK control, and the copyright footer.
-//
+// This file is the Ctrl+Shift+/ About sheet: the terminal counterpart of
+// `client/src/ui/sheets/about.rs`. It shows the app name, the running version,
+// a short description, the open-source line with the GitHub source URL, an OK
+// control, and the copyright footer.
 // About is an informational modal, not a filter overlay: it has no rows or
-// input, it can open on top of the Connect sheet exactly like the Qt
-// Ctrl+Shift+/ shortcut, and every navigation chord is blocked while it is
-// open. Escape, Enter, or Space dismiss it, matching the Qt OK button plus the
-// Escape-before-Connect order. The Qt sheet also offers Check for Updates; the
-// terminal sheet is informational only for now.
+// input, it can open on top of the Connect sheet with Ctrl+Shift+/, and every
+// navigation chord is blocked while it is open. Escape, Enter, or Space
+// dismiss it. The desktop sheet also offers Check for Updates; the terminal
+// sheet is informational only for now.
 
-// aboutRepoURL is the source repository the open-source line names. It mirrors
-// omaircGithubRepoUrl() in `omaircupdatecheck`.
+// aboutRepoURL is the source repository the open-source line names.
 const aboutRepoURL = "https://github.com/fredimachado/omairc"
 
 // aboutCopyright is the footer line, mirroring `client/src/ui/sheets/about.rs`'s aboutCopyright.

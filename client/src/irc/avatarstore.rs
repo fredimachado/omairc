@@ -1,7 +1,7 @@
 //! The pure half of the avatar store. It mirrors `tui/internal/avatar/avatar.go`
 //! and the bookkeeping in `tui/internal/avatar/avatar.go` (Go). The fetch, the
 //! decode, the DNS pin and the image itself are I/O and stay in `desktop/` and
-//! the UI. This module holds only the state: a bounded insertion-ordered cache,
+//! the UI. This module holds only the state: a bounded insertion-ordered cache
 //! the set of fetches in flight, the cache key, and the byte and decode budgets.
 //! It is generic over the stored value, so the GPUI image type never enters `irc/`.
 
@@ -17,7 +17,7 @@ pub const MAXIMUM_CACHE_ENTRIES: usize = 64;
 pub const MAXIMUM_AVATAR_BYTES: u64 = 512 * 1024;
 /// Qt `kMaximumRedirects`. Each hop is judged by `avatar_url_is_safe`.
 pub const MAXIMUM_REDIRECTS: u32 = 3;
-/// Qt `kMaximumDecodedEdge`. The decoded budget is independent of the render size,
+/// Qt `kMaximumDecodedEdge`. The decoded budget is independent of the render size
 /// since a small payload can declare a huge image.
 pub const MAXIMUM_DECODED_EDGE: u32 = 1024;
 /// Qt `kMaximumDecodedPixels`.
@@ -25,7 +25,7 @@ pub const MAXIMUM_DECODED_PIXELS: u64 = 1024 * 1024;
 /// Qt `kMaximumDecodedAllocationMb`, for the decoder's own allocation limit.
 pub const MAXIMUM_DECODED_ALLOCATION_MB: u32 = 16;
 
-/// The cache key for a resolved avatar URL: the SHA-256 of its text. Go `cacheKey`,
+/// The cache key for a resolved avatar URL: the SHA-256 of its text. Go `cacheKey`
 /// Qt `IrcAvatarStore::keyForUrl`.
 pub fn avatar_cache_key(url: &Url) -> String {
     sha256_hex(url.as_str().as_bytes())
@@ -40,7 +40,6 @@ pub fn content_type_is_image(content_type: &str) -> bool {
 }
 
 /// Whether a decoded image's declared size is inside the budget. Qt
-/// `decodedSizeWithinBudget`.
 pub fn decoded_size_within_budget(width: u32, height: u32) -> bool {
     if width == 0 || height == 0 {
         return false;
@@ -52,7 +51,6 @@ pub fn decoded_size_within_budget(width: u32, height: u32) -> bool {
 }
 
 /// The URL a redirect's `Location` names, resolved against the request URL. Qt
-/// `redirectTarget`.
 #[cfg(test)]
 pub fn redirect_target(base: &Url, location: &str) -> Option<Url> {
     base.join(location).ok()
@@ -91,7 +89,7 @@ impl<V> BoundedCache<V> {
         }
     }
 
-    /// Stores `value` under `key` as the newest entry. Returns the evicted keys,
+    /// Stores `value` under `key` as the newest entry. Returns the evicted keys
     /// oldest first.
     pub fn insert(&mut self, key: String, value: V) -> Vec<String> {
         self.order.retain(|existing| existing != &key);
@@ -166,7 +164,7 @@ impl<V> AvatarStore<V> {
         self.images.get(&key)
     }
 
-    /// Asks for a fetch. Returns the fetch to run, with its slot marked in flight,
+    /// Asks for a fetch. Returns the fetch to run, with its slot marked in flight
     /// when the URL is safe, not cached, not already in flight, and the store is
     /// open. Go `Ensure`.
     pub fn begin_fetch(&mut self, raw_url: &str, layout_pixels: i32) -> Option<PendingFetch> {

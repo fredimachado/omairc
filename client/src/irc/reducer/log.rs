@@ -1,7 +1,5 @@
 //! The transcript log seam: the reducer persists and reads back transcript lines
 //! through this trait, and the file-backed store lands in a later phase.
-//!
-//! Port of `tui/internal/irc/conversationlog.go`
 //! in `tui/internal/storage/conversationlog.go`. The methods take `&self` so the
 //! reducer can read the log while it holds a conversation. An implementation
 //! that writes keeps its own handle behind interior mutability.

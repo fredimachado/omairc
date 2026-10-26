@@ -1,4 +1,4 @@
-//! Controller + NetHub client that dials a live ircd (Qt `LiveClient`).
+//! Controller + NetHub client that dials a live ircd.
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -48,7 +48,6 @@ pub fn unique_nick(max_length: usize) -> String {
     nick
 }
 
-/// A unique channel name.
 pub fn unique_channel() -> String {
     let serial = CHANNEL_SEQ.fetch_add(1, Ordering::Relaxed);
     format!("#c{serial:06x}")

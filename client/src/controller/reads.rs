@@ -1,10 +1,9 @@
-//! The read side the shell draws from. Port of `Conversations`, `Messages`,
-//! `Members`, `Topic`, `PeopleCount`, `TypingNicks`, `SelectedPeerHeader`,
-//! `HasAwayPresence`, `HasMemberStatus`, `HasTyping`, `UnreadCountFor`,
+//! The read side the shell draws from.
+//! `Members`, `Topic`, `PeopleCount`, `TypingNicks`, `SelectedPeerHeader`
+//! `HasAwayPresence`, `HasMemberStatus`, `HasTyping`, `UnreadCountFor`
 //! `MentionFor`, `CurrentNick`, `SelfAway`, `InboxItems` and `ConsoleText` in
 //! `tui/internal/controller/`, and the conversation / message / member
 //! snapshot roles the shell draws.
-//!
 //! Reads take `&self` and answer from the reducer as it stands. The UI calls
 //! `tick` or `pump` before it reads, so the answers include every queued event.
 
@@ -29,7 +28,6 @@ impl Controller {
         self.selected.as_ref()
     }
 
-    /// The selected conversation's network id.
     pub fn selected_network_id(&self) -> Option<&str> {
         self.selected.as_ref().map(|key| key.network_id.as_str())
     }
@@ -136,7 +134,7 @@ impl Controller {
         facts
     }
 
-    /// The account a nick shows beside its name, on the network: empty when unknown,
+    /// The account a nick shows beside its name, on the network: empty when unknown
     /// logged out, or equal to the nick (`DisplayAccount`). The transcript and the
     /// identity footer both read it.
     pub fn display_account(&self, network_id: &str, nick: &str) -> String {
@@ -352,7 +350,7 @@ impl Controller {
     }
 
     /// The display name of a network: its profile name, else its host
-    /// (`IrcNetworkProfile::resolvedName`). When another network shows the same name,
+    /// (`IrcNetworkProfile::resolvedName`). When another network shows the same name
     /// the nick joins it, as `irc.example · fred`. A known network with no session yet
     /// (its start was refused) is named by its profile, and by its id when it has none.
     /// Empty for an unknown network.

@@ -1,5 +1,4 @@
-//! ZNC playback and chathistory catch-up. Ports `playback_test.go` and
-//! `catchup_test.go`.
+//! ZNC playback and chathistory catch-up.
 
 use std::cell::RefCell;
 use std::rc::Rc;

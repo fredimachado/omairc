@@ -1,6 +1,6 @@
 package ui
 
-// This file ports the Phase 9 session-inbox sheet subset of the Qt
+// This file.
 // test_unfocusedMentionNotifiesOnce / inbox feature fences: the Ctrl+Shift+A
 // toggle, the identity footer badge, Enter revealing a mention or joining an
 // invite, selecting a conversation consuming its rows, and Delete/dismiss

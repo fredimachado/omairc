@@ -1,6 +1,5 @@
-//! Port of `tui/internal/demo/demo.go`: the demo peer for the two seeded
+//! the demo peer for the two seeded
 //! networks, behind `--demo-server`.
-//!
 //! The demo is only the peer at the far end of a `LoopbackTransport`. `attach`
 //! starts a session and completes its connect, as `IrcDemoServer::startNetwork`
 //! does. `seed` then plays Qt's seeding order: the network order, the
@@ -9,7 +8,6 @@
 //! is set, one Arabic and one Hebrew PRIVMSG are injected before the INVITE.
 //! Once the seed is in, `seed` can install the auto-answer hook, so the
 //! client's own frames get server replies.
-//!
 //! The demo never touches `World` or the controller. Two of the seed's steps are
 //! controller intents, the network order and conversation selection. They come
 //! back to the caller as `SeedStep`s, and `seed` runs them through `SeedControls`.
@@ -57,7 +55,6 @@ pub enum SeedStep {
 /// The controller intents the seed interleaves with its bytes. The controller
 /// implements this. The demo calls it and never reads or writes controller state.
 pub trait SeedControls {
-    /// Sets the sidebar's network order.
     fn set_network_order(&mut self, network_ids: &[String]);
     /// Selects a conversation. The seed uses it for the transcript and the reads.
     fn select_conversation(&mut self, network_id: &str, target: &str);
@@ -86,7 +83,7 @@ impl fmt::Display for DemoError {
 
 impl std::error::Error for DemoError {}
 
-/// The session config a demo network starts with (`sessionConfig` in C++): the
+/// The session config a demo network starts with (`sessionConfig`): the
 /// seeded nick, `irc.example` on TLS, the seeded channels for autojoin, and no
 /// reconnect. The profile name stays empty, so the display name falls back to
 /// the host and both networks read `irc.example` apart by nick.
@@ -174,9 +171,9 @@ impl DemoServer {
         Ok(())
     }
 
-    /// Starts a seeded network again on a fresh loopback. It attaches the session,
-    /// plays the network's registration burst and then its world (the channels' JOIN,
-    /// topic and NAMES, and the presence lines), and installs the auto-answer hook last,
+    /// Starts a seeded network again on a fresh loopback. It attaches the session
+    /// plays the network's registration burst and then its world (the channels' JOIN
+    /// topic and NAMES, and the presence lines), and installs the auto-answer hook last
     /// so the restarted session registers and answers like the first one did. It does
     /// not replay the transcript, so no message comes back twice. The controller calls
     /// it after a disconnect (`Start`).
@@ -238,7 +235,6 @@ impl DemoServer {
 
     /// Replays the last client PRIVMSG on `network_id` as a self echo. False when
     /// there is no such frame (`echoLastPrivmsg`).
-    // Phase 4: the catalog tests check the PRIVMSG echo
     #[cfg(test)]
     pub fn echo_last_privmsg(&self, network_id: &str, nick: &str) -> bool {
         if nick.is_empty() {
@@ -376,7 +372,7 @@ impl DemoServer {
     }
 }
 
-/// The world a restarted session is handed, in the seed's order: each channel's self JOIN,
+/// The world a restarted session is handed, in the seed's order: each channel's self JOIN
 /// topic and NAMES, then the presence and account lines. The NAMES list every member the
 /// channel holds now, late joiners included, since the transcript that brought them in is
 /// not replayed. A channel's topic is the one the peer holds, so a topic a client set
@@ -400,7 +396,7 @@ fn reseed_world_lines(network: &SeedNetwork, topics: &TopicOverrides) -> Vec<Str
     out
 }
 
-/// The answer ladder, in the Go order: PING, LIST, CTCP, AWAY, METADATA, MONITOR,
+/// The answer ladder, in the Go order: PING, LIST, CTCP, AWAY, METADATA, MONITOR
 /// then PART, NICK and TOPIC, the self JOIN, and the PRIVMSG or NOTICE echo
 /// (`hookAutoEcho`). The first answer that claims the frame wins. The nick is read
 /// once per frame, so a NICK answers as the nick it replaces and the next frame

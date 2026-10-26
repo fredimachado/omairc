@@ -1,6 +1,6 @@
 //! The Link sheet (`Ctrl+Shift+O`): on a conversation, the topic's links and
 //! channel names, then the transcript's, newest row first; on Status, the Status
-//! rows' links and INVITE channels. Enter opens the selected URL in the browser,
+//! rows' links and INVITE channels. Enter opens the selected URL in the browser
 //! joins the invited channel, or switches to a channel (asking first when the
 //! network does not have it yet).
 
@@ -11,7 +11,6 @@ use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::model::{Row, Style};
 use crate::ui::sheets::filter_sheet::{text_row, FilterSource};
 
-/// Sheet width in logical pixels (Qt `LinkSheet`).
 const WIDTH: f32 = 420.;
 /// Padding on the card (16 each side) and the row's 8px inset, both sides.
 const HORIZONTAL_INSET: f32 = 48.;

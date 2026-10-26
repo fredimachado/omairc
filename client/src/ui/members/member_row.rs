@@ -62,7 +62,7 @@ pub fn member_tip_lines(member: &MemberView, is_self: bool, away_visible: bool) 
 
 /// One 43px member row: inset 8 with a radius of 7, `hover` on hover and
 /// `raised` for the keyboard cursor. The glyph sits at x 18 and the label at
-/// x 56, bold for self and muted when away. The label line reads: the nick,
+/// x 56, bold for self and muted when away. The label line reads: the nick
 /// then the account in muted text, the bot mark when the member is a bot, and
 /// the typing dots while the member types. The status line sits under the
 /// label, muted and 9px. It never dims the row: only the glyph and the label

@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// This file is the Ctrl+/ shortcuts sheet. It lists the full chord map,
+// This file is the Ctrl+/ shortcuts sheet. It lists the full chord map
 // mirroring `client/src/ui/sheets/shortcuts.rs`, and is the only overlay that can open on
 // top of the Connect sheet. While it is open every navigation chord is gated.
 
@@ -312,7 +312,7 @@ func (m *Model) shortcutsLayout(inner int) shortcutsLayout {
 
 // computeShortcutsLayout searches column counts from the width's preferred
 // count down to two and keeps the first count whose shortest whole-group
-// partition fits the row budget. One column is the fallback when none do,
+// partition fits the row budget. One column is the fallback when none do
 // including when the single column already fits without scrolling.
 func (m *Model) computeShortcutsLayout(inner, rowBudget int) shortcutsLayout {
 	measure := newShortcutMeasure()

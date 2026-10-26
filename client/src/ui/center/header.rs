@@ -185,7 +185,7 @@ pub fn render_header(
         })
 }
 
-/// The `N PEOPLE` pill (Qt's `peopleButton`): 74 by 30, lit while the member panel shows,
+/// The `N PEOPLE` pill (Qt's `peopleButton`): 74 by 30, lit while the member panel shows
 /// and raised on hover. Its border and fill are transparent until then.
 fn render_people_pill(
     style: &Style,
@@ -279,7 +279,7 @@ fn title_text(style: &Style, title: &str) -> gpui::Div {
         .child(title.to_string())
 }
 
-/// The subtitle row, one line that elides (Qt's `TopicLine`). A topic is drawn formatted,
+/// The subtitle row, one line that elides (Qt's `TopicLine`). A topic is drawn formatted
 /// and each of its hits is a clickable range of the text.
 fn subtitle_line(style: &Style, subtitle: Subtitle<'_>, subtitle_width: f32) -> impl IntoElement {
     let line = div()

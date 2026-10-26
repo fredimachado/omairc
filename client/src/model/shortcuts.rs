@@ -1,4 +1,4 @@
-//! The Shortcuts sheet's grouped table, ported from `client/src/ui/sheets/shortcuts.rs`,
+//! The Shortcuts sheet's grouped table.
 //! and its label rules: the Windows alias suffix (`keys / winKeys`) and the
 //! macOS relabel from `OmaircStyle.shortcutKeys` (Ctrl to Cmd, Alt to Option).
 

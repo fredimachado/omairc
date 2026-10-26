@@ -1,11 +1,9 @@
-//! Port of `tui/internal/controller/monitorcoordinator.go`: the MONITOR subscription behind
+//! the MONITOR subscription behind
 //! `/monitor`, `/unmonitor` and `/monitored`, and the session-scoped presence the
 //! 730, 731 and 734 numerics fold into.
-//!
-//! Presence is session-scoped. It clears when a network is forgotten or discarded,
+//! Presence is session-scoped. It clears when a network is forgotten or discarded
 //! and at each registration, so a fresh subscription starts from unknown. The nick
 //! list belongs to the `MonitorStore` and survives a reconnect.
-//!
 //! The intents take the network id and the command argument, so the slash dispatcher
 //! only resolves the surface and the verb. It maps `MonitorOutcome` to the command
 //! outcome text. A refused command keeps the composer text.
@@ -289,7 +287,7 @@ impl Controller {
         MonitorOutcome::Sent
     }
 
-    /// `/monitored`: reports every stored nick with its presence (`DispatchMonitor`,
+    /// `/monitored`: reports every stored nick with its presence (`DispatchMonitor`
     /// the list arm). An argument makes it refused.
     pub fn monitor_list(&mut self, network_id: &str, argument: &str) -> MonitorOutcome {
         self.pump();

@@ -15,7 +15,7 @@ const (
 	plainTextUnderline     = 0x1f
 )
 
-// PlainIrcText strips mIRC color/hex-color runs and formatting control codes,
+// PlainIrcText strips mIRC color/hex-color runs and formatting control codes
 // mirroring IrcTextFormatter::plainIrcText. It walks bytes: the consumed
 // sequence is always ASCII, and no UTF-8 continuation byte can equal a control
 // code, so byte indexing preserves the rest of the UTF-8 text.

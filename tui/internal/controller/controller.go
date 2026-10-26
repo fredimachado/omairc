@@ -11,10 +11,9 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/storage"
 )
 
-// Controller is the Go port of IrcController for the Phase 2 state model. It
+// Controller is the Go.
 // owns the sessions, the event reducer, the selection, and the cached
 // snapshots. See doc.go for scope and seams.go for the deferred behaviour.
-//
 // The shell goroutine (Model.Update / Model.View, which hold Lock) and the
 // session read loops (handler methods, which lock internally) share this
 // state. See lock.go.
@@ -40,20 +39,20 @@ type Controller struct {
 	consoleNetworkID string
 	// consoleOpen is the raw Status-console model flag, mirroring
 	// IrcStatusConsole::isOpen. It is not the surface the transcript shows:
-	// ConsoleOpen() derives that the way `client/src/ui/shell`'s consoleVisible does,
+	// ConsoleOpen derives that the way `client/src/ui/shell`'s consoleVisible does
 	// so a cleared selection falls back to Status. Only the two callers that
-	// mirror Qt's m_console.isOpen() reads (FocusedNetworkID and the /join
+	// mirror Qt's m_console.isOpen reads (FocusedNetworkID and the /join
 	// dispatch surface) want the raw flag; they ask StatusConsoleOpen.
 	consoleOpen  bool
 	networkOrder []string
 	// networkCollapsed holds the sidebar collapse state. Collapse/reorder
 	// state lives on the controller (mirroring the Qt IrcConnection home)
-	// because the sidebar reads NetworkOrder()/Conversations(), not
-	// connection.Networks().
+	// because the sidebar reads NetworkOrder/Conversations, not
+	// connection.Networks.
 	networkCollapsed map[string]bool
 	connectionStatus string
 
-	// Phase 7 slash subsystems and their stores. commands, replies, monitor,
+	// Slash subsystems and their stores. commands, replies, monitor
 	// and autoaway own their decisions; the controller owns the side effects.
 	ignores         *IgnoreStore
 	mutes           *MuteStore
@@ -63,7 +62,7 @@ type Controller struct {
 	prefs           *Preferences
 	membershipNoise irc.MembershipNoise
 
-	// Phase 11 persistence. New starts ephemeral so unit tests never touch the
+	// Persistence. New starts ephemeral so unit tests never touch the
 	// user's config; the shell opts in with SetEphemeral(false) and then loads
 	// the persisted stores and preferences.
 	ephemeral           bool
@@ -98,7 +97,7 @@ type Controller struct {
 	members       []MemberSnapshot
 
 	// OnMentionArrived is called for each mention the reducer hands up. It is
-	// nil-able; Phase 9 wires the inbox and notifications.
+	// nil-able; the shell wires the inbox and notifications.
 	OnMentionArrived func(author, body, networkID, target, msgid string)
 	// OnFileLink is called from the upload goroutine when a file upload
 	// finishes. It must not touch the controller. The shell turns it into a
@@ -116,7 +115,7 @@ type Controller struct {
 	// Nil-able; the shell wires it to the profile store.
 	OnAutojoinChanged func(networkID string, channels []string, keys map[string]string)
 	// OnMonitorArrived is called for each MONITOR presence change the monitor
-	// coordinator reports. It is nil-able; Phase 9 owns the inbox append and
+	// coordinator reports. It is nil-able; the shell owns the inbox append and
 	// the desktop notification.
 	OnMonitorArrived func(networkID, display, body string, newlyOnline bool)
 	// OnSelectionChanged fires when the selected conversation, the focused
@@ -199,20 +198,18 @@ func (c *Controller) now() time.Time {
 	return c.clock.Now()
 }
 
-// displayLocation is the zone every displayed clock is read in: the clock's own
+// displayLocation is the zone every displayed clock is read the clock's own
 // location, which is the system local zone for the real clock. The reducer keeps
 // a parsed server-time tag in UTC (translator.go's ircServerTimeOf), so the zone
 // has to be applied before a row's HH:mm is rendered or compared. Qt localizes
 // the same way, with QDateTime::toLocalTime in MessageListModel::displayTime and
-// with new Date() in `client/src/ui/shell`'s currentTranscriptMinute.
+// with new Date in `client/src/ui/shell`'s currentTranscriptMinute.
 func (c *Controller) displayLocation() *time.Location {
 	if now := c.now(); !now.IsZero() {
 		return now.Location()
 	}
 	return time.Local
 }
-
-// --- Phase 11 persistence -------------------------------------------------
 
 // Group and key names match `client/src/storage/preferences.rs` so
 // the desktop client and the terminal client share one INI section.
@@ -229,7 +226,7 @@ const (
 	autoawayReasonKey            = "autoawayDefaultReason"
 )
 
-// SetEphemeral turns disk persistence on/off. New() starts ephemeral so unit
+// SetEphemeral turns disk persistence on/off. New starts ephemeral so unit
 // tests never touch the user's config; the shell opts in. Rust uses
 // `Backing` / `Controller::new_user` (`client/src/controller/persistence.rs`).
 func (c *Controller) SetEphemeral(ephemeral bool) {
@@ -435,7 +432,7 @@ func (c *Controller) PrefApply(name irc.PrefName, enabled bool) {
 
 // loadStoredNetworkOrder restores networkOrder and networkCollapsed from the
 // preferences group. Saved ids without a session are dropped; the remaining
-// registered networks keep NetworkIDs() order but are re-sorted by the
+// registered networks keep NetworkIDs order but are re-sorted by the
 // profileLess fallback (case-insensitive resolved name, then trimmed nick, then
 // network id) using the session's own name and nick. Sort by network id only
 // would lose the Qt profile ordering, and the controller cannot import
@@ -471,7 +468,7 @@ func (c *Controller) loadStoredNetworkOrder(settings *storage.Settings) {
 	c.networkCollapsed = collapsed
 }
 
-// profileLessNetwork ports profileLess from `client/src/controller/networks.rs`
+// profileLessNetwork.
 // over the controller's sessions: case-insensitive resolved name, then trimmed
 // nick, then network id.
 func (c *Controller) profileLessNetwork(left, right string) bool {
@@ -525,7 +522,7 @@ func (c *Controller) NetworkIDs() []string {
 
 // NetworkOrder returns the network ids in display order: the order recorded
 // by SetNetworkOrder first (only ids that still have a session), then any
-// remaining registered networks in NetworkIDs() order.
+// remaining registered networks in NetworkIDs order.
 func (c *Controller) NetworkOrder() []string {
 	registered := c.manager.NetworkIDs()
 	if len(c.networkOrder) == 0 {
@@ -550,13 +547,10 @@ func (c *Controller) NetworkOrder() []string {
 	return order
 }
 
-// --- Session handler ------------------------------------------------------
-
 // StateChanged refreshes the focused connection status. A non-Registered
 // transition also tells the playback coordinator that the connection ended, so
 // a reconnect replays as if it never happened. It mirrors
 // `handle_session_event` for `SessionEvent::StateChanged` in
-// `client/src/controller/controller.rs`.
 func (c *Controller) StateChanged(networkID string, state session.SessionState) {
 	c.lock()
 	defer c.unlock()
@@ -576,7 +570,6 @@ func (c *Controller) ErrorOccurred(networkID string, kind session.ErrorKind, mes
 
 // Registered resets the network's features, records the assigned nick, and
 // folds the welcome into the reducer. It mirrors `on_registered` in
-// `client/src/controller/controller.rs`.
 func (c *Controller) Registered(networkID string) {
 	c.lock()
 	defer c.unlock()
@@ -769,8 +762,6 @@ func (c *Controller) AutojoinChannelsChanged(networkID string, channels []string
 	}
 }
 
-// --- Apply / Publish ------------------------------------------------------
-
 // Apply folds one translated event into the reducer and republishes the
 // surfaces it dirtied. It mirrors IrcController::apply
 // (`client/src/controller/controller.rs`).
@@ -851,7 +842,7 @@ func (c *Controller) Apply(event irc.Event) {
 	}
 
 	// A first conversation claims the selection. The Qt controller reads the
-	// reducer's std::map begin(), i.e. the (network, normalized target)
+	// reducer's std::map begin, i.e. the (network, normalized target)
 	// minimum; Go maps iterate randomly, so pick it explicitly.
 	if c.selected == nil && !typingOnly && len(c.reducer.Conversations()) > 0 {
 		key, conversation := firstConversation(c.reducer)
@@ -943,15 +934,14 @@ func (c *Controller) Publish(notify irc.ViewNotify) {
 		c.notifySelectionChanged()
 	}
 	// A typing event repaints the sidebar's typing role. Qt emits
-	// typingChanged() and calls ConversationListModel::invalidateTyping() only
+	// typingChanged and calls ConversationListModel::invalidateTyping only
 	// when the conversation list was not already reloaded. The Go snapshot
-	// materializes that role, so rebuild it here; the typing-changed
-	// notification itself is the Phase 8 seam.
+	// materializes that role, so rebuild it here.
 	if notify.Typing && !notify.Conversations {
 		c.rebuildConversations()
 		c.conversationEpoch++
 	}
-	// Wake the shell for any surface this publish dirtied. The selection,
+	// Wake the shell for any surface this publish dirtied. The selection
 	// status, and capability callbacks above cover their own surfaces, but a
 	// chat line or a membership change has no other wake-up: without this the
 	// runtime never repaints the transcript or the sidebar for them.
@@ -959,8 +949,6 @@ func (c *Controller) Publish(notify irc.ViewNotify) {
 		c.OnViewChanged()
 	}
 }
-
-// --- Session inbox --------------------------------------------------------
 
 // appendInbox stores one arrival stamped with the controller clock, then
 // wakes the UI. It mirrors IrcController::appendInbox/syncInbox.
@@ -1096,7 +1084,7 @@ func (c *Controller) adoptReducerSelection() {
 
 // selectionNotify reloads the sidebar, transcript, and member panel alongside
 // the selection, matching the model selects in IrcController::selectConversation.
-// ConversationListModel::select calls reload(), which repaints every row's
+// ConversationListModel::select calls reload, which repaints every row's
 // roles, so the unread and mention counts a selection just consumed clear
 // immediately rather than waiting for the next conversation-dirtying event.
 func selectionNotify() irc.ViewNotify {
@@ -1119,8 +1107,6 @@ func (c *Controller) reloadModels() {
 	c.Publish(irc.ViewNotifyResetAll())
 }
 
-// --- Selection ------------------------------------------------------------
-
 // SelectedNetworkID returns the selected conversation's network, or "".
 func (c *Controller) SelectedNetworkID() string {
 	if c.selected == nil {
@@ -1140,7 +1126,7 @@ func (c *Controller) SelectedTarget() string {
 	return c.selectedTarget
 }
 
-// SelectedConversationID returns the stable id of the selected conversation,
+// SelectedConversationID returns the stable id of the selected conversation
 // or "".
 func (c *Controller) SelectedConversationID() string {
 	if c.selected == nil {
@@ -1233,14 +1219,12 @@ func (c *Controller) OpenStatus(networkID string) {
 
 // ConsoleOpen reports whether the Status surface is on screen. It mirrors
 // `client/src/ui/shell`'s consoleVisible:
-//
-//	networkConsole ? (networkConsole.open || irc.selectedTarget.length === 0) : false
-//
+// networkConsole ? (networkConsole.open || irc.selectedTarget.length === 0): false
 // The raw console flag alone is not enough. A cleared selection leaves nothing
 // else to show, so Status is the surface again; and selecting a conversation
 // closes the console (see SelectConversation and the first-conversation fallback
 // in Apply), so the transcript follows the conversation. Every view predicate
-// reads this derived value; only the callers that mirror Qt's m_console.isOpen()
+// reads this derived value; only the callers that mirror Qt's m_console.isOpen
 // reads want the raw flag, via StatusConsoleOpen.
 func (c *Controller) ConsoleOpen() bool {
 	return c.consoleOpen || c.SelectedTarget() == ""
@@ -1431,8 +1415,6 @@ func (c *Controller) dropSelectedDirectAndReselect() {
 	c.DropConversationAndReselect(*c.selected, true)
 }
 
-// --- Send ----------------------------------------------------------------
-
 // SendToTarget sends a plain PRIVMSG to an arbitrary network and target. It
 // uses the QuietSend cause, so it never invents a conversation. It mirrors
 // IrcController::sendToTarget (`client/src/controller/send.rs`).
@@ -1500,8 +1482,6 @@ func (c *Controller) echoIfPresent(s *session.Session, target, body string) {
 	}
 	c.Apply(irc.MessageEvent{Conversation: key, Author: s.Nick(), Body: body, Timestamp: c.now(), Target: target})
 }
-
-// --- Status and identity --------------------------------------------------
 
 // ConnectionStatus returns the focused network's connection status.
 func (c *Controller) ConnectionStatus() string {
@@ -1731,8 +1711,7 @@ func (c *Controller) SetWindowActive(active bool) {
 	}
 }
 
-// SetMuted records the muted flag for one conversation. Persistence is the
-// Phase 8 MuteStore seam.
+// SetMuted records the muted flag for one conversation.
 func (c *Controller) SetMuted(networkID, target string, muted bool) {
 	if networkID == "" || target == "" {
 		return
@@ -1740,8 +1719,6 @@ func (c *Controller) SetMuted(networkID, target string, muted bool) {
 	c.reducer.SetMuted(c.reducer.ConversationKey(networkID, target), muted)
 	c.Publish(irc.ViewNotify{Conversations: true})
 }
-
-// --- Lifecycle ------------------------------------------------------------
 
 // Start activates one network's session and reports whether it ended up live.
 // A missing network sets its last error. It mirrors IrcController::start
@@ -1758,7 +1735,7 @@ func (c *Controller) Start(networkID string) bool {
 	return started
 }
 
-// Disconnect stops the live session for networkID while keeping it registered,
+// Disconnect stops the live session for networkID while keeping it registered
 // so the model can start it again with Apply. It mirrors
 // IrcConnection::disconnectSelected -> IrcSession::quit: a missing session or an
 // already-idle one reports false. Returns true when a session was stopped.
@@ -1879,7 +1856,7 @@ func (c *Controller) ForgetNetworkState(networkID string) {
 	c.notifyStatusChanged()
 }
 
-// SetNetworkOrder records the network display order, republishes the sidebar,
+// SetNetworkOrder records the network display order, republishes the sidebar
 // and persists the order unless ephemeral. An unchanged order is a no-op. It
 // mirrors IrcController::setNetworkOrder (`client/src/controller/networks.rs`)
 // plus IrcConnection::persistNetworkOrder.
@@ -2002,8 +1979,6 @@ func (c *Controller) MoveNetwork(networkID string, delta int) bool {
 	return true
 }
 
-// --- Message handling -----------------------------------------------------
-
 func (c *Controller) handleMessage(networkID string, message irc.Message) {
 	// The playback clock reads every inbound PRIVMSG before routing, so a line
 	// that only lands on another client's transcript still resumes there.
@@ -2038,7 +2013,7 @@ func (c *Controller) handleMessage(networkID string, message irc.Message) {
 		return
 	}
 	if message.Command == "376" || message.Command == "422" {
-		// A burst of 005 tokens is applied above without touching the models;
+		// A burst of 005 tokens is applied above without touching the models
 		// MOTD end latches the case mapping and restores open directs.
 		features := c.reducer.ServerFeatures(networkID)
 		if !features.CaseMappingKnown() {
@@ -2156,8 +2131,6 @@ func (c *Controller) notePlaybackClock(networkID string, message irc.Message) {
 		c.currentNicks[networkID],
 		c.capabilities[networkID].Contains(irc.CapabilityZncPlayback))
 }
-
-// --- Open directs and playback --------------------------------------------
 
 // persistableDirectTarget reports whether target is a direct message worth
 // persisting: non-empty, not a channel, and not a network service. It mirrors
@@ -2290,7 +2263,7 @@ func (c *Controller) noteSelfAuthoredDirect(networkID, author, target string) {
 	}
 }
 
-// noteOpenDirectsMotd restores the network's open directs once, at MOTD end,
+// noteOpenDirectsMotd restores the network's open directs once, at MOTD end
 // then releases held query playback, asks the bouncer for buffers, and catches
 // up with CHATHISTORY from the last place reached. It mirrors
 // IrcController::noteOpenDirectsMotd (`client/src/controller/persistence.rs`).
@@ -2399,8 +2372,6 @@ func (c *Controller) requestChannelPlayback(s *session.Session, channel string) 
 		c.openDirectsMotdSeen[networkID])
 }
 
-// --- Status callbacks -----------------------------------------------------
-
 func (c *Controller) refreshConnectionStatus() {
 	if s := c.manager.Find(c.FocusedNetworkID()); s != nil {
 		c.connectionStatus = stateText(s.State())
@@ -2439,8 +2410,6 @@ func (c *Controller) notifyViewChanged() {
 		c.OnViewChanged()
 	}
 }
-
-// --- Helpers --------------------------------------------------------------
 
 // stateText maps a session state to the footer text. It mirrors the anonymous
 // stateText in `client/src/controller/snapshots.rs`.
@@ -2542,7 +2511,7 @@ func actionEventOf(event irc.Event) (irc.ActionEvent, bool) {
 }
 
 // firstConversation picks the (network, normalized target) minimum so the
-// auto-selection matches the reducer's std::map begin().
+// auto-selection matches the reducer's std::map begin.
 func firstConversation(reducer *irc.EventReducer) (irc.ConversationKey, *irc.ConversationState) {
 	var bestKey irc.ConversationKey
 	var best *irc.ConversationState

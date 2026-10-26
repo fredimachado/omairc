@@ -4,8 +4,7 @@
 //! is `close_direct` or `close_conversation`. Each test drives an intent, reads the frames
 //! the loopback wrote, and checks the reads the header and the chords take. The demo echoes
 //! PART, NICK and TOPIC as a server does, so the reducer sets the state from the echo.
-//! Ports the feature map's `/part` then `/close` sequence (`slash-commands.md`) and
-//! `client/src/ui/center/header_actions.rs`.
+//! feature map's `/part` then `/close` sequence (`slash-commands.md`) and
 
 use crate::irc::command::ComposerSurface;
 use crate::irc::event::ConversationKey;

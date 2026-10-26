@@ -1,8 +1,6 @@
-//! Port of `tui/internal/demo/wire.go` and the wire part of
 //! `tui/internal/demo/demo.go`: line assembly, client-frame parsing, the
 //! registration burst, channel state, presence, accounts, transcript and typing
 //! lines, and the test-only `#bench` channel seed.
-//!
 //! Each builder returns IRC lines without their CRLF, so the text reads as the
 //! Go and C++ does. `bytes` joins a batch into the wire bytes a transport
 //! delivers. The seed is read by reference and nothing here touches a
@@ -103,7 +101,7 @@ pub fn demo_label_prefix(label: &str) -> String {
     }
 }
 
-/// One tagged PRIVMSG. The account tag comes first, then the server-time tag,
+/// One tagged PRIVMSG. The account tag comes first, then the server-time tag
 /// and only the tags present are joined with a semicolon (`privmsg`).
 pub fn privmsg_line(
     nick: &str,
@@ -168,7 +166,7 @@ pub fn names_tokens(channel: &SeedChannel) -> Vec<String> {
     prefixed_names(channel, &initial_members(channel))
 }
 
-/// The NAMES tokens for every member the channel holds once its transcript has played,
+/// The NAMES tokens for every member the channel holds once its transcript has played
 /// late joiners included. A reconnect lists the members as they are now.
 pub fn present_names_tokens(channel: &SeedChannel) -> Vec<String> {
     prefixed_names(channel, channel.members)
@@ -353,7 +351,7 @@ pub fn live_account_lines(network: &SeedNetwork) -> Vec<String> {
     vec![account_line("teo", "teoval")]
 }
 
-/// Everything `injectWorld` pushes for one network: each channel's state burst,
+/// Everything `injectWorld` pushes for one network: each channel's state burst
 /// then the presence lines, then the account lines.
 pub fn world_lines(network: &SeedNetwork) -> Vec<String> {
     let mut out = Vec::new();

@@ -1,8 +1,7 @@
-//! Port of `tui/internal/irc/pref.go`:
+//! `tui/internal/irc/pref.go`:
 //! the `/pref` catalog, its usage and avatar note, the query, state and list
 //! formatting, the argument parser, and the in-memory preferences a session
 //! holds.
-//!
 //! Pure: this module reads and writes no file. The preferences are saved in the settings
 //! file's `preferences` group by `storage/preferences.rs`.
 
@@ -55,7 +54,6 @@ impl PrefName {
         pref_find(token).map(|spec| spec.name)
     }
 
-    /// The catalog row for this name.
     pub fn spec(self) -> &'static PrefSpec {
         PREF_CATALOG
             .iter()

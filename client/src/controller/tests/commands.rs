@@ -1,8 +1,8 @@
 //! The slash dispatcher over the real demo: every verb's frames, the outcome it returns, and
-//! the Status or transcript text it leaves. Ports the cases in
+//! the Status or transcript text it leaves.
 //! `tui/internal/controller/commanddispatcher_test.go`, driven through the controller rather
 //! than a fake host: the frames come from the loopback, the answers from the demo, and the
-//! reads from the controller. Each test names the Go case it ports.
+//! reads from the controller. Each test names the Go case it.
 
 use crate::irc::command::{parse, CommandOutcome, ComposerSurface};
 use crate::irc::event::ConversationKey;

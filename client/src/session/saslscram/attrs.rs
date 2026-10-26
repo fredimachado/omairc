@@ -1,5 +1,5 @@
 //! The SCRAM attribute parser and the base64 and iteration-count checks it shares with
-//! the machine. Port of `parseScramAttributes`, `parseIterationCount` and `decodeBase64`
+//! the machine.
 //! in `tui/internal/session/saslscram.go`.
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
@@ -9,7 +9,7 @@ use super::ScramFailure;
 /// Smallest iteration count a server may ask for. A lower count is refused before PBKDF2.
 const MIN_ITERATIONS: i64 = 4096;
 
-/// Largest iteration count a server may ask for. A higher count is refused before PBKDF2,
+/// Largest iteration count a server may ask for. A higher count is refused before PBKDF2
 /// so a hostile peer cannot burn CPU.
 const MAX_ITERATIONS: i64 = 1_000_000;
 

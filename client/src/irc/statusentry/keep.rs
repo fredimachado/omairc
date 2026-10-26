@@ -1,4 +1,4 @@
-//! The keep table: which wire lines reach Status at all. Protocol chatter is dropped,
+//! The keep table: which wire lines reach Status at all. Protocol chatter is dropped
 //! replies are kept, and a direct message or channel line stays out of Status when the
 //! conversation it belongs to is engaged.
 

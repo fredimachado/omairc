@@ -1,7 +1,5 @@
-//! Port of the CTCP paths of `tui/internal/session/session.go` (Go) and
 //! `tui/internal/session/session.go`: answering a CTCP query sent to this user, and
 //! sending a CTCP query.
-//!
 //! Only a direct query is answered. A channel query gets nothing, and neither
 //! does a query from a service identity or a server-prefixed source. Replies go
 //! out as NOTICE, and at most one per nick every 5 seconds, so a flood of queries

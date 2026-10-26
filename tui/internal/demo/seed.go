@@ -2,7 +2,8 @@ package demo
 
 import "strconv"
 
-// This file is the Go port of the anonymous seed helpers and the omarchyWorld /
+// Seed helpers and the omarchyWorld / oftcWorld builders. Twin:
+// `client/src/demo/server.rs`.
 // oftcWorld builders in `client/src/demo/server.rs`. The data is content- and
 // order-identical to the C++; only the container types differ (slices for
 // QVector/QStringList, RankPair for QPair<QString, QString>).
@@ -25,7 +26,7 @@ const (
 
 	// kDemoSelfAvatarURL is the operator's own avatar, advertised for both seeded
 	// networks. Real HTTPS on purpose: the identity footer shows the Omairc mark
-	// and the demo exercises the avatar store's network path. See presenceBytes().
+	// and the demo exercises the avatar store's network path. See presenceBytes.
 	kDemoSelfAvatarURL = "https://omairc.app/omairc128.png"
 )
 
@@ -34,13 +35,12 @@ const (
 type SeedKind int
 
 const (
-	// SeedChat is a PRIVMSG row.
 	SeedChat SeedKind = iota
 	// SeedJoin is a JOIN row; only Nick and Account are meaningful.
 	SeedJoin
 )
 
-// SeedLine is one transcript row. It mirrors the C++ SeedLine.
+// SeedLine is one transcript row. It mirrors the SeedLine.
 type SeedLine struct {
 	Kind    SeedKind
 	Nick    string
@@ -57,7 +57,7 @@ type RankPair struct {
 	Value string
 }
 
-// SeedChannel is one seeded channel. It mirrors the C++ SeedChannel.
+// SeedChannel is one seeded channel. It mirrors the SeedChannel.
 type SeedChannel struct {
 	Name     string
 	Topic    string
@@ -70,7 +70,7 @@ type SeedChannel struct {
 	MarkRead bool
 }
 
-// SeedDirect is one seeded direct message. It mirrors the C++ SeedDirect.
+// SeedDirect is one seeded direct message. It mirrors the SeedDirect.
 type SeedDirect struct {
 	Nick     string
 	Lines    []SeedLine
@@ -78,14 +78,14 @@ type SeedDirect struct {
 	Typing   bool
 }
 
-// SeedListed is one /list directory entry. It mirrors the C++ SeedListed.
+// SeedListed is one /list directory entry. It mirrors the SeedListed.
 type SeedListed struct {
 	Name  string
 	Users int
 	Topic string
 }
 
-// SeedNetwork is one seeded network. It mirrors the C++ SeedNetwork.
+// SeedNetwork is one seeded network. It mirrors the SeedNetwork.
 type SeedNetwork struct {
 	NetworkID string
 	Nick      string
@@ -96,7 +96,7 @@ type SeedNetwork struct {
 	Directory []SeedListed
 }
 
-// chat builds a Chat seed line. day is optional and defaults to kToday,
+// chat builds a Chat seed line. day is optional and defaults to kToday
 // mirroring the C++ default argument.
 func chat(nick, body, hhmm string, day ...string) SeedLine {
 	date := kToday
@@ -124,7 +124,7 @@ func join(nick string, account ...string) SeedLine {
 }
 
 // omarchyWorld returns the primary demo network. It is ported verbatim from
-// omarchyWorld() in `client/src/demo/server.rs`.
+// omarchyWorld in `client/src/demo/server.rs`.
 func omarchyWorld() SeedNetwork {
 	network := SeedNetwork{
 		NetworkID: "omarchy",
@@ -143,10 +143,9 @@ func omarchyWorld() SeedNetwork {
 		LateJoin: []string{"sol", "nora"},
 		Away:     []string{"teo", "lena", "sam", "ivy", "max"},
 		// The demo ladder: founder, admin, two ops, halfop, voice, then the
-		// rest plain. mira holds two ranks at once, which multi-prefix allows,
+		// rest plain. mira holds two ranks at once, which multi-prefix allows
 		// and teo is away and voiced, because rank and presence are
 		// independent.
-		//
 		// The lateJoin members arrive through the transcript, and an arriving
 		// member carries no rank until a server says so, so they stay out of
 		// this list and out of the initial NAMES.
@@ -262,7 +261,7 @@ func omarchyWorld() SeedNetwork {
 }
 
 // oftcWorld returns the secondary demo network. It is ported verbatim from
-// oftcWorld() in `client/src/demo/server.rs`.
+// oftcWorld in `client/src/demo/server.rs`.
 func oftcWorld() SeedNetwork {
 	network := SeedNetwork{
 		NetworkID: "oftc",

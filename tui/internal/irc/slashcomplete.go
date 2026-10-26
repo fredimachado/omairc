@@ -7,9 +7,8 @@ import (
 	"unicode/utf16"
 )
 
-// This file is the Go port of IrcSlashComplete and IrcSlashProbe in
-// `ircslashcomplete`: projecting composer text into the slash
-// completion popup, and the /pref value completion shapes.
+// Slash completion: projecting composer text into the slash completion popup,
+// and the /pref value completion shapes.
 
 // SlashHit is one completion row. It mirrors IrcSlashHit.
 type SlashHit struct {

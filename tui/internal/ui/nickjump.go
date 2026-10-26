@@ -8,7 +8,7 @@ import (
 )
 
 // This file is the Ctrl+Shift+K nick jump overlay: it lists
-// members in panel order (already PREFIX-rank then nick from the controller),
+// members in panel order (already PREFIX-rank then nick from the controller)
 // filters by nick substring, and opens or creates the highlighted member's
 // direct message. It is a no-op on a direct message or Status.
 

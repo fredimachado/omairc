@@ -2,7 +2,6 @@
 //! the right of the conversation header. A joined channel offers LEAVE. A channel you have
 //! left offers JOIN. A selection that can close (a direct message, or a channel you have
 //! left) offers CLOSE.
-//!
 //! The buttons draw and ask. A click calls the handler the shell gives, and the shell calls a
 //! controller intent (`leave_selected_channel`, `join_selected_channel`, `close_direct`). The
 //! file decides which buttons show and nothing else.

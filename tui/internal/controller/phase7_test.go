@@ -1,10 +1,9 @@
 package controller
 
-// This file is the Phase 7 parity suite: the slash verbs, the channel-list
-// request/cache round trip, and the Status-surface outcome. It drives the
-// controller through SendMessage/ConsoleSubmit exactly as the shell does and
-// reuses the Phase 2 harness in controller_test.go for the transport and
-// registration fixtures.
+// Slash verbs, the channel-list request/cache round trip, and the
+// Status-surface outcome. Drives the controller through
+// SendMessage/ConsoleSubmit exactly as the shell does and reuses the harness
+// in controller_test.go for the transport and registration fixtures.
 
 import (
 	"strings"
@@ -14,8 +13,8 @@ import (
 )
 
 // phase7Setup starts one registered network with #omarchy joined and selected.
-// Every Phase 7 slash verb resolves its network through the selected
-// conversation, so each test needs a live selection before it can dispatch.
+// Every slash verb resolves its network through the selected conversation, so
+// each test needs a live selection before it can dispatch.
 func phase7Setup(t *testing.T) (*Controller, *session.LoopbackTransport) {
 	t.Helper()
 	c, clock := newController(t)

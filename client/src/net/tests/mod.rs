@@ -137,7 +137,7 @@ fn pinned_certificate_encrypts() {
 }
 
 /// A TLS peer that drops the socket without close-notify is a clean remote close. Many
-/// ircds end the connection this way right after `ERROR :Closing link`.
+/// ircds end the connection this way right after `ERROR:Closing link`.
 #[test]
 fn tls_peer_that_drops_without_close_notify_is_a_clean_disconnect() {
     let rig = Rig::new(NetOptions {

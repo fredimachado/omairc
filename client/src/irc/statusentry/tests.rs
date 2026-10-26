@@ -292,7 +292,7 @@ fn the_request_label_is_recorded_on_the_entry() {
     assert_eq!(entry.request_label, "req-7");
 }
 
-/// Ported from `TestSessionConfiguredPasswordNeverAppearsInStatusEntries`: the
+/// the
 /// server password reaches Status only as `PASS ***`.
 #[test]
 fn a_configured_password_reads_as_pass_stars() {
@@ -301,7 +301,6 @@ fn a_configured_password_reads_as_pass_stars() {
     assert_eq!(entry.text, "PASS ***");
 }
 
-/// Ported from `TestSessionKeyedJoinIsRedactedInStatusEntries`.
 #[test]
 fn a_keyed_join_is_masked_and_an_unkeyed_one_is_not() {
     let keyed = outgoing("net", b"JOIN #secret hunter2\r\n", "", now());
@@ -313,7 +312,7 @@ fn a_keyed_join_is_masked_and_an_unkeyed_one_is_not() {
     );
 }
 
-/// Ported from `TestSessionSelfEchoToServiceIsRedacted`: a self-echoed
+/// a self-echoed
 /// services command never shows its secret, and a harmless `set` line does.
 #[test]
 fn a_self_echo_to_a_service_masks_its_secret() {

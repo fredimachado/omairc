@@ -1,10 +1,8 @@
-//! Port of `tui/internal/storage/profilestore.go`
 //! The saved Connect profiles, one `networks/<id>` group each.
 //!
 //! The record keeps every field the file can hold, including the ones this client's Connect
 //! sheet does not edit (account, bouncer network, avatar). A profile the Qt client or the
 //! TUI wrote therefore reads and writes back without losing anything.
-//!
 //! The store holds no state of its own: each call reads the file, so an outside edit is
 //! never masked. An ephemeral backing has no profiles.
 
@@ -260,7 +258,7 @@ fn read_profile(settings: &Settings, id: &str) -> Profile {
     let key_values = settings
         .string_list(&group, "autojoinKeyValues")
         .unwrap_or_default();
-    // An absent or out-of-palette colour reads as no colour, as the C++ range test does.
+ // An absent or out-of-palette colour reads as no colour, as the C++ range test does.
     let icon = settings.int_value(&group, "iconColor", -1);
     let icon_color = (0..i64::from(ICON_COLOR_COUNT))
         .contains(&icon)

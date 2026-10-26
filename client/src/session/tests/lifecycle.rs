@@ -1,9 +1,7 @@
-//! Port of the ping, registration-refusal and nick-collision cases of
-//! `tui/internal/session/session_lifecycle_test.go`.
-//!
-//! The Go tests also assert on Status text (`textFor`, `anyFieldContains`). Status
-//! is Phase 3's recorder, so those assertions are left out here; each test keeps
-//! its state, error, reconnect and frame checks.
+//! Ping, registration-refusal and nick-collision cases.
+//! The Go tests also assert on Status text (`textFor`, `anyFieldContains`).
+//! Those text assertions live with the Status recorder elsewhere; each test
+//! here keeps its state, error, reconnect and frame checks.
 
 use std::time::Duration;
 

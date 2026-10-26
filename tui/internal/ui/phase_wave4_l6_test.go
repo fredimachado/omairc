@@ -113,7 +113,7 @@ func TestWave4L6JumpRowsCarryToggleChipsAndFill(t *testing.T) {
 	}
 }
 
-// TestWave4L6JumpPreservesTargetOrder proves the restyle did not reword,
+// TestWave4L6JumpPreservesTargetOrder proves the restyle did not reword
 // remove, or reorder the navigation targets: every jumpEntry label still
 // renders, in jumpEntries order.
 func TestWave4L6JumpPreservesTargetOrder(t *testing.T) {

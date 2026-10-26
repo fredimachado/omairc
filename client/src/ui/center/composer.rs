@@ -12,7 +12,7 @@ const SHELL_HEIGHT: f32 = 46.;
 /// side inset, so its edges are the shell's edges.
 pub const SHELL_INSET: f32 = 20.;
 
-/// The composer strip under the transcript, a port of `composerShell` in
+/// The composer strip under the transcript, a.
 /// `client/src/ui/center/`. The strip is `BOTTOM_BAR_HEIGHT` tall, the same as the
 /// identity footer, and its top rule is drawn on the footer's divider row, so the two
 /// rules line up across the window. The rule is an absolute child, not the strip's own
@@ -21,7 +21,6 @@ pub const SHELL_INSET: f32 = 20.;
 /// below it (to the window's bottom edge) are equal at any text scale. It holds the
 /// single-line draft and the SEND button, and its side edges are `SHELL_INSET` in. The
 /// shell's border is the accent while the draft has focus (`focused`), else the divider.
-///
 /// `has_text` says whether the draft has anything to send. A click on SEND calls
 /// `on_send`. Enter is handled by the shell root (`ComposerSubmit`), which checks
 /// header focus. `popup` is the slash-complete popup, if it shows. It is a child of

@@ -6,9 +6,7 @@ import (
 	"time"
 )
 
-// --- SASL PLAIN -----------------------------------------------------------
-
-// TestSessionNegotiatesSaslPlain ports SessionTest::negotiatesSaslPlain.
+// TestSessionNegotiatesSaslPlain.
 func TestSessionNegotiatesSaslPlain(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
 	config.Password = "secret"
@@ -42,7 +40,7 @@ func TestSessionNegotiatesSaslPlain(t *testing.T) {
 	}
 }
 
-// TestSessionSaslPlainReassemblesMultiChunkMessages ports
+// TestSessionSaslPlainReassemblesMultiChunkMessages.
 // SessionTest::saslPlainReassemblesMultiChunkMessages.
 func TestSessionSaslPlainReassemblesMultiChunkMessages(t *testing.T) {
 	secret := strings.Repeat("x", 287)
@@ -111,7 +109,7 @@ func TestSessionSaslPlainReassemblesMultiChunkMessages(t *testing.T) {
 	}
 }
 
-// TestSessionSaslPlainExactChunkBoundaryRequiresPlus ports
+// TestSessionSaslPlainExactChunkBoundaryRequiresPlus.
 // SessionTest::saslPlainExactChunkBoundaryRequiresPlus.
 func TestSessionSaslPlainExactChunkBoundaryRequiresPlus(t *testing.T) {
 	for _, secretLength := range []int{286, 586} {
@@ -174,7 +172,7 @@ func TestSessionSaslPlainExactChunkBoundaryRequiresPlus(t *testing.T) {
 	}
 }
 
-// TestSessionSaslAccountAuthenticatesAsTheBouncerName ports
+// TestSessionSaslAccountAuthenticatesAsTheBouncerName.
 // SessionTest::saslAccountAuthenticatesAsTheBouncerName.
 func TestSessionSaslAccountAuthenticatesAsTheBouncerName(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -195,7 +193,7 @@ func TestSessionSaslAccountAuthenticatesAsTheBouncerName(t *testing.T) {
 	}
 }
 
-// TestSessionEmptySaslAccountAuthenticatesAsTheNick ports
+// TestSessionEmptySaslAccountAuthenticatesAsTheNick.
 // SessionTest::emptySaslAccountAuthenticatesAsTheNick.
 func TestSessionEmptySaslAccountAuthenticatesAsTheNick(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -212,7 +210,7 @@ func TestSessionEmptySaslAccountAuthenticatesAsTheNick(t *testing.T) {
 	}
 }
 
-// TestSessionSendsPassWhenSaslIsUnavailable ports
+// TestSessionSendsPassWhenSaslIsUnavailable.
 // SessionTest::sendsPassWhenSaslIsUnavailable.
 func TestSessionSendsPassWhenSaslIsUnavailable(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -229,7 +227,7 @@ func TestSessionSendsPassWhenSaslIsUnavailable(t *testing.T) {
 	})
 }
 
-// TestSessionNickServOnlySaslPlainUsesNickServSecret ports
+// TestSessionNickServOnlySaslPlainUsesNickServSecret.
 // SessionTest::nickServOnlySaslPlainUsesNickServSecret.
 func TestSessionNickServOnlySaslPlainUsesNickServSecret(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -264,7 +262,7 @@ func TestSessionNickServOnlySaslPlainUsesNickServSecret(t *testing.T) {
 	}
 }
 
-// TestSessionNickServOnlyWithoutSaslIdentifiesBeforeJoin ports
+// TestSessionNickServOnlyWithoutSaslIdentifiesBeforeJoin.
 // SessionTest::nickServOnlyWithoutSaslIdentifiesBeforeJoin.
 func TestSessionNickServOnlyWithoutSaslIdentifiesBeforeJoin(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -285,7 +283,7 @@ func TestSessionNickServOnlyWithoutSaslIdentifiesBeforeJoin(t *testing.T) {
 	}
 }
 
-// TestSessionBothSecretsSaslSendsPassAndPlainFromNickServ ports
+// TestSessionBothSecretsSaslSendsPassAndPlainFromNickServ.
 // SessionTest::bothSecretsSaslSendsPassAndPlainFromNickServ.
 func TestSessionBothSecretsSaslSendsPassAndPlainFromNickServ(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -314,7 +312,7 @@ func TestSessionBothSecretsSaslSendsPassAndPlainFromNickServ(t *testing.T) {
 	}
 }
 
-// TestSessionBothSecretsWithoutSaslPassThenIdentifyBeforeJoin ports
+// TestSessionBothSecretsWithoutSaslPassThenIdentifyBeforeJoin.
 // SessionTest::bothSecretsWithoutSaslPassThenIdentifyBeforeJoin.
 func TestSessionBothSecretsWithoutSaslPassThenIdentifyBeforeJoin(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -336,7 +334,7 @@ func TestSessionBothSecretsWithoutSaslPassThenIdentifyBeforeJoin(t *testing.T) {
 	}
 }
 
-// TestSessionSaslSuccessDoesNotIdentify ports
+// TestSessionSaslSuccessDoesNotIdentify.
 // SessionTest::saslSuccessDoesNotIdentify.
 func TestSessionSaslSuccessDoesNotIdentify(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -358,7 +356,7 @@ func TestSessionSaslSuccessDoesNotIdentify(t *testing.T) {
 	}
 }
 
-// TestSessionSaslFailureDoesNotFallThroughToIdentify ports
+// TestSessionSaslFailureDoesNotFallThroughToIdentify.
 // SessionTest::saslFailureDoesNotFallThroughToIdentify.
 func TestSessionSaslFailureDoesNotFallThroughToIdentify(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -385,7 +383,7 @@ func TestSessionSaslFailureDoesNotFallThroughToIdentify(t *testing.T) {
 	}
 }
 
-// TestSessionAuthenticationFailureIsExplicit ports
+// TestSessionAuthenticationFailureIsExplicit.
 // SessionTest::authenticationFailureIsExplicit.
 func TestSessionAuthenticationFailureIsExplicit(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -405,9 +403,7 @@ func TestSessionAuthenticationFailureIsExplicit(t *testing.T) {
 	}
 }
 
-// --- SASL SCRAM-SHA-256 ---------------------------------------------------
-
-// TestSessionNegotiatesSaslScramSha256 ports
+// TestSessionNegotiatesSaslScramSha256.
 // SessionTest::negotiatesSaslScramSha256.
 func TestSessionNegotiatesSaslScramSha256(t *testing.T) {
 	if got := scramServerFinalFor(t, scramTestClientFirst, scramTestServerFirst); got != scramTestServerFinal {
@@ -506,7 +502,7 @@ func TestSessionNegotiatesSaslScramSha256(t *testing.T) {
 	}
 }
 
-// TestSessionScramNumericBeforeServerFinalFails ports
+// TestSessionScramNumericBeforeServerFinalFails.
 // SessionTest::scramNumericBeforeServerFinalFails.
 func TestSessionScramNumericBeforeServerFinalFails(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -550,7 +546,7 @@ func TestSessionScramNumericBeforeServerFinalFails(t *testing.T) {
 	}
 }
 
-// TestSessionScramFailureDoesNotFallThroughToPlain ports
+// TestSessionScramFailureDoesNotFallThroughToPlain.
 // SessionTest::scramFailureDoesNotFallThroughToPlain.
 func TestSessionScramFailureDoesNotFallThroughToPlain(t *testing.T) {
 	aborts := []string{
@@ -589,7 +585,7 @@ func TestSessionScramFailureDoesNotFallThroughToPlain(t *testing.T) {
 	}
 }
 
-// TestSessionScramPlainReadvertisementDoesNotFinishExchange ports
+// TestSessionScramPlainReadvertisementDoesNotFinishExchange.
 // SessionTest::scramPlainReadvertisementDoesNotFinishExchange.
 func TestSessionScramPlainReadvertisementDoesNotFinishExchange(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -636,7 +632,7 @@ func TestSessionScramPlainReadvertisementDoesNotFinishExchange(t *testing.T) {
 	}
 }
 
-// TestSessionScramServerFirstIllegalBase64Fails ports
+// TestSessionScramServerFirstIllegalBase64Fails.
 // SessionTest::scramServerFirstIllegalBase64Fails.
 func TestSessionScramServerFirstIllegalBase64Fails(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -675,7 +671,7 @@ func TestSessionScramServerFirstIllegalBase64Fails(t *testing.T) {
 	}
 }
 
-// TestSessionScramSaslReassemblesChunkedMessages ports
+// TestSessionScramSaslReassemblesChunkedMessages.
 // SessionTest::scramSaslReassemblesChunkedMessages.
 func TestSessionScramSaslReassemblesChunkedMessages(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -744,7 +740,7 @@ func TestSessionScramSaslReassemblesChunkedMessages(t *testing.T) {
 	}
 }
 
-// TestSessionScramWelcomeBeforeVerifierFails ports
+// TestSessionScramWelcomeBeforeVerifierFails.
 // SessionTest::scramWelcomeBeforeVerifierFails.
 func TestSessionScramWelcomeBeforeVerifierFails(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -781,7 +777,7 @@ func TestSessionScramWelcomeBeforeVerifierFails(t *testing.T) {
 	}
 }
 
-// TestSessionAbandonedScramBeforeAuthenticateRegisters ports
+// TestSessionAbandonedScramBeforeAuthenticateRegisters.
 // SessionTest::abandonedScramBeforeAuthenticateRegisters.
 func TestSessionAbandonedScramBeforeAuthenticateRegisters(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
@@ -837,7 +833,7 @@ func TestSessionAbandonedScramBeforeAuthenticateRegisters(t *testing.T) {
 	}
 }
 
-// TestSessionScramSaslChunkLimitFails ports
+// TestSessionScramSaslChunkLimitFails.
 // SessionTest::scramSaslChunkLimitFails.
 func TestSessionScramSaslChunkLimitFails(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)

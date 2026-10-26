@@ -187,7 +187,7 @@ func TestUploadAcceptsARelativePath(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "note.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// The temp directory can sit on another Windows volume from the module,
+	// The temp directory can sit on another Windows volume from the module
 	// where filepath.Rel cannot build a relative path. Run from the file's
 	// own directory so the relative name is real on every host.
 	t.Chdir(dir)

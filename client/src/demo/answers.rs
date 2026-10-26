@@ -1,11 +1,9 @@
-//! Port of `tui/internal/demo/answers.go` and the anonymous auto-echo
 //! handlers in `tui/internal/demo/demo.go`: the replies the demo peer
 //! sends for the client's own frames. The server answers PING, LIST, CTCP
 //! PING/TIME/VERSION, AWAY, METADATA SET, MONITOR, the PART, NICK and TOPIC
 //! echoes, and the JOIN and PRIVMSG/NOTICE echoes. It answers nothing else. The
 //! PART, NICK and TOPIC echoes carry the sender's own `!u@h` prefix, as a real
 //! server sends them. The C++ and Go demos use the same shapes.
-//!
 //! Each `answer_*` returns `None` when the frame is not its own. `Some` means it
 //! was handled, and the reply may be empty: a MONITOR C or a `-` removal answers
 //! with nothing, and the caller must still treat that as handled. The Go
@@ -410,7 +408,7 @@ pub fn answer_part(self_nick: &str, frame: &[u8]) -> Option<Vec<u8>> {
     Some(client_echo(self_nick, frame))
 }
 
-/// Answers a client NICK with the echo `:<old>!u@h NICK :<new>`, then makes `new` the
+/// Answers a client NICK with the echo `:<old>!u@h NICK:<new>`, then makes `new` the
 /// nick the demo answers as (`tryAnswerNick`). `current` holds that nick and is updated
 /// here, so every later answer and echo uses the new one.
 pub fn answer_nick(current: &mut String, frame: &[u8]) -> Option<Vec<u8>> {
@@ -431,7 +429,7 @@ pub fn answer_nick(current: &mut String, frame: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// Answers a client TOPIC that sets a channel's topic with the echo
-/// `:<self>!u@h TOPIC #chan :<text>`. The text becomes the topic a later self JOIN
+/// `:<self>!u@h TOPIC #chan:<text>`. The text becomes the topic a later self JOIN
 /// restores (`tryAnswerTopic`). A TOPIC query, or one on a non-channel target, is not
 /// answered.
 pub fn answer_topic(

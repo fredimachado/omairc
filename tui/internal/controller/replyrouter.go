@@ -119,7 +119,7 @@ type ReplyRouter struct {
 	ownMetadataWatches map[string]map[string]replyOwnMetadataWatch
 
 	// ownMetadataDispatchDepth defers an own-metadata reply that arrives while
-	// a set/clear is still in flight. The demo loopback answers synchronously,
+	// a set/clear is still in flight. The demo loopback answers synchronously
 	// so the 761/766 can land before the watch is armed; the reply is queued
 	// and replayed once the watch exists, matching the async ordering a real
 	// server provides.
@@ -148,7 +148,7 @@ func NewReplyRouter(reducer *irc.EventReducer, host ReplyHost) *ReplyRouter {
 	}
 }
 
-// Forget drops every watch for one network. It is what discard,
+// Forget drops every watch for one network. It is what discard
 // forget-network, and the welcome event call. It mirrors IrcReplyRouter::forget.
 func (r *ReplyRouter) Forget(networkID string) {
 	if networkID == "" {
@@ -871,7 +871,7 @@ func (r *ReplyRouter) replyEchoMetadataCommandFeedback(surface irc.ComposerSurfa
 	return irc.OutcomeSent
 }
 
-// replyArmOwnMetadataWatch records the pending own-metadata set or clear,
+// replyArmOwnMetadataWatch records the pending own-metadata set or clear
 // targeting the selected conversation when it is on the same network. It
 // mirrors IrcReplyRouter::armOwnMetadataWatch.
 func (r *ReplyRouter) replyArmOwnMetadataWatch(networkID, metadataKey string, kind replyOwnMetadataKind, value string) {
@@ -1141,7 +1141,7 @@ func replyContainsString(values []string, wanted string) bool {
 	return false
 }
 
-// replyFormatPair substitutes %1 and %2 in pattern with first and second,
+// replyFormatPair substitutes %1 and %2 in pattern with first and second
 // scanning only the pattern so a substituted value is never re-expanded. It
 // matches QString::arg for the two-placeholder patterns the router uses.
 func replyFormatPair(pattern, first, second string) string {

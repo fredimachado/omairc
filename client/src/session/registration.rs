@@ -1,7 +1,5 @@
-//! Port of the registration half of `tui/internal/session/session.go` (Go),
 //! `tui/internal/session/session.go`: the PASS / NICK / USER burst, the nick
 //! collision fallback, ISUPPORT (005) and welcome (001).
-//!
 //! Registration waits for CAP END (or a `421` for CAP), then sends PASS, NICK and
 //! USER. A `433` before welcome retries with `_` and then `2`; past that the
 //! session fails visibly. After welcome, the session auto-joins, identifies with
@@ -105,7 +103,7 @@ impl Core {
         }
     }
 
-    /// Handles 001, welcome (`handleWelcomeLocked`). It registers the session,
+    /// Handles 001, welcome (`handleWelcomeLocked`). It registers the session
     /// identifies with NickServ when configured, and joins the autojoin list.
     pub(crate) fn handle_welcome(&mut self, message: &IrcMessage) {
         if self.state == SessionState::Registered || self.state == SessionState::Failed {

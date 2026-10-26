@@ -1,5 +1,5 @@
 //! The transport's callbacks into the session: `connected`, `encrypted`, `disconnected` and
-//! `errorOccurred` (`IrcTransport`'s signals in `tui/internal/session/session.go`, and the Go `Connected`,
+//! `errorOccurred` (`IrcTransport`'s signals in `tui/internal/session/session.go`, and the Go `Connected`
 //! `Encrypted`, `Disconnected` and `Error` entry points of `session.go`). The session's
 //! `Core` answers them here, so the lifecycle entry points sit in one file.
 
@@ -10,7 +10,7 @@ use super::events::{ErrorKind, SessionState};
 use super::session::{Core, Session, Shared};
 use super::transport::{TransportError, TransportErrorKind, TransportSink};
 
-/// Receives the transport's callbacks and forwards them to the session. Holds a weak reference,
+/// Receives the transport's callbacks and forwards them to the session. Holds a weak reference
 /// so a dropped session stops receiving.
 pub(super) struct SinkAdapter {
     pub(super) session: Weak<Shared>,

@@ -383,6 +383,102 @@ def check_no_deleted_qt_paths():
     return problems
 
 
+# Soft cutover museum labels. Assembled so this file is not a self-hit.
+_MUSEUM_QT_LIVE = "Qt `"
+_MUSEUM_CPP_PAREN = "(" + "C++" + ")"
+_MUSEUM_TST = "`" + "tst_"
+_MUSEUM_PORT_OF = "Port of "
+_MUSEUM_PORTED_FROM = "Ported from "
+# "Ports the ..." / "Ports `twin`" / "Ports Qt's ..." - not "Ports are".
+_MUSEUM_PORTS_CLAUSE = r"Ports (?:the |Qt |`)"
+CUTOVER_MUSEUM_LABEL = re.compile(
+    rf"(?:{_MUSEUM_QT_LIVE}(?:tui|client)/"
+    rf"|{re.escape(_MUSEUM_CPP_PAREN)}"
+    rf"|{re.escape(_MUSEUM_TST)}[A-Za-z0-9_]+`"
+    rf"|\b(?:{re.escape(_MUSEUM_PORT_OF)}|{re.escape(_MUSEUM_PORTED_FROM)}"
+    rf"|{_MUSEUM_PORTS_CLAUSE})"
+    rf")"
+)
+
+CUTOVER_MUSEUM_ALLOWLIST = DELETED_QT_PATH_ALLOWLIST
+
+
+def _cutover_museum_hits(source):
+    """Yield (line_number, matched_text) for soft cutover museum labels."""
+    for number, line in enumerate(source.splitlines(), 1):
+        stripped = line.lstrip()
+        if not stripped.startswith("//"):
+            continue
+        match = CUTOVER_MUSEUM_LABEL.search(line)
+        if match:
+            yield number, match.group(0)
+
+
+def _self_test_cutover_museum_scan():
+    samples = (
+        (f"// and {_MUSEUM_QT_LIVE}tui/internal/avatar/avatar.go`\n", True),
+        (f"// and {_MUSEUM_QT_LIVE}client/src/ui/shell`\n", True),
+        (f"// `stripIrcColors` {_MUSEUM_CPP_PAREN}.\n", True),
+        (f"// Ported from {_MUSEUM_TST}command`\n", True),
+        (f"// {_MUSEUM_PORT_OF}`tui/internal/irc/framer.go`.\n", True),
+        ("// Ports the Go cases in `tui/`\n", True),
+        ("// Ports `findNextMatch`\n", True),
+        ("// `tui/internal/avatar/avatar.go`\n", False),
+        ("// The Qt client stores a QRect under window/geometry.\n", False),
+        ("// Ports are 1..65535.\n", False),
+        ("Port of `tui/internal/irc/framer.go`.\n", False),  # not a comment
+    )
+    for text, want_hit in samples:
+        hits = list(_cutover_museum_hits(text))
+        if bool(hits) != want_hit:
+            raise AssertionError(
+                f"cutover museum self-test failed for {text!r}: "
+                f"hits={hits!r}, want_hit={want_hit}")
+
+
+def check_no_cutover_museum_labels():
+    """Reject soft Qt/C++/tst_/Port-of museum labels in client and tui."""
+    try:
+        _self_test_cutover_museum_scan()
+    except AssertionError as exc:
+        return [f"cutover museum self-test failed: {exc}"]
+
+    problems = []
+    offenders = []
+    for relative, source in sources(
+        "client/**/*.rs",
+        "client/**/*.md",
+        "tui/**/*.go",
+        "tui/**/*.md",
+    ):
+        posix = relative.as_posix()
+        if posix in CUTOVER_MUSEUM_ALLOWLIST:
+            continue
+        parts = relative.parts
+        if "target" in parts or "node_modules" in parts:
+            continue
+        hits = list(_cutover_museum_hits(source))
+        if not hits:
+            continue
+        offenders.append(posix)
+        for number, matched in hits[:5]:
+            problems.append(
+                f"{posix}:{number}: cutover museum label {matched!r}; "
+                f"cite a live twin or state the invariant "
+                f"(allowlist: storage migration + "
+                f"client/docs/qml-ui-test-checklist.md)")
+        if len(hits) > 5:
+            problems.append(
+                f"{posix}: ... and {len(hits) - 5} more museum label(s)")
+    if offenders:
+        problems.insert(
+            0,
+            "cutover museum labels in "
+            + ", ".join(offenders[:20])
+            + (f" (+{len(offenders) - 20} more)" if len(offenders) > 20 else ""))
+    return problems
+
+
 # A version-looking string literal: major.minor with an optional patch and an
 # optional letter or -/+ suffix (1.0.4, 1.0.4alpha, 1.0.4+main.g1). The
 # trailing negative lookahead rejects a further dotted group so an IP address
@@ -1373,6 +1469,7 @@ CHECKS = (
     ("Rust product crate at client/", check_client_crate),
     ("client/TUI shared IRC contract", check_shared_irc_contract),
     ("no deleted Qt src/ or tests/ paths", check_no_deleted_qt_paths),
+    ("no cutover museum labels", check_no_cutover_museum_labels),
     ("Go version source", check_go_version_source),
     ("Go build reads version.pri", check_go_build_uses_version_pri),
     ("Go ReadBuildInfo version fallback", check_go_read_build_info),

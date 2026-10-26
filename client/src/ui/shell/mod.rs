@@ -113,7 +113,7 @@ pub struct Shell {
     /// The Connect sheet's text fields, focus handles and scroll handles.
     pub connect_ui: ConnectControls,
     /// OS focus and minimize/hide. Effective activity (`arrival_active`) is what the
-    /// controller and mention notify see (Qt `arrivalWindowActive`).
+    /// controller and mention notify see.
     pub activity: crate::desktop::windowvisibility::TranscriptActivity,
     /// Last effective activity pushed to the controller.
     applied_arrival_active: bool,
@@ -499,7 +499,6 @@ impl Render for Shell {
             },
             (None, None) => Subtitle::Plain(&connection),
         };
-        // The slash popup hangs over the composer while it shows.
         let slash_popup = self.slash_popup_showing().then(|| {
             render_slash_popup(
                 self.slash.hits(),
@@ -530,7 +529,7 @@ impl Render for Shell {
         };
         let photos = self.avatar_photos_for_frame(&networks, &conversations, &members, cx);
         self.push_photos(&photos, cx);
-        // The footer is the focused network's identity (Qt's `identityNetworkId`): its nick,
+        // The footer is the focused network's identity (Qt's `identityNetworkId`): its nick
         // and the presence the controller reads for that network.
         let footer_network = self.focused_network();
         let live_nick = self.controller.current_nick_for(&footer_network);
@@ -864,21 +863,18 @@ fn close_handler(entity: Entity<Shell>) -> Handler<ConversationRef> {
     })
 }
 
-/// A click on the header's LEAVE button.
 fn leave_handler(entity: Entity<Shell>) -> Handler<()> {
     Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
         entity.update(cx, |shell, cx| shell.leave_selected_channel(window, cx));
     })
 }
 
-/// A click on the header's JOIN button.
 fn join_handler(entity: Entity<Shell>) -> Handler<()> {
     Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
         entity.update(cx, |shell, cx| shell.join_selected_channel(window, cx));
     })
 }
 
-/// A click on the header's CLOSE button.
 fn close_selection_handler(entity: Entity<Shell>) -> Handler<()> {
     Rc::new(move |_: (), window: &mut Window, cx: &mut App| {
         entity.update(cx, |shell, cx| shell.close_selection(window, cx));

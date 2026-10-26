@@ -415,9 +415,9 @@ fn render_message_row(
                                     ),
                             )
                         })
-                        // The body is Qt's TextEdit, whose line is the font's own height: 1.3 em,
+                        // The body is Qt's TextEdit, whose line is the font's own height: 1.3 em
                         // which is 17 at 13px (Qt's 26 physical pixels at 150%). StyledText
-                        // takes its size from the ancestor text style and TextRun carries none,
+                        // takes its size from the ancestor text style and TextRun carries none
                         // so the body sets Qt's 13px and that line height here.
                         .child(
                             div()

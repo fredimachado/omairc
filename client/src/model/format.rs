@@ -177,7 +177,7 @@ pub fn normalize_http_url_for_open(url: &str) -> Option<String> {
 }
 
 /// A channel name found in a line: its byte range in the line, and the name
-/// the range spells. The range is the trimmed token, so sentence punctuation,
+/// the range spells. The range is the trimmed token, so sentence punctuation
 /// a trailing quote and an unmatched closing bracket are not part of it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChannelNameSpan {
@@ -201,7 +201,6 @@ pub enum TextHit {
 /// name. The token runs to a space, comma or colon, and the name needs two characters.
 /// Trailing `.,;:!?` and a trailing `"` or `'` come off one at a time, and so does a
 /// `)`, `]`, `}` or `>` with no opener. `#foo<bar>` keeps its `>`.
-///
 /// This does not skip names inside URLs. `channel_hits` does that.
 pub fn channel_name_ranges(text: &str, features: &IrcServerFeatures) -> Vec<ChannelNameSpan> {
     let chantypes = features.channel_types();

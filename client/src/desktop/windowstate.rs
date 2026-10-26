@@ -1,10 +1,9 @@
 //! The live window's geometry: where it opens, and how it is saved on move, resize
-//! and close. Port of `Backend::saveWindowGeometry` and the `client/src/ui/shell`
-//! handlers (`trackNormalGeometry` and `Component.onDestruction`). The pure model is
-//! `storage::geometry`; this module only maps gpui's `WindowBounds` onto it.
+//! and close. The shell handlers track the normal rectangle and persist on
+//! destruction. The pure model is `storage::geometry`; this module only maps
+//! gpui's `WindowBounds` onto it.
 //!
-//! Qt saves the normal rectangle on close and does not clamp it to a display, so
-//! neither does this module.
+//! The normal rectangle is saved on close and is not clamped to a display.
 
 use std::cell::RefCell;
 use std::path::PathBuf;

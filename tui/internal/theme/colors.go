@@ -1,11 +1,9 @@
 // Package theme derives the terminal palette from the Omarchy desktop theme.
-//
 // It mirrors the Omarchy colors.toml load for reading the theme file and the
 // derived colors in `client/src/model/style.rs` for the structural mixes. The
 // fixed semantic colors are ported verbatim so the TUI stays visually identical
 // to the desktop client; only the surfaces, borders, and secondary text are
 // mixed from the theme's background, foreground, and accent.
-//
 // The package speaks image/color and stays lipgloss-free: internal/ui wraps
 // these values in lipgloss at the rendering edge.
 package theme
@@ -18,20 +16,17 @@ import (
 
 // Mode values for the colors.toml "mode" key. ParseColorsTOML recognizes only
 // these two; anything else falls back to background luminance, matching
-// Backend::loadOmarchyTheme.
 const (
 	ModeDark  = "dark"
 	ModeLight = "light"
 )
 
 // Colors is the derived palette.
-//
 // The first block is derived from the theme: its values move with the theme's
 // background, foreground, and accent. The second block is fixed so the two
 // clients stay in step with `client/src/model/style.rs`; deriving it would break parity.
 // Every field is an opaque image/color value; Hex formats one for lipgloss.
 type Colors struct {
-	// Derived structural colors.
 	Background    color.Color
 	Foreground    color.Color
 	Accent        color.Color
@@ -63,7 +58,6 @@ type Colors struct {
 }
 
 // Spec is a parsed Omarchy colors.toml.
-//
 // Mode is always resolved: ParseColorsTOML takes the file's "mode" when it is
 // "dark" or "light", otherwise it infers the mode from the background
 // luminance. The Has* flags record whether the file supplied a usable value, so

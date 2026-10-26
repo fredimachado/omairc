@@ -1,6 +1,5 @@
 //! The reducer's read-marker rules: the newest server-stamped line stands in for
-//! a marker, and a line the marker covers plants no mention. Ports of
-//! `readmarker_test.go`.
+//! a marker, and a line the marker covers plants no mention.
 
 use super::*;
 use crate::irc::event::{ConversationKey, MsgId};

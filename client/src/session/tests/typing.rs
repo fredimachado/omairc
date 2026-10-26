@@ -1,4 +1,4 @@
-//! Port of `tui/internal/session/typing_test.go`: the outbound typing gate, its
+//! the outbound typing gate, its
 //! per-target pace, and the session's `SendTyping`.
 
 use std::time::Duration;

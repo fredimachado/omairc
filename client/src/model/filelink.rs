@@ -1,4 +1,4 @@
-//! Pasted file paths and composer routing for FILEHOST links. Ports
+//! Pasted file paths and composer routing for FILEHOST links.
 //! `tui/internal/ui/filepick.go` and `filepick_test.go`.
 
 use std::path::{Path, PathBuf};

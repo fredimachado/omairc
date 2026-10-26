@@ -1,14 +1,12 @@
 //! The conversation store as the controller uses it: creating a row under its
 //! cause, dropping and closing rows, the selection and unread accounting, the
 //! network-wide forgets, and the member and typing reads the panel draws from.
-//!
-//! Port of `tui/internal/irc/reducer.go` (Go: `EnsureConversation`, `DropDirectMessage`,
-//! `DropChannel`, `NoteClosed`, `ClearClosed`, `Closed`, `MarkChannelLeft`,
-//! `ForgetNetwork`, `ClearMessages`, `SetMuted`, `MarkSelected`, `MarkRead`,
-//! `MarkAllRead`, `MemberView`, `NickPresence`, `DisplayAccount`,
-//! `MeaningfulRealname`, `PeerFactLabels`, `PeerPresence`, `OrderedMembers`,
-//! `TypingNicks`, `DirectPeerIsTyping`, `ClearTypingFacts`, `ClearPresenceFacts`,
-//! `ReleaseStaleNamesSync`, `JoinedMemberChannel`, `SetServerFeatures`,
+//! `DropChannel`, `NoteClosed`, `ClearClosed`, `Closed`, `MarkChannelLeft`
+//! `ForgetNetwork`, `ClearMessages`, `SetMuted`, `MarkSelected`, `MarkRead`
+//! `MarkAllRead`, `MemberView`, `NickPresence`, `DisplayAccount`
+//! `MeaningfulRealname`, `PeerFactLabels`, `PeerPresence`, `OrderedMembers`
+//! `TypingNicks`, `DirectPeerIsTyping`, `ClearTypingFacts`, `ClearPresenceFacts`
+//! `ReleaseStaleNamesSync`, `JoinedMemberChannel`, `SetServerFeatures`
 //! `SetHighlightWords`) and of `tui/internal/irc/reducer.go`.
 
 use chrono::{DateTime, TimeDelta, Utc};
@@ -203,7 +201,6 @@ impl EventReducer {
         self.facts.is_closed(key)
     }
 
-    /// Drops every closed channel on one network.
     pub(super) fn clear_closed_network(&mut self, network_id: &str) {
         if network_id.is_empty() {
             return;
@@ -231,7 +228,7 @@ impl EventReducer {
         true
     }
 
-    /// Drops every fact about one network: conversations, features, nicks,
+    /// Drops every fact about one network: conversations, features, nicks
     /// presence, mutes and held playback (`ForgetNetwork`).
     pub fn forget_network(&mut self, network_id: &str) {
         if network_id.is_empty() {
@@ -296,7 +293,7 @@ impl EventReducer {
         }
     }
 
-    /// Records the selected conversation and clears its unread and mention counts,
+    /// Records the selected conversation and clears its unread and mention counts
     /// keeping the boundary when nothing new arrived (`MarkSelected`).
     pub fn mark_selected(&mut self, key: &ConversationKey) {
         if self.facts.selected.as_ref() == Some(key) {
@@ -535,7 +532,7 @@ impl EventReducer {
         self.facts.peer_fact_labels(network_id, nick)
     }
 
-    /// What the network proves about a nick: `Unknown` without a shared channel,
+    /// What the network proves about a nick: `Unknown` without a shared channel
     /// else `Away` or `Online` (`PeerPresence`).
     pub fn peer_presence(&self, network_id: &str, normalized_nick: &str) -> PeerPresence {
         if normalized_nick.is_empty() || !is_visible(&self.conversations, network_id, normalized_nick) {

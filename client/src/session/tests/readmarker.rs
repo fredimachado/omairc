@@ -1,4 +1,4 @@
-//! Port of `tui/internal/session/readmarker_test.go`: the outbound MARKREAD and
+//! the outbound MARKREAD and
 //! READ queue, the in-flight rule, and the inbound echo, star, and FAIL paths.
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};

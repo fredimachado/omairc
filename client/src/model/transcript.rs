@@ -469,7 +469,7 @@ fn row_plain(row: &Row) -> &str {
     }
 }
 
-/// The local `HH:MM` a line shows (Qt `displayTime`), from its display instant.
+/// The local `HH:MM` a line shows, from its display instant.
 pub fn minute_of(time: DateTime<Utc>) -> String {
     time.with_timezone(&Local).format("%H:%M").to_string()
 }
@@ -479,7 +479,7 @@ fn day_of(time: DateTime<Utc>) -> NaiveDate {
     time.with_timezone(&Local).date_naive()
 }
 
-/// The caption of a day separator (Qt `dateLabel`): `Today`, `Yesterday`, or the
+/// The caption of a day separator: `Today`, `Yesterday`, or the
 /// locale's short date for any other day.
 pub fn day_caption(day: NaiveDate, today: NaiveDate) -> String {
     if day == today {
@@ -491,7 +491,7 @@ pub fn day_caption(day: NaiveDate, today: NaiveDate) -> String {
     short_date(day)
 }
 
-/// The day a line belongs to (Qt `assignedDate`). A line with a display time takes that
+/// The day a line belongs to. A line with a display time takes that
 /// time's local date. A live line without one takes today. Any other untimed line, such as
 /// a replayed one, takes the day of the line above it.
 fn assigned_day(
@@ -509,12 +509,11 @@ fn assigned_day(
 }
 
 /// The rows for one conversation's lines, oldest first.
-///
 /// `mark` is the sequence of the "New messages" boundary (`ConversationState::unread_mark`).
 /// The boundary row sits in front of that line, but only when a row is above it, as
-/// Qt's `!view.empty()` rule has it. A day separator sits in front of a line whose day
+/// Qt's `!view.empty` rule has it. A day separator sits in front of a line whose day
 /// differs from the line above, and in front of the first dated line when that day is not
-/// today, so a backlog still says which day it is (Qt `buildView`).
+/// today, so a backlog still says which day it is.
 pub fn rows_from_messages(messages: &[Message], mark: Option<i64>) -> Vec<Row> {
     rows_from_messages_on(messages, mark, Local::now().date_naive())
 }

@@ -10,7 +10,6 @@ import (
 	"time"
 )
 
-// Options describes one PTY child.
 type Options struct {
 	Binary string
 	Args   []string
@@ -21,7 +20,6 @@ type Options struct {
 }
 
 // Process is a running child attached to a pseudo-terminal.
-//
 // readFd carries child output; writeFd delivers keystrokes. On Unix they are
 // the same PTY master handle. On Windows they are separate ConPTY pipe ends.
 type Process struct {
@@ -181,7 +179,6 @@ func (p *Process) closeFds() error {
 // launched shell never touches the developer's state directory (the crash log
 // in particular). exec.Cmd deduplicates Env with the last value winning, so
 // appending here overrides an inherited value.
-//
 // The inherited no-color hints are dropped rather than overridden. NO_COLOR and
 // CLICOLOR are presence checks in the color libraries the shell renders
 // through, not values, so a developer's or CI runner's hint cannot be beaten by

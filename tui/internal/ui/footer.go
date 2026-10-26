@@ -53,7 +53,7 @@ func (m *Model) footerVisible() bool {
 }
 
 // footerStatusView renders the footer's left side: a spinner while the focused
-// network is disconnected (a steady dot once connected), the connection state,
+// network is disconnected (a steady dot once connected), the connection state
 // and the focused network's display name.
 func (m *Model) footerStatusView() string {
 	return m.footerStatusAt(footerStatusFull, 0)
@@ -281,7 +281,7 @@ func renderFooterHelpFull(h help.Model, bindings []key.Binding, budget int) stri
 	return renderFooterHelpDropped(h, bindings, 0, false, budget)
 }
 
-// fitFooterHelp renders contextual help within budget, keeping the Ctrl+/
+// fitFooterHelp renders contextual help within budget, keeping the Ctrl+
 // shortcuts tail whole and dropping or shortening earlier hints from the end.
 func fitFooterHelp(h help.Model, bindings []key.Binding, budget int) string {
 	if len(bindings) == 0 || budget <= 0 {

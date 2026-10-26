@@ -1,14 +1,12 @@
-//! Port of `tui/internal/irc/channelname.go`.
-//!
 //! Finds channel names inside message text, so a transcript can link them. The
-//! prefix set comes from the server's CHANTYPES and the rank glyphs from PREFIX,
+//! prefix set comes from the server's CHANTYPES and the rank glyphs from PREFIX
 //! never from a hard-coded `#` or `@`.
 
 #[cfg(test)]
 use super::serverfeatures::IrcServerFeatures;
 
 /// One channel name inside a message or a topic (`IrcChannelNameSpan`). `start`
-/// and `end` are byte offsets, with `end` exclusive. `name` is the trimmed token,
+/// and `end` are byte offsets, with `end` exclusive. `name` is the trimmed token
 /// so trailing sentence punctuation sits outside the span.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg(test)]
@@ -19,12 +17,11 @@ pub struct IrcChannelNameSpan {
 }
 
 /// Every channel name in `text`. Returns nothing when CHANTYPES is empty.
-///
 /// A token starts with an advertised channel type, and only at the start of the
 /// text, after whitespace or an opening delimiter, or right after a PREFIX rank
 /// glyph (the span does not include that glyph). It runs to a space, comma, colon
 /// or control character. Trailing `.,;:!?` and a trailing `"` or `'` are stripped
-/// one mark at a time. An unmatched trailing `)`, `]`, `}` or `>` is stripped too,
+/// one mark at a time. An unmatched trailing `)`, `]`, `}` or `>` is stripped too
 /// and `>` pairs with `<`. The result is kept only when `is_channel` accepts it
 /// and it is at least two characters.
 #[cfg(test)]

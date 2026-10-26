@@ -1,7 +1,7 @@
-//! The Phase 3 parity exit, read off the controller over the real demo. Each
-//! assertion is a Qt observable the demo seed must reproduce: the titles' network
-//! name, the sidebar counts, the member panel order and labels, the typing hint,
-//! the inbox, and the Status `-AUTH-` line. The sidebar case ports
+//! Parity exit, read off the controller over the real demo. Each assertion is
+//! an observable the demo seed must reproduce: the titles' network name, the
+//! sidebar counts, the member panel order and labels, the typing hint, the
+//! inbox, and the Status `-AUTH-` line. Sidebar case:
 //! `TestDemo...` in `tui/internal/demo/demo_test.go`.
 
 use crate::irc::inbox::InboxKind;

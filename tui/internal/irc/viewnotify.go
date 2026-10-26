@@ -86,7 +86,7 @@ func ViewNotifyTranscript() ViewNotify {
 	return ViewNotify{Messages: true}
 }
 
-// ViewNotifyMembership reloads the conversation list, transcript, members,
+// ViewNotifyMembership reloads the conversation list, transcript, members
 // selection, and typing: a membership change touches all of them.
 func ViewNotifyMembership() ViewNotify {
 	return ViewNotify{

@@ -1,9 +1,9 @@
-//! Port of `tui/internal/session/saslscram_test.go`, which in turn mirrors `tst_scram`.
+//! `tui/internal/session/saslscram_test.go`, which in turn.
 //! The RFC 7677 vector is the one both suites pin.
 
 use super::*;
 
-/// The fixed nonce and messages of the RFC 7677 vector (`tst_scram`).
+/// The fixed nonce and messages of the RFC 7677 vector .
 const NONCE: &str = "rOprNGfwEbeRWgbNEkqO";
 const CLIENT_FIRST: &str = "n,,n=user,r=rOprNGfwEbeRWgbNEkqO";
 const SERVER_FIRST: &str =
@@ -30,7 +30,6 @@ fn server_first_with_iterations(iterations: &str) -> Vec<u8> {
     format!("r={NONCE}%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,s={SALT},i={iterations}").into_bytes()
 }
 
-/// Ports `ScramTest::rfc7677VectorVerifiesServerSignature`.
 #[test]
 fn rfc7677_vector_verifies_server_signature() {
     let mut scram = SaslScram::default();
@@ -46,7 +45,6 @@ fn rfc7677_vector_verifies_server_signature() {
     assert_eq!(server_final, Ok(Vec::new()));
 }
 
-/// Ports `ScramTest::wrongServerSignatureFails`.
 #[test]
 fn wrong_server_signature_fails() {
     let mut scram = SaslScram::default();
@@ -60,7 +58,6 @@ fn wrong_server_signature_fails() {
     assert_eq!(rejected, Err(ScramFailure::SignatureMismatch));
 }
 
-/// Ports `ScramTest::serverNonceMustContinueClientNonce`.
 #[test]
 fn server_nonce_must_continue_client_nonce() {
     let mut scram = SaslScram::default();
@@ -105,7 +102,6 @@ fn server_nonce_one_byte_longer_than_client_nonce_is_accepted() {
     assert!(client_final.starts_with(b"c=biws,r=abcd,p="));
 }
 
-/// Ports `ScramTest::nonceEqualsSignsBelongToTheValue`.
 #[test]
 fn nonce_equals_signs_belong_to_the_value() {
     let mut scram = SaslScram::default();
@@ -116,7 +112,6 @@ fn nonce_equals_signs_belong_to_the_value() {
     assert!(client_final.starts_with(b"c=biws,r=abc=def=ghi,p="));
 }
 
-/// Ports `ScramTest::iterationCountBelowMinimumFails`.
 #[test]
 fn iteration_count_below_minimum_fails() {
     let mut scram = SaslScram::default();
@@ -129,7 +124,7 @@ fn iteration_count_below_minimum_fails() {
     );
 }
 
-/// Ports `ScramTest::iterationCountAboveMaximumFailsWithoutPbkdf2`. The Go test times the
+/// `ScramTest::iterationCountAboveMaximumFailsWithoutPbkdf2`. The Go test times the
 /// step, but `session/` does not read the clock outside `clock.rs`. The ordering is checked
 /// structurally instead: `client_final_for` calls `parse_iterations` before the PBKDF2 call.
 #[test]
@@ -143,7 +138,6 @@ fn iteration_count_above_maximum_fails_without_pbkdf2() {
     assert!(hides_password(&rejected));
 }
 
-/// Ports `ScramTest::usernameEscapesEqualsAndComma`.
 #[test]
 fn username_escapes_equals_and_comma() {
     let mut scram = SaslScram::default();
@@ -152,7 +146,6 @@ fn username_escapes_equals_and_comma() {
     assert!(hides_password(&started));
 }
 
-/// Ports `ScramTest::accountOrPasswordWithControlBytesIsRejected`.
 #[test]
 fn account_or_password_with_control_bytes_is_rejected() {
     for account in ["user\rname", "user\nname", "\0", "us\0er"] {
@@ -183,7 +176,6 @@ fn account_or_password_with_control_bytes_is_rejected() {
     }
 }
 
-/// Ports `ScramTest::serverErrorAttributeFails`.
 #[test]
 fn server_error_attribute_fails() {
     let mut scram = SaslScram::default();
@@ -206,7 +198,6 @@ fn server_error_attribute_fails() {
     assert!(hides_password(&rejected));
 }
 
-/// Ports `ScramTest::missingOrGarbageAttributeFails`.
 #[test]
 fn missing_or_garbage_attribute_fails() {
     let mut missing = SaslScram::default();
@@ -226,7 +217,6 @@ fn missing_or_garbage_attribute_fails() {
     assert!(hides_password(&extra));
 }
 
-/// Ports `ScramTest::verifierOrSaltWithTrailingJunkFails`.
 #[test]
 fn verifier_or_salt_with_trailing_junk_fails() {
     let mut salt = SaslScram::default();
@@ -249,7 +239,7 @@ fn verifier_or_salt_with_trailing_junk_fails() {
     assert_eq!(rejected, Err(ScramFailure::MalformedAttribute));
 }
 
-/// Ports `ScramTest::serverFinalBeforeServerFirstFails`. The early call leaves the exchange
+/// `ScramTest::serverFinalBeforeServerFirstFails`. The early call leaves the exchange
 /// waiting for server-first.
 #[test]
 fn server_final_before_server_first_fails() {
@@ -267,7 +257,6 @@ fn server_final_before_server_first_fails() {
     );
 }
 
-/// Ports `ScramTest::secondCallInTheWrongStateFails`.
 #[test]
 fn second_call_in_the_wrong_state_fails() {
     let mut scram = SaslScram::default();
@@ -291,7 +280,6 @@ fn second_call_in_the_wrong_state_fails() {
     );
 }
 
-/// Ports `ScramTest::generatedNonceIsPrintableAndHasNoComma`.
 #[test]
 fn generated_nonce_is_printable_and_has_no_comma() {
     let mut scram = SaslScram::default();

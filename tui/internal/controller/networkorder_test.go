@@ -23,7 +23,7 @@ func TestNetworkOrderRecordedOrderWins(t *testing.T) {
 		addNetwork(t, c, id)
 	}
 	// "gone" has no session, so it is dropped; "zulu" is not in the recorded
-	// order, so it is appended in NetworkIDs() order.
+	// order, so it is appended in NetworkIDs order.
 	c.SetNetworkOrder([]string{"omarchy", "gone", "alpha"})
 
 	got := c.NetworkOrder()

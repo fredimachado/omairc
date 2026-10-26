@@ -1,12 +1,9 @@
-//! Port of `tui/internal/irc/capabilitynegotiation.go`.
-//!
 //! Tracks the tokens of one CAP LS / REQ / ACK / NAK / END exchange: what the
 //! server advertised, what we asked for, what it granted and what it refused.
 //! The wanted table is the fixed policy. It follows the Go order, which the tests
 //! pin. The C++ table lists the read-marker rows before `znc.in/playback`; that
 //! changes only the order of tokens within a CAP REQ, never which tokens are
 //! requested.
-//!
 //! Two deliberate differences from Go:
 //! - Token names are folded with ASCII case rules only. Every IRCv3 capability
 //!   name is ASCII, so a non-ASCII spelling that Unicode folding would map onto
@@ -24,7 +21,7 @@ use super::capability::{IrcCapability, IrcCapabilitySet};
 pub struct IrcCapabilityRequest {
     pub lines: Vec<String>,
     pub requests_sasl: bool,
-    /// `None` unless `requests_sasl`. `SCRAM-SHA-256` when the server listed it,
+    /// `None` unless `requests_sasl`. `SCRAM-SHA-256` when the server listed it
     /// otherwise `PLAIN`.
     pub sasl_mechanism: Option<&'static str>,
 }
@@ -94,7 +91,7 @@ impl Wanted {
     }
 }
 
-/// The fixed capability policy, ported from the Go table. Order decides the CAP
+/// The fixed capability policy.
 /// REQ line order. `draft/chathistory` follows `chathistory`, and `soju.im/read`
 /// follows `draft/read-marker`: each pair names one capability, so the second
 /// spelling is requested only when the first one is not requestable.
@@ -127,7 +124,7 @@ const WANTED: &[Wanted] = &[
     Wanted::new(IrcCapability::ReadMarker, "soju.im/read"),
 ];
 
-/// Tracks one CAP exchange (`IrcCapabilityNegotiation`). Build one with `new`,
+/// Tracks one CAP exchange (`IrcCapabilityNegotiation`). Build one with `new`
 /// and call `reset` when a connection starts over.
 #[derive(Clone, Debug, Default)]
 pub struct IrcCapabilityNegotiation {
@@ -289,7 +286,6 @@ impl IrcCapabilityNegotiation {
             .any(|state| *state == TokenState::Requested)
     }
 
-    /// The capabilities the server has acknowledged.
     pub fn enabled(&self) -> IrcCapabilitySet {
         let mut set = IrcCapabilitySet::default();
         for wanted in WANTED {
@@ -391,7 +387,7 @@ fn token_value(token: &str) -> &str {
 mod tests {
     use super::*;
 
-    // Ported from tui/internal/irc/capability_test.go. `tokens` splits a CAP token
+    // tui/internal/irc/capability_test.go. `tokens` splits a CAP token
     // list the way the Go helper does.
 
     fn tokens(line: &str) -> Vec<&str> {
@@ -1008,7 +1004,7 @@ mod tests {
         assert_eq!(negotiation.enabled(), set_of(&[IrcCapability::AwayNotify]));
     }
 
-    // Ported from tui/internal/irc/capability_readmarker_test.go.
+    // tui/internal/irc/capability_readmarker_test.go.
 
     #[test]
     fn dual_read_marker_offer_requests_draft_token() {

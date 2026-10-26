@@ -162,7 +162,7 @@ impl Shell {
     }
 
     /// Escape, in Qt's order: closes the slash popup first, keeping the typed text.
-    /// Then it closes the top layer: the open sheet, then the Connect sheet. Then,
+    /// Then it closes the top layer: the open sheet, then the Connect sheet. Then
     /// with neither, it leaves find mode and restores the draft. Then, with nothing
     /// open, it leaves Status for the conversation. Inert otherwise.
     pub fn escape(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -209,7 +209,7 @@ impl Shell {
         })
     }
 
-    /// `/list [mask]` for `network_id` (Qt `openChannelListSheet`): the channel list
+    /// `/list [mask]` for `network_id`: the channel list
     /// for the mask, from the cache when this mask was asked before. A channel the
     /// network has is focused, and any other is joined, on Enter or a click. Escape
     /// closes it and returns focus to the composer.
@@ -249,7 +249,7 @@ impl Shell {
         cx.notify();
     }
 
-    /// Enter or a click on a list row. A channel the network already has is selected,
+    /// Enter or a click on a list row. A channel the network already has is selected
     /// as `open_channel_name` does. Any other channel is joined through `join_invite`.
     fn join_listed_channel(&mut self, network_id: &str, name: &str, cx: &mut Context<Self>) {
         match self.find_channel(network_id, name) {
@@ -365,7 +365,7 @@ impl Shell {
         cx.notify();
     }
 
-    /// The Link sheet. On a conversation it lists the topic and transcript links;
+    /// The Link sheet. On a conversation it lists the topic and transcript links
     /// on Status it lists the Status rows' URLs and INVITE channels.
     fn present_link(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let rows = self.transcript.read(cx).rows().to_vec();

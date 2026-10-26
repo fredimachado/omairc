@@ -8,7 +8,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
-// DemoServer is the Go port of IrcDemoServer. It owns the two loopback
+// DemoServer is the Go.
 // transports it seeds, the per-network MONITOR watch lists, the per-network
 // self nick and channel topics that NICK and TOPIC frames change, and the last
 // attach error.
@@ -17,7 +17,7 @@ type DemoServer struct {
 	oftc    *session.LoopbackTransport
 
 	// monitorLists holds each network's watched nicks, keyed by network id. It
-	// mirrors the C++ QHash<IrcLoopbackTransport *, QStringList> keyed by the
+	// mirrors the QHash<IrcLoopbackTransport *, QStringList> keyed by the
 	// transport pointer; the network id is the stable equivalent.
 	monitorLists map[string][]string
 
@@ -135,9 +135,8 @@ func (d *DemoServer) Attach(c *controller.Controller, autoEcho bool) bool {
 
 // startNetwork creates and starts one loopback session and completes its
 // connect. It mirrors IrcDemoServer::startNetwork.
-//
 // The profile name stays empty, exactly like the C++ seedProfile
-// (`client/src/demo/server.rs`): resolvedName() then falls back to the host, so
+// (`client/src/demo/server.rs`): resolvedName then falls back to the host, so
 // both demo networks resolve to "irc.example" and the roster disambiguates
 // them by nick.
 func (d *DemoServer) startNetwork(c *controller.Controller, networkID, nick string, autojoin []string) (*session.LoopbackTransport, bool) {
@@ -159,8 +158,8 @@ func (d *DemoServer) startNetwork(c *controller.Controller, networkID, nick stri
 	return transport, true
 }
 
-// hookAutoEcho returns the frameWritten handler: answer ping, list, ctcp, away,
-// metadata, monitor, nick, part, and topic in order, then echo JOIN, PRIVMSG,
+// hookAutoEcho returns the frameWritten handler: answer ping, list, ctcp, away
+// metadata, monitor, nick, part, and topic in order, then echo JOIN, PRIVMSG
 // and NOTICE back to the client. Because tryAnswerMonitor uses a non-nil empty
 // slice for a handled no-op, the ladder tests `reply != nil`, not
 // `len(reply) > 0`. Each frame reads the network's current self nick, so a NICK

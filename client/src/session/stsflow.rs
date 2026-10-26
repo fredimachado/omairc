@@ -1,5 +1,5 @@
 //! The session's STS flow: the upgrade from plaintext, the reconnect on the upgraded port, the
-//! cached policy applied at start and reconnect, and the expiry refreshed on disconnect. Port of
+//! cached policy applied at start and reconnect, and the expiry refreshed on disconnect.
 //! the `STS` section of `tui/internal/session/session.go` (Go) and of the STS methods of
 //! `tui/internal/session/session.go`. The cache itself is `sts.rs`.
 

@@ -1,24 +1,19 @@
-//! Port of `tui/internal/controller/replyrouter.go`.
 //! The WHOIS, CTCP and labeled-response watches, and the routing of their replies
 //! to a conversation transcript or to Status.
-//!
 //! A WHOIS or a CTCP query arms a watch keyed by network and nick. With `labeled-response`
 //! negotiated the watch is keyed by the request label instead, so the server's answer
 //! names its own request. A reply that matches a watch is copied to the destination the
 //! watch was armed with, and the watch ends with the reply: a 318 for a WHOIS, the first
 //! reply for a CTCP, and a FAIL, WARN, NOTE or 4xx and 5xx for a labeled request that
 //! failed.
-//!
 //! A WHOIS detail line also teaches the reducer its metadata, and the first detail line of
 //! a WHOIS writes those facts to Status once. A watch armed while the nick's delivery
 //! changed is marked ambiguous, so the 401 that follows does not read as "no such nick".
-//!
 //! The user's own `/status` and `/avatar` are METADATA writes the same way: a set or a clear
 //! arms a watch keyed by network and canonical key, and the 761 or 766 that confirms it (or a
 //! FAIL, or a 764, 767 or 769 that refuses it) ends the watch and echoes the outcome to the
 //! conversation that asked, or to Status. A reply that lands while the write is still being
 //! armed waits until the watch exists (`IrcReplyRouter::routeOwnMetadataReply`).
-//!
 //! The `/whois`, `/ping`, `/time`, `/version`, `/status` and `/avatar` dispatch lives
 //! here too, so the dispatcher only routes the verb.
 
@@ -59,7 +54,6 @@ struct CtcpKey {
     command: String,
 }
 
-/// The key of a labeled request.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct LabeledKey {
     network_id: String,
@@ -153,7 +147,6 @@ impl Controller {
     /// Sends a WHOIS for `nick` on `network_id` and arms its watch, with `destination` as
     /// the transcript the replies copy to (`sendWhois`). Returns false when the nick is
     /// empty or the write is refused.
-    // The product CLI (Phase 9) calls these; the dispatcher reaches the same watches through its own verbs.
     #[cfg(test)]
     pub fn whois(&mut self, network_id: &str, nick: &str, destination: Option<ConversationKey>) -> bool {
         self.pump();
@@ -167,7 +160,6 @@ impl Controller {
 
     /// Sends a CTCP query (`PING`, `TIME` or `VERSION`) to `nick` and arms its watch, with
     /// `destination` as the transcript the reply copies to (`sendCtcpQuery`).
-    // The product CLI (Phase 9) calls these; the dispatcher reaches the same watches through its own verbs.
     #[cfg(test)]
     pub fn ctcp_query(
         &mut self,
@@ -411,7 +403,7 @@ impl Controller {
         }
     }
 
-    /// The shared body of the two WHOIS routes: the line itself goes to the destination,
+    /// The shared body of the two WHOIS routes: the line itself goes to the destination
     /// and on the first detail line the metadata facts go to Status and the destination.
     fn apply_whois_detail(
         &mut self,
@@ -661,7 +653,7 @@ impl Controller {
         }
     }
 
-    /// `/status` (`IrcReplyRouter::dispatchStatus`): no argument reads the standing status,
+    /// `/status` (`IrcReplyRouter::dispatchStatus`): no argument reads the standing status
     /// `clear` unsets it, and anything else sets it, clamped to the network's value budget.
     pub(super) fn dispatch_status(&mut self, argument: &str, surface: ComposerSurface) -> CommandOutcome {
         self.dispatch_own_metadata(argument, surface, STATUS_KEY)

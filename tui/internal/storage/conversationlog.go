@@ -16,8 +16,7 @@ import (
 // file per conversation keyed by the network and target. It mirrors
 // IrcConversationLog in `client/src/storage/conversationlog.rs` and satisfies
 // irc.ConversationLog.
-//
-// The on-disk layout is <root>/<OmaircStorageSegment(network)>/
+// The on-disk layout is <root>/<OmaircStorageSegment(network)>
 // <OmaircWireStorageSegment(target)>. PathFor migrates a pre-Omairc
 // (LegacyStorageSegment) file in place when it finds one, matching
 // migrateLegacyTranscriptPath in the C++.
@@ -29,9 +28,9 @@ type ConversationLog struct {
 // assertion catches signature drift at compile time.
 var _ irc.ConversationLog = (*ConversationLog)(nil)
 
-// NewConversationLog returns a log rooted at root, or TranscriptRoot() when
+// NewConversationLog returns a log rooted at root, or TranscriptRoot when
 // root is "". TranscriptRoot honours OMAIRC_TRANSCRIPT_ROOT and otherwise
-// falls back to <GenericStateRoot>/omairc/logs, mirroring defaultRoot().
+// falls back to <GenericStateRoot>/omairc/logs, mirroring defaultRoot.
 func NewConversationLog(root string) *ConversationLog {
 	if root == "" {
 		root = TranscriptRoot()
@@ -132,7 +131,7 @@ type conversationLogRecord struct {
 	OnlyVisibleToYou bool   `json:"onlyVisibleToYou,omitempty"`
 }
 
-// conversationLogFlatten replaces newlines and carriage returns with spaces,
+// conversationLogFlatten replaces newlines and carriage returns with spaces
 // mirroring flattenText.
 func conversationLogFlatten(text string) string {
 	replaced := make([]byte, 0, len(text))
@@ -261,7 +260,7 @@ func conversationLogPrependBytes(path string, lines [][]byte) bool {
 	return os.WriteFile(path, buf.Bytes(), 0o600) == nil
 }
 
-// conversationLogReadTail ports IrcConversationLog::readTail(QIODevice*,int):
+// conversationLogReadTail.
 // it scans the file backwards in 4096-byte chunks, parses the newest lines
 // first, filters them through the secret policy, stops at maxLines, and
 // reverses the result so it is oldest first.
@@ -393,8 +392,8 @@ func conversationLogLegacyDirExists(root, segment string) bool {
 	return conversationLogDirExists(filepath.Join(root, segment))
 }
 
-// conversationLogMigrateLegacyPath ports migrateLegacyTranscriptPath: it
-// renames the legacy network directory to the Omairc name when that is safe,
+// conversationLogMigrateLegacyPath. It.
+// renames the legacy network directory to the Omairc name when that is safe
 // then moves the legacy transcript file from either the resolved or the
 // legacy directory. It never overwrites an existing Omairc file, and it keeps
 // the legacy path when a rename fails but the legacy file survives.

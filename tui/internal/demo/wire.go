@@ -9,17 +9,17 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
-// This file is the Go port of the anonymous wire builders in
-// `client/src/demo/server.rs`: line assembly, inbound frame parsing, the
-// registration burst, channel state, presence, account, transcript, and typing
-// bytes, plus the world/transcript injectors.
+// Wire builders for the demo server: line assembly, inbound frame parsing,
+// registration burst, channel state, presence, account, transcript, and
+// typing bytes, plus world/transcript injectors. Twin:
+// `client/src/demo/server.rs`.
 
-// line appends CRLF to text, mirroring the anonymous line() helper.
+// line appends CRLF to text, mirroring the anonymous line helper.
 func line(text string) []byte {
 	return []byte(text + "\r\n")
 }
 
-// stripCrlf removes one trailing CRLF or LF, mirroring stripCrlf().
+// stripCrlf removes one trailing CRLF or LF, mirroring stripCrlf.
 func stripCrlf(frame []byte) []byte {
 	if len(frame) >= 2 && frame[len(frame)-2] == '\r' && frame[len(frame)-1] == '\n' {
 		return frame[:len(frame)-2]
@@ -30,8 +30,8 @@ func stripCrlf(frame []byte) []byte {
 	return frame
 }
 
-// parseDemoFrame strips CRLF and parses the line. ok is false on a parse error,
-// mirroring parseDemoFrame().
+// parseDemoFrame strips CRLF and parses the line. ok is false on a parse error
+// mirroring parseDemoFrame.
 func parseDemoFrame(frame []byte) (irc.Message, bool) {
 	message, err := irc.Parse(string(stripCrlf(frame)))
 	if err != nil {
@@ -41,7 +41,7 @@ func parseDemoFrame(frame []byte) (irc.Message, bool) {
 }
 
 // demoTagValue returns the first tag value named name, or "". It mirrors
-// demoTagValue().
+// demoTagValue.
 func demoTagValue(message irc.Message, name string) string {
 	for _, tag := range message.Tags {
 		if tag.Name == name && tag.Value != nil {
@@ -61,7 +61,7 @@ func demoLabelPrefix(label string) []byte {
 
 // privmsg renders one seed chat row as a tagged PRIVMSG. The account tag is
 // emitted first, then the server-time tag, and only the present tags are joined
-// with a semicolon, mirroring privmsg().
+// with a semicolon, mirroring privmsg.
 func privmsg(row SeedLine, target string) []byte {
 	var tags []byte
 	if row.Account != "" {
@@ -96,7 +96,7 @@ func privmsg(row SeedLine, target string) []byte {
 }
 
 // joinLine renders a JOIN. An account carrier uses the extended-join trailing
-// form, mirroring joinLine().
+// form, mirroring joinLine.
 func joinLine(nick, channel, account string) []byte {
 	if account != "" {
 		return line(":" + nick + "!u@h JOIN " + channel + " " + account + " :" + nick + " Example")
@@ -104,7 +104,6 @@ func joinLine(nick, channel, account string) []byte {
 	return line(":" + nick + "!u@h JOIN :" + channel)
 }
 
-// accountLine renders an account-notify ACCOUNT line.
 func accountLine(nick, account string) []byte {
 	return line(":" + nick + "!u@h ACCOUNT " + account)
 }
@@ -122,7 +121,7 @@ func removeAll(values []string, unwanted string) []string {
 }
 
 // initialMembers is the member list without the lateJoin arrivals, mirroring
-// initialMembers().
+// initialMembers.
 func initialMembers(channel SeedChannel) []string {
 	names := append([]string(nil), channel.Members...)
 	for _, late := range channel.LateJoin {
@@ -134,7 +133,7 @@ func initialMembers(channel SeedChannel) []string {
 // namesTokens prepends each member's PREFIX symbol. A NAMES reply carries the
 // PREFIX symbols in front of the nick, and the demo network advertises the full
 // ladder, so a member may carry more than one (mira holds "@+"). It mirrors
-// namesTokens().
+// namesTokens.
 func namesTokens(channel SeedChannel) []string {
 	tokens := initialMembers(channel)
 	for index, token := range tokens {
@@ -150,7 +149,7 @@ func namesTokens(channel SeedChannel) []string {
 }
 
 // registrationBytes is the CAP/registration burst. It matches every numeric's
-// parameter count and text in registrationBytes().
+// parameter count and text in registrationBytes.
 func registrationBytes(nick, welcome, iconURL string) []byte {
 	var out []byte
 	out = append(out, line(":server CAP "+nick+" LS :"+kCaps)...)
@@ -177,7 +176,7 @@ func registrationBytes(nick, welcome, iconURL string) []byte {
 }
 
 // channelStateBytes is one channel's self-JOIN, 332 topic, 353 NAMES, and 366
-// end-of-NAMES burst. It mirrors channelStateBytes().
+// end-of-NAMES burst. It mirrors channelStateBytes.
 func channelStateBytes(network SeedNetwork, channel SeedChannel) []byte {
 	var out []byte
 	out = append(out, joinLine(network.Nick, channel.Name, "")...)
@@ -229,9 +228,9 @@ func identityBytes(network SeedNetwork, members map[string]struct{}) []byte {
 
 // presenceBytes is the union of every channel's away and status facts plus the
 // deterministic avatar/bot/display-name/pronouns metadata lines. The C++
-// iterates QSet, so away and status line order is not part of the contract;
+// iterates QSet, so away and status line order is not part of the contract
 // this port sorts the nick keys but emits the same set of lines. It mirrors
-// presenceBytes().
+// presenceBytes.
 func presenceBytes(network SeedNetwork) []byte {
 	away := make(map[string]struct{})
 	status := make(map[string]string)
@@ -287,7 +286,7 @@ func presenceBytes(network SeedNetwork) []byte {
 }
 
 // accountBytes carries the peers already in NAMES and the self row. Only the
-// omarchy network seeds accounts this way. It mirrors accountBytes().
+// omarchy network seeds accounts this way. It mirrors accountBytes.
 func accountBytes(network SeedNetwork) []byte {
 	if network.NetworkID != "omarchy" {
 		return nil
@@ -301,7 +300,7 @@ func accountBytes(network SeedNetwork) []byte {
 }
 
 // liveAccountBytes is the account-notify that arrives after the seeded world is
-// up. Only omarchy seeds it. It mirrors liveAccountBytes().
+// up. Only omarchy seeds it. It mirrors liveAccountBytes.
 func liveAccountBytes(network SeedNetwork) []byte {
 	if network.NetworkID != "omarchy" {
 		return nil
@@ -311,7 +310,7 @@ func liveAccountBytes(network SeedNetwork) []byte {
 
 // transcriptBytes replays every channel and direct line. Channel JOINs carry
 // their account; channel chats target the channel; direct chats target our own
-// nick. It mirrors transcriptBytes().
+// nick. It mirrors transcriptBytes.
 func transcriptBytes(network SeedNetwork) []byte {
 	var out []byte
 	for _, channel := range network.Channels {
@@ -332,7 +331,7 @@ func transcriptBytes(network SeedNetwork) []byte {
 }
 
 // typingBytes emits an active typing hint for each direct that seeds one, once
-// into #omarchy and once addressed to our own nick. It mirrors typingBytes().
+// into #omarchy and once addressed to our own nick. It mirrors typingBytes.
 func typingBytes(network SeedNetwork) []byte {
 	var out []byte
 	for _, direct := range network.Directs {
@@ -346,7 +345,7 @@ func typingBytes(network SeedNetwork) []byte {
 }
 
 // autojoinNames is every seeded channel name in seed order, mirroring
-// autojoinNames().
+// autojoinNames.
 func autojoinNames(network SeedNetwork) []string {
 	names := make([]string, 0, len(network.Channels))
 	for _, channel := range network.Channels {
@@ -356,7 +355,7 @@ func autojoinNames(network SeedNetwork) []string {
 }
 
 // injectWorld pushes each channel's state burst, then the presence and account
-// bytes. It mirrors injectWorld().
+// bytes. It mirrors injectWorld.
 func injectWorld(transport *session.LoopbackTransport, network SeedNetwork) {
 	var out []byte
 	for _, channel := range network.Channels {
@@ -368,13 +367,13 @@ func injectWorld(transport *session.LoopbackTransport, network SeedNetwork) {
 }
 
 // injectTranscript pushes the replayed transcript. It mirrors
-// injectTranscript().
+// injectTranscript.
 func injectTranscript(transport *session.LoopbackTransport, network SeedNetwork) {
 	transport.InjectBytes(transcriptBytes(network))
 }
 
 // markRead selects every channel and direct the seed marks read, exactly like
-// markRead(). The selection clears the reducer's unread counts; the controller
+// markRead. The selection clears the reducer's unread counts; the controller
 // republishes the sidebar on the next conversation-dirtying event.
 func markRead(c *controller.Controller, network SeedNetwork) {
 	for _, channel := range network.Channels {

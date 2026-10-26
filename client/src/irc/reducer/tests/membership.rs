@@ -1,4 +1,4 @@
-//! NAMES, joins, parts, quits, kicks, nicks and the membership collapse. Ports of
+//! NAMES, joins, parts, quits, kicks, nicks and the membership collapse.
 //! `reducer_test.go` and the membership-folding cases of the same file.
 
 use super::*;

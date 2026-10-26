@@ -1,6 +1,6 @@
-//! Start and disconnect over the real demo, and the start the build refuses. Ports
-//! `tui/internal/controller/disconnect_test.go` (`TestDisconnectStopsLiveSession`),
-//! `controller_test.go` (`TestDisconnectLeavesOtherNetworkLive`,
+//! Start and disconnect over the real demo, and the start the build refuses.
+//! `tui/internal/controller/disconnect_test.go` (`TestDisconnectStopsLiveSession`)
+//! `controller_test.go` (`TestDisconnectLeavesOtherNetworkLive`
 //! `TestTwoSessionsStartTogether`, `TestQuitWhileReconnecting`) and the
 //! transport-seam rule in `client/src/controller/transports.rs`. The connection
 //! states a session writes to Status follow the same demo, as `IrcStatusConsole`

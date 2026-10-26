@@ -3,7 +3,7 @@ package storage
 import "strconv"
 
 // CredentialState mirrors CredentialStore::State. A synchronous operation only
-// ever reports Available, Missing, Unavailable, Error, or SessionOnly;
+// ever reports Available, Missing, Unavailable, Error, or SessionOnly
 // Loading is kept for parity with the asynchronous Qt API.
 type CredentialState int
 

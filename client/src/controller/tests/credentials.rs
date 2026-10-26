@@ -1,4 +1,4 @@
-//! Credential invariants: Qt-compatible key names, unreadable secrets, removal ordering,
+//! Credential invariants: Qt-compatible key names, unreadable secrets, removal ordering
 //! and live-session reconciliation after Apply.
 
 use std::cell::RefCell;

@@ -1,6 +1,5 @@
 //! The Connection form (`client/src/ui/sheets/connect/` `connectionFormArea`): the profile
 //! fields in Qt's order, the switches, and the lines that say why Apply is off.
-//!
 //! The form scrolls in a list whose children are fixed rows, numbered by
 //! `form_row_of`. Each stop maps to one row, so `Shell::reveal_connect` can bring a
 //! focused field into view.
@@ -113,7 +112,6 @@ fn host_row(view: &ConnectView<'_>) -> impl IntoElement {
         .child(tls_switch(view))
 }
 
-/// Nick and Username side by side.
 fn nick_row(view: &ConnectView<'_>) -> impl IntoElement {
     let style = view.style;
     div()
@@ -158,7 +156,7 @@ fn startup_row(view: &ConnectView<'_>) -> impl IntoElement {
         )
 }
 
-/// The lines under the form, in Qt's order: where the password is kept, the forget links,
+/// The lines under the form, in Qt's order: where the password is kept, the forget links
 /// why Apply is off, why a switch was refused, and what the last Apply saved. The credential
 /// line is muted, the forget links are accent, and the rest are accent-coloured, as Qt's are.
 fn notices(view: &ConnectView<'_>) -> impl IntoElement {
@@ -196,7 +194,7 @@ fn notices(view: &ConnectView<'_>) -> impl IntoElement {
     column
 }
 
-/// The forget links under the credential line (`connectionForgetPassword` /
+/// The forget links under the credential line (`connectionForgetPassword`
 /// `connectionForgetNickServ`). Each is a Tab stop when `can_forget` allows it; Enter and
 /// Space activate through the sheet's card keys.
 fn forget_links(view: &ConnectView<'_>) -> impl IntoElement {

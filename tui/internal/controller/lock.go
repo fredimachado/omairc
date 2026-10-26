@@ -9,7 +9,6 @@ import (
 // Qt runs the equivalent on one thread. These two sides share the reducer's
 // maps, so a walk (SelectConversation -> MemberView) overlapping an inbound
 // line (MessageReceived -> Apply) is a concurrent map read and map write.
-//
 // Lock is reentrant for the goroutine that already holds it. A shell turn
 // that calls into the session can be re-entered by a handler on that same
 // goroutine (Start emits StateChanged before it returns); a non-reentrant

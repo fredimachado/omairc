@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// This file ports the pure half of `client/src/irc/storagepath.rs`: the segment
-// encoders and decoders. The filesystem helpers (legacyStoragePathExists,
+// This file. The segment.
+// encoders and decoders. The filesystem helpers (legacyStoragePathExists
 // legacyStorageDirExists, storageCanonicalPath, storagePathsSameFile, and
 // storageDirSegmentsShareLocation) belong to a later internal/storage package
 // and are deliberately absent here.

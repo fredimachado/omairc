@@ -55,7 +55,7 @@ func (m *Model) handleMouseClick(x, y int, button tea.MouseButton) {
 }
 
 // handleMouseWheel scrolls the region under the pointer. The transcript uses
-// pageTranscript, the same step as Page Up/Down. The sidebar, the member list,
+// pageTranscript, the same step as Page Up/Down. The sidebar, the member list
 // and an open overlay list page by one window of that region.
 func (m *Model) handleMouseWheel(x, y int, button tea.MouseButton) {
 	if m == nil || !m.mouseEnabled {

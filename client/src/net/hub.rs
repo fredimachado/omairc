@@ -1,10 +1,8 @@
 //! The net hub: where the UI thread meets the net thread.
-//!
 //! `NetHub` owns the `omairc-net` thread, which runs a current-thread tokio runtime.
 //! That thread holds one task per connection and forwards `Command`s to it. Results
 //! come back as `Delivery`s on an `async_channel`, which the UI drains and routes to
 //! the transport registered under the connection's `ConnId`.
-//!
 //! The hub is made once per process. Tests build their own with `with_options`.
 
 use std::cell::{Cell, RefCell};
@@ -77,7 +75,6 @@ struct ConnTask {
 }
 
 impl NetHub {
-    /// A hub with the production options.
     pub fn new() -> Self {
         Self::with_options(NetOptions::default())
     }
@@ -274,7 +271,7 @@ async fn supervise(tag: Tag, work: impl Future<Output = ()>, hub: UnboundedSende
 }
 
 /// Ends a connection's task. A task whose pipe is not open has written nothing, so it is
-/// aborted at once. An open task stops taking frames, drains the ones already queued,
+/// aborted at once. An open task stops taking frames, drains the ones already queued
 /// says goodbye and closes. If it has not finished by `deadline`, it is aborted.
 async fn wind_down(task: ConnTask, deadline: Instant) {
     let ConnTask {

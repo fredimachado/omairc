@@ -1,7 +1,5 @@
-//! Port of `tui/internal/irc/parser.go`.
-//!
 //! `parse` turns one line, without its CRLF, into an `IrcMessage`. `serialize`
-//! is the inverse, used by the in-process demo peer and the round-trip tests;
+//! is the inverse, used by the in-process demo peer and the round-trip tests
 //! neither the Go nor the C++ package has one.
 
 use super::message::{
@@ -386,7 +384,7 @@ mod tests {
         assert_eq!(prefix.host, bytes("h"));
     }
 
-    // Ported from tui/internal/irc/parser_test.go (TestRecoversPrefixNick).
+    // tui/internal/irc/parser_test.go (TestRecoversPrefixNick).
     #[test]
     fn recovers_prefix_nick() {
         let message = parse_ok(":alice PRIVMSG #room :hello");

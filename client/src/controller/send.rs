@@ -1,6 +1,5 @@
-//! The send intents. Port of `SendToTarget`, `echoIfPresent`, the action path and
+//! The send intents.
 //! the join path in `tui/internal/controller/controller.go`.
-//!
 //! One path for every line: the intent calls the session, the session builds the
 //! frame (`irc::commandbuilder` rules, sized by the network's LINELEN) and writes it
 //! through the transport. The transcript row comes back as the server's echo when

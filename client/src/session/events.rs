@@ -1,17 +1,14 @@
 //! The session's outbound contract: what a session tells its owner, and the
 //! small value types those events carry.
-//!
-//! Port of the `Handler` interface in `tui/internal/session/session.go` and the
 //! `IrcSession` signals in `tui/internal/session/session.go`. Go delivers each callback
 //! through a Handler; here the session queues `SessionEvent`s, and its owner
 //! drains them with `Session::drain_events` once an entry point returns. That
 //! keeps the session free of callbacks into the controller, so `session/` never
-//! depends on `controller/` or `World` (the Phase 3 translator consumes these).
-//!
-//! Status and transcript text is not built here. Phase 3 classifies the raw
-//! `Inbound` and `Outbound` lines into Status entries (`irc/statusentry`) and
-//! the translator turns `MessageReceived` into transcript rows, exactly as the
-//! Go `StatusEntry` and translator do.
+//! depends on `controller/` or `World` (the translator consumes these).
+//! Status and transcript text is not built here. Classification of raw
+//! `Inbound` and `Outbound` lines into Status entries lives in
+//! `irc/statusentry`, and the translator turns `MessageReceived` into
+//! transcript rows, exactly as the Go `StatusEntry` and translator do.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -21,7 +18,7 @@ use chrono::{DateTime, Utc};
 use crate::irc::capability::IrcCapabilitySet;
 use crate::irc::message::IrcMessage;
 
-// The value types the session hands its owner now live in the portable core,
+// The value types the session hands its owner now live in the portable core
 // where the translator reads them. They are re-exported so `session::events::...`
 // keeps its path for the session submodules and their tests.
 pub use crate::irc::event::{HistoryKind, PendingInvite, Severity};
@@ -47,7 +44,6 @@ pub enum SessionState {
 
 impl SessionState {
     /// The C++ enumerator name, for logs and tests.
-    // Phase 8: the Connect sheet reads the session's display name
     #[cfg(test)]
     pub fn name(self) -> &'static str {
         match self {
@@ -138,7 +134,7 @@ pub enum SessionEvent {
         network_id: String,
         batch: HistoryBatch,
     },
-    /// A CHATHISTORY request ended without a batch. `failed` is true on FAIL;
+    /// A CHATHISTORY request ended without a batch. `failed` is true on FAIL
     /// `before` is true when the request was `CHATHISTORY BEFORE`.
     ChatHistoryRequestFinished {
         network_id: String,

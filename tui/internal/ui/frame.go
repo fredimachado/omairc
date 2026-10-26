@@ -37,7 +37,6 @@ type edgeSegment struct {
 // rule. A label that does not fit is ellipsized; the frame never grows or
 // shrinks to make room. focused paints the border, and the title, in the
 // focused border colour.
-//
 // A non-positive width or height is an empty frame: there is no positive area
 // to close. A width or height of 1 or 2 still returns exactly that size, closed
 // on the corners that fit.

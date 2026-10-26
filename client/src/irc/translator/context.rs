@@ -70,7 +70,7 @@ pub fn conversation_for(
     None
 }
 
-/// Qt `ISODateWithMs`, then `ISODate`, normalized to UTC (`serverTimeOf`,
+/// Qt `ISODateWithMs`, then `ISODate`, normalized to UTC (`serverTimeOf`
 /// `parseHistoryTargetTime`).
 fn parse_qt_iso_time(raw: &str) -> Option<DateTime<Utc>> {
     const WITH_MS: &str = "%Y-%m-%dT%H:%M:%S%.3f%#z";

@@ -77,7 +77,7 @@ func TestThemeChangeRestylesOpenOverlayInputs(t *testing.T) {
 // TestFramedSlashMenuKeepsComposerCursorRow pins STEP 2(c): L5's taller framed
 // slash menu still leaves the composer's real cursor on its frame row. At the
 // seeded size the frame is present, the footer still fits, and the cursor sits
-// at composerRow() on the row above the footer.
+// at composerRow on the row above the footer.
 func TestFramedSlashMenuKeepsComposerCursorRow(t *testing.T) {
 	m := seededModel(t)
 	m.slash.probe = controller.SlashProbe{Open: true, Needle: "/", Hits: []controller.SlashHit{

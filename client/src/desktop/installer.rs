@@ -2,7 +2,7 @@
 //! the state machine are in `model::update_check`. This module downloads the
 //! setup into the updates directory and verifies it, probes whether the running
 //! exe is the Inno-installed copy, and starts the installer. Go twin: none.
-//! File and process helpers: `commitDownloadedInstaller`,
+//! File and process helpers: `commitDownloadedInstaller`
 //! `downloadedInstallerMatches`, `launchInstaller`, `runningCopyIsInstalled`.
 
 use std::fs::{self, File};
@@ -550,7 +550,7 @@ mod tests {
 
     #[test]
     fn a_matching_install_location_under_hkcu_marks_the_copy_installed() {
-        // Mirrors tests/tst_omaircupdatecheck.cpp install-location cases.
+        // Install-location cases for the update checker.
         let reader = FakeInstallLocations::at(
             UninstallRoot::CurrentUser,
             "C:/Users/Fredi/AppData/Local/Programs/Omairc/",

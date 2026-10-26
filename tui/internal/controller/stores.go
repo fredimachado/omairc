@@ -6,15 +6,13 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/irc"
 )
 
-// This file holds the in-memory stores the Phase 7 slash catalog reads and
-// writes. The Qt stores (IrcIgnoreStore, IrcMuteStore, IrcMonitorStore,
-// IrcHighlightStore, IrcAvatarStore, and the QSettings preferences) persist to
-// disk; Phase 7 keeps the same case-mapped list semantics in memory and defers
-// persistence to a later phase. The seams in seams.go name what is still
-// deferred.
+// In-memory stores the slash catalog reads and writes. The Qt stores
+// (IrcIgnoreStore, IrcMuteStore, IrcMonitorStore, IrcHighlightStore,
+// IrcAvatarStore, and the QSettings preferences) persist to disk; these keep
+// the same case-mapped list semantics in memory.
 
-// caseListStore is the shared case-mapped string list behind the ignore, mute,
-// monitor, and highlight stores. It mirrors the list half of IrcIgnoreStore,
+// caseListStore is the shared case-mapped string list behind the ignore, mute
+// monitor, and highlight stores. It mirrors the list half of IrcIgnoreStore
 // IrcMuteStore, IrcMonitorStore, and IrcHighlightStore: a per-network ordered
 // list where membership and removal compare through the network's case
 // mapping, and adding a duplicate is a no-op.
@@ -291,7 +289,7 @@ func (s *AvatarStore) Forget(networkID string) {
 	delete(s.urls, networkID)
 }
 
-// Preferences is the in-memory /pref toggle set: reopen direct messages,
+// Preferences is the in-memory /pref toggle set: reopen direct messages
 // show peer avatars, and open conversations at unread. All three default on.
 // It mirrors the three global Preferences getters the Qt window reads; disk
 // persistence lands in phase 11.
@@ -326,7 +324,6 @@ func (p *Preferences) SetEnabled(name irc.PrefName, enabled bool) {
 // ignoreNickIsUsable reports whether nick is a plausible /ignore or /monitor
 // target: non-empty, not a channel, and free of wildcard and mask punctuation.
 // It mirrors ignoreNickIsUsable in `client/src/controller/commanddispatcher.rs` and
-// `client/src/controller/monitorcoordinator.rs`.
 func ignoreNickIsUsable(nick string, features irc.ServerFeatures) bool {
 	if nick == "" {
 		return false
@@ -345,7 +342,6 @@ func ignoreNickIsUsable(nick string, features irc.ServerFeatures) bool {
 
 // muteTargetIsUsable reports whether target may be muted: a channel, or a nick
 // that passes ignoreNickIsUsable. It mirrors muteTargetIsUsable in
-// `client/src/controller/commanddispatcher.rs`.
 func muteTargetIsUsable(target string, features irc.ServerFeatures) bool {
 	if target == "" {
 		return false
@@ -377,7 +373,7 @@ func restAfterFirstToken(argument string) string {
 }
 
 // parameterText returns one message parameter as display text, or "". It
-// mirrors the anonymous parameter() helper that wraps ircWireText.
+// mirrors the anonymous parameter helper that wraps ircWireText.
 func parameterText(message irc.Message, index int) string {
 	if index < 0 || index >= len(message.Params) {
 		return ""

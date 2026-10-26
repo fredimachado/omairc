@@ -1,5 +1,4 @@
 //! Native macOS application menu (Omairc + Edit).
-//!
 //! Compiled and wired only on `target_os = "macos"` so system chords and
 //! Services work.
 
@@ -8,7 +7,7 @@ use gpui::{App, Menu, MenuItem, OsAction, SystemMenuType};
 use crate::ui::input::{Copy, Cut, Paste, SelectAll};
 use crate::ui::shell::actions::{OpenAbout, Quit};
 
-/// Register the Omairc and Edit menus. Call after `bind_input_keys` /
+/// Register the Omairc and Edit menus. Call after `bind_input_keys`
 /// `bind_shell_keys` so Quit can pick up Cmd+Q from the keymap.
 pub fn register_menus(cx: &mut App) {
     cx.set_menus(vec![

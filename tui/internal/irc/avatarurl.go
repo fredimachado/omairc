@@ -9,13 +9,12 @@ import (
 	"strings"
 )
 
-// This file ports the avatar URL policy from `client/src/irc/avatarurl.rs`.
-// /avatar accepts an HTTPS URL or an email address; an email becomes a Gravatar
+// This file.
+// avatar accepts an HTTPS URL or an email address; an email becomes a Gravatar
 // SHA-256 URL, and only safe HTTPS URLs are stored. The Qt code resolves and
 // pins a global-unicast address so QNAM cannot re-resolve the host; the fetch
 // itself is deferred with the avatar cache, so only the metadata value, the
 // URL/address predicates, and the pin helper are ported here.
-//
 // net/url and net/netip are the URL and IP-literal parsers behind QUrl and
 // QHostAddress; bin/check-conventions exempts exactly this file, so it must not
 // import plain net (or anything else platform-bound).
@@ -218,7 +217,7 @@ func AvatarURLPinnedToAddress(u *url.URL, address netip.Addr) (*url.URL, bool) {
 		return nil, false
 	}
 	literal := address.String()
-	// Bracket IPv6 (including v4-mapped) literals so String() stays a valid
+	// Bracket IPv6 (including v4-mapped) literals so String stays a valid
 	// absolute URL.
 	if strings.Contains(literal, ":") {
 		literal = "[" + literal + "]"

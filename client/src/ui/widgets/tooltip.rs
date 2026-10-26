@@ -1,7 +1,6 @@
 //! The hover tooltip (Qt's `ToolTip`): a raised card with a hairline edge and one
 //! line of 10px ink text per entry. The card is capped at `TOOLTIP_MAX_WIDTH`, so a
 //! long entry wraps inside it. A row or a help mark attaches it with
-//! `.tooltip(text_tooltip(lines))`.
 
 use gpui::{div, prelude::*, AnyView, App, Context, Render, Window};
 

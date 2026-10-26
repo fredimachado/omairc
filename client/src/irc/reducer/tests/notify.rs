@@ -1,4 +1,4 @@
-//! Which surfaces an event dirties, read from the reducer after the fold. Ports
+//! Which surfaces an event dirties, read from the reducer after the fold.
 //! of the three `ClassifyViewNotify` tests in `reducer_test.go`.
 
 use super::*;

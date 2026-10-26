@@ -24,11 +24,10 @@ func HasIrcEmphasis(text string) bool {
 }
 
 // EmphasizedSegments mirrors IrcTextFormatter::emphasizedIrcText, but yields
-// styled runs instead of HTML. It strips mIRC color and hex-color runs first,
+// styled runs instead of HTML. It strips mIRC color and hex-color runs first
 // then toggles bold (0x02), italic (0x1d), and underline (0x1f); 0x0f resets
 // all three; reverse (0x16), monospace (0x11), and strikethrough (0x1e) are
 // dropped without flushing, so a surrounding run stays open across them.
-//
 // It walks bytes rather than runes: every consumed sequence is ASCII, and no
 // UTF-8 continuation byte can equal a control code, so byte indexing
 // preserves the rest of the UTF-8 text (same rationale as plaintext.go).

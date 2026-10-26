@@ -1,16 +1,13 @@
 //! Locates settings and state for an in-place cutover from the Qt client.
-//!
 //! With the `dev` feature this maps the installed client's
 //! [`crate::identity::QT_APP_FOLDER`] tree (separate from this build's folder).
 //! Without `dev` (default `product` build), [`QtInstallLayout`] is this build's
 //! own layout - the same folder the Qt client already used - so startup can
 //! report what is present and trigger Windows registry import
 //! ([`super::registryimport`]).
-//!
 //! On Windows, Qt stores main settings in the registry (`HKCU\Software\omairc\omairc`).
 //! Product mode imports that key once into `%LOCALAPPDATA%\omairc\omairc.conf`.
 //! STS remains an INI under `%LOCALAPPDATA%\omairc\sts`, and transcripts under
-//! `%LOCALAPPDATA%\State\omairc\logs`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -95,8 +92,8 @@ impl QtMigrationProbe {
 
 /// Reads `layout` through the same stores this build uses at runtime, without writing.
 /// On Windows with `dev`, pass the imported INI path in
-/// [`QtInstallLayout::settings`] after [`super::registryimport::import_from_reader`];
-/// the live registry is not opened here. On default product builds,
+/// [`QtInstallLayout::settings`] after [`super::registryimport::import_from_reader`]
+/// the live registry is not opened here. On default product builds
 /// [`QtInstallLayout::for_env`] already points at the product INI.
 pub fn probe_qt_migration(layout: &QtInstallLayout) -> QtMigrationProbe {
     let Some(settings_path) = layout.settings.as_ref() else {

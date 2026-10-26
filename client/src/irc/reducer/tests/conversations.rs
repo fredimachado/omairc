@@ -1,5 +1,5 @@
-//! Conversation creation under its cause, drops, closed marks, the cap, clearing,
-//! and the network-wide forget. Ports of `reducer_test.go`.
+//! Conversation creation under its cause, drops, closed marks, the cap, clearing
+//! and the network-wide forget.
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;

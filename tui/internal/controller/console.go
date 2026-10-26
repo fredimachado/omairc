@@ -6,11 +6,8 @@ import "github.com/fredimachado/omairc/tui/internal/irc"
 // matches IrcStatusConsole's default in `client/src/controller/console.rs`.
 const DefaultStatusConsoleCapacity = 2000
 
-// StatusConsole is the minimal Phase 2 Status console: a per-network ring
-// buffer of classified irc.StatusEntry lines. It mirrors the storage half of
-// IrcStatusConsole; the open/network projection and the slash dispatch that
-// the Qt console also owns land in later phases.
-//
+// StatusConsole is a per-network ring buffer of classified irc.StatusEntry
+// lines. It mirrors the storage half of IrcStatusConsole.
 // A StatusConsole is not safe for concurrent use; see the package doc.
 type StatusConsole struct {
 	capacity int

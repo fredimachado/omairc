@@ -1,8 +1,7 @@
 //! Find mode (Ctrl+F) in the shell. The composer holds the query and the
-//! transcript shows its match. Ports `beginOrAdvanceFind`, `advanceFind`,
+//! transcript shows its match.
 //! `revealFindMatch` and `leaveFind` in `client/src/ui/shell`. The search itself
 //! is `model::find`.
-//!
 //! Find mode starts in `begin_or_advance_find` and ends in `leave_find` (Escape)
 //! or `end_find_mode` (a change of conversation or Status). Those changes stash
 //! the composer first, because the field holds the query, not the draft, while
@@ -15,7 +14,7 @@ use crate::model::find::Find;
 use crate::ui::shell::Shell;
 
 impl Shell {
-    /// Ctrl+F, and Enter while find mode is on. The first press saves the draft,
+    /// Ctrl+F, and Enter while find mode is on. The first press saves the draft
     /// selects the field as the query and searches from the top. Later presses
     /// move to the next match, wrapping round. The composer keeps focus.
     pub fn begin_or_advance_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -32,7 +31,7 @@ impl Shell {
     }
 
     /// Escape with find mode on and no sheet open: leaves find mode, restores the
-    /// draft and returns focus to the composer (Qt `leaveFind`). Returns false when
+    /// draft and returns focus to the composer. Returns false when
     /// find was not on.
     pub fn leave_find(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         let Some(draft) = self.end_find_mode(cx) else {
@@ -86,7 +85,7 @@ impl Shell {
         self.search_find(true, cx);
     }
 
-    /// Runs the search for the field's text. `from_start` searches from the top,
+    /// Runs the search for the field's text. `from_start` searches from the top
     /// otherwise after the current match. A match is revealed at the top of the
     /// list, and the highlight moves with it. No match keeps the old highlight.
     pub fn search_find(&mut self, from_start: bool, cx: &mut Context<Self>) {

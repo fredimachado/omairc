@@ -2,7 +2,7 @@
 //! whois-style reply in a conversation, and the two `/clear` forms. Nothing here
 //! writes the wire. A line the server did not send is a local line, as Qt's
 //! `IrcController` writes its own `IrcStatusEntry::outcome` and `IrcWhoisTranscript`
-//! rows. Ports `Outcome`, `Clear` and the reply paths of `tui/internal/controller/`
+//! rows.
 //! (Go) and `tui/internal/controller/controller.go`.
 
 #[cfg(test)]

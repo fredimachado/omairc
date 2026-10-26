@@ -8,8 +8,7 @@ import (
 	"sync"
 )
 
-// STS (Strict Transport Security) support, ported from `client/src/session/sts.rs`.
-//
+// STS (Strict Transport Security) support.
 // This package's store is the in-memory `STSStore`. The Rust in-memory twin is
 // `MemoryStsStore` in `client/src/session/sts.rs`; durable INI persistence is
 // `IniStsStore` in `client/src/storage/stspolicies.rs`. This store keeps the
@@ -100,11 +99,10 @@ func stsTokenValue(token string) string {
 	return ""
 }
 
-// STSStore is the in-memory STS policy cache. Unlike the C++ IrcStsStore it
-// never persists; the lookup/save/clear contract is otherwise identical,
+// STSStore is the in-memory STS policy cache. Unlike the IrcStsStore it
+// never persists; the lookup/save/clear contract is otherwise identical
 // including the sha256 group key over the case-folded host and the epoch
 // expiry check.
-//
 // Lookup expires through the injected Clock, so a FakeClock can drive expiry
 // deterministically. A nil Clock falls back to RealClock.
 type STSStore struct {
@@ -147,8 +145,7 @@ func (s *STSStore) Lookup(host string) (STSCached, bool) {
 }
 
 // Store caches a policy for host. A zero duration clears the entry, and an
-// empty host or a zero port is ignored, mirroring IrcStsStore::save /
-// `StsStore::store`.
+// empty host or a zero port is ignored, mirroring IrcStsStore::save
 func (s *STSStore) Store(host string, port uint16, durationSeconds int64) {
 	if durationSeconds == 0 {
 		s.Clear(host)
@@ -167,8 +164,7 @@ func (s *STSStore) Store(host string, port uint16, durationSeconds int64) {
 	}
 }
 
-// Clear drops the cached policy for host. It mirrors IrcStsStore::clear /
-// `StsStore::clear`.
+// Clear drops the cached policy for host. It mirrors IrcStsStore::clear
 func (s *STSStore) Clear(host string) {
 	key := stsGroupKey(host)
 	if key == "" {

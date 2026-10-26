@@ -81,7 +81,6 @@ impl FuzzyQuery {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ranked<T, const N: usize> {
     pub item: T,
-    /// The best weighted field score.
     pub score: u32,
     /// Each field's own match, in the order `rank` was given them. `None`
     /// where that field did not match.
@@ -90,7 +89,7 @@ pub struct Ranked<T, const N: usize> {
 
 /// Filters and ranks `items` by `query`. `fields` names each searchable text
 /// with its weight; an item's score is its best weighted field score. Items
-/// that match no field are dropped. The sort is stable by score, descending,
+/// that match no field are dropped. The sort is stable by score, descending
 /// so ties keep the order of `items`.
 pub fn rank<T, const N: usize>(
     query: &str,
@@ -139,7 +138,6 @@ pub fn char_ranges(text: &str, starts: &[usize]) -> Vec<Range<usize>> {
 mod tests {
     use super::*;
 
-    /// One query against one haystack.
     fn fuzzy_match(query: &str, haystack: &str) -> Option<FuzzyHit> {
         FuzzyQuery::new(query).matches(haystack)
     }

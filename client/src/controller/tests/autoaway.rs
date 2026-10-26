@@ -1,6 +1,6 @@
 //! Auto-away and the manual away intents over the real demo. The clock is the
 //! fixture's `FakeClock`: advancing it fires the idle and grace timers, and the
-//! controller runs their expiries on the next tick. Ports the controller cases in
+//! controller runs their expiries on the next tick.
 //! `tui/internal/controller/autoawayruntime_test.go`. The per-nick `/autoaway` routing
 //! to a conversation or Status is the dispatcher's, so those cases are not here.
 

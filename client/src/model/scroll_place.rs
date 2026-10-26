@@ -1,7 +1,6 @@
 //! Where a conversation's transcript was left, so returning to it opens at the
 //! same line (Qt `IrcScrollPlaceStore`, `rememberOpenTranscript` and
 //! `restoreRememberedTranscript`).
-//!
 //! Qt keys the place on the first visible message's msgid when the server gave
 //! one, else on its kind, author, body and time. The client keeps the anchor row
 //! and pixel offset from `Transcript::scroll()` in memory while a conversation

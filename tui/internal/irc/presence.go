@@ -215,7 +215,7 @@ type NickPresence struct {
 	Away *Away
 	// Keys holds canonical metadata keys mapped to their values.
 	Keys map[string]string
-	// Account is the services account from account-tag, account-notify,
+	// Account is the services account from account-tag, account-notify
 	// extended-join, or WHOIS 330. Empty with AccountKnown means logged out.
 	// Empty without AccountKnown means no account fact has arrived. Both
 	// display as nothing.
@@ -251,7 +251,7 @@ func (p NickPresence) HasKey(key string) bool {
 }
 
 // IsBot reports whether the bot key marks the client. The registry treats
-// setting `bot` as the flag; the value names the software, so "0", "false",
+// setting `bot` as the flag; the value names the software, so "0", "false"
 // and "no" (case-insensitively, trimmed) are not bots.
 func (p NickPresence) IsBot() bool {
 	software := p.Metadata(BotKey())
@@ -290,7 +290,7 @@ func MeaningfulRealname(realname, nick string) bool {
 	return folded != "realname" && folded != "unknown" && folded != "fullname"
 }
 
-// DisplayedRealname returns a gecos worth showing on a query header. Empty,
+// DisplayedRealname returns a gecos worth showing on a query header. Empty
 // equal to nick, and the placeholders "realname", "unknown", and "fullname"
 // are hidden. Comparison is case-insensitive. Jump matching stays on
 // MeaningfulRealname. It mirrors ircDisplayedRealname.

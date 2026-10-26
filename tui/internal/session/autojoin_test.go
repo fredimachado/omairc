@@ -26,7 +26,7 @@ func bareTarget(t *testing.T, channel string) irc.JoinTarget {
 	return target
 }
 
-// TestSessionKeyedAutojoinSurvivesReconnectThenPartForgets ports
+// TestSessionKeyedAutojoinSurvivesReconnectThenPartForgets.
 // SessionTest::keyedAutojoinSurvivesReconnectThenPartForgets.
 func TestSessionKeyedAutojoinSurvivesReconnectThenPartForgets(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -62,7 +62,7 @@ func TestSessionKeyedAutojoinSurvivesReconnectThenPartForgets(t *testing.T) {
 	assertStringsEqual(t, joinFrames(fixture.writtenSince(before)), nil)
 }
 
-// TestSessionBareJoinDoesNotWipeStoredKey ports
+// TestSessionBareJoinDoesNotWipeStoredKey.
 // SessionTest::bareJoinDoesNotWipeStoredKey.
 func TestSessionBareJoinDoesNotWipeStoredKey(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -87,7 +87,7 @@ func TestSessionBareJoinDoesNotWipeStoredKey(t *testing.T) {
 		[]string{"JOIN #private hunter2\r\n"})
 }
 
-// TestSessionJoinWithNewKeyUpdatesAfterSuccess ports
+// TestSessionJoinWithNewKeyUpdatesAfterSuccess.
 // SessionTest::joinWithNewKeyUpdatesAfterSuccess.
 func TestSessionJoinWithNewKeyUpdatesAfterSuccess(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -112,7 +112,7 @@ func TestSessionJoinWithNewKeyUpdatesAfterSuccess(t *testing.T) {
 		[]string{"JOIN #private newkey\r\n"})
 }
 
-// TestSessionWelcomeSendsStoredChannelKey ports
+// TestSessionWelcomeSendsStoredChannelKey.
 // SessionTest::welcomeSendsStoredChannelKey.
 func TestSessionWelcomeSendsStoredChannelKey(t *testing.T) {
 	config := historyConfig()
@@ -128,7 +128,7 @@ func TestSessionWelcomeSendsStoredChannelKey(t *testing.T) {
 	}
 }
 
-// TestSessionBadChannelKeyStaysOnStatusWithoutRetry ports
+// TestSessionBadChannelKeyStaysOnStatusWithoutRetry.
 // SessionTest::badChannelKeyStaysOnStatusWithoutRetry.
 func TestSessionBadChannelKeyStaysOnStatusWithoutRetry(t *testing.T) {
 	config := historyConfig()

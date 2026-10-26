@@ -1,7 +1,7 @@
 //! The seed data and the lines it builds, checked without a session. These are
 //! the wire-level halves of `TestSeeds*` in `demo_test.go`. The reducer-level
-//! halves (the sidebar rows, the unread counts, the ordered members, the peer
-//! labels) run in the Phase 3 controller tests, which read this same seed.
+//! halves (sidebar rows, unread counts, ordered members, peer labels) run in
+//! the controller tests, which read this same seed.
 
 use std::collections::BTreeSet;
 
@@ -44,7 +44,7 @@ fn both_networks_resolve_by_id_and_unknown_ids_do_not() {
 
 #[test]
 fn the_parity_channels_hold_their_unread_counts() {
-    // #desktop is three lines unread. #ricing holds twelve: three seeded lines,
+    // #desktop is three lines unread. #ricing holds twelve: three seeded lines
     // eight pads, and the line that mentions fred. The mention is the one
     // parity count that comes from the line text.
     let desktop = channel_named(&OMARCHY_WORLD, "#desktop").expect("#desktop");

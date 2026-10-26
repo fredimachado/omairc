@@ -1,6 +1,4 @@
-//! Port of `tui/internal/storage/opendirect.go`
 //! The direct messages to reopen at startup, and the ones the user closed.
-//!
 //! Two per-network lists, both case-mapped: `openDirects/<network>/targets` holds the
 //! queries to restore, and `dismissedDirects/<network>/targets` holds the ones the user
 //! closed, so a message from them does not bring them back. Only the user's own actions

@@ -1,7 +1,7 @@
 //! The typing dots that end a DM transcript (Qt's `typingRow` in
 //! `client/src/ui/shell`). With `continues` they sit in the body column under the
 //! peer's last line. Otherwise they take the avatar and nick of a group of their
-//! own. The dots are the last item of the transcript list, after the last row,
+//! own. The dots are the last item of the transcript list, after the last row
 //! so they are not a transcript row: find, copy and pointer hits never see them.
 
 use gpui::{div, prelude::*, Div};

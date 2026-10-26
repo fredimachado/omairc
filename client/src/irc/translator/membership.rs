@@ -1,5 +1,5 @@
 //! Channel membership and channel state: JOIN, PART, KICK, QUIT and NICK; ACCOUNT and
-//! AWAY; the user's own away state (305, 306); TOPIC with its 332 and 333 replies;
+//! AWAY; the user's own away state (305, 306); TOPIC with its 332 and 333 replies
 //! NAMES (353, 366); and MODE. Each handler's parameter guard lives in `translate`'s
 //! `match`, so these run only on a message that has the parameters they read.
 

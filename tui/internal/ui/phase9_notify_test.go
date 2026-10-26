@@ -1,6 +1,6 @@
 package ui
 
-// This file ports the Phase 9 desktop-notification subset of the Qt
+// This file.
 // test_unfocusedMentionNotifiesOnce fence: an unfocused arrival records the
 // plain-text notification and calls the notifier once, a focused arrival is a
 // no-op, the test latch records without notifying, and an activation reveals

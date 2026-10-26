@@ -1,14 +1,12 @@
 //! System light or dark mode. Desktop-only (no Go twin).
-//!
 //! On Linux, GPUI already subscribes to the XDG Desktop Portal
 //! `org.freedesktop.appearance` / `color-scheme` setting (via ashpd in
 //! `gpui::platform::linux::xdg_desktop_portal`) and pushes updates into
 //! `WindowAppearance`. This crate does **not** open a second portal
 //! subscription next to [`crate::desktop::textscale`]: that would race GPUI.
-//! The app asks `cx.window_appearance()` at open and follows
+//! The app asks `cx.window_appearance` at open and follows
 //! `observe_window_appearance` so Omarchy `colors.toml` base colours flip
 //! without a restart, as Qt's portal `SettingChanged` path does.
-//!
 //! Hyprland / live portal flip is a host check (needs a session bus and a
 //! portal). CI Xvfb points `DBUS_SESSION_BUS_ADDRESS` at a missing socket, so
 //! that path is not proven there - only the GPUI wiring and this global.

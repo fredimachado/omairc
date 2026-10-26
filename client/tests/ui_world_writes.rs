@@ -1,17 +1,14 @@
 //! Rule 2 of the GPUI plan: the UI never writes state. The controller owns every write
 //! to the IRC state, and `src/ui/` reads its snapshots and calls its intents.
-//!
 //! This gate scans `src/ui/` for writes to a world value. A write is one of:
-//!
 //! - a mutable borrow of the world, `&mut self.world` or `&mut world`, which is how a
-//!   model function would hand the state over to be changed;
+//! model function would hand the state over to be changed
 //! - a call to a `&mut self` method on the world or a collection mutator on one of its
-//!   fields, such as `self.world.push_status(..)` or `.networks.retain(..)`;
-//! - an assignment into the world, `self.world.x = ..` or `world.x += ..`.
-//!
-//! The Phase 3 rewire took the allowlist to zero. The UI now holds no world at all, so
-//! the gate asserts that the scan finds nothing. A write that appears again is a new
-//! failure: route it through a `Controller` intent instead of an allowlist entry.
+//! fields, such as `self.world.push_status(..)` or `.networks.retain(..)`
+//! - an assignment into the world, `self.world.x =..` or `world.x +=..`.
+//! The UI holds no world at all, so the gate asserts that the scan finds
+//! nothing. A write that appears again is a new failure: route it through a
+//! `Controller` intent instead of an allowlist entry.
 
 mod common;
 

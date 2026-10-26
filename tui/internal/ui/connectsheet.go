@@ -15,7 +15,6 @@ import (
 // `client/src/ui/sheets/connect/` as a file-based component and reads the
 // internal/connection model, never internal/irc.
 
-// connectTab names the two sheet tabs.
 type connectTab int
 
 const (
@@ -342,7 +341,6 @@ func (m *Model) activateFooter(index int) {
 // chord. `client/src/ui/shell` binds Ctrl+Return and Ctrl+Enter separately; the
 // keystroke string can read ctrl+enter or ctrl+return, and the raw message
 // must be checked when a terminal strips the ctrl+ prefix from Enter.
-//
 // Windows Terminal and ConPTY have no distinct VT encoding for Ctrl+Enter:
 // they send LF (0x0a), which ultraviolet decodes as ctrl+j
 // (microsoft/terminal#6912). Treat that alias while the Connect sheet is
@@ -593,8 +591,6 @@ func (m *Model) handleConnectKey(key string, msg tea.KeyPressMsg) (tea.Model, te
 	}
 	return m, nil
 }
-
-// --- Rendering ------------------------------------------------------------
 
 // connectCard renders the Connect sheet as one card block through the shared
 // overlay frame in model.go.

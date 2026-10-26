@@ -1,12 +1,10 @@
 //! The local endpoint the product CLI and the single-instance guard share: the
 //! [`crate::identity::APP_NAME`] named pipe on Windows, a Unix socket under the runtime
-//! directory elsewhere. Port of the endpoint choice in `singleinstance`
+//! directory elsewhere.
 //! (`serverName`, `runtimeDir`), with Qt's `QLocalServer` and `QLocalSocket` as the
 //! reference behaviour.
-//!
 //! The Unix side is std only. The Windows side uses the few kernel32 calls std does not wrap, through
 //! `windows-sys`, pinned to the 0.59.0 the lock file already holds, so no new crate is fetched.
-//!
 //! Both sides give reads a deadline. The server uses it to expire an idle client, and the CLI uses it
 //! to stop waiting for a reply. Windows named pipes have no read timeout, so the Windows stream polls
 //! `PeekNamedPipe` and sleeps between polls.
@@ -20,7 +18,6 @@ use std::path::PathBuf;
 /// The name the window listens on: the pipe leaf on Windows, the socket file stem elsewhere.
 pub use crate::identity::APP_NAME;
 
-/// Where one window listens.
 #[cfg(windows)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Endpoint {
@@ -147,7 +144,6 @@ mod imp {
             Ok(Self(listener))
         }
 
-        /// Waits for the next client.
         pub fn accept(&mut self) -> io::Result<Stream> {
             self.0.accept().map(|(stream, _)| Stream(stream))
         }

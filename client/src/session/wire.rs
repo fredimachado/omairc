@@ -1,10 +1,8 @@
 //! Source and capability readers over a parsed `IrcMessage`, shared by the session
 //! submodules.
-//!
-//! Port of the package helpers of `tui/internal/session/session.go` (`capabilityTokens`,
-//! `claimedNick`, `ctcpReplyHost`). The field readers (`text_param`, `tag_text`,
+//! `claimedNick`, `ctcpReplyHost`). The field readers (`text_param`, `tag_text`
 //! `has_tag`, `msgid`, `param_index`) live on `IrcMessage` in `irc/message.rs`, the
-//! one home for message helpers. Every text value is decoded through `wire_text`,
+//! one home for message helpers. Every text value is decoded through `wire_text`
 //! so a stray byte cannot reach the state machine as anything but a scalar.
 
 use crate::irc::message::IrcMessage;

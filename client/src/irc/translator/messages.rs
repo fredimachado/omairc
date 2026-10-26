@@ -1,5 +1,5 @@
 //! The chat lines: NOTICE, PRIVMSG (a CTCP ACTION is an emote) and TAGMSG (typing).
-//! A nick-targeted line that carries `+draft/channel-context` is filed in that channel,
+//! A nick-targeted line that carries `+draft/channel-context` is filed in that channel
 //! visible only to the user, when the sender is a member the caller can confirm.
 
 use crate::irc::ctcp::parse_ctcp_request;
@@ -27,7 +27,7 @@ struct ChannelDelivery {
 }
 
 /// `NOTICE`. A channel-context notice or a nick-targeted direct notice produces a
-/// transcript event; channel notices without context and CTCP only update the account,
+/// transcript event; channel notices without context and CTCP only update the account
 /// which `translate` has already recorded.
 pub(super) fn notice(inbound: &Inbound<'_>) -> Vec<Event> {
     let message = inbound.message;
@@ -232,7 +232,7 @@ fn nick_targeted_channel_delivery(
     })
 }
 
-/// The channel named by `+draft/channel-context`, or the unprefixed draft tag,
+/// The channel named by `+draft/channel-context`, or the unprefixed draft tag
 /// when the value is one channel name (`channelContextChannel`).
 fn channel_context_channel(message: &IrcMessage, features: &IrcServerFeatures) -> Option<String> {
     for name in ["+draft/channel-context", "draft/channel-context"] {
@@ -245,7 +245,7 @@ fn channel_context_channel(message: &IrcMessage, features: &IrcServerFeatures) -
     None
 }
 
-/// Whether `value` is one channel name: a CHANTYPES prefix, two to fifty runes,
+/// Whether `value` is one channel name: a CHANTYPES prefix, two to fifty runes
 /// and no control character, space, comma or colon (`channelContextText`).
 fn channel_context_text(value: &str, features: &IrcServerFeatures) -> bool {
     let length = value.chars().count();

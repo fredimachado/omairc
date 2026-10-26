@@ -14,7 +14,7 @@ import (
 
 // This file covers the Wave 4 L7 restyle of the Connect sheet: the shared
 // overlay frame stays model.go's job, and the sheet keeps its labels and
-// problem text while swapping checkboxes for chips and pills. Behavior,
+// problem text while swapping checkboxes for chips and pills. Behavior
 // chords, and the title are untouched, so the assertions here are presentation
 // plus the observables the feature map pins.
 

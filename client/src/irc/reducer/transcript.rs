@@ -1,13 +1,10 @@
 //! The transcript half of the reducer: admitting rows, the 2000-row cap, the
 //! log, live chat, event and error rows, the unread and mention accounting for
 //! an arriving line, and the membership folding a replay batch goes through.
-//!
-//! Port of `tui/internal/irc/reducer.go` (Go: `appendChat`, `noteChatArrival`,
-//! `appendEvent`, `admitMembershipReplay`, `appendWhois`, `appendError`,
-//! `hydrateFromLog`, `persistMessage`, `persistMessagesPrepend`, `capMessages`,
-//! `dropLastTranscriptRow`, `classifyChatLine`, `inboxKindFor`, `kindToken`,
+//! `appendEvent`, `admitMembershipReplay`, `appendWhois`, `appendError`
+//! `hydrateFromLog`, `persistMessage`, `persistMessagesPrepend`, `capMessages`
+//! `dropLastTranscriptRow`, `classifyChatLine`, `inboxKindFor`, `kindToken`
 //! `kindFromToken`, `persistableKind`, `admitMessage`) and of
-//! `tui/internal/irc/reducer.go`.
 
 use std::collections::HashSet;
 

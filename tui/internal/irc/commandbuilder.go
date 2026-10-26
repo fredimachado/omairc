@@ -13,7 +13,7 @@ func frameLimit(frameBytes []int) int {
 	return frameBytes[0]
 }
 
-// Line appends CRLF to a command, rejecting empty input, embedded CR/LF/NUL,
+// Line appends CRLF to a command, rejecting empty input, embedded CR/LF/NUL
 // and lines past the frame. frameBytes includes CRLF and defaults to the
 // classic 512-byte frame. It mirrors IrcCommandBuilder::line.
 func Line(command string, frameBytes ...int) (string, error) {
@@ -31,9 +31,9 @@ func Line(command string, frameBytes ...int) (string, error) {
 }
 
 // ComposerByteBudget is the maximum UTF-8 bytes the composer may hold so one
-// send stays inside frameBytes. An empty target is Status: a raw line,
+// send stays inside frameBytes. An empty target is Status: a raw line
 // excluding CRLF. Any other target is the PRIVMSG trailing body that fits
-// (`PRIVMSG <target> :<body>\r\n`), the same residual SplitTrailingParam uses
+// (`PRIVMSG <target>:<body>\r\n`), the same residual SplitTrailingParam uses
 // for that prefix and an empty suffix. Tags are not subtracted. frameBytes
 // defaults to 512 when LINELEN is absent. It mirrors
 // IrcCommandBuilder::composerByteBudget.
@@ -152,7 +152,6 @@ func SplitTrailingParam(prefix, body, suffix string, frameBytes ...int) []string
 	return chunks
 }
 
-// Nick builds a NICK line.
 func Nick(nickname string) (string, error) {
 	if !isSingleField(nickname) {
 		return "", ErrorInvalidField
@@ -160,7 +159,7 @@ func Nick(nickname string) (string, error) {
 	return Line("NICK " + nickname)
 }
 
-// User builds the USER line with the fixed "8 * :realname" shape.
+// User builds the USER line with the fixed "8 *:realname" shape.
 func User(username, realname string) (string, error) {
 	if !isSingleField(username) || realname == "" || containsForbidden(realname) {
 		return "", ErrorInvalidField
@@ -168,7 +167,6 @@ func User(username, realname string) (string, error) {
 	return Line("USER " + username + " 8 * :" + realname)
 }
 
-// Pass builds a PASS line.
 func Pass(password string) (string, error) {
 	if !isSingleField(password) {
 		return "", ErrorInvalidField
@@ -220,7 +218,7 @@ func isSingleField(field string) bool {
 		strings.IndexByte(field, ' ') == -1
 }
 
-// isJoinField rejects a leading ':', empty, ASCII or Unicode whitespace, ',',
+// isJoinField rejects a leading ':', empty, ASCII or Unicode whitespace, ','
 // and NUL. It mirrors the QString-based check in the C++ builder, so it is
 // Unicode-aware.
 func isJoinField(field string) bool {

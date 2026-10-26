@@ -1,10 +1,9 @@
-// Package avatar is the terminal peer-avatar seam. It fetches, decodes,
+// Package avatar is the terminal peer-avatar seam. It fetches, decodes
 // caches, and half-block-rasterizes avatars for the TUI shell, mirroring the
-// safety model of `client/src/irc/avatarstore.rs` (bounded body, bounded decode,
+// safety model of `client/src/irc/avatarstore.rs` (bounded body, bounded decode
 // DNS pinning, fail closed, a small insertion-ordered cache). When a terminal
 // answers a Kitty graphics query, the same cache also builds Unicode
 // placeholder cells and the transmit/delete escapes for those images.
-//
 // The package is presentation-neutral: Block and Placeholder return raw
 // strings and the shell decides where to place them. It never imports
 // lipgloss. It never starts a fetch from Block or Placeholder; Ensure is the
@@ -235,7 +234,7 @@ func cacheKey(resolved *url.URL) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// remember inserts img under key and moves key to the newest position,
+// remember inserts img under key and moves key to the newest position
 // evicting the oldest entries past the cap. It is the in-package test seam.
 func (s *Store) remember(key string, img image.Image) {
 	s.commit(key, img)

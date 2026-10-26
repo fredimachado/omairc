@@ -1,19 +1,14 @@
-//! Port of `tui/internal/irc/statusentry.go` (`IrcStatusEntry`).
-//!
 //! The entry types and the constructors every caller uses: `lifecycle`, `outcome` and
-//! `ctcp_reply`. The classifiers sit beside this file: `incoming` (the server's lines),
+//! `ctcp_reply`. The classifiers sit beside this file: `incoming` (the server's lines)
 //! `outgoing` (the line the client sent), `whois`, `notice` (notices and invites), and
 //! `keep` (the keep table that decides which lines reach Status at all).
-//!
 //! Classification turns one wire line into the Status entries it produces: the
 //! server's registration burst, the CAP and lusers numerics, the WHOIS and notice
 //! shapes, CTCP replies, and the outgoing line the client sent. Which lines reach
 //! Status at all is the keep table (`keeps_incoming`, `keeps_outgoing`).
-//!
 //! Secrets are masked here, at classification time. A stored entry text is the
 //! redacted form, never the raw line, and every redaction call fails closed: a
 //! line the policy cannot read is dropped or masked, not kept.
-//!
 //! Pure: `now` is passed in, and no entry reads the IRCv3 `time` tag. Qt stamps
 //! each entry with the wall clock when it classifies the line; the Rust core
 //! receives that clock reading from its caller.
@@ -34,7 +29,6 @@ use chrono::{DateTime, Utc};
 pub const OUTCOME_LABEL: &str = "command";
 /// The label a CTCP reply or request line carries.
 pub const CTCP_LABEL: &str = "CTCP";
-/// The label a notice carries.
 pub const NOTICE_LABEL: &str = "NOTICE";
 
 /// Who produced a Status line (`LogSource`, `IrcLogSource`).

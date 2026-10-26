@@ -1,5 +1,5 @@
 //! Read-marker publishing when the transcript is caught up, and one MARKREAD get per
-//! direct message. Port of `tui/internal/controller/readmarker.go`
+//! direct message.
 //! (`syncReadMarkerForSelection` / `NoteTranscriptViewport`).
 
 use std::collections::HashSet;

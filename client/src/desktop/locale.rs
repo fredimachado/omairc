@@ -1,4 +1,4 @@
-//! The short date a day separator shows (Qt `QLocale::ShortFormat`). Windows reads the
+//! The short date a day separator shows. Windows reads the
 //! user's regional format. Other systems read the POSIX locale environment.
 
 use chrono::NaiveDate;

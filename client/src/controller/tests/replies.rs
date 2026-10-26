@@ -1,6 +1,6 @@
 //! The reply router over the real demo: a WHOIS and a CTCP query write their frames, the
 //! labeled replies the test reads back from those frames copy to the destination, and the
-//! watch ends with the reply. Ports the controller cases in
+//! watch ends with the reply.
 //! `tui/internal/controller/replyrouter_test.go`. The demo answers CTCP but not WHOIS, so
 //! the WHOIS replies are injected with the label the frame carried, the way a labeled
 //! server answers.
@@ -25,7 +25,6 @@ fn channel(fixture: &Fixture, name: &str) -> ConversationKey {
     fixture.controller.reducer.conversation_key(OMARCHY, name)
 }
 
-/// The last frame the loopback wrote.
 fn last_frame(fixture: &Fixture) -> String {
     fixture.frames(OMARCHY).last().cloned().expect("a frame was written")
 }

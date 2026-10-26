@@ -159,7 +159,7 @@ pub fn found_after_repair(
 /// runs as it always has. When it is true, a build that is not installed stops, portable builds
 /// included, so it does not overwrite a link it did not own. An installed copy goes on only when
 /// its per-user link is unreadable or names another exe, which it may replace. A missing per-user
-/// link, or one that names this exe, stops there, so after a repair a per-user link is replaced,
+/// link, or one that names this exe, stops there, so after a repair a per-user link is replaced
 /// never created.
 pub fn repair_ends_registration(
     repaired: bool,
@@ -786,7 +786,7 @@ mod tests {
 
     #[test]
     fn a_dev_build_still_refuses_an_unreadable_per_user_link_after_its_own_repair() {
-        // Its own all-users link names it, so the repair ran. The dev build stops at the gate,
+        // Its own all-users link names it, so the repair ran. The dev build stops at the gate
         // and the fallback's check would refuse the unreadable per-user link anyway.
         assert!(stops_after_repair(THIS_EXE, true, &LinkState::Unreadable));
         assert_eq!(
@@ -936,7 +936,7 @@ mod tests {
 
     #[test]
     fn a_dev_build_does_not_overwrite_a_dev_per_user_link_past_its_own_all_users_link() {
-        // Its own all-users link is stamped, so the repair runs. A dev build stops there,
+        // Its own all-users link is stamped, so the repair runs. A dev build stops there
         // before the per-user decision.
         assert!(stops_after_repair(THIS_EXE, true, &targets(DEV_EXE)));
     }

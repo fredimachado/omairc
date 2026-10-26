@@ -40,7 +40,7 @@ pub struct LinkTarget {
 const INVITE_MARKER: &str = " invited you to ";
 
 /// Links that fuzzy-match the query, best match first. Ties keep the order
-/// the links were found in: topic links, then transcript links newest row
+/// the links were found topic links, then transcript links newest row
 /// first. An empty query keeps every link in that order. A channel name is
 /// listed only when the network's CHANTYPES (`features`) makes it one.
 pub fn link_targets(
@@ -107,7 +107,7 @@ pub fn status_link_targets(rows: &[Row], query: &str) -> Vec<LinkTarget> {
 
 /// The channel an INVITE Status line offers, with the byte range that name
 /// occupies in the line's text. Only a Status row labelled `INVITE` counts. The
-/// name ends the line, so the range runs to the end (Qt `inviteChannelAt`).
+/// name ends the line, so the range runs to the end.
 pub fn invite_hit(row: &Row) -> Option<(&str, Range<usize>)> {
     if row.kind != RowKind::Status {
         return None;
@@ -124,7 +124,7 @@ pub fn invite_hit(row: &Row) -> Option<(&str, Range<usize>)> {
     Some((channel, text.len() - channel.len()..text.len()))
 }
 
-/// The channel in an invite line: the text after the last `" invited you to "`,
+/// The channel in an invite line: the text after the last `" invited you to "`
 /// when it is not empty (`refreshLinkMatches` uses `lastIndexOf`).
 fn invite_channel(text: &str) -> Option<&str> {
     let at = text.rfind(INVITE_MARKER)?;

@@ -49,7 +49,6 @@ fn sts_texts(fx: &Fixture) -> Vec<String> {
         .collect()
 }
 
-/// Ports `SessionTest::plaintextStsPortReconnectsWithTlsAndCachesOnSecureDuration`.
 #[test]
 fn plaintext_sts_port_reconnects_with_tls_and_caches_on_secure_duration() {
     let fx = Fixture::new(plaintext_config());
@@ -102,7 +101,6 @@ fn plaintext_sts_port_reconnects_with_tls_and_caches_on_secure_duration() {
     assert_eq!(cached.port, 6697);
 }
 
-/// Ports `SessionTest::plaintextStsWithoutPortStaysPlaintext`.
 #[test]
 fn plaintext_sts_without_port_stays_plaintext() {
     let fx = Fixture::new(plaintext_config());
@@ -120,7 +118,6 @@ fn plaintext_sts_without_port_stays_plaintext() {
     );
 }
 
-/// Ports `SessionTest::plaintextCapNewStsPortReconnectsWithTls`.
 #[test]
 fn plaintext_cap_new_sts_port_reconnects_with_tls() {
     let fx = Fixture::new(plaintext_config());
@@ -140,7 +137,6 @@ fn plaintext_cap_new_sts_port_reconnects_with_tls() {
     assert_eq!(fx.transport.connected_port(), 6697);
 }
 
-/// Ports `SessionTest::tlsStsDurationRefreshesCacheWithoutReconnect`.
 #[test]
 fn tls_sts_duration_refreshes_cache_without_reconnect() {
     let fx = Fixture::new(tls_config());
@@ -161,7 +157,6 @@ fn tls_sts_duration_refreshes_cache_without_reconnect() {
     assert_eq!((cached.port, cached.duration_seconds), (6697, 86400));
 }
 
-/// Ports `SessionTest::tlsStsDurationZeroClearsCache`.
 #[test]
 fn tls_sts_duration_zero_clears_cache() {
     let fx = Fixture::new(tls_config());
@@ -176,7 +171,6 @@ fn tls_sts_duration_zero_clears_cache() {
     );
 }
 
-/// Ports `SessionTest::cachedHostOpensTlsWhenProfileDisablesIt`.
 #[test]
 fn cached_host_opens_tls_when_profile_disables_it() {
     let fx = Fixture::new(plaintext_config());
@@ -192,7 +186,6 @@ fn cached_host_opens_tls_when_profile_disables_it() {
     assert_eq!(fx.session.port(), 6697);
 }
 
-/// Ports `SessionTest::capDelStsDoesNotClearCache`.
 #[test]
 fn cap_del_sts_does_not_clear_cache() {
     let fx = Fixture::new(tls_config());

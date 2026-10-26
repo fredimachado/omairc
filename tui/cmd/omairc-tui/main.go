@@ -1,5 +1,4 @@
 // Command omairc-tui is the terminal client entry point.
-//
 // It ships the CLI flags plus the Bubble Tea shell: --version, --help, and
 // --demo-server, which seeds the two-network demo world through internal/demo
 // and then runs the interactive shell over it. A plain launch wires the disk
@@ -106,7 +105,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 	} else {
-		// Phase 11 disk stores. New() starts ephemeral so unit tests and the
+		// Disk stores. New starts ephemeral so unit tests and the
 		// demo never touch the config; the shell opts in and wires the stores
 		// before the first session is applied.
 		profiles := storage.NewProfileStore()
@@ -124,7 +123,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		conn = connection.New(c, func() session.Transport { return session.NewNetTransport() })
 		conn.SetProfileStore(profiles)
 		conn.SetCredentialStore(credentials)
-		// The session moves a network's standing avatar URL or autojoin list;
+		// The session moves a network's standing avatar URL or autojoin list
 		// the controller forwards it here so the profile store stays current.
 		c.OnAvatarURLChanged = func(networkID, url string) {
 			if conn != nil {
@@ -147,7 +146,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	model.SetMouseEnabled(ui.MouseOptIn(mouseFlag, os.Getenv("OMAIRC_TUI_MOUSE")))
 
 	// The live Omarchy theme watcher. SetThemeWatcher adopts the current
-	// palette immediately; the shell then arms one blocking Changes() read as a
+	// palette immediately; the shell then arms one blocking Changes read as a
 	// tea.Cmd on the first WindowSizeMsg, and the Bubble Tea runtime delivers
 	// each ThemeChangedMsg on the Update goroutine. The watcher therefore never
 	// calls p.Send itself, so it stays off the synchronous-callback path that

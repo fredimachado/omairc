@@ -104,7 +104,7 @@ func TestInboxConsumeAt(t *testing.T) {
 	}
 }
 
-// TestInboxConsumeConversation proves conversation removal matches mentions,
+// TestInboxConsumeConversation proves conversation removal matches mentions
 // highlights, directs, and kicks for one target on one network only.
 func TestInboxConsumeConversation(t *testing.T) {
 	in := NewInbox()

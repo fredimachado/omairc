@@ -17,10 +17,10 @@ pub fn network_show_edit(show_edit: bool) -> bool {
     show_edit
 }
 
-/// The network header, a port of `NetworkSection`: 64 tall, with the
+/// The network header, a. 64 tall, with the.
 /// collapse chevron, the icon, the name with an unread dot, and the status.
 /// The header itself is inert. `on_toggle` receives the network id when the
-/// chevron is clicked; `on_open` receives it when the icon or name is clicked,
+/// chevron is clicked; `on_open` receives it when the icon or name is clicked
 /// which opens that network's Status. `on_edit` receives it when the `edit`
 /// label is clicked, which opens the Connect sheet on that network. The icon is
 /// the network's own image when it has one, and the initial otherwise. Qt shows

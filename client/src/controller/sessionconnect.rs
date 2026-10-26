@@ -6,7 +6,7 @@ use crate::storage::conversationlog::FileConversationLog;
 use super::controller::Controller;
 
 impl Controller {
-    /// Points transcript persistence at `root` (Qt `setTranscriptRoot`). Call before
+    /// Points transcript persistence at `root`. Call before
     /// [`Self::connect_session`] when a live case restores DMs across reloads.
     pub fn set_transcript_root(&mut self, root: impl Into<std::path::PathBuf>) {
         self.reducer.set_conversation_log(Some(Box::new(

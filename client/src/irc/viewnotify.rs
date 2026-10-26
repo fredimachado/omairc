@@ -1,10 +1,7 @@
-//! Port of `tui/internal/irc/viewnotify.go`.
-//!
 //! Go reports what a reduced event dirtied as one struct of flags. Here the same
 //! facts are a list of `ViewNotify` surfaces. An event yields a `Vec`, an empty
 //! `Vec` means nothing changed, and the shell maps each surface to its repaint:
 //! a transcript append or rebuild, a member row, the sidebar, the typing row.
-//!
 //! The reducer owns the classification (`ClassifyViewNotify`), because it needs
 //! presence and membership facts. This module supplies the surface sets the Go
 //! constructors name, the NAMES-syncing filter, and the union the reducer uses

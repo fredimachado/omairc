@@ -7,47 +7,26 @@ import "time"
 type EventKind int
 
 const (
-	// EventWelcome is a WelcomeEvent.
 	EventWelcome EventKind = iota
-	// EventMessage is a MessageEvent.
 	EventMessage
-	// EventNotice is a NoticeEvent.
 	EventNotice
-	// EventAction is an ActionEvent.
 	EventAction
-	// EventJoin is a JoinEvent.
 	EventJoin
-	// EventPart is a PartEvent.
 	EventPart
-	// EventQuit is a QuitEvent.
 	EventQuit
-	// EventNick is a NickEvent.
 	EventNick
-	// EventKick is a KickEvent.
 	EventKick
-	// EventTopic is a TopicEvent.
 	EventTopic
-	// EventNames is a NamesEvent.
 	EventNames
-	// EventMode is a ModeEvent.
 	EventMode
-	// EventAway is an AwayEvent.
 	EventAway
-	// EventSelfAway is a SelfAwayEvent.
 	EventSelfAway
-	// EventMemberMetadata is a MemberMetadataEvent.
 	EventMemberMetadata
-	// EventAccount is an AccountEvent.
 	EventAccount
-	// EventTyping is a TypingEvent.
 	EventTyping
-	// EventHistory is a HistoryEvent.
 	EventHistory
-	// EventWhoisTranscript is a WhoisTranscriptEvent.
 	EventWhoisTranscript
-	// EventChannelError is a ChannelErrorEvent.
 	EventChannelError
-	// EventNickFacts is a NickFactsEvent.
 	EventNickFacts
 )
 
@@ -94,7 +73,6 @@ func (m MsgID) IsEmpty() bool {
 type MessageKindTag int
 
 const (
-	// MessageKindChat is a normal PRIVMSG line.
 	MessageKindChat MessageKindTag = iota
 	// MessageKindEmote is a CTCP ACTION line.
 	MessageKindEmote
@@ -107,7 +85,6 @@ const (
 type HistoryKind int
 
 const (
-	// HistoryChat is a chathistory reply.
 	HistoryChat HistoryKind = iota
 	// HistoryBouncerPlayback is a bouncer playback batch.
 	HistoryBouncerPlayback
@@ -124,7 +101,6 @@ type WelcomeEvent struct {
 
 func (WelcomeEvent) eventKind() EventKind { return EventWelcome }
 
-// MessageEvent is a delivered PRIVMSG.
 type MessageEvent struct {
 	Conversation     ConversationKey
 	Author           string
@@ -138,7 +114,6 @@ type MessageEvent struct {
 
 func (MessageEvent) eventKind() EventKind { return EventMessage }
 
-// NoticeEvent is a delivered NOTICE.
 type NoticeEvent struct {
 	Conversation     ConversationKey
 	Author           string
@@ -152,7 +127,6 @@ type NoticeEvent struct {
 
 func (NoticeEvent) eventKind() EventKind { return EventNotice }
 
-// ActionEvent is a CTCP ACTION message.
 type ActionEvent struct {
 	Conversation     ConversationKey
 	Author           string
@@ -167,7 +141,7 @@ type ActionEvent struct {
 func (ActionEvent) eventKind() EventKind { return EventAction }
 
 // JoinEvent reports a JOIN. Account is set only when the JOIN carried the
-// extended-join account parameter; nil means a classic one-parameter JOIN,
+// extended-join account parameter; nil means a classic one-parameter JOIN
 // which must not clear a known account. Realname is set only when a third
 // parameter exists. Nil leaves a stored real name alone.
 type JoinEvent struct {
@@ -180,7 +154,6 @@ type JoinEvent struct {
 
 func (JoinEvent) eventKind() EventKind { return EventJoin }
 
-// PartEvent reports a PART.
 type PartEvent struct {
 	NetworkID string
 	Channel   string
@@ -190,7 +163,6 @@ type PartEvent struct {
 
 func (PartEvent) eventKind() EventKind { return EventPart }
 
-// QuitEvent reports a QUIT.
 type QuitEvent struct {
 	NetworkID string
 	Nick      string
@@ -199,7 +171,6 @@ type QuitEvent struct {
 
 func (QuitEvent) eventKind() EventKind { return EventQuit }
 
-// NickEvent reports a nick change.
 type NickEvent struct {
 	NetworkID string
 	OldNick   string
@@ -208,7 +179,6 @@ type NickEvent struct {
 
 func (NickEvent) eventKind() EventKind { return EventNick }
 
-// KickEvent reports a KICK.
 type KickEvent struct {
 	NetworkID string
 	Channel   string
@@ -219,7 +189,6 @@ type KickEvent struct {
 
 func (KickEvent) eventKind() EventKind { return EventKick }
 
-// TopicEvent reports a topic change.
 type TopicEvent struct {
 	NetworkID string
 	Channel   string
@@ -245,7 +214,6 @@ type NamesEvent struct {
 
 func (NamesEvent) eventKind() EventKind { return EventNames }
 
-// ModeEvent reports a MODE line.
 type ModeEvent struct {
 	NetworkID string
 	Target    string
@@ -342,7 +310,6 @@ type WhoisTranscriptEvent struct {
 
 func (WhoisTranscriptEvent) eventKind() EventKind { return EventWhoisTranscript }
 
-// ChannelErrorEvent is a channel-scoped error line.
 type ChannelErrorEvent struct {
 	NetworkID string
 	Channel   string
@@ -373,7 +340,7 @@ type KeptReplay struct {
 	ServerTime time.Time
 }
 
-// RememberedQuery is a bouncer query whose splice kept a line from the user,
+// RememberedQuery is a bouncer query whose splice kept a line from the user
 // including a nick they have since changed.
 type RememberedQuery struct {
 	NetworkID string

@@ -16,7 +16,6 @@ import (
 // the Linux Rust store: a read finds both the items QtKeychain wrote for the
 // Qt client (user/server) and the ones the TUI wrote (service/username), a
 // write stores one item both of them can read, and a delete removes both sets.
-//
 // Every call is synchronous and bounded by secretServiceCallTimeout so a hung
 // or unresponsive secret service can never block the terminal indefinitely.
 
@@ -428,7 +427,7 @@ func secretServiceCreateItem(ctx context.Context, conn *dbus.Conn, collection, s
 	return nil
 }
 
-// secretServiceDefaultCollection resolves the default collection alias,
+// secretServiceDefaultCollection resolves the default collection alias
 // falling back to the login collection when no alias is configured.
 func secretServiceDefaultCollection(ctx context.Context, conn *dbus.Conn) (dbus.ObjectPath, error) {
 	obj := conn.Object(secretServiceBusName, secretServicePath)
@@ -475,7 +474,7 @@ func secretServiceErrorName(err error) (string, bool) {
 }
 
 // secretServiceNameIsUnavailable reports whether a DBus error name means the
-// secret service itself is not available (its name could not be resolved),
+// secret service itself is not available (its name could not be resolved)
 // rather than that a call to a live service failed.
 func secretServiceNameIsUnavailable(name string) bool {
 	switch name {

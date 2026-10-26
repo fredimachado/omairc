@@ -16,7 +16,7 @@ const MONO_ADVANCE_EM: f32 = 0.6;
 /// right-aligned labels do not sit against that edge.
 const INBOX_RIGHT_INSET: f32 = 16.;
 
-/// The nick the identity footer shows (Qt `selfNick`): the live session nick when set,
+/// The nick the identity footer shows: the live session nick when set
 /// otherwise the Connect profile nick being typed.
 pub fn footer_identity_nick(live_nick: &str, connect_nick: &str) -> String {
     let live = live_nick.trim();
@@ -26,12 +26,12 @@ pub fn footer_identity_nick(live_nick: &str, connect_nick: &str) -> String {
     connect_nick.trim().to_owned()
 }
 
-/// Whether the footer draws the bot mark beside the nick (Qt `peerBot(selfNick)`).
+/// Whether the footer draws the bot mark beside the nick.
 pub fn footer_self_bot(nick: &str, peer_bot: bool) -> bool {
     !nick.is_empty() && peer_bot
 }
 
-/// The identity footer, a port of the bottom of `client/src/ui/sidebar/`: 66 tall,
+/// The identity footer, a. 66 tall.
 /// the focused network's avatar, nick and presence, then the `inbox` link with
 /// its count and the version. The presence word and the mark come from the
 /// controller through `presence`: green when available, amber when away, muted when

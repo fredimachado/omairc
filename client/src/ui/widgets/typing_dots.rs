@@ -13,7 +13,7 @@ pub fn typing_dots(style: &Style, phase: u8) -> impl IntoElement {
     typing_dots_sized(style, phase, SIDEBAR_FACE_PX)
 }
 
-/// The same dots at a text size of `face_px` (Qt `TypingDots.pixelSize`): each dot
+/// The same dots at a text size of `face_px`: each dot
 /// is a third of that, with a quarter of it between dots. The transcript's
 /// footer dots use 16.
 pub fn typing_dots_sized(style: &Style, phase: u8, face_px: f32) -> impl IntoElement {

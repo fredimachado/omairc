@@ -111,7 +111,7 @@ fn cap_tokens(message: &IrcMessage, subcommand_index: usize) -> Vec<String> {
     split_fields(&trailing_text(message))
 }
 
-/// The Status text of an incoming CAP line (`statusFormatIncomingCap`): LS, ACK,
+/// The Status text of an incoming CAP line (`statusFormatIncomingCap`): LS, ACK
 /// NAK, NEW and DEL each name what the server said, then its tokens.
 fn format_incoming_cap(message: &IrcMessage) -> Option<String> {
     if message.params.len() < 2 {
@@ -164,8 +164,8 @@ fn is_nick_refusal(command: &str) -> bool {
 }
 
 /// Whether a refusal carries its sentence (`nickRefusalSentencePresent`).
-/// 432, 433, 436 and 437 carry `<client> <nick> :<reason>`; 451, 462 and 465
-/// carry `<client> :<reason>`. Fewer parameters means no sentence.
+/// 432, 433, 436 and 437 carry `<client> <nick>:<reason>`; 451, 462 and 465
+/// carry `<client>:<reason>`. Fewer parameters means no sentence.
 fn nick_refusal_sentence_present(command: &str, count: usize) -> bool {
     match command {
         "432" | "433" | "436" | "437" => count >= 3,
@@ -337,7 +337,7 @@ pub fn incoming(
         .unwrap_or_else(|| build_default_incoming(network_id, message, channel_types, now))
 }
 
-/// The default incoming classification (`statusBuildDefaultIncoming`): WHOIS,
+/// The default incoming classification (`statusBuildDefaultIncoming`): WHOIS
 /// CTCP requests and replies, notices, invites, then the plain line.
 fn build_default_incoming(
     network_id: &str,

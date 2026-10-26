@@ -1,7 +1,5 @@
-//! The `--demo-server` controller. Port of the demo start in `tui/internal/demo/`
+//! The `--demo-server` controller.
 //! (`demo.go`, `attachController` in `demo_test.go`) and `IrcDemoServer` in
-//! `tui/internal/demo/demo.go`.
-//!
 //! The demo is only the peer behind each seeded network's loopback. The controller
 //! builds the two sessions, attaches the peers, and plays the seed in Qt's order.
 //! Its `SeedControls` impl runs the two intents the seed interleaves with its bytes:
@@ -134,7 +132,7 @@ impl Controller {
         Self::new_demo_with(clock).expect("the demo starts")
     }
 
-    /// Test-only `#bench` seed: `count` mixed lines after its JOIN, topic and NAMES,
+    /// Test-only `#bench` seed: `count` mixed lines after its JOIN, topic and NAMES
     /// injected as frames on the omarchy network, then selected. False when the
     /// controller is not running the demo.
     pub fn bench_channel(&mut self, count: usize) -> bool {

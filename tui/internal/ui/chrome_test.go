@@ -76,7 +76,7 @@ func TestComposerLivesInTheTranscriptColumn(t *testing.T) {
 		t.Fatalf("composer width did not grow with the column: %d -> %d", shownWidth, got)
 	}
 
-	// The slash menu opens over the composer's own column, right of the sidebar,
+	// The slash menu opens over the composer's own column, right of the sidebar
 	// so it never covers the sidebar the field no longer spans.
 	m.toggleServerList()
 	if got, want := m.slashMenuLeft(), m.composerLeft(); got != want {
@@ -131,7 +131,7 @@ func TestSideColumnsRunBesideTheComposer(t *testing.T) {
 
 // TestStatusConsoleHidesMembersColumn pins the Qt parity of MembersColumn's
 // !consoleVisible gate (`client/src/ui/shell`). Opening Status keeps the last
-// channel as the controller's selection, so IsChannel() stays true; the member
+// channel as the controller's selection, so IsChannel stays true; the member
 // column must still hide. Connecting a second network was the visible symptom:
 // applying a profile opens Status while the previous channel's panel stayed on
 // screen beside the console transcript.
@@ -433,9 +433,9 @@ func TestComposerInteriorHasNoSurfaceFill(t *testing.T) {
 }
 
 // TestComposerInputStylesAreUnfilled pins the style seam: the live composer
-// input wears exactly the shared Input set, so its prompt, placeholder, text,
+// input wears exactly the shared Input set, so its prompt, placeholder, text
 // and caret carry no background in any focus state. Deriving a filled variant
-// for the composer was how the field's glyphs painted a block behind themselves;
+// for the composer was how the field's glyphs painted a block behind themselves
 // now there is no composer-only input set, so a fill cannot come back that way.
 func TestComposerInputStylesAreUnfilled(t *testing.T) {
 	m := seededModel(t)

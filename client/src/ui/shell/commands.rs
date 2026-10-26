@@ -80,7 +80,7 @@ impl Shell {
     }
 
     /// A click on an INVITE line's channel in Status: joins it on that network and
-    /// selects it (Qt `joinInviteChannel`).
+    /// selects it.
     pub fn join_status_invite(&mut self, channel: &str, cx: &mut Context<Self>) {
         let Some(network_id) = self.status_network() else {
             return;
@@ -191,7 +191,7 @@ impl Shell {
         chord_enabled(chord, &self.chord_context(window, cx))
     }
 
-    /// Ctrl+Shift+S: collapse or restore the server list by width. Drops header focus,
+    /// Ctrl+Shift+S: collapse or restore the server list by width. Drops header focus
     /// as Qt does.
     pub fn toggle_rail(&mut self, window: &Window, cx: &mut Context<Self>) {
         if !self.chord_live(Chord::ServerListToggle, window, cx) {
@@ -228,7 +228,7 @@ impl Shell {
     }
 
     /// Enter in the composer. With a network header focused, Enter opens that network's
-    /// Status (Qt `activateFocusedNetworkHeader`) and does not send.
+    /// Status and does not send.
     pub fn composer_submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // The composer is under the Connect sheet, so Enter there never sends.
         if self.connect_open {
@@ -486,7 +486,6 @@ impl Shell {
         self.controller.members().get(self.member_cursor).cloned()
     }
 
-    /// Up / Down in the member list.
     pub fn member_move(&mut self, delta: isize, window: &mut Window, cx: &mut Context<Self>) {
         if !self.chord_live(Chord::MembersStep, window, cx) {
             return;

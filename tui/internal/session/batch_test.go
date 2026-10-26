@@ -8,7 +8,7 @@ import (
 )
 
 // historyConfig is the sessionTestConfig with no autojoin, mirroring the
-// per-test sessionConfig overrides in `tst_session`.
+// per-test sessionConfig overrides.
 func historyConfig() SessionConfig {
 	config := sessionTestConfig(sessionTestNetworkID)
 	config.AutojoinChannels = nil
@@ -60,7 +60,7 @@ func assertStringsEqual(t *testing.T, got, want []string) {
 	}
 }
 
-// TestSessionBatchOpenAndCloseDoNotEmitBatchLines ports
+// TestSessionBatchOpenAndCloseDoNotEmitBatchLines.
 // SessionTest::batchOpenAndCloseDoNotEmitBatchLines.
 func TestSessionBatchOpenAndCloseDoNotEmitBatchLines(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -80,7 +80,7 @@ func TestSessionBatchOpenAndCloseDoNotEmitBatchLines(t *testing.T) {
 	}
 }
 
-// TestSessionNestedBatchesDoNotFailTheSession ports
+// TestSessionNestedBatchesDoNotFailTheSession.
 // SessionTest::nestedBatchesDoNotFailTheSession.
 func TestSessionNestedBatchesDoNotFailTheSession(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -102,7 +102,7 @@ func TestSessionNestedBatchesDoNotFailTheSession(t *testing.T) {
 	}
 }
 
-// TestSessionUnknownBatchTypeAndCloseStayRegistered ports
+// TestSessionUnknownBatchTypeAndCloseStayRegistered.
 // SessionTest::unknownBatchTypeAndCloseStayRegistered.
 func TestSessionUnknownBatchTypeAndCloseStayRegistered(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -125,7 +125,7 @@ func TestSessionUnknownBatchTypeAndCloseStayRegistered(t *testing.T) {
 	}
 }
 
-// TestSessionHistoryBatchSwallowsInnerPrivmsg ports
+// TestSessionHistoryBatchSwallowsInnerPrivmsg.
 // SessionTest::historyBatchSwallowsInnerPrivmsg.
 func TestSessionHistoryBatchSwallowsInnerPrivmsg(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -164,7 +164,7 @@ func TestSessionHistoryBatchSwallowsInnerPrivmsg(t *testing.T) {
 	}
 }
 
-// TestSessionDraftHistoryBatchSwallowsInnerPrivmsg ports
+// TestSessionDraftHistoryBatchSwallowsInnerPrivmsg.
 // SessionTest::draftHistoryBatchSwallowsInnerPrivmsg.
 func TestSessionDraftHistoryBatchSwallowsInnerPrivmsg(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -187,7 +187,7 @@ func TestSessionDraftHistoryBatchSwallowsInnerPrivmsg(t *testing.T) {
 	}
 }
 
-// TestSessionUnsolicitedHistoryFloodKeepsLiveTraffic ports
+// TestSessionUnsolicitedHistoryFloodKeepsLiveTraffic.
 // SessionTest::unsolicitedHistoryFloodKeepsLiveTraffic.
 func TestSessionUnsolicitedHistoryFloodKeepsLiveTraffic(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -216,7 +216,7 @@ func TestSessionUnsolicitedHistoryFloodKeepsLiveTraffic(t *testing.T) {
 	}
 }
 
-// TestSessionOverflowedUnknownBatchPassesInnerPrivmsg ports
+// TestSessionOverflowedUnknownBatchPassesInnerPrivmsg.
 // SessionTest::overflowedUnknownBatchPassesInnerPrivmsg.
 func TestSessionOverflowedUnknownBatchPassesInnerPrivmsg(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -241,7 +241,7 @@ func TestSessionOverflowedUnknownBatchPassesInnerPrivmsg(t *testing.T) {
 	}
 }
 
-// TestSessionLeftoverNestedBatchLineAfterRootCloseIsSwallowed ports
+// TestSessionLeftoverNestedBatchLineAfterRootCloseIsSwallowed.
 // SessionTest::leftoverNestedBatchLineAfterRootCloseIsSwallowed.
 func TestSessionLeftoverNestedBatchLineAfterRootCloseIsSwallowed(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -262,7 +262,7 @@ func TestSessionLeftoverNestedBatchLineAfterRootCloseIsSwallowed(t *testing.T) {
 	}
 }
 
-// TestSessionIgnoredBatchLedgerRecoversAfterClose ports
+// TestSessionIgnoredBatchLedgerRecoversAfterClose.
 // SessionTest::ignoredBatchLedgerRecoversAfterClose.
 func TestSessionIgnoredBatchLedgerRecoversAfterClose(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -288,7 +288,7 @@ func TestSessionIgnoredBatchLedgerRecoversAfterClose(t *testing.T) {
 	}
 }
 
-// TestSessionUnsolicitedHistoryBatchStillEmits ports
+// TestSessionUnsolicitedHistoryBatchStillEmits.
 // SessionTest::unsolicitedHistoryBatchStillEmits.
 func TestSessionUnsolicitedHistoryBatchStillEmits(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -307,7 +307,7 @@ func TestSessionUnsolicitedHistoryBatchStillEmits(t *testing.T) {
 	}
 }
 
-// TestSessionHistoryBatchWithoutCapabilityIsIgnored ports
+// TestSessionHistoryBatchWithoutCapabilityIsIgnored.
 // SessionTest::historyBatchWithoutCapabilityIsIgnored.
 func TestSessionHistoryBatchWithoutCapabilityIsIgnored(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -325,7 +325,7 @@ func TestSessionHistoryBatchWithoutCapabilityIsIgnored(t *testing.T) {
 	assertStringsEqual(t, messageBodies(fixture.handler.messages[start:]), []string{"after"})
 }
 
-// TestSessionBouncerPlaybackBatchNeedsOnlyTheBatchCapability ports
+// TestSessionBouncerPlaybackBatchNeedsOnlyTheBatchCapability.
 // SessionTest::bouncerPlaybackBatchNeedsOnlyTheBatchCapability.
 func TestSessionBouncerPlaybackBatchNeedsOnlyTheBatchCapability(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -358,7 +358,7 @@ func TestSessionBouncerPlaybackBatchNeedsOnlyTheBatchCapability(t *testing.T) {
 	assertStringsEqual(t, messageBodies(fixture.handler.messages[start:]), []string{"after"})
 }
 
-// TestSessionBouncerQueryPlaybackBatchCollectsUnderThePeerNick ports
+// TestSessionBouncerQueryPlaybackBatchCollectsUnderThePeerNick.
 // SessionTest::bouncerQueryPlaybackBatchCollectsUnderThePeerNick.
 func TestSessionBouncerQueryPlaybackBatchCollectsUnderThePeerNick(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -387,7 +387,7 @@ func TestSessionBouncerQueryPlaybackBatchCollectsUnderThePeerNick(t *testing.T) 
 	}
 }
 
-// TestSessionBouncerBatchPlaybackTypeIsNotReplay ports
+// TestSessionBouncerBatchPlaybackTypeIsNotReplay.
 // SessionTest::bouncerBatchPlaybackTypeIsNotReplay.
 func TestSessionBouncerBatchPlaybackTypeIsNotReplay(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -407,7 +407,7 @@ func TestSessionBouncerBatchPlaybackTypeIsNotReplay(t *testing.T) {
 	assertStringsEqual(t, messageBodies(fixture.handler.messages[start:]), []string{"are you there"})
 }
 
-// TestSessionUnsolicitedBouncerPlaybackSharesTheOpenBatchBudget ports
+// TestSessionUnsolicitedBouncerPlaybackSharesTheOpenBatchBudget.
 // SessionTest::unsolicitedBouncerPlaybackSharesTheOpenBatchBudget.
 func TestSessionUnsolicitedBouncerPlaybackSharesTheOpenBatchBudget(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -443,7 +443,7 @@ func TestSessionUnsolicitedBouncerPlaybackSharesTheOpenBatchBudget(t *testing.T)
 	}
 }
 
-// TestSessionSolicitedHistoryBatchSurvivesOpenBatchFlood ports
+// TestSessionSolicitedHistoryBatchSurvivesOpenBatchFlood.
 // SessionTest::solicitedHistoryBatchSurvivesOpenBatchFlood.
 func TestSessionSolicitedHistoryBatchSurvivesOpenBatchFlood(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
@@ -467,7 +467,7 @@ func TestSessionSolicitedHistoryBatchSurvivesOpenBatchFlood(t *testing.T) {
 	}
 }
 
-// TestSessionOpenPlaybackDoesNotMakePendingHistoryUnsolicited ports
+// TestSessionOpenPlaybackDoesNotMakePendingHistoryUnsolicited.
 // SessionTest::openPlaybackDoesNotMakePendingHistoryUnsolicited.
 func TestSessionOpenPlaybackDoesNotMakePendingHistoryUnsolicited(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())

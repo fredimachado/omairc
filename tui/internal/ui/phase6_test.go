@@ -645,7 +645,7 @@ func TestModalBlocksChord(t *testing.T) {
 
 // TestSideColumnOuterWidthsAreInvariant pins the F2 card contract: framing the
 // sidebar and member column must not change their outer sizes, because
-// transcriptWidth() and the width tests are built on those constants.
+// transcriptWidth and the width tests are built on those constants.
 func TestSideColumnOuterWidthsAreInvariant(t *testing.T) {
 	m := seededModel(t)
 	height := m.bodyHeight()
@@ -730,7 +730,7 @@ func shortSidebar(m *Model) string {
 	return m.sidebarView(sidebarWidth(m.width), 8)
 }
 
-// selectedSidebarLabel returns the sidebar label of the selected conversation,
+// selectedSidebarLabel returns the sidebar label of the selected conversation
 // or "".
 func selectedSidebarLabel(m *Model) string {
 	id := m.ctrl.SelectedConversationID()
@@ -792,7 +792,7 @@ func TestSidebarRevealsFocusedNetworkHeader(t *testing.T) {
 	}
 }
 
-// TestSidebarShortRosterStaysAtTop pins the resting state: when the roster fits,
+// TestSidebarShortRosterStaysAtTop pins the resting state: when the roster fits
 // moving the selection does not slide the window or blank the first rows.
 func TestSidebarShortRosterStaysAtTop(t *testing.T) {
 	m := seededModel(t)

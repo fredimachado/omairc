@@ -7,7 +7,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/storage"
 )
 
-// This file ports the Phase 11 open-direct store checks: remembering a direct,
+// This file. Remembering a direct.
 // forgetting it, and restoring persisted directs at MOTD end.
 
 func hasConversationKey(c *Controller, networkID, target string) bool {

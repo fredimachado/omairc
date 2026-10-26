@@ -1,10 +1,5 @@
-//! Port of `tui/internal/session/sessionmanager.go` and
-//! `ircsessionmanager` (C++).
-//!
-//! The manager owns the live sessions, one per network id. The Qt manager keeps
-//! its sessions as QObject children and tears them down with `deleteLater`; Rust
-//! has no parent, so the manager holds the only reference and `discard` stops
-//! the session and drops it.
+//! The manager owns the live sessions, one per network id. It holds the only
+//! reference to each session; `discard` stops the session and drops it.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -83,7 +78,6 @@ impl SessionManager {
         self.sessions.borrow().get(network_id).cloned()
     }
 
-    /// Every registered network id, sorted.
     pub fn network_ids(&self) -> Vec<String> {
         self.sessions.borrow().keys().cloned().collect()
     }

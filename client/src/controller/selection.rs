@@ -1,6 +1,6 @@
 //! The selection intents: which conversation or Status the transcript shows, the
 //! direct messages the user opens and closes, and the read state of the selected
-//! conversation. Port of `SelectConversation`, `OpenStatus`, `OpenDirectMessage`,
+//! conversation.
 //! `CloseDirectMessage`, `DropConversationAndReselect`, `ClearConversationSelection`
 //! and `CanCloseSelection` in `tui/internal/controller/controller.go`.
 
@@ -74,7 +74,7 @@ impl Controller {
         self.pump();
     }
 
-    /// Leaves Status for the selected conversation (`CloseStatus`). The selection is kept,
+    /// Leaves Status for the selected conversation (`CloseStatus`). The selection is kept
     /// so the transcript shows it again. Nothing else changes.
     pub fn leave_status(&mut self) {
         self.pump();
@@ -92,7 +92,6 @@ impl Controller {
 
     /// Clears the selection, so the transcript falls back to Status
     /// (`ClearConversationSelection`).
-    // Phase 5: the header's CLOSE falls back to Status
     #[cfg(test)]
     pub fn clear_selection(&mut self) {
         self.pump();

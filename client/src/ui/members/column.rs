@@ -22,7 +22,6 @@ pub struct MembersData<'a> {
     pub on_nick: Handler<String>,
     /// The `ONLINE - N` heading's click: opens the Nick sheet.
     pub on_heading: Handler<()>,
-    /// The list's keyboard focus.
     pub focus: &'a FocusHandle,
     /// The current row, drawn raised only while the list has focus.
     pub cursor: Option<usize>,

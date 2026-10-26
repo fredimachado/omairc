@@ -1,5 +1,5 @@
 //! Replay splicing, msgid dedup, channel-context delivery, the log round trip, and
-//! the CHATHISTORY page rules. Ports of `reducer_test.go` and `history_page_test.go`.
+//! the CHATHISTORY page rules.
 
 use super::*;
 use crate::irc::event::{HistoryKind, MessageKindTag, MsgId, ReplayLine};
@@ -267,8 +267,6 @@ fn channel_context_direct_message_survives_when_untrusted() {
         "parted channel kept the private line"
     );
 }
-
-// --- history_page_test.go ---------------------------------------------------
 
 #[test]
 fn history_page_cap_tail_splices_older_chat_at_head() {

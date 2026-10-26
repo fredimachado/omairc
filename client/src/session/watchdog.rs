@@ -1,6 +1,5 @@
 //! The ping watchdog (`pingWatchdogState` in Go). Once registered, a silent socket
 //! gets one PING probe, and a probe that stays unanswered fails the connection.
-//!
 //! `PingWatchdog` owns the Off / Watching / Probing state and its transitions.
 //! The Ping timer slot stays in `Core`, so the `Core` methods below pair each
 //! transition with its timer.
@@ -15,7 +14,6 @@ use crate::irc::message::IrcMessage;
 /// The PING token the watchdog sends, and expects back in PONG.
 const PING_WATCHDOG_TOKEN: &str = "omairc-watchdog";
 
-/// Where the watchdog stands.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum PingState {
     #[default]
@@ -37,7 +35,6 @@ enum PingExpiry {
     Nothing,
 }
 
-/// The ping watchdog's state.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct PingWatchdog {
     state: PingState,

@@ -1,14 +1,12 @@
 //! One-shot import of Qt's Windows registry settings into the product INI.
-//!
 //! On Windows, Qt's `QSettings::NativeFormat` stores main settings under
 //! `HKCU\Software\omairc\omairc` (subkey = group). Product mode copies that data
 //! once into `%LOCALAPPDATA%\omairc\omairc.conf`. The TUI keeps its settings in
 //! that same file, so it can already exist: the import then merges. A value the
-//! file already holds wins, a string list gains the registry's missing items,
+//! file already holds wins, a string list gains the registry's missing items
 //! and everything else is added. The `migration/qtRegistryImported` marker
 //! records that the import ran, so a network removed later does not come back.
 //! The registry is never modified, so a Qt client can still roll back.
-//!
 //! Product startup calls [`import_if_needed`] after the file log is installed
 //! (`migrate::run_at_startup`). Tests drive the same mapping through
 //! [`RegistryReader`] with an in-memory tree.
@@ -47,15 +45,11 @@ pub enum ImportOutcome {
 pub enum RegistryValue {
     /// `REG_SZ` / `REG_EXPAND_SZ` (and UTF-16 `REG_BINARY` text).
     Sz(String),
-    /// `REG_DWORD`.
     Dword(u32),
-    /// `REG_QWORD`.
     Qword(u64),
-    /// `REG_MULTI_SZ`.
     MultiSz(Vec<String>),
 }
 
-/// Contents of one registry key (one QSettings group).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RegistryKeyContents {
     pub values: Vec<(String, RegistryValue)>,
@@ -260,8 +254,8 @@ fn apply_value(settings: &mut Settings, group: &str, key: &str, value: &Registry
     }
 }
 
-/// Maps a REG_SZ (or UTF-16 REG_BINARY) string the way Qt's `stringToVariant` /
-/// INI writer would: `@Invalid()`, `@@…` plain text, `@Rect` / `@ByteArray` /
+/// Maps a REG_SZ (or UTF-16 REG_BINARY) string the way Qt's `stringToVariant`
+/// INI writer would: `@Invalid`, `@@…` plain text, `@Rect` / `@ByteArray`
 /// other `@…` variants verbatim, else plain text.
 fn apply_sz(settings: &mut Settings, group: &str, key: &str, text: &str) {
     if text == "@Invalid()" {
@@ -286,7 +280,7 @@ fn unescape_registry_name(name: &str) -> String {
         .collect()
 }
 
-/// In-memory registry tree for tests. Keys are QSettings group paths (`""`,
+/// In-memory registry tree for tests. Keys are QSettings group paths (`""`
 /// `"networks/freenode"`); value names are unescaped.
 #[derive(Clone, Debug, Default)]
 pub struct FakeRegistry {

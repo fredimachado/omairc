@@ -1,7 +1,7 @@
 //! The `/list` channel sheet's rows: the controller's answer to `LIST mask`, ranked by
 //! the sheet's query, and the status line of `client/src/ui/sheets/channel_list.rs`. The
 //! answer is the overlay's rows (`Controller::channel_list`, fed by the wire in
-//! `controller/channellist`), and this module only ranks and shows it. Ports
+//! `controller/channellist`), and this module only ranks and shows it.
 //! `ChannelListModel::rowLess` (most users first, then name).
 
 use super::format::{format_irc, FormattedText, TextStyle};

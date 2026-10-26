@@ -5,12 +5,11 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// This file is the Phase 6 chord map: every window chord from
+// Chord map: every window chord from
 // `.cursor/skills/verify-omairc/features/keyboard.md`, plus the modal gating
 // that disables the chords while Connect or the shortcuts sheet is open.
-//
 // The pure navigation chords live in chordTable, keyed by bubbletea's
-// key.Keystroke() (lowercase arrows and special keys, "ctrl+" / "alt+" /
+// key.Keystroke (lowercase arrows and special keys, "ctrl+" / "alt+"
 // "shift+" prefixes in that order). Chords that need the raw key press, the
 // composer, or a mode check are handled in dispatchChord directly.
 
@@ -162,7 +161,7 @@ func (m *Model) dispatchChord(key string, msg tea.KeyPressMsg) (bool, tea.Cmd) {
 }
 
 // modalBlocksChord reports whether the open Connect sheet or shortcuts sheet
-// must swallow key. Every navigation chord is disabled under those modals;
+// must swallow key. Every navigation chord is disabled under those modals
 // only the keys the modal itself owns, plus Ctrl+Q (quit), Ctrl+/ (toggle the
 // shortcuts sheet), Ctrl+C (copy), and Escape, are let through. About is
 // handled before this runs, but it is included so the gate stays total.
@@ -203,7 +202,7 @@ func footerBindingSteps(full key.Binding) []key.Binding {
 // footerKeyMap is the bubbles/help KeyMap behind the footer's right side. It
 // mirrors the chords in chordTable and dispatchChord so the footer can never
 // drift into a parallel hand-written hint string. ShortHelp is contextual: it
-// lists the chords that apply where focus sits and always ends with the Ctrl+/
+// lists the chords that apply where focus sits and always ends with the Ctrl+
 // shortcuts binding.
 type footerKeyMap struct{ m *Model }
 

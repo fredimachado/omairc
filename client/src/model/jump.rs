@@ -46,7 +46,6 @@ pub struct JumpTarget {
     pub label_indices: Vec<usize>,
     /// Whether the label itself matched. Detail-only hits sort below these.
     pub name_hit: bool,
-    /// The best weighted field score.
     pub score: u32,
     pub order: usize,
 }

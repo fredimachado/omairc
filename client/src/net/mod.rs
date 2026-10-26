@@ -1,8 +1,6 @@
 //! The network layer: the only place in the client that holds sockets, TLS sessions or
 //! the async runtime. `tests/net_boundary.rs` keeps it that way.
-//!
 //! The gate enforces three rules:
-//!
 //! - `tokio`, `tokio_rustls`, `rustls`, `rustls_native_certs` and `webpki_roots` are
 //!   named only under `src/net/`.
 //! - `std::net` is forbidden in `irc/`, `session/`, `controller/`, `model/`, `ui/` and
@@ -11,7 +9,6 @@
 //! - Nothing under `src/net/` names `gpui`, `crate::ui` or `crate::controller`, except
 //!   `controller::transports::TransportFactory` in `factory.rs`, the one seam the
 //!   controller hands transports through.
-//!
 //! The socket transport: `NetHub` owns the `omairc-net` thread, `NetTransport` is the
 //! UI-side `Transport` registered with it, and `worker` runs one connection on that
 //! thread. The wire between them is `wire`. `NetTransports` is the factory the shell

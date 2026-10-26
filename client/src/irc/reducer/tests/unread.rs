@@ -1,5 +1,5 @@
 //! Unread counts, the New-messages boundary, mention and inbox arrivals, mute and
-//! nick-merge marks. Ports of `reducer_test.go`.
+//! nick-merge marks.
 
 use super::*;
 use crate::irc::world::MessageKind;

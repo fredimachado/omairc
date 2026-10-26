@@ -1,12 +1,8 @@
-//! Port of the wire helpers in `tui/internal/irc/readmarker.go` (Go) and
-//! `tui/internal/session/readmarker.go`.
-//!
 //! This file holds the timestamp and verb rules every read-marker line shares:
-//! millisecond truncation, the `timestamp=` format and parse, the `*` sentinel,
+//! millisecond truncation, the `timestamp=` format and parse, the `*` sentinel
 //! and which verb a negotiated token selects. The outbound pacing (one marker in
 //! flight per target) is in `session/readmarker.rs`, and the reducer's unread
 //! recount from a marker is in the reducer. Both call these helpers.
-//!
 //! Pure: no clock is read here.
 
 use chrono::{DateTime, Utc};
@@ -66,7 +62,7 @@ pub fn parse_read_marker_time(value: &str) -> Option<DateTime<Utc>> {
 }
 
 /// Parses the trailing parameter of a `MARKREAD` / `READ` line
-/// (`ParseReadMarkerParameter`). `Some(None)` is `*`, the no-marker sentinel;
+/// (`ParseReadMarkerParameter`). `Some(None)` is `*`, the no-marker sentinel
 /// `Some(Some(time))` is a `timestamp=` marker; `None` is anything else.
 pub fn parse_read_marker_parameter(parameter: &str) -> Option<Option<DateTime<Utc>>> {
     let parameter = parameter.trim();

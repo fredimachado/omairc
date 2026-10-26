@@ -88,7 +88,6 @@ func TestRenderHalfBlocks(t *testing.T) {
 }
 
 func TestDecodeBudgetAsksQuestions(t *testing.T) {
-	// A small valid PNG decodes.
 	small := image.NewRGBA(image.Rect(0, 0, 2, 2))
 	small.Set(0, 0, color.RGBA{R: 255, A: 255})
 	var smallBuf bytes.Buffer

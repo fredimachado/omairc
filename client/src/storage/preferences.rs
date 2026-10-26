@@ -1,5 +1,5 @@
-//! The `preferences` group of the settings file: the `/pref` toggles and the joins level,
-//! the sidebar's network order and collapse set, and the `/autoaway` settings. Port of
+//! The `preferences` group of the settings file: the `/pref` toggles and the joins level
+//! the sidebar's network order and collapse set, and the `/autoaway` settings.
 //! `IrcController::loadStoredPreferences`, `savePreferenceBool` and friends in
 //! `tui/internal/controller/controller.go` and `tui/internal/controller/autoawayruntime.go`, and of the
 //! group handling in `tui/internal/controller/controller.go` (Go). The keys are the Qt

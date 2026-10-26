@@ -1,12 +1,9 @@
-//! Port of the CAP and SASL driver in `tui/internal/session/session.go` (Go),
 //! `tui/internal/session/session.go` and `tui/internal/irc/capabilitynegotiation.go`.
-//!
 //! The session sends `CAP LS 302`, requests what `IrcCapabilityNegotiation`
 //! wants, acts on `ACK` / `NAK` / `NEW` / `DEL`, runs SASL when it was granted
 //! (PLAIN, or SCRAM-SHA-256 through `saslscram`), and ends negotiation with
 //! `CAP END` once every request has settled. Late replies after a timeout are
 //! ignored by the negotiation itself.
-//!
 //! A SCRAM-SHA-256 exchange that fails is never retried with PLAIN.
 
 use std::time::Duration;
@@ -258,7 +255,7 @@ impl Core {
         }
     }
 
-    /// Handles an `AUTHENTICATE` challenge. PLAIN and SCRAM-SHA-256 are answered. For PLAIN,
+    /// Handles an `AUTHENTICATE` challenge. PLAIN and SCRAM-SHA-256 are answered. For PLAIN
     /// the `+` after `AUTHENTICATE PLAIN` asks for the credential (`handleAuthenticateLocked`).
     pub(crate) fn handle_authenticate(&mut self, message: &IrcMessage) {
         if self.state != SessionState::Sasl || message.params.is_empty() {

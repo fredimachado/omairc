@@ -4,8 +4,9 @@ import (
 	"strings"
 )
 
-// This file is the Go port of the slash-command core in
-// `irccommand`: the composer surface, the verb scope, the
+// The slash-command core: the composer surface, the verb scope, the parsed
+// command, the verb table, and the dispatch outcome text.
+// : the composer surface, the verb scope, the
 // parsed command, the verb table, and the dispatch outcome text.
 
 // ComposerSurface selects which composer a command was typed into. It mirrors

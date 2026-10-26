@@ -16,7 +16,6 @@ use crate::ui::widgets::avatar::{avatar_with_presence, AvatarPhotos};
 use crate::ui::widgets::bot_mark::bot_mark;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
-/// Dimmed glyph opacity for an away member.
 const AWAY_GLYPH_OPACITY: f32 = 0.62;
 
 pub struct NickSource {
@@ -29,7 +28,7 @@ pub struct NickSource {
     /// The photos the frame draws, by avatar reference. The shell keeps them current.
     pub photos: AvatarPhotos,
     /// Whether away-notify is on for the selected network, from
-    /// `Controller::has_away_presence()` when the sheet opens.
+    /// `Controller::has_away_presence` when the sheet opens.
     pub away_visible: bool,
 }
 

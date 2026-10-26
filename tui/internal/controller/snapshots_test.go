@@ -1,6 +1,6 @@
 package controller_test
 
-// This file pins the display clock on MessageSnapshot.Time. The view renders,
+// This file pins the display clock on MessageSnapshot.Time. The view renders
 // groups, and copies that cell directly, so it is the one place the reducer's
 // stored instant is turned into the zone the user reads. It mirrors
 // MessageListModel::displayTime's QDateTime::toLocalTime.

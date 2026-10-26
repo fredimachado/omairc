@@ -1,12 +1,10 @@
-//! Port of `tui/internal/irc/membershipnoise.go`, and the caption fold of
+//! `tui/internal/irc/membershipnoise.go`, and the caption fold of
 //! `foldMembership` and `collapseEventBody` in `tui/internal/irc/reducer.go`.
-//!
 //! Join, part, quit and nick lines are one caption each. A run of them can fold
 //! into one caption (`Folded`), show one by one (`Every`), or disappear
 //! (`Hidden`). The setting is `/pref joins`. The fold works on caption text, so
 //! it needs no transcript type: the model folds stored lines through
 //! `fold_membership`, and the reducer folds arriving lines through the same call.
-//!
 //! Pure: no clock, no I/O. `same` compares two nicks under the network's case
 //! mapping; the caller supplies it.
 

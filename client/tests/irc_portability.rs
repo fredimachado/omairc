@@ -1,7 +1,6 @@
 //! Rule 3 of the GPUI plan: `src/irc/` stays portable. It holds no socket, no
 //! filesystem, no thread, no process, no storage and no gpui or tokio, so the same
 //! protocol core can run under any transport, store and toolkit.
-//!
 //! This mirrors the Go gate in `bin/check-conventions`
 //! (`check_go_irc_platform_neutrality`), which keeps `tui/internal/irc` free of
 //! `net`, `os` and `crypto/tls`. Sockets, threads and the filesystem belong in

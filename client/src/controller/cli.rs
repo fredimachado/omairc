@@ -1,7 +1,6 @@
-//! The product CLI's reads on the controller. Port of the snapshot helpers in `tui/internal/controller/controller.go`
+//! The product CLI's reads on the controller.
 //! (`snapshotMessages`, `snapshotMembers`, `snapshotConversations`, and `sendToTarget`, which the send
 //! intent in `send.rs` already covers).
-//!
 //! The UI reads the selected conversation through `messages`, `members` and `conversations`. The CLI
 //! names its target and window itself, so these take them. They read the same reducer and order the
 //! same way: lines by time, then message id, then sequence; members in `ordered_members` order.
@@ -176,7 +175,7 @@ impl Controller {
         }
     }
 
-    /// The members of a joined channel in panel order (`snapshotMembers`). A direct message, Status,
+    /// The members of a joined channel in panel order (`snapshotMembers`). A direct message, Status
     /// or a channel that is not joined is an error, with the text Qt gives.
     pub fn cli_members(&self, network_id: &str, target: &str) -> Result<Vec<MemberView>, String> {
         let key = self.reducer.conversation_key(network_id, target);

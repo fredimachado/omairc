@@ -1,4 +1,4 @@
-//! /pref: argument shapes, the printed lines, and the set that writes through.
+//! pref: argument shapes, the printed lines, and the set that writes through.
 
 use super::*;
 

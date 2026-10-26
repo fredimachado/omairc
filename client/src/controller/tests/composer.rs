@@ -1,5 +1,5 @@
-//! The composer's typing hint over the real demo. Ports the Go cases in
-//! `tui/internal/controller/composertyping_test.go`. The demo grants `message-tags`,
+//! The composer's typing hint over the real demo.
+//! `tui/internal/controller/composertyping_test.go`. The demo grants `message-tags`
 //! so a live line writes `@+typing=active TAGMSG` and the hint is withdrawn with
 //! `done`. The pace is the session's three-second throttle on the fixture's clock.
 

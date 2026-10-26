@@ -1,8 +1,7 @@
-//! The product CLI's JSON contract: the request line a control command sends to the running window,
+//! The product CLI's JSON contract: the request line a control command sends to the running window
 //! and the one JSON line the window answers with. Desktop-only (no Go twin). The field
 //! lists are the ones `skills/omairc/reference.md` documents. The TUI has no local socket, so it has
 //! no twin here.
-//!
 //! `QJsonObject` writes its keys in sorted order, so every row below is a struct whose fields are
 //! declared in that order. Serialising the struct gives the bytes Qt writes. Rows leave out empty
 //! strings and `false` flags, as `OmaircIpc::putText` and `putFlag` do.
@@ -47,7 +46,6 @@ pub enum ReadWindow {
     Unread,
 }
 
-/// One parsed control request.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Request {
     pub command: Command,
@@ -179,7 +177,7 @@ fn json_int(value: &Value) -> Option<i64> {
         .or_else(|| value.as_f64().map(|float| float as i64))
 }
 
-/// The milliseconds a `N` plus unit token spans: `s`, `m`, `h`, or `d`. `None` for anything else,
+/// The milliseconds a `N` plus unit token spans: `s`, `m`, `h`, or `d`. `None` for anything else
 /// for a count below one, and for a span that overflows (`OmaircIpc::durationMs`).
 pub fn duration_ms(token: &str) -> Option<i64> {
     let unit = token.chars().last()?;
@@ -460,7 +458,6 @@ pub fn ok_conversations(conversations: &[ConversationRow]) -> String {
     })
 }
 
-/// `{"error":...,"ok":false}`.
 pub fn error_response(message: &str) -> String {
     to_line(&ErrorEnvelope {
         error: message,

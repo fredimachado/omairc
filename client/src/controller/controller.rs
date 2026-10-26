@@ -1,8 +1,5 @@
-//! Port of `tui/internal/controller/controller.go`.
-//!
 //! The controller owns the session manager, the event reducer, the Status console
 //! and the session inbox. Its pipeline is one way:
-//!
 //! 1. A `Transport` delivers bytes to its `Session`, which parses them and queues
 //!    `SessionEvent`s.
 //! 2. `pump` drains every session's queue. Inbound lines go through the Status
@@ -10,8 +7,7 @@
 //!    the `EventReducer`.
 //! 3. The reducer's `ViewNotify` surfaces queue up. The shell drains them with
 //!    `take_notifications` and repaints.
-//!
-//! Intents (`select_conversation`, `send_to_target`, `start`, ...) run on the UI
+//! Intents (`select_conversation`, `send_to_target`, `start`,...) run on the UI
 //! thread, write to the session, and pump the events the write produced. The
 //! loopback delivers synchronously, so a demo reply is queued before the intent
 //! returns. Nothing here depends on gpui.
@@ -87,7 +83,6 @@ pub struct Controller {
     /// The display target of the selection, kept for a conversation that does
     /// not exist yet (`selectedTarget`).
     pub(super) selected_target: String,
-    /// The network the Status console points at.
     pub(super) console_network: String,
     /// The Status console's own open flag (`consoleOpen`).
     pub(super) console_open: bool,
@@ -146,7 +141,6 @@ pub struct Controller {
     pub(super) avatars: AvatarFetches,
     /// Channels and directs the user closed (`closedConversations` / `targets`).
     pub(super) closed: Rc<RefCell<CaseListStore>>,
-    /// Bouncer playback books (Gap 5).
     pub(super) playback: Rc<RefCell<PlaybackCoordinator>>,
     pub(super) playback_times: Rc<RefCell<PlaybackTimeStore>>,
     /// Whether the transcript viewport follows the end after new lines.
@@ -324,7 +318,6 @@ impl Controller {
     }
 
     /// The demo peers, when the controller runs `--demo-server`.
-    // test seam: the controller tests reach the demo peers
     #[cfg(test)]
     pub fn demo(&self) -> Option<&DemoServer> {
         self.demo.as_deref()
@@ -384,7 +377,7 @@ impl Controller {
     }
 
     /// Whether `network_id` can be disconnected: its session is live or reconnecting, so
-    /// Disconnect has something to stop (Qt `IrcConnection::canDisconnect`). Connecting
+    /// Disconnect has something to stop. Connecting
     /// counts as live, as it does in Qt. False for a network with no session.
     pub fn can_disconnect(&self, network_id: &str) -> bool {
         self.manager.is_live(network_id)
