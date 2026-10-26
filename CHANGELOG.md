@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (was `omairc-poc` / `OMAIRC_POC_HOME`). Desktop proof scripts and the CI
   recipe job use `verify-omairc-desktop` / `control-omairc-desktop` and
   `test-artifacts/verify-desktop/` (was `*-poc`).
+- The desktop release build uses a size-focused Cargo profile (`opt-level = "z"`,
+  fat LTO, one codegen unit, stripped symbols). On Windows MSVC the product
+  `omairc.exe` drops from about 23 MiB to about 11 MiB.
 
 ## [1.11.0rc1] - 2026-10-26
 
