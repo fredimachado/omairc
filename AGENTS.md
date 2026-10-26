@@ -142,9 +142,8 @@ this order:
    three layers cannot encode.
 
 Pick a GitHub issue, branch off `main`, run `bin/test`, and open the
-pull request against `main`. Also run `bin/test-san` when the change
-touches sanitizers, and `bin/test-live` when it touches real IRCd
-behavior. CI rejects a pull request whose base is not `main`, a
+pull request against `main`. Also run `bin/test-live` when it touches
+real IRCd behavior. CI rejects a pull request whose base is not `main`, a
 `tui-phase-*` branch, or a `slice/rust-cutover-*` stack base. No new
 bot, workflow, or notification sink.
 
@@ -190,7 +189,7 @@ new tip, and `git push origin vX.Y.Z --force` (and the same for
 `bin/test` is the default gate. It runs `bin/check-conventions`, `cargo test`
 and `clippy` in `client/` (default `product` features, plus a `dev` feature
 pass), version/help smoke on the built `omairc` binary, and `tui/bin/test`
-when `go` is on `PATH`. CI runs `bin/test`, `bin/test-san`, and `bin/test-live`
+when `go` is on `PATH`. CI runs `bin/test` and `bin/test-live`
 on every pull request that touches anything outside `tui/**`, and rejects a pull
 request whose base is not `main`, a `tui-phase-*` branch, or a
 `slice/rust-cutover-*` stack base. A pull request whose whole diff is TUI-only is
@@ -202,7 +201,6 @@ filtered over the whole pull-request diff, so a pull request that also changes
 
 ```sh
 bin/test
-bin/test-san
 bin/test-install
 bin/test-desktop
 bin/test-live

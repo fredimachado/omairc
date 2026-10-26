@@ -165,13 +165,12 @@ tree for local experiments; release packaging always uses `product`.
 
 ```sh
 bin/test
-bin/test-san
 bin/test-install
 bin/test-desktop
 bin/test-live
 ```
 
-`bin/test` is the default gate. CI also runs `bin/test-san` and `bin/test-live`.
+`bin/test` is the default gate. CI also runs `bin/test-live`.
 
 `bin/test-desktop` needs Xvfb, Xauthority, xdotool, xinput, ImageMagick,
 cargo, and lavapipe; it drives the Rust release binary through
