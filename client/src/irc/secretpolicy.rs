@@ -10,9 +10,8 @@
 //! expectations of `SessionTest::keyedJoinIsRedactedInStatusEntries`,
 //! `serviceIdentifyIsRedactedInStatusEntries`, `selfEchoToServiceIsRedacted`,
 //! `channelTalkAboutServicesStaysReadable` and the preview checks of
-//! `malformedInputSurfacesProtocolError` in `tests/session/tst_session.cpp`.
-//! Those tests drive `IrcStatusEntry`, which is a later phase; these drive the
-//! policy directly with the same lines.
+//! `malformedInputSurfacesProtocolError`. Those tests drive status entries;
+//! these drive the policy directly with the same lines.
 
 use super::servicenick::looks_like_channel;
 

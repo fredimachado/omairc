@@ -1,10 +1,10 @@
 // Package theme derives the terminal palette from the Omarchy desktop theme.
 //
-// It mirrors Backend::loadOmarchyTheme in src/backend.cpp for reading
-// colors.toml and the derived colors in `client/src/model/style.rs` for the
-// structural mixes. The fixed semantic colors are ported verbatim so the TUI
-// stays visually identical to the Qt client; only the surfaces, borders, and
-// secondary text are mixed from the theme's background, foreground, and accent.
+// It mirrors the Omarchy colors.toml load for reading the theme file and the
+// derived colors in `client/src/model/style.rs` for the structural mixes. The
+// fixed semantic colors are ported verbatim so the TUI stays visually identical
+// to the desktop client; only the surfaces, borders, and secondary text are
+// mixed from the theme's background, foreground, and accent.
 //
 // The package speaks image/color and stays lipgloss-free: internal/ui wraps
 // these values in lipgloss at the rendering edge.

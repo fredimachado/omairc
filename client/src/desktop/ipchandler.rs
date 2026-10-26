@@ -1,4 +1,4 @@
-//! The CLI's requests, answered on the UI thread. Port of `src/omaircipchandler.{h,cpp}` (C++). Each
+//! The CLI's requests, answered on the UI thread. Desktop-only (no Go twin). Each
 //! request reads the controller or calls one of its intents, then answers with one JSON line.
 //!
 //! `serve` is the loop that runs on the window. It drains the `IpcServer` queue on a gpui task, the

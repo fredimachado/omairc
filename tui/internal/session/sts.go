@@ -10,12 +10,12 @@ import (
 
 // STS (Strict Transport Security) support, ported from `client/src/session/sts.rs`.
 //
-// IMPORTANT: this is an in-memory-only port. The durable store persists the
-// cache as an INI file under the Omairc config root (`MemoryStsStore` here;
-// disk backing lives in Rust `storage/stspolicies.rs`). File persistence is deferred to a
-// later phase; this store keeps the same lookup/save/clear semantics — group
-// key, port range validation, and epoch expiry on lookup — but never touches
-// the filesystem. No os or path import belongs here.
+// This package's store is the in-memory `STSStore`. The Rust in-memory twin is
+// `MemoryStsStore` in `client/src/session/sts.rs`; durable INI persistence is
+// `IniStsStore` in `client/src/storage/stspolicies.rs`. This store keeps the
+// same lookup/save/clear semantics - group key, port range validation, and
+// epoch expiry on lookup - but never touches the filesystem. No os or path
+// import belongs here.
 
 // STSAdvertisement is the parsed value of one `sts` CAP token. A nil field
 // means the advertisement did not carry that key. It mirrors

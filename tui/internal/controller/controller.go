@@ -214,8 +214,8 @@ func (c *Controller) displayLocation() *time.Location {
 
 // --- Phase 11 persistence -------------------------------------------------
 
-// Group and key names match `client/src/controller/persistence.rs` and `client/src/controller/networks.rs` so
-// the Qt client and the terminal client share one INI section.
+// Group and key names match `client/src/storage/preferences.rs` so
+// the desktop client and the terminal client share one INI section.
 const (
 	preferencesGroup             = "preferences"
 	reopenDirectMessagesKey      = "reopenDirectMessages"
@@ -227,8 +227,8 @@ const (
 )
 
 // SetEphemeral turns disk persistence on/off. New() starts ephemeral so unit
-// tests never touch the user's config; the shell opts in. It mirrors
-// IrcController::setEphemeral (`client/src/controller/persistence.rs`).
+// tests never touch the user's config; the shell opts in. Rust uses
+// `Backing` / `Controller::new_user` (`client/src/controller/persistence.rs`).
 func (c *Controller) SetEphemeral(ephemeral bool) {
 	c.ephemeral = ephemeral
 	if ephemeral {
@@ -378,8 +378,9 @@ func (c *Controller) SetOpenAtUnread(enabled bool) {
 	}
 }
 
-// PrefEnabled maps one /pref toggle to its getter. It mirrors the prefEnabled
-// lambda in `client/src/controller/persistence.rs`.
+// PrefEnabled maps one /pref toggle to its getter. The Rust `/pref` write path
+// is `set_preference` in `client/src/controller/commanddispatcher.rs`, with
+// side effects in `after_preference_change` (`client/src/controller/persistence.rs`).
 func (c *Controller) PrefEnabled(name irc.PrefName) bool {
 	switch name {
 	case irc.PrefDirects:
@@ -412,8 +413,9 @@ func (c *Controller) SetMembershipNoise(noise irc.MembershipNoise) {
 	}
 }
 
-// PrefApply maps one /pref toggle to its setter. It mirrors the prefApply
-// lambda in `client/src/controller/persistence.rs`.
+// PrefApply maps one /pref toggle to its setter. The Rust `/pref` write path
+// is `set_preference` in `client/src/controller/commanddispatcher.rs`, with
+// side effects in `after_preference_change` (`client/src/controller/persistence.rs`).
 func (c *Controller) PrefApply(name irc.PrefName, enabled bool) {
 	switch name {
 	case irc.PrefDirects:
@@ -547,8 +549,9 @@ func (c *Controller) NetworkOrder() []string {
 
 // StateChanged refreshes the focused connection status. A non-Registered
 // transition also tells the playback coordinator that the connection ended, so
-// a reconnect replays as if it never happened. It mirrors the stateChanged
-// lambda in IrcController::addSession (`client/src/controller/persistence.rs`).
+// a reconnect replays as if it never happened. It mirrors
+// `handle_session_event` for `SessionEvent::StateChanged` in
+// `client/src/controller/controller.rs`.
 func (c *Controller) StateChanged(networkID string, state session.SessionState) {
 	c.lock()
 	defer c.unlock()
@@ -567,8 +570,8 @@ func (c *Controller) ErrorOccurred(networkID string, kind session.ErrorKind, mes
 }
 
 // Registered resets the network's features, records the assigned nick, and
-// folds the welcome into the reducer. It mirrors the registered lambda in
-// IrcController::addSession (`client/src/controller/persistence.rs`).
+// folds the welcome into the reducer. It mirrors `on_registered` in
+// `client/src/controller/controller.rs`.
 func (c *Controller) Registered(networkID string) {
 	c.lock()
 	defer c.unlock()
@@ -1076,8 +1079,8 @@ func (c *Controller) PlainIrcText(text string) string {
 }
 
 // adoptReducerSelection pulls a selection the reducer moved on its own (a NICK
-// rekey, for example) back into the controller. It mirrors
-// IrcController::adoptReducerSelection (`client/src/controller/selection.rs`).
+// rekey, for example) back into the controller. Nick rekey updates reducer
+// selection in `client/src/irc/reducer/handlers.rs`.
 func (c *Controller) adoptReducerSelection() {
 	key, ok := c.reducer.Selected()
 	if !ok {

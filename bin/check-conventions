@@ -247,10 +247,32 @@ def check_shared_irc_contract():
 _DELETED_QT_IRC = "src/" + "irc/"
 _DELETED_QT_QML = "src/" + "qml/"
 _DELETED_QT_WINDOW = "Omairc" + "Window.qml"
+_DELETED_QT_BACKEND = "src/" + "backend.cpp"
+_DELETED_QT_MAIN = "src/" + "main.cpp"
+_DELETED_QT_SESSIONBUS = "src/" + "linuxsessionbus.h"
+_DELETED_QT_WINNOTIFY = "src/" + "windowsnotifications.cpp"
+_DELETED_QT_OMAIRC = "src/" + "omairc"
+_DELETED_QT_SINGLE = "src/" + "singleinstance"
+_DELETED_QT_TST_SESSION = "tests/" + "session/tst_"
+_DELETED_QT_TST_CORPUS = "tests/" + "protocol/tst_corpus.cpp"
+_DELETED_QT_TST_QML = "tests/" + "ui/tst_omairc.qml"
+# File stem: a name, or a literal * (as in src/irc/*.cpp).
+_DELETED_QT_STEM = r"(?:[A-Za-z0-9_]+|\*)"
+# Extension: .cpp / .h, a brace pair (. {h,cpp}), or .* for a C++ pair.
+_DELETED_QT_EXT = r"(?:\.(?:cpp|h)|\.\{[^}]+\}|\.\*)"
 DELETED_QT_PATH = re.compile(
-    rf"{re.escape(_DELETED_QT_IRC)}[A-Za-z0-9_]+(?:\.(?:cpp|h)|\.{{[^}}]+}}|\.\*)"
+    rf"{re.escape(_DELETED_QT_IRC)}{_DELETED_QT_STEM}{_DELETED_QT_EXT}"
     rf"|{re.escape(_DELETED_QT_QML)}"
     rf"|(?:src/)?{re.escape(_DELETED_QT_WINDOW)}"
+    rf"|{re.escape(_DELETED_QT_BACKEND)}"
+    rf"|{re.escape(_DELETED_QT_MAIN)}"
+    rf"|{re.escape(_DELETED_QT_SESSIONBUS)}"
+    rf"|{re.escape(_DELETED_QT_WINNOTIFY)}"
+    rf"|{re.escape(_DELETED_QT_OMAIRC)}[A-Za-z0-9_]*{_DELETED_QT_EXT}"
+    rf"|{re.escape(_DELETED_QT_SINGLE)}{_DELETED_QT_EXT}"
+    rf"|{re.escape(_DELETED_QT_TST_SESSION)}[A-Za-z0-9_]+\.cpp"
+    rf"|{re.escape(_DELETED_QT_TST_CORPUS)}"
+    rf"|{re.escape(_DELETED_QT_TST_QML)}"
 )
 
 # Live migration / historical records may still name the retired Qt layout.
@@ -263,7 +285,6 @@ DELETED_QT_PATH_ALLOWLIST = frozenset({
     "client/src/storage/credentialstore/macos.rs",
     "client/src/storage/credentialstore/windows.rs",
     "client/docs/qml-ui-test-checklist.md",
-    "CHANGELOG.md",
 })
 
 
@@ -279,19 +300,34 @@ def _self_test_deleted_qt_path_scan():
     """Negative and positive controls for the deleted-Qt-path detector."""
     # Assemble forbidden samples without writing contiguous literals here.
     bad_irc = _DELETED_QT_IRC + "ircsession.cpp"
+    bad_irc_star = _DELETED_QT_IRC + "*.cpp"
     bad_qml = _DELETED_QT_QML + "Foo.qml"
     bad_window = _DELETED_QT_WINDOW
+    bad_omairc = _DELETED_QT_OMAIRC + "ipc.{h,cpp}"
+    bad_single = _DELETED_QT_SINGLE + ".{h,cpp}"
+    bad_tst = _DELETED_QT_TST_SESSION + "controller.cpp"
     samples = (
         (f"Port of `{bad_irc}`\n", True),
         (f"see {_DELETED_QT_IRC}ircsts.{{h,cpp}}\n", True),
         (f"mirrors {_DELETED_QT_IRC}ircsaslscram.*\n", True),
+        (f"mirrors {bad_irc_star}\n", True),
         (f"mirrors {bad_qml}\n", True),
         (f"as in {bad_window}\n", True),
         (f"src/{bad_window}\n", True),
+        (f"Backend in {_DELETED_QT_BACKEND}\n", True),
+        (f"entry in {_DELETED_QT_MAIN}\n", True),
+        (f"bus guard {_DELETED_QT_SESSIONBUS}\n", True),
+        (f"toasts in {_DELETED_QT_WINNOTIFY}\n", True),
+        (f"Port of `{bad_omairc}`\n", True),
+        (f"Port of `{bad_single}`\n", True),
+        (f"ports {bad_tst}\n", True),
+        (f"registry in {_DELETED_QT_TST_CORPUS}\n", True),
+        (f"cases in {_DELETED_QT_TST_QML}\n", True),
         ("Port of `tui/internal/session/session.go`\n", False),
         ("mirrors `client/src/ui/shell`\n", False),
         ("QtKeychain Secret Service attrs\n", False),
         ("client/src/irc/session.rs\n", False),
+        ("omaircfilelog without a src/ path\n", False),
     )
     for text, want_hit in samples:
         hits = list(_deleted_qt_path_hits("sample.rs", text))
@@ -302,7 +338,7 @@ def _self_test_deleted_qt_path_scan():
 
 
 def check_no_deleted_qt_paths():
-    """Reject new cites of deleted src/irc C++ and src/qml paths in client/tui."""
+    """Reject cites of deleted Qt src/ and tests/ paths in client/tui."""
     try:
         _self_test_deleted_qt_path_scan()
     except AssertionError as exc:
@@ -1336,7 +1372,7 @@ CHECKS = (
     ("Cargo version matches version.pri", check_cargo_version_matches_version_pri),
     ("Rust product crate at client/", check_client_crate),
     ("client/TUI shared IRC contract", check_shared_irc_contract),
-    ("no deleted Qt src/irc or src/qml paths", check_no_deleted_qt_paths),
+    ("no deleted Qt src/ or tests/ paths", check_no_deleted_qt_paths),
     ("Go version source", check_go_version_source),
     ("Go build reads version.pri", check_go_build_uses_version_pri),
     ("Go ReadBuildInfo version fallback", check_go_read_build_info),

@@ -2,8 +2,8 @@
 //!
 //! A validated JOIN target: a channel name and an optional channel key. The
 //! `/join` argument parser turns user input into these, and the session sends
-//! them. Go has no test file for this module, so the tests are the C++
-//! `parseJoinTargets` cases from `tests/session/tst_command.cpp`.
+//! them. Go has no test file for this module, so the tests below carry the
+//! `parseJoinTargets` cases.
 
 use super::serverfeatures::IrcServerFeatures;
 

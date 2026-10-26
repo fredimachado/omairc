@@ -1,4 +1,4 @@
-//! Port of `tui/internal/notify` and `Backend::notifyDesktop` in `src/backend.cpp`.
+//! Port of `tui/internal/notify` (desktop notification seam).
 //!
 //! The shell owns the platform notifier; the controller only queues `Arrival`s for
 //! `take_arrivals`. `--demo-server` raises notifications like a live launch, as the Qt client

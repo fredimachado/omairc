@@ -8,10 +8,9 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
-// This file ports the auto-away runtime behavior from
-// tests/session/tst_controller.cpp. It drives the runtime with a recording
-// AutoawayHost and a FakeClock, and uses real registered sessions on loopback
-// transports so AWAY/ClearAway frames are observable.
+// This file ports the auto-away runtime behavior. It drives the runtime with
+// a recording AutoawayHost and a FakeClock, and uses real registered sessions
+// on loopback transports so AWAY/ClearAway frames are observable.
 
 // autoawayStatus is one recorded RecordStatus call.
 type autoawayStatus struct {

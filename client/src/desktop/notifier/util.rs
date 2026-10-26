@@ -1,5 +1,5 @@
-//! Shared helpers for toast XML and activation URLs. Ports the free functions in
-//! `src/windowsnotifications.cpp`.
+//! Shared helpers for toast XML and activation URLs. Desktop-only Windows toast
+//! helpers (no Go twin).
 
 #[cfg(any(target_os = "macos", test))]
 use std::sync::atomic::{AtomicU64, Ordering};

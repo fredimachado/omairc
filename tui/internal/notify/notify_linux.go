@@ -18,7 +18,7 @@ const (
 	notifyIconName = "omairc"
 )
 
-// conversationKey mirrors notifyConversationKey in src/backend.cpp.
+// conversationKey builds the activation key as networkID + "\n" + target.
 func conversationKey(networkID, target string) string {
 	return networkID + "\n" + target
 }

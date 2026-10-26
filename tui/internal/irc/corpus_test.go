@@ -36,7 +36,7 @@ func strptr(value string) *string {
 	return &value
 }
 
-// corpusCases mirrors the registry in tests/protocol/tst_corpus.cpp verbatim.
+// corpusCases is the wire-corpus registry shared with `client/src/irc/corpus.rs`.
 var corpusCases = []corpusCase{
 	{
 		fileName: "01-classic-privmsg.txt",

@@ -12,7 +12,7 @@ import (
 
 // NetTransport is the production Transport. It dials TCP with net.Dialer and,
 // when requested, wraps the socket with crypto/tls. It mirrors
-// `client/src/session/transport_net.rs`:
+// `client/src/net/transport.rs`:
 //
 //   - Connect is asynchronous. A goroutine performs the dial and, for TLS, the
 //     handshake; Sink calls happen on that goroutine and on the read loop.

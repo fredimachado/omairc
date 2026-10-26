@@ -10,9 +10,9 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/storage"
 )
 
-// This file ports the Phase 11 preference and sidebar-order persistence checks
-// from tests/session/tst_controller.cpp. Every test points XDG_CONFIG_HOME at a
-// temp dir so the real user config is never touched.
+// This file ports the Phase 11 preference and sidebar-order persistence
+// checks. Every test points XDG_CONFIG_HOME at a temp dir so the real user
+// config is never touched.
 
 func TestLoadStoredPreferencesDefaultsOn(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())

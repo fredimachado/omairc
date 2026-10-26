@@ -8,11 +8,11 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
-// This file ports the coordinator half of the MONITOR behavior from
-// tests/session/tst_controller.cpp. It drives the coordinator through a
-// recording MonitorHost and real MonitorStore/MuteStore/reducer instances; the
-// session is a real registered session on a LoopbackTransport so the MONITOR
-// frames the coordinator writes are observable.
+// This file ports the coordinator half of the MONITOR behavior. It drives the
+// coordinator through a recording MonitorHost and real MonitorStore/MuteStore/
+// reducer instances; the session is a real registered session on a
+// LoopbackTransport so the MONITOR frames the coordinator writes are
+// observable.
 
 // monitorNotice is one recorded NotifyMonitor call.
 type monitorNotice struct {

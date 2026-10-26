@@ -14,9 +14,9 @@
 //   - NetTransport mirrors `client/src/net/transport.rs`: async
 //     dial, buffer-until-encrypted write ordering, and distinct TLS failures.
 //     It imports net and crypto/tls.
-//   - LoopbackTransport mirrors `client/src/session/loopback.rs`
-//     and the FakeIrcTransport used by the session transport tests. Delivery
-//     is synchronous so tests are deterministic.
+//   - LoopbackTransport mirrors `client/src/session/loopback.rs` and the
+//     session transport tests (`client/src/session/tests/transport.rs`,
+//     `transport_test.go`). Delivery is synchronous so tests are deterministic.
 //   - SASLScram mirrors `client/src/session/saslscram.rs`, a SCRAM-SHA-256
 //     client per RFC 5802 / RFC 7677. It imports crypto/sha256, crypto/hmac,
 //     crypto/pbkdf2, and crypto/rand.

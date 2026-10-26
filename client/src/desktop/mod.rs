@@ -1,8 +1,10 @@
 //! Desktop integration: the notifier seam, the file log, the single-instance
 //! guard with its IPC, the installer update and the avatar fetch. Go twin:
-//! `tui/internal/notify` (the notifier seam only) and `tui/internal/avatar/fetch.go`.
-//! C++: `src/backend.cpp`, `omaircfilelog`, `singleinstance`,
-//! `omaircipc`, `omaircupdatecheck`, `tui/internal/avatar/avatar.go`.
+//! `tui/internal/notify` (the notifier seam only). Avatar store:
+//! `tui/internal/avatar/avatar.go` / `client/src/irc/avatarstore.rs`. File log,
+//! single-instance, IPC, update check, and system theme are desktop-only (no
+//! Go twin); see `filelog`, `singleinstance`, `ipc`, `installer`, and
+//! `systemtheme`.
 
 pub mod avatarhttp;
 pub mod cli;

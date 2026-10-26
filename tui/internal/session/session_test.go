@@ -11,12 +11,12 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/irc"
 )
 
-// This file ports the phase-2 subset of tests/session/tst_session.cpp. It
-// uses the loopback transport and a FakeClock so every timer (capability
-// timeout, ping watchdog, reconnect backoff, labeled-response timeout) fires
-// deterministically without sleeping. The C++ suite injected four separate
-// FakeReconnectTimer instances; here one FakeClock drives them all, and tests
-// advance virtual time by the exact delay the session armed.
+// This file ports the phase-2 session suite. It uses the loopback transport
+// and a FakeClock so every timer (capability timeout, ping watchdog, reconnect
+// backoff, labeled-response timeout) fires deterministically without sleeping.
+// The C++ suite injected four separate FakeReconnectTimer instances; here one
+// FakeClock drives them all, and tests advance virtual time by the exact delay
+// the session armed.
 
 const sessionTestNetworkID = "network-a"
 

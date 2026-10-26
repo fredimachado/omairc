@@ -1,4 +1,4 @@
-//! Port of `tui/internal/irc/corpus_test.go` (Go) and `tests/protocol/tst_corpus.cpp` (C++).
+//! Port of `tui/internal/irc/corpus_test.go` (Go).
 //!
 //! Replays the wire corpus files (the `include_bytes!` entries below) through
 //! `IrcFramer` and `parse`. Each file is replayed whole, in halves and byte by

@@ -9,12 +9,11 @@ import (
 	"strings"
 )
 
-// ParseColorsTOML parses an Omarchy colors.toml, mirroring
-// Backend::loadOmarchyTheme in src/backend.cpp: blank lines and lines starting
+// ParseColorsTOML parses an Omarchy colors.toml: blank lines and lines starting
 // with "#" are skipped, each remaining line is split on the first "=", and the
 // value's surrounding single or double quotes are stripped. Only the keys
 // mode/background/foreground/accent/selection are read; unknown keys and
-// malformed values are ignored, exactly as Qt ignores them.
+// malformed values are ignored, exactly as the desktop client ignores them.
 //
 // The returned Spec.Mode is resolved: a recognized "mode" wins, otherwise the
 // mode is inferred from the background's luminance. An empty or missing file

@@ -1,4 +1,4 @@
-//! System light or dark mode. Port of `SystemTheme` (`systemtheme`).
+//! System light or dark mode. Desktop-only (no Go twin).
 //!
 //! On Linux, GPUI already subscribes to the XDG Desktop Portal
 //! `org.freedesktop.appearance` / `color-scheme` setting (via ashpd in

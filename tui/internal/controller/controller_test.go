@@ -1,11 +1,11 @@
 package controller
 
-// This file ports the Phase 2 subset of tests/session/tst_controller.cpp. It
-// keeps the C++ slot names and expectations, dropping only the parts that
-// belong to later phases (slash-command dispatch, persistence, playback,
-// inbox, monitors, ignore/mute, avatars, preferences, channel list). Where a
-// C++ slot drove the controller through a slash command, the Go port drives
-// the same underlying seam directly (SendToTarget for the QuietSend cause, the
+// This file ports the Phase 2 controller suite. It keeps the C++ slot names
+// and expectations, dropping only the parts that belong to later phases
+// (slash-command dispatch, persistence, playback, inbox, monitors,
+// ignore/mute, avatars, preferences, channel list). Where a C++ slot drove
+// the controller through a slash command, the Go port drives the same
+// underlying seam directly (SendToTarget for the QuietSend cause, the
 // session's SendAction/SendNotice for the frame-split contract, the reducer's
 // ClearMessages for /clear) and says so in a comment.
 
