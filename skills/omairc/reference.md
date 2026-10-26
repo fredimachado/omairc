@@ -90,7 +90,27 @@ rank. This is the panel order, not the server's `NAMES` order.
 | Item | Location |
 |---|---|
 | Built binary | `./build/omairc.app/Contents/MacOS/omairc` |
-| CLI socket | `omairc.sock` under Qt `RuntimeLocation` (typically `$TMPDIR`) |
-| Config / profiles | `~/Library/Application Support/omairc/` (or `$XDG_CONFIG_HOME/omairc/` when set) |
-| State / logs / CLI cursors | `~/Library/Application Support/omairc/` state tree (or `$XDG_STATE_HOME/omairc/` when set) |
-| Secrets | macOS Keychain via QtKeychain |
+| CLI socket | `$XDG_RUNTIME_DIR/omairc.sock` when set; otherwise `<temp>/omairc.sock` (process temp directory, typically `$TMPDIR`) |
+| Config / profiles | `~/Library/Preferences/omairc/` (or `$XDG_CONFIG_HOME/omairc/` when set) |
+| State / logs / CLI cursors | `~/Library/Preferences/State/omairc/` (or `$XDG_STATE_HOME/omairc/` when set) |
+| Secrets | macOS login Keychain (generic passwords) |
+
+## Paths (Linux)
+
+| Item | Location |
+|---|---|
+| Built binary | `client/target/release/omairc` (or `omairc` on `PATH`) |
+| CLI socket | `$XDG_RUNTIME_DIR/omairc.sock` when set; otherwise `<temp>/omairc.sock` (process temp directory) |
+| Config / profiles | `~/.config/omairc/` (or `$XDG_CONFIG_HOME/omairc/` when set) |
+| State / logs / CLI cursors | `~/.local/state/omairc/` (or `$XDG_STATE_HOME/omairc/` when set) |
+| Secrets | libsecret (Secret Service) |
+
+## Paths (Windows)
+
+| Item | Location |
+|---|---|
+| Built binary | `build\release\omairc.exe` (or `omairc` on `PATH`) |
+| CLI endpoint | named pipe `\\.\pipe\omairc` |
+| Config / profiles | `%LOCALAPPDATA%\omairc\` (or `$XDG_CONFIG_HOME\omairc\` when set) |
+| State / logs / CLI cursors | `%LOCALAPPDATA%\State\omairc\` (or `$XDG_STATE_HOME\omairc\` when set) |
+| Secrets | Windows Credential Manager |
