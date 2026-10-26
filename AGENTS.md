@@ -151,9 +151,17 @@ bot, workflow, or notification sink.
 ## Release versioning
 
 `version.pri` is the single `VERSION` for `--version`, CTCP `VERSION`,
-tests, and packaging. A release bump touches at least these files:
+tests, and packaging. Cargo needs a literal `version` in
+`client/Cargo.toml` (and a matching `client/Cargo.lock` entry); those
+stay checked copies. Prefer `bin/set-version X.Y.Z` to rewrite
+`version.pri`, `client/Cargo.toml`, and the lock together.
+`bin/check-conventions` fails when they drift. A release bump touches at
+least these files:
 
-- `version.pri` - set `VERSION`.
+- `version.pri` - set `VERSION` (or run `bin/set-version`).
+- `client/Cargo.toml` and `client/Cargo.lock` - keep in lockstep with
+  `version.pri` (letter suffixes become SemVer pre-releases, e.g.
+  `1.0.7alpha` → `1.0.7-alpha`).
 - `CHANGELOG.md` - move `[Unreleased]` into a dated `[x.y.z]` section and
   update the compare links at the bottom.
 - `tests/test_derive_build_versions.py` - replace every hardcoded
@@ -163,7 +171,8 @@ tests, and packaging. A release bump touches at least these files:
 
 Run `bin/test` (or at least
 `python3 -m unittest -v tests.test_derive_build_versions`) before
-tagging. One bump of `version.pri`, `CHANGELOG.md`, and
+tagging. One bump of `version.pri`, `client/Cargo.toml`,
+`client/Cargo.lock`, `CHANGELOG.md`, and
 `tests/test_derive_build_versions.py` ships both binaries. Tag that
 commit as `v` plus the `version.pri` string, for example `v1.0.4`, and
 as `tui/v1.0.4` so `go install` sees the module version. GitHub's `v*`

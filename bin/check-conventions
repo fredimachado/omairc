@@ -60,6 +60,107 @@ def check_version_source():
     return problems
 
 
+def _version_pri_value(text):
+    match = re.search(r"^\s*VERSION\s*=\s*(\S+)\s*$", text, re.M)
+    if not match:
+        return None
+    return match.group(1)
+
+
+def version_pri_to_cargo_semver(version):
+    """Arch pkgver cannot contain hyphens, so letter suffixes sit flush
+    (`1.0.7alpha`). Cargo SemVer needs a pre-release separator (`1.0.7-alpha`).
+    """
+    match = re.match(r"^(\d+(?:\.\d+)*)([A-Za-z].*)$", version)
+    if match:
+        return f"{match.group(1)}-{match.group(2)}"
+    return version
+
+
+def _self_test_version_pri_to_cargo_semver():
+    cases = (
+        ("1.0.7alpha", "1.0.7-alpha"),
+        ("1.10.3", "1.10.3"),
+        ("2.0.0beta1", "2.0.0-beta1"),
+        ("1.0.7rc2", "1.0.7-rc2"),
+    )
+    for raw, want in cases:
+        got = version_pri_to_cargo_semver(raw)
+        if got != want:
+            raise AssertionError(
+                f"version_pri_to_cargo_semver({raw!r}) = {got!r}, want {want!r}")
+
+
+def _cargo_toml_package_version(text):
+    match = re.search(r"^\[package\]\s*$", text, re.M)
+    if not match:
+        return None
+    rest = text[match.end():]
+    next_header = re.search(r"^\[", rest, re.M)
+    table = rest[:next_header.start()] if next_header else rest
+    ver = re.search(r'^\s*version\s*=\s*"([^"]+)"\s*$', table, re.M)
+    if not ver:
+        return None
+    return ver.group(1)
+
+
+def _cargo_lock_omairc_version(text):
+    for block in re.split(r"^\[\[package\]\]\s*$", text, flags=re.M):
+        if not re.search(r'^\s*name\s*=\s*"omairc"\s*$', block, re.M):
+            continue
+        ver = re.search(r'^\s*version\s*=\s*"([^"]+)"\s*$', block, re.M)
+        if not ver:
+            return None
+        return ver.group(1)
+    return None
+
+
+def check_cargo_version_matches_version_pri():
+    problems = []
+    try:
+        _self_test_version_pri_to_cargo_semver()
+    except AssertionError as exc:
+        return [f"version_pri_to_cargo_semver self-test failed: {exc}"]
+
+    pri_text = _read_text(VERSION_PRI)
+    cargo_toml_path = ROOT / "client" / "Cargo.toml"
+    cargo_lock_path = ROOT / "client" / "Cargo.lock"
+    cargo_toml_text = _read_text(cargo_toml_path)
+    cargo_lock_text = _read_text(cargo_lock_path)
+
+    pri_raw = _version_pri_value(pri_text) if pri_text is not None else None
+    pri_cargo = (
+        version_pri_to_cargo_semver(pri_raw) if pri_raw is not None else None)
+    toml_ver = (
+        _cargo_toml_package_version(cargo_toml_text)
+        if cargo_toml_text is not None else None)
+    lock_ver = (
+        _cargo_lock_omairc_version(cargo_lock_text)
+        if cargo_lock_text is not None else None)
+
+    if pri_text is None:
+        problems.append("version.pri: missing")
+    elif pri_raw is None:
+        problems.append("version.pri: missing VERSION value")
+    if cargo_toml_text is None:
+        problems.append("client/Cargo.toml: missing")
+    elif toml_ver is None:
+        problems.append("client/Cargo.toml: missing [package] version")
+    if cargo_lock_text is None:
+        problems.append("client/Cargo.lock: missing")
+    elif lock_ver is None:
+        problems.append('client/Cargo.lock: missing [[package]] name = "omairc" version')
+
+    if problems:
+        return problems
+
+    if toml_ver != pri_cargo or lock_ver != pri_cargo:
+        problems.append(
+            f"client/Cargo.toml: version {toml_ver} != version.pri {pri_raw} "
+            f"(Cargo.lock {lock_ver}); bump all three together")
+    return problems
+
+
 def check_client_crate():
     problems = []
     cargo = ROOT / "client" / "Cargo.toml"
@@ -1113,6 +1214,7 @@ def check_homebrew_cask():
 
 CHECKS = (
     ("single version source", check_version_source),
+    ("Cargo version matches version.pri", check_cargo_version_matches_version_pri),
     ("Rust product crate at client/", check_client_crate),
     ("client/TUI shared IRC contract", check_shared_irc_contract),
     ("Go version source", check_go_version_source),

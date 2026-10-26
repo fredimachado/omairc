@@ -103,6 +103,8 @@ jobs:
       - name: Assert tag version
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
+          python bin/check-conventions
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $tag = $env:GITHUB_REF_NAME
           if (-not $tag.StartsWith('v')) { throw "Expected v* tag, got $tag" }
           $expected = $tag.Substring(1)

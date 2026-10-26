@@ -1,8 +1,10 @@
 [package]
 name = "omairc"
 # Display / --version / CTCP VERSION come from version.pri via build.rs
-# (OMAIRC_VERSION). Keep this in sync for cargo metadata; the assert in
-# src/version.rs is the gate.
+# (OMAIRC_VERSION). Cargo still needs a literal package version; keep it in
+# sync with version.pri (and Cargo.lock). Gates: bin/check-conventions and
+# cargo_package_version_matches_version_pri in src/version.rs. Prefer
+# bin/set-version when bumping.
 version = "1.10.3"
 edition = "2021"
 

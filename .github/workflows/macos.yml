@@ -134,6 +134,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           set -euo pipefail
+          python3 bin/check-conventions
           tag="${GITHUB_REF_NAME#v}"
           test "$tag" = "$OMAIRC_VERSION"
           test "$OMAIRC_DISPLAY_VERSION" = "$OMAIRC_VERSION"

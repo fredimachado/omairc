@@ -1,0 +1,100 @@
+#!/usr/bin/env sh
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+
+usage() {
+  cat <<'EOF'
+Usage: ./bin/set-version X.Y.Z[suffix]
+
+Rewrite version.pri and client/Cargo.toml, then refresh the omairc entry
+in client/Cargo.lock. Letter suffixes stay flush in version.pri
+(1.0.7alpha) because Arch pkgver cannot contain hyphens; Cargo gets the
+SemVer form (1.0.7-alpha).
+
+Still update CHANGELOG.md and tests/test_derive_build_versions.py by hand.
+EOF
+}
+
+case "${1:-}" in
+  ""|-h|--help)
+    usage
+    exit 0
+    ;;
+esac
+
+VERSION="$1"
+
+case "$VERSION" in
+  *[[:space:]/:]*)
+    echo "VERSION $VERSION must not contain spaces, colons, or slashes." >&2
+    exit 1
+    ;;
+  *-*)
+    echo "VERSION $VERSION must not contain hyphens (Arch pkgver); use 1.0.7alpha not 1.0.7-alpha." >&2
+    exit 1
+    ;;
+  [0-9]*)
+    ;;
+  *)
+    echo "VERSION $VERSION must start with a digit." >&2
+    exit 1
+    ;;
+esac
+
+# Same conversion as bin/check-conventions version_pri_to_cargo_semver.
+CARGO_VERSION="$(printf '%s\n' "$VERSION" | sed -E 's/^([0-9]+(\.[0-9]+)*)([A-Za-z].*)$/\1-\3/')"
+
+PRI="$ROOT/version.pri"
+TOML="$ROOT/client/Cargo.toml"
+test -f "$PRI" || { echo "missing $PRI" >&2; exit 1; }
+test -f "$TOML" || { echo "missing $TOML" >&2; exit 1; }
+
+if ! grep -q '^VERSION ' "$PRI"; then
+  echo "version.pri: missing VERSION line" >&2
+  exit 1
+fi
+if ! grep -q '^\[package\]' "$TOML"; then
+  echo "client/Cargo.toml: missing [package] table" >&2
+  exit 1
+fi
+
+tmp="$(mktemp)"
+trap 'rm -f -- "$tmp"' EXIT HUP INT TERM
+
+awk -v ver="$VERSION" '
+  BEGIN { done = 0 }
+  /^VERSION / && !done { print "VERSION = " ver; done = 1; next }
+  { print }
+  END { if (!done) exit 1 }
+' "$PRI" >"$tmp"
+mv "$tmp" "$PRI"
+
+tmp="$(mktemp)"
+awk -v ver="$CARGO_VERSION" '
+  BEGIN { in_package = 0; done = 0 }
+  /^\[package\][[:space:]]*$/ { in_package = 1; print; next }
+  /^\[/ { in_package = 0 }
+  in_package && /^[[:space:]]*version[[:space:]]*=/ && !done {
+    print "version = \"" ver "\""
+    done = 1
+    next
+  }
+  { print }
+  END { if (!done) exit 1 }
+' "$TOML" >"$tmp"
+mv "$tmp" "$TOML"
+
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "cargo is required to refresh client/Cargo.lock" >&2
+  exit 1
+fi
+
+cd "$ROOT/client"
+if ! cargo update -p omairc --offline; then
+  echo "cargo update --offline failed; falling back to cargo metadata" >&2
+  cargo metadata --format-version=1 >/dev/null
+fi
+
+printf 'Set version.pri=%s client/Cargo.toml=%s (lock refreshed)\n' \
+  "$VERSION" "$CARGO_VERSION"
