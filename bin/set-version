@@ -42,13 +42,19 @@ case "$VERSION" in
     ;;
 esac
 
-# Same conversion as bin/check-conventions version_pri_to_cargo_semver.
-CARGO_VERSION="$(printf '%s\n' "$VERSION" | sed -E 's/^([0-9]+(\.[0-9]+)*)([A-Za-z].*)$/\1-\3/')"
+# Single conversion path: bin/check-conventions version_pri_to_cargo_semver.
+CARGO_VERSION="$(python3 "$ROOT/bin/check-conventions" --to-cargo-semver "$VERSION")"
+if [ -z "$CARGO_VERSION" ]; then
+  echo "failed to convert VERSION $VERSION to Cargo SemVer" >&2
+  exit 1
+fi
 
 PRI="$ROOT/version.pri"
 TOML="$ROOT/client/Cargo.toml"
+LOCK="$ROOT/client/Cargo.lock"
 test -f "$PRI" || { echo "missing $PRI" >&2; exit 1; }
 test -f "$TOML" || { echo "missing $TOML" >&2; exit 1; }
+test -f "$LOCK" || { echo "missing $LOCK" >&2; exit 1; }
 
 if ! grep -q '^VERSION ' "$PRI"; then
   echo "version.pri: missing VERSION line" >&2
@@ -92,9 +98,15 @@ fi
 
 cd "$ROOT/client"
 if ! cargo update -p omairc --offline; then
-  echo "cargo update --offline failed; falling back to cargo metadata" >&2
-  cargo metadata --format-version=1 >/dev/null
+  echo "cargo update -p omairc --offline failed; lock not refreshed" >&2
+  exit 1
 fi
 
-printf 'Set version.pri=%s client/Cargo.toml=%s (lock refreshed)\n' \
-  "$VERSION" "$CARGO_VERSION"
+LOCK_VER="$(python3 "$ROOT/bin/check-conventions" --omairc-lock-version)"
+if [ "$LOCK_VER" != "$CARGO_VERSION" ]; then
+  echo "client/Cargo.lock omairc version $LOCK_VER != expected Cargo $CARGO_VERSION" >&2
+  exit 1
+fi
+
+printf 'Set version.pri=%s client/Cargo.toml=%s Cargo.lock=%s\n' \
+  "$VERSION" "$CARGO_VERSION" "$LOCK_VER"

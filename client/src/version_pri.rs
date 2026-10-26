@@ -14,26 +14,36 @@ pub fn parse_version(pri: &str) -> Option<&str> {
 
 /// Arch pkgver cannot contain hyphens, so letter suffixes sit flush
 /// (`1.0.7alpha`). Cargo SemVer needs a pre-release separator (`1.0.7-alpha`).
+///
+/// Same algorithm as `bin/check-conventions` `version_pri_to_cargo_semver`:
+/// match `^(\d+(?:\.\d+)*)([A-Za-z].*)$` and insert `-` between the groups;
+/// otherwise return the input unchanged.
 pub fn to_cargo_semver(version: &str) -> String {
     let bytes = version.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
-        if b.is_ascii_digit() {
-            i += 1;
-            continue;
-        }
-        if b == b'.' {
-            i += 1;
-            continue;
-        }
-        break;
+    if bytes.is_empty() || !bytes[0].is_ascii_digit() {
+        return version.to_string();
     }
-    if i > 0
-        && i < bytes.len()
-        && bytes[i].is_ascii_alphabetic()
-        && bytes[i - 1].is_ascii_digit()
-    {
+
+    let mut i = 0;
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        i += 1;
+    }
+    loop {
+        if i >= bytes.len() || bytes[i] != b'.' {
+            break;
+        }
+        let mut j = i + 1;
+        if j >= bytes.len() || !bytes[j].is_ascii_digit() {
+            break;
+        }
+        j += 1;
+        while j < bytes.len() && bytes[j].is_ascii_digit() {
+            j += 1;
+        }
+        i = j;
+    }
+
+    if i < bytes.len() && bytes[i].is_ascii_alphabetic() {
         format!("{}-{}", &version[..i], &version[i..])
     } else {
         version.to_string()
@@ -57,11 +67,25 @@ mod tests {
         assert!(parse_version(include_str!("../../version.pri")).is_some());
     }
 
+    // Keep in lockstep with bin/check-conventions VERSION_PRI_TO_CARGO_CASES.
     #[test]
     fn letter_suffix_becomes_semver_prerelease() {
-        assert_eq!(to_cargo_semver("1.0.7alpha"), "1.0.7-alpha");
-        assert_eq!(to_cargo_semver("1.10.3"), "1.10.3");
-        assert_eq!(to_cargo_semver("2.0.0beta1"), "2.0.0-beta1");
-        assert_eq!(to_cargo_semver("1.0.7rc2"), "1.0.7-rc2");
+        let cases = [
+            ("1.0.7alpha", "1.0.7-alpha"),
+            ("1.10.3", "1.10.3"),
+            ("2.0.0beta1", "2.0.0-beta1"),
+            ("1.0.7rc2", "1.0.7-rc2"),
+            ("1alpha", "1-alpha"),
+            ("1.0a2", "1.0-a2"),
+            ("1.2.3.4rc1", "1.2.3.4-rc1"),
+            ("1..2alpha", "1..2alpha"),
+            ("..1alpha", "..1alpha"),
+            ("1.0.7.alpha", "1.0.7.alpha"),
+            ("1.0.7-alpha", "1.0.7-alpha"),
+            ("1.0.7+build", "1.0.7+build"),
+        ];
+        for (raw, want) in cases {
+            assert_eq!(to_cargo_semver(raw), want, "raw={raw:?}");
+        }
     }
 }

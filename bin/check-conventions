@@ -70,6 +70,10 @@ def _version_pri_value(text):
 def version_pri_to_cargo_semver(version):
     """Arch pkgver cannot contain hyphens, so letter suffixes sit flush
     (`1.0.7alpha`). Cargo SemVer needs a pre-release separator (`1.0.7-alpha`).
+
+    Keep identical to client/src/version_pri.rs::to_cargo_semver. Double dots,
+    a letter after a bare dot, or a non-letter after the numeric prefix do not
+    convert.
     """
     match = re.match(r"^(\d+(?:\.\d+)*)([A-Za-z].*)$", version)
     if match:
@@ -77,14 +81,25 @@ def version_pri_to_cargo_semver(version):
     return version
 
 
+# Shared with client/src/version_pri.rs tests (same raw -> want pairs).
+VERSION_PRI_TO_CARGO_CASES = (
+    ("1.0.7alpha", "1.0.7-alpha"),
+    ("1.10.3", "1.10.3"),
+    ("2.0.0beta1", "2.0.0-beta1"),
+    ("1.0.7rc2", "1.0.7-rc2"),
+    ("1alpha", "1-alpha"),
+    ("1.0a2", "1.0-a2"),
+    ("1.2.3.4rc1", "1.2.3.4-rc1"),
+    ("1..2alpha", "1..2alpha"),
+    ("..1alpha", "..1alpha"),
+    ("1.0.7.alpha", "1.0.7.alpha"),
+    ("1.0.7-alpha", "1.0.7-alpha"),
+    ("1.0.7+build", "1.0.7+build"),
+)
+
+
 def _self_test_version_pri_to_cargo_semver():
-    cases = (
-        ("1.0.7alpha", "1.0.7-alpha"),
-        ("1.10.3", "1.10.3"),
-        ("2.0.0beta1", "2.0.0-beta1"),
-        ("1.0.7rc2", "1.0.7-rc2"),
-    )
-    for raw, want in cases:
+    for raw, want in VERSION_PRI_TO_CARGO_CASES:
         got = version_pri_to_cargo_semver(raw)
         if got != want:
             raise AssertionError(
@@ -156,8 +171,8 @@ def check_cargo_version_matches_version_pri():
 
     if toml_ver != pri_cargo or lock_ver != pri_cargo:
         problems.append(
-            f"client/Cargo.toml: version {toml_ver} != version.pri {pri_raw} "
-            f"(Cargo.lock {lock_ver}); bump all three together")
+            f"expected Cargo {pri_cargo} (from version.pri {pri_raw}); "
+            f"Cargo.toml={toml_ver}; Cargo.lock={lock_ver}")
     return problems
 
 
@@ -1235,7 +1250,31 @@ CHECKS = (
 )
 
 
-def main():
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if len(argv) == 2 and argv[0] == "--to-cargo-semver":
+        sys.stdout.write(version_pri_to_cargo_semver(argv[1]))
+        return 0
+    if len(argv) == 1 and argv[0] == "--omairc-lock-version":
+        text = _read_text(ROOT / "client" / "Cargo.lock")
+        if text is None:
+            print("client/Cargo.lock: missing", file=sys.stderr)
+            return 1
+        lock_ver = _cargo_lock_omairc_version(text)
+        if lock_ver is None:
+            print(
+                'client/Cargo.lock: missing [[package]] name = "omairc" version',
+                file=sys.stderr)
+            return 1
+        sys.stdout.write(lock_ver)
+        return 0
+    if argv:
+        print(
+            "Usage: bin/check-conventions "
+            "[--to-cargo-semver VERSION | --omairc-lock-version]",
+            file=sys.stderr)
+        return 2
+
     failed = False
     for title, check in CHECKS:
         problems = check()
