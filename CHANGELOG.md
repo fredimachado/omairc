@@ -60,6 +60,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Omarchy edge installs with `omarchy pkg add omairc`. The GitHub releases
   repository remains the install path for Omarchy stable, Omarchy rc, and
   other Arch-based systems.
+- `/pref` feedback prints one row per line.
+- Nick-targeted non-service NOTICEs are also filed into the DM.
+- TLS errors no longer append `(CN=…)`; DNS failures read
+  `lookup HOST: no such host`.
+- MONITOR while disconnected reports after resolving server features.
+- Short dates use a locale-style approximation instead of Qt's.
+- Windows and macOS builds no longer ship Qt libraries; the Windows installer
+  removes them on upgrade.
 
 ## [1.10.3] - 2026-10-13
 

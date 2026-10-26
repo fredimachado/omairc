@@ -216,8 +216,6 @@ jobs:
 
       - name: Package rust installer
         shell: cmd
-        env:
-          OMAIRC_CLIENT: rust
         run: bin\package-windows.bat
 
       - name: Smoke rust installer
@@ -252,6 +250,7 @@ jobs:
           Set-Content -Path (Join-Path $dest 'platforms\qwindows.dll') -Value 'fake-platform'
           Set-Content -Path (Join-Path $dest 'qml\QtQuick\qmldir') -Value 'fake-qml'
           Set-Content -Path (Join-Path $dest 'qt.conf') -Value '[Paths]'
+          Set-Content -Path (Join-Path $dest 'COPYING-LGPL') -Value 'fake-lgpl'
 
           $log = Join-Path $env:RUNNER_TEMP 'omairc-rust-setup.log'
           $setupArgs = @(
@@ -284,6 +283,7 @@ jobs:
             'vcruntime140.dll',
             'vcruntime140_1.dll',
             'qt.conf',
+            'COPYING-LGPL',
             'platforms',
             'qml'
           )) {

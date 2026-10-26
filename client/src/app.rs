@@ -215,7 +215,7 @@ pub fn run() {
                     window_bounds: Some(window_bounds),
                     window_min_size: Some(size(px(760.), px(540.))),
                     titlebar: Some(gpui::TitlebarOptions {
-                        title: Some("Omairc GPUI PoC".into()),
+                        title: Some("Omairc".into()),
                         ..Default::default()
                     }),
                     // Same id as the Qt client's desktop file name. Omarchy's

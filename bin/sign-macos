@@ -2,7 +2,7 @@
 set -eu
 
 # Sign build/omairc.app. Developer ID when CODESIGN_IDENTITY is set (CI);
-# otherwise ad-hoc so local Homebrew-Qt builds stay simple.
+# otherwise ad-hoc so local rust bundle builds stay simple.
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 APP="${1:-$ROOT/build/omairc.app}"
@@ -14,11 +14,7 @@ if [ "$(uname -s)" != "Darwin" ]; then
 fi
 
 if [ ! -d "$APP" ]; then
-  if [ "${OMAIRC_CLIENT:-}" = "rust" ]; then
-    echo "Expected $APP. Run bin/build-macos-rust first." >&2
-  else
-    echo "Expected $APP. Run bin/build-macos or bin/build-macos-rust first." >&2
-  fi
+  echo "Expected $APP. Run bin/build-macos-rust first." >&2
   exit 1
 fi
 
@@ -71,7 +67,8 @@ depth_first() {
 
 echo "Signing $APP with $identity"
 # Nested code first, no app entitlements. Do not use --deep: it can stamp the
-# app entitlements onto Qt plugins and is the path Apple documents as broken.
+# app entitlements onto nested dylibs/frameworks and is the path Apple
+# documents as broken.
 find "$APP/Contents" -name '*.dylib' -type f | depth_first | while IFS= read -r f; do
   [ -n "$f" ] || continue
   sign_one "$f"

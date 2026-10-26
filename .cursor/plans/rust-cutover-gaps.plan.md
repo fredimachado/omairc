@@ -177,7 +177,7 @@ feature-map Gotchas note the minimize rule and the Wayland/Hyprland limit.
 
 ## M3 — Windows build and installer from cargo
 
-- `bin\build-rust.bat` (or extend `bin\build.bat` with `OMAIRC_CLIENT=rust`):
+- `bin\build-rust.bat`:
   locate `vcvars64.bat` the same way, run
   `cargo build --release --locked --features product`, stage
   `client\target\release\omairc.exe` plus `LICENSE`, `OFL.txt`, `COPYING-LGPL`
@@ -218,7 +218,7 @@ path filter matches; it no longer packages, notarizes, or publishes.
   `bin/sign-macos` (hardened runtime + `Omairc.entitlements`) and runs
   `bin/check-macos-bundle`.
 - Reuse `bin/package-macos`, `bin/notarize-macos`, `bin/check-macos-syspolicy`
-  against the rust-built app (`OMAIRC_CLIENT=rust` for error text). On
+  against the rust-built app. On
   tags/dispatch the rust job uploads cask zip names, notarizes when secrets
   exist, and publishes GitHub Release assets. `macos-zips` / `bump-cask`
   consume rust artifacts.

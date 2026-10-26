@@ -15,19 +15,19 @@
   features include `product` (install identity: `omairc` folder and IPC). The
   `dev` feature uses a separate `omairc-poc` config/state tree so local
   `cargo run` / `cargo test --features dev` never claim a real install.
-- `client/src/app.rs` owns the GPUI application shell: window chrome, theme
-  appearance, text scale, shortcuts, overlay open/close, conversation selection,
-  composer, slash dispatch, and navigation helpers. Presentation lives in
-  `client/src/ui/`.
+- `client/src/app.rs` is startup and window wiring. Shell behavior (shortcuts,
+  conversation selection, slash dispatch, overlays, and related helpers) lives
+  in `client/src/ui/shell/`. Presentation lives in `client/src/ui/`.
 - Seed the demo world from the in-process demo server, not from ad hoc UI list
   models.
 - Keep `client/src/desktop/` limited to desktop integration: Omarchy theme
   colors, live theme watching, text scale, window geometry, notifications, and
   platform paths.
-- Keep IRC networking, protocol, session, and model code in `client/src/irc/`.
-  IRC formatting stays in the IRC layer; nick colors stay presentation
-  (`client/src/ui/` style helpers). Do not move URL policy or invite-channel
-  parsing into unrelated modules.
+- Keep IRC code split by layer: `client/src/irc/` (protocol, reducer),
+  `client/src/session/` (connection and session), `client/src/controller/`,
+  and `client/src/model/` (view models). IRC formatting stays in the IRC
+  layer; nick colors stay presentation (`client/src/ui/` style helpers). Do
+  not move URL policy or invite-channel parsing into unrelated modules.
 - Keep system light/dark mode and portal text-scale detection in
   `client/src/desktop/`.
 - Use the bundled `iA Writer Mono S` font for all custom interface text.
@@ -37,10 +37,11 @@
   xdotool, clears `WAYLAND_DISPLAY`, requires lavapipe; pointer verbs use
   XTEST/XI2 clicks). `bin/verify-poc-recipes` and the non-blocking
   `verify-poc` job in `test.yml` drive the feature map. Load
-  `.cursor/skills/conversation-cause` when touching `ensureConversation`,
-  conversation creation, or `/msg`, and `.cursor/skills/redact-secrets` when
-  touching Status lines, error previews, or secret redaction in
-  `client/src/irc/` and `tui/internal/irc/`.
+  `.cursor/skills/conversation-cause` when touching Rust
+  `ensure_conversation` / Go `EnsureConversation`, conversation creation, or
+  `/msg`, and `.cursor/skills/redact-secrets` when touching Status lines,
+  error previews, or secret redaction in `client/src/irc/` and
+  `tui/internal/irc/`.
 
 `.cursor/skills/verify-omairc/features/*.md` is the map of how a user
 reaches a behavior: shortcuts, preconditions, and observables.
@@ -58,11 +59,13 @@ Agents looking for the legacy `verify-omairc` desktop driver should use
 `.cursor/skills/verify-omairc-poc` instead; the feature map remains under
 `.cursor/skills/verify-omairc/features/`.
 
-## Historical Qt parity
+## Intentional cutover diffs
 
-Intentional differences between the retired Qt client and this Rust desktop
-client are no longer maintained here. See `CHANGELOG.md` (Known regressions /
-release notes) for the historical list.
+User-visible behavior that differs from the retired Qt client is recorded under
+`CHANGELOG.md` `[Unreleased]` → Changed (for example `/pref` row-per-line
+feedback, NOTICE filing into DMs, TLS/DNS error text, MONITOR while
+disconnected, short dates, and dropping Qt libraries from Windows/macOS
+builds).
 
 ## Desktop UI conventions
 
@@ -95,8 +98,9 @@ release notes) for the historical list.
   Clicking another user in the member panel must open or create a direct message
   with its own local message history.
 - Order member rows by the server's `PREFIX` rank, highest first, then nick.
-  Sort through `orderedMembers` in the IRC reducer, never in the view layer,
-  and keep the panel and `omairc names` in that same order.
+  Sort through Rust `ordered_members` / Go `OrderedMembers` in the IRC
+  reducer, never in the view layer, and keep the panel and `omairc names` in
+  that same order.
 - Keep the composer single-line. `Enter` sends the message.
 
 ## Visual conventions
@@ -114,14 +118,14 @@ release notes) for the historical list.
 `bin/check-conventions` already gates the mechanical repeats. These still
 need judgment.
 
-- Inventing a conversation requires `IrcConversationCause` on
-  `ensureConversation`. QuietSend and InboundSelf never invent; UserOpen
-  invents DMs; ChannelState invents channels; InboundOther invents
-  channels and non-service DMs; Restore invents non-service DMs after
-  ISUPPORT so engaged queries survive a restart. Persist only when the
-  user opened the query, sent in it, or a self-authored line arrives.
-  Cover `/msg` with `echo-message`, incoming NickServ PRIVMSG, and
-  incoming human PRIVMSG in the same test matrix.
+- Inventing a conversation requires `IrcConversationCause` on Rust
+  `ensure_conversation` / Go `EnsureConversation`. QuietSend and InboundSelf
+  never invent; UserOpen invents DMs; ChannelState invents channels;
+  InboundOther invents channels and non-service DMs; Restore invents
+  non-service DMs after ISUPPORT so engaged queries survive a restart.
+  Persist only when the user opened the query, sent in it, or a
+  self-authored line arrives. Cover `/msg` with `echo-message`, incoming
+  NickServ PRIVMSG, and incoming human PRIVMSG in the same test matrix.
 - Do not hard-code CHANTYPES, CHANMODES, or PREFIX. Call
   `IrcServerFeatures`.
 - Fail closed when redacting secrets for Status or error previews. Do not
@@ -211,8 +215,9 @@ The TUI port lives in `tui/` as its own Go module; its gate is `tui/bin/test`
 (vet, tests, build, CLI contract), which root `bin/test` runs when `go` is on
 `PATH`. The shared contract spans the Rust desktop client and the TUI:
 `version.pri` stays the single version source, and `IrcConversationCause`,
-`IrcServerFeatures`, `IrcSecretPolicy`, `orderedMembers`, and the feature map
-under `.cursor/skills/verify-omairc/features/*.md` must stay aligned between
+`IrcServerFeatures`, `IrcSecretPolicy`, Rust `ordered_members` / Go
+`OrderedMembers`, and the feature map under
+`.cursor/skills/verify-omairc/features/*.md` must stay aligned between
 `client/`, `tui/`, and the map. TUI-scoped rules live in `tui/AGENTS.md`.
 
 `bin/test-desktop` needs Xvfb, Xauthority, xdotool, xinput, ImageMagick,
@@ -248,9 +253,9 @@ Set `OMAIRC_BUILD_VERSION` when packaging needs an exact `--version` string
 
 `bin\build-rust.bat` builds the product client with MSVC static CRT
 (`cargo build --release --locked --features product` in `client/`) and stages
-`build\release\omairc.exe`. Load the Visual Studio toolchain first when `cl`
-is not on `PATH` (see `vswhere` / `vcvars64.bat` in prior Qt docs; the Rust
-script uses the same MSVC expectation).
+`build\release\omairc.exe`. Its `:ensure_msvc` step finds `vcvars64.bat`
+through `vswhere` when `cl` is not on `PATH`, or you can load
+`vcvars64.bat` yourself first.
 
 `bin/test`, `bin/test-desktop`, and `bin/test-live` stay Unix scripts. `--help` and the local CLI attach to a parent Windows console with
 `AttachConsole` (cmd/PowerShell, not Git Bash/mintty). Redirected stdout/stderr
