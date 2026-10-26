@@ -92,9 +92,9 @@ enum Step {
     AwaitServerFinal,
 }
 
-/// A stateful SCRAM-SHA-256 client (RFC 5802, RFC 7677). It mirrors `IrcSaslScram` in
-/// `src/irc/ircsaslscram.*`. Messages are raw SCRAM bytes, and the session applies the
-/// SASL framing.
+/// A stateful SCRAM-SHA-256 client (RFC 5802, RFC 7677). It mirrors `SASLScram` in
+/// `tui/internal/session/saslscram.go`. Messages are raw SCRAM bytes; `encode_sasl_frames`
+/// in this file applies the SASL framing.
 #[derive(Default)]
 pub(crate) struct SaslScram {
     step: Step,

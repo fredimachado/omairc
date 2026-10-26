@@ -248,7 +248,7 @@ _DELETED_QT_IRC = "src/" + "irc/"
 _DELETED_QT_QML = "src/" + "qml/"
 _DELETED_QT_WINDOW = "Omairc" + "Window.qml"
 DELETED_QT_PATH = re.compile(
-    rf"{re.escape(_DELETED_QT_IRC)}[A-Za-z0-9_]+(?:\.(?:cpp|h)|\.{{[^}}]+}})"
+    rf"{re.escape(_DELETED_QT_IRC)}[A-Za-z0-9_]+(?:\.(?:cpp|h)|\.{{[^}}]+}}|\.\*)"
     rf"|{re.escape(_DELETED_QT_QML)}"
     rf"|(?:src/)?{re.escape(_DELETED_QT_WINDOW)}"
 )
@@ -284,6 +284,7 @@ def _self_test_deleted_qt_path_scan():
     samples = (
         (f"Port of `{bad_irc}`\n", True),
         (f"see {_DELETED_QT_IRC}ircsts.{{h,cpp}}\n", True),
+        (f"mirrors {_DELETED_QT_IRC}ircsaslscram.*\n", True),
         (f"mirrors {bad_qml}\n", True),
         (f"as in {bad_window}\n", True),
         (f"src/{bad_window}\n", True),

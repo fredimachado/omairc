@@ -1,5 +1,5 @@
-//! Port of `tui/internal/session/loopback.go`, `src/irc/ircloopbacktransport.*`
-//! (C++) and the `FakeIrcTransport` of `tests/session/tst_transport.cpp`.
+//! Port of `tui/internal/session/loopback.go` and the deterministic
+//! in-memory `FakeIrcTransport` used by the session transport tests.
 //!
 //! The deterministic in-memory transport. Nothing happens on its own: the test
 //! (or, in the PoC, the in-process demo peer) drives every transition through

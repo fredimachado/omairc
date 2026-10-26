@@ -1,5 +1,5 @@
 // Package demo is the Go port of IrcDemoServer from
-// `client/src/demo/server.rs` and `client/src/demo/server.rs`.
+// `client/src/demo/server.rs`.
 //
 // It is pure in-memory test scaffolding: it seeds the identical two-network
 // demo world (omarchy and oftc) over session.LoopbackTransport, drives a

@@ -1,6 +1,6 @@
 //! Persistence under this build's app folder ([`crate::identity::APP_FOLDER`]), so a
-//! default build never touches a real install. It mirrors `tui/internal/storage/` (Go) and `omaircpaths`
-//! plus the stores in `client/src/irc/` (C++). The formats match Qt and the TUI: a
+//! default build never touches a real install. It mirrors `tui/internal/storage/`
+//! and the path helpers beside the IRC core. The formats match Qt and the TUI: a
 //! QSettings-compatible INI file, with the JSON that Qt keeps inside a string value.
 //!
 //! Every store takes a [`Backing`]. `Disk` is the INI file under the config folder;

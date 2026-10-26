@@ -1,5 +1,4 @@
-//! Port of `tui/internal/controller/stores.go`,
-//! `tui/internal/controller/stores.go`, `tui/internal/controller/stores.go` and the monitor list of
+//! Port of `tui/internal/controller/stores.go` and the monitor list of
 //! `tui/internal/controller/monitorcoordinator.go`.
 //!
 //! The four lists are `CaseListStore`s, which live in `storage/lists.rs` with their

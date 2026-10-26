@@ -184,8 +184,8 @@ fn render_unread_mark_row(row_ix: usize, style: &Style) -> Stateful<Div> {
         .child(div().flex_grow().h(scaled_px(style, 1.)).bg(rule))
 }
 
-/// A whois-style line: left-aligned, muted, wrapping, and selectable. Qt's
-/// `client/src/ui/message_row.rs` sets its TextEdit in the body column: 70 from the left and
+/// A whois-style line: left-aligned, muted, wrapping, and selectable. The
+/// body sits in the message column: 70 from the left and
 /// 34 from the right. It has no time, label or avatar, so nothing sits beside it.
 /// Copy and search read `row.body.plain`, the same text the row draws.
 fn render_whois_row(

@@ -1,6 +1,5 @@
-//! Port of `tui/internal/irc/membershipnoise.go`, `tui/internal/irc/membershipnoise.go`
-//! (C++), and the caption fold of `foldMembership` and `collapseEventBody` in
-//! `tui/internal/irc/reducer.go`.
+//! Port of `tui/internal/irc/membershipnoise.go`, and the caption fold of
+//! `foldMembership` and `collapseEventBody` in `tui/internal/irc/reducer.go`.
 //!
 //! Join, part, quit and nick lines are one caption each. A run of them can fold
 //! into one caption (`Folded`), show one by one (`Every`), or disappear

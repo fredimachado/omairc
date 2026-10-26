@@ -1,5 +1,4 @@
-//! Port of `tui/internal/irc/secretpolicy.go`
-//! (C++).
+//! Port of `tui/internal/irc/secretpolicy.go`.
 //!
 //! Redaction fails closed. A wire line that would reveal a password, a channel key
 //! or a service credential comes back masked. A preview with no mask to apply

@@ -1,5 +1,5 @@
-//! Port of `tui/internal/irc/reducer.go`
-//! (C++). The reducer folds the translated events in `irc/event.rs` into
+//! Port of `tui/internal/irc/reducer.go`.
+//! The reducer folds the translated events in `irc/event.rs` into
 //! conversation state and reports which surfaces each event dirtied.
 //!
 //! The state is owned here, in one `EventReducer`: a `Store` of conversations

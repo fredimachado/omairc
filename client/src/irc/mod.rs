@@ -1,7 +1,7 @@
-//! The portable IRC core. It mirrors `tui/internal/irc/` (Go) and `client/src/irc/`
-//! (C++). Nothing here touches a socket, the filesystem, a thread, a process or
-//! gpui; `tests/irc_portability.rs` enforces that. Each submodule names its own
-//! Go and C++ source in its header.
+//! The portable IRC core. It mirrors `tui/internal/irc/`.
+//! Nothing here touches a socket, the filesystem, a thread, a process or
+//! gpui; `tests/irc_portability.rs` enforces that. Each submodule names its
+//! Go twin in its header.
 
 pub mod avatarstore;
 pub mod avatarurl;

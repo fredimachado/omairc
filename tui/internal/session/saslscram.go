@@ -57,10 +57,10 @@ const (
 )
 
 // SASLScram is a stateful SCRAM-SHA-256 client (RFC 5802, RFC 7677). It mirrors
-// IrcSaslScram in src/irc/ircsaslscram.*: Start produces the client-first
+// `SaslScram` in `client/src/session/saslscram.rs`: Start produces the client-first
 // message, TakeServerFirst produces client-final, and TakeServerFinal verifies
-// the server signature. Messages are raw SCRAM bytes; the IRC session applies
-// SASL base64 framing.
+// the server signature. Messages are raw SCRAM bytes; encodeSASLFrames in this
+// file applies SASL base64 framing.
 //
 // The zero value is an idle client, but NewSASLScram is the documented
 // constructor.
@@ -475,12 +475,10 @@ func scramSuccess(message []byte) ScramResult {
 	return ScramResult{Message: message}
 }
 
-// The AUTHENTICATE framing constants come from IrcSession in
-// `client/src/session/session.rs`. The C++ framing is not a standalone helper there: it
-// lives in IrcSession::sendSaslResponse and IrcSession::takeSaslChunk beside the
-// session's own state. The two helpers below are therefore unexported and are
-// only a private mirror for the session wave to adopt; they are not part of the
-// cross-package contract yet.
+// The AUTHENTICATE framing helpers mirror `encode_sasl_frames` and
+// `ChallengeBuffer` in `client/src/session/saslscram.rs`. The two helpers below
+// are unexported and are only a private mirror for the session wave to adopt;
+// they are not part of the cross-package contract yet.
 const (
 	saslAuthenticateChunk    = 400
 	saslIncomingEncodedLimit = 4096

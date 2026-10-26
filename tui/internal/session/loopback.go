@@ -3,8 +3,8 @@ package session
 import "sync"
 
 // LoopbackTransport is the deterministic in-memory Transport. It mirrors
-// IrcLoopbackTransport in src/irc/ircloopbacktransport.* and the
-// FakeIrcTransport used by tests/session/tst_transport.cpp: nothing happens on
+// `client/src/session/loopback.rs` and the FakeIrcTransport used by the
+// session transport tests: nothing happens on
 // its own, and the test drives every transition through the explicit control
 // methods below. All Sink calls are synchronous on the caller's goroutine, so
 // tests need no sleeps and no polling.

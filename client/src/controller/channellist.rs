@@ -1,5 +1,4 @@
-//! Port of `tui/internal/controller/channellist.go` and
-//! `tui/internal/controller/channellist.go` and `tui/internal/controller/channellist.go`
+//! Port of `tui/internal/controller/channellist.go`:
 //! `/list` through the wire.
 //!
 //! `LIST mask` goes out as a session write. The server's answer streams back as 321

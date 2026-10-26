@@ -1,5 +1,5 @@
 //! The Shortcuts sheet (`Ctrl+/`): the grouped chord table from
-//! `client/src/ui/sheets/shortcuts.rs`, read-only. Escape, a press outside the card, or
+//! `model/shortcuts::GROUPS`, read-only. Escape, a press outside the card, or
 //! `Ctrl+/` again closes it. The card holds keyboard focus so typing does not
 //! reach the composer behind it, as the Qt popup does.
 

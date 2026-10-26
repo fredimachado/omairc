@@ -3,9 +3,8 @@
 //!
 //! A port of the parts of `IrcConnection` the sheet drives (`select`, `add`,
 //! `discard`, `removeSelected`, `apply`, `dirty`, `rosterRows`), and of the
-//! strings and checks in `client/src/ui/sheets/connect/`, `client/src/ui/sheets/connect/field.rs`,
-//! `client/src/ui/sheets/connect/field.rs`, `client/src/ui/sheets/connect/` and
-//! `tui/internal/connection/profile.go`.
+//! strings and checks in `client/src/ui/sheets/connect/` (fields and
+//! `toggles.rs` preference rows) and `tui/internal/connection/profile.go`.
 //!
 //! Nothing here connects. Apply returns the saved profile, and the shell hands it to
 //! `Controller::start`. The server and NickServ passwords live in the draft until Apply.

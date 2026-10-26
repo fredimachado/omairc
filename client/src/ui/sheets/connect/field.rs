@@ -1,5 +1,5 @@
-//! A labelled text field on the Connection tab (`client/src/ui/sheets/connect/field.rs`), and the
-//! small `?` help mark that `client/src/ui/sheets/connect/field.rs` draws beside a label. The input is
+//! A labelled text field on the Connection tab, and the
+//! small `?` help mark beside a label. The input is
 //! the shared `SingleLineInput`, so typing, selection and undo are the composer's.
 
 use gpui::{div, prelude::*, MouseButton, SharedString};
@@ -49,7 +49,7 @@ pub fn text_field(view: &ConnectView<'_>, field: ConnectField) -> impl IntoEleme
     column
 }
 
-/// The `PASS` chip beside a label (`client/src/ui/sheets/connect/field.rs` `badge`).
+/// The `PASS` chip beside a label (`badge`).
 fn badge_chip(view: &ConnectView<'_>, text: &'static str) -> impl IntoElement {
     let style = view.style;
     div()

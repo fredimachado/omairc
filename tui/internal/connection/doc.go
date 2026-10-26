@@ -1,5 +1,5 @@
-// Package connection is the Go port of IrcNetworkProfile
-// (src/irc/ircnetworkprofile.*) and IrcConnection (src/irc/ircconnection.*):
+// Package connection is the Go port of the network profile and Connect
+// surface in `client/src/model/connect.rs`:
 // the profile model plus the draft/selection, apply, discard, add, remove, and
 // disconnect surface. Phase 11 adds the persisted profile store
 // (internal/storage.ProfileStore), the credential backend

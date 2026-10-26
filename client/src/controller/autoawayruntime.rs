@@ -1,5 +1,4 @@
-//! Port of `tui/internal/controller/autoawayruntime.go` and
-//! `tui/internal/controller/autoawayruntime.go`: the idle and grace timers, the tripped
+//! Port of `tui/internal/controller/autoawayruntime.go`: the idle and grace timers, the tripped
 //! state, the per-network auto and manual away sets, and the `/autoaway` settings.
 //!
 //! The idle and grace steps run on the `Clock` seam. A timer's callback cannot reach

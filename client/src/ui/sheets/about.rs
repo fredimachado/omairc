@@ -1,5 +1,5 @@
-//! The About sheet (`Ctrl+Shift+/`, or a click on the footer's version): a
-//! port of `client/src/ui/sheets/about.rs` on the veil look. OK has focus on open. Tab moves
+//! The About sheet (`Ctrl+Shift+/`, or a click on the footer's version) on the
+//! veil look. OK has focus on open. Tab moves
 //! between `Check for Updates` and OK. Enter or Space activates the focused
 //! button. Check for Updates asks GitHub on the background executor and shows
 //! one status line. A newer version opens its release page. The GitHub link

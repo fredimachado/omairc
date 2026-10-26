@@ -1,5 +1,5 @@
-//! Port of `tui/internal/irc/presence.go`, `ircmetadata`,
-//! `tui/internal/irc/presence.go` and `ircnetworkpresence` (C++).
+//! Port of `tui/internal/irc/presence.go` (metadata vocabulary, per-nick facts,
+//! and network presence).
 //!
 //! Three layers share this file, all pure:
 //! - the draft/metadata-2 vocabulary: the subscribed keys, the value ceiling,

@@ -1,5 +1,4 @@
-//! Port of `tui/internal/irc/statusentry.go`, `tui/internal/irc/statusentry.go`
-//! (C++, `IrcStatusEntry`).
+//! Port of `tui/internal/irc/statusentry.go` (`IrcStatusEntry`).
 //!
 //! The entry types and the constructors every caller uses: `lifecycle`, `outcome` and
 //! `ctcp_reply`. The classifiers sit beside this file: `incoming` (the server's lines),

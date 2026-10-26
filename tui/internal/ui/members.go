@@ -176,8 +176,8 @@ func (m *Model) toggleMembers() {
 // memberRow renders one member as one or two physical lines: the chrome line
 // (focus bar, presence dot, PREFIX label, bot mark, account, typing dots) and,
 // when the network advertises member status, a muted status subline indented
-// under the label. It mirrors the Row plus the status Text in
-// `client/src/ui/members/`:184-250. Each sub-line is its own entry so
+// under the label. It mirrors `client/src/ui/members/member_row.rs`.
+// Each sub-line is its own entry so
 // renderColumn keeps them from wrapping. membersView ellipsizes a line that
 // is wider than the column before that hard cut.
 func (m *Model) memberRow(index int, member controller.MemberSnapshot) []string {

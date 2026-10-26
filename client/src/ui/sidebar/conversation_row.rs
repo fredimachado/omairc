@@ -25,7 +25,7 @@ pub struct RowLook {
     pub bot: bool,
 }
 
-/// One channel or direct message row, a port of `client/src/ui/sidebar/conversation_row.rs`: 36 tall,
+/// One channel or direct message row: 36 tall,
 /// inset 8. A click reports `target` to `on_select`; a middle click, on a channel
 /// or a direct message alike, reports it to `on_close`. The controller decides
 /// whether the row closes: a joined channel does not.

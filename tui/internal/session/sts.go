@@ -8,12 +8,11 @@ import (
 	"sync"
 )
 
-// STS (Strict Transport Security) support, ported from `client/src/session/sts.rs` and
-// `client/src/session/sts.rs`.
+// STS (Strict Transport Security) support, ported from `client/src/session/sts.rs`.
 //
-// IMPORTANT: this is an in-memory-only port. The C++ IrcStsStore persists the
-// cache as an INI file under the Omairc config root (rootDir/filePath/
-// restrictPermissions, `client/src/session/sts.rs`:79-100). File persistence is deferred to a
+// IMPORTANT: this is an in-memory-only port. The durable store persists the
+// cache as an INI file under the Omairc config root (`MemoryStsStore` here;
+// disk backing lives in Rust `storage/stspolicies.rs`). File persistence is deferred to a
 // later phase; this store keeps the same lookup/save/clear semantics — group
 // key, port range validation, and epoch expiry on lookup — but never touches
 // the filesystem. No os or path import belongs here.
@@ -36,7 +35,7 @@ type STSCached struct {
 // ParseSTSAdvertisement scans CAP LS/NEW tokens for the last `sts` token and
 // parses its value. ok is false when no `sts` token was present; a bare `sts`
 // token yields a zero advertisement with ok true. It mirrors
-// parseIrcStsAdvertisement (`client/src/session/sts.rs`:66-75).
+// parseIrcStsAdvertisement / `parse_sts_advertisement`.
 func ParseSTSAdvertisement(tokens []string) (STSAdvertisement, bool) {
 	var advertisement STSAdvertisement
 	found := false
@@ -52,7 +51,7 @@ func ParseSTSAdvertisement(tokens []string) (STSAdvertisement, bool) {
 
 // parseSTSValue parses a comma-separated `key=value` list. The first valid
 // port and duration win; a malformed or out-of-range value is ignored. It
-// mirrors parseStsValue (`client/src/session/sts.rs`:29-55).
+// mirrors parseStsValue / `parse_sts_value`.
 func parseSTSValue(value string) STSAdvertisement {
 	var advertisement STSAdvertisement
 	for _, part := range strings.Split(value, ",") {
@@ -124,7 +123,7 @@ func NewSTSStore(clock Clock) *STSStore {
 }
 
 // Lookup returns the cached policy for host, dropping an invalid or expired
-// entry. It mirrors IrcStsStore::lookup (`client/src/session/sts.rs`:96-126).
+// entry. It mirrors IrcStsStore::lookup / `StsStore::lookup`.
 func (s *STSStore) Lookup(host string) (STSCached, bool) {
 	key := stsGroupKey(host)
 	if key == "" {
@@ -148,8 +147,8 @@ func (s *STSStore) Lookup(host string) (STSCached, bool) {
 }
 
 // Store caches a policy for host. A zero duration clears the entry, and an
-// empty host or a zero port is ignored, mirroring IrcStsStore::save
-// (`client/src/session/sts.rs`:128-148).
+// empty host or a zero port is ignored, mirroring IrcStsStore::save /
+// `StsStore::store`.
 func (s *STSStore) Store(host string, port uint16, durationSeconds int64) {
 	if durationSeconds == 0 {
 		s.Clear(host)
@@ -168,8 +167,8 @@ func (s *STSStore) Store(host string, port uint16, durationSeconds int64) {
 	}
 }
 
-// Clear drops the cached policy for host. It mirrors IrcStsStore::clear
-// (`client/src/session/sts.rs`:150-160).
+// Clear drops the cached policy for host. It mirrors IrcStsStore::clear /
+// `StsStore::clear`.
 func (s *STSStore) Clear(host string) {
 	key := stsGroupKey(host)
 	if key == "" {
@@ -181,7 +180,7 @@ func (s *STSStore) Clear(host string) {
 }
 
 // stsGroupKey hashes the trimmed, case-folded host. An empty host has no key.
-// It mirrors the anonymous groupKey (`client/src/session/sts.rs`:57-64).
+// It mirrors the anonymous groupKey / `sts_group_key`.
 func stsGroupKey(host string) string {
 	folded := strings.ToLower(strings.TrimSpace(host))
 	if folded == "" {

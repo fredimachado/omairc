@@ -1,6 +1,6 @@
 //! Read-marker publishing when the transcript is caught up, and one MARKREAD get per
-//! direct message. Port of `tui/internal/controller/readmarker.go` and
-//! `IrcController::maybePublishReadMarker` in `tui/internal/controller/controller.go`.
+//! direct message. Port of `tui/internal/controller/readmarker.go`
+//! (`maybePublishReadMarker`).
 
 use std::collections::HashSet;
 

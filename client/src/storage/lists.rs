@@ -1,7 +1,5 @@
 //! The per-network lists the controller keeps across runs: `/ignore`, `/mute`,
 //! `/highlight` and the `/monitor` nicks. Port of the list stores in
-//! `tui/internal/controller/stores.go` (Go) and `tui/internal/controller/stores.go`,
-//! `tui/internal/controller/stores.go`, `tui/internal/controller/stores.go` and the monitor list of
 //! `tui/internal/controller/stores.go`.
 //!
 //! The lists share one shape: a per-network, insertion-ordered list where membership

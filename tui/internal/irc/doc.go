@@ -1,6 +1,6 @@
 // Package irc is the portable IRC core for omairc-tui.
 //
-// It mirrors src/irc/ semantics exactly and stays platform-neutral: no socket,
+// It mirrors `client/src/irc/` semantics exactly and stays platform-neutral: no socket,
 // clock, filesystem, or OS call belongs here. Sockets, TLS, timers, and the
 // filesystem live in internal/session and internal/controller, which inject
 // time and wire bytes into this package.

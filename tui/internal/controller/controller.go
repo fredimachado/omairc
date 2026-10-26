@@ -173,7 +173,7 @@ func New() *Controller {
 	c.scrollPlaces.SetEphemeral(true)
 	c.playback = NewPlaybackCoordinator(c.playbackTimes, c.reducer)
 	// New starts ephemeral, like the Qt constructor before the shell opts in
-	// (`client/src/controller/controller.rs`): no transcript log until asked.
+	// (`client/src/controller/persistence.rs`): no transcript log until asked.
 	c.reducer.SetConversationLog(nil)
 	c.initSlashSubsystems()
 	return c
@@ -214,7 +214,7 @@ func (c *Controller) displayLocation() *time.Location {
 
 // --- Phase 11 persistence -------------------------------------------------
 
-// Group and key names match `client/src/controller/controller.rs` and `client/src/controller/networks.rs` so
+// Group and key names match `client/src/controller/persistence.rs` and `client/src/controller/networks.rs` so
 // the Qt client and the terminal client share one INI section.
 const (
 	preferencesGroup             = "preferences"
@@ -228,7 +228,7 @@ const (
 
 // SetEphemeral turns disk persistence on/off. New() starts ephemeral so unit
 // tests never touch the user's config; the shell opts in. It mirrors
-// IrcController::setEphemeral (`client/src/controller/controller.rs`).
+// IrcController::setEphemeral (`client/src/controller/persistence.rs`).
 func (c *Controller) SetEphemeral(ephemeral bool) {
 	c.ephemeral = ephemeral
 	if ephemeral {
@@ -272,7 +272,7 @@ func (c *Controller) SetPlaybackTimeStore(store *storage.PlaybackTimeStore) {
 
 // LoadStoredPreferences reads the preferences group into c.prefs and restores
 // the sidebar order and collapse set. It is a no-op when ephemeral. It mirrors
-// IrcController::loadStoredPreferences (`client/src/controller/controller.rs`).
+// IrcController::loadStoredPreferences (`client/src/controller/persistence.rs`).
 func (c *Controller) LoadStoredPreferences() {
 	if c.ephemeral {
 		return
@@ -336,7 +336,7 @@ func (c *Controller) OpenAtUnread() bool { return c.prefs.Enabled(irc.PrefUnread
 // SetReopenDirects stores the reopen-directs toggle, persists it unless
 // ephemeral, and restores the open directs of every registered network when it
 // turns back on. It mirrors IrcController::setReopenDirectMessages
-// (`client/src/controller/controller.rs`).
+// (`client/src/controller/persistence.rs`).
 func (c *Controller) SetReopenDirects(enabled bool) {
 	if c.ReopenDirects() == enabled {
 		return
@@ -379,7 +379,7 @@ func (c *Controller) SetOpenAtUnread(enabled bool) {
 }
 
 // PrefEnabled maps one /pref toggle to its getter. It mirrors the prefEnabled
-// lambda in IrcController (`client/src/controller/controller.rs`).
+// lambda in `client/src/controller/persistence.rs`.
 func (c *Controller) PrefEnabled(name irc.PrefName) bool {
 	switch name {
 	case irc.PrefDirects:
@@ -413,7 +413,7 @@ func (c *Controller) SetMembershipNoise(noise irc.MembershipNoise) {
 }
 
 // PrefApply maps one /pref toggle to its setter. It mirrors the prefApply
-// lambda in IrcController (`client/src/controller/controller.rs`).
+// lambda in `client/src/controller/persistence.rs`.
 func (c *Controller) PrefApply(name irc.PrefName, enabled bool) {
 	switch name {
 	case irc.PrefDirects:
@@ -548,7 +548,7 @@ func (c *Controller) NetworkOrder() []string {
 // StateChanged refreshes the focused connection status. A non-Registered
 // transition also tells the playback coordinator that the connection ended, so
 // a reconnect replays as if it never happened. It mirrors the stateChanged
-// lambda in IrcController::addSession (`client/src/controller/controller.rs`).
+// lambda in IrcController::addSession (`client/src/controller/persistence.rs`).
 func (c *Controller) StateChanged(networkID string, state session.SessionState) {
 	c.lock()
 	defer c.unlock()
@@ -568,7 +568,7 @@ func (c *Controller) ErrorOccurred(networkID string, kind session.ErrorKind, mes
 
 // Registered resets the network's features, records the assigned nick, and
 // folds the welcome into the reducer. It mirrors the registered lambda in
-// IrcController::addSession (`client/src/controller/controller.rs`).
+// IrcController::addSession (`client/src/controller/persistence.rs`).
 func (c *Controller) Registered(networkID string) {
 	c.lock()
 	defer c.unlock()
@@ -610,7 +610,7 @@ func (c *Controller) MessageReceived(networkID string, message irc.Message) {
 // HistoryBatchReceived replays one history batch into the reducer. A bouncer
 // playback batch is trimmed against the registration stamp first. A TARGETS
 // answer discovers directs instead of splicing lines. It mirrors
-// IrcController::handleHistoryBatch (`client/src/controller/controller.rs`).
+// IrcController::handleHistoryBatch (`client/src/controller/history.rs`).
 func (c *Controller) HistoryBatchReceived(networkID string, batch irc.HistoryBatch) {
 	c.lock()
 	defer c.unlock()
@@ -992,7 +992,7 @@ func (c *Controller) InboxItems() []InboxSnapshot {
 }
 
 // DismissInboxItem drops one waiting row. An out-of-range index is a no-op. It
-// mirrors IrcController::dismissInboxItem (`client/src/controller/controller.rs`).
+// mirrors IrcController::dismissInboxItem (inbox consume).
 func (c *Controller) DismissInboxItem(index int) {
 	if index < 0 || index >= c.inbox.Count() {
 		return
@@ -1003,7 +1003,7 @@ func (c *Controller) DismissInboxItem(index int) {
 
 // ActivateInboxItem consumes one waiting row and reveals its target, joining
 // an invited channel. An out-of-range index is a no-op. It mirrors
-// IrcController::activateInboxItem (`client/src/controller/controller.rs`).
+// IrcController::activateInboxItem (inbox activate).
 func (c *Controller) ActivateInboxItem(index int) {
 	if index < 0 || index >= c.inbox.Count() {
 		return
@@ -1048,7 +1048,7 @@ func (c *Controller) ActivateInboxItem(index int) {
 
 // RevealConversation opens or creates a conversation and selects it, clearing
 // any monitor row for a direct message. It mirrors
-// IrcController::revealConversation (`client/src/controller/controller.rs`).
+// IrcController::revealConversation (`client/src/controller/selection.rs`).
 func (c *Controller) RevealConversation(networkID, target string) {
 	if networkID == "" || target == "" {
 		return
@@ -1077,7 +1077,7 @@ func (c *Controller) PlainIrcText(text string) string {
 
 // adoptReducerSelection pulls a selection the reducer moved on its own (a NICK
 // rekey, for example) back into the controller. It mirrors
-// IrcController::adoptReducerSelection (`client/src/controller/controller.rs`).
+// IrcController::adoptReducerSelection (`client/src/controller/selection.rs`).
 func (c *Controller) adoptReducerSelection() {
 	key, ok := c.reducer.Selected()
 	if !ok {
@@ -1101,8 +1101,8 @@ func selectionNotify() irc.ViewNotify {
 }
 
 // reloadModels republishes everything, keeping a syncing channel's member panel
-// suppressed. It mirrors IrcController::reloadModels
-// (`client/src/controller/controller.rs`).
+// suppressed. It mirrors the full-surface republish after a selection or world
+// change.
 func (c *Controller) reloadModels() {
 	if irc.ChannelNamesSyncing(c.reducer, c.selected) {
 		c.Publish(irc.ViewNotify{Conversations: true})
@@ -1144,8 +1144,8 @@ func (c *Controller) SelectedConversationID() string {
 // FocusedNetworkID returns the network the identity footer and connection
 // status follow: the Status console when its model is open, else the selected
 // conversation's network, else the last Status network. It reads the raw console
-// flag, mirroring IrcController::focusedNetworkId's m_console.isOpen()
-// (`client/src/controller/controller.rs`).
+// flag, mirroring IrcController::focusedNetworkId's console-open read
+// (`client/src/controller/reads.rs`).
 func (c *Controller) FocusedNetworkID() string {
 	if c.StatusConsoleOpen() {
 		return c.consoleNetworkID
@@ -1158,7 +1158,7 @@ func (c *Controller) FocusedNetworkID() string {
 
 // SelectConversation selects one network and target, opening no transcript for
 // a conversation that does not exist yet. It mirrors
-// IrcController::selectConversation (`client/src/controller/controller.rs`).
+// IrcController::selectConversation (`client/src/controller/selection.rs`).
 func (c *Controller) SelectConversation(networkID, target string) {
 	if networkID == "" || target == "" {
 		return
@@ -1169,7 +1169,7 @@ func (c *Controller) SelectConversation(networkID, target string) {
 	key := c.reducer.ConversationKey(networkID, target)
 	// Moving to a different conversation withdraws a hint the previous target
 	// was still publishing. It mirrors IrcController::selectConversation
-	// (`client/src/controller/controller.rs`).
+	// (`client/src/controller/selection.rs`).
 	changed := c.selected == nil ||
 		c.selected.NetworkID != key.NetworkID ||
 		c.selected.NormalizedTarget != key.NormalizedTarget
@@ -1212,7 +1212,7 @@ func (c *Controller) SelectConversationByID(conversationID string) bool {
 }
 
 // OpenStatus opens the Status surface for a network. It mirrors
-// IrcController::openStatus (`client/src/controller/controller.rs`).
+// IrcController::openStatus (`client/src/controller/selection.rs`).
 func (c *Controller) OpenStatus(networkID string) {
 	if networkID == "" {
 		return
@@ -1286,11 +1286,11 @@ func (c *Controller) StatusConsoleOpen() bool { return c.consoleOpen }
 
 // ClearConversationSelection forgets the selection, leaving the Status surface
 // as the focused network. It mirrors IrcController::clearConversationSelection
-// (`client/src/controller/controller.rs`).
+// (`client/src/controller/selection.rs`).
 func (c *Controller) ClearConversationSelection() {
 	// Clearing the selection withdraws a hint the previous target was still
 	// publishing. It mirrors IrcController::clearConversationSelection
-	// (`client/src/controller/controller.rs`).
+	// (`client/src/controller/selection.rs`).
 	if c.typingTarget != "" {
 		if previous := c.selectedSession(); previous != nil {
 			previous.SendTyping(c.typingTarget, irc.TypingDone)
@@ -1370,7 +1370,7 @@ func (c *Controller) CanCloseSelection() bool {
 // DropConversationAndReselect removes one conversation and, when it was the
 // selected one, selects its sidebar neighbor or clears the selection. It
 // mirrors IrcController::dropConversationAndReselect
-// (`client/src/controller/controller.rs`).
+// (`client/src/controller/selection.rs`).
 func (c *Controller) DropConversationAndReselect(key irc.ConversationKey, forgetDirect bool) {
 	conversation := c.reducer.Find(key)
 	channel := conversation != nil && conversation.IsChannel()
@@ -1427,7 +1427,7 @@ func (c *Controller) dropSelectedDirectAndReselect() {
 
 // SendToTarget sends a plain PRIVMSG to an arbitrary network and target. It
 // uses the QuietSend cause, so it never invents a conversation. It mirrors
-// IrcController::sendToTarget (`client/src/controller/controller.rs`).
+// IrcController::sendToTarget (`client/src/controller/send.rs`).
 func (c *Controller) SendToTarget(networkID, target, text string) bool {
 	if networkID == "" || target == "" || text == "" {
 		c.setLastError(networkID, "Missing network, target, or text")
@@ -1460,7 +1460,7 @@ func (c *Controller) SendToTarget(networkID, target, text string) bool {
 
 // echoLocal folds the user's own line into the selected transcript, unless the
 // server already echoes it. It mirrors IrcController::echoLocal
-// (`client/src/controller/controller.rs`).
+// (`client/src/controller/send.rs`).
 func (c *Controller) echoLocal(kind irc.MessageKind, body string) {
 	if c.selected == nil || body == "" {
 		return
@@ -1479,7 +1479,7 @@ func (c *Controller) echoLocal(kind irc.MessageKind, body string) {
 }
 
 // echoIfPresent echoes an existing conversation's own line. It mirrors
-// IrcController::echoIfPresent (`client/src/controller/controller.rs`): a
+// IrcController::echoIfPresent (`client/src/controller/send.rs`): a
 // `notice` wire echoes as NOTICE, and an echo-message network gets no local
 // copy at all.
 func (c *Controller) echoIfPresent(s *session.Session, target, body string) {
@@ -1711,7 +1711,7 @@ func (c *Controller) MarkAllRead() {
 
 // SetWindowActive records focus. Gaining focus consumes the selected
 // conversation's unread; the "new messages" mark survives. It mirrors
-// IrcController::setWindowActive (`client/src/controller/controller.rs`).
+// IrcController::setWindowActive (`client/src/controller/selection.rs`).
 func (c *Controller) SetWindowActive(active bool) {
 	c.reducer.SetWindowActive(active)
 	c.transcriptFocused = active
@@ -1811,8 +1811,7 @@ func (c *Controller) AddSession(config session.SessionConfig, transport session.
 }
 
 // DiscardSession stops and unregisters one network's session. It reports false
-// when there is no such session. It mirrors IrcController::discardSession
-// (`client/src/controller/controller.rs`).
+// when there is no such session.
 func (c *Controller) DiscardSession(networkID string) bool {
 	if c.manager.Find(networkID) == nil {
 		return false
@@ -1836,8 +1835,8 @@ func (c *Controller) DiscardSession(networkID string) bool {
 }
 
 // ForgetNetworkState drops every controller and reducer fact about a network
-// while keeping its session. It mirrors IrcController::forgetNetworkState
-// (`client/src/controller/controller.rs`).
+// while keeping its session. It mirrors forget_network
+// (`client/src/controller/networks.rs`).
 func (c *Controller) ForgetNetworkState(networkID string) {
 	if networkID == "" {
 		return
@@ -1874,7 +1873,7 @@ func (c *Controller) ForgetNetworkState(networkID string) {
 
 // SetNetworkOrder records the network display order, republishes the sidebar,
 // and persists the order unless ephemeral. An unchanged order is a no-op. It
-// mirrors IrcController::setNetworkOrder (`client/src/controller/controller.rs`)
+// mirrors IrcController::setNetworkOrder (`client/src/controller/networks.rs`)
 // plus IrcConnection::persistNetworkOrder.
 func (c *Controller) SetNetworkOrder(order []string) {
 	if stringSlicesEqual(c.networkOrder, order) {
@@ -2126,8 +2125,8 @@ func (c *Controller) handleCapabilities(networkID string, capabilities irc.Capab
 
 // noteKeptReplay drains the replay/remembered-query hand-offs the reducer
 // produces: keeping playback clocks for landed replay lines, and remembering
-// queries the user replied to. It mirrors IrcController::noteKeptReplay
-// (`client/src/controller/controller.rs`).
+// queries the user replied to. It mirrors noteKeptReplay
+// (`client/src/controller/playback.rs`).
 func (c *Controller) noteKeptReplay() {
 	c.playback.NoteKeptReplay(func(networkID string) bool {
 		return c.capabilities[networkID].Contains(irc.CapabilityZncPlayback)
@@ -2154,7 +2153,7 @@ func (c *Controller) notePlaybackClock(networkID string, message irc.Message) {
 
 // persistableDirectTarget reports whether target is a direct message worth
 // persisting: non-empty, not a channel, and not a network service. It mirrors
-// IrcController::persistableDirectTarget (`client/src/controller/controller.rs`).
+// IrcController::persistableDirectTarget (`client/src/controller/persistence.rs`).
 func (c *Controller) persistableDirectTarget(networkID, target string) bool {
 	if networkID == "" || target == "" {
 		return false
@@ -2230,7 +2229,7 @@ func (c *Controller) otherReopenedDirect(event irc.Event) (networkID, target str
 }
 
 // rememberOpenDirect records a direct message worth restoring. It mirrors
-// IrcController::rememberOpenDirect (`client/src/controller/controller.rs`).
+// IrcController::rememberOpenDirect (`client/src/controller/persistence.rs`).
 func (c *Controller) rememberOpenDirect(networkID, target string) {
 	if !c.persistableDirectTarget(networkID, target) {
 		return
@@ -2253,7 +2252,7 @@ func (c *Controller) rememberOpenDirect(networkID, target string) {
 }
 
 // forgetOpenDirect drops a remembered direct message. It mirrors
-// IrcController::forgetOpenDirect (`client/src/controller/controller.rs`).
+// IrcController::forgetOpenDirect (`client/src/controller/persistence.rs`).
 func (c *Controller) forgetOpenDirect(networkID, target string) {
 	if networkID == "" || target == "" {
 		return
@@ -2269,8 +2268,8 @@ func (c *Controller) forgetOpenDirect(networkID, target string) {
 
 // noteSelfAuthoredDirect remembers target when the event author is our own
 // current nick and the conversation is an existing non-channel. It mirrors the
-// message/notice/action branches of IrcController::apply
-// (`client/src/controller/controller.rs`).
+// message/notice/action branches that remember open directs
+// (`client/src/controller/persistence.rs`).
 func (c *Controller) noteSelfAuthoredDirect(networkID, author, target string) {
 	features := c.reducer.ServerFeatures(networkID)
 	mapping := features.CaseMapping()
@@ -2286,7 +2285,7 @@ func (c *Controller) noteSelfAuthoredDirect(networkID, author, target string) {
 // noteOpenDirectsMotd restores the network's open directs once, at MOTD end,
 // then releases held query playback, asks the bouncer for buffers, and catches
 // up with CHATHISTORY from the last place reached. It mirrors
-// IrcController::noteOpenDirectsMotd (`client/src/controller/controller.rs`).
+// IrcController::noteOpenDirectsMotd (`client/src/controller/persistence.rs`).
 func (c *Controller) noteOpenDirectsMotd(networkID string) {
 	if networkID == "" || c.openDirectsMotdSeen[networkID] {
 		return
@@ -2308,7 +2307,7 @@ func (c *Controller) noteOpenDirectsMotd(networkID string) {
 
 // restoreOpenDirects reopens the persisted direct messages that are not already
 // loaded. It mirrors IrcController::restoreOpenDirects
-// (`client/src/controller/controller.rs`).
+// (`client/src/controller/persistence.rs`).
 func (c *Controller) restoreOpenDirects(networkID string) {
 	if !c.ReopenDirects() || networkID == "" {
 		return
@@ -2341,7 +2340,7 @@ func (c *Controller) restoreOpenDirects(networkID string) {
 }
 
 // requestZncPlayback asks the session's bouncer for the buffers it may hold. It
-// mirrors IrcController::requestZncPlayback (`client/src/controller/controller.rs`).
+// mirrors IrcController::requestZncPlayback (`client/src/controller/playback.rs`).
 func (c *Controller) requestZncPlayback(s *session.Session) {
 	if s == nil {
 		return
@@ -2381,7 +2380,7 @@ func (c *Controller) requestChatHistoryCatchUp(s *session.Session) {
 }
 
 // requestChannelPlayback retries one joined channel's PLAY. It mirrors
-// IrcController::requestZncChannelPlayback (`client/src/controller/controller.rs`).
+// IrcController::requestZncChannelPlayback (`client/src/controller/playback.rs`).
 func (c *Controller) requestChannelPlayback(s *session.Session, channel string) {
 	if s == nil {
 		return
@@ -2436,7 +2435,7 @@ func (c *Controller) notifyViewChanged() {
 // --- Helpers --------------------------------------------------------------
 
 // stateText maps a session state to the footer text. It mirrors the anonymous
-// stateText in `client/src/controller/controller.rs`.
+// stateText in `client/src/controller/snapshots.rs`.
 func stateText(state session.SessionState) string {
 	switch state {
 	case session.StateIdle, session.StateFailed:
@@ -2469,8 +2468,7 @@ func accountsMoved(kind irc.EventKind, event irc.Event) bool {
 }
 
 // servicesAccountMatches compares two account values with empty and "*"
-// treated as the same "no account". It mirrors servicesAccountMatches in
-// `client/src/controller/controller.rs`.
+// treated as the same "no account". It mirrors servicesAccountMatches (account equality with empty/`*` folded).
 func servicesAccountMatches(stored, incoming string) bool {
 	return canonicalAccount(stored) == canonicalAccount(incoming)
 }

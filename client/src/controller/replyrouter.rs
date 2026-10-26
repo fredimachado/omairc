@@ -1,4 +1,4 @@
-//! Port of `tui/internal/controller/replyrouter.go`
+//! Port of `tui/internal/controller/replyrouter.go`.
 //! The WHOIS, CTCP and labeled-response watches, and the routing of their replies
 //! to a conversation transcript or to Status.
 //!
@@ -19,8 +19,7 @@
 //! conversation that asked, or to Status. A reply that lands while the write is still being
 //! armed waits until the watch exists (`IrcReplyRouter::routeOwnMetadataReply`).
 //!
-//! Port of `tui/internal/controller/replyrouter.go`
-//! (C++). The `/whois`, `/ping`, `/time`, `/version`, `/status` and `/avatar` dispatch lives
+//! The `/whois`, `/ping`, `/time`, `/version`, `/status` and `/avatar` dispatch lives
 //! here too, so the dispatcher only routes the verb.
 
 use std::collections::BTreeMap;

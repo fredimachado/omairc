@@ -1,4 +1,4 @@
-//! One line of a network's Status pane, a port of `client/src/ui/status_row.rs`: the time,
+//! One line of a network's Status pane: the time,
 //! the `glyph label` column, and the text. Its http(s) URLs and INVITE channels
 //! are clickable; the transcript's pointer code finds those hits (see
 //! `transcript/pointer.rs`), so this row only draws them underlined.
