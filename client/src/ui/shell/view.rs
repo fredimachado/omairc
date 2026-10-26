@@ -363,6 +363,9 @@ mod tests {
                 shell.controller.bench_channel(60),
                 "the #bench seed must inject on the demo controller"
             );
+            // Selection alone leaves `shown` on the demo seed; close remembers
+            // `shown.conversation`, so follow the controller onto #bench first.
+            shell.sync_view(cx);
             inject_line(
                 shell,
                 "@msgid=close-anchor :user0!u@h PRIVMSG #bench :anchored",
