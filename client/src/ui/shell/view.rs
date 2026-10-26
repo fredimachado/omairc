@@ -86,6 +86,7 @@ pub(crate) fn build_network_headers(
                 mention: controller.mention_for(&id),
                 alerts: controller.alerts_for(&id),
                 show_edit: controller.session(&id).is_some(),
+                has_channels: rows.iter().any(|row| row.key.network_id == id && !row.direct),
                 has_directs: rows.iter().any(|row| row.key.network_id == id && row.direct),
                 collapsed: controller.is_network_collapsed(&id),
                 status: connection_line(controller, &id),

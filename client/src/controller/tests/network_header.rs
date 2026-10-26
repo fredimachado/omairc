@@ -63,3 +63,24 @@ fn network_section_show_edit_follows_live_session() {
     assert!(omarchy.show_edit, "the demo session is live");
     assert!(!freenode.show_edit, "a refused start has no session");
 }
+
+#[test]
+fn network_section_headings_follow_conversation_groups() {
+    let mut fixture = Fixture::seeded();
+    assert!(!fixture.controller.start("freenode"));
+
+    let headers = network_section_headers(&fixture.controller);
+    let omarchy = headers
+        .iter()
+        .find(|header| header.id == OMARCHY)
+        .expect("omarchy header");
+    let freenode = headers
+        .iter()
+        .find(|header| header.id == "freenode")
+        .expect("freenode header");
+
+    assert!(omarchy.has_channels, "demo omarchy has channels");
+    assert!(omarchy.has_directs, "demo omarchy has directs");
+    assert!(!freenode.has_channels, "a refused start has no channels");
+    assert!(!freenode.has_directs, "a refused start has no directs");
+}
