@@ -48,6 +48,7 @@ use crate::ui::center::header::{
     header_chrome_trailing_width, header_subtitle_clip_width, people_pill, HeaderView, QueryIdentity,
     Subtitle,
 };
+use crate::ui::format_ui::IrcColors;
 use crate::ui::center::header_actions::{HeaderActions, HeaderOffers};
 use crate::ui::center::render_center;
 use crate::ui::center::slash_popup::render_slash_popup;
@@ -284,8 +285,13 @@ impl Shell {
                 .collect(),
         };
 
-        let joins_avatars = shell.controller.preferences().avatars;
-        shell.transcript.update(cx, |t, _| t.set_avatars(joins_avatars));
+        let prefs = shell.controller.preferences();
+        let joins_avatars = prefs.avatars;
+        let joins_colors = prefs.colors;
+        shell.transcript.update(cx, |t, _| {
+            t.set_avatars(joins_avatars);
+            t.set_colors(joins_colors);
+        });
         shell.show_shown_view(None, cx);
         shell.sync_send_limit(cx);
         if required {
@@ -488,6 +494,7 @@ impl Render for Shell {
             (None, Some((text, hits))) => Subtitle::Topic {
                 text,
                 hits,
+                colors: IrcColors::from_pref(self.controller.preferences().colors),
                 on_hit: topic_handler(entity.clone()),
             },
             (None, None) => Subtitle::Plain(&connection),

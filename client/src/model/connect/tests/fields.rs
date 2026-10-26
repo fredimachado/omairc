@@ -72,11 +72,17 @@ fn preference_rows_reuse_the_pref_labels_with_qt_help() {
     let names: Vec<PrefName> = rows.iter().map(|row| row.name).collect();
     assert_eq!(
         names,
-        [PrefName::Directs, PrefName::Avatars, PrefName::Unread]
+        [
+            PrefName::Directs,
+            PrefName::Avatars,
+            PrefName::Unread,
+            PrefName::Colors
+        ]
     );
     assert_eq!(rows[0].label, "Reopen direct messages on startup");
     assert_eq!(rows[1].label, "Show peer avatars");
     assert_eq!(rows[2].label, "Open conversations at unread");
+    assert_eq!(rows[3].label, "Show mIRC colors");
     assert_eq!(
         rows[0].help,
         "Reopens direct messages you had open last session after each connect. Only tabs you opened or sent in are remembered."
@@ -84,6 +90,10 @@ fn preference_rows_reuse_the_pref_labels_with_qt_help() {
     assert_eq!(
         rows[2].help,
         "Scrolls to the New messages marker when you switch conversations. Already-focused buffers and Status are left at the end."
+    );
+    assert_eq!(
+        rows[3].help,
+        "Paints the foreground and background colors other clients send in messages and topics. Off, text takes your theme's colors; bold, italic, underline, and strikethrough still show. Applies to lines already on screen."
     );
 }
 

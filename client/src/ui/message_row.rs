@@ -15,7 +15,7 @@ use crate::model::transcript::{
 use crate::model::presence::{photo_for, NickFacts};
 use crate::model::{mix_colors, Row, RowKind, Style};
 
-use crate::ui::format_ui::{gpui_text_style, irc_runs_to_gpui, link_underline_run};
+use crate::ui::format_ui::{gpui_text_style, irc_runs_to_gpui, link_underline_run, IrcColors};
 use crate::ui::status_row::render_status_row;
 use crate::ui::widgets::avatar::{avatar_disc, AvatarPhotos};
 use crate::ui::widgets::bot_mark::bot_mark;
@@ -30,11 +30,13 @@ pub struct RowCallbacks {
 }
 
 /// What a row reads about the nicks it names: each nick's facts on the network,
-/// whether peer photos show (the `avatars` preference), and the photos the frame draws.
+/// whether peer photos show (the `avatars` preference), whether mIRC colors paint
+/// (the `colors` preference), and the photos the frame draws.
 #[derive(Clone, Default)]
 pub struct RowPeers {
     pub facts: HashMap<String, NickFacts>,
     pub avatars: bool,
+    pub colors: IrcColors,
     pub photos: AvatarPhotos,
 }
 
@@ -134,8 +136,16 @@ pub fn render_transcript_row(
             selection_range,
             hovered_link,
             ctx.layouts,
+            ctx.peers.colors,
         ),
-        RowKind::Whois => render_whois_row(row_ix, row, style, selection_range, ctx.layouts),
+        RowKind::Whois => render_whois_row(
+            row_ix,
+            row,
+            style,
+            selection_range,
+            ctx.layouts,
+            ctx.peers.colors,
+        ),
         RowKind::UnreadMark => render_unread_mark_row(row_ix, style),
         RowKind::Message => div()
             .id(("transcript-row", row_ix))
@@ -194,6 +204,7 @@ fn render_whois_row(
     style: &Style,
     selection_range: Option<Range<usize>>,
     layouts: RowLayoutMap,
+    colors: IrcColors,
 ) -> Stateful<Div> {
     let mut base = gpui_text_style(style, 12., false);
     base.color = to_gpui(style.muted_color());
@@ -202,6 +213,7 @@ fn render_whois_row(
         &row.body.runs,
         style,
         &base,
+        colors,
         selection_range.clone(),
     );
     let text = StyledText::new(SharedString::from(row.body.plain.clone())).with_runs(runs);
@@ -271,6 +283,7 @@ fn render_message_row(
         &row.body.runs,
         style,
         &base_body_style,
+        peers.colors,
         selection_range.clone(),
     );
     if let Some(link) = hovered_link {

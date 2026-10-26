@@ -548,7 +548,7 @@ fn pref_reads_and_sets_on_status_and_prints_into_a_conversation() {
     let mut fixture = Fixture::seeded();
     fixture.controller.open_status(OMARCHY);
     assert_eq!(run(&mut fixture, STATUS, "/pref"), CommandOutcome::Sent);
-    let listing = format_pref_list(true, true, true, MembershipNoise::Folded);
+    let listing = format_pref_list(true, true, true, true, MembershipNoise::Folded);
     assert!(
         listing.lines().all(|line| status_text(&fixture.controller, OMARCHY).iter().any(|text| text == line)),
         "every preference line is on Status"
@@ -564,6 +564,9 @@ fn pref_reads_and_sets_on_status_and_prints_into_a_conversation() {
     assert_eq!(run(&mut fixture, STATUS, "/pref avatars off"), CommandOutcome::Sent);
     assert_eq!(last_status(&fixture, OMARCHY), format_pref_state(PrefName::Avatars, false));
     assert!(!fixture.controller.preferences().avatars);
+
+    assert_eq!(run(&mut fixture, STATUS, "/pref colors off"), CommandOutcome::Sent);
+    assert!(!fixture.controller.preferences().colors);
 
     // A demo controller keeps nothing: the value changes in memory only. The disk round trip
     // is covered by the persistence tests, which build over a settings file.

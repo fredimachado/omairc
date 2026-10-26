@@ -64,7 +64,7 @@ fn the_walk_drops_add_while_dirty_and_remove_when_not_allowed() {
 }
 
 #[test]
-fn the_preferences_walk_is_its_three_switches_and_their_marks() {
+fn the_preferences_walk_is_its_four_switches_and_their_marks() {
     let (populated, mut state) = seeded();
     state.set_tab(ConnectTab::Preferences);
     assert_eq!(
@@ -78,6 +78,8 @@ fn the_preferences_walk_is_its_three_switches_and_their_marks() {
             Stop::PreferenceHelp(PrefName::Avatars),
             Stop::Preference(PrefName::Unread),
             Stop::PreferenceHelp(PrefName::Unread),
+            Stop::Preference(PrefName::Colors),
+            Stop::PreferenceHelp(PrefName::Colors),
         ]
     );
 }

@@ -159,14 +159,22 @@ impl Shell {
         self.drain_notifications(cx);
     }
 
-    /// Redraws what a changed preference touches: the avatars in the transcript, and the view
-    /// when the membership noise changed, since its lines fold at read time.
+    /// Redraws what a changed preference touches: the avatars and mIRC colors in the
+    /// transcript, and the view when the membership noise changed, since its lines fold
+    /// at read time. The header re-reads prefs each frame.
     pub fn apply_preference_changes(&mut self, before: Preferences, cx: &mut Context<Self>) {
         let after = *self.controller.preferences();
         if after.avatars != before.avatars {
             let avatars = after.avatars;
             self.transcript.update(cx, |t, cx| {
                 t.set_avatars(avatars);
+                cx.notify();
+            });
+        }
+        if after.colors != before.colors {
+            let colors = after.colors;
+            self.transcript.update(cx, |t, cx| {
+                t.set_colors(colors);
                 cx.notify();
             });
         }

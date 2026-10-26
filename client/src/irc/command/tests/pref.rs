@@ -39,7 +39,7 @@ fn pref_argument_shapes_are_query_set_and_usage() {
 }
 
 #[test]
-fn bare_pref_prints_four_lines() {
+fn bare_pref_prints_five_lines() {
     let mut prefs = Preferences::default();
     let reply = pref_reply(pref("/pref"), &mut prefs);
     assert_eq!(
@@ -47,6 +47,7 @@ fn bare_pref_prints_four_lines() {
         "Reopen direct messages on startup: on\n\
          Show peer avatars: on\n\
          Open conversations at unread: on\n\
+         Show mIRC colors: on\n\
          Join, part, quit, and nick lines: folded"
     );
     assert!(!reply.changed);
@@ -89,7 +90,7 @@ fn usage_echoes_the_verb_usage_and_changes_nothing() {
     let reply = pref_reply(pref("/pref joins on"), &mut prefs);
     assert_eq!(
         reply.text,
-        "/pref [directs|avatars|unread] [on|off] | joins [folded|every|hidden]"
+        "/pref [directs|avatars|unread|colors] [on|off] | joins [folded|every|hidden]"
     );
     assert!(!reply.changed);
     assert_eq!(prefs, Preferences::default());

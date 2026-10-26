@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `/pref colors` and a *Show mIRC colors* switch on the Preferences tab strip
+  mIRC foreground and background colors (formatting stays). Desktop client.
 - A channel line delivered only to you is marked "only visible to you" in the
   desktop and terminal clients. The mark is used when you have joined that
   channel and the sender is in it. A normal channel line stays unmarked.
