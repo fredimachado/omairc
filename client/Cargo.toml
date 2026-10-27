@@ -145,16 +145,14 @@ regex = "=1.13.1"
 [lints.rust]
 dead_code = "allow"
 
-# Size-focused release. Keep panic=unwind: windowvisibility::of uses
-# catch_unwind around HasWindowHandle (TestWindow unimplemented!).
-# On Windows MSVC this cut the product exe from ~23 MiB to ~11 MiB; fat LTO
-# lengthens the link. Prefer thin LTO + opt-level=3 if link time or UI speed
-# matter more than download size.
+# Shrink the shipped binary: size opt + thin LTO, strip debuginfo only so
+# panic backtraces keep function names. Do not set panic = "abort" on
+# [profile.dev] / [profile.test]; windowvisibility::of catch_unwind needs
+# unwind for TestWindow.
 [profile.release]
-opt-level = "z"
-codegen-units = 1
-lto = true
-strip = "symbols"
+opt-level = "s"
+lto = "thin"
+strip = "debuginfo"
 
 # xattr 0.2.3 reads libc::ENOATTR on Linux, which current libc no longer
 # exports there. The vendored copy maps it to ENODATA on Linux only; the
