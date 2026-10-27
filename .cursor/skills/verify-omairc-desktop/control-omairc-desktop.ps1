@@ -1714,38 +1714,10 @@ $cmd = $argv[0]
 $rest = @()
 if ($argv.Count -gt 1) { $rest = $argv[1..($argv.Count - 1)] }
 
+# Top level owns run/help only; every other verb goes through Invoke-DriverCommand
+# so CLI and desktop-recipe fences cannot drift.
 switch ($cmd) {
-    'launch' { Invoke-Launch -LaunchArgs $rest }
-    'doctor' { Invoke-Doctor }
-    'title' { Invoke-Title }
-    'wait-title' { Invoke-WaitTitle -WaitArgs $rest }
-    'click' { Invoke-Click -ClickArgs $rest }
-    'click-conversation' { Invoke-ClickConversation -ArgsList $rest }
-    'click-member' { Invoke-ClickMember -ArgsList $rest }
-    'click-people' { Invoke-ClickPeople -ArgsList $rest }
-    'click-network' { Invoke-ClickNetwork }
-    'click-edit' { Invoke-ClickEdit }
-    'click-version' { Invoke-ClickVersion }
-    'click-send' { Invoke-ClickSend }
-    'focus-composer' { Invoke-FocusComposer -ArgsList $rest }
-    'composer' { Invoke-Composer -ArgsList $rest }
-    'jump' { Invoke-Jump -ArgsList $rest }
-    'walk' { Invoke-Walk -WalkArgs $rest }
-    'unread' { Invoke-Unread -ArgsList $rest }
-    'toggle-members' { Invoke-ToggleMembers -ArgsList $rest }
-    'focus-members' { Invoke-FocusMembers -ArgsList $rest }
-    'nick-jump' { Invoke-NickJump -ArgsList $rest }
-    'status' { Invoke-Status -ArgsList $rest }
-    'connect' { Invoke-Connect -ArgsList $rest }
-    'type' { Invoke-Type -TypeArgs $rest }
-    'key' { Invoke-Key -KeyArgs $rest }
-    'send' { Invoke-Send -SendArgs $rest }
-    'screenshot' { Invoke-Screenshot -ShotArgs $rest }
-    'compare' { Invoke-Compare -CmpArgs $rest }
     'run' { Invoke-Run -RunArgs $rest }
-    'qml-suite' { Reject-QtOnlyVerb -Verb 'qml-suite' }
-    'doctor-qml' { Reject-QtOnlyVerb -Verb 'doctor-qml' }
-    'cleanup' { Invoke-Cleanup }
     { $_ -in @('-h', '--help', 'help') } { Show-Usage }
-    default { Die "unknown command '$cmd'. Try --help." }
+    default { Invoke-DriverCommand -CmdArgs $argv }
 }
