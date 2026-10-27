@@ -367,7 +367,7 @@ func (m *Model) SetTheme(colors theme.Colors) {
 	if m == nil {
 		return
 	}
-	m.applyStyles(buildStyles(colors))
+	m.rebuildStyles(colors)
 }
 
 // SetThemeWatcher installs the live theme watcher and immediately adopts its
@@ -380,8 +380,20 @@ func (m *Model) SetThemeWatcher(w *theme.Watcher) {
 	}
 	m.themeWatcher = w
 	if w != nil {
-		m.applyStyles(buildStyles(w.Current()))
+		m.rebuildStyles(w.Current())
 	}
+}
+
+// rebuildStyles swaps structural styles from colors while keeping the fixed
+// nick hue set. Nick colors never move with the live theme.
+func (m *Model) rebuildStyles(colors theme.Colors) {
+	nick := m.styles.NickPalette
+	s := buildStyles(colors)
+	if len(nick) == 0 {
+		nick = resolveNickPalette()
+	}
+	s.NickPalette = nick
+	m.applyStyles(s)
 }
 
 // applyStyles swaps in a rebuilt palette and re-derives the chrome that lives
@@ -612,9 +624,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case ThemeChangedMsg:
-		// A live theme swap. Rebuild every style from the new palette, then
-		// re-arm the read for the next change.
-		m.applyStyles(buildStyles(msg.Colors))
+		// A live theme swap. Rebuild structural styles from the new palette
+		// (nick hues stay fixed), then re-arm the read for the next change.
+		m.rebuildStyles(msg.Colors)
 		return m, m.nextThemeChange()
 	case spinner.TickMsg:
 		// Both spinners emit the same message type; the ID routes each tick to

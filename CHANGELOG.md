@@ -11,8 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Nick and network icon colors keep the classic palette by default and can
   select the brighter `vivid` set with `colorPalette=vivid` under
-  `[preferences]` in `omairc.conf` (no `/pref` UI yet). Classic still uses
-  the theme accent for slot 0; vivid uses fixed hues.
+  `[preferences]` in `omairc.conf` (no `/pref` UI yet). Desktop classic uses
+  the live theme accent for slot 0; the TUI classic nick hues stay on the
+  fixed dark fallback accent so they do not move with Omarchy theme changes.
+  Vivid uses fixed hues on both clients.
 - Per-nick colors hash nicks with FNV-1a, fold the high bits, then take
   modulo the eight-color palette, instead of summing character codes, so
   anagrams and similar short names spread across hues more evenly. A nick's

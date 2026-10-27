@@ -137,6 +137,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
+	// Color palette from [preferences] colorPalette=… (classic default). Set
+	// before ui.New so resolveNickPalette / Fallback carry the chosen set, and
+	// before the theme watcher so Derive does too.
+	if id, ok := theme.ParseColorPalette(storage.OpenSettings("").Value("preferences", "colorPalette")); ok {
+		theme.SetColorPalette(id)
+	}
+
 	// Controller and connection callbacks fire both from the Bubble Tea
 	// goroutine (inside Update) and from session goroutines. p.Send blocks on
 	// the program's message channel, so calling it synchronously from a
@@ -144,12 +151,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// rebuilt a snapshot. Coalesce the wake-ups onto one dispatcher instead.
 	model := ui.New(c, conn)
 	model.SetMouseEnabled(ui.MouseOptIn(mouseFlag, os.Getenv("OMAIRC_TUI_MOUSE")))
-
-	// Color palette from [preferences] colorPalette=… (classic default). Set
-	// before the theme watcher so Derive/Fallback carry the chosen set.
-	if id, ok := theme.ParseColorPalette(storage.OpenSettings("").Value("preferences", "colorPalette")); ok {
-		theme.SetColorPalette(id)
-	}
 
 	// The live Omarchy theme watcher. SetThemeWatcher adopts the current
 	// palette immediately; the shell then arms one blocking Changes read as a

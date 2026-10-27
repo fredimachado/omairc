@@ -192,6 +192,74 @@ def check_client_crate():
     return problems
 
 
+def _parse_color_palette_tables(text):
+    """Extract {token: {accent_slot0, dark, light}} from Rust or Go palette tables.
+
+    Rust closes dark/light with `]`; Go uses `[N]string{ ... }`.
+    """
+    hex_re = re.compile(r'"(#[0-9a-fA-F]{6})"')
+    # Open: Rust `[` or Go `[ColorPaletteLen]string{` / `[8]string{`.
+    # Close: `]` (Rust) or `}` (Go composite literal).
+    family = r'(?:\[[^\]]*\]string\{|\[)(?P<%s>.*?)(?:\}|\])'
+    entry_re = re.compile(
+        r'token:\s*"(?P<token>[a-z0-9_-]+)"\s*,\s*'
+        r'(?:accent_slot0|accentSlot0):\s*(?P<accent>true|false)\s*,\s*'
+        rf'dark:\s*{family % "dark"},\s*'
+        rf'light:\s*{family % "light"}',
+        re.S,
+    )
+    tables = {}
+    for match in entry_re.finditer(text):
+        token = match.group("token")
+        tables[token] = {
+            "accent_slot0": match.group("accent") == "true",
+            "dark": hex_re.findall(match.group("dark")),
+            "light": hex_re.findall(match.group("light")),
+        }
+    return tables
+
+
+def check_color_palette_parity():
+    """Fail when Rust and Go colorPalette hex tables drift apart."""
+    problems = []
+    rust_path = ROOT / "client" / "src" / "model" / "color_palette.rs"
+    go_path = ROOT / "tui" / "internal" / "theme" / "colorpalette.go"
+    _require_file(rust_path, "color palette (Rust)", problems)
+    _require_file(go_path, "color palette (Go)", problems)
+    if problems:
+        return problems
+
+    rust = _parse_color_palette_tables(_read_text(rust_path))
+    go = _parse_color_palette_tables(_read_text(go_path))
+    if not rust:
+        problems.append(
+            f"{rust_path.relative_to(ROOT).as_posix()}: could not parse COLOR_PALETTE_TABLE")
+    if not go:
+        problems.append(
+            f"{go_path.relative_to(ROOT).as_posix()}: could not parse colorPaletteTable")
+    if problems:
+        return problems
+
+    if set(rust) != set(go):
+        problems.append(
+            "color palette tokens differ between Rust and Go: "
+            f"rust={sorted(rust)} go={sorted(go)}")
+        return problems
+
+    for token in sorted(rust):
+        left, right = rust[token], go[token]
+        if left["accent_slot0"] != right["accent_slot0"]:
+            problems.append(
+                f"color palette {token!r}: accent_slot0/accentSlot0 differs "
+                f"(rust={left['accent_slot0']}, go={right['accent_slot0']})")
+        for family in ("dark", "light"):
+            if left[family] != right[family]:
+                problems.append(
+                    f"color palette {token!r} {family} hexes differ: "
+                    f"rust={left[family]} go={right[family]}")
+    return problems
+
+
 def check_shared_irc_contract():
     problems = []
     rust_conversation = ROOT / "client" / "src" / "irc" / "conversation.rs"
@@ -1516,6 +1584,7 @@ CHECKS = (
     ("Cargo version matches version.pri", check_cargo_version_matches_version_pri),
     ("Rust product crate at client/", check_client_crate),
     ("client/TUI shared IRC contract", check_shared_irc_contract),
+    ("client/TUI color palette parity", check_color_palette_parity),
     ("no deleted Qt src/ or tests/ paths", check_no_deleted_qt_paths),
     ("no cutover museum labels", check_no_cutover_museum_labels),
     ("Go version source", check_go_version_source),

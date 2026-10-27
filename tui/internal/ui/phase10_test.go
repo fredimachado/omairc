@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/fredimachado/omairc/tui/internal/controller"
+	"github.com/fredimachado/omairc/tui/internal/theme"
 )
 
 // fakeAvatarSource is an AvatarSource with a configurable block. Ensure records
@@ -92,8 +93,16 @@ func TestPhase10EnsureAvatarsSchedulesDirectRows(t *testing.T) {
 }
 
 // TestPhase10IdenticonDeterminism proves the hashing, color, initials, and fill
-// helpers are deterministic and self-consistent with the palette.
+// helpers are deterministic and self-consistent with an independently computed
+// classic dark palette (not the same slice nickColor reads).
 func TestPhase10IdenticonDeterminism(t *testing.T) {
+	prev := theme.ActiveColorPalette()
+	t.Cleanup(func() { theme.SetColorPalette(prev) })
+	theme.SetColorPalette(theme.ColorPaletteClassic)
+
+	wantPalette := theme.PaletteColors(theme.ColorPaletteClassic, true, theme.Fallback().Accent)
+	styles := defaultStyles()
+
 	if nickPaletteIndex("abc") == nickPaletteIndex("cab") {
 		t.Fatal("anagrams must not share a palette slot")
 	}
@@ -106,14 +115,14 @@ func TestPhase10IdenticonDeterminism(t *testing.T) {
 
 	for _, nick := range []string{"mira", "anna", "dax", "Ω", ""} {
 		index := nickPaletteIndex(nick)
-		if index < 0 || index >= len(paletteColors) {
-			t.Fatalf("nickPaletteIndex(%q) = %d, want [0,%d)", nick, index, len(paletteColors))
+		if index < 0 || index >= theme.ColorPaletteLen {
+			t.Fatalf("nickPaletteIndex(%q) = %d, want [0,%d)", nick, index, theme.ColorPaletteLen)
 		}
 		if again := nickPaletteIndex(nick); again != index {
 			t.Fatalf("nickPaletteIndex(%q) is not deterministic: %d then %d", nick, index, again)
 		}
-		if got := nickColor(nick); got != paletteColors[index] {
-			t.Fatalf("nickColor(%q) = %q, want palette[%d] = %q", nick, got, index, paletteColors[index])
+		if got, want := theme.Hex(styles.nickColor(nick)), theme.Hex(wantPalette[index]); got != want {
+			t.Fatalf("nickColor(%q) = %s, want palette[%d] = %s", nick, got, index, want)
 		}
 	}
 
@@ -123,7 +132,7 @@ func TestPhase10IdenticonDeterminism(t *testing.T) {
 	if got := initials(""); got != "?" {
 		t.Fatalf("initials(\"\") = %q, want ?", got)
 	}
-	if got, want := avatarFill("mira"), nickColor("mira"); got == want {
+	if got, want := styles.avatarFill("mira"), styles.nickColor("mira"); got == want {
 		t.Fatalf("avatarFill(mira) = %q, want it mixed away from nickColor", got)
 	}
 }

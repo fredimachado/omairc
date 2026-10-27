@@ -7,6 +7,8 @@ pub struct Style {
     pub theme: Theme,
     pub text_scale: f32,
     pub color_palette: ColorPaletteId,
+    /// Resolved nick/network hues for `color_palette` under the current theme.
+    resolved_palette: [Color; COLOR_PALETTE_LEN],
 }
 
 impl Style {
@@ -19,10 +21,12 @@ impl Style {
         text_scale: f32,
         color_palette: ColorPaletteId,
     ) -> Self {
+        let resolved_palette = color_palette.colors(theme.dark_mode, theme.accent);
         Self {
             theme,
             text_scale: text_scale.max(0.01),
             color_palette,
+            resolved_palette,
         }
     }
 
@@ -111,8 +115,7 @@ impl Style {
 
     /// The eight hues for nicks and network icons under the configured palette.
     pub fn palette_colors(&self) -> [Color; COLOR_PALETTE_LEN] {
-        self.color_palette
-            .colors(self.dark_mode(), self.accent_color())
+        self.resolved_palette
     }
 
     pub fn nick_avatar_fills(&self) -> [Color; COLOR_PALETTE_LEN] {

@@ -21,6 +21,11 @@ type Styles struct {
 	// Colors is the source palette every style below is derived from.
 	Colors theme.Colors
 
+	// NickPalette is the fixed nick/identicon hue set for the configured
+	// colorPalette. Resolved once in dark mode with the fallback accent; it
+	// never follows the live Omarchy theme (see resolveNickPalette).
+	NickPalette []color.Color
+
 	NetworkName        lipgloss.Style
 	NetworkNameFocused lipgloss.Style
 	GroupLabel         lipgloss.Style
@@ -126,22 +131,27 @@ type Styles struct {
 	Input textinput.Styles
 }
 
-// fixedColors is the fixed Tokyo-Night palette the TUI has always rendered.
-// Palette hues, the identicon page fill, and the avatar mix amount are fixed
-// presentation shared with `client/src/model/style.rs`, so they read Fallback rather than
-// the live theme.
+// fixedColors seeds the identicon page fill and avatar mix amount. Those stay
+// on the Tokyo-Night fallback; nick hues live on Styles.NickPalette.
 var (
 	fixedColors   = theme.Fallback()
-	paletteColors = fixedColors.Palette
 	nickAvatarMix = fixedColors.NickAvatarMix
 	colorPage     = fixedColors.Page
 )
 
+// resolveNickPalette is the configured nick hue set, always dark and always
+// accented with the fixed fallback accent. Classic therefore matches the
+// pre-palette-config TUI (#7aa2f7 in slot 0); vivid uses its dark hues; neither
+// set moves when the live Omarchy theme changes.
+func resolveNickPalette() []color.Color {
+	return append([]color.Color(nil), theme.Fallback().Palette...)
+}
+
 // avatarFill is the identicon background: nickColor mixed into colorPage. Since
 // there is no terminal page color, this approximates the QML
 // mixColors(pageColor, nickColor, nickAvatarMix).
-func avatarFill(nick string) color.Color {
-	return mixColors(colorPage, nickColor(nick), nickAvatarMix)
+func (s Styles) avatarFill(nick string) color.Color {
+	return mixColors(colorPage, s.nickColor(nick), nickAvatarMix)
 }
 
 // nickPaletteIndex mirrors nick_palette_index in `client/src/model/style.rs`: FNV-1a
@@ -156,13 +166,13 @@ func nickPaletteIndex(nick string) int {
 		hash *= prime32
 	}
 	hash ^= hash >> 16
-	return int(hash % uint32(len(paletteColors)))
+	return int(hash % uint32(theme.ColorPaletteLen))
 }
 
-// nickColor is the palette color for a nick. Palette hues are fixed
-// presentation, never theme-derived, so this reads theme.Colors.Palette.
-func nickColor(nick string) color.Color {
-	return paletteColors[nickPaletteIndex(nick)]
+// nickColor is the palette color for a nick. Hues come from Styles.NickPalette
+// (fixed presentation), never from the live theme's Colors.Palette.
+func (s Styles) nickColor(nick string) color.Color {
+	return s.NickPalette[nickPaletteIndex(nick)]
 }
 
 // initials is the identicon's single letter: the first rune upper-cased, or "?"
@@ -199,18 +209,20 @@ func mixColors(base, tint color.Color, amount float64) color.Color {
 		mix(baseR, tintR), mix(baseG, tintG), mix(baseB, tintB)))
 }
 
-// defaultStyles builds the shell's styles from the fixed fallback palette.
+// defaultStyles builds the shell's styles from the fixed fallback palette and
+// the configured nick hue set (call SetColorPalette before New so the set is
+// already active).
 func defaultStyles() Styles {
-	return buildStyles(theme.Fallback())
+	s := buildStyles(theme.Fallback())
+	s.NickPalette = resolveNickPalette()
+	return s
 }
 
-// buildStyles derives every style from colors. The theme package owns the
-// palette; this file is the only place lipgloss sees it. Palette hues follow
-// colors.Palette so a configured vivid/classic set reaches nickColor.
+// buildStyles derives every structural style from colors. The theme package
+// owns the live palette; this file is the only place lipgloss sees it. Nick
+// hues are not taken from colors: the caller sets Styles.NickPalette (see
+// defaultStyles and Model.rebuildStyles).
 func buildStyles(colors theme.Colors) Styles {
-	if len(colors.Palette) > 0 {
-		paletteColors = colors.Palette
-	}
 	base := lipgloss.NewStyle()
 	card := base.Border(lipgloss.RoundedBorder()).Padding(0, 1)
 	input := textinput.DefaultDarkStyles()

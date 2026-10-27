@@ -1311,7 +1311,7 @@ func (m *Model) messageRowAt(messages []controller.MessageSnapshot, index int, m
 // in bold, mirroring `client/src/model/style.rs`'s nickColor and the message
 // header's bold author label. Nick colors never move with the theme.
 func (m *Model) nickStyle(nick string) lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(nickColor(nick)).Bold(true)
+	return lipgloss.NewStyle().Foreground(m.styles.nickColor(nick)).Bold(true)
 }
 
 // mentionWash is the background of a highlighted row: the page color mixed
@@ -1361,7 +1361,7 @@ func (m *Model) mentionRow(message controller.MessageSnapshot, grouped bool, nic
 	colors := m.styles.Colors
 	first, continuation := m.chatByline(message.Author, message.Time, grouped, nickWidth, bylineStyle{
 		clock: wash.Foreground(colors.TextDim),
-		nick:  wash.Foreground(nickColor(message.Author)).Bold(true),
+		nick:  wash.Foreground(m.styles.nickColor(message.Author)).Bold(true),
 		rule:  wash.Foreground(colors.TextDim),
 	})
 	body := m.renderMessageBody(message.Body, wash.Foreground(colors.Mention))

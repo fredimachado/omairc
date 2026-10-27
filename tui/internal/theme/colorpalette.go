@@ -19,24 +19,28 @@ const (
 	ColorPaletteVivid
 )
 
-// colorPaletteLen is the hash modulus shared with client/src/model/color_palette.rs.
-const colorPaletteLen = 8
+// ColorPaletteLen is the hash modulus shared with client/src/model/color_palette.rs.
+const ColorPaletteLen = 8
 
 type colorPaletteDef struct {
 	id          ColorPaletteID
 	token       string
 	accentSlot0 bool
-	dark        [colorPaletteLen]string
-	light       [colorPaletteLen]string
+	dark        [ColorPaletteLen]string
+	light       [ColorPaletteLen]string
+	darkColors  [ColorPaletteLen]color.Color
+	lightColors [ColorPaletteLen]color.Color
 }
 
 // colorPaletteTable is the registry. Keep dark/light families parallel.
+// Hex strings stay in source for the Rust↔Go parity gate; parsed colors are
+// filled once at init so Derive does not re-parse.
 var colorPaletteTable = []colorPaletteDef{
 	{
 		id:          ColorPaletteClassic,
 		token:       "classic",
 		accentSlot0: true,
-		dark: [colorPaletteLen]string{
+		dark: [ColorPaletteLen]string{
 			"#5584aa", // overwritten by accent
 			"#c099ff",
 			"#7fc8a9",
@@ -46,7 +50,7 @@ var colorPaletteTable = []colorPaletteDef{
 			"#7dcfff",
 			"#ddd06e",
 		},
-		light: [colorPaletteLen]string{
+		light: [ColorPaletteLen]string{
 			"#2077b2", // overwritten by accent
 			"#7950b8",
 			"#237a58",
@@ -61,7 +65,7 @@ var colorPaletteTable = []colorPaletteDef{
 		id:          ColorPaletteVivid,
 		token:       "vivid",
 		accentSlot0: false,
-		dark: [colorPaletteLen]string{
+		dark: [ColorPaletteLen]string{
 			"#2f6ff5",
 			"#8a5ef8",
 			"#2eb8c9",
@@ -71,7 +75,7 @@ var colorPaletteTable = []colorPaletteDef{
 			"#e14844",
 			"#e8c23a",
 		},
-		light: [colorPaletteLen]string{
+		light: [ColorPaletteLen]string{
 			"#3474f6",
 			"#895df6",
 			"#2db6c7",
@@ -84,6 +88,17 @@ var colorPaletteTable = []colorPaletteDef{
 	},
 }
 
+func init() {
+	for i := range colorPaletteTable {
+		for j, hex := range colorPaletteTable[i].dark {
+			colorPaletteTable[i].darkColors[j] = mustHex(hex)
+		}
+		for j, hex := range colorPaletteTable[i].light {
+			colorPaletteTable[i].lightColors[j] = mustHex(hex)
+		}
+	}
+}
+
 // activeColorPalette is what Derive/Fallback resolve. Default classic. The shell
 // sets it from omairc.conf before the theme watcher loads.
 var activeColorPalette = ColorPaletteClassic
@@ -91,11 +106,8 @@ var activeColorPalette = ColorPaletteClassic
 // SetColorPalette selects the color palette for subsequent Derive/Fallback calls.
 // Unknown callers should prefer ParseColorPalette first.
 func SetColorPalette(id ColorPaletteID) {
-	if _, ok := colorPaletteDefFor(id); ok {
-		activeColorPalette = id
-		return
-	}
-	activeColorPalette = ColorPaletteClassic
+	_ = colorPaletteDefFor(id)
+	activeColorPalette = id
 }
 
 // ActiveColorPalette returns the palette Derive currently resolves.
@@ -116,38 +128,30 @@ func ParseColorPalette(token string) (ColorPaletteID, bool) {
 
 // Token returns the config token for id.
 func (id ColorPaletteID) Token() string {
-	if def, ok := colorPaletteDefFor(id); ok {
-		return def.token
-	}
-	return ColorPaletteClassic.Token()
+	return colorPaletteDefFor(id).token
 }
 
 // PaletteColors resolves the eight colors for id in the given mode. When the
 // definition marks slot 0 as accent-backed, accent replaces that slot.
 func PaletteColors(id ColorPaletteID, dark bool, accent color.Color) []color.Color {
-	def, ok := colorPaletteDefFor(id)
-	if !ok {
-		def, _ = colorPaletteDefFor(ColorPaletteClassic)
-	}
-	hexes := def.light
+	def := colorPaletteDefFor(id)
+	src := def.lightColors
 	if dark {
-		hexes = def.dark
+		src = def.darkColors
 	}
-	out := make([]color.Color, colorPaletteLen)
-	for i, hex := range hexes {
-		out[i] = mustHex(hex)
-	}
+	out := make([]color.Color, ColorPaletteLen)
+	copy(out, src[:])
 	if def.accentSlot0 {
 		out[0] = accent
 	}
 	return out
 }
 
-func colorPaletteDefFor(id ColorPaletteID) (colorPaletteDef, bool) {
+func colorPaletteDefFor(id ColorPaletteID) colorPaletteDef {
 	for _, row := range colorPaletteTable {
 		if row.id == id {
-			return row, true
+			return row
 		}
 	}
-	return colorPaletteDef{}, false
+	panic("every ColorPaletteID has a table row")
 }

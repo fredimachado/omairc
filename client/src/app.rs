@@ -9,7 +9,7 @@ use gpui::{
 };
 use crate::desktop::systemtheme::SystemAppearance;
 use crate::desktop::windowstate::{self, GeometryKeeper};
-use crate::model::{ColorPaletteId, Style, Theme, ThemeWatcher};
+use crate::model::{Style, Theme, ThemeWatcher};
 use crate::net::NetHub;
 use crate::storage::preferences::PreferenceStore;
 use crate::storage::{geometry, paths, Backing};
@@ -177,7 +177,7 @@ pub fn run() {
         let system = SystemAppearance::from_window(cx.window_appearance());
         cx.set_global(system);
         let theme = Theme::load(theme_path.as_deref(), system.dark).expect("theme load");
-        let color_palette = load_color_palette();
+        let color_palette = PreferenceStore::new(Backing::user()).color_palette();
         cx.set_global(OmaircStyleGlobal {
             style: Style::with_color_palette(theme, scale, color_palette),
         });
@@ -367,12 +367,6 @@ fn apply_portal_text_scale(
     });
     shell.update(cx, |_, cx| cx.notify());
     cx.refresh_windows();
-}
-
-fn load_color_palette() -> ColorPaletteId {
-    paths::settings_path()
-        .map(|path| PreferenceStore::new(Backing::Disk(path)).color_palette())
-        .unwrap_or_default()
 }
 
 fn refresh_theme(

@@ -339,8 +339,8 @@ func (m *Model) identityFooterLines(width int) []string {
 	nick := m.ctrl.CurrentNick()
 
 	chip := lipgloss.NewStyle().
-		Foreground(nickColor(nick)).
-		Background(avatarFill(nick)).
+		Foreground(m.styles.nickColor(nick)).
+		Background(m.styles.avatarFill(nick)).
 		Bold(true).
 		Render(initials(nick))
 
@@ -581,8 +581,8 @@ func (m *Model) avatarGlyph(row controller.ConversationSnapshot) string {
 // nickColor on an avatarFill background, followed by a separating space.
 func (m *Model) identiconGlyph(nick string) string {
 	return lipgloss.NewStyle().
-		Foreground(nickColor(nick)).
-		Background(avatarFill(nick)).
+		Foreground(m.styles.nickColor(nick)).
+		Background(m.styles.avatarFill(nick)).
 		Bold(true).
 		Render(initials(nick))
 }
