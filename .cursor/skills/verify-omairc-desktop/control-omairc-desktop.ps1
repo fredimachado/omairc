@@ -758,7 +758,11 @@ function Stop-AppPid {
     if ($ProcessId -le 0) { return }
     if (Test-ProcessAlive -ProcessId $ProcessId) {
         Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
-        Start-Sleep -Milliseconds 200
+        try {
+            Wait-Process -Id $ProcessId -Timeout 5 -ErrorAction SilentlyContinue
+        } catch {
+            # Already exited, or timed out while still locked; cleanup retries Remove-Item.
+        }
     }
 }
 
