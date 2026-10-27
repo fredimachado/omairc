@@ -132,11 +132,7 @@ impl Style {
     }
 
     pub fn nick_palette_index(&self, nick: &str) -> usize {
-        let mut hash = 0usize;
-        for ch in nick.chars() {
-            hash = (hash + ch as usize) % 8;
-        }
-        hash
+        nick_palette_index(nick)
     }
 
     pub fn nick_color(&self, nick: &str) -> Color {
@@ -161,6 +157,20 @@ impl Style {
     pub fn scaled(&self, px: f32) -> i32 {
         (px * self.text_scale).round().max(1.0) as i32
     }
+}
+
+/// FNV-1a (32-bit) over the nick's UTF-8 bytes, modulo the palette length.
+/// Shared with `nickPaletteIndex` in `tui/internal/ui/style.go`.
+fn nick_palette_index(nick: &str) -> usize {
+    const OFFSET: u32 = 2166136261;
+    const PRIME: u32 = 16777619;
+    const LEN: usize = 8;
+    let mut hash = OFFSET;
+    for byte in nick.as_bytes() {
+        hash ^= u32::from(*byte);
+        hash = hash.wrapping_mul(PRIME);
+    }
+    (hash as usize) % LEN
 }
 
 pub fn mix_colors(base: Color, tint: Color, amount: f32) -> Color {
@@ -221,7 +231,12 @@ mod tests {
         let style = Style::new(Theme::defaults_dark(), 1.0);
         assert_eq!(style.initials("fred"), "F");
         assert_eq!(style.initials(""), "?");
-        assert_eq!(style.nick_palette_index("aa"), 2);
+        assert_eq!(style.nick_palette_index("mira"), 6);
+        assert_ne!(
+            style.nick_palette_index("abc"),
+            style.nick_palette_index("cab"),
+            "anagrams must not share a palette slot"
+        );
     }
 
     #[test]
