@@ -137,8 +137,8 @@ if [ "$status" != "Accepted" ]; then
 fi
 
 echo "Stapling notarization ticket to $APP"
-xcrun stapler staple "$APP"
-xcrun stapler validate "$APP"
+"$ROOT/bin/retry-macos-stapler" staple "$APP"
+"$ROOT/bin/retry-macos-stapler" validate "$APP"
 zip_app
 if [ -n "${GITHUB_ENV:-}" ]; then
   echo "OMAIRC_NOTARIZED=1" >> "$GITHUB_ENV"

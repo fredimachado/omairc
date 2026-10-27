@@ -292,9 +292,10 @@ the portable test rebuild. Passwords use the macOS Keychain. Regenerate
 when the mark changes.
 CI imports a Developer ID certificate and signs with hardened runtime
 (`packaging/macos/Omairc.entitlements`; library validation stays on). Version
-tags and workflow_dispatch run `bin/notarize-macos` (`notarytool` + staple),
-then `stapler validate`, `syspolicy_check distribution`, and
-`spctl --assess --type execute --verbose=4`. Pull requests sign only and run
+tags and workflow_dispatch run `bin/notarize-macos` (`notarytool`, then
+`bin/retry-macos-stapler` for staple and validate), then
+`syspolicy_check distribution`, and `spctl --assess --type execute --verbose=4`.
+Pull requests sign only and run
 `syspolicy_check notary-submission`: Apple often holds the first Developer ID
 uploads In Progress for hours. Tag releases fail if the signing secrets are
 missing or Gatekeeper rejects the stapled app. Local `bin/build-macos-rust`
