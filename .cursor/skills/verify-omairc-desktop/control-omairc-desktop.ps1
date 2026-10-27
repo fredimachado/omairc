@@ -1676,7 +1676,9 @@ function Invoke-Run {
                 if (Test-LaunchShouldSkip -LaunchArgs $tokens) { continue }
             }
             if ($tokens[0] -eq 'screenshot') {
-                $path = Invoke-Screenshot -ShotArgs $tokens[1..($tokens.Count - 1)]
+                $shotArgs = @()
+                if ($tokens.Count -gt 1) { $shotArgs = $tokens[1..($tokens.Count - 1)] }
+                $path = Invoke-Screenshot -ShotArgs $shotArgs
                 if (-not $path) { Die 'screenshot printed an empty path' }
                 $path = [string](@($path) | Select-Object -Last 1)
                 if (-not (Test-Path -LiteralPath $path) -or (Get-Item -LiteralPath $path).Length -le 0) {
