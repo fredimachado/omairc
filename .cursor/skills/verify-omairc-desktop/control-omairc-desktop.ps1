@@ -842,8 +842,7 @@ function Invoke-Launch {
     $lad = Join-Path $stateDir 'lad'
     $appFolder = Resolve-OmaircAppFolderFromFeatures
     $confDir = Join-Path $lad $appFolder
-    $logDir = Join-Path $stateDir 'logs'
-    New-Item -ItemType Directory -Force -Path $confDir, $logDir, $Script:EVIDENCE_DIR | Out-Null
+    New-Item -ItemType Directory -Force -Path $confDir, $Script:EVIDENCE_DIR | Out-Null
 
     # Seed geometry before launch. Off-screen X is often clamped by Windows;
     # SetClientSizeLogical after map is authoritative (brief on-screen flash OK).
