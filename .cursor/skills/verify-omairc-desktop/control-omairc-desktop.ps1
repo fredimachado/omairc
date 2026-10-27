@@ -457,6 +457,27 @@ public static class OmaircDriver {
 }
 '@
 
+function Get-OmaircAppFolder {
+    # product (default) uses omairc; --features dev uses omairc-dev.
+    foreach ($part in ($Script:DESKTOP_FEATURES -split '[,\s]+')) {
+        if ($part.Trim() -eq 'dev') { return 'omairc-dev' }
+    }
+    return 'omairc'
+}
+
+function Parse-InvariantDouble {
+    param([string]$Token)
+    $value = 0.0
+    $ok = [double]::TryParse(
+        $Token,
+        [System.Globalization.NumberStyles]::Float,
+        [System.Globalization.CultureInfo]::InvariantCulture,
+        [ref]$value
+    )
+    if ($ok) { return $value }
+    return $null
+}
+
 function Ensure-OmaircDriver {
     if ([type]::GetType('OmaircDriver', $false)) { return }
     if (-not (Test-Path -LiteralPath $Script:STATE_ROOT)) {
@@ -469,11 +490,25 @@ function Ensure-OmaircDriver {
     } finally {
         $sha.Dispose()
     }
-    $dll = Join-Path $Script:STATE_ROOT ("OmaircDesktopDriver-" + $hash + ".dll")
+    # pwsh and Windows PowerShell 5.1 emit incompatible assemblies; key the
+    # cache by edition + CLR version so Add-Type -Path does not load the wrong one.
+    $edition = if ($PSVersionTable.ContainsKey('PSEdition') -and $PSVersionTable.PSEdition) {
+        [string]$PSVersionTable.PSEdition
+    } else {
+        'Desktop'
+    }
+    $runtime = [Environment]::Version.ToString()
+    $dll = Join-Path $Script:STATE_ROOT ("OmaircDesktopDriver-$hash-$edition-$runtime.dll")
     if (-not (Test-Path -LiteralPath $dll)) {
         Add-Type -TypeDefinition $Script:OmaircDriverSource -OutputAssembly $dll -ErrorAction Stop
     }
-    Add-Type -Path $dll -ErrorAction Stop
+    try {
+        Add-Type -Path $dll -ErrorAction Stop
+    } catch {
+        Remove-Item -LiteralPath $dll -Force -ErrorAction SilentlyContinue
+        Add-Type -TypeDefinition $Script:OmaircDriverSource -OutputAssembly $dll -ErrorAction Stop
+        Add-Type -Path $dll -ErrorAction Stop
+    }
 }
 
 function Die {
@@ -552,10 +587,11 @@ function Delay-JumpField {
 
 function Dump-OmaircLogs {
     param([string]$StateDir, [string]$LogPath)
+    $appFolder = Get-OmaircAppFolder
     $candidates = @(
         $LogPath
-        (Join-Path $StateDir 'lad\State\omairc\omairc.log')
-        (Join-Path $StateDir 'lad\omairc\omairc.log')
+        (Join-Path $StateDir "lad\State\$appFolder\omairc.log")
+        (Join-Path $StateDir "lad\$appFolder\omairc.log")
     )
     foreach ($path in $candidates) {
         if ($path -and (Test-Path -LiteralPath $path) -and (Get-Item -LiteralPath $path).Length -gt 0) {
@@ -726,6 +762,8 @@ function Test-DoctorHealthy {
         if ($obj.LOCALAPPDATA) { $lad = [string]$obj.LOCALAPPDATA }
         elseif ($obj.STATE_DIR) { $lad = Join-Path ([string]$obj.STATE_DIR) 'lad' }
         if (-not $lad -or -not (Test-Path -LiteralPath $lad)) { return $false }
+        $appFolder = Get-OmaircAppFolder
+        if (-not (Test-Path -LiteralPath (Join-Path $lad $appFolder))) { return $false }
         return $true
     } catch {
         return $false
@@ -783,7 +821,8 @@ function Invoke-Launch {
     if (-not (Test-Path -LiteralPath $binary)) { Die "missing $binary after cargo build ($($Script:DESKTOP_PROFILE))" }
 
     $lad = Join-Path $stateDir 'lad'
-    $confDir = Join-Path $lad 'omairc'
+    $appFolder = Get-OmaircAppFolder
+    $confDir = Join-Path $lad $appFolder
     $logDir = Join-Path $stateDir 'logs'
     New-Item -ItemType Directory -Force -Path $confDir, $logDir, $Script:EVIDENCE_DIR | Out-Null
 
@@ -908,6 +947,11 @@ function Invoke-Doctor {
     }
     if (-not $Script:LOCALAPPDATA_OVERRIDE -or -not (Test-Path -LiteralPath $Script:LOCALAPPDATA_OVERRIDE)) {
         Die "LOCALAPPDATA override missing: $($Script:LOCALAPPDATA_OVERRIDE)"
+    }
+    $appFolder = Get-OmaircAppFolder
+    $appConf = Join-Path $Script:LOCALAPPDATA_OVERRIDE $appFolder
+    if (-not (Test-Path -LiteralPath $appConf)) {
+        Die "app folder missing under LOCALAPPDATA: $appConf"
     }
     $placement = if ([int]$Script:VISIBLE -eq 1) { 'onscreen' } else { 'offscreen' }
     Write-Output 'ok isolated Omairc'
@@ -1255,12 +1299,15 @@ function Test-ScreenshotNearSolid {
     $parts = $stats.Trim() -split '\s+'
     $stdToken = $parts[0]
     $colors = 0.0
-    if ($parts.Count -gt 1) { [void][double]::TryParse($parts[1], [ref]$colors) }
+    if ($parts.Count -gt 1) {
+        $parsedColors = Parse-InvariantDouble -Token $parts[1]
+        if ($null -ne $parsedColors) { $colors = [double]$parsedColors }
+    }
     $token = $stdToken.Trim().ToLowerInvariant() -replace '^[+-]', ''
     if ($token -match '^(nan|inf)') { return $true }
-    $std = 0.0
-    if (-not [double]::TryParse($stdToken, [ref]$std)) { return $true }
-    if ([double]::IsNaN($std) -or $std -lt [double]$Script:SCREENSHOT_FLAT_STDDEV -or $colors -lt [double]$Script:SCREENSHOT_FLAT_COLORS) {
+    $std = Parse-InvariantDouble -Token $stdToken
+    if ($null -eq $std) { return $true }
+    if ([double]::IsNaN([double]$std) -or [double]$std -lt [double]$Script:SCREENSHOT_FLAT_STDDEV -or $colors -lt [double]$Script:SCREENSHOT_FLAT_COLORS) {
         return $true
     }
     return $false
@@ -1343,8 +1390,8 @@ function Invoke-Compare {
         $difference = [string]$_
     }
     $aeToken = ($difference.Trim() -split '\s+')[0]
-    $ae = 0.0
-    [void][double]::TryParse($aeToken, [ref]$ae)
+    $parsedAe = Parse-InvariantDouble -Token $aeToken
+    $ae = if ($null -ne $parsedAe) { [double]$parsedAe } else { 0.0 }
     if (-not ($ae -gt 100)) {
         Die "expected a visible UI change between $before and $after (AE=$($difference.Trim()))"
     }
