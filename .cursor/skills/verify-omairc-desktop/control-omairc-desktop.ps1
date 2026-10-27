@@ -528,7 +528,7 @@ function Parse-InvariantDouble {
 }
 
 function Ensure-OmaircDriver {
-    if ([type]::GetType('OmaircDriver', $false)) { return }
+    if ('OmaircDriver' -as [type]) { return }
     if (-not (Test-Path -LiteralPath $Script:STATE_ROOT)) {
         New-Item -ItemType Directory -Force -Path $Script:STATE_ROOT | Out-Null
     }
