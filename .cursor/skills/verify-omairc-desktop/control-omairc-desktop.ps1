@@ -141,6 +141,9 @@ public static class OmaircDriver {
   public static readonly IntPtr DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = new IntPtr(-4);
 
   [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+  [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr dpiContext);
+  [DllImport("user32.dll")] public static extern IntPtr GetThreadDpiAwarenessContext();
+  [DllImport("user32.dll")] public static extern bool AreDpiAwarenessContextsEqual(IntPtr a, IntPtr b);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hWnd);
@@ -213,7 +216,24 @@ public static class OmaircDriver {
   }
 
   static OmaircDriver() {
-    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    // Process-wide first. Host manifests / earlier calls can refuse that; then
+    // pin the calling thread so GetWindowRect/GetClientRect match GetDpiForWindow.
+    if (!SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)) {
+      IntPtr prev = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+      if (prev == IntPtr.Zero) {
+        throw new InvalidOperationException(
+          "SetProcessDpiAwarenessContext and SetThreadDpiAwarenessContext failed for PER_MONITOR_AWARE_V2");
+      }
+    }
+    IntPtr cur = GetThreadDpiAwarenessContext();
+    if (!AreDpiAwarenessContextsEqual(cur, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)) {
+      IntPtr prev = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+      if (prev == IntPtr.Zero &&
+          !AreDpiAwarenessContextsEqual(GetThreadDpiAwarenessContext(), DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)) {
+        throw new InvalidOperationException(
+          "thread DPI awareness is not PER_MONITOR_AWARE_V2; clicks and resize would mis-scale");
+      }
+    }
   }
 
   public static int VirtualLeft() { return GetSystemMetrics(SM_XVIRTUALSCREEN); }
@@ -393,6 +413,9 @@ public static class OmaircDriver {
     SetKeyboardState(state);
     uint scan = MapVirtualKey(vk, 0);
     uint lpDown = 1u | (scan << 16);
+    // MapVirtualKey(vk, 0) returns numpad scan codes for arrows/nav; set the
+    // extended-key bit so handlers see cursor keys, not keypad 2/4/6/8.
+    if (IsExtendedVk(vk)) lpDown |= 1u << 24;
     if (alt) lpDown |= 1u << 29;
     uint lpUp = lpDown | (1u << 30) | (1u << 31);
     int downMsg = alt ? WM_SYSKEYDOWN : WM_KEYDOWN;
