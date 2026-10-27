@@ -1,6 +1,6 @@
 ---
 name: verify-omairc-desktop
-description: Drive the Omairc Rust GPUI product client as a user would (isolated Xvfb + compiled binary). Use when proving the seeded demo shell, window title, conversation switching, Status console, composer, or keyboard chords against client/target/*/omairc.
+description: Drive the Omairc Rust GPUI product client as a user would (isolated Xvfb on Linux, or control-omairc-desktop.ps1 on Windows, against the compiled binary). Use when proving the seeded demo shell, window title, conversation switching, Status console, composer, or keyboard chords against client/target/*/omairc(.exe).
 metadata:
   internal: true
 ---
@@ -117,6 +117,52 @@ On Arch/Omarchy, install lavapipe with `vulkan-swrast` when doctor reports it
 missing. Without it the process panics on `Failed to create surface` under
 Xvfb.
 
+## Windows
+
+On Windows, use the PowerShell driver (pwsh preferred; Windows PowerShell 5.1
+also works). There is no private display: the client runs on the same session
+and desktop as the agent, with a disposable `LOCALAPPDATA` tree.
+
+```powershell
+pwsh .cursor/skills/verify-omairc-desktop/control-omairc-desktop.ps1 launch --demo-server
+```
+
+Isolation for that launch:
+
+- overrides `LOCALAPPDATA` under a temp state directory (seeded
+  `[migration] qtRegistryImported=true` so Connect geometry is controlled)
+- sets `OMAIRC_ALLOW_MULTI=1` so the isolated window does not take the user
+  named pipe
+- sets `OMAIRC_SKIP_NOTIFICATIONS=1`
+- default placement is off-screen with the taskbar button hidden; the process
+  still shares the interactive desktop
+
+**Agents always use the default (hidden).** Do not pass `--visible` from a
+recipe or an agent drive. That flag is only for a human who wants to watch: it
+centers the window on the primary work area. Never put `--visible` in
+`desktop-recipe` fences.
+
+At launch the driver briefly activates the window (so demo attention titles do
+not stick), then restores the caller's foreground. Windows often clamps the
+seeded off-screen geometry, so a short on-screen flash before off-screen
+placement is expected.
+
+`doctor` on Windows reports `ok isolated Omairc`, `binary=`, `app_pid=`,
+`window=`, `title=`, `localappdata=`, `evidence=`, `demo=`, `visible=`, and
+`placement=` (`offscreen` or `onscreen`). It does not report `display=`,
+`xserver=`, or `lavapipe=`.
+
+Requirements: `pwsh` (or Windows PowerShell 5.1), ImageMagick `magick` on
+`PATH`, and a cargo/MSVC toolchain for `launch`.
+
+Replay every feature with a `desktop-recipe` fence:
+
+```powershell
+pwsh bin\verify-desktop-recipes.ps1
+```
+
+Evidence stays in `test-artifacts/verify-desktop/`. Cleanup does not remove it.
+
 ## Drive
 
 Use `control-omairc-desktop` against the isolated window. Shortcuts and the
@@ -127,8 +173,9 @@ raw `key --key` chords. `run <feature>` plays the same
 `## Driving it with control-omairc` / `desktop-recipe` fence in
 `.cursor/skills/verify-omairc/features/<feature>.md` that the TUI uses.
 `run <feature> --dry-run` prints the fence and exits without launching.
-`bin/verify-desktop-recipes` runs every feature with a `desktop-recipe` fence
-under Xvfb + lavapipe and keeps evidence in `test-artifacts/verify-desktop/`.
+`bin/verify-desktop-recipes` (Linux) and `bin/verify-desktop-recipes.ps1`
+(Windows) run every feature with a `desktop-recipe` fence and keep evidence
+in `test-artifacts/verify-desktop/`.
 
 `run` skips a fence `launch` when `doctor` is already healthy and the demo
 flag matches. A healthy instance in the other mode is an error. Any command
