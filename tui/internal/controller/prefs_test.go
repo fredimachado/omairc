@@ -11,6 +11,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/irc"
 	"github.com/fredimachado/omairc/tui/internal/session"
 	"github.com/fredimachado/omairc/tui/internal/storage"
+	"github.com/fredimachado/omairc/tui/internal/theme"
 )
 
 // This file.
@@ -52,6 +53,35 @@ func TestSetReopenDirectsPersistsAndReloads(t *testing.T) {
 	if !fresh.ShowAvatars() || !fresh.OpenAtUnread() {
 		t.Fatalf("fresh siblings = avatars:%v unread:%v, want true",
 			fresh.ShowAvatars(), fresh.OpenAtUnread())
+	}
+}
+
+func TestSetColorPalettePersistsAndReloads(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	prev := theme.ActiveColorPalette()
+	t.Cleanup(func() { theme.SetColorPalette(prev) })
+
+	c := New()
+	c.SetEphemeral(false)
+	c.LoadStoredPreferences()
+	if c.ColorPalette() != irc.ColorPaletteClassic {
+		t.Fatalf("default ColorPalette = %v, want classic", c.ColorPalette())
+	}
+	c.SetColorPalette(irc.ColorPaletteVivid)
+
+	settings := storage.OpenSettings("")
+	if got := settings.Value(preferencesGroup, colorPaletteKey); got != "vivid" {
+		t.Fatalf("%s = %q, want vivid", colorPaletteKey, got)
+	}
+	if theme.ActiveColorPalette() != theme.ColorPaletteVivid {
+		t.Fatalf("theme.ActiveColorPalette = %v, want vivid", theme.ActiveColorPalette())
+	}
+
+	fresh := New()
+	fresh.SetEphemeral(false)
+	fresh.LoadStoredPreferences()
+	if fresh.ColorPalette() != irc.ColorPaletteVivid {
+		t.Fatalf("fresh ColorPalette = %v, want vivid", fresh.ColorPalette())
 	}
 }
 

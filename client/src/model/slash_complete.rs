@@ -193,7 +193,7 @@ mod tests {
         session.sync("/pref ", Conversation, false);
         assert_eq!(session.selected(), 0);
         session.move_selection(-1);
-        assert_eq!(session.selected(), 4);
+        assert_eq!(session.selected(), 5);
         session.move_selection(1);
         assert_eq!(session.selected(), 0);
         session.move_selection(1);
@@ -206,7 +206,7 @@ mod tests {
         let mut session = SlashSession::new();
         session.sync("/pref ", Conversation, false);
         session.select(99);
-        assert_eq!(session.selected(), 4);
+        assert_eq!(session.selected(), 5);
         assert_eq!(
             session.activate(1, "/pref ").as_deref(),
             Some("/pref avatars ")

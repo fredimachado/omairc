@@ -103,6 +103,8 @@ type CommandHost interface {
 	PrefApply(name irc.PrefName, enabled bool)
 	MembershipNoise() irc.MembershipNoise
 	SetMembershipNoise(noise irc.MembershipNoise)
+	ColorPalette() irc.ColorPaletteID
+	SetColorPalette(id irc.ColorPaletteID)
 
 	MarkChannelLeft(networkID, channel string)
 	CloseSelected() bool
@@ -964,7 +966,7 @@ func (d *CommandDispatcher) dispatchPref(command irc.Command, surface irc.Compos
 		case irc.PrefJoins:
 			d.host.SetMembershipNoise(request.Noise)
 		case irc.PrefPalette:
-			// Live apply and persistence land in slice 2.
+			d.host.SetColorPalette(request.Palette)
 		default:
 			d.host.PrefApply(request.Name, request.Enabled)
 		}
@@ -976,17 +978,13 @@ func (d *CommandDispatcher) dispatchPref(command irc.Command, surface irc.Compos
 			d.host.PrefEnabled(irc.PrefAvatars),
 			d.host.PrefEnabled(irc.PrefUnread),
 			d.host.MembershipNoise(),
-			irc.ColorPaletteClassic))
+			d.host.ColorPalette()))
 	}
 	if request.Name == irc.PrefJoins {
 		return d.echoPrefFeedback(surface, irc.FormatPrefNoise(d.host.MembershipNoise()))
 	}
 	if request.Name == irc.PrefPalette {
-		palette := irc.ColorPaletteClassic
-		if request.Kind == irc.PrefSet {
-			palette = request.Palette
-		}
-		return d.echoPrefFeedback(surface, irc.FormatPrefPalette(palette))
+		return d.echoPrefFeedback(surface, irc.FormatPrefPalette(d.host.ColorPalette()))
 	}
 	if request.Kind == irc.PrefQueryOne {
 		return d.echoPrefFeedback(surface,

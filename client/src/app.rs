@@ -177,7 +177,7 @@ pub fn run() {
         let system = SystemAppearance::from_window(cx.window_appearance());
         cx.set_global(system);
         let theme = Theme::load(theme_path.as_deref(), system.dark).expect("theme load");
-        let color_palette = PreferenceStore::new(Backing::user()).color_palette();
+        let color_palette = PreferenceStore::new(Backing::user()).preferences().palette;
         cx.set_global(OmaircStyleGlobal {
             style: Style::with_color_palette(theme, scale, color_palette),
         });

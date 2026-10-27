@@ -137,12 +137,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	// Color palette from [preferences] colorPalette=… (classic default). Set
-	// before ui.New so resolveNickPalette / Fallback carry the chosen set, and
-	// before the theme watcher so Derive does too.
-	if id, ok := theme.ParseColorPalette(storage.OpenSettings("").Value("preferences", "colorPalette")); ok {
-		theme.SetColorPalette(id)
-	}
+	// LoadStoredPreferences already selected colorPalette for theme.Derive /
+	// Fallback (classic default). Keep that before ui.New so resolveNickPalette
+	// and the theme watcher see the same set.
+	theme.SetColorPalette(c.ColorPalette())
 
 	// Controller and connection callbacks fire both from the Bubble Tea
 	// goroutine (inside Update) and from session goroutines. p.Send blocks on

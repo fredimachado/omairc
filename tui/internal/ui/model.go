@@ -384,15 +384,12 @@ func (m *Model) SetThemeWatcher(w *theme.Watcher) {
 	}
 }
 
-// rebuildStyles swaps structural styles from colors while keeping the fixed
-// nick hue set. Nick colors never move with the live theme.
+// rebuildStyles swaps structural styles from colors and re-resolves the nick
+// hue set from the active color palette. resolveNickPalette always uses the
+// fixed dark fallback accent, so a live Omarchy theme swap does not move nicks.
 func (m *Model) rebuildStyles(colors theme.Colors) {
-	nick := m.styles.NickPalette
 	s := buildStyles(colors)
-	if len(nick) == 0 {
-		nick = resolveNickPalette()
-	}
-	s.NickPalette = nick
+	s.NickPalette = resolveNickPalette()
 	m.applyStyles(s)
 }
 
@@ -595,6 +592,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case NotifyMsg:
+		// /pref palette publishes a wake-up after theme.SetColorPalette; pull
+		// the new nick hues without waiting for an Omarchy ThemeChangedMsg.
+		m.styles.NickPalette = resolveNickPalette()
 		m.ensureAvatars()
 		// A controller-driven selection, including the autojoin that claims
 		// the first channel, does not pass through switchSelection. Move the

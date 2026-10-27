@@ -9,6 +9,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/irc"
 	"github.com/fredimachado/omairc/tui/internal/session"
 	"github.com/fredimachado/omairc/tui/internal/storage"
+	"github.com/fredimachado/omairc/tui/internal/theme"
 )
 
 // Controller is the Go.
@@ -61,6 +62,7 @@ type Controller struct {
 	avatars         *AvatarStore
 	prefs           *Preferences
 	membershipNoise irc.MembershipNoise
+	colorPalette    irc.ColorPaletteID
 
 	// Persistence. New starts ephemeral so unit tests never touch the
 	// user's config; the shell opts in with SetEphemeral(false) and then loads
@@ -219,6 +221,7 @@ const (
 	loadPeerAvatarsKey           = "loadPeerAvatars"
 	openConversationsAtUnreadKey = "openConversationsAtUnread"
 	membershipNoiseKey           = "membershipNoise"
+	colorPaletteKey              = "colorPalette"
 	networkOrderKey              = "networkOrder"
 	collapsedNetworksKey         = "collapsedNetworks"
 	autoawayEnabledKey           = "autoawayEnabled"
@@ -286,6 +289,10 @@ func (c *Controller) LoadStoredPreferences() {
 		c.membershipNoise = noise
 	}
 	c.reducer.SetMembershipNoise(c.membershipNoise)
+	if id, ok := irc.ParseColorPalette(settings.Value(preferencesGroup, colorPaletteKey)); ok {
+		c.colorPalette = id
+	}
+	theme.SetColorPalette(c.colorPalette)
 	c.loadStoredNetworkOrder(settings)
 	c.autoaway.LoadStored()
 }
@@ -413,6 +420,30 @@ func (c *Controller) SetMembershipNoise(noise irc.MembershipNoise) {
 	if !c.ephemeral {
 		savePreferenceValue(membershipNoiseKey, irc.MembershipNoiseToken(noise))
 	}
+}
+
+// ColorPalette reports the nick and network-icon color set.
+func (c *Controller) ColorPalette() irc.ColorPaletteID {
+	return c.colorPalette
+}
+
+// SetColorPalette stores the color-palette setting, persists it unless
+// ephemeral, and selects it for theme.Derive / Fallback. The shell refreshes
+// Styles.NickPalette on the next view wake-up.
+func (c *Controller) SetColorPalette(id irc.ColorPaletteID) {
+	if c.colorPalette == id {
+		return
+	}
+	c.colorPalette = id
+	theme.SetColorPalette(id)
+	if !c.ephemeral {
+		savePreferenceValue(colorPaletteKey, irc.ColorPaletteToken(id))
+	}
+	c.Publish(irc.ViewNotify{
+		Conversations: true,
+		Messages:      true,
+		Members:       irc.MemberSurfaceReset,
+	})
 }
 
 // PrefApply maps one /pref toggle to its setter. The Rust `/pref` write path

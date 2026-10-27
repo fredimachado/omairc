@@ -8,8 +8,9 @@ import (
 )
 
 // TestConfiguredPaletteReachesNickColors proves the configured colorPalette
-// reaches Styles.NickPalette, classic slot 0 stays #7aa2f7, and a live theme
-// swap (accent + light mode) does not move nick hues.
+// reaches Styles.NickPalette, classic slot 0 stays #7aa2f7, a live theme
+// swap (accent + light mode) does not move nick hues, and NotifyMsg picks up
+// a later SetColorPalette without an Omarchy theme change.
 func TestConfiguredPaletteReachesNickColors(t *testing.T) {
 	prev := theme.ActiveColorPalette()
 	t.Cleanup(func() { theme.SetColorPalette(prev) })
@@ -51,5 +52,16 @@ func TestConfiguredPaletteReachesNickColors(t *testing.T) {
 	}
 	if got := theme.Hex(classic.styles.NickPalette[0]); got != "#7aa2f7" {
 		t.Fatalf("classic NickPalette[0] after SetTheme = %s, want #7aa2f7", got)
+	}
+
+	theme.SetColorPalette(theme.ColorPaletteVivid)
+	updated, _ := classic.Update(NotifyMsg{})
+	got := updated.(*Model)
+	if hex := theme.Hex(got.styles.NickPalette[0]); hex == "#7aa2f7" {
+		t.Fatalf("NotifyMsg left classic NickPalette[0] after vivid SetColorPalette")
+	}
+	wantVividSlot0 := theme.Hex(theme.PaletteColors(theme.ColorPaletteVivid, true, theme.Fallback().Accent)[0])
+	if got := theme.Hex(got.styles.NickPalette[0]); got != wantVividSlot0 {
+		t.Fatalf("NotifyMsg NickPalette[0] = %s, want %s", got, wantVividSlot0)
 	}
 }

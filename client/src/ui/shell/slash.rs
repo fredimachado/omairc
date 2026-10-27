@@ -6,12 +6,14 @@
 //! shell repaints from the surfaces the controller raises. The slash-complete popup's
 //! state and keys live here too, since they edit the same line.
 
-use gpui::{App, Context, Window};
+use gpui::{App, BorrowAppContext, Context, Window};
 
 use crate::model::chords::Chord;
 use crate::model::prefs::Preferences;
 use crate::model::slash::{parse, Command, Surface};
+use crate::model::Style;
 use crate::ui::shell::Shell;
+use crate::util::OmaircStyleGlobal;
 
 impl Shell {
     /// The surface the composer types into: Status while it shows, else the conversation.
@@ -160,8 +162,8 @@ impl Shell {
     }
 
     /// Redraws what a changed preference touches: the avatars and mIRC colors in the
-    /// transcript, and the view when the membership noise changed, since its lines fold
-    /// at read time. The header re-reads prefs each frame.
+    /// transcript, the nick/network palette, and the view when the membership noise
+    /// changed, since its lines fold at read time. The header re-reads prefs each frame.
     pub fn apply_preference_changes(&mut self, before: Preferences, cx: &mut Context<Self>) {
         let after = *self.controller.preferences();
         if after.avatars != before.avatars {
@@ -177,6 +179,19 @@ impl Shell {
                 t.set_colors(colors);
                 cx.notify();
             });
+        }
+        if after.palette != before.palette {
+            let palette = after.palette;
+            cx.update_global::<OmaircStyleGlobal, _>(|global, _| {
+                let theme = global.style.theme.clone();
+                let scale = global.style.text_scale;
+                global.style = Style::with_color_palette(theme, scale, palette);
+            });
+            self.transcript.update(cx, |t, cx| {
+                t.invalidate_all();
+                cx.notify();
+            });
+            cx.notify();
         }
         if after.joins != before.joins {
             self.rebuild_view_keeping_place(cx);

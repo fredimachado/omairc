@@ -51,22 +51,14 @@ impl PreferenceStore {
             colors: settings.bool_value(PREFERENCES_GROUP, SHOW_IRC_COLORS_KEY, defaults.colors),
             joins: MembershipNoise::from_token(&settings.value(PREFERENCES_GROUP, MEMBERSHIP_NOISE_KEY))
                 .unwrap_or(defaults.joins),
-            // Loaded here so `/pref` queries match disk; `/pref palette` writes land in slice 2.
             palette: ColorPaletteId::from_token(&settings.value(PREFERENCES_GROUP, COLOR_PALETTE_KEY))
                 .unwrap_or(defaults.palette),
         }
     }
 
-    /// The color palette for nicks and network icons. Missing or unknown
-    /// values use classic.
+    /// The color palette for nicks and network icons (`preferences().palette`).
     pub fn color_palette(&self) -> ColorPaletteId {
-        ColorPaletteId::from_token(
-            &self
-                .backing
-                .settings()
-                .value(PREFERENCES_GROUP, COLOR_PALETTE_KEY),
-        )
-        .unwrap_or_default()
+        self.preferences().palette
     }
 
     /// Writes every `/pref` value. A malformed or unwritable file is left alone.
@@ -77,6 +69,7 @@ impl PreferenceStore {
             settings.set_bool(PREFERENCES_GROUP, OPEN_AT_UNREAD_KEY, prefs.unread);
             settings.set_bool(PREFERENCES_GROUP, SHOW_IRC_COLORS_KEY, prefs.colors);
             settings.set_value(PREFERENCES_GROUP, MEMBERSHIP_NOISE_KEY, prefs.joins.token());
+            settings.set_value(PREFERENCES_GROUP, COLOR_PALETTE_KEY, prefs.palette.token());
         })
     }
 
@@ -175,16 +168,19 @@ mod tests {
             directs: false,
             colors: false,
             joins: MembershipNoise::Every,
+            palette: ColorPaletteId::Vivid,
             ..Default::default()
         };
         assert_eq!(store.save_preferences(&prefs), Status::Written);
         assert_eq!(store.preferences(), prefs);
+        assert_eq!(store.color_palette(), ColorPaletteId::Vivid);
 
         let text = std::fs::read_to_string(dir.path().join("omairc.conf")).expect("written");
         assert!(text.contains("[preferences]"), "{text}");
         assert!(text.contains("reopenDirectMessages=false"), "{text}");
         assert!(text.contains("showIrcColors=false"), "{text}");
         assert!(text.contains("membershipNoise=every"), "{text}");
+        assert!(text.contains("colorPalette=vivid"), "{text}");
     }
 
     #[test]
