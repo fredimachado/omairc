@@ -716,7 +716,7 @@ function Stop-AppPid {
         try {
             Wait-Process -Id $ProcessId -Timeout 5 -ErrorAction SilentlyContinue
         } catch {
-            # Already exited, or timed out while still locked; cleanup retries Remove-Item.
+            # Already exited, or still winding down after the wait timeout.
         }
     }
 }
@@ -894,7 +894,7 @@ maximized=false
             if (Test-Path -LiteralPath $stateDir) {
                 Remove-Item -LiteralPath $stateDir -Recurse -Force -ErrorAction SilentlyContinue
             }
-            Die "Omairc did not open; see isolated LOCALAPPDATA State log under $stateDir"
+            Die 'Omairc did not open; see log dump above'
         }
         $hwnd = [OmaircDriver]::FindWindow($appPid)
         if ($hwnd -ne [IntPtr]::Zero) { break }
@@ -905,7 +905,7 @@ maximized=false
         if (Test-Path -LiteralPath $stateDir) {
             Remove-Item -LiteralPath $stateDir -Recurse -Force -ErrorAction SilentlyContinue
         }
-        Die "Omairc did not open; see isolated LOCALAPPDATA State log under $stateDir"
+        Die 'Omairc did not open; see log dump above'
     }
 
     # Match the sh driver's post-map windowfocus: keep the window active while
