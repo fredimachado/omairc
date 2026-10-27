@@ -725,10 +725,17 @@ function Invoke-ClickXy {
 
 function Build-EnvBlock {
     param([hashtable]$Overrides)
+    # Strip path overrides that paths.rs prefers over LOCALAPPDATA, so a
+    # developer's shell cannot leak the recipe client into a real profile.
+    $strip = @{
+        'OMAIRC_DEV_HOME'         = $true
+        'OMAIRC_TRANSCRIPT_ROOT'  = $true
+    }
     $pairs = New-Object System.Collections.Generic.List[string]
     foreach ($entry in [System.Environment]::GetEnvironmentVariables().GetEnumerator()) {
         $key = [string]$entry.Key
         if ($Overrides.ContainsKey($key)) { continue }
+        if ($strip.ContainsKey($key)) { continue }
         $pairs.Add($key + '=' + [string]$entry.Value)
     }
     foreach ($key in $Overrides.Keys) {
