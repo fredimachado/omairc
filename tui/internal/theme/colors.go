@@ -53,7 +53,6 @@ type Colors struct {
 	Mention       color.Color
 	Unread        color.Color
 	Page          color.Color
-	Palette       []color.Color
 	NickAvatarMix float64
 }
 
@@ -102,14 +101,13 @@ func Derive(spec Spec) Colors {
 
 	// In dark mode the foreground is lighter than the background, so mixing
 	// toward it lightens; in light mode it darkens. The identicon mix amount is
-	// likewise mode-specific (0.23 dark / 0.16 light). Nick and network icon
-	// hues come from the active color palette (classic by default; vivid and
-	// others via config).
+	// likewise mode-specific (0.23 dark / 0.16 light). Nick hues are not
+	// derived here: the UI resolves them from the controller's ColorPaletteID
+	// via PaletteColors and FixedAccent.
 	nickAvatarMix := 0.16
 	if dark {
 		nickAvatarMix = 0.23
 	}
-	palette := PaletteColors(activeColorPalette, dark, accent)
 
 	return Colors{
 		Background:    background,
@@ -139,7 +137,6 @@ func Derive(spec Spec) Colors {
 		Mention:       fixedMention,
 		Unread:        fixedUnread,
 		Page:          fixedPage,
-		Palette:       palette,
 		NickAvatarMix: nickAvatarMix,
 	}
 }
@@ -296,6 +293,13 @@ var (
 	colorWhite = color.RGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
 	colorBlack = color.RGBA{A: 0xff}
 )
+
+// FixedAccent is the Tokyo-Night accent (#7aa2f7) used for classic nick slot 0
+// when the TUI resolves the configured color palette. It does not follow the
+// live Omarchy theme.
+func FixedAccent() color.Color {
+	return fixedAccent
+}
 
 // Qt's fallback colors from Backend::loadOmarchyTheme, used when colors.toml
 // omits a key or no theme is installed.

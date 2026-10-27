@@ -9,7 +9,6 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/irc"
 	"github.com/fredimachado/omairc/tui/internal/session"
 	"github.com/fredimachado/omairc/tui/internal/storage"
-	"github.com/fredimachado/omairc/tui/internal/theme"
 )
 
 // Controller is the Go.
@@ -292,7 +291,6 @@ func (c *Controller) LoadStoredPreferences() {
 	if id, ok := irc.ParseColorPalette(settings.Value(preferencesGroup, colorPaletteKey)); ok {
 		c.colorPalette = id
 	}
-	theme.SetColorPalette(c.colorPalette)
 	c.loadStoredNetworkOrder(settings)
 	c.autoaway.LoadStored()
 }
@@ -427,15 +425,13 @@ func (c *Controller) ColorPalette() irc.ColorPaletteID {
 	return c.colorPalette
 }
 
-// SetColorPalette stores the color-palette setting, persists it unless
-// ephemeral, and selects it for theme.Derive / Fallback. The shell refreshes
-// Styles.NickPalette on the next view wake-up.
+// SetColorPalette stores the color-palette setting and persists it unless
+// ephemeral. The shell refreshes Styles.NickPalette on the next NotifyMsg.
 func (c *Controller) SetColorPalette(id irc.ColorPaletteID) {
 	if c.colorPalette == id {
 		return
 	}
 	c.colorPalette = id
-	theme.SetColorPalette(id)
 	if !c.ephemeral {
 		savePreferenceValue(colorPaletteKey, irc.ColorPaletteToken(id))
 	}

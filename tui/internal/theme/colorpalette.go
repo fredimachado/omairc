@@ -7,13 +7,13 @@ import (
 )
 
 // ColorPaletteID names a color set for nicks and network icons. Tokens live in
-// the IRC layer; this package keeps the hex tables and the active selection.
-// Unknown tokens fall back to ColorPaletteClassic at ParseColorPalette.
+// the IRC layer; this package keeps the hex tables. Unknown tokens fall back
+// to ColorPaletteClassic at ParseColorPalette.
 type ColorPaletteID = irc.ColorPaletteID
 
 const (
 	// ColorPaletteClassic is the original Tokyo-Night-derived hues. Slot 0
-	// follows the theme accent at resolve time.
+	// follows the accent passed to PaletteColors.
 	ColorPaletteClassic = irc.ColorPaletteClassic
 	// ColorPaletteVivid is the brighter fixed chromas.
 	ColorPaletteVivid = irc.ColorPaletteVivid
@@ -34,7 +34,7 @@ type colorPaletteDef struct {
 
 // colorPaletteTable is the registry. Keep dark/light families parallel.
 // Hex strings stay in source for the Rust↔Go parity gate; parsed colors are
-// filled once at init so Derive does not re-parse. Tokens must match
+// filled once at init so PaletteColors does not re-parse. Tokens must match
 // irc.ColorPaletteToken for each id.
 var colorPaletteTable = []colorPaletteDef{
 	{
@@ -98,22 +98,6 @@ func init() {
 			colorPaletteTable[i].lightColors[j] = mustHex(hex)
 		}
 	}
-}
-
-// activeColorPalette is what Derive/Fallback resolve. Default classic. The shell
-// sets it from omairc.conf before the theme watcher loads.
-var activeColorPalette = ColorPaletteClassic
-
-// SetColorPalette selects the color palette for subsequent Derive/Fallback calls.
-// Unknown callers should prefer ParseColorPalette first.
-func SetColorPalette(id ColorPaletteID) {
-	_ = colorPaletteDefFor(id)
-	activeColorPalette = id
-}
-
-// ActiveColorPalette returns the palette Derive currently resolves.
-func ActiveColorPalette() ColorPaletteID {
-	return activeColorPalette
 }
 
 // ParseColorPalette resolves a stored token, ASCII-case-insensitively.

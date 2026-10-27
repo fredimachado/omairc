@@ -137,16 +137,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	// LoadStoredPreferences already selected colorPalette for theme.Derive /
-	// Fallback (classic default). Keep that before ui.New so resolveNickPalette
-	// and the theme watcher see the same set.
-	theme.SetColorPalette(c.ColorPalette())
-
 	// Controller and connection callbacks fire both from the Bubble Tea
 	// goroutine (inside Update) and from session goroutines. p.Send blocks on
 	// the program's message channel, so calling it synchronously from a
 	// callback would deadlock the event loop the moment a navigation chord
 	// rebuilt a snapshot. Coalesce the wake-ups onto one dispatcher instead.
+	// ui.New reads c.ColorPalette() for the fixed nick hue set.
 	model := ui.New(c, conn)
 	model.SetMouseEnabled(ui.MouseOptIn(mouseFlag, os.Getenv("OMAIRC_TUI_MOUSE")))
 

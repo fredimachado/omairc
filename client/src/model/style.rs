@@ -6,7 +6,7 @@ use super::theme::Theme;
 pub struct Style {
     pub theme: Theme,
     pub text_scale: f32,
-    pub color_palette: ColorPaletteId,
+    color_palette: ColorPaletteId,
     /// Resolved nick/network hues for `color_palette` under the current theme.
     resolved_palette: [Color; COLOR_PALETTE_LEN],
 }
@@ -28,6 +28,10 @@ impl Style {
             color_palette,
             resolved_palette,
         }
+    }
+
+    pub fn color_palette(&self) -> ColorPaletteId {
+        self.color_palette
     }
 
     pub fn dark_mode(&self) -> bool {
@@ -242,7 +246,7 @@ mod tests {
         let theme = Theme::defaults_dark();
         let classic = Style::new(theme.clone(), 1.0);
         let vivid = Style::with_color_palette(theme, 1.0, ColorPaletteId::Vivid);
-        assert_eq!(classic.color_palette, ColorPaletteId::Classic);
+        assert_eq!(classic.color_palette(), ColorPaletteId::Classic);
         assert_ne!(
             classic.palette_colors()[1].to_hex(),
             vivid.palette_colors()[1].to_hex()

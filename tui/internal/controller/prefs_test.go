@@ -11,7 +11,6 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/irc"
 	"github.com/fredimachado/omairc/tui/internal/session"
 	"github.com/fredimachado/omairc/tui/internal/storage"
-	"github.com/fredimachado/omairc/tui/internal/theme"
 )
 
 // This file.
@@ -58,8 +57,6 @@ func TestSetReopenDirectsPersistsAndReloads(t *testing.T) {
 
 func TestSetColorPalettePersistsAndReloads(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	prev := theme.ActiveColorPalette()
-	t.Cleanup(func() { theme.SetColorPalette(prev) })
 
 	c := New()
 	c.SetEphemeral(false)
@@ -72,9 +69,6 @@ func TestSetColorPalettePersistsAndReloads(t *testing.T) {
 	settings := storage.OpenSettings("")
 	if got := settings.Value(preferencesGroup, colorPaletteKey); got != "vivid" {
 		t.Fatalf("%s = %q, want vivid", colorPaletteKey, got)
-	}
-	if theme.ActiveColorPalette() != theme.ColorPaletteVivid {
-		t.Fatalf("theme.ActiveColorPalette = %v, want vivid", theme.ActiveColorPalette())
 	}
 
 	fresh := New()

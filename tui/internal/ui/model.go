@@ -98,6 +98,9 @@ type Model struct {
 	conn    *connection.Connection
 	avatars AvatarSource
 	styles  Styles
+	// nickPaletteID is the ColorPaletteID Styles.NickPalette was built from.
+	// NotifyMsg re-resolves only when the controller's id changes.
+	nickPaletteID theme.ColorPaletteID
 
 	// onStartup runs once when StartupMsg arrives. It fires from the Update
 	// goroutine so controller mutation stays single-threaded. Nil-able.
@@ -291,11 +294,16 @@ const (
 // focused. A nil controller renders the empty state. conn may be nil (the
 // seeded demo), in which case the Connect sheet is unavailable.
 func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
-	styles := defaultStyles()
+	id := theme.ColorPaletteClassic
+	if ctrl != nil {
+		id = ctrl.ColorPalette()
+	}
+	styles := stylesForNickPalette(id)
 	composer := newComposerInput(styles)
 	m := &Model{
 		ctrl:                         ctrl,
 		conn:                         conn,
+		nickPaletteID:                id,
 		width:                        defaultWidth,
 		height:                       defaultHeight,
 		focus:                        focusComposer,
@@ -384,13 +392,31 @@ func (m *Model) SetThemeWatcher(w *theme.Watcher) {
 	}
 }
 
-// rebuildStyles swaps structural styles from colors and re-resolves the nick
-// hue set from the active color palette. resolveNickPalette always uses the
-// fixed dark fallback accent, so a live Omarchy theme swap does not move nicks.
+// rebuildStyles swaps structural styles from colors while keeping the nick
+// hue set for nickPaletteID. resolveNickPalette always uses FixedAccent, so a
+// live Omarchy theme swap does not move nicks.
 func (m *Model) rebuildStyles(colors theme.Colors) {
 	s := buildStyles(colors)
-	s.NickPalette = resolveNickPalette()
+	if len(m.styles.NickPalette) > 0 {
+		s.NickPalette = m.styles.NickPalette
+	} else {
+		s.NickPalette = resolveNickPalette(m.nickPaletteID)
+	}
 	m.applyStyles(s)
+}
+
+// syncNickPalette re-resolves Styles.NickPalette only when the controller's
+// ColorPalette differs from nickPaletteID. Unchanged ids keep the same slice.
+func (m *Model) syncNickPalette() {
+	if m == nil || m.ctrl == nil {
+		return
+	}
+	id := m.ctrl.ColorPalette()
+	if id == m.nickPaletteID && len(m.styles.NickPalette) > 0 {
+		return
+	}
+	m.styles.NickPalette = resolveNickPalette(id)
+	m.nickPaletteID = id
 }
 
 // applyStyles swaps in a rebuilt palette and re-derives the chrome that lives
@@ -592,9 +618,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case NotifyMsg:
-		// /pref palette publishes a wake-up after theme.SetColorPalette; pull
-		// the new nick hues without waiting for an Omarchy ThemeChangedMsg.
-		m.styles.NickPalette = resolveNickPalette()
+		// /pref palette publishes a wake-up after SetColorPalette; pull new
+		// nick hues only when the controller id changed.
+		m.syncNickPalette()
 		m.ensureAvatars()
 		// A controller-driven selection, including the autojoin that claims
 		// the first channel, does not pass through switchSelection. Move the

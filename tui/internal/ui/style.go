@@ -22,8 +22,8 @@ type Styles struct {
 	Colors theme.Colors
 
 	// NickPalette is the fixed nick/identicon hue set for the configured
-	// colorPalette. Resolved once in dark mode with the fallback accent; it
-	// never follows the live Omarchy theme (see resolveNickPalette).
+	// colorPalette. Resolved in dark mode with FixedAccent; it never follows
+	// the live Omarchy theme (see resolveNickPalette).
 	NickPalette []color.Color
 
 	NetworkName        lipgloss.Style
@@ -139,12 +139,12 @@ var (
 	colorPage     = fixedColors.Page
 )
 
-// resolveNickPalette is the configured nick hue set, always dark and always
-// accented with the fixed fallback accent. Classic therefore matches the
+// resolveNickPalette is the configured nick hue set for id: always dark and
+// always accented with FixedAccent. Classic therefore matches the
 // pre-palette-config TUI (#7aa2f7 in slot 0); vivid uses its dark hues; neither
 // set moves when the live Omarchy theme changes.
-func resolveNickPalette() []color.Color {
-	return append([]color.Color(nil), theme.Fallback().Palette...)
+func resolveNickPalette(id theme.ColorPaletteID) []color.Color {
+	return theme.PaletteColors(id, true, theme.FixedAccent())
 }
 
 // avatarFill is the identicon background: nickColor mixed into colorPage. Since
@@ -170,7 +170,7 @@ func nickPaletteIndex(nick string) int {
 }
 
 // nickColor is the palette color for a nick. Hues come from Styles.NickPalette
-// (fixed presentation), never from the live theme's Colors.Palette.
+// (fixed presentation), never from the live theme.
 func (s Styles) nickColor(nick string) color.Color {
 	return s.NickPalette[nickPaletteIndex(nick)]
 }
@@ -210,11 +210,15 @@ func mixColors(base, tint color.Color, amount float64) color.Color {
 }
 
 // defaultStyles builds the shell's styles from the fixed fallback palette and
-// the configured nick hue set (call SetColorPalette before New so the set is
-// already active).
+// the classic nick hue set. New overrides NickPalette from the controller.
 func defaultStyles() Styles {
+	return stylesForNickPalette(theme.ColorPaletteClassic)
+}
+
+// stylesForNickPalette builds fallback structural styles plus nick hues for id.
+func stylesForNickPalette(id theme.ColorPaletteID) Styles {
 	s := buildStyles(theme.Fallback())
-	s.NickPalette = resolveNickPalette()
+	s.NickPalette = resolveNickPalette(id)
 	return s
 }
 

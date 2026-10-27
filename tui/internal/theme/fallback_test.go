@@ -8,9 +8,6 @@ import (
 // hard-coded palette in internal/ui/style.go. If one of these changes, either
 // this package or the Qt client moved and the two must be reconciled.
 func TestFallbackMatchesStyleGoLiterals(t *testing.T) {
-	prev := ActiveColorPalette()
-	t.Cleanup(func() { SetColorPalette(prev) })
-	SetColorPalette(ColorPaletteClassic)
 	colors := Fallback()
 	assertHex(t, "Background", colors.Background, "#1a1b26")
 	assertHex(t, "AvatarPage", colors.AvatarPage, "#1a1b26")
@@ -27,14 +24,20 @@ func TestFallbackMatchesStyleGoLiterals(t *testing.T) {
 	if colors.NickAvatarMix != 0.23 {
 		t.Fatalf("NickAvatarMix = %v, want 0.23", colors.NickAvatarMix)
 	}
+}
+
+// TestClassicNickPaletteLiterals pins the fixed dark classic nick hues the TUI
+// resolves via PaletteColors(classic, true, FixedAccent).
+func TestClassicNickPaletteLiterals(t *testing.T) {
+	got := PaletteColors(ColorPaletteClassic, true, FixedAccent())
 	want := []string{
 		"#7aa2f7", "#c099ff", "#7fc8a9", "#efb366",
 		"#ed8f9d", "#9ece6a", "#7dcfff", "#ddd06e",
 	}
-	if len(colors.Palette) != len(want) {
-		t.Fatalf("Palette len = %d, want %d", len(colors.Palette), len(want))
+	if len(got) != len(want) {
+		t.Fatalf("PaletteColors len = %d, want %d", len(got), len(want))
 	}
 	for i, hex := range want {
-		assertHex(t, "Palette", colors.Palette[i], hex)
+		assertHex(t, "PaletteColors", got[i], hex)
 	}
 }

@@ -96,12 +96,8 @@ func TestPhase10EnsureAvatarsSchedulesDirectRows(t *testing.T) {
 // helpers are deterministic and self-consistent with an independently computed
 // classic dark palette (not the same slice nickColor reads).
 func TestPhase10IdenticonDeterminism(t *testing.T) {
-	prev := theme.ActiveColorPalette()
-	t.Cleanup(func() { theme.SetColorPalette(prev) })
-	theme.SetColorPalette(theme.ColorPaletteClassic)
-
-	wantPalette := theme.PaletteColors(theme.ColorPaletteClassic, true, theme.Fallback().Accent)
-	styles := defaultStyles()
+	wantPalette := theme.PaletteColors(theme.ColorPaletteClassic, true, theme.FixedAccent())
+	styles := stylesForNickPalette(theme.ColorPaletteClassic)
 
 	if nickPaletteIndex("abc") == nickPaletteIndex("cab") {
 		t.Fatal("anagrams must not share a palette slot")

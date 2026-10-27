@@ -4,31 +4,28 @@ import (
 	"image/color"
 	"testing"
 
+	"github.com/fredimachado/omairc/tui/internal/controller"
 	"github.com/fredimachado/omairc/tui/internal/theme"
 )
 
 // TestConfiguredPaletteReachesNickColors proves the configured colorPalette
 // reaches Styles.NickPalette, classic slot 0 stays #7aa2f7, a live theme
-// swap (accent + light mode) does not move nick hues, and NotifyMsg picks up
-// a later SetColorPalette without an Omarchy theme change.
+// swap does not move nick hues, NotifyMsg picks up SetColorPalette, and an
+// unchanged id keeps the same NickPalette slice.
 func TestConfiguredPaletteReachesNickColors(t *testing.T) {
-	prev := theme.ActiveColorPalette()
-	t.Cleanup(func() { theme.SetColorPalette(prev) })
-
-	theme.SetColorPalette(theme.ColorPaletteVivid)
-	vivid := defaultStyles()
-	wantVivid := theme.PaletteColors(theme.ColorPaletteVivid, true, theme.Fallback().Accent)
+	vividStyles := stylesForNickPalette(theme.ColorPaletteVivid)
+	wantVivid := theme.PaletteColors(theme.ColorPaletteVivid, true, theme.FixedAccent())
 	index := nickPaletteIndex("mira")
-	if got, want := theme.Hex(vivid.nickColor("mira")), theme.Hex(wantVivid[index]); got != want {
+	if got, want := theme.Hex(vividStyles.nickColor("mira")), theme.Hex(wantVivid[index]); got != want {
 		t.Fatalf("vivid nickColor(mira) = %s, want slot %d %s", got, index, want)
 	}
 
-	theme.SetColorPalette(theme.ColorPaletteClassic)
-	classic := New(nil, nil)
+	ctrl := controller.New()
+	classic := New(ctrl, nil)
 	if got := theme.Hex(classic.styles.NickPalette[0]); got != "#7aa2f7" {
 		t.Fatalf("classic NickPalette[0] = %s, want #7aa2f7", got)
 	}
-	wantClassic := theme.PaletteColors(theme.ColorPaletteClassic, true, theme.Fallback().Accent)
+	wantClassic := theme.PaletteColors(theme.ColorPaletteClassic, true, theme.FixedAccent())
 	if got, want := theme.Hex(classic.styles.nickColor("mira")), theme.Hex(wantClassic[index]); got != want {
 		t.Fatalf("classic nickColor(mira) = %s, want %s", got, want)
 	}
@@ -54,14 +51,21 @@ func TestConfiguredPaletteReachesNickColors(t *testing.T) {
 		t.Fatalf("classic NickPalette[0] after SetTheme = %s, want #7aa2f7", got)
 	}
 
-	theme.SetColorPalette(theme.ColorPaletteVivid)
+	unchanged := classic.styles.NickPalette
 	updated, _ := classic.Update(NotifyMsg{})
 	got := updated.(*Model)
-	if hex := theme.Hex(got.styles.NickPalette[0]); hex == "#7aa2f7" {
-		t.Fatalf("NotifyMsg left classic NickPalette[0] after vivid SetColorPalette")
+	if len(unchanged) == 0 || len(got.styles.NickPalette) == 0 || &unchanged[0] != &got.styles.NickPalette[0] {
+		t.Fatal("NotifyMsg with unchanged ColorPalette rebuilt NickPalette")
 	}
-	wantVividSlot0 := theme.Hex(theme.PaletteColors(theme.ColorPaletteVivid, true, theme.Fallback().Accent)[0])
-	if got := theme.Hex(got.styles.NickPalette[0]); got != wantVividSlot0 {
-		t.Fatalf("NotifyMsg NickPalette[0] = %s, want %s", got, wantVividSlot0)
+
+	ctrl.SetColorPalette(theme.ColorPaletteVivid)
+	updated, _ = got.Update(NotifyMsg{})
+	got = updated.(*Model)
+	wantVividSlot0 := theme.Hex(wantVivid[0])
+	if hex := theme.Hex(got.styles.NickPalette[0]); hex != wantVividSlot0 {
+		t.Fatalf("NotifyMsg after SetColorPalette NickPalette[0] = %s, want %s", hex, wantVividSlot0)
+	}
+	if got.nickPaletteID != theme.ColorPaletteVivid {
+		t.Fatalf("nickPaletteID = %v, want vivid", got.nickPaletteID)
 	}
 }

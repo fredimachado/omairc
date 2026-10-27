@@ -450,14 +450,14 @@ mod tests {
         });
         shell.update(vcx, |shell, cx| {
             assert_eq!(
-                cx.global::<OmaircStyleGlobal>().style.color_palette,
+                cx.global::<OmaircStyleGlobal>().style.color_palette(),
                 ColorPaletteId::Classic
             );
             let before = *shell.controller.preferences();
             assert!(shell.controller.submit(Surface::Conversation, "/pref palette vivid"));
             shell.apply_preference_changes(before, cx);
             assert_eq!(
-                cx.global::<OmaircStyleGlobal>().style.color_palette,
+                cx.global::<OmaircStyleGlobal>().style.color_palette(),
                 ColorPaletteId::Vivid
             );
             assert_eq!(

@@ -1,7 +1,6 @@
 package theme
 
 import (
-	"slices"
 	"testing"
 
 	"github.com/fredimachado/omairc/tui/internal/irc"
@@ -24,25 +23,6 @@ func TestParseColorPalette(t *testing.T) {
 	}
 }
 
-func TestSetColorPaletteAffectsDerive(t *testing.T) {
-	prev := ActiveColorPalette()
-	t.Cleanup(func() { SetColorPalette(prev) })
-
-	SetColorPalette(ColorPaletteVivid)
-	colors := Derive(Spec{Mode: ModeDark})
-	want := PaletteColors(ColorPaletteVivid, true, colors.Accent)
-	if !slices.Equal(colors.Palette, want) {
-		t.Fatalf("vivid Palette = %v, want %v", colors.Palette, want)
-	}
-
-	SetColorPalette(ColorPaletteClassic)
-	colors = Derive(Spec{Mode: ModeDark})
-	want = PaletteColors(ColorPaletteClassic, true, colors.Accent)
-	if !slices.Equal(colors.Palette, want) {
-		t.Fatalf("classic Palette = %v, want %v", colors.Palette, want)
-	}
-}
-
 func TestPaletteColorsClassicSlotZeroFollowsAccent(t *testing.T) {
 	accent := mustHex("#112233")
 	got := PaletteColors(ColorPaletteClassic, true, accent)
@@ -59,5 +39,11 @@ func TestPaletteColorsVividIgnoresAccent(t *testing.T) {
 	got := PaletteColors(ColorPaletteVivid, true, accent)
 	if Hex(got[0]) != "#2f6ff5" {
 		t.Fatalf("vivid[0] = %s, want #2f6ff5", Hex(got[0]))
+	}
+}
+
+func TestFixedAccentIsTokyoNightBlue(t *testing.T) {
+	if Hex(FixedAccent()) != "#7aa2f7" {
+		t.Fatalf("FixedAccent = %s, want #7aa2f7", Hex(FixedAccent()))
 	}
 }

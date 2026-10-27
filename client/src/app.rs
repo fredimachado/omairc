@@ -377,7 +377,7 @@ fn refresh_theme(
 ) {
     let dark = cx.global::<SystemAppearance>().dark;
     let scale = cx.global::<OmaircStyleGlobal>().style.text_scale;
-    let color_palette = cx.global::<OmaircStyleGlobal>().style.color_palette;
+    let color_palette = cx.global::<OmaircStyleGlobal>().style.color_palette();
     let theme = Theme::load(theme_path, dark).unwrap_or_else(|_| Theme::defaults(dark));
     cx.update_global::<OmaircStyleGlobal, _>(|global, _| {
         global.style = Style::with_color_palette(theme, scale, color_palette);
