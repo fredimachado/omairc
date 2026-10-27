@@ -388,6 +388,24 @@ public static class OmaircDriver {
     }
   }
 
+  static bool IsExtendedVk(uint vk) {
+    switch (vk) {
+      case 0x21: // Page_Up
+      case 0x22: // Page_Down
+      case 0x23: // End
+      case 0x24: // Home
+      case 0x25: // Left
+      case 0x26: // Up
+      case 0x27: // Right
+      case 0x28: // Down
+      case 0x2D: // Insert
+      case 0x2E: // Delete
+        return true;
+      default:
+        return false;
+    }
+  }
+
   public static void Chord(IntPtr hwnd, string[] mods, uint vk) {
     uint pid; uint tid = GetWindowThreadProcessId(hwnd, out pid);
     uint cur = GetCurrentThreadId();
