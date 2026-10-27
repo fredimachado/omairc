@@ -77,6 +77,7 @@ $Script:DEMO = $null
 $Script:VISIBLE = $null
 $Script:MEMBERS_OPEN = 1
 $Script:LOCALAPPDATA_OVERRIDE = $null
+$Script:APP_FOLDER = $null
 
 # ---------------------------------------------------------------------------
 # Win32 helper (inline C#, compiled once, cached under STATE_ROOT parent)
@@ -457,12 +458,19 @@ public static class OmaircDriver {
 }
 '@
 
-function Get-OmaircAppFolder {
+function Resolve-OmaircAppFolderFromFeatures {
     # product (default) uses omairc; --features dev uses omairc-dev.
     foreach ($part in ($Script:DESKTOP_FEATURES -split '[,\s]+')) {
         if ($part.Trim() -eq 'dev') { return 'omairc-dev' }
     }
     return 'omairc'
+}
+
+function Get-OmaircAppFolder {
+    # Prefer the folder recorded at launch so doctor/health match the instance
+    # even when the current shell's OMAIRC_DESKTOP_FEATURES differs.
+    if ($Script:APP_FOLDER) { return $Script:APP_FOLDER }
+    return (Resolve-OmaircAppFolderFromFeatures)
 }
 
 function Parse-InvariantDouble {
@@ -586,12 +594,12 @@ function Delay-JumpField {
 }
 
 function Dump-OmaircLogs {
-    param([string]$StateDir, [string]$LogPath)
-    $appFolder = Get-OmaircAppFolder
+    param([string]$StateDir, [string]$LogPath, [string]$AppFolder)
+    if (-not $AppFolder) { $AppFolder = Resolve-OmaircAppFolderFromFeatures }
     $candidates = @(
         $LogPath
-        (Join-Path $StateDir "lad\State\$appFolder\omairc.log")
-        (Join-Path $StateDir "lad\$appFolder\omairc.log")
+        (Join-Path $StateDir "lad\State\$AppFolder\omairc.log")
+        (Join-Path $StateDir "lad\$AppFolder\omairc.log")
     )
     foreach ($path in $candidates) {
         if ($path -and (Test-Path -LiteralPath $path) -and (Get-Item -LiteralPath $path).Length -gt 0) {
@@ -665,6 +673,8 @@ function Load-State {
     if ($null -ne $obj.MEMBERS_OPEN) { $Script:MEMBERS_OPEN = [int]$obj.MEMBERS_OPEN } else { $Script:MEMBERS_OPEN = 1 }
     if ($obj.LOCALAPPDATA) { $Script:LOCALAPPDATA_OVERRIDE = [string]$obj.LOCALAPPDATA }
     elseif ($Script:STATE_DIR) { $Script:LOCALAPPDATA_OVERRIDE = Join-Path $Script:STATE_DIR 'lad' }
+    if ($obj.APP_FOLDER) { $Script:APP_FOLDER = [string]$obj.APP_FOLDER }
+    else { $Script:APP_FOLDER = Resolve-OmaircAppFolderFromFeatures }
     if (-not $Script:APP_PID) { Die 'state file is missing APP_PID' }
     Ensure-OmaircDriver
 }
@@ -686,6 +696,7 @@ function Write-State {
         VISIBLE     = $Script:VISIBLE
         MEMBERS_OPEN = $Script:MEMBERS_OPEN
         LOCALAPPDATA = $Script:LOCALAPPDATA_OVERRIDE
+        APP_FOLDER   = $Script:APP_FOLDER
     }
     ($obj | ConvertTo-Json -Depth 5) | Set-Content -LiteralPath $Script:STATE_FILE -Encoding UTF8
 }
@@ -769,7 +780,9 @@ function Test-DoctorHealthy {
         if ($obj.LOCALAPPDATA) { $lad = [string]$obj.LOCALAPPDATA }
         elseif ($obj.STATE_DIR) { $lad = Join-Path ([string]$obj.STATE_DIR) 'lad' }
         if (-not $lad -or -not (Test-Path -LiteralPath $lad)) { return $false }
-        $appFolder = Get-OmaircAppFolder
+        $appFolder = $null
+        if ($obj.APP_FOLDER) { $appFolder = [string]$obj.APP_FOLDER }
+        else { $appFolder = Resolve-OmaircAppFolderFromFeatures }
         if (-not (Test-Path -LiteralPath (Join-Path $lad $appFolder))) { return $false }
         return $true
     } catch {
@@ -828,7 +841,7 @@ function Invoke-Launch {
     if (-not (Test-Path -LiteralPath $binary)) { Die "missing $binary after cargo build ($($Script:DESKTOP_PROFILE))" }
 
     $lad = Join-Path $stateDir 'lad'
-    $appFolder = Get-OmaircAppFolder
+    $appFolder = Resolve-OmaircAppFolderFromFeatures
     $confDir = Join-Path $lad $appFolder
     $logDir = Join-Path $stateDir 'logs'
     New-Item -ItemType Directory -Force -Path $confDir, $logDir, $Script:EVIDENCE_DIR | Out-Null
@@ -879,7 +892,7 @@ maximized=false
     for ($attempt = 0; $attempt -lt 150; $attempt++) {
         Start-Sleep -Milliseconds 100
         if (-not (Test-ProcessAlive -ProcessId ([int]$appPid))) {
-            Dump-OmaircLogs -StateDir $stateDir -LogPath $logPath
+            Dump-OmaircLogs -StateDir $stateDir -LogPath $logPath -AppFolder $appFolder
             if (Test-Path -LiteralPath $stateDir) {
                 Remove-Item -LiteralPath $stateDir -Recurse -Force -ErrorAction SilentlyContinue
             }
@@ -889,7 +902,7 @@ maximized=false
         if ($hwnd -ne [IntPtr]::Zero) { break }
     }
     if ($hwnd -eq [IntPtr]::Zero) {
-        Dump-OmaircLogs -StateDir $stateDir -LogPath $logPath
+        Dump-OmaircLogs -StateDir $stateDir -LogPath $logPath -AppFolder $appFolder
         Stop-AppPid -ProcessId ([int]$appPid)
         if (Test-Path -LiteralPath $stateDir) {
             Remove-Item -LiteralPath $stateDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -929,6 +942,7 @@ maximized=false
     $Script:VISIBLE = $(if ($visible) { 1 } else { 0 })
     $Script:MEMBERS_OPEN = 1
     $Script:LOCALAPPDATA_OVERRIDE = $lad
+    $Script:APP_FOLDER = $appFolder
     Write-State
 
     Write-Output 'launched isolated Omairc'
