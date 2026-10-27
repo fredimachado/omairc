@@ -94,6 +94,16 @@ func TestPhase10EnsureAvatarsSchedulesDirectRows(t *testing.T) {
 // TestPhase10IdenticonDeterminism proves the hashing, color, initials, and fill
 // helpers are deterministic and self-consistent with the palette.
 func TestPhase10IdenticonDeterminism(t *testing.T) {
+	if nickPaletteIndex("abc") == nickPaletteIndex("cab") {
+		t.Fatal("anagrams must not share a palette slot")
+	}
+	if nickPaletteIndex("mira") == nickPaletteIndex("mara") {
+		t.Fatal("letters eight apart must be able to change the slot")
+	}
+	if nickPaletteIndex("mira") != 2 {
+		t.Fatalf("nickPaletteIndex(mira) = %d, want 2", nickPaletteIndex("mira"))
+	}
+
 	for _, nick := range []string{"mira", "anna", "dax", "Ω", ""} {
 		index := nickPaletteIndex(nick)
 		if index < 0 || index >= len(nickPalette) {

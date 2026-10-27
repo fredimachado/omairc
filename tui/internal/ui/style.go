@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"image/color"
 	"unicode"
-	"unicode/utf16"
 
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/lipgloss/v2"
@@ -145,15 +144,19 @@ func avatarFill(nick string) color.Color {
 	return mixColors(colorPage, nickColor(nick), nickAvatarMix)
 }
 
-// nickPaletteIndex mirrors nickPaletteIndex in `client/src/model/style.rs`: the sum of the
-// nick's UTF-16 code units modulo the palette length. UTF-16 code units (not
-// runes) match JavaScript's charCodeAt for non-ASCII nicks.
+// nickPaletteIndex mirrors nick_palette_index in `client/src/model/style.rs`: FNV-1a
+// (32-bit) over the nick's UTF-8 bytes, then fold high bits before modulo so the
+// slot is not only the low 3 bits of each input byte.
 func nickPaletteIndex(nick string) int {
-	hash := 0
-	for _, unit := range utf16.Encode([]rune(nick)) {
-		hash = (hash + int(unit)) % len(nickPalette)
+	const offset32 = 2166136261
+	const prime32 = 16777619
+	hash := uint32(offset32)
+	for _, b := range []byte(nick) {
+		hash ^= uint32(b)
+		hash *= prime32
 	}
-	return hash
+	hash ^= hash >> 16
+	return int(hash % uint32(len(nickPalette)))
 }
 
 // nickColor is the palette color for a nick. Nick colors are fixed
