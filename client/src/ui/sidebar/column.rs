@@ -147,8 +147,8 @@ fn network_list(data: &SidebarData, style: &Style) -> impl IntoElement {
         }))
 }
 
-/// One network's channels, then its direct messages. The DM heading shows only when
-/// the network has a DM.
+/// One network's channels, then its direct messages. Each heading shows only when
+/// that group has a conversation.
 fn conversation_groups(
     network: &NetworkHeader,
     data: &SidebarData,
@@ -182,8 +182,10 @@ fn conversation_groups(
     div()
         .flex()
         .flex_col()
-        .child(channels_heading(style))
-        .children(channels.into_iter().map(&row))
+        .when(network.has_channels, |this| {
+            this.child(channels_heading(style))
+                .children(channels.into_iter().map(&row))
+        })
         .when(network.has_directs, |this| {
             this.child(directs_heading(style))
                 .children(directs.into_iter().map(&row))

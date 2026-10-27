@@ -62,6 +62,8 @@ pub struct NetworkHeader {
     pub alerts: u32,
     /// Whether the `edit` label shows (`showEdit`: the network has a session).
     pub show_edit: bool,
+    /// Whether the network has a channel, so the CHANNELS heading shows.
+    pub has_channels: bool,
     /// Whether the network has a direct message, so the DM heading shows.
     pub has_directs: bool,
     pub collapsed: bool,

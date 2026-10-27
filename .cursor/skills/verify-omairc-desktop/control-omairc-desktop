@@ -475,12 +475,18 @@ cmd_launch() {
   "$@" >"$STATE_DIR/logs/omairc.log" 2>&1 &
   APP_PID=$!
 
+  # Cold lavapipe + GPUI first map often needs more than a few seconds on CI
+  # runners after a fresh cargo build; five seconds was flaking the first recipe.
   attempt=0
   WINDOW=
   while [ -z "$WINDOW" ]; do
     WINDOW="$(xdotool search --onlyvisible --pid "$APP_PID" 2>/dev/null | head -1 || true)"
     attempt=$((attempt + 1))
-    if [ "$attempt" -ge 50 ] || ! process_alive "$APP_PID"; then
+    if [ "$attempt" -ge 150 ] || ! process_alive "$APP_PID"; then
+      if [ -f "$STATE_DIR/logs/omairc.log" ]; then
+        echo "control-omairc-desktop: omairc.log:" >&2
+        cat "$STATE_DIR/logs/omairc.log" >&2 || true
+      fi
       die "Omairc did not open; see $STATE_DIR/logs/omairc.log"
     fi
     sleep 0.1
