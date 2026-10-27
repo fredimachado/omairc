@@ -1,7 +1,6 @@
 package theme
 
 import (
-	"image/color"
 	"slices"
 	"testing"
 )
@@ -10,6 +9,7 @@ import (
 // hard-coded palette in internal/ui/style.go. If one of these changes, either
 // this package or the Qt client moved and the two must be reconciled.
 func TestFallbackMatchesStyleGoLiterals(t *testing.T) {
+	SetColorPalette(ColorPaletteClassic)
 	colors := Fallback()
 	assertHex(t, "Background", colors.Background, "#1a1b26")
 	assertHex(t, "AvatarPage", colors.AvatarPage, "#1a1b26")
@@ -26,17 +26,8 @@ func TestFallbackMatchesStyleGoLiterals(t *testing.T) {
 	if colors.NickAvatarMix != 0.23 {
 		t.Fatalf("NickAvatarMix = %v, want 0.23", colors.NickAvatarMix)
 	}
-	want := []color.Color{
-		mustHex("#7aa2f7"),
-		mustHex("#c099ff"),
-		mustHex("#7fc8a9"),
-		mustHex("#efb366"),
-		mustHex("#ed8f9d"),
-		mustHex("#9ece6a"),
-		mustHex("#7dcfff"),
-		mustHex("#ddd06e"),
-	}
-	if !slices.Equal(colors.NickPalette, want) {
-		t.Fatalf("NickPalette = %v, want %v", colors.NickPalette, want)
+	want := PaletteColors(ColorPaletteClassic, true, colors.Accent)
+	if !slices.Equal(colors.Palette, want) {
+		t.Fatalf("Palette = %v, want classic dark %v", colors.Palette, want)
 	}
 }

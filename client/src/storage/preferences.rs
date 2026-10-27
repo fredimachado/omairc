@@ -11,6 +11,7 @@
 use crate::irc::autoaway::AutoawayConfig;
 use crate::irc::membershipnoise::MembershipNoise;
 use crate::irc::pref::Preferences;
+use crate::model::ColorPaletteId;
 
 use super::settings::Status;
 use super::Backing;
@@ -22,6 +23,7 @@ const LOAD_AVATARS_KEY: &str = "loadPeerAvatars";
 const OPEN_AT_UNREAD_KEY: &str = "openConversationsAtUnread";
 const SHOW_IRC_COLORS_KEY: &str = "showIrcColors";
 const MEMBERSHIP_NOISE_KEY: &str = "membershipNoise";
+const COLOR_PALETTE_KEY: &str = "colorPalette";
 const NETWORK_ORDER_KEY: &str = "networkOrder";
 const COLLAPSED_NETWORKS_KEY: &str = "collapsedNetworks";
 const AUTOAWAY_ENABLED_KEY: &str = "autoawayEnabled";
@@ -50,6 +52,18 @@ impl PreferenceStore {
             joins: MembershipNoise::from_token(&settings.value(PREFERENCES_GROUP, MEMBERSHIP_NOISE_KEY))
                 .unwrap_or(defaults.joins),
         }
+    }
+
+    /// The color palette for nicks and network icons. Missing or unknown
+    /// values use classic.
+    pub fn color_palette(&self) -> ColorPaletteId {
+        ColorPaletteId::from_token(
+            &self
+                .backing
+                .settings()
+                .value(PREFERENCES_GROUP, COLOR_PALETTE_KEY),
+        )
+        .unwrap_or_default()
     }
 
     /// Writes every `/pref` value. A malformed or unwritable file is left alone.
@@ -131,9 +145,23 @@ mod tests {
         let dir = TempDir::new("prefs-defaults");
         let store = store(&dir);
         assert_eq!(store.preferences(), Preferences::default());
+        assert_eq!(store.color_palette(), ColorPaletteId::Classic);
         assert!(store.network_order().is_empty());
         assert!(store.collapsed_networks().is_empty());
         assert_eq!(store.autoaway(), AutoawayConfig::default());
+    }
+
+    #[test]
+    fn color_palette_reads_known_tokens_and_ignores_unknown() {
+        let dir = TempDir::new("prefs-color-palette");
+        let path = dir.path().join("omairc.conf");
+        std::fs::write(&path, "[preferences]\ncolorPalette=vivid\n").unwrap();
+        let store = PreferenceStore::new(Backing::Disk(path.clone()));
+        assert_eq!(store.color_palette(), ColorPaletteId::Vivid);
+
+        std::fs::write(&path, "[preferences]\ncolorPalette=loud\n").unwrap();
+        let store = PreferenceStore::new(Backing::Disk(path));
+        assert_eq!(store.color_palette(), ColorPaletteId::Classic);
     }
 
     #[test]

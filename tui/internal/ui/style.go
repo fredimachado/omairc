@@ -127,12 +127,12 @@ type Styles struct {
 }
 
 // fixedColors is the fixed Tokyo-Night palette the TUI has always rendered.
-// Nick colors, the identicon page fill, and the avatar mix amount are fixed
+// Palette hues, the identicon page fill, and the avatar mix amount are fixed
 // presentation shared with `client/src/model/style.rs`, so they read Fallback rather than
 // the live theme.
 var (
 	fixedColors   = theme.Fallback()
-	nickPalette   = fixedColors.NickPalette
+	paletteColors = fixedColors.Palette
 	nickAvatarMix = fixedColors.NickAvatarMix
 	colorPage     = fixedColors.Page
 )
@@ -156,14 +156,13 @@ func nickPaletteIndex(nick string) int {
 		hash *= prime32
 	}
 	hash ^= hash >> 16
-	return int(hash % uint32(len(nickPalette)))
+	return int(hash % uint32(len(paletteColors)))
 }
 
-// nickColor is the palette color for a nick. Nick colors are fixed
-// presentation, never theme-derived, so this reads theme.Colors.NickPalette
-// from the fixed fallback palette.
+// nickColor is the palette color for a nick. Palette hues are fixed
+// presentation, never theme-derived, so this reads theme.Colors.Palette.
 func nickColor(nick string) color.Color {
-	return nickPalette[nickPaletteIndex(nick)]
+	return paletteColors[nickPaletteIndex(nick)]
 }
 
 // initials is the identicon's single letter: the first rune upper-cased, or "?"
@@ -206,8 +205,12 @@ func defaultStyles() Styles {
 }
 
 // buildStyles derives every style from colors. The theme package owns the
-// palette; this file is the only place lipgloss sees it.
+// palette; this file is the only place lipgloss sees it. Palette hues follow
+// colors.Palette so a configured vivid/classic set reaches nickColor.
 func buildStyles(colors theme.Colors) Styles {
+	if len(colors.Palette) > 0 {
+		paletteColors = colors.Palette
+	}
 	base := lipgloss.NewStyle()
 	card := base.Border(lipgloss.RoundedBorder()).Padding(0, 1)
 	input := textinput.DefaultDarkStyles()

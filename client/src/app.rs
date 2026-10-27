@@ -9,9 +9,10 @@ use gpui::{
 };
 use crate::desktop::systemtheme::SystemAppearance;
 use crate::desktop::windowstate::{self, GeometryKeeper};
-use crate::model::{Style, Theme, ThemeWatcher};
+use crate::model::{ColorPaletteId, Style, Theme, ThemeWatcher};
 use crate::net::NetHub;
-use crate::storage::{geometry, paths};
+use crate::storage::preferences::PreferenceStore;
+use crate::storage::{geometry, paths, Backing};
 use crate::ui::shell::{Shell, CONTROLLER_TICK};
 
 use crate::ui::input::bind_input_keys;
@@ -176,8 +177,9 @@ pub fn run() {
         let system = SystemAppearance::from_window(cx.window_appearance());
         cx.set_global(system);
         let theme = Theme::load(theme_path.as_deref(), system.dark).expect("theme load");
+        let color_palette = load_color_palette();
         cx.set_global(OmaircStyleGlobal {
-            style: Style::new(theme, scale),
+            style: Style::with_color_palette(theme, scale, color_palette),
         });
 
         bind_input_keys(cx);
@@ -367,6 +369,12 @@ fn apply_portal_text_scale(
     cx.refresh_windows();
 }
 
+fn load_color_palette() -> ColorPaletteId {
+    paths::settings_path()
+        .map(|path| PreferenceStore::new(Backing::Disk(path)).color_palette())
+        .unwrap_or_default()
+}
+
 fn refresh_theme(
     cx: &mut App,
     theme_path: Option<&Path>,
@@ -375,9 +383,10 @@ fn refresh_theme(
 ) {
     let dark = cx.global::<SystemAppearance>().dark;
     let scale = cx.global::<OmaircStyleGlobal>().style.text_scale;
+    let color_palette = cx.global::<OmaircStyleGlobal>().style.color_palette;
     let theme = Theme::load(theme_path, dark).unwrap_or_else(|_| Theme::defaults(dark));
     cx.update_global::<OmaircStyleGlobal, _>(|global, _| {
-        global.style = Style::new(theme, scale);
+        global.style = Style::with_color_palette(theme, scale, color_palette);
     });
     transcript.update(cx, |t, cx| {
         t.invalidate_all();

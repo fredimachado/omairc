@@ -1307,7 +1307,7 @@ func (m *Model) messageRowAt(messages []controller.MessageSnapshot, index int, m
 	return m.chatRow(message, grouped, nickWidth)
 }
 
-// nickStyle is the transcript byline style: the nick's fixed NickPalette color
+// nickStyle is the transcript byline style: the nick's fixed Palette color
 // in bold, mirroring `client/src/model/style.rs`'s nickColor and the message
 // header's bold author label. Nick colors never move with the theme.
 func (m *Model) nickStyle(nick string) lipgloss.Style {

@@ -6,6 +6,7 @@ import (
 )
 
 func TestDeriveDefaultsDark(t *testing.T) {
+	SetColorPalette(ColorPaletteClassic)
 	colors := Derive(Spec{Mode: ModeDark})
 	assertHex(t, "Background", colors.Background, "#101010")
 	assertHex(t, "Foreground", colors.Foreground, "#eeeeee")
@@ -15,12 +16,14 @@ func TestDeriveDefaultsDark(t *testing.T) {
 	if colors.NickAvatarMix != 0.23 {
 		t.Fatalf("NickAvatarMix = %v, want 0.23", colors.NickAvatarMix)
 	}
-	if !slices.Equal(colors.NickPalette, nickPaletteDark) {
-		t.Fatalf("NickPalette = %v, want the dark palette", colors.NickPalette)
+	want := PaletteColors(ColorPaletteClassic, true, colors.Accent)
+	if !slices.Equal(colors.Palette, want) {
+		t.Fatalf("Palette = %v, want classic dark %v", colors.Palette, want)
 	}
 }
 
 func TestDeriveDefaultsLight(t *testing.T) {
+	SetColorPalette(ColorPaletteClassic)
 	colors := Derive(Spec{Mode: ModeLight})
 	assertHex(t, "Background", colors.Background, "#ffffff")
 	assertHex(t, "Foreground", colors.Foreground, "#222324")
@@ -29,8 +32,9 @@ func TestDeriveDefaultsLight(t *testing.T) {
 	if colors.NickAvatarMix != 0.16 {
 		t.Fatalf("NickAvatarMix = %v, want 0.16", colors.NickAvatarMix)
 	}
-	if !slices.Equal(colors.NickPalette, nickPaletteLight) {
-		t.Fatalf("NickPalette = %v, want the light palette", colors.NickPalette)
+	want := PaletteColors(ColorPaletteClassic, false, colors.Accent)
+	if !slices.Equal(colors.Palette, want) {
+		t.Fatalf("Palette = %v, want classic light %v", colors.Palette, want)
 	}
 }
 
@@ -121,9 +125,9 @@ func TestDeriveFallsBackWhenContrastCannotBeReached(t *testing.T) {
 	}
 }
 
-func TestNickPaletteHasEightEntries(t *testing.T) {
-	palette := Derive(Spec{Mode: ModeDark}).NickPalette
+func TestPaletteHasEightEntries(t *testing.T) {
+	palette := Derive(Spec{Mode: ModeDark}).Palette
 	if len(palette) != 8 {
-		t.Fatalf("len(NickPalette) = %d, want 8", len(palette))
+		t.Fatalf("len(Palette) = %d, want 8", len(palette))
 	}
 }

@@ -106,14 +106,14 @@ func TestPhase10IdenticonDeterminism(t *testing.T) {
 
 	for _, nick := range []string{"mira", "anna", "dax", "Ω", ""} {
 		index := nickPaletteIndex(nick)
-		if index < 0 || index >= len(nickPalette) {
-			t.Fatalf("nickPaletteIndex(%q) = %d, want [0,%d)", nick, index, len(nickPalette))
+		if index < 0 || index >= len(paletteColors) {
+			t.Fatalf("nickPaletteIndex(%q) = %d, want [0,%d)", nick, index, len(paletteColors))
 		}
 		if again := nickPaletteIndex(nick); again != index {
 			t.Fatalf("nickPaletteIndex(%q) is not deterministic: %d then %d", nick, index, again)
 		}
-		if got := nickColor(nick); got != nickPalette[index] {
-			t.Fatalf("nickColor(%q) = %q, want palette[%d] = %q", nick, got, index, nickPalette[index])
+		if got := nickColor(nick); got != paletteColors[index] {
+			t.Fatalf("nickColor(%q) = %q, want palette[%d] = %q", nick, got, index, paletteColors[index])
 		}
 	}
 

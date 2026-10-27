@@ -145,6 +145,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	model := ui.New(c, conn)
 	model.SetMouseEnabled(ui.MouseOptIn(mouseFlag, os.Getenv("OMAIRC_TUI_MOUSE")))
 
+	// Color palette from [preferences] colorPalette=… (classic default). Set
+	// before the theme watcher so Derive/Fallback carry the chosen set.
+	if id, ok := theme.ParseColorPalette(storage.OpenSettings("").Value("preferences", "colorPalette")); ok {
+		theme.SetColorPalette(id)
+	}
+
 	// The live Omarchy theme watcher. SetThemeWatcher adopts the current
 	// palette immediately; the shell then arms one blocking Changes read as a
 	// tea.Cmd on the first WindowSizeMsg, and the Bubble Tea runtime delivers

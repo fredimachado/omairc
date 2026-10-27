@@ -53,7 +53,7 @@ type Colors struct {
 	Mention       color.Color
 	Unread        color.Color
 	Page          color.Color
-	NickPalette   []color.Color
+	Palette       []color.Color
 	NickAvatarMix float64
 }
 
@@ -102,14 +102,14 @@ func Derive(spec Spec) Colors {
 
 	// In dark mode the foreground is lighter than the background, so mixing
 	// toward it lightens; in light mode it darkens. The identicon mix amount is
-	// likewise mode-specific (0.23 dark / 0.16 light), and the light mode swaps
-	// in `client/src/model/style.rs`'s light nick palette.
-	nickPalette := nickPaletteLight
+	// likewise mode-specific (0.23 dark / 0.16 light). Nick and network icon
+	// hues come from the active color palette (classic by default; vivid and
+	// others via config).
 	nickAvatarMix := 0.16
 	if dark {
-		nickPalette = nickPaletteDark
 		nickAvatarMix = 0.23
 	}
+	palette := PaletteColors(activeColorPalette, dark, accent)
 
 	return Colors{
 		Background:    background,
@@ -139,7 +139,7 @@ func Derive(spec Spec) Colors {
 		Mention:       fixedMention,
 		Unread:        fixedUnread,
 		Page:          fixedPage,
-		NickPalette:   nickPalette,
+		Palette:       palette,
 		NickAvatarMix: nickAvatarMix,
 	}
 }
@@ -310,30 +310,3 @@ var (
 	lightSelectionDefault  = mustHex("#2077b2")
 )
 
-// Nick palette per mode, mirroring nickPalette in `client/src/model/style.rs`. The dark
-// entries are today's style.go constants. Eight fixed hue families; slot 0 is
-// the theme accent in QML but the fixed fallback accent here, and slots 5-7 are
-// the green/cyan/gold additions. Both modes stay parallel: slot i is the same
-// family in either mode. The slice length is the hash modulus.
-var (
-	nickPaletteDark = []color.Color{
-		fixedAccent,
-		mustHex("#c099ff"),
-		mustHex("#7fc8a9"),
-		mustHex("#efb366"),
-		mustHex("#ed8f9d"),
-		mustHex("#9ece6a"),
-		mustHex("#7dcfff"),
-		mustHex("#ddd06e"),
-	}
-	nickPaletteLight = []color.Color{
-		mustHex("#7aa2f7"),
-		mustHex("#7950b8"),
-		mustHex("#237a58"),
-		mustHex("#a45f14"),
-		mustHex("#b44355"),
-		mustHex("#4d7c0f"),
-		mustHex("#0f7b8f"),
-		mustHex("#7c6a0a"),
-	}
-)

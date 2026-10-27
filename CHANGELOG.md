@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Nick and network icon colors keep the classic palette by default and can
+  select the brighter `vivid` set with `colorPalette=vivid` under
+  `[preferences]` in `omairc.conf` (no `/pref` UI yet). Classic still uses
+  the theme accent for slot 0; vivid uses fixed hues.
 - Per-nick colors hash nicks with FNV-1a, fold the high bits, then take
   modulo the eight-color palette, instead of summing character codes, so
   anagrams and similar short names spread across hues more evenly. A nick's
