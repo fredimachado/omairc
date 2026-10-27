@@ -694,10 +694,53 @@ def check_macos_notarization():
     if "notarytool" not in notarize_text:
         problems.append(
             "bin/notarize-macos: notarize Developer ID zips with notarytool")
-    if "retry_stapler" not in notarize_text:
+    retry_stapler = ROOT / "bin" / "retry-macos-stapler"
+    retry_text = _read_text(retry_stapler) or ""
+    if not retry_stapler.is_file():
         problems.append(
-            "bin/notarize-macos: retry stapler staple/validate; CloudKit "
-            "ticket lookup flakes on GitHub runners (NSURLErrorDomain -1005)")
+            "bin/retry-macos-stapler: retry CloudKit-flaky stapler staple/"
+            "validate on GitHub runners (NSURLErrorDomain -1005)")
+    else:
+        if "xcrun stapler" not in retry_text:
+            problems.append(
+                "bin/retry-macos-stapler: call xcrun stapler staple|validate")
+        if "&& exit 0 || rc=$?" not in retry_text and \
+                "&& return 0 || rc=$?" not in retry_text:
+            problems.append(
+                "bin/retry-macos-stapler: capture stapler failure with "
+                "'cmd && exit 0 || rc=$?'; POSIX if leaves $? as 0 when the "
+                "then-branch does not run")
+        if "positive_int" not in retry_text:
+            problems.append(
+                "bin/retry-macos-stapler: reject non-integer "
+                "OMAIRC_STAPLER_ATTEMPTS / delay so the retry loop cannot "
+                "spin forever")
+        if "OMAIRC_STAPLER_MAX_DELAY" not in retry_text:
+            problems.append(
+                "bin/retry-macos-stapler: cap doubled sleep via "
+                "OMAIRC_STAPLER_MAX_DELAY so the wait bound is reachable "
+                "under the default attempt count")
+    if 'bin/retry-macos-stapler" staple' not in notarize_text and \
+            "bin/retry-macos-stapler staple" not in notarize_text:
+        problems.append(
+            "bin/notarize-macos: staple through bin/retry-macos-stapler")
+    if 'bin/retry-macos-stapler" validate' not in notarize_text and \
+            "bin/retry-macos-stapler validate" not in notarize_text:
+        problems.append(
+            "bin/notarize-macos: validate through bin/retry-macos-stapler")
+    if re.search(r"\bxcrun\s+stapler\b", notarize_text):
+        problems.append(
+            "bin/notarize-macos: do not call xcrun stapler directly; use "
+            "bin/retry-macos-stapler so CloudKit flakes retry")
+    if re.search(r"\bxcrun\s+stapler\b", text):
+        problems.append(
+            ".github/workflows/macos.yml: do not call xcrun stapler; "
+            "bin/notarize-macos already staples and validates through "
+            "bin/retry-macos-stapler")
+    if "bin/retry-macos-stapler" not in text:
+        problems.append(
+            ".github/workflows/macos.yml: path-filter bin/retry-macos-stapler "
+            "so stapler retry changes rebuild macOS")
     if "bin/notarize-macos" not in text:
         problems.append(
             ".github/workflows/macos.yml: notarize release zips through "
@@ -764,9 +807,6 @@ def check_macos_notarization():
         problems.append(
             ".github/workflows/macos.yml: keep codesign --verify after Developer ID "
             "signing")
-    if "stapler validate" not in text:
-        problems.append(
-            ".github/workflows/macos.yml: keep stapler validate after notarization")
     if "spctl --assess --type execute --verbose=4" not in text:
         problems.append(
             ".github/workflows/macos.yml: after stapling, assess Gatekeeper with "

@@ -1,0 +1,71 @@
+#!/usr/bin/env sh
+set -eu
+
+# Retry xcrun stapler staple|validate. Apple CloudKit ticket lookup flakes
+# on GitHub runners (NSURLErrorDomain -1005 / exit 68) after notarytool
+# already Accepted the submission.
+
+MODE="${1:-}"
+APP="${2:-}"
+
+case "$MODE" in
+  staple|validate) ;;
+  *)
+    echo "Usage: bin/retry-macos-stapler staple|validate <app>" >&2
+    exit 2
+    ;;
+esac
+
+if [ -z "$APP" ]; then
+  echo "Usage: bin/retry-macos-stapler staple|validate <app>" >&2
+  exit 2
+fi
+
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "bin/retry-macos-stapler must run on macOS." >&2
+  exit 1
+fi
+
+positive_int() {
+  case "$1" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  [ "$1" -ge 1 ]
+}
+
+attempts="${OMAIRC_STAPLER_ATTEMPTS:-5}"
+delay="${OMAIRC_STAPLER_RETRY_DELAY:-5}"
+# Caps the doubled wait. With the defaults above, waits are 5, 10, 20, 30.
+max_delay="${OMAIRC_STAPLER_MAX_DELAY:-30}"
+
+if ! positive_int "$attempts"; then
+  echo "OMAIRC_STAPLER_ATTEMPTS must be a positive integer (got ${attempts})." >&2
+  exit 2
+fi
+if ! positive_int "$delay"; then
+  echo "OMAIRC_STAPLER_RETRY_DELAY must be a positive integer (got ${delay})." >&2
+  exit 2
+fi
+if ! positive_int "$max_delay"; then
+  echo "OMAIRC_STAPLER_MAX_DELAY must be a positive integer (got ${max_delay})." >&2
+  exit 2
+fi
+
+n=1
+rc=1
+while [ "$n" -le "$attempts" ]; do
+  # Capture failure status outside `if`; an if whose then-branch does not
+  # run exits 0 in POSIX sh, so `rc=$?` after `if cmd; then ...; fi` is wrong.
+  xcrun stapler "$MODE" "$APP" && exit 0 || rc=$?
+  if [ "$n" -ge "$attempts" ]; then
+    exit "$rc"
+  fi
+  echo "Retrying stapler $MODE ($n/$attempts) after exit $rc in ${delay}s" >&2
+  sleep "$delay"
+  n=$((n + 1))
+  delay=$((delay * 2))
+  if [ "$delay" -gt "$max_delay" ]; then
+    delay="$max_delay"
+  fi
+done
+exit "$rc"

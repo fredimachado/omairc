@@ -136,34 +136,9 @@ if [ "$status" != "Accepted" ]; then
   exit 0
 fi
 
-# stapler talks to Apple CloudKit for ticket delivery. GitHub runners
-# occasionally drop that connection (NSURLErrorDomain -1005 / exit 68)
-# after notarytool already Accepted the submission.
-retry_stapler() {
-  attempts="${OMAIRC_STAPLER_ATTEMPTS:-5}"
-  delay="${OMAIRC_STAPLER_RETRY_DELAY:-5}"
-  n=1
-  while true; do
-    if "$@"; then
-      return 0
-    fi
-    rc=$?
-    if [ "$n" -ge "$attempts" ]; then
-      return "$rc"
-    fi
-    echo "Retrying stapler ($n/$attempts) after exit $rc in ${delay}s: $*" >&2
-    sleep "$delay"
-    n=$((n + 1))
-    delay=$((delay * 2))
-    if [ "$delay" -gt 60 ]; then
-      delay=60
-    fi
-  done
-}
-
 echo "Stapling notarization ticket to $APP"
-retry_stapler xcrun stapler staple "$APP"
-retry_stapler xcrun stapler validate "$APP"
+"$ROOT/bin/retry-macos-stapler" staple "$APP"
+"$ROOT/bin/retry-macos-stapler" validate "$APP"
 zip_app
 if [ -n "${GITHUB_ENV:-}" ]; then
   echo "OMAIRC_NOTARIZED=1" >> "$GITHUB_ENV"
