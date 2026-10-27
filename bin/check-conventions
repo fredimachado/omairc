@@ -694,6 +694,10 @@ def check_macos_notarization():
     if "notarytool" not in notarize_text:
         problems.append(
             "bin/notarize-macos: notarize Developer ID zips with notarytool")
+    if "retry_stapler" not in notarize_text:
+        problems.append(
+            "bin/notarize-macos: retry stapler staple/validate; CloudKit "
+            "ticket lookup flakes on GitHub runners (NSURLErrorDomain -1005)")
     if "bin/notarize-macos" not in text:
         problems.append(
             ".github/workflows/macos.yml: notarize release zips through "

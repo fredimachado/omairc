@@ -420,7 +420,25 @@ jobs:
         if: env.OMAIRC_NOTARIZED == '1'
         run: |
           set -euo pipefail
-          xcrun stapler validate "$GITHUB_WORKSPACE/build/omairc.app"
+          app="$GITHUB_WORKSPACE/build/omairc.app"
+          # CloudKit ticket lookup flakes on runners (NSURLErrorDomain -1005).
+          attempt=1
+          delay=5
+          while true; do
+            if xcrun stapler validate "$app"; then
+              break
+            fi
+            if [ "$attempt" -ge 5 ]; then
+              exit 1
+            fi
+            echo "stapler validate failed; retry $attempt/5 in ${delay}s" >&2
+            sleep "$delay"
+            attempt=$((attempt + 1))
+            delay=$((delay * 2))
+            if [ "$delay" -gt 60 ]; then
+              delay=60
+            fi
+          done
 
       - name: Assess Gatekeeper
         if: env.OMAIRC_NOTARIZED == '1'
