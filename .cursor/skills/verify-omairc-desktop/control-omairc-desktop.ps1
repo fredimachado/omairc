@@ -200,6 +200,7 @@ public static class OmaircDriver {
   static OmaircDriver() {
     // Process-wide first. Host manifests / earlier calls can refuse that; then
     // pin the calling thread so GetWindowRect/GetClientRect match GetDpiForWindow.
+    // Thread fallback covers only this loader thread (normal for a single-run script).
     if (!SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)) {
       IntPtr prev = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
       if (prev == IntPtr.Zero) {
