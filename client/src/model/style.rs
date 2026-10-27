@@ -98,7 +98,7 @@ impl Style {
         base.with_alpha(0.6)
     }
 
-    pub fn nick_palette(&self) -> [Color; 8] {
+    pub fn nick_palette(&self) -> [Color; NICK_PALETTE_LEN] {
         let accent = self.accent_color();
         if self.dark_mode() {
             [
@@ -125,7 +125,7 @@ impl Style {
         }
     }
 
-    pub fn nick_avatar_fills(&self) -> [Color; 8] {
+    pub fn nick_avatar_fills(&self) -> [Color; NICK_PALETTE_LEN] {
         let mix = if self.dark_mode() { 0.23 } else { 0.16 };
         self.nick_palette()
             .map(|c| mix_colors(self.page_color(), c, mix))
@@ -159,18 +159,21 @@ impl Style {
     }
 }
 
-/// FNV-1a (32-bit) over the nick's UTF-8 bytes, modulo the palette length.
+/// Eight hue families; the modulus for `nick_palette_index`.
+const NICK_PALETTE_LEN: usize = 8;
+
+/// FNV-1a (32-bit) over the nick's UTF-8 bytes, then fold high bits before
+/// modulo so the slot is not only the low 3 bits of each input byte.
 /// Shared with `nickPaletteIndex` in `tui/internal/ui/style.go`.
 fn nick_palette_index(nick: &str) -> usize {
     const OFFSET: u32 = 2166136261;
     const PRIME: u32 = 16777619;
-    const LEN: usize = 8;
     let mut hash = OFFSET;
     for byte in nick.as_bytes() {
         hash ^= u32::from(*byte);
         hash = hash.wrapping_mul(PRIME);
     }
-    (hash as usize) % LEN
+    ((hash ^ (hash >> 16)) as usize) % NICK_PALETTE_LEN
 }
 
 pub fn mix_colors(base: Color, tint: Color, amount: f32) -> Color {
@@ -231,11 +234,16 @@ mod tests {
         let style = Style::new(Theme::defaults_dark(), 1.0);
         assert_eq!(style.initials("fred"), "F");
         assert_eq!(style.initials(""), "?");
-        assert_eq!(style.nick_palette_index("mira"), 6);
+        assert_eq!(style.nick_palette_index("mira"), 2);
         assert_ne!(
             style.nick_palette_index("abc"),
             style.nick_palette_index("cab"),
             "anagrams must not share a palette slot"
+        );
+        assert_ne!(
+            style.nick_palette_index("mira"),
+            style.nick_palette_index("mara"),
+            "letters eight apart must be able to change the slot"
         );
     }
 

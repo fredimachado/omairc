@@ -97,8 +97,11 @@ func TestPhase10IdenticonDeterminism(t *testing.T) {
 	if nickPaletteIndex("abc") == nickPaletteIndex("cab") {
 		t.Fatal("anagrams must not share a palette slot")
 	}
-	if nickPaletteIndex("mira") != 6 {
-		t.Fatalf("nickPaletteIndex(mira) = %d, want 6", nickPaletteIndex("mira"))
+	if nickPaletteIndex("mira") == nickPaletteIndex("mara") {
+		t.Fatal("letters eight apart must be able to change the slot")
+	}
+	if nickPaletteIndex("mira") != 2 {
+		t.Fatalf("nickPaletteIndex(mira) = %d, want 2", nickPaletteIndex("mira"))
 	}
 
 	for _, nick := range []string{"mira", "anna", "dax", "Ω", ""} {

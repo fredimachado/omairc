@@ -9,9 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Per-nick colors hash nicks with FNV-1a (modulo the eight-color palette)
-  instead of summing character codes, so anagrams and similar short names
-  spread across hues more evenly. A nick's color may change once on upgrade.
+- Per-nick colors hash nicks with FNV-1a, fold the high bits, then take
+  modulo the eight-color palette, instead of summing character codes, so
+  anagrams and similar short names spread across hues more evenly. A nick's
+  color may change once on upgrade.
 - Dev builds use an `omairc-dev` config/state tree and `OMAIRC_DEV_HOME`
   (was `omairc-poc` / `OMAIRC_POC_HOME`). Desktop proof scripts and the CI
   recipe job use `verify-omairc-desktop` / `control-omairc-desktop` and

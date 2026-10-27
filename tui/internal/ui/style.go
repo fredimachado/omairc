@@ -145,7 +145,8 @@ func avatarFill(nick string) color.Color {
 }
 
 // nickPaletteIndex mirrors nick_palette_index in `client/src/model/style.rs`: FNV-1a
-// (32-bit) over the nick's UTF-8 bytes, modulo the palette length.
+// (32-bit) over the nick's UTF-8 bytes, then fold high bits before modulo so the
+// slot is not only the low 3 bits of each input byte.
 func nickPaletteIndex(nick string) int {
 	const offset32 = 2166136261
 	const prime32 = 16777619
@@ -154,6 +155,7 @@ func nickPaletteIndex(nick string) int {
 		hash ^= uint32(b)
 		hash *= prime32
 	}
+	hash ^= hash >> 16
 	return int(hash % uint32(len(nickPalette)))
 }
 
