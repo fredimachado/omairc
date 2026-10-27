@@ -9,7 +9,7 @@
   PowerShell 5.1. Hand-parses --flag value from $args (no param binding).
 
   Spike notes (Windows, DPI 144 / 150%):
-  - Seeded off-screen geometry is clamped on-screen briefly; PlaceOffscreen
+  - Seeded off-screen geometry is clamped on-screen briefly; SetClientSizeLogical
     after map is required (expect a short flash).
   - Force client size to 1180x760 logical after place; clamped restore can
     leave a wrong physical size.
@@ -94,8 +94,6 @@ using System.Threading;
 public static class OmaircDriver {
   public const int SW_HIDE = 0;
   public const int SW_SHOWNOACTIVATE = 4;
-  public const uint SWP_NOSIZE = 0x0001;
-  public const uint SWP_NOMOVE = 0x0002;
   public const uint SWP_NOZORDER = 0x0004;
   public const uint SWP_NOACTIVATE = 0x0010;
   public const int GWL_EXSTYLE = -20;
@@ -113,13 +111,7 @@ public static class OmaircDriver {
   public const int SM_CXSCREEN = 0;
   public const int SM_CYSCREEN = 1;
   public const uint STARTF_USESHOWWINDOW = 0x00000001;
-  public const uint STARTF_USESTDHANDLES = 0x00000100;
   public const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
-  public const uint CREATE_NO_WINDOW = 0x08000000;
-  public const int GENERIC_WRITE = unchecked((int)0x40000000);
-  public const int FILE_SHARE_READ = 0x00000001;
-  public const int CREATE_ALWAYS = 2;
-  public const int FILE_ATTRIBUTE_NORMAL = 0x80;
 
   public const int WM_MOUSEMOVE = 0x0200;
   public const int WM_LBUTTONDOWN = 0x0201;
@@ -150,7 +142,6 @@ public static class OmaircDriver {
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
   [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
-  [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hWnd, ref POINT lpPoint);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)]
   public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
@@ -180,12 +171,7 @@ public static class OmaircDriver {
     string lpApplicationName, StringBuilder lpCommandLine, IntPtr lpProcessAttributes, IntPtr lpThreadAttributes,
     bool bInheritHandles, uint dwCreationFlags, IntPtr lpEnvironment, string lpCurrentDirectory,
     ref STARTUPINFO lpStartupInfo, out PROCESS_INFORMATION lpProcessInformation);
-  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-  public static extern IntPtr CreateFileW(string lpFileName, int dwDesiredAccess, int dwShareMode,
-    IntPtr lpSecurityAttributes, int dwCreationDisposition, int dwFlagsAndAttributes, IntPtr hTemplateFile);
   [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr hObject);
-  [DllImport("kernel32.dll", SetLastError = true)]
-  public static extern bool SetHandleInformation(IntPtr hObject, uint dwMask, uint dwFlags);
   [DllImport("gdi32.dll")] public static extern IntPtr CreateCompatibleDC(IntPtr hdc);
   [DllImport("gdi32.dll")] public static extern IntPtr CreateDIBSection(IntPtr hdc, ref BITMAPINFO pbmi, uint iUsage, out IntPtr ppvBits, IntPtr hSection, uint dwOffset);
   [DllImport("gdi32.dll")] public static extern IntPtr SelectObject(IntPtr hdc, IntPtr hgdiobj);
@@ -194,7 +180,6 @@ public static class OmaircDriver {
   [DllImport("gdi32.dll")] public static extern bool BitBlt(IntPtr hdc, int x, int y, int cx, int cy, IntPtr hdcSrc, int x1, int y1, uint rop);
 
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
-  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
   [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
   public struct STARTUPINFO {
     public int cb; public string lpReserved; public string lpDesktop; public string lpTitle;
@@ -211,9 +196,6 @@ public static class OmaircDriver {
     public uint biSizeImage; public int biXPelsPerMeter, biYPelsPerMeter; public uint biClrUsed, biClrImportant;
   }
   [StructLayout(LayoutKind.Sequential)] public struct BITMAPINFO { public BITMAPINFOHEADER bmiHeader; public uint bmiColors; }
-  [StructLayout(LayoutKind.Sequential)] public struct SECURITY_ATTRIBUTES {
-    public int nLength; public IntPtr lpSecurityDescriptor; public bool bInheritHandle;
-  }
 
   static OmaircDriver() {
     // Process-wide first. Host manifests / earlier calls can refuse that; then
@@ -252,11 +234,10 @@ public static class OmaircDriver {
     }
   }
 
-  // logPath is accepted for API symmetry with the sh driver; stdout is not
-  // redirected here. Inheriting a PowerShell pipeline handle (bInheritHandles)
-  // keeps the parent pwsh stuck after launch. App logs land under the isolated
-  // LOCALAPPDATA State tree; the driver also seeds STATE_DIR\logs\.
-  public static bool Launch(string exe, string args, string envBlock, string logPath, out uint pid) {
+  // stdout is not redirected: inheriting a PowerShell pipeline handle
+  // (bInheritHandles) keeps the parent pwsh stuck after launch. App logs land
+  // under the isolated LOCALAPPDATA State tree.
+  public static bool Launch(string exe, string args, string envBlock, out uint pid) {
     pid = 0;
     var si = new STARTUPINFO();
     si.cb = Marshal.SizeOf(typeof(STARTUPINFO));
@@ -266,9 +247,6 @@ public static class OmaircDriver {
     try {
       if (!string.IsNullOrEmpty(envBlock)) {
         envPtr = Marshal.StringToHGlobalUni(envBlock);
-      }
-      if (!string.IsNullOrEmpty(logPath)) {
-        try { File.WriteAllText(logPath, ""); } catch { }
       }
       string cmd = "\"" + exe + "\"";
       if (!string.IsNullOrEmpty(args)) cmd = cmd + " " + args;
@@ -307,19 +285,6 @@ public static class OmaircDriver {
     return sb.ToString();
   }
 
-  public static void PlaceOffscreen(IntPtr hwnd) {
-    RECT wr; GetWindowRect(hwnd, out wr);
-    int w = wr.Right - wr.Left, h = wr.Bottom - wr.Top;
-    int x = VirtualRight() + 200;
-    SetWindowPos(hwnd, IntPtr.Zero, x, 40, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
-  }
-
-  public static void PlaceVisible(IntPtr hwnd, int x, int y) {
-    RECT wr; GetWindowRect(hwnd, out wr);
-    int w = wr.Right - wr.Left, h = wr.Bottom - wr.Top;
-    SetWindowPos(hwnd, IntPtr.Zero, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
-  }
-
   public static void SetClientSizeLogical(IntPtr hwnd, int logicalW, int logicalH, int screenX, int screenY) {
     uint dpi = GetDpiForWindow(hwnd);
     if (dpi == 0) dpi = 96;
@@ -341,20 +306,10 @@ public static class OmaircDriver {
     ShowWindow(hwnd, SW_SHOWNOACTIVATE);
   }
 
-  public static bool ForegroundRestore(IntPtr prev) {
-    if (prev == IntPtr.Zero || !IsWindow(prev)) return false;
-    uint curTid = GetCurrentThreadId();
-    uint prevPid; uint prevTid = GetWindowThreadProcessId(prev, out prevPid);
-    bool attached = false;
-    if (prevTid != 0 && prevTid != curTid) attached = AttachThreadInput(curTid, prevTid, true);
-    bool ok = SetForegroundWindow(prev);
-    if (attached) AttachThreadInput(curTid, prevTid, false);
-    return ok;
-  }
-
-  // Briefly activate the app so demo seed mention drains see an active window
-  // (note_title_mark skips when window_active). Pair with ForegroundRestore.
-  public static bool ForegroundActivate(IntPtr hwnd) {
+  // AttachThreadInput + SetForegroundWindow. Used to briefly activate the app
+  // so demo seed mention drains see an active window (note_title_mark skips
+  // when window_active), then again to restore the caller's foreground.
+  public static bool ForegroundTo(IntPtr hwnd) {
     if (hwnd == IntPtr.Zero || !IsWindow(hwnd)) return false;
     uint curTid = GetCurrentThreadId();
     uint pid; uint tid = GetWindowThreadProcessId(hwnd, out pid);
@@ -635,10 +590,9 @@ function Delay-JumpField {
 }
 
 function Dump-OmaircLogs {
-    param([string]$StateDir, [string]$LogPath, [string]$AppFolder)
+    param([string]$StateDir, [string]$AppFolder)
     if (-not $AppFolder) { $AppFolder = Resolve-OmaircAppFolderFromFeatures }
     $candidates = @(
-        $LogPath
         (Join-Path $StateDir "lad\State\$AppFolder\omairc.log")
         (Join-Path $StateDir "lad\$AppFolder\omairc.log")
     )
@@ -892,7 +846,7 @@ function Invoke-Launch {
     New-Item -ItemType Directory -Force -Path $confDir, $logDir, $Script:EVIDENCE_DIR | Out-Null
 
     # Seed geometry before launch. Off-screen X is often clamped by Windows;
-    # PlaceOffscreen after map is authoritative (brief on-screen flash OK).
+    # SetClientSizeLogical after map is authoritative (brief on-screen flash OK).
     $seedX = 80
     $seedY = 40
     if ($visible) {
@@ -921,11 +875,10 @@ maximized=false
     $envBlock = Build-EnvBlock -Overrides $overrides
     $appArgs = ''
     if ($demo) { $appArgs = '--demo-server' }
-    $logPath = Join-Path $logDir 'omairc.log'
 
     $prevFg = [OmaircDriver]::GetForegroundWindow()
     $appPid = [uint32]0
-    $ok = [OmaircDriver]::Launch($binary, $appArgs, $envBlock, $logPath, [ref]$appPid)
+    $ok = [OmaircDriver]::Launch($binary, $appArgs, $envBlock, [ref]$appPid)
     if (-not $ok -or $appPid -eq 0) {
         if (Test-Path -LiteralPath $stateDir) {
             Remove-Item -LiteralPath $stateDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -937,28 +890,28 @@ maximized=false
     for ($attempt = 0; $attempt -lt 150; $attempt++) {
         Start-Sleep -Milliseconds 100
         if (-not (Test-ProcessAlive -ProcessId ([int]$appPid))) {
-            Dump-OmaircLogs -StateDir $stateDir -LogPath $logPath -AppFolder $appFolder
+            Dump-OmaircLogs -StateDir $stateDir -AppFolder $appFolder
             if (Test-Path -LiteralPath $stateDir) {
                 Remove-Item -LiteralPath $stateDir -Recurse -Force -ErrorAction SilentlyContinue
             }
-            Die "Omairc did not open; see $logPath"
+            Die "Omairc did not open; see isolated LOCALAPPDATA State log under $stateDir"
         }
         $hwnd = [OmaircDriver]::FindWindow($appPid)
         if ($hwnd -ne [IntPtr]::Zero) { break }
     }
     if ($hwnd -eq [IntPtr]::Zero) {
-        Dump-OmaircLogs -StateDir $stateDir -LogPath $logPath -AppFolder $appFolder
+        Dump-OmaircLogs -StateDir $stateDir -AppFolder $appFolder
         Stop-AppPid -ProcessId ([int]$appPid)
         if (Test-Path -LiteralPath $stateDir) {
             Remove-Item -LiteralPath $stateDir -Recurse -Force -ErrorAction SilentlyContinue
         }
-        Die "Omairc did not open; see $logPath"
+        Die "Omairc did not open; see isolated LOCALAPPDATA State log under $stateDir"
     }
 
     # Match the sh driver's post-map windowfocus: keep the window active while
     # the demo seed drains mentions so note_title_mark does not stick an
     # attention title. Restore the caller's foreground after placement.
-    [void][OmaircDriver]::ForegroundActivate($hwnd)
+    [void][OmaircDriver]::ForegroundTo($hwnd)
     Start-Sleep -Milliseconds 800
 
     if ($visible) {
@@ -975,7 +928,7 @@ maximized=false
         $placement = 'offscreen'
     }
 
-    [void][OmaircDriver]::ForegroundRestore($prevFg)
+    [void][OmaircDriver]::ForegroundTo($prevFg)
 
     # Demo channels start with the member panel open (Shell::members_open).
     $Script:STATE_DIR = $stateDir
@@ -1154,11 +1107,6 @@ function Resolve-KeyToken {
     $k = $k -replace '^Control_L\+', 'ctrl+'
     $k = $k -replace '^Shift_L\+', 'shift+'
     $k = $k -replace '^Alt_L\+', 'alt+'
-    # Same rewrite table as the sh driver for ApplicationShortcuts.
-    switch ($k) {
-        'ctrl+slash' { $k = 'ctrl+slash' }
-        'ctrl+shift+slash' { $k = 'ctrl+shift+slash' }
-    }
     $mods = New-Object System.Collections.Generic.List[string]
     $rest = $k
     while ($true) {
