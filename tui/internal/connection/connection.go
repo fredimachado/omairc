@@ -708,6 +708,25 @@ func (c *Connection) SetOpenAtUnread(enabled bool) {
 	c.draftChanged()
 }
 
+// ColorPalette reports the nick and network-icon color set.
+func (c *Connection) ColorPalette() irc.ColorPaletteID { return c.ctrl.ColorPalette() }
+
+// ColorPaletteToken is the Preferences-tab chip label for the color palette.
+func (c *Connection) ColorPaletteToken() string {
+	return irc.ColorPaletteToken(c.ColorPalette())
+}
+
+// SetColorPalette replaces the color-palette preference.
+func (c *Connection) SetColorPalette(id irc.ColorPaletteID) {
+	c.ctrl.SetColorPalette(id)
+	c.draftChanged()
+}
+
+// CycleColorPalette advances classic ↔ vivid on the Preferences tab.
+func (c *Connection) CycleColorPalette() {
+	c.SetColorPalette(irc.NextColorPalette(c.ColorPalette()))
+}
+
 // PersistenceStatus is the selected network's persistence sentence, or "".
 // It mirrors IrcConnection::persistenceStatus.
 func (c *Connection) PersistenceStatus() string {

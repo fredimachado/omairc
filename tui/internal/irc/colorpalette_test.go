@@ -18,3 +18,12 @@ func TestParseColorPalette(t *testing.T) {
 		t.Fatalf("tokens = %q/%q", ColorPaletteToken(ColorPaletteClassic), ColorPaletteToken(ColorPaletteVivid))
 	}
 }
+
+func TestNextColorPaletteCycles(t *testing.T) {
+	if got := NextColorPalette(ColorPaletteClassic); got != ColorPaletteVivid {
+		t.Fatalf("NextColorPalette(classic) = %v, want vivid", got)
+	}
+	if got := NextColorPalette(ColorPaletteVivid); got != ColorPaletteClassic {
+		t.Fatalf("NextColorPalette(vivid) = %v, want classic", got)
+	}
+}

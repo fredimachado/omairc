@@ -39,3 +39,12 @@ func ParseColorPalette(token string) (ColorPaletteID, bool) {
 		return ColorPaletteClassic, false
 	}
 }
+
+// NextColorPalette is the next catalog id. The Preferences tab cycles with Space.
+// It mirrors ColorPaletteId::next.
+func NextColorPalette(id ColorPaletteID) ColorPaletteID {
+	if id == ColorPaletteVivid {
+		return ColorPaletteClassic
+	}
+	return ColorPaletteVivid
+}

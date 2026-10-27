@@ -466,4 +466,35 @@ mod tests {
             );
         });
     }
+
+    #[gpui::test]
+    fn connect_palette_cycle_updates_the_style_global(cx: &mut TestAppContext) {
+        use crate::model::color_palette::ColorPaletteId;
+
+        let (activation_tx, _) = async_channel::unbounded();
+        cx.update(|app| {
+            app.set_global(OmaircStyleGlobal {
+                style: Style::new(Theme::defaults_dark(), 1.0),
+            });
+        });
+        let (shell, vcx) = cx.add_window_view(|_window, cx| {
+            Shell::new(cx, false, true, None, activation_tx)
+        });
+        shell.update(vcx, |shell, cx| {
+            assert_eq!(
+                cx.global::<OmaircStyleGlobal>().style.color_palette(),
+                ColorPaletteId::Classic
+            );
+            shell.cycle_connect_palette(cx);
+            assert_eq!(
+                cx.global::<OmaircStyleGlobal>().style.color_palette(),
+                ColorPaletteId::Vivid
+            );
+            shell.cycle_connect_palette(cx);
+            assert_eq!(
+                cx.global::<OmaircStyleGlobal>().style.color_palette(),
+                ColorPaletteId::Classic
+            );
+        });
+    }
 }

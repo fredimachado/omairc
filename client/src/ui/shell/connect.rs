@@ -235,6 +235,19 @@ impl Shell {
         cx.notify();
     }
 
+    /// Cycles Color palette on the Preferences tab (classic ↔ vivid). Writes at
+    /// once like the toggles; no Apply.
+    pub fn cycle_connect_palette(&mut self, cx: &mut Context<Self>) {
+        let before = *self.controller.preferences();
+        let next = before.palette.next();
+        if !self.controller.set_preference(PrefName::Palette, PrefValue::Palette(next)) {
+            return;
+        }
+        self.apply_preference_changes(before, cx);
+        self.drain_notifications(cx);
+        cx.notify();
+    }
+
     /// Whether the Connect card's keys act: Connect shows, and no sheet sits above it.
     fn connect_keys_live(&self) -> bool {
         self.connect_open && self.modal.is_none()
@@ -302,6 +315,7 @@ impl Shell {
                 let on = !self.connect.connect_on_startup();
                 self.connect.set_connect_on_startup(on);
             }
+            Stop::Preference(PrefName::Palette) => self.cycle_connect_palette(cx),
             Stop::Preference(name) => {
                 let on = !self.controller.preferences().enabled(name);
                 self.set_connect_preference(name, on, cx);

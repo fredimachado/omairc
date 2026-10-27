@@ -54,13 +54,14 @@ var connectFieldLabels = [connectFieldCount]string{
 	fieldNickServPassword: "NickServ password",
 }
 
-// prefField indexes the Preferences tab's toggles.
+// prefField indexes the Preferences tab's rows.
 type prefField int
 
 const (
 	prefReopen prefField = iota
 	prefAvatars
 	prefUnread
+	prefPalette
 	prefFieldCount
 )
 
@@ -68,6 +69,7 @@ var prefFieldLabels = [prefFieldCount]string{
 	prefReopen:  "Reopen direct messages on startup",
 	prefAvatars: "Show peer avatars",
 	prefUnread:  "Open conversations at unread",
+	prefPalette: "Color palette",
 }
 
 // connectStopKind names what a focus stop points at.
@@ -525,6 +527,8 @@ func (m *Model) flipFocusedToggle() bool {
 			m.conn.SetShowAvatars(!m.conn.ShowAvatars())
 		case prefUnread:
 			m.conn.SetOpenAtUnread(!m.conn.OpenAtUnread())
+		case prefPalette:
+			m.conn.CycleColorPalette()
 		}
 		return true
 	}
@@ -754,6 +758,11 @@ func (m *Model) connectChip(on bool) string {
 	return style.Background(m.styles.Colors.SurfaceRaised).Render(" " + label + " ")
 }
 
+// connectTokenChip renders a choice value (classic/vivid) as a raised pill.
+func (m *Model) connectTokenChip(token string) string {
+	return m.styles.SheetToggleOn.Background(m.styles.Colors.SurfaceRaised).Render(" " + token + " ")
+}
+
 // connectFieldLine renders one Connection-tab field: a label column, then
 // either a toggle chip or the bracketed value box.
 func (m *Model) connectFieldLine(field connectField, inner int) string {
@@ -788,13 +797,8 @@ func (m *Model) connectFieldLine(field connectField, inner int) string {
 	return line
 }
 
-// preferencesLines renders the Preferences-tab toggles.
+// preferencesLines renders the Preferences-tab rows.
 func (m *Model) preferencesLines() []string {
-	on := [prefFieldCount]bool{
-		prefReopen:  m.conn.ReopenDirects(),
-		prefAvatars: m.conn.ShowAvatars(),
-		prefUnread:  m.conn.OpenAtUnread(),
-	}
 	lines := make([]string, 0, prefFieldCount)
 	for index := 0; index < int(prefFieldCount); index++ {
 		stop := connectStop{kind: stopField, index: index}
@@ -802,7 +806,19 @@ func (m *Model) preferencesLines() []string {
 		if m.stopFocused(stop) {
 			style = m.styles.SheetFieldActive.Foreground(m.styles.Colors.Accent)
 		}
-		lines = append(lines, m.connectChip(on[prefField(index)])+" "+style.Render(prefFieldLabels[prefField(index)]))
+		field := prefField(index)
+		var chip string
+		switch field {
+		case prefReopen:
+			chip = m.connectChip(m.conn.ReopenDirects())
+		case prefAvatars:
+			chip = m.connectChip(m.conn.ShowAvatars())
+		case prefUnread:
+			chip = m.connectChip(m.conn.OpenAtUnread())
+		case prefPalette:
+			chip = m.connectTokenChip(m.conn.ColorPaletteToken())
+		}
+		lines = append(lines, chip+" "+style.Render(prefFieldLabels[field]))
 	}
 	return lines
 }

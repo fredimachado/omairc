@@ -33,6 +33,14 @@ impl ColorPaletteId {
         let folded = token.trim().to_lowercase();
         Self::ALL.into_iter().find(|id| id.token() == folded)
     }
+
+    /// The next catalog id. The Preferences tab cycles with Space or a click.
+    pub fn next(self) -> Self {
+        match self {
+            ColorPaletteId::Classic => ColorPaletteId::Vivid,
+            ColorPaletteId::Vivid => ColorPaletteId::Classic,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -51,5 +59,11 @@ mod tests {
         assert_eq!(ColorPaletteId::from_token("loud"), None);
         assert_eq!(ColorPaletteId::from_token(""), None);
         assert_eq!(ColorPaletteId::default(), ColorPaletteId::Classic);
+    }
+
+    #[test]
+    fn next_cycles_classic_and_vivid() {
+        assert_eq!(ColorPaletteId::Classic.next(), ColorPaletteId::Vivid);
+        assert_eq!(ColorPaletteId::Vivid.next(), ColorPaletteId::Classic);
     }
 }

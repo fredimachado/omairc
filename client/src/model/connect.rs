@@ -194,8 +194,8 @@ pub enum Stop {
     Apply,
 }
 
-/// One toggle on the Preferences tab. The sheet shows these four; `joins` has no
-/// row there and stays a `/pref` setting.
+/// One row on the Preferences tab. Toggles use a switch; `Palette` cycles
+/// classic/vivid. `joins` has no row there and stays a `/pref` setting.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PreferenceRow {
     pub name: PrefName,
@@ -204,7 +204,7 @@ pub struct PreferenceRow {
 }
 
 /// The Preferences tab rows, in display order.
-pub fn preference_rows() -> [PreferenceRow; 4] {
+pub fn preference_rows() -> [PreferenceRow; 5] {
     [
         PreferenceRow {
             name: PrefName::Directs,
@@ -225,6 +225,11 @@ pub fn preference_rows() -> [PreferenceRow; 4] {
             name: PrefName::Colors,
             label: PrefName::Colors.label(),
             help: "Paints the foreground and background colors other clients send in messages and topics. Off, text takes your theme's colors; bold, italic, underline, and strikethrough still show. Applies to lines already on screen.",
+        },
+        PreferenceRow {
+            name: PrefName::Palette,
+            label: PrefName::Palette.label(),
+            help: "Nick and network icon hues. Classic follows the theme accent for the first color; vivid uses a brighter fixed set. Takes effect at once for nicks and icons already on screen. Also /pref palette.",
         },
     ]
 }
