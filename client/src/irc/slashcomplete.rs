@@ -8,6 +8,7 @@
 //! in `model/slash_complete.rs`.
 
 use super::command::{lookup, visible_on, ComposerSurface, VerbSpec};
+use super::colorpalette::ColorPaletteId;
 use super::membershipnoise::MembershipNoise;
 use super::pref::{pref_catalog, pref_find, PrefSpec, PrefValueKind};
 
@@ -224,6 +225,10 @@ fn pref_value_rows(needle: String, name_word: &str, value: &str) -> Option<Slash
             .iter()
             .map(|level| level.token())
             .collect(),
+        PrefValueKind::Palette => ColorPaletteId::ALL
+            .iter()
+            .map(|id| id.token())
+            .collect(),
         PrefValueKind::Toggle => vec!["on", "off"],
     };
     let prefix = format!("/pref {} ", spec.token);
@@ -376,7 +381,8 @@ mod tests {
                 "/pref avatars",
                 "/pref unread",
                 "/pref colors",
-                "/pref joins"
+                "/pref joins",
+                "/pref palette"
             ]
         );
         assert_eq!(probe.hits()[0].usage, "Reopen direct messages on startup");
@@ -417,6 +423,18 @@ mod tests {
         assert_eq!(
             labels(&project_slash("/pref joins f", Conversation)),
             ["/pref joins folded"]
+        );
+    }
+
+    #[test]
+    fn the_palette_offers_classic_and_vivid() {
+        assert_eq!(
+            labels(&project_slash("/pref palette ", Conversation)),
+            ["/pref palette classic", "/pref palette vivid"]
+        );
+        assert_eq!(
+            labels(&project_slash("/pref palette v", Conversation)),
+            ["/pref palette vivid"]
         );
     }
 

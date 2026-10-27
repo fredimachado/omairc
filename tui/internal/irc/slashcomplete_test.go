@@ -110,7 +110,7 @@ func TestProjectSlashPrefNames(t *testing.T) {
 	if !probe.Open {
 		t.Fatalf("/pref should list toggles: %+v", probe)
 	}
-	want := []string{"/pref directs", "/pref avatars", "/pref unread", "/pref joins"}
+	want := []string{"/pref directs", "/pref avatars", "/pref unread", "/pref joins", "/pref palette"}
 	got := make([]string, len(probe.Hits))
 	for index, hit := range probe.Hits {
 		got[index] = hit.Label
@@ -153,6 +153,19 @@ func TestProjectSlashPrefValues(t *testing.T) {
 	partial := ProjectSlash("/pref avatars o", SurfaceConversation)
 	if !partial.Open || len(partial.Hits) != 2 || partial.Hits[0].Label != "/pref avatars on" {
 		t.Fatalf("/pref avatars o = %+v", partial)
+	}
+
+	palette := ProjectSlash("/pref palette ", SurfaceConversation)
+	if !palette.Open {
+		t.Fatalf("/pref palette should list classic/vivid: %+v", palette)
+	}
+	wantPalette := []string{"/pref palette classic", "/pref palette vivid"}
+	gotPalette := make([]string, len(palette.Hits))
+	for index, hit := range palette.Hits {
+		gotPalette[index] = hit.Label
+	}
+	if !slices.Equal(gotPalette, wantPalette) {
+		t.Fatalf("pref palette hits = %v, want %v", gotPalette, wantPalette)
 	}
 }
 

@@ -3,6 +3,8 @@ package theme
 import (
 	"slices"
 	"testing"
+
+	"github.com/fredimachado/omairc/tui/internal/irc"
 )
 
 func TestParseColorPalette(t *testing.T) {
@@ -17,8 +19,8 @@ func TestParseColorPalette(t *testing.T) {
 	if _, ok := ParseColorPalette("loud"); ok {
 		t.Fatal("ParseColorPalette(loud) ok, want false")
 	}
-	if ColorPaletteClassic.Token() != "classic" || ColorPaletteVivid.Token() != "vivid" {
-		t.Fatalf("tokens = %q/%q", ColorPaletteClassic.Token(), ColorPaletteVivid.Token())
+	if irc.ColorPaletteToken(ColorPaletteClassic) != "classic" || irc.ColorPaletteToken(ColorPaletteVivid) != "vivid" {
+		t.Fatalf("tokens = %q/%q", irc.ColorPaletteToken(ColorPaletteClassic), irc.ColorPaletteToken(ColorPaletteVivid))
 	}
 }
 

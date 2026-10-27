@@ -2,21 +2,21 @@ package theme
 
 import (
 	"image/color"
-	"strings"
+
+	"github.com/fredimachado/omairc/tui/internal/irc"
 )
 
-// ColorPaletteID names a color set for nicks and network icons. Tokens are
-// stable config keys under [preferences] colorPalette=… in omairc.conf.
-// Unknown tokens fall back to ColorPaletteClassic. Add a constant, token, and
-// table row to ship a new set.
-type ColorPaletteID int
+// ColorPaletteID names a color set for nicks and network icons. Tokens live in
+// the IRC layer; this package keeps the hex tables and the active selection.
+// Unknown tokens fall back to ColorPaletteClassic at ParseColorPalette.
+type ColorPaletteID = irc.ColorPaletteID
 
 const (
 	// ColorPaletteClassic is the original Tokyo-Night-derived hues. Slot 0
 	// follows the theme accent at resolve time.
-	ColorPaletteClassic ColorPaletteID = iota
+	ColorPaletteClassic = irc.ColorPaletteClassic
 	// ColorPaletteVivid is the brighter fixed chromas.
-	ColorPaletteVivid
+	ColorPaletteVivid = irc.ColorPaletteVivid
 )
 
 // ColorPaletteLen is the hash modulus shared with client/src/model/color_palette.rs.
@@ -34,7 +34,8 @@ type colorPaletteDef struct {
 
 // colorPaletteTable is the registry. Keep dark/light families parallel.
 // Hex strings stay in source for the Rust↔Go parity gate; parsed colors are
-// filled once at init so Derive does not re-parse.
+// filled once at init so Derive does not re-parse. Tokens must match
+// irc.ColorPaletteToken for each id.
 var colorPaletteTable = []colorPaletteDef{
 	{
 		id:          ColorPaletteClassic,
@@ -117,18 +118,7 @@ func ActiveColorPalette() ColorPaletteID {
 
 // ParseColorPalette resolves a stored token, ASCII-case-insensitively.
 func ParseColorPalette(token string) (ColorPaletteID, bool) {
-	folded := strings.ToLower(strings.TrimSpace(token))
-	for _, row := range colorPaletteTable {
-		if row.token == folded {
-			return row.id, true
-		}
-	}
-	return ColorPaletteClassic, false
-}
-
-// Token returns the config token for id.
-func (id ColorPaletteID) Token() string {
-	return colorPaletteDefFor(id).token
+	return irc.ParseColorPalette(token)
 }
 
 // PaletteColors resolves the eight colors for id in the given mode. When the

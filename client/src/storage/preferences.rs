@@ -9,9 +9,9 @@
 //! never shipped.
 
 use crate::irc::autoaway::AutoawayConfig;
+use crate::irc::colorpalette::ColorPaletteId;
 use crate::irc::membershipnoise::MembershipNoise;
 use crate::irc::pref::Preferences;
-use crate::model::ColorPaletteId;
 
 use super::settings::Status;
 use super::Backing;
@@ -51,6 +51,9 @@ impl PreferenceStore {
             colors: settings.bool_value(PREFERENCES_GROUP, SHOW_IRC_COLORS_KEY, defaults.colors),
             joins: MembershipNoise::from_token(&settings.value(PREFERENCES_GROUP, MEMBERSHIP_NOISE_KEY))
                 .unwrap_or(defaults.joins),
+            // Loaded here so `/pref` queries match disk; `/pref palette` writes land in slice 2.
+            palette: ColorPaletteId::from_token(&settings.value(PREFERENCES_GROUP, COLOR_PALETTE_KEY))
+                .unwrap_or(defaults.palette),
         }
     }
 

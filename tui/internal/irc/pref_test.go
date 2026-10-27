@@ -4,14 +4,15 @@ import "testing"
 
 func TestPrefCatalog(t *testing.T) {
 	catalog := PrefCatalog()
-	if len(catalog) != 4 {
-		t.Fatalf("pref catalog has %d rows, want 4", len(catalog))
+	if len(catalog) != 5 {
+		t.Fatalf("pref catalog has %d rows, want 5", len(catalog))
 	}
 	want := []PrefSpec{
 		{PrefDirects, "directs", "Reopen direct messages on startup", PrefValueToggle},
 		{PrefAvatars, "avatars", "Show peer avatars", PrefValueToggle},
 		{PrefUnread, "unread", "Open conversations at unread", PrefValueToggle},
 		{PrefJoins, "joins", "Join, part, quit, and nick lines", PrefValueNoise},
+		{PrefPalette, "palette", "Color palette", PrefValuePalette},
 	}
 	for index, spec := range catalog {
 		if spec != want[index] {
@@ -27,13 +28,16 @@ func TestPrefFind(t *testing.T) {
 	if spec := PrefFind("avatars"); spec == nil || spec.Name != PrefAvatars {
 		t.Fatalf("PrefFind(avatars) = %+v, want avatars", spec)
 	}
+	if spec := PrefFind("palette"); spec == nil || spec.Name != PrefPalette {
+		t.Fatalf("PrefFind(palette) = %+v, want palette", spec)
+	}
 	if spec := PrefFind("nope"); spec != nil {
 		t.Fatalf("PrefFind(nope) = %+v, want nil", spec)
 	}
 }
 
 func TestPrefStrings(t *testing.T) {
-	if got := PrefUsage(); got != "/pref [directs|avatars|unread] [on|off] | joins [folded|every|hidden]" {
+	if got := PrefUsage(); got != "/pref [directs|avatars|unread] [on|off] | joins [folded|every|hidden] | palette [classic|vivid]" {
 		t.Errorf("PrefUsage() = %q", got)
 	}
 	if got := PrefAvatarNote(); got != "Turn off to keep avatar hosts from seeing your IP on busy channels." {
@@ -64,9 +68,13 @@ func TestFormatPrefList(t *testing.T) {
 	want := "Reopen direct messages on startup: on\n" +
 		"Show peer avatars: off\n" +
 		"Open conversations at unread: on\n" +
-		"Join, part, quit, and nick lines: every"
-	if got := FormatPrefList(true, false, true, MembershipNoiseEvery); got != want {
+		"Join, part, quit, and nick lines: every\n" +
+		"Color palette: classic"
+	if got := FormatPrefList(true, false, true, MembershipNoiseEvery, ColorPaletteClassic); got != want {
 		t.Errorf("FormatPrefList = %q, want %q", got, want)
+	}
+	if got := FormatPrefPalette(ColorPaletteVivid); got != "Color palette: vivid" {
+		t.Errorf("FormatPrefPalette(vivid) = %q", got)
 	}
 }
 
@@ -89,6 +97,10 @@ func TestParsePrefArgument(t *testing.T) {
 		{"directs folded", PrefRequest{Kind: PrefUsageKind, Name: PrefDirects}},
 		{"JOINS every", PrefRequest{Kind: PrefSet, Name: PrefJoins, Noise: MembershipNoiseEvery}},
 		{"joins hidden", PrefRequest{Kind: PrefSet, Name: PrefJoins, Noise: MembershipNoiseHidden}},
+		{"palette", PrefRequest{Kind: PrefQueryOne, Name: PrefPalette}},
+		{"palette on", PrefRequest{Kind: PrefUsageKind, Name: PrefPalette}},
+		{"PALETTE vivid", PrefRequest{Kind: PrefSet, Name: PrefPalette, Palette: ColorPaletteVivid}},
+		{"palette classic", PrefRequest{Kind: PrefSet, Name: PrefPalette, Palette: ColorPaletteClassic}},
 	}
 	for _, test := range cases {
 		if got := ParsePrefArgument(test.argument); got != test.want {

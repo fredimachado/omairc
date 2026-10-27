@@ -391,7 +391,7 @@ func (c *Controller) PrefEnabled(name irc.PrefName) bool {
 		return c.ShowAvatars()
 	case irc.PrefUnread:
 		return c.OpenAtUnread()
-	case irc.PrefJoins:
+	case irc.PrefJoins, irc.PrefPalette:
 		return false
 	}
 	return false
@@ -426,7 +426,7 @@ func (c *Controller) PrefApply(name irc.PrefName, enabled bool) {
 		c.SetShowAvatars(enabled)
 	case irc.PrefUnread:
 		c.SetOpenAtUnread(enabled)
-	case irc.PrefJoins:
+	case irc.PrefJoins, irc.PrefPalette:
 	}
 }
 

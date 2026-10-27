@@ -1,39 +1,16 @@
-//! Named color palettes for nicks and network icons. Each id is a config token
-//! under `[preferences] colorPalette=…`. Adding a palette is one table row plus
-//! one [`ColorPaletteId`] variant; unknown tokens fall back to
-//! [`ColorPaletteId::Classic`].
+//! Hex tables for nick and network-icon color palettes. Ids and tokens live in
+//! [`crate::irc::colorpalette`]; this module resolves colors for a given id.
+//! Adding a palette is one IRC id variant plus one table row here. Unknown
+//! tokens fall back to classic at the IRC layer.
 
 use super::color::Color;
+
+pub use crate::irc::colorpalette::ColorPaletteId;
 
 /// How many hue families every color palette carries. The hash modulus.
 pub const COLOR_PALETTE_LEN: usize = 8;
 
-/// A configured color palette. Tokens are stable config keys.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ColorPaletteId {
-    /// The original Tokyo-Night-derived hues. Slot 0 follows the theme accent.
-    #[default]
-    Classic,
-    /// Brighter fixed chromas (blue, violet, teal, orange, pink, green, red, gold).
-    Vivid,
-}
-
 impl ColorPaletteId {
-    /// Catalog order. Append new ids here when a palette is added.
-    pub const ALL: [ColorPaletteId; 2] = [ColorPaletteId::Classic, ColorPaletteId::Vivid];
-
-    /// The stored token (`colorPalette=…` in omairc.conf).
-    pub fn token(self) -> &'static str {
-        self.def().token
-    }
-
-    /// The id for a stored token, ignoring case and surrounding space.
-    /// `None` for anything unknown; the caller applies the ordinary default.
-    pub fn from_token(token: &str) -> Option<Self> {
-        let folded = token.trim().to_lowercase();
-        Self::ALL.into_iter().find(|id| id.token() == folded)
-    }
-
     /// The eight colors for this palette in the given mode. When the definition
     /// marks slot 0 as accent-backed, `accent` replaces that slot.
     pub fn colors(self, dark: bool, accent: Color) -> [Color; COLOR_PALETTE_LEN] {
@@ -56,6 +33,7 @@ impl ColorPaletteId {
 
 struct ColorPaletteDef {
     id: ColorPaletteId,
+    /// Kept in sync with [`ColorPaletteId::token`] for the Rust↔Go parity gate.
     token: &'static str,
     /// When true, slot 0 is the live theme accent at resolve time.
     accent_slot0: bool,
@@ -63,7 +41,7 @@ struct ColorPaletteDef {
     light: [&'static str; COLOR_PALETTE_LEN],
 }
 
-/// Registry of color palettes. Add a row (and a [`ColorPaletteId`] variant) to
+/// Registry of color palettes. Add a row (and an IRC [`ColorPaletteId`] variant) to
 /// ship a new set; keep dark/light families parallel slot-for-slot.
 const COLOR_PALETTE_TABLE: &[ColorPaletteDef] = &[
     ColorPaletteDef {
@@ -123,17 +101,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tokens_round_trip_and_unknown_is_none() {
+    fn table_tokens_match_irc_ids() {
         for id in ColorPaletteId::ALL {
-            assert_eq!(ColorPaletteId::from_token(id.token()), Some(id));
-            assert_eq!(
-                ColorPaletteId::from_token(&id.token().to_uppercase()),
-                Some(id)
-            );
+            assert_eq!(id.def().token, id.token());
         }
-        assert_eq!(ColorPaletteId::from_token("loud"), None);
-        assert_eq!(ColorPaletteId::from_token(""), None);
-        assert_eq!(ColorPaletteId::default(), ColorPaletteId::Classic);
     }
 
     #[test]

@@ -753,7 +753,7 @@ func TestCommandDispatcherPref(t *testing.T) {
 	fixture := newCommandFixture()
 
 	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbPref}, irc.SurfaceStatus), irc.OutcomeSent, "pref list")
-	commandRequireText(t, fixture.host.statusTexts[0], irc.FormatPrefList(true, true, true, irc.MembershipNoiseFolded), "pref list text")
+	commandRequireText(t, fixture.host.statusTexts[0], irc.FormatPrefList(true, true, true, irc.MembershipNoiseFolded, irc.ColorPaletteClassic), "pref list text")
 
 	fixture.host.statusTexts = nil
 	fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbPref, Argument: "avatars"}, irc.SurfaceStatus)

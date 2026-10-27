@@ -3,7 +3,6 @@
 
 use super::verbs::{verb_table, VerbScope};
 use super::*;
-use crate::irc::membershipnoise::MembershipNoise;
 use crate::irc::pref::PrefValueKind;
 use std::collections::HashSet;
 
