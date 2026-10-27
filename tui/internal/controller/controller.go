@@ -61,6 +61,7 @@ type Controller struct {
 	avatars         *AvatarStore
 	prefs           *Preferences
 	membershipNoise irc.MembershipNoise
+	colorPalette    irc.ColorPaletteID
 
 	// Persistence. New starts ephemeral so unit tests never touch the
 	// user's config; the shell opts in with SetEphemeral(false) and then loads
@@ -219,6 +220,7 @@ const (
 	loadPeerAvatarsKey           = "loadPeerAvatars"
 	openConversationsAtUnreadKey = "openConversationsAtUnread"
 	membershipNoiseKey           = "membershipNoise"
+	colorPaletteKey              = "colorPalette"
 	networkOrderKey              = "networkOrder"
 	collapsedNetworksKey         = "collapsedNetworks"
 	autoawayEnabledKey           = "autoawayEnabled"
@@ -286,6 +288,9 @@ func (c *Controller) LoadStoredPreferences() {
 		c.membershipNoise = noise
 	}
 	c.reducer.SetMembershipNoise(c.membershipNoise)
+	if id, ok := irc.ParseColorPalette(settings.Value(preferencesGroup, colorPaletteKey)); ok {
+		c.colorPalette = id
+	}
 	c.loadStoredNetworkOrder(settings)
 	c.autoaway.LoadStored()
 }
@@ -391,7 +396,7 @@ func (c *Controller) PrefEnabled(name irc.PrefName) bool {
 		return c.ShowAvatars()
 	case irc.PrefUnread:
 		return c.OpenAtUnread()
-	case irc.PrefJoins:
+	case irc.PrefJoins, irc.PrefPalette:
 		return false
 	}
 	return false
@@ -415,6 +420,28 @@ func (c *Controller) SetMembershipNoise(noise irc.MembershipNoise) {
 	}
 }
 
+// ColorPalette reports the nick and network-icon color set.
+func (c *Controller) ColorPalette() irc.ColorPaletteID {
+	return c.colorPalette
+}
+
+// SetColorPalette stores the color-palette setting and persists it unless
+// ephemeral. The shell refreshes Styles.NickPalette on the next NotifyMsg.
+func (c *Controller) SetColorPalette(id irc.ColorPaletteID) {
+	if c.colorPalette == id {
+		return
+	}
+	c.colorPalette = id
+	if !c.ephemeral {
+		savePreferenceValue(colorPaletteKey, irc.ColorPaletteToken(id))
+	}
+	c.Publish(irc.ViewNotify{
+		Conversations: true,
+		Messages:      true,
+		Members:       irc.MemberSurfaceReset,
+	})
+}
+
 // PrefApply maps one /pref toggle to its setter. The Rust `/pref` write path
 // is `set_preference` in `client/src/controller/commanddispatcher.rs`, with
 // side effects in `after_preference_change` (`client/src/controller/persistence.rs`).
@@ -426,7 +453,7 @@ func (c *Controller) PrefApply(name irc.PrefName, enabled bool) {
 		c.SetShowAvatars(enabled)
 	case irc.PrefUnread:
 		c.SetOpenAtUnread(enabled)
-	case irc.PrefJoins:
+	case irc.PrefJoins, irc.PrefPalette:
 	}
 }
 

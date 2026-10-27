@@ -433,4 +433,37 @@ mod tests {
             );
         });
     }
+
+    #[gpui::test]
+    fn pref_palette_updates_the_style_global(cx: &mut TestAppContext) {
+        use crate::model::color_palette::ColorPaletteId;
+        use crate::model::slash::Surface;
+
+        let (activation_tx, _) = async_channel::unbounded();
+        cx.update(|app| {
+            app.set_global(OmaircStyleGlobal {
+                style: Style::new(Theme::defaults_dark(), 1.0),
+            });
+        });
+        let (shell, vcx) = cx.add_window_view(|_window, cx| {
+            Shell::new(cx, false, true, None, activation_tx)
+        });
+        shell.update(vcx, |shell, cx| {
+            assert_eq!(
+                cx.global::<OmaircStyleGlobal>().style.color_palette(),
+                ColorPaletteId::Classic
+            );
+            let before = *shell.controller.preferences();
+            assert!(shell.controller.submit(Surface::Conversation, "/pref palette vivid"));
+            shell.apply_preference_changes(before, cx);
+            assert_eq!(
+                cx.global::<OmaircStyleGlobal>().style.color_palette(),
+                ColorPaletteId::Vivid
+            );
+            assert_eq!(
+                shell.controller.preferences().palette,
+                ColorPaletteId::Vivid
+            );
+        });
+    }
 }

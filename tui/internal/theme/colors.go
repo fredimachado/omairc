@@ -53,7 +53,6 @@ type Colors struct {
 	Mention       color.Color
 	Unread        color.Color
 	Page          color.Color
-	NickPalette   []color.Color
 	NickAvatarMix float64
 }
 
@@ -102,12 +101,11 @@ func Derive(spec Spec) Colors {
 
 	// In dark mode the foreground is lighter than the background, so mixing
 	// toward it lightens; in light mode it darkens. The identicon mix amount is
-	// likewise mode-specific (0.23 dark / 0.16 light), and the light mode swaps
-	// in `client/src/model/style.rs`'s light nick palette.
-	nickPalette := nickPaletteLight
+	// likewise mode-specific (0.23 dark / 0.16 light). Nick hues are not
+	// derived here: the UI resolves them from the controller's ColorPaletteID
+	// via PaletteColors and FixedAccent.
 	nickAvatarMix := 0.16
 	if dark {
-		nickPalette = nickPaletteDark
 		nickAvatarMix = 0.23
 	}
 
@@ -139,7 +137,6 @@ func Derive(spec Spec) Colors {
 		Mention:       fixedMention,
 		Unread:        fixedUnread,
 		Page:          fixedPage,
-		NickPalette:   nickPalette,
 		NickAvatarMix: nickAvatarMix,
 	}
 }
@@ -297,6 +294,13 @@ var (
 	colorBlack = color.RGBA{A: 0xff}
 )
 
+// FixedAccent is the Tokyo-Night accent (#7aa2f7) used for classic nick slot 0
+// when the TUI resolves the configured color palette. It does not follow the
+// live Omarchy theme.
+func FixedAccent() color.Color {
+	return fixedAccent
+}
+
 // Qt's fallback colors from Backend::loadOmarchyTheme, used when colors.toml
 // omits a key or no theme is installed.
 var (
@@ -310,30 +314,3 @@ var (
 	lightSelectionDefault  = mustHex("#2077b2")
 )
 
-// Nick palette per mode, mirroring nickPalette in `client/src/model/style.rs`. The dark
-// entries are today's style.go constants. Eight fixed hue families; slot 0 is
-// the theme accent in QML but the fixed fallback accent here, and slots 5-7 are
-// the green/cyan/gold additions. Both modes stay parallel: slot i is the same
-// family in either mode. The slice length is the hash modulus.
-var (
-	nickPaletteDark = []color.Color{
-		fixedAccent,
-		mustHex("#c099ff"),
-		mustHex("#7fc8a9"),
-		mustHex("#efb366"),
-		mustHex("#ed8f9d"),
-		mustHex("#9ece6a"),
-		mustHex("#7dcfff"),
-		mustHex("#ddd06e"),
-	}
-	nickPaletteLight = []color.Color{
-		mustHex("#7aa2f7"),
-		mustHex("#7950b8"),
-		mustHex("#237a58"),
-		mustHex("#a45f14"),
-		mustHex("#b44355"),
-		mustHex("#4d7c0f"),
-		mustHex("#0f7b8f"),
-		mustHex("#7c6a0a"),
-	}
-)

@@ -20,6 +20,7 @@ pub mod jump;
 pub mod links;
 pub mod mention;
 pub mod navigation;
+pub mod color_palette;
 pub mod nick_pick;
 pub mod prefs;
 pub mod presence;
@@ -43,6 +44,7 @@ pub use color::Color;
 pub use ids::ConversationRef;
 pub use format::{StyleRun, TextStyle};
 pub use jump::{jump_targets, JumpTarget};
+pub use color_palette::{ColorPaletteId, COLOR_PALETTE_LEN};
 pub use style::{mix_colors, Style};
 pub use theme::{Theme, ThemeWatcher};
 pub use transcript::{

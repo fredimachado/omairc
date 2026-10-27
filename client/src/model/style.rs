@@ -1,18 +1,37 @@
 use super::color::Color;
+use super::color_palette::{ColorPaletteId, COLOR_PALETTE_LEN};
 use super::theme::Theme;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Style {
     pub theme: Theme,
     pub text_scale: f32,
+    color_palette: ColorPaletteId,
+    /// Resolved nick/network hues for `color_palette` under the current theme.
+    resolved_palette: [Color; COLOR_PALETTE_LEN],
 }
 
 impl Style {
     pub fn new(theme: Theme, text_scale: f32) -> Self {
+        Self::with_color_palette(theme, text_scale, ColorPaletteId::default())
+    }
+
+    pub fn with_color_palette(
+        theme: Theme,
+        text_scale: f32,
+        color_palette: ColorPaletteId,
+    ) -> Self {
+        let resolved_palette = color_palette.colors(theme.dark_mode, theme.accent);
         Self {
             theme,
             text_scale: text_scale.max(0.01),
+            color_palette,
+            resolved_palette,
         }
+    }
+
+    pub fn color_palette(&self) -> ColorPaletteId {
+        self.color_palette
     }
 
     pub fn dark_mode(&self) -> bool {
@@ -98,36 +117,14 @@ impl Style {
         base.with_alpha(0.6)
     }
 
-    pub fn nick_palette(&self) -> [Color; NICK_PALETTE_LEN] {
-        let accent = self.accent_color();
-        if self.dark_mode() {
-            [
-                accent,
-                Color::from_hex("#c099ff").unwrap(),
-                Color::from_hex("#7fc8a9").unwrap(),
-                Color::from_hex("#efb366").unwrap(),
-                Color::from_hex("#ed8f9d").unwrap(),
-                Color::from_hex("#9ece6a").unwrap(),
-                Color::from_hex("#7dcfff").unwrap(),
-                Color::from_hex("#ddd06e").unwrap(),
-            ]
-        } else {
-            [
-                accent,
-                Color::from_hex("#7950b8").unwrap(),
-                Color::from_hex("#237a58").unwrap(),
-                Color::from_hex("#a45f14").unwrap(),
-                Color::from_hex("#b44355").unwrap(),
-                Color::from_hex("#4d7c0f").unwrap(),
-                Color::from_hex("#0f7b8f").unwrap(),
-                Color::from_hex("#7c6a0a").unwrap(),
-            ]
-        }
+    /// The eight hues for nicks and network icons under the configured palette.
+    pub fn palette_colors(&self) -> [Color; COLOR_PALETTE_LEN] {
+        self.resolved_palette
     }
 
-    pub fn nick_avatar_fills(&self) -> [Color; NICK_PALETTE_LEN] {
+    pub fn nick_avatar_fills(&self) -> [Color; COLOR_PALETTE_LEN] {
         let mix = if self.dark_mode() { 0.23 } else { 0.16 };
-        self.nick_palette()
+        self.palette_colors()
             .map(|c| mix_colors(self.page_color(), c, mix))
     }
 
@@ -136,7 +133,7 @@ impl Style {
     }
 
     pub fn nick_color(&self, nick: &str) -> Color {
-        self.nick_palette()[self.nick_palette_index(nick)]
+        self.palette_colors()[self.nick_palette_index(nick)]
     }
 
     pub fn initials(&self, nick: &str) -> String {
@@ -159,9 +156,6 @@ impl Style {
     }
 }
 
-/// Eight hue families; the modulus for `nick_palette_index`.
-const NICK_PALETTE_LEN: usize = 8;
-
 /// FNV-1a (32-bit) over the nick's UTF-8 bytes, then fold high bits before
 /// modulo so the slot is not only the low 3 bits of each input byte.
 /// Shared with `nickPaletteIndex` in `tui/internal/ui/style.go`.
@@ -173,7 +167,7 @@ fn nick_palette_index(nick: &str) -> usize {
         hash ^= u32::from(*byte);
         hash = hash.wrapping_mul(PRIME);
     }
-    ((hash ^ (hash >> 16)) as usize) % NICK_PALETTE_LEN
+    ((hash ^ (hash >> 16)) as usize) % COLOR_PALETTE_LEN
 }
 
 pub fn mix_colors(base: Color, tint: Color, amount: f32) -> Color {
@@ -245,6 +239,20 @@ mod tests {
             style.nick_palette_index("mara"),
             "letters eight apart must be able to change the slot"
         );
+    }
+
+    #[test]
+    fn classic_is_default_and_vivid_differs() {
+        let theme = Theme::defaults_dark();
+        let classic = Style::new(theme.clone(), 1.0);
+        let vivid = Style::with_color_palette(theme, 1.0, ColorPaletteId::Vivid);
+        assert_eq!(classic.color_palette(), ColorPaletteId::Classic);
+        assert_ne!(
+            classic.palette_colors()[1].to_hex(),
+            vivid.palette_colors()[1].to_hex()
+        );
+        assert_eq!(classic.palette_colors()[0], classic.accent_color());
+        assert_eq!(vivid.palette_colors()[0].to_hex(), "#2f6ff5");
     }
 
     #[test]

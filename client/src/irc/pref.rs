@@ -7,10 +7,11 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::colorpalette::ColorPaletteId;
 use super::membershipnoise::MembershipNoise;
 
 /// Each `/pref` name (`IrcPrefName`). `Joins` is the one whose value is a noise
-/// level. The zero value is `Directs`.
+/// level. `Palette` chooses the nick color set. The zero value is `Directs`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum PrefName {
     /// Reopens direct messages on startup.
@@ -24,17 +25,20 @@ pub enum PrefName {
     Colors,
     /// How join, part, quit and nick lines show.
     Joins,
+    /// Which nick and network-icon color set to use.
+    Palette,
 }
 
 impl PrefName {
     /// Catalog order, which the slash popup and the bare `/pref` list follow.
     #[cfg(test)]
-    pub const ALL: [PrefName; 5] = [
+    pub const ALL: [PrefName; 6] = [
         PrefName::Directs,
         PrefName::Avatars,
         PrefName::Unread,
         PrefName::Colors,
         PrefName::Joins,
+        PrefName::Palette,
     ];
 
     /// The word typed after `/pref`.
@@ -62,14 +66,16 @@ impl PrefName {
     }
 }
 
-/// Whether a catalog row is an on/off toggle or the membership-noise choice
-/// (`IrcPrefValueKind`).
+/// Whether a catalog row is an on/off toggle, the membership-noise choice, or
+/// the color-palette choice (`IrcPrefValueKind`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrefValueKind {
     /// On or off.
     Toggle,
     /// Folded, every or hidden.
     Noise,
+    /// Classic or vivid.
+    Palette,
 }
 
 /// One `/pref` catalog row (`IrcPrefSpec`).
@@ -82,7 +88,7 @@ pub struct PrefSpec {
 }
 
 /// The static, ordered `/pref` table (`ircPrefCatalog`).
-pub const PREF_CATALOG: [PrefSpec; 5] = [
+pub const PREF_CATALOG: [PrefSpec; 6] = [
     PrefSpec {
         name: PrefName::Directs,
         token: "directs",
@@ -113,6 +119,12 @@ pub const PREF_CATALOG: [PrefSpec; 5] = [
         label: "Join, part, quit, and nick lines",
         value_kind: PrefValueKind::Noise,
     },
+    PrefSpec {
+        name: PrefName::Palette,
+        token: "palette",
+        label: "Color palette",
+        value_kind: PrefValueKind::Palette,
+    },
 ];
 
 /// The ordered catalog (`PrefCatalog`).
@@ -130,7 +142,7 @@ pub fn pref_find(token: &str) -> Option<&'static PrefSpec> {
 /// The `/pref` usage line (`ircPrefUsage`).
 #[cfg(test)]
 pub fn pref_usage() -> &'static str {
-    "/pref [directs|avatars|unread|colors] [on|off] | joins [folded|every|hidden]"
+    "/pref [directs|avatars|unread|colors] [on|off] | joins [folded|every|hidden] | palette [classic|vivid]"
 }
 
 /// The avatar privacy note (`ircPrefAvatarNote`).
@@ -160,13 +172,20 @@ pub fn format_pref_noise(noise: MembershipNoise) -> String {
     format!("{}: {}", PrefName::Joins.label(), noise.token())
 }
 
-/// Every toggle and the noise setting, one per line (`ircFormatPrefList`).
+/// The color-palette setting, `<label>: <token>` (`ircFormatPrefPalette`).
+pub fn format_pref_palette(palette: ColorPaletteId) -> String {
+    format!("{}: {}", PrefName::Palette.label(), palette.token())
+}
+
+/// Every toggle, the noise setting, and the palette, one per line
+/// (`ircFormatPrefList`).
 pub fn format_pref_list(
     directs: bool,
     avatars: bool,
     unread: bool,
     colors: bool,
     noise: MembershipNoise,
+    palette: ColorPaletteId,
 ) -> String {
     [
         format_pref_state(PrefName::Directs, directs),
@@ -174,6 +193,7 @@ pub fn format_pref_list(
         format_pref_state(PrefName::Unread, unread),
         format_pref_state(PrefName::Colors, colors),
         format_pref_noise(noise),
+        format_pref_palette(palette),
     ]
     .join("\n")
 }
@@ -199,17 +219,19 @@ pub struct PrefRequest {
     pub name: PrefName,
     pub enabled: bool,
     pub noise: MembershipNoise,
+    pub palette: ColorPaletteId,
 }
 
 /// Parses a `/pref` argument (`ircParsePrefArgument`). Empty lists all; one known
-/// token queries it; two tokens set it for on/off or a noise level; anything else
-/// falls back to usage.
+/// token queries it; two tokens set it for on/off, a noise level, or a palette;
+/// anything else falls back to usage.
 pub fn parse_pref_argument(argument: &str) -> PrefRequest {
     let mut request = PrefRequest {
         kind: PrefKind::Usage,
         name: PrefName::default(),
         enabled: false,
         noise: MembershipNoise::default(),
+        palette: ColorPaletteId::default(),
     };
     let parts: Vec<&str> = argument.split_whitespace().collect();
     if parts.is_empty() {
@@ -230,46 +252,57 @@ pub fn parse_pref_argument(argument: &str) -> PrefRequest {
     }
 
     let value = parts[1].to_ascii_lowercase();
-    if spec.value_kind == PrefValueKind::Noise {
-        if let Some(noise) = MembershipNoise::from_token(&value) {
-            request.kind = PrefKind::Set;
-            request.noise = noise;
+    match spec.value_kind {
+        PrefValueKind::Noise => {
+            if let Some(noise) = MembershipNoise::from_token(&value) {
+                request.kind = PrefKind::Set;
+                request.noise = noise;
+            }
         }
-        return request;
-    }
-    match value.as_str() {
-        "on" => {
-            request.kind = PrefKind::Set;
-            request.enabled = true;
+        PrefValueKind::Palette => {
+            if let Some(palette) = ColorPaletteId::from_token(&value) {
+                request.kind = PrefKind::Set;
+                request.palette = palette;
+            }
         }
-        "off" => {
-            request.kind = PrefKind::Set;
-            request.enabled = false;
-        }
-        _ => {}
+        PrefValueKind::Toggle => match value.as_str() {
+            "on" => {
+                request.kind = PrefKind::Set;
+                request.enabled = true;
+            }
+            "off" => {
+                request.kind = PrefKind::Set;
+                request.enabled = false;
+            }
+            _ => {}
+        },
     }
     request
 }
 
-/// The value a `/pref` name holds (`PrefValue`): a toggle, or a noise level.
+/// The value a `/pref` name holds (`PrefValue`): a toggle, a noise level, or a
+/// palette id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrefValue {
     Toggle(bool),
     Noise(MembershipNoise),
+    Palette(ColorPaletteId),
 }
 
 impl PrefValue {
     /// The value `word` sets for `name`, or `None` if the word does not fit.
     /// Toggles take `on` or `off`. `joins` takes folded, every or hidden.
+    /// `palette` takes classic or vivid.
     #[cfg(test)]
     pub fn parse(name: PrefName, word: &str) -> Option<Self> {
-        if name == PrefName::Joins {
-            return MembershipNoise::from_token(word).map(PrefValue::Noise);
-        }
-        match word.to_lowercase().as_str() {
-            "on" => Some(PrefValue::Toggle(true)),
-            "off" => Some(PrefValue::Toggle(false)),
-            _ => None,
+        match name {
+            PrefName::Joins => MembershipNoise::from_token(word).map(PrefValue::Noise),
+            PrefName::Palette => ColorPaletteId::from_token(word).map(PrefValue::Palette),
+            _ => match word.to_lowercase().as_str() {
+                "on" => Some(PrefValue::Toggle(true)),
+                "off" => Some(PrefValue::Toggle(false)),
+                _ => None,
+            },
         }
     }
 }
@@ -289,6 +322,8 @@ pub struct Preferences {
     pub colors: bool,
     /// How join, part, quit and nick lines show.
     pub joins: MembershipNoise,
+    /// Which nick and network-icon color set to use.
+    pub palette: ColorPaletteId,
 }
 
 impl Default for Preferences {
@@ -299,19 +334,21 @@ impl Default for Preferences {
             unread: true,
             colors: true,
             joins: MembershipNoise::Folded,
+            palette: ColorPaletteId::Classic,
         }
     }
 }
 
 impl Preferences {
-    /// Whether a toggle name is on. `Joins` is not a toggle and reads false.
+    /// Whether a toggle name is on. `Joins` and `Palette` are not toggles and
+    /// read false.
     pub fn enabled(&self, name: PrefName) -> bool {
         match name {
             PrefName::Directs => self.directs,
             PrefName::Avatars => self.avatars,
             PrefName::Unread => self.unread,
             PrefName::Colors => self.colors,
-            PrefName::Joins => false,
+            PrefName::Joins | PrefName::Palette => false,
         }
     }
 
@@ -324,6 +361,7 @@ impl Preferences {
             (PrefName::Unread, PrefValue::Toggle(on)) => self.unread = on,
             (PrefName::Colors, PrefValue::Toggle(on)) => self.colors = on,
             (PrefName::Joins, PrefValue::Noise(level)) => self.joins = level,
+            (PrefName::Palette, PrefValue::Palette(id)) => self.palette = id,
             _ => return false,
         }
         true
@@ -340,13 +378,14 @@ mod tests {
             name,
             enabled: false,
             noise: MembershipNoise::default(),
+            palette: ColorPaletteId::default(),
         }
     }
 
     #[test]
     fn the_catalog_is_ordered_and_complete() {
         let catalog = pref_catalog();
-        assert_eq!(catalog.len(), 5);
+        assert_eq!(catalog.len(), 6);
         assert_eq!(
             catalog[0],
             PrefSpec {
@@ -364,6 +403,10 @@ mod tests {
         assert_eq!(catalog[3].value_kind, PrefValueKind::Toggle);
         assert_eq!(catalog[4].name, PrefName::Joins);
         assert_eq!(catalog[4].value_kind, PrefValueKind::Noise);
+        assert_eq!(catalog[5].name, PrefName::Palette);
+        assert_eq!(catalog[5].token, "palette");
+        assert_eq!(catalog[5].label, "Color palette");
+        assert_eq!(catalog[5].value_kind, PrefValueKind::Palette);
     }
 
     #[test]
@@ -378,6 +421,7 @@ mod tests {
         );
         assert!(pref_find("nope").is_none());
         assert_eq!(PrefName::from_token("Joins"), Some(PrefName::Joins));
+        assert_eq!(PrefName::from_token("palette"), Some(PrefName::Palette));
         assert_eq!(PrefName::from_token(""), None);
     }
 
@@ -385,7 +429,7 @@ mod tests {
     fn the_usage_and_note_strings_are_fixed() {
         assert_eq!(
             pref_usage(),
-            "/pref [directs|avatars|unread|colors] [on|off] | joins [folded|every|hidden]"
+            "/pref [directs|avatars|unread|colors] [on|off] | joins [folded|every|hidden] | palette [classic|vivid]"
         );
         assert_eq!(
             pref_avatar_note(),
@@ -424,12 +468,24 @@ mod tests {
             "Join, part, quit, and nick lines: every"
         );
         assert_eq!(
-            format_pref_list(true, false, true, true, MembershipNoise::Every),
+            format_pref_palette(ColorPaletteId::Vivid),
+            "Color palette: vivid"
+        );
+        assert_eq!(
+            format_pref_list(
+                true,
+                false,
+                true,
+                true,
+                MembershipNoise::Every,
+                ColorPaletteId::Classic
+            ),
             "Reopen direct messages on startup: on\n\
              Show peer avatars: off\n\
              Open conversations at unread: on\n\
              Show mIRC colors: on\n\
-             Join, part, quit, and nick lines: every"
+             Join, part, quit, and nick lines: every\n\
+             Color palette: classic"
         );
     }
 
@@ -487,6 +543,22 @@ mod tests {
                     ..request(PrefKind::Set, PrefName::Joins)
                 },
             ),
+            ("palette", request(PrefKind::QueryOne, PrefName::Palette)),
+            ("palette on", request(PrefKind::Usage, PrefName::Palette)),
+            (
+                "PALETTE vivid",
+                PrefRequest {
+                    palette: ColorPaletteId::Vivid,
+                    ..request(PrefKind::Set, PrefName::Palette)
+                },
+            ),
+            (
+                "palette classic",
+                PrefRequest {
+                    palette: ColorPaletteId::Classic,
+                    ..request(PrefKind::Set, PrefName::Palette)
+                },
+            ),
         ];
         for (argument, want) in cases {
             assert_eq!(parse_pref_argument(argument), want, "argument {argument:?}");
@@ -517,13 +589,19 @@ mod tests {
             Some(PrefValue::Noise(MembershipNoise::Hidden))
         );
         assert_eq!(PrefValue::parse(PrefName::Joins, "on"), None);
+        assert_eq!(
+            PrefValue::parse(PrefName::Palette, "vivid"),
+            Some(PrefValue::Palette(ColorPaletteId::Vivid))
+        );
+        assert_eq!(PrefValue::parse(PrefName::Palette, "on"), None);
     }
 
     #[test]
-    fn defaults_are_all_on_with_folded_joins() {
+    fn defaults_are_all_on_with_folded_joins_and_classic_palette() {
         let prefs = Preferences::default();
         assert!(prefs.directs && prefs.avatars && prefs.unread && prefs.colors);
         assert_eq!(prefs.joins, MembershipNoise::Folded);
+        assert_eq!(prefs.palette, ColorPaletteId::Classic);
     }
 
     #[test]
@@ -535,13 +613,17 @@ mod tests {
         assert!(!prefs.colors);
         assert!(prefs.set(PrefName::Joins, PrefValue::Noise(MembershipNoise::Every)));
         assert_eq!(prefs.joins, MembershipNoise::Every);
+        assert!(prefs.set(PrefName::Palette, PrefValue::Palette(ColorPaletteId::Vivid)));
+        assert_eq!(prefs.palette, ColorPaletteId::Vivid);
         assert!(!prefs.set(PrefName::Joins, PrefValue::Toggle(true)));
         assert!(!prefs.set(PrefName::Directs, PrefValue::Noise(MembershipNoise::Hidden)));
+        assert!(!prefs.set(PrefName::Palette, PrefValue::Toggle(true)));
         assert_eq!(prefs.joins, MembershipNoise::Every);
+        assert_eq!(prefs.palette, ColorPaletteId::Vivid);
     }
 
     #[test]
-    fn enabled_reads_toggles_and_is_false_for_joins() {
+    fn enabled_reads_toggles_and_is_false_for_joins_and_palette() {
         let mut prefs = Preferences::default();
         assert!(prefs.enabled(PrefName::Directs));
         assert!(prefs.enabled(PrefName::Colors));
@@ -550,6 +632,7 @@ mod tests {
         assert!(!prefs.enabled(PrefName::Directs));
         assert!(!prefs.enabled(PrefName::Colors));
         assert!(!prefs.enabled(PrefName::Joins));
+        assert!(!prefs.enabled(PrefName::Palette));
     }
 
     #[test]
@@ -559,6 +642,9 @@ mod tests {
             assert_eq!(PrefName::from_token(spec.token), Some(spec.name));
         }
         let tokens: Vec<&str> = PrefName::ALL.iter().map(|name| name.token()).collect();
-        assert_eq!(tokens, ["directs", "avatars", "unread", "colors", "joins"]);
+        assert_eq!(
+            tokens,
+            ["directs", "avatars", "unread", "colors", "joins", "palette"]
+        );
     }
 }

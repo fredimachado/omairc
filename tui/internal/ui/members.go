@@ -285,7 +285,7 @@ const memberAwayNickMix = 0.5
 // on the nick, not the PREFIX label the row renders, so "@mira" and the
 // transcript's "mira" agree.
 func (m *Model) memberNickStyle(nick string, focused, away bool) lipgloss.Style {
-	ink := nickColor(nick)
+	ink := m.styles.nickColor(nick)
 	if away {
 		ink = mixColors(ink, m.styles.Colors.Background, memberAwayNickMix)
 	}

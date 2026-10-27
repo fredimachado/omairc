@@ -19,16 +19,21 @@ const (
 	PrefUnread
 	// PrefJoins chooses how join, part, quit, and nick lines are shown.
 	PrefJoins
+	// PrefPalette chooses the nick and network-icon color set.
+	PrefPalette
 )
 
-// PrefValueKind says whether a catalog row is an on/off toggle or the
-// membership-noise choice. It mirrors IrcPrefValueKind.
+// PrefValueKind says whether a catalog row is an on/off toggle, the
+// membership-noise choice, or the color-palette choice. It mirrors
+// IrcPrefValueKind.
 type PrefValueKind int
 
 const (
 	PrefValueToggle PrefValueKind = iota
 	// PrefValueNoise is folded, every, or hidden.
 	PrefValueNoise
+	// PrefValuePalette is classic or vivid.
+	PrefValuePalette
 )
 
 // PrefKind is the parsed shape of a /pref argument. It mirrors IrcPrefKind.
@@ -62,6 +67,7 @@ type PrefRequest struct {
 	Name    PrefName
 	Enabled bool
 	Noise   MembershipNoise
+	Palette ColorPaletteID
 }
 
 // prefCatalog is the static ordered /pref table.
@@ -70,6 +76,7 @@ var prefCatalog = []PrefSpec{
 	{PrefAvatars, "avatars", "Show peer avatars", PrefValueToggle},
 	{PrefUnread, "unread", "Open conversations at unread", PrefValueToggle},
 	{PrefJoins, "joins", "Join, part, quit, and nick lines", PrefValueNoise},
+	{PrefPalette, "palette", "Color palette", PrefValuePalette},
 }
 
 // PrefCatalog returns a copy of the ordered /pref catalog. It mirrors
@@ -93,8 +100,9 @@ func PrefFind(token string) *PrefSpec {
 }
 
 // PrefUsage returns the /pref usage line. It mirrors ircPrefUsage.
+// The TUI catalog still omits colors; only palette is added here.
 func PrefUsage() string {
-	return "/pref [directs|avatars|unread] [on|off] | joins [folded|every|hidden]"
+	return "/pref [directs|avatars|unread] [on|off] | joins [folded|every|hidden] | palette [classic|vivid]"
 }
 
 // PrefAvatarNote returns the avatar privacy note. It mirrors ircPrefAvatarNote.
@@ -134,18 +142,25 @@ func FormatPrefNoise(noise MembershipNoise) string {
 	return "Join, part, quit, and nick lines: " + MembershipNoiseToken(noise)
 }
 
-// FormatPrefList renders the toggles and the membership-noise setting, one
-// per line. It mirrors ircFormatPrefList.
-func FormatPrefList(directs, avatars, unread bool, noise MembershipNoise) string {
+// FormatPrefPalette renders the color-palette setting. It mirrors
+// ircFormatPrefPalette.
+func FormatPrefPalette(palette ColorPaletteID) string {
+	return "Color palette: " + ColorPaletteToken(palette)
+}
+
+// FormatPrefList renders the toggles, the membership-noise setting, and the
+// color palette, one per line. It mirrors ircFormatPrefList.
+func FormatPrefList(directs, avatars, unread bool, noise MembershipNoise, palette ColorPaletteID) string {
 	return FormatPrefState(PrefDirects, directs) + "\n" +
 		FormatPrefState(PrefAvatars, avatars) + "\n" +
 		FormatPrefState(PrefUnread, unread) + "\n" +
-		FormatPrefNoise(noise)
+		FormatPrefNoise(noise) + "\n" +
+		FormatPrefPalette(palette)
 }
 
 // ParsePrefArgument parses a /pref argument. It mirrors ircParsePrefArgument:
 // empty lists all, one known token queries it, two tokens set it for
-// on/off, and anything else falls back to usage.
+// on/off, a noise level, or a palette, and anything else falls back to usage.
 func ParsePrefArgument(argument string) PrefRequest {
 	request := PrefRequest{Kind: PrefUsageKind}
 	parts := splitSpaceSkipEmpty(strings.TrimSpace(argument))
@@ -168,13 +183,22 @@ func ParsePrefArgument(argument string) PrefRequest {
 	}
 
 	value := strings.ToLower(parts[1])
-	if spec.ValueKind == PrefValueNoise {
+	switch spec.ValueKind {
+	case PrefValueNoise:
 		noise, ok := ParseMembershipNoise(value)
 		if !ok {
 			return request
 		}
 		request.Kind = PrefSet
 		request.Noise = noise
+		return request
+	case PrefValuePalette:
+		palette, ok := ParseColorPalette(value)
+		if !ok {
+			return request
+		}
+		request.Kind = PrefSet
+		request.Palette = palette
 		return request
 	}
 	switch value {

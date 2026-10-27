@@ -548,7 +548,14 @@ fn pref_reads_and_sets_on_status_and_prints_into_a_conversation() {
     let mut fixture = Fixture::seeded();
     fixture.controller.open_status(OMARCHY);
     assert_eq!(run(&mut fixture, STATUS, "/pref"), CommandOutcome::Sent);
-    let listing = format_pref_list(true, true, true, true, MembershipNoise::Folded);
+    let listing = format_pref_list(
+        true,
+        true,
+        true,
+        true,
+        MembershipNoise::Folded,
+        crate::irc::colorpalette::ColorPaletteId::Classic,
+    );
     assert!(
         listing.lines().all(|line| status_text(&fixture.controller, OMARCHY).iter().any(|text| text == line)),
         "every preference line is on Status"

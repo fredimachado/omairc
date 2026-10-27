@@ -11,6 +11,7 @@ pub mod capabilitynegotiation;
 pub mod casemapping;
 pub mod channelmode;
 pub mod channelname;
+pub mod colorpalette;
 pub mod command;
 pub mod commandbuilder;
 pub mod conversation;

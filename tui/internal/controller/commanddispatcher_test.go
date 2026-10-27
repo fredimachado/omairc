@@ -35,6 +35,7 @@ type commandFakeHost struct {
 	prefs   map[irc.PrefName]bool
 	prefSet map[irc.PrefName]bool
 	noise   irc.MembershipNoise
+	palette irc.ColorPaletteID
 
 	now time.Time
 
@@ -233,6 +234,10 @@ func (h *commandFakeHost) PrefApply(name irc.PrefName, enabled bool) {
 func (h *commandFakeHost) MembershipNoise() irc.MembershipNoise { return h.noise }
 
 func (h *commandFakeHost) SetMembershipNoise(noise irc.MembershipNoise) { h.noise = noise }
+
+func (h *commandFakeHost) ColorPalette() irc.ColorPaletteID { return h.palette }
+
+func (h *commandFakeHost) SetColorPalette(id irc.ColorPaletteID) { h.palette = id }
 
 func (h *commandFakeHost) MarkChannelLeft(networkID, channel string) {
 	h.markLeft = append(h.markLeft, commandPair(networkID, channel))
@@ -753,7 +758,7 @@ func TestCommandDispatcherPref(t *testing.T) {
 	fixture := newCommandFixture()
 
 	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbPref}, irc.SurfaceStatus), irc.OutcomeSent, "pref list")
-	commandRequireText(t, fixture.host.statusTexts[0], irc.FormatPrefList(true, true, true, irc.MembershipNoiseFolded), "pref list text")
+	commandRequireText(t, fixture.host.statusTexts[0], irc.FormatPrefList(true, true, true, irc.MembershipNoiseFolded, irc.ColorPaletteClassic), "pref list text")
 
 	fixture.host.statusTexts = nil
 	fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbPref, Argument: "avatars"}, irc.SurfaceStatus)
@@ -769,6 +774,21 @@ func TestCommandDispatcherPref(t *testing.T) {
 	fixture.host.statusTexts = nil
 	fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbPref, Argument: "bogus"}, irc.SurfaceStatus)
 	commandRequireText(t, fixture.host.statusTexts[0], irc.PrefUsage(), "pref usage text")
+
+	fixture.host.statusTexts = nil
+	fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbPref, Argument: "palette"}, irc.SurfaceStatus)
+	commandRequireText(t, fixture.host.statusTexts[0], irc.FormatPrefPalette(irc.ColorPaletteClassic), "pref palette query")
+
+	fixture.host.statusTexts = nil
+	fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbPref, Argument: "palette vivid"}, irc.SurfaceStatus)
+	commandRequireText(t, fixture.host.statusTexts[0], irc.FormatPrefPalette(irc.ColorPaletteVivid), "pref palette set")
+	if fixture.host.ColorPalette() != irc.ColorPaletteVivid {
+		t.Fatalf("pref palette still classic")
+	}
+
+	fixture.host.statusTexts = nil
+	fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbPref}, irc.SurfaceStatus)
+	commandRequireText(t, fixture.host.statusTexts[0], irc.FormatPrefList(true, false, true, irc.MembershipNoiseFolded, irc.ColorPaletteVivid), "pref list after palette")
 
 	// On a conversation the feedback lands in the transcript.
 	fixture.host.selectedKey = fixture.reducer.ConversationKey("freenode", "lena")

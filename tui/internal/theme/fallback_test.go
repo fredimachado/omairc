@@ -1,8 +1,6 @@
 package theme
 
 import (
-	"image/color"
-	"slices"
 	"testing"
 )
 
@@ -26,17 +24,20 @@ func TestFallbackMatchesStyleGoLiterals(t *testing.T) {
 	if colors.NickAvatarMix != 0.23 {
 		t.Fatalf("NickAvatarMix = %v, want 0.23", colors.NickAvatarMix)
 	}
-	want := []color.Color{
-		mustHex("#7aa2f7"),
-		mustHex("#c099ff"),
-		mustHex("#7fc8a9"),
-		mustHex("#efb366"),
-		mustHex("#ed8f9d"),
-		mustHex("#9ece6a"),
-		mustHex("#7dcfff"),
-		mustHex("#ddd06e"),
+}
+
+// TestClassicNickPaletteLiterals pins the fixed dark classic nick hues the TUI
+// resolves via PaletteColors(classic, true, FixedAccent).
+func TestClassicNickPaletteLiterals(t *testing.T) {
+	got := PaletteColors(ColorPaletteClassic, true, FixedAccent())
+	want := []string{
+		"#7aa2f7", "#c099ff", "#7fc8a9", "#efb366",
+		"#ed8f9d", "#9ece6a", "#7dcfff", "#ddd06e",
 	}
-	if !slices.Equal(colors.NickPalette, want) {
-		t.Fatalf("NickPalette = %v, want %v", colors.NickPalette, want)
+	if len(got) != len(want) {
+		t.Fatalf("PaletteColors len = %d, want %d", len(got), len(want))
+	}
+	for i, hex := range want {
+		assertHex(t, "PaletteColors", got[i], hex)
 	}
 }

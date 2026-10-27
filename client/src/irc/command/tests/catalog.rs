@@ -264,7 +264,7 @@ fn catalog_rows_match_the_core_matrix() {
         },
         Row {
             name: "pref",
-            usage: "/pref [directs|avatars|unread|colors] [on|off] | joins [folded|every|hidden]",
+            usage: "/pref [directs|avatars|unread|colors] [on|off] | joins [folded|every|hidden] | palette [classic|vivid]",
             scope: VerbScope::Either,
             wrong: "",
         },

@@ -141,6 +141,10 @@ func (h ctrlHost) MembershipNoise() irc.MembershipNoise { return h.c.MembershipN
 
 func (h ctrlHost) SetMembershipNoise(noise irc.MembershipNoise) { h.c.SetMembershipNoise(noise) }
 
+func (h ctrlHost) ColorPalette() irc.ColorPaletteID { return h.c.ColorPalette() }
+
+func (h ctrlHost) SetColorPalette(id irc.ColorPaletteID) { h.c.SetColorPalette(id) }
+
 func (h ctrlHost) MarkChannelLeft(networkID, channel string) {
 	h.c.markChannelLeft(networkID, channel)
 }

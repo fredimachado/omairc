@@ -19,8 +19,8 @@ pub use verbs::{lookup, spec_for, visible_on, Verb, VerbSpec, VERB_TABLE};
 #[cfg(test)]
 use crate::irc::ctcp::{ctcp_version_reply_text, format_ctcp_reply_text};
 use crate::irc::pref::{
-    format_pref_list, format_pref_noise, format_pref_query, format_pref_state, PrefKind, PrefName,
-    PrefRequest, PrefValue, Preferences,
+    format_pref_list, format_pref_noise, format_pref_palette, format_pref_query, format_pref_state,
+    PrefKind, PrefName, PrefRequest, PrefValue, Preferences,
 };
 
 /// Which composer a line was typed into (Go `ComposerSurface`, C++
@@ -387,28 +387,29 @@ pub fn pref_reply(request: PrefRequest, prefs: &mut Preferences) -> PrefReply {
                 prefs.unread,
                 prefs.colors,
                 prefs.joins,
+                prefs.palette,
             ),
             changed: false,
         },
         PrefKind::QueryOne => PrefReply {
-            text: if request.name == PrefName::Joins {
-                format_pref_noise(prefs.joins)
-            } else {
-                format_pref_query(request.name, prefs.enabled(request.name))
+            text: match request.name {
+                PrefName::Joins => format_pref_noise(prefs.joins),
+                PrefName::Palette => format_pref_palette(prefs.palette),
+                _ => format_pref_query(request.name, prefs.enabled(request.name)),
             },
             changed: false,
         },
         PrefKind::Set => {
-            let value = if request.name == PrefName::Joins {
-                PrefValue::Noise(request.noise)
-            } else {
-                PrefValue::Toggle(request.enabled)
+            let value = match request.name {
+                PrefName::Joins => PrefValue::Noise(request.noise),
+                PrefName::Palette => PrefValue::Palette(request.palette),
+                _ => PrefValue::Toggle(request.enabled),
             };
             prefs.set(request.name, value);
-            let text = if request.name == PrefName::Joins {
-                format_pref_noise(prefs.joins)
-            } else {
-                format_pref_state(request.name, prefs.enabled(request.name))
+            let text = match request.name {
+                PrefName::Joins => format_pref_noise(prefs.joins),
+                PrefName::Palette => format_pref_palette(prefs.palette),
+                _ => format_pref_state(request.name, prefs.enabled(request.name)),
             };
             PrefReply {
                 text,

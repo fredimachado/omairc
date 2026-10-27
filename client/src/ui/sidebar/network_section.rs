@@ -42,7 +42,7 @@ pub fn network_header(
     let icon_fill = to_gpui(
         network
             .icon_color
-            .and_then(|ix| style.nick_palette().get(ix as usize).copied())
+            .and_then(|ix| style.palette_colors().get(ix as usize).copied())
             .unwrap_or(style.accent_color()),
     );
     let initial = network

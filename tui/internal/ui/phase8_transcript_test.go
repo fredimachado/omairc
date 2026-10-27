@@ -433,7 +433,7 @@ func TestPhase8TranscriptMentionRowWash(t *testing.T) {
 		}
 	}
 	wash := m.mentionWash()
-	nick := wash.Foreground(nickColor("mira")).Bold(true).Render("mira")
+	nick := wash.Foreground(m.styles.nickColor("mira")).Bold(true).Render("mira")
 	if !strings.Contains(row, nick) {
 		t.Fatalf("mention row = %q, want the palette-colored bold nick %q", row, nick)
 	}

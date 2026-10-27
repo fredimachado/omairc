@@ -55,6 +55,30 @@ func TestSetReopenDirectsPersistsAndReloads(t *testing.T) {
 	}
 }
 
+func TestSetColorPalettePersistsAndReloads(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	c := New()
+	c.SetEphemeral(false)
+	c.LoadStoredPreferences()
+	if c.ColorPalette() != irc.ColorPaletteClassic {
+		t.Fatalf("default ColorPalette = %v, want classic", c.ColorPalette())
+	}
+	c.SetColorPalette(irc.ColorPaletteVivid)
+
+	settings := storage.OpenSettings("")
+	if got := settings.Value(preferencesGroup, colorPaletteKey); got != "vivid" {
+		t.Fatalf("%s = %q, want vivid", colorPaletteKey, got)
+	}
+
+	fresh := New()
+	fresh.SetEphemeral(false)
+	fresh.LoadStoredPreferences()
+	if fresh.ColorPalette() != irc.ColorPaletteVivid {
+		t.Fatalf("fresh ColorPalette = %v, want vivid", fresh.ColorPalette())
+	}
+}
+
 func TestPrefEnabledAndApplyMatchGetters(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 

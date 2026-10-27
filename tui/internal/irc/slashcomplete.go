@@ -211,8 +211,11 @@ func projectPref(composerText string) SlashProbe {
 
 	prefix := "/pref " + spec.Token + " "
 	values := []string{"on", "off"}
-	if spec.ValueKind == PrefValueNoise {
+	switch spec.ValueKind {
+	case PrefValueNoise:
 		values = []string{"folded", "every", "hidden"}
+	case PrefValuePalette:
+		values = []string{"classic", "vivid"}
 	}
 	foldedValue := strings.ToLower(value)
 	var hits []SlashHit

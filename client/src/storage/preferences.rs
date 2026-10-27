@@ -9,6 +9,7 @@
 //! never shipped.
 
 use crate::irc::autoaway::AutoawayConfig;
+use crate::irc::colorpalette::ColorPaletteId;
 use crate::irc::membershipnoise::MembershipNoise;
 use crate::irc::pref::Preferences;
 
@@ -22,6 +23,7 @@ const LOAD_AVATARS_KEY: &str = "loadPeerAvatars";
 const OPEN_AT_UNREAD_KEY: &str = "openConversationsAtUnread";
 const SHOW_IRC_COLORS_KEY: &str = "showIrcColors";
 const MEMBERSHIP_NOISE_KEY: &str = "membershipNoise";
+const COLOR_PALETTE_KEY: &str = "colorPalette";
 const NETWORK_ORDER_KEY: &str = "networkOrder";
 const COLLAPSED_NETWORKS_KEY: &str = "collapsedNetworks";
 const AUTOAWAY_ENABLED_KEY: &str = "autoawayEnabled";
@@ -49,7 +51,14 @@ impl PreferenceStore {
             colors: settings.bool_value(PREFERENCES_GROUP, SHOW_IRC_COLORS_KEY, defaults.colors),
             joins: MembershipNoise::from_token(&settings.value(PREFERENCES_GROUP, MEMBERSHIP_NOISE_KEY))
                 .unwrap_or(defaults.joins),
+            palette: ColorPaletteId::from_token(&settings.value(PREFERENCES_GROUP, COLOR_PALETTE_KEY))
+                .unwrap_or(defaults.palette),
         }
+    }
+
+    /// The color palette for nicks and network icons (`preferences().palette`).
+    pub fn color_palette(&self) -> ColorPaletteId {
+        self.preferences().palette
     }
 
     /// Writes every `/pref` value. A malformed or unwritable file is left alone.
@@ -60,6 +69,7 @@ impl PreferenceStore {
             settings.set_bool(PREFERENCES_GROUP, OPEN_AT_UNREAD_KEY, prefs.unread);
             settings.set_bool(PREFERENCES_GROUP, SHOW_IRC_COLORS_KEY, prefs.colors);
             settings.set_value(PREFERENCES_GROUP, MEMBERSHIP_NOISE_KEY, prefs.joins.token());
+            settings.set_value(PREFERENCES_GROUP, COLOR_PALETTE_KEY, prefs.palette.token());
         })
     }
 
@@ -131,9 +141,23 @@ mod tests {
         let dir = TempDir::new("prefs-defaults");
         let store = store(&dir);
         assert_eq!(store.preferences(), Preferences::default());
+        assert_eq!(store.color_palette(), ColorPaletteId::Classic);
         assert!(store.network_order().is_empty());
         assert!(store.collapsed_networks().is_empty());
         assert_eq!(store.autoaway(), AutoawayConfig::default());
+    }
+
+    #[test]
+    fn color_palette_reads_known_tokens_and_ignores_unknown() {
+        let dir = TempDir::new("prefs-color-palette");
+        let path = dir.path().join("omairc.conf");
+        std::fs::write(&path, "[preferences]\ncolorPalette=vivid\n").unwrap();
+        let store = PreferenceStore::new(Backing::Disk(path.clone()));
+        assert_eq!(store.color_palette(), ColorPaletteId::Vivid);
+
+        std::fs::write(&path, "[preferences]\ncolorPalette=loud\n").unwrap();
+        let store = PreferenceStore::new(Backing::Disk(path));
+        assert_eq!(store.color_palette(), ColorPaletteId::Classic);
     }
 
     #[test]
@@ -144,16 +168,19 @@ mod tests {
             directs: false,
             colors: false,
             joins: MembershipNoise::Every,
+            palette: ColorPaletteId::Vivid,
             ..Default::default()
         };
         assert_eq!(store.save_preferences(&prefs), Status::Written);
         assert_eq!(store.preferences(), prefs);
+        assert_eq!(store.color_palette(), ColorPaletteId::Vivid);
 
         let text = std::fs::read_to_string(dir.path().join("omairc.conf")).expect("written");
         assert!(text.contains("[preferences]"), "{text}");
         assert!(text.contains("reopenDirectMessages=false"), "{text}");
         assert!(text.contains("showIrcColors=false"), "{text}");
         assert!(text.contains("membershipNoise=every"), "{text}");
+        assert!(text.contains("colorPalette=vivid"), "{text}");
     }
 
     #[test]
