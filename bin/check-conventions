@@ -715,6 +715,10 @@ def check_macos_notarization():
                 "bin/retry-macos-stapler: reject non-integer "
                 "OMAIRC_STAPLER_ATTEMPTS / delay so the retry loop cannot "
                 "spin forever")
+        if "|0*)" not in retry_text:
+            problems.append(
+                "bin/retry-macos-stapler: reject leading-zero env values; "
+                "$((08 * 2)) is octal and fails in POSIX sh")
         if "OMAIRC_STAPLER_MAX_DELAY" not in retry_text:
             problems.append(
                 "bin/retry-macos-stapler: cap doubled sleep via "
