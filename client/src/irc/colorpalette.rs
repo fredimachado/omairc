@@ -36,10 +36,11 @@ impl ColorPaletteId {
 
     /// The next catalog id. The Preferences tab cycles with Space or a click.
     pub fn next(self) -> Self {
-        match self {
-            ColorPaletteId::Classic => ColorPaletteId::Vivid,
-            ColorPaletteId::Vivid => ColorPaletteId::Classic,
-        }
+        let index = Self::ALL
+            .iter()
+            .position(|&id| id == self)
+            .unwrap_or(0);
+        Self::ALL[(index + 1) % Self::ALL.len()]
     }
 }
 
@@ -62,8 +63,20 @@ mod tests {
     }
 
     #[test]
-    fn next_cycles_classic_and_vivid() {
-        assert_eq!(ColorPaletteId::Classic.next(), ColorPaletteId::Vivid);
-        assert_eq!(ColorPaletteId::Vivid.next(), ColorPaletteId::Classic);
+    fn next_cycles_the_catalog() {
+        let start = ColorPaletteId::ALL[0];
+        let mut id = start;
+        let mut seen = Vec::new();
+        for _ in 0..ColorPaletteId::ALL.len() {
+            seen.push(id);
+            id = id.next();
+        }
+        assert_eq!(id, start);
+        for want in ColorPaletteId::ALL {
+            assert!(
+                seen.contains(&want),
+                "cycle missed {want:?}; visited {seen:?}"
+            );
+        }
     }
 }

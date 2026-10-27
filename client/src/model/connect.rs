@@ -194,11 +194,21 @@ pub enum Stop {
     Apply,
 }
 
-/// One row on the Preferences tab. Toggles use a switch; `Palette` cycles
-/// classic/vivid. `joins` has no row there and stays a `/pref` setting.
+/// How a Preferences-tab row is controlled.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PreferenceKind {
+    /// On/off switch.
+    Switch,
+    /// Cycles a small set of tokens (classic/vivid).
+    Choice,
+}
+
+/// One row on the Preferences tab. `joins` has no row there and stays a `/pref`
+/// setting.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PreferenceRow {
     pub name: PrefName,
+    pub kind: PreferenceKind,
     pub label: &'static str,
     pub help: &'static str,
 }
@@ -208,26 +218,31 @@ pub fn preference_rows() -> [PreferenceRow; 5] {
     [
         PreferenceRow {
             name: PrefName::Directs,
+            kind: PreferenceKind::Switch,
             label: PrefName::Directs.label(),
             help: "Reopens direct messages you had open last session after each connect. Only tabs you opened or sent in are remembered.",
         },
         PreferenceRow {
             name: PrefName::Avatars,
+            kind: PreferenceKind::Switch,
             label: PrefName::Avatars.label(),
             help: "Fetches IRCv3 avatar images from peer metadata. Nick initials still show when this is off or no image loads. Turn off to keep avatar hosts from seeing your IP on busy channels.",
         },
         PreferenceRow {
             name: PrefName::Unread,
+            kind: PreferenceKind::Switch,
             label: PrefName::Unread.label(),
             help: "Scrolls to the New messages marker when you switch conversations. Already-focused buffers and Status are left at the end.",
         },
         PreferenceRow {
             name: PrefName::Colors,
+            kind: PreferenceKind::Switch,
             label: PrefName::Colors.label(),
             help: "Paints the foreground and background colors other clients send in messages and topics. Off, text takes your theme's colors; bold, italic, underline, and strikethrough still show. Applies to lines already on screen.",
         },
         PreferenceRow {
             name: PrefName::Palette,
+            kind: PreferenceKind::Choice,
             label: PrefName::Palette.label(),
             help: "Nick and network icon hues. Classic follows the theme accent for the first color; vivid uses a brighter fixed set. Takes effect at once for nicks and icons already on screen. Also /pref palette.",
         },

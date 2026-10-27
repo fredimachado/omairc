@@ -352,6 +352,23 @@ impl Preferences {
         }
     }
 
+    /// The value a Connect Preferences click or Space should write for `name`.
+    pub fn next_value(&self, name: PrefName) -> PrefValue {
+        match name.spec().value_kind {
+            PrefValueKind::Toggle => PrefValue::Toggle(!self.enabled(name)),
+            PrefValueKind::Palette => PrefValue::Palette(self.palette.next()),
+            PrefValueKind::Noise => PrefValue::Noise(self.joins),
+        }
+    }
+
+    /// The Preferences-tab chip label for a choice row, when `name` is one.
+    pub fn choice_token(&self, name: PrefName) -> Option<&'static str> {
+        match name {
+            PrefName::Palette => Some(self.palette.token()),
+            _ => None,
+        }
+    }
+
     /// Stores `value` under `name`. Returns false, and changes nothing, when the
     /// value's kind does not match the name.
     pub fn set(&mut self, name: PrefName, value: PrefValue) -> bool {
@@ -620,6 +637,27 @@ mod tests {
         assert!(!prefs.set(PrefName::Palette, PrefValue::Toggle(true)));
         assert_eq!(prefs.joins, MembershipNoise::Every);
         assert_eq!(prefs.palette, ColorPaletteId::Vivid);
+    }
+
+    #[test]
+    fn next_value_flips_toggles_and_cycles_palette() {
+        let prefs = Preferences::default();
+        assert_eq!(
+            prefs.next_value(PrefName::Colors),
+            PrefValue::Toggle(false)
+        );
+        assert_eq!(
+            prefs.next_value(PrefName::Palette),
+            PrefValue::Palette(ColorPaletteId::Vivid)
+        );
+        let mut prefs = prefs;
+        prefs.set(PrefName::Palette, PrefValue::Palette(ColorPaletteId::Vivid));
+        assert_eq!(
+            prefs.next_value(PrefName::Palette),
+            PrefValue::Palette(ColorPaletteId::Classic)
+        );
+        assert_eq!(prefs.choice_token(PrefName::Palette), Some("vivid"));
+        assert_eq!(prefs.choice_token(PrefName::Colors), None);
     }
 
     #[test]

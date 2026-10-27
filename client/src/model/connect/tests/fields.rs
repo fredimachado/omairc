@@ -85,6 +85,8 @@ fn preference_rows_reuse_the_pref_labels_with_qt_help() {
     assert_eq!(rows[2].label, "Open conversations at unread");
     assert_eq!(rows[3].label, "Show mIRC colors");
     assert_eq!(rows[4].label, "Color palette");
+    assert_eq!(rows[0].kind, PreferenceKind::Switch);
+    assert_eq!(rows[4].kind, PreferenceKind::Choice);
     assert_eq!(
         rows[0].help,
         "Reopens direct messages you had open last session after each connect. Only tabs you opened or sent in are remembered."

@@ -19,11 +19,24 @@ func TestParseColorPalette(t *testing.T) {
 	}
 }
 
-func TestNextColorPaletteCycles(t *testing.T) {
-	if got := NextColorPalette(ColorPaletteClassic); got != ColorPaletteVivid {
-		t.Fatalf("NextColorPalette(classic) = %v, want vivid", got)
+func TestNextColorPaletteCyclesTheCatalog(t *testing.T) {
+	catalog := ColorPalettes()
+	if len(catalog) == 0 {
+		t.Fatal("ColorPalettes is empty")
 	}
-	if got := NextColorPalette(ColorPaletteVivid); got != ColorPaletteClassic {
-		t.Fatalf("NextColorPalette(vivid) = %v, want classic", got)
+	start := catalog[0]
+	id := start
+	seen := make(map[ColorPaletteID]bool, len(catalog))
+	for range catalog {
+		seen[id] = true
+		id = NextColorPalette(id)
+	}
+	if id != start {
+		t.Fatalf("after %d steps got %v, want %v", len(catalog), id, start)
+	}
+	for _, want := range catalog {
+		if !seen[want] {
+			t.Fatalf("cycle missed %v; seen %v", want, seen)
+		}
 	}
 }

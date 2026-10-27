@@ -468,8 +468,9 @@ mod tests {
     }
 
     #[gpui::test]
-    fn connect_palette_cycle_updates_the_style_global(cx: &mut TestAppContext) {
+    fn connect_preference_writes_go_through_one_path(cx: &mut TestAppContext) {
         use crate::model::color_palette::ColorPaletteId;
+        use crate::model::prefs::PrefName;
 
         let (activation_tx, _) = async_channel::unbounded();
         cx.update(|app| {
@@ -485,16 +486,23 @@ mod tests {
                 cx.global::<OmaircStyleGlobal>().style.color_palette(),
                 ColorPaletteId::Classic
             );
-            shell.cycle_connect_palette(cx);
+            let palette = shell.controller.preferences().next_value(PrefName::Palette);
+            shell.set_connect_preference(PrefName::Palette, palette, cx);
             assert_eq!(
                 cx.global::<OmaircStyleGlobal>().style.color_palette(),
                 ColorPaletteId::Vivid
             );
-            shell.cycle_connect_palette(cx);
+            let palette = shell.controller.preferences().next_value(PrefName::Palette);
+            shell.set_connect_preference(PrefName::Palette, palette, cx);
             assert_eq!(
                 cx.global::<OmaircStyleGlobal>().style.color_palette(),
                 ColorPaletteId::Classic
             );
+
+            assert!(shell.controller.preferences().colors);
+            let colors = shell.controller.preferences().next_value(PrefName::Colors);
+            shell.set_connect_preference(PrefName::Colors, colors, cx);
+            assert!(!shell.controller.preferences().colors);
         });
     }
 }
