@@ -861,13 +861,21 @@ maximized=false
     $prevFg = [OmaircDriver]::GetForegroundWindow()
     $appPid = [uint32]0
     $ok = [OmaircDriver]::Launch($binary, $appArgs, $envBlock, $logPath, [ref]$appPid)
-    if (-not $ok -or $appPid -eq 0) { Die "CreateProcessW failed for $binary" }
+    if (-not $ok -or $appPid -eq 0) {
+        if (Test-Path -LiteralPath $stateDir) {
+            Remove-Item -LiteralPath $stateDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        Die "CreateProcessW failed for $binary"
+    }
 
     $hwnd = [IntPtr]::Zero
     for ($attempt = 0; $attempt -lt 150; $attempt++) {
         Start-Sleep -Milliseconds 100
         if (-not (Test-ProcessAlive -ProcessId ([int]$appPid))) {
             Dump-OmaircLogs -StateDir $stateDir -LogPath $logPath
+            if (Test-Path -LiteralPath $stateDir) {
+                Remove-Item -LiteralPath $stateDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
             Die "Omairc did not open; see $logPath"
         }
         $hwnd = [OmaircDriver]::FindWindow($appPid)
@@ -875,6 +883,10 @@ maximized=false
     }
     if ($hwnd -eq [IntPtr]::Zero) {
         Dump-OmaircLogs -StateDir $stateDir -LogPath $logPath
+        Stop-AppPid -ProcessId ([int]$appPid)
+        if (Test-Path -LiteralPath $stateDir) {
+            Remove-Item -LiteralPath $stateDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
         Die "Omairc did not open; see $logPath"
     }
 
