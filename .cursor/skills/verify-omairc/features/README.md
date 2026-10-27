@@ -6,10 +6,10 @@ Desktop window proof uses **verify-omairc-desktop**. The TUI uses **verify-omair
 
 ## Baseline preconditions
 
-- Prefer `.cursor/skills/verify-omairc-desktop/control-omairc-desktop launch` for Connect, or `control-omairc-desktop launch --demo-server` for seeded conversations. The product binary is `client/target/*/omairc` (debug by default; release + `product` for packager proof).
-- Require `control-omairc-desktop doctor` to report `ok isolated Omairc`, display owned by this run, and a title that ends with ` - Omairc` or ` Status`.
+- Prefer `.cursor/skills/verify-omairc-desktop/control-omairc-desktop launch` (Linux) or `control-omairc-desktop.ps1 launch` (Windows) for Connect, or the same with `--demo-server` for seeded conversations. The product binary is `client/target/*/omairc` / `omairc.exe` (debug by default; release + `product` for packager proof).
+- Require `control-omairc-desktop` / `control-omairc-desktop.ps1 doctor` to report `ok isolated Omairc`, isolation owned by this run (`display=` on Linux, `localappdata=` / `placement=` on Windows), and a title that ends with ` - Omairc` or ` Status`.
 - A default compiled window opens the connection sheet. Title is `{displayName} Status` until a conversation exists. `launch --demo-server` skips Connect and shows `#omarchy · irc.example · fred - Omairc`. Conversation recipes that assume that seeded window use `launch --demo-server`. Saved profiles do not connect unless `Connect automatically on startup` was enabled; Apply on the Connect sheet starts the live session. It does not restore the seeded sidebar.
-- If desktop tools (Xvfb, xdotool, lavapipe, ImageMagick) are missing, do not invent a fallback suite. Report the unmet precondition. Do not send input to the user's live window.
+- If desktop tools are missing (Linux: Xvfb, xdotool, lavapipe, ImageMagick; Windows: ImageMagick `magick`, cargo/MSVC), do not invent a fallback suite. Report the unmet precondition. Do not send input to the user's live window.
 - Start every desktop recipe from that baseline unless its preconditions say otherwise.
 - Never drive a window that this run did not start. The user's interactive `client/target/*/omairc` is off limits.
 
@@ -18,8 +18,8 @@ Desktop window proof uses **verify-omairc-desktop**. The TUI uses **verify-omair
 - Treat every command as literal. Keep quoted names and flags unchanged.
 - Prefer chord verbs (`jump`, `walk`, `unread`, `toggle-members`, `focus-members`, `nick-jump`, `status`, `connect`, `composer`, `send`) over `click-conversation` / `click-member`.
 - Pixel clicks (`click-version`, `click-people`, `click-edit`, `click-network`, `click-send`, and raw `--x/--y`) are the fallback for mouse-only chrome.
-- `control-omairc-desktop run <feature>` plays the `desktop-recipe` fence inside `## Driving it with control-omairc`. `run <feature> --dry-run` prints that fence and does not launch. Feature files keep that H2 title for map stability; the living driver is `control-omairc-desktop`.
-- Desktop evidence lands under `test-artifacts/verify-desktop/`. `bin/verify-desktop-recipes` and `bin/test-desktop` replay the same fences.
+- `control-omairc-desktop` / `control-omairc-desktop.ps1 run <feature>` plays the `desktop-recipe` fence inside `## Driving it with control-omairc`. `run <feature> --dry-run` prints that fence and does not launch. Feature files keep that H2 title for map stability; the living drivers are `control-omairc-desktop` (Linux) and `control-omairc-desktop.ps1` (Windows).
+- Desktop evidence lands under `test-artifacts/verify-desktop/`. `bin/verify-desktop-recipes`, `bin/verify-desktop-recipes.ps1`, and `bin/test-desktop` replay the same fences.
 - Window title `{conversation} - Omairc` is the conversation identity. Duplicate names use `{conversation} · {displayName} - Omairc`.
 - Named clicks assume the isolated 1180x760 window at textScale 1.0. They are invalid off that window.
 - Restore the baseline conversation (`#omarchy`) after a mutation if another recipe will reuse the instance.
@@ -40,7 +40,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 
 1. `Sub-features` lists short IDs with one line for each behavior.
 2. `How to get to it (user POV)` lists every user entry point.
-3. `Driving it with control-omairc` starts with `Preconditions:` and uses labeled bullets that pair each user action with an exact command and observable result. A `desktop-recipe` fence in that section (not a fifth H2) is the executable form `run <feature>` plays. Drive those commands with `control-omairc-desktop` (or `control-omairc-tui` where the TUI shares the fence).
+3. `Driving it with control-omairc` starts with `Preconditions:` and uses labeled bullets that pair each user action with an exact command and observable result. A `desktop-recipe` fence in that section (not a fifth H2) is the executable form `run <feature>` plays. Drive those commands with `control-omairc-desktop` / `control-omairc-desktop.ps1` (or `control-omairc-tui` where the TUI shares the fence).
 4. `Gotchas` lists traps that can waste or invalidate a verification run.
 
 Keep implementation details out of the map. Name only user paths, stable handles, required state, commands, and observable proof. Mentions of `qml-suite` / `doctor-qml` in older feature bullets are historical; they are not a fallback.

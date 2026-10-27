@@ -249,6 +249,11 @@ Set `OMAIRC_BUILD_VERSION` when packaging needs an exact `--version` string
 
 ## Windows
 
+Desktop proof on Windows uses
+`.cursor/skills/verify-omairc-desktop/control-omairc-desktop.ps1` (hidden by
+default; `--visible` to watch) and `bin/verify-desktop-recipes.ps1` for the
+feature-map fences.
+
 `bin\build-rust.bat` builds the product client with MSVC static CRT
 (`cargo build --release --locked --features product` in `client/`) and stages
 `build\release\omairc.exe`. Its `:ensure_msvc` step finds `vcvars64.bat`
