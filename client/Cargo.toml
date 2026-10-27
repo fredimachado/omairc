@@ -145,6 +145,15 @@ regex = "=1.13.1"
 [lints.rust]
 dead_code = "allow"
 
+# Shrink the shipped binary: size opt + thin LTO, strip debuginfo only so
+# panic backtraces keep function names. Do not set panic = "abort" on
+# [profile.dev] / [profile.test]; windowvisibility::of catch_unwind needs
+# unwind for TestWindow.
+[profile.release]
+opt-level = "s"
+lto = "thin"
+strip = "debuginfo"
+
 # xattr 0.2.3 reads libc::ENOATTR on Linux, which current libc no longer
 # exports there. The vendored copy maps it to ENODATA on Linux only; the
 # other targets keep libc::ENOATTR, and Windows never builds xattr.
