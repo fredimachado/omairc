@@ -382,12 +382,15 @@ jobs:
           test -L "$link"
           smoke "$link"
 
-      # Prove the zip layout on every run. Upload / notarize / publish stay
-      # gated to workflow_dispatch and v* tags (cask names match Qt's).
+      # Main and pull requests keep the app-bundle smoke above. Zip packaging,
+      # upload, notarize, and GitHub Release publish run only on
+      # workflow_dispatch and v* tags so a green main tip is not packaged twice.
       - name: Package rust app zip
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         run: bin/package-macos
 
       - name: Assert rust app zip
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         run: |
           set -euo pipefail
           zip="$GITHUB_WORKSPACE/dist/omairc-${OMAIRC_ARTIFACT_VERSION}-${OMAIRC_MAC_SUFFIX}.zip"

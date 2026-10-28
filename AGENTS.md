@@ -276,7 +276,9 @@ default (`{autopf}` is `%LOCALAPPDATA%\Programs\Omairc`); the wizard can
 elevate for all users. The installer uses `data/icons/omairc.ico`, adds a Start
 Menu shortcut and user PATH, and leaves config and logs alone on uninstall.
 Look for `ISCC.exe` under `%LOCALAPPDATA%\Programs\Inno Setup 6` as well as
-Program Files, or set `ISCC`.
+Program Files, or set `ISCC`. CI on pull requests and `main` builds and smokes
+the staged exe; Inno packaging, installer smoke, and release upload run on
+version tags and `workflow_dispatch` only.
 
 ## macOS
 
@@ -284,11 +286,12 @@ Program Files, or set `ISCC`.
 `dist/omairc-*-macos-*.zip`; CI runs `.github/workflows/macos.yml` on
 `macos-15` (Apple Silicon) and `macos-15-intel` with Rust toolchains. CI
 asserts the Mach-O contains `arm64` or `x86_64` to match the
-`macos-arm64` / `macos-x64` artifact name. Pull requests compile, smoke, and
-(on Apple Silicon) run portable tests; they do not zip or upload artifacts.
-`main` is the same for packaging. Version tags and `workflow_dispatch` package
-both zips, and tags attach both to the GitHub release. Intel pull requests skip
-the portable test rebuild. Passwords use the macOS Keychain. Regenerate
+`macos-arm64` / `macos-x64` artifact name. Pull requests and `main` compile,
+smoke the app bundle, and (on Apple Silicon) run portable tests; they do not
+zip or upload artifacts. Version tags and `workflow_dispatch` package both
+zips, notarize when credentials are present, and tags attach both to the
+GitHub release. Intel pull requests skip the portable test rebuild. Passwords
+use the macOS Keychain. Regenerate
 `data/icons/omairc.icns` from the SVG with `packaging/macos/generate-icns`
 when the mark changes.
 CI imports a Developer ID certificate and signs with hardened runtime
