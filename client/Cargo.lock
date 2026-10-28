@@ -4009,7 +4009,7 @@ dependencies = [
 
 [[package]]
 name = "omairc"
-version = "1.11.0-rc1"
+version = "1.11.0-rc2"
 dependencies = [
  "async-channel 2.5.0",
  "base64 0.22.1",

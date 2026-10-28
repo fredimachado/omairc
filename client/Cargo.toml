@@ -5,7 +5,7 @@ name = "omairc"
 # sync with version.pri (and Cargo.lock). Gates: bin/check-conventions and
 # cargo_package_version_matches_version_pri in src/version.rs. Prefer
 # bin/set-version when bumping.
-version = "1.11.0-rc1"
+version = "1.11.0-rc2"
 edition = "2021"
 
 # `product` is the default install identity (omairc folder + IPC). `dev` keeps

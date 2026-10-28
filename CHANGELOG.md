@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.0rc2] - 2026-10-28
+
 ### Changed
 
 - Nick and network icon colors keep the classic palette by default and can
@@ -861,7 +863,8 @@ First public release: a simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.11.0rc1...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.11.0rc2...HEAD
+[1.11.0rc2]: https://github.com/fredimachado/omairc/compare/v1.11.0rc1...v1.11.0rc2
 [1.11.0rc1]: https://github.com/fredimachado/omairc/compare/v1.10.3...v1.11.0rc1
 [1.10.3]: https://github.com/fredimachado/omairc/compare/v1.10.2...v1.10.3
 [1.10.2]: https://github.com/fredimachado/omairc/compare/v1.10.1...v1.10.2
