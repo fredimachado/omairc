@@ -27,6 +27,10 @@ const TRANSCRIPT_GAP: f32 = 12.;
 /// panel. It may shrink below its content (`min_w_0`), so a long header subtitle or an
 /// unwrapped line elides or clips inside it instead of pushing the people pill, SEND
 /// or the transcript's right edge past the window.
+///
+/// File-drag feedback is an absolute accent frame, not a layout border. A permanent
+/// `border_2` (even painted `page_color`) insets the composer strip by 2px and lifts
+/// its top rule above the identity footer's divider.
 #[allow(clippy::too_many_arguments)]
 pub fn render_center(
     header: HeaderView<'_>,
@@ -42,12 +46,9 @@ pub fn render_center(
     file_drag_over: bool,
     on_external_paths: Rc<dyn Fn(&ExternalPaths, &mut Window, &mut App)>,
 ) -> impl IntoElement {
-    let drag_border = if file_drag_over {
-        style.accent_color()
-    } else {
-        style.page_color()
-    };
+    let drop_paths = on_external_paths.clone();
     div()
+        .relative()
         .flex_grow()
         .min_w_0()
         .overflow_hidden()
@@ -56,8 +57,6 @@ pub fn render_center(
         .flex()
         .flex_col()
         .bg(to_gpui(style.page_color()))
-        .border_2()
-        .border_color(to_gpui(drag_border))
         .drag_over::<ExternalPaths>(|style, _, _, _| style)
         .on_drop(move |paths, window, cx| on_external_paths(paths, window, cx))
         .child(render_header(header, style, on_toggle_members))
@@ -73,4 +72,17 @@ pub fn render_center(
         .child(render_composer(
             composer, style, on_send, on_file, popup, focused, has_text,
         ))
+        .when(file_drag_over, |this| {
+            this.child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .right_0()
+                    .bottom_0()
+                    .border_2()
+                    .border_color(to_gpui(style.accent_color()))
+                    .on_drop(move |paths, window, cx| drop_paths(paths, window, cx)),
+            )
+        })
 }

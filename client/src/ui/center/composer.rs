@@ -1,4 +1,4 @@
-use gpui::{div, prelude::*, px, AnyElement, CursorStyle, Entity, MouseButton};
+use gpui::{div, prelude::*, AnyElement, CursorStyle, Entity, MouseButton};
 
 use crate::model::{mix_colors, Color, Style};
 use crate::ui::input::SingleLineInput;
@@ -12,13 +12,10 @@ const SHELL_HEIGHT: f32 = 46.;
 /// side inset, so its edges are the shell's edges.
 pub const SHELL_INSET: f32 = 20.;
 
-/// The composer strip under the transcript, a.
-/// `client/src/ui/center/`. The strip is `BOTTOM_BAR_HEIGHT` tall, the same as the
-/// identity footer, and its top rule is drawn on the footer's divider row, so the two
-/// rules line up across the window. The rule is an absolute child, not the strip's own
-/// border, so it stays on that row while the shell is centred. The 46px shell sits
-/// vertically centred in the strip, so the space above it (below the rule) and the space
-/// below it (to the window's bottom edge) are equal at any text scale. It holds the
+/// The composer strip under the transcript (`client/src/ui/center/`). The strip is
+/// `BOTTOM_BAR_HEIGHT` tall, the same as the identity footer, and uses the same
+/// `border_t_1` top rule so both dividers share one row across the window. The 46px
+/// shell sits vertically centred in the strip below that rule. It holds the
 /// single-line draft and the SEND button, and its side edges are `SHELL_INSET` in. The
 /// shell's border is the accent while the draft has focus (`focused`), else the divider.
 /// `has_text` says whether the draft has anything to send. A click on SEND calls
@@ -48,20 +45,8 @@ pub fn render_composer(
         .flex_shrink_0()
         .flex()
         .items_center()
-        // The rule on the footer's divider row, drawn as the footer draws its rule: a
-        // 1px top border. A filled 1px bar snaps to two device rows at 150%, the border
-        // to one. It comes before the shell, so the shell's own border paints over it
-        // while the draft has focus.
-        .child(
-            div()
-                .absolute()
-                .top_0()
-                .left_0()
-                .w_full()
-                .h(px(1.))
-                .border_t_1()
-                .border_color(to_gpui(style.divider_color())),
-        )
+        .border_t_1()
+        .border_color(to_gpui(style.divider_color()))
         .child(
             div()
                 .flex_grow()
