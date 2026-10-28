@@ -392,7 +392,7 @@ pub fn wire_shell_actions(root: Div, cx: &mut Context<Shell>) -> Div {
         }
     }))
     .on_action(cx.listener(|shell, _: &InsertFile, window, cx| {
-        if !shell.chord_live(Chord::InsertFile, window, cx) || !shell.file_upload_offered() {
+        if !shell.chord_live(Chord::InsertFile, window, cx) || !shell.file_offered() {
             cx.propagate();
             return;
         }

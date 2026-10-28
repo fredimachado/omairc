@@ -3,6 +3,7 @@
 //! test case lives in `client/docs/qml-ui-test-checklist.md`.
 
 mod fixture;
+mod layout;
 mod sheets;
 mod transcript;
 mod typing;
