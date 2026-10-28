@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The composer top rule matches the identity footer divider. The center
   column no longer keeps an always-on 2px drag border that inset the strip.
+- An empty CHANNELS heading stays hidden in the sidebar, matching DIRECT
+  MESSAGES: the group label appears only when that network has channels.
 
 ## [1.11.0rc2] - 2026-10-28
 
@@ -48,6 +50,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The terminal client wheel-scrolls and clicks rows when started with `--mouse`
   or `OMAIRC_TUI_MOUSE=1`. The pointer path stays off by default, so the
   terminal keeps its own text selection.
+- Direct-message avatars in the terminal client use the Kitty graphics
+  protocol when the terminal answers the probe, with a half-block raster
+  fallback. WezTerm stays on half-blocks because it answers the probe but
+  does not draw Unicode placeholders.
 
 ### Known regressions
 
@@ -86,6 +92,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Short transcripts and Status grow up from the composer. Page Up still
+  anchors history from the first rendered row.
+- Terminal member panel, jump cards, and shortcuts sheet draw titles and
+  position counters into the rounded border so the content keeps those rows.
 - The desktop client is the Rust GPUI binary in `client/` (default `product`
   feature). Arch `PKGBUILD`, `bin/test`, `bin/test-install`, and
   `bin/test-desktop` build and drive that binary. The Qt/qmake tree is gone;
