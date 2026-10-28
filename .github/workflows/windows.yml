@@ -209,16 +209,20 @@ jobs:
             throw "demo-server smoke exited $($p.ExitCode)"
           }
 
-      # Proves the installer on every run. Upload and GitHub Release publish
-      # stay gated to workflow_dispatch and v* tags below.
+      # Main and pull requests keep the staged exe smoke above. Inno packaging,
+      # installer smoke, upload, and GitHub Release publish run only on
+      # workflow_dispatch and v* tags so a green main tip is not packaged twice.
       - name: Install Inno Setup for rust
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         run: choco install innosetup --no-progress -y
 
       - name: Package rust installer
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         shell: cmd
         run: bin\package-windows.bat
 
       - name: Smoke rust installer
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         run: |
           $ErrorActionPreference = 'Stop'
           $setup = "dist\omairc-$($env:OMAIRC_ARTIFACT_VERSION)-windows-x64-setup.exe"
