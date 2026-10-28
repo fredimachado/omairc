@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-10-28
+
+### Fixed
+
+- The composer top rule matches the identity footer divider. The center
+  column no longer keeps an always-on 2px drag border that inset the strip.
+
 ## [1.11.0rc2] - 2026-10-28
 
 ### Changed
@@ -863,7 +870,8 @@ First public release: a simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.11.0rc2...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.11.0...HEAD
+[1.11.0]: https://github.com/fredimachado/omairc/compare/v1.11.0rc2...v1.11.0
 [1.11.0rc2]: https://github.com/fredimachado/omairc/compare/v1.11.0rc1...v1.11.0rc2
 [1.11.0rc1]: https://github.com/fredimachado/omairc/compare/v1.10.3...v1.11.0rc1
 [1.10.3]: https://github.com/fredimachado/omairc/compare/v1.10.2...v1.10.3
