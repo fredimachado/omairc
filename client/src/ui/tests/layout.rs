@@ -58,14 +58,20 @@ fn file_drag_frame_mounts_only_when_a_host_is_offered(cx: &mut gpui::TestAppCont
         "shell keeps the file-offer gate open with a host and no Find/Connect"
     );
 
-    // Find mode closes the same file-offer gate Connect does. gpui 0.2.2 keeps
+    // Find mode closes the same file-offer gate Connect does. Call the shell
+    // path directly: OpenFind is `secondary-f` (Ctrl on Windows/Linux, Cmd on
+    // macOS), so a hard-coded `ctrl-f` misses on macOS CI. gpui 0.2.2 keeps
     // prior debug_bounds entries across frames, so the gate is checked on the
     // shared Shell::file_offered method render uses rather than on the selector
     // disappearing.
-    ui.keys("ctrl-f");
+    ui.cx.update(|window, cx| {
+        ui.shell
+            .update(cx, |shell, cx| shell.begin_or_advance_find(window, cx));
+    });
+    ui.settle();
     assert!(
         ui.shell.read_with(ui.cx, |shell, _| shell.find.is_some()),
-        "Ctrl+F enters find"
+        "begin_or_advance_find enters find"
     );
     assert!(
         !ui.shell.read_with(ui.cx, |shell, _| shell.file_offered()),
