@@ -626,7 +626,6 @@ impl Render for Shell {
             self.composer.read(cx).focus_handle(cx).is_focused(window) && window.is_window_active();
         let has_text = !self.composer.read(cx).text().trim().is_empty();
         let file_offered = self.file_upload_offered() && !self.connect_open && self.find.is_none();
-        let file_drag_over = cx.has_active_drag() && file_offered;
         let on_file = file_offered.then(|| file_handler(entity.clone()));
         let center = render_center(
             header,
@@ -639,7 +638,7 @@ impl Render for Shell {
             slash_popup,
             composer_focused,
             has_text,
-            file_drag_over,
+            file_offered,
             external_drop_handler(entity.clone()),
         );
 

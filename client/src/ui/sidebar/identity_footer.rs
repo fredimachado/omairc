@@ -72,6 +72,7 @@ pub fn identity_footer(
         .bg(to_gpui(mix_colors(style.panel_color(), ink, amount)))
         .border_t_1()
         .border_color(to_gpui(style.divider_color()))
+        .debug_selector(|| "identity-footer".into())
         .child(
             div()
                 .relative()

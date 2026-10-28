@@ -5,7 +5,7 @@ pub mod slash_popup;
 
 use std::rc::Rc;
 
-use gpui::{div, prelude::*, AnyElement, App, Entity, ExternalPaths, Window};
+use gpui::{div, prelude::*, transparent_black, AnyElement, App, Entity, ExternalPaths, Window};
 
 use crate::model::Style;
 use crate::ui::center::composer::render_composer;
@@ -19,6 +19,11 @@ use crate::util::{scaled_px, to_gpui};
 /// `anchors.bottomMargin`).
 const TRANSCRIPT_GAP: f32 = 12.;
 
+/// Hitbox group for the centre column. The absolute file-drag frame listens with
+/// `group_drag_over` so the accent border appears only while an `ExternalPaths`
+/// drag is over this column, not for a drag elsewhere in the window.
+const CENTER_GROUP: &str = "center-column";
+
 /// The centre column: header, transcript, composer. The header is the
 /// conversation's or the Status pane's, so the caller builds `header`. `popup`
 /// is the slash-complete popup, when it shows. `focused` and `has_text` drive the
@@ -30,7 +35,11 @@ const TRANSCRIPT_GAP: f32 = 12.;
 ///
 /// File-drag feedback is an absolute accent frame, not a layout border. A permanent
 /// `border_2` (even painted `page_color`) insets the composer strip by 2px and lifts
-/// its top rule above the identity footer's divider.
+/// its top rule above the identity footer's divider. The frame mounts only when a
+/// file host is offered (`file_offered`); it keeps a transparent 2px border and takes
+/// the accent via `group_drag_over` while an `ExternalPaths` drag is over this column.
+/// The column's `.drag_over` is what makes gpui repaint as the drag enters and leaves.
+/// Drops stay on the column's own `.on_drop`; the frame has no hitbox.
 #[allow(clippy::too_many_arguments)]
 pub fn render_center(
     header: HeaderView<'_>,
@@ -43,11 +52,12 @@ pub fn render_center(
     popup: Option<AnyElement>,
     focused: bool,
     has_text: bool,
-    file_drag_over: bool,
+    file_offered: bool,
     on_external_paths: Rc<dyn Fn(&ExternalPaths, &mut Window, &mut App)>,
 ) -> impl IntoElement {
-    let drop_paths = on_external_paths.clone();
+    let accent = to_gpui(style.accent_color());
     div()
+        .group(CENTER_GROUP)
         .relative()
         .flex_grow()
         .min_w_0()
@@ -72,7 +82,7 @@ pub fn render_center(
         .child(render_composer(
             composer, style, on_send, on_file, popup, focused, has_text,
         ))
-        .when(file_drag_over, |this| {
+        .when(file_offered, |this| {
             this.child(
                 div()
                     .absolute()
@@ -81,8 +91,11 @@ pub fn render_center(
                     .right_0()
                     .bottom_0()
                     .border_2()
-                    .border_color(to_gpui(style.accent_color()))
-                    .on_drop(move |paths, window, cx| drop_paths(paths, window, cx)),
+                    .border_color(transparent_black())
+                    .group_drag_over::<ExternalPaths>(CENTER_GROUP, move |style| {
+                        style.border_color(accent)
+                    })
+                    .debug_selector(|| "center-file-drag-frame".into()),
             )
         })
 }

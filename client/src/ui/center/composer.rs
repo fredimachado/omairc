@@ -1,4 +1,4 @@
-use gpui::{div, prelude::*, AnyElement, CursorStyle, Entity, MouseButton};
+use gpui::{div, prelude::*, px, AnyElement, CursorStyle, Entity, MouseButton};
 
 use crate::model::{mix_colors, Color, Style};
 use crate::ui::input::SingleLineInput;
@@ -15,9 +15,12 @@ pub const SHELL_INSET: f32 = 20.;
 /// The composer strip under the transcript (`client/src/ui/center/`). The strip is
 /// `BOTTOM_BAR_HEIGHT` tall, the same as the identity footer, and uses the same
 /// `border_t_1` top rule so both dividers share one row across the window. The 46px
-/// shell sits vertically centred in the strip below that rule. It holds the
-/// single-line draft and the SEND button, and its side edges are `SHELL_INSET` in. The
-/// shell's border is the accent while the draft has focus (`focused`), else the divider.
+/// shell sits vertically centred in the full 66px strip: `(66 - 46) / 2` = 10px above
+/// and below. The unscaled top border eats 1px of that top gap, so an unscaled 1px
+/// bottom padding mirrors it; without that padding `items_center` would centre in the
+/// 65px content box (9.5 / 10.5) and snap unevenly at 150%. It holds the single-line
+/// draft and the SEND button, and its side edges are `SHELL_INSET` in. The shell's
+/// border is the accent while the draft has focus (`focused`), else the divider.
 /// `has_text` says whether the draft has anything to send. A click on SEND calls
 /// `on_send`. Enter is handled by the shell root (`ComposerSubmit`), which checks
 /// header focus. `popup` is the slash-complete popup, if it shows. It is a child of
@@ -47,6 +50,10 @@ pub fn render_composer(
         .items_center()
         .border_t_1()
         .border_color(to_gpui(style.divider_color()))
+        // Mirrors the unscaled top border so `items_center` centres the shell in the
+        // full strip, not the 65px content box under the rule.
+        .pb(px(1.))
+        .debug_selector(|| "composer-strip".into())
         .child(
             div()
                 .flex_grow()
@@ -59,6 +66,7 @@ pub fn render_composer(
                 .bg(to_gpui(style.panel_color()))
                 .border_1()
                 .border_color(to_gpui(border))
+                .debug_selector(|| "composer-shell".into())
                 .child(
                     div()
                         .flex_grow()
