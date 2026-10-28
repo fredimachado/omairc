@@ -472,24 +472,53 @@ cmd_launch() {
   if [ -n "$HOST_SCALE" ]; then
     set -- "$@" --scale "$HOST_SCALE"
   fi
-  "$@" >"$STATE_DIR/logs/omairc.log" 2>&1 &
-  APP_PID=$!
-
   # Cold lavapipe + GPUI first map often needs more than a few seconds on CI
   # runners after a fresh cargo build; five seconds was flaking the first recipe.
-  attempt=0
+  # GPUI can also lose the race against a just-started Xvfb ("Failed to
+  # initialize X11 client"); retry the binary against the same nested server.
+  launch_try=0
   WINDOW=
   while [ -z "$WINDOW" ]; do
-    WINDOW="$(xdotool search --onlyvisible --pid "$APP_PID" 2>/dev/null | head -1 || true)"
-    attempt=$((attempt + 1))
-    if [ "$attempt" -ge 150 ] || ! process_alive "$APP_PID"; then
-      if [ -f "$STATE_DIR/logs/omairc.log" ]; then
-        echo "control-omairc-desktop: omairc.log:" >&2
-        cat "$STATE_DIR/logs/omairc.log" >&2 || true
+    launch_try=$((launch_try + 1))
+    : >"$STATE_DIR/logs/omairc.log"
+    "$@" >"$STATE_DIR/logs/omairc.log" 2>&1 &
+    APP_PID=$!
+
+    attempt=0
+    while [ -z "$WINDOW" ]; do
+      WINDOW="$(xdotool search --onlyvisible --pid "$APP_PID" 2>/dev/null | head -1 || true)"
+      attempt=$((attempt + 1))
+      if [ -n "$WINDOW" ]; then
+        break
       fi
-      die "Omairc did not open; see $STATE_DIR/logs/omairc.log"
+      if [ "$attempt" -ge 150 ]; then
+        break
+      fi
+      if ! process_alive "$APP_PID"; then
+        break
+      fi
+      sleep 0.1
+    done
+
+    if [ -n "$WINDOW" ]; then
+      break
     fi
-    sleep 0.1
+    if process_alive "$APP_PID"; then
+      kill "$APP_PID" 2>/dev/null || true
+      wait "$APP_PID" 2>/dev/null || true
+    fi
+    if [ "$launch_try" -lt 3 ] \
+      && grep -Fq 'Failed to initialize X11 client' "$STATE_DIR/logs/omairc.log" 2>/dev/null \
+      && process_alive "$XVFB_PID"; then
+      echo "control-omairc-desktop: X11 client init failed; retrying launch ($launch_try/3)" >&2
+      sleep 0.2
+      continue
+    fi
+    if [ -f "$STATE_DIR/logs/omairc.log" ]; then
+      echo "control-omairc-desktop: omairc.log:" >&2
+      cat "$STATE_DIR/logs/omairc.log" >&2 || true
+    fi
+    die "Omairc did not open; see $STATE_DIR/logs/omairc.log"
   done
 
   # Place after the app maps so the Xephyr host window is fully on-screen.
