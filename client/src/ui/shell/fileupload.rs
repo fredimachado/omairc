@@ -47,8 +47,14 @@ impl Shell {
         self.controller.file_host().is_some()
     }
 
+    /// Whether the centre column should mount the file-drag frame and offer FILE /
+    /// drop. A host must be advertised, and Connect or Find must not be open.
+    pub(crate) fn file_offered(&self) -> bool {
+        self.file_upload_offered() && !self.connect_open && self.find.is_none()
+    }
+
     pub(super) fn prompt_for_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.file_upload_offered() || self.find.is_some() || self.connect_open {
+        if !self.file_offered() {
             return;
         }
         let draft_key = self.shown.draft_key();
@@ -90,7 +96,7 @@ impl Shell {
         if self.connect_field_focused(window, cx) {
             return self.swallow_file_paste(cx);
         }
-        if !self.composer_focused(window, cx) || !self.file_upload_offered() || self.find.is_some() {
+        if !self.composer_focused(window, cx) || !self.file_offered() {
             return false;
         }
         let item = cx.read_from_clipboard();
@@ -113,7 +119,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.file_upload_drop_gate() {
+        if !self.file_offered() {
             return;
         }
         let draft_key = self.shown.draft_key();
@@ -122,10 +128,6 @@ impl Shell {
             .upload_network_id()
             .unwrap_or_else(|| self.shown.conversation.network_id.clone());
         self.enqueue_paths(paths.paths().to_vec(), draft_key, network_id, window, cx);
-    }
-
-    fn file_upload_drop_gate(&self) -> bool {
-        self.file_upload_offered() && !self.connect_open && self.find.is_none()
     }
 
     /// A paste into a Connect field. A file path is swallowed, so its text never reaches

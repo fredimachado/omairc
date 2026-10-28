@@ -39,7 +39,9 @@ const CENTER_GROUP: &str = "center-column";
 /// file host is offered (`file_offered`); it keeps a transparent 2px border and takes
 /// the accent via `group_drag_over` while an `ExternalPaths` drag is over this column.
 /// The column's `.drag_over` is what makes gpui repaint as the drag enters and leaves.
-/// Drops stay on the column's own `.on_drop`; the frame has no hitbox.
+/// Drops stay on the column's own `.on_drop`. The frame keeps a Normal, non-blocking
+/// hitbox (a no-op `.hover`) so gpui's `group_drag_over` path can refine its border;
+/// without that hitbox the accent never applies.
 #[allow(clippy::too_many_arguments)]
 pub fn render_center(
     header: HeaderView<'_>,
@@ -92,10 +94,46 @@ pub fn render_center(
                     .bottom_0()
                     .border_2()
                     .border_color(transparent_black())
+                    // Normal hitbox so `group_drag_over` can refine the border. gpui
+                    // skips hover styles while a drag is active, and Normal does not
+                    // block the column's on_drop or the transcript/composer below.
+                    .hover(|style| style)
                     .group_drag_over::<ExternalPaths>(CENTER_GROUP, move |style| {
                         style.border_color(accent)
+                    })
+                    // Paint-time probe: drag_over only runs when this frame has a
+                    // hitbox and is hovered, the same gate `group_drag_over` needs.
+                    .drag_over::<ExternalPaths>(|style, _, _, _| {
+                        #[cfg(test)]
+                        drag_frame_probe::note_active();
+                        style
                     })
                     .debug_selector(|| "center-file-drag-frame".into()),
             )
         })
+}
+
+/// Test-only paint probe for the file-drag frame's accent path. `drag_over` on the
+/// frame calls `note_active` only when the frame has a hitbox and is hovered during
+/// an `ExternalPaths` drag - the same condition `group_drag_over` needs to apply the
+/// accent border.
+#[cfg(test)]
+pub(crate) mod drag_frame_probe {
+    use std::cell::Cell;
+
+    thread_local! {
+        static ACTIVE: Cell<bool> = const { Cell::new(false) };
+    }
+
+    pub fn reset() {
+        ACTIVE.with(|cell| cell.set(false));
+    }
+
+    pub fn note_active() {
+        ACTIVE.with(|cell| cell.set(true));
+    }
+
+    pub fn active() -> bool {
+        ACTIVE.with(|cell| cell.get())
+    }
 }

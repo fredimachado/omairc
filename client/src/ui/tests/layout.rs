@@ -4,6 +4,7 @@ use gpui::{px, BorrowAppContext, FileDropEvent, Point};
 
 use crate::model::theme::Theme;
 use crate::model::Style;
+use crate::ui::center::drag_frame_probe;
 use crate::ui::BOTTOM_BAR_HEIGHT;
 use crate::util::{scaled_px, style, OmaircStyleGlobal};
 
@@ -34,6 +35,10 @@ fn file_drag_frame_mounts_only_when_a_host_is_offered(cx: &mut gpui::TestAppCont
         ui.cx.debug_bounds("center-file-drag-frame").is_none(),
         "demo seed has no FILEHOST, so the frame stays unmounted"
     );
+    assert!(
+        !ui.shell.read_with(ui.cx, |shell, _| shell.file_offered()),
+        "shell file_offered matches the unmounted frame"
+    );
 
     offer_file_host(&mut ui);
     let frame = ui
@@ -49,50 +54,83 @@ fn file_drag_frame_mounts_only_when_a_host_is_offered(cx: &mut gpui::TestAppCont
         "frame covers the centre column down through the composer"
     );
     assert!(
-        file_frame_offered(&ui),
+        ui.shell.read_with(ui.cx, |shell, _| shell.file_offered()),
         "shell keeps the file-offer gate open with a host and no Find/Connect"
     );
 
     // Find mode closes the same file-offer gate Connect does. gpui 0.2.2 keeps
     // prior debug_bounds entries across frames, so the gate is checked on the
-    // shell boolean `render` uses rather than on the selector disappearing.
+    // shared Shell::file_offered method render uses rather than on the selector
+    // disappearing.
     ui.keys("ctrl-f");
     assert!(
         ui.shell.read_with(ui.cx, |shell, _| shell.find.is_some()),
         "Ctrl+F enters find"
     );
     assert!(
-        !file_frame_offered(&ui),
+        !ui.shell.read_with(ui.cx, |shell, _| shell.file_offered()),
         "Find closes the file-offer gate that mounts the frame"
     );
 }
 
 #[gpui::test]
-fn file_drop_over_the_centre_column_does_not_panic(cx: &mut gpui::TestAppContext) {
-    // ExternalPaths's paths field is crate-private in gpui 0.2.2, so a real path
-    // cannot be synthesised here. This still drives Entered/Submit through the
-    // column's hitbox and on_drop with an empty path list.
+fn file_drag_frame_accents_only_over_the_centre_column(cx: &mut gpui::TestAppContext) {
+    // The frame's accent comes from group_drag_over, which gpui only applies when
+    // the frame has a hitbox. A paint-time drag_over probe on the frame notes the
+    // same gate (fixture cannot read computed border colours from the scene).
     let mut ui = fixture::open(cx);
     offer_file_host(&mut ui);
     let strip = ui
         .cx
         .debug_bounds("composer-strip")
         .expect("composer strip");
+    let footer = ui
+        .cx
+        .debug_bounds("identity-footer")
+        .expect("identity footer");
     let over_centre = Point::new(
         strip.origin.x + strip.size.width / 2.,
         strip.origin.y - px(40.),
     );
+    let over_sidebar = Point::new(
+        footer.origin.x + footer.size.width / 2.,
+        footer.origin.y + footer.size.height / 2.,
+    );
 
+    drag_frame_probe::reset();
     ui.cx.simulate_event(FileDropEvent::Entered {
         position: over_centre,
         paths: gpui::ExternalPaths::default(),
+    });
+    ui.cx.simulate_event(FileDropEvent::Pending {
+        position: over_centre,
     });
     ui.settle();
     assert!(
         ui.cx.update(|_, cx| cx.has_active_drag()),
         "Entered starts an ExternalPaths drag"
     );
+    assert!(
+        drag_frame_probe::active(),
+        "frame drag-over (and group_drag_over accent) must run while the drag is over the centre"
+    );
 
+    drag_frame_probe::reset();
+    ui.cx.simulate_event(FileDropEvent::Pending {
+        position: over_sidebar,
+    });
+    ui.settle();
+    assert!(
+        ui.cx.update(|_, cx| cx.has_active_drag()),
+        "drag stays active over the sidebar"
+    );
+    assert!(
+        !drag_frame_probe::active(),
+        "frame must not stay accented once the drag leaves the centre column"
+    );
+
+    // ExternalPaths's paths field is crate-private, so Submit carries an empty
+    // list; the column's on_drop still runs and clears the active drag.
     ui.cx.simulate_event(FileDropEvent::Submit {
         position: over_centre,
     });
@@ -175,11 +213,4 @@ fn offer_file_host(ui: &mut fixture::SeededShell<'_>) {
             .read_with(ui.cx, |shell, _| shell.controller.file_host().is_some()),
         "FILEHOST must open the upload gate"
     );
-}
-
-/// The same gate `Shell::render` passes to `render_center` as `file_offered`.
-fn file_frame_offered(ui: &fixture::SeededShell<'_>) -> bool {
-    ui.shell.read_with(ui.cx, |shell, _| {
-        shell.controller.file_host().is_some() && !shell.connect_open && shell.find.is_none()
-    })
 }
