@@ -223,11 +223,16 @@ impl Shell {
         }
     }
 
-    /// A Preferences switch on the Connect sheet, or `/pref`. The value writes
-    /// through at once and is saved to the preferences file. No Apply.
-    pub fn set_connect_preference(&mut self, name: PrefName, on: bool, cx: &mut Context<Self>) {
+    /// A Preferences control on the Connect sheet. The value writes through at
+    /// once and is saved to the preferences file. No Apply.
+    pub fn set_connect_preference(
+        &mut self,
+        name: PrefName,
+        value: PrefValue,
+        cx: &mut Context<Self>,
+    ) {
         let before = *self.controller.preferences();
-        if !self.controller.set_preference(name, PrefValue::Toggle(on)) {
+        if !self.controller.set_preference(name, value) {
             return;
         }
         self.apply_preference_changes(before, cx);
@@ -303,8 +308,8 @@ impl Shell {
                 self.connect.set_connect_on_startup(on);
             }
             Stop::Preference(name) => {
-                let on = !self.controller.preferences().enabled(name);
-                self.set_connect_preference(name, on, cx);
+                let value = self.controller.preferences().next_value(name);
+                self.set_connect_preference(name, value, cx);
             }
             Stop::Remove => self.connect_remove(window, cx),
             Stop::Discard => self.connect.discard(),

@@ -33,6 +33,15 @@ impl ColorPaletteId {
         let folded = token.trim().to_lowercase();
         Self::ALL.into_iter().find(|id| id.token() == folded)
     }
+
+    /// The next catalog id. The Preferences tab cycles with Space or a click.
+    pub fn next(self) -> Self {
+        let index = Self::ALL
+            .iter()
+            .position(|&id| id == self)
+            .unwrap_or(0);
+        Self::ALL[(index + 1) % Self::ALL.len()]
+    }
 }
 
 #[cfg(test)]
@@ -51,5 +60,23 @@ mod tests {
         assert_eq!(ColorPaletteId::from_token("loud"), None);
         assert_eq!(ColorPaletteId::from_token(""), None);
         assert_eq!(ColorPaletteId::default(), ColorPaletteId::Classic);
+    }
+
+    #[test]
+    fn next_cycles_the_catalog() {
+        let start = ColorPaletteId::ALL[0];
+        let mut id = start;
+        let mut seen = Vec::new();
+        for _ in 0..ColorPaletteId::ALL.len() {
+            seen.push(id);
+            id = id.next();
+        }
+        assert_eq!(id, start);
+        for want in ColorPaletteId::ALL {
+            assert!(
+                seen.contains(&want),
+                "cycle missed {want:?}; visited {seen:?}"
+            );
+        }
     }
 }

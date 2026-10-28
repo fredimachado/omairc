@@ -466,4 +466,43 @@ mod tests {
             );
         });
     }
+
+    #[gpui::test]
+    fn connect_preference_writes_go_through_one_path(cx: &mut TestAppContext) {
+        use crate::model::color_palette::ColorPaletteId;
+        use crate::model::prefs::PrefName;
+
+        let (activation_tx, _) = async_channel::unbounded();
+        cx.update(|app| {
+            app.set_global(OmaircStyleGlobal {
+                style: Style::new(Theme::defaults_dark(), 1.0),
+            });
+        });
+        let (shell, vcx) = cx.add_window_view(|_window, cx| {
+            Shell::new(cx, false, true, None, activation_tx)
+        });
+        shell.update(vcx, |shell, cx| {
+            assert_eq!(
+                cx.global::<OmaircStyleGlobal>().style.color_palette(),
+                ColorPaletteId::Classic
+            );
+            let palette = shell.controller.preferences().next_value(PrefName::Palette);
+            shell.set_connect_preference(PrefName::Palette, palette, cx);
+            assert_eq!(
+                cx.global::<OmaircStyleGlobal>().style.color_palette(),
+                ColorPaletteId::Vivid
+            );
+            let palette = shell.controller.preferences().next_value(PrefName::Palette);
+            shell.set_connect_preference(PrefName::Palette, palette, cx);
+            assert_eq!(
+                cx.global::<OmaircStyleGlobal>().style.color_palette(),
+                ColorPaletteId::Classic
+            );
+
+            assert!(shell.controller.preferences().colors);
+            let colors = shell.controller.preferences().next_value(PrefName::Colors);
+            shell.set_connect_preference(PrefName::Colors, colors, cx);
+            assert!(!shell.controller.preferences().colors);
+        });
+    }
 }

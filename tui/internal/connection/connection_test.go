@@ -328,6 +328,13 @@ func TestPreferencesDefaultTrue(t *testing.T) {
 		t.Fatalf("preferences = %v/%v/%v, want all true",
 			conn.ReopenDirects(), conn.ShowAvatars(), conn.OpenAtUnread())
 	}
+	if conn.ColorPaletteToken() != "classic" {
+		t.Fatalf("ColorPaletteToken = %q, want classic", conn.ColorPaletteToken())
+	}
+	conn.CycleColorPalette()
+	if conn.ColorPaletteToken() != "vivid" {
+		t.Fatalf("CycleColorPalette token = %q, want vivid", conn.ColorPaletteToken())
+	}
 	conn.SetReopenDirects(false)
 	conn.SetShowAvatars(false)
 	conn.SetOpenAtUnread(false)

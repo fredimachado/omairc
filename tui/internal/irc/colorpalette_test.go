@@ -18,3 +18,25 @@ func TestParseColorPalette(t *testing.T) {
 		t.Fatalf("tokens = %q/%q", ColorPaletteToken(ColorPaletteClassic), ColorPaletteToken(ColorPaletteVivid))
 	}
 }
+
+func TestNextColorPaletteCyclesTheCatalog(t *testing.T) {
+	catalog := ColorPalettes()
+	if len(catalog) == 0 {
+		t.Fatal("ColorPalettes is empty")
+	}
+	start := catalog[0]
+	id := start
+	seen := make(map[ColorPaletteID]bool, len(catalog))
+	for range catalog {
+		seen[id] = true
+		id = NextColorPalette(id)
+	}
+	if id != start {
+		t.Fatalf("after %d steps got %v, want %v", len(catalog), id, start)
+	}
+	for _, want := range catalog {
+		if !seen[want] {
+			t.Fatalf("cycle missed %v; seen %v", want, seen)
+		}
+	}
+}

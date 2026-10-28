@@ -77,8 +77,9 @@ builds).
 - Collapse the server list by width, not by hiding it with zero size.
 - The Connect sheet is tabbed: `Connection` holds the per-network profile and
   `Preferences` holds global settings such as reopening direct messages on
-  startup. `/pref` reads and sets those toggles from the composer
-  (`directs`, `avatars`, `unread`, `colors`, `palette`). Open conversations at unread starts on.
+  startup and the color palette (classic/vivid). `/pref` reads and sets those
+  from the composer (`directs`, `avatars`, `unread`, `colors`, `palette`).
+  Open conversations at unread starts on.
   Only queries the user opened or replied to are restored, and restore waits
   until after ISUPPORT (`376` / `422`). Keep the `Ctrl+/` shortcut hint in its
   rail so new users find the shortcuts sheet.

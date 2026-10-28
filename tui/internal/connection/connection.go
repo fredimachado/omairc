@@ -708,6 +708,17 @@ func (c *Connection) SetOpenAtUnread(enabled bool) {
 	c.draftChanged()
 }
 
+// ColorPaletteToken is the Preferences-tab chip label for the color palette.
+func (c *Connection) ColorPaletteToken() string {
+	return irc.ColorPaletteToken(c.ctrl.ColorPalette())
+}
+
+// CycleColorPalette advances the color-palette catalog on the Preferences tab.
+func (c *Connection) CycleColorPalette() {
+	c.ctrl.SetColorPalette(irc.NextColorPalette(c.ctrl.ColorPalette()))
+	c.draftChanged()
+}
+
 // PersistenceStatus is the selected network's persistence sentence, or "".
 // It mirrors IrcConnection::persistenceStatus.
 func (c *Connection) PersistenceStatus() string {

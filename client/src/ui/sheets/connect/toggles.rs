@@ -5,7 +5,9 @@
 
 use gpui::{div, prelude::*, transparent_black, white, FontWeight, MouseButton};
 
-use crate::model::connect::{preference_rows, PreferenceRow, Stop, PREFERENCES_TITLE, TLS_LABEL};
+use crate::model::connect::{
+    preference_rows, PreferenceKind, PreferenceRow, Stop, PREFERENCES_TITLE, TLS_LABEL,
+};
 use crate::ui::sheets::connect::field::{caption, help_mark};
 use crate::ui::sheets::connect::ConnectView;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
@@ -101,12 +103,17 @@ pub fn preferences_panel(view: &ConnectView<'_>) -> impl IntoElement {
     panel
 }
 
-/// One preference: its switch, its label and help mark, and the help caption
-/// under them while the mark has focus.
+/// One preference: its control, its label and help mark, and the help caption
+/// under them while the mark has focus. The control follows `row.kind`.
 fn preference_row(view: &ConnectView<'_>, row: PreferenceRow) -> impl IntoElement {
     let style = view.style;
-    let on = view.prefs.enabled(row.name);
     let help_stop = Stop::PreferenceHelp(row.name);
+    let control = match row.kind {
+        PreferenceKind::Choice => preference_choice(view, row).into_any_element(),
+        PreferenceKind::Switch => {
+            switch(view, Stop::Preference(row.name), view.prefs.enabled(row.name)).into_any_element()
+        }
+    };
     let mut column = div()
         .w_full()
         .flex()
@@ -118,7 +125,7 @@ fn preference_row(view: &ConnectView<'_>, row: PreferenceRow) -> impl IntoElemen
                 .flex_row()
                 .items_center()
                 .gap(scaled_px(style, 10.))
-                .child(switch(view, Stop::Preference(row.name), on))
+                .child(control)
                 .child(
                     div()
                         .flex()
@@ -143,4 +150,43 @@ fn preference_row(view: &ConnectView<'_>, row: PreferenceRow) -> impl IntoElemen
         );
     }
     column
+}
+
+/// A Preferences choice control: a token chip. Click or Space advances the
+/// catalog; Enter walks focus like the switches.
+fn preference_choice(view: &ConnectView<'_>, row: PreferenceRow) -> impl IntoElement {
+    let style = view.style;
+    let stop = Stop::Preference(row.name);
+    let focused = view.is_focused(&stop);
+    let token = view.prefs.choice_token(row.name).unwrap_or("");
+    let mut chip = div()
+        .id("connect-preference-choice")
+        .flex_shrink_0()
+        .h(scaled_px(style, 16.))
+        .min_w(scaled_px(style, 52.))
+        .px(scaled_px(style, 6.))
+        .rounded(scaled_px(style, 8.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .cursor_pointer()
+        .bg(to_gpui(style.raised_color()))
+        .border_1()
+        .border_color(if focused {
+            to_gpui(style.accent_color())
+        } else {
+            transparent_black()
+        })
+        .text_size(scaled_px(style, 10.))
+        .text_color(to_gpui(style.ink_color()))
+        .font_family(FONT_FAMILY)
+        .child(token)
+        .on_mouse_down(MouseButton::Left, {
+            let click = view.click(stop.clone());
+            move |_, window, cx| click(window, cx)
+        });
+    if let Some(handle) = view.handle(&stop) {
+        chip = chip.track_focus(handle);
+    }
+    chip
 }
