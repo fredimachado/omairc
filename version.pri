@@ -5,4 +5,4 @@
 #
 # The Rust client reads this in client/build.rs (OMAIRC_VERSION). The TUI
 # injects it through tui/bin/build. Do not duplicate VERSION elsewhere.
-VERSION = 1.11.0
+VERSION = 1.11.1

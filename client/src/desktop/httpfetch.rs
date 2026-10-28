@@ -211,11 +211,17 @@ impl HttpFetch for UreqFetch {
         let location = header_text("location");
         let content_type = header_text("content-type");
         if (200..300).contains(&status) {
+            // ureq's LimitReader errors on the EOF probe after reading exactly
+            // `limit` bytes (`BodyExceedsLimit`), so a body whose Content-Length
+            // equals `max_body` never finishes. Cap one byte above the budget;
+            // callers that need a hard size still enforce it in `on_body`.
+            let ureq_limit = request.max_body.saturating_add(1);
             let mut reader = response
                 .body_mut()
                 .with_config()
-                .limit(request.max_body)
+                .limit(ureq_limit)
                 .reader();
+            let mut total: u64 = 0;
             let mut buffer = [0u8; 16 * 1024];
             loop {
                 let read = std::io::Read::read(&mut reader, &mut buffer)
@@ -223,6 +229,14 @@ impl HttpFetch for UreqFetch {
                 if read == 0 {
                     break;
                 }
+                let read_u64 = read as u64;
+                if total.saturating_add(read_u64) > request.max_body {
+                    return Err(FetchError::Transport(format!(
+                        "the response body is larger than request limit: {}",
+                        request.max_body
+                    )));
+                }
+                total += read_u64;
                 if !on_body(&buffer[..read]) {
                     return Err(FetchError::Stopped);
                 }
@@ -835,6 +849,26 @@ mod tests {
         let small = FetchRequest::get(&url, Duration::from_secs(5), 1024);
         let result = UreqFetch.get(&small, &mut |_| true);
         assert!(matches!(result, Err(FetchError::Transport(_))), "{result:?}");
+    }
+
+    #[test]
+    fn a_body_whose_length_equals_the_limit_finishes() {
+        // The Windows installer download sets max_body to the asset size. ureq's
+        // LimitReader used to fail the EOF probe after reading exactly that many
+        // bytes, so the About-sheet update never committed.
+        let body = b"omairc-setup".to_vec();
+        let (url, server) = serve_once("200 OK", "", body.clone());
+        let exact = FetchRequest::get(&url, Duration::from_secs(5), body.len() as u64);
+        let mut got = Vec::new();
+        let reply = UreqFetch
+            .get(&exact, &mut |bytes| {
+                got.extend_from_slice(bytes);
+                true
+            })
+            .expect("exact-size body must finish");
+        let _ = server.join().expect("server thread");
+        assert_eq!(reply.status, 200);
+        assert_eq!(got, body);
     }
 
     #[test]

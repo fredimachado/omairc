@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.1] - 2026-10-28
+
+### Fixed
+
+- Checking for updates from an installed Windows copy downloads the setup
+  again. The HTTP body limit matched the asset size exactly, and ureq then
+  failed the end-of-stream read, so About showed "Could not download the
+  update."
+
 ## [1.11.0] - 2026-10-28
 
 ### Fixed
@@ -880,7 +889,8 @@ First public release: a simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.11.0...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.11.1...HEAD
+[1.11.1]: https://github.com/fredimachado/omairc/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/fredimachado/omairc/compare/v1.11.0rc2...v1.11.0
 [1.11.0rc2]: https://github.com/fredimachado/omairc/compare/v1.11.0rc1...v1.11.0rc2
 [1.11.0rc1]: https://github.com/fredimachado/omairc/compare/v1.10.3...v1.11.0rc1
