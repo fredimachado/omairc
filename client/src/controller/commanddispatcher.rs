@@ -14,8 +14,7 @@
 
 
 use crate::irc::autoaway::parse_autoaway_argument;
-use crate::irc::channelmode::parse_channel_mode_request;
-use crate::irc::listmask::{expand_list_mask, kick_nick_from_mask, ListMaskKind};
+use crate::irc::listmask::ListMaskKind;
 use crate::irc::pref::{PrefName, PrefRequest, PrefValue, Preferences};
 use crate::irc::command::{
     command_outcome_text, help_text, parse, pref_reply, Command, CommandOutcome, ComposerSurface,
@@ -29,6 +28,7 @@ use crate::session::events::SessionState;
 use crate::session::session::Session;
 
 use super::controller::Controller;
+use super::listmode::ChannelModeWrapper;
 use super::monitorcoordinator::MonitorOutcome;
 use super::send::Outgoing;
 use super::stores::{ignore_nick_is_usable, mute_target_is_usable};
@@ -50,15 +50,6 @@ enum StoreVerb {
 enum QuietSend {
     Msg,
     Notice,
-}
-
-/// Which channel-mode wrapper a `/op`, `/deop`, `/voice`, `/devoice`, `/ban`,
-/// `/unban`, `/quiet` or `/unquiet` is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct ChannelModeWrapper {
-    modes: &'static str,
-    /// When set, the parameter is a list mask and gets the shared nick expansion.
-    list_mask: Option<ListMaskKind>,
 }
 
 /// A verb's words rejoined, so a verb that splits its argument (`Words`) reads the same text
@@ -543,111 +534,6 @@ impl Controller {
         }
     }
 
-    /// `/kick [channel] <nick> [reason]` (`dispatchKick`). A first word that names a channel on the
-    /// network chooses the channel; otherwise the selected channel is the target.
-    fn dispatch_kick(&mut self, active: &Session, argument: &str, surface: ComposerSurface) -> CommandOutcome {
-        let words = Words::split(argument);
-        if words.first.is_empty() {
-            return CommandOutcome::Refused;
-        }
-        let network = self.surface_network(surface);
-        let features = self.reducer.server_features(&network).clone();
-        if features.is_channel(&words.first) {
-            let after = Words::split(&words.rest);
-            if after.first.is_empty() {
-                return CommandOutcome::Refused;
-            }
-            return outcome_of(active.kick(&words.first, &after.first, &after.rest));
-        }
-        if self.selected.is_none() || !self.is_channel() {
-            return CommandOutcome::WrongScope;
-        }
-        let selected_network = self.selected.as_ref().map(|key| key.network_id.clone());
-        if selected_network.as_deref() != Some(network.as_str()) {
-            return CommandOutcome::Refused;
-        }
-        let channel = self.selected_target().to_owned();
-        outcome_of(!channel.is_empty() && active.kick(&channel, &words.first, &words.rest))
-    }
-
-    /// `/kickban [channel] <nick> [reason]` (`/kb`). Scope matches `/kick`; the ban
-    /// mask expands like `/ban`, and a token with `!` bans that mask while kicking
-    /// the nick before `!`.
-    fn dispatch_kickban(
-        &mut self,
-        active: &Session,
-        argument: &str,
-        surface: ComposerSurface,
-    ) -> CommandOutcome {
-        let words = Words::split(argument);
-        if words.first.is_empty() {
-            return CommandOutcome::Refused;
-        }
-        let network = self.surface_network(surface);
-        let features = self.reducer.server_features(&network).clone();
-        let (channel, nick_token, reason) = if features.is_channel(&words.first) {
-            let after = Words::split(&words.rest);
-            if after.first.is_empty() {
-                return CommandOutcome::Refused;
-            }
-            (words.first.clone(), after.first.clone(), after.rest.clone())
-        } else {
-            if self.selected.is_none() || !self.is_channel() {
-                return CommandOutcome::WrongScope;
-            }
-            let selected_network = self.selected.as_ref().map(|key| key.network_id.clone());
-            if selected_network.as_deref() != Some(network.as_str()) {
-                return CommandOutcome::Refused;
-            }
-            let channel = self.selected_target().to_owned();
-            if channel.is_empty() {
-                return CommandOutcome::Refused;
-            }
-            (channel, words.first.clone(), words.rest.clone())
-        };
-        let nick = kick_nick_from_mask(&nick_token);
-        if nick.is_empty() {
-            return CommandOutcome::Refused;
-        }
-        let mask = expand_list_mask(&nick_token);
-        outcome_of(active.kickban(&channel, &mask, nick, &reason))
-    }
-
-    /// `/invite <nick> [channel]` (`dispatchInvite`). Without a channel the selected one is used
-    /// and Status has none to name, so an invite there needs one.
-    fn dispatch_invite(&mut self, active: &Session, argument: &str, surface: ComposerSurface) -> CommandOutcome {
-        let words = Words::split(argument);
-        if words.first.is_empty() {
-            return CommandOutcome::WrongScope;
-        }
-        let network = self.surface_network(surface);
-        let features = self.reducer.server_features(&network).clone();
-        if features.is_channel(&words.first) {
-            return CommandOutcome::Refused;
-        }
-        let nick = words.first.clone();
-        let channel = if words.rest.is_empty() {
-            if surface == ComposerSurface::Status {
-                return CommandOutcome::WrongScope;
-            }
-            if self.selected.is_none() || !self.is_channel() {
-                return CommandOutcome::WrongScope;
-            }
-            let selected_network = self.selected.as_ref().map(|key| key.network_id.clone());
-            if selected_network.as_deref() != Some(network.as_str()) {
-                return CommandOutcome::Refused;
-            }
-            self.selected_target().to_owned()
-        } else {
-            let named = Words::split(&words.rest);
-            if !features.is_channel(&named.first) || !named.rest.is_empty() {
-                return CommandOutcome::Refused;
-            }
-            named.first
-        };
-        outcome_of(!channel.is_empty() && active.invite(&nick, &channel))
-    }
-
     /// `/query <nick> [text]` (`dispatchQuery`). Opens or selects a direct message as the user
     /// asked, so it inserts the row (`UserOpen`). Text sends into it.
     fn dispatch_query(&mut self, argument: &str, surface: ComposerSurface) -> CommandOutcome {
@@ -742,61 +628,6 @@ impl Controller {
             format!("{service} {text}")
         };
         self.dispatch_quiet_send(QuietSend::Msg, &argument, surface)
-    }
-
-    /// `/mode <target>...` (`dispatchMode`). The argument is read against the network's channel
-    /// modes, so a query and a change both map to the frame the server expects.
-    fn dispatch_mode(&mut self, argument: &str, surface: ComposerSurface) -> CommandOutcome {
-        if argument.is_empty() {
-            return CommandOutcome::Refused;
-        }
-        let network = self.surface_network(surface);
-        if network.is_empty() {
-            return refused_or_wrong_scope(surface);
-        }
-        let features = self.reducer.server_features(&network).clone();
-        let Some(request) = parse_channel_mode_request(argument, &features) else {
-            return CommandOutcome::Refused;
-        };
-        let Some(active) = self.registered_session(&network) else {
-            return CommandOutcome::NotConnected;
-        };
-        outcome_of(active.send_channel_mode(&request))
-    }
-
-    /// `/op`, `/deop`, `/voice`, `/devoice`, `/ban` and `/unban`
-    /// (`dispatchChannelModeWrapper`). They turn one nick or mask into a MODE
-    /// change on the selected channel.
-    fn dispatch_channel_mode_wrapper(
-        &mut self,
-        wrapper: ChannelModeWrapper,
-        words: &Words,
-        surface: ComposerSurface,
-    ) -> CommandOutcome {
-        if self.selected.is_none() || !self.is_channel() {
-            return CommandOutcome::WrongScope;
-        }
-        let selected_network = self.selected.as_ref().map(|key| key.network_id.clone());
-        if selected_network.as_deref() != Some(self.surface_network(surface).as_str()) {
-            return CommandOutcome::Refused;
-        }
-        if words.first.is_empty() || !words.rest.is_empty() {
-            return CommandOutcome::Refused;
-        }
-        if wrapper.list_mask == Some(ListMaskKind::Quiet) {
-            let network = self.surface_network(surface);
-            let features = self.reducer.server_features(&network);
-            if !features.chan_modes_a().contains('q') {
-                return CommandOutcome::Refused;
-            }
-        }
-        let parameter = if wrapper.list_mask.is_some() {
-            expand_list_mask(&words.first)
-        } else {
-            words.first.clone()
-        };
-        let argument = format!("{} {} {parameter}", self.selected_target(), wrapper.modes);
-        self.dispatch_mode(&argument, surface)
     }
 
     /// `/raw <line>` and `/quote <line>`: one literal line, sent as given (`dispatchRaw`).
@@ -1203,7 +1034,7 @@ impl Controller {
     }
 
     /// The session on `network_id`, when it is registered.
-    fn registered_session(&self, network_id: &str) -> Option<Session> {
+    pub(super) fn registered_session(&self, network_id: &str) -> Option<Session> {
         self.session(network_id)
             .filter(|session| session.state() == SessionState::Registered)
     }

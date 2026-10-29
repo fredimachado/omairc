@@ -27,8 +27,8 @@ const LIMIT: usize = 800;
 /// Files over `LIMIT`, at their production line counts when the ratchet landed. The
 /// count may only fall, and an entry leaves this list once its file is within `LIMIT`.
 const ALLOWLIST: &[(&str, usize)] = &[
-    ("controller/commanddispatcher.rs", 972),
-    ("controller/replyrouter.rs", 917),
+    ("controller/commanddispatcher.rs", 921),
+    ("controller/replyrouter.rs", 912),
 ];
 
 /// Non-blank production lines in `code` (comments already blanked): every line before
