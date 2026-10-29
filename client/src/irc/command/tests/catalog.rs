@@ -5,7 +5,7 @@ use super::*;
 #[test]
 fn verb_table_has_the_catalog_shape() {
     let table = verb_table();
-    assert_eq!(table.len(), 47, "the catalog has 47 rows");
+    assert_eq!(table.len(), 53, "the catalog has 53 rows");
 
     let first = table[0];
     assert_eq!(first.verb, Verb::Action);
@@ -31,7 +31,13 @@ fn verb_table_has_the_catalog_shape() {
     assert_eq!(topic.scope, VerbScope::Conversation);
     assert_eq!(topic.wrong_scope_text, "Topic applies to channels");
 
-    let last = table[46];
+    let kickban = lookup("kickban").expect("kickban");
+    assert_eq!(kickban.aliases, ["kb"]);
+    assert_eq!(kickban.usage, "/kickban [channel] <nick> [reason]");
+    assert_eq!(kickban.scope, VerbScope::Conversation);
+    assert_eq!(lookup("kb").map(|s| s.verb), Some(Verb::Kickban));
+
+    let last = table[52];
     assert_eq!(last.verb, Verb::List);
     assert_eq!(last.name, "list");
     assert_eq!(last.usage, "/list [mask]");
@@ -46,7 +52,7 @@ fn every_verb_has_exactly_one_row_and_names_are_unique() {
         assert!(verbs.insert(spec.verb), "duplicate verb {:?}", spec.verb);
         assert_eq!(spec_for(spec.verb).name, spec.name);
     }
-    assert_eq!(verbs.len(), 47);
+    assert_eq!(verbs.len(), 53);
 }
 
 #[test]
@@ -133,8 +139,9 @@ fn verb_spec_wrong_scope_message_defaults_when_empty() {
 fn visible_verbs_on_surface_drops_the_conversation_only_rows() {
     let conversation = visible_on(CONVERSATION);
     let status = visible_on(STATUS);
-    assert_eq!(conversation.len(), 47);
-    // Status drops me, close, topic, op, deop, voice, devoice and ban.
+    assert_eq!(conversation.len(), 53);
+    // Status drops me, close, topic, op, deop, voice, devoice, ban, and the
+    // kickban / quiet / ban-list family.
     assert_eq!(status.len(), 39);
     for spec in status {
         assert_ne!(
@@ -419,6 +426,42 @@ fn catalog_rows_match_the_core_matrix() {
             wrong: "Ban applies to channels",
         },
         Row {
+            name: "kickban",
+            usage: "/kickban [channel] <nick> [reason]",
+            scope: VerbScope::Conversation,
+            wrong: "Kickban applies to channels",
+        },
+        Row {
+            name: "unban",
+            usage: "/unban <mask>",
+            scope: VerbScope::Conversation,
+            wrong: "Unban applies to channels",
+        },
+        Row {
+            name: "quiet",
+            usage: "/quiet <mask>",
+            scope: VerbScope::Conversation,
+            wrong: "Quiet applies to channels",
+        },
+        Row {
+            name: "unquiet",
+            usage: "/unquiet <mask>",
+            scope: VerbScope::Conversation,
+            wrong: "Unquiet applies to channels",
+        },
+        Row {
+            name: "bans",
+            usage: "/bans",
+            scope: VerbScope::Conversation,
+            wrong: "Bans applies to channels",
+        },
+        Row {
+            name: "quiets",
+            usage: "/quiets",
+            scope: VerbScope::Conversation,
+            wrong: "Quiets applies to channels",
+        },
+        Row {
             name: "ns",
             usage: "/ns <text>",
             scope: VerbScope::Either,
@@ -451,6 +494,7 @@ fn the_join_and_quit_and_raw_aliases_resolve_only_their_own_verb() {
     assert_eq!(lookup("leave").map(|s| s.name), Some("part"));
     assert_eq!(lookup("quit").map(|s| s.name), Some("disconnect"));
     assert_eq!(lookup("quote").map(|s| s.name), Some("raw"));
+    assert_eq!(lookup("kb").map(|s| s.name), Some("kickban"));
     assert!(lookup("msg").is_some_and(|s| s.aliases.is_empty()));
     assert!(lookup("query").is_some_and(|s| s.aliases.is_empty()));
 }
@@ -499,6 +543,12 @@ fn the_help_text_names_every_verb_then_the_join_hint() {
         "/voice",
         "/devoice",
         "/ban",
+        "/kickban",
+        "/unban",
+        "/quiet",
+        "/unquiet",
+        "/bans",
+        "/quiets",
         "/ns",
         "/cs",
         "/znc",

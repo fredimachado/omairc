@@ -1,5 +1,6 @@
 //! handlers in `tui/internal/demo/demo.go`: the replies the demo peer
-//! sends for the client's own frames. The server answers PING, LIST, CTCP
+//! sends for the client's own frames. The server answers PING, LIST, ban and
+//! quiet list inquiries (`MODE #chan b` / `MODE #chan q`), CTCP
 //! PING/TIME/VERSION, AWAY, METADATA SET, MONITOR, the PART, NICK and TOPIC
 //! echoes, and the JOIN and PRIVMSG/NOTICE echoes. It answers nothing else. The
 //! PART, NICK and TOPIC echoes carry the sender's own `!u@h` prefix, as a real
@@ -154,6 +155,53 @@ pub fn answer_list(network: &SeedNetwork, self_nick: &str, frame: &[u8]) -> Opti
     }
     out.extend(line(&format!(":server 323 {me} :End of /LIST")));
     Some(out)
+}
+
+/// Answers a bare ban or quiet list inquiry (`MODE #chan b` / `MODE #chan q`)
+/// with one sample row and the matching end numeric (`tryAnswerModeList`). A
+/// MODE that sets a mask, names a non-channel target, or asks for a letter
+/// outside CHANMODES A is not answered. Quiet (`q`) only replies when the
+/// demo's ISUPPORT advertises `q` in CHANMODES A.
+pub fn answer_mode_list(self_nick: &str, frame: &[u8]) -> Option<Vec<u8>> {
+    if self_nick.is_empty() || !strip_crlf(frame).starts_with(b"MODE ") {
+        return None;
+    }
+    let message = parse_demo_frame(frame)?;
+    if message.command != "MODE" || message.params.len() != 2 {
+        return None;
+    }
+    let channel = wire_text(&message.params[0]);
+    let modes = wire_text(&message.params[1]);
+    let features = demo_server_features();
+    if !features.is_channel(&channel) || modes.len() != 1 {
+        return None;
+    }
+    let letter = modes.as_bytes()[0].to_ascii_lowercase() as char;
+    if !features.chan_modes_a().contains(letter) {
+        return None;
+    }
+    let me = self_nick;
+    match letter {
+        'b' => {
+            let mut out = line(&format!(
+                ":server 367 {me} {channel} *!*@evil.example alice 1"
+            ));
+            out.extend(line(&format!(
+                ":server 368 {me} {channel} :End of Channel Ban List"
+            )));
+            Some(out)
+        }
+        'q' => {
+            let mut out = line(&format!(
+                ":server 728 {me} {channel} q *!*@quiet.example bob 2"
+            ));
+            out.extend(line(&format!(
+                ":server 729 {me} {channel} q :End of Channel Quiet List"
+            )));
+            Some(out)
+        }
+        _ => None,
+    }
 }
 
 /// Answers a CTCP query sent to our nick with a NOTICE from the queried nick. A

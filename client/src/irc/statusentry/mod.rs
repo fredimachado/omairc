@@ -15,12 +15,14 @@
 
 mod incoming;
 mod keep;
+mod listmode;
 mod notice;
 mod outgoing;
 mod whois;
 
 pub use incoming::incoming_all;
 pub use keep::{keeps_incoming, keeps_outgoing};
+pub use listmode::ListModeLine;
 pub use outgoing::outgoing;
 
 use chrono::{DateTime, Utc};
@@ -100,6 +102,7 @@ pub struct StatusEntry {
     pub request_label: String,
     pub text: String,
     pub whois_line: Option<WhoisLine>,
+    pub list_mode_line: Option<ListModeLine>,
     pub ctcp_reply: Option<CtcpReplyLine>,
 }
 
@@ -121,6 +124,7 @@ impl StatusEntry {
             request_label: String::new(),
             text,
             whois_line: None,
+            list_mode_line: None,
             ctcp_reply: None,
         }
     }

@@ -34,10 +34,11 @@ type replyFakeHost struct {
 	networkIDs map[irc.ComposerSurface]string
 	sessions   map[irc.ComposerSurface]*session.Session
 
-	selectedSession   *session.Session
-	selectedTarget    string
-	selectedCloseable bool
-	hasNetworks       bool
+	selectedSession    *session.Session
+	selectedTarget     string
+	selectedIsChannel  bool
+	selectedCloseable  bool
+	hasNetworks        bool
 
 	now time.Time
 }
@@ -79,6 +80,8 @@ func (h *replyFakeHost) SessionFor(surface irc.ComposerSurface) *session.Session
 func (h *replyFakeHost) SelectedSession() *session.Session { return h.selectedSession }
 
 func (h *replyFakeHost) SelectedTarget() string { return h.selectedTarget }
+
+func (h *replyFakeHost) SelectedIsChannel() bool { return h.selectedIsChannel }
 
 func (h *replyFakeHost) SelectedIsCloseableDirect() bool { return h.selectedCloseable }
 
@@ -469,6 +472,59 @@ func TestReplyDispatchStatusAndAvatar(t *testing.T) {
 	}
 }
 
+func TestReplyListModeInquiryReplaceAndFile(t *testing.T) {
+	harness := newReplyRouterTestHarness()
+	router := harness.router
+	destination := irc.ConversationKey{NetworkID: "net", NormalizedTarget: "#room"}
+
+	router.listModeWatches["net"] = replyListModeWatch{
+		destination: destination,
+		kind:        irc.ListMaskBan,
+		channel:     "#room",
+	}
+	entry := irc.Incoming("net", mustParseMessageForReply(t, ":server 367 me #room *!*@evil.com alice 1"), "#", replyRouterTestNow)
+	router.RouteStatusEntry(entry)
+	if len(harness.host.transcripts) != 1 {
+		t.Fatalf("transcripts = %d, want 1", len(harness.host.transcripts))
+	}
+	if got := harness.host.transcripts[0].FormattedBody; got != "ban *!*@evil.com on #room by alice" {
+		t.Fatalf("body = %q", got)
+	}
+	if len(router.listModeWatches) != 1 {
+		t.Fatal("detail line should keep the watch armed")
+	}
+
+	// A second arm replaces the first.
+	router.listModeWatches["net"] = replyListModeWatch{
+		destination: destination,
+		kind:        irc.ListMaskBan,
+		channel:     "#room",
+	}
+	if len(router.listModeWatches) != 1 {
+		t.Fatal("replace policy keeps one watch per network")
+	}
+
+	end := irc.Incoming("net", mustParseMessageForReply(t, ":server 368 me #room :End of Channel Ban List"), "#", replyRouterTestNow)
+	router.RouteStatusEntry(end)
+	if len(router.listModeWatches) != 0 {
+		t.Fatal("368 should clear the watch")
+	}
+
+	outcome := router.DispatchListModeInquiry(irc.ListMaskQuiet, "", irc.SurfaceConversation)
+	if outcome != irc.OutcomeWrongScope {
+		t.Fatalf("quiets without a channel selection = %v, want WrongScope", outcome)
+	}
+}
+
+func mustParseMessageForReply(t *testing.T, line string) irc.Message {
+	t.Helper()
+	message, err := irc.Parse(line)
+	if err != nil {
+		t.Fatalf("parse %q: %v", line, err)
+	}
+	return message
+}
+
 func TestReplyForget(t *testing.T) {
 	harness := newReplyRouterTestHarness()
 	router := harness.router
@@ -481,14 +537,18 @@ func TestReplyForget(t *testing.T) {
 	router.labeledWatches[replyLabeledWatchKey{networkID: "net2", requestLabel: "l2"}] = replyLabeledWatch{kind: replyLabeledCtcp}
 	router.ownMetadataWatches["net"] = map[string]replyOwnMetadataWatch{irc.StatusKey(): {}}
 	router.ownMetadataWatches["net2"] = map[string]replyOwnMetadataWatch{irc.StatusKey(): {}}
+	router.listModeWatches["net"] = replyListModeWatch{kind: irc.ListMaskBan}
+	router.listModeWatches["net2"] = replyListModeWatch{kind: irc.ListMaskQuiet}
 
 	router.Forget("net")
 
 	if len(router.whoisWatches) != 1 || len(router.ctcpWatches) != 1 ||
-		len(router.labeledWatches) != 1 || len(router.ownMetadataWatches) != 1 {
-		t.Fatalf("Forget left the wrong state: %d/%d/%d/%d",
+		len(router.labeledWatches) != 1 || len(router.ownMetadataWatches) != 1 ||
+		len(router.listModeWatches) != 1 {
+		t.Fatalf("Forget left the wrong state: %d/%d/%d/%d/%d",
 			len(router.whoisWatches), len(router.ctcpWatches),
-			len(router.labeledWatches), len(router.ownMetadataWatches))
+			len(router.labeledWatches), len(router.ownMetadataWatches),
+			len(router.listModeWatches))
 	}
 	if _, ok := router.ownMetadataWatches["net2"]; !ok {
 		t.Fatal("Forget dropped the wrong network")

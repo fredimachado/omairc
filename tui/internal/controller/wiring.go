@@ -117,6 +117,10 @@ func (h ctrlHost) DispatchWhois(command irc.Command, surface irc.ComposerSurface
 	return h.c.replies.DispatchWhois(command, surface)
 }
 
+func (h ctrlHost) DispatchListModeInquiry(kind irc.ListMaskKind, argument string, surface irc.ComposerSurface) irc.CommandOutcome {
+	return h.c.replies.DispatchListModeInquiry(kind, argument, surface)
+}
+
 func (h ctrlHost) DispatchCtcp(command irc.Command, surface irc.ComposerSurface) irc.CommandOutcome {
 	return h.c.replies.DispatchCtcp(command, surface)
 }

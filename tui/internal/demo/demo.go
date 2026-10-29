@@ -158,13 +158,14 @@ func (d *DemoServer) startNetwork(c *controller.Controller, networkID, nick stri
 	return transport, true
 }
 
-// hookAutoEcho returns the frameWritten handler: answer ping, list, ctcp, away
-// metadata, monitor, nick, part, and topic in order, then echo JOIN, PRIVMSG
-// and NOTICE back to the client. Because tryAnswerMonitor uses a non-nil empty
-// slice for a handled no-op, the ladder tests `reply != nil`, not
-// `len(reply) > 0`. Each frame reads the network's current self nick, so a NICK
-// frame moves every later reply to the new nick, and the MONITOR online set is
-// rebuilt from that nick. It mirrors IrcDemoServer::hookAutoEcho.
+// hookAutoEcho returns the frameWritten handler: answer ping, list, mode list
+// inquiry, ctcp, away, metadata, monitor, nick, part, and topic in order, then
+// echo JOIN, PRIVMSG and NOTICE back to the client. Because tryAnswerMonitor
+// uses a non-nil empty slice for a handled no-op, the ladder tests
+// `reply != nil`, not `len(reply) > 0`. Each frame reads the network's current
+// self nick, so a NICK frame moves every later reply to the new nick, and the
+// MONITOR online set is rebuilt from that nick. It mirrors
+// IrcDemoServer::hookAutoEcho.
 func (d *DemoServer) hookAutoEcho(networkID, nick string) func([]byte) {
 	seed := seedFor(networkID)
 	d.selfNicks[networkID] = nick
@@ -177,6 +178,10 @@ func (d *DemoServer) hookAutoEcho(networkID, nick string) func([]byte) {
 			return
 		}
 		if reply := d.tryAnswerList(seed, self, frame); reply != nil {
+			d.inject(networkID, reply)
+			return
+		}
+		if reply := d.tryAnswerModeList(self, frame); reply != nil {
 			d.inject(networkID, reply)
 			return
 		}

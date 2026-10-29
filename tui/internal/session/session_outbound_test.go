@@ -240,6 +240,48 @@ func TestSessionKickWritesOptionalReason(t *testing.T) {
 	}
 }
 
+func TestSessionKickbanWritesModeThenKick(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	fixture.connectTLS()
+	fixture.inject(":server CAP omairc LS :multi-prefix\r\n" +
+		":server 001 omairc :Welcome\r\n")
+
+	before := len(fixture.frames())
+	if fixture.session.Kickban("", "alice!*@*", "alice", "spam") ||
+		fixture.session.Kickban("#omarchy", "", "alice", "spam") ||
+		fixture.session.Kickban("#omarchy", "alice!*@*", "", "spam") {
+		t.Fatal("empty channel, mask, or nick must fail")
+	}
+	if len(fixture.frames()) != before {
+		t.Fatal("invalid kickban must not write a frame")
+	}
+
+	if !fixture.session.Kickban("#omarchy", "alice!*@*", "alice", "spam") {
+		t.Fatal("kickban with a reason must succeed")
+	}
+	frames := fixture.frames()
+	if len(frames) < 2 {
+		t.Fatal("kickban must write two frames")
+	}
+	if got, want := frames[len(frames)-2], "MODE #omarchy +b alice!*@*\r\n"; got != want {
+		t.Fatalf("mode frame = %q, want %q", got, want)
+	}
+	if got, want := frames[len(frames)-1], "KICK #omarchy alice :spam\r\n"; got != want {
+		t.Fatalf("kick frame = %q, want %q", got, want)
+	}
+
+	if !fixture.session.Kickban("#omarchy", "bob!u@h", "bob", "") {
+		t.Fatal("kickban without a reason must succeed")
+	}
+	frames = fixture.frames()
+	if got, want := frames[len(frames)-2], "MODE #omarchy +b bob!u@h\r\n"; got != want {
+		t.Fatalf("mode frame = %q, want %q", got, want)
+	}
+	if got, want := frames[len(frames)-1], "KICK #omarchy bob\r\n"; got != want {
+		t.Fatalf("kick frame = %q, want %q", got, want)
+	}
+}
+
 // TestSessionInviteWritesNickThenChannel.
 // SessionTest::inviteWritesNickThenChannel.
 func TestSessionInviteWritesNickThenChannel(t *testing.T) {

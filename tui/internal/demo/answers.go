@@ -139,6 +139,42 @@ func (d *DemoServer) tryAnswerList(network SeedNetwork, selfNick string, frame [
 	return out
 }
 
+// tryAnswerModeList answers a bare ban or quiet list inquiry (MODE #chan b /
+// MODE #chan q) with one sample row and the matching end numeric. It mirrors
+// answer_mode_list. Quiet only replies when the demo ISUPPORT advertises q in
+// CHANMODES A. A MODE that sets a mask or asks for another letter is ignored.
+func (d *DemoServer) tryAnswerModeList(selfNick string, frame []byte) []byte {
+	if selfNick == "" || !bytes.HasPrefix(stripCrlf(frame), []byte("MODE ")) {
+		return nil
+	}
+	message, ok := parseDemoFrame(frame)
+	if !ok || message.Command != "MODE" || len(message.Params) != 2 {
+		return nil
+	}
+	channel := irc.WireText([]byte(message.Params[0]))
+	modes := irc.WireText([]byte(message.Params[1]))
+	features := demoServerFeatures()
+	if !features.IsChannel(channel) || len(modes) != 1 {
+		return nil
+	}
+	letter := strings.ToLower(modes)
+	if !strings.Contains(features.ChanModesA(), letter) {
+		return nil
+	}
+	switch letter {
+	case "b":
+		out := line(":server 367 " + selfNick + " " + channel + " *!*@evil.example alice 1")
+		out = append(out, line(":server 368 "+selfNick+" "+channel+" :End of Channel Ban List")...)
+		return out
+	case "q":
+		out := line(":server 728 " + selfNick + " " + channel + " q *!*@quiet.example bob 2")
+		out = append(out, line(":server 729 "+selfNick+" "+channel+" q :End of Channel Quiet List")...)
+		return out
+	default:
+		return nil
+	}
+}
+
 // tryAnswerNick answers our own NICK with an echo under the old nick, then moves
 // the network's self nick to the new one so later replies use it. A NICK that
 // does not carry exactly one new nick, with no space in it, gets no echo. It

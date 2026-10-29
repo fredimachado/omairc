@@ -145,6 +145,18 @@ pub enum Command {
     Voice(Words),
     Devoice(Words),
     Ban(Words),
+    /// `/kickban [channel] <nick> [reason]` (`/kb`). The first word may name the channel.
+    Kickban(Words),
+    /// `/unban <mask>`. The first word; the dispatcher turns it into a MODE change.
+    Unban(Words),
+    /// `/quiet <mask>`. The first word; the dispatcher turns it into a MODE change.
+    Quiet(Words),
+    /// `/unquiet <mask>`. The first word; the dispatcher turns it into a MODE change.
+    Unquiet(Words),
+    /// `/bans`. A non-empty argument is refused by the dispatcher.
+    Bans(String),
+    /// `/quiets`. A non-empty argument is refused by the dispatcher.
+    Quiets(String),
     /// `/ns <text>`: a PRIVMSG to NickServ, with the text as its body.
     Ns(String),
     /// `/cs <text>`: a PRIVMSG to ChanServ.
@@ -205,6 +217,12 @@ impl Command {
             Command::Voice(_) => Verb::Voice,
             Command::Devoice(_) => Verb::Devoice,
             Command::Ban(_) => Verb::Ban,
+            Command::Kickban(_) => Verb::Kickban,
+            Command::Unban(_) => Verb::Unban,
+            Command::Quiet(_) => Verb::Quiet,
+            Command::Unquiet(_) => Verb::Unquiet,
+            Command::Bans(_) => Verb::Bans,
+            Command::Quiets(_) => Verb::Quiets,
             Command::Ns(_) => Verb::Ns,
             Command::Cs(_) => Verb::Cs,
             Command::Znc(_) => Verb::Znc,

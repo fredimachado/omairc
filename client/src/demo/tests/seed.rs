@@ -25,7 +25,10 @@ fn the_seed_constants_match_the_go_world() {
         "echo-message message-tags labeled-response away-notify multi-prefix batch \
          draft/metadata-2 server-time account-tag account-notify extended-join"
     );
-    assert_eq!(ISUPPORT, "CHANTYPES=# PREFIX=(qaohv)~&@%+ MONITOR=100");
+    assert_eq!(
+        ISUPPORT,
+        "CHANTYPES=# PREFIX=(qaohv)~&@%+ CHANMODES=bq,k,l,imnpst MONITOR=100"
+    );
     assert_eq!(MONITOR_LIMIT, 100);
     assert_eq!(DEMO_SELF_AVATAR_URL, "https://omairc.app/omairc128.png");
     assert_eq!(OMARCHY_WORLD.nick, "fred");
@@ -74,12 +77,13 @@ fn the_registration_burst_advertises_caps_and_the_icon_only_on_omarchy() {
     assert_eq!(omarchy[0], format!(":server CAP fred LS :{CAPS}"));
     assert_eq!(omarchy[1], format!(":server CAP fred ACK :{CAPS}"));
     assert!(omarchy[15].ends_with(
-        "005 fred CHANTYPES=# PREFIX=(qaohv)~&@%+ MONITOR=100 draft/ICON=qrc:/demo/omarchy-icon.png \
-         :are supported by this server"
+        "005 fred CHANTYPES=# PREFIX=(qaohv)~&@%+ CHANMODES=bq,k,l,imnpst MONITOR=100 \
+         draft/ICON=qrc:/demo/omarchy-icon.png :are supported by this server"
     ));
 
     let oftc = registration_lines("oak", "Welcome", OFTC_WORLD.icon_url);
     assert!(oftc[15].ends_with(" MONITOR=100 :are supported by this server"));
+    assert!(oftc[15].contains("CHANMODES=bq,k,l,imnpst"));
     assert!(!oftc[15].contains("draft/ICON"));
 }
 

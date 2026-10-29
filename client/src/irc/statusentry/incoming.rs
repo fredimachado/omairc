@@ -2,6 +2,7 @@
 //! refusals and the default line, and the WHOIS and notice shapes routed to their own
 //! files. `incoming_all` is the one entry point a caller reads.
 
+use super::listmode::format_list_mode;
 use super::notice::{parse_incoming_notice, present_invite, present_notice};
 use super::whois::format_whois;
 use super::{
@@ -362,6 +363,19 @@ fn build_default_incoming(
             formatted.text,
         );
         entry.whois_line = whois;
+        return entry;
+    }
+
+    if let Some(formatted) = format_list_mode(message) {
+        let mut entry = StatusEntry::new(
+            network_id,
+            now,
+            LogSource::Server,
+            severity_for(&command),
+            formatted.label,
+            formatted.line.text.clone(),
+        );
+        entry.list_mode_line = Some(formatted.line);
         return entry;
     }
 

@@ -510,13 +510,17 @@ impl EventReducer {
         let Some(conv) = self.conversations.get_mut(&key) else {
             return;
         };
-        append_event(
-            &mut self.facts,
-            conv,
-            &format!("{} set mode {}", event.author, event.mode),
-            false,
-            false,
-        );
+        let caption = if event.arguments.is_empty() {
+            format!("{} set mode {}", event.author, event.mode)
+        } else {
+            format!(
+                "{} set mode {} {}",
+                event.author,
+                event.mode,
+                event.arguments.join(" ")
+            )
+        };
+        append_event(&mut self.facts, conv, &caption, false, false);
         let Some(channel) = conv.channel.as_mut() else {
             return;
         };
