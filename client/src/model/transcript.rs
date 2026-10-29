@@ -1152,6 +1152,27 @@ mod tests {
     }
 
     #[test]
+    fn day_separator_captions_update_when_today_advances() {
+        let messages = vec![line(
+            MessageKind::Message,
+            "nick",
+            "older",
+            local_on(21, 12, 0),
+            1,
+        )];
+        let rows_before = rows_from_messages_on(&messages, None, october(22));
+        assert_eq!(
+            rows_before[0].separator_text.as_deref(),
+            Some("Yesterday")
+        );
+        let rows_after = rows_from_messages_on(&messages, None, october(23));
+        assert_eq!(
+            rows_after[0].separator_text.as_deref(),
+            Some(short_date(october(21)).as_str())
+        );
+    }
+
+    #[test]
     fn only_visible_to_you_carried_onto_row() {
         let mut private = chat("nick", "psst", 9, 0, 1);
         private.only_visible_to_you = true;
