@@ -6,9 +6,9 @@
 use chrono::{Local, TimeZone, Utc};
 
 use crate::demo::answers::{
-    answer_away, answer_ctcp, answer_list, answer_metadata, answer_monitor, answer_nick,
-    answer_part, answer_ping, answer_topic, client_echo, demo_online_nicks, list_mask_matches,
-    self_join, TopicOverrides,
+    answer_away, answer_ctcp, answer_list, answer_metadata, answer_mode_list, answer_monitor,
+    answer_nick, answer_part, answer_ping, answer_topic, client_echo, demo_online_nicks,
+    list_mask_matches, self_join, TopicOverrides,
 };
 use crate::demo::seed::{OFTC_WORLD, OMARCHY_WORLD};
 
@@ -149,6 +149,39 @@ fn list_masks_are_case_insensitive_globs_or_exact() {
 #[test]
 fn a_non_list_frame_is_not_answered() {
     assert_eq!(answer_list(&OMARCHY_WORLD, "fred", b"MODE #omarchy\r\n"), None);
+}
+
+#[test]
+fn mode_ban_list_inquiry_answers_367_and_368() {
+    assert_eq!(
+        text(answer_mode_list("fred", b"MODE #omarchy b\r\n")),
+        ":server 367 fred #omarchy *!*@evil.example alice 1\r\n\
+         :server 368 fred #omarchy :End of Channel Ban List\r\n"
+    );
+    assert_eq!(
+        text(answer_mode_list("fred", b"MODE #help B\r\n")),
+        ":server 367 fred #help *!*@evil.example alice 1\r\n\
+         :server 368 fred #help :End of Channel Ban List\r\n",
+        "any channel name, case-insensitive mode letter"
+    );
+}
+
+#[test]
+fn mode_quiet_list_inquiry_answers_728_and_729_when_q_is_advertised() {
+    assert_eq!(
+        text(answer_mode_list("fred", b"MODE #omarchy q\r\n")),
+        ":server 728 fred #omarchy q *!*@quiet.example bob 2\r\n\
+         :server 729 fred #omarchy q :End of Channel Quiet List\r\n"
+    );
+}
+
+#[test]
+fn mode_list_inquiry_ignores_sets_and_non_list_modes() {
+    assert_eq!(answer_mode_list("fred", b"MODE #omarchy\r\n"), None);
+    assert_eq!(answer_mode_list("fred", b"MODE #omarchy +b *!*@x\r\n"), None);
+    assert_eq!(answer_mode_list("fred", b"MODE #omarchy o\r\n"), None);
+    assert_eq!(answer_mode_list("fred", b"MODE fred b\r\n"), None);
+    assert_eq!(answer_mode_list("", b"MODE #omarchy b\r\n"), None);
 }
 
 #[test]

@@ -26,8 +26,8 @@ use crate::session::session::Session;
 use crate::session::transport::{ConnectionState, Transport};
 
 use super::answers::{
-    answer_away, answer_ctcp, answer_list, answer_metadata, answer_monitor, answer_nick,
-    answer_part, answer_ping, answer_topic, client_echo, demo_online_nicks, self_join,
+    answer_away, answer_ctcp, answer_list, answer_metadata, answer_mode_list, answer_monitor,
+    answer_nick, answer_part, answer_ping, answer_topic, client_echo, demo_online_nicks, self_join,
     TopicOverrides,
 };
 use super::seed::{
@@ -396,11 +396,11 @@ fn reseed_world_lines(network: &SeedNetwork, topics: &TopicOverrides) -> Vec<Str
     out
 }
 
-/// The answer ladder, in the Go order: PING, LIST, CTCP, AWAY, METADATA, MONITOR
-/// then PART, NICK and TOPIC, the self JOIN, and the PRIVMSG or NOTICE echo
-/// (`hookAutoEcho`). The first answer that claims the frame wins. The nick is read
-/// once per frame, so a NICK answers as the nick it replaces and the next frame
-/// uses the new one.
+/// The answer ladder, in the Go order: PING, LIST, MODE list inquiry, CTCP,
+/// AWAY, METADATA, MONITOR then PART, NICK and TOPIC, the self JOIN, and the
+/// PRIVMSG or NOTICE echo (`hookAutoEcho`). The first answer that claims the
+/// frame wins. The nick is read once per frame, so a NICK answers as the nick
+/// it replaces and the next frame uses the new one.
 fn auto_echo_reply(
     network: &SeedNetwork,
     state: &RefCell<PeerState>,
@@ -419,6 +419,9 @@ fn auto_echo_reply(
         return Some(reply);
     }
     if let Some(reply) = answer_list(network, me, frame) {
+        return Some(reply);
+    }
+    if let Some(reply) = answer_mode_list(me, frame) {
         return Some(reply);
     }
     if let Some(reply) = answer_ctcp(me, frame, now) {
