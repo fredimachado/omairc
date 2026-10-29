@@ -15,6 +15,7 @@
 
 use crate::irc::autoaway::parse_autoaway_argument;
 use crate::irc::channelmode::parse_channel_mode_request;
+use crate::irc::listmask::{expand_list_mask, ListMaskKind};
 use crate::irc::pref::{PrefName, PrefRequest, PrefValue, Preferences};
 use crate::irc::command::{
     command_outcome_text, help_text, parse, pref_reply, Command, CommandOutcome, ComposerSurface,
@@ -51,12 +52,13 @@ enum QuietSend {
     Notice,
 }
 
-/// Which channel-mode wrapper a `/op`, `/deop`, `/voice`, `/devoice` or `/ban` is.
+/// Which channel-mode wrapper a `/op`, `/deop`, `/voice`, `/devoice`, `/ban`,
+/// `/unban`, `/quiet` or `/unquiet` is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ChannelModeWrapper {
     modes: &'static str,
-    /// A ban with no `!` or `@` in its mask gets `!*@*` appended.
-    ban: bool,
+    /// When set, the parameter is a list mask and gets the shared nick expansion.
+    list_mask: Option<ListMaskKind>,
 }
 
 /// A verb's words rejoined, so a verb that splits its argument (`Words`) reads the same text
@@ -234,37 +236,73 @@ impl Controller {
             Command::Znc(text) => self.dispatch_service_msg("*status", text, surface),
             Command::Mode(argument) => self.dispatch_mode(argument, surface),
             Command::Op(words) => self.dispatch_channel_mode_wrapper(
-                ChannelModeWrapper { modes: "+o", ban: false },
+                ChannelModeWrapper {
+                    modes: "+o",
+                    list_mask: None,
+                },
                 words,
                 surface,
             ),
             Command::Deop(words) => self.dispatch_channel_mode_wrapper(
-                ChannelModeWrapper { modes: "-o", ban: false },
+                ChannelModeWrapper {
+                    modes: "-o",
+                    list_mask: None,
+                },
                 words,
                 surface,
             ),
             Command::Voice(words) => self.dispatch_channel_mode_wrapper(
-                ChannelModeWrapper { modes: "+v", ban: false },
+                ChannelModeWrapper {
+                    modes: "+v",
+                    list_mask: None,
+                },
                 words,
                 surface,
             ),
             Command::Devoice(words) => self.dispatch_channel_mode_wrapper(
-                ChannelModeWrapper { modes: "-v", ban: false },
+                ChannelModeWrapper {
+                    modes: "-v",
+                    list_mask: None,
+                },
                 words,
                 surface,
             ),
             Command::Ban(words) => self.dispatch_channel_mode_wrapper(
-                ChannelModeWrapper { modes: "+b", ban: true },
+                ChannelModeWrapper {
+                    modes: "+b",
+                    list_mask: Some(ListMaskKind::Ban),
+                },
                 words,
                 surface,
             ),
-            // Slice 1 catalog stubs: real arms land with Session::kickban and list watches.
-            Command::Kickban(_)
-            | Command::Unban(_)
-            | Command::Quiet(_)
-            | Command::Unquiet(_)
-            | Command::Bans(_)
-            | Command::Quiets(_) => CommandOutcome::Unsupported,
+            Command::Unban(words) => self.dispatch_channel_mode_wrapper(
+                ChannelModeWrapper {
+                    modes: "-b",
+                    list_mask: Some(ListMaskKind::Ban),
+                },
+                words,
+                surface,
+            ),
+            Command::Quiet(words) => self.dispatch_channel_mode_wrapper(
+                ChannelModeWrapper {
+                    modes: "+q",
+                    list_mask: Some(ListMaskKind::Quiet),
+                },
+                words,
+                surface,
+            ),
+            Command::Unquiet(words) => self.dispatch_channel_mode_wrapper(
+                ChannelModeWrapper {
+                    modes: "-q",
+                    list_mask: Some(ListMaskKind::Quiet),
+                },
+                words,
+                surface,
+            ),
+            // Slice 1 stubs for kickban / list inquiry; filled in with Session::kickban.
+            Command::Kickban(_) | Command::Bans(_) | Command::Quiets(_) => {
+                CommandOutcome::Unsupported
+            },
             Command::Raw(line) => self.dispatch_raw(line, surface),
             Command::Whois(words) => self.dispatch_whois(words, surface),
             Command::Ping(words) => self.dispatch_ctcp("PING", words, surface),
@@ -677,8 +715,9 @@ impl Controller {
         outcome_of(active.send_channel_mode(&request))
     }
 
-    /// `/op`, `/deop`, `/voice`, `/devoice` and `/ban` (`dispatchChannelModeWrapper`). They turn
-    /// one nick or mask into a MODE change on the selected channel.
+    /// `/op`, `/deop`, `/voice`, `/devoice`, `/ban` and `/unban`
+    /// (`dispatchChannelModeWrapper`). They turn one nick or mask into a MODE
+    /// change on the selected channel.
     fn dispatch_channel_mode_wrapper(
         &mut self,
         wrapper: ChannelModeWrapper,
@@ -695,10 +734,18 @@ impl Controller {
         if words.first.is_empty() || !words.rest.is_empty() {
             return CommandOutcome::Refused;
         }
-        let mut parameter = words.first.clone();
-        if wrapper.ban && !parameter.contains('!') && !parameter.contains('@') {
-            parameter.push_str("!*@*");
+        if wrapper.list_mask == Some(ListMaskKind::Quiet) {
+            let network = self.surface_network(surface);
+            let features = self.reducer.server_features(&network);
+            if !features.chan_modes_a().contains('q') {
+                return CommandOutcome::Refused;
+            }
         }
+        let parameter = if wrapper.list_mask.is_some() {
+            expand_list_mask(&words.first)
+        } else {
+            words.first.clone()
+        };
         let argument = format!("{} {} {parameter}", self.selected_target(), wrapper.modes);
         self.dispatch_mode(&argument, surface)
     }

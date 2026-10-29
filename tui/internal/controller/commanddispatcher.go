@@ -199,7 +199,8 @@ func (d *CommandDispatcher) Dispatch(command irc.Command, surface irc.ComposerSu
 	}
 
 	switch command.Verb {
-	case irc.VerbOp, irc.VerbDeop, irc.VerbVoice, irc.VerbDevoice, irc.VerbBan:
+	case irc.VerbOp, irc.VerbDeop, irc.VerbVoice, irc.VerbDevoice, irc.VerbBan, irc.VerbUnban,
+		irc.VerbQuiet, irc.VerbUnquiet:
 		return d.dispatchChannelModeWrapper(command, surface)
 	}
 
@@ -639,8 +640,8 @@ func (d *CommandDispatcher) dispatchMode(command irc.Command, surface irc.Compos
 	return irc.OutcomeRefused
 }
 
-// dispatchChannelModeWrapper turns /op //deop //voice //devoice //ban into a
-// MODE change on the selected channel. It mirrors
+// dispatchChannelModeWrapper turns /op //deop //voice //devoice //ban //unban
+// into a MODE change on the selected channel. It mirrors
 // IrcCommandDispatcher::dispatchChannelModeWrapper.
 func (d *CommandDispatcher) dispatchChannelModeWrapper(command irc.Command, surface irc.ComposerSurface) irc.CommandOutcome {
 	key, ok := d.host.SelectedKey()
@@ -657,6 +658,8 @@ func (d *CommandDispatcher) dispatchChannelModeWrapper(command irc.Command, surf
 	}
 
 	modes := ""
+	expandMask := false
+	requireQuiet := false
 	switch command.Verb {
 	case irc.VerbOp:
 		modes = "+o"
@@ -668,13 +671,32 @@ func (d *CommandDispatcher) dispatchChannelModeWrapper(command irc.Command, surf
 		modes = "-v"
 	case irc.VerbBan:
 		modes = "+b"
+		expandMask = true
+	case irc.VerbUnban:
+		modes = "-b"
+		expandMask = true
+	case irc.VerbQuiet:
+		modes = "+q"
+		expandMask = true
+		requireQuiet = true
+	case irc.VerbUnquiet:
+		modes = "-q"
+		expandMask = true
+		requireQuiet = true
 	default:
 		return irc.OutcomeUnsupported
 	}
 
+	if requireQuiet {
+		features := d.reducer.ServerFeatures(key.NetworkID)
+		if !strings.ContainsRune(features.ChanModesA(), 'q') {
+			return irc.OutcomeRefused
+		}
+	}
+
 	parameter := token
-	if command.Verb == irc.VerbBan && !strings.Contains(token, "!") && !strings.Contains(token, "@") {
-		parameter = token + "!*@*"
+	if expandMask {
+		parameter = irc.ExpandListMask(token)
 	}
 
 	mode := irc.Command{

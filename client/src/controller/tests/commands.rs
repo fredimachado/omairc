@@ -369,6 +369,7 @@ fn mode_and_the_channel_mode_wrappers_write_the_expected_change() {
     assert_eq!(run(&mut fixture, CONVERSATION, "/op bob"), CommandOutcome::Sent);
     assert_eq!(run(&mut fixture, CONVERSATION, "/ban bob"), CommandOutcome::Sent);
     assert_eq!(run(&mut fixture, CONVERSATION, "/ban bob!*@*"), CommandOutcome::Sent);
+    assert_eq!(run(&mut fixture, CONVERSATION, "/unban bob"), CommandOutcome::Sent);
     assert_eq!(run(&mut fixture, CONVERSATION, "/voice bob"), CommandOutcome::Sent);
     assert_eq!(run(&mut fixture, CONVERSATION, "/devoice bob"), CommandOutcome::Sent);
     assert_eq!(run(&mut fixture, CONVERSATION, "/deop bob"), CommandOutcome::Sent);
@@ -379,9 +380,26 @@ fn mode_and_the_channel_mode_wrappers_write_the_expected_change() {
             "MODE #omarchy +o bob\r\n",
             "MODE #omarchy +b bob!*@*\r\n",
             "MODE #omarchy +b bob!*@*\r\n",
+            "MODE #omarchy -b bob!*@*\r\n",
             "MODE #omarchy +v bob\r\n",
             "MODE #omarchy -v bob\r\n",
             "MODE #omarchy -o bob\r\n",
+        ]
+    );
+
+    // Quiet needs CHANMODES A to advertise q; mute stays a different verb.
+    assert_eq!(run(&mut fixture, CONVERSATION, "/quiet bob"), CommandOutcome::Refused);
+    let mut with_quiet = fixture.controller.reducer.server_features(OMARCHY).clone();
+    with_quiet.apply_token("CHANMODES=eIbq,k,l,imnpst");
+    fixture.controller.reducer.set_server_features(OMARCHY, with_quiet);
+    fixture.clear_frames(OMARCHY);
+    assert_eq!(run(&mut fixture, CONVERSATION, "/quiet bob"), CommandOutcome::Sent);
+    assert_eq!(run(&mut fixture, CONVERSATION, "/unquiet bob"), CommandOutcome::Sent);
+    assert_eq!(
+        fixture.frames(OMARCHY),
+        [
+            "MODE #omarchy +q bob!*@*\r\n",
+            "MODE #omarchy -q bob!*@*\r\n",
         ]
     );
 

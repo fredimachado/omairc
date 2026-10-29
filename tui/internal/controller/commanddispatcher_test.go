@@ -588,6 +588,19 @@ func TestCommandDispatcherMode(t *testing.T) {
 	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbBan, Argument: "bob!*@*"}, irc.SurfaceConversation), irc.OutcomeSent, "ban mask")
 	commandWrote(t, transport, "MODE #room +b bob!*@*\r\n")
 
+	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbUnban, Argument: "bob"}, irc.SurfaceConversation), irc.OutcomeSent, "unban")
+	commandWrote(t, transport, "MODE #room -b bob!*@*\r\n")
+
+	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbQuiet, Argument: "bob"}, irc.SurfaceConversation), irc.OutcomeRefused, "quiet without q")
+
+	features := fixture.reducer.ServerFeatures("freenode")
+	features.ApplyToken("CHANMODES=eIbq,k,l,imnpst")
+	fixture.reducer.SetServerFeatures("freenode", features)
+	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbQuiet, Argument: "bob"}, irc.SurfaceConversation), irc.OutcomeSent, "quiet")
+	commandWrote(t, transport, "MODE #room +q bob!*@*\r\n")
+	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbUnquiet, Argument: "bob"}, irc.SurfaceConversation), irc.OutcomeSent, "unquiet")
+	commandWrote(t, transport, "MODE #room -q bob!*@*\r\n")
+
 	// A wrapper outside a channel is the wrong scope.
 	fixture.host.selectedIsChannel = false
 	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbOp, Argument: "bob"}, irc.SurfaceConversation), irc.OutcomeWrongScope, "op outside channel")
