@@ -595,6 +595,89 @@ func readSoon(t *testing.T, r io.Reader) string {
 	}
 }
 
+func TestWakePipeReadBlocksUntilClose(t *testing.T) {
+	wakeR, wakeW, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wakeR.Close()
+	done := make(chan error, 1)
+	go func() {
+		var b [1]byte
+		_, err := wakeR.Read(b[:])
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("wake read returned early: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	_ = wakeW.Close()
+	select {
+	case err := <-done:
+		if err != nil && err != io.EOF {
+			t.Fatalf("wake read after close: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("wake read did not unblock after close")
+	}
+}
+
+// Close must stop the stdin copier without reading another key. Otherwise the
+// restored terminal loses the first post-exit keystroke into a closed pipe.
+func TestCloseDoesNotEatPostCloseKeystroke(t *testing.T) {
+	srcR, srcW, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srcR.Close()
+	defer srcW.Close()
+
+	input := probeResult{replay: []byte("hi"), dropLate: true}.wrap(srcR)
+	if input == nil {
+		t.Fatal("wrap returned nil")
+	}
+	closer, ok := input.(io.Closer)
+	if !ok {
+		t.Fatalf("input = %T, want Closer", input)
+	}
+	if got := readSoon(t, input); got != "hi" {
+		t.Fatalf("replay = %q, want hi", got)
+	}
+	if err := closer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Close must have stopped the copier. A still-running copier is blocked on
+	// src.Read and would take this byte during the wait below.
+	if _, err := srcW.Write([]byte("K")); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	type readResult struct {
+		n   int
+		err error
+		b   byte
+	}
+	done := make(chan readResult, 1)
+	go func() {
+		buf := make([]byte, 1)
+		n, err := srcR.Read(buf)
+		var b byte
+		if n > 0 {
+			b = buf[0]
+		}
+		done <- readResult{n: n, err: err, b: b}
+	}()
+	select {
+	case got := <-done:
+		if got.err != nil || got.n != 1 || got.b != 'K' {
+			t.Fatalf("post-close key = %q n=%d err=%v, want K still on src", got.b, got.n, got.err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("post-close key was eaten by the copier")
+	}
+}
+
 func TestNoteDrawnMarksOneDrainAtATime(t *testing.T) {
 	store := New(true, nil)
 	defer store.Close()

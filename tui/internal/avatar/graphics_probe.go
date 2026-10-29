@@ -2,6 +2,7 @@ package avatar
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"strconv"
@@ -267,8 +268,19 @@ func (r probeResult) wrap(in *os.File) io.Reader {
 		_ = pw.Close()
 		return nil
 	}
-	go copyProbeInput(in, pw, late)
-	return &bufferedProbeInput{f: pr, src: in}
+	wakeR, wakeW, err := os.Pipe()
+	if err != nil {
+		_ = pr.Close()
+		_ = pw.Close()
+		return nil
+	}
+	held := &bufferedProbeInput{f: pr, src: in, wake: wakeW}
+	held.copyWG.Add(1)
+	go func() {
+		defer held.copyWG.Done()
+		copyProbeInput(in, pw, wakeR, late)
+	}()
+	return held
 }
 
 func writeAll(w io.Writer, p []byte) error {
@@ -287,23 +299,23 @@ func writeAll(w io.Writer, p []byte) error {
 	return nil
 }
 
-// copyProbeInput reads the terminal, drops a late probe reply, and writes the
-// kept bytes to the pipe Bubble Tea reads. os.Pipe is the Windows-safe path.
-func copyProbeInput(src, dst *os.File, late *lateFilter) {
-	defer dst.Close()
-	tmp := make([]byte, 256)
-	for {
-		n, err := src.Read(tmp)
-		if n > 0 {
-			kept := late.push(tmp[:n])
-			if err := writeAll(dst, kept); err != nil {
-				return
-			}
-		}
-		if err != nil {
-			return
-		}
+func isCopyTimeout(err error) bool {
+	if err == nil {
+		return false
 	}
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		return true
+	}
+	type timeout interface{ Timeout() bool }
+	var t timeout
+	return errors.As(err, &t) && t.Timeout()
+}
+
+func filterCopyChunk(dst *os.File, late *lateFilter, chunk []byte) error {
+	if len(chunk) == 0 {
+		return nil
+	}
+	return writeAll(dst, late.push(chunk))
 }
 
 // bufferedProbeInput is the pipe end that carries replayed keys and filtered
@@ -315,6 +327,8 @@ func copyProbeInput(src, dst *os.File, late *lateFilter) {
 type bufferedProbeInput struct {
 	f        *os.File
 	src      *os.File
+	wake     *os.File
+	copyWG   sync.WaitGroup
 	once     sync.Once
 	mu       sync.Mutex
 	fd       uintptr
@@ -335,6 +349,11 @@ func (b *bufferedProbeInput) Name() string { return b.f.Name() }
 func (b *bufferedProbeInput) Close() error {
 	b.once.Do(func() {
 		b.finishTerminal()
+		if b.wake != nil {
+			_ = b.wake.Close()
+			b.wake = nil
+		}
+		b.copyWG.Wait()
 		_ = b.f.Close()
 	})
 	return nil
