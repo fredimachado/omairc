@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A conversation left open overnight keeps Today and Yesterday day rules
+  current after local midnight and after the clock zone changes.
+
 ### Changed
 
 - `/kickban` (`/kb`) bans then kicks in one step on a channel. `/unban`,
