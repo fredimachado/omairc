@@ -15,6 +15,7 @@ import (
 
 	"github.com/fredimachado/omairc/tui/internal/controller"
 	"github.com/fredimachado/omairc/tui/internal/demo"
+	"github.com/fredimachado/omairc/tui/internal/irc"
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
@@ -695,6 +696,55 @@ func TestAltUStepsPastAWrappedRowTallerThanTheViewport(t *testing.T) {
 	}
 	if got := m.ctrl.Messages()[m.firstVisibleMessageRow()].Body; got != "trailer" {
 		t.Fatalf("top body = %q, want trailer", got)
+	}
+}
+
+// TestSettleUnseenResumeRefreshesAnchorSequence proves Alt+U during an older
+// page load does not restore a stale catch-up after the splice. The snapshot
+// taken when the page was requested must follow the post-Alt+U landing.
+func TestSettleUnseenResumeRefreshesAnchorSequence(t *testing.T) {
+	m, continuation := detachAndLandOnLongUnseen(t)
+	staleBody := m.ctrl.Messages()[continuation].Body
+	m.snapshotTranscriptAnchor()
+	if m.unseenResumeSequenceAtAnchor < 0 {
+		t.Fatal("the older-page snapshot must record the catch-up sequence")
+	}
+
+	m = press(t, m, altKey('u'))
+	if m.transcriptFollowEnd || m.unseenResumeRow < 0 {
+		t.Fatal("a second Alt+U must stay detached with a new catch-up row")
+	}
+	landed := m.unseenResumeRow
+	if landed <= continuation {
+		t.Fatalf("resume = %d, want it past the first continuation %d", landed, continuation)
+	}
+	landedBody := m.ctrl.Messages()[landed].Body
+	if landedBody == staleBody {
+		t.Fatal("the post-Alt+U catch-up must be a later row than the snapshotted one")
+	}
+
+	key := m.ctrl.Reducer().ConversationKey("omarchy", "#omarchy")
+	when := time.Date(2026, 9, 26, 8, 0, 0, 0, time.UTC)
+	m.ctrl.Apply(irc.HistoryEvent{
+		Conversation: key,
+		Target:       "#omarchy",
+		Kind:         irc.HistoryChat,
+		OlderPage:    true,
+		Lines: []irc.ReplayLine{{
+			Author:    "bob",
+			Body:      "older while alt-u",
+			Timestamp: when,
+			MsgID:     irc.MsgID{Value: "older-while-alt-u"},
+		}},
+	})
+	m.ctrl.Publish(irc.ViewNotify{Messages: true})
+	m.noteTranscriptGrowth()
+
+	if m.unseenResumeRow < 0 || m.unseenResumeRow >= len(m.ctrl.Messages()) {
+		t.Fatalf("resume = %d after the prepend, want the post-Alt+U landing", m.unseenResumeRow)
+	}
+	if got := m.ctrl.Messages()[m.unseenResumeRow].Body; got != landedBody {
+		t.Fatalf("resume body = %q, want post-Alt+U landing %q (stale was %q)", got, landedBody, staleBody)
 	}
 }
 
