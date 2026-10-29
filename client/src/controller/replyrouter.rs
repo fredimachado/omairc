@@ -22,17 +22,20 @@ use std::collections::BTreeMap;
 use crate::irc::avatarurl::avatar_metadata_value;
 use crate::irc::capability::IrcCapability;
 use crate::irc::command::{CommandOutcome, ComposerSurface, Words};
-use crate::irc::event::{ConversationKey, Event, WhoisTranscriptEvent};
+use crate::irc::event::ConversationKey;
 use crate::irc::message::IrcMessage;
 use crate::irc::presence::{
     canonical_key, clamped_to, effective_max_value_bytes, is_known_key, AVATAR_KEY, BOT_KEY,
     COLOR_KEY, DISPLAY_NAME_KEY, HOMEPAGE_KEY, PRONOUNS_KEY, STATUS_KEY,
 };
-use crate::irc::statusentry::{self, CtcpReplyLine, LogSeverity, StatusEntry, WhoisLine, WhoisProgress};
+use crate::irc::statusentry::{
+    self, CtcpReplyLine, LogSeverity, StatusEntry, WhoisLine, WhoisProgress,
+};
 use crate::session::events::SessionState;
 use crate::session::session::Session;
 
 use super::controller::Controller;
+use super::listmode::ListModeWatch;
 use super::replytext::{
     clear_fail_message, cleared_message, copies_labeled_standard_reply, format_pair,
     inspect_empty_message, inspect_value_message, is_clear_alias, no_capability_message,
@@ -117,6 +120,8 @@ pub(super) struct ReplyWatches {
     whois: BTreeMap<WhoisKey, WhoisWatch>,
     ctcp: BTreeMap<CtcpKey, CtcpWatch>,
     labeled: BTreeMap<LabeledKey, LabeledWatch>,
+    /// One armed ban/quiet list inquiry per network (replace on re-arm).
+    pub(super) list_mode: BTreeMap<String, ListModeWatch>,
     /// The in-flight own-metadata writes, by network and canonical key.
     own_metadata: BTreeMap<String, BTreeMap<&'static str, OwnMetadataWatch>>,
     /// How many own-metadata writes are being armed. While one is, a confirming reply waits
@@ -204,6 +209,7 @@ impl Controller {
         self.reply_watches
             .labeled
             .retain(|key, _| key.network_id != network_id);
+        self.reply_watches.list_mode.remove(network_id);
         self.reply_watches.own_metadata.remove(network_id);
     }
 
@@ -254,6 +260,9 @@ impl Controller {
         }
         if let Some(line) = entry.whois_line.clone() {
             self.route_whois_line(&network_id, &line);
+        }
+        if let Some(line) = entry.list_mode_line.clone() {
+            self.route_list_mode_line(&network_id, &line);
         }
         if let Some(line) = entry.ctcp_reply.clone() {
             self.route_ctcp_reply(&network_id, &line, &entry.text);
@@ -480,23 +489,6 @@ impl Controller {
         if entry.severity == LogSeverity::Alert {
             self.reply_watches.labeled.remove(&key);
         }
-    }
-
-    /// Copies one reply body into a watch's destination, unless there is none or the
-    /// body is empty.
-    fn copy_to_destination(&mut self, destination: Option<&ConversationKey>, text: &str) {
-        if let Some(destination) = destination {
-            if !text.is_empty() {
-                self.apply_whois_transcript(destination, text);
-            }
-        }
-    }
-
-    pub(super) fn apply_whois_transcript(&mut self, destination: &ConversationKey, body: &str) {
-        self.apply(Event::WhoisTranscript(WhoisTranscriptEvent {
-            destination: destination.clone(),
-            formatted_body: body.to_owned(),
-        }));
     }
 
     /// The metadata facts a WHOIS taught the reducer, as the lines Status shows

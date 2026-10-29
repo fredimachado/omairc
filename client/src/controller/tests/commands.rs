@@ -20,6 +20,16 @@ fn run(fixture: &mut Fixture, surface: ComposerSurface, line: &str) -> CommandOu
     fixture.controller.dispatch(surface, &parse(line))
 }
 
+/// Stops the demo from answering the next write, so a list-mode watch stays armed.
+fn silence_demo(fixture: &Fixture) {
+    fixture
+        .controller
+        .demo()
+        .and_then(|demo| demo.transport(OMARCHY))
+        .expect("the omarchy loopback")
+        .clear_frame_written_hook();
+}
+
 /// The last Status line of `network_id`, or "" when Status is empty.
 fn last_status(fixture: &Fixture, network_id: &str) -> String {
     status_text(&fixture.controller, network_id)
@@ -360,6 +370,130 @@ fn kick_and_invite_take_an_explicit_channel_or_the_selected_one() {
 }
 
 #[test]
+fn bans_and_quiets_arm_a_list_watch_and_file_whois_rows() {
+    // Demo advertises CHANMODES A with b and q and answers bare MODE #chan b|q
+    // during the dispatch pump, so the watch clears and whois-style rows land
+    // in the asking channel. Replace-while-armed is `list_mode_inquiry_replace_while_armed`.
+    let mut fixture = Fixture::seeded();
+    fixture.controller.select_conversation(OMARCHY, "#omarchy");
+    fixture.clear_frames(OMARCHY);
+
+    assert_eq!(run(&mut fixture, CONVERSATION, "/bans extra"), CommandOutcome::Refused);
+    assert_eq!(run(&mut fixture, STATUS, "/bans"), CommandOutcome::WrongScope);
+
+    assert_eq!(run(&mut fixture, CONVERSATION, "/bans"), CommandOutcome::Sent);
+    assert_eq!(fixture.frames(OMARCHY), ["MODE #omarchy b\r\n"]);
+    assert_eq!(fixture.controller.reply_watches.list_mode_count(), 0);
+    assert!(fixture.controller.messages().iter().any(|row| {
+        row.kind == MessageKind::Whois && row.body.contains("ban *!*@evil.example on #omarchy")
+    }));
+    assert!(fixture.controller.messages().iter().any(|row| {
+        row.kind == MessageKind::Whois && row.body.contains("End of ban list for #omarchy")
+    }));
+
+    // Quiets without q in CHANMODES A is refused (demo seed includes q).
+    let mut without_quiet = fixture.controller.reducer.server_features(OMARCHY).clone();
+    without_quiet.apply_token("CHANMODES=beI,k,l,imnpst");
+    fixture.controller.reducer.set_server_features(OMARCHY, without_quiet);
+    assert_eq!(run(&mut fixture, CONVERSATION, "/quiets"), CommandOutcome::Refused);
+
+    let mut with_quiet = fixture.controller.reducer.server_features(OMARCHY).clone();
+    with_quiet.apply_token("CHANMODES=bq,k,l,imnpst");
+    fixture.controller.reducer.set_server_features(OMARCHY, with_quiet);
+    fixture.clear_frames(OMARCHY);
+    assert_eq!(run(&mut fixture, CONVERSATION, "/quiets"), CommandOutcome::Sent);
+    assert_eq!(fixture.frames(OMARCHY), ["MODE #omarchy q\r\n"]);
+    assert_eq!(fixture.controller.reply_watches.list_mode_count(), 0);
+    assert!(fixture.controller.messages().iter().any(|row| {
+        row.kind == MessageKind::Whois && row.body.contains("quiet *!*@quiet.example on #omarchy")
+    }));
+}
+
+#[test]
+fn list_mode_inquiry_replace_while_armed() {
+    // Go `TestReplyListModeInquiryReplaceAndFile` (dispatch half). The demo auto-answers
+    // MODE #chan b, so silence the hook and inject 367/368 like a live server would.
+    let mut fixture = Fixture::seeded();
+    fixture.controller.select_conversation(OMARCHY, "#omarchy");
+    silence_demo(&fixture);
+    fixture.clear_frames(OMARCHY);
+
+    assert_eq!(run(&mut fixture, CONVERSATION, "/bans"), CommandOutcome::Sent);
+    assert_eq!(fixture.frames(OMARCHY), ["MODE #omarchy b\r\n"]);
+    assert_eq!(fixture.controller.reply_watches.list_mode_count(), 1);
+
+    fixture.clear_frames(OMARCHY);
+    assert_eq!(run(&mut fixture, CONVERSATION, "/bans"), CommandOutcome::Sent);
+    assert_eq!(fixture.frames(OMARCHY), ["MODE #omarchy b\r\n"]);
+    assert_eq!(
+        fixture.controller.reply_watches.list_mode_count(),
+        1,
+        "a second /bans replaces the prior watch instead of stacking two"
+    );
+
+    fixture.deliver(OMARCHY, ":server 367 fred #omarchy *!*@evil.example alice 1");
+    assert_eq!(
+        fixture.controller.reply_watches.list_mode_count(),
+        1,
+        "367 keeps the watch armed until the end numeric"
+    );
+    fixture.deliver(OMARCHY, ":server 368 fred #omarchy :End of Channel Ban List");
+    assert_eq!(fixture.controller.reply_watches.list_mode_count(), 0);
+    assert!(fixture.controller.messages().iter().any(|row| {
+        row.kind == MessageKind::Whois && row.body.contains("ban *!*@evil.example on #omarchy")
+    }));
+    assert!(fixture.controller.messages().iter().any(|row| {
+        row.kind == MessageKind::Whois && row.body.contains("End of ban list for #omarchy")
+    }));
+}
+
+#[test]
+fn kickban_sends_mode_then_kick_with_kick_scope_and_ban_masks() {
+    let mut fixture = Fixture::seeded();
+    fixture.controller.select_conversation(OMARCHY, "#omarchy");
+    fixture.clear_frames(OMARCHY);
+
+    assert_eq!(
+        run(&mut fixture, CONVERSATION, "/kickban #room bob spam"),
+        CommandOutcome::Sent
+    );
+    assert_eq!(
+        fixture.frames(OMARCHY),
+        [
+            "MODE #room +b bob!*@*\r\n",
+            "KICK #room bob :spam\r\n",
+        ]
+    );
+
+    fixture.clear_frames(OMARCHY);
+    assert_eq!(run(&mut fixture, CONVERSATION, "/kb bob"), CommandOutcome::Sent);
+    assert_eq!(
+        fixture.frames(OMARCHY),
+        [
+            "MODE #omarchy +b bob!*@*\r\n",
+            "KICK #omarchy bob\r\n",
+        ]
+    );
+
+    fixture.clear_frames(OMARCHY);
+    assert_eq!(
+        run(&mut fixture, CONVERSATION, "/kickban bob!u@h bye"),
+        CommandOutcome::Sent
+    );
+    assert_eq!(
+        fixture.frames(OMARCHY),
+        [
+            "MODE #omarchy +b bob!u@h\r\n",
+            "KICK #omarchy bob :bye\r\n",
+        ]
+    );
+
+    assert_eq!(run(&mut fixture, CONVERSATION, "/kickban #room"), CommandOutcome::Refused);
+    fixture.controller.open_status(OMARCHY);
+    assert_eq!(run(&mut fixture, STATUS, "/kickban bob"), CommandOutcome::WrongScope);
+}
+
+#[test]
 fn mode_and_the_channel_mode_wrappers_write_the_expected_change() {
     // Go `TestCommandDispatcherMode`. `/ban` with no `!` or `@` gets `!*@*`.
     let mut fixture = Fixture::seeded();
@@ -369,6 +503,7 @@ fn mode_and_the_channel_mode_wrappers_write_the_expected_change() {
     assert_eq!(run(&mut fixture, CONVERSATION, "/op bob"), CommandOutcome::Sent);
     assert_eq!(run(&mut fixture, CONVERSATION, "/ban bob"), CommandOutcome::Sent);
     assert_eq!(run(&mut fixture, CONVERSATION, "/ban bob!*@*"), CommandOutcome::Sent);
+    assert_eq!(run(&mut fixture, CONVERSATION, "/unban bob"), CommandOutcome::Sent);
     assert_eq!(run(&mut fixture, CONVERSATION, "/voice bob"), CommandOutcome::Sent);
     assert_eq!(run(&mut fixture, CONVERSATION, "/devoice bob"), CommandOutcome::Sent);
     assert_eq!(run(&mut fixture, CONVERSATION, "/deop bob"), CommandOutcome::Sent);
@@ -379,9 +514,30 @@ fn mode_and_the_channel_mode_wrappers_write_the_expected_change() {
             "MODE #omarchy +o bob\r\n",
             "MODE #omarchy +b bob!*@*\r\n",
             "MODE #omarchy +b bob!*@*\r\n",
+            "MODE #omarchy -b bob!*@*\r\n",
             "MODE #omarchy +v bob\r\n",
             "MODE #omarchy -v bob\r\n",
             "MODE #omarchy -o bob\r\n",
+        ]
+    );
+
+    // Quiet needs CHANMODES A to advertise q; mute stays a different verb.
+    // Demo seed includes q, so strip it first to prove the refuse path.
+    let mut without_quiet = fixture.controller.reducer.server_features(OMARCHY).clone();
+    without_quiet.apply_token("CHANMODES=beI,k,l,imnpst");
+    fixture.controller.reducer.set_server_features(OMARCHY, without_quiet);
+    assert_eq!(run(&mut fixture, CONVERSATION, "/quiet bob"), CommandOutcome::Refused);
+    let mut with_quiet = fixture.controller.reducer.server_features(OMARCHY).clone();
+    with_quiet.apply_token("CHANMODES=eIbq,k,l,imnpst");
+    fixture.controller.reducer.set_server_features(OMARCHY, with_quiet);
+    fixture.clear_frames(OMARCHY);
+    assert_eq!(run(&mut fixture, CONVERSATION, "/quiet bob"), CommandOutcome::Sent);
+    assert_eq!(run(&mut fixture, CONVERSATION, "/unquiet bob"), CommandOutcome::Sent);
+    assert_eq!(
+        fixture.frames(OMARCHY),
+        [
+            "MODE #omarchy +q bob!*@*\r\n",
+            "MODE #omarchy -q bob!*@*\r\n",
         ]
     );
 

@@ -19,7 +19,7 @@ const (
 		"draft/metadata-2 server-time account-tag account-notify extended-join"
 
 	// kIsupport is the 005 token list the demo server advertises.
-	kIsupport = "CHANTYPES=# PREFIX=(qaohv)~&@%+ MONITOR=100"
+	kIsupport = "CHANTYPES=# PREFIX=(qaohv)~&@%+ CHANMODES=bq,k,l,imnpst MONITOR=100"
 
 	// kMonitorLimit is the MONITOR entry ceiling, mirroring IrcServerFeatures.
 	kMonitorLimit = 100

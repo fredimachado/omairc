@@ -194,6 +194,12 @@ func (m *Model) transcriptHeader() []string {
 		}
 		topic := strings.TrimSpace(m.ctrl.PlainIrcText(m.ctrl.Topic()))
 		if topic == "" && m.unseenMarker() == "" {
+			// The arm check short-circuits unseenMarker to "". Channel and DM
+			// bands already keep a stable height; empty Status still paints the
+			// ↓ new band, so reserve those two lines while measuring.
+			if m.withinResumeArmCheck {
+				return []string{m.topicHeaderLine(""), ""}
+			}
 			return nil
 		}
 		return []string{m.topicHeaderLine(m.ctrl.Topic()), ""}
@@ -893,17 +899,18 @@ func (m *Model) syncTranscriptLineCount() {
 
 // jumpArmed reports whether a jump-to-newest affordance applies: the reader is
 // scrolled up and either the first-unseen row is still not fully on screen,
-// the Alt+U catch-up row is the first row that is not fully on screen, or a
-// "New messages" mark still has a message row below the viewport. It mirrors
-// TranscriptList.jumpArmed with canScrollDown standing in for
+// the Alt+U catch-up row is at or above the first row that is not fully on
+// screen, or a "New messages" mark still has a message row below the viewport.
+// It mirrors TranscriptList.jumpArmed with canScrollDown standing in for
 // !transcriptFollowEnd. firstUnseenRow alone is not enough: it must sit at or
 // past the first row that is not fully visible, matching unseenResumeArmed's
 // admit rule so ↓ new cannot paint over history the reader has already caught
 // up on. A catch-up index that sits further down than the current viewport
 // does not arm the marker: the reader is in history already read, and only
-// another Alt+U returns to that row. A leading date can put the boundary on
-// the first row; once every message row is on screen, the typing footer is
-// not a reason to keep ↓ new.
+// another Alt+U returns to that row. Page Down past the catch-up keeps ↓ new
+// while unseen remain. A leading date can put the boundary on the first row;
+// once every message row is on screen, the typing footer is not a reason to
+// keep ↓ new.
 func (m *Model) jumpArmed() bool {
 	if m.ctrl == nil || m.transcriptFollowEnd {
 		return false
@@ -946,9 +953,10 @@ func (m *Model) firstUnseenArmed() bool {
 }
 
 // unseenResumeArmed reports whether ↓ new should offer the catch-up row. The
-// row has to be the first message that is not fully on screen. Older history
-// above it, a continuation that is already fully visible, and a viewport whose
-// only hidden lines are the typing footer all leave it disarmed.
+// first message that is not fully on screen has to be at or past the catch-up
+// row, so a manual Page Down past that row keeps ↓ new while unseen remain.
+// Older history above it and a viewport whose only hidden lines are the typing
+// footer leave it disarmed.
 func (m *Model) unseenResumeArmed() bool {
 	if m == nil || m.withinResumeArmCheck {
 		return false
@@ -958,7 +966,8 @@ func (m *Model) unseenResumeArmed() bool {
 	}
 	m.withinResumeArmCheck = true
 	defer func() { m.withinResumeArmCheck = false }()
-	return m.firstRowBelowViewport() == m.unseenResumeRow
+	below := m.firstRowBelowViewport()
+	return below >= m.unseenResumeRow
 }
 
 // jumpToUnseen lands on the first row that arrived while the reader was
@@ -1025,10 +1034,13 @@ func (m *Model) advanceUnseenResume() {
 // page. Otherwise the catch-up index becomes the first message row that is not
 // fully on screen, which is what keeps ↓ new armed. A viewport with every
 // message row fully visible leaves the index clear, including when the only
-// lines below it are the typing footer.
+// lines below it are the typing footer. While an older-page anchor is active,
+// the snapshotted catch-up sequence is refreshed to match, so a splice after
+// Alt+U does not restore a stale resume row.
 func (m *Model) settleUnseenResume() {
 	if m.transcriptFollowEnd || m.transcriptScroll == 0 {
 		m.unseenResumeRow = -1
+		m.refreshUnseenResumeSequenceAtAnchor()
 		if !m.transcriptFollowEnd {
 			m.jumpTranscript(true)
 		}
@@ -1037,9 +1049,25 @@ func (m *Model) settleUnseenResume() {
 	below := m.firstRowBelowViewport()
 	if below < 0 {
 		m.unseenResumeRow = -1
+		m.refreshUnseenResumeSequenceAtAnchor()
 		return
 	}
 	m.unseenResumeRow = below
+	m.refreshUnseenResumeSequenceAtAnchor()
+}
+
+// refreshUnseenResumeSequenceAtAnchor mirrors the catch-up half of
+// snapshotTranscriptAnchor while an older-page request is in flight.
+func (m *Model) refreshUnseenResumeSequenceAtAnchor() {
+	if m == nil || m.ctrl == nil || m.transcriptAnchorSequence < 0 {
+		return
+	}
+	messages := m.ctrl.Messages()
+	if m.unseenResumeRow >= 0 && m.unseenResumeRow < len(messages) {
+		m.unseenResumeSequenceAtAnchor = messages[m.unseenResumeRow].Sequence
+		return
+	}
+	m.unseenResumeSequenceAtAnchor = -1
 }
 
 // shiftedResumeRow moves a snapshotted row index across a prepend (unseen

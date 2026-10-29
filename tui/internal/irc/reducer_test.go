@@ -1275,7 +1275,7 @@ func TestKickAndModeStaySeparateFromJoinLine(t *testing.T) {
 	requireString(t, "messages[0]", conversation.Messages[0].Body, "Alice joined")
 	requireString(t, "messages[1]", conversation.Messages[1].Body, "Alice was kicked")
 	requireString(t, "messages[2]", conversation.Messages[2].Body, "Bob joined")
-	requireString(t, "messages[3]", conversation.Messages[3].Body, "op set mode +v")
+	requireString(t, "messages[3]", conversation.Messages[3].Body, "op set mode +v Bob")
 	requireString(t, "messages[4]", conversation.Messages[4].Body, "Carol joined")
 }
 
@@ -2093,6 +2093,137 @@ func TestOnlyVisibleToYouSurvivesHistoryAndHydrate(t *testing.T) {
 	hydrated := messageByBody(t, stateOf(t, again, room).Messages, "stored")
 	requireTrue(t, "hydrated only you", hydrated.OnlyVisibleToYou)
 	requireInt(t, "hydrated origin", int(hydrated.Origin), int(OriginReplay))
+}
+
+func TestChannelContextMsgidSkipsQueryAfterHydrate(t *testing.T) {
+	log := &recordingConversationLog{}
+	first := NewEventReducer()
+	first.SetConversationLog(log)
+	welcome(first, networkA)
+	first.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	first.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "bot"}, reducerTimestamp)
+	applyWire(t, first, "@msgid=stored-only;+draft/channel-context=#room :bot!u@h PRIVMSG omairc :stored")
+
+	again := NewEventReducer()
+	again.SetConversationLog(log)
+	welcome(again, networkA)
+	again.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	room := again.ConversationKey(networkA, "#room")
+	requireTrue(t, "hydrated only you", messageByBody(t, stateOf(t, again, room).Messages, "stored").OnlyVisibleToYou)
+
+	bot := again.ConversationKey(networkA, "bot")
+	again.EnsureConversation(bot, "bot", CauseUserOpen)
+	history, ok := TranslateHistory(networkA, "omairc", NewServerFeatures(), HistoryBatch{
+		Target: "bot",
+		Lines: []Message{
+			mustParse(t, "@msgid=stored-only;+draft/channel-context=#room :bot!u@h PRIVMSG omairc :stored"),
+		},
+	}, reducerTimestamp, func(channel, sender string) (string, bool) {
+		return again.JoinedMemberChannel(networkA, channel, sender)
+	})
+	requireTrue(t, "query history", ok)
+	again.Apply(history, reducerTimestamp)
+	for _, message := range stateOf(t, again, bot).Messages {
+		if message.Body == "stored" {
+			t.Fatal("hydrate claim must still skip the query twin")
+		}
+	}
+}
+
+func TestChannelContextMsgidSkipsQueryAfterPart(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "bot"}, reducerTimestamp)
+	applyWire(t, reducer, "@msgid=part-keep;+draft/channel-context=#room :bot!u@h PRIVMSG omairc :kept")
+	reducer.Apply(PartEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+
+	room := reducer.ConversationKey(networkA, "#room")
+	requireFalse(t, "left the channel", stateOf(t, reducer, room).Channel().Joined)
+	requireTrue(t, "channel still holds the filing", messageByBody(t, stateOf(t, reducer, room).Messages, "kept").OnlyVisibleToYou)
+
+	bot := reducer.ConversationKey(networkA, "bot")
+	reducer.EnsureConversation(bot, "bot", CauseUserOpen)
+	history, ok := TranslateHistory(networkA, "omairc", NewServerFeatures(), HistoryBatch{
+		Target: "bot",
+		Lines: []Message{
+			mustParse(t, "@msgid=part-keep;+draft/channel-context=#room :bot!u@h PRIVMSG omairc :kept"),
+		},
+	}, reducerTimestamp, func(channel, sender string) (string, bool) {
+		return reducer.JoinedMemberChannel(networkA, channel, sender)
+	})
+	requireTrue(t, "query history", ok)
+	reducer.Apply(history, reducerTimestamp)
+	for _, message := range stateOf(t, reducer, bot).Messages {
+		if message.Body == "kept" {
+			t.Fatal("ownership survives PART while the channel row remains")
+		}
+	}
+}
+
+func TestChannelContextMsgidSkipsQueryForCaseDifferingSender(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "bot"}, reducerTimestamp)
+	applyWire(t, reducer, "@msgid=case-1;+draft/channel-context=#room :Bot!u@h PRIVMSG omairc :cased")
+
+	room := reducer.ConversationKey(networkA, "#room")
+	requireTrue(t, "live relocates despite sender case", messageByBody(t, stateOf(t, reducer, room).Messages, "cased").OnlyVisibleToYou)
+	requireFalse(t, "no live direct for cased sender", reducer.Find(reducer.ConversationKey(networkA, "bot")) != nil)
+
+	bot := reducer.ConversationKey(networkA, "bot")
+	reducer.EnsureConversation(bot, "bot", CauseUserOpen)
+	history, ok := TranslateHistory(networkA, "omairc", NewServerFeatures(), HistoryBatch{
+		Target: "bot",
+		Lines: []Message{
+			mustParse(t, "@msgid=case-1;+draft/channel-context=#room :Bot!u@h PRIVMSG omairc :cased"),
+		},
+	}, reducerTimestamp, func(channel, sender string) (string, bool) {
+		return reducer.JoinedMemberChannel(networkA, channel, sender)
+	})
+	requireTrue(t, "query history", ok)
+	reducer.Apply(history, reducerTimestamp)
+	for _, message := range stateOf(t, reducer, bot).Messages {
+		if message.Body == "cased" {
+			t.Fatal("claimed msgid skips the case-differing query twin")
+		}
+	}
+}
+
+func TestChannelContextMsgidSkipsQueryReplay(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "bot"}, reducerTimestamp)
+	applyWire(t, reducer, "@msgid=only-1;+draft/channel-context=#room :bot!u@h PRIVMSG omairc :just you")
+
+	room := reducer.ConversationKey(networkA, "#room")
+	requireTrue(t, "live only you", messageByBody(t, stateOf(t, reducer, room).Messages, "just you").OnlyVisibleToYou)
+	requireFalse(t, "no live direct", reducer.Find(reducer.ConversationKey(networkA, "bot")) != nil)
+
+	bot := reducer.ConversationKey(networkA, "bot")
+	reducer.EnsureConversation(bot, "bot", CauseUserOpen)
+	history, ok := TranslateHistory(networkA, "omairc", NewServerFeatures(), HistoryBatch{
+		Target: "bot",
+		Lines: []Message{
+			mustParse(t, "@msgid=only-1;+draft/channel-context=#room :bot!u@h PRIVMSG omairc :just you"),
+		},
+	}, reducerTimestamp, func(channel, sender string) (string, bool) {
+		return reducer.JoinedMemberChannel(networkA, channel, sender)
+	})
+	requireTrue(t, "query history", ok)
+	requireInt(t, "query lines", len(history.Lines), 1)
+	requireFalse(t, "query stays unlabeled", history.Lines[0].OnlyVisibleToYou)
+	reducer.Apply(history, reducerTimestamp)
+
+	direct := stateOf(t, reducer, bot)
+	for _, message := range direct.Messages {
+		if message.Body == "just you" {
+			t.Fatal("query must not twin the channel filing")
+		}
+	}
+	requireString(t, "channel keeps the filing", messageByBody(t, stateOf(t, reducer, room).Messages, "just you").Body, "just you")
 }
 
 func TestChannelContextDirectMessageSurvivesWhenUntrusted(t *testing.T) {

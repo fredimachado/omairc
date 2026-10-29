@@ -23,6 +23,7 @@ pub mod filelink;
 pub mod framer;
 pub mod inbox;
 pub mod jointarget;
+pub mod listmask;
 pub mod membershipnoise;
 pub mod message;
 pub mod parser;

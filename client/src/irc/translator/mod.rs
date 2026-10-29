@@ -20,6 +20,7 @@ mod numerics;
 
 pub use context::{conversation_for, parse_history_target_time, server_time_of, JoinedMemberLookup};
 pub use history::{translate_history, HistoryBatch, HistoryTarget};
+pub use messages::CHANNEL_CONTEXT_LIMIT;
 
 use chrono::{DateTime, Utc};
 

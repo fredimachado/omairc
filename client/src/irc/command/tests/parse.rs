@@ -174,6 +174,17 @@ fn op_family_services_raw_help_and_list() {
     assert_eq!(parse("/devoice bob"), Command::Devoice(words("bob", "")));
     assert_eq!(parse("/ban eve"), Command::Ban(words("eve", "")));
     assert_eq!(
+        parse("/kickban #room bob spam"),
+        Command::Kickban(words("#room", "bob spam"))
+    );
+    assert_eq!(parse("/kb bob"), Command::Kickban(words("bob", "")));
+    assert_eq!(parse("/unban bob!*@*"), Command::Unban(words("bob!*@*", "")));
+    assert_eq!(parse("/quiet eve"), Command::Quiet(words("eve", "")));
+    assert_eq!(parse("/unquiet eve"), Command::Unquiet(words("eve", "")));
+    assert_eq!(parse("/bans"), Command::Bans(String::new()));
+    assert_eq!(parse("/bans extra"), Command::Bans("extra".into()));
+    assert_eq!(parse("/quiets"), Command::Quiets(String::new()));
+    assert_eq!(
         parse("/ns identify hunter2"),
         Command::Ns("identify hunter2".into())
     );

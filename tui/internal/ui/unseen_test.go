@@ -15,6 +15,7 @@ import (
 
 	"github.com/fredimachado/omairc/tui/internal/controller"
 	"github.com/fredimachado/omairc/tui/internal/demo"
+	"github.com/fredimachado/omairc/tui/internal/irc"
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
@@ -452,6 +453,37 @@ func detachAndLandOnLongUnseen(t *testing.T) (*Model, int) {
 	return m, continuation
 }
 
+// TestPageDownPastResumeKeepsUnseenMarker proves a manual Page Down past the
+// catch-up row keeps ↓ new while unseen rows remain. Alt+U alone is not enough:
+// the arm check has to treat a continuation further down than the resume row as
+// still armed.
+func TestPageDownPastResumeKeepsUnseenMarker(t *testing.T) {
+	m, continuation := detachAndLandOnLongUnseen(t)
+	resume := m.unseenResumeRow
+	if resume != continuation {
+		t.Fatalf("resume = %d, want %d", resume, continuation)
+	}
+
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+	if m.transcriptFollowEnd {
+		t.Fatal("Page Down must stay detached while unseen rows remain")
+	}
+	below := m.firstRowBelowViewport()
+	if below < 0 {
+		t.Fatal("Page Down must leave a row that is not fully visible")
+	}
+	if below <= resume {
+		t.Fatalf("first row below = %d, want it past the resume row %d", below, resume)
+	}
+	if m.unseenResumeRow != resume {
+		t.Fatalf("resume = %d, want it kept at %d after Page Down", m.unseenResumeRow, resume)
+	}
+	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
+	if !m.jumpArmed() || !strings.Contains(plain, "↓ new") {
+		t.Fatalf("↓ new must stay after Page Down past the resume row:\n%s", plain)
+	}
+}
+
 // TestAltUAfterCtrlHomeReturnsToTheUnseenRun proves Ctrl+Home hides ↓ new over
 // history already read and the next Alt+U returns to the unseen run instead of
 // walking that history from the top.
@@ -664,6 +696,121 @@ func TestAltUStepsPastAWrappedRowTallerThanTheViewport(t *testing.T) {
 	}
 	if got := m.ctrl.Messages()[m.firstVisibleMessageRow()].Body; got != "trailer" {
 		t.Fatalf("top body = %q, want trailer", got)
+	}
+}
+
+// TestSettleUnseenResumeRefreshesAnchorSequence proves Alt+U during an older
+// page load does not restore a stale catch-up after the splice. The snapshot
+// taken when the page was requested must follow the post-Alt+U landing.
+func TestSettleUnseenResumeRefreshesAnchorSequence(t *testing.T) {
+	m, continuation := detachAndLandOnLongUnseen(t)
+	staleBody := m.ctrl.Messages()[continuation].Body
+	m.snapshotTranscriptAnchor()
+	if m.unseenResumeSequenceAtAnchor < 0 {
+		t.Fatal("the older-page snapshot must record the catch-up sequence")
+	}
+
+	m = press(t, m, altKey('u'))
+	if m.transcriptFollowEnd || m.unseenResumeRow < 0 {
+		t.Fatal("a second Alt+U must stay detached with a new catch-up row")
+	}
+	landed := m.unseenResumeRow
+	if landed <= continuation {
+		t.Fatalf("resume = %d, want it past the first continuation %d", landed, continuation)
+	}
+	landedBody := m.ctrl.Messages()[landed].Body
+	if landedBody == staleBody {
+		t.Fatal("the post-Alt+U catch-up must be a later row than the snapshotted one")
+	}
+
+	key := m.ctrl.Reducer().ConversationKey("omarchy", "#omarchy")
+	when := time.Date(2026, 9, 26, 8, 0, 0, 0, time.UTC)
+	m.ctrl.Apply(irc.HistoryEvent{
+		Conversation: key,
+		Target:       "#omarchy",
+		Kind:         irc.HistoryChat,
+		OlderPage:    true,
+		Lines: []irc.ReplayLine{{
+			Author:    "bob",
+			Body:      "older while alt-u",
+			Timestamp: when,
+			MsgID:     irc.MsgID{Value: "older-while-alt-u"},
+		}},
+	})
+	m.ctrl.Publish(irc.ViewNotify{Messages: true})
+	m.noteTranscriptGrowth()
+
+	if m.unseenResumeRow < 0 || m.unseenResumeRow >= len(m.ctrl.Messages()) {
+		t.Fatalf("resume = %d after the prepend, want the post-Alt+U landing", m.unseenResumeRow)
+	}
+	if got := m.ctrl.Messages()[m.unseenResumeRow].Body; got != landedBody {
+		t.Fatalf("resume body = %q, want post-Alt+U landing %q (stale was %q)", got, landedBody, staleBody)
+	}
+}
+
+// TestStatusResumeArmCheckHeaderHeightParity proves the recursion guard that
+// measures ↓ new arming keeps Status header height in line with the painted
+// ↓ new band. An empty Status topic must not collapse to a nil header under
+// the guard while the view paints two lines. Channel bands stay stable either
+// way.
+func TestStatusResumeArmCheckHeaderHeightParity(t *testing.T) {
+	m := seededModel(t)
+	channel := m.ctrl.SelectedTarget()
+	m.ctrl.Apply(irc.TopicEvent{NetworkID: "omarchy", Channel: channel, Topic: ""})
+	channelHeader := len(m.transcriptHeader())
+	m.withinResumeArmCheck = true
+	if got := len(m.transcriptHeader()); got != channelHeader {
+		t.Fatalf("channel header guard=%d painted=%d, want a stable band", got, channelHeader)
+	}
+	m.withinResumeArmCheck = false
+
+	m.toggleStatus()
+	if !m.ctrl.ConsoleOpen() {
+		t.Fatal("Status must be the open pane")
+	}
+	if topic := strings.TrimSpace(m.ctrl.PlainIrcText(m.ctrl.Topic())); topic != "" {
+		t.Fatalf("Status Topic() = %q, want empty", topic)
+	}
+	now := time.Date(2026, 9, 26, 9, 0, 0, 0, time.UTC)
+	for i := 0; i < 40; i++ {
+		m.ctrl.Console().Append(irc.Lifecycle("omarchy", irc.LogSeverityInfo, "test",
+			fmt.Sprintf("status pad %d", i), now))
+	}
+	m.noteTranscriptGrowth()
+	if m.transcriptRowTotal() < 20 {
+		t.Fatalf("Status rows = %d, want a console taller than the viewport", m.transcriptRowTotal())
+	}
+	m.pinTranscriptToRow(0)
+	if m.transcriptFollowEnd {
+		t.Fatal("pinning the top Status row must stay detached when more rows remain")
+	}
+	m.firstUnseenRow = -1
+	// Point the catch-up at the continuation the guarded measure sees so ↓ new
+	// arms before the height fix. The painted band then uses a taller header.
+	m.withinResumeArmCheck = true
+	m.unseenResumeRow = m.firstRowBelowViewport()
+	m.withinResumeArmCheck = false
+	if m.unseenResumeRow < 0 {
+		t.Fatal("Status must leave a row below the viewport")
+	}
+	if !m.jumpArmed() {
+		t.Fatal("Status catch-up must arm ↓ new")
+	}
+	paintedHeader := len(m.transcriptHeader())
+	paintedBelow := m.firstRowBelowViewport()
+	if paintedHeader != 2 {
+		t.Fatalf("painted Status header = %d, want the ↓ new band and blank", paintedHeader)
+	}
+
+	m.withinResumeArmCheck = true
+	guardHeader := len(m.transcriptHeader())
+	guardBelow := m.firstRowBelowViewport()
+	m.withinResumeArmCheck = false
+	if guardHeader != paintedHeader {
+		t.Fatalf("guard Status header = %d, painted = %d", guardHeader, paintedHeader)
+	}
+	if guardBelow != paintedBelow {
+		t.Fatalf("guard firstRowBelow = %d, painted = %d", guardBelow, paintedBelow)
 	}
 }
 

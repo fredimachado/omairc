@@ -98,6 +98,7 @@ type CommandHost interface {
 	DispatchStatus(command irc.Command, surface irc.ComposerSurface) irc.CommandOutcome
 	DispatchAvatar(command irc.Command, surface irc.ComposerSurface) irc.CommandOutcome
 	DispatchMonitor(command irc.Command, surface irc.ComposerSurface) irc.CommandOutcome
+	DispatchListModeInquiry(kind irc.ListMaskKind, argument string, surface irc.ComposerSurface) irc.CommandOutcome
 
 	PrefEnabled(name irc.PrefName) bool
 	PrefApply(name irc.PrefName, enabled bool)
@@ -199,7 +200,8 @@ func (d *CommandDispatcher) Dispatch(command irc.Command, surface irc.ComposerSu
 	}
 
 	switch command.Verb {
-	case irc.VerbOp, irc.VerbDeop, irc.VerbVoice, irc.VerbDevoice, irc.VerbBan:
+	case irc.VerbOp, irc.VerbDeop, irc.VerbVoice, irc.VerbDevoice, irc.VerbBan, irc.VerbUnban,
+		irc.VerbQuiet, irc.VerbUnquiet:
 		return d.dispatchChannelModeWrapper(command, surface)
 	}
 
@@ -214,6 +216,13 @@ func (d *CommandDispatcher) Dispatch(command irc.Command, surface irc.ComposerSu
 
 	if command.Verb == irc.VerbWhois {
 		return d.host.DispatchWhois(command, surface)
+	}
+
+	if command.Verb == irc.VerbBans {
+		return d.host.DispatchListModeInquiry(irc.ListMaskBan, command.Argument, surface)
+	}
+	if command.Verb == irc.VerbQuiets {
+		return d.host.DispatchListModeInquiry(irc.ListMaskQuiet, command.Argument, surface)
 	}
 
 	switch command.Verb {
@@ -308,6 +317,13 @@ func (d *CommandDispatcher) Dispatch(command irc.Command, surface irc.ComposerSu
 		var outcome irc.CommandOutcome
 		var done bool
 		sent, outcome, done = d.dispatchKick(active, command, surface)
+		if done {
+			return outcome
+		}
+	case irc.VerbKickban:
+		var outcome irc.CommandOutcome
+		var done bool
+		sent, outcome, done = d.dispatchKickban(active, command, surface)
 		if done {
 			return outcome
 		}
@@ -470,6 +486,54 @@ func (d *CommandDispatcher) dispatchKick(
 	channel := d.host.SelectedTarget()
 	sent := channel != "" && active.Kick(channel, first, restAfterFirstToken(command.Argument))
 	return sent, irc.OutcomeSent, false
+}
+
+// dispatchKickban resolves the Kickban arm of dispatch. Scope matches /kick;
+// the ban mask expands like /ban, and a token with ! bans that mask while
+// kicking the nick before !.
+func (d *CommandDispatcher) dispatchKickban(
+	active *session.Session,
+	command irc.Command,
+	surface irc.ComposerSurface,
+) (bool, irc.CommandOutcome, bool) {
+	first := firstToken(command.Argument)
+	if first == "" {
+		return false, irc.OutcomeRefused, true
+	}
+	networkID := d.host.QueryNetworkID(surface)
+	features := d.reducer.ServerFeatures(networkID)
+
+	var channel, nickToken, reason string
+	if features.IsChannel(first) {
+		afterChannel := restAfterFirstToken(command.Argument)
+		nickToken = firstToken(afterChannel)
+		if nickToken == "" {
+			return false, irc.OutcomeRefused, true
+		}
+		channel = first
+		reason = restAfterFirstToken(afterChannel)
+	} else {
+		key, ok := d.host.SelectedKey()
+		if !ok || !d.host.SelectedIsChannel() {
+			return false, irc.OutcomeWrongScope, true
+		}
+		if key.NetworkID != networkID {
+			return false, irc.OutcomeRefused, true
+		}
+		channel = d.host.SelectedTarget()
+		if channel == "" {
+			return false, irc.OutcomeRefused, true
+		}
+		nickToken = first
+		reason = restAfterFirstToken(command.Argument)
+	}
+
+	nick := irc.KickNickFromMask(nickToken)
+	if nick == "" {
+		return false, irc.OutcomeRefused, true
+	}
+	mask := irc.ExpandListMask(nickToken)
+	return active.Kickban(channel, mask, nick, reason), irc.OutcomeSent, false
 }
 
 // dispatchInvite resolves the Invite arm of dispatch. done is true when the arm
@@ -639,8 +703,8 @@ func (d *CommandDispatcher) dispatchMode(command irc.Command, surface irc.Compos
 	return irc.OutcomeRefused
 }
 
-// dispatchChannelModeWrapper turns /op //deop //voice //devoice //ban into a
-// MODE change on the selected channel. It mirrors
+// dispatchChannelModeWrapper turns /op //deop //voice //devoice //ban //unban
+// into a MODE change on the selected channel. It mirrors
 // IrcCommandDispatcher::dispatchChannelModeWrapper.
 func (d *CommandDispatcher) dispatchChannelModeWrapper(command irc.Command, surface irc.ComposerSurface) irc.CommandOutcome {
 	key, ok := d.host.SelectedKey()
@@ -657,6 +721,8 @@ func (d *CommandDispatcher) dispatchChannelModeWrapper(command irc.Command, surf
 	}
 
 	modes := ""
+	expandMask := false
+	requireQuiet := false
 	switch command.Verb {
 	case irc.VerbOp:
 		modes = "+o"
@@ -668,13 +734,32 @@ func (d *CommandDispatcher) dispatchChannelModeWrapper(command irc.Command, surf
 		modes = "-v"
 	case irc.VerbBan:
 		modes = "+b"
+		expandMask = true
+	case irc.VerbUnban:
+		modes = "-b"
+		expandMask = true
+	case irc.VerbQuiet:
+		modes = "+q"
+		expandMask = true
+		requireQuiet = true
+	case irc.VerbUnquiet:
+		modes = "-q"
+		expandMask = true
+		requireQuiet = true
 	default:
 		return irc.OutcomeUnsupported
 	}
 
+	if requireQuiet {
+		features := d.reducer.ServerFeatures(key.NetworkID)
+		if !strings.ContainsRune(features.ChanModesA(), 'q') {
+			return irc.OutcomeRefused
+		}
+	}
+
 	parameter := token
-	if command.Verb == irc.VerbBan && !strings.Contains(token, "!") && !strings.Contains(token, "@") {
-		parameter = token + "!*@*"
+	if expandMask {
+		parameter = irc.ExpandListMask(token)
 	}
 
 	mode := irc.Command{

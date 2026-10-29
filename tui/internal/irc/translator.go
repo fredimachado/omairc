@@ -9,8 +9,11 @@ import (
 )
 
 // channelContextLimit is the classic channel-name length (RFC 2811). A longer
-// tag is not a channel key.
+// tag is not a channel key. Keep in lockstep with Rust CHANNEL_CONTEXT_LIMIT.
 const channelContextLimit = 50
+
+// ChannelContextLimit exposes the classic length gate for tests and parity locks.
+const ChannelContextLimit = channelContextLimit
 
 // JoinedMemberChannel returns the display name of a joined channel when sender
 // is a member of it. A nil func, or ok false, leaves the line on the

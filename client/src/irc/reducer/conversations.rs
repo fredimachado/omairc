@@ -86,7 +86,7 @@ impl EventReducer {
         if target_is_channel {
             conv.channel = Some(ChannelState::default());
         }
-        super::transcript::hydrate_from_log(&self.facts, &mut conv);
+        super::transcript::hydrate_from_log(&mut self.facts, &mut conv);
         self.conversations.insert(key.clone(), conv);
         true
     }
@@ -153,6 +153,7 @@ impl EventReducer {
         if self.facts.selected.as_ref() == Some(key) {
             self.facts.selected = None;
         }
+        self.facts.clear_channel_context_home(key);
         self.conversations.remove(key);
     }
 
@@ -238,6 +239,7 @@ impl EventReducer {
         self.drop_kept_playback(network_id);
         self.facts.query_restore_pending.remove(network_id);
         self.clear_closed_network(network_id);
+        self.facts.clear_channel_context_network(network_id);
         self.conversations
             .retain(|key, _| key.network_id != network_id);
         self.facts.features.remove(network_id);

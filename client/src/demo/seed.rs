@@ -25,7 +25,8 @@ pub const CAPS: &str = concat!(
 );
 
 /// The 005 tokens the demo server advertises.
-pub const ISUPPORT: &str = "CHANTYPES=# PREFIX=(qaohv)~&@%+ MONITOR=100";
+pub const ISUPPORT: &str =
+    "CHANTYPES=# PREFIX=(qaohv)~&@%+ CHANMODES=bq,k,l,imnpst MONITOR=100";
 
 /// The MONITOR entry ceiling, mirroring `IrcServerFeatures`.
 pub const MONITOR_LIMIT: usize = 100;

@@ -65,6 +65,13 @@ fn conversation_only_verbs_are_refused_on_status_with_their_texts() {
         ("/voice bob", "Voice applies to channels"),
         ("/devoice bob", "Devoice applies to channels"),
         ("/ban eve", "Ban applies to channels"),
+        ("/kickban bob", "Kickban applies to channels"),
+        ("/kb bob", "Kickban applies to channels"),
+        ("/unban bob", "Unban applies to channels"),
+        ("/quiet bob", "Quiet applies to channels"),
+        ("/unquiet bob", "Unquiet applies to channels"),
+        ("/bans", "Bans applies to channels"),
+        ("/quiets", "Quiets applies to channels"),
     ];
     for (line, text) in cases {
         let command = parse(line);

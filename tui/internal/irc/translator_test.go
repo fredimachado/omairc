@@ -513,8 +513,17 @@ func TestChannelContextStaysADirectMessageWhenUntrusted(t *testing.T) {
 
 	expectDirect(t, translateJoined(t, "@+draft/channel-context=#room :eve!u@h PRIVMSG omairc :unjoined", nil), "eve", "unjoined")
 	expectDirect(t, translateJoined(t, "@+draft/channel-context=#room :eve!u@h PRIVMSG omairc :not a member", roomMemberLookup()), "eve", "not a member")
-	overlong := "@+draft/channel-context=#" + strings.Repeat("x", 60) + " :eve!u@h PRIVMSG omairc :overlong"
+	requireInt(t, "channel-context length lock", ChannelContextLimit, 50)
+	atLimit := "@+draft/channel-context=#" + strings.Repeat("x", ChannelContextLimit-1) + " :bot!u@h PRIVMSG omairc :at limit"
+	limited := translateJoined(t, atLimit, accept)
+	requireInt(t, "at-limit events", len(limited), 1)
+	limitedMessage, ok := limited[0].(MessageEvent)
+	requireTrue(t, "at-limit message", ok)
+	requireTrue(t, "exactly ChannelContextLimit runes still relocates", limitedMessage.OnlyVisibleToYou)
+	overlong := "@+draft/channel-context=#" + strings.Repeat("x", ChannelContextLimit) + " :eve!u@h PRIVMSG omairc :overlong"
 	expectDirect(t, translateJoined(t, overlong, accept), "eve", "overlong")
+	farOverlong := "@+draft/channel-context=#" + strings.Repeat("x", 60) + " :eve!u@h PRIVMSG omairc :far overlong"
+	expectDirect(t, translateJoined(t, farOverlong, accept), "eve", "far overlong")
 	expectDirect(t, translateJoined(t, "@+draft/channel-context=#a,#b :eve!u@h PRIVMSG omairc :comma", accept), "eve", "comma")
 	expectDirect(t, translateJoined(t, "@+draft/channel-context=#my\\sroom :eve!u@h PRIVMSG omairc :space", accept), "eve", "space")
 	expectDirect(t, translateJoined(t, "@+draft/channel-context=#room\x01x :eve!u@h PRIVMSG omairc :control", accept), "eve", "control")

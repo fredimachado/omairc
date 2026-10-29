@@ -13,8 +13,9 @@ use crate::irc::typing::typing_phase_from_tag;
 use super::context::{conversation_for, key, same, Inbound};
 
 /// The longest channel name a `+draft/channel-context` tag may carry: the
-/// classic RFC 2811 limit. A longer tag is not a channel key.
-const CHANNEL_CONTEXT_LIMIT: usize = 50;
+/// classic RFC 2811 limit. A longer tag is not a channel key. Keep in lockstep
+/// with Go `channelContextLimit`.
+pub const CHANNEL_CONTEXT_LIMIT: usize = 50;
 
 /// The CTCP ACTION prefix, including the trailing space.
 const ACTION_PREFIX: &str = "\u{1}ACTION ";

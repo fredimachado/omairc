@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `/kickban` (`/kb`) bans then kicks in one step on a channel. `/unban`,
+  `/quiet`, and `/unquiet` set the matching list modes with the same
+  nick-or-mask expansion as `/ban`. `/quiet` and `/unquiet` refuse when
+  ISUPPORT `CHANMODES` A omits `q`. `/bans` and `/quiets` inquire the server
+  lists and copy `367`/`368` and `728`/`729` into the asking channel as
+  whois-style rows. Empty `/ban` still does not list masks (intentional
+  cutover: list inquiry stays on `/bans`, not an empty `/ban`). Channel quiet
+  is not `/mute`. Desktop and TUI. `--demo-server` advertises `b`/`q` list
+  modes and answers those inquiries so offline proof shows the transcript
+  rows.
+
 ## [1.11.1] - 2026-10-28
 
 ### Fixed
