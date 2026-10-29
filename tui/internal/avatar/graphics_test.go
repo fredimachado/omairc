@@ -390,6 +390,81 @@ func TestLateReplySplitAfterEscIsDropped(t *testing.T) {
 	})
 }
 
+// Esc then a lone _ or P must not enter a hold: that re-sends Esc when the
+// unfinished hold flushes. Only _G and P>| start a late reply drop.
+func TestLateHoldRequiresGraphicsOrXTPrefix(t *testing.T) {
+	t.Run("esc underscore other", func(t *testing.T) {
+		f := &lateFilter{dropAPC: true, dropDA1: true, dropXT: true}
+		if got := f.push([]byte{0x1b}); string(got) != "\x1b" {
+			t.Fatalf("Esc = %q", got)
+		}
+		if got := f.push([]byte("_x")); string(got) != "_x" || f.state != lateGround {
+			t.Fatalf("Esc _x = %q state %d, want _x in ground", got, f.state)
+		}
+		if got := f.push([]byte("y")); string(got) != "y" {
+			t.Fatalf("key after = %q", got)
+		}
+	})
+
+	t.Run("esc P other", func(t *testing.T) {
+		f := &lateFilter{dropXT: true}
+		if got := f.push([]byte{0x1b}); string(got) != "\x1b" {
+			t.Fatalf("Esc = %q", got)
+		}
+		if got := f.push([]byte("PQ")); string(got) != "PQ" || f.state != lateGround {
+			t.Fatalf("Esc PQ = %q state %d, want PQ in ground", got, f.state)
+		}
+	})
+
+	t.Run("esc P> other", func(t *testing.T) {
+		f := &lateFilter{dropXT: true}
+		if got := f.push([]byte{0x1b}); string(got) != "\x1b" {
+			t.Fatalf("Esc = %q", got)
+		}
+		if got := f.push([]byte("P>x")); string(got) != "P>x" || f.state != lateGround {
+			t.Fatalf("Esc P>x = %q state %d, want P>x in ground", got, f.state)
+		}
+	})
+
+	t.Run("same read esc underscore other", func(t *testing.T) {
+		f := &lateFilter{dropAPC: true}
+		if got := f.push([]byte("\x1b_xZ")); string(got) != "\x1b_xZ" || f.state != lateGround {
+			t.Fatalf("same-read Esc _x = %q state %d", got, f.state)
+		}
+	})
+
+	t.Run("same read esc P other", func(t *testing.T) {
+		f := &lateFilter{dropXT: true}
+		if got := f.push([]byte("\x1bPZ")); string(got) != "\x1bPZ" || f.state != lateGround {
+			t.Fatalf("same-read Esc P = %q state %d", got, f.state)
+		}
+	})
+
+	t.Run("overlong hold after split does not resend esc", func(t *testing.T) {
+		f := &lateFilter{dropAPC: true}
+		if got := f.push([]byte{0x1b}); string(got) != "\x1b" {
+			t.Fatalf("Esc = %q", got)
+		}
+		long := append([]byte("_G"), bytes.Repeat([]byte{'1'}, 80)...)
+		got := f.push(long)
+		if !strings.HasPrefix(string(got), "_G") {
+			t.Fatalf("flush = %q, want continuation without a second Esc", got)
+		}
+		if strings.Contains(string(got), "\x1b") {
+			t.Fatalf("flush re-sent Esc: %q", got)
+		}
+	})
+
+	t.Run("response prefix needs G and XT body", func(t *testing.T) {
+		if isResponsePrefix([]byte("\x1b_")) || isResponsePrefix([]byte("\x1bP")) {
+			t.Fatal("bare Esc _ / Esc P must not seed a late hold")
+		}
+		if !isResponsePrefix([]byte("\x1b_Gi=")) || !isResponsePrefix([]byte("\x1bP>|W")) {
+			t.Fatal("_G and P>| must still seed a late hold")
+		}
+	})
+}
+
 func TestLateDA1RequiresQuestionMark(t *testing.T) {
 	f := &lateFilter{dropAPC: true, dropDA1: true, dropXT: true}
 	kept := f.push([]byte("\x1b[6c\x1b[c\x1b[A"))
