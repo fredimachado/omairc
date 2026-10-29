@@ -195,6 +195,11 @@ type Model struct {
 	// TranscriptList's firstUnseenIndex and trackedCount.
 	firstUnseenRow  int
 	transcriptCount int
+	// transcriptSpliceEpoch is the last splice generation noteTranscriptGrowth
+	// observed. A count increase with a higher epoch is a head or mid splice
+	// (older page, reconnect replay), not a live append, so growth must not
+	// invent firstUnseenRow at the old count.
+	transcriptSpliceEpoch int
 	// unseenResumeRow is the message row where an Alt+U catch-up continues, or
 	// -1 when no catch-up is active. ↓ new is armed while the first row that is
 	// not fully on screen is at or past that catch-up row. Scrolling into
@@ -342,6 +347,9 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 	m.resize()
 	m.draftKey = m.composerDraftKey()
 	m.transcriptCount = m.transcriptRowTotal()
+	if m.ctrl != nil {
+		m.transcriptSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
+	}
 	m.landSavedTranscript()
 	if m.connectVisible() {
 		m.focus = focusConnect
