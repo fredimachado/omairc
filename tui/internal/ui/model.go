@@ -208,7 +208,9 @@ type Model struct {
 	// Measuring the continuation row renders the header, and the header asks
 	// whether the marker is armed. The nested check reports disarmed. On a
 	// channel or direct message the marker shares an existing header line, so
-	// the height used for that measurement still matches.
+	// the height used for that measurement still matches. Empty Status has no
+	// topic band unless ↓ new is showing; the header reserves that band while
+	// this flag is set so firstRowBelowViewport matches the painted view.
 	withinResumeArmCheck bool
 	// transcriptLineCount is the rendered line count of transcriptArea
 	// including the typing footer. A detached append adds the increase to

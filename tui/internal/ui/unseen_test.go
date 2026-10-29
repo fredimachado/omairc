@@ -748,6 +748,72 @@ func TestSettleUnseenResumeRefreshesAnchorSequence(t *testing.T) {
 	}
 }
 
+// TestStatusResumeArmCheckHeaderHeightParity proves the recursion guard that
+// measures ↓ new arming keeps Status header height in line with the painted
+// ↓ new band. An empty Status topic must not collapse to a nil header under
+// the guard while the view paints two lines. Channel bands stay stable either
+// way.
+func TestStatusResumeArmCheckHeaderHeightParity(t *testing.T) {
+	m := seededModel(t)
+	channel := m.ctrl.SelectedTarget()
+	m.ctrl.Apply(irc.TopicEvent{NetworkID: "omarchy", Channel: channel, Topic: ""})
+	channelHeader := len(m.transcriptHeader())
+	m.withinResumeArmCheck = true
+	if got := len(m.transcriptHeader()); got != channelHeader {
+		t.Fatalf("channel header guard=%d painted=%d, want a stable band", got, channelHeader)
+	}
+	m.withinResumeArmCheck = false
+
+	m.toggleStatus()
+	if !m.ctrl.ConsoleOpen() {
+		t.Fatal("Status must be the open pane")
+	}
+	if topic := strings.TrimSpace(m.ctrl.PlainIrcText(m.ctrl.Topic())); topic != "" {
+		t.Fatalf("Status Topic() = %q, want empty", topic)
+	}
+	now := time.Date(2026, 9, 26, 9, 0, 0, 0, time.UTC)
+	for i := 0; i < 40; i++ {
+		m.ctrl.Console().Append(irc.Lifecycle("omarchy", irc.LogSeverityInfo, "test",
+			fmt.Sprintf("status pad %d", i), now))
+	}
+	m.noteTranscriptGrowth()
+	if m.transcriptRowTotal() < 20 {
+		t.Fatalf("Status rows = %d, want a console taller than the viewport", m.transcriptRowTotal())
+	}
+	m.pinTranscriptToRow(0)
+	if m.transcriptFollowEnd {
+		t.Fatal("pinning the top Status row must stay detached when more rows remain")
+	}
+	m.firstUnseenRow = -1
+	// Point the catch-up at the continuation the guarded measure sees so ↓ new
+	// arms before the height fix. The painted band then uses a taller header.
+	m.withinResumeArmCheck = true
+	m.unseenResumeRow = m.firstRowBelowViewport()
+	m.withinResumeArmCheck = false
+	if m.unseenResumeRow < 0 {
+		t.Fatal("Status must leave a row below the viewport")
+	}
+	if !m.jumpArmed() {
+		t.Fatal("Status catch-up must arm ↓ new")
+	}
+	paintedHeader := len(m.transcriptHeader())
+	paintedBelow := m.firstRowBelowViewport()
+	if paintedHeader != 2 {
+		t.Fatalf("painted Status header = %d, want the ↓ new band and blank", paintedHeader)
+	}
+
+	m.withinResumeArmCheck = true
+	guardHeader := len(m.transcriptHeader())
+	guardBelow := m.firstRowBelowViewport()
+	m.withinResumeArmCheck = false
+	if guardHeader != paintedHeader {
+		t.Fatalf("guard Status header = %d, painted = %d", guardHeader, paintedHeader)
+	}
+	if guardBelow != paintedBelow {
+		t.Fatalf("guard firstRowBelow = %d, painted = %d", guardBelow, paintedBelow)
+	}
+}
+
 // TestShortcutSheetListsJumpToNew proves the chord is discoverable in the
 // shortcuts sheet.
 func TestShortcutSheetListsJumpToNew(t *testing.T) {

@@ -194,6 +194,12 @@ func (m *Model) transcriptHeader() []string {
 		}
 		topic := strings.TrimSpace(m.ctrl.PlainIrcText(m.ctrl.Topic()))
 		if topic == "" && m.unseenMarker() == "" {
+			// The arm check short-circuits unseenMarker to "". Channel and DM
+			// bands already keep a stable height; empty Status still paints the
+			// ↓ new band, so reserve those two lines while measuring.
+			if m.withinResumeArmCheck {
+				return []string{m.topicHeaderLine(""), ""}
+			}
 			return nil
 		}
 		return []string{m.topicHeaderLine(m.ctrl.Topic()), ""}
