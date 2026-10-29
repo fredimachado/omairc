@@ -17,6 +17,8 @@ const (
 	PrefAvatars
 	// PrefUnread opens conversations at unread.
 	PrefUnread
+	// PrefColors paints mIRC foreground and background colors.
+	PrefColors
 	// PrefJoins chooses how join, part, quit, and nick lines are shown.
 	PrefJoins
 	// PrefPalette chooses the nick and network-icon color set.
@@ -75,6 +77,7 @@ var prefCatalog = []PrefSpec{
 	{PrefDirects, "directs", "Reopen direct messages on startup", PrefValueToggle},
 	{PrefAvatars, "avatars", "Show peer avatars", PrefValueToggle},
 	{PrefUnread, "unread", "Open conversations at unread", PrefValueToggle},
+	{PrefColors, "colors", "Show mIRC colors", PrefValueToggle},
 	{PrefJoins, "joins", "Join, part, quit, and nick lines", PrefValueNoise},
 	{PrefPalette, "palette", "Color palette", PrefValuePalette},
 }
@@ -100,9 +103,8 @@ func PrefFind(token string) *PrefSpec {
 }
 
 // PrefUsage returns the /pref usage line. It mirrors ircPrefUsage.
-// The TUI catalog still omits colors; only palette is added here.
 func PrefUsage() string {
-	return "/pref [directs|avatars|unread] [on|off] | joins [folded|every|hidden] | palette [classic|vivid]"
+	return "/pref [directs|avatars|unread|colors] [on|off] | joins [folded|every|hidden] | palette [classic|vivid]"
 }
 
 // PrefAvatarNote returns the avatar privacy note. It mirrors ircPrefAvatarNote.
@@ -150,10 +152,11 @@ func FormatPrefPalette(palette ColorPaletteID) string {
 
 // FormatPrefList renders the toggles, the membership-noise setting, and the
 // color palette, one per line. It mirrors ircFormatPrefList.
-func FormatPrefList(directs, avatars, unread bool, noise MembershipNoise, palette ColorPaletteID) string {
+func FormatPrefList(directs, avatars, unread, colors bool, noise MembershipNoise, palette ColorPaletteID) string {
 	return FormatPrefState(PrefDirects, directs) + "\n" +
 		FormatPrefState(PrefAvatars, avatars) + "\n" +
 		FormatPrefState(PrefUnread, unread) + "\n" +
+		FormatPrefState(PrefColors, colors) + "\n" +
 		FormatPrefNoise(noise) + "\n" +
 		FormatPrefPalette(palette)
 }

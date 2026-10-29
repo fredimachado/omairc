@@ -216,6 +216,7 @@ func TestPhase7PrefOnStatus(t *testing.T) {
 		"Reopen direct messages on startup",
 		"Show peer avatars",
 		"Open conversations at unread",
+		"Show mIRC colors",
 		"Join, part, quit, and nick lines",
 	} {
 		if !strings.Contains(text, label) {

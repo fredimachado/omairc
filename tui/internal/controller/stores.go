@@ -289,10 +289,9 @@ func (s *AvatarStore) Forget(networkID string) {
 	delete(s.urls, networkID)
 }
 
-// Preferences is the in-memory /pref toggle set: reopen direct messages
-// show peer avatars, and open conversations at unread. All three default on.
-// It mirrors the three global Preferences getters the Qt window reads; disk
-// persistence lands in phase 11.
+// Preferences is the in-memory /pref toggle set: reopen direct messages,
+// show peer avatars, open conversations at unread, and show mIRC colors.
+// All toggles default on via Enabled.
 type Preferences struct {
 	values map[irc.PrefName]bool
 	set    map[irc.PrefName]bool

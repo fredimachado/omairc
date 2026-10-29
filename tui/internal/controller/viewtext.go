@@ -33,3 +33,12 @@ func (c *Controller) PrefAvatarsEnabled() bool {
 	}
 	return c.prefs.Enabled(irc.PrefAvatars)
 }
+
+// PrefColorsEnabled reports the stored /pref colors toggle. The shell uses it
+// to decide whether mIRC foreground and background paint in the transcript.
+func (c *Controller) PrefColorsEnabled() bool {
+	if c.prefs == nil {
+		return true
+	}
+	return c.prefs.Enabled(irc.PrefColors)
+}
