@@ -486,7 +486,8 @@ fn fold_into(
     row: &mut Message,
     body: &str,
     network_id: &str,
-    facts: &Facts,
+    facts: &mut Facts,
+    home: &ConversationKey,
     message_ids: &mut HashSet<MsgId>,
     result: &mut MembershipReplayResult,
 ) -> bool {
@@ -501,6 +502,7 @@ fn fold_into(
         result.dropped_sequence = row.sequence;
         if !row.msgid.is_empty() {
             message_ids.remove(&row.msgid);
+            facts.release_channel_context(home, &row.msgid);
         }
         return true;
     }
@@ -513,7 +515,7 @@ fn fold_into(
 /// into the caption it joins (`admitMembershipReplay`). `at` is the splice point
 /// in the transcript and moves when a folded-away row is removed above it.
 pub(super) fn admit_membership_replay(
-    facts: &Facts,
+    facts: &mut Facts,
     conv: &mut ConversationState,
     run: &mut Vec<Message>,
     at: &mut usize,
@@ -525,6 +527,7 @@ pub(super) fn admit_membership_replay(
         return result;
     }
     let network = conv.key.network_id.clone();
+    let home = conv.key.clone();
     let show_each = noise == MembershipNoise::Every;
 
     if !show_each && !run.is_empty() {
@@ -534,6 +537,7 @@ pub(super) fn admit_membership_replay(
             line.body,
             &network,
             facts,
+            &home,
             &mut conv.message_ids,
             &mut result,
         ) {
@@ -550,6 +554,7 @@ pub(super) fn admit_membership_replay(
             line.body,
             &network,
             facts,
+            &home,
             &mut conv.message_ids,
             &mut result,
         ) {

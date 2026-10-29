@@ -1400,6 +1400,7 @@ func (r *EventReducer) admitMembershipReplay(conversation *ConversationState, ru
 			result.droppedSequence = row.Sequence
 			if !row.MsgID.IsEmpty() {
 				delete(conversation.MessageIDs, row.MsgID)
+				r.releaseChannelContext(conversation.Key, row.MsgID)
 			}
 			return true
 		}
