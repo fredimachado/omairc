@@ -360,6 +360,49 @@ fn kick_and_invite_take_an_explicit_channel_or_the_selected_one() {
 }
 
 #[test]
+fn bans_and_quiets_arm_a_list_watch_and_file_whois_rows() {
+    let mut fixture = Fixture::seeded();
+    fixture.controller.select_conversation(OMARCHY, "#omarchy");
+    fixture.clear_frames(OMARCHY);
+
+    assert_eq!(run(&mut fixture, CONVERSATION, "/bans extra"), CommandOutcome::Refused);
+    assert_eq!(run(&mut fixture, STATUS, "/bans"), CommandOutcome::WrongScope);
+
+    assert_eq!(run(&mut fixture, CONVERSATION, "/bans"), CommandOutcome::Sent);
+    assert_eq!(fixture.frames(OMARCHY), ["MODE #omarchy b\r\n"]);
+    assert_eq!(fixture.controller.reply_watches.list_mode_count(), 1);
+
+    // A second inquiry replaces the first watch.
+    fixture.clear_frames(OMARCHY);
+    assert_eq!(run(&mut fixture, CONVERSATION, "/bans"), CommandOutcome::Sent);
+    assert_eq!(fixture.controller.reply_watches.list_mode_count(), 1);
+
+    fixture.deliver(OMARCHY, ":server 367 fred #omarchy *!*@evil.com alice 1");
+    fixture.deliver(OMARCHY, ":server 368 fred #omarchy :End of Channel Ban List");
+    assert!(fixture.controller.messages().iter().any(|row| {
+        row.kind == MessageKind::Whois && row.body.contains("ban *!*@evil.com on #omarchy")
+    }));
+    assert!(fixture.controller.messages().iter().any(|row| {
+        row.kind == MessageKind::Whois && row.body.contains("End of ban list for #omarchy")
+    }));
+    assert_eq!(fixture.controller.reply_watches.list_mode_count(), 0);
+
+    assert_eq!(run(&mut fixture, CONVERSATION, "/quiets"), CommandOutcome::Refused);
+    let mut with_quiet = fixture.controller.reducer.server_features(OMARCHY).clone();
+    with_quiet.apply_token("CHANMODES=eIbq,k,l,imnpst");
+    fixture.controller.reducer.set_server_features(OMARCHY, with_quiet);
+    fixture.clear_frames(OMARCHY);
+    assert_eq!(run(&mut fixture, CONVERSATION, "/quiets"), CommandOutcome::Sent);
+    assert_eq!(fixture.frames(OMARCHY), ["MODE #omarchy q\r\n"]);
+    fixture.deliver(OMARCHY, ":server 728 fred #omarchy q *!*@quiet.example bob 2");
+    fixture.deliver(OMARCHY, ":server 729 fred #omarchy q :End of Channel Quiet List");
+    assert!(fixture.controller.messages().iter().any(|row| {
+        row.kind == MessageKind::Whois && row.body.contains("quiet *!*@quiet.example on #omarchy")
+    }));
+    assert_eq!(fixture.controller.reply_watches.list_mode_count(), 0);
+}
+
+#[test]
 fn kickban_sends_mode_then_kick_with_kick_scope_and_ban_masks() {
     let mut fixture = Fixture::seeded();
     fixture.controller.select_conversation(OMARCHY, "#omarchy");

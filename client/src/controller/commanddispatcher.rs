@@ -299,8 +299,12 @@ impl Controller {
                 words,
                 surface,
             ),
-            // Slice 1 stubs for list inquiry; filled in with reply-router watches.
-            Command::Bans(_) | Command::Quiets(_) => CommandOutcome::Unsupported,
+            Command::Bans(argument) => {
+                self.dispatch_list_mode_inquiry(ListMaskKind::Ban, argument, surface)
+            }
+            Command::Quiets(argument) => {
+                self.dispatch_list_mode_inquiry(ListMaskKind::Quiet, argument, surface)
+            }
             Command::Raw(line) => self.dispatch_raw(line, surface),
             Command::Whois(words) => self.dispatch_whois(words, surface),
             Command::Ping(words) => self.dispatch_ctcp("PING", words, surface),

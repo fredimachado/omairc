@@ -98,6 +98,7 @@ type CommandHost interface {
 	DispatchStatus(command irc.Command, surface irc.ComposerSurface) irc.CommandOutcome
 	DispatchAvatar(command irc.Command, surface irc.ComposerSurface) irc.CommandOutcome
 	DispatchMonitor(command irc.Command, surface irc.ComposerSurface) irc.CommandOutcome
+	DispatchListModeInquiry(kind irc.ListMaskKind, argument string, surface irc.ComposerSurface) irc.CommandOutcome
 
 	PrefEnabled(name irc.PrefName) bool
 	PrefApply(name irc.PrefName, enabled bool)
@@ -215,6 +216,13 @@ func (d *CommandDispatcher) Dispatch(command irc.Command, surface irc.ComposerSu
 
 	if command.Verb == irc.VerbWhois {
 		return d.host.DispatchWhois(command, surface)
+	}
+
+	if command.Verb == irc.VerbBans {
+		return d.host.DispatchListModeInquiry(irc.ListMaskBan, command.Argument, surface)
+	}
+	if command.Verb == irc.VerbQuiets {
+		return d.host.DispatchListModeInquiry(irc.ListMaskQuiet, command.Argument, surface)
 	}
 
 	switch command.Verb {

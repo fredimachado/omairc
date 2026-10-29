@@ -2347,7 +2347,11 @@ func (r *EventReducer) reduceMode(event ModeEvent) {
 	if conversation == nil {
 		return
 	}
-	r.appendEvent(conversation, event.Author+" set mode "+event.Mode, false, false)
+	caption := event.Author + " set mode " + event.Mode
+	if len(event.Arguments) > 0 {
+		caption += " " + strings.Join(event.Arguments, " ")
+	}
+	r.appendEvent(conversation, caption, false, false)
 	channel := conversation.channel
 	if channel == nil {
 		return

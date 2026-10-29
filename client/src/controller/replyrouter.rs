@@ -21,14 +21,18 @@ use std::collections::BTreeMap;
 
 use crate::irc::avatarurl::avatar_metadata_value;
 use crate::irc::capability::IrcCapability;
+use crate::irc::channelmode::IrcChannelModeRequest;
 use crate::irc::command::{CommandOutcome, ComposerSurface, Words};
 use crate::irc::event::{ConversationKey, Event, WhoisTranscriptEvent};
+use crate::irc::listmask::ListMaskKind;
 use crate::irc::message::IrcMessage;
 use crate::irc::presence::{
     canonical_key, clamped_to, effective_max_value_bytes, is_known_key, AVATAR_KEY, BOT_KEY,
     COLOR_KEY, DISPLAY_NAME_KEY, HOMEPAGE_KEY, PRONOUNS_KEY, STATUS_KEY,
 };
-use crate::irc::statusentry::{self, CtcpReplyLine, LogSeverity, StatusEntry, WhoisLine, WhoisProgress};
+use crate::irc::statusentry::{
+    self, CtcpReplyLine, ListModeLine, LogSeverity, StatusEntry, WhoisLine, WhoisProgress,
+};
 use crate::session::events::SessionState;
 use crate::session::session::Session;
 
@@ -79,6 +83,15 @@ struct CtcpWatch {
     destination: Option<ConversationKey>,
 }
 
+/// One in-flight ban or quiet list inquiry (`ListModeWatch`). One watch per
+/// network; a new `/bans` or `/quiets` replaces the previous arm.
+#[derive(Clone, Debug)]
+struct ListModeWatch {
+    destination: ConversationKey,
+    kind: ListMaskKind,
+    channel: String,
+}
+
 #[derive(Clone, Debug)]
 struct LabeledWatch {
     kind: LabeledKind,
@@ -117,6 +130,8 @@ pub(super) struct ReplyWatches {
     whois: BTreeMap<WhoisKey, WhoisWatch>,
     ctcp: BTreeMap<CtcpKey, CtcpWatch>,
     labeled: BTreeMap<LabeledKey, LabeledWatch>,
+    /// One armed ban/quiet list inquiry per network (replace on re-arm).
+    list_mode: BTreeMap<String, ListModeWatch>,
     /// The in-flight own-metadata writes, by network and canonical key.
     own_metadata: BTreeMap<String, BTreeMap<&'static str, OwnMetadataWatch>>,
     /// How many own-metadata writes are being armed. While one is, a confirming reply waits
@@ -140,6 +155,11 @@ impl ReplyWatches {
     /// How many plain WHOIS and CTCP watches are armed (a test seam).
     pub(super) fn plain_count(&self) -> usize {
         self.whois.len() + self.ctcp.len()
+    }
+
+    /// How many list-mode inquiry watches are armed (a test seam).
+    pub(super) fn list_mode_count(&self) -> usize {
+        self.list_mode.len()
     }
 }
 
@@ -204,6 +224,7 @@ impl Controller {
         self.reply_watches
             .labeled
             .retain(|key, _| key.network_id != network_id);
+        self.reply_watches.list_mode.remove(network_id);
         self.reply_watches.own_metadata.remove(network_id);
     }
 
@@ -255,8 +276,34 @@ impl Controller {
         if let Some(line) = entry.whois_line.clone() {
             self.route_whois_line(&network_id, &line);
         }
+        if let Some(line) = entry.list_mode_line.clone() {
+            self.route_list_mode_line(&network_id, &line);
+        }
         if let Some(line) = entry.ctcp_reply.clone() {
             self.route_ctcp_reply(&network_id, &line, &entry.text);
+        }
+    }
+
+    /// Routes a ban or quiet list line to the armed inquiry destination
+    /// (`routeListModeLine`). A new inquiry replaces the previous watch, so at
+    /// most one list inquiry is armed per network.
+    fn route_list_mode_line(&mut self, network_id: &str, line: &ListModeLine) {
+        let Some(watch) = self.reply_watches.list_mode.get(network_id).cloned() else {
+            return;
+        };
+        if watch.kind != line.kind {
+            return;
+        }
+        let features = self.reducer.server_features(network_id);
+        if !features
+            .case_mapping()
+            .equals(&watch.channel, &line.channel)
+        {
+            return;
+        }
+        self.apply_whois_transcript(&watch.destination, &line.text);
+        if line.is_terminal() {
+            self.reply_watches.list_mode.remove(network_id);
         }
     }
 
@@ -572,6 +619,69 @@ impl Controller {
     /// `/whois` (`IrcReplyRouter::dispatchWhois`). A bare WHOIS asks the selected direct
     /// message's peer. With a nick, the reply copies into the selected conversation, or stays
     /// on Status when Status is the surface.
+    /// `/bans` or `/quiets`: arms a list-mode watch and writes `MODE #chan b|q`.
+    /// Conversation-only; a second inquiry on the same network replaces the first.
+    pub(super) fn dispatch_list_mode_inquiry(
+        &mut self,
+        kind: ListMaskKind,
+        argument: &str,
+        surface: ComposerSurface,
+    ) -> CommandOutcome {
+        if !argument.is_empty() {
+            return CommandOutcome::Refused;
+        }
+        if surface != ComposerSurface::Conversation
+            || self.selected.is_none()
+            || !self.is_channel()
+        {
+            return CommandOutcome::WrongScope;
+        }
+        let network = self.surface_network(surface);
+        if network.is_empty() {
+            return CommandOutcome::WrongScope;
+        }
+        let selected_network = self.selected.as_ref().map(|key| key.network_id.clone());
+        if selected_network.as_deref() != Some(network.as_str()) {
+            return CommandOutcome::Refused;
+        }
+        let features = self.reducer.server_features(&network).clone();
+        if kind == ListMaskKind::Quiet && !features.chan_modes_a().contains('q') {
+            return CommandOutcome::Refused;
+        }
+        let channel = self.selected_target().to_owned();
+        if channel.is_empty() || !features.is_channel(&channel) {
+            return CommandOutcome::Refused;
+        }
+        let Some(session) = self
+            .session_for(surface)
+            .filter(|session| session.state() == SessionState::Registered)
+        else {
+            return CommandOutcome::NotConnected;
+        };
+        let destination = self.selected.clone().expect("selected channel checked above");
+        let modes = kind.mode_letter().to_string();
+        let request = IrcChannelModeRequest {
+            channel: channel.clone(),
+            modes,
+            parameters: Vec::new(),
+            query: false,
+        };
+        // Replace any prior list inquiry on this network.
+        self.reply_watches.list_mode.insert(
+            network.clone(),
+            ListModeWatch {
+                destination,
+                kind,
+                channel,
+            },
+        );
+        if !session.send_channel_mode(&request) {
+            self.reply_watches.list_mode.remove(&network);
+            return CommandOutcome::Refused;
+        }
+        CommandOutcome::Sent
+    }
+
     pub(super) fn dispatch_whois(&mut self, words: &Words, surface: ComposerSurface) -> CommandOutcome {
         let (nick, session) = if words.first.is_empty() {
             match self.bare_nick_target() {

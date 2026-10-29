@@ -199,6 +199,29 @@ func (h *commandFakeHost) DispatchAutoaway(irc.Command, irc.ComposerSurface) irc
 	return h.delegatedOutcome("autoaway", h.delegatedResult)
 }
 
+func (h *commandFakeHost) DispatchListModeInquiry(kind irc.ListMaskKind, argument string, surface irc.ComposerSurface) irc.CommandOutcome {
+	if argument != "" {
+		return irc.OutcomeRefused
+	}
+	if surface != irc.SurfaceConversation || !h.selectedIsChannel {
+		return irc.OutcomeWrongScope
+	}
+	key, ok := h.SelectedKey()
+	if !ok {
+		return irc.OutcomeWrongScope
+	}
+	sess := h.SessionFor(surface)
+	if sess == nil || sess.State() != session.StateRegistered {
+		return irc.OutcomeNotConnected
+	}
+	modes := string([]byte{kind.ModeLetter()})
+	if !sess.SendChannelMode(irc.ChannelModeRequest{Channel: h.selectedTarget, Modes: modes}) {
+		return irc.OutcomeRefused
+	}
+	_ = key
+	return irc.OutcomeSent
+}
+
 func (h *commandFakeHost) DispatchWhois(irc.Command, irc.ComposerSurface) irc.CommandOutcome {
 	return h.delegatedOutcome("whois", h.delegatedResult)
 }
@@ -564,6 +587,24 @@ func TestCommandDispatcherKickInvite(t *testing.T) {
 	commandWrote(t, transport, "INVITE bob #room\r\n")
 	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbInvite, Argument: "bob"}, irc.SurfaceConversation), irc.OutcomeSent, "invite selected")
 	commandWrote(t, transport, "INVITE bob #room\r\n")
+}
+
+func TestCommandDispatcherBansQuiets(t *testing.T) {
+	fixture := newCommandFixture()
+	active, transport := commandRegisteredSession(t, "freenode")
+	fixture.host.sessionForSurface = active
+	fixture.host.sessionByNetwork["freenode"] = active
+	fixture.host.selectedKey = fixture.reducer.ConversationKey("freenode", "#room")
+	fixture.host.hasSelectedKey = true
+	fixture.host.selectedIsChannel = true
+	fixture.host.selectedTarget = "#room"
+
+	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbBans, Argument: "extra"}, irc.SurfaceConversation), irc.OutcomeRefused, "bans extra")
+	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbBans}, irc.SurfaceStatus), irc.OutcomeWrongScope, "bans status")
+
+	before := len(commandFrames(transport))
+	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbBans}, irc.SurfaceConversation), irc.OutcomeSent, "bans")
+	commandRequireLastFrames(t, transport, before, []string{"MODE #room b\r\n"})
 }
 
 func TestCommandDispatcherKickban(t *testing.T) {

@@ -6,6 +6,7 @@ use super::incoming::{
     command_of, first_token, has_prefix_fold, is_numeric_command, trailing_text,
 };
 use super::outgoing::strip_line_end;
+use super::listmode::keeps_list_mode_numeric;
 use super::whois::whois_spec;
 use crate::irc::ctcp::parse_ctcp_request;
 use crate::irc::message::{IrcMessage, IrcPrefix};
@@ -244,6 +245,9 @@ fn keeps_numeric(command: &str) -> bool {
         return true;
     }
     if whois_spec(code).is_some() {
+        return true;
+    }
+    if keeps_list_mode_numeric(code) {
         return true;
     }
     matches!(command.as_bytes()[0], b'4' | b'5')

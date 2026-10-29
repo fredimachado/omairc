@@ -76,6 +76,30 @@ func (l CtcpReplyLine) Nick() string { return l.nick }
 // Command returns the uppercased CTCP command.
 func (l CtcpReplyLine) Command() string { return l.command }
 
+// ListModeLine is the ban/quiet list detail a server Status entry carries. It
+// mirrors client/src/irc/statusentry/listmode.rs.
+type ListModeLine struct {
+	channel  string
+	text     string
+	kind     ListMaskKind
+	progress WhoisProgress
+}
+
+// Channel returns the channel the list line describes.
+func (l ListModeLine) Channel() string { return l.channel }
+
+// Text returns the formatted detail.
+func (l ListModeLine) Text() string { return l.text }
+
+// Kind returns ban or quiet.
+func (l ListModeLine) Kind() ListMaskKind { return l.kind }
+
+// Progress returns the sequence position.
+func (l ListModeLine) Progress() WhoisProgress { return l.progress }
+
+// Terminal reports whether the line ends the list exchange.
+func (l ListModeLine) Terminal() bool { return l.progress != WhoisDetail }
+
 // StatusEntry is one classified Status line. It mirrors IrcStatusEntry: the
 // session emits the raw line, and the entry carries the redacted text.
 // Timestamps are clock-free. The C++ stamps QDateTime::currentDateTimeUtc
@@ -91,6 +115,7 @@ type StatusEntry struct {
 	requestLabel string
 	text         string
 	whoisLine    *WhoisLine
+	listModeLine *ListModeLine
 	ctcpReply    *CtcpReplyLine
 }
 
@@ -142,6 +167,9 @@ func (e StatusEntry) Text() string { return e.text }
 
 // WhoisLine returns the WHOIS detail, or nil.
 func (e StatusEntry) WhoisLine() *WhoisLine { return e.whoisLine }
+
+// ListModeLine returns the ban/quiet list detail, or nil.
+func (e StatusEntry) ListModeLine() *ListModeLine { return e.listModeLine }
 
 // CtcpReplyLine returns the CTCP reply metadata, or nil.
 func (e StatusEntry) CtcpReplyLine() *CtcpReplyLine { return e.ctcpReply }
@@ -857,7 +885,79 @@ func statusKeepsIncomingNumeric(command string) bool {
 	if statusWhoisSpecFor(code) != nil {
 		return true
 	}
+	if statusKeepsListModeNumeric(code) {
+		return true
+	}
 	return command[0] == '4' || command[0] == '5'
+}
+
+func statusKeepsListModeNumeric(code int) bool {
+	switch code {
+	case 367, 368, 728, 729:
+		return true
+	}
+	return false
+}
+
+func statusFormatListMode(message Message) (label string, line ListModeLine, ok bool) {
+	command := statusCommandOf(message)
+	if len(command) != 3 {
+		return "", ListModeLine{}, false
+	}
+	code, err := strconv.Atoi(command)
+	if err != nil {
+		return "", ListModeLine{}, false
+	}
+	parameters := statusMessageParameters(message)
+	at := func(index int) string { return statusParameterAt(parameters, index) }
+	switch code {
+	case 367:
+		if len(parameters) < 3 {
+			return "", ListModeLine{}, false
+		}
+		channel := at(1)
+		mask := at(2)
+		text := "ban " + mask + " on " + channel
+		if len(parameters) >= 4 && at(3) != "" {
+			text += " by " + at(3)
+		}
+		return "banlist", ListModeLine{channel: channel, text: text, kind: ListMaskBan, progress: WhoisDetail}, true
+	case 368:
+		if len(parameters) < 2 {
+			return "", ListModeLine{}, false
+		}
+		channel := at(1)
+		return "banlist", ListModeLine{
+			channel:  channel,
+			text:     "End of ban list for " + channel,
+			kind:     ListMaskBan,
+			progress: WhoisTerminal,
+		}, true
+	case 728:
+		if len(parameters) < 4 {
+			return "", ListModeLine{}, false
+		}
+		channel := at(1)
+		mask := at(3)
+		text := "quiet " + mask + " on " + channel
+		if len(parameters) >= 5 && at(4) != "" {
+			text += " by " + at(4)
+		}
+		return "quietlist", ListModeLine{channel: channel, text: text, kind: ListMaskQuiet, progress: WhoisDetail}, true
+	case 729:
+		if len(parameters) < 2 {
+			return "", ListModeLine{}, false
+		}
+		channel := at(1)
+		return "quietlist", ListModeLine{
+			channel:  channel,
+			text:     "End of quiet list for " + channel,
+			kind:     ListMaskQuiet,
+			progress: WhoisTerminal,
+		}, true
+	default:
+		return "", ListModeLine{}, false
+	}
 }
 
 func statusKeepsIncomingPrivmsg(message Message, currentNick, channelTypes string) bool {
@@ -1023,6 +1123,14 @@ func statusBuildDefaultIncoming(networkID string, message Message, channelTypes 
 		}
 		return newStatusEntry(networkID, timestamp, LogSourceServer,
 			statusSeverityFor(command), formatted.label, formatted.text, line, nil)
+	}
+
+	if label, listLine, ok := statusFormatListMode(message); ok {
+		entry := newStatusEntry(networkID, timestamp, LogSourceServer,
+			statusSeverityFor(command), label, listLine.text, nil, nil)
+		copy := listLine
+		entry.listModeLine = &copy
+		return entry
 	}
 
 	// Redaction happens at classification time: the stored entry text is the
