@@ -36,7 +36,8 @@ func PlainIrcText(text string) string {
 }
 
 // stripIrcColors removes mIRC color and hex-color codes, mirroring
-// IrcTextFormatter::stripIrcColors.
+// IrcTextFormatter::stripIrcColors. Consumption matches StyledSegments via
+// the shared consumeMircColor / consumeHexColor helpers.
 func stripIrcColors(text string) string {
 	var out strings.Builder
 	out.Grow(len(text))
