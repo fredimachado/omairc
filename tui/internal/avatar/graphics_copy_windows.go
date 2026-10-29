@@ -36,18 +36,8 @@ func peekNamedPipeAvail(h windows.Handle) (uint32, error) {
 	return avail, nil
 }
 
-// waitCopyStop waits for the copier, but bounds the wait. Console CancelIoEx is
-// best-effort; a hung Read must not block process teardown.
 func waitCopyStop(wg *sync.WaitGroup) {
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(250 * time.Millisecond):
-	}
+	wg.Wait()
 }
 
 // copyProbeInput reads the terminal, drops a late probe reply, and writes the
@@ -55,7 +45,8 @@ func waitCopyStop(wg *sync.WaitGroup) {
 // SetReadDeadline and do not wake WaitForMultipleObjects once Go owns them, so
 // this path peeks for input and watches wake with a normal Read. Closing the
 // wake write end returns without a src.Read, so a post-Close keystroke stays
-// on src.
+// on src. Production stdin after term.IsTerminal is a console handle; that
+// path uses wait-for-ready instead of a naked blocking Read.
 func copyProbeInput(src, dst, wake *os.File, late *lateFilter) {
 	defer dst.Close()
 	defer wake.Close()
@@ -110,29 +101,39 @@ func copyProbeInput(src, dst, wake *os.File, late *lateFilter) {
 	}
 }
 
-// copyProbeInputConsole is the non-pipe stdin path. CancelIoEx is best-effort;
-// Close still closes wake so a later Read can observe stop.
+// copyProbeInputConsole is the production Windows stdin path. Console handles
+// are waitable, so Close signals a stop event and WaitForMultipleObjects
+// returns before any ReadFile. CancelIoEx is not required.
 func copyProbeInputConsole(src, dst, wake *os.File, late *lateFilter) {
-	stop := make(chan struct{})
+	stopEvent, err := windows.CreateEvent(nil, 1, 0, nil)
+	if err != nil {
+		return
+	}
+	defer windows.CloseHandle(stopEvent)
+
 	go func() {
 		var b [1]byte
 		_, _ = wake.Read(b[:])
-		_ = windows.CancelIoEx(windows.Handle(src.Fd()), nil)
-		close(stop)
+		_ = windows.SetEvent(stopEvent)
 	}()
+
+	srcH := windows.Handle(src.Fd())
 	tmp := make([]byte, 256)
+	handles := []windows.Handle{srcH, stopEvent}
 	for {
-		select {
-		case <-stop:
+		ev, err := windows.WaitForMultipleObjects(handles, false, windows.INFINITE)
+		if err != nil {
 			return
-		default:
 		}
-		n, err := src.Read(tmp)
-		select {
-		case <-stop:
+		if ev != windows.WAIT_OBJECT_0 {
 			return
-		default:
 		}
+		// Close wins over a racing key so the post-Close stroke stays on src.
+		if st, err := windows.WaitForSingleObject(stopEvent, 0); err == nil && st == windows.WAIT_OBJECT_0 {
+			return
+		}
+		var n uint32
+		err = windows.ReadFile(srcH, tmp, &n, nil)
 		if n > 0 {
 			if werr := filterCopyChunk(dst, late, tmp[:n]); werr != nil {
 				return
