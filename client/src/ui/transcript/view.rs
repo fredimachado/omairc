@@ -21,6 +21,7 @@ use crate::model::typing_tail::typing_continues;
 use crate::model::unread::{self, UnseenLanding};
 use crate::model::transcript::minute_of;
 use crate::model::{mix_colors, row_from_message, Pos, Row, Style, Transcript};
+use chrono::NaiveDate;
 use crate::ui::format_ui::IrcColors;
 use crate::ui::message_row::{
     render_transcript_row, RowCallbacks, RowContext, RowLayoutMap, RowPeers,
@@ -167,7 +168,8 @@ impl TranscriptView {
     /// their membership folding already: the reducer applies `/pref joins` as lines
     /// arrive. A DM whose peer is typing gets the typing dots after its last line.
     pub fn set_conversation(&mut self, lines: ConversationLines) {
-        self.model.set_conversation(lines.messages, lines.mark);
+        self.model
+            .set_conversation(lines.messages, lines.mark, lines.today);
         self.peers.facts = lines.facts;
         self.self_nick = lines.self_nick.to_owned();
         self.features = lines.features.clone();
@@ -191,7 +193,7 @@ impl TranscriptView {
         self.features = lines.features.clone();
         self.typing_peer = lines.typing_peer;
         self.model
-            .replace_conversation(lines.messages, lines.mark);
+            .replace_conversation(lines.messages, lines.mark, lines.today);
         let new_rows = self.model.rows().len();
         unread::note_row_growth(previous_rows, new_rows, was_at_end, &mut self.first_unseen);
         if unread::detached_arrival(previous_rows, new_rows, was_at_end) {
@@ -869,8 +871,8 @@ fn link_click(row: &Row, range: &Range<usize>, features: &IrcServerFeatures) -> 
 }
 
 /// What a conversation's transcript is built from: its lines, the "New messages" mark
-/// the nicks' facts, the local nick, the network's features, and the DM peer whose typing
-/// dots end the list.
+/// the nicks' facts, the local nick, the network's features, the DM peer whose typing
+/// dots end the list, and the local calendar day that shapes Today/Yesterday captions.
 pub struct ConversationLines<'a> {
     pub messages: &'a [Message],
     pub mark: Option<i64>,
@@ -878,6 +880,7 @@ pub struct ConversationLines<'a> {
     pub self_nick: &'a str,
     pub features: &'a IrcServerFeatures,
     pub typing_peer: Option<String>,
+    pub today: NaiveDate,
 }
 
 #[cfg(test)]
@@ -925,6 +928,7 @@ mod tests {
             self_nick: "me",
             features: &features,
             typing_peer: None,
+            today: chrono::Local::now().date_naive(),
         };
         transcript.update(cx, |view, cx| {
             view.set_conversation(lines);

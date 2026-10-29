@@ -233,16 +233,23 @@ impl Transcript {
     }
 
     /// Replaces the rows with a conversation's lines and its "New messages" mark.
-    pub fn set_conversation(&mut self, messages: &[Message], mark: Option<i64>) {
-        self.set_rows(rows_from_messages(messages, mark));
+    /// `today` is the local calendar day that shapes Today/Yesterday captions.
+    pub fn set_conversation(&mut self, messages: &[Message], mark: Option<i64>, today: NaiveDate) {
+        self.set_rows(rows_from_messages_on(messages, mark, today));
     }
 
     /// Replaces a conversation's rows while keeping scroll and selection when they
     /// still apply. Used when the same buffer grows on the wire.
-    pub fn replace_conversation(&mut self, messages: &[Message], mark: Option<i64>) {
+    /// `today` is the local calendar day that shapes Today/Yesterday captions.
+    pub fn replace_conversation(
+        &mut self,
+        messages: &[Message],
+        mark: Option<i64>,
+        today: NaiveDate,
+    ) {
         let scroll = self.scroll;
         let selection = self.selection;
-        let rows = rows_from_messages(messages, mark);
+        let rows = rows_from_messages_on(messages, mark, today);
         self.rows = rows;
         self.measured = vec![false; self.rows.len()];
         self.heights = Fenwick::new(self.rows.len());
@@ -1152,6 +1159,70 @@ mod tests {
     }
 
     #[test]
+    fn day_separator_captions_update_when_today_advances() {
+        let message_day = october(21);
+        let messages = vec![line(
+            MessageKind::Message,
+            "nick",
+            "older",
+            local_on(21, 12, 0),
+            1,
+        )];
+        let rows_same_day = rows_from_messages_on(&messages, None, message_day);
+        assert_eq!(rows_same_day.len(), 1);
+        assert!(rows_same_day
+            .iter()
+            .all(|row| row.kind != RowKind::DaySeparator));
+
+        let rows_overnight = rows_from_messages_on(&messages, None, october(22));
+        assert_eq!(rows_overnight.len(), 2);
+        assert_eq!(
+            rows_overnight[0].separator_text.as_deref(),
+            Some("Yesterday")
+        );
+
+        let rows_later = rows_from_messages_on(&messages, None, october(23));
+        assert_eq!(
+            rows_later[0].separator_text.as_deref(),
+            Some(short_date(message_day).as_str())
+        );
+
+        let two_days = vec![
+            line(
+                MessageKind::Message,
+                "nick",
+                "older",
+                local_on(21, 12, 0),
+                1,
+            ),
+            line(
+                MessageKind::Message,
+                "nick",
+                "today line",
+                local_on(22, 9, 0),
+                2,
+            ),
+        ];
+        let mid_before = rows_from_messages_on(&two_days, None, october(22));
+        let mid_captions: Vec<&str> = mid_before
+            .iter()
+            .filter(|row| row.kind == RowKind::DaySeparator)
+            .filter_map(|row| row.separator_text.as_deref())
+            .collect();
+        assert_eq!(mid_captions, ["Yesterday", "Today"]);
+        let mid_after = rows_from_messages_on(&two_days, None, october(23));
+        let mid_captions: Vec<&str> = mid_after
+            .iter()
+            .filter(|row| row.kind == RowKind::DaySeparator)
+            .filter_map(|row| row.separator_text.as_deref())
+            .collect();
+        assert_eq!(
+            mid_captions,
+            [short_date(october(21)).as_str(), "Yesterday"]
+        );
+    }
+
+    #[test]
     fn only_visible_to_you_carried_onto_row() {
         let mut private = chat("nick", "psst", 9, 0, 1);
         private.only_visible_to_you = true;
@@ -1186,7 +1257,7 @@ mod tests {
         let mut t = Transcript::new(72);
         t.set_rows(sample_rows());
         select_everything(&mut t);
-        t.set_conversation(&[chat("anna", "fresh", 9, 50, 1)], None);
+        t.set_conversation(&[chat("anna", "fresh", 9, 50, 1)], None, today());
         assert!(t.selection().is_none());
         assert!(t.rows().iter().any(|row| row.body.plain == "fresh"));
         assert!(!t.rows().iter().any(|row| row.body.plain == "hello"));
@@ -1195,7 +1266,11 @@ mod tests {
     #[test]
     fn replace_conversation_keeps_selection_and_scroll() {
         let mut t = Transcript::new(72);
-        t.set_conversation(&[chat("anna", "one", 9, 50, 1), chat("bob", "two", 9, 51, 2)], None);
+        t.set_conversation(
+            &[chat("anna", "one", 9, 50, 1), chat("bob", "two", 9, 51, 2)],
+            None,
+            today(),
+        );
         t.begin(Pos { row: 0, offset: 0 });
         t.set_scroll_anchor(0, 4);
         t.replace_conversation(
@@ -1205,6 +1280,7 @@ mod tests {
                 chat("carl", "three", 9, 52, 3),
             ],
             None,
+            today(),
         );
         assert!(t.selection().is_some());
         assert_eq!(t.scroll().row, 0);

@@ -36,6 +36,7 @@ pub mod theme;
 pub mod title;
 pub mod topic_line;
 pub mod transcript;
+pub mod transcript_calendar;
 pub mod typing_tail;
 pub mod unread;
 pub mod update_check;

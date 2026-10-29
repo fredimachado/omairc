@@ -42,6 +42,9 @@ use crate::desktop::notifier::{platform_notifier, Notifier};
 use crate::model::title::{conversation_title, window_title, TitleMark, TitleView};
 use crate::model::update_check::UpdateCheck;
 use crate::model::ConversationRef;
+use crate::model::transcript_calendar::{
+    advance_transcript_calendar, TranscriptCalendarSnapshot,
+};
 use crate::net::{NetHub, NetTransports};
 use crate::session::clock::RealClock;
 use crate::ui::center::header::{
@@ -134,6 +137,8 @@ pub struct Shell {
     notifier: Box<dyn Notifier>,
     /// Host network reachability (NetworkManager on Linux). Live launches only.
     network_reachability: Option<async_channel::Receiver<()>>,
+    /// Last seen local date and UTC offset used for transcript day rules.
+    transcript_calendar: TranscriptCalendarSnapshot,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -279,6 +284,7 @@ impl Shell {
             update,
             notifier,
             network_reachability,
+            transcript_calendar: TranscriptCalendarSnapshot::capture_now(),
             _subscriptions: [transcript_events, transcript_scrolls, composer_events, update_observe]
                 .into_iter()
                 .chain(connect_edits)
@@ -323,7 +329,20 @@ impl Shell {
             }
         }
         self.controller.tick();
+        self.tick_transcript_calendar(TranscriptCalendarSnapshot::capture_now(), cx);
         self.drain_notifications(cx);
+    }
+
+    /// Refreshes the open conversation when the local calendar day or UTC offset changes.
+    pub(crate) fn tick_transcript_calendar(
+        &mut self,
+        now: TranscriptCalendarSnapshot,
+        cx: &mut Context<Self>,
+    ) {
+        if advance_transcript_calendar(&mut self.transcript_calendar, now) && !self.status_showing()
+        {
+            self.rebuild_view_keeping_place(cx);
+        }
     }
 }
 
@@ -899,3 +918,17 @@ fn nick_handler(entity: Entity<Shell>) -> Handler<String> {
 
 /// The interval of the controller's timers (autoaway, typing, reconnect), in milliseconds.
 pub const CONTROLLER_TICK: Duration = Duration::from_millis(100);
+
+#[cfg(test)]
+impl Shell {
+    pub(crate) fn set_transcript_calendar_for_test(
+        &mut self,
+        snapshot: TranscriptCalendarSnapshot,
+    ) {
+        self.transcript_calendar = snapshot;
+    }
+
+    pub(crate) fn transcript_calendar_for_test(&self) -> TranscriptCalendarSnapshot {
+        self.transcript_calendar
+    }
+}
