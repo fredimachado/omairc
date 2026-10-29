@@ -61,7 +61,7 @@ func TestConnectSheetKeepsItsObservables(t *testing.T) {
 	view = ansiPattern.ReplaceAllString(m.View().Content, "")
 	for _, wanted := range []string{
 		"Reopen direct messages on startup", "Show peer avatars", "Open conversations at unread",
-		"Color palette", "classic",
+		"Show mIRC colors", "Color palette", "classic",
 	} {
 		if !strings.Contains(view, wanted) {
 			t.Fatalf("Preferences tab missing %q:\n%s", wanted, view)
