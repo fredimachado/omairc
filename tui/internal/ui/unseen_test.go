@@ -452,6 +452,37 @@ func detachAndLandOnLongUnseen(t *testing.T) (*Model, int) {
 	return m, continuation
 }
 
+// TestPageDownPastResumeKeepsUnseenMarker proves a manual Page Down past the
+// catch-up row keeps ↓ new while unseen rows remain. Alt+U alone is not enough:
+// the arm check has to treat a continuation further down than the resume row as
+// still armed.
+func TestPageDownPastResumeKeepsUnseenMarker(t *testing.T) {
+	m, continuation := detachAndLandOnLongUnseen(t)
+	resume := m.unseenResumeRow
+	if resume != continuation {
+		t.Fatalf("resume = %d, want %d", resume, continuation)
+	}
+
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+	if m.transcriptFollowEnd {
+		t.Fatal("Page Down must stay detached while unseen rows remain")
+	}
+	below := m.firstRowBelowViewport()
+	if below < 0 {
+		t.Fatal("Page Down must leave a row that is not fully visible")
+	}
+	if below <= resume {
+		t.Fatalf("first row below = %d, want it past the resume row %d", below, resume)
+	}
+	if m.unseenResumeRow != resume {
+		t.Fatalf("resume = %d, want it kept at %d after Page Down", m.unseenResumeRow, resume)
+	}
+	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
+	if !m.jumpArmed() || !strings.Contains(plain, "↓ new") {
+		t.Fatalf("↓ new must stay after Page Down past the resume row:\n%s", plain)
+	}
+}
+
 // TestAltUAfterCtrlHomeReturnsToTheUnseenRun proves Ctrl+Home hides ↓ new over
 // history already read and the next Alt+U returns to the unseen run instead of
 // walking that history from the top.

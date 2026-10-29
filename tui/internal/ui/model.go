@@ -196,11 +196,12 @@ type Model struct {
 	firstUnseenRow  int
 	transcriptCount int
 	// unseenResumeRow is the message row where an Alt+U catch-up continues, or
-	// -1 when no catch-up is active. ↓ new is armed only while that row is the
-	// first one not fully on screen. Scrolling into history already read keeps
-	// the index and hides the marker; the next Alt+U returns to the row.
-	// unseenResumeSequenceAtAnchor shifts it across a prepend. Following the
-	// end, or switching buffers, clears both.
+	// -1 when no catch-up is active. ↓ new is armed while the first row that is
+	// not fully on screen is at or past that catch-up row. Scrolling into
+	// history already read keeps the index and hides the marker; the next
+	// Alt+U returns to the row. A manual Page Down past the row keeps ↓ new
+	// while unseen remain. unseenResumeSequenceAtAnchor shifts it across a
+	// prepend. Following the end, or switching buffers, clears both.
 	unseenResumeRow              int
 	unseenResumeSequenceAtAnchor int64
 	// withinResumeArmCheck stops the catch-up arming check from recursing.
