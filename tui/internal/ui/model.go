@@ -758,7 +758,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // handleKey routes one key press to the open modal, overlay, find session, or
-// the chord table. Ctrl+Q is the only quit chord; Ctrl+C copies.
+// the chord table. Ctrl+Q is the only quit chord; Ctrl+Z suspends; Ctrl+C copies.
 func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// Keystroke, not String: kitty and ConPTY can populate Text on ctrl+printable
 	// chords, and String returns "." for ctrl+. instead of "ctrl+.".
@@ -766,6 +766,12 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if key == "ctrl+q" {
 		m.rememberOpenTranscript()
 		return m, m.quitCommand()
+	}
+	// Raw mode clears ISIG, so Ctrl+Z arrives as a key (0x1a). Bubble Tea's
+	// Suspend releases the tty, stops the process group, and restores raw
+	// mode plus a redraw on SIGCONT. Unsupported platforms no-op the message.
+	if key == "ctrl+z" {
+		return m, tea.Suspend
 	}
 	// About is an informational modal that can sit on top of the Connect
 	// sheet. While it is open every other chord is blocked; Escape, Enter, or

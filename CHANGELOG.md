@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The terminal client suspends on Ctrl+Z and restores raw mode with a redraw
+  after `fg` (and after an external SIGTSTP). Windows has no job-control
+  suspend path; Ctrl+Z is a no-op there.
 - A conversation left open overnight keeps Today and Yesterday day rules
   current after local midnight and after the clock zone changes.
 

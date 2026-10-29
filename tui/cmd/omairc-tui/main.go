@@ -171,7 +171,21 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if input != nil {
 		opts = append(opts, tea.WithInput(input))
 	}
+	// External SIGTSTP on the normal path (no probe replay) must release and
+	// restore through Bubble Tea. The avatar holdTerminal watcher already
+	// covers tea.WithInput(replay); do not register a second handler there.
+	var stops *stopWatcher
+	if input == nil {
+		stopDone := make(chan struct{})
+		defer close(stopDone)
+		stops = newStopWatcher(stopDone)
+		opts = append(opts, tea.WithFilter(suspendFilter(stops)))
+	}
 	p := tea.NewProgram(model, opts...)
+	if stops != nil {
+		stops.bind(p)
+		go stops.run()
+	}
 
 	// SIGHUP's default action kills the process before deferred cleanup runs.
 	// Quit the program instead so Run returns and the delete escapes are written.
