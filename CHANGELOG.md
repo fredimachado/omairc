@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The terminal client suspends on Ctrl+Z and restores raw mode with a redraw
   after `fg` (and after an external SIGTSTP). Windows has no job-control
   suspend path; Ctrl+Z is a no-op there.
+- TUI: after a Kitty graphics probe timeout, Esc followed by `_` or `P` no
+  longer holds later keys or re-sends Esc. Only `_G` and `P>|` start a late
+  reply drop. Closing the probe input reader stops the stdin copier so the
+  next keystroke is not eaten. A second SIGTSTP right after continue can no
+  longer stop the process while the tty is still raw.
 - A conversation left open overnight keeps Today and Yesterday day rules
   current after local midnight and after the clock zone changes.
 
