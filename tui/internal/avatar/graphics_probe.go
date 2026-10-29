@@ -149,7 +149,7 @@ func (s *probeScan) finish(timedOut bool) probeResult {
 }
 
 func isResponsePrefix(b []byte) bool {
-	return bytes.HasPrefix(b, []byte("\x1b_")) || bytes.HasPrefix(b, []byte("\x1bP"))
+	return bytes.HasPrefix(b, []byte("\x1b_G")) || bytes.HasPrefix(b, []byte("\x1bP>|"))
 }
 
 // stEnd is the length of a DCS or APC through its ST (ESC \), or 0 while the
@@ -253,9 +253,9 @@ func (r probeResult) wrap(in *os.File) io.Reader {
 	}
 	late := &lateFilter{}
 	if r.dropLate {
-		late.dropAPC = !r.sawAPC && !bytes.HasPrefix(r.partial, []byte("\x1b_"))
+		late.dropAPC = !r.sawAPC && !bytes.HasPrefix(r.partial, []byte("\x1b_G"))
 		late.dropDA1 = true
-		late.dropXT = !r.sawXT && !bytes.HasPrefix(r.partial, []byte("\x1bP"))
+		late.dropXT = !r.sawXT && !bytes.HasPrefix(r.partial, []byte("\x1bP>|"))
 	}
 	if len(r.partial) > 0 {
 		late.seed(r.partial)
@@ -267,8 +267,19 @@ func (r probeResult) wrap(in *os.File) io.Reader {
 		_ = pw.Close()
 		return nil
 	}
-	go copyProbeInput(in, pw, late)
-	return &bufferedProbeInput{f: pr, src: in}
+	wakeR, wakeW, err := os.Pipe()
+	if err != nil {
+		_ = pr.Close()
+		_ = pw.Close()
+		return nil
+	}
+	held := &bufferedProbeInput{f: pr, src: in, wake: wakeW}
+	held.copyWG.Add(1)
+	go func() {
+		defer held.copyWG.Done()
+		copyProbeInput(in, pw, wakeR, late)
+	}()
+	return held
 }
 
 func writeAll(w io.Writer, p []byte) error {
@@ -287,23 +298,11 @@ func writeAll(w io.Writer, p []byte) error {
 	return nil
 }
 
-// copyProbeInput reads the terminal, drops a late probe reply, and writes the
-// kept bytes to the pipe Bubble Tea reads. os.Pipe is the Windows-safe path.
-func copyProbeInput(src, dst *os.File, late *lateFilter) {
-	defer dst.Close()
-	tmp := make([]byte, 256)
-	for {
-		n, err := src.Read(tmp)
-		if n > 0 {
-			kept := late.push(tmp[:n])
-			if err := writeAll(dst, kept); err != nil {
-				return
-			}
-		}
-		if err != nil {
-			return
-		}
+func filterCopyChunk(dst *os.File, late *lateFilter, chunk []byte) error {
+	if len(chunk) == 0 {
+		return nil
 	}
+	return writeAll(dst, late.push(chunk))
 }
 
 // bufferedProbeInput is the pipe end that carries replayed keys and filtered
@@ -315,6 +314,8 @@ func copyProbeInput(src, dst *os.File, late *lateFilter) {
 type bufferedProbeInput struct {
 	f        *os.File
 	src      *os.File
+	wake     *os.File
+	copyWG   sync.WaitGroup
 	once     sync.Once
 	mu       sync.Mutex
 	fd       uintptr
@@ -335,6 +336,11 @@ func (b *bufferedProbeInput) Name() string { return b.f.Name() }
 func (b *bufferedProbeInput) Close() error {
 	b.once.Do(func() {
 		b.finishTerminal()
+		if b.wake != nil {
+			_ = b.wake.Close()
+			b.wake = nil
+		}
+		waitCopyStop(&b.copyWG)
 		_ = b.f.Close()
 	})
 	return nil
@@ -368,28 +374,34 @@ const lateHoldCap = 64
 // lateFilter drops one graphics APC, one DA1 (`ESC [ ?` … `c`), and one
 // XTVERSION that arrive after a probe timeout. A lone ESC is returned in the
 // read that contained it. If that ESC was the first byte of a reply, the next
-// read's `[?...c`, `P>|...`, or `_G...` continuation is dropped.
+// read's `[?...c`, `P>|...`, or `_G...` continuation is dropped. A bare `_`
+// or `P` after Esc is ordinary input: holding on those alone would later
+// re-send the already-delivered Esc when the unfinished hold flushed.
 type lateFilter struct {
-	dropAPC     bool
-	dropDA1     bool
-	dropXT      bool
-	state       int
-	buf         []byte
-	sawEsc      bool
-	heldBracket bool
+	dropAPC        bool
+	dropDA1        bool
+	dropXT         bool
+	state          int
+	buf            []byte
+	sawEsc         bool
+	heldBracket    bool
+	heldUnderscore bool
+	heldP          bool
+	heldPGT        bool
 }
 
 func (f *lateFilter) armed() bool {
-	return f.dropAPC || f.dropDA1 || f.dropXT || f.state != lateGround
+	return f.dropAPC || f.dropDA1 || f.dropXT || f.state != lateGround ||
+		f.heldBracket || f.heldUnderscore || f.heldP || f.heldPGT
 }
 
 func (f *lateFilter) seed(partial []byte) {
 	f.buf = append([]byte(nil), partial...)
 	switch {
-	case bytes.HasPrefix(partial, []byte("\x1b_")):
+	case bytes.HasPrefix(partial, []byte("\x1b_G")):
 		f.state = lateAPC
 		f.dropAPC = false
-	case bytes.HasPrefix(partial, []byte("\x1bP")):
+	case bytes.HasPrefix(partial, []byte("\x1bP>|")):
 		f.state = lateDCS
 		f.dropXT = false
 	default:
@@ -402,7 +414,8 @@ func (f *lateFilter) push(in []byte) []byte {
 	if len(in) == 0 {
 		return in
 	}
-	if f.state == lateGround && !f.dropAPC && !f.dropDA1 && !f.dropXT && !f.sawEsc && !f.heldBracket {
+	if f.state == lateGround && !f.dropAPC && !f.dropDA1 && !f.dropXT && !f.sawEsc &&
+		!f.heldBracket && !f.heldUnderscore && !f.heldP && !f.heldPGT {
 		return in
 	}
 	out := make([]byte, 0, len(in))
@@ -412,6 +425,15 @@ func (f *lateFilter) push(in []byte) []byte {
 	}
 	if f.state == lateGround && f.heldBracket && len(in) > 0 {
 		in = f.takeHeldBracket(in, &out)
+	}
+	if f.state == lateGround && f.heldUnderscore && len(in) > 0 {
+		in = f.takeHeldUnderscore(in, &out)
+	}
+	if f.state == lateGround && f.heldP && len(in) > 0 {
+		in = f.takeHeldP(in, &out)
+	}
+	if f.state == lateGround && f.heldPGT && len(in) > 0 {
+		in = f.takeHeldPGT(in, &out)
 	}
 	for i := 0; i < len(in); i++ {
 		b := in[i]
@@ -425,14 +447,26 @@ func (f *lateFilter) push(in []byte) []byte {
 			}
 			next := in[i+1]
 			switch {
-			case next == '_' && f.dropAPC:
-				f.buf = append(f.buf[:0], b, next)
+			case next == '_' && f.dropAPC && i+2 < len(in) && in[i+2] == 'G':
+				f.buf = append(f.buf[:0], 0x1b, '_', 'G')
 				f.state = lateAPC
+				i += 2
+			case next == '_' && f.dropAPC && i+2 >= len(in):
+				out = append(out, 0x1b)
+				f.heldUnderscore = true
 				i++
-			case next == 'P' && f.dropXT:
-				f.buf = append(f.buf[:0], b, next)
+			case next == 'P' && f.dropXT && i+3 < len(in) && in[i+2] == '>' && in[i+3] == '|':
+				f.buf = append(f.buf[:0], 0x1b, 'P', '>', '|')
 				f.state = lateDCS
+				i += 3
+			case next == 'P' && f.dropXT && i+2 >= len(in):
+				out = append(out, 0x1b)
+				f.heldP = true
 				i++
+			case next == 'P' && f.dropXT && i+2 < len(in) && in[i+2] == '>' && i+3 >= len(in):
+				out = append(out, 0x1b)
+				f.heldPGT = true
+				i += 2
 			case next == '[' && f.dropDA1 && i+2 < len(in) && in[i+2] == '?':
 				f.buf = append(f.buf[:0], 0x1b, '[', '?')
 				f.state = lateCSI
@@ -480,7 +514,7 @@ func (f *lateFilter) push(in []byte) []byte {
 			f.flushHeld(&out)
 		}
 	}
-	if f.heldBracket {
+	if f.heldBracket || f.heldUnderscore || f.heldP || f.heldPGT {
 		f.sawEsc = false
 	} else if f.state == lateGround && len(out) > 0 {
 		f.sawEsc = out[len(out)-1] == 0x1b
@@ -492,7 +526,8 @@ func (f *lateFilter) push(in []byte) []byte {
 
 // takeEscContinuation drops the rest of a reply whose ESC was delivered at
 // the end of the previous read. `[?...c`, `P>|...`, and `_G...` match.
-// Anything else is returned for normal delivery.
+// Anything else is returned for normal delivery. The held buf omits the
+// already-delivered ESC so a later flush cannot re-send it.
 func (f *lateFilter) takeEscContinuation(in []byte) []byte {
 	if len(in) == 0 {
 		return in
@@ -502,16 +537,37 @@ func (f *lateFilter) takeEscContinuation(in []byte) []byte {
 		if !f.dropAPC {
 			return in
 		}
-		f.buf = append(f.buf[:0], 0x1b, '_')
-		f.state = lateAPC
-		return in[1:]
+		if len(in) == 1 {
+			f.heldUnderscore = true
+			return nil
+		}
+		if in[1] == 'G' {
+			f.buf = append(f.buf[:0], '_', 'G')
+			f.state = lateAPC
+			return in[2:]
+		}
+		return in
 	case 'P':
 		if !f.dropXT {
 			return in
 		}
-		f.buf = append(f.buf[:0], 0x1b, 'P')
-		f.state = lateDCS
-		return in[1:]
+		if len(in) == 1 {
+			f.heldP = true
+			return nil
+		}
+		if in[1] != '>' {
+			return in
+		}
+		if len(in) == 2 {
+			f.heldPGT = true
+			return nil
+		}
+		if in[2] == '|' {
+			f.buf = append(f.buf[:0], 'P', '>', '|')
+			f.state = lateDCS
+			return in[3:]
+		}
+		return in
 	case '[':
 		if !f.dropDA1 {
 			return in
@@ -521,7 +577,7 @@ func (f *lateFilter) takeEscContinuation(in []byte) []byte {
 			return nil
 		}
 		if in[1] == '?' {
-			f.buf = append(f.buf[:0], 0x1b, '[', '?')
+			f.buf = append(f.buf[:0], '[', '?')
 			f.state = lateCSI
 			return in[2:]
 		}
@@ -536,11 +592,59 @@ func (f *lateFilter) takeEscContinuation(in []byte) []byte {
 func (f *lateFilter) takeHeldBracket(in []byte, out *[]byte) []byte {
 	f.heldBracket = false
 	if len(in) > 0 && in[0] == '?' && f.dropDA1 {
-		f.buf = append(f.buf[:0], 0x1b, '[', '?')
+		f.buf = append(f.buf[:0], '[', '?')
 		f.state = lateCSI
 		return in[1:]
 	}
 	*out = append(*out, '[')
+	return in
+}
+
+// takeHeldUnderscore finishes a `_` that followed a delivered ESC. `G` starts
+// a graphics APC hold without re-adding Esc. Anything else emits the
+// underscore as input.
+func (f *lateFilter) takeHeldUnderscore(in []byte, out *[]byte) []byte {
+	f.heldUnderscore = false
+	if len(in) > 0 && in[0] == 'G' && f.dropAPC {
+		f.buf = append(f.buf[:0], '_', 'G')
+		f.state = lateAPC
+		return in[1:]
+	}
+	*out = append(*out, '_')
+	return in
+}
+
+// takeHeldP finishes a `P` that followed a delivered ESC. `>` waits for `|`;
+// anything else emits P as input.
+func (f *lateFilter) takeHeldP(in []byte, out *[]byte) []byte {
+	f.heldP = false
+	if len(in) > 0 && in[0] == '>' && f.dropXT {
+		if len(in) == 1 {
+			f.heldPGT = true
+			return nil
+		}
+		if in[1] == '|' {
+			f.buf = append(f.buf[:0], 'P', '>', '|')
+			f.state = lateDCS
+			return in[2:]
+		}
+		*out = append(*out, 'P')
+		return in
+	}
+	*out = append(*out, 'P')
+	return in
+}
+
+// takeHeldPGT finishes a `P>` that followed a delivered ESC. `|` starts an
+// XTVERSION hold without re-adding Esc.
+func (f *lateFilter) takeHeldPGT(in []byte, out *[]byte) []byte {
+	f.heldPGT = false
+	if len(in) > 0 && in[0] == '|' && f.dropXT {
+		f.buf = append(f.buf[:0], 'P', '>', '|')
+		f.state = lateDCS
+		return in[1:]
+	}
+	*out = append(*out, 'P', '>')
 	return in
 }
 

@@ -185,3 +185,56 @@ func TestReplayInputKeepsNewlineMap(t *testing.T) {
 		t.Fatalf("lflag = %#x, want non-canonical and no echo", termios.Lflag)
 	}
 }
+
+// Close must put the real tty back to cooked mode. Bubble Tea never owned
+// raw mode on the replay pipe, so a missing restore leaves the shell without
+// ICANON/ECHO after omairc-tui exits.
+func TestCloseRestoresCookedTermios(t *testing.T) {
+	master, slave, err := pty.Open()
+	if err != nil {
+		t.Skip(err)
+	}
+	defer master.Close()
+	defer slave.Close()
+	go func() { _, _ = io.Copy(io.Discard, master) }()
+
+	before, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.Lflag&unix.ICANON == 0 || before.Lflag&unix.ECHO == 0 {
+		t.Fatalf("pty lflag = %#x, want cooked before probe", before.Lflag)
+	}
+
+	ok, input := ProbeGraphics(slave, slave, 40*time.Millisecond)
+	if ok {
+		t.Fatal("silent pty enabled graphics")
+	}
+	if input == nil {
+		t.Fatal("timeout did not install a replay reader")
+	}
+	closer, okCloser := input.(io.Closer)
+	if !okCloser {
+		t.Fatalf("input = %T, want Closer", input)
+	}
+	held, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if held.Lflag&unix.ICANON != 0 || held.Lflag&unix.ECHO != 0 {
+		t.Fatalf("held lflag = %#x, want raw while wrapper is open", held.Lflag)
+	}
+	if err := closer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.Lflag&unix.ICANON == 0 || restored.Lflag&unix.ECHO == 0 {
+		t.Fatalf("after Close lflag = %#x, want ICANON|ECHO", restored.Lflag)
+	}
+	if restored.Oflag&unix.OPOST == 0 {
+		t.Fatalf("after Close oflag = %#x, want OPOST", restored.Oflag)
+	}
+}
