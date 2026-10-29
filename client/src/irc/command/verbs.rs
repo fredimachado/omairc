@@ -62,6 +62,12 @@ pub enum Verb {
     Voice,
     Devoice,
     Ban,
+    Kickban,
+    Unban,
+    Quiet,
+    Unquiet,
+    Bans,
+    Quiets,
     Ns,
     Cs,
     Znc,
@@ -107,7 +113,7 @@ impl VerbSpec {
 
 /// The ordered catalog. The order is the completion ranking's tie order and the
 /// `/help` order, so rows are never re-sorted. Mirrors `IrcVerbTable::all` and
-pub static VERB_TABLE: [VerbSpec; 47] = [
+pub static VERB_TABLE: [VerbSpec; 53] = [
     VerbSpec {
         verb: Verb::Action,
         name: "me",
@@ -435,6 +441,54 @@ pub static VERB_TABLE: [VerbSpec; 47] = [
         usage: "/ban <mask>",
         scope: VerbScope::Conversation,
         wrong_scope_text: "Ban applies to channels",
+    },
+    VerbSpec {
+        verb: Verb::Kickban,
+        name: "kickban",
+        aliases: &["kb"],
+        usage: "/kickban [channel] <nick> [reason]",
+        scope: VerbScope::Conversation,
+        wrong_scope_text: "Kickban applies to channels",
+    },
+    VerbSpec {
+        verb: Verb::Unban,
+        name: "unban",
+        aliases: &[],
+        usage: "/unban <mask>",
+        scope: VerbScope::Conversation,
+        wrong_scope_text: "Unban applies to channels",
+    },
+    VerbSpec {
+        verb: Verb::Quiet,
+        name: "quiet",
+        aliases: &[],
+        usage: "/quiet <mask>",
+        scope: VerbScope::Conversation,
+        wrong_scope_text: "Quiet applies to channels",
+    },
+    VerbSpec {
+        verb: Verb::Unquiet,
+        name: "unquiet",
+        aliases: &[],
+        usage: "/unquiet <mask>",
+        scope: VerbScope::Conversation,
+        wrong_scope_text: "Unquiet applies to channels",
+    },
+    VerbSpec {
+        verb: Verb::Bans,
+        name: "bans",
+        aliases: &[],
+        usage: "/bans",
+        scope: VerbScope::Conversation,
+        wrong_scope_text: "Bans applies to channels",
+    },
+    VerbSpec {
+        verb: Verb::Quiets,
+        name: "quiets",
+        aliases: &[],
+        usage: "/quiets",
+        scope: VerbScope::Conversation,
+        wrong_scope_text: "Quiets applies to channels",
     },
     VerbSpec {
         verb: Verb::Ns,

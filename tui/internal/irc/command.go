@@ -80,6 +80,12 @@ const (
 	VerbVoice
 	VerbDevoice
 	VerbBan
+	VerbKickban
+	VerbUnban
+	VerbQuiet
+	VerbUnquiet
+	VerbBans
+	VerbQuiets
 	VerbNs
 	VerbCs
 	VerbZnc
@@ -245,6 +251,14 @@ var verbCatalog = []VerbSpec{
 	{VerbDevoice, "devoice", nil, "/devoice <nick>", ScopeConversation,
 		"Devoice applies to channels"},
 	{VerbBan, "ban", nil, "/ban <mask>", ScopeConversation, "Ban applies to channels"},
+	{VerbKickban, "kickban", []string{"kb"}, "/kickban [channel] <nick> [reason]", ScopeConversation,
+		"Kickban applies to channels"},
+	{VerbUnban, "unban", nil, "/unban <mask>", ScopeConversation, "Unban applies to channels"},
+	{VerbQuiet, "quiet", nil, "/quiet <mask>", ScopeConversation, "Quiet applies to channels"},
+	{VerbUnquiet, "unquiet", nil, "/unquiet <mask>", ScopeConversation,
+		"Unquiet applies to channels"},
+	{VerbBans, "bans", nil, "/bans", ScopeConversation, "Bans applies to channels"},
+	{VerbQuiets, "quiets", nil, "/quiets", ScopeConversation, "Quiets applies to channels"},
 	{VerbNs, "ns", nil, "/ns <text>", ScopeEither, ""},
 	{VerbCs, "cs", nil, "/cs <text>", ScopeEither, ""},
 	{VerbZnc, "znc", nil, "/znc <text>", ScopeEither, ""},

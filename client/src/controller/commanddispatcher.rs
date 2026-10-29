@@ -258,6 +258,13 @@ impl Controller {
                 words,
                 surface,
             ),
+            // Slice 1 catalog stubs: real arms land with Session::kickban and list watches.
+            Command::Kickban(_)
+            | Command::Unban(_)
+            | Command::Quiet(_)
+            | Command::Unquiet(_)
+            | Command::Bans(_)
+            | Command::Quiets(_) => CommandOutcome::Unsupported,
             Command::Raw(line) => self.dispatch_raw(line, surface),
             Command::Whois(words) => self.dispatch_whois(words, surface),
             Command::Ping(words) => self.dispatch_ctcp("PING", words, surface),
