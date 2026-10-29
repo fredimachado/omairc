@@ -147,6 +147,36 @@ func TestEmphasizedSegmentsNonASCII(t *testing.T) {
 		[]Segment{{Bold: true, Text: "héllo → 世界"}})
 }
 
+// TestHasIrcColorCodes reports palette and hex introducers, not emphasis.
+func TestHasIrcColorCodes(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"plain", false},
+		{"\x02bold", false},
+		{"\x034red", true},
+		{"\x03", true},
+		{"\x04FF0000x", true},
+		{"\x04", true},
+	}
+	for _, testCase := range cases {
+		if got := HasIrcColorCodes(testCase.in); got != testCase.want {
+			t.Errorf("HasIrcColorCodes(%q) = %v, want %v", testCase.in, got, testCase.want)
+		}
+	}
+}
+
+// TestHasIrcStyle is emphasis or color codes.
+func TestHasIrcStyle(t *testing.T) {
+	if HasIrcStyle("plain") {
+		t.Fatal("plain must not report style")
+	}
+	if !HasIrcStyle("\x02bold") || !HasIrcStyle("\x034red") {
+		t.Fatal("emphasis or color must report style")
+	}
+}
+
 // TestHasIrcEmphasis mirrors IrcTextFormatterTest::hasIrcEmphasisIgnoresStrippedCodes.
 func TestHasIrcEmphasis(t *testing.T) {
 	cases := []struct {

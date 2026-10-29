@@ -12,10 +12,31 @@ import "github.com/fredimachado/omairc/tui/internal/irc"
 // internal/irc.
 type EmphasisRun = irc.Segment
 
+// StyledRun is one fully styled stretch of a transcript body, including
+// optional mIRC foreground and background. It aliases irc.StyledSegment so the
+// shell never imports internal/irc.
+type StyledRun = irc.StyledSegment
+
+// RunColor is a mIRC palette index or RGB triple from a styled run. Presentation
+// RGB for palette indices lives in the UI layer.
+type RunColor = irc.IrcColor
+
 // HasIrcEmphasis reports whether the raw body carries a bold, italic, or
 // underline control code. It mirrors IrcTextFormatter::hasIrcEmphasis.
 func (c *Controller) HasIrcEmphasis(text string) bool {
 	return irc.HasIrcEmphasis(text)
+}
+
+// HasIrcColorCodes reports whether the raw body carries a mIRC palette or hex
+// color control. Color-only bodies need this to enter the styled path when
+// /pref colors is on.
+func (c *Controller) HasIrcColorCodes(text string) bool {
+	return irc.HasIrcColorCodes(text)
+}
+
+// HasIrcStyle reports whether the raw body carries emphasis or color controls.
+func (c *Controller) HasIrcStyle(text string) bool {
+	return irc.HasIrcStyle(text)
 }
 
 // EmphasizedRuns splits a transcript body into styled runs, stripping mIRC
@@ -23,6 +44,14 @@ func (c *Controller) HasIrcEmphasis(text string) bool {
 // IrcTextFormatter::emphasizedIrcText as segments.
 func (c *Controller) EmphasizedRuns(text string) []EmphasisRun {
 	return irc.EmphasizedSegments(text)
+}
+
+// StyledRuns splits a transcript body into fully styled runs, including mIRC
+// FG/BG when present. Concatenating Text equals PlainIrcText. Reverse,
+// monospace, and strikethrough may appear on the style flags but the shell
+// does not paint them.
+func (c *Controller) StyledRuns(text string) []StyledRun {
+	return irc.StyledSegments(text)
 }
 
 // PrefAvatarsEnabled reports the stored /pref avatars toggle. The shell uses it

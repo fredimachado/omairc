@@ -75,6 +75,26 @@ func HasIrcEmphasis(text string) bool {
 	return false
 }
 
+// HasIrcColorCodes reports whether the raw text carries a mIRC palette (\x03)
+// or hex (\x04) color control. It does not require a well-formed payload: the
+// presence of the introducer is enough for the transcript to consider the
+// styled path when colors are enabled.
+func HasIrcColorCodes(text string) bool {
+	for index := 0; index < len(text); index++ {
+		switch text[index] {
+		case plainTextColor, plainTextHexColor:
+			return true
+		}
+	}
+	return false
+}
+
+// HasIrcStyle reports whether the raw text carries emphasis or color controls.
+// The transcript uses it with PrefColors to decide whether to walk styled runs.
+func HasIrcStyle(text string) bool {
+	return HasIrcEmphasis(text) || HasIrcColorCodes(text)
+}
+
 // StyledSegments mirrors Rust styled_runs: one walker reads color sequences
 // before removing them, toggles emphasis, and yields runs whose text covers
 // PlainIrcText. It reuses consumeMircColor / consumeHexColor so consumption
