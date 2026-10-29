@@ -2,7 +2,6 @@ package avatar
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"os"
 	"strconv"
@@ -297,18 +296,6 @@ func writeAll(w io.Writer, p []byte) error {
 		}
 	}
 	return nil
-}
-
-func isCopyTimeout(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, os.ErrDeadlineExceeded) {
-		return true
-	}
-	type timeout interface{ Timeout() bool }
-	var t timeout
-	return errors.As(err, &t) && t.Timeout()
 }
 
 func filterCopyChunk(dst *os.File, late *lateFilter, chunk []byte) error {
