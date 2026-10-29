@@ -196,18 +196,21 @@ type Model struct {
 	firstUnseenRow  int
 	transcriptCount int
 	// unseenResumeRow is the message row where an Alt+U catch-up continues, or
-	// -1 when no catch-up is active. ↓ new is armed only while that row is the
-	// first one not fully on screen. Scrolling into history already read keeps
-	// the index and hides the marker; the next Alt+U returns to the row.
-	// unseenResumeSequenceAtAnchor shifts it across a prepend. Following the
-	// end, or switching buffers, clears both.
+	// -1 when no catch-up is active. ↓ new is armed while the first row that is
+	// not fully on screen is at or past that catch-up row. Scrolling into
+	// history already read keeps the index and hides the marker; the next
+	// Alt+U returns to the row. A manual Page Down past the row keeps ↓ new
+	// while unseen remain. unseenResumeSequenceAtAnchor shifts it across a
+	// prepend. Following the end, or switching buffers, clears both.
 	unseenResumeRow              int
 	unseenResumeSequenceAtAnchor int64
 	// withinResumeArmCheck stops the catch-up arming check from recursing.
 	// Measuring the continuation row renders the header, and the header asks
 	// whether the marker is armed. The nested check reports disarmed. On a
 	// channel or direct message the marker shares an existing header line, so
-	// the height used for that measurement still matches.
+	// the height used for that measurement still matches. Empty Status has no
+	// topic band unless ↓ new is showing; the header reserves that band while
+	// this flag is set so firstRowBelowViewport matches the painted view.
 	withinResumeArmCheck bool
 	// transcriptLineCount is the rendered line count of transcriptArea
 	// including the typing footer. A detached append adds the increase to
