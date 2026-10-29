@@ -18,7 +18,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::irc::casemapping::IrcCaseMapping;
 use crate::irc::event::{
-    ConversationKey, HistoryEvent, HistoryKind, InboxArrival, KeptReplay, MentionArrival,
+    ConversationKey, HistoryEvent, HistoryKind, InboxArrival, KeptReplay, MentionArrival, MsgId,
     RememberedQuery,
 };
 use crate::irc::membershipnoise::MembershipNoise;
@@ -63,6 +63,9 @@ pub(super) struct Facts {
     pub(super) closed_store: Option<Box<dyn ClosedStore>>,
     pub(super) mention_arrival: Option<MentionArrival>,
     pub(super) inbox_arrival: Option<InboxArrival>,
+    /// Nonempty msgids filed into a channel as `only_visible_to_you`. A peer DM
+    /// on the same network must refuse that msgid while the claim holds.
+    pub(super) channel_context_msgids: HashMap<MsgId, ConversationKey>,
 }
 
 impl Facts {
@@ -89,7 +92,63 @@ impl Facts {
             closed_store: None,
             mention_arrival: None,
             inbox_arrival: None,
+            channel_context_msgids: HashMap::new(),
         }
+    }
+
+    /// Records that a channel admitted an only-visible msgid (`claimChannelContext`).
+    pub(super) fn claim_channel_context(
+        &mut self,
+        home: &ConversationKey,
+        is_channel: bool,
+        msgid: &MsgId,
+        only_visible_to_you: bool,
+    ) {
+        if msgid.is_empty() || !is_channel || !only_visible_to_you {
+            return;
+        }
+        self.channel_context_msgids
+            .insert(msgid.clone(), home.clone());
+    }
+
+    /// Drops a claim when that msgid leaves the channel that filed it
+    /// (`releaseChannelContext`).
+    pub(super) fn release_channel_context(&mut self, home: &ConversationKey, msgid: &MsgId) {
+        if msgid.is_empty() {
+            return;
+        }
+        if self.channel_context_msgids.get(msgid) == Some(home) {
+            self.channel_context_msgids.remove(msgid);
+        }
+    }
+
+    /// True when a nonempty msgid is claimed by a channel on this network, so a
+    /// peer DM must not admit it (`channelContextBlocksDm`). Channel admit is
+    /// never blocked.
+    pub(super) fn channel_context_blocks_dm(
+        &self,
+        key: &ConversationKey,
+        is_channel: bool,
+        msgid: &MsgId,
+    ) -> bool {
+        if is_channel || msgid.is_empty() {
+            return false;
+        }
+        match self.channel_context_msgids.get(msgid) {
+            Some(home) if home.network_id == key.network_id => true,
+            _ => false,
+        }
+    }
+
+    /// Forgets every channel-context claim on one network.
+    pub(super) fn clear_channel_context_network(&mut self, network_id: &str) {
+        self.channel_context_msgids
+            .retain(|_, home| home.network_id != network_id);
+    }
+
+    /// Forgets every claim that pointed at one conversation.
+    pub(super) fn clear_channel_context_home(&mut self, home: &ConversationKey) {
+        self.channel_context_msgids.retain(|_, claimed| claimed != home);
     }
 
     /// The network's ISUPPORT set, or the default when it never sent one

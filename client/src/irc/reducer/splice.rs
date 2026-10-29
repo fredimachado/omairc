@@ -164,6 +164,9 @@ pub(super) fn splice_history(
             }
             continue;
         }
+        if facts.channel_context_blocks_dm(&conv.key, conv.is_channel(), &line.msgid) {
+            continue;
+        }
 
         if line.kind == MessageKindTag::Event {
             if !line.msgid.is_empty() {
@@ -240,6 +243,12 @@ pub(super) fn splice_history(
             sequence,
             only_visible_to_you: line.only_visible_to_you,
         });
+        facts.claim_channel_context(
+            &conv.key,
+            conv.is_channel(),
+            &line.msgid,
+            line.only_visible_to_you,
+        );
         pending_notes.push(PendingNote {
             sequence,
             server_time: line.server_time,
@@ -288,9 +297,9 @@ pub(super) fn splice_history(
         }
         if conv.history_page_cap_tail && event.kind == HistoryKind::Chat {
             conv.history_page_cap_tail = false;
-            cap_messages_prefer_tail(conv);
+            cap_messages_prefer_tail(facts, conv);
         } else {
-            cap_messages(conv);
+            cap_messages(facts, conv);
         }
         for message in &run {
             if message.kind == MessageKind::Event {

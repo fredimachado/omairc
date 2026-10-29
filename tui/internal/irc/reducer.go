@@ -215,6 +215,10 @@ type EventReducer struct {
 	// reads it back so a restart still refuses the channel.
 	persistClosed  func(key ConversationKey, closed bool)
 	containsClosed func(key ConversationKey) bool
+	// channelContextMsgIDs maps a nonempty msgid to the channel that filed it
+	// as only-visible-to-you. A peer DM on the same network must refuse that
+	// msgid while the claim holds.
+	channelContextMsgIDs map[MsgID]ConversationKey
 }
 
 // defaultServerFeatures is returned for a network the caller never configured.
@@ -266,6 +270,61 @@ func (r *EventReducer) ensure() {
 	}
 	if r.closedChannels == nil {
 		r.closedChannels = make(map[ConversationKey]struct{})
+	}
+	if r.channelContextMsgIDs == nil {
+		r.channelContextMsgIDs = make(map[MsgID]ConversationKey)
+	}
+}
+
+// claimChannelContext records that a channel admitted an only-visible msgid.
+func (r *EventReducer) claimChannelContext(home ConversationKey, isChannel bool, msgid MsgID, onlyVisibleToYou bool) {
+	r.ensure()
+	if msgid.IsEmpty() || !isChannel || !onlyVisibleToYou {
+		return
+	}
+	r.channelContextMsgIDs[msgid] = home
+}
+
+// releaseChannelContext drops a claim when that msgid leaves the channel that filed it.
+func (r *EventReducer) releaseChannelContext(home ConversationKey, msgid MsgID) {
+	r.ensure()
+	if msgid.IsEmpty() {
+		return
+	}
+	if claimed, ok := r.channelContextMsgIDs[msgid]; ok && claimed == home {
+		delete(r.channelContextMsgIDs, msgid)
+	}
+}
+
+// channelContextBlocksDM reports whether a nonempty msgid is claimed by a
+// channel on this network, so a peer DM must not admit it. Channel admit is
+// never blocked.
+func (r *EventReducer) channelContextBlocksDM(key ConversationKey, isChannel bool, msgid MsgID) bool {
+	r.ensure()
+	if isChannel || msgid.IsEmpty() {
+		return false
+	}
+	home, ok := r.channelContextMsgIDs[msgid]
+	return ok && home.NetworkID == key.NetworkID
+}
+
+// clearChannelContextNetwork forgets every channel-context claim on one network.
+func (r *EventReducer) clearChannelContextNetwork(networkID string) {
+	r.ensure()
+	for msgid, home := range r.channelContextMsgIDs {
+		if home.NetworkID == networkID {
+			delete(r.channelContextMsgIDs, msgid)
+		}
+	}
+}
+
+// clearChannelContextHome forgets every claim that pointed at one conversation.
+func (r *EventReducer) clearChannelContextHome(home ConversationKey) {
+	r.ensure()
+	for msgid, claimed := range r.channelContextMsgIDs {
+		if claimed == home {
+			delete(r.channelContextMsgIDs, msgid)
+		}
 	}
 }
 
@@ -562,6 +621,7 @@ func (r *EventReducer) DropDirectMessage(key ConversationKey) bool {
 	if r.selected != nil && *r.selected == key {
 		r.selected = nil
 	}
+	r.clearChannelContextHome(key)
 	delete(r.conversations, key)
 	return true
 }
@@ -576,6 +636,7 @@ func (r *EventReducer) DropChannel(key ConversationKey) bool {
 	if r.selected != nil && *r.selected == key {
 		r.selected = nil
 	}
+	r.clearChannelContextHome(key)
 	delete(r.conversations, key)
 	return true
 }
@@ -663,6 +724,7 @@ func (r *EventReducer) ForgetNetwork(networkID string) {
 	r.dropKeptPlayback(networkID)
 	delete(r.queryRestorePending, networkID)
 	r.clearClosedNetwork(networkID)
+	r.clearChannelContextNetwork(networkID)
 	for key := range r.conversations {
 		if key.NetworkID == networkID {
 			delete(r.conversations, key)
@@ -1138,8 +1200,12 @@ func (r *EventReducer) appendChat(key ConversationKey, displayTarget, author, bo
 	if conversation == nil {
 		return
 	}
+	isChannel := conversation.IsChannel()
 	if !msgid.IsEmpty() {
 		if _, exists := conversation.MessageIDs[msgid]; exists {
+			return
+		}
+		if r.channelContextBlocksDM(key, isChannel, msgid) {
 			return
 		}
 		conversation.MessageIDs[msgid] = struct{}{}
@@ -1154,6 +1220,7 @@ func (r *EventReducer) appendChat(key ConversationKey, displayTarget, author, bo
 		MsgID:            msgid,
 		OnlyVisibleToYou: onlyVisibleToYou,
 	})
+	r.claimChannelContext(key, isChannel, msgid, onlyVisibleToYou)
 	last := conversation.Messages[len(conversation.Messages)-1]
 	r.persistMessage(conversation, last)
 	r.capMessages(conversation)
@@ -1229,13 +1296,14 @@ func (r *EventReducer) noteChatArrival(conversation *ConversationState, key Conv
 	}
 }
 
-func dropLastTranscriptRow(conversation *ConversationState) {
+func (r *EventReducer) dropLastTranscriptRow(conversation *ConversationState) {
 	if len(conversation.Messages) == 0 {
 		return
 	}
 	last := conversation.Messages[len(conversation.Messages)-1]
 	if !last.MsgID.IsEmpty() {
 		delete(conversation.MessageIDs, last.MsgID)
+		r.releaseChannelContext(conversation.Key, last.MsgID)
 	}
 	removedIndex := int64(len(conversation.Messages) - 1)
 	conversation.Messages = conversation.Messages[:len(conversation.Messages)-1]
@@ -1266,7 +1334,7 @@ func (r *EventReducer) appendEvent(conversation *ConversationState, body string,
 			})
 			if folded.Kind == FoldCancel {
 				if folded.DropRow {
-					dropLastTranscriptRow(conversation)
+					r.dropLastTranscriptRow(conversation)
 				} else {
 					last.Body = folded.Body
 				}
@@ -1332,6 +1400,7 @@ func (r *EventReducer) admitMembershipReplay(conversation *ConversationState, ru
 			result.droppedSequence = row.Sequence
 			if !row.MsgID.IsEmpty() {
 				delete(conversation.MessageIDs, row.MsgID)
+				r.releaseChannelContext(conversation.Key, row.MsgID)
 			}
 			return true
 		}
@@ -1403,8 +1472,12 @@ func (r *EventReducer) hydrateFromLog(conversation *ConversationState) {
 			continue
 		}
 		msgid := MsgID{Value: line.MsgID}
+		isChannel := conversation.IsChannel()
 		if !msgid.IsEmpty() {
 			if _, exists := conversation.MessageIDs[msgid]; exists {
+				continue
+			}
+			if r.channelContextBlocksDM(conversation.Key, isChannel, msgid) {
 				continue
 			}
 			conversation.MessageIDs[msgid] = struct{}{}
@@ -1418,6 +1491,7 @@ func (r *EventReducer) hydrateFromLog(conversation *ConversationState) {
 			MsgID:            msgid,
 			OnlyVisibleToYou: line.OnlyVisibleToYou,
 		})
+		r.claimChannelContext(conversation.Key, isChannel, msgid, line.OnlyVisibleToYou)
 	}
 	r.capMessages(conversation)
 }
@@ -1498,6 +1572,7 @@ func (r *EventReducer) capMessagesWithPolicy(conversation *ConversationState, dr
 			msgid := conversation.Messages[index].MsgID
 			if !msgid.IsEmpty() {
 				delete(conversation.MessageIDs, msgid)
+				r.releaseChannelContext(conversation.Key, msgid)
 			}
 		}
 		conversation.Messages = conversation.Messages[extra:]
@@ -1513,6 +1588,7 @@ func (r *EventReducer) capMessagesWithPolicy(conversation *ConversationState, dr
 		msgid := conversation.Messages[index].MsgID
 		if !msgid.IsEmpty() {
 			delete(conversation.MessageIDs, msgid)
+			r.releaseChannelContext(conversation.Key, msgid)
 		}
 	}
 	conversation.Messages = conversation.Messages[:len(conversation.Messages)-extra]
@@ -1803,6 +1879,9 @@ func (r *EventReducer) spliceHistory(conversation *ConversationState, event Hist
 				continue
 			}
 		}
+		if r.channelContextBlocksDM(conversation.Key, conversation.IsChannel(), line.MsgID) {
+			continue
+		}
 		if line.Kind == MessageKindEvent {
 			if !line.MsgID.IsEmpty() {
 				conversation.MessageIDs[line.MsgID] = struct{}{}
@@ -1851,6 +1930,7 @@ func (r *EventReducer) spliceHistory(conversation *ConversationState, event Hist
 		message.Sequence = conversation.NextSequence
 		conversation.NextSequence++
 		run = append(run, message)
+		r.claimChannelContext(conversation.Key, conversation.IsChannel(), line.MsgID, line.OnlyVisibleToYou)
 		queueNote(message.Sequence)
 	}
 

@@ -210,11 +210,33 @@ fn channel_context_stays_a_direct_message_when_it_is_not_trusted() {
         "eve",
         "not a member",
     );
+    assert_eq!(
+        crate::irc::translator::CHANNEL_CONTEXT_LIMIT,
+        50,
+        "channel-context length lock"
+    );
+    let at_limit = format!(
+        "@+draft/channel-context=#{} :bot!u@h PRIVMSG omairc :at limit",
+        "x".repeat(crate::irc::translator::CHANNEL_CONTEXT_LIMIT - 1)
+    );
+    let limited = translate_joined(&at_limit, accept);
+    assert_eq!(limited.len(), 1, "at-limit event count");
+    assert!(
+        message_of(&limited).only_visible_to_you,
+        "exactly {} runes still relocates",
+        crate::irc::translator::CHANNEL_CONTEXT_LIMIT
+    );
+
     let overlong = format!(
         "@+draft/channel-context=#{} :eve!u@h PRIVMSG omairc :overlong",
-        "x".repeat(60)
+        "x".repeat(crate::irc::translator::CHANNEL_CONTEXT_LIMIT)
     );
     expect_direct(&translate_joined(&overlong, accept), "eve", "overlong");
+    let far_overlong = format!(
+        "@+draft/channel-context=#{} :eve!u@h PRIVMSG omairc :far overlong",
+        "x".repeat(60)
+    );
+    expect_direct(&translate_joined(&far_overlong, accept), "eve", "far overlong");
     expect_direct(
         &translate_joined(
             "@+draft/channel-context=#a,#b :eve!u@h PRIVMSG omairc :comma",
