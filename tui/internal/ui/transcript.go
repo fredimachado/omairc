@@ -454,7 +454,7 @@ func (m *Model) pageTranscript(direction int, fraction float64) {
 		if direction > 0 {
 			m.transcriptScroll = 0
 			m.setTranscriptFollowEnd(true)
-			m.firstUnseenRow = -1
+			m.clearFirstUnseen()
 		}
 		m.noteViewportSettled()
 		return
@@ -484,7 +484,7 @@ func (m *Model) pageTranscript(direction int, fraction float64) {
 	m.transcriptScroll = offset
 	m.setTranscriptFollowEnd(offset == 0)
 	if m.transcriptFollowEnd {
-		m.firstUnseenRow = -1
+		m.clearFirstUnseen()
 	}
 	m.syncReadMarkerViewport()
 	start := n - height - offset
@@ -638,7 +638,7 @@ func (m *Model) jumpTranscript(toEnd bool) {
 		m.setTranscriptFollowEnd(true)
 		m.transcriptScroll = 0
 		m.transcriptCursor = m.transcriptRowTotal() - 1
-		m.firstUnseenRow = -1
+		m.clearFirstUnseen()
 		m.syncReadMarkerViewport()
 		m.noteViewportSettled()
 		return
@@ -724,7 +724,7 @@ func (m *Model) pinTranscriptToText(row int, lead int) {
 	if maxOffset <= 0 || row < 0 || row >= area.count() {
 		m.setTranscriptFollowEnd(true)
 		m.transcriptScroll = 0
-		m.firstUnseenRow = -1
+		m.clearFirstUnseen()
 		m.syncReadMarkerViewport()
 		m.noteViewportSettled()
 		return
@@ -746,23 +746,41 @@ func (m *Model) pinTranscriptToText(row int, lead int) {
 	m.noteViewportSettled()
 }
 
+// clearFirstUnseen drops the jump-to-first-new row and any snapshotted sequence
+// for an inflight older-page restore. Clearing only the row left a stale
+// sequence that could re-arm ↓ new after a CHATHISTORY BEFORE splice.
+func (m *Model) clearFirstUnseen() {
+	if m == nil {
+		return
+	}
+	m.firstUnseenRow = -1
+	m.firstUnseenSequenceAtAnchor = -1
+}
+
 // noteTranscriptGrowth arms the first-new-row marker when rows arrive while the
 // reader is scrolled up, and clears it while they follow the end or the
 // transcript shrank. It mirrors TranscriptList.noteGrowth, which is driven by
 // count changes rather than by the model's own notification. A detached append
 // keeps the top line put by adding the new rendered lines to transcriptScroll.
+// A count increase with a higher splice epoch is a head or mid splice, not a
+// live append: inventing firstUnseenRow at the old count would point at
+// already-read history below a reader who loaded older pages at the top.
 func (m *Model) noteTranscriptGrowth() {
 	defer m.syncTranscriptLineCount()
 	count := m.transcriptRowTotal()
+	spliceEpoch := m.transcriptSpliceEpoch
+	if m.ctrl != nil {
+		spliceEpoch = m.ctrl.TranscriptSpliceEpoch()
+	}
 	if m.ctrl != nil && m.transcriptAnchorSequence >= 0 {
-		spliceEpoch := m.ctrl.TranscriptSpliceEpoch()
 		if spliceEpoch > m.transcriptAnchorSpliceEpoch {
+			hadUnseen := m.firstUnseenRow >= 0
 			unseenSequence := m.firstUnseenSequenceAtAnchor
 			resumeSequence := m.unseenResumeSequenceAtAnchor
 			resumeRow := m.unseenResumeRow
 			oldCount := m.transcriptCount
 			m.restoreTranscriptAnchor()
-			if unseenSequence >= 0 && !m.transcriptFollowEnd {
+			if hadUnseen && unseenSequence >= 0 && !m.transcriptFollowEnd {
 				resolved := false
 				for index, message := range m.ctrl.Messages() {
 					if message.Sequence == unseenSequence {
@@ -772,29 +790,42 @@ func (m *Model) noteTranscriptGrowth() {
 					}
 				}
 				if !resolved {
-					m.firstUnseenRow = -1
+					m.clearFirstUnseen()
 				}
+			} else if !hadUnseen {
+				m.clearFirstUnseen()
 			}
 			if !m.transcriptFollowEnd {
 				m.unseenResumeRow = shiftedResumeRow(
 					m.ctrl.Messages(), resumeSequence, resumeRow, count-oldCount, count)
 			}
 			m.transcriptCount = count
+			m.transcriptSpliceEpoch = spliceEpoch
 			return
 		}
 	}
 	switch {
 	case count < m.transcriptCount:
 		if m.firstUnseenRow >= count {
-			m.firstUnseenRow = -1
+			m.clearFirstUnseen()
 		}
 		if m.unseenResumeRow >= count {
 			m.unseenResumeRow = -1
 		}
 	case count > m.transcriptCount:
+		spliced := spliceEpoch > m.transcriptSpliceEpoch
 		if m.transcriptFollowEnd {
-			m.firstUnseenRow = -1
+			m.clearFirstUnseen()
 			m.unseenResumeRow = -1
+		} else if spliced {
+			delta := count - m.transcriptCount
+			if m.firstUnseenRow >= 0 {
+				m.firstUnseenRow += delta
+			}
+			if m.unseenResumeRow >= 0 {
+				m.unseenResumeRow += delta
+			}
+			m.holdDetachedTranscript()
 		} else {
 			if m.firstUnseenRow < 0 {
 				m.firstUnseenRow = m.transcriptCount
@@ -803,9 +834,11 @@ func (m *Model) noteTranscriptGrowth() {
 		}
 	default:
 		m.transcriptCount = count
+		m.transcriptSpliceEpoch = spliceEpoch
 		return
 	}
 	m.transcriptCount = count
+	m.transcriptSpliceEpoch = spliceEpoch
 }
 
 // holdDetachedTranscript adds newly rendered lines to the offset so a longer
@@ -844,19 +877,23 @@ func (m *Model) syncTranscriptLineCount() {
 }
 
 // jumpArmed reports whether a jump-to-newest affordance applies: the reader is
-// scrolled up and either rows arrived below them, the Alt+U catch-up row is
-// the first row that is not fully on screen, or a "New messages" mark still
-// has a message row below the viewport. It mirrors TranscriptList.jumpArmed
-// with canScrollDown standing in for !transcriptFollowEnd. A catch-up index
-// that sits further down than the current viewport does not arm the marker:
-// the reader is in history already read, and only another Alt+U returns to
-// that row. A leading date can put the boundary on the first row; once every
-// message row is on screen, the typing footer is not a reason to keep ↓ new.
+// scrolled up and either the first-unseen row is still not fully on screen,
+// the Alt+U catch-up row is the first row that is not fully on screen, or a
+// "New messages" mark still has a message row below the viewport. It mirrors
+// TranscriptList.jumpArmed with canScrollDown standing in for
+// !transcriptFollowEnd. firstUnseenRow alone is not enough: it must sit at or
+// past the first row that is not fully visible, matching unseenResumeArmed's
+// admit rule so ↓ new cannot paint over history the reader has already caught
+// up on. A catch-up index that sits further down than the current viewport
+// does not arm the marker: the reader is in history already read, and only
+// another Alt+U returns to that row. A leading date can put the boundary on
+// the first row; once every message row is on screen, the typing footer is
+// not a reason to keep ↓ new.
 func (m *Model) jumpArmed() bool {
 	if m.ctrl == nil || m.transcriptFollowEnd {
 		return false
 	}
-	if m.firstUnseenRow >= 0 && m.firstUnseenRow < m.transcriptRowTotal() {
+	if m.firstUnseenArmed() {
 		return true
 	}
 	if m.unseenResumeArmed() {
@@ -874,6 +911,23 @@ func (m *Model) jumpArmed() bool {
 	m.withinResumeArmCheck = true
 	defer func() { m.withinResumeArmCheck = false }()
 	return m.firstRowBelowViewport() >= 0
+}
+
+// firstUnseenArmed reports whether ↓ new should offer the first-arrival row.
+// The row has to be the first message that is not fully on screen, or further
+// down than that fold. A fully visible marker stays indexed for Alt+U but does
+// not paint ↓ new; sibling resume follow-ups may widen that to >=.
+func (m *Model) firstUnseenArmed() bool {
+	if m == nil || m.withinResumeArmCheck {
+		return false
+	}
+	if m.firstUnseenRow < 0 || m.firstUnseenRow >= m.transcriptRowTotal() {
+		return false
+	}
+	m.withinResumeArmCheck = true
+	defer func() { m.withinResumeArmCheck = false }()
+	below := m.firstRowBelowViewport()
+	return below >= 0 && m.firstUnseenRow >= below
 }
 
 // unseenResumeArmed reports whether ↓ new should offer the catch-up row. The
@@ -909,14 +963,16 @@ func (m *Model) jumpToUnseen() {
 		m.advanceUnseenResume()
 		return
 	}
-	if !m.jumpArmed() {
-		return
-	}
+	// Like the catch-up row, firstUnseen stays reachable by Alt+U while ↓ new
+	// is hidden (the row is already on screen, or the reader is above it).
 	if m.firstUnseenRow >= 0 && m.firstUnseenRow < m.transcriptRowTotal() {
 		row := m.firstUnseenRow
-		m.firstUnseenRow = -1
+		m.clearFirstUnseen()
 		m.pinTranscriptToRow(row)
 		m.settleUnseenResume()
+		return
+	}
+	if !m.jumpArmed() {
 		return
 	}
 	m.jumpTranscript(true)
@@ -944,7 +1000,7 @@ func (m *Model) advanceUnseenResume() {
 		return
 	}
 	if m.firstUnseenRow >= 0 && m.firstUnseenRow <= target {
-		m.firstUnseenRow = -1
+		m.clearFirstUnseen()
 	}
 	m.pinTranscriptToRow(target)
 	m.settleUnseenResume()

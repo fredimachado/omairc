@@ -71,7 +71,7 @@ func (m *Model) applyRememberedTranscript() string {
 		m.scrollRestorePending = false
 		m.setTranscriptFollowEnd(true)
 		m.transcriptScroll = 0
-		m.firstUnseenRow = -1
+		m.clearFirstUnseen()
 		return "applied"
 	}
 	if place.Row >= 0 {

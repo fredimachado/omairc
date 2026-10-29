@@ -162,6 +162,99 @@ func TestOlderDayPrependKeepsAnchorTextLine(t *testing.T) {
 	}
 }
 
+// TestOlderPageAtTopDoesNotArmJumpWhenCaughtUp proves a CHATHISTORY BEFORE
+// page at the top must not arm ↓ new when the reader has no unseen rows.
+// Prepending older lines grows the count while detached; that growth must not
+// be treated as a live arrival below the viewport.
+func TestOlderPageAtTopDoesNotArmJumpWhenCaughtUp(t *testing.T) {
+	m, key, day := scrollableYesterday(t)
+	if m.firstUnseenRow != -1 || m.jumpArmed() {
+		t.Fatalf("precondition: caught up at top, unseen=%d armed=%v",
+			m.firstUnseenRow, m.jumpArmed())
+	}
+	prependOlder(m, key, "ancient", day.Add(-48*time.Hour), "ancient-id")
+	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
+	if m.firstUnseenRow != -1 || m.jumpArmed() || strings.Contains(plain, "↓ new") {
+		t.Fatalf("after older page: unseen=%d armed=%v\n%s",
+			m.firstUnseenRow, m.jumpArmed(), plain)
+	}
+}
+
+// TestOlderPageWithoutAnchorDoesNotArmJumpWhenCaughtUp is the splice-skipped
+// path: head growth with no transcript anchor must not set firstUnseenRow to
+// the old count (already-read history) and paint ↓ new.
+func TestOlderPageWithoutAnchorDoesNotArmJumpWhenCaughtUp(t *testing.T) {
+	m, key, day := scrollableYesterday(t)
+	if m.firstUnseenRow != -1 || m.jumpArmed() {
+		t.Fatalf("precondition: caught up at top, unseen=%d armed=%v",
+			m.firstUnseenRow, m.jumpArmed())
+	}
+	m.clearTranscriptAnchor()
+	m.transcriptCount = m.transcriptRowTotal()
+	m.transcriptSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
+	m.ctrl.Apply(irc.HistoryEvent{
+		Conversation: key,
+		Target:       "#room",
+		Kind:         irc.HistoryChat,
+		OlderPage:    true,
+		Lines: []irc.ReplayLine{{
+			Author:    "bob",
+			Body:      "ancient unanchored",
+			Timestamp: day.Add(-48 * time.Hour),
+			MsgID:     irc.MsgID{Value: "ancient-unanchored"},
+		}},
+	})
+	m.ctrl.Publish(irc.ViewNotify{Messages: true})
+	m.noteTranscriptGrowth()
+	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
+	if m.firstUnseenRow != -1 || m.jumpArmed() || strings.Contains(plain, "↓ new") {
+		t.Fatalf("after unanchored older page: unseen=%d armed=%v\n%s",
+			m.firstUnseenRow, m.jumpArmed(), plain)
+	}
+}
+
+// TestOlderPageDoesNotRestoreConsumedFirstUnseen proves an inflight older-page
+// snapshot must not revive a firstUnseenRow the reader already cleared. A
+// leftover sequence alone is not enough to re-arm after the row was consumed.
+func TestOlderPageDoesNotRestoreConsumedFirstUnseen(t *testing.T) {
+	m, key, day := scrollableYesterday(t)
+	messages := m.ctrl.Messages()
+	marker := len(messages) - 1
+	m.firstUnseenRow = marker
+	m.transcriptCount = m.transcriptRowTotal()
+	m.transcriptSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
+	m.snapshotTranscriptAnchor()
+	if m.firstUnseenSequenceAtAnchor != messages[marker].Sequence {
+		t.Fatal("snapshot must record the unseen sequence")
+	}
+	stale := m.firstUnseenSequenceAtAnchor
+	m.clearFirstUnseen()
+	if m.firstUnseenSequenceAtAnchor >= 0 {
+		t.Fatalf("clearFirstUnseen must drop the snapshotted sequence, got %d",
+			m.firstUnseenSequenceAtAnchor)
+	}
+	// Leave a stale sequence as a pre-fix clear of only firstUnseenRow did.
+	m.firstUnseenSequenceAtAnchor = stale
+	m.ctrl.Apply(irc.HistoryEvent{
+		Conversation: key,
+		Target:       "#room",
+		Kind:         irc.HistoryChat,
+		OlderPage:    true,
+		Lines: []irc.ReplayLine{{
+			Author:    "bob",
+			Body:      "after clear",
+			Timestamp: day.Add(-48 * time.Hour),
+			MsgID:     irc.MsgID{Value: "after-clear"},
+		}},
+	})
+	m.ctrl.Publish(irc.ViewNotify{Messages: true})
+	m.noteTranscriptGrowth()
+	if m.firstUnseenRow != -1 || m.jumpArmed() {
+		t.Fatalf("consumed unseen must stay clear after older page, unseen=%d armed=%v",
+			m.firstUnseenRow, m.jumpArmed())
+	}
+}
+
 func TestNoteTranscriptGrowthRestoresFirstUnseenAfterOlderPage(t *testing.T) {
 	m := seededModel(t)
 	m.transcriptFollowEnd = false

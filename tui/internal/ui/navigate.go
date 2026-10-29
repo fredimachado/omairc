@@ -630,9 +630,12 @@ func (m *Model) afterSelectionChange(previousID string, wasConsole bool) {
 	if previousID != "" && m.ctrl != nil && previousID != m.ctrl.SelectedConversationID() {
 		m.ctrl.ClearHistoryPageCapTailForConversationID(previousID)
 	}
-	m.firstUnseenRow = -1
+	m.clearFirstUnseen()
 	m.unseenResumeRow = -1
 	m.transcriptCount = m.transcriptRowTotal()
+	if m.ctrl != nil {
+		m.transcriptSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
+	}
 	console := m.ctrl != nil && m.ctrl.ConsoleOpen()
 	if !wasConsole && !console && m.keepsViewportOnReselect(previousID) {
 		m.transcriptCursor = -1
