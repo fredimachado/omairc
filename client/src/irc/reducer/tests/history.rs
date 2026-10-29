@@ -181,6 +181,132 @@ fn only_visible_to_you_survives_history_and_hydrate() {
 }
 
 #[test]
+fn channel_context_msgid_skips_query_after_hydrate() {
+    let log = RecordingLog::default();
+    let mut first = EventReducer::new();
+    first.set_conversation_log(Some(Box::new(log.clone())));
+    welcome_omairc(&mut first, NETWORK_A);
+    fold(&mut first, join(NETWORK_A, "#room", "omairc"));
+    fold(&mut first, join(NETWORK_A, "#room", "bot"));
+    apply_wire(
+        &mut first,
+        "@msgid=stored-only;+draft/channel-context=#room :bot!u@h PRIVMSG omairc :stored",
+    );
+
+    let mut again = EventReducer::new();
+    again.set_conversation_log(Some(Box::new(log.clone())));
+    welcome_omairc(&mut again, NETWORK_A);
+    fold(&mut again, join(NETWORK_A, "#room", "omairc"));
+    let room = again.conversation_key(NETWORK_A, "#room");
+    assert!(
+        message_by_body(&state_of(&again, &room).messages, "stored").only_visible_to_you,
+        "hydrated only you"
+    );
+
+    let bot = again.conversation_key(NETWORK_A, "bot");
+    again.ensure_conversation(&bot, "bot", crate::irc::event::IrcConversationCause::UserOpen);
+    let history = history_of(
+        &again,
+        &batch(
+            "bot",
+            HistoryKind::Chat,
+            &["@msgid=stored-only;+draft/channel-context=#room :bot!u@h PRIVMSG omairc :stored"],
+        ),
+    );
+    fold(&mut again, history);
+    assert!(
+        state_of(&again, &bot)
+            .messages
+            .iter()
+            .all(|message| message.body != "stored"),
+        "hydrate claim must still skip the query twin"
+    );
+}
+
+#[test]
+fn channel_context_msgid_skips_query_after_part() {
+    let mut reducer = EventReducer::new();
+    welcome_omairc(&mut reducer, NETWORK_A);
+    fold(&mut reducer, join(NETWORK_A, "#room", "omairc"));
+    fold(&mut reducer, join(NETWORK_A, "#room", "bot"));
+    apply_wire(
+        &mut reducer,
+        "@msgid=part-keep;+draft/channel-context=#room :bot!u@h PRIVMSG omairc :kept",
+    );
+    fold(&mut reducer, part(NETWORK_A, "#room", "omairc"));
+
+    let room = reducer.conversation_key(NETWORK_A, "#room");
+    assert!(
+        !state_of(&reducer, &room).channel.as_ref().expect("channel").joined,
+        "left the channel"
+    );
+    assert!(
+        message_by_body(&state_of(&reducer, &room).messages, "kept").only_visible_to_you,
+        "channel still holds the filing"
+    );
+
+    let bot = reducer.conversation_key(NETWORK_A, "bot");
+    reducer.ensure_conversation(&bot, "bot", crate::irc::event::IrcConversationCause::UserOpen);
+    let history = history_of(
+        &reducer,
+        &batch(
+            "bot",
+            HistoryKind::Chat,
+            &["@msgid=part-keep;+draft/channel-context=#room :bot!u@h PRIVMSG omairc :kept"],
+        ),
+    );
+    fold(&mut reducer, history);
+    assert!(
+        state_of(&reducer, &bot)
+            .messages
+            .iter()
+            .all(|message| message.body != "kept"),
+        "ownership survives PART while the channel row remains"
+    );
+}
+
+#[test]
+fn channel_context_msgid_skips_query_for_case_differing_sender() {
+    let mut reducer = EventReducer::new();
+    welcome_omairc(&mut reducer, NETWORK_A);
+    fold(&mut reducer, join(NETWORK_A, "#room", "omairc"));
+    fold(&mut reducer, join(NETWORK_A, "#room", "bot"));
+    apply_wire(
+        &mut reducer,
+        "@msgid=case-1;+draft/channel-context=#room :Bot!u@h PRIVMSG omairc :cased",
+    );
+
+    let room = reducer.conversation_key(NETWORK_A, "#room");
+    assert!(
+        message_by_body(&state_of(&reducer, &room).messages, "cased").only_visible_to_you,
+        "live relocates despite sender case"
+    );
+    assert!(
+        reducer.find(&reducer.conversation_key(NETWORK_A, "bot")).is_none(),
+        "no live direct for cased sender"
+    );
+
+    let bot = reducer.conversation_key(NETWORK_A, "bot");
+    reducer.ensure_conversation(&bot, "bot", crate::irc::event::IrcConversationCause::UserOpen);
+    let history = history_of(
+        &reducer,
+        &batch(
+            "bot",
+            HistoryKind::Chat,
+            &["@msgid=case-1;+draft/channel-context=#room :Bot!u@h PRIVMSG omairc :cased"],
+        ),
+    );
+    fold(&mut reducer, history);
+    assert!(
+        state_of(&reducer, &bot)
+            .messages
+            .iter()
+            .all(|message| message.body != "cased"),
+        "claimed msgid skips the case-differing query twin"
+    );
+}
+
+#[test]
 fn channel_context_msgid_skips_query_replay() {
     let mut reducer = EventReducer::new();
     welcome_omairc(&mut reducer, NETWORK_A);
