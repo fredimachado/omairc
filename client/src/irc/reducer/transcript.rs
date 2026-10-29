@@ -82,24 +82,34 @@ pub(super) fn admit_message(conv: &mut ConversationState, mut message: Message) 
 
 /// Trims the transcript to `MAX_MESSAGES`, dropping the oldest rows and their
 /// msgids (`capMessages`).
-pub(super) fn cap_messages(conv: &mut ConversationState) {
-    cap_with_policy(conv, true);
+pub(super) fn cap_messages(facts: &mut Facts, conv: &mut ConversationState) {
+    cap_with_policy(facts, conv, true);
 }
 
 /// The tail-first trim a CHATHISTORY older page uses (`capMessagesPreferTail`).
-pub(super) fn cap_messages_prefer_tail(conv: &mut ConversationState) {
-    cap_with_policy(conv, false);
+pub(super) fn cap_messages_prefer_tail(facts: &mut Facts, conv: &mut ConversationState) {
+    cap_with_policy(facts, conv, false);
 }
 
-fn cap_with_policy(conv: &mut ConversationState, drop_from_head: bool) {
+fn forget_transcript_msgid(facts: &mut Facts, conv: &mut ConversationState, msgid: &MsgId) {
+    if msgid.is_empty() {
+        return;
+    }
+    conv.message_ids.remove(msgid);
+    facts.release_channel_context(&conv.key, msgid);
+}
+
+fn cap_with_policy(facts: &mut Facts, conv: &mut ConversationState, drop_from_head: bool) {
     if conv.messages.len() <= MAX_MESSAGES {
         return;
     }
     let extra = conv.messages.len() - MAX_MESSAGES;
     if drop_from_head {
+        let home = conv.key.clone();
         for message in &conv.messages[..extra] {
             if !message.msgid.is_empty() {
                 conv.message_ids.remove(&message.msgid);
+                facts.release_channel_context(&home, &message.msgid);
             }
         }
         conv.messages.drain(..extra);
@@ -114,9 +124,11 @@ fn cap_with_policy(conv: &mut ConversationState, drop_from_head: bool) {
         return;
     }
     let start = conv.messages.len() - extra;
+    let home = conv.key.clone();
     for message in &conv.messages[start..] {
         if !message.msgid.is_empty() {
             conv.message_ids.remove(&message.msgid);
+            facts.release_channel_context(&home, &message.msgid);
         }
     }
     conv.messages.truncate(start);
@@ -124,14 +136,12 @@ fn cap_with_policy(conv: &mut ConversationState, drop_from_head: bool) {
 
 /// Removes the newest row, forgetting its msgid and shifting a history anchor
 /// that sat past it (`dropLastTranscriptRow`).
-pub(super) fn drop_last_transcript_row(conv: &mut ConversationState) {
+pub(super) fn drop_last_transcript_row(facts: &mut Facts, conv: &mut ConversationState) {
     let Some(last) = conv.messages.last() else {
         return;
     };
     let msgid = last.msgid.clone();
-    if !msgid.is_empty() {
-        conv.message_ids.remove(&msgid);
-    }
+    forget_transcript_msgid(facts, conv, &msgid);
     let removed_index = conv.messages.len() as i64 - 1;
     conv.messages.pop();
     let trimmed = conv.trimmed as i64;
@@ -232,17 +242,18 @@ pub(super) fn persist_messages_prepend(facts: &Facts, conv: &ConversationState, 
 
 /// Loads a new conversation's stored tail, skipping unknown kinds and msgids
 /// already present (`hydrateFromLog`).
-pub(super) fn hydrate_from_log(facts: &Facts, conv: &mut ConversationState) {
-    let Some(log) = facts.log.as_ref() else {
-        return;
-    };
+pub(super) fn hydrate_from_log(facts: &mut Facts, conv: &mut ConversationState) {
     let network = conv.key.network_id.clone();
-    let lines = log.read_tail(
-        &network,
-        &conv.key.normalized_target,
-        facts.case_mapping(&network),
-        MAX_MESSAGES,
-    );
+    let mapping = facts.case_mapping(&network);
+    let target = conv.key.normalized_target.clone();
+    let lines = {
+        let Some(log) = facts.log.as_ref() else {
+            return;
+        };
+        log.read_tail(&network, &target, mapping, MAX_MESSAGES)
+    };
+    let is_channel = conv.is_channel();
+    let home = conv.key.clone();
     for line in lines {
         let Some(kind) = kind_from_token(&line.kind) else {
             continue;
@@ -252,9 +263,13 @@ pub(super) fn hydrate_from_log(facts: &Facts, conv: &mut ConversationState) {
             if conv.message_ids.contains(&msgid) {
                 continue;
             }
+            if facts.channel_context_blocks_dm(&home, is_channel, &msgid) {
+                continue;
+            }
             conv.message_ids.insert(msgid.clone());
         }
         let mentioned = facts.transcript_highlight(&network, &line.author, kind, &line.body);
+        let only_visible_to_you = line.only_visible_to_you;
         admit_message(
             conv,
             Message {
@@ -263,16 +278,17 @@ pub(super) fn hydrate_from_log(facts: &Facts, conv: &mut ConversationState) {
                 body: line.body,
                 time: line.timestamp,
                 server_time: None,
-                msgid,
+                msgid: msgid.clone(),
                 origin: Origin::Replay,
                 mentioned,
                 collapsible: false,
                 sequence: 0,
-                only_visible_to_you: line.only_visible_to_you,
+                only_visible_to_you,
             },
         );
+        facts.claim_channel_context(&home, is_channel, &msgid, only_visible_to_you);
     }
-    cap_messages(conv);
+    cap_messages(facts, conv);
 }
 
 /// Which chat reason a line carries: a nick hit, a highlight hit, or a direct
@@ -403,7 +419,7 @@ pub(super) fn note_chat_arrival(
 /// the same nick undoes at once is dropped, every line stays separate when shown
 /// each, and hidden lines are skipped (`appendEvent`).
 pub(super) fn append_event(
-    facts: &Facts,
+    facts: &mut Facts,
     conv: &mut ConversationState,
     body: &str,
     collapsible: bool,
@@ -427,7 +443,7 @@ pub(super) fn append_event(
             });
             if folded.kind == FoldKind::Cancel {
                 if folded.drop_row {
-                    drop_last_transcript_row(conv);
+                    drop_last_transcript_row(facts, conv);
                 } else {
                     conv.messages[last_index].body = folded.body;
                 }
@@ -461,7 +477,7 @@ pub(super) fn append_event(
         .cloned()
         .expect("a row was just admitted");
     persist_message(facts, conv, &last);
-    cap_messages(conv);
+    cap_messages(facts, conv);
 }
 
 /// Folds one replayed membership line into an existing caption row
@@ -576,7 +592,7 @@ pub(super) fn admit_membership_replay(
 }
 
 /// Adds one WHOIS transcript row (`appendWhois`).
-pub(super) fn append_whois(conv: &mut ConversationState, body: &str) {
+pub(super) fn append_whois(facts: &mut Facts, conv: &mut ConversationState, body: &str) {
     admit_message(
         conv,
         Message {
@@ -593,11 +609,11 @@ pub(super) fn append_whois(conv: &mut ConversationState, body: &str) {
             only_visible_to_you: false,
         },
     );
-    cap_messages(conv);
+    cap_messages(facts, conv);
 }
 
 /// Adds one error row (`appendError`).
-pub(super) fn append_error(conv: &mut ConversationState, body: &str) {
+pub(super) fn append_error(facts: &mut Facts, conv: &mut ConversationState, body: &str) {
     admit_message(
         conv,
         Message {
@@ -614,7 +630,7 @@ pub(super) fn append_error(conv: &mut ConversationState, body: &str) {
             only_visible_to_you: false,
         },
     );
-    cap_messages(conv);
+    cap_messages(facts, conv);
 }
 
 impl EventReducer {
@@ -636,8 +652,15 @@ impl EventReducer {
         let Some(conv) = self.conversations.get_mut(key) else {
             return;
         };
+        let is_channel = conv.is_channel();
         if !line.msgid.is_empty() {
             if conv.message_ids.contains(line.msgid) {
+                return;
+            }
+            if self
+                .facts
+                .channel_context_blocks_dm(key, is_channel, line.msgid)
+            {
                 return;
             }
             conv.message_ids.insert(line.msgid.clone());
@@ -661,13 +684,19 @@ impl EventReducer {
                 only_visible_to_you: line.only_visible_to_you,
             },
         );
+        self.facts.claim_channel_context(
+            key,
+            is_channel,
+            line.msgid,
+            line.only_visible_to_you,
+        );
         let last = conv
             .messages
             .last()
             .cloned()
             .expect("a row was just admitted");
         persist_message(&self.facts, conv, &last);
-        cap_messages(conv);
+        cap_messages(&mut self.facts, conv);
         let normalized = self.facts.normalize(&key.network_id, line.author);
         conv.typing.remove(&normalized);
         note_chat_arrival(

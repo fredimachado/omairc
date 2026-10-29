@@ -195,7 +195,7 @@ impl EventReducer {
                 sequence: conv.trimmed as i64 + conv.messages.len() as i64,
             });
         }
-        append_event(&self.facts, conv, &body, !self_join, true);
+        append_event(&mut self.facts, conv, &body, !self_join, true);
         if self_join {
             self.release_pending_playback(&key);
         }
@@ -256,7 +256,7 @@ impl EventReducer {
         let Some(conv) = self.conversations.get_mut(&key) else {
             return;
         };
-        append_event(&self.facts, conv, &part_line(&event.nick), true, true);
+        append_event(&mut self.facts, conv, &part_line(&event.nick), true, true);
         if self_part {
             conv.typing.clear();
         } else {
@@ -279,7 +279,7 @@ impl EventReducer {
             if channel.members.remove(&normalized).is_none() {
                 continue;
             }
-            append_event(&self.facts, conv, &body, true, true);
+            append_event(&mut self.facts, conv, &body, true, true);
         }
         self.forget_unseen(network, std::slice::from_ref(&normalized));
         self.clear_typing_everywhere(network, &normalized);
@@ -315,7 +315,7 @@ impl EventReducer {
             };
             member.display_nick = event.new_nick.clone();
             channel.members.insert(new_normalized.clone(), member);
-            append_event(&self.facts, conv, &body, true, true);
+            append_event(&mut self.facts, conv, &body, true, true);
         }
 
         let old_key = ConversationKey::new(network, old_normalized);
@@ -327,7 +327,7 @@ impl EventReducer {
             return;
         }
         direct.target = event.new_nick.clone();
-        append_event(&self.facts, direct, &body, true, true);
+        append_event(&mut self.facts, direct, &body, true, true);
         if old_key == new_key {
             return;
         }
@@ -362,7 +362,7 @@ impl EventReducer {
                     }
                     existing.messages.push(message);
                 }
-                cap_messages(existing);
+                cap_messages(&mut self.facts, existing);
                 existing.unread += moved.unread;
                 existing.mentions += moved.mentions;
                 existing.muted = existing.muted || moved.muted;
@@ -407,7 +407,7 @@ impl EventReducer {
             return;
         };
         append_event(
-            &self.facts,
+            &mut self.facts,
             conv,
             &format!("{} was kicked", event.target),
             false,
@@ -511,7 +511,7 @@ impl EventReducer {
             return;
         };
         append_event(
-            &self.facts,
+            &mut self.facts,
             conv,
             &format!("{} set mode {}", event.author, event.mode),
             false,
@@ -594,7 +594,7 @@ impl EventReducer {
     /// Appends a formatted WHOIS block to its conversation (`reduceWhoisTranscript`).
     fn reduce_whois_transcript(&mut self, event: &WhoisTranscriptEvent) {
         if let Some(conv) = self.conversations.get_mut(&event.destination) {
-            append_whois(conv, &event.formatted_body);
+            append_whois(&mut self.facts, conv, &event.formatted_body);
         }
     }
 
@@ -602,7 +602,7 @@ impl EventReducer {
     fn reduce_channel_error(&mut self, event: &ChannelErrorEvent) {
         let key = self.conversation_key(&event.network_id, &event.channel);
         if let Some(conv) = self.conversations.get_mut(&key) {
-            append_error(conv, &event.body);
+            append_error(&mut self.facts, conv, &event.body);
         }
     }
 
