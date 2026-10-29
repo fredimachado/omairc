@@ -1160,6 +1160,7 @@ mod tests {
 
     #[test]
     fn day_separator_captions_update_when_today_advances() {
+        let message_day = october(21);
         let messages = vec![line(
             MessageKind::Message,
             "nick",
@@ -1167,15 +1168,57 @@ mod tests {
             local_on(21, 12, 0),
             1,
         )];
-        let rows_before = rows_from_messages_on(&messages, None, october(22));
+        let rows_same_day = rows_from_messages_on(&messages, None, message_day);
+        assert_eq!(rows_same_day.len(), 1);
+        assert!(rows_same_day
+            .iter()
+            .all(|row| row.kind != RowKind::DaySeparator));
+
+        let rows_overnight = rows_from_messages_on(&messages, None, october(22));
+        assert_eq!(rows_overnight.len(), 2);
         assert_eq!(
-            rows_before[0].separator_text.as_deref(),
+            rows_overnight[0].separator_text.as_deref(),
             Some("Yesterday")
         );
-        let rows_after = rows_from_messages_on(&messages, None, october(23));
+
+        let rows_later = rows_from_messages_on(&messages, None, october(23));
         assert_eq!(
-            rows_after[0].separator_text.as_deref(),
-            Some(short_date(october(21)).as_str())
+            rows_later[0].separator_text.as_deref(),
+            Some(short_date(message_day).as_str())
+        );
+
+        let two_days = vec![
+            line(
+                MessageKind::Message,
+                "nick",
+                "older",
+                local_on(21, 12, 0),
+                1,
+            ),
+            line(
+                MessageKind::Message,
+                "nick",
+                "today line",
+                local_on(22, 9, 0),
+                2,
+            ),
+        ];
+        let mid_before = rows_from_messages_on(&two_days, None, october(22));
+        let mid_captions: Vec<&str> = mid_before
+            .iter()
+            .filter(|row| row.kind == RowKind::DaySeparator)
+            .filter_map(|row| row.separator_text.as_deref())
+            .collect();
+        assert_eq!(mid_captions, ["Yesterday", "Today"]);
+        let mid_after = rows_from_messages_on(&two_days, None, october(23));
+        let mid_captions: Vec<&str> = mid_after
+            .iter()
+            .filter(|row| row.kind == RowKind::DaySeparator)
+            .filter_map(|row| row.separator_text.as_deref())
+            .collect();
+        assert_eq!(
+            mid_captions,
+            [short_date(october(21)).as_str(), "Yesterday"]
         );
     }
 

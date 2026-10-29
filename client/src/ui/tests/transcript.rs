@@ -140,6 +140,65 @@ fn detached_arrival_keeps_viewport_and_jumps_to_first_unseen(
 }
 
 #[gpui::test]
+fn transcript_calendar_roll_does_not_arm_first_unseen_while_scrolled_up(
+    cx: &mut gpui::TestAppContext,
+) {
+    use chrono::Local;
+
+    use crate::irc::reducer::zero_time;
+    use crate::model::transcript_calendar::TranscriptCalendarSnapshot;
+
+    let mut ui = fixture::open(cx);
+    ui.select("#ricing");
+    ui.fill_until_scrollable("anna", "#ricing", "calendar roll");
+
+    let message_day = ui.shell.read_with(ui.cx, |shell, _| {
+        shell
+            .controller
+            .messages()
+            .iter()
+            .find_map(|message| {
+                (message.time != zero_time())
+                    .then(|| message.time.with_timezone(&Local).date_naive())
+            })
+            .expect("#ricing seed has a dated line")
+    });
+    let offset = ui
+        .shell
+        .read_with(ui.cx, |shell, _| shell.transcript_calendar_for_test().utc_offset_secs);
+
+    ui.shell.update(ui.cx, |shell, cx| {
+        shell.set_transcript_calendar_for_test(TranscriptCalendarSnapshot {
+            local_date: message_day,
+            utc_offset_secs: offset,
+        });
+        shell.refresh_shown_conversation(cx);
+    });
+    ui.page_up();
+    assert!(!ui.at_end(), "Page Up leaves the reader detached");
+    assert!(
+        ui.first_unseen().is_none(),
+        "no unseen marker before the calendar roll"
+    );
+
+    let next_day = message_day.succ_opt().expect("seed day has a next day");
+    ui.shell.update(ui.cx, |shell, cx| {
+        shell.tick_transcript_calendar(
+            TranscriptCalendarSnapshot {
+                local_date: next_day,
+                utc_offset_secs: offset,
+            },
+            cx,
+        );
+    });
+    ui.settle();
+    assert!(
+        ui.first_unseen().is_none(),
+        "calendar roll must not arm first unseen while scrolled up"
+    );
+}
+
+#[gpui::test]
 fn history_splice_keeps_the_reader_on_the_same_message(cx: &mut gpui::TestAppContext) {
     let mut ui = fixture::open(cx);
     ui.select("#omarchy");

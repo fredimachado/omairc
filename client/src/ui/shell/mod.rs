@@ -341,7 +341,7 @@ impl Shell {
     ) {
         if advance_transcript_calendar(&mut self.transcript_calendar, now) && !self.status_showing()
         {
-            self.refresh_shown_conversation(cx);
+            self.rebuild_view_keeping_place(cx);
         }
     }
 }
@@ -918,3 +918,17 @@ fn nick_handler(entity: Entity<Shell>) -> Handler<String> {
 
 /// The interval of the controller's timers (autoaway, typing, reconnect), in milliseconds.
 pub const CONTROLLER_TICK: Duration = Duration::from_millis(100);
+
+#[cfg(test)]
+impl Shell {
+    pub(crate) fn set_transcript_calendar_for_test(
+        &mut self,
+        snapshot: TranscriptCalendarSnapshot,
+    ) {
+        self.transcript_calendar = snapshot;
+    }
+
+    pub(crate) fn transcript_calendar_for_test(&self) -> TranscriptCalendarSnapshot {
+        self.transcript_calendar
+    }
+}
