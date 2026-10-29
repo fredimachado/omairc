@@ -505,4 +505,32 @@ mod tests {
             assert!(!shell.controller.preferences().colors);
         });
     }
+
+    #[gpui::test]
+    fn transcript_calendar_roll_refreshes_open_conversation(cx: &mut TestAppContext) {
+        use crate::model::transcript_calendar::TranscriptCalendarSnapshot;
+
+        let (activation_tx, _) = async_channel::unbounded();
+        cx.update(|app| {
+            app.set_global(OmaircStyleGlobal {
+                style: Style::new(Theme::defaults_dark(), 1.0),
+            });
+        });
+        let (shell, vcx) = cx.add_window_view(|_window, cx| {
+            Shell::new(cx, false, true, None, activation_tx)
+        });
+        shell.update(vcx, |shell, cx| {
+            shell.sync_view(cx);
+            let next = TranscriptCalendarSnapshot {
+                local_date: shell
+                    .transcript_calendar
+                    .local_date
+                    .succ_opt()
+                    .expect("test day fits in calendar"),
+                utc_offset_secs: shell.transcript_calendar.utc_offset_secs,
+            };
+            shell.tick_transcript_calendar(next, cx);
+            assert_eq!(shell.transcript_calendar, next);
+        });
+    }
 }
