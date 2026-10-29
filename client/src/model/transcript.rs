@@ -233,16 +233,23 @@ impl Transcript {
     }
 
     /// Replaces the rows with a conversation's lines and its "New messages" mark.
-    pub fn set_conversation(&mut self, messages: &[Message], mark: Option<i64>) {
-        self.set_rows(rows_from_messages(messages, mark));
+    /// `today` is the local calendar day that shapes Today/Yesterday captions.
+    pub fn set_conversation(&mut self, messages: &[Message], mark: Option<i64>, today: NaiveDate) {
+        self.set_rows(rows_from_messages_on(messages, mark, today));
     }
 
     /// Replaces a conversation's rows while keeping scroll and selection when they
     /// still apply. Used when the same buffer grows on the wire.
-    pub fn replace_conversation(&mut self, messages: &[Message], mark: Option<i64>) {
+    /// `today` is the local calendar day that shapes Today/Yesterday captions.
+    pub fn replace_conversation(
+        &mut self,
+        messages: &[Message],
+        mark: Option<i64>,
+        today: NaiveDate,
+    ) {
         let scroll = self.scroll;
         let selection = self.selection;
-        let rows = rows_from_messages(messages, mark);
+        let rows = rows_from_messages_on(messages, mark, today);
         self.rows = rows;
         self.measured = vec![false; self.rows.len()];
         self.heights = Fenwick::new(self.rows.len());
@@ -1207,7 +1214,7 @@ mod tests {
         let mut t = Transcript::new(72);
         t.set_rows(sample_rows());
         select_everything(&mut t);
-        t.set_conversation(&[chat("anna", "fresh", 9, 50, 1)], None);
+        t.set_conversation(&[chat("anna", "fresh", 9, 50, 1)], None, today());
         assert!(t.selection().is_none());
         assert!(t.rows().iter().any(|row| row.body.plain == "fresh"));
         assert!(!t.rows().iter().any(|row| row.body.plain == "hello"));
@@ -1216,7 +1223,11 @@ mod tests {
     #[test]
     fn replace_conversation_keeps_selection_and_scroll() {
         let mut t = Transcript::new(72);
-        t.set_conversation(&[chat("anna", "one", 9, 50, 1), chat("bob", "two", 9, 51, 2)], None);
+        t.set_conversation(
+            &[chat("anna", "one", 9, 50, 1), chat("bob", "two", 9, 51, 2)],
+            None,
+            today(),
+        );
         t.begin(Pos { row: 0, offset: 0 });
         t.set_scroll_anchor(0, 4);
         t.replace_conversation(
@@ -1226,6 +1237,7 @@ mod tests {
                 chat("carl", "three", 9, 52, 3),
             ],
             None,
+            today(),
         );
         assert!(t.selection().is_some());
         assert_eq!(t.scroll().row, 0);

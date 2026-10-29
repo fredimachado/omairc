@@ -250,6 +250,7 @@ impl Shell {
                 self_nick: &self_nick,
                 features: &features,
                 typing_peer,
+                today: self.transcript_calendar.local_date,
             };
             self.transcript.update(cx, |t, cx| t.refresh_conversation(lines, cx));
         }
@@ -293,6 +294,7 @@ impl Shell {
                     self_nick: &self_nick,
                     features: &features,
                     typing_peer,
+                    today: self.transcript_calendar.local_date,
                 };
                 let open_at_unread = place.is_none() && self.controller.preferences().unread;
                 let place = place.or_else(|| self.saved_place(&self.shown.conversation));
@@ -508,7 +510,12 @@ mod tests {
 
     #[gpui::test]
     fn transcript_calendar_roll_refreshes_open_conversation(cx: &mut TestAppContext) {
+        use chrono::Local;
+
+        use crate::irc::reducer::zero_time;
+        use crate::model::transcript::{day_caption, rows_from_messages_on};
         use crate::model::transcript_calendar::TranscriptCalendarSnapshot;
+        use crate::model::{ConversationRef, RowKind};
 
         let (activation_tx, _) = async_channel::unbounded();
         cx.update(|app| {
@@ -520,17 +527,129 @@ mod tests {
             Shell::new(cx, false, true, None, activation_tx)
         });
         shell.update(vcx, |shell, cx| {
-            shell.sync_view(cx);
-            let next = TranscriptCalendarSnapshot {
-                local_date: shell
-                    .transcript_calendar
-                    .local_date
-                    .succ_opt()
-                    .expect("test day fits in calendar"),
-                utc_offset_secs: shell.transcript_calendar.utc_offset_secs,
+            shell.select(ConversationRef::new(OMARCHY, "#ricing"), cx);
+            let messages = shell.controller.messages().to_vec();
+            let mark = shell.controller.unread_mark();
+            let message_day = messages
+                .iter()
+                .find_map(|message| {
+                    (message.time != zero_time())
+                        .then(|| message.time.with_timezone(&Local).date_naive())
+                })
+                .expect("#ricing seed has a dated line");
+            // Sit one day after the seed's local day so the leading rule reads Yesterday,
+            // then roll forward so the same rule becomes the short date.
+            let today = message_day.succ_opt().expect("seed day has a next day");
+            let next_day = today.succ_opt().expect("next day fits in calendar");
+            let offset = shell.transcript_calendar.utc_offset_secs;
+            shell.transcript_calendar = TranscriptCalendarSnapshot {
+                local_date: today,
+                utc_offset_secs: offset,
             };
-            shell.tick_transcript_calendar(next, cx);
-            assert_eq!(shell.transcript_calendar, next);
+            shell.refresh_shown_conversation(cx);
+            let expected_before = rows_from_messages_on(&messages, mark, today)
+                .into_iter()
+                .find(|row| row.kind == RowKind::DaySeparator)
+                .and_then(|row| row.separator_text);
+            assert_eq!(
+                expected_before.as_deref(),
+                Some(day_caption(message_day, today).as_str())
+            );
+            assert_eq!(
+                leading_day_separator(shell, cx),
+                expected_before,
+                "refresh must build captions from the calendar snapshot, not Local::now()"
+            );
+
+            shell.tick_transcript_calendar(
+                TranscriptCalendarSnapshot {
+                    local_date: next_day,
+                    utc_offset_secs: offset,
+                },
+                cx,
+            );
+            let expected_after = rows_from_messages_on(&messages, mark, next_day)
+                .into_iter()
+                .find(|row| row.kind == RowKind::DaySeparator)
+                .and_then(|row| row.separator_text);
+            assert_ne!(
+                expected_after, expected_before,
+                "calendar roll must change the leading day caption"
+            );
+            assert_eq!(
+                leading_day_separator(shell, cx),
+                expected_after,
+                "day roll must rebuild captions from the advanced snapshot local_date"
+            );
         });
+    }
+
+    #[gpui::test]
+    fn transcript_calendar_offset_tick_refreshes_open_conversation(cx: &mut TestAppContext) {
+        use chrono::Local;
+
+        use crate::irc::reducer::zero_time;
+        use crate::model::transcript::rows_from_messages_on;
+        use crate::model::transcript_calendar::TranscriptCalendarSnapshot;
+        use crate::model::{ConversationRef, RowKind};
+
+        let (activation_tx, _) = async_channel::unbounded();
+        cx.update(|app| {
+            app.set_global(OmaircStyleGlobal {
+                style: Style::new(Theme::defaults_dark(), 1.0),
+            });
+        });
+        let (shell, vcx) = cx.add_window_view(|_window, cx| {
+            Shell::new(cx, false, true, None, activation_tx)
+        });
+        shell.update(vcx, |shell, cx| {
+            shell.select(ConversationRef::new(OMARCHY, "#ricing"), cx);
+            let messages = shell.controller.messages().to_vec();
+            let mark = shell.controller.unread_mark();
+            let message_day = messages
+                .iter()
+                .find_map(|message| {
+                    (message.time != zero_time())
+                        .then(|| message.time.with_timezone(&Local).date_naive())
+                })
+                .expect("#ricing seed has a dated line");
+            let today = message_day.succ_opt().expect("seed day has a next day");
+            let offset = shell.transcript_calendar.utc_offset_secs;
+            shell.transcript_calendar = TranscriptCalendarSnapshot {
+                local_date: today,
+                utc_offset_secs: offset,
+            };
+            shell.refresh_shown_conversation(cx);
+            let expected = rows_from_messages_on(&messages, mark, today)
+                .into_iter()
+                .find(|row| row.kind == RowKind::DaySeparator)
+                .and_then(|row| row.separator_text);
+            assert_eq!(leading_day_separator(shell, cx), expected);
+
+            shell.tick_transcript_calendar(
+                TranscriptCalendarSnapshot {
+                    local_date: today,
+                    utc_offset_secs: offset + 3_600,
+                },
+                cx,
+            );
+            assert_eq!(
+                leading_day_separator(shell, cx),
+                expected,
+                "offset-only tick must still rebuild through the snapshot local_date"
+            );
+        });
+    }
+
+    fn leading_day_separator(shell: &Shell, cx: &gpui::App) -> Option<String> {
+        use crate::model::RowKind;
+
+        shell
+            .transcript
+            .read(cx)
+            .rows()
+            .iter()
+            .find(|row| row.kind == RowKind::DaySeparator)
+            .and_then(|row| row.separator_text.clone())
     }
 }

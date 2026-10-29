@@ -162,6 +162,7 @@ fn history_splice_keeps_the_reader_on_the_same_message(cx: &mut gpui::TestAppCon
                 self_nick: &self_nick,
                 features: &features,
                 typing_peer: None,
+                today: chrono::Local::now().date_naive(),
             });
         });
     });
@@ -204,6 +205,7 @@ fn history_splice_keeps_the_reader_on_the_same_message(cx: &mut gpui::TestAppCon
                     self_nick: &self_nick,
                     features: &features,
                     typing_peer: None,
+                    today: chrono::Local::now().date_naive(),
                 },
                 cx,
             );
@@ -253,6 +255,7 @@ fn history_prepend_keeps_anchor_message(cx: &mut gpui::TestAppContext) {
                 self_nick: &self_nick,
                 features: &features,
                 typing_peer: None,
+                today: chrono::Local::now().date_naive(),
             });
         });
     });
@@ -302,6 +305,7 @@ fn history_prepend_keeps_anchor_message(cx: &mut gpui::TestAppContext) {
                     self_nick: &self_nick,
                     features: &features,
                     typing_peer: None,
+                    today: chrono::Local::now().date_naive(),
                 },
                 cx,
             );
