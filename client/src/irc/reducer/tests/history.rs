@@ -181,6 +181,53 @@ fn only_visible_to_you_survives_history_and_hydrate() {
 }
 
 #[test]
+fn channel_context_msgid_skips_query_replay() {
+    let mut reducer = EventReducer::new();
+    welcome_omairc(&mut reducer, NETWORK_A);
+    fold(&mut reducer, join(NETWORK_A, "#room", "omairc"));
+    fold(&mut reducer, join(NETWORK_A, "#room", "bot"));
+    apply_wire(
+        &mut reducer,
+        "@msgid=only-1;+draft/channel-context=#room :bot!u@h PRIVMSG omairc :just you",
+    );
+
+    let room = reducer.conversation_key(NETWORK_A, "#room");
+    assert!(
+        message_by_body(&state_of(&reducer, &room).messages, "just you").only_visible_to_you,
+        "live only you"
+    );
+    assert!(
+        reducer.find(&reducer.conversation_key(NETWORK_A, "bot")).is_none(),
+        "no live direct"
+    );
+
+    let bot = reducer.conversation_key(NETWORK_A, "bot");
+    reducer.ensure_conversation(&bot, "bot", crate::irc::event::IrcConversationCause::UserOpen);
+    let history = history_of(
+        &reducer,
+        &batch(
+            "bot",
+            HistoryKind::Chat,
+            &["@msgid=only-1;+draft/channel-context=#room :bot!u@h PRIVMSG omairc :just you"],
+        ),
+    );
+    assert_eq!(history.lines.len(), 1, "query lines");
+    assert!(!history.lines[0].only_visible_to_you, "query stays unlabeled");
+    fold(&mut reducer, history);
+
+    let direct = state_of(&reducer, &bot);
+    assert!(
+        direct.messages.iter().all(|message| message.body != "just you"),
+        "query must not twin the channel filing"
+    );
+    assert_eq!(
+        message_by_body(&state_of(&reducer, &room).messages, "just you").body,
+        "just you",
+        "channel keeps the filing"
+    );
+}
+
+#[test]
 fn channel_context_direct_message_survives_when_untrusted() {
     let mut reducer = EventReducer::new();
     welcome_omairc(&mut reducer, NETWORK_A);

@@ -2095,6 +2095,41 @@ func TestOnlyVisibleToYouSurvivesHistoryAndHydrate(t *testing.T) {
 	requireInt(t, "hydrated origin", int(hydrated.Origin), int(OriginReplay))
 }
 
+func TestChannelContextMsgidSkipsQueryReplay(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "bot"}, reducerTimestamp)
+	applyWire(t, reducer, "@msgid=only-1;+draft/channel-context=#room :bot!u@h PRIVMSG omairc :just you")
+
+	room := reducer.ConversationKey(networkA, "#room")
+	requireTrue(t, "live only you", messageByBody(t, stateOf(t, reducer, room).Messages, "just you").OnlyVisibleToYou)
+	requireFalse(t, "no live direct", reducer.Find(reducer.ConversationKey(networkA, "bot")) != nil)
+
+	bot := reducer.ConversationKey(networkA, "bot")
+	reducer.EnsureConversation(bot, "bot", CauseUserOpen)
+	history, ok := TranslateHistory(networkA, "omairc", NewServerFeatures(), HistoryBatch{
+		Target: "bot",
+		Lines: []Message{
+			mustParse(t, "@msgid=only-1;+draft/channel-context=#room :bot!u@h PRIVMSG omairc :just you"),
+		},
+	}, reducerTimestamp, func(channel, sender string) (string, bool) {
+		return reducer.JoinedMemberChannel(networkA, channel, sender)
+	})
+	requireTrue(t, "query history", ok)
+	requireInt(t, "query lines", len(history.Lines), 1)
+	requireFalse(t, "query stays unlabeled", history.Lines[0].OnlyVisibleToYou)
+	reducer.Apply(history, reducerTimestamp)
+
+	direct := stateOf(t, reducer, bot)
+	for _, message := range direct.Messages {
+		if message.Body == "just you" {
+			t.Fatal("query must not twin the channel filing")
+		}
+	}
+	requireString(t, "channel keeps the filing", messageByBody(t, stateOf(t, reducer, room).Messages, "just you").Body, "just you")
+}
+
 func TestChannelContextDirectMessageSurvivesWhenUntrusted(t *testing.T) {
 	reducer := NewEventReducer()
 	welcome(reducer, networkA)
