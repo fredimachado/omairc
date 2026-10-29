@@ -54,7 +54,8 @@ type StyledSegment struct {
 }
 
 // Segment is the emphasis-only projection of a styled run: bold, italic, and
-// underline. Callers that do not render mIRC colors use EmphasizedSegments.
+// underline. The transcript paints FG/BG through StyledSegments when
+// showIrcColors is on; callers that only need emphasis use EmphasizedSegments.
 type Segment struct {
 	Bold      bool
 	Italic    bool

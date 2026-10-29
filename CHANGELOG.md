@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The terminal client paints mIRC foreground and background colors in the
+  transcript (default on), with `/pref colors` and Connect Preferences →
+  Show mIRC colors sharing the desktop `showIrcColors` setting. Formatting
+  stays when colors are off. Toggle refreshes lines already on screen.
+
 ### Fixed
 
 - A conversation left open overnight keeps Today and Yesterday day rules

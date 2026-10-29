@@ -1,7 +1,8 @@
 //! One walker produces styled runs with the full attribute set (colors, reverse
-//! monospace, strikethrough) for the GPUI transcript. `emphasized_segments` is the
-//! TUI's view: bold, italic and underline only, with colors and the other codes
-//! dropped, and adjacent runs that share those three flags merged.
+//! monospace, strikethrough) for the GPUI transcript. `emphasized_segments` is a
+//! test-only emphasis projection (bold, italic, underline) that historically
+//! matched the TUI before it painted mIRC FG/BG; the live TUI now uses Go
+//! `StyledSegments` with colors. Adjacent runs that share those three flags merge.
 
 use std::ops::Range;
 
@@ -12,8 +13,9 @@ use super::plaintext::{
     REVERSE, STRIKETHROUGH, UNDERLINE,
 };
 
-/// A run of TUI-visible text. The TUI never renders mIRC colors, so only the
-/// three emphasis flags survive.
+/// A run of emphasis-only text for the test-only `emphasized_segments`
+/// projection. Historical note: this mirrored the TUI when it painted bold,
+/// italic, and underline only; the product TUI now also renders mIRC FG/BG.
 #[cfg(test)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Segment {
@@ -59,11 +61,13 @@ pub fn has_irc_emphasis(text: &str) -> bool {
         .any(|code| matches!(code, BOLD | ITALIC | UNDERLINE))
 }
 
-/// The TUI's styled runs: bold, italic and underline only, over the plain text.
-/// Colors and the reverse, monospace and strikethrough codes do not split a run.
-/// Adjacent runs with equal flags are merged, so an unchanged flag set reads as
-/// one run. Go would split at a toggle that leaves the flags unchanged; the text
-/// and the flags a reader sees are the same either way.
+/// Test-only emphasis projection: bold, italic and underline only, over the
+/// plain text. Colors and the reverse, monospace and strikethrough codes do not
+/// split a run. The live TUI paints FG/BG through Go `StyledSegments`; this
+/// helper stays for Rust parity tests of the emphasis half. Adjacent runs with
+/// equal flags are merged, so an unchanged flag set reads as one run. Go would
+/// split at a toggle that leaves the flags unchanged; the text and the flags a
+/// reader sees are the same either way.
 #[cfg(test)]
 pub fn emphasized_segments(text: &str) -> Vec<Segment> {
     let plain = plain_irc_text(text);

@@ -225,6 +225,13 @@ const OMARCHY_MAIN_LINES: &[SeedLine] = &[
         "10:02",
     ),
     chat("mira", "Keep the member list optional and I am sold.", "10:04"),
+    // mIRC color 04 around paint-verify so /pref colors on/off proof can
+    // toggle an already-visible transcript body (LIST topics strip colors).
+    chat(
+        "dax",
+        "Color sample: \x0304paint-verify\x03 stays in the seed.",
+        "10:05",
+    ),
 ];
 
 const OMARCHY_DESKTOP_LINES: &[SeedLine] = &[
