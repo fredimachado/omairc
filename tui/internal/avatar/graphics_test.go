@@ -455,6 +455,21 @@ func TestLateHoldRequiresGraphicsOrXTPrefix(t *testing.T) {
 		}
 	})
 
+	t.Run("overlong split da1 does not resend esc", func(t *testing.T) {
+		f := &lateFilter{dropDA1: true}
+		if got := f.push([]byte{0x1b}); string(got) != "\x1b" {
+			t.Fatalf("Esc = %q", got)
+		}
+		long := append([]byte("[?"), bytes.Repeat([]byte{'1'}, 80)...)
+		got := f.push(long)
+		if !strings.HasPrefix(string(got), "[?") {
+			t.Fatalf("flush = %q, want continuation without a second Esc", got)
+		}
+		if strings.Contains(string(got), "\x1b") {
+			t.Fatalf("flush re-sent Esc: %q", got)
+		}
+	})
+
 	t.Run("response prefix needs G and XT body", func(t *testing.T) {
 		if isResponsePrefix([]byte("\x1b_")) || isResponsePrefix([]byte("\x1bP")) {
 			t.Fatal("bare Esc _ / Esc P must not seed a late hold")

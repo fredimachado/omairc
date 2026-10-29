@@ -577,7 +577,7 @@ func (f *lateFilter) takeEscContinuation(in []byte) []byte {
 			return nil
 		}
 		if in[1] == '?' {
-			f.buf = append(f.buf[:0], 0x1b, '[', '?')
+			f.buf = append(f.buf[:0], '[', '?')
 			f.state = lateCSI
 			return in[2:]
 		}
@@ -592,7 +592,7 @@ func (f *lateFilter) takeEscContinuation(in []byte) []byte {
 func (f *lateFilter) takeHeldBracket(in []byte, out *[]byte) []byte {
 	f.heldBracket = false
 	if len(in) > 0 && in[0] == '?' && f.dropDA1 {
-		f.buf = append(f.buf[:0], 0x1b, '[', '?')
+		f.buf = append(f.buf[:0], '[', '?')
 		f.state = lateCSI
 		return in[1:]
 	}

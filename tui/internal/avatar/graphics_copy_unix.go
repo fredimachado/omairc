@@ -22,6 +22,10 @@ func copyProbeInput(src, dst, wake *os.File, late *lateFilter) {
 		if err != nil || !srcReady {
 			return
 		}
+		// Close wins over a racing key so the post-Close stroke stays on src.
+		if wakeSignaled(wake) {
+			return
+		}
 		n, err := src.Read(tmp)
 		if n > 0 {
 			if err := filterCopyChunk(dst, late, tmp[:n]); err != nil {
@@ -36,6 +40,29 @@ func copyProbeInput(src, dst, wake *os.File, late *lateFilter) {
 
 func waitCopyStop(wg *sync.WaitGroup) {
 	wg.Wait()
+}
+
+func wakeSignaled(wake *os.File) bool {
+	if wake == nil {
+		return false
+	}
+	fds := []unix.PollFd{{Fd: int32(wake.Fd()), Events: unix.POLLIN}}
+	for {
+		n, err := unix.Poll(fds, 0)
+		if err == unix.EINTR {
+			continue
+		}
+		if err != nil {
+			return true
+		}
+		if n == 0 {
+			return false
+		}
+		if fds[0].Revents&unix.POLLNVAL != 0 {
+			return true
+		}
+		return fds[0].Revents&(unix.POLLIN|unix.POLLHUP|unix.POLLERR) != 0
+	}
 }
 
 func waitCopyReady(src, wake *os.File) (srcReady bool, err error) {
