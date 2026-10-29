@@ -328,7 +328,9 @@ never trusts `TERM`. It sends DA1 after the graphics query and stops when
 that answer arrives; the timeout is only the backstop. WezTerm answers that
 probe and stays on the half-block raster, because it does not draw Unicode
 placeholders. tmux and screen do not pass Kitty graphics through, so the
-probe gets no OK and the glyph stays on the half-block raster. Under tmux
+probe gets no OK and the glyph stays on the half-block raster. Non-empty
+`NO_COLOR` or `CLICOLOR=0` skips the probe entirely so raw mode and a replay
+reader never run; half-block avatars still follow `COLORTERM`/`TERM`. Under tmux
 on WezTerm, tmux sets `TERM_PROGRAM` and answers XTVERSION itself, so the
 WezTerm opt-out does not see the host; graphics still depend on `a=q`
 passthrough, and otherwise the glyph stays on the half-block raster.

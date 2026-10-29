@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reply drop. Closing the probe input reader stops the stdin copier so the
   next keystroke is not eaten. A second SIGTSTP right after continue can no
   longer stop the process while the tty is still raw.
+- TUI: `NO_COLOR` and `CLICOLOR=0` skip the Kitty graphics startup probe so
+  the terminal is not left in raw mode and early keystrokes are not wrapped in
+  a replay reader. Half-block avatars still follow `COLORTERM`/`TERM`; only
+  Unicode placeholders are disabled.
 - A conversation left open overnight keeps Today and Yesterday day rules
   current after local midnight and after the clock zone changes.
 
