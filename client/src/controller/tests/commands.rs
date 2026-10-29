@@ -361,6 +361,10 @@ fn kick_and_invite_take_an_explicit_channel_or_the_selected_one() {
 
 #[test]
 fn bans_and_quiets_arm_a_list_watch_and_file_whois_rows() {
+    // Demo advertises CHANMODES A with b and q and answers bare MODE #chan b|q
+    // during the dispatch pump, so the watch clears and whois-style rows land
+    // in the asking channel. Replace-while-armed is covered by the reply-router
+    // unit tests that inject without a live answerer.
     let mut fixture = Fixture::seeded();
     fixture.controller.select_conversation(OMARCHY, "#omarchy");
     fixture.clear_frames(OMARCHY);
@@ -370,36 +374,30 @@ fn bans_and_quiets_arm_a_list_watch_and_file_whois_rows() {
 
     assert_eq!(run(&mut fixture, CONVERSATION, "/bans"), CommandOutcome::Sent);
     assert_eq!(fixture.frames(OMARCHY), ["MODE #omarchy b\r\n"]);
-    assert_eq!(fixture.controller.reply_watches.list_mode_count(), 1);
-
-    // A second inquiry replaces the first watch.
-    fixture.clear_frames(OMARCHY);
-    assert_eq!(run(&mut fixture, CONVERSATION, "/bans"), CommandOutcome::Sent);
-    assert_eq!(fixture.controller.reply_watches.list_mode_count(), 1);
-
-    fixture.deliver(OMARCHY, ":server 367 fred #omarchy *!*@evil.com alice 1");
-    fixture.deliver(OMARCHY, ":server 368 fred #omarchy :End of Channel Ban List");
+    assert_eq!(fixture.controller.reply_watches.list_mode_count(), 0);
     assert!(fixture.controller.messages().iter().any(|row| {
-        row.kind == MessageKind::Whois && row.body.contains("ban *!*@evil.com on #omarchy")
+        row.kind == MessageKind::Whois && row.body.contains("ban *!*@evil.example on #omarchy")
     }));
     assert!(fixture.controller.messages().iter().any(|row| {
         row.kind == MessageKind::Whois && row.body.contains("End of ban list for #omarchy")
     }));
-    assert_eq!(fixture.controller.reply_watches.list_mode_count(), 0);
 
+    // Quiets without q in CHANMODES A is refused (demo seed includes q).
+    let mut without_quiet = fixture.controller.reducer.server_features(OMARCHY).clone();
+    without_quiet.apply_token("CHANMODES=beI,k,l,imnpst");
+    fixture.controller.reducer.set_server_features(OMARCHY, without_quiet);
     assert_eq!(run(&mut fixture, CONVERSATION, "/quiets"), CommandOutcome::Refused);
+
     let mut with_quiet = fixture.controller.reducer.server_features(OMARCHY).clone();
-    with_quiet.apply_token("CHANMODES=eIbq,k,l,imnpst");
+    with_quiet.apply_token("CHANMODES=bq,k,l,imnpst");
     fixture.controller.reducer.set_server_features(OMARCHY, with_quiet);
     fixture.clear_frames(OMARCHY);
     assert_eq!(run(&mut fixture, CONVERSATION, "/quiets"), CommandOutcome::Sent);
     assert_eq!(fixture.frames(OMARCHY), ["MODE #omarchy q\r\n"]);
-    fixture.deliver(OMARCHY, ":server 728 fred #omarchy q *!*@quiet.example bob 2");
-    fixture.deliver(OMARCHY, ":server 729 fred #omarchy q :End of Channel Quiet List");
+    assert_eq!(fixture.controller.reply_watches.list_mode_count(), 0);
     assert!(fixture.controller.messages().iter().any(|row| {
         row.kind == MessageKind::Whois && row.body.contains("quiet *!*@quiet.example on #omarchy")
     }));
-    assert_eq!(fixture.controller.reply_watches.list_mode_count(), 0);
 }
 
 #[test]
@@ -477,6 +475,10 @@ fn mode_and_the_channel_mode_wrappers_write_the_expected_change() {
     );
 
     // Quiet needs CHANMODES A to advertise q; mute stays a different verb.
+    // Demo seed includes q, so strip it first to prove the refuse path.
+    let mut without_quiet = fixture.controller.reducer.server_features(OMARCHY).clone();
+    without_quiet.apply_token("CHANMODES=beI,k,l,imnpst");
+    fixture.controller.reducer.set_server_features(OMARCHY, without_quiet);
     assert_eq!(run(&mut fixture, CONVERSATION, "/quiet bob"), CommandOutcome::Refused);
     let mut with_quiet = fixture.controller.reducer.server_features(OMARCHY).clone();
     with_quiet.apply_token("CHANMODES=eIbq,k,l,imnpst");
