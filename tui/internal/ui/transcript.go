@@ -765,6 +765,9 @@ func (m *Model) clearFirstUnseen() {
 // A count increase with a higher splice epoch is a head or mid splice, not a
 // live append: inventing firstUnseenRow at the old count would point at
 // already-read history below a reader who loaded older pages at the top.
+// Inventing while a transcript anchor is live also records
+// firstUnseenSequenceAtAnchor so the later older-page restore can re-resolve
+// the marker instead of keeping the pre-prepend index.
 func (m *Model) noteTranscriptGrowth() {
 	defer m.syncTranscriptLineCount()
 	count := m.transcriptRowTotal()
@@ -776,20 +779,18 @@ func (m *Model) noteTranscriptGrowth() {
 		if spliceEpoch > m.transcriptAnchorSpliceEpoch {
 			hadUnseen := m.firstUnseenRow >= 0
 			unseenSequence := m.firstUnseenSequenceAtAnchor
+			unseenRow := m.firstUnseenRow
 			resumeSequence := m.unseenResumeSequenceAtAnchor
 			resumeRow := m.unseenResumeRow
 			oldCount := m.transcriptCount
 			m.restoreTranscriptAnchor()
-			if hadUnseen && unseenSequence >= 0 && !m.transcriptFollowEnd {
-				resolved := false
-				for index, message := range m.ctrl.Messages() {
-					if message.Sequence == unseenSequence {
-						m.firstUnseenRow = index
-						resolved = true
-						break
-					}
-				}
-				if !resolved {
+			if hadUnseen && !m.transcriptFollowEnd {
+				// Mirror resume: sequence wins; a missing sequence (invent
+				// under a live anchor that forgot to record one) shifts by
+				// the row delta instead of keeping the pre-prepend index.
+				m.firstUnseenRow = shiftedResumeRow(
+					m.ctrl.Messages(), unseenSequence, unseenRow, count-oldCount, count)
+				if m.firstUnseenRow < 0 {
 					m.clearFirstUnseen()
 				}
 			} else if !hadUnseen {
@@ -818,6 +819,10 @@ func (m *Model) noteTranscriptGrowth() {
 			m.clearFirstUnseen()
 			m.unseenResumeRow = -1
 		} else if spliced {
+			// Unanchored head/mid splice only: no live transcript anchor, so
+			// there is no snapshotted sequence. Shift row indexes by the
+			// growth delta. Cover with OlderPageWithoutAnchor*; anchored
+			// restores use firstUnseenSequenceAtAnchor above.
 			delta := count - m.transcriptCount
 			if m.firstUnseenRow >= 0 {
 				m.firstUnseenRow += delta
@@ -829,6 +834,16 @@ func (m *Model) noteTranscriptGrowth() {
 		} else {
 			if m.firstUnseenRow < 0 {
 				m.firstUnseenRow = m.transcriptCount
+				// An older-page request may already hold a viewport anchor
+				// with no marker. Record the invented row's sequence so the
+				// later splice restore can re-resolve it (not keep the
+				// pre-prepend index).
+				if m.transcriptAnchorSequence >= 0 && m.ctrl != nil {
+					messages := m.ctrl.Messages()
+					if m.firstUnseenRow < len(messages) {
+						m.firstUnseenSequenceAtAnchor = messages[m.firstUnseenRow].Sequence
+					}
+				}
 			}
 			m.holdDetachedTranscript()
 		}
@@ -1027,9 +1042,10 @@ func (m *Model) settleUnseenResume() {
 	m.unseenResumeRow = below
 }
 
-// shiftedResumeRow moves the catch-up index across a prepend. A snapshotted
-// sequence wins, including a tail-cap that keeps the row count steady. Without
-// a sequence the index shifts by the row delta. A trimmed row becomes -1.
+// shiftedResumeRow moves a snapshotted row index across a prepend (unseen
+// marker or catch-up resume). A snapshotted sequence wins, including a
+// tail-cap that keeps the row count steady. Without a sequence the index
+// shifts by the row delta. A trimmed row becomes -1.
 func shiftedResumeRow(messages []controller.MessageSnapshot, sequence int64, row, delta, count int) int {
 	if sequence >= 0 {
 		for index, message := range messages {

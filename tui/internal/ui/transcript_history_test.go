@@ -162,10 +162,10 @@ func TestOlderDayPrependKeepsAnchorTextLine(t *testing.T) {
 	}
 }
 
-// TestOlderPageAtTopDoesNotArmJumpWhenCaughtUp proves a CHATHISTORY BEFORE
-// page at the top must not arm ↓ new when the reader has no unseen rows.
-// Prepending older lines grows the count while detached; that growth must not
-// be treated as a live arrival below the viewport.
+// TestOlderPageAtTopDoesNotArmJumpWhenCaughtUp is a caught-up guard: a
+// CHATHISTORY BEFORE page at the top must not arm ↓ new when there is no
+// marker. It is not the invent-without-sequence repro (see
+// TestNoteTranscriptGrowthRestoresInventedFirstUnseenAfterOlderPage).
 func TestOlderPageAtTopDoesNotArmJumpWhenCaughtUp(t *testing.T) {
 	m, key, day := scrollableYesterday(t)
 	if m.firstUnseenRow != -1 || m.jumpArmed() {
@@ -292,6 +292,78 @@ func TestNoteTranscriptGrowthRestoresFirstUnseenAfterOlderPage(t *testing.T) {
 	}
 }
 
+// TestNoteTranscriptGrowthRestoresInventedFirstUnseenAfterOlderPage proves the
+// inflight invent-without-sequence path: snapshot older-page with no marker,
+// a live append invents firstUnseenRow while the anchor is live, then the
+// older page restores. The marker must stay on the invented live row, not the
+// pre-prepend index.
+func TestNoteTranscriptGrowthRestoresInventedFirstUnseenAfterOlderPage(t *testing.T) {
+	m := seededModel(t)
+	m.transcriptFollowEnd = false
+	messages := m.ctrl.Messages()
+	if len(messages) < 2 {
+		t.Fatal("seeded transcript must have messages")
+	}
+	m.transcriptCount = m.transcriptRowTotal()
+	m.transcriptSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
+	m.snapshotTranscriptAnchor()
+	if m.transcriptAnchorSequence < 0 {
+		t.Fatal("precondition: older-page anchor must be live")
+	}
+	if m.firstUnseenRow >= 0 || m.firstUnseenSequenceAtAnchor >= 0 {
+		t.Fatalf("precondition: no marker yet, unseen=%d seq=%d",
+			m.firstUnseenRow, m.firstUnseenSequenceAtAnchor)
+	}
+
+	oldCount := m.transcriptCount
+	key := m.ctrl.Reducer().ConversationKey("omarchy", "#omarchy")
+	m.ctrl.Apply(irc.MessageEvent{
+		Conversation: key,
+		Author:       "alice",
+		Body:         "live while older page inflight",
+		Timestamp:    time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
+		Target:       "#omarchy",
+	})
+	m.ctrl.Publish(irc.ViewNotify{Messages: true})
+	m.noteTranscriptGrowth()
+	if m.firstUnseenRow != oldCount {
+		t.Fatalf("invented firstUnseenRow = %d, want %d", m.firstUnseenRow, oldCount)
+	}
+	inventedSequence := m.ctrl.Messages()[m.firstUnseenRow].Sequence
+	if m.firstUnseenSequenceAtAnchor != inventedSequence {
+		t.Fatalf("invent under a live anchor must record sequence, got %d want %d",
+			m.firstUnseenSequenceAtAnchor, inventedSequence)
+	}
+	if m.transcriptAnchorSequence < 0 {
+		t.Fatal("live invent must leave the older-page anchor armed")
+	}
+
+	when := time.Date(2026, 9, 26, 8, 0, 0, 0, time.UTC)
+	m.ctrl.Apply(irc.HistoryEvent{
+		Conversation: key,
+		Target:       "#omarchy",
+		Kind:         irc.HistoryChat,
+		OlderPage:    true,
+		Lines: []irc.ReplayLine{{
+			Author:    "bob",
+			Body:      "older during invent",
+			Timestamp: when,
+			MsgID:     irc.MsgID{Value: "older-during-invent"},
+		}},
+	})
+	m.ctrl.Publish(irc.ViewNotify{Messages: true})
+	m.noteTranscriptGrowth()
+
+	wantRow := oldCount + 1
+	if m.firstUnseenRow != wantRow {
+		t.Fatalf("firstUnseenRow = %d, want %d after prepend over invented marker",
+			m.firstUnseenRow, wantRow)
+	}
+	if got := m.ctrl.Messages()[m.firstUnseenRow].Sequence; got != inventedSequence {
+		t.Fatalf("marker sequence = %d, want invented live %d", got, inventedSequence)
+	}
+}
+
 func TestNoteTranscriptGrowthRestoresUnseenResumeAfterOlderPage(t *testing.T) {
 	m := seededModel(t)
 	m.transcriptFollowEnd = false
@@ -326,6 +398,43 @@ func TestNoteTranscriptGrowthRestoresUnseenResumeAfterOlderPage(t *testing.T) {
 	wantRow := resumeIndex + 1
 	if m.unseenResumeRow != wantRow {
 		t.Fatalf("unseenResumeRow = %d, want %d after one prepended row", m.unseenResumeRow, wantRow)
+	}
+}
+
+func TestNoteTranscriptGrowthShiftsFirstUnseenWithoutASequence(t *testing.T) {
+	m := seededModel(t)
+	m.transcriptFollowEnd = false
+	messages := m.ctrl.Messages()
+	if len(messages) < 2 {
+		t.Fatal("seeded transcript must have messages")
+	}
+	markerIndex := len(messages) - 1
+	m.firstUnseenRow = markerIndex
+	m.firstUnseenSequenceAtAnchor = -1
+	m.transcriptCount = m.transcriptRowTotal()
+	m.transcriptAnchorSequence = messages[0].Sequence
+	m.transcriptAnchorSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
+
+	key := m.ctrl.Reducer().ConversationKey("omarchy", "#omarchy")
+	when := time.Date(2026, 9, 26, 8, 2, 0, 0, time.UTC)
+	m.ctrl.Apply(irc.HistoryEvent{
+		Conversation: key,
+		Target:       "#omarchy",
+		Kind:         irc.HistoryChat,
+		OlderPage:    true,
+		Lines: []irc.ReplayLine{{
+			Author:    "bob",
+			Body:      "older unseen delta",
+			Timestamp: when,
+			MsgID:     irc.MsgID{Value: "older-unseen-delta"},
+		}},
+	})
+	m.ctrl.Publish(irc.ViewNotify{Messages: true})
+	m.noteTranscriptGrowth()
+
+	wantRow := markerIndex + 1
+	if m.firstUnseenRow != wantRow {
+		t.Fatalf("firstUnseenRow = %d, want %d after a delta shift", m.firstUnseenRow, wantRow)
 	}
 }
 
