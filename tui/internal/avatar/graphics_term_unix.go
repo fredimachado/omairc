@@ -44,16 +44,17 @@ func (b *bufferedProbeInput) watchStop() {
 			return
 		}
 		// Cooked mode is only for the stopped process. stopProcess does
-		// not return until SIGCONT, and reapply runs before this
-		// goroutine reads the terminal again.
+		// not return until SIGCONT. Re-arm Notify before reapply so a
+		// second SIGTSTP in that gap cannot stop the process while the
+		// tty is still raw.
 		b.releaseForStop()
 		raiseDefaultStop()
 		if b.terminalStopped() {
 			return
 		}
+		signal.Notify(stop, syscall.SIGTSTP)
 		b.reapply()
 		requestRedraw()
-		signal.Notify(stop, syscall.SIGTSTP)
 	}
 }
 
