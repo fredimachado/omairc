@@ -360,6 +360,52 @@ fn kick_and_invite_take_an_explicit_channel_or_the_selected_one() {
 }
 
 #[test]
+fn kickban_sends_mode_then_kick_with_kick_scope_and_ban_masks() {
+    let mut fixture = Fixture::seeded();
+    fixture.controller.select_conversation(OMARCHY, "#omarchy");
+    fixture.clear_frames(OMARCHY);
+
+    assert_eq!(
+        run(&mut fixture, CONVERSATION, "/kickban #room bob spam"),
+        CommandOutcome::Sent
+    );
+    assert_eq!(
+        fixture.frames(OMARCHY),
+        [
+            "MODE #room +b bob!*@*\r\n",
+            "KICK #room bob :spam\r\n",
+        ]
+    );
+
+    fixture.clear_frames(OMARCHY);
+    assert_eq!(run(&mut fixture, CONVERSATION, "/kb bob"), CommandOutcome::Sent);
+    assert_eq!(
+        fixture.frames(OMARCHY),
+        [
+            "MODE #omarchy +b bob!*@*\r\n",
+            "KICK #omarchy bob\r\n",
+        ]
+    );
+
+    fixture.clear_frames(OMARCHY);
+    assert_eq!(
+        run(&mut fixture, CONVERSATION, "/kickban bob!u@h bye"),
+        CommandOutcome::Sent
+    );
+    assert_eq!(
+        fixture.frames(OMARCHY),
+        [
+            "MODE #omarchy +b bob!u@h\r\n",
+            "KICK #omarchy bob :bye\r\n",
+        ]
+    );
+
+    assert_eq!(run(&mut fixture, CONVERSATION, "/kickban #room"), CommandOutcome::Refused);
+    fixture.controller.open_status(OMARCHY);
+    assert_eq!(run(&mut fixture, STATUS, "/kickban bob"), CommandOutcome::WrongScope);
+}
+
+#[test]
 fn mode_and_the_channel_mode_wrappers_write_the_expected_change() {
     // Go `TestCommandDispatcherMode`. `/ban` with no `!` or `@` gets `!*@*`.
     let mut fixture = Fixture::seeded();

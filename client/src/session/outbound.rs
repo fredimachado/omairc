@@ -113,6 +113,24 @@ impl Session {
         })
     }
 
+    /// Writes `MODE +b` then `KICK` for a kickban (`IrcSession::kickban`). Both
+    /// frames go out at send time; there is no wait for a MODE ack.
+    pub fn kickban(&self, channel: &str, mask: &str, nick: &str, reason: &str) -> bool {
+        if channel.is_empty() || mask.is_empty() || nick.is_empty() {
+            return false;
+        }
+        let ban = IrcChannelModeRequest {
+            channel: channel.to_owned(),
+            modes: "+b".to_owned(),
+            parameters: vec![mask.to_owned()],
+            query: false,
+        };
+        if !self.send_channel_mode(&ban) {
+            return false;
+        }
+        self.kick(channel, nick, reason)
+    }
+
     /// Writes an INVITE (`IrcSession::invite`).
     pub fn invite(&self, nick: &str, channel: &str) -> bool {
         self.locked(|core| {

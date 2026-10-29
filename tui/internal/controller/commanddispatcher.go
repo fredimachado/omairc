@@ -312,6 +312,13 @@ func (d *CommandDispatcher) Dispatch(command irc.Command, surface irc.ComposerSu
 		if done {
 			return outcome
 		}
+	case irc.VerbKickban:
+		var outcome irc.CommandOutcome
+		var done bool
+		sent, outcome, done = d.dispatchKickban(active, command, surface)
+		if done {
+			return outcome
+		}
 	case irc.VerbInvite:
 		var outcome irc.CommandOutcome
 		var done bool
@@ -471,6 +478,54 @@ func (d *CommandDispatcher) dispatchKick(
 	channel := d.host.SelectedTarget()
 	sent := channel != "" && active.Kick(channel, first, restAfterFirstToken(command.Argument))
 	return sent, irc.OutcomeSent, false
+}
+
+// dispatchKickban resolves the Kickban arm of dispatch. Scope matches /kick;
+// the ban mask expands like /ban, and a token with ! bans that mask while
+// kicking the nick before !.
+func (d *CommandDispatcher) dispatchKickban(
+	active *session.Session,
+	command irc.Command,
+	surface irc.ComposerSurface,
+) (bool, irc.CommandOutcome, bool) {
+	first := firstToken(command.Argument)
+	if first == "" {
+		return false, irc.OutcomeRefused, true
+	}
+	networkID := d.host.QueryNetworkID(surface)
+	features := d.reducer.ServerFeatures(networkID)
+
+	var channel, nickToken, reason string
+	if features.IsChannel(first) {
+		afterChannel := restAfterFirstToken(command.Argument)
+		nickToken = firstToken(afterChannel)
+		if nickToken == "" {
+			return false, irc.OutcomeRefused, true
+		}
+		channel = first
+		reason = restAfterFirstToken(afterChannel)
+	} else {
+		key, ok := d.host.SelectedKey()
+		if !ok || !d.host.SelectedIsChannel() {
+			return false, irc.OutcomeWrongScope, true
+		}
+		if key.NetworkID != networkID {
+			return false, irc.OutcomeRefused, true
+		}
+		channel = d.host.SelectedTarget()
+		if channel == "" {
+			return false, irc.OutcomeRefused, true
+		}
+		nickToken = first
+		reason = restAfterFirstToken(command.Argument)
+	}
+
+	nick := irc.KickNickFromMask(nickToken)
+	if nick == "" {
+		return false, irc.OutcomeRefused, true
+	}
+	mask := irc.ExpandListMask(nickToken)
+	return active.Kickban(channel, mask, nick, reason), irc.OutcomeSent, false
 }
 
 // dispatchInvite resolves the Invite arm of dispatch. done is true when the arm

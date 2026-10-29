@@ -566,6 +566,54 @@ func TestCommandDispatcherKickInvite(t *testing.T) {
 	commandWrote(t, transport, "INVITE bob #room\r\n")
 }
 
+func TestCommandDispatcherKickban(t *testing.T) {
+	fixture := newCommandFixture()
+	active, transport := commandRegisteredSession(t, "freenode")
+	fixture.host.sessionForSurface = active
+
+	before := len(commandFrames(transport))
+	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbKickban, Argument: "#room bob spam"}, irc.SurfaceConversation), irc.OutcomeSent, "kickban channel")
+	commandRequireLastFrames(t, transport, before, []string{
+		"MODE #room +b bob!*@*\r\n",
+		"KICK #room bob :spam\r\n",
+	})
+
+	fixture.host.selectedKey = fixture.reducer.ConversationKey("freenode", "#room")
+	fixture.host.hasSelectedKey = true
+	fixture.host.selectedIsChannel = true
+	fixture.host.selectedTarget = "#room"
+	before = len(commandFrames(transport))
+	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbKickban, Argument: "bob"}, irc.SurfaceConversation), irc.OutcomeSent, "kickban selected")
+	commandRequireLastFrames(t, transport, before, []string{
+		"MODE #room +b bob!*@*\r\n",
+		"KICK #room bob\r\n",
+	})
+
+	before = len(commandFrames(transport))
+	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbKickban, Argument: "bob!u@h bye"}, irc.SurfaceConversation), irc.OutcomeSent, "kickban mask")
+	commandRequireLastFrames(t, transport, before, []string{
+		"MODE #room +b bob!u@h\r\n",
+		"KICK #room bob :bye\r\n",
+	})
+
+	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbKickban, Argument: "#room"}, irc.SurfaceConversation), irc.OutcomeRefused, "kickban no nick")
+	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbKickban, Argument: "bob"}, irc.SurfaceStatus), irc.OutcomeWrongScope, "kickban status")
+}
+
+func commandRequireLastFrames(t *testing.T, transport *session.LoopbackTransport, before int, want []string) {
+	t.Helper()
+	frames := commandFrames(transport)
+	got := frames[before:]
+	if len(got) != len(want) {
+		t.Fatalf("wrote %d frames after mark, want %d: got %q", len(got), len(want), got)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("frame[%d] = %q, want %q", index, got[index], want[index])
+		}
+	}
+}
+
 func TestCommandDispatcherMode(t *testing.T) {
 	fixture := newCommandFixture()
 	active, transport := commandRegisteredSession(t, "freenode")

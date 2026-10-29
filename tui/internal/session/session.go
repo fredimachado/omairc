@@ -901,6 +901,23 @@ func (s *Session) Kick(channel, nick, reason string) bool {
 	return sent
 }
 
+// Kickban writes MODE +b then KICK. It mirrors IrcSession::kickban: both frames
+// go out at send time with no wait for a MODE ack.
+func (s *Session) Kickban(channel, mask, nick, reason string) bool {
+	if channel == "" || mask == "" || nick == "" {
+		return false
+	}
+	ban := irc.ChannelModeRequest{
+		Channel:    channel,
+		Modes:      "+b",
+		Parameters: []string{mask},
+	}
+	if !s.SendChannelMode(ban) {
+		return false
+	}
+	return s.Kick(channel, nick, reason)
+}
+
 // Invite writes an INVITE. It mirrors IrcSession::invite.
 func (s *Session) Invite(nick, channel string) bool {
 	var sent bool

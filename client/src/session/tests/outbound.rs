@@ -163,6 +163,36 @@ fn kick_writes_optional_reason() {
 }
 
 #[test]
+fn kickban_writes_mode_then_kick_without_waiting() {
+    let fx = registered();
+    let before = fx.frames().len();
+    assert!(!fx.session.kickban("", "alice!*@*", "alice", "spam"));
+    assert!(!fx.session.kickban("#omarchy", "", "alice", "spam"));
+    assert!(!fx.session.kickban("#omarchy", "alice!*@*", "", "spam"));
+    assert_eq!(fx.frames().len(), before, "invalid kickban must not write");
+
+    assert!(fx.session.kickban("#omarchy", "alice!*@*", "alice", "spam"));
+    let frames = fx.frames();
+    assert_eq!(
+        &frames[frames.len() - 2..],
+        [
+            "MODE #omarchy +b alice!*@*\r\n".to_owned(),
+            "KICK #omarchy alice :spam\r\n".to_owned(),
+        ]
+    );
+
+    assert!(fx.session.kickban("#omarchy", "bob!u@h", "bob", ""));
+    let frames = fx.frames();
+    assert_eq!(
+        &frames[frames.len() - 2..],
+        [
+            "MODE #omarchy +b bob!u@h\r\n".to_owned(),
+            "KICK #omarchy bob\r\n".to_owned(),
+        ]
+    );
+}
+
+#[test]
 fn invite_writes_nick_then_channel() {
     let fx = registered();
     let before = fx.frames().len();

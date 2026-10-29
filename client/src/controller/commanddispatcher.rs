@@ -15,7 +15,7 @@
 
 use crate::irc::autoaway::parse_autoaway_argument;
 use crate::irc::channelmode::parse_channel_mode_request;
-use crate::irc::listmask::{expand_list_mask, ListMaskKind};
+use crate::irc::listmask::{expand_list_mask, kick_nick_from_mask, ListMaskKind};
 use crate::irc::pref::{PrefName, PrefRequest, PrefValue, Preferences};
 use crate::irc::command::{
     command_outcome_text, help_text, parse, pref_reply, Command, CommandOutcome, ComposerSurface,
@@ -299,10 +299,8 @@ impl Controller {
                 words,
                 surface,
             ),
-            // Slice 1 stubs for kickban / list inquiry; filled in with Session::kickban.
-            Command::Kickban(_) | Command::Bans(_) | Command::Quiets(_) => {
-                CommandOutcome::Unsupported
-            },
+            // Slice 1 stubs for list inquiry; filled in with reply-router watches.
+            Command::Bans(_) | Command::Quiets(_) => CommandOutcome::Unsupported,
             Command::Raw(line) => self.dispatch_raw(line, surface),
             Command::Whois(words) => self.dispatch_whois(words, surface),
             Command::Ping(words) => self.dispatch_ctcp("PING", words, surface),
@@ -352,6 +350,7 @@ impl Controller {
             | Command::Nick(_)
             | Command::Disconnect(_)
             | Command::Kick(_)
+            | Command::Kickban(_)
             | Command::Invite(_)
             | Command::Away(_)
             | Command::Back => self.dispatch_wire(command, surface),
@@ -381,6 +380,9 @@ impl Controller {
             Command::Join(argument) => return self.dispatch_join(&active, argument),
             Command::Part(words) => return self.dispatch_part(&active, words, surface),
             Command::Kick(words) => return self.dispatch_kick(&active, &joined(words), surface),
+            Command::Kickban(words) => {
+                return self.dispatch_kickban(&active, &joined(words), surface)
+            }
             Command::Invite(words) => return self.dispatch_invite(&active, &joined(words), surface),
             Command::Nick(nick) => !nick.is_empty() && active.change_nick(nick),
             Command::Disconnect(reason) => {
@@ -562,6 +564,49 @@ impl Controller {
         }
         let channel = self.selected_target().to_owned();
         outcome_of(!channel.is_empty() && active.kick(&channel, &words.first, &words.rest))
+    }
+
+    /// `/kickban [channel] <nick> [reason]` (`/kb`). Scope matches `/kick`; the ban
+    /// mask expands like `/ban`, and a token with `!` bans that mask while kicking
+    /// the nick before `!`.
+    fn dispatch_kickban(
+        &mut self,
+        active: &Session,
+        argument: &str,
+        surface: ComposerSurface,
+    ) -> CommandOutcome {
+        let words = Words::split(argument);
+        if words.first.is_empty() {
+            return CommandOutcome::Refused;
+        }
+        let network = self.surface_network(surface);
+        let features = self.reducer.server_features(&network).clone();
+        let (channel, nick_token, reason) = if features.is_channel(&words.first) {
+            let after = Words::split(&words.rest);
+            if after.first.is_empty() {
+                return CommandOutcome::Refused;
+            }
+            (words.first.clone(), after.first.clone(), after.rest.clone())
+        } else {
+            if self.selected.is_none() || !self.is_channel() {
+                return CommandOutcome::WrongScope;
+            }
+            let selected_network = self.selected.as_ref().map(|key| key.network_id.clone());
+            if selected_network.as_deref() != Some(network.as_str()) {
+                return CommandOutcome::Refused;
+            }
+            let channel = self.selected_target().to_owned();
+            if channel.is_empty() {
+                return CommandOutcome::Refused;
+            }
+            (channel, words.first.clone(), words.rest.clone())
+        };
+        let nick = kick_nick_from_mask(&nick_token);
+        if nick.is_empty() {
+            return CommandOutcome::Refused;
+        }
+        let mask = expand_list_mask(&nick_token);
+        outcome_of(active.kickban(&channel, &mask, nick, &reason))
     }
 
     /// `/invite <nick> [channel]` (`dispatchInvite`). Without a channel the selected one is used
