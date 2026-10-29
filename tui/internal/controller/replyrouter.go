@@ -27,6 +27,7 @@ type ReplyHost interface {
 	SessionFor(surface irc.ComposerSurface) *session.Session
 	SelectedSession() *session.Session
 	SelectedTarget() string
+	SelectedIsChannel() bool
 	SelectedIsCloseableDirect() bool
 	HasNetworks() bool
 	Now() time.Time
@@ -90,6 +91,14 @@ type replyCtcpWatch struct {
 	destination replyDestination
 }
 
+// replyListModeWatch is one in-flight ban/quiet list inquiry. One per network;
+// a new /bans or /quiets replaces the previous arm.
+type replyListModeWatch struct {
+	destination irc.ConversationKey
+	kind        irc.ListMaskKind
+	channel     string
+}
+
 // replyOwnMetadataKind distinguishes a set watch from a clear watch. It
 // mirrors IrcOwnMetadataWatch::Kind.
 type replyOwnMetadataKind int
@@ -116,6 +125,7 @@ type ReplyRouter struct {
 	whoisWatches       map[replyWhoisWatchKey]replyWhoisWatch
 	ctcpWatches        map[replyCtcpWatchKey]replyCtcpWatch
 	labeledWatches     map[replyLabeledWatchKey]replyLabeledWatch
+	listModeWatches    map[string]replyListModeWatch
 	ownMetadataWatches map[string]map[string]replyOwnMetadataWatch
 
 	// ownMetadataDispatchDepth defers an own-metadata reply that arrives while
@@ -144,6 +154,7 @@ func NewReplyRouter(reducer *irc.EventReducer, host ReplyHost) *ReplyRouter {
 		whoisWatches:       make(map[replyWhoisWatchKey]replyWhoisWatch),
 		ctcpWatches:        make(map[replyCtcpWatchKey]replyCtcpWatch),
 		labeledWatches:     make(map[replyLabeledWatchKey]replyLabeledWatch),
+		listModeWatches:    make(map[string]replyListModeWatch),
 		ownMetadataWatches: make(map[string]map[string]replyOwnMetadataWatch),
 	}
 }
@@ -166,6 +177,7 @@ func (r *ReplyRouter) Forget(networkID string) {
 		}
 	}
 	r.replyForgetLabeledWatches(networkID, replyLabeledCtcp)
+	delete(r.listModeWatches, networkID)
 	delete(r.ownMetadataWatches, networkID)
 }
 
@@ -217,10 +229,83 @@ func (r *ReplyRouter) RouteStatusEntry(entry irc.StatusEntry) {
 		if line := entry.WhoisLine(); line != nil {
 			r.replyRouteWhoisLine(networkID, *line)
 		}
+		if line := entry.ListModeLine(); line != nil {
+			r.replyRouteListModeLine(networkID, *line)
+		}
 		if line := entry.CtcpReplyLine(); line != nil {
 			r.replyRouteCtcpReply(networkID, *line, entry.Text())
 		}
 	}
+}
+
+// replyRouteListModeLine copies an armed ban/quiet list reply into the asking
+// channel. A new inquiry replaces the previous watch, so at most one list
+// inquiry is armed per network.
+func (r *ReplyRouter) replyRouteListModeLine(networkID string, line irc.ListModeLine) {
+	watch, found := r.listModeWatches[networkID]
+	if !found || watch.kind != line.Kind() {
+		return
+	}
+	features := r.reducer.ServerFeatures(networkID)
+	if !features.CaseMapping().Equals(watch.channel, line.Channel()) {
+		return
+	}
+	r.host.ApplyWhoisTranscript(irc.WhoisTranscriptEvent{
+		Destination:   watch.destination,
+		FormattedBody: line.Text(),
+	})
+	if line.Terminal() {
+		delete(r.listModeWatches, networkID)
+	}
+}
+
+// DispatchListModeInquiry runs /bans or /quiets. Conversation-only; a second
+// inquiry on the same network replaces the first.
+func (r *ReplyRouter) DispatchListModeInquiry(
+	kind irc.ListMaskKind,
+	argument string,
+	surface irc.ComposerSurface,
+) irc.CommandOutcome {
+	if argument != "" {
+		return irc.OutcomeRefused
+	}
+	if surface != irc.SurfaceConversation || !r.host.SelectedIsChannel() {
+		return irc.OutcomeWrongScope
+	}
+	key, ok := r.host.SelectedKey()
+	if !ok {
+		return irc.OutcomeWrongScope
+	}
+	networkID := r.host.QueryNetworkID(surface)
+	if networkID == "" || key.NetworkID != networkID {
+		return irc.OutcomeRefused
+	}
+	features := r.reducer.ServerFeatures(networkID)
+	if kind == irc.ListMaskQuiet && !strings.ContainsRune(features.ChanModesA(), 'q') {
+		return irc.OutcomeRefused
+	}
+	channel := r.host.SelectedTarget()
+	if channel == "" || !features.IsChannel(channel) {
+		return irc.OutcomeRefused
+	}
+	sess := r.host.SessionFor(surface)
+	if sess == nil || sess.State() != session.StateRegistered {
+		return irc.OutcomeNotConnected
+	}
+	request := irc.ChannelModeRequest{
+		Channel: channel,
+		Modes:   string([]byte{kind.ModeLetter()}),
+	}
+	r.listModeWatches[networkID] = replyListModeWatch{
+		destination: key,
+		kind:        kind,
+		channel:     channel,
+	}
+	if !sess.SendChannelMode(request) {
+		delete(r.listModeWatches, networkID)
+		return irc.OutcomeRefused
+	}
+	return irc.OutcomeSent
 }
 
 // RouteOwnMetadataFail routes a METADATA FAIL that answers a pending own

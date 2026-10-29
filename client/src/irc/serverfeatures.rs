@@ -231,7 +231,6 @@ impl IrcServerFeatures {
     }
 
     /// CHANMODES group A, the list modes.
-    #[cfg(test)]
     pub fn chan_modes_a(&self) -> &str {
         &self.chan_modes[0]
     }

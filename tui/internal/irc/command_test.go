@@ -10,8 +10,8 @@ import (
 
 func TestVerbTableShape(t *testing.T) {
 	table := VerbTable()
-	if len(table) != 47 {
-		t.Fatalf("verb table has %d rows, want 47", len(table))
+	if len(table) != 53 {
+		t.Fatalf("verb table has %d rows, want 53", len(table))
 	}
 
 	first := table[0]
@@ -69,6 +69,9 @@ func TestLookupVerbCaseAndAliases(t *testing.T) {
 	}
 	if spec := LookupVerb("quote"); spec == nil || spec.Verb != VerbRaw {
 		t.Fatalf("LookupVerb(quote) = %+v, want raw", spec)
+	}
+	if spec := LookupVerb("kb"); spec == nil || spec.Verb != VerbKickban {
+		t.Fatalf("LookupVerb(kb) = %+v, want kickban", spec)
 	}
 	if spec := LookupVerb("nope"); spec != nil {
 		t.Fatalf("LookupVerb(nope) = %+v, want nil", spec)
@@ -168,11 +171,11 @@ func TestVerbSpecWrongScopeMessage(t *testing.T) {
 func TestVisibleVerbsOnSurface(t *testing.T) {
 	conversation := VisibleVerbsOn(SurfaceConversation)
 	status := VisibleVerbsOn(SurfaceStatus)
-	if len(conversation) != 47 {
-		t.Fatalf("conversation visible verbs = %d, want 47", len(conversation))
+	if len(conversation) != 53 {
+		t.Fatalf("conversation visible verbs = %d, want 53", len(conversation))
 	}
 	// Status drops the conversation-only verbs: me, close, topic, op, deop
-	// voice, devoice, ban.
+	// voice, devoice, ban, and the kickban / quiet / ban-list family.
 	if len(status) != 39 {
 		t.Fatalf("status visible verbs = %d, want 39", len(status))
 	}

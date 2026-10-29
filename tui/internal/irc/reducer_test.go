@@ -1275,7 +1275,7 @@ func TestKickAndModeStaySeparateFromJoinLine(t *testing.T) {
 	requireString(t, "messages[0]", conversation.Messages[0].Body, "Alice joined")
 	requireString(t, "messages[1]", conversation.Messages[1].Body, "Alice was kicked")
 	requireString(t, "messages[2]", conversation.Messages[2].Body, "Bob joined")
-	requireString(t, "messages[3]", conversation.Messages[3].Body, "op set mode +v")
+	requireString(t, "messages[3]", conversation.Messages[3].Body, "op set mode +v Bob")
 	requireString(t, "messages[4]", conversation.Messages[4].Body, "Carol joined")
 }
 

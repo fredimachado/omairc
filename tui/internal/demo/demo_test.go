@@ -119,6 +119,40 @@ func TestAnswersList(t *testing.T) {
 	}
 }
 
+func TestAnswersModeBanAndQuietLists(t *testing.T) {
+	d := New()
+	wantBan := ":server 367 fred #omarchy *!*@evil.example alice 1\r\n" +
+		":server 368 fred #omarchy :End of Channel Ban List\r\n"
+	if got := string(d.tryAnswerModeList("fred", []byte("MODE #omarchy b\r\n"))); got != wantBan {
+		t.Fatalf("MODE #omarchy b = %q, want %q", got, wantBan)
+	}
+	wantBanHelp := ":server 367 fred #help *!*@evil.example alice 1\r\n" +
+		":server 368 fred #help :End of Channel Ban List\r\n"
+	if got := string(d.tryAnswerModeList("fred", []byte("MODE #help B\r\n"))); got != wantBanHelp {
+		t.Fatalf("MODE #help B = %q, want %q", got, wantBanHelp)
+	}
+	wantQuiet := ":server 728 fred #omarchy q *!*@quiet.example bob 2\r\n" +
+		":server 729 fred #omarchy q :End of Channel Quiet List\r\n"
+	if got := string(d.tryAnswerModeList("fred", []byte("MODE #omarchy q\r\n"))); got != wantQuiet {
+		t.Fatalf("MODE #omarchy q = %q, want %q", got, wantQuiet)
+	}
+	if got := d.tryAnswerModeList("fred", []byte("MODE #omarchy\r\n")); got != nil {
+		t.Fatalf("bare MODE answered %q", got)
+	}
+	if got := d.tryAnswerModeList("fred", []byte("MODE #omarchy +b *!*@x\r\n")); got != nil {
+		t.Fatalf("MODE +b set answered %q", got)
+	}
+	if got := d.tryAnswerModeList("fred", []byte("MODE #omarchy o\r\n")); got != nil {
+		t.Fatalf("MODE o answered %q", got)
+	}
+	if got := d.tryAnswerModeList("fred", []byte("MODE fred b\r\n")); got != nil {
+		t.Fatalf("MODE on nick answered %q", got)
+	}
+	if got := d.tryAnswerModeList("", []byte("MODE #omarchy b\r\n")); got != nil {
+		t.Fatalf("empty nick answered %q", got)
+	}
+}
+
 func TestSeedsServiceAccounts(t *testing.T) {
 	c, _ := attachController(t, false)
 	want := map[string]string{

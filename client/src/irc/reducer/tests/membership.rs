@@ -247,7 +247,13 @@ fn kick_and_mode_stay_separate_from_join_line() {
     let conversation = state_of(&reducer, &reducer.conversation_key(NETWORK_A, "#room"));
     assert_eq!(
         bodies(conversation),
-        vec!["Alice joined", "Alice was kicked", "Bob joined", "op set mode +v", "Carol joined"]
+        vec![
+            "Alice joined",
+            "Alice was kicked",
+            "Bob joined",
+            "op set mode +v Bob",
+            "Carol joined",
+        ]
     );
 }
 

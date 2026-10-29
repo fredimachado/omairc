@@ -14,7 +14,8 @@
 //! `commanddispatcher` (every verb's decision, and the composer's submit rule), with the
 //! modules it calls: `stores` (ignore, mute, monitor and highlight lists)
 //! `monitorcoordinator` (MONITOR), `autoawayruntime` (idle and grace timers)
-//! `composertyping` (the typing hint), `channellist` (`/list` through the wire), and
+//! `composertyping` (the typing hint), `channellist` (`/list` through the wire),
+//! `listmode` (ban/quiet wrappers, `/kickban`, and `/bans`/`/quiets` inquiries), and
 //! `replyrouter` (WHOIS, CTCP, and the user's own `/status` and `/avatar` replies). The
 //! `history` (history batches and self-JOIN), `notify` (mention and monitor arrivals)
 //! and `playback` (bouncer catch-up, Gap 5). The `scrollplace` module records where a
@@ -36,6 +37,7 @@ pub mod error;
 pub mod fileupload;
 pub mod history;
 pub mod lines;
+pub mod listmode;
 pub mod monitorcoordinator;
 pub mod notify;
 pub mod playback;

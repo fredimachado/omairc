@@ -14,7 +14,7 @@
 
 
 use crate::irc::autoaway::parse_autoaway_argument;
-use crate::irc::channelmode::parse_channel_mode_request;
+use crate::irc::listmask::ListMaskKind;
 use crate::irc::pref::{PrefName, PrefRequest, PrefValue, Preferences};
 use crate::irc::command::{
     command_outcome_text, help_text, parse, pref_reply, Command, CommandOutcome, ComposerSurface,
@@ -28,6 +28,7 @@ use crate::session::events::SessionState;
 use crate::session::session::Session;
 
 use super::controller::Controller;
+use super::listmode::ChannelModeWrapper;
 use super::monitorcoordinator::MonitorOutcome;
 use super::send::Outgoing;
 use super::stores::{ignore_nick_is_usable, mute_target_is_usable};
@@ -49,14 +50,6 @@ enum StoreVerb {
 enum QuietSend {
     Msg,
     Notice,
-}
-
-/// Which channel-mode wrapper a `/op`, `/deop`, `/voice`, `/devoice` or `/ban` is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct ChannelModeWrapper {
-    modes: &'static str,
-    /// A ban with no `!` or `@` in its mask gets `!*@*` appended.
-    ban: bool,
 }
 
 /// A verb's words rejoined, so a verb that splits its argument (`Words`) reads the same text
@@ -234,30 +227,75 @@ impl Controller {
             Command::Znc(text) => self.dispatch_service_msg("*status", text, surface),
             Command::Mode(argument) => self.dispatch_mode(argument, surface),
             Command::Op(words) => self.dispatch_channel_mode_wrapper(
-                ChannelModeWrapper { modes: "+o", ban: false },
+                ChannelModeWrapper {
+                    modes: "+o",
+                    list_mask: None,
+                },
                 words,
                 surface,
             ),
             Command::Deop(words) => self.dispatch_channel_mode_wrapper(
-                ChannelModeWrapper { modes: "-o", ban: false },
+                ChannelModeWrapper {
+                    modes: "-o",
+                    list_mask: None,
+                },
                 words,
                 surface,
             ),
             Command::Voice(words) => self.dispatch_channel_mode_wrapper(
-                ChannelModeWrapper { modes: "+v", ban: false },
+                ChannelModeWrapper {
+                    modes: "+v",
+                    list_mask: None,
+                },
                 words,
                 surface,
             ),
             Command::Devoice(words) => self.dispatch_channel_mode_wrapper(
-                ChannelModeWrapper { modes: "-v", ban: false },
+                ChannelModeWrapper {
+                    modes: "-v",
+                    list_mask: None,
+                },
                 words,
                 surface,
             ),
             Command::Ban(words) => self.dispatch_channel_mode_wrapper(
-                ChannelModeWrapper { modes: "+b", ban: true },
+                ChannelModeWrapper {
+                    modes: "+b",
+                    list_mask: Some(ListMaskKind::Ban),
+                },
                 words,
                 surface,
             ),
+            Command::Unban(words) => self.dispatch_channel_mode_wrapper(
+                ChannelModeWrapper {
+                    modes: "-b",
+                    list_mask: Some(ListMaskKind::Ban),
+                },
+                words,
+                surface,
+            ),
+            Command::Quiet(words) => self.dispatch_channel_mode_wrapper(
+                ChannelModeWrapper {
+                    modes: "+q",
+                    list_mask: Some(ListMaskKind::Quiet),
+                },
+                words,
+                surface,
+            ),
+            Command::Unquiet(words) => self.dispatch_channel_mode_wrapper(
+                ChannelModeWrapper {
+                    modes: "-q",
+                    list_mask: Some(ListMaskKind::Quiet),
+                },
+                words,
+                surface,
+            ),
+            Command::Bans(argument) => {
+                self.dispatch_list_mode_inquiry(ListMaskKind::Ban, argument, surface)
+            }
+            Command::Quiets(argument) => {
+                self.dispatch_list_mode_inquiry(ListMaskKind::Quiet, argument, surface)
+            }
             Command::Raw(line) => self.dispatch_raw(line, surface),
             Command::Whois(words) => self.dispatch_whois(words, surface),
             Command::Ping(words) => self.dispatch_ctcp("PING", words, surface),
@@ -307,6 +345,7 @@ impl Controller {
             | Command::Nick(_)
             | Command::Disconnect(_)
             | Command::Kick(_)
+            | Command::Kickban(_)
             | Command::Invite(_)
             | Command::Away(_)
             | Command::Back => self.dispatch_wire(command, surface),
@@ -336,6 +375,9 @@ impl Controller {
             Command::Join(argument) => return self.dispatch_join(&active, argument),
             Command::Part(words) => return self.dispatch_part(&active, words, surface),
             Command::Kick(words) => return self.dispatch_kick(&active, &joined(words), surface),
+            Command::Kickban(words) => {
+                return self.dispatch_kickban(&active, &joined(words), surface)
+            }
             Command::Invite(words) => return self.dispatch_invite(&active, &joined(words), surface),
             Command::Nick(nick) => !nick.is_empty() && active.change_nick(nick),
             Command::Disconnect(reason) => {
@@ -492,68 +534,6 @@ impl Controller {
         }
     }
 
-    /// `/kick [channel] <nick> [reason]` (`dispatchKick`). A first word that names a channel on the
-    /// network chooses the channel; otherwise the selected channel is the target.
-    fn dispatch_kick(&mut self, active: &Session, argument: &str, surface: ComposerSurface) -> CommandOutcome {
-        let words = Words::split(argument);
-        if words.first.is_empty() {
-            return CommandOutcome::Refused;
-        }
-        let network = self.surface_network(surface);
-        let features = self.reducer.server_features(&network).clone();
-        if features.is_channel(&words.first) {
-            let after = Words::split(&words.rest);
-            if after.first.is_empty() {
-                return CommandOutcome::Refused;
-            }
-            return outcome_of(active.kick(&words.first, &after.first, &after.rest));
-        }
-        if self.selected.is_none() || !self.is_channel() {
-            return CommandOutcome::WrongScope;
-        }
-        let selected_network = self.selected.as_ref().map(|key| key.network_id.clone());
-        if selected_network.as_deref() != Some(network.as_str()) {
-            return CommandOutcome::Refused;
-        }
-        let channel = self.selected_target().to_owned();
-        outcome_of(!channel.is_empty() && active.kick(&channel, &words.first, &words.rest))
-    }
-
-    /// `/invite <nick> [channel]` (`dispatchInvite`). Without a channel the selected one is used
-    /// and Status has none to name, so an invite there needs one.
-    fn dispatch_invite(&mut self, active: &Session, argument: &str, surface: ComposerSurface) -> CommandOutcome {
-        let words = Words::split(argument);
-        if words.first.is_empty() {
-            return CommandOutcome::WrongScope;
-        }
-        let network = self.surface_network(surface);
-        let features = self.reducer.server_features(&network).clone();
-        if features.is_channel(&words.first) {
-            return CommandOutcome::Refused;
-        }
-        let nick = words.first.clone();
-        let channel = if words.rest.is_empty() {
-            if surface == ComposerSurface::Status {
-                return CommandOutcome::WrongScope;
-            }
-            if self.selected.is_none() || !self.is_channel() {
-                return CommandOutcome::WrongScope;
-            }
-            let selected_network = self.selected.as_ref().map(|key| key.network_id.clone());
-            if selected_network.as_deref() != Some(network.as_str()) {
-                return CommandOutcome::Refused;
-            }
-            self.selected_target().to_owned()
-        } else {
-            let named = Words::split(&words.rest);
-            if !features.is_channel(&named.first) || !named.rest.is_empty() {
-                return CommandOutcome::Refused;
-            }
-            named.first
-        };
-        outcome_of(!channel.is_empty() && active.invite(&nick, &channel))
-    }
-
     /// `/query <nick> [text]` (`dispatchQuery`). Opens or selects a direct message as the user
     /// asked, so it inserts the row (`UserOpen`). Text sends into it.
     fn dispatch_query(&mut self, argument: &str, surface: ComposerSurface) -> CommandOutcome {
@@ -648,52 +628,6 @@ impl Controller {
             format!("{service} {text}")
         };
         self.dispatch_quiet_send(QuietSend::Msg, &argument, surface)
-    }
-
-    /// `/mode <target>...` (`dispatchMode`). The argument is read against the network's channel
-    /// modes, so a query and a change both map to the frame the server expects.
-    fn dispatch_mode(&mut self, argument: &str, surface: ComposerSurface) -> CommandOutcome {
-        if argument.is_empty() {
-            return CommandOutcome::Refused;
-        }
-        let network = self.surface_network(surface);
-        if network.is_empty() {
-            return refused_or_wrong_scope(surface);
-        }
-        let features = self.reducer.server_features(&network).clone();
-        let Some(request) = parse_channel_mode_request(argument, &features) else {
-            return CommandOutcome::Refused;
-        };
-        let Some(active) = self.registered_session(&network) else {
-            return CommandOutcome::NotConnected;
-        };
-        outcome_of(active.send_channel_mode(&request))
-    }
-
-    /// `/op`, `/deop`, `/voice`, `/devoice` and `/ban` (`dispatchChannelModeWrapper`). They turn
-    /// one nick or mask into a MODE change on the selected channel.
-    fn dispatch_channel_mode_wrapper(
-        &mut self,
-        wrapper: ChannelModeWrapper,
-        words: &Words,
-        surface: ComposerSurface,
-    ) -> CommandOutcome {
-        if self.selected.is_none() || !self.is_channel() {
-            return CommandOutcome::WrongScope;
-        }
-        let selected_network = self.selected.as_ref().map(|key| key.network_id.clone());
-        if selected_network.as_deref() != Some(self.surface_network(surface).as_str()) {
-            return CommandOutcome::Refused;
-        }
-        if words.first.is_empty() || !words.rest.is_empty() {
-            return CommandOutcome::Refused;
-        }
-        let mut parameter = words.first.clone();
-        if wrapper.ban && !parameter.contains('!') && !parameter.contains('@') {
-            parameter.push_str("!*@*");
-        }
-        let argument = format!("{} {} {parameter}", self.selected_target(), wrapper.modes);
-        self.dispatch_mode(&argument, surface)
     }
 
     /// `/raw <line>` and `/quote <line>`: one literal line, sent as given (`dispatchRaw`).
@@ -1100,7 +1034,7 @@ impl Controller {
     }
 
     /// The session on `network_id`, when it is registered.
-    fn registered_session(&self, network_id: &str) -> Option<Session> {
+    pub(super) fn registered_session(&self, network_id: &str) -> Option<Session> {
         self.session(network_id)
             .filter(|session| session.state() == SessionState::Registered)
     }
