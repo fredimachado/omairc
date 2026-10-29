@@ -340,7 +340,7 @@ func (b *bufferedProbeInput) Close() error {
 			_ = b.wake.Close()
 			b.wake = nil
 		}
-		b.copyWG.Wait()
+		waitCopyStop(&b.copyWG)
 		_ = b.f.Close()
 	})
 	return nil

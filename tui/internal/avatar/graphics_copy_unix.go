@@ -4,6 +4,7 @@ package avatar
 
 import (
 	"os"
+	"sync"
 
 	"golang.org/x/sys/unix"
 )
@@ -31,6 +32,10 @@ func copyProbeInput(src, dst, wake *os.File, late *lateFilter) {
 			return
 		}
 	}
+}
+
+func waitCopyStop(wg *sync.WaitGroup) {
+	wg.Wait()
 }
 
 func waitCopyReady(src, wake *os.File) (srcReady bool, err error) {
