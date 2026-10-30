@@ -37,7 +37,7 @@ screenshot --feature member-presence --name ranked-omarchy
 
 - **Ranked #omarchy.** Press `Ctrl+K` and jump to `#omarchy`. Run `control-omairc jump --query "#omarchy"` then `control-omairc wait-title --exact "#omarchy · irc.example · fred - Omairc"`, then `control-omairc screenshot --feature member-presence --name ranked-omarchy`. The member panel shows presence dots, away dimming, status lines, and rank glyphs. The rows read `~fred`, `&anna`, `@dax`, `@mira`, `%kai`, `+teo`, then `ivy`, `lena`, `max`, `nora`, `sam`, `sol`. `anna` is typing, so three dots sit beside `&anna`.
 - **Capability gate and injected NAMES.** Capability gating and an injected name list are not this fence. Do not invent those frames on the desktop.
-- **Direct message presence.** `bin/test` runs `directMessagePresenceFollowsAwayAndOffline` by injecting `AWAY` and `QUIT`. That is not a compiled-window recipe. `nick-jump --query teo` would open the DM, and the sidebar dot is presence, but this fence stays on the channel panel.
+- **Direct message presence.** The sidebar dot on a direct message follows the same facts as a member row: green when a shared channel shows the peer available, amber when they are away, and muted when no shared channel proves them online. `nick-jump --query teo` would open that DM. This fence stays on the channel panel.
 - **Mouse path.** `control-omairc click-member` opens a DM. That is open-direct-message, not this screenshot.
 
 ## Gotchas

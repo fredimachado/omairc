@@ -4,7 +4,7 @@ This directory is the maintained source for verifying the user-facing behavior o
 
 Desktop window proof uses **verify-omairc-desktop**. The TUI uses **verify-omairc-tui**.
 
-Historical note: the retired Qt client was driven by `control-omairc` `doctor-qml` and `qml-suite`. Those paths are gone. Do not run them, and do not put them back in a recipe.
+In recipe bullets, `control-omairc <verb>` is shorthand for that same verb on `control-omairc-desktop` (Linux), `control-omairc-desktop.ps1` (Windows), and `control-omairc-tui`. Historical note: `doctor-qml` and `qml-suite` are retired. Do not run them, and do not put them back in a recipe.
 
 ## Baseline preconditions
 
