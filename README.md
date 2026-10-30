@@ -8,7 +8,7 @@ A simple IRC client for Omarchy. The desktop app is a Rust GPUI client in
 ## Features
 
 - Several networks in one window. Each keeps its own channels, direct messages, nick, and Status console.
-- Connect sheet on first launch. Freenode, TLS on, autojoin `#omarchy`. SASL uses SCRAM-SHA-256 when the server lists it, otherwise PLAIN. EXTERNAL is not used. The NickServ password is the SASL secret when it is set; otherwise the server password is. NickServ `IDENTIFY` is sent only when SASL was not used. A server that lists SCRAM-SHA-256 and refuses `sasl` receives neither SASL nor `IDENTIFY`.
+- Connect sheet on first launch. Freenode, TLS on, autojoin `#omarchy`. SASL uses SCRAM-SHA-256 when the server lists it, otherwise PLAIN. EXTERNAL is not used. The NickServ password is the SASL secret when it is set; otherwise the server password is. NickServ `IDENTIFY` is sent only when SASL was not used. If the server refuses `sasl` after Omairc requests it, the connection stops with "Server rejected the SASL capability"; no `IDENTIFY` is sent.
 - Member list and people count on channels. Click a nick to open a direct message. `Ctrl+W` closes it.
 - Avatars, a status line, and a bot mark when the network supports them.
 - Keyboard first. `Ctrl+/` lists the shortcuts.
