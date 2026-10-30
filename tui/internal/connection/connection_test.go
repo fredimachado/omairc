@@ -324,9 +324,9 @@ func TestSetAutojoinParsesAndRetainsKeys(t *testing.T) {
 
 func TestPreferencesDefaultTrue(t *testing.T) {
 	conn, _, _ := newFixture(t)
-	if !conn.ReopenDirects() || !conn.ShowAvatars() || !conn.OpenAtUnread() {
-		t.Fatalf("preferences = %v/%v/%v, want all true",
-			conn.ReopenDirects(), conn.ShowAvatars(), conn.OpenAtUnread())
+	if !conn.ReopenDirects() || !conn.ShowAvatars() || !conn.OpenAtUnread() || !conn.ShowIrcColors() {
+		t.Fatalf("preferences = %v/%v/%v/%v, want all true",
+			conn.ReopenDirects(), conn.ShowAvatars(), conn.OpenAtUnread(), conn.ShowIrcColors())
 	}
 	if conn.ColorPaletteToken() != "classic" {
 		t.Fatalf("ColorPaletteToken = %q, want classic", conn.ColorPaletteToken())
@@ -338,7 +338,8 @@ func TestPreferencesDefaultTrue(t *testing.T) {
 	conn.SetReopenDirects(false)
 	conn.SetShowAvatars(false)
 	conn.SetOpenAtUnread(false)
-	if conn.ReopenDirects() || conn.ShowAvatars() || conn.OpenAtUnread() {
+	conn.SetShowIrcColors(false)
+	if conn.ReopenDirects() || conn.ShowAvatars() || conn.OpenAtUnread() || conn.ShowIrcColors() {
 		t.Fatal("preferences did not stick")
 	}
 }

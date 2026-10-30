@@ -708,6 +708,15 @@ func (c *Connection) SetOpenAtUnread(enabled bool) {
 	c.draftChanged()
 }
 
+// ShowIrcColors reports whether mIRC foreground and background colors paint.
+func (c *Connection) ShowIrcColors() bool { return c.ctrl.ShowIrcColors() }
+
+// SetShowIrcColors replaces the mIRC-colors preference.
+func (c *Connection) SetShowIrcColors(enabled bool) {
+	c.ctrl.SetShowIrcColors(enabled)
+	c.draftChanged()
+}
+
 // ColorPaletteToken is the Preferences-tab chip label for the color palette.
 func (c *Connection) ColorPaletteToken() string {
 	return irc.ColorPaletteToken(c.ctrl.ColorPalette())

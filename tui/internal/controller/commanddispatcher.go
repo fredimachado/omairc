@@ -1062,6 +1062,7 @@ func (d *CommandDispatcher) dispatchPref(command irc.Command, surface irc.Compos
 			d.host.PrefEnabled(irc.PrefDirects),
 			d.host.PrefEnabled(irc.PrefAvatars),
 			d.host.PrefEnabled(irc.PrefUnread),
+			d.host.PrefEnabled(irc.PrefColors),
 			d.host.MembershipNoise(),
 			d.host.ColorPalette()))
 	}

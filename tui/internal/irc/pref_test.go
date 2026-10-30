@@ -4,13 +4,14 @@ import "testing"
 
 func TestPrefCatalog(t *testing.T) {
 	catalog := PrefCatalog()
-	if len(catalog) != 5 {
-		t.Fatalf("pref catalog has %d rows, want 5", len(catalog))
+	if len(catalog) != 6 {
+		t.Fatalf("pref catalog has %d rows, want 6", len(catalog))
 	}
 	want := []PrefSpec{
 		{PrefDirects, "directs", "Reopen direct messages on startup", PrefValueToggle},
 		{PrefAvatars, "avatars", "Show peer avatars", PrefValueToggle},
 		{PrefUnread, "unread", "Open conversations at unread", PrefValueToggle},
+		{PrefColors, "colors", "Show mIRC colors", PrefValueToggle},
 		{PrefJoins, "joins", "Join, part, quit, and nick lines", PrefValueNoise},
 		{PrefPalette, "palette", "Color palette", PrefValuePalette},
 	}
@@ -37,7 +38,7 @@ func TestPrefFind(t *testing.T) {
 }
 
 func TestPrefStrings(t *testing.T) {
-	if got := PrefUsage(); got != "/pref [directs|avatars|unread] [on|off] | joins [folded|every|hidden] | palette [classic|vivid]" {
+	if got := PrefUsage(); got != "/pref [directs|avatars|unread|colors] [on|off] | joins [folded|every|hidden] | palette [classic|vivid]" {
 		t.Errorf("PrefUsage() = %q", got)
 	}
 	if got := PrefAvatarNote(); got != "Turn off to keep avatar hosts from seeing your IP on busy channels." {
@@ -68,9 +69,10 @@ func TestFormatPrefList(t *testing.T) {
 	want := "Reopen direct messages on startup: on\n" +
 		"Show peer avatars: off\n" +
 		"Open conversations at unread: on\n" +
+		"Show mIRC colors: off\n" +
 		"Join, part, quit, and nick lines: every\n" +
 		"Color palette: classic"
-	if got := FormatPrefList(true, false, true, MembershipNoiseEvery, ColorPaletteClassic); got != want {
+	if got := FormatPrefList(true, false, true, false, MembershipNoiseEvery, ColorPaletteClassic); got != want {
 		t.Errorf("FormatPrefList = %q, want %q", got, want)
 	}
 	if got := FormatPrefPalette(ColorPaletteVivid); got != "Color palette: vivid" {
@@ -89,6 +91,10 @@ func TestParsePrefArgument(t *testing.T) {
 		{"AVATARS", PrefRequest{Kind: PrefQueryOne, Name: PrefAvatars}},
 		{"avatars on", PrefRequest{Kind: PrefSet, Name: PrefAvatars, Enabled: true}},
 		{"unread OFF", PrefRequest{Kind: PrefSet, Name: PrefUnread, Enabled: false}},
+		{"colors", PrefRequest{Kind: PrefQueryOne, Name: PrefColors}},
+		{"colors on", PrefRequest{Kind: PrefSet, Name: PrefColors, Enabled: true}},
+		{"COLORS off", PrefRequest{Kind: PrefSet, Name: PrefColors, Enabled: false}},
+		{"colors maybe", PrefRequest{Kind: PrefUsageKind, Name: PrefColors}},
 		{"directs maybe", PrefRequest{Kind: PrefUsageKind, Name: PrefDirects}},
 		{"directs on extra", PrefRequest{Kind: PrefUsageKind}},
 		{"bogus", PrefRequest{Kind: PrefUsageKind}},

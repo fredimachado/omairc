@@ -1155,30 +1155,43 @@ func (m *Model) unseenMarker() string {
 	return m.styles.UnseenJump.Render("↓ new")
 }
 
-// renderMessageBody renders a message body with its IRC emphasis (bold
-// italic, underline) applied to the body portion only. The author/timestamp
-// prefix is rendered by the caller, so a bold run can never leak into it.
-// Control codes never reach the output: a body with no emphasis just renders
-// its plain text, and an emphasized body is split into styled runs.
+// renderMessageBody renders a message body with IRC emphasis and, when
+// /pref colors is on, mIRC FG/BG. The author/timestamp prefix is rendered by
+// the caller, so a bold or colored run can never leak into it. Each run starts
+// from base so unset colors keep the caller's style (mention wash, action
+// italic) and attributes do not bleed into later runs. Control codes never
+// reach the output: plain bodies render through PlainIrcText, and styled
+// bodies walk StyledRuns. Reverse/monospace/strikethrough stay non-rendered.
 func (m *Model) renderMessageBody(body string, base lipgloss.Style) string {
 	if m.ctrl == nil {
 		return base.Render(body)
 	}
 	plain := m.ctrl.PlainIrcText(body)
-	if !m.ctrl.HasIrcEmphasis(body) {
+	colorsOn := m.ctrl.PrefColorsEnabled()
+	// Color-only with colors off stays plain. Emphasis always takes the styled
+	// path. Color-only with colors on must paint.
+	if !m.ctrl.HasIrcEmphasis(body) && !(colorsOn && m.ctrl.HasIrcColorCodes(body)) {
 		return base.Render(plain)
 	}
 	var builder strings.Builder
-	for _, run := range m.ctrl.EmphasizedRuns(body) {
+	for _, run := range m.ctrl.StyledRuns(body) {
 		style := base
-		if run.Bold {
+		if run.Style.Bold {
 			style = style.Bold(true)
 		}
-		if run.Italic {
+		if run.Style.Italic {
 			style = style.Italic(true)
 		}
-		if run.Underline {
+		if run.Style.Underline {
 			style = style.Underline(true)
+		}
+		if colorsOn {
+			if paint, ok := mircLipglossColor(run.Style.Fg); ok {
+				style = style.Foreground(paint)
+			}
+			if paint, ok := mircLipglossColor(run.Style.Bg); ok {
+				style = style.Background(paint)
+			}
 		}
 		builder.WriteString(style.Render(run.Text))
 	}
