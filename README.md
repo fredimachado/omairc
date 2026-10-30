@@ -8,7 +8,7 @@ A simple IRC client for Omarchy. The desktop app is a Rust GPUI client in
 ## Features
 
 - Several networks in one window. Each keeps its own channels, direct messages, nick, and Status console.
-- Connect sheet on first launch. Freenode, TLS on, autojoin `#omarchy`. SASL uses SCRAM-SHA-256 when the server lists it, otherwise PLAIN. EXTERNAL is not used. The NickServ password is the SASL secret when it is set; otherwise the server password is. NickServ `IDENTIFY` is sent only when SASL was not used.
+- Connect sheet on first launch. Freenode, TLS on, autojoin `#omarchy`. SASL uses SCRAM-SHA-256 when the server lists it, otherwise PLAIN. EXTERNAL is not used. The NickServ password is the SASL secret when it is set; otherwise the server password is. NickServ `IDENTIFY` is sent only when SASL was not used. A server that lists SCRAM-SHA-256 and refuses `sasl` receives neither SASL nor `IDENTIFY`.
 - Member list and people count on channels. Click a nick to open a direct message. `Ctrl+W` closes it.
 - Avatars, a status line, and a bot mark when the network supports them.
 - Keyboard first. `Ctrl+/` lists the shortcuts.
@@ -23,8 +23,8 @@ A simple IRC client for Omarchy. The desktop app is a Rust GPUI client in
 ## Limits
 
 - The saved profile stores a SASL account and a bouncer network (`account`, `bouncerNetwork`). SASL logs in as that account when it is set, otherwise the nick, and appends `/network` when a bouncer network is stored. Connect Username is the IRC `USER` name. Connect does not edit the account or the bouncer network. Saving a network keeps the stored values. A new network authenticates as the nick. Connect fields for them are [planned](https://trello.com/c/4CbyPUrR).
-- ZNC playback needs `batch`. When the server also offers `znc.in/playback`, Omairc requests it and, after the message of the day, sends `ZNC *playback PLAY` from each target's stored server-time, or `0` the first time. A channel asks again on join until its playback batch arrives. A playback batch is backlog whenever `batch` is enabled.
-- IRCv3 chat history needs `batch` plus `chathistory`, or `draft/chathistory` when `chathistory` is not available. A join uses `CHATHISTORY AFTER` the stored time, or `CHATHISTORY LATEST` when there is none. After the message of the day, open conversations catch up the same way. A direct message that arrived while away can be discovered with `CHATHISTORY TARGETS`. A closed conversation stays closed. Paging to the top loads an older page. ZNC playback remains when the server has no chathistory.
+- ZNC playback needs `batch`. When the server also offers `znc.in/playback`, Omairc requests it and, after the message of the day, sends `ZNC *playback PLAY` from each target's stored server-time, and `ZNC *playback PLAY * 0` on every registration. A channel asks again on join until its playback batch arrives. A playback batch is backlog whenever `batch` is enabled.
+- IRCv3 chat history needs `batch` plus `chathistory`, or `draft/chathistory` when `chathistory` is not available. A join uses `CHATHISTORY AFTER` the stored time, or `CHATHISTORY LATEST` when there is none. After the message of the day, open conversations catch up the same way. A direct message that arrived while away can be discovered with `CHATHISTORY TARGETS`. A closed conversation stays closed. Paging to the top loads an older page. When the server offers both `znc.in/playback` and chat history, both are requested in the same session.
 - Read markers use `draft/read-marker` (`MARKREAD`), or `soju.im/read` (`READ`) when that is the only token offered. A marker from the server clears unread another client already read. This window publishes a marker when it is caught up on the selected conversation. Selecting a direct message asks the server for its marker.
 - Soju network discovery is not implemented ([proposed](https://trello.com/c/800SHq4M)).
 - No DCC, file transfer, voice, video, plugins, or scripts.
