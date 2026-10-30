@@ -24,6 +24,7 @@ func TestMain(m *testing.M) {
 		runStopHelper()
 		os.Exit(0)
 	}
+	clearAmbientColorEnv()
 	os.Exit(m.Run())
 }
 

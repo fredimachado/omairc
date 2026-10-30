@@ -169,8 +169,8 @@ version the moment its package is first imported — never earlier, because
 - `github.com/ergochat/irc-go` (`ircmsg`, `ircreader`, `ircfmt`, `ircutils`)
   — still not imported. The wire layer stays a hand-port of `client/src/irc/` so the
   byte-for-byte behavior and the mirrored test matrices stay the contract.
-  Phase 10 hand-ported the emphasis half of `IrcTextFormatter` as well
-  (`internal/irc/textformat.go`, consistent with `plaintext.go`), so `ircfmt`
+  Phase 10 hand-ported `IrcTextFormatter` as `internal/irc/textformat.go`
+  (emphasis plus mIRC FG/BG, consistent with `plaintext.go`), so `ircfmt`
   was not needed; a later `ircreader` import is the remaining candidate.
 
 Update this list and the import that pulls the dependency in the same change.
@@ -316,22 +316,24 @@ mark, typing ellipsis) and the DM transcript typing footer live in
 Phase 9 adds the session-inbox store, the `internal/notify` desktop notifier
 (D-Bus on Linux, no-op stubs elsewhere), the `Ctrl+Shift+A` sheet, the identity
 footer badge, and terminal-focus gating via `tea.View.ReportFocus`.
-Phase 10 adds the hand-ported emphasis renderer (`internal/irc/textformat.go`,
-wired through `internal/ui/transcript.go`), the URL allowlist and the real
-`Ctrl+Shift+O` link-sheet source (`internal/ui/urllinks.go`), the
-`internal/openurl` seam behind `openAllowedUrl`, and the sidebar
-direct-message avatar glyph: an identicon by default, a half-block
-truecolor raster when `internal/avatar` has the peer image cached and the
-terminal advertises 24-bit color, or a Kitty Unicode placeholder in that
-same two-cell box when a startup `a=q` probe gets an OK reply. The probe
-never trusts `TERM`. It sends DA1 after the graphics query and stops when
-that answer arrives; the timeout is only the backstop. WezTerm answers that
-probe and stays on the half-block raster, because it does not draw Unicode
-placeholders. tmux and screen do not pass Kitty graphics through, so the
-probe gets no OK and the glyph stays on the half-block raster. Non-empty
+Phase 10 adds the hand-ported IRC text renderer (`internal/irc/textformat.go`,
+wired through `internal/ui/transcript.go`): bold, italic, underline, and mIRC
+foreground/background paint gated by the shared `showIrcColors` preference
+(`/pref colors`, Connect Preferences → Show mIRC colors, default on). It also
+adds the URL allowlist and the real `Ctrl+Shift+O` link-sheet source
+(`internal/ui/urllinks.go`), the `internal/openurl` seam behind
+`openAllowedUrl`, and the sidebar direct-message avatar glyph: an identicon by
+default, a half-block truecolor raster when `internal/avatar` has the peer
+image cached and the terminal advertises 24-bit color, or a Kitty Unicode
+placeholder in that same two-cell box when a startup `a=q` probe gets an OK
+reply. The probe never trusts `TERM`. It sends DA1 after the graphics query
+and stops when that answer arrives; the timeout is only the backstop. WezTerm
+answers that probe and stays on the half-block raster, because it does not
+draw Unicode placeholders. tmux and screen do not pass Kitty graphics through,
+so the probe gets no OK and the glyph stays on the half-block raster. Non-empty
 `NO_COLOR` or `CLICOLOR=0` skips the probe entirely so raw mode and a replay
-reader never run; half-block avatars still follow `COLORTERM`/`TERM`. Under tmux
-on WezTerm, tmux sets `TERM_PROGRAM` and answers XTVERSION itself, so the
+reader never run; half-block avatars still follow `COLORTERM`/`TERM`. Under
+tmux on WezTerm, tmux sets `TERM_PROGRAM` and answers XTVERSION itself, so the
 WezTerm opt-out does not see the host; graphics still depend on `a=q`
 passthrough, and otherwise the glyph stays on the half-block raster.
 Transmit escapes go out through `tea.Raw` and are flushed before a

@@ -9,6 +9,7 @@ Send a message lets a user add a local line to the current mock transcript from 
 - `send-button` submits the same text with SEND.
 - `send-empty` leaves the transcript unchanged when the composer is blank or whitespace.
 - `send-action` turns a `/me ` prefix into an action line attributed to `fred`.
+- `send-mirc-colors` keeps mIRC FG/BG when Show mIRC colors / `/pref colors` is on (default). Off keeps the plain body and emphasis, without palette paint. On `--demo-server`, `#omarchy` already seeds a `dax` line with palette `04` around `paint-verify` so proof can toggle without typing a color byte (raw `\x03` is Ctrl+C on a PTY). Screenshots or cell colors after `/pref colors off` / `on`; stripped `text` alone is not enough.
 
 ## How to get to it (user POV)
 

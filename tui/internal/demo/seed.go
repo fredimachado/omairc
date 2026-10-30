@@ -181,6 +181,9 @@ func omarchyWorld() SeedNetwork {
 			chat("nora", "Good timing. I was just looking for a quiet place to ask about native Omarchy apps.", "10:01"),
 			chat("fred", "I am sketching a tiny IRC client that belongs here. No browser chrome, no clutter.", "10:02"),
 			chat("mira", "Keep the member list optional and I am sold.", "10:04"),
+			// mIRC color 04 around paint-verify so /pref colors on/off proof can
+			// toggle an already-visible transcript body (LIST topics strip colors).
+			chat("dax", "Color sample: \x03"+"04paint-verify"+"\x03 stays in the seed.", "10:05"),
 		},
 	}
 

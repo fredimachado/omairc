@@ -219,6 +219,7 @@ const (
 	reopenDirectMessagesKey      = "reopenDirectMessages"
 	loadPeerAvatarsKey           = "loadPeerAvatars"
 	openConversationsAtUnreadKey = "openConversationsAtUnread"
+	showIrcColorsKey             = "showIrcColors"
 	membershipNoiseKey           = "membershipNoise"
 	colorPaletteKey              = "colorPalette"
 	networkOrderKey              = "networkOrder"
@@ -284,6 +285,7 @@ func (c *Controller) LoadStoredPreferences() {
 	c.prefs.SetEnabled(irc.PrefDirects, settings.Bool(preferencesGroup, reopenDirectMessagesKey, true))
 	c.prefs.SetEnabled(irc.PrefAvatars, settings.Bool(preferencesGroup, loadPeerAvatarsKey, true))
 	c.prefs.SetEnabled(irc.PrefUnread, settings.Bool(preferencesGroup, openConversationsAtUnreadKey, true))
+	c.prefs.SetEnabled(irc.PrefColors, settings.Bool(preferencesGroup, showIrcColorsKey, true))
 	if noise, ok := irc.ParseMembershipNoise(settings.Value(preferencesGroup, membershipNoiseKey)); ok {
 		c.membershipNoise = noise
 	}
@@ -340,6 +342,9 @@ func (c *Controller) ShowAvatars() bool { return c.prefs.Enabled(irc.PrefAvatars
 // OpenAtUnread reports whether conversations open at their unread start.
 func (c *Controller) OpenAtUnread() bool { return c.prefs.Enabled(irc.PrefUnread) }
 
+// ShowIrcColors reports whether mIRC foreground and background colors paint.
+func (c *Controller) ShowIrcColors() bool { return c.prefs.Enabled(irc.PrefColors) }
+
 // SetReopenDirects stores the reopen-directs toggle, persists it unless
 // ephemeral, and restores the open directs of every registered network when it
 // turns back on. It mirrors IrcController::setReopenDirectMessages
@@ -385,6 +390,20 @@ func (c *Controller) SetOpenAtUnread(enabled bool) {
 	}
 }
 
+// SetShowIrcColors stores the mIRC-colors toggle, persists it unless ephemeral,
+// and publishes a Messages refresh so stored bodies repaint without changing
+// contents. Palette stays independent.
+func (c *Controller) SetShowIrcColors(enabled bool) {
+	if c.ShowIrcColors() == enabled {
+		return
+	}
+	c.prefs.SetEnabled(irc.PrefColors, enabled)
+	if !c.ephemeral {
+		savePreferenceBool(showIrcColorsKey, enabled)
+	}
+	c.Publish(irc.ViewNotify{Messages: true})
+}
+
 // PrefEnabled maps one /pref toggle to its getter. The Rust `/pref` write path
 // is `set_preference` in `client/src/controller/commanddispatcher.rs`, with
 // side effects in `after_preference_change` (`client/src/controller/persistence.rs`).
@@ -396,6 +415,8 @@ func (c *Controller) PrefEnabled(name irc.PrefName) bool {
 		return c.ShowAvatars()
 	case irc.PrefUnread:
 		return c.OpenAtUnread()
+	case irc.PrefColors:
+		return c.ShowIrcColors()
 	case irc.PrefJoins, irc.PrefPalette:
 		return false
 	}
@@ -453,6 +474,8 @@ func (c *Controller) PrefApply(name irc.PrefName, enabled bool) {
 		c.SetShowAvatars(enabled)
 	case irc.PrefUnread:
 		c.SetOpenAtUnread(enabled)
+	case irc.PrefColors:
+		c.SetShowIrcColors(enabled)
 	case irc.PrefJoins, irc.PrefPalette:
 	}
 }

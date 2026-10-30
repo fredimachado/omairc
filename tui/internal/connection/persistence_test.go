@@ -202,7 +202,7 @@ func TestActivateStartupWithoutStoresIsSafe(t *testing.T) {
 func TestPreferencesDelegateToController(t *testing.T) {
 	ctrl := controller.New()
 	conn := New(ctrl, nil)
-	if !conn.ReopenDirects() || !conn.ShowAvatars() || !conn.OpenAtUnread() {
+	if !conn.ReopenDirects() || !conn.ShowAvatars() || !conn.OpenAtUnread() || !conn.ShowIrcColors() {
 		t.Fatal("preferences must default on")
 	}
 	conn.SetReopenDirects(false)
@@ -220,6 +220,13 @@ func TestPreferencesDelegateToController(t *testing.T) {
 	if ctrl.OpenAtUnread() {
 		t.Fatal("SetOpenAtUnread(false) did not flip the controller preference")
 	}
+	conn.SetShowIrcColors(false)
+	if ctrl.ShowIrcColors() {
+		t.Fatal("SetShowIrcColors(false) did not flip the controller preference")
+	}
+	if conn.ShowIrcColors() {
+		t.Fatal("ShowIrcColors() did not read through to the controller")
+	}
 }
 
 func TestPreferencesFireDraftChanged(t *testing.T) {
@@ -230,6 +237,11 @@ func TestPreferencesFireDraftChanged(t *testing.T) {
 	conn.SetReopenDirects(false)
 	if calls == 0 {
 		t.Fatal("SetReopenDirects did not fire OnDraftChanged")
+	}
+	before := calls
+	conn.SetShowIrcColors(false)
+	if calls == before {
+		t.Fatal("SetShowIrcColors did not fire OnDraftChanged")
 	}
 }
 

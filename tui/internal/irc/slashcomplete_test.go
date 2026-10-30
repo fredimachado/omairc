@@ -110,7 +110,7 @@ func TestProjectSlashPrefNames(t *testing.T) {
 	if !probe.Open {
 		t.Fatalf("/pref should list toggles: %+v", probe)
 	}
-	want := []string{"/pref directs", "/pref avatars", "/pref unread", "/pref joins", "/pref palette"}
+	want := []string{"/pref directs", "/pref avatars", "/pref unread", "/pref colors", "/pref joins", "/pref palette"}
 	got := make([]string, len(probe.Hits))
 	for index, hit := range probe.Hits {
 		got[index] = hit.Label

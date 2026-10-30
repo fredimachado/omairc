@@ -24,9 +24,99 @@ func TestLoadStoredPreferencesDefaultsOn(t *testing.T) {
 	c.SetEphemeral(false)
 	c.LoadStoredPreferences()
 
-	if !c.ReopenDirects() || !c.ShowAvatars() || !c.OpenAtUnread() {
-		t.Fatalf("defaults = directs:%v avatars:%v unread:%v, want all true",
-			c.ReopenDirects(), c.ShowAvatars(), c.OpenAtUnread())
+	if !c.ReopenDirects() || !c.ShowAvatars() || !c.OpenAtUnread() || !c.ShowIrcColors() {
+		t.Fatalf("defaults = directs:%v avatars:%v unread:%v colors:%v, want all true",
+			c.ReopenDirects(), c.ShowAvatars(), c.OpenAtUnread(), c.ShowIrcColors())
+	}
+}
+
+func TestShowIrcColorsMissingKeyDefaultsTrue(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	settings := storage.OpenSettings("")
+	settings.SetBool(preferencesGroup, reopenDirectMessagesKey, true)
+	if status := settings.Sync(); status != storage.StatusWritten {
+		t.Fatalf("Sync = %v", status)
+	}
+	text, err := os.ReadFile(storage.ConfigPath())
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if strings.Contains(string(text), showIrcColorsKey) {
+		t.Fatalf("fixture must omit %s: %s", showIrcColorsKey, text)
+	}
+
+	c := New()
+	c.SetEphemeral(false)
+	c.LoadStoredPreferences()
+	if !c.ShowIrcColors() {
+		t.Fatalf("missing %s must default true", showIrcColorsKey)
+	}
+}
+
+func TestSetShowIrcColorsPersistsAndReloads(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	c := New()
+	c.SetEphemeral(false)
+	c.LoadStoredPreferences()
+	c.SetShowIrcColors(false)
+
+	settings := storage.OpenSettings("")
+	if settings.Bool(preferencesGroup, showIrcColorsKey, true) {
+		t.Fatalf("%s not persisted false", showIrcColorsKey)
+	}
+	text, err := os.ReadFile(storage.ConfigPath())
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(text), showIrcColorsKey+"=false") {
+		t.Fatalf("shared key %s missing from ini: %s", showIrcColorsKey, text)
+	}
+
+	fresh := New()
+	fresh.SetEphemeral(false)
+	fresh.LoadStoredPreferences()
+	if fresh.ShowIrcColors() {
+		t.Fatalf("fresh ShowIrcColors = true, want false")
+	}
+	if !fresh.ReopenDirects() || !fresh.ShowAvatars() || !fresh.OpenAtUnread() {
+		t.Fatalf("fresh siblings = directs:%v avatars:%v unread:%v, want true",
+			fresh.ReopenDirects(), fresh.ShowAvatars(), fresh.OpenAtUnread())
+	}
+}
+
+func TestSetShowIrcColorsPublishesMessagesOnChange(t *testing.T) {
+	c := New()
+	woken := 0
+	c.OnViewChanged = func() { woken++ }
+
+	c.SetShowIrcColors(false)
+	if woken != 1 {
+		t.Fatalf("OnViewChanged fired %d times for colors off, want 1", woken)
+	}
+	c.SetShowIrcColors(false)
+	if woken != 1 {
+		t.Fatalf("unchanged colors must not publish; woken = %d", woken)
+	}
+	c.SetShowIrcColors(true)
+	if woken != 2 {
+		t.Fatalf("OnViewChanged fired %d times after colors on, want 2", woken)
+	}
+}
+
+func TestEphemeralShowIrcColorsWritesNothing(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	c := New() // ephemeral by default
+	c.SetShowIrcColors(false)
+	if c.ShowIrcColors() {
+		t.Fatalf("ephemeral SetShowIrcColors did not update memory")
+	}
+	if path := storage.ConfigPath(); path != "" {
+		if _, err := os.Stat(path); err == nil {
+			t.Fatalf("ephemeral controller wrote %s", path)
+		}
 	}
 }
 
@@ -93,6 +183,10 @@ func TestPrefEnabledAndApplyMatchGetters(t *testing.T) {
 	if c.PrefEnabled(irc.PrefUnread) || c.OpenAtUnread() {
 		t.Fatalf("PrefApply(unread, false) did not reach the getter")
 	}
+	c.PrefApply(irc.PrefColors, false)
+	if c.PrefEnabled(irc.PrefColors) || c.ShowIrcColors() {
+		t.Fatalf("PrefApply(colors, false) did not reach the getter")
+	}
 	c.PrefApply(irc.PrefDirects, false)
 	if c.PrefEnabled(irc.PrefDirects) || c.ReopenDirects() {
 		t.Fatalf("PrefApply(directs, false) did not reach the getter")
@@ -120,6 +214,7 @@ func TestEphemeralControllerWritesNothing(t *testing.T) {
 	c.SetReopenDirects(false)
 	c.SetShowAvatars(false)
 	c.SetOpenAtUnread(false)
+	c.SetShowIrcColors(false)
 	c.SetNetworkOrder([]string{"alpha", "zulu"})
 	c.SetNetworkCollapsed("alpha", true)
 	c.autoaway.DispatchAutoaway(irc.Command{Verb: irc.VerbAutoaway, Argument: "10m"}, irc.SurfaceStatus)

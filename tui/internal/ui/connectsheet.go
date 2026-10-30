@@ -61,6 +61,7 @@ const (
 	prefReopen prefField = iota
 	prefAvatars
 	prefUnread
+	prefColors
 	prefPalette
 	prefFieldCount
 )
@@ -69,6 +70,7 @@ var prefFieldLabels = [prefFieldCount]string{
 	prefReopen:  "Reopen direct messages on startup",
 	prefAvatars: "Show peer avatars",
 	prefUnread:  "Open conversations at unread",
+	prefColors:  "Show mIRC colors",
 	prefPalette: "Color palette",
 }
 
@@ -527,6 +529,8 @@ func (m *Model) flipFocusedToggle() bool {
 			m.conn.SetShowAvatars(!m.conn.ShowAvatars())
 		case prefUnread:
 			m.conn.SetOpenAtUnread(!m.conn.OpenAtUnread())
+		case prefColors:
+			m.conn.SetShowIrcColors(!m.conn.ShowIrcColors())
 		case prefPalette:
 			m.conn.CycleColorPalette()
 		}
@@ -815,6 +819,8 @@ func (m *Model) preferencesLines() []string {
 			chip = m.connectChip(m.conn.ShowAvatars())
 		case prefUnread:
 			chip = m.connectChip(m.conn.OpenAtUnread())
+		case prefColors:
+			chip = m.connectChip(m.conn.ShowIrcColors())
 		case prefPalette:
 			chip = m.connectTokenChip(m.conn.ColorPaletteToken())
 		}

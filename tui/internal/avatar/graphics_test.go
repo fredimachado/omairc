@@ -18,13 +18,14 @@ import (
 	"github.com/muesli/cancelreader"
 )
 
-func TestMain(m *testing.M) {
-	// Agent shells and CI often export NO_COLOR; graphics probe tests expect it
-	// blank unless they set their own matrix. Empty NO_COLOR does not suppress
-	// placeholders; t.Setenv in subtests still overrides per case.
+// clearAmbientColorEnv blanks inherited NO_COLOR/CLICOLOR so probe tests are
+// not skipped on agent shells. Empty NO_COLOR does not suppress placeholders;
+// t.Setenv in subtests still overrides per case. Called from TestMain on every
+// OS (graphics_testmain_other.go on non-Linux; graphics_term_linux_test.go on
+// Linux, which also owns the SIGTSTP helper).
+func clearAmbientColorEnv() {
 	_ = os.Setenv("NO_COLOR", "")
 	_ = os.Setenv("CLICOLOR", "")
-	os.Exit(m.Run())
 }
 
 func TestTransmitChunksQuietly(t *testing.T) {
