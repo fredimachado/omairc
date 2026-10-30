@@ -236,7 +236,24 @@ func probeQueries() string {
 // TERM_PROGRAM=WezTerm. An XTVERSION reply is the same signal when that
 // variable is absent. Either one keeps the half-block raster.
 func placeholdersAllowed() bool {
+	if colorEnvSuppressed() {
+		return false
+	}
 	return !wezTermProgram(os.Getenv("TERM_PROGRAM"))
+}
+
+// colorEnvSuppressed reports whether common no-color environment hints forbid
+// Kitty Unicode placeholders. NO_COLOR is honored when non-empty; CLICOLOR=0
+// disables color output. TruecolorSupported is unchanged: half-block avatars
+// still use 24-bit SGR when the terminal advertises it.
+func colorEnvSuppressed() bool {
+	if v, ok := os.LookupEnv("NO_COLOR"); ok && strings.TrimSpace(v) != "" {
+		return true
+	}
+	if v, ok := os.LookupEnv("CLICOLOR"); ok && strings.TrimSpace(v) == "0" {
+		return true
+	}
+	return false
 }
 
 func wezTermProgram(program string) bool {

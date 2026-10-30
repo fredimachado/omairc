@@ -51,6 +51,27 @@ func TestProbeGraphicsPTYReply(t *testing.T) {
 	<-done
 }
 
+func TestProbeGraphicsPTYNoColorSkips(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+
+	master, slave, err := pty.Open()
+	if err != nil {
+		t.Skip(err)
+	}
+	defer master.Close()
+	defer slave.Close()
+
+	go func() { _, _ = io.Copy(io.Discard, master) }()
+
+	ok, input := ProbeGraphics(slave, slave, time.Second)
+	if ok {
+		t.Fatal("NO_COLOR probe returned true")
+	}
+	if input != nil {
+		t.Fatalf("NO_COLOR probe input = %v, want nil", input)
+	}
+}
+
 func TestProbeGraphicsPTYTimeout(t *testing.T) {
 	master, slave, err := pty.Open()
 	if err != nil {

@@ -18,6 +18,16 @@ import (
 	"github.com/muesli/cancelreader"
 )
 
+// clearAmbientColorEnv blanks inherited NO_COLOR/CLICOLOR so probe tests are
+// not skipped on agent shells. Empty NO_COLOR does not suppress placeholders;
+// t.Setenv in subtests still overrides per case. Called from TestMain on every
+// OS (graphics_testmain_other.go on non-Linux; graphics_term_linux_test.go on
+// Linux, which also owns the SIGTSTP helper).
+func clearAmbientColorEnv() {
+	_ = os.Setenv("NO_COLOR", "")
+	_ = os.Setenv("CLICOLOR", "")
+}
+
 func TestTransmitChunksQuietly(t *testing.T) {
 	small := []byte("hi")
 	got := TransmitPNG(7, small)
@@ -745,6 +755,47 @@ func TestWriteDeleteEscapesWithoutQuit(t *testing.T) {
 	}
 	if again := store.DeleteEscapes(); again != "" {
 		t.Fatalf("second delete = %q, want empty", again)
+	}
+}
+
+func TestColorEnvSuppressesPlaceholders(t *testing.T) {
+	kittyReply := []byte("\x1bP>|kitty(0.32.2)\x1b\\\x1b_Gi=4294967295;OK\x1b\\")
+	cases := []struct {
+		name    string
+		env     map[string]string
+		allowed bool
+	}{
+		{"unset", nil, true},
+		{"no_color empty", map[string]string{"NO_COLOR": ""}, true},
+		{"no_color set", map[string]string{"NO_COLOR": "1"}, false},
+		{"clicolor zero", map[string]string{"CLICOLOR": "0"}, false},
+		{"clicolor one", map[string]string{"CLICOLOR": "1"}, true},
+		{"clicolor force", map[string]string{"CLICOLOR_FORCE": "1"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("NO_COLOR", "")
+			t.Setenv("CLICOLOR", "")
+			t.Setenv("CLICOLOR_FORCE", "")
+			t.Setenv("TERM_PROGRAM", "")
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			term := &scriptTerminal{reply: kittyReply}
+			got := ReadGraphicsSupport(term, term, 50*time.Millisecond)
+			if got != tc.allowed {
+				t.Fatalf("ReadGraphicsSupport() = %v, want %v", got, tc.allowed)
+			}
+			if !tc.allowed && term.written.Len() != 0 {
+				t.Fatalf("suppressed env still wrote probe: %q", term.written.String())
+			}
+			if !tc.allowed {
+				ok, input := ProbeGraphics(os.Stdin, os.Stdout, time.Second)
+				if ok || input != nil {
+					t.Fatalf("ProbeGraphics() = (%v, %v), want (false, nil) when placeholders suppressed", ok, input)
+				}
+			}
+		})
 	}
 }
 
