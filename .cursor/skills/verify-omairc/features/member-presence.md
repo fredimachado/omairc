@@ -23,7 +23,7 @@ Member presence is what each channel member row shows besides the nick: a presen
 
 Preconditions:
 
-- Seeded conversation UI is showing (`#omarchy · irc.example · fred - Omairc`, members visible). Use `control-omairc launch --demo-server`. When Xvfb tools are missing, `qml-suite` (seeded `IrcController`) is the fallback and is not compiled-window proof.
+- Seeded conversation UI is showing (`#omarchy · irc.example · fred - Omairc`, members visible). Use `control-omairc launch --demo-server`. If desktop tools are missing, report the unmet precondition.
 - `control-omairc launch` without `--demo-server` is first-run Connect titled `chat.freenode.net Status` with no member list. Do not start this recipe there.
 - The compiled demo already paints presence dots, away dimming, status lines, and PREFIX glyphs on `#omarchy`. Capability gating and a real handshake are not this fence.
 
@@ -36,7 +36,7 @@ screenshot --feature member-presence --name ranked-omarchy
 ```
 
 - **Ranked #omarchy.** Press `Ctrl+K` and jump to `#omarchy`. Run `control-omairc jump --query "#omarchy"` then `control-omairc wait-title --exact "#omarchy · irc.example · fred - Omairc"`, then `control-omairc screenshot --feature member-presence --name ranked-omarchy`. The member panel shows presence dots, away dimming, status lines, and rank glyphs. The rows read `~fred`, `&anna`, `@dax`, `@mira`, `%kai`, `+teo`, then `ivy`, `lena`, `max`, `nora`, `sam`, `sol`. `anna` is typing, so three dots sit beside `&anna`.
-- **Capability gate and injected NAMES.** `control-omairc doctor-qml` then `control-omairc qml-suite` covers `presence-caps` in `test_memberPresenceChromeFollowsCapabilities` and the self-away exception in `test_memberPresenceShowsOurOwnAwayWithoutAwayNotify`. `test_memberRowsFollowRankOrder` injects a `353` / `366` and mode changes. That suite is not compiled-window proof. Do not invent those frames on the desktop.
+- **Capability gate and injected NAMES.** Capability gating and an injected name list are not this fence. Do not invent those frames on the desktop.
 - **Direct message presence.** `bin/test` runs `directMessagePresenceFollowsAwayAndOffline` by injecting `AWAY` and `QUIT`. That is not a compiled-window recipe. `nick-jump --query teo` would open the DM, and the sidebar dot is presence, but this fence stays on the channel panel.
 - **Mouse path.** `control-omairc click-member` opens a DM. That is open-direct-message, not this screenshot.
 

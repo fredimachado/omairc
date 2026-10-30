@@ -2,7 +2,9 @@
 
 This directory is the maintained source for verifying the user-facing behavior of the Omairc desktop client and TUI. Read the index before driving the app, then use the matching feature file as the recipe.
 
-Desktop window proof uses **verify-omairc-desktop**. The TUI uses **verify-omairc-tui**. The Qt `control-omairc` driver, `doctor-qml`, and `qml-suite` are retired; do not treat them as living paths.
+Desktop window proof uses **verify-omairc-desktop**. The TUI uses **verify-omairc-tui**.
+
+Historical note: the retired Qt client was driven by `control-omairc` `doctor-qml` and `qml-suite`. Those paths are gone. Do not run them, and do not put them back in a recipe.
 
 ## Baseline preconditions
 
@@ -43,7 +45,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 3. `Driving it with control-omairc` starts with `Preconditions:` and uses labeled bullets that pair each user action with an exact command and observable result. A `desktop-recipe` fence in that section (not a fifth H2) is the executable form `run <feature>` plays. Drive those commands with `control-omairc-desktop` / `control-omairc-desktop.ps1` (or `control-omairc-tui` where the TUI shares the fence).
 4. `Gotchas` lists traps that can waste or invalidate a verification run.
 
-Keep implementation details out of the map. Name only user paths, stable handles, required state, commands, and observable proof. Mentions of `qml-suite` / `doctor-qml` in older feature bullets are historical; they are not a fallback.
+Keep implementation details out of the map. Name only user paths, stable handles, required state, commands, and observable proof. A file with no `desktop-recipe` fence has no executable recipe yet. `run` fails closed on both drivers. Report that gap. Do not invent a fence or a fallback driver.
 
 ## Features
 
@@ -55,13 +57,14 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Open a direct message](./open-direct-message.md) covers opening or creating a DM from a member row and clearing unread state.
 - [Status console](./status-console.md) covers the network Status pane, header entry points, AUTH notices, and the shared composer.
 - [Member presence](./member-presence.md) covers presence dots, away dimming, status lines, capability gating, and live PREFIX ranks.
+- [Session inbox](./inbox.md) covers the footer inbox mark, `Ctrl+Shift+A`, and activating mention, invite, and monitor rows. No executable recipe yet.
 - [Identity footer](./identity-footer.md) covers the sidebar nick footer (`fred` on first run, then the connection or live nick), the app version on the right, and live available/away/offline chrome.
 - [About](./about.md) covers the About sheet opened from that footer version, the GitHub source link, and Check for Updates.
 - [Keyboard](./keyboard.md) covers conversation walk, network-header walk, per-network collapse and reorder, unread jump, `Ctrl+K` jump, `Ctrl+Shift+K` nick jump, nick complete, history, find, member focus, the `Ctrl+Shift+S` server list toggle, `Ctrl+W` close, the shortcut sheet, and `Ctrl+,`.
 - [Slash complete](./slash-complete.md) covers the composer slash-command list for `/` plus a character, Tab insert, Escape dismiss, and Up/Down.
 - [Typing](./typing.md) covers bouncing ellipsis on channel members and in direct messages, plus the `message-tags` gate.
 - [Slash commands](./slash-commands.md) covers live catalog verbs from the composer, including `/kick`, `/kickban`, ban and quiet list verbs, and `/ignore`. Mock treats them as chat except `/me `.
-- [Mention notify](./mention-notify.md) covers the desktop notification for an unfocused mention or direct message.
-- [Title mention](./title-mention.md) covers the window title for an unfocused mention or direct message.
-- [Open links](./open-links.md) covers clicking allowlisted `http`/`https` URLs in transcripts and Status.
-- [Open a channel name](./open-channel-name.md) covers a channel name in a message or a topic. An open buffer switches. A missing buffer asks before it joins.
+- [Mention notify](./mention-notify.md) covers the desktop notification for an unfocused mention or direct message. No executable recipe yet.
+- [Title mention](./title-mention.md) covers the window title for an unfocused mention or direct message. No executable recipe yet.
+- [Open links](./open-links.md) covers clicking allowlisted `http`/`https` URLs in transcripts and Status. No executable recipe yet.
+- [Open a channel name](./open-channel-name.md) covers a channel name in a message or a topic. An open buffer switches. A missing buffer asks before it joins. No executable recipe yet.

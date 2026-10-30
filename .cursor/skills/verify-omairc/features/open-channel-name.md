@@ -20,12 +20,11 @@ A channel name in a message or a topic opens inside the client. A buffer that is
 
 Preconditions:
 
-- Proof is the offscreen suite and the TUI test. `qml-suite` clicks `urlHit` and `topicHit` on the seeded window, whose network advertises `CHANTYPES=#`.
-- A compiled window would send `JOIN` only after the ask is confirmed. Do not use a live network as proof.
-- `control-omairc launch` without `--demo-server` is first-run Connect. Do not start this recipe there.
+- The seeded network advertises `CHANTYPES=#`. A compiled window sends `JOIN` only after the ask is confirmed. Do not use a live network as proof.
+- `control-omairc launch` without `--demo-server` is first-run Connect. Do not start here.
 
-- **No compiled-window recipe.** `control-omairc run open-channel-name` fails closed. This file has no `desktop-recipe` fence. Do not add an empty fence or a `qml-suite` fence.
-- **Message, topic, and the link sheet.** Run `control-omairc doctor-qml` then `control-omairc qml-suite`. `test_channelNameUsesAdvertisedTypes` keeps `#desktop` and drops `&local` on the seeded network. `test_channelNameInMessageSwitchesOrAsks` clicks `#Desktop` and lands on `#desktop` with no `JOIN`, then clicks `#brand-new`, cancels, and confirms a `JOIN`. `test_channelNameInTopicAndLinkSheet` does the same from the topic and from `Ctrl+Shift+O`.
+- **No executable recipe yet.** `run open-channel-name` fails closed. This file has no `desktop-recipe` fence. Do not add an empty fence.
+- **What a user sees.** On the seeded network, `#desktop` is a channel name and `&local` is not. Clicking `#Desktop` in a message switches to the open `#desktop` buffer and sends no `JOIN`. Clicking `#brand-new` asks first. Escape cancels and joins nothing. Enter on the ask sends `JOIN`. A channel name in the topic and a channel row in the `Ctrl+Shift+O` sheet follow the same switch-or-ask rule.
 
 ## Gotchas
 

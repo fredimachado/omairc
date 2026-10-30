@@ -21,7 +21,7 @@ Switch conversation lets a user leave the current mock chat and open another cha
 
 Preconditions:
 
-- Seeded conversation UI is showing (`#omarchy · irc.example · fred - Omairc`, sidebar includes `#desktop` and `anna`). Use `control-omairc launch --demo-server`. When Xvfb tools are missing, `qml-suite` (seeded `IrcController`) is the fallback and is not compiled-window proof.
+- Seeded conversation UI is showing (`#omarchy · irc.example · fred - Omairc`, sidebar includes `#desktop` and `anna`). Use `control-omairc launch --demo-server`. If desktop tools are missing, report the unmet precondition.
 - `control-omairc launch` without `--demo-server` is first-run Connect titled `chat.freenode.net Status`. Do not start this recipe there.
 - For a desktop instance titled `#omarchy · irc.example · fred - Omairc`, `control-omairc doctor` must report `demo=yes`, the disposable XDG directory, and the default-sized window.
 
@@ -62,7 +62,6 @@ compare --before test-artifacts/verify/switch-conversation/before-switch.png --a
 - **Open dax.** Jump to `dax`. Run `control-omairc jump --query dax` then `control-omairc wait-title --exact "dax - Omairc"`. The topic is `Direct message with dax`.
 - **Proof.** Jump back to `#desktop` and capture the channel state. Run `control-omairc jump --query "#desktop"`, `control-omairc wait-title --exact "#desktop - Omairc"`, `control-omairc screenshot --feature switch-conversation --name after-desktop`, and `control-omairc compare --before test-artifacts/verify/switch-conversation/before-switch.png --after test-artifacts/verify/switch-conversation/after-desktop.png`. The screenshot shows `#desktop` selected, topic `Desktops should feel personal, fast, and calm.`, `8 PEOPLE`, and the `#desktop` unread badge gone. `compare` must report a pixel change.
 - **Mouse fallback.** `control-omairc click-conversation --name` still aims the seeded rows (`#desktop`, `#help`, `#omarchy`, `#ricing`, `anna`, `dax`) when a chord cannot. It is not this recipe.
-- **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` clicks `conversation-omarchy-#desktop` and writes `test-artifacts/switch-channel.png`. `qml-suite` copies it to `test-artifacts/verify/switch-conversation/after-desktop.png`. The image must show `#desktop`, the desktop topic, and `8 PEOPLE`. This is not compiled-window proof.
 
 ## Gotchas
 
@@ -70,4 +69,4 @@ compare --before test-artifacts/verify/switch-conversation/before-switch.png --a
 - From a fresh `#omarchy · irc.example · fred - Omairc`, `walk --down` lands on `#ricing - Omairc`. The following `unread` lands on `anna - Omairc`. Opening `#ricing` clears its mention, so a later `unread` does not return there.
 - Direct messages do not show a people count or member panel. Do not treat a missing panel as a toggle failure.
 - Sidebar labels render as `#  omarchy` without repeating the hash in the name string. Assert the window title (`#omarchy · irc.example · fred - Omairc`), not the clipped label text. Do not assert the stale title `#omarchy - Omairc` while both networks have `#omarchy`.
-- `Alt+Down` / `Alt+Up` / `Alt+A` are keyboard. Status is not in that walk. A default compiled launch has no sidebar rows. `qml-suite` is not compiled-window proof.
+- `Alt+Down` / `Alt+Up` / `Alt+A` are keyboard. Status is not in that walk. A default compiled launch has no sidebar rows.
