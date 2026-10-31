@@ -66,10 +66,23 @@ impl ScrollPlaceFile {
     /// live user settings file; otherwise (tests) the state file sits beside the
     /// settings file. The settings path is kept only for the legacy conf fallback.
     pub fn for_settings(settings: &Backing) -> Self {
+        Self::for_settings_with(
+            settings,
+            &paths::Env::from_process(),
+            paths::Platform::current(),
+        )
+    }
+
+    /// Like [`Self::for_settings`], with an explicit path environment (tests).
+    pub fn for_settings_with(
+        settings: &Backing,
+        env: &paths::Env,
+        platform: paths::Platform,
+    ) -> Self {
         match settings {
             Backing::Ephemeral => Self::new(Backing::Ephemeral),
             Backing::Disk(conf) => {
-                let state = scroll_state_path_for_settings(conf);
+                let state = scroll_state_path_for_settings(conf, env, platform);
                 Self {
                     backing: Backing::Disk(state),
                     conf_path: Some(conf.clone()),
@@ -99,6 +112,11 @@ impl ScrollPlaceFile {
         }
     }
 
+    /// The legacy conf path kept for a one-time fallback read.
+    pub fn conf_path(&self) -> Option<&Path> {
+        self.conf_path.as_deref()
+    }
+
     /// Every network's places, keyed by network id. Entries that do not parse are skipped.
     /// Prefers `scrollplaces.ini` when it exists; otherwise reads the legacy conf group
     /// without writing or stripping it.
@@ -118,31 +136,69 @@ impl ScrollPlaceFile {
     }
 
     /// Replaces one network's places (`save`). An empty list removes the network's group.
-    /// Writes only to the state file; the conf is never touched.
+    /// When the state file is missing, every legacy `scrollPlaces/*` group from the conf
+    /// is copied into the same write first, so other networks are not lost. The conf is
+    /// never touched.
     pub fn save(&self, network_id: &str, rows: &PlaceRows) -> Status {
         if network_id.is_empty() {
             return Status::Absent;
         }
-        let group = format!("{SCROLL_PLACES_GROUP}/{network_id}");
-        self.backing.edit(|settings| {
-            settings.remove_group(&group);
-            if !rows.is_empty() {
-                let array: Vec<Value> = rows
-                    .iter()
-                    .map(|(target, place)| place_json(target, place))
-                    .collect();
-                settings.set_value(&group, PLACES_KEY, &Value::Array(array).to_string());
-            }
-        })
+        if self.backing.is_ephemeral() {
+            return Status::Written;
+        }
+        let Backing::Disk(state) = &self.backing else {
+            return Status::Written;
+        };
+        let mut settings = Settings::open(state);
+        if !state.exists() {
+            seed_legacy_into(&mut settings, self.conf_path.as_deref());
+        }
+        apply_network(&mut settings, network_id, rows);
+        settings.sync()
     }
 }
 
 /// State path for a settings file: the live user path uses the state dir; a
 /// test/temp conf gets a sibling `scrollplaces.ini`.
-fn scroll_state_path_for_settings(conf: &Path) -> PathBuf {
-    match paths::settings_path() {
-        Some(user) if user == conf => paths::scroll_places_path(),
+fn scroll_state_path_for_settings(
+    conf: &Path,
+    env: &paths::Env,
+    platform: paths::Platform,
+) -> PathBuf {
+    match paths::settings_path_for(env, platform) {
+        Some(user) if user == conf => paths::scroll_places_path_for(env, platform),
         _ => conf.with_file_name(SCROLL_PLACES_FILE),
+    }
+}
+
+/// Copies every legacy `scrollPlaces/*` group from `conf` into `dest`. The conf is
+/// only read. Used when creating `scrollplaces.ini` for the first time.
+fn seed_legacy_into(dest: &mut Settings, conf: Option<&Path>) {
+    let Some(conf) = conf else {
+        return;
+    };
+    if !conf.exists() {
+        return;
+    }
+    let legacy = Settings::open(conf);
+    for network_id in legacy.child_groups(SCROLL_PLACES_GROUP) {
+        let group = format!("{SCROLL_PLACES_GROUP}/{network_id}");
+        if !legacy.contains(&group, PLACES_KEY) {
+            continue;
+        }
+        dest.set_value(&group, PLACES_KEY, &legacy.value(&group, PLACES_KEY));
+    }
+}
+
+fn apply_network(settings: &mut Settings, network_id: &str, rows: &PlaceRows) {
+    let group = format!("{SCROLL_PLACES_GROUP}/{network_id}");
+    settings.remove_group(&group);
+    if !rows.is_empty() {
+        let array: Vec<Value> = rows
+            .iter()
+            .map(|(target, place)| place_json(target, place))
+            .collect();
+        settings.set_value(&group, PLACES_KEY, &Value::Array(array).to_string());
     }
 }
 
@@ -604,6 +660,166 @@ mod tests {
                 .unwrap()
                 .contains("[scrollPlaces]"),
             "scroll place save must not add a [scrollPlaces] group to omairc.conf"
+        );
+    }
+
+    fn two_network_legacy_conf(conf: &Path) {
+        fs::write(
+            conf,
+            "[scrollPlaces]\n\
+             net1\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#qa\\\"},{\\\"follow\\\":true,\\\"target\\\":\\\"#qb\\\"}]\"\n\
+             net2\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#dev\\\"}]\"\n",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn first_save_keeps_other_networks_from_legacy_conf() {
+        let dir = agent_dir("scroll-two-net-save");
+        let conf = dir.path().join("omairc.conf");
+        let state = dir.path().join(SCROLL_PLACES_FILE);
+        two_network_legacy_conf(&conf);
+        let conf_bytes = fs::read(&conf).unwrap();
+
+        let file = ScrollPlaceFile::with_paths(state.clone(), Some(conf.clone()));
+        assert_eq!(
+            file.save(
+                "net1",
+                &vec![
+                    (
+                        "#qa".to_owned(),
+                        ScrollPlace {
+                            follow_end: false,
+                            msg_id: "m-qa".to_owned(),
+                            ..ScrollPlace::default()
+                        },
+                    ),
+                    (
+                        "#qb".to_owned(),
+                        ScrollPlace {
+                            follow_end: true,
+                            ..ScrollPlace::default()
+                        },
+                    ),
+                ]
+            ),
+            Status::Written
+        );
+        assert_eq!(fs::read(&conf).unwrap(), conf_bytes);
+
+        let relaunched = ScrollPlaceFile::with_paths(state, Some(conf)).load_all();
+        assert_eq!(relaunched["net1"][0].1.msg_id, "m-qa");
+        assert!(
+            relaunched.get("net2").is_some_and(|rows| rows
+                == &[(
+                    "#dev".to_owned(),
+                    ScrollPlace {
+                        follow_end: true,
+                        ..ScrollPlace::default()
+                    }
+                )]),
+            "net2#dev must survive the first save: {relaunched:?}"
+        );
+    }
+
+    #[test]
+    fn forget_seeds_legacy_networks_before_removing_one() {
+        let dir = agent_dir("scroll-two-net-forget");
+        let conf = dir.path().join("omairc.conf");
+        let state = dir.path().join(SCROLL_PLACES_FILE);
+        two_network_legacy_conf(&conf);
+        let conf_bytes = fs::read(&conf).unwrap();
+
+        let file = ScrollPlaceFile::with_paths(state.clone(), Some(conf.clone()));
+        assert!(!state.exists());
+        assert_eq!(file.save("net1", &PlaceRows::new()), Status::Written);
+        assert_eq!(fs::read(&conf).unwrap(), conf_bytes);
+
+        let relaunched = ScrollPlaceFile::with_paths(state, Some(conf)).load_all();
+        assert!(
+            !relaunched.contains_key("net1"),
+            "forgotten net1 must be gone: {relaunched:?}"
+        );
+        assert!(
+            relaunched
+                .get("net2")
+                .is_some_and(|rows| rows.iter().any(|(target, _)| target == "#dev")),
+            "net2#dev must survive forget when the state file was missing: {relaunched:?}"
+        );
+    }
+
+    #[test]
+    fn for_settings_live_path_uses_state_dir_and_keeps_legacy_conf() {
+        let dir = agent_dir("scroll-live-wiring");
+        let env = paths::Env {
+            xdg_config_home: Some(dir.path().join("config")),
+            xdg_state_home: Some(dir.path().join("state")),
+            home: Some(PathBuf::from("home-1d06")),
+            temp_dir: dir.path().join("tmp"),
+            ..paths::Env::default()
+        };
+        let platform = Platform::Linux;
+        let conf = paths::settings_path_for(&env, platform).expect("config root");
+        let state = paths::scroll_places_path_for(&env, platform);
+        fs::create_dir_all(conf.parent().expect("parent")).unwrap();
+        two_network_legacy_conf(&conf);
+        let conf_bytes = fs::read(&conf).unwrap();
+
+        let file = ScrollPlaceFile::for_settings_with(&Backing::Disk(conf.clone()), &env, platform);
+        assert_eq!(file.conf_path(), Some(conf.as_path()));
+        assert_eq!(file.state_path(), Some(state.as_path()));
+        assert!(
+            !state.starts_with(conf.parent().unwrap()),
+            "live state must not sit in the conf folder: state={} conf={}",
+            state.display(),
+            conf.display()
+        );
+        assert!(
+            file.load_all().contains_key("net2"),
+            "live wiring must keep the legacy conf fallback"
+        );
+
+        assert_eq!(
+            file.save(
+                "net1",
+                &vec![(
+                    "#qa".to_owned(),
+                    ScrollPlace {
+                        follow_end: true,
+                        ..ScrollPlace::default()
+                    }
+                )]
+            ),
+            Status::Written
+        );
+        assert_eq!(fs::read(&conf).unwrap(), conf_bytes);
+        assert!(state.exists());
+        assert!(!conf.parent().unwrap().join(SCROLL_PLACES_FILE).exists());
+        let relaunched =
+            ScrollPlaceFile::for_settings_with(&Backing::Disk(conf), &env, platform).load_all();
+        assert!(relaunched.contains_key("net2"), "{relaunched:?}");
+    }
+
+    #[test]
+    fn for_settings_macos_uses_ini_conf_and_state_dir() {
+        let dir = agent_dir("scroll-macos-ini");
+        let env = paths::Env {
+            home: Some(dir.path().join("home")),
+            temp_dir: dir.path().join("tmp"),
+            ..paths::Env::default()
+        };
+        let conf = paths::settings_path_for(&env, Platform::MacOs).expect("macos conf");
+        assert_eq!(
+            conf.file_name().and_then(|name| name.to_str()),
+            Some("omairc.ini"),
+            "macOS settings stay on omairc.ini"
+        );
+        let file =
+            ScrollPlaceFile::for_settings_with(&Backing::Disk(conf.clone()), &env, Platform::MacOs);
+        assert_eq!(file.conf_path(), Some(conf.as_path()));
+        assert_eq!(
+            file.state_path(),
+            Some(paths::scroll_places_path_for(&env, Platform::MacOs).as_path())
         );
     }
 }

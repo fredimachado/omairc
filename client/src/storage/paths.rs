@@ -354,6 +354,26 @@ mod tests {
     }
 
     #[test]
+    fn windows_scrollplaces_path_uses_state_subdir_without_xdg() {
+        // Matches the desktop state root: %LOCALAPPDATA%\State\omairc\scrollplaces.ini.
+        // No XDG_STATE_HOME, so a bare LocalAppData fallback would regress sharing.
+        let env = Env {
+            local_app_data: Some(PathBuf::from("lad")),
+            home: Some(home()),
+            temp_dir: PathBuf::from("tmp"),
+            ..Env::default()
+        };
+        assert_eq!(env.xdg_state_home, None);
+        assert_eq!(
+            scroll_places_path_for(&env, Platform::Windows),
+            PathBuf::from("lad")
+                .join("State")
+                .join(APP_FOLDER)
+                .join(SCROLL_PLACES_FILE)
+        );
+    }
+
+    #[test]
     fn macos_uses_library_preferences_and_state() {
         let env = env_with_home();
         let prefs = home().join("Library").join("Preferences");

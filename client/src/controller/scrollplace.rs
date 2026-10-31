@@ -99,11 +99,14 @@ impl ScrollPlaceStore {
         true
     }
 
-    /// Drops every place of `network_id` (`Forget`).
+    /// Drops every place of `network_id` (`Forget`). Always persists, so a missing
+    /// state file is seeded from the legacy conf before this network is removed.
     pub fn forget(&mut self, network_id: &str) {
-        if self.places.remove(network_id).is_some() {
-            self.file.save(network_id, &PlaceRows::new());
+        if network_id.is_empty() {
+            return;
         }
+        self.places.remove(network_id);
+        self.file.save(network_id, &PlaceRows::new());
     }
 
     fn save(&self, network_id: &str) {

@@ -56,3 +56,17 @@ func TestScrollPlacesPathHonoursDevHome(t *testing.T) {
 		t.Errorf("ScrollPlacesPath() = %q, want %q", got, want)
 	}
 }
+
+func TestScrollPlacesPathMatchesDesktopWithoutXDGOverride(t *testing.T) {
+	// On Linux the default is ~/.local/state/omairc/scrollplaces.ini, same as
+	// the desktop. Clear XDG_STATE_HOME so the shared helper cannot hide a
+	// Windows-style LocalAppData mismatch.
+	t.Setenv("XDG_STATE_HOME", "")
+	t.Setenv("OMAIRC_DEV_HOME", "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	want := filepath.Join(home, ".local", "state", "omairc", ScrollPlacesFile)
+	if got := ScrollPlacesPath(); got != want {
+		t.Errorf("ScrollPlacesPath() = %q, want %q", got, want)
+	}
+}

@@ -73,17 +73,18 @@ func CrashLogPath() string {
 	return filepath.Join(root, "omairc", "omairc-tui.log")
 }
 
-// ScrollPlacesPath is <state>/omairc/scrollplaces.ini, honouring
-// OMAIRC_DEV_HOME and XDG_STATE_HOME the same way the desktop client's
-// scroll_places_path does. It returns "" when the platform state root is
-// unknown and OMAIRC_DEV_HOME is unset.
+// ScrollPlacesPath is the shared scroll-places INI, honouring OMAIRC_DEV_HOME
+// and XDG_STATE_HOME the same way the desktop client's scroll_places_path
+// does. On Windows without XDG_STATE_HOME it uses
+// %LOCALAPPDATA%\State\omairc\scrollplaces.ini so both clients share one file,
+// without moving GenericStateRoot (transcripts / crash logs). It returns ""
+// when the platform state root is unknown and OMAIRC_DEV_HOME is unset.
 func ScrollPlacesPath() string {
 	if home := os.Getenv("OMAIRC_DEV_HOME"); home != "" {
 		return filepath.Join(home, "state", ScrollPlacesFile)
 	}
-	root := GenericStateRoot()
-	if root == "" {
-		return ""
+	if xdg := os.Getenv("XDG_STATE_HOME"); xdg != "" {
+		return filepath.Join(xdg, "omairc", ScrollPlacesFile)
 	}
-	return filepath.Join(root, "omairc", ScrollPlacesFile)
+	return scrollPlacesPathDefault()
 }

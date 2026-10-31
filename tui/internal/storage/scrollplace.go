@@ -96,14 +96,6 @@ func (s *ScrollPlaceStore) settingsForRead() *Settings {
 	return OpenSettings("")
 }
 
-func (s *ScrollPlaceStore) settingsForWrite() *Settings {
-	state := ScrollPlacesPath()
-	if state == "" {
-		return nil
-	}
-	return OpenSettings(state)
-}
-
 func (s *ScrollPlaceStore) load(networkID string) []scrollEntry {
 	if networkID == "" {
 		return nil
@@ -219,9 +211,15 @@ func (s *ScrollPlaceStore) save(networkID string, rows []scrollEntry) {
 		}
 		return
 	}
-	settings := s.settingsForWrite()
-	if settings == nil {
+	state := ScrollPlacesPath()
+	if state == "" {
 		return
+	}
+	_, statErr := os.Stat(state)
+	missing := os.IsNotExist(statErr)
+	settings := OpenSettings(state)
+	if missing {
+		seedLegacyScrollPlaces(settings)
 	}
 	group := scrollPlacesGroup + "/" + networkID
 	if len(rows) == 0 {
@@ -234,6 +232,30 @@ func (s *ScrollPlaceStore) save(networkID string, rows []scrollEntry) {
 		settings.SetValue(group, scrollPlacesKey, scrollEncode(encoded))
 	}
 	settings.Sync()
+}
+
+// seedLegacyScrollPlaces copies every scrollPlaces/* group from omairc.conf
+// into dest. Used only when creating scrollplaces.ini for the first time so
+// other networks are not lost. The conf is never written.
+func seedLegacyScrollPlaces(dest *Settings) {
+	if dest == nil {
+		return
+	}
+	conf := ConfigPath()
+	if conf == "" {
+		return
+	}
+	if _, err := os.Stat(conf); err != nil {
+		return
+	}
+	src := OpenSettings(conf)
+	for _, networkID := range src.ChildGroups(scrollPlacesGroup) {
+		group := scrollPlacesGroup + "/" + networkID
+		if !src.Contains(group, scrollPlacesKey) {
+			continue
+		}
+		dest.SetValue(group, scrollPlacesKey, src.Value(group, scrollPlacesKey))
+	}
 }
 
 func scrollEncode(rows []any) string {

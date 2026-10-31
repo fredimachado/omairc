@@ -28,6 +28,14 @@ func GenericStateRoot() string {
 	return underHome(".local", "state")
 }
 
+func scrollPlacesPathDefault() string {
+	root := GenericStateRoot()
+	if root == "" {
+		return ""
+	}
+	return filepath.Join(root, "omairc", ScrollPlacesFile)
+}
+
 // underHome joins parts onto the user's home directory, returning "" when no
 // home directory is known.
 func underHome(parts ...string) string {

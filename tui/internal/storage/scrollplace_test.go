@@ -299,3 +299,75 @@ func TestScrollPlaceSaveMustNotTargetConf(t *testing.T) {
 		t.Fatalf("state file missing: %v", err)
 	}
 }
+
+func writeTwoNetworkLegacyConf(t *testing.T, conf string) []byte {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(conf), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body := []byte("[scrollPlaces]\n" +
+		"net1\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#qa\\\"},{\\\"follow\\\":true,\\\"target\\\":\\\"#qb\\\"}]\"\n" +
+		"net2\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#dev\\\"}]\"\n")
+	if err := os.WriteFile(conf, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return body
+}
+
+func TestScrollPlaceFirstSaveKeepsOtherNetworksFromLegacy(t *testing.T) {
+	config, state := scrollTestRoots(t)
+	conf := filepath.Join(config, "omairc", "omairc.conf")
+	before := writeTwoNetworkLegacyConf(t, conf)
+	mapping := irc.NewCaseMapping(irc.KindRfc1459)
+
+	NewScrollPlaceStore().Remember("net1", "#qa", ScrollPlace{MsgID: "m-qa"}, mapping)
+
+	after, err := os.ReadFile(conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("conf changed:\nbefore=%q\nafter=%q", before, after)
+	}
+	fresh := NewScrollPlaceStore()
+	qa, ok := fresh.Place("net1", "#qa", mapping)
+	if !ok || qa.MsgID != "m-qa" {
+		t.Fatalf("net1#qa = %+v/%v", qa, ok)
+	}
+	dev, ok := fresh.Place("net2", "#dev", mapping)
+	if !ok || !dev.FollowEnd {
+		t.Fatalf("net2#dev must survive the first save: %+v/%v", dev, ok)
+	}
+	if _, err := os.Stat(filepath.Join(state, "omairc", ScrollPlacesFile)); err != nil {
+		t.Fatalf("state file missing: %v", err)
+	}
+}
+
+func TestScrollPlaceForgetSeedsLegacyNetworks(t *testing.T) {
+	config, state := scrollTestRoots(t)
+	conf := filepath.Join(config, "omairc", "omairc.conf")
+	before := writeTwoNetworkLegacyConf(t, conf)
+	mapping := irc.NewCaseMapping(irc.KindRfc1459)
+
+	store := NewScrollPlaceStore()
+	store.Forget("net1")
+
+	after, err := os.ReadFile(conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("conf changed:\nbefore=%q\nafter=%q", before, after)
+	}
+	if _, err := os.Stat(filepath.Join(state, "omairc", ScrollPlacesFile)); err != nil {
+		t.Fatalf("forget must create the state file: %v", err)
+	}
+	fresh := NewScrollPlaceStore()
+	if _, ok := fresh.Place("net1", "#qa", mapping); ok {
+		t.Fatal("forgotten net1 must be gone")
+	}
+	dev, ok := fresh.Place("net2", "#dev", mapping)
+	if !ok || !dev.FollowEnd {
+		t.Fatalf("net2#dev must survive forget: %+v/%v", dev, ok)
+	}
+}
