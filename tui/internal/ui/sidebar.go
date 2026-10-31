@@ -60,14 +60,31 @@ func (m *Model) sidebarNetworkDisplayName(networkID string) string {
 	return networkID
 }
 
-// syncSidebarNetworkOrder copies the connection roster order into the
+// sidebarStoredNetworkIDs returns the stored profile ids from the connection
+// roster, in roster order. The unsaved Connect draft is shown in the sidebar
+// but must not be written to networkOrder on disk.
+func (m *Model) sidebarStoredNetworkIDs() []string {
+	if m.conn == nil {
+		return nil
+	}
+	rows := m.conn.Networks()
+	ids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if row.Stored {
+			ids = append(ids, row.NetworkID)
+		}
+	}
+	return ids
+}
+
+// syncSidebarNetworkOrder copies the stored connection roster order into the
 // controller so collapse, reorder, and jump overlays stay aligned with the
 // sidebar. The demo shell has no connection model to mirror.
 func (m *Model) syncSidebarNetworkOrder() {
 	if m.conn == nil || m.ctrl == nil {
 		return
 	}
-	m.ctrl.SetNetworkOrder(m.sidebarNetworkIDs())
+	m.ctrl.SetNetworkOrder(m.sidebarStoredNetworkIDs())
 }
 
 // sidebarSlotKind is one inner line of the sidebar column. Hit-testing and
