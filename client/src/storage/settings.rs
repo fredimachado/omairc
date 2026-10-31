@@ -504,10 +504,12 @@ fn parse_settings_ini(data: &[u8]) -> BTreeMap<String, IniValue> {
     values
 }
 
-/// STS load path: like [`parse_settings_ini`], but after a bad line (or an unclosed
-/// `[` header) a later key is ignored only when that key is already set in the
-/// current group, so a garbage line cannot drop the rest of an intact policy and
-/// leaked keys cannot overwrite real ones.
+/// STS load path: like [`parse_settings_ini`], but after a bad non-header line a
+/// later key is ignored only when that key is already set in the current group,
+/// so a garbage line cannot drop the rest of an intact policy and leaked keys
+/// cannot overwrite real ones. An unclosed `[` header still starts a new section
+/// (as on main) and clears the after-bad-line flag, so the next host's keys never
+/// land in the previous group.
 fn parse_sts_ini(data: &[u8]) -> BTreeMap<String, IniValue> {
     let raw = strip_bom(data);
     let mut values = BTreeMap::new();
@@ -516,11 +518,7 @@ fn parse_sts_ini(data: &[u8]) -> BTreeMap<String, IniValue> {
     for line in (IniLines { data: raw, pos: 0 }) {
         let text = &raw[line.start..line.start + line.len];
         if text[0] == b'[' {
-            let closed = text.iter().position(|&byte| byte == b']').is_some();
-            if !closed {
-                after_bad = true;
-                continue;
-            }
+            // Match main: unclosed `[` still opens a new section via section_prefix.
             section = section_prefix(text);
             after_bad = false;
             continue;

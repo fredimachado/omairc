@@ -700,6 +700,108 @@ mod tests {
     }
 
     #[test]
+    fn an_unclosed_header_does_not_merge_into_a_complete_group() {
+        let dir = TempDir::new("sts-unclosed-complete");
+        let (store, path) = store_in(&dir);
+        let other = other_example_group();
+        // Unclosed [other — like main, opens other's section; A's keys stay A's.
+        let mixed = format!(
+            "[{IRC_EXAMPLE_GROUP}]\nport=6697\nduration=60\nexpiry=4102444800\n[{other}\nport=7000\nduration=100\nexpiry=100\n"
+        );
+        fs::write(&path, &mixed).expect("write");
+
+        assert_eq!(
+            store.lookup("irc.example", at(1_700_000_000)),
+            Some(StsCached {
+                port: 6697,
+                duration_seconds: 60,
+                expiry_epoch_seconds: 4_102_444_800,
+            }),
+            "A must stay exactly as advertised"
+        );
+        assert_ne!(
+            store.lookup("irc.example", at(1_700_000_000)).map(|e| e.port),
+            Some(7000),
+            "B's port must not merge into A"
+        );
+
+        store.store("third.example", 6699, 10, at(1_700_000_000));
+        let restarted = IniStsStore::new(path.clone());
+        assert_eq!(
+            restarted.lookup("irc.example", at(1_700_000_000)),
+            Some(StsCached {
+                port: 6697,
+                duration_seconds: 60,
+                expiry_epoch_seconds: 4_102_444_800,
+            }),
+            "A must survive recovery and reload"
+        );
+        let text = fs::read_to_string(&path).unwrap();
+        let a_block = sts_group_block(&text, IRC_EXAMPLE_GROUP);
+        assert!(
+            a_block.contains("port=6697"),
+            "A's port must remain under A: {text}"
+        );
+        assert!(
+            !a_block.contains("port=7000"),
+            "B's port must not land under A after recovery: {text}"
+        );
+    }
+
+    #[test]
+    fn an_unclosed_header_does_not_merge_into_a_partial_group() {
+        let dir = TempDir::new("sts-unclosed-partial");
+        let (store, path) = store_in(&dir);
+        let other = other_example_group();
+        // A only advertised port; B's duration/expiry/port must not fill A.
+        let mixed = format!(
+            "[{IRC_EXAMPLE_GROUP}]\nport=6697\n[{other}\nport=7000\nduration=100\nexpiry=100\n"
+        );
+        fs::write(&path, &mixed).expect("write");
+
+        assert_eq!(
+            store.lookup("irc.example", at(1_700_000_000)),
+            None,
+            "partial A without expiry must not become a full policy from B's keys"
+        );
+
+        store.store("third.example", 6699, 10, at(1_700_000_000));
+        let text = fs::read_to_string(&path).unwrap();
+        let a_block = sts_group_block(&text, IRC_EXAMPLE_GROUP);
+        assert!(
+            a_block.contains("port=6697"),
+            "A's advertised port must remain: {text}"
+        );
+        assert!(
+            !a_block.contains("port=7000"),
+            "B's port must not merge into A: {text}"
+        );
+        assert!(
+            !a_block.contains("duration=100"),
+            "B's duration must not merge into A: {text}"
+        );
+        assert!(
+            !a_block.contains("expiry=100"),
+            "B's expiry must not merge into A: {text}"
+        );
+        let restarted = IniStsStore::new(path);
+        assert_eq!(
+            restarted.lookup("irc.example", at(1_700_000_000)),
+            None,
+            "partial A must not become enforceable after recovery"
+        );
+    }
+
+    fn sts_group_block<'a>(text: &'a str, group: &str) -> &'a str {
+        text.split(&format!("[{group}]"))
+            .nth(1)
+            .unwrap_or("")
+            .split('[')
+            .next()
+            .unwrap_or("")
+    }
+
+    #[test]
     fn a_bad_line_inside_a_valid_group_keeps_the_policy() {
         let dir = TempDir::new("sts-bad-inside-group");
         let (store, path) = store_in(&dir);
