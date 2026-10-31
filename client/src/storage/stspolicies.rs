@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 
-use super::settings::{Settings, Status};
+use super::settings::{file_not_writable, Settings, Status};
 use crate::session::sts::{sts_group_key, StsCached, StsStore};
 
 /// The value names of one host's group, as Qt writes them.
@@ -198,6 +198,9 @@ fn persist_sts_settings(
     match settings.write_blocked() {
         Status::AccessError => Status::AccessError,
         Status::FormatError => {
+            if file_not_writable(path) {
+                return Status::AccessError;
+            }
             merge_memory_into_settings(settings, memory, now_unix);
             match recover_malformed_sts(path, &settings.encode()) {
                 Ok(()) => {

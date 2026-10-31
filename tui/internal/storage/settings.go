@@ -317,15 +317,10 @@ func (s *Settings) Sync() Status {
 // WriteBlocked mirrors blockedIniWrite + existingSettingsFileIsNotWritable: it
 // returns StatusFormatError/StatusAccessError when the file must not be
 // written, or StatusWritten when writing is allowed. A missing file is
-// writable; a file that exists but cannot accept a write is not. A malformed
-// file that is not writable is an access error (leave it alone), not a format
-// error that STS recovery would rewrite.
+// writable; a file that exists but cannot accept a write is not.
 func (s *Settings) WriteBlocked() Status {
 	switch ProbeSettingsIni(s.path) {
 	case IniProbeMalformed:
-		if settingsFileNotWritable(s.path) {
-			return StatusAccessError
-		}
 		return StatusFormatError
 	case IniProbeUnreadable:
 		return StatusAccessError

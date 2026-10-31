@@ -459,6 +459,42 @@ func TestSyncRefusesReadOnlyFile(t *testing.T) {
 	}
 }
 
+func TestSyncRefusesReadOnlyMalformedFileWithFormatError(t *testing.T) {
+	t.Parallel()
+
+	path := tempSettingsPath(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	corrupt := []byte("[networks]\nabc\\host\n")
+	if err := os.WriteFile(path, corrupt, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := os.Chmod(path, 0o444); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+	if f, err := os.OpenFile(path, os.O_WRONLY, 0); err == nil {
+		f.Close()
+		_ = os.Chmod(path, 0o644)
+		t.Skip("process can write a read-only file (running as root?); skipping")
+	}
+
+	s := OpenSettings(path)
+	s.SetValue("networks/abc", "host", "irc.changed.example")
+	if got := s.Sync(); got != StatusFormatError {
+		_ = os.Chmod(path, 0o644)
+		t.Fatalf("Sync() = %v, want StatusFormatError", got)
+	}
+	_ = os.Chmod(path, 0o644)
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(after) != string(corrupt) {
+		t.Errorf("read-only malformed file was modified:\n%s", after)
+	}
+}
+
 func TestSyncCreatesMissingFile(t *testing.T) {
 	t.Parallel()
 
