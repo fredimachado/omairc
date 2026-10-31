@@ -41,7 +41,6 @@ wait-title --exact "#omarchy · irc.example · fred - Omairc"
 - **Escape.** Press Escape. Run `control-omairc key --key Escape` then `control-omairc wait-title --exact "#omarchy · irc.example · fred - Omairc"`. Status closes and the last conversation returns.
 - **First-run Status.** After `control-omairc launch` (no `--demo-server`), the title is `chat.freenode.net Status`. Connect sits on top of Status, the subtitle is `Offline`, and there are no handshake lines. `status` does not close Status while nothing is selected. That path is not this fence.
 - **Mouse path.** `control-omairc click-network` opens Status from the network name. `control-omairc click-edit` opens Connect from the small edit control. There is no chord for those pixels. They are not this recipe. The recipe uses `status`.
-- **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` clicks `networkHeaderButton` on the live fixture, asserts `-AUTH- *** Looking up your hostname...` in `consoleList`, and keeps AUTH out of DIRECT MESSAGES. The suite writes `test-artifacts/status-console.png`. This is not compiled-window proof.
 
 ## Gotchas
 
@@ -52,4 +51,4 @@ wait-title --exact "#omarchy · irc.example · fred - Omairc"
 - AUTH, `*`, and blank-target notices belong in Status. A DM named AUTH is a failure.
 - Status titles do not end with ` - Omairc`. Do not use `wait-title --exact "* - Omairc"` as the Status identity.
 - `Ctrl+`` does not close Status when no conversation is selected. First-run Connect is that state.
-- The header subtitle is `Offline` on a default compiled launch and `Connected` on `--demo-server` and the live fixture.
+- The header subtitle is `Offline` on a default compiled launch and `Connected` on `--demo-server`.

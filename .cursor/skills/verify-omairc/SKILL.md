@@ -20,8 +20,7 @@ desktop client and the TUI. Do not duplicate it in product code or CLI help.
 | Terminal UI | `.cursor/skills/verify-omairc-tui` | `control-omairc-tui` | `omairc-tui` |
 
 **Desktop window proof** (title, screenshots, keyboard chords, isolated Xvfb)
-always goes through **verify-omairc-desktop**, not this skill's old Qt
-`control-omairc` path. Read `features/README.md`, then drive with:
+always goes through **verify-omairc-desktop**. Read `features/README.md`, then drive with:
 
 ```sh
 .cursor/skills/verify-omairc-desktop/control-omairc-desktop launch --demo-server
@@ -40,8 +39,8 @@ for mapped GUI proof.
 - Add or edit behavior in `features/<id>.md`, not in a binary catalog.
 - Keep `desktop-recipe` fences compatible with both `control-omairc-desktop` and
   `control-omairc-tui` where the behavior exists on both surfaces.
-- Qt-specific QML object names and `doctor-qml` / `qml-suite` paths are
-  retired; do not extend them.
+- Retired offscreen suites are not a fallback. The historical note lives in
+  `features/README.md`.
 
 For launch, doctor, chords, pointer verbs, and cleanup details, read
 `.cursor/skills/verify-omairc-desktop/SKILL.md` in full.

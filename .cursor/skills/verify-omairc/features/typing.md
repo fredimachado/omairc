@@ -19,7 +19,7 @@ The mirror image is outbound: editing the composer in a conversation on a networ
 
 Preconditions:
 
-- Seeded conversation UI is showing (`#omarchy · irc.example · fred - Omairc`, members visible). Use `control-omairc launch --demo-server`. When Xvfb tools are missing, `qml-suite` (seeded `IrcController`) is the fallback and is not compiled-window proof.
+- Seeded conversation UI is showing (`#omarchy · irc.example · fred - Omairc`, members visible). Use `control-omairc launch --demo-server`. If desktop tools are missing, report the unmet precondition.
 - `control-omairc launch` without `--demo-server` is first-run Connect titled `chat.freenode.net Status` with no member list. Do not start this recipe there.
 - Live `typing-caps` needs a completed Connect and `message-tags`. That is not this recipe. Do not inject typing frames.
 
@@ -33,8 +33,7 @@ screenshot --feature typing --name dm-overlay
 ```
 
 - **Member glyph.** Capture the member panel. Run `control-omairc screenshot --feature typing --name member-glyph`. Three dots sit beside `&anna`. The other rows do not.
-- **DM overlay.** Jump to `anna`. Run `control-omairc jump --query anna`, `control-omairc wait-title --exact "anna - Omairc"`, and `control-omairc screenshot --feature typing --name dm-overlay`. There is no member panel. Under anna's last message, a second anna row shows three dots on the indented body column. The seeded line is not in the current minute, so the dots take their own avatar line. The dots always own their line: a narrower window that wraps anna's body must still show the dots below the wrapped text, never appended to its last word.
-- **Offscreen suite.** Run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` writes `test-artifacts/typing-member-glyph.png` and `test-artifacts/typing-dm-overlay.png`. `qml-suite` copies them to `test-artifacts/verify/typing/member-glyph.png` and `test-artifacts/verify/typing/dm-overlay.png`. The suite grab must show dots beside `anna` on `#omarchy` and dots at the end of the `anna` transcript. `test_typingChromeFollowsCapabilities` covers `typing-caps`. This is not compiled-window proof.
+- **DM overlay.** Jump to `anna`. Run `control-omairc jump --query anna`, `control-omairc wait-title --exact "anna - Omairc"`, and `control-omairc screenshot --feature typing --name dm-overlay`. There is no member panel. Under anna's last message, a second anna row shows three dots on the indented body column. The seeded line is not in the current minute, so the dots take their own avatar line. The dots always own their line: a narrower window that wraps anna's body must still show the dots below the wrapped text, never appended to its last word. Live `typing-caps` is not this fence.
 
 ## Gotchas
 

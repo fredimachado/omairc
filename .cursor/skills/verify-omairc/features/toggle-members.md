@@ -20,7 +20,7 @@ Toggle members lets a user hide or show the channel member list from the header 
 
 Preconditions:
 
-- Seeded conversation UI is showing (`#omarchy · irc.example · fred - Omairc`, members visible). Use `control-omairc launch --demo-server`. When Xvfb tools are missing, `qml-suite` (seeded `IrcController`) is the fallback and is not compiled-window proof.
+- Seeded conversation UI is showing (`#omarchy · irc.example · fred - Omairc`, members visible). Use `control-omairc launch --demo-server`. If desktop tools are missing, report the unmet precondition.
 - `control-omairc launch` without `--demo-server` is first-run Connect titled `chat.freenode.net Status`. Do not start this recipe there.
 - For a desktop instance, the window is the isolated 1180x760 default, so the panel can appear (`width >= 980`).
 
@@ -50,14 +50,13 @@ screenshot --feature toggle-members --name after-toggle
 - **Direct message.** Jump to `anna`. Run `control-omairc jump --query anna` then `control-omairc wait-title --exact "anna - Omairc"`. The people control is absent. Press `Ctrl+Shift+M`. Run `control-omairc toggle-members` then `control-omairc screenshot --feature toggle-members --name dm-no-members`. The chord is a no-op. No member column appears.
 - **Proof.** Jump back to `#omarchy`. The panel was shown again on the channel before the DM, and the DM chord did not flip it, so the column is visible. Run `control-omairc jump --query "#omarchy"`, `control-omairc wait-title --exact "#omarchy · irc.example · fred - Omairc"`, and `control-omairc screenshot --feature toggle-members --name after-toggle`. The artifact shows `#omarchy`, `12 PEOPLE`, and `ONLINE - 12`. The title is disambiguated because both networks have `#omarchy`.
 - **Mouse path.** `control-omairc click-people` hides the panel while the column is open. After it hides, `control-omairc click-people --hidden` shows it. There is no chord for that control. It is not this recipe.
-- **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` hides the panel with `Ctrl+Shift+M` on `#omarchy` and writes `test-artifacts/toggle-members.png`. `qml-suite` copies it to `test-artifacts/verify/toggle-members/members-hidden.png`. The right column is gone; `12 PEOPLE` remains. This is not compiled-window proof.
 
 ## Gotchas
 
 - `run toggle-members` skips `launch` when `doctor` is already healthy and `demo=yes`. It does not reset the member panel, unread badges, or sent lines. A hidden panel survives. Recipes that need the default open panel on a fresh demo need `cleanup` before `run`.
 - `screenshot` retries a near-solid grab and fails the run if the frame stays flat. The open-panel shot is the first grab. Compare it to `members-hidden` only after that retry has a real frame.
 - `Ctrl+Shift+M` is disabled on direct messages. A no-op there is correct, not a broken shortcut.
-- `control-omairc toggle-members` sends `Control_L+Shift_L+m`. xdotool's `ctrl+shift+m` token does not reach the Qt shortcut on the isolated Xvfb.
+- `control-omairc toggle-members` sends `Control_L+Shift_L+m` on a direct message. xdotool's `ctrl+shift+m` token does not reach that chord on the isolated Xvfb.
 - `control-omairc-desktop toggle-members` clicks the header people pill on a channel title (XI2) and tracks open/hidden for the two pill x positions. `Ctrl+Shift+M` alone has been AE=0 under Xvfb+lavapipe while the panel stayed open. On a direct message it still sends the chord (a no-op).
 - The panel also stays hidden when the window is narrower than 980 CSS pixels. Isolated launch stays at 1180 wide so this does not apply unless geometry isolation failed.
 - The people control label is the count plus ` PEOPLE`, not the words Hide/Show. Those names exist only as the control's accessible name.

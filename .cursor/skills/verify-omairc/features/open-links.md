@@ -19,16 +19,14 @@ Open links lets a user click an `http` or `https` URL in a conversation transcri
 
 Preconditions:
 
-- Proof is the offscreen suite. `qml-suite` clicks `urlHit` on `messageBody` and on a Status line, and asserts the allowlist without opening a system handler.
-- A compiled window would call `Qt.openUrlExternally` on a real click. Do not use that as proof on the isolated display.
-- `control-omairc launch` without `--demo-server` is first-run Connect titled `chat.freenode.net Status` with no transcript URLs. Do not start this recipe there.
+- `control-omairc launch` without `--demo-server` is first-run Connect titled `chat.freenode.net Status` with no transcript URLs. Do not start here.
+- A click on a real URL opens the system handler. Do not use that click as proof on the isolated display.
 
-- **No compiled-window recipe.** `control-omairc run open-links` fails closed. This file has no `desktop-recipe` fence. Do not add an empty fence or a `qml-suite` fence.
-- **Message and Status clicks.** Run `control-omairc doctor-qml` then `control-omairc qml-suite`. `test_messageBodyClickOpensHttpsUrl` appends `read https://example.com thanks` and clicks the hit; `lastOpenedUrl` is `https://example.com`. `test_consoleBodyClickOpensHttpUrl` does the same for `http://example.com` on Status. `test_httpUrlAllowlist` keeps `file:` and `javascript:` closed. `test_httpUrlAtTrimCases` covers balanced parenthesis and bracket trim. `test_ctrlShiftOLinkSheet` covers the link sheet filter, wrap, Enter, Escape, Status INVITE join, and overlay guards. `qml-suite` is not compiled-window proof.
+- **No executable recipe yet.** `run open-links` fails closed. This file has no `desktop-recipe` fence. Do not add an empty fence.
+- **What a user sees.** A click on `https://example.com` in a message body opens that URL. A click on `http://example.com` in Status opens that URL. `file:` and `javascript:` stay closed. Trailing `.,;:!?` is stripped, and a trailing `)` or `]` is stripped only while it is unmatched. `Ctrl+Shift+O` lists the current transcript's `http`/`https` URLs, filters as you type, wraps with Up/Down, opens or joins on Enter, and dismisses on Escape without changing the draft. Connect blocks the chord. While the sheet is open, `Alt+Down` does not walk conversations and `Ctrl+/` does not open the shortcuts sheet.
 
 ## Gotchas
 
 - Only `http` and `https` with `://` and non-empty text after `://` are allowed. A hostname is not validated separately, so `https:///foo` would still pass. Trailing `.,;:!?` is stripped. Trailing `)` or `]` is stripped only while the close count exceeds the open count inside the match, so balanced parens in paths like `IRC_(protocol)` stay intact.
-- The body stays `PlainText`. Do not look for rich-text anchors.
 - Sending `https://example.com` from the compiled composer and clicking it is not this feature's proof. That opens the system URL handler.
-- Selectable message text is not this feature. The suite still checks that a body can be selected without opening a URL.
+- Selectable message text is not this feature. Selecting a body must not open a URL.

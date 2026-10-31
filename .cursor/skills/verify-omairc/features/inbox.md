@@ -20,10 +20,10 @@ The session inbox is a waiting list of background arrivals: mentions, highlight 
 
 Preconditions:
 
-- Use the seeded UI (`control-omairc launch --demo-server` or `qml-suite`). A fresh `--demo-server` already holds two rows: the seeded `#ricing` mention (the seeded transcript arrives as live frames, so it appends) and a live OFTC `INVITE` (`rio` → `#debian`) injected at attach. Everything past that still needs an injected frame or a switch away first. Do not inject frames for this proof.
+- A fresh `launch --demo-server` holds three rows, and the footer count starts at 3. They are mira's seeded `#ricing` mention (`looks good, fred.`), anna's seeded direct that names fred (`fred: The prototype already feels at home. Nice work.`), and a live OFTC `INVITE` (`rio` → `#debian`) injected at attach. The seeded `dax` direct (`Send me the build when the mock is ready.`) does not add a row: it does not name fred, and a plain direct message stays out of the inbox. The three rows are in place when the window opens. Everything past them still needs an injected frame or a switch away first. Do not inject frames for this proof.
+- **No executable recipe yet.** `run inbox` fails closed. This file has no `desktop-recipe` fence. Do not add an empty fence.
 
-- **No compiled-window recipe.** `control-omairc run inbox` fails closed. This file has no `desktop-recipe` fence. Do not add an empty fence or a `qml-suite` fence. `Ctrl+Shift+A` on a fresh `--demo-server` opens a non-empty sheet (the `#ricing` mention plus the OFTC invite); `inboxCount` starts at 2.
-- **Offscreen suite.** Run `control-omairc doctor-qml` then `control-omairc qml-suite`. `test_inboxSheetTogglesWithShortcut` covers `Ctrl+Shift+A` toggle, Escape, and Connect no-op. `test_inboxMarkShowsCountAndOpensSheet` covers the footer badge and click path. `test_inboxMentionEnterJumpsToMsgid` and `test_inboxInviteEnterJoinsChannel` cover Enter activation. `test_inboxSelectingConversationClearsMatchingRows` covers sidebar consume. `qml-suite` is not compiled-window proof.
+- **What a user sees.** `Ctrl+Shift+A` toggles the sheet. Escape closes it and returns focus to the composer. Connect blocks the chord. The footer `inbox` mark shows the count and opens the sheet. Enter on a mention or highlight reveals that conversation at the stored message. Enter on an invite joins that channel. Delete dismisses the selected row without navigating. Selecting the matching conversation from the sidebar consumes related rows and clears the badge when nothing remains.
 
 ## Gotchas
 

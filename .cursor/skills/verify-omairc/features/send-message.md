@@ -22,7 +22,7 @@ Send a message lets a user add a local line to the current mock transcript from 
 
 Preconditions:
 
-- Seeded conversation UI is showing. Use `control-omairc launch --demo-server`. When Xvfb tools are missing, `qml-suite` (seeded `IrcController`) is the fallback and is not compiled-window proof. A default compiled launch is titled `chat.freenode.net Status`.
+- Seeded conversation UI is showing. Use `control-omairc launch --demo-server`. If desktop tools are missing, report the unmet precondition. A default compiled launch is titled `chat.freenode.net Status`.
 - For the desktop recipe below, jump to `#desktop` first. Run `control-omairc jump --query "#desktop"` then `control-omairc wait-title --exact "#desktop - Omairc"`. `launch --demo-server` starts on `#omarchy · irc.example · fred - Omairc`.
 - No prior verify line `Hello from verify` is already in this session's `#desktop` transcript.
 - `run send-message` skips `launch` when `doctor` is already healthy and `demo=yes`. It does not reset the member panel. `click-send` aims at the SEND button while that panel is open. A hidden panel makes the click miss, and the draft stays in the composer. Run `cleanup` before `run` when reusing a dirty instance.
@@ -59,7 +59,6 @@ compare --before test-artifacts/verify/send-message/after-button.png --after tes
 - **Action line.** Send `/me waves` only after that shot, as its own `send`. Run `control-omairc send --text "/me waves"`. The last line is an italic action: author `fred`, body `waves`. A leftover button draft would be prefixed onto `/me waves` in this line.
 - **Confirm persistence.** Jump to `#omarchy` and back to `#desktop`. Run `control-omairc jump --query "#omarchy"`, `control-omairc wait-title --exact "#omarchy · irc.example · fred - Omairc"`, `control-omairc jump --query "#desktop"`, and `control-omairc wait-title --exact "#desktop - Omairc"`. `#desktop` still shows the three sent lines.
 - **Proof.** Capture the populated transcript after `/me` and again after returning. Run `control-omairc screenshot --feature send-message --name after-send` before the jump away, and `control-omairc screenshot --feature send-message --name after-return` after coming back. Both images show `Hello from verify` in `#desktop`. Run `control-omairc compare --before test-artifacts/verify/send-message/before-send.png --after test-artifacts/verify/send-message/after-send.png` and `control-omairc compare --before test-artifacts/verify/send-message/after-button.png --after test-artifacts/verify/send-message/after-send.png`. Both compares must report a pixel change. The second pair is the button line against the action line. A missed `click-send` leaves the draft, and the later `send` then posts one combined line; that pair is how the miss shows up.
-- **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` sends from `#omarchy` (not `#desktop`) and writes `test-artifacts/send-message.png`. The last line is `fred` / `Hello from the UI test`. `qml-suite` copies it to `test-artifacts/verify/send-message/after-send.png`. This is not compiled-window proof.
 
 ## Gotchas
 

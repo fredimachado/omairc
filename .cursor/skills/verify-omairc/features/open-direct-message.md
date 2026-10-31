@@ -24,7 +24,7 @@ Open a direct message lets a user click another person in a channel member list 
 
 Preconditions:
 
-- Seeded conversation UI is showing (`#omarchy · irc.example · fred - Omairc`, members visible, no `mira` sidebar row). Use `control-omairc launch --demo-server`. When Xvfb tools are missing, `qml-suite` (seeded `IrcController`) is the fallback and is not compiled-window proof.
+- Seeded conversation UI is showing (`#omarchy · irc.example · fred - Omairc`, members visible, no `mira` sidebar row). Use `control-omairc launch --demo-server`. If desktop tools are missing, report the unmet precondition.
 - `control-omairc launch` without `--demo-server` is first-run Connect titled `chat.freenode.net Status`. Do not start this recipe there.
 - For a desktop instance, this launch has not already created a `mira` sidebar row. `nick-jump` does not need the member panel.
 
@@ -56,8 +56,7 @@ wait-title --exact "#omarchy · irc.example · fred - Omairc"
 - **Ignore self.** Jump to `#omarchy` and nick-jump `fred`. Run `control-omairc jump --query "#omarchy"`, `control-omairc wait-title --exact "#omarchy · irc.example · fred - Omairc"`, `control-omairc nick-jump --query fred`, and `control-omairc wait-title --exact "#omarchy · irc.example · fred - Omairc"`. The title stays on the channel. Enter on yourself does not open a DM.
 - **Proof.** Capture the created mira conversation after jumping away and back. Run `control-omairc screenshot --feature open-direct-message --name mira-dm`. The screenshot shows title identity `mira`, a `mira` sidebar row, no member panel, and `Hi mira from verify`.
 - **Mouse path.** `control-omairc click-member --name anna` and `control-omairc click-member --name mira` open the same conversations when the member panel is visible. `control-omairc click-member --name fred` is ignored. There is no chord that aims a pixel. It is not this recipe.
-- **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` clicks `mira` and writes `test-artifacts/open-direct-message.png`. `qml-suite` copies it to `test-artifacts/verify/open-direct-message/mira-dm.png`. The image must show `mira` selected, the beginning line, and no member panel. This is not compiled-window proof.
-- **Transcript nick.** `bin/test` runs `test_openDirectMessageFromTranscriptNick`. It clicks mira's avatar and author, ignores `fred` and event or grouped rows, keeps anna's existing buffer, and leaves NickServ on Status. Desktop `control-omairc` has no transcript-nick click.
+- **Transcript nick.** Clicking an author or avatar opens or selects that nick. `fred`, grouped follow-ups, event rows, and WHOIS rows do nothing. NickServ stays on Status. The driver has no transcript-nick click. It is not this recipe.
 
 ## Gotchas
 

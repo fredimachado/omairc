@@ -25,9 +25,9 @@ Preconditions:
 - `control-omairc launch` without `--demo-server` is first-run Connect titled `chat.freenode.net Status`. That window has no session and no mentions.
 - `--demo-server` has no new inbound mentions after launch. There is no compiled-window mention recipe there.
 
-- **No compiled-window recipe.** `control-omairc run mention-notify` fails closed. This file has no `desktop-recipe` fence. Do not add an empty fence or a `qml-suite` fence.
-- **Offscreen suite.** Run `control-omairc doctor-qml` then `control-omairc qml-suite`. `test_unfocusedMentionNotifiesOnce` calls `notifyMentionIfUnfocused(false, "alice", "hey \x02fred")` and expects `lastNotification` author `alice` / body `hey fred`, then the focused call leaves `lastNotification` null, then `notifyMentionIfUnfocused(false, "alice", "hello")` expects author `alice` / body `hello`. `test_notificationActivateOpensLiveChannelMention` and `test_notificationActivateOpensDirectMessage` cover the activation path: `activateNotifiedConversation` switches to the mention's channel or DM and reveals the exact `msgid` row. `qml-suite` is not compiled-window proof.
-- **Live desktop mention.** Do not claim this on first-run Connect or `--demo-server`. It is `verified-unreachable` until a session has completed Connect and the isolated window is unfocused. The attempted compiled route is `control-omairc launch` (title `chat.freenode.net Status`, no traffic).
+- **No executable recipe yet.** `run mention-notify` fails closed. This file has no `desktop-recipe` fence. Do not add an empty fence.
+- **What a user sees.** An unfocused mention notifies with the author as the summary and the body stripped of IRC formatting (`hey fred` from a bold `fred`). A focused window stays quiet. An unfocused direct message notifies even when the body does not contain the nick. Activating the notification raises Omairc, opens that conversation, and shows the exact message with the composer focused. A muted conversation does not notify. Chat still arrives.
+- **Live desktop mention.** Do not claim this on first-run Connect or `--demo-server`. It is unreachable until a session has completed Connect and the isolated window is unfocused. The attempted compiled route is `control-omairc launch` (title `chat.freenode.net Status`, no traffic).
 
 ## Gotchas
 
@@ -35,5 +35,5 @@ Preconditions:
 - The mentions badge stays nick-only. An unfocused direct message without the nick still notifies.
 - Minimized and hidden count as away even when the window stays OS-active (`arrivalWindowActive` / Rust `TranscriptActivity`). A mention while minimized still notifies. Wayland cannot report minimize, so arrivals look focused there (Hyprland special workspaces included).
 - The identity footer shows a separate inbox mark and count for the session waiting list. That inbox is not the mentions badge and does not follow mention counts.
-- The suite sets `suppressDesktopNotification` so it does not call the session bus. A live compiled mention would.
+- A live mention on a compiled window notifies through the session bus. This file does not drive that.
 - Do not Apply on the compiled window to "get a mention". That starts a real network.

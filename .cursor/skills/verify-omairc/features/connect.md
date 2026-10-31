@@ -27,7 +27,7 @@ Preconditions:
 
 - A default compiled launch (`control-omairc launch`) is titled `chat.freenode.net Status` and shows Connect. That is the desktop entry point.
 - `control-omairc launch --demo-server` skips Connect and shows the seeded sidebar. Do not start this recipe there. Do not put both launches in one fence.
-- When Xvfb tools are missing, use `control-omairc doctor-qml` then `control-omairc qml-suite`. That suite is not compiled-window proof. Do not send input to the user's live window.
+- If desktop tools are missing, report the unmet precondition. Do not send input to the user's live window.
 
 ```desktop-recipe
 launch
@@ -41,7 +41,6 @@ wait-title --exact "chat.freenode.net Status"
 
 - **First-run sheet.** After an isolated launch, the title is `chat.freenode.net Status`. Run `control-omairc wait-title --exact "chat.freenode.net Status"` then `control-omairc screenshot --feature connect --name first-run`. That shot is the Connect sheet, before any key. The overlay heading is `Connect`. Name is `chat.freenode.net`, Host is `chat.freenode.net`, port is `6697`, TLS is on, Autojoin is `#omarchy`, `Connect automatically on startup` is off, Nick is empty, the problem line is `Nick is required`, and Apply is muted.
 - **Keyboard on first run.** After that shot, the recipe walks one `Tab`, one `Shift+Tab`, and one `Return`. Run `control-omairc key --key Tab`, `control-omairc key --key shift+Tab`, and `control-omairc key --key Return`, then `control-omairc wait-title --exact "chat.freenode.net Status"`. Those keys walk focus and leave the sheet open. Nick stays empty, the problem line stays `Nick is required`, and Apply stays muted. This walk is not claimed as a pixel change. Do not press `Return` again once Apply is focused. `Ctrl+Enter` would Apply. This recipe does not Apply.
-- **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` opens a window with a fake incomplete profile and writes `test-artifacts/connection-sheet.png`. `qml-suite` copies it to `test-artifacts/verify/connect/first-run.png`. The image must show `Connect`, `chat.freenode.net`, `Nick is required`, and muted Apply. The same suite covers Tab from the network list to Apply, Enter from Host keeping `Nick is required`, Enter from Nick closing a complete sheet, scrollbars on a short window and a long network list, and Disconnect next to Apply when the selected network is live. This is not compiled-window proof.
 
 ## Gotchas
 
@@ -50,8 +49,7 @@ wait-title --exact "chat.freenode.net Status"
 - First run cannot be dismissed. Escape and a click outside the card only work after a complete profile already exists. The overlay covers the sidebar and member list, so those clicks do not switch conversation, open Status, or open a DM.
 - Discard on first run restores the suggested Freenode defaults. It does not close the sheet. An incomplete saved profile still opens Connect, but the fields follow that stored draft, not `suggested()`. Isolated `control-omairc launch` uses empty XDG, so it is first-run suggested values. A stored profile with no name uses the host as the name. Name and Host stay independent after that: changing Host does not update Name, so a legacy profile keeps the original host in Name until you edit it.
 - Apply on the compiled window starts a real IRC session. That is not this feature's proof, and it does not restore the seeded `#omarchy` sidebar.
-- Seeded conversation recipes need `control-omairc launch --demo-server` or `qml-suite` (seeded `IrcController`). They do not start from this sheet.
-- `qml-suite` overwrites `test-artifacts/verify/connect/first-run.png`. If this run also captured a compiled first-run, keep that file as `compiled-first-run.png` before running the suite.
+- Seeded conversation recipes need `control-omairc launch --demo-server`. They do not start from this sheet.
 - NickServ sits in the Tab order after Password. Forget links appear only when a stored secret exists. First run skips Add network, Forget, and Remove.
 - Enter on a network row selects that network. A second Enter or Ctrl+Return Applies. Enter on Discard, Add network, or Forget activates that control.
 - Disconnect stops the selected live or reconnecting session. The sheet stays open. The profile and Connect automatically on startup stay as saved. Apply starts that network again.
