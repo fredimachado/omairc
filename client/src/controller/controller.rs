@@ -435,6 +435,8 @@ impl Controller {
                 if !network_id.is_empty() && state != SessionState::Registered {
                     self.playback.borrow_mut().on_left_registration(&network_id);
                     self.applied_profile_avatars.remove(&network_id);
+                    // Hold sets on the selected DM until Welcome's get runs.
+                    self.arm_read_marker_reconnect_hold(&network_id);
                 }
                 let severity = if state == SessionState::Failed {
                     LogSeverity::Alert
@@ -903,6 +905,11 @@ impl Controller {
                 ],
             );
         }
+        // Welcome's get must land before queued surfaces can refresh the shell
+        // viewport: the get hold has to exist first.
+        if !welcome_network.is_empty() {
+            self.request_read_marker_get_for_selected_direct(&welcome_network);
+        }
         self.queue(surfaces);
         if let Some(metadata) = metadata_reply {
             self.route_own_metadata_reply(
@@ -926,9 +933,6 @@ impl Controller {
                 preview: arrival.body,
                 msgid: arrival.msgid,
             });
-        }
-        if !welcome_network.is_empty() {
-            self.request_read_marker_get_for_selected_direct(&welcome_network);
         }
         self.sync_read_marker_for_selection();
     }

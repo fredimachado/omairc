@@ -63,11 +63,38 @@ impl ReadMarkerState {
 
 impl Controller {
     /// Records whether the shell is focused and the selected transcript is pinned to the bottom
-    /// (`NoteTranscriptViewport`).
+    /// (`NoteTranscriptViewport`). Unchanged values are ignored so a redundant report after a
+    /// set FAIL cannot immediately resend the same stamp.
     pub fn note_transcript_viewport(&mut self, focused: bool, follow_end: bool) {
+        if self.transcript_focused == focused && self.transcript_follow_end == follow_end {
+            return;
+        }
         self.transcript_focused = focused;
         self.transcript_follow_end = follow_end;
         self.sync_read_marker_for_selection();
+    }
+
+    /// Drops get dedupe for `network_id` and, when a direct message on that network is
+    /// selected, keeps `awaiting_get` set so a viewport sync after 001 cannot publish
+    /// before Welcome's get request.
+    pub(super) fn arm_read_marker_reconnect_hold(&mut self, network_id: &str) {
+        if network_id.is_empty() {
+            return;
+        }
+        self.read_markers
+            .get_sent
+            .retain(|key| key.network_id != network_id);
+        let Some(selected) = self.selected.clone() else {
+            return;
+        };
+        if selected.network_id != network_id {
+            return;
+        }
+        let features = self.reducer.server_features(network_id);
+        if features.is_channel(&selected.normalized_target) {
+            return;
+        }
+        self.read_markers.awaiting_get.insert(selected);
     }
 
     /// Applies a server read marker for one target (`ReadMarkerReceived`). An empty
