@@ -233,19 +233,25 @@ fn merge_memory_into_settings(
 
 /// Writes clean `data` to a temp sibling, hard-links `path` to a backup, then renames
 /// the temp over `path`. On any failure, leaves `path` untouched and removes the temp.
+/// After a successful rename, the backup is restricted to owner-only (0600) so a
+/// hard-linked copy of a looser-mode original is not left world-readable.
 fn recover_malformed_sts(path: &Path, data: &[u8]) -> io::Result<()> {
     let temp = write_sts_temp(path, data)?;
-    if !link_sts_corrupt_backup(path) {
+    let Some(backup) = link_sts_corrupt_backup(path) else {
         let _ = fs::remove_file(&temp);
         return Err(io::Error::other("sts corrupt backup failed"));
-    }
+    };
     #[cfg(test)]
     if STS_TEST_HOOK.with(|hook| matches!(hook.get(), StsTestHook::FailInstall)) {
         let _ = fs::remove_file(&temp);
         return Err(io::Error::other("test: install after backup failed"));
     }
     match fs::rename(&temp, path) {
-        Ok(()) => Ok(()),
+        Ok(()) => {
+            // Chmod after rename so the hard link no longer shares an inode with `sts`.
+            restrict_permissions(&backup);
+            Ok(())
+        }
         Err(err) => {
             let _ = fs::remove_file(&temp);
             Err(err)
@@ -310,29 +316,26 @@ fn sts_corrupt_backup_limit() -> u32 {
 
 /// Hard-links `path` to `path.corrupt` / `path.corrupt.N`. Retries only on "already
 /// exists"; falls back to an exclusive-create copy. Fails closed on other errors.
-fn link_sts_corrupt_backup(path: &Path) -> bool {
+/// Returns the backup path on success.
+fn link_sts_corrupt_backup(path: &Path) -> Option<PathBuf> {
     #[cfg(test)]
     match STS_TEST_HOOK.with(std::cell::Cell::get) {
-        StsTestHook::FailBackup => return false,
+        StsTestHook::FailBackup => return None,
         StsTestHook::FailCopyAfterCreate => {
             // Exercise the copy fallback, then fail it (and require cleanup).
             let parent = path.parent().unwrap_or_else(|| Path::new("."));
             let name = path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
             let candidate = parent.join(format!("{name}.corrupt"));
             return match copy_sts_exclusive(path, &candidate) {
-                Ok(()) => true,
-                Err(err) if err.kind() == io::ErrorKind::AlreadyExists => false,
-                Err(_) => false,
+                Ok(()) => Some(candidate),
+                Err(err) if err.kind() == io::ErrorKind::AlreadyExists => None,
+                Err(_) => None,
             };
         }
         _ => {}
     }
-    let Some(parent) = path.parent() else {
-        return false;
-    };
-    let Some(name) = path.file_name().map(|n| n.to_string_lossy()) else {
-        return false;
-    };
+    let parent = path.parent()?;
+    let name = path.file_name()?.to_string_lossy();
     for n in 0..sts_corrupt_backup_limit() {
         let candidate = if n == 0 {
             parent.join(format!("{name}.corrupt"))
@@ -340,16 +343,16 @@ fn link_sts_corrupt_backup(path: &Path) -> bool {
             parent.join(format!("{name}.corrupt.{n}"))
         };
         match fs::hard_link(path, &candidate) {
-            Ok(()) => return true,
+            Ok(()) => return Some(candidate),
             Err(err) if err.kind() == io::ErrorKind::AlreadyExists => continue,
             Err(_) => match copy_sts_exclusive(path, &candidate) {
-                Ok(()) => return true,
+                Ok(()) => return Some(candidate),
                 Err(err) if err.kind() == io::ErrorKind::AlreadyExists => continue,
-                Err(_) => return false,
+                Err(_) => return None,
             },
         }
     }
-    false
+    None
 }
 
 /// Copies `src` to a new `dst` created with `create_new`, then fsyncs.
@@ -1082,5 +1085,58 @@ mod tests {
 
         let mode = fs::metadata(&path).expect("stat").permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_read_only_malformed_file_is_left_alone() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = TempDir::new("sts-readonly-malformed");
+        let (store, path) = store_in(&dir);
+        let garbage = "this line has no equals sign\n";
+        fs::write(&path, garbage).expect("write");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o444)).unwrap();
+        if fs::OpenOptions::new().write(true).open(&path).is_ok() {
+            // Running as root: the mode does not stop the write.
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+            return;
+        }
+
+        store.store("irc.example", 6697, 60, at(0));
+
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(fs::read_to_string(&path).expect("still there"), garbage);
+        assert!(
+            !path.with_file_name("sts.corrupt").exists(),
+            "read-only malformed sts must not be backed up"
+        );
+        assert_eq!(
+            store.lookup("irc.example", at(1)),
+            Some(StsCached {
+                port: 6697,
+                duration_seconds: 60,
+                expiry_epoch_seconds: 60,
+            }),
+            "policy stays in memory"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_corrupt_backup_is_owner_only_after_recovery() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = TempDir::new("sts-backup-mode");
+        let (store, path) = store_in(&dir);
+        let garbage = "this line has no equals sign\n";
+        fs::write(&path, garbage).expect("write");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+
+        store.store("irc.example", 6697, 60, at(0));
+
+        let backup = path.with_file_name("sts.corrupt");
+        let mode = fs::metadata(&backup).expect("backup").permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "backup must be owner-only after recovery");
+        let sts_mode = fs::metadata(&path).expect("sts").permissions().mode() & 0o777;
+        assert_eq!(sts_mode, 0o600);
     }
 }

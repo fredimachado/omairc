@@ -243,9 +243,16 @@ impl Settings {
     }
 
     /// Whether [`Settings::sync`] would refuse to write. A missing file is writable.
+    /// A malformed file that is not writable is an access error (leave it alone),
+    /// not a format error that STS recovery would rewrite.
     pub fn write_blocked(&self) -> Status {
         match probe_ini(&self.path) {
-            IniProbe::Malformed => return Status::FormatError,
+            IniProbe::Malformed => {
+                if file_not_writable(&self.path) {
+                    return Status::AccessError;
+                }
+                return Status::FormatError;
+            }
             IniProbe::Unreadable => return Status::AccessError,
             IniProbe::Ok => {}
         }
