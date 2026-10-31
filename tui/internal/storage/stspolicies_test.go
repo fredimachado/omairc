@@ -259,26 +259,18 @@ func TestIniSTSStoreWeakerNewPolicyDoesNotShortenExistingExpiry(t *testing.T) {
 func TestIniSTSStoreFailedBackupLeavesFileAlone(t *testing.T) {
 	// client/src/storage/stspolicies.rs::a_failed_backup_keeps_the_policy_in_memory
 	// IniSTSStore itself has no memory; the session STSStore keeps the policy.
-	if runtime.GOOS == "windows" {
-		t.Skip("unix directory modes")
-	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sts")
 	garbage := "this line has no equals sign\n"
 	if err := os.WriteFile(path, []byte(garbage), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(dir, 0o555); err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chmod(dir, 0o755)
+	restore := TestingSetSTSHook("fail-backup", 0)
+	defer restore()
 
 	store := NewIniSTSStore(path)
 	if status := store.Store("irc.example", 6697, 60, 0); status != StatusFormatError {
 		t.Fatalf("Store status = %v, want FormatError", status)
-	}
-	if err := os.Chmod(dir, 0o755); err != nil {
-		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -287,9 +279,81 @@ func TestIniSTSStoreFailedBackupLeavesFileAlone(t *testing.T) {
 	if string(raw) != garbage {
 		t.Fatalf("malformed file was rewritten: %q", raw)
 	}
+	if _, err := os.Stat(filepath.Join(dir, "sts.corrupt")); !os.IsNotExist(err) {
+		t.Fatal("backup step must fail before creating a backup")
+	}
 	if _, ok := store.Lookup("irc.example", 1); ok {
 		t.Fatal("failed backup must not invent a policy on disk")
 	}
+	assertNoSTSTemps(t, dir)
+}
+
+func TestIniSTSStoreFailedCopyFallbackLeavesSTSIntact(t *testing.T) {
+	// client/src/storage/stspolicies.rs::a_failed_copy_fallback_leaves_sts_intact_and_removes_partial
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	garbage := "this line has no equals sign\n"
+	if err := os.WriteFile(path, []byte(garbage), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	restore := TestingSetSTSHook("fail-copy", 0)
+	defer restore()
+
+	store := NewIniSTSStore(path)
+	if status := store.Store("irc.example", 6697, 60, 0); status != StatusFormatError {
+		t.Fatalf("Store status = %v, want FormatError", status)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != garbage {
+		t.Fatalf("sts must stay intact: %q", raw)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "sts.corrupt")); !os.IsNotExist(err) {
+		t.Fatal("partial copy backup must be removed")
+	}
+	assertNoSTSTemps(t, dir)
+}
+
+func TestIniSTSStoreExhaustingCorruptBackupNamesFailsClosed(t *testing.T) {
+	// client/src/storage/stspolicies.rs::exhausting_corrupt_backup_names_fails_closed
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	garbage := "this line has no equals sign\n"
+	if err := os.WriteFile(path, []byte(garbage), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sts.corrupt"), []byte("taken0"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sts.corrupt.1"), []byte("taken1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	restore := TestingSetSTSHook("max-backups", 2)
+	defer restore()
+
+	store := NewIniSTSStore(path)
+	if status := store.Store("irc.example", 6697, 60, 0); status != StatusFormatError {
+		t.Fatalf("Store status = %v, want FormatError", status)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != garbage {
+		t.Fatalf("sts must stay intact: %q", raw)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "sts.corrupt")); string(got) != "taken0" {
+		t.Fatalf("sts.corrupt clobbered: %q", got)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "sts.corrupt.1")); string(got) != "taken1" {
+		t.Fatalf("sts.corrupt.1 clobbered: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "sts.corrupt.2")); !os.IsNotExist(err) {
+		t.Fatal("must not invent a name past the cap")
+	}
+	assertNoSTSTemps(t, dir)
 }
 
 func TestIniSTSStoreFailedWriteAfterBackupLeavesSTSIntact(t *testing.T) {
@@ -300,8 +364,8 @@ func TestIniSTSStoreFailedWriteAfterBackupLeavesSTSIntact(t *testing.T) {
 	if err := os.WriteFile(path, []byte(garbage), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	testFailSTSInstall = true
-	defer func() { testFailSTSInstall = false }()
+	restore := TestingSetSTSHook("fail-install", 0)
+	defer restore()
 
 	store := NewIniSTSStore(path)
 	if status := store.Store("irc.example", 6697, 60, 0); status != StatusFormatError {
@@ -321,6 +385,11 @@ func TestIniSTSStoreFailedWriteAfterBackupLeavesSTSIntact(t *testing.T) {
 	if string(backup) != garbage {
 		t.Fatalf("backup = %q", backup)
 	}
+	assertNoSTSTemps(t, dir)
+}
+
+func assertNoSTSTemps(t *testing.T, dir string) {
+	t.Helper()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -376,9 +445,40 @@ func TestIniSTSStoreInvalidPortEntryDoesNotBeatValidPolicy(t *testing.T) {
 	if status := store.Store("irc.example", 6697, 60, 1_700_000_000); status != StatusWritten {
 		t.Fatal(status)
 	}
-	entry, ok := store.Lookup("irc.example", 1_700_000_000)
+	restarted := NewIniSTSStore(path)
+	entry, ok := restarted.Lookup("irc.example", 1_700_000_000)
 	if !ok || entry.Port != 6697 || entry.ExpiryEpochSeconds != 1_700_000_060 {
-		t.Fatalf("must keep valid policy: %+v ok=%v", entry, ok)
+		t.Fatalf("must keep valid policy on disk: %+v ok=%v", entry, ok)
+	}
+}
+
+func TestIniSTSStoreBadLineInsideValidGroupKeepsPolicy(t *testing.T) {
+	// client/src/storage/stspolicies.rs::a_bad_line_inside_a_valid_group_keeps_the_policy
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	mixed := "[" + ircExampleSTSGroup + "]\nport=6697\nbad line\nduration=60\nexpiry=4102444800\n"
+	if err := os.WriteFile(path, []byte(mixed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewIniSTSStore(path)
+	entry, ok := store.Lookup("irc.example", 1_700_000_000)
+	if !ok || entry.Port != 6697 || entry.DurationSeconds != 60 || entry.ExpiryEpochSeconds != 4_102_444_800 {
+		t.Fatalf("policy must stay intact on load: %+v ok=%v", entry, ok)
+	}
+	if status := store.Store("other.example", 6698, 30, 1_700_000_000); status != StatusWritten {
+		t.Fatal(status)
+	}
+	restarted := NewIniSTSStore(path)
+	entry, ok = restarted.Lookup("irc.example", 1_700_000_000)
+	if !ok || entry.Port != 6697 || entry.DurationSeconds != 60 || entry.ExpiryEpochSeconds != 4_102_444_800 {
+		t.Fatalf("policy must survive recovery unchanged: %+v ok=%v", entry, ok)
+	}
+	backup, err := os.ReadFile(filepath.Join(dir, "sts.corrupt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(backup) != mixed {
+		t.Fatalf("backup = %q", backup)
 	}
 }
 

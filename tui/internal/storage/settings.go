@@ -79,6 +79,21 @@ func OpenSettings(path string) *Settings {
 	return s
 }
 
+// OpenSTSSettings loads an STS policy file with parseSTSIni. Shared config
+// reads stay on OpenSettings.
+func OpenSTSSettings(path string) *Settings {
+	s := &Settings{path: path, values: make(map[string]iniValue)}
+	if path == "" {
+		return s
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return s
+	}
+	s.values = parseSTSIni(raw)
+	return s
+}
+
 // Path returns the backing file path.
 func (s *Settings) Path() string {
 	return s.path
@@ -528,36 +543,67 @@ func parseSettingsIni(data []byte) map[string]iniValue {
 	}
 
 	section := ""
-	// After a malformed line, ignore key=value pairs until the next valid header
-	// so they cannot leak into the previous group (STS recovery must not save that).
-	skipKeys := false
 	dataPos, lineStart, lineLen, equalsPos := 0, 0, 0, -1
 	for nextIniLine(raw, &dataPos, &lineStart, &lineLen, &equalsPos) {
 		line := raw[lineStart : lineStart+lineLen]
 		if line[0] == '[' {
-			if bytes.IndexByte(line, ']') < 0 {
-				skipKeys = true
-				continue
-			}
 			section = iniSectionPrefix(line)
-			skipKeys = false
 			continue
 		}
 		if equalsPos < 0 {
 			// A comment or a value line with no '='. ProbeSettingsIni gates the
 			// malformed case; skip it here rather than inventing a key.
-			if line[0] != ';' {
-				skipKeys = true
-			}
-			continue
-		}
-		if skipKeys {
 			continue
 		}
 		equals := equalsPos - lineStart
 		key := iniUnescapedKey(bytes.TrimSpace(line[:equals]))
 		value := iniUnescapedStringList(line[equals+1:])
 		values[section+key] = value
+	}
+	return values
+}
+
+// parseSTSIni is the STS load path: like parseSettingsIni, but after a bad
+// line (or an unclosed "[" header) a later key is ignored only when that key
+// is already set in the current group, so a garbage line cannot drop the rest
+// of an intact policy and leaked keys cannot overwrite real ones.
+func parseSTSIni(data []byte) map[string]iniValue {
+	values := make(map[string]iniValue)
+	raw := data
+	if bytes.HasPrefix(raw, []byte{0xEF, 0xBB, 0xBF}) {
+		raw = raw[3:]
+	}
+
+	section := ""
+	afterBad := false
+	dataPos, lineStart, lineLen, equalsPos := 0, 0, 0, -1
+	for nextIniLine(raw, &dataPos, &lineStart, &lineLen, &equalsPos) {
+		line := raw[lineStart : lineStart+lineLen]
+		if line[0] == '[' {
+			if bytes.IndexByte(line, ']') < 0 {
+				afterBad = true
+				continue
+			}
+			section = iniSectionPrefix(line)
+			afterBad = false
+			continue
+		}
+		if equalsPos < 0 {
+			if line[0] != ';' {
+				afterBad = true
+			}
+			continue
+		}
+		equals := equalsPos - lineStart
+		key := iniUnescapedKey(bytes.TrimSpace(line[:equals]))
+		path := section + key
+		if afterBad {
+			if _, exists := values[path]; exists {
+				continue
+			}
+		}
+		value := iniUnescapedStringList(line[equals+1:])
+		values[path] = value
 	}
 	return values
 }
@@ -772,7 +818,7 @@ func iniEscapedKey(key string) string {
 
 // iniEscapedString.
 // format. Rules implemented:
-// - ';', ',' and '=' force the whole value to be wrapped in double quotes
+//   - ';', ',' and '=' force the whole value to be wrapped in double quotes
 //     they are not backslash-escaped.
 //   - '\' and '"' are backslash-escaped.
 //   - '\0', '\a', '\b', '\f', '\n', '\r', '\t', '\v' use their named escapes.

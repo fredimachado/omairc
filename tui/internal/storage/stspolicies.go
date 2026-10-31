@@ -33,9 +33,44 @@ const (
 	maxSTSCorruptBackups = 10000
 )
 
-// testFailSTSInstall, when true, makes recoverMalformedSTS stop after the
-// backup step and remove the temp file. Tests only.
-var testFailSTSInstall bool
+// Test hooks for recovery failure paths. Tests only; zero value is normal.
+type stsTestHook int
+
+const (
+	stsHookNone stsTestHook = iota
+	stsHookFailInstall
+	stsHookFailBackup
+	stsHookFailCopyAfterCreate
+	stsHookMaxBackups
+)
+
+var (
+	testSTSHook              stsTestHook
+	testSTSMaxCorruptBackups int
+)
+
+// TestingSetSTSHook configures recovery failure hooks for tests. name is one of
+// "fail-install", "fail-backup", "fail-copy", or "max-backups". restore clears it.
+func TestingSetSTSHook(name string, maxBackups int) (restore func()) {
+	prev, prevMax := testSTSHook, testSTSMaxCorruptBackups
+	switch name {
+	case "fail-install":
+		testSTSHook = stsHookFailInstall
+	case "fail-backup":
+		testSTSHook = stsHookFailBackup
+	case "fail-copy":
+		testSTSHook = stsHookFailCopyAfterCreate
+	case "max-backups":
+		testSTSHook = stsHookMaxBackups
+		testSTSMaxCorruptBackups = maxBackups
+	default:
+		testSTSHook = stsHookNone
+	}
+	return func() {
+		testSTSHook = prev
+		testSTSMaxCorruptBackups = prevMax
+	}
+}
 
 // STSEntry is one cached STS policy on disk. It mirrors IrcStsCached /
 // session.STSCached without importing session.
@@ -71,7 +106,7 @@ func (s *IniSTSStore) Lookup(host string, nowUnix int64) (STSEntry, bool) {
 	if key == "" || s.path == "" {
 		return STSEntry{}, false
 	}
-	settings := OpenSettings(s.path)
+	settings := OpenSTSSettings(s.path)
 	if !settings.Contains(key, stsPortKey) || !settings.Contains(key, stsExpiryKey) {
 		return STSEntry{}, false
 	}
@@ -108,7 +143,7 @@ func (s *IniSTSStore) Store(host string, port uint16, durationSeconds, nowUnix i
 		return StatusWritten
 	}
 	expiry := stsSaturatingExpiry(nowUnix, durationSeconds)
-	settings := OpenSettings(s.path)
+	settings := OpenSTSSettings(s.path)
 	mergeSTSPolicy(settings, key, STSEntry{
 		Port:               port,
 		DurationSeconds:    durationSeconds,
@@ -134,7 +169,7 @@ func (s *IniSTSStore) MergeEntries(entries map[string]STSEntry, clearKeys []stri
 	if s == nil || s.path == "" {
 		return StatusWritten
 	}
-	settings := OpenSettings(s.path)
+	settings := OpenSTSSettings(s.path)
 	for _, key := range clearKeys {
 		if key != "" {
 			settings.RemoveGroup(key)
@@ -151,7 +186,7 @@ func (s *IniSTSStore) MergeEntries(entries map[string]STSEntry, clearKeys []stri
 
 // remove drops group key. Nothing is written when the group is not there.
 func (s *IniSTSStore) remove(key string) Status {
-	settings := OpenSettings(s.path)
+	settings := OpenSTSSettings(s.path)
 	found := false
 	for _, group := range settings.ChildGroups("") {
 		if group == key {
@@ -215,7 +250,7 @@ func recoverMalformedSTS(path string, data []byte) error {
 		_ = os.Remove(temp)
 		return errors.New("sts corrupt backup failed")
 	}
-	if testFailSTSInstall {
+	if testSTSHook == stsHookFailInstall {
 		_ = os.Remove(temp)
 		return errors.New("test: install after backup failed")
 	}
@@ -261,6 +296,13 @@ func writeSTSTemp(path string, data []byte) (string, error) {
 	return tmpName, nil
 }
 
+func stsCorruptBackupLimit() int {
+	if testSTSHook == stsHookMaxBackups && testSTSMaxCorruptBackups > 0 {
+		return testSTSMaxCorruptBackups
+	}
+	return maxSTSCorruptBackups
+}
+
 // linkSTSCorruptBackup hard-links path to path.corrupt / path.corrupt.N.
 // Retries only on ErrExist; falls back to an exclusive-create copy. Fails
 // closed on other errors and caps the loop.
@@ -268,9 +310,17 @@ func linkSTSCorruptBackup(path string) bool {
 	if path == "" {
 		return false
 	}
+	if testSTSHook == stsHookFailBackup {
+		return false
+	}
+	if testSTSHook == stsHookFailCopyAfterCreate {
+		candidate := filepath.Join(filepath.Dir(path), filepath.Base(path)+".corrupt")
+		err := copySTSExclusive(path, candidate)
+		return err == nil
+	}
 	dir := filepath.Dir(path)
 	name := filepath.Base(path)
-	for n := 0; n < maxSTSCorruptBackups; n++ {
+	for n := 0; n < stsCorruptBackupLimit(); n++ {
 		var candidate string
 		if n == 0 {
 			candidate = filepath.Join(dir, name+".corrupt")
@@ -316,6 +366,12 @@ func copySTSExclusive(src, dst string) error {
 			_ = os.Remove(dst)
 		}
 	}()
+	if testSTSHook == stsHookFailCopyAfterCreate {
+		if _, err := out.Write([]byte("partial")); err != nil {
+			return err
+		}
+		return errors.New("test: copy write failed")
+	}
 	if _, err := io.Copy(out, in); err != nil {
 		return err
 	}

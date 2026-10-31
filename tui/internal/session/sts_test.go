@@ -4,7 +4,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -199,12 +198,9 @@ func TestSTSStoreMalformedDiskRecoversWithoutWeakeningMemory(t *testing.T) {
 	}
 }
 
-// Fail-closed: when the backup rename cannot run, memory still keeps the policy
+// Fail-closed: when the backup step cannot run, memory still keeps the policy
 // and the malformed file is left untouched.
-func TestSTSStoreFailedBackupRenameDoesNotWeakenMemory(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix directory modes")
-	}
+func TestSTSStoreFailedBackupDoesNotWeakenMemory(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sts")
 	garbage := "this line has no equals sign\n"
@@ -213,13 +209,11 @@ func TestSTSStoreFailedBackupRenameDoesNotWeakenMemory(t *testing.T) {
 	}
 	store := NewSTSStore()
 	store.AttachDisk(storage.NewIniSTSStore(path))
-	if err := os.Chmod(dir, 0o555); err != nil {
-		t.Fatal(err)
-	}
+	restore := storage.TestingSetSTSHook("fail-backup", 0)
+	defer restore()
 	err := store.Store("irc.example", 6697, 120, time.Unix(10, 0))
-	_ = os.Chmod(dir, 0o755)
 	if err == nil {
-		t.Fatal("failed rename must report a persist error")
+		t.Fatal("failed backup must report a persist error")
 	}
 	cached, ok := store.Lookup("irc.example", time.Unix(11, 0))
 	if !ok || cached.DurationSeconds != 120 || cached.Port != 6697 {
