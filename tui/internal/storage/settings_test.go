@@ -495,6 +495,37 @@ func TestSyncRefusesReadOnlyMalformedFileWithFormatError(t *testing.T) {
 	}
 }
 
+func TestSyncPreservesExistingFileMode(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("unix file modes")
+	}
+
+	path := tempSettingsPath(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("[preferences]\ndirects=false\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	s := OpenSettings(path)
+	s.SetBool("preferences", "directs", true)
+	if got := s.Sync(); got != StatusWritten {
+		t.Fatalf("Sync() = %v, want StatusWritten", got)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o644 {
+		t.Errorf("permissions = %o, want 644", perm)
+	}
+	if !OpenSettings(path).Bool("preferences", "directs", false) {
+		t.Error("directs did not round-trip")
+	}
+}
+
 func TestSyncCreatesMissingFile(t *testing.T) {
 	t.Parallel()
 
