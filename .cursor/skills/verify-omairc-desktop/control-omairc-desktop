@@ -377,6 +377,9 @@ window_title() {
 # xdotool fails or the title is still empty (caller polls until deadline).
 read_window_title() {
   require_app_window
+  if [ -n "${SELF_CHECK_FORCE_EMPTY_TITLE:-}" ]; then
+    return 1
+  fi
   if ! _title=$(xdotool getwindowname "$WINDOW" 2>/dev/null); then
     return 1
   fi
@@ -384,6 +387,16 @@ read_window_title() {
     return 1
   fi
   printf '%s' "$_title"
+}
+
+report_read_window_title_failure() {
+  require_app_alive
+  refresh_app_window
+  found="$(xdotool search --onlyvisible --pid "$APP_PID" 2>/dev/null | head -1 || true)"
+  if [ -z "$found" ]; then
+    die "Omairc window not found for pid $APP_PID"
+  fi
+  die "cannot read window title"
 }
 
 try_focus_window() {
@@ -434,6 +447,9 @@ validate_wait_title_timeout() {
       _raw=$_arg
       ;;
   esac
+  if [ "${#_raw}" -gt 4 ]; then
+    invalid_wait_title_timeout "$_arg"
+  fi
   _sec=$(printf '%s' "$_raw" | awk '{ if ($0 !~ /^[0-9]+$/) exit 1; print $0 + 0 }') \
     || invalid_wait_title_timeout "$_arg"
   if [ "$_sec" -lt 1 ] || [ "$_sec" -gt "$WAIT_TITLE_MAX_SEC" ]; then
@@ -790,7 +806,11 @@ cmd_doctor() {
 
 cmd_title() {
   load_state
-  read_window_title
+  if _title=$(read_window_title); then
+    printf '%s\n' "$_title"
+    return 0
+  fi
+  report_read_window_title_failure
 }
 
 cmd_wait_title() {
@@ -1237,6 +1257,15 @@ self_check_timeout_validator() {
   if ( validate_wait_title_timeout 99999 ) >/dev/null 2>&1; then
     die "self-check: parse 99999 should fail"
   fi
+  if ( validate_wait_title_timeout 99999999999999999999 ) >/dev/null 2>&1; then
+    die "self-check: parse huge timeout should fail"
+  fi
+  if ( OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT=99999999999999999999 "$SELF" doctor ) >/dev/null 2>&1; then
+    die "self-check: env huge timeout should fail"
+  fi
+  if ( "$SELF" wait-title --exact foo --timeout 99999999999999999999 ) >/dev/null 2>&1; then
+    die "self-check: --timeout huge value should fail"
+  fi
   if ( validate_wait_title_timeout 1m ) >/dev/null 2>&1; then
     die "self-check: parse 1m should fail"
   fi
@@ -1276,6 +1305,18 @@ cmd_self_check() {
   if ! "$SELF" title >/dev/null; then
     die "self-check: title should succeed on live app"
   fi
+  load_state
+  SELF_CHECK_FORCE_EMPTY_TITLE=1
+  set +e
+  _title_err=$(cmd_title 2>&1 >/dev/null)
+  _empty_title_st=$?
+  set -e
+  unset SELF_CHECK_FORCE_EMPTY_TITLE
+  [ "$_empty_title_st" -ne 0 ] || die "self-check: title should fail on unreadable window"
+  case $_title_err in
+    *"cannot read window title"*|*"Omairc window not found"*) ;;
+    *) die "self-check: title error expected cannot read/window not found, got '$_title_err'" ;;
+  esac
   _start_ms=$(now_ms)
   set +e
   "$SELF" wait-title --exact "never-matches" --timeout 1 >/dev/null 2>&1
@@ -1288,10 +1329,10 @@ cmd_self_check() {
     die "self-check: wait-title --timeout without value should fail"
   fi
   load_state
-  kill "$APP_PID" 2>/dev/null || true
+  kill -9 "$APP_PID" 2>/dev/null || true
   wait "$APP_PID" 2>/dev/null || true
   set +e
-  "$SELF" title >/dev/null 2>&1
+  _dead_title_err=$("$SELF" title 2>&1 >/dev/null)
   _title_st=$?
   ( poll_window_title_exact "never-matches" 2 ) >/dev/null 2>&1
   _status=$?
@@ -1299,6 +1340,10 @@ cmd_self_check() {
   if [ "$_title_st" -eq 0 ]; then
     die "self-check: title should fail when app is dead"
   fi
+  case $_dead_title_err in
+    *"Omairc pid"*|*"cannot read window title"*|*"Omairc window not found"*) ;;
+    *) die "self-check: dead-app title error expected pid/window message, got '$_dead_title_err'" ;;
+  esac
   if [ "$_status" -eq 0 ]; then
     die "self-check: wait-title should fail when app is dead"
   fi
