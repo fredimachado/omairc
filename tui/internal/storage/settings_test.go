@@ -508,6 +508,9 @@ func TestSyncPreservesExistingFileMode(t *testing.T) {
 	if err := os.WriteFile(path, []byte("[preferences]\ndirects=false\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
 
 	s := OpenSettings(path)
 	s.SetBool("preferences", "directs", true)
