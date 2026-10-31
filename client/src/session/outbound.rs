@@ -270,9 +270,10 @@ impl Session {
         self.locked(|core| core.request_history_targets(from, until))
     }
 
-    /// Asks the server for the stored read marker of `target`.
-    pub fn request_read_marker_get(&self, target: &str) {
-        self.locked(|core| core.request_read_marker_get(target));
+    /// Asks the server for the stored read marker of `target`. Returns whether
+    /// the command was sent.
+    pub fn request_read_marker_get(&self, target: &str) -> bool {
+        self.locked(|core| core.request_read_marker_get(target))
     }
 
     /// Records a read marker to publish once the target is caught up

@@ -130,16 +130,17 @@ impl Core {
         self.flush_read_marker_set(&folded);
     }
 
-    /// Asks the server for the stored marker on `target`.
-    pub(crate) fn request_read_marker_get(&mut self, target: &str) {
+    /// Asks the server for the stored marker on `target`. Returns whether the
+    /// command was sent (registered and read-marker cap enabled).
+    pub(crate) fn request_read_marker_get(&mut self, target: &str) -> bool {
         if target.is_empty() {
-            return;
+            return false;
         }
         let command = self.read_marker_command();
         if command.is_empty() {
-            return;
+            return false;
         }
-        self.send_command(&format!("{command} {target}"), "");
+        self.send_command(&format!("{command} {target}"), "")
     }
 
     /// Records a newer marker to publish once the target is caught up
