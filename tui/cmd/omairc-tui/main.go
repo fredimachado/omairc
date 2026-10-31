@@ -95,6 +95,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	c := controller.New()
+	// tea.Quit (Ctrl+Q) and p.Quit (SIGHUP) return from Run without calling
+	// Session.Stop. Refresh STS expiry on the way out so a long-lived session
+	// does not leave an already-expired policy on disk for the next start.
+	defer c.Shutdown()
 	var conn *connection.Connection
 	if demoServer {
 		// The demo stays ephemeral: it must never read or write the user's

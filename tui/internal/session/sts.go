@@ -161,7 +161,8 @@ func (s *STSStore) Lookup(host string, now time.Time) (STSCached, bool) {
 
 // Store caches a policy for host at now. A zero duration clears the entry, and
 // an empty host or a zero port is ignored. Memory is updated first; a disk
-// failure is returned without rolling memory back.
+// failure is returned without rolling memory back. The mutex covers the disk
+// write so concurrent Stores from shared-manager sessions cannot lose hosts.
 func (s *STSStore) Store(host string, port uint16, durationSeconds int64, now time.Time) error {
 	if durationSeconds == 0 {
 		return s.Clear(host)
@@ -176,30 +177,29 @@ func (s *STSStore) Store(host string, port uint16, durationSeconds int64, now ti
 		ExpiryEpochSeconds: stsExpiry(now.Unix(), durationSeconds),
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.entries[key] = cached
-	disk := s.disk
-	s.mu.Unlock()
-	if disk == nil {
+	if s.disk == nil {
 		return nil
 	}
-	return stsPersistStatus(disk.Store(host, port, durationSeconds, now.Unix()))
+	return stsPersistStatus(s.disk.Store(host, port, durationSeconds, now.Unix()))
 }
 
 // Clear drops the cached policy for host. Memory is cleared first; a disk
-// failure is returned without restoring memory.
+// failure is returned without restoring memory. The mutex covers the disk
+// write so concurrent Clears cannot race other Stores.
 func (s *STSStore) Clear(host string) error {
 	key := stsGroupKey(host)
 	if key == "" {
 		return nil
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	delete(s.entries, key)
-	disk := s.disk
-	s.mu.Unlock()
-	if disk == nil {
+	if s.disk == nil {
 		return nil
 	}
-	return stsPersistStatus(disk.Clear(host))
+	return stsPersistStatus(s.disk.Clear(host))
 }
 
 func stsPersistStatus(status storage.Status) error {

@@ -251,6 +251,17 @@ func (c *Controller) AttachSTSDisk(path string) {
 	c.manager.AttachSTSDisk(path)
 }
 
+// Shutdown stops every live session. Ctrl+Q, SIGHUP, and other tea.Quit paths
+// reach here from run's deferred call so STS expiry is refreshed before the
+// process exits (stopLocked), instead of leaving connect-time + duration on
+// disk.
+func (c *Controller) Shutdown() {
+	if c == nil {
+		return
+	}
+	c.manager.StopAll()
+}
+
 // SetConversationLog wires the reducer's transcript log.
 func (c *Controller) SetConversationLog(log irc.ConversationLog) {
 	c.reducer.SetConversationLog(log)

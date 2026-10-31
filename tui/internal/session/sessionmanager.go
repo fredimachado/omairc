@@ -112,6 +112,14 @@ func (m *Manager) Stop(networkID string) {
 	}
 }
 
+// StopAll stops every registered session. Each Stop refreshes that session's
+// STS expiry on disk, so quitting the TUI does not leave connect-time expiry.
+func (m *Manager) StopAll() {
+	for _, id := range m.NetworkIDs() {
+		m.Stop(id)
+	}
+}
+
 // Discard removes the session for networkID from the registry and stops it.
 // The removal happens first so a concurrent Create for the same id sees a free
 // slot; Find returns nil once Discard returns. A missing network is a no-op.

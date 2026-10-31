@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -182,5 +183,66 @@ func TestSTSStoreDiskFailureDoesNotWeakenMemory(t *testing.T) {
 	cached, ok := store.Lookup("irc.example", time.Unix(11, 0))
 	if !ok || cached.DurationSeconds != 120 || cached.Port != 6697 {
 		t.Fatalf("memory must keep the refreshed policy: %+v ok=%v", cached, ok)
+	}
+}
+
+// duration=0 through STSStore must clear the on-disk group, not only memory.
+func TestSTSStoreZeroDurationClearsDisk(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	store := NewSTSStore()
+	store.AttachDisk(storage.NewIniSTSStore(path))
+	now := time.Unix(1_700_000_000, 0)
+	if err := store.Store("irc.example", 6697, 60, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := storage.NewIniSTSStore(path).Lookup("irc.example", now.Unix()); !ok {
+		t.Fatal("policy must be on disk before clear")
+	}
+	if err := store.Store("irc.example", 6697, 0, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := store.Lookup("irc.example", now.Add(time.Second)); ok {
+		t.Fatal("memory must clear on duration=0")
+	}
+	if _, ok := storage.NewIniSTSStore(path).Lookup("irc.example", now.Unix()); ok {
+		t.Fatal("duration=0 through STSStore must remove the host from disk")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), storage.STSGroupKey("irc.example")) {
+		t.Fatalf("cleared group still in file: %s", raw)
+	}
+}
+
+// Concurrent Stores from shared-manager sessions must not drop each other's hosts.
+func TestSTSStoreConcurrentStoresPersistAllHosts(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	store := NewSTSStore()
+	store.AttachDisk(storage.NewIniSTSStore(path))
+	hosts := []string{"a.example", "b.example", "c.example", "d.example"}
+	const rounds = 50
+	var wg sync.WaitGroup
+	for round := 0; round < rounds; round++ {
+		now := time.Unix(int64(round), 0)
+		for _, host := range hosts {
+			wg.Add(1)
+			go func(host string, now time.Time) {
+				defer wg.Done()
+				if err := store.Store(host, 6697, 60, now); err != nil {
+					t.Errorf("Store(%s): %v", host, err)
+				}
+			}(host, now)
+		}
+		wg.Wait()
+	}
+	disk := storage.NewIniSTSStore(path)
+	for _, host := range hosts {
+		if _, ok := disk.Lookup(host, int64(rounds-1)); !ok {
+			t.Fatalf("host %s missing from disk after concurrent stores", host)
+		}
 	}
 }
