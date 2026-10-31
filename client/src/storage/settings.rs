@@ -249,7 +249,7 @@ impl Settings {
 
     /// Renders the whole store as QSettings INI. Sections and keys are sorted, so
     /// the same contents always produce the same bytes.
-    fn encode(&self) -> Vec<u8> {
+    pub(super) fn encode(&self) -> Vec<u8> {
         let mut sections: BTreeMap<String, Vec<(String, &IniValue)>> = BTreeMap::new();
         for (path, value) in &self.values {
             let (section, key) = split_section(path);
@@ -464,17 +464,32 @@ fn parse_settings_ini(data: &[u8]) -> BTreeMap<String, IniValue> {
     let raw = strip_bom(data);
     let mut values = BTreeMap::new();
     let mut section = String::new();
+    // After a malformed line, ignore key=value pairs until the next valid header
+    // so they cannot leak into the previous group (STS recovery must not save that).
+    let mut skip_keys = false;
     for line in (IniLines { data: raw, pos: 0 }) {
         let text = &raw[line.start..line.start + line.len];
         if text[0] == b'[' {
+            let closed = text.iter().position(|&byte| byte == b']').is_some();
+            if !closed {
+                skip_keys = true;
+                continue;
+            }
             section = section_prefix(text);
+            skip_keys = false;
             continue;
         }
         // A comment or a value with no '=' carries no key. Probing has already
         // refused a malformed file, so skipping here never invents a key.
         let Some(equals_at) = line.equals else {
+            if text[0] != b';' {
+                skip_keys = true;
+            }
             continue;
         };
+        if skip_keys {
+            continue;
+        }
         let Some(equals) = equals_at.checked_sub(line.start) else {
             continue;
         };
