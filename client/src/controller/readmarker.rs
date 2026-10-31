@@ -34,8 +34,8 @@ impl ReadMarkerState {
         self.get_sent.remove(key);
     }
 
-    fn note_get_sent(&mut self, key: &ConversationKey) -> bool {
-        self.get_sent.insert(key.clone())
+    fn note_get_sent(&mut self, key: &ConversationKey) {
+        self.get_sent.insert(key.clone());
     }
 }
 
@@ -87,16 +87,36 @@ impl Controller {
         let Some(session) = self.manager.find(network_id) else {
             return;
         };
-        let ready = session.locked(|core| !core.read_marker_command().is_empty());
-        if !ready {
+        if !session.request_read_marker_get(target) {
             return;
         }
         self.read_markers.note_get_sent(&key);
-        session.request_read_marker_get(target);
     }
 
     pub(super) fn read_marker_forget_network(&mut self, network_id: &str) {
         self.read_markers.forget_network(network_id);
+    }
+
+    pub(super) fn request_read_marker_get_for_selected_direct(&mut self, network_id: &str) {
+        let Some(selected) = self.selected.clone() else {
+            return;
+        };
+        if selected.network_id != network_id {
+            return;
+        }
+        let features = self.reducer.server_features(network_id);
+        if features.is_channel(&selected.normalized_target) {
+            return;
+        }
+        let Some(conversation) = self.reducer.find(&selected) else {
+            return;
+        };
+        let target = if conversation.target.is_empty() {
+            self.selected_target.clone()
+        } else {
+            conversation.target.clone()
+        };
+        self.request_read_marker_get_once(network_id, &target);
     }
 
     pub(super) fn sync_read_marker_for_selection(&mut self) {

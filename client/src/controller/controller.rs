@@ -839,10 +839,13 @@ impl Controller {
         // A welcome re-enters registration, so the away bookkeeping resets first. A
         // 305 or 306 lifts the unaway latch (`IrcController::apply`'s welcome and
         // selfAway branches).
+        let mut welcome_network = String::new();
         match &event {
             Event::Welcome(welcome) => {
                 self.autoaway_forget_network(&welcome.network_id);
                 self.forget_replies(&welcome.network_id);
+                self.read_marker_forget_network(&welcome.network_id);
+                welcome_network = welcome.network_id.clone();
             }
             Event::SelfAway(away) => {
                 self.autoaway.unaway_sent.remove(&away.network_id);
@@ -922,6 +925,9 @@ impl Controller {
             });
         }
         self.sync_read_marker_for_selection();
+        if !welcome_network.is_empty() {
+            self.request_read_marker_get_for_selected_direct(&welcome_network);
+        }
     }
 
     /// The first conversation the reducer holds claims the selection and takes the

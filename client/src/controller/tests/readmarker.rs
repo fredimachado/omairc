@@ -2,7 +2,7 @@
 
 use chrono::{TimeDelta, TimeZone, Utc};
 
-use crate::irc::event::IrcConversationCause;
+use crate::irc::event::{Event, IrcConversationCause, WelcomeEvent};
 
 use super::fixture::{Fixture, OMARCHY};
 
@@ -337,5 +337,123 @@ fn first_conversation_claim_requests_read_marker_get_for_direct() {
         count_containing(&frames, "MARKREAD alice\r\n"),
         1,
         "first conversation claim must send one MARKREAD get"
+    );
+}
+
+#[test]
+fn reselect_direct_sends_read_marker_get_once() {
+    let mut fixture = Fixture::seeded();
+    enable_read_marker(&mut fixture);
+    ensure_room(&mut fixture, "#room");
+    fixture.controller.select_conversation(NET, "#room");
+    let alice = fixture.controller.reducer.conversation_key(NET, "alice");
+    fixture
+        .controller
+        .reducer
+        .ensure_conversation(&alice, "alice", IrcConversationCause::InboundOther);
+    fixture.controller.select_conversation(NET, "alice");
+    assert_eq!(
+        count_containing(&fixture.frames(NET), "MARKREAD alice\r\n"),
+        1,
+        "first select must send one MARKREAD get"
+    );
+    fixture.controller.select_conversation(NET, "#room");
+    fixture.controller.select_conversation(NET, "alice");
+    assert_eq!(
+        count_containing(&fixture.frames(NET), "MARKREAD alice\r\n"),
+        1,
+        "reselect must not send another MARKREAD get"
+    );
+}
+
+#[test]
+fn reconnect_selected_direct_gets_read_marker_on_welcome() {
+    let mut fixture = Fixture::seeded();
+    enable_read_marker(&mut fixture);
+    let alice = fixture.controller.reducer.conversation_key(NET, "alice");
+    fixture
+        .controller
+        .reducer
+        .ensure_conversation(&alice, "alice", IrcConversationCause::InboundOther);
+    fixture.controller.select_conversation(NET, "alice");
+    assert_eq!(
+        count_containing(&fixture.frames(NET), "MARKREAD alice\r\n"),
+        1,
+        "first select must send one get"
+    );
+    fixture.controller.apply(Event::Welcome(WelcomeEvent {
+        network_id: NET.to_string(),
+        current_nick: "omairc".to_string(),
+    }));
+    assert_eq!(
+        count_containing(&fixture.frames(NET), "MARKREAD alice\r\n"),
+        2,
+        "welcome while DM selected must send one new get"
+    );
+    ensure_room(&mut fixture, "#room");
+    fixture.controller.select_conversation(NET, "#room");
+    fixture.controller.select_conversation(NET, "alice");
+    assert_eq!(
+        count_containing(&fixture.frames(NET), "MARKREAD alice\r\n"),
+        2,
+        "reselect after welcome must not send again"
+    );
+}
+
+#[test]
+fn select_direct_before_welcome_retries_get_after_registered() {
+    use std::rc::Rc;
+
+    use crate::controller::controller::Controller;
+    use crate::controller::transports::NoTransports;
+    use crate::session::clock::FakeClock;
+    use crate::session::config::SessionConfig;
+    use crate::session::loopback::LoopbackTransport;
+
+    const LAB: &str = "lab";
+    let clock = Rc::new(FakeClock::new(Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap()));
+    let mut controller = Controller::with_parts(clock.clone(), Box::new(NoTransports));
+    let transport = Rc::new(LoopbackTransport::new());
+    let config = SessionConfig::with_defaults(LAB, "", "irc.example", "omairc");
+    let session = controller
+        .manager
+        .create(config, transport.clone(), clock)
+        .expect("session");
+    session.start();
+    transport.complete_connect();
+    controller.pump();
+    session.locked(|core| {
+        core.read_marker_token = Some("draft/read-marker");
+    });
+    transport.inject_bytes(
+        b":server CAP omairc LS :multi-prefix draft/read-marker\r\n\
+          :server CAP omairc ACK :multi-prefix draft/read-marker\r\n",
+    );
+    controller.pump();
+    let alice = controller.reducer.conversation_key(LAB, "alice");
+    controller
+        .reducer
+        .ensure_conversation(&alice, "alice", IrcConversationCause::InboundOther);
+    controller.select_conversation(LAB, "alice");
+    let frames_before = transport
+        .written_frames()
+        .into_iter()
+        .map(|frame| String::from_utf8_lossy(&frame).into_owned())
+        .collect::<Vec<_>>();
+    assert!(
+        !frames_contain(&frames_before, "MARKREAD alice\r\n"),
+        "must not send MARKREAD get before 001"
+    );
+    transport.inject_bytes(b":server 001 omairc :Welcome\r\n");
+    controller.pump();
+    let frames = transport
+        .written_frames()
+        .into_iter()
+        .map(|frame| String::from_utf8_lossy(&frame).into_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        count_containing(&frames, "MARKREAD alice\r\n"),
+        1,
+        "001 while DM selected must send one MARKREAD get"
     );
 }
