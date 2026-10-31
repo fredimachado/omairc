@@ -175,10 +175,7 @@ fn recover_malformed_ini_file(path: &Path, data: &[u8]) -> io::Result<()> {
 }
 
 fn write_window_temp(path: &Path, data: &[u8]) -> io::Result<PathBuf> {
-    let dir = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
+    let dir = super::atomicwrite::atomic_write_dir(path).unwrap_or_else(|| PathBuf::from("."));
     let mut last_error = None;
     for n in 0..16u32 {
         let candidate = dir.join(format!(
@@ -217,8 +214,9 @@ fn write_window_temp(path: &Path, data: &[u8]) -> io::Result<PathBuf> {
 }
 
 fn link_window_corrupt_backup(path: &Path) -> Option<PathBuf> {
-    let parent = path.parent()?;
-    let name = path.file_name()?.to_string_lossy();
+    let parent = super::atomicwrite::atomic_write_dir(path)?;
+    let name = super::atomicwrite::atomic_write_base(path);
+    let name = name.to_string_lossy();
     for n in 0..MAX_WINDOW_CORRUPT_BACKUPS {
         let candidate = if n == 0 {
             parent.join(format!("{name}.corrupt"))

@@ -737,3 +737,42 @@ func TestRecoverMalformedSTSThroughSymlink3dba(t *testing.T) {
 		t.Fatalf("rewritten sts = %q", text)
 	}
 }
+
+func TestRecoverMalformedSTSThroughSymlinkedDataDirectory3dba(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks")
+	}
+
+	root := t.TempDir()
+	data := filepath.Join(root, "data")
+	if err := os.MkdirAll(data, 0o700); err != nil {
+		t.Fatalf("MkdirAll data: %v", err)
+	}
+	realSTS := filepath.Join(data, "sts")
+	corrupt := []byte("this line has no equals sign\n")
+	if err := os.WriteFile(realSTS, corrupt, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "cfg"), 0o700); err != nil {
+		t.Fatalf("MkdirAll cfg: %v", err)
+	}
+	if err := os.Symlink(data, filepath.Join(root, "dotfiles")); err != nil {
+		t.Fatalf("Symlink dotfiles: %v", err)
+	}
+	link := filepath.Join(root, "cfg", "sts")
+	if err := os.Symlink("../dotfiles/sts", link); err != nil {
+		t.Fatalf("Symlink sts: %v", err)
+	}
+
+	store := NewIniSTSStore(link)
+	store.Store("irc.example", 6697, 60, 1000)
+
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("sts path must remain a symlink")
+	}
+	backup := filepath.Join(data, "sts.corrupt")
+	gotBackup, err := os.ReadFile(backup)
+	if err != nil || !bytes.Equal(gotBackup, corrupt) {
+		t.Fatalf("backup = %q err=%v", gotBackup, err)
+	}
+}

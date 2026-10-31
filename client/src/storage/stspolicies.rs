@@ -267,7 +267,7 @@ fn recover_malformed_sts(path: &Path, data: &[u8]) -> io::Result<()> {
 /// Creates a same-directory temp file with `data`, fsyncs it, and returns its path.
 /// Removes the temp on every failure after create.
 fn write_sts_temp(path: &Path, data: &[u8]) -> io::Result<PathBuf> {
-    let dir = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+    let dir = super::atomicwrite::atomic_write_dir(path).unwrap_or_else(|| PathBuf::from("."));
     let mut last_error = None;
     for n in 0..16u32 {
         let candidate = dir.join(format!(
@@ -327,8 +327,9 @@ fn link_sts_corrupt_backup(path: &Path) -> Option<PathBuf> {
         StsTestHook::FailBackup => return None,
         StsTestHook::FailCopyAfterCreate => {
             // Exercise the copy fallback, then fail it (and require cleanup).
-            let parent = path.parent().unwrap_or_else(|| Path::new("."));
-            let name = path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
+            let parent = super::atomicwrite::atomic_write_dir(path).unwrap_or_else(|| PathBuf::from("."));
+            let base = super::atomicwrite::atomic_write_base(path);
+            let name = base.to_string_lossy();
             let candidate = parent.join(format!("{name}.corrupt"));
             return match copy_sts_exclusive(path, &candidate) {
                 Ok(()) => Some(candidate),
@@ -338,8 +339,9 @@ fn link_sts_corrupt_backup(path: &Path) -> Option<PathBuf> {
         }
         _ => {}
     }
-    let parent = path.parent()?;
-    let name = path.file_name()?.to_string_lossy();
+    let parent = super::atomicwrite::atomic_write_dir(path)?;
+    let base = super::atomicwrite::atomic_write_base(path);
+    let name = base.to_string_lossy();
     for n in 0..sts_corrupt_backup_limit() {
         let candidate = if n == 0 {
             parent.join(format!("{name}.corrupt"))
@@ -1169,5 +1171,30 @@ mod tests {
         let text = fs::read_to_string(&real_sts).unwrap();
         assert!(text.contains(IRC_EXAMPLE_GROUP), "{text}");
         assert!(store.lookup("irc.example", at(1)).is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn malformed_sts_through_symlinked_data_directory() {
+        use std::os::unix::fs::symlink;
+
+        let dir = TempDir::new("sts-symlink-data-dir-3dba");
+        let data = dir.path().join("data");
+        fs::create_dir_all(&data).unwrap();
+        let real_sts = data.join("sts");
+        let corrupt = b"this line has no equals sign\n";
+        fs::write(&real_sts, corrupt).unwrap();
+        let dotfiles = dir.path().join("dotfiles");
+        symlink(&data, &dotfiles).unwrap();
+        fs::create_dir_all(dir.path().join("cfg")).unwrap();
+        let link = dir.path().join("cfg").join("sts");
+        symlink("../dotfiles/sts", &link).unwrap();
+
+        let store = IniStsStore::new(link.clone());
+        store.store("irc.example", 6697, 60, at(0));
+
+        assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        let backup = data.join("sts.corrupt");
+        assert_eq!(fs::read(&backup).unwrap(), corrupt);
     }
 }

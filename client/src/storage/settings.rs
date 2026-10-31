@@ -1466,6 +1466,28 @@ mod tests {
             assert_eq!(settings.sync(), Status::AccessError);
             assert!(!missing_dir.exists());
         }
+
+        #[test]
+        fn sync_through_symlinked_data_directory() {
+            let dir = TempDir::new("settings-symlink-data-dir-3dba");
+            let data = dir.path().join("data");
+            fs::create_dir_all(&data).unwrap();
+            let target = data.join("omairc.conf");
+            write_file(&target, b"[preferences]\ndirects=false\n");
+            let dotfiles = dir.path().join("dotfiles");
+            symlink(&data, &dotfiles).unwrap();
+            fs::create_dir_all(dir.path().join("cfg")).unwrap();
+            let link = dir.path().join("cfg").join("omairc.conf");
+            symlink("../dotfiles/omairc.conf", &link).unwrap();
+
+            let mut settings = Settings::open(&link);
+            settings.set_bool("preferences", "directs", true);
+            assert_eq!(settings.sync(), Status::Written);
+            assert_eq!(
+                fs::read(&target).unwrap(),
+                b"[preferences]\ndirects=true\n"
+            );
+        }
     }
 
     #[test]

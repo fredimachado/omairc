@@ -16,6 +16,56 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Maximum symlink hops when resolving an atomic-write destination.
 const MAX_SYMLINK_HOPS: u32 = 32;
 
+/// Directory containing `path`, without normalizing `..`.
+pub(crate) fn atomic_write_dir(path: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+    let mut components: Vec<Component<'_>> = path.components().collect();
+    trim_trailing_cur_dir(&mut components);
+    if components.is_empty() {
+        return None;
+    }
+    match components.last() {
+        Some(Component::Normal(_)) | Some(Component::ParentDir) => {
+            components.pop();
+        }
+        Some(Component::RootDir) | Some(Component::Prefix(_)) => return None,
+        Some(Component::CurDir) => {
+            components.pop();
+        }
+        None => return None,
+    }
+    if components.is_empty() {
+        return None;
+    }
+    let mut out = PathBuf::new();
+    for component in components {
+        out.push(component);
+    }
+    Some(out)
+}
+
+/// Final path segment of `path`, without normalizing `..`.
+pub(crate) fn atomic_write_base(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut components: Vec<Component<'_>> = path.components().collect();
+    trim_trailing_cur_dir(&mut components);
+    if let Some(last) = components.pop() {
+        let mut out = PathBuf::new();
+        out.push(last);
+        return out;
+    }
+    path.to_path_buf()
+}
+
+fn trim_trailing_cur_dir(components: &mut Vec<std::path::Component<'_>>) {
+    while components
+        .last()
+        .is_some_and(|component| matches!(component, std::path::Component::CurDir))
+    {
+        components.pop();
+    }
+}
+
 /// Resolved path for an atomic rename plus whether any symlink was followed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct AtomicWriteTarget {
@@ -36,7 +86,7 @@ pub(crate) fn atomic_write_target(path: &Path) -> io::Result<AtomicWriteTarget> 
                 resolved = if link.is_absolute() {
                     link
                 } else {
-                    let parent = resolved.parent().unwrap_or_else(|| Path::new("."));
+                    let parent = atomic_write_dir(&resolved).unwrap_or_else(|| PathBuf::from("."));
                     parent.join(link)
                 };
             }
@@ -65,12 +115,14 @@ pub(crate) fn atomic_write_target(path: &Path) -> io::Result<AtomicWriteTarget> 
 
 /// Ensures the destination's parent directory exists when allowed to create it.
 pub(crate) fn ensure_atomic_write_parent(target: &AtomicWriteTarget) -> io::Result<()> {
-    let dir = match target.destination.parent() {
-        Some(dir) if !dir.as_os_str().is_empty() => dir,
-        _ => return Ok(()),
+    let Some(dir) = atomic_write_dir(&target.destination) else {
+        return Ok(());
     };
+    if dir.as_os_str().is_empty() {
+        return Ok(());
+    }
     if target.followed_symlink {
-        match fs::symlink_metadata(dir) {
+        match fs::metadata(&dir) {
             Ok(meta) if meta.is_dir() => Ok(()),
             Ok(_) => Err(io::Error::new(
                 io::ErrorKind::NotFound,
@@ -83,7 +135,7 @@ pub(crate) fn ensure_atomic_write_parent(target: &AtomicWriteTarget) -> io::Resu
             Err(err) => Err(err),
         }
     } else {
-        create_private_dir(dir)
+        create_private_dir(&dir)
     }
 }
 
@@ -104,12 +156,9 @@ fn write_atomic_with_mode(path: &Path, data: &[u8], preserve_mode: bool) -> io::
     let target = atomic_write_target(path)?;
     ensure_atomic_write_parent(&target)?;
 
-    let dir = match target.destination.parent() {
-        Some(dir) if !dir.as_os_str().is_empty() => dir,
-        _ => Path::new("."),
-    };
+    let dir = atomic_write_dir(&target.destination).unwrap_or_else(|| PathBuf::from("."));
 
-    let (temp, mut file) = create_temp_file(dir)?;
+    let (temp, mut file) = create_temp_file(&dir)?;
     let written = (|| -> io::Result<()> {
         set_mode_on_temp(&file, &target.destination, preserve_mode)?;
         file.write_all(data)?;
@@ -249,6 +298,32 @@ mod tests {
         }
     }
 
+    #[test]
+    fn atomic_write_path_helpers_table_3dba() {
+        let cases = [
+            ("sts", None, "sts"),
+            ("x", None, "x"),
+            ("a/b", Some("a"), "b"),
+            ("a/b/", Some("a"), "b"),
+            ("/x", Some("/"), "x"),
+            ("..", None, ".."),
+            ("a/..", Some("a"), ".."),
+        ];
+        for (path, want_dir, want_base) in cases {
+            let path = Path::new(path);
+            assert_eq!(
+                atomic_write_dir(path).as_deref(),
+                want_dir.map(Path::new),
+                "dir({path:?})"
+            );
+            assert_eq!(
+                atomic_write_base(path),
+                Path::new(want_base),
+                "base({path:?})"
+            );
+        }
+    }
+
     #[cfg(unix)]
     mod symlink_atomic_write_3dba {
         use super::*;
@@ -311,6 +386,50 @@ mod tests {
 
             assert_is_symlink(&link, Path::new("../../store/omairc.conf"));
             assert_eq!(fs::read(&real_file).unwrap(), b"new\n");
+        }
+
+        #[test]
+        fn write_atomic_two_hop_dotdot_decoy_3dba() {
+            let dir = TempDir::new("atomic-two-hop-decoy-3dba");
+            let home = dir.path().join("home");
+            let dots = dir.path().join("dots");
+            fs::create_dir_all(dots.join("cfg").join("omairc")).unwrap();
+            fs::create_dir_all(dots.join("pkg")).unwrap();
+            fs::create_dir_all(home.join("pkg")).unwrap();
+            let decoy = home.join("pkg").join("real.conf");
+            let real = dots.join("pkg").join("real.conf");
+            fs::write(&decoy, b"DECOY").unwrap();
+            fs::write(&real, b"REAL").unwrap();
+            symlink("../dots/cfg", &home.join(".config")).unwrap();
+            symlink(
+                "../../pkg/hop2",
+                &dots.join("cfg").join("omairc").join("omairc.conf"),
+            )
+            .unwrap();
+            symlink("real.conf", &dots.join("pkg").join("hop2")).unwrap();
+
+            let conf = home.join(".config").join("omairc").join("omairc.conf");
+            write_atomic_preserve_mode(&conf, b"NEW").unwrap();
+
+            assert_eq!(fs::read(&real).unwrap(), b"NEW");
+            assert_eq!(fs::read(&decoy).unwrap(), b"DECOY");
+        }
+
+        #[test]
+        fn write_atomic_through_symlinked_data_directory_3dba() {
+            let dir = TempDir::new("atomic-symlink-data-dir-3dba");
+            let data = dir.path().join("data");
+            fs::create_dir_all(&data).unwrap();
+            let target = data.join("omairc.conf");
+            fs::write(&target, b"old\n").unwrap();
+            let dotfiles = dir.path().join("dotfiles");
+            symlink(&data, &dotfiles).unwrap();
+            fs::create_dir_all(dir.path().join("cfg")).unwrap();
+            let link = dir.path().join("cfg").join("omairc.conf");
+            symlink("../dotfiles/omairc.conf", &link).unwrap();
+
+            write_atomic_preserve_mode(&link, b"new\n").unwrap();
+            assert_eq!(fs::read(&target).unwrap(), b"new\n");
         }
 
         #[test]

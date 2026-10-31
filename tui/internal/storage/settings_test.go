@@ -930,6 +930,78 @@ func TestSyncThroughSymlinkedParentAndDotdot3dba(t *testing.T) {
 	assertFileBytes(t, realFile, []byte("new\n"))
 }
 
+func TestAtomicWritePathHelpers3dba(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		path     string
+		wantDir  string
+		wantBase string
+	}{
+		{"sts", ".", "sts"},
+		{"x", ".", "x"},
+		{"a/b", "a", "b"},
+		{"a/b/", "a", "b"},
+		{"/x", "/", "x"},
+		{"..", ".", ".."},
+		{"a/..", "a", ".."},
+	}
+	for _, tc := range cases {
+		if got := atomicWriteDir(tc.path); got != tc.wantDir {
+			t.Errorf("atomicWriteDir(%q) = %q, want %q", tc.path, got, tc.wantDir)
+		}
+		if got := atomicWriteBase(tc.path); got != tc.wantBase {
+			t.Errorf("atomicWriteBase(%q) = %q, want %q", tc.path, got, tc.wantBase)
+		}
+	}
+}
+
+func TestWriteSettingsAtomicTwoHopDotdotDecoy3dba(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks")
+	}
+
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	dots := filepath.Join(root, "dots")
+	mustMkdirAll(t, filepath.Join(dots, "cfg", "omairc"), filepath.Join(dots, "pkg"), filepath.Join(home, "pkg"))
+	decoy := filepath.Join(home, "pkg", "real.conf")
+	real := filepath.Join(dots, "pkg", "real.conf")
+	mustWriteFileMode(t, decoy, []byte("DECOY"), 0o644)
+	mustWriteFileMode(t, real, []byte("REAL"), 0o644)
+	mustSymlink(t, "../dots/cfg", filepath.Join(home, ".config"))
+	mustSymlink(t, "../../pkg/hop2", filepath.Join(dots, "cfg", "omairc", "omairc.conf"))
+	mustSymlink(t, "real.conf", filepath.Join(dots, "pkg", "hop2"))
+
+	conf := filepath.Join(home, ".config", "omairc", "omairc.conf")
+	if err := writeSettingsAtomic(conf, []byte("NEW"), true); err != nil {
+		t.Fatalf("writeSettingsAtomic: %v", err)
+	}
+	assertFileBytes(t, real, []byte("NEW"))
+	assertFileBytes(t, decoy, []byte("DECOY"))
+}
+
+func TestSyncThroughSymlinkedDataDirectory3dba(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks")
+	}
+
+	root := t.TempDir()
+	data := filepath.Join(root, "data")
+	mustMkdirAll(t, data, filepath.Join(root, "cfg"))
+	target := filepath.Join(data, "omairc.conf")
+	mustWriteFileMode(t, target, []byte("[preferences]\ndirects=false\n"), 0o644)
+	mustSymlink(t, data, filepath.Join(root, "dotfiles"))
+	link := filepath.Join(root, "cfg", "omairc.conf")
+	mustSymlink(t, "../dotfiles/omairc.conf", link)
+
+	s := OpenSettings(link)
+	s.SetBool("preferences", "directs", true)
+	if got := s.Sync(); got != StatusWritten {
+		t.Fatalf("Sync() = %v, want StatusWritten", got)
+	}
+	assertFileBytes(t, target, []byte("[preferences]\ndirects=true\n"))
+}
+
 func TestWriteSettingsAtomicSymlinkCases3dba(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks")

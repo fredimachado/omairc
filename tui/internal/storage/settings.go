@@ -540,7 +540,7 @@ func resolveAtomicWriteTarget(path string) (atomicWriteTarget, error) {
 		if filepath.IsAbs(link) {
 			resolved = link
 		} else {
-			resolved = joinRelativeSymlinkTarget(filepath.Dir(resolved), link)
+			resolved = joinRelativeSymlinkTarget(atomicWriteDir(resolved), link)
 		}
 	}
 	return atomicWriteTarget{}, errors.New("too many symlinks resolving atomic write destination")
@@ -582,18 +582,32 @@ func atomicWriteDir(destination string) string {
 	if destination == "" {
 		return "."
 	}
-	if i := strings.LastIndexAny(destination, `/\`); i >= 0 {
-		return destination[:i]
+	end := len(destination)
+	for end > 0 && os.IsPathSeparator(destination[end-1]) {
+		end--
+	}
+	for i := end - 1; i >= 0; i-- {
+		if os.IsPathSeparator(destination[i]) {
+			if i == 0 {
+				return destination[:1]
+			}
+			return destination[:i]
+		}
 	}
 	return "."
 }
 
 func atomicWriteBase(destination string) string {
-	dir := atomicWriteDir(destination)
-	if dir == destination {
-		return destination
+	end := len(destination)
+	for end > 0 && os.IsPathSeparator(destination[end-1]) {
+		end--
 	}
-	return destination[len(dir)+1:]
+	for i := end - 1; i >= 0; i-- {
+		if os.IsPathSeparator(destination[i]) {
+			return destination[i+1 : end]
+		}
+	}
+	return destination[:end]
 }
 
 // sectionEntry is one key line within a written section.
