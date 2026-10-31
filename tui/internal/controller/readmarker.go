@@ -123,3 +123,22 @@ func (c *Controller) requestReadMarkerGetOnce(networkID, target string) {
 func (c *Controller) readMarkerForgetNetwork(networkID string) {
 	c.readMarkers.forgetNetwork(networkID)
 }
+
+func (c *Controller) requestReadMarkerGetForSelectedDirect(networkID string) {
+	if c.selected == nil || c.selected.NetworkID != networkID {
+		return
+	}
+	features := c.reducer.ServerFeatures(networkID)
+	if features.IsChannel(c.selected.NormalizedTarget) {
+		return
+	}
+	conversation := c.reducer.Find(*c.selected)
+	if conversation == nil {
+		return
+	}
+	target := conversation.Target
+	if target == "" {
+		target = c.selectedTarget
+	}
+	c.requestReadMarkerGetOnce(networkID, target)
+}

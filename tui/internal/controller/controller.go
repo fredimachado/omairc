@@ -852,6 +852,7 @@ func (c *Controller) Apply(event irc.Event) {
 	kind := irc.KindOf(event)
 	typingOnly := kind == irc.EventTyping
 	selfAwayOnly := kind == irc.EventSelfAway
+	welcomeNetwork := ""
 
 	// A welcome re-enters registration: reply watches, auto-away state, and
 	// the unaway latch all reset first. It mirrors the welcome branch in
@@ -861,6 +862,7 @@ func (c *Controller) Apply(event irc.Event) {
 		c.autoaway.ForgetNetwork(welcome.NetworkID)
 		c.replies.Forget(welcome.NetworkID)
 		c.readMarkerForgetNetwork(welcome.NetworkID)
+		welcomeNetwork = welcome.NetworkID
 	} else if selfAway, ok := event.(irc.SelfAwayEvent); ok {
 		delete(c.unawaySent, selfAway.NetworkID)
 	}
@@ -966,6 +968,9 @@ func (c *Controller) Apply(event irc.Event) {
 			Preview:   arrival.Body,
 			MsgID:     arrival.MsgID,
 		})
+	}
+	if welcomeNetwork != "" {
+		c.requestReadMarkerGetForSelectedDirect(welcomeNetwork)
 	}
 }
 

@@ -250,29 +250,26 @@ func TestDirectMarkreadGetWaitsForReadMarkerCap(t *testing.T) {
 	}
 }
 
-func TestReconnectReselectSendsOneNewReadMarkerGet(t *testing.T) {
+func TestReconnectSelectedDirectGetsReadMarkerOnWelcome(t *testing.T) {
 	c, clock := newController(t)
 	transport := addAndStart(t, c, clock, baseConfig("net", "omairc"))
 	registerNetwork(t, transport, "omairc", "draft/read-marker")
-	roomKey := c.reducer.ConversationKey("net", "#room")
-	c.reducer.EnsureConversation(roomKey, "#room", irc.CauseChannelState)
-	c.SelectConversation("net", "#room")
 	key := c.reducer.ConversationKey("net", "alice")
 	c.reducer.EnsureConversation(key, "alice", irc.CauseInboundOther)
 	c.SelectConversation("net", "alice")
 	if countFramesContaining(transport, "MARKREAD alice\r\n") != 1 {
 		t.Fatalf("first select must send one get, frames=%v", transport.WrittenFrames())
 	}
-	c.SelectConversation("net", "#room")
-	c.SelectConversation("net", "alice")
-	if countFramesContaining(transport, "MARKREAD alice\r\n") != 1 {
-		t.Fatalf("reselect before reconnect must not send again, frames=%v", transport.WrittenFrames())
-	}
 	c.Apply(irc.WelcomeEvent{NetworkID: "net", CurrentNick: "omairc"})
+	if countFramesContaining(transport, "MARKREAD alice\r\n") != 2 {
+		t.Fatalf("welcome while DM selected must send one new get, frames=%v", transport.WrittenFrames())
+	}
 	c.SelectConversation("net", "#room")
+	roomKey := c.reducer.ConversationKey("net", "#room")
+	c.reducer.EnsureConversation(roomKey, "#room", irc.CauseChannelState)
 	c.SelectConversation("net", "alice")
 	if countFramesContaining(transport, "MARKREAD alice\r\n") != 2 {
-		t.Fatalf("after welcome must allow exactly one new get, frames=%v", transport.WrittenFrames())
+		t.Fatalf("reselect after welcome must not send again, frames=%v", transport.WrittenFrames())
 	}
 }
 
@@ -288,12 +285,38 @@ func TestSelectDirectBeforeWelcomeRetriesGetAfterRegistered(t *testing.T) {
 		t.Fatalf("must not send MARKREAD get before 001, frames=%v", transport.WrittenFrames())
 	}
 	inject(t, transport, ":server 001 omairc :Welcome\r\n")
-	c.SelectConversation("net", "#room")
+	if countFramesContaining(transport, "MARKREAD alice\r\n") != 1 {
+		t.Fatalf("001 while DM selected must send one MARKREAD get, frames=%v", transport.WrittenFrames())
+	}
+}
+
+func TestWelcomeWithSelectedChannelNoReadMarkerGet(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("net", "omairc"))
+	registerNetwork(t, transport, "omairc", "draft/read-marker")
 	roomKey := c.reducer.ConversationKey("net", "#room")
 	c.reducer.EnsureConversation(roomKey, "#room", irc.CauseChannelState)
+	c.SelectConversation("net", "#room")
+	before := countFramesContaining(transport, "MARKREAD")
+	c.Apply(irc.WelcomeEvent{NetworkID: "net", CurrentNick: "omairc"})
+	if countFramesContaining(transport, "MARKREAD") != before {
+		t.Fatalf("welcome with channel selected must not send MARKREAD get, frames=%v", transport.WrittenFrames())
+	}
+}
+
+func TestWelcomeOnOtherNetworkDoesNotFetchSelectedDirect(t *testing.T) {
+	c, clock := newController(t)
+	transportNet := addAndStart(t, c, clock, baseConfig("net", "omairc"))
+	transportOther := addAndStart(t, c, clock, baseConfig("other", "bob"))
+	registerNetwork(t, transportNet, "omairc", "draft/read-marker")
+	registerNetwork(t, transportOther, "bob", "draft/read-marker")
+	key := c.reducer.ConversationKey("net", "alice")
+	c.reducer.EnsureConversation(key, "alice", irc.CauseInboundOther)
 	c.SelectConversation("net", "alice")
-	if countFramesContaining(transport, "MARKREAD alice\r\n") != 1 {
-		t.Fatalf("after 001 must send one MARKREAD get, frames=%v", transport.WrittenFrames())
+	before := countFramesContaining(transportNet, "MARKREAD alice\r\n")
+	c.Apply(irc.WelcomeEvent{NetworkID: "other", CurrentNick: "bob"})
+	if countFramesContaining(transportNet, "MARKREAD alice\r\n") != before {
+		t.Fatalf("welcome on other network must not fetch net direct, frames=%v", transportNet.WrittenFrames())
 	}
 }
 
