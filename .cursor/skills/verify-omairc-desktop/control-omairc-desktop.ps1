@@ -985,6 +985,8 @@ maximized=false
     $Script:VISIBLE = $(if ($visible) { 1 } else { 0 })
     $Script:LOCALAPPDATA_OVERRIDE = $lad
     $Script:APP_FOLDER = $appFolder
+    $Script:MEMBERS_OPEN = 1
+    Write-State
 
     # Match the sh driver: keep the window active while the demo seed drains
     # mentions so note_title_mark does not stick an attention title.
@@ -1008,10 +1010,6 @@ maximized=false
     }
 
     [void][OmaircDriver]::ForegroundTo($prevFg)
-
-    # Demo channels start with the member panel open (Shell::members_open).
-    $Script:MEMBERS_OPEN = 1
-    Write-State
 
     Write-Output 'launched isolated Omairc'
     Write-Output $(if ($demo) { 'demo=yes' } else { 'demo=no' })

@@ -263,8 +263,13 @@ click-conversation --name NAME | click-member --name NICK
 click-people [--hidden] | click-network | click-edit | click-version | click-send
 screenshot --feature ID --name STEM
 compare --before PATH --after PATH
+self-check
 cleanup
 ```
+
+`self-check` writes driver state to a private temp
+`OMAIRC_VERIFY_DESKTOP_STATE` file (removed on exit) so it never clears the
+default state path while a live verify session is running.
 
 If Xvfb tools are missing, install
 `xorg-server-xvfb xorg-xauth xdotool xorg-xinput imagemagick`. If lavapipe

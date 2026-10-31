@@ -76,7 +76,11 @@ Usage:
   control-omairc-desktop screenshot --feature <id> --name <stem>
   control-omairc-desktop compare --before <path> --after <path>
   control-omairc-desktop run <feature> [--dry-run]
+  control-omairc-desktop self-check
   control-omairc-desktop cleanup
+
+self-check uses a private OMAIRC_VERIFY_DESKTOP_STATE temp file so it never
+clears the default state file for a live verify session.
 
 Default launch uses headless Xvfb (what agents should use). --visible uses
 Xephyr so a nested window appears on your desktop; same xdotool control
@@ -1188,7 +1192,24 @@ self_check_parse_timeout() {
 
 cmd_self_check() {
   require_tools
-  cmd_cleanup >/dev/null 2>&1 || true
+  _saved_verify_state=${OMAIRC_VERIFY_DESKTOP_STATE-}
+  _self_check_temp_state=$(mktemp "${TMPDIR:-/tmp}/omairc-verify-self-check-state.XXXXXX")
+  export OMAIRC_VERIFY_DESKTOP_STATE="$_self_check_temp_state"
+  STATE_FILE="$_self_check_temp_state"
+
+  _self_check_teardown() {
+    STATE_FILE="$_self_check_temp_state"
+    cmd_cleanup >/dev/null 2>&1 || true
+    rm -f "$_self_check_temp_state"
+    if [ -n "$_saved_verify_state" ]; then
+      export OMAIRC_VERIFY_DESKTOP_STATE="$_saved_verify_state"
+    else
+      unset OMAIRC_VERIFY_DESKTOP_STATE
+    fi
+    STATE_FILE="${OMAIRC_VERIFY_DESKTOP_STATE:-${TMPDIR:-/tmp}/omairc-verify-desktop-$USER/state}"
+  }
+  trap _self_check_teardown EXIT INT HUP TERM
+
   self_check_parse_timeout
   if ! "$SELF" launch --demo-server >/dev/null; then
     die "self-check: launch failed"
@@ -1200,7 +1221,6 @@ cmd_self_check() {
   ( poll_window_title_exact "never-matches" 2 ) >/dev/null 2>&1
   _status=$?
   set -e
-  cmd_cleanup >/dev/null 2>&1 || true
   if [ "$_status" -eq 0 ]; then
     die "self-check: wait-title should fail when app is dead"
   fi
