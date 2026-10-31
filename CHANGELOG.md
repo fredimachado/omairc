@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   host upgrade to TLS survives a TUI restart. Expired and cleared policies
   are removed from the file; a corrupt or unwritable file never weakens an
   in-memory policy.
+- When the shared `sts` policy file is malformed, both clients rename it to
+  a non-clobbering `sts.corrupt` / `sts.corrupt.N` backup and rewrite a clean
+  file from parseable entries plus newly learned policies, so STS still
+  survives a restart. A failed rename leaves the file alone.
 - The terminal client paints mIRC foreground and background colors in the
   transcript (default on), with `/pref colors` and Connect Preferences →
   Show mIRC colors sharing the desktop `showIrcColors` setting. Formatting

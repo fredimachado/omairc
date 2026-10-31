@@ -33,7 +33,8 @@ pub enum Status {
     Absent,
     /// The file could not be read or written.
     AccessError,
-    /// The file is not a well-formed INI, so it is left alone.
+    /// The file is not a well-formed INI. Settings leaves it alone; the STS store
+    /// may back it up and rewrite.
     FormatError,
 }
 
@@ -197,6 +198,13 @@ impl Settings {
             }
         }
         seen.into_iter().collect()
+    }
+
+    /// Marks the store dirty so the next [`Settings::sync`] writes even when no
+    /// value changed. STS recovery uses this after renaming a malformed file so
+    /// the already-loaded parseable map is rewritten cleanly.
+    pub(super) fn mark_dirty(&mut self) {
+        self.dirty = true;
     }
 
     /// Writes pending changes atomically. Refuses first when the file must not be
