@@ -140,8 +140,8 @@ func TestIniSTSStoreLookupOrClearWithNothingStoredWritesNoFile(t *testing.T) {
 	}
 }
 
-func TestIniSTSStoreMalformedFileIsLeftAlone(t *testing.T) {
-	// client/src/storage/stspolicies.rs::a_malformed_file_is_left_alone
+func TestIniSTSStoreMalformedFileIsBackedUpAndNewPolicySurvives(t *testing.T) {
+	// client/src/storage/stspolicies.rs::a_malformed_file_is_backed_up_and_a_new_policy_survives
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sts")
 	garbage := "this line has no equals sign\n"
@@ -149,11 +149,135 @@ func TestIniSTSStoreMalformedFileIsLeftAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := NewIniSTSStore(path)
+	if status := store.Store("irc.example", 6697, 60, 0); status != StatusWritten {
+		t.Fatalf("Store status = %v, want Written", status)
+	}
+	backup, err := os.ReadFile(filepath.Join(dir, "sts.corrupt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(backup) != garbage {
+		t.Fatalf("backup = %q, want original garbage", backup)
+	}
+	entry, ok := store.Lookup("irc.example", 1)
+	if !ok || entry.Port != 6697 || entry.DurationSeconds != 60 || entry.ExpiryEpochSeconds != 60 {
+		t.Fatalf("entry = %+v ok=%v", entry, ok)
+	}
+	restarted := NewIniSTSStore(path)
+	if _, ok := restarted.Lookup("irc.example", 1); !ok {
+		t.Fatal("new policy must survive a reload")
+	}
+}
+
+func TestIniSTSStoreSecondMalformedWriteDoesNotClobberFirstBackup(t *testing.T) {
+	// client/src/storage/stspolicies.rs::a_second_malformed_write_does_not_clobber_the_first_backup
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	first := "first garbage without equals\n"
+	if err := os.WriteFile(path, []byte(first), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewIniSTSStore(path)
+	if status := store.Store("irc.example", 6697, 60, 0); status != StatusWritten {
+		t.Fatal(status)
+	}
+	second := "second garbage without equals\n"
+	if err := os.WriteFile(path, []byte(second), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if status := store.Store("other.example", 6697, 30, 10); status != StatusWritten {
+		t.Fatal(status)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "sts.corrupt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != first {
+		t.Fatalf("first backup clobbered: %q", raw)
+	}
+	raw, err = os.ReadFile(filepath.Join(dir, "sts.corrupt.1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != second {
+		t.Fatalf("second backup = %q", raw)
+	}
+	if _, ok := store.Lookup("other.example", 11); !ok {
+		t.Fatal("second policy must load")
+	}
+}
+
+func TestIniSTSStoreValidEntriesInPartlyMalformedFileArePreserved(t *testing.T) {
+	// client/src/storage/stspolicies.rs::valid_entries_in_a_partly_malformed_file_are_preserved
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	other := STSGroupKey("other.example")
+	mixed := "[" + ircExampleSTSGroup + "]\nport=6697\nduration=60\nexpiry=4102444800\nbad line\n[" + other + "]\nport=6698\nduration=30\nexpiry=4102444800\n"
+	if err := os.WriteFile(path, []byte(mixed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewIniSTSStore(path)
+	if status := store.Store("third.example", 6699, 10, 1_700_000_000); status != StatusWritten {
+		t.Fatal(status)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "sts.corrupt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != mixed {
+		t.Fatalf("backup mismatch: %q", raw)
+	}
+	if entry, ok := store.Lookup("irc.example", 1_700_000_000); !ok || entry.Port != 6697 {
+		t.Fatalf("irc.example = %+v ok=%v", entry, ok)
+	}
+	if entry, ok := store.Lookup("other.example", 1_700_000_000); !ok || entry.Port != 6698 {
+		t.Fatalf("other.example = %+v ok=%v", entry, ok)
+	}
+	if _, ok := store.Lookup("third.example", 1_700_000_000); !ok {
+		t.Fatal("third.example missing")
+	}
+}
+
+func TestIniSTSStoreWeakerNewPolicyDoesNotShortenExistingExpiry(t *testing.T) {
+	// client/src/storage/stspolicies.rs::a_weaker_new_policy_does_not_shorten_an_existing_expiry
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	mixed := "[" + ircExampleSTSGroup + "]\nport=6697\nduration=60\nexpiry=5000\nbad line\n"
+	if err := os.WriteFile(path, []byte(mixed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewIniSTSStore(path)
+	if status := store.Store("irc.example", 7000, 10, 100); status != StatusWritten {
+		t.Fatal(status)
+	}
+	entry, ok := store.Lookup("irc.example", 100)
+	if !ok || entry.Port != 6697 || entry.DurationSeconds != 60 || entry.ExpiryEpochSeconds != 5000 {
+		t.Fatalf("must keep stronger policy: %+v ok=%v", entry, ok)
+	}
+}
+
+func TestIniSTSStoreFailedBackupRenameLeavesFileAlone(t *testing.T) {
+	// client/src/storage/stspolicies.rs::a_failed_backup_rename_leaves_the_malformed_file_alone
+	if runtime.GOOS == "windows" {
+		t.Skip("unix directory modes")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	garbage := "this line has no equals sign\n"
+	if err := os.WriteFile(path, []byte(garbage), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(dir, 0o755)
+
+	store := NewIniSTSStore(path)
 	if status := store.Store("irc.example", 6697, 60, 0); status != StatusFormatError {
 		t.Fatalf("Store status = %v, want FormatError", status)
 	}
-	if _, ok := store.Lookup("irc.example", 1); ok {
-		t.Fatal("malformed file must not yield a policy")
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -161,6 +285,9 @@ func TestIniSTSStoreMalformedFileIsLeftAlone(t *testing.T) {
 	}
 	if string(raw) != garbage {
 		t.Fatalf("malformed file was rewritten: %q", raw)
+	}
+	if _, ok := store.Lookup("irc.example", 1); ok {
+		t.Fatal("failed rename must not invent a policy on disk")
 	}
 }
 
@@ -178,6 +305,29 @@ func TestIniSTSStoreFileIsOwnerOnlyAfterWrite(t *testing.T) {
 	}
 	if mode := info.Mode().Perm(); mode != 0o600 {
 		t.Fatalf("mode = %o, want 0600", mode)
+	}
+}
+
+func TestNextSTSCorruptPathSkipsExistingBackups(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := nextSTSCorruptPath(path); got != filepath.Join(dir, "sts.corrupt") {
+		t.Fatalf("got %q", got)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sts.corrupt"), []byte("a"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := nextSTSCorruptPath(path); got != filepath.Join(dir, "sts.corrupt.1") {
+		t.Fatalf("got %q", got)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sts.corrupt.1"), []byte("b"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := nextSTSCorruptPath(path); got != filepath.Join(dir, "sts.corrupt.2") {
+		t.Fatalf("got %q", got)
 	}
 }
 

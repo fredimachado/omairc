@@ -4,6 +4,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -167,23 +168,92 @@ func TestSTSStoreHugeDurationSaturates(t *testing.T) {
 	}
 }
 
-// Fail-closed: memory survives a disk write failure.
-func TestSTSStoreDiskFailureDoesNotWeakenMemory(t *testing.T) {
+// A malformed sts file is recovered; memory and disk both keep the policy.
+func TestSTSStoreMalformedDiskRecoversWithoutWeakeningMemory(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sts")
-	if err := os.WriteFile(path, []byte("this line has no equals sign\n"), 0o600); err != nil {
+	garbage := "this line has no equals sign\n"
+	if err := os.WriteFile(path, []byte(garbage), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	store := NewSTSStore()
 	_ = store.Store("irc.example", 6697, 60, time.Unix(0, 0))
 	store.AttachDisk(storage.NewIniSTSStore(path))
-	err := store.Store("irc.example", 6697, 120, time.Unix(10, 0))
-	if err == nil {
-		t.Fatal("corrupt disk must report a persist error")
+	if err := store.Store("irc.example", 6697, 120, time.Unix(10, 0)); err != nil {
+		t.Fatalf("recovery must succeed: %v", err)
 	}
 	cached, ok := store.Lookup("irc.example", time.Unix(11, 0))
 	if !ok || cached.DurationSeconds != 120 || cached.Port != 6697 {
 		t.Fatalf("memory must keep the refreshed policy: %+v ok=%v", cached, ok)
+	}
+	backup, err := os.ReadFile(filepath.Join(dir, "sts.corrupt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(backup) != garbage {
+		t.Fatalf("backup = %q", backup)
+	}
+	entry, ok := storage.NewIniSTSStore(path).Lookup("irc.example", 11)
+	if !ok || entry.DurationSeconds != 120 {
+		t.Fatalf("disk entry = %+v ok=%v", entry, ok)
+	}
+}
+
+// Fail-closed: when the backup rename cannot run, memory still keeps the policy
+// and the malformed file is left untouched.
+func TestSTSStoreFailedBackupRenameDoesNotWeakenMemory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix directory modes")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	garbage := "this line has no equals sign\n"
+	if err := os.WriteFile(path, []byte(garbage), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewSTSStore()
+	store.AttachDisk(storage.NewIniSTSStore(path))
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	err := store.Store("irc.example", 6697, 120, time.Unix(10, 0))
+	_ = os.Chmod(dir, 0o755)
+	if err == nil {
+		t.Fatal("failed rename must report a persist error")
+	}
+	cached, ok := store.Lookup("irc.example", time.Unix(11, 0))
+	if !ok || cached.DurationSeconds != 120 || cached.Port != 6697 {
+		t.Fatalf("memory must keep the policy: %+v ok=%v", cached, ok)
+	}
+	raw, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(raw) != garbage {
+		t.Fatalf("malformed file was rewritten: %q", raw)
+	}
+}
+
+// All in-memory hosts are written when recovering a malformed file.
+func TestSTSStoreMalformedRecoveryFlushesEveryMemoryHost(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	if err := os.WriteFile(path, []byte("bad line without equals\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewSTSStore()
+	now := time.Unix(100, 0)
+	_ = store.Store("a.example", 6697, 60, now)
+	_ = store.Store("b.example", 6697, 60, now)
+	store.AttachDisk(storage.NewIniSTSStore(path))
+	if err := store.Store("c.example", 6697, 60, now); err != nil {
+		t.Fatal(err)
+	}
+	disk := storage.NewIniSTSStore(path)
+	for _, host := range []string{"a.example", "b.example", "c.example"} {
+		if _, ok := disk.Lookup(host, now.Unix()); !ok {
+			t.Fatalf("%s missing from recovered disk", host)
+		}
 	}
 }
 

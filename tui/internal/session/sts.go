@@ -163,9 +163,11 @@ func (s *STSStore) Lookup(host string, now time.Time) (STSCached, bool) {
 // an empty host or a zero port is ignored. Memory is updated first; a disk
 // failure is returned without rolling memory back. The mutex covers the disk
 // write so concurrent Stores from shared-manager sessions cannot lose hosts.
+// Every in-memory entry is flushed together so a malformed-file recovery
+// cannot drop a host that only lives in memory.
 func (s *STSStore) Store(host string, port uint16, durationSeconds int64, now time.Time) error {
 	if durationSeconds == 0 {
-		return s.Clear(host)
+		return s.clearAt(host, now.Unix())
 	}
 	key := stsGroupKey(host)
 	if key == "" || port < 1 {
@@ -179,16 +181,17 @@ func (s *STSStore) Store(host string, port uint16, durationSeconds int64, now ti
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.entries[key] = cached
-	if s.disk == nil {
-		return nil
-	}
-	return stsPersistStatus(s.disk.Store(host, port, durationSeconds, now.Unix()))
+	return s.flushDiskLocked(now.Unix(), nil)
 }
 
 // Clear drops the cached policy for host. Memory is cleared first; a disk
-// failure is returned without restoring memory. The mutex covers the disk
-// write so concurrent Clears cannot race other Stores.
+// failure is returned without restoring memory. Remaining in-memory entries
+// are rewritten with the clear so recovery cannot resurrect the host.
 func (s *STSStore) Clear(host string) error {
+	return s.clearAt(host, time.Now().Unix())
+}
+
+func (s *STSStore) clearAt(host string, nowUnix int64) error {
 	key := stsGroupKey(host)
 	if key == "" {
 		return nil
@@ -196,10 +199,24 @@ func (s *STSStore) Clear(host string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.entries, key)
+	return s.flushDiskLocked(nowUnix, []string{key})
+}
+
+// flushDiskLocked writes every in-memory entry (and applies clearKeys) through
+// the disk store. Caller must hold s.mu.
+func (s *STSStore) flushDiskLocked(nowUnix int64, clearKeys []string) error {
 	if s.disk == nil {
 		return nil
 	}
-	return stsPersistStatus(s.disk.Clear(host))
+	entries := make(map[string]storage.STSEntry, len(s.entries))
+	for key, cached := range s.entries {
+		entries[key] = storage.STSEntry{
+			Port:               cached.Port,
+			DurationSeconds:    cached.DurationSeconds,
+			ExpiryEpochSeconds: cached.ExpiryEpochSeconds,
+		}
+	}
+	return stsPersistStatus(s.disk.MergeEntries(entries, clearKeys, nowUnix))
 }
 
 func stsPersistStatus(status storage.Status) error {

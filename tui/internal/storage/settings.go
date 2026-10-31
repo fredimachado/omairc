@@ -271,6 +271,13 @@ func (s *Settings) ChildGroups(group string) []string {
 	return groups
 }
 
+// markDirty marks the store dirty so the next Sync writes even when no value
+// changed. STS recovery uses this after renaming a malformed file so the
+// already-loaded parseable map is rewritten cleanly.
+func (s *Settings) markDirty() {
+	s.dirty = true
+}
+
 // Sync writes pending changes to disk atomically and returns the resulting
 // status. It refuses before writing when WriteBlocked reports the file must
 // not be overwritten, so a malformed or unreadable ini is never rebuilt from
