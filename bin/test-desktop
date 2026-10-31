@@ -43,7 +43,11 @@ cleanup
   --before "$DESKTOP_SHOTS/switch-channel.png" \
   --after "$DESKTOP_SHOTS/send-message.png"
 
-# Open mira's direct message from the seeded #desktop member list.
+# Adjacent rows on #desktop (alphabetical, no PREFIX): kai then mira.
+"$CONTROL" click-member --name kai
+"$CONTROL" wait-title --exact "kai - Omairc"
+"$CONTROL" jump --query "#desktop"
+"$CONTROL" wait-title --exact "#desktop - Omairc"
 "$CONTROL" click-member --name mira
 "$CONTROL" wait-title --exact "mira - Omairc"
 "$CONTROL" screenshot --feature desktop --name open-direct-message

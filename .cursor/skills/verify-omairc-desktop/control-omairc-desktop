@@ -164,6 +164,12 @@ load_state() {
   [ -n "${XVFB_PID:-}" ] || die "state file is missing XVFB_PID"
   [ -n "${WINDOW:-}" ] || die "state file is missing WINDOW"
   export DISPLAY XAUTHORITY
+  if [ -n "${STATE_DIR:-}" ]; then
+    export XDG_CONFIG_HOME="$STATE_DIR/config"
+    export XDG_CACHE_HOME="$STATE_DIR/cache"
+    export XDG_DATA_HOME="$STATE_DIR/data"
+    export XDG_STATE_HOME="$STATE_DIR/state"
+  fi
 }
 
 write_state() {
@@ -198,6 +204,23 @@ stop_pid() {
   fi
 }
 
+# Stop only the nested server and temp dir from a launch that never wrote state.
+abort_isolated_launch() {
+  if [ -n "${APP_PID:-}" ]; then
+    stop_pid "$APP_PID"
+  fi
+  if [ -n "${XVFB_PID:-}" ]; then
+    stop_pid "$XVFB_PID"
+  fi
+  if [ -n "${STATE_DIR:-}" ] && [ -d "$STATE_DIR" ]; then
+    rm -rf -- "$STATE_DIR"
+  fi
+}
+
+# Member panel geometry at text scale 1.0 (`client/src/ui/members/`).
+MEMBER_FIRST_ROW_Y=71
+MEMBER_ROW_STEP=43
+
 conversation_y() {
   case $1 in
     "#desktop") echo 124 ;;
@@ -210,25 +233,76 @@ conversation_y() {
   esac
 }
 
-member_y() {
-  # Rows are ordered by server PREFIX rank, highest first, then nick
-  # (IrcEventReducer::orderedMembers). Seeded #omarchy settles as:
-  # ~fred, &anna, @dax, @mira, %kai, +teo, ivy, lena, max, nora, sam, sol.
-  case $1 in
-    fred) echo 71 ;;
-    anna) echo 114 ;;
-    dax) echo 157 ;;
-    mira) echo 200 ;;
-    kai) echo 243 ;;
-    teo) echo 286 ;;
-    ivy) echo 329 ;;
-    lena) echo 372 ;;
-    max) echo 415 ;;
-    nora) echo 458 ;;
-    sam) echo 501 ;;
-    sol) echo 544 ;;
-    *) die "unknown member '$1'." ;;
+member_row_y() {
+  echo $(( MEMBER_FIRST_ROW_Y + $1 * MEMBER_ROW_STEP ))
+}
+
+# Channel half of a window title (`#desktop - Omairc`, `#omarchy · … - Omairc`).
+channel_target_from_title() {
+  _title=$1
+  case $_title in
+    "#"*)
+      _rest=${_title#"#"}
+      _name=${_rest%% ·*}
+      _name=${_name%% - Omairc*}
+      printf '#%s' "$_name"
+      ;;
+    *)
+      return 1
+      ;;
   esac
+}
+
+# Demo seed member order for one channel (`ordered_members` / PREFIX then nick).
+member_index_in_demo_channel() {
+  _channel=$1
+  _nick=$2
+  _list=
+  case $_channel in
+    "#omarchy")
+      _list="fred anna dax mira kai teo ivy lena max nora sam sol"
+      ;;
+    "#desktop")
+      _list="anna dax fred kai mira nora sol teo"
+      ;;
+    "#help")
+      _list="anna dax fred mira sol"
+      ;;
+    "#ricing")
+      _list="anna dax fred kai mira nora sol teo lena sam"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+  _index=0
+  for _member in $_list; do
+    if [ "$_member" = "$_nick" ]; then
+      echo "$_index"
+      return 0
+    fi
+    _index=$((_index + 1))
+  done
+  return 1
+}
+
+# Prints the member-row Y for the nick on the channel shown in the window title.
+member_row_y_for_nick() {
+  _nick=$1
+  require_app_window
+  if ! _title=$(read_window_title); then
+    echo "control-omairc-desktop: click-member: cannot read window title" >&2
+    return 1
+  fi
+  if ! _target=$(channel_target_from_title "$_title"); then
+    echo "control-omairc-desktop: click-member needs a channel with the member panel open (title '$_title')" >&2
+    return 1
+  fi
+  if ! _index=$(member_index_in_demo_channel "$_target" "$_nick"); then
+    echo "control-omairc-desktop: click-member: '$_nick' is not in $_target" >&2
+    return 1
+  fi
+  member_row_y "$_index"
 }
 
 # XTEST pointer id from xinput, or empty. GPUI on X11 only handles XI2
@@ -616,17 +690,21 @@ cmd_launch() {
   fi
 
   set -- build
-  if [ "$DESKTOP_PROFILE" = release ]; then
-    set -- "$@" --release
+  if [ -n "${OMAIRC_VERIFY_DESKTOP_BINARY:-}" ]; then
+    BINARY="$OMAIRC_VERIFY_DESKTOP_BINARY"
+  else
+    if [ "$DESKTOP_PROFILE" = release ]; then
+      set -- "$@" --release
+    fi
+    if [ -n "$DESKTOP_FEATURES" ]; then
+      set -- "$@" --features "$DESKTOP_FEATURES"
+    fi
+    (cd "$ROOT/client" && cargo "$@")
+    BINARY="$ROOT/client/target/$DESKTOP_PROFILE/omairc"
   fi
-  if [ -n "$DESKTOP_FEATURES" ]; then
-    set -- "$@" --features "$DESKTOP_FEATURES"
-  fi
-  (cd "$ROOT/client" && cargo "$@")
-  STATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/omairc-verify-desktop.XXXXXX")"
-  BINARY="$ROOT/client/target/$DESKTOP_PROFILE/omairc"
   [ -x "$BINARY" ] || die "missing $BINARY after cargo build ($DESKTOP_PROFILE)"
 
+  STATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/omairc-verify-desktop.XXXXXX")"
   display_number=110
   while [ -e "/tmp/.X11-unix/X$display_number" ]; do
     display_number=$((display_number + 1))
@@ -674,7 +752,12 @@ cmd_launch() {
   while ! xdotool getmouselocation >/dev/null 2>&1; do
     attempt=$((attempt + 1))
     if [ "$attempt" -ge 50 ] || ! process_alive "$XVFB_PID"; then
-      die "isolated X server ($XSERVER) did not start; see $STATE_DIR/logs/xserver.log"
+      if [ -f "$STATE_DIR/logs/xserver.log" ]; then
+        echo "control-omairc-desktop: xserver.log:" >&2
+        cat "$STATE_DIR/logs/xserver.log" >&2 || true
+      fi
+      abort_isolated_launch
+      die "isolated X server ($XSERVER) did not start"
     fi
     sleep 0.1
   done
@@ -745,6 +828,7 @@ cmd_launch() {
       echo "control-omairc-desktop: omairc.log:" >&2
       cat "$STATE_DIR/logs/omairc.log" >&2 || true
     fi
+    abort_isolated_launch
     die "Omairc did not open; see $STATE_DIR/logs/omairc.log"
   done
 
@@ -909,7 +993,8 @@ cmd_click_member() {
   done
   [ -n "$name" ] || die "click-member requires --name"
   load_state
-  click_xy 1070 "$(member_y "$name")"
+  _y=$(member_row_y_for_nick "$name") || exit 1
+  click_xy 1070 "$_y"
 }
 
 cmd_click_people() {
@@ -1317,6 +1402,39 @@ self_check_timeout_validator() {
   fi
 }
 
+self_check_failed_launch_xvfb() {
+  _known_pids=$(pgrep Xvfb 2>/dev/null | sort -u | tr '\n' ' ')
+  _fake=$(mktemp "${TMPDIR:-/tmp}/omairc-verify-fake-bin.XXXXXX")
+  printf '#!/bin/sh\nexit 1\n' >"$_fake"
+  chmod +x "$_fake"
+  _try=0
+  while [ "$_try" -lt 3 ]; do
+    _try=$((_try + 1))
+    set +e
+    OMAIRC_VERIFY_DESKTOP_BINARY="$_fake" "$SELF" launch --demo-server >/dev/null 2>&1
+    set -e
+  done
+  rm -f "$_fake"
+  _after_pids=$(pgrep Xvfb 2>/dev/null | sort -u || true)
+  for _pid in $_after_pids; do
+    case " $_known_pids " in
+      *" $_pid "*) ;;
+      *) die "self-check: failed launch left orphan Xvfb pid $_pid" ;;
+    esac
+  done
+}
+
+self_check_click_member_desktop() {
+  "$SELF" jump --query "#desktop" >/dev/null
+  "$SELF" wait-title --exact "#desktop - Omairc" >/dev/null
+  "$SELF" click-member --name kai >/dev/null
+  "$SELF" wait-title --exact "kai - Omairc" >/dev/null
+  "$SELF" jump --query "#desktop" >/dev/null
+  "$SELF" wait-title --exact "#desktop - Omairc" >/dev/null
+  "$SELF" click-member --name mira >/dev/null
+  "$SELF" wait-title --exact "mira - Omairc" >/dev/null
+}
+
 cmd_self_check() {
   require_tools
   _saved_verify_state=${OMAIRC_VERIFY_DESKTOP_STATE-}
@@ -1338,6 +1456,7 @@ cmd_self_check() {
   trap _self_check_teardown EXIT INT HUP TERM
 
   self_check_timeout_validator
+  self_check_failed_launch_xvfb
   if ! "$SELF" launch --demo-server >/dev/null; then
     die "self-check: launch failed"
   fi
@@ -1368,6 +1487,7 @@ cmd_self_check() {
   if ( "$SELF" wait-title --exact foo --timeout ) >/dev/null 2>&1; then
     die "self-check: wait-title --timeout without value should fail"
   fi
+  self_check_click_member_desktop
   load_state
   kill -9 "$APP_PID" 2>/dev/null || true
   wait "$APP_PID" 2>/dev/null || true
