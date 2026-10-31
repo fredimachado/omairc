@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Full-line `#` comments in `omairc.conf` (including with leading whitespace)
+  are accepted like `;` comments, so a hand-edited file is no longer treated
+  as malformed and saves are not silently refused. Values that contain `#` still
+  round-trip unchanged.
+
 - Atomic config and state writes follow symlinked paths to their target file,
   so stow-managed `omairc.conf` (and the shared `sts` cache) keep the symlink
   and persist through the real file. A dangling symlink creates the missing

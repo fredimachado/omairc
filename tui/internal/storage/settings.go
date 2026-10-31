@@ -749,7 +749,7 @@ func parseSTSIni(data []byte) map[string]iniValue {
 			continue
 		}
 		if equalsPos < 0 {
-			if line[0] != ';' {
+			if !iniFullLineComment(line, 0) {
 				afterBad = true
 			}
 			continue
@@ -807,7 +807,7 @@ func iniBytesAreMalformed(data []byte) bool {
 			}
 			continue
 		}
-		if equalsPos < 0 && raw[lineStart] != ';' {
+		if equalsPos < 0 && !iniFullLineComment(raw, lineStart) {
 			return true
 		}
 	}
@@ -833,6 +833,21 @@ func nextIniLine(data []byte, dataPos, lineStart, lineLen, equalsPos *int) bool 
 	for i < dataLen && !ended {
 		ch := data[i]
 		if !iniSpecial(ch) {
+			if i == *lineStart && ch == '#' {
+				i++
+				for i < dataLen {
+					comment := data[i]
+					if comment == '\n' || comment == '\r' {
+						break
+					}
+					i++
+				}
+				for i < dataLen && iniSpace(data[i]) {
+					i++
+				}
+				*lineStart = i
+				continue
+			}
 			i++
 			continue
 		}
@@ -889,6 +904,12 @@ func nextIniLine(data []byte, dataPos, lineStart, lineLen, equalsPos *int) bool 
 
 func iniSpace(ch byte) bool {
 	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'
+}
+
+// iniFullLineComment reports whether lineStart points at a full-line comment
+// (first non-space byte is ';' or '#'), matching Qt INI.
+func iniFullLineComment(data []byte, lineStart int) bool {
+	return lineStart < len(data) && (data[lineStart] == ';' || data[lineStart] == '#')
 }
 
 func iniSpecial(ch byte) bool {
