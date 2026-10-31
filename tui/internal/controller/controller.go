@@ -860,6 +860,7 @@ func (c *Controller) Apply(event irc.Event) {
 		delete(c.unawaySent, welcome.NetworkID)
 		c.autoaway.ForgetNetwork(welcome.NetworkID)
 		c.replies.Forget(welcome.NetworkID)
+		c.readMarkerForgetNetwork(welcome.NetworkID)
 	} else if selfAway, ok := event.(irc.SelfAwayEvent); ok {
 		delete(c.unawaySent, selfAway.NetworkID)
 	}

@@ -114,8 +114,10 @@ func (c *Controller) requestReadMarkerGetOnce(networkID, target string) {
 	if session.ReadMarkerCommand() == "" {
 		return
 	}
+	if !session.RequestReadMarkerGet(target) {
+		return
+	}
 	c.readMarkers.noteGetSent(key)
-	session.RequestReadMarkerGet(target)
 }
 
 func (c *Controller) readMarkerForgetNetwork(networkID string) {

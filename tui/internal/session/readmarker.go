@@ -99,20 +99,23 @@ func (s *Session) ReadMarkerCommand() string {
 	return command
 }
 
-// RequestReadMarkerGet asks the server for the stored marker on one target.
-func (s *Session) RequestReadMarkerGet(target string) {
+// RequestReadMarkerGet asks the server for the stored marker on one target. It
+// reports whether the command was sent (session registered and cap enabled).
+func (s *Session) RequestReadMarkerGet(target string) bool {
 	if target == "" {
-		return
+		return false
 	}
-	s.locked(func() { s.requestReadMarkerGetLocked(target) })
+	var sent bool
+	s.locked(func() { sent = s.requestReadMarkerGetLocked(target) })
+	return sent
 }
 
-func (s *Session) requestReadMarkerGetLocked(target string) {
+func (s *Session) requestReadMarkerGetLocked(target string) bool {
 	command := s.readMarkerCommandLocked()
 	if command == "" {
-		return
+		return false
 	}
-	s.sendCommandLocked(fmt.Sprintf("%s %s", command, target), "")
+	return s.sendCommandLocked(fmt.Sprintf("%s %s", command, target), "")
 }
 
 // QueueReadMarkerSet records a newer read marker to publish when caught up.
