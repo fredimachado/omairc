@@ -812,6 +812,30 @@ func TestSettingsIniEscapingHelpers(t *testing.T) {
 	}
 }
 
+func TestSyncSameValueAfterWriteSkipsUnchangedBytes(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("unix mtime")
+	}
+
+	path := tempSettingsPath(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("[preferences]\ndirects=true\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+	s := OpenSettings(path)
+	if !syncLeavesDiskUnchanged(t, path, s, func() {
+		s.SetBool("preferences", "directs", true)
+	}) {
+		t.Fatal("repeat assignment after write rewrote the file")
+	}
+}
+
 func equalStrings(left, right []string) bool {
 	if len(left) != len(right) {
 		return false

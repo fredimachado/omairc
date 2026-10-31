@@ -404,6 +404,7 @@ func (s *Settings) rememberDiskSnapshotFrom(encoded []byte) {
 	if encoded == nil {
 		encoded = []byte{}
 	}
+	s.loadedFromDisk = true
 	s.onDisk = encoded
 }
 

@@ -26,6 +26,8 @@ use crate::identity::settings_file_name;
 pub const STS_FILE: &str = "sts";
 /// The application log, the same name the Qt client uses.
 pub const LOG_FILE: &str = "omairc.log";
+/// Saved window restore rectangle and maximized flag (GPUI desktop client).
+pub const WINDOW_FILE: &str = "window.ini";
 /// Moves the config and state roots under one directory.
 pub const HOME_OVERRIDE_VAR: &str = "OMAIRC_DEV_HOME";
 /// Overrides the on-disk transcript log root (`OMAIRC_TRANSCRIPT_ROOT`).
@@ -165,6 +167,11 @@ pub fn log_path_for(env: &Env, platform: Platform) -> PathBuf {
     state_dir_for(env, platform).join(LOG_FILE)
 }
 
+/// The GPUI window geometry file (`<state>/<APP_FOLDER>/window.ini`).
+pub fn window_path_for(env: &Env, platform: Platform) -> PathBuf {
+    state_dir_for(env, platform).join(WINDOW_FILE)
+}
+
 /// The conversation transcript folder (`<state>/logs`), or the override when set.
 pub fn transcript_root_for(env: &Env, platform: Platform) -> PathBuf {
     if let Some(root) = &env.transcript_root {
@@ -199,6 +206,10 @@ pub fn settings_path() -> Option<PathBuf> {
 
 pub fn log_path() -> PathBuf {
     log_path_for(&Env::from_process(), Platform::current())
+}
+
+pub fn window_path() -> PathBuf {
+    window_path_for(&Env::from_process(), Platform::current())
 }
 
 fn config_dir_for_folder(env: &Env, platform: Platform, folder: &str) -> Option<PathBuf> {
@@ -272,6 +283,14 @@ mod tests {
                 .join("state")
                 .join(APP_FOLDER)
                 .join(LOG_FILE)
+        );
+        assert_eq!(
+            window_path_for(&env, Platform::Linux),
+            home()
+                .join(".local")
+                .join("state")
+                .join(APP_FOLDER)
+                .join(WINDOW_FILE)
         );
     }
 
@@ -368,6 +387,10 @@ mod tests {
             assert_eq!(
                 log_path_for(&env, platform),
                 PathBuf::from("scratch").join("state").join(LOG_FILE)
+            );
+            assert_eq!(
+                window_path_for(&env, platform),
+                PathBuf::from("scratch").join("state").join(WINDOW_FILE)
             );
         }
     }

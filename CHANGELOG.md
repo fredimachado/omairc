@@ -46,6 +46,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   0600 on every write. A new config file is still created owner-only (0600).
 - Config saves skip the disk write when settings are unchanged, so
   `omairc.conf` bytes and modification time stay put on a no-op sync.
+- The GPUI desktop client stores window restore geometry and the maximized
+  flag in `<state>/window.ini` instead of `omairc.conf`. A missing
+  `window.ini` still reads the legacy `[window]` group from the config file
+  once; later saves go only to `window.ini` and leave the config bytes alone.
+  Demo mode writes neither file. Unchanged geometry skips rewriting
+  `window.ini`.
 - `/kickban` (`/kb`) bans then kicks in one step on a channel. `/unban`,
   `/quiet`, and `/unquiet` set the matching list modes with the same
   nick-or-mask expansion as `/ban`. `/quiet` and `/unquiet` refuse when

@@ -69,6 +69,7 @@ pub struct Settings {
 }
 
 impl Settings {
+    /// The stored value for `group`/`key`, or an empty string when the key is absent.
     pub fn value(&self, group: &str, key: &str) -> String {
         self.text(group, key).unwrap_or_default().to_string()
     }
@@ -119,7 +120,9 @@ impl Settings {
         self.dirty = true;
     }
 
-    /// Stores `@Rect(...)` and other QVariant encodings verbatim.
+    /// Stores an already-encoded QVariant such as `@Rect(0 0 800 600)`, written
+    /// verbatim so Qt reads it back as that type. [`Settings::set_value`] is for plain
+    /// strings, and it escapes a leading `@`.
     pub fn set_variant(&mut self, group: &str, key: &str, encoded: &str) {
         self.values.insert(
             settings_key(group, key),
@@ -140,7 +143,8 @@ impl Settings {
         self.set_value(group, key, &value.to_string());
     }
 
-    /// An empty list is stored as `@Invalid`.
+    /// Stores a string list. An empty list is written as `@Invalid`, which is
+    /// QSettings' sentinel, so it reads back distinct from a list holding one "".
     pub fn set_string_list(&mut self, group: &str, key: &str, values: &[String]) {
         self.values
             .insert(settings_key(group, key), IniValue::List(values.to_vec()));
