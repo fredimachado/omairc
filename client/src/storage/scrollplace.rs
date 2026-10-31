@@ -52,6 +52,8 @@ pub struct ScrollPlaceFile {
     backing: Backing,
     /// Legacy `omairc.conf` path for a one-time read when the state file is missing.
     conf_path: Option<PathBuf>,
+    /// Selects which legacy conf names are consulted on first seed (dual on macOS).
+    platform: paths::Platform,
 }
 
 impl ScrollPlaceFile {
@@ -61,6 +63,7 @@ impl ScrollPlaceFile {
         Self {
             backing,
             conf_path: None,
+            platform: paths::Platform::current(),
         }
     }
 
@@ -83,12 +86,17 @@ impl ScrollPlaceFile {
         platform: paths::Platform,
     ) -> Self {
         match settings {
-            Backing::Ephemeral => Self::new(Backing::Ephemeral),
+            Backing::Ephemeral => Self {
+                backing: Backing::Ephemeral,
+                conf_path: None,
+                platform,
+            },
             Backing::Disk(conf) => {
                 let state = scroll_state_path_for_settings(conf, env, platform);
                 Self {
                     backing: Backing::Disk(state),
                     conf_path: Some(conf.clone()),
+                    platform,
                 }
             }
         }
@@ -96,9 +104,19 @@ impl ScrollPlaceFile {
 
     /// Explicit state file and optional legacy conf path (tests and helpers).
     pub fn with_paths(state_path: PathBuf, conf_path: Option<PathBuf>) -> Self {
+        Self::with_paths_for(state_path, conf_path, paths::Platform::current())
+    }
+
+    /// Like [`Self::with_paths`], with an explicit platform for legacy conf selection.
+    pub fn with_paths_for(
+        state_path: PathBuf,
+        conf_path: Option<PathBuf>,
+        platform: paths::Platform,
+    ) -> Self {
         Self {
             backing: Backing::Disk(state_path),
             conf_path,
+            platform,
         }
     }
 
@@ -133,7 +151,7 @@ impl ScrollPlaceFile {
                 return load_all_from(&Settings::open(state));
             }
         }
-        load_all_from_legacy(self.conf_path.as_deref())
+        load_all_from_legacy(self.conf_path.as_deref(), self.platform)
     }
 
     /// Replaces one network's places (`save`). An empty list removes the network's group.
@@ -156,7 +174,7 @@ impl ScrollPlaceFile {
         let mut settings = Settings::open(state);
         let mut seeded = false;
         if missing {
-            match seed_legacy_into(&mut settings, self.conf_path.as_deref()) {
+            match seed_legacy_into(&mut settings, self.conf_path.as_deref(), self.platform) {
                 SeedOutcome::Unreadable => return Status::AccessError,
                 SeedOutcome::Copied => seeded = true,
                 SeedOutcome::Empty => {}
@@ -203,25 +221,33 @@ enum SeedOutcome {
     Unreadable,
 }
 
-/// Legacy conf paths beside the settings file: `omairc.ini` first (wins per network),
-/// then `omairc.conf` fills networks that are not already present. Both clients share
-/// one state file on macOS but historically wrote different conf names.
-fn legacy_scroll_conf_paths(conf: Option<&Path>) -> Vec<PathBuf> {
+/// Legacy conf paths for a one-time seed. On macOS both clients share one state
+/// file but historically wrote different conf names, so `omairc.ini` wins per
+/// network and `omairc.conf` fills the rest. Elsewhere only the platform's
+/// normal settings file is consulted.
+fn legacy_scroll_conf_paths(conf: Option<&Path>, platform: paths::Platform) -> Vec<PathBuf> {
     let Some(conf) = conf else {
         return Vec::new();
     };
+    if platform != paths::Platform::MacOs {
+        return vec![conf.to_path_buf()];
+    }
     let Some(dir) = conf.parent() else {
         return vec![conf.to_path_buf()];
     };
     vec![dir.join(SETTINGS_FILE_MACOS), dir.join(SETTINGS_FILE)]
 }
 
-/// Copies every legacy `scrollPlaces/*` group from the macOS/desktop and TUI conf
-/// files into `dest`. `omairc.ini` wins per network; `omairc.conf` fills the rest.
-/// The confs are only read. Used when creating `scrollplaces.ini` for the first time.
-fn seed_legacy_into(dest: &mut Settings, conf: Option<&Path>) -> SeedOutcome {
+/// Copies every legacy `scrollPlaces/*` group from the platform's conf path(s)
+/// into `dest`. On macOS, `omairc.ini` wins per network and `omairc.conf` fills
+/// the rest. The confs are only read. Used when creating `scrollplaces.ini`.
+fn seed_legacy_into(
+    dest: &mut Settings,
+    conf: Option<&Path>,
+    platform: paths::Platform,
+) -> SeedOutcome {
     let mut copied = false;
-    for path in legacy_scroll_conf_paths(conf) {
+    for path in legacy_scroll_conf_paths(conf, platform) {
         match probe_ini(&path) {
             IniProbe::Ok if !path.exists() => continue,
             IniProbe::Unreadable => return SeedOutcome::Unreadable,
@@ -247,10 +273,13 @@ fn seed_legacy_into(dest: &mut Settings, conf: Option<&Path>) -> SeedOutcome {
     }
 }
 
-/// Legacy places from both conf names, `omairc.ini` winning per network.
-fn load_all_from_legacy(conf: Option<&Path>) -> BTreeMap<String, PlaceRows> {
+/// Legacy places from the platform's conf path(s); on macOS `omairc.ini` wins.
+fn load_all_from_legacy(
+    conf: Option<&Path>,
+    platform: paths::Platform,
+) -> BTreeMap<String, PlaceRows> {
     let mut out = BTreeMap::new();
-    for path in legacy_scroll_conf_paths(conf) {
+    for path in legacy_scroll_conf_paths(conf, platform) {
         if !path.exists() || probe_ini(&path) == IniProbe::Unreadable {
             continue;
         }
@@ -942,7 +971,8 @@ mod tests {
         .unwrap();
 
         // Desktop-shaped primary (omairc.ini): first save must also pick up conf-only nets.
-        let file = ScrollPlaceFile::with_paths(state.clone(), Some(ini.clone()));
+        let file =
+            ScrollPlaceFile::with_paths_for(state.clone(), Some(ini.clone()), Platform::MacOs);
         assert_eq!(
             file.save(
                 "net_ini",
@@ -956,7 +986,8 @@ mod tests {
             ),
             Status::Written
         );
-        let loaded = ScrollPlaceFile::with_paths(state.clone(), Some(ini)).load_all();
+        let loaded =
+            ScrollPlaceFile::with_paths_for(state.clone(), Some(ini), Platform::MacOs).load_all();
         assert_eq!(loaded["net_ini"][0].0, "#from-ini");
         assert_eq!(
             loaded["net_conf"][0].0, "#from-conf",
@@ -978,7 +1009,8 @@ mod tests {
         )
         .unwrap();
         fs::write(&conf2, "[preferences]\ndirects=true\n").unwrap();
-        let tui_shaped = ScrollPlaceFile::with_paths(state2.clone(), Some(conf2));
+        let tui_shaped =
+            ScrollPlaceFile::with_paths_for(state2.clone(), Some(conf2), Platform::MacOs);
         assert_eq!(
             tui_shaped.save(
                 "other",
@@ -992,10 +1024,148 @@ mod tests {
             ),
             Status::Written
         );
-        let again = ScrollPlaceFile::with_paths(state2, None).load_all();
+        let again = ScrollPlaceFile::with_paths_for(state2, None, Platform::MacOs).load_all();
         assert_eq!(
             again["net_ini_only"][0].0, "#ini-only",
             "places only in omairc.ini must seed when primary is omairc.conf"
+        );
+    }
+
+    #[test]
+    fn linux_ignores_a_stray_readable_omairc_ini() {
+        let dir = agent_dir("scroll-linux-stray-ini");
+        let ini = dir.path().join("omairc.ini");
+        let conf = dir.path().join("omairc.conf");
+        let state = dir.path().join(SCROLL_PLACES_FILE);
+        fs::write(
+            &ini,
+            "[scrollPlaces]\nnet_ini\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#from-ini\\\"}]\"\n\
+             net_both\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#ini-wins\\\"}]\"\n",
+        )
+        .unwrap();
+        fs::write(
+            &conf,
+            "[scrollPlaces]\nnet_conf\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#from-conf\\\"}]\"\n\
+             net_both\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#conf-wins-on-linux\\\"}]\"\n",
+        )
+        .unwrap();
+
+        let file =
+            ScrollPlaceFile::with_paths_for(state.clone(), Some(conf.clone()), Platform::Linux);
+        assert_eq!(
+            file.save(
+                "net_conf",
+                &vec![(
+                    "#from-conf".to_owned(),
+                    ScrollPlace {
+                        follow_end: true,
+                        ..ScrollPlace::default()
+                    }
+                )]
+            ),
+            Status::Written
+        );
+        let loaded = ScrollPlaceFile::with_paths_for(state, Some(conf), Platform::Linux).load_all();
+        assert_eq!(loaded["net_conf"][0].0, "#from-conf");
+        assert_eq!(
+            loaded["net_both"][0].0, "#conf-wins-on-linux",
+            "Linux must seed only omairc.conf, not a stray omairc.ini"
+        );
+        assert!(
+            !loaded.contains_key("net_ini"),
+            "stray omairc.ini must not contribute networks on Linux: {loaded:?}"
+        );
+    }
+
+    #[test]
+    fn linux_unreadable_stray_ini_does_not_refuse_save() {
+        let dir = agent_dir("scroll-linux-unreadable-ini");
+        let ini = dir.path().join("omairc.ini");
+        let conf = dir.path().join("omairc.conf");
+        let state = dir.path().join(SCROLL_PLACES_FILE);
+        fs::write(
+            &ini,
+            "[scrollPlaces]\nnet_ini\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#from-ini\\\"}]\"\n",
+        )
+        .unwrap();
+        fs::write(
+            &conf,
+            "[scrollPlaces]\nnet_conf\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#from-conf\\\"}]\"\n",
+        )
+        .unwrap();
+        #[cfg(not(unix))]
+        {
+            let _ = (ini, conf, state);
+            return;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let restore = fs::Permissions::from_mode(0o600);
+            fs::set_permissions(&ini, fs::Permissions::from_mode(0o000)).unwrap();
+            if fs::read(&ini).is_ok() {
+                fs::set_permissions(&ini, restore).unwrap();
+                return;
+            }
+            let file =
+                ScrollPlaceFile::with_paths_for(state.clone(), Some(conf.clone()), Platform::Linux);
+            assert_eq!(
+                file.save(
+                    "net_conf",
+                    &vec![(
+                        "#from-conf".to_owned(),
+                        ScrollPlace {
+                            follow_end: true,
+                            ..ScrollPlace::default()
+                        }
+                    )]
+                ),
+                Status::Written,
+                "an unreadable stray omairc.ini must not refuse a Linux save"
+            );
+            assert!(state.exists());
+            let loaded =
+                ScrollPlaceFile::with_paths_for(state, Some(conf), Platform::Linux).load_all();
+            assert_eq!(loaded["net_conf"][0].0, "#from-conf");
+            assert!(!loaded.contains_key("net_ini"));
+            fs::set_permissions(&ini, restore).unwrap();
+        }
+    }
+
+    #[test]
+    fn malformed_legacy_conf_still_seeds_valid_places() {
+        let dir = agent_dir("scroll-malformed-seed");
+        let conf = dir.path().join("omairc.conf");
+        let state = dir.path().join(SCROLL_PLACES_FILE);
+        // A valid scrollPlaces group, then a malformed trailing section.
+        fs::write(
+            &conf,
+            "[scrollPlaces]\nnet1\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#qa\\\"}]\"\n\
+             [broken\nkey=value\n",
+        )
+        .unwrap();
+        assert_eq!(probe_ini(&conf), IniProbe::Malformed);
+
+        let file = ScrollPlaceFile::with_paths(state.clone(), Some(conf.clone()));
+        assert_eq!(
+            file.save(
+                "other",
+                &vec![(
+                    "#x".to_owned(),
+                    ScrollPlace {
+                        follow_end: true,
+                        ..ScrollPlace::default()
+                    }
+                )]
+            ),
+            Status::Written
+        );
+        let loaded = ScrollPlaceFile::with_paths(state, Some(conf)).load_all();
+        assert!(
+            loaded
+                .get("net1")
+                .is_some_and(|rows| rows.iter().any(|(t, _)| t == "#qa")),
+            "malformed conf must still seed its valid scrollPlaces: {loaded:?}"
         );
     }
 

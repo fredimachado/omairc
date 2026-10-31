@@ -403,6 +403,10 @@ func TestScrollPlaceForgetOnlyLegacyNetworkWritesEmptyState(t *testing.T) {
 }
 
 func TestScrollPlaceSeedReadsBothMacOSConfNames(t *testing.T) {
+	prev := scrollLegacyGOOS
+	scrollLegacyGOOS = "darwin"
+	t.Cleanup(func() { scrollLegacyGOOS = prev })
+
 	config, state := scrollTestRoots(t)
 	dir := filepath.Join(config, "omairc")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -457,6 +461,115 @@ func TestScrollPlaceSeedReadsBothMacOSConfNames(t *testing.T) {
 		t.Fatalf("places only in omairc.ini must seed: %+v/%v", only, ok)
 	}
 	if _, err := os.Stat(filepath.Join(state2, "omairc", ScrollPlacesFile)); err != nil {
+		t.Fatalf("state file missing: %v", err)
+	}
+}
+
+func TestScrollPlaceLinuxIgnoresStrayReadableIni(t *testing.T) {
+	prev := scrollLegacyGOOS
+	scrollLegacyGOOS = "linux"
+	t.Cleanup(func() { scrollLegacyGOOS = prev })
+
+	config, state := scrollTestRoots(t)
+	dir := filepath.Join(config, "omairc")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ini := filepath.Join(dir, "omairc.ini")
+	conf := filepath.Join(dir, "omairc.conf")
+	if err := os.WriteFile(ini, []byte("[scrollPlaces]\n"+
+		"net_ini\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#from-ini\\\"}]\"\n"+
+		"net_both\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#ini-wins\\\"}]\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(conf, []byte("[scrollPlaces]\n"+
+		"net_conf\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#from-conf\\\"}]\"\n"+
+		"net_both\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#conf-wins-on-linux\\\"}]\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mapping := irc.NewCaseMapping(irc.KindRfc1459)
+	NewScrollPlaceStore().Remember("net_conf", "#from-conf", ScrollPlace{FollowEnd: true}, mapping)
+
+	fresh := NewScrollPlaceStore()
+	if place, ok := fresh.Place("net_conf", "#from-conf", mapping); !ok || !place.FollowEnd {
+		t.Fatalf("net_conf = %+v/%v", place, ok)
+	}
+	if place, ok := fresh.Place("net_both", "#conf-wins-on-linux", mapping); !ok || !place.FollowEnd {
+		t.Fatalf("Linux must seed only omairc.conf: %+v/%v", place, ok)
+	}
+	if _, ok := fresh.Place("net_ini", "#from-ini", mapping); ok {
+		t.Fatal("stray omairc.ini must not contribute networks on Linux")
+	}
+	if _, err := os.Stat(filepath.Join(state, "omairc", ScrollPlacesFile)); err != nil {
+		t.Fatalf("state file missing: %v", err)
+	}
+}
+
+func TestScrollPlaceLinuxUnreadableStrayIniDoesNotRefuseSave(t *testing.T) {
+	prev := scrollLegacyGOOS
+	scrollLegacyGOOS = "linux"
+	t.Cleanup(func() { scrollLegacyGOOS = prev })
+
+	config, state := scrollTestRoots(t)
+	dir := filepath.Join(config, "omairc")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ini := filepath.Join(dir, "omairc.ini")
+	conf := filepath.Join(dir, "omairc.conf")
+	if err := os.WriteFile(ini, []byte(
+		"[scrollPlaces]\nnet_ini\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#from-ini\\\"}]\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(conf, []byte(
+		"[scrollPlaces]\nnet_conf\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#from-conf\\\"}]\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(ini, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(ini, 0o600) })
+	if _, err := os.ReadFile(ini); err == nil {
+		t.Skip("running as root: chmod 000 leaves the file readable")
+	}
+
+	mapping := irc.NewCaseMapping(irc.KindRfc1459)
+	NewScrollPlaceStore().Remember("net_conf", "#from-conf", ScrollPlace{FollowEnd: true}, mapping)
+	statePath := filepath.Join(state, "omairc", ScrollPlacesFile)
+	if _, err := os.Stat(statePath); err != nil {
+		t.Fatalf("unreadable stray ini must not refuse a Linux save: %v", err)
+	}
+	fresh := NewScrollPlaceStore()
+	if place, ok := fresh.Place("net_conf", "#from-conf", mapping); !ok || !place.FollowEnd {
+		t.Fatalf("net_conf = %+v/%v", place, ok)
+	}
+	if _, ok := fresh.Place("net_ini", "#from-ini", mapping); ok {
+		t.Fatal("stray omairc.ini must stay ignored on Linux")
+	}
+}
+
+func TestScrollPlaceMalformedLegacyConfStillSeeds(t *testing.T) {
+	config, state := scrollTestRoots(t)
+	conf := filepath.Join(config, "omairc", "omairc.conf")
+	if err := os.MkdirAll(filepath.Dir(conf), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body := []byte("[scrollPlaces]\n" +
+		"net1\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#qa\\\"}]\"\n" +
+		"[broken\nkey=value\n")
+	if err := os.WriteFile(conf, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if ProbeSettingsIni(conf) != IniProbeMalformed {
+		t.Fatal("fixture must probe as malformed")
+	}
+	mapping := irc.NewCaseMapping(irc.KindRfc1459)
+	NewScrollPlaceStore().Remember("other", "#x", ScrollPlace{FollowEnd: true}, mapping)
+	place, ok := NewScrollPlaceStore().Place("net1", "#qa", mapping)
+	if !ok || !place.FollowEnd {
+		t.Fatalf("malformed conf must still seed valid scrollPlaces: %+v/%v", place, ok)
+	}
+	if _, err := os.Stat(filepath.Join(state, "omairc", ScrollPlacesFile)); err != nil {
 		t.Fatalf("state file missing: %v", err)
 	}
 }

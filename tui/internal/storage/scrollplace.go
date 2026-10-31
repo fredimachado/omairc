@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -253,13 +254,21 @@ func (s *ScrollPlaceStore) save(networkID string, rows []scrollEntry) {
 	}
 }
 
-// legacyScrollConfPaths returns omairc.ini then omairc.conf beside ConfigPath.
-// Both clients share scrollplaces.ini on macOS but historically wrote different
-// conf names; ini groups win per network and conf fills the rest.
+// scrollLegacyGOOS selects dual-conf seeding. Production uses runtime.GOOS;
+// tests may override so macOS dual-conf coverage still runs on Linux CI.
+var scrollLegacyGOOS = runtime.GOOS
+
+// legacyScrollConfPaths returns the legacy conf file(s) to seed from. On macOS
+// both clients share scrollplaces.ini but historically wrote different conf
+// names, so omairc.ini wins per network and omairc.conf fills the rest.
+// Elsewhere only the platform's normal ConfigPath is consulted.
 func legacyScrollConfPaths() []string {
 	conf := ConfigPath()
 	if conf == "" {
 		return nil
+	}
+	if scrollLegacyGOOS != "darwin" {
+		return []string{conf}
 	}
 	dir := filepath.Dir(conf)
 	return []string{
@@ -275,9 +284,10 @@ func seedLegacyScrollPlaces(dest *Settings) (copied bool, refuse bool) {
 	return copyLegacyScrollPlaces(dest, true)
 }
 
-// copyLegacyScrollPlaces merges omairc.ini then omairc.conf into dest. Ini
-// groups win per network; conf fills the rest. When refuseUnreadable is set,
-// an existing unreadable conf aborts so a first save cannot drop legacy places.
+// copyLegacyScrollPlaces copies scrollPlaces groups from the platform's legacy
+// conf path(s) into dest. On macOS, ini wins per network and conf fills the
+// rest. When refuseUnreadable is set, an existing unreadable conf aborts so a
+// first save cannot drop legacy places.
 func copyLegacyScrollPlaces(dest *Settings, refuseUnreadable bool) (copied bool, refuse bool) {
 	if dest == nil {
 		return false, false
