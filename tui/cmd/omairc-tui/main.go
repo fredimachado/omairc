@@ -118,6 +118,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		c.SetOpenDirectStore(openDirects)
 		c.SetPlaybackTimeStore(playbackTimes)
 		c.SetConversationLog(transcripts)
+		// Share the desktop client's `sts` INI beside omairc.conf so a
+		// learned policy survives a TUI restart (and a desktop restart).
+		c.AttachSTSDisk(storage.STSPath())
 		c.LoadStoredPreferences()
 
 		conn = connection.New(c, func() session.Transport { return session.NewNetTransport() })

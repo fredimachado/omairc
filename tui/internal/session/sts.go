@@ -1,20 +1,23 @@
 package session
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"errors"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/fredimachado/omairc/tui/internal/storage"
 )
 
 // STS (Strict Transport Security) support.
-// This package's store is the in-memory `STSStore`. The Rust in-memory twin is
-// `MemoryStsStore` in `client/src/session/sts.rs`; durable INI persistence is
-// `IniStsStore` in `client/src/storage/stspolicies.rs`. This store keeps the
-// same lookup/save/clear semantics - group key, port range validation, and
-// epoch expiry on lookup - but never touches the filesystem. No os or path
-// import belongs here.
+// The in-memory `STSStore` is the process source of truth (MemoryStsStore in
+// `client/src/session/sts.rs`). Durable INI persistence is
+// `storage.IniSTSStore` (`client/src/storage/stspolicies.rs`). Memory is
+// updated first; a disk failure never drops a policy that already applies in
+// memory, and a corrupt file never forces a plaintext connect for a host that
+// still has a valid in-memory entry.
 
 // STSAdvertisement is the parsed value of one `sts` CAP token. A nil field
 // means the advertisement did not carry that key. It mirrors
@@ -83,7 +86,6 @@ func parseSTSValue(value string) STSAdvertisement {
 	return advertisement
 }
 
-// stsTokenName returns the capability name of a token, dropping any "=value".
 func stsTokenName(token string) string {
 	if separator := strings.IndexByte(token, '='); separator != -1 {
 		return token[:separator]
@@ -91,7 +93,6 @@ func stsTokenName(token string) string {
 	return token
 }
 
-// stsTokenValue returns everything after the first '=', or "".
 func stsTokenValue(token string) string {
 	if separator := strings.IndexByte(token, '='); separator != -1 {
 		return token[separator+1:]
@@ -99,89 +100,132 @@ func stsTokenValue(token string) string {
 	return ""
 }
 
-// STSStore is the in-memory STS policy cache. Unlike the IrcStsStore it
-// never persists; the lookup/save/clear contract is otherwise identical
-// including the sha256 group key over the case-folded host and the epoch
-// expiry check.
-// Lookup expires through the injected Clock, so a FakeClock can drive expiry
-// deterministically. A nil Clock falls back to RealClock.
+// STSStore is the process STS policy cache. Lookup expires through the caller's
+// now, so a FakeClock can drive expiry deterministically. An optional disk
+// store persists learned policies across restarts; memory always wins over a
+// corrupt or unwritable file.
 type STSStore struct {
 	mu      sync.Mutex
-	clock   Clock
 	entries map[string]STSCached
+	disk    *storage.IniSTSStore
 }
 
-// NewSTSStore returns an empty in-memory store. clock may be nil, in which
-// case the store reads wall-clock time through RealClock.
-func NewSTSStore(clock Clock) *STSStore {
-	if clock == nil {
-		clock = RealClock{}
+// NewSTSStore returns an empty in-memory store.
+func NewSTSStore() *STSStore {
+	return &STSStore{entries: make(map[string]STSCached)}
+}
+
+// AttachDisk installs the durable INI store. nil clears persistence. Existing
+// in-memory entries are kept: attaching a corrupt disk must not weaken them.
+func (s *STSStore) AttachDisk(disk *storage.IniSTSStore) {
+	if s == nil {
+		return
 	}
-	return &STSStore{clock: clock, entries: make(map[string]STSCached)}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.disk = disk
 }
 
-// Lookup returns the cached policy for host, dropping an invalid or expired
-// entry. It mirrors IrcStsStore::lookup / `StsStore::lookup`.
-func (s *STSStore) Lookup(host string) (STSCached, bool) {
+// Lookup returns the cached policy for host at now, dropping an invalid or
+// expired entry. Memory is checked first; on a miss the disk store is consulted
+// and hydrated into memory. It mirrors StsStore::lookup.
+func (s *STSStore) Lookup(host string, now time.Time) (STSCached, bool) {
 	key := stsGroupKey(host)
 	if key == "" {
 		return STSCached{}, false
 	}
+	nowUnix := now.Unix()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	entry, ok := s.entries[key]
+	if entry, ok := s.entries[key]; ok {
+		if entry.Port >= 1 && entry.Port <= 65535 && entry.ExpiryEpochSeconds > nowUnix {
+			return entry, true
+		}
+		delete(s.entries, key)
+	}
+	if s.disk == nil {
+		return STSCached{}, false
+	}
+	entry, ok := s.disk.Lookup(host, nowUnix)
 	if !ok {
 		return STSCached{}, false
 	}
-	if entry.Port < 1 || entry.Port > 65535 {
-		delete(s.entries, key)
-		return STSCached{}, false
+	cached := STSCached{
+		Port:               entry.Port,
+		DurationSeconds:    entry.DurationSeconds,
+		ExpiryEpochSeconds: entry.ExpiryEpochSeconds,
 	}
-	if entry.ExpiryEpochSeconds <= s.clock.Now().Unix() {
-		delete(s.entries, key)
-		return STSCached{}, false
-	}
-	return entry, true
+	s.entries[key] = cached
+	return cached, true
 }
 
-// Store caches a policy for host. A zero duration clears the entry, and an
-// empty host or a zero port is ignored, mirroring IrcStsStore::save
-func (s *STSStore) Store(host string, port uint16, durationSeconds int64) {
+// Store caches a policy for host at now. A zero duration clears the entry, and
+// an empty host or a zero port is ignored. Memory is updated first; a disk
+// failure is returned without rolling memory back.
+func (s *STSStore) Store(host string, port uint16, durationSeconds int64, now time.Time) error {
 	if durationSeconds == 0 {
-		s.Clear(host)
-		return
+		return s.Clear(host)
 	}
 	key := stsGroupKey(host)
 	if key == "" || port < 1 {
-		return
+		return nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.entries[key] = STSCached{
+	cached := STSCached{
 		Port:               port,
 		DurationSeconds:    durationSeconds,
-		ExpiryEpochSeconds: s.clock.Now().Unix() + durationSeconds,
-	}
-}
-
-// Clear drops the cached policy for host. It mirrors IrcStsStore::clear
-func (s *STSStore) Clear(host string) {
-	key := stsGroupKey(host)
-	if key == "" {
-		return
+		ExpiryEpochSeconds: stsExpiry(now.Unix(), durationSeconds),
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.entries, key)
+	s.entries[key] = cached
+	disk := s.disk
+	s.mu.Unlock()
+	if disk == nil {
+		return nil
+	}
+	return stsPersistStatus(disk.Store(host, port, durationSeconds, now.Unix()))
 }
 
-// stsGroupKey hashes the trimmed, case-folded host. An empty host has no key.
-// It mirrors the anonymous groupKey / `sts_group_key`.
-func stsGroupKey(host string) string {
-	folded := strings.ToLower(strings.TrimSpace(host))
-	if folded == "" {
-		return ""
+// Clear drops the cached policy for host. Memory is cleared first; a disk
+// failure is returned without restoring memory.
+func (s *STSStore) Clear(host string) error {
+	key := stsGroupKey(host)
+	if key == "" {
+		return nil
 	}
-	sum := sha256.Sum256([]byte(folded))
-	return hex.EncodeToString(sum[:])
+	s.mu.Lock()
+	delete(s.entries, key)
+	disk := s.disk
+	s.mu.Unlock()
+	if disk == nil {
+		return nil
+	}
+	return stsPersistStatus(disk.Clear(host))
+}
+
+func stsPersistStatus(status storage.Status) error {
+	switch status {
+	case storage.StatusWritten, storage.StatusAbsent:
+		return nil
+	case storage.StatusFormatError:
+		return errors.New("STS policy file is malformed")
+	case storage.StatusAccessError:
+		return errors.New("STS policy file is not writable")
+	default:
+		return errors.New("STS policy file could not be saved")
+	}
+}
+
+func stsExpiry(nowUnix, durationSeconds int64) int64 {
+	if durationSeconds <= 0 {
+		return nowUnix
+	}
+	if nowUnix > math.MaxInt64-durationSeconds {
+		return math.MaxInt64
+	}
+	return nowUnix + durationSeconds
+}
+
+// stsGroupKey is storage.STSGroupKey: the SHA-256 of the folded host.
+func stsGroupKey(host string) string {
+	return storage.STSGroupKey(host)
 }

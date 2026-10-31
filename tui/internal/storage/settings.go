@@ -141,6 +141,27 @@ func (s *Settings) Int(group, key string, fallback int) int {
 	return n
 }
 
+// Int64 parses the stored value as a base-10 signed 64-bit integer, returning
+// fallback when the key is absent or does not parse. It mirrors
+// Settings::int_value in the desktop client.
+func (s *Settings) Int64(group, key string, fallback int64) int64 {
+	v, ok := s.lookup(group, key)
+	if !ok || v.isList || v.invalid {
+		return fallback
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(v.text), 10, 64)
+	if err != nil {
+		return fallback
+	}
+	return n
+}
+
+// Contains reports whether group/key is present, mirroring Settings::contains.
+func (s *Settings) Contains(group, key string) bool {
+	_, ok := s.lookup(group, key)
+	return ok
+}
+
 // StringList returns the stored string list, or nil when the key is absent. A
 // stored empty value and a stored @Invalid both yield an empty, non-nil
 // list; a plain non-empty string yields a one-element list, matching

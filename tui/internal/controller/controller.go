@@ -244,6 +244,13 @@ func (c *Controller) SetEphemeral(ephemeral bool) {
 	c.autoaway.SetEphemeral(ephemeral)
 }
 
+// AttachSTSDisk installs the shared durable STS policy cache beside the
+// settings file. An empty path is a no-op. Demo and unit tests stay
+// ephemeral and never call this.
+func (c *Controller) AttachSTSDisk(path string) {
+	c.manager.AttachSTSDisk(path)
+}
+
 // SetConversationLog wires the reducer's transcript log.
 func (c *Controller) SetConversationLog(log irc.ConversationLog) {
 	c.reducer.SetConversationLog(log)

@@ -344,9 +344,20 @@ var _ Sink = (*Session)(nil)
 // which case RealClock is used. It mirrors the IrcSession constructor
 // (`client/src/session/session.rs`): the transport's sink is installed here and
 // the capability negotiation is primed with whether SASL credentials exist.
+// Pass a shared STS store through NewSessionWithSTS / Manager so networks
+// reuse one policy cache.
 func NewSession(config SessionConfig, transport Transport, clock Clock) *Session {
+	return NewSessionWithSTS(config, transport, clock, nil)
+}
+
+// NewSessionWithSTS is NewSession with an optional shared STS policy cache.
+// A nil sts creates a private in-memory store, matching unit-test fixtures.
+func NewSessionWithSTS(config SessionConfig, transport Transport, clock Clock, sts *STSStore) *Session {
 	if clock == nil {
 		clock = RealClock{}
+	}
+	if sts == nil {
+		sts = NewSTSStore()
 	}
 	s := &Session{
 		config:               config,
@@ -358,7 +369,7 @@ func NewSession(config SessionConfig, transport Transport, clock Clock) *Session
 		autojoinKeys:         cloneStringMap(config.AutojoinKeys),
 		pendingJoinKeys:      map[string]string{},
 		nickname:             config.Nick,
-		sts:                  NewSTSStore(clock),
+		sts:                  sts,
 		historyLimit:         kHistoryLimit,
 		features:             irc.NewServerFeatures(),
 		capabilities:         irc.NewCapabilityNegotiation(config.saslSecret() != ""),
@@ -1767,7 +1778,7 @@ func (s *Session) handleWelcomeLocked(message irc.Message) {
 }
 
 func (s *Session) applyCachedStsLocked() {
-	cached, ok := s.sts.Lookup(s.config.Host)
+	cached, ok := s.sts.Lookup(s.config.Host, s.clock.Now())
 	if !ok {
 		return
 	}
@@ -1790,11 +1801,11 @@ func (s *Session) handleStsAdvertisementLocked(advertisement *STSAdvertisement) 
 		return
 	}
 	if *advertisement.DurationSeconds == 0 {
-		s.sts.Clear(s.config.Host)
+		s.persistSTS(s.sts.Clear(s.config.Host))
 		s.stsDuration = nil
 		return
 	}
-	s.sts.Store(s.config.Host, s.portNumber, *advertisement.DurationSeconds)
+	s.persistSTS(s.sts.Store(s.config.Host, s.portNumber, *advertisement.DurationSeconds, s.clock.Now()))
 	s.stsDuration = advertisement.DurationSeconds
 }
 
@@ -1817,7 +1828,18 @@ func (s *Session) rescheduleStsExpiryLocked() {
 	if !s.tlsEnabled || s.stsDuration == nil {
 		return
 	}
-	s.sts.Store(s.config.Host, s.portNumber, *s.stsDuration)
+	s.persistSTS(s.sts.Store(s.config.Host, s.portNumber, *s.stsDuration, s.clock.Now()))
+}
+
+// persistSTS surfaces a disk-persistence failure without rolling back the
+// in-memory policy. A nil error is a no-op.
+func (s *Session) persistSTS(err error) {
+	if err == nil {
+		return
+	}
+	entry := irc.Lifecycle(s.config.NetworkID, irc.LogSeverityInfo, "sts",
+		err.Error(), s.clock.Now())
+	s.emit(func(handler Handler) { handler.StatusEntry(entry) })
 }
 
 func (s *Session) handleCapLocked(message irc.Message) {

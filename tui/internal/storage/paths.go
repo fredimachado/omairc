@@ -5,6 +5,10 @@ import (
 	"path/filepath"
 )
 
+// STSFile is the STS policy cache file name, beside the settings file. It
+// mirrors client/src/storage/paths.rs STS_FILE and Qt's IrcStsStore.
+const STSFile = "sts"
+
 // ConfigPath is the shared QSettings INI path both clients use:
 // <GenericConfigRoot>/omairc/omairc.conf. Both clients use organization and
 // application name "omairc", so QSettings writes
@@ -16,6 +20,26 @@ func ConfigPath() string {
 		return ""
 	}
 	return filepath.Join(root, "omairc", "omairc.conf")
+}
+
+// STSPath is the shared STS policy cache beside ConfigPath
+// (<GenericConfigRoot>/omairc/sts). Desktop and TUI read and write the same
+// file. It returns "" when the platform config root is unknown.
+func STSPath() string {
+	conf := ConfigPath()
+	if conf == "" {
+		return ""
+	}
+	return STSPathBeside(conf)
+}
+
+// STSPathBeside returns the STS cache path in the folder that holds
+// settingsFile, mirroring sts_path_beside.
+func STSPathBeside(settingsFile string) string {
+	if settingsFile == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(settingsFile), STSFile)
 }
 
 // TranscriptRoot returns $OMAIRC_TRANSCRIPT_ROOT when set, else
