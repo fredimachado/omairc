@@ -371,6 +371,14 @@ func TestProbeSettingsIni(t *testing.T) {
 		t.Errorf("comment-only probe = %v, want IniProbeOK", got)
 	}
 
+	hashComment := filepath.Join(dir, "hash-comment.conf")
+	if err := os.WriteFile(hashComment, []byte("# keep me\n   # note\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if got := ProbeSettingsIni(hashComment); got != IniProbeOK {
+		t.Errorf("hash comment probe = %v, want IniProbeOK", got)
+	}
+
 	unclosed := filepath.Join(dir, "unclosed.conf")
 	if err := os.WriteFile(unclosed, []byte("[unclosed\nkey=x\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -399,6 +407,91 @@ func TestProbeSettingsIni(t *testing.T) {
 	}
 	if got := ProbeSettingsIni(unreadable); got != IniProbeUnreadable {
 		t.Errorf("unreadable file probe = %v, want IniProbeUnreadable", got)
+	}
+}
+
+func TestHashFullLineCommentsLoadAndSave(t *testing.T) {
+	t.Parallel()
+
+	path := tempSettingsPath(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	original := "# keep me\n   # note\n[preferences]\ndirects=false\nchannel=#omarchy\ncolor=#ff0000\n"
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+
+	if got := ProbeSettingsIni(path); got != IniProbeOK {
+		t.Fatalf("ProbeSettingsIni = %v, want IniProbeOK", got)
+	}
+	s := OpenSettings(path)
+	if got := s.WriteBlocked(); got != StatusWritten {
+		t.Fatalf("WriteBlocked = %v, want StatusWritten", got)
+	}
+	if s.Bool("preferences", "directs", true) {
+		t.Fatal("directs should load as false")
+	}
+	if got := s.Value("preferences", "channel"); got != "#omarchy" {
+		t.Fatalf("channel = %q, want #omarchy", got)
+	}
+	if got := s.Value("preferences", "color"); got != "#ff0000" {
+		t.Fatalf("color = %q, want #ff0000", got)
+	}
+
+	s.SetBool("preferences", "directs", true)
+	if got := s.Sync(); got != StatusWritten {
+		t.Fatalf("Sync() = %v, want StatusWritten", got)
+	}
+	if !s.Bool("preferences", "directs", false) {
+		t.Fatal("directs should be true after save")
+	}
+
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	body := string(after)
+	if !strings.Contains(body, "directs=true\n") {
+		t.Fatalf("missing directs=true after save:\n%s", body)
+	}
+	if !strings.Contains(body, "channel=#omarchy\n") {
+		t.Fatalf("channel with # must round-trip:\n%s", body)
+	}
+	if !strings.Contains(body, "color=#ff0000\n") {
+		t.Fatalf("color with # must round-trip:\n%s", body)
+	}
+	if strings.Contains(body, "# keep me") || strings.Contains(body, "# note") {
+		t.Fatalf("full-line # comments are not preserved on write:\n%s", body)
+	}
+}
+
+func TestHashCommentIteratorSkipsSpecialBytesInComment(t *testing.T) {
+	t.Parallel()
+
+	path := tempSettingsPath(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	body := "# don't \"quote\n# a=b\n# x;y\n[preferences]\ndirects=false\nnote=ok\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+	if got := ProbeSettingsIni(path); got != IniProbeOK {
+		t.Fatalf("ProbeSettingsIni = %v, want IniProbeOK", got)
+	}
+	s := OpenSettings(path)
+	if s.Bool("preferences", "directs", true) {
+		t.Fatal("directs should load as false")
+	}
+	if got := s.Value("preferences", "note"); got != "ok" {
+		t.Fatalf("note = %q, want ok", got)
 	}
 }
 

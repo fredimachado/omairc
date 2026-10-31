@@ -815,9 +815,10 @@ func iniBytesAreMalformed(data []byte) bool {
 }
 
 // nextIniLine.
-// ';' is a comment; '=' inside quotes does not count as the separator; and a
-// backslash consumes the next byte, including a newline, so an escaped
-// newline does not end the line. Positions are byte offsets into data.
+// A line starting with ';' is a comment (Qt). A line starting with '#' is a
+// comment too (omairc extension). '=' inside quotes does not count as the
+// separator; a backslash consumes the next byte, including a newline, so an
+// escaped newline does not end the line. Positions are byte offsets into data.
 func nextIniLine(data []byte, dataPos, lineStart, lineLen, equalsPos *int) bool {
 	dataLen := len(data)
 	inQuotes := false
@@ -833,6 +834,21 @@ func nextIniLine(data []byte, dataPos, lineStart, lineLen, equalsPos *int) bool 
 	for i < dataLen && !ended {
 		ch := data[i]
 		if !iniSpecial(ch) {
+			if i == *lineStart && ch == '#' {
+				i++
+				for i < dataLen {
+					comment := data[i]
+					if comment == '\n' || comment == '\r' {
+						break
+					}
+					i++
+				}
+				for i < dataLen && iniSpace(data[i]) {
+					i++
+				}
+				*lineStart = i
+				continue
+			}
 			i++
 			continue
 		}
