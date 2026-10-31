@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -457,9 +458,16 @@ func settingsFileNotWritable(path string) bool {
 // writeSettingsAtomic writes data to path through a same-directory temporary
 // file and a rename, creating parents with owner-only permissions. When
 // preserveMode is true and path already exists, the temp file takes the
-// target's permission bits before rename; otherwise the file is 0600.
+// resolved target's permission bits before rename; otherwise the file is 0600.
+// When path is a symlink, the temp is created beside the resolved target and
+// the rename replaces that target so the link stays a symlink. A dangling
+// symlink creates the missing target at mode 0600.
 func writeSettingsAtomic(path string, data []byte, preserveMode bool) error {
-	dir := filepath.Dir(path)
+	destination, err := atomicWriteDestination(path)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(destination)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -475,7 +483,7 @@ func writeSettingsAtomic(path string, data []byte, preserveMode bool) error {
 	}()
 	mode := os.FileMode(0o600)
 	if preserveMode {
-		if info, err := os.Stat(path); err == nil {
+		if info, err := os.Stat(destination); err == nil {
 			mode = info.Mode().Perm()
 		}
 	}
@@ -494,11 +502,49 @@ func writeSettingsAtomic(path string, data []byte, preserveMode bool) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmpName, path); err != nil {
+	if err := os.Rename(tmpName, destination); err != nil {
 		return err
 	}
 	tmpName = ""
 	return nil
+}
+
+// atomicWriteDestination follows symlink chains starting at path and returns
+// the file path that must receive an atomic rename. When the chain ends at a
+// missing path, that path is returned so the target file can be created.
+func atomicWriteDestination(path string) (string, error) {
+	const maxSymlinkHops = 32
+	resolved := path
+	for range maxSymlinkHops {
+		info, err := os.Lstat(resolved)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return resolved, nil
+			}
+			return "", err
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			return resolved, nil
+		}
+		link, err := os.Readlink(resolved)
+		if err != nil {
+			return "", err
+		}
+		if filepath.IsAbs(link) {
+			resolved = lexicalNormalizePath(link)
+		} else {
+			resolved = lexicalNormalizePath(filepath.Join(filepath.Dir(resolved), link))
+		}
+	}
+	return "", errors.New("too many symlinks resolving atomic write destination")
+}
+
+func lexicalNormalizePath(path string) string {
+	clean := filepath.Clean(path)
+	if clean == "." {
+		return path
+	}
+	return clean
 }
 
 // sectionEntry is one key line within a written section.

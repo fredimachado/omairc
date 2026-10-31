@@ -239,7 +239,8 @@ fn merge_memory_into_settings(
 /// After a successful rename, the backup is restricted to owner-only (0600) so a
 /// hard-linked copy of a looser-mode original is not left world-readable.
 fn recover_malformed_sts(path: &Path, data: &[u8]) -> io::Result<()> {
-    let temp = write_sts_temp(path, data)?;
+    let destination = super::atomicwrite::atomic_write_destination(path)?;
+    let temp = write_sts_temp(&destination, data)?;
     let Some(backup) = link_sts_corrupt_backup(path) else {
         let _ = fs::remove_file(&temp);
         return Err(io::Error::other("sts corrupt backup failed"));
@@ -249,7 +250,7 @@ fn recover_malformed_sts(path: &Path, data: &[u8]) -> io::Result<()> {
         let _ = fs::remove_file(&temp);
         return Err(io::Error::other("test: install after backup failed"));
     }
-    match fs::rename(&temp, path) {
+    match fs::rename(&temp, &destination) {
         Ok(()) => {
             // Chmod after rename so the hard link no longer shares an inode with `sts`.
             restrict_permissions(&backup);

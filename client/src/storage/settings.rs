@@ -1394,6 +1394,65 @@ mod tests {
         assert!(settings.bool_value("preferences", "directs", false));
     }
 
+    #[cfg(unix)]
+    mod symlink_sync_3dba {
+        use super::*;
+        use std::os::unix::fs::{symlink, PermissionsExt};
+
+        #[test]
+        fn sync_through_symlink_updates_target_and_keeps_link() {
+            let dir = TempDir::new("settings-symlink-3dba");
+            let cfg_dir = dir.path().join("cfg").join("omairc");
+            fs::create_dir_all(&cfg_dir).unwrap();
+            let target = cfg_dir.join("real").join("omairc.conf");
+            fs::create_dir_all(target.parent().unwrap()).unwrap();
+            write_file(&target, b"[preferences]\ndirects=false\n");
+            fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).unwrap();
+            let link = cfg_dir.join("omairc.conf");
+            symlink("real/omairc.conf", &link).unwrap();
+
+            let mut settings = Settings::open(&link);
+            settings.set_bool("preferences", "directs", true);
+            assert_eq!(settings.sync(), Status::Written);
+
+            assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+            assert_eq!(fs::read_link(&link).unwrap(), Path::new("real/omairc.conf"));
+            assert_eq!(
+                fs::read(&target).unwrap(),
+                b"[preferences]\ndirects=true\n"
+            );
+            let mode = fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o644);
+        }
+
+        #[test]
+        fn sync_refuses_read_only_target_behind_symlink() {
+            let dir = TempDir::new("settings-symlink-readonly-3dba");
+            let cfg_dir = dir.path().join("cfg").join("omairc");
+            fs::create_dir_all(&cfg_dir).unwrap();
+            let target = cfg_dir.join("real").join("omairc.conf");
+            fs::create_dir_all(target.parent().unwrap()).unwrap();
+            let original = b"[preferences]\ndirects=false\n";
+            write_file(&target, original);
+            fs::set_permissions(&target, fs::Permissions::from_mode(0o444)).unwrap();
+            let link = cfg_dir.join("omairc.conf");
+            symlink("real/omairc.conf", &link).unwrap();
+
+            if fs::OpenOptions::new().write(true).open(&link).is_ok() {
+                fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).unwrap();
+                return;
+            }
+
+            let mut settings = Settings::open(&link);
+            settings.set_bool("preferences", "directs", true);
+            assert_eq!(settings.sync(), Status::AccessError);
+            assert_eq!(fs::read(&target).unwrap(), original);
+            assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+
+            fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).unwrap();
+        }
+    }
+
     #[test]
     fn sync_creates_missing_file_owner_only() {
         let dir = TempDir::new("settings-create");

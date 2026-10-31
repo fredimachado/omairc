@@ -154,12 +154,13 @@ fn encoded_geometry(geometry: &WindowGeometry) -> Vec<u8> {
 
 /// Temp sibling, hard-link backup, rename — same shape as STS malformed recovery.
 fn recover_malformed_ini_file(path: &Path, data: &[u8]) -> io::Result<()> {
-    let temp = write_window_temp(path, data)?;
+    let destination = super::atomicwrite::atomic_write_destination(path)?;
+    let temp = write_window_temp(&destination, data)?;
     let Some(backup) = link_window_corrupt_backup(path) else {
         let _ = fs::remove_file(&temp);
         return Err(io::Error::other("window.ini corrupt backup failed"));
     };
-    match fs::rename(&temp, path) {
+    match fs::rename(&temp, &destination) {
         Ok(()) => {
             restrict_backup_permissions(&backup);
             Ok(())

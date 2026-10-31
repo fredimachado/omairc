@@ -260,7 +260,11 @@ func persistSTSSettings(settings *Settings, path string) Status {
 // and removes the temp. After a successful rename, the backup is chmod'd to
 // 0600 so a hard-linked copy of a looser-mode original is not left world-readable.
 func recoverMalformedSTS(path string, data []byte) error {
-	temp, err := writeSTSTemp(path, data)
+	destination, err := atomicWriteDestination(path)
+	if err != nil {
+		return err
+	}
+	temp, err := writeSTSTemp(destination, data)
 	if err != nil {
 		return err
 	}
@@ -273,7 +277,7 @@ func recoverMalformedSTS(path string, data []byte) error {
 		_ = os.Remove(temp)
 		return errors.New("test: install after backup failed")
 	}
-	if err := os.Rename(temp, path); err != nil {
+	if err := os.Rename(temp, destination); err != nil {
 		_ = os.Remove(temp)
 		return err
 	}

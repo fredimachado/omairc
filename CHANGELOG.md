@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Atomic config and state writes follow symlinked paths to their target file,
+  so stow-managed `omairc.conf` (and the shared `sts` cache) keep the symlink
+  and persist through the real file. A dangling symlink creates the missing
+  target owner-only (0600).
 - The terminal client suspends on Ctrl+Z and restores raw mode with a redraw
   after `fg` (and after an external SIGTSTP). Windows has no job-control
   suspend path; Ctrl+Z is a no-op there.
