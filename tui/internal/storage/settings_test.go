@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -635,6 +636,95 @@ func TestSyncRepeatAssignmentPreservesFileBytesAndMtime(t *testing.T) {
 	}
 	if OpenSettings(path).Bool("preferences", "directs", true) {
 		t.Error("directs did not round-trip as false")
+	}
+}
+
+func syncLeavesDiskUnchanged(t *testing.T, path string, s *Settings, mutate func()) bool {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("unix mtime")
+	}
+	beforeBytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	beforeInfo, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	time.Sleep(1100 * time.Millisecond)
+	mutate()
+	if got := s.Sync(); got != StatusWritten {
+		t.Fatalf("Sync() = %v, want StatusWritten", got)
+	}
+	afterBytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	afterInfo, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	return bytes.Equal(beforeBytes, afterBytes) && afterInfo.ModTime().Equal(beforeInfo.ModTime())
+}
+
+func TestSyncStringListAfterReopenSkipsUnchangedBytes(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("unix mtime")
+	}
+
+	path := tempSettingsPath(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("[preferences]\nnetworkOrder=@Invalid()\ncollapsed=@Invalid()\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+	s := OpenSettings(path)
+	if !syncLeavesDiskUnchanged(t, path, s, func() {
+		s.SetStringList("preferences", "networkOrder", nil)
+		s.SetStringList("preferences", "collapsed", nil)
+	}) {
+		t.Fatal("empty lists after reopen rewrote the file")
+	}
+
+	if err := os.WriteFile(path, []byte("[preferences]\nnetworkOrder=freenode\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	s = OpenSettings(path)
+	if !syncLeavesDiskUnchanged(t, path, s, func() {
+		s.SetStringList("preferences", "networkOrder", []string{"freenode"})
+	}) {
+		t.Fatal("one-item list after reopen rewrote the file")
+	}
+}
+
+func TestSyncUnchangedBytesGuardRequired(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("unix mtime")
+	}
+
+	path := tempSettingsPath(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("[preferences]\nnetworkOrder=@Invalid()\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+	s := OpenSettings(path)
+	s.skipUnchangedBytes = true
+	if syncLeavesDiskUnchanged(t, path, s, func() {
+		s.SetStringList("preferences", "networkOrder", nil)
+	}) {
+		t.Fatal("byte compare disabled but sync did not rewrite the file")
 	}
 }
 

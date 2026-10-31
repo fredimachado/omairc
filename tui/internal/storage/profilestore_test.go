@@ -5,8 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // profileStoreWriteIni writes a hand-authored ini at the config path implied by
@@ -80,6 +82,45 @@ func TestProfileStoreRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got[0], want) {
 		t.Errorf("Profiles()[0] =\n%#v\nwant\n%#v", got[0], want)
+	}
+}
+
+func TestProfileStoreIdenticalResaveSkipsUnchangedBytes(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if runtime.GOOS == "windows" {
+		t.Skip("unix mtime")
+	}
+
+	want := Profile{
+		NetworkID: "freenode",
+		Host:      "chat.freenode.net",
+		Port:      6697,
+		Nick:      "fredi",
+	}
+	path := ConfigPath()
+	store := NewProfileStore()
+	if status := store.Save(want); status != StatusWritten {
+		t.Fatalf("Save() = %v, want StatusWritten", status)
+	}
+	before := profileStoreReadFile(t, path)
+	beforeInfo, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	time.Sleep(1100 * time.Millisecond)
+	if status := store.Save(want); status != StatusWritten {
+		t.Fatalf("Save() = %v, want StatusWritten", status)
+	}
+	after := profileStoreReadFile(t, path)
+	if !bytes.Equal(before, after) {
+		t.Fatalf("identical Save() changed bytes:\n%s", after)
+	}
+	afterInfo, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if !afterInfo.ModTime().Equal(beforeInfo.ModTime()) {
+		t.Fatalf("identical Save() changed mtime")
 	}
 }
 

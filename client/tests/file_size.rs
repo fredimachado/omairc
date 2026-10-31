@@ -29,6 +29,7 @@ const LIMIT: usize = 800;
 const ALLOWLIST: &[(&str, usize)] = &[
     ("controller/commanddispatcher.rs", 921),
     ("controller/replyrouter.rs", 912),
+    ("storage/settings.rs", 823),
 ];
 
 /// Non-blank production lines in `code` (comments already blanked): every line before

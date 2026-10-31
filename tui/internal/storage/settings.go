@@ -65,6 +65,11 @@ type Settings struct {
 	path   string
 	values map[string]iniValue
 	dirty  bool
+	// onDisk holds bytes last loaded from or written to path; nil when the file was
+	// missing at open.
+	onDisk []byte
+	// skipUnchangedBytes disables the encoded-bytes disk compare in Sync (tests only).
+	skipUnchangedBytes bool
 	// preserveFileMode keeps an existing file's permission bits on Sync.
 	preserveFileMode bool
 }
@@ -93,6 +98,7 @@ func OpenSTSSettings(path string) *Settings {
 		return s
 	}
 	s.values = parseSTSIni(raw)
+	s.onDisk = s.encode()
 	return s
 }
 
@@ -204,7 +210,8 @@ func (s *Settings) StringList(group, key string) []string {
 // SetValue stores a plain string. A value that looks like a JSON document is
 // not special-cased: it is escaped and quoted as an ordinary string.
 func (s *Settings) SetValue(group, key, value string) {
-	s.assign(settingsKey(group, key), iniValue{text: value})
+	s.values[settingsKey(group, key)] = iniValue{text: value}
+	s.dirty = true
 }
 
 // SetBool stores a QSettings bool ("true"/"false").
@@ -232,7 +239,8 @@ func (s *Settings) SetInt(group, key string, value int) {
 func (s *Settings) SetStringList(group, key string, values []string) {
 	items := make([]string, len(values))
 	copy(items, values)
-	s.assign(settingsKey(group, key), iniValue{isList: true, items: items})
+	s.values[settingsKey(group, key)] = iniValue{isList: true, items: items}
+	s.dirty = true
 }
 
 // RemoveKey removes one key from a group (no-op when absent).
@@ -317,9 +325,15 @@ func (s *Settings) Sync() Status {
 	if !s.dirty {
 		return StatusWritten
 	}
-	if err := writeSettingsAtomic(s.path, s.encode(), s.preserveFileMode); err != nil {
+	encoded := s.encode()
+	if !s.skipUnchangedBytes && encodedMatchesDisk(s.path, s.onDisk, encoded) {
+		s.dirty = false
+		return StatusWritten
+	}
+	if err := writeSettingsAtomic(s.path, encoded, s.preserveFileMode); err != nil {
 		return StatusAccessError
 	}
+	s.onDisk = encoded
 	s.dirty = false
 	return StatusWritten
 }
@@ -379,44 +393,20 @@ func (s *Settings) load() {
 		return
 	}
 	s.values = parseSettingsIni(raw)
+	s.onDisk = s.encode()
+}
+
+func encodedMatchesDisk(path string, onDisk, encoded []byte) bool {
+	if onDisk != nil {
+		return bytes.Equal(onDisk, encoded)
+	}
+	_, err := os.Stat(path)
+	return os.IsNotExist(err) && len(encoded) == 0
 }
 
 func (s *Settings) lookup(group, key string) (iniValue, bool) {
 	v, ok := s.values[settingsKey(group, key)]
 	return v, ok
-}
-
-func (s *Settings) assign(path string, value iniValue) {
-	if old, ok := s.values[path]; ok && iniValueEqual(old, value) {
-		return
-	}
-	s.values[path] = value
-	s.dirty = true
-}
-
-func iniValueEqual(left, right iniValue) bool {
-	if left.isList != right.isList || left.invalid != right.invalid {
-		return false
-	}
-	if left.isList {
-		return equalStringSlices(left.items, right.items)
-	}
-	if left.invalid {
-		return true
-	}
-	return left.text == right.text
-}
-
-func equalStringSlices(left, right []string) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for i := range left {
-		if left[i] != right[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // settingsKey joins a group path and a leaf key. An empty group is the top

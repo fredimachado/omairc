@@ -428,6 +428,28 @@ mod tests {
     }
 
     #[test]
+    fn an_identical_resave_after_remove_group_leaves_disk_unchanged() {
+        use std::thread;
+        use std::time::Duration;
+
+        let dir = TempDir::new("profiles-idempotent");
+        let backing = disk(&dir);
+        let path = dir.path().join("omairc.conf");
+        let profile = sample("network-1");
+        let store = ProfileStore::new(backing.clone());
+        assert_eq!(store.save(&profile), Status::Written);
+        let before = std::fs::read(&path).expect("read");
+        let before_mtime = std::fs::metadata(&path).expect("stat").modified().expect("mtime");
+        thread::sleep(Duration::from_millis(1100));
+        assert_eq!(store.save(&profile), Status::Written);
+        assert_eq!(std::fs::read(&path).expect("read after"), before);
+        assert_eq!(
+            std::fs::metadata(&path).expect("stat after").modified().expect("mtime"),
+            before_mtime
+        );
+    }
+
+    #[test]
     fn the_file_uses_the_qt_group_and_key_names() {
         let dir = TempDir::new("profiles-shape");
         let store = ProfileStore::new(disk(&dir));

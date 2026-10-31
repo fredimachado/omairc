@@ -28,6 +28,7 @@ pub mod profilestore;
 pub mod registryimport;
 pub mod scrollplace;
 pub mod settings;
+mod settings_snapshot;
 pub mod stspolicies;
 
 #[derive(Clone, Debug, PartialEq, Eq)]

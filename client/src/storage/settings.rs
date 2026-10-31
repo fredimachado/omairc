@@ -13,6 +13,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use super::atomicwrite::{write_atomic, write_atomic_preserve_mode};
+use super::settings_snapshot::{encoded_matches_disk, read_ini_bytes};
 
 /// The result of a fail-closed probe of the raw bytes (`probeSettingsIni`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,15 +53,6 @@ enum IniValue {
     Invalid,
 }
 
-macro_rules! settings_assign {
-    ($store:expr, $key:expr, $value:expr) => {{
-        if $store.values.get(&$key) != Some(&$value) {
-            $store.values.insert($key, $value);
-            $store.dirty = true;
-        }
-    }};
-}
-
 /// A QSettings-compatible key/value store. A group is a `/`-joined path such as
 /// `networks/abc`. Group and key names are case-sensitive.
 #[derive(Clone, Debug)]
@@ -68,7 +60,9 @@ pub struct Settings {
     path: PathBuf,
     values: BTreeMap<String, IniValue>,
     dirty: bool,
-    /// When true, [`Settings::sync`] keeps an existing file's permission bits.
+    on_disk: Option<Vec<u8>>,
+    #[cfg(test)]
+    test_skip_unchanged_bytes: bool,
     preserve_file_mode: bool,
 }
 
@@ -76,16 +70,7 @@ impl Settings {
     /// Loads `path`. A missing or unreadable file gives an empty store, and
     /// [`Settings::sync`] still refuses to overwrite a malformed or unreadable file.
     pub fn open(path: impl Into<PathBuf>) -> Self {
-        let path = path.into();
-        let values = fs::read(&path)
-            .map(|raw| parse_settings_ini(&raw))
-            .unwrap_or_default();
-        Self {
-            path,
-            values,
-            dirty: false,
-            preserve_file_mode: true,
-        }
+        Self::load(path.into(), parse_settings_ini, true)
     }
 
     /// Loads an STS policy file. Same as [`Settings::open`], but after a bad line
@@ -93,16 +78,37 @@ impl Settings {
     /// a key that is already set is not overwritten by a leaked line. Shared config
     /// reads stay on [`Settings::open`].
     pub(super) fn open_sts(path: impl Into<PathBuf>) -> Self {
-        let path = path.into();
-        let values = fs::read(&path)
-            .map(|raw| parse_sts_ini(&raw))
+        Self::load(path.into(), parse_sts_ini, false)
+    }
+
+    #[cfg(test)]
+    pub(super) fn test_skip_unchanged_bytes(&mut self, skip: bool) {
+        self.test_skip_unchanged_bytes = skip;
+    }
+
+    fn load(
+        path: PathBuf,
+        parse: fn(&[u8]) -> BTreeMap<String, IniValue>,
+        preserve_file_mode: bool,
+    ) -> Self {
+        let file_bytes = read_ini_bytes(&path);
+        let values = file_bytes
+            .as_ref()
+            .map(|raw| parse(raw))
             .unwrap_or_default();
-        Self {
+        let mut settings = Self {
             path,
             values,
             dirty: false,
-            preserve_file_mode: false,
+            on_disk: None,
+            #[cfg(test)]
+            test_skip_unchanged_bytes: false,
+            preserve_file_mode,
+        };
+        if file_bytes.is_some() {
+            settings.on_disk = Some(settings.encode());
         }
+        settings
     }
 
     /// The stored string, or `""` when the key is absent. A string list and an
@@ -152,14 +158,18 @@ impl Settings {
     }
 
     pub fn set_value(&mut self, group: &str, key: &str, value: &str) {
-        settings_assign!(self, settings_key(group, key), IniValue::Text(value.to_string()));
+        self.values
+            .insert(settings_key(group, key), IniValue::Text(value.to_string()));
+        self.dirty = true;
     }
 
-    /// Stores an already-encoded QVariant such as `@Rect(0 0 800 600)`, written
-    /// verbatim so Qt reads it back as that type. [`Settings::set_value`] is for plain
-    /// strings, and it escapes a leading `@`.
+    /// Stores `@Rect(...)` and other QVariant encodings verbatim.
     pub fn set_variant(&mut self, group: &str, key: &str, encoded: &str) {
-        settings_assign!(self, settings_key(group, key), IniValue::Variant(encoded.to_string()));
+        self.values.insert(
+            settings_key(group, key),
+            IniValue::Variant(encoded.to_string()),
+        );
+        self.dirty = true;
     }
 
     pub fn set_bool(&mut self, group: &str, key: &str, value: bool) {
@@ -174,10 +184,11 @@ impl Settings {
         self.set_value(group, key, &value.to_string());
     }
 
-    /// Stores a string list. An empty list is written as `@Invalid`, which is
-    /// QSettings' sentinel, so it reads back distinct from a list holding one "".
+    /// An empty list is stored as `@Invalid`.
     pub fn set_string_list(&mut self, group: &str, key: &str, values: &[String]) {
-        settings_assign!(self, settings_key(group, key), IniValue::List(values.to_vec()));
+        self.values
+            .insert(settings_key(group, key), IniValue::List(values.to_vec()));
+        self.dirty = true;
     }
 
     /// Removes one key. Removing an absent key is a no-op. Only the settings tests remove a
@@ -189,8 +200,6 @@ impl Settings {
         }
     }
 
-    /// Removes a group and everything beneath it, as `QSettings::remove(group)`
-    /// does. An empty group clears the whole store.
     pub fn remove_group(&mut self, group: &str) {
         let before = self.values.len();
         if group.is_empty() {
@@ -225,15 +234,10 @@ impl Settings {
         seen.into_iter().collect()
     }
 
-    /// Marks the store dirty so the next [`Settings::sync`] writes even when no
-    /// value changed. STS recovery uses this after renaming a malformed file so
-    /// the already-loaded parseable map is rewritten cleanly.
     pub(super) fn mark_dirty(&mut self) {
         self.dirty = true;
     }
 
-    /// Writes pending changes atomically. Refuses first when the file must not be
-    /// overwritten, so a malformed or read-only file is never rebuilt.
     pub fn sync(&mut self) -> Status {
         let blocked = self.write_blocked();
         if blocked != Status::Written {
@@ -242,13 +246,23 @@ impl Settings {
         if !self.dirty {
             return Status::Written;
         }
+        let encoded = self.encode();
+        #[cfg(test)]
+        let skip_compare = self.test_skip_unchanged_bytes;
+        #[cfg(not(test))]
+        let skip_compare = false;
+        if !skip_compare && encoded_matches_disk(&self.path, self.on_disk.as_deref(), &encoded) {
+            self.dirty = false;
+            return Status::Written;
+        }
         let write = if self.preserve_file_mode {
-            write_atomic_preserve_mode(&self.path, &self.encode())
+            write_atomic_preserve_mode(&self.path, &encoded)
         } else {
-            write_atomic(&self.path, &self.encode())
+            write_atomic(&self.path, &encoded)
         };
         match write {
             Ok(()) => {
+                self.on_disk = Some(encoded);
                 self.dirty = false;
                 Status::Written
             }
@@ -1475,6 +1489,57 @@ mod tests {
             assert_eq!(mode, 0o644);
         }
         assert!(!settings.bool_value("preferences", "directs", true));
+    }
+
+    fn sync_leaves_disk_unchanged(path: &Path, settings: &mut Settings, mutate: impl FnOnce(&mut Settings)) -> bool {
+        use std::thread;
+        use std::time::Duration;
+
+        thread::sleep(Duration::from_millis(1100));
+        let before_bytes = fs::read(path).expect("read");
+        let before_mtime = fs::metadata(path).expect("stat").modified().expect("mtime");
+        mutate(settings);
+        assert_eq!(settings.sync(), Status::Written);
+        let bytes_unchanged = fs::read(path).expect("read after") == before_bytes;
+        let mtime_unchanged =
+            fs::metadata(path).expect("stat after").modified().expect("mtime") == before_mtime;
+        bytes_unchanged && mtime_unchanged
+    }
+
+    #[test]
+    fn sync_string_list_after_reopen_skips_unchanged_bytes() {
+        let dir = TempDir::new("settings-list-idempotent");
+        let path = settings_in(&dir);
+        write_file(
+            &path,
+            b"[preferences]\nnetworkOrder=@Invalid()\ncollapsed=@Invalid()\n",
+        );
+        let mut settings = Settings::open(&path);
+        assert!(sync_leaves_disk_unchanged(&path, &mut settings, |settings| {
+            settings.set_string_list("preferences", "networkOrder", &[]);
+            settings.set_string_list("preferences", "collapsed", &[]);
+        }));
+
+        write_file(&path, b"[preferences]\nnetworkOrder=freenode\n");
+        let mut settings = Settings::open(&path);
+        assert!(sync_leaves_disk_unchanged(&path, &mut settings, |settings| {
+            settings.set_string_list("preferences", "networkOrder", &["freenode".into()]);
+        }));
+    }
+
+    #[test]
+    fn sync_unchanged_bytes_guard_is_required() {
+        let dir = TempDir::new("settings-byte-guard");
+        let path = settings_in(&dir);
+        write_file(&path, b"[preferences]\nnetworkOrder=@Invalid()\n");
+        let mut settings = Settings::open(&path);
+        settings.test_skip_unchanged_bytes(true);
+        assert!(
+            !sync_leaves_disk_unchanged(&path, &mut settings, |settings| {
+                settings.set_string_list("preferences", "networkOrder", &[]);
+            }),
+            "byte compare disabled but sync did not rewrite the file"
+        );
     }
 
     #[test]
