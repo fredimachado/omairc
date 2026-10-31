@@ -62,6 +62,15 @@ fn verify_desktop_click_member_lists() {
 }
 
 #[test]
+fn verify_desktop_click_member_lists_have_no_inline_case_literals() {
+    let script = driver_script();
+    assert!(
+        !script.contains("_list=\"anna dax fred kai mira"),
+        "click-member must read lists from verify-desktop-member-list markers, not inline _list="
+    );
+}
+
+#[test]
 fn verify_desktop_click_member_lists_cover_omarchy_channels() {
     let lists = parse_driver_lists(&driver_script());
     assert!(

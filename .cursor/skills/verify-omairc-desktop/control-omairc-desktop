@@ -201,9 +201,8 @@ pid_is_tracked() {
   _pid=$1
   case $_pid in
     ''|*[!0-9]*) return 1 ;;
-    0) return 1 ;;
   esac
-  return 0
+  [ "$_pid" -gt 0 ] 2>/dev/null || return 1
 }
 
 stop_pid() {
@@ -289,23 +288,26 @@ demo_member_context_from_title() {
   return 0
 }
 
+# Space-separated nicks from the matching verify-desktop-member-list marker in $SELF.
+demo_member_list_nicks() {
+  _network=$1
+  _channel=$2
+  _prefix="# verify-desktop-member-list: $_network $_channel "
+  _line=$(grep -F "$_prefix" "$SELF" 2>/dev/null | head -1) || true
+  [ -n "$_line" ] || return 1
+  _rest=${_line#"$_prefix"}
+  [ -n "$_rest" ] || return 1
+  printf '%s' "$_rest"
+}
+
 member_index_in_demo_channel() {
   _network=$1
   _channel=$2
   _nick=$3
-  _list=
-  case "$_network:$_channel" in
-    omarchy:#desktop)
-      _list="anna dax fred kai mira nora sol teo"
-      ;;
-    omarchy:#omarchy)
-      _list="fred anna dax mira kai teo ivy lena max nora sam sol"
-      ;;
-    *)
-      echo "control-omairc-desktop: click-member: no member list for $_network $_channel" >&2
-      return 1
-      ;;
-  esac
+  if ! _list=$(demo_member_list_nicks "$_network" "$_channel"); then
+    echo "control-omairc-desktop: click-member: no member list for $_network $_channel" >&2
+    return 1
+  fi
   _index=0
   for _member in $_list; do
     if [ "$_member" = "$_nick" ]; then
@@ -720,7 +722,10 @@ cmd_launch() {
       die "an isolated Omairc instance is already running. Run cleanup first, or doctor to inspect it."
     fi
     echo "control-omairc-desktop: clearing stale run state" >&2
-    cmd_cleanup >/dev/null 2>&1 || true
+    ( cmd_cleanup ) >/dev/null 2>&1 || true
+    APP_PID=
+    XVFB_PID=
+    WINDOW=
   fi
 
   set -- build
@@ -1481,6 +1486,42 @@ self_check_driver_member_list_drift() {
   fi
 }
 
+self_check_stale_cleanup_preserves_launch_flags() {
+  if pid_is_tracked 0; then
+    die "self-check: pid 0 must not be tracked"
+  fi
+  if pid_is_tracked 00; then
+    die "self-check: pid 00 must not be tracked"
+  fi
+  if ! pid_is_tracked 1; then
+    die "self-check: pid 1 should be tracked"
+  fi
+  _stale=$(mktemp "${TMPDIR:-/tmp}/omairc-verify-stale-state.XXXXXX")
+  cat >"$_stale" <<EOF
+APP_PID=99999999
+DEMO=
+VISIBLE=1
+XVFB_PID=99999998
+STATE_DIR=/tmp/omairc-verify-stale-missing-dir
+EOF
+  _saved_state=$STATE_FILE
+  STATE_FILE="$_stale"
+  DEMO=1
+  VISIBLE=
+  APP_PID=
+  XVFB_PID=
+  WINDOW=
+  ( cmd_cleanup ) >/dev/null 2>&1 || true
+  APP_PID=
+  XVFB_PID=
+  WINDOW=
+  [ "$DEMO" = 1 ] || die "self-check: stale cleanup cleared DEMO=1"
+  [ -z "${VISIBLE:-}" ] || die "self-check: stale cleanup sourced VISIBLE=$VISIBLE"
+  [ -z "${APP_PID:-}" ] || die "self-check: stale cleanup left APP_PID set"
+  rm -f "$_stale"
+  STATE_FILE="$_saved_state"
+}
+
 self_check_click_member_desktop() {
   "$SELF" jump --query "#desktop" >/dev/null
   "$SELF" wait-title --exact "#desktop - Omairc" >/dev/null
@@ -1513,6 +1554,7 @@ cmd_self_check() {
   trap _self_check_teardown EXIT INT HUP TERM
 
   self_check_timeout_validator
+  self_check_stale_cleanup_preserves_launch_flags
   self_check_driver_member_list_drift
   self_check_failed_launch_xvfb
   if ! "$SELF" launch --demo-server >/dev/null; then
