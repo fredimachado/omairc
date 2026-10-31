@@ -258,3 +258,97 @@ fn read_marker_is_consumed_and_not_a_protocol_error() {
         .iter()
         .all(|message| message.command != "MARKREAD"));
 }
+
+#[test]
+fn read_marker_echo_then_equal_set_does_not_resend() {
+    let fx = fresh();
+    register_with_read_marker(&fx, "draft/read-marker");
+    let when =
+        Utc.with_ymd_and_hms(2024, 6, 1, 12, 0, 0).single().unwrap() + TimeDelta::milliseconds(123);
+    fx.session.queue_read_marker_set("#omarchy", when);
+    let want = "MARKREAD #omarchy timestamp=2024-06-01T12:00:00.123Z\r\n";
+    assert!(fx.wrote(want));
+    fx.inject(":server MARKREAD #omarchy :timestamp=2024-06-01T12:00:00.123Z\r\n");
+    fx.session.queue_read_marker_set("#omarchy", when);
+    assert_eq!(
+        count_containing(&fx.frames(), want),
+        1,
+        "after echo, equal timestamp must not send again: {:?}",
+        fx.frames()
+    );
+}
+
+#[test]
+fn read_marker_received_newer_blocks_older_set() {
+    let fx = fresh();
+    register_with_read_marker(&fx, "draft/read-marker");
+    fx.inject(":server MARKREAD alice :timestamp=2024-06-01T13:00:00.000Z\r\n");
+    fx.session.queue_read_marker_set("Alice", at(0));
+    assert_eq!(
+        count_containing(&fx.frames(), "timestamp="),
+        0,
+        "older set after newer received marker must not send: {:?}",
+        fx.frames()
+    );
+}
+
+#[test]
+fn read_marker_fail_allows_same_timestamp_retry() {
+    let fx = fresh();
+    register_with_read_marker(&fx, "draft/read-marker");
+    let want = "MARKREAD #omarchy timestamp=2024-06-01T12:00:00.000Z\r\n";
+    fx.session.queue_read_marker_set("#omarchy", at(0));
+    assert_eq!(count_containing(&fx.frames(), want), 1);
+    fx.inject(":server FAIL MARKREAD RATE_LIMITED #omarchy :slow\r\n");
+    fx.session.queue_read_marker_set("#omarchy", at(0));
+    assert_eq!(
+        count_containing(&fx.frames(), want),
+        2,
+        "FAIL must clear in-flight so the same stamp can be retried: {:?}",
+        fx.frames()
+    );
+}
+
+#[test]
+fn read_marker_set_before_registered_does_not_block_same_stamp() {
+    let fx = fresh();
+    fx.connect_tls();
+    fx.inject(":server CAP omairc LS :draft/read-marker multi-prefix\r\n");
+    fx.inject(":server CAP omairc ACK :draft/read-marker multi-prefix\r\n");
+    let want = "MARKREAD #omarchy timestamp=2024-06-01T12:00:00.000Z\r\n";
+    fx.session.queue_read_marker_set("#omarchy", at(0));
+    assert_eq!(
+        count_containing(&fx.frames(), want),
+        0,
+        "must not send a set before 001, frames={:?}",
+        fx.frames()
+    );
+    fx.inject(":server 001 omairc :Welcome\r\n");
+    fx.session.queue_read_marker_set("#omarchy", at(0));
+    assert_eq!(
+        count_containing(&fx.frames(), want),
+        1,
+        "a refused send must not leave in_flight/last_known blocking the same stamp: {:?}",
+        fx.frames()
+    );
+}
+
+#[test]
+fn read_marker_reconnect_clears_in_flight_so_same_stamp_retries() {
+    let fx = fresh();
+    register_with_read_marker(&fx, "draft/read-marker");
+    let want = "MARKREAD #omarchy timestamp=2024-06-01T12:00:00.000Z\r\n";
+    fx.session.queue_read_marker_set("#omarchy", at(0));
+    assert_eq!(count_containing(&fx.frames(), want), 1);
+    fx.transport.remote_close();
+    fx.fire_reconnect();
+    fx.transport.complete_connect();
+    register_with_read_marker(&fx, "draft/read-marker");
+    fx.session.queue_read_marker_set("#omarchy", at(0));
+    assert_eq!(
+        count_containing(&fx.frames(), want),
+        2,
+        "connection reset must clear in_flight so the same stamp can be sent again: {:?}",
+        fx.frames()
+    );
+}

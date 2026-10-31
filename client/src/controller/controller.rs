@@ -818,6 +818,9 @@ impl Controller {
         if dropped(IrcCapability::MessageTags) {
             self.reducer.clear_typing_facts(network_id);
         }
+        if dropped(IrcCapability::ReadMarker) {
+            self.read_marker_clear_awaiting_network(network_id);
+        }
         self.queue(vec![ViewNotify::Status]);
         if let Some(session) = self.manager.find(network_id) {
             if session.state() == SessionState::Registered {
@@ -924,10 +927,10 @@ impl Controller {
                 msgid: arrival.msgid,
             });
         }
-        self.sync_read_marker_for_selection();
         if !welcome_network.is_empty() {
             self.request_read_marker_get_for_selected_direct(&welcome_network);
         }
+        self.sync_read_marker_for_selection();
     }
 
     /// The first conversation the reducer holds claims the selection and takes the
@@ -946,7 +949,7 @@ impl Controller {
         self.reducer.mark_selected(&key);
         self.console_open = false;
         if !is_channel {
-            self.request_read_marker_get_once(&key.network_id, &target);
+            self.request_read_marker_get_with_key(&key, &target);
         }
     }
 
