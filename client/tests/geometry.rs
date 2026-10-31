@@ -15,6 +15,10 @@ fn main_chains_geometry_save_with_update_launch_on_close() {
         app.contains("windowstate::attach") && app.contains("launch_update_on_close"),
         "app.rs must wire geometry attach and the update launch together"
     );
+    assert!(
+        app.contains("on_app_quit") && app.contains("WindowCloseWork"),
+        "Ctrl+Q must route through the same close work as a WM close"
+    );
     let attach = app
         .find("windowstate::attach")
         .expect("windowstate::attach in app.rs");
@@ -28,6 +32,10 @@ fn main_chains_geometry_save_with_update_launch_on_close() {
             && windowstate.contains("keeper.save(window_bounds)"),
         "windowstate must save geometry before running the chained close hook"
     );
+    assert!(
+        windowstate.contains("WindowCloseWork") && windowstate.contains("self.ran.get()"),
+        "windowstate must guard close work so WM close and app quit run it once"
+    );
 }
 
 #[test]
@@ -37,16 +45,14 @@ fn geometry_close_handler_source_orders_save_before_also() {
             .expect("windowstate.rs"),
     );
     let run_close = windowstate
-        .split("pub fn run_close_handlers")
+        .split("impl WindowCloseWork")
         .nth(1)
-        .and_then(|tail| tail.split("pub fn attach").next())
-        .expect("run_close_handlers");
+        .and_then(|tail| tail.split("pub fn run_close_handlers").next())
+        .expect("WindowCloseWork::run");
     let save = run_close
         .find("keeper.save(window_bounds)")
-        .expect("geometry save in run_close_handlers");
-    let also = run_close
-        .find("also()")
-        .expect("also hook in run_close_handlers");
+        .expect("geometry save in close work");
+    let also = run_close.find("also()").expect("also hook in close work");
     assert!(
         save < also,
         "geometry must be saved before the chained close hook runs"

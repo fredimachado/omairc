@@ -8,7 +8,7 @@ use gpui::{
     px, size, AnyWindowHandle, App, Application, Entity, WindowOptions, prelude::*,
 };
 use crate::desktop::systemtheme::SystemAppearance;
-use crate::desktop::windowstate::{self, GeometryKeeper};
+use crate::desktop::windowstate::{self, GeometryKeeper, WindowCloseWork};
 use crate::model::{Style, Theme, ThemeWatcher};
 use crate::net::NetHub;
 use crate::storage::preferences::PreferenceStore;
@@ -193,6 +193,7 @@ pub fn run() {
         let window_path = paths::window_path();
         let stored = geometry::load_stored(&window_path, settings_path.as_deref());
         let keeper = (!demo_server).then(|| GeometryKeeper::new(window_path, stored));
+        let close_work = WindowCloseWork::new(keeper.clone());
         let window_bounds = windowstate::initial_bounds(stored, cx);
         // The socket hub runs its net thread for a live launch. The demo's peers are in-process
         // so the demo has none.
@@ -238,20 +239,29 @@ pub fn run() {
                         start_net_delivery(shell.clone(), hub, cx);
                     }
                     let transcript = shell.read(cx).transcript.clone();
-                    if let Some(keeper) = &keeper {
-                        // Geometry save and a ready installer launch share one close
-                        // handler; GPUI replaces an earlier registration.
-                        let close_shell = shell.clone();
-                        windowstate::attach(keeper, &shell, window, cx, move |_, cx| {
-                            close_shell.update(cx, |shell, cx| shell.launch_update_on_close(cx));
-                        });
-                    } else {
-                        let close_shell = shell.clone();
-                        window.on_window_should_close(cx, move |_, cx| {
-                            close_shell.update(cx, |shell, cx| shell.launch_update_on_close(cx));
-                            true
-                        });
-                    }
+                    // Geometry save and a ready installer launch share one close
+                    // handler; Ctrl+Q reaches the same work through on_app_quit.
+                    let close_shell = shell.clone();
+                    let work_wm = close_work.clone();
+                    windowstate::attach(&work_wm, &shell, window, cx, move |_, cx| {
+                        close_shell.update(cx, |shell, cx| shell.launch_update_on_close(cx));
+                    });
+                    let work_quit = close_work.clone();
+                    let quit_shell = shell.clone();
+                    let quit_window = window.window_handle();
+                    cx.on_app_quit(move |cx| {
+                        quit_window
+                            .update(cx, |_, window, cx| {
+                                work_quit.run(window.window_bounds(), || {
+                                    quit_shell.update(cx, |shell, cx| {
+                                        shell.launch_update_on_close(cx);
+                                    });
+                                });
+                            })
+                            .ok();
+                        async {}
+                    })
+                    .detach();
                     if let Some(server) = ipc {
                         crate::desktop::ipchandler::serve(shell.clone(), window.window_handle(), server, cx);
                     }
