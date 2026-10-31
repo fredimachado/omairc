@@ -92,6 +92,13 @@ func (s *Session) handleReadMarkerFailLocked(message irc.Message) {
 	s.flushReadMarkerSetLocked(folded)
 }
 
+// ReadMarkerCommand returns the wire verb for an acknowledged read-marker cap, or "".
+func (s *Session) ReadMarkerCommand() string {
+	var command string
+	s.locked(func() { command = s.readMarkerCommandLocked() })
+	return command
+}
+
 // RequestReadMarkerGet asks the server for the stored marker on one target.
 func (s *Session) RequestReadMarkerGet(target string) {
 	if target == "" {
