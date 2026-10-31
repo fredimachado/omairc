@@ -128,7 +128,9 @@ func (s *STSStore) AttachDisk(disk *storage.IniSTSStore) {
 
 // Lookup returns the cached policy for host at now, dropping an invalid or
 // expired entry. Memory is checked first; on a miss the disk store is consulted
-// and hydrated into memory. It mirrors StsStore::lookup.
+// and hydrated into memory. A malformed file is recovered through
+// flushRecoveryLocked so other in-memory hosts are not dropped. It mirrors
+// StsStore::lookup.
 func (s *STSStore) Lookup(host string, now time.Time) (STSCached, bool) {
 	key := stsGroupKey(host)
 	if key == "" {
@@ -146,6 +148,9 @@ func (s *STSStore) Lookup(host string, now time.Time) (STSCached, bool) {
 	if s.disk == nil {
 		return STSCached{}, false
 	}
+	if storage.ProbeSettingsIni(s.disk.Path()) == storage.IniProbeMalformed {
+		return s.lookupMalformedDiskLocked(host, nowUnix)
+	}
 	entry, ok := s.disk.Lookup(host, nowUnix)
 	if !ok {
 		return STSCached{}, false
@@ -156,6 +161,29 @@ func (s *STSStore) Lookup(host string, now time.Time) (STSCached, bool) {
 		ExpiryEpochSeconds: entry.ExpiryEpochSeconds,
 	}
 	s.entries[key] = cached
+	return cached, true
+}
+
+// lookupMalformedDiskLocked inspects a malformed sts file without a blind
+// rewrite. A stale group triggers flushRecoveryLocked so unexpired in-memory
+// hosts survive. Caller must hold s.mu.
+func (s *STSStore) lookupMalformedDiskLocked(host string, nowUnix int64) (STSCached, bool) {
+	entry, present, stale := s.disk.Inspect(host, nowUnix)
+	if stale {
+		_ = s.flushRecoveryLocked(nowUnix, true, host)
+		return STSCached{}, false
+	}
+	if !present {
+		return STSCached{}, false
+	}
+	cached := STSCached{
+		Port:               entry.Port,
+		DurationSeconds:    entry.DurationSeconds,
+		ExpiryEpochSeconds: entry.ExpiryEpochSeconds,
+	}
+	if key := stsGroupKey(host); key != "" {
+		s.entries[key] = cached
+	}
 	return cached, true
 }
 

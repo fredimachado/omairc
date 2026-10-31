@@ -482,6 +482,88 @@ func TestIniSTSStoreBadLineInsideValidGroupKeepsPolicy(t *testing.T) {
 	}
 }
 
+func TestIniSTSStoreUnclosedHeaderDoesNotMergeIntoCompleteGroup(t *testing.T) {
+	// client/src/storage/stspolicies.rs::an_unclosed_header_does_not_merge_into_a_complete_group
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	other := STSGroupKey("other.example")
+	mixed := "[" + ircExampleSTSGroup + "]\nport=6697\nduration=60\nexpiry=4102444800\n[" + other + "\nport=7000\nduration=100\nexpiry=100\n"
+	if err := os.WriteFile(path, []byte(mixed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewIniSTSStore(path)
+	entry, ok := store.Lookup("irc.example", 1_700_000_000)
+	if !ok || entry.Port != 6697 || entry.DurationSeconds != 60 || entry.ExpiryEpochSeconds != 4_102_444_800 {
+		t.Fatalf("A must stay exactly as advertised: %+v ok=%v", entry, ok)
+	}
+	if entry.Port == 7000 {
+		t.Fatal("B's port must not merge into A")
+	}
+	if status := store.Store("third.example", 6699, 10, 1_700_000_000); status != StatusWritten {
+		t.Fatal(status)
+	}
+	restarted := NewIniSTSStore(path)
+	entry, ok = restarted.Lookup("irc.example", 1_700_000_000)
+	if !ok || entry.Port != 6697 || entry.DurationSeconds != 60 || entry.ExpiryEpochSeconds != 4_102_444_800 {
+		t.Fatalf("A must survive recovery and reload: %+v ok=%v", entry, ok)
+	}
+	text, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	aBlock := stsGroupBlock(string(text), ircExampleSTSGroup)
+	if !strings.Contains(aBlock, "port=6697") {
+		t.Fatalf("A's port must remain under A: %s", text)
+	}
+	if strings.Contains(aBlock, "port=7000") {
+		t.Fatalf("B's port must not land under A after recovery: %s", text)
+	}
+}
+
+func TestIniSTSStoreUnclosedHeaderDoesNotMergeIntoPartialGroup(t *testing.T) {
+	// client/src/storage/stspolicies.rs::an_unclosed_header_does_not_merge_into_a_partial_group
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	other := STSGroupKey("other.example")
+	mixed := "[" + ircExampleSTSGroup + "]\nport=6697\n[" + other + "\nport=7000\nduration=100\nexpiry=100\n"
+	if err := os.WriteFile(path, []byte(mixed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewIniSTSStore(path)
+	if _, ok := store.Lookup("irc.example", 1_700_000_000); ok {
+		t.Fatal("partial A without expiry must not become a full policy from B's keys")
+	}
+	if status := store.Store("third.example", 6699, 10, 1_700_000_000); status != StatusWritten {
+		t.Fatal(status)
+	}
+	text, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(text)
+	aBlock := stsGroupBlock(body, ircExampleSTSGroup)
+	if aBlock == "" {
+		t.Fatalf("A group missing after recovery: %s", body)
+	}
+	if !strings.Contains(aBlock, "port=6697") {
+		t.Fatalf("A's advertised port must remain: %s", body)
+	}
+	if strings.Contains(aBlock, "port=7000") || strings.Contains(aBlock, "duration=100") || strings.Contains(aBlock, "expiry=100") {
+		t.Fatalf("B's keys must not merge into A: %s", body)
+	}
+	if _, ok := NewIniSTSStore(path).Lookup("irc.example", 1_700_000_000); ok {
+		t.Fatal("partial A must not become enforceable after recovery")
+	}
+}
+
+func stsGroupBlock(text, group string) string {
+	parts := strings.SplitN(text, "["+group+"]", 2)
+	if len(parts) < 2 {
+		return ""
+	}
+	return strings.SplitN(parts[1], "[", 2)[0]
+}
+
 func TestIniSTSStoreKeysUnderGarbageHeaderAreNotSaved(t *testing.T) {
 	// client/src/storage/stspolicies.rs::keys_under_a_garbage_header_are_not_saved
 	dir := t.TempDir()

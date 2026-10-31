@@ -99,34 +99,48 @@ func (s *IniSTSStore) Path() string {
 }
 
 // Lookup returns the cached policy for host at nowUnix, or ok false when there
-// is none or it has expired. An expired or invalid entry is removed from the
-// file. It mirrors IniStsStore::lookup.
+// is none or it has expired. An expired or invalid entry is removed from a
+// well-formed file. On a malformed file it does not rewrite (recovery needs the
+// caller's in-memory map; see session.STSStore). It mirrors IniStsStore::lookup.
 func (s *IniSTSStore) Lookup(host string, nowUnix int64) (STSEntry, bool) {
+	entry, present, stale := s.Inspect(host, nowUnix)
+	if !present {
+		return STSEntry{}, false
+	}
+	if stale {
+		if ProbeSettingsIni(s.path) == IniProbeMalformed {
+			return STSEntry{}, false
+		}
+		s.remove(STSGroupKey(host))
+		return STSEntry{}, false
+	}
+	return entry, true
+}
+
+// Inspect reports the on-disk STS entry for host without writing. present is
+// false when port or expiry is missing. stale is true when present but the
+// port is invalid or the entry has expired.
+func (s *IniSTSStore) Inspect(host string, nowUnix int64) (entry STSEntry, present, stale bool) {
 	key := STSGroupKey(host)
 	if key == "" || s.path == "" {
-		return STSEntry{}, false
+		return STSEntry{}, false, false
 	}
 	settings := OpenSTSSettings(s.path)
 	if !settings.Contains(key, stsPortKey) || !settings.Contains(key, stsExpiryKey) {
-		return STSEntry{}, false
+		return STSEntry{}, false, false
 	}
 	port := settings.Uint(key, stsPortKey, 0)
 	durationSeconds := settings.Int64(key, stsDurationKey, 0)
 	expiryEpochSeconds := settings.Int64(key, stsExpiryKey, 0)
-
-	if port < 1 || port > 65535 {
-		s.remove(key)
-		return STSEntry{}, false
-	}
-	if expiryEpochSeconds <= nowUnix {
-		s.remove(key)
-		return STSEntry{}, false
-	}
-	return STSEntry{
-		Port:               uint16(port),
+	entry = STSEntry{
+		Port:               uint16(port), // may truncate; stale check uses the full uint
 		DurationSeconds:    durationSeconds,
 		ExpiryEpochSeconds: expiryEpochSeconds,
-	}, true
+	}
+	if port < 1 || port > 65535 || expiryEpochSeconds <= nowUnix {
+		return entry, true, true
+	}
+	return entry, true, false
 }
 
 // Store caches port for durationSeconds from nowUnix. A zero duration clears

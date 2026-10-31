@@ -198,6 +198,45 @@ func TestSTSStoreMalformedDiskRecoversWithoutWeakeningMemory(t *testing.T) {
 	}
 }
 
+// A Lookup that removes a stale group from a malformed file must recover with
+// flushRecoveryLocked so another in-memory host is kept on disk and on lookup.
+func TestSTSStoreLookupRemoveOnMalformedKeepsOtherMemoryHost(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	store := NewSTSStore()
+	now := time.Unix(1_700_000_000, 0)
+	if err := store.Store("keep.example", 6697, 60, now); err != nil {
+		t.Fatal(err)
+	}
+	dropKey := storage.STSGroupKey("drop.example")
+	malformed := "[" + dropKey + "]\nport=junk\nduration=60\nexpiry=4102444800\nbad line\n"
+	if err := os.WriteFile(path, []byte(malformed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store.AttachDisk(storage.NewIniSTSStore(path))
+	if _, ok := store.Lookup("drop.example", now); ok {
+		t.Fatal("stale drop.example must not apply")
+	}
+	cached, ok := store.Lookup("keep.example", now.Add(time.Second))
+	if !ok || cached.Port != 6697 || cached.DurationSeconds != 60 {
+		t.Fatalf("keep.example must remain in memory: %+v ok=%v", cached, ok)
+	}
+	disk, ok := storage.NewIniSTSStore(path).Lookup("keep.example", now.Unix())
+	if !ok || disk.Port != 6697 || disk.DurationSeconds != 60 {
+		t.Fatalf("keep.example must be on disk after recovery: %+v ok=%v", disk, ok)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), dropKey) {
+		t.Fatalf("stale drop group must be gone after recovery: %s", raw)
+	}
+	if !strings.Contains(string(raw), storage.STSGroupKey("keep.example")) {
+		t.Fatalf("keep.example missing from recovered file: %s", raw)
+	}
+}
+
 // Fail-closed: when the backup step cannot run, memory still keeps the policy
 // and the malformed file is left untouched.
 func TestSTSStoreFailedBackupDoesNotWeakenMemory(t *testing.T) {

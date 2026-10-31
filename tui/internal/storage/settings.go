@@ -564,9 +564,11 @@ func parseSettingsIni(data []byte) map[string]iniValue {
 }
 
 // parseSTSIni is the STS load path: like parseSettingsIni, but after a bad
-// line (or an unclosed "[" header) a later key is ignored only when that key
-// is already set in the current group, so a garbage line cannot drop the rest
-// of an intact policy and leaked keys cannot overwrite real ones.
+// non-header line a later key is ignored only when that key is already set in
+// the current group, so a garbage line cannot drop the rest of an intact
+// policy and leaked keys cannot overwrite real ones. An unclosed "[" header
+// still starts a new section (as on main) and clears the after-bad-line flag,
+// so the next host's keys never land in the previous group.
 func parseSTSIni(data []byte) map[string]iniValue {
 	values := make(map[string]iniValue)
 	raw := data
@@ -580,10 +582,7 @@ func parseSTSIni(data []byte) map[string]iniValue {
 	for nextIniLine(raw, &dataPos, &lineStart, &lineLen, &equalsPos) {
 		line := raw[lineStart : lineStart+lineLen]
 		if line[0] == '[' {
-			if bytes.IndexByte(line, ']') < 0 {
-				afterBad = true
-				continue
-			}
+			// Match main: unclosed "[" still opens a new section via iniSectionPrefix.
 			section = iniSectionPrefix(line)
 			afterBad = false
 			continue
