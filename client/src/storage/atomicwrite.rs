@@ -3,9 +3,10 @@
 //!
 //! When the destination path is a symlink (including stow-managed dotfiles), the temp
 //! file is created beside the resolved target and the rename replaces that target,
-//! so the symlink stays a symlink. A dangling symlink chain ends at a missing path;
-//! the rename creates that file (parent directories are created owner-only) at mode
-//! 0600 unless an existing target's mode is preserved.
+//! so the symlink stays a symlink. Relative link targets are joined onto each link's
+//! parent without collapsing `..`. After a symlink chain, parent directories of a
+//! missing target are not created; a dangling link whose target directory is missing
+//! fails without writing.
 
 use std::fs;
 use std::io::{self, Write};
@@ -15,41 +16,44 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Maximum symlink hops when resolving an atomic-write destination.
 const MAX_SYMLINK_HOPS: u32 = 32;
 
-fn lexical_normalize(path: PathBuf) -> PathBuf {
-    use std::path::Component;
-    let mut out = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                let _ = out.pop();
-            }
-            Component::Prefix(prefix) => out.push(prefix.as_os_str()),
-            Component::RootDir => out.push(component.as_os_str()),
-            Component::Normal(name) => out.push(name),
-        }
-    }
-    out
+/// Resolved path for an atomic rename plus whether any symlink was followed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct AtomicWriteTarget {
+    pub destination: PathBuf,
+    pub followed_symlink: bool,
 }
 
-/// Returns the path that must receive the atomic rename. Follows symlink chains
-/// starting at `path`; when the chain ends at a missing path, returns that path so
-/// the target file can be created without replacing the link.
-pub(crate) fn atomic_write_destination(path: &Path) -> io::Result<PathBuf> {
+/// Follows symlink chains starting at `path`. Relative targets are joined onto each
+/// link's parent without normalizing `..`.
+pub(crate) fn atomic_write_target(path: &Path) -> io::Result<AtomicWriteTarget> {
     let mut resolved = path.to_path_buf();
+    let mut followed_symlink = false;
     for _ in 0..MAX_SYMLINK_HOPS {
         match fs::symlink_metadata(&resolved) {
             Ok(meta) if meta.file_type().is_symlink() => {
+                followed_symlink = true;
                 let link = fs::read_link(&resolved)?;
                 resolved = if link.is_absolute() {
-                    lexical_normalize(link)
+                    link
                 } else {
                     let parent = resolved.parent().unwrap_or_else(|| Path::new("."));
-                    lexical_normalize(parent.join(link))
+                    parent.join(link)
                 };
             }
-            Ok(_) => return Ok(resolved),
-            Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(resolved),
+            Ok(_) => {
+                return Ok(AtomicWriteTarget {
+                    destination: resolved,
+                    followed_symlink,
+                });
+            }
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                return Ok(AtomicWriteTarget {
+                    destination: resolved,
+                    followed_symlink,
+                });
+            }
+            #[cfg(unix)]
+            Err(err) if err.raw_os_error() == Some(40) => return Err(err),
             Err(err) => return Err(err),
         }
     }
@@ -57,6 +61,30 @@ pub(crate) fn atomic_write_destination(path: &Path) -> io::Result<PathBuf> {
         io::ErrorKind::InvalidInput,
         "too many symlinks resolving atomic write destination",
     ))
+}
+
+/// Ensures the destination's parent directory exists when allowed to create it.
+pub(crate) fn ensure_atomic_write_parent(target: &AtomicWriteTarget) -> io::Result<()> {
+    let dir = match target.destination.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir,
+        _ => return Ok(()),
+    };
+    if target.followed_symlink {
+        match fs::symlink_metadata(dir) {
+            Ok(meta) if meta.is_dir() => Ok(()),
+            Ok(_) => Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "atomic write target directory missing",
+            )),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "atomic write target directory missing",
+            )),
+            Err(err) => Err(err),
+        }
+    } else {
+        create_private_dir(dir)
+    }
 }
 
 /// Writes through a temporary file in the same folder and renames it over the
@@ -73,22 +101,23 @@ pub(crate) fn write_atomic_preserve_mode(path: &Path, data: &[u8]) -> io::Result
 }
 
 fn write_atomic_with_mode(path: &Path, data: &[u8], preserve_mode: bool) -> io::Result<()> {
-    let destination = atomic_write_destination(path)?;
-    let dir = match destination.parent() {
+    let target = atomic_write_target(path)?;
+    ensure_atomic_write_parent(&target)?;
+
+    let dir = match target.destination.parent() {
         Some(dir) if !dir.as_os_str().is_empty() => dir,
         _ => Path::new("."),
     };
-    create_private_dir(dir)?;
 
     let (temp, mut file) = create_temp_file(dir)?;
     let written = (|| -> io::Result<()> {
-        set_mode_on_temp(&file, &destination, preserve_mode)?;
+        set_mode_on_temp(&file, &target.destination, preserve_mode)?;
         file.write_all(data)?;
         file.sync_all()
     })();
     drop(file);
 
-    let result = written.and_then(|()| fs::rename(&temp, &destination));
+    let result = written.and_then(|()| fs::rename(&temp, &target.destination));
     if result.is_err() {
         let _ = fs::remove_file(&temp);
     }
@@ -260,6 +289,31 @@ mod tests {
         }
 
         #[test]
+        fn write_atomic_through_symlinked_parent_and_dotdot_in_target() {
+            let dir = TempDir::new("atomic-symlink-parent-dotdot-3dba");
+            let real_store = dir.path().join("real").join("store");
+            let real_cfg = dir.path().join("real").join("cfg").join("omairc");
+            fs::create_dir_all(&real_store).unwrap();
+            fs::create_dir_all(&real_cfg).unwrap();
+            let real_file = real_store.join("omairc.conf");
+            fs::write(&real_file, b"old\n").unwrap();
+            fs::set_permissions(&real_file, fs::Permissions::from_mode(0o644)).unwrap();
+            let cfg_link = dir.path().join("cfg");
+            symlink(
+                dir.path().join("real").join("cfg"),
+                &cfg_link,
+            )
+            .unwrap();
+            let link = cfg_link.join("omairc").join("omairc.conf");
+            symlink("../../store/omairc.conf", &link).unwrap();
+
+            write_atomic_preserve_mode(&link, b"new\n").unwrap();
+
+            assert_is_symlink(&link, Path::new("../../store/omairc.conf"));
+            assert_eq!(fs::read(&real_file).unwrap(), b"new\n");
+        }
+
+        #[test]
         fn write_atomic_follows_relative_symlink_and_two_hop_chain() {
             let dir = TempDir::new("atomic-symlink-chain-3dba");
             let store = dir.path().join("store");
@@ -282,10 +336,11 @@ mod tests {
         }
 
         #[test]
-        fn write_atomic_creates_dangling_symlink_target_owner_only() {
+        fn write_atomic_creates_dangling_symlink_target_when_parent_exists() {
             let dir = TempDir::new("atomic-symlink-dangling-3dba");
             let cfg_dir = dir.path().join("cfg").join("omairc");
             fs::create_dir_all(&cfg_dir).unwrap();
+            fs::create_dir_all(cfg_dir.join("real")).unwrap();
             let link = cfg_dir.join("omairc.conf");
             symlink("real/omairc.conf", &link).unwrap();
 
@@ -300,6 +355,20 @@ mod tests {
             );
             let mode = fs::metadata(&target).unwrap().permissions().mode() & 0o777;
             assert_eq!(mode, 0o600);
+        }
+
+        #[test]
+        fn write_atomic_errors_when_dangling_target_directory_missing() {
+            let dir = TempDir::new("atomic-symlink-missing-dir-3dba");
+            let cfg_dir = dir.path().join("cfg").join("omairc");
+            fs::create_dir_all(&cfg_dir).unwrap();
+            let link = cfg_dir.join("omairc.conf");
+            symlink("missing/deep/omairc.conf", &link).unwrap();
+            let missing_dir = cfg_dir.join("missing");
+
+            let err = write_atomic(&link, b"nope\n");
+            assert!(err.is_err(), "expected missing target directory to fail");
+            assert!(!missing_dir.exists());
         }
     }
 }

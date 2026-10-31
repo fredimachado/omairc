@@ -7,7 +7,6 @@ import (
 	"io"
 	"math"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -260,15 +259,18 @@ func persistSTSSettings(settings *Settings, path string) Status {
 // and removes the temp. After a successful rename, the backup is chmod'd to
 // 0600 so a hard-linked copy of a looser-mode original is not left world-readable.
 func recoverMalformedSTS(path string, data []byte) error {
-	destination, err := atomicWriteDestination(path)
+	target, err := resolveAtomicWriteTarget(path)
 	if err != nil {
 		return err
 	}
-	temp, err := writeSTSTemp(destination, data)
+	if err := ensureWriteParent(target); err != nil {
+		return err
+	}
+	temp, err := writeSTSTemp(target.destination, data)
 	if err != nil {
 		return err
 	}
-	backup, ok := linkSTSCorruptBackup(path)
+	backup, ok := linkSTSCorruptBackup(target.destination)
 	if !ok {
 		_ = os.Remove(temp)
 		return errors.New("sts corrupt backup failed")
@@ -277,7 +279,7 @@ func recoverMalformedSTS(path string, data []byte) error {
 		_ = os.Remove(temp)
 		return errors.New("test: install after backup failed")
 	}
-	if err := os.Rename(temp, destination); err != nil {
+	if err := os.Rename(temp, target.destination); err != nil {
 		_ = os.Remove(temp)
 		return err
 	}
@@ -289,10 +291,7 @@ func recoverMalformedSTS(path string, data []byte) error {
 // writeSTSTemp creates a same-directory temp file with data, fsyncs it, and
 // returns its path.
 func writeSTSTemp(path string, data []byte) (string, error) {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", err
-	}
+	dir := atomicWriteDir(path)
 	tmp, err := os.CreateTemp(dir, ".omairc-sts-*.tmp")
 	if err != nil {
 		return "", err
@@ -339,21 +338,21 @@ func linkSTSCorruptBackup(path string) (string, bool) {
 		return "", false
 	}
 	if testSTSHook == stsHookFailCopyAfterCreate {
-		candidate := filepath.Join(filepath.Dir(path), filepath.Base(path)+".corrupt")
+		candidate := atomicWriteDir(path) + string(os.PathSeparator) + atomicWriteBase(path) + ".corrupt"
 		err := copySTSExclusive(path, candidate)
 		if err != nil {
 			return "", false
 		}
 		return candidate, true
 	}
-	dir := filepath.Dir(path)
-	name := filepath.Base(path)
+	dir := atomicWriteDir(path)
+	name := atomicWriteBase(path)
 	for n := 0; n < stsCorruptBackupLimit(); n++ {
 		var candidate string
 		if n == 0 {
-			candidate = filepath.Join(dir, name+".corrupt")
+			candidate = dir + string(os.PathSeparator) + name + ".corrupt"
 		} else {
-			candidate = filepath.Join(dir, name+".corrupt."+strconv.Itoa(n))
+			candidate = dir + string(os.PathSeparator) + name + ".corrupt." + strconv.Itoa(n)
 		}
 		err := os.Link(path, candidate)
 		if err == nil {

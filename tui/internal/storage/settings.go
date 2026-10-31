@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"unicode/utf16"
 	"unicode/utf8"
 )
@@ -456,21 +457,18 @@ func settingsFileNotWritable(path string) bool {
 }
 
 // writeSettingsAtomic writes data to path through a same-directory temporary
-// file and a rename, creating parents with owner-only permissions. When
-// preserveMode is true and path already exists, the temp file takes the
-// resolved target's permission bits before rename; otherwise the file is 0600.
-// When path is a symlink, the temp is created beside the resolved target and
-// the rename replaces that target so the link stays a symlink. A dangling
-// symlink creates the missing target at mode 0600.
+// file and a rename, creating parents with owner-only permissions when path was
+// not reached through a symlink. When preserveMode is true and the resolved
+// target already exists, the temp file takes its permission bits before rename.
 func writeSettingsAtomic(path string, data []byte, preserveMode bool) error {
-	destination, err := atomicWriteDestination(path)
+	target, err := resolveAtomicWriteTarget(path)
 	if err != nil {
 		return err
 	}
-	dir := filepath.Dir(destination)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := ensureWriteParent(target); err != nil {
 		return err
 	}
+	dir := atomicWriteDir(target.destination)
 	tmp, err := os.CreateTemp(dir, ".omairc-settings-*.tmp")
 	if err != nil {
 		return err
@@ -483,7 +481,7 @@ func writeSettingsAtomic(path string, data []byte, preserveMode bool) error {
 	}()
 	mode := os.FileMode(0o600)
 	if preserveMode {
-		if info, err := os.Stat(destination); err == nil {
+		if info, err := os.Stat(target.destination); err == nil {
 			mode = info.Mode().Perm()
 		}
 	}
@@ -502,49 +500,100 @@ func writeSettingsAtomic(path string, data []byte, preserveMode bool) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmpName, destination); err != nil {
+	if err := os.Rename(tmpName, target.destination); err != nil {
 		return err
 	}
 	tmpName = ""
 	return nil
 }
 
-// atomicWriteDestination follows symlink chains starting at path and returns
-// the file path that must receive an atomic rename. When the chain ends at a
-// missing path, that path is returned so the target file can be created.
-func atomicWriteDestination(path string) (string, error) {
+type atomicWriteTarget struct {
+	destination     string
+	followedSymlink bool
+}
+
+// resolveAtomicWriteTarget follows symlink chains starting at path. Relative
+// targets are joined onto each link's parent without collapsing "..".
+func resolveAtomicWriteTarget(path string) (atomicWriteTarget, error) {
 	const maxSymlinkHops = 32
 	resolved := path
+	followed := false
 	for range maxSymlinkHops {
 		info, err := os.Lstat(resolved)
 		if err != nil {
 			if os.IsNotExist(err) {
-				return resolved, nil
+				return atomicWriteTarget{destination: resolved, followedSymlink: followed}, nil
 			}
-			return "", err
+			if errors.Is(err, syscall.ELOOP) {
+				return atomicWriteTarget{}, err
+			}
+			return atomicWriteTarget{}, err
 		}
 		if info.Mode()&os.ModeSymlink == 0 {
-			return resolved, nil
+			return atomicWriteTarget{destination: resolved, followedSymlink: followed}, nil
 		}
+		followed = true
 		link, err := os.Readlink(resolved)
 		if err != nil {
-			return "", err
+			return atomicWriteTarget{}, err
 		}
 		if filepath.IsAbs(link) {
-			resolved = lexicalNormalizePath(link)
+			resolved = link
 		} else {
-			resolved = lexicalNormalizePath(filepath.Join(filepath.Dir(resolved), link))
+			resolved = joinRelativeSymlinkTarget(filepath.Dir(resolved), link)
 		}
 	}
-	return "", errors.New("too many symlinks resolving atomic write destination")
+	return atomicWriteTarget{}, errors.New("too many symlinks resolving atomic write destination")
 }
 
-func lexicalNormalizePath(path string) string {
-	clean := filepath.Clean(path)
-	if clean == "." {
-		return path
+func joinRelativeSymlinkTarget(parent, linkTarget string) string {
+	if filepath.IsAbs(linkTarget) {
+		return linkTarget
 	}
-	return clean
+	if parent == "" {
+		return linkTarget
+	}
+	sep := string(os.PathSeparator)
+	if strings.HasSuffix(parent, sep) {
+		return parent + linkTarget
+	}
+	return parent + sep + linkTarget
+}
+
+func ensureWriteParent(target atomicWriteTarget) error {
+	dir := atomicWriteDir(target.destination)
+	if dir == "" || dir == "." {
+		return nil
+	}
+	if target.followedSymlink {
+		info, err := os.Stat(dir)
+		if err != nil || !info.IsDir() {
+			if err == nil {
+				return os.ErrNotExist
+			}
+			return err
+		}
+		return nil
+	}
+	return os.MkdirAll(dir, 0o700)
+}
+
+func atomicWriteDir(destination string) string {
+	if destination == "" {
+		return "."
+	}
+	if i := strings.LastIndexAny(destination, `/\`); i >= 0 {
+		return destination[:i]
+	}
+	return "."
+}
+
+func atomicWriteBase(destination string) string {
+	dir := atomicWriteDir(destination)
+	if dir == destination {
+		return destination
+	}
+	return destination[len(dir)+1:]
 }
 
 // sectionEntry is one key line within a written section.

@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -686,5 +687,53 @@ func TestSTSPathBesideSettings(t *testing.T) {
 	want := filepath.Join("cfg", "omairc", "sts")
 	if got != want {
 		t.Fatalf("STSPathBeside = %q, want %q", got, want)
+	}
+}
+
+func TestRecoverMalformedSTSThroughSymlink3dba(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks")
+	}
+
+	root := t.TempDir()
+	realSTS := filepath.Join(root, "real", "sts")
+	if err := os.MkdirAll(filepath.Dir(realSTS), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	corrupt := []byte("this line has no equals sign\n")
+	if err := os.WriteFile(realSTS, corrupt, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	realCfg := filepath.Join(root, "real", "cfg")
+	if err := os.MkdirAll(realCfg, 0o700); err != nil {
+		t.Fatalf("MkdirAll cfg: %v", err)
+	}
+	cfgLink := filepath.Join(root, "cfg")
+	if err := os.Symlink(realCfg, cfgLink); err != nil {
+		t.Fatalf("Symlink cfg: %v", err)
+	}
+	link := filepath.Join(cfgLink, "sts")
+	if err := os.Symlink("../sts", link); err != nil {
+		t.Fatalf("Symlink sts: %v", err)
+	}
+
+	store := NewIniSTSStore(link)
+	store.Store("irc.example", 6697, 60, 1000)
+
+	linkInfo, err := os.Lstat(link)
+	if err != nil || linkInfo.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("sts path must remain a symlink")
+	}
+	backup := filepath.Join(filepath.Dir(realSTS), "sts.corrupt")
+	gotBackup, err := os.ReadFile(backup)
+	if err != nil || !bytes.Equal(gotBackup, corrupt) {
+		t.Fatalf("backup = %q err=%v, want corrupt bytes", gotBackup, err)
+	}
+	text, err := os.ReadFile(realSTS)
+	if err != nil {
+		t.Fatalf("ReadFile sts: %v", err)
+	}
+	if !strings.Contains(string(text), ircExampleSTSGroup) {
+		t.Fatalf("rewritten sts = %q", text)
 	}
 }

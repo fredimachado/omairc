@@ -154,13 +154,14 @@ fn encoded_geometry(geometry: &WindowGeometry) -> Vec<u8> {
 
 /// Temp sibling, hard-link backup, rename — same shape as STS malformed recovery.
 fn recover_malformed_ini_file(path: &Path, data: &[u8]) -> io::Result<()> {
-    let destination = super::atomicwrite::atomic_write_destination(path)?;
-    let temp = write_window_temp(&destination, data)?;
-    let Some(backup) = link_window_corrupt_backup(path) else {
+    let target = super::atomicwrite::atomic_write_target(path)?;
+    super::atomicwrite::ensure_atomic_write_parent(&target)?;
+    let temp = write_window_temp(&target.destination, data)?;
+    let Some(backup) = link_window_corrupt_backup(&target.destination) else {
         let _ = fs::remove_file(&temp);
         return Err(io::Error::other("window.ini corrupt backup failed"));
     };
-    match fs::rename(&temp, &destination) {
+    match fs::rename(&temp, &target.destination) {
         Ok(()) => {
             restrict_backup_permissions(&backup);
             Ok(())
@@ -178,7 +179,6 @@ fn write_window_temp(path: &Path, data: &[u8]) -> io::Result<PathBuf> {
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    fs::create_dir_all(dir)?;
     let mut last_error = None;
     for n in 0..16u32 {
         let candidate = dir.join(format!(
@@ -417,6 +417,32 @@ mod tests {
         assert!(!dir.path().join("window.ini.corrupt").exists());
 
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn malformed_window_ini_through_symlink_backs_up_target_and_keeps_link() {
+        use std::os::unix::fs::symlink;
+
+        let dir = TempDir::new("geometry-symlink-recover-3dba");
+        let real_ini = dir.path().join("real").join(WINDOW_FILE);
+        fs::create_dir_all(real_ini.parent().unwrap()).unwrap();
+        let corrupt = b"[window\ngeometry=@Rect(0 0 800 600)\n";
+        fs::write(&real_ini, corrupt).unwrap();
+        let cfg_link = dir.path().join("cfg");
+        fs::create_dir_all(dir.path().join("real").join("cfg")).unwrap();
+        symlink(dir.path().join("real").join("cfg"), &cfg_link).unwrap();
+        let link = cfg_link.join(WINDOW_FILE);
+        symlink(format!("../{WINDOW_FILE}"), &link).unwrap();
+        let saved = WindowGeometry::new(0, 0, 900, 700, false);
+
+        assert_eq!(save_to(&link, &saved), Status::Written);
+        assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        assert_eq!(
+            fs::read(real_ini.with_file_name("window.ini.corrupt")).unwrap(),
+            corrupt
+        );
+        assert_eq!(load_from(&real_ini), Some(saved));
     }
 
     #[test]

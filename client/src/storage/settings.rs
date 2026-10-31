@@ -1451,6 +1451,21 @@ mod tests {
 
             fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).unwrap();
         }
+
+        #[test]
+        fn sync_errors_when_dangling_target_directory_missing() {
+            let dir = TempDir::new("settings-symlink-missing-dir-3dba");
+            let cfg_dir = dir.path().join("cfg").join("omairc");
+            fs::create_dir_all(&cfg_dir).unwrap();
+            let link = cfg_dir.join("omairc.conf");
+            symlink("missing/deep/omairc.conf", &link).unwrap();
+            let missing_dir = cfg_dir.join("missing");
+
+            let mut settings = Settings::open(&link);
+            settings.set_bool("preferences", "directs", true);
+            assert_eq!(settings.sync(), Status::AccessError);
+            assert!(!missing_dir.exists());
+        }
     }
 
     #[test]

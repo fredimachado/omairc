@@ -907,6 +907,29 @@ func TestSyncThroughSymlinkUpdatesTarget3dba(t *testing.T) {
 	}
 }
 
+func TestSyncThroughSymlinkedParentAndDotdot3dba(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks")
+	}
+
+	root := t.TempDir()
+	realStore := filepath.Join(root, "real", "store")
+	realCfg := filepath.Join(root, "real", "cfg", "omairc")
+	mustMkdirAll(t, realStore, realCfg)
+	realFile := filepath.Join(realStore, "omairc.conf")
+	mustWriteFileMode(t, realFile, []byte("old\n"), 0o644)
+	cfgLink := filepath.Join(root, "cfg")
+	mustSymlink(t, filepath.Join(root, "real", "cfg"), cfgLink)
+	link := filepath.Join(cfgLink, "omairc", "omairc.conf")
+	mustSymlink(t, "../../store/omairc.conf", link)
+
+	if err := writeSettingsAtomic(link, []byte("new\n"), true); err != nil {
+		t.Fatalf("writeSettingsAtomic: %v", err)
+	}
+	assertSymlinkTarget(t, link, "../../store/omairc.conf")
+	assertFileBytes(t, realFile, []byte("new\n"))
+}
+
 func TestWriteSettingsAtomicSymlinkCases3dba(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks")
@@ -948,10 +971,11 @@ func TestWriteSettingsAtomicSymlinkCases3dba(t *testing.T) {
 		assertFileBytes(t, target, []byte("new\n"))
 	})
 
-	t.Run("dangling", func(t *testing.T) {
+	t.Run("dangling with existing parent", func(t *testing.T) {
 		root := t.TempDir()
 		cfgDir := filepath.Join(root, "cfg", "omairc")
-		mustMkdirAll(t, cfgDir)
+		realDir := filepath.Join(cfgDir, "real")
+		mustMkdirAll(t, cfgDir, realDir)
 		link := filepath.Join(cfgDir, "omairc.conf")
 		mustSymlink(t, "real/omairc.conf", link)
 		if err := writeSettingsAtomic(link, []byte("created\n"), false); err != nil {
@@ -961,6 +985,21 @@ func TestWriteSettingsAtomicSymlinkCases3dba(t *testing.T) {
 		assertSymlinkTarget(t, link, "real/omairc.conf")
 		assertFileBytes(t, target, []byte("created\n"))
 		assertFileMode(t, target, 0o600)
+	})
+
+	t.Run("dangling missing target directory", func(t *testing.T) {
+		root := t.TempDir()
+		cfgDir := filepath.Join(root, "cfg", "omairc")
+		mustMkdirAll(t, cfgDir)
+		link := filepath.Join(cfgDir, "omairc.conf")
+		mustSymlink(t, "missing/deep/omairc.conf", link)
+		missingDir := filepath.Join(cfgDir, "missing")
+		if err := writeSettingsAtomic(link, []byte("nope\n"), false); err == nil {
+			t.Fatal("expected error for missing target directory")
+		}
+		if _, err := os.Stat(missingDir); err == nil {
+			t.Fatal("missing directory must not be created")
+		}
 	})
 
 	t.Run("read-only target", func(t *testing.T) {
