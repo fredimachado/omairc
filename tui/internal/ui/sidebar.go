@@ -73,21 +73,35 @@ func (m *Model) sidebarNetworkDisplayName(networkID string) string {
 	return networkID
 }
 
-// sidebarStoredNetworkIDs returns the stored profile ids from the connection
-// roster, in roster order. The unsaved Connect draft is shown in the sidebar
-// but must not be written to networkOrder on disk.
+// sidebarStoredNetworkIDs returns stored profile ids in sidebar display order.
+// The unsaved Connect draft is shown in the sidebar but must not be written to
+// networkOrder on disk.
 func (m *Model) sidebarStoredNetworkIDs() []string {
 	if m.conn == nil {
 		return nil
 	}
-	rows := m.conn.Networks()
-	ids := make([]string, 0, len(rows))
-	for _, row := range rows {
+	stored := make(map[string]bool, len(m.conn.Networks()))
+	for _, row := range m.conn.Networks() {
 		if row.Stored {
-			ids = append(ids, row.NetworkID)
+			stored[row.NetworkID] = true
+		}
+	}
+	ids := make([]string, 0, len(stored))
+	for _, id := range m.sidebarNetworkIDs() {
+		if stored[id] {
+			ids = append(ids, id)
 		}
 	}
 	return ids
+}
+
+// alignConnectionStoredOrder matches the connection roster to sidebar display
+// order without persisting preferences.
+func (m *Model) alignConnectionStoredOrder() {
+	if m.conn == nil {
+		return
+	}
+	m.conn.ReorderStored(m.sidebarStoredNetworkIDs())
 }
 
 // syncSidebarNetworkOrder copies the stored connection roster order into the

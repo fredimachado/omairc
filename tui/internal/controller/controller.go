@@ -2,6 +2,7 @@ package controller
 
 import (
 	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -50,6 +51,10 @@ type Controller struct {
 	// because the sidebar reads NetworkOrder/Conversations, not
 	// connection.Networks.
 	networkCollapsed map[string]bool
+	// storedProfileIDs caches settings ChildGroups for "networks". Refresh it
+	// after preferences load and whenever the connection roster persists a
+	// profile change, so render paths never parse the ini.
+	storedProfileIDs []string
 	connectionStatus string
 
 	// Slash subsystems and their stores. commands, replies, monitor
@@ -314,6 +319,7 @@ func (c *Controller) LoadStoredPreferences() {
 		c.colorPalette = id
 	}
 	c.loadStoredNetworkOrder(settings)
+	c.refreshStoredProfileIDsLocked(settings)
 	c.autoaway.LoadStored()
 }
 
@@ -528,19 +534,33 @@ func (c *Controller) loadStoredNetworkOrder(settings *storage.Settings) {
 
 const storedNetworksGroup = "networks"
 
-// knownNetworkIDs returns every network the sidebar may list: registered
-// sessions, saved profiles, Status console traffic, and recorded errors. It
-// mirrors Controller::known_network_ids (`client/src/controller/networks.rs`).
-func (c *Controller) knownNetworkIDs() []string {
-	seen := make(map[string]struct{})
+// RefreshStoredProfileIDs reloads the cached saved-profile id list from disk.
+// It is a no-op when ephemeral. Call after the profile store changes.
+func (c *Controller) RefreshStoredProfileIDs() {
+	if c.ephemeral {
+		return
+	}
+	settings := storage.OpenSettings("")
+	c.lock()
+	c.refreshStoredProfileIDsLocked(settings)
+	c.unlock()
+}
+
+func (c *Controller) refreshStoredProfileIDsLocked(settings *storage.Settings) {
+	if c.ephemeral {
+		c.storedProfileIDs = nil
+		return
+	}
+	c.storedProfileIDs = settings.ChildGroups(storedNetworksGroup)
+}
+
+func (c *Controller) knownNetworkIDSet() map[string]struct{} {
+	set := make(map[string]struct{})
 	add := func(id string) {
 		if id == "" {
 			return
 		}
-		if _, ok := seen[id]; ok {
-			return
-		}
-		seen[id] = struct{}{}
+		set[id] = struct{}{}
 	}
 	for _, id := range c.manager.NetworkIDs() {
 		add(id)
@@ -548,17 +568,24 @@ func (c *Controller) knownNetworkIDs() []string {
 	for id := range c.lastErrors {
 		add(id)
 	}
-	for _, id := range c.statusConsole.NetworkIDs() {
-		add(id)
-	}
-	if !c.ephemeral {
-		settings := storage.OpenSettings("")
-		for _, id := range settings.ChildGroups(storedNetworksGroup) {
+	if c.statusConsole != nil {
+		for id := range c.statusConsole.lines {
 			add(id)
 		}
 	}
-	ids := make([]string, 0, len(seen))
-	for id := range seen {
+	for _, id := range c.storedProfileIDs {
+		add(id)
+	}
+	return set
+}
+
+// knownNetworkIDs returns every network the sidebar may list: registered
+// sessions, saved profiles, Status console traffic, and recorded errors. It
+// mirrors Controller::known_network_ids (`client/src/controller/networks.rs`).
+func (c *Controller) knownNetworkIDs() []string {
+	set := c.knownNetworkIDSet()
+	ids := make([]string, 0, len(set))
+	for id := range set {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
@@ -569,12 +596,19 @@ func (c *Controller) isKnownNetwork(networkID string) bool {
 	if networkID == "" {
 		return false
 	}
-	for _, id := range c.knownNetworkIDs() {
-		if id == networkID {
+	if c.manager.Find(networkID) != nil {
+		return true
+	}
+	if _, ok := c.lastErrors[networkID]; ok {
+		return true
+	}
+	if c.statusConsole != nil {
+		if lines, ok := c.statusConsole.lines[networkID]; ok && len(lines) > 0 {
 			return true
 		}
 	}
-	return false
+	_, ok := slices.BinarySearch(c.storedProfileIDs, networkID)
+	return ok
 }
 
 // Reducer returns the event reducer the controller folds into.
@@ -611,16 +645,17 @@ func (c *Controller) NetworkIDs() []string {
 // first (keeping only known networks), then any other known network in stable
 // id order.
 func (c *Controller) NetworkOrder() []string {
-	known := c.knownNetworkIDs()
+	knownSet := c.knownNetworkIDSet()
 	if len(c.networkOrder) == 0 {
+		known := make([]string, 0, len(knownSet))
+		for id := range knownSet {
+			known = append(known, id)
+		}
+		sort.Strings(known)
 		return known
 	}
-	knownSet := make(map[string]struct{}, len(known))
-	for _, id := range known {
-		knownSet[id] = struct{}{}
-	}
-	seen := make(map[string]bool, len(known))
-	order := make([]string, 0, len(known))
+	seen := make(map[string]bool, len(knownSet))
+	order := make([]string, 0, len(knownSet))
 	for _, id := range c.networkOrder {
 		if seen[id] {
 			continue
@@ -631,6 +666,11 @@ func (c *Controller) NetworkOrder() []string {
 		seen[id] = true
 		order = append(order, id)
 	}
+	known := make([]string, 0, len(knownSet))
+	for id := range knownSet {
+		known = append(known, id)
+	}
+	sort.Strings(known)
 	for _, id := range known {
 		if seen[id] {
 			continue

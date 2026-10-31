@@ -620,6 +620,41 @@ func (c *Connection) MoveNetwork(networkID string, delta int) bool {
 	return true
 }
 
+// ReorderStored rearranges the in-memory stored profile list to follow order
+// without touching disk. Unknown ids are appended in their prior order.
+func (c *Connection) ReorderStored(order []string) {
+	if len(c.stored) <= 1 || len(order) == 0 {
+		return
+	}
+	byID := make(map[string]NetworkProfile, len(c.stored))
+	for _, profile := range c.stored {
+		byID[profile.NetworkID] = profile
+	}
+	reordered := make([]NetworkProfile, 0, len(c.stored))
+	seen := make(map[string]bool, len(c.stored))
+	for _, id := range order {
+		profile, ok := byID[id]
+		if !ok || seen[id] {
+			continue
+		}
+		seen[id] = true
+		reordered = append(reordered, profile)
+	}
+	for _, profile := range c.stored {
+		if seen[profile.NetworkID] {
+			continue
+		}
+		reordered = append(reordered, profile)
+	}
+	if slices.EqualFunc(reordered, c.stored, func(left, right NetworkProfile) bool {
+		return left.NetworkID == right.NetworkID
+	}) {
+		return
+	}
+	c.stored = reordered
+	c.networksChanged()
+}
+
 // Apply normalizes the draft, persists the profile and its edited secrets
 // stores it, and reconciles its session. It reports whether a live session was
 // reached. An incomplete draft is normalized in place and rejected.

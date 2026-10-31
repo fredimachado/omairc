@@ -276,7 +276,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if conn != nil {
 		conn.OnDraftChanged = notify
-		conn.OnNetworksChanged = notify
+		conn.OnNetworksChanged = func() {
+			c.RefreshStoredProfileIDs()
+			notify()
+		}
 		conn.OnSetupRequiredChanged = notify
 		conn.OnPersistenceChanged = notify
 		conn.OnCredentialChanged = notify

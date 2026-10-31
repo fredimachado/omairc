@@ -109,6 +109,7 @@ func shellFromDisk(t *testing.T) *Model {
 	ctrl.LoadStoredPreferences()
 	conn := connection.New(ctrl, func() session.Transport { return session.NewLoopbackTransport() })
 	conn.SetProfileStore(storage.NewProfileStore())
+	ctrl.RefreshStoredProfileIDs()
 	return New(ctrl, conn)
 }
 
@@ -190,17 +191,123 @@ func TestNetworkOrderSurvivesRestartWithoutRewritingConf(t *testing.T) {
 	}
 }
 
+func connectionStoredIDs(t *testing.T, conn *connection.Connection) []string {
+	t.Helper()
+	ids := make([]string, 0, len(conn.Networks()))
+	for _, row := range conn.Networks() {
+		if row.Stored {
+			ids = append(ids, row.NetworkID)
+		}
+	}
+	return ids
+}
+
+func TestNetworkOrderMoveAfterRestart(t *testing.T) {
+	dir := configDir(t)
+	seedThreeNetworkOrder(t, dir)
+	start := []string{"net-charlie", "net-bravo", "net-alpha"}
+
+	before := snapshotConfig(t)
+	m := shellFromDisk(t)
+	assertConfigUnchanged(t, before, snapshotConfig(t))
+	if got := m.sidebarNetworkIDs(); !slices.Equal(got, start) {
+		t.Fatalf("sidebarNetworkIDs() = %v, want %v", got, start)
+	}
+	if got := connectionStoredIDs(t, m.conn); !slices.Equal(got, start) {
+		t.Fatalf("roster before move = %v, want %v", got, start)
+	}
+
+	m.sidebarNetworkFocusID = "net-charlie"
+	m.moveFocusedNetwork(1)
+	afterCharlieDown := []string{"net-bravo", "net-charlie", "net-alpha"}
+	if got := m.sidebarNetworkIDs(); !slices.Equal(got, afterCharlieDown) {
+		t.Fatalf("after charlie down sidebar = %v, want %v", got, afterCharlieDown)
+	}
+	if got := connectionStoredIDs(t, m.conn); !slices.Equal(got, afterCharlieDown) {
+		t.Fatalf("after charlie down roster = %v, want %v", got, afterCharlieDown)
+	}
+
+	m2 := shellFromDisk(t)
+	if got := m2.sidebarNetworkIDs(); !slices.Equal(got, afterCharlieDown) {
+		t.Fatalf("after restart sidebar = %v, want %v", got, afterCharlieDown)
+	}
+
+	m2.sidebarNetworkFocusID = "net-alpha"
+	m2.moveFocusedNetwork(-1)
+	afterAlphaUp := []string{"net-bravo", "net-alpha", "net-charlie"}
+	if got := m2.sidebarNetworkIDs(); !slices.Equal(got, afterAlphaUp) {
+		t.Fatalf("after alpha up sidebar = %v, want %v", got, afterAlphaUp)
+	}
+
+	m2.sidebarNetworkFocusID = "net-bravo"
+	beforeBoundary := m2.sidebarNetworkIDs()
+	m2.moveFocusedNetwork(-1)
+	if got := m2.sidebarNetworkIDs(); !slices.Equal(got, beforeBoundary) {
+		t.Fatalf("move bravo up past top changed order to %v", got)
+	}
+	m2.sidebarNetworkFocusID = "net-charlie"
+	m2.moveFocusedNetwork(1)
+	if got := m2.sidebarNetworkIDs(); !slices.Equal(got, beforeBoundary) {
+		t.Fatalf("move charlie down past bottom changed order to %v", got)
+	}
+
+	m3 := shellFromDisk(t)
+	if got := m3.sidebarNetworkIDs(); !slices.Equal(got, afterAlphaUp) {
+		t.Fatalf("after second restart sidebar = %v, want %v", got, afterAlphaUp)
+	}
+}
+
+func TestNetworkOrderSaveNewNetworkAfterRestart(t *testing.T) {
+	dir := configDir(t)
+	seedThreeNetworkOrder(t, dir)
+	wantBase := []string{"net-charlie", "net-bravo", "net-alpha"}
+
+	before := snapshotConfig(t)
+	m := shellFromDisk(t)
+	assertConfigUnchanged(t, before, snapshotConfig(t))
+
+	if !m.conn.Add() {
+		t.Fatal("Add() = false")
+	}
+	m.conn.SetName("Delta")
+	m.conn.SetHost("irc.delta.example")
+	m.conn.SetNick("omairc")
+	m.conn.SetUsername("omairc")
+	m.conn.SetRealname("Omairc")
+	deltaID := m.conn.SelectedNetworkID()
+	if !m.conn.Apply() {
+		t.Fatal("Apply() = false")
+	}
+	m.ctrl.RefreshStoredProfileIDs()
+	m.syncSidebarNetworkOrder()
+	m.alignConnectionStoredOrder()
+
+	want := append(slices.Clone(wantBase), deltaID)
+	if got := m.sidebarNetworkIDs(); !slices.Equal(got, want) {
+		t.Fatalf("sidebarNetworkIDs() = %v, want %v", got, want)
+	}
+	if got := connectionStoredIDs(t, m.conn); !slices.Equal(got, want) {
+		t.Fatalf("roster after save = %v, want %v", got, want)
+	}
+	settings := storage.OpenSettings("")
+	if got := settings.StringList("preferences", "networkOrder"); !slices.Equal(got, want) {
+		t.Fatalf("networkOrder = %v, want %v", got, want)
+	}
+}
+
 func TestNetworkOrderAfterSaveContainsOnlyStoredIDs(t *testing.T) {
 	dir := configDir(t)
 	t.Setenv("XDG_CONFIG_HOME", dir)
+	store := storage.NewProfileStore()
 
 	ctrl := controller.New()
 	ctrl.SetEphemeral(false)
 	ctrl.LoadStoredPreferences()
 	conn := connection.New(ctrl, func() session.Transport { return session.NewLoopbackTransport() })
-	conn.SetProfileStore(storage.NewProfileStore())
+	conn.SetProfileStore(store)
 
 	first := connection.SuggestedProfile()
+	first.NetworkID = "net-first"
 	first.Nick = "omairc"
 	first.Username = "omairc"
 	first.Realname = "Omairc"
@@ -208,7 +315,13 @@ func TestNetworkOrderAfterSaveContainsOnlyStoredIDs(t *testing.T) {
 	second := first
 	second.NetworkID = "net-second"
 	second.Name = "Second"
-	conn.SetStoredProfiles([]connection.NetworkProfile{first, second})
+	for _, profile := range []connection.NetworkProfile{first, second} {
+		if status := store.Save(storageStoredProfile(profile.NetworkID, profile.Name)); status != storage.StatusWritten {
+			t.Fatalf("Save(%q) = %v", profile.NetworkID, status)
+		}
+	}
+	conn.SetProfileStore(store)
+	ctrl.RefreshStoredProfileIDs()
 
 	m := New(ctrl, conn)
 	if !conn.Add() {
@@ -218,10 +331,8 @@ func TestNetworkOrderAfterSaveContainsOnlyStoredIDs(t *testing.T) {
 	if draftID == "" || draftID == first.NetworkID || draftID == second.NetworkID {
 		t.Fatalf("draft id %q must be a fresh unsaved profile", draftID)
 	}
-	if !conn.MoveNetwork(second.NetworkID, -1) {
-		t.Fatal("MoveNetwork(second, -1) = false")
-	}
-	m.syncSidebarNetworkOrder()
+	m.sidebarNetworkFocusID = second.NetworkID
+	m.moveFocusedNetwork(-1)
 
 	settings := storage.OpenSettings("")
 	order := settings.StringList("preferences", "networkOrder")
