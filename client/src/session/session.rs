@@ -716,6 +716,10 @@ impl Core {
         self.clear_pending_request_labels(true);
         self.caps.reset(!self.config.sasl_secret().is_empty());
         self.read_marker_token = None;
+        // Outstanding sets die with the socket; last_known is the durable
+        // high-water and stays until a separate reconnect ledger reset.
+        self.read_markers.in_flight.clear();
+        self.read_markers.pending.clear();
         self.metadata = MetadataCapability::default();
         self.typing.reset();
         self.publish_capabilities();

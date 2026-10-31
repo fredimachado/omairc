@@ -291,3 +291,20 @@ fn read_marker_received_newer_blocks_older_set() {
         fx.frames()
     );
 }
+
+#[test]
+fn read_marker_fail_allows_same_timestamp_retry() {
+    let fx = fresh();
+    register_with_read_marker(&fx, "draft/read-marker");
+    let want = "MARKREAD #omarchy timestamp=2024-06-01T12:00:00.000Z\r\n";
+    fx.session.queue_read_marker_set("#omarchy", at(0));
+    assert_eq!(count_containing(&fx.frames(), want), 1);
+    fx.inject(":server FAIL MARKREAD RATE_LIMITED #omarchy :slow\r\n");
+    fx.session.queue_read_marker_set("#omarchy", at(0));
+    assert_eq!(
+        count_containing(&fx.frames(), want),
+        2,
+        "FAIL must clear in-flight so the same stamp can be retried: {:?}",
+        fx.frames()
+    );
+}

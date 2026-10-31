@@ -49,6 +49,8 @@ func (s *Session) deliverReadMarkerLocked(message irc.Message) bool {
 	if !ok {
 		delete(s.readMarkerInFlight, folded)
 		s.flushReadMarkerSetLocked(folded)
+		// Unparseable replies still release a controller get-hold.
+		s.emit(func(handler Handler) { handler.ReadMarkerReceived(networkID, target, nil) })
 		return true
 	}
 	if marker == nil {
@@ -77,11 +79,14 @@ func (s *Session) handleReadMarkerFailLocked(message irc.Message) {
 	if !strings.EqualFold(command, "MARKREAD") && !strings.EqualFold(command, "READ") {
 		return
 	}
+	networkID := s.config.NetworkID
 	if len(message.Params) < 4 {
 		for folded := range s.readMarkerInFlight {
 			delete(s.readMarkerInFlight, folded)
 			s.flushReadMarkerSetLocked(folded)
 		}
+		// Empty target clears every awaiting get on this network.
+		s.emit(func(handler Handler) { handler.ReadMarkerReceived(networkID, "", nil) })
 		return
 	}
 	target := parameter(message, 2)
@@ -91,6 +96,7 @@ func (s *Session) handleReadMarkerFailLocked(message irc.Message) {
 	}
 	delete(s.readMarkerInFlight, folded)
 	s.flushReadMarkerSetLocked(folded)
+	s.emit(func(handler Handler) { handler.ReadMarkerReceived(networkID, target, nil) })
 }
 
 // ReadMarkerCommand returns the wire verb for an acknowledged read-marker cap, or "".
@@ -179,9 +185,10 @@ func (s *Session) flushReadMarkerSetLocked(folded string) {
 		return
 	}
 	line := fmt.Sprintf("%s %s timestamp=%s", command, pending.target, irc.FormatReadMarkerTime(pending.timestamp))
-	s.sendCommandLocked(line, "")
 	delete(s.readMarkerPending, folded)
-	s.advanceReadMarkerLastKnownLocked(folded, pending.timestamp)
+	if !s.sendCommandLocked(line, "") {
+		return
+	}
 	s.readMarkerInFlight[folded] = pending.timestamp
 }
 

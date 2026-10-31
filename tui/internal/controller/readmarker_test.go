@@ -463,37 +463,95 @@ func TestSelectDirectGetUsesDisplayName(t *testing.T) {
 	}
 }
 
-func TestAwaitingGetHoldsSetUntilReplyAndBlocksOlder(t *testing.T) {
+func TestReconnectSelectedDirectDoesNotSetOlderThanGetReply(t *testing.T) {
 	c, clock := newController(t)
 	transport := addAndStart(t, c, clock, baseConfig("net", "omairc"))
 	registerNetwork(t, transport, "omairc", "draft/read-marker")
 	c.NoteTranscriptViewport(true, true)
-	room := c.reducer.ConversationKey("net", "#room")
-	c.reducer.EnsureConversation(room, "#room", irc.CauseChannelState)
-	c.SelectConversation("net", "#room")
 	alice := c.reducer.ConversationKey("net", "Alice")
 	c.reducer.EnsureConversation(alice, "Alice", irc.CauseInboundOther)
 	older := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 	applyMessage(c, alice, "Alice", "hi", older)
+	c.SelectConversation("net", "Alice")
 	before := len(transport.WrittenFrames())
-	c.SelectConversation("net", "alice")
+	c.Apply(irc.WelcomeEvent{NetworkID: "net", CurrentNick: "omairc"})
 	frames := transport.WrittenFrames()[before:]
 	if countFramesIn(frames, "MARKREAD Alice\r\n") != 1 {
-		t.Fatalf("select must send one get with display name, frames=%v", frames)
+		t.Fatalf("welcome must send one get, frames=%v", frames)
 	}
 	if framesContainBytes(frames, "timestamp=") {
-		t.Fatalf("must not set while get reply is outstanding, frames=%v", frames)
-	}
-	c.NoteTranscriptViewport(true, true)
-	frames = transport.WrittenFrames()[before:]
-	if framesContainBytes(frames, "timestamp=") {
-		t.Fatalf("viewport sync must stay held until get reply, frames=%v", frames)
+		t.Fatalf("welcome must not publish a set before the get reply, frames=%v", frames)
 	}
 	newer := older.Add(time.Hour)
 	inject(t, transport, ":server MARKREAD Alice :timestamp="+irc.FormatReadMarkerTime(newer)+"\r\n")
 	frames = transport.WrittenFrames()[before:]
 	if framesContainBytes(frames, "timestamp=2024-06-01T12:00:00.000Z") {
 		t.Fatalf("must not set an older marker after newer get reply, frames=%v", frames)
+	}
+}
+
+func TestStarGetReplyReleasesHoldAndSendsOneSet(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("net", "omairc"))
+	registerNetwork(t, transport, "omairc", "draft/read-marker")
+	c.NoteTranscriptViewport(true, true)
+	alice := c.reducer.ConversationKey("net", "Alice")
+	c.reducer.EnsureConversation(alice, "Alice", irc.CauseInboundOther)
+	at := time.Date(2024, 6, 1, 12, 0, 0, 123000000, time.UTC)
+	applyMessage(c, alice, "Alice", "hi", at)
+	before := len(transport.WrittenFrames())
+	c.SelectConversation("net", "Alice")
+	frames := transport.WrittenFrames()[before:]
+	if framesContainBytes(frames, "timestamp=") {
+		t.Fatalf("must hold the set until the get reply, frames=%v", frames)
+	}
+	inject(t, transport, ":server MARKREAD Alice :*\r\n")
+	frames = transport.WrittenFrames()[before:]
+	want := "MARKREAD Alice timestamp=2024-06-01T12:00:00.123Z\r\n"
+	if countFramesIn(frames, want) != 1 {
+		t.Fatalf("star reply must release the hold and send exactly one set, frames=%v", frames)
+	}
+}
+
+func TestOlderGetReplyReleasesHoldAndSendsOneNewerSet(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("net", "omairc"))
+	registerNetwork(t, transport, "omairc", "draft/read-marker")
+	c.NoteTranscriptViewport(true, true)
+	alice := c.reducer.ConversationKey("net", "Alice")
+	c.reducer.EnsureConversation(alice, "Alice", irc.CauseInboundOther)
+	newer := time.Date(2024, 6, 1, 13, 0, 0, 0, time.UTC)
+	applyMessage(c, alice, "Alice", "hi", newer)
+	before := len(transport.WrittenFrames())
+	c.SelectConversation("net", "Alice")
+	inject(t, transport, ":server MARKREAD Alice :timestamp=2024-06-01T12:00:00.000Z\r\n")
+	frames := transport.WrittenFrames()[before:]
+	want := "MARKREAD Alice timestamp=2024-06-01T13:00:00.000Z\r\n"
+	if countFramesIn(frames, want) != 1 {
+		t.Fatalf("older get reply must release hold and send newer stamp once, frames=%v", frames)
+	}
+}
+
+func TestFailGetReplyReleasesHoldAndSendsSet(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("net", "omairc"))
+	registerNetwork(t, transport, "omairc", "draft/read-marker")
+	c.NoteTranscriptViewport(true, true)
+	alice := c.reducer.ConversationKey("net", "Alice")
+	c.reducer.EnsureConversation(alice, "Alice", irc.CauseInboundOther)
+	at := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	applyMessage(c, alice, "Alice", "hi", at)
+	before := len(transport.WrittenFrames())
+	c.SelectConversation("net", "Alice")
+	frames := transport.WrittenFrames()[before:]
+	if framesContainBytes(frames, "timestamp=") {
+		t.Fatalf("must hold until FAIL releases, frames=%v", frames)
+	}
+	inject(t, transport, ":server FAIL MARKREAD INTERNAL_ERROR Alice :oops\r\n")
+	frames = transport.WrittenFrames()[before:]
+	want := "MARKREAD Alice timestamp=2024-06-01T12:00:00.000Z\r\n"
+	if countFramesIn(frames, want) != 1 {
+		t.Fatalf("FAIL must release the hold and allow one set, frames=%v", frames)
 	}
 }
 

@@ -27,8 +27,9 @@ pub(crate) struct ReadMarkerQueue {
 }
 
 /// Pending and in-flight markers, keyed by the folded target. `last_known` is the
-/// high-water mark from a sent set or a received marker; it only moves forward so
-/// an echo that clears in-flight cannot re-send an equal or older timestamp.
+/// high-water mark from a received marker only; it only moves forward so an echo
+/// that clears in-flight cannot re-send an equal or older timestamp, while a FAIL
+/// can still retry the same stamp.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ReadMarkerLedger {
     pub(crate) pending: BTreeMap<String, ReadMarkerQueue>,
@@ -80,6 +81,12 @@ impl Core {
         let Some(parsed) = parse_read_marker_parameter(&message.text_param(1)) else {
             self.read_markers.in_flight.remove(&folded);
             self.flush_read_marker_set(&folded);
+            // Unparseable replies still release a controller get-hold.
+            self.emit(SessionEvent::ReadMarkerReceived {
+                network_id,
+                target,
+                marker: None,
+            });
             return true;
         };
         let Some(marker) = parsed else {
@@ -117,12 +124,19 @@ impl Core {
         if !command.eq_ignore_ascii_case("MARKREAD") && !command.eq_ignore_ascii_case("READ") {
             return;
         }
+        let network_id = self.network_id();
         if message.params.len() < 4 {
             let folded: Vec<String> = self.read_markers.in_flight.keys().cloned().collect();
             for key in folded {
                 self.read_markers.in_flight.remove(&key);
                 self.flush_read_marker_set(&key);
             }
+            // Empty target clears every awaiting get on this network.
+            self.emit(SessionEvent::ReadMarkerReceived {
+                network_id,
+                target: String::new(),
+                marker: None,
+            });
             return;
         }
         let target = message.text_param(2);
@@ -132,6 +146,11 @@ impl Core {
         }
         self.read_markers.in_flight.remove(&folded);
         self.flush_read_marker_set(&folded);
+        self.emit(SessionEvent::ReadMarkerReceived {
+            network_id,
+            target,
+            marker: None,
+        });
     }
 
     /// Asks the server for the stored marker on `target`. Returns whether the
@@ -208,9 +227,10 @@ impl Core {
             pending.target,
             format_read_marker_time(pending.timestamp)
         );
-        self.send_command(&line, "");
         self.read_markers.pending.remove(folded);
-        self.advance_last_known(folded, pending.timestamp);
+        if !self.send_command(&line, "") {
+            return;
+        }
         self.read_markers
             .in_flight
             .insert(folded.to_owned(), pending.timestamp);

@@ -3113,6 +3113,10 @@ func (s *Session) resetForConnectionLocked() {
 	s.cancelPingWatchdogLocked()
 	s.clearPendingRequestLabelsLocked(true)
 	s.capabilities.Reset(s.config.saslSecret() != "")
+	// Outstanding sets die with the socket; last_known is the durable
+	// high-water and stays until a separate reconnect ledger reset.
+	s.readMarkerInFlight = nil
+	s.readMarkerPending = nil
 	s.metadataCapability = irc.MetadataCapability{}
 	s.typing.reset()
 	s.publishCapabilitiesLocked()

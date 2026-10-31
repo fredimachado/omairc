@@ -274,7 +274,7 @@ impl Controller {
                 } else {
                     conversation.target.clone()
                 };
-                self.request_read_marker_get_once(network_id, &get_target);
+                self.request_read_marker_get_with_key(&key, &get_target);
             }
         }
     }

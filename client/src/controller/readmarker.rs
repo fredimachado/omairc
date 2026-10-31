@@ -49,13 +49,20 @@ impl ReadMarkerState {
         self.awaiting_get.remove(key)
     }
 
+    fn clear_awaiting_network(&mut self, network_id: &str) -> bool {
+        let before = self.awaiting_get.len();
+        self.awaiting_get
+            .retain(|key| key.network_id != network_id);
+        self.awaiting_get.len() != before
+    }
+
     fn awaits_get(&self, key: &ConversationKey) -> bool {
         self.awaiting_get.contains(key)
     }
 }
 
 impl Controller {
-    /// Records whether the shell is focused and the transcript is pinned to the bottom
+    /// Records whether the shell is focused and the selected transcript is pinned to the bottom
     /// (`NoteTranscriptViewport`).
     pub fn note_transcript_viewport(&mut self, focused: bool, follow_end: bool) {
         self.transcript_focused = focused;
@@ -63,19 +70,58 @@ impl Controller {
         self.sync_read_marker_for_selection();
     }
 
-    /// Applies a server read marker for one target (`ReadMarkerReceived`).
+    /// Applies a server read marker for one target (`ReadMarkerReceived`). An empty
+    /// `target` clears every awaiting get on the network (FAIL without a target).
     pub fn read_marker_received(
         &mut self,
         network_id: &str,
         target: &str,
         marker: Option<DateTime<Utc>>,
     ) {
-        if network_id.is_empty() || target.is_empty() {
+        if network_id.is_empty() {
+            return;
+        }
+        if target.is_empty() {
+            if self.read_markers.clear_awaiting_network(network_id) {
+                self.sync_read_marker_for_selection();
+            }
             return;
         }
         let features = self.reducer.server_features(network_id);
         let key = self.reducer.conversation_key(network_id, target);
-        let awaited = self.read_markers.clear_awaiting_get(&key);
+        let mut awaited = self.read_markers.clear_awaiting_get(&key);
+        // Welcome may record the hold under the selected key before 005 arrives,
+        // when conversation_key still uses the default casemapping.
+        if !awaited {
+            if let Some(selected) = self.selected.clone() {
+                if selected.network_id == network_id
+                    && features
+                        .case_mapping()
+                        .equals(&selected.normalized_target, target)
+                {
+                    awaited = self.read_markers.clear_awaiting_get(&selected);
+                }
+            }
+        }
+        if !awaited {
+            let pending: Vec<ConversationKey> = self
+                .read_markers
+                .awaiting_get
+                .iter()
+                .filter(|pending| pending.network_id == network_id)
+                .cloned()
+                .collect();
+            for pending in pending {
+                if features
+                    .case_mapping()
+                    .equals(&pending.normalized_target, target)
+                    && self.read_markers.clear_awaiting_get(&pending)
+                {
+                    awaited = true;
+                    break;
+                }
+            }
+        }
         if features.is_channel(target) {
             if self.reducer.find(&key).is_none() {
                 return;
@@ -94,29 +140,40 @@ impl Controller {
         }
     }
 
-    pub(super) fn request_read_marker_get_once(&mut self, network_id: &str, target: &str) {
+    /// Asks for one MARKREAD get, recording the hold under `key` (the selection's
+    /// conversation identity) so pre-005 casemapping cannot miss it.
+    pub(super) fn request_read_marker_get_with_key(
+        &mut self,
+        key: &ConversationKey,
+        target: &str,
+    ) {
         if target.is_empty() {
             return;
         }
-        let features = self.reducer.server_features(network_id);
+        let features = self.reducer.server_features(&key.network_id);
         if features.is_channel(target) {
             return;
         }
-        let key = self.reducer.conversation_key(network_id, target);
-        if self.read_markers.get_sent.contains(&key) {
+        if self.read_markers.get_sent.contains(key) {
             return;
         }
-        let Some(session) = self.manager.find(network_id) else {
+        let Some(session) = self.manager.find(&key.network_id) else {
             return;
         };
         if !session.request_read_marker_get(target) {
             return;
         }
-        self.read_markers.note_get_sent(&key);
+        self.read_markers.note_get_sent(key);
     }
 
     pub(super) fn read_marker_forget_network(&mut self, network_id: &str) {
         self.read_markers.forget_network(network_id);
+    }
+
+    pub(super) fn read_marker_clear_awaiting_network(&mut self, network_id: &str) {
+        if self.read_markers.clear_awaiting_network(network_id) {
+            self.sync_read_marker_for_selection();
+        }
     }
 
     pub(super) fn request_read_marker_get_for_selected_direct(&mut self, network_id: &str) {
@@ -138,7 +195,7 @@ impl Controller {
         } else {
             conversation.target.clone()
         };
-        self.request_read_marker_get_once(network_id, &target);
+        self.request_read_marker_get_with_key(&selected, &target);
     }
 
     pub(super) fn sync_read_marker_for_selection(&mut self) {

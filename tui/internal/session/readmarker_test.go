@@ -249,3 +249,19 @@ func TestReadMarkerReceivedNewerBlocksOlderSet(t *testing.T) {
 		t.Fatalf("older set after newer received marker must not send: %v", fixture.frames())
 	}
 }
+
+func TestReadMarkerFailAllowsSameTimestampRetry(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	registerWithReadMarker(fixture, "draft/read-marker")
+	want := "MARKREAD #omarchy timestamp=2024-06-01T12:00:00.000Z\r\n"
+	when := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	fixture.session.QueueReadMarkerSet("#omarchy", when)
+	if countReadMarkerFrame(fixture.frames(), want) != 1 {
+		t.Fatalf("frames = %v", fixture.frames())
+	}
+	fixture.inject(":server FAIL MARKREAD RATE_LIMITED #omarchy :slow\r\n")
+	fixture.session.QueueReadMarkerSet("#omarchy", when)
+	if countReadMarkerFrame(fixture.frames(), want) != 2 {
+		t.Fatalf("FAIL must clear in-flight so the same stamp can be retried: %v", fixture.frames())
+	}
+}

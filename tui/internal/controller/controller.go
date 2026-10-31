@@ -931,7 +931,7 @@ func (c *Controller) Apply(event irc.Event) {
 		c.consoleOpen = false
 		features := c.reducer.ServerFeatures(key.NetworkID)
 		if c.reducer.Find(key) != nil && !features.IsChannel(key.NormalizedTarget) {
-			c.requestReadMarkerGetOnce(key.NetworkID, conversation.Target)
+			c.requestReadMarkerGetWithKey(key, conversation.Target)
 		}
 	}
 	c.adoptReducerSelection()
@@ -1266,7 +1266,7 @@ func (c *Controller) SelectConversation(networkID, target string) {
 		if getTarget == "" {
 			getTarget = target
 		}
-		c.requestReadMarkerGetOnce(networkID, getTarget)
+		c.requestReadMarkerGetWithKey(key, getTarget)
 	}
 }
 
@@ -2184,6 +2184,9 @@ func (c *Controller) handleCapabilities(networkID string, capabilities irc.Capab
 	}
 	if dropped(irc.CapabilityMessageTags) {
 		c.reducer.ClearTypingFacts(networkID)
+	}
+	if dropped(irc.CapabilityReadMarker) {
+		c.readMarkerClearAwaitingNetwork(networkID)
 	}
 	c.notifyCapabilitiesChanged()
 }
