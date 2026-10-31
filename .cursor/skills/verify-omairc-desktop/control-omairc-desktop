@@ -28,6 +28,12 @@ SCREENSHOT_GRAB_ATTEMPTS=5
 SCREENSHOT_GRAB_DELAY=0.3
 SCREENSHOT_FLAT_STDDEV=0.005
 SCREENSHOT_FLAT_COLORS=16
+# wait-title polls the X11 window name. Cold demo launch can briefly show an
+# unfocused attention preview (author: body - Omairc) until the window is
+# focused and the seed settles; three seconds was flaking full recipe replay.
+WAIT_TITLE_POLL_SEC=0.1
+WAIT_TITLE_MAX_SEC=3600
+WAIT_TITLE_DEFAULT_SEC=10
 # Headless Xvfb framebuffer. --visible overrides these after reading the
 # host scale so the nested size matches the physical Xephyr window (on a
 # 2x panel, logical 1600x1000 → nested 3200x2000).
@@ -46,7 +52,7 @@ Usage:
   control-omairc-desktop launch [--demo-server] [--visible]
   control-omairc-desktop doctor
   control-omairc-desktop title
-  control-omairc-desktop wait-title --exact "<title>"
+  control-omairc-desktop wait-title --exact "<title>" [--timeout SEC|10s] (max 3600)
   control-omairc-desktop focus-composer
   control-omairc-desktop composer
   control-omairc-desktop jump --query "<text>"
@@ -71,7 +77,11 @@ Usage:
   control-omairc-desktop screenshot --feature <id> --name <stem>
   control-omairc-desktop compare --before <path> --after <path>
   control-omairc-desktop run <feature> [--dry-run]
+  control-omairc-desktop self-check
   control-omairc-desktop cleanup
+
+self-check uses a private OMAIRC_VERIFY_DESKTOP_STATE temp file so it never
+clears the default state file for a live verify session.
 
 Default launch uses headless Xvfb (what agents should use). --visible uses
 Xephyr so a nested window appears on your desktop; same xdotool control
@@ -342,8 +352,220 @@ PY
 }
 
 
+refresh_app_window() {
+  found="$(xdotool search --onlyvisible --pid "$APP_PID" 2>/dev/null | head -1 || true)"
+  if [ -n "$found" ]; then
+    WINDOW=$found
+  fi
+}
+
+require_app_alive() {
+  process_alive "$APP_PID" || die "Omairc pid $APP_PID is not running"
+}
+
+require_app_window() {
+  require_app_alive
+  refresh_app_window
+  [ -n "$WINDOW" ] || die "Omairc window is gone for pid $APP_PID"
+}
+
 window_title() {
-  xdotool getwindowname "$WINDOW"
+  read_window_title
+}
+
+# Read the X11 window name. Fails when the app/window is gone; returns 1 when
+# xdotool fails or the title is still empty (caller polls until deadline).
+read_window_title() {
+  require_app_window
+  if [ -n "${SELF_CHECK_FORCE_EMPTY_TITLE:-}" ]; then
+    return 1
+  fi
+  if ! _title=$(xdotool getwindowname "$WINDOW" 2>/dev/null); then
+    return 1
+  fi
+  if [ -z "$_title" ]; then
+    return 1
+  fi
+  printf '%s' "$_title"
+}
+
+report_read_window_title_failure() {
+  require_app_alive
+  refresh_app_window
+  found="$(xdotool search --onlyvisible --pid "$APP_PID" 2>/dev/null | head -1 || true)"
+  if [ -z "$found" ]; then
+    die "Omairc window not found for pid $APP_PID"
+  fi
+  die "cannot read window title"
+}
+
+try_focus_window() {
+  require_app_window
+  xdotool windowfocus --sync "$WINDOW" >/dev/null 2>&1
+}
+
+now_ms() {
+  _t=$(date +%s%3N 2>/dev/null) || _t=$(($(date +%s) * 1000))
+  printf '%s' "$_t"
+}
+
+deadline_ms() {
+  _timeout_sec=$1
+  echo $(( $(now_ms) + _timeout_sec * 1000 ))
+}
+
+deadline_reached() {
+  [ "$(now_ms)" -ge "$1" ]
+}
+
+invalid_wait_title_timeout() {
+  if [ -n "${1:-}" ]; then
+    die "invalid wait-title timeout '$1' (use seconds or 10s, max ${WAIT_TITLE_MAX_SEC})"
+  fi
+  die "invalid wait-title timeout (use seconds or 10s, max ${WAIT_TITLE_MAX_SEC})"
+}
+
+invalid_env_wait_title_timeout() {
+  if [ -n "${1:-}" ]; then
+    die "invalid OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT '$1' (use seconds or 10s, max ${WAIT_TITLE_MAX_SEC})"
+  fi
+  die "invalid OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT (use seconds or 10s, max ${WAIT_TITLE_MAX_SEC})"
+}
+
+# _label is "flag" for --timeout or "env" for OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT.
+_wait_title_timeout_seconds() {
+  _arg=$1
+  _label=$2
+  _invalid() {
+    if [ "$_label" = env ]; then
+      invalid_env_wait_title_timeout "$_arg"
+    else
+      invalid_wait_title_timeout "$_arg"
+    fi
+  }
+  [ -n "$_arg" ] || _invalid
+  case $_arg in
+    *m*) _invalid ;;
+  esac
+  case $_arg in
+    *s)
+      _digits=${_arg%s}
+      case $_digits in
+        ''|*[!0-9]*) _invalid ;;
+      esac
+      _raw=$_digits
+      ;;
+    *[!0-9]*)
+      _invalid
+      ;;
+    *)
+      _raw=$_arg
+      ;;
+  esac
+  if [ "${#_raw}" -gt 4 ]; then
+    _invalid
+  fi
+  _sec=$(printf '%s' "$_raw" | awk '{ if ($0 !~ /^[0-9]+$/) exit 1; print $0 + 0 }') \
+    || _invalid
+  if [ "$_sec" -lt 1 ] || [ "$_sec" -gt "$WAIT_TITLE_MAX_SEC" ]; then
+    _invalid
+  fi
+  echo "$_sec"
+}
+
+validate_wait_title_timeout() {
+  _wait_title_timeout_seconds "$1" flag
+}
+
+wait_title_timeout_from_env() {
+  if [ -z "${OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT+x}" ] || [ -z "$OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT" ]; then
+    echo "$WAIT_TITLE_DEFAULT_SEC"
+    return 0
+  fi
+  _wait_title_timeout_seconds "$OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT" env
+}
+
+ensure_window_focused() {
+  _timeout=$(wait_title_timeout_from_env)
+  _deadline=$(deadline_ms "$_timeout")
+  while ! deadline_reached "$_deadline"; do
+    require_app_window
+    if try_focus_window; then
+      return 0
+    fi
+    sleep "$WAIT_TITLE_POLL_SEC"
+  done
+  die "failed to focus Omairc window $WINDOW within ${_timeout}s"
+}
+
+# Unfocused demo traffic uses attention_title (nick: preview - Omairc). Channel
+# and DM conversation titles do not use that author: body prefix.
+title_is_attention_mark() {
+  case $1 in
+    *" - Omairc") ;;
+    *) return 1 ;;
+  esac
+  case $1 in
+    "#"*) return 1 ;;
+    *": "*) ;;
+    *) return 1 ;;
+  esac
+  return 0
+}
+
+wait_title_mark_cleared() {
+  _timeout_sec=$1
+  _deadline=$(deadline_ms "$_timeout_sec")
+  while ! deadline_reached "$_deadline"; do
+    require_app_window
+    if ! try_focus_window; then
+      sleep "$WAIT_TITLE_POLL_SEC"
+      continue
+    fi
+    if ! _title=$(read_window_title); then
+      sleep "$WAIT_TITLE_POLL_SEC"
+      continue
+    fi
+    if ! title_is_attention_mark "$_title"; then
+      return 0
+    fi
+    sleep "$WAIT_TITLE_POLL_SEC"
+  done
+  require_app_window
+  if ! _title=$(read_window_title); then
+    die "window title empty for ${_timeout_sec}s after launch"
+  fi
+  if title_is_attention_mark "$_title"; then
+    die "window title stayed on attention preview '$_title' for ${_timeout_sec}s after focus"
+  fi
+  die "failed to settle window title within ${_timeout_sec}s (last title '$_title')"
+}
+
+poll_window_title_exact() {
+  _exact=$1
+  _timeout_sec=$2
+  _deadline=$(deadline_ms "$_timeout_sec")
+  while ! deadline_reached "$_deadline"; do
+    require_app_window
+    if ! try_focus_window; then
+      sleep "$WAIT_TITLE_POLL_SEC"
+      continue
+    fi
+    if ! _title=$(read_window_title); then
+      sleep "$WAIT_TITLE_POLL_SEC"
+      continue
+    fi
+    if [ "$_title" = "$_exact" ]; then
+      printf '%s\n' "$_title"
+      return 0
+    fi
+    sleep "$WAIT_TITLE_POLL_SEC"
+  done
+  require_app_window
+  if ! _title=$(read_window_title); then
+    die "expected title '$_exact', window title empty after ${_timeout_sec}s"
+  fi
+  die "expected title '$_exact', got '$_title' after ${_timeout_sec}s"
 }
 
 
@@ -357,6 +579,11 @@ cmd_launch() {
       *) die "unknown launch argument: $1. Use launch [--demo-server] [--visible]." ;;
     esac
   done
+
+  LAUNCH_WAIT_TITLE_TIMEOUT=
+  if [ "$DEMO" = 1 ]; then
+    LAUNCH_WAIT_TITLE_TIMEOUT=$(wait_title_timeout_from_env)
+  fi
 
   require_tools "$VISIBLE"
   VISIBLE_LOGIC_X=80
@@ -533,7 +760,11 @@ cmd_launch() {
   # Demo channels start with the member panel open (Shell::members_open).
   MEMBERS_OPEN=1
   write_state
-  xdotool windowfocus --sync "$WINDOW"
+  if [ "$DEMO" = 1 ]; then
+    wait_title_mark_cleared "$LAUNCH_WAIT_TITLE_TIMEOUT"
+  else
+    ensure_window_focused
+  fi
   echo "launched isolated Omairc"
   if [ "$DEMO" = 1 ]; then
     echo "demo=yes"
@@ -552,7 +783,10 @@ cmd_launch() {
   echo "display=$DISPLAY"
   echo "pid=$APP_PID"
   echo "window=$WINDOW"
-  echo "title=$(window_title)"
+  if ! _title=$(read_window_title); then
+    die "Omairc launched but window title is empty"
+  fi
+  echo "title=$_title"
   echo "state=$STATE_FILE"
 }
 
@@ -564,7 +798,9 @@ cmd_doctor() {
   [ -e "/tmp/.X11-unix/X${DISPLAY#:}" ] || die "display $DISPLAY is gone"
   found="$(xdotool search --onlyvisible --pid "$APP_PID" 2>/dev/null | head -1 || true)"
   [ "$found" = "$WINDOW" ] || die "window $WINDOW is not the Omairc window for pid $APP_PID"
-  title="$(window_title)"
+  if ! title=$(read_window_title); then
+    report_read_window_title_failure
+  fi
   case $title in
     *" - Omairc"|*" Status"|Status) ;;
     *) die "unexpected window title '$title'" ;;
@@ -599,28 +835,35 @@ cmd_doctor() {
 
 cmd_title() {
   load_state
-  window_title
+  if ! process_alive "$APP_PID"; then
+    die "Omairc pid $APP_PID is not running"
+  fi
+  if ! _title=$(read_window_title); then
+    report_read_window_title_failure
+  fi
+  printf '%s\n' "$_title"
 }
 
 cmd_wait_title() {
   exact=
+  timeout_sec=
   while [ $# -gt 0 ]; do
     case $1 in
       --exact) exact=$2; shift 2 ;;
+      --timeout)
+        [ $# -ge 2 ] || invalid_wait_title_timeout
+        timeout_sec=$(validate_wait_title_timeout "$2")
+        shift 2
+        ;;
       *) die "unknown wait-title argument: $1" ;;
     esac
   done
   [ -n "$exact" ] || die "wait-title requires --exact"
   load_state
-  attempt=0
-  while [ "$(window_title)" != "$exact" ]; do
-    attempt=$((attempt + 1))
-    if [ "$attempt" -ge 30 ]; then
-      die "expected title '$exact', got '$(window_title)'"
-    fi
-    sleep 0.1
-  done
-  window_title
+  if [ -z "$timeout_sec" ]; then
+    timeout_sec=$(wait_title_timeout_from_env)
+  fi
+  poll_window_title_exact "$exact" "$timeout_sec"
 }
 
 
@@ -880,7 +1123,9 @@ cmd_toggle_members() {
   # the people pill does toggle via the XI2 click path. Track open/hidden so
   # the pill's two x positions stay correct. Direct messages keep the chord
   # (a no-op, as the product does).
-  title=$(window_title)
+  if ! title=$(read_window_title); then
+    die "cannot read window title"
+  fi
   case $title in
     *\#*)
       members_open=${MEMBERS_OPEN:-1}
@@ -1023,6 +1268,129 @@ cmd_compare() {
 
 cmd_doctor_qml() { reject_qt_only_verb doctor-qml; }
 cmd_qml_suite() { reject_qt_only_verb qml-suite; }
+
+self_check_timeout_validator() {
+  _got=$(validate_wait_title_timeout 08) || return 1
+  [ "$_got" = 8 ] || die "self-check: parse 08 expected 8 got $_got"
+  _got=$(validate_wait_title_timeout 010)
+  [ "$_got" = 10 ] || die "self-check: parse 010 expected 10 got $_got"
+  _got=$(validate_wait_title_timeout 10s)
+  [ "$_got" = 10 ] || die "self-check: parse 10s expected 10 got $_got"
+  if ( validate_wait_title_timeout 00 ) >/dev/null 2>&1; then
+    die "self-check: parse 00 should fail"
+  fi
+  if ( validate_wait_title_timeout abc ) >/dev/null 2>&1; then
+    die "self-check: parse abc should fail"
+  fi
+  if ( validate_wait_title_timeout -5 ) >/dev/null 2>&1; then
+    die "self-check: parse -5 should fail"
+  fi
+  if ( validate_wait_title_timeout 10junk ) >/dev/null 2>&1; then
+    die "self-check: parse 10junk should fail"
+  fi
+  if ( validate_wait_title_timeout 99999 ) >/dev/null 2>&1; then
+    die "self-check: parse 99999 should fail"
+  fi
+  if ( validate_wait_title_timeout 99999999999999999999 ) >/dev/null 2>&1; then
+    die "self-check: parse huge timeout should fail"
+  fi
+  if ( "$SELF" wait-title --exact foo --timeout 99999999999999999999 ) >/dev/null 2>&1; then
+    die "self-check: --timeout huge value should fail"
+  fi
+  if ! ( OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT=abc "$SELF" cleanup ) >/dev/null 2>&1; then
+    die "self-check: cleanup should work with bad OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT"
+  fi
+  _env_launch_err=$(
+    OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT=abc "$SELF" launch --demo-server 2>&1 >/dev/null || true
+  )
+  case $_env_launch_err in
+    *"invalid OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT 'abc'"*) ;;
+    *) die "self-check: env launch error expected variable name, got '$_env_launch_err'" ;;
+  esac
+  "$SELF" cleanup >/dev/null 2>&1 || true
+  if ( OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT=0 "$SELF" launch --demo-server ) >/dev/null 2>&1; then
+    die "self-check: env OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT=0 should fail on launch"
+  fi
+  "$SELF" cleanup >/dev/null 2>&1 || true
+  if ( validate_wait_title_timeout 1m ) >/dev/null 2>&1; then
+    die "self-check: parse 1m should fail"
+  fi
+}
+
+cmd_self_check() {
+  require_tools
+  _saved_verify_state=${OMAIRC_VERIFY_DESKTOP_STATE-}
+  _self_check_temp_state=$(mktemp "${TMPDIR:-/tmp}/omairc-verify-self-check-state.XXXXXX")
+  export OMAIRC_VERIFY_DESKTOP_STATE="$_self_check_temp_state"
+  STATE_FILE="$_self_check_temp_state"
+
+  _self_check_teardown() {
+    STATE_FILE="$_self_check_temp_state"
+    cmd_cleanup >/dev/null 2>&1 || true
+    rm -f "$_self_check_temp_state"
+    if [ -n "$_saved_verify_state" ]; then
+      export OMAIRC_VERIFY_DESKTOP_STATE="$_saved_verify_state"
+    else
+      unset OMAIRC_VERIFY_DESKTOP_STATE
+    fi
+    STATE_FILE="${OMAIRC_VERIFY_DESKTOP_STATE:-${TMPDIR:-/tmp}/omairc-verify-desktop-$USER/state}"
+  }
+  trap _self_check_teardown EXIT INT HUP TERM
+
+  self_check_timeout_validator
+  if ! "$SELF" launch --demo-server >/dev/null; then
+    die "self-check: launch failed"
+  fi
+  load_state
+  if ! "$SELF" title >/dev/null; then
+    die "self-check: title should succeed on live app"
+  fi
+  load_state
+  SELF_CHECK_FORCE_EMPTY_TITLE=1
+  set +e
+  _title_err=$(cmd_title 2>&1 >/dev/null)
+  _empty_title_st=$?
+  set -e
+  unset SELF_CHECK_FORCE_EMPTY_TITLE
+  [ "$_empty_title_st" -ne 0 ] || die "self-check: title should fail on unreadable window"
+  case $_title_err in
+    *"cannot read window title"*|*"Omairc window not found"*) ;;
+    *) die "self-check: title error expected cannot read/window not found, got '$_title_err'" ;;
+  esac
+  _start_ms=$(now_ms)
+  set +e
+  "$SELF" wait-title --exact "never-matches" --timeout 1 >/dev/null 2>&1
+  _wait_st=$?
+  set -e
+  _elapsed=$(( $(now_ms) - _start_ms ))
+  [ "$_wait_st" -ne 0 ] || die "self-check: wait-title --timeout 1 should fail"
+  [ "$_elapsed" -ge 1000 ] || die "self-check: wait-title --timeout 1 ended early (${_elapsed}ms)"
+  if ( "$SELF" wait-title --exact foo --timeout ) >/dev/null 2>&1; then
+    die "self-check: wait-title --timeout without value should fail"
+  fi
+  load_state
+  kill -9 "$APP_PID" 2>/dev/null || true
+  wait "$APP_PID" 2>/dev/null || true
+  set +e
+  _dead_title_err=$("$SELF" title 2>&1 >/dev/null)
+  _title_st=$?
+  ( poll_window_title_exact "never-matches" 2 ) >/dev/null 2>&1
+  _status=$?
+  set -e
+  if [ "$_title_st" -eq 0 ]; then
+    die "self-check: title should fail when app is dead"
+  fi
+  case $_dead_title_err in
+    *"Omairc pid"*|*"cannot read window title"*|*"Omairc window not found"*) ;;
+    *) die "self-check: dead-app title error expected pid/window message, got '$_dead_title_err'" ;;
+  esac
+  _dead_msg_count=$(printf '%s\n' "$_dead_title_err" | grep -c 'Omairc pid.*is not running' || true)
+  [ "$_dead_msg_count" -eq 1 ] || die "self-check: dead-app title message should appear once (got $_dead_msg_count)"
+  if [ "$_status" -eq 0 ]; then
+    die "self-check: wait-title should fail when app is dead"
+  fi
+  echo "self-check ok"
+}
 
 cmd_cleanup() {
   if [ -f "$STATE_FILE" ]; then
@@ -1306,6 +1674,7 @@ case $cmd in
   run) cmd_run "$@" ;;
   qml-suite) cmd_qml_suite ;;
   doctor-qml) cmd_doctor_qml ;;
+  self-check) cmd_self_check ;;
   cleanup) cmd_cleanup ;;
   -h|--help|help|"") usage ;;
   *) die "unknown command '$cmd'. Try --help." ;;
