@@ -506,6 +506,43 @@ fn preferences_and_the_sidebar_layout_survive_a_relaunch() {
 }
 
 #[test]
+fn reordering_networks_writes_order_without_collapsed_networks() {
+    let dir = TempDir::new("network-reorder-persist");
+    let path = dir.path().join("omairc.conf");
+    let backing = disk(&dir);
+    {
+        let mut first = launch(&backing, Box::new(Loopbacks::default()));
+        save(&mut first, libera(LIBERA));
+        save(&mut first, libera(OFTC));
+        assert!(first.move_network(LIBERA, 1));
+    }
+    let text = std::fs::read_to_string(&path).expect("conf");
+    assert!(text.contains("networkOrder"), "{text}");
+    assert!(
+        !text.contains("collapsedNetworks"),
+        "reorder must not invent collapsedNetworks:\n{text}"
+    );
+}
+
+#[test]
+fn expanding_the_last_collapsed_network_drops_the_key() {
+    let dir = TempDir::new("network-collapse-clear");
+    let path = dir.path().join("omairc.conf");
+    let backing = disk(&dir);
+    {
+        let mut first = launch(&backing, Box::new(Loopbacks::default()));
+        save(&mut first, libera(LIBERA));
+        first.set_network_collapsed(LIBERA, true);
+        first.set_network_collapsed(LIBERA, false);
+    }
+    let text = std::fs::read_to_string(&path).expect("conf");
+    assert!(
+        !text.contains("collapsedNetworks"),
+        "expand should remove collapsedNetworks:\n{text}"
+    );
+}
+
+#[test]
 fn autoaway_settings_survive_a_relaunch() {
     let dir = TempDir::new("autoaway");
     let backing = disk(&dir);

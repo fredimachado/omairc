@@ -449,11 +449,17 @@ impl Controller {
     }
 
     /// Saves the sidebar order and the folded networks.
-    pub(super) fn persist_network_layout(&mut self) {
-        let order = self.network_order.clone();
-        self.preference_store.save_network_order(&order);
-        let collapsed: Vec<String> = self.network_collapsed.iter().cloned().collect();
-        self.preference_store.save_collapsed_networks(&collapsed);
+    pub(super) fn persist_network_order(&mut self) {
+        if !self.backing.is_ephemeral() {
+            self.preference_store.save_network_order(&self.network_order);
+        }
+    }
+
+    pub(super) fn persist_collapsed_networks(&mut self) {
+        if !self.backing.is_ephemeral() {
+            let collapsed: Vec<String> = self.network_collapsed.iter().cloned().collect();
+            self.preference_store.save_collapsed_networks(&collapsed);
+        }
     }
 
     /// Saves the `/autoaway` settings. The one-shot reason is not kept.

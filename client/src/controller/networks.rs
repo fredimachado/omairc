@@ -56,7 +56,7 @@ impl Controller {
             return;
         }
         self.network_order = order.to_vec();
-        self.persist_network_layout();
+        self.persist_network_order();
         self.queue(vec![ViewNotify::Conversations]);
     }
 
@@ -76,7 +76,7 @@ impl Controller {
             self.network_collapsed.remove(network_id)
         };
         if changed {
-            self.persist_network_layout();
+            self.persist_collapsed_networks();
             self.queue(vec![ViewNotify::Conversations]);
         }
     }
@@ -97,7 +97,7 @@ impl Controller {
                 self.network_collapsed.remove(&id);
             }
         }
-        self.persist_network_layout();
+        self.persist_collapsed_networks();
         self.queue(vec![ViewNotify::Conversations]);
     }
 
@@ -153,7 +153,8 @@ impl Controller {
         self.inbox.purge_network(network_id);
         self.network_order.retain(|id| id != network_id);
         self.network_collapsed.remove(network_id);
-        self.persist_network_layout();
+        self.persist_network_order();
+        self.persist_collapsed_networks();
         if self.console_network == network_id {
             self.console_network.clear();
             self.console_open = false;

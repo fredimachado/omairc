@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The desktop client no longer writes `collapsedNetworks=@Invalid()` or a second
+  preferences flush when a sidebar network is reordered. Network order and
+  collapse state persist separately and only when their value changed; an empty
+  collapsed list removes the key instead of storing Qt's empty-list sentinel.
+
 - The terminal client keeps a saved sidebar network order across restarts.
   Startup no longer mirrors the id-sorted profile roster into `networkOrder`,
   and saved networks that have not connected yet stay in the restored order.

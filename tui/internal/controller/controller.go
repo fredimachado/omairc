@@ -355,7 +355,11 @@ func savePreferenceList(key string, value []string) {
 	if existing := settings.StringList(preferencesGroup, key); stringSlicesEqual(existing, value) {
 		return
 	}
-	settings.SetStringList(preferencesGroup, key, value)
+	if len(value) == 0 {
+		settings.RemoveKey(preferencesGroup, key)
+	} else {
+		settings.SetStringList(preferencesGroup, key, value)
+	}
 	settings.Sync()
 }
 

@@ -121,8 +121,15 @@ impl PreferenceStore {
     }
 
     fn save_list(&self, key: &str, values: &[String]) -> Status {
+        if self.list(key) == values {
+            return Status::Written;
+        }
         self.backing.edit(|settings| {
-            settings.set_string_list(PREFERENCES_GROUP, key, values);
+            if values.is_empty() {
+                settings.remove_key(PREFERENCES_GROUP, key);
+            } else {
+                settings.set_string_list(PREFERENCES_GROUP, key, values);
+            }
         })
     }
 }
@@ -219,5 +226,47 @@ mod tests {
 
     fn store_again(dir: &TempDir) -> PreferenceStore {
         store(dir)
+    }
+
+    #[test]
+    fn a_missing_collapsed_key_reads_as_empty() {
+        let dir = TempDir::new("prefs-collapsed-missing");
+        let path = dir.path().join("omairc.conf");
+        std::fs::write(&path, "[preferences]\nnetworkOrder=oftc\n").unwrap();
+        let store = PreferenceStore::new(Backing::Disk(path));
+        assert!(store.collapsed_networks().is_empty());
+    }
+
+    #[test]
+    fn an_empty_collapsed_list_removes_the_key() {
+        let dir = TempDir::new("prefs-collapsed-clear");
+        let path = dir.path().join("omairc.conf");
+        std::fs::write(
+            &path,
+            "[preferences]\ncollapsedNetworks=oftc\nnetworkOrder=oftc\n",
+        )
+        .unwrap();
+        let store = store(&dir);
+        assert_eq!(store.save_collapsed_networks(&[]), Status::Written);
+        let text = std::fs::read_to_string(&path).expect("written");
+        assert!(
+            !text.contains("collapsedNetworks"),
+            "expanded sidebar should drop the key, got:\n{text}"
+        );
+        assert!(store.collapsed_networks().is_empty());
+    }
+
+    #[test]
+    fn a_no_op_list_save_leaves_the_file_alone() {
+        let dir = TempDir::new("prefs-list-noop");
+        let path = dir.path().join("omairc.conf");
+        std::fs::write(&path, "[preferences]\nnetworkOrder=oftc, omarchy\n").unwrap();
+        let before = std::fs::read(&path).expect("read");
+        let store = store(&dir);
+        assert_eq!(
+            store.save_network_order(&["oftc".to_owned(), "omarchy".to_owned()]),
+            Status::Written
+        );
+        assert_eq!(std::fs::read(&path).expect("read"), before);
     }
 }
