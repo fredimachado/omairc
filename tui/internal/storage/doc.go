@@ -16,8 +16,8 @@
 // persistence sits below the session and the view.
 // Later phase-11 files build on this foundation: profilestore.go
 // opendirect.go, playbacktime.go, scrollplace.go, conversationlog.go, credentialstore.go
-// secretservice.go, secretservice_darwin.go, and secretservice_other.go. The
-// platform and INI
-// foundation here is what they share, so it deliberately carries no
+// secretservice.go, secretservice_darwin.go, secretservice_other.go, and
+// stspolicies.go (the shared `sts` INI beside omairc.conf). The platform and
+// INI foundation here is what they share, so it deliberately carries no
 // protocol or view policy of its own.
 package storage

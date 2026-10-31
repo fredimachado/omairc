@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The terminal client persists learned STS policies in the shared `sts` INI
+  beside `omairc.conf` (same file and layout as the desktop client), so a
+  host upgrade to TLS survives a TUI restart. Expired and cleared policies
+  are removed from the file; a corrupt or unwritable file never weakens an
+  in-memory policy.
 - The terminal client paints mIRC foreground and background colors in the
   transcript (default on), with `/pref colors` and Connect Preferences →
   Show mIRC colors sharing the desktop `showIrcColors` setting. Formatting

@@ -1,6 +1,8 @@
 package session
 
 import (
+	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -8,12 +10,12 @@ import (
 	"time"
 
 	"github.com/fredimachado/omairc/tui/internal/irc"
+	"github.com/fredimachado/omairc/tui/internal/storage"
 )
 
 // TestSessionPlaintextStsPortReconnectsWithTlsAndCachesOnSecureDuration.
-// SessionTest::plaintextStsPortReconnectsWithTlsAndCachesOnSecureDuration.
-// The C++ test also checks the on-disk STS cache; file persistence is deferred
-// so the in-session in-memory store is inspected instead.
+// SessionTest::plaintextStsPortReconnectsWithTlsAndCachesOnSecureDuration /
+// client/src/session/tests/sts.rs::plaintext_sts_port_reconnects_with_tls_and_caches_on_secure_duration.
 func TestSessionPlaintextStsPortReconnectsWithTlsAndCachesOnSecureDuration(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestPlaintextConfig())
 	fixture.session.Start()
@@ -56,7 +58,7 @@ func TestSessionPlaintextStsPortReconnectsWithTlsAndCachesOnSecureDuration(t *te
 	if got := capLsCount(fixture.frames()); got != 2 {
 		t.Fatalf("CAP LS count = %d, want 2", got)
 	}
-	cached, ok := fixture.session.sts.Lookup("irc.example")
+	cached, ok := fixture.session.sts.Lookup("irc.example", fixture.clock.Now())
 	if !ok {
 		t.Fatal("the STS policy must be cached after the secure connect")
 	}
@@ -66,7 +68,8 @@ func TestSessionPlaintextStsPortReconnectsWithTlsAndCachesOnSecureDuration(t *te
 }
 
 // TestSessionPlaintextStsWithoutPortStaysPlaintext.
-// SessionTest::plaintextStsWithoutPortStaysPlaintext.
+// SessionTest::plaintextStsWithoutPortStaysPlaintext /
+// client/src/session/tests/sts.rs::plaintext_sts_without_port_stays_plaintext.
 func TestSessionPlaintextStsWithoutPortStaysPlaintext(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestPlaintextConfig())
 	fixture.session.Start()
@@ -85,7 +88,8 @@ func TestSessionPlaintextStsWithoutPortStaysPlaintext(t *testing.T) {
 }
 
 // TestSessionPlaintextCapNewStsPortReconnectsWithTls.
-// SessionTest::plaintextCapNewStsPortReconnectsWithTls.
+// SessionTest::plaintextCapNewStsPortReconnectsWithTls /
+// client/src/session/tests/sts.rs::plaintext_cap_new_sts_port_reconnects_with_tls.
 func TestSessionPlaintextCapNewStsPortReconnectsWithTls(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestPlaintextConfig())
 	fixture.session.Start()
@@ -104,7 +108,8 @@ func TestSessionPlaintextCapNewStsPortReconnectsWithTls(t *testing.T) {
 }
 
 // TestSessionTlsStsDurationRefreshesCacheWithoutReconnect.
-// SessionTest::tlsStsDurationRefreshesCacheWithoutReconnect.
+// SessionTest::tlsStsDurationRefreshesCacheWithoutReconnect /
+// client/src/session/tests/sts.rs::tls_sts_duration_refreshes_cache_without_reconnect.
 func TestSessionTlsStsDurationRefreshesCacheWithoutReconnect(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
 	config.AutojoinChannels = nil
@@ -121,7 +126,7 @@ func TestSessionTlsStsDurationRefreshesCacheWithoutReconnect(t *testing.T) {
 	if got := fixture.transport.ConnectedPort(); got != 6697 {
 		t.Fatalf("port = %d, want 6697", got)
 	}
-	cached, ok := fixture.session.sts.Lookup("irc.example")
+	cached, ok := fixture.session.sts.Lookup("irc.example", fixture.clock.Now())
 	if !ok {
 		t.Fatal("the STS duration must refresh the cache")
 	}
@@ -131,29 +136,28 @@ func TestSessionTlsStsDurationRefreshesCacheWithoutReconnect(t *testing.T) {
 }
 
 // TestSessionTlsStsDurationZeroClearsCache.
-// SessionTest::tlsStsDurationZeroClearsCache.
+// SessionTest::tlsStsDurationZeroClearsCache /
+// client/src/session/tests/sts.rs::tls_sts_duration_zero_clears_cache.
 func TestSessionTlsStsDurationZeroClearsCache(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
 	config.AutojoinChannels = nil
 	fixture := newSessionFixture(t, config)
-	// Prime the session's own in-memory cache; the C++ test primed the
-	// persisted store instead.
-	fixture.session.sts.Store("irc.example", 6697, 60)
+	_ = fixture.session.sts.Store("irc.example", 6697, 60, fixture.clock.Now())
 
 	fixture.connectTLS()
 	fixture.inject(":server CAP omairc LS :sts=duration=0\r\n" +
 		":server 001 omairc :Welcome\r\n")
-	if _, ok := fixture.session.sts.Lookup("irc.example"); ok {
+	if _, ok := fixture.session.sts.Lookup("irc.example", fixture.clock.Now()); ok {
 		t.Fatal("a zero duration must clear the cache")
 	}
 }
 
 // TestSessionCachedHostOpensTlsWhenProfileDisablesIt.
-// SessionTest::cachedHostOpensTlsWhenProfileDisablesIt by priming the
-// session's in-memory store, since the on-disk store is deferred.
+// SessionTest::cachedHostOpensTlsWhenProfileDisablesIt /
+// client/src/session/tests/sts.rs::cached_host_opens_tls_when_profile_disables_it.
 func TestSessionCachedHostOpensTlsWhenProfileDisablesIt(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestPlaintextConfig())
-	fixture.session.sts.Store("irc.example", 6697, 60)
+	_ = fixture.session.sts.Store("irc.example", 6697, 60, fixture.clock.Now())
 
 	fixture.session.Start()
 	if !fixture.transport.TLSRequested() {
@@ -171,7 +175,8 @@ func TestSessionCachedHostOpensTlsWhenProfileDisablesIt(t *testing.T) {
 }
 
 // TestSessionCapDelStsDoesNotClearCache.
-// SessionTest::capDelStsDoesNotClearCache.
+// SessionTest::capDelStsDoesNotClearCache /
+// client/src/session/tests/sts.rs::cap_del_sts_does_not_clear_cache.
 func TestSessionCapDelStsDoesNotClearCache(t *testing.T) {
 	config := sessionTestConfig(sessionTestNetworkID)
 	config.AutojoinChannels = nil
@@ -181,12 +186,154 @@ func TestSessionCapDelStsDoesNotClearCache(t *testing.T) {
 	fixture.inject(":server CAP omairc LS :sts=duration=86400\r\n" +
 		":server 001 omairc :Welcome\r\n" +
 		":server CAP omairc DEL :sts\r\n")
-	cached, ok := fixture.session.sts.Lookup("irc.example")
+	cached, ok := fixture.session.sts.Lookup("irc.example", fixture.clock.Now())
 	if !ok {
 		t.Fatal("CAP DEL must not clear the STS cache")
 	}
 	if cached.Port != 6697 {
 		t.Fatalf("cached port = %d, want 6697", cached.Port)
+	}
+}
+
+// TestSessionExpiredCachedPolicyDoesNotUpgradeOnStart.
+// client/src/session/tests/sts.rs::an_expired_cached_policy_does_not_upgrade_on_start.
+func TestSessionExpiredCachedPolicyDoesNotUpgradeOnStart(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestPlaintextConfig())
+	_ = fixture.session.sts.Store("irc.example", 6697, 60, fixture.clock.Now())
+	fixture.clock.Advance(61 * time.Second)
+
+	fixture.session.Start()
+	if fixture.transport.TLSRequested() {
+		t.Fatal("an expired policy must not force TLS")
+	}
+	if got := fixture.transport.ConnectedPort(); got != 6667 {
+		t.Fatalf("port = %d, want 6667", got)
+	}
+}
+
+// TestSessionDroppedSecureConnectionRefreshesExpiry.
+// client/src/session/tests/sts.rs::a_dropped_secure_connection_refreshes_the_expiry.
+func TestSessionDroppedSecureConnectionRefreshesExpiry(t *testing.T) {
+	config := sessionTestConfig(sessionTestNetworkID)
+	config.AutojoinChannels = nil
+	fixture := newSessionFixture(t, config)
+	fixture.connectTLS()
+	fixture.inject(":server CAP omairc LS :sts=duration=60\r\n")
+	fixture.clock.Advance(30 * time.Second)
+
+	fixture.transport.RemoteClose()
+
+	cached, ok := fixture.session.sts.Lookup("irc.example", fixture.clock.Now())
+	if !ok {
+		t.Fatal("the policy is still valid")
+	}
+	if cached.ExpiryEpochSeconds != 90 {
+		t.Fatalf("expiry = %d, want 90 (30s in plus 60s duration)", cached.ExpiryEpochSeconds)
+	}
+}
+
+// TestSessionStoppingRefreshesExpiry.
+// client/src/session/tests/sts.rs::stopping_the_session_refreshes_the_expiry.
+func TestSessionStoppingRefreshesExpiry(t *testing.T) {
+	config := sessionTestConfig(sessionTestNetworkID)
+	config.AutojoinChannels = nil
+	fixture := newSessionFixture(t, config)
+	fixture.connectTLS()
+	fixture.inject(":server CAP omairc LS :sts=duration=60\r\n")
+	fixture.clock.Advance(30 * time.Second)
+
+	fixture.session.Stop()
+
+	cached, ok := fixture.session.sts.Lookup("irc.example", fixture.clock.Now())
+	if !ok {
+		t.Fatal("the policy is still valid")
+	}
+	if cached.ExpiryEpochSeconds != 90 {
+		t.Fatalf("expiry = %d, want 90", cached.ExpiryEpochSeconds)
+	}
+}
+
+// TestSessionManagerNetworksSharePolicyCache.
+// client/src/session/tests/sts.rs::networks_on_one_manager_share_the_policy_cache.
+func TestSessionManagerNetworksSharePolicyCache(t *testing.T) {
+	manager := NewManager()
+	clock := NewFakeClock(time.Unix(0, 0))
+	learnerTransport := NewLoopbackTransport()
+	tlsConfig := sessionTestConfig("learner")
+	tlsConfig.AutojoinChannels = nil
+	learner, err := manager.Create(tlsConfig, learnerTransport, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	learner.Start()
+	learnerTransport.CompleteConnect()
+	learnerTransport.InjectBytes([]byte(":server CAP omairc LS :sts=duration=60\r\n"))
+
+	followerTransport := NewLoopbackTransport()
+	followerConfig := sessionTestPlaintextConfig()
+	followerConfig.NetworkID = "follower"
+	follower, err := manager.Create(followerConfig, followerTransport, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	follower.Start()
+	if !followerTransport.TLSRequested() {
+		t.Fatal("the other network reuses the cached policy")
+	}
+	if got := followerTransport.ConnectedPort(); got != 6697 {
+		t.Fatalf("port = %d, want 6697", got)
+	}
+}
+
+// TestSessionPolicyLearnedBeforeRestartAppliesAfterIt.
+// client/src/session/tests/sts.rs::a_policy_learned_before_a_restart_applies_after_it.
+func TestSessionPolicyLearnedBeforeRestartAppliesAfterIt(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	clock := NewFakeClock(time.Unix(0, 0))
+
+	firstTransport := NewLoopbackTransport()
+	firstSTS := NewSTSStore()
+	firstSTS.AttachDisk(storage.NewIniSTSStore(path))
+	tlsConfig := sessionTestConfig(sessionTestNetworkID)
+	tlsConfig.AutojoinChannels = nil
+	first := NewSessionWithSTS(tlsConfig, firstTransport, clock, firstSTS)
+	first.Start()
+	firstTransport.CompleteConnect()
+	firstTransport.InjectBytes([]byte(":server CAP omairc LS :sts=duration=60\r\n"))
+
+	secondTransport := NewLoopbackTransport()
+	secondSTS := NewSTSStore()
+	secondSTS.AttachDisk(storage.NewIniSTSStore(path))
+	second := NewSessionWithSTS(sessionTestPlaintextConfig(), secondTransport, clock, secondSTS)
+	second.Start()
+	if !secondTransport.TLSRequested() {
+		t.Fatal("the saved policy forces TLS after a restart")
+	}
+	if got := secondTransport.ConnectedPort(); got != 6697 {
+		t.Fatalf("port = %d, want 6697", got)
+	}
+}
+
+// TestSessionCorruptSTSFileDoesNotWeakenInMemoryPolicy.
+// Acceptance: a corrupt file must not cause a plaintext connect for a host
+// with a valid in-memory policy.
+func TestSessionCorruptSTSFileDoesNotWeakenInMemoryPolicy(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	if err := os.WriteFile(path, []byte("this line has no equals sign\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fixture := newSessionFixture(t, sessionTestPlaintextConfig())
+	fixture.session.sts.AttachDisk(storage.NewIniSTSStore(path))
+	_ = fixture.session.sts.Store("irc.example", 6697, 60, fixture.clock.Now())
+
+	fixture.session.Start()
+	if !fixture.transport.TLSRequested() {
+		t.Fatal("in-memory policy must still force TLS when the file is corrupt")
+	}
+	if got := fixture.transport.ConnectedPort(); got != 6697 {
+		t.Fatalf("port = %d, want 6697", got)
 	}
 }
 

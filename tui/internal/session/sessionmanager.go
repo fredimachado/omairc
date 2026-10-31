@@ -4,25 +4,52 @@ import (
 	"errors"
 	"sort"
 	"sync"
+
+	"github.com/fredimachado/omairc/tui/internal/storage"
 )
 
 // Manager owns the live sessions, one per network id: create an add-only
 // registry, look sessions up by network id, and activate/stop/discard them.
 // Go has no parent/child ownership, so Manager holds the only reference:
 // Discard stops the session and drops it, and the caller's reference becomes
-// the last one.
+// the last one. Every session on one manager shares one STS policy cache, as
+// SessionManager does in the desktop client.
 type Manager struct {
 	mu       sync.Mutex
 	sessions map[string]*Session
+	sts      *STSStore
 }
 
-// NewManager returns an empty manager.
+// NewManager returns an empty manager with a shared in-memory STS store.
 func NewManager() *Manager {
-	return &Manager{sessions: make(map[string]*Session)}
+	return &Manager{
+		sessions: make(map[string]*Session),
+		sts:      NewSTSStore(),
+	}
+}
+
+// STS returns the shared STS policy cache.
+func (m *Manager) STS() *STSStore {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.sts
+}
+
+// AttachSTSDisk installs durable STS persistence on the shared store. An empty
+// path is a no-op. Existing in-memory policies are kept.
+func (m *Manager) AttachSTSDisk(path string) {
+	if path == "" {
+		return
+	}
+	m.mu.Lock()
+	sts := m.sts
+	m.mu.Unlock()
+	sts.AttachDisk(storage.NewIniSTSStore(path))
 }
 
 // Create builds a session, installs it in the registry, and returns it. It
 // rejects an empty network id, a duplicate network id, and a nil transport.
+// The session uses the manager's shared STS store.
 func (m *Manager) Create(config SessionConfig, transport Transport, clock Clock) (*Session, error) {
 	if transport == nil {
 		return nil, errors.New("session: transport is required")
@@ -39,8 +66,11 @@ func (m *Manager) Create(config SessionConfig, transport Transport, clock Clock)
 	if _, exists := m.sessions[config.NetworkID]; exists {
 		return nil, errors.New("session: network id is already registered")
 	}
+	if m.sts == nil {
+		m.sts = NewSTSStore()
+	}
 
-	session := NewSession(config, transport, clock)
+	session := NewSessionWithSTS(config, transport, clock, m.sts)
 	m.sessions[config.NetworkID] = session
 	return session, nil
 }
@@ -79,6 +109,14 @@ func (m *Manager) Activate(networkID string) bool {
 func (m *Manager) Stop(networkID string) {
 	if session := m.Find(networkID); session != nil {
 		session.Stop()
+	}
+}
+
+// StopAll stops every registered session. Each Stop refreshes that session's
+// STS expiry on disk, so quitting the TUI does not leave connect-time expiry.
+func (m *Manager) StopAll() {
+	for _, id := range m.NetworkIDs() {
+		m.Stop(id)
 	}
 }
 

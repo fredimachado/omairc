@@ -36,6 +36,7 @@ func TestPTYSmokeDemoShell(t *testing.T) {
 	)
 	screen := NewScreen(cols, rows)
 	var screenMu sync.Mutex
+	var captured strings.Builder
 	read := func() (string, string) {
 		screenMu.Lock()
 		defer screenMu.Unlock()
@@ -54,6 +55,7 @@ func TestPTYSmokeDemoShell(t *testing.T) {
 	}
 	proc.OnOutput(func(b []byte) {
 		screenMu.Lock()
+		_, _ = captured.Write(b)
 		screen.Feed(b)
 		screenMu.Unlock()
 	})
@@ -90,8 +92,12 @@ func TestPTYSmokeDemoShell(t *testing.T) {
 	if _, err := proc.Write([]byte{0x11}); err != nil {
 		t.Fatalf("write ctrl+q: %v", err)
 	}
-	done := make(chan error, 1)
-	go func() { done <- proc.Wait() }()
+	var waitErr error
+	done := make(chan struct{})
+	go func() {
+		waitErr = proc.Wait()
+		close(done)
+	}()
 	select {
 	case <-done:
 	case <-time.After(10 * time.Second):
@@ -99,6 +105,10 @@ func TestPTYSmokeDemoShell(t *testing.T) {
 		title, _ := read()
 		t.Fatalf("omairc-tui did not exit after ctrl+q; title=%q", title)
 	}
+	screenMu.Lock()
+	out := captured.String()
+	screenMu.Unlock()
+	assertDemoQuitExitClean(t, waitErr, out)
 }
 
 func containsAll(text string, needles []string) bool {
