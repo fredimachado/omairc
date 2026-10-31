@@ -265,3 +265,40 @@ func TestReadMarkerFailAllowsSameTimestampRetry(t *testing.T) {
 		t.Fatalf("FAIL must clear in-flight so the same stamp can be retried: %v", fixture.frames())
 	}
 }
+
+func TestReadMarkerSetBeforeRegisteredDoesNotBlockSameStamp(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	fixture.connectTLS()
+	fixture.inject(":server CAP omairc LS :draft/read-marker multi-prefix\r\n")
+	fixture.inject(":server CAP omairc ACK :draft/read-marker multi-prefix\r\n")
+	want := "MARKREAD #omarchy timestamp=2024-06-01T12:00:00.000Z\r\n"
+	when := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	fixture.session.QueueReadMarkerSet("#omarchy", when)
+	if countReadMarkerFrame(fixture.frames(), want) != 0 {
+		t.Fatalf("must not send a set before 001, frames=%v", fixture.frames())
+	}
+	fixture.inject(":server 001 omairc :Welcome\r\n")
+	fixture.session.QueueReadMarkerSet("#omarchy", when)
+	if countReadMarkerFrame(fixture.frames(), want) != 1 {
+		t.Fatalf("a refused send must not leave in_flight/last_known blocking the same stamp: %v", fixture.frames())
+	}
+}
+
+func TestReadMarkerReconnectClearsInFlightSoSameStampRetries(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	registerWithReadMarker(fixture, "draft/read-marker")
+	want := "MARKREAD #omarchy timestamp=2024-06-01T12:00:00.000Z\r\n"
+	when := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	fixture.session.QueueReadMarkerSet("#omarchy", when)
+	if countReadMarkerFrame(fixture.frames(), want) != 1 {
+		t.Fatalf("frames = %v", fixture.frames())
+	}
+	fixture.transport.RemoteClose()
+	fixture.fireReconnect()
+	fixture.transport.CompleteConnect()
+	registerWithReadMarker(fixture, "draft/read-marker")
+	fixture.session.QueueReadMarkerSet("#omarchy", when)
+	if countReadMarkerFrame(fixture.frames(), want) != 2 {
+		t.Fatalf("connection reset must clear in_flight so the same stamp can be sent again: %v", fixture.frames())
+	}
+}

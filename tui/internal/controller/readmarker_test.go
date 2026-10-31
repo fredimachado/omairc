@@ -555,6 +555,147 @@ func TestFailGetReplyReleasesHoldAndSendsSet(t *testing.T) {
 	}
 }
 
+func setAsciiCaseMapping(c *Controller, networkID string) {
+	features := irc.NewServerFeatures()
+	features.ApplyToken("CASEMAPPING=ascii")
+	c.reducer.SetServerFeatures(networkID, features)
+}
+
+func TestReconnectAsciiDmHoldsUntilGetReplyAfterFeatureReset(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("net", "omairc"))
+	registerNetwork(t, transport, "omairc", "draft/read-marker")
+	c.NoteTranscriptViewport(true, true)
+	setAsciiCaseMapping(c, "net")
+	peer := "foo[bar]"
+	key := c.reducer.ConversationKey("net", peer)
+	if key.NormalizedTarget != "foo[bar]" {
+		t.Fatalf("ascii must keep brackets, got %q", key.NormalizedTarget)
+	}
+	c.reducer.EnsureConversation(key, peer, irc.CauseInboundOther)
+	marker := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	local := time.Date(2024, 6, 1, 12, 30, 0, 0, time.UTC)
+	c.ReadMarkerReceived("net", peer, &marker)
+	applyMessage(c, key, peer, "hi", local)
+	c.SelectConversation("net", peer)
+	before := len(transport.WrittenFrames())
+	// Registered resets features to rfc1459 before Welcome; CASEMAPPING returns with 005.
+	c.reducer.SetServerFeatures("net", irc.NewServerFeatures())
+	c.Apply(irc.WelcomeEvent{NetworkID: "net", CurrentNick: "omairc"})
+	frames := transport.WrittenFrames()[before:]
+	if countFramesIn(frames, "MARKREAD "+peer+"\r\n") != 1 {
+		t.Fatalf("welcome must send one get under the selected key, frames=%v", frames)
+	}
+	if framesContainBytes(frames, "timestamp=") {
+		t.Fatalf("hold must match after the rfc1459 feature reset, frames=%v", frames)
+	}
+	setAsciiCaseMapping(c, "net")
+	inject(t, transport, ":server MARKREAD "+peer+" :timestamp="+irc.FormatReadMarkerTime(marker)+"\r\n")
+	frames = transport.WrittenFrames()[before:]
+	want := "MARKREAD " + peer + " timestamp=2024-06-01T12:30:00.000Z\r\n"
+	if countFramesIn(frames, want) != 1 {
+		t.Fatalf("after 005 and the get reply, exactly one newer set must go out, frames=%v", frames)
+	}
+}
+
+func TestUnparseableGetReplyReleasesHoldAndSendsSet(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("net", "omairc"))
+	registerNetwork(t, transport, "omairc", "draft/read-marker")
+	c.NoteTranscriptViewport(true, true)
+	alice := c.reducer.ConversationKey("net", "Alice")
+	c.reducer.EnsureConversation(alice, "Alice", irc.CauseInboundOther)
+	at := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	applyMessage(c, alice, "Alice", "hi", at)
+	before := len(transport.WrittenFrames())
+	c.SelectConversation("net", "Alice")
+	frames := transport.WrittenFrames()[before:]
+	if framesContainBytes(frames, "timestamp=") {
+		t.Fatalf("must hold until the unparseable reply, frames=%v", frames)
+	}
+	inject(t, transport, ":server MARKREAD Alice :timestamp=not-a-time\r\n")
+	frames = transport.WrittenFrames()[before:]
+	want := "MARKREAD Alice timestamp=2024-06-01T12:00:00.000Z\r\n"
+	if countFramesIn(frames, want) != 1 {
+		t.Fatalf("unparseable reply must release the hold and allow one set, frames=%v", frames)
+	}
+}
+
+func TestFailWithoutTargetReleasesHoldAndSendsSet(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("net", "omairc"))
+	registerNetwork(t, transport, "omairc", "draft/read-marker")
+	c.NoteTranscriptViewport(true, true)
+	alice := c.reducer.ConversationKey("net", "Alice")
+	c.reducer.EnsureConversation(alice, "Alice", irc.CauseInboundOther)
+	at := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	applyMessage(c, alice, "Alice", "hi", at)
+	before := len(transport.WrittenFrames())
+	c.SelectConversation("net", "Alice")
+	frames := transport.WrittenFrames()[before:]
+	if framesContainBytes(frames, "timestamp=") {
+		t.Fatalf("must hold until the untargeted FAIL, frames=%v", frames)
+	}
+	inject(t, transport, ":server FAIL MARKREAD NEED_MORE_PARAMS :Missing parameters\r\n")
+	frames = transport.WrittenFrames()[before:]
+	want := "MARKREAD Alice timestamp=2024-06-01T12:00:00.000Z\r\n"
+	if countFramesIn(frames, want) != 1 {
+		t.Fatalf("FAIL without a target must release the hold and allow one set, frames=%v", frames)
+	}
+}
+
+func TestCapDropReleasesHoldAndAllowsSetWhenCapReturns(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("net", "omairc"))
+	registerNetwork(t, transport, "omairc", "draft/read-marker")
+	c.NoteTranscriptViewport(true, true)
+	alice := c.reducer.ConversationKey("net", "Alice")
+	c.reducer.EnsureConversation(alice, "Alice", irc.CauseInboundOther)
+	at := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	applyMessage(c, alice, "Alice", "hi", at)
+	before := len(transport.WrittenFrames())
+	c.SelectConversation("net", "Alice")
+	frames := transport.WrittenFrames()[before:]
+	if framesContainBytes(frames, "timestamp=") {
+		t.Fatalf("must hold before the cap drop, frames=%v", frames)
+	}
+	c.CapabilitiesChanged("net", irc.CapabilitySet(0))
+	frames = transport.WrittenFrames()[before:]
+	want := "MARKREAD Alice timestamp=2024-06-01T12:00:00.000Z\r\n"
+	if countFramesIn(frames, want) != 1 {
+		t.Fatalf("dropping the read-marker cap must release the hold, frames=%v", frames)
+	}
+}
+
+func TestReceiveFallbackReleasesHoldWhenReplyKeyMismatchesSelected(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("net", "omairc"))
+	registerNetwork(t, transport, "omairc", "draft/read-marker")
+	c.NoteTranscriptViewport(true, true)
+	setAsciiCaseMapping(c, "net")
+	peer := "foo[bar]"
+	key := c.reducer.ConversationKey("net", peer)
+	c.reducer.EnsureConversation(key, peer, irc.CauseInboundOther)
+	at := time.Date(2024, 6, 1, 12, 30, 0, 0, time.UTC)
+	applyMessage(c, key, peer, "hi", at)
+	c.SelectConversation("net", peer)
+	before := len(transport.WrittenFrames())
+	c.reducer.SetServerFeatures("net", irc.NewServerFeatures())
+	c.Apply(irc.WelcomeEvent{NetworkID: "net", CurrentNick: "omairc"})
+	frames := transport.WrittenFrames()[before:]
+	if framesContainBytes(frames, "timestamp=") {
+		t.Fatalf("must hold after welcome under the selected ascii key, frames=%v", frames)
+	}
+	// Reply while still on rfc1459: ConversationKey folds to foo{bar}, so the
+	// primary clear misses and the selected-key fallback must release the hold.
+	inject(t, transport, ":server MARKREAD "+peer+" :*\r\n")
+	frames = transport.WrittenFrames()[before:]
+	want := "MARKREAD " + peer + " timestamp=2024-06-01T12:30:00.000Z\r\n"
+	if countFramesIn(frames, want) != 1 {
+		t.Fatalf("receive fallback must release the hold before 005, frames=%v", frames)
+	}
+}
+
 func countFramesIn(frames [][]byte, needle string) int {
 	count := 0
 	for _, frame := range frames {
