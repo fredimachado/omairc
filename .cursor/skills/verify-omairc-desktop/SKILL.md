@@ -252,7 +252,7 @@ disposable XDG/Xauth directory and the state file. It does not remove
 `control-omairc-desktop` is executable. Invoke it from the repo root.
 
 ```text
-launch [--demo-server] [--visible] | doctor | title | wait-title --exact TITLE [--timeout SEC|10s]
+launch [--demo-server] [--visible] | doctor | title | wait-title --exact TITLE [--timeout SEC|10s] (max 3600)
 run FEATURE [--dry-run]
 jump --query TEXT | nick-jump --query TEXT
 walk --down | walk --up [--times N]

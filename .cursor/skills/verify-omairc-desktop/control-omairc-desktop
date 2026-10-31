@@ -31,8 +31,9 @@ SCREENSHOT_FLAT_COLORS=16
 # wait-title polls the X11 window name. Cold demo launch can briefly show an
 # unfocused attention preview (author: body - Omairc) until the window is
 # focused and the seed settles; three seconds was flaking full recipe replay.
-WAIT_TITLE_TIMEOUT_SEC="${OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT:-10}"
 WAIT_TITLE_POLL_SEC=0.1
+WAIT_TITLE_MAX_SEC=3600
+WAIT_TITLE_DEFAULT_SEC=10
 # Headless Xvfb framebuffer. --visible overrides these after reading the
 # host scale so the nested size matches the physical Xephyr window (on a
 # 2x panel, logical 1600x1000 → nested 3200x2000).
@@ -51,7 +52,7 @@ Usage:
   control-omairc-desktop launch [--demo-server] [--visible]
   control-omairc-desktop doctor
   control-omairc-desktop title
-  control-omairc-desktop wait-title --exact "<title>" [--timeout SEC|10s]
+  control-omairc-desktop wait-title --exact "<title>" [--timeout SEC|10s] (max 3600)
   control-omairc-desktop focus-composer
   control-omairc-desktop composer
   control-omairc-desktop jump --query "<text>"
@@ -369,8 +370,7 @@ require_app_window() {
 }
 
 window_title() {
-  refresh_app_window
-  xdotool getwindowname "$WINDOW" 2>/dev/null || true
+  read_window_title
 }
 
 # Read the X11 window name. Fails when the app/window is gone; returns 1 when
@@ -391,9 +391,66 @@ try_focus_window() {
   xdotool windowfocus --sync "$WINDOW" >/dev/null 2>&1
 }
 
+now_ms() {
+  _t=$(date +%s%3N 2>/dev/null) || _t=$(($(date +%s) * 1000))
+  printf '%s' "$_t"
+}
+
+deadline_ms() {
+  _timeout_sec=$1
+  echo $(( $(now_ms) + _timeout_sec * 1000 ))
+}
+
+deadline_reached() {
+  [ "$(now_ms)" -ge "$1" ]
+}
+
+invalid_wait_title_timeout() {
+  if [ -n "${1:-}" ]; then
+    die "invalid wait-title timeout '$1' (use seconds or 10s, max ${WAIT_TITLE_MAX_SEC})"
+  fi
+  die "invalid wait-title timeout (use seconds or 10s, max ${WAIT_TITLE_MAX_SEC})"
+}
+
+# Shared by OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT and wait-title --timeout.
+validate_wait_title_timeout() {
+  _arg=$1
+  [ -n "$_arg" ] || invalid_wait_title_timeout
+  case $_arg in
+    *m*) invalid_wait_title_timeout "$_arg" ;;
+  esac
+  case $_arg in
+    *s)
+      _digits=${_arg%s}
+      case $_digits in
+        ''|*[!0-9]*) invalid_wait_title_timeout "$_arg" ;;
+      esac
+      _raw=$_digits
+      ;;
+    *[!0-9]*)
+      invalid_wait_title_timeout "$_arg"
+      ;;
+    *)
+      _raw=$_arg
+      ;;
+  esac
+  _sec=$(printf '%s' "$_raw" | awk '{ if ($0 !~ /^[0-9]+$/) exit 1; print $0 + 0 }') \
+    || invalid_wait_title_timeout "$_arg"
+  if [ "$_sec" -lt 1 ] || [ "$_sec" -gt "$WAIT_TITLE_MAX_SEC" ]; then
+    invalid_wait_title_timeout "$_arg"
+  fi
+  echo "$_sec"
+}
+
+if [ -n "${OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT+x}" ]; then
+  WAIT_TITLE_TIMEOUT_SEC=$(validate_wait_title_timeout "$OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT")
+else
+  WAIT_TITLE_TIMEOUT_SEC=$WAIT_TITLE_DEFAULT_SEC
+fi
+
 ensure_window_focused() {
-  _deadline=$(( $(date +%s) + WAIT_TITLE_TIMEOUT_SEC ))
-  while [ "$(date +%s)" -lt "$_deadline" ]; do
+  _deadline=$(deadline_ms "$WAIT_TITLE_TIMEOUT_SEC")
+  while ! deadline_reached "$_deadline"; do
     require_app_window
     if try_focus_window; then
       return 0
@@ -418,33 +475,10 @@ title_is_attention_mark() {
   return 0
 }
 
-parse_timeout_sec() {
-  _arg=$1
-  _raw=$_arg
-  case $_raw in
-    *s) _raw=${_raw%s} ;;
-    *m) _raw=${_raw%m} ;;
-  esac
-  case $_raw in
-    ''|*[!0-9]*)
-      die "invalid wait-title timeout '$_arg' (use seconds or 10s)"
-      ;;
-  esac
-  _sec=$(printf '%s' "$_raw" | awk '{ if ($0 !~ /^[0-9]+$/) exit 1; print $0 + 0 }') \
-    || die "invalid wait-title timeout '$_arg' (use seconds or 10s)"
-  case $_arg in
-    *m) _sec=$((_sec * 60)) ;;
-  esac
-  if [ "$_sec" -lt 1 ]; then
-    die "wait-title timeout must be at least 1 second"
-  fi
-  echo "$_sec"
-}
-
 wait_title_mark_cleared() {
   _timeout_sec=$1
-  _deadline=$(( $(date +%s) + _timeout_sec ))
-  while [ "$(date +%s)" -lt "$_deadline" ]; do
+  _deadline=$(deadline_ms "$_timeout_sec")
+  while ! deadline_reached "$_deadline"; do
     require_app_window
     if ! try_focus_window; then
       sleep "$WAIT_TITLE_POLL_SEC"
@@ -472,8 +506,8 @@ wait_title_mark_cleared() {
 poll_window_title_exact() {
   _exact=$1
   _timeout_sec=$2
-  _deadline=$(( $(date +%s) + _timeout_sec ))
-  while [ "$(date +%s)" -lt "$_deadline" ]; do
+  _deadline=$(deadline_ms "$_timeout_sec")
+  while ! deadline_reached "$_deadline"; do
     require_app_window
     if ! try_focus_window; then
       sleep "$WAIT_TITLE_POLL_SEC"
@@ -756,7 +790,7 @@ cmd_doctor() {
 
 cmd_title() {
   load_state
-  window_title
+  read_window_title
 }
 
 cmd_wait_title() {
@@ -765,7 +799,11 @@ cmd_wait_title() {
   while [ $# -gt 0 ]; do
     case $1 in
       --exact) exact=$2; shift 2 ;;
-      --timeout) timeout_sec=$(parse_timeout_sec "$2"); shift 2 ;;
+      --timeout)
+        [ $# -ge 2 ] || invalid_wait_title_timeout
+        timeout_sec=$(validate_wait_title_timeout "$2")
+        shift 2
+        ;;
       *) die "unknown wait-title argument: $1" ;;
     esac
   done
@@ -1031,7 +1069,9 @@ cmd_toggle_members() {
   # the people pill does toggle via the XI2 click path. Track open/hidden so
   # the pill's two x positions stay correct. Direct messages keep the chord
   # (a no-op, as the product does).
-  title=$(window_title)
+  if ! title=$(read_window_title); then
+    die "cannot read window title"
+  fi
   case $title in
     *\#*)
       members_open=${MEMBERS_OPEN:-1}
@@ -1175,18 +1215,36 @@ cmd_compare() {
 cmd_doctor_qml() { reject_qt_only_verb doctor-qml; }
 cmd_qml_suite() { reject_qt_only_verb qml-suite; }
 
-self_check_parse_timeout() {
-  _got=$(parse_timeout_sec 08) || return 1
+self_check_timeout_validator() {
+  _got=$(validate_wait_title_timeout 08) || return 1
   [ "$_got" = 8 ] || die "self-check: parse 08 expected 8 got $_got"
-  _got=$(parse_timeout_sec 010)
+  _got=$(validate_wait_title_timeout 010)
   [ "$_got" = 10 ] || die "self-check: parse 010 expected 10 got $_got"
-  _got=$(parse_timeout_sec 10s)
+  _got=$(validate_wait_title_timeout 10s)
   [ "$_got" = 10 ] || die "self-check: parse 10s expected 10 got $_got"
-  if ( parse_timeout_sec 00 ) >/dev/null 2>&1; then
+  if ( validate_wait_title_timeout 00 ) >/dev/null 2>&1; then
     die "self-check: parse 00 should fail"
   fi
-  if ( parse_timeout_sec abc ) >/dev/null 2>&1; then
+  if ( validate_wait_title_timeout abc ) >/dev/null 2>&1; then
     die "self-check: parse abc should fail"
+  fi
+  if ( validate_wait_title_timeout -5 ) >/dev/null 2>&1; then
+    die "self-check: parse -5 should fail"
+  fi
+  if ( validate_wait_title_timeout 10junk ) >/dev/null 2>&1; then
+    die "self-check: parse 10junk should fail"
+  fi
+  if ( validate_wait_title_timeout 99999 ) >/dev/null 2>&1; then
+    die "self-check: parse 99999 should fail"
+  fi
+  if ( validate_wait_title_timeout 1m ) >/dev/null 2>&1; then
+    die "self-check: parse 1m should fail"
+  fi
+  if ( OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT=abc "$SELF" doctor ) >/dev/null 2>&1; then
+    die "self-check: env OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT=abc should fail"
+  fi
+  if ( OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT=0 "$SELF" doctor ) >/dev/null 2>&1; then
+    die "self-check: env OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT=0 should fail"
   fi
 }
 
@@ -1210,17 +1268,37 @@ cmd_self_check() {
   }
   trap _self_check_teardown EXIT INT HUP TERM
 
-  self_check_parse_timeout
+  self_check_timeout_validator
   if ! "$SELF" launch --demo-server >/dev/null; then
     die "self-check: launch failed"
+  fi
+  load_state
+  if ! "$SELF" title >/dev/null; then
+    die "self-check: title should succeed on live app"
+  fi
+  _start_ms=$(now_ms)
+  set +e
+  "$SELF" wait-title --exact "never-matches" --timeout 1 >/dev/null 2>&1
+  _wait_st=$?
+  set -e
+  _elapsed=$(( $(now_ms) - _start_ms ))
+  [ "$_wait_st" -ne 0 ] || die "self-check: wait-title --timeout 1 should fail"
+  [ "$_elapsed" -ge 1000 ] || die "self-check: wait-title --timeout 1 ended early (${_elapsed}ms)"
+  if ( "$SELF" wait-title --exact foo --timeout ) >/dev/null 2>&1; then
+    die "self-check: wait-title --timeout without value should fail"
   fi
   load_state
   kill "$APP_PID" 2>/dev/null || true
   wait "$APP_PID" 2>/dev/null || true
   set +e
+  "$SELF" title >/dev/null 2>&1
+  _title_st=$?
   ( poll_window_title_exact "never-matches" 2 ) >/dev/null 2>&1
   _status=$?
   set -e
+  if [ "$_title_st" -eq 0 ]; then
+    die "self-check: title should fail when app is dead"
+  fi
   if [ "$_status" -eq 0 ]; then
     die "self-check: wait-title should fail when app is dead"
   fi
