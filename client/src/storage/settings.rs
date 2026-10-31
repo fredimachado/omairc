@@ -4,8 +4,8 @@
 //! Qt client and the TUI.
 //! Writes fail closed. A malformed or unreadable file is never overwritten, so a
 //! corrupt store is not rebuilt from memory and silently loses its contents.
-//! The stores in this folder (profiles, open directs, lists, preferences, scroll places)
-//! read and write through this API.
+//! The stores in this folder (profiles, open directs, lists, preferences, and
+//! the scroll-places state file) read and write through this API.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;

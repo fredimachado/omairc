@@ -70,6 +70,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   0600 on every write. A new config file is still created owner-only (0600).
 - Config saves skip the disk write when settings are unchanged, so
   `omairc.conf` bytes and modification time stay put on a no-op sync.
+- Desktop and TUI store transcript scroll places in
+  `<state>/scrollplaces.ini` instead of `omairc.conf`. A missing
+  `scrollplaces.ini` still reads the legacy `[scrollPlaces]` group from the
+  config file once (on macOS both `omairc.ini` and `omairc.conf`, with ini
+  winning per network); the first save copies every legacy network into the
+  state file, and an empty state file is still written when that seed then
+  forgets the only network so the conf cannot bring it back. Later saves go
+  only to `scrollplaces.ini` and leave the config bytes alone. An unreadable
+  legacy conf refuses the first save instead of creating an unseeded state
+  file. Demo mode writes neither file.
 - The GPUI desktop client stores window restore geometry and the maximized
   flag in `<state>/window.ini` instead of `omairc.conf`. A missing
   `window.ini` still reads the legacy `[window]` group from the config file

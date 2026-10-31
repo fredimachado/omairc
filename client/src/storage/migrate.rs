@@ -14,9 +14,7 @@ use std::path::{Path, PathBuf};
 
 use super::opendirect::{OPEN_DIRECTS_GROUP, TARGETS_KEY};
 use super::paths::{self, Env, Platform};
-use super::scrollplace::ScrollPlaceFile;
 use super::settings::{probe_ini, IniProbe, Settings};
-use super::Backing;
 
 /// On-disk layout probed at cutover: the Qt install when `dev` is on, or this
 /// build's own paths (same folder) on default product builds.
@@ -117,8 +115,9 @@ pub fn probe_qt_migration(layout: &QtInstallLayout) -> QtMigrationProbe {
                 .unwrap_or(0)
         })
         .sum();
-    let scroll = ScrollPlaceFile::new(Backing::Disk(settings_path.clone()));
-    let scroll_all = scroll.load_all();
+    // Qt installs still keep scroll places in the conf; the migration probe reads
+    // that legacy group and does not look at scrollplaces.ini.
+    let scroll_all = super::scrollplace::load_all_from(&settings);
     let scroll_place_networks = scroll_all.len();
     let scroll_place_rows = scroll_all.values().map(|rows| rows.len()).sum();
     let sts_policies = count_sts_groups(&layout.sts);
@@ -211,10 +210,10 @@ mod tests {
     #[cfg(feature = "dev")]
     use crate::storage::paths::QT_APP_FOLDER;
     use crate::storage::paths::SETTINGS_FILE_MACOS;
-    use crate::storage::scrollplace::PlaceRows;
+    use crate::storage::Backing;
     use crate::storage::profilestore::{Profile, ProfileStore};
-    use crate::storage::scrollplace::{ScrollPlace, ScrollPlaceFile};
-    use crate::storage::settings::Status;
+    use crate::storage::scrollplace::{PLACES_KEY, SCROLL_PLACES_GROUP};
+    use crate::storage::settings::{Settings, Status};
     use crate::storage::stspolicies::IniStsStore;
     use crate::util::testdir::TempDir;
     use chrono::{TimeZone, Utc};
@@ -258,15 +257,15 @@ mod tests {
         open.add("freenode", "dax", mapping);
         open.dismiss("freenode", "dax", mapping);
 
-        let scroll = ScrollPlaceFile::new(Backing::Disk(settings));
-        let rows: PlaceRows = vec![(
-            "#omarchy".into(),
-            ScrollPlace {
-                follow_end: true,
-                ..ScrollPlace::default()
-            },
-        )];
-        scroll.save("freenode", &rows);
+        // Qt still wrote scroll places into the conf; seed the legacy group so the
+        // migration probe sees what an old install looks like.
+        let mut scroll_settings = Settings::open(&settings);
+        scroll_settings.set_value(
+            &format!("{SCROLL_PLACES_GROUP}/freenode"),
+            PLACES_KEY,
+            r###"[{"follow":true,"target":"#omarchy"}]"###,
+        );
+        assert_eq!(scroll_settings.sync(), Status::Written);
 
         IniStsStore::new(layout.sts.clone()).store(
             "irc.example",

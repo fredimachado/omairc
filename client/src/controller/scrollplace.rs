@@ -3,9 +3,10 @@
 //! and otherwise by its kind, author, body and server time. An anchor is found again
 //! after the transcript changes, so a place survives a reload. A place that pins the
 //! bottom is stored as `follow_end`. The Status console has no place.
-//! The places live in the settings file under `scrollPlaces/<network>`, the group Qt uses
-//! (`storage::scrollplace`). Each network's list is loaded when the store is built and
-//! written again after each change.
+//! The places live in `<state>/scrollplaces.ini` under `scrollPlaces/<network>`, the
+//! group Qt used in the conf (`storage::scrollplace`). Each network's list is loaded
+//! when the store is built and written again after each change. A missing state file
+//! still reads the legacy conf group once; saves never touch the conf.
 //! The shell resumes a transcript by its own rows (`model::scroll_place`) and stores the
 //! result through `remember_place` and `place_for`. The message-anchor reads below are the
 //! Qt-format path over the controller's messages; the GUI uses row msgids through
@@ -98,11 +99,14 @@ impl ScrollPlaceStore {
         true
     }
 
-    /// Drops every place of `network_id` (`Forget`).
+    /// Drops every place of `network_id` (`Forget`). Always persists, so a missing
+    /// state file is seeded from the legacy conf before this network is removed.
     pub fn forget(&mut self, network_id: &str) {
-        if self.places.remove(network_id).is_some() {
-            self.file.save(network_id, &PlaceRows::new());
+        if network_id.is_empty() {
+            return;
         }
+        self.places.remove(network_id);
+        self.file.save(network_id, &PlaceRows::new());
     }
 
     fn save(&self, network_id: &str) {
