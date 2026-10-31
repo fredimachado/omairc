@@ -512,8 +512,8 @@ func (m *Model) moveFocusedNetwork(delta int) {
 		return
 	}
 	if m.conn != nil {
-		if m.conn.MoveNetwork(m.sidebarNetworkFocusID, delta) {
-			m.syncSidebarNetworkOrder()
+		if m.ctrl.MoveNetwork(m.sidebarNetworkFocusID, delta) {
+			m.alignConnectionStoredOrder()
 		}
 		return
 	}

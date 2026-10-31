@@ -376,6 +376,7 @@ func (m *Model) applyConnect() {
 	}
 	networkID := m.conn.SelectedNetworkID()
 	m.syncSidebarNetworkOrder()
+	m.alignConnectionStoredOrder()
 	m.closeConnect()
 	m.switchSelection(func() {
 		m.ctrl.OpenStatus(networkID)
