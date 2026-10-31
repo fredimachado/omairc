@@ -469,6 +469,32 @@ func TestHashFullLineCommentsLoadAndSave(t *testing.T) {
 	}
 }
 
+func TestHashCommentIteratorSkipsSpecialBytesInComment(t *testing.T) {
+	t.Parallel()
+
+	path := tempSettingsPath(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	body := "# don't \"quote\n# a=b\n# x;y\n[preferences]\ndirects=false\nnote=ok\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+	if got := ProbeSettingsIni(path); got != IniProbeOK {
+		t.Fatalf("ProbeSettingsIni = %v, want IniProbeOK", got)
+	}
+	s := OpenSettings(path)
+	if s.Bool("preferences", "directs", true) {
+		t.Fatal("directs should load as false")
+	}
+	if got := s.Value("preferences", "note"); got != "ok" {
+		t.Fatalf("note = %q, want ok", got)
+	}
+}
+
 func TestSyncRefusesMalformedFile(t *testing.T) {
 	t.Parallel()
 

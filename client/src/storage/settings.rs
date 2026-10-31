@@ -363,10 +363,9 @@ pub(crate) fn file_not_writable(path: &Path) -> bool {
 #[path = "settings_ini.rs"]
 mod settings_ini;
 
-pub(in crate::storage) use settings_ini::{parse_settings_ini, parse_sts_ini};
-pub(crate) use settings_ini::{
+use settings_ini::{
     ini_bytes_are_malformed, ini_escaped_key, ini_escaped_string, ini_escaped_string_list,
-    ini_unescaped_key,
+    parse_settings_ini, parse_sts_ini,
 };
 
 #[cfg(test)]
@@ -768,6 +767,26 @@ mod tests {
     }
 
     #[test]
+    fn hash_comment_iterator_skips_special_bytes_in_comment() {
+        let dir = TempDir::new("settings-hash-iterator-236b");
+        let path = settings_in(&dir);
+        let body = concat!(
+            "# don't \"quote\n",
+            "# a=b\n",
+            "# x;y\n",
+            "[preferences]\n",
+            "directs=false\n",
+            "note=ok\n",
+        );
+        write_file(&path, body.as_bytes());
+        assert_eq!(probe_ini(&path), IniProbe::Ok);
+
+        let settings = Settings::open(&path);
+        assert!(!settings.bool_value("preferences", "directs", true));
+        assert_eq!(settings.value("preferences", "note"), "ok");
+    }
+
+    #[test]
     fn sync_refuses_malformed_file() {
         let dir = TempDir::new("settings-malformed");
         let path = settings_in(&dir);
@@ -1127,8 +1146,8 @@ mod tests {
     #[test]
     fn key_escaping_round_trips_slashes_and_unicode() {
         let key = "abc/dé日";
-        assert_eq!(ini_unescaped_key(ini_escaped_key(key).as_bytes()), key);
+        assert_eq!(settings_ini::ini_unescaped_key(ini_escaped_key(key).as_bytes()), key);
         assert_eq!(ini_escaped_key("a/b"), r"a\b");
-        assert_eq!(ini_unescaped_key(br"a\b"), "a/b");
+        assert_eq!(settings_ini::ini_unescaped_key(br"a\b"), "a/b");
     }
 }

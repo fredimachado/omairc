@@ -749,7 +749,7 @@ func parseSTSIni(data []byte) map[string]iniValue {
 			continue
 		}
 		if equalsPos < 0 {
-			if !iniFullLineComment(line, 0) {
+			if line[0] != ';' {
 				afterBad = true
 			}
 			continue
@@ -807,7 +807,7 @@ func iniBytesAreMalformed(data []byte) bool {
 			}
 			continue
 		}
-		if equalsPos < 0 && !iniFullLineComment(raw, lineStart) {
+		if equalsPos < 0 && raw[lineStart] != ';' {
 			return true
 		}
 	}
@@ -815,9 +815,10 @@ func iniBytesAreMalformed(data []byte) bool {
 }
 
 // nextIniLine.
-// ';' is a comment; '=' inside quotes does not count as the separator; and a
-// backslash consumes the next byte, including a newline, so an escaped
-// newline does not end the line. Positions are byte offsets into data.
+// A line starting with ';' is a comment (Qt). A line starting with '#' is a
+// comment too (omairc extension). '=' inside quotes does not count as the
+// separator; a backslash consumes the next byte, including a newline, so an
+// escaped newline does not end the line. Positions are byte offsets into data.
 func nextIniLine(data []byte, dataPos, lineStart, lineLen, equalsPos *int) bool {
 	dataLen := len(data)
 	inQuotes := false
@@ -904,12 +905,6 @@ func nextIniLine(data []byte, dataPos, lineStart, lineLen, equalsPos *int) bool 
 
 func iniSpace(ch byte) bool {
 	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'
-}
-
-// iniFullLineComment reports whether lineStart points at a full-line comment
-// (first non-space byte is ';' or '#'), matching Qt INI.
-func iniFullLineComment(data []byte, lineStart int) bool {
-	return lineStart < len(data) && (data[lineStart] == ';' || data[lineStart] == '#')
 }
 
 func iniSpecial(ch byte) bool {

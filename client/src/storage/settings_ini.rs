@@ -11,8 +11,8 @@ struct IniLine {
     equals: Option<usize>,
 }
 
-/// leading `;` starts a comment, a `=` inside quotes is not a separator, and a
-/// backslash consumes the next byte, newline included.
+/// Leading `;` starts a Qt comment; leading `#` is an omairc extension. `=` inside
+/// quotes is not a separator, and a backslash consumes the next byte, newline included.
 struct IniLines<'a> {
     data: &'a [u8],
     pos: usize,
@@ -114,10 +114,6 @@ fn ini_space(ch: u8) -> bool {
     matches!(ch, b' ' | b'\t' | b'\n' | b'\r')
 }
 
-fn ini_full_line_comment(data: &[u8], line_start: usize) -> bool {
-    line_start < data.len() && matches!(data[line_start], b';' | b'#')
-}
-
 fn ini_special(ch: u8) -> bool {
     matches!(ch, b'\n' | b'\r' | b'"' | b';' | b'=' | b'\\')
 }
@@ -129,7 +125,7 @@ fn strip_bom(data: &[u8]) -> &[u8] {
 /// Decodes INI bytes into full key paths. A `[networks]` section followed by
 /// `abc\host=x` yields `networks/abc/host`. A hand-written `[networks/abc]` section
 /// yields the same path.
-pub(in crate::storage) fn parse_settings_ini(data: &[u8]) -> BTreeMap<String, IniValue> {
+pub(super) fn parse_settings_ini(data: &[u8]) -> BTreeMap<String, IniValue> {
     let raw = strip_bom(data);
     let mut values = BTreeMap::new();
     let mut section = String::new();
@@ -163,7 +159,7 @@ pub(in crate::storage) fn parse_settings_ini(data: &[u8]) -> BTreeMap<String, In
 /// cannot overwrite real ones. An unclosed `[` header still starts a new section
 /// (as on main) and clears the after-bad-line flag, so the next host's keys never
 /// land in the previous group.
-pub(in crate::storage) fn parse_sts_ini(data: &[u8]) -> BTreeMap<String, IniValue> {
+pub(super) fn parse_sts_ini(data: &[u8]) -> BTreeMap<String, IniValue> {
     let raw = strip_bom(data);
     let mut values = BTreeMap::new();
     let mut section = String::new();
@@ -177,7 +173,7 @@ pub(in crate::storage) fn parse_sts_ini(data: &[u8]) -> BTreeMap<String, IniValu
             continue;
         }
         let Some(equals_at) = line.equals else {
-            if !ini_full_line_comment(raw, line.start) {
+            if text[0] != b';' {
                 after_bad = true;
             }
             continue;
@@ -230,7 +226,7 @@ pub(crate) fn ini_bytes_are_malformed(data: &[u8]) -> bool {
             }
             continue;
         }
-        if line.equals.is_none() && !ini_full_line_comment(raw, line.start) {
+        if line.equals.is_none() && raw[line.start] != b';' {
             return true;
         }
     }
