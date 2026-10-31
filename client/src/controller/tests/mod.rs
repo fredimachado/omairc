@@ -37,3 +37,4 @@ mod sends;
 mod source;
 mod stores;
 mod suspension;
+mod verify_desktop_member_lists;
