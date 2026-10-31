@@ -65,6 +65,10 @@ type Settings struct {
 	path   string
 	values map[string]iniValue
 	dirty  bool
+	// onDisk is the canonical encoded snapshot when loadedFromDisk is true.
+	onDisk []byte
+	// loadedFromDisk is true after a successful read of path at open.
+	loadedFromDisk bool
 	// preserveFileMode keeps an existing file's permission bits on Sync.
 	preserveFileMode bool
 }
@@ -93,6 +97,7 @@ func OpenSTSSettings(path string) *Settings {
 		return s
 	}
 	s.values = parseSTSIni(raw)
+	s.rememberDiskSnapshot()
 	return s
 }
 
@@ -239,6 +244,9 @@ func (s *Settings) SetStringList(group, key string, values []string) {
 
 // RemoveKey removes one key from a group (no-op when absent).
 func (s *Settings) RemoveKey(group, key string) {
+	if _, ok := s.values[settingsKey(group, key)]; !ok {
+		return
+	}
 	delete(s.values, settingsKey(group, key))
 	s.dirty = true
 }
@@ -247,6 +255,9 @@ func (s *Settings) RemoveKey(group, key string) {
 // QSettings::remove(group): the key itself and every key beneath it go.
 func (s *Settings) RemoveGroup(group string) {
 	if group == "" {
+		if len(s.values) == 0 {
+			return
+		}
 		for path := range s.values {
 			delete(s.values, path)
 		}
@@ -254,12 +265,16 @@ func (s *Settings) RemoveGroup(group string) {
 		return
 	}
 	prefix := group + "/"
+	removed := false
 	for path := range s.values {
 		if path == group || strings.HasPrefix(path, prefix) {
 			delete(s.values, path)
+			removed = true
 		}
 	}
-	s.dirty = true
+	if removed {
+		s.dirty = true
+	}
 }
 
 // ChildGroups returns the direct child group names of group, sorted, mirroring
@@ -309,9 +324,15 @@ func (s *Settings) Sync() Status {
 	if !s.dirty {
 		return StatusWritten
 	}
-	if err := writeSettingsAtomic(s.path, s.encode(), s.preserveFileMode); err != nil {
+	encoded := s.encode()
+	if encodedMatchesDisk(s.path, s.onDisk, s.loadedFromDisk, encoded) {
+		s.dirty = false
+		return StatusWritten
+	}
+	if err := writeSettingsAtomic(s.path, encoded, s.preserveFileMode); err != nil {
 		return StatusAccessError
 	}
+	s.rememberDiskSnapshotFrom(encoded)
 	s.dirty = false
 	return StatusWritten
 }
@@ -371,6 +392,27 @@ func (s *Settings) load() {
 		return
 	}
 	s.values = parseSettingsIni(raw)
+	s.rememberDiskSnapshot()
+}
+
+func (s *Settings) rememberDiskSnapshot() {
+	s.loadedFromDisk = true
+	s.rememberDiskSnapshotFrom(s.encode())
+}
+
+func (s *Settings) rememberDiskSnapshotFrom(encoded []byte) {
+	if encoded == nil {
+		encoded = []byte{}
+	}
+	s.onDisk = encoded
+}
+
+func encodedMatchesDisk(path string, onDisk []byte, loadedFromDisk bool, encoded []byte) bool {
+	if loadedFromDisk {
+		return bytes.Equal(onDisk, encoded)
+	}
+	_, err := os.Stat(path)
+	return os.IsNotExist(err) && len(encoded) == 0
 }
 
 func (s *Settings) lookup(group, key string) (iniValue, bool) {

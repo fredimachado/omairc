@@ -14,6 +14,11 @@ use std::path::{Path, PathBuf};
 
 use super::atomicwrite::{write_atomic, write_atomic_preserve_mode};
 
+#[path = "settings_snapshot.rs"]
+mod settings_snapshot;
+
+use self::settings_snapshot::encoded_matches_disk;
+
 /// The result of a fail-closed probe of the raw bytes (`probeSettingsIni`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IniProbe {
@@ -59,45 +64,11 @@ pub struct Settings {
     path: PathBuf,
     values: BTreeMap<String, IniValue>,
     dirty: bool,
-    /// When true, [`Settings::sync`] keeps an existing file's permission bits.
+    on_disk: Option<Vec<u8>>,
     preserve_file_mode: bool,
 }
 
 impl Settings {
-    /// Loads `path`. A missing or unreadable file gives an empty store, and
-    /// [`Settings::sync`] still refuses to overwrite a malformed or unreadable file.
-    pub fn open(path: impl Into<PathBuf>) -> Self {
-        let path = path.into();
-        let values = fs::read(&path)
-            .map(|raw| parse_settings_ini(&raw))
-            .unwrap_or_default();
-        Self {
-            path,
-            values,
-            dirty: false,
-            preserve_file_mode: true,
-        }
-    }
-
-    /// Loads an STS policy file. Same as [`Settings::open`], but after a bad line
-    /// inside a group, later keys for that group are kept when not already set, and
-    /// a key that is already set is not overwritten by a leaked line. Shared config
-    /// reads stay on [`Settings::open`].
-    pub(super) fn open_sts(path: impl Into<PathBuf>) -> Self {
-        let path = path.into();
-        let values = fs::read(&path)
-            .map(|raw| parse_sts_ini(&raw))
-            .unwrap_or_default();
-        Self {
-            path,
-            values,
-            dirty: false,
-            preserve_file_mode: false,
-        }
-    }
-
-    /// The stored string, or `""` when the key is absent. A string list and an
-    /// invalid value also read as `""`, matching `QVariant::toString`.
     pub fn value(&self, group: &str, key: &str) -> String {
         self.text(group, key).unwrap_or_default().to_string()
     }
@@ -148,9 +119,7 @@ impl Settings {
         self.dirty = true;
     }
 
-    /// Stores an already-encoded QVariant such as `@Rect(0 0 800 600)`, written
-    /// verbatim so Qt reads it back as that type. [`Settings::set_value`] is for plain
-    /// strings, and it escapes a leading `@`.
+    /// Stores `@Rect(...)` and other QVariant encodings verbatim.
     pub fn set_variant(&mut self, group: &str, key: &str, encoded: &str) {
         self.values.insert(
             settings_key(group, key),
@@ -171,8 +140,7 @@ impl Settings {
         self.set_value(group, key, &value.to_string());
     }
 
-    /// Stores a string list. An empty list is written as `@Invalid`, which is
-    /// QSettings' sentinel, so it reads back distinct from a list holding one "".
+    /// An empty list is stored as `@Invalid`.
     pub fn set_string_list(&mut self, group: &str, key: &str, values: &[String]) {
         self.values
             .insert(settings_key(group, key), IniValue::List(values.to_vec()));
@@ -183,13 +151,15 @@ impl Settings {
     /// single key; the stores remove whole groups.
     #[cfg(test)]
     pub fn remove_key(&mut self, group: &str, key: &str) {
-        self.values.remove(&settings_key(group, key));
-        self.dirty = true;
+        if self.values.remove(&settings_key(group, key)).is_some() {
+            self.dirty = true;
+        }
     }
 
     /// Removes a group and everything beneath it, as `QSettings::remove(group)`
     /// does. An empty group clears the whole store.
     pub fn remove_group(&mut self, group: &str) {
+        let before = self.values.len();
         if group.is_empty() {
             self.values.clear();
         } else {
@@ -197,7 +167,9 @@ impl Settings {
             self.values
                 .retain(|path, _| path != group && !path.starts_with(&prefix));
         }
-        self.dirty = true;
+        if self.values.len() != before {
+            self.dirty = true;
+        }
     }
 
     /// The direct child groups of `group`, sorted. Deeper groups collapse to their
@@ -237,13 +209,19 @@ impl Settings {
         if !self.dirty {
             return Status::Written;
         }
+        let encoded = self.encode();
+        if encoded_matches_disk(&self.path, self.on_disk.as_deref(), &encoded) {
+            self.dirty = false;
+            return Status::Written;
+        }
         let write = if self.preserve_file_mode {
-            write_atomic_preserve_mode(&self.path, &self.encode())
+            write_atomic_preserve_mode(&self.path, &encoded)
         } else {
-            write_atomic(&self.path, &self.encode())
+            write_atomic(&self.path, &encoded)
         };
         match write {
             Ok(()) => {
+                self.on_disk = Some(encoded);
                 self.dirty = false;
                 Status::Written
             }
@@ -1431,6 +1409,113 @@ mod tests {
         let mut settings = Settings::open(&path);
         assert_eq!(settings.sync(), Status::Written);
         assert!(!path.exists());
+    }
+
+    fn mark_dirty_for_test(settings: &mut Settings) {
+        settings.set_value("_sync_test", "noop", "1");
+        settings.remove_key("_sync_test", "noop");
+    }
+
+    #[test]
+    fn sync_on_empty_file_leaves_disk_unchanged() {
+        let dir = TempDir::new("settings-empty-file");
+        let path = settings_in(&dir);
+        write_file(&path, b"");
+        let mut settings = Settings::open(&path);
+        assert!(sync_leaves_disk_unchanged(&path, &mut settings, mark_dirty_for_test));
+    }
+
+    #[test]
+    fn sync_on_comment_only_file_leaves_disk_unchanged() {
+        let dir = TempDir::new("settings-comment-file");
+        let path = settings_in(&dir);
+        write_file(&path, b"; keep this comment\n");
+        let mut settings = Settings::open(&path);
+        assert!(sync_leaves_disk_unchanged(
+            &path,
+            &mut settings,
+            mark_dirty_for_test,
+        ));
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            b"; keep this comment\n",
+            "comment-only bytes must survive a no-op sync"
+        );
+    }
+
+    #[test]
+    fn sync_repeat_assignment_preserves_file_bytes_and_mtime() {
+        use std::thread;
+        use std::time::Duration;
+
+        let dir = TempDir::new("settings-idempotent");
+        let path = settings_in(&dir);
+        write_file(&path, b"[preferences]\ndirects=true\n");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        }
+
+        let before_bytes = fs::read(&path).unwrap();
+        let before_mtime = fs::metadata(&path).unwrap().modified().unwrap();
+        thread::sleep(Duration::from_millis(1100));
+
+        let mut settings = Settings::open(&path);
+        settings.set_bool("preferences", "directs", true);
+        assert_eq!(settings.sync(), Status::Written);
+        assert_eq!(fs::read(&path).unwrap(), before_bytes);
+        assert_eq!(
+            fs::metadata(&path).unwrap().modified().unwrap(),
+            before_mtime
+        );
+
+        settings.set_bool("preferences", "directs", false);
+        assert_eq!(settings.sync(), Status::Written);
+        assert_ne!(fs::read(&path).unwrap(), before_bytes);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o644);
+        }
+        assert!(!settings.bool_value("preferences", "directs", true));
+    }
+
+    fn sync_leaves_disk_unchanged(path: &Path, settings: &mut Settings, mutate: impl FnOnce(&mut Settings)) -> bool {
+        use std::thread;
+        use std::time::Duration;
+
+        thread::sleep(Duration::from_millis(1100));
+        let before_bytes = fs::read(path).expect("read");
+        let before_mtime = fs::metadata(path).expect("stat").modified().expect("mtime");
+        mutate(settings);
+        assert_eq!(settings.sync(), Status::Written);
+        let bytes_unchanged = fs::read(path).expect("read after") == before_bytes;
+        let mtime_unchanged =
+            fs::metadata(path).expect("stat after").modified().expect("mtime") == before_mtime;
+        bytes_unchanged && mtime_unchanged
+    }
+
+    #[test]
+    fn sync_string_list_after_reopen_skips_unchanged_bytes() {
+        let dir = TempDir::new("settings-list-idempotent");
+        let path = settings_in(&dir);
+        write_file(
+            &path,
+            b"[preferences]\nnetworkOrder=@Invalid()\ncollapsed=@Invalid()\n",
+        );
+        let mut settings = Settings::open(&path);
+        assert!(sync_leaves_disk_unchanged(&path, &mut settings, |settings| {
+            settings.set_string_list("preferences", "networkOrder", &[]);
+            settings.set_string_list("preferences", "collapsed", &[]);
+        }));
+
+        write_file(&path, b"[preferences]\nnetworkOrder=freenode\n");
+        let mut settings = Settings::open(&path);
+        assert!(sync_leaves_disk_unchanged(&path, &mut settings, |settings| {
+            settings.set_string_list("preferences", "networkOrder", &["freenode".into()]);
+        }));
     }
 
     #[test]
