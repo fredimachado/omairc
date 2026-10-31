@@ -59,6 +59,12 @@ $Script:SCREENSHOT_GRAB_ATTEMPTS = 5
 $Script:SCREENSHOT_GRAB_DELAY = 0.3
 $Script:SCREENSHOT_FLAT_STDDEV = 0.005
 $Script:SCREENSHOT_FLAT_COLORS = 16
+$Script:WAIT_TITLE_TIMEOUT_SEC = if ($env:OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT) {
+    [int]$env:OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT
+} else {
+    10
+}
+$Script:WAIT_TITLE_POLL_MS = 100
 
 # Logical client size recipes assume (same as sh / Qt default).
 $Script:LOGICAL_WIDTH = 1180
@@ -726,6 +732,38 @@ function Get-WindowTitle {
     return [OmaircDriver]::Title($Script:HWND)
 }
 
+function Test-AttentionTitleMark {
+    param([string]$Title)
+    if ($Title -notmatch ' - Omairc$') { return $false }
+    if ($Title.StartsWith('#')) { return $false }
+    return $Title.Contains(': ')
+}
+
+function Wait-TitleMarkCleared {
+    param([int]$TimeoutSec)
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    [void][OmaircDriver]::ForegroundTo($Script:HWND)
+    while (Test-AttentionTitleMark (Get-WindowTitle)) {
+        if ((Get-Date) -ge $deadline) {
+            Die "window title stayed on attention preview '$(Get-WindowTitle)' for ${TimeoutSec}s after focus"
+        }
+        Start-Sleep -Milliseconds $Script:WAIT_TITLE_POLL_MS
+    }
+}
+
+function Wait-WindowTitleExact {
+    param([string]$Exact, [int]$TimeoutSec)
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    [void][OmaircDriver]::ForegroundTo($Script:HWND)
+    while ((Get-WindowTitle) -ne $Exact) {
+        if ((Get-Date) -ge $deadline) {
+            Die "expected title '$Exact', got '$(Get-WindowTitle)' after ${TimeoutSec}s"
+        }
+        Start-Sleep -Milliseconds $Script:WAIT_TITLE_POLL_MS
+    }
+    Write-Output (Get-WindowTitle)
+}
+
 function Invoke-ClickXy {
     param([int]$X, [int]$Y)
     Ensure-OmaircDriver
@@ -908,11 +946,12 @@ maximized=false
         Die 'Omairc did not open; see log dump above'
     }
 
-    # Match the sh driver's post-map windowfocus: keep the window active while
-    # the demo seed drains mentions so note_title_mark does not stick an
-    # attention title. Restore the caller's foreground after placement.
+    # Match the sh driver: keep the window active while the demo seed drains
+    # mentions so note_title_mark does not stick an attention title.
     [void][OmaircDriver]::ForegroundTo($hwnd)
-    Start-Sleep -Milliseconds 800
+    if ($demo) {
+        Wait-TitleMarkCleared -TimeoutSec $Script:WAIT_TITLE_TIMEOUT_SEC
+    }
 
     if ($visible) {
         $wx = 0; $wy = 0; $ww = 0; $wh = 0
@@ -1005,11 +1044,24 @@ function Invoke-Title {
 function Invoke-WaitTitle {
     param([string[]]$WaitArgs)
     $exact = $null
+    $timeoutSec = $Script:WAIT_TITLE_TIMEOUT_SEC
     $i = 0
     while ($i -lt $WaitArgs.Count) {
         if ($WaitArgs[$i] -eq '--exact') {
             if ($i + 1 -ge $WaitArgs.Count) { Die 'wait-title requires --exact' }
             $exact = $WaitArgs[$i + 1]
+            $i += 2
+        } elseif ($WaitArgs[$i] -eq '--timeout') {
+            if ($i + 1 -ge $WaitArgs.Count) { Die 'wait-title requires --timeout' }
+            $raw = $WaitArgs[$i + 1]
+            if ($raw -match '^(?<n>\d+)s$') {
+                $timeoutSec = [int]$Matches.n
+            } elseif ($raw -match '^\d+$') {
+                $timeoutSec = [int]$raw
+            } else {
+                Die "invalid wait-title timeout '$raw' (use seconds or 10s)"
+            }
+            if ($timeoutSec -lt 1) { Die 'wait-title timeout must be at least 1 second' }
             $i += 2
         } else {
             Die "unknown wait-title argument: $($WaitArgs[$i])"
@@ -1017,15 +1069,7 @@ function Invoke-WaitTitle {
     }
     if (-not $exact) { Die 'wait-title requires --exact' }
     Load-State
-    for ($attempt = 0; $attempt -lt 30; $attempt++) {
-        $title = Get-WindowTitle
-        if ($title -eq $exact) {
-            Write-Output $title
-            return
-        }
-        Start-Sleep -Milliseconds 100
-    }
-    Die "expected title '$exact', got '$(Get-WindowTitle)'"
+    Wait-WindowTitleExact -Exact $exact -TimeoutSec $timeoutSec
 }
 
 function Reject-QtOnlyVerb {

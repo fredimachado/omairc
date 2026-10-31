@@ -28,6 +28,11 @@ SCREENSHOT_GRAB_ATTEMPTS=5
 SCREENSHOT_GRAB_DELAY=0.3
 SCREENSHOT_FLAT_STDDEV=0.005
 SCREENSHOT_FLAT_COLORS=16
+# wait-title polls the X11 window name. Cold demo launch can briefly show an
+# unfocused attention preview (author: body - Omairc) until the window is
+# focused and the seed settles; three seconds was flaking full recipe replay.
+WAIT_TITLE_TIMEOUT_SEC="${OMAIRC_VERIFY_WAIT_TITLE_TIMEOUT:-10}"
+WAIT_TITLE_POLL_SEC=0.1
 # Headless Xvfb framebuffer. --visible overrides these after reading the
 # host scale so the nested size matches the physical Xephyr window (on a
 # 2x panel, logical 1600x1000 → nested 3200x2000).
@@ -46,7 +51,7 @@ Usage:
   control-omairc-desktop launch [--demo-server] [--visible]
   control-omairc-desktop doctor
   control-omairc-desktop title
-  control-omairc-desktop wait-title --exact "<title>"
+  control-omairc-desktop wait-title --exact "<title>" [--timeout SEC|10s]
   control-omairc-desktop focus-composer
   control-omairc-desktop composer
   control-omairc-desktop jump --query "<text>"
@@ -342,8 +347,79 @@ PY
 }
 
 
+refresh_app_window() {
+  found="$(xdotool search --onlyvisible --pid "$APP_PID" 2>/dev/null | head -1 || true)"
+  if [ -n "$found" ]; then
+    WINDOW=$found
+  fi
+}
+
 window_title() {
-  xdotool getwindowname "$WINDOW"
+  refresh_app_window
+  xdotool getwindowname "$WINDOW" 2>/dev/null || true
+}
+
+ensure_window_focused() {
+  refresh_app_window
+  xdotool windowfocus --sync "$WINDOW" 2>/dev/null || true
+}
+
+# Unfocused demo traffic uses attention_title (nick: preview - Omairc). Channel
+# and DM conversation titles do not use that author: body prefix.
+title_is_attention_mark() {
+  case $1 in
+    *" - Omairc") ;;
+    *) return 1 ;;
+  esac
+  case $1 in
+    "#"*) return 1 ;;
+    *": "*) ;;
+    *) return 1 ;;
+  esac
+  return 0
+}
+
+parse_timeout_sec() {
+  _raw=$1
+  case $_raw in
+    *s) _raw=${_raw%s} ;;
+    *m) _raw=$((${_raw%m} * 60)) ;;
+  esac
+  case $_raw in
+    ''|*[!0-9]*)
+      die "invalid wait-title timeout '$_raw' (use seconds or 10s)"
+      ;;
+  esac
+  if [ "$_raw" -lt 1 ]; then
+    die "wait-title timeout must be at least 1 second"
+  fi
+  echo "$_raw"
+}
+
+wait_title_mark_cleared() {
+  _timeout_sec=$1
+  _deadline=$(( $(date +%s) + _timeout_sec ))
+  ensure_window_focused
+  while title_is_attention_mark "$(window_title)"; do
+    if [ "$(date +%s)" -ge "$_deadline" ]; then
+      die "window title stayed on attention preview '$(window_title)' for ${_timeout_sec}s after focus"
+    fi
+    sleep "$WAIT_TITLE_POLL_SEC"
+  done
+}
+
+poll_window_title_exact() {
+  _exact=$1
+  _timeout_sec=$2
+  _deadline=$(( $(date +%s) + _timeout_sec ))
+  ensure_window_focused
+  while [ "$(window_title)" != "$_exact" ]; do
+    if [ "$(date +%s)" -ge "$_deadline" ]; then
+      die "expected title '$_exact', got '$(window_title)' after ${_timeout_sec}s"
+    fi
+    sleep "$WAIT_TITLE_POLL_SEC"
+  done
+  window_title
 }
 
 
@@ -533,7 +609,10 @@ cmd_launch() {
   # Demo channels start with the member panel open (Shell::members_open).
   MEMBERS_OPEN=1
   write_state
-  xdotool windowfocus --sync "$WINDOW"
+  ensure_window_focused
+  if [ "$DEMO" = 1 ]; then
+    wait_title_mark_cleared "$WAIT_TITLE_TIMEOUT_SEC"
+  fi
   echo "launched isolated Omairc"
   if [ "$DEMO" = 1 ]; then
     echo "demo=yes"
@@ -604,23 +683,17 @@ cmd_title() {
 
 cmd_wait_title() {
   exact=
+  timeout_sec=$WAIT_TITLE_TIMEOUT_SEC
   while [ $# -gt 0 ]; do
     case $1 in
       --exact) exact=$2; shift 2 ;;
+      --timeout) timeout_sec=$(parse_timeout_sec "$2"); shift 2 ;;
       *) die "unknown wait-title argument: $1" ;;
     esac
   done
   [ -n "$exact" ] || die "wait-title requires --exact"
   load_state
-  attempt=0
-  while [ "$(window_title)" != "$exact" ]; do
-    attempt=$((attempt + 1))
-    if [ "$attempt" -ge 30 ]; then
-      die "expected title '$exact', got '$(window_title)'"
-    fi
-    sleep 0.1
-  done
-  window_title
+  poll_window_title_exact "$exact" "$timeout_sec"
 }
 
 
