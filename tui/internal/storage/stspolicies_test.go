@@ -256,8 +256,9 @@ func TestIniSTSStoreWeakerNewPolicyDoesNotShortenExistingExpiry(t *testing.T) {
 	}
 }
 
-func TestIniSTSStoreFailedBackupRenameLeavesFileAlone(t *testing.T) {
-	// client/src/storage/stspolicies.rs::a_failed_backup_rename_leaves_the_malformed_file_alone
+func TestIniSTSStoreFailedBackupLeavesFileAlone(t *testing.T) {
+	// client/src/storage/stspolicies.rs::a_failed_backup_keeps_the_policy_in_memory
+	// IniSTSStore itself has no memory; the session STSStore keeps the policy.
 	if runtime.GOOS == "windows" {
 		t.Skip("unix directory modes")
 	}
@@ -287,7 +288,127 @@ func TestIniSTSStoreFailedBackupRenameLeavesFileAlone(t *testing.T) {
 		t.Fatalf("malformed file was rewritten: %q", raw)
 	}
 	if _, ok := store.Lookup("irc.example", 1); ok {
-		t.Fatal("failed rename must not invent a policy on disk")
+		t.Fatal("failed backup must not invent a policy on disk")
+	}
+}
+
+func TestIniSTSStoreFailedWriteAfterBackupLeavesSTSIntact(t *testing.T) {
+	// client/src/storage/stspolicies.rs::a_failed_write_after_backup_leaves_sts_intact
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	garbage := "this line has no equals sign\n"
+	if err := os.WriteFile(path, []byte(garbage), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	testFailSTSInstall = true
+	defer func() { testFailSTSInstall = false }()
+
+	store := NewIniSTSStore(path)
+	if status := store.Store("irc.example", 6697, 60, 0); status != StatusFormatError {
+		t.Fatalf("Store status = %v, want FormatError", status)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != garbage {
+		t.Fatalf("sts must stay intact: %q", raw)
+	}
+	backup, err := os.ReadFile(filepath.Join(dir, "sts.corrupt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(backup) != garbage {
+		t.Fatalf("backup = %q", backup)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".tmp") {
+			t.Fatalf("leftover temp file: %s", entry.Name())
+		}
+	}
+}
+
+func TestIniSTSStoreExistingBackupNameIsNeverClobbered(t *testing.T) {
+	// client/src/storage/stspolicies.rs::an_existing_backup_name_is_never_clobbered
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	preexisting := "preexisting backup bytes\n"
+	if err := os.WriteFile(filepath.Join(dir, "sts.corrupt"), []byte(preexisting), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	garbage := "fresh garbage without equals\n"
+	if err := os.WriteFile(path, []byte(garbage), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewIniSTSStore(path)
+	if status := store.Store("irc.example", 6697, 60, 0); status != StatusWritten {
+		t.Fatal(status)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "sts.corrupt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != preexisting {
+		t.Fatalf("existing backup clobbered: %q", raw)
+	}
+	raw, err = os.ReadFile(filepath.Join(dir, "sts.corrupt.1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != garbage {
+		t.Fatalf("second backup = %q", raw)
+	}
+}
+
+func TestIniSTSStoreInvalidPortEntryDoesNotBeatValidPolicy(t *testing.T) {
+	// client/src/storage/stspolicies.rs::an_invalid_port_entry_does_not_beat_a_valid_policy
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	junk := "[" + ircExampleSTSGroup + "]\nport=junk\nduration=60\nexpiry=4102444800\nbad line\n"
+	if err := os.WriteFile(path, []byte(junk), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewIniSTSStore(path)
+	if status := store.Store("irc.example", 6697, 60, 1_700_000_000); status != StatusWritten {
+		t.Fatal(status)
+	}
+	entry, ok := store.Lookup("irc.example", 1_700_000_000)
+	if !ok || entry.Port != 6697 || entry.ExpiryEpochSeconds != 1_700_000_060 {
+		t.Fatalf("must keep valid policy: %+v ok=%v", entry, ok)
+	}
+}
+
+func TestIniSTSStoreKeysUnderGarbageHeaderAreNotSaved(t *testing.T) {
+	// client/src/storage/stspolicies.rs::keys_under_a_garbage_header_are_not_saved
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	other := STSGroupKey("other.example")
+	mixed := "[" + ircExampleSTSGroup + "]\nport=6697\nduration=60\nexpiry=4102444800\ngarbage header line\nport=7000\nduration=100\nexpiry=100\n[" + other + "]\nport=6698\nduration=30\nexpiry=4102444800\n"
+	if err := os.WriteFile(path, []byte(mixed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewIniSTSStore(path)
+	if status := store.Store("third.example", 6699, 10, 1_700_000_000); status != StatusWritten {
+		t.Fatal(status)
+	}
+	entry, ok := store.Lookup("irc.example", 1_700_000_000)
+	if !ok || entry.Port != 6697 || entry.ExpiryEpochSeconds != 4_102_444_800 {
+		t.Fatalf("leaked keys must not weaken A: %+v ok=%v", entry, ok)
+	}
+	if entry, ok := store.Lookup("other.example", 1_700_000_000); !ok || entry.Port != 6698 {
+		t.Fatalf("other.example = %+v ok=%v", entry, ok)
+	}
+	text, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(text)
+	if strings.Contains(body, "port=7000") {
+		t.Fatalf("leaked port must not be saved: %s", body)
 	}
 }
 
@@ -305,29 +426,6 @@ func TestIniSTSStoreFileIsOwnerOnlyAfterWrite(t *testing.T) {
 	}
 	if mode := info.Mode().Perm(); mode != 0o600 {
 		t.Fatalf("mode = %o, want 0600", mode)
-	}
-}
-
-func TestNextSTSCorruptPathSkipsExistingBackups(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "sts")
-	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := nextSTSCorruptPath(path); got != filepath.Join(dir, "sts.corrupt") {
-		t.Fatalf("got %q", got)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "sts.corrupt"), []byte("a"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := nextSTSCorruptPath(path); got != filepath.Join(dir, "sts.corrupt.1") {
-		t.Fatalf("got %q", got)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "sts.corrupt.1"), []byte("b"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := nextSTSCorruptPath(path); got != filepath.Join(dir, "sts.corrupt.2") {
-		t.Fatalf("got %q", got)
 	}
 }
 

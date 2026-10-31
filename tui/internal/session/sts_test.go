@@ -257,6 +257,47 @@ func TestSTSStoreMalformedRecoveryFlushesEveryMemoryHost(t *testing.T) {
 	}
 }
 
+// A host cleared on disk must not return when a normal (well-formed) write
+// only persists the new host. Memory still holds the old host, but flush is
+// recovery-only.
+func TestSTSStoreClearedHostNotBroughtBackByNormalWrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	store := NewSTSStore()
+	store.AttachDisk(storage.NewIniSTSStore(path))
+	now := time.Unix(100, 0)
+	if err := store.Store("keep.example", 6697, 60, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Store("drop.example", 6697, 60, now); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate another client clearing drop.example on disk with duration=0.
+	keepKey := storage.STSGroupKey("keep.example")
+	onlyKeep := "[" + keepKey + "]\nduration=60\nexpiry=160\nport=6697\n"
+	if err := os.WriteFile(path, []byte(onlyKeep), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Store("other.example", 6697, 30, time.Unix(110, 0)); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	dropKey := storage.STSGroupKey("drop.example")
+	if strings.Contains(body, dropKey) {
+		t.Fatalf("cleared host must not return on a normal write: %s", body)
+	}
+	if !strings.Contains(body, keepKey) {
+		t.Fatalf("keep.example missing: %s", body)
+	}
+	if !strings.Contains(body, storage.STSGroupKey("other.example")) {
+		t.Fatalf("other.example missing: %s", body)
+	}
+}
+
 // duration=0 through STSStore must clear the on-disk group, not only memory.
 func TestSTSStoreZeroDurationClearsDisk(t *testing.T) {
 	dir := t.TempDir()

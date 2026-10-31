@@ -528,16 +528,30 @@ func parseSettingsIni(data []byte) map[string]iniValue {
 	}
 
 	section := ""
+	// After a malformed line, ignore key=value pairs until the next valid header
+	// so they cannot leak into the previous group (STS recovery must not save that).
+	skipKeys := false
 	dataPos, lineStart, lineLen, equalsPos := 0, 0, 0, -1
 	for nextIniLine(raw, &dataPos, &lineStart, &lineLen, &equalsPos) {
 		line := raw[lineStart : lineStart+lineLen]
 		if line[0] == '[' {
+			if bytes.IndexByte(line, ']') < 0 {
+				skipKeys = true
+				continue
+			}
 			section = iniSectionPrefix(line)
+			skipKeys = false
 			continue
 		}
 		if equalsPos < 0 {
 			// A comment or a value line with no '='. ProbeSettingsIni gates the
 			// malformed case; skip it here rather than inventing a key.
+			if line[0] != ';' {
+				skipKeys = true
+			}
+			continue
+		}
+		if skipKeys {
 			continue
 		}
 		equals := equalsPos - lineStart

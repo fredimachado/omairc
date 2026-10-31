@@ -3,6 +3,8 @@ package storage
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -15,17 +17,25 @@ import (
 // named by its STSGroupKey, holding port, duration, and expiry (epoch seconds).
 // Desktop and this client read and write the same entries.
 // A well-formed file is updated in place through Settings. When the file is
-// malformed, this store renames it to a non-clobbering sts.corrupt backup
-// (then sts.corrupt.1, .2, …) and writes a clean file from the parseable
-// entries plus the new policy. A failed rename leaves the file alone. An
-// unreadable or unwritable file is still left alone. Sync already restricts
-// the file to its owner (0600).
+// malformed, this store writes a clean temp file, hard-links sts to a
+// non-clobbering sts.corrupt backup (then sts.corrupt.1, .2, …), and renames
+// the temp over sts. A failure at any step leaves sts untouched. An unreadable
+// or unwritable file is still left alone. Sync already restricts the file to
+// its owner (0600).
 
 const (
 	stsPortKey     = "port"
 	stsDurationKey = "duration"
 	stsExpiryKey   = "expiry"
+
+	// Cap on sts.corrupt / sts.corrupt.N attempts so a persistent error cannot
+	// spin forever under the store mutex.
+	maxSTSCorruptBackups = 10000
 )
+
+// testFailSTSInstall, when true, makes recoverMalformedSTS stop after the
+// backup step and remove the temp file. Tests only.
+var testFailSTSInstall bool
 
 // STSEntry is one cached STS policy on disk. It mirrors IrcStsCached /
 // session.STSCached without importing session.
@@ -158,11 +168,14 @@ func (s *IniSTSStore) remove(key string) Status {
 
 // mergeSTSPolicy keeps the stronger unexpired policy when the same host
 // already has one. A longer remaining expiry wins; on a tie the incoming
-// policy wins. duration=0 clears go through Clear and never call this.
+// policy wins. An existing entry with an invalid port never wins. duration=0
+// clears go through Clear and never call this.
 func mergeSTSPolicy(settings *Settings, key string, incoming STSEntry, nowUnix int64) {
 	if settings.Contains(key, stsPortKey) && settings.Contains(key, stsExpiryKey) {
+		existingPort := settings.Uint(key, stsPortKey, 0)
 		existingExpiry := settings.Int64(key, stsExpiryKey, 0)
-		if existingExpiry > nowUnix && existingExpiry > incoming.ExpiryEpochSeconds {
+		portOK := existingPort >= 1 && existingPort <= 65535
+		if portOK && existingExpiry > nowUnix && existingExpiry > incoming.ExpiryEpochSeconds {
 			return
 		}
 	}
@@ -171,53 +184,149 @@ func mergeSTSPolicy(settings *Settings, key string, incoming STSEntry, nowUnix i
 	settings.SetValue(key, stsExpiryKey, strconv.FormatInt(incoming.ExpiryEpochSeconds, 10))
 }
 
-// persistSTSSettings writes settings to path. On a malformed file, renames it
-// to a backup first; a failed rename leaves the file alone. Access errors
-// leave the file alone.
+// persistSTSSettings writes settings to path. On a malformed file, writes a
+// clean temp file, hard-links a backup, then renames the temp over sts. A
+// failure at any step leaves sts untouched. Access errors leave the file alone.
 func persistSTSSettings(settings *Settings, path string) Status {
 	switch settings.WriteBlocked() {
 	case StatusAccessError:
 		return StatusAccessError
 	case StatusFormatError:
-		if !renameSTSCorruptBackup(path) {
-			return StatusFormatError
-		}
 		// Merge may have kept existing values (dirty=false). Still rewrite.
 		settings.markDirty()
-		return settings.Sync()
+		if err := recoverMalformedSTS(path, settings.encode()); err != nil {
+			return StatusFormatError
+		}
+		return StatusWritten
 	default:
 		return settings.Sync()
 	}
 }
 
-// renameSTSCorruptBackup renames path to path.corrupt, or path.corrupt.N when
-// that name is taken. Never overwrites an existing backup.
-func renameSTSCorruptBackup(path string) bool {
-	backup := nextSTSCorruptPath(path)
-	if backup == "" {
-		return false
+// recoverMalformedSTS writes clean data to a temp sibling, hard-links path to a
+// backup, then renames the temp over path. On any failure, leaves path untouched
+// and removes the temp.
+func recoverMalformedSTS(path string, data []byte) error {
+	temp, err := writeSTSTemp(path, data)
+	if err != nil {
+		return err
 	}
-	return os.Rename(path, backup) == nil
+	if !linkSTSCorruptBackup(path) {
+		_ = os.Remove(temp)
+		return errors.New("sts corrupt backup failed")
+	}
+	if testFailSTSInstall {
+		_ = os.Remove(temp)
+		return errors.New("test: install after backup failed")
+	}
+	if err := os.Rename(temp, path); err != nil {
+		_ = os.Remove(temp)
+		return err
+	}
+	return nil
 }
 
-// nextSTSCorruptPath returns the next unused backup path beside path:
-// sts.corrupt, then sts.corrupt.1, …
-func nextSTSCorruptPath(path string) string {
+// writeSTSTemp creates a same-directory temp file with data, fsyncs it, and
+// returns its path.
+func writeSTSTemp(path string, data []byte) (string, error) {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	tmp, err := os.CreateTemp(dir, ".omairc-sts-*.tmp")
+	if err != nil {
+		return "", err
+	}
+	tmpName := tmp.Name()
+	cleanup := true
+	defer func() {
+		_ = tmp.Close()
+		if cleanup {
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if err := tmp.Chmod(0o600); err != nil {
+		return "", err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		return "", err
+	}
+	if err := tmp.Sync(); err != nil {
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+	cleanup = false
+	return tmpName, nil
+}
+
+// linkSTSCorruptBackup hard-links path to path.corrupt / path.corrupt.N.
+// Retries only on ErrExist; falls back to an exclusive-create copy. Fails
+// closed on other errors and caps the loop.
+func linkSTSCorruptBackup(path string) bool {
 	if path == "" {
-		return ""
+		return false
 	}
 	dir := filepath.Dir(path)
 	name := filepath.Base(path)
-	primary := filepath.Join(dir, name+".corrupt")
-	if _, err := os.Stat(primary); os.IsNotExist(err) {
-		return primary
-	}
-	for n := 1; ; n++ {
-		candidate := filepath.Join(dir, name+".corrupt."+strconv.Itoa(n))
-		if _, err := os.Stat(candidate); os.IsNotExist(err) {
-			return candidate
+	for n := 0; n < maxSTSCorruptBackups; n++ {
+		var candidate string
+		if n == 0 {
+			candidate = filepath.Join(dir, name+".corrupt")
+		} else {
+			candidate = filepath.Join(dir, name+".corrupt."+strconv.Itoa(n))
 		}
+		err := os.Link(path, candidate)
+		if err == nil {
+			return true
+		}
+		if os.IsExist(err) {
+			continue
+		}
+		// Link can fail for EXDEV and similar; try an exclusive copy.
+		copyErr := copySTSExclusive(path, candidate)
+		if copyErr == nil {
+			return true
+		}
+		if os.IsExist(copyErr) {
+			continue
+		}
+		return false
 	}
+	return false
+}
+
+// copySTSExclusive copies src to a new dst created with O_EXCL, then fsyncs.
+func copySTSExclusive(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	cleanup := true
+	defer func() {
+		_ = out.Close()
+		if cleanup {
+			_ = os.Remove(dst)
+		}
+	}()
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	if err := out.Sync(); err != nil {
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+	cleanup = false
+	return nil
 }
 
 // STSGroupKey hashes the trimmed, case-folded host as lowercase hex SHA-256.
