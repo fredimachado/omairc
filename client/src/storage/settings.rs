@@ -52,6 +52,15 @@ enum IniValue {
     Invalid,
 }
 
+macro_rules! settings_assign {
+    ($store:expr, $key:expr, $value:expr) => {{
+        if $store.values.get(&$key) != Some(&$value) {
+            $store.values.insert($key, $value);
+            $store.dirty = true;
+        }
+    }};
+}
+
 /// A QSettings-compatible key/value store. A group is a `/`-joined path such as
 /// `networks/abc`. Group and key names are case-sensitive.
 #[derive(Clone, Debug)]
@@ -143,20 +152,14 @@ impl Settings {
     }
 
     pub fn set_value(&mut self, group: &str, key: &str, value: &str) {
-        self.values
-            .insert(settings_key(group, key), IniValue::Text(value.to_string()));
-        self.dirty = true;
+        settings_assign!(self, settings_key(group, key), IniValue::Text(value.to_string()));
     }
 
     /// Stores an already-encoded QVariant such as `@Rect(0 0 800 600)`, written
     /// verbatim so Qt reads it back as that type. [`Settings::set_value`] is for plain
     /// strings, and it escapes a leading `@`.
     pub fn set_variant(&mut self, group: &str, key: &str, encoded: &str) {
-        self.values.insert(
-            settings_key(group, key),
-            IniValue::Variant(encoded.to_string()),
-        );
-        self.dirty = true;
+        settings_assign!(self, settings_key(group, key), IniValue::Variant(encoded.to_string()));
     }
 
     pub fn set_bool(&mut self, group: &str, key: &str, value: bool) {
@@ -174,22 +177,22 @@ impl Settings {
     /// Stores a string list. An empty list is written as `@Invalid`, which is
     /// QSettings' sentinel, so it reads back distinct from a list holding one "".
     pub fn set_string_list(&mut self, group: &str, key: &str, values: &[String]) {
-        self.values
-            .insert(settings_key(group, key), IniValue::List(values.to_vec()));
-        self.dirty = true;
+        settings_assign!(self, settings_key(group, key), IniValue::List(values.to_vec()));
     }
 
     /// Removes one key. Removing an absent key is a no-op. Only the settings tests remove a
     /// single key; the stores remove whole groups.
     #[cfg(test)]
     pub fn remove_key(&mut self, group: &str, key: &str) {
-        self.values.remove(&settings_key(group, key));
-        self.dirty = true;
+        if self.values.remove(&settings_key(group, key)).is_some() {
+            self.dirty = true;
+        }
     }
 
     /// Removes a group and everything beneath it, as `QSettings::remove(group)`
     /// does. An empty group clears the whole store.
     pub fn remove_group(&mut self, group: &str) {
+        let before = self.values.len();
         if group.is_empty() {
             self.values.clear();
         } else {
@@ -197,7 +200,9 @@ impl Settings {
             self.values
                 .retain(|path, _| path != group && !path.starts_with(&prefix));
         }
-        self.dirty = true;
+        if self.values.len() != before {
+            self.dirty = true;
+        }
     }
 
     /// The direct child groups of `group`, sorted. Deeper groups collapse to their
@@ -1431,6 +1436,45 @@ mod tests {
         let mut settings = Settings::open(&path);
         assert_eq!(settings.sync(), Status::Written);
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn sync_repeat_assignment_preserves_file_bytes_and_mtime() {
+        use std::thread;
+        use std::time::Duration;
+
+        let dir = TempDir::new("settings-idempotent");
+        let path = settings_in(&dir);
+        write_file(&path, b"[preferences]\ndirects=true\n");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        }
+
+        let before_bytes = fs::read(&path).unwrap();
+        let before_mtime = fs::metadata(&path).unwrap().modified().unwrap();
+        thread::sleep(Duration::from_millis(1100));
+
+        let mut settings = Settings::open(&path);
+        settings.set_bool("preferences", "directs", true);
+        assert_eq!(settings.sync(), Status::Written);
+        assert_eq!(fs::read(&path).unwrap(), before_bytes);
+        assert_eq!(
+            fs::metadata(&path).unwrap().modified().unwrap(),
+            before_mtime
+        );
+
+        settings.set_bool("preferences", "directs", false);
+        assert_eq!(settings.sync(), Status::Written);
+        assert_ne!(fs::read(&path).unwrap(), before_bytes);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o644);
+        }
+        assert!(!settings.bool_value("preferences", "directs", true));
     }
 
     #[test]

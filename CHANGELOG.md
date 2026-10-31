@@ -44,6 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Config saves keep an existing `omairc.conf` file mode instead of forcing
   0600 on every write. A new config file is still created owner-only (0600).
+- Config saves skip the disk write when settings are unchanged, so
+  `omairc.conf` bytes and modification time stay put on a no-op sync.
 - `/kickban` (`/kb`) bans then kicks in one step on a channel. `/unban`,
   `/quiet`, and `/unquiet` set the matching list modes with the same
   nick-or-mask expansion as `/ban`. `/quiet` and `/unquiet` refuse when

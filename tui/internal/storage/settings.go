@@ -204,8 +204,7 @@ func (s *Settings) StringList(group, key string) []string {
 // SetValue stores a plain string. A value that looks like a JSON document is
 // not special-cased: it is escaped and quoted as an ordinary string.
 func (s *Settings) SetValue(group, key, value string) {
-	s.values[settingsKey(group, key)] = iniValue{text: value}
-	s.dirty = true
+	s.assign(settingsKey(group, key), iniValue{text: value})
 }
 
 // SetBool stores a QSettings bool ("true"/"false").
@@ -233,12 +232,14 @@ func (s *Settings) SetInt(group, key string, value int) {
 func (s *Settings) SetStringList(group, key string, values []string) {
 	items := make([]string, len(values))
 	copy(items, values)
-	s.values[settingsKey(group, key)] = iniValue{isList: true, items: items}
-	s.dirty = true
+	s.assign(settingsKey(group, key), iniValue{isList: true, items: items})
 }
 
 // RemoveKey removes one key from a group (no-op when absent).
 func (s *Settings) RemoveKey(group, key string) {
+	if _, ok := s.values[settingsKey(group, key)]; !ok {
+		return
+	}
 	delete(s.values, settingsKey(group, key))
 	s.dirty = true
 }
@@ -247,6 +248,9 @@ func (s *Settings) RemoveKey(group, key string) {
 // QSettings::remove(group): the key itself and every key beneath it go.
 func (s *Settings) RemoveGroup(group string) {
 	if group == "" {
+		if len(s.values) == 0 {
+			return
+		}
 		for path := range s.values {
 			delete(s.values, path)
 		}
@@ -254,12 +258,16 @@ func (s *Settings) RemoveGroup(group string) {
 		return
 	}
 	prefix := group + "/"
+	removed := false
 	for path := range s.values {
 		if path == group || strings.HasPrefix(path, prefix) {
 			delete(s.values, path)
+			removed = true
 		}
 	}
-	s.dirty = true
+	if removed {
+		s.dirty = true
+	}
 }
 
 // ChildGroups returns the direct child group names of group, sorted, mirroring
@@ -376,6 +384,39 @@ func (s *Settings) load() {
 func (s *Settings) lookup(group, key string) (iniValue, bool) {
 	v, ok := s.values[settingsKey(group, key)]
 	return v, ok
+}
+
+func (s *Settings) assign(path string, value iniValue) {
+	if old, ok := s.values[path]; ok && iniValueEqual(old, value) {
+		return
+	}
+	s.values[path] = value
+	s.dirty = true
+}
+
+func iniValueEqual(left, right iniValue) bool {
+	if left.isList != right.isList || left.invalid != right.invalid {
+		return false
+	}
+	if left.isList {
+		return equalStringSlices(left.items, right.items)
+	}
+	if left.invalid {
+		return true
+	}
+	return left.text == right.text
+}
+
+func equalStringSlices(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // settingsKey joins a group path and a leaf key. An empty group is the top
