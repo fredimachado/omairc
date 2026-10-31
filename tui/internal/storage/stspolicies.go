@@ -254,13 +254,15 @@ func persistSTSSettings(settings *Settings, path string) Status {
 
 // recoverMalformedSTS writes clean data to a temp sibling, hard-links path to a
 // backup, then renames the temp over path. On any failure, leaves path untouched
-// and removes the temp.
+// and removes the temp. After a successful rename, the backup is chmod'd to
+// 0600 so a hard-linked copy of a looser-mode original is not left world-readable.
 func recoverMalformedSTS(path string, data []byte) error {
 	temp, err := writeSTSTemp(path, data)
 	if err != nil {
 		return err
 	}
-	if !linkSTSCorruptBackup(path) {
+	backup, ok := linkSTSCorruptBackup(path)
+	if !ok {
 		_ = os.Remove(temp)
 		return errors.New("sts corrupt backup failed")
 	}
@@ -272,6 +274,8 @@ func recoverMalformedSTS(path string, data []byte) error {
 		_ = os.Remove(temp)
 		return err
 	}
+	// Chmod after rename so the hard link no longer shares an inode with sts.
+	_ = os.Chmod(backup, 0o600)
 	return nil
 }
 
@@ -319,18 +323,21 @@ func stsCorruptBackupLimit() int {
 
 // linkSTSCorruptBackup hard-links path to path.corrupt / path.corrupt.N.
 // Retries only on ErrExist; falls back to an exclusive-create copy. Fails
-// closed on other errors and caps the loop.
-func linkSTSCorruptBackup(path string) bool {
+// closed on other errors and caps the loop. Returns the backup path on success.
+func linkSTSCorruptBackup(path string) (string, bool) {
 	if path == "" {
-		return false
+		return "", false
 	}
 	if testSTSHook == stsHookFailBackup {
-		return false
+		return "", false
 	}
 	if testSTSHook == stsHookFailCopyAfterCreate {
 		candidate := filepath.Join(filepath.Dir(path), filepath.Base(path)+".corrupt")
 		err := copySTSExclusive(path, candidate)
-		return err == nil
+		if err != nil {
+			return "", false
+		}
+		return candidate, true
 	}
 	dir := filepath.Dir(path)
 	name := filepath.Base(path)
@@ -343,7 +350,7 @@ func linkSTSCorruptBackup(path string) bool {
 		}
 		err := os.Link(path, candidate)
 		if err == nil {
-			return true
+			return candidate, true
 		}
 		if os.IsExist(err) {
 			continue
@@ -351,14 +358,14 @@ func linkSTSCorruptBackup(path string) bool {
 		// Link can fail for EXDEV and similar; try an exclusive copy.
 		copyErr := copySTSExclusive(path, candidate)
 		if copyErr == nil {
-			return true
+			return candidate, true
 		}
 		if os.IsExist(copyErr) {
 			continue
 		}
-		return false
+		return "", false
 	}
-	return false
+	return "", false
 }
 
 // copySTSExclusive copies src to a new dst created with O_EXCL, then fsyncs.

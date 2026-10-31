@@ -611,6 +611,76 @@ func TestIniSTSStoreFileIsOwnerOnlyAfterWrite(t *testing.T) {
 	}
 }
 
+func TestIniSTSStoreReadOnlyMalformedFileIsLeftAlone(t *testing.T) {
+	// client/src/storage/stspolicies.rs::a_read_only_malformed_file_is_left_alone
+	if runtime.GOOS == "windows" {
+		t.Skip("unix mode bits")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	garbage := "this line has no equals sign\n"
+	if err := os.WriteFile(path, []byte(garbage), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := os.OpenFile(path, os.O_WRONLY, 0); err == nil {
+		f.Close()
+		_ = os.Chmod(path, 0o644)
+		t.Skip("process can write a read-only file (running as root?); skipping")
+	}
+
+	store := NewIniSTSStore(path)
+	if status := store.Store("irc.example", 6697, 60, 0); status != StatusAccessError {
+		_ = os.Chmod(path, 0o644)
+		t.Fatalf("Store status = %v, want AccessError", status)
+	}
+	_ = os.Chmod(path, 0o644)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != garbage {
+		t.Fatalf("read-only malformed sts was rewritten: %q", raw)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "sts.corrupt")); !os.IsNotExist(err) {
+		t.Fatal("read-only malformed sts must not be backed up")
+	}
+}
+
+func TestIniSTSStoreCorruptBackupIsOwnerOnlyAfterRecovery(t *testing.T) {
+	// client/src/storage/stspolicies.rs::the_corrupt_backup_is_owner_only_after_recovery
+	if runtime.GOOS == "windows" {
+		t.Skip("unix mode bits")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	garbage := "this line has no equals sign\n"
+	if err := os.WriteFile(path, []byte(garbage), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store := NewIniSTSStore(path)
+	if status := store.Store("irc.example", 6697, 60, 0); status != StatusWritten {
+		t.Fatal(status)
+	}
+	backup := filepath.Join(dir, "sts.corrupt")
+	info, err := os.Stat(backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := info.Mode().Perm(); mode != 0o600 {
+		t.Fatalf("backup mode = %o, want 0600", mode)
+	}
+	stsInfo, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := stsInfo.Mode().Perm(); mode != 0o600 {
+		t.Fatalf("sts mode = %o, want 0600", mode)
+	}
+}
+
 func TestSTSPathBesideSettings(t *testing.T) {
 	got := STSPathBeside(filepath.Join("cfg", "omairc", "omairc.conf"))
 	want := filepath.Join("cfg", "omairc", "sts")
