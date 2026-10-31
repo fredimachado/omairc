@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The terminal client keeps a saved sidebar network order across restarts.
+  Startup no longer mirrors the id-sorted profile roster into `networkOrder`,
+  and saved networks that have not connected yet stay in the restored order.
+
 - The terminal client no longer writes a random `networkOrder` entry to
   `omairc.conf` on every launch when no network profile is saved. The Connect
   sheet draft keeps a fresh in-memory id for display, but startup no longer

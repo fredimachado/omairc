@@ -359,7 +359,6 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 		_ = m.composer.Focus()
 	}
 	m.ensureAvatars()
-	m.syncSidebarNetworkOrder()
 	return m
 }
 

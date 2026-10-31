@@ -337,19 +337,16 @@ func TestNetworkOrderAndCollapseRoundTrip(t *testing.T) {
 	}
 }
 
-func TestLoadStoredSidebarDropsMissingAndSortsLeftovers(t *testing.T) {
+func TestLoadStoredSidebarOrderKeepsDiskVerbatim(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	c := New()
 	c.SetEphemeral(false)
-	// No sessions yet: the collapsed set has nothing to keep.
 	c.LoadStoredPreferences()
 	if got := c.NetworkOrder(); len(got) != 0 {
-		t.Fatalf("NetworkOrder with no sessions = %v, want empty", got)
+		t.Fatalf("NetworkOrder with no known networks = %v, want empty", got)
 	}
 
-	// A saved order with a missing id keeps only the registered ids, and the
-	// leftovers come back in the profileLess fallback order (nick, here).
 	settings := storage.OpenSettings("")
 	settings.SetStringList(preferencesGroup, networkOrderKey, []string{"zulu", "gone", "alpha"})
 	settings.SetStringList(preferencesGroup, collapsedNetworksKey, []string{"gone", "zulu"})
@@ -371,7 +368,13 @@ func TestLoadStoredSidebarDropsMissingAndSortsLeftovers(t *testing.T) {
 		t.Fatalf("collapsed zulu dropped")
 	}
 	if fresh.IsNetworkCollapsed("gone") {
-		t.Fatalf("collapsed gone survived")
+		t.Fatalf("collapsed unknown gone surfaced in UI")
+	}
+	if again := storage.OpenSettings(""); !slices.Equal(
+		again.StringList(preferencesGroup, networkOrderKey),
+		[]string{"zulu", "gone", "alpha"},
+	) {
+		t.Fatalf("load rewrote networkOrder on disk")
 	}
 }
 

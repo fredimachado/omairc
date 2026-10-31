@@ -1,6 +1,10 @@
 package controller
 
-import "github.com/fredimachado/omairc/tui/internal/irc"
+import (
+	"sort"
+
+	"github.com/fredimachado/omairc/tui/internal/irc"
+)
 
 // DefaultStatusConsoleCapacity is the per-network Status ring-buffer cap. It
 // matches IrcStatusConsole's default in `client/src/controller/console.rs`.
@@ -63,6 +67,21 @@ func (s *StatusConsole) Clear(networkID string) {
 		return
 	}
 	delete(s.lines, networkID)
+}
+
+// NetworkIDs returns every network id that has at least one Status line.
+func (s *StatusConsole) NetworkIDs() []string {
+	if s == nil || len(s.lines) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(s.lines))
+	for id := range s.lines {
+		if id != "" {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // ConsoleText returns the display text of each Status console line for a

@@ -21,22 +21,35 @@ const (
 )
 
 // sidebarNetworkIDs returns the network ids shown in the left sidebar, in
-// display order. Stored profiles from the connection model are listed even
-// before a session exists, matching `client/src/ui/sidebar/`'s connection.networks
-// repeater. The demo shell (conn == nil) falls back to registered sessions.
+// display order. Stored profiles are listed even before a session exists,
+// following the controller order. The unsaved Connect draft is appended when
+// it is not already listed. The demo shell (conn == nil) falls back to the
+// controller order alone.
 func (m *Model) sidebarNetworkIDs() []string {
-	if m.conn != nil {
-		rows := m.conn.Networks()
-		ids := make([]string, 0, len(rows))
-		for _, row := range rows {
-			ids = append(ids, row.NetworkID)
-		}
-		return ids
-	}
 	if m.ctrl == nil {
 		return nil
 	}
-	return m.ctrl.NetworkOrder()
+	order := m.ctrl.NetworkOrder()
+	if m.conn == nil {
+		return order
+	}
+	seen := make(map[string]bool, len(order)+1)
+	ids := make([]string, 0, len(order)+1)
+	for _, id := range order {
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	for _, row := range m.conn.Networks() {
+		if row.NetworkID == "" || seen[row.NetworkID] {
+			continue
+		}
+		seen[row.NetworkID] = true
+		ids = append(ids, row.NetworkID)
+	}
+	return ids
 }
 
 // sidebarNetworkDisplayName returns the roster label for one sidebar network.

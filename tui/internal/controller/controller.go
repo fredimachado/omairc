@@ -501,63 +501,80 @@ func (c *Controller) PrefApply(name irc.PrefName, enabled bool) {
 }
 
 // loadStoredNetworkOrder restores networkOrder and networkCollapsed from the
-// preferences group. Saved ids without a session are dropped; the remaining
-// registered networks keep NetworkIDs order but are re-sorted by the
-// profileLess fallback (case-insensitive resolved name, then trimmed nick, then
-// network id) using the session's own name and nick. Sort by network id only
-// would lose the Qt profile ordering, and the controller cannot import
-// internal/connection because connection imports controller.
+// preferences group. The on-disk lists are kept verbatim; display filtering
+// happens in NetworkOrder and IsNetworkCollapsed. It mirrors
+// preference_store.network_order / collapsed_networks
+// (`client/src/controller/persistence.rs`).
 func (c *Controller) loadStoredNetworkOrder(settings *storage.Settings) {
-	registered := c.manager.NetworkIDs()
-	seen := make(map[string]bool, len(registered))
-	order := make([]string, 0, len(registered))
+	seen := make(map[string]bool)
+	order := make([]string, 0, len(settings.StringList(preferencesGroup, networkOrderKey)))
 	for _, id := range settings.StringList(preferencesGroup, networkOrderKey) {
-		if id == "" || seen[id] || c.manager.Find(id) == nil {
+		if id == "" || seen[id] {
 			continue
 		}
 		seen[id] = true
 		order = append(order, id)
 	}
-	leftovers := make([]string, 0, len(registered))
-	for _, id := range registered {
-		if !seen[id] {
-			leftovers = append(leftovers, id)
-		}
-	}
-	sort.SliceStable(leftovers, func(i, j int) bool {
-		return c.profileLessNetwork(leftovers[i], leftovers[j])
-	})
-	c.networkOrder = append(order, leftovers...)
+	c.networkOrder = order
 
 	collapsed := make(map[string]bool)
 	for _, id := range settings.StringList(preferencesGroup, collapsedNetworksKey) {
-		if id != "" && c.manager.Find(id) != nil {
+		if id != "" {
 			collapsed[id] = true
 		}
 	}
 	c.networkCollapsed = collapsed
 }
 
-// profileLessNetwork.
-// over the controller's sessions: case-insensitive resolved name, then trimmed
-// nick, then network id.
-func (c *Controller) profileLessNetwork(left, right string) bool {
-	leftSession := c.manager.Find(left)
-	rightSession := c.manager.Find(right)
-	if leftSession == nil || rightSession == nil {
-		return left < right
+const storedNetworksGroup = "networks"
+
+// knownNetworkIDs returns every network the sidebar may list: registered
+// sessions, saved profiles, Status console traffic, and recorded errors. It
+// mirrors Controller::known_network_ids (`client/src/controller/networks.rs`).
+func (c *Controller) knownNetworkIDs() []string {
+	seen := make(map[string]struct{})
+	add := func(id string) {
+		if id == "" {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
 	}
-	leftName := strings.ToLower(leftSession.Name())
-	rightName := strings.ToLower(rightSession.Name())
-	if leftName != rightName {
-		return leftName < rightName
+	for _, id := range c.manager.NetworkIDs() {
+		add(id)
 	}
-	leftNick := strings.ToLower(strings.TrimSpace(leftSession.Nick()))
-	rightNick := strings.ToLower(strings.TrimSpace(rightSession.Nick()))
-	if leftNick != rightNick {
-		return leftNick < rightNick
+	for id := range c.lastErrors {
+		add(id)
 	}
-	return left < right
+	for _, id := range c.statusConsole.NetworkIDs() {
+		add(id)
+	}
+	if !c.ephemeral {
+		settings := storage.OpenSettings("")
+		for _, id := range settings.ChildGroups(storedNetworksGroup) {
+			add(id)
+		}
+	}
+	ids := make([]string, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func (c *Controller) isKnownNetwork(networkID string) bool {
+	if networkID == "" {
+		return false
+	}
+	for _, id := range c.knownNetworkIDs() {
+		if id == networkID {
+			return true
+		}
+	}
+	return false
 }
 
 // Reducer returns the event reducer the controller folds into.
@@ -590,24 +607,31 @@ func (c *Controller) NetworkIDs() []string {
 	return c.manager.NetworkIDs()
 }
 
-// NetworkOrder returns the network ids in display order: the order recorded
-// by SetNetworkOrder first (only ids that still have a session), then any
-// remaining registered networks in NetworkIDs order.
+// NetworkOrder returns the network ids in display order: the recorded order
+// first (keeping only known networks), then any other known network in stable
+// id order.
 func (c *Controller) NetworkOrder() []string {
-	registered := c.manager.NetworkIDs()
+	known := c.knownNetworkIDs()
 	if len(c.networkOrder) == 0 {
-		return registered
+		return known
 	}
-	seen := make(map[string]bool, len(registered))
-	order := make([]string, 0, len(registered))
+	knownSet := make(map[string]struct{}, len(known))
+	for _, id := range known {
+		knownSet[id] = struct{}{}
+	}
+	seen := make(map[string]bool, len(known))
+	order := make([]string, 0, len(known))
 	for _, id := range c.networkOrder {
-		if seen[id] || c.manager.Find(id) == nil {
+		if seen[id] {
+			continue
+		}
+		if _, ok := knownSet[id]; !ok {
 			continue
 		}
 		seen[id] = true
 		order = append(order, id)
 	}
-	for _, id := range registered {
+	for _, id := range known {
 		if seen[id] {
 			continue
 		}
@@ -1983,7 +2007,7 @@ func (c *Controller) collapsedNetworkIDs() []string {
 // IsNetworkCollapsed reports whether the sidebar collapses one network. An
 // empty id is never collapsed.
 func (c *Controller) IsNetworkCollapsed(networkID string) bool {
-	return networkID != "" && c.networkCollapsed[networkID]
+	return networkID != "" && c.isKnownNetwork(networkID) && c.networkCollapsed[networkID]
 }
 
 // SetNetworkCollapsed records whether the sidebar collapses one network and
