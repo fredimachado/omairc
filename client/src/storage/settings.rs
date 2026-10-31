@@ -156,9 +156,7 @@ impl Settings {
         self.dirty = true;
     }
 
-    /// Removes one key. Removing an absent key is a no-op. Only the settings tests remove a
-    /// single key; the stores remove whole groups.
-    #[cfg(test)]
+    /// Removes one key. Removing an absent key is a no-op.
     pub fn remove_key(&mut self, group: &str, key: &str) {
         if self.values.remove(&settings_key(group, key)).is_some() {
             self.dirty = true;

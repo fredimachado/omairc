@@ -378,6 +378,22 @@ func TestLoadStoredSidebarOrderKeepsDiskVerbatim(t *testing.T) {
 	}
 }
 
+func TestExpandCollapsedNetworksRemovesKey(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	c := New()
+	c.SetEphemeral(false)
+	addNetwork(t, c, "alpha")
+	c.SetNetworkCollapsed("alpha", true)
+	c.SetNetworkCollapsed("alpha", false)
+
+	settings := storage.OpenSettings("")
+	if settings.Contains(preferencesGroup, collapsedNetworksKey) {
+		t.Fatalf("collapsedNetworks should be absent after expand, got %q",
+			settings.StringList(preferencesGroup, collapsedNetworksKey))
+	}
+}
+
 func TestPersistenceCallbacksForwardAvatarAndAutojoin(t *testing.T) {
 	c := New()
 
