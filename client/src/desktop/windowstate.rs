@@ -152,10 +152,20 @@ pub fn run_close_handlers(
     true
 }
 
+/// Demo runs restore the window but never save over the user's geometry.
+pub fn close_work_for_session(
+    demo_server: bool,
+    window_path: PathBuf,
+    stored: Option<WindowGeometry>,
+) -> WindowCloseWork {
+    let keeper = (!demo_server).then(|| GeometryKeeper::new(window_path, stored));
+    WindowCloseWork::new(keeper)
+}
+
 /// Saves the window's geometry on close, and on every move or resize that `entity`
-/// observes. `on_close` runs after the geometry save (Qt `onClosing` order:
-/// remember geometry, then launch a ready installer). Call once after the window
-/// is open.
+/// observes. `on_close` runs after the geometry save on WM close and on `cx.quit()`
+/// (Qt `onClosing` order: remember geometry, then launch a ready installer). Call
+/// once after the window is open.
 pub fn attach<T: 'static>(
     work: &WindowCloseWork,
     entity: &Entity<T>,
@@ -163,12 +173,28 @@ pub fn attach<T: 'static>(
     cx: &mut App,
     on_close: impl Fn(&mut Window, &mut App) + 'static,
 ) {
+    let hook: Rc<dyn Fn(&mut Window, &mut App)> = Rc::new(on_close);
+
     let on_close_work = work.clone();
+    let hook_wm = hook.clone();
     window.on_window_should_close(cx, move |window, cx| {
         run_close_handlers(&on_close_work, window.window_bounds(), || {
-            on_close(window, cx)
+            hook_wm(window, cx)
         })
     });
+
+    let on_close_work_quit = work.clone();
+    let hook_quit = hook.clone();
+    let window_handle = window.window_handle();
+    cx.on_app_quit(move |cx| {
+        window_handle
+            .update(cx, |_, window, cx| {
+                on_close_work_quit.run(window.window_bounds(), || hook_quit(window, cx));
+            })
+            .ok();
+        async {}
+    })
+    .detach();
 
     if let Some(on_bounds) = work.keeper().cloned() {
         entity.update(cx, |_, cx| {
@@ -265,21 +291,18 @@ mod tests {
     }
 
     #[test]
-    fn demo_close_work_writes_no_geometry_file() {
-        let dir = TempDir::new("windowstate-demo-close-f862");
+    fn demo_session_uses_no_geometry_keeper() {
+        let dir = TempDir::new("windowstate-demo-session-f862");
         let path = dir.path().join("window.ini");
-        let work = WindowCloseWork::new(None);
-        let bounds = WindowBounds::Windowed(bounds(40.0, 50.0, 900.0, 700.0));
+        let work = close_work_for_session(true, path.clone(), None);
+        assert!(work.keeper().is_none());
 
-        assert!(work.run(bounds, || {}));
-        assert!(
-            !path.exists(),
-            "demo mode must not create window.ini on quit"
-        );
+        let product = close_work_for_session(false, path, None);
+        assert!(product.keeper().is_some());
     }
 
     #[gpui::test]
-    fn wm_close_then_app_quit_runs_close_handlers_once(cx: &mut gpui::TestAppContext) {
+    fn attach_runs_the_chained_hook_on_wm_close(cx: &mut gpui::TestAppContext) {
         use gpui::{AppContext, EmptyView};
 
         struct BoundsAnchor;
@@ -297,38 +320,54 @@ mod tests {
             attach(&work_attach, &anchor, window, cx, move |_, _| {
                 runs_wm.set(runs_wm.get() + 1);
             });
-
-            let work_quit = work.clone();
-            let runs_quit = hook_runs.clone();
-            let window_handle = window.window_handle();
-            cx.on_app_quit(move |cx| {
-                window_handle
-                    .update(cx, |_, window, _| {
-                        work_quit.run(window.window_bounds(), || {
-                            runs_quit.set(runs_quit.get() + 1);
-                        });
-                    })
-                    .ok();
-                async {}
-            })
-            .detach();
         });
 
         assert!(
             vcx.simulate_close(),
             "WM close must run the should_close hook"
         );
-        cx.quit();
         assert_eq!(
             hook_runs.get(),
             1,
-            "close work must run once when both paths fire"
+            "attach must run the chained hook on WM close before app quit"
         );
-        assert!(path.exists(), "the single close pass must persist geometry");
+        assert!(path.exists(), "WM close must persist geometry");
     }
 
     #[gpui::test]
-    fn app_quit_runs_the_same_close_handlers_as_wm_close(cx: &mut gpui::TestAppContext) {
+    fn wm_close_then_app_quit_runs_close_handlers_once(cx: &mut gpui::TestAppContext) {
+        use gpui::{AppContext, EmptyView};
+
+        struct BoundsAnchor;
+
+        let dir = TempDir::new("windowstate-gpui-close-once-f862");
+        let path = dir.path().join("window.ini");
+        let work = WindowCloseWork::new(Some(GeometryKeeper::new(path.clone(), None)));
+        let hook_runs = Rc::new(Cell::new(0));
+
+        let (_view, vcx) = cx.add_window_view(|_window, _cx| EmptyView);
+        let work_attach = work.clone();
+        let runs = hook_runs.clone();
+        vcx.update(|window, cx| {
+            let anchor = cx.new(|_| BoundsAnchor);
+            attach(&work_attach, &anchor, window, cx, move |_, _| {
+                runs.set(runs.get() + 1);
+            });
+        });
+
+        assert!(vcx.simulate_close(), "WM close must run attach's hook");
+        assert_eq!(
+            hook_runs.get(),
+            1,
+            "WM close must run the chained hook once"
+        );
+        cx.quit();
+        assert_eq!(hook_runs.get(), 1, "app quit must not run close work again");
+        assert!(path.exists());
+    }
+
+    #[gpui::test]
+    fn attach_runs_the_chained_hook_on_app_quit(cx: &mut gpui::TestAppContext) {
         use gpui::{AppContext, EmptyView};
 
         struct BoundsAnchor;
@@ -339,26 +378,18 @@ mod tests {
         let hook_ran = Rc::new(Cell::new(false));
 
         let (_view, vcx) = cx.add_window_view(|_window, _cx| EmptyView);
-        let work_quit = work.clone();
+        let work_attach = work.clone();
         let ran = hook_ran.clone();
         vcx.update(|window, cx| {
             let anchor = cx.new(|_| BoundsAnchor);
-            attach(&work, &anchor, window, cx, |_, _| {});
-
-            let window_handle = window.window_handle();
-            cx.on_app_quit(move |cx| {
-                window_handle
-                    .update(cx, |_, window, _| {
-                        work_quit.run(window.window_bounds(), || ran.set(true));
-                    })
-                    .ok();
-                async {}
-            })
-            .detach();
+            attach(&work_attach, &anchor, window, cx, move |_, _| ran.set(true));
         });
 
         cx.quit();
-        assert!(hook_ran.get(), "Ctrl+Q / cx.quit must run the close work");
+        assert!(
+            hook_ran.get(),
+            "Ctrl+Q / cx.quit must run attach's chained hook"
+        );
         assert!(path.exists(), "quit must persist geometry like a WM close");
     }
 

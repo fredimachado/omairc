@@ -3,17 +3,15 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
 
-use clap::Parser;
-use gpui::{
-    px, size, AnyWindowHandle, App, Application, Entity, WindowOptions, prelude::*,
-};
 use crate::desktop::systemtheme::SystemAppearance;
-use crate::desktop::windowstate::{self, GeometryKeeper, WindowCloseWork};
+use crate::desktop::windowstate::{self, close_work_for_session};
 use crate::model::{Style, Theme, ThemeWatcher};
 use crate::net::NetHub;
 use crate::storage::preferences::PreferenceStore;
 use crate::storage::{geometry, paths, Backing};
 use crate::ui::shell::{Shell, CONTROLLER_TICK};
+use clap::Parser;
+use gpui::{prelude::*, px, size, AnyWindowHandle, App, Application, Entity, WindowOptions};
 
 use crate::ui::input::bind_input_keys;
 use crate::ui::shell::bind_shell_keys;
@@ -162,48 +160,49 @@ pub fn run() {
         crate::storage::migrate::run_at_startup();
     }
 
-    Application::new().with_assets(crate::assets::OmaircAssets).run(move |cx: &mut App| {
-        cx.text_system()
-            .add_fonts(vec![Cow::Borrowed(
-                include_bytes!("../../fonts/iAWriterMonoS-Regular.ttf") as &[u8],
-            )])
-            .expect("regular font");
-        cx.text_system()
-            .add_fonts(vec![Cow::Borrowed(
-                include_bytes!("../../fonts/iAWriterMonoS-Bold.ttf") as &[u8],
-            )])
-            .expect("bold font");
+    Application::new()
+        .with_assets(crate::assets::OmaircAssets)
+        .run(move |cx: &mut App| {
+            cx.text_system()
+                .add_fonts(vec![Cow::Borrowed(include_bytes!(
+                    "../../fonts/iAWriterMonoS-Regular.ttf"
+                ) as &[u8])])
+                .expect("regular font");
+            cx.text_system()
+                .add_fonts(vec![Cow::Borrowed(
+                    include_bytes!("../../fonts/iAWriterMonoS-Bold.ttf") as &[u8],
+                )])
+                .expect("bold font");
 
-        let system = SystemAppearance::from_window(cx.window_appearance());
-        cx.set_global(system);
-        let theme = Theme::load(theme_path.as_deref(), system.dark).expect("theme load");
-        let color_palette = PreferenceStore::new(Backing::user()).preferences().palette;
-        cx.set_global(OmaircStyleGlobal {
-            style: Style::with_color_palette(theme, scale, color_palette),
-        });
+            let system = SystemAppearance::from_window(cx.window_appearance());
+            cx.set_global(system);
+            let theme = Theme::load(theme_path.as_deref(), system.dark).expect("theme load");
+            let color_palette = PreferenceStore::new(Backing::user()).preferences().palette;
+            cx.set_global(OmaircStyleGlobal {
+                style: Style::with_color_palette(theme, scale, color_palette),
+            });
 
-        bind_input_keys(cx);
-        bind_shell_keys(cx);
-        #[cfg(target_os = "macos")]
-        crate::ui::macos_menu::register_menus(cx);
+            bind_input_keys(cx);
+            bind_shell_keys(cx);
+            #[cfg(target_os = "macos")]
+            crate::ui::macos_menu::register_menus(cx);
 
-        // Demo runs restore the window but never save over the user's
-        // geometry, as the Qt client's demo mode is ephemeral.
-        let settings_path = paths::settings_path();
-        let window_path = paths::window_path();
-        let stored = geometry::load_stored(&window_path, settings_path.as_deref());
-        let keeper = (!demo_server).then(|| GeometryKeeper::new(window_path, stored));
-        let close_work = WindowCloseWork::new(keeper.clone());
-        let window_bounds = windowstate::initial_bounds(stored, cx);
-        // The socket hub runs its net thread for a live launch. The demo's peers are in-process
-        // so the demo has none.
-        let net = (!demo_server).then(|| Rc::new(NetHub::new()));
-        let (activation_tx, activation_rx) = async_channel::unbounded();
-        #[cfg(windows)]
-        let pending_activation = crate::desktop::notifier::activation_from_args(&raw_args);
-        #[cfg(not(windows))]
-        let pending_activation: Option<crate::desktop::notifier::Activation> = None;
-        let window = match cx.open_window(
+            // Demo runs restore the window but never save over the user's
+            // geometry, as the Qt client's demo mode is ephemeral.
+            let settings_path = paths::settings_path();
+            let window_path = paths::window_path();
+            let stored = geometry::load_stored(&window_path, settings_path.as_deref());
+            let close_work = close_work_for_session(demo_server, window_path, stored);
+            let window_bounds = windowstate::initial_bounds(stored, cx);
+            // The socket hub runs its net thread for a live launch. The demo's peers are in-process
+            // so the demo has none.
+            let net = (!demo_server).then(|| Rc::new(NetHub::new()));
+            let (activation_tx, activation_rx) = async_channel::unbounded();
+            #[cfg(windows)]
+            let pending_activation = crate::desktop::notifier::activation_from_args(&raw_args);
+            #[cfg(not(windows))]
+            let pending_activation: Option<crate::desktop::notifier::Activation> = None;
+            let window = match cx.open_window(
                 WindowOptions {
                     window_bounds: Some(window_bounds),
                     window_min_size: Some(size(px(760.), px(540.))),
@@ -218,13 +217,7 @@ pub fn run() {
                 },
                 |window, cx| {
                     let shell = cx.new(|cx| {
-                        Shell::new(
-                            cx,
-                            smoke,
-                            demo_server,
-                            net.clone(),
-                            activation_tx.clone(),
-                        )
+                        Shell::new(cx, smoke, demo_server, net.clone(), activation_tx.clone())
                     });
                     if let Some(activation) = pending_activation {
                         let _ = activation_tx.send_blocking(activation);
@@ -242,28 +235,16 @@ pub fn run() {
                     // Geometry save and a ready installer launch share one close
                     // handler; Ctrl+Q reaches the same work through on_app_quit.
                     let close_shell = shell.clone();
-                    let work_wm = close_work.clone();
-                    windowstate::attach(&work_wm, &shell, window, cx, move |_, cx| {
+                    windowstate::attach(&close_work, &shell, window, cx, move |_, cx| {
                         close_shell.update(cx, |shell, cx| shell.launch_update_on_close(cx));
                     });
-                    let work_quit = close_work.clone();
-                    let quit_shell = shell.clone();
-                    let quit_window = window.window_handle();
-                    cx.on_app_quit(move |cx| {
-                        quit_window
-                            .update(cx, |_, window, cx| {
-                                work_quit.run(window.window_bounds(), || {
-                                    quit_shell.update(cx, |shell, cx| {
-                                        shell.launch_update_on_close(cx);
-                                    });
-                                });
-                            })
-                            .ok();
-                        async {}
-                    })
-                    .detach();
                     if let Some(server) = ipc {
-                        crate::desktop::ipchandler::serve(shell.clone(), window.window_handle(), server, cx);
+                        crate::desktop::ipchandler::serve(
+                            shell.clone(),
+                            window.window_handle(),
+                            server,
+                            cx,
+                        );
                     }
                     start_typing_pulse(shell.clone(), cx);
                     start_controller_tick(shell.clone(), cx);
@@ -315,48 +296,41 @@ pub fn run() {
                     let transcript_watch = transcript;
                     let mut watcher =
                         ThemeWatcher::start(theme_path.as_deref()).expect("theme watcher");
-                    cx.spawn(async move |cx| {
-                        loop {
-                            while watcher.receiver().try_recv().is_ok() {
-                                let path = watch_path.clone();
-                                cx.update(|cx| {
-                                    refresh_theme(
-                                        cx,
-                                        path.as_deref(),
-                                        &shell_watch,
-                                        &transcript_watch,
-                                    );
-                                })
-                                .ok();
-                                watcher
-                                    .rearm(watch_path.as_deref())
-                                    .expect("re-arm theme watcher");
-                            }
-                            cx.background_executor()
-                                .timer(Duration::from_millis(250))
-                                .await;
+                    cx.spawn(async move |cx| loop {
+                        while watcher.receiver().try_recv().is_ok() {
+                            let path = watch_path.clone();
+                            cx.update(|cx| {
+                                refresh_theme(cx, path.as_deref(), &shell_watch, &transcript_watch);
+                            })
+                            .ok();
+                            watcher
+                                .rearm(watch_path.as_deref())
+                                .expect("re-arm theme watcher");
                         }
+                        cx.background_executor()
+                            .timer(Duration::from_millis(250))
+                            .await;
                     })
                     .detach();
 
                     shell
                 },
             ) {
-            Ok(window) => window,
-            Err(_) if smoke => {
-                eprintln!("Omairc smoke: could not open a window");
-                std::process::exit(1);
-            }
-            Err(error) => panic!("open window: {error:?}"),
-        };
+                Ok(window) => window,
+                Err(_) if smoke => {
+                    eprintln!("Omairc smoke: could not open a window");
+                    std::process::exit(1);
+                }
+                Err(error) => panic!("open window: {error:?}"),
+            };
 
-        window
-            .update(cx, |shell, window, cx| {
-                shell.focus_on_launch(window, cx);
-                cx.activate(true);
-            })
-            .ok();
-    });
+            window
+                .update(cx, |shell, window, cx| {
+                    shell.focus_on_launch(window, cx);
+                    cx.activate(true);
+                })
+                .ok();
+        });
 }
 
 /// Re-reads the palette for the current system appearance and repaints the shell.
@@ -426,7 +400,9 @@ fn start_notification_activation(
     cx.spawn(async move |cx| {
         while let Ok(activation) = activation_rx.recv().await {
             cx.update_window(window, |_, window, cx| {
-                shell.update(cx, |shell, cx| shell.activate_notification(activation, window, cx));
+                shell.update(cx, |shell, cx| {
+                    shell.activate_notification(activation, window, cx)
+                });
             })
             .ok();
         }
@@ -459,11 +435,9 @@ fn start_typing_pulse(shell: Entity<Shell>, cx: &mut App) {
 /// Drives the controller's timers and repaints what they change. The clock is polled
 /// (`RealClock`), so the loop ticks on an interval. A tick with nothing due costs nothing.
 fn start_controller_tick(shell: Entity<Shell>, cx: &mut App) {
-    cx.spawn(async move |cx| {
-        loop {
-            cx.background_executor().timer(CONTROLLER_TICK).await;
-            shell.update(cx, |shell, cx| shell.tick(cx)).ok();
-        }
+    cx.spawn(async move |cx| loop {
+        cx.background_executor().timer(CONTROLLER_TICK).await;
+        shell.update(cx, |shell, cx| shell.tick(cx)).ok();
     })
     .detach();
 }
@@ -485,55 +459,47 @@ fn start_net_delivery(shell: Entity<Shell>, hub: &NetHub, cx: &mut App) {
 /// Repaints the composer at each caret blink boundary, so the caret flips on time
 /// rather than at the next typing-pulse repaint.
 fn start_caret_blink(shell: Entity<Shell>, cx: &mut App) {
-    cx.spawn(async move |cx| {
-        loop {
-            let wait = shell
-                .update(cx, |shell, cx| shell.composer.read(cx).caret_flip_in())
-                .unwrap_or(Duration::from_millis(530));
-            cx.background_executor().timer(wait).await;
-            shell
-                .update(cx, |shell, cx| {
-                    shell.composer.update(cx, |_, cx| cx.notify());
-                })
-                .ok();
-        }
+    cx.spawn(async move |cx| loop {
+        let wait = shell
+            .update(cx, |shell, cx| shell.composer.read(cx).caret_flip_in())
+            .unwrap_or(Duration::from_millis(530));
+        cx.background_executor().timer(wait).await;
+        shell
+            .update(cx, |shell, cx| {
+                shell.composer.update(cx, |_, cx| cx.notify());
+            })
+            .ok();
     })
     .detach();
 }
 
 fn start_unseen_bounce(transcript: Entity<TranscriptView>, cx: &mut App) {
-    cx.spawn(async move |cx| {
-        loop {
-            let wait = transcript
-                .update(cx, |view, _| view.unseen_bounce_next_frame())
-                .ok()
-                .flatten()
-                .unwrap_or(Duration::from_millis(200));
-            cx.background_executor().timer(wait).await;
-            transcript
-                .update(cx, |_, cx| cx.notify())
-                .ok();
-        }
+    cx.spawn(async move |cx| loop {
+        let wait = transcript
+            .update(cx, |view, _| view.unseen_bounce_next_frame())
+            .ok()
+            .flatten()
+            .unwrap_or(Duration::from_millis(200));
+        cx.background_executor().timer(wait).await;
+        transcript.update(cx, |_, cx| cx.notify()).ok();
     })
     .detach();
 }
 
 fn start_drag_autoscroll(transcript: Entity<TranscriptView>, cx: &mut App) {
-    cx.spawn(async move |cx| {
-        loop {
-            cx.background_executor()
-                .timer(Duration::from_millis(50))
-                .await;
-            transcript
-                .update(cx, |t, cx| {
-                    if t.is_dragging() {
-                        let app_style = cx.global::<OmaircStyleGlobal>().style.clone();
-                        t.tick_drag_autoscroll(&app_style, cx);
-                        cx.notify();
-                    }
-                })
-                .ok();
-        }
+    cx.spawn(async move |cx| loop {
+        cx.background_executor()
+            .timer(Duration::from_millis(50))
+            .await;
+        transcript
+            .update(cx, |t, cx| {
+                if t.is_dragging() {
+                    let app_style = cx.global::<OmaircStyleGlobal>().style.clone();
+                    t.tick_drag_autoscroll(&app_style, cx);
+                    cx.notify();
+                }
+            })
+            .ok();
     })
     .detach();
 }

@@ -9,15 +9,14 @@ use common::{code_only, crate_root, read_code};
 #[test]
 fn main_chains_geometry_save_with_update_launch_on_close() {
     let app = read_code(&crate_root().join("src/app.rs"));
-    let windowstate = read_code(&crate_root().join("src/desktop/windowstate.rs"));
 
     assert!(
         app.contains("windowstate::attach") && app.contains("launch_update_on_close"),
         "app.rs must wire geometry attach and the update launch together"
     );
     assert!(
-        app.contains("on_app_quit") && app.contains("WindowCloseWork"),
-        "Ctrl+Q must route through the same close work as a WM close"
+        !app.contains("cx.on_app_quit"),
+        "Ctrl+Q routing belongs in windowstate::attach, not app.rs"
     );
     let attach = app
         .find("windowstate::attach")
@@ -27,14 +26,10 @@ fn main_chains_geometry_save_with_update_launch_on_close() {
         !before_attach.contains("launch_update_on_close"),
         "app.rs must not register update launch before attach replaces the close handler"
     );
+    let attach_tail = &app[attach..];
     assert!(
-        windowstate.contains("run_close_handlers")
-            && windowstate.contains("keeper.save(window_bounds)"),
-        "windowstate must save geometry before running the chained close hook"
-    );
-    assert!(
-        windowstate.contains("WindowCloseWork") && windowstate.contains("self.ran.get()"),
-        "windowstate must guard close work so WM close and app quit run it once"
+        attach_tail.contains("launch_update_on_close"),
+        "app.rs must pass launch_update_on_close through attach's close hook"
     );
 }
 

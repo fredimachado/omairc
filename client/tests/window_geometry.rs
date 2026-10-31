@@ -8,8 +8,8 @@ use common::{crate_root, read_code};
 fn demo_server_skips_geometry_keeper() {
     let app = read_code(&crate_root().join("src/app.rs"));
     assert!(
-        app.contains("(!demo_server).then(|| GeometryKeeper::new(window_path, stored))"),
-        "demo mode must not construct a geometry keeper"
+        app.contains("close_work_for_session(demo_server, window_path, stored)"),
+        "demo mode must skip geometry through close_work_for_session"
     );
     assert!(
         app.contains("geometry::load_stored(&window_path, settings_path.as_deref())"),
