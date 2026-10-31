@@ -65,11 +65,10 @@ type Settings struct {
 	path   string
 	values map[string]iniValue
 	dirty  bool
-	// onDisk holds bytes last loaded from or written to path; nil when the file was
-	// missing at open.
+	// onDisk is the canonical encoded snapshot when loadedFromDisk is true.
 	onDisk []byte
-	// skipUnchangedBytes disables the encoded-bytes disk compare in Sync (tests only).
-	skipUnchangedBytes bool
+	// loadedFromDisk is true after a successful read of path at open.
+	loadedFromDisk bool
 	// preserveFileMode keeps an existing file's permission bits on Sync.
 	preserveFileMode bool
 }
@@ -98,7 +97,7 @@ func OpenSTSSettings(path string) *Settings {
 		return s
 	}
 	s.values = parseSTSIni(raw)
-	s.onDisk = s.encode()
+	s.rememberDiskSnapshot()
 	return s
 }
 
@@ -326,14 +325,14 @@ func (s *Settings) Sync() Status {
 		return StatusWritten
 	}
 	encoded := s.encode()
-	if !s.skipUnchangedBytes && encodedMatchesDisk(s.path, s.onDisk, encoded) {
+	if encodedMatchesDisk(s.path, s.onDisk, s.loadedFromDisk, encoded) {
 		s.dirty = false
 		return StatusWritten
 	}
 	if err := writeSettingsAtomic(s.path, encoded, s.preserveFileMode); err != nil {
 		return StatusAccessError
 	}
-	s.onDisk = encoded
+	s.rememberDiskSnapshotFrom(encoded)
 	s.dirty = false
 	return StatusWritten
 }
@@ -393,11 +392,23 @@ func (s *Settings) load() {
 		return
 	}
 	s.values = parseSettingsIni(raw)
-	s.onDisk = s.encode()
+	s.rememberDiskSnapshot()
 }
 
-func encodedMatchesDisk(path string, onDisk, encoded []byte) bool {
-	if onDisk != nil {
+func (s *Settings) rememberDiskSnapshot() {
+	s.loadedFromDisk = true
+	s.rememberDiskSnapshotFrom(s.encode())
+}
+
+func (s *Settings) rememberDiskSnapshotFrom(encoded []byte) {
+	if encoded == nil {
+		encoded = []byte{}
+	}
+	s.onDisk = encoded
+}
+
+func encodedMatchesDisk(path string, onDisk []byte, loadedFromDisk bool, encoded []byte) bool {
+	if loadedFromDisk {
 		return bytes.Equal(onDisk, encoded)
 	}
 	_, err := os.Stat(path)

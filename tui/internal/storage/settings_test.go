@@ -703,7 +703,12 @@ func TestSyncStringListAfterReopenSkipsUnchangedBytes(t *testing.T) {
 	}
 }
 
-func TestSyncUnchangedBytesGuardRequired(t *testing.T) {
+func markDirtyNoop(s *Settings) {
+	s.SetValue("_sync_test", "noop", "1")
+	s.RemoveKey("_sync_test", "noop")
+}
+
+func TestSyncOnEmptyFileLeavesDiskUnchanged(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("unix mtime")
@@ -713,18 +718,45 @@ func TestSyncUnchangedBytesGuardRequired(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := os.WriteFile(path, []byte("[preferences]\nnetworkOrder=@Invalid()\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	if err := os.Chmod(path, 0o644); err != nil {
 		t.Fatalf("Chmod: %v", err)
 	}
 	s := OpenSettings(path)
-	s.skipUnchangedBytes = true
-	if syncLeavesDiskUnchanged(t, path, s, func() {
-		s.SetStringList("preferences", "networkOrder", nil)
-	}) {
-		t.Fatal("byte compare disabled but sync did not rewrite the file")
+	if !syncLeavesDiskUnchanged(t, path, s, func() { markDirtyNoop(s) }) {
+		t.Fatal("no-op sync on empty file rewrote the file")
+	}
+}
+
+func TestSyncOnCommentOnlyFileLeavesDiskUnchanged(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("unix mtime")
+	}
+
+	path := tempSettingsPath(t)
+	original := []byte("; keep this comment\n")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, original, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+	s := OpenSettings(path)
+	if !syncLeavesDiskUnchanged(t, path, s, func() { markDirtyNoop(s) }) {
+		t.Fatal("no-op sync on comment-only file rewrote the file")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !bytes.Equal(after, original) {
+		t.Fatalf("comment-only bytes changed:\n%s", after)
 	}
 }
 

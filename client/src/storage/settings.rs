@@ -13,7 +13,11 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use super::atomicwrite::{write_atomic, write_atomic_preserve_mode};
-use super::settings_snapshot::{encoded_matches_disk, read_ini_bytes};
+
+#[path = "settings_snapshot.rs"]
+mod settings_snapshot;
+
+use self::settings_snapshot::encoded_matches_disk;
 
 /// The result of a fail-closed probe of the raw bytes (`probeSettingsIni`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,58 +65,10 @@ pub struct Settings {
     values: BTreeMap<String, IniValue>,
     dirty: bool,
     on_disk: Option<Vec<u8>>,
-    #[cfg(test)]
-    test_skip_unchanged_bytes: bool,
     preserve_file_mode: bool,
 }
 
 impl Settings {
-    /// Loads `path`. A missing or unreadable file gives an empty store, and
-    /// [`Settings::sync`] still refuses to overwrite a malformed or unreadable file.
-    pub fn open(path: impl Into<PathBuf>) -> Self {
-        Self::load(path.into(), parse_settings_ini, true)
-    }
-
-    /// Loads an STS policy file. Same as [`Settings::open`], but after a bad line
-    /// inside a group, later keys for that group are kept when not already set, and
-    /// a key that is already set is not overwritten by a leaked line. Shared config
-    /// reads stay on [`Settings::open`].
-    pub(super) fn open_sts(path: impl Into<PathBuf>) -> Self {
-        Self::load(path.into(), parse_sts_ini, false)
-    }
-
-    #[cfg(test)]
-    pub(super) fn test_skip_unchanged_bytes(&mut self, skip: bool) {
-        self.test_skip_unchanged_bytes = skip;
-    }
-
-    fn load(
-        path: PathBuf,
-        parse: fn(&[u8]) -> BTreeMap<String, IniValue>,
-        preserve_file_mode: bool,
-    ) -> Self {
-        let file_bytes = read_ini_bytes(&path);
-        let values = file_bytes
-            .as_ref()
-            .map(|raw| parse(raw))
-            .unwrap_or_default();
-        let mut settings = Self {
-            path,
-            values,
-            dirty: false,
-            on_disk: None,
-            #[cfg(test)]
-            test_skip_unchanged_bytes: false,
-            preserve_file_mode,
-        };
-        if file_bytes.is_some() {
-            settings.on_disk = Some(settings.encode());
-        }
-        settings
-    }
-
-    /// The stored string, or `""` when the key is absent. A string list and an
-    /// invalid value also read as `""`, matching `QVariant::toString`.
     pub fn value(&self, group: &str, key: &str) -> String {
         self.text(group, key).unwrap_or_default().to_string()
     }
@@ -200,6 +156,8 @@ impl Settings {
         }
     }
 
+    /// Removes a group and everything beneath it, as `QSettings::remove(group)`
+    /// does. An empty group clears the whole store.
     pub fn remove_group(&mut self, group: &str) {
         let before = self.values.len();
         if group.is_empty() {
@@ -234,10 +192,15 @@ impl Settings {
         seen.into_iter().collect()
     }
 
+    /// Marks the store dirty so the next [`Settings::sync`] writes even when no
+    /// value changed. STS recovery uses this after renaming a malformed file so
+    /// the already-loaded parseable map is rewritten cleanly.
     pub(super) fn mark_dirty(&mut self) {
         self.dirty = true;
     }
 
+    /// Writes pending changes atomically. Refuses first when the file must not be
+    /// overwritten, so a malformed or read-only file is never rebuilt.
     pub fn sync(&mut self) -> Status {
         let blocked = self.write_blocked();
         if blocked != Status::Written {
@@ -247,11 +210,7 @@ impl Settings {
             return Status::Written;
         }
         let encoded = self.encode();
-        #[cfg(test)]
-        let skip_compare = self.test_skip_unchanged_bytes;
-        #[cfg(not(test))]
-        let skip_compare = false;
-        if !skip_compare && encoded_matches_disk(&self.path, self.on_disk.as_deref(), &encoded) {
+        if encoded_matches_disk(&self.path, self.on_disk.as_deref(), &encoded) {
             self.dirty = false;
             return Status::Written;
         }
@@ -1452,6 +1411,38 @@ mod tests {
         assert!(!path.exists());
     }
 
+    fn mark_dirty_for_test(settings: &mut Settings) {
+        settings.set_value("_sync_test", "noop", "1");
+        settings.remove_key("_sync_test", "noop");
+    }
+
+    #[test]
+    fn sync_on_empty_file_leaves_disk_unchanged() {
+        let dir = TempDir::new("settings-empty-file");
+        let path = settings_in(&dir);
+        write_file(&path, b"");
+        let mut settings = Settings::open(&path);
+        assert!(sync_leaves_disk_unchanged(&path, &mut settings, mark_dirty_for_test));
+    }
+
+    #[test]
+    fn sync_on_comment_only_file_leaves_disk_unchanged() {
+        let dir = TempDir::new("settings-comment-file");
+        let path = settings_in(&dir);
+        write_file(&path, b"; keep this comment\n");
+        let mut settings = Settings::open(&path);
+        assert!(sync_leaves_disk_unchanged(
+            &path,
+            &mut settings,
+            mark_dirty_for_test,
+        ));
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            b"; keep this comment\n",
+            "comment-only bytes must survive a no-op sync"
+        );
+    }
+
     #[test]
     fn sync_repeat_assignment_preserves_file_bytes_and_mtime() {
         use std::thread;
@@ -1525,21 +1516,6 @@ mod tests {
         assert!(sync_leaves_disk_unchanged(&path, &mut settings, |settings| {
             settings.set_string_list("preferences", "networkOrder", &["freenode".into()]);
         }));
-    }
-
-    #[test]
-    fn sync_unchanged_bytes_guard_is_required() {
-        let dir = TempDir::new("settings-byte-guard");
-        let path = settings_in(&dir);
-        write_file(&path, b"[preferences]\nnetworkOrder=@Invalid()\n");
-        let mut settings = Settings::open(&path);
-        settings.test_skip_unchanged_bytes(true);
-        assert!(
-            !sync_leaves_disk_unchanged(&path, &mut settings, |settings| {
-                settings.set_string_list("preferences", "networkOrder", &[]);
-            }),
-            "byte compare disabled but sync did not rewrite the file"
-        );
     }
 
     #[test]
