@@ -223,3 +223,29 @@ func countReadMarkerFrame(frames []string, needle string) int {
 	}
 	return count
 }
+
+func TestReadMarkerEchoThenEqualSetDoesNotResend(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	registerWithReadMarker(fixture, "draft/read-marker")
+	when := time.Date(2024, 6, 1, 12, 0, 0, 123000000, time.UTC)
+	fixture.session.QueueReadMarkerSet("#omarchy", when)
+	want := "MARKREAD #omarchy timestamp=2024-06-01T12:00:00.123Z\r\n"
+	if !fixture.wrote(want) {
+		t.Fatalf("frames = %q", fixture.frames())
+	}
+	fixture.inject(":server MARKREAD #omarchy :timestamp=2024-06-01T12:00:00.123Z\r\n")
+	fixture.session.QueueReadMarkerSet("#omarchy", when)
+	if countReadMarkerFrame(fixture.frames(), want) != 1 {
+		t.Fatalf("after echo, equal timestamp must not send again: %v", fixture.frames())
+	}
+}
+
+func TestReadMarkerReceivedNewerBlocksOlderSet(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	registerWithReadMarker(fixture, "draft/read-marker")
+	fixture.inject(":server MARKREAD alice :timestamp=2024-06-01T13:00:00.000Z\r\n")
+	fixture.session.QueueReadMarkerSet("Alice", time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC))
+	if countReadMarkerFrame(fixture.frames(), "timestamp=") != 0 {
+		t.Fatalf("older set after newer received marker must not send: %v", fixture.frames())
+	}
+}

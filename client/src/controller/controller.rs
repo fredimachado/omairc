@@ -924,10 +924,10 @@ impl Controller {
                 msgid: arrival.msgid,
             });
         }
-        self.sync_read_marker_for_selection();
         if !welcome_network.is_empty() {
             self.request_read_marker_get_for_selected_direct(&welcome_network);
         }
+        self.sync_read_marker_for_selection();
     }
 
     /// The first conversation the reducer holds claims the selection and takes the

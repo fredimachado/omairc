@@ -287,8 +287,9 @@ type Session struct {
 	historyTargetsPending bool
 	historyResume         func(target string) (time.Time, bool)
 
-	readMarkerPending  map[string]readMarkerQueue
-	readMarkerInFlight map[string]time.Time
+	readMarkerPending   map[string]readMarkerQueue
+	readMarkerInFlight  map[string]time.Time
+	readMarkerLastKnown map[string]time.Time
 
 	pendingLabels    map[string]time.Time
 	nextRequestLabel uint64

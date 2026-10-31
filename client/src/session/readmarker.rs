@@ -26,11 +26,14 @@ pub(crate) struct ReadMarkerQueue {
     pub(crate) timestamp: DateTime<Utc>,
 }
 
-/// Pending and in-flight markers, keyed by the folded target.
+/// Pending and in-flight markers, keyed by the folded target. `last_known` is the
+/// high-water mark from a sent set or a received marker; it only moves forward so
+/// an echo that clears in-flight cannot re-send an equal or older timestamp.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ReadMarkerLedger {
     pub(crate) pending: BTreeMap<String, ReadMarkerQueue>,
     pub(crate) in_flight: BTreeMap<String, DateTime<Utc>>,
+    pub(crate) last_known: BTreeMap<String, DateTime<Utc>>,
 }
 
 impl Core {
@@ -88,6 +91,7 @@ impl Core {
             return true;
         };
         let echoed = read_marker_time_millis(marker);
+        self.advance_last_known(&folded, echoed);
         self.emit(SessionEvent::ReadMarkerReceived {
             network_id,
             target,
@@ -154,6 +158,11 @@ impl Core {
             return;
         }
         let when = read_marker_time_millis(when);
+        if let Some(known) = self.read_markers.last_known.get(&folded) {
+            if !read_marker_time_after(when, *known) {
+                return;
+            }
+        }
         if let Some(in_flight) = self.read_markers.in_flight.get(&folded) {
             if !read_marker_time_after(when, *in_flight) {
                 return;
@@ -183,6 +192,12 @@ impl Core {
         let Some(pending) = self.read_markers.pending.get(folded).cloned() else {
             return;
         };
+        if let Some(known) = self.read_markers.last_known.get(folded) {
+            if !read_marker_time_after(pending.timestamp, *known) {
+                self.read_markers.pending.remove(folded);
+                return;
+            }
+        }
         let command = self.read_marker_command();
         if command.is_empty() {
             self.read_markers.pending.remove(folded);
@@ -195,8 +210,20 @@ impl Core {
         );
         self.send_command(&line, "");
         self.read_markers.pending.remove(folded);
+        self.advance_last_known(folded, pending.timestamp);
         self.read_markers
             .in_flight
             .insert(folded.to_owned(), pending.timestamp);
+    }
+
+    fn advance_last_known(&mut self, folded: &str, when: DateTime<Utc>) {
+        if let Some(known) = self.read_markers.last_known.get(folded) {
+            if !read_marker_time_after(when, *known) {
+                return;
+            }
+        }
+        self.read_markers
+            .last_known
+            .insert(folded.to_owned(), when);
     }
 }

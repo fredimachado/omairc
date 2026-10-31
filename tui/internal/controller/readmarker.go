@@ -7,14 +7,18 @@ import (
 )
 
 // readMarkerState tracks direct messages that already received a MARKREAD get
-// this controller session. It mirrors client/src/controller/readmarker.rs
-// ReadMarkerState.
+// this controller session, and which still await that get's reply before a set
+// may publish. It mirrors client/src/controller/readmarker.rs ReadMarkerState.
 type readMarkerState struct {
-	getSent map[irc.ConversationKey]struct{}
+	getSent     map[irc.ConversationKey]struct{}
+	awaitingGet map[irc.ConversationKey]struct{}
 }
 
 func newReadMarkerState() readMarkerState {
-	return readMarkerState{getSent: make(map[irc.ConversationKey]struct{})}
+	return readMarkerState{
+		getSent:     make(map[irc.ConversationKey]struct{}),
+		awaitingGet: make(map[irc.ConversationKey]struct{}),
+	}
 }
 
 func (s *readMarkerState) forgetNetwork(networkID string) {
@@ -23,18 +27,38 @@ func (s *readMarkerState) forgetNetwork(networkID string) {
 			delete(s.getSent, key)
 		}
 	}
+	for key := range s.awaitingGet {
+		if key.NetworkID == networkID {
+			delete(s.awaitingGet, key)
+		}
+	}
 }
 
 func (s *readMarkerState) forgetConversation(key irc.ConversationKey) {
 	delete(s.getSent, key)
+	delete(s.awaitingGet, key)
 }
 
 func (s *readMarkerState) noteGetSent(key irc.ConversationKey) {
 	s.getSent[key] = struct{}{}
+	s.awaitingGet[key] = struct{}{}
 }
 
 func (s *readMarkerState) getSentContains(key irc.ConversationKey) bool {
 	_, ok := s.getSent[key]
+	return ok
+}
+
+func (s *readMarkerState) clearAwaitingGet(key irc.ConversationKey) bool {
+	_, ok := s.awaitingGet[key]
+	if ok {
+		delete(s.awaitingGet, key)
+	}
+	return ok
+}
+
+func (s *readMarkerState) awaitsGet(key irc.ConversationKey) bool {
+	_, ok := s.awaitingGet[key]
 	return ok
 }
 
@@ -56,21 +80,30 @@ func (c *Controller) ReadMarkerReceived(networkID, target string, marker *time.T
 	}
 	features := c.reducer.ServerFeatures(networkID)
 	key := c.reducer.ConversationKey(networkID, target)
+	awaited := c.readMarkers.clearAwaitingGet(key)
 	if features.IsChannel(target) {
 		if c.reducer.Find(key) == nil {
 			return
 		}
 	} else if marker == nil {
+		if awaited {
+			c.syncReadMarkerForSelection()
+		}
 		return
 	}
-	if !c.reducer.ApplyServerReadMarker(key, marker) {
-		return
+	if c.reducer.ApplyServerReadMarker(key, marker) {
+		c.Publish(irc.ViewNotify{Conversations: true})
 	}
-	c.Publish(irc.ViewNotify{Conversations: true})
+	if awaited {
+		c.syncReadMarkerForSelection()
+	}
 }
 
 func (c *Controller) syncReadMarkerForSelection() {
 	if c.selected == nil || c.consoleOpen || !c.transcriptFollowEnd || !c.transcriptFocused || !c.reducer.WindowActive() {
+		return
+	}
+	if c.readMarkers.awaitsGet(*c.selected) {
 		return
 	}
 	session := c.manager.Find(c.selected.NetworkID)

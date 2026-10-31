@@ -442,3 +442,76 @@ func countFramesContaining(transport *session.LoopbackTransport, needle string) 
 	}
 	return count
 }
+
+func TestSelectDirectGetUsesDisplayName(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("net", "omairc"))
+	registerNetwork(t, transport, "omairc", "draft/read-marker")
+	room := c.reducer.ConversationKey("net", "#room")
+	c.reducer.EnsureConversation(room, "#room", irc.CauseChannelState)
+	c.SelectConversation("net", "#room")
+	before := len(transport.WrittenFrames())
+	alice := c.reducer.ConversationKey("net", "Alice")
+	c.reducer.EnsureConversation(alice, "Alice", irc.CauseInboundOther)
+	c.SelectConversation("net", "alice")
+	frames := transport.WrittenFrames()[before:]
+	if countFramesIn(frames, "MARKREAD Alice\r\n") != 1 {
+		t.Fatalf("get must use display name, frames=%v", frames)
+	}
+	if framesContainBytes(frames, "MARKREAD alice\r\n") {
+		t.Fatalf("folded form must not be used on the wire, frames=%v", frames)
+	}
+}
+
+func TestAwaitingGetHoldsSetUntilReplyAndBlocksOlder(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("net", "omairc"))
+	registerNetwork(t, transport, "omairc", "draft/read-marker")
+	c.NoteTranscriptViewport(true, true)
+	room := c.reducer.ConversationKey("net", "#room")
+	c.reducer.EnsureConversation(room, "#room", irc.CauseChannelState)
+	c.SelectConversation("net", "#room")
+	alice := c.reducer.ConversationKey("net", "Alice")
+	c.reducer.EnsureConversation(alice, "Alice", irc.CauseInboundOther)
+	older := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	applyMessage(c, alice, "Alice", "hi", older)
+	before := len(transport.WrittenFrames())
+	c.SelectConversation("net", "alice")
+	frames := transport.WrittenFrames()[before:]
+	if countFramesIn(frames, "MARKREAD Alice\r\n") != 1 {
+		t.Fatalf("select must send one get with display name, frames=%v", frames)
+	}
+	if framesContainBytes(frames, "timestamp=") {
+		t.Fatalf("must not set while get reply is outstanding, frames=%v", frames)
+	}
+	c.NoteTranscriptViewport(true, true)
+	frames = transport.WrittenFrames()[before:]
+	if framesContainBytes(frames, "timestamp=") {
+		t.Fatalf("viewport sync must stay held until get reply, frames=%v", frames)
+	}
+	newer := older.Add(time.Hour)
+	inject(t, transport, ":server MARKREAD Alice :timestamp="+irc.FormatReadMarkerTime(newer)+"\r\n")
+	frames = transport.WrittenFrames()[before:]
+	if framesContainBytes(frames, "timestamp=2024-06-01T12:00:00.000Z") {
+		t.Fatalf("must not set an older marker after newer get reply, frames=%v", frames)
+	}
+}
+
+func countFramesIn(frames [][]byte, needle string) int {
+	count := 0
+	for _, frame := range frames {
+		if strings.Contains(string(frame), needle) {
+			count++
+		}
+	}
+	return count
+}
+
+func framesContainBytes(frames [][]byte, needle string) bool {
+	for _, frame := range frames {
+		if strings.Contains(string(frame), needle) {
+			return true
+		}
+	}
+	return false
+}

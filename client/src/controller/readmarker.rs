@@ -13,29 +13,44 @@ use crate::irc::viewnotify::ViewNotify;
 
 use super::controller::Controller;
 
-/// Tracks which direct messages already received a MARKREAD get this session.
+/// Tracks which direct messages already received a MARKREAD get this session,
+/// and which still await that get's reply before a set may publish.
 pub(super) struct ReadMarkerState {
     get_sent: HashSet<ConversationKey>,
+    awaiting_get: HashSet<ConversationKey>,
 }
 
 impl ReadMarkerState {
     pub(super) fn new() -> Self {
         Self {
             get_sent: HashSet::new(),
+            awaiting_get: HashSet::new(),
         }
     }
 
     pub(super) fn forget_network(&mut self, network_id: &str) {
         self.get_sent
             .retain(|key| key.network_id != network_id);
+        self.awaiting_get
+            .retain(|key| key.network_id != network_id);
     }
 
     pub(super) fn forget_conversation(&mut self, key: &ConversationKey) {
         self.get_sent.remove(key);
+        self.awaiting_get.remove(key);
     }
 
     fn note_get_sent(&mut self, key: &ConversationKey) {
         self.get_sent.insert(key.clone());
+        self.awaiting_get.insert(key.clone());
+    }
+
+    fn clear_awaiting_get(&mut self, key: &ConversationKey) -> bool {
+        self.awaiting_get.remove(key)
+    }
+
+    fn awaits_get(&self, key: &ConversationKey) -> bool {
+        self.awaiting_get.contains(key)
     }
 }
 
@@ -60,15 +75,22 @@ impl Controller {
         }
         let features = self.reducer.server_features(network_id);
         let key = self.reducer.conversation_key(network_id, target);
+        let awaited = self.read_markers.clear_awaiting_get(&key);
         if features.is_channel(target) {
             if self.reducer.find(&key).is_none() {
                 return;
             }
         } else if marker.is_none() {
+            if awaited {
+                self.sync_read_marker_for_selection();
+            }
             return;
         }
         if self.reducer.apply_server_read_marker(&key, marker) {
             self.queue(vec![ViewNotify::Conversations]);
+        }
+        if awaited {
+            self.sync_read_marker_for_selection();
         }
     }
 
@@ -129,6 +151,9 @@ impl Controller {
             return;
         }
         let key = self.selected.clone().expect("selected");
+        if self.read_markers.awaits_get(&key) {
+            return;
+        }
         let Some(session) = self.manager.find(&key.network_id) else {
             return;
         };

@@ -956,6 +956,9 @@ func (c *Controller) Apply(event irc.Event) {
 				mention.Target, mention.MsgID.Value)
 		})
 	}
+	if welcomeNetwork != "" {
+		c.requestReadMarkerGetForSelectedDirect(welcomeNetwork)
+	}
 	c.syncReadMarkerForSelection()
 
 	if arrival, ok := c.reducer.TakeInboxArrival(); ok {
@@ -968,9 +971,6 @@ func (c *Controller) Apply(event irc.Event) {
 			Preview:   arrival.Body,
 			MsgID:     arrival.MsgID,
 		})
-	}
-	if welcomeNetwork != "" {
-		c.requestReadMarkerGetForSelectedDirect(welcomeNetwork)
 	}
 }
 
@@ -1262,7 +1262,11 @@ func (c *Controller) SelectConversation(networkID, target string) {
 	c.refreshConnectionStatus()
 	c.notifyCapabilitiesChanged()
 	if conversation := c.reducer.Find(key); conversation != nil && !features.IsChannel(key.NormalizedTarget) {
-		c.requestReadMarkerGetOnce(networkID, target)
+		getTarget := conversation.Target
+		if getTarget == "" {
+			getTarget = target
+		}
+		c.requestReadMarkerGetOnce(networkID, getTarget)
 	}
 }
 

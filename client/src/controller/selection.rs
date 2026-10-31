@@ -267,8 +267,15 @@ impl Controller {
         let mut surfaces = selection_surfaces();
         viewnotify::merge(&mut surfaces, vec![ViewNotify::Inbox, ViewNotify::Status]);
         self.queue(surfaces);
-        if self.reducer.find(&key).is_some() && !is_channel {
-            self.request_read_marker_get_once(network_id, target);
+        if !is_channel {
+            if let Some(conversation) = self.reducer.find(&key) {
+                let get_target = if conversation.target.is_empty() {
+                    target.to_owned()
+                } else {
+                    conversation.target.clone()
+                };
+                self.request_read_marker_get_once(network_id, &get_target);
+            }
         }
     }
 

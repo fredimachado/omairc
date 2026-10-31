@@ -258,3 +258,36 @@ fn read_marker_is_consumed_and_not_a_protocol_error() {
         .iter()
         .all(|message| message.command != "MARKREAD"));
 }
+
+#[test]
+fn read_marker_echo_then_equal_set_does_not_resend() {
+    let fx = fresh();
+    register_with_read_marker(&fx, "draft/read-marker");
+    let when =
+        Utc.with_ymd_and_hms(2024, 6, 1, 12, 0, 0).single().unwrap() + TimeDelta::milliseconds(123);
+    fx.session.queue_read_marker_set("#omarchy", when);
+    let want = "MARKREAD #omarchy timestamp=2024-06-01T12:00:00.123Z\r\n";
+    assert!(fx.wrote(want));
+    fx.inject(":server MARKREAD #omarchy :timestamp=2024-06-01T12:00:00.123Z\r\n");
+    fx.session.queue_read_marker_set("#omarchy", when);
+    assert_eq!(
+        count_containing(&fx.frames(), want),
+        1,
+        "after echo, equal timestamp must not send again: {:?}",
+        fx.frames()
+    );
+}
+
+#[test]
+fn read_marker_received_newer_blocks_older_set() {
+    let fx = fresh();
+    register_with_read_marker(&fx, "draft/read-marker");
+    fx.inject(":server MARKREAD alice :timestamp=2024-06-01T13:00:00.000Z\r\n");
+    fx.session.queue_read_marker_set("Alice", at(0));
+    assert_eq!(
+        count_containing(&fx.frames(), "timestamp="),
+        0,
+        "older set after newer received marker must not send: {:?}",
+        fx.frames()
+    );
+}

@@ -457,3 +457,97 @@ fn select_direct_before_welcome_retries_get_after_registered() {
         "001 while DM selected must send one MARKREAD get"
     );
 }
+
+#[test]
+fn echo_then_viewport_does_not_resend_equal_set() {
+    let mut fixture = Fixture::seeded();
+    enable_read_marker(&mut fixture);
+    fixture.controller.note_transcript_viewport(true, true);
+    ensure_room(&mut fixture, "#room");
+    fixture.controller.select_conversation(NET, "#room");
+    fixture.clear_frames(NET);
+    let at = when(2024, 6, 1, 12, 0, 0, 123);
+    deliver_privmsg(&mut fixture, "#room", "peer", "hi", at);
+    let want = "MARKREAD #room timestamp=2024-06-01T12:00:00.123Z\r\n";
+    assert_eq!(count_containing(&fixture.frames(NET), want), 1);
+    fixture.deliver(NET, ":server MARKREAD #room :timestamp=2024-06-01T12:00:00.123Z\r\n");
+    fixture.controller.note_transcript_viewport(true, true);
+    assert_eq!(
+        count_containing(&fixture.frames(NET), want),
+        1,
+        "viewport after echo must not resend the same MARKREAD set"
+    );
+}
+
+#[test]
+fn select_direct_get_uses_display_name() {
+    let mut fixture = Fixture::seeded();
+    enable_read_marker(&mut fixture);
+    ensure_room(&mut fixture, "#room");
+    fixture.controller.select_conversation(NET, "#room");
+    fixture.clear_frames(NET);
+    let alice = fixture.controller.reducer.conversation_key(NET, "Alice");
+    fixture
+        .controller
+        .reducer
+        .ensure_conversation(&alice, "Alice", IrcConversationCause::InboundOther);
+    fixture.controller.select_conversation(NET, "alice");
+    assert_eq!(
+        count_containing(&fixture.frames(NET), "MARKREAD Alice\r\n"),
+        1,
+        "get must use the conversation display name, frames={:?}",
+        fixture.frames(NET)
+    );
+    assert!(
+        !frames_contain(&fixture.frames(NET), "MARKREAD alice\r\n"),
+        "folded form must not be used on the wire, frames={:?}",
+        fixture.frames(NET)
+    );
+}
+
+#[test]
+fn awaiting_get_holds_set_until_reply_and_blocks_older() {
+    let mut fixture = Fixture::seeded();
+    enable_read_marker(&mut fixture);
+    fixture.controller.note_transcript_viewport(true, true);
+    ensure_room(&mut fixture, "#room");
+    fixture.controller.select_conversation(NET, "#room");
+    let alice = fixture.controller.reducer.conversation_key(NET, "Alice");
+    fixture
+        .controller
+        .reducer
+        .ensure_conversation(&alice, "Alice", IrcConversationCause::InboundOther);
+    let older = when(2024, 6, 1, 12, 0, 0, 0);
+    deliver_privmsg(&mut fixture, "omairc", "Alice", "hi", older);
+    fixture.clear_frames(NET);
+    fixture.controller.select_conversation(NET, "alice");
+    assert_eq!(
+        count_containing(&fixture.frames(NET), "MARKREAD Alice\r\n"),
+        1,
+        "select must send one get with the display name"
+    );
+    assert!(
+        !frames_contain(&fixture.frames(NET), "timestamp="),
+        "must not set while the get reply is outstanding, frames={:?}",
+        fixture.frames(NET)
+    );
+    fixture.controller.note_transcript_viewport(true, true);
+    assert!(
+        !frames_contain(&fixture.frames(NET), "timestamp="),
+        "viewport sync must stay held until the get reply, frames={:?}",
+        fixture.frames(NET)
+    );
+    let newer = older + TimeDelta::hours(1);
+    fixture.deliver(
+        NET,
+        &format!(
+            ":server MARKREAD Alice :timestamp={}\r\n",
+            newer.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+        ),
+    );
+    assert!(
+        !frames_contain(&fixture.frames(NET), "timestamp=2024-06-01T12:00:00.000Z"),
+        "must not set an older marker after a newer get reply, frames={:?}",
+        fixture.frames(NET)
+    );
+}
