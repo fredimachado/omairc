@@ -10,6 +10,16 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// target, so an interrupted write cannot leave a half-written or truncated file.
 /// The folder is created owner-only, and the file is owner read/write only.
 pub(crate) fn write_atomic(path: &Path, data: &[u8]) -> io::Result<()> {
+    write_atomic_with_mode(path, data, false)
+}
+
+/// Like [`write_atomic`], but when `path` already exists the temp file takes
+/// that file's permission bits before rename. A new file is still owner-only (0600).
+pub(crate) fn write_atomic_preserve_mode(path: &Path, data: &[u8]) -> io::Result<()> {
+    write_atomic_with_mode(path, data, true)
+}
+
+fn write_atomic_with_mode(path: &Path, data: &[u8], preserve_mode: bool) -> io::Result<()> {
     let dir = match path.parent() {
         Some(dir) if !dir.as_os_str().is_empty() => dir,
         _ => Path::new("."),
@@ -18,7 +28,7 @@ pub(crate) fn write_atomic(path: &Path, data: &[u8]) -> io::Result<()> {
 
     let (temp, mut file) = create_temp_file(dir)?;
     let written = (|| -> io::Result<()> {
-        set_owner_only(&file)?;
+        set_mode_on_temp(&file, path, preserve_mode)?;
         file.write_all(data)?;
         file.sync_all()
     })();
@@ -64,15 +74,24 @@ fn create_temp_file(dir: &Path) -> io::Result<(PathBuf, fs::File)> {
     Err(last_error.unwrap_or_else(|| io::Error::other("no free temporary name")))
 }
 
-#[cfg(unix)]
-fn set_owner_only(file: &fs::File) -> io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    file.set_permissions(fs::Permissions::from_mode(0o600))
-}
-
-#[cfg(not(unix))]
-fn set_owner_only(_file: &fs::File) -> io::Result<()> {
-    Ok(())
+fn set_mode_on_temp(file: &fs::File, target: &Path, preserve_mode: bool) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = if preserve_mode {
+            fs::metadata(target)
+                .map(|meta| meta.permissions().mode() & 0o777)
+                .unwrap_or(0o600)
+        } else {
+            0o600
+        };
+        file.set_permissions(fs::Permissions::from_mode(mode))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (file, target, preserve_mode);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -106,6 +125,34 @@ mod tests {
 
         fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
         assert_no_tmp_siblings(dir.path());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_atomic_preserves_existing_target_mode() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new("atomic-preserve-mode");
+        let path = dir.path().join("config");
+        fs::write(&path, b"old\n").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        write_atomic_preserve_mode(&path, b"new\n").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"new\n");
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o644);
+        assert_no_tmp_siblings(dir.path());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_atomic_preserve_mode_uses_owner_only_for_new_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new("atomic-preserve-new");
+        let path = dir.path().join("config");
+        write_atomic_preserve_mode(&path, b"new\n").unwrap();
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
     }
 
     fn assert_no_tmp_siblings(dir: &Path) {

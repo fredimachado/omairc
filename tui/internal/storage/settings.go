@@ -65,6 +65,8 @@ type Settings struct {
 	path   string
 	values map[string]iniValue
 	dirty  bool
+	// preserveFileMode keeps an existing file's permission bits on Sync.
+	preserveFileMode bool
 }
 
 // OpenSettings loads path, or ConfigPath when path is "". A missing or
@@ -74,7 +76,7 @@ func OpenSettings(path string) *Settings {
 	if path == "" {
 		path = ConfigPath()
 	}
-	s := &Settings{path: path, values: make(map[string]iniValue)}
+	s := &Settings{path: path, values: make(map[string]iniValue), preserveFileMode: true}
 	s.load()
 	return s
 }
@@ -307,7 +309,7 @@ func (s *Settings) Sync() Status {
 	if !s.dirty {
 		return StatusWritten
 	}
-	if err := writeSettingsAtomic(s.path, s.encode()); err != nil {
+	if err := writeSettingsAtomic(s.path, s.encode(), s.preserveFileMode); err != nil {
 		return StatusAccessError
 	}
 	s.dirty = false
@@ -410,9 +412,10 @@ func settingsFileNotWritable(path string) bool {
 }
 
 // writeSettingsAtomic writes data to path through a same-directory temporary
-// file and a rename, creating parents with owner-only permissions and setting
-// 0600 on the file, so an interrupted Sync cannot leave a half-written ini.
-func writeSettingsAtomic(path string, data []byte) error {
+// file and a rename, creating parents with owner-only permissions. When
+// preserveMode is true and path already exists, the temp file takes the
+// target's permission bits before rename; otherwise the file is 0600.
+func writeSettingsAtomic(path string, data []byte, preserveMode bool) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -427,7 +430,13 @@ func writeSettingsAtomic(path string, data []byte) error {
 			os.Remove(tmpName)
 		}
 	}()
-	if err := tmp.Chmod(0o600); err != nil {
+	mode := os.FileMode(0o600)
+	if preserveMode {
+		if info, err := os.Stat(path); err == nil {
+			mode = info.Mode().Perm()
+		}
+	}
+	if err := tmp.Chmod(mode); err != nil {
 		tmp.Close()
 		return err
 	}

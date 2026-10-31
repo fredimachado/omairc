@@ -12,7 +12,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use super::atomicwrite::write_atomic;
+use super::atomicwrite::{write_atomic, write_atomic_preserve_mode};
 
 /// The result of a fail-closed probe of the raw bytes (`probeSettingsIni`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -59,6 +59,8 @@ pub struct Settings {
     path: PathBuf,
     values: BTreeMap<String, IniValue>,
     dirty: bool,
+    /// When true, [`Settings::sync`] keeps an existing file's permission bits.
+    preserve_file_mode: bool,
 }
 
 impl Settings {
@@ -73,6 +75,7 @@ impl Settings {
             path,
             values,
             dirty: false,
+            preserve_file_mode: true,
         }
     }
 
@@ -89,6 +92,7 @@ impl Settings {
             path,
             values,
             dirty: false,
+            preserve_file_mode: false,
         }
     }
 
@@ -233,7 +237,12 @@ impl Settings {
         if !self.dirty {
             return Status::Written;
         }
-        match write_atomic(&self.path, &self.encode()) {
+        let write = if self.preserve_file_mode {
+            write_atomic_preserve_mode(&self.path, &self.encode())
+        } else {
+            write_atomic(&self.path, &self.encode())
+        };
+        match write {
             Ok(()) => {
                 self.dirty = false;
                 Status::Written
@@ -1377,6 +1386,25 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), corrupt);
 
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sync_preserves_existing_file_mode() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new("settings-preserve-mode");
+        let path = settings_in(&dir);
+        write_file(&path, b"[preferences]\ndirects=false\n");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+
+        let mut settings = Settings::open(&path);
+        settings.set_bool("preferences", "directs", true);
+        assert_eq!(settings.sync(), Status::Written);
+
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o644);
+        assert!(settings.bool_value("preferences", "directs", false));
     }
 
     #[test]
