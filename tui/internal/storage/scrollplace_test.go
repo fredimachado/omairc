@@ -371,3 +371,155 @@ func TestScrollPlaceForgetSeedsLegacyNetworks(t *testing.T) {
 		t.Fatalf("net2#dev must survive forget: %+v/%v", dev, ok)
 	}
 }
+
+func TestScrollPlaceForgetOnlyLegacyNetworkWritesEmptyState(t *testing.T) {
+	config, state := scrollTestRoots(t)
+	conf := filepath.Join(config, "omairc", "omairc.conf")
+	if err := os.MkdirAll(filepath.Dir(conf), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	before := []byte("[scrollPlaces]\nnet1\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#qa\\\"}]\"\n")
+	if err := os.WriteFile(conf, before, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mapping := irc.NewCaseMapping(irc.KindRfc1459)
+	statePath := filepath.Join(state, "omairc", ScrollPlacesFile)
+
+	NewScrollPlaceStore().Forget("net1")
+
+	after, err := os.ReadFile(conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("conf changed:\nbefore=%q\nafter=%q", before, after)
+	}
+	if _, err := os.Stat(statePath); err != nil {
+		t.Fatalf("forgetting the only legacy network must create an empty state file: %v", err)
+	}
+	if _, ok := NewScrollPlaceStore().Place("net1", "#qa", mapping); ok {
+		t.Fatal("forgotten sole legacy network must stay gone after reload")
+	}
+}
+
+func TestScrollPlaceSeedReadsBothMacOSConfNames(t *testing.T) {
+	config, state := scrollTestRoots(t)
+	dir := filepath.Join(config, "omairc")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ini := filepath.Join(dir, "omairc.ini")
+	conf := filepath.Join(dir, "omairc.conf")
+	if err := os.WriteFile(ini, []byte("[scrollPlaces]\n"+
+		"net_ini\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#from-ini\\\"}]\"\n"+
+		"net_both\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#ini-wins\\\"}]\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(conf, []byte("[scrollPlaces]\n"+
+		"net_conf\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#from-conf\\\"}]\"\n"+
+		"net_both\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#conf-loses\\\"}]\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mapping := irc.NewCaseMapping(irc.KindRfc1459)
+
+	NewScrollPlaceStore().Remember("net_ini", "#from-ini", ScrollPlace{FollowEnd: true}, mapping)
+
+	fresh := NewScrollPlaceStore()
+	if place, ok := fresh.Place("net_conf", "#from-conf", mapping); !ok || !place.FollowEnd {
+		t.Fatalf("places only in omairc.conf must be seeded: %+v/%v", place, ok)
+	}
+	if place, ok := fresh.Place("net_both", "#ini-wins", mapping); !ok || !place.FollowEnd {
+		t.Fatalf("omairc.ini must win per network: %+v/%v", place, ok)
+	}
+	if _, ok := fresh.Place("net_both", "#conf-loses", mapping); ok {
+		t.Fatal("conf must not override ini for the same network")
+	}
+	if _, err := os.Stat(filepath.Join(state, "omairc", ScrollPlacesFile)); err != nil {
+		t.Fatalf("state file missing: %v", err)
+	}
+
+	// Places only in omairc.ini must seed when the TUI's omairc.conf has none.
+	config2, state2 := scrollTestRoots(t)
+	dir2 := filepath.Join(config2, "omairc")
+	if err := os.MkdirAll(dir2, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir2, "omairc.ini"), []byte(
+		"[scrollPlaces]\nnet_ini_only\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#ini-only\\\"}]\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir2, "omairc.conf"), []byte("[preferences]\ndirects=true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	NewScrollPlaceStore().Remember("other", "#x", ScrollPlace{FollowEnd: true}, mapping)
+	only, ok := NewScrollPlaceStore().Place("net_ini_only", "#ini-only", mapping)
+	if !ok || !only.FollowEnd {
+		t.Fatalf("places only in omairc.ini must seed: %+v/%v", only, ok)
+	}
+	if _, err := os.Stat(filepath.Join(state2, "omairc", ScrollPlacesFile)); err != nil {
+		t.Fatalf("state file missing: %v", err)
+	}
+}
+
+func TestScrollPlaceUnreadableLegacyConfRefusesSave(t *testing.T) {
+	config, state := scrollTestRoots(t)
+	conf := filepath.Join(config, "omairc", "omairc.conf")
+	if err := os.MkdirAll(filepath.Dir(conf), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body := []byte("[scrollPlaces]\n" +
+		"net1\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#qa\\\"}]\"\n" +
+		"net2\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#dev\\\"}]\"\n")
+	if err := os.WriteFile(conf, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(conf, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(conf, 0o600) })
+	if _, err := os.ReadFile(conf); err == nil {
+		t.Skip("running as root: chmod 000 leaves the file readable")
+	}
+
+	mapping := irc.NewCaseMapping(irc.KindRfc1459)
+	store := NewScrollPlaceStore()
+	store.Remember("net1", "#qa", ScrollPlace{FollowEnd: true}, mapping)
+	if _, ok := store.Place("net1", "#qa", mapping); !ok {
+		t.Fatal("refused save must keep places in memory")
+	}
+	statePath := filepath.Join(state, "omairc", ScrollPlacesFile)
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Fatalf("unreadable legacy conf must not create an unseeded state file, err=%v", err)
+	}
+}
+
+func TestScrollPlaceSeedRunsOnlyWhenStateMissing(t *testing.T) {
+	config, state := scrollTestRoots(t)
+	conf := filepath.Join(config, "omairc", "omairc.conf")
+	if err := os.MkdirAll(filepath.Dir(conf), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(conf, []byte(
+		"[scrollPlaces]\nnet2\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#dev\\\"}]\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	statePath := filepath.Join(state, "omairc", ScrollPlacesFile)
+	if err := os.MkdirAll(filepath.Dir(statePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statePath, []byte(
+		"[scrollPlaces]\nnet1\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#qa\\\"}]\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mapping := irc.NewCaseMapping(irc.KindRfc1459)
+	NewScrollPlaceStore().Remember("net1", "#qa", ScrollPlace{MsgID: "m-1"}, mapping)
+
+	fresh := NewScrollPlaceStore()
+	place, ok := fresh.Place("net1", "#qa", mapping)
+	if !ok || place.MsgID != "m-1" {
+		t.Fatalf("net1 = %+v/%v", place, ok)
+	}
+	if _, ok := fresh.Place("net2", "#dev", mapping); ok {
+		t.Fatal("existing state file must not re-seed net2 from conf")
+	}
+}

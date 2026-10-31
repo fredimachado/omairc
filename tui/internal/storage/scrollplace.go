@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -93,7 +94,10 @@ func (s *ScrollPlaceStore) settingsForRead() *Settings {
 			return OpenSettings(state)
 		}
 	}
-	return OpenSettings("")
+	// Merge both legacy conf names (ini wins per network) without writing.
+	merged := &Settings{values: make(map[string]iniValue), preserveFileMode: true}
+	_, _ = copyLegacyScrollPlaces(merged, false)
+	return merged
 }
 
 func (s *ScrollPlaceStore) load(networkID string) []scrollEntry {
@@ -218,8 +222,14 @@ func (s *ScrollPlaceStore) save(networkID string, rows []scrollEntry) {
 	_, statErr := os.Stat(state)
 	missing := os.IsNotExist(statErr)
 	settings := OpenSettings(state)
+	seeded := false
 	if missing {
-		seedLegacyScrollPlaces(settings)
+		copied, refuse := seedLegacyScrollPlaces(settings)
+		if refuse {
+			// Keep places in memory; do not create an unseeded state file.
+			return
+		}
+		seeded = copied
 	}
 	group := scrollPlacesGroup + "/" + networkID
 	if len(rows) == 0 {
@@ -231,31 +241,84 @@ func (s *ScrollPlaceStore) save(networkID string, rows []scrollEntry) {
 		}
 		settings.SetValue(group, scrollPlacesKey, scrollEncode(encoded))
 	}
-	settings.Sync()
+	if settings.Sync() != StatusWritten {
+		return
+	}
+	// Empty encode + missing file matches disk, so Sync skips the create. An
+	// empty state file still records that migration happened once anything was seeded.
+	if missing && seeded {
+		if _, err := os.Stat(state); os.IsNotExist(err) {
+			_ = writeSettingsAtomic(state, nil, false)
+		}
+	}
 }
 
-// seedLegacyScrollPlaces copies every scrollPlaces/* group from omairc.conf
-// into dest. Used only when creating scrollplaces.ini for the first time so
-// other networks are not lost. The conf is never written.
-func seedLegacyScrollPlaces(dest *Settings) {
-	if dest == nil {
-		return
-	}
+// legacyScrollConfPaths returns omairc.ini then omairc.conf beside ConfigPath.
+// Both clients share scrollplaces.ini on macOS but historically wrote different
+// conf names; ini groups win per network and conf fills the rest.
+func legacyScrollConfPaths() []string {
 	conf := ConfigPath()
 	if conf == "" {
-		return
+		return nil
 	}
-	if _, err := os.Stat(conf); err != nil {
-		return
+	dir := filepath.Dir(conf)
+	return []string{
+		filepath.Join(dir, "omairc.ini"),
+		filepath.Join(dir, "omairc.conf"),
 	}
-	src := OpenSettings(conf)
-	for _, networkID := range src.ChildGroups(scrollPlacesGroup) {
-		group := scrollPlacesGroup + "/" + networkID
-		if !src.Contains(group, scrollPlacesKey) {
+}
+
+// seedLegacyScrollPlaces copies every scrollPlaces/* group from the legacy
+// confs into dest when creating scrollplaces.ini. Refuses when a conf exists
+// but cannot be read so the save does not create an unseeded state file.
+func seedLegacyScrollPlaces(dest *Settings) (copied bool, refuse bool) {
+	return copyLegacyScrollPlaces(dest, true)
+}
+
+// copyLegacyScrollPlaces merges omairc.ini then omairc.conf into dest. Ini
+// groups win per network; conf fills the rest. When refuseUnreadable is set,
+// an existing unreadable conf aborts so a first save cannot drop legacy places.
+func copyLegacyScrollPlaces(dest *Settings, refuseUnreadable bool) (copied bool, refuse bool) {
+	if dest == nil {
+		return false, false
+	}
+	for _, conf := range legacyScrollConfPaths() {
+		info, err := os.Stat(conf)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			if refuseUnreadable {
+				return false, true
+			}
 			continue
 		}
-		dest.SetValue(group, scrollPlacesKey, src.Value(group, scrollPlacesKey))
+		if info.IsDir() {
+			if refuseUnreadable {
+				return false, true
+			}
+			continue
+		}
+		if ProbeSettingsIni(conf) == IniProbeUnreadable {
+			if refuseUnreadable {
+				return false, true
+			}
+			continue
+		}
+		src := OpenSettings(conf)
+		for _, networkID := range src.ChildGroups(scrollPlacesGroup) {
+			group := scrollPlacesGroup + "/" + networkID
+			if !src.Contains(group, scrollPlacesKey) {
+				continue
+			}
+			if dest.Contains(group, scrollPlacesKey) {
+				continue
+			}
+			dest.SetValue(group, scrollPlacesKey, src.Value(group, scrollPlacesKey))
+			copied = true
+		}
 	}
+	return copied, false
 }
 
 func scrollEncode(rows []any) string {
