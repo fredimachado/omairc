@@ -4,6 +4,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -217,17 +218,21 @@ func TestSTSStoreZeroDurationClearsDisk(t *testing.T) {
 	}
 }
 
-// Concurrent Stores from shared-manager sessions must not drop each other's hosts.
+// Concurrent Stores from shared-manager sessions must not drop each other's
+// hosts. Each round uses a fresh file and asserts ExpiryEpochSeconds ==
+// round+60 for every host, so a lost update cannot hide behind an older
+// unexpired entry. Without the STSStore mutex this fails; with it, it passes.
 func TestSTSStoreConcurrentStoresPersistAllHosts(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "sts")
-	store := NewSTSStore()
-	store.AttachDisk(storage.NewIniSTSStore(path))
 	hosts := []string{"a.example", "b.example", "c.example", "d.example"}
 	const rounds = 50
 	var wg sync.WaitGroup
 	for round := 0; round < rounds; round++ {
+		path := filepath.Join(dir, "sts-"+strconv.Itoa(round))
+		store := NewSTSStore()
+		store.AttachDisk(storage.NewIniSTSStore(path))
 		now := time.Unix(int64(round), 0)
+		wantExpiry := now.Unix() + 60
 		for _, host := range hosts {
 			wg.Add(1)
 			go func(host string, now time.Time) {
@@ -238,11 +243,15 @@ func TestSTSStoreConcurrentStoresPersistAllHosts(t *testing.T) {
 			}(host, now)
 		}
 		wg.Wait()
-	}
-	disk := storage.NewIniSTSStore(path)
-	for _, host := range hosts {
-		if _, ok := disk.Lookup(host, int64(rounds-1)); !ok {
-			t.Fatalf("host %s missing from disk after concurrent stores", host)
+		disk := storage.NewIniSTSStore(path)
+		for _, host := range hosts {
+			entry, ok := disk.Lookup(host, now.Unix())
+			if !ok {
+				t.Fatalf("round %d: host %s missing from disk", round, host)
+			}
+			if entry.ExpiryEpochSeconds != wantExpiry {
+				t.Fatalf("round %d: host %s expiry = %d, want %d", round, host, entry.ExpiryEpochSeconds, wantExpiry)
+			}
 		}
 	}
 }

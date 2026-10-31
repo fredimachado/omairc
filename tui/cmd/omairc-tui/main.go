@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	tea "charm.land/bubbletea/v2"
@@ -98,7 +99,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// tea.Quit (Ctrl+Q) and p.Quit (SIGHUP) return from Run without calling
 	// Session.Stop. Refresh STS expiry on the way out so a long-lived session
 	// does not leave an already-expired policy on disk for the next start.
-	defer c.Shutdown()
+	// Once so the explicit post-Run call and this defer for early returns share
+	// one Shutdown; the post-Run path must run Shutdown before close(wake).
+	var shutOnce sync.Once
+	shutdownSessions := func() {
+		shutOnce.Do(func() { c.Shutdown() })
+	}
+	defer shutdownSessions()
 	var conn *connection.Connection
 	if demoServer {
 		// The demo stays ephemeral: it must never read or write the user's
@@ -237,16 +244,35 @@ func run(args []string, stdout, stderr io.Writer) int {
 	defer desktop.Close()
 
 	wake := make(chan struct{}, 1)
+	var wakeMu sync.Mutex
+	wakeOpen := true
 	go func() {
 		for range wake {
 			p.Send(ui.NotifyMsg{})
 		}
 	}()
+	// notify must not panic if wake is already closed. Shutdown can fire
+	// OnStatusChanged while stopping sessions; that must stay safe even if
+	// closeWake raced ahead.
 	notify := func() {
+		wakeMu.Lock()
+		defer wakeMu.Unlock()
+		if !wakeOpen {
+			return
+		}
 		select {
 		case wake <- struct{}{}:
 		default:
 		}
+	}
+	closeWake := func() {
+		wakeMu.Lock()
+		defer wakeMu.Unlock()
+		if !wakeOpen {
+			return
+		}
+		wakeOpen = false
+		close(wake)
 	}
 	if conn != nil {
 		conn.OnDraftChanged = notify
@@ -282,13 +308,21 @@ func run(args []string, stdout, stderr io.Writer) int {
 			notify()
 		})
 	}
+	var runErr error
 	if _, err := p.Run(); err != nil {
 		// Report through os.Stderr, which crashlog.Install replaced with the
 		// tee: a recovered Bubble Tea panic arrives here as ErrProgramPanic
 		// and must reach the log, not just the parameter's pre-install file.
 		fmt.Fprintf(os.Stderr, "omairc-tui: %v\n", err)
+		runErr = err
+	}
+	// Quit order: refresh STS (Stop → StateChanged → notify) while wake is
+	// still open, then close wake. Closing first panics every Ctrl+Q/SIGHUP
+	// with a live session and aborts StopAll after the first network.
+	shutdownSessions()
+	closeWake()
+	if runErr != nil {
 		return 1
 	}
-	close(wake)
 	return 0
 }

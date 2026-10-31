@@ -2,6 +2,7 @@ package controller
 
 import (
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -10,10 +11,10 @@ import (
 )
 
 // TestControllerShutdownRefreshesSTSExpiry covers the quit path: Ctrl+Q and
-// SIGHUP return from tea.Run without Session.Stop, and main defers
-// Controller.Shutdown so STS expiry is rewritten from quit time, not connect
-// time. Without that, a session that outlives duration leaves an expired
-// on-disk policy and the next start connects in plaintext.
+// SIGHUP return from tea.Run without Session.Stop, and main calls
+// Controller.Shutdown before close(wake) so STS expiry is rewritten from quit
+// time, not connect time. Without that, a session that outlives duration
+// leaves an expired on-disk policy and the next start connects in plaintext.
 func TestControllerShutdownRefreshesSTSExpiry(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sts")
@@ -51,6 +52,93 @@ func TestControllerShutdownRefreshesSTSExpiry(t *testing.T) {
 	if _, ok := storage.NewIniSTSStore(path).Lookup("irc.example", start+61); !ok {
 		t.Fatal("refreshed expiry must still apply past the original connect+duration")
 	}
+}
+
+// TestQuitOrderShutdownBeforeCloseWake follows main's real quit sequence with
+// more than one live session: wire notify onto a wake channel the way run
+// does, Shutdown while wake is open (Stop → StateChanged → notify), then
+// close wake. Every network's STS expiry must refresh and notify must not
+// panic. Closing wake first used to panic and abort StopAll after one network.
+func TestQuitOrderShutdownBeforeCloseWake(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	c, clock := newController(t)
+	c.AttachSTSDisk(path)
+
+	wake := make(chan struct{}, 1)
+	var wakeMu sync.Mutex
+	wakeOpen := true
+	notify := func() {
+		wakeMu.Lock()
+		defer wakeMu.Unlock()
+		if !wakeOpen {
+			return
+		}
+		select {
+		case wake <- struct{}{}:
+		default:
+		}
+	}
+	closeWake := func() {
+		wakeMu.Lock()
+		defer wakeMu.Unlock()
+		if !wakeOpen {
+			return
+		}
+		wakeOpen = false
+		close(wake)
+	}
+	c.OnStatusChanged = notify
+	c.OnSelectionChanged = notify
+	c.OnCapabilitiesChanged = notify
+	c.OnViewChanged = notify
+
+	hosts := []string{"alpha.example", "beta.example"}
+	for i, host := range hosts {
+		config := baseConfig("net-"+host, "omairc")
+		config.Host = host
+		config.AutojoinChannels = nil
+		transport := addAndStart(t, c, clock, config)
+		transport.InjectBytes([]byte(":server CAP omairc LS :sts=duration=60\r\n"))
+		_ = i
+	}
+
+	start := clock.Now().Unix()
+	for _, host := range hosts {
+		entry, ok := storage.NewIniSTSStore(path).Lookup(host, start)
+		if !ok || entry.ExpiryEpochSeconds != start+60 {
+			t.Fatalf("%s connect-time entry = %+v ok=%v", host, entry, ok)
+		}
+	}
+
+	clock.Advance(30 * time.Second)
+	after := clock.Now().Unix()
+
+	// Real quit order from run after tea.Run returns.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		c.Shutdown()
+		closeWake()
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Shutdown+closeWake hung or panicked")
+	}
+
+	for _, host := range hosts {
+		entry, ok := storage.NewIniSTSStore(path).Lookup(host, after)
+		if !ok {
+			t.Fatalf("%s missing after quit-order Shutdown", host)
+		}
+		if entry.ExpiryEpochSeconds != after+60 {
+			t.Fatalf("%s quit-time expiry = %d, want %d", host, entry.ExpiryEpochSeconds, after+60)
+		}
+	}
+
+	// A late status notify after close must not panic.
+	notify()
 }
 
 // TestManagerStopAllStopsEverySession pins the seam Shutdown uses.

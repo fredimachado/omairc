@@ -53,9 +53,14 @@ func Start(opts Options) (*Process, error) {
 }
 
 func (p *Process) readLoop() {
+	// Hold a local fd so Close can nil p.readFd without racing this Read.
+	fd := p.readFd
+	if fd == nil {
+		return
+	}
 	buf := make([]byte, 32*1024)
 	for {
-		n, err := p.readFd.Read(buf)
+		n, err := fd.Read(buf)
 		if n > 0 {
 			chunk := make([]byte, n)
 			copy(chunk, buf[:n])
