@@ -4,8 +4,39 @@ import (
 	"time"
 
 	"github.com/fredimachado/omairc/tui/internal/irc"
-	"github.com/fredimachado/omairc/tui/internal/session"
 )
+
+// readMarkerState tracks direct messages that already received a MARKREAD get
+// this controller session. It mirrors client/src/controller/readmarker.rs
+// ReadMarkerState.
+type readMarkerState struct {
+	getSent map[irc.ConversationKey]struct{}
+}
+
+func newReadMarkerState() readMarkerState {
+	return readMarkerState{getSent: make(map[irc.ConversationKey]struct{})}
+}
+
+func (s *readMarkerState) forgetNetwork(networkID string) {
+	for key := range s.getSent {
+		if key.NetworkID == networkID {
+			delete(s.getSent, key)
+		}
+	}
+}
+
+func (s *readMarkerState) forgetConversation(key irc.ConversationKey) {
+	delete(s.getSent, key)
+}
+
+func (s *readMarkerState) noteGetSent(key irc.ConversationKey) {
+	s.getSent[key] = struct{}{}
+}
+
+func (s *readMarkerState) getSentContains(key irc.ConversationKey) bool {
+	_, ok := s.getSent[key]
+	return ok
+}
 
 // NoteTranscriptViewport records whether the shell is focused and the selected
 // transcript is pinned to the bottom. It mirrors the Qt window's active plus
@@ -64,13 +95,50 @@ func (c *Controller) syncReadMarkerForSelection() {
 	session.QueueReadMarkerSet(target, when)
 }
 
-func (c *Controller) requestReadMarkerGet(session *session.Session, networkID, target string) {
-	if session == nil || target == "" {
+func (c *Controller) requestReadMarkerGetOnce(networkID, target string) {
+	if target == "" {
 		return
 	}
 	features := c.reducer.ServerFeatures(networkID)
 	if features.IsChannel(target) {
 		return
 	}
-	session.RequestReadMarkerGet(target)
+	key := c.reducer.ConversationKey(networkID, target)
+	if c.readMarkers.getSentContains(key) {
+		return
+	}
+	session := c.manager.Find(networkID)
+	if session == nil {
+		return
+	}
+	if session.ReadMarkerCommand() == "" {
+		return
+	}
+	if !session.RequestReadMarkerGet(target) {
+		return
+	}
+	c.readMarkers.noteGetSent(key)
+}
+
+func (c *Controller) readMarkerForgetNetwork(networkID string) {
+	c.readMarkers.forgetNetwork(networkID)
+}
+
+func (c *Controller) requestReadMarkerGetForSelectedDirect(networkID string) {
+	if c.selected == nil || c.selected.NetworkID != networkID {
+		return
+	}
+	features := c.reducer.ServerFeatures(networkID)
+	if features.IsChannel(c.selected.NormalizedTarget) {
+		return
+	}
+	conversation := c.reducer.Find(*c.selected)
+	if conversation == nil {
+		return
+	}
+	target := conversation.Target
+	if target == "" {
+		target = c.selectedTarget
+	}
+	c.requestReadMarkerGetOnce(networkID, target)
 }

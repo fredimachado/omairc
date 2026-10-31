@@ -130,6 +130,7 @@ type Controller struct {
 	OnCapabilitiesChanged func()
 	transcriptFocused     bool
 	transcriptFollowEnd   bool
+	readMarkers           readMarkerState
 
 	// OnViewChanged fires whenever Publish dirtied a view surface, so the shell
 	// re-renders. Publish runs on both the Update goroutine and session
@@ -161,6 +162,7 @@ func New() *Controller {
 	c.reducer.SetWindowActive(true)
 	c.transcriptFocused = true
 	c.transcriptFollowEnd = true
+	c.readMarkers = newReadMarkerState()
 	c.openDirectsMotdSeen = make(map[string]bool)
 	c.openDirects = storage.NewOpenDirectStore()
 	c.openDirects.SetEphemeral(true)
@@ -850,6 +852,7 @@ func (c *Controller) Apply(event irc.Event) {
 	kind := irc.KindOf(event)
 	typingOnly := kind == irc.EventTyping
 	selfAwayOnly := kind == irc.EventSelfAway
+	welcomeNetwork := ""
 
 	// A welcome re-enters registration: reply watches, auto-away state, and
 	// the unaway latch all reset first. It mirrors the welcome branch in
@@ -858,6 +861,8 @@ func (c *Controller) Apply(event irc.Event) {
 		delete(c.unawaySent, welcome.NetworkID)
 		c.autoaway.ForgetNetwork(welcome.NetworkID)
 		c.replies.Forget(welcome.NetworkID)
+		c.readMarkerForgetNetwork(welcome.NetworkID)
+		welcomeNetwork = welcome.NetworkID
 	} else if selfAway, ok := event.(irc.SelfAwayEvent); ok {
 		delete(c.unawaySent, selfAway.NetworkID)
 	}
@@ -926,7 +931,7 @@ func (c *Controller) Apply(event irc.Event) {
 		c.consoleOpen = false
 		features := c.reducer.ServerFeatures(key.NetworkID)
 		if c.reducer.Find(key) != nil && !features.IsChannel(key.NormalizedTarget) {
-			c.requestReadMarkerGet(c.manager.Find(key.NetworkID), key.NetworkID, conversation.Target)
+			c.requestReadMarkerGetOnce(key.NetworkID, conversation.Target)
 		}
 	}
 	c.adoptReducerSelection()
@@ -963,6 +968,9 @@ func (c *Controller) Apply(event irc.Event) {
 			Preview:   arrival.Body,
 			MsgID:     arrival.MsgID,
 		})
+	}
+	if welcomeNetwork != "" {
+		c.requestReadMarkerGetForSelectedDirect(welcomeNetwork)
 	}
 }
 
@@ -1254,7 +1262,7 @@ func (c *Controller) SelectConversation(networkID, target string) {
 	c.refreshConnectionStatus()
 	c.notifyCapabilitiesChanged()
 	if conversation := c.reducer.Find(key); conversation != nil && !features.IsChannel(key.NormalizedTarget) {
-		c.requestReadMarkerGet(c.manager.Find(networkID), networkID, target)
+		c.requestReadMarkerGetOnce(networkID, target)
 	}
 }
 
@@ -1459,6 +1467,7 @@ func (c *Controller) DropConversationAndReselect(key irc.ConversationKey, forget
 	if channel {
 		c.reducer.DropChannel(key)
 	} else {
+		c.readMarkers.forgetConversation(key)
 		c.reducer.DropDirectMessage(key)
 	}
 	c.reloadModels()
@@ -1903,6 +1912,7 @@ func (c *Controller) ForgetNetworkState(networkID string) {
 	c.replies.Forget(networkID)
 	c.monitor.ForgetPresence(networkID)
 	c.autoaway.ForgetNetwork(networkID)
+	c.readMarkerForgetNetwork(networkID)
 	delete(c.openDirectsMotdSeen, networkID)
 	c.openDirects.Forget(networkID)
 	c.closed.Forget(networkID)

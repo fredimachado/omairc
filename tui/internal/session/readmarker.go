@@ -92,20 +92,30 @@ func (s *Session) handleReadMarkerFailLocked(message irc.Message) {
 	s.flushReadMarkerSetLocked(folded)
 }
 
-// RequestReadMarkerGet asks the server for the stored marker on one target.
-func (s *Session) RequestReadMarkerGet(target string) {
-	if target == "" {
-		return
-	}
-	s.locked(func() { s.requestReadMarkerGetLocked(target) })
+// ReadMarkerCommand returns the wire verb for an acknowledged read-marker cap, or "".
+func (s *Session) ReadMarkerCommand() string {
+	var command string
+	s.locked(func() { command = s.readMarkerCommandLocked() })
+	return command
 }
 
-func (s *Session) requestReadMarkerGetLocked(target string) {
+// RequestReadMarkerGet asks the server for the stored marker on one target. It
+// reports whether the command was sent (session registered and cap enabled).
+func (s *Session) RequestReadMarkerGet(target string) bool {
+	if target == "" {
+		return false
+	}
+	var sent bool
+	s.locked(func() { sent = s.requestReadMarkerGetLocked(target) })
+	return sent
+}
+
+func (s *Session) requestReadMarkerGetLocked(target string) bool {
 	command := s.readMarkerCommandLocked()
 	if command == "" {
-		return
+		return false
 	}
-	s.sendCommandLocked(fmt.Sprintf("%s %s", command, target), "")
+	return s.sendCommandLocked(fmt.Sprintf("%s %s", command, target), "")
 }
 
 // QueueReadMarkerSet records a newer read marker to publish when caught up.
