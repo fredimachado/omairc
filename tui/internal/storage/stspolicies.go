@@ -3,7 +3,11 @@ package storage
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"io"
 	"math"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -12,14 +16,61 @@ import (
 // the format IrcStsStore / desktop IniStsStore write. Each host is one group,
 // named by its STSGroupKey, holding port, duration, and expiry (epoch seconds).
 // Desktop and this client read and write the same entries.
-// The file goes through Settings, so a malformed or unreadable file is never
-// overwritten. Sync already restricts the file to its owner (0600).
+// A well-formed file is updated in place through Settings. When the file is
+// malformed, this store writes a clean temp file, hard-links sts to a
+// non-clobbering sts.corrupt backup (then sts.corrupt.1, .2, …), and renames
+// the temp over sts. A failure at any step leaves sts untouched. An unreadable
+// or unwritable file is still left alone. Sync already restricts the file to
+// its owner (0600).
 
 const (
 	stsPortKey     = "port"
 	stsDurationKey = "duration"
 	stsExpiryKey   = "expiry"
+
+	// Cap on sts.corrupt / sts.corrupt.N attempts so a persistent error cannot
+	// spin forever under the store mutex.
+	maxSTSCorruptBackups = 10000
 )
+
+// Test hooks for recovery failure paths. Tests only; zero value is normal.
+type stsTestHook int
+
+const (
+	stsHookNone stsTestHook = iota
+	stsHookFailInstall
+	stsHookFailBackup
+	stsHookFailCopyAfterCreate
+	stsHookMaxBackups
+)
+
+var (
+	testSTSHook              stsTestHook
+	testSTSMaxCorruptBackups int
+)
+
+// TestingSetSTSHook configures recovery failure hooks for tests. name is one of
+// "fail-install", "fail-backup", "fail-copy", or "max-backups". restore clears it.
+func TestingSetSTSHook(name string, maxBackups int) (restore func()) {
+	prev, prevMax := testSTSHook, testSTSMaxCorruptBackups
+	switch name {
+	case "fail-install":
+		testSTSHook = stsHookFailInstall
+	case "fail-backup":
+		testSTSHook = stsHookFailBackup
+	case "fail-copy":
+		testSTSHook = stsHookFailCopyAfterCreate
+	case "max-backups":
+		testSTSHook = stsHookMaxBackups
+		testSTSMaxCorruptBackups = maxBackups
+	default:
+		testSTSHook = stsHookNone
+	}
+	return func() {
+		testSTSHook = prev
+		testSTSMaxCorruptBackups = prevMax
+	}
+}
 
 // STSEntry is one cached STS policy on disk. It mirrors IrcStsCached /
 // session.STSCached without importing session.
@@ -48,41 +99,55 @@ func (s *IniSTSStore) Path() string {
 }
 
 // Lookup returns the cached policy for host at nowUnix, or ok false when there
-// is none or it has expired. An expired or invalid entry is removed from the
-// file. It mirrors IniStsStore::lookup.
+// is none or it has expired. An expired or invalid entry is removed from a
+// well-formed file. On a malformed file it does not rewrite (recovery needs the
+// caller's in-memory map; see session.STSStore). It mirrors IniStsStore::lookup.
 func (s *IniSTSStore) Lookup(host string, nowUnix int64) (STSEntry, bool) {
-	key := STSGroupKey(host)
-	if key == "" || s.path == "" {
+	entry, present, stale := s.Inspect(host, nowUnix)
+	if !present {
 		return STSEntry{}, false
 	}
-	settings := OpenSettings(s.path)
-	if !settings.Contains(key, stsPortKey) || !settings.Contains(key, stsExpiryKey) {
+	if stale {
+		if ProbeSettingsIni(s.path) == IniProbeMalformed {
+			return STSEntry{}, false
+		}
+		s.remove(STSGroupKey(host))
 		return STSEntry{}, false
+	}
+	return entry, true
+}
+
+// Inspect reports the on-disk STS entry for host without writing. present is
+// false when port or expiry is missing. stale is true when present but the
+// port is invalid or the entry has expired.
+func (s *IniSTSStore) Inspect(host string, nowUnix int64) (entry STSEntry, present, stale bool) {
+	key := STSGroupKey(host)
+	if key == "" || s.path == "" {
+		return STSEntry{}, false, false
+	}
+	settings := OpenSTSSettings(s.path)
+	if !settings.Contains(key, stsPortKey) || !settings.Contains(key, stsExpiryKey) {
+		return STSEntry{}, false, false
 	}
 	port := settings.Uint(key, stsPortKey, 0)
 	durationSeconds := settings.Int64(key, stsDurationKey, 0)
 	expiryEpochSeconds := settings.Int64(key, stsExpiryKey, 0)
-
-	if port < 1 || port > 65535 {
-		s.remove(key)
-		return STSEntry{}, false
-	}
-	if expiryEpochSeconds <= nowUnix {
-		s.remove(key)
-		return STSEntry{}, false
-	}
-	return STSEntry{
-		Port:               uint16(port),
+	entry = STSEntry{
+		Port:               uint16(port), // may truncate; stale check uses the full uint
 		DurationSeconds:    durationSeconds,
 		ExpiryEpochSeconds: expiryEpochSeconds,
-	}, true
+	}
+	if port < 1 || port > 65535 || expiryEpochSeconds <= nowUnix {
+		return entry, true, true
+	}
+	return entry, true, false
 }
 
 // Store caches port for durationSeconds from nowUnix. A zero duration clears
 // the host. An empty host or a zero port is ignored. It mirrors
-// IniStsStore::store. A malformed or unwritable file is left alone
-// (StatusFormatError / StatusAccessError); the caller keeps any in-memory
-// policy.
+// IniStsStore::store. A malformed file is backed up and rewritten from
+// parseable entries plus the new policy; an unwritable file is left alone
+// (StatusAccessError). The caller keeps any in-memory policy on failure.
 func (s *IniSTSStore) Store(host string, port uint16, durationSeconds, nowUnix int64) Status {
 	if durationSeconds == 0 {
 		return s.Clear(host)
@@ -92,14 +157,13 @@ func (s *IniSTSStore) Store(host string, port uint16, durationSeconds, nowUnix i
 		return StatusWritten
 	}
 	expiry := stsSaturatingExpiry(nowUnix, durationSeconds)
-	settings := OpenSettings(s.path)
-	if blocked := settings.WriteBlocked(); blocked != StatusWritten {
-		return blocked
-	}
-	settings.SetUint(key, stsPortKey, uint64(port))
-	settings.SetValue(key, stsDurationKey, strconv.FormatInt(durationSeconds, 10))
-	settings.SetValue(key, stsExpiryKey, strconv.FormatInt(expiry, 10))
-	return settings.Sync()
+	settings := OpenSTSSettings(s.path)
+	mergeSTSPolicy(settings, key, STSEntry{
+		Port:               port,
+		DurationSeconds:    durationSeconds,
+		ExpiryEpochSeconds: expiry,
+	}, nowUnix)
+	return persistSTSSettings(settings, s.path)
 }
 
 // Clear drops the policy for host, if any. It mirrors IniStsStore::clear.
@@ -111,9 +175,32 @@ func (s *IniSTSStore) Clear(host string) Status {
 	return s.remove(key)
 }
 
+// MergeEntries writes every entry (keyed by STS group key) into the file,
+// removing clearKeys first. Parseable on-disk groups are kept and merged with
+// the same strongest-expiry rule as Store. Used by session.STSStore so a
+// malformed-file recovery includes every in-memory policy.
+func (s *IniSTSStore) MergeEntries(entries map[string]STSEntry, clearKeys []string, nowUnix int64) Status {
+	if s == nil || s.path == "" {
+		return StatusWritten
+	}
+	settings := OpenSTSSettings(s.path)
+	for _, key := range clearKeys {
+		if key != "" {
+			settings.RemoveGroup(key)
+		}
+	}
+	for key, entry := range entries {
+		if key == "" || entry.Port < 1 {
+			continue
+		}
+		mergeSTSPolicy(settings, key, entry, nowUnix)
+	}
+	return persistSTSSettings(settings, s.path)
+}
+
 // remove drops group key. Nothing is written when the group is not there.
 func (s *IniSTSStore) remove(key string) Status {
-	settings := OpenSettings(s.path)
+	settings := OpenSTSSettings(s.path)
 	found := false
 	for _, group := range settings.ChildGroups("") {
 		if group == key {
@@ -124,11 +211,199 @@ func (s *IniSTSStore) remove(key string) Status {
 	if !found {
 		return StatusWritten
 	}
-	if blocked := settings.WriteBlocked(); blocked != StatusWritten {
-		return blocked
-	}
 	settings.RemoveGroup(key)
-	return settings.Sync()
+	return persistSTSSettings(settings, s.path)
+}
+
+// mergeSTSPolicy keeps the stronger unexpired policy when the same host
+// already has one. A longer remaining expiry wins; on a tie the incoming
+// policy wins. An existing entry with an invalid port never wins. duration=0
+// clears go through Clear and never call this.
+func mergeSTSPolicy(settings *Settings, key string, incoming STSEntry, nowUnix int64) {
+	if settings.Contains(key, stsPortKey) && settings.Contains(key, stsExpiryKey) {
+		existingPort := settings.Uint(key, stsPortKey, 0)
+		existingExpiry := settings.Int64(key, stsExpiryKey, 0)
+		portOK := existingPort >= 1 && existingPort <= 65535
+		if portOK && existingExpiry > nowUnix && existingExpiry > incoming.ExpiryEpochSeconds {
+			return
+		}
+	}
+	settings.SetUint(key, stsPortKey, uint64(incoming.Port))
+	settings.SetValue(key, stsDurationKey, strconv.FormatInt(incoming.DurationSeconds, 10))
+	settings.SetValue(key, stsExpiryKey, strconv.FormatInt(incoming.ExpiryEpochSeconds, 10))
+}
+
+// persistSTSSettings writes settings to path. On a malformed file, writes a
+// clean temp file, hard-links a backup, then renames the temp over sts. A
+// failure at any step leaves sts untouched. Access errors leave the file alone.
+func persistSTSSettings(settings *Settings, path string) Status {
+	switch settings.WriteBlocked() {
+	case StatusAccessError:
+		return StatusAccessError
+	case StatusFormatError:
+		// Merge may have kept existing values (dirty=false). Still rewrite.
+		settings.markDirty()
+		if err := recoverMalformedSTS(path, settings.encode()); err != nil {
+			return StatusFormatError
+		}
+		return StatusWritten
+	default:
+		return settings.Sync()
+	}
+}
+
+// recoverMalformedSTS writes clean data to a temp sibling, hard-links path to a
+// backup, then renames the temp over path. On any failure, leaves path untouched
+// and removes the temp. After a successful rename, the backup is chmod'd to
+// 0600 so a hard-linked copy of a looser-mode original is not left world-readable.
+func recoverMalformedSTS(path string, data []byte) error {
+	temp, err := writeSTSTemp(path, data)
+	if err != nil {
+		return err
+	}
+	backup, ok := linkSTSCorruptBackup(path)
+	if !ok {
+		_ = os.Remove(temp)
+		return errors.New("sts corrupt backup failed")
+	}
+	if testSTSHook == stsHookFailInstall {
+		_ = os.Remove(temp)
+		return errors.New("test: install after backup failed")
+	}
+	if err := os.Rename(temp, path); err != nil {
+		_ = os.Remove(temp)
+		return err
+	}
+	// Chmod after rename so the hard link no longer shares an inode with sts.
+	_ = os.Chmod(backup, 0o600)
+	return nil
+}
+
+// writeSTSTemp creates a same-directory temp file with data, fsyncs it, and
+// returns its path.
+func writeSTSTemp(path string, data []byte) (string, error) {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	tmp, err := os.CreateTemp(dir, ".omairc-sts-*.tmp")
+	if err != nil {
+		return "", err
+	}
+	tmpName := tmp.Name()
+	cleanup := true
+	defer func() {
+		_ = tmp.Close()
+		if cleanup {
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if err := tmp.Chmod(0o600); err != nil {
+		return "", err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		return "", err
+	}
+	if err := tmp.Sync(); err != nil {
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+	cleanup = false
+	return tmpName, nil
+}
+
+func stsCorruptBackupLimit() int {
+	if testSTSHook == stsHookMaxBackups && testSTSMaxCorruptBackups > 0 {
+		return testSTSMaxCorruptBackups
+	}
+	return maxSTSCorruptBackups
+}
+
+// linkSTSCorruptBackup hard-links path to path.corrupt / path.corrupt.N.
+// Retries only on ErrExist; falls back to an exclusive-create copy. Fails
+// closed on other errors and caps the loop. Returns the backup path on success.
+func linkSTSCorruptBackup(path string) (string, bool) {
+	if path == "" {
+		return "", false
+	}
+	if testSTSHook == stsHookFailBackup {
+		return "", false
+	}
+	if testSTSHook == stsHookFailCopyAfterCreate {
+		candidate := filepath.Join(filepath.Dir(path), filepath.Base(path)+".corrupt")
+		err := copySTSExclusive(path, candidate)
+		if err != nil {
+			return "", false
+		}
+		return candidate, true
+	}
+	dir := filepath.Dir(path)
+	name := filepath.Base(path)
+	for n := 0; n < stsCorruptBackupLimit(); n++ {
+		var candidate string
+		if n == 0 {
+			candidate = filepath.Join(dir, name+".corrupt")
+		} else {
+			candidate = filepath.Join(dir, name+".corrupt."+strconv.Itoa(n))
+		}
+		err := os.Link(path, candidate)
+		if err == nil {
+			return candidate, true
+		}
+		if os.IsExist(err) {
+			continue
+		}
+		// Link can fail for EXDEV and similar; try an exclusive copy.
+		copyErr := copySTSExclusive(path, candidate)
+		if copyErr == nil {
+			return candidate, true
+		}
+		if os.IsExist(copyErr) {
+			continue
+		}
+		return "", false
+	}
+	return "", false
+}
+
+// copySTSExclusive copies src to a new dst created with O_EXCL, then fsyncs.
+func copySTSExclusive(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	cleanup := true
+	defer func() {
+		_ = out.Close()
+		if cleanup {
+			_ = os.Remove(dst)
+		}
+	}()
+	if testSTSHook == stsHookFailCopyAfterCreate {
+		if _, err := out.Write([]byte("partial")); err != nil {
+			return err
+		}
+		return errors.New("test: copy write failed")
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	if err := out.Sync(); err != nil {
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+	cleanup = false
+	return nil
 }
 
 // STSGroupKey hashes the trimmed, case-folded host as lowercase hex SHA-256.

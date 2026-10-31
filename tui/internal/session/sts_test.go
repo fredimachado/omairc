@@ -167,23 +167,167 @@ func TestSTSStoreHugeDurationSaturates(t *testing.T) {
 	}
 }
 
-// Fail-closed: memory survives a disk write failure.
-func TestSTSStoreDiskFailureDoesNotWeakenMemory(t *testing.T) {
+// A malformed sts file is recovered; memory and disk both keep the policy.
+func TestSTSStoreMalformedDiskRecoversWithoutWeakeningMemory(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sts")
-	if err := os.WriteFile(path, []byte("this line has no equals sign\n"), 0o600); err != nil {
+	garbage := "this line has no equals sign\n"
+	if err := os.WriteFile(path, []byte(garbage), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	store := NewSTSStore()
 	_ = store.Store("irc.example", 6697, 60, time.Unix(0, 0))
 	store.AttachDisk(storage.NewIniSTSStore(path))
-	err := store.Store("irc.example", 6697, 120, time.Unix(10, 0))
-	if err == nil {
-		t.Fatal("corrupt disk must report a persist error")
+	if err := store.Store("irc.example", 6697, 120, time.Unix(10, 0)); err != nil {
+		t.Fatalf("recovery must succeed: %v", err)
 	}
 	cached, ok := store.Lookup("irc.example", time.Unix(11, 0))
 	if !ok || cached.DurationSeconds != 120 || cached.Port != 6697 {
 		t.Fatalf("memory must keep the refreshed policy: %+v ok=%v", cached, ok)
+	}
+	backup, err := os.ReadFile(filepath.Join(dir, "sts.corrupt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(backup) != garbage {
+		t.Fatalf("backup = %q", backup)
+	}
+	entry, ok := storage.NewIniSTSStore(path).Lookup("irc.example", 11)
+	if !ok || entry.DurationSeconds != 120 {
+		t.Fatalf("disk entry = %+v ok=%v", entry, ok)
+	}
+}
+
+// A Lookup that removes a stale group from a malformed file must recover with
+// flushRecoveryLocked so another in-memory host is kept on disk and on lookup.
+func TestSTSStoreLookupRemoveOnMalformedKeepsOtherMemoryHost(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	store := NewSTSStore()
+	now := time.Unix(1_700_000_000, 0)
+	if err := store.Store("keep.example", 6697, 60, now); err != nil {
+		t.Fatal(err)
+	}
+	dropKey := storage.STSGroupKey("drop.example")
+	malformed := "[" + dropKey + "]\nport=junk\nduration=60\nexpiry=4102444800\nbad line\n"
+	if err := os.WriteFile(path, []byte(malformed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store.AttachDisk(storage.NewIniSTSStore(path))
+	if _, ok := store.Lookup("drop.example", now); ok {
+		t.Fatal("stale drop.example must not apply")
+	}
+	cached, ok := store.Lookup("keep.example", now.Add(time.Second))
+	if !ok || cached.Port != 6697 || cached.DurationSeconds != 60 {
+		t.Fatalf("keep.example must remain in memory: %+v ok=%v", cached, ok)
+	}
+	disk, ok := storage.NewIniSTSStore(path).Lookup("keep.example", now.Unix())
+	if !ok || disk.Port != 6697 || disk.DurationSeconds != 60 {
+		t.Fatalf("keep.example must be on disk after recovery: %+v ok=%v", disk, ok)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), dropKey) {
+		t.Fatalf("stale drop group must be gone after recovery: %s", raw)
+	}
+	if !strings.Contains(string(raw), storage.STSGroupKey("keep.example")) {
+		t.Fatalf("keep.example missing from recovered file: %s", raw)
+	}
+}
+
+// Fail-closed: when the backup step cannot run, memory still keeps the policy
+// and the malformed file is left untouched.
+func TestSTSStoreFailedBackupDoesNotWeakenMemory(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	garbage := "this line has no equals sign\n"
+	if err := os.WriteFile(path, []byte(garbage), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewSTSStore()
+	store.AttachDisk(storage.NewIniSTSStore(path))
+	restore := storage.TestingSetSTSHook("fail-backup", 0)
+	defer restore()
+	err := store.Store("irc.example", 6697, 120, time.Unix(10, 0))
+	if err == nil {
+		t.Fatal("failed backup must report a persist error")
+	}
+	cached, ok := store.Lookup("irc.example", time.Unix(11, 0))
+	if !ok || cached.DurationSeconds != 120 || cached.Port != 6697 {
+		t.Fatalf("memory must keep the policy: %+v ok=%v", cached, ok)
+	}
+	raw, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(raw) != garbage {
+		t.Fatalf("malformed file was rewritten: %q", raw)
+	}
+}
+
+// All in-memory hosts are written when recovering a malformed file.
+func TestSTSStoreMalformedRecoveryFlushesEveryMemoryHost(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	if err := os.WriteFile(path, []byte("bad line without equals\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewSTSStore()
+	now := time.Unix(100, 0)
+	_ = store.Store("a.example", 6697, 60, now)
+	_ = store.Store("b.example", 6697, 60, now)
+	store.AttachDisk(storage.NewIniSTSStore(path))
+	if err := store.Store("c.example", 6697, 60, now); err != nil {
+		t.Fatal(err)
+	}
+	disk := storage.NewIniSTSStore(path)
+	for _, host := range []string{"a.example", "b.example", "c.example"} {
+		if _, ok := disk.Lookup(host, now.Unix()); !ok {
+			t.Fatalf("%s missing from recovered disk", host)
+		}
+	}
+}
+
+// A host cleared on disk must not return when a normal (well-formed) write
+// only persists the new host. Memory still holds the old host, but flush is
+// recovery-only.
+func TestSTSStoreClearedHostNotBroughtBackByNormalWrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	store := NewSTSStore()
+	store.AttachDisk(storage.NewIniSTSStore(path))
+	now := time.Unix(100, 0)
+	if err := store.Store("keep.example", 6697, 60, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Store("drop.example", 6697, 60, now); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate another client clearing drop.example on disk with duration=0.
+	keepKey := storage.STSGroupKey("keep.example")
+	onlyKeep := "[" + keepKey + "]\nduration=60\nexpiry=160\nport=6697\n"
+	if err := os.WriteFile(path, []byte(onlyKeep), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Store("other.example", 6697, 30, time.Unix(110, 0)); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	dropKey := storage.STSGroupKey("drop.example")
+	if strings.Contains(body, dropKey) {
+		t.Fatalf("cleared host must not return on a normal write: %s", body)
+	}
+	if !strings.Contains(body, keepKey) {
+		t.Fatalf("keep.example missing: %s", body)
+	}
+	if !strings.Contains(body, storage.STSGroupKey("other.example")) {
+		t.Fatalf("other.example missing: %s", body)
 	}
 }
 

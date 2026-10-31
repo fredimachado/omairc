@@ -66,8 +66,9 @@ impl Backing {
     }
 
     /// Reads the store, applies `edit`, and writes it back. The write refuses first
-    /// when the file is malformed or read-only, so a bad file is left alone. An
-    /// ephemeral backing applies the edit and reports success.
+    /// when the settings file is malformed or read-only, so a bad file is left alone
+    /// (the STS cache recovers malformed `sts` files separately). An ephemeral
+    /// backing applies the edit and reports success.
     pub fn edit(&self, edit: impl FnOnce(&mut Settings)) -> Status {
         let mut settings = self.settings();
         edit(&mut settings);

@@ -128,7 +128,9 @@ func (s *STSStore) AttachDisk(disk *storage.IniSTSStore) {
 
 // Lookup returns the cached policy for host at now, dropping an invalid or
 // expired entry. Memory is checked first; on a miss the disk store is consulted
-// and hydrated into memory. It mirrors StsStore::lookup.
+// and hydrated into memory. A malformed file is recovered through
+// flushRecoveryLocked so other in-memory hosts are not dropped. It mirrors
+// StsStore::lookup.
 func (s *STSStore) Lookup(host string, now time.Time) (STSCached, bool) {
 	key := stsGroupKey(host)
 	if key == "" {
@@ -146,6 +148,9 @@ func (s *STSStore) Lookup(host string, now time.Time) (STSCached, bool) {
 	if s.disk == nil {
 		return STSCached{}, false
 	}
+	if storage.ProbeSettingsIni(s.disk.Path()) == storage.IniProbeMalformed {
+		return s.lookupMalformedDiskLocked(host, nowUnix)
+	}
 	entry, ok := s.disk.Lookup(host, nowUnix)
 	if !ok {
 		return STSCached{}, false
@@ -159,13 +164,39 @@ func (s *STSStore) Lookup(host string, now time.Time) (STSCached, bool) {
 	return cached, true
 }
 
+// lookupMalformedDiskLocked inspects a malformed sts file without a blind
+// rewrite. A stale group triggers flushRecoveryLocked so unexpired in-memory
+// hosts survive. Caller must hold s.mu.
+func (s *STSStore) lookupMalformedDiskLocked(host string, nowUnix int64) (STSCached, bool) {
+	entry, present, stale := s.disk.Inspect(host, nowUnix)
+	if stale {
+		_ = s.flushRecoveryLocked(nowUnix, true, host)
+		return STSCached{}, false
+	}
+	if !present {
+		return STSCached{}, false
+	}
+	cached := STSCached{
+		Port:               entry.Port,
+		DurationSeconds:    entry.DurationSeconds,
+		ExpiryEpochSeconds: entry.ExpiryEpochSeconds,
+	}
+	if key := stsGroupKey(host); key != "" {
+		s.entries[key] = cached
+	}
+	return cached, true
+}
+
 // Store caches a policy for host at now. A zero duration clears the entry, and
 // an empty host or a zero port is ignored. Memory is updated first; a disk
 // failure is returned without rolling memory back. The mutex covers the disk
 // write so concurrent Stores from shared-manager sessions cannot lose hosts.
+// A well-formed file gets only this host's mutation. Malformed-file recovery
+// flushes every unexpired in-memory entry so a host that only lives in memory
+// is not dropped, without resurrecting a host another client cleared on disk.
 func (s *STSStore) Store(host string, port uint16, durationSeconds int64, now time.Time) error {
 	if durationSeconds == 0 {
-		return s.Clear(host)
+		return s.clearAt(host, now.Unix())
 	}
 	key := stsGroupKey(host)
 	if key == "" || port < 1 {
@@ -179,16 +210,16 @@ func (s *STSStore) Store(host string, port uint16, durationSeconds int64, now ti
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.entries[key] = cached
-	if s.disk == nil {
-		return nil
-	}
-	return stsPersistStatus(s.disk.Store(host, port, durationSeconds, now.Unix()))
+	return s.persistLocked(host, port, durationSeconds, now.Unix(), false)
 }
 
 // Clear drops the cached policy for host. Memory is cleared first; a disk
-// failure is returned without restoring memory. The mutex covers the disk
-// write so concurrent Clears cannot race other Stores.
+// failure is returned without restoring memory.
 func (s *STSStore) Clear(host string) error {
+	return s.clearAt(host, time.Now().Unix())
+}
+
+func (s *STSStore) clearAt(host string, nowUnix int64) error {
 	key := stsGroupKey(host)
 	if key == "" {
 		return nil
@@ -196,10 +227,47 @@ func (s *STSStore) Clear(host string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.entries, key)
+	return s.persistLocked(host, 0, 0, nowUnix, true)
+}
+
+// persistLocked writes one mutation to a well-formed file, or recovers a
+// malformed file by flushing every unexpired in-memory entry. Caller must hold s.mu.
+func (s *STSStore) persistLocked(host string, port uint16, durationSeconds, nowUnix int64, clearing bool) error {
 	if s.disk == nil {
 		return nil
 	}
-	return stsPersistStatus(s.disk.Clear(host))
+	path := s.disk.Path()
+	if storage.ProbeSettingsIni(path) == storage.IniProbeMalformed {
+		return s.flushRecoveryLocked(nowUnix, clearing, host)
+	}
+	if clearing {
+		return stsPersistStatus(s.disk.Clear(host))
+	}
+	return stsPersistStatus(s.disk.Store(host, port, durationSeconds, nowUnix))
+}
+
+// flushRecoveryLocked merges every unexpired in-memory entry into a recovered
+// clean file. Expired entries are skipped so they cannot return to disk.
+func (s *STSStore) flushRecoveryLocked(nowUnix int64, clearing bool, clearHost string) error {
+	entries := make(map[string]storage.STSEntry, len(s.entries))
+	for key, cached := range s.entries {
+		if cached.Port < 1 || cached.ExpiryEpochSeconds <= nowUnix {
+			continue
+		}
+		entries[key] = storage.STSEntry{
+			Port:               cached.Port,
+			DurationSeconds:    cached.DurationSeconds,
+			ExpiryEpochSeconds: cached.ExpiryEpochSeconds,
+		}
+	}
+	var clearKeys []string
+	if clearing {
+		if key := stsGroupKey(clearHost); key != "" {
+			clearKeys = []string{key}
+			delete(entries, key)
+		}
+	}
+	return stsPersistStatus(s.disk.MergeEntries(entries, clearKeys, nowUnix))
 }
 
 func stsPersistStatus(status storage.Status) error {

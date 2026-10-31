@@ -33,7 +33,8 @@ pub enum Status {
     Absent,
     /// The file could not be read or written.
     AccessError,
-    /// The file is not a well-formed INI, so it is left alone.
+    /// The file is not a well-formed INI. Settings leaves it alone; the STS store
+    /// may back it up and rewrite.
     FormatError,
 }
 
@@ -67,6 +68,22 @@ impl Settings {
         let path = path.into();
         let values = fs::read(&path)
             .map(|raw| parse_settings_ini(&raw))
+            .unwrap_or_default();
+        Self {
+            path,
+            values,
+            dirty: false,
+        }
+    }
+
+    /// Loads an STS policy file. Same as [`Settings::open`], but after a bad line
+    /// inside a group, later keys for that group are kept when not already set, and
+    /// a key that is already set is not overwritten by a leaked line. Shared config
+    /// reads stay on [`Settings::open`].
+    pub(super) fn open_sts(path: impl Into<PathBuf>) -> Self {
+        let path = path.into();
+        let values = fs::read(&path)
+            .map(|raw| parse_sts_ini(&raw))
             .unwrap_or_default();
         Self {
             path,
@@ -199,6 +216,13 @@ impl Settings {
         seen.into_iter().collect()
     }
 
+    /// Marks the store dirty so the next [`Settings::sync`] writes even when no
+    /// value changed. STS recovery uses this after renaming a malformed file so
+    /// the already-loaded parseable map is rewritten cleanly.
+    pub(super) fn mark_dirty(&mut self) {
+        self.dirty = true;
+    }
+
     /// Writes pending changes atomically. Refuses first when the file must not be
     /// overwritten, so a malformed or read-only file is never rebuilt.
     pub fn sync(&mut self) -> Status {
@@ -219,9 +243,16 @@ impl Settings {
     }
 
     /// Whether [`Settings::sync`] would refuse to write. A missing file is writable.
+    /// A malformed file that is not writable is an access error (leave it alone),
+    /// not a format error that STS recovery would rewrite.
     pub fn write_blocked(&self) -> Status {
         match probe_ini(&self.path) {
-            IniProbe::Malformed => return Status::FormatError,
+            IniProbe::Malformed => {
+                if file_not_writable(&self.path) {
+                    return Status::AccessError;
+                }
+                return Status::FormatError;
+            }
             IniProbe::Unreadable => return Status::AccessError,
             IniProbe::Ok => {}
         }
@@ -241,7 +272,7 @@ impl Settings {
 
     /// Renders the whole store as QSettings INI. Sections and keys are sorted, so
     /// the same contents always produce the same bytes.
-    fn encode(&self) -> Vec<u8> {
+    pub(super) fn encode(&self) -> Vec<u8> {
         let mut sections: BTreeMap<String, Vec<(String, &IniValue)>> = BTreeMap::new();
         for (path, value) in &self.values {
             let (section, key) = split_section(path);
@@ -476,6 +507,48 @@ fn parse_settings_ini(data: &[u8]) -> BTreeMap<String, IniValue> {
         let key = ini_unescaped_key(text[..equals].trim_ascii());
         let value = ini_unescaped_string_list(&text[equals + 1..]);
         values.insert(format!("{section}{key}"), value);
+    }
+    values
+}
+
+/// STS load path: like [`parse_settings_ini`], but after a bad non-header line a
+/// later key is ignored only when that key is already set in the current group,
+/// so a garbage line cannot drop the rest of an intact policy and leaked keys
+/// cannot overwrite real ones. An unclosed `[` header still starts a new section
+/// (as on main) and clears the after-bad-line flag, so the next host's keys never
+/// land in the previous group.
+fn parse_sts_ini(data: &[u8]) -> BTreeMap<String, IniValue> {
+    let raw = strip_bom(data);
+    let mut values = BTreeMap::new();
+    let mut section = String::new();
+    let mut after_bad = false;
+    for line in (IniLines { data: raw, pos: 0 }) {
+        let text = &raw[line.start..line.start + line.len];
+        if text[0] == b'[' {
+            // Match main: unclosed `[` still opens a new section via section_prefix.
+            section = section_prefix(text);
+            after_bad = false;
+            continue;
+        }
+        let Some(equals_at) = line.equals else {
+            if text[0] != b';' {
+                after_bad = true;
+            }
+            continue;
+        };
+        let Some(equals) = equals_at.checked_sub(line.start) else {
+            continue;
+        };
+        if equals >= text.len() {
+            continue;
+        }
+        let key = ini_unescaped_key(text[..equals].trim_ascii());
+        let path = format!("{section}{key}");
+        if after_bad && values.contains_key(&path) {
+            continue;
+        }
+        let value = ini_unescaped_string_list(&text[equals + 1..]);
+        values.insert(path, value);
     }
     values
 }

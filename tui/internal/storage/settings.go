@@ -79,6 +79,21 @@ func OpenSettings(path string) *Settings {
 	return s
 }
 
+// OpenSTSSettings loads an STS policy file with parseSTSIni. Shared config
+// reads stay on OpenSettings.
+func OpenSTSSettings(path string) *Settings {
+	s := &Settings{path: path, values: make(map[string]iniValue)}
+	if path == "" {
+		return s
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return s
+	}
+	s.values = parseSTSIni(raw)
+	return s
+}
+
 // Path returns the backing file path.
 func (s *Settings) Path() string {
 	return s.path
@@ -271,6 +286,13 @@ func (s *Settings) ChildGroups(group string) []string {
 	return groups
 }
 
+// markDirty marks the store dirty so the next Sync writes even when no value
+// changed. STS recovery uses this after renaming a malformed file so the
+// already-loaded parseable map is rewritten cleanly.
+func (s *Settings) markDirty() {
+	s.dirty = true
+}
+
 // Sync writes pending changes to disk atomically and returns the resulting
 // status. It refuses before writing when WriteBlocked reports the file must
 // not be overwritten, so a malformed or unreadable ini is never rebuilt from
@@ -295,10 +317,15 @@ func (s *Settings) Sync() Status {
 // WriteBlocked mirrors blockedIniWrite + existingSettingsFileIsNotWritable: it
 // returns StatusFormatError/StatusAccessError when the file must not be
 // written, or StatusWritten when writing is allowed. A missing file is
-// writable; a file that exists but cannot accept a write is not.
+// writable; a file that exists but cannot accept a write is not. A malformed
+// file that is not writable is an access error (leave it alone), not a format
+// error that STS recovery would rewrite.
 func (s *Settings) WriteBlocked() Status {
 	switch ProbeSettingsIni(s.path) {
 	case IniProbeMalformed:
+		if settingsFileNotWritable(s.path) {
+			return StatusAccessError
+		}
 		return StatusFormatError
 	case IniProbeUnreadable:
 		return StatusAccessError
@@ -541,6 +568,50 @@ func parseSettingsIni(data []byte) map[string]iniValue {
 	return values
 }
 
+// parseSTSIni is the STS load path: like parseSettingsIni, but after a bad
+// non-header line a later key is ignored only when that key is already set in
+// the current group, so a garbage line cannot drop the rest of an intact
+// policy and leaked keys cannot overwrite real ones. An unclosed "[" header
+// still starts a new section (as on main) and clears the after-bad-line flag,
+// so the next host's keys never land in the previous group.
+func parseSTSIni(data []byte) map[string]iniValue {
+	values := make(map[string]iniValue)
+	raw := data
+	if bytes.HasPrefix(raw, []byte{0xEF, 0xBB, 0xBF}) {
+		raw = raw[3:]
+	}
+
+	section := ""
+	afterBad := false
+	dataPos, lineStart, lineLen, equalsPos := 0, 0, 0, -1
+	for nextIniLine(raw, &dataPos, &lineStart, &lineLen, &equalsPos) {
+		line := raw[lineStart : lineStart+lineLen]
+		if line[0] == '[' {
+			// Match main: unclosed "[" still opens a new section via iniSectionPrefix.
+			section = iniSectionPrefix(line)
+			afterBad = false
+			continue
+		}
+		if equalsPos < 0 {
+			if line[0] != ';' {
+				afterBad = true
+			}
+			continue
+		}
+		equals := equalsPos - lineStart
+		key := iniUnescapedKey(bytes.TrimSpace(line[:equals]))
+		path := section + key
+		if afterBad {
+			if _, exists := values[path]; exists {
+				continue
+			}
+		}
+		value := iniUnescapedStringList(line[equals+1:])
+		values[path] = value
+	}
+	return values
+}
+
 // iniSectionPrefix decodes a "[...]" line into the group prefix QSettings
 // prepends to its keys: "" for [General] (the top level), a decoded segment
 // plus "/" otherwise, and "%General" (any case) for the literal-name escape.
@@ -751,7 +822,7 @@ func iniEscapedKey(key string) string {
 
 // iniEscapedString.
 // format. Rules implemented:
-// - ';', ',' and '=' force the whole value to be wrapped in double quotes
+//   - ';', ',' and '=' force the whole value to be wrapped in double quotes
 //     they are not backslash-escaped.
 //   - '\' and '"' are backslash-escaped.
 //   - '\0', '\a', '\b', '\f', '\n', '\r', '\t', '\v' use their named escapes.
