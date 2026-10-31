@@ -743,9 +743,26 @@ function Wait-TitleMarkCleared {
     param([int]$TimeoutSec)
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     [void][OmaircDriver]::ForegroundTo($Script:HWND)
-    while (Test-AttentionTitleMark (Get-WindowTitle)) {
+    while ($true) {
+        if (-not (Test-ProcessAlive -ProcessId $Script:APP_PID)) {
+            Die "Omairc pid $($Script:APP_PID) exited while waiting for window title"
+        }
+        if (-not [OmaircDriver]::IsWindow($Script:HWND)) {
+            Die "Omairc window $($Script:WINDOW) is gone while waiting for title"
+        }
+        $title = [OmaircDriver]::Title($Script:HWND)
+        if (-not $title) {
+            if ((Get-Date) -ge $deadline) {
+                Die "window title empty for ${TimeoutSec}s after launch"
+            }
+            Start-Sleep -Milliseconds $Script:WAIT_TITLE_POLL_MS
+            continue
+        }
+        if (-not (Test-AttentionTitleMark $title)) {
+            return
+        }
         if ((Get-Date) -ge $deadline) {
-            Die "window title stayed on attention preview '$(Get-WindowTitle)' for ${TimeoutSec}s after focus"
+            Die "window title stayed on attention preview '$title' for ${TimeoutSec}s after focus"
         }
         Start-Sleep -Milliseconds $Script:WAIT_TITLE_POLL_MS
     }
@@ -755,13 +772,26 @@ function Wait-WindowTitleExact {
     param([string]$Exact, [int]$TimeoutSec)
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     [void][OmaircDriver]::ForegroundTo($Script:HWND)
-    while ((Get-WindowTitle) -ne $Exact) {
+    while ($true) {
+        if (-not (Test-ProcessAlive -ProcessId $Script:APP_PID)) {
+            Die "Omairc pid $($Script:APP_PID) exited while waiting for title '$Exact'"
+        }
+        if (-not [OmaircDriver]::IsWindow($Script:HWND)) {
+            Die "Omairc window $($Script:WINDOW) is gone while waiting for title '$Exact'"
+        }
+        $title = [OmaircDriver]::Title($Script:HWND)
+        if ($title -eq $Exact) {
+            Write-Output $title
+            return
+        }
         if ((Get-Date) -ge $deadline) {
-            Die "expected title '$Exact', got '$(Get-WindowTitle)' after ${TimeoutSec}s"
+            if (-not $title) {
+                Die "expected title '$Exact', window title empty after ${TimeoutSec}s"
+            }
+            Die "expected title '$Exact', got '$title' after ${TimeoutSec}s"
         }
         Start-Sleep -Milliseconds $Script:WAIT_TITLE_POLL_MS
     }
-    Write-Output (Get-WindowTitle)
 }
 
 function Invoke-ClickXy {
@@ -946,6 +976,16 @@ maximized=false
         Die 'Omairc did not open; see log dump above'
     }
 
+    $Script:STATE_DIR = $stateDir
+    $Script:APP_PID = [int]$appPid
+    $Script:HWND = $hwnd
+    $Script:WINDOW = ('0x{0:X}' -f ([int64]$hwnd))
+    $Script:BINARY = $binary
+    $Script:DEMO = $(if ($demo) { 1 } else { 0 })
+    $Script:VISIBLE = $(if ($visible) { 1 } else { 0 })
+    $Script:LOCALAPPDATA_OVERRIDE = $lad
+    $Script:APP_FOLDER = $appFolder
+
     # Match the sh driver: keep the window active while the demo seed drains
     # mentions so note_title_mark does not stick an attention title.
     [void][OmaircDriver]::ForegroundTo($hwnd)
@@ -970,16 +1010,7 @@ maximized=false
     [void][OmaircDriver]::ForegroundTo($prevFg)
 
     # Demo channels start with the member panel open (Shell::members_open).
-    $Script:STATE_DIR = $stateDir
-    $Script:APP_PID = [int]$appPid
-    $Script:HWND = $hwnd
-    $Script:WINDOW = ('0x{0:X}' -f ([int64]$hwnd))
-    $Script:BINARY = $binary
-    $Script:DEMO = $(if ($demo) { 1 } else { 0 })
-    $Script:VISIBLE = $(if ($visible) { 1 } else { 0 })
     $Script:MEMBERS_OPEN = 1
-    $Script:LOCALAPPDATA_OVERRIDE = $lad
-    $Script:APP_FOLDER = $appFolder
     Write-State
 
     Write-Output 'launched isolated Omairc'

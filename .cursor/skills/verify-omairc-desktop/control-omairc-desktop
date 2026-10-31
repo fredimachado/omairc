@@ -354,14 +354,49 @@ refresh_app_window() {
   fi
 }
 
+require_app_alive() {
+  process_alive "$APP_PID" || die "Omairc pid $APP_PID is not running"
+}
+
+require_app_window() {
+  require_app_alive
+  refresh_app_window
+  [ -n "$WINDOW" ] || die "Omairc window is gone for pid $APP_PID"
+}
+
 window_title() {
   refresh_app_window
   xdotool getwindowname "$WINDOW" 2>/dev/null || true
 }
 
+# Read the X11 window name. Fails when the app/window is gone; returns 1 when
+# xdotool fails or the title is still empty (caller polls until deadline).
+read_window_title() {
+  require_app_window
+  if ! _title=$(xdotool getwindowname "$WINDOW" 2>/dev/null); then
+    return 1
+  fi
+  if [ -z "$_title" ]; then
+    return 1
+  fi
+  printf '%s' "$_title"
+}
+
+try_focus_window() {
+  require_app_window
+  xdotool windowfocus --sync "$WINDOW" >/dev/null 2>&1
+}
+
 ensure_window_focused() {
-  refresh_app_window
-  xdotool windowfocus --sync "$WINDOW" 2>/dev/null || true
+  _deadline=$(( $(date +%s) + WAIT_TITLE_TIMEOUT_SEC ))
+  while [ "$(date +%s)" -lt "$_deadline" ]; do
+    require_app_window
+    if try_focus_window; then
+      return 0
+    fi
+    sleep "$WAIT_TITLE_POLL_SEC"
+  done
+  die "failed to focus Omairc window $WINDOW within ${WAIT_TITLE_TIMEOUT_SEC}s"
 }
 
 # Unfocused demo traffic uses attention_title (nick: preview - Omairc). Channel
@@ -380,46 +415,81 @@ title_is_attention_mark() {
 }
 
 parse_timeout_sec() {
-  _raw=$1
+  _arg=$1
+  _raw=$_arg
   case $_raw in
     *s) _raw=${_raw%s} ;;
-    *m) _raw=$((${_raw%m} * 60)) ;;
+    *m) _raw=${_raw%m} ;;
   esac
   case $_raw in
     ''|*[!0-9]*)
-      die "invalid wait-title timeout '$_raw' (use seconds or 10s)"
+      die "invalid wait-title timeout '$_arg' (use seconds or 10s)"
       ;;
   esac
-  if [ "$_raw" -lt 1 ]; then
+  _sec=$(printf '%s' "$_raw" | awk '{ if ($0 !~ /^[0-9]+$/) exit 1; print $0 + 0 }') \
+    || die "invalid wait-title timeout '$_arg' (use seconds or 10s)"
+  case $_arg in
+    *m) _sec=$((_sec * 60)) ;;
+  esac
+  if [ "$_sec" -lt 1 ]; then
     die "wait-title timeout must be at least 1 second"
   fi
-  echo "$_raw"
+  echo "$_sec"
 }
 
 wait_title_mark_cleared() {
   _timeout_sec=$1
   _deadline=$(( $(date +%s) + _timeout_sec ))
-  ensure_window_focused
-  while title_is_attention_mark "$(window_title)"; do
-    if [ "$(date +%s)" -ge "$_deadline" ]; then
-      die "window title stayed on attention preview '$(window_title)' for ${_timeout_sec}s after focus"
+  while [ "$(date +%s)" -lt "$_deadline" ]; do
+    require_app_window
+    if ! try_focus_window; then
+      sleep "$WAIT_TITLE_POLL_SEC"
+      continue
+    fi
+    if ! _title=$(read_window_title); then
+      sleep "$WAIT_TITLE_POLL_SEC"
+      continue
+    fi
+    if ! title_is_attention_mark "$_title"; then
+      return 0
     fi
     sleep "$WAIT_TITLE_POLL_SEC"
   done
+  require_app_window
+  if ! _title=$(read_window_title); then
+    die "window title empty for ${_timeout_sec}s after launch"
+  fi
+  if title_is_attention_mark "$_title"; then
+    die "window title stayed on attention preview '$_title' for ${_timeout_sec}s after focus"
+  fi
+  die "failed to settle window title within ${_timeout_sec}s (last title '$_title')"
 }
 
 poll_window_title_exact() {
   _exact=$1
   _timeout_sec=$2
   _deadline=$(( $(date +%s) + _timeout_sec ))
-  ensure_window_focused
-  while [ "$(window_title)" != "$_exact" ]; do
-    if [ "$(date +%s)" -ge "$_deadline" ]; then
-      die "expected title '$_exact', got '$(window_title)' after ${_timeout_sec}s"
+  while [ "$(date +%s)" -lt "$_deadline" ]; do
+    require_app_window
+    if ! try_focus_window; then
+      sleep "$WAIT_TITLE_POLL_SEC"
+      continue
+    fi
+    if ! _title=$(read_window_title); then
+      sleep "$WAIT_TITLE_POLL_SEC"
+      continue
+    fi
+    if [ "$_title" = "$_exact" ]; then
+      printf '%s\n' "$_title"
+      return 0
     fi
     sleep "$WAIT_TITLE_POLL_SEC"
   done
-  window_title
+  require_app_window
+  if ! _title=$(read_window_title); then
+    die "expected title '$_exact', window title empty after ${_timeout_sec}s"
+  fi
+  die "expected title '$_exact', got '$_title' after ${_timeout_sec}s"
 }
 
 
@@ -609,9 +679,10 @@ cmd_launch() {
   # Demo channels start with the member panel open (Shell::members_open).
   MEMBERS_OPEN=1
   write_state
-  ensure_window_focused
   if [ "$DEMO" = 1 ]; then
     wait_title_mark_cleared "$WAIT_TITLE_TIMEOUT_SEC"
+  else
+    ensure_window_focused
   fi
   echo "launched isolated Omairc"
   if [ "$DEMO" = 1 ]; then
@@ -631,7 +702,10 @@ cmd_launch() {
   echo "display=$DISPLAY"
   echo "pid=$APP_PID"
   echo "window=$WINDOW"
-  echo "title=$(window_title)"
+  if ! _title=$(read_window_title); then
+    die "Omairc launched but window title is empty"
+  fi
+  echo "title=$_title"
   echo "state=$STATE_FILE"
 }
 
@@ -1097,6 +1171,42 @@ cmd_compare() {
 cmd_doctor_qml() { reject_qt_only_verb doctor-qml; }
 cmd_qml_suite() { reject_qt_only_verb qml-suite; }
 
+self_check_parse_timeout() {
+  _got=$(parse_timeout_sec 08) || return 1
+  [ "$_got" = 8 ] || die "self-check: parse 08 expected 8 got $_got"
+  _got=$(parse_timeout_sec 010)
+  [ "$_got" = 10 ] || die "self-check: parse 010 expected 10 got $_got"
+  _got=$(parse_timeout_sec 10s)
+  [ "$_got" = 10 ] || die "self-check: parse 10s expected 10 got $_got"
+  if ( parse_timeout_sec 00 ) >/dev/null 2>&1; then
+    die "self-check: parse 00 should fail"
+  fi
+  if ( parse_timeout_sec abc ) >/dev/null 2>&1; then
+    die "self-check: parse abc should fail"
+  fi
+}
+
+cmd_self_check() {
+  require_tools
+  cmd_cleanup >/dev/null 2>&1 || true
+  self_check_parse_timeout
+  if ! "$SELF" launch --demo-server >/dev/null; then
+    die "self-check: launch failed"
+  fi
+  load_state
+  kill "$APP_PID" 2>/dev/null || true
+  wait "$APP_PID" 2>/dev/null || true
+  set +e
+  ( poll_window_title_exact "never-matches" 2 ) >/dev/null 2>&1
+  _status=$?
+  set -e
+  cmd_cleanup >/dev/null 2>&1 || true
+  if [ "$_status" -eq 0 ]; then
+    die "self-check: wait-title should fail when app is dead"
+  fi
+  echo "self-check ok"
+}
+
 cmd_cleanup() {
   if [ -f "$STATE_FILE" ]; then
     # shellcheck disable=SC1090
@@ -1379,6 +1489,7 @@ case $cmd in
   run) cmd_run "$@" ;;
   qml-suite) cmd_qml_suite ;;
   doctor-qml) cmd_doctor_qml ;;
+  self-check) cmd_self_check ;;
   cleanup) cmd_cleanup ;;
   -h|--help|help|"") usage ;;
   *) die "unknown command '$cmd'. Try --help." ;;
