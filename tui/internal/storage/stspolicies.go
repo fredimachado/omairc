@@ -241,6 +241,9 @@ func persistSTSSettings(settings *Settings, path string) Status {
 	case StatusAccessError:
 		return StatusAccessError
 	case StatusFormatError:
+		if settingsFileNotWritable(path) {
+			return StatusAccessError
+		}
 		// Merge may have kept existing values (dirty=false). Still rewrite.
 		settings.markDirty()
 		if err := recoverMalformedSTS(path, settings.encode()); err != nil {

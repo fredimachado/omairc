@@ -243,16 +243,9 @@ impl Settings {
     }
 
     /// Whether [`Settings::sync`] would refuse to write. A missing file is writable.
-    /// A malformed file that is not writable is an access error (leave it alone),
-    /// not a format error that STS recovery would rewrite.
     pub fn write_blocked(&self) -> Status {
         match probe_ini(&self.path) {
-            IniProbe::Malformed => {
-                if file_not_writable(&self.path) {
-                    return Status::AccessError;
-                }
-                return Status::FormatError;
-            }
+            IniProbe::Malformed => return Status::FormatError,
             IniProbe::Unreadable => return Status::AccessError,
             IniProbe::Ok => {}
         }
@@ -361,7 +354,7 @@ pub fn probe_ini(path: &Path) -> IniProbe {
 
 /// A file that exists and cannot accept a write. Read-only is checked first, then an
 /// `O_WRONLY` open, which never truncates.
-fn file_not_writable(path: &Path) -> bool {
+pub(crate) fn file_not_writable(path: &Path) -> bool {
     let Ok(metadata) = fs::metadata(path) else {
         return false;
     };
@@ -1358,6 +1351,32 @@ mod tests {
 
         permissions.set_readonly(false);
         fs::set_permissions(&path, permissions).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    // Restores writability after the read-only probe; the false bit is intentional cleanup.
+    #[allow(clippy::permissions_set_readonly_false)]
+    fn sync_refuses_read_only_malformed_file_with_format_error() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new("settings-readonly-malformed");
+        let path = settings_in(&dir);
+        let corrupt = b"[networks]\nabc\\host\n";
+        write_file(&path, corrupt);
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o444)).unwrap();
+
+        if fs::OpenOptions::new().write(true).open(&path).is_ok() {
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+            return;
+        }
+
+        let mut settings = Settings::open(&path);
+        settings.set_value("networks/abc", "host", "irc.changed.example");
+        assert_eq!(settings.sync(), Status::FormatError);
+        assert_eq!(fs::read(&path).unwrap(), corrupt);
+
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
     }
 
     #[test]
