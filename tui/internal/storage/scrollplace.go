@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"strconv"
 	"strings"
 
@@ -10,7 +11,7 @@ import (
 )
 
 // Group and key names must match `client/src/storage/scrollplace.rs` byte for byte so
-// the Qt client and the terminal client share one INI section.
+// the desktop client and the terminal client share one INI section.
 const (
 	scrollPlacesGroup = "scrollPlaces"
 	scrollPlacesKey   = "places"
@@ -62,7 +63,10 @@ type scrollContentJSON struct {
 
 // ScrollPlaceStore persists one place per target per network, mirroring
 // IrcScrollPlaceStore. Group "scrollPlaces/<networkId>", key "places".
-// When ephemeral, nothing touches disk. SetEphemeral(true) clears the cache.
+// Places live in scrollplaces.ini under the state dir. When that file is
+// missing, a one-time read falls back to the legacy [scrollPlaces] group in
+// omairc.conf. Saves never write to or strip the conf. When ephemeral,
+// nothing touches disk. SetEphemeral(true) clears the cache.
 type ScrollPlaceStore struct {
 	ephemeral bool
 	cache     map[string][]scrollEntry
@@ -82,6 +86,24 @@ func (s *ScrollPlaceStore) SetEphemeral(ephemeral bool) {
 	}
 }
 
+func (s *ScrollPlaceStore) settingsForRead() *Settings {
+	state := ScrollPlacesPath()
+	if state != "" {
+		if _, err := os.Stat(state); err == nil {
+			return OpenSettings(state)
+		}
+	}
+	return OpenSettings("")
+}
+
+func (s *ScrollPlaceStore) settingsForWrite() *Settings {
+	state := ScrollPlacesPath()
+	if state == "" {
+		return nil
+	}
+	return OpenSettings(state)
+}
+
 func (s *ScrollPlaceStore) load(networkID string) []scrollEntry {
 	if networkID == "" {
 		return nil
@@ -89,7 +111,7 @@ func (s *ScrollPlaceStore) load(networkID string) []scrollEntry {
 	if s.ephemeral {
 		return s.cache[networkID]
 	}
-	settings := OpenSettings("")
+	settings := s.settingsForRead()
 	stored := settings.Value(scrollPlacesGroup+"/"+networkID, scrollPlacesKey)
 	if stored == "" {
 		return nil
@@ -197,7 +219,10 @@ func (s *ScrollPlaceStore) save(networkID string, rows []scrollEntry) {
 		}
 		return
 	}
-	settings := OpenSettings("")
+	settings := s.settingsForWrite()
+	if settings == nil {
+		return
+	}
 	group := scrollPlacesGroup + "/" + networkID
 	if len(rows) == 0 {
 		settings.RemoveGroup(group)
@@ -328,6 +353,6 @@ func (s *ScrollPlaceStore) PlacesJSON(networkID string) string {
 		}
 		return scrollEncode(encoded)
 	}
-	settings := OpenSettings("")
+	settings := s.settingsForRead()
 	return settings.Value(scrollPlacesGroup+"/"+networkID, scrollPlacesKey)
 }

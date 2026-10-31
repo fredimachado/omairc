@@ -33,6 +33,7 @@ func TestTranscriptRootFallsBackToStateHome(t *testing.T) {
 	t.Setenv("OMAIRC_TRANSCRIPT_ROOT", "")
 	state := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", state)
+	t.Setenv("OMAIRC_DEV_HOME", "")
 
 	want := filepath.Join(state, "omairc", "logs")
 	if got := TranscriptRoot(); got != want {
@@ -40,5 +41,18 @@ func TestTranscriptRootFallsBackToStateHome(t *testing.T) {
 	}
 	if got := GenericStateRoot(); got != state {
 		t.Errorf("GenericStateRoot() = %q, want %q", got, state)
+	}
+	if got := ScrollPlacesPath(); got != filepath.Join(state, "omairc", ScrollPlacesFile) {
+		t.Errorf("ScrollPlacesPath() = %q, want under XDG_STATE_HOME", got)
+	}
+}
+
+func TestScrollPlacesPathHonoursDevHome(t *testing.T) {
+	dev := t.TempDir()
+	t.Setenv("OMAIRC_DEV_HOME", dev)
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	want := filepath.Join(dev, "state", ScrollPlacesFile)
+	if got := ScrollPlacesPath(); got != want {
+		t.Errorf("ScrollPlacesPath() = %q, want %q", got, want)
 	}
 }

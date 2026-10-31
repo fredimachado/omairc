@@ -9,6 +9,10 @@ import (
 // mirrors client/src/storage/paths.rs STS_FILE and Qt's IrcStsStore.
 const STSFile = "sts"
 
+// ScrollPlacesFile is the shared scroll-places INI under the state dir. It
+// mirrors client/src/storage/paths.rs SCROLL_PLACES_FILE.
+const ScrollPlacesFile = "scrollplaces.ini"
+
 // ConfigPath is the shared QSettings INI path both clients use:
 // <GenericConfigRoot>/omairc/omairc.conf. Both clients use organization and
 // application name "omairc", so QSettings writes
@@ -67,4 +71,19 @@ func CrashLogPath() string {
 		return ""
 	}
 	return filepath.Join(root, "omairc", "omairc-tui.log")
+}
+
+// ScrollPlacesPath is <state>/omairc/scrollplaces.ini, honouring
+// OMAIRC_DEV_HOME and XDG_STATE_HOME the same way the desktop client's
+// scroll_places_path does. It returns "" when the platform state root is
+// unknown and OMAIRC_DEV_HOME is unset.
+func ScrollPlacesPath() string {
+	if home := os.Getenv("OMAIRC_DEV_HOME"); home != "" {
+		return filepath.Join(home, "state", ScrollPlacesFile)
+	}
+	root := GenericStateRoot()
+	if root == "" {
+		return ""
+	}
+	return filepath.Join(root, "omairc", ScrollPlacesFile)
 }

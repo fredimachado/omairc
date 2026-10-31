@@ -17,10 +17,10 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
+use crate::identity::settings_file_name;
 pub use crate::identity::{APP_FOLDER, QT_APP_FOLDER};
 #[cfg(test)]
 pub use crate::identity::{SETTINGS_FILE, SETTINGS_FILE_MACOS};
-use crate::identity::settings_file_name;
 
 /// The STS policy cache, beside the settings file (`IrcStsStore::filePath`, same name as Qt).
 pub const STS_FILE: &str = "sts";
@@ -28,6 +28,8 @@ pub const STS_FILE: &str = "sts";
 pub const LOG_FILE: &str = "omairc.log";
 /// Saved window restore rectangle and maximized flag (GPUI desktop client).
 pub const WINDOW_FILE: &str = "window.ini";
+/// Saved transcript scroll places per network (desktop and TUI).
+pub const SCROLL_PLACES_FILE: &str = "scrollplaces.ini";
 /// Moves the config and state roots under one directory.
 pub const HOME_OVERRIDE_VAR: &str = "OMAIRC_DEV_HOME";
 /// Overrides the on-disk transcript log root (`OMAIRC_TRANSCRIPT_ROOT`).
@@ -172,6 +174,11 @@ pub fn window_path_for(env: &Env, platform: Platform) -> PathBuf {
     state_dir_for(env, platform).join(WINDOW_FILE)
 }
 
+/// The scroll-places file (`<state>/<APP_FOLDER>/scrollplaces.ini`).
+pub fn scroll_places_path_for(env: &Env, platform: Platform) -> PathBuf {
+    state_dir_for(env, platform).join(SCROLL_PLACES_FILE)
+}
+
 /// The conversation transcript folder (`<state>/logs`), or the override when set.
 pub fn transcript_root_for(env: &Env, platform: Platform) -> PathBuf {
     if let Some(root) = &env.transcript_root {
@@ -212,6 +219,10 @@ pub fn window_path() -> PathBuf {
     window_path_for(&Env::from_process(), Platform::current())
 }
 
+pub fn scroll_places_path() -> PathBuf {
+    scroll_places_path_for(&Env::from_process(), Platform::current())
+}
+
 fn config_dir_for_folder(env: &Env, platform: Platform, folder: &str) -> Option<PathBuf> {
     config_root(env, platform).map(|root| root.join(folder))
 }
@@ -238,10 +249,7 @@ fn state_root(env: &Env, platform: Platform) -> Option<PathBuf> {
         // Qt 6 `GenericStateLocation` on Windows is `%LOCALAPPDATA%\State`
         // (`platform paths`), not bare LocalAppData. Transcripts and
         // `omairc.log` from the Qt client live under that tree.
-        Platform::Windows => env
-            .local_app_data
-            .as_ref()
-            .map(|root| root.join("State")),
+        Platform::Windows => env.local_app_data.as_ref().map(|root| root.join("State")),
         Platform::MacOs => env
             .home
             .as_deref()
@@ -291,6 +299,14 @@ mod tests {
                 .join("state")
                 .join(APP_FOLDER)
                 .join(WINDOW_FILE)
+        );
+        assert_eq!(
+            scroll_places_path_for(&env, Platform::Linux),
+            home()
+                .join(".local")
+                .join("state")
+                .join(APP_FOLDER)
+                .join(SCROLL_PLACES_FILE)
         );
     }
 
@@ -392,6 +408,12 @@ mod tests {
                 window_path_for(&env, platform),
                 PathBuf::from("scratch").join("state").join(WINDOW_FILE)
             );
+            assert_eq!(
+                scroll_places_path_for(&env, platform),
+                PathBuf::from("scratch")
+                    .join("state")
+                    .join(SCROLL_PLACES_FILE)
+            );
         }
     }
 
@@ -429,7 +451,9 @@ mod tests {
             ];
             for path in paths {
                 assert!(
-                    !path.components().any(|part| part.as_os_str() == QT_APP_FOLDER),
+                    !path
+                        .components()
+                        .any(|part| part.as_os_str() == QT_APP_FOLDER),
                     "{} names the Qt folder",
                     path.display()
                 );
@@ -475,7 +499,12 @@ mod tests {
         let env = env_with_home();
         assert_eq!(
             qt_settings_path_for(&env, Platform::Linux),
-            Some(home().join(".config").join(QT_APP_FOLDER).join(SETTINGS_FILE))
+            Some(
+                home()
+                    .join(".config")
+                    .join(QT_APP_FOLDER)
+                    .join(SETTINGS_FILE)
+            )
         );
         assert_eq!(
             qt_transcript_root_for(&env, Platform::Linux),
@@ -549,7 +578,12 @@ mod tests {
         };
         assert_eq!(
             qt_settings_path_for(&env, Platform::Linux),
-            Some(home().join(".config").join(QT_APP_FOLDER).join(SETTINGS_FILE))
+            Some(
+                home()
+                    .join(".config")
+                    .join(QT_APP_FOLDER)
+                    .join(SETTINGS_FILE)
+            )
         );
     }
 

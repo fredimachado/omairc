@@ -70,6 +70,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   0600 on every write. A new config file is still created owner-only (0600).
 - Config saves skip the disk write when settings are unchanged, so
   `omairc.conf` bytes and modification time stay put on a no-op sync.
+- Desktop and TUI store transcript scroll places in
+  `<state>/scrollplaces.ini` instead of `omairc.conf`. A missing
+  `scrollplaces.ini` still reads the legacy `[scrollPlaces]` group from the
+  config file once; later saves go only to `scrollplaces.ini` and leave the
+  config bytes alone. Demo mode writes neither file.
 - The GPUI desktop client stores window restore geometry and the maximized
   flag in `<state>/window.ini` instead of `omairc.conf`. A missing
   `window.ini` still reads the legacy `[window]` group from the config file

@@ -565,6 +565,7 @@ fn autoaway_settings_survive_a_relaunch() {
 fn ignores_mutes_and_scroll_places_survive_a_relaunch() {
     let dir = TempDir::new("lists");
     let backing = disk(&dir);
+    let conf = dir.path().join("omairc.conf");
     {
         let mut first = launch(&backing, Box::new(Loopbacks::default()));
         save(&mut first, libera(LIBERA));
@@ -579,6 +580,15 @@ fn ignores_mutes_and_scroll_places_survive_a_relaunch() {
             },
         );
     }
+    let conf_text = std::fs::read_to_string(&conf).unwrap_or_default();
+    assert!(
+        !conf_text.contains("scrollPlaces"),
+        "scroll places must leave omairc.conf alone:\n{conf_text}"
+    );
+    assert!(
+        dir.path().join("scrollplaces.ini").exists(),
+        "scroll places must land in scrollplaces.ini"
+    );
     let second = launch(&backing, Box::new(Loopbacks::default()));
     assert_eq!(second.ignored_nicks(LIBERA), ["spam"]);
     assert!(second.place_for(LIBERA, "anna").is_some_and(|place| place.follow_end));
