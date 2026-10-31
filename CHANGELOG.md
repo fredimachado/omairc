@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The terminal client no longer writes a random `networkOrder` entry to
+  `omairc.conf` on every launch when no network profile is saved. The Connect
+  sheet draft keeps a fresh in-memory id for display, but startup no longer
+  copies that unsaved id into persisted sidebar order.
+
 - Full-line `#` comments in `omairc.conf` (including with leading whitespace)
   are accepted like `;` comments, so a hand-edited file is no longer treated
   as malformed and saves are not silently refused. Values that contain `#` still
