@@ -239,8 +239,10 @@ fn merge_memory_into_settings(
 /// After a successful rename, the backup is restricted to owner-only (0600) so a
 /// hard-linked copy of a looser-mode original is not left world-readable.
 fn recover_malformed_sts(path: &Path, data: &[u8]) -> io::Result<()> {
-    let temp = write_sts_temp(path, data)?;
-    let Some(backup) = link_sts_corrupt_backup(path) else {
+    let target = super::atomicwrite::atomic_write_target(path)?;
+    super::atomicwrite::ensure_atomic_write_parent(&target)?;
+    let temp = write_sts_temp(&target.destination, data)?;
+    let Some(backup) = link_sts_corrupt_backup(&target.destination) else {
         let _ = fs::remove_file(&temp);
         return Err(io::Error::other("sts corrupt backup failed"));
     };
@@ -249,7 +251,7 @@ fn recover_malformed_sts(path: &Path, data: &[u8]) -> io::Result<()> {
         let _ = fs::remove_file(&temp);
         return Err(io::Error::other("test: install after backup failed"));
     }
-    match fs::rename(&temp, path) {
+    match fs::rename(&temp, &target.destination) {
         Ok(()) => {
             // Chmod after rename so the hard link no longer shares an inode with `sts`.
             restrict_permissions(&backup);
@@ -265,8 +267,7 @@ fn recover_malformed_sts(path: &Path, data: &[u8]) -> io::Result<()> {
 /// Creates a same-directory temp file with `data`, fsyncs it, and returns its path.
 /// Removes the temp on every failure after create.
 fn write_sts_temp(path: &Path, data: &[u8]) -> io::Result<PathBuf> {
-    let dir = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
-    fs::create_dir_all(dir)?;
+    let dir = super::atomicwrite::atomic_write_dir(path).unwrap_or_else(|| PathBuf::from("."));
     let mut last_error = None;
     for n in 0..16u32 {
         let candidate = dir.join(format!(
@@ -326,8 +327,9 @@ fn link_sts_corrupt_backup(path: &Path) -> Option<PathBuf> {
         StsTestHook::FailBackup => return None,
         StsTestHook::FailCopyAfterCreate => {
             // Exercise the copy fallback, then fail it (and require cleanup).
-            let parent = path.parent().unwrap_or_else(|| Path::new("."));
-            let name = path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
+            let parent = super::atomicwrite::atomic_write_dir(path).unwrap_or_else(|| PathBuf::from("."));
+            let base = super::atomicwrite::atomic_write_base(path);
+            let name = base.to_string_lossy();
             let candidate = parent.join(format!("{name}.corrupt"));
             return match copy_sts_exclusive(path, &candidate) {
                 Ok(()) => Some(candidate),
@@ -337,8 +339,9 @@ fn link_sts_corrupt_backup(path: &Path) -> Option<PathBuf> {
         }
         _ => {}
     }
-    let parent = path.parent()?;
-    let name = path.file_name()?.to_string_lossy();
+    let parent = super::atomicwrite::atomic_write_dir(path)?;
+    let base = super::atomicwrite::atomic_write_base(path);
+    let name = base.to_string_lossy();
     for n in 0..sts_corrupt_backup_limit() {
         let candidate = if n == 0 {
             parent.join(format!("{name}.corrupt"))
@@ -1141,5 +1144,57 @@ mod tests {
         assert_eq!(mode, 0o600, "backup must be owner-only after recovery");
         let sts_mode = fs::metadata(&path).expect("sts").permissions().mode() & 0o777;
         assert_eq!(sts_mode, 0o600);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn malformed_sts_through_symlink_backs_up_target_and_keeps_link() {
+        use std::os::unix::fs::symlink;
+
+        let dir = TempDir::new("sts-symlink-recover-3dba");
+        let real_sts = dir.path().join("real").join("sts");
+        fs::create_dir_all(real_sts.parent().unwrap()).unwrap();
+        let corrupt = b"this line has no equals sign\n";
+        fs::write(&real_sts, corrupt).unwrap();
+        let cfg_link = dir.path().join("cfg");
+        fs::create_dir_all(dir.path().join("real").join("cfg")).unwrap();
+        symlink(dir.path().join("real").join("cfg"), &cfg_link).unwrap();
+        let link = cfg_link.join("sts");
+        symlink("../sts", &link).unwrap();
+
+        let store = IniStsStore::new(link.clone());
+        store.store("irc.example", 6697, 60, at(0));
+
+        assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        let backup = real_sts.with_file_name("sts.corrupt");
+        assert_eq!(fs::read(&backup).unwrap(), corrupt);
+        let text = fs::read_to_string(&real_sts).unwrap();
+        assert!(text.contains(IRC_EXAMPLE_GROUP), "{text}");
+        assert!(store.lookup("irc.example", at(1)).is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn malformed_sts_through_symlinked_data_directory() {
+        use std::os::unix::fs::symlink;
+
+        let dir = TempDir::new("sts-symlink-data-dir-3dba");
+        let data = dir.path().join("data");
+        fs::create_dir_all(&data).unwrap();
+        let real_sts = data.join("sts");
+        let corrupt = b"this line has no equals sign\n";
+        fs::write(&real_sts, corrupt).unwrap();
+        let dotfiles = dir.path().join("dotfiles");
+        symlink(&data, &dotfiles).unwrap();
+        fs::create_dir_all(dir.path().join("cfg")).unwrap();
+        let link = dir.path().join("cfg").join("sts");
+        symlink("../dotfiles/sts", &link).unwrap();
+
+        let store = IniStsStore::new(link.clone());
+        store.store("irc.example", 6697, 60, at(0));
+
+        assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        let backup = data.join("sts.corrupt");
+        assert_eq!(fs::read(&backup).unwrap(), corrupt);
     }
 }

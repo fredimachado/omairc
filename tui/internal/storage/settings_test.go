@@ -851,3 +851,311 @@ func equalStrings(left, right []string) bool {
 	}
 	return true
 }
+
+func TestSyncThroughSymlinkUpdatesTarget3dba(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks")
+	}
+
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, "cfg", "omairc")
+	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll cfg: %v", err)
+	}
+	target := filepath.Join(cfgDir, "real", "omairc.conf")
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatalf("MkdirAll target dir: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("[preferences]\ndirects=false\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile target: %v", err)
+	}
+	link := filepath.Join(cfgDir, "omairc.conf")
+	if err := os.Symlink("real/omairc.conf", link); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+
+	s := OpenSettings(link)
+	s.SetBool("preferences", "directs", true)
+	if got := s.Sync(); got != StatusWritten {
+		t.Fatalf("Sync() = %v, want StatusWritten", got)
+	}
+
+	linkInfo, err := os.Lstat(link)
+	if err != nil {
+		t.Fatalf("Lstat link: %v", err)
+	}
+	if linkInfo.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("config path must remain a symlink")
+	}
+	wantTarget := "real/omairc.conf"
+	if got, err := os.Readlink(link); err != nil || got != wantTarget {
+		t.Fatalf("Readlink = %q, want %q (err=%v)", got, wantTarget, err)
+	}
+	after, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("ReadFile target: %v", err)
+	}
+	if string(after) != "[preferences]\ndirects=true\n" {
+		t.Fatalf("target bytes = %q", after)
+	}
+	targetInfo, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("Stat target: %v", err)
+	}
+	if targetInfo.Mode().Perm() != 0o644 {
+		t.Fatalf("target mode = %o, want 0644", targetInfo.Mode().Perm())
+	}
+}
+
+func TestSyncThroughSymlinkedParentAndDotdot3dba(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks")
+	}
+
+	root := t.TempDir()
+	realStore := filepath.Join(root, "real", "store")
+	realCfg := filepath.Join(root, "real", "cfg", "omairc")
+	mustMkdirAll(t, realStore, realCfg)
+	realFile := filepath.Join(realStore, "omairc.conf")
+	mustWriteFileMode(t, realFile, []byte("old\n"), 0o644)
+	cfgLink := filepath.Join(root, "cfg")
+	mustSymlink(t, filepath.Join(root, "real", "cfg"), cfgLink)
+	link := filepath.Join(cfgLink, "omairc", "omairc.conf")
+	mustSymlink(t, "../../store/omairc.conf", link)
+
+	if err := writeSettingsAtomic(link, []byte("new\n"), true); err != nil {
+		t.Fatalf("writeSettingsAtomic: %v", err)
+	}
+	assertSymlinkTarget(t, link, "../../store/omairc.conf")
+	assertFileBytes(t, realFile, []byte("new\n"))
+}
+
+func TestAtomicWritePathHelpers3dba(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		path     string
+		wantDir  string
+		wantBase string
+	}{
+		{"sts", ".", "sts"},
+		{"x", ".", "x"},
+		{"a/b", "a", "b"},
+		{"a/b/", "a", "b"},
+		{"/x", "/", "x"},
+		{"..", ".", ".."},
+		{"a/..", "a", ".."},
+	}
+	for _, tc := range cases {
+		if got := atomicWriteDir(tc.path); got != tc.wantDir {
+			t.Errorf("atomicWriteDir(%q) = %q, want %q", tc.path, got, tc.wantDir)
+		}
+		if got := atomicWriteBase(tc.path); got != tc.wantBase {
+			t.Errorf("atomicWriteBase(%q) = %q, want %q", tc.path, got, tc.wantBase)
+		}
+	}
+}
+
+func TestWriteSettingsAtomicTwoHopDotdotDecoy3dba(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks")
+	}
+
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	dots := filepath.Join(root, "dots")
+	mustMkdirAll(t, filepath.Join(dots, "cfg", "omairc"), filepath.Join(dots, "pkg"), filepath.Join(home, "pkg"))
+	decoy := filepath.Join(home, "pkg", "real.conf")
+	real := filepath.Join(dots, "pkg", "real.conf")
+	mustWriteFileMode(t, decoy, []byte("DECOY"), 0o644)
+	mustWriteFileMode(t, real, []byte("REAL"), 0o644)
+	mustSymlink(t, "../dots/cfg", filepath.Join(home, ".config"))
+	mustSymlink(t, "../../pkg/hop2", filepath.Join(dots, "cfg", "omairc", "omairc.conf"))
+	mustSymlink(t, "real.conf", filepath.Join(dots, "pkg", "hop2"))
+
+	conf := filepath.Join(home, ".config", "omairc", "omairc.conf")
+	if err := writeSettingsAtomic(conf, []byte("NEW"), true); err != nil {
+		t.Fatalf("writeSettingsAtomic: %v", err)
+	}
+	assertFileBytes(t, real, []byte("NEW"))
+	assertFileBytes(t, decoy, []byte("DECOY"))
+}
+
+func TestSyncThroughSymlinkedDataDirectory3dba(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks")
+	}
+
+	root := t.TempDir()
+	data := filepath.Join(root, "data")
+	mustMkdirAll(t, data, filepath.Join(root, "cfg"))
+	target := filepath.Join(data, "omairc.conf")
+	mustWriteFileMode(t, target, []byte("[preferences]\ndirects=false\n"), 0o644)
+	mustSymlink(t, data, filepath.Join(root, "dotfiles"))
+	link := filepath.Join(root, "cfg", "omairc.conf")
+	mustSymlink(t, "../dotfiles/omairc.conf", link)
+
+	s := OpenSettings(link)
+	s.SetBool("preferences", "directs", true)
+	if got := s.Sync(); got != StatusWritten {
+		t.Fatalf("Sync() = %v, want StatusWritten", got)
+	}
+	assertFileBytes(t, target, []byte("[preferences]\ndirects=true\n"))
+}
+
+func TestWriteSettingsAtomicSymlinkCases3dba(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks")
+	}
+
+	t.Run("relative", func(t *testing.T) {
+		root := t.TempDir()
+		cfgDir := filepath.Join(root, "cfg", "omairc")
+		mustMkdirAll(t, cfgDir)
+		target := filepath.Join(cfgDir, "real", "omairc.conf")
+		mustMkdirAll(t, filepath.Dir(target))
+		mustWriteFileMode(t, target, []byte("old\n"), 0o644)
+		link := filepath.Join(cfgDir, "omairc.conf")
+		mustSymlink(t, "real/omairc.conf", link)
+		if err := writeSettingsAtomic(link, []byte("new\n"), true); err != nil {
+			t.Fatalf("writeSettingsAtomic: %v", err)
+		}
+		assertSymlinkTarget(t, link, "real/omairc.conf")
+		assertFileBytes(t, target, []byte("new\n"))
+		assertFileMode(t, target, 0o644)
+	})
+
+	t.Run("two-hop chain", func(t *testing.T) {
+		root := t.TempDir()
+		store := filepath.Join(root, "store")
+		links := filepath.Join(root, "links")
+		mustMkdirAll(t, store, links)
+		target := filepath.Join(store, "omairc.conf")
+		mustWriteFileMode(t, target, []byte("old\n"), 0o644)
+		hop1 := filepath.Join(links, "hop1.conf")
+		hop2 := filepath.Join(links, "hop2.conf")
+		mustSymlink(t, "../store/omairc.conf", hop1)
+		mustSymlink(t, "hop1.conf", hop2)
+		if err := writeSettingsAtomic(hop2, []byte("new\n"), true); err != nil {
+			t.Fatalf("writeSettingsAtomic: %v", err)
+		}
+		assertSymlinkTarget(t, hop2, "hop1.conf")
+		assertSymlinkTarget(t, hop1, "../store/omairc.conf")
+		assertFileBytes(t, target, []byte("new\n"))
+	})
+
+	t.Run("dangling with existing parent", func(t *testing.T) {
+		root := t.TempDir()
+		cfgDir := filepath.Join(root, "cfg", "omairc")
+		realDir := filepath.Join(cfgDir, "real")
+		mustMkdirAll(t, cfgDir, realDir)
+		link := filepath.Join(cfgDir, "omairc.conf")
+		mustSymlink(t, "real/omairc.conf", link)
+		if err := writeSettingsAtomic(link, []byte("created\n"), false); err != nil {
+			t.Fatalf("writeSettingsAtomic: %v", err)
+		}
+		target := filepath.Join(cfgDir, "real", "omairc.conf")
+		assertSymlinkTarget(t, link, "real/omairc.conf")
+		assertFileBytes(t, target, []byte("created\n"))
+		assertFileMode(t, target, 0o600)
+	})
+
+	t.Run("dangling missing target directory", func(t *testing.T) {
+		root := t.TempDir()
+		cfgDir := filepath.Join(root, "cfg", "omairc")
+		mustMkdirAll(t, cfgDir)
+		link := filepath.Join(cfgDir, "omairc.conf")
+		mustSymlink(t, "missing/deep/omairc.conf", link)
+		missingDir := filepath.Join(cfgDir, "missing")
+		if err := writeSettingsAtomic(link, []byte("nope\n"), false); err == nil {
+			t.Fatal("expected error for missing target directory")
+		}
+		if _, err := os.Stat(missingDir); err == nil {
+			t.Fatal("missing directory must not be created")
+		}
+	})
+
+	t.Run("read-only target", func(t *testing.T) {
+		root := t.TempDir()
+		cfgDir := filepath.Join(root, "cfg", "omairc")
+		mustMkdirAll(t, cfgDir)
+		target := filepath.Join(cfgDir, "real", "omairc.conf")
+		mustMkdirAll(t, filepath.Dir(target))
+		original := []byte("[preferences]\ndirects=false\n")
+		mustWriteFileMode(t, target, original, 0o444)
+		link := filepath.Join(cfgDir, "omairc.conf")
+		mustSymlink(t, "real/omairc.conf", link)
+		if writable, err := os.OpenFile(link, os.O_WRONLY, 0); err == nil {
+			writable.Close()
+			_ = os.Chmod(target, 0o644)
+			t.Skip("running as root")
+		}
+		s := OpenSettings(link)
+		s.SetBool("preferences", "directs", true)
+		if got := s.Sync(); got != StatusAccessError {
+			t.Fatalf("Sync() = %v, want StatusAccessError", got)
+		}
+		assertFileBytes(t, target, original)
+		assertSymlinkTarget(t, link, "real/omairc.conf")
+		_ = os.Chmod(target, 0o644)
+	})
+}
+
+func mustMkdirAll(t *testing.T, dirs ...string) {
+	t.Helper()
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatalf("MkdirAll %s: %v", dir, err)
+		}
+	}
+}
+
+func mustWriteFileMode(t *testing.T, path string, data []byte, mode os.FileMode) {
+	t.Helper()
+	if err := os.WriteFile(path, data, mode); err != nil {
+		t.Fatalf("WriteFile %s: %v", path, err)
+	}
+}
+
+func mustSymlink(t *testing.T, target, link string) {
+	t.Helper()
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("Symlink %s -> %s: %v", link, target, err)
+	}
+}
+
+func assertSymlinkTarget(t *testing.T, link, wantTarget string) {
+	t.Helper()
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatalf("Lstat %s: %v", link, err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("%s is not a symlink", link)
+	}
+	got, err := os.Readlink(link)
+	if err != nil || got != wantTarget {
+		t.Fatalf("Readlink(%s) = %q, want %q (err=%v)", link, got, wantTarget, err)
+	}
+}
+
+func assertFileBytes(t *testing.T, path string, want []byte) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile %s: %v", path, err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("%s bytes = %q, want %q", path, got, want)
+	}
+}
+
+func assertFileMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat %s: %v", path, err)
+	}
+	if info.Mode().Perm() != want {
+		t.Fatalf("%s mode = %o, want %o", path, info.Mode().Perm(), want)
+	}
+}
