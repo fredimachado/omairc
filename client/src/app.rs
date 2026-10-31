@@ -190,10 +190,9 @@ pub fn run() {
         // Demo runs restore the window but never save over the user's
         // geometry, as the Qt client's demo mode is ephemeral.
         let settings_path = paths::settings_path();
-        let stored = settings_path.as_deref().and_then(geometry::load_from);
-        let keeper = settings_path
-            .filter(|_| !demo_server)
-            .map(|path| GeometryKeeper::new(path, stored));
+        let window_path = paths::window_path();
+        let stored = geometry::load_stored(&window_path, settings_path.as_deref());
+        let keeper = (!demo_server).then(|| GeometryKeeper::new(window_path, stored));
         let window_bounds = windowstate::initial_bounds(stored, cx);
         // The socket hub runs its net thread for a live launch. The demo's peers are in-process
         // so the demo has none.

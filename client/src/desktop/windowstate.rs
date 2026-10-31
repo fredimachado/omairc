@@ -172,8 +172,8 @@ mod tests {
 
     #[test]
     fn keeper_saves_only_changes_and_skips_invalid_rectangles() {
-        let dir = TempDir::new("windowstate-keeper");
-        let path = dir.path().join("omairc.conf");
+        let dir = TempDir::new("windowstate-keeper-f862");
+        let path = dir.path().join("window.ini");
         let keeper = GeometryKeeper::new(path.clone(), None);
 
         keeper.save(WindowBounds::Windowed(bounds(0.0, 0.0, 0.0, 0.0)));
@@ -191,8 +191,8 @@ mod tests {
 
     #[test]
     fn geometry_close_saves_and_runs_the_also_hook() {
-        let dir = TempDir::new("windowstate-close");
-        let path = dir.path().join("omairc.conf");
+        let dir = TempDir::new("windowstate-close-f862");
+        let path = dir.path().join("window.ini");
         let keeper = GeometryKeeper::new(path.clone(), None);
         let bounds = WindowBounds::Windowed(bounds(40.0, 50.0, 900.0, 700.0));
         let also_ran = std::cell::Cell::new(false);
@@ -204,8 +204,8 @@ mod tests {
 
     #[test]
     fn geometry_close_skipping_the_hook_still_saves() {
-        let dir = TempDir::new("windowstate-close-save-only");
-        let path = dir.path().join("omairc.conf");
+        let dir = TempDir::new("windowstate-close-save-only-f862");
+        let path = dir.path().join("window.ini");
         let keeper = GeometryKeeper::new(path.clone(), None);
         let bounds = WindowBounds::Windowed(bounds(40.0, 50.0, 900.0, 700.0));
 

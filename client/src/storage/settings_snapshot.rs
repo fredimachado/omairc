@@ -34,6 +34,11 @@ pub(super) fn finish_load(
     settings
 }
 
+/// Empty in-memory store for encoding without touching disk.
+pub(in crate::storage) fn in_memory() -> Settings {
+    finish_load(PathBuf::new(), BTreeMap::new(), false, true)
+}
+
 impl Settings {
     /// Loads `path`. A missing or unreadable file gives an empty store, and
     /// [`Settings::sync`] still refuses to overwrite a malformed or unreadable file.

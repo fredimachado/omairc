@@ -1,14 +1,16 @@
 //! Window geometry, the pure model behind the saved normal (restore) rectangle
 //! and maximized flag. The Qt client stores the rectangle as a `QRect` under
-//! `window/geometry` and the maximized flag under `window/maximized`. The INI
-//! file holds the rectangle as `@Rect(x y width height)`, so this module writes
-//! the same keys and value text.
+//! `window/geometry` and the maximized flag under `window/maximized`. The GPUI
+//! desktop client writes the same keys under `[window]` in `<state>/window.ini`.
+//! The INI holds the rectangle as `@Rect(x y width height)`.
 //! The gpui glue that reads and applies the live window lives in
 //! `desktop::windowstate`. This module has no toolkit types.
 
-use std::path::Path;
+use std::fs::{self, OpenOptions};
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 
-use super::settings::{Settings, Status};
+use super::settings::{file_not_writable, probe_ini, IniProbe, Settings, Status};
 
 const GROUP: &str = "window";
 const KEY_GEOMETRY: &str = "geometry";
@@ -54,7 +56,7 @@ impl WindowGeometry {
         geometry.is_valid().then_some(geometry)
     }
 
-    pub fn save(&self, settings: &mut Settings) {
+    fn save(&self, settings: &mut Settings) {
         settings.set_variant(
             GROUP,
             KEY_GEOMETRY,
@@ -107,13 +109,167 @@ impl GeometryTracker {
     }
 }
 
-/// Writes `geometry` into the INI at `path`, keeping every other key. Returns the
-/// status. A malformed or read-only file is refused, not overwritten.
-pub fn save_to(path: &Path, geometry: &WindowGeometry) -> Status {
-    let mut settings = Settings::open(path);
-    geometry.save(&mut settings);
-    settings.sync()
+/// Reads geometry from `window_path` when it exists. When `window.ini` is missing,
+/// reads the legacy `[window]` group from `conf_path` on each launch until the first
+/// successful save creates `window.ini`. Never writes to `conf_path`.
+pub fn load_stored(window_path: &Path, conf_path: Option<&Path>) -> Option<WindowGeometry> {
+    if window_path.exists() {
+        return load_from(window_path);
+    }
+    conf_path.and_then(|path| WindowGeometry::load(&Settings::open(path)))
 }
+
+/// Writes `geometry` into `window_path`, keeping every other key in that file when
+/// it is well-formed. A malformed `window.ini` is hard-linked to `window.ini.corrupt`
+/// (then `.corrupt.1`, …) and replaced with a clean file. Returns the status.
+pub fn save_to(window_path: &Path, geometry: &WindowGeometry) -> Status {
+    let mut settings = Settings::open(window_path);
+    geometry.save(&mut settings);
+    match settings.sync() {
+        Status::FormatError if probe_ini(window_path) == IniProbe::Malformed => {
+            recover_malformed_window_ini(window_path, geometry)
+        }
+        other => other,
+    }
+}
+
+const MAX_WINDOW_CORRUPT_BACKUPS: u32 = 10_000;
+
+fn recover_malformed_window_ini(window_path: &Path, geometry: &WindowGeometry) -> Status {
+    if file_not_writable(window_path) {
+        return Status::AccessError;
+    }
+    let encoded = encoded_geometry(geometry);
+    match recover_malformed_ini_file(window_path, &encoded) {
+        Ok(()) => Status::Written,
+        Err(_) => Status::FormatError,
+    }
+}
+
+fn encoded_geometry(geometry: &WindowGeometry) -> Vec<u8> {
+    let mut settings = Settings::in_memory();
+    geometry.save(&mut settings);
+    settings.encode()
+}
+
+/// Temp sibling, hard-link backup, rename — same shape as STS malformed recovery.
+fn recover_malformed_ini_file(path: &Path, data: &[u8]) -> io::Result<()> {
+    let temp = write_window_temp(path, data)?;
+    let Some(backup) = link_window_corrupt_backup(path) else {
+        let _ = fs::remove_file(&temp);
+        return Err(io::Error::other("window.ini corrupt backup failed"));
+    };
+    match fs::rename(&temp, path) {
+        Ok(()) => {
+            restrict_backup_permissions(&backup);
+            Ok(())
+        }
+        Err(err) => {
+            let _ = fs::remove_file(&temp);
+            let _ = fs::remove_file(&backup);
+            Err(err)
+        }
+    }
+}
+
+fn write_window_temp(path: &Path, data: &[u8]) -> io::Result<PathBuf> {
+    let dir = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(dir)?;
+    let mut last_error = None;
+    for n in 0..16u32 {
+        let candidate = dir.join(format!(
+            ".omairc-window-{}-{n}.tmp",
+            std::process::id()
+        ));
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&candidate)
+        {
+            Ok(mut file) => {
+                let write_result = (|| -> io::Result<()> {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+                    }
+                    file.write_all(data)?;
+                    file.sync_all()
+                })();
+                drop(file);
+                match write_result {
+                    Ok(()) => return Ok(candidate),
+                    Err(err) => {
+                        let _ = fs::remove_file(&candidate);
+                        return Err(err);
+                    }
+                }
+            }
+            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => last_error = Some(err),
+            Err(err) => return Err(err),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| io::Error::other("no free window temp name")))
+}
+
+fn link_window_corrupt_backup(path: &Path) -> Option<PathBuf> {
+    let parent = path.parent()?;
+    let name = path.file_name()?.to_string_lossy();
+    for n in 0..MAX_WINDOW_CORRUPT_BACKUPS {
+        let candidate = if n == 0 {
+            parent.join(format!("{name}.corrupt"))
+        } else {
+            parent.join(format!("{name}.corrupt.{n}"))
+        };
+        match fs::hard_link(path, &candidate) {
+            Ok(()) => return Some(candidate),
+            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(_) => match copy_window_exclusive(path, &candidate) {
+                Ok(()) => return Some(candidate),
+                Err(err) if err.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(_) => return None,
+            },
+        }
+    }
+    None
+}
+
+fn copy_window_exclusive(src: &Path, dst: &Path) -> io::Result<()> {
+    let data = fs::read(src)?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(dst)?;
+    let write_result = (|| -> io::Result<()> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            file.set_permissions(fs::Permissions::from_mode(0o600))?;
+        }
+        file.write_all(&data)?;
+        file.sync_all()
+    })();
+    drop(file);
+    match write_result {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            let _ = fs::remove_file(dst);
+            Err(err)
+        }
+    }
+}
+
+#[cfg(unix)]
+fn restrict_backup_permissions(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
+}
+
+#[cfg(not(unix))]
+fn restrict_backup_permissions(_path: &Path) {}
 
 /// Reads the stored geometry at `path`, or `None` when it has none. A malformed file
 /// is read as empty, which is what the Qt client does too.
@@ -124,8 +280,13 @@ pub fn load_from(path: &Path) -> Option<WindowGeometry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::paths::{self, Env, Platform, WINDOW_FILE};
     use crate::storage::settings::{probe_ini, IniProbe};
     use crate::util::testdir::TempDir;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::thread;
+    use std::time::Duration;
 
     #[test]
     fn parses_qrect_text() {
@@ -148,23 +309,23 @@ mod tests {
 
     #[test]
     fn save_then_load_round_trips_the_maximized_flag() {
-        let dir = TempDir::new("geometry-round-trip");
-        let path = dir.path().join("omairc").join("omairc.conf");
+        let dir = TempDir::new("geometry-round-trip-f862");
+        let path = dir.path().join(WINDOW_FILE);
         let saved = WindowGeometry::new(120, 64, 1024, 700, true);
 
         assert_eq!(save_to(&path, &saved), Status::Written);
         assert_eq!(load_from(&path), Some(saved));
 
-        let text = std::fs::read_to_string(&path).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
         assert!(text.contains("@Rect(120 64 1024 700)"), "{text}");
         assert!(text.contains("maximized=true"), "{text}");
     }
 
     #[test]
     fn loads_a_geometry_qt_wrote() {
-        let dir = TempDir::new("geometry-qt");
-        let path = dir.path().join("omairc.conf");
-        std::fs::write(
+        let dir = TempDir::new("geometry-qt-f862");
+        let path = dir.path().join(WINDOW_FILE);
+        fs::write(
             &path,
             "[window]\ngeometry=@Rect(10 20 300 400)\nmaximized=true\n",
         )
@@ -176,9 +337,9 @@ mod tests {
     }
 
     #[test]
-    fn saving_keeps_unrelated_keys() {
-        let dir = TempDir::new("geometry-keeps-keys");
-        let path = dir.path().join("omairc.conf");
+    fn saving_keeps_unrelated_keys_in_window_ini() {
+        let dir = TempDir::new("geometry-keeps-keys-f862");
+        let path = dir.path().join(WINDOW_FILE);
         let mut other = Settings::open(&path);
         other.set_bool("preferences", "directs", true);
         assert_eq!(other.sync(), Status::Written);
@@ -192,8 +353,8 @@ mod tests {
 
     #[test]
     fn missing_or_invalid_geometry_loads_as_none() {
-        let dir = TempDir::new("geometry-missing");
-        let path = dir.path().join("omairc.conf");
+        let dir = TempDir::new("geometry-missing-f862");
+        let path = dir.path().join(WINDOW_FILE);
         assert_eq!(load_from(&path), None);
 
         let mut settings = Settings::open(&path);
@@ -203,18 +364,79 @@ mod tests {
     }
 
     #[test]
-    fn a_malformed_store_is_not_overwritten() {
-        let dir = TempDir::new("geometry-malformed");
-        let path = dir.path().join("omairc.conf");
+    fn malformed_window_ini_is_backed_up_and_rewritten() {
+        let dir = TempDir::new("geometry-malformed-window-f862");
+        let path = dir.path().join(WINDOW_FILE);
         let corrupt = b"[window\ngeometry=@Rect(0 0 800 600)\n";
-        std::fs::write(&path, corrupt).unwrap();
+        fs::write(&path, corrupt).unwrap();
+        let saved = WindowGeometry::new(0, 0, 900, 700, false);
+
+        assert_eq!(save_to(&path, &saved), Status::Written);
+        assert_eq!(load_from(&path), Some(saved));
+        assert_eq!(fs::read(path.with_file_name("window.ini.corrupt")).unwrap(), corrupt);
+        assert_eq!(probe_ini(&path), IniProbe::Ok);
+    }
+
+    #[test]
+    fn malformed_omairc_conf_is_not_overwritten() {
+        let dir = TempDir::new("geometry-malformed-conf-f862");
+        let conf = dir.path().join("omairc.conf");
+        let corrupt = b"[preferences\nbad=1\n";
+        fs::write(&conf, corrupt).unwrap();
+
+        let mut settings = Settings::open(&conf);
+        settings.set_bool("preferences", "directs", true);
+        assert_eq!(settings.sync(), Status::FormatError);
+        assert_eq!(fs::read(&conf).unwrap(), corrupt);
+        assert_eq!(probe_ini(&conf), IniProbe::Malformed);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    #[allow(clippy::permissions_set_readonly_false)]
+    fn read_only_malformed_window_ini_is_left_alone() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new("geometry-readonly-malformed-f862");
+        let path = dir.path().join(WINDOW_FILE);
+        let corrupt = b"[window\ngeometry=@Rect(0 0 800 600)\n";
+        fs::write(&path, corrupt).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o444)).unwrap();
+
+        if fs::OpenOptions::new().write(true).open(&path).is_ok() {
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+            return;
+        }
 
         assert_eq!(
             save_to(&path, &WindowGeometry::new(0, 0, 900, 700, false)),
-            Status::FormatError
+            Status::AccessError
         );
-        assert_eq!(std::fs::read(&path).unwrap(), corrupt);
-        assert_eq!(probe_ini(&path), IniProbe::Malformed);
+        assert_eq!(fs::read(&path).unwrap(), corrupt);
+        assert!(!dir.path().join("window.ini.corrupt").exists());
+
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+    }
+
+    #[test]
+    fn failed_rename_removes_the_corrupt_backup() {
+        let dir = TempDir::new("geometry-rename-fail-f862");
+        let path = dir.path().join(WINDOW_FILE);
+        let corrupt = b"[window\nbad=1\n";
+        fs::write(&path, corrupt).unwrap();
+        let data = encoded_geometry(&WindowGeometry::new(0, 0, 900, 700, false));
+        let temp = write_window_temp(&path, &data).expect("temp");
+        let backup = link_window_corrupt_backup(&path).expect("backup");
+        fs::remove_file(&path).unwrap();
+        fs::create_dir(&path).unwrap();
+        assert!(fs::rename(&temp, &path).is_err());
+        let _ = fs::remove_file(&temp);
+        let _ = fs::remove_file(&backup);
+        assert!(!backup.exists());
+        assert!(path.is_dir());
+
+        assert!(recover_malformed_ini_file(&path, &data).is_err());
+        assert!(!dir.path().join("window.ini.corrupt").exists());
     }
 
     #[test]
@@ -230,5 +452,162 @@ mod tests {
 
         let seeded = GeometryTracker::new(Some(first));
         assert!(!seeded.differs(first));
+    }
+
+    fn set_mode(path: &Path, mode: u32) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = (path, mode);
+        }
+    }
+
+    fn sleep_for_mtime() {
+        thread::sleep(Duration::from_millis(1100));
+    }
+
+    #[test]
+    fn geometry_save_leaves_conf_bytes_and_mtime_alone() {
+        let dir = TempDir::new("geometry-conf-untouched-f862");
+        let conf = dir.path().join("omairc.conf");
+        let window = dir.path().join(WINDOW_FILE);
+        fs::write(
+            &conf,
+            "[preferences]\ndirects=true\n[window]\ngeometry=@Rect(1 2 3 4)\n",
+        )
+        .unwrap();
+        set_mode(&conf, 0o644);
+        sleep_for_mtime();
+        let before_bytes = fs::read(&conf).unwrap();
+        let before_mtime = fs::metadata(&conf).unwrap().modified().unwrap();
+
+        assert_eq!(
+            save_to(&window, &WindowGeometry::new(40, 50, 900, 700, false)),
+            Status::Written
+        );
+        assert_eq!(fs::read(&conf).unwrap(), before_bytes);
+        assert_eq!(fs::metadata(&conf).unwrap().modified().unwrap(), before_mtime);
+        assert!(window.exists());
+
+        sleep_for_mtime();
+        assert_eq!(
+            save_to(&window, &WindowGeometry::new(40, 50, 900, 700, true)),
+            Status::Written
+        );
+        assert_eq!(fs::read(&conf).unwrap(), before_bytes);
+        assert_eq!(fs::metadata(&conf).unwrap().modified().unwrap(), before_mtime);
+
+        sleep_for_mtime();
+        assert_eq!(
+            save_to(&window, &WindowGeometry::new(40, 50, 900, 700, true)),
+            Status::Written
+        );
+        assert_eq!(fs::read(&conf).unwrap(), before_bytes);
+        assert_eq!(fs::metadata(&conf).unwrap().modified().unwrap(), before_mtime);
+    }
+
+    #[test]
+    fn window_ini_honours_xdg_state_home_and_dev_home() {
+        let home = PathBuf::from("home-f862");
+        let xdg = TempDir::new("geometry-xdg-f862");
+        let env = Env {
+            xdg_state_home: Some(xdg.path().to_path_buf()),
+            home: Some(home.clone()),
+            temp_dir: PathBuf::from("tmp"),
+            ..Env::default()
+        };
+        let window = paths::window_path_for(&env, Platform::Linux);
+        assert_eq!(save_to(&window, &WindowGeometry::new(1, 2, 800, 600, false)), Status::Written);
+        assert!(window.starts_with(xdg.path()));
+        assert_eq!(load_from(&window).unwrap().width, 800);
+
+        let dev = TempDir::new("geometry-dev-f862");
+        let dev_env = Env {
+            dev_home: Some(dev.path().to_path_buf()),
+            xdg_state_home: Some(PathBuf::from("ignored")),
+            home: Some(home),
+            temp_dir: PathBuf::from("tmp"),
+            ..Env::default()
+        };
+        let dev_window = paths::window_path_for(&dev_env, Platform::Linux);
+        assert_eq!(
+            save_to(&dev_window, &WindowGeometry::new(3, 4, 700, 500, true)),
+            Status::Written
+        );
+        assert_eq!(
+            dev_window,
+            dev.path().join("state").join(WINDOW_FILE)
+        );
+        assert!(load_from(&dev_window).unwrap().maximized);
+    }
+
+    #[test]
+    fn conf_fallback_restores_once_and_writes_window_ini() {
+        let dir = TempDir::new("geometry-fallback-f862");
+        let conf = dir.path().join("omairc.conf");
+        let window = dir.path().join(WINDOW_FILE);
+        fs::write(
+            &conf,
+            "[window]\ngeometry=@Rect(100 100 900 650)\nmaximized=false\n",
+        )
+        .unwrap();
+        set_mode(&conf, 0o600);
+        let conf_bytes = fs::read(&conf).unwrap();
+
+        let restored = load_stored(&window, Some(&conf)).expect("fallback geometry");
+        assert_eq!(restored.width, 900);
+        assert_eq!(restored.height, 650);
+        assert_eq!(restored.x, 100);
+        assert_eq!(fs::read(&conf).unwrap(), conf_bytes);
+        assert!(!window.exists());
+
+        assert_eq!(
+            save_to(&window, &WindowGeometry::new(100, 100, 900, 650, false)),
+            Status::Written
+        );
+        assert_eq!(fs::read(&conf).unwrap(), conf_bytes);
+        assert!(window.exists());
+        assert_eq!(load_from(&window), Some(restored));
+    }
+
+    #[test]
+    fn new_window_ini_is_owner_only() {
+        let dir = TempDir::new("geometry-mode-f862");
+        let window = dir.path().join(WINDOW_FILE);
+        assert_eq!(
+            save_to(&window, &WindowGeometry::new(0, 0, 800, 600, false)),
+            Status::Written
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&window).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
+    }
+
+    #[test]
+    fn geometry_save_must_target_window_ini_not_conf() {
+        let dir = TempDir::new("geometry-mutation-guard-f862");
+        let conf = dir.path().join("omairc.conf");
+        let window = dir.path().join(WINDOW_FILE);
+        fs::write(&conf, "[preferences]\nkeep=yes\n").unwrap();
+        sleep_for_mtime();
+        let before = fs::read(&conf).unwrap();
+
+        assert_eq!(
+            save_to(&window, &WindowGeometry::new(10, 20, 900, 700, false)),
+            Status::Written
+        );
+        assert_eq!(fs::read(&conf).unwrap(), before);
+        assert!(window.exists());
+        assert!(
+            !fs::read_to_string(&conf).unwrap().contains("[window]"),
+            "geometry save must not add a [window] group to omairc.conf"
+        );
     }
 }
