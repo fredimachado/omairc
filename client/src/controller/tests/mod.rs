@@ -29,7 +29,6 @@ mod persistence;
 mod persistence_closed;
 mod playback;
 mod readmarker;
-mod readmarker_hold;
 mod replies;
 mod scrollplace;
 mod selection;

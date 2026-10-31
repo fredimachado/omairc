@@ -277,7 +277,6 @@ impl Controller {
                 self.request_read_marker_get_with_key(&key, &get_target);
             }
         }
-        self.sync_read_marker_for_selection();
     }
 
     /// Drops the selection without pumping (`ClearConversationSelection`).

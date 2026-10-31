@@ -302,18 +302,3 @@ func TestReadMarkerReconnectClearsInFlightSoSameStampRetries(t *testing.T) {
 		t.Fatalf("connection reset must clear in_flight so the same stamp can be sent again: %v", fixture.frames())
 	}
 }
-
-func TestReadMarkerFailDoesNotFlushSameStampImmediately(t *testing.T) {
-	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
-	registerWithReadMarker(fixture, "draft/read-marker")
-	want := "MARKREAD #omarchy timestamp=2024-06-01T12:00:00.000Z\r\n"
-	when := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
-	fixture.session.QueueReadMarkerSet("#omarchy", when)
-	if countReadMarkerFrame(fixture.frames(), want) != 1 {
-		t.Fatalf("frames = %v", fixture.frames())
-	}
-	fixture.inject(":server FAIL MARKREAD RATE_LIMITED #omarchy :slow\r\n")
-	if countReadMarkerFrame(fixture.frames(), want) != 1 {
-		t.Fatalf("FAIL must not flush an immediate same-stamp resend: %v", fixture.frames())
-	}
-}

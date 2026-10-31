@@ -75,39 +75,11 @@ func (s *readMarkerState) awaitsGet(key irc.ConversationKey) bool {
 
 // NoteTranscriptViewport records whether the shell is focused and the selected
 // transcript is pinned to the bottom. It mirrors the Qt window's active plus
-// transcript-at-end gate used before publishing a read marker. Unchanged
-// values are ignored so a NotifyMsg after a set FAIL cannot immediately
-// resend the same stamp; retries come from select, focus, reconnect, or a
-// new message.
+// transcript-at-end gate used before publishing a read marker.
 func (c *Controller) NoteTranscriptViewport(focused bool, followEnd bool) {
-	if c.transcriptFocused == focused && c.transcriptFollowEnd == followEnd {
-		return
-	}
 	c.transcriptFocused = focused
 	c.transcriptFollowEnd = followEnd
 	c.syncReadMarkerForSelection()
-}
-
-// armReadMarkerReconnectHold drops get dedupe for networkID and, when a
-// direct message on that network is selected, keeps awaiting_get set so a
-// viewport sync after 001 cannot publish before Welcome's get request.
-func (c *Controller) armReadMarkerReconnectHold(networkID string) {
-	if networkID == "" {
-		return
-	}
-	for key := range c.readMarkers.getSent {
-		if key.NetworkID == networkID {
-			delete(c.readMarkers.getSent, key)
-		}
-	}
-	if c.selected == nil || c.selected.NetworkID != networkID {
-		return
-	}
-	features := c.reducer.ServerFeatures(networkID)
-	if features.IsChannel(c.selected.NormalizedTarget) {
-		return
-	}
-	c.readMarkers.awaitingGet[*c.selected] = struct{}{}
 }
 
 // ReadMarkerReceived applies a server read marker for one target. An empty

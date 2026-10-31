@@ -626,10 +626,6 @@ func (c *Controller) StateChanged(networkID string, state session.SessionState) 
 	defer c.unlock()
 	if networkID != "" && state != session.StateRegistered {
 		c.playback.OnLeftRegistration(networkID)
-		// Hold sets on the selected DM until Welcome's get runs. 001 marks the
-		// session Registered before Registered()/Apply can take this lock, and
-		// a shell NotifyMsg that already holds it would otherwise publish.
-		c.armReadMarkerReconnectHold(networkID)
 	}
 	c.refreshConnectionStatus()
 }
@@ -948,11 +944,6 @@ func (c *Controller) Apply(event irc.Event) {
 		notify.Members = irc.MemberSurfaceReset
 		notify.Selection = true
 	}
-	// Welcome's get must land before Publish can wake the shell: OnViewChanged
-	// may sync the viewport, and the get hold has to exist first.
-	if welcomeNetwork != "" {
-		c.requestReadMarkerGetForSelectedDirect(welcomeNetwork)
-	}
 	c.Publish(notify)
 
 	if mention, ok := c.reducer.TakeMentionArrival(); ok && c.OnMentionArrived != nil {
@@ -964,6 +955,9 @@ func (c *Controller) Apply(event irc.Event) {
 			fn(mention.Author, mention.Body, mention.NetworkID,
 				mention.Target, mention.MsgID.Value)
 		})
+	}
+	if welcomeNetwork != "" {
+		c.requestReadMarkerGetForSelectedDirect(welcomeNetwork)
 	}
 	c.syncReadMarkerForSelection()
 
@@ -1274,7 +1268,6 @@ func (c *Controller) SelectConversation(networkID, target string) {
 		}
 		c.requestReadMarkerGetWithKey(key, getTarget)
 	}
-	c.syncReadMarkerForSelection()
 }
 
 // SelectConversationByID resolves a irc.ConversationID and selects it. It
@@ -1797,9 +1790,6 @@ func (c *Controller) SetWindowActive(active bool) {
 	if c.reducer.MarkRead(*c.selected) {
 		c.Publish(irc.ViewNotify{Conversations: true})
 	}
-	// Refocus is a retry trigger after a set FAIL; NoteTranscriptViewport
-	// ignores an unchanged focused bit once SetWindowActive has applied it.
-	c.syncReadMarkerForSelection()
 }
 
 // SetMuted records the muted flag for one conversation.

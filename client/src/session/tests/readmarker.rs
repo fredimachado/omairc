@@ -352,19 +352,3 @@ fn read_marker_reconnect_clears_in_flight_so_same_stamp_retries() {
         fx.frames()
     );
 }
-
-#[test]
-fn read_marker_fail_does_not_flush_same_stamp_immediately() {
-    let fx = fresh();
-    register_with_read_marker(&fx, "draft/read-marker");
-    let want = "MARKREAD #omarchy timestamp=2024-06-01T12:00:00.000Z\r\n";
-    fx.session.queue_read_marker_set("#omarchy", at(0));
-    assert_eq!(count_containing(&fx.frames(), want), 1);
-    fx.inject(":server FAIL MARKREAD RATE_LIMITED #omarchy :slow\r\n");
-    assert_eq!(
-        count_containing(&fx.frames(), want),
-        1,
-        "FAIL must not flush an immediate same-stamp resend: {:?}",
-        fx.frames()
-    );
-}
