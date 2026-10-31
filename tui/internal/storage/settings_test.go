@@ -822,17 +822,21 @@ func TestSyncSameValueAfterWriteSkipsUnchangedBytes(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := os.WriteFile(path, []byte("[preferences]\ndirects=true\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
+	if _, err := os.Stat(path); err == nil {
+		t.Fatalf("test file already exists: %s", path)
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("Stat: %v", err)
 	}
-	if err := os.Chmod(path, 0o644); err != nil {
-		t.Fatalf("Chmod: %v", err)
-	}
+
 	s := OpenSettings(path)
+	s.SetBool("preferences", "directs", true)
+	if got := s.Sync(); got != StatusWritten {
+		t.Fatalf("first Sync() = %v, want StatusWritten", got)
+	}
 	if !syncLeavesDiskUnchanged(t, path, s, func() {
 		s.SetBool("preferences", "directs", true)
 	}) {
-		t.Fatal("repeat assignment after write rewrote the file")
+		t.Fatal("repeat assignment after first write rewrote the file")
 	}
 }
 

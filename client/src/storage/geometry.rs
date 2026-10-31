@@ -6,9 +6,11 @@
 //! The gpui glue that reads and applies the live window lives in
 //! `desktop::windowstate`. This module has no toolkit types.
 
-use std::path::Path;
+use std::fs::{self, OpenOptions};
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 
-use super::settings::{Settings, Status};
+use super::settings::{probe_ini, IniProbe, Settings, Status};
 
 const GROUP: &str = "window";
 const KEY_GEOMETRY: &str = "geometry";
@@ -107,8 +109,9 @@ impl GeometryTracker {
     }
 }
 
-/// Reads geometry from `window_path`, or once from `conf_path` when `window.ini`
-/// is missing. Never writes to `conf_path`.
+/// Reads geometry from `window_path` when it exists. When `window.ini` is missing,
+/// reads the legacy `[window]` group from `conf_path` on each launch until the first
+/// successful save creates `window.ini`. Never writes to `conf_path`.
 pub fn load_stored(window_path: &Path, conf_path: Option<&Path>) -> Option<WindowGeometry> {
     if window_path.exists() {
         return load_from(window_path);
@@ -116,13 +119,157 @@ pub fn load_stored(window_path: &Path, conf_path: Option<&Path>) -> Option<Windo
     conf_path.and_then(|path| WindowGeometry::load(&Settings::open(path)))
 }
 
-/// Writes `geometry` into `window_path`, keeping every other key in that file.
-/// Returns the status. A malformed or read-only file is refused, not overwritten.
+/// Writes `geometry` into `window_path`, keeping every other key in that file when
+/// it is well-formed. A malformed `window.ini` is hard-linked to `window.ini.corrupt`
+/// (then `.corrupt.1`, …) and replaced with a clean file. Returns the status.
 pub fn save_to(window_path: &Path, geometry: &WindowGeometry) -> Status {
     let mut settings = Settings::open(window_path);
     geometry.save(&mut settings);
-    settings.sync()
+    match settings.sync() {
+        Status::FormatError if probe_ini(window_path) == IniProbe::Malformed => {
+            recover_malformed_window_ini(window_path, geometry)
+        }
+        other => other,
+    }
 }
+
+const MAX_WINDOW_CORRUPT_BACKUPS: u32 = 10_000;
+
+fn recover_malformed_window_ini(window_path: &Path, geometry: &WindowGeometry) -> Status {
+    let encoded = encoded_geometry(geometry);
+    match recover_malformed_ini_file(window_path, &encoded) {
+        Ok(()) => Status::Written,
+        Err(_) => Status::FormatError,
+    }
+}
+
+fn encoded_geometry(geometry: &WindowGeometry) -> Vec<u8> {
+    let scratch = std::env::temp_dir().join(format!(
+        ".omairc-window-encode-{}",
+        std::process::id()
+    ));
+    let mut settings = Settings::open(&scratch);
+    geometry.save(&mut settings);
+    settings.encode()
+}
+
+/// Temp sibling, hard-link backup, rename — same shape as STS malformed recovery.
+fn recover_malformed_ini_file(path: &Path, data: &[u8]) -> io::Result<()> {
+    let temp = write_window_temp(path, data)?;
+    let Some(backup) = link_window_corrupt_backup(path) else {
+        let _ = fs::remove_file(&temp);
+        return Err(io::Error::other("window.ini corrupt backup failed"));
+    };
+    match fs::rename(&temp, path) {
+        Ok(()) => {
+            restrict_backup_permissions(&backup);
+            Ok(())
+        }
+        Err(err) => {
+            let _ = fs::remove_file(&temp);
+            Err(err)
+        }
+    }
+}
+
+fn write_window_temp(path: &Path, data: &[u8]) -> io::Result<PathBuf> {
+    let dir = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(dir)?;
+    let mut last_error = None;
+    for n in 0..16u32 {
+        let candidate = dir.join(format!(
+            ".omairc-window-{}-{n}.tmp",
+            std::process::id()
+        ));
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&candidate)
+        {
+            Ok(mut file) => {
+                let write_result = (|| -> io::Result<()> {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+                    }
+                    file.write_all(data)?;
+                    file.sync_all()
+                })();
+                drop(file);
+                match write_result {
+                    Ok(()) => return Ok(candidate),
+                    Err(err) => {
+                        let _ = fs::remove_file(&candidate);
+                        return Err(err);
+                    }
+                }
+            }
+            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => last_error = Some(err),
+            Err(err) => return Err(err),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| io::Error::other("no free window temp name")))
+}
+
+fn link_window_corrupt_backup(path: &Path) -> Option<PathBuf> {
+    let parent = path.parent()?;
+    let name = path.file_name()?.to_string_lossy();
+    for n in 0..MAX_WINDOW_CORRUPT_BACKUPS {
+        let candidate = if n == 0 {
+            parent.join(format!("{name}.corrupt"))
+        } else {
+            parent.join(format!("{name}.corrupt.{n}"))
+        };
+        match fs::hard_link(path, &candidate) {
+            Ok(()) => return Some(candidate),
+            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(_) => match copy_window_exclusive(path, &candidate) {
+                Ok(()) => return Some(candidate),
+                Err(err) if err.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(_) => return None,
+            },
+        }
+    }
+    None
+}
+
+fn copy_window_exclusive(src: &Path, dst: &Path) -> io::Result<()> {
+    let data = fs::read(src)?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(dst)?;
+    let write_result = (|| -> io::Result<()> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            file.set_permissions(fs::Permissions::from_mode(0o600))?;
+        }
+        file.write_all(&data)?;
+        file.sync_all()
+    })();
+    drop(file);
+    match write_result {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            let _ = fs::remove_file(dst);
+            Err(err)
+        }
+    }
+}
+
+#[cfg(unix)]
+fn restrict_backup_permissions(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
+}
+
+#[cfg(not(unix))]
+fn restrict_backup_permissions(_path: &Path) {}
 
 /// Reads the stored geometry at `path`, or `None` when it has none. A malformed file
 /// is read as empty, which is what the Qt client does too.
@@ -217,18 +364,31 @@ mod tests {
     }
 
     #[test]
-    fn a_malformed_store_is_not_overwritten() {
-        let dir = TempDir::new("geometry-malformed-f862");
+    fn malformed_window_ini_is_backed_up_and_rewritten() {
+        let dir = TempDir::new("geometry-malformed-window-f862");
         let path = dir.path().join(WINDOW_FILE);
         let corrupt = b"[window\ngeometry=@Rect(0 0 800 600)\n";
         fs::write(&path, corrupt).unwrap();
+        let saved = WindowGeometry::new(0, 0, 900, 700, false);
 
-        assert_eq!(
-            save_to(&path, &WindowGeometry::new(0, 0, 900, 700, false)),
-            Status::FormatError
-        );
-        assert_eq!(fs::read(&path).unwrap(), corrupt);
-        assert_eq!(probe_ini(&path), IniProbe::Malformed);
+        assert_eq!(save_to(&path, &saved), Status::Written);
+        assert_eq!(load_from(&path), Some(saved));
+        assert_eq!(fs::read(path.with_file_name("window.ini.corrupt")).unwrap(), corrupt);
+        assert_eq!(probe_ini(&path), IniProbe::Ok);
+    }
+
+    #[test]
+    fn malformed_omairc_conf_is_not_overwritten() {
+        let dir = TempDir::new("geometry-malformed-conf-f862");
+        let conf = dir.path().join("omairc.conf");
+        let corrupt = b"[preferences\nbad=1\n";
+        fs::write(&conf, corrupt).unwrap();
+
+        let mut settings = Settings::open(&conf);
+        settings.set_bool("preferences", "directs", true);
+        assert_eq!(settings.sync(), Status::FormatError);
+        assert_eq!(fs::read(&conf).unwrap(), corrupt);
+        assert_eq!(probe_ini(&conf), IniProbe::Malformed);
     }
 
     #[test]
