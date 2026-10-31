@@ -10,7 +10,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use super::settings::{probe_ini, IniProbe, Settings, Status};
+use super::settings::{file_not_writable, probe_ini, IniProbe, Settings, Status};
 
 const GROUP: &str = "window";
 const KEY_GEOMETRY: &str = "geometry";
@@ -136,6 +136,9 @@ pub fn save_to(window_path: &Path, geometry: &WindowGeometry) -> Status {
 const MAX_WINDOW_CORRUPT_BACKUPS: u32 = 10_000;
 
 fn recover_malformed_window_ini(window_path: &Path, geometry: &WindowGeometry) -> Status {
+    if file_not_writable(window_path) {
+        return Status::AccessError;
+    }
     let encoded = encoded_geometry(geometry);
     match recover_malformed_ini_file(window_path, &encoded) {
         Ok(()) => Status::Written,
@@ -144,11 +147,7 @@ fn recover_malformed_window_ini(window_path: &Path, geometry: &WindowGeometry) -
 }
 
 fn encoded_geometry(geometry: &WindowGeometry) -> Vec<u8> {
-    let scratch = std::env::temp_dir().join(format!(
-        ".omairc-window-encode-{}",
-        std::process::id()
-    ));
-    let mut settings = Settings::open(&scratch);
+    let mut settings = Settings::in_memory();
     geometry.save(&mut settings);
     settings.encode()
 }
@@ -167,6 +166,7 @@ fn recover_malformed_ini_file(path: &Path, data: &[u8]) -> io::Result<()> {
         }
         Err(err) => {
             let _ = fs::remove_file(&temp);
+            let _ = fs::remove_file(&backup);
             Err(err)
         }
     }
@@ -389,6 +389,54 @@ mod tests {
         assert_eq!(settings.sync(), Status::FormatError);
         assert_eq!(fs::read(&conf).unwrap(), corrupt);
         assert_eq!(probe_ini(&conf), IniProbe::Malformed);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    #[allow(clippy::permissions_set_readonly_false)]
+    fn read_only_malformed_window_ini_is_left_alone() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new("geometry-readonly-malformed-f862");
+        let path = dir.path().join(WINDOW_FILE);
+        let corrupt = b"[window\ngeometry=@Rect(0 0 800 600)\n";
+        fs::write(&path, corrupt).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o444)).unwrap();
+
+        if fs::OpenOptions::new().write(true).open(&path).is_ok() {
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+            return;
+        }
+
+        assert_eq!(
+            save_to(&path, &WindowGeometry::new(0, 0, 900, 700, false)),
+            Status::AccessError
+        );
+        assert_eq!(fs::read(&path).unwrap(), corrupt);
+        assert!(!dir.path().join("window.ini.corrupt").exists());
+
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+    }
+
+    #[test]
+    fn failed_rename_removes_the_corrupt_backup() {
+        let dir = TempDir::new("geometry-rename-fail-f862");
+        let path = dir.path().join(WINDOW_FILE);
+        let corrupt = b"[window\nbad=1\n";
+        fs::write(&path, corrupt).unwrap();
+        let data = encoded_geometry(&WindowGeometry::new(0, 0, 900, 700, false));
+        let temp = write_window_temp(&path, &data).expect("temp");
+        let backup = link_window_corrupt_backup(&path).expect("backup");
+        fs::remove_file(&path).unwrap();
+        fs::create_dir(&path).unwrap();
+        assert!(fs::rename(&temp, &path).is_err());
+        let _ = fs::remove_file(&temp);
+        let _ = fs::remove_file(&backup);
+        assert!(!backup.exists());
+        assert!(path.is_dir());
+
+        assert!(recover_malformed_ini_file(&path, &data).is_err());
+        assert!(!dir.path().join("window.ini.corrupt").exists());
     }
 
     #[test]

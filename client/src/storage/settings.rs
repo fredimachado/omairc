@@ -69,6 +69,11 @@ pub struct Settings {
 }
 
 impl Settings {
+    /// In-memory store for encoding without reading or writing a path.
+    pub(in crate::storage) fn in_memory() -> Self {
+        settings_snapshot::in_memory()
+    }
+
     /// The stored value for `group`/`key`, or an empty string when the key is absent.
     pub fn value(&self, group: &str, key: &str) -> String {
         self.text(group, key).unwrap_or_default().to_string()
