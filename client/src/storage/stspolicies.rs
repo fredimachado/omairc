@@ -50,7 +50,7 @@ impl IniStsStore {
     /// Removes the group `key` from memory and, when present, from the file.
     fn remove(&self, key: &str, now_unix: i64) {
         self.memory.borrow_mut().remove(key);
-        let mut settings = Settings::open(&self.path);
+        let mut settings = Settings::open_sts(&self.path);
         if !settings.child_groups("").iter().any(|group| group == key) {
             return;
         }
@@ -86,7 +86,7 @@ impl StsStore for IniStsStore {
                 return Some(cached);
             }
         }
-        let settings = Settings::open(&self.path);
+        let settings = Settings::open_sts(&self.path);
         if !settings.contains(&key, PORT_KEY) || !settings.contains(&key, EXPIRY_KEY) {
             return None;
         }
@@ -128,7 +128,7 @@ impl StsStore for IniStsStore {
             duration_seconds,
             expiry_epoch_seconds: expiry,
         };
-        let mut settings = Settings::open(&self.path);
+        let mut settings = Settings::open_sts(&self.path);
         merge_sts_policy(&mut settings, &key, incoming, now.timestamp());
         // Remember the merge winner so a failed persist cannot drop it, and so
         // memory never holds a weaker policy than the file map.
@@ -240,7 +240,7 @@ fn recover_malformed_sts(path: &Path, data: &[u8]) -> io::Result<()> {
         return Err(io::Error::other("sts corrupt backup failed"));
     }
     #[cfg(test)]
-    if FAIL_STS_INSTALL.with(std::cell::Cell::get) {
+    if STS_TEST_HOOK.with(|hook| matches!(hook.get(), StsTestHook::FailInstall)) {
         let _ = fs::remove_file(&temp);
         return Err(io::Error::other("test: install after backup failed"));
     }
@@ -254,6 +254,7 @@ fn recover_malformed_sts(path: &Path, data: &[u8]) -> io::Result<()> {
 }
 
 /// Creates a same-directory temp file with `data`, fsyncs it, and returns its path.
+/// Removes the temp on every failure after create.
 fn write_sts_temp(path: &Path, data: &[u8]) -> io::Result<PathBuf> {
     let dir = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(dir)?;
@@ -269,14 +270,28 @@ fn write_sts_temp(path: &Path, data: &[u8]) -> io::Result<PathBuf> {
             .open(&candidate)
         {
             Ok(mut file) => {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    file.set_permissions(fs::Permissions::from_mode(0o600))?;
+                let write_result = (|| -> io::Result<()> {
+                    #[cfg(test)]
+                    if STS_TEST_HOOK.with(|hook| matches!(hook.get(), StsTestHook::FailTempAfterCreate)) {
+                        return Err(io::Error::other("test: temp write failed"));
+                    }
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+                    }
+                    file.write_all(data)?;
+                    file.sync_all()?;
+                    Ok(())
+                })();
+                drop(file);
+                match write_result {
+                    Ok(()) => return Ok(candidate),
+                    Err(err) => {
+                        let _ = fs::remove_file(&candidate);
+                        return Err(err);
+                    }
                 }
-                file.write_all(data)?;
-                file.sync_all()?;
-                return Ok(candidate);
             }
             Err(err) if err.kind() == io::ErrorKind::AlreadyExists => last_error = Some(err),
             Err(err) => return Err(err),
@@ -285,16 +300,40 @@ fn write_sts_temp(path: &Path, data: &[u8]) -> io::Result<PathBuf> {
     Err(last_error.unwrap_or_else(|| io::Error::other("no free sts temp name")))
 }
 
+fn sts_corrupt_backup_limit() -> u32 {
+    #[cfg(test)]
+    if let StsTestHook::MaxBackups(limit) = STS_TEST_HOOK.with(std::cell::Cell::get) {
+        return limit.max(1);
+    }
+    MAX_STS_CORRUPT_BACKUPS
+}
+
 /// Hard-links `path` to `path.corrupt` / `path.corrupt.N`. Retries only on "already
 /// exists"; falls back to an exclusive-create copy. Fails closed on other errors.
 fn link_sts_corrupt_backup(path: &Path) -> bool {
+    #[cfg(test)]
+    match STS_TEST_HOOK.with(std::cell::Cell::get) {
+        StsTestHook::FailBackup => return false,
+        StsTestHook::FailCopyAfterCreate => {
+            // Exercise the copy fallback, then fail it (and require cleanup).
+            let parent = path.parent().unwrap_or_else(|| Path::new("."));
+            let name = path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
+            let candidate = parent.join(format!("{name}.corrupt"));
+            return match copy_sts_exclusive(path, &candidate) {
+                Ok(()) => true,
+                Err(err) if err.kind() == io::ErrorKind::AlreadyExists => false,
+                Err(_) => false,
+            };
+        }
+        _ => {}
+    }
     let Some(parent) = path.parent() else {
         return false;
     };
     let Some(name) = path.file_name().map(|n| n.to_string_lossy()) else {
         return false;
     };
-    for n in 0..MAX_STS_CORRUPT_BACKUPS {
+    for n in 0..sts_corrupt_backup_limit() {
         let candidate = if n == 0 {
             parent.join(format!("{name}.corrupt"))
         } else {
@@ -314,20 +353,37 @@ fn link_sts_corrupt_backup(path: &Path) -> bool {
 }
 
 /// Copies `src` to a new `dst` created with `create_new`, then fsyncs.
+/// Removes a partial `dst` on any failure after create.
 fn copy_sts_exclusive(src: &Path, dst: &Path) -> io::Result<()> {
     let data = fs::read(src)?;
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(dst)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+    let write_result = (|| -> io::Result<()> {
+        #[cfg(test)]
+        if STS_TEST_HOOK.with(|hook| matches!(hook.get(), StsTestHook::FailCopyAfterCreate)) {
+            // Leave a truncated file that the cleanup path must remove.
+            let _ = file.write_all(b"partial");
+            return Err(io::Error::other("test: copy write failed"));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            file.set_permissions(fs::Permissions::from_mode(0o600))?;
+        }
+        file.write_all(&data)?;
+        file.sync_all()?;
+        Ok(())
+    })();
+    drop(file);
+    match write_result {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            let _ = fs::remove_file(dst);
+            Err(err)
+        }
     }
-    file.write_all(&data)?;
-    file.sync_all()?;
-    Ok(())
 }
 
 /// Owner read and write only (`IrcStsStore::restrictPermissions`). A missing file is left alone.
@@ -341,9 +397,34 @@ fn restrict_permissions(path: &Path) {
 fn restrict_permissions(_path: &Path) {}
 
 #[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum StsTestHook {
+    #[default]
+    None,
+    /// Recovery stops after the backup step and removes the temp file.
+    FailInstall,
+    /// Backup step itself fails (sts untouched, policy kept in memory).
+    FailBackup,
+    /// Copy fallback creates a partial file then fails; partial must be removed.
+    FailCopyAfterCreate,
+    /// Temp create succeeds then write fails; temp must be removed.
+    FailTempAfterCreate,
+    /// Caps the corrupt-backup name loop so exhaustion is testable.
+    MaxBackups(u32),
+}
+
+#[cfg(test)]
 thread_local! {
-    /// When true, recovery stops after the backup step and removes the temp file.
-    static FAIL_STS_INSTALL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static STS_TEST_HOOK: std::cell::Cell<StsTestHook> =
+        const { std::cell::Cell::new(StsTestHook::None) };
+}
+
+#[cfg(test)]
+fn with_sts_test_hook<T>(hook: StsTestHook, f: impl FnOnce() -> T) -> T {
+    STS_TEST_HOOK.with(|cell| cell.set(hook));
+    let result = f();
+    STS_TEST_HOOK.with(|cell| cell.set(StsTestHook::None));
+    result
 }
 
 #[cfg(test)]
@@ -605,14 +686,54 @@ mod tests {
 
         store.store("irc.example", 6697, 60, at(1_700_000_000));
 
+        // Reload from disk so memory cannot mask a merge regression.
+        let restarted = IniStsStore::new(path);
         assert_eq!(
-            store.lookup("irc.example", at(1_700_000_000)),
+            restarted.lookup("irc.example", at(1_700_000_000)),
             Some(StsCached {
                 port: 6697,
                 duration_seconds: 60,
                 expiry_epoch_seconds: 1_700_000_060,
             }),
-            "invalid existing port must not win over a valid policy"
+            "invalid existing port must not win over a valid policy on disk"
+        );
+    }
+
+    #[test]
+    fn a_bad_line_inside_a_valid_group_keeps_the_policy() {
+        let dir = TempDir::new("sts-bad-inside-group");
+        let (store, path) = store_in(&dir);
+        // Bad line after port must not drop duration/expiry on load or recovery.
+        let mixed = format!(
+            "[{IRC_EXAMPLE_GROUP}]\nport=6697\nbad line\nduration=60\nexpiry=4102444800\n"
+        );
+        fs::write(&path, &mixed).expect("write");
+
+        assert_eq!(
+            store.lookup("irc.example", at(1_700_000_000)),
+            Some(StsCached {
+                port: 6697,
+                duration_seconds: 60,
+                expiry_epoch_seconds: 4_102_444_800,
+            }),
+            "policy must stay intact on load"
+        );
+
+        store.store("other.example", 6698, 30, at(1_700_000_000));
+
+        let restarted = IniStsStore::new(path.clone());
+        assert_eq!(
+            restarted.lookup("irc.example", at(1_700_000_000)),
+            Some(StsCached {
+                port: 6697,
+                duration_seconds: 60,
+                expiry_epoch_seconds: 4_102_444_800,
+            }),
+            "policy must survive recovery unchanged"
+        );
+        assert_eq!(
+            fs::read_to_string(path.with_file_name("sts.corrupt")).unwrap(),
+            mixed
         );
     }
 
@@ -688,26 +809,22 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn a_failed_backup_keeps_the_policy_in_memory() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = TempDir::new("sts-rename-fail");
+        let dir = TempDir::new("sts-backup-fail");
         let (store, path) = store_in(&dir);
         let garbage = "this line has no equals sign\n";
         fs::write(&path, garbage).expect("write");
-        // A read-only parent blocks backup creation, so recovery must fail closed.
-        let mut perms = fs::metadata(dir.path()).unwrap().permissions();
-        perms.set_mode(0o555);
-        fs::set_permissions(dir.path(), perms).unwrap();
 
-        store.store("irc.example", 6697, 60, at(0));
-
-        let mut perms = fs::metadata(dir.path()).unwrap().permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(dir.path(), perms).unwrap();
+        with_sts_test_hook(StsTestHook::FailBackup, || {
+            store.store("irc.example", 6697, 60, at(0));
+        });
 
         assert_eq!(fs::read_to_string(&path).expect("still there"), garbage);
+        assert!(
+            !path.with_file_name("sts.corrupt").exists(),
+            "backup step failed before creating a backup"
+        );
         assert_eq!(
             store.lookup("irc.example", at(1)),
             Some(StsCached {
@@ -717,6 +834,96 @@ mod tests {
             }),
             "failed backup must keep the policy in memory"
         );
+        assert_no_sts_temps(dir.path());
+    }
+
+    #[test]
+    fn a_failed_copy_fallback_leaves_sts_intact_and_removes_partial() {
+        let dir = TempDir::new("sts-copy-fail");
+        let (store, path) = store_in(&dir);
+        let garbage = "this line has no equals sign\n";
+        fs::write(&path, garbage).expect("write");
+
+        with_sts_test_hook(StsTestHook::FailCopyAfterCreate, || {
+            store.store("irc.example", 6697, 60, at(0));
+        });
+
+        assert_eq!(fs::read_to_string(&path).expect("still there"), garbage);
+        assert!(
+            !path.with_file_name("sts.corrupt").exists(),
+            "partial copy backup must be removed"
+        );
+        assert_eq!(
+            store.lookup("irc.example", at(1)),
+            Some(StsCached {
+                port: 6697,
+                duration_seconds: 60,
+                expiry_epoch_seconds: 60,
+            }),
+            "failed copy fallback must keep the policy in memory"
+        );
+        assert_no_sts_temps(dir.path());
+    }
+
+    #[test]
+    fn exhausting_corrupt_backup_names_fails_closed() {
+        let dir = TempDir::new("sts-backup-cap");
+        let (store, path) = store_in(&dir);
+        let garbage = "this line has no equals sign\n";
+        fs::write(&path, garbage).expect("write");
+        fs::write(dir.path().join("sts.corrupt"), "taken0").unwrap();
+        fs::write(dir.path().join("sts.corrupt.1"), "taken1").unwrap();
+
+        with_sts_test_hook(StsTestHook::MaxBackups(2), || {
+            store.store("irc.example", 6697, 60, at(0));
+        });
+
+        assert_eq!(fs::read_to_string(&path).expect("still there"), garbage);
+        assert_eq!(
+            fs::read_to_string(dir.path().join("sts.corrupt")).unwrap(),
+            "taken0"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join("sts.corrupt.1")).unwrap(),
+            "taken1"
+        );
+        assert!(
+            !dir.path().join("sts.corrupt.2").exists(),
+            "must not invent a name past the cap"
+        );
+        assert_eq!(
+            store.lookup("irc.example", at(1)),
+            Some(StsCached {
+                port: 6697,
+                duration_seconds: 60,
+                expiry_epoch_seconds: 60,
+            }),
+            "cap exit must keep the policy in memory"
+        );
+        assert_no_sts_temps(dir.path());
+    }
+
+    #[test]
+    fn a_failed_temp_write_leaves_no_temp_behind() {
+        let dir = TempDir::new("sts-temp-fail");
+        let (store, path) = store_in(&dir);
+        let garbage = "this line has no equals sign\n";
+        fs::write(&path, garbage).expect("write");
+
+        with_sts_test_hook(StsTestHook::FailTempAfterCreate, || {
+            store.store("irc.example", 6697, 60, at(0));
+        });
+
+        assert_eq!(fs::read_to_string(&path).expect("still there"), garbage);
+        assert_eq!(
+            store.lookup("irc.example", at(1)),
+            Some(StsCached {
+                port: 6697,
+                duration_seconds: 60,
+                expiry_epoch_seconds: 60,
+            })
+        );
+        assert_no_sts_temps(dir.path());
     }
 
     #[test]
@@ -726,9 +933,9 @@ mod tests {
         let garbage = "this line has no equals sign\n";
         fs::write(&path, garbage).expect("write");
 
-        FAIL_STS_INSTALL.with(|flag| flag.set(true));
-        store.store("irc.example", 6697, 60, at(0));
-        FAIL_STS_INSTALL.with(|flag| flag.set(false));
+        with_sts_test_hook(StsTestHook::FailInstall, || {
+            store.store("irc.example", 6697, 60, at(0));
+        });
 
         assert_eq!(
             fs::read_to_string(&path).expect("sts untouched"),
@@ -749,7 +956,11 @@ mod tests {
             }),
             "policy stays in memory"
         );
-        for entry in fs::read_dir(dir.path()).unwrap() {
+        assert_no_sts_temps(dir.path());
+    }
+
+    fn assert_no_sts_temps(dir: &Path) {
+        for entry in fs::read_dir(dir).unwrap() {
             let name = entry.unwrap().file_name();
             let name = name.to_string_lossy();
             assert!(

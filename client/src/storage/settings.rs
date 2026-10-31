@@ -76,6 +76,22 @@ impl Settings {
         }
     }
 
+    /// Loads an STS policy file. Same as [`Settings::open`], but after a bad line
+    /// inside a group, later keys for that group are kept when not already set, and
+    /// a key that is already set is not overwritten by a leaked line. Shared config
+    /// reads stay on [`Settings::open`].
+    pub(super) fn open_sts(path: impl Into<PathBuf>) -> Self {
+        let path = path.into();
+        let values = fs::read(&path)
+            .map(|raw| parse_sts_ini(&raw))
+            .unwrap_or_default();
+        Self {
+            path,
+            values,
+            dirty: false,
+        }
+    }
+
     /// The stored string, or `""` when the key is absent. A string list and an
     /// invalid value also read as `""`, matching `QVariant::toString`.
     pub fn value(&self, group: &str, key: &str) -> String {
@@ -464,32 +480,17 @@ fn parse_settings_ini(data: &[u8]) -> BTreeMap<String, IniValue> {
     let raw = strip_bom(data);
     let mut values = BTreeMap::new();
     let mut section = String::new();
-    // After a malformed line, ignore key=value pairs until the next valid header
-    // so they cannot leak into the previous group (STS recovery must not save that).
-    let mut skip_keys = false;
     for line in (IniLines { data: raw, pos: 0 }) {
         let text = &raw[line.start..line.start + line.len];
         if text[0] == b'[' {
-            let closed = text.iter().position(|&byte| byte == b']').is_some();
-            if !closed {
-                skip_keys = true;
-                continue;
-            }
             section = section_prefix(text);
-            skip_keys = false;
             continue;
         }
         // A comment or a value with no '=' carries no key. Probing has already
         // refused a malformed file, so skipping here never invents a key.
         let Some(equals_at) = line.equals else {
-            if text[0] != b';' {
-                skip_keys = true;
-            }
             continue;
         };
-        if skip_keys {
-            continue;
-        }
         let Some(equals) = equals_at.checked_sub(line.start) else {
             continue;
         };
@@ -499,6 +500,50 @@ fn parse_settings_ini(data: &[u8]) -> BTreeMap<String, IniValue> {
         let key = ini_unescaped_key(text[..equals].trim_ascii());
         let value = ini_unescaped_string_list(&text[equals + 1..]);
         values.insert(format!("{section}{key}"), value);
+    }
+    values
+}
+
+/// STS load path: like [`parse_settings_ini`], but after a bad line (or an unclosed
+/// `[` header) a later key is ignored only when that key is already set in the
+/// current group, so a garbage line cannot drop the rest of an intact policy and
+/// leaked keys cannot overwrite real ones.
+fn parse_sts_ini(data: &[u8]) -> BTreeMap<String, IniValue> {
+    let raw = strip_bom(data);
+    let mut values = BTreeMap::new();
+    let mut section = String::new();
+    let mut after_bad = false;
+    for line in (IniLines { data: raw, pos: 0 }) {
+        let text = &raw[line.start..line.start + line.len];
+        if text[0] == b'[' {
+            let closed = text.iter().position(|&byte| byte == b']').is_some();
+            if !closed {
+                after_bad = true;
+                continue;
+            }
+            section = section_prefix(text);
+            after_bad = false;
+            continue;
+        }
+        let Some(equals_at) = line.equals else {
+            if text[0] != b';' {
+                after_bad = true;
+            }
+            continue;
+        };
+        let Some(equals) = equals_at.checked_sub(line.start) else {
+            continue;
+        };
+        if equals >= text.len() {
+            continue;
+        }
+        let key = ini_unescaped_key(text[..equals].trim_ascii());
+        let path = format!("{section}{key}");
+        if after_bad && values.contains_key(&path) {
+            continue;
+        }
+        let value = ini_unescaped_string_list(&text[equals + 1..]);
+        values.insert(path, value);
     }
     values
 }
