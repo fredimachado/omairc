@@ -871,7 +871,7 @@ mod tests {
     }
 
     #[cfg(unix)]
-    mod symlink_sync_3dba {
+    mod symlink_sync {
         use super::*;
         use std::os::unix::fs::{symlink, PermissionsExt};
 

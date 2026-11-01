@@ -327,7 +327,7 @@ fn link_sts_corrupt_backup(path: &Path) -> Option<PathBuf> {
         StsTestHook::FailBackup => return None,
         StsTestHook::FailCopyAfterCreate => {
             // Exercise the copy fallback, then fail it (and require cleanup).
-            let parent = super::atomicwrite::atomic_write_dir(path).unwrap_or_else(|| PathBuf::from("."));
+            let parent = super::atomicwrite::atomic_write_parent_dir(path);
             let base = super::atomicwrite::atomic_write_base(path);
             let name = base.to_string_lossy();
             let candidate = parent.join(format!("{name}.corrupt"));
@@ -339,7 +339,7 @@ fn link_sts_corrupt_backup(path: &Path) -> Option<PathBuf> {
         }
         _ => {}
     }
-    let parent = super::atomicwrite::atomic_write_dir(path)?;
+    let parent = super::atomicwrite::atomic_write_parent_dir(path);
     let base = super::atomicwrite::atomic_write_base(path);
     let name = base.to_string_lossy();
     for n in 0..sts_corrupt_backup_limit() {

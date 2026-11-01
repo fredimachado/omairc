@@ -44,6 +44,12 @@ pub(crate) fn atomic_write_dir(path: &Path) -> Option<PathBuf> {
     Some(out)
 }
 
+/// Directory for sibling files (temp files, `.corrupt` backups) beside `path`.
+/// Uses `"."` when `path` has no directory prefix (for example `window.ini`).
+pub(crate) fn atomic_write_parent_dir(path: &Path) -> PathBuf {
+    atomic_write_dir(path).unwrap_or_else(|| PathBuf::from("."))
+}
+
 /// Final path segment of `path`, without normalizing `..`.
 pub(crate) fn atomic_write_base(path: &Path) -> PathBuf {
     use std::path::Component;
@@ -299,7 +305,7 @@ mod tests {
     }
 
     #[test]
-    fn atomic_write_path_helpers_table_3dba() {
+    fn atomic_write_path_helpers_table() {
         let cases = [
             ("sts", None, "sts"),
             ("x", None, "x"),
@@ -325,7 +331,7 @@ mod tests {
     }
 
     #[cfg(unix)]
-    mod symlink_atomic_write_3dba {
+    mod symlink_atomic_write {
         use super::*;
         use std::os::unix::fs::{symlink, PermissionsExt};
 
@@ -389,7 +395,7 @@ mod tests {
         }
 
         #[test]
-        fn write_atomic_two_hop_dotdot_decoy_3dba() {
+        fn write_atomic_two_hop_dotdot_decoy() {
             let dir = TempDir::new("atomic-two-hop-decoy-3dba");
             let home = dir.path().join("home");
             let dots = dir.path().join("dots");
@@ -416,7 +422,7 @@ mod tests {
         }
 
         #[test]
-        fn write_atomic_through_symlinked_data_directory_3dba() {
+        fn write_atomic_through_symlinked_data_directory() {
             let dir = TempDir::new("atomic-symlink-data-dir-3dba");
             let data = dir.path().join("data");
             fs::create_dir_all(&data).unwrap();

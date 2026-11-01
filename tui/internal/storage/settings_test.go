@@ -945,7 +945,7 @@ func equalStrings(left, right []string) bool {
 	return true
 }
 
-func TestSyncThroughSymlinkUpdatesTarget3dba(t *testing.T) {
+func TestSyncThroughSymlinkUpdatesTarget(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks")
 	}
@@ -1000,7 +1000,7 @@ func TestSyncThroughSymlinkUpdatesTarget3dba(t *testing.T) {
 	}
 }
 
-func TestSyncThroughSymlinkedParentAndDotdot3dba(t *testing.T) {
+func TestSyncThroughSymlinkedParentAndDotdot(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks")
 	}
@@ -1023,7 +1023,7 @@ func TestSyncThroughSymlinkedParentAndDotdot3dba(t *testing.T) {
 	assertFileBytes(t, realFile, []byte("new\n"))
 }
 
-func TestAtomicWritePathHelpers3dba(t *testing.T) {
+func TestAtomicWritePathHelpers(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		path     string
@@ -1048,7 +1048,7 @@ func TestAtomicWritePathHelpers3dba(t *testing.T) {
 	}
 }
 
-func TestWriteSettingsAtomicTwoHopDotdotDecoy3dba(t *testing.T) {
+func TestWriteSettingsAtomicTwoHopDotdotDecoy(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks")
 	}
@@ -1073,7 +1073,7 @@ func TestWriteSettingsAtomicTwoHopDotdotDecoy3dba(t *testing.T) {
 	assertFileBytes(t, decoy, []byte("DECOY"))
 }
 
-func TestSyncThroughSymlinkedDataDirectory3dba(t *testing.T) {
+func TestSyncThroughSymlinkedDataDirectory(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks")
 	}
@@ -1095,7 +1095,7 @@ func TestSyncThroughSymlinkedDataDirectory3dba(t *testing.T) {
 	assertFileBytes(t, target, []byte("[preferences]\ndirects=true\n"))
 }
 
-func TestWriteSettingsAtomicSymlinkCases3dba(t *testing.T) {
+func TestWriteSettingsAtomicSymlinkCases(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks")
 	}
