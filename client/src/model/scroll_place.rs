@@ -5,6 +5,9 @@
 //! one, else on its kind, author, body and time. The client keeps the anchor row
 //! and pixel offset from `Transcript::scroll()` in memory while a conversation
 //! is open, and persists through the same JSON shape Qt uses.
+//!
+//! Unread marks and day separators are not restorable places: capture skips them
+//! for the first message/event/status/whois row at or below the top of the view.
 
 use super::transcript::{row_for_msgid, Row, RowKind, ScrollAnchor};
 use crate::storage::scrollplace::ScrollPlace as StoredPlace;
@@ -22,11 +25,56 @@ pub enum SavedPlace {
     },
 }
 
+/// Row kinds that can be stored and restored. Dividers (`UnreadMark`,
+/// `DaySeparator`) are excluded so `kind:unread` / `kind:day` never land on disk.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RestorableKind {
+    Message,
+    Event,
+    Status,
+    Whois,
+}
+
+impl RestorableKind {
+    fn from_row(kind: RowKind) -> Option<Self> {
+        Some(match kind {
+            RowKind::Message => Self::Message,
+            RowKind::Event => Self::Event,
+            RowKind::Status => Self::Status,
+            RowKind::Whois => Self::Whois,
+            RowKind::DaySeparator | RowKind::UnreadMark => return None,
+        })
+    }
+
+    fn matches(self, kind: RowKind) -> bool {
+        Self::from_row(kind) == Some(self)
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Message => "message",
+            Self::Event => "event",
+            Self::Status => "status",
+            Self::Whois => "whois",
+        }
+    }
+
+    fn from_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "message" => Self::Message,
+            "event" => Self::Event,
+            "status" => Self::Status,
+            "whois" => Self::Whois,
+            _ => return None,
+        })
+    }
+}
+
 /// The content of a displayed line. It tells a saved line apart from the row now
 /// at the same index, so a place can be found again after rows move.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LineKey {
-    kind: RowKind,
+    kind: RestorableKind,
     author: Option<String>,
     time: Option<String>,
     text: String,
@@ -34,14 +82,91 @@ pub struct LineKey {
 }
 
 impl LineKey {
-    pub fn of(row: &Row) -> Self {
-        Self {
-            kind: row.kind,
+    fn of(row: &Row) -> Option<Self> {
+        Some(Self {
+            kind: RestorableKind::from_row(row.kind)?,
             author: row.author.clone(),
             time: row.time.clone(),
             text: row.body.plain.clone(),
             msgid: row.msgid.clone(),
+        })
+    }
+
+    fn is_row(&self, row: &Row) -> bool {
+        if !self.msgid.is_empty() {
+            return row.msgid == self.msgid;
         }
+        self.kind.matches(row.kind)
+            && self.author == row.author
+            && self.time == row.time
+            && self.text == row.body.plain
+    }
+}
+
+impl SavedPlace {
+    /// The place for a transcript whose scroll is `anchor` and whose rows are
+    /// `rows`. A pinned anchor, or an empty transcript, is the end. Capture skips
+    /// unread marks and day separators, anchoring on the first restorable row at
+    /// or below the top of the view (Qt's first visible message).
+    pub fn from_anchor(anchor: ScrollAnchor, rows: &[Row]) -> Self {
+        if anchor.pinned_to_bottom || rows.is_empty() {
+            return Self::End;
+        }
+        let start = anchor.row.min(rows.len() - 1);
+        let Some((rel, row_ix, line)) = rows[start..].iter().enumerate().find_map(|(rel, row)| {
+            LineKey::of(row).map(|line| (rel, start + rel, line))
+        }) else {
+            return Self::End;
+        };
+        let offset_px = if rel == 0 { anchor.offset_px } else { 0 };
+        Self::Line {
+            row: row_ix,
+            offset_px,
+            line,
+        }
+    }
+}
+
+/// Where a restore lands in the rows on screen now.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Resume {
+    End,
+    Line { row: usize, offset_px: i32 },
+}
+
+/// The live viewport top while a conversation stays open, including day
+/// separators and unread marks. Used only to keep the same top row across an
+/// in-session refresh (history splice, typing footer). Persistence goes through
+/// [`SavedPlace`], which never stores those dividers.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LivePlace {
+    row: usize,
+    offset_px: i32,
+    kind: RowKind,
+    author: Option<String>,
+    time: Option<String>,
+    text: String,
+    msgid: String,
+}
+
+impl LivePlace {
+    /// The top row under `anchor`, whatever its kind. A pinned or empty
+    /// transcript has no live place.
+    pub fn from_anchor(anchor: ScrollAnchor, rows: &[Row]) -> Option<Self> {
+        if anchor.pinned_to_bottom || rows.is_empty() {
+            return None;
+        }
+        let row = anchor.row.min(rows.len() - 1);
+        let top = &rows[row];
+        Some(Self {
+            row,
+            offset_px: anchor.offset_px,
+            kind: top.kind,
+            author: top.author.clone(),
+            time: top.time.clone(),
+            text: top.body.plain.clone(),
+            msgid: top.msgid.clone(),
+        })
     }
 
     fn is_row(&self, row: &Row) -> bool {
@@ -53,29 +178,42 @@ impl LineKey {
             && self.time == row.time
             && self.text == row.body.plain
     }
-}
 
-impl SavedPlace {
-    /// The place for a transcript whose scroll is `anchor` and whose rows are
-    /// `rows`. A pinned anchor, or an empty transcript, is the end.
-    pub fn from_anchor(anchor: ScrollAnchor, rows: &[Row]) -> Self {
-        if anchor.pinned_to_bottom || rows.is_empty() {
-            return Self::End;
+    /// Resolves this live top against the rows now shown.
+    pub fn resume(&self, rows: &[Row]) -> Resume {
+        if rows.is_empty() {
+            return Resume::End;
         }
-        let row = anchor.row.min(rows.len() - 1);
-        Self::Line {
-            row,
-            offset_px: anchor.offset_px,
-            line: LineKey::of(&rows[row]),
+        let found = if !self.msgid.is_empty() {
+            row_for_msgid(rows, &self.msgid)
+                .unwrap_or_else(|| self.row.min(rows.len() - 1))
+        } else if rows.get(self.row).is_some_and(|candidate| self.is_row(candidate)) {
+            self.row
+        } else {
+            rows.iter()
+                .position(|candidate| self.is_row(candidate))
+                .unwrap_or_else(|| self.row.min(rows.len() - 1))
+        };
+        Resume::Line {
+            row: found,
+            offset_px: self.offset_px,
         }
     }
 }
 
-/// Where a restore lands in the rows on screen now.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Resume {
-    End,
-    Line { row: usize, offset_px: i32 },
+/// Whether `place`'s line is already among `rows`. A missing line means restore
+/// should wait (history has not arrived) instead of falling back to the bottom.
+pub fn place_is_present(place: &SavedPlace, rows: &[Row]) -> bool {
+    match place {
+        SavedPlace::End => true,
+        SavedPlace::Line { line, .. } => {
+            if !line.msgid.is_empty() {
+                row_for_msgid(rows, &line.msgid).is_some()
+            } else {
+                rows.iter().any(|candidate| line.is_row(candidate))
+            }
+        }
+    }
 }
 
 /// Resolves a saved place against the rows now shown. A saved line is found at
@@ -111,28 +249,6 @@ pub fn resume(place: Option<&SavedPlace>, rows: &[Row]) -> Resume {
     }
 }
 
-/// The Qt name of a row kind, as the saved place's `kind` field holds it.
-fn kind_name(kind: RowKind) -> &'static str {
-    match kind {
-        RowKind::Message => "message",
-        RowKind::Event => "event",
-        RowKind::DaySeparator => "day",
-        RowKind::Status => "status",
-        RowKind::Whois => "whois",
-        RowKind::UnreadMark => "unread",
-    }
-}
-
-fn kind_from_name(name: &str) -> Option<RowKind> {
-    Some(match name {
-        "message" => RowKind::Message,
-        "event" => RowKind::Event,
-        "status" => RowKind::Status,
-        "whois" => RowKind::Whois,
-        _ => return None,
-    })
-}
-
 impl SavedPlace {
     /// The place as the settings file keeps it. A chat line with a msgid is stored by
     /// that id alone, as Qt does. Other lines fall back to content. Pixel offset is not
@@ -148,7 +264,7 @@ impl SavedPlace {
                 ..StoredPlace::default()
             },
             SavedPlace::Line { line, .. } => StoredPlace {
-                kind: kind_name(line.kind).to_owned(),
+                kind: line.kind.name().to_owned(),
                 author: line.author.clone().unwrap_or_default(),
                 body: line.text.clone(),
                 shown_time: line.time.clone().unwrap_or_default(),
@@ -168,7 +284,7 @@ impl SavedPlace {
                 row: 0,
                 offset_px: 0,
                 line: LineKey {
-                    kind: RowKind::Message,
+                    kind: RestorableKind::Message,
                     author: None,
                     time: None,
                     text: String::new(),
@@ -176,7 +292,7 @@ impl SavedPlace {
                 },
             });
         }
-        let kind = kind_from_name(&place.kind)?;
+        let kind = RestorableKind::from_name(&place.kind)?;
         Some(SavedPlace::Line {
             row: 0,
             offset_px: 0,
@@ -194,6 +310,8 @@ impl SavedPlace {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::irc::world::Origin;
+    use crate::model::format::format_irc;
     use crate::model::transcript::row_from_message;
 
     fn rows(count: u64) -> Vec<Row> {
@@ -206,6 +324,25 @@ mod tests {
         let mut row = row_from_message(id, author, time, body, continues);
         row.msgid = msgid.to_owned();
         row
+    }
+
+    fn divider(id: u64, kind: RowKind, text: &str) -> Row {
+        Row {
+            id,
+            kind,
+            author: None,
+            time: None,
+            body: format_irc(text),
+            continues: false,
+            action: false,
+            separator_text: (kind == RowKind::DaySeparator).then(|| text.to_owned()),
+            event_text: None,
+            status: None,
+            msgid: String::new(),
+            only_visible_to_you: false,
+            mentioned: false,
+            origin: Origin::Live,
+        }
     }
 
     fn anchor(row: usize, offset_px: i32) -> ScrollAnchor {
@@ -236,7 +373,7 @@ mod tests {
             SavedPlace::Line {
                 row: 2,
                 offset_px: 17,
-                line: LineKey::of(&rows[2]),
+                line: LineKey::of(&rows[2]).expect("message is restorable"),
             }
         );
     }
@@ -244,6 +381,55 @@ mod tests {
     #[test]
     fn an_empty_transcript_has_no_line_to_keep() {
         assert_eq!(SavedPlace::from_anchor(anchor(0, 0), &[]), SavedPlace::End);
+    }
+
+    #[test]
+    fn an_unread_mark_at_the_top_saves_the_message_below() {
+        let rows = vec![
+            divider(1, RowKind::UnreadMark, "New messages"),
+            row_with_msgid(2, "below-unread", "anna", "09:00", "first after mark", false),
+            row_from_message(3, "anna", "09:01", "later", false),
+        ];
+        let place = SavedPlace::from_anchor(anchor(0, 3), &rows);
+        assert_eq!(
+            place,
+            SavedPlace::Line {
+                row: 1,
+                offset_px: 0,
+                line: LineKey::of(&rows[1]).expect("message"),
+            }
+        );
+        assert_eq!(place.to_stored().msg_id, "below-unread");
+        assert_ne!(place.to_stored().kind, "unread");
+    }
+
+    #[test]
+    fn a_day_separator_at_the_top_saves_the_message_below() {
+        let rows = vec![
+            divider(1, RowKind::DaySeparator, "Yesterday"),
+            row_with_msgid(2, "below-day", "mira", "08:00", "first of day", false),
+        ];
+        let place = SavedPlace::from_anchor(anchor(0, 8), &rows);
+        assert_eq!(
+            place,
+            SavedPlace::Line {
+                row: 1,
+                offset_px: 0,
+                line: LineKey::of(&rows[1]).expect("message"),
+            }
+        );
+        assert_eq!(place.to_stored().msg_id, "below-day");
+        assert_ne!(place.to_stored().kind, "day");
+    }
+
+    #[test]
+    fn only_dividers_visible_saves_the_end() {
+        let rows = vec![
+            divider(1, RowKind::DaySeparator, "Yesterday"),
+            divider(2, RowKind::UnreadMark, "New messages"),
+        ];
+        assert_eq!(SavedPlace::from_anchor(anchor(0, 0), &rows), SavedPlace::End);
+        assert!(SavedPlace::from_anchor(anchor(0, 0), &rows).to_stored().follow_end);
     }
 
     #[test]
@@ -303,6 +489,18 @@ mod tests {
     }
 
     #[test]
+    fn place_is_absent_until_its_msgid_arrives() {
+        let place = SavedPlace::from_stored(&StoredPlace {
+            msg_id: "history-line".to_owned(),
+            ..StoredPlace::default()
+        })
+        .expect("msgid place");
+        assert!(!place_is_present(&place, &rows(3)));
+        let arrived = vec![row_with_msgid(1, "history-line", "anna", "09:00", "hello", false)];
+        assert!(place_is_present(&place, &arrived));
+    }
+
+    #[test]
     fn a_line_place_round_trips_by_its_content() {
         let rows = rows(4);
         let place = SavedPlace::from_anchor(anchor(2, 5), &rows);
@@ -353,5 +551,10 @@ mod tests {
             ..StoredPlace::default()
         };
         assert_eq!(SavedPlace::from_stored(&stored), None);
+        let unread = StoredPlace {
+            kind: "unread".to_owned(),
+            ..StoredPlace::default()
+        };
+        assert_eq!(SavedPlace::from_stored(&unread), None);
     }
 }

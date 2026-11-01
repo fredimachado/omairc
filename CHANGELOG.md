@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The desktop client restores a saved transcript place once history arrives, and
+  no longer saves the "New messages" divider or a day separator as the place.
+  Capture anchors on the first restorable row at or below the top of the view.
+
 - The desktop client no longer writes `collapsedNetworks=@Invalid()` or a second
   preferences flush when a sidebar network is reordered. Network order and
   collapse state persist separately and only when their value changed; an empty
