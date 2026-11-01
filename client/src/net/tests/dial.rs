@@ -4,7 +4,8 @@
 
 use std::io;
 
-use crate::net::dial::resolve_failure;
+use crate::net::dial::{normalize_resolve_error, resolve_failure};
+use crate::net::NetOptions;
 use crate::session::transport::TransportErrorKind;
 
 const HOST: &str = "irc.example";
@@ -40,4 +41,23 @@ fn a_try_again_resolve_is_not_no_such_host() {
     let error = resolve_failure(HOST, &io::Error::from_raw_os_error(11002));
     assert!(error.message.starts_with("lookup irc.example: "));
     assert!(!error.message.contains("no such host"), "{}", error.message);
+}
+
+/// Exercises the production resolver and the same normalization `dial` applies before
+/// `resolve_failure`, without injecting `NotFound`.
+#[test]
+fn system_resolver_unknown_host_reads_as_no_such_host() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("runtime");
+    let resolve = NetOptions::default().resolve_host;
+    let host = "nonexistent.invalid";
+    let error = rt
+        .block_on(async { resolve(host.to_owned(), 6667).await })
+        .expect_err("resolver should fail for a missing host");
+    let error = normalize_resolve_error(host, 6667, error);
+    let mapped = resolve_failure(host, &error);
+    assert_eq!(mapped.kind, TransportErrorKind::Resolve);
+    assert_eq!(mapped.message, "lookup nonexistent.invalid: no such host");
 }

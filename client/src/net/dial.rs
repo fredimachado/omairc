@@ -49,6 +49,7 @@ async fn dial(
         Ok(found) => found,
         Err(error) => {
             log::debug!("resolving {host} failed: {error}");
+            let error = normalize_resolve_error(host, port, error);
             return Err(resolve_failure(host, &error));
         }
     };
@@ -97,6 +98,62 @@ pub(super) fn resolve_failure(host: &str, error: &io::Error) -> TransportError {
 fn is_not_found(error: &io::Error) -> bool {
     const WSAHOST_NOT_FOUND: i32 = 11001;
     error.kind() == io::ErrorKind::NotFound || error.raw_os_error() == Some(WSAHOST_NOT_FOUND)
+}
+
+/// Maps a resolver failure from the system path into `NotFound` when getaddrinfo says the
+/// name does not exist. The stock `ToSocketAddrs` / `lookup_host` error on Unix often omits
+/// the gai code, so the code is read from a fresh lookup on the error path only.
+pub(super) fn normalize_resolve_error(host: &str, port: u16, error: io::Error) -> io::Error {
+    if is_not_found(&error) {
+        return error;
+    }
+    #[cfg(unix)]
+    if let Some(code) = unix_gai_error_code(host, port) {
+        if gai_name_not_found(code) {
+            return io::Error::new(io::ErrorKind::NotFound, unix_gai_message(code));
+        }
+    }
+    error
+}
+
+#[cfg(unix)]
+fn gai_name_not_found(code: i32) -> bool {
+    code == libc::EAI_NONAME || code == libc::EAI_NODATA
+}
+
+#[cfg(unix)]
+fn unix_gai_message(code: i32) -> String {
+    use std::ffi::CStr;
+    unsafe { CStr::from_ptr(libc::gai_strerror(code)).to_string_lossy().into_owned() }
+}
+
+#[cfg(unix)]
+fn unix_gai_error_code(host: &str, port: u16) -> Option<i32> {
+    use std::ffi::CString;
+    use std::ptr;
+
+    let host = CString::new(host).ok()?;
+    let port = CString::new(port.to_string()).ok()?;
+    let hints = libc::addrinfo {
+        ai_flags: libc::AI_ADDRCONFIG,
+        ai_family: libc::AF_UNSPEC,
+        ai_socktype: libc::SOCK_STREAM,
+        ai_protocol: 0,
+        ai_addrlen: 0,
+        ai_addr: ptr::null_mut(),
+        ai_canonname: ptr::null_mut(),
+        ai_next: ptr::null_mut(),
+    };
+    let mut result: *mut libc::addrinfo = ptr::null_mut();
+    let code = unsafe { libc::getaddrinfo(host.as_ptr(), port.as_ptr(), &hints, &mut result) };
+    if !result.is_null() {
+        unsafe { libc::freeaddrinfo(result) };
+    }
+    if code == 0 {
+        None
+    } else {
+        Some(code)
+    }
 }
 
 /// Turns on `TCP_NODELAY` and keepalive. A socket that refuses either still works, so
