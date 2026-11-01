@@ -138,6 +138,12 @@ impl ScrollPlaceFile {
         self.conf_path.as_deref()
     }
 
+    /// The platform that selects legacy conf paths on first seed (tests only).
+    #[cfg(test)]
+    pub(crate) fn platform(&self) -> paths::Platform {
+        self.platform
+    }
+
     /// Every network's places, keyed by network id. Entries that do not parse are skipped.
     /// Prefers `scrollplaces.ini` when it exists; otherwise reads the legacy conf groups
     /// without writing or stripping them. On macOS both `omairc.ini` and `omairc.conf`
@@ -414,6 +420,79 @@ mod tests {
 
     fn agent_dir(label: &str) -> TempDir {
         TempDir::new(&format!("{label}-1d06"))
+    }
+
+    #[test]
+    fn new_and_for_settings_carry_current_platform() {
+        assert_eq!(
+            ScrollPlaceFile::new(Backing::Ephemeral).platform(),
+            Platform::current()
+        );
+        let dir = TempDir::new("scroll-platform-pin-f194");
+        let conf = dir.path().join("omairc.conf");
+        assert_eq!(
+            ScrollPlaceFile::for_settings(&Backing::Disk(conf)).platform(),
+            Platform::current()
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn for_settings_live_macos_seeds_from_omairc_ini() {
+        use crate::storage::paths::{SETTINGS_FILE, SETTINGS_FILE_MACOS};
+
+        struct RestoreHome(Option<std::ffi::OsString>);
+        impl Drop for RestoreHome {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(prev) => std::env::set_var("HOME", prev),
+                    None => std::env::remove_var("HOME"),
+                }
+            }
+        }
+
+        let dir = TempDir::new("scroll-live-macos-f194");
+        let home = dir.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let _restore_home = RestoreHome(std::env::var_os("HOME"));
+        std::env::set_var("HOME", &home);
+
+        let env = paths::Env::from_process();
+        let conf = paths::settings_path_for(&env, Platform::current()).expect("settings");
+        fs::create_dir_all(conf.parent().unwrap()).unwrap();
+        let ini = conf.parent().unwrap().join(SETTINGS_FILE_MACOS);
+        let legacy_conf = conf.parent().unwrap().join(SETTINGS_FILE);
+        fs::write(
+            &ini,
+            "[scrollPlaces]\nnet_ini\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#from-ini\\\"}]\"\n",
+        )
+        .unwrap();
+        fs::write(
+            &legacy_conf,
+            "[scrollPlaces]\nnet_conf\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#from-conf\\\"}]\"\n",
+        )
+        .unwrap();
+
+        let file = ScrollPlaceFile::for_settings(&Backing::Disk(conf));
+        assert_eq!(file.platform(), Platform::MacOs);
+        assert_eq!(
+            file.save(
+                "net_ini",
+                &vec![(
+                    "#from-ini".to_owned(),
+                    ScrollPlace {
+                        follow_end: true,
+                        ..ScrollPlace::default()
+                    }
+                )]
+            ),
+            Status::Written
+        );
+        let loaded = file.load_all();
+        assert!(
+            loaded.contains_key("net_conf"),
+            "live for_settings on macOS must seed omairc.conf-only networks: {loaded:?}"
+        );
     }
 
     fn sleep_for_mtime() {

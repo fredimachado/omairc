@@ -3,12 +3,22 @@ package storage
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/fredimachado/omairc/tui/internal/irc"
 )
+
+// scrollLegacyGOOSAtInit records the production default before tests override scrollLegacyGOOS.
+var scrollLegacyGOOSAtInit = scrollLegacyGOOS
+
+func TestScrollLegacyGOOSMatchesRuntime(t *testing.T) {
+	if scrollLegacyGOOSAtInit != runtime.GOOS {
+		t.Fatalf("scrollLegacyGOOSAtInit = %q, want runtime.GOOS %q", scrollLegacyGOOSAtInit, runtime.GOOS)
+	}
+}
 
 func scrollTestRoots(t *testing.T) (config, state string) {
 	t.Helper()
