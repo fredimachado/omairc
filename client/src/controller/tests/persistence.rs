@@ -505,6 +505,44 @@ fn preferences_and_the_sidebar_layout_survive_a_relaunch() {
     assert!(!second.is_network_collapsed(OFTC));
 }
 
+fn preferences_line<'a>(text: &'a str, key: &str) -> Option<&'a str> {
+    let prefix = format!("{key}=");
+    text.lines().find(|line| line.starts_with(prefix.as_str()))
+}
+
+#[test]
+fn reordering_networks_leaves_collapsed_networks_line_unchanged() {
+    let dir = TempDir::new("network-reorder-collapsed-line");
+    let path = dir.path().join("omairc.conf");
+    let backing = disk(&dir);
+    {
+        let mut first = launch(&backing, Box::new(Loopbacks::default()));
+        save(&mut first, libera(LIBERA));
+        save(&mut first, libera(OFTC));
+        first.set_network_collapsed(LIBERA, true);
+        first.set_network_collapsed(OFTC, true);
+        let mut text = std::fs::read_to_string(&path).expect("conf");
+        if let Some(line) = preferences_line(&text, "collapsedNetworks") {
+            let swapped = line.replace("libera, oftc", "oftc, libera");
+            if swapped != line {
+                text = text.replace(line, &swapped);
+                std::fs::write(&path, text).expect("rewrite collapsed order");
+            }
+        }
+        let before_reorder = std::fs::read_to_string(&path).expect("conf");
+        let collapsed_before = preferences_line(&before_reorder, "collapsedNetworks")
+            .expect("collapse should persist before reorder")
+            .to_owned();
+        assert!(first.move_network(LIBERA, 1));
+        let after_reorder = std::fs::read_to_string(&path).expect("conf");
+        assert_eq!(
+            preferences_line(&after_reorder, "collapsedNetworks"),
+            Some(collapsed_before.as_str()),
+            "reorder must not rewrite collapsedNetworks:\nbefore:\n{before_reorder}\nafter:\n{after_reorder}"
+        );
+    }
+}
+
 #[test]
 fn reordering_networks_writes_order_without_collapsed_networks() {
     let dir = TempDir::new("network-reorder-persist");

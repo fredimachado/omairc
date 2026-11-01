@@ -121,9 +121,6 @@ impl PreferenceStore {
     }
 
     fn save_list(&self, key: &str, values: &[String]) -> Status {
-        if self.list(key) == values {
-            return Status::Written;
-        }
         self.backing.edit(|settings| {
             if values.is_empty() {
                 settings.remove_key(PREFERENCES_GROUP, key);
@@ -235,6 +232,24 @@ mod tests {
         std::fs::write(&path, "[preferences]\nnetworkOrder=oftc\n").unwrap();
         let store = PreferenceStore::new(Backing::Disk(path));
         assert!(store.collapsed_networks().is_empty());
+    }
+
+    #[test]
+    fn an_existing_invalid_collapsed_line_is_removed_when_saving_empty() {
+        let dir = TempDir::new("prefs-collapsed-invalid");
+        let path = dir.path().join("omairc.conf");
+        std::fs::write(
+            &path,
+            "[preferences]\ncollapsedNetworks=@Invalid()\nnetworkOrder=oftc\n",
+        )
+        .unwrap();
+        let store = store(&dir);
+        assert_eq!(store.save_collapsed_networks(&[]), Status::Written);
+        let text = std::fs::read_to_string(&path).expect("written");
+        assert!(
+            !text.contains("collapsedNetworks"),
+            "empty collapse should drop @Invalid(), got:\n{text}"
+        );
     }
 
     #[test]

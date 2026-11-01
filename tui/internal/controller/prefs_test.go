@@ -379,6 +379,71 @@ func TestLoadStoredSidebarOrderKeepsDiskVerbatim(t *testing.T) {
 	}
 }
 
+func preferencesLine(text, key string) (string, bool) {
+	prefix := key + "="
+	for line := range strings.SplitSeq(text, "\n") {
+		if strings.HasPrefix(line, prefix) {
+			return line, true
+		}
+	}
+	return "", false
+}
+
+func TestReorderPreservesCollapsedNetworksLine(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	c := New()
+	c.SetEphemeral(false)
+	addNetwork(t, c, "alpha")
+	addNetwork(t, c, "omarchy")
+	addNetwork(t, c, "zulu")
+	c.SetNetworkOrder([]string{"zulu", "alpha", "omarchy"})
+	c.SetNetworkCollapsed("alpha", true)
+	c.SetNetworkCollapsed("omarchy", true)
+
+	settings := storage.OpenSettings("")
+	path := settings.Path()
+	text, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if line, ok := preferencesLine(string(text), collapsedNetworksKey); ok {
+		swapped := strings.Replace(line, "alpha, omarchy", "omarchy, alpha", 1)
+		if swapped != line {
+			text = []byte(strings.Replace(string(text), line, swapped, 1))
+			if err := os.WriteFile(path, text, 0o644); err != nil {
+				t.Fatalf("WriteFile swap: %v", err)
+			}
+		}
+	}
+
+	beforeReorder, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	collapsedBefore, ok := preferencesLine(string(beforeReorder), collapsedNetworksKey)
+	if !ok {
+		t.Fatalf("missing %s before reorder:\n%s", collapsedNetworksKey, beforeReorder)
+	}
+
+	if !c.MoveNetwork("zulu", 1) {
+		t.Fatal("MoveNetwork(zulu, 1) = false, want true")
+	}
+
+	afterReorder, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile after reorder: %v", err)
+	}
+	collapsedAfter, ok := preferencesLine(string(afterReorder), collapsedNetworksKey)
+	if !ok {
+		t.Fatalf("missing %s after reorder:\n%s", collapsedNetworksKey, afterReorder)
+	}
+	if collapsedAfter != collapsedBefore {
+		t.Fatalf("%s changed on reorder:\nbefore %q\nafter  %q",
+			collapsedNetworksKey, collapsedBefore, collapsedAfter)
+	}
+}
+
 func TestExpandCollapsedNetworksRemovesKey(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
