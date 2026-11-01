@@ -140,6 +140,9 @@ impl Shell {
         let accepted = self.controller.submit(surface, &text);
         self.apply_preference_changes(before, cx);
         if accepted {
+            // Sending retires a pending restore so capture saves the live page.
+            self.transcript
+                .update(cx, |t, _| t.clear_pending_restore());
             self.finish_command(&text, cx);
         }
         self.drain_notifications(cx);

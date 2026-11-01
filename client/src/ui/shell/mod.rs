@@ -58,7 +58,9 @@ use crate::ui::center::slash_popup::render_slash_popup;
 use crate::ui::input::SingleLineInput;
 use crate::ui::members::column::MEMBERS_PANEL_WIDTH;
 use crate::ui::members::{render_members, MembersData};
-use crate::ui::scrollbar::{end_scrollbar_drag, move_scrollbar_drag, ScrollbarDragCell};
+use crate::ui::scrollbar::{
+    end_scrollbar_drag, move_scrollbar_drag, ScrollbarDragCell, ScrollbarDragKind,
+};
 use crate::ui::shell::actions::wire_shell_actions;
 use crate::ui::shell::view::{shown_view, ShownView};
 use crate::ui::sheets::connect::controls::ConnectControls;
@@ -672,11 +674,15 @@ impl Render for Shell {
             .flex_row()
             .on_mouse_move(cx.listener(|shell, ev: &MouseMoveEvent, _, cx| {
                 let app_style = style(cx);
-                if shell.scrollbar_drag.borrow().is_some() {
+                if let Some(drag) = shell.scrollbar_drag.borrow().clone() {
                     move_scrollbar_drag(&shell.scrollbar_drag, ev.position, &app_style);
-                    // The dragged thumb may be the transcript's, moved outside its own
-                    // handler. The note emits only when the at-end bit changed.
-                    shell.transcript.update(cx, |t, cx| t.note_scroll_end(cx));
+                    // Only the transcript's List thumb retires a pending restore.
+                    // Sidebar and member Div thumbs share this drag cell.
+                    if matches!(drag.kind, ScrollbarDragKind::List(_)) {
+                        shell
+                            .transcript
+                            .update(cx, |t, cx| t.note_transcript_scroll(cx));
+                    }
                     cx.notify();
                 } else {
                     shell.transcript.update(cx, |t, cx| {

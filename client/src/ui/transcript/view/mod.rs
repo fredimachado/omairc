@@ -16,9 +16,10 @@ use crate::model::links::{conversation_channel_hits, invite_hit};
 use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::irc::world::Message;
 use crate::model::presence::NickFacts;
-use crate::model::scroll_place::{
-    place_is_present, resume, LivePlace, Resume, SavedPlace,
-};
+use crate::model::scroll_place::SavedPlace;
+use crate::ui::scrollbar::ScrollbarDragKind;
+
+mod scroll_restore;
 use crate::model::typing_tail::typing_continues;
 use crate::model::unread::{self, UnseenLanding};
 use crate::model::transcript::minute_of;
@@ -138,13 +139,13 @@ impl TranscriptView {
         };
         // gpui calls the list's scroll handler only for wheel scrolling, and while the list
         // is still borrowed, so the at-end read waits for the effect cycle to finish. Every
-        // other move of the list calls `note_scroll_end` itself, after the move.
+        // other move of this list calls `note_transcript_scroll` itself, after the move.
         let transcript = cx.weak_entity();
         view.list_state.set_scroll_handler(move |_, _, cx| {
             let transcript = transcript.clone();
             cx.defer(move |cx| {
                 transcript
-                    .update(cx, |view, cx| view.note_scroll_end(cx))
+                    .update(cx, |view, cx| view.note_transcript_scroll(cx))
                     .ok();
             });
         });
@@ -155,21 +156,6 @@ impl TranscriptView {
     /// a change from it.
     pub fn note_reported_at_end(&mut self, at_end: bool) {
         self.reported_at_end = at_end;
-    }
-
-    /// Emits `TranscriptScrolled` when the at-end bit differs from the bit last reported.
-    /// Every move of the list calls this after moving it: the wheel handler, and the key
-    /// scrollbar, find, link, unseen and notification moves. `restore_scroll_place` does
-    /// not, because the list has just been reset and is not measured yet; the shell
-    /// reports that viewport itself. A real scroll retires a pending restore so it does
-    /// not fight the reader.
-    pub fn note_scroll_end(&mut self, cx: &mut Context<Self>) {
-        self.pending_restore = None;
-        let at_end = self.at_end();
-        if at_end != self.reported_at_end {
-            self.reported_at_end = at_end;
-            cx.emit(TranscriptScrolled { at_end });
-        }
     }
 
     /// Shows a conversation's lines with a fresh selection and scroll. The lines carry
@@ -189,84 +175,6 @@ impl TranscriptView {
         self.first_unseen = None;
         self.list_state.reset(self.list_len());
         self.row_layouts.borrow_mut().clear();
-    }
-
-    /// Reloads the open conversation without clearing selection, find, or unseen
-    /// state. The list follows the end when the reader was already there. A pending
-    /// restore whose line just arrived is applied instead of following the end.
-    pub fn refresh_conversation(&mut self, lines: ConversationLines, cx: &mut Context<Self>) {
-        let previous_rows = self.model.rows().len();
-        let was_at_end = self.at_end();
-        let pending = self.pending_restore.clone();
-        // Keep the visible top row as-is across the rebuild, including dividers.
-        // Persistence uses `capture_scroll_place`, which skips those.
-        let live = (pending.is_none() && !was_at_end).then(|| self.capture_live_place()).flatten();
-        self.peers.facts = lines.facts;
-        self.self_nick = lines.self_nick.to_owned();
-        self.features = lines.features.clone();
-        self.typing_peer = lines.typing_peer;
-        self.model
-            .replace_conversation(lines.messages, lines.mark, lines.today);
-        let new_rows = self.model.rows().len();
-        unread::note_row_growth(previous_rows, new_rows, was_at_end, &mut self.first_unseen);
-        if unread::detached_arrival(previous_rows, new_rows, was_at_end) {
-            self.unseen_bounce.restart();
-        }
-        self.list_state.reset(self.list_len());
-        self.row_layouts.borrow_mut().clear();
-        if let Some(place) = pending
-            .as_ref()
-            .filter(|place| place_is_present(place, self.model.rows()))
-            .cloned()
-        {
-            self.pending_restore = None;
-            self.restore_scroll_place(Some(&place), false);
-        } else if pending.is_some() {
-            // History has not brought the anchor yet. Stay on the interim page
-            // without retiring the pending place through `note_scroll_end`.
-            if was_at_end {
-                self.model.set_pinned_to_bottom(true);
-                self.list_state
-                    .scroll_to_reveal_item(self.list_len().saturating_sub(1));
-                self.reported_at_end = true;
-            }
-        } else if was_at_end {
-            self.model.set_pinned_to_bottom(true);
-            self.list_state
-                .scroll_to_reveal_item(self.list_len().saturating_sub(1));
-            self.note_scroll_end(cx);
-        } else if let Some(place) = live {
-            self.restore_live_place(&place);
-        }
-        cx.notify();
-    }
-
-    /// Updates only the typing footer for the open direct message.
-    pub fn refresh_typing_peer(&mut self, peer: Option<String>, cx: &mut Context<Self>) {
-        if self.typing_peer == peer {
-            return;
-        }
-        let was_at_end = self.at_end();
-        let pending = self.pending_restore.is_some();
-        let live = (!pending && !was_at_end).then(|| self.capture_live_place()).flatten();
-        self.typing_peer = peer;
-        self.list_state.reset(self.list_len());
-        if pending {
-            if was_at_end {
-                self.model.set_pinned_to_bottom(true);
-                self.list_state
-                    .scroll_to_reveal_item(self.list_len().saturating_sub(1));
-                self.reported_at_end = true;
-            }
-        } else if was_at_end {
-            self.model.set_pinned_to_bottom(true);
-            self.list_state
-                .scroll_to_reveal_item(self.list_len().saturating_sub(1));
-            self.note_scroll_end(cx);
-        } else if let Some(place) = live {
-            self.restore_live_place(&place);
-        }
-        cx.notify();
     }
 
     /// The `avatars` preference. Off, the rows show initials. The rows are drawn
@@ -349,83 +257,6 @@ impl TranscriptView {
         }
     }
 
-    /// Writes the live list top into `Transcript::scroll`. Pinned to the end, or
-    /// scrolled onto the typing dots, pins the model to the bottom.
-    fn sync_scroll_from_list(&mut self) {
-        let rows = self.model.rows().len();
-        let top = self.list_state.logical_scroll_top();
-        if self.at_end() || top.item_ix >= rows {
-            self.model.set_pinned_to_bottom(true);
-        } else {
-            let offset_px = f32::from(top.offset_in_item).round() as i32;
-            self.model.set_scroll_anchor(top.item_ix, offset_px);
-        }
-    }
-
-    /// Where the reader is now, for the scroll-place memory. Skips unread marks
-    /// and day separators so those kinds never reach `scrollplaces.ini`. While a
-    /// restore is still waiting for its line, the pending place is returned so a
-    /// switch away does not overwrite it with the interim page.
-    pub fn capture_scroll_place(&mut self) -> SavedPlace {
-        if let Some(place) = self.pending_restore.clone() {
-            return place;
-        }
-        self.sync_scroll_from_list();
-        SavedPlace::from_anchor(self.model.scroll(), self.model.rows())
-    }
-
-    /// The visible top row for an in-session refresh, including dividers.
-    fn capture_live_place(&mut self) -> Option<LivePlace> {
-        self.sync_scroll_from_list();
-        LivePlace::from_anchor(self.model.scroll(), self.model.rows())
-    }
-
-    fn restore_live_place(&mut self, place: &LivePlace) {
-        match place.resume(self.model.rows()) {
-            Resume::End => self.model.set_pinned_to_bottom(true),
-            Resume::Line { row, offset_px } => {
-                self.model.set_scroll_anchor(row, offset_px);
-                self.list_state.scroll_to(ListOffset {
-                    item_ix: row,
-                    offset_in_item: px(offset_px as f32),
-                });
-            }
-        }
-    }
-
-    /// Puts the list at `place`, once `set_conversation` or `set_status` has reset
-    /// it. A missing or end place leaves the reset list following the tail, unless
-    /// `open_at_unread` is on and the conversation holds a "New messages" mark: then
-    /// the mark is the top of the view. When the saved line is not loaded yet, the
-    /// place is kept as a single pending restore and applied once that row arrives.
-    pub fn restore_scroll_place(&mut self, place: Option<&SavedPlace>, open_at_unread: bool) {
-        self.pending_restore = None;
-        let rows = self.model.rows();
-        if let Some(line_place @ SavedPlace::Line { .. }) = place {
-            if !place_is_present(line_place, rows) {
-                self.pending_restore = Some(line_place.clone());
-                // Interim page: follow the loaded tail without writing this over the
-                // pending anchor. open_at_unread does not win over a known place.
-                self.model.set_pinned_to_bottom(true);
-                return;
-            }
-        }
-        let mark = unread::opening_row(rows, open_at_unread);
-        match resume(place, rows) {
-            Resume::End => match mark {
-                Some(row) => self.reveal_row(row),
-                None => self.model.set_pinned_to_bottom(true),
-            },
-            Resume::Line { row, offset_px } => {
-                self.model.set_scroll_anchor(row, offset_px);
-                self.list_state.scroll_to(ListOffset {
-                    item_ix: row,
-                    offset_in_item: px(offset_px as f32),
-                });
-            }
-        }
-    }
-
     /// Whether the list shows its end. The scrollbar's offset is measured in
     /// pixels, and a list that follows the tail reports past its maximum.
     pub fn at_end(&self) -> bool {
@@ -494,7 +325,7 @@ impl TranscriptView {
     /// `revealRow` does for a find or link match. The caller notifies.
     pub fn scroll_to_row(&mut self, row_ix: usize, cx: &mut Context<Self>) {
         self.reveal_row(row_ix);
-        self.note_scroll_end(cx);
+        self.note_transcript_scroll(cx);
     }
 
     /// The move behind `scroll_to_row`, without the at-end note.
@@ -535,7 +366,7 @@ impl TranscriptView {
         let target = scroll_target(current, max, delta);
         self.model.set_pinned_to_bottom(target >= max);
         list.set_offset_from_scrollbar(Point::new(px(0.), px(target)));
-        self.note_scroll_end(cx);
+        self.note_transcript_scroll(cx);
     }
 
     /// Ctrl+Home: the first row.
@@ -545,7 +376,7 @@ impl TranscriptView {
             item_ix: 0,
             offset_in_item: px(0.),
         });
-        self.note_scroll_end(cx);
+        self.note_transcript_scroll(cx);
     }
 
     /// Ctrl+End: the last row, and the list follows new lines again.
@@ -556,7 +387,7 @@ impl TranscriptView {
         }
         self.model.set_pinned_to_bottom(true);
         self.list_state.scroll_to_reveal_item(count - 1);
-        self.note_scroll_end(cx);
+        self.note_transcript_scroll(cx);
     }
 
     pub fn has_selection(&self) -> bool {
@@ -822,7 +653,16 @@ impl Render for TranscriptView {
                 if view.scrollbar_drag.borrow().is_some() {
                     let app_style = style(cx);
                     move_scrollbar_drag(&view.scrollbar_drag, ev.position, &app_style);
-                    view.note_scroll_end(cx);
+                    // This surface only starts List drags; Div drags belong to
+                    // the sidebar and members and must not cancel a pending restore.
+                    if matches!(
+                        view.scrollbar_drag.borrow().as_ref().map(|d| &d.kind),
+                        Some(ScrollbarDragKind::List(_))
+                    ) {
+                        view.note_transcript_scroll(cx);
+                    } else {
+                        view.note_scroll_end(cx);
+                    }
                     cx.notify();
                 } else if !view.dragging {
                     view.hovered_link = view.link_at(ev.position);
@@ -919,7 +759,7 @@ impl Render for TranscriptView {
                 &app_style,
                 entity,
                 drag,
-                TranscriptView::note_scroll_end,
+                TranscriptView::note_transcript_scroll,
             ))
             .when(unseen, |this| {
                 this.child(render_unseen_jump(&app_style, bounce_y, on_unseen))
@@ -1052,7 +892,7 @@ mod tests {
 
         transcript.update(cx, |view, _| {
             view.set_conversation(empty);
-            view.restore_scroll_place(Some(&place), false);
+            view.restore_scroll_place(Some(&place), false, true);
             assert!(
                 view.pending_restore.is_some(),
                 "restore waits while the anchor is absent"
@@ -1060,6 +900,10 @@ mod tests {
             assert!(
                 matches!(view.capture_scroll_place(), SavedPlace::Line { .. }),
                 "capture keeps the pending place instead of the interim end"
+            );
+            assert!(
+                !view.reports_follow_end(),
+                "pending must not report follow-end while waiting"
             );
         });
 
@@ -1092,6 +936,247 @@ mod tests {
                 view.rows().get(top.item_ix).map(|row| row.msgid.as_str()),
                 Some("history-anchor"),
                 "history arrival lands on the saved msgid"
+            );
+        });
+    }
+
+    fn pending_place() -> SavedPlace {
+        SavedPlace::from_stored(&crate::storage::scrollplace::ScrollPlace {
+            msg_id: "missing-anchor".to_owned(),
+            ..crate::storage::scrollplace::ScrollPlace::default()
+        })
+        .expect("msgid place")
+    }
+
+    fn empty_lines<'a>(features: &'a IrcServerFeatures) -> ConversationLines<'a> {
+        ConversationLines {
+            messages: &[],
+            mark: None,
+            facts: HashMap::new(),
+            self_nick: "me",
+            features,
+            typing_peer: None,
+            today: chrono::Local::now().date_naive(),
+        }
+    }
+
+    #[gpui::test]
+    fn pending_restore_cancelled_by_transcript_scroll(cx: &mut TestAppContext) {
+        let cxw = cx.add_empty_window();
+        let drag = ScrollbarDragCell::default();
+        let transcript = cxw.update(|_, cx| {
+            let focus = cx.focus_handle();
+            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+        });
+        let features = IrcServerFeatures::new();
+        let place = pending_place();
+        transcript.update(cx, |view, cx| {
+            view.set_conversation(empty_lines(&features));
+            view.restore_scroll_place(Some(&place), false, true);
+            assert!(view.has_pending_restore());
+            view.note_transcript_scroll(cx);
+            assert!(
+                !view.has_pending_restore(),
+                "a transcript scroll retires the pending restore"
+            );
+            assert!(
+                matches!(view.capture_scroll_place(), SavedPlace::End),
+                "capture then saves the live page"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn pending_restore_not_cancelled_by_note_scroll_end_alone(cx: &mut TestAppContext) {
+        let cxw = cx.add_empty_window();
+        let drag = ScrollbarDragCell::default();
+        let transcript = cxw.update(|_, cx| {
+            let focus = cx.focus_handle();
+            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+        });
+        let features = IrcServerFeatures::new();
+        let place = pending_place();
+        transcript.update(cx, |view, cx| {
+            view.set_conversation(empty_lines(&features));
+            view.restore_scroll_place(Some(&place), false, true);
+            assert!(view.has_pending_restore());
+            // Sidebar / member Div scrollbar drags only call note_scroll_end.
+            view.note_scroll_end(cx);
+            assert!(
+                view.has_pending_restore(),
+                "a non-transcript scrollbar must not cancel the pending restore"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn pending_restore_cancelled_by_send(cx: &mut TestAppContext) {
+        let cxw = cx.add_empty_window();
+        let drag = ScrollbarDragCell::default();
+        let transcript = cxw.update(|_, cx| {
+            let focus = cx.focus_handle();
+            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+        });
+        let features = IrcServerFeatures::new();
+        let place = pending_place();
+        transcript.update(cx, |view, _| {
+            view.set_conversation(empty_lines(&features));
+            view.restore_scroll_place(Some(&place), false, true);
+            view.clear_pending_restore();
+            assert!(
+                !view.has_pending_restore(),
+                "sending clears the pending restore"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn pending_restore_cancelled_when_history_finishes_without_anchor(cx: &mut TestAppContext) {
+        let cxw = cx.add_empty_window();
+        let drag = ScrollbarDragCell::default();
+        let transcript = cxw.update(|_, cx| {
+            let focus = cx.focus_handle();
+            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+        });
+        let features = IrcServerFeatures::new();
+        let place = pending_place();
+        let other: Vec<Message> = (0..4)
+            .map(|i| chat_with_msgid("anna", &format!("fill {i}"), i as i64 + 1, &format!("fill-{i}")))
+            .collect();
+        transcript.update(cx, |view, cx| {
+            view.set_conversation(empty_lines(&features));
+            view.restore_scroll_place(Some(&place), false, true);
+            assert!(view.has_pending_restore());
+            view.refresh_conversation(
+                ConversationLines {
+                    messages: &other,
+                    mark: None,
+                    facts: HashMap::new(),
+                    self_nick: "me",
+                    features: &features,
+                    typing_peer: None,
+                    today: chrono::Local::now().date_naive(),
+                },
+                cx,
+            );
+            assert!(
+                view.has_pending_restore(),
+                "refresh without the anchor keeps the pending place"
+            );
+            assert!(
+                matches!(view.capture_scroll_place(), SavedPlace::Line { .. }),
+                "capture still returns the original saved place, not End"
+            );
+            assert!(view.cancel_pending_if_missing());
+            assert!(
+                !view.has_pending_restore(),
+                "history finishing without the anchor clears the pending restore"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn pending_restore_skipped_without_chathistory(cx: &mut TestAppContext) {
+        let cxw = cx.add_empty_window();
+        let drag = ScrollbarDragCell::default();
+        let transcript = cxw.update(|_, cx| {
+            let focus = cx.focus_handle();
+            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+        });
+        let features = IrcServerFeatures::new();
+        let place = pending_place();
+        transcript.update(cx, |view, _| {
+            view.set_conversation(empty_lines(&features));
+            view.restore_scroll_place(Some(&place), false, false);
+            assert!(
+                !view.has_pending_restore(),
+                "without chathistory a missing place is not kept pending"
+            );
+            assert!(matches!(view.capture_scroll_place(), SavedPlace::End));
+        });
+    }
+
+    #[gpui::test]
+    fn pending_restore_refresh_keeps_saved_place_not_end(cx: &mut TestAppContext) {
+        let cxw = cx.add_empty_window();
+        let drag = ScrollbarDragCell::default();
+        let transcript = cxw.update(|_, cx| {
+            let focus = cx.focus_handle();
+            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+        });
+        let features = IrcServerFeatures::new();
+        let place = pending_place();
+        let live: Vec<Message> =
+            vec![chat_with_msgid("anna", "live", 1, "live-1")];
+        transcript.update(cx, |view, cx| {
+            view.set_conversation(empty_lines(&features));
+            view.restore_scroll_place(Some(&place), false, true);
+            view.refresh_conversation(
+                ConversationLines {
+                    messages: &live,
+                    mark: None,
+                    facts: HashMap::new(),
+                    self_nick: "me",
+                    features: &features,
+                    typing_peer: None,
+                    today: chrono::Local::now().date_naive(),
+                },
+                cx,
+            );
+            let captured = view.capture_scroll_place();
+            assert_eq!(
+                captured.to_stored().msg_id,
+                "missing-anchor",
+                "refresh while waiting must not overwrite the saved place with End"
+            );
+            assert!(!view.reports_follow_end());
+        });
+    }
+
+    #[gpui::test]
+    fn pending_restore_new_lines_do_not_report_follow_end(cx: &mut TestAppContext) {
+        let cxw = cx.add_empty_window();
+        let drag = ScrollbarDragCell::default();
+        let transcript = cxw.update(|_, cx| {
+            let focus = cx.focus_handle();
+            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+        });
+        let features = IrcServerFeatures::new();
+        let place = pending_place();
+        let first: Vec<Message> = vec![chat_with_msgid("anna", "one", 1, "m1")];
+        let second: Vec<Message> = vec![
+            chat_with_msgid("anna", "one", 1, "m1"),
+            chat_with_msgid("anna", "two", 2, "m2"),
+        ];
+        transcript.update(cx, |view, cx| {
+            view.set_conversation(ConversationLines {
+                messages: &first,
+                mark: None,
+                facts: HashMap::new(),
+                self_nick: "me",
+                features: &features,
+                typing_peer: None,
+                today: chrono::Local::now().date_naive(),
+            });
+            view.restore_scroll_place(Some(&place), false, true);
+            assert!(view.has_pending_restore());
+            assert!(!view.reports_follow_end());
+            view.refresh_conversation(
+                ConversationLines {
+                    messages: &second,
+                    mark: None,
+                    facts: HashMap::new(),
+                    self_nick: "me",
+                    features: &features,
+                    typing_peer: None,
+                    today: chrono::Local::now().date_naive(),
+                },
+                cx,
+            );
+            assert!(view.has_pending_restore());
+            assert!(
+                !view.reports_follow_end(),
+                "new lines while pending must not report follow-end for the read marker"
             );
         });
     }

@@ -132,6 +132,8 @@ impl SavedPlace {
 pub enum Resume {
     End,
     Line { row: usize, offset_px: i32 },
+    /// The saved line is not among the rows yet (history still in flight, or gone).
+    Missing,
 }
 
 /// The live viewport top while a conversation stays open, including day
@@ -201,26 +203,12 @@ impl LivePlace {
     }
 }
 
-/// Whether `place`'s line is already among `rows`. A missing line means restore
-/// should wait (history has not arrived) instead of falling back to the bottom.
-pub fn place_is_present(place: &SavedPlace, rows: &[Row]) -> bool {
-    match place {
-        SavedPlace::End => true,
-        SavedPlace::Line { line, .. } => {
-            if !line.msgid.is_empty() {
-                row_for_msgid(rows, &line.msgid).is_some()
-            } else {
-                rows.iter().any(|candidate| line.is_row(candidate))
-            }
-        }
-    }
-}
-
 /// Resolves a saved place against the rows now shown. A saved line is found at
 /// its old index when it is still there, else at the first row with the same
-/// content, else at its old index clamped to the rows that remain. No place
-/// resumes at the end: the caller decides what a conversation with no place
-/// opens at.
+/// content. When the line is absent, the result is [`Resume::Missing`] so the
+/// caller can wait for history or give up — it does not clamp to a nearby row.
+/// No place resumes at the end: the caller decides what a conversation with no
+/// place opens at.
 pub fn resume(place: Option<&SavedPlace>, rows: &[Row]) -> Resume {
     let Some(SavedPlace::Line {
         row,
@@ -231,21 +219,21 @@ pub fn resume(place: Option<&SavedPlace>, rows: &[Row]) -> Resume {
         return Resume::End;
     };
     if rows.is_empty() {
-        return Resume::End;
+        return Resume::Missing;
     }
     let found = if !line.msgid.is_empty() {
         row_for_msgid(rows, &line.msgid)
-            .unwrap_or_else(|| (*row).min(rows.len() - 1))
     } else if rows.get(*row).is_some_and(|candidate| line.is_row(candidate)) {
-        *row
+        Some(*row)
     } else {
-        rows.iter()
-            .position(|candidate| line.is_row(candidate))
-            .unwrap_or_else(|| (*row).min(rows.len() - 1))
+        rows.iter().position(|candidate| line.is_row(candidate))
     };
-    Resume::Line {
-        row: found,
-        offset_px: *offset_px,
+    match found {
+        Some(row) => Resume::Line {
+            row,
+            offset_px: *offset_px,
+        },
+        None => Resume::Missing,
     }
 }
 
@@ -468,36 +456,36 @@ mod tests {
     }
 
     #[test]
-    fn a_place_clamps_when_its_line_is_gone() {
+    fn a_gone_line_is_missing_not_clamped() {
         let rows = rows(5);
         let place = SavedPlace::from_anchor(anchor(3, 9), &rows);
         let fewer = rows[..2].to_vec();
-        assert_eq!(
-            resume(Some(&place), &fewer),
-            Resume::Line {
-                row: 1,
-                offset_px: 9
-            }
-        );
+        assert_eq!(resume(Some(&place), &fewer), Resume::Missing);
     }
 
     #[test]
-    fn a_place_in_an_emptied_transcript_is_the_end() {
+    fn a_place_in_an_emptied_transcript_is_missing() {
         let rows = rows(5);
         let place = SavedPlace::from_anchor(anchor(3, 9), &rows);
-        assert_eq!(resume(Some(&place), &[]), Resume::End);
+        assert_eq!(resume(Some(&place), &[]), Resume::Missing);
     }
 
     #[test]
-    fn place_is_absent_until_its_msgid_arrives() {
+    fn a_msgid_place_is_missing_until_its_row_arrives() {
         let place = SavedPlace::from_stored(&StoredPlace {
             msg_id: "history-line".to_owned(),
             ..StoredPlace::default()
         })
         .expect("msgid place");
-        assert!(!place_is_present(&place, &rows(3)));
+        assert_eq!(resume(Some(&place), &rows(3)), Resume::Missing);
         let arrived = vec![row_with_msgid(1, "history-line", "anna", "09:00", "hello", false)];
-        assert!(place_is_present(&place, &arrived));
+        assert_eq!(
+            resume(Some(&place), &arrived),
+            Resume::Line {
+                row: 0,
+                offset_px: 0
+            }
+        );
     }
 
     #[test]

@@ -254,8 +254,8 @@ impl Shell {
             };
             self.transcript.update(cx, |t, cx| t.refresh_conversation(lines, cx));
         }
-        let at_end = self.transcript.read(cx).at_end();
-        self.report_transcript_viewport_from_shell(at_end, cx);
+        let follow_end = self.transcript.read(cx).reports_follow_end();
+        self.report_transcript_viewport_from_shell(follow_end, cx);
     }
 
     /// Updates only the typing dots on the open direct message.
@@ -298,14 +298,15 @@ impl Shell {
                 };
                 let open_at_unread = place.is_none() && self.controller.preferences().unread;
                 let place = place.or_else(|| self.saved_place(&self.shown.conversation));
+                let wait_for_history = self.controller.chat_history_enabled();
                 self.transcript.update(cx, |t, _| {
                     t.set_conversation(lines);
-                    t.restore_scroll_place(place.as_ref(), open_at_unread);
+                    t.restore_scroll_place(place.as_ref(), open_at_unread, wait_for_history);
                 });
             }
         }
-        let at_end = self.transcript.read(cx).at_end();
-        self.report_transcript_viewport_from_shell(at_end, cx);
+        let follow_end = self.transcript.read(cx).reports_follow_end();
+        self.report_transcript_viewport_from_shell(follow_end, cx);
     }
 
     /// Qt `rememberOpenTranscript`: stores where the open conversation's transcript

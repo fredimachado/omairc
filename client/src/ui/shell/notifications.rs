@@ -72,7 +72,27 @@ impl Shell {
         } else if refresh_typing {
             self.refresh_shown_typing(cx);
         }
-        if !surfaces.is_empty() {
+        // History that finished without the saved anchor drops the pending restore
+        // so capture saves the live page instead of re-saving a stale place.
+        let settled = self.controller.take_history_scroll_settle();
+        if !settled.is_empty() && !self.status_showing() {
+            let network_id = self.shown.conversation.network_id.clone();
+            let selected = self.controller.selected_target().to_owned();
+            let mapping = self.features_of(&network_id).case_mapping();
+            let for_shown = settled.iter().any(|(net, target)| {
+                net == &network_id && mapping.equals(target, &selected)
+            });
+            if for_shown {
+                let cancelled = self
+                    .transcript
+                    .update(cx, |t, _| t.cancel_pending_if_missing());
+                if cancelled {
+                    let follow_end = self.transcript.read(cx).reports_follow_end();
+                    self.report_transcript_viewport_from_shell(follow_end, cx);
+                }
+            }
+        }
+        if !surfaces.is_empty() || !settled.is_empty() {
             cx.notify();
         }
     }

@@ -48,8 +48,8 @@ impl Shell {
             self.transcript
                 .update(cx, |t, cx| t.land_on_unread_mark(cx));
         }
-        let at_end = self.transcript.read(cx).at_end();
-        self.report_transcript_viewport_from_shell(at_end, cx);
+        let follow_end = self.transcript.read(cx).reports_follow_end();
+        self.report_transcript_viewport_from_shell(follow_end, cx);
         self.drain_notifications(cx);
         cx.notify();
     }
