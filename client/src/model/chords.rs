@@ -183,8 +183,8 @@ pub fn chord_enabled(chord: Chord, ctx: &ChordContext) -> bool {
         && !sheet_is(Sheet::ChannelOpen)
         && (ctx.sheet.is_none() || sheet_is(Sheet::Inbox) || sheet_is(Sheet::ChannelList));
     match chord {
-        // Qt's Ctrl+Q is disabled only while the shortcuts overlay is open.
-        Chord::Quit => shortcuts_clear,
+        // Ctrl+Q always reaches the window close path, including while Shortcuts is open.
+        Chord::Quit => true,
         // Copies the transcript selection, or the member list's selection.
         // The composer's own selection is copied by the composer first, so this
         // only sees Ctrl+C when the draft has none. Focus does not matter here:
@@ -399,10 +399,8 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_q_is_blocked_only_by_the_shortcuts_sheet() {
-        const QUIT: [bool; 11] = [
-            true, false, true, true, true, true, true, true, true, true, true,
-        ];
+    fn ctrl_q_stays_live_while_the_shortcuts_sheet_is_open() {
+        const QUIT: [bool; 11] = [true; 11];
         check(Chord::Quit, nothing, QUIT);
     }
 
@@ -417,6 +415,13 @@ mod tests {
         assert!(chord_enabled(Chord::Quit, &jump));
         assert!(!chord_enabled(
             Chord::ComposerFocus,
+            &ChordContext {
+                sheet: Some(Sheet::Shortcuts),
+                ..ChordContext::default()
+            }
+        ));
+        assert!(chord_enabled(
+            Chord::Quit,
             &ChordContext {
                 sheet: Some(Sheet::Shortcuts),
                 ..ChordContext::default()
