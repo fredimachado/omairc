@@ -49,14 +49,23 @@ pub type ResolveHost = Arc<
 >;
 
 #[cfg(unix)]
-fn system_resolve_host() -> ResolveHost {
-    Arc::new(|host, port| {
+pub(super) type BlockingLookupHost = fn(&str, u16) -> io::Result<Vec<SocketAddr>>;
+
+/// Builds the production resolve closure, running `blocking` on a worker thread.
+#[cfg(unix)]
+pub(super) fn resolve_host_with_blocking(blocking: BlockingLookupHost) -> ResolveHost {
+    Arc::new(move |host, port| {
         Box::pin(async move {
-            tokio::task::spawn_blocking(move || super::resolve::blocking_lookup_host(&host, port))
+            tokio::task::spawn_blocking(move || blocking(&host, port))
                 .await
                 .map_err(|join| io::Error::other(format!("resolve task failed: {join}")))?
         })
     })
+}
+
+#[cfg(unix)]
+fn system_resolve_host() -> ResolveHost {
+    resolve_host_with_blocking(super::resolve::blocking_lookup_host)
 }
 
 #[cfg(not(unix))]

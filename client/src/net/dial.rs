@@ -99,7 +99,7 @@ fn is_not_found(error: &io::Error) -> bool {
     error.kind() == io::ErrorKind::NotFound || error.raw_os_error() == Some(WSAHOST_NOT_FOUND)
 }
 
-/// Turns on `TCP_NODELAY` and keepalive.
+/// Turns on `TCP_NODELAY` and keepalive. A socket that refuses either still works, so
 /// the failure is logged and the connection goes on.
 fn tune(stream: &TcpStream) {
     if let Err(error) = stream.set_nodelay(true) {

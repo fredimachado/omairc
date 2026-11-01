@@ -91,24 +91,56 @@ fn system_resolver_unknown_host_reads_as_no_such_host() {
     assert_eq!(mapped.message, "lookup nonexistent.invalid: no such host");
 }
 
-/// A resolver that blocks on a worker thread must not prevent other tasks on the runtime
-/// from making progress.
+/// A production-style resolve host must not block the runtime while `blocking` sleeps.
+#[cfg(unix)]
 #[test]
-fn spawn_blocking_resolve_leaves_runtime_responsive() {
+fn system_resolve_host_leaves_runtime_responsive() {
+    use crate::net::hub::resolve_host_with_blocking;
+
+    let resolve = resolve_host_with_blocking(|_host, _port| {
+        std::thread::sleep(Duration::from_millis(400));
+        Ok(Vec::new())
+    });
+
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("runtime");
 
     rt.block_on(async {
-        let blocking = tokio::task::spawn_blocking(|| {
-            std::thread::sleep(Duration::from_millis(400));
-            Ok::<(), io::Error>(())
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::Arc;
+        use std::time::Instant;
+
+        let ticks = Arc::new(AtomicU32::new(0));
+        let counter = ticks.clone();
+        let ticker = tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                counter.fetch_add(1, Ordering::Relaxed);
+            }
         });
-        tokio::time::sleep(Duration::from_millis(30)).await;
+
+        let resolve = resolve("hang.example".to_owned(), 6667);
+        tokio::pin!(resolve);
+        let deadline = Instant::now() + Duration::from_millis(150);
+        let mut saw_ticks_while_pending = false;
+        while Instant::now() < deadline {
+            match tokio::time::timeout(Duration::from_millis(10), &mut resolve).await {
+                Ok(_) => break,
+                Err(_) => {
+                    if ticks.load(Ordering::Relaxed) >= 3 {
+                        saw_ticks_while_pending = true;
+                        break;
+                    }
+                }
+            }
+        }
+        ticker.abort();
         assert!(
-            !blocking.is_finished(),
-            "short sleep should finish before a blocking resolve worker"
+            saw_ticks_while_pending,
+            "ticker should advance while resolve is still pending on a worker thread"
         );
+        let _ = resolve.await;
     });
 }
