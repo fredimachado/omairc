@@ -1,5 +1,5 @@
-//! Quit proofs: every quit, Ctrl+Q included, stops the live sessions, so each one refreshes
-//! its STS expiry on the way out.
+//! Quit proofs: Ctrl+Q stops the live sessions, so each one refreshes its STS expiry on the way
+//! out. Logout and SIGTERM do not reach this path.
 
 use crate::session::events::SessionState;
 

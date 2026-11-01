@@ -69,8 +69,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Lookups and malformed-file recovery prefer the file's policy over a stale
   in-memory one. A policy whose write failed, because the file is read-only or
   malformed, stays in memory and wins lookups until a later write lands.
-- Ctrl+Q on the desktop client stops every session before it exits, as the
-  terminal client does on quit, so each network refreshes its STS expiry.
+- Ctrl+Q and closing the window on the desktop client stop every session before
+  it exits, as the terminal client does on quit, so each network refreshes its
+  STS expiry. Logout and SIGTERM still exit without it.
 - The `sts` cache keeps only real policies. A group whose name is not a host
   key, or that has no valid port, duration, or expiry, is dropped on the next
   write.
