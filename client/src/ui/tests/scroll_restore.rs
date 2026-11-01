@@ -586,3 +586,49 @@ fn a_wheel_back_to_the_end_reports_the_end(cx: &mut gpui::TestAppContext) {
         "a wheel back to the end reports it, so the read marker can advance again"
     );
 }
+
+#[gpui::test]
+fn a_saved_line_near_the_loaded_end_keeps_its_place_as_later_history_arrives(
+    cx: &mut gpui::TestAppContext,
+) {
+    let mut ui = fixture::open(cx);
+    offer_chathistory(&mut ui);
+    ui.select("anna");
+    ui.fill_until_scrollable("anna", "fred", "landing line");
+    start_after_chain(&mut ui);
+    reopen_at_gone_place(&mut ui, "anna");
+    let first: Vec<String> = (0..HISTORY_LIMIT).map(|i| format!("fill-{i}")).collect();
+    deliver_burst(&mut ui, &anna_page("p1", &first));
+    assert!(
+        waiting(&ui),
+        "the chained page is in flight, so the place keeps waiting"
+    );
+    // The saved line is near the end of the rows loaded so far, so the list cannot scroll it to
+    // the top until the next page arrives. The reader must still not be taken for one at the end.
+    let mut second: Vec<String> = (0..HISTORY_LIMIT).map(|i| format!("more-{i}")).collect();
+    second[80] = "gone-anchor".to_owned();
+    deliver_burst(&mut ui, &anna_page("p2", &second));
+    assert!(
+        !waiting(&ui),
+        "page 2 brought the saved line, so the place lands"
+    );
+    ui.shell
+        .update(ui.cx, |shell, cx| shell.remember_open_transcript(cx));
+    let saved = ui.shell.read_with(ui.cx, |shell, _| {
+        shell.controller.place_for(OMARCHY, "anna")
+    });
+    assert!(
+        !saved.expect("a place is saved").follow_end,
+        "leaving the restored reader saves its line, not the end"
+    );
+    let tail: Vec<String> = (0..50).map(|i| format!("tail-{i}")).collect();
+    deliver_burst(&mut ui, &anna_page("p3", &tail));
+    assert!(
+        !reported_end(&ui),
+        "the page after the saved line must not report the reader at the end"
+    );
+    assert!(
+        !ui.at_end(),
+        "the page after the saved line must not pull the restored reader to the end"
+    );
+}

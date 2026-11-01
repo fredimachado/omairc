@@ -26,6 +26,13 @@ impl TranscriptView {
         }
     }
 
+    /// Whether the reader follows the end, by its bottom pin. The pin is set by the reader's
+    /// own moves and by landing at the end. The list clamps a restored line that sits within a
+    /// screen of the loaded end, so `at_end` reads true there while the reader has not moved.
+    fn reader_following(&self) -> bool {
+        self.model.scroll().pinned_to_bottom
+    }
+
     pub fn has_pending_restore(&self) -> bool {
         self.pending_restore.is_some()
     }
@@ -67,7 +74,7 @@ impl TranscriptView {
     /// Reloads the open conversation. A pending restore whose line arrived is applied.
     pub fn refresh_conversation(&mut self, lines: ConversationLines, cx: &mut Context<Self>) {
         let previous_rows = self.model.rows().len();
-        let was_at_end = self.reader_at_end();
+        let was_at_end = self.reader_following();
         let pending = self.pending_restore.clone();
         let live = (pending.is_none() && !was_at_end)
             .then(|| self.capture_live_place())
@@ -112,7 +119,7 @@ impl TranscriptView {
         if self.typing_peer == peer {
             return;
         }
-        let was_at_end = self.reader_at_end();
+        let was_at_end = self.reader_following();
         let pending = self.pending_restore.is_some();
         let live = (!pending && !was_at_end)
             .then(|| self.capture_live_place())
@@ -149,16 +156,14 @@ impl TranscriptView {
     }
 
     /// Skips unread/day dividers for persistence. Returns a pending place while waiting.
-    pub fn capture_scroll_place(&mut self) -> SavedPlace {
+    pub fn capture_scroll_place(&self) -> SavedPlace {
         if let Some(place) = self.pending_restore.clone() {
             return place;
         }
-        self.sync_scroll_from_list();
         SavedPlace::from_anchor(self.model.scroll(), self.model.rows())
     }
 
-    fn capture_live_place(&mut self) -> Option<LivePlace> {
-        self.sync_scroll_from_list();
+    fn capture_live_place(&self) -> Option<LivePlace> {
         LivePlace::from_anchor(self.model.scroll(), self.model.rows())
     }
 
