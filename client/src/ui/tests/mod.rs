@@ -4,6 +4,7 @@
 
 mod fixture;
 mod layout;
+mod quit;
 mod sheets;
 mod transcript;
 mod typing;

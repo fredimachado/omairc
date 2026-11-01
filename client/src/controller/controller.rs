@@ -355,6 +355,12 @@ impl Controller {
         started
     }
 
+    /// Stops every session as the app quits, so each refreshes its STS expiry on the way out
+    /// (`Controller.Shutdown` in the TUI). Unlike `disconnect`, it sends no QUIT.
+    pub fn shutdown(&self) {
+        self.manager.stop_all();
+    }
+
     /// Sends QUIT and stops `network_id`'s session (`Disconnect`). Returns false when
     /// the network has no session or the session was already idle.
     pub fn disconnect(&mut self, network_id: &str) -> bool {

@@ -93,11 +93,17 @@ impl SessionManager {
     }
 
     /// Stops the session for `network_id`. A missing network is a no-op.
-    // Test-only: no non-test caller stops a session through the manager yet.
-    #[cfg(test)]
     pub fn stop(&self, network_id: &str) {
         if let Some(session) = self.find(network_id) {
             session.stop();
+        }
+    }
+
+    /// Stops every registered session, so each one refreshes its STS expiry on the way out.
+    /// Sends no QUIT (`Manager.StopAll` in the TUI).
+    pub fn stop_all(&self) {
+        for network_id in self.network_ids() {
+            self.stop(&network_id);
         }
     }
 
