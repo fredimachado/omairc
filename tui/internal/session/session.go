@@ -328,10 +328,11 @@ type Session struct {
 	reachability     ReachabilitySource
 	reachabilityStop chan struct{}
 
-	reconnectTimer  Timer
-	capabilityTimer Timer
-	pingTimer       Timer
-	labelTimer      Timer
+	reconnectTimer    Timer
+	capabilityTimer   Timer
+	registrationTimer Timer
+	pingTimer         Timer
+	labelTimer        Timer
 
 	// deferred holds work to run after the mutex is released. Guarded by mu.
 	deferred []sessionAction
@@ -717,6 +718,7 @@ func (s *Session) stopLocked() {
 	s.reconnectAfterDisconnect = false
 	s.cancelTimer(&s.reconnectTimer)
 	s.cancelTimer(&s.capabilityTimer)
+	s.cancelTimer(&s.registrationTimer)
 	s.cancelPingWatchdogLocked()
 	s.clearPendingRequestLabelsLocked(true)
 	s.reconnectAttempt = 0
@@ -1546,6 +1548,14 @@ func (s *Session) setStateLocked(state SessionState) {
 func (s *Session) beginCapabilityNegotiationLocked() {
 	s.setStateLocked(StateCapLs)
 	s.sendLineLocked([]byte("CAP LS 302\r\n"))
+	s.armTimer(&s.registrationTimer, s.config.RegistrationTimeoutMs, s.onRegistrationTimeoutLocked)
+}
+
+func (s *Session) onRegistrationTimeoutLocked() {
+	if s.sessionState == StateRegistered || s.sessionState == StateFailed {
+		return
+	}
+	s.failLocked(ErrorNetwork, RegistrationTimeoutMessage, true)
 }
 
 func (s *Session) requestCapabilitiesLocked() {
@@ -1747,6 +1757,7 @@ func (s *Session) handleWelcomeLocked(message irc.Message) {
 	s.reconnectAttempt = 0
 	s.reportedRetryErrors = 0
 	s.cancelTimer(&s.capabilityTimer)
+	s.cancelTimer(&s.registrationTimer)
 	s.capabilities.AbandonOutstanding()
 	s.setStateLocked(StateRegistered)
 	networkID := s.config.NetworkID
@@ -3003,6 +3014,7 @@ func (s *Session) pongMatchesWatchdogLocked(message irc.Message) bool {
 }
 
 func (s *Session) failLocked(kind ErrorKind, message string, reconnect bool) {
+	s.cancelTimer(&s.registrationTimer)
 	s.cancelPingWatchdogLocked()
 	s.clearPendingRequestLabelsLocked(true)
 
@@ -3110,6 +3122,7 @@ func (s *Session) resetForConnectionLocked() {
 	s.pendingJoinKeys = map[string]string{}
 	s.channelTypes = ""
 	s.cancelTimer(&s.capabilityTimer)
+	s.cancelTimer(&s.registrationTimer)
 	s.cancelPingWatchdogLocked()
 	s.clearPendingRequestLabelsLocked(true)
 	s.capabilities.Reset(s.config.saslSecret() != "")

@@ -13,7 +13,8 @@ use crate::irc::colorpalette::ColorPaletteId;
 use crate::irc::membershipnoise::MembershipNoise;
 use crate::irc::pref::Preferences;
 
-use super::settings::Status;
+use super::profilestore::NETWORKS_GROUP;
+use super::settings::{Settings, Status};
 use super::Backing;
 
 /// The QSettings group that holds every preference.
@@ -91,6 +92,24 @@ impl PreferenceStore {
         self.save_list(COLLAPSED_NETWORKS_KEY, network_ids)
     }
 
+    /// One settings write for forgetting a network: drop `networks/<id>` when
+    /// `remove_profile` is set, then store the updated order and collapse lists.
+    pub fn forget_network(
+        &self,
+        network_id: &str,
+        remove_profile: bool,
+        network_order: &[String],
+        collapsed: &[String],
+    ) -> Status {
+        self.backing.edit(|settings| {
+            if remove_profile && !network_id.is_empty() {
+                settings.remove_group(&format!("{NETWORKS_GROUP}/{network_id}"));
+            }
+            apply_preference_list(settings, NETWORK_ORDER_KEY, network_order);
+            apply_preference_list(settings, COLLAPSED_NETWORKS_KEY, collapsed);
+        })
+    }
+
     /// The saved `/autoaway` settings. The one-shot reason is never saved, as in Qt.
     pub fn autoaway(&self) -> AutoawayConfig {
         let settings = self.backing.settings();
@@ -122,12 +141,16 @@ impl PreferenceStore {
 
     fn save_list(&self, key: &str, values: &[String]) -> Status {
         self.backing.edit(|settings| {
-            if values.is_empty() {
-                settings.remove_key(PREFERENCES_GROUP, key);
-            } else {
-                settings.set_string_list(PREFERENCES_GROUP, key, values);
-            }
+            apply_preference_list(settings, key, values);
         })
+    }
+}
+
+fn apply_preference_list(settings: &mut Settings, key: &str, values: &[String]) {
+    if values.is_empty() {
+        settings.remove_key(PREFERENCES_GROUP, key);
+    } else {
+        settings.set_string_list(PREFERENCES_GROUP, key, values);
     }
 }
 

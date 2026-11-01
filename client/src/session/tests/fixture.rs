@@ -36,6 +36,7 @@ pub fn test_config() -> SessionConfig {
         reconnect_base_delay_ms: 250,
         reconnect_maximum_delay_ms: 1000,
         capability_timeout_ms: 10000,
+        registration_timeout_ms: crate::session::config::REGISTRATION_TIMEOUT_MS,
         ping_timeout_ms: 60000,
         labeled_response_timeout_ms: 45000,
         ..SessionConfig::default()

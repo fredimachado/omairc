@@ -230,7 +230,7 @@ fn forgetting_a_network_removes_its_profile_from_the_file() {
         let mut first = launch(&backing, Box::new(Loopbacks::default()));
         save(&mut first, libera(LIBERA));
         save(&mut first, libera(OFTC));
-        assert!(first.forget_network(LIBERA));
+        assert_eq!(first.forget_network(LIBERA), Status::Written);
     }
     let second = launch(&backing, Box::new(Loopbacks::default()));
     let ids: Vec<String> = second

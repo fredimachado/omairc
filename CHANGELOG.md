@@ -33,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   line. A waiting place does not advance the server read marker. A transcript
   scroll, or a message sent to that conversation, ends the wait; commands such
   as `/pref` and `/whois` and sidebar or member scrollbar drags do not.
+- Desktop and TUI write `collapsedNetworks` in sidebar `networkOrder` (not id
+  sort), so switching clients no longer rewrites the line. Forgetting a network
+  updates the profile group plus `networkOrder` and `collapsedNetworks` in one
+  conf write. The TUI also removes a stale `collapsedNetworks=@Invalid()` line
+  on an empty save; Settings.Sync still skips identical bytes.
 
 - The desktop client no longer writes `collapsedNetworks=@Invalid()` or a second
   preferences flush when a sidebar network is reordered. Network order and

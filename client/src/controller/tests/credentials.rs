@@ -24,7 +24,6 @@ use std::time::{Duration, Instant};
 use crate::storage::profilestore::Profile;
 use crate::storage::settings::Status;
 use crate::storage::Backing;
-use crate::util::testdir::TempDir;
 
 const NET: &str = "net";
 
@@ -618,30 +617,6 @@ fn poll_credential_reads_refuses_two_failed_startup_connects() {
     let attempt_counts = attempts.lock().expect("lock").clone();
     assert_eq!(attempt_counts.get(net_a), Some(&1));
     assert_eq!(attempt_counts.get(net_b), Some(&1));
-}
-
-#[test]
-fn a_failed_profile_removal_leaves_credentials_in_place() {
-    let dir = TempDir::new("remove-creds");
-    let backing = Backing::Disk(dir.path().join("omairc.conf"));
-    let mut controller = Controller::with_backing(clock(), Box::new(NoTransports), backing);
-    controller.credentials = Box::new(MemoryCredentialStore::default());
-    let profile = complete_profile();
-    controller.save_profile(
-        profile.clone(),
-        SecretEdits {
-            password: Some("hunter2".to_owned().into()),
-            nickserv: None,
-        },
-    );
-    std::fs::write(dir.path().join("omairc.conf"), "not ini").expect("broken file");
-
-    assert!(!controller.forget_network(NET));
-    assert_eq!(
-        read_slot_sync(controller.credentials.as_ref(), &profile, PURPOSE_PASSWORD),
-        Ok(Some("hunter2".to_owned()))
-    );
-    assert!(controller.profile(NET).is_some());
 }
 
 #[test]

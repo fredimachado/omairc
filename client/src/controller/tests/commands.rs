@@ -9,6 +9,7 @@ use crate::irc::event::ConversationKey;
 use crate::irc::pref::{format_pref_list, format_pref_query, format_pref_state, PrefName};
 use crate::irc::membershipnoise::MembershipNoise;
 use crate::irc::world::MessageKind;
+use crate::storage::settings::Status;
 
 use super::fixture::{bodies, status_text, Fixture, OFTC, OMARCHY};
 
@@ -882,7 +883,7 @@ fn a_pending_join_cancellation_is_kept_per_network_and_forgotten_with_its_networ
     let oftc = key(&fixture, OFTC, "#room");
     fixture.controller.cancelled_joins.insert(omarchy.clone());
     fixture.controller.cancelled_joins.insert(oftc.clone());
-    assert!(fixture.controller.forget_network(OFTC));
+    assert_eq!(fixture.controller.forget_network(OFTC), Status::Written);
     assert!(fixture.controller.cancelled_joins.contains(&omarchy));
     assert!(!fixture.controller.cancelled_joins.contains(&oftc));
 }

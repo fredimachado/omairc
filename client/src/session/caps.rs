@@ -48,6 +48,10 @@ impl Core {
     pub(crate) fn begin_capability_negotiation(&mut self) {
         self.set_state(SessionState::CapLs);
         self.send_line(b"CAP LS 302\r\n");
+        self.arm_timer(
+            TimerSlot::Registration,
+            Duration::from_millis(self.config.registration_timeout_ms),
+        );
     }
 
     /// Requests every capability that can be requested now, then registers

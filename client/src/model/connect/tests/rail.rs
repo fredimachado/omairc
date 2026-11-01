@@ -210,6 +210,65 @@ fn remove_arms_on_the_first_press_and_removes_on_the_second() {
     assert!(!state.remove_armed());
 }
 
+/// `remove_with_forget` must honour the forget Status. Hard-coding
+/// `Status::Written` inside the helper (or calling `complete_remove` with
+/// Written despite a failed forget) drops the row and fails this test.
+#[test]
+fn remove_with_forget_keeps_the_row_on_access_error() {
+    let (populated, mut state) = seeded();
+    assert_eq!(
+        state.remove_with_forget(&populated, |_| Status::Written),
+        RemoveOutcome::Armed
+    );
+    assert_eq!(
+        state.remove_with_forget(&populated, |_| Status::AccessError),
+        RemoveOutcome::Refused
+    );
+    assert_eq!(stored_ids(&state), ["omarchy", "oftc"]);
+    assert!(state.is_saved("omarchy"));
+    assert_eq!(state.selected(), "omarchy");
+    assert!(!state.remove_armed());
+    assert_eq!(
+        state.persistence_status(),
+        "The settings file could not be written."
+    );
+}
+
+/// FormatError must show Apply's read sentence, not the write sentence.
+#[test]
+fn remove_with_forget_shows_the_format_error_sentence() {
+    let (populated, mut state) = seeded();
+    assert_eq!(
+        state.remove_with_forget(&populated, |_| Status::Written),
+        RemoveOutcome::Armed
+    );
+    assert_eq!(
+        state.remove_with_forget(&populated, |_| Status::FormatError),
+        RemoveOutcome::Refused
+    );
+    assert!(state.is_saved("omarchy"));
+    assert_eq!(
+        state.persistence_status(),
+        "The settings file could not be read."
+    );
+}
+
+#[test]
+fn remove_with_forget_drops_the_row_when_forget_writes() {
+    let (populated, mut state) = seeded();
+    assert_eq!(
+        state.remove_with_forget(&populated, |_| Status::Written),
+        RemoveOutcome::Armed
+    );
+    assert_eq!(
+        state.remove_with_forget(&populated, |_| Status::Written),
+        RemoveOutcome::Removed("omarchy".to_string())
+    );
+    assert_eq!(stored_ids(&state), ["oftc"]);
+    assert!(!state.is_saved("omarchy"));
+    assert_eq!(state.selected(), "oftc");
+}
+
 #[test]
 fn removing_selects_the_network_now_at_the_same_position() {
     let (populated, mut state) = seeded();

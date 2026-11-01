@@ -35,6 +35,7 @@ func sessionTestConfig(networkID string) SessionConfig {
 		ReconnectBaseDelayMs:     250,
 		ReconnectMaximumDelayMs:  1000,
 		CapabilityTimeoutMs:      10000,
+		RegistrationTimeoutMs:    RegistrationTimeoutMs,
 		PingTimeoutMs:            60000,
 		LabeledResponseTimeoutMs: 45000,
 	}
