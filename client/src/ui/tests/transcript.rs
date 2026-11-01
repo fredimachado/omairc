@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use chrono::{TimeZone, Utc};
 
 use crate::irc::event::MsgId;
+use crate::irc::pref::{PrefName, PrefValue};
 use crate::irc::world::{Message, MessageKind, Origin};
 use crate::model::transcript::RowKind;
 use crate::ui::transcript::view::ConversationLines;
@@ -520,4 +521,66 @@ fn a_mark_within_a_screen_of_the_end_follows_the_end(cx: &mut gpui::TestAppConte
         ui.saved_place("newbie").follow_end,
         "a reader at the end saves follow-end"
     );
+}
+
+#[gpui::test]
+fn a_conversation_with_no_mark_opens_at_the_end(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    ui.select("#help");
+    assert_ne!(
+        ui.top_kind(),
+        Some(RowKind::UnreadMark),
+        "#help has no unread lines to mark"
+    );
+    assert!(ui.at_end(), "a conversation with no mark rests on the end");
+    assert!(ui.reported_end(), "the reader at the end reports it");
+    ui.shell
+        .update(ui.cx, |shell, cx| shell.remember_open_transcript(cx));
+    assert!(
+        ui.saved_place("#help").follow_end,
+        "the end is saved as follow-end"
+    );
+}
+
+#[gpui::test]
+fn with_unread_off_a_direct_message_opens_at_the_end(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    ui.select("#omarchy");
+    ui.shell.update(ui.cx, |shell, _| {
+        assert!(shell
+            .controller
+            .set_preference(PrefName::Unread, PrefValue::Toggle(false)));
+    });
+    unread_direct_lines(&mut ui, "newbie", 60);
+    ui.select("newbie");
+    assert_eq!(
+        ui.top_kind(),
+        None,
+        "with the unread preference off a conversation opens at the end, not on its mark"
+    );
+    assert!(ui.at_end());
+    assert!(ui.reported_end(), "the reader at the end reports it");
+    ui.shell
+        .update(ui.cx, |shell, cx| shell.remember_open_transcript(cx));
+    assert!(ui.saved_place("newbie").follow_end);
+}
+
+#[gpui::test]
+fn a_saved_end_reopens_at_the_end_over_a_mark(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    unread_direct_lines(&mut ui, "newbie", 60);
+    ui.select("newbie");
+    ui.shell.update(ui.cx, |shell, cx| {
+        shell.transcript.update(cx, |t, cx| t.scroll_to_bottom(cx));
+    });
+    ui.select("#omarchy");
+    ui.select("newbie");
+    assert_eq!(
+        ui.top_kind(),
+        None,
+        "a saved end reopens at the end, even with a mark in the transcript"
+    );
+    assert!(ui.at_end());
+    assert!(ui.reported_end(), "the reader at the end reports it");
+    assert!(ui.saved_place("newbie").follow_end);
 }

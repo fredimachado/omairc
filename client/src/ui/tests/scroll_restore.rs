@@ -429,6 +429,71 @@ fn a_manual_disconnect_gives_the_wait_up(cx: &mut gpui::TestAppContext) {
 }
 
 #[gpui::test]
+fn a_loaded_saved_line_lands_on_it_and_saves_it(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    offer_chathistory(&mut ui);
+    ui.select("anna");
+    ui.fill_until_scrollable("anna", "fred", "landing line");
+    request_history(&mut ui);
+    let page: Vec<String> = (0..30).map(|i| format!("loaded-{i}")).collect();
+    deliver_burst(&mut ui, &anna_page("h", &page));
+    ui.select("#help");
+    ui.shell.update(ui.cx, |shell, _| {
+        shell.controller.remember_place(
+            OMARCHY,
+            "anna",
+            ScrollPlace {
+                msg_id: "loaded-5".to_owned(),
+                ..ScrollPlace::default()
+            },
+        );
+    });
+    ui.select("anna");
+    assert!(!waiting(&ui), "the saved line is loaded, so nothing waits");
+    assert_eq!(
+        top_msgid(&ui),
+        "loaded-5",
+        "the place lands on the saved line"
+    );
+    assert!(
+        !ui.reported_end(),
+        "a reader on a saved line does not report the end"
+    );
+    ui.shell
+        .update(ui.cx, |shell, cx| shell.remember_open_transcript(cx));
+    let saved = ui.saved_place("anna");
+    assert_eq!(saved.msg_id, "loaded-5", "the place saves the same line");
+    assert!(
+        !saved.follow_end,
+        "a reader off the end does not save follow-end"
+    );
+}
+
+#[gpui::test]
+fn a_wheel_during_a_wait_retires_it_and_saves_the_live_page(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    waiting_above_a_mark(&mut ui, true, request_history);
+    wheel(&mut ui, 3200.);
+    assert!(!waiting(&ui), "a wheel scroll retires the wait");
+    assert!(!ui.at_end(), "the wheel leaves the reader above the end");
+    assert!(
+        !ui.reported_end(),
+        "a reader above the end does not report it"
+    );
+    ui.shell
+        .update(ui.cx, |shell, cx| shell.remember_open_transcript(cx));
+    let saved = ui.saved_place("anna");
+    assert_ne!(
+        saved.msg_id, "gone-anchor",
+        "the place saved is the live line the reader scrolled to, not the waiting line"
+    );
+    assert!(
+        !saved.follow_end,
+        "a reader off the end does not save follow-end"
+    );
+}
+
+#[gpui::test]
 fn a_chain_that_ends_short_of_the_line_gives_the_wait_up(cx: &mut gpui::TestAppContext) {
     for unread_on in [true, false] {
         let mut ui = fixture::open(cx);
@@ -467,6 +532,17 @@ fn a_page_with_the_saved_line_lands_on_it_as_its_request_settles(cx: &mut gpui::
         top_msgid(&ui),
         "gone-anchor",
         "the place lands on the saved line the page brought, not on the row it was saved at"
+    );
+    assert!(
+        !ui.reported_end(),
+        "a restored line does not report the end"
+    );
+    ui.shell
+        .update(ui.cx, |shell, cx| shell.remember_open_transcript(cx));
+    assert_eq!(
+        ui.saved_place("anna").msg_id,
+        "gone-anchor",
+        "the place saved is the line the page brought"
     );
 }
 
@@ -515,6 +591,17 @@ fn a_full_page_without_the_line_keeps_the_wait_for_the_next_page(cx: &mut gpui::
         top_msgid(&ui),
         "gone-anchor",
         "the place lands on the saved line from the chained page"
+    );
+    assert!(
+        !ui.reported_end(),
+        "a restored line does not report the end"
+    );
+    ui.shell
+        .update(ui.cx, |shell, cx| shell.remember_open_transcript(cx));
+    assert_eq!(
+        ui.saved_place("anna").msg_id,
+        "gone-anchor",
+        "the place saved is the line from the chained page"
     );
 }
 
@@ -714,11 +801,13 @@ fn a_saved_line_near_the_loaded_end_keeps_its_place_as_later_history_arrives(
     );
     ui.shell
         .update(ui.cx, |shell, cx| shell.remember_open_transcript(cx));
-    let saved = ui.shell.read_with(ui.cx, |shell, _| {
-        shell.controller.place_for(OMARCHY, "anna")
-    });
+    let saved = ui.saved_place("anna");
+    assert_eq!(
+        saved.msg_id, "gone-anchor",
+        "leaving the restored reader saves its line"
+    );
     assert!(
-        !saved.expect("a place is saved").follow_end,
+        !saved.follow_end,
         "leaving the restored reader saves its line, not the end"
     );
     let tail: Vec<String> = (0..50).map(|i| format!("tail-{i}")).collect();
@@ -777,5 +866,16 @@ fn a_chained_page_in_a_channel_brings_the_saved_line(cx: &mut gpui::TestAppConte
         top_msgid(&ui),
         "gone-anchor",
         "the place lands on the saved line from a page after the first"
+    );
+    assert!(
+        !ui.reported_end(),
+        "a restored line does not report the end"
+    );
+    ui.shell
+        .update(ui.cx, |shell, cx| shell.remember_open_transcript(cx));
+    assert_eq!(
+        ui.saved_place("#help").msg_id,
+        "gone-anchor",
+        "the place saved is the line from the page after the first"
     );
 }

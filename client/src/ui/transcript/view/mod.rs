@@ -1324,4 +1324,37 @@ mod tests {
             );
         });
     }
+
+    #[gpui::test]
+    fn replayed_lines_without_a_mark_open_at_the_end(cx: &mut TestAppContext) {
+        let cxw = cx.add_empty_window();
+        let drag = ScrollbarDragCell::default();
+        let transcript = cxw.update(|_, cx| {
+            let focus = cx.focus_handle();
+            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+        });
+        let features = IrcServerFeatures::new();
+        // Lines read back from the local log keep their stored time and carry no server time.
+        let stored: Vec<Message> = (0..40)
+            .map(|i| Message {
+                origin: Origin::Replay,
+                server_time: None,
+                ..chat("anna", &format!("stored {i}"), i + 1)
+            })
+            .collect();
+        transcript.update(cx, |view, cx| {
+            view.set_conversation(lines_for(&stored, &features));
+            view.restore_scroll_place(None, true, false);
+            assert!(
+                view.reports_follow_end(),
+                "a relaunch whose lines are all read opens at the end and reports it"
+            );
+            assert!(!view.has_pending_restore());
+            view.refresh_conversation(lines_for(&stored, &features), cx);
+            assert!(
+                view.reports_follow_end(),
+                "a refresh keeps the reader at the end"
+            );
+        });
+    }
 }
