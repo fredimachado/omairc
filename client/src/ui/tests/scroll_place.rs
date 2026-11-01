@@ -7,6 +7,7 @@ use super::scroll_restore::{
     assert_given_up_landing, deliver, request_history, top_msgid, waiting, waiting_above_a_mark,
 };
 use crate::model::transcript::RowKind;
+use crate::model::ConversationRef;
 use crate::storage::scrollplace::ScrollPlace;
 
 /// `count` lines from a direct message nobody has open, so they arrive unread under a mark.
@@ -252,4 +253,59 @@ fn a_rebuild_during_a_wait_keeps_the_unread_preference(cx: &mut gpui::TestAppCon
     );
     assert!(!waiting(&ui), "the request settled without the line");
     assert_given_up_landing(&mut ui, true);
+}
+
+#[gpui::test]
+fn a_landing_stays_a_place_when_the_window_grows_past_it(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    unread_direct_lines(&mut ui, "newbie", 60);
+    ui.select("newbie");
+    assert_eq!(ui.top_kind(), Some(RowKind::UnreadMark));
+    ui.resize(WINDOW_WIDTH, WINDOW_HEIGHT * 5.);
+    assert!(ui.at_end(), "the whole transcript fits now");
+    assert!(
+        !ui.reported_end(),
+        "the landing settled when it was laid out, and a resize is not the reader reaching the end"
+    );
+    ui.resize(WINDOW_WIDTH, WINDOW_HEIGHT);
+    assert_eq!(
+        ui.top_kind(),
+        Some(RowKind::UnreadMark),
+        "the reader is still on the mark when the window comes back"
+    );
+}
+
+fn chip_drawn(ui: &SeededShell) -> bool {
+    ui.shell
+        .read_with(ui.cx, |shell, cx| shell.transcript.read(cx).chip_drawn())
+}
+
+#[gpui::test]
+fn the_chip_follows_the_layout_with_no_other_frame_to_help(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    ui.select("anna");
+    ui.fill_until_scrollable("anna", "fred", "chip line");
+    ui.page_up();
+    // Neither step refreshes the window, so the only frames are the ones they ask for.
+    ui.shell.update(ui.cx, |shell, cx| {
+        shell
+            .controller
+            .demo()
+            .expect("demo controller")
+            .inject(OMARCHY, b":anna!u@h PRIVMSG fred :while reading\r\n");
+        shell.tick(cx);
+    });
+    ui.cx.run_until_parked();
+    assert!(chip_drawn(&ui), "a line above the end draws the chip");
+
+    unread_direct_lines(&mut ui, "newbie", 2);
+    ui.shell.update(ui.cx, |shell, cx| {
+        shell.select(ConversationRef::new(OMARCHY, "newbie"), cx);
+    });
+    ui.cx.run_until_parked();
+    assert!(ui.reported_end(), "the mark's landing clamped to the end");
+    assert!(
+        !chip_drawn(&ui),
+        "the frame that found the clamp asks for one without the chip"
+    );
 }

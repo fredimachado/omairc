@@ -1,6 +1,6 @@
 //! Pending scroll-place restore: wait for history, capture, and resume.
 
-use gpui::{px, Context, ListOffset, Pixels, Size, Window};
+use gpui::{px, Context, ListOffset, Pixels, Size};
 
 use super::{ConversationLines, TranscriptScrolled, TranscriptView};
 use crate::model::scroll_place::{has_line, resume, Resume, SavedPlace};
@@ -38,7 +38,7 @@ impl TranscriptView {
     /// The list's frame has laid out, so its pixels are true. A landing the layout clamped
     /// shows the end, and its reader follows it from here. The frame has already been built
     /// from the at-end bit, so one that changed asks for another.
-    pub(super) fn list_laid_out(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn list_laid_out(&mut self, cx: &mut Context<Self>) {
         let was_at_end = self.at_end();
         self.list_measured = true;
         if std::mem::take(&mut self.landing) && self.at_end() {
@@ -46,7 +46,10 @@ impl TranscriptView {
             self.note_scroll_end(cx);
         }
         if self.at_end() != was_at_end {
-            window.request_animation_frame();
+            let view = cx.weak_entity();
+            cx.defer(move |cx| {
+                view.update(cx, |_, cx| cx.notify()).ok();
+            });
         }
     }
 

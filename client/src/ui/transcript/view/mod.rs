@@ -111,6 +111,9 @@ pub struct TranscriptView {
     /// A landing on a row (a mark, a find or a link), which a layout may clamp to the end.
     /// The layout that places it decides: a clamped landing follows the end.
     landing: bool,
+    /// Whether the last frame drew the unseen chip.
+    #[cfg(test)]
+    chip_drawn: bool,
 }
 
 impl TranscriptView {
@@ -146,6 +149,8 @@ impl TranscriptView {
             pending_restore: None,
             list_measured: false,
             landing: false,
+            #[cfg(test)]
+            chip_drawn: false,
         };
         // gpui calls the list's scroll handler only for wheel scrolling, and while the list
         // is still borrowed, so the at-end read waits for the effect cycle to finish. Every
@@ -223,6 +228,11 @@ impl TranscriptView {
     /// The row of the first line that arrived while the reader was scrolled up.
     pub fn first_unseen_index(&self) -> Option<usize> {
         self.first_unseen
+    }
+
+    #[cfg(test)]
+    pub fn chip_drawn(&self) -> bool {
+        self.chip_drawn
     }
 
     /// The list's logical top: which item and how far into that item.
@@ -633,6 +643,10 @@ impl Render for TranscriptView {
             self.first_unseen = None;
         }
         let unseen = self.unseen_target().is_some();
+        #[cfg(test)]
+        {
+            self.chip_drawn = unseen;
+        }
         if !unseen {
             self.unseen_bounce.stop();
         }
@@ -794,8 +808,8 @@ impl Render for TranscriptView {
                 canvas(
                     {
                         let entity = entity.clone();
-                        move |_, window, cx| {
-                            entity.update(cx, |view, cx| view.list_laid_out(window, cx));
+                        move |_, _, cx| {
+                            entity.update(cx, |view, cx| view.list_laid_out(cx));
                         }
                     },
                     |_, _, _, _| {},
