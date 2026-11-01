@@ -2044,7 +2044,13 @@ func (c *Controller) persistNetworkOrder() {
 	if c.ephemeral {
 		return
 	}
-	savePreferenceList(networkOrderKey, c.networkOrder)
+	storedOnly := make([]string, 0, len(c.networkOrder))
+	for _, id := range c.networkOrder {
+		if c.isStoredNetwork(id) {
+			storedOnly = append(storedOnly, id)
+		}
+	}
+	savePreferenceList(networkOrderKey, storedOnly)
 }
 
 // persistCollapsedNetworks saves the collapsed ids in display order.
