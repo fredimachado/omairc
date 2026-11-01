@@ -276,6 +276,12 @@ impl Controller {
         if matches!(status, Status::AccessError | Status::FormatError) {
             return status;
         }
+        self.finish_remove_profile(network_id, profile);
+        status
+    }
+
+    /// Secret and in-memory profile cleanup after a successful (or skipped) disk remove.
+    pub(super) fn finish_remove_profile(&mut self, network_id: &str, profile: Option<crate::storage::profilestore::Profile>) {
         self.applied_sessions.remove(network_id);
         if let Some(profile) = profile {
             self.queue_slot_removals(&profile, PURPOSE_PASSWORD);
@@ -285,7 +291,6 @@ impl Controller {
             self.delete_key(&key);
         }
         self.profiles.remove(network_id);
-        status
     }
 
     /// Starts a saved network (`Start`, for a network that is not a seeded demo). A session
@@ -457,9 +462,29 @@ impl Controller {
 
     pub(super) fn persist_collapsed_networks(&mut self) {
         if !self.backing.is_ephemeral() {
-            let collapsed: Vec<String> = self.network_collapsed.iter().cloned().collect();
+            let collapsed: Vec<String> = self
+                .network_order()
+                .into_iter()
+                .filter(|id| self.network_collapsed.contains(id))
+                .collect();
             self.preference_store.save_collapsed_networks(&collapsed);
         }
+    }
+
+    /// One conf write for forget: drop the profile group when present and store
+    /// the updated `networkOrder` / `collapsedNetworks` lists.
+    pub(super) fn persist_forget_network(&mut self, network_id: &str, remove_profile: bool) {
+        if self.backing.is_ephemeral() {
+            return;
+        }
+        let collapsed: Vec<String> = self
+            .network_order()
+            .into_iter()
+            .filter(|id| self.network_collapsed.contains(id))
+            .collect();
+        let order = self.network_order.clone();
+        self.preference_store
+            .forget_network(network_id, remove_profile, &order, &collapsed);
     }
 
     /// Saves the `/autoaway` settings. The one-shot reason is not kept.

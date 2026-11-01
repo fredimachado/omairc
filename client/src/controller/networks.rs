@@ -114,9 +114,15 @@ impl Controller {
             || self.profiles.contains_key(network_id)
             || !self.console.lines(network_id).is_empty()
             || self.reducer.conversations().keys().any(|key| key.network_id == network_id);
-        if self.profiles.contains_key(network_id) {
-            let status = self.remove_profile(network_id);
-            if matches!(status, crate::storage::settings::Status::AccessError | crate::storage::settings::Status::FormatError) {
+        let had_profile = self.profiles.contains_key(network_id);
+        let profile = self.profiles.get(network_id).cloned();
+        if had_profile {
+            let status = self.profile_store.preflight_remove(network_id);
+            if matches!(
+                status,
+                crate::storage::settings::Status::AccessError
+                    | crate::storage::settings::Status::FormatError
+            ) {
                 self.pump();
                 return false;
             }
@@ -153,8 +159,11 @@ impl Controller {
         self.inbox.purge_network(network_id);
         self.network_order.retain(|id| id != network_id);
         self.network_collapsed.remove(network_id);
-        self.persist_network_order();
-        self.persist_collapsed_networks();
+        // Profile group + preference lists in one conf write.
+        self.persist_forget_network(network_id, had_profile);
+        if had_profile {
+            self.finish_remove_profile(network_id, profile);
+        }
         if self.console_network == network_id {
             self.console_network.clear();
             self.console_open = false;
