@@ -4023,6 +4023,7 @@ dependencies = [
  "gpui",
  "hmac",
  "image",
+ "libc",
  "log",
  "mime_guess",
  "notify",
