@@ -9,6 +9,8 @@ use std::collections::BTreeSet;
 
 use crate::irc::viewnotify::{self, ViewNotify};
 use crate::session::events::SessionState;
+use crate::storage::credentialstore::{PURPOSE_NICKSERV, PURPOSE_PASSWORD};
+use crate::storage::profilestore::Profile;
 
 use super::controller::Controller;
 
@@ -180,6 +182,39 @@ impl Controller {
         self.queue(vec![ViewNotify::Status]);
         self.pump();
         known
+    }
+
+    /// Collapsed network ids in sidebar display order.
+    pub(super) fn collapsed_network_ids(&self) -> Vec<String> {
+        self.network_order()
+            .into_iter()
+            .filter(|id| self.network_collapsed.contains(id))
+            .collect()
+    }
+
+    /// One conf write for forget: drop the profile group when present and store
+    /// the updated `networkOrder` / `collapsedNetworks` lists.
+    pub(super) fn persist_forget_network(&mut self, network_id: &str, remove_profile: bool) {
+        if self.backing.is_ephemeral() {
+            return;
+        }
+        let collapsed = self.collapsed_network_ids();
+        let order = self.network_order.clone();
+        self.preference_store
+            .forget_network(network_id, remove_profile, &order, &collapsed);
+    }
+
+    /// In-memory profile and secret cleanup after the profile group is gone.
+    pub(super) fn finish_remove_profile(&mut self, network_id: &str, profile: Option<Profile>) {
+        self.applied_sessions.remove(network_id);
+        if let Some(profile) = profile {
+            self.queue_slot_removals(&profile, PURPOSE_PASSWORD);
+            self.queue_slot_removals(&profile, PURPOSE_NICKSERV);
+        }
+        for key in self.credentials.pending().network(network_id) {
+            self.delete_key(&key);
+        }
+        self.profiles.remove(network_id);
     }
 
     /// Moves a network `delta` places up (negative) or down (positive) in the

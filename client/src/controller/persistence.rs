@@ -280,19 +280,6 @@ impl Controller {
         status
     }
 
-    /// Secret and in-memory profile cleanup after a successful (or skipped) disk remove.
-    pub(super) fn finish_remove_profile(&mut self, network_id: &str, profile: Option<crate::storage::profilestore::Profile>) {
-        self.applied_sessions.remove(network_id);
-        if let Some(profile) = profile {
-            self.queue_slot_removals(&profile, PURPOSE_PASSWORD);
-            self.queue_slot_removals(&profile, PURPOSE_NICKSERV);
-        }
-        for key in self.credentials.pending().network(network_id) {
-            self.delete_key(&key);
-        }
-        self.profiles.remove(network_id);
-    }
-
     /// Starts a saved network (`Start`, for a network that is not a seeded demo). A session
     /// built from the same profile is reused. A changed profile, or none yet, rebuilds the
     /// session through the transport factory. A missing or incomplete profile is refused.
@@ -462,29 +449,9 @@ impl Controller {
 
     pub(super) fn persist_collapsed_networks(&mut self) {
         if !self.backing.is_ephemeral() {
-            let collapsed: Vec<String> = self
-                .network_order()
-                .into_iter()
-                .filter(|id| self.network_collapsed.contains(id))
-                .collect();
-            self.preference_store.save_collapsed_networks(&collapsed);
+            self.preference_store
+                .save_collapsed_networks(&self.collapsed_network_ids());
         }
-    }
-
-    /// One conf write for forget: drop the profile group when present and store
-    /// the updated `networkOrder` / `collapsedNetworks` lists.
-    pub(super) fn persist_forget_network(&mut self, network_id: &str, remove_profile: bool) {
-        if self.backing.is_ephemeral() {
-            return;
-        }
-        let collapsed: Vec<String> = self
-            .network_order()
-            .into_iter()
-            .filter(|id| self.network_collapsed.contains(id))
-            .collect();
-        let order = self.network_order.clone();
-        self.preference_store
-            .forget_network(network_id, remove_profile, &order, &collapsed);
     }
 
     /// Saves the `/autoaway` settings. The one-shot reason is not kept.
@@ -779,7 +746,7 @@ impl Controller {
     }
 
     /// Deletes one key. A refused delete stays owed. Returns the store settle state.
-    fn delete_key(&mut self, key: &CredentialKey) -> CredentialState {
+    pub(super) fn delete_key(&mut self, key: &CredentialKey) -> CredentialState {
         let state = self.credentials.remove(key);
         match &state {
             CredentialState::Missing => self.credentials.pending_mut().forget(key),
@@ -805,7 +772,7 @@ impl Controller {
         }
     }
 
-    fn queue_slot_removals(&mut self, profile: &Profile, purpose: &'static str) {
+    pub(super) fn queue_slot_removals(&mut self, profile: &Profile, purpose: &'static str) {
         self.credentials
             .pending_mut()
             .add(CredentialKey::for_profile(profile, purpose));
