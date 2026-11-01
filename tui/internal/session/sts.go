@@ -310,6 +310,7 @@ func (s *STSStore) Refresh(host string, durationSeconds int64, now time.Time) er
 		return nil
 	}
 	view := s.fileViewLocked(host)
+	prior := s.entries[key].unpersisted
 	// An unpersisted policy is the one lookup serves, so a refresh extends it. Otherwise the file's.
 	cached, ok := s.unpersistedLocked(key, view, nowUnix)
 	if !ok {
@@ -322,7 +323,12 @@ func (s *STSStore) Refresh(host string, durationSeconds int64, now time.Time) er
 		return nil
 	}
 	cached.ExpiryEpochSeconds = stsExpiry(nowUnix, durationSeconds)
-	s.entries[key] = stsHeld{cached: cached, unpersisted: &view}
+	// An unreadable file says nothing, so the view recorded before it stays.
+	recorded := &view
+	if view.unreadable {
+		recorded = prior
+	}
+	s.entries[key] = stsHeld{cached: cached, unpersisted: recorded}
 	err := s.persistLocked(host, cached.Port, durationSeconds, nowUnix, false)
 	s.settleLocked(key, err)
 	return err
@@ -355,6 +361,13 @@ func (s *STSStore) unpersistedLocked(key string, view stsFileView, nowUnix int64
 	held, ok := s.entries[key]
 	if !ok || held.unpersisted == nil {
 		return STSCached{}, false
+	}
+	// A view recorded while the file was unreadable has nothing to compare with,
+	// so the first readable view becomes its baseline.
+	if held.unpersisted.unreadable {
+		held.unpersisted = &view
+		s.entries[key] = held
+		return held.cached, true
 	}
 	if stsFileMoved(*held.unpersisted, view, nowUnix) {
 		delete(s.entries, key)

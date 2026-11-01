@@ -875,6 +875,118 @@ func TestSTSStoreMalformedFileIsNotAClearForUnwrittenPolicy(t *testing.T) {
 	}
 }
 
+// TestSTSStoreWriteMadeWhileUnreadableYieldsToLaterChange: the write fails while the
+// file is unreadable, so nothing readable was recorded. Once the file reads again,
+// its first view is the baseline, so another client's later save is seen, and a
+// refresh does not write 6697 over it.
+func TestSTSStoreWriteMadeWhileUnreadableYieldsToLaterChange(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix mode bits")
+	}
+	path := filepath.Join(t.TempDir(), "sts")
+	if err := stsStoreOnFile(path).Store("irc.example", 6697, 60, time.Unix(0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	makeUnreadable(t, path)
+	ours := stsStoreOnFile(path)
+	if err := ours.Store("irc.example", 6697, 86400, time.Unix(0, 0)); err == nil {
+		t.Fatal("an unreadable file must refuse the write")
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if cached, ok := ours.Lookup("irc.example", time.Unix(1, 0)); !ok || cached.ExpiryEpochSeconds != 86400 {
+		t.Fatalf("the first readable lookup takes the baseline and still answers this store's policy: %+v ok=%v", cached, ok)
+	}
+	if err := stsStoreOnFile(path).Store("irc.example", 6698, 86400, time.Unix(2, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	cached, ok := ours.Lookup("irc.example", time.Unix(3, 0))
+	if !ok || cached.Port != 6698 || cached.ExpiryEpochSeconds != 86402 {
+		t.Fatalf("the 6698 save after the baseline must win: %+v ok=%v", cached, ok)
+	}
+	if err := ours.Refresh("irc.example", 86400, time.Unix(4, 0)); err != nil {
+		t.Fatal(err)
+	}
+	entry, ok := storage.NewIniSTSStore(path).Lookup("irc.example", 5)
+	if !ok || entry.Port != 6698 || entry.ExpiryEpochSeconds != 86404 {
+		t.Fatalf("a refresh must not write 6697 over the 6698 save: %+v ok=%v", entry, ok)
+	}
+}
+
+// TestSTSStoreRefreshOnUnreadableFileKeepsRecordedView: the file is readable when
+// this store's write fails, then a refresh runs while it is unreadable. The refresh
+// cannot write, so it must keep the view the policy was recorded against, and another
+// client's later save is still seen once the file reads again.
+func TestSTSStoreRefreshOnUnreadableFileKeepsRecordedView(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix mode bits")
+	}
+	path := filepath.Join(t.TempDir(), "sts")
+	if err := stsStoreOnFile(path).Store("irc.example", 6697, 3600, time.Unix(0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	makeReadOnly(t, path)
+	ours := stsStoreOnFile(path)
+	if err := ours.Store("irc.example", 6697, 86400, time.Unix(0, 0)); err == nil {
+		t.Fatal("a read-only file must refuse the write")
+	}
+	makeUnreadable(t, path)
+	if err := ours.Refresh("irc.example", 86400, time.Unix(10, 0)); err == nil {
+		t.Fatal("an unreadable file must refuse the refresh write")
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := stsStoreOnFile(path).Store("irc.example", 6698, 3600, time.Unix(20, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	cached, ok := ours.Lookup("irc.example", time.Unix(21, 0))
+	if !ok || cached.Port != 6698 || cached.ExpiryEpochSeconds != 3620 {
+		t.Fatalf("the 6698 save after the failed refresh must be seen as a change: %+v ok=%v", cached, ok)
+	}
+}
+
+// TestSTSStoreRefreshThatCannotWriteKeepsFileView: another client's 3600s policy is
+// on disk when this store's 86400s write fails. A refresh that also cannot write
+// must leave the file's view as it was, so the unchanged file still yields to the
+// unwritten policy, and a later save by another client is still seen.
+func TestSTSStoreRefreshThatCannotWriteKeepsFileView(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix mode bits")
+	}
+	path := filepath.Join(t.TempDir(), "sts")
+	if err := stsStoreOnFile(path).Store("irc.example", 6698, 3600, time.Unix(0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	makeReadOnly(t, path)
+	ours := stsStoreOnFile(path)
+	if err := ours.Store("irc.example", 6697, 86400, time.Unix(0, 0)); err == nil {
+		t.Fatal("a read-only file must refuse the write")
+	}
+	if err := ours.Refresh("irc.example", 86400, time.Unix(10, 0)); err == nil {
+		t.Fatal("a read-only file must refuse the refresh write")
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cached, ok := ours.Lookup("irc.example", time.Unix(11, 0))
+	if !ok || cached.Port != 6697 || cached.ExpiryEpochSeconds != 86410 {
+		t.Fatalf("an unchanged file must keep the unwritten policy after a failed refresh: %+v ok=%v", cached, ok)
+	}
+	if err := stsStoreOnFile(path).Store("irc.example", 6699, 3600, time.Unix(12, 0)); err != nil {
+		t.Fatal(err)
+	}
+	cached, ok = ours.Lookup("irc.example", time.Unix(13, 0))
+	if !ok || cached.Port != 6699 || cached.ExpiryEpochSeconds != 3612 {
+		t.Fatalf("a later save by another client must still win: %+v ok=%v", cached, ok)
+	}
+}
+
 // TestSTSStoreUnreadableFileKeepsUnwrittenPolicy: the file is unreadable when this
 // store looks at it. Nothing can say the host moved, so the unwritten 86400 policy
 // still answers.

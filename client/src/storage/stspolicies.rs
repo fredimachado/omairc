@@ -151,10 +151,14 @@ impl IniStsStore {
 
     /// The unpersisted policy for `key`, while the file still holds what it held when that write
     /// failed. Once the file has moved on, another client saved or cleared the host: the
-    /// unpersisted copy is forgotten, and the file answers.
+    /// unpersisted copy is forgotten, and the file answers. A view recorded while the file was
+    /// unreadable has nothing to compare with, so the first readable view becomes its baseline.
     fn unpersisted_policy(&self, key: &str, file: FileView, now_unix: i64) -> Option<StsCached> {
         let held = self.memory.borrow().get(key).copied()?;
-        if file_moved(held.unpersisted?, file, now_unix) {
+        let recorded = held.unpersisted?;
+        if matches!(recorded, FileView::Unreadable) {
+            self.remember(key, held.cached, Some(file));
+        } else if file_moved(recorded, file, now_unix) {
             self.memory.borrow_mut().remove(key);
             return None;
         }
@@ -241,6 +245,11 @@ impl StsStore for IniStsStore {
         let now_unix = now.timestamp();
         let mut settings = Settings::open_sts(&self.path);
         let file = file_view(&self.path, &settings, &key);
+        let prior = self
+            .memory
+            .borrow()
+            .get(&key)
+            .and_then(|held| held.unpersisted);
         // An unpersisted policy is the one lookup serves, so a refresh extends it. Otherwise the
         // file's policy is extended.
         let Some(cached) = self
@@ -255,7 +264,12 @@ impl StsStore for IniStsStore {
             ..cached
         };
         merge_sts_policy(&mut settings, &key, refreshed);
-        self.remember(&key, refreshed, Some(file));
+        // An unreadable file says nothing, so the view recorded before it stays.
+        let recorded = match file {
+            FileView::Unreadable => prior.unwrap_or(file),
+            FileView::Group(_) => file,
+        };
+        self.remember(&key, refreshed, Some(recorded));
         let status = persist_sts_settings(&mut settings, &self.path, &self.memory, now_unix);
         self.settle(&key, status);
     }
@@ -1069,6 +1083,121 @@ mod tests {
                 expiry_epoch_seconds: 86400,
             }),
             "an unreadable file must not drop the unwritten policy"
+        );
+    }
+
+    /// The write fails while the file is unreadable, so nothing readable was recorded. Once the
+    /// file reads again, its first view is the baseline, so a later save by another client is seen
+    /// and a refresh does not write 6697 over it.
+    #[cfg(unix)]
+    #[test]
+    fn a_first_readable_view_after_an_unreadable_write_is_the_baseline() {
+        let dir = TempDir::new("sts-unreadable-baseline");
+        let (ours, path) = store_in(&dir);
+        IniStsStore::new(path.clone()).store("irc.example", 6697, 60, at(0));
+        if !make_unreadable(&path) {
+            return;
+        }
+        ours.store("irc.example", 6697, 86400, at(0));
+        make_writable(&path);
+
+        assert_eq!(
+            ours.lookup("irc.example", at(1)),
+            Some(StsCached {
+                port: 6697,
+                duration_seconds: 86400,
+                expiry_epoch_seconds: 86400,
+            }),
+            "the first readable lookup takes the baseline and still answers this store's policy"
+        );
+        IniStsStore::new(path.clone()).store("irc.example", 6698, 86400, at(2));
+        assert_eq!(
+            ours.lookup("irc.example", at(3)),
+            Some(StsCached {
+                port: 6698,
+                duration_seconds: 86400,
+                expiry_epoch_seconds: 86402,
+            }),
+            "the 6698 save after the baseline must win"
+        );
+
+        ours.refresh("irc.example", 86400, at(4));
+        assert_eq!(
+            IniStsStore::new(path).lookup("irc.example", at(5)),
+            Some(StsCached {
+                port: 6698,
+                duration_seconds: 86400,
+                expiry_epoch_seconds: 86404,
+            }),
+            "a refresh must not write 6697 over the 6698 save"
+        );
+    }
+
+    /// The write fails while the file is readable, then a refresh runs while it is unreadable.
+    /// The refresh cannot write, so it must keep the view the policy was recorded against. A later
+    /// save by another client is then still seen once the file reads again.
+    #[cfg(unix)]
+    #[test]
+    fn a_refresh_on_an_unreadable_file_keeps_the_view_it_was_recorded_against() {
+        let dir = TempDir::new("sts-refresh-unreadable");
+        let (ours, path) = store_in(&dir);
+        IniStsStore::new(path.clone()).store("irc.example", 6697, 3600, at(0));
+        if !make_read_only(&path) {
+            return;
+        }
+        ours.store("irc.example", 6697, 86400, at(0));
+        if !make_unreadable(&path) {
+            return;
+        }
+        ours.refresh("irc.example", 86400, at(10));
+        make_writable(&path);
+        IniStsStore::new(path.clone()).store("irc.example", 6698, 3600, at(20));
+
+        assert_eq!(
+            ours.lookup("irc.example", at(21)),
+            Some(StsCached {
+                port: 6698,
+                duration_seconds: 3600,
+                expiry_epoch_seconds: 3620,
+            }),
+            "the 6698 save after the failed refresh must be seen as a change"
+        );
+    }
+
+    /// Another client's 3600s policy is on disk when this store's 86400s write fails. A refresh
+    /// that also cannot write must leave the file's view as it was, so the unchanged file still
+    /// yields to the unwritten policy, and a later save by another client is still seen.
+    #[cfg(unix)]
+    #[test]
+    fn a_refresh_that_cannot_write_keeps_the_file_view_it_checks_against() {
+        let dir = TempDir::new("sts-refresh-snapshot");
+        let (ours, path) = store_in(&dir);
+        IniStsStore::new(path.clone()).store("irc.example", 6698, 3600, at(0));
+        if !make_read_only(&path) {
+            return;
+        }
+        ours.store("irc.example", 6697, 86400, at(0));
+        ours.refresh("irc.example", 86400, at(10));
+        make_writable(&path);
+
+        assert_eq!(
+            ours.lookup("irc.example", at(11)),
+            Some(StsCached {
+                port: 6697,
+                duration_seconds: 86400,
+                expiry_epoch_seconds: 86410,
+            }),
+            "an unchanged file must keep the unwritten policy after a failed refresh"
+        );
+        IniStsStore::new(path.clone()).store("irc.example", 6699, 3600, at(12));
+        assert_eq!(
+            ours.lookup("irc.example", at(13)),
+            Some(StsCached {
+                port: 6699,
+                duration_seconds: 3600,
+                expiry_epoch_seconds: 3612,
+            }),
+            "a later save by another client must still win"
         );
     }
 
