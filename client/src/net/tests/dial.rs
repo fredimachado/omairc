@@ -3,7 +3,6 @@
 //! outage is not reported as a missing host.
 
 use std::io;
-use std::time::Duration;
 
 use crate::net::dial::resolve_failure;
 use crate::net::NetOptions;
@@ -95,6 +94,8 @@ fn system_resolver_unknown_host_reads_as_no_such_host() {
 #[cfg(unix)]
 #[test]
 fn system_resolve_host_leaves_runtime_responsive() {
+    use std::time::Duration;
+
     use crate::net::hub::resolve_host_with_blocking;
 
     let resolve = resolve_host_with_blocking(|_host, _port| {
