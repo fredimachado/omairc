@@ -2183,8 +2183,17 @@ func (c *Controller) MoveNetwork(networkID string, delta int) bool {
 		return false
 	}
 	order := c.NetworkOrder()
-	idx := -1
+	movablePos := make([]int, 0, len(order))
+	movable := make([]string, 0, len(order))
 	for index, id := range order {
+		if !c.isMovableNetwork(id) {
+			continue
+		}
+		movablePos = append(movablePos, index)
+		movable = append(movable, id)
+	}
+	idx := -1
+	for index, id := range movable {
 		if id == networkID {
 			idx = index
 			break
@@ -2194,16 +2203,20 @@ func (c *Controller) MoveNetwork(networkID string, delta int) bool {
 		return false
 	}
 	target := idx + delta
-	if target < 0 || target >= len(order) {
+	if target < 0 || target >= len(movable) {
 		return false
 	}
-	moved := make([]string, 0, len(order))
-	moved = append(moved, order[:idx]...)
-	moved = append(moved, order[idx+1:]...)
-	newOrder := make([]string, 0, len(order))
-	newOrder = append(newOrder, moved[:target]...)
-	newOrder = append(newOrder, networkID)
-	newOrder = append(newOrder, moved[target:]...)
+	moved := make([]string, 0, len(movable)-1)
+	moved = append(moved, movable[:idx]...)
+	moved = append(moved, movable[idx+1:]...)
+	reordered := make([]string, 0, len(movable))
+	reordered = append(reordered, moved[:target]...)
+	reordered = append(reordered, networkID)
+	reordered = append(reordered, moved[target:]...)
+	newOrder := append([]string(nil), order...)
+	for index, id := range reordered {
+		newOrder[movablePos[index]] = id
+	}
 	c.SetNetworkOrder(newOrder)
 	return true
 }

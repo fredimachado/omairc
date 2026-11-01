@@ -124,7 +124,11 @@ impl Controller {
         let known = self.manager.find(network_id).is_some()
             || self.profiles.contains_key(network_id)
             || !self.console.lines(network_id).is_empty()
-            || self.reducer.conversations().keys().any(|key| key.network_id == network_id);
+            || self
+                .reducer
+                .conversations()
+                .keys()
+                .any(|key| key.network_id == network_id);
         let had_profile = self.profiles.contains_key(network_id);
         let profile = self.profiles.get(network_id).cloned();
         if had_profile {
@@ -157,7 +161,10 @@ impl Controller {
         }
         if let Some(session) = self.manager.find(network_id) {
             if session.state() == SessionState::Registered
-                && self.reducer.server_features(network_id).monitor_advertised()
+                && self
+                    .reducer
+                    .server_features(network_id)
+                    .monitor_advertised()
             {
                 session.send_monitor('C', &[]);
                 self.pump();
@@ -178,7 +185,8 @@ impl Controller {
         self.closed.borrow_mut().forget(network_id);
         self.open_directs_motd_seen.remove(network_id);
         self.reducer.forget_network(network_id);
-        self.cancelled_joins.retain(|key| key.network_id != network_id);
+        self.cancelled_joins
+            .retain(|key| key.network_id != network_id);
         self.console.forget(network_id);
         self.last_errors.remove(network_id);
         self.capabilities.remove(network_id);
@@ -254,8 +262,21 @@ impl Controller {
     /// sidebar (`MoveNetwork`). False when the network is unknown, the move is zero
     /// or it would leave the list.
     pub fn move_network(&mut self, network_id: &str, delta: isize) -> bool {
-        let mut order = self.network_order();
-        let Some(index) = order.iter().position(|id| id == network_id) else {
+        if !self.is_movable_network(network_id) {
+            return false;
+        }
+        let order = self.network_order();
+        let movable_positions: Vec<usize> = order
+            .iter()
+            .enumerate()
+            .filter(|(_, id)| self.is_movable_network(id))
+            .map(|(index, _)| index)
+            .collect();
+        let movable: Vec<String> = movable_positions
+            .iter()
+            .map(|&index| order[index].clone())
+            .collect();
+        let Some(index) = movable.iter().position(|id| id == network_id) else {
             return false;
         };
         if delta == 0 {
@@ -264,12 +285,30 @@ impl Controller {
         let Some(target) = index.checked_add_signed(delta) else {
             return false;
         };
-        if target >= order.len() {
+        if target >= movable.len() {
             return false;
         }
-        let moved = order.remove(index);
-        order.insert(target, moved);
-        self.set_network_order(&order);
+        let mut tail = movable;
+        let moved = tail.remove(index);
+        tail.insert(target, moved);
+        let mut new_order = order;
+        for (slot, id) in movable_positions.into_iter().zip(tail) {
+            new_order[slot] = id;
+        }
+        self.set_network_order(&new_order);
         true
+    }
+
+    fn is_stored_network(&self, network_id: &str) -> bool {
+        !network_id.is_empty() && self.profiles.contains_key(network_id)
+    }
+
+    fn is_movable_network(&self, network_id: &str) -> bool {
+        if self.is_stored_network(network_id) {
+            return true;
+        }
+        // Ephemeral shells (demo and unit tests) have no saved profiles; live
+        // sessions may still reorder in memory without persisting draft ids.
+        self.backing.is_ephemeral() && self.manager.find(network_id).is_some()
     }
 }

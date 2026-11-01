@@ -1,13 +1,18 @@
 //! Sidebar network order and collapse.
 //! (`TestNetworkOrderRecordedOrderWins`, `TestNetworkOrderDeduplicates`
 //! `TestNetworkCollapsedRoundTrip`, `TestSetAllNetworksCollapsed`, `TestMoveNetwork`
-//! `TestCollapseDoesNotMutateConversationsOrder`).
+//! `TestCollapseDoesNotMutateConversationsOrder`, and the last-saved move past a draft case).
+
+use chrono::{TimeZone, Utc};
 
 use crate::irc::serverfeatures::IrcServerFeatures;
+use crate::irc::statusentry::outcome;
 use crate::session::events::SessionState;
 use crate::storage::settings::Status;
+use crate::util::testdir::TempDir;
 
 use super::fixture::{Fixture, OFTC, OMARCHY};
+use super::persistence::{disk, launch, libera, save, Loopbacks, LIBERA};
 
 fn ids(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_owned()).collect()
@@ -27,8 +32,36 @@ fn the_sidebar_rows_follow_the_network_order() {
     let mut fixture = Fixture::seeded();
     fixture.controller.set_network_order(&ids(&[OFTC, OMARCHY]));
     let rows = fixture.controller.conversations();
-    assert_eq!(rows.first().map(|row| row.key.network_id.as_str()), Some(OFTC));
-    assert_eq!(rows.last().map(|row| row.key.network_id.as_str()), Some(OMARCHY));
+    assert_eq!(
+        rows.first().map(|row| row.key.network_id.as_str()),
+        Some(OFTC)
+    );
+    assert_eq!(
+        rows.last().map(|row| row.key.network_id.as_str()),
+        Some(OMARCHY)
+    );
+}
+
+#[test]
+fn moving_the_last_saved_network_down_past_a_draft_changes_nothing() {
+    const DRAFT: &str = "zdraft";
+    let dir = TempDir::new("move-past-draft");
+    let path = dir.path().join("omairc.conf");
+    let backing = disk(&dir);
+    let at = Utc.with_ymd_and_hms(2026, 10, 21, 9, 0, 0).unwrap();
+    let mut controller = launch(&backing, Box::new(Loopbacks::default()));
+    save(&mut controller, libera(LIBERA));
+    save(&mut controller, libera(OFTC));
+    controller.status_entry(outcome(DRAFT, "Status line", at));
+    controller.set_network_order(&ids(&[LIBERA, OFTC, DRAFT]));
+    let before_order = controller.network_order();
+    let before_conf = std::fs::read(&path).expect("conf");
+    assert!(
+        !controller.move_network(OFTC, 1),
+        "last stored network must not move past a status draft"
+    );
+    assert_eq!(controller.network_order(), before_order);
+    assert_eq!(std::fs::read(&path).expect("conf"), before_conf);
 }
 
 #[test]

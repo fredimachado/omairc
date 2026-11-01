@@ -346,8 +346,8 @@ func TestSessionAnswersPingImmediately(t *testing.T) {
 	if got := fixture.lastFrame(); got != "PONG :server-token\r\n" {
 		t.Fatalf("last frame = %q, want PONG", got)
 	}
-	if fixture.clock.Pending() != 0 {
-		t.Fatal("no watchdog is armed before registration")
+	if fixture.clock.Pending() != 1 {
+		t.Fatal("only the registration timer is armed before welcome")
 	}
 }
 
@@ -400,6 +400,73 @@ func TestSessionUnansweredClientPingReconnects(t *testing.T) {
 	}
 	if len(fixture.handler.reconnects) != 1 {
 		t.Fatalf("reconnects = %d, want 1", len(fixture.handler.reconnects))
+	}
+}
+
+// TestSessionSilentServerTimesOutRegistrationAndSchedulesReconnect covers a
+// loopback that accepts and stays silent: the registration deadline fires,
+// the network-row text is set, and a reconnect is scheduled.
+func TestSessionSilentServerTimesOutRegistrationAndSchedulesReconnect(t *testing.T) {
+	config := sessionTestPlaintextConfig()
+	config.RegistrationTimeoutMs = 50
+	fixture := newSessionFixture(t, config)
+	fixture.connectPlaintext()
+	if got := fixture.session.State(); got != StateCapLs {
+		t.Fatalf("state = %v, want CapLs", got)
+	}
+
+	fixture.clock.Advance(50 * time.Millisecond)
+
+	if len(fixture.handler.errors) != 1 {
+		t.Fatalf("errors = %d, want 1 (%v)", len(fixture.handler.errors), fixture.handler.errors)
+	}
+	if fixture.handler.errors[0].kind != ErrorNetwork {
+		t.Fatalf("error kind = %v, want Network", fixture.handler.errors[0].kind)
+	}
+	if fixture.handler.errors[0].message != RegistrationTimeoutMessage {
+		t.Fatalf("error = %q, want %q", fixture.handler.errors[0].message, RegistrationTimeoutMessage)
+	}
+	if got := fixture.session.State(); got != StateReconnecting {
+		t.Fatalf("state = %v, want Reconnecting", got)
+	}
+	if len(fixture.handler.reconnects) != 1 {
+		t.Fatalf("reconnects = %d, want 1", len(fixture.handler.reconnects))
+	}
+}
+
+// TestSessionSlowServerThatRepliesInTimeStillRegisters covers a delayed but
+// in-time CAP LS / 001 reply that still completes registration.
+func TestSessionSlowServerThatRepliesInTimeStillRegisters(t *testing.T) {
+	config := sessionTestPlaintextConfig()
+	config.RegistrationTimeoutMs = 100
+	fixture := newSessionFixture(t, config)
+	fixture.connectPlaintext()
+	if got := fixture.session.State(); got != StateCapLs {
+		t.Fatalf("state = %v, want CapLs", got)
+	}
+
+	fixture.clock.Advance(50 * time.Millisecond)
+	if got := fixture.session.State(); got != StateCapLs {
+		t.Fatalf("state after partial wait = %v, want CapLs", got)
+	}
+	if len(fixture.handler.errors) != 0 {
+		t.Fatalf("errors before welcome = %v, want none", fixture.handler.errors)
+	}
+
+	fixture.inject(":server CAP omairc LS :multi-prefix\r\n:server 001 omairc :Welcome\r\n")
+	if got := fixture.session.State(); got != StateRegistered {
+		t.Fatalf("state = %v, want Registered", got)
+	}
+
+	fixture.clock.Advance(100 * time.Millisecond)
+	if len(fixture.handler.errors) != 0 {
+		t.Fatalf("errors after welcome = %v, want none", fixture.handler.errors)
+	}
+	if len(fixture.handler.reconnects) != 0 {
+		t.Fatalf("reconnects = %d, want 0", len(fixture.handler.reconnects))
+	}
+	if got := fixture.session.State(); got != StateRegistered {
+		t.Fatalf("state = %v, want Registered", got)
 	}
 }
 
