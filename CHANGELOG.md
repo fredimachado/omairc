@@ -63,6 +63,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Unicode placeholders are disabled.
 - A conversation left open overnight keeps Today and Yesterday day rules
   current after local midnight and after the clock zone changes.
+- Two clients sharing the `sts` policy cache no longer undo each other. A
+  client that disconnects or quits refreshes the expiry only of a policy whose
+  duration it still holds, so a shorter policy another client saved is kept.
+  Lookups and malformed-file recovery prefer the file's policy over a stale
+  in-memory one.
+- Ctrl+Q on the desktop client stops every session before it exits, as the
+  terminal client does on quit, so each network refreshes its STS expiry.
+- The `sts` cache keeps only real policies. A group whose name is not a host
+  key, or that has no valid port, duration, or expiry, is dropped on the next
+  write.
 
 ### Changed
 
