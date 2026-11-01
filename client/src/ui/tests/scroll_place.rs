@@ -229,13 +229,13 @@ fn a_scrollbar_click_after_a_resize_goes_by_the_whole_transcript(cx: &mut gpui::
 fn a_find_jump_during_a_wait_retires_it_and_saves_the_line(cx: &mut gpui::TestAppContext) {
     let mut ui = fixture::open(cx);
     waiting_above_a_mark(&mut ui, true, request_history);
-    ui.resize(WINDOW_WIDTH * 0.6, WINDOW_HEIGHT);
-    ui.jump_to("landing line 0");
+    ui.jump_to("New messages");
     assert!(!waiting(&ui), "a jump retires the wait");
+    deliver(&mut ui, ":anna!u@h PRIVMSG fred :one more");
     assert_eq!(
         ui.save_place("anna").body,
         "landing line 0",
-        "the place saved is the line jumped to, not the waiting line"
+        "the place saved is the line jumped to, not the waiting line or the moved mark"
     );
 }
 
