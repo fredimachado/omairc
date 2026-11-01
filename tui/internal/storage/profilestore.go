@@ -150,44 +150,47 @@ func (s *ProfileStore) Save(profile Profile) Status {
 	return settings.Sync()
 }
 
-// Remove deletes "networks/<networkId>", mirroring IrcProfileStore::remove. An
-// empty id or a config file that is missing on disk is Absent. The bytes are
-// probed before any mutation, so a malformed or unreadable file is left
-// untouched instead of being rebuilt from a partial parse.
-func (s *ProfileStore) Remove(networkID string) Status {
+// PreflightRemove probes whether Remove would be allowed, without writing.
+// Written means the group is present and the file may be updated; Absent means
+// there is nothing to remove.
+func (s *ProfileStore) PreflightRemove(networkID string) Status {
 	if networkID == "" {
 		return StatusAbsent
 	}
-
 	path := ConfigPath()
 	if path == "" {
 		return StatusAbsent
 	}
-	// Check before opening: a missing file (or missing parent) is Absent, and
-	// we must not create an empty ini just to remove a key from it.
 	if _, err := os.Stat(path); err != nil {
 		return StatusAbsent
 	}
-
-	// Fail closed on the raw bytes before touching the group, so a bad line
-	// stays put rather than being written back over.
 	switch ProbeSettingsIni(path) {
 	case IniProbeMalformed:
 		return StatusFormatError
 	case IniProbeUnreadable:
 		return StatusAccessError
 	}
-
 	settings := OpenSettings(path)
 	if !profileStoreContainsString(settings.ChildGroups(networksGroup), networkID) {
 		return StatusAbsent
 	}
-	// Pending keys survive a failed sync in a process-wide cache; refuse
-	// before mutating a file that cannot accept the write.
 	if settingsFileNotWritable(path) {
 		return StatusAccessError
 	}
+	return StatusWritten
+}
 
+// Remove deletes "networks/<networkId>", mirroring IrcProfileStore::remove. An
+// empty id or a config file that is missing on disk is Absent. The bytes are
+// probed before any mutation, so a malformed or unreadable file is left
+// untouched instead of being rebuilt from a partial parse.
+func (s *ProfileStore) Remove(networkID string) Status {
+	switch status := s.PreflightRemove(networkID); status {
+	case StatusWritten:
+	default:
+		return status
+	}
+	settings := OpenSettings(ConfigPath())
 	settings.RemoveGroup(networksGroup + "/" + networkID)
 	return settings.Sync()
 }

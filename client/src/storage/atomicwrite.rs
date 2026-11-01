@@ -176,7 +176,38 @@ fn write_atomic_with_mode(path: &Path, data: &[u8], preserve_mode: bool) -> io::
     if result.is_err() {
         let _ = fs::remove_file(&temp);
     }
+    #[cfg(test)]
+    if result.is_ok() {
+        test_write_count::note();
+    }
     result
+}
+
+/// Test-only counter of successful atomic renames (settings/conf writes).
+#[cfg(test)]
+pub mod test_write_count {
+    use std::cell::Cell;
+
+    thread_local! {
+        static ENABLED: Cell<bool> = const { Cell::new(false) };
+        static COUNT: Cell<u64> = const { Cell::new(0) };
+    }
+
+    pub fn begin() {
+        ENABLED.with(|enabled| enabled.set(true));
+        COUNT.with(|count| count.set(0));
+    }
+
+    pub fn end() -> u64 {
+        ENABLED.with(|enabled| enabled.set(false));
+        COUNT.with(|count| count.get())
+    }
+
+    pub(super) fn note() {
+        if ENABLED.with(|enabled| enabled.get()) {
+            COUNT.with(|count| count.set(count.get() + 1));
+        }
+    }
 }
 
 fn create_private_dir(dir: &Path) -> io::Result<()> {

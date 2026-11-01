@@ -265,29 +265,6 @@ impl Controller {
         settled
     }
 
-    /// Forgets a network's profile and its secrets (`forgetNetwork`'s store half). The current
-    /// keys and every obsolete key of the network are deleted; one the store refuses stays owed.
-    pub(super) fn remove_profile(&mut self, network_id: &str) -> Status {
-        let profile = self.profiles.get(network_id).cloned();
-        if profile.is_none() {
-            return Status::Absent;
-        }
-        let status = self.profile_store.remove(network_id);
-        if matches!(status, Status::AccessError | Status::FormatError) {
-            return status;
-        }
-        self.applied_sessions.remove(network_id);
-        if let Some(profile) = profile {
-            self.queue_slot_removals(&profile, PURPOSE_PASSWORD);
-            self.queue_slot_removals(&profile, PURPOSE_NICKSERV);
-        }
-        for key in self.credentials.pending().network(network_id) {
-            self.delete_key(&key);
-        }
-        self.profiles.remove(network_id);
-        status
-    }
-
     /// Starts a saved network (`Start`, for a network that is not a seeded demo). A session
     /// built from the same profile is reused. A changed profile, or none yet, rebuilds the
     /// session through the transport factory. A missing or incomplete profile is refused.
@@ -457,8 +434,8 @@ impl Controller {
 
     pub(super) fn persist_collapsed_networks(&mut self) {
         if !self.backing.is_ephemeral() {
-            let collapsed: Vec<String> = self.network_collapsed.iter().cloned().collect();
-            self.preference_store.save_collapsed_networks(&collapsed);
+            self.preference_store
+                .save_collapsed_networks(&self.collapsed_network_ids());
         }
     }
 
@@ -754,7 +731,7 @@ impl Controller {
     }
 
     /// Deletes one key. A refused delete stays owed. Returns the store settle state.
-    fn delete_key(&mut self, key: &CredentialKey) -> CredentialState {
+    pub(super) fn delete_key(&mut self, key: &CredentialKey) -> CredentialState {
         let state = self.credentials.remove(key);
         match &state {
             CredentialState::Missing => self.credentials.pending_mut().forget(key),
@@ -780,7 +757,7 @@ impl Controller {
         }
     }
 
-    fn queue_slot_removals(&mut self, profile: &Profile, purpose: &'static str) {
+    pub(super) fn queue_slot_removals(&mut self, profile: &Profile, purpose: &'static str) {
         self.credentials
             .pending_mut()
             .add(CredentialKey::for_profile(profile, purpose));

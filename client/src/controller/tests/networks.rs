@@ -8,6 +8,7 @@ use chrono::{TimeZone, Utc};
 use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::irc::statusentry::outcome;
 use crate::session::events::SessionState;
+use crate::storage::settings::Status;
 use crate::util::testdir::TempDir;
 
 use super::fixture::{Fixture, OFTC, OMARCHY};
@@ -107,7 +108,7 @@ fn forgetting_a_registered_network_clears_monitor_before_quit() {
     fixture.controller.monitor_add(OMARCHY, "anna");
     fixture.clear_frames(OMARCHY);
 
-    assert!(fixture.controller.forget_network(OMARCHY));
+    assert_eq!(fixture.controller.forget_network(OMARCHY), Status::Written);
     assert_eq!(
         fixture.frames(OMARCHY),
         ["MONITOR C\r\n", "QUIT\r\n"],
@@ -123,7 +124,7 @@ fn forgetting_a_connecting_network_skips_monitor_c_and_quit() {
     session.locked(|core| core.set_state(SessionState::Connecting));
     fixture.clear_frames(OMARCHY);
 
-    assert!(fixture.controller.forget_network(OMARCHY));
+    assert_eq!(fixture.controller.forget_network(OMARCHY), Status::Written);
     assert!(
         fixture.frames(OMARCHY).is_empty(),
         "MONITOR C and QUIT run only while registered"
@@ -139,7 +140,7 @@ fn forgetting_a_network_without_monitor_skips_monitor_c() {
         .set_server_features(OMARCHY, IrcServerFeatures::new());
     fixture.clear_frames(OMARCHY);
 
-    assert!(fixture.controller.forget_network(OMARCHY));
+    assert_eq!(fixture.controller.forget_network(OMARCHY), Status::Written);
     assert_eq!(fixture.frames(OMARCHY), ["QUIT\r\n"]);
 }
 

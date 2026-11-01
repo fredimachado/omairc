@@ -345,22 +345,24 @@ func savePreferenceValue(key, value string) {
 }
 
 // savePreferenceList persists one preferences-group string list. It shares the
-// fail-closed probe and only writes when the value changed, mirroring
-// IrcConnection's savePreferenceList (`client/src/controller/networks.rs`).
+// fail-closed probe. Settings.Sync already skips identical bytes, so there is
+// no equality pre-check here: an on-disk `@Invalid()` empty list must still
+// reach RemoveKey (mirrors the desktop PreferenceStore::save_list path).
 func savePreferenceList(key string, value []string) {
 	settings := storage.OpenSettings("")
 	if settings.WriteBlocked() != storage.StatusWritten {
 		return
 	}
-	if existing := settings.StringList(preferencesGroup, key); stringSlicesEqual(existing, value) {
-		return
-	}
+	writePreferenceList(settings, key, value)
+	settings.Sync()
+}
+
+func writePreferenceList(settings *storage.Settings, key string, value []string) {
 	if len(value) == 0 {
 		settings.RemoveKey(preferencesGroup, key)
 	} else {
 		settings.SetStringList(preferencesGroup, key, value)
 	}
-	settings.Sync()
 }
 
 // ReopenDirects reports whether direct messages reopen at startup.
@@ -1990,7 +1992,9 @@ func (c *Controller) DiscardSession(networkID string) bool {
 
 // ForgetNetworkState drops every controller and reducer fact about a network
 // while keeping its session. It mirrors forget_network
-// (`client/src/controller/networks.rs`).
+// (`client/src/controller/networks.rs`). Sidebar order and collapse are cleared
+// in memory here; the Connect sheet's RemoveSelected persists them together
+// with the profile remove in one Sync via PersistForgetNetwork.
 func (c *Controller) ForgetNetworkState(networkID string) {
 	if networkID == "" {
 		return
@@ -2014,6 +2018,10 @@ func (c *Controller) ForgetNetworkState(networkID string) {
 	c.channelLists.Forget(networkID)
 	c.inbox.PurgeNetwork(networkID)
 	c.notifyInboxChanged()
+	c.networkOrder = slices.DeleteFunc(c.networkOrder, func(id string) bool {
+		return id == networkID
+	})
+	delete(c.networkCollapsed, networkID)
 	if current := c.ChannelListSnapshot(); current.NetworkID == networkID {
 		c.channelList.Clear()
 		c.channelListOpen = false
@@ -2024,6 +2032,48 @@ func (c *Controller) ForgetNetworkState(networkID string) {
 	c.reloadModels()
 	c.notifyCapabilitiesChanged()
 	c.notifyStatusChanged()
+}
+
+// PersistForgetNetwork writes one settings Sync that removes networks/<id>
+// when removeProfile is set and stores networkOrder / collapsedNetworks with
+// that id omitted. Call before ForgetNetworkState so a blocked Sync leaves
+// controller memory and Connect-sheet secrets untouched.
+func (c *Controller) PersistForgetNetwork(networkID string, removeProfile bool) storage.Status {
+	if c.ephemeral {
+		return storage.StatusWritten
+	}
+	settings := storage.OpenSettings("")
+	if blocked := settings.WriteBlocked(); blocked != storage.StatusWritten {
+		return blocked
+	}
+	if removeProfile && networkID != "" {
+		settings.RemoveGroup(storedNetworksGroup + "/" + networkID)
+	}
+	// Lists as they will look after the forget; skip networkID even though it
+	// is still in memory and still in the stored-profile cache.
+	storedOnly := make([]string, 0, len(c.networkOrder))
+	for _, id := range c.networkOrder {
+		if id == networkID {
+			continue
+		}
+		if c.isStoredNetwork(id) {
+			storedOnly = append(storedOnly, id)
+		}
+	}
+	collapsed := make([]string, 0, len(c.networkCollapsed))
+	for _, id := range c.collapsedNetworkIDs() {
+		if id == networkID {
+			continue
+		}
+		collapsed = append(collapsed, id)
+	}
+	writePreferenceList(settings, networkOrderKey, storedOnly)
+	writePreferenceList(settings, collapsedNetworksKey, collapsed)
+	status := settings.Sync()
+	if status == storage.StatusWritten {
+		c.RefreshStoredProfileIDs()
+	}
+	return status
 }
 
 // SetNetworkOrder records the network display order, republishes the sidebar

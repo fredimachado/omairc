@@ -18,6 +18,7 @@ use crate::storage::credentialstore::{
     PURPOSE_NICKSERV, PURPOSE_PASSWORD,
 };
 use crate::storage::profilestore::Profile;
+use crate::storage::settings::Status;
 use crate::storage::Backing;
 
 const LIBERA: &str = "libera";
@@ -240,7 +241,7 @@ fn removing_a_network_deletes_its_current_and_its_obsolete_keys() {
 
     // The keychain takes deletes again, and the network is removed.
     ledger.refused_deletes.borrow_mut().clear();
-    assert!(controller.forget_network(LIBERA));
+    assert_eq!(controller.forget_network(LIBERA), Status::Written);
 
     for stale in [
         key(&before, PURPOSE_PASSWORD),

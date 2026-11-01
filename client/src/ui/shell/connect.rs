@@ -7,8 +7,8 @@
 
 use gpui::{Context, Window};
 
-use crate::model::chords::Chord;
 use crate::controller::persistence::SecretEdits;
+use crate::model::chords::Chord;
 use crate::model::connect::{ConnectField, RailEnter, RemoveOutcome, Secret, Stop};
 use crate::model::prefs::{PrefName, PrefValue};
 use crate::storage::credentialstore::{PURPOSE_NICKSERV, PURPOSE_PASSWORD};
@@ -107,11 +107,9 @@ impl Shell {
             nickserv: self.connect.secret_edit(Secret::NickServ),
         };
         if let Ok(profile) = self.connect.apply() {
-            let case_mapping = self
-                .controller
-                .features(&profile.network_id)
-                .case_mapping();
-            let stored = profile.to_stored(self.controller.profile(&profile.network_id), case_mapping);
+            let case_mapping = self.controller.features(&profile.network_id).case_mapping();
+            let stored =
+                profile.to_stored(self.controller.profile(&profile.network_id), case_mapping);
             let network_id = profile.network_id.clone();
             let saved = self.controller.save_profile(stored, edits);
             let applied_profile = self
@@ -123,9 +121,9 @@ impl Shell {
                 .controller
                 .connect_allowed_after_save(&applied_profile, &saved)
                 && self.controller.start(&network_id);
-            let close = self
-                .connect
-                .record_apply(saved.status, saved.password, saved.nickserv, started);
+            let close =
+                self.connect
+                    .record_apply(saved.status, saved.password, saved.nickserv, started);
             if close {
                 self.connect.clear_secret_text();
                 self.close_connect(window, cx);
@@ -168,16 +166,23 @@ impl Shell {
         cx.notify();
     }
 
-    /// Ctrl+Shift+Delete, or the Remove button. The first
-    /// press arms it, and the second removes the selected network.
+    /// Ctrl+Shift+Delete, or the Remove button. The first press arms it. The
+    /// second forgets on the controller first; only a successful forget drops
+    /// the sheet row. A blocked Sync keeps the row and shows the settings
+    /// sentence the same way a failed Apply does.
     pub fn connect_remove(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.chord_live(Chord::ConnectRemove, window, cx) {
             return;
         }
         let populated = self.populated_networks();
-        if let RemoveOutcome::Removed(network_id) = self.connect.remove(&populated) {
-            let was_status = self.status_network().as_deref() == Some(network_id.as_str());
-            self.controller.forget_network(&network_id);
+        let network_id = self.connect.selected().to_owned();
+        let was_status = self.status_network().as_deref() == Some(network_id.as_str());
+        let outcome = {
+            let controller = &mut self.controller;
+            self.connect
+                .remove_with_forget(&populated, |id| controller.forget_network(id))
+        };
+        if let RemoveOutcome::Removed(_) = outcome {
             self.after_network_removed(&network_id, was_status, window, cx);
         }
         cx.notify();
@@ -346,9 +351,9 @@ impl Shell {
         if was_focused {
             let populated = self.populated_networks();
             let disconnectable = self.connect_disconnectable();
-            if let Some(target) =
-                self.connect
-                    .focus_after_forget(slot, &populated, disconnectable)
+            if let Some(target) = self
+                .connect
+                .focus_after_forget(slot, &populated, disconnectable)
             {
                 self.focus_connect(target, window, cx);
             }
@@ -535,7 +540,10 @@ impl Shell {
         // The controller dropped the selection with the network. The first row left takes
         // it (the model only removes a network when another one has a conversation).
         if self.controller.selected().is_none() {
-            let fallback = self.sidebar_walk().first().map(|row| row.conversation.clone());
+            let fallback = self
+                .sidebar_walk()
+                .first()
+                .map(|row| row.conversation.clone());
             if let Some(target) = fallback {
                 self.select(target, cx);
             }

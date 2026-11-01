@@ -464,6 +464,150 @@ func TestExpandCollapsedNetworksRemovesKey(t *testing.T) {
 	}
 }
 
+// Shared fixture with the desktop client: order zulu, alpha, omarchy and
+// collapsed alpha, omarchy → collapsedNetworks=alpha, omarchy. A second
+// collapse set (zulu, omarchy) proves sidebar order rather than id sort.
+func TestCollapsedNetworksPersistInSidebarOrder(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	c := New()
+	c.SetEphemeral(false)
+	addNetwork(t, c, "zulu")
+	addNetwork(t, c, "alpha")
+	addNetwork(t, c, "omarchy")
+	c.storedProfileIDs = []string{"alpha", "omarchy", "zulu"}
+	c.SetNetworkOrder([]string{"zulu", "alpha", "omarchy"})
+	c.SetNetworkCollapsed("alpha", true)
+	c.SetNetworkCollapsed("omarchy", true)
+
+	path := storage.ConfigPath()
+	text, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	line, ok := preferencesLine(string(text), collapsedNetworksKey)
+	if !ok || line != "collapsedNetworks=alpha, omarchy" {
+		t.Fatalf("sidebar-order collapse line (shared with desktop) = %q, want collapsedNetworks=alpha, omarchy\n%s",
+			line, text)
+	}
+
+	c.SetNetworkCollapsed("alpha", false)
+	c.SetNetworkCollapsed("zulu", true)
+	text, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	line, ok = preferencesLine(string(text), collapsedNetworksKey)
+	if !ok || line != "collapsedNetworks=zulu, omarchy" {
+		t.Fatalf("must follow networkOrder, not id sort: got %q\n%s", line, text)
+	}
+}
+
+func TestInvalidCollapsedLineRemovedOnEmptySave(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	settings := storage.OpenSettings("")
+	settings.SetValue(preferencesGroup, networkOrderKey, "alpha")
+	settings.SetValue(preferencesGroup, collapsedNetworksKey, "@Invalid()")
+	if status := settings.Sync(); status != storage.StatusWritten {
+		t.Fatalf("seed Sync = %v", status)
+	}
+	path := settings.Path()
+	seed, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile seed: %v", err)
+	}
+	if !strings.Contains(string(seed), "collapsedNetworks=@Invalid()") {
+		t.Fatalf("seed must keep @Invalid():\n%s", seed)
+	}
+
+	// Empty list reads equal to @Invalid(), so the equality pre-check must not
+	// skip RemoveKey. Collapse then expand also clears the line; this hits the
+	// empty-save path directly so restoring the pre-check fails the test.
+	savePreferenceList(collapsedNetworksKey, nil)
+
+	text, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if strings.Contains(string(text), "collapsedNetworks") {
+		t.Fatalf("@Invalid() collapsedNetworks must be removed on empty save:\n%s", text)
+	}
+}
+
+func TestInvalidCollapsedLineRemovedOnCollapseExpand(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	settings := storage.OpenSettings("")
+	settings.SetValue(preferencesGroup, networkOrderKey, "alpha")
+	settings.SetValue(preferencesGroup, collapsedNetworksKey, "@Invalid()")
+	if status := settings.Sync(); status != storage.StatusWritten {
+		t.Fatalf("seed Sync = %v", status)
+	}
+	path := settings.Path()
+
+	c := New()
+	c.SetEphemeral(false)
+	addNetwork(t, c, "alpha")
+	c.storedProfileIDs = []string{"alpha"}
+	c.LoadStoredPreferences()
+	c.SetNetworkCollapsed("alpha", true)
+	c.SetNetworkCollapsed("alpha", false)
+
+	text, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if strings.Contains(string(text), "collapsedNetworks") {
+		t.Fatalf("@Invalid() collapsedNetworks must be removed after collapse/expand:\n%s", text)
+	}
+}
+
+func TestUnchangedPreferencesSyncSkipsWrite(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	c := New()
+	c.SetEphemeral(false)
+	addNetwork(t, c, "alpha")
+	c.storedProfileIDs = []string{"alpha"}
+	c.SetNetworkOrder([]string{"alpha"})
+	c.SetNetworkCollapsed("alpha", true)
+
+	path := storage.ConfigPath()
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	mtime := info.ModTime()
+	time.Sleep(1100 * time.Millisecond)
+
+	settings := storage.OpenSettings("")
+	settings.SetStringList(preferencesGroup, networkOrderKey, []string{"alpha"})
+	settings.SetStringList(preferencesGroup, collapsedNetworksKey, []string{"alpha"})
+	if status := settings.Sync(); status != storage.StatusWritten {
+		t.Fatalf("noop Sync = %v", status)
+	}
+
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile after: %v", err)
+	}
+	if !slices.Equal(before, after) {
+		t.Fatalf("bytes changed on identical Sync:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+	info, err = os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat after: %v", err)
+	}
+	if !info.ModTime().Equal(mtime) {
+		t.Fatalf("mtime changed on identical Sync: before %v after %v", mtime, info.ModTime())
+	}
+}
+
 func TestPersistenceCallbacksForwardAvatarAndAutojoin(t *testing.T) {
 	c := New()
 

@@ -217,6 +217,22 @@ impl ProfileStore {
     /// Deletes one network's group (`IrcProfileStore::remove`). A missing file or entry is
     /// `Absent`. The bytes are probed first, so a bad file is left as it is.
     pub fn remove(&self, network_id: &str) -> Status {
+        match self.preflight_remove(network_id) {
+            Status::Written => {}
+            other => return other,
+        }
+        let Backing::Disk(path) = &self.backing else {
+            return Status::Absent;
+        };
+        let mut settings = Settings::open(path.clone());
+        settings.remove_group(&format!("{NETWORKS_GROUP}/{network_id}"));
+        settings.sync()
+    }
+
+    /// Probes whether [`Self::remove`] would be allowed, without writing.
+    /// `Written` means the group is present and the file may be updated;
+    /// `Absent` means there is nothing to remove.
+    pub fn preflight_remove(&self, network_id: &str) -> Status {
         let Backing::Disk(path) = &self.backing else {
             return Status::Absent;
         };
@@ -228,7 +244,10 @@ impl ProfileStore {
             IniProbe::Unreadable => return Status::AccessError,
             IniProbe::Ok => {}
         }
-        let mut settings = Settings::open(path.clone());
+        let settings = Settings::open(path.clone());
+        if settings.write_blocked() != Status::Written {
+            return settings.write_blocked();
+        }
         if !settings
             .child_groups(NETWORKS_GROUP)
             .iter()
@@ -236,8 +255,7 @@ impl ProfileStore {
         {
             return Status::Absent;
         }
-        settings.remove_group(&format!("{NETWORKS_GROUP}/{network_id}"));
-        settings.sync()
+        Status::Written
     }
 }
 
