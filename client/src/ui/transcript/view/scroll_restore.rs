@@ -1,6 +1,6 @@
 //! Pending scroll-place restore: wait for history, capture, and resume.
 
-use gpui::{px, Context, ListOffset, Window};
+use gpui::{px, Context, ListOffset, Pixels, Size, Window};
 
 use super::{ConversationLines, TranscriptScrolled, TranscriptView};
 use crate::model::scroll_place::{has_line, resume, LivePlace, Resume, SavedPlace};
@@ -16,38 +16,55 @@ pub(super) struct PendingRestore {
 impl TranscriptView {
     /// Follow-end for the controller. False while a restore is pending so the
     /// server read marker does not jump past unread backlog on the interim tail.
-    /// `at_end` alone is not enough: after `list_state.reset` it reads true until the
-    /// next layout measures the list, so a restore just applied would report the end.
-    /// The bottom pin is off after a restore lands, so it is checked too.
     pub fn reports_follow_end(&self) -> bool {
-        self.pending_restore.is_none() && self.at_end() && self.model.scroll().pinned_to_bottom
+        self.pending_restore.is_none() && self.model.scroll().pinned_to_bottom
     }
 
-    /// Whether the reader is at the end. Until a layout measures the rows after a reset,
-    /// `at_end` reads true whatever the offset, so the bottom pin is the reader's bit.
-    fn reader_at_end(&self) -> bool {
-        if self.list_measured {
-            self.at_end()
-        } else {
-            self.model.scroll().pinned_to_bottom
+    /// The list's frame is about to lay out at `size`. gpui drops every row height on a new
+    /// width and measures only what it draws, and rows it has not measured count as 0 px, so
+    /// the end and the scrollbar would read false. A reset measures all of them in this frame.
+    /// The list then goes back to the reader's place, which a clamp may have left behind.
+    pub(super) fn list_sized(&mut self, size: Size<Pixels>) {
+        let last = self.list_state.viewport_bounds().size;
+        if last == size {
+            return;
         }
+        if last.width != size.width {
+            self.reset_list();
+        }
+        self.project_place();
     }
 
-    /// Re-pins a landing that the layout clamped to the end. gpui clamps at layout, so the
-    /// first frame after a layout reads the end. Until one has run, a frame is requested.
-    pub(super) fn settle_landing(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.landing {
-            return;
-        }
-        if !self.list_measured {
-            window.request_animation_frame();
-            return;
-        }
-        self.landing = false;
-        if self.at_end() {
+    /// The list's frame has laid out, so its pixels are true. A landing the layout clamped
+    /// shows the end, and its reader follows it from here. The frame has already been built
+    /// from the at-end bit, so one that changed asks for another.
+    pub(super) fn list_laid_out(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let was_at_end = self.at_end();
+        self.list_measured = true;
+        if std::mem::take(&mut self.landing) && self.at_end() {
             self.model.set_pinned_to_bottom(true);
             self.note_scroll_end(cx);
         }
+        if self.at_end() != was_at_end {
+            window.request_animation_frame();
+        }
+    }
+
+    /// Moves the list to the reader's place in the model: the end, or the anchor.
+    pub(super) fn project_place(&mut self) {
+        let scroll = self.model.scroll();
+        let top = if scroll.pinned_to_bottom {
+            ListOffset {
+                item_ix: self.list_len(),
+                offset_in_item: px(0.),
+            }
+        } else {
+            ListOffset {
+                item_ix: scroll.row,
+                offset_in_item: px(scroll.offset_px as f32),
+            }
+        };
+        self.list_state.scroll_to(top);
     }
 
     /// Whether the reader follows the end, by its bottom pin. The pin is set by the reader's
@@ -173,9 +190,8 @@ impl TranscriptView {
     }
 
     fn sync_scroll_from_list(&mut self) {
-        let rows = self.model.rows().len();
         let top = self.list_state.logical_scroll_top();
-        if self.reader_at_end() || top.item_ix >= rows {
+        if self.at_end() {
             self.model.set_pinned_to_bottom(true);
         } else {
             let offset_px = f32::from(top.offset_in_item).round() as i32;

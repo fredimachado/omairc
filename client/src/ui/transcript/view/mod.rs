@@ -7,8 +7,9 @@ use std::time::{Duration, Instant};
 #[cfg(target_os = "linux")]
 use gpui::ClipboardItem;
 use gpui::{
-    div, list, prelude::*, px, App, Context, EventEmitter, FocusHandle, ListAlignment, ListOffset,
-    ListState, MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, Render, Window,
+    canvas, div, list, prelude::*, px, App, Context, EventEmitter, FocusHandle, ListAlignment,
+    ListOffset, ListState, MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, Render,
+    Window,
 };
 
 mod scroll_restore;
@@ -104,10 +105,10 @@ pub struct TranscriptView {
     /// Applied once when the anchor row arrives; cleared if the reader scrolls first.
     pending_restore: Option<PendingRestore>,
     /// Whether a layout has measured the rows since the list was last reset. Until one
-    /// has, the scrollbar max reads 0, so `at_end` says nothing about the reader.
+    /// has, every row counts as 0 px, so the list's pixels say nothing about the reader.
     list_measured: bool,
     /// A landing on a row (a mark, a find or a link), which a layout may clamp to the end.
-    /// The first frame after a layout re-pins the reader when the list is at the end.
+    /// The layout that places it decides: a clamped landing follows the end.
     landing: bool,
 }
 
@@ -274,8 +275,12 @@ impl TranscriptView {
     }
 
     /// Whether the list shows its end. The scrollbar's offset is measured in
-    /// pixels, and a list that follows the tail reports past its maximum.
+    /// pixels, and a list that follows the tail reports past its maximum. Until a layout
+    /// has measured the rows there are no pixels to read, so the bottom pin answers.
     pub fn at_end(&self) -> bool {
+        if !self.list_measured {
+            return self.model.scroll().pinned_to_bottom;
+        }
         let max = f32::from(self.list_state.max_offset_for_scrollbar().height);
         let current = -f32::from(self.list_state.scroll_px_offset_for_scrollbar().y);
         current >= max - 1.
@@ -404,7 +409,7 @@ impl TranscriptView {
             return;
         }
         self.model.set_pinned_to_bottom(true);
-        self.list_state.scroll_to_reveal_item(count - 1);
+        self.project_place();
         self.note_transcript_scroll(cx);
     }
 
@@ -614,18 +619,13 @@ impl TranscriptView {
 }
 
 impl Render for TranscriptView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let app_style = style(cx);
         // Heights measured by the last frame's prepaint feed the transcript model.
         self.sync_measured_heights();
-        self.settle_landing(window, cx);
-        // This frame lays the list out after render returns, before any other code runs.
-        self.list_measured = true;
-        // A reader who follows the end has seen what arrived while scrolled up.
-        // `at_end` alone is not enough: after `list_state.reset` the scrollbar max
-        // is 0 until the next measure, so a detached restore looks like the end for
-        // one frame. The bottom pin is the real follow-the-end bit.
-        if self.at_end() && self.model.scroll().pinned_to_bottom {
+        // A reader who follows the end has seen what arrived while scrolled up. A clamped
+        // saved line shows the end too, but its reader has not reached it.
+        if self.model.scroll().pinned_to_bottom {
             self.first_unseen = None;
         }
         let unseen = self.unseen_target().is_some();
@@ -686,6 +686,21 @@ impl Render for TranscriptView {
                     cx.notify();
                 }
             }))
+            // gpui prepaints siblings in order, so these two see the list's frame from either
+            // side: its new size before it lays out, and the finished layout after.
+            .child(
+                canvas(
+                    {
+                        let entity = entity.clone();
+                        move |bounds, _, cx| {
+                            entity.update(cx, |view, _| view.list_sized(bounds.size));
+                        }
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            )
             .child({
                 let entity = entity.clone();
                 list(list_state, move |ix, window, app| {
@@ -771,6 +786,19 @@ impl Render for TranscriptView {
                 .size_full()
                 .with_sizing_behavior(gpui::ListSizingBehavior::Auto)
             })
+            .child(
+                canvas(
+                    {
+                        let entity = entity.clone();
+                        move |_, window, cx| {
+                            entity.update(cx, |view, cx| view.list_laid_out(window, cx));
+                        }
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            )
             .child(list_vertical_scrollbar(
                 self.list_state.clone(),
                 &app_style,

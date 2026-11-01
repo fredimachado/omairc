@@ -26,7 +26,7 @@ fn gone_place() -> ScrollPlace {
 }
 
 /// Offers CHATHISTORY on the demo's omarchy network, as a server does after CAP NEW.
-fn offer_chathistory(ui: &mut SeededShell) {
+pub(super) fn offer_chathistory(ui: &mut SeededShell) {
     ui.inject(OMARCHY, ":server CAP omairc NEW :chathistory");
     ui.inject(OMARCHY, ":server CAP omairc ACK :chathistory");
     assert!(
@@ -37,7 +37,7 @@ fn offer_chathistory(ui: &mut SeededShell) {
 }
 
 /// Asks for a page of the selected conversation's history, so its request is in flight.
-fn request_history(ui: &mut SeededShell) {
+pub(super) fn request_history(ui: &mut SeededShell) {
     let asked = ui.shell.update(ui.cx, |shell, _| {
         shell.controller.request_older_transcript_history()
     });
@@ -49,7 +49,7 @@ fn request_history(ui: &mut SeededShell) {
 
 /// Leaves the open conversation at `gone_place`, then comes back to `key`, so it opens
 /// at that saved place.
-fn reopen_at_gone_place(ui: &mut SeededShell, key: &str) {
+pub(super) fn reopen_at_gone_place(ui: &mut SeededShell, key: &str) {
     ui.select("#help");
     ui.shell.update(ui.cx, |shell, _| {
         shell.controller.remember_place(OMARCHY, key, gone_place());
@@ -81,7 +81,7 @@ fn unread_from_anna(ui: &mut SeededShell, count: usize) {
 /// transcript overflows the window, and lines that arrive while the window is not focused
 /// are unread, so a "New messages" mark sits before the first of them. The unread preference
 /// is `unread_on`, as the wait carries it to a give-up.
-fn waiting_above_a_mark(ui: &mut SeededShell, unread_on: bool, request: fn(&mut SeededShell)) {
+pub(super) fn waiting_above_a_mark(ui: &mut SeededShell, unread_on: bool, request: fn(&mut SeededShell)) {
     offer_chathistory(ui);
     ui.select("anna");
     ui.fill_until_scrollable("anna", "fred", "landing line");
@@ -140,7 +140,7 @@ fn assert_given_up_landing(ui: &mut SeededShell, unread_on: bool) {
     }
 }
 
-fn waiting(ui: &SeededShell) -> bool {
+pub(super) fn waiting(ui: &SeededShell) -> bool {
     ui.shell.read_with(ui.cx, |shell, cx| {
         shell.transcript.read(cx).has_pending_restore()
     })
@@ -163,7 +163,7 @@ fn deliver_unrendered(ui: &mut SeededShell, line: &str) {
 
 /// Delivers each server line, running the tick after each, inside one update. Nothing
 /// renders between the lines, so each tick drains with the list as the last one left it.
-fn deliver_burst<S: AsRef<str>>(ui: &mut SeededShell, lines: &[S]) {
+pub(super) fn deliver_burst<S: AsRef<str>>(ui: &mut SeededShell, lines: &[S]) {
     ui.shell.update(ui.cx, |shell, cx| {
         for line in lines {
             let mut bytes = line.as_ref().as_bytes().to_vec();
@@ -185,7 +185,7 @@ fn deliver(ui: &mut SeededShell, line: &str) {
 }
 
 /// Runs the tick the UI loop runs, without delivering a line.
-fn tick(ui: &mut SeededShell) {
+pub(super) fn tick(ui: &mut SeededShell) {
     ui.shell.update(ui.cx, |shell, cx| shell.tick(cx));
     ui.settle();
 }
@@ -204,7 +204,7 @@ fn wait_window() -> Duration {
 
 /// One CHATHISTORY page of anna's lines, one per msgid, as the server sends it. The lines
 /// carry an old time, so the page sorts before the demo's own lines.
-fn anna_page<S: AsRef<str>>(reference: &str, msgids: &[S]) -> Vec<String> {
+pub(super) fn anna_page<S: AsRef<str>>(reference: &str, msgids: &[S]) -> Vec<String> {
     let mut lines = vec![format!(":server BATCH +{reference} chathistory anna")];
     for msgid in msgids {
         let msgid = msgid.as_ref();
@@ -230,7 +230,7 @@ fn channel_page<S: AsRef<str>>(reference: &str, msgids: &[S]) -> Vec<String> {
 }
 
 /// The msgid of the row at the top of the transcript.
-fn top_msgid(ui: &SeededShell) -> String {
+pub(super) fn top_msgid(ui: &SeededShell) -> String {
     ui.shell.read_with(ui.cx, |shell, cx| {
         let transcript = shell.transcript.read(cx);
         let top = transcript.logical_scroll_top().item_ix;
@@ -243,7 +243,7 @@ fn top_msgid(ui: &SeededShell) -> String {
 }
 
 /// Starts a CHATHISTORY AFTER chain for the selected conversation, as a catch-up does.
-fn start_after_chain(ui: &mut SeededShell) {
+pub(super) fn start_after_chain(ui: &mut SeededShell) {
     let when = Utc.with_ymd_and_hms(2024, 3, 9, 16, 0, 0).unwrap();
     let started = ui.shell.update(ui.cx, |shell, _| {
         shell.controller.start_history_after_for_tests(when)
@@ -255,7 +255,7 @@ fn start_after_chain(ui: &mut SeededShell) {
 }
 
 /// Types one line in the composer and presses Enter.
-fn send_line(ui: &mut SeededShell, text: &str) {
+pub(super) fn send_line(ui: &mut SeededShell, text: &str) {
     submit_line(ui, text);
     ui.settle();
 }
@@ -473,7 +473,7 @@ fn a_loaded_saved_line_lands_on_it_and_saves_it(cx: &mut gpui::TestAppContext) {
 fn a_wheel_during_a_wait_retires_it_and_saves_the_live_page(cx: &mut gpui::TestAppContext) {
     let mut ui = fixture::open(cx);
     waiting_above_a_mark(&mut ui, true, request_history);
-    wheel(&mut ui, 3200.);
+    ui.wheel(3200.);
     assert!(!waiting(&ui), "a wheel scroll retires the wait");
     assert!(!ui.at_end(), "the wheel leaves the reader above the end");
     assert!(
@@ -724,18 +724,6 @@ fn set_drag(ui: &mut SeededShell, kind: ScrollbarDragKind) {
     });
 }
 
-/// Scrolls the transcript with the wheel over its middle. Positive pixels move up.
-fn wheel(ui: &mut SeededShell, pixels: f32) {
-    let centre = gpui::point(px(WINDOW_WIDTH / 2.), px(WINDOW_HEIGHT / 2.));
-    ui.cx.simulate_event(gpui::ScrollWheelEvent {
-        position: centre,
-        delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.), px(pixels))),
-        modifiers: Modifiers::default(),
-        touch_phase: gpui::TouchPhase::Moved,
-    });
-    ui.settle();
-}
-
 #[gpui::test]
 fn a_line_after_wheel_up_does_not_report_the_end(cx: &mut gpui::TestAppContext) {
     let mut ui = fixture::open(cx);
@@ -743,7 +731,7 @@ fn a_line_after_wheel_up_does_not_report_the_end(cx: &mut gpui::TestAppContext) 
     ui.fill_until_scrollable("anna", "fred", "wheel base");
     deliver(&mut ui, ":anna!u@h PRIVMSG fred :first line");
     assert!(ui.at_end(), "the reader follows the end before wheeling up");
-    wheel(&mut ui, 3200.);
+    ui.wheel(3200.);
     assert!(!ui.at_end(), "wheel up leaves the reader detached");
     assert!(
         !ui.reported_end(),
@@ -767,7 +755,7 @@ fn a_wheel_back_to_the_end_reports_the_end(cx: &mut gpui::TestAppContext) {
     ui.fill_until_scrollable("anna", "fred", "wheel line");
     ui.page_up();
     assert!(!ui.reported_end(), "a page up leaves the end");
-    wheel(&mut ui, -6000.);
+    ui.wheel(-6000.);
     assert!(
         ui.reported_end(),
         "a wheel back to the end reports it, so the read marker can advance again"

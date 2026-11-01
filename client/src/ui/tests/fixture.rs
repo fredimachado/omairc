@@ -147,6 +147,37 @@ impl SeededShell<'_> {
             .expect("a place is saved")
     }
 
+    /// Jumps to the first row whose text is `body`, as a find or link match does, and renders.
+    pub fn jump_to(&mut self, body: &str) {
+        self.shell.update(self.cx, |shell, cx| {
+            shell.transcript.update(cx, |transcript, cx| {
+                let rows = transcript.rows();
+                let row = rows.iter().position(|row| row.body.plain == body);
+                transcript.scroll_to_row(row.expect("the row is shown"), cx);
+            });
+        });
+        self.settle();
+    }
+
+    /// Scrolls the transcript with the wheel over its middle. Positive pixels move up.
+    pub fn wheel(&mut self, pixels: f32) {
+        let centre = gpui::point(px(WINDOW_WIDTH / 2.), px(WINDOW_HEIGHT / 2.));
+        self.cx.simulate_event(gpui::ScrollWheelEvent {
+            position: centre,
+            delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.), px(pixels))),
+            modifiers: Modifiers::default(),
+            touch_phase: gpui::TouchPhase::Moved,
+        });
+        self.settle();
+    }
+
+    /// Saves the open conversation's place, as leaving it does, and returns it as stored.
+    pub fn save_place(&mut self, key: &str) -> ScrollPlace {
+        self.shell
+            .update(self.cx, |shell, cx| shell.remember_open_transcript(cx));
+        self.saved_place(key)
+    }
+
     /// The kind of the row at the top of the transcript, or `None` when the list is at its end.
     pub fn top_kind(&self) -> Option<RowKind> {
         self.shell.read_with(self.cx, |shell, cx| {
@@ -156,6 +187,13 @@ impl SeededShell<'_> {
                 .get(transcript.logical_scroll_top().item_ix)
                 .map(|row| row.kind)
         })
+    }
+
+    pub fn page_down(&mut self) {
+        self.shell.update(self.cx, |shell, cx| {
+            shell.transcript.update(cx, |t, cx| t.scroll_page(true, false, cx));
+        });
+        self.settle();
     }
 
     pub fn page_up(&mut self) {
