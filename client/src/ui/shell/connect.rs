@@ -168,16 +168,25 @@ impl Shell {
         cx.notify();
     }
 
-    /// Ctrl+Shift+Delete, or the Remove button. The first
-    /// press arms it, and the second removes the selected network.
+    /// Ctrl+Shift+Delete, or the Remove button. The first press arms it. The
+    /// second forgets on the controller first; only a successful forget drops
+    /// the sheet row. A blocked Sync keeps the row and shows the settings
+    /// sentence the same way a failed Apply does.
     pub fn connect_remove(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.chord_live(Chord::ConnectRemove, window, cx) {
             return;
         }
         let populated = self.populated_networks();
-        if let RemoveOutcome::Removed(network_id) = self.connect.remove(&populated) {
+        let committing = self.connect.remove_armed() && self.connect.can_remove(&populated);
+        let (network_id, was_status, forgot) = if committing {
+            let network_id = self.connect.selected().to_owned();
             let was_status = self.status_network().as_deref() == Some(network_id.as_str());
-            self.controller.forget_network(&network_id);
+            let forgot = self.controller.forget_network(&network_id);
+            (network_id, was_status, forgot)
+        } else {
+            (String::new(), false, true)
+        };
+        if let RemoveOutcome::Removed(_) = self.connect.complete_remove(&populated, forgot) {
             self.after_network_removed(&network_id, was_status, window, cx);
         }
         cx.notify();

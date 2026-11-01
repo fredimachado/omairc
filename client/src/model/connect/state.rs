@@ -587,9 +587,19 @@ impl ConnectState {
 
     /// Remove (Ctrl+Shift+Delete, Qt `removeSheetNetwork`). The first press arms
     /// the button. The second removes the selected saved network and selects the
-    /// network now at its position, or the last one. The shell then forgets the
-    /// network on the controller. `populated` names the networks with a conversation.
+    /// network now at its position, or the last one. Equivalent to
+    /// [`complete_remove`] with a successful forget. `populated` names the
+    /// networks with a conversation.
     pub fn remove(&mut self, populated: &[String]) -> RemoveOutcome {
+        self.complete_remove(populated, true)
+    }
+
+    /// Second Remove press after the controller tried to forget. When `forgot`
+    /// is false the row stays, Remove disarms, and the settings-file sentence is
+    /// recorded the same way a failed Apply is. When true the selected saved
+    /// network is dropped. The shell forgets on the controller before calling
+    /// with `forgot` from that result, so a blocked Sync cannot hide the row.
+    pub fn complete_remove(&mut self, populated: &[String], forgot: bool) -> RemoveOutcome {
         if !self.can_remove(populated) {
             self.remove_armed = false;
             return RemoveOutcome::Refused;
@@ -597,6 +607,14 @@ impl ConnectState {
         if !self.remove_armed {
             self.remove_armed = true;
             return RemoveOutcome::Armed;
+        }
+        if !forgot {
+            if let Some(sentence) = apply_sentence(Status::AccessError, false) {
+                self.persistence.insert(self.selected.clone(), sentence);
+            }
+            self.remove_armed = false;
+            self.rail_armed = None;
+            return RemoveOutcome::Refused;
         }
         let removed = self.selected.clone();
         let index = self

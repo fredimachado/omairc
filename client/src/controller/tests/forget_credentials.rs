@@ -109,3 +109,76 @@ fn a_failed_forget_sync_leaves_profile_and_credentials_in_place() {
         "conf must still hold the profile group after a failed Sync:\n{text}"
     );
 }
+
+/// The Connect sheet's Remove path: forget first, then `complete_remove` with that
+/// result. Passing `true` despite a failed forget (the old shell bug) drops the
+/// row and fails this test.
+#[cfg(unix)]
+#[test]
+fn connect_remove_keeps_the_row_when_forget_sync_fails() {
+    use std::os::unix::fs::PermissionsExt;
+
+    use crate::model::connect::{ConnectState, RemoveOutcome};
+
+    let dir = TempDir::new("forget-sync-sheet");
+    let conf = dir.path().join("omairc.conf");
+    let backing = Backing::Disk(conf.clone());
+    let mut controller = Controller::with_backing(clock(), Box::new(NoTransports), backing);
+    controller.credentials = Box::new(MemoryCredentialStore::default());
+    let keep = Profile {
+        host: "irc.keep.example".to_owned(),
+        nick: "oak".to_owned(),
+        secret_saved: true,
+        connect_on_startup: true,
+        ..Profile::new("keep")
+    };
+    controller.save_profile(
+        keep.clone(),
+        SecretEdits {
+            password: None,
+            nickserv: None,
+        },
+    );
+    let profile = complete_profile();
+    controller.save_profile(
+        profile.clone(),
+        SecretEdits {
+            password: Some("hunter2".to_owned().into()),
+            nickserv: None,
+        },
+    );
+
+    let stored: Vec<_> = ["keep", NET]
+        .into_iter()
+        .map(|id| controller.profile(id).expect("profile").clone())
+        .collect();
+    let mut state = ConnectState::from_stored(&stored);
+    assert!(state.select(NET));
+    let populated = vec!["keep".to_owned(), NET.to_owned()];
+    assert_eq!(
+        state.complete_remove(&populated, true),
+        RemoveOutcome::Armed
+    );
+
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o555))
+        .expect("chmod dir");
+    let forgot = controller.forget_network(NET);
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700))
+        .expect("restore dir mode");
+    assert!(!forgot, "forget must return false when Sync fails after preflight");
+
+    assert_eq!(
+        state.complete_remove(&populated, forgot),
+        RemoveOutcome::Refused
+    );
+    assert!(
+        state.is_saved(NET),
+        "sheet row must stay when forget_network returns false"
+    );
+    assert_eq!(state.selected(), NET);
+    assert_eq!(
+        state.persistence_status(),
+        "The settings file could not be written."
+    );
+    assert!(controller.profile(NET).is_some());
+}

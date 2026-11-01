@@ -210,6 +210,30 @@ fn remove_arms_on_the_first_press_and_removes_on_the_second() {
     assert!(!state.remove_armed());
 }
 
+/// A blocked forget must not drop the rail row: the shell calls
+/// `complete_remove(..., false)` when `forget_network` returns false. Ignoring
+/// that flag and always removing fails this test.
+#[test]
+fn a_failed_forget_keeps_the_row_and_shows_the_settings_error() {
+    let (populated, mut state) = seeded();
+    assert_eq!(
+        state.complete_remove(&populated, true),
+        RemoveOutcome::Armed
+    );
+    assert_eq!(
+        state.complete_remove(&populated, false),
+        RemoveOutcome::Refused
+    );
+    assert_eq!(stored_ids(&state), ["omarchy", "oftc"]);
+    assert!(state.is_saved("omarchy"));
+    assert_eq!(state.selected(), "omarchy");
+    assert!(!state.remove_armed());
+    assert_eq!(
+        state.persistence_status(),
+        "The settings file could not be written."
+    );
+}
+
 #[test]
 fn removing_selects_the_network_now_at_the_same_position() {
     let (populated, mut state) = seeded();
