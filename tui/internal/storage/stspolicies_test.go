@@ -708,7 +708,7 @@ func TestSTSPathBesideSettings(t *testing.T) {
 	}
 }
 
-func TestRecoverMalformedSTSThroughSymlink3dba(t *testing.T) {
+func TestRecoverMalformedSTSThroughSymlink(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks")
 	}
@@ -756,7 +756,7 @@ func TestRecoverMalformedSTSThroughSymlink3dba(t *testing.T) {
 	}
 }
 
-func TestRecoverMalformedSTSThroughSymlinkedDataDirectory3dba(t *testing.T) {
+func TestRecoverMalformedSTSThroughSymlinkedDataDirectory(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks")
 	}

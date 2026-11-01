@@ -214,7 +214,7 @@ fn write_window_temp(path: &Path, data: &[u8]) -> io::Result<PathBuf> {
 }
 
 fn link_window_corrupt_backup(path: &Path) -> Option<PathBuf> {
-    let parent = super::atomicwrite::atomic_write_dir(path)?;
+    let parent = super::atomicwrite::atomic_write_parent_dir(path);
     let name = super::atomicwrite::atomic_write_base(path);
     let name = name.to_string_lossy();
     for n in 0..MAX_WINDOW_CORRUPT_BACKUPS {
@@ -441,6 +441,37 @@ mod tests {
             corrupt
         );
         assert_eq!(load_from(&real_ini), Some(saved));
+    }
+
+    #[test]
+    fn bare_relative_window_ini_corrupt_backup_uses_cwd() {
+        use std::sync::{Mutex, MutexGuard};
+
+        static CHDIR_LOCK: Mutex<()> = Mutex::new(());
+        let _guard: MutexGuard<'_, ()> = CHDIR_LOCK.lock().unwrap();
+
+        let dir = TempDir::new("geometry-bare-backup-4d50");
+        let previous = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(dir.path()).expect("chdir into temp dir");
+        struct RestoreCwd(PathBuf);
+        impl Drop for RestoreCwd {
+            fn drop(&mut self) {
+                let _ = std::env::set_current_dir(&self.0);
+            }
+        }
+        let _restore = RestoreCwd(previous);
+
+        let corrupt = b"[window\ngeometry=@Rect(0 0 800 600)\n";
+        fs::write(WINDOW_FILE, corrupt).expect("write bare window.ini");
+        assert!(
+            crate::storage::atomicwrite::atomic_write_dir(Path::new(WINDOW_FILE)).is_none(),
+            "bare relative paths have no explicit parent directory"
+        );
+
+        let backup =
+            link_window_corrupt_backup(Path::new(WINDOW_FILE)).expect("backup beside cwd");
+        assert_eq!(backup, Path::new("./window.ini.corrupt"));
+        assert_eq!(fs::read(&backup).unwrap(), corrupt);
     }
 
     #[test]
