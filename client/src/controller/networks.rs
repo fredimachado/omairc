@@ -9,6 +9,9 @@ use std::collections::BTreeSet;
 
 use crate::irc::viewnotify::{self, ViewNotify};
 use crate::session::events::SessionState;
+use crate::storage::credentialstore::{PURPOSE_NICKSERV, PURPOSE_PASSWORD};
+use crate::storage::profilestore::Profile;
+use crate::storage::settings::Status;
 
 use super::controller::Controller;
 
@@ -104,26 +107,64 @@ impl Controller {
     /// Forgets a network the Connect sheet removed (`ForgetNetwork`). A live session
     /// quits and stops; the network's conversations, Status log, last error, order
     /// collapse state and inbox rows go with it. The selection leaves it when it held
-    /// the selection. False when the network was never known.
-    pub fn forget_network(&mut self, network_id: &str) -> bool {
+    /// the selection.
+    ///
+    /// Returns [`Status::Written`] when a known network was forgotten,
+    /// [`Status::Absent`] when the id was empty or never known, and the real
+    /// [`Status::AccessError`] / [`Status::FormatError`] from preflight or the
+    /// combined settings write when that write is blocked — profile and secrets
+    /// stay in place until that write succeeds. Connect Remove passes this into
+    /// [`crate::model::connect::ConnectState::complete_remove`] so Apply and Remove
+    /// share the same settings-file sentences.
+    pub fn forget_network(&mut self, network_id: &str) -> Status {
         self.pump();
         if network_id.is_empty() {
-            return false;
+            return Status::Absent;
         }
         let known = self.manager.find(network_id).is_some()
             || self.profiles.contains_key(network_id)
             || !self.console.lines(network_id).is_empty()
-            || self.reducer.conversations().keys().any(|key| key.network_id == network_id);
-        if self.profiles.contains_key(network_id) {
-            let status = self.remove_profile(network_id);
-            if matches!(status, crate::storage::settings::Status::AccessError | crate::storage::settings::Status::FormatError) {
+            || self
+                .reducer
+                .conversations()
+                .keys()
+                .any(|key| key.network_id == network_id);
+        let had_profile = self.profiles.contains_key(network_id);
+        let profile = self.profiles.get(network_id).cloned();
+        if had_profile {
+            let status = self.profile_store.preflight_remove(network_id);
+            if matches!(status, Status::AccessError | Status::FormatError) {
                 self.pump();
-                return false;
+                return status;
             }
+        }
+        // Post-forget lists before any memory clear; the write must win first.
+        let post_order: Vec<String> = self
+            .network_order
+            .iter()
+            .filter(|id| *id != network_id)
+            .cloned()
+            .collect();
+        let post_collapsed: Vec<String> = self
+            .collapsed_network_ids()
+            .into_iter()
+            .filter(|id| id != network_id)
+            .collect();
+        let persist_status =
+            self.persist_forget_network(network_id, had_profile, &post_order, &post_collapsed);
+        if matches!(
+            persist_status,
+            Status::AccessError | Status::FormatError
+        ) {
+            self.pump();
+            return persist_status;
         }
         if let Some(session) = self.manager.find(network_id) {
             if session.state() == SessionState::Registered
-                && self.reducer.server_features(network_id).monitor_advertised()
+                && self
+                    .reducer
+                    .server_features(network_id)
+                    .monitor_advertised()
             {
                 session.send_monitor('C', &[]);
                 self.pump();
@@ -144,17 +185,19 @@ impl Controller {
         self.closed.borrow_mut().forget(network_id);
         self.open_directs_motd_seen.remove(network_id);
         self.reducer.forget_network(network_id);
-        self.cancelled_joins.retain(|key| key.network_id != network_id);
+        self.cancelled_joins
+            .retain(|key| key.network_id != network_id);
         self.console.forget(network_id);
         self.last_errors.remove(network_id);
         self.capabilities.remove(network_id);
         self.applied_profile_avatars.remove(network_id);
         self.current_nicks.remove(network_id);
         self.inbox.purge_network(network_id);
-        self.network_order.retain(|id| id != network_id);
+        self.network_order = post_order;
         self.network_collapsed.remove(network_id);
-        self.persist_network_order();
-        self.persist_collapsed_networks();
+        if had_profile {
+            self.finish_remove_profile(network_id, profile);
+        }
         if self.console_network == network_id {
             self.console_network.clear();
             self.console_open = false;
@@ -170,15 +213,70 @@ impl Controller {
         self.queue(viewnotify::reset_all());
         self.queue(vec![ViewNotify::Status]);
         self.pump();
-        known
+        if known {
+            Status::Written
+        } else {
+            Status::Absent
+        }
+    }
+
+    /// Collapsed network ids in sidebar display order.
+    pub(super) fn collapsed_network_ids(&self) -> Vec<String> {
+        self.network_order()
+            .into_iter()
+            .filter(|id| self.network_collapsed.contains(id))
+            .collect()
+    }
+
+    /// One conf write for forget: drop the profile group when present and store
+    /// the updated `networkOrder` / `collapsedNetworks` lists. Call before clearing
+    /// controller state so a blocked Sync leaves profile and secrets in place.
+    pub(super) fn persist_forget_network(
+        &mut self,
+        network_id: &str,
+        remove_profile: bool,
+        network_order: &[String],
+        collapsed: &[String],
+    ) -> Status {
+        if self.backing.is_ephemeral() {
+            return Status::Written;
+        }
+        self.preference_store
+            .forget_network(network_id, remove_profile, network_order, collapsed)
+    }
+
+    /// In-memory profile and secret cleanup after the profile group is gone.
+    pub(super) fn finish_remove_profile(&mut self, network_id: &str, profile: Option<Profile>) {
+        self.applied_sessions.remove(network_id);
+        if let Some(profile) = profile {
+            self.queue_slot_removals(&profile, PURPOSE_PASSWORD);
+            self.queue_slot_removals(&profile, PURPOSE_NICKSERV);
+        }
+        for key in self.credentials.pending().network(network_id) {
+            self.delete_key(&key);
+        }
+        self.profiles.remove(network_id);
     }
 
     /// Moves a network `delta` places up (negative) or down (positive) in the
     /// sidebar (`MoveNetwork`). False when the network is unknown, the move is zero
     /// or it would leave the list.
     pub fn move_network(&mut self, network_id: &str, delta: isize) -> bool {
-        let mut order = self.network_order();
-        let Some(index) = order.iter().position(|id| id == network_id) else {
+        if !self.is_movable_network(network_id) {
+            return false;
+        }
+        let order = self.network_order();
+        let movable_positions: Vec<usize> = order
+            .iter()
+            .enumerate()
+            .filter(|(_, id)| self.is_movable_network(id))
+            .map(|(index, _)| index)
+            .collect();
+        let movable: Vec<String> = movable_positions
+            .iter()
+            .map(|&index| order[index].clone())
+            .collect();
+        let Some(index) = movable.iter().position(|id| id == network_id) else {
             return false;
         };
         if delta == 0 {
@@ -187,12 +285,30 @@ impl Controller {
         let Some(target) = index.checked_add_signed(delta) else {
             return false;
         };
-        if target >= order.len() {
+        if target >= movable.len() {
             return false;
         }
-        let moved = order.remove(index);
-        order.insert(target, moved);
-        self.set_network_order(&order);
+        let mut tail = movable;
+        let moved = tail.remove(index);
+        tail.insert(target, moved);
+        let mut new_order = order;
+        for (slot, id) in movable_positions.into_iter().zip(tail) {
+            new_order[slot] = id;
+        }
+        self.set_network_order(&new_order);
         true
+    }
+
+    fn is_stored_network(&self, network_id: &str) -> bool {
+        !network_id.is_empty() && self.profiles.contains_key(network_id)
+    }
+
+    fn is_movable_network(&self, network_id: &str) -> bool {
+        if self.is_stored_network(network_id) {
+            return true;
+        }
+        // Ephemeral shells (demo and unit tests) have no saved profiles; live
+        // sessions may still reorder in memory without persisting draft ids.
+        self.backing.is_ephemeral() && self.manager.find(network_id).is_some()
     }
 }

@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Desktop and TUI write `collapsedNetworks` in sidebar `networkOrder` (not id
+  sort), so switching clients no longer rewrites the line. Forgetting a network
+  updates the profile group plus `networkOrder` and `collapsedNetworks` in one
+  conf write. The TUI also removes a stale `collapsedNetworks=@Invalid()` line
+  on an empty save; Settings.Sync still skips identical bytes.
+
 - The desktop client no longer writes `collapsedNetworks=@Invalid()` or a second
   preferences flush when a sidebar network is reordered. Network order and
   collapse state persist separately and only when their value changed; an empty

@@ -120,6 +120,10 @@ block2 = "=0.6.2"
 # line gpui already builds.
 objc2-app-kit = { version = "=0.3.2", features = ["NSView", "NSWindow"] }
 
+# getaddrinfo error codes for DNS resolution in `net::dial` (Linux and macOS).
+[target.'cfg(unix)'.dependencies]
+libc = "=0.2.191"
+
 # The Secret Service on Linux. `futures` only supplies `block_on`, which drives oo7 on the calling thread.
 [target.'cfg(target_os = "linux")'.dependencies]
 futures = { version = "=0.3.34", default-features = false, features = ["executor"] }

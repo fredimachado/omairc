@@ -18,6 +18,8 @@
 mod dial;
 mod factory;
 mod hub;
+#[cfg(unix)]
+mod resolve;
 mod tls;
 mod transport;
 mod wire;

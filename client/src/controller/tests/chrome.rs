@@ -20,6 +20,7 @@ use crate::model::{Color, Style};
 use crate::session::clock::FakeClock;
 use crate::session::config::SessionConfig;
 use crate::session::loopback::LoopbackTransport;
+use crate::storage::settings::Status;
 
 use super::fixture::{status_text, Fixture, OFTC, OMARCHY};
 
@@ -260,7 +261,7 @@ fn a_refused_start_is_the_row_status_and_the_status_line() {
     assert_eq!(fixture.controller.network_name("freenode"), "freenode");
     assert!(!fixture.controller.can_disconnect("freenode"));
 
-    assert!(fixture.controller.forget_network("freenode"));
+    assert_eq!(fixture.controller.forget_network("freenode"), Status::Written);
     assert!(!fixture
         .controller
         .network_order()

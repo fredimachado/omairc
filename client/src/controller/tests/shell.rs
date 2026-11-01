@@ -5,6 +5,7 @@
 
 use crate::irc::world::MessageKind;
 use crate::irc::inbox::InboxKind;
+use crate::storage::settings::Status;
 
 use super::fixture::{status_text, Fixture, OFTC, OMARCHY};
 
@@ -176,7 +177,7 @@ fn the_network_name_gains_the_nick_only_while_another_network_shares_the_host() 
     assert_eq!(fixture.controller.network_name(OMARCHY), "irc.example · fred");
     assert_eq!(fixture.controller.network_name(OFTC), "irc.example · oak");
 
-    assert!(fixture.controller.forget_network(OFTC));
+    assert_eq!(fixture.controller.forget_network(OFTC), Status::Written);
     assert_eq!(fixture.controller.network_name(OMARCHY), "irc.example");
     assert_eq!(fixture.controller.network_name(OFTC), "");
 }
@@ -185,7 +186,7 @@ fn the_network_name_gains_the_nick_only_while_another_network_shares_the_host() 
 fn forgetting_a_network_drops_its_rows_status_order_and_inbox_items() {
     let mut fixture = Fixture::seeded();
     fixture.controller.select_conversation(OFTC, "#lab");
-    assert!(fixture.controller.forget_network(OFTC));
+    assert_eq!(fixture.controller.forget_network(OFTC), Status::Written);
 
     assert!(fixture
         .controller
@@ -206,8 +207,8 @@ fn forgetting_a_network_drops_its_rows_status_order_and_inbox_items() {
 #[test]
 fn forgetting_an_unknown_network_reports_it_was_never_known() {
     let mut fixture = Fixture::seeded();
-    assert!(!fixture.controller.forget_network("ghost"));
-    assert!(!fixture.controller.forget_network(""));
+    assert_eq!(fixture.controller.forget_network("ghost"), Status::Absent);
+    assert_eq!(fixture.controller.forget_network(""), Status::Absent);
 }
 
 #[test]

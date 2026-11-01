@@ -341,3 +341,123 @@ func TestEphemeralSkipsDiskAndBackend(t *testing.T) {
 		t.Fatalf("CredentialState() = %v, want SessionOnly", conn.CredentialState())
 	}
 }
+
+func TestRemoveSelectedWritesConfOnceAndClearsOrderCollapse(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	ctrl := controller.New()
+	ctrl.SetEphemeral(false)
+	for _, id := range []string{"zulu", "alpha", "omarchy"} {
+		config := session.DefaultSessionConfig(id, "", "irc."+id+".example", id)
+		if _, err := ctrl.AddSession(config, session.NewLoopbackTransport(), nil); err != nil {
+			t.Fatalf("AddSession(%s): %v", id, err)
+		}
+	}
+	store := storage.NewProfileStore()
+	for _, id := range []string{"zulu", "alpha", "omarchy"} {
+		profile := completeProfile(id, "irc."+id+".example")
+		if status := store.Save(storageProfile(profile)); status != storage.StatusWritten {
+			t.Fatalf("Save(%s) = %v", id, status)
+		}
+	}
+	ctrl.RefreshStoredProfileIDs()
+	ctrl.SetNetworkOrder([]string{"zulu", "alpha", "omarchy"})
+	ctrl.SetNetworkCollapsed("alpha", true)
+	ctrl.SetNetworkCollapsed("omarchy", true)
+
+	conn := New(ctrl, nil)
+	conn.SetProfileStore(store)
+	conn.Select("alpha")
+
+	storage.BeginAtomicWriteCount()
+	if !conn.RemoveSelected() {
+		t.Fatal("RemoveSelected() = false")
+	}
+	writes := storage.EndAtomicWriteCount()
+	if writes != 1 {
+		t.Fatalf("RemoveSelected wrote conf %d times, want 1", writes)
+	}
+
+	settings := storage.OpenSettings("")
+	if groups := settings.ChildGroups("networks"); slices.Contains(groups, "alpha") {
+		t.Fatalf("networks child groups still include alpha: %v", groups)
+	}
+	if got := settings.StringList("preferences", "networkOrder"); !slices.Equal(got, []string{"zulu", "omarchy"}) {
+		t.Fatalf("networkOrder = %v, want [zulu omarchy]", got)
+	}
+	if got := settings.StringList("preferences", "collapsedNetworks"); !slices.Equal(got, []string{"omarchy"}) {
+		t.Fatalf("collapsedNetworks = %v, want [omarchy]", got)
+	}
+	if slices.Contains(ctrl.NetworkOrder(), "alpha") {
+		t.Fatalf("in-memory NetworkOrder still has alpha: %v", ctrl.NetworkOrder())
+	}
+	if ctrl.IsNetworkCollapsed("alpha") {
+		t.Fatal("in-memory collapse still has alpha")
+	}
+}
+
+// TestRemoveSelectedFailedSyncLeavesProfileAndSecrets proves AccessError from
+// the combined forget Sync (after a successful PreflightRemove) returns false
+// and leaves the Connect sheet roster, credentials, session, in-memory network
+// state, and conf group in place. Uses FailNextAtomicWrite so the block works
+// on every platform (chmod 0555 does not refuse writes on Windows).
+func TestRemoveSelectedFailedSyncLeavesProfileAndSecrets(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	ctrl := controller.New()
+	ctrl.SetEphemeral(false)
+	config := session.DefaultSessionConfig("alpha", "", "irc.alpha.example", "alpha")
+	if _, err := ctrl.AddSession(config, session.NewLoopbackTransport(), nil); err != nil {
+		t.Fatalf("AddSession: %v", err)
+	}
+	store := storage.NewProfileStore()
+	profile := completeProfile("alpha", "irc.alpha.example")
+	if status := store.Save(storageProfile(profile)); status != storage.StatusWritten {
+		t.Fatalf("Save = %v", status)
+	}
+	ctrl.RefreshStoredProfileIDs()
+	ctrl.SetNetworkOrder([]string{"alpha"})
+
+	fake := newFakeCredentialStore()
+	key := credentialKeyFor(profile, false)
+	fake.secrets[storage.CredentialKeyName(key)] = "hunter2"
+
+	conn := New(ctrl, nil)
+	conn.SetProfileStore(store)
+	conn.SetCredentialStore(fake)
+	conn.Select("alpha")
+	ctrl.SetNetworkCollapsed("alpha", true)
+
+	storage.FailNextAtomicWrite()
+	t.Cleanup(storage.CancelFailNextAtomicWrite)
+
+	if conn.RemoveSelected() {
+		t.Fatal("RemoveSelected() = true, want false when Sync fails after preflight")
+	}
+	if len(fake.removes) != 0 {
+		t.Fatalf("credentials.Remove called on Sync failure: %v", fake.removes)
+	}
+	if fake.secrets[storage.CredentialKeyName(key)] != "hunter2" {
+		t.Fatal("secret deleted despite failed Sync")
+	}
+	if _, ok := conn.storedProfile("alpha"); !ok {
+		t.Fatal("stored roster dropped alpha despite failed Sync")
+	}
+	if !slices.Contains(ctrl.NetworkIDs(), "alpha") {
+		t.Fatalf("session NetworkIDs lost alpha after failed Sync: %v", ctrl.NetworkIDs())
+	}
+	if !slices.Contains(ctrl.NetworkOrder(), "alpha") {
+		t.Fatalf("controller NetworkOrder lost alpha: %v", ctrl.NetworkOrder())
+	}
+	if !ctrl.IsNetworkCollapsed("alpha") {
+		t.Fatal("collapse lost after failed Sync; ForgetNetworkState must not run before PersistForgetNetwork")
+	}
+	settings := storage.OpenSettings("")
+	if groups := settings.ChildGroups("networks"); !slices.Contains(groups, "alpha") {
+		t.Fatalf("conf lost networks/alpha after failed Sync: %v", groups)
+	}
+	if got := conn.PersistenceStatus(); got == "" {
+		t.Fatal("expected persistence sentence on failed Sync")
+	}
+}
