@@ -21,8 +21,8 @@ fn answers_ping_immediately() {
     assert_eq!(fx.last_frame(), "PONG :server-token\r\n");
     assert_eq!(
         fx.clock.pending(),
-        0,
-        "no watchdog is armed before registration"
+        1,
+        "only the registration timer is armed before welcome"
     );
 }
 

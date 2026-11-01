@@ -597,6 +597,7 @@ impl Core {
         self.connection.begin_stop();
         self.cancel_timer(TimerSlot::Reconnect);
         self.cancel_timer(TimerSlot::Capability);
+        self.cancel_timer(TimerSlot::Registration);
         self.cancel_ping_watchdog();
         self.clear_pending_request_labels(true);
 
@@ -624,6 +625,7 @@ impl Core {
     /// failure of each kind is reported and the session retries; otherwise the
     /// session stops in Failed.
     pub(crate) fn fail(&mut self, kind: ErrorKind, message: &str, reconnect: bool) {
+        self.cancel_timer(TimerSlot::Registration);
         self.cancel_ping_watchdog();
         self.clear_pending_request_labels(true);
 
@@ -712,6 +714,7 @@ impl Core {
         self.pending_join_keys.clear();
         self.channel_types.clear();
         self.cancel_timer(TimerSlot::Capability);
+        self.cancel_timer(TimerSlot::Registration);
         self.cancel_ping_watchdog();
         self.clear_pending_request_labels(true);
         self.caps.reset(!self.config.sasl_secret().is_empty());

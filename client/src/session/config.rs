@@ -7,6 +7,9 @@ use std::collections::BTreeMap;
 
 use crate::util::Secret;
 
+/// How long registration (CAP LS through 001) may wait without a welcome.
+pub const REGISTRATION_TIMEOUT_MS: u64 = 60_000;
+
 /// The per-network session settings.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SessionConfig {
@@ -36,6 +39,8 @@ pub struct SessionConfig {
     pub reconnect_maximum_delay_ms: u64,
     /// How long to wait for CAP ACK / NAK before giving up on negotiation.
     pub capability_timeout_ms: u64,
+    /// How long registration (CAP LS through 001) may wait without a welcome.
+    pub registration_timeout_ms: u64,
     /// The ping watchdog interval: silence this long triggers a PING probe.
     pub ping_timeout_ms: u64,
     /// How long a labeled request may wait for its response.
@@ -44,10 +49,10 @@ pub struct SessionConfig {
 
 impl SessionConfig {
     /// The defaults of `IrcSessionConfig`: port 6697, TLS on, reconnect on
-    /// 1000 ms base backoff doubling to 30000 ms, a 10000 ms capability timeout
-    /// a 60000 ms ping watchdog, and a 45000 ms labeled-response timeout.
-    /// Username and realname fall back to the nick, as
-    /// `IrcConnection::sessionConfigFor` does.
+    /// 1000 ms base backoff doubling to 30000 ms, a 10000 ms capability timeout,
+    /// a 60000 ms registration timeout, a 60000 ms ping watchdog, and a
+    /// 45000 ms labeled-response timeout. Username and realname fall back to
+    /// the nick, as `IrcConnection::sessionConfigFor` does.
     pub fn with_defaults(network_id: &str, name: &str, host: &str, nick: &str) -> Self {
         Self {
             network_id: network_id.to_owned(),
@@ -62,6 +67,7 @@ impl SessionConfig {
             reconnect_base_delay_ms: 1000,
             reconnect_maximum_delay_ms: 30000,
             capability_timeout_ms: 10000,
+            registration_timeout_ms: REGISTRATION_TIMEOUT_MS,
             ping_timeout_ms: 60000,
             labeled_response_timeout_ms: 45000,
             ..Self::default()
