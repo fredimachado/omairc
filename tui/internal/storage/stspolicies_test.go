@@ -560,15 +560,8 @@ func TestIniSTSStoreUnclosedHeaderDoesNotMergeIntoPartialGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := string(text)
-	aBlock := stsGroupBlock(body, ircExampleSTSGroup)
-	if aBlock == "" {
-		t.Fatalf("A group missing after recovery: %s", body)
-	}
-	if !strings.Contains(aBlock, "port=6697") {
-		t.Fatalf("A's advertised port must remain: %s", body)
-	}
-	if strings.Contains(aBlock, "port=7000") || strings.Contains(aBlock, "duration=100") || strings.Contains(aBlock, "expiry=100") {
-		t.Fatalf("B's keys must not merge into A: %s", body)
+	if strings.Contains(body, ircExampleSTSGroup) {
+		t.Fatalf("partial A has no expiry, so the next write drops it: %s", body)
 	}
 	if _, ok := NewIniSTSStore(path).Lookup("irc.example", 1_700_000_000); ok {
 		t.Fatal("partial A must not become enforceable after recovery")
@@ -792,5 +785,72 @@ func TestRecoverMalformedSTSThroughSymlinkedDataDirectory(t *testing.T) {
 	gotBackup, err := os.ReadFile(backup)
 	if err != nil || !bytes.Equal(gotBackup, corrupt) {
 		t.Fatalf("backup = %q err=%v", gotBackup, err)
+	}
+}
+
+// client/src/storage/stspolicies.rs::a_junk_group_is_dropped_by_the_next_write
+func TestIniSTSStoreJunkGroupsAreDroppedByTheNextWrite(t *testing.T) {
+	other := STSGroupKey("other.example")
+	junk := map[string]string{
+		"name STSGroupKey never returns": "[deadbeef]\nport=1\nduration=60\nexpiry=4102444800\n",
+		"no expiry":                      "[" + other + "]\nport=6698\nduration=60\n",
+		"no duration":                    "[" + other + "]\nport=6698\nexpiry=4102444800\n",
+		"port out of range":              "[" + other + "]\nport=70000\nduration=60\nexpiry=4102444800\n",
+	}
+	now := int64(1_700_000_000)
+	for name, group := range junk {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "sts")
+			store := NewIniSTSStore(path)
+			if status := store.Store("irc.example", 6697, 60, now); status != StatusWritten {
+				t.Fatalf("seed write = %v", status)
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, append(raw, group...), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := store.Lookup("irc.example", now); !ok {
+				t.Fatal("the real policy must load beside junk")
+			}
+
+			if status := store.Store("irc.example", 6697, 60, now); status != StatusWritten {
+				t.Fatalf("write = %v", status)
+			}
+
+			raw, err = os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := string(raw)
+			if strings.Contains(body, "deadbeef") || strings.Contains(body, other) {
+				t.Fatalf("junk group survived the write: %s", body)
+			}
+			if !strings.Contains(body, ircExampleSTSGroup) {
+				t.Fatalf("real policy missing after the write: %s", body)
+			}
+			info, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode := info.Mode().Perm(); mode != 0o600 {
+				t.Fatalf("sts mode = %o, want 600", mode)
+			}
+		})
+	}
+}
+
+// client/src/session/sts.rs::a_group_key_is_64_lowercase_hex
+func TestIsSTSGroupKeyAcceptsOnlyLowercaseHex(t *testing.T) {
+	if !IsSTSGroupKey(STSGroupKey("irc.example")) {
+		t.Fatal("a key STSGroupKey built must be valid")
+	}
+	upper := strings.ToUpper(STSGroupKey("irc.example"))
+	for _, bad := range []string{"", "deadbeef", upper, STSGroupKey("irc.example") + "0"} {
+		if IsSTSGroupKey(bad) {
+			t.Fatalf("IsSTSGroupKey(%q) = true, want false", bad)
+		}
 	}
 }

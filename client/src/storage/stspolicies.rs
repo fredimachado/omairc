@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 
 use super::settings::{file_not_writable, Settings, Status};
-use crate::session::sts::{sts_group_key, StsCached, StsStore};
+use crate::session::sts::{is_sts_group_key, sts_group_key, StsCached, StsStore};
 
 /// The value names of one host's group, as Qt writes them.
 const PORT_KEY: &str = "port";
@@ -65,7 +65,6 @@ impl IniStsStore {
     fn remember(&self, key: &str, entry: StsCached) {
         self.memory.borrow_mut().insert(key.to_string(), entry);
     }
-
 }
 
 impl StsStore for IniStsStore {
@@ -177,13 +176,15 @@ fn merge_sts_policy(settings: &mut Settings, key: &str, incoming: StsCached) {
 
 /// Writes `settings` to `path`. On a malformed file, merges unexpired memory, writes a
 /// clean temp file, hard-links a backup, then renames the temp over `sts`. A failure at
-/// any step leaves `sts` untouched. Access errors leave the file alone.
+/// any step leaves `sts` untouched. Access errors leave the file alone. Every write first
+/// drops the groups that are not policies, so the file keeps only real ones.
 fn persist_sts_settings(
     settings: &mut Settings,
     path: &Path,
     memory: &RefCell<BTreeMap<String, StsCached>>,
     now_unix: i64,
 ) -> Status {
+    drop_invalid_groups(settings);
     match settings.write_blocked() {
         Status::AccessError => Status::AccessError,
         Status::FormatError => {
@@ -206,6 +207,16 @@ fn persist_sts_settings(
             }
             other => other,
         },
+    }
+}
+
+/// Drops every group that is not a policy: a name `sts_group_key` could not return, or a
+/// port, duration or expiry that is missing or out of range.
+fn drop_invalid_groups(settings: &mut Settings) {
+    for group in settings.child_groups("") {
+        if !is_sts_group_key(&group) || read_policy(settings, &group).is_none() {
+            settings.remove_group(&group);
+        }
     }
 }
 
@@ -664,6 +675,51 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_junk_group_is_dropped_by_the_next_write() {
+        use std::os::unix::fs::PermissionsExt;
+        let other = other_example_group();
+        let junk = [
+            (
+                "a name sts_group_key never returns",
+                "[deadbeef]\nport=1\nduration=60\nexpiry=4102444800\n".to_owned(),
+            ),
+            ("no expiry", format!("[{other}]\nport=6698\nduration=60\n")),
+            (
+                "no duration",
+                format!("[{other}]\nport=6698\nexpiry=4102444800\n"),
+            ),
+            (
+                "port out of range",
+                format!("[{other}]\nport=70000\nduration=60\nexpiry=4102444800\n"),
+            ),
+        ];
+        for (name, group) in junk {
+            let dir = TempDir::new("sts-junk");
+            let (store, path) = store_in(&dir);
+            store.store("irc.example", 6697, 60, at(1_700_000_000));
+            let mut text = fs::read_to_string(&path).expect("seeded");
+            text.push_str(&group);
+            fs::write(&path, text).expect("append junk");
+            assert!(
+                store.lookup("irc.example", at(1_700_000_000)).is_some(),
+                "{name}: the real policy loads beside junk"
+            );
+
+            store.store("irc.example", 6697, 60, at(1_700_000_000));
+
+            let text = fs::read_to_string(&path).expect("file stays");
+            assert!(
+                !text.contains("deadbeef") && !text.contains(&other),
+                "{name}: junk survived the write: {text}"
+            );
+            assert!(text.contains(IRC_EXAMPLE_GROUP), "{name}: {text}");
+            let mode = fs::metadata(&path).expect("stat").permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600, "{name}");
+        }
+    }
+
     #[test]
     fn a_lookup_or_clear_with_nothing_stored_writes_no_file() {
         let dir = TempDir::new("sts-empty");
@@ -922,22 +978,9 @@ mod tests {
 
         store.store("third.example", 6699, 10, at(1_700_000_000));
         let text = fs::read_to_string(&path).unwrap();
-        let a_block = sts_group_block(&text, IRC_EXAMPLE_GROUP);
         assert!(
-            a_block.contains("port=6697"),
-            "A's advertised port must remain: {text}"
-        );
-        assert!(
-            !a_block.contains("port=7000"),
-            "B's port must not merge into A: {text}"
-        );
-        assert!(
-            !a_block.contains("duration=100"),
-            "B's duration must not merge into A: {text}"
-        );
-        assert!(
-            !a_block.contains("expiry=100"),
-            "B's expiry must not merge into A: {text}"
+            !text.contains(IRC_EXAMPLE_GROUP),
+            "partial A has no expiry, so the next write drops it: {text}"
         );
         let restarted = IniStsStore::new(path);
         assert_eq!(

@@ -565,3 +565,35 @@ func TestSTSStoreRecoveryKeepsNewerDiskPolicyOverMemory(t *testing.T) {
 		t.Fatalf("recovery must keep the 60s policy on disk: %+v ok=%v", entry, ok)
 	}
 }
+
+// TestSessionCachedPolicyBesideJunkGroupsUpgradesPlaintext: a policy in a file
+// that also holds junk groups still makes a plaintext profile connect with TLS
+// on the cached port.
+func TestSessionCachedPolicyBesideJunkGroupsUpgradesPlaintext(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sts")
+	now := time.Unix(1_700_000_000, 0)
+	if status := storage.NewIniSTSStore(path).Store("irc.example", 6697, 60, now.Unix()); status != storage.StatusWritten {
+		t.Fatalf("seed write = %v", status)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	junk := "[deadbeef]\nport=1\nduration=60\nexpiry=4102444800\n"
+	if err := os.WriteFile(path, append(raw, junk...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewSTSStore()
+	store.AttachDisk(storage.NewIniSTSStore(path))
+	transport := NewLoopbackTransport()
+	session := NewSessionWithSTS(sessionTestPlaintextConfig(), transport, NewFakeClock(now), store)
+
+	session.Start()
+
+	if !transport.TLSRequested() {
+		t.Fatal("the cached policy must force TLS beside junk groups")
+	}
+	if got := transport.ConnectedPort(); got != 6697 {
+		t.Fatalf("port = %d, want 6697", got)
+	}
+}

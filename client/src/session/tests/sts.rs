@@ -3,6 +3,7 @@
 //! that role. The last two tests cross the file: a policy learned on one run applies after a
 //! restart, and networks on one manager share one cache.
 
+use std::fs;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -366,6 +367,34 @@ fn two_sessions_on_one_file_keep_the_newer_policy_when_the_older_quits() {
         .lookup(HOST, clock.now())
         .expect("the newer policy is refreshed on quit");
     assert_eq!(refreshed.expiry_epoch_seconds, 90, "30s in plus 60s");
+}
+
+#[test]
+fn a_cached_policy_beside_junk_groups_upgrades_a_plaintext_profile() {
+    let dir = TempDir::new("sts-junk-session");
+    let path = dir.path().join("sts");
+    let clock = Rc::new(FakeClock::new(
+        Utc.timestamp_opt(1_700_000_000, 0).single().unwrap(),
+    ));
+    IniStsStore::new(path.clone()).store(HOST, 6697, 60, clock.now());
+    let mut text = fs::read_to_string(&path).expect("seeded");
+    text.push_str("[deadbeef]\nport=1\nduration=60\nexpiry=4102444800\n");
+    fs::write(&path, text).expect("append junk");
+
+    let transport = Rc::new(LoopbackTransport::new());
+    let session = Session::new(
+        plaintext_config(),
+        transport.clone(),
+        clock,
+        Rc::new(IniStsStore::new(path)),
+    );
+    session.start();
+
+    assert!(
+        transport.tls_requested(),
+        "the cached policy must force TLS beside junk groups"
+    );
+    assert_eq!(transport.connected_port(), 6697);
 }
 
 #[test]

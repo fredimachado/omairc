@@ -264,7 +264,10 @@ func mergeSTSPolicy(settings *Settings, key string, incoming STSEntry) {
 // persistSTSSettings writes settings to path. On a malformed file, writes a
 // clean temp file, hard-links a backup, then renames the temp over sts. A
 // failure at any step leaves sts untouched. Access errors leave the file alone.
+// Every write first drops the groups that are not policies, so the file keeps
+// only real ones.
 func persistSTSSettings(settings *Settings, path string) Status {
+	dropInvalidSTSGroups(settings)
 	switch settings.WriteBlocked() {
 	case StatusAccessError:
 		return StatusAccessError
@@ -280,6 +283,17 @@ func persistSTSSettings(settings *Settings, path string) Status {
 		return StatusWritten
 	default:
 		return settings.Sync()
+	}
+}
+
+// dropInvalidSTSGroups removes every group that is not a policy: a name
+// STSGroupKey could not return, or a port, duration, or expiry that is missing
+// or out of range. It mirrors drop_invalid_groups in stspolicies.rs.
+func dropInvalidSTSGroups(settings *Settings) {
+	for _, group := range settings.ChildGroups("") {
+		if _, ok := readSTSPolicy(settings, group); !ok || !IsSTSGroupKey(group) {
+			settings.RemoveGroup(group)
+		}
 	}
 }
 
@@ -451,6 +465,21 @@ func STSGroupKey(host string) string {
 	}
 	sum := sha256.Sum256([]byte(folded))
 	return hex.EncodeToString(sum[:])
+}
+
+// IsSTSGroupKey reports whether key is a name STSGroupKey can return: 64
+// lowercase hex digits. It mirrors is_sts_group_key in session/sts.rs.
+func IsSTSGroupKey(key string) bool {
+	if len(key) != 64 {
+		return false
+	}
+	for i := 0; i < len(key); i++ {
+		c := key[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func stsSaturatingExpiry(nowUnix, durationSeconds int64) int64 {

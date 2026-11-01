@@ -109,6 +109,15 @@ pub fn sts_group_key(host: &str) -> Option<String> {
     Some(digest.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
+/// Whether `key` is a name `sts_group_key` can return: 64 lowercase hex digits. A cache group
+/// under any other name cannot be a policy.
+pub fn is_sts_group_key(key: &str) -> bool {
+    key.len() == 64
+        && key
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
 /// The policy cache that keeps what it is given for the life of the process
 /// (`Backing::Ephemeral`). The Go store (`STSStore`) works the same way.
 #[derive(Debug, Default)]
@@ -265,6 +274,15 @@ mod tests {
             sts_group_key("  IRC.Example \t"),
             sts_group_key("irc.example")
         );
+    }
+
+    #[test]
+    fn a_group_key_is_64_lowercase_hex() {
+        let key = sts_group_key("irc.example").expect("host");
+        assert!(is_sts_group_key(&key));
+        assert!(!is_sts_group_key("deadbeef"));
+        assert!(!is_sts_group_key(&key.to_uppercase()));
+        assert!(!is_sts_group_key(&format!("{key}0")));
     }
 
     #[test]
