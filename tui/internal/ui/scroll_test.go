@@ -84,7 +84,10 @@ func TestScrollPlaceStatusRoundTrip(t *testing.T) {
 }
 
 func TestScrollPlaceSurvivesRestart(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	root := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", root)
+	t.Setenv("XDG_STATE_HOME", root)
+	t.Setenv("OMAIRC_DEV_HOME", "")
 	ctrl := controller.New()
 	ctrl.SetEphemeral(false)
 	if !demo.New().Attach(ctrl, true) {
@@ -117,7 +120,10 @@ func TestScrollPlaceSurvivesRestart(t *testing.T) {
 
 func plantUnloadedScrollPlace(t *testing.T) (*Model, storage.ScrollPlace) {
 	t.Helper()
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	root := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", root)
+	t.Setenv("XDG_STATE_HOME", root)
+	t.Setenv("OMAIRC_DEV_HOME", "")
 	want := storage.ScrollPlace{
 		Author: "anna",
 		Body:   "not-in-transcript",

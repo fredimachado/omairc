@@ -208,14 +208,14 @@ impl Shell {
         cx.notify();
     }
 
-    /// Stores where a conversation's transcript was left. The controller keeps it in the
-    /// settings file, so it is there after a restart.
+    /// Stores where a conversation's transcript was left. The controller keeps it in
+    /// `scrollplaces.ini`, so it is there after a restart.
     fn remember_place(&mut self, conversation: ConversationRef, place: SavedPlace) {
         self.controller
             .remember_place(&conversation.network_id, &conversation.key, place.to_stored());
     }
 
-    /// Where a conversation's transcript was last left, as the settings file has it.
+    /// Where a conversation's transcript was last left, as `scrollplaces.ini` has it.
     fn saved_place(&self, conversation: &ConversationRef) -> Option<SavedPlace> {
         self.controller
             .place_for(&conversation.network_id, &conversation.key)

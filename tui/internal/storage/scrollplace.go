@@ -3,6 +3,9 @@ package storage
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -10,7 +13,7 @@ import (
 )
 
 // Group and key names must match `client/src/storage/scrollplace.rs` byte for byte so
-// the Qt client and the terminal client share one INI section.
+// the desktop client and the terminal client share one INI section.
 const (
 	scrollPlacesGroup = "scrollPlaces"
 	scrollPlacesKey   = "places"
@@ -62,7 +65,10 @@ type scrollContentJSON struct {
 
 // ScrollPlaceStore persists one place per target per network, mirroring
 // IrcScrollPlaceStore. Group "scrollPlaces/<networkId>", key "places".
-// When ephemeral, nothing touches disk. SetEphemeral(true) clears the cache.
+// Places live in scrollplaces.ini under the state dir. When that file is
+// missing, a one-time read falls back to the legacy [scrollPlaces] group in
+// omairc.conf. Saves never write to or strip the conf. When ephemeral,
+// nothing touches disk. SetEphemeral(true) clears the cache.
 type ScrollPlaceStore struct {
 	ephemeral bool
 	cache     map[string][]scrollEntry
@@ -82,6 +88,19 @@ func (s *ScrollPlaceStore) SetEphemeral(ephemeral bool) {
 	}
 }
 
+func (s *ScrollPlaceStore) settingsForRead() *Settings {
+	state := ScrollPlacesPath()
+	if state != "" {
+		if _, err := os.Stat(state); err == nil {
+			return OpenSettings(state)
+		}
+	}
+	// Merge both legacy conf names (ini wins per network) without writing.
+	merged := &Settings{values: make(map[string]iniValue), preserveFileMode: true}
+	_, _ = copyLegacyScrollPlaces(merged, false)
+	return merged
+}
+
 func (s *ScrollPlaceStore) load(networkID string) []scrollEntry {
 	if networkID == "" {
 		return nil
@@ -89,7 +108,7 @@ func (s *ScrollPlaceStore) load(networkID string) []scrollEntry {
 	if s.ephemeral {
 		return s.cache[networkID]
 	}
-	settings := OpenSettings("")
+	settings := s.settingsForRead()
 	stored := settings.Value(scrollPlacesGroup+"/"+networkID, scrollPlacesKey)
 	if stored == "" {
 		return nil
@@ -197,7 +216,22 @@ func (s *ScrollPlaceStore) save(networkID string, rows []scrollEntry) {
 		}
 		return
 	}
-	settings := OpenSettings("")
+	state := ScrollPlacesPath()
+	if state == "" {
+		return
+	}
+	_, statErr := os.Stat(state)
+	missing := os.IsNotExist(statErr)
+	settings := OpenSettings(state)
+	seeded := false
+	if missing {
+		copied, refuse := seedLegacyScrollPlaces(settings)
+		if refuse {
+			// Keep places in memory; do not create an unseeded state file.
+			return
+		}
+		seeded = copied
+	}
 	group := scrollPlacesGroup + "/" + networkID
 	if len(rows) == 0 {
 		settings.RemoveGroup(group)
@@ -208,7 +242,93 @@ func (s *ScrollPlaceStore) save(networkID string, rows []scrollEntry) {
 		}
 		settings.SetValue(group, scrollPlacesKey, scrollEncode(encoded))
 	}
-	settings.Sync()
+	if settings.Sync() != StatusWritten {
+		return
+	}
+	// Empty encode + missing file matches disk, so Sync skips the create. An
+	// empty state file still records that migration happened once anything was seeded.
+	if missing && seeded {
+		if _, err := os.Stat(state); os.IsNotExist(err) {
+			_ = writeSettingsAtomic(state, nil, false)
+		}
+	}
+}
+
+// scrollLegacyGOOS selects dual-conf seeding. Production uses runtime.GOOS;
+// tests may override so macOS dual-conf coverage still runs on Linux CI.
+var scrollLegacyGOOS = runtime.GOOS
+
+// legacyScrollConfPaths returns the legacy conf file(s) to seed from. On macOS
+// both clients share scrollplaces.ini but historically wrote different conf
+// names, so omairc.ini wins per network and omairc.conf fills the rest.
+// Elsewhere only the platform's normal ConfigPath is consulted.
+func legacyScrollConfPaths() []string {
+	conf := ConfigPath()
+	if conf == "" {
+		return nil
+	}
+	if scrollLegacyGOOS != "darwin" {
+		return []string{conf}
+	}
+	dir := filepath.Dir(conf)
+	return []string{
+		filepath.Join(dir, "omairc.ini"),
+		filepath.Join(dir, "omairc.conf"),
+	}
+}
+
+// seedLegacyScrollPlaces copies every scrollPlaces/* group from the legacy
+// confs into dest when creating scrollplaces.ini. Refuses when a conf exists
+// but cannot be read so the save does not create an unseeded state file.
+func seedLegacyScrollPlaces(dest *Settings) (copied bool, refuse bool) {
+	return copyLegacyScrollPlaces(dest, true)
+}
+
+// copyLegacyScrollPlaces copies scrollPlaces groups from the platform's legacy
+// conf path(s) into dest. On macOS, ini wins per network and conf fills the
+// rest. When refuseUnreadable is set, an existing unreadable conf aborts so a
+// first save cannot drop legacy places.
+func copyLegacyScrollPlaces(dest *Settings, refuseUnreadable bool) (copied bool, refuse bool) {
+	if dest == nil {
+		return false, false
+	}
+	for _, conf := range legacyScrollConfPaths() {
+		info, err := os.Stat(conf)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			if refuseUnreadable {
+				return false, true
+			}
+			continue
+		}
+		if info.IsDir() {
+			if refuseUnreadable {
+				return false, true
+			}
+			continue
+		}
+		if ProbeSettingsIni(conf) == IniProbeUnreadable {
+			if refuseUnreadable {
+				return false, true
+			}
+			continue
+		}
+		src := OpenSettings(conf)
+		for _, networkID := range src.ChildGroups(scrollPlacesGroup) {
+			group := scrollPlacesGroup + "/" + networkID
+			if !src.Contains(group, scrollPlacesKey) {
+				continue
+			}
+			if dest.Contains(group, scrollPlacesKey) {
+				continue
+			}
+			dest.SetValue(group, scrollPlacesKey, src.Value(group, scrollPlacesKey))
+			copied = true
+		}
+	}
+	return copied, false
 }
 
 func scrollEncode(rows []any) string {
@@ -328,6 +448,6 @@ func (s *ScrollPlaceStore) PlacesJSON(networkID string) string {
 		}
 		return scrollEncode(encoded)
 	}
-	settings := OpenSettings("")
+	settings := s.settingsForRead()
 	return settings.Value(scrollPlacesGroup+"/"+networkID, scrollPlacesKey)
 }

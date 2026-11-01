@@ -68,6 +68,23 @@ func TestTranscriptRootHonoursXDGStateHome(t *testing.T) {
 	}
 }
 
+func TestScrollPlacesPathUsesStateSubdirWithoutXDG(t *testing.T) {
+	// Desktop writes %LOCALAPPDATA%\State\omairc\scrollplaces.ini. Keep
+	// GenericStateRoot as bare LocalAppData so transcripts stay put.
+	root := t.TempDir()
+	t.Setenv("LOCALAPPDATA", root)
+	t.Setenv("XDG_STATE_HOME", "")
+	t.Setenv("OMAIRC_DEV_HOME", "")
+
+	want := filepath.Join(root, "State", "omairc", ScrollPlacesFile)
+	if got := ScrollPlacesPath(); got != want {
+		t.Errorf("ScrollPlacesPath() = %q, want %q", got, want)
+	}
+	if got := GenericStateRoot(); got != root {
+		t.Errorf("GenericStateRoot() must stay %q, got %q", root, got)
+	}
+}
+
 func TestWindowsCredentialTarget(t *testing.T) {
 	key := "omairc/v1/8:freenode/5:alice/17:chat.freenode.net"
 	want := key + "@omairc"

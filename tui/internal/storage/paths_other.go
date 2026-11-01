@@ -8,3 +8,5 @@ func GenericConfigRoot() string { return "" }
 
 // GenericStateRoot is the counterpart of the Linux XDG base state directory.
 func GenericStateRoot() string { return "" }
+
+func scrollPlacesPathDefault() string { return "" }

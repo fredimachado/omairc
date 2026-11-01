@@ -206,7 +206,7 @@ impl Controller {
             network_collapsed: BTreeSet::new(),
             notifications: Vec::new(),
             autoaway: AutoawayState::default(),
-            scroll_places: ScrollPlaceStore::new(ScrollPlaceFile::new(backing.clone())),
+            scroll_places: ScrollPlaceStore::new(ScrollPlaceFile::for_settings(&backing)),
             reply_watches: ReplyWatches::default(),
             channel_lists,
             channel_view: ChannelListView::default(),
