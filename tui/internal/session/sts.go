@@ -101,6 +101,13 @@ func stsTokenValue(token string) string {
 	return ""
 }
 
+// stsHeld is one policy in memory. unpersisted marks a policy whose write failed,
+// so the file does not hold it.
+type stsHeld struct {
+	cached      STSCached
+	unpersisted bool
+}
+
 // STSStore is the process STS policy cache. Lookup expires through the caller's
 // now, so a FakeClock can drive expiry deterministically. An optional disk
 // store persists learned policies across restarts. The file answers first when
@@ -108,13 +115,13 @@ func stsTokenValue(token string) string {
 // unwritable file never weakens a policy this process learned.
 type STSStore struct {
 	mu      sync.Mutex
-	entries map[string]STSCached
+	entries map[string]stsHeld
 	disk    *storage.IniSTSStore
 }
 
 // NewSTSStore returns an empty in-memory store.
 func NewSTSStore() *STSStore {
-	return &STSStore{entries: make(map[string]STSCached)}
+	return &STSStore{entries: make(map[string]stsHeld)}
 }
 
 // AttachDisk installs the durable INI store. nil clears persistence. Existing
@@ -143,12 +150,12 @@ func (s *STSStore) Lookup(host string, now time.Time) (STSCached, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if cached, ok := s.lookupDiskLocked(host, nowUnix); ok {
-		s.entries[key] = cached
+		s.entries[key] = stsHeld{cached: cached}
 		return cached, true
 	}
-	if entry, ok := s.entries[key]; ok {
-		if entry.Port >= 1 && entry.Port <= 65535 && entry.ExpiryEpochSeconds > nowUnix {
-			return entry, true
+	if held, ok := s.entries[key]; ok {
+		if held.cached.Port >= 1 && held.cached.Port <= 65535 && held.cached.ExpiryEpochSeconds > nowUnix {
+			return held.cached, true
 		}
 		delete(s.entries, key)
 	}
@@ -216,8 +223,12 @@ func (s *STSStore) Store(host string, port uint16, durationSeconds int64, now ti
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.entries[key] = cached
-	return s.persistLocked(host, port, durationSeconds, now.Unix(), false)
+	// Unpersisted until a write lands: a failed write keeps the policy in memory,
+	// and the next recovery writes it into the file.
+	s.entries[key] = stsHeld{cached: cached, unpersisted: true}
+	err := s.persistLocked(host, port, durationSeconds, now.Unix(), false)
+	s.settleLocked(key, err)
+	return err
 }
 
 // Refresh extends host's policy to now plus durationSeconds, for a connection
@@ -234,9 +245,9 @@ func (s *STSStore) Refresh(host string, durationSeconds int64, now time.Time) er
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.disk == nil {
-		if cached, ok := s.entries[key]; ok && cached.DurationSeconds == durationSeconds {
-			cached.ExpiryEpochSeconds = stsExpiry(nowUnix, durationSeconds)
-			s.entries[key] = cached
+		if held, ok := s.entries[key]; ok && held.cached.DurationSeconds == durationSeconds {
+			held.cached.ExpiryEpochSeconds = stsExpiry(nowUnix, durationSeconds)
+			s.entries[key] = held
 		}
 		return nil
 	}
@@ -244,12 +255,17 @@ func (s *STSStore) Refresh(host string, durationSeconds int64, now time.Time) er
 	if !ok {
 		return nil
 	}
-	s.entries[key] = STSCached{
-		Port:               entry.Port,
-		DurationSeconds:    durationSeconds,
-		ExpiryEpochSeconds: stsExpiry(nowUnix, durationSeconds),
+	s.entries[key] = stsHeld{
+		cached: STSCached{
+			Port:               entry.Port,
+			DurationSeconds:    durationSeconds,
+			ExpiryEpochSeconds: stsExpiry(nowUnix, durationSeconds),
+		},
+		unpersisted: true,
 	}
-	return s.persistLocked(host, entry.Port, durationSeconds, nowUnix, false)
+	err := s.persistLocked(host, entry.Port, durationSeconds, nowUnix, false)
+	s.settleLocked(key, err)
+	return err
 }
 
 // Clear drops the cached policy for host. Memory is cleared first; a disk
@@ -286,27 +302,50 @@ func (s *STSStore) persistLocked(host string, port uint16, durationSeconds, nowU
 }
 
 // flushRecoveryLocked merges every unexpired in-memory entry into a recovered
-// clean file. Expired entries are skipped so they cannot return to disk.
+// clean file. Expired entries are skipped so they cannot return to disk. Once the
+// write lands, the unsaved entries it carried are in the file.
 func (s *STSStore) flushRecoveryLocked(nowUnix int64, clearing bool, clearHost string) error {
-	entries := make(map[string]storage.STSEntry, len(s.entries))
-	for key, cached := range s.entries {
-		if cached.Port < 1 || cached.ExpiryEpochSeconds <= nowUnix {
+	unsaved := make(map[string]storage.STSEntry)
+	known := make(map[string]storage.STSEntry, len(s.entries))
+	for key, held := range s.entries {
+		if held.cached.Port < 1 || held.cached.ExpiryEpochSeconds <= nowUnix {
 			continue
 		}
-		entries[key] = storage.STSEntry{
-			Port:               cached.Port,
-			DurationSeconds:    cached.DurationSeconds,
-			ExpiryEpochSeconds: cached.ExpiryEpochSeconds,
+		entry := storage.STSEntry{
+			Port:               held.cached.Port,
+			DurationSeconds:    held.cached.DurationSeconds,
+			ExpiryEpochSeconds: held.cached.ExpiryEpochSeconds,
+		}
+		if held.unpersisted {
+			unsaved[key] = entry
+		} else {
+			known[key] = entry
 		}
 	}
 	var clearKeys []string
 	if clearing {
 		if key := stsGroupKey(clearHost); key != "" {
 			clearKeys = []string{key}
-			delete(entries, key)
+			delete(unsaved, key)
+			delete(known, key)
 		}
 	}
-	return stsPersistStatus(s.disk.MergeEntries(entries, clearKeys, nowUnix))
+	err := stsPersistStatus(s.disk.MergeEntries(unsaved, known, clearKeys, nowUnix))
+	if err == nil {
+		for key := range unsaved {
+			s.settleLocked(key, nil)
+		}
+	}
+	return err
+}
+
+// settleLocked marks key's policy as held by the file once a write has landed.
+// A failed write leaves it unpersisted.
+func (s *STSStore) settleLocked(key string, err error) {
+	if held, ok := s.entries[key]; ok && err == nil {
+		held.unpersisted = false
+		s.entries[key] = held
+	}
 }
 
 func stsPersistStatus(status storage.Status) error {

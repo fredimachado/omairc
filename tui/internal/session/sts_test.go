@@ -597,3 +597,55 @@ func TestSessionCachedPolicyBesideJunkGroupsUpgradesPlaintext(t *testing.T) {
 		t.Fatalf("port = %d, want 6697", got)
 	}
 }
+
+// TestSTSStoreMalformedRecoveryWritesTheStoredPolicyOverTheFile: the file goes
+// malformed holding a live 3600s policy for the host this client then stores at
+// 60s. The new policy must land, so the file and a lookup both show 60s.
+func TestSTSStoreMalformedRecoveryWritesTheStoredPolicyOverTheFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sts")
+	key := storage.STSGroupKey("irc.example")
+	live := "this line has no equals sign\n[" + key + "]\nport=6697\nduration=3600\nexpiry=3600\n"
+	if err := os.WriteFile(path, []byte(live), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := stsStoreOnFile(path)
+
+	if err := store.Store("irc.example", 6697, 60, time.Unix(0, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	entry, ok := storage.NewIniSTSStore(path).Lookup("irc.example", 1)
+	if !ok || entry.DurationSeconds != 60 || entry.ExpiryEpochSeconds != 60 {
+		t.Fatalf("the stored 60s policy must replace the file's 3600s one: %+v ok=%v", entry, ok)
+	}
+	cached, ok := store.Lookup("irc.example", time.Unix(1, 0))
+	if !ok || cached.DurationSeconds != 60 {
+		t.Fatalf("lookup must show the stored 60s policy: %+v ok=%v", cached, ok)
+	}
+}
+
+// TestSTSStoreRefreshOnMalformedFileExtendsThePolicy: a refresh of a 3600s
+// policy on a file that has gone malformed must still extend its expiry on disk.
+func TestSTSStoreRefreshOnMalformedFileExtendsThePolicy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sts")
+	store := stsStoreOnFile(path)
+	if err := store.Store("irc.example", 6697, 3600, time.Unix(0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append([]byte("this line has no equals sign\n"), raw...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.Refresh("irc.example", 3600, time.Unix(100, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	entry, ok := storage.NewIniSTSStore(path).Lookup("irc.example", 101)
+	if !ok || entry.ExpiryEpochSeconds != 3700 {
+		t.Fatalf("refresh on a malformed file must extend to 100+3600: %+v ok=%v", entry, ok)
+	}
+}
