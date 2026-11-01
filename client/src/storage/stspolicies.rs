@@ -71,9 +71,13 @@ impl IniStsStore {
 
     /// Remembers `cached` under `key`. `unpersisted` marks a policy whose write has not landed.
     fn remember(&self, key: &str, cached: StsCached, unpersisted: bool) {
-        self.memory
-            .borrow_mut()
-            .insert(key.to_string(), Remembered { cached, unpersisted });
+        self.memory.borrow_mut().insert(
+            key.to_string(),
+            Remembered {
+                cached,
+                unpersisted,
+            },
+        );
     }
 
     /// Marks `key`'s policy as held by the file once `status` says the write landed.
@@ -276,8 +280,8 @@ fn merge_memory_into_settings(
         if entry.port < 1 || entry.expiry_epoch_seconds <= now_unix {
             continue;
         }
-        let disk_is_live = read_policy(settings, key)
-            .is_some_and(|disk| disk.expiry_epoch_seconds > now_unix);
+        let disk_is_live =
+            read_policy(settings, key).is_some_and(|disk| disk.expiry_epoch_seconds > now_unix);
         if disk_is_live && !held.unpersisted {
             continue;
         }
@@ -797,9 +801,8 @@ mod tests {
         let dir = TempDir::new("sts-recovery-unwritten");
         let (ours, path) = store_in(&dir);
         let key = sts_group_key("irc.example").expect("host");
-        let mixed = format!(
-            "this line has no equals sign\n[{key}]\nport=6697\nduration=60\nexpiry=70\n"
-        );
+        let mixed =
+            format!("this line has no equals sign\n[{key}]\nport=6697\nduration=60\nexpiry=70\n");
         fs::write(&path, &mixed).expect("write");
         with_sts_test_hook(StsTestHook::FailBackup, || {
             ours.store("irc.example", 6697, 86400, at(0));
