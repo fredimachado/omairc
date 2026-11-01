@@ -8,7 +8,9 @@ use gpui::{
 };
 
 use crate::model::theme::Theme;
+use crate::model::transcript::RowKind;
 use crate::model::{ConversationRef, Style};
+use crate::storage::scrollplace::ScrollPlace;
 use crate::ui::input::bind_input_keys;
 use crate::ui::shell::{bind_shell_keys, Shell};
 use crate::util::OmaircStyleGlobal;
@@ -129,6 +131,30 @@ impl SeededShell<'_> {
     pub fn scroll_top(&self) -> ListOffset {
         self.shell.read_with(self.cx, |shell, cx| {
             shell.transcript.read(cx).logical_scroll_top()
+        })
+    }
+
+    /// Whether the transcript last reported that it follows the end.
+    pub fn reported_end(&self) -> bool {
+        self.shell
+            .read_with(self.cx, |shell, _| shell.controller.transcript_follow_end())
+    }
+
+    /// The place the open transcript's conversation `key` was saved at, as the settings file keeps it.
+    pub fn saved_place(&self, key: &str) -> ScrollPlace {
+        self.shell
+            .read_with(self.cx, |shell, _| shell.controller.place_for(OMARCHY, key))
+            .expect("a place is saved")
+    }
+
+    /// The kind of the row at the top of the transcript, or `None` when the list is at its end.
+    pub fn top_kind(&self) -> Option<RowKind> {
+        self.shell.read_with(self.cx, |shell, cx| {
+            let transcript = shell.transcript.read(cx);
+            transcript
+                .rows()
+                .get(transcript.logical_scroll_top().item_ix)
+                .map(|row| row.kind)
         })
     }
 

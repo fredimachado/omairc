@@ -9,6 +9,7 @@ use chrono::{TimeZone, Utc};
 use gpui::{px, ListAlignment, ListState, Modifiers, ScrollHandle};
 
 use crate::model::scroll_place::SavedPlace;
+use crate::model::transcript::RowKind;
 use crate::session::session::HISTORY_LIMIT;
 use crate::storage::scrollplace::ScrollPlace;
 use crate::ui::scrollbar::{ScrollbarDrag, ScrollbarDragKind};
@@ -68,13 +69,34 @@ fn waiting_for_history(ui: &mut SeededShell) {
     );
 }
 
-/// As `waiting_for_history`, with enough lines that the list overflows, so a place that lands
-/// on its saved row is not the list's end.
-fn waiting_in_a_full_transcript(ui: &mut SeededShell) {
+/// `count` lines from anna while another conversation is open, so they arrive unread.
+fn unread_from_anna(ui: &mut SeededShell, count: usize) {
+    ui.select("#help");
+    for index in 0..count {
+        ui.inject(OMARCHY, &format!(":anna!u@h PRIVMSG fred :unread {index}"));
+    }
+}
+
+/// The open conversation waits on a saved line for the history `request` asks for. The
+/// transcript overflows the window, and lines that arrive while the window is not focused
+/// are unread, so a "New messages" mark sits before the first of them. The unread preference
+/// is `unread_on`, as the wait carries it to a give-up.
+fn waiting_above_a_mark(ui: &mut SeededShell, unread_on: bool, request: fn(&mut SeededShell)) {
     offer_chathistory(ui);
     ui.select("anna");
     ui.fill_until_scrollable("anna", "fred", "landing line");
-    request_history(ui);
+    request(ui);
+    let command = if unread_on {
+        "/pref unread on"
+    } else {
+        "/pref unread off"
+    };
+    send_line(ui, command);
+    let unread = ui
+        .shell
+        .read_with(ui.cx, |shell, _| shell.controller.preferences().unread);
+    assert_eq!(unread, unread_on, "the preference is set before the wait");
+    unread_from_anna(ui, 60);
     reopen_at_gone_place(ui, "anna");
     assert!(
         waiting(ui),
@@ -82,16 +104,46 @@ fn waiting_in_a_full_transcript(ui: &mut SeededShell) {
     );
 }
 
+/// Where a give-up leaves the reader: on the unread mark when the preference is on, else at the
+/// end. The place it saves follows the same choice.
+fn assert_given_up_landing(ui: &mut SeededShell, unread_on: bool) {
+    if unread_on {
+        assert_eq!(
+            ui.top_kind(),
+            Some(RowKind::UnreadMark),
+            "a give-up with the preference on lands on the unread mark"
+        );
+        assert!(!ui.at_end(), "sixty lines below the mark are not the end");
+        assert!(
+            !ui.reported_end(),
+            "a reader short of the end does not report it, so the read marker stays put"
+        );
+        ui.shell
+            .update(ui.cx, |shell, cx| shell.remember_open_transcript(cx));
+        assert_eq!(
+            ui.saved_place("anna").body,
+            "landing line 0",
+            "the place saved is the first unread line under the mark"
+        );
+    } else {
+        assert!(
+            ui.at_end(),
+            "a give-up with the preference off lands at the end"
+        );
+        assert!(ui.reported_end(), "a reader at the end reports it");
+        ui.shell
+            .update(ui.cx, |shell, cx| shell.remember_open_transcript(cx));
+        assert!(
+            ui.saved_place("anna").follow_end,
+            "a reader at the end saves follow-end"
+        );
+    }
+}
+
 fn waiting(ui: &SeededShell) -> bool {
     ui.shell.read_with(ui.cx, |shell, cx| {
         shell.transcript.read(cx).has_pending_restore()
     })
-}
-
-/// Whether the transcript last reported that it follows the end.
-fn reported_end(ui: &SeededShell) -> bool {
-    ui.shell
-        .read_with(ui.cx, |shell, _| shell.controller.transcript_follow_end())
 }
 
 /// Delivers one server line to the omarchy network and runs the tick the UI loop runs,
@@ -272,7 +324,7 @@ fn a_second_drain_before_a_frame_keeps_the_restored_place(cx: &mut gpui::TestApp
     );
     assert!(!waiting(&ui), "the saved line arrived, so the place lands");
     assert!(
-        !reported_end(&ui),
+        !ui.reported_end(),
         "a second drain before a frame must keep the restored place, not report the end"
     );
 }
@@ -293,80 +345,102 @@ fn a_waiting_place_stays_while_unrelated_lines_arrive(cx: &mut gpui::TestAppCont
 fn a_history_request_that_settles_without_the_line_gives_the_wait_up(
     cx: &mut gpui::TestAppContext,
 ) {
-    let mut ui = fixture::open(cx);
-    waiting_in_a_full_transcript(&mut ui);
-    deliver(
-        &mut ui,
-        ":server FAIL CHATHISTORY INVALID_TARGET BEFORE anna :no",
-    );
-    assert!(
-        !waiting(&ui),
-        "the request for this conversation settled, so the place lands without the line"
-    );
-    assert!(
-        ui.at_end(),
-        "the given-up place lands at the end, not on the row it was saved at"
-    );
+    for unread_on in [true, false] {
+        let mut ui = fixture::open(cx);
+        waiting_above_a_mark(&mut ui, unread_on, request_history);
+        deliver(
+            &mut ui,
+            ":server FAIL CHATHISTORY INVALID_TARGET BEFORE anna :no",
+        );
+        assert!(
+            !waiting(&ui),
+            "the request for this conversation settled, so the place lands without the line"
+        );
+        assert_given_up_landing(&mut ui, unread_on);
+    }
 }
 
 #[gpui::test]
 fn an_untargeted_fail_holds_the_wait_only_until_its_deadline(cx: &mut gpui::TestAppContext) {
-    let mut ui = fixture::open(cx);
-    waiting_in_a_full_transcript(&mut ui);
-    tick(&mut ui);
-    deliver(
-        &mut ui,
-        ":server FAIL CHATHISTORY INVALID_PARAMS LATEST :no",
-    );
-    assert!(
-        waiting(&ui),
-        "a FAIL that names no target does not settle this conversation's request"
-    );
-    advance(&mut ui, wait_window() - Duration::from_secs(1));
-    assert!(waiting(&ui), "the wait holds just before its deadline");
-    advance(&mut ui, Duration::from_secs(1));
-    assert!(!waiting(&ui), "the wait is given up at its deadline");
-    assert!(ui.at_end(), "the given-up place lands at the end");
+    for unread_on in [true, false] {
+        let mut ui = fixture::open(cx);
+        waiting_above_a_mark(&mut ui, unread_on, request_history);
+        tick(&mut ui);
+        deliver(
+            &mut ui,
+            ":server FAIL CHATHISTORY INVALID_PARAMS LATEST :no",
+        );
+        assert!(
+            waiting(&ui),
+            "a FAIL that names no target does not settle this conversation's request"
+        );
+        advance(&mut ui, wait_window() - Duration::from_secs(1));
+        assert!(waiting(&ui), "the wait holds just before its deadline");
+        advance(&mut ui, Duration::from_secs(1));
+        assert!(!waiting(&ui), "the wait is given up at its deadline");
+        assert_given_up_landing(&mut ui, unread_on);
+    }
 }
 
 #[gpui::test]
 fn a_silent_server_gives_the_wait_up_at_its_deadline(cx: &mut gpui::TestAppContext) {
-    let mut ui = fixture::open(cx);
-    waiting_in_a_full_transcript(&mut ui);
-    tick(&mut ui);
-    advance(&mut ui, wait_window() - Duration::from_secs(1));
-    assert!(waiting(&ui), "the wait holds just before its deadline");
-    advance(&mut ui, Duration::from_secs(1));
-    assert!(!waiting(&ui), "the wait is given up at its deadline");
-    assert!(ui.at_end(), "the given-up place lands at the end");
+    for unread_on in [true, false] {
+        let mut ui = fixture::open(cx);
+        waiting_above_a_mark(&mut ui, unread_on, request_history);
+        tick(&mut ui);
+        advance(&mut ui, wait_window() - Duration::from_secs(1));
+        assert!(waiting(&ui), "the wait holds just before its deadline");
+        advance(&mut ui, Duration::from_secs(1));
+        assert!(!waiting(&ui), "the wait is given up at its deadline");
+        assert_given_up_landing(&mut ui, unread_on);
+    }
 }
 
 #[gpui::test]
 fn a_dropped_connection_gives_the_wait_up(cx: &mut gpui::TestAppContext) {
-    let mut ui = fixture::open(cx);
-    waiting_in_a_full_transcript(&mut ui);
-    deliver(&mut ui, ":server ERROR :gone");
-    assert!(
-        !waiting(&ui),
-        "a request on a dropped connection cannot be answered, so the wait is given up"
-    );
-    assert!(ui.at_end(), "the given-up place lands at the end");
+    for unread_on in [true, false] {
+        let mut ui = fixture::open(cx);
+        waiting_above_a_mark(&mut ui, unread_on, request_history);
+        deliver(&mut ui, ":server ERROR :gone");
+        assert!(
+            !waiting(&ui),
+            "a request on a dropped connection cannot be answered, so the wait is given up"
+        );
+        assert_given_up_landing(&mut ui, unread_on);
+    }
 }
 
 #[gpui::test]
 fn a_manual_disconnect_gives_the_wait_up(cx: &mut gpui::TestAppContext) {
-    let mut ui = fixture::open(cx);
-    waiting_in_a_full_transcript(&mut ui);
-    ui.shell.update(ui.cx, |shell, cx| {
-        shell.controller.disconnect(OMARCHY);
-        shell.tick(cx);
-    });
-    ui.settle();
-    assert!(
-        !waiting(&ui),
-        "a disconnect leaves no request to answer, so the wait is given up"
-    );
-    assert!(ui.at_end(), "the given-up place lands at the end");
+    for unread_on in [true, false] {
+        let mut ui = fixture::open(cx);
+        waiting_above_a_mark(&mut ui, unread_on, request_history);
+        ui.shell.update(ui.cx, |shell, cx| {
+            shell.controller.disconnect(OMARCHY);
+            shell.tick(cx);
+        });
+        ui.settle();
+        assert!(
+            !waiting(&ui),
+            "a disconnect leaves no request to answer, so the wait is given up"
+        );
+        assert_given_up_landing(&mut ui, unread_on);
+    }
+}
+
+#[gpui::test]
+fn a_chain_that_ends_short_of_the_line_gives_the_wait_up(cx: &mut gpui::TestAppContext) {
+    for unread_on in [true, false] {
+        let mut ui = fixture::open(cx);
+        waiting_above_a_mark(&mut ui, unread_on, start_after_chain);
+        // A short page is the chain's last, and it does not hold the saved line.
+        deliver_burst(&mut ui, &anna_page("p1", &["fill-tail"]));
+        assert!(
+            !waiting(&ui),
+            "a short AFTER page ends the chain without the line, so the wait is given up"
+        );
+        assert_given_up_landing(&mut ui, unread_on);
+    }
 }
 
 #[gpui::test]
@@ -397,26 +471,17 @@ fn a_page_with_the_saved_line_lands_on_it_as_its_request_settles(cx: &mut gpui::
 }
 
 #[gpui::test]
-fn an_empty_page_gives_the_wait_up_and_lands_at_the_end(cx: &mut gpui::TestAppContext) {
-    let mut ui = fixture::open(cx);
-    offer_chathistory(&mut ui);
-    ui.select("anna");
-    ui.fill_until_scrollable("anna", "fred", "landing line");
-    request_history(&mut ui);
-    reopen_at_gone_place(&mut ui, "anna");
-    assert!(
-        waiting(&ui),
-        "the place waits while its history is in flight"
-    );
-    deliver_burst(&mut ui, &anna_page("e", &[] as &[&str]));
-    assert!(
-        !waiting(&ui),
-        "an empty page settles the request, so the place lands without the line"
-    );
-    assert!(
-        ui.at_end(),
-        "the given-up place lands at the end, not on the row it was saved at"
-    );
+fn an_empty_page_gives_the_wait_up_and_lands_on_the_mark_or_the_end(cx: &mut gpui::TestAppContext) {
+    for unread_on in [true, false] {
+        let mut ui = fixture::open(cx);
+        waiting_above_a_mark(&mut ui, unread_on, request_history);
+        deliver_burst(&mut ui, &anna_page("e", &[] as &[&str]));
+        assert!(
+            !waiting(&ui),
+            "an empty page settles the request, so the place lands without the line"
+        );
+        assert_given_up_landing(&mut ui, unread_on);
+    }
 }
 
 #[gpui::test]
@@ -500,7 +565,7 @@ fn a_restore_that_lands_does_not_report_the_end(cx: &mut gpui::TestAppContext) {
     let mut ui = fixture::open(cx);
     waiting_for_history(&mut ui);
     assert!(
-        !reported_end(&ui),
+        !ui.reported_end(),
         "a waiting place reports that it is not at the end"
     );
     deliver(
@@ -509,7 +574,7 @@ fn a_restore_that_lands_does_not_report_the_end(cx: &mut gpui::TestAppContext) {
     );
     assert!(!waiting(&ui), "the saved line arrived, so the place lands");
     assert!(
-        !reported_end(&ui),
+        !ui.reported_end(),
         "landing on a saved line must not report the end, or the read marker advances"
     );
 }
@@ -529,7 +594,7 @@ fn a_command_keeps_a_waiting_place_but_a_message_here_retires_it(cx: &mut gpui::
         "a message to this conversation retires the wait so the live page is saved"
     );
     assert!(
-        reported_end(&ui),
+        ui.reported_end(),
         "the send itself reports the end to the read marker, before any render"
     );
 }
@@ -594,7 +659,7 @@ fn a_line_after_wheel_up_does_not_report_the_end(cx: &mut gpui::TestAppContext) 
     wheel(&mut ui, 3200.);
     assert!(!ui.at_end(), "wheel up leaves the reader detached");
     assert!(
-        !reported_end(&ui),
+        !ui.reported_end(),
         "a detached reader must not report the end"
     );
     deliver(&mut ui, ":anna!u@h PRIVMSG fred :second line");
@@ -603,7 +668,7 @@ fn a_line_after_wheel_up_does_not_report_the_end(cx: &mut gpui::TestAppContext) 
         "another line must not pull a wheeled-up reader back to the end"
     );
     assert!(
-        !reported_end(&ui),
+        !ui.reported_end(),
         "a detached reader must not report the end when another line arrives"
     );
 }
@@ -614,10 +679,10 @@ fn a_wheel_back_to_the_end_reports_the_end(cx: &mut gpui::TestAppContext) {
     ui.select("anna");
     ui.fill_until_scrollable("anna", "fred", "wheel line");
     ui.page_up();
-    assert!(!reported_end(&ui), "a page up leaves the end");
+    assert!(!ui.reported_end(), "a page up leaves the end");
     wheel(&mut ui, -6000.);
     assert!(
-        reported_end(&ui),
+        ui.reported_end(),
         "a wheel back to the end reports it, so the read marker can advance again"
     );
 }
@@ -659,7 +724,7 @@ fn a_saved_line_near_the_loaded_end_keeps_its_place_as_later_history_arrives(
     let tail: Vec<String> = (0..50).map(|i| format!("tail-{i}")).collect();
     deliver_burst(&mut ui, &anna_page("p3", &tail));
     assert!(
-        !reported_end(&ui),
+        !ui.reported_end(),
         "the page after the saved line must not report the reader at the end"
     );
     assert!(

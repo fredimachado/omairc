@@ -13,12 +13,13 @@ use gpui::{
 
 mod scroll_restore;
 
+use scroll_restore::PendingRestore;
+
 use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::irc::world::Message;
 use crate::model::cursor::{page_amount, scroll_target};
 use crate::model::links::{conversation_channel_hits, invite_hit};
 use crate::model::presence::NickFacts;
-use crate::model::scroll_place::SavedPlace;
 use crate::model::transcript::minute_of;
 use crate::model::typing_tail::typing_continues;
 use crate::model::unread::{self, UnseenLanding};
@@ -101,7 +102,7 @@ pub struct TranscriptView {
     reported_at_end: bool,
     /// A restore whose line is not in the transcript yet (history still in flight).
     /// Applied once when the anchor row arrives; cleared if the reader scrolls first.
-    pending_restore: Option<SavedPlace>,
+    pending_restore: Option<PendingRestore>,
     /// Whether a layout has measured the rows since the list was last reset. Until one
     /// has, the scrollbar max reads 0, so `at_end` says nothing about the reader.
     list_measured: bool,
@@ -822,6 +823,8 @@ mod tests {
     use super::*;
     use chrono::{TimeZone, Utc};
 
+    use crate::model::scroll_place::SavedPlace;
+
     use gpui::{AppContext, TestAppContext};
 
     use crate::irc::event::MsgId;
@@ -1066,6 +1069,54 @@ mod tests {
                 "the given-up place lands at the end, as a conversation with no place does"
             );
         });
+    }
+
+    #[gpui::test]
+    fn pending_restore_given_up_lands_as_a_conversation_with_no_place_does(
+        cx: &mut TestAppContext,
+    ) {
+        for unread_on in [true, false] {
+            let cxw = cx.add_empty_window();
+            let drag = ScrollbarDragCell::default();
+            let transcript = cxw.update(|_, cx| {
+                let focus = cx.focus_handle();
+                cx.new(|cx| TranscriptView::new(focus, drag, cx))
+            });
+            let features = IrcServerFeatures::new();
+            let place = pending_place();
+            let other: Vec<Message> = (0..4)
+                .map(|i| chat_with_msgid("anna", &format!("fill {i}"), i + 1, &format!("fill-{i}")))
+                .collect();
+            transcript.update(cx, |view, cx| {
+                view.set_conversation(empty_lines(&features));
+                view.restore_scroll_place(Some(&place), unread_on, true);
+                view.refresh_conversation(
+                    ConversationLines {
+                        messages: &other,
+                        mark: Some(3),
+                        facts: HashMap::new(),
+                        self_nick: "me",
+                        features: &features,
+                        typing_peer: None,
+                        today: chrono::Local::now().date_naive(),
+                    },
+                    cx,
+                );
+                assert!(view.has_pending_restore());
+                view.give_up_pending_restore(cx);
+                match crate::model::unread::unread_mark_row(view.rows()) {
+                    Some(mark) if unread_on => assert_eq!(
+                        view.logical_scroll_top().item_ix,
+                        mark,
+                        "a give-up with the preference on lands on the unread mark"
+                    ),
+                    _ => assert!(
+                        view.reports_follow_end(),
+                        "a give-up with the preference off lands at the end"
+                    ),
+                }
+            });
+        }
     }
 
     #[gpui::test]

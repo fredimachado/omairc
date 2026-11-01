@@ -6,6 +6,13 @@ use super::{ConversationLines, TranscriptScrolled, TranscriptView};
 use crate::model::scroll_place::{has_line, resume, LivePlace, Resume, SavedPlace};
 use crate::model::unread;
 
+/// A saved line the transcript waits for. A give-up lands as a conversation with no saved
+/// place does, so it keeps the unread preference the wait started with.
+pub(super) struct PendingRestore {
+    place: SavedPlace,
+    open_at_unread: bool,
+}
+
 impl TranscriptView {
     /// Follow-end for the controller. False while a restore is pending so the
     /// server read marker does not jump past unread backlog on the interim tail.
@@ -60,12 +67,13 @@ impl TranscriptView {
     }
 
     /// Gives up a pending restore whose history settled without its line, or whose request
-    /// never settled. The list lands at the end, as a conversation with no saved place does.
+    /// never settled. The list lands where a conversation with no saved place lands: on its
+    /// unread mark when the wait's preference is on and a mark exists, else at the end.
     pub fn give_up_pending_restore(&mut self, cx: &mut Context<Self>) {
-        if self.pending_restore.is_none() {
+        let Some(pending) = self.pending_restore.take() else {
             return;
-        }
-        self.restore_scroll_place(None, false, false);
+        };
+        self.restore_scroll_place(None, pending.open_at_unread, false);
         cx.notify();
     }
 
@@ -92,7 +100,10 @@ impl TranscriptView {
     pub fn refresh_conversation(&mut self, lines: ConversationLines, cx: &mut Context<Self>) {
         let previous_rows = self.model.rows().len();
         let was_at_end = self.reader_following();
-        let pending = self.pending_restore.clone();
+        let pending = self
+            .pending_restore
+            .as_ref()
+            .map(|pending| pending.place.clone());
         let live = (pending.is_none() && !was_at_end)
             .then(|| self.capture_live_place())
             .flatten();
@@ -174,8 +185,8 @@ impl TranscriptView {
 
     /// Skips unread/day dividers for persistence. Returns a pending place while waiting.
     pub fn capture_scroll_place(&self) -> SavedPlace {
-        if let Some(place) = self.pending_restore.clone() {
-            return place;
+        if let Some(pending) = &self.pending_restore {
+            return pending.place.clone();
         }
         SavedPlace::from_anchor(self.model.scroll(), self.model.rows())
     }
@@ -199,7 +210,8 @@ impl TranscriptView {
 
     /// Lands on `place`. With `wait_for_history`, a line that is not shown yet keeps the
     /// place pending, and the list stays at the end until the line arrives or its
-    /// history settles without it.
+    /// history settles without it. `open_at_unread` is the unread preference: a place-less
+    /// landing opens on the mark when it is on, and a pending wait keeps it for a give-up.
     pub fn restore_scroll_place(
         &mut self,
         place: Option<&SavedPlace>,
@@ -210,14 +222,17 @@ impl TranscriptView {
         self.landing = false;
         if let Some(line @ SavedPlace::Line { .. }) = place {
             if wait_for_history && !has_line(line, self.model.rows()) {
-                self.pending_restore = Some(line.clone());
+                self.pending_restore = Some(PendingRestore {
+                    place: line.clone(),
+                    open_at_unread,
+                });
                 self.model.set_pinned_to_bottom(true);
                 self.reported_at_end = false;
                 return;
             }
         }
         let rows = self.model.rows();
-        let mark = unread::opening_row(rows, open_at_unread);
+        let mark = unread::opening_row(rows, open_at_unread && place.is_none());
         match resume(place, rows) {
             Resume::End => match mark {
                 Some(row) => self.reveal_row(row),
