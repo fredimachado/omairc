@@ -296,7 +296,7 @@ impl Shell {
                     typing_peer,
                     today: self.transcript_calendar.local_date,
                 };
-                let open_at_unread = self.controller.preferences().unread;
+                let open_at_unread = place.is_none() && self.controller.preferences().unread;
                 let place = place.or_else(|| self.saved_place(&self.shown.conversation));
                 // A saved line that a history request in flight may still bring waits for it.
                 let wait_for_history = self.controller.transcript_history_awaited();

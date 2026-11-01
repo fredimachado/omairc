@@ -232,7 +232,7 @@ impl TranscriptView {
             }
         }
         let rows = self.model.rows();
-        let mark = unread::opening_row(rows, open_at_unread && place.is_none());
+        let mark = unread::opening_row(rows, open_at_unread);
         match resume(place, rows) {
             Resume::End => match mark {
                 Some(row) => self.reveal_row(row),

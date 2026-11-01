@@ -566,7 +566,7 @@ fn with_unread_off_a_direct_message_opens_at_the_end(cx: &mut gpui::TestAppConte
 }
 
 #[gpui::test]
-fn a_saved_end_reopens_at_the_end_over_a_mark(cx: &mut gpui::TestAppContext) {
+fn a_saved_end_with_nothing_new_reopens_at_the_end(cx: &mut gpui::TestAppContext) {
     let mut ui = fixture::open(cx);
     unread_direct_lines(&mut ui, "newbie", 60);
     ui.select("newbie");
@@ -578,9 +578,33 @@ fn a_saved_end_reopens_at_the_end_over_a_mark(cx: &mut gpui::TestAppContext) {
     assert_eq!(
         ui.top_kind(),
         None,
-        "a saved end reopens at the end, even with a mark in the transcript"
+        "a saved end with nothing new reopens at the end; reselecting a read conversation clears its mark"
     );
     assert!(ui.at_end());
     assert!(ui.reported_end(), "the reader at the end reports it");
     assert!(ui.saved_place("newbie").follow_end);
+}
+
+#[gpui::test]
+fn a_saved_end_reopens_on_the_mark_of_lines_that_arrived_while_away(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    unread_direct_lines(&mut ui, "newbie", 5);
+    ui.select("newbie");
+    ui.shell.update(ui.cx, |shell, cx| {
+        shell.transcript.update(cx, |t, cx| t.scroll_to_bottom(cx));
+    });
+    ui.settle();
+    // Leaving at the end saves the end; sixty lines then arrive while the reader is away.
+    unread_direct_lines(&mut ui, "newbie", 60);
+    assert!(ui.saved_place("newbie").follow_end);
+    ui.select("newbie");
+    assert_eq!(
+        ui.top_kind(),
+        Some(RowKind::UnreadMark),
+        "a saved end reopens on the New messages mark, as main does"
+    );
+    assert!(
+        !ui.reported_end(),
+        "the reader on the mark does not report the end, so the new lines stay unread"
+    );
 }
