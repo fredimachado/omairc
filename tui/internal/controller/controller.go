@@ -611,8 +611,27 @@ func (c *Controller) isKnownNetwork(networkID string) bool {
 			return true
 		}
 	}
+	return c.isStoredNetwork(networkID)
+}
+
+func (c *Controller) isStoredNetwork(networkID string) bool {
+	if networkID == "" {
+		return false
+	}
 	_, ok := slices.BinarySearch(c.storedProfileIDs, networkID)
 	return ok
+}
+
+func (c *Controller) isMovableNetwork(networkID string) bool {
+	if c.isStoredNetwork(networkID) {
+		return true
+	}
+	// Ephemeral shells (demo and unit tests) have no saved profiles; live
+	// sessions may still reorder in memory without persisting draft ids.
+	if c.ephemeral && c.manager.Find(networkID) != nil {
+		return true
+	}
+	return false
 }
 
 // Reducer returns the event reducer the controller folds into.
@@ -2103,6 +2122,9 @@ func (c *Controller) SetAllNetworksCollapsed(collapsed bool) {
 // unknown network, or a move past either end of the list. Focus stays with the
 // network id; the controller keeps no focus.
 func (c *Controller) MoveNetwork(networkID string, delta int) bool {
+	if !c.isMovableNetwork(networkID) {
+		return false
+	}
 	order := c.NetworkOrder()
 	idx := -1
 	for index, id := range order {

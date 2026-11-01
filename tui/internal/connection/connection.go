@@ -691,7 +691,6 @@ func (c *Connection) Apply() bool {
 	c.draft = profile
 	c.selectedNetworkID = profile.NetworkID
 	c.draftChanged()
-	c.networksChanged()
 	if wasSetup != c.SetupRequired() {
 		c.setupChanged()
 	}
@@ -704,6 +703,7 @@ func (c *Connection) Apply() bool {
 	} else {
 		sessionAccepted = c.reconcile(profile)
 	}
+	c.networksChanged()
 
 	password.edited = false
 	nickServ.edited = false

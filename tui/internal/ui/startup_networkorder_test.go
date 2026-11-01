@@ -10,6 +10,7 @@ import (
 
 	"github.com/fredimachado/omairc/tui/internal/connection"
 	"github.com/fredimachado/omairc/tui/internal/controller"
+	"github.com/fredimachado/omairc/tui/internal/irc"
 	"github.com/fredimachado/omairc/tui/internal/session"
 	"github.com/fredimachado/omairc/tui/internal/storage"
 )
@@ -278,7 +279,6 @@ func TestNetworkOrderSaveNewNetworkAfterRestart(t *testing.T) {
 	if !m.conn.Apply() {
 		t.Fatal("Apply() = false")
 	}
-	m.ctrl.RefreshStoredProfileIDs()
 	m.syncSidebarNetworkOrder()
 	m.alignConnectionStoredOrder()
 
@@ -343,6 +343,101 @@ func TestNetworkOrderAfterSaveContainsOnlyStoredIDs(t *testing.T) {
 	for _, id := range order {
 		if id == draftID {
 			t.Fatalf("networkOrder contains draft id %q", draftID)
+		}
+	}
+}
+
+func TestNetworkOrderDraftWithStatusNotMovable(t *testing.T) {
+	dir := configDir(t)
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	store := storage.NewProfileStore()
+
+	ctrl := controller.New()
+	ctrl.SetEphemeral(false)
+	ctrl.LoadStoredPreferences()
+	conn := connection.New(ctrl, func() session.Transport { return session.NewLoopbackTransport() })
+	conn.SetProfileStore(store)
+
+	first := connection.SuggestedProfile()
+	first.NetworkID = "net-first"
+	first.Nick = "omairc"
+	first.Username = "omairc"
+	first.Realname = "Omairc"
+	first.Name = "First"
+	if status := store.Save(storageStoredProfile(first.NetworkID, first.Name)); status != storage.StatusWritten {
+		t.Fatalf("Save(%q) = %v", first.NetworkID, status)
+	}
+	conn.SetProfileStore(store)
+	ctrl.RefreshStoredProfileIDs()
+
+	m := New(ctrl, conn)
+	if !conn.Add() {
+		t.Fatal("Add() = false, want a Connect draft")
+	}
+	draftID := conn.SelectedNetworkID()
+	ctrl.StatusEntry(irc.Outcome(draftID, "Unknown command: /help", time.Now()))
+	m.sidebarNetworkFocusID = draftID
+	m.moveFocusedNetwork(-1)
+
+	settings := storage.OpenSettings("")
+	order := settings.StringList("preferences", "networkOrder")
+	if slices.Contains(order, draftID) {
+		t.Fatalf("networkOrder contains draft id %q after Status traffic and move attempt", draftID)
+	}
+}
+
+func TestNetworkOrderNewSaveMovableImmediately(t *testing.T) {
+	dir := configDir(t)
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	store := storage.NewProfileStore()
+	if status := store.Save(storageStoredProfile("net-alpha", "Alpha")); status != storage.StatusWritten {
+		t.Fatalf("Save(net-alpha) = %v", status)
+	}
+
+	ctrl := controller.New()
+	ctrl.SetEphemeral(false)
+	ctrl.LoadStoredPreferences()
+	conn := connection.New(ctrl, func() session.Transport { return session.NewLoopbackTransport() })
+	conn.SetProfileStore(store)
+	conn.SetEphemeral(false)
+	conn.OnNetworksChanged = func() { ctrl.RefreshStoredProfileIDs() }
+	ctrl.RefreshStoredProfileIDs()
+	_ = New(ctrl, conn)
+
+	if !conn.Add() {
+		t.Fatal("Add() = false")
+	}
+	conn.SetName("Bravo")
+	conn.SetHost("irc.bravo.example")
+	conn.SetNick("omairc")
+	conn.SetUsername("omairc")
+	conn.SetRealname("Omairc")
+	bravoID := conn.SelectedNetworkID()
+	if !conn.Apply() {
+		t.Fatal("Apply() = false")
+	}
+	settings := storage.OpenSettings("")
+	if !slices.Contains(settings.ChildGroups("networks"), bravoID) {
+		t.Fatalf("saved profile %q missing from store: %v", bravoID, settings.ChildGroups("networks"))
+	}
+	order := ctrl.NetworkOrder()
+	idx := slices.Index(order, bravoID)
+	if idx < 0 {
+		t.Fatalf("saved profile missing from NetworkOrder(): %v", order)
+	}
+	delta := -1
+	if idx == 0 {
+		delta = 1
+	}
+	if !ctrl.MoveNetwork(bravoID, delta) {
+		t.Fatalf("MoveNetwork(%q, %d) = false, want true without manual cache refresh (order=%v)", bravoID, delta, order)
+	}
+	wantOrder := append([]string(nil), order...)
+	wantOrder[idx], wantOrder[idx+delta] = wantOrder[idx+delta], wantOrder[idx]
+	if got := settings.StringList("preferences", "networkOrder"); !slices.Equal(got, wantOrder) {
+		settings = storage.OpenSettings("")
+		if got := settings.StringList("preferences", "networkOrder"); !slices.Equal(got, wantOrder) {
+			t.Fatalf("networkOrder = %v, want %v", got, wantOrder)
 		}
 	}
 }

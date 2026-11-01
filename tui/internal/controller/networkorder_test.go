@@ -3,6 +3,7 @@ package controller
 import (
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/fredimachado/omairc/tui/internal/irc"
 	"github.com/fredimachado/omairc/tui/internal/session"
@@ -114,6 +115,7 @@ func TestMoveNetwork(t *testing.T) {
 	for _, id := range []string{"alpha", "omarchy", "zulu"} {
 		addNetwork(t, c, id)
 	}
+	c.storedProfileIDs = []string{"alpha", "omarchy", "zulu"}
 	c.SetNetworkOrder([]string{"alpha", "omarchy", "zulu"})
 
 	if !c.MoveNetwork("omarchy", -1) {
@@ -145,6 +147,23 @@ func TestMoveNetwork(t *testing.T) {
 	}
 	if got, want := c.NetworkOrder(), []string{"alpha", "omarchy", "zulu"}; !slices.Equal(got, want) {
 		t.Fatalf("NetworkOrder() = %v after rejected moves, want %v", got, want)
+	}
+}
+
+func TestMoveNetworkRejectsUnstoredKnownNetwork(t *testing.T) {
+	c := New()
+	c.SetEphemeral(false)
+	c.storedProfileIDs = []string{"alpha", "omarchy"}
+	c.SetNetworkOrder([]string{"alpha", "omarchy"})
+	c.StatusEntry(irc.Outcome("draft-with-status", "Unknown command: /help", time.Now()))
+	if !slices.Contains(c.NetworkOrder(), "draft-with-status") {
+		t.Fatal("NetworkOrder() must list draft known from Status traffic")
+	}
+	if c.MoveNetwork("draft-with-status", -1) {
+		t.Fatal("MoveNetwork(draft-with-status) = true, want false")
+	}
+	if slices.Contains(c.networkOrder, "draft-with-status") {
+		t.Fatalf("networkOrder persisted draft id %q", "draft-with-status")
 	}
 }
 
