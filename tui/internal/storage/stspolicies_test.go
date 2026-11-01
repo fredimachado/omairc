@@ -29,7 +29,7 @@ func TestIniSTSStorePolicySurvivesRestartUnderQtGroupLayout(t *testing.T) {
 	// client/src/storage/stspolicies.rs::a_policy_survives_a_restart_under_the_qt_group_layout
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nested", "sts")
-	NewIniSTSStore(path).Store("IRC.example ", 6697, 60, 1000)
+	NewIniSTSStore(path).Store("IRC.example ", 6697, 60, 1000, nil)
 
 	restarted := NewIniSTSStore(path)
 	entry, ok := restarted.Lookup("irc.example", 1030)
@@ -79,7 +79,7 @@ func TestIniSTSStoreExpiredEntryIsDroppedFromFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sts")
 	store := NewIniSTSStore(path)
-	store.Store("irc.example", 6697, 60, 0)
+	store.Store("irc.example", 6697, 60, 0, nil)
 
 	if _, ok := store.Lookup("irc.example", 60); ok {
 		t.Fatal("expired entry must not apply")
@@ -120,8 +120,8 @@ func TestIniSTSStoreZeroDurationClearsHost(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sts")
 	store := NewIniSTSStore(path)
-	store.Store("irc.example", 6697, 60, 0)
-	store.Store("irc.example", 6697, 0, 0)
+	store.Store("irc.example", 6697, 60, 0, nil)
+	store.Store("irc.example", 6697, 0, 0, nil)
 	if _, ok := store.Lookup("irc.example", 1); ok {
 		t.Fatal("zero duration must clear")
 	}
@@ -135,7 +135,7 @@ func TestIniSTSStoreLookupOrClearWithNothingStoredWritesNoFile(t *testing.T) {
 	if _, ok := store.Lookup("irc.example", 1); ok {
 		t.Fatal("empty store must miss")
 	}
-	store.Clear("irc.example")
+	store.Clear("irc.example", nil)
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("clear of nothing must not create the file: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestIniSTSStoreMalformedFileIsBackedUpAndNewPolicySurvives(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := NewIniSTSStore(path)
-	if status := store.Store("irc.example", 6697, 60, 0); status != StatusWritten {
+	if status := store.Store("irc.example", 6697, 60, 0, nil); status != StatusWritten {
 		t.Fatalf("Store status = %v, want Written", status)
 	}
 	backup, err := os.ReadFile(filepath.Join(dir, "sts.corrupt"))
@@ -179,14 +179,14 @@ func TestIniSTSStoreSecondMalformedWriteDoesNotClobberFirstBackup(t *testing.T) 
 		t.Fatal(err)
 	}
 	store := NewIniSTSStore(path)
-	if status := store.Store("irc.example", 6697, 60, 0); status != StatusWritten {
+	if status := store.Store("irc.example", 6697, 60, 0, nil); status != StatusWritten {
 		t.Fatal(status)
 	}
 	second := "second garbage without equals\n"
 	if err := os.WriteFile(path, []byte(second), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if status := store.Store("other.example", 6697, 30, 10); status != StatusWritten {
+	if status := store.Store("other.example", 6697, 30, 10, nil); status != StatusWritten {
 		t.Fatal(status)
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, "sts.corrupt"))
@@ -218,7 +218,7 @@ func TestIniSTSStoreValidEntriesInPartlyMalformedFileArePreserved(t *testing.T) 
 		t.Fatal(err)
 	}
 	store := NewIniSTSStore(path)
-	if status := store.Store("third.example", 6699, 10, 1_700_000_000); status != StatusWritten {
+	if status := store.Store("third.example", 6699, 10, 1_700_000_000, nil); status != StatusWritten {
 		t.Fatal(status)
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, "sts.corrupt"))
@@ -248,7 +248,7 @@ func TestIniSTSStoreShorterDurationReplacesExistingExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := NewIniSTSStore(path)
-	if status := store.Store("irc.example", 7000, 10, 100); status != StatusWritten {
+	if status := store.Store("irc.example", 7000, 10, 100, nil); status != StatusWritten {
 		t.Fatal(status)
 	}
 	entry, ok := store.Lookup("irc.example", 100)
@@ -266,7 +266,7 @@ func TestIniSTSStoreLongerDurationReplacesExistingExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := NewIniSTSStore(path)
-	if status := store.Store("irc.example", 6697, 3600, 100); status != StatusWritten {
+	if status := store.Store("irc.example", 6697, 3600, 100, nil); status != StatusWritten {
 		t.Fatal(status)
 	}
 	entry, ok := store.Lookup("irc.example", 100)
@@ -288,7 +288,7 @@ func TestIniSTSStoreFailedBackupLeavesFileAlone(t *testing.T) {
 	defer restore()
 
 	store := NewIniSTSStore(path)
-	if status := store.Store("irc.example", 6697, 60, 0); status != StatusFormatError {
+	if status := store.Store("irc.example", 6697, 60, 0, nil); status != StatusFormatError {
 		t.Fatalf("Store status = %v, want FormatError", status)
 	}
 	raw, err := os.ReadFile(path)
@@ -319,7 +319,7 @@ func TestIniSTSStoreFailedCopyFallbackLeavesSTSIntact(t *testing.T) {
 	defer restore()
 
 	store := NewIniSTSStore(path)
-	if status := store.Store("irc.example", 6697, 60, 0); status != StatusFormatError {
+	if status := store.Store("irc.example", 6697, 60, 0, nil); status != StatusFormatError {
 		t.Fatalf("Store status = %v, want FormatError", status)
 	}
 	raw, err := os.ReadFile(path)
@@ -353,7 +353,7 @@ func TestIniSTSStoreExhaustingCorruptBackupNamesFailsClosed(t *testing.T) {
 	defer restore()
 
 	store := NewIniSTSStore(path)
-	if status := store.Store("irc.example", 6697, 60, 0); status != StatusFormatError {
+	if status := store.Store("irc.example", 6697, 60, 0, nil); status != StatusFormatError {
 		t.Fatalf("Store status = %v, want FormatError", status)
 	}
 	raw, err := os.ReadFile(path)
@@ -387,7 +387,7 @@ func TestIniSTSStoreFailedWriteAfterBackupLeavesSTSIntact(t *testing.T) {
 	defer restore()
 
 	store := NewIniSTSStore(path)
-	if status := store.Store("irc.example", 6697, 60, 0); status != StatusFormatError {
+	if status := store.Store("irc.example", 6697, 60, 0, nil); status != StatusFormatError {
 		t.Fatalf("Store status = %v, want FormatError", status)
 	}
 	raw, err := os.ReadFile(path)
@@ -433,7 +433,7 @@ func TestIniSTSStoreExistingBackupNameIsNeverClobbered(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := NewIniSTSStore(path)
-	if status := store.Store("irc.example", 6697, 60, 0); status != StatusWritten {
+	if status := store.Store("irc.example", 6697, 60, 0, nil); status != StatusWritten {
 		t.Fatal(status)
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, "sts.corrupt"))
@@ -461,7 +461,7 @@ func TestIniSTSStoreInvalidPortEntryDoesNotBeatValidPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := NewIniSTSStore(path)
-	if status := store.Store("irc.example", 6697, 60, 1_700_000_000); status != StatusWritten {
+	if status := store.Store("irc.example", 6697, 60, 1_700_000_000, nil); status != StatusWritten {
 		t.Fatal(status)
 	}
 	restarted := NewIniSTSStore(path)
@@ -484,7 +484,7 @@ func TestIniSTSStoreBadLineInsideValidGroupKeepsPolicy(t *testing.T) {
 	if !ok || entry.Port != 6697 || entry.DurationSeconds != 60 || entry.ExpiryEpochSeconds != 4_102_444_800 {
 		t.Fatalf("policy must stay intact on load: %+v ok=%v", entry, ok)
 	}
-	if status := store.Store("other.example", 6698, 30, 1_700_000_000); status != StatusWritten {
+	if status := store.Store("other.example", 6698, 30, 1_700_000_000, nil); status != StatusWritten {
 		t.Fatal(status)
 	}
 	restarted := NewIniSTSStore(path)
@@ -518,7 +518,7 @@ func TestIniSTSStoreUnclosedHeaderDoesNotMergeIntoCompleteGroup(t *testing.T) {
 	if entry.Port == 7000 {
 		t.Fatal("B's port must not merge into A")
 	}
-	if status := store.Store("third.example", 6699, 10, 1_700_000_000); status != StatusWritten {
+	if status := store.Store("third.example", 6699, 10, 1_700_000_000, nil); status != StatusWritten {
 		t.Fatal(status)
 	}
 	restarted := NewIniSTSStore(path)
@@ -552,7 +552,7 @@ func TestIniSTSStoreUnclosedHeaderDoesNotMergeIntoPartialGroup(t *testing.T) {
 	if _, ok := store.Lookup("irc.example", 1_700_000_000); ok {
 		t.Fatal("partial A without expiry must not become a full policy from B's keys")
 	}
-	if status := store.Store("third.example", 6699, 10, 1_700_000_000); status != StatusWritten {
+	if status := store.Store("third.example", 6699, 10, 1_700_000_000, nil); status != StatusWritten {
 		t.Fatal(status)
 	}
 	text, err := os.ReadFile(path)
@@ -586,7 +586,7 @@ func TestIniSTSStoreKeysUnderGarbageHeaderAreNotSaved(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := NewIniSTSStore(path)
-	if status := store.Store("third.example", 6699, 10, 1_700_000_000); status != StatusWritten {
+	if status := store.Store("third.example", 6699, 10, 1_700_000_000, nil); status != StatusWritten {
 		t.Fatal(status)
 	}
 	entry, ok := store.Lookup("irc.example", 1_700_000_000)
@@ -613,7 +613,7 @@ func TestIniSTSStoreFileIsOwnerOnlyAfterWrite(t *testing.T) {
 	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sts")
-	NewIniSTSStore(path).Store("irc.example", 6697, 60, 0)
+	NewIniSTSStore(path).Store("irc.example", 6697, 60, 0, nil)
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
@@ -644,7 +644,7 @@ func TestIniSTSStoreReadOnlyMalformedFileIsLeftAlone(t *testing.T) {
 	}
 
 	store := NewIniSTSStore(path)
-	if status := store.Store("irc.example", 6697, 60, 0); status != StatusAccessError {
+	if status := store.Store("irc.example", 6697, 60, 0, nil); status != StatusAccessError {
 		_ = os.Chmod(path, 0o644)
 		t.Fatalf("Store status = %v, want AccessError", status)
 	}
@@ -673,7 +673,7 @@ func TestIniSTSStoreCorruptBackupIsOwnerOnlyAfterRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := NewIniSTSStore(path)
-	if status := store.Store("irc.example", 6697, 60, 0); status != StatusWritten {
+	if status := store.Store("irc.example", 6697, 60, 0, nil); status != StatusWritten {
 		t.Fatal(status)
 	}
 	backup := filepath.Join(dir, "sts.corrupt")
@@ -729,7 +729,7 @@ func TestRecoverMalformedSTSThroughSymlink(t *testing.T) {
 	}
 
 	store := NewIniSTSStore(link)
-	store.Store("irc.example", 6697, 60, 1000)
+	store.Store("irc.example", 6697, 60, 1000, nil)
 
 	linkInfo, err := os.Lstat(link)
 	if err != nil || linkInfo.Mode()&os.ModeSymlink == 0 {
@@ -776,7 +776,7 @@ func TestRecoverMalformedSTSThroughSymlinkedDataDirectory(t *testing.T) {
 	}
 
 	store := NewIniSTSStore(link)
-	store.Store("irc.example", 6697, 60, 1000)
+	store.Store("irc.example", 6697, 60, 1000, nil)
 
 	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Fatal("sts path must remain a symlink")
@@ -802,7 +802,7 @@ func TestIniSTSStoreJunkGroupsAreDroppedByTheNextWrite(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "sts")
 			store := NewIniSTSStore(path)
-			if status := store.Store("irc.example", 6697, 60, now); status != StatusWritten {
+			if status := store.Store("irc.example", 6697, 60, now, nil); status != StatusWritten {
 				t.Fatalf("seed write = %v", status)
 			}
 			raw, err := os.ReadFile(path)
@@ -816,7 +816,7 @@ func TestIniSTSStoreJunkGroupsAreDroppedByTheNextWrite(t *testing.T) {
 				t.Fatal("the real policy must load beside junk")
 			}
 
-			if status := store.Store("irc.example", 6697, 60, now); status != StatusWritten {
+			if status := store.Store("irc.example", 6697, 60, now, nil); status != StatusWritten {
 				t.Fatalf("write = %v", status)
 			}
 
