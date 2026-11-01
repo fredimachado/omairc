@@ -381,13 +381,17 @@ impl TranscriptView {
     /// is not used: while the list follows the tail, its top is the full content
     /// height, so a relative move from there lands past the bottom and the next
     /// layout snaps back. Clamping to the real range and setting the absolute
-    /// offset avoids that, and reaching the bottom re-pins the tail.
+    /// offset avoids that, and reaching the bottom re-pins the tail. Between a reset and
+    /// its layout there are no heights to move by, so the list stays where it is, as gpui
+    /// does for a wheel.
     fn scroll_by_px(&mut self, delta: f32, cx: &mut Context<Self>) {
+        if !self.list_measured {
+            return;
+        }
         let list = &self.list_state;
         let max = f32::from(list.max_offset_for_scrollbar().height);
         let current = -f32::from(list.scroll_px_offset_for_scrollbar().y);
         let target = scroll_target(current, max, delta);
-        self.model.set_pinned_to_bottom(target >= max);
         list.set_offset_from_scrollbar(Point::new(px(0.), px(target)));
         self.note_transcript_scroll(cx);
     }

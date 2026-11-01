@@ -3,7 +3,7 @@
 //! measured) does not move the place, and what moves the rows keeps it on its line.
 
 use super::fixture::{self, SeededShell, OMARCHY, WINDOW_HEIGHT, WINDOW_WIDTH};
-use super::scroll_restore::top_msgid;
+use super::scroll_restore::{request_history, top_msgid, waiting, waiting_above_a_mark};
 use crate::model::transcript::RowKind;
 use crate::storage::scrollplace::ScrollPlace;
 
@@ -180,4 +180,58 @@ fn a_rebuild_keeps_a_reader_where_they_are(cx: &mut gpui::TestAppContext) {
         "a reader who went to the end is not sent back to the mark"
     );
     assert!(ui.reported_end());
+}
+
+#[gpui::test]
+fn a_page_key_before_a_layout_keeps_the_place(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    unread_direct_lines(&mut ui, "newbie", 60);
+    ui.select("newbie");
+    // One update, so no frame lays the list out between the line and the key.
+    ui.shell.update(ui.cx, |shell, cx| {
+        shell
+            .controller
+            .demo()
+            .expect("demo controller")
+            .inject(OMARCHY, b":newbie!u@h PRIVMSG fred :one more\r\n");
+        shell.tick(cx);
+        shell.transcript.update(cx, |t, cx| {
+            t.scroll_page(false, false, cx);
+            assert!(
+                !t.reports_follow_end(),
+                "a reset list has no heights, which must not read as the end"
+            );
+        });
+    });
+    ui.settle();
+    assert_eq!(ui.save_place("newbie").body, "line 0");
+}
+
+#[gpui::test]
+fn a_scrollbar_click_after_a_resize_goes_by_the_whole_transcript(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    unread_direct_lines(&mut ui, "newbie", 60);
+    ui.select("newbie");
+    let width = WINDOW_WIDTH * 0.6;
+    ui.resize(width, WINDOW_HEIGHT);
+    ui.click(width - 2., WINDOW_HEIGHT / 2.);
+    assert!(
+        ui.scroll_top().item_ix >= 15,
+        "the middle of the track is the middle of sixty lines, not of the rows drawn so far"
+    );
+    assert!(!ui.reported_end());
+}
+
+#[gpui::test]
+fn a_find_jump_during_a_wait_retires_it_and_saves_the_line(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    waiting_above_a_mark(&mut ui, true, request_history);
+    ui.resize(WINDOW_WIDTH * 0.6, WINDOW_HEIGHT);
+    ui.jump_to("landing line 0");
+    assert!(!waiting(&ui), "a jump retires the wait");
+    assert_eq!(
+        ui.save_place("anna").body,
+        "landing line 0",
+        "the place saved is the line jumped to, not the waiting line"
+    );
 }
