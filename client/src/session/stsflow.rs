@@ -70,13 +70,15 @@ impl Core {
 
     /// Refreshes the cached policy's expiry from now, for the duration last advertised over TLS.
     /// It runs on every disconnect and on stop, so a long session keeps its policy alive. The
-    /// cache extends only a policy that still has that duration, so a newer one another client
-    /// saved survives (`rescheduleStsExpiryLocked`).
+    /// duration is taken, so only the first refresh after a connection ends extends it: a stop
+    /// that follows a drop does not re-arm a policy that already lapsed. The cache extends only
+    /// a policy that still has that duration, so a newer one another client saved survives
+    /// (`rescheduleStsExpiryLocked`).
     pub(crate) fn reschedule_sts_expiry(&mut self) {
         if !self.tls_enabled {
             return;
         }
-        let Some(duration) = self.sts_duration else {
+        let Some(duration) = self.sts_duration.take() else {
             return;
         };
         let now = self.now();

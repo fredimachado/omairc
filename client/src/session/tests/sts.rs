@@ -253,6 +253,24 @@ fn stopping_the_session_refreshes_the_expiry() {
 }
 
 #[test]
+fn a_stop_after_a_drop_does_not_rearm_a_lapsed_policy() {
+    let fx = Fixture::new(tls_config());
+    fx.connect_tls();
+    fx.inject(":server CAP omairc LS :sts=duration=60\r\n");
+    fx.clock.advance(Duration::from_secs(30));
+    fx.transport.remote_close();
+    fx.clock.advance(Duration::from_secs(70));
+
+    fx.session.stop();
+
+    assert_eq!(
+        fx.sts.lookup(HOST, fx.clock.now()),
+        None,
+        "the drop refreshed the policy to 90s, so a stop at 100s must not extend it"
+    );
+}
+
+#[test]
 fn networks_on_one_manager_share_the_policy_cache() {
     let manager = SessionManager::new(Rc::new(MemoryStsStore::default()));
     let clock = Rc::new(FakeClock::new(Utc.timestamp_opt(0, 0).single().unwrap()));

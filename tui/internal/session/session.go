@@ -1836,11 +1836,16 @@ func (s *Session) shouldFinishStsUpgradeLocked() bool {
 		!s.expectedDisconnect && !s.reconnectAfterDisconnect
 }
 
+// rescheduleStsExpiryLocked takes the duration, so only the first refresh after
+// a connection ends extends the policy. A stop after a drop then cannot re-arm a
+// policy that already lapsed.
 func (s *Session) rescheduleStsExpiryLocked() {
 	if !s.tlsEnabled || s.stsDuration == nil {
 		return
 	}
-	s.persistSTS(s.sts.Refresh(s.config.Host, *s.stsDuration, s.clock.Now()))
+	duration := *s.stsDuration
+	s.stsDuration = nil
+	s.persistSTS(s.sts.Refresh(s.config.Host, duration, s.clock.Now()))
 }
 
 // persistSTS surfaces a disk-persistence failure without rolling back the
