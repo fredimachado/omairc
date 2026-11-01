@@ -9,10 +9,10 @@ use chrono::{DateTime, Utc};
 
 use crate::irc::event::ConversationKey;
 use crate::irc::readmarker::{read_marker_time_after, read_marker_time_millis};
-use crate::irc::world::{MessageKind, Origin};
+use crate::irc::world::{Message, MessageKind, Origin};
 
 use super::facts::Facts;
-use super::state::ConversationState;
+use super::state::{zero_time, ConversationState};
 use super::transcript::{classify_chat_line, ChatLineReason};
 use super::EventReducer;
 
@@ -23,6 +23,15 @@ pub(super) fn covered(marker: Option<DateTime<Utc>>, server_time: Option<DateTim
         (Some(marker), Some(server_time)) => !read_marker_time_after(server_time, marker),
         _ => false,
     }
+}
+
+/// The time a row is read by under the marker. A server-stamped line carries its server
+/// time. A replayed row without one, such as a line read back from the local log, keeps the
+/// time it was stored with, which is the server's time for a line the server stamped.
+fn read_time(message: &Message) -> Option<DateTime<Utc>> {
+    message.server_time.or_else(|| {
+        (message.origin == Origin::Replay && message.time != zero_time()).then_some(message.time)
+    })
 }
 
 /// Whether a row's line is covered by the conversation's read marker
@@ -70,7 +79,7 @@ fn recount_unread_from_read_marker(facts: &Facts, conv: &mut ConversationState, 
         if facts.is_self(network, &message.author) {
             continue;
         }
-        if covered(marker, message.server_time) {
+        if covered(marker, read_time(message)) {
             continue;
         }
         let nick_hit = facts.is_nick_mention(network, &message.body);
