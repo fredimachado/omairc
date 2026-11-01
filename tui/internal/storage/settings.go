@@ -504,7 +504,36 @@ func writeSettingsAtomic(path string, data []byte, preserveMode bool) error {
 		return err
 	}
 	tmpName = ""
+	noteAtomicWrite()
 	return nil
+}
+
+// Test-only atomic-write counter. Production builds keep the hooks as no-ops
+// via the empty helpers below; tests enable counting around one call.
+
+var (
+	atomicWriteCountEnabled bool
+	atomicWriteCount        int
+)
+
+// BeginAtomicWriteCount starts counting successful settings renames.
+func BeginAtomicWriteCount() {
+	atomicWriteCountEnabled = true
+	atomicWriteCount = 0
+}
+
+// EndAtomicWriteCount stops counting and returns how many renames ran.
+func EndAtomicWriteCount() int {
+	atomicWriteCountEnabled = false
+	count := atomicWriteCount
+	atomicWriteCount = 0
+	return count
+}
+
+func noteAtomicWrite() {
+	if atomicWriteCountEnabled {
+		atomicWriteCount++
+	}
 }
 
 type atomicWriteTarget struct {

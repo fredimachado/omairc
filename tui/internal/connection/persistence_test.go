@@ -341,3 +341,57 @@ func TestEphemeralSkipsDiskAndBackend(t *testing.T) {
 		t.Fatalf("CredentialState() = %v, want SessionOnly", conn.CredentialState())
 	}
 }
+
+func TestRemoveSelectedWritesConfOnceAndClearsOrderCollapse(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	ctrl := controller.New()
+	ctrl.SetEphemeral(false)
+	for _, id := range []string{"zulu", "alpha", "omarchy"} {
+		config := session.DefaultSessionConfig(id, "", "irc."+id+".example", id)
+		if _, err := ctrl.AddSession(config, session.NewLoopbackTransport(), nil); err != nil {
+			t.Fatalf("AddSession(%s): %v", id, err)
+		}
+	}
+	store := storage.NewProfileStore()
+	for _, id := range []string{"zulu", "alpha", "omarchy"} {
+		profile := completeProfile(id, "irc."+id+".example")
+		if status := store.Save(storageProfile(profile)); status != storage.StatusWritten {
+			t.Fatalf("Save(%s) = %v", id, status)
+		}
+	}
+	ctrl.RefreshStoredProfileIDs()
+	ctrl.SetNetworkOrder([]string{"zulu", "alpha", "omarchy"})
+	ctrl.SetNetworkCollapsed("alpha", true)
+	ctrl.SetNetworkCollapsed("omarchy", true)
+
+	conn := New(ctrl, nil)
+	conn.SetProfileStore(store)
+	conn.Select("alpha")
+
+	storage.BeginAtomicWriteCount()
+	if !conn.RemoveSelected() {
+		t.Fatal("RemoveSelected() = false")
+	}
+	writes := storage.EndAtomicWriteCount()
+	if writes != 1 {
+		t.Fatalf("RemoveSelected wrote conf %d times, want 1", writes)
+	}
+
+	settings := storage.OpenSettings("")
+	if groups := settings.ChildGroups("networks"); slices.Contains(groups, "alpha") {
+		t.Fatalf("networks child groups still include alpha: %v", groups)
+	}
+	if got := settings.StringList("preferences", "networkOrder"); !slices.Equal(got, []string{"zulu", "omarchy"}) {
+		t.Fatalf("networkOrder = %v, want [zulu omarchy]", got)
+	}
+	if got := settings.StringList("preferences", "collapsedNetworks"); !slices.Equal(got, []string{"omarchy"}) {
+		t.Fatalf("collapsedNetworks = %v, want [omarchy]", got)
+	}
+	if slices.Contains(ctrl.NetworkOrder(), "alpha") {
+		t.Fatalf("in-memory NetworkOrder still has alpha: %v", ctrl.NetworkOrder())
+	}
+	if ctrl.IsNetworkCollapsed("alpha") {
+		t.Fatal("in-memory collapse still has alpha")
+	}
+}

@@ -535,7 +535,8 @@ func (c *Connection) Discard() {
 // state, and its secrets, then selects a neighbor. It reports whether anything
 // was removed. A read-only or malformed settings file leaves the network in
 // place and records the persistence sentence, mirroring
-// IrcConnection::removeSelected.
+// IrcConnection::removeSelected. Profile removal and sidebar preference lists
+// share one settings Sync.
 func (c *Connection) RemoveSelected() bool {
 	if !c.CanRemove() {
 		return false
@@ -544,14 +545,10 @@ func (c *Connection) RemoveSelected() bool {
 	removed, hadStored := c.storedProfile(id)
 
 	if c.profiles != nil && !c.ephemeral {
-		status := c.profiles.Remove(id)
-		if status == storage.StatusAccessError || status == storage.StatusFormatError {
+		if status := c.profiles.PreflightRemove(id); status == storage.StatusAccessError || status == storage.StatusFormatError {
 			c.assignPersistenceStatus(id,
 				"This network could not be removed. "+settingsFileSentence(status))
 			return false
-		}
-		if status == storage.StatusWritten {
-			delete(c.persistenceMessages, id)
 		}
 	}
 
@@ -560,6 +557,17 @@ func (c *Connection) RemoveSelected() bool {
 
 	c.ctrl.DiscardSession(id)
 	c.ctrl.ForgetNetworkState(id)
+	if c.profiles != nil && !c.ephemeral {
+		// Prefs + profile share one Sync. Preflight already refused a blocked
+		// file; a late Sync failure records the sentence but memory is cleared.
+		status := c.ctrl.PersistForgetNetwork(id, hadStored)
+		if status == storage.StatusAccessError || status == storage.StatusFormatError {
+			c.assignPersistenceStatus(id,
+				"This network could not be removed. "+settingsFileSentence(status))
+		} else if status == storage.StatusWritten {
+			delete(c.persistenceMessages, id)
+		}
+	}
 	if hadStored && c.credentials != nil && !c.ephemeral {
 		c.credentials.Remove(credentialKeyFor(removed, false))
 		c.credentials.Remove(credentialKeyFor(removed, true))
