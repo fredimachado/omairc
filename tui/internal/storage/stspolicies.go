@@ -161,7 +161,7 @@ func (s *IniSTSStore) Store(host string, port uint16, durationSeconds, nowUnix i
 		Port:               port,
 		DurationSeconds:    durationSeconds,
 		ExpiryEpochSeconds: expiry,
-	}, nowUnix)
+	})
 	return persistSTSSettings(settings, s.path)
 }
 
@@ -176,7 +176,7 @@ func (s *IniSTSStore) Clear(host string) Status {
 
 // MergeEntries writes every entry (keyed by STS group key) into the file,
 // removing clearKeys first. Parseable on-disk groups are kept and merged with
-// the same strongest-expiry rule as Store. Used by session.STSStore so a
+// the same replace rule as Store. Used by session.STSStore so a
 // malformed-file recovery includes every in-memory policy.
 func (s *IniSTSStore) MergeEntries(entries map[string]STSEntry, clearKeys []string, nowUnix int64) Status {
 	if s == nil || s.path == "" {
@@ -192,7 +192,7 @@ func (s *IniSTSStore) MergeEntries(entries map[string]STSEntry, clearKeys []stri
 		if key == "" || entry.Port < 1 {
 			continue
 		}
-		mergeSTSPolicy(settings, key, entry, nowUnix)
+		mergeSTSPolicy(settings, key, entry)
 	}
 	return persistSTSSettings(settings, s.path)
 }
@@ -214,19 +214,10 @@ func (s *IniSTSStore) remove(key string) Status {
 	return persistSTSSettings(settings, s.path)
 }
 
-// mergeSTSPolicy keeps the stronger unexpired policy when the same host
-// already has one. A longer remaining expiry wins; on a tie the incoming
-// policy wins. An existing entry with an invalid port never wins. duration=0
-// clears go through Clear and never call this.
-func mergeSTSPolicy(settings *Settings, key string, incoming STSEntry, nowUnix int64) {
-	if settings.Contains(key, stsPortKey) && settings.Contains(key, stsExpiryKey) {
-		existingPort := settings.Uint(key, stsPortKey, 0)
-		existingExpiry := settings.Int64(key, stsExpiryKey, 0)
-		portOK := existingPort >= 1 && existingPort <= 65535
-		if portOK && existingExpiry > nowUnix && existingExpiry > incoming.ExpiryEpochSeconds {
-			return
-		}
-	}
+// mergeSTSPolicy writes incoming as the current policy for key. Per IRCv3 STS,
+// the latest policy replaces the previous one. duration=0 clears go through
+// Clear and never call this.
+func mergeSTSPolicy(settings *Settings, key string, incoming STSEntry) {
 	settings.SetUint(key, stsPortKey, uint64(incoming.Port))
 	settings.SetValue(key, stsDurationKey, strconv.FormatInt(incoming.DurationSeconds, 10))
 	settings.SetValue(key, stsExpiryKey, strconv.FormatInt(incoming.ExpiryEpochSeconds, 10))

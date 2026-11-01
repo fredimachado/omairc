@@ -239,8 +239,8 @@ func TestIniSTSStoreValidEntriesInPartlyMalformedFileArePreserved(t *testing.T) 
 	}
 }
 
-func TestIniSTSStoreWeakerNewPolicyDoesNotShortenExistingExpiry(t *testing.T) {
-	// client/src/storage/stspolicies.rs::a_weaker_new_policy_does_not_shorten_an_existing_expiry
+func TestIniSTSStoreShorterDurationReplacesExistingExpiry(t *testing.T) {
+	// client/src/storage/stspolicies.rs::a_shorter_duration_replaces_an_existing_expiry
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sts")
 	mixed := "[" + ircExampleSTSGroup + "]\nport=6697\nduration=60\nexpiry=5000\nbad line\n"
@@ -252,8 +252,26 @@ func TestIniSTSStoreWeakerNewPolicyDoesNotShortenExistingExpiry(t *testing.T) {
 		t.Fatal(status)
 	}
 	entry, ok := store.Lookup("irc.example", 100)
-	if !ok || entry.Port != 6697 || entry.DurationSeconds != 60 || entry.ExpiryEpochSeconds != 5000 {
-		t.Fatalf("must keep stronger policy: %+v ok=%v", entry, ok)
+	if !ok || entry.Port != 7000 || entry.DurationSeconds != 10 || entry.ExpiryEpochSeconds != 110 {
+		t.Fatalf("shorter duration must replace stored policy: %+v ok=%v", entry, ok)
+	}
+}
+
+func TestIniSTSStoreLongerDurationReplacesExistingExpiry(t *testing.T) {
+	// client/src/storage/stspolicies.rs::a_longer_duration_replaces_an_existing_expiry
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sts")
+	mixed := "[" + ircExampleSTSGroup + "]\nport=6697\nduration=10\nexpiry=200\nbad line\n"
+	if err := os.WriteFile(path, []byte(mixed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewIniSTSStore(path)
+	if status := store.Store("irc.example", 6697, 3600, 100); status != StatusWritten {
+		t.Fatal(status)
+	}
+	entry, ok := store.Lookup("irc.example", 100)
+	if !ok || entry.Port != 6697 || entry.DurationSeconds != 3600 || entry.ExpiryEpochSeconds != 3700 {
+		t.Fatalf("longer duration must replace stored policy: %+v ok=%v", entry, ok)
 	}
 }
 

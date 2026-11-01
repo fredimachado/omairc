@@ -129,9 +129,8 @@ impl StsStore for IniStsStore {
             expiry_epoch_seconds: expiry,
         };
         let mut settings = Settings::open_sts(&self.path);
-        merge_sts_policy(&mut settings, &key, incoming, now.timestamp());
-        // Remember the merge winner so a failed persist cannot drop it, and so
-        // memory never holds a weaker policy than the file map.
+        merge_sts_policy(&mut settings, &key, incoming);
+        // Remember the written policy so a failed persist cannot drop it.
         let winner = sts_cached_from_settings(&settings, &key).unwrap_or(incoming);
         self.remember(&key, winner);
         let _ = persist_sts_settings(&mut settings, &self.path, &self.memory, now.timestamp());
@@ -160,23 +159,10 @@ fn sts_cached_from_settings(settings: &Settings, key: &str) -> Option<StsCached>
     })
 }
 
-/// Keeps the stronger unexpired policy when the same host already has one.
-/// A longer remaining expiry wins; on a tie the incoming policy wins. An existing
-/// entry with an invalid port never wins. `duration=0` clears go through
+/// Writes `incoming` as the current policy for `key`. Per IRCv3 STS, the latest
+/// policy replaces the previous one. `duration=0` clears go through
 /// [`IniStsStore::clear`] and never call this.
-fn merge_sts_policy(settings: &mut Settings, key: &str, incoming: StsCached, now_unix: i64) {
-    if settings.contains(key, PORT_KEY) && settings.contains(key, EXPIRY_KEY) {
-        let existing_port = settings.uint_value(key, PORT_KEY, 0);
-        let existing_expiry = settings.int_value(key, EXPIRY_KEY, 0);
-        let port_ok = u16::try_from(existing_port)
-            .ok()
-            .filter(|&port| port >= 1)
-            .is_some();
-        if port_ok && existing_expiry > now_unix && existing_expiry > incoming.expiry_epoch_seconds
-        {
-            return;
-        }
-    }
+fn merge_sts_policy(settings: &mut Settings, key: &str, incoming: StsCached) {
     settings.set_uint(key, PORT_KEY, u64::from(incoming.port));
     settings.set_value(key, DURATION_KEY, &incoming.duration_seconds.to_string());
     settings.set_value(
@@ -230,7 +216,7 @@ fn merge_memory_into_settings(
         if entry.port < 1 || entry.expiry_epoch_seconds <= now_unix {
             continue;
         }
-        merge_sts_policy(settings, key, *entry, now_unix);
+        merge_sts_policy(settings, key, *entry);
     }
 }
 
@@ -663,8 +649,8 @@ mod tests {
     }
 
     #[test]
-    fn a_weaker_new_policy_does_not_shorten_an_existing_expiry() {
-        let dir = TempDir::new("sts-no-weaken");
+    fn a_shorter_duration_replaces_an_existing_expiry() {
+        let dir = TempDir::new("sts-shorter-duration-605d");
         let (store, path) = store_in(&dir);
         let mixed = format!(
             "[{IRC_EXAMPLE_GROUP}]\nport=6697\nduration=60\nexpiry=5000\nbad line\n"
@@ -676,11 +662,33 @@ mod tests {
         assert_eq!(
             store.lookup("irc.example", at(100)),
             Some(StsCached {
-                port: 6697,
-                duration_seconds: 60,
-                expiry_epoch_seconds: 5000,
+                port: 7000,
+                duration_seconds: 10,
+                expiry_epoch_seconds: 110,
             }),
-            "existing unexpired policy must not be shortened"
+            "a shorter advertised duration must replace the stored expiry"
+        );
+    }
+
+    #[test]
+    fn a_longer_duration_replaces_an_existing_expiry() {
+        let dir = TempDir::new("sts-longer-duration-605d");
+        let (store, path) = store_in(&dir);
+        let mixed = format!(
+            "[{IRC_EXAMPLE_GROUP}]\nport=6697\nduration=10\nexpiry=200\nbad line\n"
+        );
+        fs::write(&path, mixed).expect("write");
+
+        store.store("irc.example", 6697, 3600, at(100));
+
+        assert_eq!(
+            store.lookup("irc.example", at(100)),
+            Some(StsCached {
+                port: 6697,
+                duration_seconds: 3600,
+                expiry_epoch_seconds: 3700,
+            }),
+            "a longer advertised duration must replace the stored expiry"
         );
     }
 
