@@ -175,16 +175,14 @@ impl Shell {
             return;
         }
         let populated = self.populated_networks();
-        let committing = self.connect.remove_armed() && self.connect.can_remove(&populated);
-        let (network_id, was_status, forgot) = if committing {
-            let network_id = self.connect.selected().to_owned();
-            let was_status = self.status_network().as_deref() == Some(network_id.as_str());
-            let forgot = self.controller.forget_network(&network_id);
-            (network_id, was_status, forgot)
-        } else {
-            (String::new(), false, true)
+        let network_id = self.connect.selected().to_owned();
+        let was_status = self.status_network().as_deref() == Some(network_id.as_str());
+        let outcome = {
+            let controller = &mut self.controller;
+            self.connect
+                .remove_with_forget(&populated, |id| controller.forget_network(id))
         };
-        if let RemoveOutcome::Removed(_) = self.connect.complete_remove(&populated, forgot) {
+        if let RemoveOutcome::Removed(_) = outcome {
             self.after_network_removed(&network_id, was_status, window, cx);
         }
         cx.notify();

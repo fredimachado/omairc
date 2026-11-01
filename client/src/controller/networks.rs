@@ -107,13 +107,19 @@ impl Controller {
     /// Forgets a network the Connect sheet removed (`ForgetNetwork`). A live session
     /// quits and stops; the network's conversations, Status log, last error, order
     /// collapse state and inbox rows go with it. The selection leaves it when it held
-    /// the selection. False when the network was never known, or when the combined
-    /// settings write is blocked (`AccessError` / `FormatError`) — profile and secrets
-    /// stay in place until that write succeeds.
-    pub fn forget_network(&mut self, network_id: &str) -> bool {
+    /// the selection.
+    ///
+    /// Returns [`Status::Written`] when a known network was forgotten,
+    /// [`Status::Absent`] when the id was empty or never known, and the real
+    /// [`Status::AccessError`] / [`Status::FormatError`] from preflight or the
+    /// combined settings write when that write is blocked — profile and secrets
+    /// stay in place until that write succeeds. Connect Remove passes this into
+    /// [`crate::model::connect::ConnectState::complete_remove`] so Apply and Remove
+    /// share the same settings-file sentences.
+    pub fn forget_network(&mut self, network_id: &str) -> Status {
         self.pump();
         if network_id.is_empty() {
-            return false;
+            return Status::Absent;
         }
         let known = self.manager.find(network_id).is_some()
             || self.profiles.contains_key(network_id)
@@ -125,7 +131,7 @@ impl Controller {
             let status = self.profile_store.preflight_remove(network_id);
             if matches!(status, Status::AccessError | Status::FormatError) {
                 self.pump();
-                return false;
+                return status;
             }
         }
         // Post-forget lists before any memory clear; the write must win first.
@@ -140,12 +146,14 @@ impl Controller {
             .into_iter()
             .filter(|id| id != network_id)
             .collect();
+        let persist_status =
+            self.persist_forget_network(network_id, had_profile, &post_order, &post_collapsed);
         if matches!(
-            self.persist_forget_network(network_id, had_profile, &post_order, &post_collapsed),
+            persist_status,
             Status::AccessError | Status::FormatError
         ) {
             self.pump();
-            return false;
+            return persist_status;
         }
         if let Some(session) = self.manager.find(network_id) {
             if session.state() == SessionState::Registered
@@ -197,7 +205,11 @@ impl Controller {
         self.queue(viewnotify::reset_all());
         self.queue(vec![ViewNotify::Status]);
         self.pump();
-        known
+        if known {
+            Status::Written
+        } else {
+            Status::Absent
+        }
     }
 
     /// Collapsed network ids in sidebar display order.

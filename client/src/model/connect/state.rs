@@ -590,18 +590,39 @@ impl ConnectState {
     /// Remove (Ctrl+Shift+Delete, Qt `removeSheetNetwork`). The first press arms
     /// the button. The second removes the selected saved network and selects the
     /// network now at its position, or the last one. Equivalent to
-    /// [`complete_remove`] with a successful forget. `populated` names the
+    /// [`complete_remove`] with [`Status::Written`]. Prefer [`remove_with_forget`]
+    /// when a controller forget runs between the presses. `populated` names the
     /// networks with a conversation.
     pub fn remove(&mut self, populated: &[String]) -> RemoveOutcome {
-        self.complete_remove(populated, true)
+        self.complete_remove(populated, Status::Written)
     }
 
-    /// Second Remove press after the controller tried to forget. When `forgot`
-    /// is false the row stays, Remove disarms, and the settings-file sentence is
-    /// recorded the same way a failed Apply is. When true the selected saved
-    /// network is dropped. The shell forgets on the controller before calling
-    /// with `forgot` from that result, so a blocked Sync cannot hide the row.
-    pub fn complete_remove(&mut self, populated: &[String], forgot: bool) -> RemoveOutcome {
+    /// Armed commit path: on the second press, calls `forget` with the selected
+    /// network id, then [`complete_remove`] with that [`Status`]. The first press
+    /// only arms (`forget` is not called). The shell passes
+    /// `|id| controller.forget_network(id)`. Hard-coding [`Status::Written`] here
+    /// instead of using the closure's result fails the AccessError / FormatError
+    /// unit tests that drive this helper.
+    pub fn remove_with_forget(
+        &mut self,
+        populated: &[String],
+        forget: impl FnOnce(&str) -> Status,
+    ) -> RemoveOutcome {
+        if !self.remove_armed || !self.can_remove(populated) {
+            return self.complete_remove(populated, Status::Written);
+        }
+        let network_id = self.selected.clone();
+        let status = forget(&network_id);
+        self.complete_remove(populated, status)
+    }
+
+    /// Finishes a Remove after the forget attempt. [`Status::Written`] drops the
+    /// selected saved network. [`Status::AccessError`] / [`Status::FormatError`]
+    /// keep the row, disarm Remove, and record the same settings-file sentence a
+    /// failed Apply would (`apply_sentence`). Other statuses keep the row without
+    /// a sentence. Prefer [`remove_with_forget`], which calls forget then this
+    /// helper, so a blocked Sync cannot hide the row.
+    pub fn complete_remove(&mut self, populated: &[String], status: Status) -> RemoveOutcome {
         if !self.can_remove(populated) {
             self.remove_armed = false;
             return RemoveOutcome::Refused;
@@ -610,8 +631,8 @@ impl ConnectState {
             self.remove_armed = true;
             return RemoveOutcome::Armed;
         }
-        if !forgot {
-            if let Some(sentence) = apply_sentence(Status::AccessError, false) {
+        if status != Status::Written {
+            if let Some(sentence) = apply_sentence(status, false) {
                 self.persistence.insert(self.selected.clone(), sentence);
             }
             self.remove_armed = false;

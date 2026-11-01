@@ -1,6 +1,7 @@
 //! Sidebar networkOrder / collapsedNetworks persistence contracts shared with
 //! the TUI (`tui/internal/controller/prefs_test.go`).
 
+use crate::storage::settings::Status;
 use crate::util::testdir::TempDir;
 
 use super::persistence::{disk, launch, libera, save, Loopbacks};
@@ -62,7 +63,7 @@ fn forget_network_writes_conf_once_and_clears_order_collapse() {
         first.set_network_collapsed("omarchy", true);
 
         crate::storage::atomicwrite::test_write_count::begin();
-        assert!(first.forget_network("alpha"));
+        assert_eq!(first.forget_network("alpha"), Status::Written);
         let writes = crate::storage::atomicwrite::test_write_count::end();
         assert_eq!(writes, 1, "forget must write omairc.conf once, got {writes}");
     }
