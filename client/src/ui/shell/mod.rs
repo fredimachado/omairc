@@ -98,6 +98,9 @@ pub struct Shell {
     pub sidebar_scroll: ScrollHandle,
     pub members_scroll: ScrollHandle,
     pub scrollbar_drag: ScrollbarDragCell,
+    /// When the shown conversation's saved place started waiting for history, so a
+    /// request that never settles gives the wait up (`notifications.rs`).
+    pub restore_wait_since: Option<chrono::DateTime<chrono::Utc>>,
     pub transcript: Entity<TranscriptView>,
     pub composer: Entity<SingleLineInput>,
     /// The composer's drafts, sent-line history and Tab cycle, per target.
@@ -265,6 +268,7 @@ impl Shell {
             sidebar_scroll: ScrollHandle::new(),
             members_scroll: ScrollHandle::new(),
             scrollbar_drag,
+            restore_wait_since: None,
             transcript,
             composer,
             composer_state,

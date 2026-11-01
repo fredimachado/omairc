@@ -108,6 +108,43 @@ impl Controller {
         true
     }
 
+    /// Starts a CHATHISTORY AFTER chain on the selected conversation from `when`, as a
+    /// catch-up does, so a test can deliver the pages.
+    #[cfg(test)]
+    pub fn start_history_after_for_tests(&mut self, when: DateTime<Utc>) -> bool {
+        let Some(key) = self.selected.clone() else {
+            return false;
+        };
+        let Some(conversation) = self.reducer.find(&key) else {
+            return false;
+        };
+        let target = if conversation.target.is_empty() {
+            key.normalized_target.clone()
+        } else {
+            conversation.target.clone()
+        };
+        let Some(session) = self.manager.find(&key.network_id) else {
+            return false;
+        };
+        session.request_history_after(&target, when)
+    }
+
+    /// The current time on the controller's clock.
+    pub fn now(&self) -> DateTime<Utc> {
+        self.clock.now()
+    }
+
+    /// Whether a CHATHISTORY page in flight can still bring the selected conversation's
+    /// saved line: one is in flight and its session is still registered to answer it.
+    pub fn transcript_history_awaited(&self) -> bool {
+        let registered = self.selected.as_ref().is_some_and(|key| {
+            self.manager
+                .find(&key.network_id)
+                .is_some_and(|session| session.state() == SessionState::Registered)
+        });
+        registered && self.older_transcript_history_inflight()
+    }
+
     /// Whether a CHATHISTORY page is already in flight for the selected conversation.
     pub fn older_transcript_history_inflight(&self) -> bool {
         let key = match self.selected.as_ref() {

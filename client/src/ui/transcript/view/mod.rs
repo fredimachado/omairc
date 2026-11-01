@@ -102,6 +102,9 @@ pub struct TranscriptView {
     /// A restore whose line is not in the transcript yet (history still in flight).
     /// Applied once when the anchor row arrives; cleared if the reader scrolls first.
     pending_restore: Option<SavedPlace>,
+    /// Whether a layout has measured the rows since the list was last reset. Until one
+    /// has, the scrollbar max reads 0, so `at_end` says nothing about the reader.
+    list_measured: bool,
 }
 
 impl TranscriptView {
@@ -135,6 +138,7 @@ impl TranscriptView {
             unseen_bounce: UnseenBounce::default(),
             reported_at_end: true,
             pending_restore: None,
+            list_measured: false,
         };
         // gpui calls the list's scroll handler only for wheel scrolling, and while the list
         // is still borrowed, so the at-end read waits for the effect cycle to finish. Every
@@ -172,7 +176,7 @@ impl TranscriptView {
         self.find_row = None;
         // Switching buffers drops any catch-up.
         self.first_unseen = None;
-        self.list_state.reset(self.list_len());
+        self.reset_list();
         self.row_layouts.borrow_mut().clear();
     }
 
@@ -239,13 +243,19 @@ impl TranscriptView {
         self.hovered_link = None;
         self.find_row = None;
         self.first_unseen = None;
-        self.list_state.reset(self.list_len());
+        self.reset_list();
         self.row_layouts.borrow_mut().clear();
     }
 
     /// The list's items: every row, then the typing dots when they show.
     fn list_len(&self) -> usize {
         self.model.rows().len() + usize::from(self.typing_peer.is_some())
+    }
+
+    /// Resets the list to its items. Its rows are unmeasured until the next layout.
+    fn reset_list(&mut self) {
+        self.list_state.reset(self.list_len());
+        self.list_measured = false;
     }
 
     /// The typing dots' pulse frame. Repaints only while the dots show.
@@ -596,6 +606,8 @@ impl Render for TranscriptView {
         let app_style = style(cx);
         // Heights measured by the last frame's prepaint feed the transcript model.
         self.sync_measured_heights();
+        // This frame lays the list out after render returns, before any other code runs.
+        self.list_measured = true;
         // A reader who follows the end has seen what arrived while scrolled up.
         // `at_end` alone is not enough: after `list_state.reset` the scrollbar max
         // is 0 until the next measure, so a detached restore looks like the end for
@@ -1134,6 +1146,72 @@ mod tests {
             assert!(
                 !view.reports_follow_end(),
                 "new lines while pending must not report follow-end for the read marker"
+            );
+        });
+    }
+
+    /// `count` lines for one history page, with the anchor at index 4.
+    fn anchored_page(count: i64) -> Vec<Message> {
+        (0..count)
+            .map(|i| {
+                let msgid = if i == 4 {
+                    "history-anchor".to_owned()
+                } else {
+                    format!("fill-{i}")
+                };
+                chat_with_msgid("anna", &format!("line {i}"), i + 1, &msgid)
+            })
+            .collect()
+    }
+
+    fn lines_for<'a>(
+        messages: &'a [Message],
+        features: &'a IrcServerFeatures,
+    ) -> ConversationLines<'a> {
+        ConversationLines {
+            messages,
+            mark: None,
+            facts: HashMap::new(),
+            self_nick: "me",
+            features,
+            typing_peer: None,
+            today: chrono::Local::now().date_naive(),
+        }
+    }
+
+    #[gpui::test]
+    fn applied_restore_survives_a_second_refresh_before_layout(cx: &mut TestAppContext) {
+        let cxw = cx.add_empty_window();
+        let drag = ScrollbarDragCell::default();
+        let transcript = cxw.update(|_, cx| {
+            let focus = cx.focus_handle();
+            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+        });
+        let features = IrcServerFeatures::new();
+        let place = SavedPlace::from_stored(&crate::storage::scrollplace::ScrollPlace {
+            msg_id: "history-anchor".to_owned(),
+            ..crate::storage::scrollplace::ScrollPlace::default()
+        })
+        .expect("msgid place");
+        let page = anchored_page(12);
+        let burst = anchored_page(13);
+        transcript.update(cx, |view, cx| {
+            view.set_conversation(empty_lines(&features));
+            view.restore_scroll_place(Some(&place), false, true);
+            view.refresh_conversation(lines_for(&page, &features), cx);
+            assert!(
+                !view.has_pending_restore(),
+                "the anchor arrived, so the place lands"
+            );
+            // A second drain before any frame lays the list out again.
+            view.refresh_conversation(lines_for(&burst, &features), cx);
+            assert!(
+                matches!(view.capture_scroll_place(), SavedPlace::Line { .. }),
+                "a second refresh before layout must keep the applied place, not save the end"
+            );
+            assert!(
+                !view.reports_follow_end(),
+                "a restored place must not report follow-end before the next layout"
             );
         });
     }

@@ -1,5 +1,6 @@
 //! Desktop notification drain and activation from a toast or D-Bus action.
 
+use chrono::TimeDelta;
 use gpui::{Context, Window};
 
 use crate::controller::notify::Arrival;
@@ -8,6 +9,10 @@ use crate::irc::plaintext::plain_irc_text;
 use crate::irc::viewnotify::ViewNotify;
 use crate::model::title::note_title_mark;
 use crate::ui::shell::Shell;
+
+/// How long a saved place waits for its history while a request is in flight. A request that
+/// never settles (a FAIL that names no target, a silent server) gives the wait up at this.
+pub(crate) const RESTORE_WAIT: TimeDelta = TimeDelta::seconds(12);
 
 impl Shell {
     pub fn drain_notifications(&mut self, cx: &mut Context<Self>) {
@@ -74,8 +79,14 @@ impl Shell {
         }
         // A restore waiting on history is given up once the shown conversation's request has
         // settled and its line never arrived, so the place lands as it does with no history.
+        // A request that never settles gives the wait up at its deadline the same way.
         let waiting = self.transcript.read(cx).has_pending_restore();
-        if waiting && !self.controller.older_transcript_history_inflight() {
+        let since = *self.restore_wait_since.get_or_insert_with(|| self.controller.now());
+        let expired = self.controller.now() - since >= RESTORE_WAIT;
+        if !waiting {
+            self.restore_wait_since = None;
+        } else if expired || !self.controller.transcript_history_awaited() {
+            self.restore_wait_since = None;
             self.transcript.update(cx, |t, cx| t.give_up_pending_restore(cx));
             let follow_end = self.transcript.read(cx).reports_follow_end();
             self.report_transcript_viewport_from_shell(follow_end, cx);

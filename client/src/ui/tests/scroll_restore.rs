@@ -3,11 +3,16 @@
 //! that request settles without the line, and a message sent to the conversation
 //! retires the wait. Sidebar scrollbar drags leave the wait alone.
 
+use std::time::Duration;
+
+use chrono::{TimeZone, Utc};
 use gpui::{px, ListAlignment, ListState, Modifiers, ScrollHandle};
 
 use crate::model::scroll_place::SavedPlace;
+use crate::session::session::HISTORY_LIMIT;
 use crate::storage::scrollplace::ScrollPlace;
 use crate::ui::scrollbar::{ScrollbarDrag, ScrollbarDragKind};
+use crate::ui::shell::notifications::RESTORE_WAIT;
 
 use super::fixture::{self, SeededShell, OMARCHY, WINDOW_HEIGHT, WINDOW_WIDTH};
 
@@ -90,9 +95,84 @@ fn deliver_unrendered(ui: &mut SeededShell, line: &str) {
     });
 }
 
+/// Delivers each server line, running the tick after each, inside one update. Nothing
+/// renders between the lines, so each tick drains with the list as the last one left it.
+fn deliver_burst<S: AsRef<str>>(ui: &mut SeededShell, lines: &[S]) {
+    ui.shell.update(ui.cx, |shell, cx| {
+        for line in lines {
+            let mut bytes = line.as_ref().as_bytes().to_vec();
+            bytes.extend_from_slice(b"\r\n");
+            shell
+                .controller
+                .demo()
+                .expect("demo controller")
+                .inject(OMARCHY, &bytes);
+            shell.tick(cx);
+        }
+    });
+    ui.settle();
+}
+
 fn deliver(ui: &mut SeededShell, line: &str) {
     deliver_unrendered(ui, line);
     ui.settle();
+}
+
+/// Runs the tick the UI loop runs, without delivering a line.
+fn tick(ui: &mut SeededShell) {
+    ui.shell.update(ui.cx, |shell, cx| shell.tick(cx));
+    ui.settle();
+}
+
+/// Moves the controller's fake clock forward, then runs the tick that follows it.
+fn advance(ui: &mut SeededShell, by: Duration) {
+    ui.shell
+        .read_with(ui.cx, |shell, _| shell.controller.advance_test_clock(by));
+    tick(ui);
+}
+
+/// The wait's deadline as a std duration, so a test can stop just before it.
+fn wait_window() -> Duration {
+    RESTORE_WAIT.to_std().expect("the wait is a positive span")
+}
+
+/// One CHATHISTORY page of anna's lines, one per msgid, as the server sends it. The lines
+/// carry an old time, so the page sorts before the demo's own lines.
+fn anna_page<S: AsRef<str>>(reference: &str, msgids: &[S]) -> Vec<String> {
+    let mut lines = vec![format!(":server BATCH +{reference} chathistory anna")];
+    for msgid in msgids {
+        let msgid = msgid.as_ref();
+        lines.push(format!(
+            "@batch={reference};msgid={msgid};time=2011-10-19T16:40:51.000Z :anna!u@h PRIVMSG fred :{msgid}"
+        ));
+    }
+    lines.push(format!(":server BATCH -{reference}"));
+    lines
+}
+
+/// The msgid of the row at the top of the transcript.
+fn top_msgid(ui: &SeededShell) -> String {
+    ui.shell.read_with(ui.cx, |shell, cx| {
+        let transcript = shell.transcript.read(cx);
+        let top = transcript.logical_scroll_top().item_ix;
+        transcript
+            .rows()
+            .get(top)
+            .map(|row| row.msgid.clone())
+            .unwrap_or_default()
+    })
+}
+
+/// Starts a CHATHISTORY AFTER chain for the selected conversation, as a catch-up does.
+fn start_after_chain(ui: &mut SeededShell) {
+    let when = Utc.with_ymd_and_hms(2024, 3, 9, 16, 0, 0).unwrap();
+    let started = ui.shell.update(ui.cx, |shell, _| {
+        shell.controller.start_history_after_for_tests(when)
+    });
+    assert!(
+        started,
+        "an AFTER page goes out for the selected conversation"
+    );
 }
 
 /// Types one line in the composer and presses Enter.
@@ -151,6 +231,26 @@ fn a_gone_line_with_nothing_in_flight_lands_on_its_row_not_the_end(cx: &mut gpui
 }
 
 #[gpui::test]
+fn a_second_drain_before_a_frame_keeps_the_restored_place(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    waiting_for_history(&mut ui);
+    // Both drains run inside one update: gpui's test harness draws dirty windows when an
+    // update ends, so only one update keeps the list unlaid-out between the two.
+    deliver_burst(
+        &mut ui,
+        &[
+            "@msgid=gone-anchor :anna!u@h PRIVMSG fred :the saved line",
+            ":anna!u@h PRIVMSG fred :a line after it",
+        ],
+    );
+    assert!(!waiting(&ui), "the saved line arrived, so the place lands");
+    assert!(
+        !reported_end(&ui),
+        "a second drain before a frame must keep the restored place, not report the end"
+    );
+}
+
+#[gpui::test]
 fn a_waiting_place_stays_while_unrelated_lines_arrive(cx: &mut gpui::TestAppContext) {
     let mut ui = fixture::open(cx);
     waiting_for_history(&mut ui);
@@ -175,6 +275,146 @@ fn a_history_request_that_settles_without_the_line_gives_the_wait_up(
     assert!(
         !waiting(&ui),
         "the request for this conversation settled, so the place lands without the line"
+    );
+}
+
+#[gpui::test]
+fn an_untargeted_fail_holds_the_wait_only_until_its_deadline(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    waiting_for_history(&mut ui);
+    tick(&mut ui);
+    deliver(
+        &mut ui,
+        ":server FAIL CHATHISTORY INVALID_PARAMS LATEST :no",
+    );
+    assert!(
+        waiting(&ui),
+        "a FAIL that names no target does not settle this conversation's request"
+    );
+    advance(&mut ui, wait_window() - Duration::from_secs(1));
+    assert!(waiting(&ui), "the wait holds just before its deadline");
+    advance(&mut ui, Duration::from_secs(1));
+    assert!(!waiting(&ui), "the wait is given up at its deadline");
+}
+
+#[gpui::test]
+fn a_silent_server_gives_the_wait_up_at_its_deadline(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    waiting_for_history(&mut ui);
+    tick(&mut ui);
+    advance(&mut ui, wait_window() - Duration::from_secs(1));
+    assert!(waiting(&ui), "the wait holds just before its deadline");
+    advance(&mut ui, Duration::from_secs(1));
+    assert!(!waiting(&ui), "the wait is given up at its deadline");
+}
+
+#[gpui::test]
+fn a_dropped_connection_gives_the_wait_up(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    waiting_for_history(&mut ui);
+    deliver(&mut ui, ":server ERROR :gone");
+    assert!(
+        !waiting(&ui),
+        "a request on a dropped connection cannot be answered, so the wait is given up"
+    );
+}
+
+#[gpui::test]
+fn a_manual_disconnect_gives_the_wait_up(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    waiting_for_history(&mut ui);
+    ui.shell.update(ui.cx, |shell, cx| {
+        shell.controller.disconnect(OMARCHY);
+        shell.tick(cx);
+    });
+    ui.settle();
+    assert!(
+        !waiting(&ui),
+        "a disconnect leaves no request to answer, so the wait is given up"
+    );
+}
+
+#[gpui::test]
+fn a_page_with_the_saved_line_lands_on_it_as_its_request_settles(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    offer_chathistory(&mut ui);
+    ui.select("anna");
+    ui.fill_until_scrollable("anna", "fred", "landing line");
+    request_history(&mut ui);
+    reopen_at_gone_place(&mut ui, "anna");
+    assert!(
+        waiting(&ui),
+        "the place waits while its history is in flight"
+    );
+    // Rows below the saved line fill the window, so it is not the list's end.
+    let mut page = vec!["fill-0".to_owned(), "gone-anchor".to_owned()];
+    page.extend((0..30).map(|i| format!("tail-{i}")));
+    deliver_burst(&mut ui, &anna_page("h", &page));
+    assert!(
+        !waiting(&ui),
+        "the page closed the request and brought the saved line"
+    );
+    assert_eq!(
+        top_msgid(&ui),
+        "gone-anchor",
+        "the place lands on the saved line the page brought, not on the row it was saved at"
+    );
+}
+
+#[gpui::test]
+fn an_empty_page_gives_the_wait_up_and_lands_on_the_saved_row(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    offer_chathistory(&mut ui);
+    ui.select("anna");
+    ui.fill_until_scrollable("anna", "fred", "landing line");
+    request_history(&mut ui);
+    reopen_at_gone_place(&mut ui, "anna");
+    assert!(
+        waiting(&ui),
+        "the place waits while its history is in flight"
+    );
+    deliver_burst(&mut ui, &anna_page("e", &[] as &[&str]));
+    assert!(
+        !waiting(&ui),
+        "an empty page settles the request, so the place lands without the line"
+    );
+    assert!(
+        !ui.at_end(),
+        "the given-up place lands on its saved row, not at the end"
+    );
+}
+
+#[gpui::test]
+fn a_full_page_without_the_line_keeps_the_wait_for_the_next_page(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    offer_chathistory(&mut ui);
+    ui.select("anna");
+    ui.fill_until_scrollable("anna", "fred", "landing line");
+    start_after_chain(&mut ui);
+    reopen_at_gone_place(&mut ui, "anna");
+    assert!(
+        waiting(&ui),
+        "the place waits while its AFTER page is in flight"
+    );
+    // A full page chains the next AFTER page, so the request is still in flight after it.
+    let first: Vec<String> = (0..HISTORY_LIMIT).map(|i| format!("fill-{i}")).collect();
+    deliver_burst(&mut ui, &anna_page("p1", &first));
+    assert!(
+        waiting(&ui),
+        "the chained AFTER page is in flight, so the place keeps waiting"
+    );
+    // As above: rows below the saved line fill the window, so it is not the list's end.
+    let mut tail = vec!["fill-tail".to_owned(), "gone-anchor".to_owned()];
+    tail.extend((0..30).map(|i| format!("after-{i}")));
+    deliver_burst(&mut ui, &anna_page("p2", &tail));
+    assert!(
+        !waiting(&ui),
+        "the chained page brought the saved line, so the place lands"
+    );
+    assert_eq!(
+        top_msgid(&ui),
+        "gone-anchor",
+        "the place lands on the saved line from the chained page"
     );
 }
 

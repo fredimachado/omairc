@@ -299,11 +299,16 @@ impl Shell {
                 let open_at_unread = place.is_none() && self.controller.preferences().unread;
                 let place = place.or_else(|| self.saved_place(&self.shown.conversation));
                 // A saved line that a history request in flight may still bring waits for it.
-                let wait_for_history = self.controller.older_transcript_history_inflight();
+                let wait_for_history = self.controller.transcript_history_awaited();
                 self.transcript.update(cx, |t, _| {
                     t.set_conversation(lines);
                     t.restore_scroll_place(place.as_ref(), open_at_unread, wait_for_history);
                 });
+                self.restore_wait_since = self
+                    .transcript
+                    .read(cx)
+                    .has_pending_restore()
+                    .then(|| self.controller.now());
             }
         }
         let follow_end = self.transcript.read(cx).reports_follow_end();

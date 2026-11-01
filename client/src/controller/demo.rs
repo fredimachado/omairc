@@ -120,16 +120,26 @@ impl SeedControls for Controller {
 
 #[cfg(test)]
 impl Controller {
+    /// Moves a seeded test controller's fake clock forward, running the timers that come due.
+    pub fn advance_test_clock(&self, by: std::time::Duration) {
+        self.test_clock
+            .as_ref()
+            .expect("a seeded test controller runs on a fake clock")
+            .advance(by);
+    }
+
     /// The seeded demo on a fixed clock for the presentation tests in `model/` and `ui/`.
     /// Frame-level tests use `tests/fixture.rs`.
     pub fn seeded_for_tests() -> Self {
         use chrono::{TimeZone, Utc};
         use crate::session::clock::FakeClock;
 
-        let clock: Rc<dyn Clock> = Rc::new(FakeClock::new(
+        let clock = Rc::new(FakeClock::new(
             Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap(),
         ));
-        Self::new_demo_with(clock).expect("the demo starts")
+        let mut controller = Self::new_demo_with(clock.clone()).expect("the demo starts");
+        controller.test_clock = Some(clock);
+        controller
     }
 
     /// Test-only `#bench` seed: `count` mixed lines after its JOIN, topic and NAMES

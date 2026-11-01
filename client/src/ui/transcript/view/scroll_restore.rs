@@ -16,6 +16,16 @@ impl TranscriptView {
         self.pending_restore.is_none() && self.at_end() && self.model.scroll().pinned_to_bottom
     }
 
+    /// Whether the reader is at the end. Until a layout measures the rows after a reset,
+    /// `at_end` reads true whatever the offset, so the bottom pin is the reader's bit.
+    fn reader_at_end(&self) -> bool {
+        if self.list_measured {
+            self.at_end()
+        } else {
+            self.model.scroll().pinned_to_bottom
+        }
+    }
+
     pub fn has_pending_restore(&self) -> bool {
         self.pending_restore.is_some()
     }
@@ -57,7 +67,7 @@ impl TranscriptView {
     /// Reloads the open conversation. A pending restore whose line arrived is applied.
     pub fn refresh_conversation(&mut self, lines: ConversationLines, cx: &mut Context<Self>) {
         let previous_rows = self.model.rows().len();
-        let was_at_end = self.at_end();
+        let was_at_end = self.reader_at_end();
         let pending = self.pending_restore.clone();
         let live = (pending.is_none() && !was_at_end)
             .then(|| self.capture_live_place())
@@ -73,7 +83,7 @@ impl TranscriptView {
         if unread::detached_arrival(previous_rows, new_rows, was_at_end) {
             self.unseen_bounce.restart();
         }
-        self.list_state.reset(self.list_len());
+        self.reset_list();
         self.row_layouts.borrow_mut().clear();
         if let Some(place) = pending {
             if has_line(&place, self.model.rows()) {
@@ -102,13 +112,13 @@ impl TranscriptView {
         if self.typing_peer == peer {
             return;
         }
-        let was_at_end = self.at_end();
+        let was_at_end = self.reader_at_end();
         let pending = self.pending_restore.is_some();
         let live = (!pending && !was_at_end)
             .then(|| self.capture_live_place())
             .flatten();
         self.typing_peer = peer;
-        self.list_state.reset(self.list_len());
+        self.reset_list();
         if pending {
             if was_at_end {
                 self.model.set_pinned_to_bottom(true);
@@ -130,7 +140,7 @@ impl TranscriptView {
     fn sync_scroll_from_list(&mut self) {
         let rows = self.model.rows().len();
         let top = self.list_state.logical_scroll_top();
-        if self.at_end() || top.item_ix >= rows {
+        if self.reader_at_end() || top.item_ix >= rows {
             self.model.set_pinned_to_bottom(true);
         } else {
             let offset_px = f32::from(top.offset_in_item).round() as i32;
