@@ -8,6 +8,9 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::future::Future;
+use std::io;
+use std::net::SocketAddr;
+use std::pin::Pin;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -36,13 +39,32 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(20);
 /// say goodbye before its task is aborted. Stop shares one such period across every connection.
 const CLOSE_GRACE: Duration = Duration::from_millis(500);
 
+/// Resolves a host name for TCP connect. Production uses [`tokio::net::lookup_host`];
+/// tests inject a stub through [`NetOptions::resolve_host`].
+pub type ResolveHost = Arc<
+    dyn Fn(String, u16) -> Pin<Box<dyn Future<Output = io::Result<Vec<SocketAddr>>> + Send>>
+        + Send
+        + Sync,
+>;
+
+fn system_resolve_host() -> ResolveHost {
+    Arc::new(|host, port| {
+        Box::pin(async move {
+            tokio::net::lookup_host((host.as_str(), port))
+                .await
+                .map(|found| found.collect())
+        })
+    })
+}
+
 /// The knobs a hub's connections run under. `Default` is production: 20 s for the
-/// connect and for the handshake, and the process-wide TLS config.
+/// connect and for the handshake, the process-wide TLS config, and system DNS.
 #[derive(Clone)]
 pub struct NetOptions {
     pub connect_timeout: Duration,
     pub handshake_timeout: Duration,
     pub tls: Arc<ClientConfig>,
+    pub resolve_host: ResolveHost,
 }
 
 impl Default for NetOptions {
@@ -51,6 +73,7 @@ impl Default for NetOptions {
             connect_timeout: CONNECT_TIMEOUT,
             handshake_timeout: HANDSHAKE_TIMEOUT,
             tls: tls::client_config(),
+            resolve_host: system_resolve_host(),
         }
     }
 }
