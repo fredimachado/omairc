@@ -106,7 +106,7 @@ pub(super) fn waiting_above_a_mark(ui: &mut SeededShell, unread_on: bool, reques
 
 /// Where a give-up leaves the reader: on the unread mark when the preference is on, else at the
 /// end. The place it saves follows the same choice.
-fn assert_given_up_landing(ui: &mut SeededShell, unread_on: bool) {
+pub(super) fn assert_given_up_landing(ui: &mut SeededShell, unread_on: bool) {
     if unread_on {
         assert_eq!(
             ui.top_kind(),
@@ -179,7 +179,7 @@ pub(super) fn deliver_burst<S: AsRef<str>>(ui: &mut SeededShell, lines: &[S]) {
     ui.settle();
 }
 
-fn deliver(ui: &mut SeededShell, line: &str) {
+pub(super) fn deliver(ui: &mut SeededShell, line: &str) {
     deliver_unrendered(ui, line);
     ui.settle();
 }

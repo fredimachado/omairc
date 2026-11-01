@@ -3,7 +3,9 @@
 //! measured) does not move the place, and what moves the rows keeps it on its line.
 
 use super::fixture::{self, SeededShell, OMARCHY, WINDOW_HEIGHT, WINDOW_WIDTH};
-use super::scroll_restore::{request_history, top_msgid, waiting, waiting_above_a_mark};
+use super::scroll_restore::{
+    assert_given_up_landing, deliver, request_history, top_msgid, waiting, waiting_above_a_mark,
+};
 use crate::model::transcript::RowKind;
 use crate::storage::scrollplace::ScrollPlace;
 
@@ -234,4 +236,20 @@ fn a_find_jump_during_a_wait_retires_it_and_saves_the_line(cx: &mut gpui::TestAp
         "landing line 0",
         "the place saved is the line jumped to, not the waiting line"
     );
+}
+
+#[gpui::test]
+fn a_rebuild_during_a_wait_keeps_the_unread_preference(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    waiting_above_a_mark(&mut ui, true, request_history);
+    ui.shell
+        .update(ui.cx, |shell, cx| shell.rebuild_view_keeping_place(cx));
+    ui.settle();
+    assert!(waiting(&ui), "a rebuild keeps the wait");
+    deliver(
+        &mut ui,
+        ":server FAIL CHATHISTORY INVALID_TARGET BEFORE anna :no",
+    );
+    assert!(!waiting(&ui), "the request settled without the line");
+    assert_given_up_landing(&mut ui, true);
 }
