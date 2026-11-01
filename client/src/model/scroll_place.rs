@@ -6,8 +6,10 @@
 //! and pixel offset from `Transcript::scroll()` in memory while a conversation
 //! is open, and persists through the same JSON shape Qt uses.
 //!
-//! Unread marks and day separators are not restorable places: capture skips them
-//! for the first message/event/status/whois row at or below the top of the view.
+//! Unread marks and day separators are not places: capture skips them for the first
+//! message/event/status/whois row at or below the top of the view. A divider that was on
+//! top stays there only while it still sits above that line, so a mark that moves does not
+//! take the reader with it. A live refresh and persistence share this one place.
 
 use super::transcript::{row_for_msgid, Row, RowKind, ScrollAnchor};
 use crate::storage::scrollplace::ScrollPlace as StoredPlace;
@@ -17,12 +19,30 @@ use crate::storage::scrollplace::ScrollPlace as StoredPlace;
 pub enum SavedPlace {
     /// The reader was at the end. Returning follows the end again.
     End,
-    /// The line at the top of the view, and how far its top was scrolled past.
+    /// The first line at or below the top of the view, the dividers on top above it, and how
+    /// far the top row was scrolled past. Dividers and pixels are not kept on disk.
     Line {
         row: usize,
         offset_px: i32,
         line: LineKey,
+        lead: Vec<DividerKey>,
     },
+}
+
+/// A divider on top of the view above the reader's line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DividerKey {
+    kind: RowKind,
+    text: String,
+}
+
+impl DividerKey {
+    fn of(row: &Row) -> Self {
+        Self {
+            kind: row.kind,
+            text: row.body.plain.clone(),
+        }
+    }
 }
 
 /// Row kinds that can be stored and restored. Dividers (`UnreadMark`,
@@ -118,11 +138,14 @@ impl SavedPlace {
         }) else {
             return Self::End;
         };
-        let offset_px = if rel == 0 { anchor.offset_px } else { 0 };
         Self::Line {
             row: row_ix,
-            offset_px,
+            offset_px: anchor.offset_px,
             line,
+            lead: rows[start..start + rel]
+                .iter()
+                .map(DividerKey::of)
+                .collect(),
         }
     }
 }
@@ -132,73 +155,6 @@ impl SavedPlace {
 pub enum Resume {
     End,
     Line { row: usize, offset_px: i32 },
-}
-
-/// The live viewport top while a conversation stays open, including day
-/// separators and unread marks. Used only to keep the same top row across an
-/// in-session refresh (history splice, typing footer). Persistence goes through
-/// [`SavedPlace`], which never stores those dividers.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct LivePlace {
-    row: usize,
-    offset_px: i32,
-    kind: RowKind,
-    author: Option<String>,
-    time: Option<String>,
-    text: String,
-    msgid: String,
-}
-
-impl LivePlace {
-    /// The top row under `anchor`, whatever its kind. A pinned or empty
-    /// transcript has no live place.
-    pub fn from_anchor(anchor: ScrollAnchor, rows: &[Row]) -> Option<Self> {
-        if anchor.pinned_to_bottom || rows.is_empty() {
-            return None;
-        }
-        let row = anchor.row.min(rows.len() - 1);
-        let top = &rows[row];
-        Some(Self {
-            row,
-            offset_px: anchor.offset_px,
-            kind: top.kind,
-            author: top.author.clone(),
-            time: top.time.clone(),
-            text: top.body.plain.clone(),
-            msgid: top.msgid.clone(),
-        })
-    }
-
-    fn is_row(&self, row: &Row) -> bool {
-        if !self.msgid.is_empty() {
-            return row.msgid == self.msgid;
-        }
-        self.kind == row.kind
-            && self.author == row.author
-            && self.time == row.time
-            && self.text == row.body.plain
-    }
-
-    /// Resolves this live top against the rows now shown.
-    pub fn resume(&self, rows: &[Row]) -> Resume {
-        if rows.is_empty() {
-            return Resume::End;
-        }
-        let found = if !self.msgid.is_empty() {
-            row_for_msgid(rows, &self.msgid)
-                .unwrap_or_else(|| self.row.min(rows.len() - 1))
-        } else if rows.get(self.row).is_some_and(|candidate| self.is_row(candidate)) {
-            self.row
-        } else {
-            rows.iter()
-                .position(|candidate| self.is_row(candidate))
-                .unwrap_or_else(|| self.row.min(rows.len() - 1))
-        };
-        Resume::Line {
-            row: found,
-            offset_px: self.offset_px,
-        }
-    }
 }
 
 /// The row a saved line sits on in `rows`: its msgid row, else its old row while that
@@ -224,14 +180,16 @@ pub fn has_line(place: &SavedPlace, rows: &[Row]) -> bool {
 
 /// Resolves a saved place against the rows now shown. A saved line is found at
 /// its old index when it is still there, else at the first row with the same
-/// content, else at its old index clamped to the rows that remain. No place
-/// resumes at the end: the caller decides what a conversation with no place
-/// opens at.
+/// content, else at its old index clamped to the rows that remain. Its dividers go
+/// back on top only when exactly those rows still sit above it. Otherwise the line
+/// is on top. No place resumes at the end: the caller decides what a conversation
+/// with no place opens at.
 pub fn resume(place: Option<&SavedPlace>, rows: &[Row]) -> Resume {
     let Some(SavedPlace::Line {
         row,
         offset_px,
         line,
+        lead,
     }) = place
     else {
         return Resume::End;
@@ -239,10 +197,27 @@ pub fn resume(place: Option<&SavedPlace>, rows: &[Row]) -> Resume {
     if rows.is_empty() {
         return Resume::End;
     }
-    let found = find_line(line, *row, rows).unwrap_or_else(|| (*row).min(rows.len() - 1));
-    Resume::Line {
-        row: found,
-        offset_px: *offset_px,
+    let Some(found) = find_line(line, *row, rows) else {
+        return Resume::Line {
+            row: (*row).min(rows.len() - 1),
+            offset_px: *offset_px,
+        };
+    };
+    let top = found.checked_sub(lead.len()).filter(|&top| {
+        rows[top..found]
+            .iter()
+            .map(DividerKey::of)
+            .eq(lead.iter().cloned())
+    });
+    match top {
+        Some(top) => Resume::Line {
+            row: top,
+            offset_px: *offset_px,
+        },
+        None => Resume::Line {
+            row: found,
+            offset_px: 0,
+        },
     }
 }
 
@@ -287,6 +262,7 @@ impl SavedPlace {
                     text: String::new(),
                     msgid: place.msg_id.clone(),
                 },
+                lead: Vec::new(),
             });
         }
         let kind = RestorableKind::from_name(&place.kind)?;
@@ -300,6 +276,7 @@ impl SavedPlace {
                 text: place.body.clone(),
                 msgid: String::new(),
             },
+            lead: Vec::new(),
         })
     }
 }
@@ -371,6 +348,7 @@ mod tests {
                 row: 2,
                 offset_px: 17,
                 line: LineKey::of(&rows[2]).expect("message is restorable"),
+                lead: Vec::new(),
             }
         );
     }
@@ -392,8 +370,9 @@ mod tests {
             place,
             SavedPlace::Line {
                 row: 1,
-                offset_px: 0,
+                offset_px: 3,
                 line: LineKey::of(&rows[1]).expect("message"),
+                lead: vec![DividerKey::of(&rows[0])],
             }
         );
         assert_eq!(place.to_stored().msg_id, "below-unread");
@@ -411,8 +390,9 @@ mod tests {
             place,
             SavedPlace::Line {
                 row: 1,
-                offset_px: 0,
+                offset_px: 8,
                 line: LineKey::of(&rows[1]).expect("message"),
+                lead: vec![DividerKey::of(&rows[0])],
             }
         );
         assert_eq!(place.to_stored().msg_id, "below-day");
@@ -427,6 +407,57 @@ mod tests {
         ];
         assert_eq!(SavedPlace::from_anchor(anchor(0, 0), &rows), SavedPlace::End);
         assert!(SavedPlace::from_anchor(anchor(0, 0), &rows).to_stored().follow_end);
+    }
+
+    #[test]
+    fn a_divider_top_stays_only_while_it_sits_above_its_line() {
+        let mark = || divider(9, RowKind::UnreadMark, "New messages");
+        let day = || divider(8, RowKind::DaySeparator, "Yesterday");
+        let lines = rows(3);
+        let before = vec![mark(), lines[0].clone(), lines[1].clone()];
+        let place = SavedPlace::from_anchor(anchor(0, 4), &before);
+        assert_eq!(
+            resume(Some(&place), &before),
+            Resume::Line { row: 0, offset_px: 4 },
+            "the mark still above its line stays on top"
+        );
+        let moved = vec![lines[0].clone(), mark(), lines[1].clone()];
+        assert_eq!(
+            resume(Some(&place), &moved),
+            Resume::Line { row: 0, offset_px: 0 },
+            "a moved mark leaves the reader on the line that was under it"
+        );
+        assert_eq!(
+            resume(Some(&place), &lines),
+            Resume::Line { row: 0, offset_px: 0 },
+            "a removed mark leaves the reader on the same line"
+        );
+        let under_a_day = vec![day(), lines[0].clone(), mark(), lines[1].clone()];
+        assert_eq!(
+            resume(Some(&place), &under_a_day),
+            Resume::Line { row: 1, offset_px: 0 },
+            "another divider above the line does not stand in for the mark"
+        );
+        let prepended = vec![lines[2].clone(), mark(), lines[0].clone(), lines[1].clone()];
+        assert_eq!(
+            resume(Some(&place), &prepended),
+            Resume::Line { row: 1, offset_px: 4 },
+            "rows above move the divider and its line together"
+        );
+        let on_a_day = vec![day(), lines[0].clone(), lines[1].clone()];
+        let place = SavedPlace::from_anchor(anchor(0, 2), &on_a_day);
+        let older_day = vec![lines[2].clone(), day(), lines[0].clone(), lines[1].clone()];
+        assert_eq!(
+            resume(Some(&place), &older_day),
+            Resume::Line { row: 1, offset_px: 2 },
+            "a day separator still above its line stays on top"
+        );
+        let same_day = vec![day(), lines[2].clone(), lines[0].clone(), lines[1].clone()];
+        assert_eq!(
+            resume(Some(&place), &same_day),
+            Resume::Line { row: 2, offset_px: 0 },
+            "lines spliced under a day separator leave the reader on the same line"
+        );
     }
 
     #[test]

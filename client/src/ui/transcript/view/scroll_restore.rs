@@ -3,7 +3,7 @@
 use gpui::{px, Context, ListOffset, Pixels, Size, Window};
 
 use super::{ConversationLines, TranscriptScrolled, TranscriptView};
-use crate::model::scroll_place::{has_line, resume, LivePlace, Resume, SavedPlace};
+use crate::model::scroll_place::{has_line, resume, Resume, SavedPlace};
 use crate::model::unread;
 
 /// A saved line the transcript waits for. A give-up lands as a conversation with no saved
@@ -67,13 +67,6 @@ impl TranscriptView {
         self.list_state.scroll_to(top);
     }
 
-    /// Whether the reader follows the end, by its bottom pin. The pin is set by the reader's
-    /// own moves and by landing at the end. The list clamps a restored line that sits within a
-    /// screen of the loaded end, so `at_end` reads true there while the reader has not moved.
-    fn reader_following(&self) -> bool {
-        self.model.scroll().pinned_to_bottom
-    }
-
     pub fn has_pending_restore(&self) -> bool {
         self.pending_restore.is_some()
     }
@@ -116,14 +109,8 @@ impl TranscriptView {
     /// Reloads the open conversation. A pending restore whose line arrived is applied.
     pub fn refresh_conversation(&mut self, lines: ConversationLines, cx: &mut Context<Self>) {
         let previous_rows = self.model.rows().len();
-        let was_at_end = self.reader_following();
-        let pending = self
-            .pending_restore
-            .as_ref()
-            .map(|pending| pending.place.clone());
-        let live = (pending.is_none() && !was_at_end)
-            .then(|| self.capture_live_place())
-            .flatten();
+        let was_at_end = self.model.scroll().pinned_to_bottom;
+        let place = self.capture_scroll_place();
         self.peers.facts = lines.facts;
         self.self_nick = lines.self_nick.to_owned();
         self.features = lines.features.clone();
@@ -137,25 +124,7 @@ impl TranscriptView {
         }
         self.reset_list();
         self.row_layouts.borrow_mut().clear();
-        if let Some(place) = pending {
-            if has_line(&place, self.model.rows()) {
-                self.restore_scroll_place(Some(&place), false, false);
-            } else {
-                if was_at_end {
-                    self.model.set_pinned_to_bottom(true);
-                    self.list_state
-                        .scroll_to_reveal_item(self.list_len().saturating_sub(1));
-                }
-                self.reported_at_end = false;
-            }
-        } else if was_at_end {
-            self.model.set_pinned_to_bottom(true);
-            self.list_state
-                .scroll_to_reveal_item(self.list_len().saturating_sub(1));
-            self.note_scroll_end(cx);
-        } else if let Some(place) = live {
-            self.restore_live_place(&place);
-        }
+        self.reland(&place, cx);
         cx.notify();
     }
 
@@ -164,29 +133,24 @@ impl TranscriptView {
         if self.typing_peer == peer {
             return;
         }
-        let was_at_end = self.reader_following();
-        let pending = self.pending_restore.is_some();
-        let live = (!pending && !was_at_end)
-            .then(|| self.capture_live_place())
-            .flatten();
+        let place = self.capture_scroll_place();
         self.typing_peer = peer;
         self.reset_list();
-        if pending {
-            if was_at_end {
-                self.model.set_pinned_to_bottom(true);
-                self.list_state
-                    .scroll_to_reveal_item(self.list_len().saturating_sub(1));
-            }
-            self.reported_at_end = false;
-        } else if was_at_end {
-            self.model.set_pinned_to_bottom(true);
-            self.list_state
-                .scroll_to_reveal_item(self.list_len().saturating_sub(1));
-            self.note_scroll_end(cx);
-        } else if let Some(place) = live {
-            self.restore_live_place(&place);
-        }
+        self.reland(&place, cx);
         cx.notify();
+    }
+
+    /// Puts the reader back on `place` after the list was reset. A wait stays at the end
+    /// until its line is there.
+    fn reland(&mut self, place: &SavedPlace, cx: &mut Context<Self>) {
+        if self.pending_restore.is_none() {
+            self.land(resume(Some(place), self.model.rows()));
+            self.note_scroll_end(cx);
+        } else if has_line(place, self.model.rows()) {
+            self.restore_scroll_place(Some(place), false, false);
+        } else {
+            self.reported_at_end = false;
+        }
     }
 
     fn sync_scroll_from_list(&mut self) {
@@ -199,7 +163,8 @@ impl TranscriptView {
         }
     }
 
-    /// Skips unread/day dividers for persistence. Returns a pending place while waiting.
+    /// The reader's place: the end, or a line and not a divider. Returns a pending place
+    /// while waiting.
     pub fn capture_scroll_place(&self) -> SavedPlace {
         if let Some(pending) = &self.pending_restore {
             return pending.place.clone();
@@ -207,21 +172,13 @@ impl TranscriptView {
         SavedPlace::from_anchor(self.model.scroll(), self.model.rows())
     }
 
-    fn capture_live_place(&self) -> Option<LivePlace> {
-        LivePlace::from_anchor(self.model.scroll(), self.model.rows())
-    }
-
-    fn restore_live_place(&mut self, place: &LivePlace) {
-        match place.resume(self.model.rows()) {
-            Resume::Line { row, offset_px } => {
-                self.model.set_scroll_anchor(row, offset_px);
-                self.list_state.scroll_to(ListOffset {
-                    item_ix: row,
-                    offset_in_item: px(offset_px as f32),
-                });
-            }
+    /// Sets the reader's place and moves the list to it.
+    pub(super) fn land(&mut self, place: Resume) {
+        match place {
             Resume::End => self.model.set_pinned_to_bottom(true),
+            Resume::Line { row, offset_px } => self.model.set_scroll_anchor(row, offset_px),
         }
+        self.project_place();
     }
 
     /// Lands on `place`. With `wait_for_history`, a line that is not shown yet keeps the
@@ -249,18 +206,9 @@ impl TranscriptView {
         }
         let rows = self.model.rows();
         let mark = unread::opening_row(rows, open_at_unread);
-        match resume(place, rows) {
-            Resume::End => match mark {
-                Some(row) => self.reveal_row(row),
-                None => self.model.set_pinned_to_bottom(true),
-            },
-            Resume::Line { row, offset_px } => {
-                self.model.set_scroll_anchor(row, offset_px);
-                self.list_state.scroll_to(ListOffset {
-                    item_ix: row,
-                    offset_in_item: px(offset_px as f32),
-                });
-            }
+        match (resume(place, rows), mark) {
+            (Resume::End, Some(row)) => self.reveal_row(row),
+            (resumed, _) => self.land(resumed),
         }
     }
 }

@@ -21,6 +21,7 @@ use crate::irc::world::Message;
 use crate::model::cursor::{page_amount, scroll_target};
 use crate::model::links::{conversation_channel_hits, invite_hit};
 use crate::model::presence::NickFacts;
+use crate::model::scroll_place::Resume;
 use crate::model::transcript::minute_of;
 use crate::model::typing_tail::typing_continues;
 use crate::model::unread::{self, UnseenLanding};
@@ -352,12 +353,11 @@ impl TranscriptView {
     /// The move behind `scroll_to_row`, without the at-end note. The anchor moves with the
     /// list, so capture saves the row the reader landed on.
     fn reveal_row(&mut self, row_ix: usize) {
-        self.model.set_scroll_anchor(row_ix, 0);
-        self.landing = true;
-        self.list_state.scroll_to(ListOffset {
-            item_ix: row_ix,
-            offset_in_item: px(0.),
+        self.land(Resume::Line {
+            row: row_ix,
+            offset_px: 0,
         });
+        self.landing = true;
     }
 
     /// The row find mode is on, drawn with the selection colour. `None` clears it.
@@ -1349,6 +1349,31 @@ mod tests {
             assert!(
                 !view.reports_follow_end(),
                 "a restored place must not report follow-end before the next layout"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn a_top_with_no_line_under_it_follows_the_end_on_refresh(cx: &mut TestAppContext) {
+        let cxw = cx.add_empty_window();
+        let drag = ScrollbarDragCell::default();
+        let transcript = cxw.update(|_, cx| {
+            let focus = cx.focus_handle();
+            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+        });
+        let features = IrcServerFeatures::new();
+        let messages: Vec<Message> = (0..5).map(|i| chat("anna", "line", i + 1)).collect();
+        let mut rows = crate::model::transcript::rows_from_messages(&messages, Some(3));
+        let mark = crate::model::unread::unread_mark_row(&rows).expect("the mark row");
+        rows.truncate(mark + 1);
+        transcript.update(cx, |view, cx| {
+            view.model.set_rows(rows);
+            view.model.set_scroll_anchor(mark, 0);
+            assert!(!view.reports_follow_end(), "the anchor is off the end");
+            view.refresh_conversation(lines_for(&messages, &features), cx);
+            assert!(
+                view.reports_follow_end(),
+                "no line at or below the top leaves the reader at the end"
             );
         });
     }

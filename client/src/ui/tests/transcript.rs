@@ -239,13 +239,8 @@ fn history_splice_keeps_the_reader_on_the_same_message(cx: &mut gpui::TestAppCon
     ui.settle();
     assert!(!ui.at_end());
 
-    let anchor_body = ui.shell.read_with(ui.cx, |shell, cx| {
-        let top = shell.transcript.read(cx).logical_scroll_top();
-        shell.transcript.read(cx).rows()[top.item_ix]
-            .body
-            .plain
-            .clone()
-    });
+    let anchor = place_msgid(&ui);
+    assert_eq!(anchor, "id-0", "the page-ups reach the first line");
 
     let mut combined: Vec<Message> = (0..9)
         .map(|i| tagged_chat("anna", &format!("old {i}"), i as i64 + 1, &format!("old-{i}")))
@@ -274,14 +269,16 @@ fn history_splice_keeps_the_reader_on_the_same_message(cx: &mut gpui::TestAppCon
     });
     ui.settle();
 
-    let body = ui.shell.read_with(ui.cx, |shell, cx| {
-        let top = shell.transcript.read(cx).logical_scroll_top();
-        shell.transcript.read(cx).rows()[top.item_ix]
-            .body
-            .plain
-            .clone()
-    });
-    assert_eq!(body, anchor_body, "splice must keep the reader on the same message");
+    assert_eq!(
+        place_msgid(&ui),
+        anchor,
+        "splice must keep the reader on the same message"
+    );
+    assert_eq!(
+        top_body(&ui),
+        "line 0",
+        "same-day lines spliced under the day separator do not take the reader up with it"
+    );
 }
 
 #[gpui::test]
@@ -332,13 +329,8 @@ fn history_prepend_keeps_anchor_message(cx: &mut gpui::TestAppContext) {
     ui.settle();
     assert!(!ui.at_end(), "reader must be detached before the prepend");
 
-    let anchor_body = ui.shell.read_with(ui.cx, |shell, cx| {
-        let top = shell.transcript.read(cx).logical_scroll_top();
-        shell.transcript.read(cx).rows()[top.item_ix]
-            .body
-            .plain
-            .clone()
-    });
+    let anchor = place_msgid(&ui);
+    assert_eq!(anchor, "anna-0", "the page-ups reach the first line");
 
     let mut combined: Vec<Message> = (0..4)
         .map(|i| {
@@ -374,15 +366,10 @@ fn history_prepend_keeps_anchor_message(cx: &mut gpui::TestAppContext) {
     });
     ui.settle();
 
-    let body = ui.shell.read_with(ui.cx, |shell, cx| {
-        let rows = shell.transcript.read(cx).rows();
-        let top = shell.transcript.read(cx).logical_scroll_top();
-        let ix = top.item_ix.min(rows.len().saturating_sub(1));
-        rows[ix].body.plain.clone()
-    });
     assert_eq!(
-        body, anchor_body,
-        "prepend must keep the anchored message at the top"
+        place_msgid(&ui),
+        anchor,
+        "prepend must keep the reader on the anchored message"
     );
 }
 
@@ -440,6 +427,29 @@ fn capped_trim_keeps_detached_place(cx: &mut gpui::TestAppContext) {
     }
 }
 
+/// The msgid of the line the reader's place is on.
+fn place_msgid(ui: &fixture::SeededShell) -> String {
+    ui.shell.read_with(ui.cx, |shell, cx| {
+        shell
+            .transcript
+            .read(cx)
+            .capture_scroll_place()
+            .to_stored()
+            .msg_id
+    })
+}
+
+/// The text of the row at the top of the transcript.
+fn top_body(ui: &fixture::SeededShell) -> String {
+    ui.shell.read_with(ui.cx, |shell, cx| {
+        let transcript = shell.transcript.read(cx);
+        transcript.rows()[transcript.logical_scroll_top().item_ix]
+            .body
+            .plain
+            .clone()
+    })
+}
+
 fn tagged_chat(author: &str, body: &str, sequence: i64, msgid: &str) -> Message {
     Message {
         kind: MessageKind::Message,
@@ -488,6 +498,21 @@ fn opening_a_direct_message_on_its_mark_saves_the_mark_line_not_the_end(
         ui.top_kind(),
         Some(RowKind::UnreadMark),
         "a refresh with nothing new keeps the reader on the mark"
+    );
+    ui.inject(OMARCHY, ":newbie!u@h PRIVMSG fred :one more");
+    ui.settle();
+    assert_eq!(
+        ui.top_kind(),
+        Some(RowKind::Message),
+        "the moved mark does not take the reader with it"
+    );
+    assert!(
+        !ui.at_end(),
+        "a new line moves the mark down but not the reader on the first unread line"
+    );
+    assert!(
+        !ui.reported_end(),
+        "the reader is still short of the end, so the read marker stays put"
     );
     ui.shell
         .update(ui.cx, |shell, cx| shell.remember_open_transcript(cx));

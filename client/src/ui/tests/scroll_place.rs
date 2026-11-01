@@ -4,6 +4,7 @@
 
 use super::fixture::{self, SeededShell, OMARCHY, WINDOW_HEIGHT, WINDOW_WIDTH};
 use super::scroll_restore::top_msgid;
+use crate::model::transcript::RowKind;
 use crate::storage::scrollplace::ScrollPlace;
 
 /// `count` lines from a direct message nobody has open, so they arrive unread under a mark.
@@ -151,4 +152,32 @@ fn a_line_arriving_above_the_end_arms_the_chip_before_a_layout(cx: &mut gpui::Te
             "the frame this line asks for draws the chip, so a reset list must not read as the end"
         );
     });
+}
+
+#[gpui::test]
+fn a_rebuild_keeps_a_reader_where_they_are(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    unread_direct_lines(&mut ui, "newbie", 60);
+    ui.select("newbie");
+    ui.shell
+        .update(ui.cx, |shell, cx| shell.rebuild_view_keeping_place(cx));
+    ui.settle();
+    assert_eq!(
+        ui.top_kind(),
+        Some(RowKind::UnreadMark),
+        "a rebuild moves no rows, so the view stays as it was"
+    );
+    assert!(!ui.reported_end());
+    ui.shell.update(ui.cx, |shell, cx| {
+        shell.transcript.update(cx, |t, cx| t.scroll_to_bottom(cx));
+    });
+    ui.settle();
+    ui.shell
+        .update(ui.cx, |shell, cx| shell.rebuild_view_keeping_place(cx));
+    ui.settle();
+    assert!(
+        ui.at_end(),
+        "a reader who went to the end is not sent back to the mark"
+    );
+    assert!(ui.reported_end());
 }
