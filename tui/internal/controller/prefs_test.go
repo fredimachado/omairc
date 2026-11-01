@@ -397,6 +397,7 @@ func TestReorderPreservesCollapsedNetworksLine(t *testing.T) {
 	addNetwork(t, c, "alpha")
 	addNetwork(t, c, "omarchy")
 	addNetwork(t, c, "zulu")
+	c.storedProfileIDs = []string{"alpha", "omarchy", "zulu"}
 	c.SetNetworkOrder([]string{"zulu", "alpha", "omarchy"})
 	c.SetNetworkCollapsed("alpha", true)
 	c.SetNetworkCollapsed("omarchy", true)
@@ -428,6 +429,9 @@ func TestReorderPreservesCollapsedNetworksLine(t *testing.T) {
 
 	if !c.MoveNetwork("zulu", 1) {
 		t.Fatal("MoveNetwork(zulu, 1) = false, want true")
+	}
+	if got, want := c.NetworkOrder(), []string{"alpha", "zulu", "omarchy"}; !slices.Equal(got, want) {
+		t.Fatalf("NetworkOrder after reorder = %v, want %v", got, want)
 	}
 
 	afterReorder, err := os.ReadFile(path)
