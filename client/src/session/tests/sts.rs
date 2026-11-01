@@ -324,6 +324,51 @@ fn a_policy_learned_before_a_restart_applies_after_it() {
 }
 
 #[test]
+fn two_sessions_on_one_file_keep_the_newer_policy_when_the_older_quits() {
+    let dir = TempDir::new("sts-two-writers");
+    let path = dir.path().join("sts");
+    let clock = Rc::new(FakeClock::new(Utc.timestamp_opt(0, 0).single().unwrap()));
+
+    let older_transport = Rc::new(LoopbackTransport::new());
+    let older = Session::new(
+        tls_config(),
+        older_transport.clone(),
+        clock.clone(),
+        Rc::new(IniStsStore::new(path.clone())),
+    );
+    older.start();
+    older_transport.complete_connect();
+    older_transport.inject_bytes(b":server CAP omairc LS :sts=duration=3600\r\n");
+
+    let newer_transport = Rc::new(LoopbackTransport::new());
+    let newer = Session::new(
+        tls_config(),
+        newer_transport.clone(),
+        clock.clone(),
+        Rc::new(IniStsStore::new(path.clone())),
+    );
+    newer.start();
+    newer_transport.complete_connect();
+    newer_transport.inject_bytes(b":server CAP omairc LS :sts=duration=60\r\n");
+
+    older.stop();
+    let kept = IniStsStore::new(path.clone())
+        .lookup(HOST, clock.now())
+        .expect("the newer policy is still valid");
+    assert_eq!(
+        kept.duration_seconds, 60,
+        "quitting the older client must not write its 3600s back"
+    );
+
+    clock.advance(Duration::from_secs(30));
+    newer.stop();
+    let refreshed = IniStsStore::new(path)
+        .lookup(HOST, clock.now())
+        .expect("the newer policy is refreshed on quit");
+    assert_eq!(refreshed.expiry_epoch_seconds, 90, "30s in plus 60s");
+}
+
+#[test]
 fn the_sts_upgrading_state_names_itself_like_the_cpp_enum() {
     assert_eq!(SessionState::StsUpgrading.name(), "StsUpgrading");
 }

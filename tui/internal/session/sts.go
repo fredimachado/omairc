@@ -213,6 +213,38 @@ func (s *STSStore) Store(host string, port uint16, durationSeconds int64, now ti
 	return s.persistLocked(host, port, durationSeconds, now.Unix(), false)
 }
 
+// Refresh extends host's policy to now plus durationSeconds, for a connection
+// that closes holding that duration. It writes only when the cache still holds
+// host with that same duration: a policy another client replaced or cleared is
+// left alone, and a missing one is not recreated. With no disk store the
+// in-memory entry is refreshed the same way. It mirrors StsStore::refresh.
+func (s *STSStore) Refresh(host string, durationSeconds int64, now time.Time) error {
+	key := stsGroupKey(host)
+	if key == "" || durationSeconds <= 0 {
+		return nil
+	}
+	nowUnix := now.Unix()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.disk == nil {
+		if cached, ok := s.entries[key]; ok && cached.DurationSeconds == durationSeconds {
+			cached.ExpiryEpochSeconds = stsExpiry(nowUnix, durationSeconds)
+			s.entries[key] = cached
+		}
+		return nil
+	}
+	entry, ok := s.disk.Matching(host, durationSeconds)
+	if !ok {
+		return nil
+	}
+	s.entries[key] = STSCached{
+		Port:               entry.Port,
+		DurationSeconds:    durationSeconds,
+		ExpiryEpochSeconds: stsExpiry(nowUnix, durationSeconds),
+	}
+	return s.persistLocked(host, entry.Port, durationSeconds, nowUnix, false)
+}
+
 // Clear drops the cached policy for host. Memory is cleared first; a disk
 // failure is returned without restoring memory.
 func (s *STSStore) Clear(host string) error {

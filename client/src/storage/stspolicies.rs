@@ -131,9 +131,29 @@ impl StsStore for IniStsStore {
         let mut settings = Settings::open_sts(&self.path);
         merge_sts_policy(&mut settings, &key, incoming);
         // Remember the written policy so a failed persist cannot drop it.
-        let winner = sts_cached_from_settings(&settings, &key).unwrap_or(incoming);
+        let winner = read_policy(&settings, &key).unwrap_or(incoming);
         self.remember(&key, winner);
         let _ = persist_sts_settings(&mut settings, &self.path, &self.memory, now.timestamp());
+    }
+
+    fn refresh(&self, host: &str, duration_seconds: i64, now: DateTime<Utc>) {
+        let Some(key) = sts_group_key(host) else {
+            return;
+        };
+        let now_unix = now.timestamp();
+        let mut settings = Settings::open_sts(&self.path);
+        let Some(cached) = read_policy(&settings, &key)
+            .filter(|cached| cached.duration_seconds == duration_seconds)
+        else {
+            return;
+        };
+        let refreshed = StsCached {
+            expiry_epoch_seconds: now_unix.saturating_add(duration_seconds),
+            ..cached
+        };
+        merge_sts_policy(&mut settings, &key, refreshed);
+        self.remember(&key, refreshed);
+        let _ = persist_sts_settings(&mut settings, &self.path, &self.memory, now_unix);
     }
 
     fn clear(&self, host: &str) {
@@ -144,18 +164,18 @@ impl StsStore for IniStsStore {
     }
 }
 
-/// Reads one host's STS entry from `settings`, or `None` when the port is invalid.
-fn sts_cached_from_settings(settings: &Settings, key: &str) -> Option<StsCached> {
-    if !settings.contains(key, PORT_KEY) || !settings.contains(key, EXPIRY_KEY) {
-        return None;
-    }
+/// Reads one host's group as a policy: a port in 1..=65535, and a duration and expiry of at
+/// least one second. `None` for a group that is missing or malformed.
+fn read_policy(settings: &Settings, key: &str) -> Option<StsCached> {
     let port = u16::try_from(settings.uint_value(key, PORT_KEY, 0))
         .ok()
         .filter(|&port| port >= 1)?;
-    Some(StsCached {
+    let duration_seconds = settings.int_value(key, DURATION_KEY, 0);
+    let expiry_epoch_seconds = settings.int_value(key, EXPIRY_KEY, 0);
+    (duration_seconds >= 1 && expiry_epoch_seconds >= 1).then_some(StsCached {
         port,
-        duration_seconds: settings.int_value(key, DURATION_KEY, 0),
-        expiry_epoch_seconds: settings.int_value(key, EXPIRY_KEY, 0),
+        duration_seconds,
+        expiry_epoch_seconds,
     })
 }
 
@@ -524,6 +544,95 @@ mod tests {
         store.store("irc.example", 6697, 60, at(0));
         store.store("irc.example", 6697, 0, at(0));
         assert_eq!(store.lookup("irc.example", at(1)), None);
+    }
+
+    #[test]
+    fn a_refresh_keeps_a_newer_policy_another_client_saved() {
+        let dir = TempDir::new("sts-refresh-newer");
+        let (ours, path) = store_in(&dir);
+        ours.store("irc.example", 6697, 3600, at(0));
+        IniStsStore::new(path.clone()).store("irc.example", 6697, 60, at(10));
+
+        ours.refresh("irc.example", 3600, at(20));
+
+        assert_eq!(
+            IniStsStore::new(path).lookup("irc.example", at(20)),
+            Some(StsCached {
+                port: 6697,
+                duration_seconds: 60,
+                expiry_epoch_seconds: 70,
+            }),
+            "the newer 60s policy keeps its expiry"
+        );
+    }
+
+    #[test]
+    fn a_refresh_extends_the_expiry_of_the_same_policy() {
+        let dir = TempDir::new("sts-refresh-same");
+        let (store, path) = store_in(&dir);
+        store.store("irc.example", 6697, 60, at(0));
+
+        store.refresh("irc.example", 60, at(30));
+
+        assert_eq!(
+            IniStsStore::new(path).lookup("irc.example", at(31)),
+            Some(StsCached {
+                port: 6697,
+                duration_seconds: 60,
+                expiry_epoch_seconds: 90,
+            })
+        );
+    }
+
+    #[test]
+    fn a_refresh_does_not_recreate_a_host_another_client_cleared() {
+        let dir = TempDir::new("sts-refresh-cleared");
+        let (ours, path) = store_in(&dir);
+        ours.store("irc.example", 6697, 60, at(0));
+        IniStsStore::new(path.clone()).store("irc.example", 6697, 0, at(10));
+
+        ours.refresh("irc.example", 60, at(20));
+
+        assert_eq!(
+            IniStsStore::new(path.clone()).lookup("irc.example", at(20)),
+            None
+        );
+        let text = fs::read_to_string(&path).expect("the file stays");
+        assert!(!text.contains(IRC_EXAMPLE_GROUP), "{text}");
+    }
+
+    #[test]
+    fn a_refresh_revives_an_expired_policy_of_the_same_duration() {
+        let dir = TempDir::new("sts-refresh-lapsed");
+        let (store, path) = store_in(&dir);
+        store.store("irc.example", 6697, 60, at(0));
+
+        store.refresh("irc.example", 60, at(100));
+
+        assert_eq!(
+            IniStsStore::new(path).lookup("irc.example", at(100)),
+            Some(StsCached {
+                port: 6697,
+                duration_seconds: 60,
+                expiry_epoch_seconds: 160,
+            }),
+            "a session that outlived its duration re-arms the policy it held"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_refresh_write_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = TempDir::new("sts-refresh-mode");
+        let (store, path) = store_in(&dir);
+        store.store("irc.example", 6697, 60, at(0));
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+
+        store.refresh("irc.example", 60, at(30));
+
+        let mode = fs::metadata(&path).expect("stat").permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
     }
 
     #[test]

@@ -1840,7 +1840,7 @@ func (s *Session) rescheduleStsExpiryLocked() {
 	if !s.tlsEnabled || s.stsDuration == nil {
 		return
 	}
-	s.persistSTS(s.sts.Store(s.config.Host, s.portNumber, *s.stsDuration, s.clock.Now()))
+	s.persistSTS(s.sts.Refresh(s.config.Host, *s.stsDuration, s.clock.Now()))
 }
 
 // persistSTS surfaces a disk-persistence failure without rolling back the

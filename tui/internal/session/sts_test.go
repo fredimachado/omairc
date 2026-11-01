@@ -399,3 +399,121 @@ func TestSTSStoreConcurrentStoresPersistAllHosts(t *testing.T) {
 		}
 	}
 }
+
+// stsStoreOnFile is one client's STS cache, attached to the shared file at path.
+// Two of them stand for two running clients.
+func stsStoreOnFile(path string) *STSStore {
+	store := NewSTSStore()
+	store.AttachDisk(storage.NewIniSTSStore(path))
+	return store
+}
+
+func TestSTSStoreRefreshKeepsNewerPolicyAnotherClientSaved(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sts")
+	older := stsStoreOnFile(path)
+	newer := stsStoreOnFile(path)
+	if err := older.Store("irc.example", 6697, 3600, time.Unix(0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if err := newer.Store("irc.example", 6697, 60, time.Unix(10, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := older.Refresh("irc.example", 3600, time.Unix(20, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	entry, ok := storage.NewIniSTSStore(path).Lookup("irc.example", 20)
+	if !ok || entry.DurationSeconds != 60 || entry.ExpiryEpochSeconds != 70 {
+		t.Fatalf("file must keep the newer 60s policy: %+v ok=%v", entry, ok)
+	}
+}
+
+func TestSTSStoreRefreshExtendsSameDurationPolicyOnDisk(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sts")
+	store := stsStoreOnFile(path)
+	if err := store.Store("irc.example", 6697, 60, time.Unix(0, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.Refresh("irc.example", 60, time.Unix(30, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	entry, ok := storage.NewIniSTSStore(path).Lookup("irc.example", 31)
+	if !ok || entry.ExpiryEpochSeconds != 90 {
+		t.Fatalf("refresh must extend the expiry to 30+60: %+v ok=%v", entry, ok)
+	}
+}
+
+func TestSTSStoreRefreshDoesNotRecreateClearedPolicy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sts")
+	older := stsStoreOnFile(path)
+	newer := stsStoreOnFile(path)
+	if err := older.Store("irc.example", 6697, 60, time.Unix(0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if err := newer.Store("irc.example", 6697, 0, time.Unix(10, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := older.Refresh("irc.example", 60, time.Unix(20, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := storage.NewIniSTSStore(path).Lookup("irc.example", 20); ok {
+		t.Fatal("a cleared host must not come back on refresh")
+	}
+	raw, err := os.ReadFile(path)
+	if err == nil && strings.Contains(string(raw), storage.STSGroupKey("irc.example")) {
+		t.Fatalf("cleared group must stay out of the file: %s", raw)
+	}
+}
+
+func TestSTSStoreRefreshRevivesLapsedPolicyOfSameDuration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sts")
+	store := stsStoreOnFile(path)
+	if err := store.Store("irc.example", 6697, 60, time.Unix(0, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.Refresh("irc.example", 60, time.Unix(100, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	entry, ok := storage.NewIniSTSStore(path).Lookup("irc.example", 100)
+	if !ok || entry.ExpiryEpochSeconds != 160 {
+		t.Fatalf("a session that outlived its duration re-arms its own policy: %+v ok=%v", entry, ok)
+	}
+}
+
+// TestSessionQuitKeepsNewerPolicyAnotherClientSaved is the two-writer case through
+// Stop: the older client quits holding 3600s after the newer one saved 60s.
+func TestSessionQuitKeepsNewerPolicyAnotherClientSaved(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sts")
+	clock := NewFakeClock(time.Unix(0, 0))
+	older, olderTransport := stsSessionOnFile(path, clock)
+	older.Start()
+	olderTransport.CompleteConnect()
+	olderTransport.InjectBytes([]byte(":server CAP omairc LS :sts=duration=3600\r\n"))
+
+	newer, newerTransport := stsSessionOnFile(path, clock)
+	newer.Start()
+	newerTransport.CompleteConnect()
+	newerTransport.InjectBytes([]byte(":server CAP omairc LS :sts=duration=60\r\n"))
+
+	older.Stop()
+
+	entry, ok := storage.NewIniSTSStore(path).Lookup("irc.example", clock.Now().Unix())
+	if !ok || entry.DurationSeconds != 60 {
+		t.Fatalf("quitting the older client must keep the newer 60s policy: %+v ok=%v", entry, ok)
+	}
+}
+
+// stsSessionOnFile is a TLS session whose cache is the shared file at path.
+func stsSessionOnFile(path string, clock *FakeClock) (*Session, *LoopbackTransport) {
+	config := sessionTestConfig(sessionTestNetworkID)
+	config.AutojoinChannels = nil
+	transport := NewLoopbackTransport()
+	return NewSessionWithSTS(config, transport, clock, stsStoreOnFile(path)), transport
+}

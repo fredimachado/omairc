@@ -165,6 +165,22 @@ func (s *IniSTSStore) Store(host string, port uint16, durationSeconds, nowUnix i
 	return persistSTSSettings(settings, s.path)
 }
 
+// Matching returns the on-disk policy for host when it is a valid policy with
+// durationSeconds. An expired one still matches, so a session that outlived its
+// duration re-arms it on disconnect. A missing, invalid, or differently timed
+// policy does not match. It mirrors the match in IniStsStore::refresh.
+func (s *IniSTSStore) Matching(host string, durationSeconds int64) (STSEntry, bool) {
+	key := STSGroupKey(host)
+	if key == "" || s.path == "" {
+		return STSEntry{}, false
+	}
+	entry, ok := readSTSPolicy(OpenSTSSettings(s.path), key)
+	if !ok || entry.DurationSeconds != durationSeconds {
+		return STSEntry{}, false
+	}
+	return entry, true
+}
+
 // Clear drops the policy for host, if any. It mirrors IniStsStore::clear.
 func (s *IniSTSStore) Clear(host string) Status {
 	key := STSGroupKey(host)
@@ -212,6 +228,23 @@ func (s *IniSTSStore) remove(key string) Status {
 	}
 	settings.RemoveGroup(key)
 	return persistSTSSettings(settings, s.path)
+}
+
+// readSTSPolicy reads one group as a policy: a port in 1..65535, and a duration
+// and expiry of at least one second. It reports false for a group that is
+// missing or malformed. It mirrors `read_policy` in stspolicies.rs.
+func readSTSPolicy(settings *Settings, key string) (STSEntry, bool) {
+	port := settings.Uint(key, stsPortKey, 0)
+	duration := settings.Int64(key, stsDurationKey, 0)
+	expiry := settings.Int64(key, stsExpiryKey, 0)
+	if port < 1 || port > 65535 || duration < 1 || expiry < 1 {
+		return STSEntry{}, false
+	}
+	return STSEntry{
+		Port:               uint16(port),
+		DurationSeconds:    duration,
+		ExpiryEpochSeconds: expiry,
+	}, true
 }
 
 // mergeSTSPolicy writes incoming as the current policy for key. Per IRCv3 STS,
