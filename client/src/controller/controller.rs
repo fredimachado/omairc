@@ -558,6 +558,7 @@ impl Controller {
         let Some(session) = self.manager.find(network_id) else {
             return;
         };
+        self.set_last_error(network_id, None);
         self.playback
             .borrow_mut()
             .on_registered(network_id, &session.autojoin_channels());
