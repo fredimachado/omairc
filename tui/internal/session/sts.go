@@ -104,8 +104,8 @@ func stsTokenValue(token string) string {
 }
 
 // stsFileView is what the disk store held for one host when it was read.
-// unreadable means the file exists but cannot be read, which says nothing about
-// the host. policy is nil when the group is missing or malformed.
+// unreadable means the file says nothing about the host. policy is nil when a
+// well-formed file has no group for the host, which is a clear.
 type stsFileView struct {
 	unreadable bool
 	policy     *STSCached

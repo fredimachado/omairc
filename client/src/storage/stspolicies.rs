@@ -29,12 +29,13 @@ const EXPIRY_KEY: &str = "expiry";
 /// Cap on `sts.corrupt` / `sts.corrupt.N` attempts so a persistent error cannot spin forever.
 const MAX_STS_CORRUPT_BACKUPS: u32 = 10_000;
 
-/// What the file held for one host when it was read. `Unreadable` means the file exists but
-/// cannot be read, so it says nothing about the host.
+/// What the file held for one host when it was read. `Unreadable` says nothing about the host:
+/// the file cannot be read, or it is malformed with no valid policy for the host.
 #[derive(Clone, Copy, Debug)]
 enum FileView {
     Unreadable,
-    /// The host's policy group, lapsed or not. `None` when the group is missing or malformed.
+    /// The host's policy group, lapsed or not. `None` only when a well-formed file has no group
+    /// for the host, which is a clear.
     Group(Option<StsCached>),
 }
 
@@ -61,13 +62,22 @@ impl FileView {
     }
 }
 
-/// Reads `key` as the file at `path` holds it, given `settings` loaded from that file. A
-/// malformed file reads leniently, as everywhere else. An unreadable one is `Unreadable`, since
-/// its empty load would look like a cleared host.
+/// Reads `key` as the file at `path` holds it, given `settings` loaded from that file. Only a
+/// missing group in a well-formed file is a clear. A malformed file, or a group that is present
+/// but is not a valid policy, says nothing about the host, so it is `Unreadable`.
 fn file_view(path: &Path, settings: &Settings, key: &str) -> FileView {
-    match probe_ini(path) {
-        IniProbe::Unreadable => FileView::Unreadable,
-        IniProbe::Ok | IniProbe::Malformed => FileView::Group(read_policy(settings, key)),
+    let probe = probe_ini(path);
+    if probe == IniProbe::Unreadable {
+        return FileView::Unreadable;
+    }
+    if let Some(policy) = read_policy(settings, key) {
+        return FileView::Group(Some(policy));
+    }
+    let missing = !settings.child_groups("").iter().any(|group| group == key);
+    if probe == IniProbe::Ok && missing {
+        FileView::Group(None)
+    } else {
+        FileView::Unreadable
     }
 }
 
@@ -1004,6 +1014,33 @@ mod tests {
                 "at {seconds}s the unwritten 86400s policy must hold over the refreshed 60s one"
             );
         }
+    }
+
+    /// The file holds a 3600s policy when this store's write fails, then it is overwritten with
+    /// garbage. A malformed file with no valid group for the host says nothing about it, so the
+    /// unwritten 86400 policy still answers instead of the garbage reading as a clear.
+    #[cfg(unix)]
+    #[test]
+    fn a_malformed_file_is_not_a_clear_for_an_unwritten_policy() {
+        let dir = TempDir::new("sts-moved-malformed");
+        let (ours, path) = store_in(&dir);
+        IniStsStore::new(path.clone()).store("irc.example", 6697, 3600, at(0));
+        if !make_read_only(&path) {
+            return;
+        }
+        ours.store("irc.example", 6697, 86400, at(0));
+        make_writable(&path);
+        fs::write(&path, "this line has no equals sign\n").expect("write garbage");
+
+        assert_eq!(
+            ours.lookup("irc.example", at(1)),
+            Some(StsCached {
+                port: 6697,
+                duration_seconds: 86400,
+                expiry_epoch_seconds: 86400,
+            }),
+            "a malformed file must not drop the unwritten 86400s policy"
+        );
     }
 
     /// The file is unreadable when this store looks at it. Nothing can say the host moved, so

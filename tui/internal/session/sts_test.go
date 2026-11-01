@@ -845,6 +845,36 @@ func TestSTSStoreExpiryOnlyRefreshByAnotherClientKeepsUnwrittenPolicy(t *testing
 	}
 }
 
+// TestSTSStoreMalformedFileIsNotAClearForUnwrittenPolicy: the file holds a 3600s
+// policy when this store's write fails, then it is overwritten with garbage. A
+// malformed file with no valid group for the host says nothing about it, so the
+// unwritten 86400s policy still answers instead of the garbage reading as a clear.
+func TestSTSStoreMalformedFileIsNotAClearForUnwrittenPolicy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix mode bits")
+	}
+	path := filepath.Join(t.TempDir(), "sts")
+	if err := stsStoreOnFile(path).Store("irc.example", 6697, 3600, time.Unix(0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	makeReadOnly(t, path)
+	ours := stsStoreOnFile(path)
+	if err := ours.Store("irc.example", 6697, 86400, time.Unix(0, 0)); err == nil {
+		t.Fatal("a read-only file must refuse the write")
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("this line has no equals sign\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cached, ok := ours.Lookup("irc.example", time.Unix(1, 0))
+	if !ok || cached.ExpiryEpochSeconds != 86400 {
+		t.Fatalf("a malformed file must not drop the unwritten 86400s policy: %+v ok=%v", cached, ok)
+	}
+}
+
 // TestSTSStoreUnreadableFileKeepsUnwrittenPolicy: the file is unreadable when this
 // store looks at it. Nothing can say the host moved, so the unwritten 86400 policy
 // still answers.

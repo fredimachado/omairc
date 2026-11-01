@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -166,19 +167,28 @@ func (s *IniSTSStore) Store(host string, port uint16, durationSeconds, nowUnix i
 }
 
 // Group reads host's policy group as the file holds it, lapsed or not. ok is
-// false when the group is missing or malformed. readable is false when the file
-// exists but cannot be read, which says nothing about the host. It mirrors
-// file_view in client/src/storage/stspolicies.rs.
+// true for a valid policy. readable is false when the file says nothing about
+// the host: it cannot be read, it is malformed, or the group is present but is
+// not a valid policy. Otherwise ok false and readable true means a well-formed
+// file with no group for the host, which is a clear. It mirrors file_view in
+// client/src/storage/stspolicies.rs.
 func (s *IniSTSStore) Group(host string) (entry STSEntry, ok, readable bool) {
 	key := STSGroupKey(host)
 	if key == "" || s.path == "" {
 		return STSEntry{}, false, true
 	}
-	if ProbeSettingsIni(s.path) == IniProbeUnreadable {
+	probe := ProbeSettingsIni(s.path)
+	if probe == IniProbeUnreadable {
 		return STSEntry{}, false, false
 	}
-	entry, ok = readSTSPolicy(OpenSTSSettings(s.path), key)
-	return entry, ok, true
+	settings := OpenSTSSettings(s.path)
+	if entry, ok = readSTSPolicy(settings, key); ok {
+		return entry, true, true
+	}
+	if probe == IniProbeOK && !slices.Contains(settings.ChildGroups(""), key) {
+		return STSEntry{}, false, true
+	}
+	return STSEntry{}, false, false
 }
 
 // Clear drops the policy for host, if any. It mirrors IniStsStore::clear.
