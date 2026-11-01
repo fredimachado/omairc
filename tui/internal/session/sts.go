@@ -12,12 +12,13 @@ import (
 )
 
 // STS (Strict Transport Security) support.
-// The in-memory `STSStore` is the process source of truth (MemoryStsStore in
+// The `STSStore` is the process STS policy cache (MemoryStsStore in
 // `client/src/session/sts.rs`). Durable INI persistence is
-// `storage.IniSTSStore` (`client/src/storage/stspolicies.rs`). Memory is
-// updated first; a disk failure never drops a policy that already applies in
-// memory, and a corrupt file never forces a plaintext connect for a host that
-// still has a valid in-memory entry.
+// `storage.IniSTSStore` (`client/src/storage/stspolicies.rs`). Lookups answer
+// from the file when it holds a live policy for the host, and from memory when
+// it does not. A store updates memory first; a disk failure never drops a
+// policy that already applies in memory, and a corrupt file never forces a
+// plaintext connect for a host that still has a valid in-memory entry.
 
 // STSAdvertisement is the parsed value of one `sts` CAP token. A nil field
 // means the advertisement did not carry that key. It mirrors
@@ -102,8 +103,9 @@ func stsTokenValue(token string) string {
 
 // STSStore is the process STS policy cache. Lookup expires through the caller's
 // now, so a FakeClock can drive expiry deterministically. An optional disk
-// store persists learned policies across restarts; memory always wins over a
-// corrupt or unwritable file.
+// store persists learned policies across restarts. The file answers first when
+// it holds a live policy; memory answers when it does not, so a corrupt or
+// unwritable file never weakens a policy this process learned.
 type STSStore struct {
 	mu      sync.Mutex
 	entries map[string]STSCached
@@ -127,10 +129,11 @@ func (s *STSStore) AttachDisk(disk *storage.IniSTSStore) {
 }
 
 // Lookup returns the cached policy for host at now, dropping an invalid or
-// expired entry. Memory is checked first; on a miss the disk store is consulted
-// and hydrated into memory. A malformed file is recovered through
-// flushRecoveryLocked so other in-memory hosts are not dropped. It mirrors
-// StsStore::lookup.
+// expired entry. The file answers first when it holds a live policy for host,
+// and that policy is hydrated into memory, so a stale memory entry never beats a
+// newer one another client saved. Memory answers only when the file has none.
+// A malformed file is recovered through flushRecoveryLocked so other in-memory
+// hosts are not dropped. It mirrors StsStore::lookup.
 func (s *STSStore) Lookup(host string, now time.Time) (STSCached, bool) {
 	key := stsGroupKey(host)
 	if key == "" {
@@ -139,12 +142,22 @@ func (s *STSStore) Lookup(host string, now time.Time) (STSCached, bool) {
 	nowUnix := now.Unix()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if cached, ok := s.lookupDiskLocked(host, nowUnix); ok {
+		s.entries[key] = cached
+		return cached, true
+	}
 	if entry, ok := s.entries[key]; ok {
 		if entry.Port >= 1 && entry.Port <= 65535 && entry.ExpiryEpochSeconds > nowUnix {
 			return entry, true
 		}
 		delete(s.entries, key)
 	}
+	return STSCached{}, false
+}
+
+// lookupDiskLocked reads host's live policy from the disk store, or reports
+// false when the file has none. Caller must hold s.mu.
+func (s *STSStore) lookupDiskLocked(host string, nowUnix int64) (STSCached, bool) {
 	if s.disk == nil {
 		return STSCached{}, false
 	}
@@ -155,13 +168,11 @@ func (s *STSStore) Lookup(host string, now time.Time) (STSCached, bool) {
 	if !ok {
 		return STSCached{}, false
 	}
-	cached := STSCached{
+	return STSCached{
 		Port:               entry.Port,
 		DurationSeconds:    entry.DurationSeconds,
 		ExpiryEpochSeconds: entry.ExpiryEpochSeconds,
-	}
-	s.entries[key] = cached
-	return cached, true
+	}, true
 }
 
 // lookupMalformedDiskLocked inspects a malformed sts file without a blind
@@ -176,15 +187,11 @@ func (s *STSStore) lookupMalformedDiskLocked(host string, nowUnix int64) (STSCac
 	if !present {
 		return STSCached{}, false
 	}
-	cached := STSCached{
+	return STSCached{
 		Port:               entry.Port,
 		DurationSeconds:    entry.DurationSeconds,
 		ExpiryEpochSeconds: entry.ExpiryEpochSeconds,
-	}
-	if key := stsGroupKey(host); key != "" {
-		s.entries[key] = cached
-	}
-	return cached, true
+	}, true
 }
 
 // Store caches a policy for host at now. A zero duration clears the entry, and

@@ -191,9 +191,11 @@ func (s *IniSTSStore) Clear(host string) Status {
 }
 
 // MergeEntries writes every entry (keyed by STS group key) into the file,
-// removing clearKeys first. Parseable on-disk groups are kept and merged with
-// the same replace rule as Store. Used by session.STSStore so a
-// malformed-file recovery includes every in-memory policy.
+// removing clearKeys first. Parseable on-disk groups are kept. A live policy the
+// file already holds wins over the entry for the same key, since it is newer
+// than memory. Used by session.STSStore so a malformed-file recovery includes
+// every in-memory policy the file does not have. It mirrors
+// merge_memory_into_settings in stspolicies.rs.
 func (s *IniSTSStore) MergeEntries(entries map[string]STSEntry, clearKeys []string, nowUnix int64) Status {
 	if s == nil || s.path == "" {
 		return StatusWritten
@@ -206,6 +208,9 @@ func (s *IniSTSStore) MergeEntries(entries map[string]STSEntry, clearKeys []stri
 	}
 	for key, entry := range entries {
 		if key == "" || entry.Port < 1 {
+			continue
+		}
+		if disk, ok := readSTSPolicy(settings, key); ok && disk.ExpiryEpochSeconds > nowUnix {
 			continue
 		}
 		mergeSTSPolicy(settings, key, entry)

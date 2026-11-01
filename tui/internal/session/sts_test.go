@@ -517,3 +517,51 @@ func stsSessionOnFile(path string, clock *FakeClock) (*Session, *LoopbackTranspo
 	transport := NewLoopbackTransport()
 	return NewSessionWithSTS(config, transport, clock, stsStoreOnFile(path)), transport
 }
+
+// TestSTSStoreLookupPrefersNewerDiskPolicyOverMemory: this client's memory holds
+// 3600s, and another client saved 60s after it, so the file's policy wins.
+func TestSTSStoreLookupPrefersNewerDiskPolicyOverMemory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sts")
+	ours := stsStoreOnFile(path)
+	theirs := stsStoreOnFile(path)
+	if err := ours.Store("irc.example", 6697, 3600, time.Unix(0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if err := theirs.Store("irc.example", 6697, 60, time.Unix(10, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	cached, ok := ours.Lookup("irc.example", time.Unix(20, 0))
+	if !ok || cached.DurationSeconds != 60 || cached.ExpiryEpochSeconds != 70 {
+		t.Fatalf("the policy another client saved must beat memory: %+v ok=%v", cached, ok)
+	}
+}
+
+// TestSTSStoreRecoveryKeepsNewerDiskPolicyOverMemory: the file goes malformed
+// after another client saved 60s, and recovery must not write the stale 3600s
+// memory entry over it.
+func TestSTSStoreRecoveryKeepsNewerDiskPolicyOverMemory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sts")
+	ours := stsStoreOnFile(path)
+	theirs := stsStoreOnFile(path)
+	if err := ours.Store("irc.example", 6697, 3600, time.Unix(0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if err := theirs.Store("irc.example", 6697, 60, time.Unix(10, 0)); err != nil {
+		t.Fatal(err)
+	}
+	key := storage.STSGroupKey("irc.example")
+	mixed := "this line has no equals sign\n[" + key + "]\nport=6697\nduration=60\nexpiry=70\n"
+	if err := os.WriteFile(path, []byte(mixed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ours.Store("third.example", 6699, 10, time.Unix(20, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	entry, ok := storage.NewIniSTSStore(path).Lookup("irc.example", 20)
+	if !ok || entry.DurationSeconds != 60 || entry.ExpiryEpochSeconds != 70 {
+		t.Fatalf("recovery must keep the 60s policy on disk: %+v ok=%v", entry, ok)
+	}
+}
