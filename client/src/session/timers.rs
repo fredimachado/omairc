@@ -1,8 +1,8 @@
-//! The session's timers: the reconnect backoff, the capability deadline, the ping
-//! watchdog and the label expiry. Each slot holds at most one armed timer. Arming a
-//! slot cancels its predecessor, and a callback whose id is no longer the slot's
-//! current one is ignored. `timer_fired` routes an expiry to the handler that owns
-//! the slot.
+//! The session's timers: the reconnect backoff, the capability deadline, the
+//! registration deadline, the ping watchdog and the label expiry. Each slot holds
+//! at most one armed timer. Arming a slot cancels its predecessor, and a callback
+//! whose id is no longer the slot's current one is ignored. `timer_fired` routes
+//! an expiry to the handler that owns the slot.
 
 use std::time::Duration;
 
@@ -13,12 +13,13 @@ use super::session::{Core, Session};
 pub(crate) enum TimerSlot {
     Reconnect,
     Capability,
+    Registration,
     Ping,
     Label,
 }
 
 impl TimerSlot {
-    pub(crate) const COUNT: usize = 4;
+    pub(crate) const COUNT: usize = 5;
 
     fn index(self) -> usize {
         self as usize
@@ -64,6 +65,7 @@ impl Core {
         match slot {
             TimerSlot::Reconnect => self.begin_reconnect_attempt(),
             TimerSlot::Capability => self.on_capability_timeout(),
+            TimerSlot::Registration => self.on_registration_timeout(),
             TimerSlot::Ping => self.on_ping_watchdog_fired(),
             TimerSlot::Label => self.on_label_timer_fired(),
         }

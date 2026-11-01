@@ -1,9 +1,10 @@
 //! `Clock` is the only place a session reads time or arms a timer. Every
-//! timer the state machine needs (reconnect backoff, capability timeout, ping
-//! watchdog, labeled-response timeout, typing refresh) goes through `after`, so
-//! tests drive them from a `FakeClock` without sleeping. The production
-//! `RealClock` never spawns a thread: the UI loop calls `fire_due`, which keeps
-//! the session on the UI thread and needs no `Send`.
+//! timer the state machine needs (reconnect backoff, capability timeout,
+//! registration timeout, ping watchdog, labeled-response timeout, typing
+//! refresh) goes through `after`, so tests drive them from a `FakeClock`
+//! without sleeping. The production `RealClock` never spawns a thread: the UI
+//! loop calls `fire_due`, which keeps the session on the UI thread and needs
+//! no `Send`.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;

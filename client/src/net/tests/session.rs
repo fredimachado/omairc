@@ -2,7 +2,7 @@
 //! hub, with bytes on a real socket. Both cases start from `SessionConfig` and read the
 //! outcome from the session's own events, so they check the whole path, not one layer.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Sender};
@@ -15,6 +15,7 @@ use crate::net::NetOptions;
 use crate::session::clock::RealClock;
 use crate::session::config::SessionConfig;
 use crate::session::events::{ErrorKind, SessionEvent, SessionState};
+use crate::session::registration::REGISTRATION_TIMEOUT_MESSAGE;
 use crate::session::session::Session;
 use crate::session::sts::MemoryStsStore;
 use crate::session::transport::{ConnectionState, Transport};
@@ -86,6 +87,57 @@ fn error_kinds(events: &[SessionEvent]) -> Vec<ErrorKind> {
         .collect()
 }
 
+/// The `ErrorOccurred` messages in `events`, in order.
+fn error_messages(events: &[SessionEvent]) -> Vec<&str> {
+    events
+        .iter()
+        .filter_map(|event| match event {
+            SessionEvent::ErrorOccurred { message, .. } => Some(message.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A listener that accepts one TCP connection and never writes.
+fn silent_listener(listener: TcpListener) {
+    thread::spawn(move || {
+        let Ok((mut stream, _)) = listener.accept() else {
+            return;
+        };
+        // Drain inbound bytes and stay silent until the client closes.
+        let mut buffer = [0_u8; 1024];
+        loop {
+            match stream.read(&mut buffer) {
+                Ok(0) | Err(_) => return,
+                Ok(_) => {}
+            }
+        }
+    });
+}
+
+/// A listener that accepts, waits past a short delay, then completes registration.
+fn delayed_ircd(listener: TcpListener, delay: Duration) {
+    thread::spawn(move || {
+        let Ok((stream, _)) = listener.accept() else {
+            return;
+        };
+        thread::sleep(delay);
+        let Ok(mut writer) = stream.try_clone() else {
+            return;
+        };
+        for line in BufReader::new(stream).lines() {
+            let Ok(line) = line else {
+                return;
+            };
+            if line.starts_with("CAP LS") {
+                let _ = writer.write_all(b"CAP * LS :\r\n");
+            } else if line.starts_with("USER ") {
+                let _ = writer.write_all(b":irc.example 001 fred :Welcome\r\n");
+            }
+        }
+    });
+}
+
 /// Registration and PING/PONG over a plaintext socket, against the scripted ircd.
 #[test]
 fn session_registers_and_answers_ping_over_tcp() {
@@ -124,6 +176,84 @@ fn session_registers_and_answers_ping_over_tcp() {
         "the session announced registration"
     );
     assert!(error_kinds(&events).is_empty(), "no errors: {events:?}");
+}
+
+/// A server that accepts TCP and stays silent trips the registration timeout,
+/// reports the network-row text, and schedules a reconnect.
+#[test]
+fn silent_server_times_out_registration_and_schedules_reconnect() {
+    let rig = Rig::new(NetOptions::default());
+    let listener = TcpListener::bind("127.0.0.1:0").expect("the silent peer binds a port");
+    let port = listener
+        .local_addr()
+        .expect("the silent peer has an address")
+        .port();
+    silent_listener(listener);
+
+    let mut config = SessionConfig::with_defaults("net", "Net", "127.0.0.1", "fred");
+    config.port = port;
+    config.tls_enabled = false;
+    config.registration_timeout_ms = 80;
+    config.reconnect_base_delay_ms = 250;
+    config.reconnect_maximum_delay_ms = 1000;
+    let clock = Rc::new(RealClock::new());
+    let transport = rig.hub.register();
+    let sts = Rc::new(MemoryStsStore::default());
+    let session = Session::new(config, transport.clone(), clock.clone(), sts);
+    session.start();
+
+    drive(&rig, &clock, || session.state() == SessionState::Reconnecting);
+
+    let events = session.drain_events();
+    assert_eq!(
+        error_messages(&events),
+        [REGISTRATION_TIMEOUT_MESSAGE],
+        "{events:?}"
+    );
+    assert_eq!(error_kinds(&events), [ErrorKind::Network], "{events:?}");
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            SessionEvent::ReconnectScheduled { attempt: 1, .. }
+        )),
+        "a reconnect must be scheduled: {events:?}"
+    );
+    assert_eq!(session.state(), SessionState::Reconnecting);
+}
+
+/// A slow server that replies inside the registration timeout still registers.
+#[test]
+fn slow_server_that_replies_in_time_still_registers() {
+    let rig = Rig::new(NetOptions::default());
+    let listener = TcpListener::bind("127.0.0.1:0").expect("the delayed peer binds a port");
+    let port = listener
+        .local_addr()
+        .expect("the delayed peer has an address")
+        .port();
+    delayed_ircd(listener, Duration::from_millis(40));
+
+    let mut config = SessionConfig::with_defaults("net", "Net", "127.0.0.1", "fred");
+    config.port = port;
+    config.tls_enabled = false;
+    config.registration_timeout_ms = 500;
+    config.reconnect_enabled = false;
+    let clock = Rc::new(RealClock::new());
+    let transport = rig.hub.register();
+    let sts = Rc::new(MemoryStsStore::default());
+    let session = Session::new(config, transport.clone(), clock.clone(), sts);
+    session.start();
+
+    drive(&rig, &clock, || session.state() == SessionState::Registered);
+
+    let events = session.drain_events();
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, SessionEvent::Registered { .. })),
+        "the session announced registration"
+    );
+    assert!(error_kinds(&events).is_empty(), "no errors: {events:?}");
+    assert_eq!(session.state(), SessionState::Registered);
 }
 
 /// The system trust store does not hold the test certificate. The session sees the

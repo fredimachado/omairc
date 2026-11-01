@@ -4,13 +4,19 @@
 //! USER. A `433` before welcome retries with `_` and then `2`; past that the
 //! session fails visibly. After welcome, the session auto-joins, identifies with
 //! NickServ when a password is set, and arms the ping watchdog.
+//! A silent server that never answers CAP LS is closed by the registration
+//! timeout (`REGISTRATION_TIMEOUT_MS`) with [`REGISTRATION_TIMEOUT_MESSAGE`].
 
 use super::events::{ErrorKind, SessionEvent, SessionState, Severity};
 use super::session::{lifecycle_event, Core, RegistrationNick, HISTORY_LIMIT};
+use super::timers::TimerSlot;
 use crate::irc::commandbuilder;
 use crate::irc::jointarget::IrcJoinTarget;
 use crate::irc::message::IrcMessage;
 use crate::irc::serverfeatures::IrcServerFeatures;
+
+/// The network-row text when registration never completes.
+pub const REGISTRATION_TIMEOUT_MESSAGE: &str = "The server didn't respond";
 
 impl Core {
     /// Sends PASS (when set and not reserved for SASL), NICK and USER, once
@@ -130,7 +136,8 @@ impl Core {
         }
 
         self.connection.reset_retries();
-        self.cancel_timer(super::timers::TimerSlot::Capability);
+        self.cancel_timer(TimerSlot::Capability);
+        self.cancel_timer(TimerSlot::Registration);
         self.caps.abandon_outstanding();
         self.set_state(SessionState::Registered);
         let network_id = self.network_id();
@@ -173,5 +180,13 @@ impl Core {
                 });
             }
         }
+    }
+
+    /// The registration deadline fired before welcome (`onRegistrationTimeoutLocked`).
+    pub(crate) fn on_registration_timeout(&mut self) {
+        if self.state == SessionState::Registered || self.state == SessionState::Failed {
+            return;
+        }
+        self.fail(ErrorKind::Network, REGISTRATION_TIMEOUT_MESSAGE, true);
     }
 }

@@ -2,6 +2,14 @@ package session
 
 import "strings"
 
+// RegistrationTimeoutMs is how long registration (CAP LS through 001) may wait
+// without a welcome. It mirrors client/src/session/config.rs.
+const RegistrationTimeoutMs = 60_000
+
+// RegistrationTimeoutMessage is the network-row text when registration never
+// completes. It mirrors client/src/session/registration.rs.
+const RegistrationTimeoutMessage = "The server didn't respond"
+
 // SessionConfig is the Go shape of IrcSessionConfig in
 // `client/src/session/session.rs`. It carries one network's identity, credentials
 // autojoin state, and timer policy. Build the defaults with
@@ -28,6 +36,7 @@ type SessionConfig struct {
 	ReconnectBaseDelayMs     int
 	ReconnectMaximumDelayMs  int
 	CapabilityTimeoutMs      int
+	RegistrationTimeoutMs    int
 	PingTimeoutMs            int
 	LabeledResponseTimeoutMs int
 }
@@ -35,10 +44,11 @@ type SessionConfig struct {
 // DefaultSessionConfig builds a config with the same defaults as
 // IrcSessionConfig in `client/src/session/session.rs`: port 6697, TLS on, reconnect
 // enabled, 1000ms base backoff doubling to 30000ms, a 10000ms capability
-// timeout, a 60000ms ping watchdog, and a 45000ms labeled-response timeout.
-// Username and realname default to nick, mirroring the fallback in
-// IrcConnection::sessionConfigFor (`client/src/controller/networks.rs`): an
-// empty profile field is filled from the nick before the session is built.
+// timeout, a 60000ms registration timeout, a 60000ms ping watchdog, and a
+// 45000ms labeled-response timeout. Username and realname default to nick,
+// mirroring the fallback in IrcConnection::sessionConfigFor
+// (`client/src/controller/networks.rs`): an empty profile field is filled from
+// the nick before the session is built.
 func DefaultSessionConfig(networkID, name, host, nick string) SessionConfig {
 	return SessionConfig{
 		NetworkID:  networkID,
@@ -55,6 +65,7 @@ func DefaultSessionConfig(networkID, name, host, nick string) SessionConfig {
 		ReconnectBaseDelayMs:     1000,
 		ReconnectMaximumDelayMs:  30000,
 		CapabilityTimeoutMs:      10000,
+		RegistrationTimeoutMs:    RegistrationTimeoutMs,
 		PingTimeoutMs:            60000,
 		LabeledResponseTimeoutMs: 45000,
 	}
