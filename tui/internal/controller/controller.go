@@ -730,6 +730,7 @@ func (c *Controller) ErrorOccurred(networkID string, kind session.ErrorKind, mes
 func (c *Controller) Registered(networkID string) {
 	c.lock()
 	defer c.unlock()
+	c.setLastError(networkID, "")
 	s := c.manager.Find(networkID)
 	if s != nil {
 		c.playback.OnRegistered(networkID, s.AutojoinChannels())
