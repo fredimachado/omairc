@@ -427,6 +427,7 @@ func TestRemoveSelectedFailedSyncLeavesProfileAndSecrets(t *testing.T) {
 	conn.SetProfileStore(store)
 	conn.SetCredentialStore(fake)
 	conn.Select("alpha")
+	ctrl.SetNetworkCollapsed("alpha", true)
 
 	storage.FailNextAtomicWrite()
 	t.Cleanup(storage.CancelFailNextAtomicWrite)
@@ -448,6 +449,9 @@ func TestRemoveSelectedFailedSyncLeavesProfileAndSecrets(t *testing.T) {
 	}
 	if !slices.Contains(ctrl.NetworkOrder(), "alpha") {
 		t.Fatalf("controller NetworkOrder lost alpha: %v", ctrl.NetworkOrder())
+	}
+	if !ctrl.IsNetworkCollapsed("alpha") {
+		t.Fatal("collapse lost after failed Sync; ForgetNetworkState must not run before PersistForgetNetwork")
 	}
 	settings := storage.OpenSettings("")
 	if groups := settings.ChildGroups("networks"); !slices.Contains(groups, "alpha") {
