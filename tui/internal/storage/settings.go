@@ -461,6 +461,10 @@ func settingsFileNotWritable(path string) bool {
 // not reached through a symlink. When preserveMode is true and the resolved
 // target already exists, the temp file takes its permission bits before rename.
 func writeSettingsAtomic(path string, data []byte, preserveMode bool) error {
+	if failNextAtomicWrite {
+		failNextAtomicWrite = false
+		return errors.New("injected atomic write failure")
+	}
 	target, err := resolveAtomicWriteTarget(path)
 	if err != nil {
 		return err
@@ -508,13 +512,14 @@ func writeSettingsAtomic(path string, data []byte, preserveMode bool) error {
 	return nil
 }
 
-// Test-only atomic-write counter. noteAtomicWrite is always linked but stays
-// inert until BeginAtomicWriteCount; EndAtomicWriteCount stops counting and
-// returns the total. Product code never calls Begin.
+// Test-only atomic-write seams. noteAtomicWrite / failNextAtomicWrite are
+// always linked but stay inert until a test arms them. Product code never
+// calls BeginAtomicWriteCount or FailNextAtomicWrite.
 
 var (
 	atomicWriteCountEnabled bool
 	atomicWriteCount        int
+	failNextAtomicWrite     bool
 )
 
 // BeginAtomicWriteCount starts counting successful settings renames.
@@ -535,6 +540,18 @@ func noteAtomicWrite() {
 	if atomicWriteCountEnabled {
 		atomicWriteCount++
 	}
+}
+
+// FailNextAtomicWrite makes the next writeSettingsAtomic return an error so
+// Sync reports StatusAccessError. Works on every platform (unlike chmod). One
+// shot: cleared after the next write attempt, or by CancelFailNextAtomicWrite.
+func FailNextAtomicWrite() {
+	failNextAtomicWrite = true
+}
+
+// CancelFailNextAtomicWrite clears a pending FailNextAtomicWrite injection.
+func CancelFailNextAtomicWrite() {
+	failNextAtomicWrite = false
 }
 
 type atomicWriteTarget struct {

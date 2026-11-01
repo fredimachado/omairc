@@ -398,16 +398,19 @@ func TestRemoveSelectedWritesConfOnceAndClearsOrderCollapse(t *testing.T) {
 
 // TestRemoveSelectedFailedSyncLeavesProfileAndSecrets proves AccessError from
 // the combined forget Sync (after a successful PreflightRemove) returns false
-// and leaves the Connect sheet roster, credentials, and conf group in place.
+// and leaves the Connect sheet roster, credentials, session, in-memory network
+// state, and conf group in place. Uses FailNextAtomicWrite so the block works
+// on every platform (chmod 0555 does not refuse writes on Windows).
 func TestRemoveSelectedFailedSyncLeavesProfileAndSecrets(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root ignores permission bits")
-	}
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	ctrl := controller.New()
 	ctrl.SetEphemeral(false)
+	config := session.DefaultSessionConfig("alpha", "", "irc.alpha.example", "alpha")
+	if _, err := ctrl.AddSession(config, session.NewLoopbackTransport(), nil); err != nil {
+		t.Fatalf("AddSession: %v", err)
+	}
 	store := storage.NewProfileStore()
 	profile := completeProfile("alpha", "irc.alpha.example")
 	if status := store.Save(storageProfile(profile)); status != storage.StatusWritten {
@@ -425,13 +428,8 @@ func TestRemoveSelectedFailedSyncLeavesProfileAndSecrets(t *testing.T) {
 	conn.SetCredentialStore(fake)
 	conn.Select("alpha")
 
-	omaircDir := filepath.Dir(storage.ConfigPath())
-	if err := os.Chmod(omaircDir, 0o555); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chmod(omaircDir, 0o700)
-	})
+	storage.FailNextAtomicWrite()
+	t.Cleanup(storage.CancelFailNextAtomicWrite)
 
 	if conn.RemoveSelected() {
 		t.Fatal("RemoveSelected() = true, want false when Sync fails after preflight")
@@ -444,6 +442,9 @@ func TestRemoveSelectedFailedSyncLeavesProfileAndSecrets(t *testing.T) {
 	}
 	if _, ok := conn.storedProfile("alpha"); !ok {
 		t.Fatal("stored roster dropped alpha despite failed Sync")
+	}
+	if !slices.Contains(ctrl.NetworkIDs(), "alpha") {
+		t.Fatalf("session NetworkIDs lost alpha after failed Sync: %v", ctrl.NetworkIDs())
 	}
 	if !slices.Contains(ctrl.NetworkOrder(), "alpha") {
 		t.Fatalf("controller NetworkOrder lost alpha: %v", ctrl.NetworkOrder())
