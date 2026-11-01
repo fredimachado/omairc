@@ -74,7 +74,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   duration it still holds, so a shorter policy another client saved is kept.
   Lookups and malformed-file recovery prefer the file's policy over a stale
   in-memory one. A policy whose write failed, because the file is read-only or
-  malformed, stays in memory and wins lookups until a later write lands.
+  malformed, stays in memory and wins lookups until a later write lands, or
+  until another client saves a different port or duration for that host or
+  clears it in the file.
 - Ctrl+Q and closing the window on the desktop client stop every session before
   it exits, as the terminal client does on quit, so each network refreshes its
   STS expiry. Logout and SIGTERM still exit without it.
