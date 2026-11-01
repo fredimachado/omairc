@@ -39,14 +39,27 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(20);
 /// say goodbye before its task is aborted. Stop shares one such period across every connection.
 const CLOSE_GRACE: Duration = Duration::from_millis(500);
 
-/// Resolves a host name for TCP connect. Production uses [`tokio::net::lookup_host`];
-/// tests inject a stub through [`NetOptions::resolve_host`].
+/// Resolves a host name for TCP connect. On Unix, production uses one getaddrinfo call on
+/// a blocking thread; elsewhere it uses [`tokio::net::lookup_host`]. Tests inject a stub
+/// through [`NetOptions::resolve_host`].
 pub type ResolveHost = Arc<
     dyn Fn(String, u16) -> Pin<Box<dyn Future<Output = io::Result<Vec<SocketAddr>>> + Send>>
         + Send
         + Sync,
 >;
 
+#[cfg(unix)]
+fn system_resolve_host() -> ResolveHost {
+    Arc::new(|host, port| {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || super::resolve::blocking_lookup_host(&host, port))
+                .await
+                .map_err(|join| io::Error::other(format!("resolve task failed: {join}")))?
+        })
+    })
+}
+
+#[cfg(not(unix))]
 fn system_resolve_host() -> ResolveHost {
     Arc::new(|host, port| {
         Box::pin(async move {
