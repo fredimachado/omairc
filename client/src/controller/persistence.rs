@@ -265,21 +265,6 @@ impl Controller {
         settled
     }
 
-    /// Forgets a network's profile and its secrets (`forgetNetwork`'s store half). The current
-    /// keys and every obsolete key of the network are deleted; one the store refuses stays owed.
-    pub(super) fn remove_profile(&mut self, network_id: &str) -> Status {
-        let profile = self.profiles.get(network_id).cloned();
-        if profile.is_none() {
-            return Status::Absent;
-        }
-        let status = self.profile_store.remove(network_id);
-        if matches!(status, Status::AccessError | Status::FormatError) {
-            return status;
-        }
-        self.finish_remove_profile(network_id, profile);
-        status
-    }
-
     /// Starts a saved network (`Start`, for a network that is not a seeded demo). A session
     /// built from the same profile is reused. A changed profile, or none yet, rebuilds the
     /// session through the transport factory. A missing or incomplete profile is refused.

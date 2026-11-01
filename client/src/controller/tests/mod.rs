@@ -11,6 +11,7 @@ mod commands;
 mod composer;
 mod credentials;
 mod console;
+mod forget_credentials;
 mod fileupload;
 mod fixture;
 mod inbox;

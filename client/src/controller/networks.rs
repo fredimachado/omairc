@@ -11,6 +11,7 @@ use crate::irc::viewnotify::{self, ViewNotify};
 use crate::session::events::SessionState;
 use crate::storage::credentialstore::{PURPOSE_NICKSERV, PURPOSE_PASSWORD};
 use crate::storage::profilestore::Profile;
+use crate::storage::settings::Status;
 
 use super::controller::Controller;
 
@@ -106,7 +107,9 @@ impl Controller {
     /// Forgets a network the Connect sheet removed (`ForgetNetwork`). A live session
     /// quits and stops; the network's conversations, Status log, last error, order
     /// collapse state and inbox rows go with it. The selection leaves it when it held
-    /// the selection. False when the network was never known.
+    /// the selection. False when the network was never known, or when the combined
+    /// settings write is blocked (`AccessError` / `FormatError`) — profile and secrets
+    /// stay in place until that write succeeds.
     pub fn forget_network(&mut self, network_id: &str) -> bool {
         self.pump();
         if network_id.is_empty() {
@@ -120,14 +123,29 @@ impl Controller {
         let profile = self.profiles.get(network_id).cloned();
         if had_profile {
             let status = self.profile_store.preflight_remove(network_id);
-            if matches!(
-                status,
-                crate::storage::settings::Status::AccessError
-                    | crate::storage::settings::Status::FormatError
-            ) {
+            if matches!(status, Status::AccessError | Status::FormatError) {
                 self.pump();
                 return false;
             }
+        }
+        // Post-forget lists before any memory clear; the write must win first.
+        let post_order: Vec<String> = self
+            .network_order
+            .iter()
+            .filter(|id| *id != network_id)
+            .cloned()
+            .collect();
+        let post_collapsed: Vec<String> = self
+            .collapsed_network_ids()
+            .into_iter()
+            .filter(|id| id != network_id)
+            .collect();
+        if matches!(
+            self.persist_forget_network(network_id, had_profile, &post_order, &post_collapsed),
+            Status::AccessError | Status::FormatError
+        ) {
+            self.pump();
+            return false;
         }
         if let Some(session) = self.manager.find(network_id) {
             if session.state() == SessionState::Registered
@@ -159,10 +177,8 @@ impl Controller {
         self.applied_profile_avatars.remove(network_id);
         self.current_nicks.remove(network_id);
         self.inbox.purge_network(network_id);
-        self.network_order.retain(|id| id != network_id);
+        self.network_order = post_order;
         self.network_collapsed.remove(network_id);
-        // Profile group + preference lists in one conf write.
-        self.persist_forget_network(network_id, had_profile);
         if had_profile {
             self.finish_remove_profile(network_id, profile);
         }
@@ -193,15 +209,20 @@ impl Controller {
     }
 
     /// One conf write for forget: drop the profile group when present and store
-    /// the updated `networkOrder` / `collapsedNetworks` lists.
-    pub(super) fn persist_forget_network(&mut self, network_id: &str, remove_profile: bool) {
+    /// the updated `networkOrder` / `collapsedNetworks` lists. Call before clearing
+    /// controller state so a blocked Sync leaves profile and secrets in place.
+    pub(super) fn persist_forget_network(
+        &mut self,
+        network_id: &str,
+        remove_profile: bool,
+        network_order: &[String],
+        collapsed: &[String],
+    ) -> Status {
         if self.backing.is_ephemeral() {
-            return;
+            return Status::Written;
         }
-        let collapsed = self.collapsed_network_ids();
-        let order = self.network_order.clone();
         self.preference_store
-            .forget_network(network_id, remove_profile, &order, &collapsed);
+            .forget_network(network_id, remove_profile, network_order, collapsed)
     }
 
     /// In-memory profile and secret cleanup after the profile group is gone.

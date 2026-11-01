@@ -2035,8 +2035,9 @@ func (c *Controller) ForgetNetworkState(networkID string) {
 }
 
 // PersistForgetNetwork writes one settings Sync that removes networks/<id>
-// when removeProfile is set and stores the current networkOrder and
-// collapsedNetworks lists. Call after ForgetNetworkState so memory matches disk.
+// when removeProfile is set and stores networkOrder / collapsedNetworks with
+// that id omitted. Call before ForgetNetworkState so a blocked Sync leaves
+// controller memory and Connect-sheet secrets untouched.
 func (c *Controller) PersistForgetNetwork(networkID string, removeProfile bool) storage.Status {
 	if c.ephemeral {
 		return storage.StatusWritten
@@ -2048,9 +2049,8 @@ func (c *Controller) PersistForgetNetwork(networkID string, removeProfile bool) 
 	if removeProfile && networkID != "" {
 		settings.RemoveGroup(storedNetworksGroup + "/" + networkID)
 	}
-	// ForgetNetworkState already dropped networkID from c.networkOrder; keep
-	// only ids that still have a stored profile (cache may briefly still list
-	// the forgotten id, so skip it explicitly).
+	// Lists as they will look after the forget; skip networkID even though it
+	// is still in memory and still in the stored-profile cache.
 	storedOnly := make([]string, 0, len(c.networkOrder))
 	for _, id := range c.networkOrder {
 		if id == networkID {
@@ -2060,10 +2060,19 @@ func (c *Controller) PersistForgetNetwork(networkID string, removeProfile bool) 
 			storedOnly = append(storedOnly, id)
 		}
 	}
+	collapsed := make([]string, 0, len(c.networkCollapsed))
+	for _, id := range c.collapsedNetworkIDs() {
+		if id == networkID {
+			continue
+		}
+		collapsed = append(collapsed, id)
+	}
 	writePreferenceList(settings, networkOrderKey, storedOnly)
-	writePreferenceList(settings, collapsedNetworksKey, c.collapsedNetworkIDs())
+	writePreferenceList(settings, collapsedNetworksKey, collapsed)
 	status := settings.Sync()
-	c.RefreshStoredProfileIDs()
+	if status == storage.StatusWritten {
+		c.RefreshStoredProfileIDs()
+	}
 	return status
 }
 

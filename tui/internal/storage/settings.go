@@ -508,8 +508,9 @@ func writeSettingsAtomic(path string, data []byte, preserveMode bool) error {
 	return nil
 }
 
-// Test-only atomic-write counter. Production builds keep the hooks as no-ops
-// via the empty helpers below; tests enable counting around one call.
+// Test-only atomic-write counter. noteAtomicWrite is always linked but stays
+// inert until BeginAtomicWriteCount; EndAtomicWriteCount stops counting and
+// returns the total. Product code never calls Begin.
 
 var (
 	atomicWriteCountEnabled bool

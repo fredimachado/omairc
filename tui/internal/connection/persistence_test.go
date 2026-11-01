@@ -395,3 +395,64 @@ func TestRemoveSelectedWritesConfOnceAndClearsOrderCollapse(t *testing.T) {
 		t.Fatal("in-memory collapse still has alpha")
 	}
 }
+
+// TestRemoveSelectedFailedSyncLeavesProfileAndSecrets proves AccessError from
+// the combined forget Sync (after a successful PreflightRemove) returns false
+// and leaves the Connect sheet roster, credentials, and conf group in place.
+func TestRemoveSelectedFailedSyncLeavesProfileAndSecrets(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores permission bits")
+	}
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	ctrl := controller.New()
+	ctrl.SetEphemeral(false)
+	store := storage.NewProfileStore()
+	profile := completeProfile("alpha", "irc.alpha.example")
+	if status := store.Save(storageProfile(profile)); status != storage.StatusWritten {
+		t.Fatalf("Save = %v", status)
+	}
+	ctrl.RefreshStoredProfileIDs()
+	ctrl.SetNetworkOrder([]string{"alpha"})
+
+	fake := newFakeCredentialStore()
+	key := credentialKeyFor(profile, false)
+	fake.secrets[storage.CredentialKeyName(key)] = "hunter2"
+
+	conn := New(ctrl, nil)
+	conn.SetProfileStore(store)
+	conn.SetCredentialStore(fake)
+	conn.Select("alpha")
+
+	omaircDir := filepath.Dir(storage.ConfigPath())
+	if err := os.Chmod(omaircDir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(omaircDir, 0o700)
+	})
+
+	if conn.RemoveSelected() {
+		t.Fatal("RemoveSelected() = true, want false when Sync fails after preflight")
+	}
+	if len(fake.removes) != 0 {
+		t.Fatalf("credentials.Remove called on Sync failure: %v", fake.removes)
+	}
+	if fake.secrets[storage.CredentialKeyName(key)] != "hunter2" {
+		t.Fatal("secret deleted despite failed Sync")
+	}
+	if _, ok := conn.storedProfile("alpha"); !ok {
+		t.Fatal("stored roster dropped alpha despite failed Sync")
+	}
+	if !slices.Contains(ctrl.NetworkOrder(), "alpha") {
+		t.Fatalf("controller NetworkOrder lost alpha: %v", ctrl.NetworkOrder())
+	}
+	settings := storage.OpenSettings("")
+	if groups := settings.ChildGroups("networks"); !slices.Contains(groups, "alpha") {
+		t.Fatalf("conf lost networks/alpha after failed Sync: %v", groups)
+	}
+	if got := conn.PersistenceStatus(); got == "" {
+		t.Fatal("expected persistence sentence on failed Sync")
+	}
+}
