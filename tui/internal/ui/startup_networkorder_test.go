@@ -348,6 +348,68 @@ func TestNetworkOrderAfterSaveContainsOnlyStoredIDs(t *testing.T) {
 	}
 }
 
+func TestNetworkOrderMoveLastStoredPastConnectDraft(t *testing.T) {
+	dir := configDir(t)
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	store := storage.NewProfileStore()
+
+	ctrl := controller.New()
+	ctrl.SetEphemeral(false)
+	ctrl.LoadStoredPreferences()
+	conn := connection.New(ctrl, func() session.Transport { return session.NewLoopbackTransport() })
+	conn.SetProfileStore(store)
+
+	first := connection.SuggestedProfile()
+	first.NetworkID = "net-first"
+	first.Nick = "omairc"
+	first.Username = "omairc"
+	first.Realname = "Omairc"
+	first.Name = "First"
+	second := first
+	second.NetworkID = "net-second"
+	second.Name = "Second"
+	for _, profile := range []connection.NetworkProfile{first, second} {
+		if status := store.Save(storageStoredProfile(profile.NetworkID, profile.Name)); status != storage.StatusWritten {
+			t.Fatalf("Save(%q) = %v", profile.NetworkID, status)
+		}
+	}
+	conn.SetProfileStore(store)
+	ctrl.RefreshStoredProfileIDs()
+	ctrl.SetNetworkOrder([]string{first.NetworkID, second.NetworkID})
+
+	m := New(ctrl, conn)
+	if !conn.Add() {
+		t.Fatal("Add() = false, want a Connect draft")
+	}
+	draftID := conn.SelectedNetworkID()
+	ctrl.StatusEntry(irc.Outcome(draftID, "Unknown command: /help", time.Now()))
+
+	before := snapshotConfig(t)
+	beforeSidebar := slices.Clone(m.sidebarNetworkIDs())
+	beforeOrder := slices.Clone(ctrl.NetworkOrder())
+
+	stored := m.sidebarStoredNetworkIDs()
+	if len(stored) == 0 {
+		t.Fatal("sidebarStoredNetworkIDs() empty")
+	}
+	m.sidebarNetworkFocusID = stored[len(stored)-1]
+	m.moveFocusedNetwork(1)
+
+	if got := m.sidebarNetworkIDs(); !slices.Equal(got, beforeSidebar) {
+		t.Fatalf("after move sidebarNetworkIDs() = %v, want unchanged %v", got, beforeSidebar)
+	}
+	if got := ctrl.NetworkOrder(); !slices.Equal(got, beforeOrder) {
+		t.Fatalf("after move NetworkOrder() = %v, want unchanged %v", got, beforeOrder)
+	}
+	assertConfigUnchanged(t, before, snapshotConfig(t))
+	settings := storage.OpenSettings("")
+	for _, id := range settings.StringList("preferences", "networkOrder") {
+		if id == draftID {
+			t.Fatalf("networkOrder contains draft id %q", draftID)
+		}
+	}
+}
+
 func TestNetworkOrderDraftWithStatusNotMovable(t *testing.T) {
 	dir := configDir(t)
 	t.Setenv("XDG_CONFIG_HOME", dir)

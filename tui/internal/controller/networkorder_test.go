@@ -168,6 +168,30 @@ func TestMoveNetworkRejectsUnstoredKnownNetwork(t *testing.T) {
 	}
 }
 
+func TestMoveNetworkLastStoredPastStatusDraft(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	c := New()
+	c.SetEphemeral(false)
+	c.storedProfileIDs = []string{"alpha", "omarchy"}
+	c.SetNetworkOrder([]string{"alpha", "omarchy"})
+	c.StatusEntry(irc.Outcome("zdraft", "Status line", time.Now()))
+	if !slices.Contains(c.NetworkOrder(), "zdraft") {
+		t.Fatal("NetworkOrder() must include Status-only draft zdraft")
+	}
+	before := slices.Clone(c.NetworkOrder())
+	if c.MoveNetwork("omarchy", 1) {
+		t.Fatal("MoveNetwork(omarchy, 1) = true, want false past status draft")
+	}
+	if got := c.NetworkOrder(); !slices.Equal(got, before) {
+		t.Fatalf("NetworkOrder() = %v, want unchanged %v", got, before)
+	}
+	got := storage.OpenSettings("").StringList(preferencesGroup, networkOrderKey)
+	want := []string{"alpha", "omarchy"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("persisted networkOrder = %v, want %v", got, want)
+	}
+}
+
 func TestMoveNetworkPersistOmitsStatusDraft(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	c := New()
