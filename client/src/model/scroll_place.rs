@@ -132,8 +132,6 @@ impl SavedPlace {
 pub enum Resume {
     End,
     Line { row: usize, offset_px: i32 },
-    /// The saved line is not among the rows yet (history still in flight, or gone).
-    Missing,
 }
 
 /// The live viewport top while a conversation stays open, including day
@@ -203,12 +201,32 @@ impl LivePlace {
     }
 }
 
+/// The row a saved line sits on in `rows`: its msgid row, else its old row while that
+/// still holds it, else the first row with the same content. `None` when it is gone.
+fn find_line(line: &LineKey, row: usize, rows: &[Row]) -> Option<usize> {
+    if !line.msgid.is_empty() {
+        return row_for_msgid(rows, &line.msgid);
+    }
+    if rows.get(row).is_some_and(|candidate| line.is_row(candidate)) {
+        return Some(row);
+    }
+    rows.iter().position(|candidate| line.is_row(candidate))
+}
+
+/// Whether the saved line is among `rows` now. A restore that waits for history asks
+/// this before it lands. [`resume`] clamps a line that is gone, so it cannot tell.
+pub fn has_line(place: &SavedPlace, rows: &[Row]) -> bool {
+    match place {
+        SavedPlace::Line { row, line, .. } => find_line(line, *row, rows).is_some(),
+        SavedPlace::End => false,
+    }
+}
+
 /// Resolves a saved place against the rows now shown. A saved line is found at
 /// its old index when it is still there, else at the first row with the same
-/// content. When the line is absent, the result is [`Resume::Missing`] so the
-/// caller can wait for history or give up — it does not clamp to a nearby row.
-/// No place resumes at the end: the caller decides what a conversation with no
-/// place opens at.
+/// content, else at its old index clamped to the rows that remain. No place
+/// resumes at the end: the caller decides what a conversation with no place
+/// opens at.
 pub fn resume(place: Option<&SavedPlace>, rows: &[Row]) -> Resume {
     let Some(SavedPlace::Line {
         row,
@@ -219,21 +237,12 @@ pub fn resume(place: Option<&SavedPlace>, rows: &[Row]) -> Resume {
         return Resume::End;
     };
     if rows.is_empty() {
-        return Resume::Missing;
+        return Resume::End;
     }
-    let found = if !line.msgid.is_empty() {
-        row_for_msgid(rows, &line.msgid)
-    } else if rows.get(*row).is_some_and(|candidate| line.is_row(candidate)) {
-        Some(*row)
-    } else {
-        rows.iter().position(|candidate| line.is_row(candidate))
-    };
-    match found {
-        Some(row) => Resume::Line {
-            row,
-            offset_px: *offset_px,
-        },
-        None => Resume::Missing,
+    let found = find_line(line, *row, rows).unwrap_or_else(|| (*row).min(rows.len() - 1));
+    Resume::Line {
+        row: found,
+        offset_px: *offset_px,
     }
 }
 
@@ -456,29 +465,38 @@ mod tests {
     }
 
     #[test]
-    fn a_gone_line_is_missing_not_clamped() {
+    fn a_gone_line_is_not_there_and_resumes_at_its_old_row() {
         let rows = rows(5);
         let place = SavedPlace::from_anchor(anchor(3, 9), &rows);
         let fewer = rows[..2].to_vec();
-        assert_eq!(resume(Some(&place), &fewer), Resume::Missing);
+        assert!(!has_line(&place, &fewer));
+        assert_eq!(
+            resume(Some(&place), &fewer),
+            Resume::Line {
+                row: 1,
+                offset_px: 9
+            }
+        );
     }
 
     #[test]
-    fn a_place_in_an_emptied_transcript_is_missing() {
+    fn an_emptied_transcript_has_no_line_and_resumes_at_the_end() {
         let rows = rows(5);
         let place = SavedPlace::from_anchor(anchor(3, 9), &rows);
-        assert_eq!(resume(Some(&place), &[]), Resume::Missing);
+        assert!(!has_line(&place, &[]));
+        assert_eq!(resume(Some(&place), &[]), Resume::End);
     }
 
     #[test]
-    fn a_msgid_place_is_missing_until_its_row_arrives() {
+    fn a_msgid_line_is_there_only_once_its_row_arrives() {
         let place = SavedPlace::from_stored(&StoredPlace {
             msg_id: "history-line".to_owned(),
             ..StoredPlace::default()
         })
         .expect("msgid place");
-        assert_eq!(resume(Some(&place), &rows(3)), Resume::Missing);
+        assert!(!has_line(&place, &rows(3)));
         let arrived = vec![row_with_msgid(1, "history-line", "anna", "09:00", "hello", false)];
+        assert!(has_line(&place, &arrived));
         assert_eq!(
             resume(Some(&place), &arrived),
             Resume::Line {

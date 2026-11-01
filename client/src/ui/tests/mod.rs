@@ -4,6 +4,7 @@
 
 mod fixture;
 mod layout;
+mod scroll_restore;
 mod sheets;
 mod transcript;
 mod typing;

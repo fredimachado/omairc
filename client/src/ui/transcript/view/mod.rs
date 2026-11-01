@@ -11,15 +11,14 @@ use gpui::{
 #[cfg(target_os = "linux")]
 use gpui::ClipboardItem;
 
+mod scroll_restore;
+
 use crate::model::cursor::{page_amount, scroll_target};
 use crate::model::links::{conversation_channel_hits, invite_hit};
 use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::irc::world::Message;
 use crate::model::presence::NickFacts;
 use crate::model::scroll_place::SavedPlace;
-use crate::ui::scrollbar::ScrollbarDragKind;
-
-mod scroll_restore;
 use crate::model::typing_tail::typing_continues;
 use crate::model::unread::{self, UnseenLanding};
 use crate::model::transcript::minute_of;
@@ -653,16 +652,9 @@ impl Render for TranscriptView {
                 if view.scrollbar_drag.borrow().is_some() {
                     let app_style = style(cx);
                     move_scrollbar_drag(&view.scrollbar_drag, ev.position, &app_style);
-                    // This surface only starts List drags; Div drags belong to
-                    // the sidebar and members and must not cancel a pending restore.
-                    if matches!(
-                        view.scrollbar_drag.borrow().as_ref().map(|d| &d.kind),
-                        Some(ScrollbarDragKind::List(_))
-                    ) {
-                        view.note_transcript_scroll(cx);
-                    } else {
-                        view.note_scroll_end(cx);
-                    }
+                    // The shell's root handler decides whether this drag retires a
+                    // pending restore, since sidebar and member thumbs share the cell.
+                    view.note_scroll_end(cx);
                     cx.notify();
                 } else if !view.dragging {
                     view.hovered_link = view.link_at(ev.position);
@@ -927,6 +919,11 @@ mod tests {
         };
         transcript.update(cx, |view, cx| {
             view.refresh_conversation(arrived, cx);
+            assert_eq!(
+                view.first_unseen_index(),
+                None,
+                "history that lands on a waiting place does not arm the unseen chip"
+            );
             assert!(
                 view.pending_restore.is_none(),
                 "pending clears once the anchor is present"
@@ -987,50 +984,6 @@ mod tests {
     }
 
     #[gpui::test]
-    fn pending_restore_not_cancelled_by_note_scroll_end_alone(cx: &mut TestAppContext) {
-        let cxw = cx.add_empty_window();
-        let drag = ScrollbarDragCell::default();
-        let transcript = cxw.update(|_, cx| {
-            let focus = cx.focus_handle();
-            cx.new(|cx| TranscriptView::new(focus, drag, cx))
-        });
-        let features = IrcServerFeatures::new();
-        let place = pending_place();
-        transcript.update(cx, |view, cx| {
-            view.set_conversation(empty_lines(&features));
-            view.restore_scroll_place(Some(&place), false, true);
-            assert!(view.has_pending_restore());
-            // Sidebar / member Div scrollbar drags only call note_scroll_end.
-            view.note_scroll_end(cx);
-            assert!(
-                view.has_pending_restore(),
-                "a non-transcript scrollbar must not cancel the pending restore"
-            );
-        });
-    }
-
-    #[gpui::test]
-    fn pending_restore_cancelled_by_send(cx: &mut TestAppContext) {
-        let cxw = cx.add_empty_window();
-        let drag = ScrollbarDragCell::default();
-        let transcript = cxw.update(|_, cx| {
-            let focus = cx.focus_handle();
-            cx.new(|cx| TranscriptView::new(focus, drag, cx))
-        });
-        let features = IrcServerFeatures::new();
-        let place = pending_place();
-        transcript.update(cx, |view, _| {
-            view.set_conversation(empty_lines(&features));
-            view.restore_scroll_place(Some(&place), false, true);
-            view.clear_pending_restore();
-            assert!(
-                !view.has_pending_restore(),
-                "sending clears the pending restore"
-            );
-        });
-    }
-
-    #[gpui::test]
     fn pending_restore_cancelled_when_history_finishes_without_anchor(cx: &mut TestAppContext) {
         let cxw = cx.add_empty_window();
         let drag = ScrollbarDragCell::default();
@@ -1067,16 +1020,20 @@ mod tests {
                 matches!(view.capture_scroll_place(), SavedPlace::Line { .. }),
                 "capture still returns the original saved place, not End"
             );
-            assert!(view.cancel_pending_if_missing());
+            view.give_up_pending_restore(cx);
             assert!(
                 !view.has_pending_restore(),
                 "history finishing without the anchor clears the pending restore"
+            );
+            assert!(
+                !view.reports_follow_end(),
+                "the given-up place lands on its saved row, not at the end"
             );
         });
     }
 
     #[gpui::test]
-    fn pending_restore_skipped_without_chathistory(cx: &mut TestAppContext) {
+    fn pending_restore_is_not_kept_without_a_request_in_flight(cx: &mut TestAppContext) {
         let cxw = cx.add_empty_window();
         let drag = ScrollbarDragCell::default();
         let transcript = cxw.update(|_, cx| {
@@ -1090,7 +1047,7 @@ mod tests {
             view.restore_scroll_place(Some(&place), false, false);
             assert!(
                 !view.has_pending_restore(),
-                "without chathistory a missing place is not kept pending"
+                "with no history request in flight a missing place is not kept pending"
             );
             assert!(matches!(view.capture_scroll_place(), SavedPlace::End));
         });

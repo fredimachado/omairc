@@ -298,7 +298,8 @@ impl Shell {
                 };
                 let open_at_unread = place.is_none() && self.controller.preferences().unread;
                 let place = place.or_else(|| self.saved_place(&self.shown.conversation));
-                let wait_for_history = self.controller.chat_history_enabled();
+                // A saved line that a history request in flight may still bring waits for it.
+                let wait_for_history = self.controller.older_transcript_history_inflight();
                 self.transcript.update(cx, |t, _| {
                     t.set_conversation(lines);
                     t.restore_scroll_place(place.as_ref(), open_at_unread, wait_for_history);

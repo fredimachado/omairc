@@ -28,9 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The desktop client restores a saved transcript place once history arrives, and
   no longer saves the "New messages" divider or a day separator as the place.
   Capture anchors on the first restorable row at or below the top of the view.
-  A pending restore does not advance the server read marker, is cancelled by a
-  transcript scroll, a send, history finishing without the anchor, or a network
-  without chathistory, and is not cancelled by sidebar or member scrollbar drags.
+  A saved line waits for history only while a CHATHISTORY request for that
+  conversation is in flight, and gives up once that request settles without the
+  line. A waiting place does not advance the server read marker. A transcript
+  scroll, or a message sent to that conversation, ends the wait; commands such
+  as `/pref` and `/whois` and sidebar or member scrollbar drags do not.
 
 - The desktop client no longer writes `collapsedNetworks=@Invalid()` or a second
   preferences flush when a sidebar network is reordered. Network order and

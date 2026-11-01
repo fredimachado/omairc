@@ -3,14 +3,17 @@
 use gpui::{px, Context, ListOffset};
 
 use super::{ConversationLines, TranscriptScrolled, TranscriptView};
-use crate::model::scroll_place::{resume, LivePlace, Resume, SavedPlace};
+use crate::model::scroll_place::{has_line, resume, LivePlace, Resume, SavedPlace};
 use crate::model::unread;
 
 impl TranscriptView {
     /// Follow-end for the controller. False while a restore is pending so the
     /// server read marker does not jump past unread backlog on the interim tail.
+    /// `at_end` alone is not enough: after `list_state.reset` it reads true until the
+    /// next layout measures the list, so a restore just applied would report the end.
+    /// The bottom pin is off after a restore lands, so it is checked too.
     pub fn reports_follow_end(&self) -> bool {
-        self.pending_restore.is_none() && self.at_end()
+        self.pending_restore.is_none() && self.at_end() && self.model.scroll().pinned_to_bottom
     }
 
     pub fn has_pending_restore(&self) -> bool {
@@ -22,17 +25,14 @@ impl TranscriptView {
         self.pending_restore = None;
     }
 
-    /// Clears a pending restore whose line is still absent after history settled.
-    pub fn cancel_pending_if_missing(&mut self) -> bool {
-        let Some(place) = self.pending_restore.clone() else {
-            return false;
+    /// Gives up a pending restore whose history settled without its line. The saved
+    /// row then lands as it does with no history to wait for.
+    pub fn give_up_pending_restore(&mut self, cx: &mut Context<Self>) {
+        let Some(place) = self.pending_restore.take() else {
+            return;
         };
-        if matches!(resume(Some(&place), self.model.rows()), Resume::Missing) {
-            self.pending_restore = None;
-            true
-        } else {
-            false
-        }
+        self.restore_scroll_place(Some(&place), false, false);
+        cx.notify();
     }
 
     /// Emits `TranscriptScrolled` when follow-end changes. Does not retire a
@@ -45,9 +45,12 @@ impl TranscriptView {
         }
     }
 
-    /// A move of this list (wheel, keys, find, link, transcript scrollbar).
+    /// A move of this list (wheel, keys, find, link, transcript scrollbar). The move
+    /// retires a pending restore, and the anchor and bottom pin are read back from
+    /// the list so they match where the reader now is.
     pub fn note_transcript_scroll(&mut self, cx: &mut Context<Self>) {
         self.pending_restore = None;
+        self.sync_scroll_from_list();
         self.note_scroll_end(cx);
     }
 
@@ -66,27 +69,22 @@ impl TranscriptView {
         self.model
             .replace_conversation(lines.messages, lines.mark, lines.today);
         let new_rows = self.model.rows().len();
-        let follow_end = pending.is_none() && was_at_end;
-        unread::note_row_growth(previous_rows, new_rows, follow_end, &mut self.first_unseen);
-        if unread::detached_arrival(previous_rows, new_rows, follow_end) {
+        unread::note_row_growth(previous_rows, new_rows, was_at_end, &mut self.first_unseen);
+        if unread::detached_arrival(previous_rows, new_rows, was_at_end) {
             self.unseen_bounce.restart();
         }
         self.list_state.reset(self.list_len());
         self.row_layouts.borrow_mut().clear();
-        if let Some(place) = pending.clone() {
-            match resume(Some(&place), self.model.rows()) {
-                Resume::Line { .. } => {
-                    self.pending_restore = None;
-                    self.restore_scroll_place(Some(&place), false, false);
+        if let Some(place) = pending {
+            if has_line(&place, self.model.rows()) {
+                self.restore_scroll_place(Some(&place), false, false);
+            } else {
+                if was_at_end {
+                    self.model.set_pinned_to_bottom(true);
+                    self.list_state
+                        .scroll_to_reveal_item(self.list_len().saturating_sub(1));
                 }
-                Resume::Missing | Resume::End => {
-                    if was_at_end {
-                        self.model.set_pinned_to_bottom(true);
-                        self.list_state
-                            .scroll_to_reveal_item(self.list_len().saturating_sub(1));
-                    }
-                    self.reported_at_end = false;
-                }
+                self.reported_at_end = false;
             }
         } else if was_at_end {
             self.model.set_pinned_to_bottom(true);
@@ -163,11 +161,13 @@ impl TranscriptView {
                     offset_in_item: px(offset_px as f32),
                 });
             }
-            Resume::End | Resume::Missing => self.model.set_pinned_to_bottom(true),
+            Resume::End => self.model.set_pinned_to_bottom(true),
         }
     }
 
-    /// Lands on `place`. With `wait_for_history`, a missing line stays pending.
+    /// Lands on `place`. With `wait_for_history`, a line that is not shown yet keeps the
+    /// place pending, and the list stays at the end until the line arrives or its
+    /// history settles without it.
     pub fn restore_scroll_place(
         &mut self,
         place: Option<&SavedPlace>,
@@ -175,17 +175,18 @@ impl TranscriptView {
         wait_for_history: bool,
     ) {
         self.pending_restore = None;
+        if let Some(line @ SavedPlace::Line { .. }) = place {
+            if wait_for_history && !has_line(line, self.model.rows()) {
+                self.pending_restore = Some(line.clone());
+                self.model.set_pinned_to_bottom(true);
+                self.reported_at_end = false;
+                return;
+            }
+        }
         let rows = self.model.rows();
         let mark = unread::opening_row(rows, open_at_unread);
         match resume(place, rows) {
-            Resume::Missing if wait_for_history => {
-                if let Some(line_place @ SavedPlace::Line { .. }) = place {
-                    self.pending_restore = Some(line_place.clone());
-                }
-                self.model.set_pinned_to_bottom(true);
-                self.reported_at_end = false;
-            }
-            Resume::Missing | Resume::End => match mark {
+            Resume::End => match mark {
                 Some(row) => self.reveal_row(row),
                 None => self.model.set_pinned_to_bottom(true),
             },

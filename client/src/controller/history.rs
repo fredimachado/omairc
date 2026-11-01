@@ -15,13 +15,7 @@ impl Controller {
     pub(super) fn on_history_event(&mut self, event: SessionEvent) {
         match event {
             SessionEvent::HistoryBatchReceived { network_id, batch } => {
-                let target = batch.target.clone();
                 self.handle_history_batch(&network_id, &batch);
-                // A completed page with nothing more in flight settles a pending
-                // scroll restore when the anchor never showed up.
-                if !target.is_empty() && !self.history_inflight_for_target(&network_id, &target) {
-                    self.note_history_scroll_settle(network_id, target);
-                }
             }
             SessionEvent::ChatHistoryRequestFinished {
                 network_id,
@@ -33,9 +27,6 @@ impl Controller {
                     let key = self.reducer.conversation_key(&network_id, &target);
                     self.reducer.clear_history_page_cap_tail(&key);
                 }
-                if !target.is_empty() {
-                    self.note_history_scroll_settle(network_id, target);
-                }
             }
             SessionEvent::ChatHistoryFailed {
                 network_id,
@@ -44,21 +35,6 @@ impl Controller {
             } => self.on_chat_history_failed(&network_id, subcommand, &target),
             _ => {}
         }
-    }
-
-    fn note_history_scroll_settle(&mut self, network_id: String, target: String) {
-        self.history_scroll_settle.push((network_id, target));
-    }
-
-    /// CHATHISTORY targets whose requests just settled, for pending scroll restores.
-    pub fn take_history_scroll_settle(&mut self) -> Vec<(String, String)> {
-        std::mem::take(&mut self.history_scroll_settle)
-    }
-
-    fn history_inflight_for_target(&self, network_id: &str, target: &str) -> bool {
-        self.manager
-            .find(network_id)
-            .is_some_and(|session| session.history_inflight_for(target))
     }
 
     /// Our own JOIN consumes the channel's invite row, requests channel playback

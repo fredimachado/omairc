@@ -150,9 +150,6 @@ pub struct Controller {
     pub(super) read_markers: super::readmarker::ReadMarkerState,
     /// Mention and monitor arrivals waiting for the shell (`notify.rs`).
     pub(super) arrivals: Vec<Arrival>,
-    /// CHATHISTORY requests that just settled for a target, so the shell can
-    /// drop a pending scroll restore when the anchor never arrived.
-    pub(super) history_scroll_settle: Vec<(String, String)>,
     pumping: bool,
 }
 
@@ -245,7 +242,6 @@ impl Controller {
             transcript_focused: true,
             read_markers: super::readmarker::ReadMarkerState::new(),
             arrivals: Vec::new(),
-            history_scroll_settle: Vec::new(),
             pumping: false,
         }
     }

@@ -140,9 +140,13 @@ impl Shell {
         let accepted = self.controller.submit(surface, &text);
         self.apply_preference_changes(before, cx);
         if accepted {
-            // Sending retires a pending restore so capture saves the live page.
-            self.transcript
-                .update(cx, |t, _| t.clear_pending_restore());
+            // A line to this conversation retires a pending restore, so the live page is what
+            // gets saved. Other commands leave the place waiting.
+            if matches!(command, Command::Say(_) | Command::Action(_)) {
+                self.transcript.update(cx, |t, _| t.clear_pending_restore());
+                let follow_end = self.transcript.read(cx).reports_follow_end();
+                self.report_transcript_viewport_from_shell(follow_end, cx);
+            }
             self.finish_command(&text, cx);
         }
         self.drain_notifications(cx);
