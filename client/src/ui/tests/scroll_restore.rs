@@ -150,6 +150,19 @@ fn anna_page<S: AsRef<str>>(reference: &str, msgids: &[S]) -> Vec<String> {
     lines
 }
 
+/// One CHATHISTORY page of `#help` lines from talker, one per msgid, as the server sends it.
+fn channel_page<S: AsRef<str>>(reference: &str, msgids: &[S]) -> Vec<String> {
+    let mut lines = vec![format!(":server BATCH +{reference} chathistory #help")];
+    for msgid in msgids {
+        let msgid = msgid.as_ref();
+        lines.push(format!(
+            "@batch={reference};msgid={msgid};time=2011-10-19T16:40:51.000Z :talker!u@h PRIVMSG #help :{msgid}"
+        ));
+    }
+    lines.push(format!(":server BATCH -{reference}"));
+    lines
+}
+
 /// The msgid of the row at the top of the transcript.
 fn top_msgid(ui: &SeededShell) -> String {
     ui.shell.read_with(ui.cx, |shell, cx| {
@@ -630,5 +643,52 @@ fn a_saved_line_near_the_loaded_end_keeps_its_place_as_later_history_arrives(
     assert!(
         !ui.at_end(),
         "the page after the saved line must not pull the restored reader to the end"
+    );
+}
+
+#[gpui::test]
+fn a_chained_page_in_a_channel_brings_the_saved_line(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    offer_chathistory(&mut ui);
+    ui.select("#help");
+    ui.fill_until_scrollable("talker", "#help", "landing line");
+    start_after_chain(&mut ui);
+    ui.select("anna");
+    ui.shell.update(ui.cx, |shell, _| {
+        shell
+            .controller
+            .remember_place(OMARCHY, "#help", gone_place());
+    });
+    ui.select("#help");
+    assert!(
+        waiting(&ui),
+        "the place waits while the channel's chained page is in flight"
+    );
+    let first: Vec<String> = (0..HISTORY_LIMIT).map(|i| format!("fill-{i}")).collect();
+    deliver_burst(&mut ui, &channel_page("p1", &first));
+    assert!(
+        waiting(&ui),
+        "the chained page is in flight, so the place keeps waiting"
+    );
+    // The second page is the one that holds the saved line, and the rows after it fill the window.
+    let mut second: Vec<String> = (0..HISTORY_LIMIT).map(|i| format!("more-{i}")).collect();
+    second[20] = "gone-anchor".to_owned();
+    deliver_burst(&mut ui, &channel_page("p2", &second));
+    assert!(
+        !waiting(&ui),
+        "the chained page brought the saved line, so the place lands"
+    );
+    let stored = ui.shell.read_with(ui.cx, |shell, _| {
+        shell
+            .controller
+            .messages()
+            .iter()
+            .any(|message| message.msgid.value == "gone-anchor")
+    });
+    assert!(stored, "the chained page is kept in the channel's history");
+    assert_eq!(
+        top_msgid(&ui),
+        "gone-anchor",
+        "the place lands on the saved line from a page after the first"
     );
 }
