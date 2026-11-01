@@ -9,9 +9,7 @@ use crate::controller::controller::Controller;
 use crate::controller::persistence::SecretEdits;
 use crate::controller::transports::NoTransports;
 use crate::session::clock::{Clock, FakeClock};
-use crate::storage::credentialstore::{
-    read_slot_sync, MemoryCredentialStore, PURPOSE_PASSWORD,
-};
+use crate::storage::credentialstore::{read_slot_sync, MemoryCredentialStore, PURPOSE_PASSWORD};
 use crate::storage::profilestore::Profile;
 use crate::storage::Backing;
 use crate::util::testdir::TempDir;
@@ -79,10 +77,7 @@ fn a_failed_forget_sync_leaves_profile_and_credentials_in_place() {
             nickserv: None,
         },
     );
-    assert!(
-        conf.is_file(),
-        "preflight needs a readable conf after save"
-    );
+    assert!(conf.is_file(), "preflight needs a readable conf after save");
     // Directory not writable → atomic rename fails; the conf file itself still
     // probes as writable so preflight_remove returns Written.
     std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o555))
@@ -93,7 +88,10 @@ fn a_failed_forget_sync_leaves_profile_and_credentials_in_place() {
     std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700))
         .expect("restore dir mode");
 
-    assert!(!forgot, "forget must return false when Sync fails after preflight");
+    assert!(
+        !forgot,
+        "forget must return false when Sync fails after preflight"
+    );
     assert_eq!(
         read_slot_sync(controller.credentials.as_ref(), &profile, PURPOSE_PASSWORD),
         Ok(Some("hunter2".to_owned())),
@@ -165,7 +163,10 @@ fn connect_remove_keeps_the_row_when_forget_sync_fails() {
     let forgot = controller.forget_network(NET);
     std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700))
         .expect("restore dir mode");
-    assert!(!forgot, "forget must return false when Sync fails after preflight");
+    assert!(
+        !forgot,
+        "forget must return false when Sync fails after preflight"
+    );
 
     assert_eq!(
         state.complete_remove(&populated, forgot),

@@ -7,8 +7,8 @@
 
 use gpui::{Context, Window};
 
-use crate::model::chords::Chord;
 use crate::controller::persistence::SecretEdits;
+use crate::model::chords::Chord;
 use crate::model::connect::{ConnectField, RailEnter, RemoveOutcome, Secret, Stop};
 use crate::model::prefs::{PrefName, PrefValue};
 use crate::storage::credentialstore::{PURPOSE_NICKSERV, PURPOSE_PASSWORD};
@@ -107,11 +107,9 @@ impl Shell {
             nickserv: self.connect.secret_edit(Secret::NickServ),
         };
         if let Ok(profile) = self.connect.apply() {
-            let case_mapping = self
-                .controller
-                .features(&profile.network_id)
-                .case_mapping();
-            let stored = profile.to_stored(self.controller.profile(&profile.network_id), case_mapping);
+            let case_mapping = self.controller.features(&profile.network_id).case_mapping();
+            let stored =
+                profile.to_stored(self.controller.profile(&profile.network_id), case_mapping);
             let network_id = profile.network_id.clone();
             let saved = self.controller.save_profile(stored, edits);
             let applied_profile = self
@@ -123,9 +121,9 @@ impl Shell {
                 .controller
                 .connect_allowed_after_save(&applied_profile, &saved)
                 && self.controller.start(&network_id);
-            let close = self
-                .connect
-                .record_apply(saved.status, saved.password, saved.nickserv, started);
+            let close =
+                self.connect
+                    .record_apply(saved.status, saved.password, saved.nickserv, started);
             if close {
                 self.connect.clear_secret_text();
                 self.close_connect(window, cx);
@@ -355,9 +353,9 @@ impl Shell {
         if was_focused {
             let populated = self.populated_networks();
             let disconnectable = self.connect_disconnectable();
-            if let Some(target) =
-                self.connect
-                    .focus_after_forget(slot, &populated, disconnectable)
+            if let Some(target) = self
+                .connect
+                .focus_after_forget(slot, &populated, disconnectable)
             {
                 self.focus_connect(target, window, cx);
             }
@@ -544,7 +542,10 @@ impl Shell {
         // The controller dropped the selection with the network. The first row left takes
         // it (the model only removes a network when another one has a conversation).
         if self.controller.selected().is_none() {
-            let fallback = self.sidebar_walk().first().map(|row| row.conversation.clone());
+            let fallback = self
+                .sidebar_walk()
+                .first()
+                .map(|row| row.conversation.clone());
             if let Some(target) = fallback {
                 self.select(target, cx);
             }

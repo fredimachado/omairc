@@ -295,7 +295,10 @@ impl ConnectState {
             Secret::Password => (states.password, !self.draft.password.is_empty()),
             Secret::NickServ => (states.nickserv, !self.draft.nickserv_password.is_empty()),
         };
-        matches!(state, CredentialState::Available | CredentialState::Error(_)) || held
+        matches!(
+            state,
+            CredentialState::Available | CredentialState::Error(_)
+        ) || held
     }
 
     /// Clears the draft text for `slot` and marks it edited (`forgetPassword` / `forgetNickServ`).
@@ -327,8 +330,7 @@ impl ConnectState {
                 self.nickserv_edited = true;
             }
         }
-        self.is_saved(&self.selected)
-            .then(|| self.selected.clone())
+        self.is_saved(&self.selected).then(|| self.selected.clone())
     }
 
     /// Applies what the keychain reported after a forget delete (`handleCredentialWrite` for
