@@ -710,6 +710,147 @@ func TestSTSStoreLaterWriteClearsTheUnsavedMark(t *testing.T) {
 	}
 }
 
+// TestSTSStoreAnotherClientReplacementAfterFailedWriteWins: another client saves a
+// different port for the host after this store's write failed, and the disk
+// recovers. Lookup follows the file, and a refresh does not write 6697 back.
+func TestSTSStoreAnotherClientReplacementAfterFailedWriteWins(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix mode bits")
+	}
+	path := filepath.Join(t.TempDir(), "sts")
+	if err := stsStoreOnFile(path).Store("irc.example", 6697, 3600, time.Unix(0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	makeReadOnly(t, path)
+	ours := stsStoreOnFile(path)
+	if err := ours.Store("irc.example", 6697, 86400, time.Unix(10, 0)); err == nil {
+		t.Fatal("a read-only file must refuse the write")
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := stsStoreOnFile(path).Store("irc.example", 6698, 86400, time.Unix(20, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	cached, ok := ours.Lookup("irc.example", time.Unix(21, 0))
+	if !ok || cached.Port != 6698 || cached.ExpiryEpochSeconds != 86420 {
+		t.Fatalf("the newer port on disk must beat this store's unwritten 6697 policy: %+v ok=%v", cached, ok)
+	}
+
+	if err := ours.Refresh("irc.example", 86400, time.Unix(30, 0)); err != nil {
+		t.Fatal(err)
+	}
+	entry, ok := storage.NewIniSTSStore(path).Lookup("irc.example", 31)
+	if !ok || entry.Port != 6698 || entry.ExpiryEpochSeconds != 86430 {
+		t.Fatalf("a refresh must not write the unwritten 6697 policy back: %+v ok=%v", entry, ok)
+	}
+}
+
+// TestSTSStoreAnotherClientClearAfterFailedWriteStaysCleared: another client clears
+// the host after this store's write failed, and the disk recovers. Lookup answers
+// none, and a refresh does not recreate the cleared group.
+func TestSTSStoreAnotherClientClearAfterFailedWriteStaysCleared(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix mode bits")
+	}
+	path := filepath.Join(t.TempDir(), "sts")
+	if err := stsStoreOnFile(path).Store("irc.example", 6697, 60, time.Unix(0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	makeReadOnly(t, path)
+	ours := stsStoreOnFile(path)
+	if err := ours.Store("irc.example", 6697, 86400, time.Unix(0, 0)); err == nil {
+		t.Fatal("a read-only file must refuse the write")
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := stsStoreOnFile(path).Store("irc.example", 6697, 0, time.Unix(10, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	if cached, ok := ours.Lookup("irc.example", time.Unix(11, 0)); ok {
+		t.Fatalf("the clear on disk must win over this store's unwritten policy: %+v", cached)
+	}
+	if err := ours.Refresh("irc.example", 86400, time.Unix(20, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := storage.NewIniSTSStore(path).Lookup("irc.example", 20); ok {
+		t.Fatal("a refresh must not recreate the cleared host")
+	}
+	raw, err := os.ReadFile(path)
+	if err == nil && strings.Contains(string(raw), storage.STSGroupKey("irc.example")) {
+		t.Fatalf("cleared group must stay out of the file: %s", raw)
+	}
+}
+
+// TestSTSStoreLapsedGroupDroppedByAnotherClientIsNotAClear: the 60s policy lapses,
+// and another client's lookup then drops that group from the file. A lapsed group
+// removed this way is not a clear, so the unwritten 86400 policy still holds.
+func TestSTSStoreLapsedGroupDroppedByAnotherClientIsNotAClear(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix mode bits")
+	}
+	path := filepath.Join(t.TempDir(), "sts")
+	if err := stsStoreOnFile(path).Store("irc.example", 6697, 60, time.Unix(0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	makeReadOnly(t, path)
+	ours := stsStoreOnFile(path)
+	if err := ours.Store("irc.example", 6697, 86400, time.Unix(0, 0)); err == nil {
+		t.Fatal("a read-only file must refuse the write")
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	storage.NewIniSTSStore(path).Lookup("irc.example", 100)
+
+	cached, ok := ours.Lookup("irc.example", time.Unix(100, 0))
+	if !ok || cached.ExpiryEpochSeconds != 86400 {
+		t.Fatalf("a lapsed group another client dropped must not drop this store's unwritten policy: %+v ok=%v", cached, ok)
+	}
+}
+
+// TestSTSStoreUnreadableFileKeepsUnwrittenPolicy: the file is unreadable when this
+// store looks at it. Nothing can say the host moved, so the unwritten 86400 policy
+// still answers.
+func TestSTSStoreUnreadableFileKeepsUnwrittenPolicy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix mode bits")
+	}
+	path := filepath.Join(t.TempDir(), "sts")
+	if err := stsStoreOnFile(path).Store("irc.example", 6697, 60, time.Unix(0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	makeReadOnly(t, path)
+	ours := stsStoreOnFile(path)
+	if err := ours.Store("irc.example", 6697, 86400, time.Unix(0, 0)); err == nil {
+		t.Fatal("a read-only file must refuse the write")
+	}
+	makeUnreadable(t, path)
+
+	cached, ok := ours.Lookup("irc.example", time.Unix(1, 0))
+	if !ok || cached.ExpiryEpochSeconds != 86400 {
+		t.Fatalf("an unreadable file must not drop the unwritten policy: %+v ok=%v", cached, ok)
+	}
+}
+
+// makeUnreadable makes path unreadable and skips the test when the process can
+// still read it (running as root).
+func makeUnreadable(t *testing.T, path string) {
+	t.Helper()
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.ReadFile(path); err == nil {
+		_ = os.Chmod(path, 0o600)
+		t.Skip("process can read a mode 000 file (running as root?); skipping")
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+}
+
 // makeReadOnly makes path read-only and skips the test when the process can
 // still write it (running as root).
 func makeReadOnly(t *testing.T, path string) {

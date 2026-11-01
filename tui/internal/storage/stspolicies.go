@@ -165,20 +165,20 @@ func (s *IniSTSStore) Store(host string, port uint16, durationSeconds, nowUnix i
 	return persistSTSSettings(settings, s.path)
 }
 
-// Matching returns the on-disk policy for host when it is a valid policy with
-// durationSeconds. An expired one still matches, so a session that outlived its
-// duration re-arms it on disconnect. A missing, invalid, or differently timed
-// policy does not match. It mirrors the match in IniStsStore::refresh.
-func (s *IniSTSStore) Matching(host string, durationSeconds int64) (STSEntry, bool) {
+// Group reads host's policy group as the file holds it, lapsed or not. ok is
+// false when the group is missing or malformed. readable is false when the file
+// exists but cannot be read, which says nothing about the host. It mirrors
+// file_view in client/src/storage/stspolicies.rs.
+func (s *IniSTSStore) Group(host string) (entry STSEntry, ok, readable bool) {
 	key := STSGroupKey(host)
 	if key == "" || s.path == "" {
-		return STSEntry{}, false
+		return STSEntry{}, false, true
 	}
-	entry, ok := readSTSPolicy(OpenSTSSettings(s.path), key)
-	if !ok || entry.DurationSeconds != durationSeconds {
-		return STSEntry{}, false
+	if ProbeSettingsIni(s.path) == IniProbeUnreadable {
+		return STSEntry{}, false, false
 	}
-	return entry, true
+	entry, ok = readSTSPolicy(OpenSTSSettings(s.path), key)
+	return entry, ok, true
 }
 
 // Clear drops the policy for host, if any. It mirrors IniStsStore::clear.

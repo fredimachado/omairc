@@ -15,12 +15,12 @@ import (
 // The `STSStore` is the process STS policy cache (MemoryStsStore in
 // `client/src/session/sts.rs`). Durable INI persistence is
 // `storage.IniSTSStore` (`client/src/storage/stspolicies.rs`). A store updates
-// memory first and keeps a policy whose write failed there until a write lands.
-// Lookups answer with that unsaved policy first, then from the file when it
-// holds a live policy for the host, and from memory when it does not. A disk
-// failure never drops a policy that already applies in memory, and a corrupt
-// file never forces a plaintext connect for a host that still has a valid
-// in-memory entry.
+// memory first and keeps a policy whose write failed there until a write lands,
+// or until another client changes that host in the file. Lookups answer with
+// that unsaved policy first, then from the file when it holds a live policy for
+// the host, and from memory when it does not. A disk failure never drops a
+// policy that already applies in memory, and a corrupt file never forces a
+// plaintext connect for a host that still has a valid in-memory entry.
 
 // STSAdvertisement is the parsed value of one `sts` CAP token. A nil field
 // means the advertisement did not carry that key. It mirrors
@@ -103,11 +103,42 @@ func stsTokenValue(token string) string {
 	return ""
 }
 
-// stsHeld is one policy in memory. unpersisted marks a policy whose write failed,
-// so the file does not hold it.
+// stsFileView is what the disk store held for one host when it was read.
+// unreadable means the file exists but cannot be read, which says nothing about
+// the host. policy is nil when the group is missing or malformed.
+type stsFileView struct {
+	unreadable bool
+	policy     *STSCached
+}
+
+// live is the port and duration of the policy the view holds at nowUnix, with
+// the expiry left out, so two views compare by what the policy is. It is the
+// zero STSCached when the group is missing or has lapsed.
+func (v stsFileView) live(nowUnix int64) STSCached {
+	if v.policy == nil || v.policy.ExpiryEpochSeconds <= nowUnix {
+		return STSCached{}
+	}
+	return STSCached{Port: v.policy.Port, DurationSeconds: v.policy.DurationSeconds}
+}
+
+// stsFileMoved reports whether the file's policy for a host changed since
+// recorded was read: another client saved a different port or duration, or
+// cleared the host. An unreadable file on either side says nothing. It mirrors
+// file_moved in client/src/storage/stspolicies.rs.
+func stsFileMoved(recorded, now stsFileView, nowUnix int64) bool {
+	if recorded.unreadable || now.unreadable {
+		return false
+	}
+	return recorded.live(nowUnix) != now.live(nowUnix)
+}
+
+// stsHeld is one policy in memory. unpersisted is set when a write of the policy
+// failed, so the file does not hold it. It holds the file's view of the host
+// from when that write failed, so a later change by another client lets the file
+// answer.
 type stsHeld struct {
 	cached      STSCached
-	unpersisted bool
+	unpersisted *stsFileView
 }
 
 // STSStore is the process STS policy cache. Lookup expires through the caller's
@@ -138,12 +169,13 @@ func (s *STSStore) AttachDisk(disk *storage.IniSTSStore) {
 }
 
 // Lookup returns the cached policy for host at now, dropping an invalid or
-// expired entry. A policy whose write failed answers first, so the file never
-// replaces it. Then the file answers when it holds a live policy for host, and
-// that policy is hydrated into memory, so a stale memory entry never beats a
-// newer one another client saved. Memory answers last, when the file has none.
-// A malformed file is recovered through flushRecoveryLocked so other in-memory
-// hosts are not dropped. It mirrors StsStore::lookup.
+// expired entry. An unpersisted policy answers first while the file has not
+// moved on from it, so the file never replaces it. Then the file answers when it
+// holds a live policy for host, and that policy is hydrated into memory, so a
+// stale memory entry never beats a newer one another client saved. Memory
+// answers last, when the file has none. A malformed file is recovered through
+// flushRecoveryLocked so other in-memory hosts are not dropped. It mirrors
+// StsStore::lookup.
 func (s *STSStore) Lookup(host string, now time.Time) (STSCached, bool) {
 	key := stsGroupKey(host)
 	if key == "" {
@@ -152,8 +184,9 @@ func (s *STSStore) Lookup(host string, now time.Time) (STSCached, bool) {
 	nowUnix := now.Unix()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if held, ok := s.entries[key]; ok && held.unpersisted && held.cached.ExpiryEpochSeconds > nowUnix {
-		return held.cached, true
+	view := s.fileViewLocked(host)
+	if cached, ok := s.unpersistedLocked(key, view, nowUnix); ok && cached.ExpiryEpochSeconds > nowUnix {
+		return cached, true
 	}
 	if cached, ok := s.lookupDiskLocked(host, nowUnix); ok {
 		s.entries[key] = stsHeld{cached: cached}
@@ -234,8 +267,10 @@ func (s *STSStore) Store(host string, port uint16, durationSeconds int64, now ti
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// Unpersisted until a write lands: a failed write keeps the policy in memory,
-	// and the next recovery writes it into the file.
-	s.entries[key] = stsHeld{cached: cached, unpersisted: true}
+	// and the next recovery writes it into the file. The file's view before this
+	// write is what the file still holds if the write fails.
+	view := s.fileViewLocked(host)
+	s.entries[key] = stsHeld{cached: cached, unpersisted: &view}
 	err := s.persistLocked(host, port, durationSeconds, now.Unix(), false)
 	s.settleLocked(key, err)
 	return err
@@ -261,28 +296,58 @@ func (s *STSStore) Refresh(host string, durationSeconds int64, now time.Time) er
 		}
 		return nil
 	}
-	// An unwritten policy is the one lookup serves, so a refresh extends it. Otherwise the file's.
-	held, hasHeld := s.entries[key]
-	cached := held.cached
-	if !hasHeld || !held.unpersisted {
-		entry, ok := s.disk.Matching(host, durationSeconds)
-		if !ok {
+	view := s.fileViewLocked(host)
+	// An unpersisted policy is the one lookup serves, so a refresh extends it. Otherwise the file's.
+	cached, ok := s.unpersistedLocked(key, view, nowUnix)
+	if !ok {
+		if view.policy == nil {
 			return nil
 		}
-		cached = STSCached{
-			Port:               entry.Port,
-			DurationSeconds:    entry.DurationSeconds,
-			ExpiryEpochSeconds: entry.ExpiryEpochSeconds,
-		}
+		cached = *view.policy
 	}
 	if cached.DurationSeconds != durationSeconds {
 		return nil
 	}
 	cached.ExpiryEpochSeconds = stsExpiry(nowUnix, durationSeconds)
-	s.entries[key] = stsHeld{cached: cached, unpersisted: true}
+	s.entries[key] = stsHeld{cached: cached, unpersisted: &view}
 	err := s.persistLocked(host, cached.Port, durationSeconds, nowUnix, false)
 	s.settleLocked(key, err)
 	return err
+}
+
+// fileViewLocked reads host's group from the disk store. Caller must hold s.mu.
+func (s *STSStore) fileViewLocked(host string) stsFileView {
+	if s.disk == nil {
+		return stsFileView{}
+	}
+	entry, ok, readable := s.disk.Group(host)
+	if !readable {
+		return stsFileView{unreadable: true}
+	}
+	if !ok {
+		return stsFileView{}
+	}
+	return stsFileView{policy: &STSCached{
+		Port:               entry.Port,
+		DurationSeconds:    entry.DurationSeconds,
+		ExpiryEpochSeconds: entry.ExpiryEpochSeconds,
+	}}
+}
+
+// unpersistedLocked returns key's unpersisted policy while the file has not moved
+// on from the view its write failed against. Once it has, another client saved or
+// cleared the host: the unpersisted copy is dropped, and the file answers. Caller
+// must hold s.mu.
+func (s *STSStore) unpersistedLocked(key string, view stsFileView, nowUnix int64) (STSCached, bool) {
+	held, ok := s.entries[key]
+	if !ok || held.unpersisted == nil {
+		return STSCached{}, false
+	}
+	if stsFileMoved(*held.unpersisted, view, nowUnix) {
+		delete(s.entries, key)
+		return STSCached{}, false
+	}
+	return held.cached, true
 }
 
 // Clear drops the cached policy for host. Memory is cleared first; a disk
@@ -333,7 +398,7 @@ func (s *STSStore) flushRecoveryLocked(nowUnix int64, clearing bool, clearHost s
 			DurationSeconds:    held.cached.DurationSeconds,
 			ExpiryEpochSeconds: held.cached.ExpiryEpochSeconds,
 		}
-		if held.unpersisted {
+		if held.unpersisted != nil {
 			unsaved[key] = entry
 		} else {
 			known[key] = entry
@@ -360,7 +425,7 @@ func (s *STSStore) flushRecoveryLocked(nowUnix int64, clearing bool, clearHost s
 // A failed write leaves it unpersisted.
 func (s *STSStore) settleLocked(key string, err error) {
 	if held, ok := s.entries[key]; ok && err == nil {
-		held.unpersisted = false
+		held.unpersisted = nil
 		s.entries[key] = held
 	}
 }
