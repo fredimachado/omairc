@@ -14,11 +14,13 @@ import (
 // STS (Strict Transport Security) support.
 // The `STSStore` is the process STS policy cache (MemoryStsStore in
 // `client/src/session/sts.rs`). Durable INI persistence is
-// `storage.IniSTSStore` (`client/src/storage/stspolicies.rs`). Lookups answer
-// from the file when it holds a live policy for the host, and from memory when
-// it does not. A store updates memory first; a disk failure never drops a
-// policy that already applies in memory, and a corrupt file never forces a
-// plaintext connect for a host that still has a valid in-memory entry.
+// `storage.IniSTSStore` (`client/src/storage/stspolicies.rs`). A store updates
+// memory first and keeps a policy whose write failed there until a write lands.
+// Lookups answer with that unsaved policy first, then from the file when it
+// holds a live policy for the host, and from memory when it does not. A disk
+// failure never drops a policy that already applies in memory, and a corrupt
+// file never forces a plaintext connect for a host that still has a valid
+// in-memory entry.
 
 // STSAdvertisement is the parsed value of one `sts` CAP token. A nil field
 // means the advertisement did not carry that key. It mirrors
@@ -136,9 +138,10 @@ func (s *STSStore) AttachDisk(disk *storage.IniSTSStore) {
 }
 
 // Lookup returns the cached policy for host at now, dropping an invalid or
-// expired entry. The file answers first when it holds a live policy for host,
-// and that policy is hydrated into memory, so a stale memory entry never beats a
-// newer one another client saved. Memory answers only when the file has none.
+// expired entry. A policy whose write failed answers first, so the file never
+// replaces it. Then the file answers when it holds a live policy for host, and
+// that policy is hydrated into memory, so a stale memory entry never beats a
+// newer one another client saved. Memory answers last, when the file has none.
 // A malformed file is recovered through flushRecoveryLocked so other in-memory
 // hosts are not dropped. It mirrors StsStore::lookup.
 func (s *STSStore) Lookup(host string, now time.Time) (STSCached, bool) {
@@ -149,6 +152,9 @@ func (s *STSStore) Lookup(host string, now time.Time) (STSCached, bool) {
 	nowUnix := now.Unix()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if held, ok := s.entries[key]; ok && held.unpersisted && held.cached.ExpiryEpochSeconds > nowUnix {
+		return held.cached, true
+	}
 	if cached, ok := s.lookupDiskLocked(host, nowUnix); ok {
 		s.entries[key] = stsHeld{cached: cached}
 		return cached, true

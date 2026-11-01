@@ -4,6 +4,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -648,4 +649,78 @@ func TestSTSStoreRefreshOnMalformedFileExtendsThePolicy(t *testing.T) {
 	if !ok || entry.ExpiryEpochSeconds != 3700 {
 		t.Fatalf("refresh on a malformed file must extend to 100+3600: %+v ok=%v", entry, ok)
 	}
+}
+
+// TestSTSStoreUnwritableStorePrefersItsLongerPolicyOverFile: the file holds a
+// 60s policy and is read-only, so storing 86400s for the host fails and keeps
+// the new policy in memory. After the file's 60s lapses, lookup still returns
+// the 86400s policy instead of dropping to none.
+func TestSTSStoreUnwritableStorePrefersItsLongerPolicyOverFile(t *testing.T) {
+	// client/src/storage/stspolicies.rs::an_unwritable_store_keeps_its_longer_policy_over_the_file
+	if runtime.GOOS == "windows" {
+		t.Skip("unix mode bits")
+	}
+	path := filepath.Join(t.TempDir(), "sts")
+	if err := stsStoreOnFile(path).Store("irc.example", 6697, 60, time.Unix(0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	makeReadOnly(t, path)
+	store := stsStoreOnFile(path)
+
+	if err := store.Store("irc.example", 6697, 86400, time.Unix(0, 0)); err == nil {
+		t.Fatal("a read-only file must refuse the write")
+	}
+
+	for _, seconds := range []int64{31, 61} {
+		cached, ok := store.Lookup("irc.example", time.Unix(seconds, 0))
+		if !ok || cached.ExpiryEpochSeconds != 86400 {
+			t.Fatalf("at %ds the unwritten 86400s policy must hold: %+v ok=%v", seconds, cached, ok)
+		}
+	}
+}
+
+// TestSTSStoreLaterWriteClearsTheUnsavedMark: once a write of the host lands,
+// the policy is in the file, so a newer file policy from another client wins again.
+func TestSTSStoreLaterWriteClearsTheUnsavedMark(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix mode bits")
+	}
+	path := filepath.Join(t.TempDir(), "sts")
+	if err := stsStoreOnFile(path).Store("irc.example", 6697, 60, time.Unix(0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	makeReadOnly(t, path)
+	store := stsStoreOnFile(path)
+	if err := store.Store("irc.example", 6697, 86400, time.Unix(0, 0)); err == nil {
+		t.Fatal("a read-only file must refuse the write")
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Store("irc.example", 6697, 30, time.Unix(0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if err := stsStoreOnFile(path).Store("irc.example", 6697, 45, time.Unix(10, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	cached, ok := store.Lookup("irc.example", time.Unix(11, 0))
+	if !ok || cached.DurationSeconds != 45 {
+		t.Fatalf("after a landed write the newer file policy must win: %+v ok=%v", cached, ok)
+	}
+}
+
+// makeReadOnly makes path read-only and skips the test when the process can
+// still write it (running as root).
+func makeReadOnly(t *testing.T, path string) {
+	t.Helper()
+	if err := os.Chmod(path, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := os.OpenFile(path, os.O_WRONLY, 0); err == nil {
+		f.Close()
+		_ = os.Chmod(path, 0o600)
+		t.Skip("process can write a read-only file (running as root?); skipping")
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
 }

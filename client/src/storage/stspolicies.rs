@@ -5,9 +5,9 @@
 //! A well-formed file is updated in place through `Settings`. When the file is malformed, this
 //! store writes a clean temp file, hard-links `sts` to a non-clobbering `sts.corrupt` backup
 //! (then `sts.corrupt.1`, `.2`, …), and renames the temp over `sts`. A failure at any step leaves
-//! `sts` untouched and keeps the new policy in a small in-memory layer that lookups fall back
-//! to and recovery merges where the file has none. An unreadable or unwritable file is still
-//! left alone. Each successful write then restricts the file to its owner, as
+//! `sts` untouched and keeps the new policy in memory, where lookups prefer it over the file until
+//! a write lands and recovery writes it into the clean file. An unreadable or unwritable file is
+//! still left alone. Each successful write then restricts the file to its owner, as
 //! `restrictPermissions` does.
 
 use std::cell::RefCell;
@@ -29,15 +29,24 @@ const EXPIRY_KEY: &str = "expiry";
 /// Cap on `sts.corrupt` / `sts.corrupt.N` attempts so a persistent error cannot spin forever.
 const MAX_STS_CORRUPT_BACKUPS: u32 = 10_000;
 
+/// One host's policy in memory. `unpersisted` marks a policy whose write failed: the file does
+/// not hold it, so lookups prefer it over the file until a write lands.
+#[derive(Clone, Copy, Debug)]
+struct Remembered {
+    cached: StsCached,
+    unpersisted: bool,
+}
+
 /// The on-disk STS cache at `path`, plus a small in-memory layer for policies that must
-/// survive a failed backup or write. Lookups read the file first and fall back to memory
-/// only when the file has no live policy for the host; recovery merges unexpired memory
-/// entries into the clean file where the file has none. Normal well-formed writes only
-/// persist the mutation, so a host cleared on disk with `duration=0` is not brought back.
+/// survive a failed backup or write. Lookups prefer an unpersisted policy, then read the file,
+/// then fall back to memory only when the file has no live policy for the host. Recovery
+/// writes every unexpired unpersisted policy into the clean file, and merges saved memory
+/// entries where the file has none. Normal well-formed writes only persist the mutation, so a
+/// host cleared on disk with `duration=0` is not brought back.
 #[derive(Debug)]
 pub struct IniStsStore {
     path: PathBuf,
-    memory: RefCell<BTreeMap<String, StsCached>>,
+    memory: RefCell<BTreeMap<String, Remembered>>,
 }
 
 impl IniStsStore {
@@ -60,31 +69,47 @@ impl IniStsStore {
         let _ = persist_sts_settings(&mut settings, &self.path, &self.memory, now_unix);
     }
 
-    /// Remembers `entry` under `key` so a failed persist still serves it on lookup
-    /// and a later recovery can merge it.
-    fn remember(&self, key: &str, entry: StsCached) {
-        self.memory.borrow_mut().insert(key.to_string(), entry);
+    /// Remembers `cached` under `key`. `unpersisted` marks a policy whose write has not landed.
+    fn remember(&self, key: &str, cached: StsCached, unpersisted: bool) {
+        self.memory
+            .borrow_mut()
+            .insert(key.to_string(), Remembered { cached, unpersisted });
+    }
+
+    /// Marks `key`'s policy as held by the file once `status` says the write landed.
+    fn settle(&self, key: &str, status: Status) {
+        if status != Status::Written {
+            return;
+        }
+        if let Some(held) = self.memory.borrow_mut().get_mut(key) {
+            held.unpersisted = false;
+        }
     }
 }
 
 impl StsStore for IniStsStore {
-    /// The file answers first when it holds a live policy for `host`, so a stale memory entry
-    /// never beats a newer policy another client saved. Memory answers only when the file has
-    /// none, which covers a failed write, a corrupt file, or an unwritable one.
+    /// A policy whose write failed answers first, so the file never replaces it. Then the file
+    /// answers when it holds a live policy for `host`, so a stale memory entry never beats a newer
+    /// policy another client saved. Memory answers last, when the file has none, which covers a
+    /// corrupt or unwritable file.
     fn lookup(&self, host: &str, now: DateTime<Utc>) -> Option<StsCached> {
         let key = sts_group_key(host)?;
         let now_unix = now.timestamp();
+        let remembered = self.memory.borrow().get(&key).copied();
+        if let Some(held) = remembered
+            .filter(|held| held.unpersisted && held.cached.expiry_epoch_seconds > now_unix)
+        {
+            return Some(held.cached);
+        }
         let settings = Settings::open_sts(&self.path);
         if let Some(cached) = read_policy(&settings, &key) {
             if cached.expiry_epoch_seconds > now_unix {
-                self.remember(&key, cached);
+                self.remember(&key, cached, false);
                 return Some(cached);
             }
         }
-        if let Some(cached) = self.memory.borrow().get(&key).copied() {
-            if cached.expiry_epoch_seconds > now_unix {
-                return Some(cached);
-            }
+        if let Some(held) = remembered.filter(|held| held.cached.expiry_epoch_seconds > now_unix) {
+            return Some(held.cached);
         }
         if settings.contains(&key, PORT_KEY) && settings.contains(&key, EXPIRY_KEY) {
             // Expired or invalid on disk: drop it from the file.
@@ -112,10 +137,12 @@ impl StsStore for IniStsStore {
         };
         let mut settings = Settings::open_sts(&self.path);
         merge_sts_policy(&mut settings, &key, incoming);
-        // Remember the written policy so a failed persist cannot drop it.
+        // Remember the written policy as unpersisted before the write, so a failed persist keeps
+        // it and a recovery writes it.
         let winner = read_policy(&settings, &key).unwrap_or(incoming);
-        self.remember(&key, winner);
-        let _ = persist_sts_settings(&mut settings, &self.path, &self.memory, now.timestamp());
+        self.remember(&key, winner, true);
+        let status = persist_sts_settings(&mut settings, &self.path, &self.memory, now.timestamp());
+        self.settle(&key, status);
     }
 
     fn refresh(&self, host: &str, duration_seconds: i64, now: DateTime<Utc>) {
@@ -134,8 +161,9 @@ impl StsStore for IniStsStore {
             ..cached
         };
         merge_sts_policy(&mut settings, &key, refreshed);
-        self.remember(&key, refreshed);
-        let _ = persist_sts_settings(&mut settings, &self.path, &self.memory, now_unix);
+        self.remember(&key, refreshed, true);
+        let status = persist_sts_settings(&mut settings, &self.path, &self.memory, now_unix);
+        self.settle(&key, status);
     }
 
     fn clear(&self, host: &str) {
@@ -181,7 +209,7 @@ fn merge_sts_policy(settings: &mut Settings, key: &str, incoming: StsCached) {
 fn persist_sts_settings(
     settings: &mut Settings,
     path: &Path,
-    memory: &RefCell<BTreeMap<String, StsCached>>,
+    memory: &RefCell<BTreeMap<String, Remembered>>,
     now_unix: i64,
 ) -> Status {
     drop_invalid_groups(settings);
@@ -195,6 +223,12 @@ fn persist_sts_settings(
             match recover_malformed_sts(path, &settings.encode()) {
                 Ok(()) => {
                     restrict_permissions(path);
+                    // Every unexpired memory policy is in the file now, or yields to a live one there.
+                    for held in memory.borrow_mut().values_mut() {
+                        if held.cached.expiry_epoch_seconds > now_unix {
+                            held.unpersisted = false;
+                        }
+                    }
                     Status::Written
                 }
                 Err(_) => Status::FormatError,
@@ -220,21 +254,25 @@ fn drop_invalid_groups(settings: &mut Settings) {
     }
 }
 
-/// Merges every unexpired in-memory policy into `settings` for malformed-file recovery, except
-/// where the file already holds a live policy for the host: that one is newer than memory.
+/// Merges every unexpired in-memory policy into `settings` for malformed-file recovery. An
+/// unpersisted policy always lands. A saved one yields where the file already holds a live
+/// policy for the host, since that one is newer than memory.
 fn merge_memory_into_settings(
     settings: &mut Settings,
-    memory: &RefCell<BTreeMap<String, StsCached>>,
+    memory: &RefCell<BTreeMap<String, Remembered>>,
     now_unix: i64,
 ) {
-    for (key, entry) in memory.borrow().iter() {
+    for (key, held) in memory.borrow().iter() {
+        let entry = held.cached;
         if entry.port < 1 || entry.expiry_epoch_seconds <= now_unix {
             continue;
         }
-        if read_policy(settings, key).is_some_and(|disk| disk.expiry_epoch_seconds > now_unix) {
+        let disk_is_live = read_policy(settings, key)
+            .is_some_and(|disk| disk.expiry_epoch_seconds > now_unix);
+        if disk_is_live && !held.unpersisted {
             continue;
         }
-        merge_sts_policy(settings, key, *entry);
+        merge_sts_policy(settings, key, entry);
     }
 }
 
@@ -672,6 +710,102 @@ mod tests {
                 expiry_epoch_seconds: 70,
             }),
             "recovery must not write the stale 3600s memory over the 60s policy on disk"
+        );
+    }
+
+    /// Makes `path` read-only. Returns false when the process can still write it (running as
+    /// root), so the caller skips.
+    #[cfg(unix)]
+    fn make_read_only(path: &Path) -> bool {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o444)).unwrap();
+        if fs::OpenOptions::new().write(true).open(path).is_ok() {
+            fs::set_permissions(path, fs::Permissions::from_mode(0o644)).unwrap();
+            return false;
+        }
+        true
+    }
+
+    #[cfg(unix)]
+    fn make_writable(path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o644)).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unwritable_store_keeps_its_longer_policy_over_the_file() {
+        let dir = TempDir::new("sts-unwritable-longer");
+        let (store, path) = store_in(&dir);
+        IniStsStore::new(path.clone()).store("irc.example", 6697, 60, at(0));
+        if !make_read_only(&path) {
+            return;
+        }
+
+        store.store("irc.example", 6697, 86400, at(0));
+        make_writable(&path);
+
+        for seconds in [31, 61] {
+            assert_eq!(
+                store.lookup("irc.example", at(seconds)),
+                Some(StsCached {
+                    port: 6697,
+                    duration_seconds: 86400,
+                    expiry_epoch_seconds: 86400,
+                }),
+                "at {seconds}s the unwritten 86400s policy must hold over the file's 60s one"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_later_write_that_lands_clears_the_unwritten_mark() {
+        let dir = TempDir::new("sts-unwritten-cleared");
+        let (store, path) = store_in(&dir);
+        IniStsStore::new(path.clone()).store("irc.example", 6697, 60, at(0));
+        if !make_read_only(&path) {
+            return;
+        }
+        store.store("irc.example", 6697, 86400, at(0));
+        make_writable(&path);
+        store.store("irc.example", 6697, 30, at(0));
+        IniStsStore::new(path.clone()).store("irc.example", 6697, 45, at(10));
+
+        assert_eq!(
+            store.lookup("irc.example", at(11)),
+            Some(StsCached {
+                port: 6697,
+                duration_seconds: 45,
+                expiry_epoch_seconds: 55,
+            }),
+            "once a write landed, the newer file policy wins again"
+        );
+    }
+
+    #[test]
+    fn a_recovery_writes_an_unwritten_policy_over_a_live_one_on_disk() {
+        let dir = TempDir::new("sts-recovery-unwritten");
+        let (ours, path) = store_in(&dir);
+        let key = sts_group_key("irc.example").expect("host");
+        let mixed = format!(
+            "this line has no equals sign\n[{key}]\nport=6697\nduration=60\nexpiry=70\n"
+        );
+        fs::write(&path, &mixed).expect("write");
+        with_sts_test_hook(StsTestHook::FailBackup, || {
+            ours.store("irc.example", 6697, 86400, at(0));
+        });
+
+        ours.store("third.example", 6699, 10, at(20));
+
+        assert_eq!(
+            IniStsStore::new(path).lookup("irc.example", at(20)),
+            Some(StsCached {
+                port: 6697,
+                duration_seconds: 86400,
+                expiry_epoch_seconds: 86400,
+            }),
+            "recovery lands the unwritten policy, which lookup already served over the 60s one"
         );
     }
 

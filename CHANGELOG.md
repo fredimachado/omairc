@@ -67,7 +67,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   client that disconnects or quits refreshes the expiry only of a policy whose
   duration it still holds, so a shorter policy another client saved is kept.
   Lookups and malformed-file recovery prefer the file's policy over a stale
-  in-memory one.
+  in-memory one. A policy whose write failed, because the file is read-only or
+  malformed, stays in memory and wins lookups until a later write lands.
 - Ctrl+Q on the desktop client stops every session before it exits, as the
   terminal client does on quit, so each network refreshes its STS expiry.
 - The `sts` cache keeps only real policies. A group whose name is not a host
