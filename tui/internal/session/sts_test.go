@@ -813,6 +813,38 @@ func TestSTSStoreLapsedGroupDroppedByAnotherClientIsNotAClear(t *testing.T) {
 	}
 }
 
+// TestSTSStoreExpiryOnlyRefreshByAnotherClientKeepsUnwrittenPolicy: another client
+// refreshes the 60s policy after this store's write failed. The refresh moves only
+// the expiry, which is not a change, so the unwritten 86400s policy keeps answering
+// after the recorded 60s expiry has passed.
+func TestSTSStoreExpiryOnlyRefreshByAnotherClientKeepsUnwrittenPolicy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix mode bits")
+	}
+	path := filepath.Join(t.TempDir(), "sts")
+	if err := stsStoreOnFile(path).Store("irc.example", 6697, 60, time.Unix(0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	makeReadOnly(t, path)
+	ours := stsStoreOnFile(path)
+	if err := ours.Store("irc.example", 6697, 86400, time.Unix(0, 0)); err == nil {
+		t.Fatal("a read-only file must refuse the write")
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := stsStoreOnFile(path).Refresh("irc.example", 60, time.Unix(50, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, seconds := range []int64{70, 120} {
+		cached, ok := ours.Lookup("irc.example", time.Unix(seconds, 0))
+		if !ok || cached.ExpiryEpochSeconds != 86400 {
+			t.Fatalf("at %ds the unwritten 86400s policy must hold over the refreshed 60s one: %+v ok=%v", seconds, cached, ok)
+		}
+	}
+}
+
 // TestSTSStoreUnreadableFileKeepsUnwrittenPolicy: the file is unreadable when this
 // store looks at it. Nothing can say the host moved, so the unwritten 86400 policy
 // still answers.

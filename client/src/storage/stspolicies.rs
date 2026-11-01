@@ -46,9 +46,14 @@ impl FileView {
         }
     }
 
+    /// The port and duration of the policy the view holds, with the expiry left out.
+    fn port_and_duration(self) -> Option<(u16, i64)> {
+        self.policy()
+            .map(|cached| (cached.port, cached.duration_seconds))
+    }
+
     /// The port and duration of the policy held at `now_unix`, or `None` when it is missing or
-    /// has lapsed. Expiry is left out: a refresh by another client moves only the expiry, which
-    /// is not a change to the policy.
+    /// has lapsed.
     fn live(self, now_unix: i64) -> Option<(u16, i64)> {
         self.policy()
             .filter(|cached| cached.expiry_epoch_seconds > now_unix)
@@ -70,6 +75,11 @@ fn file_view(path: &Path, settings: &Settings, key: &str) -> FileView {
 /// a different port or duration, or cleared the host. An unreadable file says nothing.
 fn file_moved(recorded: FileView, now: FileView, now_unix: i64) -> bool {
     if matches!(recorded, FileView::Unreadable) || matches!(now, FileView::Unreadable) {
+        return false;
+    }
+    // A refresh by another client moves only the expiry. The same port and duration is never a
+    // change, even once the recorded expiry has passed, so this is checked before liveness.
+    if recorded.port_and_duration() == now.port_and_duration() {
         return false;
     }
     recorded.live(now_unix) != now.live(now_unix)
@@ -965,6 +975,35 @@ mod tests {
             }),
             "a lapsed group another client dropped must not drop this store's unwritten policy"
         );
+    }
+
+    /// Another client refreshes the 60s policy after this store's write failed. The refresh moves
+    /// only the expiry, which is not a change, so the unwritten 86400 policy keeps answering after
+    /// the recorded 60s expiry has passed.
+    #[cfg(unix)]
+    #[test]
+    fn an_expiry_only_refresh_by_another_client_keeps_the_unwritten_policy() {
+        let dir = TempDir::new("sts-moved-expiry-only");
+        let (ours, path) = store_in(&dir);
+        IniStsStore::new(path.clone()).store("irc.example", 6697, 60, at(0));
+        if !make_read_only(&path) {
+            return;
+        }
+        ours.store("irc.example", 6697, 86400, at(0));
+        make_writable(&path);
+        IniStsStore::new(path.clone()).refresh("irc.example", 60, at(50));
+
+        for seconds in [70, 120] {
+            assert_eq!(
+                ours.lookup("irc.example", at(seconds)),
+                Some(StsCached {
+                    port: 6697,
+                    duration_seconds: 86400,
+                    expiry_epoch_seconds: 86400,
+                }),
+                "at {seconds}s the unwritten 86400s policy must hold over the refreshed 60s one"
+            );
+        }
     }
 
     /// The file is unreadable when this store looks at it. Nothing can say the host moved, so

@@ -111,14 +111,22 @@ type stsFileView struct {
 	policy     *STSCached
 }
 
-// live is the port and duration of the policy the view holds at nowUnix, with
-// the expiry left out, so two views compare by what the policy is. It is the
-// zero STSCached when the group is missing or has lapsed.
+// identity is the port and duration of the policy the view holds, with the
+// expiry left out. It is the zero STSCached when the group is missing.
+func (v stsFileView) identity() STSCached {
+	if v.policy == nil {
+		return STSCached{}
+	}
+	return STSCached{Port: v.policy.Port, DurationSeconds: v.policy.DurationSeconds}
+}
+
+// live is identity while the policy has not lapsed at nowUnix. It is the zero
+// STSCached when the group is missing or has lapsed.
 func (v stsFileView) live(nowUnix int64) STSCached {
 	if v.policy == nil || v.policy.ExpiryEpochSeconds <= nowUnix {
 		return STSCached{}
 	}
-	return STSCached{Port: v.policy.Port, DurationSeconds: v.policy.DurationSeconds}
+	return v.identity()
 }
 
 // stsFileMoved reports whether the file's policy for a host changed since
@@ -127,6 +135,11 @@ func (v stsFileView) live(nowUnix int64) STSCached {
 // file_moved in client/src/storage/stspolicies.rs.
 func stsFileMoved(recorded, now stsFileView, nowUnix int64) bool {
 	if recorded.unreadable || now.unreadable {
+		return false
+	}
+	// A refresh by another client moves only the expiry. The same port and
+	// duration is never a change, even once the recorded expiry has passed.
+	if recorded.identity() == now.identity() {
 		return false
 	}
 	return recorded.live(nowUnix) != now.live(nowUnix)
