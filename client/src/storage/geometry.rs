@@ -161,14 +161,20 @@ fn recover_malformed_ini_file(path: &Path, data: &[u8]) -> io::Result<()> {
         let _ = fs::remove_file(&temp);
         return Err(io::Error::other("window.ini corrupt backup failed"));
     };
-    match fs::rename(&temp, &target.destination) {
+    install_recovered(&temp, &target.destination, &backup)
+}
+
+/// Renames the recovered temp over the destination and tightens the corrupt backup.
+/// On failure, both the temp and backup siblings are removed before the error is returned.
+fn install_recovered(temp: &Path, destination: &Path, backup: &Path) -> io::Result<()> {
+    match fs::rename(temp, destination) {
         Ok(()) => {
-            restrict_backup_permissions(&backup);
+            restrict_backup_permissions(backup);
             Ok(())
         }
         Err(err) => {
-            let _ = fs::remove_file(&temp);
-            let _ = fs::remove_file(&backup);
+            let _ = fs::remove_file(temp);
+            let _ = fs::remove_file(backup);
             Err(err)
         }
     }
@@ -476,7 +482,7 @@ mod tests {
 
     #[test]
     fn failed_rename_removes_the_corrupt_backup() {
-        let dir = TempDir::new("geometry-rename-fail-f862");
+        let dir = TempDir::new("geometry-rename-fail-f194");
         let path = dir.path().join(WINDOW_FILE);
         let corrupt = b"[window\nbad=1\n";
         fs::write(&path, corrupt).unwrap();
@@ -485,14 +491,32 @@ mod tests {
         let backup = link_window_corrupt_backup(&path).expect("backup");
         fs::remove_file(&path).unwrap();
         fs::create_dir(&path).unwrap();
-        assert!(fs::rename(&temp, &path).is_err());
-        let _ = fs::remove_file(&temp);
-        let _ = fs::remove_file(&backup);
+        assert!(install_recovered(&temp, &path, &backup).is_err());
         assert!(!backup.exists());
+        assert!(!temp.exists());
         assert!(path.is_dir());
+    }
 
+    #[test]
+    fn backup_link_failure_removes_temp_and_leaves_no_corrupt_file() {
+        let dir = TempDir::new("geometry-backup-link-f194");
+        let path = dir.path().join(WINDOW_FILE);
+        fs::create_dir(&path).unwrap();
+        let data = encoded_geometry(&WindowGeometry::new(0, 0, 900, 700, false));
         assert!(recover_malformed_ini_file(&path, &data).is_err());
         assert!(!dir.path().join("window.ini.corrupt").exists());
+        assert!(
+            fs::read_dir(dir.path())
+                .unwrap()
+                .filter_map(Result::ok)
+                .all(|entry| {
+                    !entry
+                        .file_name()
+                        .to_string_lossy()
+                        .contains(".omairc-window-")
+                }),
+            "temp sibling must be removed when the corrupt backup link fails"
+        );
     }
 
     #[test]

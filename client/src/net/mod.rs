@@ -27,7 +27,7 @@ mod worker;
 mod tests;
 
 pub use factory::NetTransports;
-pub use hub::{NetHub, NetOptions};
+pub use hub::{NetHub, NetOptions, ResolveHost};
 pub use tls::client_config_trusting_pem;
 pub use wire::Delivery;
 

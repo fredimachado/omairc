@@ -8,9 +8,10 @@ use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
 use socket2::{SockRef, TcpKeepalive};
-use tokio::net::{lookup_host, TcpStream};
+use tokio::net::TcpStream;
 use tokio::time::timeout;
 
+use super::hub::ResolveHost;
 use crate::session::transport::{TransportError, TransportErrorKind};
 
 /// The keepalive idle time and probe interval, the values Go's dialer leaves on by
@@ -29,17 +30,23 @@ pub(super) async fn connect(
     host: &str,
     port: u16,
     budget: Duration,
+    resolve_host: &ResolveHost,
 ) -> Result<TcpStream, TransportError> {
     let deadline = Instant::now() + budget;
-    match timeout(budget, dial(host, port, deadline)).await {
+    match timeout(budget, dial(host, port, deadline, resolve_host)).await {
         Ok(result) => result,
         Err(_elapsed) => Err(timed_out()),
     }
 }
 
-async fn dial(host: &str, port: u16, deadline: Instant) -> Result<TcpStream, TransportError> {
-    let addresses: Vec<SocketAddr> = match lookup_host((host, port)).await {
-        Ok(found) => found.collect(),
+async fn dial(
+    host: &str,
+    port: u16,
+    deadline: Instant,
+    resolve_host: &ResolveHost,
+) -> Result<TcpStream, TransportError> {
+    let addresses: Vec<SocketAddr> = match resolve_host(host.to_owned(), port).await {
+        Ok(found) => found,
         Err(error) => {
             log::debug!("resolving {host} failed: {error}");
             return Err(resolve_failure(host, &error));

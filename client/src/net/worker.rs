@@ -54,7 +54,14 @@ pub(super) async fn run(
     options: NetOptions,
     events: Sender<Delivery>,
 ) {
-    let tcp = match dial::connect(&target.host, target.port, options.connect_timeout).await {
+    let tcp = match dial::connect(
+        &target.host,
+        target.port,
+        options.connect_timeout,
+        &options.resolve_host,
+    )
+    .await
+    {
         Ok(tcp) => tcp,
         Err(error) => {
             report(&events, tag, IoEvent::Failed(error));

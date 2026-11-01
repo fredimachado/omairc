@@ -12,12 +12,14 @@ mod peer;
 mod session;
 mod worker;
 
+use std::io;
+use std::sync::Arc;
 use std::time::Duration;
 
 use harness::{awaiting_peer, first_error, record, NetHarness, Rig};
 use peer::{dead_address, Mode};
 
-use crate::net::NetOptions;
+use crate::net::{NetOptions, ResolveHost};
 use crate::session::transport::{ConnectionState, Transport, TransportErrorKind};
 
 mod socket_suite {
@@ -69,9 +71,39 @@ fn refused_port_is_a_network_error() {
     );
 }
 
+fn resolve_host_that_always_fails() -> ResolveHost {
+    Arc::new(|_host, _port| {
+        Box::pin(async { Err(io::Error::new(io::ErrorKind::NotFound, "no such host")) })
+    })
+}
+
 /// A host name nothing resolves fails as a resolution error, before any socket opens.
 #[test]
 fn unresolvable_host_is_a_resolve_error() {
+    let rig = Rig::new(NetOptions {
+        resolve_host: resolve_host_that_always_fails(),
+        ..NetOptions::default()
+    });
+    let transport = rig.hub.register();
+    let (sink, _keep) = record(transport.as_ref());
+
+    transport.connect("no-such-host.invalid", 6667, false);
+    rig.settle(&|| awaiting_peer(&transport, false));
+
+    assert_eq!(transport.state(), ConnectionState::Failed);
+    let error = first_error(&sink);
+    assert_eq!(error.kind, TransportErrorKind::Resolve);
+    assert!(
+        error.message.starts_with("lookup no-such-host.invalid:"),
+        "{}",
+        error.message
+    );
+}
+
+/// Exercises real DNS when the resolver returns NXDOMAIN for `.invalid` names.
+#[test]
+#[ignore = "requires a resolver that does not synthesize addresses for .invalid"]
+fn unresolvable_host_is_a_resolve_error_live_dns() {
     let rig = Rig::new(NetOptions::default());
     let transport = rig.hub.register();
     let (sink, _keep) = record(transport.as_ref());

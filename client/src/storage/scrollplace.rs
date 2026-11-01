@@ -138,6 +138,12 @@ impl ScrollPlaceFile {
         self.conf_path.as_deref()
     }
 
+    /// The platform that selects legacy conf paths on first seed (tests only).
+    #[cfg(test)]
+    pub(crate) fn platform(&self) -> paths::Platform {
+        self.platform
+    }
+
     /// Every network's places, keyed by network id. Entries that do not parse are skipped.
     /// Prefers `scrollplaces.ini` when it exists; otherwise reads the legacy conf groups
     /// without writing or stripping them. On macOS both `omairc.ini` and `omairc.conf`
@@ -414,6 +420,69 @@ mod tests {
 
     fn agent_dir(label: &str) -> TempDir {
         TempDir::new(&format!("{label}-1d06"))
+    }
+
+    #[test]
+    fn new_and_for_settings_carry_current_platform() {
+        assert_eq!(
+            ScrollPlaceFile::new(Backing::Ephemeral).platform(),
+            Platform::current()
+        );
+        let dir = TempDir::new("scroll-platform-pin-f194");
+        let conf = dir.path().join("omairc.conf");
+        assert_eq!(
+            ScrollPlaceFile::for_settings(&Backing::Disk(conf)).platform(),
+            Platform::current()
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn for_settings_live_macos_seeds_from_omairc_ini() {
+        use crate::storage::paths::{SETTINGS_FILE, SETTINGS_FILE_MACOS};
+
+        let dir = TempDir::new("scroll-live-macos-f194");
+        let ini = dir.path().join(SETTINGS_FILE_MACOS);
+        let legacy_conf = dir.path().join(SETTINGS_FILE);
+        fs::write(
+            &ini,
+            "[scrollPlaces]\nnet_ini\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#from-ini\\\"}]\"\n",
+        )
+        .unwrap();
+        fs::write(
+            &legacy_conf,
+            "[scrollPlaces]\nnet_conf\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#from-conf\\\"}]\"\n",
+        )
+        .unwrap();
+
+        let file = ScrollPlaceFile::for_settings(&Backing::Disk(ini));
+        assert_eq!(file.platform(), Platform::MacOs);
+        assert_eq!(
+            file.state_path(),
+            Some(dir.path().join(SCROLL_PLACES_FILE).as_path())
+        );
+        assert_eq!(
+            file.save(
+                "net_ini",
+                &vec![(
+                    "#from-ini".to_owned(),
+                    ScrollPlace {
+                        follow_end: true,
+                        ..ScrollPlace::default()
+                    }
+                )]
+            ),
+            Status::Written
+        );
+        let loaded = file.load_all();
+        assert!(
+            loaded.contains_key("net_conf"),
+            "live for_settings on macOS must seed omairc.conf-only networks: {loaded:?}"
+        );
+        assert!(
+            dir.path().join(SCROLL_PLACES_FILE).exists(),
+            "state file must stay under the temp dir"
+        );
     }
 
     fn sleep_for_mtime() {
