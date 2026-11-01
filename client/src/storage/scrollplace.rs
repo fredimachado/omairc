@@ -441,27 +441,9 @@ mod tests {
     fn for_settings_live_macos_seeds_from_omairc_ini() {
         use crate::storage::paths::{SETTINGS_FILE, SETTINGS_FILE_MACOS};
 
-        struct RestoreHome(Option<std::ffi::OsString>);
-        impl Drop for RestoreHome {
-            fn drop(&mut self) {
-                match self.0.take() {
-                    Some(prev) => std::env::set_var("HOME", prev),
-                    None => std::env::remove_var("HOME"),
-                }
-            }
-        }
-
         let dir = TempDir::new("scroll-live-macos-f194");
-        let home = dir.path().join("home");
-        fs::create_dir_all(&home).unwrap();
-        let _restore_home = RestoreHome(std::env::var_os("HOME"));
-        std::env::set_var("HOME", &home);
-
-        let env = paths::Env::from_process();
-        let conf = paths::settings_path_for(&env, Platform::current()).expect("settings");
-        fs::create_dir_all(conf.parent().unwrap()).unwrap();
-        let ini = conf.parent().unwrap().join(SETTINGS_FILE_MACOS);
-        let legacy_conf = conf.parent().unwrap().join(SETTINGS_FILE);
+        let ini = dir.path().join(SETTINGS_FILE_MACOS);
+        let legacy_conf = dir.path().join(SETTINGS_FILE);
         fs::write(
             &ini,
             "[scrollPlaces]\nnet_ini\\places=\"[{\\\"follow\\\":true,\\\"target\\\":\\\"#from-ini\\\"}]\"\n",
@@ -473,8 +455,12 @@ mod tests {
         )
         .unwrap();
 
-        let file = ScrollPlaceFile::for_settings(&Backing::Disk(conf));
+        let file = ScrollPlaceFile::for_settings(&Backing::Disk(ini));
         assert_eq!(file.platform(), Platform::MacOs);
+        assert_eq!(
+            file.state_path(),
+            Some(dir.path().join(SCROLL_PLACES_FILE).as_path())
+        );
         assert_eq!(
             file.save(
                 "net_ini",
@@ -492,6 +478,10 @@ mod tests {
         assert!(
             loaded.contains_key("net_conf"),
             "live for_settings on macOS must seed omairc.conf-only networks: {loaded:?}"
+        );
+        assert!(
+            dir.path().join(SCROLL_PLACES_FILE).exists(),
+            "state file must stay under the temp dir"
         );
     }
 

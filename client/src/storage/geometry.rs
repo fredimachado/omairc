@@ -467,6 +467,28 @@ mod tests {
     }
 
     #[test]
+    fn backup_link_failure_removes_temp_and_leaves_no_corrupt_file() {
+        let dir = TempDir::new("geometry-backup-link-f194");
+        let path = dir.path().join(WINDOW_FILE);
+        fs::create_dir(&path).unwrap();
+        let data = encoded_geometry(&WindowGeometry::new(0, 0, 900, 700, false));
+        assert!(recover_malformed_ini_file(&path, &data).is_err());
+        assert!(!dir.path().join("window.ini.corrupt").exists());
+        assert!(
+            fs::read_dir(dir.path())
+                .unwrap()
+                .filter_map(Result::ok)
+                .all(|entry| {
+                    !entry
+                        .file_name()
+                        .to_string_lossy()
+                        .contains(".omairc-window-")
+                }),
+            "temp sibling must be removed when the corrupt backup link fails"
+        );
+    }
+
+    #[test]
     fn tracker_skips_unchanged_geometry() {
         let first = WindowGeometry::new(10, 10, 900, 700, false);
         let moved = WindowGeometry::new(20, 10, 900, 700, false);
