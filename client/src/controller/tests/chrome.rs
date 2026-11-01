@@ -6,6 +6,7 @@
 //! The colours are the `presenceMarkColor` values in `client/src/model/style.rs`.
 
 use std::rc::Rc;
+use std::time::Duration;
 
 use chrono::{TimeZone, Utc};
 
@@ -16,7 +17,7 @@ use crate::model::presence::{footer_presence, SelfPresence};
 use crate::model::status::{connection_line, network_mark_online};
 use crate::model::theme::Theme;
 use crate::model::{Color, Style};
-use crate::session::clock::{Clock, FakeClock};
+use crate::session::clock::FakeClock;
 use crate::session::config::SessionConfig;
 use crate::session::loopback::LoopbackTransport;
 
@@ -37,7 +38,7 @@ fn mark_of(presence: SelfPresence) -> Color {
     style().presence_color(presence.mark())
 }
 
-fn fake_clock() -> Rc<dyn Clock> {
+fn fake_clock() -> Rc<FakeClock> {
     Rc::new(FakeClock::new(
         Utc.with_ymd_and_hms(2026, 9, 12, 12, 0, 0).unwrap(),
     ))
@@ -307,6 +308,41 @@ fn a_connecting_session_shows_connecting_and_can_be_disconnected() {
 
     assert!(controller.disconnect("lab"));
     assert_eq!(connection_line(&controller, "lab"), "Offline");
+}
+
+#[test]
+fn a_successful_reconnect_clears_the_disconnect_reason_from_the_row_status() {
+    let clock = fake_clock();
+    let mut controller = Controller::with_parts(clock.clone(), Box::new(NoTransports));
+    let transport = lab_session(&mut controller, true);
+    transport.complete_connect();
+    controller.pump();
+    transport.inject_bytes(
+        b":server CAP tester ACK :multi-prefix\r\n:server 001 tester :Welcome\r\n",
+    );
+    controller.pump();
+    assert_eq!(connection_line(&controller, "lab"), "Connected");
+
+    transport.remote_close();
+    controller.pump();
+    assert_eq!(
+        connection_line(&controller, "lab"),
+        "Connection closed by the server"
+    );
+    assert_eq!(controller.connection_status_for("lab"), "Reconnecting");
+
+    clock.advance(Duration::from_millis(1000));
+    controller.pump();
+    transport.complete_connect();
+    controller.pump();
+    transport.inject_bytes(
+        b":server CAP tester ACK :multi-prefix\r\n:server 001 tester :Welcome\r\n",
+    );
+    controller.pump();
+
+    assert_eq!(controller.connection_status_for("lab"), "Connected");
+    assert_eq!(connection_line(&controller, "lab"), "Connected");
+    assert_eq!(controller.last_error_for("lab"), None);
 }
 
 #[test]
