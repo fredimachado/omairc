@@ -724,3 +724,26 @@ func makeReadOnly(t *testing.T, path string) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
 }
+
+// TestSTSStoreRefreshExtendsPolicyWhoseWriteFailed: a 86400s policy whose write
+// failed (the file is malformed and cannot be recovered) is held in memory. A
+// refresh of that duration extends it there, so it still holds past the first expiry.
+func TestSTSStoreRefreshExtendsPolicyWhoseWriteFailed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sts")
+	if err := os.WriteFile(path, []byte("this line has no equals sign\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := stsStoreOnFile(path)
+	restore := storage.TestingSetSTSHook("fail-backup", 0)
+	defer restore()
+
+	if err := store.Store("irc.example", 6697, 86400, time.Unix(0, 0)); err == nil {
+		t.Fatal("the backup step must fail for this test")
+	}
+	_ = store.Refresh("irc.example", 86400, time.Unix(1000, 0))
+
+	cached, ok := store.Lookup("irc.example", time.Unix(86500, 0))
+	if !ok || cached.ExpiryEpochSeconds != 87400 {
+		t.Fatalf("refresh must extend the unwritten policy to 1000+86400: %+v ok=%v", cached, ok)
+	}
+}

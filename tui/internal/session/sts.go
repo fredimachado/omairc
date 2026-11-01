@@ -257,19 +257,26 @@ func (s *STSStore) Refresh(host string, durationSeconds int64, now time.Time) er
 		}
 		return nil
 	}
-	entry, ok := s.disk.Matching(host, durationSeconds)
-	if !ok {
+	// An unwritten policy is the one lookup serves, so a refresh extends it. Otherwise the file's.
+	held, hasHeld := s.entries[key]
+	cached := held.cached
+	if !hasHeld || !held.unpersisted {
+		entry, ok := s.disk.Matching(host, durationSeconds)
+		if !ok {
+			return nil
+		}
+		cached = STSCached{
+			Port:               entry.Port,
+			DurationSeconds:    entry.DurationSeconds,
+			ExpiryEpochSeconds: entry.ExpiryEpochSeconds,
+		}
+	}
+	if cached.DurationSeconds != durationSeconds {
 		return nil
 	}
-	s.entries[key] = stsHeld{
-		cached: STSCached{
-			Port:               entry.Port,
-			DurationSeconds:    durationSeconds,
-			ExpiryEpochSeconds: stsExpiry(nowUnix, durationSeconds),
-		},
-		unpersisted: true,
-	}
-	err := s.persistLocked(host, entry.Port, durationSeconds, nowUnix, false)
+	cached.ExpiryEpochSeconds = stsExpiry(nowUnix, durationSeconds)
+	s.entries[key] = stsHeld{cached: cached, unpersisted: true}
+	err := s.persistLocked(host, cached.Port, durationSeconds, nowUnix, false)
 	s.settleLocked(key, err)
 	return err
 }

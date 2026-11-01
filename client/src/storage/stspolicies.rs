@@ -151,7 +151,16 @@ impl StsStore for IniStsStore {
         };
         let now_unix = now.timestamp();
         let mut settings = Settings::open_sts(&self.path);
-        let Some(cached) = read_policy(&settings, &key)
+        // An unwritten policy is the one lookup serves, so a refresh extends it. Otherwise the file's.
+        let unwritten = self
+            .memory
+            .borrow()
+            .get(&key)
+            .copied()
+            .filter(|held| held.unpersisted)
+            .map(|held| held.cached);
+        let Some(cached) = unwritten
+            .or_else(|| read_policy(&settings, &key))
             .filter(|cached| cached.duration_seconds == duration_seconds)
         else {
             return;
@@ -806,6 +815,27 @@ mod tests {
                 expiry_epoch_seconds: 86400,
             }),
             "recovery lands the unwritten policy, which lookup already served over the 60s one"
+        );
+    }
+
+    #[test]
+    fn a_refresh_extends_a_policy_whose_write_failed() {
+        let dir = TempDir::new("sts-refresh-unwritten");
+        let (store, path) = store_in(&dir);
+        fs::write(&path, "this line has no equals sign\n").expect("write");
+        with_sts_test_hook(StsTestHook::FailBackup, || {
+            store.store("irc.example", 6697, 86400, at(0));
+            store.refresh("irc.example", 86400, at(1000));
+        });
+
+        assert_eq!(
+            store.lookup("irc.example", at(86500)),
+            Some(StsCached {
+                port: 6697,
+                duration_seconds: 86400,
+                expiry_epoch_seconds: 87400,
+            }),
+            "a refresh of the unwritten policy extends it in memory"
         );
     }
 
