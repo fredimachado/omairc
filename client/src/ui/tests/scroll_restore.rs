@@ -550,6 +550,30 @@ fn wheel(ui: &mut SeededShell, pixels: f32) {
 }
 
 #[gpui::test]
+fn a_line_after_wheel_up_does_not_report_the_end(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    ui.select("anna");
+    ui.fill_until_scrollable("anna", "fred", "wheel base");
+    deliver(&mut ui, ":anna!u@h PRIVMSG fred :first line");
+    assert!(ui.at_end(), "the reader follows the end before wheeling up");
+    wheel(&mut ui, 3200.);
+    assert!(!ui.at_end(), "wheel up leaves the reader detached");
+    assert!(
+        !reported_end(&ui),
+        "a detached reader must not report the end"
+    );
+    deliver(&mut ui, ":anna!u@h PRIVMSG fred :second line");
+    assert!(
+        !ui.at_end(),
+        "another line must not pull a wheeled-up reader back to the end"
+    );
+    assert!(
+        !reported_end(&ui),
+        "a detached reader must not report the end when another line arrives"
+    );
+}
+
+#[gpui::test]
 fn a_wheel_back_to_the_end_reports_the_end(cx: &mut gpui::TestAppContext) {
     let mut ui = fixture::open(cx);
     ui.select("anna");

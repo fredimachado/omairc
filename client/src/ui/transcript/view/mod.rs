@@ -4,26 +4,25 @@ use std::ops::Range;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use gpui::{
-    div, list, px, App, Context, EventEmitter, FocusHandle, ListAlignment, ListOffset, ListState,
-    MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, Render, Window, prelude::*,
-};
 #[cfg(target_os = "linux")]
 use gpui::ClipboardItem;
+use gpui::{
+    div, list, prelude::*, px, App, Context, EventEmitter, FocusHandle, ListAlignment, ListOffset,
+    ListState, MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, Render, Window,
+};
 
 mod scroll_restore;
 
-use crate::model::cursor::{page_amount, scroll_target};
-use crate::model::links::{conversation_channel_hits, invite_hit};
 use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::irc::world::Message;
+use crate::model::cursor::{page_amount, scroll_target};
+use crate::model::links::{conversation_channel_hits, invite_hit};
 use crate::model::presence::NickFacts;
 use crate::model::scroll_place::SavedPlace;
+use crate::model::transcript::minute_of;
 use crate::model::typing_tail::typing_continues;
 use crate::model::unread::{self, UnseenLanding};
-use crate::model::transcript::minute_of;
 use crate::model::{mix_colors, row_from_message, Pos, Row, Style, Transcript};
-use chrono::NaiveDate;
 use crate::ui::format_ui::IrcColors;
 use crate::ui::message_row::{
     render_transcript_row, RowCallbacks, RowContext, RowLayoutMap, RowPeers,
@@ -35,6 +34,7 @@ use crate::ui::typing_row::render_typing_row;
 use crate::ui::widgets::avatar::AvatarPhotos;
 use crate::ui::Handler;
 use crate::util::{style, to_gpui, OmaircStyleGlobal};
+use chrono::NaiveDate;
 
 /// A click on a transcript author or avatar. The shell opens or creates the DM.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -579,7 +579,10 @@ impl TranscriptView {
         if position.y > viewport.bottom() {
             if let Some(row_ix) = pointer::last_visible(&self.row_bounds, viewport) {
                 let offset = self.model.rows()[row_ix].body.plain.len();
-                self.model.extend(Pos { row: row_ix, offset });
+                self.model.extend(Pos {
+                    row: row_ix,
+                    offset,
+                });
             }
             return;
         }
@@ -916,7 +919,12 @@ mod tests {
                 if i == 4 {
                     chat_with_msgid("anna", "anchored history", i as i64 + 1, "history-anchor")
                 } else {
-                    chat_with_msgid("anna", &format!("fill {i}"), i as i64 + 1, &format!("fill-{i}"))
+                    chat_with_msgid(
+                        "anna",
+                        &format!("fill {i}"),
+                        i as i64 + 1,
+                        &format!("fill-{i}"),
+                    )
                 }
             })
             .collect();
@@ -1006,7 +1014,14 @@ mod tests {
         let features = IrcServerFeatures::new();
         let place = pending_place();
         let other: Vec<Message> = (0..4)
-            .map(|i| chat_with_msgid("anna", &format!("fill {i}"), i as i64 + 1, &format!("fill-{i}")))
+            .map(|i| {
+                chat_with_msgid(
+                    "anna",
+                    &format!("fill {i}"),
+                    i as i64 + 1,
+                    &format!("fill-{i}"),
+                )
+            })
             .collect();
         transcript.update(cx, |view, cx| {
             view.set_conversation(empty_lines(&features));
@@ -1075,8 +1090,7 @@ mod tests {
         });
         let features = IrcServerFeatures::new();
         let place = pending_place();
-        let live: Vec<Message> =
-            vec![chat_with_msgid("anna", "live", 1, "live-1")];
+        let live: Vec<Message> = vec![chat_with_msgid("anna", "live", 1, "live-1")];
         transcript.update(cx, |view, cx| {
             view.set_conversation(empty_lines(&features));
             view.restore_scroll_place(Some(&place), false, true);
@@ -1208,6 +1222,41 @@ mod tests {
             assert!(
                 matches!(view.capture_scroll_place(), SavedPlace::Line { .. }),
                 "a second refresh before layout must keep the applied place, not save the end"
+            );
+            assert!(
+                !view.reports_follow_end(),
+                "a restored place must not report follow-end before the next layout"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn applied_restore_survives_a_typing_refresh_before_layout(cx: &mut TestAppContext) {
+        let cxw = cx.add_empty_window();
+        let drag = ScrollbarDragCell::default();
+        let transcript = cxw.update(|_, cx| {
+            let focus = cx.focus_handle();
+            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+        });
+        let features = IrcServerFeatures::new();
+        let place = SavedPlace::from_stored(&crate::storage::scrollplace::ScrollPlace {
+            msg_id: "history-anchor".to_owned(),
+            ..crate::storage::scrollplace::ScrollPlace::default()
+        })
+        .expect("msgid place");
+        let page = anchored_page(12);
+        transcript.update(cx, |view, cx| {
+            view.set_conversation(empty_lines(&features));
+            view.restore_scroll_place(Some(&place), false, true);
+            view.refresh_conversation(lines_for(&page, &features), cx);
+            assert!(
+                !view.has_pending_restore(),
+                "the anchor arrived, so the place lands"
+            );
+            view.refresh_typing_peer(Some("anna".into()), cx);
+            assert!(
+                matches!(view.capture_scroll_place(), SavedPlace::Line { .. }),
+                "a typing refresh before layout must keep the applied place, not save the end"
             );
             assert!(
                 !view.reports_follow_end(),
