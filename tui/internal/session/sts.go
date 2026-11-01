@@ -194,6 +194,10 @@ func (s *STSStore) lookupDiskLocked(host string, nowUnix int64) (STSCached, bool
 func (s *STSStore) lookupMalformedDiskLocked(host string, nowUnix int64) (STSCached, bool) {
 	entry, present, stale := s.disk.Inspect(host, nowUnix)
 	if stale {
+		// Memory that still holds the host answers in Lookup, so recovery must not clear it.
+		if held, ok := s.entries[stsGroupKey(host)]; ok && held.cached.ExpiryEpochSeconds > nowUnix {
+			return STSCached{}, false
+		}
 		_ = s.flushRecoveryLocked(nowUnix, true, host)
 		return STSCached{}, false
 	}

@@ -747,3 +747,38 @@ func TestSTSStoreRefreshExtendsPolicyWhoseWriteFailed(t *testing.T) {
 		t.Fatalf("refresh must extend the unwritten policy to 1000+86400: %+v ok=%v", cached, ok)
 	}
 }
+
+// TestSTSStoreLookupOnMalformedFileKeepsLiveMemoryPolicy: the file goes malformed
+// and its group for the host has lapsed, but memory still holds the host's 3600s
+// policy. Lookup answers from memory and leaves the file alone: no rewrite, no
+// backup, and the host's group stays put, as the Rust client does.
+func TestSTSStoreLookupOnMalformedFileKeepsLiveMemoryPolicy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sts")
+	store := stsStoreOnFile(path)
+	if err := store.Store("irc.example", 6697, 3600, time.Unix(0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	key := storage.STSGroupKey("irc.example")
+	lapsed := "this line has no equals sign\n[" + key + "]\nport=6697\nduration=60\nexpiry=60\n"
+	if err := os.WriteFile(path, []byte(lapsed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cached, ok := store.Lookup("irc.example", time.Unix(100, 0))
+	if !ok || cached.ExpiryEpochSeconds != 3600 {
+		t.Fatalf("memory's live 3600s policy must answer: %+v ok=%v", cached, ok)
+	}
+	if _, ok := store.Lookup("irc.example", time.Unix(101, 0)); !ok {
+		t.Fatal("the host must survive the first lookup")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != lapsed {
+		t.Fatalf("a lookup must not rewrite the malformed file while memory answers: %q", raw)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "sts.corrupt")); !os.IsNotExist(err) {
+		t.Fatalf("a lookup must not back up the malformed file: %v", err)
+	}
+}
