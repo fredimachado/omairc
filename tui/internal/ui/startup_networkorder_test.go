@@ -110,6 +110,7 @@ func shellFromDisk(t *testing.T) *Model {
 	ctrl.LoadStoredPreferences()
 	conn := connection.New(ctrl, func() session.Transport { return session.NewLoopbackTransport() })
 	conn.SetProfileStore(storage.NewProfileStore())
+	conn.OnNetworksChanged = func() { ctrl.RefreshStoredProfileIDs() }
 	ctrl.RefreshStoredProfileIDs()
 	return New(ctrl, conn)
 }

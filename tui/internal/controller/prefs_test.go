@@ -316,6 +316,7 @@ func TestNetworkOrderAndCollapseRoundTrip(t *testing.T) {
 	addNetwork(t, c, "alpha")
 	addNetwork(t, c, "omarchy")
 	addNetwork(t, c, "zulu")
+	c.storedProfileIDs = []string{"alpha", "omarchy", "zulu"}
 	c.SetNetworkOrder([]string{"zulu", "alpha", "omarchy"})
 	c.SetNetworkCollapsed("alpha", true)
 

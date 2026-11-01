@@ -7,6 +7,7 @@ import (
 
 	"github.com/fredimachado/omairc/tui/internal/irc"
 	"github.com/fredimachado/omairc/tui/internal/session"
+	"github.com/fredimachado/omairc/tui/internal/storage"
 )
 
 // addNetwork registers an unstarted session so NetworkIDs/NetworkOrder see it.
@@ -164,6 +165,29 @@ func TestMoveNetworkRejectsUnstoredKnownNetwork(t *testing.T) {
 	}
 	if slices.Contains(c.networkOrder, "draft-with-status") {
 		t.Fatalf("networkOrder persisted draft id %q", "draft-with-status")
+	}
+}
+
+func TestMoveNetworkPersistOmitsStatusDraft(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	c := New()
+	c.SetEphemeral(false)
+	c.storedProfileIDs = []string{"alpha", "omarchy"}
+	c.SetNetworkOrder([]string{"alpha", "omarchy"})
+	c.StatusEntry(irc.Outcome("zdraft", "Status line", time.Now()))
+	if !slices.Contains(c.NetworkOrder(), "zdraft") {
+		t.Fatal("NetworkOrder() must include Status-only draft zdraft")
+	}
+	if !c.MoveNetwork("omarchy", -1) {
+		t.Fatal("MoveNetwork(omarchy, -1) = false, want true")
+	}
+	got := storage.OpenSettings("").StringList(preferencesGroup, networkOrderKey)
+	want := []string{"omarchy", "alpha"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("persisted networkOrder = %v, want %v", got, want)
+	}
+	if slices.Contains(got, "zdraft") {
+		t.Fatalf("persisted networkOrder contains draft id %q", "zdraft")
 	}
 }
 
