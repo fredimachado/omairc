@@ -155,7 +155,8 @@ impl StsStore for IniStsStore {
         };
         let now_unix = now.timestamp();
         let mut settings = Settings::open_sts(&self.path);
-        // An unwritten policy is the one lookup serves, so a refresh extends it. Otherwise the file's.
+        // An unwritten policy is the one lookup serves, so a refresh extends it. Otherwise the
+        // file's policy is extended.
         let unwritten = self
             .memory
             .borrow()
@@ -236,7 +237,8 @@ fn persist_sts_settings(
             match recover_malformed_sts(path, &settings.encode()) {
                 Ok(()) => {
                     restrict_permissions(path);
-                    // Every unexpired memory policy is in the file now, or yields to a live one there.
+                    // Every unexpired memory policy is in the file now, or yields to a live
+                    // policy there.
                     for held in memory.borrow_mut().values_mut() {
                         if held.cached.expiry_epoch_seconds > now_unix {
                             held.unpersisted = false;
