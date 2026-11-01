@@ -1,6 +1,6 @@
 //! Pending scroll-place restore: wait for history, capture, and resume.
 
-use gpui::{px, Context, ListOffset};
+use gpui::{px, Context, ListOffset, Window};
 
 use super::{ConversationLines, TranscriptScrolled, TranscriptView};
 use crate::model::scroll_place::{has_line, resume, LivePlace, Resume, SavedPlace};
@@ -23,6 +23,23 @@ impl TranscriptView {
             self.at_end()
         } else {
             self.model.scroll().pinned_to_bottom
+        }
+    }
+
+    /// Re-pins a landing that the layout clamped to the end. gpui clamps at layout, so the
+    /// first frame after a layout reads the end. Until one has run, a frame is requested.
+    pub(super) fn settle_landing(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.landing {
+            return;
+        }
+        if !self.list_measured {
+            window.request_animation_frame();
+            return;
+        }
+        self.landing = false;
+        if self.at_end() {
+            self.model.set_pinned_to_bottom(true);
+            self.note_scroll_end(cx);
         }
     }
 
@@ -190,6 +207,7 @@ impl TranscriptView {
         wait_for_history: bool,
     ) {
         self.pending_restore = None;
+        self.landing = false;
         if let Some(line @ SavedPlace::Line { .. }) = place {
             if wait_for_history && !has_line(line, self.model.rows()) {
                 self.pending_restore = Some(line.clone());

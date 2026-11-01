@@ -6,6 +6,8 @@ use chrono::{TimeZone, Utc};
 
 use crate::irc::event::MsgId;
 use crate::irc::world::{Message, MessageKind, Origin};
+use crate::model::transcript::RowKind;
+use crate::storage::scrollplace::ScrollPlace;
 use crate::ui::transcript::view::ConversationLines;
 
 use super::fixture::{self, OMARCHY, WINDOW_HEIGHT, WINDOW_WIDTH};
@@ -452,4 +454,95 @@ fn tagged_chat(author: &str, body: &str, sequence: i64, msgid: &str) -> Message 
         sequence,
         only_visible_to_you: false,
     }
+}
+
+/// Sixty lines from a direct message nobody has open, so they arrive unread under a mark.
+fn unread_direct_lines(ui: &mut fixture::SeededShell, nick: &str, count: usize) {
+    ui.select("#omarchy");
+    for index in 0..count {
+        ui.inject(OMARCHY, &format!(":{nick}!u@h PRIVMSG fred :line {index}"));
+    }
+}
+
+/// Whether the transcript last reported that it follows the end.
+fn reported_end(ui: &fixture::SeededShell) -> bool {
+    ui.shell
+        .read_with(ui.cx, |shell, _| shell.controller.transcript_follow_end())
+}
+
+/// Where the open conversation's transcript was saved for `key`, as the settings file keeps it.
+fn saved_place(ui: &fixture::SeededShell, key: &str) -> ScrollPlace {
+    ui.shell
+        .read_with(ui.cx, |shell, _| shell.controller.place_for(OMARCHY, key))
+        .expect("a place is saved")
+}
+
+/// The kind of the row at the top of the transcript, or `None` when the list is at its end.
+fn top_kind(ui: &fixture::SeededShell) -> Option<RowKind> {
+    ui.shell.read_with(ui.cx, |shell, cx| {
+        let transcript = shell.transcript.read(cx);
+        transcript
+            .rows()
+            .get(transcript.logical_scroll_top().item_ix)
+            .map(|row| row.kind)
+    })
+}
+
+#[gpui::test]
+fn opening_a_direct_message_on_its_mark_saves_the_mark_line_not_the_end(
+    cx: &mut gpui::TestAppContext,
+) {
+    let mut ui = fixture::open(cx);
+    unread_direct_lines(&mut ui, "newbie", 60);
+    ui.select("newbie");
+    assert_eq!(
+        top_kind(&ui),
+        Some(RowKind::UnreadMark),
+        "the reader opens on the New messages mark"
+    );
+    assert!(!ui.at_end(), "sixty lines below the mark are not the end");
+    assert!(
+        !reported_end(&ui),
+        "a reader short of the end does not report it, so the read marker stays put"
+    );
+    ui.shell
+        .update(ui.cx, |shell, cx| shell.refresh_shown_conversation(cx));
+    ui.settle();
+    assert_eq!(
+        top_kind(&ui),
+        Some(RowKind::UnreadMark),
+        "a refresh with nothing new keeps the reader on the mark"
+    );
+    ui.shell
+        .update(ui.cx, |shell, cx| shell.remember_open_transcript(cx));
+    let saved = saved_place(&ui, "newbie");
+    assert_eq!(
+        saved.body, "line 0",
+        "the place is the first unread line under the mark, not the last line"
+    );
+    assert!(
+        !saved.follow_end,
+        "a place off the end does not save follow-end"
+    );
+}
+
+#[gpui::test]
+fn a_mark_within_a_screen_of_the_end_follows_the_end(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    unread_direct_lines(&mut ui, "newbie", 2);
+    ui.select("newbie");
+    assert!(
+        ui.at_end(),
+        "two lines below the mark fit on screen, so the list shows its end"
+    );
+    assert!(
+        reported_end(&ui),
+        "the reader sees the end, so the read marker advances"
+    );
+    ui.shell
+        .update(ui.cx, |shell, cx| shell.remember_open_transcript(cx));
+    assert!(
+        saved_place(&ui, "newbie").follow_end,
+        "a reader at the end saves follow-end"
+    );
 }

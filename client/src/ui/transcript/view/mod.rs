@@ -105,6 +105,9 @@ pub struct TranscriptView {
     /// Whether a layout has measured the rows since the list was last reset. Until one
     /// has, the scrollbar max reads 0, so `at_end` says nothing about the reader.
     list_measured: bool,
+    /// A landing on a row (a mark, a find or a link), which a layout may clamp to the end.
+    /// The first frame after a layout re-pins the reader when the list is at the end.
+    landing: bool,
 }
 
 impl TranscriptView {
@@ -139,6 +142,7 @@ impl TranscriptView {
             reported_at_end: true,
             pending_restore: None,
             list_measured: false,
+            landing: false,
         };
         // gpui calls the list's scroll handler only for wheel scrolling, and while the list
         // is still borrowed, so the at-end read waits for the effect cycle to finish. Every
@@ -166,6 +170,7 @@ impl TranscriptView {
     /// arrive. A DM whose peer is typing gets the typing dots after its last line.
     pub fn set_conversation(&mut self, lines: ConversationLines) {
         self.pending_restore = None;
+        self.landing = false;
         self.model
             .set_conversation(lines.messages, lines.mark, lines.today);
         self.peers.facts = lines.facts;
@@ -236,6 +241,7 @@ impl TranscriptView {
     /// and has no typing dots.
     pub fn set_status(&mut self, rows: Vec<Row>) {
         self.pending_restore = None;
+        self.landing = false;
         self.model.set_rows(rows);
         self.peers.facts.clear();
         self.typing_peer = None;
@@ -337,9 +343,11 @@ impl TranscriptView {
         self.note_transcript_scroll(cx);
     }
 
-    /// The move behind `scroll_to_row`, without the at-end note.
+    /// The move behind `scroll_to_row`, without the at-end note. The anchor moves with the
+    /// list, so capture saves the row the reader landed on.
     fn reveal_row(&mut self, row_ix: usize) {
-        self.model.set_pinned_to_bottom(false);
+        self.model.set_scroll_anchor(row_ix, 0);
+        self.landing = true;
         self.list_state.scroll_to(ListOffset {
             item_ix: row_ix,
             offset_in_item: px(0.),
@@ -605,10 +613,11 @@ impl TranscriptView {
 }
 
 impl Render for TranscriptView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let app_style = style(cx);
         // Heights measured by the last frame's prepaint feed the transcript model.
         self.sync_measured_heights();
+        self.settle_landing(window, cx);
         // This frame lays the list out after render returns, before any other code runs.
         self.list_measured = true;
         // A reader who follows the end has seen what arrived while scrolled up.
