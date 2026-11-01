@@ -68,6 +68,20 @@ fn waiting_for_history(ui: &mut SeededShell) {
     );
 }
 
+/// As `waiting_for_history`, with enough lines that the list overflows, so a place that lands
+/// on its saved row is not the list's end.
+fn waiting_in_a_full_transcript(ui: &mut SeededShell) {
+    offer_chathistory(ui);
+    ui.select("anna");
+    ui.fill_until_scrollable("anna", "fred", "landing line");
+    request_history(ui);
+    reopen_at_gone_place(ui, "anna");
+    assert!(
+        waiting(ui),
+        "the place waits while its history is in flight"
+    );
+}
+
 fn waiting(ui: &SeededShell) -> bool {
     ui.shell.read_with(ui.cx, |shell, cx| {
         shell.transcript.read(cx).has_pending_restore()
@@ -280,7 +294,7 @@ fn a_history_request_that_settles_without_the_line_gives_the_wait_up(
     cx: &mut gpui::TestAppContext,
 ) {
     let mut ui = fixture::open(cx);
-    waiting_for_history(&mut ui);
+    waiting_in_a_full_transcript(&mut ui);
     deliver(
         &mut ui,
         ":server FAIL CHATHISTORY INVALID_TARGET BEFORE anna :no",
@@ -289,12 +303,16 @@ fn a_history_request_that_settles_without_the_line_gives_the_wait_up(
         !waiting(&ui),
         "the request for this conversation settled, so the place lands without the line"
     );
+    assert!(
+        ui.at_end(),
+        "the given-up place lands at the end, not on the row it was saved at"
+    );
 }
 
 #[gpui::test]
 fn an_untargeted_fail_holds_the_wait_only_until_its_deadline(cx: &mut gpui::TestAppContext) {
     let mut ui = fixture::open(cx);
-    waiting_for_history(&mut ui);
+    waiting_in_a_full_transcript(&mut ui);
     tick(&mut ui);
     deliver(
         &mut ui,
@@ -308,34 +326,37 @@ fn an_untargeted_fail_holds_the_wait_only_until_its_deadline(cx: &mut gpui::Test
     assert!(waiting(&ui), "the wait holds just before its deadline");
     advance(&mut ui, Duration::from_secs(1));
     assert!(!waiting(&ui), "the wait is given up at its deadline");
+    assert!(ui.at_end(), "the given-up place lands at the end");
 }
 
 #[gpui::test]
 fn a_silent_server_gives_the_wait_up_at_its_deadline(cx: &mut gpui::TestAppContext) {
     let mut ui = fixture::open(cx);
-    waiting_for_history(&mut ui);
+    waiting_in_a_full_transcript(&mut ui);
     tick(&mut ui);
     advance(&mut ui, wait_window() - Duration::from_secs(1));
     assert!(waiting(&ui), "the wait holds just before its deadline");
     advance(&mut ui, Duration::from_secs(1));
     assert!(!waiting(&ui), "the wait is given up at its deadline");
+    assert!(ui.at_end(), "the given-up place lands at the end");
 }
 
 #[gpui::test]
 fn a_dropped_connection_gives_the_wait_up(cx: &mut gpui::TestAppContext) {
     let mut ui = fixture::open(cx);
-    waiting_for_history(&mut ui);
+    waiting_in_a_full_transcript(&mut ui);
     deliver(&mut ui, ":server ERROR :gone");
     assert!(
         !waiting(&ui),
         "a request on a dropped connection cannot be answered, so the wait is given up"
     );
+    assert!(ui.at_end(), "the given-up place lands at the end");
 }
 
 #[gpui::test]
 fn a_manual_disconnect_gives_the_wait_up(cx: &mut gpui::TestAppContext) {
     let mut ui = fixture::open(cx);
-    waiting_for_history(&mut ui);
+    waiting_in_a_full_transcript(&mut ui);
     ui.shell.update(ui.cx, |shell, cx| {
         shell.controller.disconnect(OMARCHY);
         shell.tick(cx);
@@ -345,6 +366,7 @@ fn a_manual_disconnect_gives_the_wait_up(cx: &mut gpui::TestAppContext) {
         !waiting(&ui),
         "a disconnect leaves no request to answer, so the wait is given up"
     );
+    assert!(ui.at_end(), "the given-up place lands at the end");
 }
 
 #[gpui::test]
@@ -375,7 +397,7 @@ fn a_page_with_the_saved_line_lands_on_it_as_its_request_settles(cx: &mut gpui::
 }
 
 #[gpui::test]
-fn an_empty_page_gives_the_wait_up_and_lands_on_the_saved_row(cx: &mut gpui::TestAppContext) {
+fn an_empty_page_gives_the_wait_up_and_lands_at_the_end(cx: &mut gpui::TestAppContext) {
     let mut ui = fixture::open(cx);
     offer_chathistory(&mut ui);
     ui.select("anna");
@@ -392,8 +414,8 @@ fn an_empty_page_gives_the_wait_up_and_lands_on_the_saved_row(cx: &mut gpui::Tes
         "an empty page settles the request, so the place lands without the line"
     );
     assert!(
-        !ui.at_end(),
-        "the given-up place lands on its saved row, not at the end"
+        ui.at_end(),
+        "the given-up place lands at the end, not on the row it was saved at"
     );
 }
 

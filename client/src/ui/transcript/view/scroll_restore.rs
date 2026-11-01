@@ -42,13 +42,13 @@ impl TranscriptView {
         self.pending_restore = None;
     }
 
-    /// Gives up a pending restore whose history settled without its line. The saved
-    /// row then lands as it does with no history to wait for.
+    /// Gives up a pending restore whose history settled without its line, or whose request
+    /// never settled. The list lands at the end, as a conversation with no saved place does.
     pub fn give_up_pending_restore(&mut self, cx: &mut Context<Self>) {
-        let Some(place) = self.pending_restore.take() else {
+        if self.pending_restore.is_none() {
             return;
-        };
-        self.restore_scroll_place(Some(&place), false, false);
+        }
+        self.restore_scroll_place(None, false, false);
         cx.notify();
     }
 

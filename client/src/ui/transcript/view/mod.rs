@@ -1004,7 +1004,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn pending_restore_cancelled_when_history_finishes_without_anchor(cx: &mut TestAppContext) {
+    fn pending_restore_given_up_without_its_line_lands_at_the_end(cx: &mut TestAppContext) {
         let cxw = cx.add_empty_window();
         let drag = ScrollbarDragCell::default();
         let transcript = cxw.update(|_, cx| {
@@ -1053,8 +1053,8 @@ mod tests {
                 "history finishing without the anchor clears the pending restore"
             );
             assert!(
-                !view.reports_follow_end(),
-                "the given-up place lands on its saved row, not at the end"
+                view.reports_follow_end(),
+                "the given-up place lands at the end, as a conversation with no place does"
             );
         });
     }
