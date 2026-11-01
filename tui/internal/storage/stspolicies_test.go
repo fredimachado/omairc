@@ -831,12 +831,15 @@ func TestIniSTSStoreJunkGroupsAreDroppedByTheNextWrite(t *testing.T) {
 			if !strings.Contains(body, ircExampleSTSGroup) {
 				t.Fatalf("real policy missing after the write: %s", body)
 			}
-			info, err := os.Stat(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if mode := info.Mode().Perm(); mode != 0o600 {
-				t.Fatalf("sts mode = %o, want 600", mode)
+			// Owner-only mode bits exist only on unix; the junk checks above run everywhere.
+			if runtime.GOOS != "windows" {
+				info, err := os.Stat(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if mode := info.Mode().Perm(); mode != 0o600 {
+					t.Fatalf("sts mode = %o, want 600", mode)
+				}
 			}
 		})
 	}
