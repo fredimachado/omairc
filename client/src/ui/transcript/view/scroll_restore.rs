@@ -18,17 +18,16 @@ pub(super) struct PendingRestore {
 /// width every frame, and its repeated changes wait for this before the rows are measured again.
 pub(super) const WIDTH_QUIET: TimeDelta = TimeDelta::milliseconds(150);
 
-/// Where the window's width is within a burst of changes. The first change of a burst measures
-/// its rows in the frame that sees it. Whether the rows are measured now is `list_measured`.
+/// Where the window's width is within a burst of changes, on the controller clock. A change that
+/// comes less than `WIDTH_QUIET` after the last one repeats it. The first change of a burst
+/// measures its rows in the frame that sees it. Whether the rows are measured now is
+/// `list_measured`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum WidthState {
     /// No width change is waiting to settle.
     Settled,
-    /// The width changed in a frame since the last tick.
-    Moving,
-    /// The last tick found a change and none has come since. It settles once `WIDTH_QUIET`
-    /// has passed since `since`.
-    Quiet { since: DateTime<Utc> },
+    /// The last width change was at `at`. The burst is over once `WIDTH_QUIET` has passed since.
+    Changed { at: DateTime<Utc> },
 }
 
 impl TranscriptView {
@@ -52,11 +51,12 @@ impl TranscriptView {
         }
         // Before the first layout there are no heights to drop.
         if last.width != size.width && last.width > px(0.) {
+            let now = self.clock.now();
             match self.width {
-                WidthState::Settled => self.reset_list(),
-                WidthState::Moving | WidthState::Quiet { .. } => self.list_measured = false,
+                WidthState::Changed { at } if now - at < WIDTH_QUIET => self.list_measured = false,
+                WidthState::Settled | WidthState::Changed { .. } => self.reset_list(),
             }
-            self.width = WidthState::Moving;
+            self.width = WidthState::Changed { at: now };
         }
         self.project_place();
     }
@@ -83,24 +83,22 @@ impl TranscriptView {
         }
     }
 
-    /// The shell's tick. The first tick that finds the width changed starts the quiet period.
-    /// Once the width has been still for `WIDTH_QUIET`, the rows are measured again, in the
-    /// next frame, unless a layout since the last change already measured them. The place is
-    /// projected either way.
-    pub fn settle_width(&mut self, now: DateTime<Utc>, cx: &mut Context<Self>) {
-        match self.width {
-            WidthState::Settled => {}
-            WidthState::Moving => self.width = WidthState::Quiet { since: now },
-            WidthState::Quiet { since } if now - since >= WIDTH_QUIET => {
-                self.width = WidthState::Settled;
-                if !self.list_measured {
-                    self.reset_list();
-                }
-                self.project_place();
-                cx.notify();
-            }
-            WidthState::Quiet { .. } => {}
+    /// The shell's tick. Once the last width change is `WIDTH_QUIET` old, the burst is over: the
+    /// rows are measured again, in the next frame, unless a layout since that change already
+    /// measured them. The place is projected either way.
+    pub fn settle_width(&mut self, cx: &mut Context<Self>) {
+        let WidthState::Changed { at } = self.width else {
+            return;
+        };
+        if self.clock.now() - at < WIDTH_QUIET {
+            return;
         }
+        self.width = WidthState::Settled;
+        if !self.list_measured {
+            self.reset_list();
+        }
+        self.project_place();
+        cx.notify();
     }
 
     /// Moves the list to the reader's place in the model: the end, or the anchor.

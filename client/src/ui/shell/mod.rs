@@ -219,7 +219,9 @@ impl Shell {
                 .frameless()
         });
         let composer_focus = composer.read(cx).focus_handle(cx);
-        let transcript = cx.new(|cx| TranscriptView::new(composer_focus, scrollbar_drag.clone(), cx));
+        let clock = controller.clock();
+        let transcript =
+            cx.new(|cx| TranscriptView::new(composer_focus, scrollbar_drag.clone(), clock, cx));
 
         let transcript_events = cx.subscribe(&transcript, |shell: &mut Shell, _, event: &NickClicked, cx| {
             shell.open_direct_nick(&event.0, cx);
@@ -337,8 +339,7 @@ impl Shell {
         self.controller.tick();
         self.tick_transcript_calendar(TranscriptCalendarSnapshot::capture_now(), cx);
         // The transcript measures its rows again once the window's width has been still a while.
-        let now = self.controller.now();
-        self.transcript.update(cx, |t, cx| t.settle_width(now, cx));
+        self.transcript.update(cx, |t, cx| t.settle_width(cx));
         self.drain_notifications(cx);
     }
 

@@ -26,6 +26,7 @@ use crate::model::transcript::minute_of;
 use crate::model::typing_tail::typing_continues;
 use crate::model::unread::{self, UnseenLanding};
 use crate::model::{mix_colors, row_from_message, Pos, Row, Style, Transcript};
+use crate::session::clock::Clock;
 use crate::ui::format_ui::IrcColors;
 use crate::ui::message_row::{
     render_transcript_row, RowCallbacks, RowContext, RowLayoutMap, RowPeers,
@@ -114,6 +115,9 @@ pub struct TranscriptView {
     measure_pending: bool,
     /// Where the window's width is, for when the rows are measured again (`settle_width`).
     width: WidthState,
+    /// The controller's clock. A width change's time on it decides whether the change starts a
+    /// burst.
+    clock: Rc<dyn Clock>,
     /// A landing on a row (a mark, a find or a link), which a layout may clamp to the end.
     /// The layout that places it decides: a clamped landing follows the end.
     landing: bool,
@@ -129,6 +133,7 @@ impl TranscriptView {
     pub fn new(
         composer_focus: FocusHandle,
         scrollbar_drag: ScrollbarDragCell,
+        clock: Rc<dyn Clock>,
         cx: &mut Context<Self>,
     ) -> Self {
         let view = Self {
@@ -159,6 +164,7 @@ impl TranscriptView {
             list_measured: false,
             measure_pending: false,
             width: WidthState::Settled,
+            clock,
             landing: false,
             #[cfg(test)]
             chip_drawn: false,
@@ -894,11 +900,16 @@ mod tests {
     use chrono::{TimeZone, Utc};
 
     use crate::model::scroll_place::SavedPlace;
+    use crate::session::clock::RealClock;
 
     use gpui::{AppContext, TestAppContext};
 
     use crate::irc::event::MsgId;
     use crate::irc::world::{MessageKind, Origin};
+
+    fn test_clock() -> Rc<dyn Clock> {
+        Rc::new(RealClock::new())
+    }
 
     fn chat(author: &str, body: &str, sequence: i64) -> Message {
         Message {
@@ -922,7 +933,7 @@ mod tests {
         let drag = ScrollbarDragCell::default();
         let transcript = cxw.update(|_, cx| {
             let focus = cx.focus_handle();
-            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+            cx.new(|cx| TranscriptView::new(focus, drag, test_clock(), cx))
         });
         let messages: Vec<Message> = (0..20)
             .map(|i| chat("peer", &format!("line {i}"), i as i64 + 1))
@@ -961,7 +972,7 @@ mod tests {
         let drag = ScrollbarDragCell::default();
         let transcript = cxw.update(|_, cx| {
             let focus = cx.focus_handle();
-            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+            cx.new(|cx| TranscriptView::new(focus, drag, test_clock(), cx))
         });
         let features = IrcServerFeatures::new();
         let empty = ConversationLines {
@@ -1065,7 +1076,7 @@ mod tests {
         let drag = ScrollbarDragCell::default();
         let transcript = cxw.update(|_, cx| {
             let focus = cx.focus_handle();
-            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+            cx.new(|cx| TranscriptView::new(focus, drag, test_clock(), cx))
         });
         let features = IrcServerFeatures::new();
         let place = pending_place();
@@ -1091,7 +1102,7 @@ mod tests {
         let drag = ScrollbarDragCell::default();
         let transcript = cxw.update(|_, cx| {
             let focus = cx.focus_handle();
-            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+            cx.new(|cx| TranscriptView::new(focus, drag, test_clock(), cx))
         });
         let features = IrcServerFeatures::new();
         let place = pending_place();
@@ -1150,7 +1161,7 @@ mod tests {
             let drag = ScrollbarDragCell::default();
             let transcript = cxw.update(|_, cx| {
                 let focus = cx.focus_handle();
-                cx.new(|cx| TranscriptView::new(focus, drag, cx))
+                cx.new(|cx| TranscriptView::new(focus, drag, test_clock(), cx))
             });
             let features = IrcServerFeatures::new();
             let place = pending_place();
@@ -1195,7 +1206,7 @@ mod tests {
         let drag = ScrollbarDragCell::default();
         let transcript = cxw.update(|_, cx| {
             let focus = cx.focus_handle();
-            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+            cx.new(|cx| TranscriptView::new(focus, drag, test_clock(), cx))
         });
         let features = IrcServerFeatures::new();
         let place = pending_place();
@@ -1216,7 +1227,7 @@ mod tests {
         let drag = ScrollbarDragCell::default();
         let transcript = cxw.update(|_, cx| {
             let focus = cx.focus_handle();
-            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+            cx.new(|cx| TranscriptView::new(focus, drag, test_clock(), cx))
         });
         let features = IrcServerFeatures::new();
         let place = pending_place();
@@ -1252,7 +1263,7 @@ mod tests {
         let drag = ScrollbarDragCell::default();
         let transcript = cxw.update(|_, cx| {
             let focus = cx.focus_handle();
-            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+            cx.new(|cx| TranscriptView::new(focus, drag, test_clock(), cx))
         });
         let features = IrcServerFeatures::new();
         let place = pending_place();
@@ -1329,7 +1340,7 @@ mod tests {
         let drag = ScrollbarDragCell::default();
         let transcript = cxw.update(|_, cx| {
             let focus = cx.focus_handle();
-            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+            cx.new(|cx| TranscriptView::new(focus, drag, test_clock(), cx))
         });
         let features = IrcServerFeatures::new();
         let place = SavedPlace::from_stored(&crate::storage::scrollplace::ScrollPlace {
@@ -1366,7 +1377,7 @@ mod tests {
         let drag = ScrollbarDragCell::default();
         let transcript = cxw.update(|_, cx| {
             let focus = cx.focus_handle();
-            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+            cx.new(|cx| TranscriptView::new(focus, drag, test_clock(), cx))
         });
         let features = IrcServerFeatures::new();
         let place = SavedPlace::from_stored(&crate::storage::scrollplace::ScrollPlace {
@@ -1401,7 +1412,7 @@ mod tests {
         let drag = ScrollbarDragCell::default();
         let transcript = cxw.update(|_, cx| {
             let focus = cx.focus_handle();
-            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+            cx.new(|cx| TranscriptView::new(focus, drag, test_clock(), cx))
         });
         let features = IrcServerFeatures::new();
         let messages: Vec<Message> = (0..5).map(|i| chat("anna", "line", i + 1)).collect();
@@ -1426,7 +1437,7 @@ mod tests {
         let drag = ScrollbarDragCell::default();
         let transcript = cxw.update(|_, cx| {
             let focus = cx.focus_handle();
-            cx.new(|cx| TranscriptView::new(focus, drag, cx))
+            cx.new(|cx| TranscriptView::new(focus, drag, test_clock(), cx))
         });
         let features = IrcServerFeatures::new();
         // Lines read back from the local log keep their stored time and carry no server time.

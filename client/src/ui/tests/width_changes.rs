@@ -2,6 +2,8 @@
 //! One change, and input straight after it. The first change of a burst measures its rows at
 //! once, so the page key, the wheel and Ctrl+Home take effect with no tick and no settle.
 
+use std::time::Duration;
+
 use super::fixture::{self, SeededShell, OMARCHY};
 use super::scroll_place::long_body;
 
@@ -81,5 +83,23 @@ fn a_change_after_a_settle_starts_a_new_burst_and_measures_at_once(cx: &mut gpui
     assert!(
         ui.scroll_top().item_ix < top,
         "a change after the quiet period is a new lone change, so a page up moves the view"
+    );
+}
+
+#[gpui::test]
+fn a_change_200_ms_after_the_last_one_is_lone_before_any_tick(cx: &mut gpui::TestAppContext) {
+    let mut ui = closed_the_member_panel_mid_transcript(cx);
+    // No tick: the quiet period passes on the controller clock alone.
+    ui.shell.read_with(ui.cx, |shell, _| {
+        shell
+            .controller
+            .advance_test_clock(Duration::from_millis(200))
+    });
+    ui.keys("secondary-shift-m");
+    let top = ui.scroll_top().item_ix;
+    ui.keys("pageup");
+    assert!(
+        ui.scroll_top().item_ix < top,
+        "a change 200 ms after the last one is the first of a burst, so a page up moves the view"
     );
 }

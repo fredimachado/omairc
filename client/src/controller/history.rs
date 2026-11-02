@@ -1,11 +1,14 @@
 //! History batch replay, catch-up wiring, and older-page requests.
 
+use std::rc::Rc;
+
 use chrono::{DateTime, Utc};
 
 use crate::irc::event::{Event, HistoryKind};
 use crate::irc::translator::{translate_history, HistoryBatch};
 use crate::irc::viewnotify::ViewNotify;
 use crate::irc::world::Message;
+use crate::session::clock::Clock;
 use crate::session::events::{SessionEvent, SessionState};
 
 use super::controller::Controller;
@@ -132,6 +135,11 @@ impl Controller {
     /// The current time on the controller's clock.
     pub fn now(&self) -> DateTime<Utc> {
         self.clock.now()
+    }
+
+    /// The controller's clock, for a view that judges its own timing on it.
+    pub fn clock(&self) -> Rc<dyn Clock> {
+        Rc::clone(&self.clock)
     }
 
     /// Whether a CHATHISTORY page in flight can still bring the selected conversation's
