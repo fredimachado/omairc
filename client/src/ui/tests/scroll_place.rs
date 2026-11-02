@@ -600,3 +600,36 @@ fn a_landing_near_the_end_mid_drag_follows_the_end_once_it_settles(cx: &mut gpui
         "a landing the layout clamped follows the end, as a landing does once measured"
     );
 }
+
+#[gpui::test]
+fn ctrl_home_and_ctrl_end_during_a_drag_land_on_the_model_place_and_stay(
+    cx: &mut gpui::TestAppContext,
+) {
+    let mut ui = fixture::open(cx);
+    long_lines(&mut ui, 2000);
+    ui.settle_width();
+    ui.jump_to(&long_body(1000));
+    assert_unmeasured(drag(&mut ui, 10), ui.row_count());
+    ui.keys("secondary-home");
+    assert_eq!(
+        ui.scroll_top().item_ix,
+        0,
+        "Ctrl+Home lands on the first row mid-drag"
+    );
+    ui.settle_width();
+    assert_eq!(
+        ui.scroll_top().item_ix,
+        0,
+        "and the settle keeps the first row"
+    );
+    ui.keys("secondary-end");
+    assert!(
+        ui.at_end() && ui.reported_end(),
+        "Ctrl+End lands on the end mid-drag"
+    );
+    ui.settle_width();
+    assert!(
+        ui.at_end() && ui.reported_end(),
+        "and the settle keeps the end"
+    );
+}

@@ -426,12 +426,12 @@ impl TranscriptView {
         self.note_transcript_scroll(cx);
     }
 
-    /// Ctrl+Home: the first row.
+    /// Ctrl+Home: the first row. The move lands the model's place, so a projection (after a
+    /// width change, or while the rows are unmeasured) keeps it.
     pub fn scroll_to_top(&mut self, cx: &mut Context<Self>) {
-        self.model.set_pinned_to_bottom(false);
-        self.list_state.scroll_to(ListOffset {
-            item_ix: 0,
-            offset_in_item: px(0.),
+        self.land(Resume::Line {
+            row: 0,
+            offset_px: 0,
         });
         self.note_transcript_scroll(cx);
     }
