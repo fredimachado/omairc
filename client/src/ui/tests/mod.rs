@@ -9,3 +9,4 @@ mod scroll_restore;
 mod sheets;
 mod transcript;
 mod typing;
+mod wait_sends;

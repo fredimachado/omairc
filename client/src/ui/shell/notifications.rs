@@ -8,6 +8,7 @@ use crate::desktop::notifier::Activation;
 use crate::irc::plaintext::plain_irc_text;
 use crate::irc::viewnotify::ViewNotify;
 use crate::model::title::note_title_mark;
+use crate::model::ConversationRef;
 use crate::ui::shell::Shell;
 
 /// How long a saved place waits for its history while a request is in flight. A request that
@@ -47,6 +48,7 @@ impl Shell {
             }
         }
         let surfaces = self.controller.take_notifications();
+        self.retire_wait_for_sent_lines(&surfaces, cx);
         let mut connect_synced = false;
         for network_id in self.controller.take_background_profile_syncs() {
             if let Some(profile) = self.controller.profile(&network_id) {
@@ -94,6 +96,27 @@ impl Shell {
         if !surfaces.is_empty() {
             cx.notify();
         }
+    }
+
+    /// A line the controller accepted to the conversation the transcript shows retires a
+    /// waiting place, so the live page is what gets saved. The target of each accepted line
+    /// (`ViewNotify::Sent`) decides it, whatever sent it (composer, `/me`, `/msg`, `/notice`,
+    /// or the CLI). A line to another target leaves the wait, and so does any line while
+    /// Status shows. The viewport is reported as it was for a composer line.
+    fn retire_wait_for_sent_lines(&mut self, surfaces: &[ViewNotify], cx: &mut Context<Self>) {
+        if self.shown.status.is_some() {
+            return;
+        }
+        let shown = &self.shown.conversation;
+        let retires = surfaces.iter().any(|surface| {
+            matches!(surface, ViewNotify::Sent(key) if ConversationRef::from_key(key) == *shown)
+        });
+        if !retires {
+            return;
+        }
+        self.transcript.update(cx, |t, _| t.clear_pending_restore());
+        let follow_end = self.transcript.read(cx).reports_follow_end();
+        self.report_transcript_viewport_from_shell(follow_end, cx);
     }
 
     /// Raises the window and reveals the conversation a notification named.

@@ -58,7 +58,7 @@ pub(super) fn reopen_at_gone_place(ui: &mut SeededShell, key: &str) {
 }
 
 /// The open conversation with a request in flight, reopened at a place it does not hold.
-fn waiting_for_history(ui: &mut SeededShell) {
+pub(super) fn waiting_for_history(ui: &mut SeededShell) {
     offer_chathistory(ui);
     ui.select("anna");
     request_history(ui);
@@ -261,7 +261,7 @@ pub(super) fn send_line(ui: &mut SeededShell, text: &str) {
 }
 
 /// Types one line in the composer and presses Enter, without rendering afterwards.
-fn submit_line(ui: &mut SeededShell, text: &str) {
+pub(super) fn submit_line(ui: &mut SeededShell, text: &str) {
     ui.cx.update(|window, cx| {
         ui.shell.update(cx, |shell, cx| {
             shell.composer.update(cx, |composer, cx| {

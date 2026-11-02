@@ -140,15 +140,9 @@ impl Shell {
         let accepted = self.controller.submit(surface, &text);
         self.apply_preference_changes(before, cx);
         if accepted {
-            // A line to this conversation retires a pending restore, so the live page is what
-            // gets saved. Other commands leave the place waiting.
-            if matches!(command, Command::Say(_) | Command::Action(_)) {
-                self.transcript.update(cx, |t, _| t.clear_pending_restore());
-                let follow_end = self.transcript.read(cx).reports_follow_end();
-                self.report_transcript_viewport_from_shell(follow_end, cx);
-            }
             self.finish_command(&text, cx);
         }
+        // The line's accepted target retires a waiting place there, whatever the verb.
         self.drain_notifications(cx);
         if matches!(command, Command::List(_)) && self.controller.channel_list().open {
             let network_id = self.controller.channel_list().network_id.clone();
