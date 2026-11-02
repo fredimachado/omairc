@@ -51,6 +51,7 @@ pub mod scrollplace;
 pub mod selection;
 pub mod send;
 pub mod sessionconnect;
+pub mod sessioncontrol;
 pub mod snapshots;
 pub mod stores;
 pub mod transports;
