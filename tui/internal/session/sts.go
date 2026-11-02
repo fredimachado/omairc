@@ -16,7 +16,8 @@ import (
 // `client/src/session/sts.rs`). Durable INI persistence is
 // `storage.IniSTSStore` (`client/src/storage/stspolicies.rs`). A store updates
 // memory first and keeps a policy whose write failed there until a write lands,
-// or until another client changes that host in the file. Lookups answer with
+// or until another client changes that host in the file, which leaves it as saved
+// memory. Lookups answer with
 // that unsaved policy first, then from the file when it holds a live policy for
 // the host, and from memory when it does not. A disk failure never drops a
 // policy that already applies in memory, and a corrupt file never forces a
@@ -378,8 +379,8 @@ func (s *STSStore) fileViewLocked(host string) stsFileView {
 
 // settleUnsavedLocked settles every unsaved policy against the file's view of its
 // host, before a call changes anything. An unreadable view keeps the baseline. An
-// unknown view ends it. A readable view that moved from a live baseline drops the
-// policy, so the file answers. Otherwise the view becomes the baseline. Caller must
+// unknown view ends it. A readable view that moved from a live baseline marks the
+// policy saved, so the file answers and nothing writes it back. Otherwise the view becomes the baseline. Caller must
 // hold s.mu.
 func (s *STSStore) settleUnsavedLocked(nowUnix int64) {
 	if s.disk == nil {
@@ -391,7 +392,10 @@ func (s *STSStore) settleUnsavedLocked(nowUnix int64) {
 		}
 		file := s.fileViewLocked(held.host)
 		if stsFileMoved(held.recorded, file, nowUnix) {
-			delete(s.entries, key)
+			// The file moved on, so it must never get this policy back. It stays in memory
+			// as a saved policy: the file answers first, and memory answers until expiry.
+			held.unsaved = false
+			s.entries[key] = held
 			continue
 		}
 		if file.view == storage.STSViewUnreadable {

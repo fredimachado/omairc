@@ -7,8 +7,8 @@
 //! (then `sts.corrupt.1`, `.2`, …), and renames the temp over `sts`. A failure at any step leaves
 //! `sts` untouched and keeps the new policy in memory as unsaved. Lookups prefer an unsaved policy
 //! until the file moves on from the view it was recorded against (another client saved a different
-//! live policy, or cleared the host). Every later successful write merges the unsaved policies into
-//! the file. An unreadable or unwritable file is still left alone. Each successful write then
+//! live policy, or cleared the host), then keep it as saved memory. Every later successful write
+//! merges the unsaved policies into the file. An unreadable or unwritable file is still left alone. Each successful write then
 //! restricts the file to its owner, as `restrictPermissions` does.
 
 use std::cell::RefCell;
@@ -130,8 +130,8 @@ impl IniStsStore {
 
     /// Opens the file for one call and settles every unsaved policy against the view it reads,
     /// before the call changes anything. An unreadable file keeps each baseline. An unknown view
-    /// ends it. A readable view that moved from a live baseline drops the unsaved policy, so the
-    /// file answers. Otherwise the view becomes the baseline.
+    /// ends it. A readable view that moved from a live baseline marks the policy saved, so the
+    /// file answers and nothing writes it back. Otherwise the view becomes the baseline.
     fn open(&self, now_unix: i64) -> Settings {
         let settings = Settings::open_sts(&self.path);
         let unsaved: Vec<String> = self
@@ -143,18 +143,20 @@ impl IniStsStore {
             .collect();
         for key in unsaved {
             let file = file_view(&self.path, &settings, &key);
-            let moved = self.memory.borrow().get(&key).is_some_and(|held| {
-                held.unsaved
-                    .is_some_and(|recorded| file_moved(recorded, file, now_unix))
-            });
             let mut memory = self.memory.borrow_mut();
-            if moved {
-                memory.remove(&key);
-            } else if let Some(held) = memory.get_mut(&key) {
+            let Some(held) = memory.get_mut(&key) else {
+                continue;
+            };
+            let Some(recorded) = held.unsaved else {
+                continue;
+            };
+            if file_moved(recorded, file, now_unix) {
+                // The file moved on, so it must never get this policy back. It stays in memory
+                // as a saved policy: the file answers first, and memory answers until expiry.
+                held.unsaved = None;
+            } else if file != FileView::Unreadable {
                 // An unreadable file says nothing, so the baseline stays as it was.
-                if file != FileView::Unreadable {
-                    held.unsaved = Some(file);
-                }
+                held.unsaved = Some(file);
             }
         }
         settings
@@ -950,10 +952,11 @@ mod tests {
     }
 
     /// Another client clears the host after this store's write failed, and the disk recovers.
-    /// Lookup answers none, and a refresh does not recreate the cleared group.
+    /// The policy is saved memory from then on, so lookup still answers it, and a refresh does not
+    /// recreate the cleared group.
     #[cfg(unix)]
     #[test]
-    fn a_clear_another_client_saves_after_our_failed_write_stays_cleared() {
+    fn a_clear_another_client_saves_after_our_failed_write_is_kept_as_saved_memory() {
         let dir = TempDir::new("sts-moved-cleared");
         let (ours, path) = store_in(&dir);
         IniStsStore::new(path.clone()).store("irc.example", 6697, 60, at(0));
@@ -966,8 +969,8 @@ mod tests {
 
         assert_eq!(
             ours.lookup("irc.example", at(11)),
-            None,
-            "the clear on disk wins"
+            entry(6697, 86400, 86400),
+            "the clear on disk is not written back, and memory keeps answering"
         );
         ours.refresh("irc.example", 86400, at(20));
 
@@ -1429,13 +1432,13 @@ mod tests {
         }
     }
 
-    /// Known gap 1. The file is damaged, and this store never looks at it. Another client's
-    /// recovery then rewrites it clean without this host. From this store's side the clean file is
-    /// a clear of a live baseline, so the unsaved policy yields. The saved policy still answers
-    /// from memory.
+    /// The file is damaged, and this store never looks at it. Another client's recovery then
+    /// rewrites it clean without this host. From this store's side that is a clear of a live
+    /// baseline, so the unsaved policy becomes saved memory and keeps answering. Lookup never
+    /// fails open.
     #[cfg(unix)]
     #[test]
-    fn a_clean_rewrite_nobody_here_saw_damaged_is_a_clear() {
+    fn a_clean_rewrite_nobody_here_saw_damaged_does_not_fail_open() {
         for saved in [true, false] {
             let dir = TempDir::new("sts-unseen-damage");
             let Some((ours, path)) = ours_over_file_3600(&dir, saved) else {
@@ -1444,15 +1447,10 @@ mod tests {
             fs::write(&path, "this line has no equals sign\n").expect("write garbage");
             IniStsStore::new(path).store("other.example", 6698, 60, at(2));
 
-            let expected = if saved {
-                entry(6697, 86400, 86400)
-            } else {
-                None
-            };
             assert_eq!(
                 ours.lookup("irc.example", at(3)),
-                expected,
-                "saved={saved}: the unseen rewrite is a clear"
+                entry(6697, 86400, 86400),
+                "saved={saved}: the unseen rewrite must not fail open"
             );
         }
     }
@@ -1504,11 +1502,11 @@ mod tests {
         }
     }
 
-    /// Row: clear from a live baseline. A clear on disk ends an unsaved policy, and a refresh does
-    /// not recreate the group. A saved policy keeps answering from memory, which is known gap 4.
+    /// Row: clear from a live baseline. A clear on disk makes an unsaved policy saved memory, like
+    /// a saved one (known gap 4): both keep answering, and a refresh does not recreate the group.
     #[cfg(unix)]
     #[test]
-    fn a_clear_on_disk_yields_an_unwritten_policy_and_not_a_saved_one() {
+    fn a_clear_on_disk_leaves_an_unwritten_policy_as_saved_memory() {
         for saved in [true, false] {
             let dir = TempDir::new("sts-clear-row");
             let Some((ours, path)) = ours_over_file_3600(&dir, saved) else {
@@ -1516,14 +1514,9 @@ mod tests {
             };
             IniStsStore::new(path.clone()).store("irc.example", 6697, 0, at(10));
 
-            let expected = if saved {
-                entry(6697, 86400, 86400)
-            } else {
-                None
-            };
             assert_eq!(
                 ours.lookup("irc.example", at(11)),
-                expected,
+                entry(6697, 86400, 86400),
                 "saved={saved}"
             );
             ours.refresh("irc.example", 86400, at(20));
@@ -1592,6 +1585,35 @@ mod tests {
                 "the other host is written too"
             );
         }
+    }
+
+    /// A clear of a host the file does not hold writes nothing, so it must not mark an unwritten
+    /// policy for another host as saved. The policy still answers after the file's own policy
+    /// lapses, and the next write for another host still carries it. The clear runs on the wall
+    /// clock, so the policies are live now.
+    #[cfg(unix)]
+    #[test]
+    fn a_clear_of_an_absent_host_keeps_an_unwritten_policy_unsaved() {
+        let base = Utc::now().timestamp();
+        let dir = TempDir::new("sts-clear-absent");
+        let (ours, path) = store_in(&dir);
+        IniStsStore::new(path.clone()).store("irc.example", 6697, 3600, at(base));
+        if !make_read_only(&path) {
+            return;
+        }
+        ours.store("irc.example", 6697, 86400, at(base));
+        make_writable(&path);
+
+        ours.clear("absent.example");
+
+        let held = entry(6697, 86400, base + 86400);
+        assert_eq!(ours.lookup("irc.example", at(base + 3700)), held);
+        ours.store("other.example", 6699, 60, at(base + 3701));
+        assert_eq!(
+            IniStsStore::new(path).lookup("irc.example", at(base + 3702)),
+            held,
+            "the next write for another host still carries the unwritten policy"
+        );
     }
 
     /// Another client saves a newer port for the host after this store's write failed. A store for

@@ -747,10 +747,11 @@ func TestSTSStoreAnotherClientReplacementAfterFailedWriteWins(t *testing.T) {
 	}
 }
 
-// TestSTSStoreAnotherClientClearAfterFailedWriteStaysCleared: another client clears
-// the host after this store's write failed, and the disk recovers. Lookup answers
-// none, and a refresh does not recreate the cleared group.
-func TestSTSStoreAnotherClientClearAfterFailedWriteStaysCleared(t *testing.T) {
+// TestSTSStoreAnotherClientClearAfterFailedWriteIsKeptAsSavedMemory: another client
+// clears the host after this store's write failed, and the disk recovers. The policy
+// is saved memory from then on, so lookup still answers it, and a refresh does not
+// recreate the cleared group.
+func TestSTSStoreAnotherClientClearAfterFailedWriteIsKeptAsSavedMemory(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("unix mode bits")
 	}
@@ -770,8 +771,8 @@ func TestSTSStoreAnotherClientClearAfterFailedWriteStaysCleared(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if cached, ok := ours.Lookup("irc.example", time.Unix(11, 0)); ok {
-		t.Fatalf("the clear on disk must win over this store's unwritten policy: %+v", cached)
+	if cached, ok := ours.Lookup("irc.example", time.Unix(11, 0)); !ok || cached.ExpiryEpochSeconds != 86400 {
+		t.Fatalf("the clear on disk is not written back, and memory keeps answering: %+v ok=%v", cached, ok)
 	}
 	if err := ours.Refresh("irc.example", 86400, time.Unix(20, 0)); err != nil {
 		t.Fatal(err)
@@ -1269,11 +1270,11 @@ func TestSTSStoreCleanRewriteAfterDamageKeepsUnwrittenPolicy(t *testing.T) {
 	}
 }
 
-// TestSTSStoreCleanRewriteNobodyHereSawDamagedIsAClear is known gap 1. The file is
-// damaged and this store never looks at it. Another client's recovery then rewrites it
-// clean without this host. From this store's side that is a clear of a live baseline,
-// so the unsaved policy yields. The saved policy still answers from memory.
-func TestSTSStoreCleanRewriteNobodyHereSawDamagedIsAClear(t *testing.T) {
+// TestSTSStoreCleanRewriteNobodyHereSawDamagedDoesNotFailOpen: the file is damaged and
+// this store never looks at it. Another client's recovery then rewrites it clean
+// without this host. From this store's side that is a clear of a live baseline, so
+// the unsaved policy becomes saved memory and keeps answering. Lookup never fails open.
+func TestSTSStoreCleanRewriteNobodyHereSawDamagedDoesNotFailOpen(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("unix mode bits")
 	}
@@ -1287,10 +1288,9 @@ func TestSTSStoreCleanRewriteNobodyHereSawDamagedIsAClear(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// Saved answers from memory. Unsaved yields to the clean view, a clear of a live baseline.
 		cached, ok := ours.Lookup("irc.example", time.Unix(3, 0))
-		if ok != saved || (ok && cached.ExpiryEpochSeconds != 86400) {
-			t.Fatalf("saved=%v: the unseen rewrite is a clear: %+v ok=%v", saved, cached, ok)
+		if !ok || cached.ExpiryEpochSeconds != 86400 {
+			t.Fatalf("saved=%v: the unseen rewrite must not fail open: %+v ok=%v", saved, cached, ok)
 		}
 	}
 }
@@ -1343,10 +1343,10 @@ func TestSTSStoreLapsedNewerPolicyOnDiskDoesNotReplaceUnwrittenPolicy(t *testing
 	}
 }
 
-// TestSTSStoreClearOnDiskYieldsUnwrittenPolicyNotSaved: another client clears the host.
-// A clear ends an unsaved policy, and a refresh does not recreate the group. A saved
-// policy keeps answering from memory, which is known gap 4.
-func TestSTSStoreClearOnDiskYieldsUnwrittenPolicyNotSaved(t *testing.T) {
+// TestSTSStoreClearOnDiskLeavesUnwrittenPolicyAsSavedMemory: another client clears the
+// host. An unsaved policy becomes saved memory, like a saved one (known gap 4): both
+// keep answering, and a refresh does not recreate the group.
+func TestSTSStoreClearOnDiskLeavesUnwrittenPolicyAsSavedMemory(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("unix mode bits")
 	}
@@ -1358,7 +1358,7 @@ func TestSTSStoreClearOnDiskYieldsUnwrittenPolicyNotSaved(t *testing.T) {
 		}
 
 		cached, ok := ours.Lookup("irc.example", time.Unix(11, 0))
-		if ok != saved || (ok && cached.ExpiryEpochSeconds != 86400) {
+		if !ok || cached.ExpiryEpochSeconds != 86400 {
 			t.Fatalf("saved=%v: a clear on disk: %+v ok=%v", saved, cached, ok)
 		}
 		if err := ours.Refresh("irc.example", 86400, time.Unix(20, 0)); err != nil {
