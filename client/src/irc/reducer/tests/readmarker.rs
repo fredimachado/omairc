@@ -87,3 +87,82 @@ fn apply_server_read_marker_recounts_covered_badges() {
     assert_eq!(state_of(&reducer, &room).mentions, 1, "mentions after marker covers the early line");
     assert!(!reducer.apply_server_read_marker(&room, Some(early)), "an equal marker is not newer");
 }
+
+#[test]
+fn a_read_marker_at_the_last_stored_line_plants_no_mark_on_the_stored_lines() {
+    let log = RecordingLog::default();
+    let mut first = EventReducer::new();
+    first.set_conversation_log(Some(Box::new(log.clone())));
+    welcome_omairc(&mut first, NETWORK_A);
+    fold(&mut first, join(NETWORK_A, "#room", "omairc"));
+    let room = first.conversation_key(NETWORK_A, "#room");
+    let early = Utc.with_ymd_and_hms(2024, 6, 1, 12, 0, 0).unwrap();
+    let late = Utc.with_ymd_and_hms(2024, 6, 1, 12, 5, 0).unwrap();
+    for (body, when) in [("first", early), ("second", late)] {
+        fold(
+            &mut first,
+            MessageEvent {
+                timestamp: when,
+                server_time: Some(when),
+                ..message(&room, "peer", body, "#room")
+            },
+        );
+    }
+
+    // A relaunch reads the stored lines back. They keep their times but not the server-time tag.
+    let mut again = EventReducer::new();
+    again.set_conversation_log(Some(Box::new(log.clone())));
+    welcome_omairc(&mut again, NETWORK_A);
+    fold(&mut again, join(NETWORK_A, "#room", "omairc"));
+    let stored_chat = state_of(&again, &room)
+        .messages
+        .iter()
+        .filter(|message| message.kind == MessageKind::Message)
+        .count();
+    assert_eq!(stored_chat, 2, "both stored chat lines are back");
+    assert!(
+        again.apply_server_read_marker(&room, Some(late)),
+        "the server marker is newer than none"
+    );
+
+    let conv = state_of(&again, &room);
+    assert_eq!(
+        conv.unread, 0,
+        "a marker at the last stored line covers the stored lines"
+    );
+    assert_eq!(
+        conv.unread_mark, None,
+        "so no New messages mark is planted on them"
+    );
+}
+
+#[test]
+fn a_live_line_without_server_time_stays_unread_under_a_newer_marker() {
+    let mut reducer = EventReducer::new();
+    welcome_omairc(&mut reducer, NETWORK_A);
+    let room = reducer.conversation_key(NETWORK_A, "#room");
+    let early = Utc.with_ymd_and_hms(2024, 6, 1, 12, 0, 0).unwrap();
+    let late = Utc.with_ymd_and_hms(2024, 6, 1, 12, 5, 0).unwrap();
+    fold(
+        &mut reducer,
+        MessageEvent {
+            timestamp: early,
+            ..message(&room, "peer", "a live line with no server time", "#room")
+        },
+    );
+    assert_eq!(
+        state_of(&reducer, &room).unread,
+        1,
+        "the live line is unread"
+    );
+
+    assert!(
+        reducer.apply_server_read_marker(&room, Some(late)),
+        "the marker is newer than none"
+    );
+    assert_eq!(
+        state_of(&reducer, &room).unread,
+        1,
+        "a live line with no server time is not covered by a marker that is newer than its time"
+    );
+}

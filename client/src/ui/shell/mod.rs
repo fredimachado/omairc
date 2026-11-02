@@ -58,7 +58,9 @@ use crate::ui::center::slash_popup::render_slash_popup;
 use crate::ui::input::SingleLineInput;
 use crate::ui::members::column::MEMBERS_PANEL_WIDTH;
 use crate::ui::members::{render_members, MembersData};
-use crate::ui::scrollbar::{end_scrollbar_drag, move_scrollbar_drag, ScrollbarDragCell};
+use crate::ui::scrollbar::{
+    end_scrollbar_drag, move_scrollbar_drag, ScrollbarDragCell, ScrollbarDragKind,
+};
 use crate::ui::shell::actions::wire_shell_actions;
 use crate::ui::shell::view::{shown_view, ShownView};
 use crate::ui::sheets::connect::controls::ConnectControls;
@@ -96,6 +98,9 @@ pub struct Shell {
     pub sidebar_scroll: ScrollHandle,
     pub members_scroll: ScrollHandle,
     pub scrollbar_drag: ScrollbarDragCell,
+    /// When the shown conversation's saved place started waiting for history, so a
+    /// request that never settles gives the wait up (`notifications.rs`).
+    pub restore_wait_since: Option<chrono::DateTime<chrono::Utc>>,
     pub transcript: Entity<TranscriptView>,
     pub composer: Entity<SingleLineInput>,
     /// The composer's drafts, sent-line history and Tab cycle, per target.
@@ -214,7 +219,9 @@ impl Shell {
                 .frameless()
         });
         let composer_focus = composer.read(cx).focus_handle(cx);
-        let transcript = cx.new(|cx| TranscriptView::new(composer_focus, scrollbar_drag.clone(), cx));
+        let clock = controller.clock();
+        let transcript =
+            cx.new(|cx| TranscriptView::new(composer_focus, scrollbar_drag.clone(), clock, cx));
 
         let transcript_events = cx.subscribe(&transcript, |shell: &mut Shell, _, event: &NickClicked, cx| {
             shell.open_direct_nick(&event.0, cx);
@@ -263,6 +270,7 @@ impl Shell {
             sidebar_scroll: ScrollHandle::new(),
             members_scroll: ScrollHandle::new(),
             scrollbar_drag,
+            restore_wait_since: None,
             transcript,
             composer,
             composer_state,
@@ -330,6 +338,8 @@ impl Shell {
         }
         self.controller.tick();
         self.tick_transcript_calendar(TranscriptCalendarSnapshot::capture_now(), cx);
+        // The transcript measures its rows again once the window's width has been still a while.
+        self.transcript.update(cx, |t, cx| t.settle_width(cx));
         self.drain_notifications(cx);
     }
 
@@ -672,11 +682,15 @@ impl Render for Shell {
             .flex_row()
             .on_mouse_move(cx.listener(|shell, ev: &MouseMoveEvent, _, cx| {
                 let app_style = style(cx);
-                if shell.scrollbar_drag.borrow().is_some() {
+                if let Some(drag) = shell.scrollbar_drag.borrow().clone() {
                     move_scrollbar_drag(&shell.scrollbar_drag, ev.position, &app_style);
-                    // The dragged thumb may be the transcript's, moved outside its own
-                    // handler. The note emits only when the at-end bit changed.
-                    shell.transcript.update(cx, |t, cx| t.note_scroll_end(cx));
+                    // Only the transcript's List thumb retires a pending restore.
+                    // Sidebar and member Div thumbs share this drag cell.
+                    if matches!(drag.kind, ScrollbarDragKind::List(_)) {
+                        shell
+                            .transcript
+                            .update(cx, |t, cx| t.note_transcript_scroll(cx));
+                    }
                     cx.notify();
                 } else {
                     shell.transcript.update(cx, |t, cx| {

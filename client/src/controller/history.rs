@@ -1,11 +1,14 @@
 //! History batch replay, catch-up wiring, and older-page requests.
 
+use std::rc::Rc;
+
 use chrono::{DateTime, Utc};
 
 use crate::irc::event::{Event, HistoryKind};
 use crate::irc::translator::{translate_history, HistoryBatch};
 use crate::irc::viewnotify::ViewNotify;
 use crate::irc::world::Message;
+use crate::session::clock::Clock;
 use crate::session::events::{SessionEvent, SessionState};
 
 use super::controller::Controller;
@@ -106,6 +109,48 @@ impl Controller {
             return false;
         }
         true
+    }
+
+    /// Starts a CHATHISTORY AFTER chain on the selected conversation from `when`, as a
+    /// catch-up does, so a test can deliver the pages.
+    #[cfg(test)]
+    pub fn start_history_after_for_tests(&mut self, when: DateTime<Utc>) -> bool {
+        let Some(key) = self.selected.clone() else {
+            return false;
+        };
+        let Some(conversation) = self.reducer.find(&key) else {
+            return false;
+        };
+        let target = if conversation.target.is_empty() {
+            key.normalized_target.clone()
+        } else {
+            conversation.target.clone()
+        };
+        let Some(session) = self.manager.find(&key.network_id) else {
+            return false;
+        };
+        session.request_history_after(&target, when)
+    }
+
+    /// The current time on the controller's clock.
+    pub fn now(&self) -> DateTime<Utc> {
+        self.clock.now()
+    }
+
+    /// The controller's clock, for a view that judges its own timing on it.
+    pub fn clock(&self) -> Rc<dyn Clock> {
+        Rc::clone(&self.clock)
+    }
+
+    /// Whether a CHATHISTORY page in flight can still bring the selected conversation's
+    /// saved line: one is in flight and its session is still registered to answer it.
+    pub fn transcript_history_awaited(&self) -> bool {
+        let registered = self.selected.as_ref().is_some_and(|key| {
+            self.manager
+                .find(&key.network_id)
+                .is_some_and(|session| session.state() == SessionState::Registered)
+        });
+        registered && self.older_transcript_history_inflight()
     }
 
     /// Whether a CHATHISTORY page is already in flight for the selected conversation.

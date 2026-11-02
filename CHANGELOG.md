@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The desktop client restores a saved transcript place once history arrives, and
+  no longer saves the "New messages" divider or a day separator as the place.
+  Capture anchors on the first restorable row at or below the top of the view.
+  A saved line waits for history only while a CHATHISTORY request for that
+  conversation is in flight, and gives up once that request settles without the
+  line. A waiting place does not advance the server read marker. A transcript
+  scroll, or a message sent to that conversation, ends the wait; commands such
+  as `/pref` and `/whois` and sidebar or member scrollbar drags do not.
 - Desktop and TUI write `collapsedNetworks` in sidebar `networkOrder` (not id
   sort), so switching clients no longer rewrites the line. Forgetting a network
   updates the profile group plus `networkOrder` and `collapsedNetworks` in one

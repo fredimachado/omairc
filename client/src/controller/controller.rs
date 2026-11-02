@@ -147,6 +147,9 @@ pub struct Controller {
     pub(super) transcript_follow_end: bool,
     /// Whether the shell reports the transcript as focused for read-marker sync.
     pub(super) transcript_focused: bool,
+    /// The fake clock a seeded test controller runs on, so a test can move time forward.
+    #[cfg(test)]
+    pub(super) test_clock: Option<Rc<crate::session::clock::FakeClock>>,
     pub(super) read_markers: super::readmarker::ReadMarkerState,
     /// Mention and monitor arrivals waiting for the shell (`notify.rs`).
     pub(super) arrivals: Vec<Arrival>,
@@ -240,6 +243,8 @@ impl Controller {
             playback_times,
             transcript_follow_end: true,
             transcript_focused: true,
+            #[cfg(test)]
+            test_clock: None,
             read_markers: super::readmarker::ReadMarkerState::new(),
             arrivals: Vec::new(),
             pumping: false,

@@ -254,8 +254,8 @@ impl Shell {
             };
             self.transcript.update(cx, |t, cx| t.refresh_conversation(lines, cx));
         }
-        let at_end = self.transcript.read(cx).at_end();
-        self.report_transcript_viewport_from_shell(at_end, cx);
+        let follow_end = self.transcript.read(cx).reports_follow_end();
+        self.report_transcript_viewport_from_shell(follow_end, cx);
     }
 
     /// Updates only the typing dots on the open direct message.
@@ -296,16 +296,26 @@ impl Shell {
                     typing_peer,
                     today: self.transcript_calendar.local_date,
                 };
-                let open_at_unread = place.is_none() && self.controller.preferences().unread;
+                // An explicit end is a reader at the end, whom a rebuild does not send to the
+                // mark. A line lands without the mark, but a wait keeps this for its give-up.
+                let open_at_unread = !matches!(place, Some(SavedPlace::End))
+                    && self.controller.preferences().unread;
                 let place = place.or_else(|| self.saved_place(&self.shown.conversation));
+                // A saved line that a history request in flight may still bring waits for it.
+                let wait_for_history = self.controller.transcript_history_awaited();
                 self.transcript.update(cx, |t, _| {
                     t.set_conversation(lines);
-                    t.restore_scroll_place(place.as_ref(), open_at_unread);
+                    t.restore_scroll_place(place.as_ref(), open_at_unread, wait_for_history);
                 });
+                self.restore_wait_since = self
+                    .transcript
+                    .read(cx)
+                    .has_pending_restore()
+                    .then(|| self.controller.now());
             }
         }
-        let at_end = self.transcript.read(cx).at_end();
-        self.report_transcript_viewport_from_shell(at_end, cx);
+        let follow_end = self.transcript.read(cx).reports_follow_end();
+        self.report_transcript_viewport_from_shell(follow_end, cx);
     }
 
     /// Qt `rememberOpenTranscript`: stores where the open conversation's transcript
