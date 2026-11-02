@@ -2,6 +2,8 @@
 //! `TestAppContext`, fixed window size, and helpers for settle, inject, select
 //! scroll, and chords. Every view test that needs a live shell uses this.
 
+use std::time::Duration;
+
 use gpui::{
     px, size, Entity, Focusable, ListOffset, MouseButton, Modifiers, Point, TestAppContext,
     VisualTestContext,
@@ -20,6 +22,10 @@ pub const OMARCHY: &str = "omarchy";
 /// Fixed window used by every shell view test so list layout is comparable.
 pub const WINDOW_WIDTH: f32 = 1024.;
 pub const WINDOW_HEIGHT: f32 = 768.;
+
+/// How far the clock moves for a width to count as settled: longer than the transcript's quiet
+/// period, so the tick after it settles the width.
+const WIDTH_SETTLE: Duration = Duration::from_secs(1);
 
 /// The seeded demo shell in a window, ready for layout and input.
 pub struct SeededShell<'a> {
@@ -49,7 +55,7 @@ pub fn open(cx: &mut TestAppContext) -> SeededShell<'_> {
         shell.update(cx, |shell, cx| shell.focus_on_launch(window, cx));
     });
     let mut seeded = SeededShell { shell, cx: vcx };
-    seeded.settle();
+    seeded.settle_width();
     seeded
 }
 
@@ -60,9 +66,29 @@ impl SeededShell<'_> {
         self.cx.run_until_parked();
     }
 
+    /// One frame at the new size. The width is not settled: the rows are not measured for it
+    /// until `settle_width`.
     pub fn resize(&mut self, width: f32, height: f32) {
         self.cx.simulate_resize(size(px(width), px(height)));
         self.settle();
+    }
+
+    /// The width has stopped moving: the quiet period passes, and the shell's tick settles it, so
+    /// every row is measured. The first tick is the one that sees the last change.
+    pub fn settle_width(&mut self) {
+        self.shell.update(self.cx, |shell, cx| {
+            shell.tick(cx);
+            shell.controller.advance_test_clock(WIDTH_SETTLE);
+            shell.tick(cx);
+        });
+        self.settle();
+    }
+
+    /// Rows the transcript's list has asked to draw so far, summed over frames.
+    pub fn rows_rendered(&self) -> usize {
+        self.shell.read_with(self.cx, |shell, cx| {
+            shell.transcript.read(cx).rows_rendered()
+        })
     }
 
     /// Selects a conversation on `OMARCHY` and refreshes the transcript.

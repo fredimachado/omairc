@@ -336,6 +336,9 @@ impl Shell {
         }
         self.controller.tick();
         self.tick_transcript_calendar(TranscriptCalendarSnapshot::capture_now(), cx);
+        // The transcript measures its rows again once the window's width has been still a while.
+        let now = self.controller.now();
+        self.transcript.update(cx, |t, cx| t.settle_width(now, cx));
         self.drain_notifications(cx);
     }
 

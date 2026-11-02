@@ -14,7 +14,7 @@ use gpui::{
 
 mod scroll_restore;
 
-use scroll_restore::PendingRestore;
+use scroll_restore::{PendingRestore, WidthState};
 
 use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::irc::world::Message;
@@ -105,15 +105,24 @@ pub struct TranscriptView {
     /// A restore whose line is not in the transcript yet (history still in flight).
     /// Applied once when the anchor row arrives; cleared if the reader scrolls first.
     pending_restore: Option<PendingRestore>,
-    /// Whether a layout has measured the rows since the list was last reset. Until one
-    /// has, every row counts as 0 px, so the list's pixels say nothing about the reader.
+    /// Whether every row's height is true for the list's width. A layout after a reset measures
+    /// them all. A width change makes gpui drop them, so the flag is off until the next such
+    /// layout. Until it is on, the list's pixels say nothing about the reader.
     list_measured: bool,
+    /// Whether a reset has happened since the last layout. The next layout then measures every
+    /// row, at the width it lays out at.
+    measure_pending: bool,
+    /// Where the window's width is, for when the rows are measured again (`settle_width`).
+    width: WidthState,
     /// A landing on a row (a mark, a find or a link), which a layout may clamp to the end.
     /// The layout that places it decides: a clamped landing follows the end.
     landing: bool,
     /// Whether the last frame drew the unseen chip.
     #[cfg(test)]
     chip_drawn: bool,
+    /// Rows the list asked to draw, summed over frames, so a test can count what a frame lays out.
+    #[cfg(test)]
+    rows_rendered: usize,
 }
 
 impl TranscriptView {
@@ -148,9 +157,13 @@ impl TranscriptView {
             reported_at_end: true,
             pending_restore: None,
             list_measured: false,
+            measure_pending: false,
+            width: WidthState::Settled,
             landing: false,
             #[cfg(test)]
             chip_drawn: false,
+            #[cfg(test)]
+            rows_rendered: 0,
         };
         // gpui calls the list's scroll handler only for wheel scrolling, and while the list
         // is still borrowed, so the at-end read waits for the effect cycle to finish. Every
@@ -235,6 +248,11 @@ impl TranscriptView {
         self.chip_drawn
     }
 
+    #[cfg(test)]
+    pub fn rows_rendered(&self) -> usize {
+        self.rows_rendered
+    }
+
     /// The list's logical top: which item and how far into that item.
     pub fn logical_scroll_top(&self) -> ListOffset {
         self.list_state.logical_scroll_top()
@@ -271,10 +289,12 @@ impl TranscriptView {
         self.model.rows().len() + usize::from(self.typing_peer.is_some())
     }
 
-    /// Resets the list to its items. Its rows are unmeasured until the next layout.
+    /// Resets the list to its items. Its rows are unmeasured until the next layout, which
+    /// measures every one of them.
     fn reset_list(&mut self) {
         self.list_state.reset(self.list_len());
         self.list_measured = false;
+        self.measure_pending = true;
     }
 
     /// The typing dots' pulse frame. Repaints only while the dots show.
@@ -726,6 +746,10 @@ impl Render for TranscriptView {
                     // The transcript selection is painted only while the window is active.
                     let window_active = window.is_window_active();
                     entity.update(app, |view, _cx| {
+                        #[cfg(test)]
+                        {
+                            view.rows_rendered += 1;
+                        }
                         // The typing dots end the list. They get no row bounds, so pointer
                         // hits and the drag autoscroll never see them.
                         if ix >= view.model.rows().len() {

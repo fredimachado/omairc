@@ -1,5 +1,6 @@
 //! Pending scroll-place restore: wait for history, capture, and resume.
 
+use chrono::{DateTime, TimeDelta, Utc};
 use gpui::{px, Context, ListOffset, Pixels, Size};
 
 use super::{ConversationLines, TranscriptScrolled, TranscriptView};
@@ -13,6 +14,22 @@ pub(super) struct PendingRestore {
     open_at_unread: bool,
 }
 
+/// How long the window's width must stay still before the rows are measured again. A drag
+/// changes the width every frame.
+pub(super) const WIDTH_QUIET: TimeDelta = TimeDelta::milliseconds(150);
+
+/// Where the window's width is. The rows' heights are true only when it is `Settled`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum WidthState {
+    /// No width change is waiting to settle.
+    Settled,
+    /// The width changed in a frame since the last tick.
+    Moving,
+    /// The last tick found a change and none has come since. It settles once `WIDTH_QUIET`
+    /// has passed since `since`.
+    Quiet { since: DateTime<Utc> },
+}
+
 impl TranscriptView {
     /// Follow-end for the controller. False while a restore is pending so the
     /// server read marker does not jump past unread backlog on the interim tail.
@@ -20,28 +37,34 @@ impl TranscriptView {
         self.pending_restore.is_none() && self.model.scroll().pinned_to_bottom
     }
 
-    /// The list's frame is about to lay out at `size`. gpui drops every row height on a new
-    /// width and measures only what it draws, and rows it has not measured count as 0 px, so
-    /// the end and the scrollbar would read false. A reset measures all of them in this frame.
-    /// The list then goes back to the reader's place, which a clamp may have left behind.
+    /// The list's frame is about to lay out at `size`. A width change makes gpui drop every row
+    /// height in this frame, and rows it has not measured count as 0 px. Measuring every row
+    /// costs a full layout, so that waits for the width to settle (`settle_width`). Until then
+    /// the list shows the reader's place, and nothing reads its pixels.
     pub(super) fn list_sized(&mut self, size: Size<Pixels>) {
         let last = self.list_state.viewport_bounds().size;
         if last == size {
             return;
         }
-        if last.width != size.width {
-            self.reset_list();
+        // Before the first layout there are no heights to drop.
+        if last.width != size.width && last.width > px(0.) {
+            self.width = WidthState::Moving;
+            self.list_measured = false;
         }
         self.project_place();
     }
 
-    /// The list's frame has laid out, so its pixels are true. A landing the layout clamped
-    /// shows the end, and its reader follows it from here. The frame has already been built
-    /// from the at-end bit, so one that changed asks for another.
+    /// The list's frame has laid out. A layout after a reset measures every row, which makes the
+    /// pixels true (`list_measured`). A landing waits for such a layout, so it is the one that
+    /// decides whether the landing clamped to the end. A clamped landing shows the end, and its
+    /// reader follows it from here. The frame has already been built from the at-end bit, so
+    /// one that changed asks for another.
     pub(super) fn list_laid_out(&mut self, cx: &mut Context<Self>) {
         let was_at_end = self.at_end();
-        self.list_measured = true;
-        if std::mem::take(&mut self.landing) && self.at_end() {
+        if std::mem::take(&mut self.measure_pending) {
+            self.list_measured = true;
+        }
+        if self.list_measured && std::mem::take(&mut self.landing) && self.at_end() {
             self.model.set_pinned_to_bottom(true);
             self.note_scroll_end(cx);
         }
@@ -50,6 +73,26 @@ impl TranscriptView {
             cx.defer(move |cx| {
                 view.update(cx, |_, cx| cx.notify()).ok();
             });
+        }
+    }
+
+    /// The shell's tick. The first tick that finds the width changed starts the quiet period.
+    /// Once the width has been still for `WIDTH_QUIET`, the rows are measured again, in the
+    /// next frame, unless a layout since the last change already measured them. The place is
+    /// projected either way.
+    pub fn settle_width(&mut self, now: DateTime<Utc>, cx: &mut Context<Self>) {
+        match self.width {
+            WidthState::Settled => {}
+            WidthState::Moving => self.width = WidthState::Quiet { since: now },
+            WidthState::Quiet { since } if now - since >= WIDTH_QUIET => {
+                self.width = WidthState::Settled;
+                if !self.list_measured {
+                    self.reset_list();
+                }
+                self.project_place();
+                cx.notify();
+            }
+            WidthState::Quiet { .. } => {}
         }
     }
 
@@ -102,10 +145,15 @@ impl TranscriptView {
 
     /// A move of this list (wheel, keys, find, link, transcript scrollbar). The move
     /// retires a pending restore, and the anchor and bottom pin are read back from
-    /// the list so they match where the reader now is.
+    /// the list so they match where the reader now is. While the rows are not measured the
+    /// list moved by heights that are not true, so the place is projected back instead.
     pub fn note_transcript_scroll(&mut self, cx: &mut Context<Self>) {
         self.pending_restore = None;
-        self.sync_scroll_from_list();
+        if self.list_measured {
+            self.sync_scroll_from_list();
+        } else {
+            self.project_place();
+        }
         self.note_scroll_end(cx);
     }
 
