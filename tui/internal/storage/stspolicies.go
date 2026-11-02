@@ -251,7 +251,8 @@ func (s *IniSTSStore) MergeEntries(unsaved, known map[string]STSEntry, clearKeys
 }
 
 // remove drops group key and merges the unsaved entries into the file it writes.
-// Nothing is written when the group is not there.
+// Nothing is written when the group is not there, and the status is StatusAbsent
+// so the caller does not take it for a write that landed.
 func (s *IniSTSStore) remove(key string, unsaved map[string]STSEntry) Status {
 	settings := OpenSTSSettings(s.path)
 	found := false
@@ -262,7 +263,7 @@ func (s *IniSTSStore) remove(key string, unsaved map[string]STSEntry) Status {
 		}
 	}
 	if !found {
-		return StatusWritten
+		return StatusAbsent
 	}
 	settings.RemoveGroup(key)
 	mergeUnsaved(settings, unsaved)

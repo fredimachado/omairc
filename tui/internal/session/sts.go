@@ -440,7 +440,7 @@ func (s *STSStore) persistLocked(host string, port uint16, durationSeconds, nowU
 		status = s.disk.Store(host, port, durationSeconds, nowUnix, unsaved)
 	}
 	err := stsPersistStatus(status)
-	if err == nil {
+	if status == storage.StatusWritten {
 		s.settleWrittenLocked(nowUnix)
 	}
 	return err

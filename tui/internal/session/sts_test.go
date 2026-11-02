@@ -1460,3 +1460,30 @@ func TestSessionWriteForAnotherHostDoesNotWriteBackYieldedPolicy(t *testing.T) {
 		t.Fatalf("the other host is written: %+v ok=%v", other, ok)
 	}
 }
+
+// TestSTSStoreClearOfAbsentHostKeepsUnwrittenPolicyUnsaved: a clear of a host the file
+// does not hold writes nothing, so it must not mark an unwritten policy for another
+// host as saved. The policy still answers after the file's own policy lapses, and the
+// next write for another host still carries it.
+func TestSTSStoreClearOfAbsentHostKeepsUnwrittenPolicyUnsaved(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix mode bits")
+	}
+	path := filepath.Join(t.TempDir(), "sts")
+	ours := stsOursOver3600(t, path, false)
+
+	if err := ours.Store("absent.example", 6697, 0, time.Unix(1, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	if cached, ok := ours.Lookup("irc.example", time.Unix(3700, 0)); !ok || cached.ExpiryEpochSeconds != 86400 {
+		t.Fatalf("the unwritten 86400 policy must still answer: %+v ok=%v", cached, ok)
+	}
+	if err := ours.Store("other.example", 6699, 60, time.Unix(3701, 0)); err != nil {
+		t.Fatal(err)
+	}
+	entry, ok := storage.NewIniSTSStore(path).Lookup("irc.example", 3702)
+	if !ok || entry.Port != 6697 || entry.ExpiryEpochSeconds != 86400 {
+		t.Fatalf("the next write for another host must carry the unwritten policy: %+v ok=%v", entry, ok)
+	}
+}

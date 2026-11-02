@@ -141,6 +141,20 @@ func TestIniSTSStoreLookupOrClearWithNothingStoredWritesNoFile(t *testing.T) {
 	}
 }
 
+func TestIniSTSStoreClearOfAbsentHostReportsNothingWritten(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sts")
+	store := NewIniSTSStore(path)
+	if status := store.Store("irc.example", 6697, 3600, 0, nil); status != StatusWritten {
+		t.Fatalf("store: %v", status)
+	}
+	if status := store.Clear("absent.example", nil); status == StatusWritten {
+		t.Fatal("a clear of a host the file does not hold writes nothing, so it must not report StatusWritten")
+	}
+	if status := store.Clear("irc.example", nil); status != StatusWritten {
+		t.Fatalf("a clear of a held host writes: %v", status)
+	}
+}
+
 func TestIniSTSStoreMalformedFileIsBackedUpAndNewPolicySurvives(t *testing.T) {
 	// client/src/storage/stspolicies.rs::a_malformed_file_is_backed_up_and_a_new_policy_survives
 	dir := t.TempDir()
