@@ -14,11 +14,12 @@ pub(super) struct PendingRestore {
     open_at_unread: bool,
 }
 
-/// How long the window's width must stay still before the rows are measured again. A drag
-/// changes the width every frame.
+/// How long the width must stay still after a change before the burst is over. A drag changes the
+/// width every frame, and its repeated changes wait for this before the rows are measured again.
 pub(super) const WIDTH_QUIET: TimeDelta = TimeDelta::milliseconds(150);
 
-/// Where the window's width is. The rows' heights are true only when it is `Settled`.
+/// Where the window's width is within a burst of changes. The first change of a burst measures
+/// its rows in the frame that sees it. Whether the rows are measured now is `list_measured`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum WidthState {
     /// No width change is waiting to settle.
@@ -38,9 +39,12 @@ impl TranscriptView {
     }
 
     /// The list's frame is about to lay out at `size`. A width change makes gpui drop every row
-    /// height in this frame, and rows it has not measured count as 0 px. Measuring every row
-    /// costs a full layout, so that waits for the width to settle (`settle_width`). Until then
-    /// the list shows the reader's place, and nothing reads its pixels.
+    /// height in this frame, and rows it has not measured count as 0 px. The first change of a
+    /// burst measures every row in this frame, so a lone change (the member panel, a channel
+    /// switch) leaves the list measured at once. A change that repeats one within the quiet
+    /// period (a drag) only drops the heights: a full layout for every frame of a drag is too
+    /// costly, so that waits for the width to settle (`settle_width`). Until then the list shows
+    /// the reader's place, and nothing reads its pixels.
     pub(super) fn list_sized(&mut self, size: Size<Pixels>) {
         let last = self.list_state.viewport_bounds().size;
         if last == size {
@@ -48,8 +52,11 @@ impl TranscriptView {
         }
         // Before the first layout there are no heights to drop.
         if last.width != size.width && last.width > px(0.) {
+            match self.width {
+                WidthState::Settled => self.reset_list(),
+                WidthState::Moving | WidthState::Quiet { .. } => self.list_measured = false,
+            }
             self.width = WidthState::Moving;
-            self.list_measured = false;
         }
         self.project_place();
     }

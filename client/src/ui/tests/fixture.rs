@@ -66,8 +66,8 @@ impl SeededShell<'_> {
         self.cx.run_until_parked();
     }
 
-    /// One frame at the new size. The width is not settled: the rows are not measured for it
-    /// until `settle_width`.
+    /// One frame at the new size. A change that starts a burst measures its rows in this frame. A
+    /// change that repeats one within the quiet period leaves them unmeasured until `settle_width`.
     pub fn resize(&mut self, width: f32, height: f32) {
         self.cx.simulate_resize(size(px(width), px(height)));
         self.settle();

@@ -314,7 +314,7 @@ fn the_chip_follows_the_layout_with_no_other_frame_to_help(cx: &mut gpui::TestAp
 }
 
 /// A line that wraps to several rows at the window's width, numbered so a test can find it.
-fn long_body(index: usize) -> String {
+pub(super) fn long_body(index: usize) -> String {
     format!("{}{index}", "words that wrap ".repeat(12))
 }
 
@@ -334,7 +334,9 @@ fn long_lines(ui: &mut SeededShell, count: usize) {
 }
 
 /// `steps` width changes in a row from `from` to `to`, one frame each, with no quiet period
-/// between them. Returns the most rows one of those frames laid out.
+/// between them. The first change is a lone change until the next one, so it measures every row
+/// (`a_drag_of_many_width_changes_lays_out_no_rows_until_it_settles`) and is not counted. Returns
+/// the most rows one of the later frames laid out.
 fn drag_between(ui: &mut SeededShell, from: f32, to: f32, steps: usize) -> usize {
     let mut most = 0;
     for step in 1..=steps {
@@ -343,7 +345,9 @@ fn drag_between(ui: &mut SeededShell, from: f32, to: f32, steps: usize) -> usize
             from + (to - from) * step as f32 / steps as f32,
             WINDOW_HEIGHT,
         );
-        most = most.max(ui.rows_rendered() - before);
+        if step > 1 {
+            most = most.max(ui.rows_rendered() - before);
+        }
     }
     most
 }
@@ -379,10 +383,19 @@ fn a_drag_of_many_width_changes_lays_out_no_rows_until_it_settles(cx: &mut gpui:
         let before = ui.rows_rendered();
         ui.resize(dragged_width(step), WINDOW_HEIGHT);
         let laid_out = ui.rows_rendered() - before;
-        assert!(
-            laid_out < SCREENFUL_ROWS,
-            "drag frame {step} laid out {laid_out} rows; only a screenful is laid out mid-drag"
-        );
+        if step == 1 {
+            // The first change of the drag is a lone change until the next one, so it measures
+            // every row in its frame.
+            assert!(
+                laid_out >= 2000,
+                "the first change measures every row at once: {laid_out} rows laid out"
+            );
+        } else {
+            assert!(
+                laid_out < SCREENFUL_ROWS,
+                "drag frame {step} laid out {laid_out} rows; only a screenful is laid out mid-drag"
+            );
+        }
     }
     let before = ui.rows_rendered();
     ui.settle_width();
