@@ -29,6 +29,7 @@ mod peers;
 mod persistence;
 mod persistence_closed;
 mod persistence_network_lists;
+mod persistence_sts;
 mod playback;
 mod readmarker;
 mod replies;

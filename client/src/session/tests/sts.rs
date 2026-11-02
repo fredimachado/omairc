@@ -3,6 +3,7 @@
 //! that role. The last two tests cross the file: a policy learned on one run applies after a
 //! restart, and networks on one manager share one cache.
 
+use std::fs;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -252,6 +253,24 @@ fn stopping_the_session_refreshes_the_expiry() {
 }
 
 #[test]
+fn a_stop_after_a_drop_does_not_rearm_a_lapsed_policy() {
+    let fx = Fixture::new(tls_config());
+    fx.connect_tls();
+    fx.inject(":server CAP omairc LS :sts=duration=60\r\n");
+    fx.clock.advance(Duration::from_secs(30));
+    fx.transport.remote_close();
+    fx.clock.advance(Duration::from_secs(70));
+
+    fx.session.stop();
+
+    assert_eq!(
+        fx.sts.lookup(HOST, fx.clock.now()),
+        None,
+        "the drop refreshed the policy to 90s, so a stop at 100s must not extend it"
+    );
+}
+
+#[test]
 fn networks_on_one_manager_share_the_policy_cache() {
     let manager = SessionManager::new(Rc::new(MemoryStsStore::default()));
     let clock = Rc::new(FakeClock::new(Utc.timestamp_opt(0, 0).single().unwrap()));
@@ -321,6 +340,79 @@ fn a_policy_learned_before_a_restart_applies_after_it() {
         "the saved policy forces TLS after a restart"
     );
     assert_eq!(second_transport.connected_port(), 6697);
+}
+
+#[test]
+fn two_sessions_on_one_file_keep_the_newer_policy_when_the_older_quits() {
+    let dir = TempDir::new("sts-two-writers");
+    let path = dir.path().join("sts");
+    let clock = Rc::new(FakeClock::new(Utc.timestamp_opt(0, 0).single().unwrap()));
+
+    let older_transport = Rc::new(LoopbackTransport::new());
+    let older = Session::new(
+        tls_config(),
+        older_transport.clone(),
+        clock.clone(),
+        Rc::new(IniStsStore::new(path.clone())),
+    );
+    older.start();
+    older_transport.complete_connect();
+    older_transport.inject_bytes(b":server CAP omairc LS :sts=duration=3600\r\n");
+
+    let newer_transport = Rc::new(LoopbackTransport::new());
+    let newer = Session::new(
+        tls_config(),
+        newer_transport.clone(),
+        clock.clone(),
+        Rc::new(IniStsStore::new(path.clone())),
+    );
+    newer.start();
+    newer_transport.complete_connect();
+    newer_transport.inject_bytes(b":server CAP omairc LS :sts=duration=60\r\n");
+
+    older.stop();
+    let kept = IniStsStore::new(path.clone())
+        .lookup(HOST, clock.now())
+        .expect("the newer policy is still valid");
+    assert_eq!(
+        kept.duration_seconds, 60,
+        "quitting the older client must not write its 3600s back"
+    );
+
+    clock.advance(Duration::from_secs(30));
+    newer.stop();
+    let refreshed = IniStsStore::new(path)
+        .lookup(HOST, clock.now())
+        .expect("the newer policy is refreshed on quit");
+    assert_eq!(refreshed.expiry_epoch_seconds, 90, "30s in plus 60s");
+}
+
+#[test]
+fn a_cached_policy_beside_junk_groups_upgrades_a_plaintext_profile() {
+    let dir = TempDir::new("sts-junk-session");
+    let path = dir.path().join("sts");
+    let clock = Rc::new(FakeClock::new(
+        Utc.timestamp_opt(1_700_000_000, 0).single().unwrap(),
+    ));
+    IniStsStore::new(path.clone()).store(HOST, 6697, 60, clock.now());
+    let mut text = fs::read_to_string(&path).expect("seeded");
+    text.push_str("[deadbeef]\nport=1\nduration=60\nexpiry=4102444800\n");
+    fs::write(&path, text).expect("append junk");
+
+    let transport = Rc::new(LoopbackTransport::new());
+    let session = Session::new(
+        plaintext_config(),
+        transport.clone(),
+        clock,
+        Rc::new(IniStsStore::new(path)),
+    );
+    session.start();
+
+    assert!(
+        transport.tls_requested(),
+        "the cached policy must force TLS beside junk groups"
+    );
+    assert_eq!(transport.connected_port(), 6697);
 }
 
 #[test]

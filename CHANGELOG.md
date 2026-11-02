@@ -77,6 +77,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Unicode placeholders are disabled.
 - A conversation left open overnight keeps Today and Yesterday day rules
   current after local midnight and after the clock zone changes.
+- Two clients sharing the `sts` policy cache no longer undo each other. A
+  client that disconnects or quits refreshes the expiry only of a policy whose
+  duration it still holds, so a shorter policy another client saved is kept.
+  Lookups and malformed-file recovery prefer the file's policy over a stale
+  in-memory one. A policy whose write failed, because the file is read-only or
+  malformed, stays in memory and wins lookups until a later write lands, or
+  until another client saves a different port or duration for that host or
+  clears it while that policy was live. Then the file answers first and the
+  policy stays in memory until it expires, so a clear never leaves the host
+  without a policy, and this client never writes it back. A missing,
+  unreadable, or damaged file does not drop it, and the next successful write
+  from this client saves it into the file. A lapsed policy another client saved
+  does not replace it. Clearing a host the file does not hold writes nothing
+  and does not mark any unsaved policy saved.
+- Ctrl+Q and closing the window on the desktop client stop every session before
+  it exits, as the terminal client does on quit, so each network refreshes its
+  STS expiry. Logout and SIGTERM still exit without it.
+- The `sts` cache keeps only real policies. A group whose name is not a host
+  key, or that has no valid port, duration, or expiry, is dropped on the next
+  write.
 
 ### Changed
 

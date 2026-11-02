@@ -253,6 +253,25 @@ func TestSessionStoppingRefreshesExpiry(t *testing.T) {
 	}
 }
 
+// TestSessionStopAfterDropDoesNotRearmLapsedPolicy.
+// client/src/session/tests/sts.rs::a_stop_after_a_drop_does_not_rearm_a_lapsed_policy.
+func TestSessionStopAfterDropDoesNotRearmLapsedPolicy(t *testing.T) {
+	config := sessionTestConfig(sessionTestNetworkID)
+	config.AutojoinChannels = nil
+	fixture := newSessionFixture(t, config)
+	fixture.connectTLS()
+	fixture.inject(":server CAP omairc LS :sts=duration=60\r\n")
+	fixture.clock.Advance(30 * time.Second)
+	fixture.transport.RemoteClose()
+	fixture.clock.Advance(70 * time.Second)
+
+	fixture.session.Stop()
+
+	if _, ok := fixture.session.sts.Lookup("irc.example", fixture.clock.Now()); ok {
+		t.Fatal("the drop refreshed the policy to 90s, so a stop at 100s must not extend it")
+	}
+}
+
 // TestSessionManagerNetworksSharePolicyCache.
 // client/src/session/tests/sts.rs::networks_on_one_manager_share_the_policy_cache.
 func TestSessionManagerNetworksSharePolicyCache(t *testing.T) {

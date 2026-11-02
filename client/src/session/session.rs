@@ -152,7 +152,8 @@ pub(crate) struct Core {
     pub(crate) capability_list_seen: bool,
     /// The STS advertisement a CAP LS carried, held until its last line (`pendingSTS`).
     pub(crate) pending_sts: Option<StsAdvertisement>,
-    /// The duration last advertised over TLS, re-stored on disconnect (`stsDuration`).
+    /// The duration last advertised over TLS. The first refresh after the connection ends takes
+    /// it (`stsDuration`).
     pub(crate) sts_duration: Option<i64>,
     /// The STS policy cache, shared with every session of the manager (`sts`).
     pub(crate) sts: Rc<dyn StsStore>,

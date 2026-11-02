@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -110,7 +111,7 @@ func (s *IniSTSStore) Lookup(host string, nowUnix int64) (STSEntry, bool) {
 		if ProbeSettingsIni(s.path) == IniProbeMalformed {
 			return STSEntry{}, false
 		}
-		s.remove(STSGroupKey(host))
+		s.remove(STSGroupKey(host), nil)
 		return STSEntry{}, false
 	}
 	return entry, true
@@ -144,12 +145,14 @@ func (s *IniSTSStore) Inspect(host string, nowUnix int64) (entry STSEntry, prese
 
 // Store caches port for durationSeconds from nowUnix. A zero duration clears
 // the host. An empty host or a zero port is ignored. It mirrors
-// IniStsStore::store. A malformed file is backed up and rewritten from
-// parseable entries plus the new policy; an unwritable file is left alone
-// (StatusAccessError). The caller keeps any in-memory policy on failure.
-func (s *IniSTSStore) Store(host string, port uint16, durationSeconds, nowUnix int64) Status {
+// IniStsStore::store. Every unsaved entry is merged into the file too, since
+// the caller has settled it against the file already. A malformed file is
+// backed up and rewritten from parseable entries plus the new policy; an
+// unwritable file is left alone (StatusAccessError). The caller keeps any
+// in-memory policy on failure.
+func (s *IniSTSStore) Store(host string, port uint16, durationSeconds, nowUnix int64, unsaved map[string]STSEntry) Status {
 	if durationSeconds == 0 {
-		return s.Clear(host)
+		return s.Clear(host, unsaved)
 	}
 	key := STSGroupKey(host)
 	if key == "" || port < 1 || s.path == "" {
@@ -162,23 +165,69 @@ func (s *IniSTSStore) Store(host string, port uint16, durationSeconds, nowUnix i
 		DurationSeconds:    durationSeconds,
 		ExpiryEpochSeconds: expiry,
 	})
+	mergeUnsaved(settings, unsaved)
 	return persistSTSSettings(settings, s.path)
 }
 
-// Clear drops the policy for host, if any. It mirrors IniStsStore::clear.
-func (s *IniSTSStore) Clear(host string) Status {
+// STSView is what the file held for one host when it was read. It mirrors
+// FileView in client/src/storage/stspolicies.rs. Unreadable and Unknown say
+// nothing about the host. Unreadable leaves a recorded baseline as it was, since
+// the file may be unchanged. Unknown ends the baseline: the file is missing or
+// malformed, or its group for the host is present but is not a valid policy.
+type STSView int
+
+const (
+	// STSViewUnreadable: the file exists but cannot be read, or is a directory.
+	STSViewUnreadable STSView = iota
+	// STSViewUnknown: the file is missing or malformed, or the host's group is
+	// present but is not a valid policy, with no valid policy for the host.
+	STSViewUnknown
+	// STSViewClear: a well-formed file with no group for the host.
+	STSViewClear
+	// STSViewPolicy: the host's valid policy group, lapsed or not.
+	STSViewPolicy
+)
+
+// Group reads host's policy group as the file holds it, lapsed or not. The
+// returned entry is set for STSViewPolicy. It mirrors file_view in
+// client/src/storage/stspolicies.rs.
+func (s *IniSTSStore) Group(host string) (STSEntry, STSView) {
+	key := STSGroupKey(host)
+	if key == "" || s.path == "" {
+		return STSEntry{}, STSViewUnknown
+	}
+	probe := ProbeSettingsIni(s.path)
+	if probe == IniProbeUnreadable {
+		return STSEntry{}, STSViewUnreadable
+	}
+	settings := OpenSTSSettings(s.path)
+	if entry, ok := readSTSPolicy(settings, key); ok {
+		return entry, STSViewPolicy
+	}
+	_, statErr := os.Stat(s.path)
+	if probe == IniProbeOK && statErr == nil && !slices.Contains(settings.ChildGroups(""), key) {
+		return STSEntry{}, STSViewClear
+	}
+	return STSEntry{}, STSViewUnknown
+}
+
+// Clear drops the policy for host, if any, and merges the unsaved entries into
+// the file it writes. It mirrors IniStsStore::clear.
+func (s *IniSTSStore) Clear(host string, unsaved map[string]STSEntry) Status {
 	key := STSGroupKey(host)
 	if key == "" || s.path == "" {
 		return StatusWritten
 	}
-	return s.remove(key)
+	return s.remove(key, unsaved)
 }
 
-// MergeEntries writes every entry (keyed by STS group key) into the file,
-// removing clearKeys first. Parseable on-disk groups are kept and merged with
-// the same replace rule as Store. Used by session.STSStore so a
-// malformed-file recovery includes every in-memory policy.
-func (s *IniSTSStore) MergeEntries(entries map[string]STSEntry, clearKeys []string, nowUnix int64) Status {
+// MergeEntries writes the in-memory policies into the file, removing clearKeys
+// first. Parseable on-disk groups are kept. Every unsaved entry lands: its write
+// failed, so the file cannot hold it. A known entry lands only where the file has
+// no live policy for its key, since a live one is newer than memory. Used by
+// session.STSStore so a malformed-file recovery keeps every in-memory policy.
+// It mirrors merge_memory_into_settings in stspolicies.rs.
+func (s *IniSTSStore) MergeEntries(unsaved, known map[string]STSEntry, clearKeys []string, nowUnix int64) Status {
 	if s == nil || s.path == "" {
 		return StatusWritten
 	}
@@ -188,8 +237,12 @@ func (s *IniSTSStore) MergeEntries(entries map[string]STSEntry, clearKeys []stri
 			settings.RemoveGroup(key)
 		}
 	}
-	for key, entry := range entries {
+	mergeUnsaved(settings, unsaved)
+	for key, entry := range known {
 		if key == "" || entry.Port < 1 {
+			continue
+		}
+		if disk, ok := readSTSPolicy(settings, key); ok && disk.ExpiryEpochSeconds > nowUnix {
 			continue
 		}
 		mergeSTSPolicy(settings, key, entry)
@@ -197,8 +250,10 @@ func (s *IniSTSStore) MergeEntries(entries map[string]STSEntry, clearKeys []stri
 	return persistSTSSettings(settings, s.path)
 }
 
-// remove drops group key. Nothing is written when the group is not there.
-func (s *IniSTSStore) remove(key string) Status {
+// remove drops group key and merges the unsaved entries into the file it writes.
+// Nothing is written when the group is not there, and the status is StatusAbsent
+// so the caller does not take it for a write that landed.
+func (s *IniSTSStore) remove(key string, unsaved map[string]STSEntry) Status {
 	settings := OpenSTSSettings(s.path)
 	found := false
 	for _, group := range settings.ChildGroups("") {
@@ -208,10 +263,38 @@ func (s *IniSTSStore) remove(key string) Status {
 		}
 	}
 	if !found {
-		return StatusWritten
+		return StatusAbsent
 	}
 	settings.RemoveGroup(key)
+	mergeUnsaved(settings, unsaved)
 	return persistSTSSettings(settings, s.path)
+}
+
+// mergeUnsaved writes every unsaved entry into settings over the file's group for
+// its key. The caller has settled each one against the file, so each one is kept.
+func mergeUnsaved(settings *Settings, unsaved map[string]STSEntry) {
+	for key, entry := range unsaved {
+		if key != "" && entry.Port >= 1 {
+			mergeSTSPolicy(settings, key, entry)
+		}
+	}
+}
+
+// readSTSPolicy reads one group as a policy: a port in 1..65535, and a duration
+// and expiry of at least one second. It reports false for a group that is
+// missing or malformed. It mirrors `read_policy` in stspolicies.rs.
+func readSTSPolicy(settings *Settings, key string) (STSEntry, bool) {
+	port := settings.Uint(key, stsPortKey, 0)
+	duration := settings.Int64(key, stsDurationKey, 0)
+	expiry := settings.Int64(key, stsExpiryKey, 0)
+	if port < 1 || port > 65535 || duration < 1 || expiry < 1 {
+		return STSEntry{}, false
+	}
+	return STSEntry{
+		Port:               uint16(port),
+		DurationSeconds:    duration,
+		ExpiryEpochSeconds: expiry,
+	}, true
 }
 
 // mergeSTSPolicy writes incoming as the current policy for key. Per IRCv3 STS,
@@ -226,7 +309,10 @@ func mergeSTSPolicy(settings *Settings, key string, incoming STSEntry) {
 // persistSTSSettings writes settings to path. On a malformed file, writes a
 // clean temp file, hard-links a backup, then renames the temp over sts. A
 // failure at any step leaves sts untouched. Access errors leave the file alone.
+// Every write first drops the groups that are not policies, so the file keeps
+// only real ones.
 func persistSTSSettings(settings *Settings, path string) Status {
+	dropInvalidSTSGroups(settings)
 	switch settings.WriteBlocked() {
 	case StatusAccessError:
 		return StatusAccessError
@@ -242,6 +328,17 @@ func persistSTSSettings(settings *Settings, path string) Status {
 		return StatusWritten
 	default:
 		return settings.Sync()
+	}
+}
+
+// dropInvalidSTSGroups removes every group that is not a policy: a name
+// STSGroupKey could not return, or a port, duration, or expiry that is missing
+// or out of range. It mirrors drop_invalid_groups in stspolicies.rs.
+func dropInvalidSTSGroups(settings *Settings) {
+	for _, group := range settings.ChildGroups("") {
+		if _, ok := readSTSPolicy(settings, group); !ok || !IsSTSGroupKey(group) {
+			settings.RemoveGroup(group)
+		}
 	}
 }
 
@@ -413,6 +510,21 @@ func STSGroupKey(host string) string {
 	}
 	sum := sha256.Sum256([]byte(folded))
 	return hex.EncodeToString(sum[:])
+}
+
+// IsSTSGroupKey reports whether key is a name STSGroupKey can return: 64
+// lowercase hex digits. It mirrors is_sts_group_key in session/sts.rs.
+func IsSTSGroupKey(key string) bool {
+	if len(key) != 64 {
+		return false
+	}
+	for i := 0; i < len(key); i++ {
+		c := key[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func stsSaturatingExpiry(nowUnix, durationSeconds int64) int64 {

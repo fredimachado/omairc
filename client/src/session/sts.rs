@@ -37,6 +37,11 @@ pub trait StsStore {
     fn lookup(&self, host: &str, now: DateTime<Utc>) -> Option<StsCached>;
     /// Caches `port` for `duration_seconds` from `now`. A zero duration clears the host.
     fn store(&self, host: &str, port: u16, duration_seconds: i64, now: DateTime<Utc>);
+    /// Extends the expiry of `host`'s policy to `now` plus `duration_seconds`, for a connection
+    /// that closes holding that duration. It writes only when the cache still holds `host` with
+    /// that same duration: a policy another client replaced or cleared is left alone, and a
+    /// missing one is not recreated. An expired policy with the duration is extended.
+    fn refresh(&self, host: &str, duration_seconds: i64, now: DateTime<Utc>);
     /// Drops the policy for `host`, if any.
     fn clear(&self, host: &str);
 }
@@ -104,6 +109,15 @@ pub fn sts_group_key(host: &str) -> Option<String> {
     Some(digest.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
+/// Whether `key` is a name `sts_group_key` can return: 64 lowercase hex digits. A cache group
+/// under any other name cannot be a policy.
+pub fn is_sts_group_key(key: &str) -> bool {
+    key.len() == 64
+        && key
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
 /// The policy cache that keeps what it is given for the life of the process
 /// (`Backing::Ephemeral`). The Go store (`STSStore`) works the same way.
 #[derive(Debug, Default)]
@@ -140,6 +154,17 @@ impl StsStore for MemoryStsStore {
             expiry_epoch_seconds: now.timestamp().saturating_add(duration_seconds),
         };
         self.entries.borrow_mut().insert(key, cached);
+    }
+
+    fn refresh(&self, host: &str, duration_seconds: i64, now: DateTime<Utc>) {
+        let Some(key) = sts_group_key(host) else {
+            return;
+        };
+        if let Some(cached) = self.entries.borrow_mut().get_mut(&key) {
+            if cached.duration_seconds == duration_seconds {
+                cached.expiry_epoch_seconds = now.timestamp().saturating_add(duration_seconds);
+            }
+        }
     }
 
     fn clear(&self, host: &str) {
@@ -249,6 +274,15 @@ mod tests {
             sts_group_key("  IRC.Example \t"),
             sts_group_key("irc.example")
         );
+    }
+
+    #[test]
+    fn a_group_key_is_64_lowercase_hex() {
+        let key = sts_group_key("irc.example").expect("host");
+        assert!(is_sts_group_key(&key));
+        assert!(!is_sts_group_key("deadbeef"));
+        assert!(!is_sts_group_key(&key.to_uppercase()));
+        assert!(!is_sts_group_key(&format!("{key}0")));
     }
 
     #[test]

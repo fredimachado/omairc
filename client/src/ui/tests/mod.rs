@@ -4,6 +4,7 @@
 
 mod fixture;
 mod layout;
+mod quit;
 mod scroll_place;
 mod scroll_restore;
 mod sheets;

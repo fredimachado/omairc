@@ -256,6 +256,14 @@ impl Shell {
             })
             .collect();
 
+        // Ctrl+Q and closing the window stop the sessions the way the TUI does after Run returns,
+        // so each network refreshes its STS expiry on the way out. Logout and SIGTERM skip this.
+        cx.on_app_quit(|shell: &mut Shell, _| {
+            shell.controller.shutdown();
+            async {}
+        })
+        .detach();
+
         let mut shell = Self {
             controller,
             net,
