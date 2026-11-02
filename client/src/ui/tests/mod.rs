@@ -5,6 +5,10 @@
 mod fixture;
 mod layout;
 mod quit;
+mod scroll_place;
+mod scroll_restore;
 mod sheets;
 mod transcript;
 mod typing;
+mod wait_sends;
+mod width_changes;

@@ -5,7 +5,9 @@ use std::collections::HashMap;
 use chrono::{TimeZone, Utc};
 
 use crate::irc::event::MsgId;
+use crate::irc::pref::{PrefName, PrefValue};
 use crate::irc::world::{Message, MessageKind, Origin};
+use crate::model::transcript::RowKind;
 use crate::ui::transcript::view::ConversationLines;
 
 use super::fixture::{self, OMARCHY, WINDOW_HEIGHT, WINDOW_WIDTH};
@@ -237,13 +239,8 @@ fn history_splice_keeps_the_reader_on_the_same_message(cx: &mut gpui::TestAppCon
     ui.settle();
     assert!(!ui.at_end());
 
-    let anchor_body = ui.shell.read_with(ui.cx, |shell, cx| {
-        let top = shell.transcript.read(cx).logical_scroll_top();
-        shell.transcript.read(cx).rows()[top.item_ix]
-            .body
-            .plain
-            .clone()
-    });
+    let anchor = place_msgid(&ui);
+    assert_eq!(anchor, "id-0", "the page-ups reach the first line");
 
     let mut combined: Vec<Message> = (0..9)
         .map(|i| tagged_chat("anna", &format!("old {i}"), i as i64 + 1, &format!("old-{i}")))
@@ -272,14 +269,16 @@ fn history_splice_keeps_the_reader_on_the_same_message(cx: &mut gpui::TestAppCon
     });
     ui.settle();
 
-    let body = ui.shell.read_with(ui.cx, |shell, cx| {
-        let top = shell.transcript.read(cx).logical_scroll_top();
-        shell.transcript.read(cx).rows()[top.item_ix]
-            .body
-            .plain
-            .clone()
-    });
-    assert_eq!(body, anchor_body, "splice must keep the reader on the same message");
+    assert_eq!(
+        place_msgid(&ui),
+        anchor,
+        "splice must keep the reader on the same message"
+    );
+    assert_eq!(
+        top_body(&ui),
+        "line 0",
+        "same-day lines spliced under the day separator do not take the reader up with it"
+    );
 }
 
 #[gpui::test]
@@ -330,13 +329,8 @@ fn history_prepend_keeps_anchor_message(cx: &mut gpui::TestAppContext) {
     ui.settle();
     assert!(!ui.at_end(), "reader must be detached before the prepend");
 
-    let anchor_body = ui.shell.read_with(ui.cx, |shell, cx| {
-        let top = shell.transcript.read(cx).logical_scroll_top();
-        shell.transcript.read(cx).rows()[top.item_ix]
-            .body
-            .plain
-            .clone()
-    });
+    let anchor = place_msgid(&ui);
+    assert_eq!(anchor, "anna-0", "the page-ups reach the first line");
 
     let mut combined: Vec<Message> = (0..4)
         .map(|i| {
@@ -372,15 +366,10 @@ fn history_prepend_keeps_anchor_message(cx: &mut gpui::TestAppContext) {
     });
     ui.settle();
 
-    let body = ui.shell.read_with(ui.cx, |shell, cx| {
-        let rows = shell.transcript.read(cx).rows();
-        let top = shell.transcript.read(cx).logical_scroll_top();
-        let ix = top.item_ix.min(rows.len().saturating_sub(1));
-        rows[ix].body.plain.clone()
-    });
     assert_eq!(
-        body, anchor_body,
-        "prepend must keep the anchored message at the top"
+        place_msgid(&ui),
+        anchor,
+        "prepend must keep the reader on the anchored message"
     );
 }
 
@@ -438,6 +427,29 @@ fn capped_trim_keeps_detached_place(cx: &mut gpui::TestAppContext) {
     }
 }
 
+/// The msgid of the line the reader's place is on.
+fn place_msgid(ui: &fixture::SeededShell) -> String {
+    ui.shell.read_with(ui.cx, |shell, cx| {
+        shell
+            .transcript
+            .read(cx)
+            .capture_scroll_place()
+            .to_stored()
+            .msg_id
+    })
+}
+
+/// The text of the row at the top of the transcript.
+fn top_body(ui: &fixture::SeededShell) -> String {
+    ui.shell.read_with(ui.cx, |shell, cx| {
+        let transcript = shell.transcript.read(cx);
+        transcript.rows()[transcript.logical_scroll_top().item_ix]
+            .body
+            .plain
+            .clone()
+    })
+}
+
 fn tagged_chat(author: &str, body: &str, sequence: i64, msgid: &str) -> Message {
     Message {
         kind: MessageKind::Message,
@@ -452,4 +464,172 @@ fn tagged_chat(author: &str, body: &str, sequence: i64, msgid: &str) -> Message 
         sequence,
         only_visible_to_you: false,
     }
+}
+
+/// Sixty lines from a direct message nobody has open, so they arrive unread under a mark.
+fn unread_direct_lines(ui: &mut fixture::SeededShell, nick: &str, count: usize) {
+    ui.select("#omarchy");
+    for index in 0..count {
+        ui.inject(OMARCHY, &format!(":{nick}!u@h PRIVMSG fred :line {index}"));
+    }
+}
+
+#[gpui::test]
+fn opening_a_direct_message_on_its_mark_saves_the_mark_line_not_the_end(
+    cx: &mut gpui::TestAppContext,
+) {
+    let mut ui = fixture::open(cx);
+    unread_direct_lines(&mut ui, "newbie", 60);
+    ui.select("newbie");
+    assert_eq!(
+        ui.top_kind(),
+        Some(RowKind::UnreadMark),
+        "the reader opens on the New messages mark"
+    );
+    assert!(!ui.at_end(), "sixty lines below the mark are not the end");
+    assert!(
+        !ui.reported_end(),
+        "a reader short of the end does not report it, so the read marker stays put"
+    );
+    ui.shell
+        .update(ui.cx, |shell, cx| shell.refresh_shown_conversation(cx));
+    ui.settle();
+    assert_eq!(
+        ui.top_kind(),
+        Some(RowKind::UnreadMark),
+        "a refresh with nothing new keeps the reader on the mark"
+    );
+    ui.inject(OMARCHY, ":newbie!u@h PRIVMSG fred :one more");
+    ui.settle();
+    assert_eq!(
+        ui.top_kind(),
+        Some(RowKind::Message),
+        "the moved mark does not take the reader with it"
+    );
+    assert!(
+        !ui.at_end(),
+        "a new line moves the mark down but not the reader on the first unread line"
+    );
+    assert!(
+        !ui.reported_end(),
+        "the reader is still short of the end, so the read marker stays put"
+    );
+    ui.shell
+        .update(ui.cx, |shell, cx| shell.remember_open_transcript(cx));
+    let saved = ui.saved_place("newbie");
+    assert_eq!(
+        saved.body, "line 0",
+        "the place is the first unread line under the mark, not the last line"
+    );
+    assert!(
+        !saved.follow_end,
+        "a place off the end does not save follow-end"
+    );
+}
+
+#[gpui::test]
+fn a_mark_within_a_screen_of_the_end_follows_the_end(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    unread_direct_lines(&mut ui, "newbie", 2);
+    ui.select("newbie");
+    assert!(
+        ui.at_end(),
+        "two lines below the mark fit on screen, so the list shows its end"
+    );
+    assert!(
+        ui.reported_end(),
+        "the reader sees the end, so the read marker advances"
+    );
+    ui.shell
+        .update(ui.cx, |shell, cx| shell.remember_open_transcript(cx));
+    assert!(
+        ui.saved_place("newbie").follow_end,
+        "a reader at the end saves follow-end"
+    );
+}
+
+#[gpui::test]
+fn a_conversation_with_no_mark_opens_at_the_end(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    ui.select("#help");
+    assert_ne!(
+        ui.top_kind(),
+        Some(RowKind::UnreadMark),
+        "#help has no unread lines to mark"
+    );
+    assert!(ui.at_end(), "a conversation with no mark rests on the end");
+    assert!(ui.reported_end(), "the reader at the end reports it");
+    ui.shell
+        .update(ui.cx, |shell, cx| shell.remember_open_transcript(cx));
+    assert!(
+        ui.saved_place("#help").follow_end,
+        "the end is saved as follow-end"
+    );
+}
+
+#[gpui::test]
+fn with_unread_off_a_direct_message_opens_at_the_end(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    ui.select("#omarchy");
+    ui.shell.update(ui.cx, |shell, _| {
+        assert!(shell
+            .controller
+            .set_preference(PrefName::Unread, PrefValue::Toggle(false)));
+    });
+    unread_direct_lines(&mut ui, "newbie", 60);
+    ui.select("newbie");
+    assert_eq!(
+        ui.top_kind(),
+        None,
+        "with the unread preference off a conversation opens at the end, not on its mark"
+    );
+    assert!(ui.at_end());
+    assert!(ui.reported_end(), "the reader at the end reports it");
+    ui.shell
+        .update(ui.cx, |shell, cx| shell.remember_open_transcript(cx));
+    assert!(ui.saved_place("newbie").follow_end);
+}
+
+#[gpui::test]
+fn a_saved_end_with_nothing_new_reopens_at_the_end(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    unread_direct_lines(&mut ui, "newbie", 60);
+    ui.select("newbie");
+    ui.shell.update(ui.cx, |shell, cx| {
+        shell.transcript.update(cx, |t, cx| t.scroll_to_bottom(cx));
+    });
+    ui.select("#omarchy");
+    ui.select("newbie");
+    assert_eq!(
+        ui.top_kind(),
+        None,
+        "a saved end with nothing new reopens at the end; reselecting a read conversation clears its mark"
+    );
+    assert!(ui.at_end());
+    assert!(ui.reported_end(), "the reader at the end reports it");
+    assert!(ui.saved_place("newbie").follow_end);
+}
+
+#[gpui::test]
+fn a_saved_end_reopens_on_the_mark_of_lines_that_arrived_while_away(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    unread_direct_lines(&mut ui, "newbie", 5);
+    ui.select("newbie");
+    ui.shell.update(ui.cx, |shell, cx| {
+        shell.transcript.update(cx, |t, cx| t.scroll_to_bottom(cx));
+    });
+    ui.settle();
+    // Leaving at the end saves the end; sixty lines then arrive while the reader is away.
+    unread_direct_lines(&mut ui, "newbie", 60);
+    assert!(ui.saved_place("newbie").follow_end);
+    ui.select("newbie");
+    assert_eq!(
+        ui.top_kind(),
+        Some(RowKind::UnreadMark),
+        "a saved end reopens on the New messages mark, as main does"
+    );
+    assert!(
+        !ui.reported_end(),
+        "the reader on the mark does not report the end, so the new lines stay unread"
+    );
 }

@@ -30,7 +30,7 @@ use crate::session::session::Session;
 use super::controller::Controller;
 use super::listmode::ChannelModeWrapper;
 use super::monitorcoordinator::MonitorOutcome;
-use super::send::Outgoing;
+use super::send::QuietSend;
 use super::stores::{ignore_nick_is_usable, mute_target_is_usable};
 
 /// Which list a `/ignore`, `/mute`, `/highlight` or `/monitor` family verb edits or reads.
@@ -42,14 +42,6 @@ enum StoreVerb {
     Remove,
     /// `/ignored`, `/muted`, `/highlights` or `/monitored`.
     List,
-}
-
-/// The two quiet-send verbs. `/msg` is PRIVMSG to a nick only; `/notice` is NOTICE to any target
-/// (`IrcCommandDispatcher::QuietSend`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum QuietSend {
-    Msg,
-    Notice,
 }
 
 /// A verb's words rejoined, so a verb that splits its argument (`Words`) reads the same text
@@ -183,24 +175,11 @@ impl Controller {
     }
 
     /// Whether the selected conversation is a channel the user is in (`ChannelJoined`).
-    fn channel_is_joined(&self, key: &ConversationKey) -> bool {
+    pub(super) fn channel_is_joined(&self, key: &ConversationKey) -> bool {
         self.reducer
             .find(key)
             .and_then(|conversation| conversation.channel.as_ref())
             .is_some_and(|channel| channel.joined)
-    }
-
-    /// Whether the selection is a channel that is not joined (`/close` and chat refuse it).
-    fn selected_channel_left(&self) -> bool {
-        match self.selected.as_ref() {
-            Some(key) => match self.reducer.find(key) {
-                Some(conversation) if conversation.is_channel() => {
-                    !self.channel_is_joined(key)
-                }
-                _ => false,
-            },
-            None => false,
-        }
     }
 
     /// The routing table (`IrcCommandDispatcher::dispatch`). Each arm is one verb family.
@@ -570,55 +549,6 @@ impl Controller {
         self.send_selected_message(&words.rest)
     }
 
-    /// `/msg <nick> <text>` and `/notice <target> <text>` (`dispatchQuietSend`). The line goes out
-    /// without opening or selecting a conversation: `/msg` never invents a direct message
-    /// (`QuietSend`). The echo shows only where a conversation already exists, and a PRIVMSG
-    /// counts as chat activity, so the user is brought back from away.
-    fn dispatch_quiet_send(&mut self, kind: QuietSend, argument: &str, surface: ComposerSurface) -> CommandOutcome {
-        let words = Words::split(argument);
-        let target = words.first.clone();
-        let body = words.rest.clone();
-        if target.is_empty() || body.is_empty() {
-            return CommandOutcome::Refused;
-        }
-        let network = self.surface_network(surface);
-        if network.is_empty() {
-            return refused_or_wrong_scope(surface);
-        }
-        if kind == QuietSend::Msg && self.reducer.server_features(&network).is_channel(&target) {
-            return CommandOutcome::Refused;
-        }
-        let Some(active) = self.registered_session(&network) else {
-            return CommandOutcome::NotConnected;
-        };
-
-        let sent = match kind {
-            QuietSend::Msg => active.send_privmsg(&target, &body),
-            QuietSend::Notice => active.send_notice(&target, &body),
-        };
-        if !sent {
-            return CommandOutcome::Refused;
-        }
-
-        self.note_nick_delivery(&network, &target);
-        if kind == QuietSend::Msg {
-            // A private message the user sent is a query worth reopening (`rememberOpenDirect`).
-            self.remember_open_direct(&network, &target);
-        }
-        let key = self.reducer.conversation_key(&network, &target);
-        self.reducer
-            .ensure_conversation(&key, &target, IrcConversationCause::QuietSend);
-        let outgoing = match kind {
-            QuietSend::Msg => Outgoing::Say,
-            QuietSend::Notice => Outgoing::Notice,
-        };
-        self.echo_if_present(&active, &target, &body, outgoing);
-        if kind == QuietSend::Msg {
-            self.note_chat_sent(&network);
-        }
-        CommandOutcome::Sent
-    }
-
     /// `/ns`, `/cs` and `/znc`: a `/msg` to the service (`dispatchServiceMsg`). The service nick
     /// is the target, so the line stays a quiet send and never opens a conversation.
     fn dispatch_service_msg(&mut self, service: &str, text: &str, surface: ComposerSurface) -> CommandOutcome {
@@ -643,54 +573,6 @@ impl Controller {
             return CommandOutcome::NotConnected;
         };
         outcome_of(active.send_raw(line))
-    }
-
-    /// `/me <text>` (`dispatch`'s action branch). A CTCP ACTION to the selected target. A channel
-    /// you have left refuses it. A sent action is chat activity, and it clears the typing hint.
-    fn dispatch_action(&mut self, text: &str) -> CommandOutcome {
-        let Some(active) = self.selected_session() else {
-            return CommandOutcome::WrongScope;
-        };
-        if self.selected.is_none() {
-            return CommandOutcome::WrongScope;
-        }
-        if self.selected_channel_left() {
-            return CommandOutcome::Refused;
-        }
-        let network = active.network_id();
-        let target = self.selected_target().to_owned();
-        if !active.send_action(&target, text) {
-            return CommandOutcome::Refused;
-        }
-        self.note_nick_delivery(&network, &target);
-        self.echo_if_present(&active, &target, text, Outgoing::Action);
-        self.typing_target = None;
-        self.note_chat_sent(&network);
-        CommandOutcome::Sent
-    }
-
-    /// Plain text to the selected conversation (`sendSelectedMessageOutcome`). The message
-    /// echoes as the server's own line when `echo-message` is on, and locally otherwise. The
-    /// target becomes a direct message the user has now spoken in.
-    pub(super) fn send_selected_message(&mut self, text: &str) -> CommandOutcome {
-        let Some(active) = self.selected_session() else {
-            return CommandOutcome::WrongScope;
-        };
-        if self.selected.is_none() {
-            return CommandOutcome::WrongScope;
-        }
-        if self.selected_channel_left() {
-            return CommandOutcome::Refused;
-        }
-        let network = active.network_id();
-        let target = self.selected_target().to_owned();
-        if !active.send_privmsg(&target, text) {
-            return CommandOutcome::Refused;
-        }
-        self.note_nick_delivery(&network, &target);
-        self.echo_if_present(&active, &target, text, Outgoing::Say);
-        self.note_chat_sent(&network);
-        CommandOutcome::Sent
     }
 
     /// `/list [mask]`. Opens the channel list on the surface's network. It writes `LIST`, or shows

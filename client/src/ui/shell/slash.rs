@@ -142,6 +142,7 @@ impl Shell {
         if accepted {
             self.finish_command(&text, cx);
         }
+        // The line's accepted target retires a waiting place there, whatever the verb.
         self.drain_notifications(cx);
         if matches!(command, Command::List(_)) && self.controller.channel_list().open {
             let network_id = self.controller.channel_list().network_id.clone();

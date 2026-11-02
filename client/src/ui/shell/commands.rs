@@ -457,8 +457,8 @@ impl Shell {
             t.scroll_page(down, half, cx);
             cx.notify();
         });
-        let at_end = self.transcript.read(cx).at_end();
-        self.report_transcript_viewport(at_end, window, cx);
+        let follow_end = self.transcript.read(cx).reports_follow_end();
+        self.report_transcript_viewport(follow_end, window, cx);
     }
 
     /// Ctrl+Home (top) and Ctrl+End (bottom) of the transcript.

@@ -7,6 +7,8 @@
 //! constructors name, the NAMES-syncing filter, and the union the reducer uses
 //! to combine them.
 
+use crate::irc::event::ConversationKey;
+
 /// One surface an event dirtied (`IrcViewNotify`, one flag at a time).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ViewNotify {
@@ -31,6 +33,9 @@ pub enum ViewNotify {
     Status,
     /// The session inbox gained, lost or reordered a row.
     Inbox,
+    /// A chat line the session accepted for this conversation. The shell retires a waiting
+    /// place the line is to, whatever sent it; no repaint follows from it.
+    Sent(ConversationKey),
 }
 
 /// The surfaces a `001` welcome dirties (`ViewNotifyResetAll`).

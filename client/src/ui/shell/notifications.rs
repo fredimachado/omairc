@@ -1,5 +1,6 @@
 //! Desktop notification drain and activation from a toast or D-Bus action.
 
+use chrono::TimeDelta;
 use gpui::{Context, Window};
 
 use crate::controller::notify::Arrival;
@@ -7,7 +8,12 @@ use crate::desktop::notifier::Activation;
 use crate::irc::plaintext::plain_irc_text;
 use crate::irc::viewnotify::ViewNotify;
 use crate::model::title::note_title_mark;
+use crate::model::ConversationRef;
 use crate::ui::shell::Shell;
+
+/// How long a saved place waits for its history while a request is in flight. A request that
+/// never settles (a FAIL that names no target, a silent server) gives the wait up at this.
+pub(crate) const RESTORE_WAIT: TimeDelta = TimeDelta::seconds(12);
 
 impl Shell {
     pub fn drain_notifications(&mut self, cx: &mut Context<Self>) {
@@ -42,6 +48,7 @@ impl Shell {
             }
         }
         let surfaces = self.controller.take_notifications();
+        self.retire_wait_for_sent_lines(&surfaces, cx);
         let mut connect_synced = false;
         for network_id in self.controller.take_background_profile_syncs() {
             if let Some(profile) = self.controller.profile(&network_id) {
@@ -72,9 +79,44 @@ impl Shell {
         } else if refresh_typing {
             self.refresh_shown_typing(cx);
         }
+        // A restore waiting on history is given up once the shown conversation's request has
+        // settled and its line never arrived, so the place lands as it does with no history.
+        // A request that never settles gives the wait up at its deadline the same way.
+        let waiting = self.transcript.read(cx).has_pending_restore();
+        let since = *self.restore_wait_since.get_or_insert_with(|| self.controller.now());
+        let expired = self.controller.now() - since >= RESTORE_WAIT;
+        if !waiting {
+            self.restore_wait_since = None;
+        } else if expired || !self.controller.transcript_history_awaited() {
+            self.restore_wait_since = None;
+            self.transcript.update(cx, |t, cx| t.give_up_pending_restore(cx));
+            let follow_end = self.transcript.read(cx).reports_follow_end();
+            self.report_transcript_viewport_from_shell(follow_end, cx);
+        }
         if !surfaces.is_empty() {
             cx.notify();
         }
+    }
+
+    /// A line the controller accepted to the conversation the transcript shows retires a
+    /// waiting place, so the live page is what gets saved. The target of each accepted line
+    /// (`ViewNotify::Sent`) decides it, whatever sent it (composer, `/me`, `/msg`, `/notice`,
+    /// or the CLI). A line to another target leaves the wait, and so does any line while
+    /// Status shows. The viewport is reported as it was for a composer line.
+    fn retire_wait_for_sent_lines(&mut self, surfaces: &[ViewNotify], cx: &mut Context<Self>) {
+        if self.shown.status.is_some() {
+            return;
+        }
+        let shown = &self.shown.conversation;
+        let retires = surfaces.iter().any(|surface| {
+            matches!(surface, ViewNotify::Sent(key) if ConversationRef::from_key(key) == *shown)
+        });
+        if !retires {
+            return;
+        }
+        self.transcript.update(cx, |t, _| t.clear_pending_restore());
+        let follow_end = self.transcript.read(cx).reports_follow_end();
+        self.report_transcript_viewport_from_shell(follow_end, cx);
     }
 
     /// Raises the window and reveals the conversation a notification named.

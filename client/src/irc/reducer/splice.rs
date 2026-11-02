@@ -58,7 +58,7 @@ pub(super) fn peek_splice_index(conv: &ConversationState) -> Option<usize> {
 }
 
 /// Where a batch lands, dropping an anchor that no longer names a row
-/// (`takeSpliceIndex`). A usable anchor stays until a line lands.
+/// (`takeSpliceIndex`). A usable anchor stays, so each page of a chain lands at it.
 pub(super) fn take_splice_index(conv: &mut ConversationState) -> Option<usize> {
     let len = conv.messages.len();
     let trimmed = conv.trimmed as i64;
@@ -280,17 +280,15 @@ pub(super) fn splice_history(
                 persist_message(facts, conv, message);
             }
         }
-        // Consume drops the anchor only once a replay line has landed. Keep
-        // still names the join line, shifted forward by what landed.
-        if let Some(channel) = conv.channel.as_mut() {
-            match anchor_use {
-                AnchorUse::Consume if !older_page => channel.history_anchor = None,
-                AnchorUse::Consume | AnchorUse::Keep => {
-                    if let Some(anchor) = channel.history_anchor.as_mut() {
-                        anchor.sequence += run_len;
-                    }
-                }
-            }
+        // Every replayed line is older than the join line, so the anchor keeps naming
+        // the join line, shifted forward by what landed. The next page of an AFTER chain
+        // lands in front of it too.
+        if let Some(anchor) = conv
+            .channel
+            .as_mut()
+            .and_then(|channel| channel.history_anchor.as_mut())
+        {
+            anchor.sequence += run_len;
         }
         if at != previous_size {
             conv.splice_epoch += 1;

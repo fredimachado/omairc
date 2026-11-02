@@ -2,13 +2,17 @@
 //! `TestAppContext`, fixed window size, and helpers for settle, inject, select
 //! scroll, and chords. Every view test that needs a live shell uses this.
 
+use std::time::Duration;
+
 use gpui::{
     px, size, Entity, Focusable, ListOffset, MouseButton, Modifiers, Point, TestAppContext,
     VisualTestContext,
 };
 
 use crate::model::theme::Theme;
+use crate::model::transcript::RowKind;
 use crate::model::{ConversationRef, Style};
+use crate::storage::scrollplace::ScrollPlace;
 use crate::ui::input::bind_input_keys;
 use crate::ui::shell::{bind_shell_keys, Shell};
 use crate::util::OmaircStyleGlobal;
@@ -18,6 +22,10 @@ pub const OMARCHY: &str = "omarchy";
 /// Fixed window used by every shell view test so list layout is comparable.
 pub const WINDOW_WIDTH: f32 = 1024.;
 pub const WINDOW_HEIGHT: f32 = 768.;
+
+/// How far the clock moves for a width to count as settled: longer than the transcript's quiet
+/// period, so the tick after it settles the width.
+const WIDTH_SETTLE: Duration = Duration::from_secs(1);
 
 /// The seeded demo shell in a window, ready for layout and input.
 pub struct SeededShell<'a> {
@@ -47,7 +55,7 @@ pub fn open(cx: &mut TestAppContext) -> SeededShell<'_> {
         shell.update(cx, |shell, cx| shell.focus_on_launch(window, cx));
     });
     let mut seeded = SeededShell { shell, cx: vcx };
-    seeded.settle();
+    seeded.settle_width();
     seeded
 }
 
@@ -58,9 +66,29 @@ impl SeededShell<'_> {
         self.cx.run_until_parked();
     }
 
+    /// One frame at the new size. A change that starts a burst measures its rows in this frame. A
+    /// change that repeats one within the quiet period leaves them unmeasured until `settle_width`.
     pub fn resize(&mut self, width: f32, height: f32) {
         self.cx.simulate_resize(size(px(width), px(height)));
         self.settle();
+    }
+
+    /// The width has stopped moving: the quiet period passes, and the shell's tick settles it, so
+    /// every row is measured. The first tick is the one that sees the last change.
+    pub fn settle_width(&mut self) {
+        self.shell.update(self.cx, |shell, cx| {
+            shell.tick(cx);
+            shell.controller.advance_test_clock(WIDTH_SETTLE);
+            shell.tick(cx);
+        });
+        self.settle();
+    }
+
+    /// Rows the transcript's list has asked to draw so far, summed over frames.
+    pub fn rows_rendered(&self) -> usize {
+        self.shell.read_with(self.cx, |shell, cx| {
+            shell.transcript.read(cx).rows_rendered()
+        })
     }
 
     /// Selects a conversation on `OMARCHY` and refreshes the transcript.
@@ -130,6 +158,68 @@ impl SeededShell<'_> {
         self.shell.read_with(self.cx, |shell, cx| {
             shell.transcript.read(cx).logical_scroll_top()
         })
+    }
+
+    /// Whether the transcript last reported that it follows the end.
+    pub fn reported_end(&self) -> bool {
+        self.shell
+            .read_with(self.cx, |shell, _| shell.controller.transcript_follow_end())
+    }
+
+    /// The place the open transcript's conversation `key` was saved at, as the settings file keeps it.
+    pub fn saved_place(&self, key: &str) -> ScrollPlace {
+        self.shell
+            .read_with(self.cx, |shell, _| shell.controller.place_for(OMARCHY, key))
+            .expect("a place is saved")
+    }
+
+    /// Jumps to the first row whose text is `body`, as a find or link match does, and renders.
+    pub fn jump_to(&mut self, body: &str) {
+        self.shell.update(self.cx, |shell, cx| {
+            shell.transcript.update(cx, |transcript, cx| {
+                let rows = transcript.rows();
+                let row = rows.iter().position(|row| row.body.plain == body);
+                transcript.scroll_to_row(row.expect("the row is shown"), cx);
+            });
+        });
+        self.settle();
+    }
+
+    /// Scrolls the transcript with the wheel over its middle. Positive pixels move up.
+    pub fn wheel(&mut self, pixels: f32) {
+        let centre = gpui::point(px(WINDOW_WIDTH / 2.), px(WINDOW_HEIGHT / 2.));
+        self.cx.simulate_event(gpui::ScrollWheelEvent {
+            position: centre,
+            delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.), px(pixels))),
+            modifiers: Modifiers::default(),
+            touch_phase: gpui::TouchPhase::Moved,
+        });
+        self.settle();
+    }
+
+    /// Saves the open conversation's place, as leaving it does, and returns it as stored.
+    pub fn save_place(&mut self, key: &str) -> ScrollPlace {
+        self.shell
+            .update(self.cx, |shell, cx| shell.remember_open_transcript(cx));
+        self.saved_place(key)
+    }
+
+    /// The kind of the row at the top of the transcript, or `None` when the list is at its end.
+    pub fn top_kind(&self) -> Option<RowKind> {
+        self.shell.read_with(self.cx, |shell, cx| {
+            let transcript = shell.transcript.read(cx);
+            transcript
+                .rows()
+                .get(transcript.logical_scroll_top().item_ix)
+                .map(|row| row.kind)
+        })
+    }
+
+    pub fn page_down(&mut self) {
+        self.shell.update(self.cx, |shell, cx| {
+            shell.transcript.update(cx, |t, cx| t.scroll_page(true, false, cx));
+        });
+        self.settle();
     }
 
     pub fn page_up(&mut self) {

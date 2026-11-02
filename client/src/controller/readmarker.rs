@@ -70,6 +70,12 @@ impl Controller {
         self.sync_read_marker_for_selection();
     }
 
+    /// The bottom-pin bit the shell last reported, which gates the read marker.
+    #[cfg(test)]
+    pub fn transcript_follow_end(&self) -> bool {
+        self.transcript_follow_end
+    }
+
     /// Applies a server read marker for one target (`ReadMarkerReceived`). An empty
     /// `target` clears every awaiting get on the network (FAIL without a target).
     pub fn read_marker_received(
