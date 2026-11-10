@@ -100,6 +100,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Desktop modals share one contrasting dim (bright over dark themes, dark over
+  light) at alpha 0.3 instead of Qt Material's 0.6. About and Connect use the
+  same scrim as Jump, Link, Nick, Inbox, Shortcuts, and the channel sheets.
 - Config saves keep an existing `omairc.conf` file mode instead of forcing
   0600 on every write. A new config file is still created owner-only (0600).
 - Config saves skip the disk write when settings are unchanged, so

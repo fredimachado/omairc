@@ -94,27 +94,18 @@ impl Style {
         )
     }
 
-    pub fn overlay_veil_color(&self) -> Color {
-        let veil = mix_colors(
-            self.page_color(),
-            self.ink_color(),
-            if self.dark_mode() { 0.18 } else { 0.12 },
-        );
-        veil.with_alpha(0.5)
-    }
-
-    /// The dim behind a modal popup (Jump, Link, Nick, Inbox, Shortcuts).
-    /// Qt's Material style draws `Material.backgroundDimColor`, read from Qt
-    /// 6.11.2 with `qml.exe`: `#303030` at alpha 0.6 for the light theme and
-    /// `#fafafa` at alpha 0.6 for the dark one. The Qt window picks the theme
-    /// from `darkMode` (`client/src/ui/shell`), so this follows `dark_mode`.
+    /// The dim behind every modal (Jump, Link, Nick, Inbox, Shortcuts, About,
+    /// Connect, channel list / open). Matches Qt Material's contrast scrim
+    /// (`#303030` in light mode, `#fafafa` in dark) so a dark card stays
+    /// readable, at alpha 0.3 so more of the window shows through than
+    /// Material's 0.6.
     pub fn popup_dim_color(&self) -> Color {
         let base = if self.dark_mode() {
             Color::from_rgb8(250, 250, 250)
         } else {
             Color::from_rgb8(48, 48, 48)
         };
-        base.with_alpha(0.6)
+        base.with_alpha(0.3)
     }
 
     /// The eight hues for nicks and network icons under the configured palette.
@@ -187,9 +178,6 @@ mod tests {
         assert_eq!(style.hover_color().to_hex(), "#262626");
         assert_eq!(style.divider_color().to_hex(), "#2d2d2d");
         assert_eq!(style.muted_color().to_hex(), "#838383");
-        let veil = style.overlay_veil_color();
-        assert_eq!(veil.to_rgb8(), (56, 56, 56));
-        assert!((veil.a - 0.5).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -204,23 +192,19 @@ mod tests {
         assert_eq!(style.hover_color().to_hex(), "#eeefef");
         assert_eq!(style.divider_color().to_hex(), "#e7e7e7");
         assert_eq!(style.muted_color().to_hex(), "#979898");
-        let veil = style.overlay_veil_color();
-        assert_eq!(veil.to_rgb8(), (228, 229, 229));
-        assert!((veil.a - 0.5).abs() < f32::EPSILON);
     }
 
     #[test]
-    fn popup_dim_matches_qt_material_background_dim() {
-        // Values read from Qt 6.11.2's Material style (see popup_dim_color).
+    fn popup_dim_contrasts_theme_with_extra_transparency() {
         let dark = Style::new(Theme::defaults_dark(), 1.0);
         assert_eq!(dark.popup_dim_color().to_rgb8(), (250, 250, 250));
-        assert!((dark.popup_dim_color().a - 0.6).abs() < 1e-6);
+        assert!((dark.popup_dim_color().a - 0.3).abs() < 1e-6);
 
         let mut theme = Theme::defaults_dark();
         theme.dark_mode = false;
         let light = Style::new(theme, 1.0);
         assert_eq!(light.popup_dim_color().to_rgb8(), (48, 48, 48));
-        assert!((light.popup_dim_color().a - 0.6).abs() < 1e-6);
+        assert!((light.popup_dim_color().a - 0.3).abs() < 1e-6);
     }
 
     #[test]
