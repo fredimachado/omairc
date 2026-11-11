@@ -97,6 +97,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `sts` cache keeps only real policies. A group whose name is not a host
   key, or that has no valid port, duration, or expiry, is dropped on the next
   write.
+- Pasting multi-line text copied on Windows (CRLF) into the desktop composer no
+  longer leaves the message unsendable. Each line break becomes one space.
 
 ### Changed
 

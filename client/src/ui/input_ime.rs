@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use gpui::{Bounds, Context, EntityInputHandler, Pixels, Point, UTF16Selection, Window};
 
-use crate::model::text_edit::snap_grapheme;
+use crate::model::text_edit::{single_line_text, snap_grapheme};
 
 use super::SingleLineInput;
 
@@ -120,8 +120,10 @@ impl EntityInputHandler for SingleLineInput {
             .unwrap_or_else(|| self.selected_range.clone());
 
         // Typed and pasted text is cut at a character boundary to the send limit.
-        let keep = self.fit_len(&self.content[..range.start], new_text, &self.content[range.end..]);
-        let new_text = &new_text[..keep];
+        // Line breaks become spaces first, so the limit counts the text that is kept.
+        let text = single_line_text(new_text);
+        let keep = self.fit_len(&self.content[..range.start], &text, &self.content[range.end..]);
+        let new_text = &text[..keep];
         if range.is_empty() && new_text.is_empty() {
             return;
         }
@@ -213,9 +215,11 @@ impl EntityInputHandler for SingleLineInput {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::irc::serverfeatures::IrcServerFeatures;
+    use crate::model::byte_budget::SendLimit;
     use gpui::{
-        AppContext as _, Bounds, EntityInputHandler, ShapedLine, TestAppContext, TextRun, point,
-        px, size,
+        AppContext as _, Bounds, Entity, EntityInputHandler, ShapedLine, TestAppContext, TextRun,
+        VisualTestContext, point, px, size,
     };
 
     fn shape_line(window: &mut Window, text: &str) -> ShapedLine {
@@ -277,6 +281,54 @@ mod tests {
         assert!(
             near_end > near_start,
             "IME point mapping must follow local x through scroll (got start={near_start}, end={near_end})"
+        );
+    }
+
+    /// Pastes `text` into an empty `input` through `replace_text_in_range`, the
+    /// path a paste takes, and returns the text the field then holds.
+    fn paste_into_empty(
+        cxw: &mut VisualTestContext,
+        input: &Entity<SingleLineInput>,
+        text: &str,
+    ) -> String {
+        cxw.update(|window, cx| {
+            input.update(cx, |input, cx| {
+                input.set_text("");
+                EntityInputHandler::replace_text_in_range(input, None, text, window, cx);
+            });
+        });
+        cxw.update(|_, cx| input.read(cx).text().to_string())
+    }
+
+    #[gpui::test]
+    fn a_crlf_paste_counts_one_space_against_the_send_limit(cx: &mut TestAppContext) {
+        // #omarchy takes 492 bytes. The CRLF folds to one space, so 492 bytes of
+        // text fit whole. Cutting before the fold would drop a character.
+        let cxw = cx.add_empty_window();
+        let input = cxw.update(|_, cx| {
+            let focus = cx.focus_handle();
+            cx.new(|_| SingleLineInput::new("", "test", focus))
+        });
+        let features = IrcServerFeatures::new();
+        cxw.update(|_, cx| {
+            input.update(cx, |input, cx| {
+                input.set_send_limit(Some(SendLimit::new(Some("#omarchy"), &features)), cx);
+            });
+        });
+
+        let a = "a".repeat(246);
+        let fits = format!("{a}\r\n{}", "b".repeat(245));
+        assert_eq!(fits.len(), 493, "one byte over the budget before folding");
+        assert_eq!(
+            paste_into_empty(cxw, &input, &fits),
+            format!("{a} {}", "b".repeat(245))
+        );
+
+        let one_over = format!("{a}\r\n{}", "b".repeat(246));
+        assert_eq!(
+            paste_into_empty(cxw, &input, &one_over),
+            format!("{a} {}", "b".repeat(245)),
+            "the cut lands on the budget, after the fold"
         );
     }
 }

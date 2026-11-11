@@ -42,7 +42,7 @@ impl SingleLineInput {
             let offset = self.index_for_mouse_position(event.position);
             self.move_to(offset, cx);
             if let Some(text) = cx.read_from_primary().and_then(|item| item.text()) {
-                self.replace_text_in_range(None, &text.replace('\n', " "), window, cx);
+                self.replace_text_in_range(None, &text, window, cx);
             }
         }
         #[cfg(not(target_os = "linux"))]
