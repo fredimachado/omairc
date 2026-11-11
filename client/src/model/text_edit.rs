@@ -4,6 +4,7 @@
 //! Every offset is a byte offset into the text, and every result lands on a
 //! grapheme boundary.
 
+use std::borrow::Cow;
 use std::ops::Range;
 
 use unicode_segmentation::GraphemeCursor;
@@ -229,6 +230,17 @@ pub fn selection_text(content: &str, range: Range<usize>) -> &str {
     }
 }
 
+/// `text` with each line break made one space, so a single-line field never
+/// holds a carriage return or line feed. `\r\n`, a lone `\r` and a lone `\n`
+/// each become one space. Text with no line break is borrowed unchanged.
+pub fn single_line_text(text: &str) -> Cow<'_, str> {
+    if !text.contains(['\r', '\n']) {
+        return Cow::Borrowed(text);
+    }
+    // CRLF goes first, so it becomes one space rather than two.
+    Cow::Owned(text.replace("\r\n", " ").replace(['\r', '\n'], " "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -429,5 +441,32 @@ mod tests {
         assert_eq!(selection_text("hello", 0..5), "hello");
         assert_eq!(selection_text("aéx", 1..3), "é");
         assert_eq!(selection_text("hello", 3..99), "");
+    }
+
+    #[test]
+    fn a_crlf_is_one_space() {
+        assert_eq!(single_line_text("a\r\nb"), "a b");
+        assert_eq!(single_line_text("\r\n"), " ");
+    }
+
+    #[test]
+    fn a_lone_cr_or_lf_is_one_space() {
+        assert_eq!(single_line_text("a\rb"), "a b");
+        assert_eq!(single_line_text("a\nb"), "a b");
+    }
+
+    #[test]
+    fn each_break_in_a_mixed_run_is_one_space() {
+        assert_eq!(single_line_text("a\r\nb\nc\rd"), "a b c d");
+        assert_eq!(single_line_text("a\r\n\nb"), "a  b");
+        assert_eq!(single_line_text("a\n\r\nb"), "a  b");
+    }
+
+    #[test]
+    fn text_without_a_break_is_borrowed_unchanged() {
+        let text = "héllo wörld";
+        let folded = single_line_text(text);
+        assert_eq!(folded, text);
+        assert!(matches!(folded, Cow::Borrowed(_)));
     }
 }

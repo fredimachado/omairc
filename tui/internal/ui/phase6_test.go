@@ -475,6 +475,24 @@ func TestComposerPasteHonorsAdvertisedLineLength(t *testing.T) {
 	}
 }
 
+// A CRLF paste, the line ending Windows apps put on the clipboard, must leave no
+// carriage return or line feed in the composer. bubbles turns each break into one
+// space, so CRLF becomes two spaces here. The desktop client folds it to one.
+func TestComposerPasteCRLFLeavesNoLineBreak(t *testing.T) {
+	m := seededModel(t)
+	m.composer.SetValue("")
+	m.composer.CursorEnd()
+	updated, _ := m.Update(tea.PasteMsg{Content: "a\r\nb"})
+	m = updated.(*Model)
+	got := m.composer.Value()
+	if strings.ContainsAny(got, "\r\n") {
+		t.Fatalf("composer after CRLF paste = %q, want no line breaks", got)
+	}
+	if want := "a  b"; got != want {
+		t.Fatalf("composer after CRLF paste = %q, want %q", got, want)
+	}
+}
+
 func TestFilledMeStopsAtOneFrame(t *testing.T) {
 	m := seededModel(t)
 	if got := m.ctrl.ComposerByteBudgetFor("/me "); got != 487 {

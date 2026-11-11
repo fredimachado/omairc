@@ -506,7 +506,7 @@ impl SingleLineInput {
 
     fn paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-            self.replace_text_in_range(None, &text.replace('\n', " "), window, cx);
+            self.replace_text_in_range(None, &text, window, cx);
         }
     }
 
