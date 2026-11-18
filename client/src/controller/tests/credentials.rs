@@ -1,7 +1,7 @@
 //! Credential invariants: Qt-compatible key names, unreadable secrets, removal ordering
 //! and live-session reconciliation after Apply.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
@@ -24,11 +24,15 @@ use crate::storage::Backing;
 pub(super) const NET: &str = "net";
 
 #[derive(Clone, Default)]
-pub(super) struct Loopbacks(pub(super) Rc<RefCell<BTreeMap<String, Rc<LoopbackTransport>>>>);
+pub(super) struct Loopbacks(
+    Rc<RefCell<BTreeMap<String, Rc<LoopbackTransport>>>>,
+    Rc<Cell<usize>>,
+);
 
 impl TransportFactory for Loopbacks {
     fn open(&self, network_id: &str) -> Result<Rc<dyn Transport>, String> {
         let transport = Rc::new(LoopbackTransport::new());
+        self.1.set(self.1.get() + 1);
         self.0
             .borrow_mut()
             .insert(network_id.to_owned(), transport.clone());
@@ -37,6 +41,11 @@ impl TransportFactory for Loopbacks {
 }
 
 impl Loopbacks {
+    /// How many transports the factory has opened, over all networks.
+    pub(super) fn opened(&self) -> usize {
+        self.1.get()
+    }
+
     pub(super) fn get(&self, network_id: &str) -> Rc<LoopbackTransport> {
         self.0.borrow()[network_id].clone()
     }

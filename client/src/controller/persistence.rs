@@ -35,7 +35,7 @@ use crate::storage::settings::Status;
 use crate::storage::Backing;
 use crate::util::Secret;
 
-use super::controller::Controller;
+use super::controller::{Controller, KeychainWait};
 use super::transports::TransportFactory;
 
 /// The secrets an Apply hands over. `None` leaves a slot as it is; an empty `Secret` removes it.
@@ -101,12 +101,21 @@ impl Controller {
             if self.profile_credentials_loading(&profile)
                 || !self.startup_connect_allowed(&profile)
             {
-                self.pending_session_registrations
-                    .insert(profile.network_id.clone());
+                self.await_keychain(&profile.network_id, KeychainWait::Registration);
             } else {
                 self.register_session(&profile);
             }
         }
+    }
+
+    /// Records that `network_id`'s session work waits on a keychain read. A network has one
+    /// wait, and a startup connect is never downgraded to a registration.
+    pub(super) fn await_keychain(&mut self, network_id: &str, wait: KeychainWait) {
+        let held = self
+            .keychain_waits
+            .entry(network_id.to_owned())
+            .or_insert(wait);
+        *held = (*held).max(wait);
     }
 
     /// Drains in-flight keychain reads and finishes session registration or startup connects
@@ -129,43 +138,35 @@ impl Controller {
                 self.register_session(&profile);
             }
         }
-        let waiting: Vec<String> = self
-            .pending_session_registrations
-            .iter()
-            .filter(|network_id| {
-                self.profiles.get(*network_id).is_some_and(|profile| {
-                    !self.profile_credentials_loading(profile)
-                        && self.startup_connect_allowed(profile)
-                })
-            })
-            .cloned()
-            .collect();
+        let waiting: Vec<String> = self.keychain_waits.keys().cloned().collect();
         for network_id in waiting {
-            self.pending_session_registrations.remove(&network_id);
-            if let Some(profile) = self.profiles.get(&network_id).cloned() {
-                self.register_session(&profile);
-            }
-        }
-        let startup: Vec<String> = self.pending_startup_connects.iter().cloned().collect();
-        for network_id in startup {
+            // A start below polls again, and may have settled this network already.
+            let Some(wait) = self.keychain_waits.get(&network_id).copied() else {
+                continue;
+            };
             let profile = match self.profiles.get(&network_id) {
                 Some(profile) if profile.is_complete() => profile.clone(),
                 _ => {
-                    self.pending_startup_connects.remove(&network_id);
+                    self.keychain_waits.remove(&network_id);
                     continue;
                 }
             };
             if self.profile_credentials_loading(&profile) {
                 continue;
             }
-            self.pending_startup_connects.remove(&network_id);
-            if self.startup_connect_allowed(&profile) {
-                let _ = self.start(&network_id);
-            } else {
-                self.refuse_with(
+            self.keychain_waits.remove(&network_id);
+            let allowed = self.startup_connect_allowed(&profile);
+            match wait {
+                KeychainWait::StartupConnect if allowed => {
+                    let _ = self.start(&network_id);
+                }
+                KeychainWait::StartupConnect => self.refuse_with(
                     &network_id,
                     "The saved password could not be read from secure storage.",
-                );
+                ),
+                // The registration pass above registers it once it is allowed.
+                KeychainWait::Registration if allowed => self.register_session(&profile),
+                KeychainWait::Registration => {}
             }
         }
     }
@@ -184,7 +185,7 @@ impl Controller {
         for id in ids {
             let profile = self.profiles.get(&id).expect("filtered above");
             if self.profile_credentials_loading(profile) {
-                self.pending_startup_connects.insert(id);
+                self.await_keychain(&id, KeychainWait::StartupConnect);
                 continue;
             }
             if !self.startup_connect_allowed(profile) {
@@ -275,7 +276,7 @@ impl Controller {
             _ => return self.refuse_start(network_id),
         };
         if self.profile_credentials_loading(&profile) {
-            self.pending_startup_connects.insert(network_id.to_owned());
+            self.await_keychain(network_id, KeychainWait::StartupConnect);
             return false;
         }
         if !self.startup_connect_allowed(&profile) {

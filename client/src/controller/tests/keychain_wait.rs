@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::controller::controller::Controller;
+use crate::controller::controller::{Controller, KeychainWait};
 use crate::controller::persistence::SecretEdits;
 use crate::storage::credentialstore::{
     read_slot, CredentialKey, CredentialState, CredentialStore, DeferringCredentialStore,
@@ -206,14 +206,10 @@ fn poll_credential_reads_clears_a_failed_startup_connect() {
         Controller::with_backing(clock(), Box::new(loopbacks), Backing::Ephemeral);
     controller.credentials = store;
     controller.profiles.insert(NET.to_owned(), profile);
-    controller
-        .pending_session_registrations
-        .insert(NET.to_owned());
+    controller.await_keychain(NET, KeychainWait::Registration);
     assert_eq!(controller.activate_startup(), 0, "read still in flight");
     assert!(
-        controller
-            .pending_session_registrations
-            .contains(NET),
+        controller.keychain_waits.contains_key(NET),
         "load_stored leaves the network pending until credentials settle"
     );
     assert_eq!(
@@ -268,9 +264,7 @@ fn poll_credential_reads_starts_a_startup_connect_after_a_deferred_read() {
         Controller::with_backing(clock(), Box::new(loopbacks.clone()), Backing::Ephemeral);
     controller.credentials = store;
     controller.profiles.insert(NET.to_owned(), profile.clone());
-    controller
-        .pending_session_registrations
-        .insert(NET.to_owned());
+    controller.await_keychain(NET, KeychainWait::Registration);
     assert_eq!(controller.activate_startup(), 0, "read still in flight");
     assert_eq!(
         controller.pending_startup_connect_ids(),
@@ -486,12 +480,8 @@ fn poll_credential_reads_refuses_two_failed_startup_connects() {
     controller.credentials = store;
     controller.profiles.insert(net_a.to_owned(), profile_a);
     controller.profiles.insert(net_b.to_owned(), profile_b);
-    controller
-        .pending_session_registrations
-        .insert(net_a.to_owned());
-    controller
-        .pending_session_registrations
-        .insert(net_b.to_owned());
+    controller.await_keychain(net_a, KeychainWait::Registration);
+    controller.await_keychain(net_b, KeychainWait::Registration);
     assert_eq!(controller.activate_startup(), 0, "reads still in flight");
     let mut pending = controller.pending_startup_connect_ids();
     pending.sort();
@@ -558,14 +548,12 @@ fn a_network_waiting_on_a_keychain_read_neither_registers_nor_connects() {
         Controller::with_backing(clock(), Box::new(loopbacks.clone()), Backing::Ephemeral);
     controller.credentials = store;
     controller.profiles.insert(NET.to_owned(), profile);
-    controller
-        .pending_session_registrations
-        .insert(NET.to_owned());
+    controller.await_keychain(NET, KeychainWait::Registration);
     assert_eq!(controller.activate_startup(), 0, "read still in flight");
     for _ in 0..5 {
         controller.poll_credential_reads();
         assert!(controller.session(NET).is_none(), "nothing registers yet");
-        assert!(loopbacks.0.borrow().is_empty(), "no transport was opened");
+        assert_eq!(loopbacks.opened(), 0, "no transport was opened");
         assert_eq!(controller.last_error_for(NET), None, "nothing was refused");
         thread::sleep(Duration::from_millis(5));
     }
@@ -575,9 +563,119 @@ fn a_network_waiting_on_a_keychain_read_neither_registers_nor_connects() {
         thread::sleep(Duration::from_millis(5));
     }
     assert!(controller.session(NET).is_some(), "a settled read runs");
+    assert_eq!(loopbacks.opened(), 1, "the session was built once");
+}
+
+/// A controller whose password read for `complete_profile` answers after `delay`: with the
+/// secret held when `readable`, or with a timeout.
+fn slow_read_controller(delay: Duration, readable: bool) -> (Controller, Loopbacks) {
+    let loopbacks = Loopbacks::default();
+    let profile = complete_profile();
+    let secrets = Arc::new(Mutex::new(MemoryCredentialStore::default()));
+    if readable {
+        let key = CredentialKey::for_profile(&profile, PURPOSE_PASSWORD);
+        secrets.lock().expect("lock").write(&key, "hunter2");
+    }
+    let store = DeferringCredentialStore::new(
+        Box::new(SlowMemoryStore {
+            secrets: Arc::clone(&secrets),
+            delay,
+            pending: PendingRemovals::default(),
+        }),
+        move |key| {
+            thread::sleep(delay);
+            if readable {
+                secrets.lock().expect("lock").read(key)
+            } else {
+                Err("timed out".to_owned())
+            }
+        },
+    );
+    let mut controller =
+        Controller::with_backing(clock(), Box::new(loopbacks.clone()), Backing::Ephemeral);
+    controller.credentials = store;
+    controller.profiles.insert(NET.to_owned(), profile);
+    (controller, loopbacks)
+}
+
+fn settle(controller: &mut Controller) {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !controller.keychain_waits.is_empty() && Instant::now() < deadline {
+        controller.poll_credential_reads();
+        thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn a_registration_and_a_startup_connect_merge_to_one_wait() {
+    let mut controller = Controller::new(clock());
+    controller.await_keychain(NET, KeychainWait::Registration);
+    controller.await_keychain(NET, KeychainWait::StartupConnect);
+    assert_eq!(controller.keychain_waits.len(), 1, "one wait per network");
     assert_eq!(
-        loopbacks.0.borrow().len(),
-        1,
-        "the session was built once"
+        controller.keychain_waits.get(NET),
+        Some(&KeychainWait::StartupConnect)
+    );
+
+    let mut other = Controller::new(clock());
+    other.await_keychain(NET, KeychainWait::StartupConnect);
+    other.await_keychain(NET, KeychainWait::Registration);
+    assert_eq!(
+        other.keychain_waits.get(NET),
+        Some(&KeychainWait::StartupConnect),
+        "a startup connect is never downgraded to a registration"
+    );
+    assert_eq!(other.pending_startup_connect_ids(), vec![NET.to_owned()]);
+}
+
+#[test]
+fn start_while_the_read_is_loading_does_not_downgrade_the_wait() {
+    let (mut controller, loopbacks) =
+        slow_read_controller(Duration::from_millis(300), true);
+    controller.await_keychain(NET, KeychainWait::Registration);
+    assert!(!controller.start(NET), "the read is still in flight");
+    assert_eq!(
+        controller.keychain_waits.get(NET),
+        Some(&KeychainWait::StartupConnect)
+    );
+    controller.await_keychain(NET, KeychainWait::Registration);
+    assert_eq!(
+        controller.keychain_waits.get(NET),
+        Some(&KeychainWait::StartupConnect)
+    );
+    assert!(controller.session(NET).is_none());
+    assert_eq!(loopbacks.opened(), 0);
+    settle(&mut controller);
+    assert!(controller.session(NET).is_some(), "the settled read starts it");
+    assert_eq!(loopbacks.opened(), 1, "built once, not per queue");
+}
+
+#[test]
+fn a_settled_registration_wait_registers_without_connecting() {
+    let (mut controller, loopbacks) =
+        slow_read_controller(Duration::from_millis(300), true);
+    controller.await_keychain(NET, KeychainWait::Registration);
+    controller.poll_credential_reads();
+    assert!(controller.session(NET).is_none(), "the read is in flight");
+    settle(&mut controller);
+    assert!(controller.keychain_waits.is_empty());
+    assert!(controller.session(NET).is_some());
+    assert_eq!(loopbacks.opened(), 1);
+    assert_eq!(controller.last_error_for(NET), None);
+}
+
+#[test]
+fn an_unreadable_registration_wait_is_dropped_without_a_refusal() {
+    let (mut controller, loopbacks) =
+        slow_read_controller(Duration::from_millis(100), false);
+    controller.await_keychain(NET, KeychainWait::Registration);
+    settle(&mut controller);
+    assert!(controller.keychain_waits.is_empty(), "the wait is gone");
+    assert!(controller.session(NET).is_none());
+    assert_eq!(loopbacks.opened(), 0);
+    assert_eq!(
+        controller.last_error_for(NET),
+        None,
+        "only a startup connect says the password could not be read"
     );
 }

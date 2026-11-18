@@ -62,6 +62,18 @@ use super::transports::TransportFactory;
 
 pub use super::error::ControllerError;
 
+/// What a network's session work is waiting for while its keychain read is in flight
+/// (desktop only). A network has one wait, and the kinds merge upwards, so the two paths
+/// cannot both fire when the read settles.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum KeychainWait {
+    /// Only the session registration from `load_stored` waits.
+    Registration,
+    /// A startup connect (`activate_startup` or `start_profile`) waits. It registers too, so
+    /// it wins over [`Self::Registration`] and is never downgraded.
+    StartupConnect,
+}
+
 /// The controller. The UI thread owns it; it is not `Send`.
 pub struct Controller {
     pub(super) clock: Rc<dyn Clock>,
@@ -121,10 +133,8 @@ pub struct Controller {
     pub(super) preference_store: PreferenceStore,
     /// The network secrets: the OS keychain for a saved network, memory for an ephemeral one.
     pub(super) credentials: Box<dyn CredentialStore>,
-    /// Networks waiting for a keychain read before their session is registered at load.
-    pub(super) pending_session_registrations: BTreeSet<String>,
-    /// Networks that asked to connect on startup while a keychain read was still in flight.
-    pub(super) pending_startup_connects: BTreeSet<String>,
+    /// The networks whose session work waits on a keychain read, one wait each (desktop only).
+    pub(super) keychain_waits: BTreeMap<String, KeychainWait>,
     /// The profile and secrets each network's session was built from, so Apply rebuilds when
     /// either changes (`IrcConnection::reconcile`).
     pub(super) applied_sessions: BTreeMap<String, super::persistence::AppliedSession>,
@@ -165,7 +175,11 @@ impl Controller {
 
     #[cfg(test)]
     pub(crate) fn pending_startup_connect_ids(&self) -> Vec<String> {
-        self.pending_startup_connects.iter().cloned().collect()
+        self.keychain_waits
+            .iter()
+            .filter(|(_, wait)| **wait == KeychainWait::StartupConnect)
+            .map(|(network_id, _)| network_id.clone())
+            .collect()
     }
 
     /// A controller with the given transport factory, keeping nothing between runs.
@@ -229,8 +243,7 @@ impl Controller {
             } else {
                 platform_store()
             },
-            pending_session_registrations: BTreeSet::new(),
-            pending_startup_connects: BTreeSet::new(),
+            keychain_waits: BTreeMap::new(),
             applied_sessions: BTreeMap::new(),
             open_directs: OpenDirectStore::new(&backing),
             open_directs_motd_seen: BTreeSet::new(),
