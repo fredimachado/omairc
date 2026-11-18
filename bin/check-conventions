@@ -815,6 +815,60 @@ def check_read_marker_set_single_caller():
     return problems
 
 
+# The reader's place in a transcript is one value (`ReaderPosition` in Rust,
+# `readerPosition` in Go). A second flag beside it lets follow-end coexist with a
+# pending restore or an active catch-up.
+READER_POSITION_SCATTERED = re.compile(
+    r"\b(?:transcriptFollowEnd|scrollRestorePending|firstUnseenRow|unseenResumeRow"
+    r"|(?:self|view|this)\.(?:pending_restore|first_unseen))\b")
+READER_POSITION_SCOPES = ("tui/internal/ui/", "client/src/ui/transcript/")
+
+
+def _reader_position_problems(posix, source):
+    if not posix.startswith(READER_POSITION_SCOPES):
+        return []
+    problems = []
+    for number, line in enumerate(source.splitlines(), 1):
+        if READER_POSITION_SCATTERED.search(line):
+            problems.append(
+                f"{posix}:{number}: the reader's place is one value; read and "
+                f"write it through the reader position, not a separate flag")
+    return problems
+
+
+def _self_test_reader_position_gate():
+    samples = (
+        ("tui/internal/ui/transcript.go", "if m.transcriptFollowEnd {\n", True),
+        ("tui/internal/ui/scroll.go", "m.scrollRestorePending = false\n", True),
+        ("tui/internal/ui/transcript.go", "m.firstUnseenRow = -1\n", True),
+        ("tui/internal/ui/transcript.go", "if m.followingEnd() {\n", False),
+        ("client/src/ui/transcript/view/mod.rs", "self.pending_restore = None;\n", True),
+        ("client/src/ui/transcript/view/mod.rs", "self.first_unseen = None;\n", True),
+        ("client/src/ui/transcript/view/mod.rs", "self.has_pending_restore()\n", False),
+        ("client/src/model/reader_position.rs", "first_unseen: usize,\n", False),
+        ("tui/internal/controller/x.go", "firstUnseenRow := 1\n", False),
+    )
+    for posix, text, want_problem in samples:
+        got = _reader_position_problems(posix, text)
+        if bool(got) != want_problem:
+            raise AssertionError(
+                f"reader position self-test failed for {posix!r}: "
+                f"problems={got!r}, want_problem={want_problem}")
+
+
+def check_reader_position_single_value():
+    """No flag beside the reader position can say what the position says."""
+    try:
+        _self_test_reader_position_gate()
+    except AssertionError as exc:
+        return [str(exc)]
+
+    problems = []
+    for relative, source in sources("client/src/**/*.rs", "tui/internal/ui/*.go"):
+        problems.extend(_reader_position_problems(relative.as_posix(), source))
+    return problems
+
+
 GO_TITLE_STRINGS = ("- Omairc", '" Status"')
 GO_TITLE_SOURCE = Path("tui/internal/ui/title.go")
 
@@ -1707,6 +1761,7 @@ CHECKS = (
     ("Go view/driver free of internal/irc", check_go_view_no_protocol),
     ("Go title strings only in title.go", check_go_title_strings),
     ("read-marker SET has one caller", check_read_marker_set_single_caller),
+    ("reader position is one value", check_reader_position_single_value),
     ("macOS CI host arch selection", check_macos_ci_arch_selection),
     ("CI packages only on tags and dispatch", check_ci_package_triggers),
     ("macOS CI Bash 3.2 builtins", check_macos_ci_bash32),
