@@ -87,7 +87,7 @@ func TestLongTranscriptStaysFilled(t *testing.T) {
 		t.Fatalf("row area of %d lines fits a %d-line viewport; the proof needs an overflow",
 			len(area.lines), viewport)
 	}
-	if !m.transcriptFollowEnd {
+	if !m.followingEnd() {
 		t.Fatal("the seeded view starts pinned to the tail")
 	}
 	lines := transcriptViewLines(m)

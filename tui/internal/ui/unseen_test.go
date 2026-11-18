@@ -47,7 +47,7 @@ func unseenDemoModel(t *testing.T) (*Model, *demo.DemoServer) {
 func TestDetachedArrivalArmsMarker(t *testing.T) {
 	m, d := unseenDemoModel(t)
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("Page Up must leave follow-the-end")
 	}
 	before := m.transcriptRowTotal()
@@ -58,16 +58,16 @@ func TestDetachedArrivalArmsMarker(t *testing.T) {
 	if !m.jumpArmed() {
 		t.Fatal("an arrival while scrolled up must arm the jump")
 	}
-	if m.firstUnseenRow != before {
-		t.Fatalf("firstUnseenRow = %d, want %d", m.firstUnseenRow, before)
+	if m.firstUnseen() != before {
+		t.Fatalf("firstUnseen = %d, want %d", m.firstUnseen(), before)
 	}
 	if content := m.View().Content; !strings.Contains(content, "↓ new") {
 		t.Fatalf("the header must show the jump marker:\n%s", content)
 	}
 
 	m = press(t, m, altKey('u'))
-	if m.firstUnseenRow != -1 {
-		t.Fatalf("Alt+U must consume the marker, firstUnseenRow = %d", m.firstUnseenRow)
+	if m.firstUnseen() != -1 {
+		t.Fatalf("Alt+U must consume the marker, firstUnseen = %d", m.firstUnseen())
 	}
 	if m.jumpArmed() {
 		t.Fatal("the jump must be unarmed after landing on the first new row")
@@ -81,7 +81,7 @@ func TestDetachedArrivalArmsMarker(t *testing.T) {
 func TestAltUReattachesWhenTheTargetIsTheEnd(t *testing.T) {
 	m, d := unseenDemoModel(t)
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("Page Up must leave follow-the-end")
 	}
 	for i := 0; i < 3; i++ {
@@ -100,14 +100,14 @@ func TestAltUReattachesWhenTheTargetIsTheEnd(t *testing.T) {
 	}
 
 	m = press(t, m, altKey('u'))
-	if !m.transcriptFollowEnd {
+	if !m.followingEnd() {
 		t.Fatal("Alt+U onto a target at the end must follow the end")
 	}
-	if m.transcriptScroll != 0 {
-		t.Fatalf("scroll = %d, want 0 after reattach", m.transcriptScroll)
+	if m.scrollLines() != 0 {
+		t.Fatalf("scroll = %d, want 0 after reattach", m.scrollLines())
 	}
-	if m.firstUnseenRow != -1 {
-		t.Fatalf("firstUnseenRow = %d, want cleared", m.firstUnseenRow)
+	if m.firstUnseen() != -1 {
+		t.Fatalf("firstUnseen = %d, want cleared", m.firstUnseen())
 	}
 	if label := m.transcriptPlaceLabel(); label != "" {
 		t.Fatalf("place after reattach = %q, want empty", label)
@@ -122,9 +122,9 @@ func TestAltUReattachesWhenTheTargetIsTheEnd(t *testing.T) {
 
 	d.InjectOmarchy([]byte("@msgid=few-later :nora!u@h PRIVMSG #omarchy :after reattach\r\n"))
 	m = updateMsg(t, m, NotifyMsg{})
-	if !m.transcriptFollowEnd || m.firstUnseenRow != -1 || m.jumpArmed() {
+	if !m.followingEnd() || m.firstUnseen() != -1 || m.jumpArmed() {
 		t.Fatalf("later arrival follow=%v unseen=%d armed=%v, want followed and clear",
-			m.transcriptFollowEnd, m.firstUnseenRow, m.jumpArmed())
+			m.followingEnd(), m.firstUnseen(), m.jumpArmed())
 	}
 	if label := m.transcriptPlaceLabel(); label != "" {
 		t.Fatalf("place after the later arrival = %q, want empty", label)
@@ -147,7 +147,7 @@ func TestAltUKeepsMarkerWhileUnseenRowsRemainBelow(t *testing.T) {
 	m = resizeModel(t, m, 180, 30)
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("two Page Ups must leave follow-the-end")
 	}
 	before := m.transcriptRowTotal()
@@ -157,8 +157,8 @@ func TestAltUKeepsMarkerWhileUnseenRowsRemainBelow(t *testing.T) {
 			"@msgid=tail-%d :nora!u@h PRIVMSG #omarchy :tail %d\r\n", i, i)))
 	}
 	m = updateMsg(t, m, NotifyMsg{})
-	if m.firstUnseenRow != before {
-		t.Fatalf("firstUnseenRow = %d, want %d", m.firstUnseenRow, before)
+	if m.firstUnseen() != before {
+		t.Fatalf("firstUnseen = %d, want %d", m.firstUnseen(), before)
 	}
 	if !m.jumpArmed() {
 		t.Fatal("arrivals while scrolled up must arm the jump")
@@ -169,11 +169,11 @@ func TestAltUKeepsMarkerWhileUnseenRowsRemainBelow(t *testing.T) {
 	}
 
 	m = press(t, m, altKey('u'))
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("Alt+U partway through the unseen run must stay detached")
 	}
-	if m.firstUnseenRow != -1 {
-		t.Fatalf("firstUnseenRow = %d, want the original marker consumed", m.firstUnseenRow)
+	if m.firstUnseen() != -1 {
+		t.Fatalf("firstUnseen = %d, want the original marker consumed", m.firstUnseen())
 	}
 	if got := m.ctrl.Messages()[m.firstVisibleMessageRow()].Body; got != "tail 0" {
 		t.Fatalf("top body = %q, want the first unseen row", got)
@@ -194,7 +194,7 @@ func TestAltUKeepsMarkerWhileUnseenRowsRemainBelow(t *testing.T) {
 	top := m.firstVisibleMessageRow()
 	for pressN := 0; pressN < 8; pressN++ {
 		m = press(t, m, altKey('u'))
-		if m.transcriptFollowEnd {
+		if m.followingEnd() {
 			break
 		}
 		next := m.firstVisibleMessageRow()
@@ -210,8 +210,8 @@ func TestAltUKeepsMarkerWhileUnseenRowsRemainBelow(t *testing.T) {
 		}
 		top = next
 	}
-	if !m.transcriptFollowEnd || m.transcriptScroll != 0 {
-		t.Fatalf("follow=%v scroll=%d, want followed at the end", m.transcriptFollowEnd, m.transcriptScroll)
+	if !m.followingEnd() || m.scrollLines() != 0 {
+		t.Fatalf("follow=%v scroll=%d, want followed at the end", m.followingEnd(), m.scrollLines())
 	}
 	if label := m.transcriptPlaceLabel(); label != "" {
 		t.Fatalf("place after reattach = %q, want empty", label)
@@ -234,7 +234,7 @@ func TestAltUStepsToTheNextRowThatIsNotFullyVisible(t *testing.T) {
 	m, d := unseenDemoModel(t)
 	m = resizeModel(t, m, 180, 30)
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("Page Up must leave follow-the-end")
 	}
 	before := m.transcriptRowTotal()
@@ -247,12 +247,12 @@ func TestAltUStepsToTheNextRowThatIsNotFullyVisible(t *testing.T) {
 			"@msgid=page-%d :nora!u@h PRIVMSG #omarchy :page %d\r\n", i, i)))
 	}
 	m = updateMsg(t, m, NotifyMsg{})
-	if m.firstUnseenRow != before {
-		t.Fatalf("firstUnseenRow = %d, want %d", m.firstUnseenRow, before)
+	if m.firstUnseen() != before {
+		t.Fatalf("firstUnseen = %d, want %d", m.firstUnseen(), before)
 	}
 
 	m = press(t, m, altKey('u'))
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("the first Alt+U must stay detached")
 	}
 	if got := m.ctrl.Messages()[m.firstVisibleMessageRow()].Body; got != "page 0" {
@@ -270,10 +270,10 @@ func TestAltUStepsToTheNextRowThatIsNotFullyVisible(t *testing.T) {
 	top := m.firstVisibleMessageRow()
 
 	m = press(t, m, altKey('u'))
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("the second Alt+U must stay detached while a viewport of unseen rows remains")
 	}
-	if m.transcriptScroll == 0 {
+	if m.scrollLines() == 0 {
 		t.Fatal("the second Alt+U must not clamp onto the end")
 	}
 	next := m.firstVisibleMessageRow()
@@ -297,7 +297,7 @@ func TestAltUStepsToTheNextRowThatIsNotFullyVisible(t *testing.T) {
 
 	for pressN := 0; pressN < 8; pressN++ {
 		m = press(t, m, altKey('u'))
-		if m.transcriptFollowEnd {
+		if m.followingEnd() {
 			break
 		}
 		advanced := m.firstVisibleMessageRow()
@@ -306,8 +306,8 @@ func TestAltUStepsToTheNextRowThatIsNotFullyVisible(t *testing.T) {
 		}
 		next = advanced
 	}
-	if !m.transcriptFollowEnd || m.transcriptScroll != 0 {
-		t.Fatalf("follow=%v scroll=%d, want followed at the end", m.transcriptFollowEnd, m.transcriptScroll)
+	if !m.followingEnd() || m.scrollLines() != 0 {
+		t.Fatalf("follow=%v scroll=%d, want followed at the end", m.followingEnd(), m.scrollLines())
 	}
 	plain = ansiPattern.ReplaceAllString(m.View().Content, "")
 	if m.jumpArmed() || strings.Contains(plain, "↓ new") {
@@ -333,19 +333,19 @@ func TestAltUStaysDetachedWhenUnseenRowsFillTheViewport(t *testing.T) {
 			"@msgid=many-%d :nora!u@h PRIVMSG #omarchy :buried %d\r\n", i, i)))
 	}
 	m = updateMsg(t, m, NotifyMsg{})
-	if m.firstUnseenRow != before {
-		t.Fatalf("firstUnseenRow = %d, want %d", m.firstUnseenRow, before)
+	if m.firstUnseen() != before {
+		t.Fatalf("firstUnseen = %d, want %d", m.firstUnseen(), before)
 	}
 
 	m = press(t, m, altKey('u'))
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("Alt+U with more unseen rows than the viewport must stay detached")
 	}
-	if m.transcriptScroll == 0 {
+	if m.scrollLines() == 0 {
 		t.Fatal("the newest row must stay below the viewport")
 	}
-	if m.firstUnseenRow != -1 {
-		t.Fatalf("firstUnseenRow = %d, want the marker consumed", m.firstUnseenRow)
+	if m.firstUnseen() != -1 {
+		t.Fatalf("firstUnseen = %d, want the marker consumed", m.firstUnseen())
 	}
 	label := m.transcriptPlaceLabel()
 	if label == "" {
@@ -372,7 +372,7 @@ func TestJumpWithMarkGoesToEnd(t *testing.T) {
 	m.switchSelection(func() {
 		m.ctrl.SelectConversation("omarchy", "#desktop")
 	})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("precondition: the conversation must have landed on the mark")
 	}
 	if !m.jumpArmed() {
@@ -380,7 +380,7 @@ func TestJumpWithMarkGoesToEnd(t *testing.T) {
 	}
 
 	m = press(t, m, altKey('u'))
-	if !m.transcriptFollowEnd {
+	if !m.followingEnd() {
 		t.Fatal("Alt+U with only a mark must land on the newest row")
 	}
 }
@@ -389,14 +389,14 @@ func TestJumpWithMarkGoesToEnd(t *testing.T) {
 // already at the newest row.
 func TestJumpNoOpWhenFollowingEnd(t *testing.T) {
 	m, _ := unseenDemoModel(t)
-	if !m.transcriptFollowEnd {
+	if !m.followingEnd() {
 		t.Fatal("precondition: the pad model starts following the end")
 	}
 	if m.jumpArmed() {
 		t.Fatal("nothing is waiting below a reader who follows the end")
 	}
 	m = press(t, m, altKey('u'))
-	if !m.transcriptFollowEnd || m.firstUnseenRow != -1 {
+	if !m.followingEnd() || m.firstUnseen() != -1 {
 		t.Fatal("Alt+U must be a no-op while following the end")
 	}
 }
@@ -407,8 +407,8 @@ func TestArrivalWhileFollowingEndDoesNotArm(t *testing.T) {
 	m, d := unseenDemoModel(t)
 	d.InjectOmarchy([]byte("@msgid=arrival-2 :nora!u@h PRIVMSG #omarchy :at the bottom\r\n"))
 	m = updateMsg(t, m, NotifyMsg{})
-	if m.firstUnseenRow != -1 {
-		t.Fatalf("firstUnseenRow = %d, want -1 while following the end", m.firstUnseenRow)
+	if m.firstUnseen() != -1 {
+		t.Fatalf("firstUnseen = %d, want -1 while following the end", m.firstUnseen())
 	}
 	if m.jumpArmed() {
 		t.Fatal("following the end must not arm the jump")
@@ -423,7 +423,7 @@ func detachAndLandOnLongUnseen(t *testing.T) (*Model, int) {
 	m, d := unseenDemoModel(t)
 	m = resizeModel(t, m, 180, 30)
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("Page Up must leave follow-the-end")
 	}
 	extra := m.transcriptRowsHeight()*2 + 8
@@ -436,15 +436,15 @@ func detachAndLandOnLongUnseen(t *testing.T) (*Model, int) {
 	}
 	m = updateMsg(t, m, NotifyMsg{})
 	m = press(t, m, altKey('u'))
-	if m.transcriptFollowEnd || m.transcriptScroll == 0 {
+	if m.followingEnd() || m.scrollLines() == 0 {
 		t.Fatal("the first Alt+U must stay detached")
 	}
 	continuation := m.firstRowBelowViewport()
 	if continuation < 0 {
 		t.Fatal("a long tail must leave a row that is not fully visible")
 	}
-	if m.unseenResumeRow != continuation {
-		t.Fatalf("resume = %d, want the continuation row %d", m.unseenResumeRow, continuation)
+	if m.resumeRow() != continuation {
+		t.Fatalf("resume = %d, want the continuation row %d", m.resumeRow(), continuation)
 	}
 	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
 	if !strings.Contains(plain, "↓ new") {
@@ -459,13 +459,13 @@ func detachAndLandOnLongUnseen(t *testing.T) (*Model, int) {
 // still armed.
 func TestPageDownPastResumeKeepsUnseenMarker(t *testing.T) {
 	m, continuation := detachAndLandOnLongUnseen(t)
-	resume := m.unseenResumeRow
+	resume := m.resumeRow()
 	if resume != continuation {
 		t.Fatalf("resume = %d, want %d", resume, continuation)
 	}
 
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgDown})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("Page Down must stay detached while unseen rows remain")
 	}
 	below := m.firstRowBelowViewport()
@@ -475,8 +475,8 @@ func TestPageDownPastResumeKeepsUnseenMarker(t *testing.T) {
 	if below <= resume {
 		t.Fatalf("first row below = %d, want it past the resume row %d", below, resume)
 	}
-	if m.unseenResumeRow != resume {
-		t.Fatalf("resume = %d, want it kept at %d after Page Down", m.unseenResumeRow, resume)
+	if m.resumeRow() != resume {
+		t.Fatalf("resume = %d, want it kept at %d after Page Down", m.resumeRow(), resume)
 	}
 	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
 	if !m.jumpArmed() || !strings.Contains(plain, "↓ new") {
@@ -492,14 +492,14 @@ func TestAltUAfterCtrlHomeReturnsToTheUnseenRun(t *testing.T) {
 	body := m.ctrl.Messages()[continuation].Body
 
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyHome, Mod: tea.ModCtrl})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("Ctrl+Home must leave follow-the-end")
 	}
 	if m.firstVisibleMessageRow() >= continuation {
 		t.Fatalf("Ctrl+Home top = %d, want it above the continuation %d", m.firstVisibleMessageRow(), continuation)
 	}
-	if m.unseenResumeRow != continuation {
-		t.Fatalf("resume = %d, want it kept at %d", m.unseenResumeRow, continuation)
+	if m.resumeRow() != continuation {
+		t.Fatalf("resume = %d, want it kept at %d", m.resumeRow(), continuation)
 	}
 	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
 	if strings.Contains(plain, "↓ new") {
@@ -524,14 +524,14 @@ func TestAltUAfterPageUpReturnsToTheUnseenRun(t *testing.T) {
 	body := m.ctrl.Messages()[continuation].Body
 
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("Page Up must leave follow-the-end")
 	}
 	if m.firstVisibleMessageRow() >= continuation {
 		t.Fatalf("Page Up top = %d, want it above the continuation %d", m.firstVisibleMessageRow(), continuation)
 	}
-	if m.unseenResumeRow != continuation {
-		t.Fatalf("resume = %d, want it kept at %d", m.unseenResumeRow, continuation)
+	if m.resumeRow() != continuation {
+		t.Fatalf("resume = %d, want it kept at %d", m.resumeRow(), continuation)
 	}
 	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
 	if strings.Contains(plain, "↓ new") {
@@ -558,7 +558,7 @@ func TestTypingFooterBelowTheViewDoesNotArmUnseenMarker(t *testing.T) {
 	m = updateMsg(t, m, NotifyMsg{})
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("Page Up must leave follow-the-end")
 	}
 	for i := 0; i < 35; i++ {
@@ -570,7 +570,7 @@ func TestTypingFooterBelowTheViewDoesNotArmUnseenMarker(t *testing.T) {
 	d.InjectOmarchy([]byte("@+typing=active :anna!u@h TAGMSG fred\r\n"))
 	m = updateMsg(t, m, NotifyMsg{})
 	m = press(t, m, altKey('u'))
-	if m.unseenResumeRow < 0 {
+	if m.resumeRow() < 0 {
 		t.Fatal("Alt+U through a long direct-message tail must arm the catch-up")
 	}
 	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
@@ -592,10 +592,9 @@ func TestTypingFooterBelowTheViewDoesNotArmUnseenMarker(t *testing.T) {
 	// message row arrives, which hides the footer-only case this test locks.
 	// Assigning the fields leaves the catch-up index in place, so a sticky
 	// flag would still paint ↓ new.
-	m.transcriptFollowEnd = false
-	m.transcriptScroll = len(area.lines) - messageEnd
-	if m.transcriptScroll <= 0 {
-		t.Fatalf("scroll = %d, want the footer lines below the viewport", m.transcriptScroll)
+	m.holdAt(len(area.lines) - messageEnd)
+	if m.scrollLines() <= 0 {
+		t.Fatalf("scroll = %d, want the footer lines below the viewport", m.scrollLines())
 	}
 	if got := m.firstRowBelowViewport(); got >= 0 {
 		t.Fatalf("first row below = %d, want none when only the typing footer is hidden", got)
@@ -610,22 +609,22 @@ func TestTypingFooterBelowTheViewDoesNotArmUnseenMarker(t *testing.T) {
 // catch-up, and returning does not bring ↓ new or the Alt+U walk back.
 func TestBufferSwitchDropsUnseenCatchUp(t *testing.T) {
 	m, _ := detachAndLandOnLongUnseen(t)
-	if m.unseenResumeRow < 0 {
+	if m.resumeRow() < 0 {
 		t.Fatal("precondition: the catch-up must be armed")
 	}
 
 	m.switchSelection(func() {
 		m.ctrl.SelectConversation("omarchy", "#desktop")
 	})
-	if m.unseenResumeRow != -1 {
-		t.Fatalf("unseenResumeRow = %d, want cleared on a buffer switch", m.unseenResumeRow)
+	if m.resumeRow() != -1 {
+		t.Fatalf("resumeRow = %d, want cleared on a buffer switch", m.resumeRow())
 	}
 
 	m.switchSelection(func() {
 		m.ctrl.SelectConversation("omarchy", "#omarchy")
 	})
-	if m.unseenResumeRow != -1 {
-		t.Fatalf("unseenResumeRow = %d, want the catch-up to stay dropped", m.unseenResumeRow)
+	if m.resumeRow() != -1 {
+		t.Fatalf("resumeRow = %d, want the catch-up to stay dropped", m.resumeRow())
 	}
 	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
 	if strings.Contains(plain, "↓ new") {
@@ -636,8 +635,8 @@ func TestBufferSwitchDropsUnseenCatchUp(t *testing.T) {
 	if got := m.firstVisibleMessageRow(); got != top {
 		t.Fatalf("top = %d, want unchanged %d: Alt+U must not walk a dropped catch-up", got, top)
 	}
-	if m.unseenResumeRow != -1 {
-		t.Fatalf("unseenResumeRow = %d, want it to stay clear", m.unseenResumeRow)
+	if m.resumeRow() != -1 {
+		t.Fatalf("resumeRow = %d, want it to stay clear", m.resumeRow())
 	}
 }
 
@@ -648,7 +647,7 @@ func TestAltUStepsPastAWrappedRowTallerThanTheViewport(t *testing.T) {
 	m, d := unseenDemoModel(t)
 	m = resizeModel(t, m, 100, 30)
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("Page Up must leave follow-the-end")
 	}
 	tall := strings.TrimRight(strings.Repeat("word ", 400), " ")
@@ -686,8 +685,8 @@ func TestAltUStepsPastAWrappedRowTallerThanTheViewport(t *testing.T) {
 	if got := m.firstVisibleMessageRow(); got != tallIndex {
 		t.Fatalf("top = %d, want the wrapped row %d", got, tallIndex)
 	}
-	if m.unseenResumeRow != tallIndex+1 {
-		t.Fatalf("resume = %d, want the row after the wrapped one (%d)", m.unseenResumeRow, tallIndex+1)
+	if m.resumeRow() != tallIndex+1 {
+		t.Fatalf("resume = %d, want the row after the wrapped one (%d)", m.resumeRow(), tallIndex+1)
 	}
 
 	m = press(t, m, altKey('u'))
@@ -705,16 +704,16 @@ func TestAltUStepsPastAWrappedRowTallerThanTheViewport(t *testing.T) {
 func TestSettleUnseenResumeRefreshesAnchorSequence(t *testing.T) {
 	m, continuation := detachAndLandOnLongUnseen(t)
 	staleBody := m.ctrl.Messages()[continuation].Body
-	m.snapshotTranscriptAnchor()
-	if m.unseenResumeSequenceAtAnchor < 0 {
+	m.armTranscriptAnchor(m.snapshotTranscriptAnchor())
+	if m.resumeSeq() < 0 {
 		t.Fatal("the older-page snapshot must record the catch-up sequence")
 	}
 
 	m = press(t, m, altKey('u'))
-	if m.transcriptFollowEnd || m.unseenResumeRow < 0 {
+	if m.followingEnd() || m.resumeRow() < 0 {
 		t.Fatal("a second Alt+U must stay detached with a new catch-up row")
 	}
-	landed := m.unseenResumeRow
+	landed := m.resumeRow()
 	if landed <= continuation {
 		t.Fatalf("resume = %d, want it past the first continuation %d", landed, continuation)
 	}
@@ -740,10 +739,10 @@ func TestSettleUnseenResumeRefreshesAnchorSequence(t *testing.T) {
 	m.ctrl.Publish(irc.ViewNotify{Messages: true})
 	m.noteTranscriptGrowth()
 
-	if m.unseenResumeRow < 0 || m.unseenResumeRow >= len(m.ctrl.Messages()) {
-		t.Fatalf("resume = %d after the prepend, want the post-Alt+U landing", m.unseenResumeRow)
+	if m.resumeRow() < 0 || m.resumeRow() >= len(m.ctrl.Messages()) {
+		t.Fatalf("resume = %d after the prepend, want the post-Alt+U landing", m.resumeRow())
 	}
-	if got := m.ctrl.Messages()[m.unseenResumeRow].Body; got != landedBody {
+	if got := m.ctrl.Messages()[m.resumeRow()].Body; got != landedBody {
 		t.Fatalf("resume body = %q, want post-Alt+U landing %q (stale was %q)", got, landedBody, staleBody)
 	}
 }
@@ -781,16 +780,16 @@ func TestStatusResumeArmCheckHeaderHeightParity(t *testing.T) {
 		t.Fatalf("Status rows = %d, want a console taller than the viewport", m.transcriptRowTotal())
 	}
 	m.pinTranscriptToRow(0)
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("pinning the top Status row must stay detached when more rows remain")
 	}
-	m.firstUnseenRow = -1
+	m.clearFirstUnseen()
 	// Point the catch-up at the continuation the guarded measure sees so ↓ new
 	// arms before the height fix. The painted band then uses a taller header.
 	m.withinResumeArmCheck = true
-	m.unseenResumeRow = m.firstRowBelowViewport()
+	m.setResume(m.firstRowBelowViewport(), -1)
 	m.withinResumeArmCheck = false
-	if m.unseenResumeRow < 0 {
+	if m.resumeRow() < 0 {
 		t.Fatal("Status must leave a row below the viewport")
 	}
 	if !m.jumpArmed() {

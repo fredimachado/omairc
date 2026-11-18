@@ -100,8 +100,7 @@ func (m *Model) activateInboxSelection() {
 		return
 	}
 	if m.ctrl.OpenAtUnread() {
-		m.setTranscriptFollowEnd(true)
-		m.transcriptScroll = 0
+		m.followEnd()
 		m.placeTranscriptAfterSelect()
 		m.rememberOpenTranscript()
 		return
@@ -111,8 +110,7 @@ func (m *Model) activateInboxSelection() {
 		m.rememberOpenTranscript()
 		return
 	}
-	m.setTranscriptFollowEnd(true)
-	m.transcriptScroll = 0
+	m.followEnd()
 	m.rememberOpenTranscript()
 }
 

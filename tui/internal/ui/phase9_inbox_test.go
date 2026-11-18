@@ -180,7 +180,7 @@ func TestInboxMentionWithoutMsgidKeepsSavedPlace(t *testing.T) {
 	}
 	m.noteTranscriptGrowth()
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("Page Up must leave follow-the-end")
 	}
 	body := m.ctrl.Messages()[m.firstVisibleMessageRow()].Body

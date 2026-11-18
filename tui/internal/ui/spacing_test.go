@@ -123,11 +123,11 @@ func TestFindRevealsMatchingRow(t *testing.T) {
 		t.Fatalf("find index %d outside the %d rows", row, area.count())
 	}
 	// The revealed row must be inside the visible window.
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("revealing a match must leave follow-the-end")
 	}
 	height := m.transcriptRowsHeight()
-	start := len(area.lines) - height - m.transcriptScroll
+	start := len(area.lines) - height - m.scrollLines()
 	if rowStart := area.line(row); rowStart < start || rowStart >= start+height {
 		t.Fatalf("matched row %d at line %d is outside the window [%d,%d)",
 			row, rowStart, start, start+height)
@@ -156,7 +156,7 @@ func TestTranscriptHeaderStaysPinned(t *testing.T) {
 	}
 
 	content := m.View().Content
-	if !m.transcriptFollowEnd {
+	if !m.followingEnd() {
 		t.Fatal("the seeded view starts pinned to the tail")
 	}
 	channel := m.ctrl.SelectedTarget()

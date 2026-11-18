@@ -567,7 +567,7 @@ func TestTranscriptHeaderCarriesTheTopicBand(t *testing.T) {
 func TestPhase8TranscriptHeaderTailKeepsItsGutter(t *testing.T) {
 	m, d := unseenDemoModel(t)
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("Page Up must leave follow-the-end")
 	}
 	d.InjectOmarchy([]byte("@msgid=gutter-1 :nora!u@h PRIVMSG #omarchy :while reading\r\n"))

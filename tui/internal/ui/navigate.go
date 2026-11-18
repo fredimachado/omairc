@@ -613,8 +613,7 @@ func (m *Model) afterSelectionChange(previousID string, wasConsole bool) {
 	if previousID != "" && m.ctrl != nil && previousID != m.ctrl.SelectedConversationID() {
 		m.ctrl.ClearHistoryPageCapTailForConversationID(previousID)
 	}
-	m.clearFirstUnseen()
-	m.unseenResumeRow = -1
+	m.endCatchUp()
 	m.transcriptCount = m.transcriptRowTotal()
 	if m.ctrl != nil {
 		m.transcriptSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
@@ -634,15 +633,13 @@ func (m *Model) afterSelectionChange(previousID string, wasConsole bool) {
 	m.memberFocus = false
 	m.memberIndex = 0
 	if console {
-		m.setTranscriptFollowEnd(true)
-		m.transcriptScroll = 0
+		m.followEnd()
 		m.suspendScrollMemory = false
 		return
 	}
 	mode := m.applyRememberedTranscript()
 	if mode == "absent" {
-		m.setTranscriptFollowEnd(true)
-		m.transcriptScroll = 0
+		m.followEnd()
 		m.placeTranscriptAfterSelect()
 		mode = "applied"
 	}

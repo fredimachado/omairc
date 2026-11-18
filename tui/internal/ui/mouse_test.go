@@ -380,12 +380,12 @@ func TestWheelTranscriptMatchesPageUp(t *testing.T) {
 
 	point := transcriptPoint(wheeled)
 	wheeled = wheelAt(t, wheeled, point.X, point.Y, tea.MouseWheelUp)
-	if wheeled.transcriptFollowEnd {
+	if wheeled.followingEnd() {
 		t.Fatal("wheel up must leave follow-the-end")
 	}
-	if wheeled.transcriptScroll != paged.transcriptScroll || wheeled.transcriptFollowEnd != paged.transcriptFollowEnd {
+	if wheeled.scrollLines() != paged.scrollLines() || wheeled.followingEnd() != paged.followingEnd() {
 		t.Fatalf("wheel scroll=%d follow=%v, Page Up scroll=%d follow=%v",
-			wheeled.transcriptScroll, wheeled.transcriptFollowEnd, paged.transcriptScroll, paged.transcriptFollowEnd)
+			wheeled.scrollLines(), wheeled.followingEnd(), paged.scrollLines(), paged.followingEnd())
 	}
 	if wheeled.transcriptPlaceLabel() == "" || wheeled.transcriptPlaceLabel() != paged.transcriptPlaceLabel() {
 		t.Fatalf("place label wheel=%q page=%q", wheeled.transcriptPlaceLabel(), paged.transcriptPlaceLabel())
@@ -396,9 +396,9 @@ func TestWheelTranscriptMatchesPageUp(t *testing.T) {
 	}
 
 	wheeled = wheelAt(t, wheeled, point.X, point.Y, tea.MouseWheelDown)
-	if !wheeled.transcriptFollowEnd || wheeled.transcriptScroll != 0 || wheeled.transcriptPlaceLabel() != "" {
+	if !wheeled.followingEnd() || wheeled.scrollLines() != 0 || wheeled.transcriptPlaceLabel() != "" {
 		t.Fatalf("wheel down follow=%v scroll=%d label=%q, want reattached",
-			wheeled.transcriptFollowEnd, wheeled.transcriptScroll, wheeled.transcriptPlaceLabel())
+			wheeled.followingEnd(), wheeled.scrollLines(), wheeled.transcriptPlaceLabel())
 	}
 }
 
@@ -407,14 +407,14 @@ func TestWheelUpArmsUnseenMarker(t *testing.T) {
 	m.SetMouseEnabled(true)
 	point := transcriptPoint(m)
 	m = wheelAt(t, m, point.X, point.Y, tea.MouseWheelUp)
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("wheel up must detach")
 	}
 	before := m.transcriptRowTotal()
 	d.InjectOmarchy([]byte("@msgid=wheel-new :nora!u@h PRIVMSG #omarchy :new while reading\r\n"))
 	m = updateMsg(t, m, NotifyMsg{})
-	if !m.jumpArmed() || m.firstUnseenRow != before {
-		t.Fatalf("armed=%v firstUnseen=%d, want armed at %d", m.jumpArmed(), m.firstUnseenRow, before)
+	if !m.jumpArmed() || m.firstUnseen() != before {
+		t.Fatalf("armed=%v firstUnseen=%d, want armed at %d", m.jumpArmed(), m.firstUnseen(), before)
 	}
 	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
 	if !strings.Contains(plain, "↓ new") {
@@ -429,7 +429,7 @@ func TestWheelIgnoredWhenMouseOff(t *testing.T) {
 	m, _ := unseenDemoModel(t)
 	point := transcriptPoint(m)
 	m = wheelAt(t, m, point.X, point.Y, tea.MouseWheelUp)
-	if !m.transcriptFollowEnd || m.transcriptScroll != 0 || m.transcriptPlaceLabel() != "" {
+	if !m.followingEnd() || m.scrollLines() != 0 || m.transcriptPlaceLabel() != "" {
 		t.Fatal("a wheel event must not scroll while the pointer path is off")
 	}
 	if m.View().MouseMode != tea.MouseModeNone {
@@ -448,7 +448,7 @@ func TestWheelSidebarAndMembersPage(t *testing.T) {
 	if !m.sidebarScrollPinned || m.sidebarScroll == 0 {
 		t.Fatalf("sidebar wheel pin=%v scroll=%d, want a paged pin", m.sidebarScrollPinned, m.sidebarScroll)
 	}
-	if !m.transcriptFollowEnd {
+	if !m.followingEnd() {
 		t.Fatal("a sidebar wheel must not detach the transcript")
 	}
 
@@ -476,7 +476,7 @@ func TestWheelOverlayPagesTheOpenList(t *testing.T) {
 	if m.jumpSheet().scroll == 0 {
 		t.Fatal("wheel down on the jump card must page the list")
 	}
-	if !m.transcriptFollowEnd {
+	if !m.followingEnd() {
 		t.Fatal("an overlay wheel must not detach the transcript")
 	}
 	scrolled := m.jumpSheet().scroll

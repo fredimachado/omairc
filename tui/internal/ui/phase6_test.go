@@ -572,14 +572,14 @@ func TestTranscriptPagingOffsets(t *testing.T) {
 	m := seededModel(t)
 	m = resizeModel(t, m, 118, 6)
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyHome, Mod: tea.ModCtrl})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("Ctrl+Home must leave follow-the-end")
 	}
-	if m.transcriptScroll <= 0 {
-		t.Fatalf("Ctrl+Home scroll = %d, want > 0", m.transcriptScroll)
+	if m.scrollLines() <= 0 {
+		t.Fatalf("Ctrl+Home scroll = %d, want > 0", m.scrollLines())
 	}
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnd, Mod: tea.ModCtrl})
-	if !m.transcriptFollowEnd {
+	if !m.followingEnd() {
 		t.Fatal("Ctrl+End must restore follow-the-end")
 	}
 }

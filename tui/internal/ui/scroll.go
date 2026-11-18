@@ -7,10 +7,10 @@ package ui
 // conversation, and leaving Status must restore the saved line.
 
 func (m *Model) rememberOpenTranscript() {
-	if m == nil || m.suspendScrollMemory || m.scrollRestorePending || m.ctrl == nil || m.ctrl.ConsoleOpen() {
+	if m == nil || m.suspendScrollMemory || m.restoringNow() || m.ctrl == nil || m.ctrl.ConsoleOpen() {
 		return
 	}
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		m.ctrl.RememberScrollPlace(true, -1)
 		return
 	}
@@ -36,10 +36,7 @@ func (m *Model) firstVisibleMessageRow() int {
 	if height < 1 {
 		height = 1
 	}
-	offset := m.transcriptScroll
-	if m.transcriptFollowEnd {
-		offset = 0
-	}
+	offset := m.scrollLines()
 	start := n - height - offset
 	if start < 0 {
 		start = 0
@@ -59,32 +56,28 @@ func (m *Model) firstVisibleMessageRow() int {
 // this conversation has no saved place.
 func (m *Model) applyRememberedTranscript() string {
 	if m.ctrl == nil || m.ctrl.ConsoleOpen() {
-		m.scrollRestorePending = false
+		m.retireRestore()
 		return "absent"
 	}
 	place := m.ctrl.CurrentScrollPlace()
 	if !place.Known {
-		m.scrollRestorePending = false
+		m.retireRestore()
 		return "absent"
 	}
 	if place.Follow {
-		m.scrollRestorePending = false
-		m.setTranscriptFollowEnd(true)
-		m.transcriptScroll = 0
+		m.followEnd()
 		m.clearFirstUnseen()
 		return "applied"
 	}
 	if place.Row >= 0 {
-		m.scrollRestorePending = false
+		m.retireRestore()
 		m.pinTranscriptToRow(place.Row)
 		return "applied"
 	}
 	// The line is not loaded. Show the last page without entering follow
 	// which would drop the history page cap, and without writing this
 	// interim page over the anchor.
-	m.scrollRestorePending = true
-	m.transcriptFollowEnd = false
-	m.transcriptScroll = 0
+	m.startRestore(place)
 	return "pending"
 }
 
@@ -103,7 +96,7 @@ func (m *Model) landSavedTranscript() {
 
 // maybeLandSavedTranscript retries a place whose line was not loaded yet.
 func (m *Model) maybeLandSavedTranscript() {
-	if m == nil || !m.scrollRestorePending || m.suspendScrollMemory {
+	if m == nil || !m.restoringNow() || m.suspendScrollMemory {
 		return
 	}
 	if m.ctrl == nil || m.ctrl.ConsoleOpen() {
@@ -120,7 +113,7 @@ func (m *Model) noteViewportSettled() {
 	// A real scroll retires a pending anchor. beginTranscriptSwitch calls
 	// rememberOpenTranscript directly, so an anchor that has not loaded yet
 	// stays stored.
-	m.scrollRestorePending = false
+	m.retireRestore()
 	m.rememberOpenTranscript()
 }
 

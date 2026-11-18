@@ -387,16 +387,13 @@ func (m *Model) appendTranscriptTypingFooter(area transcriptRows) transcriptRows
 }
 
 // transcriptWindow returns the [start, end) slice of lines the viewport shows
-// counting transcriptScroll as the number of lines hidden below the window.
+// counting the reader's scroll as the number of lines hidden below the window.
 func (m *Model) transcriptWindow(n, height int) (int, int) {
 	maxOffset := n - height
 	if maxOffset < 0 {
 		maxOffset = 0
 	}
-	offset := m.transcriptScroll
-	if m.transcriptFollowEnd {
-		offset = 0
-	}
+	offset := m.scrollLines()
 	if offset > maxOffset {
 		offset = maxOffset
 	}
@@ -453,22 +450,16 @@ func (m *Model) pageTranscript(direction int, fraction float64) {
 	maxOffset := n - height
 	if maxOffset <= 0 {
 		if direction < 0 {
-			if m.requestOlderTranscriptPage() {
-				m.transcriptFollowEnd = false
-			}
+			m.requestOlderTranscriptPage()
 		}
 		if direction > 0 {
-			m.transcriptScroll = 0
-			m.setTranscriptFollowEnd(true)
+			m.followEnd()
 			m.clearFirstUnseen()
 		}
 		m.noteViewportSettled()
 		return
 	}
-	offset := m.transcriptScroll
-	if m.transcriptFollowEnd {
-		offset = 0
-	}
+	offset := m.scrollLines()
 	if direction < 0 && offset >= maxOffset {
 		m.maybeRequestOlderTranscript()
 	}
@@ -487,10 +478,11 @@ func (m *Model) pageTranscript(direction int, fraction float64) {
 	if offset > maxOffset {
 		offset = maxOffset
 	}
-	m.transcriptScroll = offset
-	m.setTranscriptFollowEnd(offset == 0)
-	if m.transcriptFollowEnd {
+	if offset == 0 {
+		m.followEnd()
 		m.clearFirstUnseen()
+	} else {
+		m.holdAt(offset)
 	}
 	m.syncReadMarkerViewport()
 	start := n - height - offset
@@ -502,44 +494,34 @@ func (m *Model) pageTranscript(direction int, fraction float64) {
 }
 
 func (m *Model) maybeRequestOlderTranscript() {
-	if m.requestOlderTranscriptPage() {
-		m.transcriptFollowEnd = false
-	}
+	m.requestOlderTranscriptPage()
 }
 
 // requestOlderTranscriptPage snapshots the viewport and asks for one older
-// page. It reports whether a request was sent or is already in flight.
+// page. It reports whether a request was sent or is already in flight. Either
+// way the reader leaves the end, held where the view is, with the snapshot
+// armed so the older page can be spliced in above the same line.
 func (m *Model) requestOlderTranscriptPage() bool {
 	if m.ctrl == nil || m.connectVisible() || m.ctrl.ConsoleOpen() || !m.ctrl.ChatHistoryEnabled() {
 		return false
 	}
-	m.snapshotTranscriptAnchor()
-	if m.ctrl.RequestOlderTranscriptHistory() {
-		return true
-	}
-	if m.ctrl.OlderTranscriptHistoryInflight() {
+	pin := m.snapshotTranscriptAnchor()
+	if m.ctrl.RequestOlderTranscriptHistory() || m.ctrl.OlderTranscriptHistoryInflight() {
+		m.leaveEnd()
+		m.armTranscriptAnchor(pin)
 		return true
 	}
 	m.clearTranscriptAnchor()
 	return false
 }
 
-func (m *Model) setTranscriptFollowEnd(follow bool) {
-	if follow && !m.transcriptFollowEnd && m.ctrl != nil {
+// followEnd follows the end again, which also drops the catch-up, an armed
+// older-page pin, and the history page cap tail.
+func (m *Model) followEnd() {
+	if !m.followingEnd() && m.ctrl != nil {
 		m.ctrl.ClearHistoryPageCapTail()
 	}
-	if follow {
-		m.unseenResumeRow = -1
-	}
-	m.transcriptFollowEnd = follow
-}
-
-func (m *Model) clearTranscriptAnchor() {
-	m.transcriptAnchorSequence = -1
-	m.transcriptAnchorTextLead = 0
-	m.transcriptAnchorSpliceEpoch = -1
-	m.firstUnseenSequenceAtAnchor = -1
-	m.unseenResumeSequenceAtAnchor = -1
+	m.setReader(followingEnd{})
 }
 
 // transcriptPrefixLines is the date rule and unread mark drawn above a
@@ -560,19 +542,20 @@ func (m *Model) transcriptPrefixLines(row int) int {
 	return lines
 }
 
-func (m *Model) snapshotTranscriptAnchor() {
+// snapshotTranscriptAnchor names the row at the top of the view, and how far
+// its text sits below the viewport start, for an older page about to be
+// requested. PinSeq is -1 when there is nothing to pin.
+func (m *Model) snapshotTranscriptAnchor() readerAnchor {
 	if m.ctrl == nil {
-		m.clearTranscriptAnchor()
-		return
+		return plainAnchor(0)
 	}
 	messages := m.ctrl.Messages()
 	if len(messages) == 0 {
-		m.clearTranscriptAnchor()
-		return
+		return plainAnchor(0)
 	}
 	row := 0
 	textLead := 0
-	if !m.transcriptFollowEnd {
+	if !m.followingEnd() {
 		area := m.transcriptArea()
 		n := len(area.lines)
 		height := m.transcriptRowsHeight()
@@ -591,34 +574,22 @@ func (m *Model) snapshotTranscriptAnchor() {
 		}
 	}
 	if row >= len(messages) {
-		m.clearTranscriptAnchor()
-		return
+		return plainAnchor(0)
 	}
-	m.transcriptAnchorSequence = messages[row].Sequence
-	m.transcriptAnchorTextLead = textLead
-	m.transcriptAnchorSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
-	if m.firstUnseenRow >= 0 && m.firstUnseenRow < len(messages) {
-		m.firstUnseenSequenceAtAnchor = messages[m.firstUnseenRow].Sequence
-	} else {
-		m.firstUnseenSequenceAtAnchor = -1
-	}
-	if m.unseenResumeRow >= 0 && m.unseenResumeRow < len(messages) {
-		m.unseenResumeSequenceAtAnchor = messages[m.unseenResumeRow].Sequence
-	} else {
-		m.unseenResumeSequenceAtAnchor = -1
+	return readerAnchor{
+		PinSeq:      messages[row].Sequence,
+		TextLead:    textLead,
+		SpliceEpoch: m.ctrl.TranscriptSpliceEpoch(),
 	}
 }
 
 func (m *Model) restoreTranscriptAnchor() {
-	if m.transcriptAnchorSequence < 0 || m.ctrl == nil {
+	pin := m.pin()
+	if pin.PinSeq < 0 || m.ctrl == nil {
 		return
 	}
-	if m.transcriptFollowEnd {
-		m.clearTranscriptAnchor()
-		return
-	}
-	sequence := m.transcriptAnchorSequence
-	lead := m.transcriptAnchorTextLead
+	sequence := pin.PinSeq
+	lead := pin.TextLead
 	m.clearTranscriptAnchor()
 	messages := m.ctrl.Messages()
 	for index, message := range messages {
@@ -641,8 +612,7 @@ func (m *Model) jumpTranscript(toEnd bool) {
 		height = 1
 	}
 	if toEnd {
-		m.setTranscriptFollowEnd(true)
-		m.transcriptScroll = 0
+		m.followEnd()
 		m.transcriptCursor = m.transcriptRowTotal() - 1
 		m.clearFirstUnseen()
 		m.syncReadMarkerViewport()
@@ -653,8 +623,7 @@ func (m *Model) jumpTranscript(toEnd bool) {
 	if maxOffset < 0 {
 		maxOffset = 0
 	}
-	m.transcriptFollowEnd = false
-	m.transcriptScroll = maxOffset
+	m.holdAt(maxOffset)
 	m.transcriptCursor = 0
 	m.syncReadMarkerViewport()
 	m.noteViewportSettled()
@@ -693,11 +662,7 @@ func (m *Model) revealTranscriptRow(row int) {
 	if start > maxOffset {
 		start = maxOffset
 	}
-	m.transcriptFollowEnd = false
-	m.transcriptScroll = n - height - start
-	if m.transcriptScroll < 0 {
-		m.transcriptScroll = 0
-	}
+	m.holdAt(max(n-height-start, 0))
 	m.syncReadMarkerViewport()
 	m.noteViewportSettled()
 }
@@ -728,8 +693,7 @@ func (m *Model) pinTranscriptToText(row int, lead int) {
 	}
 	maxOffset := n - height
 	if maxOffset <= 0 || row < 0 || row >= area.count() {
-		m.setTranscriptFollowEnd(true)
-		m.transcriptScroll = 0
+		m.followEnd()
 		m.clearFirstUnseen()
 		m.syncReadMarkerViewport()
 		m.noteViewportSettled()
@@ -743,37 +707,22 @@ func (m *Model) pinTranscriptToText(row int, lead int) {
 	if start > maxOffset {
 		start = maxOffset
 	}
-	m.transcriptFollowEnd = false
-	m.transcriptScroll = n - height - start
-	if m.transcriptScroll < 0 {
-		m.transcriptScroll = 0
-	}
+	m.holdAt(max(n-height-start, 0))
 	m.syncReadMarkerViewport()
 	m.noteViewportSettled()
-}
-
-// clearFirstUnseen drops the jump-to-first-new row and any snapshotted sequence
-// for an inflight older-page restore. Clearing only the row left a stale
-// sequence that could re-arm ↓ new after a CHATHISTORY BEFORE splice.
-func (m *Model) clearFirstUnseen() {
-	if m == nil {
-		return
-	}
-	m.firstUnseenRow = -1
-	m.firstUnseenSequenceAtAnchor = -1
 }
 
 // noteTranscriptGrowth arms the first-new-row marker when rows arrive while the
 // reader is scrolled up, and clears it while they follow the end or the
 // transcript shrank. It mirrors TranscriptList.noteGrowth, which is driven by
 // count changes rather than by the model's own notification. A detached append
-// keeps the top line put by adding the new rendered lines to transcriptScroll.
+// keeps the top line put by adding the new rendered lines to the anchor's scroll.
 // A count increase with a higher splice epoch is a head or mid splice, not a
-// live append: inventing firstUnseenRow at the old count would point at
+// live append: inventing the first unseen row at the old count would point at
 // already-read history below a reader who loaded older pages at the top.
-// Inventing while a transcript anchor is live also records
-// firstUnseenSequenceAtAnchor so the later older-page restore can re-resolve
-// the marker instead of keeping the pre-prepend index.
+// Inventing while a transcript anchor is live also records the row's sequence
+// so the later older-page restore can re-resolve the marker instead of keeping
+// the pre-prepend index.
 func (m *Model) noteTranscriptGrowth() {
 	defer m.syncTranscriptLineCount()
 	count := m.transcriptRowTotal()
@@ -781,31 +730,24 @@ func (m *Model) noteTranscriptGrowth() {
 	if m.ctrl != nil {
 		spliceEpoch = m.ctrl.TranscriptSpliceEpoch()
 	}
-	if m.ctrl != nil && m.transcriptAnchorSequence >= 0 {
-		if spliceEpoch > m.transcriptAnchorSpliceEpoch {
-			hadUnseen := m.firstUnseenRow >= 0
-			unseenSequence := m.firstUnseenSequenceAtAnchor
-			unseenRow := m.firstUnseenRow
-			resumeSequence := m.unseenResumeSequenceAtAnchor
-			resumeRow := m.unseenResumeRow
+	if pin := m.pin(); m.ctrl != nil && pin.PinSeq >= 0 {
+		if spliceEpoch > pin.SpliceEpoch {
+			hadUnseen := m.firstUnseen() >= 0
+			unseenSequence := m.firstUnseenSeq()
+			unseenRow := m.firstUnseen()
+			resumeSequence := m.resumeSeq()
+			resumeRow := m.resumeRow()
 			oldCount := m.transcriptCount
 			m.restoreTranscriptAnchor()
-			if hadUnseen && !m.transcriptFollowEnd {
+			if hadUnseen {
 				// Mirror resume: sequence wins; a missing sequence (invent
 				// under a live anchor that forgot to record one) shifts by
 				// the row delta instead of keeping the pre-prepend index.
-				m.firstUnseenRow = shiftedResumeRow(
-					m.ctrl.Messages(), unseenSequence, unseenRow, count-oldCount, count)
-				if m.firstUnseenRow < 0 {
-					m.clearFirstUnseen()
-				}
-			} else if !hadUnseen {
-				m.clearFirstUnseen()
+				m.setFirstUnseen(shiftedResumeRow(
+					m.ctrl.Messages(), unseenSequence, unseenRow, count-oldCount, count), -1)
 			}
-			if !m.transcriptFollowEnd {
-				m.unseenResumeRow = shiftedResumeRow(
-					m.ctrl.Messages(), resumeSequence, resumeRow, count-oldCount, count)
-			}
+			m.setResume(shiftedResumeRow(
+				m.ctrl.Messages(), resumeSequence, resumeRow, count-oldCount, count), -1)
 			m.transcriptCount = count
 			m.transcriptSpliceEpoch = spliceEpoch
 			return
@@ -813,46 +755,43 @@ func (m *Model) noteTranscriptGrowth() {
 	}
 	switch {
 	case count < m.transcriptCount:
-		if m.firstUnseenRow >= count {
+		if m.firstUnseen() >= count {
 			m.clearFirstUnseen()
 		}
-		if m.unseenResumeRow >= count {
-			m.unseenResumeRow = -1
+		if m.resumeRow() >= count {
+			m.setResume(-1, -1)
 		}
 	case count > m.transcriptCount:
-		spliced := spliceEpoch > m.transcriptSpliceEpoch
-		if m.transcriptFollowEnd {
-			m.clearFirstUnseen()
-			m.unseenResumeRow = -1
-		} else if spliced {
+		// A reader at the end has seen what arrived. One waiting for a saved
+		// line has not reached the new lines, and the interim page stays on
+		// the end until the line is there. Neither has a catch-up to arm.
+		if _, held := m.held(); !held {
+			break
+		}
+		if spliceEpoch > m.transcriptSpliceEpoch {
 			// Unanchored head/mid splice only: no live transcript anchor, so
 			// there is no snapshotted sequence. Shift row indexes by the
 			// growth delta. Cover with OlderPageWithoutAnchor*; anchored
-			// restores use firstUnseenSequenceAtAnchor above.
+			// restores use the sequences recorded at the anchor above.
 			delta := count - m.transcriptCount
-			if m.firstUnseenRow >= 0 {
-				m.firstUnseenRow += delta
+			if row := m.firstUnseen(); row >= 0 {
+				m.setFirstUnseen(row+delta, m.firstUnseenSeq())
 			}
-			if m.unseenResumeRow >= 0 {
-				m.unseenResumeRow += delta
+			if row := m.resumeRow(); row >= 0 {
+				m.setResume(row+delta, m.resumeSeq())
 			}
-			m.holdDetachedTranscript()
-		} else {
-			if m.firstUnseenRow < 0 {
-				m.firstUnseenRow = m.transcriptCount
-				// An older-page request may already hold a viewport anchor
-				// with no marker. Record the invented row's sequence so the
-				// later splice restore can re-resolve it (not keep the
-				// pre-prepend index).
-				if m.transcriptAnchorSequence >= 0 && m.ctrl != nil {
-					messages := m.ctrl.Messages()
-					if m.firstUnseenRow < len(messages) {
-						m.firstUnseenSequenceAtAnchor = messages[m.firstUnseenRow].Sequence
-					}
-				}
+		} else if m.firstUnseen() < 0 {
+			// An older-page request may already hold a viewport anchor with
+			// no marker. Record the invented row's sequence so the later
+			// splice restore can re-resolve it (not keep the pre-prepend
+			// index).
+			seq := int64(-1)
+			if m.pin().PinSeq >= 0 {
+				seq = m.sequenceOf(m.transcriptCount)
 			}
-			m.holdDetachedTranscript()
+			m.setFirstUnseen(m.transcriptCount, seq)
 		}
+		m.holdDetachedTranscript()
 	default:
 		m.transcriptCount = count
 		m.transcriptSpliceEpoch = spliceEpoch
@@ -863,13 +802,15 @@ func (m *Model) noteTranscriptGrowth() {
 }
 
 // holdDetachedTranscript adds newly rendered lines to the offset so a longer
-// buffer does not slide the top line down. transcriptScroll counts lines
-// hidden below the window. The follow-end branch never calls this.
+// buffer does not slide the top line down. The anchor's scroll counts lines
+// hidden below the window. Neither the follow-end branch nor a reader waiting
+// for a saved line calls this.
 func (m *Model) holdDetachedTranscript() {
 	area := m.transcriptArea()
+	scroll := m.scrollLines()
 	delta := len(area.lines) - m.transcriptLineCount
 	if delta > 0 {
-		m.transcriptScroll += delta
+		scroll += delta
 	}
 	n := len(area.lines)
 	height := m.transcriptRowsHeight()
@@ -880,12 +821,7 @@ func (m *Model) holdDetachedTranscript() {
 	if maxOffset < 0 {
 		maxOffset = 0
 	}
-	if m.transcriptScroll > maxOffset {
-		m.transcriptScroll = maxOffset
-	}
-	if m.transcriptScroll < 0 {
-		m.transcriptScroll = 0
-	}
+	m.holdAt(min(max(scroll, 0), maxOffset))
 }
 
 // syncTranscriptLineCount records the rendered line count so the next detached
@@ -902,7 +838,7 @@ func (m *Model) syncTranscriptLineCount() {
 // the Alt+U catch-up row is at or above the first row that is not fully on
 // screen, or a "New messages" mark still has a message row below the viewport.
 // It mirrors TranscriptList.jumpArmed with canScrollDown standing in for
-// !transcriptFollowEnd. firstUnseenRow alone is not enough: it must sit at or
+// !followingEnd. The first unseen row alone is not enough: it must sit at or
 // past the first row that is not fully visible, matching unseenResumeArmed's
 // admit rule so ↓ new cannot paint over history the reader has already caught
 // up on. A catch-up index that sits further down than the current viewport
@@ -912,7 +848,7 @@ func (m *Model) syncTranscriptLineCount() {
 // once every message row is on screen, the typing footer is not a reason to
 // keep ↓ new.
 func (m *Model) jumpArmed() bool {
-	if m.ctrl == nil || m.transcriptFollowEnd {
+	if m.ctrl == nil || m.followingEnd() {
 		return false
 	}
 	if m.firstUnseenArmed() {
@@ -943,13 +879,13 @@ func (m *Model) firstUnseenArmed() bool {
 	if m == nil || m.withinResumeArmCheck {
 		return false
 	}
-	if m.firstUnseenRow < 0 || m.firstUnseenRow >= m.transcriptRowTotal() {
+	if m.firstUnseen() < 0 || m.firstUnseen() >= m.transcriptRowTotal() {
 		return false
 	}
 	m.withinResumeArmCheck = true
 	defer func() { m.withinResumeArmCheck = false }()
 	below := m.firstRowBelowViewport()
-	return below >= 0 && m.firstUnseenRow >= below
+	return below >= 0 && m.firstUnseen() >= below
 }
 
 // unseenResumeArmed reports whether ↓ new should offer the catch-up row. The
@@ -961,13 +897,13 @@ func (m *Model) unseenResumeArmed() bool {
 	if m == nil || m.withinResumeArmCheck {
 		return false
 	}
-	if m.unseenResumeRow < 0 || m.unseenResumeRow >= m.transcriptRowTotal() {
+	if m.resumeRow() < 0 || m.resumeRow() >= m.transcriptRowTotal() {
 		return false
 	}
 	m.withinResumeArmCheck = true
 	defer func() { m.withinResumeArmCheck = false }()
 	below := m.firstRowBelowViewport()
-	return below >= m.unseenResumeRow
+	return below >= m.resumeRow()
 }
 
 // jumpToUnseen lands on the first row that arrived while the reader was
@@ -978,19 +914,19 @@ func (m *Model) unseenResumeArmed() bool {
 // landing is max(resume, first row not fully visible): history above the run
 // jumps to the run, and a viewport already past it steps to the next row that
 // is not fully visible. Pinning a row can clamp onto the last page. When the
-// newest row then sits on the bottom line, transcriptScroll is 0, which is the
+// newest row then sits on the bottom line, the scroll is 0, which is the
 // same end condition Page Down and Ctrl+End use, so the view follows the end
 // again and the place counter and ↓ new clear. A pin that still hides that
 // next row stays detached and keeps ↓ new armed.
 func (m *Model) jumpToUnseen() {
-	if m.unseenResumeRow >= 0 && m.unseenResumeRow < m.transcriptRowTotal() {
+	if m.resumeRow() >= 0 && m.resumeRow() < m.transcriptRowTotal() {
 		m.advanceUnseenResume()
 		return
 	}
 	// Like the catch-up row, firstUnseen stays reachable by Alt+U while ↓ new
 	// is hidden (the row is already on screen, or the reader is above it).
-	if m.firstUnseenRow >= 0 && m.firstUnseenRow < m.transcriptRowTotal() {
-		row := m.firstUnseenRow
+	if m.firstUnseen() >= 0 && m.firstUnseen() < m.transcriptRowTotal() {
+		row := m.firstUnseen()
 		m.clearFirstUnseen()
 		m.pinTranscriptToRow(row)
 		m.settleUnseenResume()
@@ -1010,20 +946,20 @@ func (m *Model) jumpToUnseen() {
 func (m *Model) advanceUnseenResume() {
 	below := m.firstRowBelowViewport()
 	if below < 0 {
-		m.unseenResumeRow = -1
+		m.setResume(-1, -1)
 		m.jumpTranscript(true)
 		return
 	}
-	target := m.unseenResumeRow
+	target := m.resumeRow()
 	if below > target {
 		target = below
 	}
 	if target < 0 || target >= m.transcriptRowTotal() {
-		m.unseenResumeRow = -1
+		m.setResume(-1, -1)
 		m.jumpTranscript(true)
 		return
 	}
-	if m.firstUnseenRow >= 0 && m.firstUnseenRow <= target {
+	if m.firstUnseen() >= 0 && m.firstUnseen() <= target {
 		m.clearFirstUnseen()
 	}
 	m.pinTranscriptToRow(target)
@@ -1038,36 +974,31 @@ func (m *Model) advanceUnseenResume() {
 // the snapshotted catch-up sequence is refreshed to match, so a splice after
 // Alt+U does not restore a stale resume row.
 func (m *Model) settleUnseenResume() {
-	if m.transcriptFollowEnd || m.transcriptScroll == 0 {
-		m.unseenResumeRow = -1
+	if m.followingEnd() || m.scrollLines() == 0 {
+		m.setResume(-1, -1)
 		m.refreshUnseenResumeSequenceAtAnchor()
-		if !m.transcriptFollowEnd {
+		if !m.followingEnd() {
 			m.jumpTranscript(true)
 		}
 		return
 	}
 	below := m.firstRowBelowViewport()
 	if below < 0 {
-		m.unseenResumeRow = -1
+		m.setResume(-1, -1)
 		m.refreshUnseenResumeSequenceAtAnchor()
 		return
 	}
-	m.unseenResumeRow = below
+	m.setResume(below, -1)
 	m.refreshUnseenResumeSequenceAtAnchor()
 }
 
 // refreshUnseenResumeSequenceAtAnchor mirrors the catch-up half of
-// snapshotTranscriptAnchor while an older-page request is in flight.
+// armTranscriptAnchor while an older-page request is in flight.
 func (m *Model) refreshUnseenResumeSequenceAtAnchor() {
-	if m == nil || m.ctrl == nil || m.transcriptAnchorSequence < 0 {
+	if m == nil || m.ctrl == nil || m.pin().PinSeq < 0 {
 		return
 	}
-	messages := m.ctrl.Messages()
-	if m.unseenResumeRow >= 0 && m.unseenResumeRow < len(messages) {
-		m.unseenResumeSequenceAtAnchor = messages[m.unseenResumeRow].Sequence
-		return
-	}
-	m.unseenResumeSequenceAtAnchor = -1
+	m.setResume(m.resumeRow(), m.sequenceOf(m.resumeRow()))
 }
 
 // shiftedResumeRow moves a snapshotted row index across a prepend (unseen
@@ -1128,7 +1059,7 @@ func (m *Model) firstRowBelowViewport() int {
 // the message count. Following the end leaves it empty, and it never repeats
 // the header's "↓ new" marker.
 func (m *Model) transcriptPlaceLabel() string {
-	if m == nil || m.ctrl == nil || m.transcriptFollowEnd || m.ctrl.ConsoleOpen() {
+	if m == nil || m.ctrl == nil || m.followingEnd() || m.ctrl.ConsoleOpen() {
 		return ""
 	}
 	total := len(m.ctrl.Messages())

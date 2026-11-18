@@ -168,50 +168,23 @@ type Model struct {
 	// membersHidden is the window-level Ctrl+Shift+M state. It survives
 	// channel switches and is moot on a direct message; membersVisible also
 	// requires the column to fit and the target to be a channel.
-	membersHidden       bool
-	transcriptScroll    int
-	transcriptFollowEnd bool
+	membersHidden bool
+	// reader is where the reader is in the open transcript: following the
+	// end, anchored on a line, or restoring a saved one (position.go).
+	reader readerPosition
 	// suspendScrollMemory blocks a selection change from storing the
-	// destination's transitional pin. scrollRestorePending retries a saved
-	// line that is not in the loaded transcript yet.
-	suspendScrollMemory  bool
-	scrollRestorePending bool
-	transcriptCursor     int
-	// transcriptAnchorSequence names the top visible row to pin after a
-	// CHATHISTORY prepend, or -1 when inactive.
-	transcriptAnchorSequence int64
-	// transcriptAnchorTextLead is how many rendered lines the anchored
-	// message's text sits below the viewport start. A date rule or unread
-	// mark above that text makes it positive. Restore subtracts it from the
-	// text line so chrome added or removed above the view does not shift the
-	// text.
-	transcriptAnchorTextLead int
-	// transcriptAnchorSpliceEpoch is the splice generation when the anchor was
-	// armed; restore runs only after the epoch advances.
-	transcriptAnchorSpliceEpoch int
-	// firstUnseenSequenceAtAnchor remembers the unseen marker row across a
-	// prepend that tail-caps without growing the row count.
-	firstUnseenSequenceAtAnchor int64
-	// firstUnseenRow is the row that first arrived while the reader was scrolled
-	// up, or -1 when nothing is waiting below. transcriptCount tracks the row
-	// count between notifications so a growth can be detected. They mirror
-	// TranscriptList's firstUnseenIndex and trackedCount.
-	firstUnseenRow  int
+	// destination's transitional pin.
+	suspendScrollMemory bool
+	transcriptCursor    int
+	// transcriptCount tracks the row count between notifications so a growth
+	// can be detected. It mirrors TranscriptList's trackedCount. The rows a
+	// reader catches up on live in the reader position (position.go).
 	transcriptCount int
 	// transcriptSpliceEpoch is the last splice generation noteTranscriptGrowth
 	// observed. A count increase with a higher epoch is a head or mid splice
 	// (older page, reconnect replay), not a live append, so growth must not
-	// invent firstUnseenRow at the old count.
+	// invent the first unseen row at the old count.
 	transcriptSpliceEpoch int
-	// unseenResumeRow is the message row where an Alt+U catch-up continues, or
-	// -1 when no catch-up is active. ↓ new is armed while the first row that is
-	// not fully on screen is at or past that catch-up row. Scrolling into
-	// history already read keeps the index and hides the marker; the next
-	// Alt+U returns to the row. A manual Page Down past the row keeps ↓ new
-	// while unseen remain. unseenResumeSequenceAtAnchor shifts it across a
-	// prepend. Following the end, or switching buffers, clears both.
-	unseenResumeRow              int
-	unseenResumeSequenceAtAnchor int64
 	// withinResumeArmCheck stops the catch-up arming check from recursing.
 	// Measuring the continuation row renders the header, and the header asks
 	// whether the marker is armed. The nested check reports disarmed. On a
@@ -222,7 +195,7 @@ type Model struct {
 	withinResumeArmCheck bool
 	// transcriptLineCount is the rendered line count of transcriptArea
 	// including the typing footer. A detached append adds the increase to
-	// transcriptScroll so the top line stays put.
+	// the anchor's scroll so the top line stays put.
 	transcriptLineCount  int
 	find                 findState
 	nickComplete         nickCompleteSession
@@ -307,28 +280,22 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 	styles := stylesForNickPalette(id)
 	composer := newComposerInput(styles)
 	m := &Model{
-		ctrl:                         ctrl,
-		conn:                         conn,
-		nickPaletteID:                id,
-		width:                        defaultWidth,
-		height:                       defaultHeight,
-		focus:                        focusComposer,
-		composer:                     composer,
-		help:                         help.New(),
-		spinner:                      spinner.New(spinner.WithSpinner(spinner.MiniDot)),
-		typingSpinner:                spinner.New(spinner.WithSpinner(spinner.Points)),
-		sheet:                        newConnectSheetState(),
-		serverListVisible:            true,
-		transcriptFollowEnd:          true,
-		transcriptCursor:             -1,
-		transcriptAnchorSequence:     -1,
-		transcriptAnchorSpliceEpoch:  -1,
-		firstUnseenSequenceAtAnchor:  -1,
-		firstUnseenRow:               -1,
-		unseenResumeRow:              -1,
-		unseenResumeSequenceAtAnchor: -1,
-		composerHistoryIndex:         -1,
-		drafts:                       make(map[string]string),
+		ctrl:                 ctrl,
+		conn:                 conn,
+		nickPaletteID:        id,
+		width:                defaultWidth,
+		height:               defaultHeight,
+		focus:                focusComposer,
+		composer:             composer,
+		help:                 help.New(),
+		spinner:              spinner.New(spinner.WithSpinner(spinner.MiniDot)),
+		typingSpinner:        spinner.New(spinner.WithSpinner(spinner.Points)),
+		sheet:                newConnectSheetState(),
+		serverListVisible:    true,
+		reader:               followingEnd{},
+		transcriptCursor:     -1,
+		composerHistoryIndex: -1,
+		drafts:               make(map[string]string),
 		// The terminal starts focused until a Blur arrives, mirroring
 		// `client/src/ui/shell`'s win.active default.
 		windowActive: true,
