@@ -315,3 +315,83 @@ fn channel_context_stays_a_direct_message_when_it_is_not_trusted() {
     assert_eq!(unjoined.lines[0].body, "public only");
     assert!(!unjoined.lines[0].only_visible_to_you);
 }
+
+// draft/multiline (#478): the session hands the translator one PRIVMSG or NOTICE
+// whose body holds the `\n`s, so nothing downstream knows about batches.
+
+/// The one message a multiline batch assembles to.
+fn assembled(open: &str, command: &str, target: &str, lines: &[&str]) -> IrcMessage {
+    let lines: Vec<IrcMessage> = lines
+        .iter()
+        .map(|text| must_parse(&format!("@batch=ml {command} {target} :{text}")))
+        .collect();
+    crate::irc::multiline::assemble_multiline(&must_parse(open), &lines).expect("assembles")
+}
+
+fn translate_message(message: &IrcMessage) -> Vec<Event> {
+    translate(
+        NETWORK_A,
+        "omairc",
+        &features(),
+        message,
+        reducer_timestamp(),
+        None,
+    )
+}
+
+#[test]
+fn an_assembled_multiline_privmsg_is_one_message_with_hard_breaks() {
+    let message = assembled(
+        "@msgid=ml1 :mira!u@h BATCH +ml draft/multiline #room",
+        "PRIVMSG",
+        "#room",
+        &["one", "two", "three"],
+    );
+    let events = translate_message(&message);
+    assert_eq!(events.len(), 1);
+    let event = message_of(&events);
+    assert_eq!(event.author, "mira");
+    assert_eq!(event.body, "one\ntwo\nthree");
+    assert_eq!(event.body.matches('\n').count(), 2);
+    assert_eq!(event.msgid, Id::new("ml1"));
+    assert_eq!(event.conversation.normalized_target, "#room");
+}
+
+#[test]
+fn an_assembled_multiline_notice_to_us_is_one_notice_with_hard_breaks() {
+    let message = assembled(
+        "@msgid=ml2 :mira!u@h BATCH +ml draft/multiline omairc",
+        "NOTICE",
+        "omairc",
+        &["one", "two"],
+    );
+    let events = translate_message(&message);
+    assert_eq!(events.len(), 1);
+    match &events[0] {
+        Event::Notice(notice) => {
+            assert_eq!(notice.body, "one\ntwo");
+            assert_eq!(notice.msgid, Id::new("ml2"));
+        }
+        other => panic!("want NoticeEvent, got {other:?}"),
+    }
+}
+
+#[test]
+fn an_assembled_multiline_keeps_its_breaks_in_a_replay_line() {
+    let message = assembled(
+        "@msgid=ml3;time=2024-03-09T16:00:00.620Z :mira!u@h BATCH +ml draft/multiline #room",
+        "PRIVMSG",
+        "#room",
+        &["one", "two"],
+    );
+    let batch = HistoryBatch {
+        target: "#room".to_owned(),
+        lines: vec![message],
+        kind: Some(HistoryKind::Chat),
+        ..HistoryBatch::default()
+    };
+    let event = history_of(&batch, None);
+    assert_eq!(event.lines.len(), 1);
+    assert_eq!(event.lines[0].body, "one\ntwo");
+    assert_eq!(event.lines[0].msgid, Id::new("ml3"));
+}

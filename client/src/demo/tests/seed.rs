@@ -23,7 +23,7 @@ fn the_seed_constants_match_the_go_world() {
     assert_eq!(
         CAPS,
         "echo-message message-tags labeled-response away-notify multi-prefix batch \
-         draft/metadata-2 server-time account-tag account-notify extended-join"
+         draft/metadata-2 server-time account-tag account-notify extended-join draft/multiline"
     );
     assert_eq!(
         ISUPPORT,

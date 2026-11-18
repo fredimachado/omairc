@@ -259,6 +259,15 @@ impl TranscriptView {
         self.rows_rendered
     }
 
+    /// Where the last frame painted a row's body text, and how tall one of its
+    /// visual lines is. `None` when the row was not drawn.
+    #[cfg(test)]
+    pub fn painted_body(&self, row: usize) -> Option<(gpui::Bounds<gpui::Pixels>, gpui::Pixels)> {
+        let layouts = self.row_layouts.borrow();
+        let layout = layouts.get(&row)?;
+        Some((layout.body_bounds, layout.layout.line_height()))
+    }
+
     /// The list's logical top: which item and how far into that item.
     pub fn logical_scroll_top(&self) -> ListOffset {
         self.list_state.logical_scroll_top()
