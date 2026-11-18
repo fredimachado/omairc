@@ -32,6 +32,7 @@ mod persistence_network_lists;
 mod persistence_sts;
 mod playback;
 mod readmarker;
+mod readmarker_viewport;
 mod replies;
 mod scrollplace;
 mod selection;
