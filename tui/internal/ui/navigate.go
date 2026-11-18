@@ -699,12 +699,14 @@ func (m *Model) pinTranscriptOnFocusReturn() {
 	}
 }
 
-// saveDraft records the composer text under the current conversation key.
+// saveDraft records the unsent text under the current conversation key, in
+// memory only. During a find or an Up/Down walk the field is not the draft
+// (unsentText).
 func (m *Model) saveDraft() {
 	if m.draftKey == "" {
 		return
 	}
-	m.drafts[m.draftKey] = m.composer.Value()
+	m.drafts[m.draftKey] = m.unsentText()
 }
 
 // followControllerSelection keeps an unsent line on the conversation that was
@@ -728,10 +730,21 @@ func (m *Model) followControllerSelection() {
 	m.loadDraft()
 }
 
-// loadDraft restores the composer text for the current conversation key.
+// loadDraft restores the composer text for the current conversation key. When
+// the key changes, the draft saved for the key being left is kept on disk. A
+// key the program has no draft for asks the controller, which holds what an
+// earlier run kept.
 func (m *Model) loadDraft() {
 	key := m.composerDraftKey()
+	if m.draftKey != key && m.draftKey != "" {
+		m.rememberDraftFor(m.draftKey, m.drafts[m.draftKey])
+	}
 	m.draftKey = key
+	if _, known := m.drafts[key]; !known {
+		if stored, ok := m.storedDraft(key); ok {
+			m.drafts[key] = stored
+		}
+	}
 	m.composer.SetValue(m.drafts[key])
 	m.composer.CursorEnd()
 	m.resetNickComplete()
@@ -757,6 +770,7 @@ func (m *Model) clearCurrentDraft() {
 		return
 	}
 	m.drafts[m.draftKey] = ""
+	m.rememberDraftFor(m.draftKey, "")
 }
 
 // jumpCard renders the jump overlay as one card block through the shared

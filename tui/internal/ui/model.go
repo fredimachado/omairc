@@ -338,6 +338,7 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 	m.applyStyles(styles)
 	m.resize()
 	m.draftKey = m.composerDraftKey()
+	m.restoreLaunchDraft()
 	m.transcriptCount = m.transcriptRowTotal()
 	if m.ctrl != nil {
 		m.transcriptSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
@@ -582,6 +583,7 @@ func (m *Model) avatarGraphicsCmd() tea.Cmd {
 // returns, so a quit chord, a returned error, and a caught signal all free
 // the same transmitted ids.
 func (m *Model) quitCommand() tea.Cmd {
+	m.persistCurrentDraft()
 	return tea.Quit
 }
 
@@ -687,6 +689,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.BlurMsg:
 		// The terminal lost focus; arrivals now earn a desktop notification.
 		m.windowActive = false
+		m.persistCurrentDraft()
 		if m.ctrl != nil {
 			m.ctrl.SetWindowActive(false)
 		}
