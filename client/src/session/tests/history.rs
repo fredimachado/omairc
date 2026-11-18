@@ -6,9 +6,10 @@ use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 use super::batch::history_config;
 use super::fixture::Fixture;
 use crate::session::events::{HistoryKind, SessionState};
+use crate::session::history::{HistoryPhase, InFlightRequest};
 
 /// A UTC instant with a millisecond part.
-fn at(
+pub(super) fn at(
     year: i32,
     month: u32,
     day: u32,
@@ -24,19 +25,19 @@ fn at(
 }
 
 /// The resume time the self-JOIN tests use: 2024-03-09T16:00:00.620Z.
-fn resume_time() -> DateTime<Utc> {
+pub(super) fn resume_time() -> DateTime<Utc> {
     at(2024, 3, 9, 16, 0, 0, 620)
 }
 
 /// Resumes `#omarchy` at `when`, and no other target (`resumeOmarchy`).
-fn resume_omarchy(fx: &Fixture, when: DateTime<Utc>) {
+pub(super) fn resume_omarchy(fx: &Fixture, when: DateTime<Utc>) {
     fx.session.set_history_resume(Some(Box::new(move |target, _| {
         (target == "#omarchy").then_some(when)
     })));
 }
 
 /// Count of frames containing `needle`.
-fn count_containing(frames: &[String], needle: &str) -> usize {
+pub(super) fn count_containing(frames: &[String], needle: &str) -> usize {
     frames.iter().filter(|frame| frame.contains(needle)).count()
 }
 
@@ -51,7 +52,7 @@ fn chathistory_registered(fx: &Fixture) {
 }
 
 /// The registration plus a self-JOIN of `#omarchy` (`completeHistoryJoin`).
-fn complete_history_join(fx: &Fixture) {
+pub(super) fn complete_history_join(fx: &Fixture) {
     fx.inject(
         ":server CAP omairc LS :batch chathistory\r\n\
          :server CAP omairc ACK :batch chathistory\r\n\
@@ -62,7 +63,7 @@ fn complete_history_join(fx: &Fixture) {
 }
 
 /// One older line closing the LATEST batch (`finishLatestBatch`).
-fn finish_latest_batch(fx: &Fixture) {
+pub(super) fn finish_latest_batch(fx: &Fixture) {
     fx.inject(
         ":irc.host BATCH +hx chathistory #omarchy\r\n\
          @batch=hx;time=2011-10-19T16:40:51.620Z;msgid=old :alice!u@h PRIVMSG #omarchy :older\r\n\
@@ -71,7 +72,7 @@ fn finish_latest_batch(fx: &Fixture) {
 }
 
 /// Sends one page of an AFTER chain as a batch with a msgid.
-fn page(fx: &Fixture, reference: &str, msgid: &str) {
+pub(super) fn page(fx: &Fixture, reference: &str, msgid: &str) {
     fx.inject(&format!(
         ":irc.host BATCH +{reference} chathistory #omarchy\r\n\
          @batch={reference};time=2024-03-09T16:00:01.000Z;msgid={msgid} :bob!u@h PRIVMSG #omarchy :line\r\n\
@@ -563,7 +564,13 @@ fn before_ignores_stale_history_pending_generation() {
     finish_latest_batch(&fx);
     fx.session.locked(|core| {
         let folded = core.fold_channel("#omarchy");
-        core.history.pending.insert(folded.clone(), 0);
+        core.history.phase.insert(
+            folded.clone(),
+            HistoryPhase::InFlight {
+                generation: 0,
+                request: InFlightRequest::Before,
+            },
+        );
         core.history.generation.insert(folded, 2);
     });
     assert!(
@@ -584,10 +591,14 @@ fn reconnect_clears_history_pending_before() {
     );
     fx.session.locked(|core| {
         assert!(
-            core.history
-                .pending_before
-                .contains(&core.fold_channel("#omarchy")),
-            "pending BEFORE must be set while the page is in flight"
+            matches!(
+                core.history.phase.get(&core.fold_channel("#omarchy")),
+                Some(HistoryPhase::InFlight {
+                    request: InFlightRequest::Before,
+                    ..
+                })
+            ),
+            "BEFORE must be in flight while the page is outstanding"
         );
     });
     fx.inject(":server ERROR :gone\r\n");
@@ -602,8 +613,9 @@ fn reconnect_clears_history_pending_before() {
     );
     fx.session.locked(|core| {
         assert!(
-            core.history.pending_before.is_empty(),
-            "pending BEFORE must clear on reconnect"
+            core.history.phase.is_empty(),
+            "the phases must clear on reconnect: {:?}",
+            core.history.phase
         );
     });
     fx.inject(

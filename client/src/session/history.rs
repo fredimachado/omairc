@@ -6,6 +6,13 @@
 //! re-JOIN is recognised as stale. Every request is written through
 //! `send_command`, so a send that the frame budget refuses leaves no state
 //! behind.
+//!
+//! Each target has one `HistoryPhase`; `tui/internal/session/history_phase.go`
+//! names the same phases. A request in
+//! flight carries its kind, its membership generation, and, for AFTER only, the
+//! page count and cursor, so none of them can disagree. A missing entry means
+//! the target was never asked, or was forgotten by a PART or KICK and may be
+//! asked again.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -31,6 +38,14 @@ pub(crate) enum HistoryRequestKind {
     AfterTail,
 }
 
+impl HistoryRequestKind {
+    /// Whether an empty answer, or a FAIL, to this request means older history
+    /// has run out. An AFTER page or its tail says nothing about older lines.
+    pub(crate) fn exhausts_before(self) -> bool {
+        matches!(self, Self::Latest | Self::Before)
+    }
+}
+
 /// The exclusive bound of the next `CHATHISTORY AFTER` page. A msgid wins; a
 /// time is used only when no line in the page carried a msgid.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -39,25 +54,52 @@ pub(crate) struct HistoryCursor {
     pub(crate) when: Option<DateTime<Utc>>,
 }
 
+/// What a request in flight carries. `kind` is the only mapping to
+/// `HistoryRequestKind`; the AFTER page count and cursor exist only on `After`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum InFlightRequest {
+    Latest,
+    Before,
+    After { pages: u32, cursor: HistoryCursor },
+    AfterTail,
+}
+
+impl InFlightRequest {
+    pub(crate) fn kind(&self) -> HistoryRequestKind {
+        match self {
+            Self::Latest => HistoryRequestKind::Latest,
+            Self::Before => HistoryRequestKind::Before,
+            Self::After { .. } => HistoryRequestKind::After,
+            Self::AfterTail => HistoryRequestKind::AfterTail,
+        }
+    }
+}
+
+/// Where one folded target stands. An absent entry means not yet asked.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum HistoryPhase {
+    /// Asked; nothing in flight; BEFORE is allowed.
+    Settled,
+    /// A request is outstanding, sent under `generation`.
+    InFlight {
+        generation: u64,
+        request: InFlightRequest,
+    },
+    /// BEFORE stops. It cannot coexist with a request in flight.
+    Exhausted,
+}
+
 /// Per-connection CHATHISTORY state, keyed by the folded channel name.
 #[derive(Clone, Debug)]
 pub(crate) struct HistoryLedger {
     /// The membership generation of each channel. A JOIN, PART or KICK bumps it.
+    /// It outlives `phase` entries, so a PART forgets a target but not its count.
     pub(crate) generation: BTreeMap<String, u64>,
-    /// Channels that have been asked for history since they were joined.
-    pub(crate) asked: BTreeSet<String>,
-    /// The generation each outstanding request was sent under.
-    pub(crate) pending: BTreeMap<String, u64>,
-    pub(crate) pending_before: BTreeSet<String>,
-    pub(crate) pending_kind: BTreeMap<String, HistoryRequestKind>,
-    /// Channels whose history has run out, so BEFORE stops.
-    pub(crate) exhausted: BTreeSet<String>,
-    pub(crate) after_pages: BTreeMap<String, u32>,
-    pub(crate) after_cursor: BTreeMap<String, HistoryCursor>,
+    pub(crate) phase: BTreeMap<String, HistoryPhase>,
     /// The AFTER pages chained before one LATEST bound closes the gap. Tests
     /// lower it; production keeps the default.
     pub(crate) after_page_cap: u32,
-    /// A `CHATHISTORY TARGETS` request is outstanding.
+    /// A `CHATHISTORY TARGETS` request is outstanding. It is not a channel phase.
     pub(crate) targets_pending: bool,
 }
 
@@ -65,13 +107,7 @@ impl HistoryLedger {
     pub(crate) fn new(after_page_cap: u32) -> Self {
         Self {
             generation: BTreeMap::new(),
-            asked: BTreeSet::new(),
-            pending: BTreeMap::new(),
-            pending_before: BTreeSet::new(),
-            pending_kind: BTreeMap::new(),
-            exhausted: BTreeSet::new(),
-            after_pages: BTreeMap::new(),
-            after_cursor: BTreeMap::new(),
+            phase: BTreeMap::new(),
             after_page_cap,
             targets_pending: false,
         }
@@ -94,42 +130,122 @@ impl Core {
             .unwrap_or(0)
     }
 
-    /// Records a membership change: the answers still in flight for this channel
-    /// are now stale.
+    /// The phase of a folded target, when it has been asked.
+    fn history_phase(&self, folded: &str) -> Option<&HistoryPhase> {
+        self.history.phase.get(folded)
+    }
+
+    /// Records a membership change: the request still in flight for this channel
+    /// is now stale, so it settles in the same step the generation moves.
     pub(crate) fn bump_history_generation(&mut self, channel: &str) {
         let folded = self.fold_channel(channel);
         let next = self.history_generation(channel) + 1;
         self.history.generation.insert(folded.clone(), next);
-        self.history.pending.remove(&folded);
-        self.history.pending_before.remove(&folded);
-        self.history.pending_kind.remove(&folded);
+        self.settle_inflight(&folded);
+    }
+
+    /// The request outstanding on `target` for the current generation.
+    fn inflight_request(&self, target: &str) -> Option<&InFlightRequest> {
+        if target.is_empty() {
+            return None;
+        }
+        match self.history_phase(&self.fold_channel(target)) {
+            Some(HistoryPhase::InFlight {
+                generation,
+                request,
+            }) if *generation == self.history_generation(target) => Some(request),
+            _ => None,
+        }
     }
 
     /// Whether a request is outstanding on `target` for the current generation.
     pub(crate) fn history_inflight(&self, target: &str) -> bool {
-        if target.is_empty() {
-            return false;
-        }
-        let folded = self.fold_channel(target);
-        self.history
-            .pending
-            .get(&folded)
-            .is_some_and(|generation| *generation == self.history_generation(target))
+        self.inflight_request(target).is_some()
     }
 
     /// Whether `channel` has a live request whose answer is not yet arriving as a
     /// batch (`answersPendingHistoryLocked`).
     pub(crate) fn answers_pending_history(&self, channel: &str) -> bool {
-        if channel.is_empty() {
-            return false;
+        self.history_inflight(channel) && !self.has_open_current_history_batch(channel)
+    }
+
+    /// The kind of the request `channel`'s next batch would answer, as
+    /// `answers_pending_history` sees it. `open_batch` captures it.
+    pub(crate) fn pending_history_kind(&self, channel: &str) -> Option<HistoryRequestKind> {
+        if !self.answers_pending_history(channel) {
+            return None;
         }
-        let folded = self.fold_channel(channel);
-        let current = self
+        self.inflight_request(channel).map(InFlightRequest::kind)
+    }
+
+    /// Stores `request` as in flight at the current generation and returns the
+    /// phase it replaced, for `rollback_history`.
+    fn begin_history(&mut self, key: &str, request: InFlightRequest) -> Option<HistoryPhase> {
+        let generation = self.history_generation(key);
+        self.history.phase.insert(
+            key.to_owned(),
+            HistoryPhase::InFlight {
+                generation,
+                request,
+            },
+        )
+    }
+
+    /// Undoes `begin_history` after a send the frame budget refused.
+    fn rollback_history(&mut self, key: &str, previous: Option<HistoryPhase>) {
+        match previous {
+            Some(phase) => self.history.phase.insert(key.to_owned(), phase),
+            None => self.history.phase.remove(key),
+        };
+    }
+
+    /// Turns an in-flight request into `Settled` and returns it. Any other phase
+    /// stays as it is.
+    fn settle_inflight(&mut self, folded: &str) -> Option<InFlightRequest> {
+        if !matches!(
+            self.history.phase.get(folded),
+            Some(HistoryPhase::InFlight { .. })
+        ) {
+            return None;
+        }
+        match self
             .history
-            .pending
-            .get(&folded)
-            .is_some_and(|generation| *generation == self.history_generation(channel));
-        current && !self.has_open_current_history_batch(channel)
+            .phase
+            .insert(folded.to_owned(), HistoryPhase::Settled)
+        {
+            Some(HistoryPhase::InFlight { request, .. }) => Some(request),
+            _ => None,
+        }
+    }
+
+    /// Settles the request a closing batch answers. The batch counts only when
+    /// the target's phase is still the in-flight request it opened under: same
+    /// generation, same kind. A late batch that disagrees leaves the phase alone.
+    pub(crate) fn finish_history(
+        &mut self,
+        target: &str,
+        opened: u64,
+        opened_kind: Option<HistoryRequestKind>,
+    ) -> Option<InFlightRequest> {
+        let folded = self.fold_channel(target);
+        let matches = opened == self.history_generation(target)
+            && matches!(
+                self.history_phase(&folded),
+                Some(HistoryPhase::InFlight { generation, request })
+                    if *generation == opened && Some(request.kind()) == opened_kind
+            );
+        if matches {
+            self.settle_inflight(&folded)
+        } else {
+            None
+        }
+    }
+
+    /// Stops BEFORE for a target whose request just settled with nothing left.
+    pub(crate) fn exhaust_history(&mut self, folded: &str) {
+        self.history
+            .phase
+            .insert(folded.to_owned(), HistoryPhase::Exhausted);
     }
 
     /// Whether a CHATHISTORY batch for `channel` is open at the current
@@ -145,24 +261,16 @@ impl Core {
         })
     }
 
-    /// Clears the pending state of one channel's request.
+    /// Drops one channel's request in flight.
     pub(crate) fn clear_history_pending(&mut self, channel: &str) {
         let folded = self.fold_channel(channel);
-        self.history.pending.remove(&folded);
-        self.history.pending_before.remove(&folded);
-        self.history.pending_kind.remove(&folded);
+        self.settle_inflight(&folded);
     }
 
     /// Forgets a channel's history after a PART or KICK.
     pub(crate) fn forget_channel_history(&mut self, channel: &str) {
         let folded = self.fold_channel(channel);
-        self.history.asked.remove(&folded);
-        self.history.pending.remove(&folded);
-        self.history.pending_before.remove(&folded);
-        self.history.pending_kind.remove(&folded);
-        self.history.exhausted.remove(&folded);
-        self.history.after_pages.remove(&folded);
-        self.history.after_cursor.remove(&folded);
+        self.history.phase.remove(&folded);
         self.drop_history_batches(channel);
     }
 
@@ -213,12 +321,12 @@ impl Core {
         for target in targets {
             self.drop_history_batches(&target);
         }
-        self.history.pending.clear();
-        self.history.pending_before.clear();
-        self.history.pending_kind.clear();
+        for phase in self.history.phase.values_mut() {
+            if matches!(phase, HistoryPhase::InFlight { .. }) {
+                *phase = HistoryPhase::Settled;
+            }
+        }
         self.history.targets_pending = false;
-        self.history.after_pages.clear();
-        self.history.after_cursor.clear();
     }
 
     /// Handles a `FAIL CHATHISTORY` line (`handleChatHistoryFailLocked`). The
@@ -249,19 +357,14 @@ impl Core {
                 continue;
             }
             let folded = self.fold_channel(&channel);
-            let before = self.history.pending_before.contains(&folded);
-            let kind = self
-                .history
-                .pending_kind
-                .get(&folded)
-                .copied()
-                .unwrap_or_default();
+            let Some(request) = self.settle_inflight(&folded) else {
+                continue;
+            };
+            let kind = request.kind();
+            let before = kind == HistoryRequestKind::Before;
             let after = kind == HistoryRequestKind::After;
-            self.history.pending.remove(&folded);
-            self.history.pending_before.remove(&folded);
-            self.history.pending_kind.remove(&folded);
-            if kind != HistoryRequestKind::After && kind != HistoryRequestKind::AfterTail {
-                self.history.exhausted.insert(folded);
+            if kind.exhausts_before() {
+                self.exhaust_history(&folded);
             }
             self.emit(SessionEvent::ChatHistoryRequestFinished {
                 network_id: network_id.clone(),
@@ -288,7 +391,7 @@ impl Core {
             return;
         }
         let key = self.fold_channel(channel);
-        if self.history.asked.contains(&key) {
+        if self.history.phase.contains_key(&key) {
             return;
         }
         let mapping = self.features.case_mapping();
@@ -311,20 +414,13 @@ impl Core {
             return false;
         }
         let key = self.fold_channel(target);
-        if self.history.asked.contains(&key) || self.history_inflight(target) {
+        if self.history.phase.contains_key(&key) {
             return false;
         }
-        self.history.asked.insert(key.clone());
-        let generation = self.history_generation(target);
-        self.history.pending.insert(key.clone(), generation);
-        self.history
-            .pending_kind
-            .insert(key.clone(), HistoryRequestKind::Latest);
+        self.begin_history(&key, InFlightRequest::Latest);
         let command = format!("CHATHISTORY LATEST {target} * {}", self.history_limit);
         if !self.send_command(&command, "") {
-            self.history.asked.remove(&key);
-            self.history.pending.remove(&key);
-            self.history.pending_kind.remove(&key);
+            self.rollback_history(&key, None);
             return false;
         }
         true
@@ -338,42 +434,29 @@ impl Core {
         if self.history_inflight(target) {
             return false;
         }
-        let key = self.fold_channel(target);
-        self.history.asked.insert(key.clone());
-        self.history.after_pages.insert(key.clone(), 1);
+        // From `Exhausted` this clears the exhaustion: the gap may hold lines
+        // BEFORE has not seen, and the server answers an empty BEFORE again.
         let cursor = HistoryCursor {
             msgid: String::new(),
             when: Some(after),
         };
-        self.history.after_cursor.insert(key, cursor.clone());
-        self.send_history_after(target, &cursor)
+        self.send_history_after(target, 1, cursor)
     }
 
-    fn clear_history_after_attempt(&mut self, key: &str) {
-        self.history.pending.remove(key);
-        self.history.pending_kind.remove(key);
-        self.history.asked.remove(key);
-        self.history.after_pages.remove(key);
-        self.history.after_cursor.remove(key);
-    }
-
-    /// Sends one `CHATHISTORY AFTER` page from `cursor`.
-    fn send_history_after(&mut self, target: &str, cursor: &HistoryCursor) -> bool {
-        let Some(selector) = history_selector(cursor) else {
+    /// Sends one `CHATHISTORY AFTER` page, number `pages` of the chain, from
+    /// `cursor`. A refused send forgets the target, so it can be asked again.
+    fn send_history_after(&mut self, target: &str, pages: u32, cursor: HistoryCursor) -> bool {
+        let Some(selector) = history_selector(&cursor) else {
             return false;
         };
         let key = self.fold_channel(target);
-        let generation = self.history_generation(target);
-        self.history.pending.insert(key.clone(), generation);
-        self.history
-            .pending_kind
-            .insert(key.clone(), HistoryRequestKind::After);
+        self.begin_history(&key, InFlightRequest::After { pages, cursor });
         let command = format!(
             "CHATHISTORY AFTER {target} {selector} {}",
             self.history_limit
         );
         if !self.send_command(&command, "") {
-            self.clear_history_after_attempt(&key);
+            self.rollback_history(&key, None);
             return false;
         }
         true
@@ -386,29 +469,28 @@ impl Core {
             return false;
         };
         let key = self.fold_channel(target);
-        let generation = self.history_generation(target);
-        self.history.pending.insert(key.clone(), generation);
-        self.history
-            .pending_kind
-            .insert(key.clone(), HistoryRequestKind::AfterTail);
+        self.begin_history(&key, InFlightRequest::AfterTail);
         let command = format!(
             "CHATHISTORY LATEST {target} {selector} {}",
             self.history_limit
         );
         if !self.send_command(&command, "") {
-            self.clear_history_after_attempt(&key);
+            self.rollback_history(&key, None);
             return false;
         }
         true
     }
 
     /// Chains the next AFTER page when a full page arrived and the gap may not be
-    /// closed yet (`maybeChainHistoryAfterLocked`).
+    /// closed yet (`maybeChainHistoryAfterLocked`). `pages` and `previous` are the
+    /// page number and cursor of the AFTER request this batch answered.
     pub(crate) fn maybe_chain_history_after(
         &mut self,
         target: &str,
         batch: &HistoryBatch,
         history_ended: bool,
+        pages: u32,
+        previous: &HistoryCursor,
     ) {
         if target.is_empty() || history_ended || batch.lines.len() < self.history_limit {
             return;
@@ -417,14 +499,6 @@ impl Core {
         if next.msgid.is_empty() && next.when.is_none() {
             return;
         }
-        let key = self.fold_channel(target);
-        let pages = self
-            .history
-            .after_pages
-            .get(&key)
-            .copied()
-            .unwrap_or(1)
-            .max(1);
         let cap = if self.history.after_page_cap == 0 {
             HISTORY_AFTER_PAGE_CAP
         } else {
@@ -437,21 +511,13 @@ impl Core {
         // A timestamp bound that does not move would ask for the same page again.
         // A msgid always moves, even when two lines share a time.
         if next.msgid.is_empty() {
-            let previous = self
-                .history
-                .after_cursor
-                .get(&key)
-                .cloned()
-                .unwrap_or_default();
             if let (Some(previous_when), Some(next_when)) = (previous.when, next.when) {
                 if next_when <= previous_when {
                     return;
                 }
             }
         }
-        self.history.after_pages.insert(key.clone(), pages + 1);
-        self.history.after_cursor.insert(key, next.clone());
-        self.send_history_after(target, &next);
+        self.send_history_after(target, pages + 1, next);
     }
 
     /// `CHATHISTORY TARGETS` between two instants (`requestHistoryTargetsLocked`).
@@ -491,10 +557,12 @@ impl Core {
             return false;
         }
         let key = self.fold_channel(target);
-        if self.history.exhausted.contains(&key) || self.history_inflight(target) {
+        if matches!(self.history_phase(&key), Some(HistoryPhase::Exhausted))
+            || self.history_inflight(target)
+        {
             return false;
         }
-        if self.features.is_channel(target) && !self.history.asked.contains(&key) {
+        if self.features.is_channel(target) && !self.history.phase.contains_key(&key) {
             return false;
         }
         let cursor = if !msgid.is_empty() {
@@ -504,20 +572,13 @@ impl Core {
         } else {
             return false;
         };
-        let generation = self.history_generation(target);
-        self.history.pending.insert(key.clone(), generation);
-        self.history.pending_before.insert(key.clone());
-        self.history
-            .pending_kind
-            .insert(key.clone(), HistoryRequestKind::Before);
+        let previous = self.begin_history(&key, InFlightRequest::Before);
         let command = format!(
             "CHATHISTORY BEFORE {target} {cursor} {}",
             self.history_limit
         );
         if !self.send_command(&command, "") {
-            self.history.pending.remove(&key);
-            self.history.pending_before.remove(&key);
-            self.history.pending_kind.remove(&key);
+            self.rollback_history(&key, previous);
             return false;
         }
         true
