@@ -32,6 +32,8 @@ impl IrcPrefixChange {
 pub struct IrcParsedName {
     pub nick: String,
     pub ranks: IrcPrefixSet,
+    /// `user@host` from a `userhost-in-names` token, empty when the server sent none.
+    pub userhost: String,
 }
 
 /// Whether a channel-mode letter consumes a parameter (`IrcServerFeatures::ModeParamRule`).
@@ -277,8 +279,9 @@ impl IrcServerFeatures {
         }
     }
 
-    /// Splits one 353 NAMES token into its rank set and nick. `None` when the
-    /// token is only rank glyphs.
+    /// Splits one 353 NAMES token into its rank set, nick and (with
+    /// `userhost-in-names`) `user@host`. The nick ends at the first `!` after the
+    /// rank glyphs; nicks cannot contain one. `None` when no nick is left.
     pub fn parse_names_token(&self, token: &str) -> Option<IrcParsedName> {
         let bytes = token.as_bytes();
         let mut bits = 0;
@@ -291,10 +294,15 @@ impl IrcServerFeatures {
             bits |= bit_for(letter);
             index += 1;
         }
-        let nick = token.get(index..).filter(|nick| !nick.is_empty())?;
+        let rest = token.get(index..)?;
+        let (nick, userhost) = rest.split_once('!').unwrap_or((rest, ""));
+        if nick.is_empty() {
+            return None;
+        }
         Some(IrcParsedName {
             nick: nick.to_owned(),
             ranks: IrcPrefixSet(bits),
+            userhost: userhost.to_owned(),
         })
     }
 
@@ -657,6 +665,32 @@ mod tests {
         for token in ["@", "@+", "+", ""] {
             assert!(features.parse_names_token(token).is_none(), "parse_names_token({token:?}) succeeded");
         }
+    }
+
+    #[test]
+    fn names_token_with_userhost_cuts_at_first_bang_after_prefixes() {
+        let features = IrcServerFeatures::new();
+        let multi = features.parse_names_token("@+nick!u@h").expect("@+nick!u@h parses");
+        assert_eq!(multi.nick, "nick");
+        assert_eq!(multi.userhost, "u@h");
+        assert_eq!(features.member_label(multi.ranks, "nick"), "@nick");
+        assert_eq!(multi.ranks, features.parse_names_token("@+nick").expect("parses").ranks);
+
+        let stacked = features.parse_names_token("~@%nick!u@h").expect("~@%nick!u@h parses");
+        assert_eq!((stacked.nick.as_str(), stacked.userhost.as_str()), ("nick", "u@h"));
+        assert_eq!(features.member_label(stacked.ranks, "nick"), "~nick");
+
+        let empty = features.parse_names_token("nick!").expect("nick! parses");
+        assert_eq!((empty.nick.as_str(), empty.userhost.as_str()), ("nick", ""));
+
+        let twice = features.parse_names_token("nick!u@h!x").expect("parses");
+        assert_eq!((twice.nick.as_str(), twice.userhost.as_str()), ("nick", "u@h!x"));
+
+        assert!(features.parse_names_token("@!u@h").is_none(), "no nick before the bang");
+        assert!(features.parse_names_token("!u@h").is_none());
+
+        let plain = features.parse_names_token("@alice").expect("@alice parses");
+        assert_eq!((plain.nick.as_str(), plain.userhost.as_str()), ("alice", ""));
     }
 
     #[test]

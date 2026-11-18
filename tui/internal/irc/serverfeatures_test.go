@@ -215,6 +215,50 @@ func TestEmptyLeftoverNickIsNotAParse(t *testing.T) {
 	}
 }
 
+func TestParseNamesTokenUserhost(t *testing.T) {
+	features := NewServerFeatures()
+	multi, ok := features.ParseNamesToken("@+nick!u@h")
+	if !ok || multi.Nick != "nick" || multi.Userhost != "u@h" {
+		t.Fatalf("@+nick!u@h = %+v ok=%v, want nick u@h", multi, ok)
+	}
+	if got := features.MemberLabel(multi.Ranks, "nick"); got != "@nick" {
+		t.Fatalf("label = %q, want @nick", got)
+	}
+	plain, _ := features.ParseNamesToken("@+nick")
+	if multi.Ranks != plain.Ranks {
+		t.Fatalf("ranks %v differ from the userhost-less token %v", multi.Ranks, plain.Ranks)
+	}
+
+	stacked, ok := features.ParseNamesToken("~@%nick!u@h")
+	if !ok || stacked.Nick != "nick" || stacked.Userhost != "u@h" {
+		t.Fatalf("~@%%nick!u@h = %+v ok=%v", stacked, ok)
+	}
+	if got := features.MemberLabel(stacked.Ranks, "nick"); got != "~nick" {
+		t.Fatalf("label = %q, want ~nick", got)
+	}
+
+	empty, ok := features.ParseNamesToken("nick!")
+	if !ok || empty.Nick != "nick" || empty.Userhost != "" {
+		t.Fatalf("nick! = %+v ok=%v", empty, ok)
+	}
+
+	twice, ok := features.ParseNamesToken("nick!u@h!x")
+	if !ok || twice.Nick != "nick" || twice.Userhost != "u@h!x" {
+		t.Fatalf("nick!u@h!x = %+v ok=%v, want first-bang cut", twice, ok)
+	}
+
+	for _, token := range []string{"@!u@h", "!u@h"} {
+		if _, ok := features.ParseNamesToken(token); ok {
+			t.Fatalf("ParseNamesToken(%q) unexpectedly succeeded", token)
+		}
+	}
+
+	alice, ok := features.ParseNamesToken("@alice")
+	if !ok || alice.Nick != "alice" || alice.Userhost != "" {
+		t.Fatalf("@alice = %+v ok=%v", alice, ok)
+	}
+}
+
 func TestPrefixChangesWalkLettersAndApplyIdempotently(t *testing.T) {
 	features := NewServerFeatures()
 	changes := features.PrefixChanges("+ov-o", []string{"alice", "bob", "alice"})

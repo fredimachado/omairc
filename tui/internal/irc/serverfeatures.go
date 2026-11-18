@@ -27,6 +27,8 @@ type PrefixChange struct {
 type ParsedName struct {
 	Nick  string
 	Ranks PrefixSet
+	// Userhost is "user@host" from a userhost-in-names token, "" when absent.
+	Userhost string
 }
 
 // ModeParamRule describes whether a channel-mode letter consumes a parameter.
@@ -414,8 +416,9 @@ func (f *ServerFeatures) FileHost(encrypted bool) string {
 	return cleartext
 }
 
-// ParseNamesToken splits one 353 NAMES token into ranks and nick. ok is false
-// when the token is only rank glyphs.
+// ParseNamesToken splits one 353 NAMES token into ranks, nick and (with
+// userhost-in-names) user@host. The nick ends at the first "!" after the rank
+// glyphs; nicks cannot contain one. ok is false when no nick is left.
 func (f *ServerFeatures) ParseNamesToken(token string) (ParsedName, bool) {
 	var bits uint32
 	index := 0
@@ -427,11 +430,11 @@ func (f *ServerFeatures) ParseNamesToken(token string) (ParsedName, bool) {
 		bits |= bitFor(letter)
 		index++
 	}
-	nick := token[index:]
+	nick, userhost, _ := strings.Cut(token[index:], "!")
 	if nick == "" {
 		return ParsedName{}, false
 	}
-	return ParsedName{Nick: nick, Ranks: PrefixSet(bits)}, true
+	return ParsedName{Nick: nick, Ranks: PrefixSet(bits), Userhost: userhost}, true
 }
 
 // PrefixChanges derives the rank grants and revokes from one MODE line
