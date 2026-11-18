@@ -2508,3 +2508,65 @@ func TestPresenceIsDefaultFalseWhenOnlyUserhostSet(t *testing.T) {
 	store.SetUserhost("", "u@h")
 	requireFalse(t, "empty nick ignored", store.Knows(""))
 }
+
+// draft/multiline (#478): one assembled message is one event, so a mention on its
+// last line counts and notifies once. The Rust twins are in
+// `client/src/irc/reducer/tests/unread.rs`.
+
+func TestMentionOnTheLastLineOfAMultilineMessageCountsOnce(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	selected := reducer.ConversationKey(networkA, "#selected")
+	background := reducer.ConversationKey(networkA, "#background")
+	reducer.MarkSelected(selected)
+
+	body := "first line\nsecond line\nthird line, omairc"
+	reducer.Apply(MessageEvent{
+		Conversation: background, Author: "Alice", Body: body,
+		Timestamp: reducerTimestamp, Target: "#background",
+	}, reducerTimestamp)
+
+	state := stateOf(t, reducer, background)
+	requireInt(t, "unread", state.Unread, 1)
+	requireInt(t, "mentions", state.Mentions, 1)
+	if _, ok := reducer.TakeMentionArrival(); !ok {
+		t.Fatal("the mention did not notify")
+	}
+	if _, ok := reducer.TakeMentionArrival(); ok {
+		t.Fatal("the mention notified twice")
+	}
+	if _, ok := reducer.TakeInboxArrival(); !ok {
+		t.Fatal("no inbox entry")
+	}
+	if _, ok := reducer.TakeInboxArrival(); ok {
+		t.Fatal("more than one inbox entry")
+	}
+	requireStrings(t, "bodies", transcriptBodies(state), []string{body})
+}
+
+func TestTheSameTextAsThreeSeparateLinesCountsThreeTimes(t *testing.T) {
+	// The control: without multiline assembly, each line is its own message.
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	selected := reducer.ConversationKey(networkA, "#selected")
+	background := reducer.ConversationKey(networkA, "#background")
+	reducer.MarkSelected(selected)
+
+	for _, line := range []string{"first line", "second line", "third line, omairc"} {
+		reducer.Apply(MessageEvent{
+			Conversation: background, Author: "Alice", Body: line,
+			Timestamp: reducerTimestamp, Target: "#background",
+		}, reducerTimestamp)
+	}
+	state := stateOf(t, reducer, background)
+	requireInt(t, "unread", state.Unread, 3)
+	requireInt(t, "mentions", state.Mentions, 1)
+}
+
+func transcriptBodies(state *ConversationState) []string {
+	var bodies []string
+	for _, message := range state.Messages {
+		bodies = append(bodies, message.Body)
+	}
+	return bodies
+}

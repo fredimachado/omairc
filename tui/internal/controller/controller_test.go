@@ -346,6 +346,62 @@ func TestAnInviteToAnotherUserRaisesNoInboxRowAndNoStatusEntry(t *testing.T) {
 	}
 }
 
+// injectMultiline delivers one multiline batch from sender to target, as the
+// server sends it.
+func injectMultiline(t *testing.T, transport *session.LoopbackTransport, sender, target string, lines ...string) {
+	t.Helper()
+	wire := ":" + sender + "!u@h BATCH +ml draft/multiline " + target + "\r\n"
+	for _, line := range lines {
+		wire += "@batch=ml :" + sender + "!u@h PRIVMSG " + target + " :" + line + "\r\n"
+	}
+	inject(t, transport, wire+":"+sender+"!u@h BATCH -ml\r\n")
+}
+
+// TestConversationCreateMatrixMultiline runs the cases of the matrix above for
+// draft/multiline (#478): the assembled message is an ordinary PRIVMSG, so the
+// same cause rules apply. The Rust twins are in
+// `client/src/controller/tests/matrices.rs`.
+func TestConversationCreateMatrixMultiline(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
+	registerNetwork(t, transport, "omairc", "echo-message", "batch", "message-tags", "draft/multiline")
+	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n")
+	if !c.Session("freenode").Capabilities().Contains(irc.CapabilityMultiline) {
+		t.Fatalf("draft/multiline not acked")
+	}
+	c.SelectConversation("freenode", "#omarchy")
+
+	// The echo of our own multiline message never invents a direct message.
+	injectMultiline(t, transport, "omairc", "lena", "one", "two")
+	if hasConversation(c, "freenode", "lena") {
+		t.Fatalf("an echoed multiline invented lena: %v", conversationTargets(c))
+	}
+
+	// In an open channel it is one row.
+	injectMultiline(t, transport, "omairc", "#omarchy", "one", "two")
+	bodies := messageBodies(c)
+	if len(bodies) != 2 || bodies[1] != "one\ntwo" {
+		t.Fatalf("bodies = %q, want the join, then one row with the break", bodies)
+	}
+
+	// A service multiline never invents a direct message.
+	injectMultiline(t, transport, "NickServ", "omairc", "This nickname", "is registered.")
+	if hasConversation(c, "freenode", "NickServ") || hasConversation(c, "freenode", "nickserv") {
+		t.Fatalf("service multiline invented a direct: %v", conversationTargets(c))
+	}
+
+	// A human multiline invents one direct message with one row.
+	injectMultiline(t, transport, "alice", "omairc", "hey there", "got a minute?")
+	if !hasConversation(c, "freenode", "alice") {
+		t.Fatalf("a human multiline did not invent alice: %v", conversationTargets(c))
+	}
+	c.SelectConversation("freenode", "alice")
+	bodies = messageBodies(c)
+	if len(bodies) != 1 || bodies[0] != "hey there\ngot a minute?" {
+		t.Fatalf("alice bodies = %q", bodies)
+	}
+}
+
 func TestSelectedPrivmsgInsertsMessageRow(t *testing.T) {
 	c, clock := newController(t)
 	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))

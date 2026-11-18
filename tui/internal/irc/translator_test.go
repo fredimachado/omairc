@@ -691,3 +691,59 @@ func TestChghostTranslatesToAUserhostFact(t *testing.T) {
 	requireInt(t, "one param", len(translateLine(t, ":alice!u@h CHGHOST onlyone")), 0)
 	requireInt(t, "no sender", len(translateLine(t, "CHGHOST a b")), 0)
 }
+
+// draft/multiline (#478): the session hands the translator one PRIVMSG or NOTICE
+// whose body holds the "\n"s, so nothing downstream knows about batches. The Rust
+// twins are in `client/src/irc/translator/tests/chat.rs`.
+
+func assembledMultiline(t *testing.T, open, command, target string, lines ...string) Message {
+	t.Helper()
+	var parsed []Message
+	for _, text := range lines {
+		parsed = append(parsed, mustParse(t, "@batch=ml "+command+" "+target+" :"+text))
+	}
+	message, ok := AssembleMultiline(mustParse(t, open), parsed)
+	requireTrue(t, "assembled", ok)
+	return message
+}
+
+func TestAssembledMultilinePrivmsgIsOneMessageWithHardBreaks(t *testing.T) {
+	message := assembledMultiline(t, "@msgid=ml1 :mira!u@h BATCH +ml draft/multiline #room",
+		"PRIVMSG", "#room", "one", "two", "three")
+	events := Translate(networkA, "omairc", NewServerFeatures(), message, reducerTimestamp)
+	requireInt(t, "events", len(events), 1)
+	event, ok := events[0].(MessageEvent)
+	requireTrue(t, "message event", ok)
+	requireString(t, "author", event.Author, "mira")
+	requireString(t, "body", event.Body, "one\ntwo\nthree")
+	requireString(t, "msgid", event.MsgID.Value, "ml1")
+	requireString(t, "conversation", event.Conversation.NormalizedTarget, "#room")
+}
+
+func TestAssembledMultilineNoticeIsOneNoticeWithHardBreaks(t *testing.T) {
+	message := assembledMultiline(t,
+		"@msgid=ml2;+draft/channel-context=#room :bot!u@h BATCH +ml draft/multiline omairc",
+		"NOTICE", "omairc", "one", "two")
+	events := translateMessageJoined(message, roomMemberLookup())
+	requireInt(t, "events", len(events), 1)
+	notice, ok := events[0].(NoticeEvent)
+	requireTrue(t, "notice event", ok)
+	requireString(t, "body", notice.Body, "one\ntwo")
+	requireString(t, "msgid", notice.MsgID.Value, "ml2")
+}
+
+func translateMessageJoined(message Message, joined JoinedMemberChannel) []Event {
+	return Translate(networkA, "omairc", NewServerFeatures(), message, reducerTimestamp, joined)
+}
+
+func TestAssembledMultilineKeepsItsBreaksInAReplayLine(t *testing.T) {
+	message := assembledMultiline(t,
+		"@msgid=ml3;time=2024-03-09T16:00:00.620Z :mira!u@h BATCH +ml draft/multiline #room",
+		"PRIVMSG", "#room", "one", "two")
+	batch := HistoryBatch{Target: "#room", Lines: []Message{message}, Kind: HistoryChat}
+	event, ok := TranslateHistory(networkA, "omairc", NewServerFeatures(), batch, reducerTimestamp)
+	requireTrue(t, "history ok", ok)
+	requireInt(t, "lines", len(event.Lines), 1)
+	requireString(t, "body", event.Lines[0].Body, "one\ntwo")
+	requireString(t, "msgid", event.Lines[0].MsgID.Value, "ml3")
+}
