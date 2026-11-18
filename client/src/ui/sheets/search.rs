@@ -46,6 +46,10 @@ impl FilterSource for SearchSource {
         self.results.hits.clone()
     }
 
+    fn walks_to_ends(&self) -> bool {
+        true
+    }
+
     fn width(&self) -> f32 {
         WIDTH
     }

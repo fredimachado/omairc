@@ -259,3 +259,62 @@ fn a_credential_in_a_log_is_never_listed(cx: &mut gpui::TestAppContext) {
     let texts: Vec<String> = hits(&ui).into_iter().map(|hit| hit.text).collect();
     assert_eq!(texts, ["hunter2 is a fine joke"]);
 }
+
+/// Thirty lines with "zebra" in `#help`, and one in `#omarchy`, which sorts last. A
+/// third conversation is on screen, so Enter on the last hit visibly moves.
+fn seed_many_zebras(ui: &mut SeededShell) {
+    ui.select("#help");
+    for index in 0..30 {
+        ui.inject(
+            OMARCHY,
+            &tagged(&format!("zh-{index}"), "kai", "#help", &format!("zebra number {index}")),
+        );
+    }
+    ui.select("#omarchy");
+    ui.inject(OMARCHY, &tagged("zlast", "dax", "#omarchy", "zebra in the omarchy room"));
+    ui.select("#ricing");
+}
+
+fn selected_hit(ui: &SeededShell) -> usize {
+    ui.shell.read_with(ui.cx, |shell, cx| match &shell.modal {
+        Some(crate::ui::shell::modal::ActiveModal::Search { sheet, .. }) => sheet.read(cx).selected,
+        _ => panic!("the search sheet is not open"),
+    })
+}
+
+#[gpui::test]
+fn end_selects_the_last_hit_and_home_the_first_without_moving_the_caret(cx: &mut gpui::TestAppContext) {
+    let mut ui = super::fixture::open(cx);
+    seed_many_zebras(&mut ui);
+    open_search(&mut ui);
+    type_query(&mut ui, "zebra");
+    let count = hits(&ui).len();
+    assert_eq!(count, 31);
+    assert_eq!(selected_hit(&ui), 0);
+
+    ui.keys("end");
+    assert_eq!(selected_hit(&ui), count - 1, "End selects the last hit");
+    ui.keys("home");
+    assert_eq!(selected_hit(&ui), 0, "Home selects the first hit");
+
+    // The field keeps its caret keys: Left then typing inserts before the last char.
+    ui.keys("left x");
+    settle_search(&mut ui);
+    assert!(hits(&ui).is_empty(), "the field now reads `zebrxa`");
+}
+
+#[gpui::test]
+fn enter_after_end_opens_the_last_hits_conversation(cx: &mut gpui::TestAppContext) {
+    let mut ui = super::fixture::open(cx);
+    seed_many_zebras(&mut ui);
+    open_search(&mut ui);
+    type_query(&mut ui, "zebra");
+    let last = hits(&ui).pop().expect("hits");
+    assert_eq!(last.conversation.normalized_target, "#omarchy");
+
+    ui.keys("end");
+    ui.keys("enter");
+
+    assert!(!search_open(&ui));
+    assert_eq!(ConversationKey::new(OMARCHY, ui.selected_key()), last.conversation);
+}

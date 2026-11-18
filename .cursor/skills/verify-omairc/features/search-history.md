@@ -6,7 +6,7 @@
 
 - `search-open` toggles with `Ctrl+Shift+F`. The same chord closes it. Connect blocks the chord, as it blocks every sheet.
 - `search-type` searches after a 150 ms pause. The match is case-insensitive over the author nick and the plain text. A blank field lists nothing and shows `Type to search every conversation`. The footer reads `N results`, `Searching…` while the logs are read, or `200+ results, refine your search`.
-- `search-walk` Up and Down move the highlight through the hits and wrap. The list scrolls to keep it in view.
+- `search-walk` Up and Down move the highlight through the hits and wrap. Home selects the first hit and End the last. The list scrolls to keep it in view. Left and Right still move the field's caret.
 - `search-jump` Enter closes the sheet, selects the hit's conversation, and lands on the line (by msgid when it has one, else by author, kind, body and time). A line older than the transcript the conversation has loaded opens the conversation as it opens without a search, with `That message is older than the loaded history.` in place of the topic line. No history is fetched for it.
 - `search-close` Escape closes the sheet and returns focus to the composer.
 
@@ -23,7 +23,7 @@ Preconditions:
 - **No executable recipe yet.** `run search-history` fails closed. This file has no `desktop-recipe` fence. Do not add an empty fence.
 - The Xvfb desktop driver needs lavapipe. The desktop proof is the in-process `#[gpui::test]` in `client/src/ui/tests/search.rs`. The TUI proof is `control-omairc-tui` (`key --key ctrl+shift+f`, `type --text prototype`, `key --key down`, `key --key enter`).
 
-- **What a user sees.** `Ctrl+Shift+F` opens a sheet with a field and a list `network  conversation  time  author  text`. Typing `prototype` lists anna's line. Enter closes the sheet, the window title becomes `anna - Omairc` (the TUI's OSC title) and the line is on screen. Escape on an open sheet returns focus to the composer.
+- **What a user sees.** `Ctrl+Shift+F` opens a sheet with a field and a list `network  conversation  time  author  text`. Typing `prototype` lists anna's line. The matched text in each row is highlighted (the desktop draws it bold in the accent; the TUI uses the find-match style). Enter closes the sheet, the window title becomes `anna - Omairc` (the TUI's OSC title) and the line is on screen. Escape on an open sheet returns focus to the composer.
 
 ## Gotchas
 
@@ -33,5 +33,4 @@ Preconditions:
 - The query is never written to the application log.
 - A hit older than the loaded transcript does not fetch CHATHISTORY. It opens the conversation and says so.
 - The search sheet is not the in-conversation `Ctrl+F` find. Find stays on the transcript on screen.
-- `Home` and `End` edit the field's caret; only Up and Down walk the hits.
 - Results from disk are bounded by the 200-hit cap, so a very old line is found only while fewer than 200 newer lines match the same query.

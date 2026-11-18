@@ -14,7 +14,7 @@ use gpui::{
 use crate::model::filter_list::{clamp_after_filter, step};
 use crate::model::fuzzy::char_ranges;
 use crate::model::Style;
-use crate::ui::input::SingleLineInput;
+use crate::ui::input::{End, Home, SingleLineInput};
 use crate::ui::key_bindings::{bind_return, RETURN_KEYS};
 use crate::ui::sheets::frame::popup_frame;
 use crate::util::{scaled_px, style, to_gpui, FONT_FAMILY};
@@ -57,6 +57,11 @@ pub trait FilterSource: 'static {
     /// Whether Enter or a click on this row activates it. Inert rows stay listed.
     fn activatable(&self, _item: &Self::Item) -> bool {
         true
+    }
+    /// Whether Home and End walk to the first and last row instead of moving the filter
+    /// field's caret (Left and Right still move it).
+    fn walks_to_ends(&self) -> bool {
+        false
     }
     /// The sheet's width in logical pixels.
     fn width(&self) -> f32;
@@ -136,6 +141,18 @@ impl<S: FilterSource> FilterSheet<S> {
         cx.notify();
     }
 
+    /// Home / End: selects the first or last row, scrolls it into view, and reports it.
+    pub fn select_edge(&mut self, last: bool, cx: &mut Context<Self>) {
+        let (items, _) = self.rows(cx);
+        if items.is_empty() {
+            return;
+        }
+        self.selected = if last { items.len() - 1 } else { 0 };
+        self.scroll.scroll_to_item(self.selected);
+        cx.emit(SheetEvent::Highlighted(items[self.selected].clone()));
+        cx.notify();
+    }
+
     /// A click on row `ix`: select it, then activate it.
     pub fn activate_at(&mut self, ix: usize, cx: &mut Context<Self>) {
         self.selected = ix;
@@ -200,6 +217,9 @@ pub fn render_filter_sheet<S: FilterSource>(sheet: &Entity<FilterSheet<S>>, cx: 
     let up = sheet.clone();
     let down = sheet.clone();
     let enter = sheet.clone();
+    let first = sheet.clone();
+    let last = sheet.clone();
+    let walks_to_ends = state.source.walks_to_ends();
     let card = div()
         .w(scaled_px(&app_style, state.source.width()))
         .p(scaled_px(&app_style, 16.))
@@ -221,6 +241,16 @@ pub fn render_filter_sheet<S: FilterSource>(sheet: &Entity<FilterSheet<S>>, cx: 
             enter.update(cx, |sheet, cx| sheet.activate(cx));
         })
         .on_action(|_: &FilterSwallowTab, _, _| {})
+        // The field binds Home and End to its caret, and it is deeper than the card, so
+        // the card takes them first (capture) when its source walks to the ends.
+        .when(walks_to_ends, |card| {
+            card.capture_action(move |_: &Home, _, cx| {
+                first.update(cx, |sheet, cx| sheet.select_edge(false, cx));
+            })
+            .capture_action(move |_: &End, _, cx| {
+                last.update(cx, |sheet, cx| sheet.select_edge(true, cx));
+            })
+        })
         .child(state.filter.clone())
         .child(
             div()
