@@ -32,6 +32,8 @@ func overlayCases() []overlayCase {
 		{"link", (*Model).toggleLink, (*Model).linkVisible, "Links",
 			func(m *Model) string { return m.linkSheet().input.Value() }},
 		{"inbox", (*Model).toggleInbox, (*Model).inboxVisible, "Inbox", nil},
+		{"search", (*Model).toggleSearch, (*Model).searchVisible, "Search",
+			func(m *Model) string { return m.searchSheet().input.Value() }},
 		{"list", (*Model).openChannelList, (*Model).channelListVisible, "Channels",
 			func(m *Model) string { return m.listSheet().input.Value() }},
 		{"file", (*Model).openFilePick, (*Model).filePickVisible, "File path",
@@ -40,7 +42,7 @@ func overlayCases() []overlayCase {
 }
 
 // overlayModel is the demo world with a file host on the focused network, so
-// every one of the six sheets can open on a #channel.
+// every one of the seven sheets can open on a #channel.
 func overlayModel(t *testing.T) *Model {
 	t.Helper()
 	m := seededModel(t)

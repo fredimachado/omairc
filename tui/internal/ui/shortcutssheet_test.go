@@ -253,8 +253,8 @@ func TestShortcutsSheetFitsDefaultSize(t *testing.T) {
 	if got := shortcutGroupTitles(layout.columns[1].groups); got != "WRITE+WINDOW" {
 		t.Fatalf("right column = %s, want WRITE+WINDOW", got)
 	}
-	if len(layout.widths) != 2 || layout.widths[0] != 48 || layout.widths[1] != 60 {
-		t.Fatalf("column widths = %v, want [48 60]", layout.widths)
+	if len(layout.widths) != 2 || layout.widths[0] != 49 || layout.widths[1] != 59 {
+		t.Fatalf("column widths = %v, want [49 59]", layout.widths)
 	}
 	budget := m.overlayCardRowBudget() - shortcutsHeaderRows
 	if len(layout.body) != 25 || len(layout.body) > budget {

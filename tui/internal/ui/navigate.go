@@ -575,6 +575,7 @@ func indexOfString(values []string, needle string) int {
 // instead: the walk was a no-op for the header focus, so the typed line stayed
 // in the composer as a draft while the transcript jumped away.
 func (m *Model) switchSelection(apply func()) {
+	m.searchNote = ""
 	if m.find.active {
 		m.leaveFind()
 	}
