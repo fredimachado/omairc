@@ -274,6 +274,17 @@ func TestConversationCreateMatrix(t *testing.T) {
 		t.Fatalf("SelectedTarget = %q after inbound direct", c.SelectedTarget())
 	}
 
+	// A reaction from someone with no conversation open is not an inbound line:
+	// it never invents one, person or service.
+	inject(t, transport, "@+draft/reply=abc;+draft/react=\U0001F44D :lena!u@h TAGMSG omairc\r\n")
+	inject(t, transport, "@+draft/reply=abc;+draft/react=\U0001F44D :NickServ!NickServ@services TAGMSG omairc\r\n")
+	if hasConversation(c, "freenode", "lena") || hasConversation(c, "freenode", "NickServ") {
+		t.Fatalf("a react TAGMSG invented a conversation: %v", conversationTargets(c))
+	}
+	if c.SelectedTarget() != "#omarchy" {
+		t.Fatalf("SelectedTarget = %q after react TAGMSG", c.SelectedTarget())
+	}
+
 	// UserOpen invents and selects, without a PRIVMSG.
 	framesBefore := len(transport.WrittenFrames())
 	if !c.OpenDirectMessage("bob") {

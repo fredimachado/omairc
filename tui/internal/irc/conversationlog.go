@@ -10,6 +10,7 @@ type TranscriptLine struct {
 	Kind             string
 	Body             string
 	MsgID            string
+	ReplyTo          string
 	OnlyVisibleToYou bool
 }
 

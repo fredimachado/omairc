@@ -47,6 +47,7 @@ type ReducedMessage struct {
 	Collapsible      bool
 	Origin           Origin
 	MsgID            MsgID
+	ReplyTo          string
 	Sequence         int64
 	OnlyVisibleToYou bool
 }
@@ -153,9 +154,21 @@ type ConversationState struct {
 	// CHATHISTORY older page lands while the reader is parked at the top.
 	HistoryPageCapTail bool
 
+	// Reactions holds the reactions on each chat line, keyed by its msgid. In
+	// memory only: a line that leaves the transcript takes its entry with it
+	// (forgetMsgID).
+	Reactions map[string]*ReactionSet
+
 	// channel is non-nil only for channels; a nil channel means a direct
 	// message.
 	channel *ChannelState
+}
+
+// forgetMsgID forgets a line's msgid: it no longer dedupes and its reactions go
+// with it.
+func (c *ConversationState) forgetMsgID(msgid MsgID) {
+	delete(c.MessageIDs, msgid)
+	delete(c.Reactions, msgid.Value)
 }
 
 // IsChannel reports whether this conversation is a channel.
@@ -518,6 +531,8 @@ func (r *EventReducer) Apply(event Event, now time.Time) {
 		r.reduceNickFacts(value)
 	case InviteEvent:
 		r.reduceInvite(value)
+	case ReactionEvent:
+		r.reduceReaction(value)
 	}
 }
 
@@ -817,6 +832,7 @@ func (r *EventReducer) EnsureConversation(key ConversationKey, displayTarget str
 		Target:     displayTarget,
 		Typing:     make(map[string]TypingHint),
 		MessageIDs: make(map[MsgID]struct{}),
+		Reactions:  make(map[string]*ReactionSet),
 	}
 	_, conversation.Muted = r.mutedKeys[key]
 	if targetIsChannel {
@@ -1196,7 +1212,7 @@ func (r *EventReducer) presenceOf(networkID, normalizedNick string) NickPresence
 // appendChat admits one live chat line, dedupes by msgid, persists it, caps the
 // transcript, clears the author's typing hint, and notes the arrival. It
 // mirrors IrcEventReducer::appendChat.
-func (r *EventReducer) appendChat(key ConversationKey, displayTarget, author, body string, timestamp time.Time, serverTime *time.Time, kind MessageKind, msgid MsgID, onlyVisibleToYou bool) {
+func (r *EventReducer) appendChat(key ConversationKey, displayTarget, author, body string, timestamp time.Time, serverTime *time.Time, kind MessageKind, msgid, replyTo MsgID, onlyVisibleToYou bool) {
 	self := r.isSelf(key.NetworkID, author)
 	cause := CauseInboundOther
 	if self {
@@ -1224,6 +1240,7 @@ func (r *EventReducer) appendChat(key ConversationKey, displayTarget, author, bo
 		Kind:             kind,
 		Origin:           OriginLive,
 		MsgID:            msgid,
+		ReplyTo:          replyTo.Value,
 		OnlyVisibleToYou: onlyVisibleToYou,
 	})
 	r.claimChannelContext(key, isChannel, msgid, onlyVisibleToYou)
@@ -1308,7 +1325,7 @@ func (r *EventReducer) dropLastTranscriptRow(conversation *ConversationState) {
 	}
 	last := conversation.Messages[len(conversation.Messages)-1]
 	if !last.MsgID.IsEmpty() {
-		delete(conversation.MessageIDs, last.MsgID)
+		conversation.forgetMsgID(last.MsgID)
 		r.releaseChannelContext(conversation.Key, last.MsgID)
 	}
 	removedIndex := int64(len(conversation.Messages) - 1)
@@ -1405,7 +1422,7 @@ func (r *EventReducer) admitMembershipReplay(conversation *ConversationState, ru
 			result.dropped = true
 			result.droppedSequence = row.Sequence
 			if !row.MsgID.IsEmpty() {
-				delete(conversation.MessageIDs, row.MsgID)
+				conversation.forgetMsgID(row.MsgID)
 				r.releaseChannelContext(conversation.Key, row.MsgID)
 			}
 			return true
@@ -1495,6 +1512,7 @@ func (r *EventReducer) hydrateFromLog(conversation *ConversationState) {
 			Kind:             kind,
 			Origin:           OriginReplay,
 			MsgID:            msgid,
+			ReplyTo:          line.ReplyTo,
 			OnlyVisibleToYou: line.OnlyVisibleToYou,
 		})
 		r.claimChannelContext(conversation.Key, isChannel, msgid, line.OnlyVisibleToYou)
@@ -1532,6 +1550,7 @@ func (r *EventReducer) transcriptLineFromMessage(conversation *ConversationState
 		Kind:             kind,
 		Body:             message.Body,
 		MsgID:            message.MsgID.Value,
+		ReplyTo:          message.ReplyTo,
 		OnlyVisibleToYou: message.OnlyVisibleToYou,
 	}
 }
@@ -1577,7 +1596,7 @@ func (r *EventReducer) capMessagesWithPolicy(conversation *ConversationState, dr
 		for index := 0; index < extra; index++ {
 			msgid := conversation.Messages[index].MsgID
 			if !msgid.IsEmpty() {
-				delete(conversation.MessageIDs, msgid)
+				conversation.forgetMsgID(msgid)
 				r.releaseChannelContext(conversation.Key, msgid)
 			}
 		}
@@ -1593,7 +1612,7 @@ func (r *EventReducer) capMessagesWithPolicy(conversation *ConversationState, dr
 	for index := len(conversation.Messages) - extra; index < len(conversation.Messages); index++ {
 		msgid := conversation.Messages[index].MsgID
 		if !msgid.IsEmpty() {
-			delete(conversation.MessageIDs, msgid)
+			conversation.forgetMsgID(msgid)
 			r.releaseChannelContext(conversation.Key, msgid)
 		}
 	}
@@ -1931,6 +1950,7 @@ func (r *EventReducer) spliceHistory(conversation *ConversationState, event Hist
 			Kind:             kind,
 			Origin:           OriginReplay,
 			MsgID:            line.MsgID,
+			ReplyTo:          line.ReplyTo.Value,
 			OnlyVisibleToYou: line.OnlyVisibleToYou,
 		}
 		message.Sequence = conversation.NextSequence
@@ -2111,21 +2131,21 @@ func (r *EventReducer) reduceWelcome(event WelcomeEvent) {
 // IrcEventReducer::reduce(IrcMessageEvent).
 func (r *EventReducer) reduceMessage(event MessageEvent) {
 	r.appendChat(event.Conversation, displayTarget(event.Conversation, event.Target),
-		event.Author, event.Body, event.Timestamp, event.ServerTime, KindMessage, event.MsgID, event.OnlyVisibleToYou)
+		event.Author, event.Body, event.Timestamp, event.ServerTime, KindMessage, event.MsgID, event.ReplyTo, event.OnlyVisibleToYou)
 }
 
 // reduceNotice admits a NOTICE. It mirrors
 // IrcEventReducer::reduce(IrcNoticeEvent).
 func (r *EventReducer) reduceNotice(event NoticeEvent) {
 	r.appendChat(event.Conversation, displayTarget(event.Conversation, event.Target),
-		event.Author, event.Body, event.Timestamp, event.ServerTime, KindNotice, event.MsgID, event.OnlyVisibleToYou)
+		event.Author, event.Body, event.Timestamp, event.ServerTime, KindNotice, event.MsgID, event.ReplyTo, event.OnlyVisibleToYou)
 }
 
 // reduceAction admits a CTCP ACTION. It mirrors
 // IrcEventReducer::reduce(IrcActionEvent).
 func (r *EventReducer) reduceAction(event ActionEvent) {
 	r.appendChat(event.Conversation, displayTarget(event.Conversation, event.Target),
-		event.Author, event.Body, event.Timestamp, event.ServerTime, KindAction, event.MsgID, event.OnlyVisibleToYou)
+		event.Author, event.Body, event.Timestamp, event.ServerTime, KindAction, event.MsgID, event.ReplyTo, event.OnlyVisibleToYou)
 }
 
 // reduceJoin records a JOIN, its account, and a self-join's history anchor. It
@@ -2318,6 +2338,9 @@ func (r *EventReducer) reduceNick(event NickEvent) {
 					continue
 				}
 				existing.MessageIDs[message.MsgID] = struct{}{}
+				if reactions, ok := moved.Reactions[message.MsgID.Value]; ok {
+					existing.Reactions[message.MsgID.Value] = reactions
+				}
 			}
 			oldSequence := message.Sequence
 			message.Sequence = existing.NextSequence
@@ -2521,6 +2544,58 @@ func (r *EventReducer) reduceTyping(event TypingEvent) {
 	}
 	r.pruneExpiredTyping(conversation, event.ReceivedAt)
 	conversation.Typing[normalizedNick] = hint
+}
+
+// holdsChatLine reports whether the transcript holds a chat line with msgid. Join
+// and part lines may carry one too, but only a chat line draws reactions. Newest
+// first, because a reaction mostly follows a recent line.
+func holdsChatLine(conversation *ConversationState, msgid MsgID) bool {
+	if msgid.IsEmpty() {
+		return false
+	}
+	if _, known := conversation.MessageIDs[msgid]; !known {
+		return false
+	}
+	for index := len(conversation.Messages) - 1; index >= 0; index-- {
+		message := conversation.Messages[index]
+		if message.MsgID != msgid {
+			continue
+		}
+		return message.Kind == KindMessage || message.Kind == KindNotice || message.Kind == KindAction
+	}
+	return false
+}
+
+// reduceReaction adds or removes one nick's reaction on a chat line. A reaction
+// is not a line: it never creates a conversation (it takes no
+// IrcConversationCause, so see .cursor/skills/conversation-cause), never marks
+// unread, never raises a mention or inbox arrival and is not written to the log.
+// One aimed at a conversation or a line the reducer does not hold is dropped. It
+// mirrors reduce_reaction in `client/src/irc/reducer/handlers.rs`.
+func (r *EventReducer) reduceReaction(event ReactionEvent) {
+	normalized := r.normalize(event.Conversation.NetworkID, event.Nick)
+	conversation := r.findMutable(event.Conversation)
+	if conversation == nil || !holdsChatLine(conversation, event.TargetMsgID) {
+		return
+	}
+	key := event.TargetMsgID.Value
+	if event.Removed {
+		set := conversation.Reactions[key]
+		if set == nil {
+			return
+		}
+		set.Remove(event.Emoji, normalized)
+		if set.IsEmpty() {
+			delete(conversation.Reactions, key)
+		}
+		return
+	}
+	set := conversation.Reactions[key]
+	if set == nil {
+		set = &ReactionSet{}
+		conversation.Reactions[key] = set
+	}
+	set.Add(event.Emoji, normalized, event.Nick)
 }
 
 // reduceHistory routes a replay batch: bouncer channel batches wait for the
@@ -2824,6 +2899,11 @@ func dereferenceEvent(event Event) Event {
 		}
 		return *value
 	case *InviteEvent:
+		if value == nil {
+			return nil
+		}
+		return *value
+	case *ReactionEvent:
 		if value == nil {
 			return nil
 		}

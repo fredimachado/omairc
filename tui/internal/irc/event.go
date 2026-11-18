@@ -29,6 +29,7 @@ const (
 	EventChannelError
 	EventNickFacts
 	EventInvite
+	EventReaction
 )
 
 // Event is one translated IRC fact. The unexported method seals the interface
@@ -102,6 +103,8 @@ type WelcomeEvent struct {
 
 func (WelcomeEvent) eventKind() EventKind { return EventWelcome }
 
+// MessageEvent, NoticeEvent and ActionEvent carry ReplyTo, the +draft/reply
+// parent msgid; it is empty when the line is not a reply.
 type MessageEvent struct {
 	Conversation     ConversationKey
 	Author           string
@@ -110,6 +113,7 @@ type MessageEvent struct {
 	ServerTime       *time.Time
 	Target           string
 	MsgID            MsgID
+	ReplyTo          MsgID
 	OnlyVisibleToYou bool
 }
 
@@ -123,6 +127,7 @@ type NoticeEvent struct {
 	ServerTime       *time.Time
 	Target           string
 	MsgID            MsgID
+	ReplyTo          MsgID
 	OnlyVisibleToYou bool
 }
 
@@ -136,6 +141,7 @@ type ActionEvent struct {
 	ServerTime       *time.Time
 	Target           string
 	MsgID            MsgID
+	ReplyTo          MsgID
 	OnlyVisibleToYou bool
 }
 
@@ -276,6 +282,21 @@ type TypingEvent struct {
 
 func (TypingEvent) eventKind() EventKind { return EventTyping }
 
+// ReactionEvent reports a reaction (+draft/react) or its removal
+// (+draft/unreact) on one line of a conversation. Removed is false for a react.
+// The reducer drops it unless the conversation and the target line already
+// exist. It mirrors ReactionEvent in client/src/irc/event.rs.
+type ReactionEvent struct {
+	Conversation ConversationKey
+	Nick         string
+	TargetMsgID  MsgID
+	Emoji        string
+	Removed      bool
+	ReceivedAt   time.Time
+}
+
+func (ReactionEvent) eventKind() EventKind { return EventReaction }
+
 // ReplayLine is one line inside a replay batch. ServerTime is the parsed time
 // tag only; Timestamp falls back to the local wall clock when the tag is
 // missing or unparseable, and that fallback must not advance the bouncer PLAY
@@ -286,6 +307,7 @@ type ReplayLine struct {
 	Timestamp        time.Time
 	Kind             MessageKindTag
 	MsgID            MsgID
+	ReplyTo          MsgID
 	ServerTime       *time.Time
 	OnlyVisibleToYou bool
 }
