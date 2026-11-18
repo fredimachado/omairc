@@ -72,6 +72,14 @@ func (m *Model) applyRememberedTranscript() string {
 	if place.Row >= 0 {
 		m.retireRestore()
 		m.pinTranscriptToRow(place.Row)
+		if m.scrollLines() == 0 {
+			// The line sits inside the last page, so the landing clamped to
+			// the end: the reader follows it, as Rust's layout clamp rule has
+			// it, and the read marker may advance.
+			m.followEnd()
+			m.clearFirstUnseen()
+			m.syncReadMarkerViewport()
+		}
 		return "applied"
 	}
 	// The line is not loaded. Show the last page without entering follow

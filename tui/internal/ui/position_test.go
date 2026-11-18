@@ -88,3 +88,29 @@ func TestPrependShiftsCatchUpRows(t *testing.T) {
 			m.firstUnseen(), m.resumeRow(), first+1, resume+1)
 	}
 }
+
+// A restore that lands on the end follows it, as the Rust client does once the
+// layout clamps the landing; one that lands short of the end stays anchored.
+func TestRestoreLandingOnTheEndFollowsIt(t *testing.T) {
+	m := seededModel(t)
+	last := len(m.ctrl.Messages()) - 1
+	m.ctrl.RememberScrollPlace(false, last-1)
+	if got := m.applyRememberedTranscript(); got != "applied" {
+		t.Fatalf("restore = %q, want applied", got)
+	}
+	if !m.reader.reportsFollowEnd() {
+		t.Fatalf("reader = %T, want followingEnd: the saved line sits inside the last page", m.reader)
+	}
+}
+
+func TestRestoreLandingShortOfTheEndStaysAnchored(t *testing.T) {
+	m := seededModel(t)
+	m = resizeModel(t, m, 118, 6)
+	m.ctrl.RememberScrollPlace(false, 0)
+	if got := m.applyRememberedTranscript(); got != "applied" {
+		t.Fatalf("restore = %q, want applied", got)
+	}
+	if _, ok := m.reader.(anchored); !ok || m.reader.reportsFollowEnd() {
+		t.Fatalf("reader = %T, want anchored: the saved line is above the last page", m.reader)
+	}
+}
