@@ -520,3 +520,199 @@ func TestChannelListModelPlainTopic(t *testing.T) {
 		}
 	}
 }
+
+// requireListPhase checks the loading and complete flags of network "n".
+func requireListPhase(t *testing.T, r *ChannelListRequest, when string, loading, complete bool) {
+	t.Helper()
+	state, _ := r.State("n")
+	if state.Loading != loading || state.Complete != complete {
+		t.Fatalf("%s: loading=%v complete=%v, want loading=%v complete=%v (%+v)",
+			when, state.Loading, state.Complete, loading, complete, state)
+	}
+}
+
+// TestChannelListRequestPhasesAreExclusive pins that a load is loading or complete
+// and never both, and that a failed load is neither.
+func TestChannelListRequestPhasesAreExclusive(t *testing.T) {
+	r := NewChannelListRequest(channelListClock())
+	r.Request("n", "*", false)
+	requireListPhase(t, r, "started", true, false)
+
+	r.Finish("n")
+	requireListPhase(t, r, "finished", false, true)
+
+	r.Request("n", "*", true)
+	requireListPhase(t, r, "refreshed", true, false)
+
+	r.Fail("n", "boom", false)
+	requireListPhase(t, r, "failed", false, false)
+	state, _ := r.State("n")
+	if state.Error != "boom" {
+		t.Fatalf("failed state error = %q, want boom", state.Error)
+	}
+}
+
+// TestChannelListRequestQueuesOneMask pins that a second mask while loading takes the
+// single pending slot without arming another timer, and that the in-flight mask in any
+// case clears it.
+func TestChannelListRequestQueuesOneMask(t *testing.T) {
+	clock := channelListClock()
+	r := NewChannelListRequest(clock)
+	r.Request("n", "#a", false)
+	pendingBefore := clock.Pending()
+
+	r.Request("n", "#b", false)
+	r.Request("n", "#c", false)
+	state, _ := r.State("n")
+	if !state.HasPendingMask || state.PendingMask != "#c" {
+		t.Fatalf("pending after #b then #c = %+v, want the one slot to hold #c", state)
+	}
+	if clock.Pending() != pendingBefore {
+		t.Fatalf("a queued mask armed a timer: pending %d -> %d", pendingBefore, clock.Pending())
+	}
+
+	if kind := r.Request("n", "#A", false); kind != ChannelListLoading {
+		t.Fatalf("same-mask Request = %v, want Loading", kind)
+	}
+	state, _ = r.State("n")
+	if state.HasPendingMask || !state.Loading || state.Mask != "#a" {
+		t.Fatalf("same mask did not clear the queue: %+v", state)
+	}
+}
+
+// TestChannelListRequestCompletedNewerMaskCarriesNoDrain pins that a newer mask
+// drains the timed-out load's stale END once, completes on the real END, and carries
+// no drain flag into a later load.
+func TestChannelListRequestCompletedNewerMaskCarriesNoDrain(t *testing.T) {
+	r := NewChannelListRequest(channelListClock())
+	r.Request("n", "*", false)
+	r.Fail("n", channelListTimeoutText, true)
+
+	r.Request("n", "#x", false)
+	if res := r.Finish("n"); res.Completed {
+		t.Fatalf("stale END completed #x: %+v", res)
+	}
+	if res := r.Finish("n"); !res.Completed {
+		t.Fatalf("real END did not complete #x: %+v", res)
+	}
+	state, _ := r.State("n")
+	if state.DrainTimedOutEnd || !state.Complete {
+		t.Fatalf("completed #x = %+v, want complete without a drain flag", state)
+	}
+
+	r.Request("n", "#y", false)
+	if res := r.Finish("n"); !res.Completed {
+		t.Fatalf("first END of #y = %+v, want it to complete (not swallowed)", res)
+	}
+}
+
+// TestChannelListRequestFailedKeepsRowsAndError pins that a timed-out load keeps the
+// rows it streamed and carries the timeout text.
+func TestChannelListRequestFailedKeepsRowsAndError(t *testing.T) {
+	clock := channelListClock()
+	r := NewChannelListRequest(clock)
+	r.Request("n", "*", false)
+	r.Row("n", ChannelListRow{Channel: "#kept", Users: 4})
+	clock.Advance(31 * time.Second)
+
+	state, _ := r.State("n")
+	requireListPhase(t, r, "timed out", false, false)
+	if state.Error != channelListTimeoutText {
+		t.Fatalf("error = %q, want %q", state.Error, channelListTimeoutText)
+	}
+	if len(state.Rows) != 1 || state.Rows[0].Channel != "#kept" {
+		t.Fatalf("rows after timeout = %+v, want #kept", state.Rows)
+	}
+}
+
+// TestChannelListRequestNonTimeoutFailKeepsDrain pins today's behavior: a failure that
+// is not a timeout keeps the drain of the timed-out load it replaced, and the stale END
+// is then absorbed by the failed state without completing anything.
+func TestChannelListRequestNonTimeoutFailKeepsDrain(t *testing.T) {
+	r := NewChannelListRequest(channelListClock())
+	r.Request("n", "*", false)
+	r.Fail("n", channelListTimeoutText, true)
+	r.Request("n", "#x", false)
+	if !r.Fail("n", "Too many channel matches", false) {
+		t.Fatal("Fail(non-timeout) = false, want true")
+	}
+	state, _ := r.State("n")
+	if state.Loading || state.Complete || !state.DrainTimedOutEnd {
+		t.Fatalf("state after non-timeout fail = %+v, want failed with the drain kept", state)
+	}
+
+	if res := r.Finish("n"); res.Completed {
+		t.Fatalf("END on a failed request completed: %+v", res)
+	}
+	state, _ = r.State("n")
+	if state.Loading || state.Complete || state.DrainTimedOutEnd {
+		t.Fatalf("state after the END = %+v, want failed with no drain", state)
+	}
+}
+
+// recordingClock keeps each AfterFunc callback unfired, so a test can run one late the
+// way a real timer that fired just before it was superseded would.
+type recordingClock struct {
+	callbacks []func()
+}
+
+func (c *recordingClock) Now() time.Time { return time.Time{} }
+
+func (c *recordingClock) AfterFunc(_ time.Duration, f func()) session.Timer {
+	c.callbacks = append(c.callbacks, f)
+	return recordingTimer{}
+}
+
+type recordingTimer struct{}
+
+func (recordingTimer) Stop() bool { return true }
+
+// TestChannelListRequestStaleTimerCallbackIgnored pins that the idle callback of a
+// superseded load cannot fail the newer load.
+func TestChannelListRequestStaleTimerCallbackIgnored(t *testing.T) {
+	clock := &recordingClock{}
+	r := NewChannelListRequest(clock)
+	r.Request("n", "*", false)
+	stale := clock.callbacks[0]
+	r.Finish("n")
+	r.Request("n", "#new", false)
+
+	stale()
+
+	state, _ := r.State("n")
+	if !state.Loading || state.Error != "" {
+		t.Fatalf("a stale timer callback failed the newer load: %+v", state)
+	}
+}
+
+// TestChannelListStaleEndAfterTimeoutDoesNotCompleteTheNewerLoad drives the timeout and
+// the newer load through the controller: the timed-out LIST's late 323 is drained and
+// the newer load completes only on its own end.
+func TestChannelListStaleEndAfterTimeoutDoesNotCompleteTheNewerLoad(t *testing.T) {
+	c, transport := phase7Setup(t)
+	clock := c.clock.(*session.FakeClock)
+
+	if !c.SendMessage("/list *") {
+		t.Fatal("SendMessage(/list *) = false")
+	}
+	clock.Advance(31 * time.Second)
+
+	if !c.SendMessage("/list #new") {
+		t.Fatal("SendMessage(/list #new) = false")
+	}
+	if !writtenFramesContain(transport, "LIST #new") {
+		t.Fatalf("no LIST #new frame: %v", transport.WrittenFrames())
+	}
+	inject(t, transport, ":server 323 omairc :End of /LIST\r\n")
+	state, _ := c.channelLists.State("freenode")
+	if !state.Loading || state.Complete {
+		t.Fatalf("state after the stale 323 = %+v, want #new still loading", state)
+	}
+
+	inject(t, transport, ":server 322 omairc #new 3 :new channel\r\n"+
+		":server 323 omairc :End of /LIST\r\n")
+	state, _ = c.channelLists.State("freenode")
+	if state.Loading || !state.Complete || state.Mask != "#new" || len(state.Rows) != 1 {
+		t.Fatalf("state after the real end = %+v, want #new complete with one row", state)
+	}
+}
