@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Request the IRCv3 `invite-notify`, `setname` and `userhost-in-names`
+  capabilities. An invite sent to another user now shows as a muted
+  `op invited nick` line in an open channel (never in Status, never as a join
+  link), a `SETNAME` updates that member's real name live without a transcript
+  line, and the member tooltip shows `user@host`, kept current from NAMES, JOIN,
+  WHO and CHGHOST. NAMES tokens of the form `@nick!user@host` no longer corrupt
+  member nicks.
 - The terminal client persists learned STS policies in the shared `sts` INI
   beside `omairc.conf` (same file and layout as the desktop client), so a
   host upgrade to TLS survives a TUI restart. Expired and cleared policies

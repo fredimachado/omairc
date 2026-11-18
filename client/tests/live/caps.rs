@@ -51,7 +51,40 @@ fn capability_flags() {
                 "{}",
                 daemon.name
             );
+            assert!(!caps.contains(IrcCapability::InviteNotify), "{}", daemon.name);
+            assert!(!caps.contains(IrcCapability::SetName), "{}", daemon.name);
+            assert!(
+                !caps.contains(IrcCapability::UserhostInNames),
+                "{}",
+                daemon.name
+            );
         }
+        // Which daemons advertise the three identity caps, as observed on the fixtures:
+        // Ergo all of them, Solanum only userhost-in-names, and ngIRCd none (the
+        // negative block above).
+        let caps = client
+            .controller
+            .session(&client.network_id)
+            .expect("session")
+            .capabilities();
+        let (invite_notify, setname, userhost_in_names) = match daemon.name.as_str() {
+            "ergo" => (true, true, true),
+            "solanum" => (false, false, true),
+            _ => (false, false, false),
+        };
+        assert_eq!(
+            caps.contains(IrcCapability::InviteNotify),
+            invite_notify,
+            "{} invite-notify",
+            daemon.name
+        );
+        assert_eq!(caps.contains(IrcCapability::SetName), setname, "{} setname", daemon.name);
+        assert_eq!(
+            caps.contains(IrcCapability::UserhostInNames),
+            userhost_in_names,
+            "{} userhost-in-names",
+            daemon.name
+        );
     }
 }
 
