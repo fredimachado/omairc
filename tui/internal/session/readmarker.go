@@ -8,9 +8,122 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/irc"
 )
 
-type readMarkerQueue struct {
-	target    string
-	timestamp time.Time
+// setSlot is the one SET slot per folded target: idle, one in-flight stamp, or
+// one in-flight stamp plus one newer queued stamp. Two in-flight stamps for a
+// target cannot be stored. It mirrors client/src/session/readmarker.rs SetSlot.
+type setSlot interface{ setSlot() }
+
+type slotIdle struct{}
+
+type slotInFlight struct{ Sent time.Time }
+
+// slotQueued holds the newest stamp waiting behind Sent. Target is the wire
+// spelling of the newest queued call.
+type slotQueued struct {
+	Sent, Next time.Time
+	Target     string
+}
+
+func (slotIdle) setSlot()     {}
+func (slotInFlight) setSlot() {}
+func (slotQueued) setSlot()   {}
+
+// sendSet is a SET line a transition wants on the wire now.
+type sendSet struct {
+	Target    string
+	Timestamp time.Time
+}
+
+// offerSlot applies a newer-than-everything offer. lastKnown is the
+// forward-only high-water mark; an equal or older stamp is ignored.
+func offerSlot(slot setSlot, when time.Time, target string, lastKnown *time.Time) (setSlot, *sendSet) {
+	if lastKnown != nil && !irc.ReadMarkerTimeAfter(when, *lastKnown) {
+		return slot, nil
+	}
+	switch current := slot.(type) {
+	case slotInFlight:
+		if !irc.ReadMarkerTimeAfter(when, current.Sent) {
+			return slot, nil
+		}
+		return slotQueued{Sent: current.Sent, Next: when, Target: target}, nil
+	case slotQueued:
+		if !irc.ReadMarkerTimeAfter(when, current.Next) {
+			return slot, nil
+		}
+		return slotQueued{Sent: current.Sent, Next: when, Target: target}, nil
+	default:
+		return slotInFlight{Sent: when}, &sendSet{Target: target, Timestamp: when}
+	}
+}
+
+// echoedSlot applies the echo of marker echoed: it releases the in-flight stamp
+// when that stamp is not newer than the echo, drops a queued stamp the echo
+// covers, and returns a still-newer queued stamp to send now.
+func echoedSlot(slot setSlot, echoed time.Time) (setSlot, *sendSet) {
+	switch current := slot.(type) {
+	case slotInFlight:
+		if irc.ReadMarkerTimeAfter(current.Sent, echoed) {
+			return slot, nil
+		}
+		return slotIdle{}, nil
+	case slotQueued:
+		if irc.ReadMarkerTimeAfter(current.Sent, echoed) {
+			return slot, nil
+		}
+		if !irc.ReadMarkerTimeAfter(current.Next, echoed) {
+			return slotIdle{}, nil
+		}
+		return slotInFlight{Sent: current.Next}, &sendSet{Target: current.Target, Timestamp: current.Next}
+	default:
+		return slot, nil
+	}
+}
+
+// releasedSlot applies a FAIL or an unparseable echo: the in-flight stamp is
+// released (the same stamp may retry) and a queued stamp is sent now.
+func releasedSlot(slot setSlot) (setSlot, *sendSet) {
+	if current, ok := slot.(slotQueued); ok {
+		return slotInFlight{Sent: current.Next}, &sendSet{Target: current.Target, Timestamp: current.Next}
+	}
+	return slotIdle{}, nil
+}
+
+func (s *Session) readMarkerSlotLocked(folded string) setSlot {
+	if slot, ok := s.readMarkerSlots[folded]; ok {
+		return slot
+	}
+	return slotIdle{}
+}
+
+// settleReadMarkerSlotLocked stores slot for folded and puts send on the wire.
+// A refused send leaves the slot idle: nothing is in flight.
+func (s *Session) settleReadMarkerSlotLocked(folded string, slot setSlot, send *sendSet) {
+	if send != nil && !s.sendReadMarkerSetLocked(*send) {
+		slot = slotIdle{}
+	}
+	if _, idle := slot.(slotIdle); idle {
+		delete(s.readMarkerSlots, folded)
+		return
+	}
+	if s.readMarkerSlots == nil {
+		s.readMarkerSlots = make(map[string]setSlot)
+	}
+	s.readMarkerSlots[folded] = slot
+}
+
+func (s *Session) sendReadMarkerSetLocked(set sendSet) bool {
+	command := s.readMarkerCommandLocked()
+	if command == "" {
+		return false
+	}
+	line := fmt.Sprintf("%s %s timestamp=%s", command, set.Target, irc.FormatReadMarkerTime(set.Timestamp))
+	return s.sendCommandLocked(line, "")
+}
+
+// releaseReadMarkerSlotLocked is a FAIL or unparseable echo for folded.
+func (s *Session) releaseReadMarkerSlotLocked(folded string) {
+	slot, send := releasedSlot(s.readMarkerSlotLocked(folded))
+	s.settleReadMarkerSlotLocked(folded, slot, send)
 }
 
 func (s *Session) foldReadMarkerTargetLocked(target string) string {
@@ -47,8 +160,7 @@ func (s *Session) deliverReadMarkerLocked(message irc.Message) bool {
 	}
 	marker, ok := irc.ParseReadMarkerParameter(parameter(message, 1))
 	if !ok {
-		delete(s.readMarkerInFlight, folded)
-		s.flushReadMarkerSetLocked(folded)
+		s.releaseReadMarkerSlotLocked(folded)
 		// Unparseable replies still release a controller get-hold.
 		s.emit(func(handler Handler) { handler.ReadMarkerReceived(networkID, target, nil) })
 		return true
@@ -60,17 +172,8 @@ func (s *Session) deliverReadMarkerLocked(message irc.Message) bool {
 	echoed := irc.ReadMarkerTimeMillis(*marker)
 	s.advanceReadMarkerLastKnownLocked(folded, echoed)
 	s.emit(func(handler Handler) { handler.ReadMarkerReceived(networkID, target, &echoed) })
-	if inFlight, hasInFlight := s.readMarkerInFlight[folded]; hasInFlight {
-		if !irc.ReadMarkerTimeAfter(inFlight, echoed) {
-			delete(s.readMarkerInFlight, folded)
-			if pending, hasPending := s.readMarkerPending[folded]; hasPending {
-				if !irc.ReadMarkerTimeAfter(pending.timestamp, echoed) {
-					delete(s.readMarkerPending, folded)
-				}
-			}
-			s.flushReadMarkerSetLocked(folded)
-		}
-	}
+	slot, send := echoedSlot(s.readMarkerSlotLocked(folded), echoed)
+	s.settleReadMarkerSlotLocked(folded, slot, send)
 	return true
 }
 
@@ -81,9 +184,12 @@ func (s *Session) handleReadMarkerFailLocked(message irc.Message) {
 	}
 	networkID := s.config.NetworkID
 	if len(message.Params) < 4 {
-		for folded := range s.readMarkerInFlight {
-			delete(s.readMarkerInFlight, folded)
-			s.flushReadMarkerSetLocked(folded)
+		folded := make([]string, 0, len(s.readMarkerSlots))
+		for key := range s.readMarkerSlots {
+			folded = append(folded, key)
+		}
+		for _, key := range folded {
+			s.releaseReadMarkerSlotLocked(key)
 		}
 		// Empty target clears every awaiting get on this network.
 		s.emit(func(handler Handler) { handler.ReadMarkerReceived(networkID, "", nil) })
@@ -94,8 +200,7 @@ func (s *Session) handleReadMarkerFailLocked(message irc.Message) {
 	if folded == "" {
 		return
 	}
-	delete(s.readMarkerInFlight, folded)
-	s.flushReadMarkerSetLocked(folded)
+	s.releaseReadMarkerSlotLocked(folded)
 	s.emit(func(handler Handler) { handler.ReadMarkerReceived(networkID, target, nil) })
 }
 
@@ -143,53 +248,12 @@ func (s *Session) queueReadMarkerSetLocked(target string, when time.Time) {
 		return
 	}
 	when = irc.ReadMarkerTimeMillis(when)
-	if s.readMarkerPending == nil {
-		s.readMarkerPending = make(map[string]readMarkerQueue)
+	var lastKnown *time.Time
+	if known, ok := s.readMarkerLastKnown[folded]; ok {
+		lastKnown = &known
 	}
-	if s.readMarkerInFlight == nil {
-		s.readMarkerInFlight = make(map[string]time.Time)
-	}
-	if s.readMarkerLastKnown == nil {
-		s.readMarkerLastKnown = make(map[string]time.Time)
-	}
-	if known, ok := s.readMarkerLastKnown[folded]; ok && !irc.ReadMarkerTimeAfter(when, known) {
-		return
-	}
-	if inFlight, ok := s.readMarkerInFlight[folded]; ok {
-		if !irc.ReadMarkerTimeAfter(when, inFlight) {
-			return
-		}
-	}
-	if pending, ok := s.readMarkerPending[folded]; ok && !irc.ReadMarkerTimeAfter(when, pending.timestamp) {
-		return
-	}
-	s.readMarkerPending[folded] = readMarkerQueue{target: target, timestamp: when}
-	s.flushReadMarkerSetLocked(folded)
-}
-
-func (s *Session) flushReadMarkerSetLocked(folded string) {
-	if _, ok := s.readMarkerInFlight[folded]; ok {
-		return
-	}
-	pending, ok := s.readMarkerPending[folded]
-	if !ok {
-		return
-	}
-	if known, ok := s.readMarkerLastKnown[folded]; ok && !irc.ReadMarkerTimeAfter(pending.timestamp, known) {
-		delete(s.readMarkerPending, folded)
-		return
-	}
-	command := s.readMarkerCommandLocked()
-	if command == "" {
-		delete(s.readMarkerPending, folded)
-		return
-	}
-	line := fmt.Sprintf("%s %s timestamp=%s", command, pending.target, irc.FormatReadMarkerTime(pending.timestamp))
-	delete(s.readMarkerPending, folded)
-	if !s.sendCommandLocked(line, "") {
-		return
-	}
-	s.readMarkerInFlight[folded] = pending.timestamp
+	slot, send := offerSlot(s.readMarkerSlotLocked(folded), when, target, lastKnown)
+	s.settleReadMarkerSlotLocked(folded, slot, send)
 }
 
 func (s *Session) advanceReadMarkerLastKnownLocked(folded string, when time.Time) {

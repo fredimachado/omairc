@@ -728,8 +728,7 @@ impl Core {
         self.read_marker_token = None;
         // Outstanding sets die with the socket; last_known is the durable
         // high-water and stays until a separate reconnect ledger reset.
-        self.read_markers.in_flight.clear();
-        self.read_markers.pending.clear();
+        self.read_markers.slots.clear();
         self.metadata = MetadataCapability::default();
         self.typing.reset();
         self.publish_capabilities();

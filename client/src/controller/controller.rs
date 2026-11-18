@@ -142,10 +142,8 @@ pub struct Controller {
     pub(super) closed: Rc<RefCell<CaseListStore>>,
     pub(super) playback: Rc<RefCell<PlaybackCoordinator>>,
     pub(super) playback_times: Rc<RefCell<PlaybackTimeStore>>,
-    /// Whether the transcript viewport follows the end after new lines.
-    pub(super) transcript_follow_end: bool,
-    /// Whether the shell reports the transcript as focused for read-marker sync.
-    pub(super) transcript_focused: bool,
+    /// What the shell last reported about the transcript, for the read-marker gate.
+    pub(super) viewport: super::readmarker::ReadMarkerViewport,
     /// The fake clock a seeded test controller runs on, so a test can move time forward.
     #[cfg(test)]
     pub(super) test_clock: Option<Rc<crate::session::clock::FakeClock>>,
@@ -240,8 +238,10 @@ impl Controller {
             closed,
             playback,
             playback_times,
-            transcript_follow_end: true,
-            transcript_focused: true,
+            viewport: super::readmarker::ReadMarkerViewport {
+                focused: true,
+                follow_end: true,
+            },
             #[cfg(test)]
             test_clock: None,
             read_markers: super::readmarker::ReadMarkerState::new(),
@@ -875,7 +875,7 @@ impl Controller {
         if !welcome_network.is_empty() {
             self.request_read_marker_get_for_selected_direct(&welcome_network);
         }
-        self.sync_read_marker_for_selection();
+        self.publish_read_marker();
     }
 
     /// The first conversation the reducer holds claims the selection and takes the

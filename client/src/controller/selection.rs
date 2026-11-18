@@ -10,6 +10,7 @@ use crate::irc::event::{ConversationKey, IrcConversationCause};
 use crate::irc::viewnotify::{self, ViewNotify};
 
 use super::controller::Controller;
+use super::readmarker::ReadMarkerViewport;
 
 /// The surfaces a selection change dirties: the sidebar, the transcript, the
 /// member panel and the header.
@@ -221,11 +222,13 @@ impl Controller {
         self.pump();
         self.reducer.set_window_active(active);
         if !active {
-            self.transcript_focused = false;
+            self.viewport.focused = false;
             return;
         }
-        self.transcript_focused = true;
-        self.transcript_follow_end = false;
+        self.viewport = ReadMarkerViewport {
+            focused: true,
+            follow_end: false,
+        };
         let Some(key) = self.selected.clone() else {
             return;
         };

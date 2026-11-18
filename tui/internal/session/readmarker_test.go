@@ -302,3 +302,41 @@ func TestReadMarkerReconnectClearsInFlightSoSameStampRetries(t *testing.T) {
 		t.Fatalf("connection reset must clear in_flight so the same stamp can be sent again: %v", fixture.frames())
 	}
 }
+
+func TestOneInFlightSetANewerStampWaitsThenSendsOnEcho(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	registerWithReadMarker(fixture, "draft/read-marker")
+	base := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	fixture.session.QueueReadMarkerSet("#omarchy", base)
+	fixture.session.QueueReadMarkerSet("#omarchy", base.Add(time.Minute))
+	fixture.session.QueueReadMarkerSet("#omarchy", base.Add(2*time.Minute))
+	if got := countReadMarkerFrame(fixture.frames(), "timestamp="); got != 1 {
+		t.Fatalf("one wire line while in flight, got %d: %v", got, fixture.frames())
+	}
+	fixture.inject(":server MARKREAD #omarchy :timestamp=2024-06-01T12:00:00.000Z\r\n")
+	if got := countReadMarkerFrame(fixture.frames(), "timestamp="); got != 2 {
+		t.Fatalf("echo must release exactly one more, got %d: %v", got, fixture.frames())
+	}
+	if countReadMarkerFrame(fixture.frames(), "MARKREAD #omarchy timestamp=2024-06-01T12:02:00.000Z\r\n") != 1 {
+		t.Fatalf("only the newest waits: %v", fixture.frames())
+	}
+	if countReadMarkerFrame(fixture.frames(), "timestamp=2024-06-01T12:01:00.000Z") != 0 {
+		t.Fatalf("the middle stamp must be dropped: %v", fixture.frames())
+	}
+}
+
+func TestQueuedSlotHoldsOnlyTheNewestPending(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	registerWithReadMarker(fixture, "draft/read-marker")
+	base := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	fixture.session.QueueReadMarkerSet("#omarchy", base)
+	fixture.session.QueueReadMarkerSet("#omarchy", base.Add(2*time.Minute))
+	fixture.session.QueueReadMarkerSet("#omarchy", base.Add(time.Minute))
+	fixture.inject(":server MARKREAD #omarchy :timestamp=2024-06-01T12:00:00.000Z\r\n")
+	if countReadMarkerFrame(fixture.frames(), "MARKREAD #omarchy timestamp=2024-06-01T12:02:00.000Z\r\n") != 1 {
+		t.Fatalf("frames = %v", fixture.frames())
+	}
+	if countReadMarkerFrame(fixture.frames(), "timestamp=2024-06-01T12:01:00.000Z") != 0 {
+		t.Fatalf("older queued stamp must not replace the newest: %v", fixture.frames())
+	}
+}

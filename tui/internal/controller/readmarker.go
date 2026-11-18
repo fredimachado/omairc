@@ -6,80 +6,107 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/irc"
 )
 
-// readMarkerState tracks direct messages that already received a MARKREAD get
-// this controller session, and which still await that get's reply before a set
-// may publish. It mirrors client/src/controller/readmarker.rs ReadMarkerState.
+// getPhase is the one GET phase per conversation: not sent (absent from the
+// map), awaiting the reply, or released once the reply or a FAIL arrived. Only
+// noteGetSent constructs getAwaiting, so awaiting a GET that was never sent
+// cannot be stored. It mirrors client/src/controller/readmarker.rs GetPhase.
+type getPhase interface{ getPhase() }
+
+type getNotSent struct{}
+
+type getAwaiting struct{}
+
+type getReleased struct{}
+
+func (getNotSent) getPhase()  {}
+func (getAwaiting) getPhase() {}
+func (getReleased) getPhase() {}
+
+// readMarkerState tracks the GET phase of each direct message this controller
+// session. Released keeps the "do not GET again" role until the conversation or
+// network is forgotten.
 type readMarkerState struct {
-	getSent     map[irc.ConversationKey]struct{}
-	awaitingGet map[irc.ConversationKey]struct{}
+	gets map[irc.ConversationKey]getPhase
 }
 
 func newReadMarkerState() readMarkerState {
-	return readMarkerState{
-		getSent:     make(map[irc.ConversationKey]struct{}),
-		awaitingGet: make(map[irc.ConversationKey]struct{}),
-	}
+	return readMarkerState{gets: make(map[irc.ConversationKey]getPhase)}
 }
 
+// readMarkerViewport is what the shell reports. The transcript-position work
+// changes where FollowEnd comes from, never this type.
+type readMarkerViewport struct {
+	Focused, FollowEnd bool
+}
+
+// open reports whether the viewport is caught up and focused.
+func (v readMarkerViewport) open() bool { return v.Focused && v.FollowEnd }
+
 func (s *readMarkerState) forgetNetwork(networkID string) {
-	for key := range s.getSent {
+	for key := range s.gets {
 		if key.NetworkID == networkID {
-			delete(s.getSent, key)
-		}
-	}
-	for key := range s.awaitingGet {
-		if key.NetworkID == networkID {
-			delete(s.awaitingGet, key)
+			delete(s.gets, key)
 		}
 	}
 }
 
 func (s *readMarkerState) forgetConversation(key irc.ConversationKey) {
-	delete(s.getSent, key)
-	delete(s.awaitingGet, key)
+	delete(s.gets, key)
 }
 
-func (s *readMarkerState) noteGetSent(key irc.ConversationKey) {
-	s.getSent[key] = struct{}{}
-	s.awaitingGet[key] = struct{}{}
-}
-
-func (s *readMarkerState) getSentContains(key irc.ConversationKey) bool {
-	_, ok := s.getSent[key]
-	return ok
-}
-
-func (s *readMarkerState) clearAwaitingGet(key irc.ConversationKey) bool {
-	_, ok := s.awaitingGet[key]
-	if ok {
-		delete(s.awaitingGet, key)
+func (s *readMarkerState) phase(key irc.ConversationKey) getPhase {
+	if phase, ok := s.gets[key]; ok {
+		return phase
 	}
-	return ok
+	return getNotSent{}
 }
 
-func (s *readMarkerState) clearAwaitingNetwork(networkID string) bool {
+// noteGetSent is the only constructor of getAwaiting; call it after the
+// session accepted the GET.
+func (s *readMarkerState) noteGetSent(key irc.ConversationKey) {
+	s.gets[key] = getAwaiting{}
+}
+
+// releaseGet moves an awaiting GET to released and reports whether it was
+// awaiting.
+func (s *readMarkerState) releaseGet(key irc.ConversationKey) bool {
+	if _, ok := s.phase(key).(getAwaiting); !ok {
+		return false
+	}
+	s.gets[key] = getReleased{}
+	return true
+}
+
+// releaseNetwork releases every awaiting GET on the network (FAIL without a
+// target) and reports whether any was awaiting.
+func (s *readMarkerState) releaseNetwork(networkID string) bool {
 	released := false
-	for key := range s.awaitingGet {
-		if key.NetworkID == networkID {
-			delete(s.awaitingGet, key)
+	for key, phase := range s.gets {
+		if _, ok := phase.(getAwaiting); ok && key.NetworkID == networkID {
+			s.gets[key] = getReleased{}
 			released = true
 		}
 	}
 	return released
 }
 
-func (s *readMarkerState) awaitsGet(key irc.ConversationKey) bool {
-	_, ok := s.awaitingGet[key]
-	return ok
+// awaitingKeys lists the awaiting GETs on one network.
+func (s *readMarkerState) awaitingKeys(networkID string) []irc.ConversationKey {
+	var keys []irc.ConversationKey
+	for key, phase := range s.gets {
+		if _, ok := phase.(getAwaiting); ok && key.NetworkID == networkID {
+			keys = append(keys, key)
+		}
+	}
+	return keys
 }
 
 // NoteTranscriptViewport records whether the shell is focused and the selected
 // transcript is pinned to the bottom. It mirrors the Qt window's active plus
 // transcript-at-end gate used before publishing a read marker.
 func (c *Controller) NoteTranscriptViewport(focused bool, followEnd bool) {
-	c.transcriptFocused = focused
-	c.transcriptFollowEnd = followEnd
-	c.syncReadMarkerForSelection()
+	c.viewport = readMarkerViewport{Focused: focused, FollowEnd: followEnd}
+	c.publishReadMarker()
 }
 
 // ReadMarkerReceived applies a server read marker for one target. An empty
@@ -91,28 +118,25 @@ func (c *Controller) ReadMarkerReceived(networkID, target string, marker *time.T
 		return
 	}
 	if target == "" {
-		if c.readMarkers.clearAwaitingNetwork(networkID) {
-			c.syncReadMarkerForSelection()
+		if c.readMarkers.releaseNetwork(networkID) {
+			c.publishReadMarker()
 		}
 		return
 	}
 	features := c.reducer.ServerFeatures(networkID)
 	key := c.reducer.ConversationKey(networkID, target)
-	awaited := c.readMarkers.clearAwaitingGet(key)
+	awaited := c.readMarkers.releaseGet(key)
 	// Welcome may record the hold under the selected key before 005 arrives,
 	// when ConversationKey still uses the default casemapping.
 	if !awaited && c.selected != nil && c.selected.NetworkID == networkID {
 		if features.CaseMapping().Equals(c.selected.NormalizedTarget, target) {
-			awaited = c.readMarkers.clearAwaitingGet(*c.selected)
+			awaited = c.readMarkers.releaseGet(*c.selected)
 		}
 	}
 	if !awaited {
-		for pending := range c.readMarkers.awaitingGet {
-			if pending.NetworkID != networkID {
-				continue
-			}
+		for _, pending := range c.readMarkers.awaitingKeys(networkID) {
 			if features.CaseMapping().Equals(pending.NormalizedTarget, target) {
-				awaited = c.readMarkers.clearAwaitingGet(pending)
+				awaited = c.readMarkers.releaseGet(pending)
 				break
 			}
 		}
@@ -123,7 +147,7 @@ func (c *Controller) ReadMarkerReceived(networkID, target string, marker *time.T
 		}
 	} else if marker == nil {
 		if awaited {
-			c.syncReadMarkerForSelection()
+			c.publishReadMarker()
 		}
 		return
 	}
@@ -131,15 +155,19 @@ func (c *Controller) ReadMarkerReceived(networkID, target string, marker *time.T
 		c.Publish(irc.ViewNotify{Conversations: true})
 	}
 	if awaited {
-		c.syncReadMarkerForSelection()
+		c.publishReadMarker()
 	}
 }
 
-func (c *Controller) syncReadMarkerForSelection() {
-	if c.selected == nil || c.consoleOpen || !c.transcriptFollowEnd || !c.transcriptFocused || !c.reducer.WindowActive() {
+// publishReadMarker is the only caller that asks a session to send a read
+// marker SET. Inputs: the selection, the GET phase, the viewport the shell
+// reported, and the reducer's latest message time. The session's SET slot
+// decides in-flight dedupe. bin/check-conventions enforces the single caller.
+func (c *Controller) publishReadMarker() {
+	if c.selected == nil || c.consoleOpen || !c.viewport.open() || !c.reducer.WindowActive() {
 		return
 	}
-	if c.readMarkers.awaitsGet(*c.selected) {
+	if _, awaiting := c.readMarkers.phase(*c.selected).(getAwaiting); awaiting {
 		return
 	}
 	session := c.manager.Find(c.selected.NetworkID)
@@ -174,7 +202,7 @@ func (c *Controller) requestReadMarkerGetWithKey(key irc.ConversationKey, target
 	if features.IsChannel(target) {
 		return
 	}
-	if c.readMarkers.getSentContains(key) {
+	if _, notSent := c.readMarkers.phase(key).(getNotSent); !notSent {
 		return
 	}
 	session := c.manager.Find(key.NetworkID)
@@ -195,8 +223,8 @@ func (c *Controller) readMarkerForgetNetwork(networkID string) {
 }
 
 func (c *Controller) readMarkerClearAwaitingNetwork(networkID string) {
-	if c.readMarkers.clearAwaitingNetwork(networkID) {
-		c.syncReadMarkerForSelection()
+	if c.readMarkers.releaseNetwork(networkID) {
+		c.publishReadMarker()
 	}
 }
 

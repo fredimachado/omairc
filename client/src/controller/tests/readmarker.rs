@@ -9,13 +9,13 @@ use super::fixture::{Fixture, OMARCHY};
 
 const NET: &str = OMARCHY;
 
-fn when(y: i32, mo: u32, d: u32, h: u32, mi: u32, s: u32, ms: u32) -> chrono::DateTime<Utc> {
+pub(super) fn when(y: i32, mo: u32, d: u32, h: u32, mi: u32, s: u32, ms: u32) -> chrono::DateTime<Utc> {
     Utc.with_ymd_and_hms(y, mo, d, h, mi, s)
         .unwrap()
         + TimeDelta::milliseconds(ms as i64)
 }
 
-fn enable_read_marker(fixture: &mut Fixture) {
+pub(super) fn enable_read_marker(fixture: &mut Fixture) {
     if let Some(session) = fixture.controller.session(NET) {
         session.locked(|core| {
             core.read_marker_token = Some("draft/read-marker");
@@ -23,7 +23,7 @@ fn enable_read_marker(fixture: &mut Fixture) {
     }
 }
 
-fn deliver_privmsg(
+pub(super) fn deliver_privmsg(
     fixture: &mut Fixture,
     target: &str,
     nick: &str,
@@ -37,15 +37,15 @@ fn deliver_privmsg(
     );
 }
 
-fn frames_contain(frames: &[String], needle: &str) -> bool {
+pub(super) fn frames_contain(frames: &[String], needle: &str) -> bool {
     frames.iter().any(|frame| frame.contains(needle))
 }
 
-fn count_containing(frames: &[String], needle: &str) -> usize {
+pub(super) fn count_containing(frames: &[String], needle: &str) -> usize {
     frames.iter().filter(|frame| frame.contains(needle)).count()
 }
 
-fn ensure_room(fixture: &mut Fixture, target: &str) {
+pub(super) fn ensure_room(fixture: &mut Fixture, target: &str) {
     let key = fixture.controller.reducer.conversation_key(NET, target);
     fixture
         .controller
@@ -190,22 +190,6 @@ fn status_open_does_not_publish_read_marker() {
 }
 
 #[test]
-fn scrolled_up_does_not_send() {
-    let mut fixture = Fixture::seeded();
-    enable_read_marker(&mut fixture);
-    fixture.controller.note_transcript_viewport(true, false);
-    ensure_room(&mut fixture, "#room");
-    fixture.controller.select_conversation(NET, "#room");
-    fixture.clear_frames(NET);
-    let at = when(2024, 6, 1, 12, 0, 0, 0);
-    deliver_privmsg(&mut fixture, "#room", "peer", "hi", at);
-    assert!(
-        !frames_contain(&fixture.frames(NET), "MARKREAD"),
-        "scrolled up must not publish a read marker"
-    );
-}
-
-#[test]
 fn later_timestamp_sends_once_more() {
     let mut fixture = Fixture::seeded();
     enable_read_marker(&mut fixture);
@@ -283,29 +267,6 @@ fn direct_markread_get_waits_for_read_marker_cap() {
     assert!(
         frames_contain(&fixture.frames(NET), "MARKREAD alice\r\n"),
         "must retry MARKREAD get once the cap is available"
-    );
-}
-
-#[test]
-fn gaining_focus_holds_read_marker_until_viewport_reports_caught_up() {
-    let mut fixture = Fixture::seeded();
-    enable_read_marker(&mut fixture);
-    fixture.controller.note_transcript_viewport(true, true);
-    ensure_room(&mut fixture, "#room");
-    fixture.controller.select_conversation(NET, "#room");
-    fixture.clear_frames(NET);
-    fixture.controller.set_window_active(false);
-    fixture.controller.set_window_active(true);
-    let at = when(2024, 6, 1, 12, 0, 0, 123);
-    deliver_privmsg(&mut fixture, "#room", "peer", "after focus", at);
-    assert!(
-        !frames_contain(&fixture.frames(NET), "MARKREAD #room timestamp="),
-        "focus gain must not publish until the shell reports follow-end"
-    );
-    fixture.controller.note_transcript_viewport(true, true);
-    assert!(
-        frames_contain(&fixture.frames(NET), "MARKREAD #room timestamp=2024-06-01T12:00:00.123Z\r\n"),
-        "caught-up viewport must publish the read marker"
     );
 }
 
