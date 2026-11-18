@@ -68,6 +68,13 @@ pub fn row_search_text(row: &Row, status_view: bool) -> String {
     format!("{lead} {}", row.body.plain)
 }
 
+/// The case-folded text every search compares: Ctrl+F and the history search share it,
+/// so a query matches the same lines in both. Folding goes char by char, so each folded
+/// char still belongs to one char of the original (the search sheet's highlight needs it).
+pub fn fold(text: &str) -> String {
+    text.chars().flat_map(char::to_lowercase).collect()
+}
+
 /// The first row after `start` whose search text holds `query`, ignoring case.
 /// `None` starts from the top. The search wraps, and the start row is checked
 /// last. An empty query matches nothing.
@@ -81,7 +88,7 @@ pub fn find_next(
     if count == 0 || query.is_empty() {
         return None;
     }
-    let needle = query.to_lowercase();
+    let needle = fold(query);
     (1..=count).find_map(|step| {
         let index = match start {
             None => step - 1,
@@ -91,7 +98,7 @@ pub fn find_next(
         if rows[index].kind == RowKind::UnreadMark {
             return None;
         }
-        let hay = row_search_text(&rows[index], status_view).to_lowercase();
+        let hay = fold(&row_search_text(&rows[index], status_view));
         hay.contains(&needle).then_some(index)
     })
 }
