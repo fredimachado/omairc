@@ -97,6 +97,7 @@ pub fn translate_history(
                         timestamp: value.timestamp,
                         kind: MessageKindTag::Chat,
                         msgid: value.msgid.clone(),
+                        reply_to: value.reply_to.clone(),
                         server_time,
                         only_visible_to_you: value.only_visible_to_you,
                     });
@@ -112,6 +113,7 @@ pub fn translate_history(
                         timestamp: value.timestamp,
                         kind: MessageKindTag::Emote,
                         msgid: value.msgid.clone(),
+                        reply_to: value.reply_to.clone(),
                         server_time,
                         only_visible_to_you: value.only_visible_to_you,
                     });
@@ -167,6 +169,7 @@ fn channel_membership_replay_line(
         timestamp,
         kind: MessageKindTag::Event,
         msgid: msgid.clone(),
+        reply_to: MsgId::default(),
         server_time,
         only_visible_to_you: false,
     };
@@ -258,6 +261,7 @@ fn bouncer_query_replay_line(
         timestamp,
         kind,
         msgid,
+        reply_to: super::messages::reply_target(message),
         server_time,
         only_visible_to_you: false,
     })

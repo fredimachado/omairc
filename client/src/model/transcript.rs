@@ -789,6 +789,7 @@ mod tests {
             time,
             server_time: None,
             msgid: MsgId::default(),
+            reply_to: String::new(),
             origin: Origin::Live,
             mentioned: false,
             collapsible: false,

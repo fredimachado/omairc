@@ -195,6 +195,25 @@ fn an_invite_to_another_user_raises_no_inbox_row_and_no_status_entry() {
 }
 
 #[test]
+fn a_react_tagmsg_never_opens_a_direct_message() {
+    // Case 4: a reaction from someone with no conversation open is not an inbound line. It
+    // leaves the sidebar alone, whether the sender is a person or a service.
+    let mut fixture = Fixture::seeded();
+    fixture.controller.select_conversation(OMARCHY, "#omarchy");
+    fixture.deliver(
+        OMARCHY,
+        "@+draft/reply=abc;+draft/react=\u{1F44D} :lena!u@h TAGMSG fred",
+    );
+    fixture.deliver(
+        OMARCHY,
+        "@+draft/reply=abc;+draft/react=\u{1F44D} :NickServ!NickServ@services TAGMSG fred",
+    );
+    assert!(!has_conversation(&fixture, OMARCHY, "lena"));
+    assert!(!has_conversation(&fixture, OMARCHY, "NickServ"));
+    assert_eq!(fixture.controller.selected_target(), "#omarchy");
+}
+
+#[test]
 fn the_quiet_send_cause_never_inserts_and_user_open_does_for_a_direct_message() {
     // The conversation-cause table at the dispatcher: a quiet send leaves the row out, and
     // `/query` inserts it.

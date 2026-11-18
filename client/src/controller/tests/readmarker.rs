@@ -68,6 +68,7 @@ fn apply_direct_message(
         server_time: Some(at),
         target: author.to_owned(),
         msgid: MsgId::default(),
+        reply_to: MsgId::default(),
         only_visible_to_you: false,
     }));
 }

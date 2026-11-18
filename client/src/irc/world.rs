@@ -55,6 +55,8 @@ pub struct Message {
     /// The raw time tag, when the server sent one. Never the wall-clock fallback.
     pub server_time: Option<DateTime<Utc>>,
     pub msgid: MsgId,
+    /// The `+draft/reply` parent msgid. Empty when the line is not a reply.
+    pub reply_to: String,
     pub origin: Origin,
     /// True when this line named the local user, so the sidebar and the inbox
     /// count it as a mention.
@@ -245,6 +247,7 @@ mod tests {
             time,
             server_time: None,
             msgid: MsgId::default(),
+            reply_to: String::new(),
             origin: Origin::Replay,
             mentioned: false,
             collapsible: false,

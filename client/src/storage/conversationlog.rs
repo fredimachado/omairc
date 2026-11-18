@@ -176,6 +176,7 @@ fn parse_line(raw: &[u8]) -> Option<TranscriptLine> {
         kind: record.kind,
         body: record.body,
         msgid: record.msgid,
+        reply_to: String::new(),
         only_visible_to_you: record.only_visible_to_you,
     })
 }
@@ -503,6 +504,7 @@ mod tests {
             kind: "chat".to_owned(),
             body: body.to_owned(),
             msgid: String::new(),
+            reply_to: String::new(),
             only_visible_to_you: false,
         }
     }
@@ -544,6 +546,7 @@ mod tests {
             kind: "message".to_owned(),
             body: "live".to_owned(),
             msgid: String::new(),
+            reply_to: String::new(),
             only_visible_to_you: false,
         };
         let bytes = format_line(&line);

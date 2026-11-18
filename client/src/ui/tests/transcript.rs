@@ -458,6 +458,7 @@ fn tagged_chat(author: &str, body: &str, sequence: i64, msgid: &str) -> Message 
         time: Utc.with_ymd_and_hms(2026, 9, 10, 9, 0, 0).unwrap(),
         server_time: None,
         msgid: MsgId::new(msgid),
+        reply_to: String::new(),
         origin: Origin::Live,
         mentioned: false,
         collapsible: false,

@@ -185,6 +185,7 @@ fn trim_bouncer_batch_respects_snapshot_bound() {
         msgid: MsgId {
             value: msgid.to_owned(),
         },
+        reply_to: MsgId::default(),
         server_time,
         only_visible_to_you: false,
     };
@@ -312,6 +313,7 @@ fn oldest_history_cursor_prefers_first_msgid() {
             msgid: MsgId {
                 value: "notice-id".to_owned(),
             },
+            reply_to: String::new(),
             origin: Origin::Live,
             author: String::new(),
             server_time: None,
@@ -327,6 +329,7 @@ fn oldest_history_cursor_prefers_first_msgid() {
             msgid: MsgId {
                 value: "chat-id".to_owned(),
             },
+            reply_to: String::new(),
             origin: Origin::Live,
             author: String::new(),
             server_time: None,

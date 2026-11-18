@@ -916,6 +916,7 @@ mod tests {
             time: Utc.with_ymd_and_hms(2026, 1, 1, 12, 0, 0).unwrap(),
             server_time: None,
             msgid: MsgId::default(),
+            reply_to: String::new(),
             origin: Origin::Live,
             mentioned: false,
             collapsible: false,

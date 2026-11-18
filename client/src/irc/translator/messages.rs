@@ -1,10 +1,14 @@
-//! The chat lines: NOTICE, PRIVMSG (a CTCP ACTION is an emote) and TAGMSG (typing).
+//! The chat lines: NOTICE, PRIVMSG (a CTCP ACTION is an emote) and TAGMSG (typing, and
+//! `+draft/react` reactions). A chat line carries its `+draft/reply` parent.
 //! A nick-targeted line that carries `+draft/channel-context` is filed in that channel
 //! visible only to the user, when the sender is a member the caller can confirm.
 
 use crate::irc::ctcp::parse_ctcp_request;
-use crate::irc::event::{ActionEvent, Event, MessageEvent, MsgId, NoticeEvent, TypingEvent};
+use crate::irc::event::{
+    ActionEvent, Event, MessageEvent, MsgId, NoticeEvent, ReactionEvent, TypingEvent,
+};
 use crate::irc::message::IrcMessage;
+use crate::irc::reaction::{valid_reaction_value, valid_reply_target};
 use crate::irc::conversation::target_looks_like_service;
 use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::irc::servicenick::is_network_notice_target;
@@ -39,6 +43,7 @@ pub(super) fn notice(inbound: &Inbound<'_>) -> Vec<Event> {
     let wire_target = message.text_param(0);
     let features = inbound.features;
     let msgid = MsgId::new(message.msgid());
+    let reply_to = reply_target(message);
     let sender = &inbound.sender;
     if let Some(delivery) = nick_targeted_channel_delivery(&wire_target, inbound) {
         return vec![NoticeEvent {
@@ -49,6 +54,7 @@ pub(super) fn notice(inbound: &Inbound<'_>) -> Vec<Event> {
             server_time: inbound.server_time,
             target: delivery.channel,
             msgid,
+            reply_to,
             only_visible_to_you: delivery.only_visible_to_you,
         }
         .into()];
@@ -89,6 +95,7 @@ pub(super) fn notice(inbound: &Inbound<'_>) -> Vec<Event> {
         server_time: inbound.server_time,
         target: display_target,
         msgid,
+        reply_to,
         only_visible_to_you: false,
     }
     .into()]
@@ -106,6 +113,7 @@ pub(super) fn privmsg(inbound: &Inbound<'_>) -> Vec<Event> {
         }
     }
     let msgid = MsgId::new(message.msgid());
+    let reply_to = reply_target(message);
     let action = action_text(&body);
     let sender = &inbound.sender;
     if let Some(delivery) = nick_targeted_channel_delivery(&wire_target, inbound) {
@@ -119,6 +127,7 @@ pub(super) fn privmsg(inbound: &Inbound<'_>) -> Vec<Event> {
                 server_time: inbound.server_time,
                 target: delivery.channel,
                 msgid,
+                reply_to,
                 only_visible_to_you: delivery.only_visible_to_you,
             }
             .into()],
@@ -130,6 +139,7 @@ pub(super) fn privmsg(inbound: &Inbound<'_>) -> Vec<Event> {
                 server_time: inbound.server_time,
                 target: delivery.channel,
                 msgid,
+                reply_to,
                 only_visible_to_you: delivery.only_visible_to_you,
             }
             .into()],
@@ -159,6 +169,7 @@ pub(super) fn privmsg(inbound: &Inbound<'_>) -> Vec<Event> {
             server_time: inbound.server_time,
             target: display_target,
             msgid,
+            reply_to,
             only_visible_to_you: false,
         }
         .into()],
@@ -170,21 +181,27 @@ pub(super) fn privmsg(inbound: &Inbound<'_>) -> Vec<Event> {
             server_time: inbound.server_time,
             target: display_target,
             msgid,
+            reply_to,
             only_visible_to_you: false,
         }
         .into()],
     }
 }
 
-/// `TAGMSG` carrying `+typing`. Any other tag, or a phase that is not one, is dropped.
+/// `TAGMSG`. `+typing` is a typing hint. A reply with exactly one of `+draft/react`
+/// and `+draft/unreact` is a reaction. Any other tag, or a value nobody could have
+/// sent, is dropped.
 pub(super) fn tagmsg(inbound: &Inbound<'_>) -> Vec<Event> {
     let message = inbound.message;
-    let Some(value) = message.tag_text("+typing") else {
-        return Vec::new();
-    };
     if inbound.sender.is_empty() {
         return Vec::new();
     }
+    if message.has_tag("+draft/react") || message.has_tag("+draft/unreact") {
+        return reaction_event(inbound).into_iter().collect();
+    }
+    let Some(value) = message.tag_text("+typing") else {
+        return Vec::new();
+    };
     let Some(phase) = typing_phase_from_tag(&value) else {
         return Vec::new();
     };
@@ -204,6 +221,53 @@ pub(super) fn tagmsg(inbound: &Inbound<'_>) -> Vec<Event> {
         received_at: inbound.timestamp,
     }
     .into()]
+}
+
+/// The reaction a `TAGMSG` carries, or `None`. The conversation is only resolved
+/// here, as typing does: the reducer decides whether it and the target line exist.
+fn reaction_event(inbound: &Inbound<'_>) -> Option<Event> {
+    let message = inbound.message;
+    let reacted = message.tag_text("+draft/react");
+    let unreacted = message.tag_text("+draft/unreact");
+    let (emoji, removed) = match (reacted, unreacted) {
+        (Some(emoji), None) => (emoji, false),
+        (None, Some(emoji)) => (emoji, true),
+        _ => return None,
+    };
+    if !valid_reaction_value(&emoji) {
+        return None;
+    }
+    let target_msgid = reply_target(message);
+    if target_msgid.is_empty() {
+        return None;
+    }
+    let conversation = conversation_for(
+        inbound.network_id,
+        &message.text_param(0),
+        message,
+        inbound.current_nick,
+        inbound.features,
+    )?;
+    Some(
+        ReactionEvent {
+            conversation,
+            nick: inbound.sender.clone(),
+            target_msgid,
+            emoji,
+            removed,
+            received_at: inbound.timestamp,
+        }
+        .into(),
+    )
+}
+
+/// The parent a `+draft/reply` tag names, or empty when the tag is absent or is
+/// not one token (`replyTarget`).
+pub(super) fn reply_target(message: &IrcMessage) -> MsgId {
+    match message.tag_text("+draft/reply") {
+        Some(value) if valid_reply_target(&value) => MsgId::new(value),
+        _ => MsgId::default(),
+    }
 }
 
 /// Routes a nick-targeted line that carries `+draft/channel-context` into the

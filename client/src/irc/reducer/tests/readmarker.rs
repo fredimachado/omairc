@@ -22,6 +22,7 @@ fn latest_server_message_time_ignores_wall_clock_fallback() {
         time: wall,
         server_time: None,
         msgid: MsgId::default(),
+        reply_to: String::new(),
         origin: Origin::Live,
         mentioned: false,
         collapsible: false,

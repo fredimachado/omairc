@@ -31,6 +31,7 @@ mod history;
 mod membership;
 mod notify;
 mod presence;
+mod reactions;
 mod readmarker;
 mod sidebar;
 mod typing;
@@ -186,6 +187,7 @@ pub(super) fn replay_line(author: &str, body: &str, msgid: &str) -> ReplayLine {
         timestamp: reducer_timestamp(),
         kind: MessageKindTag::Chat,
         msgid: MsgId::new(msgid),
+        reply_to: MsgId::default(),
         server_time: None,
         only_visible_to_you: false,
     }
@@ -218,6 +220,7 @@ pub(super) fn message(conversation: &ConversationKey, author: &str, body: &str, 
         server_time: None,
         target: target.to_owned(),
         msgid: MsgId::default(),
+        reply_to: MsgId::default(),
         only_visible_to_you: false,
     }
 }
@@ -232,6 +235,7 @@ pub(super) fn notice(conversation: &ConversationKey, author: &str, body: &str, t
         server_time: None,
         target: target.to_owned(),
         msgid: MsgId::default(),
+        reply_to: MsgId::default(),
         only_visible_to_you: false,
     }
 }
@@ -246,6 +250,7 @@ pub(super) fn action(conversation: &ConversationKey, author: &str, body: &str, t
         server_time: None,
         target: target.to_owned(),
         msgid: MsgId::default(),
+        reply_to: MsgId::default(),
         only_visible_to_you: false,
     }
 }

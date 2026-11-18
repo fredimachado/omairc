@@ -40,6 +40,7 @@ pub(super) struct ChatLine<'a> {
     pub server_time: Option<DateTime<Utc>>,
     pub kind: MessageKind,
     pub msgid: &'a MsgId,
+    pub reply_to: &'a MsgId,
     pub only_visible_to_you: bool,
 }
 
@@ -95,7 +96,7 @@ fn forget_transcript_msgid(facts: &mut Facts, conv: &mut ConversationState, msgi
     if msgid.is_empty() {
         return;
     }
-    conv.message_ids.remove(msgid);
+    conv.forget_msgid(msgid);
     facts.release_channel_context(&conv.key, msgid);
 }
 
@@ -106,11 +107,14 @@ fn cap_with_policy(facts: &mut Facts, conv: &mut ConversationState, drop_from_he
     let extra = conv.messages.len() - MAX_MESSAGES;
     if drop_from_head {
         let home = conv.key.clone();
-        for message in &conv.messages[..extra] {
-            if !message.msgid.is_empty() {
-                conv.message_ids.remove(&message.msgid);
-                facts.release_channel_context(&home, &message.msgid);
-            }
+        let dropped: Vec<MsgId> = conv.messages[..extra]
+            .iter()
+            .filter(|message| !message.msgid.is_empty())
+            .map(|message| message.msgid.clone())
+            .collect();
+        for msgid in &dropped {
+            conv.forget_msgid(msgid);
+            facts.release_channel_context(&home, msgid);
         }
         conv.messages.drain(..extra);
         conv.trimmed += extra;
@@ -125,11 +129,14 @@ fn cap_with_policy(facts: &mut Facts, conv: &mut ConversationState, drop_from_he
     }
     let start = conv.messages.len() - extra;
     let home = conv.key.clone();
-    for message in &conv.messages[start..] {
-        if !message.msgid.is_empty() {
-            conv.message_ids.remove(&message.msgid);
-            facts.release_channel_context(&home, &message.msgid);
-        }
+    let dropped: Vec<MsgId> = conv.messages[start..]
+        .iter()
+        .filter(|message| !message.msgid.is_empty())
+        .map(|message| message.msgid.clone())
+        .collect();
+    for msgid in &dropped {
+        conv.forget_msgid(msgid);
+        facts.release_channel_context(&home, msgid);
     }
     conv.messages.truncate(start);
 }
@@ -194,6 +201,7 @@ fn transcript_line(message: &Message) -> Option<TranscriptLine> {
         kind: kind_token(message.kind)?.to_owned(),
         body: message.body.clone(),
         msgid: message.msgid.value.clone(),
+        reply_to: message.reply_to.clone(),
         only_visible_to_you: message.only_visible_to_you,
     })
 }
@@ -279,6 +287,7 @@ pub(super) fn hydrate_from_log(facts: &mut Facts, conv: &mut ConversationState) 
                 time: line.timestamp,
                 server_time: None,
                 msgid: msgid.clone(),
+                reply_to: line.reply_to,
                 origin: Origin::Replay,
                 mentioned,
                 collapsible: false,
@@ -464,6 +473,7 @@ pub(super) fn append_event(
             time: zero_time(),
             server_time: None,
             msgid: MsgId::default(),
+            reply_to: String::new(),
             origin: Origin::Live,
             mentioned: false,
             collapsible,
@@ -585,6 +595,7 @@ pub(super) fn admit_membership_replay(
         time: line.timestamp,
         server_time: line.server_time,
         msgid: line.msgid.clone(),
+        reply_to: String::new(),
         origin: Origin::Replay,
         mentioned: false,
         collapsible: !show_each,
@@ -607,6 +618,7 @@ pub(super) fn append_whois(facts: &mut Facts, conv: &mut ConversationState, body
             time: zero_time(),
             server_time: None,
             msgid: MsgId::default(),
+            reply_to: String::new(),
             origin: Origin::Live,
             mentioned: false,
             collapsible: false,
@@ -628,6 +640,7 @@ pub(super) fn append_error(facts: &mut Facts, conv: &mut ConversationState, body
             time: zero_time(),
             server_time: None,
             msgid: MsgId::default(),
+            reply_to: String::new(),
             origin: Origin::Live,
             mentioned: false,
             collapsible: false,
@@ -682,6 +695,7 @@ impl EventReducer {
                 time: line.timestamp,
                 server_time: line.server_time,
                 msgid: line.msgid.clone(),
+                reply_to: line.reply_to.value.clone(),
                 origin: Origin::Live,
                 mentioned,
                 collapsible: false,
