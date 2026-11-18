@@ -14,7 +14,7 @@ mod drafts;
 mod console;
 mod forget_credentials;
 mod fileupload;
-mod fixture;
+pub(crate) mod fixture;
 mod inbox;
 mod keychain;
 mod keychain_wait;

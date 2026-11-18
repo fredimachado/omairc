@@ -49,6 +49,7 @@ pub mod reads;
 pub mod replyrouter;
 pub mod replytext;
 pub mod scrollplace;
+pub mod search;
 pub mod selection;
 pub mod send;
 pub mod sessionconnect;

@@ -20,6 +20,7 @@ pub mod credentialstore;
 pub mod drafts;
 pub mod geometry;
 pub mod lists;
+pub mod logscan;
 pub mod migrate;
 pub mod opendirect;
 pub mod playbacktime;

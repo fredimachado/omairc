@@ -164,6 +164,9 @@ pub struct Controller {
     pub(super) read_markers: super::readmarker::ReadMarkerState,
     /// Mention and monitor arrivals waiting for the shell (`notify.rs`).
     pub(super) arrivals: Vec<Arrival>,
+    /// Where the conversation logs live, when this controller keeps any (the history search
+    /// reads them). `None` for the demo and for tests with no transcript root.
+    pub(super) transcript_root: Option<std::path::PathBuf>,
     pumping: bool,
 }
 
@@ -265,6 +268,7 @@ impl Controller {
             test_clock: None,
             read_markers: super::readmarker::ReadMarkerState::new(),
             arrivals: Vec::new(),
+            transcript_root: None,
             pumping: false,
         }
     }

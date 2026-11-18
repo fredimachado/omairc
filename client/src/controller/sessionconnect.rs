@@ -9,9 +9,11 @@ impl Controller {
     /// Points transcript persistence at `root`. Call before
     /// [`Self::connect_session`] when a live case restores DMs across reloads.
     pub fn set_transcript_root(&mut self, root: impl Into<std::path::PathBuf>) {
+        let root = root.into();
         self.reducer.set_conversation_log(Some(Box::new(
-            FileConversationLog::new(root.into()),
+            FileConversationLog::new(root.clone()),
         )));
+        self.transcript_root = Some(root);
     }
 
     /// Registers and starts a session with an explicit config. The live harness uses this

@@ -215,14 +215,20 @@ impl SearchConversation {
         }
         let text = plain_irc_text(line.body);
         let found = query.matches_line(line.author, &text)?;
+        // The log keeps the time to the millisecond. A loaded line may carry more, and the
+        // same line from both sources must compare equal.
+        let time = Utc
+            .timestamp_millis_opt(line.time.timestamp_millis())
+            .single()
+            .unwrap_or(line.time);
         Some(SearchHit {
             network_id: self.network_id.clone(),
             network_name: self.network_name.clone(),
             conversation: self.conversation.clone(),
             conversation_label: self.label.clone(),
-            time: line.time,
+            time,
             author: line.author.to_owned(),
-            target: JumpTarget::for_line(line.msgid, line.author, line.kind, &text, line.time),
+            target: JumpTarget::for_line(line.msgid, line.author, line.kind, &text, time),
             text,
             matches: found.matches,
             author_match: found.author_match,
@@ -419,6 +425,15 @@ mod tests {
         // A query that ends inside the expansion highlights the whole original char.
         let found = matches_line("xi", "anna", body).unwrap();
         assert_eq!(found.matches, vec![0..3]);
+    }
+
+    #[test]
+    fn a_hit_keeps_the_time_to_the_millisecond_the_log_keeps() {
+        let query = SearchQuery::parse("tea").unwrap();
+        let mut loaded = line(1, "anna", "tea", "m-1");
+        loaded.time += chrono::Duration::nanoseconds(123_456);
+        let found = room("omarchy", "#ricing").hit(&query, &loaded).unwrap();
+        assert_eq!(found.time, at(1));
     }
 
     #[test]

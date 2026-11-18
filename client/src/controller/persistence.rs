@@ -23,7 +23,6 @@ use crate::irc::viewnotify::ViewNotify;
 use crate::session::clock::Clock;
 use crate::session::config::SessionConfig;
 use crate::session::events::SessionState;
-use crate::storage::conversationlog::FileConversationLog;
 use crate::irc::event::Event;
 use crate::storage::credentialstore::{
     read_slot, read_slot_sync, remove_slot, write_slot, CredentialKey, CredentialState,
@@ -68,9 +67,7 @@ impl Controller {
     pub fn new_user(clock: Rc<dyn Clock>, transports: Box<dyn TransportFactory>) -> Self {
         let mut controller = Self::with_backing(clock, transports, Backing::user());
         if !controller.backing.is_ephemeral() {
-            controller.reducer.set_conversation_log(Some(Box::new(
-                FileConversationLog::new(paths::transcript_root()),
-            )));
+            controller.set_transcript_root(paths::transcript_root());
         }
         controller.load_stored();
         controller
