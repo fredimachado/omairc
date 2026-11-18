@@ -9,6 +9,7 @@ mod hostile;
 mod labeled;
 mod ledger;
 mod lifecycle;
+mod multiline;
 mod outbound;
 mod portability;
 mod readmarker;

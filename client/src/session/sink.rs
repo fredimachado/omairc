@@ -74,6 +74,8 @@ impl Core {
     /// The connection ended (`IrcTransport::disconnected`). An STS upgrade reconnects at once.
     /// Every other end refreshes the STS expiry, then settles, reconnects or fails.
     pub(crate) fn on_disconnected(&mut self) {
+        // A manual disconnect never resets, so the unclosed message shows here.
+        self.flush_open_multiline();
         let outcome = self.connection.on_disconnect(self.state);
         if outcome == DisconnectOutcome::FinishStsUpgrade {
             self.finish_sts_upgrade();

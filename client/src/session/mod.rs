@@ -21,6 +21,7 @@ pub mod labels;
 pub mod loopback;
 pub mod malformed;
 pub mod metadata;
+pub mod multiline;
 pub mod outbound;
 pub mod readmarker;
 pub mod registration;
