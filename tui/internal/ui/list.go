@@ -20,7 +20,6 @@ type ChannelListSnapshot = controller.ChannelListSnapshot
 // channelListState is the /list overlay: a filter input, a highlighted row
 // and the rows streamed by the controller. It is modal while open.
 type channelListState struct {
-	open     bool
 	input    textinput.Model
 	selected int
 	scroll   int
@@ -32,42 +31,29 @@ type channelListState struct {
 // clips it).
 const channelListRowCap = 200
 
-func newChannelListState() channelListState {
-	// The filter adopts the shared text input. Its styles are re-applied from
-	// the live palette when the overlay opens, because model.go owns
-	// construction and does not know this input's styles.
-	return channelListState{input: newTextInput(defaultStyles(), "Filter channels", "› ")}
-}
-
 // channelListVisible reports whether the /list overlay is open.
-func (m *Model) channelListVisible() bool { return m != nil && m.list.open }
+func (m *Model) channelListVisible() bool { return m.listSheet() != nil }
 
 // openChannelList shows the overlay with the controller's current filter.
 func (m *Model) openChannelList() {
 	if m.ctrl == nil {
 		return
 	}
-	m.closeAllOverlays()
-	m.list.open = true
-	m.list.selected = 0
-	m.list.scroll = 0
-	m.list.input.SetStyles(m.styles.Input)
-	m.list.input.SetValue(m.ctrl.ChannelListSnapshot().Filter)
-	m.list.input.SetWidth(m.overlayInputWidth())
+	sheet := &channelListState{input: newTextInput(m.styles, "Filter channels", overlayFilterPrompt)}
+	sheet.input.SetValue(m.ctrl.ChannelListSnapshot().Filter)
+	sheet.input.SetWidth(m.overlayInputWidth())
+	m.setOverlay(sheet)
 	m.composer.Blur()
-	_ = m.list.input.Focus()
+	_ = sheet.input.Focus()
 }
 
-// closeChannelList dismisses the overlay and returns focus to the composer.
+// closeChannelList dismisses the overlay, drops the controller's list request
+// (channelListState.discard), and returns focus to the composer.
 func (m *Model) closeChannelList() {
-	if !m.list.open {
+	if m.listSheet() == nil {
 		return
 	}
-	m.list.open = false
-	m.list.input.Blur()
-	if m.ctrl != nil {
-		m.ctrl.DismissChannelList()
-	}
+	m.clearOverlay()
 	_ = m.composer.Focus()
 	m.loadDraft()
 }
@@ -79,13 +65,14 @@ func (m *Model) syncChannelList() {
 		return
 	}
 	snapshot := m.ctrl.ChannelListSnapshot()
-	if snapshot.Open && !m.list.open {
+	if snapshot.Open && m.listSheet() == nil {
 		m.openChannelList()
 		return
 	}
-	if !snapshot.Open && m.list.open {
-		m.list.open = false
-		m.list.input.Blur()
+	if !snapshot.Open && m.listSheet() != nil {
+		// The controller already closed the list, so drop the sheet without
+		// clearOverlay: its discard would dismiss the list a second time.
+		m.overlay = nil
 		_ = m.composer.Focus()
 	}
 }
@@ -100,18 +87,26 @@ func (m *Model) channelListRows() []controller.ChannelListRow {
 
 // moveChannelList moves the highlight by delta, wrapping.
 func (m *Model) moveChannelList(delta int) {
-	count := len(m.channelListRows())
-	if count == 0 {
-		m.list.selected = 0
+	sheet := m.listSheet()
+	if sheet == nil {
 		return
 	}
-	m.list.selected = ((m.list.selected+delta)%count + count) % count
-	m.revealList(&m.list.scroll, m.list.selected, count, m.channelListHeaderLines())
+	count := len(m.channelListRows())
+	if count == 0 {
+		sheet.selected = 0
+		return
+	}
+	sheet.selected = ((sheet.selected+delta)%count + count) % count
+	m.revealList(&sheet.scroll, sheet.selected, count, m.channelListHeaderLines())
 }
 
 // activateChannelList opens the highlighted channel and dismisses the overlay.
 func (m *Model) activateChannelList() {
-	index := m.list.selected
+	sheet := m.listSheet()
+	if sheet == nil {
+		return
+	}
+	index := sheet.selected
 	m.closeChannelList()
 	if m.ctrl == nil {
 		return
@@ -128,6 +123,10 @@ func (m *Model) activateChannelList() {
 // dismisses to the composer, Up/Down highlight, Enter joins, and everything
 // else filters.
 func (m *Model) handleChannelListKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	sheet := m.listSheet()
+	if sheet == nil {
+		return m, nil
+	}
 	switch key {
 	case "esc", "escape":
 		m.closeChannelList()
@@ -142,13 +141,12 @@ func (m *Model) handleChannelListKey(key string, msg tea.KeyPressMsg) (tea.Model
 		m.activateChannelList()
 		return m, nil
 	}
-	var cmd tea.Cmd
-	m.list.input, cmd = m.list.input.Update(msg)
+	cmd := sheet.updateInput(msg)
 	if m.ctrl != nil {
-		m.ctrl.SetChannelListFilter(m.list.input.Value())
+		m.ctrl.SetChannelListFilter(sheet.input.Value())
 	}
-	m.list.selected = 0
-	m.list.scroll = 0
+	sheet.selected = 0
+	sheet.scroll = 0
 	return m, cmd
 }
 
@@ -156,10 +154,14 @@ func (m *Model) handleChannelListKey(key string, msg tea.KeyPressMsg) (tea.Model
 // shared overlay frame in model.go. The name, mask, and match count sit on the
 // top edge and the highlighted row's position sits on the bottom edge.
 func (m *Model) channelListCard(width int) string {
+	sheet := m.listSheet()
+	if sheet == nil {
+		return ""
+	}
 	snapshot := m.channelListSnapshot()
 	return m.overlayCardFramed(width,
 		channelListFrameTitle(snapshot),
-		overlayCountLabel(m.list.selected, len(snapshot.Rows)),
+		overlayCountLabel(sheet.selected, len(snapshot.Rows)),
 		m.channelListCardBody)
 }
 
@@ -202,8 +204,12 @@ const channelListTableChrome = 2
 // listOverlayLines is the /list card body. The filter and the table header are
 // not rows. Each data line is one channel.
 func (m *Model) listOverlayLines(inner int) []overlayLine {
+	sheet := m.listSheet()
+	if sheet == nil {
+		return nil
+	}
 	snapshot := m.channelListSnapshot()
-	lines := []overlayLine{{text: truncateLine(m.list.input.View(), inner), row: -1}}
+	lines := []overlayLine{{text: truncateLine(sheet.input.View(), inner), row: -1}}
 	switch {
 	case snapshot.Loading:
 		return append(lines, overlayLine{text: ellipsizeLine(m.styles.Empty.Render("Loading..."), inner), row: -1})
@@ -220,7 +226,7 @@ func (m *Model) listOverlayLines(inner int) []overlayLine {
 	if visible < 1 {
 		visible = 1
 	}
-	start, end := listWindow(len(rows), m.list.scroll, visible)
+	start, end := listWindow(len(rows), sheet.scroll, visible)
 	table := m.channelListTableLines(rows[start:end], inner, start)
 	chrome := len(table) - (end - start)
 	if chrome < 0 {
@@ -245,6 +251,10 @@ func (m *Model) listOverlayLines(inner int) []overlayLine {
 // of rows[0], so highlight and zebra stay aligned with the full list when the
 // window is not at the top. origin 0 is the unwindowed table.
 func (m *Model) channelListTableLines(rows []controller.ChannelListRow, inner, origin int) []string {
+	selected := -1
+	if sheet := m.listSheet(); sheet != nil {
+		selected = sheet.selected
+	}
 	t := table.New().
 		Headers("CHANNEL", "USERS", "TOPIC").
 		Border(lipgloss.NormalBorder()).
@@ -268,7 +278,7 @@ func (m *Model) channelListTableLines(rows []controller.ChannelListRow, inner, o
 		switch {
 		case row == table.HeaderRow:
 			return channelListCellStyle(col, m.styles.SectionHeader)
-		case row+origin == m.list.selected:
+		case row+origin == selected:
 			return channelListCellStyle(col, m.channelListSelectedStyle())
 		case (row+origin)%2 == 1:
 			return channelListCellStyle(col, m.channelListZebraStyle())

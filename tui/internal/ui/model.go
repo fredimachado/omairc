@@ -146,7 +146,10 @@ type Model struct {
 	connectOpen bool
 	sheet       connectSheetState
 
-	jump jumpState
+	// overlay is the one open filter sheet (jump, nick, link, inbox, list, or
+	// file), or nil. It is separate from the channel prompt, About, shortcuts,
+	// and Connect layers; see filterOverlay.
+	overlay filterOverlay
 
 	// Keyboard/nav state. Every field is a mirror of an `client/src/ui/shell`
 	// property; the controller owns the network collapse/reorder facts.
@@ -249,14 +252,9 @@ type Model struct {
 	shortcutsLayoutCache shortcutsLayoutCache
 	aboutOpen            bool
 	channelPrompt        channelPromptState
-	nick                 nickJumpState
-	link                 linkState
-	file                 filePickState
 	fileQueue            []queuedFile
 	fileActive           *queuedFile
-	inbox                inboxState
 	slash                slashSession
-	list                 channelListState
 
 	// Desktop-notification state. notifier is the nil-able desktop
 	// seam (mirroring backend.notifyDesktop); windowActive mirrors win.active
@@ -320,12 +318,6 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 		spinner:                      spinner.New(spinner.WithSpinner(spinner.MiniDot)),
 		typingSpinner:                spinner.New(spinner.WithSpinner(spinner.Points)),
 		sheet:                        newConnectSheetState(),
-		jump:                         newJumpState(),
-		nick:                         newNickJumpState(),
-		link:                         newLinkState(),
-		file:                         newFilePickState(),
-		inbox:                        newInboxState(),
-		list:                         newChannelListState(),
 		serverListVisible:            true,
 		transcriptFollowEnd:          true,
 		transcriptCursor:             -1,
@@ -443,19 +435,17 @@ func (m *Model) applyStyles(styles Styles) {
 	m.shortcutsLayoutCache = shortcutsLayoutCache{}
 }
 
-// restyleOverlayInputs re-applies the shared input style set to the overlay
-// filters and the Connect sheet. Those text inputs are built when their sheet
+// restyleOverlayInputs re-applies the shared input style set to the open filter
+// sheet and the Connect sheet. Those text inputs are built when their sheet
 // opens (or, for Connect, when a field takes focus), so without this a live
 // ThemeChangedMsg would restyle only the composer and leave an already-open
 // sheet on the previous palette. SetStyles keeps each input's value, width
-// and focus, so the call is behavior-neutral while the sheet is closed.
+// and focus. A closed filter sheet has no input to restyle.
 func (m *Model) restyleOverlayInputs() {
 	input := m.styles.Input
-	m.jump.input.SetStyles(input)
-	m.nick.input.SetStyles(input)
-	m.link.input.SetStyles(input)
-	m.file.input.SetStyles(input)
-	m.list.input.SetStyles(input)
+	if m.overlay != nil {
+		m.overlay.restyle(input)
+	}
 	m.sheet.input.SetStyles(input)
 }
 
@@ -940,11 +930,9 @@ func (m *Model) resize() {
 	}
 	m.composer.SetWidth(width)
 	m.sheet.input.SetWidth(m.overlayInputWidth())
-	m.jump.input.SetWidth(m.overlayInputWidth())
-	m.nick.input.SetWidth(m.overlayInputWidth())
-	m.link.input.SetWidth(m.overlayInputWidth())
-	m.file.input.SetWidth(m.overlayInputWidth())
-	m.list.input.SetWidth(m.overlayInputWidth())
+	if m.overlay != nil {
+		m.overlay.setInputWidth(m.overlayInputWidth())
+	}
 }
 
 // render composes the columns, any open overlay, and the status footer. The
@@ -1121,10 +1109,11 @@ func (m *Model) cursorRow() int {
 }
 
 // overlayCard returns the topmost overlay card as one rendered block, if any.
-// Every overlay renders through its own <name>Card method, which wraps its
-// content with the shared overlayCardBlock frame, so model.go owns the single
-// framing path. About and the shortcuts sheet can sit on top of Connect, so
-// they are checked first.
+// Every overlay renders through its own card method, which wraps its content
+// with the shared overlayCardBlock frame, so model.go owns the single framing
+// path. The layers stack in this order, topmost first: channel prompt, About,
+// shortcuts, Connect, then the one filter sheet. About and the shortcuts sheet
+// can sit on top of Connect, so they are checked first.
 func (m *Model) overlayCard() (string, bool) {
 	switch {
 	case m.channelPrompt.open:
@@ -1135,77 +1124,10 @@ func (m *Model) overlayCard() (string, bool) {
 		return m.shortcutsCard(m.width), true
 	case m.connectVisible():
 		return m.connectCard(m.width), true
-	case m.nick.open:
-		return m.nickCard(m.width), true
-	case m.link.open:
-		return m.linkCard(m.width), true
-	case m.inbox.open:
-		return m.inboxCard(m.width), true
-	case m.list.open:
-		return m.channelListCard(m.width), true
-	case m.jump.open:
-		return m.jumpCard(m.width), true
-	case m.file.open:
-		return m.fileCard(m.width), true
+	case m.overlay != nil:
+		return m.overlay.card(m, m.width), true
 	}
 	return "", false
-}
-
-// overlaysVisible reports whether any of the filter overlays owns the keys.
-func (m *Model) overlaysVisible() bool {
-	return m != nil && (m.jump.open || m.nick.open || m.link.open || m.inbox.open || m.list.open || m.file.open)
-}
-
-// overlayInputUpdate folds a non-key message (a paste, for one) into the open
-// overlay's filter input.
-func (m *Model) overlayInputUpdate(msg tea.Msg) tea.Cmd {
-	var cmd tea.Cmd
-	switch {
-	case m.jump.open:
-		m.jump.input, cmd = m.jump.input.Update(msg)
-	case m.nick.open:
-		m.nick.input, cmd = m.nick.input.Update(msg)
-	case m.link.open:
-		m.link.input, cmd = m.link.input.Update(msg)
-	case m.inbox.open:
-		// The inbox has no filter input yet.
-	case m.list.open:
-		m.list.input, cmd = m.list.input.Update(msg)
-	case m.file.open:
-		m.file.input, cmd = m.file.input.Update(msg)
-	}
-	return cmd
-}
-
-// closeAllOverlays dismisses every filter overlay. Opening one overlay closes
-// the rest, so only one ever owns the keys.
-func (m *Model) closeAllOverlays() {
-	if m.jump.open {
-		m.jump.open = false
-		m.jump.input.Blur()
-	}
-	if m.nick.open {
-		m.nick.open = false
-		m.nick.input.Blur()
-	}
-	if m.link.open {
-		m.link.open = false
-		m.link.input.Blur()
-	}
-	if m.inbox.open {
-		m.inbox.open = false
-	}
-	if m.list.open {
-		m.list.open = false
-		m.list.input.Blur()
-		if m.ctrl != nil {
-			m.ctrl.DismissChannelList()
-		}
-	}
-	if m.file.open {
-		m.file.open = false
-		m.file.input.Blur()
-	}
 }
 
 // overlayCardInset is the blank margin the shared overlay frame leaves on each

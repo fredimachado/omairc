@@ -12,38 +12,32 @@ import (
 // inboxState is the inbox sheet. The selected row index is clamped to the
 // waiting list so the highlight always names a real row.
 type inboxState struct {
-	open     bool
 	selected int
 	scroll   int
 }
 
-func newInboxState() inboxState { return inboxState{} }
-
 // inboxVisible reports whether the inbox sheet is open.
-func (m *Model) inboxVisible() bool { return m != nil && m.inbox.open }
+func (m *Model) inboxVisible() bool { return m.inboxSheet() != nil }
 
 // toggleInbox opens or closes the inbox sheet.
 func (m *Model) toggleInbox() {
-	if m.inbox.open {
+	if m.inboxSheet() != nil {
 		m.closeInbox()
 		return
 	}
 	if m.ctrl == nil {
 		return
 	}
-	m.closeAllOverlays()
-	m.inbox.open = true
-	m.inbox.selected = 0
-	m.inbox.scroll = 0
+	m.setOverlay(&inboxState{})
 	m.composer.Blur()
 }
 
 // closeInbox dismisses the sheet and returns focus to the composer.
 func (m *Model) closeInbox() {
-	if !m.inbox.open {
+	if m.inboxSheet() == nil {
 		return
 	}
-	m.inbox.open = false
+	m.clearOverlay()
 	_ = m.composer.Focus()
 	m.loadDraft()
 }
@@ -67,11 +61,12 @@ func (m *Model) inboxEntries() []string {
 // mark, or the msgid when open-at-unread is off) instead of a saved scroll
 // place. The conversation being left is remembered first.
 func (m *Model) activateInboxSelection() {
-	if m.ctrl == nil {
+	sheet := m.inboxSheet()
+	if m.ctrl == nil || sheet == nil {
 		return
 	}
 	items := m.ctrl.InboxItems()
-	index := m.inbox.selected
+	index := sheet.selected
 	if index < 0 || index >= len(items) {
 		return
 	}
@@ -125,7 +120,8 @@ func (m *Model) activateInboxSelection() {
 // logical row: a dismissal above the selection shifts it up. It mirrors
 // inboxDismissAboveSelectionKeepsHighlight.
 func (m *Model) dismissInboxRow(index int) {
-	if m.ctrl == nil {
+	sheet := m.inboxSheet()
+	if m.ctrl == nil || sheet == nil {
 		return
 	}
 	before := len(m.inboxEntries())
@@ -134,8 +130,8 @@ func (m *Model) dismissInboxRow(index int) {
 	if after == before {
 		return
 	}
-	if index < m.inbox.selected {
-		m.inbox.selected--
+	if index < sheet.selected {
+		sheet.selected--
 	}
 	m.clampInboxSelection()
 }
@@ -143,34 +139,46 @@ func (m *Model) dismissInboxRow(index int) {
 // clampInboxSelection keeps the highlight inside the waiting list: 0 when the
 // list is empty, else clamped to [0, count-1].
 func (m *Model) clampInboxSelection() {
-	count := len(m.inboxEntries())
-	if count == 0 {
-		m.inbox.selected = 0
+	sheet := m.inboxSheet()
+	if sheet == nil {
 		return
 	}
-	if m.inbox.selected < 0 {
-		m.inbox.selected = 0
+	count := len(m.inboxEntries())
+	if count == 0 {
+		sheet.selected = 0
+		return
 	}
-	if m.inbox.selected >= count {
-		m.inbox.selected = count - 1
+	if sheet.selected < 0 {
+		sheet.selected = 0
+	}
+	if sheet.selected >= count {
+		sheet.selected = count - 1
 	}
 }
 
 // moveInbox moves the highlighted row by delta, wrapping at both ends.
 func (m *Model) moveInbox(delta int) {
-	count := len(m.inboxEntries())
-	if count == 0 {
-		m.inbox.selected = 0
+	sheet := m.inboxSheet()
+	if sheet == nil {
 		return
 	}
-	m.inbox.selected = ((m.inbox.selected+delta)%count + count) % count
-	m.revealList(&m.inbox.scroll, m.inbox.selected, count, 0)
+	count := len(m.inboxEntries())
+	if count == 0 {
+		sheet.selected = 0
+		return
+	}
+	sheet.selected = ((sheet.selected+delta)%count + count) % count
+	m.revealList(&sheet.scroll, sheet.selected, count, 0)
 }
 
 // handleInboxKey folds one key while the sheet is open. Ctrl+Shift+A toggles
 // the sheet closed, Up/Down walk rows, Enter activates the highlighted row and
 // closes, Delete dismisses it and keeps the sheet open, and Escape closes.
 func (m *Model) handleInboxKey(key string, _ tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	sheet := m.inboxSheet()
+	if sheet == nil {
+		return m, nil
+	}
 	switch key {
 	case "ctrl+shift+a":
 		// The overlay owns every key while it is open, so a second chord must
@@ -191,7 +199,7 @@ func (m *Model) handleInboxKey(key string, _ tea.KeyPressMsg) (tea.Model, tea.Cm
 		m.closeInbox()
 		return m, nil
 	case "delete":
-		m.dismissInboxRow(m.inbox.selected)
+		m.dismissInboxRow(sheet.selected)
 		return m, nil
 	}
 	return m, nil
@@ -201,10 +209,14 @@ func (m *Model) handleInboxKey(key string, _ tea.KeyPressMsg) (tea.Model, tea.Cm
 // overlay frame in model.go. The name and match count sit on the top edge and
 // the highlighted row's position sits on the bottom edge.
 func (m *Model) inboxCard(width int) string {
+	sheet := m.inboxSheet()
+	if sheet == nil {
+		return ""
+	}
 	entries := m.inboxEntries()
 	return m.overlayCardFramed(width,
 		overlayCountTitle("Inbox", len(entries)),
-		overlayCountLabel(m.inbox.selected, len(entries)),
+		overlayCountLabel(sheet.selected, len(entries)),
 		m.inboxCardBody)
 }
 
@@ -217,15 +229,19 @@ func (m *Model) inboxCardBody(inner int) []string {
 // inboxOverlayLines is the inbox card body. There is no filter line, so the
 // first content line is a row.
 func (m *Model) inboxOverlayLines(inner int) []overlayLine {
+	sheet := m.inboxSheet()
+	if sheet == nil {
+		return nil
+	}
 	entries := m.inboxEntries()
 	if len(entries) == 0 {
 		return []overlayLine{{text: m.overlaySheetEmpty("No mentions"), row: -1}}
 	}
-	start, end := listWindow(len(entries), m.inbox.scroll, m.overlayRowBudget(0))
+	start, end := listWindow(len(entries), sheet.scroll, m.overlayRowBudget(0))
 	lines := make([]overlayLine, 0, end-start)
 	for index := start; index < end; index++ {
 		lines = append(lines, overlayLine{
-			text: m.overlayToggleRow(inner, index == m.inbox.selected, entries[index]),
+			text: m.overlayToggleRow(inner, index == sheet.selected, entries[index]),
 			row:  index,
 		})
 	}

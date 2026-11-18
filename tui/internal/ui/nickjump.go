@@ -14,7 +14,6 @@ import (
 
 // nickJumpState is the Ctrl+Shift+K filter overlay.
 type nickJumpState struct {
-	open     bool
 	input    textinput.Model
 	selected int
 	scroll   int
@@ -22,12 +21,8 @@ type nickJumpState struct {
 
 const nickPlaceholder = "Nick"
 
-func newNickJumpState() nickJumpState {
-	return nickJumpState{input: newTextInput(defaultStyles(), nickPlaceholder, overlayFilterPrompt)}
-}
-
 // nickVisible reports whether the nick jump overlay is open.
-func (m *Model) nickVisible() bool { return m != nil && m.nick.open }
+func (m *Model) nickVisible() bool { return m.nickSheet() != nil }
 
 // openNickJump opens the overlay on a channel you are in. It is a no-op on a
 // direct message, Status, or a channel you have left, matching the chord's gate.
@@ -35,23 +30,19 @@ func (m *Model) openNickJump() {
 	if m.ctrl == nil || !m.ctrl.IsChannel() || !m.ctrl.ChannelJoined() || m.ctrl.ConsoleOpen() {
 		return
 	}
-	m.closeAllOverlays()
-	m.nick.open = true
-	m.nick.input = newTextInput(m.styles, nickPlaceholder, overlayFilterPrompt)
-	m.nick.selected = 0
-	m.nick.scroll = 0
-	m.nick.input.SetWidth(m.overlayInputWidth())
+	sheet := &nickJumpState{input: newTextInput(m.styles, nickPlaceholder, overlayFilterPrompt)}
+	sheet.input.SetWidth(m.overlayInputWidth())
+	m.setOverlay(sheet)
 	m.composer.Blur()
-	_ = m.nick.input.Focus()
+	_ = sheet.input.Focus()
 }
 
 // closeNickJump dismisses the overlay and returns focus to the composer.
 func (m *Model) closeNickJump() {
-	if !m.nick.open {
+	if m.nickSheet() == nil {
 		return
 	}
-	m.nick.open = false
-	m.nick.input.Blur()
+	m.clearOverlay()
 	_ = m.composer.Focus()
 	m.loadDraft()
 }
@@ -62,7 +53,10 @@ func (m *Model) nickEntries() []string {
 	if m.ctrl == nil {
 		return nil
 	}
-	query := strings.ToLower(strings.TrimSpace(m.nick.input.Value()))
+	query := ""
+	if sheet := m.nickSheet(); sheet != nil {
+		query = strings.ToLower(strings.TrimSpace(sheet.input.Value()))
+	}
 	members := m.ctrl.Members()
 	nicks := make([]string, 0, len(members))
 	for _, member := range members {
@@ -79,26 +73,31 @@ func (m *Model) nickEntries() []string {
 
 // moveNick moves the highlighted nick by delta, wrapping at both ends.
 func (m *Model) moveNick(delta int) {
-	entries := m.nickEntries()
-	if len(entries) == 0 {
-		m.nick.selected = 0
+	sheet := m.nickSheet()
+	if sheet == nil {
 		return
 	}
-	m.nick.selected = ((m.nick.selected+delta)%len(entries) + len(entries)) % len(entries)
-	m.revealList(&m.nick.scroll, m.nick.selected, len(entries), 1)
+	entries := m.nickEntries()
+	if len(entries) == 0 {
+		sheet.selected = 0
+		return
+	}
+	sheet.selected = ((sheet.selected+delta)%len(entries) + len(entries)) % len(entries)
+	m.revealList(&sheet.scroll, sheet.selected, len(entries), 1)
 }
 
 // activateNick opens or creates a direct message with the highlighted member.
 // Entering on your own nick is a no-op.
 func (m *Model) activateNick() {
-	if m.ctrl == nil {
+	sheet := m.nickSheet()
+	if m.ctrl == nil || sheet == nil {
 		return
 	}
 	entries := m.nickEntries()
 	if len(entries) == 0 {
 		return
 	}
-	index := m.nick.selected
+	index := sheet.selected
 	if index < 0 || index >= len(entries) {
 		index = 0
 	}
@@ -107,8 +106,7 @@ func (m *Model) activateNick() {
 		return
 	}
 	m.saveDraft()
-	m.nick.open = false
-	m.nick.input.Blur()
+	m.clearOverlay()
 	previousID, wasConsole := m.beginTranscriptSwitch()
 	m.ctrl.OpenDirectMessage(nick)
 	m.loadDraft()
@@ -117,6 +115,10 @@ func (m *Model) activateNick() {
 
 // handleNickKey folds one key while the overlay is open.
 func (m *Model) handleNickKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	sheet := m.nickSheet()
+	if sheet == nil {
+		return m, nil
+	}
 	switch key {
 	case "esc", "escape":
 		m.closeNickJump()
@@ -131,10 +133,9 @@ func (m *Model) handleNickKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.C
 		m.activateNick()
 		return m, nil
 	}
-	var cmd tea.Cmd
-	m.nick.input, cmd = m.nick.input.Update(msg)
-	m.nick.selected = 0
-	m.nick.scroll = 0
+	cmd := sheet.updateInput(msg)
+	sheet.selected = 0
+	sheet.scroll = 0
 	return m, cmd
 }
 
@@ -142,10 +143,14 @@ func (m *Model) handleNickKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.C
 // overlay frame in model.go. The name and match count sit on the top edge and
 // the highlighted nick's position sits on the bottom edge.
 func (m *Model) nickCard(width int) string {
+	sheet := m.nickSheet()
+	if sheet == nil {
+		return ""
+	}
 	entries := m.nickEntries()
 	return m.overlayCardFramed(width,
 		overlayCountTitle("Nick", len(entries)),
-		overlayCountLabel(m.nick.selected, len(entries)),
+		overlayCountLabel(sheet.selected, len(entries)),
 		m.nickCardBody)
 }
 
@@ -157,15 +162,19 @@ func (m *Model) nickCardBody(inner int) []string {
 
 // nickOverlayLines is the nick card body. The filter is not a row.
 func (m *Model) nickOverlayLines(inner int) []overlayLine {
+	sheet := m.nickSheet()
+	if sheet == nil {
+		return nil
+	}
 	entries := m.nickEntries()
-	lines := []overlayLine{{text: truncateLine(m.nick.input.View(), inner), row: -1}}
+	lines := []overlayLine{{text: truncateLine(sheet.input.View(), inner), row: -1}}
 	if len(entries) == 0 {
 		return append(lines, overlayLine{text: m.overlaySheetEmpty("No matches"), row: -1})
 	}
-	start, end := listWindow(len(entries), m.nick.scroll, m.overlayRowBudget(1))
+	start, end := listWindow(len(entries), sheet.scroll, m.overlayRowBudget(1))
 	for index := start; index < end; index++ {
 		lines = append(lines, overlayLine{
-			text: m.overlayToggleRow(inner, index == m.nick.selected, entries[index]),
+			text: m.overlayToggleRow(inner, index == sheet.selected, entries[index]),
 			row:  index,
 		})
 	}

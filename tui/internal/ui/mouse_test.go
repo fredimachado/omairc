@@ -270,7 +270,7 @@ func TestClickJumpRowMatchesEnter(t *testing.T) {
 	var row pointerHit
 	found := false
 	for _, hit := range m.screenLayout().overlayHits {
-		if hit.index != m.jump.selected {
+		if hit.index != m.jumpSheet().selected {
 			row = hit
 			found = true
 			break
@@ -281,11 +281,11 @@ func TestClickJumpRowMatchesEnter(t *testing.T) {
 	}
 	chord := seededModel(t)
 	chord.openJump()
-	chord.jump.selected = row.index
+	chord.jumpSheet().selected = row.index
 	chord.activateJump()
 
 	m = clickLeft(t, m, row.rect.X, row.rect.Y)
-	if m.jump.open {
+	if m.jumpVisible() {
 		t.Fatal("clicking a jump row must dismiss the overlay")
 	}
 	if m.ctrl.SelectedTarget() != chord.ctrl.SelectedTarget() || m.ctrl.FocusedNetworkID() != chord.ctrl.FocusedNetworkID() {
@@ -313,11 +313,11 @@ func TestClickNickRowMatchesEnter(t *testing.T) {
 	}
 	chord := seededModel(t)
 	chord.openNickJump()
-	chord.nick.selected = row.index
+	chord.nickSheet().selected = row.index
 	chord.activateNick()
 
 	m = clickLeft(t, m, row.rect.X, row.rect.Y)
-	if m.nick.open {
+	if m.nickVisible() {
 		t.Fatal("clicking a nick row must dismiss the overlay")
 	}
 	if m.ctrl.SelectedTarget() != chord.ctrl.SelectedTarget() || m.ctrl.FocusedNetworkID() != chord.ctrl.FocusedNetworkID() {
@@ -333,11 +333,11 @@ func TestClickOutsideDismissesListOverlays(t *testing.T) {
 		open func(*Model)
 		done func(*Model) bool
 	}{
-		{"jump", func(m *Model) { m.openJump() }, func(m *Model) bool { return m.jump.open }},
-		{"nick", func(m *Model) { m.openNickJump() }, func(m *Model) bool { return m.nick.open }},
-		{"link", func(m *Model) { m.toggleLink() }, func(m *Model) bool { return m.link.open }},
-		{"inbox", func(m *Model) { m.toggleInbox() }, func(m *Model) bool { return m.inbox.open }},
-		{"list", func(m *Model) { m.openChannelList() }, func(m *Model) bool { return m.list.open }},
+		{"jump", func(m *Model) { m.openJump() }, func(m *Model) bool { return m.jumpVisible() }},
+		{"nick", func(m *Model) { m.openNickJump() }, func(m *Model) bool { return m.nickVisible() }},
+		{"link", func(m *Model) { m.toggleLink() }, func(m *Model) bool { return m.linkVisible() }},
+		{"inbox", func(m *Model) { m.toggleInbox() }, func(m *Model) bool { return m.inboxVisible() }},
+		{"list", func(m *Model) { m.openChannelList() }, func(m *Model) bool { return m.channelListVisible() }},
 	}
 	for _, opener := range openers {
 		t.Run(opener.name, func(t *testing.T) {
@@ -473,15 +473,15 @@ func TestWheelOverlayPagesTheOpenList(t *testing.T) {
 	}
 	card := m.screenLayout().overlay
 	m = wheelAt(t, m, card.X+2, card.Y+2, tea.MouseWheelDown)
-	if m.jump.scroll == 0 {
+	if m.jumpSheet().scroll == 0 {
 		t.Fatal("wheel down on the jump card must page the list")
 	}
 	if !m.transcriptFollowEnd {
 		t.Fatal("an overlay wheel must not detach the transcript")
 	}
-	scrolled := m.jump.scroll
+	scrolled := m.jumpSheet().scroll
 	m = wheelAt(t, m, 0, 0, tea.MouseWheelDown)
-	if m.jump.scroll != scrolled {
+	if m.jumpSheet().scroll != scrolled {
 		t.Fatal("a wheel outside the card must not page the list")
 	}
 }

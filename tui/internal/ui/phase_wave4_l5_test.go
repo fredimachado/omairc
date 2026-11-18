@@ -31,7 +31,7 @@ func openListOverlay(t *testing.T) *Model {
 	m := seededModel(t)
 	m.composer.SetValue("/list")
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if !m.list.open {
+	if !m.channelListVisible() {
 		t.Fatal("/list must open the channel-list overlay")
 	}
 	return m

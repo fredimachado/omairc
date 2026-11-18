@@ -152,7 +152,7 @@ func TestTerminalResizeBelowAndBackRestoresFrame(t *testing.T) {
 	if shrunk.transcriptScroll != 3 {
 		t.Fatalf("scroll after shrink = %d, want 3", shrunk.transcriptScroll)
 	}
-	if !shrunk.jump.open {
+	if !shrunk.jumpVisible() {
 		t.Fatal("jump overlay must stay open in state while the notice shows")
 	}
 
@@ -166,7 +166,7 @@ func TestTerminalResizeBelowAndBackRestoresFrame(t *testing.T) {
 	if restored.ctrl.SelectedConversationID() != before {
 		t.Fatalf("conversation after restore = %q, want %q", restored.ctrl.SelectedConversationID(), before)
 	}
-	if !restored.jump.open {
+	if !restored.jumpVisible() {
 		t.Fatal("jump overlay must return after growing past the minimum")
 	}
 	if restored.View().Content != beforeView {

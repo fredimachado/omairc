@@ -34,16 +34,16 @@ func TestThemeChangeRestylesOpenOverlayInputs(t *testing.T) {
 		check func(m *Model) bool
 	}{
 		{"jump", func(m *Model) { m.openJump() }, func(m *Model) bool {
-			return reflect.DeepEqual(m.jump.input.Styles(), m.styles.Input)
+			return reflect.DeepEqual(m.jumpSheet().input.Styles(), m.styles.Input)
 		}},
 		{"nick", func(m *Model) { m.openNickJump() }, func(m *Model) bool {
-			return reflect.DeepEqual(m.nick.input.Styles(), m.styles.Input)
+			return reflect.DeepEqual(m.nickSheet().input.Styles(), m.styles.Input)
 		}},
 		{"link", func(m *Model) { m.toggleLink() }, func(m *Model) bool {
-			return reflect.DeepEqual(m.link.input.Styles(), m.styles.Input)
+			return reflect.DeepEqual(m.linkSheet().input.Styles(), m.styles.Input)
 		}},
 		{"list", func(m *Model) { m.openChannelList() }, func(m *Model) bool {
-			return reflect.DeepEqual(m.list.input.Styles(), m.styles.Input)
+			return reflect.DeepEqual(m.listSheet().input.Styles(), m.styles.Input)
 		}},
 	}
 	for _, c := range cases {

@@ -14,7 +14,6 @@ import (
 // linkState is the link sheet. The filter input narrows the matches and
 // selected is the highlighted row.
 type linkState struct {
-	open     bool
 	input    textinput.Model
 	selected int
 	scroll   int
@@ -22,42 +21,34 @@ type linkState struct {
 
 const linkPlaceholder = "Filter links"
 
-func newLinkState() linkState {
-	return linkState{input: newTextInput(defaultStyles(), linkPlaceholder, overlayFilterPrompt)}
-}
-
 // linkVisible reports whether the link sheet is open.
-func (m *Model) linkVisible() bool { return m != nil && m.link.open }
+func (m *Model) linkVisible() bool { return m.linkSheet() != nil }
 
 // toggleLink opens or closes the link sheet. It is only reached while Connect
 // is closed; while the sheet is open the overlay owns the keys, so Alt+Down
 // and Ctrl+/ never run.
 func (m *Model) toggleLink() {
-	if m.link.open {
+	if m.linkSheet() != nil {
 		m.closeLink()
 		return
 	}
 	if m.ctrl == nil {
 		return
 	}
-	m.closeAllOverlays()
-	m.link.open = true
-	m.link.input = newTextInput(m.styles, linkPlaceholder, overlayFilterPrompt)
-	m.link.selected = 0
-	m.link.scroll = 0
-	m.link.input.SetWidth(m.overlayInputWidth())
+	sheet := &linkState{input: newTextInput(m.styles, linkPlaceholder, overlayFilterPrompt)}
+	sheet.input.SetWidth(m.overlayInputWidth())
+	m.setOverlay(sheet)
 	m.composer.Blur()
-	_ = m.link.input.Focus()
+	_ = sheet.input.Focus()
 }
 
 // closeLink dismisses the sheet and returns focus to the composer without
 // changing the draft.
 func (m *Model) closeLink() {
-	if !m.link.open {
+	if m.linkSheet() == nil {
 		return
 	}
-	m.link.open = false
-	m.link.input.Blur()
+	m.clearOverlay()
 	if m.channelPrompt.open {
 		m.composer.Blur()
 		return
@@ -69,25 +60,33 @@ func (m *Model) closeLink() {
 // moveLink moves the highlight by delta, wrapping at both ends, and reveals
 // the source row so the match stays visible.
 func (m *Model) moveLink(delta int) {
-	matches := m.linkMatches()
-	if len(matches) == 0 {
-		m.link.selected = 0
+	sheet := m.linkSheet()
+	if sheet == nil {
 		return
 	}
-	m.link.selected = ((m.link.selected+delta)%len(matches) + len(matches)) % len(matches)
-	m.revealList(&m.link.scroll, m.link.selected, len(matches), 1)
-	m.revealTranscriptRow(matches[m.link.selected].row)
+	matches := m.linkMatches()
+	if len(matches) == 0 {
+		sheet.selected = 0
+		return
+	}
+	sheet.selected = ((sheet.selected+delta)%len(matches) + len(matches)) % len(matches)
+	m.revealList(&sheet.scroll, sheet.selected, len(matches), 1)
+	m.revealTranscriptRow(matches[sheet.selected].row)
 }
 
 // activateLink opens the selected URL or joins the selected invite channel
 // then dismisses the sheet. A URL row that is not allowed opens nothing.
 func (m *Model) activateLink() {
+	sheet := m.linkSheet()
+	if sheet == nil {
+		return
+	}
 	matches := m.linkMatches()
 	if len(matches) == 0 {
 		m.closeLink()
 		return
 	}
-	index := m.link.selected
+	index := sheet.selected
 	if index < 0 || index >= len(matches) {
 		index = 0
 	}
@@ -109,6 +108,10 @@ func (m *Model) activateLink() {
 // chord close it; Up/Down move and reveal; Enter activates; everything else
 // filters the list.
 func (m *Model) handleLinkKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	sheet := m.linkSheet()
+	if sheet == nil {
+		return m, nil
+	}
 	switch key {
 	case "esc", "escape", "ctrl+shift+o":
 		m.closeLink()
@@ -123,10 +126,9 @@ func (m *Model) handleLinkKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.C
 		m.activateLink()
 		return m, nil
 	}
-	var cmd tea.Cmd
-	m.link.input, cmd = m.link.input.Update(msg)
-	m.link.selected = 0
-	m.link.scroll = 0
+	cmd := sheet.updateInput(msg)
+	sheet.selected = 0
+	sheet.scroll = 0
 	return m, cmd
 }
 
@@ -134,10 +136,14 @@ func (m *Model) handleLinkKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.C
 // frame in model.go. The name and match count sit on the top edge and the
 // highlighted row's position sits on the bottom edge.
 func (m *Model) linkCard(width int) string {
+	sheet := m.linkSheet()
+	if sheet == nil {
+		return ""
+	}
 	matches := m.linkMatches()
 	return m.overlayCardFramed(width,
 		overlayCountTitle("Links", len(matches)),
-		overlayCountLabel(m.link.selected, len(matches)),
+		overlayCountLabel(sheet.selected, len(matches)),
 		m.linkCardBody)
 }
 
@@ -149,15 +155,19 @@ func (m *Model) linkCardBody(inner int) []string {
 
 // linkOverlayLines is the link card body. The filter is not a row.
 func (m *Model) linkOverlayLines(inner int) []overlayLine {
+	sheet := m.linkSheet()
+	if sheet == nil {
+		return nil
+	}
 	matches := m.linkMatches()
-	lines := []overlayLine{{text: truncateLine(m.link.input.View(), inner), row: -1}}
+	lines := []overlayLine{{text: truncateLine(sheet.input.View(), inner), row: -1}}
 	if len(matches) == 0 {
 		return append(lines, overlayLine{text: m.overlaySheetEmpty("No links"), row: -1})
 	}
-	start, end := listWindow(len(matches), m.link.scroll, m.overlayRowBudget(1))
+	start, end := listWindow(len(matches), sheet.scroll, m.overlayRowBudget(1))
 	for index := start; index < end; index++ {
 		lines = append(lines, overlayLine{
-			text: m.overlayToggleRow(inner, index == m.link.selected, matches[index].label),
+			text: m.overlayToggleRow(inner, index == sheet.selected, matches[index].label),
 			row:  index,
 		})
 	}

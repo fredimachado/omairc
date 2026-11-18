@@ -39,7 +39,7 @@ func openPhase8AnnaDirect(t *testing.T, m *Model) *Model {
 	if !m.nickVisible() {
 		t.Fatal("Ctrl+Shift+K must open the nick jump on a channel")
 	}
-	m.nick.input.SetValue("anna")
+	m.nickSheet().input.SetValue("anna")
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if got := m.View().WindowTitle; got != "anna - Omairc" {
 		t.Fatalf("after the nick jump title = %q, want %q", got, "anna - Omairc")

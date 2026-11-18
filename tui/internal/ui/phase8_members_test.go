@@ -92,7 +92,7 @@ func TestFocusMembersReopensHiddenPanel(t *testing.T) {
 func TestToggleMembersNoOpOnDirectMessage(t *testing.T) {
 	m := seededModel(t)
 	m = press(t, m, ctrlShiftKey('k'))
-	m.nick.input.SetValue("anna")
+	m.nickSheet().input.SetValue("anna")
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if got := m.View().WindowTitle; got != "anna - Omairc" {
 		t.Fatalf("after selecting anna title = %q, want %q", got, "anna - Omairc")

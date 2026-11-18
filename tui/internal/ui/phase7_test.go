@@ -171,7 +171,7 @@ func TestListOpensOverlayAndJoins(t *testing.T) {
 	m.composer.SetValue("/list")
 
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if !m.list.open {
+	if !m.channelListVisible() {
 		t.Fatalf("list overlay not open after /list")
 	}
 	snapshot := m.ctrl.ChannelListSnapshot()
@@ -183,7 +183,7 @@ func TestListOpensOverlayAndJoins(t *testing.T) {
 	}
 
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if m.list.open {
+	if m.channelListVisible() {
 		t.Fatalf("list overlay stayed open after Enter")
 	}
 	if !m.ctrl.IsChannel() {

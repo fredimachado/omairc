@@ -37,7 +37,7 @@ func TestChannelNameAsksBeforeOpening(t *testing.T) {
 	}
 
 	framesBefore := len(d.OmarchyTransport().WrittenFrames())
-	m.link.selected = help.index
+	m.linkSheet().selected = help.index
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.channelPrompt.open {
 		t.Fatal("an open topic buffer must switch without asking")
@@ -54,7 +54,7 @@ func TestChannelNameAsksBeforeOpening(t *testing.T) {
 	desktop := channelMatch(t, m, "#Desktop")
 	fresh := channelMatch(t, m, "#brand-new")
 	framesBefore = len(d.OmarchyTransport().WrittenFrames())
-	m.link.selected = fresh.index
+	m.linkSheet().selected = fresh.index
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.linkVisible() {
 		t.Fatal("Enter must close the link sheet")
@@ -85,7 +85,7 @@ func TestChannelNameAsksBeforeOpening(t *testing.T) {
 
 	m = press(t, m, ctrlShiftKey('o'))
 	desktop = channelMatch(t, m, "#Desktop")
-	m.link.selected = desktop.index
+	m.linkSheet().selected = desktop.index
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.channelPrompt.open {
 		t.Fatal("an open buffer must switch without asking")
@@ -100,7 +100,7 @@ func TestChannelNameAsksBeforeOpening(t *testing.T) {
 	m.ctrl.SelectConversation(m.ctrl.FocusedNetworkID(), "#omarchy")
 	m = press(t, m, ctrlShiftKey('o'))
 	fresh = channelMatch(t, m, "#brand-new")
-	m.link.selected = fresh.index
+	m.linkSheet().selected = fresh.index
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !m.channelPrompt.open {
 		t.Fatal("a missing channel must ask again")

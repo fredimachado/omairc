@@ -88,9 +88,9 @@ func TestOverlayCardsPutCountsOnTheBorder(t *testing.T) {
 		t.Fatalf("jump entries = %d, want at least 2", len(entries))
 	}
 	assertEdge(t, m.jumpCard(m.width), overlayCountTitle("Jump", len(entries)), "1 of "+fmt.Sprint(len(entries)))
-	m.jump.selected = 1
+	m.jumpSheet().selected = 1
 	assertEdge(t, m.jumpCard(m.width), overlayCountTitle("Jump", len(entries)), "2 of "+fmt.Sprint(len(entries)))
-	m.jump.input.SetValue("zzz-no-match")
+	m.jumpSheet().input.SetValue("zzz-no-match")
 	assertEdge(t, m.jumpCard(m.width), "Jump 0", "")
 	m.closeJump()
 

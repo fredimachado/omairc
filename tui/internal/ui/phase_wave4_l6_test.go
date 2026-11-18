@@ -35,34 +35,34 @@ func TestWave4L6FilterInputsUseSharedChrome(t *testing.T) {
 	m := seededModel(t)
 
 	m.openJump()
-	if got := m.jump.input.Prompt; got != overlayFilterPrompt {
+	if got := m.jumpSheet().input.Prompt; got != overlayFilterPrompt {
 		t.Fatalf("jump prompt = %q, want %q", got, overlayFilterPrompt)
 	}
-	if got := m.jump.input.Placeholder; got != jumpPlaceholder {
+	if got := m.jumpSheet().input.Placeholder; got != jumpPlaceholder {
 		t.Fatalf("jump placeholder = %q, want %q", got, jumpPlaceholder)
 	}
-	m.jump.input.SetValue("#desktop")
+	m.jumpSheet().input.SetValue("#desktop")
 	m.closeJump()
 	m.openJump()
-	if got := m.jump.input.Value(); got != "" {
+	if got := m.jumpSheet().input.Value(); got != "" {
 		t.Fatalf("reopened jump filter = %q, want it reset", got)
 	}
 	m.closeJump()
 
 	m.openNickJump()
-	if got := m.nick.input.Prompt; got != overlayFilterPrompt {
+	if got := m.nickSheet().input.Prompt; got != overlayFilterPrompt {
 		t.Fatalf("nick prompt = %q, want %q", got, overlayFilterPrompt)
 	}
-	if got := m.nick.input.Placeholder; got != nickPlaceholder {
+	if got := m.nickSheet().input.Placeholder; got != nickPlaceholder {
 		t.Fatalf("nick placeholder = %q, want %q", got, nickPlaceholder)
 	}
 	m.closeNickJump()
 
 	m.toggleLink()
-	if got := m.link.input.Prompt; got != overlayFilterPrompt {
+	if got := m.linkSheet().input.Prompt; got != overlayFilterPrompt {
 		t.Fatalf("link prompt = %q, want %q", got, overlayFilterPrompt)
 	}
-	if got := m.link.input.Placeholder; got != linkPlaceholder {
+	if got := m.linkSheet().input.Placeholder; got != linkPlaceholder {
 		t.Fatalf("link placeholder = %q, want %q", got, linkPlaceholder)
 	}
 	m.closeLink()
@@ -166,21 +166,21 @@ func TestWave4L6EmptyStatesPreserved(t *testing.T) {
 	inner := wave4L6Inner(m)
 
 	m.openJump()
-	m.jump.input.SetValue("zzz-no-match")
+	m.jumpSheet().input.SetValue("zzz-no-match")
 	if body := strings.Join(wave4L6Plain(m.jumpCardBody(inner)), "\n"); !strings.Contains(body, "No matches") {
 		t.Fatalf("jump empty body = %q, want No matches", body)
 	}
 	m.closeJump()
 
 	m.openNickJump()
-	m.nick.input.SetValue("zzz-no-match")
+	m.nickSheet().input.SetValue("zzz-no-match")
 	if body := strings.Join(wave4L6Plain(m.nickCardBody(inner)), "\n"); !strings.Contains(body, "No matches") {
 		t.Fatalf("nick empty body = %q, want No matches", body)
 	}
 	m.closeNickJump()
 
 	m.toggleLink()
-	m.link.input.SetValue("zzz-no-match")
+	m.linkSheet().input.SetValue("zzz-no-match")
 	if body := strings.Join(wave4L6Plain(m.linkCardBody(inner)), "\n"); !strings.Contains(body, "No links") {
 		t.Fatalf("link empty body = %q, want No links", body)
 	}

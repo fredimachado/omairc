@@ -16,7 +16,7 @@ func TestFooterFitsNarrowWidths(t *testing.T) {
 		prep func(*Model)
 	}{
 		{name: "composer", prep: func(m *Model) {}},
-		{name: "jump overlay", prep: func(m *Model) { m.jump.open = true }},
+		{name: "jump overlay", prep: func(m *Model) { m.openJump() }},
 	}
 
 	for _, ctx := range contexts {

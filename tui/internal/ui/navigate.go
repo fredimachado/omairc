@@ -35,28 +35,21 @@ type jumpEntry struct {
 
 // jumpState is the Ctrl+K filter overlay.
 type jumpState struct {
-	open     bool
 	input    textinput.Model
 	selected int
 	scroll   int
 }
 
 // Overlay filter chrome. Every filter sheet shares one prompt glyph, so the
-// fields line up inside the card, and one placeholder per sheet. The state
-// constructors run before the model has a palette, so each open* rebuilds its
-// filter through newTextInput with the live styles; defaultStyles seeds the
-// never-rendered pre-open value.
+// fields line up inside the card, and one placeholder per sheet. Each open*
+// builds its filter through newTextInput with the live styles.
 const (
 	overlayFilterPrompt = "› "
 	jumpPlaceholder     = "Jump to"
 )
 
-func newJumpState() jumpState {
-	return jumpState{input: newTextInput(defaultStyles(), jumpPlaceholder, overlayFilterPrompt)}
-}
-
 // jumpVisible reports whether the jump overlay is open.
-func (m *Model) jumpVisible() bool { return m != nil && m.jump.open }
+func (m *Model) jumpVisible() bool { return m.jumpSheet() != nil }
 
 // openJump opens the jump overlay with an empty query and the composer
 // blurred, so typed keys reach the filter.
@@ -64,23 +57,19 @@ func (m *Model) openJump() {
 	if m.ctrl == nil {
 		return
 	}
-	m.closeAllOverlays()
-	m.jump.open = true
-	m.jump.input = newTextInput(m.styles, jumpPlaceholder, overlayFilterPrompt)
-	m.jump.selected = 0
-	m.jump.scroll = 0
-	m.jump.input.SetWidth(m.overlayInputWidth())
+	sheet := &jumpState{input: newTextInput(m.styles, jumpPlaceholder, overlayFilterPrompt)}
+	sheet.input.SetWidth(m.overlayInputWidth())
+	m.setOverlay(sheet)
 	m.composer.Blur()
-	_ = m.jump.input.Focus()
+	_ = sheet.input.Focus()
 }
 
 // closeJump dismisses the overlay and returns focus to the composer.
 func (m *Model) closeJump() {
-	if !m.jump.open {
+	if m.jumpSheet() == nil {
 		return
 	}
-	m.jump.open = false
-	m.jump.input.Blur()
+	m.clearOverlay()
 	_ = m.composer.Focus()
 	m.loadDraft()
 }
@@ -95,7 +84,10 @@ func (m *Model) jumpEntries() []jumpEntry {
 	if m.ctrl == nil {
 		return nil
 	}
-	query := strings.TrimSpace(m.jump.input.Value())
+	query := ""
+	if sheet := m.jumpSheet(); sheet != nil {
+		query = strings.TrimSpace(sheet.input.Value())
+	}
 	conversations := m.ctrl.Conversations()
 	type ranked struct {
 		entry jumpEntry
@@ -185,23 +177,31 @@ func (m *Model) jumpConversationLabel(name, networkName string) string {
 
 // moveJump moves the highlighted row by delta, wrapping at both ends.
 func (m *Model) moveJump(delta int) {
-	entries := m.jumpEntries()
-	if len(entries) == 0 {
-		m.jump.selected = 0
+	sheet := m.jumpSheet()
+	if sheet == nil {
 		return
 	}
-	m.jump.selected = ((m.jump.selected+delta)%len(entries) + len(entries)) % len(entries)
-	m.revealList(&m.jump.scroll, m.jump.selected, len(entries), 1)
+	entries := m.jumpEntries()
+	if len(entries) == 0 {
+		sheet.selected = 0
+		return
+	}
+	sheet.selected = ((sheet.selected+delta)%len(entries) + len(entries)) % len(entries)
+	m.revealList(&sheet.scroll, sheet.selected, len(entries), 1)
 }
 
 // activateJump opens the highlighted entry and dismisses the overlay. Landing
 // on a conversation under a collapsed network expands that network first.
 func (m *Model) activateJump() {
+	sheet := m.jumpSheet()
+	if sheet == nil {
+		return
+	}
 	entries := m.jumpEntries()
 	if len(entries) == 0 {
 		return
 	}
-	index := m.jump.selected
+	index := sheet.selected
 	if index < 0 || index >= len(entries) {
 		index = 0
 	}
@@ -220,6 +220,10 @@ func (m *Model) activateJump() {
 // handleJumpKey folds one key while the overlay is open. Escape dismisses
 // Up/Down highlight, Enter activates, and everything else filters.
 func (m *Model) handleJumpKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	sheet := m.jumpSheet()
+	if sheet == nil {
+		return m, nil
+	}
 	switch key {
 	case "esc", "escape":
 		m.closeJump()
@@ -234,31 +238,10 @@ func (m *Model) handleJumpKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.C
 		m.activateJump()
 		return m, nil
 	}
-	var cmd tea.Cmd
-	m.jump.input, cmd = m.jump.input.Update(msg)
-	m.jump.selected = 0
-	m.jump.scroll = 0
+	cmd := sheet.updateInput(msg)
+	sheet.selected = 0
+	sheet.scroll = 0
 	return m, cmd
-}
-
-// handleOverlayKey routes one key to whichever filter overlay is open. Only
-// one overlay ever owns the keys; opening one closes the rest.
-func (m *Model) handleOverlayKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case m.nick.open:
-		return m.handleNickKey(key, msg)
-	case m.link.open:
-		return m.handleLinkKey(key, msg)
-	case m.inbox.open:
-		return m.handleInboxKey(key, msg)
-	case m.list.open:
-		return m.handleChannelListKey(key, msg)
-	case m.jump.open:
-		return m.handleJumpKey(key, msg)
-	case m.file.open:
-		return m.handleFilePickKey(key, msg)
-	}
-	return m, nil
 }
 
 // walk moves to the next or previous visible conversation over the sidebar
@@ -780,10 +763,14 @@ func (m *Model) clearCurrentDraft() {
 // overlay frame in model.go. The name and match count sit on the top edge and
 // the highlighted row's position sits on the bottom edge.
 func (m *Model) jumpCard(width int) string {
+	sheet := m.jumpSheet()
+	if sheet == nil {
+		return ""
+	}
 	entries := m.jumpEntries()
 	return m.overlayCardFramed(width,
 		overlayCountTitle("Jump", len(entries)),
-		overlayCountLabel(m.jump.selected, len(entries)),
+		overlayCountLabel(sheet.selected, len(entries)),
 		m.jumpCardBody)
 }
 
@@ -795,17 +782,21 @@ func (m *Model) jumpCardBody(inner int) []string {
 
 // jumpOverlayLines is the jump card body. The filter is not a row. Each
 // following line is one jump entry. A list that fits the card is unchanged
-// a longer list windows from jump.scroll, the same offset a click reads.
+// a longer list windows from the sheet's scroll, the same offset a click reads.
 func (m *Model) jumpOverlayLines(inner int) []overlayLine {
+	sheet := m.jumpSheet()
+	if sheet == nil {
+		return nil
+	}
 	entries := m.jumpEntries()
-	lines := []overlayLine{{text: truncateLine(m.jump.input.View(), inner), row: -1}}
+	lines := []overlayLine{{text: truncateLine(sheet.input.View(), inner), row: -1}}
 	if len(entries) == 0 {
 		return append(lines, overlayLine{text: m.overlaySheetEmpty("No matches"), row: -1})
 	}
-	start, end := listWindow(len(entries), m.jump.scroll, m.overlayRowBudget(1))
+	start, end := listWindow(len(entries), sheet.scroll, m.overlayRowBudget(1))
 	for index := start; index < end; index++ {
 		lines = append(lines, overlayLine{
-			text: m.overlayToggleRow(inner, index == m.jump.selected, entries[index].label),
+			text: m.overlayToggleRow(inner, index == sheet.selected, entries[index].label),
 			row:  index,
 		})
 	}
