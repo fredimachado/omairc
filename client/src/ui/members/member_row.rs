@@ -258,4 +258,46 @@ mod tests {
             vec!["away", "Ann Lee", "unauthenticated", "bot"]
         );
     }
+
+    #[test]
+    fn a_setname_realname_shows_in_the_tooltip_without_a_transcript_line() {
+        use crate::irc::event::{ConversationKey, Event, JoinEvent, NickFactsEvent};
+        use crate::irc::reducer::EventReducer;
+
+        let mut reducer = EventReducer::new();
+        let now = chrono::Utc::now();
+        reducer.apply(
+            crate::irc::event::WelcomeEvent {
+                network_id: "net".to_owned(),
+                current_nick: "me".to_owned(),
+            }
+            .into(),
+            now,
+        );
+        for nick in ["me", "ann"] {
+            reducer.apply(
+                Event::Join(JoinEvent {
+                    network_id: "net".to_owned(),
+                    channel: "#room".to_owned(),
+                    nick: nick.to_owned(),
+                    account: None,
+                    realname: None,
+                }),
+                now,
+            );
+        }
+        let room: ConversationKey = reducer.conversation_key("net", "#room");
+        let view = |reducer: &EventReducer| reducer.member_view(&room, "ann").expect("ann");
+        assert!(member_tip_lines(&view(&reducer), false, false).is_empty());
+        reducer.apply(
+            Event::NickFacts(NickFactsEvent {
+                network_id: "net".to_owned(),
+                nick: "ann".to_owned(),
+                realname: Some("Ann Lee".to_owned()),
+                server_operator: None,
+            }),
+            now,
+        );
+        assert_eq!(member_tip_lines(&view(&reducer), false, false), vec!["Ann Lee"]);
+    }
 }

@@ -40,6 +40,7 @@ func TestTranslateNumericTable(t *testing.T) {
 		{"join failure 471", ":server 471 omairc #room :Cannot join channel (+l)", EventChannelError},
 		{"join failure 473", ":server 473 omairc #room :Invite only", EventChannelError},
 		{"ambiguous join failure 437", ":server 437 omairc #room :unavailable", EventChannelError},
+		{"setname", ":alice!u@h SETNAME :Alice Lee", EventNickFacts},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -564,4 +565,30 @@ func TestChannelContextStaysADirectMessageWhenUntrusted(t *testing.T) {
 	requireInt(t, "channel lines", len(unjoined.Lines), 1)
 	requireString(t, "public only", unjoined.Lines[0].Body, "public only")
 	requireFalse(t, "public only flag", unjoined.Lines[0].OnlyVisibleToYou)
+}
+
+func TestSetnameTranslatesToRealnameFact(t *testing.T) {
+	events := translateLine(t, ":alice!u@h SETNAME :Alice Lee")
+	requireInt(t, "events", len(events), 1)
+	facts, ok := events[0].(NickFactsEvent)
+	requireTrue(t, "NickFactsEvent", ok)
+	requireString(t, "nick", facts.Nick, "alice")
+	requireTrue(t, "realname set", facts.Realname != nil)
+	requireString(t, "realname", *facts.Realname, "Alice Lee")
+	requireTrue(t, "operator untouched", facts.ServerOperator == nil)
+}
+
+func TestSetnameWithEmptyParamClearsRealname(t *testing.T) {
+	for _, line := range []string{":alice!u@h SETNAME :", ":alice!u@h SETNAME"} {
+		events := translateLine(t, line)
+		requireInt(t, line+" events", len(events), 1)
+		facts, ok := events[0].(NickFactsEvent)
+		requireTrue(t, line+" NickFactsEvent", ok)
+		requireTrue(t, line+" realname set", facts.Realname != nil)
+		requireString(t, line+" realname", *facts.Realname, "")
+	}
+}
+
+func TestSetnameWithoutPrefixIsIgnored(t *testing.T) {
+	requireInt(t, "events", len(translateLine(t, "SETNAME :Alice Lee")), 0)
 }

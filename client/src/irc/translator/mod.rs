@@ -89,6 +89,7 @@ pub fn translate(
         "366" if message.params.len() >= 2 => membership::names_end(&inbound),
         "MODE" if message.params.len() >= 2 => membership::mode(&inbound),
         "AWAY" if !inbound.sender.is_empty() => membership::away(&inbound),
+        "SETNAME" if !inbound.sender.is_empty() => membership::setname(&inbound),
         "306" => membership::self_away(&inbound, true),
         "305" => membership::self_away(&inbound, false),
         "352" if message.params.len() >= 7 => numerics::who_reply(&inbound),

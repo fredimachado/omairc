@@ -122,6 +122,7 @@ const WANTED: &[Wanted] = &[
     Wanted::new(IrcCapability::ExtendedJoin, "extended-join"),
     Wanted::new(IrcCapability::ReadMarker, "draft/read-marker"),
     Wanted::new(IrcCapability::ReadMarker, "soju.im/read"),
+    Wanted::new(IrcCapability::SetName, "setname"),
 ];
 
 /// Tracks one CAP exchange (`IrcCapabilityNegotiation`). Build one with `new`
@@ -409,7 +410,7 @@ mod tests {
     #[test]
     fn unwanted_advertisement_produces_no_request() {
         let mut negotiation = IrcCapabilityNegotiation::new(false);
-        negotiation.advertise(&tokens("invite-notify"));
+        negotiation.advertise(&tokens("extended-monitor"));
 
         let request = negotiation.take_request();
         assert!(request.lines.is_empty());
@@ -422,7 +423,7 @@ mod tests {
     fn quiet_caps_request_when_advertised() {
         let mut negotiation = IrcCapabilityNegotiation::new(false);
         negotiation.advertise(&tokens(
-            "multi-prefix chghost cap-notify echo-message invite-notify",
+            "multi-prefix chghost cap-notify echo-message extended-monitor",
         ));
 
         let request = negotiation.take_request();
@@ -902,9 +903,19 @@ mod tests {
         );
 
         let mut none = IrcCapabilityNegotiation::new(false);
-        none.advertise(&tokens("invite-notify"));
+        none.advertise(&tokens("extended-monitor"));
         assert!(none.take_request().lines.is_empty(), "no lines expected");
         assert!(none.settled(), "settled");
+    }
+
+    #[test]
+    fn setname_is_requested_without_dependencies() {
+        let mut negotiation = IrcCapabilityNegotiation::new(false);
+        negotiation.advertise(&tokens("setname"));
+        assert_cap_lines(&negotiation.take_request().lines, &["setname"]);
+        let granted = negotiation.acknowledge(&tokens("setname"));
+        assert!(granted.contains(IrcCapability::SetName));
+        assert!(negotiation.settled());
     }
 
     #[test]

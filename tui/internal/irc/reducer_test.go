@@ -2304,3 +2304,70 @@ func TestChannelContextDirectMessageSurvivesWhenUntrusted(t *testing.T) {
 		}
 	}
 }
+
+func roomWithAlice(t *testing.T, reducer *EventReducer) ConversationKey {
+	t.Helper()
+	welcome(reducer, networkA)
+	applyWire(t, reducer, ":omairc!me@h JOIN #room")
+	applyWire(t, reducer, ":Alice!a@h JOIN #room")
+	return reducer.ConversationKey(networkA, "#room")
+}
+
+func TestSetnameFromMemberUpdatesTooltipRealname(t *testing.T) {
+	reducer := NewEventReducer()
+	room := roomWithAlice(t, reducer)
+	applyWire(t, reducer, ":Alice!a@h SETNAME :Alice Lee")
+	requireString(t, "realname", memberViewOf(t, reducer, room, "alice").Realname, "Alice Lee")
+	applyWire(t, reducer, ":Alice!a@h SETNAME :Alice Q. Lee")
+	requireString(t, "realname again", memberViewOf(t, reducer, room, "alice").Realname, "Alice Q. Lee")
+}
+
+func TestSetnameFromSelfUpdatesOwnRealname(t *testing.T) {
+	reducer := NewEventReducer()
+	room := roomWithAlice(t, reducer)
+	applyWire(t, reducer, ":omairc!me@h SETNAME :Omairc User")
+	requireString(t, "self realname", memberViewOf(t, reducer, room, "omairc").Realname, "Omairc User")
+	requireString(t, "meaningful", reducer.MeaningfulRealname(networkA, "omairc"), "Omairc User")
+}
+
+func TestSetnameEmptyRealnameClearsIt(t *testing.T) {
+	reducer := NewEventReducer()
+	room := roomWithAlice(t, reducer)
+	applyWire(t, reducer, ":Alice!a@h SETNAME :Alice Lee")
+	applyWire(t, reducer, ":Alice!a@h SETNAME :")
+	requireString(t, "realname", memberViewOf(t, reducer, room, "alice").Realname, "")
+	requireString(t, "meaningful", reducer.MeaningfulRealname(networkA, "Alice"), "")
+}
+
+func TestSetnameAppendsNoTranscriptLine(t *testing.T) {
+	reducer := NewEventReducer()
+	room := roomWithAlice(t, reducer)
+	before := len(stateOf(t, reducer, room).Messages)
+	applyWire(t, reducer, ":Alice!a@h SETNAME :Alice Lee")
+	applyWire(t, reducer, ":omairc!me@h SETNAME :Omairc User")
+	requireInt(t, "messages", len(stateOf(t, reducer, room).Messages), before)
+}
+
+func TestSetnameForAnUnknownNickInventsNoConversation(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	applyWire(t, reducer, ":Stranger!s@h SETNAME :Some One")
+	requireTrue(t, "no direct row", reducer.Find(reducer.ConversationKey(networkA, "Stranger")) == nil)
+}
+
+func TestSetnameUpdatesDirectMessageHeaderRealname(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	applyWire(t, reducer, ":Alice!a@h PRIVMSG omairc :hi")
+	direct := reducer.ConversationKey(networkA, "Alice")
+	before := len(stateOf(t, reducer, direct).Messages)
+	requireString(t, "before", reducer.MeaningfulRealname(networkA, "Alice"), "")
+	realname := "Alice Lee"
+	event := NickFactsEvent{NetworkID: networkA, Nick: "Alice", Realname: &realname}
+	notify := ClassifyViewNotify(event, reducer, nil)
+	reducer.Apply(event, reducerTimestamp)
+	requireString(t, "header realname", reducer.MeaningfulRealname(networkA, "Alice"), "Alice Lee")
+	requireInt(t, "member surface", int(notify.Members), int(MemberSurfaceRow))
+	requireString(t, "member nick", notify.Nick, "alice")
+	requireInt(t, "messages", len(stateOf(t, reducer, direct).Messages), before)
+}

@@ -376,6 +376,10 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 			away = &Away{Reason: ircParameter(message, 0)}
 		}
 		events = append(events, AwayEvent{NetworkID: networkID, Nick: sender, Away: away})
+	case command == "SETNAME" && sender != "":
+		// A missing or empty parameter is an empty name, which clears it.
+		realname := ircParameter(message, 0)
+		events = append(events, NickFactsEvent{NetworkID: networkID, Nick: sender, Realname: &realname})
 	case command == "306":
 		events = append(events, SelfAwayEvent{NetworkID: networkID, Away: true})
 	case command == "305":

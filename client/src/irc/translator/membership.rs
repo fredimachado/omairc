@@ -1,10 +1,11 @@
 //! Channel membership and channel state: JOIN, PART, KICK, QUIT and NICK; ACCOUNT and
-//! AWAY; the user's own away state (305, 306); TOPIC with its 332 and 333 replies
+//! AWAY; SETNAME; the user's own away state (305, 306); TOPIC with its 332 and 333 replies
 //! NAMES (353, 366); and MODE. Each handler's parameter guard lives in `translate`'s
 //! `match`, so these run only on a message that has the parameters they read.
 
 use crate::irc::event::{
     AccountEvent, AwayEvent, Event, JoinEvent, KickEvent, ModeEvent, Name, NamesEvent, NickEvent,
+    NickFactsEvent,
     PartEvent, QuitEvent, SelfAwayEvent, TopicEvent,
 };
 use crate::irc::message::IrcMessage;
@@ -186,6 +187,18 @@ pub(super) fn away(inbound: &Inbound<'_>) -> Vec<Event> {
         away,
         realname: None,
         realname_only: false,
+    }
+    .into()]
+}
+
+/// `SETNAME` from a member (or from us): the new real name. A missing or empty
+/// parameter is `Some("")`, which clears the stored name.
+pub(super) fn setname(inbound: &Inbound<'_>) -> Vec<Event> {
+    vec![NickFactsEvent {
+        network_id: inbound.network_id.to_owned(),
+        nick: inbound.sender.clone(),
+        realname: Some(inbound.message.text_param(0)),
+        server_operator: None,
     }
     .into()]
 }

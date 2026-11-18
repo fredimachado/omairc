@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn numeric_and_command_table_yields_the_expected_first_kind() {
-    let cases: [(&str, &str, EventKind); 22] = [
+    let cases: [(&str, &str, EventKind); 23] = [
         (
             "self away",
             ":server 306 omairc :marked away",
@@ -78,6 +78,11 @@ fn numeric_and_command_table_yields_the_expected_first_kind() {
             "whois user",
             ":server 311 omairc Alice user host * :Alice Example",
             EventKind::Away,
+        ),
+        (
+            "setname",
+            ":alice!u@h SETNAME :Alice Lee",
+            EventKind::NickFacts,
         ),
     ];
     for (name, line, want) in cases {

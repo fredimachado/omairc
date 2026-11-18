@@ -138,3 +138,32 @@ fn join_failure_numerics_need_a_channel_when_they_are_ambiguous() {
     }
     assert!(translate_line(":server 437 omairc someNick :unavailable").is_empty());
 }
+
+#[test]
+fn setname_translates_to_realname_fact() {
+    let events = translate_line(":alice!u@h SETNAME :Alice Lee");
+    assert_eq!(events.len(), 1, "{events:?}");
+    match &events[0] {
+        Event::NickFacts(facts) => {
+            assert_eq!(facts.nick, "alice");
+            assert_eq!(facts.realname.as_deref(), Some("Alice Lee"));
+            assert_eq!(facts.server_operator, None);
+        }
+        other => panic!("want NickFactsEvent, got {other:?}"),
+    }
+}
+
+#[test]
+fn setname_with_empty_param_clears_realname() {
+    for line in [":alice!u@h SETNAME :", ":alice!u@h SETNAME"] {
+        match translate_line(line).as_slice() {
+            [Event::NickFacts(facts)] => assert_eq!(facts.realname.as_deref(), Some(""), "{line}"),
+            other => panic!("{line}: want one NickFactsEvent, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn setname_without_prefix_is_ignored() {
+    assert!(translate_line("SETNAME :Alice Lee").is_empty());
+}
