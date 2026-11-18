@@ -14,6 +14,7 @@
 use std::collections::HashMap;
 
 use super::capability::{IrcCapability, IrcCapabilitySet};
+use super::multiline::{parse_multiline_limits, MultilineLimits};
 
 /// One CAP REQ outcome: the lines to send, whether SASL is being requested, and
 /// the chosen SASL mechanism (`IrcCapabilityNegotiation::Request`).
@@ -111,6 +112,7 @@ const WANTED: &[Wanted] = &[
     Wanted::new(IrcCapability::ServerTime, "server-time").own_line(),
     Wanted::new(IrcCapability::ChatHistory, "chathistory").depends_on(IrcCapability::Batch),
     Wanted::new(IrcCapability::ChatHistory, "draft/chathistory").depends_on(IrcCapability::Batch),
+    Wanted::new(IrcCapability::Multiline, "draft/multiline").depends_on(IrcCapability::Batch),
     Wanted::new(IrcCapability::ZncPlayback, "znc.in/playback")
         .depends_on(IrcCapability::Batch)
         .own_line(),
@@ -134,6 +136,8 @@ pub struct IrcCapabilityNegotiation {
     /// Keyed by the wanted table's lowercase token.
     tokens: HashMap<&'static str, TokenState>,
     sasl_advertised_value: String,
+    /// The `max-bytes` and `max-lines` of the advertised `draft/multiline` value.
+    multiline_limits: MultilineLimits,
     sasl_credentials_available: bool,
 }
 
@@ -144,6 +148,7 @@ impl IrcCapabilityNegotiation {
         Self {
             tokens: HashMap::new(),
             sasl_advertised_value: String::new(),
+            multiline_limits: MultilineLimits::default(),
             sasl_credentials_available,
         }
     }
@@ -175,6 +180,9 @@ impl IrcCapabilityNegotiation {
             if wanted.capability == IrcCapability::Sasl {
                 self.sasl_advertised_value = value.to_owned();
             }
+            if wanted.capability == IrcCapability::Multiline {
+                self.multiline_limits = parse_multiline_limits(value);
+            }
             self.tokens.insert(wanted.token, TokenState::Advertised);
         }
     }
@@ -187,6 +195,9 @@ impl IrcCapabilityNegotiation {
             };
             if wanted.capability == IrcCapability::Sasl {
                 self.sasl_advertised_value.clear();
+            }
+            if wanted.capability == IrcCapability::Multiline {
+                self.multiline_limits = MultilineLimits::default();
             }
             self.tokens.remove(wanted.token);
         }
@@ -287,6 +298,12 @@ impl IrcCapabilityNegotiation {
             .tokens
             .values()
             .any(|state| *state == TokenState::Requested)
+    }
+
+    /// The limits the server advertised for `draft/multiline`. Receiving does not
+    /// use them.
+    pub fn multiline_limits(&self) -> MultilineLimits {
+        self.multiline_limits
     }
 
     pub fn enabled(&self) -> IrcCapabilitySet {
@@ -1080,5 +1097,46 @@ mod tests {
         let mut negotiation = IrcCapabilityNegotiation::new(false);
         negotiation.advertise(&tokens("draft/read-ma\u{212A}er"));
         assert!(negotiation.take_request().lines.is_empty());
+    }
+
+    #[test]
+    fn multiline_needs_batch_and_rides_the_presence_line() {
+        let mut without_batch = IrcCapabilityNegotiation::new(false);
+        without_batch.advertise(&tokens("draft/multiline=max-bytes=4096,max-lines=100 multi-prefix"));
+        assert_cap_lines(&without_batch.take_request().lines, &["multi-prefix"]);
+
+        let mut negotiation = IrcCapabilityNegotiation::new(false);
+        negotiation.advertise(&tokens("draft/multiline=max-bytes=4096,max-lines=100 batch"));
+        assert_cap_lines(&negotiation.take_request().lines, &["batch draft/multiline"]);
+        let granted = negotiation.acknowledge(&tokens("batch draft/multiline"));
+        assert!(granted.contains(IrcCapability::Multiline));
+        assert!(negotiation.enabled().contains(IrcCapability::Multiline));
+    }
+
+    #[test]
+    fn multiline_limits_are_stored_then_cleared_by_cap_del_and_reset() {
+        let mut negotiation = IrcCapabilityNegotiation::new(false);
+        assert_eq!(negotiation.multiline_limits(), MultilineLimits::default());
+        negotiation.advertise(&tokens("batch draft/multiline=max-bytes=4096,max-lines=100"));
+        assert_eq!(
+            negotiation.multiline_limits(),
+            MultilineLimits { max_bytes: Some(4096), max_lines: Some(100) }
+        );
+
+        negotiation.withdraw(&tokens("draft/multiline"));
+        assert_eq!(negotiation.multiline_limits(), MultilineLimits::default());
+
+        negotiation.advertise(&tokens("draft/multiline=max-lines=5"));
+        assert_eq!(negotiation.multiline_limits().max_lines, Some(5));
+        negotiation.reset(false);
+        assert_eq!(negotiation.multiline_limits(), MultilineLimits::default());
+    }
+
+    #[test]
+    fn a_bare_multiline_token_is_requested_with_no_limits() {
+        let mut negotiation = IrcCapabilityNegotiation::new(false);
+        negotiation.advertise(&tokens("batch draft/multiline"));
+        assert_cap_lines(&negotiation.take_request().lines, &["batch draft/multiline"]);
+        assert_eq!(negotiation.multiline_limits(), MultilineLimits::default());
     }
 }

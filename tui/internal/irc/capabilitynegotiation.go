@@ -37,8 +37,11 @@ type wantedCapability struct {
 // tokens across one CAP LS/REQ/ACK/NAK/END exchange. It mirrors
 // IrcCapabilityNegotiation.
 type CapabilityNegotiation struct {
-	tokens                   map[string]tokenState
-	saslAdvertisedValue      string
+	tokens              map[string]tokenState
+	saslAdvertisedValue string
+	// multilineLimits is the max-bytes and max-lines of the advertised
+	// draft/multiline value. Receiving does not use them.
+	multilineLimits          MultilineLimits
 	saslCredentialsAvailable bool
 }
 
@@ -54,6 +57,7 @@ func NewCapabilityNegotiation(saslCredentialsAvailable bool) *CapabilityNegotiat
 func (n *CapabilityNegotiation) Reset(saslCredentialsAvailable bool) {
 	n.tokens = make(map[string]tokenState)
 	n.saslAdvertisedValue = ""
+	n.multilineLimits = MultilineLimits{}
 	n.saslCredentialsAvailable = saslCredentialsAvailable
 }
 
@@ -73,6 +77,9 @@ func (n *CapabilityNegotiation) Advertise(tokens []string) {
 		if wanted.capability == CapabilitySasl {
 			n.saslAdvertisedValue = tokenValue(token)
 		}
+		if wanted.capability == CapabilityMultiline {
+			n.multilineLimits = ParseMultilineLimits(tokenValue(token))
+		}
 		n.tokens[name] = tokenAdvertised
 	}
 }
@@ -80,12 +87,16 @@ func (n *CapabilityNegotiation) Advertise(tokens []string) {
 // Withdraw forgets tokens the server removed in CAP DEL / NEW.
 func (n *CapabilityNegotiation) Withdraw(tokens []string) {
 	for _, token := range tokens {
-		if wantedFor(tokenName(token)) == nil {
+		wanted := wantedFor(tokenName(token))
+		if wanted == nil {
 			continue
 		}
 		name := foldedName(token)
 		if name == "sasl" {
 			n.saslAdvertisedValue = ""
+		}
+		if wanted.capability == CapabilityMultiline {
+			n.multilineLimits = MultilineLimits{}
 		}
 		delete(n.tokens, name)
 	}
@@ -193,6 +204,12 @@ func (n *CapabilityNegotiation) Settled() bool {
 	return true
 }
 
+// MultilineLimits returns the limits the server advertised for draft/multiline.
+// Receiving does not use them.
+func (n *CapabilityNegotiation) MultilineLimits() MultilineLimits {
+	return n.multilineLimits
+}
+
 // Enabled returns the capabilities the server has acknowledged.
 func (n *CapabilityNegotiation) Enabled() CapabilitySet {
 	var set CapabilitySet
@@ -259,6 +276,7 @@ var wantedTable = []wantedCapability{
 	{CapabilityServerTime, "server-time", 0, false, false, true, acceptsAnyValue},
 	{CapabilityChatHistory, "chathistory", CapabilityBatch, true, false, false, acceptsAnyValue},
 	{CapabilityChatHistory, "draft/chathistory", CapabilityBatch, true, false, false, acceptsAnyValue},
+	{CapabilityMultiline, "draft/multiline", CapabilityBatch, true, false, false, acceptsAnyValue},
 	{CapabilityZncPlayback, "znc.in/playback", CapabilityBatch, true, false, true, acceptsAnyValue},
 	{CapabilityLabeledResponse, "labeled-response", CapabilityMessageTags, true, false, true, acceptsAnyValue},
 	{CapabilityAccountTag, "account-tag", CapabilityMessageTags, true, false, false, acceptsAnyValue},

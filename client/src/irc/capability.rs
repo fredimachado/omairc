@@ -25,6 +25,7 @@ pub enum IrcCapability {
     InviteNotify,
     SetName,
     UserhostInNames,
+    Multiline,
 }
 
 impl IrcCapability {
@@ -99,6 +100,7 @@ mod tests {
         assert_eq!(IrcCapability::InviteNotify.bit(), 1 << 17);
         assert_eq!(IrcCapability::SetName.bit(), 1 << 18);
         assert_eq!(IrcCapability::UserhostInNames.bit(), 1 << 19);
+        assert_eq!(IrcCapability::Multiline.bit(), 1 << 20);
     }
 
     #[test]
