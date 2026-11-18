@@ -71,7 +71,12 @@ impl Core {
         }
 
         let command = message.command.clone();
-        if command == "INVITE" && message.params.len() >= 2 {
+        // With invite-notify an INVITE can name someone else. Only one to us is a
+        // pending invite, or a bare `/join` would follow another user's invite.
+        if command == "INVITE"
+            && message.params.len() >= 2
+            && self.nicks_equal(&message.text_param(0), &self.nickname)
+        {
             let nick = prefix_nick(&message);
             let channel = message.text_param(message.params.len() - 1);
             if !nick.is_empty() && !channel.is_empty() {

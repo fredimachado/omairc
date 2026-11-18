@@ -3,6 +3,7 @@ package irc
 import (
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -2370,4 +2371,60 @@ func TestSetnameUpdatesDirectMessageHeaderRealname(t *testing.T) {
 	requireInt(t, "member surface", int(notify.Members), int(MemberSurfaceRow))
 	requireString(t, "member nick", notify.Nick, "alice")
 	requireInt(t, "messages", len(stateOf(t, reducer, direct).Messages), before)
+}
+
+func TestInviteToOtherInOpenChannelAddsMutedSystemLine(t *testing.T) {
+	// The cause matrix: an invite inserts nothing, so no ConversationCause applies.
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	applyWire(t, reducer, ":omairc!me@h JOIN #room")
+	room := reducer.ConversationKey(networkA, "#room")
+	before := len(reducer.Conversations())
+	lines := len(stateOf(t, reducer, room).Messages)
+
+	applyWire(t, reducer, ":op!u@h INVITE bob #room")
+
+	conversation := stateOf(t, reducer, room)
+	requireInt(t, "messages", len(conversation.Messages), lines+1)
+	last := conversation.Messages[len(conversation.Messages)-1]
+	requireInt(t, "kind", int(last.Kind), int(KindEvent))
+	requireString(t, "body", last.Body, "op invited bob")
+	requireInt(t, "conversations", len(reducer.Conversations()), before)
+}
+
+func TestInviteToOtherInClosedChannelIsDropped(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	applyWire(t, reducer, ":omairc!me@h JOIN #other")
+	before := len(reducer.Conversations())
+
+	applyWire(t, reducer, ":op!u@h INVITE bob #room")
+
+	requireTrue(t, "no #room", roomOf(reducer, "#room") == nil)
+	requireInt(t, "conversations", len(reducer.Conversations()), before)
+	for _, message := range roomOf(reducer, "#other").Messages {
+		requireFalse(t, "line leaked into #other", strings.Contains(message.Body, "invited"))
+	}
+}
+
+func TestInviteForADirectMessageNameInsertsNothing(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	applyWire(t, reducer, ":bob!b@h PRIVMSG omairc :hi")
+	before := len(reducer.Conversations())
+	applyWire(t, reducer, ":op!u@h INVITE carol bob")
+	requireInt(t, "conversations", len(reducer.Conversations()), before)
+}
+
+func TestInviteLineIsNotFoldedByMembershipNoiseSettings(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	applyWire(t, reducer, ":omairc!me@h JOIN #room")
+	reducer.SetMembershipNoise(MembershipNoiseHidden)
+	applyWire(t, reducer, ":op!u@h INVITE bob #room")
+	found := false
+	for _, message := range roomOf(reducer, "#room").Messages {
+		found = found || message.Body == "op invited bob"
+	}
+	requireTrue(t, "invite line survives Hidden", found)
 }

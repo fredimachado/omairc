@@ -28,6 +28,7 @@ const (
 	EventWhoisTranscript
 	EventChannelError
 	EventNickFacts
+	EventInvite
 )
 
 // Event is one translated IRC fact. The unexported method seals the interface
@@ -330,6 +331,18 @@ type NickFactsEvent struct {
 }
 
 func (NickFactsEvent) eventKind() EventKind { return EventNickFacts }
+
+// InviteEvent is an invite-notify INVITE addressed to someone else. An invite
+// to us is no event: it stays a Status line and an inbox row. It mirrors
+// InviteEvent in client/src/irc/event.rs.
+type InviteEvent struct {
+	NetworkID string
+	Channel   string
+	Inviter   string
+	Target    string
+}
+
+func (InviteEvent) eventKind() EventKind { return EventInvite }
 
 // KeptReplay is a replay line the reducer actually kept: inserted, or already
 // present so author/body/kind/time or msgid dedup skipped it. ServerTime is

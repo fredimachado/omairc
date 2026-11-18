@@ -293,6 +293,59 @@ func TestConversationCreateMatrix(t *testing.T) {
 	}
 }
 
+// TestAnInviteToAnotherUserRaisesNoInboxRowAndNoStatusEntry extends the
+// creation matrix with the INVITE rows: an invite never inserts a conversation.
+// Another user's invite is a muted line in an open channel, dropped in a
+// channel we do not have, and never reaches Status, the inbox, or the pending
+// invite. Our own invite keeps its Status entry and inbox row.
+func TestAnInviteToAnotherUserRaisesNoInboxRowAndNoStatusEntry(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
+	registerNetwork(t, transport, "omairc")
+	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n")
+	c.SelectConversation("freenode", "#omarchy")
+	inbox := c.InboxCount()
+	status := len(c.Console().Lines("freenode"))
+	lines := len(c.Messages())
+
+	// Other, open channel: one muted line in the channel.
+	inject(t, transport, ":lena!u@h INVITE milo #omarchy\r\n")
+	if len(c.Messages()) != lines+1 || c.Messages()[lines].Body != "lena invited milo" {
+		t.Fatalf("messages = %v, want one new muted invite line", messageBodies(c))
+	}
+
+	// Other, closed channel: dropped without opening it.
+	inject(t, transport, ":lena!u@h INVITE milo #nowhere\r\n")
+	if hasConversation(c, "freenode", "#nowhere") {
+		t.Fatalf("an invite opened #nowhere: %v", conversationTargets(c))
+	}
+	if len(c.Messages()) != lines+1 {
+		t.Fatalf("messages = %v after the dropped invite", messageBodies(c))
+	}
+
+	if c.InboxCount() != inbox {
+		t.Fatalf("inbox = %d, want %d", c.InboxCount(), inbox)
+	}
+	if got := len(c.Console().Lines("freenode")); got != status {
+		t.Fatalf("Status lines = %d, want %d", got, status)
+	}
+	if invite, ok := c.Session("freenode").PendingInvite(); ok {
+		t.Fatalf("pending invite = %+v", invite)
+	}
+
+	// Self: the old behavior, a Status entry and an inbox row, still no conversation.
+	inject(t, transport, ":lena!u@h INVITE omairc #lounge\r\n")
+	if hasConversation(c, "freenode", "#lounge") {
+		t.Fatalf("our own invite opened #lounge: %v", conversationTargets(c))
+	}
+	if c.InboxCount() != inbox+1 {
+		t.Fatalf("inbox = %d, want %d", c.InboxCount(), inbox+1)
+	}
+	if got := len(c.Console().Lines("freenode")); got != status+1 {
+		t.Fatalf("Status lines = %d, want %d", got, status+1)
+	}
+}
+
 func TestSelectedPrivmsgInsertsMessageRow(t *testing.T) {
 	c, clock := newController(t)
 	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))

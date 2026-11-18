@@ -440,3 +440,68 @@ fn lone_membership_line_keeps_today_wording() {
     assert_eq!(conversation.messages[8].body, "Bob joined", "bob");
     assert_eq!(conversation.messages[10].body, "Bob is now Bobby", "nick");
 }
+
+fn invite_wire(reducer: &mut EventReducer, line: &str) {
+    apply_wire(reducer, line);
+}
+
+#[test]
+fn invite_to_other_in_open_channel_adds_muted_system_line() {
+    // The cause matrix: an invite inserts nothing, so no `IrcConversationCause` applies.
+    let mut reducer = EventReducer::new();
+    welcome_omairc(&mut reducer, NETWORK_A);
+    fold(&mut reducer, join(NETWORK_A, "#room", "omairc"));
+    let room = reducer.conversation_key(NETWORK_A, "#room");
+    let before = reducer.conversations().len();
+    let lines = state_of(&reducer, &room).messages.len();
+
+    invite_wire(&mut reducer, ":op!u@h INVITE bob #room");
+
+    let conv = state_of(&reducer, &room);
+    assert_eq!(conv.messages.len(), lines + 1);
+    let line = conv.messages.last().expect("the invite line");
+    assert_eq!(line.kind, crate::irc::world::MessageKind::Event);
+    assert_eq!(line.body, "op invited bob");
+    assert_eq!(reducer.conversations().len(), before, "no conversation inserted");
+}
+
+#[test]
+fn invite_to_other_in_closed_channel_is_dropped() {
+    let mut reducer = EventReducer::new();
+    welcome_omairc(&mut reducer, NETWORK_A);
+    fold(&mut reducer, join(NETWORK_A, "#other", "omairc"));
+    let before = reducer.conversations().len();
+
+    invite_wire(&mut reducer, ":op!u@h INVITE bob #room");
+
+    assert!(room_of(&reducer, "#room").is_none(), "an invite never opens a channel");
+    assert_eq!(reducer.conversations().len(), before);
+    assert!(
+        bodies(room_of(&reducer, "#other").expect("#other")).iter().all(|body| !body.contains("invited")),
+        "the line belongs to #room only"
+    );
+}
+
+#[test]
+fn invite_for_a_direct_message_name_inserts_nothing() {
+    let mut reducer = EventReducer::new();
+    welcome_omairc(&mut reducer, NETWORK_A);
+    let bob = reducer.conversation_key(NETWORK_A, "bob");
+    fold(&mut reducer, message(&bob, "bob", "hi", "omairc"));
+    let before = reducer.conversations().len();
+    invite_wire(&mut reducer, ":op!u@h INVITE carol bob");
+    assert_eq!(reducer.conversations().len(), before);
+}
+
+#[test]
+fn invite_line_is_not_folded_by_membership_noise_settings() {
+    let mut reducer = EventReducer::new();
+    welcome_omairc(&mut reducer, NETWORK_A);
+    fold(&mut reducer, join(NETWORK_A, "#room", "omairc"));
+    reducer.set_membership_noise(crate::irc::membershipnoise::MembershipNoise::Hidden);
+    invite_wire(&mut reducer, ":op!u@h INVITE bob #room");
+    assert!(
+        bodies(room_of(&reducer, "#room").expect("#room")).contains(&"op invited bob".to_owned()),
+        "hiding join/part noise must not hide an invite"
+    );
+}

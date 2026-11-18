@@ -100,7 +100,7 @@ fn classify_unchecked(event: &Event, reducer: &EventReducer) -> Vec<ViewNotify> 
             merge(&mut notify, vec![ViewNotify::Conversations]);
             notify
         }
-        Event::WhoisTranscript(_) | Event::ChannelError(_) => transcript(),
+        Event::WhoisTranscript(_) | Event::ChannelError(_) | Event::Invite(_) => transcript(),
         Event::NickFacts(facts) => {
             let key = reducer.conversation_key(&facts.network_id, &facts.nick);
             member_row(&key.normalized_target)

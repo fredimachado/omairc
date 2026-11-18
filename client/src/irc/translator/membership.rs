@@ -1,10 +1,10 @@
 //! Channel membership and channel state: JOIN, PART, KICK, QUIT and NICK; ACCOUNT and
-//! AWAY; SETNAME; the user's own away state (305, 306); TOPIC with its 332 and 333 replies
+//! AWAY; SETNAME; INVITE to another user; the user's own away state (305, 306); TOPIC with its 332 and 333 replies
 //! NAMES (353, 366); and MODE. Each handler's parameter guard lives in `translate`'s
 //! `match`, so these run only on a message that has the parameters they read.
 
 use crate::irc::event::{
-    AccountEvent, AwayEvent, Event, JoinEvent, KickEvent, ModeEvent, Name, NamesEvent, NickEvent,
+    AccountEvent, AwayEvent, Event, InviteEvent, JoinEvent, KickEvent, ModeEvent, Name, NamesEvent, NickEvent,
     NickFactsEvent,
     PartEvent, QuitEvent, SelfAwayEvent, TopicEvent,
 };
@@ -199,6 +199,26 @@ pub(super) fn setname(inbound: &Inbound<'_>) -> Vec<Event> {
         nick: inbound.sender.clone(),
         realname: Some(inbound.message.text_param(0)),
         server_operator: None,
+    }
+    .into()]
+}
+
+/// `INVITE` (with `invite-notify`) from a channel operator to another user. An invite
+/// to us is no event: Status, the inbox and `/join` read it from the wire. A target
+/// that is not a channel is dropped.
+pub(super) fn invite(inbound: &Inbound<'_>) -> Vec<Event> {
+    let message = inbound.message;
+    let target = message.text_param(0);
+    let channel = message.text_param(1);
+    let features = inbound.features;
+    if features.case_mapping().equals(&target, inbound.current_nick) || !features.is_channel(&channel) {
+        return Vec::new();
+    }
+    vec![InviteEvent {
+        network_id: inbound.network_id.to_owned(),
+        channel,
+        inviter: inbound.sender.clone(),
+        target,
     }
     .into()]
 }

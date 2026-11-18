@@ -770,3 +770,22 @@ func TestUploadCredentialUsesTheServerPasswordUntilSasl(t *testing.T) {
 		t.Fatalf("after SASL account=%q secret=%q", user, secret)
 	}
 }
+
+func TestInviteToOtherDoesNotSetPendingInvite(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	fixture.registerWithWelcome()
+	fixture.inject(":op!u@h INVITE bob :#elsewhere\r\n")
+	if invite, ok := fixture.session.PendingInvite(); ok {
+		t.Fatalf("pending invite = %+v for an invite to bob", invite)
+	}
+	fixture.inject(":op!u@h INVITE OMAIRC :#mine\r\n")
+	invite, ok := fixture.session.PendingInvite()
+	if !ok || invite.Nick != "op" || invite.Channel != "#mine" {
+		t.Fatalf("pending invite = %+v ok=%v, want op #mine", invite, ok)
+	}
+	fixture.inject(":op!u@h INVITE bob :#later\r\n")
+	invite, _ = fixture.session.PendingInvite()
+	if invite.Channel != "#mine" {
+		t.Fatalf("a later invite to someone else replaced ours: %+v", invite)
+	}
+}

@@ -23,6 +23,7 @@ pub(super) enum Keep {
     Drop,
     Keep,
     IncomingPrivmsg,
+    IncomingInvite,
 }
 
 /// One keep-table row (`statusKeepRow`).
@@ -152,7 +153,7 @@ pub(super) static KEEP_ROWS: [KeepRow; 25] = [
     },
     KeepRow {
         command: "INVITE",
-        incoming: Keep::Keep,
+        incoming: Keep::IncomingInvite,
         outgoing: Keep::Drop,
     },
     KeepRow {
@@ -287,6 +288,21 @@ fn keeps_privmsg(message: &IrcMessage, current_nick: &str, channel_types: &str) 
     !conversation_engaged(message, &target, current_nick, &features)
 }
 
+/// Whether an INVITE belongs in Status (`statusKeepsIncomingInvite`). With
+/// `invite-notify` a channel operator also sees invites to other users, and those
+/// become a muted channel line instead. A line too short to name a target keeps the
+/// old behavior. Like `conversation_engaged`, this has only CHANTYPES to go on, so a
+/// nick that differs from ours only by a non-default case mapping can misclassify.
+fn keeps_invite(message: &IrcMessage, current_nick: &str, channel_types: &str) -> bool {
+    if message.params.len() < 2 {
+        return true;
+    }
+    let features = features_for_channel_types(channel_types);
+    features
+        .case_mapping()
+        .equals(&wire_text(&message.params[0]), current_nick)
+}
+
 /// Whether an incoming message belongs in Status (`ircStatusKeepsIncoming`).
 pub fn keeps_incoming(message: &IrcMessage, current_nick: &str, channel_types: &str) -> bool {
     let command = command_of(message);
@@ -295,6 +311,7 @@ pub fn keeps_incoming(message: &IrcMessage, current_nick: &str, channel_types: &
             Keep::Keep => true,
             Keep::Drop => false,
             Keep::IncomingPrivmsg => keeps_privmsg(message, current_nick, channel_types),
+            Keep::IncomingInvite => keeps_invite(message, current_nick, channel_types),
         },
         None => keeps_numeric(&command),
     }

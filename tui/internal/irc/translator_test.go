@@ -592,3 +592,41 @@ func TestSetnameWithEmptyParamClearsRealname(t *testing.T) {
 func TestSetnameWithoutPrefixIsIgnored(t *testing.T) {
 	requireInt(t, "events", len(translateLine(t, "SETNAME :Alice Lee")), 0)
 }
+
+func TestInviteToSelfEmitsNoEvent(t *testing.T) {
+	requireInt(t, "bare", len(translateLine(t, ":op!u@h INVITE omairc #room")), 0)
+	requireInt(t, "trailing", len(translateLine(t, ":op!u@h INVITE omairc :#room")), 0)
+}
+
+func TestInviteToOtherEmitsInviteEvent(t *testing.T) {
+	events := translateLine(t, ":op!u@h INVITE bob #room")
+	requireInt(t, "events", len(events), 1)
+	invite, ok := events[0].(InviteEvent)
+	requireTrue(t, "InviteEvent", ok)
+	requireString(t, "network", invite.NetworkID, networkA)
+	requireString(t, "channel", invite.Channel, "#room")
+	requireString(t, "inviter", invite.Inviter, "op")
+	requireString(t, "target", invite.Target, "bob")
+}
+
+func TestInviteToOtherNickCaseMappedSelfIsSelf(t *testing.T) {
+	translateAs := func(nick, line string) []Event {
+		return Translate(networkA, nick, NewServerFeatures(), mustParse(t, line), reducerTimestamp)
+	}
+	requireInt(t, "ASCII case", len(translateAs("me", ":op!u@h INVITE ME #room")), 0)
+	requireInt(t, "rfc1459 brackets", len(translateAs("a[b", ":op!u@h INVITE A{B #room")), 0)
+	requireInt(t, "different nick", len(translateAs("me", ":op!u@h INVITE mee #room")), 1)
+}
+
+func TestInviteWithoutChannelEmitsNothing(t *testing.T) {
+	requireInt(t, "no channel", len(translateLine(t, ":op!u@h INVITE bob")), 0)
+	requireInt(t, "not a channel", len(translateLine(t, ":op!u@h INVITE bob notachannel")), 0)
+	requireInt(t, "no inviter", len(translateLine(t, "INVITE bob #room")), 0)
+}
+
+func TestInviteToOtherIsNotKeptForStatus(t *testing.T) {
+	requireTrue(t, "to us", StatusKeepsIncoming(mustParse(t, ":rio!r@host INVITE me #debian"), "me", "#&"))
+	requireTrue(t, "to us, other case", StatusKeepsIncoming(mustParse(t, ":rio!r@host INVITE ME #debian"), "me", "#&"))
+	requireFalse(t, "to bob", StatusKeepsIncoming(mustParse(t, ":rio!r@host INVITE bob #debian"), "me", "#&"))
+	requireTrue(t, "short line keeps old behavior", StatusKeepsIncoming(mustParse(t, "INVITE #debian"), "me", "#&"))
+}

@@ -729,6 +729,7 @@ const (
 	statusKeepDrop statusKeep = iota
 	statusKeepKeep
 	statusKeepIncomingPrivmsg
+	statusKeepIncomingInvite
 )
 
 type statusKeepRow struct {
@@ -762,7 +763,7 @@ var statusKeepRows = []statusKeepRow{
 	{"WARN", statusKeepKeep, statusKeepDrop},
 	{"NOTE", statusKeepKeep, statusKeepDrop},
 	{"ERROR", statusKeepKeep, statusKeepDrop},
-	{"INVITE", statusKeepKeep, statusKeepDrop},
+	{"INVITE", statusKeepIncomingInvite, statusKeepDrop},
 	{"PASS", statusKeepDrop, statusKeepKeep},
 }
 
@@ -960,6 +961,20 @@ func statusFormatListMode(message Message) (label string, line ListModeLine, ok 
 	}
 }
 
+// statusKeepsIncomingInvite keeps an INVITE for Status when it names us. With
+// invite-notify a channel operator also sees invites to other users, and those
+// become a muted channel line instead. A line too short to name a target keeps
+// the old behavior. Like statusConversationEngaged, it has only CHANTYPES to go
+// on, so a nick that differs from ours only by a non-default case mapping can
+// misclassify.
+func statusKeepsIncomingInvite(message Message, currentNick, channelTypes string) bool {
+	if len(message.Params) < 2 {
+		return true
+	}
+	features := statusFeaturesForChannelTypes(channelTypes)
+	return features.CaseMapping().Equals(WireText([]byte(message.Params[0])), currentNick)
+}
+
 func statusKeepsIncomingPrivmsg(message Message, currentNick, channelTypes string) bool {
 	if len(message.Params) >= 2 {
 		if request, ok := ParseCtcpRequest(WireText([]byte(message.Params[len(message.Params)-1]))); ok {
@@ -1009,6 +1024,8 @@ func StatusKeepsIncoming(message Message, currentNick, channelTypes string) bool
 			return false
 		case statusKeepIncomingPrivmsg:
 			return statusKeepsIncomingPrivmsg(message, currentNick, channelTypes)
+		case statusKeepIncomingInvite:
+			return statusKeepsIncomingInvite(message, currentNick, channelTypes)
 		}
 		return false
 	}

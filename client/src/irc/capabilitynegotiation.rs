@@ -122,6 +122,7 @@ const WANTED: &[Wanted] = &[
     Wanted::new(IrcCapability::ExtendedJoin, "extended-join"),
     Wanted::new(IrcCapability::ReadMarker, "draft/read-marker"),
     Wanted::new(IrcCapability::ReadMarker, "soju.im/read"),
+    Wanted::new(IrcCapability::InviteNotify, "invite-notify"),
     Wanted::new(IrcCapability::SetName, "setname"),
 ];
 
@@ -423,24 +424,27 @@ mod tests {
     fn quiet_caps_request_when_advertised() {
         let mut negotiation = IrcCapabilityNegotiation::new(false);
         negotiation.advertise(&tokens(
-            "multi-prefix chghost cap-notify echo-message extended-monitor",
+            "multi-prefix chghost cap-notify echo-message extended-monitor invite-notify setname",
         ));
 
         let request = negotiation.take_request();
         assert_cap_lines(
             &request.lines,
-            &["multi-prefix chghost cap-notify echo-message"],
+            &["multi-prefix chghost cap-notify echo-message invite-notify setname"],
         );
         assert!(!request.requests_sasl);
         assert!(!negotiation.settled(), "not settled before the ACK");
 
-        let granted =
-            negotiation.acknowledge(&tokens("multi-prefix chghost cap-notify echo-message"));
+        let granted = negotiation.acknowledge(&tokens(
+            "multi-prefix chghost cap-notify echo-message invite-notify setname",
+        ));
         for capability in [
             IrcCapability::MultiPrefix,
             IrcCapability::Chghost,
             IrcCapability::CapNotify,
             IrcCapability::EchoMessage,
+            IrcCapability::InviteNotify,
+            IrcCapability::SetName,
         ] {
             assert!(
                 granted.contains(capability),
@@ -906,6 +910,16 @@ mod tests {
         none.advertise(&tokens("extended-monitor"));
         assert!(none.take_request().lines.is_empty(), "no lines expected");
         assert!(none.settled(), "settled");
+    }
+
+    #[test]
+    fn invite_notify_is_requested_without_dependencies() {
+        let mut negotiation = IrcCapabilityNegotiation::new(false);
+        negotiation.advertise(&tokens("invite-notify"));
+        assert_cap_lines(&negotiation.take_request().lines, &["invite-notify"]);
+        let granted = negotiation.acknowledge(&tokens("invite-notify"));
+        assert!(granted.contains(IrcCapability::InviteNotify));
+        assert!(negotiation.settled());
     }
 
     #[test]

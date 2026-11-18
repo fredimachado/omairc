@@ -513,6 +513,8 @@ func (r *EventReducer) Apply(event Event, now time.Time) {
 		r.reduceChannelError(value)
 	case NickFactsEvent:
 		r.reduceNickFacts(value)
+	case InviteEvent:
+		r.reduceInvite(value)
 	}
 }
 
@@ -2447,6 +2449,18 @@ func (r *EventReducer) reduceMode(event ModeEvent) {
 	}
 }
 
+// reduceInvite notes an invite to another user as a system line in a channel
+// we have open. It never inserts a conversation: an invite is not a cause for
+// one, so a channel we do not have drops it. It mirrors reduce_invite in
+// client/src/irc/reducer/handlers.rs.
+func (r *EventReducer) reduceInvite(event InviteEvent) {
+	conversation := r.Find(r.ConversationKey(event.NetworkID, event.Channel))
+	if conversation == nil || conversation.channel == nil {
+		return
+	}
+	r.appendEvent(conversation, event.Inviter+" invited "+event.Target, false, false)
+}
+
 // reduceAway records an away-notify change. It mirrors
 // IrcEventReducer::reduce(IrcAwayEvent).
 func (r *EventReducer) reduceAway(event AwayEvent) {
@@ -2791,6 +2805,11 @@ func dereferenceEvent(event Event) Event {
 		}
 		return *value
 	case *NickFactsEvent:
+		if value == nil {
+			return nil
+		}
+		return *value
+	case *InviteEvent:
 		if value == nil {
 			return nil
 		}

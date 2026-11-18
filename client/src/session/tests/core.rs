@@ -345,3 +345,20 @@ fn upload_credential_uses_the_server_password_until_sasl() {
     let (user, secret, _, _) = fx.session.upload_credential();
     assert_eq!((user.as_str(), secret.expose()), ("acct", "nick-secret"));
 }
+
+#[test]
+fn invite_to_other_does_not_set_pending_invite() {
+    let fx = Fixture::new(test_config());
+    fx.register_with_welcome();
+    fx.inject(":op!u@h INVITE bob :#elsewhere\r\n");
+    assert_eq!(fx.session.pending_invite(), None, "an invite for bob is not ours to join");
+    fx.inject(":op!u@h INVITE OMAIRC :#mine\r\n");
+    let pending = fx.session.pending_invite().expect("the invite to us is pending");
+    assert_eq!((pending.nick.as_str(), pending.channel.as_str()), ("op", "#mine"));
+    fx.inject(":op!u@h INVITE bob :#later\r\n");
+    assert_eq!(
+        fx.session.pending_invite().map(|invite| invite.channel),
+        Some("#mine".to_owned()),
+        "a later invite to someone else leaves ours untouched"
+    );
+}

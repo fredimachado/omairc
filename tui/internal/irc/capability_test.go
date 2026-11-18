@@ -43,10 +43,10 @@ func TestUnwantedAdvertisementProducesNoRequest(t *testing.T) {
 
 func TestQuietCapsRequestWhenAdvertised(t *testing.T) {
 	negotiation := NewCapabilityNegotiation(false)
-	negotiation.Advertise(tokens("multi-prefix chghost cap-notify echo-message extended-monitor"))
+	negotiation.Advertise(tokens("multi-prefix chghost cap-notify echo-message extended-monitor invite-notify setname"))
 
 	request := negotiation.TakeRequest()
-	assertCapLines(t, request.Lines, "multi-prefix chghost cap-notify echo-message")
+	assertCapLines(t, request.Lines, "multi-prefix chghost cap-notify echo-message invite-notify setname")
 	if request.RequestsSasl {
 		t.Fatal("requestsSasl must be false")
 	}
@@ -54,9 +54,10 @@ func TestQuietCapsRequestWhenAdvertised(t *testing.T) {
 		t.Fatal("negotiation must not be settled before the ACK")
 	}
 
-	granted := negotiation.Acknowledge(tokens("multi-prefix chghost cap-notify echo-message"))
+	granted := negotiation.Acknowledge(tokens("multi-prefix chghost cap-notify echo-message invite-notify setname"))
 	for _, capability := range []Capability{
 		CapabilityMultiPrefix, CapabilityChghost, CapabilityCapNotify, CapabilityEchoMessage,
+		CapabilityInviteNotify, CapabilitySetName,
 	} {
 		if !granted.Contains(capability) {
 			t.Fatalf("granted set missing capability %v", capability)
@@ -566,6 +567,19 @@ func TestAccountCapAckEnablesMatchingBits(t *testing.T) {
 		if !negotiation.Enabled().Contains(capability) {
 			t.Fatalf("enabled set missing capability %v", capability)
 		}
+	}
+	if !negotiation.Settled() {
+		t.Fatal("negotiation must be settled")
+	}
+}
+
+func TestInviteNotifyIsRequestedWithoutDependencies(t *testing.T) {
+	negotiation := NewCapabilityNegotiation(false)
+	negotiation.Advertise(tokens("invite-notify"))
+	assertCapLines(t, negotiation.TakeRequest().Lines, "invite-notify")
+	granted := negotiation.Acknowledge(tokens("invite-notify"))
+	if !granted.Contains(CapabilityInviteNotify) {
+		t.Fatal("invite-notify must be granted")
 	}
 	if !negotiation.Settled() {
 		t.Fatal("negotiation must be settled")
