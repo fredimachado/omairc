@@ -85,6 +85,7 @@ func TestKeySequenceTable(t *testing.T) {
 		{"ctrl+shift+p", []byte("\x1b[112;6u")},
 		{"ctrl+shift+k", []byte("\x1b[107;6u")},
 		{"ctrl+shift+a", []byte("\x1b[97;6u")},
+		{"ctrl+shift+f", []byte("\x1b[102;6u")},
 		{"ctrl+shift+o", []byte("\x1b[111;6u")},
 		{"ctrl+shift+u", []byte("\x1b[117;6u")},
 		{"ctrl+shift+m", []byte("\x1b[109;6u")},

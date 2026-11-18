@@ -58,6 +58,7 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Status console](./status-console.md) covers the network Status pane, header entry points, AUTH notices, and the shared composer.
 - [Member presence](./member-presence.md) covers presence dots, away dimming, status lines, capability gating, and live PREFIX ranks.
 - [Session inbox](./inbox.md) covers the footer inbox mark, `Ctrl+Shift+A`, and activating mention, invite, and monitor rows. No executable recipe yet.
+- [Search history](./search-history.md) covers `Ctrl+Shift+F`, the streamed newest-first results over memory then the on-disk logs, and Enter landing on the matching line. No executable recipe yet.
 - [Identity footer](./identity-footer.md) covers the sidebar nick footer (`fred` on first run, then the connection or live nick), the app version on the right, and live available/away/offline chrome.
 - [About](./about.md) covers the About sheet opened from that footer version, the GitHub source link, and Check for Updates.
 - [Keyboard](./keyboard.md) covers conversation walk, network-header walk, per-network collapse and reorder, unread jump, `Ctrl+K` jump, `Ctrl+Shift+K` nick jump, nick complete, history, find, member focus, the `Ctrl+Shift+S` server list toggle, `Ctrl+W` close, the shortcut sheet, and `Ctrl+,`.

@@ -30,6 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in the desktop tooltip. Reply context survives restarts through the
   conversation log; reactions are in memory only. Reactions never open a
   conversation, mark unread or notify. Sending is not included.
+- Both clients search the history of every conversation with `Ctrl+Shift+F`.
+  Results stream in as you type, newest first (capped at 200), from the loaded
+  transcripts and then the on-disk logs of known networks, using the same
+  case-insensitive plain-text match as `Ctrl+F` plus the author nick. `Enter`
+  opens the conversation at that message, by msgid or by the saved-place
+  anchor; a line older than the loaded history opens the conversation with an
+  `older than loaded history` note. Lines the transcript never stores
+  (credentials) are never found.
 - The terminal client persists learned STS policies in the shared `sts` INI
   beside `omairc.conf` (same file and layout as the desktop client), so a
   host upgrade to TLS survives a TUI restart. Expired and cleared policies
