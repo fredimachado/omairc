@@ -108,7 +108,7 @@ func TestOpenAtUnreadLandsOnMark(t *testing.T) {
 	if mark < 0 {
 		t.Fatal("#desktop must carry an unread mark after the injected lines")
 	}
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("opening a never-visited conversation at unread must leave follow-the-end")
 	}
 	if content := m.View().Content; !strings.Contains(content, "New messages") {
@@ -126,7 +126,7 @@ func TestOpenAtUnreadOffPinsToEnd(t *testing.T) {
 	if got := m.ctrl.SelectedTarget(); got != "#omarchy" {
 		t.Fatalf("walk selection = %q, want #omarchy", got)
 	}
-	if !m.transcriptFollowEnd {
+	if !m.followingEnd() {
 		t.Fatal("with the preference off the transcript must follow the end")
 	}
 }
@@ -157,15 +157,15 @@ func TestReopenSameConversationKeepsViewport(t *testing.T) {
 	m = press(t, m, altKey(tea.KeyUp))
 
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
-	scroll := m.transcriptScroll
-	if m.transcriptFollowEnd {
+	scroll := m.scrollLines()
+	if m.followingEnd() {
 		t.Fatal("Page Up must leave follow-the-end")
 	}
 	m.switchSelection(func() {
 		m.ctrl.SelectConversation("omarchy", "#omarchy")
 	})
-	if m.transcriptScroll != scroll {
-		t.Fatalf("re-select moved the viewport: scroll = %d, want %d", m.transcriptScroll, scroll)
+	if m.scrollLines() != scroll {
+		t.Fatalf("re-select moved the viewport: scroll = %d, want %d", m.scrollLines(), scroll)
 	}
 }
 
@@ -177,7 +177,7 @@ func TestStatusFollowsEndWithMark(t *testing.T) {
 	m.switchSelection(func() {
 		m.ctrl.SelectConversation("omarchy", "#desktop")
 	})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("precondition: the conversation must have landed on the mark")
 	}
 
@@ -185,7 +185,7 @@ func TestStatusFollowsEndWithMark(t *testing.T) {
 	if !m.ctrl.ConsoleOpen() {
 		t.Fatal("Ctrl+` must open Status")
 	}
-	if !m.transcriptFollowEnd {
+	if !m.followingEnd() {
 		t.Fatal("Status must follow the end regardless of the mark")
 	}
 }
@@ -209,17 +209,17 @@ func injectAwayLines(d *demo.DemoServer, target, prefix string) {
 // up, left the window, and came back.
 func focusReturnWhileFollowing(t *testing.T, m *Model, d *demo.DemoServer, target, prefix string) *Model {
 	t.Helper()
-	if !m.transcriptFollowEnd {
+	if !m.followingEnd() {
 		m.jumpTranscript(true)
 	}
-	if !m.transcriptFollowEnd {
+	if !m.followingEnd() {
 		t.Fatal("precondition: the transcript must be pinned to the end")
 	}
 	m = updateMsg(t, m, tea.BlurMsg{})
 	injectAwayLines(d, target, prefix)
 	// The running shell hears the burst as a view notify before focus returns.
 	m = updateMsg(t, m, NotifyMsg{})
-	if !m.transcriptFollowEnd {
+	if !m.followingEnd() {
 		t.Fatal("an unfocused burst must keep a caught-up transcript at the end until focus returns")
 	}
 	return updateMsg(t, m, tea.FocusMsg{})
@@ -227,7 +227,7 @@ func focusReturnWhileFollowing(t *testing.T, m *Model, d *demo.DemoServer, targe
 
 func assertFocusReturnLeavesTheEnd(t *testing.T, m *Model, prefix string) {
 	t.Helper()
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("focus return must leave follow-the-end and land on the New messages mark")
 	}
 	content := m.View().Content
@@ -282,7 +282,7 @@ func TestFocusRegainLandsOnMark(t *testing.T) {
 	m = updateMsg(t, m, tea.BlurMsg{})
 	d.InjectOmarchy([]byte("@msgid=unread-2 :anna!u@h PRIVMSG #omarchy :while away\r\n"))
 	m = updateMsg(t, m, tea.FocusMsg{})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("focus regain must land on the mark, not the end")
 	}
 	if content := m.View().Content; !strings.Contains(content, "New messages") {

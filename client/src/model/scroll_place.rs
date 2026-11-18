@@ -172,9 +172,16 @@ fn find_line(line: &LineKey, row: usize, rows: &[Row]) -> Option<usize> {
 /// Whether the saved line is among `rows` now. A restore that waits for history asks
 /// this before it lands. [`resume`] clamps a line that is gone, so it cannot tell.
 pub fn has_line(place: &SavedPlace, rows: &[Row]) -> bool {
+    line_row(place, rows).is_some()
+}
+
+/// The row the saved line is on in `rows` now, not counting the dividers above it. `None`
+/// for the end, or when the line is gone. Rows prepended above the line move this row, and
+/// whatever sits below the line, by the same amount.
+pub fn line_row(place: &SavedPlace, rows: &[Row]) -> Option<usize> {
     match place {
-        SavedPlace::Line { row, line, .. } => find_line(line, *row, rows).is_some(),
-        SavedPlace::End => false,
+        SavedPlace::Line { row, line, .. } => find_line(line, *row, rows),
+        SavedPlace::End => None,
     }
 }
 

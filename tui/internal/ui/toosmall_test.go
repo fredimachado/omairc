@@ -140,7 +140,7 @@ func TestTerminalAboveMinimumShowsShell(t *testing.T) {
 func TestTerminalResizeBelowAndBackRestoresFrame(t *testing.T) {
 	m := seededModel(t)
 	m.composer.SetValue("draft stays")
-	m.transcriptScroll = 3
+	m.holdAt(3)
 	before := m.ctrl.SelectedConversationID()
 	m.openJump()
 	beforeView := m.View().Content
@@ -149,8 +149,8 @@ func TestTerminalResizeBelowAndBackRestoresFrame(t *testing.T) {
 	if shrunk.composer.Value() != "draft stays" {
 		t.Fatalf("draft after shrink = %q, want draft stays", shrunk.composer.Value())
 	}
-	if shrunk.transcriptScroll != 3 {
-		t.Fatalf("scroll after shrink = %d, want 3", shrunk.transcriptScroll)
+	if shrunk.scrollLines() != 3 {
+		t.Fatalf("scroll after shrink = %d, want 3", shrunk.scrollLines())
 	}
 	if !shrunk.jumpVisible() {
 		t.Fatal("jump overlay must stay open in state while the notice shows")
@@ -160,8 +160,8 @@ func TestTerminalResizeBelowAndBackRestoresFrame(t *testing.T) {
 	if restored.composer.Value() != "draft stays" {
 		t.Fatalf("draft after restore = %q, want draft stays", restored.composer.Value())
 	}
-	if restored.transcriptScroll != 3 {
-		t.Fatalf("scroll after restore = %d, want 3", restored.transcriptScroll)
+	if restored.scrollLines() != 3 {
+		t.Fatalf("scroll after restore = %d, want 3", restored.scrollLines())
 	}
 	if restored.ctrl.SelectedConversationID() != before {
 		t.Fatalf("conversation after restore = %q, want %q", restored.ctrl.SelectedConversationID(), before)

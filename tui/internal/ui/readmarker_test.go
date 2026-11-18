@@ -40,7 +40,7 @@ func TestStatusToggleDoesNotPublishReadMarker(t *testing.T) {
 	if ctrl.SelectedTarget() != "#omarchy" {
 		t.Fatalf("SelectedTarget = %q, want #omarchy", ctrl.SelectedTarget())
 	}
-	m.transcriptFollowEnd = true
+	m.setReader(followingEnd{})
 	m.syncReadMarkerViewport()
 	first := time.Date(2024, 6, 1, 12, 0, 0, 123000000, time.UTC)
 	ctrl.Apply(irc.MessageEvent{

@@ -72,8 +72,7 @@ func (m *Model) activateNotifiedConversation(networkID, target, msgid string) {
 	if m.ctrl != nil && !m.ctrl.ConsoleOpen() {
 		same := previousID != "" && previousID == m.ctrl.SelectedConversationID()
 		if !same && m.ctrl.OpenAtUnread() {
-			m.setTranscriptFollowEnd(true)
-			m.transcriptScroll = 0
+			m.followEnd()
 			m.placeTranscriptAfterSelect()
 			m.rememberOpenTranscript()
 		} else if !m.ctrl.OpenAtUnread() {
@@ -81,8 +80,7 @@ func (m *Model) activateNotifiedConversation(networkID, target, msgid string) {
 				m.revealTranscriptRow(row)
 				m.rememberOpenTranscript()
 			} else if !same {
-				m.setTranscriptFollowEnd(true)
-				m.transcriptScroll = 0
+				m.followEnd()
 				m.rememberOpenTranscript()
 			}
 		}

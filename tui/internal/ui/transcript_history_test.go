@@ -17,31 +17,31 @@ func TestSnapshotTranscriptAnchorRecordsTopRowSequence(t *testing.T) {
 	m := seededModel(t)
 	m = resizeModel(t, m, 118, 8)
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyHome, Mod: tea.ModCtrl})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("Ctrl+Home must leave follow-the-end")
 	}
 	messages := m.ctrl.Messages()
 	if len(messages) == 0 {
 		t.Fatal("seeded transcript must have messages")
 	}
-	m.snapshotTranscriptAnchor()
-	if m.transcriptAnchorSequence != messages[0].Sequence {
-		t.Fatalf("anchor sequence = %d, want top row %d", m.transcriptAnchorSequence, messages[0].Sequence)
+	m.armTranscriptAnchor(m.snapshotTranscriptAnchor())
+	if m.pin().PinSeq != messages[0].Sequence {
+		t.Fatalf("anchor sequence = %d, want top row %d", m.pin().PinSeq, messages[0].Sequence)
 	}
-	scrollBefore := m.transcriptScroll
+	scrollBefore := m.scrollLines()
 	m.restoreTranscriptAnchor()
-	if m.transcriptAnchorSequence != -1 {
+	if m.pin().PinSeq != -1 {
 		t.Fatal("restore must clear the anchor")
 	}
-	if m.transcriptScroll != scrollBefore {
-		t.Fatalf("scroll = %d, want unchanged %d", m.transcriptScroll, scrollBefore)
+	if m.scrollLines() != scrollBefore {
+		t.Fatalf("scroll = %d, want unchanged %d", m.scrollLines(), scrollBefore)
 	}
 }
 
 func TestNewModelAnchorInactive(t *testing.T) {
 	m := seededModel(t)
-	if m.transcriptAnchorSequence != -1 {
-		t.Fatalf("transcriptAnchorSequence = %d, want -1", m.transcriptAnchorSequence)
+	if m.pin().PinSeq != -1 {
+		t.Fatalf("pin sequence = %d, want -1", m.pin().PinSeq)
 	}
 }
 
@@ -71,7 +71,7 @@ func scrollableYesterday(t *testing.T) (*Model, irc.ConversationKey, time.Time) 
 	}
 	m := resizeModel(t, New(ctrl, nil), 80, 30)
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyHome, Mod: tea.ModCtrl})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("Ctrl+Home must leave follow-the-end")
 	}
 	return m, key, day
@@ -90,7 +90,7 @@ func screenLineContaining(m *Model, body string) int {
 }
 
 func prependOlder(m *Model, key irc.ConversationKey, body string, at time.Time, id string) {
-	m.snapshotTranscriptAnchor()
+	m.armTranscriptAnchor(m.snapshotTranscriptAnchor())
 	m.ctrl.Apply(irc.HistoryEvent{
 		Conversation: key,
 		Target:       "#room",
@@ -168,26 +168,26 @@ func TestOlderDayPrependKeepsAnchorTextLine(t *testing.T) {
 // TestNoteTranscriptGrowthRestoresInventedFirstUnseenAfterOlderPage).
 func TestOlderPageAtTopDoesNotArmJumpWhenCaughtUp(t *testing.T) {
 	m, key, day := scrollableYesterday(t)
-	if m.firstUnseenRow != -1 || m.jumpArmed() {
+	if m.firstUnseen() != -1 || m.jumpArmed() {
 		t.Fatalf("precondition: caught up at top, unseen=%d armed=%v",
-			m.firstUnseenRow, m.jumpArmed())
+			m.firstUnseen(), m.jumpArmed())
 	}
 	prependOlder(m, key, "ancient", day.Add(-48*time.Hour), "ancient-id")
 	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
-	if m.firstUnseenRow != -1 || m.jumpArmed() || strings.Contains(plain, "↓ new") {
+	if m.firstUnseen() != -1 || m.jumpArmed() || strings.Contains(plain, "↓ new") {
 		t.Fatalf("after older page: unseen=%d armed=%v\n%s",
-			m.firstUnseenRow, m.jumpArmed(), plain)
+			m.firstUnseen(), m.jumpArmed(), plain)
 	}
 }
 
 // TestOlderPageWithoutAnchorDoesNotArmJumpWhenCaughtUp is the splice-skipped
-// path: head growth with no transcript anchor must not set firstUnseenRow to
+// path: head growth with no transcript anchor must not set firstUnseen to
 // the old count (already-read history) and paint ↓ new.
 func TestOlderPageWithoutAnchorDoesNotArmJumpWhenCaughtUp(t *testing.T) {
 	m, key, day := scrollableYesterday(t)
-	if m.firstUnseenRow != -1 || m.jumpArmed() {
+	if m.firstUnseen() != -1 || m.jumpArmed() {
 		t.Fatalf("precondition: caught up at top, unseen=%d armed=%v",
-			m.firstUnseenRow, m.jumpArmed())
+			m.firstUnseen(), m.jumpArmed())
 	}
 	m.clearTranscriptAnchor()
 	m.transcriptCount = m.transcriptRowTotal()
@@ -207,34 +207,34 @@ func TestOlderPageWithoutAnchorDoesNotArmJumpWhenCaughtUp(t *testing.T) {
 	m.ctrl.Publish(irc.ViewNotify{Messages: true})
 	m.noteTranscriptGrowth()
 	plain := ansiPattern.ReplaceAllString(m.View().Content, "")
-	if m.firstUnseenRow != -1 || m.jumpArmed() || strings.Contains(plain, "↓ new") {
+	if m.firstUnseen() != -1 || m.jumpArmed() || strings.Contains(plain, "↓ new") {
 		t.Fatalf("after unanchored older page: unseen=%d armed=%v\n%s",
-			m.firstUnseenRow, m.jumpArmed(), plain)
+			m.firstUnseen(), m.jumpArmed(), plain)
 	}
 }
 
 // TestOlderPageDoesNotRestoreConsumedFirstUnseen proves an inflight older-page
-// snapshot must not revive a firstUnseenRow the reader already cleared. A
+// snapshot must not revive a firstUnseen the reader already cleared. A
 // leftover sequence alone is not enough to re-arm after the row was consumed.
 func TestOlderPageDoesNotRestoreConsumedFirstUnseen(t *testing.T) {
 	m, key, day := scrollableYesterday(t)
 	messages := m.ctrl.Messages()
 	marker := len(messages) - 1
-	m.firstUnseenRow = marker
+	m.holdAt(0)
+	m.setFirstUnseen(marker, -1)
 	m.transcriptCount = m.transcriptRowTotal()
 	m.transcriptSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
-	m.snapshotTranscriptAnchor()
-	if m.firstUnseenSequenceAtAnchor != messages[marker].Sequence {
+	m.armTranscriptAnchor(m.snapshotTranscriptAnchor())
+	if m.firstUnseenSeq() != messages[marker].Sequence {
 		t.Fatal("snapshot must record the unseen sequence")
 	}
-	stale := m.firstUnseenSequenceAtAnchor
 	m.clearFirstUnseen()
-	if m.firstUnseenSequenceAtAnchor >= 0 {
+	if m.firstUnseenSeq() >= 0 {
 		t.Fatalf("clearFirstUnseen must drop the snapshotted sequence, got %d",
-			m.firstUnseenSequenceAtAnchor)
+			m.firstUnseenSeq())
 	}
-	// Leave a stale sequence as a pre-fix clear of only firstUnseenRow did.
-	m.firstUnseenSequenceAtAnchor = stale
+	// A sequence cannot outlive its row: the catch-up holds both, so there is no
+	// stale one to leave behind as a pre-fix clear of only the row did.
 	m.ctrl.Apply(irc.HistoryEvent{
 		Conversation: key,
 		Target:       "#room",
@@ -249,25 +249,28 @@ func TestOlderPageDoesNotRestoreConsumedFirstUnseen(t *testing.T) {
 	})
 	m.ctrl.Publish(irc.ViewNotify{Messages: true})
 	m.noteTranscriptGrowth()
-	if m.firstUnseenRow != -1 || m.jumpArmed() {
+	if m.firstUnseen() != -1 || m.jumpArmed() {
 		t.Fatalf("consumed unseen must stay clear after older page, unseen=%d armed=%v",
-			m.firstUnseenRow, m.jumpArmed())
+			m.firstUnseen(), m.jumpArmed())
 	}
 }
 
 func TestNoteTranscriptGrowthRestoresFirstUnseenAfterOlderPage(t *testing.T) {
 	m := seededModel(t)
-	m.transcriptFollowEnd = false
+	m.holdAt(0)
 	messages := m.ctrl.Messages()
 	if len(messages) < 2 {
 		t.Fatal("seeded transcript must have messages")
 	}
 	markerIndex := len(messages) - 1
-	m.firstUnseenRow = markerIndex
 	m.transcriptCount = m.transcriptRowTotal()
-	m.transcriptAnchorSequence = messages[0].Sequence
-	m.transcriptAnchorSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
-	m.firstUnseenSequenceAtAnchor = messages[markerIndex].Sequence
+	m.setHeld(catchingUp{
+		Anchor:         readerAnchor{PinSeq: messages[0].Sequence, SpliceEpoch: m.ctrl.TranscriptSpliceEpoch()},
+		FirstUnseen:    markerIndex,
+		FirstUnseenSeq: messages[markerIndex].Sequence,
+		ResumeRow:      -1,
+		ResumeSeq:      -1,
+	})
 
 	key := m.ctrl.Reducer().ConversationKey("omarchy", "#omarchy")
 	when := time.Date(2026, 9, 26, 8, 0, 0, 0, time.UTC)
@@ -287,32 +290,32 @@ func TestNoteTranscriptGrowthRestoresFirstUnseenAfterOlderPage(t *testing.T) {
 	m.noteTranscriptGrowth()
 
 	wantRow := markerIndex + 1
-	if m.firstUnseenRow != wantRow {
-		t.Fatalf("firstUnseenRow = %d, want %d after one prepended row", m.firstUnseenRow, wantRow)
+	if m.firstUnseen() != wantRow {
+		t.Fatalf("firstUnseen = %d, want %d after one prepended row", m.firstUnseen(), wantRow)
 	}
 }
 
 // TestNoteTranscriptGrowthRestoresInventedFirstUnseenAfterOlderPage proves the
 // inflight invent-without-sequence path: snapshot older-page with no marker,
-// a live append invents firstUnseenRow while the anchor is live, then the
+// a live append invents firstUnseen while the anchor is live, then the
 // older page restores. The marker must stay on the invented live row, not the
 // pre-prepend index.
 func TestNoteTranscriptGrowthRestoresInventedFirstUnseenAfterOlderPage(t *testing.T) {
 	m := seededModel(t)
-	m.transcriptFollowEnd = false
+	m.holdAt(0)
 	messages := m.ctrl.Messages()
 	if len(messages) < 2 {
 		t.Fatal("seeded transcript must have messages")
 	}
 	m.transcriptCount = m.transcriptRowTotal()
 	m.transcriptSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
-	m.snapshotTranscriptAnchor()
-	if m.transcriptAnchorSequence < 0 {
+	m.armTranscriptAnchor(m.snapshotTranscriptAnchor())
+	if m.pin().PinSeq < 0 {
 		t.Fatal("precondition: older-page anchor must be live")
 	}
-	if m.firstUnseenRow >= 0 || m.firstUnseenSequenceAtAnchor >= 0 {
+	if m.firstUnseen() >= 0 || m.firstUnseenSeq() >= 0 {
 		t.Fatalf("precondition: no marker yet, unseen=%d seq=%d",
-			m.firstUnseenRow, m.firstUnseenSequenceAtAnchor)
+			m.firstUnseen(), m.firstUnseenSeq())
 	}
 
 	oldCount := m.transcriptCount
@@ -326,15 +329,15 @@ func TestNoteTranscriptGrowthRestoresInventedFirstUnseenAfterOlderPage(t *testin
 	})
 	m.ctrl.Publish(irc.ViewNotify{Messages: true})
 	m.noteTranscriptGrowth()
-	if m.firstUnseenRow != oldCount {
-		t.Fatalf("invented firstUnseenRow = %d, want %d", m.firstUnseenRow, oldCount)
+	if m.firstUnseen() != oldCount {
+		t.Fatalf("invented firstUnseen = %d, want %d", m.firstUnseen(), oldCount)
 	}
-	inventedSequence := m.ctrl.Messages()[m.firstUnseenRow].Sequence
-	if m.firstUnseenSequenceAtAnchor != inventedSequence {
+	inventedSequence := m.ctrl.Messages()[m.firstUnseen()].Sequence
+	if m.firstUnseenSeq() != inventedSequence {
 		t.Fatalf("invent under a live anchor must record sequence, got %d want %d",
-			m.firstUnseenSequenceAtAnchor, inventedSequence)
+			m.firstUnseenSeq(), inventedSequence)
 	}
-	if m.transcriptAnchorSequence < 0 {
+	if m.pin().PinSeq < 0 {
 		t.Fatal("live invent must leave the older-page anchor armed")
 	}
 
@@ -355,28 +358,31 @@ func TestNoteTranscriptGrowthRestoresInventedFirstUnseenAfterOlderPage(t *testin
 	m.noteTranscriptGrowth()
 
 	wantRow := oldCount + 1
-	if m.firstUnseenRow != wantRow {
-		t.Fatalf("firstUnseenRow = %d, want %d after prepend over invented marker",
-			m.firstUnseenRow, wantRow)
+	if m.firstUnseen() != wantRow {
+		t.Fatalf("firstUnseen = %d, want %d after prepend over invented marker",
+			m.firstUnseen(), wantRow)
 	}
-	if got := m.ctrl.Messages()[m.firstUnseenRow].Sequence; got != inventedSequence {
+	if got := m.ctrl.Messages()[m.firstUnseen()].Sequence; got != inventedSequence {
 		t.Fatalf("marker sequence = %d, want invented live %d", got, inventedSequence)
 	}
 }
 
 func TestNoteTranscriptGrowthRestoresUnseenResumeAfterOlderPage(t *testing.T) {
 	m := seededModel(t)
-	m.transcriptFollowEnd = false
+	m.holdAt(0)
 	messages := m.ctrl.Messages()
 	if len(messages) < 2 {
 		t.Fatal("seeded transcript must have messages")
 	}
 	resumeIndex := len(messages) - 1
-	m.unseenResumeRow = resumeIndex
 	m.transcriptCount = m.transcriptRowTotal()
-	m.transcriptAnchorSequence = messages[0].Sequence
-	m.transcriptAnchorSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
-	m.unseenResumeSequenceAtAnchor = messages[resumeIndex].Sequence
+	m.setHeld(catchingUp{
+		Anchor:         readerAnchor{PinSeq: messages[0].Sequence, SpliceEpoch: m.ctrl.TranscriptSpliceEpoch()},
+		FirstUnseen:    -1,
+		FirstUnseenSeq: -1,
+		ResumeRow:      resumeIndex,
+		ResumeSeq:      messages[resumeIndex].Sequence,
+	})
 
 	key := m.ctrl.Reducer().ConversationKey("omarchy", "#omarchy")
 	when := time.Date(2026, 9, 26, 8, 0, 0, 0, time.UTC)
@@ -396,24 +402,27 @@ func TestNoteTranscriptGrowthRestoresUnseenResumeAfterOlderPage(t *testing.T) {
 	m.noteTranscriptGrowth()
 
 	wantRow := resumeIndex + 1
-	if m.unseenResumeRow != wantRow {
-		t.Fatalf("unseenResumeRow = %d, want %d after one prepended row", m.unseenResumeRow, wantRow)
+	if m.resumeRow() != wantRow {
+		t.Fatalf("resumeRow = %d, want %d after one prepended row", m.resumeRow(), wantRow)
 	}
 }
 
 func TestNoteTranscriptGrowthShiftsFirstUnseenWithoutASequence(t *testing.T) {
 	m := seededModel(t)
-	m.transcriptFollowEnd = false
+	m.holdAt(0)
 	messages := m.ctrl.Messages()
 	if len(messages) < 2 {
 		t.Fatal("seeded transcript must have messages")
 	}
 	markerIndex := len(messages) - 1
-	m.firstUnseenRow = markerIndex
-	m.firstUnseenSequenceAtAnchor = -1
 	m.transcriptCount = m.transcriptRowTotal()
-	m.transcriptAnchorSequence = messages[0].Sequence
-	m.transcriptAnchorSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
+	m.setHeld(catchingUp{
+		Anchor:         readerAnchor{PinSeq: messages[0].Sequence, SpliceEpoch: m.ctrl.TranscriptSpliceEpoch()},
+		FirstUnseen:    markerIndex,
+		FirstUnseenSeq: -1,
+		ResumeRow:      -1,
+		ResumeSeq:      -1,
+	})
 
 	key := m.ctrl.Reducer().ConversationKey("omarchy", "#omarchy")
 	when := time.Date(2026, 9, 26, 8, 2, 0, 0, time.UTC)
@@ -433,24 +442,27 @@ func TestNoteTranscriptGrowthShiftsFirstUnseenWithoutASequence(t *testing.T) {
 	m.noteTranscriptGrowth()
 
 	wantRow := markerIndex + 1
-	if m.firstUnseenRow != wantRow {
-		t.Fatalf("firstUnseenRow = %d, want %d after a delta shift", m.firstUnseenRow, wantRow)
+	if m.firstUnseen() != wantRow {
+		t.Fatalf("firstUnseen = %d, want %d after a delta shift", m.firstUnseen(), wantRow)
 	}
 }
 
 func TestNoteTranscriptGrowthShiftsUnseenResumeWithoutASequence(t *testing.T) {
 	m := seededModel(t)
-	m.transcriptFollowEnd = false
+	m.holdAt(0)
 	messages := m.ctrl.Messages()
 	if len(messages) < 2 {
 		t.Fatal("seeded transcript must have messages")
 	}
 	resumeIndex := len(messages) - 1
-	m.unseenResumeRow = resumeIndex
-	m.unseenResumeSequenceAtAnchor = -1
 	m.transcriptCount = m.transcriptRowTotal()
-	m.transcriptAnchorSequence = messages[0].Sequence
-	m.transcriptAnchorSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
+	m.setHeld(catchingUp{
+		Anchor:         readerAnchor{PinSeq: messages[0].Sequence, SpliceEpoch: m.ctrl.TranscriptSpliceEpoch()},
+		FirstUnseen:    -1,
+		FirstUnseenSeq: -1,
+		ResumeRow:      resumeIndex,
+		ResumeSeq:      -1,
+	})
 
 	key := m.ctrl.Reducer().ConversationKey("omarchy", "#omarchy")
 	when := time.Date(2026, 9, 26, 8, 1, 0, 0, time.UTC)
@@ -470,24 +482,24 @@ func TestNoteTranscriptGrowthShiftsUnseenResumeWithoutASequence(t *testing.T) {
 	m.noteTranscriptGrowth()
 
 	wantRow := resumeIndex + 1
-	if m.unseenResumeRow != wantRow {
-		t.Fatalf("unseenResumeRow = %d, want %d after a delta shift", m.unseenResumeRow, wantRow)
+	if m.resumeRow() != wantRow {
+		t.Fatalf("resumeRow = %d, want %d after a delta shift", m.resumeRow(), wantRow)
 	}
 }
 
 func TestDetachedGrowthKeepsTheTopLine(t *testing.T) {
 	m, d := unreadDemoModel(t)
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("Page Up must leave follow-the-end")
 	}
 	top := m.firstVisibleMessageRow()
 	body := m.ctrl.Messages()[top].Body
-	scrollBefore := m.transcriptScroll
+	scrollBefore := m.scrollLines()
 	linesBefore := m.transcriptLineCount
 	d.InjectOmarchy([]byte(":anna!u@h PRIVMSG #omarchy :a line below the reader\r\n"))
 	m.noteTranscriptGrowth()
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("a detached reader must stay detached")
 	}
 	if got := m.ctrl.Messages()[m.firstVisibleMessageRow()].Body; got != body {
@@ -497,23 +509,23 @@ func TestDetachedGrowthKeepsTheTopLine(t *testing.T) {
 	if delta < 1 {
 		t.Fatalf("rendered lines grew by %d, want at least 1", delta)
 	}
-	if m.transcriptScroll != scrollBefore+delta {
-		t.Fatalf("scroll = %d, want %d", m.transcriptScroll, scrollBefore+delta)
+	if m.scrollLines() != scrollBefore+delta {
+		t.Fatalf("scroll = %d, want %d", m.scrollLines(), scrollBefore+delta)
 	}
 }
 
 func TestFollowEndGrowthLeavesScrollAtZero(t *testing.T) {
 	m, d := unreadDemoModel(t)
-	if !m.transcriptFollowEnd {
+	if !m.followingEnd() {
 		t.Fatal("startup must follow the end")
 	}
 	d.InjectOmarchy([]byte(":anna!u@h PRIVMSG #omarchy :a line at the end\r\n"))
 	m.noteTranscriptGrowth()
-	if !m.transcriptFollowEnd || m.transcriptScroll != 0 {
-		t.Fatalf("follow=%v scroll=%d, want pinned with scroll 0", m.transcriptFollowEnd, m.transcriptScroll)
+	if !m.followingEnd() || m.scrollLines() != 0 {
+		t.Fatalf("follow=%v scroll=%d, want pinned with scroll 0", m.followingEnd(), m.scrollLines())
 	}
-	if m.firstUnseenRow != -1 {
-		t.Fatalf("firstUnseenRow = %d, want -1", m.firstUnseenRow)
+	if m.firstUnseen() != -1 {
+		t.Fatalf("firstUnseen = %d, want -1", m.firstUnseen())
 	}
 }
 

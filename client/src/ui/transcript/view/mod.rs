@@ -14,7 +14,7 @@ use gpui::{
 
 mod scroll_restore;
 
-use scroll_restore::{PendingRestore, WidthState};
+use scroll_restore::WidthState;
 
 use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::irc::world::Message;
@@ -94,18 +94,11 @@ pub struct TranscriptView {
     typing_peer: Option<String>,
     /// The typing dots' pulse frame, set by the shell's typing pulse.
     typing_phase: u8,
-    /// The row of the first line that arrived while the reader was scrolled up.
-    /// The unseen jump lands there. It clears when the reader reaches the end, or
-    /// jumps.
-    first_unseen: Option<usize>,
     /// The `↓` chip bounce after a detached arrival (`UnseenJumpButton.bounceBurst`).
     unseen_bounce: UnseenBounce,
     /// The at-end bit the shell last reported. A wheel scroll emits `TranscriptScrolled`
     /// only when the list's at-end bit differs from it.
     reported_at_end: bool,
-    /// A restore whose line is not in the transcript yet (history still in flight).
-    /// Applied once when the anchor row arrives; cleared if the reader scrolls first.
-    pending_restore: Option<PendingRestore>,
     /// Whether every row's height is true for the list's width. A layout after a reset measures
     /// them all. A width change makes gpui drop them, so the flag is off until the next such
     /// layout. Until it is on, the list's pixels say nothing about the reader.
@@ -157,10 +150,8 @@ impl TranscriptView {
             find_row: None,
             typing_peer: None,
             typing_phase: 0,
-            first_unseen: None,
             unseen_bounce: UnseenBounce::default(),
             reported_at_end: true,
-            pending_restore: None,
             list_measured: false,
             measure_pending: false,
             width: WidthState::Settled,
@@ -196,7 +187,6 @@ impl TranscriptView {
     /// their membership folding already: the reducer applies `/pref joins` as lines
     /// arrive. A DM whose peer is typing gets the typing dots after its last line.
     pub fn set_conversation(&mut self, lines: ConversationLines) {
-        self.pending_restore = None;
         self.landing = false;
         self.model
             .set_conversation(lines.messages, lines.mark, lines.today);
@@ -206,8 +196,8 @@ impl TranscriptView {
         self.typing_peer = lines.typing_peer;
         self.model.clear_selection();
         self.find_row = None;
-        // Switching buffers drops any catch-up.
-        self.first_unseen = None;
+        // Switching buffers leaves the reader at the end, with no catch-up and no saved line
+        // to wait on (`Transcript::set_conversation`).
         self.reset_list();
         self.row_layouts.borrow_mut().clear();
     }
@@ -244,9 +234,10 @@ impl TranscriptView {
         self.typing_peer.as_deref()
     }
 
-    /// The row of the first line that arrived while the reader was scrolled up.
+    /// The row of the first line that arrived while the reader was scrolled up. The unseen
+    /// jump lands there. It ends when the reader reaches the end, or jumps.
     pub fn first_unseen_index(&self) -> Option<usize> {
-        self.first_unseen
+        self.model.position().first_unseen()
     }
 
     #[cfg(test)]
@@ -277,7 +268,6 @@ impl TranscriptView {
     /// Shows a network's Status rows with a fresh selection. Status opens at the end
     /// and has no typing dots.
     pub fn set_status(&mut self, rows: Vec<Row>) {
-        self.pending_restore = None;
         self.landing = false;
         self.model.set_rows(rows);
         self.peers.facts.clear();
@@ -285,7 +275,6 @@ impl TranscriptView {
         self.model.clear_selection();
         self.hovered_link = None;
         self.find_row = None;
-        self.first_unseen = None;
         self.reset_list();
         self.row_layouts.borrow_mut().clear();
     }
@@ -313,10 +302,10 @@ impl TranscriptView {
 
     /// Whether the list shows its end. The scrollbar's offset is measured in
     /// pixels, and a list that follows the tail reports past its maximum. Until a layout
-    /// has measured the rows there are no pixels to read, so the bottom pin answers.
+    /// has measured the rows there are no pixels to read, so the reader's position answers.
     pub fn at_end(&self) -> bool {
         if !self.list_measured {
-            return self.model.scroll().pinned_to_bottom;
+            return self.model.position().shows_end();
         }
         let max = f32::from(self.list_state.max_offset_for_scrollbar().height);
         let current = -f32::from(self.list_state.scroll_px_offset_for_scrollbar().y);
@@ -340,7 +329,11 @@ impl TranscriptView {
 
     /// Where the unseen jump lands now, for the `↓` chip and Alt+U.
     pub fn unseen_target(&self) -> Option<UnseenLanding> {
-        unread::unseen_landing(!self.at_end(), self.first_unseen, self.model.rows())
+        unread::unseen_landing(
+            !self.at_end(),
+            self.model.position().first_unseen(),
+            self.model.rows(),
+        )
     }
 
     /// Alt+U and the `↓` chip: to the first line that arrived
@@ -355,12 +348,12 @@ impl TranscriptView {
     pub fn jump_to_unseen(&mut self, cx: &mut Context<Self>) -> bool {
         match self.unseen_target() {
             Some(UnseenLanding::Row(row)) => {
-                self.first_unseen = None;
+                self.model.end_catch_up();
                 self.scroll_to_row(row, cx);
                 true
             }
             Some(UnseenLanding::End) => {
-                self.first_unseen = None;
+                self.model.end_catch_up();
                 self.scroll_to_bottom(cx);
                 true
             }
@@ -448,7 +441,7 @@ impl TranscriptView {
         if count == 0 {
             return;
         }
-        self.model.set_pinned_to_bottom(true);
+        self.model.follow_end();
         self.project_place();
         self.note_transcript_scroll(cx);
     }
@@ -663,11 +656,6 @@ impl Render for TranscriptView {
         let app_style = style(cx);
         // Heights measured by the last frame's prepaint feed the transcript model.
         self.sync_measured_heights();
-        // A reader who follows the end has seen what arrived while scrolled up. A clamped
-        // saved line shows the end too, but its reader has not reached it.
-        if self.model.scroll().pinned_to_bottom {
-            self.first_unseen = None;
-        }
         let unseen = self.unseen_target().is_some();
         #[cfg(test)]
         {
@@ -994,7 +982,7 @@ mod tests {
             view.set_conversation(empty);
             view.restore_scroll_place(Some(&place), false, true);
             assert!(
-                view.pending_restore.is_some(),
+                view.has_pending_restore(),
                 "restore waits while the anchor is absent"
             );
             assert!(
@@ -1038,7 +1026,7 @@ mod tests {
                 "history that lands on a waiting place does not arm the unseen chip"
             );
             assert!(
-                view.pending_restore.is_none(),
+                !view.has_pending_restore(),
                 "pending clears once the anchor is present"
             );
             let top = view.logical_scroll_top();

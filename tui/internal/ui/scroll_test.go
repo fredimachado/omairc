@@ -15,7 +15,7 @@ import (
 func TestScrollPlaceSwitchRestoresLine(t *testing.T) {
 	m, _ := unreadDemoModel(t)
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("Page Up must leave follow-the-end")
 	}
 	row := m.firstVisibleMessageRow()
@@ -30,7 +30,7 @@ func TestScrollPlaceSwitchRestoresLine(t *testing.T) {
 	m.switchSelection(func() {
 		m.ctrl.SelectConversation("omarchy", "#omarchy")
 	})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("returning to a scrolled conversation must stay detached")
 	}
 	if got := m.ctrl.Messages()[m.firstVisibleMessageRow()].Body; got != body {
@@ -40,7 +40,7 @@ func TestScrollPlaceSwitchRestoresLine(t *testing.T) {
 
 func TestScrollPlaceFollowStaysPinned(t *testing.T) {
 	m, d := unreadDemoModel(t)
-	if !m.transcriptFollowEnd {
+	if !m.followingEnd() {
 		t.Fatal("startup must follow the end")
 	}
 	m.switchSelection(func() {
@@ -50,7 +50,7 @@ func TestScrollPlaceFollowStaysPinned(t *testing.T) {
 	m.switchSelection(func() {
 		m.ctrl.SelectConversation("omarchy", "#omarchy")
 	})
-	if !m.transcriptFollowEnd {
+	if !m.followingEnd() {
 		t.Fatal("a conversation left at the end must stay pinned")
 	}
 	place := m.ctrl.CurrentScrollPlace()
@@ -68,14 +68,14 @@ func TestScrollPlaceStatusRoundTrip(t *testing.T) {
 	if !m.ctrl.ConsoleOpen() {
 		t.Fatal("Ctrl+` must open Status")
 	}
-	if !m.transcriptFollowEnd {
+	if !m.followingEnd() {
 		t.Fatal("Status must follow the end")
 	}
 	m = press(t, m, ctrlKey('`'))
 	if m.ctrl.ConsoleOpen() {
 		t.Fatal("Ctrl+` must close Status")
 	}
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("closing Status must restore the scrolled conversation")
 	}
 	if got := m.ctrl.Messages()[m.firstVisibleMessageRow()].Body; got != body {
@@ -95,7 +95,7 @@ func TestScrollPlaceSurvivesRestart(t *testing.T) {
 	}
 	m := resizeModel(t, New(ctrl, nil), 118, 20)
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
-	if m.transcriptFollowEnd {
+	if m.followingEnd() {
 		t.Fatal("Page Up must leave follow-the-end")
 	}
 	body := m.ctrl.Messages()[m.firstVisibleMessageRow()].Body
@@ -107,7 +107,7 @@ func TestScrollPlaceSurvivesRestart(t *testing.T) {
 		t.Fatal("restart Attach failed")
 	}
 	restored := resizeModel(t, New(again, nil), 118, 20)
-	if restored.transcriptFollowEnd {
+	if restored.followingEnd() {
 		t.Fatal("a restart must reopen the scrolled line")
 	}
 	if got := restored.ctrl.Messages()[restored.firstVisibleMessageRow()].Body; got != body {
@@ -147,9 +147,9 @@ func plantUnloadedScrollPlace(t *testing.T) (*Model, storage.ScrollPlace) {
 
 func TestPendingScrollPlaceSurvivesSwitch(t *testing.T) {
 	m, want := plantUnloadedScrollPlace(t)
-	if m.transcriptFollowEnd || m.transcriptScroll != 0 {
+	if m.followingEnd() || m.scrollLines() != 0 {
 		t.Fatalf("pending viewport follow=%v scroll=%d, want the last loaded page",
-			m.transcriptFollowEnd, m.transcriptScroll)
+			m.followingEnd(), m.scrollLines())
 	}
 	m.switchSelection(func() {
 		m.ctrl.SelectConversation("omarchy", "#desktop")
@@ -178,8 +178,9 @@ func TestUserScrollReplacesPendingScrollPlace(t *testing.T) {
 		m.ctrl.SelectConversation("omarchy", "#omarchy")
 	})
 	place := m.ctrl.CurrentScrollPlace()
-	if !place.Known || place.Row < 0 {
-		t.Fatalf("place = %+v, want the visible line", place)
+	// The visible page here is the last one, so landing on it follows the end.
+	if !place.Known || !place.Follow {
+		t.Fatalf("place = %+v, want follow-end, not the unloaded line", place)
 	}
 	mapping := irc.NewCaseMapping(irc.KindRfc1459)
 	stored, ok := storage.NewScrollPlaceStore().Place("omarchy", "#omarchy", mapping)

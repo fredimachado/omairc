@@ -1,4 +1,5 @@
 use super::format::{format_irc, FormattedText};
+use super::reader_position::{Anchor, ReaderPosition};
 use super::status::StatusMark;
 use super::text_edit::{snap_grapheme, word_bounds};
 use crate::desktop::locale::short_date;
@@ -137,6 +138,8 @@ impl Fenwick {
     }
 }
 
+/// The reader's place as the list and the saved place read it. It is derived from the
+/// transcript's `ReaderPosition`, which is the stored truth.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ScrollAnchor {
     pub row: usize,
@@ -149,7 +152,7 @@ pub struct Transcript {
     heights: Fenwick,
     measured: Vec<bool>,
     estimate_height: i32,
-    scroll: ScrollAnchor,
+    position: ReaderPosition,
     selection: Option<Selection>,
 }
 
@@ -160,11 +163,7 @@ impl Transcript {
             heights: Fenwick::new(0),
             measured: Vec::new(),
             estimate_height: estimate_height.max(1),
-            scroll: ScrollAnchor {
-                row: 0,
-                offset_px: 0,
-                pinned_to_bottom: true,
-            },
+            position: ReaderPosition::FollowingEnd,
             selection: None,
         }
     }
@@ -177,8 +176,31 @@ impl Transcript {
         self.selection
     }
 
+    /// Where the reader is: following the end, held on a line, waiting on a saved line, or
+    /// catching up.
+    pub fn position(&self) -> &ReaderPosition {
+        &self.position
+    }
+
+    pub fn set_position(&mut self, position: ReaderPosition) {
+        self.position = position;
+    }
+
+    /// The reader's place as a line and an offset, or the end. A reader who waits on a saved
+    /// line is at the end and has not reached it, so it is not pinned to the bottom.
     pub fn scroll(&self) -> ScrollAnchor {
-        self.scroll
+        match self.position.anchor() {
+            Some(anchor) => ScrollAnchor {
+                row: anchor.row,
+                offset_px: anchor.offset_px,
+                pinned_to_bottom: false,
+            },
+            None => ScrollAnchor {
+                row: self.rows.len().saturating_sub(1),
+                offset_px: 0,
+                pinned_to_bottom: self.position.reports_follow_end(),
+            },
+        }
     }
 
     pub fn set_rows(&mut self, rows: Vec<Row>) {
@@ -189,11 +211,7 @@ impl Transcript {
             self.heights.add(i, self.estimate_height as i64);
         }
         self.selection = None;
-        self.scroll = ScrollAnchor {
-            row: self.rows.len().saturating_sub(1),
-            offset_px: 0,
-            pinned_to_bottom: true,
-        };
+        self.position = ReaderPosition::FollowingEnd;
     }
 
     pub fn clear_selection(&mut self) {
@@ -247,7 +265,7 @@ impl Transcript {
         mark: Option<i64>,
         today: NaiveDate,
     ) {
-        let scroll = self.scroll;
+        let position = std::mem::replace(&mut self.position, ReaderPosition::FollowingEnd);
         let selection = self.selection;
         let rows = rows_from_messages_on(messages, mark, today);
         self.rows = rows;
@@ -262,24 +280,25 @@ impl Transcript {
                 anchor: snap_pos(&self.rows, sel.anchor),
                 focus: snap_pos(&self.rows, sel.focus),
             });
-        self.scroll = if self.rows.is_empty() {
-            ScrollAnchor {
-                row: 0,
-                offset_px: 0,
-                pinned_to_bottom: true,
-            }
-        } else if scroll.pinned_to_bottom {
-            ScrollAnchor {
-                row: self.rows.len() - 1,
-                offset_px: 0,
-                pinned_to_bottom: true,
-            }
-        } else {
-            ScrollAnchor {
-                row: scroll.row.min(self.rows.len() - 1),
-                offset_px: scroll.offset_px,
-                pinned_to_bottom: false,
-            }
+        let held = |anchor: Anchor| Anchor {
+            row: anchor.row.min(self.rows.len().saturating_sub(1)),
+            ..anchor
+        };
+        self.position = match position {
+            // A saved line that has not arrived keeps waiting while the rows grow.
+            ReaderPosition::Restoring { .. } => position,
+            _ if self.rows.is_empty() => ReaderPosition::FollowingEnd,
+            ReaderPosition::FollowingEnd => ReaderPosition::FollowingEnd,
+            ReaderPosition::Anchored { anchor } => ReaderPosition::Anchored {
+                anchor: held(anchor),
+            },
+            ReaderPosition::CatchingUp {
+                anchor,
+                first_unseen,
+            } => ReaderPosition::CatchingUp {
+                anchor: held(anchor),
+                first_unseen,
+            },
         };
     }
 
@@ -291,24 +310,33 @@ impl Transcript {
         self.heights.ensure_rows(self.rows.len());
         self.heights
             .add(self.rows.len() - 1, self.estimate_height as i64);
-        if self.scroll.pinned_to_bottom {
-            self.scroll.row = self.rows.len() - 1;
-            self.scroll.offset_px = 0;
-        }
     }
 
-    pub fn set_pinned_to_bottom(&mut self, pinned: bool) {
-        self.scroll.pinned_to_bottom = pinned;
-        if pinned && !self.rows.is_empty() {
-            self.scroll.row = self.rows.len() - 1;
-            self.scroll.offset_px = 0;
-        }
+    /// The reader follows the end: a catch-up or a saved line they waited on is over.
+    pub fn follow_end(&mut self) {
+        self.position = ReaderPosition::FollowingEnd;
     }
 
+    /// Holds the reader on `row`. A catch-up goes on; a reader who followed the end, or
+    /// waited on a saved line, is now on the line.
     pub fn set_scroll_anchor(&mut self, row: usize, offset_px: i32) {
-        self.scroll.pinned_to_bottom = false;
-        self.scroll.row = row.min(self.rows.len().saturating_sub(1));
-        self.scroll.offset_px = offset_px;
+        let anchor = Anchor {
+            row: row.min(self.rows.len().saturating_sub(1)),
+            offset_px,
+        };
+        self.position = self.position.held_at(anchor);
+    }
+
+    /// The reader stays on the same line, with nothing below it left to catch up on.
+    pub fn end_catch_up(&mut self) {
+        self.position = self.position.without_catch_up();
+    }
+
+    /// Stops waiting on a saved line. The view was at the end, so the reader follows it.
+    pub fn retire_restore(&mut self) {
+        if self.position.restoring().is_some() {
+            self.position = ReaderPosition::FollowingEnd;
+        }
     }
 
     pub fn begin(&mut self, pos: Pos) {
@@ -822,20 +850,18 @@ mod tests {
     fn anchor_survives_remeasure_above() {
         let mut t = Transcript::new(10);
         t.set_rows(sample_rows());
-        t.set_pinned_to_bottom(false);
         t.set_scroll_anchor(1, 0);
         t.set_measured(0, 100);
-        assert_eq!(t.scroll.row, 1);
+        assert_eq!(t.scroll().row, 1);
     }
 
     #[test]
     fn pinned_stays_on_append() {
         let mut t = Transcript::new(10);
         t.set_rows(sample_rows());
-        t.set_pinned_to_bottom(true);
         t.append(row_from_message(3, "mira", "09:46", "more", false));
-        assert_eq!(t.scroll.row, t.rows.len() - 1);
-        assert!(t.scroll.pinned_to_bottom);
+        assert_eq!(t.scroll().row, t.rows.len() - 1);
+        assert!(t.scroll().pinned_to_bottom);
     }
 
     #[test]
@@ -1285,5 +1311,96 @@ mod tests {
         assert!(t.selection().is_some());
         assert_eq!(t.scroll().row, 0);
         assert_eq!(t.scroll().offset_px, 4);
+    }
+
+    fn waiting_position() -> ReaderPosition {
+        ReaderPosition::Restoring {
+            place: crate::model::scroll_place::SavedPlace::End,
+            open_at_unread: false,
+        }
+    }
+
+    #[test]
+    fn the_scroll_anchor_is_derived_from_the_reader_position() {
+        let mut t = Transcript::new(72);
+        t.set_rows(sample_rows());
+        let last = t.rows().len() - 1;
+        let end = t.scroll();
+        assert!(end.pinned_to_bottom);
+        assert_eq!((end.row, end.offset_px), (last, 0));
+        t.set_scroll_anchor(1, 6);
+        let held = t.scroll();
+        assert!(!held.pinned_to_bottom);
+        assert_eq!((held.row, held.offset_px), (1, 6));
+        t.set_position(waiting_position());
+        assert!(
+            !t.scroll().pinned_to_bottom,
+            "a reader who waits on a saved line has not reached the end"
+        );
+        assert_eq!(t.scroll().row, last, "but the view shows it");
+    }
+
+    #[test]
+    fn replacing_the_rows_keeps_a_catch_up_and_clamps_its_anchor() {
+        let mut t = Transcript::new(72);
+        t.set_rows(sample_rows());
+        t.set_position(ReaderPosition::CatchingUp {
+            anchor: Anchor {
+                row: 99,
+                offset_px: 3,
+            },
+            first_unseen: 2,
+        });
+        t.replace_conversation(&[chat("anna", "one", 9, 50, 1)], None, today());
+        assert_eq!(
+            *t.position(),
+            ReaderPosition::CatchingUp {
+                anchor: Anchor {
+                    row: t.rows().len() - 1,
+                    offset_px: 3
+                },
+                first_unseen: 2
+            }
+        );
+    }
+
+    #[test]
+    fn replacing_the_rows_keeps_a_waiting_restore_and_empties_to_the_end() {
+        let mut t = Transcript::new(72);
+        t.set_rows(sample_rows());
+        t.set_position(waiting_position());
+        t.replace_conversation(&[chat("anna", "one", 9, 50, 1)], None, today());
+        assert_eq!(*t.position(), waiting_position());
+        t.set_scroll_anchor(0, 0);
+        t.replace_conversation(&[], None, today());
+        assert_eq!(*t.position(), ReaderPosition::FollowingEnd);
+    }
+
+    #[test]
+    fn following_the_end_or_a_row_jump_ends_what_the_reader_waited_on() {
+        let mut t = Transcript::new(72);
+        t.set_rows(sample_rows());
+        t.set_position(waiting_position());
+        t.retire_restore();
+        assert_eq!(*t.position(), ReaderPosition::FollowingEnd);
+        t.set_position(ReaderPosition::CatchingUp {
+            anchor: Anchor {
+                row: 1,
+                offset_px: 0,
+            },
+            first_unseen: 3,
+        });
+        t.end_catch_up();
+        assert_eq!(
+            *t.position(),
+            ReaderPosition::Anchored {
+                anchor: Anchor {
+                    row: 1,
+                    offset_px: 0
+                }
+            }
+        );
+        t.follow_end();
+        assert!(t.position().reports_follow_end());
     }
 }
