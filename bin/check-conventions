@@ -705,6 +705,116 @@ def check_go_view_no_protocol():
     return problems
 
 
+READ_MARKER_SET_CALL = re.compile(r"\b(?:queue_read_marker_set|QueueReadMarkerSet)\s*\(")
+READ_MARKER_SET_FN = re.compile(
+    r"^\s*(?:pub(?:\([a-z]+\))?\s+)?fn\s+(\w+)|^func\s+(?:\([^)]*\)\s*)?(\w+)")
+# The only non-test files that may mention the SET entry point: the session
+# defines it, and the controller's publish function is the one caller.
+READ_MARKER_SET_SESSION_FILES = {
+    "client/src/session/readmarker.rs",
+    "client/src/session/outbound.rs",
+    "tui/internal/session/readmarker.go",
+}
+READ_MARKER_SET_CALLERS = {
+    "client/src/controller/readmarker.rs": "publish_read_marker",
+    "tui/internal/controller/readmarker.go": "publishReadMarker",
+}
+
+
+def _read_marker_set_call_owners(source):
+    """Yield (line_number, enclosing function name) for each SET entry-point call."""
+    lines = source.splitlines()
+    for index, line in enumerate(lines):
+        if not READ_MARKER_SET_CALL.search(line):
+            continue
+        owner = None
+        for back in range(index, -1, -1):
+            match = READ_MARKER_SET_FN.match(lines[back])
+            if match:
+                owner = match.group(1) or match.group(2)
+                break
+        yield index + 1, owner
+
+
+def _is_read_marker_test_path(relative):
+    parts = relative.parts
+    return (
+        "tests" in parts
+        or relative.name.endswith("_test.go")
+        or relative.name == "tests.rs"
+    )
+
+
+def _read_marker_set_problems(posix, relative, source):
+    if _is_read_marker_test_path(relative) or posix in READ_MARKER_SET_SESSION_FILES:
+        return []
+    allowed = READ_MARKER_SET_CALLERS.get(posix)
+    problems = []
+    calls = list(_read_marker_set_call_owners(source))
+    for number, owner in calls:
+        if allowed is None:
+            problems.append(
+                f"{posix}:{number}: only the controller's read-marker publish "
+                f"function may ask a session to send a read marker SET")
+        elif owner != allowed:
+            problems.append(
+                f"{posix}:{number}: the read-marker SET call belongs in "
+                f"{allowed}, found in {owner}")
+    if allowed is not None and len(calls) > 1:
+        problems.append(f"{posix}: {allowed} must hold the only SET call")
+    return problems
+
+
+def _self_test_read_marker_set_gate():
+    rust_ok = (
+        "impl Controller {\n"
+        "    pub(super) fn publish_read_marker(&mut self) {\n"
+        "        session.queue_read_marker_set(&target, when);\n"
+        "    }\n"
+        "}\n")
+    rust_wrong_fn = rust_ok.replace("publish_read_marker", "sync_elsewhere")
+    go_ok = (
+        "func (c *Controller) publishReadMarker() {\n"
+        "\tsession.QueueReadMarkerSet(target, when)\n"
+        "}\n")
+    go_twice = go_ok + go_ok.replace("publishReadMarker", "publishReadMarker")
+    samples = (
+        ("client/src/controller/readmarker.rs", rust_ok, False),
+        ("client/src/controller/readmarker.rs", rust_wrong_fn, True),
+        ("client/src/controller/networks.rs", rust_ok, True),
+        ("client/src/ui/shell/mod.rs", "x.queue_read_marker_set(t, w);\n", True),
+        ("client/src/session/tests/readmarker.rs", rust_ok, False),
+        ("client/src/session/outbound.rs", rust_ok, False),
+        ("tui/internal/controller/readmarker.go", go_ok, False),
+        ("tui/internal/controller/readmarker.go", go_twice, True),
+        ("tui/internal/ui/model.go", "m.s.QueueReadMarkerSet(t, w)\n", True),
+        ("tui/internal/session/readmarker_test.go", "s.QueueReadMarkerSet(t, w)\n", False),
+        ("tui/internal/ui/model.go", "// publish a marker\n", False),
+    )
+    for posix, text, want_problem in samples:
+        got = _read_marker_set_problems(posix, Path(posix), text)
+        if bool(got) != want_problem:
+            raise AssertionError(
+                f"read-marker SET self-test failed for {posix!r}: "
+                f"problems={got!r}, want_problem={want_problem}")
+
+
+def check_read_marker_set_single_caller():
+    """Only the controller's publish function asks a session to send a SET."""
+    try:
+        _self_test_read_marker_set_gate()
+    except AssertionError as exc:
+        return [str(exc)]
+
+    problems = []
+    for relative, source in sources("client/**/*.rs", "tui/**/*.go"):
+        if "target" in relative.parts:
+            continue
+        problems.extend(
+            _read_marker_set_problems(relative.as_posix(), relative, source))
+    return problems
+
+
 GO_TITLE_STRINGS = ("- Omairc", '" Status"')
 GO_TITLE_SOURCE = Path("tui/internal/ui/title.go")
 
@@ -1596,6 +1706,7 @@ CHECKS = (
     ("internal/irc platform neutrality", check_go_irc_platform_neutrality),
     ("Go view/driver free of internal/irc", check_go_view_no_protocol),
     ("Go title strings only in title.go", check_go_title_strings),
+    ("read-marker SET has one caller", check_read_marker_set_single_caller),
     ("macOS CI host arch selection", check_macos_ci_arch_selection),
     ("CI packages only on tags and dispatch", check_ci_package_triggers),
     ("macOS CI Bash 3.2 builtins", check_macos_ci_bash32),
