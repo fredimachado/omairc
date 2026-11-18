@@ -2,8 +2,9 @@
 //! `/list` through the wire.
 //! `LIST mask` goes out as a session write. The server's answer streams back as 321
 //! (start), one 322 per channel, then 323 (end), and the controller folds those into a
-//! per-network request: the rows, the loading and complete flags, the pending mask a
-//! second `/list` left behind, and the idle timeout. A stale 323 after a timeout is
+//! per-network request: one phase per network (idle, loading, complete, or failed) that
+//! holds the rows, the mask a second `/list` queued, and the idle timeout. A stale 323
+//! after a timeout is
 //! drained once, so it does not complete the next load. The overlay (`ChannelListView`)
 //! shows the rows of the request once it completes, most users first, then by name.
 //! The idle timer runs on the `Clock` seam. As in `autoawayruntime.rs`, a fired timer
@@ -56,17 +57,73 @@ pub(super) enum RequestKind {
     Cached,
 }
 
-/// One network's request state (`ChannelListRequestState`).
+/// One network's `/list` lifecycle. A load is exactly one phase, so it is never both
+/// loading and complete, and a failed load is not complete. A network with no entry is
+/// `Idle`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(super) struct ChannelListState {
-    pub(super) mask: String,
-    pub(super) rows: Vec<ListedChannel>,
-    pub(super) complete: bool,
-    pub(super) loading: bool,
-    pub(super) error: String,
-    pub(super) pending_mask: Option<String>,
-    /// A timed-out load's stale 323 is still to come, so the next 323 is swallowed.
-    pub(super) drain_timed_out_end: bool,
+pub(super) enum ChannelListPhase {
+    #[default]
+    Idle,
+    Loading {
+        mask: String,
+        rows: Vec<ListedChannel>,
+        /// At most one queued mask (a different `/list` while loading).
+        queued_mask: Option<String>,
+        /// A timed-out earlier load's stale 323 is still to come.
+        drain_stale_end: bool,
+    },
+    Complete {
+        mask: String,
+        rows: Vec<ListedChannel>,
+    },
+    Failed {
+        mask: String,
+        rows: Vec<ListedChannel>,
+        error: String,
+        /// The stale 323 of the timed-out load is still to come.
+        drain_stale_end: bool,
+    },
+}
+
+/// The phase a network with no entry is in.
+static IDLE: ChannelListPhase = ChannelListPhase::Idle;
+
+impl ChannelListPhase {
+    /// The mask of this load, or "" when idle.
+    pub(super) fn mask(&self) -> &str {
+        match self {
+            Self::Idle => "",
+            Self::Loading { mask, .. }
+            | Self::Complete { mask, .. }
+            | Self::Failed { mask, .. } => mask.as_str(),
+        }
+    }
+
+    /// The rows streamed or completed so far. A failed load keeps the rows it had.
+    pub(super) fn rows(&self) -> &[ListedChannel] {
+        match self {
+            Self::Idle => &[],
+            Self::Loading { rows, .. }
+            | Self::Complete { rows, .. }
+            | Self::Failed { rows, .. } => rows.as_slice(),
+        }
+    }
+
+    /// The error text of a failed load, or "".
+    pub(super) fn error(&self) -> &str {
+        match self {
+            Self::Failed { error, .. } => error.as_str(),
+            _ => "",
+        }
+    }
+
+    pub(super) fn is_loading(&self) -> bool {
+        matches!(self, Self::Loading { .. })
+    }
+
+    pub(super) fn is_complete(&self) -> bool {
+        matches!(self, Self::Complete { .. })
+    }
 }
 
 /// The shared queue the idle timers write to: the network and the generation each
@@ -78,7 +135,7 @@ type ExpiryQueue = Rc<RefCell<VecDeque<(String, u64)>>>;
 pub(super) struct ChannelListRequests {
     clock: Rc<dyn Clock>,
     idle_timeout: Duration,
-    states: BTreeMap<String, ChannelListState>,
+    states: BTreeMap<String, ChannelListPhase>,
     /// One armed timer per network, with the generation it was armed under.
     timers: BTreeMap<String, (u64, Box<dyn ClockTimer>)>,
     generation: u64,
@@ -97,39 +154,50 @@ impl ChannelListRequests {
         }
     }
 
-    /// A copy of one network's request, if it has one.
-    pub(super) fn state(&self, network_id: &str) -> Option<ChannelListState> {
-        self.states.get(network_id).cloned()
+    /// One network's phase. A network with no entry is idle.
+    pub(super) fn phase(&self, network_id: &str) -> &ChannelListPhase {
+        self.states.get(network_id).unwrap_or(&IDLE)
     }
 
     /// Starts or joins a `/list` load (`Request`). While a load is in flight a same-mask
     /// request is a no-op and a different mask becomes the pending mask. A completed
     /// request for the same mask is reused unless `refresh` is set.
     pub(super) fn request(&mut self, network_id: &str, mask: &str, refresh: bool) -> RequestKind {
-        if let Some(entry) = self.states.get_mut(network_id) {
-            if entry.loading {
-                if same_mask(&entry.mask, mask) {
-                    entry.pending_mask = None;
+        match self.states.get_mut(network_id) {
+            Some(ChannelListPhase::Loading {
+                mask: in_flight,
+                queued_mask,
+                ..
+            }) => {
+                *queued_mask = if same_mask(in_flight, mask) {
+                    None
                 } else {
-                    entry.pending_mask = Some(mask.to_owned());
-                }
+                    Some(mask.to_owned())
+                };
                 return RequestKind::Loading;
             }
-            if !refresh && entry.complete && same_mask(&entry.mask, mask) {
+            Some(ChannelListPhase::Complete { mask: done, .. })
+                if !refresh && same_mask(done, mask) =>
+            {
                 return RequestKind::Cached;
             }
+            _ => {}
         }
-        let drain = self
-            .states
-            .get(network_id)
-            .is_some_and(|entry| entry.drain_timed_out_end);
+        // Only a failed load that timed out hands its stale end to the next load.
+        let drain_stale_end = matches!(
+            self.states.get(network_id),
+            Some(ChannelListPhase::Failed {
+                drain_stale_end: true,
+                ..
+            })
+        );
         self.states.insert(
             network_id.to_owned(),
-            ChannelListState {
+            ChannelListPhase::Loading {
                 mask: mask.to_owned(),
-                loading: true,
-                drain_timed_out_end: drain,
-                ..ChannelListState::default()
+                rows: Vec::new(),
+                queued_mask: None,
+                drain_stale_end,
             },
         );
         self.arm(network_id);
@@ -145,37 +213,29 @@ impl ChannelListRequests {
     /// under case folding. Empty channels and rows outside a load are ignored, and a new
     /// row past `CHANNEL_LIST_MAX_ROWS` is dropped. Returns whether a row was replaced.
     fn row(&mut self, network_id: &str, row: ListedChannel) -> bool {
-        if row.name.is_empty() {
-            return false;
-        }
-        if !self.states.get(network_id).is_some_and(|entry| entry.loading) {
+        if row.name.is_empty() || !self.phase(network_id).is_loading() {
             return false;
         }
         self.arm(network_id);
-        let Some(entry) = self.states.get_mut(network_id) else {
+        let Some(ChannelListPhase::Loading { rows, .. }) = self.states.get_mut(network_id) else {
             return false;
         };
-        if let Some(index) = entry
-            .rows
+        if let Some(index) = rows
             .iter()
             .position(|existing| existing.name.to_lowercase() == row.name.to_lowercase())
         {
-            entry.rows[index] = row;
+            rows[index] = row;
             return true;
         }
-        if entry.rows.len() < CHANNEL_LIST_MAX_ROWS {
-            entry.rows.push(row);
+        if rows.len() < CHANNEL_LIST_MAX_ROWS {
+            rows.push(row);
         }
         false
     }
 
     /// The server is still streaming (321 or a row): the idle window starts over.
     fn activity(&mut self, network_id: &str) {
-        if self
-            .states
-            .get(network_id)
-            .is_some_and(|entry| entry.loading)
-        {
+        if self.phase(network_id).is_loading() {
             self.arm(network_id);
         }
     }
@@ -184,49 +244,82 @@ impl ChannelListRequests {
     /// load keeps going. Otherwise the load completes, and a pending mask that differs
     /// from the current one is handed back to start next.
     fn finish(&mut self, network_id: &str) -> FinishResult {
-        let Some(entry) = self.states.get_mut(network_id) else {
-            return FinishResult::default();
+        let draining = match self.states.get_mut(network_id) {
+            Some(ChannelListPhase::Loading {
+                drain_stale_end, ..
+            }) if *drain_stale_end => {
+                *drain_stale_end = false;
+                true
+            }
+            Some(ChannelListPhase::Loading { .. }) => false,
+            Some(ChannelListPhase::Failed {
+                drain_stale_end, ..
+            }) => {
+                // A failed load keeps its error and rows. Its stale end is absorbed here.
+                *drain_stale_end = false;
+                return FinishResult::default();
+            }
+            None | Some(ChannelListPhase::Idle | ChannelListPhase::Complete { .. }) => {
+                return FinishResult::default();
+            }
         };
-        if !entry.loading {
-            entry.drain_timed_out_end = false;
-            return FinishResult::default();
-        }
-        if entry.drain_timed_out_end {
-            entry.drain_timed_out_end = false;
+        if draining {
             self.arm(network_id);
             return FinishResult::default();
         }
+        self.complete_load(network_id)
+    }
+
+    /// Moves a loading request to complete. A queued mask that differs from it is handed
+    /// back to start next.
+    fn complete_load(&mut self, network_id: &str) -> FinishResult {
         self.stop(network_id);
-        let Some(entry) = self.states.get_mut(network_id) else {
+        let Some(ChannelListPhase::Loading {
+            mask,
+            rows,
+            queued_mask,
+            ..
+        }) = self.states.remove(network_id)
+        else {
             return FinishResult::default();
         };
-        let pending = entry.pending_mask.take();
-        entry.loading = false;
-        entry.complete = true;
-        entry.error.clear();
-        let next = pending.filter(|pending| !same_mask(pending, &entry.mask));
+        let next = queued_mask.filter(|queued| !same_mask(queued, &mask));
+        self.states.insert(
+            network_id.to_owned(),
+            ChannelListPhase::Complete { mask, rows },
+        );
         FinishResult {
             completed: true,
             pending_mask: next,
         }
     }
 
-    /// Fails an in-flight load (`Fail`). Only a loading request can fail. A timed-out
-    /// failure leaves its stale end to drain. Returns whether anything changed.
+    /// Fails an in-flight load (`Fail`). Only a loading request can fail. The rows it had
+    /// stay, and a timed-out failure leaves its stale end to drain. Returns whether
+    /// anything changed.
     fn fail(&mut self, network_id: &str, text: &str, timed_out: bool) -> bool {
-        if !self.states.get(network_id).is_some_and(|entry| entry.loading) {
+        if !self.phase(network_id).is_loading() {
             return false;
         }
         self.stop(network_id);
-        if let Some(entry) = self.states.get_mut(network_id) {
-            entry.loading = false;
-            entry.complete = false;
-            entry.pending_mask = None;
-            entry.error = text.to_owned();
-            if timed_out {
-                entry.drain_timed_out_end = true;
-            }
-        }
+        let Some(ChannelListPhase::Loading {
+            mask,
+            rows,
+            drain_stale_end,
+            ..
+        }) = self.states.remove(network_id)
+        else {
+            return false;
+        };
+        self.states.insert(
+            network_id.to_owned(),
+            ChannelListPhase::Failed {
+                mask,
+                rows,
+                error: text.to_owned(),
+                drain_stale_end: drain_stale_end || timed_out,
+            },
+        );
         true
     }
 
@@ -428,33 +521,28 @@ impl Controller {
             return ListOutcome::NotConnected;
         }
         let mask = mask.trim();
-        let same = self
-            .channel_lists
-            .state(network_id)
-            .is_some_and(|found| same_mask(&found.mask, mask));
+        let same = same_mask(self.channel_lists.phase(network_id).mask(), mask);
         let refresh = self.channel_view.open && self.channel_view.network_id == network_id && same;
 
         let kind = self.channel_lists.request(network_id, mask, refresh);
-        let Some(found) = self.channel_lists.state(network_id) else {
-            return ListOutcome::Refused;
-        };
+        let found = self.channel_lists.phase(network_id);
         match kind {
             RequestKind::Loading => {
                 self.channel_view.show(
                     network_id,
-                    &found.mask,
-                    &found.rows,
+                    found.mask(),
+                    found.rows(),
                     false,
                     true,
                     false,
-                    &found.error,
+                    found.error(),
                 );
                 self.channel_view.open = true;
                 ListOutcome::Sent
             }
             RequestKind::Cached => {
                 self.channel_view
-                    .show(network_id, &found.mask, &found.rows, true, false, true, "");
+                    .show(network_id, found.mask(), found.rows(), true, false, true, "");
                 self.channel_view.open = true;
                 ListOutcome::Sent
             }
@@ -487,13 +575,7 @@ impl Controller {
     /// Otherwise the overlay shows the completed rows, if it is on this network.
     fn finish_channel_list(&mut self, network_id: &str) {
         let result = self.channel_lists.finish(network_id);
-        if !result.completed {
-            return;
-        }
-        let Some(cache) = self.channel_lists.state(network_id) else {
-            return;
-        };
-        if cache.loading {
+        if !result.completed || !self.channel_lists.phase(network_id).is_complete() {
             return;
         }
         if let Some(pending) = result.pending_mask {
@@ -506,19 +588,16 @@ impl Controller {
             }
         }
         if self.channel_view.network_id == network_id {
+            let cache = self.channel_lists.phase(network_id);
             self.channel_view
-                .show(network_id, &cache.mask, &cache.rows, true, false, false, "");
+                .show(network_id, cache.mask(), cache.rows(), true, false, false, "");
         }
     }
 
     /// Fails an in-flight load from a 263, a 416, or a 4xx or 5xx numeric that names
     /// LIST (`failChannelListFromNumeric`).
     fn fail_channel_list_from_numeric(&mut self, network_id: &str, message: &IrcMessage) -> bool {
-        if !self
-            .channel_lists
-            .state(network_id)
-            .is_some_and(|found| found.loading)
-        {
+        if !self.channel_lists.phase(network_id).is_loading() {
             return false;
         }
         let command = message.command.as_str();
