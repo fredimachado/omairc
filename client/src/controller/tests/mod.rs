@@ -37,6 +37,7 @@ mod readmarker;
 mod readmarker_viewport;
 mod replies;
 mod scrollplace;
+mod search;
 mod selection;
 mod shell;
 mod sends;

@@ -60,6 +60,7 @@ pub const GROUPS: &[ShortcutGroup] = &[
             row("Ctrl+Shift+O", "open link"),
             row("Ctrl+Shift+K", "jump to nick"),
             row("Ctrl+Shift+A", "inbox"),
+            row("Ctrl+Shift+F", "search history"),
             row("Ctrl+`", "Status"),
             row("Ctrl+W", "close conversation"),
         ],
@@ -154,7 +155,7 @@ mod tests {
             summary,
             [
                 ("MOVE", 7),
-                ("JUMP", 6),
+                ("JUMP", 7),
                 ("WRITE", 11),
                 ("CONNECT", 5),
                 ("WINDOW", 9)
@@ -215,6 +216,7 @@ mod tests {
             "Ctrl+Shift+O",
             "Ctrl+Shift+K",
             "Ctrl+Shift+A",
+            "Ctrl+Shift+F",
             "Ctrl+/",
             "Ctrl+Shift+/",
             "Ctrl+Shift+M",

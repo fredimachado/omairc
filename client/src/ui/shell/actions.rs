@@ -25,6 +25,7 @@ actions!(
         OpenLink,
         OpenNick,
         OpenInbox,
+        OpenSearch,
         ToggleShortcuts,
         OpenAbout,
         CloseSheet,
@@ -96,6 +97,7 @@ pub fn bind_shell_keys(cx: &mut App) {
         KeyBinding::new("secondary-?", OpenAbout, None),
         KeyBinding::new("secondary-k", OpenJump, None),
         KeyBinding::new("secondary-shift-a", OpenInbox, None),
+        KeyBinding::new("secondary-shift-f", OpenSearch, None),
         KeyBinding::new("secondary-shift-o", OpenLink, None),
         KeyBinding::new("secondary-shift-u", InsertFile, None),
         KeyBinding::new("secondary-shift-k", OpenNick, None),
@@ -184,6 +186,9 @@ pub fn wire_shell_actions(root: Div, cx: &mut Context<Shell>) -> Div {
     }))
     .on_action(cx.listener(|shell, _: &OpenInbox, window, cx| {
         shell.toggle_inbox(window, cx);
+    }))
+    .on_action(cx.listener(|shell, _: &OpenSearch, window, cx| {
+        shell.toggle_search(window, cx);
     }))
     .on_action(cx.listener(|shell, _: &ToggleShortcuts, window, cx| {
         shell.toggle_shortcuts(window, cx);

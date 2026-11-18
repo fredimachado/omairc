@@ -10,6 +10,7 @@ use crate::model::chords::{Chord, Sheet};
 use crate::model::jump::{JumpKind, JumpTarget, JumpView};
 use crate::model::links::{LinkKind, LinkTarget};
 use crate::model::nick_pick::NickTarget;
+use crate::model::search::SearchHit;
 use crate::ui::sheets::about::{AboutEvent, AboutSheet};
 use crate::ui::sheets::channel_list::ChannelListSource;
 use crate::ui::sheets::channel_open::{ChannelOpenEvent, ChannelOpenSheet};
@@ -18,6 +19,8 @@ use crate::ui::sheets::inbox::{render_inbox_sheet, InboxEvent, InboxSheet};
 use crate::ui::sheets::jump::JumpSource;
 use crate::ui::sheets::link::LinkSource;
 use crate::ui::sheets::nick::NickSource;
+use crate::ui::sheets::search::SearchSource;
+use crate::ui::shell::search::SearchRun;
 use crate::ui::sheets::shortcuts::{ShortcutsEvent, ShortcutsSheet};
 use crate::ui::shell::Shell;
 use crate::ui::update::launch_installer;
@@ -41,6 +44,12 @@ pub enum ActiveModal {
     },
     Inbox {
         sheet: Entity<InboxSheet>,
+        _subscriptions: Vec<Subscription>,
+    },
+    Search {
+        sheet: Entity<FilterSheet<SearchSource>>,
+        /// Dropping the sheet drops the run, which cancels its scan.
+        run: SearchRun,
         _subscriptions: Vec<Subscription>,
     },
     Shortcuts {
@@ -68,6 +77,7 @@ impl ActiveModal {
             Self::Link { .. } => Sheet::Link,
             Self::Nick { .. } => Sheet::Nick,
             Self::Inbox { .. } => Sheet::Inbox,
+            Self::Search { .. } => Sheet::Search,
             Self::Shortcuts { .. } => Sheet::Shortcuts,
             Self::About { .. } => Sheet::About,
             Self::ChannelOpen { .. } => Sheet::ChannelOpen,
@@ -202,6 +212,7 @@ impl Shell {
             ActiveModal::Link { sheet, .. } => render_filter_sheet(sheet, cx),
             ActiveModal::Nick { sheet, .. } => render_filter_sheet(sheet, cx),
             ActiveModal::Inbox { sheet, .. } => render_inbox_sheet(sheet, cx),
+            ActiveModal::Search { sheet, .. } => render_filter_sheet(sheet, cx),
             ActiveModal::Shortcuts { sheet, .. } => sheet.clone().into_any_element(),
             ActiveModal::About { sheet, .. } => sheet.clone().into_any_element(),
             ActiveModal::ChannelOpen { sheet, .. } => sheet.clone().into_any_element(),
@@ -465,6 +476,32 @@ impl Shell {
         window.focus(&sheet.read(cx).focus_handle());
         self.modal = Some(ActiveModal::Inbox {
             sheet,
+            _subscriptions: subscriptions,
+        });
+        cx.notify();
+    }
+
+    pub(super) fn present_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search_note = None;
+        let sheet = cx.new(|cx| FilterSheet::new(SearchSource::blank(), cx));
+        let filter = sheet.read(cx).filter.clone();
+        let subscriptions = vec![
+            track(cx, &sheet),
+            cx.observe(&filter, |shell, _, cx| shell.search_query_changed(cx)),
+            cx.subscribe_in(
+                &sheet,
+                window,
+                |shell: &mut Shell, _, event: &SheetEvent<SearchHit>, window, cx| match event {
+                    SheetEvent::Activated(hit) => shell.activate_search(hit.clone(), window, cx),
+                    SheetEvent::Dismissed => shell.close_modal(window, cx),
+                    SheetEvent::Highlighted(_) => {}
+                },
+            ),
+        ];
+        window.focus(&sheet.read(cx).filter_focus(cx));
+        self.modal = Some(ActiveModal::Search {
+            sheet,
+            run: SearchRun::new(),
             _subscriptions: subscriptions,
         });
         cx.notify();

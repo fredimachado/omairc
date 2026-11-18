@@ -11,6 +11,7 @@ mod replies;
 mod reader_position;
 mod scroll_place;
 mod scroll_restore;
+mod search;
 mod sheets;
 mod transcript;
 mod typing;

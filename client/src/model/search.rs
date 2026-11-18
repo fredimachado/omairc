@@ -286,6 +286,41 @@ pub fn merge_results(sources: Vec<Vec<SearchHit>>, cap: usize) -> SearchResults 
     }
 }
 
+/// The note a jump shows when its line is older than the transcript the conversation has
+/// loaded (`JumpOutcome::OlderThanLoaded`).
+pub const OLDER_THAN_LOADED_NOTE: &str = "That message is older than the loaded history.";
+
+/// The footer under the result list, from where the search stands.
+pub fn footer_text(query_blank: bool, results: &SearchResults, scanning: bool) -> String {
+    if query_blank {
+        return "Type to search every conversation".to_owned();
+    }
+    let count = results.hits.len();
+    if results.more {
+        return format!("{SEARCH_CAP}+ results, refine your search");
+    }
+    match (count, scanning) {
+        (0, true) => "Searching…".to_owned(),
+        (0, false) => "No results".to_owned(),
+        (1, true) => "1 result · Searching…".to_owned(),
+        (1, false) => "1 result".to_owned(),
+        (n, true) => format!("{n} results · Searching…"),
+        (n, false) => format!("{n} results"),
+    }
+}
+
+/// The time a row shows: the local `HH:MM` for a line from `today`, else the short date in
+/// front of it.
+pub fn time_label(time: DateTime<Utc>, today: chrono::NaiveDate) -> String {
+    use chrono::Local;
+    let local = time.with_timezone(&Local);
+    if local.date_naive() == today {
+        local.format("%H:%M").to_string()
+    } else {
+        local.format("%b %-d %H:%M").to_string()
+    }
+}
+
 /// The row of `rows` the target names, by msgid or by content.
 pub fn resolve_jump(target: &JumpTarget, rows: &[Row]) -> Option<usize> {
     line_row(&target.saved_place(), rows)
@@ -625,6 +660,34 @@ mod tests {
         };
         assert_eq!(jump_outcome(&by_content, &rows), JumpOutcome::OlderThanLoaded);
         assert_eq!(jump_outcome(&by_content, &[]), JumpOutcome::OlderThanLoaded);
+    }
+
+    #[test]
+    fn the_footer_says_where_the_search_stands() {
+        let none = SearchResults::default();
+        assert_eq!(footer_text(true, &none, false), "Type to search every conversation");
+        assert_eq!(footer_text(false, &none, true), "Searching…");
+        assert_eq!(footer_text(false, &none, false), "No results");
+        let some = SearchResults {
+            hits: vec![hit("omarchy", "#a", 1, "x"), hit("omarchy", "#a", 2, "y")],
+            more: false,
+        };
+        assert_eq!(footer_text(false, &some, false), "2 results");
+        assert_eq!(footer_text(false, &some, true), "2 results · Searching…");
+        let more = SearchResults { more: true, ..some };
+        assert_eq!(footer_text(false, &more, false), "200+ results, refine your search");
+    }
+
+    #[test]
+    fn a_line_from_today_shows_only_its_minute() {
+        use chrono::Local;
+        let time = Local
+            .with_ymd_and_hms(2026, 10, 19, 9, 5, 0)
+            .unwrap()
+            .with_timezone(&Utc);
+        let day = |d| chrono::NaiveDate::from_ymd_opt(2026, 10, d).unwrap();
+        assert_eq!(time_label(time, day(19)), "09:05");
+        assert_eq!(time_label(time, day(20)), "Oct 19 09:05");
     }
 
     #[test]
