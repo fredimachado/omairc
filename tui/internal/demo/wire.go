@@ -93,21 +93,21 @@ func demoLabelPrefix(label string) []byte {
 // emitted first, then the server-time tag, and only the present tags are joined
 // with a semicolon, mirroring privmsg.
 func privmsg(row SeedLine, target string) []byte {
-	var tags []byte
+	// The tags run account, msgid, reply, time.
+	var parts []string
 	if row.Account != "" {
-		tags = append(tags, "account="...)
-		tags = append(tags, row.Account...)
+		parts = append(parts, "account="+row.Account)
+	}
+	if row.MsgID != "" {
+		parts = append(parts, "msgid="+row.MsgID)
+	}
+	if row.ReplyTo != "" {
+		parts = append(parts, "+draft/reply="+row.ReplyTo)
 	}
 	if row.Day != "" && row.HHMM != "" {
-		if len(tags) > 0 {
-			tags = append(tags, ';')
-		}
-		tags = append(tags, "time="...)
-		tags = append(tags, row.Day...)
-		tags = append(tags, 'T')
-		tags = append(tags, row.HHMM...)
-		tags = append(tags, ":00.000Z"...)
+		parts = append(parts, "time="+row.Day+"T"+row.HHMM+":00.000Z")
 	}
+	tags := []byte(strings.Join(parts, ";"))
 
 	var out []byte
 	if len(tags) > 0 {
@@ -345,9 +345,12 @@ func transcriptBytes(network SeedNetwork) []byte {
 	var out []byte
 	for _, channel := range network.Channels {
 		for _, row := range channel.Lines {
-			if row.Kind == SeedJoin {
+			switch row.Kind {
+			case SeedJoin:
 				out = append(out, joinLine(row.Nick, channel.Name, row.Account)...)
-			} else {
+			case SeedReact:
+				out = append(out, line("@+draft/reply="+row.ReplyTo+";+draft/react="+row.Body+" :"+row.Nick+"!u@h TAGMSG "+channel.Name)...)
+			default:
 				out = append(out, privmsg(row, channel.Name)...)
 			}
 		}

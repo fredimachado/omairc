@@ -204,7 +204,7 @@ fn the_seeded_link_and_the_typing_hint_reach_the_session() {
     let hints = with_command(&omarchy_inbound, "TAGMSG");
     let typing = hints
         .iter()
-        .find(|message| nick_of(message) == "anna")
+        .find(|message| nick_of(message) == "anna" && tag_of(message, "+typing").is_some())
         .expect("anna's typing hint");
     assert_eq!(tag_of(typing, "+typing").as_deref(), Some("active"));
     assert_eq!(params_of(typing)[0], "#omarchy");

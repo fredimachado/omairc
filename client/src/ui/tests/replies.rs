@@ -142,3 +142,25 @@ fn clicking_a_reply_line_whose_parent_is_not_loaded_does_nothing(cx: &mut gpui::
     );
     assert!(ui.at_end());
 }
+
+#[gpui::test]
+fn the_demo_seed_shows_one_reply_and_its_reactions(cx: &mut gpui::TestAppContext) {
+    let mut ui = fixture::open(cx);
+    ui.select("#omarchy");
+    let question = row_of(&ui, "demo-question");
+    let answer = row_of(&ui, "demo-answer");
+    ui.shell.read_with(ui.cx, |shell, cx| {
+        let rows = shell.transcript.read(cx).rows();
+        assert_eq!(
+            rows[answer].reply_preview,
+            format!("{ARROW} anna: Morning! Has anyone tried the new minimal install flow yet?")
+        );
+        let chips: Vec<(&str, usize)> = rows[question]
+            .reactions
+            .iter()
+            .map(|chip| (chip.emoji.as_str(), chip.count))
+            .collect();
+        assert_eq!(chips, vec![("\u{1F44D}", 2)]);
+        assert_eq!(rows[answer].reactions[0].emoji, "\u{1F389}");
+    });
+}

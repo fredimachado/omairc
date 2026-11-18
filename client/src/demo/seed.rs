@@ -36,13 +36,16 @@ pub const MONITOR_LIMIT: usize = 100;
 /// the avatar store's network path. See `wire::presence_lines`.
 pub const DEMO_SELF_AVATAR_URL: &str = "https://omairc.app/omairc128.png";
 
-/// Whether a seed line is a PRIVMSG row or a JOIN row.
+/// Whether a seed line is a PRIVMSG row, a JOIN row or a reaction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SeedKind {
     /// A PRIVMSG row.
     Chat,
     /// A JOIN row; only `nick` and `account` are meaningful.
     Join,
+    /// A `+draft/react` TAGMSG: `nick` reacts with the emoji in `body` to the line
+    /// whose msgid is `reply_to`. It makes no transcript row.
+    React,
 }
 
 /// One transcript row (`SeedLine`).
@@ -55,6 +58,10 @@ pub struct SeedLine {
     pub hhmm: &'static str,
     /// The account tag, or empty.
     pub account: &'static str,
+    /// The `msgid` tag a later reply or reaction names, or empty.
+    pub msgid: &'static str,
+    /// The `+draft/reply` parent msgid, or empty.
+    pub reply_to: &'static str,
 }
 
 /// A nick paired with a PREFIX rank or a status value (`RankPair`).
@@ -127,6 +134,8 @@ const fn chat_on(
         day,
         hhmm,
         account: "",
+        msgid: "",
+        reply_to: "",
     }
 }
 
@@ -144,6 +153,50 @@ const fn chat_account(
         day,
         hhmm,
         account,
+        msgid: "",
+        reply_to: "",
+    }
+}
+
+/// A chat row a later reply or reaction can name.
+const fn chat_id(
+    nick: &'static str,
+    body: &'static str,
+    hhmm: &'static str,
+    msgid: &'static str,
+) -> SeedLine {
+    SeedLine {
+        msgid,
+        ..chat(nick, body, hhmm)
+    }
+}
+
+/// A chat row that replies to the line whose msgid is `reply_to`.
+const fn chat_reply(
+    nick: &'static str,
+    body: &'static str,
+    hhmm: &'static str,
+    msgid: &'static str,
+    reply_to: &'static str,
+) -> SeedLine {
+    SeedLine {
+        msgid,
+        reply_to,
+        ..chat(nick, body, hhmm)
+    }
+}
+
+/// `nick` reacts with `emoji` to the line whose msgid is `target`.
+const fn react(nick: &'static str, emoji: &'static str, target: &'static str) -> SeedLine {
+    SeedLine {
+        kind: SeedKind::React,
+        nick,
+        body: emoji,
+        day: "",
+        hhmm: "",
+        account: "",
+        msgid: "",
+        reply_to: target,
     }
 }
 
@@ -159,6 +212,8 @@ const fn join_account(nick: &'static str, account: &'static str) -> SeedLine {
         day: "",
         hhmm: "",
         account,
+        msgid: "",
+        reply_to: "",
     }
 }
 
@@ -166,16 +221,23 @@ const fn rank(nick: &'static str, value: &'static str) -> RankPair {
     RankPair { nick, value }
 }
 
+/// The msgids of the demo's first question and the answer that replies to it.
+const DEMO_QUESTION_ID: &str = "demo-question";
+const DEMO_ANSWER_ID: &str = "demo-answer";
+
 const OMARCHY_MAIN_LINES: &[SeedLine] = &[
-    chat(
+    chat_id(
         "anna",
         "Morning! Has anyone tried the new minimal install flow yet?",
         "09:41",
+        DEMO_QUESTION_ID,
     ),
-    chat(
+    chat_reply(
         "dax",
         "Yes. Fresh install on my Framework took about twelve minutes. The defaults feel really considered.",
         "09:43",
+        DEMO_ANSWER_ID,
+        DEMO_QUESTION_ID,
     ),
     chat(
         "mira",
@@ -232,6 +294,11 @@ const OMARCHY_MAIN_LINES: &[SeedLine] = &[
         "Color sample: \x0304paint-verify\x03 stays in the seed.",
         "10:05",
     ),
+    // Two people like the opening question and one likes its answer, so the demo
+    // shows the reply line under dax's line and the chips under anna's.
+    react("mira", "\u{1F44D}", DEMO_QUESTION_ID),
+    react("sol", "\u{1F44D}", DEMO_QUESTION_ID),
+    react("anna", "\u{1F389}", DEMO_ANSWER_ID),
 ];
 
 const OMARCHY_DESKTOP_LINES: &[SeedLine] = &[

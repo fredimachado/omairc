@@ -38,6 +38,15 @@ const (
 	SeedChat SeedKind = iota
 	// SeedJoin is a JOIN row; only Nick and Account are meaningful.
 	SeedJoin
+	// SeedReact is a +draft/react TAGMSG: Nick reacts with the emoji in Body to
+	// the line whose msgid is ReplyTo. It makes no transcript row.
+	SeedReact
+)
+
+// The msgids of the demo's first question and the answer that replies to it.
+const (
+	kDemoQuestionID = "demo-question"
+	kDemoAnswerID   = "demo-answer"
 )
 
 // SeedLine is one transcript row. It mirrors the SeedLine.
@@ -48,6 +57,10 @@ type SeedLine struct {
 	Day     string
 	HHMM    string
 	Account string
+	// MsgID is the msgid tag a later reply or reaction names, or empty.
+	MsgID string
+	// ReplyTo is the +draft/reply parent msgid, or empty.
+	ReplyTo string
 }
 
 // RankPair joins a nick to a PREFIX rank or a metadata value. The C++ uses the
@@ -114,6 +127,25 @@ func chatAccount(nick, body, hhmm, day, account string) SeedLine {
 	return row
 }
 
+// chatID is chat with a msgid a later reply or reaction can name.
+func chatID(nick, body, hhmm, msgid string) SeedLine {
+	row := chat(nick, body, hhmm)
+	row.MsgID = msgid
+	return row
+}
+
+// chatReply is chatID that replies to the line whose msgid is replyTo.
+func chatReply(nick, body, hhmm, msgid, replyTo string) SeedLine {
+	row := chatID(nick, body, hhmm, msgid)
+	row.ReplyTo = replyTo
+	return row
+}
+
+// react builds a reaction: nick reacts with emoji to the line whose msgid is target.
+func react(nick, emoji, target string) SeedLine {
+	return SeedLine{Kind: SeedReact, Nick: nick, Body: emoji, ReplyTo: target}
+}
+
 // join builds a Join seed line. account is optional.
 func join(nick string, account ...string) SeedLine {
 	row := SeedLine{Kind: SeedJoin, Nick: nick}
@@ -165,8 +197,8 @@ func omarchyWorld() SeedNetwork {
 			{"fred", "building Omairc"},
 		},
 		Lines: []SeedLine{
-			chat("anna", "Morning! Has anyone tried the new minimal install flow yet?", "09:41"),
-			chat("dax", "Yes. Fresh install on my Framework took about twelve minutes. The defaults feel really considered.", "09:43"),
+			chatID("anna", "Morning! Has anyone tried the new minimal install flow yet?", "09:41", kDemoQuestionID),
+			chatReply("dax", "Yes. Fresh install on my Framework took about twelve minutes. The defaults feel really considered.", "09:43", kDemoAnswerID, kDemoQuestionID),
 			chat("mira", "The way the theme carries across the terminal and native apps is my favorite detail.", "09:46"),
 			join("sol", "solarius"),
 			chat("sol", "Hey all. Just landed here from Arch. This feels surprisingly calm.", "09:52"),
@@ -184,6 +216,11 @@ func omarchyWorld() SeedNetwork {
 			// mIRC color 04 around paint-verify so /pref colors on/off proof can
 			// toggle an already-visible transcript body (LIST topics strip colors).
 			chat("dax", "Color sample: \x03"+"04paint-verify"+"\x03 stays in the seed.", "10:05"),
+			// Two people like the opening question and one likes its answer, so the
+			// demo shows the reply line under dax's line and the chips under anna's.
+			react("mira", "\U0001F44D", kDemoQuestionID),
+			react("sol", "\U0001F44D", kDemoQuestionID),
+			react("anna", "\U0001F389", kDemoAnswerID),
 		},
 	}
 

@@ -137,28 +137,60 @@ pub fn privmsg_line(
     hhmm: &str,
     account: &str,
 ) -> String {
-    let mut tags = String::new();
+    tagged_privmsg_line(nick, target, body, day, hhmm, account, "", "")
+}
+
+/// `privmsg_line` with the `msgid` tag and the `+draft/reply` parent when given. The tags
+/// run account, msgid, reply, time.
+#[allow(clippy::too_many_arguments)]
+pub fn tagged_privmsg_line(
+    nick: &str,
+    target: &str,
+    body: &str,
+    day: &str,
+    hhmm: &str,
+    account: &str,
+    msgid: &str,
+    reply_to: &str,
+) -> String {
+    let mut tags: Vec<String> = Vec::new();
     if !account.is_empty() {
-        tags.push_str("account=");
-        tags.push_str(account);
+        tags.push(format!("account={account}"));
+    }
+    if !msgid.is_empty() {
+        tags.push(format!("msgid={msgid}"));
+    }
+    if !reply_to.is_empty() {
+        tags.push(format!("+draft/reply={reply_to}"));
     }
     if !day.is_empty() && !hhmm.is_empty() {
-        if !tags.is_empty() {
-            tags.push(';');
-        }
-        tags.push_str(&format!("time={day}T{hhmm}:00.000Z"));
+        tags.push(format!("time={day}T{hhmm}:00.000Z"));
     }
     let prefix = if tags.is_empty() {
         String::new()
     } else {
-        format!("@{tags} ")
+        format!("@{} ", tags.join(";"))
     };
     format!("{prefix}:{nick}!u@h PRIVMSG {target} :{body}")
 }
 
+/// One `+draft/react` TAGMSG: `nick` reacts with `emoji` to the line `target_msgid`.
+pub fn react_line(nick: &str, target: &str, emoji: &str, target_msgid: &str) -> String {
+    format!("@+draft/reply={target_msgid};+draft/react={emoji} :{nick}!u@h TAGMSG {target}")
+}
+
 /// One seed chat row, addressed to `target`.
 fn chat_line(row: &SeedLine, target: &str) -> String {
-    privmsg_line(row.nick, target, row.body, row.day, row.hhmm, row.account)
+    tagged_privmsg_line(
+        row.nick,
+        target,
+        row.body,
+        row.day,
+        row.hhmm,
+        row.account,
+        row.msgid,
+        row.reply_to,
+    )
 }
 
 /// A JOIN. An account carrier uses the extended-join trailing form
@@ -399,6 +431,9 @@ pub fn transcript_lines(network: &SeedNetwork) -> Vec<String> {
             match row.kind {
                 SeedKind::Join => out.push(join_line(row.nick, channel.name, row.account)),
                 SeedKind::Chat => out.push(chat_line(row, channel.name)),
+                SeedKind::React => {
+                    out.push(react_line(row.nick, channel.name, row.body, row.reply_to))
+                }
             }
         }
     }

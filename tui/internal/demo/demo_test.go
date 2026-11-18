@@ -667,3 +667,29 @@ func TestMultilineSeedLandsAsOneRowWithAMention(t *testing.T) {
 		t.Fatalf("rows with the multiline body = %d, want 1, bodies = %q", count, bodies)
 	}
 }
+
+func TestSeedsOneReplyAndItsReactions(t *testing.T) {
+	text := string(transcriptBytes(omarchyWorld()))
+	for _, want := range []string{
+		"@msgid=demo-question;time=",
+		"@msgid=demo-answer;+draft/reply=demo-question;time=",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("transcript is missing a line starting %q", want)
+		}
+	}
+	var reactions []string
+	for _, line := range strings.Split(text, "\r\n") {
+		if strings.Contains(line, " TAGMSG ") {
+			reactions = append(reactions, line)
+		}
+	}
+	want := []string{
+		"@+draft/reply=demo-question;+draft/react=\U0001F44D :mira!u@h TAGMSG #omarchy",
+		"@+draft/reply=demo-question;+draft/react=\U0001F44D :sol!u@h TAGMSG #omarchy",
+		"@+draft/reply=demo-answer;+draft/react=\U0001F389 :anna!u@h TAGMSG #omarchy",
+	}
+	if strings.Join(reactions, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("reactions = %q, want %q", reactions, want)
+	}
+}

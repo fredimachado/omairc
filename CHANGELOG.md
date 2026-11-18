@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   emptied. Status drafts, find queries, Up/Down history lines, and anything that
   looks like a password command (`/msg NickServ IDENTIFY ...`, `/quote PASS ...`)
   are never written. Only `/me ` lines persist among slash commands.
+- Replies (`+draft/reply`) and emoji reactions (`+draft/react`, `+draft/unreact`)
+  from other IRCv3 clients now show in both clients: a muted `↪ author: text`
+  line above a reply that scrolls to the parent when it is loaded (`↪ reply`
+  when it is not), and `emoji count` chips under reacted lines, with the nicks
+  in the desktop tooltip. Reply context survives restarts through the
+  conversation log; reactions are in memory only. Reactions never open a
+  conversation, mark unread or notify. Sending is not included.
 - The terminal client persists learned STS policies in the shared `sts` INI
   beside `omairc.conf` (same file and layout as the desktop client), so a
   host upgrade to TLS survives a TUI restart. Expired and cleared policies
