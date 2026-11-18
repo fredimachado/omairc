@@ -743,3 +743,67 @@ func framesContainBytes(frames [][]byte, needle string) bool {
 	}
 	return false
 }
+
+func TestGetPhaseTransitions(t *testing.T) {
+	state := newReadMarkerState()
+	alice := irc.ConversationKey{NetworkID: "net", NormalizedTarget: "alice"}
+	bob := irc.ConversationKey{NetworkID: "net", NormalizedTarget: "bob"}
+	other := irc.ConversationKey{NetworkID: "other", NormalizedTarget: "alice"}
+	if _, ok := state.phase(alice).(getNotSent); !ok {
+		t.Fatalf("a fresh conversation must be NotSent, got %T", state.phase(alice))
+	}
+	if state.releaseGet(alice) {
+		t.Fatal("a GET that was never sent cannot be released")
+	}
+	if _, ok := state.phase(alice).(getNotSent); !ok {
+		t.Fatal("releasing a NotSent GET must not invent a phase")
+	}
+	state.noteGetSent(alice)
+	state.noteGetSent(bob)
+	state.noteGetSent(other)
+	if _, ok := state.phase(alice).(getAwaiting); !ok {
+		t.Fatalf("noteGetSent must await, got %T", state.phase(alice))
+	}
+	if !state.releaseGet(alice) {
+		t.Fatal("awaiting GET must release")
+	}
+	if _, ok := state.phase(alice).(getReleased); !ok {
+		t.Fatalf("a replied GET must stay Released, got %T", state.phase(alice))
+	}
+	if state.releaseGet(alice) {
+		t.Fatal("a Released GET is not awaiting")
+	}
+	if !state.releaseNetwork("net") {
+		t.Fatal("targetless FAIL must release bob")
+	}
+	if _, ok := state.phase(bob).(getReleased); !ok {
+		t.Fatalf("network release must keep Released (no re-GET), got %T", state.phase(bob))
+	}
+	if _, ok := state.phase(other).(getAwaiting); !ok {
+		t.Fatal("another network must stay awaiting")
+	}
+	state.forgetConversation(alice)
+	if _, ok := state.phase(alice).(getNotSent); !ok {
+		t.Fatal("forgetting a conversation returns it to NotSent")
+	}
+	state.forgetNetwork("other")
+	if _, ok := state.phase(other).(getNotSent); !ok {
+		t.Fatal("forgetting a network returns its conversations to NotSent")
+	}
+}
+
+func TestReadMarkerViewportOpen(t *testing.T) {
+	for _, test := range []struct {
+		viewport readMarkerViewport
+		want     bool
+	}{
+		{readMarkerViewport{Focused: true, FollowEnd: true}, true},
+		{readMarkerViewport{Focused: true}, false},
+		{readMarkerViewport{FollowEnd: true}, false},
+		{readMarkerViewport{}, false},
+	} {
+		if got := test.viewport.open(); got != test.want {
+			t.Fatalf("%+v open = %v, want %v", test.viewport, got, test.want)
+		}
+	}
+}

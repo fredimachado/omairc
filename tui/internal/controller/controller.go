@@ -133,8 +133,7 @@ type Controller struct {
 	// OnCapabilitiesChanged fires when the negotiated capability set changes or
 	// the selection moves to a network with a different set.
 	OnCapabilitiesChanged func()
-	transcriptFocused     bool
-	transcriptFollowEnd   bool
+	viewport              readMarkerViewport
 	readMarkers           readMarkerState
 
 	// OnViewChanged fires whenever Publish dirtied a view surface, so the shell
@@ -165,8 +164,7 @@ func New() *Controller {
 	// (`client/src/irc/reducer.rs`). NewEventReducer leaves the Go field at
 	// its zero value, so the controller restores the Qt default here.
 	c.reducer.SetWindowActive(true)
-	c.transcriptFocused = true
-	c.transcriptFollowEnd = true
+	c.viewport = readMarkerViewport{Focused: true, FollowEnd: true}
 	c.readMarkers = newReadMarkerState()
 	c.openDirectsMotdSeen = make(map[string]bool)
 	c.openDirects = storage.NewOpenDirectStore()
@@ -1049,7 +1047,7 @@ func (c *Controller) Apply(event irc.Event) {
 	if welcomeNetwork != "" {
 		c.requestReadMarkerGetForSelectedDirect(welcomeNetwork)
 	}
-	c.syncReadMarkerForSelection()
+	c.publishReadMarker()
 
 	if arrival, ok := c.reducer.TakeInboxArrival(); ok {
 		c.appendInbox(irc.InboxItem{
@@ -1873,7 +1871,7 @@ func (c *Controller) MarkAllRead() {
 // IrcController::setWindowActive (`client/src/controller/selection.rs`).
 func (c *Controller) SetWindowActive(active bool) {
 	c.reducer.SetWindowActive(active)
-	c.transcriptFocused = active
+	c.viewport.Focused = active
 	if !active || c.selected == nil {
 		return
 	}
