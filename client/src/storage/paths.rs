@@ -30,6 +30,8 @@ pub const LOG_FILE: &str = "omairc.log";
 pub const WINDOW_FILE: &str = "window.ini";
 /// Saved transcript scroll places per network (desktop and TUI).
 pub const SCROLL_PLACES_FILE: &str = "scrollplaces.ini";
+/// Unsent composer text per conversation (desktop and TUI share this file).
+pub const DRAFTS_FILE: &str = "drafts.json";
 /// Moves the config and state roots under one directory.
 pub const HOME_OVERRIDE_VAR: &str = "OMAIRC_DEV_HOME";
 /// Overrides the on-disk transcript log root (`OMAIRC_TRANSCRIPT_ROOT`).
@@ -179,6 +181,11 @@ pub fn scroll_places_path_for(env: &Env, platform: Platform) -> PathBuf {
     state_dir_for(env, platform).join(SCROLL_PLACES_FILE)
 }
 
+/// The composer drafts file (`<state>/<APP_FOLDER>/drafts.json`).
+pub fn drafts_path_for(env: &Env, platform: Platform) -> PathBuf {
+    state_dir_for(env, platform).join(DRAFTS_FILE)
+}
+
 /// The conversation transcript folder (`<state>/logs`), or the override when set.
 pub fn transcript_root_for(env: &Env, platform: Platform) -> PathBuf {
     if let Some(root) = &env.transcript_root {
@@ -221,6 +228,10 @@ pub fn window_path() -> PathBuf {
 
 pub fn scroll_places_path() -> PathBuf {
     scroll_places_path_for(&Env::from_process(), Platform::current())
+}
+
+pub fn drafts_path() -> PathBuf {
+    drafts_path_for(&Env::from_process(), Platform::current())
 }
 
 fn config_dir_for_folder(env: &Env, platform: Platform, folder: &str) -> Option<PathBuf> {
@@ -308,6 +319,14 @@ mod tests {
                 .join(APP_FOLDER)
                 .join(SCROLL_PLACES_FILE)
         );
+        assert_eq!(
+            drafts_path_for(&env, Platform::Linux),
+            home()
+                .join(".local")
+                .join("state")
+                .join(APP_FOLDER)
+                .join(DRAFTS_FILE)
+        );
     }
 
     #[test]
@@ -371,6 +390,13 @@ mod tests {
                 .join(APP_FOLDER)
                 .join(SCROLL_PLACES_FILE)
         );
+        assert_eq!(
+            drafts_path_for(&env, Platform::Windows),
+            PathBuf::from("lad")
+                .join("State")
+                .join(APP_FOLDER)
+                .join(DRAFTS_FILE)
+        );
     }
 
     #[test]
@@ -433,6 +459,10 @@ mod tests {
                 PathBuf::from("scratch")
                     .join("state")
                     .join(SCROLL_PLACES_FILE)
+            );
+            assert_eq!(
+                drafts_path_for(&env, platform),
+                PathBuf::from("scratch").join("state").join(DRAFTS_FILE)
             );
         }
     }

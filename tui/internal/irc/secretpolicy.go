@@ -1,6 +1,9 @@
 package irc
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+)
 
 // MaskedCommand is a redacted wire command. It mirrors IrcMaskedCommand:
 // Verb is the uppercased command and Parameters are the surviving or
@@ -673,4 +676,33 @@ func AllowsTranscript(text, channelTypes string) bool {
 	probe := Message{Command: "PRIVMSG", Params: []string{"NickServ", text}}
 	_, ok := redactMessage(probe, channelTypes)
 	return !ok
+}
+
+// DraftMayBePersisted reports whether an unsent composer draft may be written
+// to disk. It fails closed: true only when the policy positively clears the
+// text. A draft that starts with "/" is a command this layer cannot classify,
+// so it is dropped, except "/me " (any case, then a space), whose remainder is
+// ordinary message text. The text, and the "/me" remainder, must pass
+// AllowsTranscript and must draw no mask from RedactPreviewLine (the near-miss
+// and leading-verb masks), so prose that starts with a secret verb is dropped
+// too. Do not add spellings here: when in doubt the answer is false.
+// Mirrors allows_draft_persistence in client/src/irc/secretpolicy.rs.
+func DraftMayBePersisted(text, channelTypes string) bool {
+	trimmed := strings.TrimLeftFunc(text, unicode.IsSpace)
+	body := trimmed
+	if strings.HasPrefix(trimmed, "/") {
+		if len(trimmed) < 4 || !strings.EqualFold(trimmed[:4], "/me ") {
+			return false
+		}
+		body = trimmed[4:]
+	}
+	for _, candidate := range []string{text, body} {
+		if !AllowsTranscript(candidate, channelTypes) {
+			return false
+		}
+		if _, masked := redactPreviewLine(candidate, channelTypes); masked {
+			return false
+		}
+	}
+	return true
 }

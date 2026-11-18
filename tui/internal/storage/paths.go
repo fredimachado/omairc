@@ -88,3 +88,15 @@ func ScrollPlacesPath() string {
 	}
 	return scrollPlacesPathDefault()
 }
+
+// DraftsPath is the shared composer-drafts file (DraftsFile, mirroring
+// client/src/storage/paths.rs DRAFTS_FILE). It sits beside ScrollPlacesPath, in
+// the same state directory on every platform, and returns "" when
+// ScrollPlacesPath does.
+func DraftsPath() string {
+	places := ScrollPlacesPath()
+	if places == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(places), DraftsFile)
+}
