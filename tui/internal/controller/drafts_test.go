@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fredimachado/omairc/tui/internal/irc"
 	"github.com/fredimachado/omairc/tui/internal/session"
 	"github.com/fredimachado/omairc/tui/internal/storage"
 )
@@ -180,5 +181,36 @@ func TestSetEphemeralFalseLoadsTheSharedFile(t *testing.T) {
 	c.SetEphemeral(true)
 	if _, ok := c.DraftFor("libera", "#a"); ok {
 		t.Fatal("going ephemeral clears the drafts")
+	}
+}
+
+func TestAnotherClientsDraftSurvivesAnEmptyComposerHere(t *testing.T) {
+	path := filepath.Join(t.TempDir(), storage.DraftsFile)
+	c := draftController(t, path, nil)
+	// Another client writes #a after this process loaded its cache.
+	other := storage.NewDraftStoreAt(path)
+	other.Remember("omarchy", "#a", "theirs", irc.NewCaseMapping(irc.KindRfc1459), "#&", time.Now())
+	c.RememberDraft("omarchy", "#a", "")
+	if !strings.Contains(draftsOnDisk(t, path), "theirs") {
+		t.Fatalf("file = %s", draftsOnDisk(t, path))
+	}
+	// A write of our own for another key does not adopt their draft as ours either.
+	c.RememberDraft("omarchy", "#b", "ours")
+	c.RememberDraft("omarchy", "#a", "")
+	if !strings.Contains(draftsOnDisk(t, path), "theirs") {
+		t.Fatalf("file after our own write = %s", draftsOnDisk(t, path))
+	}
+}
+
+func TestOnlyAChangeAgainstThisProcesssOwnViewReachesTheFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), storage.DraftsFile)
+	c := draftController(t, path, nil)
+	c.RememberDraft("omarchy", "#a", "mine")
+	if !strings.Contains(draftsOnDisk(t, path), "mine") {
+		t.Fatalf("file = %s", draftsOnDisk(t, path))
+	}
+	c.RememberDraft("omarchy", "#a", "")
+	if got := draftsOnDisk(t, path); got != draftsEmptyFile {
+		t.Fatalf("a draft we stored is ours to delete, file = %q", got)
 	}
 }

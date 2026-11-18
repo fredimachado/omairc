@@ -8,12 +8,13 @@
 
 use crate::irc::casemapping::IrcCaseMapping;
 use crate::irc::secretpolicy::allows_draft_persistence;
-use crate::storage::drafts::{DraftFile, DraftMap};
+use crate::storage::drafts::{DraftFile, DraftMap, StoredDraft, MAX_DRAFT_BYTES};
+use crate::storage::settings::Status;
 
 use super::controller::Controller;
 
-/// The drafts of every network, loaded when the store is built and refreshed from the file
-/// after each write, so another client's drafts are seen too.
+/// The drafts this process loaded or stored, by network. Only the key a write touches is
+/// updated, so the cache is this process's own view of the file.
 #[derive(Debug)]
 pub struct DraftStore {
     file: DraftFile,
@@ -49,10 +50,43 @@ impl DraftStore {
         if network_id.is_empty() || target.is_empty() {
             return;
         }
-        let kept = allows_draft_persistence(text, channel_types).then_some(text);
+        let kept = allows_draft_persistence(text, channel_types)
+            .then_some(text)
+            .filter(|t| !t.trim().is_empty() && t.len() <= MAX_DRAFT_BYTES);
         let normalized = mapping.normalize(target);
-        if self.file.store(network_id, &normalized, kept, now_ms) == crate::storage::settings::Status::Written {
-            self.cache = self.file.load(now_ms);
+        // Only a change against this process's own view reaches the file, so a draft another
+        // client wrote after this cache was loaded is not deleted by an untouched composer.
+        let have = self
+            .cache
+            .get(network_id)
+            .and_then(|targets| targets.get(&normalized))
+            .map(|draft| draft.text.as_str());
+        if have == kept {
+            return;
+        }
+        if self.file.store(network_id, &normalized, kept, now_ms) != Status::Written
+            || self.file.is_ephemeral()
+        {
+            return;
+        }
+        match kept {
+            Some(text) => {
+                self.cache.entry(network_id.to_owned()).or_default().insert(
+                    normalized,
+                    StoredDraft {
+                        text: text.to_owned(),
+                        ms: now_ms,
+                    },
+                );
+            }
+            None => {
+                if let Some(targets) = self.cache.get_mut(network_id) {
+                    targets.remove(&normalized);
+                    if targets.is_empty() {
+                        self.cache.remove(network_id);
+                    }
+                }
+            }
         }
     }
 }

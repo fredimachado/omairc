@@ -139,3 +139,29 @@ fn an_ephemeral_controller_keeps_nothing() {
     fixture.controller.remember_draft(OMARCHY, "#a", "half typed");
     assert_eq!(fixture.controller.draft_for(OMARCHY, "#a"), None);
 }
+
+#[test]
+fn another_clients_draft_survives_an_empty_composer_here() {
+    let dir = TempDir::new("ctrl-drafts-theirs");
+    let (mut fixture, path) = on_disk(&dir);
+    // Another client writes #a after this process loaded its cache.
+    let other = DraftFile::new(Backing::Disk(path.clone()));
+    other.store(OMARCHY, "#a", Some("theirs"), 1_789_214_400_000);
+    fixture.controller.remember_draft(OMARCHY, "#a", "");
+    assert!(on_disk_text(&path).contains("theirs"), "{}", on_disk_text(&path));
+
+    // A write of our own for another key does not adopt their draft as ours either.
+    fixture.controller.remember_draft(OMARCHY, "#b", "ours");
+    fixture.controller.remember_draft(OMARCHY, "#a", "");
+    assert!(on_disk_text(&path).contains("theirs"), "{}", on_disk_text(&path));
+}
+
+#[test]
+fn only_a_change_against_this_processs_own_view_reaches_the_file() {
+    let dir = TempDir::new("ctrl-drafts-own-view");
+    let (mut fixture, path) = on_disk(&dir);
+    fixture.controller.remember_draft(OMARCHY, "#a", "mine");
+    assert!(on_disk_text(&path).contains("mine"));
+    fixture.controller.remember_draft(OMARCHY, "#a", "");
+    assert_eq!(on_disk_text(&path), EMPTY, "a draft we stored is ours to delete");
+}

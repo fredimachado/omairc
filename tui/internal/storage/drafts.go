@@ -154,31 +154,52 @@ func (s *DraftStore) Remember(networkID, target, text string, mapping irc.CaseMa
 	cur, hasCur := m[networkID][normalized]
 	switch {
 	case wanted == "" && !hasCur:
-		s.cache = m
-		return
 	case wanted != "" && hasCur && cur.Text == wanted:
-		s.cache = m
-		return
 	case wanted == "":
 		delete(m[networkID], normalized)
 		if len(m[networkID]) == 0 {
 			delete(m, networkID)
+		}
+		if !s.writeDrafts(path, m) {
+			return
 		}
 	default:
 		if m[networkID] == nil {
 			m[networkID] = map[string]StoredDraft{}
 		}
 		m[networkID][normalized] = StoredDraft{Text: wanted, Ms: nowMs}
+		if !s.writeDrafts(path, m) {
+			return
+		}
 	}
+	s.syncKey(m, networkID, normalized)
+}
+
+// writeDrafts caps and writes m, and reports whether the file now holds it.
+func (s *DraftStore) writeDrafts(path string, m draftMap) bool {
 	capDrafts(m)
 	data := encodeDrafts(m)
 	if data == nil {
+		return false
+	}
+	return writeSettingsAtomic(path, data, false) == nil
+}
+
+// syncKey makes the cache hold, for one key, what the file holds now. Every other
+// key stays this process's own view, so a draft another client wrote since the cache
+// was loaded is not ours to delete.
+func (s *DraftStore) syncKey(m draftMap, networkID, normalized string) {
+	if d, ok := m[networkID][normalized]; ok {
+		if s.cache[networkID] == nil {
+			s.cache[networkID] = map[string]StoredDraft{}
+		}
+		s.cache[networkID][normalized] = d
 		return
 	}
-	if err := writeSettingsAtomic(path, data, false); err != nil {
-		return
+	delete(s.cache[networkID], normalized)
+	if len(s.cache[networkID]) == 0 {
+		delete(s.cache, networkID)
 	}
-	s.cache = m
 }
 
 type draftsState int
