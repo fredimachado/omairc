@@ -5,7 +5,7 @@ use gpui::{px, Context, ListOffset, Pixels, Size};
 
 use super::{ConversationLines, TranscriptScrolled, TranscriptView};
 use crate::model::reader_position::ReaderPosition;
-use crate::model::scroll_place::{has_line, resume, Resume, SavedPlace};
+use crate::model::scroll_place::{has_line, line_row, resume, Resume, SavedPlace};
 use crate::model::unread;
 
 /// How long the width must stay still after a change before the burst is over. A drag changes the
@@ -179,6 +179,18 @@ impl TranscriptView {
         self.reset_list();
         self.row_layouts.borrow_mut().clear();
         self.reland(&place, cx);
+        // Older lines prepended, or old ones trimmed, move the reader's line. The catch-up row
+        // below it moves by as much.
+        if let (SavedPlace::Line { row: before, .. }, Some(after)) =
+            (&place, line_row(&place, self.model.rows()))
+        {
+            let position = self
+                .model
+                .position()
+                .clone()
+                .after_rows_moved(after as isize - *before as isize, new_rows);
+            self.model.set_position(position);
+        }
         cx.notify();
     }
 
