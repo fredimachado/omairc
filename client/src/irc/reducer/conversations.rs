@@ -509,6 +509,7 @@ impl EventReducer {
             color: stored.metadata(COLOR_KEY).to_owned(),
             account: self.facts.display_account(network, &member.display_nick),
             realname: presence::displayed_realname(&stored.realname, &member.display_nick).to_owned(),
+            userhost: stored.userhost.clone(),
             labels: self.facts.peer_fact_labels(network, &member.display_nick),
         })
     }

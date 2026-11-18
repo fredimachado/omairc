@@ -163,6 +163,18 @@ fn an_invite_names_the_nick_and_the_channel() {
 }
 
 #[test]
+fn invite_to_other_is_not_kept_for_status() {
+    // Only an invite to us reaches Status, the inbox and the click-to-join link.
+    assert!(keeps_incoming(&msg(":rio!r@host INVITE me #debian"), "me", "#&"));
+    assert!(keeps_incoming(&msg(":rio!r@host INVITE ME #debian"), "me", "#&"));
+    assert!(!keeps_incoming(&msg(":rio!r@host INVITE bob #debian"), "me", "#&"));
+    assert!(
+        keeps_incoming(&msg("INVITE #debian"), "me", "#&"),
+        "a malformed short line keeps the old behavior"
+    );
+}
+
+#[test]
 fn a_standard_reply_shows_its_description_on_status() {
     assert_eq!(
         texts(":srv FAIL AUTH BAD_ACCOUNT :Account is not set up"),

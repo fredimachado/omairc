@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn numeric_and_command_table_yields_the_expected_first_kind() {
-    let cases: [(&str, &str, EventKind); 22] = [
+    let cases: [(&str, &str, EventKind); 23] = [
         (
             "self away",
             ":server 306 omairc :marked away",
@@ -79,6 +79,11 @@ fn numeric_and_command_table_yields_the_expected_first_kind() {
             ":server 311 omairc Alice user host * :Alice Example",
             EventKind::Away,
         ),
+        (
+            "setname",
+            ":alice!u@h SETNAME :Alice Lee",
+            EventKind::NickFacts,
+        ),
     ];
     for (name, line, want) in cases {
         let events = translate_line(line);
@@ -92,7 +97,53 @@ fn numeric_and_command_table_yields_the_expected_first_kind() {
 
 #[test]
 fn lines_the_translator_does_not_model_produce_nothing() {
-    // CHGHOST is a no-op, and an unknown numeric has no handler.
-    assert!(translate_line(":alice!u@h CHGHOST new host").is_empty());
+    // An unknown numeric has no handler.
     assert!(translate_line(":server 999 omairc :nope").is_empty());
+}
+
+#[test]
+fn invite_to_self_emits_no_event() {
+    // The invite to us stays a Status and inbox matter, not a transcript event.
+    assert!(translate_line(":op!u@h INVITE omairc #room").is_empty());
+    assert!(translate_line(":op!u@h INVITE omairc :#room").is_empty());
+}
+
+#[test]
+fn invite_to_other_emits_invite_event() {
+    match translate_line(":op!u@h INVITE bob #room").as_slice() {
+        [Event::Invite(invite)] => {
+            assert_eq!(invite.network_id, NETWORK_A);
+            assert_eq!(invite.channel, "#room");
+            assert_eq!(invite.inviter, "op");
+            assert_eq!(invite.target, "bob");
+        }
+        other => panic!("want one InviteEvent, got {other:?}"),
+    }
+}
+
+#[test]
+fn invite_to_other_nick_case_mapped_self_is_self() {
+    let translate_as = |nick: &str, line: &str| {
+        translate(
+            NETWORK_A,
+            nick,
+            &features(),
+            &must_parse(line),
+            reducer_timestamp(),
+            None,
+        )
+    };
+    assert!(translate_as("me", ":op!u@h INVITE ME #room").is_empty(), "ASCII case");
+    assert!(
+        translate_as("a[b", ":op!u@h INVITE A{B #room").is_empty(),
+        "rfc1459 brackets fold to braces"
+    );
+    assert_eq!(translate_as("me", ":op!u@h INVITE mee #room").len(), 1);
+}
+
+#[test]
+fn invite_without_channel_emits_nothing() {
+    assert!(translate_line(":op!u@h INVITE bob").is_empty());
+    assert!(translate_line(":op!u@h INVITE bob notachannel").is_empty());
+    assert!(translate_line("INVITE bob #room").is_empty(), "no inviter");
 }

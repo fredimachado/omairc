@@ -448,3 +448,158 @@ fn nick_change_keeps_services_account() {
     assert_eq!(last_body(&ascii, "#room"), "a[b (a{b) joined", "ascii join body");
     assert_eq!(ascii.display_account(NETWORK_A, "a[b"), "a{b", "ascii display account");
 }
+
+fn room_with_alice(reducer: &mut EventReducer) -> ConversationKey {
+    welcome_omairc(reducer, NETWORK_A);
+    wire(reducer, ":omairc!me@h JOIN #room");
+    wire(reducer, ":Alice!a@h JOIN #room");
+    reducer.conversation_key(NETWORK_A, "#room")
+}
+
+#[test]
+fn setname_from_member_updates_tooltip_realname() {
+    let mut reducer = EventReducer::new();
+    let room = room_with_alice(&mut reducer);
+    wire(&mut reducer, ":Alice!a@h SETNAME :Alice Lee");
+    assert_eq!(reducer.member_view(&room, "alice").expect("alice").realname, "Alice Lee");
+    wire(&mut reducer, ":Alice!a@h SETNAME :Alice Q. Lee");
+    assert_eq!(reducer.member_view(&room, "alice").expect("alice").realname, "Alice Q. Lee");
+}
+
+#[test]
+fn setname_from_self_updates_own_realname() {
+    let mut reducer = EventReducer::new();
+    let room = room_with_alice(&mut reducer);
+    wire(&mut reducer, ":omairc!me@h SETNAME :Omairc User");
+    assert_eq!(reducer.member_view(&room, "omairc").expect("self").realname, "Omairc User");
+    assert_eq!(reducer.meaningful_realname(NETWORK_A, "omairc"), "Omairc User");
+}
+
+#[test]
+fn setname_empty_realname_clears_it() {
+    let mut reducer = EventReducer::new();
+    let room = room_with_alice(&mut reducer);
+    wire(&mut reducer, ":Alice!a@h SETNAME :Alice Lee");
+    wire(&mut reducer, ":Alice!a@h SETNAME :");
+    assert_eq!(reducer.member_view(&room, "alice").expect("alice").realname, "");
+    assert_eq!(reducer.meaningful_realname(NETWORK_A, "Alice"), "");
+}
+
+#[test]
+fn setname_appends_no_transcript_line() {
+    let mut reducer = EventReducer::new();
+    let room = room_with_alice(&mut reducer);
+    let before = bodies(state_of(&reducer, &room));
+    wire(&mut reducer, ":Alice!a@h SETNAME :Alice Lee");
+    wire(&mut reducer, ":omairc!me@h SETNAME :Omairc User");
+    assert_eq!(bodies(state_of(&reducer, &room)), before);
+}
+
+#[test]
+fn setname_for_an_unknown_nick_invents_no_conversation() {
+    let mut reducer = EventReducer::new();
+    welcome_omairc(&mut reducer, NETWORK_A);
+    wire(&mut reducer, ":Stranger!s@h SETNAME :Some One");
+    assert!(
+        reducer.find(&reducer.conversation_key(NETWORK_A, "Stranger")).is_none(),
+        "a SETNAME is metadata and never opens a direct message"
+    );
+}
+
+#[test]
+fn setname_updates_direct_message_header_realname() {
+    let mut reducer = EventReducer::new();
+    welcome_omairc(&mut reducer, NETWORK_A);
+    wire(&mut reducer, ":Alice!a@h PRIVMSG omairc :hi");
+    let direct = reducer.conversation_key(NETWORK_A, "Alice");
+    let before = bodies(state_of(&reducer, &direct));
+    assert_eq!(reducer.meaningful_realname(NETWORK_A, "Alice"), "");
+    let notify = {
+        let event = Event::NickFacts(crate::irc::event::NickFactsEvent {
+            network_id: NETWORK_A.to_owned(),
+            nick: "Alice".to_owned(),
+            realname: Some("Alice Lee".to_owned()),
+            server_operator: None,
+            userhost: None,
+        });
+        let notify = crate::irc::reducer::classify_view_notify(&event, &reducer);
+        fold(&mut reducer, event);
+        notify
+    };
+    assert_eq!(reducer.meaningful_realname(NETWORK_A, "Alice"), "Alice Lee", "the header's second line");
+    assert!(notify.contains(&ViewNotify::MemberRow("alice".to_owned())));
+    assert_eq!(bodies(state_of(&reducer, &direct)), before, "no transcript line");
+}
+
+fn names_wire(reducer: &mut EventReducer, tokens: &str) {
+    wire(reducer, &format!(":server 353 omairc = #room :{tokens}"));
+    wire(reducer, ":server 366 omairc #room :End of /NAMES list.");
+}
+
+#[test]
+fn names_userhost_reaches_member_view() {
+    let mut reducer = EventReducer::new();
+    welcome_omairc(&mut reducer, NETWORK_A);
+    wire(&mut reducer, ":omairc!me@h JOIN #room");
+    names_wire(&mut reducer, "@+alice!a@h.example bob omairc!me@h");
+    let room = reducer.conversation_key(NETWORK_A, "#room");
+    let alice = reducer.member_view(&room, "alice").expect("alice keeps her own nick");
+    assert_eq!(alice.nick, "alice");
+    assert_eq!(alice.label, "@alice");
+    assert_eq!(alice.userhost, "a@h.example");
+    assert_eq!(reducer.member_view(&room, "bob").expect("bob").userhost, "");
+    assert_eq!(reducer.member_view(&room, "omairc").expect("self").userhost, "me@h");
+    assert!(reducer.member_view(&room, "alice!a@h.example").is_none());
+}
+
+#[test]
+fn join_sets_userhost() {
+    let mut reducer = EventReducer::new();
+    let room = room_with_alice(&mut reducer);
+    assert_eq!(reducer.member_view(&room, "alice").expect("alice").userhost, "a@h");
+}
+
+#[test]
+fn chghost_updates_member_userhost() {
+    let mut reducer = EventReducer::new();
+    let room = room_with_alice(&mut reducer);
+    wire(&mut reducer, ":Alice!a@h CHGHOST alicia cloak.example");
+    assert_eq!(reducer.member_view(&room, "alice").expect("alice").userhost, "alicia@cloak.example");
+}
+
+#[test]
+fn who_352_sets_userhost() {
+    let mut reducer = EventReducer::new();
+    let room = room_with_alice(&mut reducer);
+    wire(&mut reducer, ":server 352 omairc #room u2 host2 server Alice H :0 Alice");
+    assert_eq!(reducer.member_view(&room, "alice").expect("alice").userhost, "u2@host2");
+}
+
+#[test]
+fn userhost_survives_nick_change() {
+    let mut reducer = EventReducer::new();
+    let room = room_with_alice(&mut reducer);
+    wire(&mut reducer, ":Alice!a@h NICK Alicia");
+    assert_eq!(reducer.member_view(&room, "alicia").expect("alicia").userhost, "a@h");
+    assert_eq!(reducer.nick_presence(NETWORK_A, "Alice").userhost, "");
+}
+
+#[test]
+fn userhost_forgotten_on_quit() {
+    let mut reducer = EventReducer::new();
+    room_with_alice(&mut reducer);
+    wire(&mut reducer, ":Alice!a@h QUIT :gone");
+    assert_eq!(reducer.nick_presence(NETWORK_A, "Alice").userhost, "");
+}
+
+#[test]
+fn userhost_fact_leaves_the_realname_alone_and_adds_no_transcript_line() {
+    let mut reducer = EventReducer::new();
+    let room = room_with_alice(&mut reducer);
+    wire(&mut reducer, ":Alice!a@h SETNAME :Alice Lee");
+    let before = bodies(state_of(&reducer, &room));
+    wire(&mut reducer, ":Alice!a@h CHGHOST x y");
+    let view = reducer.member_view(&room, "alice").expect("alice");
+    assert_eq!((view.realname.as_str(), view.userhost.as_str()), ("Alice Lee", "x@y"));
+    assert_eq!(bodies(state_of(&reducer, &room)), before);
+}

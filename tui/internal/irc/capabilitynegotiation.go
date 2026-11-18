@@ -266,6 +266,9 @@ var wantedTable = []wantedCapability{
 	{CapabilityExtendedJoin, "extended-join", 0, false, false, false, acceptsAnyValue},
 	{CapabilityReadMarker, "draft/read-marker", 0, false, false, false, acceptsAnyValue},
 	{CapabilityReadMarker, "soju.im/read", 0, false, false, false, acceptsAnyValue},
+	{CapabilityInviteNotify, "invite-notify", 0, false, false, false, acceptsAnyValue},
+	{CapabilitySetName, "setname", 0, false, false, false, acceptsAnyValue},
+	{CapabilityUserhostInNames, "userhost-in-names", 0, false, false, false, acceptsAnyValue},
 }
 
 func wantedFor(name string) *wantedCapability {

@@ -87,6 +87,40 @@ fn a_human_privmsg_opens_a_direct_message() {
 }
 
 #[test]
+fn an_invite_to_another_user_raises_no_inbox_row_and_no_status_entry() {
+    // The invite rows of the cause matrix: an INVITE never inserts a conversation. Another
+    // user's invite is a muted line in an open channel, dropped in a channel we do not have,
+    // and never reaches Status, the inbox or the pending invite. Our own invite is unchanged.
+    let mut fixture = Fixture::seeded();
+    fixture.controller.select_conversation(OMARCHY, "#omarchy");
+    let inbox = fixture.controller.inbox_items().len();
+    let status = fixture.controller.status_lines(OMARCHY).len();
+    let lines = fixture.controller.messages().len();
+
+    // Other, open channel: one muted line in the channel.
+    fixture.deliver(OMARCHY, ":lena!u@h INVITE milo #omarchy");
+    assert_eq!(fixture.controller.messages().len(), lines + 1);
+    assert_eq!(
+        fixture.controller.messages().last().map(|message| message.body.as_str()),
+        Some("lena invited milo")
+    );
+
+    // Other, closed channel: dropped without opening it.
+    fixture.deliver(OMARCHY, ":lena!u@h INVITE milo #nowhere");
+    assert!(!has_conversation(&fixture, OMARCHY, "#nowhere"));
+    assert_eq!(fixture.controller.messages().len(), lines + 1);
+
+    assert_eq!(fixture.controller.inbox_items().len(), inbox, "no inbox row");
+    assert_eq!(fixture.controller.status_lines(OMARCHY).len(), status, "no Status entry");
+
+    // Self: the old behavior, a Status entry and an inbox row, still no conversation.
+    fixture.deliver(OMARCHY, ":lena!u@h INVITE fred #lounge");
+    assert!(!has_conversation(&fixture, OMARCHY, "#lounge"));
+    assert_eq!(fixture.controller.inbox_items().len(), inbox + 1, "our own invite stays in the inbox");
+    assert_eq!(fixture.controller.status_lines(OMARCHY).len(), status + 1);
+}
+
+#[test]
 fn the_quiet_send_cause_never_inserts_and_user_open_does_for_a_direct_message() {
     // The conversation-cause table at the dispatcher: a quiet send leaves the row out, and
     // `/query` inserts it.

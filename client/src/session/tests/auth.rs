@@ -214,7 +214,7 @@ fn sends_pass_when_sasl_is_unavailable() {
     config.password = "secret".to_owned().into();
     let fx = Fixture::new(config);
     fx.connect_tls();
-    fx.inject(":server CAP omairc LS :invite-notify\r\n");
+    fx.inject(":server CAP omairc LS :extended-monitor\r\n");
     assert_frames(
         &fx.written_since(1),
         &[
@@ -267,7 +267,7 @@ fn nickserv_only_without_sasl_identifies_before_join() {
     config.nickserv_password = "nick-secret".to_owned().into();
     let fx = Fixture::new(config);
     fx.connect_tls();
-    fx.inject(":server CAP omairc LS :invite-notify\r\n:server 001 omairc :Welcome\r\n");
+    fx.inject(":server CAP omairc LS :extended-monitor\r\n:server 001 omairc :Welcome\r\n");
     let frames = fx.frames();
     assert!(
         !fx.wrote("PASS nick-secret\r\n"),
@@ -312,7 +312,7 @@ fn both_secrets_without_sasl_pass_then_identify_before_join() {
     config.nickserv_password = "nick-secret".to_owned().into();
     let fx = Fixture::new(config);
     fx.connect_tls();
-    fx.inject(":server CAP omairc LS :invite-notify\r\n:server 001 omairc :Welcome\r\n");
+    fx.inject(":server CAP omairc LS :extended-monitor\r\n:server 001 omairc :Welcome\r\n");
     assert!(
         fx.wrote("PASS server-secret\r\n"),
         "the server password must ride PASS"

@@ -6,6 +6,7 @@ package ui
 // and the key helpers in phase6_test.go.
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -400,6 +401,25 @@ func TestMemberFocusShowsIdentityTooltip(t *testing.T) {
 		if !panelHasFact(lena, want) {
 			t.Fatalf("lena panel missing %q:\n%s", want, lena)
 		}
+	}
+}
+
+// TestMemberTooltipListsUserhostAfterRealname pins the tooltip order: presence,
+// real name, user@host, then the labels.
+func TestMemberTooltipListsUserhostAfterRealname(t *testing.T) {
+	m := seededModel(t)
+	ann := controller.MemberSnapshot{
+		Nick: "ann", Realname: "Ann Lee", Userhost: "ann@host.example", Labels: []string{"unauthenticated"},
+	}
+	if got, want := m.memberTooltip(ann, false, false), []string{"Ann Lee", "ann@host.example", "unauthenticated"}; !slices.Equal(got, want) {
+		t.Fatalf("tooltip = %q, want %q", got, want)
+	}
+	if got, want := m.memberTooltip(ann, true, true), []string{"away", "Ann Lee", "ann@host.example", "unauthenticated"}; !slices.Equal(got, want) {
+		t.Fatalf("away tooltip = %q, want %q", got, want)
+	}
+	ann.Realname = ""
+	if got, want := m.memberTooltip(ann, false, false), []string{"ann@host.example", "unauthenticated"}; !slices.Equal(got, want) {
+		t.Fatalf("tooltip without a real name = %q, want %q", got, want)
 	}
 }
 

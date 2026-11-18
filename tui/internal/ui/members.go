@@ -255,6 +255,9 @@ func (m *Model) memberTooltip(member controller.MemberSnapshot, presenceShown, a
 	if name := strings.TrimSpace(m.ctrl.PlainIrcText(member.Realname)); name != "" {
 		parts = append(parts, name)
 	}
+	if member.Userhost != "" {
+		parts = append(parts, member.Userhost)
+	}
 	for _, label := range member.Labels {
 		if label != "" {
 			parts = append(parts, label)

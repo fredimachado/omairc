@@ -1,14 +1,16 @@
 //! Channel membership and channel state: JOIN, PART, KICK, QUIT and NICK; ACCOUNT and
-//! AWAY; the user's own away state (305, 306); TOPIC with its 332 and 333 replies
+//! AWAY; SETNAME; INVITE to another user; the user's own away state (305, 306); TOPIC with its 332 and 333 replies
 //! NAMES (353, 366); and MODE. Each handler's parameter guard lives in `translate`'s
 //! `match`, so these run only on a message that has the parameters they read.
 
 use crate::irc::event::{
-    AccountEvent, AwayEvent, Event, JoinEvent, KickEvent, ModeEvent, Name, NamesEvent, NickEvent,
+    AccountEvent, AwayEvent, Event, InviteEvent, JoinEvent, KickEvent, ModeEvent, Name, NamesEvent, NickEvent,
+    NickFactsEvent,
     PartEvent, QuitEvent, SelfAwayEvent, TopicEvent,
 };
 use crate::irc::message::IrcMessage;
 use crate::irc::presence::Away;
+use crate::irc::wiretext::wire_text;
 
 use super::context::Inbound;
 
@@ -17,14 +19,20 @@ pub(super) fn join(inbound: &Inbound<'_>) -> Vec<Event> {
     let message = inbound.message;
     let account = (message.params.len() >= 2).then(|| message.text_param(1));
     let realname = (message.params.len() >= 3).then(|| message.text_param(2));
-    vec![JoinEvent {
+    let mut events = vec![JoinEvent {
         network_id: inbound.network_id.to_owned(),
         channel: message.text_param(0),
         nick: inbound.sender.clone(),
         account,
         realname,
     }
-    .into()]
+    .into()];
+    // A JOIN names the joiner's user and host in its source.
+    if let Some(prefix) = message.prefix.as_ref().filter(|prefix| prefix.is_user() && !prefix.host.is_empty()) {
+        let userhost = format!("{}@{}", wire_text(&prefix.user), wire_text(&prefix.host));
+        events.push(userhost_fact(inbound, &inbound.sender, &userhost));
+    }
+    events
 }
 
 /// `ACCOUNT`: the sender's new account. An empty account means a logout.
@@ -131,23 +139,54 @@ pub(super) fn topic_who_time(inbound: &Inbound<'_>) -> Vec<Event> {
 /// `353` names reply: one batch of member tokens for the channel, not yet complete.
 pub(super) fn names(inbound: &Inbound<'_>) -> Vec<Event> {
     let message = inbound.message;
-    let names = message
+    let parsed: Vec<_> = message
         .text_param(3)
         .split(' ')
         .filter(|token| !token.is_empty())
         .filter_map(|token| inbound.features.parse_names_token(token))
-        .map(|parsed| Name {
-            nick: parsed.nick,
-            ranks: parsed.ranks,
+        .collect();
+    // With userhost-in-names a token carries `user@host`. It is a fact about the nick,
+    // not part of the member row, so it rides on its own events after the names.
+    let userhosts: Vec<Event> = parsed
+        .iter()
+        .filter(|name| !name.userhost.is_empty())
+        .map(|name| userhost_fact(inbound, &name.nick, &name.userhost))
+        .collect();
+    let names = parsed
+        .into_iter()
+        .map(|name| Name {
+            nick: name.nick,
+            ranks: name.ranks,
         })
         .collect();
-    vec![NamesEvent {
+    let mut events = vec![NamesEvent {
         network_id: inbound.network_id.to_owned(),
         channel: message.text_param(2),
         names,
         complete: false,
     }
-    .into()]
+    .into()];
+    events.extend(userhosts);
+    events
+}
+
+/// The `user@host` of `nick` as a fact for the reducer.
+pub(super) fn userhost_fact(inbound: &Inbound<'_>, nick: &str, userhost: &str) -> Event {
+    NickFactsEvent {
+        network_id: inbound.network_id.to_owned(),
+        nick: nick.to_owned(),
+        realname: None,
+        server_operator: None,
+        userhost: Some(userhost.to_owned()),
+    }
+    .into()
+}
+
+/// `CHGHOST` from a member: their new user and host.
+pub(super) fn chghost(inbound: &Inbound<'_>) -> Vec<Event> {
+    let message = inbound.message;
+    let userhost = format!("{}@{}", message.text_param(0), message.text_param(1));
+    vec![userhost_fact(inbound, &inbound.sender, &userhost)]
 }
 
 /// `366` end of names: the channel's list is complete.
@@ -186,6 +225,39 @@ pub(super) fn away(inbound: &Inbound<'_>) -> Vec<Event> {
         away,
         realname: None,
         realname_only: false,
+    }
+    .into()]
+}
+
+/// `SETNAME` from a member (or from us): the new real name. A missing or empty
+/// parameter is `Some("")`, which clears the stored name.
+pub(super) fn setname(inbound: &Inbound<'_>) -> Vec<Event> {
+    vec![NickFactsEvent {
+        network_id: inbound.network_id.to_owned(),
+        nick: inbound.sender.clone(),
+        realname: Some(inbound.message.text_param(0)),
+        server_operator: None,
+        userhost: None,
+    }
+    .into()]
+}
+
+/// `INVITE` (with `invite-notify`) from a channel operator to another user. An invite
+/// to us is no event: Status, the inbox and `/join` read it from the wire. A target
+/// that is not a channel is dropped.
+pub(super) fn invite(inbound: &Inbound<'_>) -> Vec<Event> {
+    let message = inbound.message;
+    let target = message.text_param(0);
+    let channel = message.text_param(1);
+    let features = inbound.features;
+    if features.case_mapping().equals(&target, inbound.current_nick) || !features.is_channel(&channel) {
+        return Vec::new();
+    }
+    vec![InviteEvent {
+        network_id: inbound.network_id.to_owned(),
+        channel,
+        inviter: inbound.sender.clone(),
+        target,
     }
     .into()]
 }

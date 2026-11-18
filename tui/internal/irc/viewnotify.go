@@ -178,7 +178,7 @@ func classifyViewNotifyUnchecked(event Event, reducer *EventReducer) ViewNotify 
 		notify := ViewNotifyTranscript()
 		notify.Conversations = true
 		return notify
-	case WhoisTranscriptEvent, ChannelErrorEvent:
+	case WhoisTranscriptEvent, ChannelErrorEvent, InviteEvent:
 		return ViewNotifyTranscript()
 	case NickFactsEvent:
 		key := reducer.ConversationKey(e.NetworkID, e.Nick)

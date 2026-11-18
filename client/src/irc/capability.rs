@@ -22,6 +22,9 @@ pub enum IrcCapability {
     ExtendedJoin,
     ReadMarker,
     ZncPlayback,
+    InviteNotify,
+    SetName,
+    UserhostInNames,
 }
 
 impl IrcCapability {
@@ -93,6 +96,9 @@ mod tests {
         assert_eq!(IrcCapability::Sasl.bit(), 1);
         assert_eq!(IrcCapability::AwayNotify.bit(), 2);
         assert_eq!(IrcCapability::ZncPlayback.bit(), 1 << 16);
+        assert_eq!(IrcCapability::InviteNotify.bit(), 1 << 17);
+        assert_eq!(IrcCapability::SetName.bit(), 1 << 18);
+        assert_eq!(IrcCapability::UserhostInNames.bit(), 1 << 19);
     }
 
     #[test]

@@ -148,6 +148,8 @@ pub struct MemberView {
     pub account: String,
     /// The meaningful gecos. Empty when blank or a placeholder.
     pub realname: String,
+    /// `user@host` when the server told us, else empty. The member tooltip shows it.
+    pub userhost: String,
     /// The query-header labels: account or `unauthenticated`, then
     /// `server operator`, then `bot`.
     pub labels: Vec<String>,

@@ -228,6 +228,9 @@ type NickPresence struct {
 	Realname string
 	// ServerOperator is the WHO `*` flag or WHOIS 313.
 	ServerOperator bool
+	// Userhost is "user@host" from userhost-in-names, JOIN, WHO or CHGHOST.
+	// Empty means unknown.
+	Userhost string
 }
 
 // Metadata returns the stored value for key, or "" when unset. The key is
@@ -277,7 +280,7 @@ func (p NickPresence) Avatar() string {
 // IsDefault reports whether the presence carries no fact worth keeping.
 func (p NickPresence) IsDefault() bool {
 	return p.Away == nil && len(p.Keys) == 0 && p.Account == "" &&
-		!p.AccountKnown && p.Realname == "" && !p.ServerOperator
+		!p.AccountKnown && p.Realname == "" && !p.ServerOperator && p.Userhost == ""
 }
 
 // MeaningfulRealname reports whether realname is worth matching in jump.
@@ -345,6 +348,7 @@ func (p NickPresence) clone() NickPresence {
 		AccountKnown:   p.AccountKnown,
 		Realname:       p.Realname,
 		ServerOperator: p.ServerOperator,
+		Userhost:       p.Userhost,
 	}
 }
 
@@ -457,6 +461,27 @@ func (n *NetworkPresence) SetRealname(normalizedNick, realname string) {
 	n.ensure()
 	presence := n.nicks[normalizedNick]
 	presence.Realname = realname
+	n.nicks[normalizedNick] = presence
+}
+
+// SetUserhost stores "user@host" for normalizedNick. An empty value clears it.
+func (n *NetworkPresence) SetUserhost(normalizedNick, userhost string) {
+	if normalizedNick == "" {
+		return
+	}
+	if userhost == "" {
+		presence, ok := n.nicks[normalizedNick]
+		if !ok {
+			return
+		}
+		presence.Userhost = ""
+		n.nicks[normalizedNick] = presence
+		n.eraseIfDefault(normalizedNick)
+		return
+	}
+	n.ensure()
+	presence := n.nicks[normalizedNick]
+	presence.Userhost = userhost
 	n.nicks[normalizedNick] = presence
 }
 

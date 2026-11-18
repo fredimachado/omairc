@@ -12,8 +12,8 @@ use chrono::{DateTime, Utc};
 
 use crate::irc::event::{
     AccountEvent, ActionEvent, AwayEvent, ChannelErrorEvent, ConversationKey, Event, InboxArrival,
-    IrcConversationCause, JoinEvent, KickEvent, MemberMetadataEvent, MessageEvent, ModeEvent,
-    MsgId, NamesEvent, NickEvent, NickFactsEvent, NoticeEvent, PartEvent, QuitEvent,
+    InviteEvent, IrcConversationCause, JoinEvent, KickEvent, MemberMetadataEvent, MessageEvent,
+    ModeEvent, MsgId, NamesEvent, NickEvent, NickFactsEvent, NoticeEvent, PartEvent, QuitEvent,
     SelfAwayEvent, TopicEvent, TypingEvent, WelcomeEvent, WhoisTranscriptEvent,
 };
 use crate::irc::inbox::InboxKind;
@@ -65,6 +65,7 @@ impl EventReducer {
             Event::WhoisTranscript(event) => self.reduce_whois_transcript(event),
             Event::ChannelError(event) => self.reduce_channel_error(event),
             Event::NickFacts(event) => self.reduce_nick_facts(event),
+            Event::Invite(event) => self.reduce_invite(event),
         }
     }
 
@@ -201,6 +202,21 @@ impl EventReducer {
         }
     }
 
+    /// Notes an invite to another user as a system line in a channel we have open
+    /// (`reduceInvite`). It never inserts a conversation: an invite is not a cause
+    /// for one, so a channel we do not have drops it.
+    fn reduce_invite(&mut self, event: &InviteEvent) {
+        let key = self.conversation_key(&event.network_id, &event.channel);
+        let Some(conv) = self.conversations.get_mut(&key) else {
+            return;
+        };
+        if conv.channel.is_none() {
+            return;
+        }
+        let body = format!("{} invited {}", event.inviter, event.target);
+        append_event(&mut self.facts, conv, &body, false, false);
+    }
+
     /// Stores a WHO or WHOIS identity fact. A `None` field is left unchanged
     /// (`reduceNickFacts`).
     fn reduce_nick_facts(&mut self, event: &NickFactsEvent) {
@@ -214,6 +230,9 @@ impl EventReducer {
         }
         if let Some(operator) = event.server_operator {
             self.facts.set_presence_operator(network, &normalized, operator);
+        }
+        if let Some(userhost) = &event.userhost {
+            self.facts.set_presence_userhost(network, &normalized, userhost);
         }
     }
 

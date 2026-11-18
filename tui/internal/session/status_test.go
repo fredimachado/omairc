@@ -823,7 +823,7 @@ func TestSessionPlaintextIdentifyEmitsOneStatusWarning(t *testing.T) {
 
 	fixture.session.Start()
 	fixture.transport.CompleteConnect()
-	fixture.inject(":server CAP omairc LS :invite-notify\r\n" +
+	fixture.inject(":server CAP omairc LS :extended-monitor\r\n" +
 		":server 001 omairc :Welcome\r\n")
 
 	warnings := 0
@@ -863,7 +863,7 @@ func TestSessionAutomaticIdentifyDoesNotAppearInStatusAsSecret(t *testing.T) {
 	fixture := newSessionFixture(t, config)
 
 	fixture.connectTLS()
-	fixture.inject(":server CAP omairc LS :invite-notify\r\n" +
+	fixture.inject(":server CAP omairc LS :extended-monitor\r\n" +
 		":server 001 omairc :Welcome\r\n")
 	if fixture.handler.anyFieldContains("PRIVMSG") || fixture.handler.anyFieldContains("nick-secret") {
 		t.Fatal("the automatic IDENTIFY leaked into Status")

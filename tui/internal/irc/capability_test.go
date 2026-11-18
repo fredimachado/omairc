@@ -24,7 +24,7 @@ func assertCapLines(t *testing.T, got []string, want ...string) {
 
 func TestUnwantedAdvertisementProducesNoRequest(t *testing.T) {
 	negotiation := NewCapabilityNegotiation(false)
-	negotiation.Advertise(tokens("invite-notify"))
+	negotiation.Advertise(tokens("extended-monitor"))
 
 	request := negotiation.TakeRequest()
 	if len(request.Lines) != 0 {
@@ -43,10 +43,10 @@ func TestUnwantedAdvertisementProducesNoRequest(t *testing.T) {
 
 func TestQuietCapsRequestWhenAdvertised(t *testing.T) {
 	negotiation := NewCapabilityNegotiation(false)
-	negotiation.Advertise(tokens("multi-prefix chghost cap-notify echo-message invite-notify"))
+	negotiation.Advertise(tokens("multi-prefix chghost cap-notify echo-message extended-monitor invite-notify setname userhost-in-names"))
 
 	request := negotiation.TakeRequest()
-	assertCapLines(t, request.Lines, "multi-prefix chghost cap-notify echo-message")
+	assertCapLines(t, request.Lines, "multi-prefix chghost cap-notify echo-message invite-notify setname userhost-in-names")
 	if request.RequestsSasl {
 		t.Fatal("requestsSasl must be false")
 	}
@@ -54,9 +54,10 @@ func TestQuietCapsRequestWhenAdvertised(t *testing.T) {
 		t.Fatal("negotiation must not be settled before the ACK")
 	}
 
-	granted := negotiation.Acknowledge(tokens("multi-prefix chghost cap-notify echo-message"))
+	granted := negotiation.Acknowledge(tokens("multi-prefix chghost cap-notify echo-message invite-notify setname userhost-in-names"))
 	for _, capability := range []Capability{
 		CapabilityMultiPrefix, CapabilityChghost, CapabilityCapNotify, CapabilityEchoMessage,
+		CapabilityInviteNotify, CapabilitySetName, CapabilityUserhostInNames,
 	} {
 		if !granted.Contains(capability) {
 			t.Fatalf("granted set missing capability %v", capability)
@@ -542,7 +543,7 @@ func TestPartialAccountAdvertisementRequestsOnlyPresentCaps(t *testing.T) {
 	assertCapLines(t, tagAndJoin.TakeRequest().Lines, "message-tags", "account-tag extended-join")
 
 	none := NewCapabilityNegotiation(false)
-	none.Advertise(tokens("invite-notify"))
+	none.Advertise(tokens("extended-monitor"))
 	if len(none.TakeRequest().Lines) != 0 {
 		t.Fatal("no lines expected")
 	}
@@ -566,6 +567,45 @@ func TestAccountCapAckEnablesMatchingBits(t *testing.T) {
 		if !negotiation.Enabled().Contains(capability) {
 			t.Fatalf("enabled set missing capability %v", capability)
 		}
+	}
+	if !negotiation.Settled() {
+		t.Fatal("negotiation must be settled")
+	}
+}
+
+func TestInviteNotifyIsRequestedWithoutDependencies(t *testing.T) {
+	negotiation := NewCapabilityNegotiation(false)
+	negotiation.Advertise(tokens("invite-notify"))
+	assertCapLines(t, negotiation.TakeRequest().Lines, "invite-notify")
+	granted := negotiation.Acknowledge(tokens("invite-notify"))
+	if !granted.Contains(CapabilityInviteNotify) {
+		t.Fatal("invite-notify must be granted")
+	}
+	if !negotiation.Settled() {
+		t.Fatal("negotiation must be settled")
+	}
+}
+
+func TestUserhostInNamesIsRequestedWithoutDependencies(t *testing.T) {
+	negotiation := NewCapabilityNegotiation(false)
+	negotiation.Advertise(tokens("userhost-in-names"))
+	assertCapLines(t, negotiation.TakeRequest().Lines, "userhost-in-names")
+	granted := negotiation.Acknowledge(tokens("userhost-in-names"))
+	if !granted.Contains(CapabilityUserhostInNames) {
+		t.Fatal("userhost-in-names must be granted")
+	}
+	if !negotiation.Settled() {
+		t.Fatal("negotiation must be settled")
+	}
+}
+
+func TestSetnameIsRequestedWithoutDependencies(t *testing.T) {
+	negotiation := NewCapabilityNegotiation(false)
+	negotiation.Advertise(tokens("setname"))
+	assertCapLines(t, negotiation.TakeRequest().Lines, "setname")
+	granted := negotiation.Acknowledge(tokens("setname"))
+	if !granted.Contains(CapabilitySetName) {
+		t.Fatal("setname must be granted")
 	}
 	if !negotiation.Settled() {
 		t.Fatal("negotiation must be settled")

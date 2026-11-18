@@ -295,6 +295,11 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 			Account:   account,
 			Realname:  realname,
 		})
+		// A JOIN names the joiner's user and host in its source.
+		if prefix := message.Prefix; prefix != nil && ircHasUserPrefix(message) && prefix.Host != "" {
+			events = append(events, userhostFact(networkID, sender,
+				WireText([]byte(prefix.User))+"@"+WireText([]byte(prefix.Host))))
+		}
 	case command == "ACCOUNT" && sender != "":
 		account := ""
 		if len(message.Params) != 0 {
@@ -340,6 +345,7 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 		})
 	case command == "353" && len(message.Params) >= 4:
 		var names []Name
+		var userhosts []Event
 		for _, token := range strings.Split(ircParameter(message, 3), " ") {
 			if token == "" {
 				continue
@@ -349,6 +355,12 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 				continue
 			}
 			names = append(names, Name{Nick: parsed.Nick, Ranks: parsed.Ranks})
+			if parsed.Userhost != "" {
+				// With userhost-in-names a token carries user@host. It is a fact
+				// about the nick, not part of the member row, so it rides on its
+				// own event after the names.
+				userhosts = append(userhosts, userhostFact(networkID, parsed.Nick, parsed.Userhost))
+			}
 		}
 		events = append(events, NamesEvent{
 			NetworkID: networkID,
@@ -356,6 +368,7 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 			Names:     names,
 			Complete:  false,
 		})
+		events = append(events, userhosts...)
 	case command == "366" && len(message.Params) >= 2:
 		events = append(events, NamesEvent{
 			NetworkID: networkID,
@@ -376,6 +389,16 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 			away = &Away{Reason: ircParameter(message, 0)}
 		}
 		events = append(events, AwayEvent{NetworkID: networkID, Nick: sender, Away: away})
+	case command == "INVITE" && len(message.Params) >= 2 && sender != "":
+		target := ircParameter(message, 0)
+		channel := ircParameter(message, 1)
+		if !features.CaseMapping().Equals(target, currentNick) && features.IsChannel(channel) {
+			events = append(events, InviteEvent{NetworkID: networkID, Channel: channel, Inviter: sender, Target: target})
+		}
+	case command == "SETNAME" && sender != "":
+		// A missing or empty parameter is an empty name, which clears it.
+		realname := ircParameter(message, 0)
+		events = append(events, NickFactsEvent{NetworkID: networkID, Nick: sender, Realname: &realname})
 	case command == "306":
 		events = append(events, SelfAwayEvent{NetworkID: networkID, Away: true})
 	case command == "305":
@@ -406,6 +429,7 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 				NetworkID:      networkID,
 				Nick:           nick,
 				ServerOperator: &oper,
+				Userhost:       userhostPtr(ircParameter(message, 2) + "@" + ircParameter(message, 3)),
 			})
 		}
 	case command == "311" && len(message.Params) >= 6:
@@ -429,8 +453,9 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 				ServerOperator: &oper,
 			})
 		}
-	case command == "CHGHOST":
-		// Members store nick plus ranks. User and host are not modeled.
+	case command == "CHGHOST" && sender != "" && len(message.Params) >= 2:
+		events = append(events, userhostFact(networkID, sender,
+			ircParameter(message, 0)+"@"+ircParameter(message, 1)))
 	case command == "METADATA":
 		events = appendMemberMetadata(events, networkID, message, 0, features)
 	case command == "761":
@@ -864,4 +889,11 @@ func allDigits(value string) bool {
 		}
 	}
 	return true
+}
+
+func userhostPtr(userhost string) *string { return &userhost }
+
+// userhostFact is the user@host of nick as a fact for the reducer.
+func userhostFact(networkID, nick, userhost string) NickFactsEvent {
+	return NickFactsEvent{NetworkID: networkID, Nick: nick, Userhost: &userhost}
 }

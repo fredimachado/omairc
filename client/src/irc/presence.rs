@@ -189,6 +189,9 @@ pub struct NickPresence {
     pub realname: String,
     /// The WHO `*` flag or WHOIS 313.
     pub server_operator: bool,
+    /// `user@host` from userhost-in-names, JOIN, WHO or CHGHOST. Empty means
+    /// unknown.
+    pub userhost: String,
 }
 
 impl NickPresence {
@@ -238,6 +241,7 @@ impl NickPresence {
             && !self.account_known
             && self.realname.is_empty()
             && !self.server_operator
+            && self.userhost.is_empty()
     }
 }
 
@@ -371,6 +375,21 @@ impl NetworkPresence {
             return;
         }
         self.nicks.entry(nick.to_owned()).or_default().realname = realname.to_owned();
+    }
+
+    /// Stores `user@host` for `nick`. An empty value clears it (`SetUserhost`).
+    pub fn set_userhost(&mut self, nick: &str, userhost: &str) {
+        if nick.is_empty() {
+            return;
+        }
+        if userhost.is_empty() {
+            if let Some(presence) = self.nicks.get_mut(nick) {
+                presence.userhost.clear();
+            }
+            self.erase_if_default(nick);
+            return;
+        }
+        self.nicks.entry(nick.to_owned()).or_default().userhost = userhost.to_owned();
     }
 
     /// Moves the presence from one normalized nick to another, replacing any
@@ -665,6 +684,19 @@ mod tests {
             !store.knows("fred"),
             "a blank realname never creates an entry"
         );
+    }
+
+    #[test]
+    fn presence_is_default_false_when_only_userhost_set() {
+        let mut store = NetworkPresence::default();
+        store.set_userhost("fred", "u@h");
+        assert!(store.knows("fred"));
+        assert!(!store.lookup("fred").is_default());
+        assert_eq!(store.lookup("fred").userhost, "u@h");
+        store.set_userhost("fred", "");
+        assert!(!store.knows("fred"), "clearing the last fact forgets the nick");
+        store.set_userhost("", "u@h");
+        assert!(!store.knows(""));
     }
 
     #[test]

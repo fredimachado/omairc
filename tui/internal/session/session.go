@@ -1301,7 +1301,10 @@ func (s *Session) handleMessageLocked(message irc.Message) {
 		return
 	}
 
-	if message.Command == "INVITE" && len(message.Params) >= 2 {
+	// With invite-notify an INVITE can name someone else. Only one to us is a
+	// pending invite, or a bare /join would follow another user's invite.
+	if message.Command == "INVITE" && len(message.Params) >= 2 &&
+		s.nicksEqualLocked(parameter(message, 0), s.nickname) {
 		nick := irc.PrefixNick(message)
 		channel := parameter(message, len(message.Params)-1)
 		if nick != "" && channel != "" {

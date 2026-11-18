@@ -38,6 +38,7 @@ pub enum EventKind {
     WhoisTranscript,
     ChannelError,
     NickFacts,
+    Invite,
 }
 
 /// One translated IRC fact (`Event`). The reducer reads these in order.
@@ -64,6 +65,7 @@ pub enum Event {
     WhoisTranscript(WhoisTranscriptEvent),
     ChannelError(ChannelErrorEvent),
     NickFacts(NickFactsEvent),
+    Invite(InviteEvent),
 }
 
 impl Event {
@@ -92,6 +94,7 @@ impl Event {
             Self::WhoisTranscript(_) => EventKind::WhoisTranscript,
             Self::ChannelError(_) => EventKind::ChannelError,
             Self::NickFacts(_) => EventKind::NickFacts,
+            Self::Invite(_) => EventKind::Invite,
         }
     }
 }
@@ -130,6 +133,7 @@ event_from_payload!(
     WhoisTranscript(WhoisTranscriptEvent),
     ChannelError(ChannelErrorEvent),
     NickFacts(NickFactsEvent),
+    Invite(InviteEvent),
 );
 
 /// A conversation: a network plus a normalized target (`ConversationKey`). The
@@ -467,6 +471,18 @@ pub struct NickFactsEvent {
     pub nick: String,
     pub realname: Option<String>,
     pub server_operator: Option<bool>,
+    /// `user@host`; `None` leaves the stored value alone.
+    pub userhost: Option<String>,
+}
+
+/// An `invite-notify` INVITE addressed to someone else (`InviteEvent`). An invite to
+/// us is not an event: it stays a Status line and an inbox row.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InviteEvent {
+    pub network_id: String,
+    pub channel: String,
+    pub inviter: String,
+    pub target: String,
 }
 
 /// A replay line the reducer kept: inserted, or already present so dedup skipped
@@ -549,19 +565,30 @@ mod tests {
             nick: "alice".into(),
             realname: None,
             server_operator: Some(true),
+            userhost: None,
         }
         .into();
         assert_eq!(facts.kind(), EventKind::NickFacts);
+
+        let invite: Event = InviteEvent {
+            network_id: "n".into(),
+            channel: "#room".into(),
+            inviter: "op".into(),
+            target: "bob".into(),
+        }
+        .into();
+        assert_eq!(invite.kind(), EventKind::Invite);
     }
 
     #[test]
     fn kind_order_matches_the_go_taxonomy() {
-        // The Go iota order: `EventWelcome` is 0 and `EventNickFacts` is the last.
+        // The Go iota order: `EventWelcome` is 0 and `EventInvite` is the last.
         assert_eq!(EventKind::Welcome as usize, 0);
         assert_eq!(EventKind::Message as usize, 1);
         assert_eq!(EventKind::SelfAway as usize, 13);
         assert_eq!(EventKind::MemberMetadata as usize, 14);
         assert_eq!(EventKind::NickFacts as usize, 20);
+        assert_eq!(EventKind::Invite as usize, 21);
     }
 
     #[test]

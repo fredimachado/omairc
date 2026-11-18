@@ -78,6 +78,9 @@ type MemberView struct {
 	// Realname is the meaningful gecos. Empty when the stored name is blank
 	// or a placeholder.
 	Realname string
+	// Userhost is "user@host" when the server told us, else empty. The member
+	// tooltip shows it.
+	Userhost string
 	// Labels are the query-header labels: account or "unauthenticated", then
 	// "server operator", then "bot".
 	Labels []string
@@ -513,6 +516,8 @@ func (r *EventReducer) Apply(event Event, now time.Time) {
 		r.reduceChannelError(value)
 	case NickFactsEvent:
 		r.reduceNickFacts(value)
+	case InviteEvent:
+		r.reduceInvite(value)
 	}
 }
 
@@ -910,6 +915,7 @@ func (r *EventReducer) MemberView(key ConversationKey, normalizedNick string) (M
 		Color:       facts.Metadata(ColorKey()),
 		Account:     r.DisplayAccount(key.NetworkID, member.DisplayNick),
 		Realname:    DisplayedRealname(facts.Realname, member.DisplayNick),
+		Userhost:    facts.Userhost,
 		Labels:      r.PeerFactLabels(key.NetworkID, member.DisplayNick),
 	}, true
 }
@@ -2179,6 +2185,9 @@ func (r *EventReducer) reduceNickFacts(event NickFactsEvent) {
 	if event.ServerOperator != nil {
 		r.setPresenceOperator(event.NetworkID, normalizedNick, *event.ServerOperator)
 	}
+	if event.Userhost != nil {
+		r.setPresenceUserhost(event.NetworkID, normalizedNick, *event.Userhost)
+	}
 }
 
 // reduceAccount records an account-notify change. It mirrors
@@ -2447,6 +2456,18 @@ func (r *EventReducer) reduceMode(event ModeEvent) {
 	}
 }
 
+// reduceInvite notes an invite to another user as a system line in a channel
+// we have open. It never inserts a conversation: an invite is not a cause for
+// one, so a channel we do not have drops it. It mirrors reduce_invite in
+// client/src/irc/reducer/handlers.rs.
+func (r *EventReducer) reduceInvite(event InviteEvent) {
+	conversation := r.Find(r.ConversationKey(event.NetworkID, event.Channel))
+	if conversation == nil || conversation.channel == nil {
+		return
+	}
+	r.appendEvent(conversation, event.Inviter+" invited "+event.Target, false, false)
+}
+
 // reduceAway records an away-notify change. It mirrors
 // IrcEventReducer::reduce(IrcAwayEvent).
 func (r *EventReducer) reduceAway(event AwayEvent) {
@@ -2672,6 +2693,13 @@ func (r *EventReducer) setPresenceRealname(networkID, normalizedNick, realname s
 	r.presence[networkID] = presence
 }
 
+// setPresenceUserhost stores a nick's user@host.
+func (r *EventReducer) setPresenceUserhost(networkID, normalizedNick, userhost string) {
+	presence := r.presence[networkID]
+	presence.SetUserhost(normalizedNick, userhost)
+	r.presence[networkID] = presence
+}
+
 // setPresenceOperator stores whether a nick is a server operator.
 func (r *EventReducer) setPresenceOperator(networkID, normalizedNick string, operator bool) {
 	presence := r.presence[networkID]
@@ -2791,6 +2819,11 @@ func dereferenceEvent(event Event) Event {
 		}
 		return *value
 	case *NickFactsEvent:
+		if value == nil {
+			return nil
+		}
+		return *value
+	case *InviteEvent:
 		if value == nil {
 			return nil
 		}

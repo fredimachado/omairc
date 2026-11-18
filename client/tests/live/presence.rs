@@ -88,6 +88,73 @@ fn peer_away() {
     }
 }
 
+/// The peer is already in the channel when the client joins, so the client learns the
+/// peer from NAMES: with `userhost-in-names` that token is `nick!user@host`, and the member
+/// must keep the plain nick and gain a `user@host`. Where the daemon offers `setname`, a
+/// peer's `SETNAME` then reaches the member's real name live.
+#[test]
+#[ignore = "requires bin/test-live (OMAIRC_LIVE_DAEMONS)"]
+fn setname_and_userhost() {
+    require_live();
+    for daemon in live_daemons() {
+        if !daemon.wanted_caps_advertised {
+            continue;
+        }
+        let tls = daemon.use_tls();
+        let channel = unique_channel();
+        let mut peer = LiveClient::connect(
+            &daemon,
+            &unique_nick(daemon.nick_length),
+            tls,
+            LiveClientOptions::default(),
+        );
+        assert!(peer.wait_registered(), "{}", daemon.name);
+        assert!(peer.join_channel(&channel));
+        assert!(wait_names_end(&mut peer, &channel));
+
+        let mut client = LiveClient::connect(
+            &daemon,
+            &unique_nick(daemon.nick_length),
+            tls,
+            LiveClientOptions::default(),
+        );
+        assert!(client.wait_registered(), "{}", daemon.name);
+        assert!(client.join_channel(&channel));
+        assert!(wait_names_end(&mut client, &channel));
+        client.select_channel(&channel);
+
+        let peer_nick = peer.nick();
+        let member = client
+            .member(&peer_nick)
+            .unwrap_or_else(|| panic!("{} NAMES lost the peer's nick {peer_nick}", daemon.name));
+        assert_eq!(member.nick, peer_nick, "{}", daemon.name);
+        assert!(
+            member.userhost.contains('@') && !member.userhost.contains('!'),
+            "{} userhost {:?}",
+            daemon.name,
+            member.userhost
+        );
+
+        if daemon.name == "ergo" {
+            assert!(peer
+                .controller
+                .session(&peer.network_id)
+                .expect("session")
+                .send_raw("SETNAME :Peer Real Name"));
+            peer.pump();
+            assert!(
+                client.wait_until(|client| {
+                    client
+                        .member(&peer_nick)
+                        .is_some_and(|member| member.realname == "Peer Real Name")
+                }),
+                "{} setname",
+                daemon.name
+            );
+        }
+    }
+}
+
 #[test]
 #[ignore = "requires bin/test-live (OMAIRC_LIVE_DAEMONS)"]
 fn peer_typing() {

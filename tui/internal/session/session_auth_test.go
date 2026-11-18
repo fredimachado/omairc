@@ -218,7 +218,7 @@ func TestSessionSendsPassWhenSaslIsUnavailable(t *testing.T) {
 	fixture := newSessionFixture(t, config)
 
 	fixture.connectTLS()
-	fixture.inject(":server CAP omairc LS :invite-notify\r\n")
+	fixture.inject(":server CAP omairc LS :extended-monitor\r\n")
 	assertFramesEqual(t, fixture.writtenSince(1), []string{
 		"PASS secret\r\n",
 		"NICK omairc\r\n",
@@ -270,7 +270,7 @@ func TestSessionNickServOnlyWithoutSaslIdentifiesBeforeJoin(t *testing.T) {
 	fixture := newSessionFixture(t, config)
 
 	fixture.connectTLS()
-	fixture.inject(":server CAP omairc LS :invite-notify\r\n" +
+	fixture.inject(":server CAP omairc LS :extended-monitor\r\n" +
 		":server 001 omairc :Welcome\r\n")
 	frames := fixture.frames()
 	if fixture.wrote("PASS nick-secret\r\n") {
@@ -321,7 +321,7 @@ func TestSessionBothSecretsWithoutSaslPassThenIdentifyBeforeJoin(t *testing.T) {
 	fixture := newSessionFixture(t, config)
 
 	fixture.connectTLS()
-	fixture.inject(":server CAP omairc LS :invite-notify\r\n" +
+	fixture.inject(":server CAP omairc LS :extended-monitor\r\n" +
 		":server 001 omairc :Welcome\r\n")
 	frames := fixture.frames()
 	if !fixture.wrote("PASS server-secret\r\n") {
