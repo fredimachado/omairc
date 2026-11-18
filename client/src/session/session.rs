@@ -379,7 +379,13 @@ impl Session {
     /// Whether a CHATHISTORY request is outstanding on any target.
     #[cfg(test)]
     pub fn history_pending(&self) -> bool {
-        !self.shared.core.borrow().history.pending.is_empty()
+        self.shared
+            .core
+            .borrow()
+            .history
+            .phase
+            .values()
+            .any(|phase| matches!(phase, super::history::HistoryPhase::InFlight { .. }))
     }
 
     /// A copy of the autojoin channel list.

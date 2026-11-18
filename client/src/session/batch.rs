@@ -9,7 +9,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::events::{HistoryBatch, HistoryKind, HistoryTarget, SessionEvent};
-use super::history::HistoryRequestKind;
+use super::history::{HistoryRequestKind, InFlightRequest};
 use super::session::{
     replay_kind_for, Core, HISTORY_BUFFER_CEILING, MAX_IGNORED_BATCHES, MAX_OPEN_BATCHES,
 };
@@ -134,11 +134,8 @@ impl Core {
             frame.history_ended = message.has_tag("draft/chathistory-end");
             frame.collected.target = target_arg.clone();
             frame.generation = self.history_generation(&frame.collected.target);
-            if kind == Some(HistoryKind::Chat) && self.answers_pending_history(&target_arg) {
-                let folded = self.fold_channel(&target_arg);
-                if let Some(request) = self.history.pending_kind.get(&folded) {
-                    frame.history_request = Some(*request);
-                }
+            if kind == Some(HistoryKind::Chat) {
+                frame.history_request = self.pending_history_kind(&target_arg);
             }
         }
         self.batches.open.insert(reference, frame);
@@ -188,17 +185,19 @@ impl Core {
         }
         let target = frame.collected.target.clone();
         let current = frame.generation == self.history_generation(&target);
-        let folded = self.fold_channel(&target);
-        let after = frame.history_request == Some(HistoryRequestKind::After);
-        let after_tail = frame.history_request == Some(HistoryRequestKind::AfterTail);
-        if current && frame.kind == Some(HistoryKind::Chat) && frame.history_request.is_some() {
-            self.history.pending.remove(&folded);
-            self.history.pending_kind.remove(&folded);
-            // An empty AFTER, and the one LATEST sent when the AFTER page cap is
-            // hit, are not the end of older history. Scrolling up must still send
-            // BEFORE.
-            if frame.collected.lines.is_empty() && !after && !after_tail {
-                self.history.exhausted.insert(folded.clone());
+        // Only a batch that still answers the request in flight settles it. An
+        // empty LATEST or BEFORE ends older history; an empty AFTER, and the one
+        // LATEST sent when the AFTER page cap is hit, do not, so scrolling up
+        // must still send BEFORE.
+        let finished = if frame.kind == Some(HistoryKind::Chat) {
+            self.finish_history(&target, frame.generation, frame.history_request)
+        } else {
+            None
+        };
+        if let Some(request) = &finished {
+            if frame.collected.lines.is_empty() && request.kind().exhausts_before() {
+                let folded = self.fold_channel(&target);
+                self.exhaust_history(&folded);
             }
         }
         // A self-JOIN bumps the generation while a playback batch can still be
@@ -211,11 +210,16 @@ impl Core {
         batch.kind = frame.kind;
         if frame.kind == Some(HistoryKind::Chat) {
             batch.older_page = frame.history_request == Some(HistoryRequestKind::Before);
-            self.history.pending_before.remove(&folded);
-            if current && after {
-                self.maybe_chain_history_after(&target, &batch, frame.history_ended);
+            if let Some(InFlightRequest::After { pages, cursor }) = &finished {
+                self.maybe_chain_history_after(
+                    &target,
+                    &batch,
+                    frame.history_ended,
+                    *pages,
+                    cursor,
+                );
             }
-            batch.after_request = current && after;
+            batch.after_request = matches!(finished, Some(InFlightRequest::After { .. }));
             batch.history_ended = frame.history_ended;
         }
         let network_id = self.network_id();
