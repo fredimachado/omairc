@@ -192,13 +192,18 @@ impl Shell {
         );
         if previous.status.is_none() {
             let place = self.transcript.update(cx, |t, _| t.capture_scroll_place());
-            self.remember_place(previous.conversation, place);
+            self.remember_place(previous.conversation.clone(), place);
         }
         let text = self.composer.read(cx).text().to_string();
         self.composer_state.stash(&text);
         self.end_find_mode(cx);
+        self.persist_stashed_draft(&previous.draft_key());
         self.member_cursor = 0;
-        let draft = self.composer_state.switch_to(view.draft_key());
+        let draft_key = view.draft_key();
+        let mut draft = self.composer_state.switch_to(draft_key.clone());
+        if draft.is_empty() {
+            draft = self.restored_draft(&draft_key).unwrap_or_default();
+        }
         self.composer.update(cx, |c, cx| {
             c.set_text(draft);
             cx.notify();

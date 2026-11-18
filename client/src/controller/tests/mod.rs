@@ -10,6 +10,7 @@ mod chrome;
 mod commands;
 mod composer;
 mod credentials;
+mod drafts;
 mod console;
 mod forget_credentials;
 mod fileupload;

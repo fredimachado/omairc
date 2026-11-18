@@ -7,6 +7,7 @@ pub mod actions;
 pub mod avatars;
 pub mod commands;
 pub mod connect;
+pub mod drafts;
 pub mod fileupload;
 pub mod find;
 pub mod inbox;
@@ -316,6 +317,7 @@ impl Shell {
         });
         shell.show_shown_view(None, cx);
         shell.sync_send_limit(cx);
+        shell.restore_shown_draft(cx);
         if required {
             // The first field takes focus, as Qt focuses it when the sheet opens.
             let first = shell.connect.initial_focus();

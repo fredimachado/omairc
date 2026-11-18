@@ -19,6 +19,9 @@ impl Shell {
     /// The window gains or loses OS focus (Qt `windowFocusGained` / `windowFocusLost`).
     /// A focus report while minimized or hidden does not consume the backlog.
     pub fn set_window_active(&mut self, active: bool, cx: &mut Context<Self>) {
+        if !active {
+            self.persist_current_draft(cx);
+        }
         if let Some(effective) = self.activity.set_focus(active) {
             self.apply_arrival_active(effective, cx);
         }
