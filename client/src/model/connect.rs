@@ -571,6 +571,28 @@ pub enum RemoveOutcome {
     Refused,
 }
 
+/// Where the selected network's draft came from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum DraftOrigin {
+    /// The draft edits the saved profile with the selected id.
+    Saved,
+    /// An unsaved draft. `from` is the saved network Add ran on (`None` for a first run with
+    /// no network saved), which Discard returns to.
+    New { from: Option<String> },
+}
+
+/// What the selected network's draft is. It is derived from the origin and the text, never
+/// stored, so it cannot drift from either.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DraftPhase {
+    /// The saved profile, as saved.
+    Clean,
+    /// A saved profile with edits that Apply or Discard settles.
+    Dirty,
+    /// A network that is not saved yet.
+    Added,
+}
+
 /// The whole Connect sheet state, held for the window's life.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConnectState {
@@ -580,8 +602,9 @@ pub struct ConnectState {
     draft: Profile,
     /// The selected network's id. It is the draft's id, which may be unsaved.
     selected: String,
-    /// The network that was selected when Add ran, which Discard returns to.
-    added_from: Option<String>,
+    /// Where the draft came from. With the draft's text it is the whole draft phase
+    /// ([`ConnectState::phase`]), so Discard's way back cannot disagree with a dirty bit.
+    origin: DraftOrigin,
     tab: ConnectTab,
     /// Remove was pressed once. Qt's `connectionRemoveArmed`.
     remove_armed: bool,

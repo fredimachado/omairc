@@ -68,11 +68,17 @@ impl ConnectState {
     }
 
     fn assembled(saved: Vec<Profile>, selected: String, draft: Profile) -> Self {
-        Self {
+        // A selection the saved networks do not hold is a new network with nothing to return to.
+        let origin = if saved.iter().any(|profile| profile.network_id == selected) {
+            DraftOrigin::Saved
+        } else {
+            DraftOrigin::New { from: None }
+        };
+        let state = Self {
             saved,
             draft,
             selected,
-            added_from: None,
+            origin,
             tab: ConnectTab::Connection,
             remove_armed: false,
             rail_armed: None,
@@ -83,7 +89,15 @@ impl ConnectState {
             password_edited: false,
             nickserv_edited: false,
             persistence: BTreeMap::new(),
-        }
+        };
+        debug_assert!(state.origin_consistent());
+        state
+    }
+
+    /// Whether the origin says what the saved networks say: the draft is new exactly when its
+    /// network is not saved.
+    pub(super) fn origin_consistent(&self) -> bool {
+        matches!(self.origin, DraftOrigin::New { .. }) != self.is_saved(&self.selected)
     }
 
     /// Whether no saved network is complete, so the sheet stays up until one is
@@ -389,17 +403,25 @@ impl ConnectState {
         self.draft.connect_on_startup = on;
     }
 
-    /// Whether the draft differs from the saved network it came from.
-    /// A draft that is not saved yet is always dirty. Secrets do not count.
-    pub fn dirty(&self) -> bool {
-        match self
-            .saved
-            .iter()
-            .find(|profile| profile.network_id == self.selected)
-        {
-            None => true,
-            Some(saved) => saved.normalized() != self.draft.normalized(),
+    /// What the selected network's draft is: the saved profile as it was saved, with edits, or
+    /// a network not saved yet. Secrets do not count as edits.
+    pub fn phase(&self) -> DraftPhase {
+        match self.origin {
+            DraftOrigin::New { .. } => DraftPhase::Added,
+            DraftOrigin::Saved => match self
+                .saved
+                .iter()
+                .find(|profile| profile.network_id == self.selected)
+            {
+                Some(saved) if saved.normalized() == self.draft.normalized() => DraftPhase::Clean,
+                _ => DraftPhase::Dirty,
+            },
         }
+    }
+
+    /// Whether the draft is anything but clean: edited, or not saved yet.
+    pub fn dirty(&self) -> bool {
+        self.phase() != DraftPhase::Clean
     }
 
     /// Why Apply is refused, or `None` when the draft can be applied.
@@ -441,7 +463,7 @@ impl ConnectState {
 
     /// Whether Add (Ctrl+N) can run: the selection is saved and has no edits.
     pub fn can_add(&self) -> bool {
-        self.is_saved(&self.selected) && !self.dirty()
+        self.phase() == DraftPhase::Clean
     }
 
     /// Whether Remove can run on the selection. It must be saved, and another
@@ -467,9 +489,8 @@ impl ConnectState {
             self.switch_refused = true;
             return false;
         }
-        self.switch_refused = false;
-        self.rail_armed = None;
-        self.load_draft(network_id);
+        self.settle();
+        self.enter_saved(network_id);
         true
     }
 
@@ -518,16 +539,17 @@ impl ConnectState {
         let id = self.fresh_network_id();
         let mut profile = Profile::blank(&id);
         profile.icon_color = self.first_free_icon_color();
-        self.added_from = Some(self.selected.clone());
+        self.origin = DraftOrigin::New {
+            from: Some(self.selected.clone()),
+        };
         self.draft = profile;
         self.password_edited = false;
         self.nickserv_edited = false;
         self.selected = id;
         self.tab = ConnectTab::Connection;
-        self.remove_armed = false;
-        self.rail_armed = None;
+        self.settle();
         self.focus_request = Some(Stop::Field(ConnectField::Name));
-        self.switch_refused = false;
+        debug_assert!(self.origin_consistent());
         true
     }
 
@@ -535,22 +557,18 @@ impl ConnectState {
     /// the network it was added from, or to the first saved one. A saved network's
     /// edits are reverted to the saved values.
     pub fn discard(&mut self) {
-        self.remove_armed = false;
-        self.rail_armed = None;
-        self.switch_refused = false;
-        if !self.is_saved(&self.selected) {
-            let returned = self
-                .added_from
-                .take()
+        self.settle();
+        let back_to = match &self.origin {
+            DraftOrigin::New { from } => from
+                .clone()
                 .filter(|id| self.is_saved(id))
-                .or_else(|| self.saved.first().map(|profile| profile.network_id.clone()));
-            if let Some(id) = returned {
-                self.load_draft(&id);
-            }
-            return;
+                .or_else(|| self.saved.first().map(|profile| profile.network_id.clone())),
+            DraftOrigin::Saved => Some(self.selected.clone()),
+        };
+        // With nothing saved (a first run) there is no network to return to, so the draft stays.
+        if let Some(id) = back_to {
+            self.enter_saved(&id);
         }
-        let selected = self.selected.clone();
-        self.load_draft(&selected);
     }
 
     /// Apply (Ctrl+Enter, Qt `apply` through `submitConnection`). Saves the
@@ -580,10 +598,9 @@ impl ConnectState {
         self.draft.nickserv_password = nickserv_password;
         self.password_edited = false;
         self.nickserv_edited = false;
-        self.added_from = None;
-        self.remove_armed = false;
-        self.rail_armed = None;
-        self.switch_refused = false;
+        self.origin = DraftOrigin::Saved;
+        self.settle();
+        debug_assert!(self.origin_consistent());
         Ok(profile)
     }
 
@@ -647,11 +664,8 @@ impl ConnectState {
             .unwrap_or(0);
         self.saved.remove(index);
         let next = index.min(self.saved.len().saturating_sub(1));
-        self.load_draft(&self.saved[next].network_id.clone());
-        self.remove_armed = false;
-        self.rail_armed = None;
-        self.added_from = None;
-        self.switch_refused = false;
+        self.enter_saved(&self.saved[next].network_id.clone());
+        self.settle();
         RemoveOutcome::Removed(removed)
     }
 
@@ -833,8 +847,15 @@ impl ConnectState {
         self.focus_request.take()
     }
 
+    /// The draft is settled: nothing is armed and no refused switch is still noticed.
+    fn settle(&mut self) {
+        self.remove_armed = false;
+        self.rail_armed = None;
+        self.switch_refused = false;
+    }
+
     /// Loads a saved network into the draft and selects it. Secrets are dropped.
-    fn load_draft(&mut self, network_id: &str) {
+    fn enter_saved(&mut self, network_id: &str) {
         if let Some(profile) = self
             .saved
             .iter()
@@ -842,8 +863,10 @@ impl ConnectState {
         {
             self.draft = profile.clone();
             self.selected = network_id.to_string();
+            self.origin = DraftOrigin::Saved;
             self.password_edited = false;
             self.nickserv_edited = false;
+            debug_assert!(self.origin_consistent());
         }
     }
 
