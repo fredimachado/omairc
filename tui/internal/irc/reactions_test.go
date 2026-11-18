@@ -286,3 +286,30 @@ func TestReactionKindOrderEndsWithReaction(t *testing.T) {
 	requireInt(t, "nick facts", int(EventNickFacts), 20)
 	requireInt(t, "reaction", int(EventReaction), 22)
 }
+
+func TestReplyKeepsItsParentAcrossARestartAndReactionsAreNotLogged(t *testing.T) {
+	log := &recordingConversationLog{}
+	first := NewEventReducer()
+	first.SetConversationLog(log)
+	welcome(first, networkA)
+	first.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	applyWire(t, first, "@msgid=m1 :alice!u@h PRIVMSG #room :ship it")
+	applyWire(t, first, "@msgid=m2;+draft/reply=m1 :bob!u@h PRIVMSG #room :agreed")
+	applyWire(t, first, "@+draft/reply=m1;+draft/react=👍 :carol!u@h TAGMSG #room")
+	requireInt(t, "logged lines", len(log.lines), 3)
+
+	again := NewEventReducer()
+	again.SetConversationLog(log)
+	welcome(again, networkA)
+	again.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	state := stateOf(t, again, again.ConversationKey(networkA, "#room"))
+	found := false
+	for _, message := range state.Messages {
+		if message.Body == "agreed" {
+			found = true
+			requireString(t, "hydrated reply", message.ReplyTo, "m1")
+		}
+	}
+	requireTrue(t, "hydrated line", found)
+	requireInt(t, "reactions", len(state.Reactions), 0)
+}

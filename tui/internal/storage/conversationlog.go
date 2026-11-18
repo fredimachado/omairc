@@ -128,6 +128,7 @@ type conversationLogRecord struct {
 	Kind             string `json:"kind"`
 	Body             string `json:"body"`
 	MsgID            string `json:"msgid,omitempty"`
+	ReplyTo          string `json:"replyTo,omitempty"`
 	OnlyVisibleToYou bool   `json:"onlyVisibleToYou,omitempty"`
 }
 
@@ -165,6 +166,7 @@ func conversationLogFormatLine(line irc.TranscriptLine) []byte {
 		Kind:             line.Kind,
 		Body:             conversationLogFlatten(line.Body),
 		MsgID:            line.MsgID,
+		ReplyTo:          line.ReplyTo,
 		OnlyVisibleToYou: line.OnlyVisibleToYou,
 	}
 	var buffer bytes.Buffer
@@ -192,6 +194,7 @@ func conversationLogParseLine(raw []byte) (irc.TranscriptLine, bool) {
 		Kind:             record.Kind,
 		Body:             termtext.Sanitize(record.Body),
 		MsgID:            record.MsgID,
+		ReplyTo:          termtext.Sanitize(record.ReplyTo),
 		OnlyVisibleToYou: record.OnlyVisibleToYou,
 	}
 	if record.Timestamp != "" {

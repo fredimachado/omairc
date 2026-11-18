@@ -113,6 +113,8 @@ struct ConversationLogRecord {
     body: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     msgid: String,
+    #[serde(default, rename = "replyTo", skip_serializing_if = "String::is_empty")]
+    reply_to: String,
     #[serde(
         default,
         rename = "onlyVisibleToYou",
@@ -157,6 +159,7 @@ fn format_line(line: &TranscriptLine) -> Vec<u8> {
         kind: line.kind.clone(),
         body: flatten_text(&line.body),
         msgid: line.msgid.clone(),
+        reply_to: line.reply_to.clone(),
         only_visible_to_you: line.only_visible_to_you,
     };
     let mut buffer = serde_json::to_vec(&record).expect("json encode");
@@ -176,7 +179,7 @@ fn parse_line(raw: &[u8]) -> Option<TranscriptLine> {
         kind: record.kind,
         body: record.body,
         msgid: record.msgid,
-        reply_to: String::new(),
+        reply_to: record.reply_to,
         only_visible_to_you: record.only_visible_to_you,
     })
 }
@@ -535,6 +538,31 @@ mod tests {
             "json {:?}",
             String::from_utf8_lossy(&bytes)
         );
+    }
+
+    #[test]
+    fn a_reply_parent_round_trips_under_the_reply_to_key() {
+        let mut line = test_line("agreed");
+        line.reply_to = "parent-1".to_owned();
+        let bytes = format_line(&line);
+        let text = String::from_utf8_lossy(&bytes).into_owned();
+        assert!(text.contains("\"replyTo\":\"parent-1\""), "{text}");
+        let back = parse_line(&bytes[..bytes.len() - 1]).expect("parses");
+        assert_eq!(back.reply_to, "parent-1");
+
+        let plain = format_line(&test_line("hello"));
+        assert!(
+            !String::from_utf8_lossy(&plain).contains("replyTo"),
+            "a line that is not a reply writes no key"
+        );
+    }
+
+    #[test]
+    fn a_record_written_before_replies_parses_with_no_parent() {
+        let old = br#"{"timestamp":"2026-09-04T00:00:00.000Z","author":"alice","kind":"message","body":"hi","msgid":"m1"}"#;
+        let line = parse_line(old).expect("an old record parses");
+        assert_eq!(line.msgid, "m1");
+        assert_eq!(line.reply_to, "");
     }
 
     #[test]

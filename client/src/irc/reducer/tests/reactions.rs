@@ -220,3 +220,25 @@ fn merged_direct_messages_keep_the_reactions_of_the_moved_lines() {
     assert!(reducer.find(&old).is_none(), "the two direct messages merged");
     assert_eq!(chips(&reducer, &new, "m1").len(), 1, "the moved line keeps its chip");
 }
+
+#[test]
+fn a_reply_keeps_its_parent_across_a_restart_and_reactions_are_not_logged() {
+    let log = RecordingLog::default();
+    let mut first = EventReducer::new();
+    first.set_conversation_log(Some(Box::new(log.clone())));
+    welcome_omairc(&mut first, NETWORK_A);
+    fold(&mut first, join(NETWORK_A, "#room", "omairc"));
+    apply_wire(&mut first, "@msgid=m1 :alice!u@h PRIVMSG #room :ship it");
+    apply_wire(&mut first, "@msgid=m2;+draft/reply=m1 :bob!u@h PRIVMSG #room :agreed");
+    apply_wire(&mut first, "@+draft/reply=m1;+draft/react=👍 :carol!u@h TAGMSG #room");
+    assert_eq!(log.snapshot().len(), 3, "join, two lines, no reaction");
+
+    let mut again = EventReducer::new();
+    again.set_conversation_log(Some(Box::new(log.clone())));
+    welcome_omairc(&mut again, NETWORK_A);
+    fold(&mut again, join(NETWORK_A, "#room", "omairc"));
+    let room = again.conversation_key(NETWORK_A, "#room");
+    let state = state_of(&again, &room);
+    assert_eq!(message_by_body(&state.messages, "agreed").reply_to, "m1");
+    assert!(state.reactions.is_empty(), "reactions are in memory only");
+}
