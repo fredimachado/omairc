@@ -1,8 +1,8 @@
 //! Read-marker publishing when the transcript is caught up, and one MARKREAD get per
 //! direct message.
-//! (`syncReadMarkerForSelection` / `NoteTranscriptViewport`).
+//! (`publishReadMarker` / `NoteTranscriptViewport`).
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 
@@ -13,51 +13,92 @@ use crate::irc::viewnotify::ViewNotify;
 
 use super::controller::Controller;
 
-/// Tracks which direct messages already received a MARKREAD get this session,
-/// and which still await that get's reply before a set may publish.
+/// One GET phase per conversation. Absent from the map means `NotSent`. Only
+/// `ReadMarkerState::note_get_sent` stores `Awaiting`, after the session accepted
+/// the GET, so awaiting a GET that was never sent cannot be represented.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum GetPhase {
+    NotSent,
+    Awaiting,
+    /// The GET was sent and its reply or a FAIL arrived. Keeps the "do not GET
+    /// again" role until the conversation or network is forgotten.
+    Released,
+}
+
+/// The GET phase of each direct message this controller session.
 pub(super) struct ReadMarkerState {
-    get_sent: HashSet<ConversationKey>,
-    awaiting_get: HashSet<ConversationKey>,
+    gets: HashMap<ConversationKey, GetPhase>,
+}
+
+/// What the shell reports about the transcript. Where `follow_end` comes from
+/// may change; this type does not.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct ReadMarkerViewport {
+    pub focused: bool,
+    pub follow_end: bool,
+}
+
+impl ReadMarkerViewport {
+    /// Whether the viewport is focused and caught up to the end.
+    pub(super) fn open(self) -> bool {
+        self.focused && self.follow_end
+    }
 }
 
 impl ReadMarkerState {
     pub(super) fn new() -> Self {
         Self {
-            get_sent: HashSet::new(),
-            awaiting_get: HashSet::new(),
+            gets: HashMap::new(),
         }
     }
 
     pub(super) fn forget_network(&mut self, network_id: &str) {
-        self.get_sent
-            .retain(|key| key.network_id != network_id);
-        self.awaiting_get
-            .retain(|key| key.network_id != network_id);
+        self.gets.retain(|key, _| key.network_id != network_id);
     }
 
     pub(super) fn forget_conversation(&mut self, key: &ConversationKey) {
-        self.get_sent.remove(key);
-        self.awaiting_get.remove(key);
+        self.gets.remove(key);
     }
 
+    pub(super) fn phase(&self, key: &ConversationKey) -> GetPhase {
+        self.gets.get(key).copied().unwrap_or(GetPhase::NotSent)
+    }
+
+    /// The only constructor of `Awaiting`; call it after the session accepted the GET.
     fn note_get_sent(&mut self, key: &ConversationKey) {
-        self.get_sent.insert(key.clone());
-        self.awaiting_get.insert(key.clone());
+        self.gets.insert(key.clone(), GetPhase::Awaiting);
     }
 
-    fn clear_awaiting_get(&mut self, key: &ConversationKey) -> bool {
-        self.awaiting_get.remove(key)
+    /// Moves an awaiting GET to `Released`; true iff it was awaiting.
+    fn release_get(&mut self, key: &ConversationKey) -> bool {
+        match self.gets.get_mut(key) {
+            Some(phase @ GetPhase::Awaiting) => {
+                *phase = GetPhase::Released;
+                true
+            }
+            _ => false,
+        }
     }
 
-    fn clear_awaiting_network(&mut self, network_id: &str) -> bool {
-        let before = self.awaiting_get.len();
-        self.awaiting_get
-            .retain(|key| key.network_id != network_id);
-        self.awaiting_get.len() != before
+    /// Releases every awaiting GET on the network (FAIL without a target); true
+    /// iff any was awaiting.
+    fn release_network(&mut self, network_id: &str) -> bool {
+        let mut released = false;
+        for (key, phase) in &mut self.gets {
+            if key.network_id == network_id && *phase == GetPhase::Awaiting {
+                *phase = GetPhase::Released;
+                released = true;
+            }
+        }
+        released
     }
 
-    fn awaits_get(&self, key: &ConversationKey) -> bool {
-        self.awaiting_get.contains(key)
+    fn awaiting_keys(&self, network_id: &str) -> Vec<ConversationKey> {
+        self.gets
+            .iter()
+            .filter(|(key, phase)| key.network_id == network_id && **phase == GetPhase::Awaiting)
+            .map(|(key, _)| key.clone())
+            .collect()
     }
 }
 
@@ -65,15 +106,17 @@ impl Controller {
     /// Records whether the shell is focused and the selected transcript is pinned to the bottom
     /// (`NoteTranscriptViewport`).
     pub fn note_transcript_viewport(&mut self, focused: bool, follow_end: bool) {
-        self.transcript_focused = focused;
-        self.transcript_follow_end = follow_end;
-        self.sync_read_marker_for_selection();
+        self.viewport = ReadMarkerViewport {
+            focused,
+            follow_end,
+        };
+        self.publish_read_marker();
     }
 
     /// The bottom-pin bit the shell last reported, which gates the read marker.
     #[cfg(test)]
     pub fn transcript_follow_end(&self) -> bool {
-        self.transcript_follow_end
+        self.viewport.follow_end
     }
 
     /// Applies a server read marker for one target (`ReadMarkerReceived`). An empty
@@ -88,14 +131,14 @@ impl Controller {
             return;
         }
         if target.is_empty() {
-            if self.read_markers.clear_awaiting_network(network_id) {
-                self.sync_read_marker_for_selection();
+            if self.read_markers.release_network(network_id) {
+                self.publish_read_marker();
             }
             return;
         }
         let features = self.reducer.server_features(network_id);
         let key = self.reducer.conversation_key(network_id, target);
-        let mut awaited = self.read_markers.clear_awaiting_get(&key);
+        let mut awaited = self.read_markers.release_get(&key);
         // Welcome may record the hold under the selected key before 005 arrives,
         // when conversation_key still uses the default casemapping.
         if !awaited {
@@ -105,23 +148,16 @@ impl Controller {
                         .case_mapping()
                         .equals(&selected.normalized_target, target)
                 {
-                    awaited = self.read_markers.clear_awaiting_get(&selected);
+                    awaited = self.read_markers.release_get(&selected);
                 }
             }
         }
         if !awaited {
-            let pending: Vec<ConversationKey> = self
-                .read_markers
-                .awaiting_get
-                .iter()
-                .filter(|pending| pending.network_id == network_id)
-                .cloned()
-                .collect();
-            for pending in pending {
+            for pending in self.read_markers.awaiting_keys(network_id) {
                 if features
                     .case_mapping()
                     .equals(&pending.normalized_target, target)
-                    && self.read_markers.clear_awaiting_get(&pending)
+                    && self.read_markers.release_get(&pending)
                 {
                     awaited = true;
                     break;
@@ -134,7 +170,7 @@ impl Controller {
             }
         } else if marker.is_none() {
             if awaited {
-                self.sync_read_marker_for_selection();
+                self.publish_read_marker();
             }
             return;
         }
@@ -142,7 +178,7 @@ impl Controller {
             self.queue(vec![ViewNotify::Conversations]);
         }
         if awaited {
-            self.sync_read_marker_for_selection();
+            self.publish_read_marker();
         }
     }
 
@@ -160,7 +196,7 @@ impl Controller {
         if features.is_channel(target) {
             return;
         }
-        if self.read_markers.get_sent.contains(key) {
+        if self.read_markers.phase(key) != GetPhase::NotSent {
             return;
         }
         let Some(session) = self.manager.find(&key.network_id) else {
@@ -177,8 +213,8 @@ impl Controller {
     }
 
     pub(super) fn read_marker_clear_awaiting_network(&mut self, network_id: &str) {
-        if self.read_markers.clear_awaiting_network(network_id) {
-            self.sync_read_marker_for_selection();
+        if self.read_markers.release_network(network_id) {
+            self.publish_read_marker();
         }
     }
 
@@ -204,17 +240,20 @@ impl Controller {
         self.request_read_marker_get_with_key(&selected, &target);
     }
 
-    pub(super) fn sync_read_marker_for_selection(&mut self) {
+    /// The only caller that asks a session to send a read marker SET. Inputs: the
+    /// selection, the GET phase, the viewport the shell reported, and the
+    /// reducer's latest message time; the session's `SetSlot` decides in-flight
+    /// dedupe. `bin/check-conventions` enforces the single caller.
+    pub(super) fn publish_read_marker(&mut self) {
         if self.selected.is_none()
             || self.console_open
-            || !self.transcript_follow_end
-            || !self.transcript_focused
+            || !self.viewport.open()
             || !self.reducer.window_active()
         {
             return;
         }
         let key = self.selected.clone().expect("selected");
-        if self.read_markers.awaits_get(&key) {
+        if self.read_markers.phase(&key) == GetPhase::Awaiting {
             return;
         }
         let Some(session) = self.manager.find(&key.network_id) else {
@@ -235,5 +274,51 @@ impl Controller {
             conversation.target.clone()
         };
         session.queue_read_marker_set(&target, when);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key(network: &str, target: &str) -> ConversationKey {
+        ConversationKey {
+            network_id: network.to_owned(),
+            normalized_target: target.to_owned(),
+        }
+    }
+
+    #[test]
+    fn get_phase_transitions() {
+        let mut state = ReadMarkerState::new();
+        let alice = key("net", "alice");
+        let bob = key("net", "bob");
+        let other = key("other", "alice");
+        assert_eq!(state.phase(&alice), GetPhase::NotSent);
+        assert!(!state.release_get(&alice), "a GET never sent cannot release");
+        assert_eq!(state.phase(&alice), GetPhase::NotSent);
+        for key in [&alice, &bob, &other] {
+            state.note_get_sent(key);
+        }
+        assert_eq!(state.phase(&alice), GetPhase::Awaiting);
+        assert!(state.release_get(&alice));
+        assert_eq!(state.phase(&alice), GetPhase::Released);
+        assert!(!state.release_get(&alice), "a Released GET is not awaiting");
+        assert!(state.release_network("net"));
+        assert_eq!(state.phase(&bob), GetPhase::Released, "no re-GET after release");
+        assert_eq!(state.phase(&other), GetPhase::Awaiting);
+        state.forget_conversation(&alice);
+        assert_eq!(state.phase(&alice), GetPhase::NotSent);
+        state.forget_network("other");
+        assert_eq!(state.phase(&other), GetPhase::NotSent);
+    }
+
+    #[test]
+    fn viewport_opens_only_when_focused_and_following() {
+        let open = |focused, follow_end| ReadMarkerViewport { focused, follow_end }.open();
+        assert!(open(true, true));
+        assert!(!open(true, false));
+        assert!(!open(false, true));
+        assert!(!open(false, false));
     }
 }
