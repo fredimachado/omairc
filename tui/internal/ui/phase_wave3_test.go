@@ -79,23 +79,28 @@ func TestOverlayCardInterface(t *testing.T) {
 	wantWidth := m.width - 2*overlayCardInset
 	cases := []struct {
 		name string
-		card string
+		open func()
+		card func() string
 	}{
-		{"shortcuts", m.shortcutsCard(m.width)},
-		{"jump", m.jumpCard(m.width)},
-		{"nick", m.nickCard(m.width)},
-		{"link", m.linkCard(m.width)},
-		{"inbox", m.inboxCard(m.width)},
+		{"shortcuts", func() { m.shortcutsOpen = true }, func() string { return m.shortcutsCard(m.width) }},
+		{"jump", m.openJump, func() string { return m.jumpCard(m.width) }},
+		{"nick", m.openNickJump, func() string { return m.nickCard(m.width) }},
+		{"link", m.toggleLink, func() string { return m.linkCard(m.width) }},
+		{"inbox", m.toggleInbox, func() string { return m.inboxCard(m.width) }},
 	}
 	for _, c := range cases {
-		plain := strings.TrimRight(ansiPattern.ReplaceAllString(c.card, ""), "\n")
-		if got := lipgloss.Width(c.card); got != wantWidth {
+		m.shortcutsOpen = false
+		c.open()
+		card := c.card()
+		plain := strings.TrimRight(ansiPattern.ReplaceAllString(card, ""), "\n")
+		if got := lipgloss.Width(card); got != wantWidth {
 			t.Fatalf("%s card width = %d, want the shared outer width %d", c.name, got, wantWidth)
 		}
 		if !strings.HasPrefix(plain, "╭") || !strings.HasSuffix(plain, "╯") {
-			t.Fatalf("%s card must be the shared panel frame:\n%s", c.name, c.card)
+			t.Fatalf("%s card must be the shared panel frame:\n%s", c.name, card)
 		}
 	}
+	m.shortcutsOpen = false
 
 	// overlayCard delegates to the open overlay's card method.
 	m.openJump()
@@ -127,7 +132,7 @@ func TestOverlayCardTopIsAnchoredAgainstContent(t *testing.T) {
 	}
 
 	wideRow, wideHeight := topRow(), lipgloss.Height(m.jumpCard(m.width))
-	m.jump.input.SetValue("#desktop")
+	m.jumpSheet().input.SetValue("#desktop")
 	narrowRow, narrowHeight := topRow(), lipgloss.Height(m.jumpCard(m.width))
 
 	if narrowHeight >= wideHeight {

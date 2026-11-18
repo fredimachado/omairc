@@ -283,13 +283,13 @@ func TestInboxDismissAboveSelectionKeepsHighlight(t *testing.T) {
 	m = press(t, m, ctrlShiftKey('a'))
 	// The waiting list is newest first: Down moves from keep-3 to keep-2.
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
-	if m.inbox.selected != 1 {
-		t.Fatalf("selected = %d, want 1", m.inbox.selected)
+	if m.inboxSheet().selected != 1 {
+		t.Fatalf("selected = %d, want 1", m.inboxSheet().selected)
 	}
 
 	m.dismissInboxRow(0)
-	if m.inbox.selected != 0 {
-		t.Fatalf("selected after dismissing above it = %d, want 0", m.inbox.selected)
+	if m.inboxSheet().selected != 0 {
+		t.Fatalf("selected after dismissing above it = %d, want 0", m.inboxSheet().selected)
 	}
 	items := m.ctrl.InboxItems()
 	if items[0].MsgID != "inbox-keep-2" {
@@ -306,8 +306,8 @@ func TestInboxDismissAboveSelectionKeepsHighlight(t *testing.T) {
 	if items[0].MsgID != "inbox-keep-4" {
 		t.Fatalf("items[0].MsgID = %q, want inbox-keep-4", items[0].MsgID)
 	}
-	if m.inbox.selected != 0 {
-		t.Fatalf("selected = %d, want 0 after the new arrival", m.inbox.selected)
+	if m.inboxSheet().selected != 0 {
+		t.Fatalf("selected = %d, want 0 after the new arrival", m.inboxSheet().selected)
 	}
 }
 

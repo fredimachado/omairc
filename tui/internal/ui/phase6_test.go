@@ -186,7 +186,7 @@ func TestCloseDirectMessageSelectsNeighbor(t *testing.T) {
 	if !m.nickVisible() {
 		t.Fatal("Ctrl+Shift+K must open the nick jump on a channel")
 	}
-	m.nick.input.SetValue("mira")
+	m.nickSheet().input.SetValue("mira")
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if got := m.View().WindowTitle; got != "mira - Omairc" {
 		t.Fatalf("after nick jump title = %q, want %q", got, "mira - Omairc")
@@ -201,7 +201,7 @@ func TestNickJumpNoOpOffChannel(t *testing.T) {
 	m := seededModel(t)
 	// Opening a direct message first makes the selected target a DM.
 	m = press(t, m, ctrlShiftKey('k'))
-	m.nick.input.SetValue("anna")
+	m.nickSheet().input.SetValue("anna")
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = press(t, m, ctrlShiftKey('k'))
 	if m.nickVisible() {

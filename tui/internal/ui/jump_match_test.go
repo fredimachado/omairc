@@ -11,7 +11,7 @@ func TestJumpMatchesTopicAboveNameAndKeepsNetwork(t *testing.T) {
 	m := seededModel(t)
 	m.openJump()
 
-	m.jump.input.SetValue("builders")
+	m.jumpSheet().input.SetValue("builders")
 	entries := m.jumpEntries()
 	if len(entries) != 1 || entries[0].target != "#omarchy" || entries[0].networkID != "omarchy" {
 		t.Fatalf("builders entries = %+v, want the omarchy #omarchy topic", entries)
@@ -20,7 +20,7 @@ func TestJumpMatchesTopicAboveNameAndKeepsNetwork(t *testing.T) {
 		t.Fatalf("duplicate channel label = %q, want the network name on the row", entries[0].label)
 	}
 
-	m.jump.input.SetValue("#omarchy")
+	m.jumpSheet().input.SetValue("#omarchy")
 	entries = m.jumpEntries()
 	// The OFTC topic also contains "#omarchy". That detail hit must not
 	// reorder the two name matches, so the sidebar-first row stays first.
@@ -31,7 +31,7 @@ func TestJumpMatchesTopicAboveNameAndKeepsNetwork(t *testing.T) {
 		t.Fatalf("#omarchy entries = %+v, want omarchy then oftc, each with its network", entries)
 	}
 
-	m.jump.input.SetValue("build")
+	m.jumpSheet().input.SetValue("build")
 	entries = m.jumpEntries()
 	// "build" is inside #omarchy's "builders" topic, so that row ties with
 	// #lab. #build wins on the name, then sidebar order.
@@ -57,13 +57,13 @@ func TestJumpMatchesTopicAboveNameAndKeepsNetwork(t *testing.T) {
 		RealnameOnly: true,
 	})
 
-	m.jump.input.SetValue("vale")
+	m.jumpSheet().input.SetValue("vale")
 	entries = m.jumpEntries()
 	if len(entries) != 1 || entries[0].target != "anna" || entries[0].networkID != "omarchy" {
 		t.Fatalf("vale entries = %+v, want anna", entries)
 	}
 
-	m.jump.input.SetValue("unknown")
+	m.jumpSheet().input.SetValue("unknown")
 	if entries = m.jumpEntries(); len(entries) != 0 {
 		t.Fatalf("placeholder real name matched: %+v", entries)
 	}
@@ -93,7 +93,7 @@ func TestJumpCapsAfterRank(t *testing.T) {
 		t.Fatalf("empty jump = %+v, want 20 rows starting at #c00", entries)
 	}
 
-	m.jump.input.SetValue("zzcap")
+	m.jumpSheet().input.SetValue("zzcap")
 	entries = m.jumpEntries()
 	if len(entries) != 20 || entries[0].target != "#zzcap" || entries[0].networkID != "omarchy" {
 		t.Fatalf("zzcap entries = %+v, want 20 rows with #zzcap first", entries)

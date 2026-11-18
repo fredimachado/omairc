@@ -128,46 +128,18 @@ func (m *Model) clickMember(index int) {
 
 // activateOverlayRow selects the row and runs the overlay's Enter path.
 func (m *Model) activateOverlayRow(index int) {
-	if m == nil {
+	if m == nil || m.overlay == nil {
 		return
 	}
-	switch {
-	case m.jump.open:
-		m.jump.selected = index
-		m.activateJump()
-	case m.nick.open:
-		m.nick.selected = index
-		m.activateNick()
-	case m.link.open:
-		m.link.selected = index
-		m.activateLink()
-	case m.inbox.open:
-		m.inbox.selected = index
-		m.activateInboxSelection()
-		m.closeInbox()
-	case m.list.open:
-		m.list.selected = index
-		m.activateChannelList()
-	}
+	m.overlay.activateRow(m, index)
 }
 
 // dismissPointerOverlay closes the list the way Escape does.
 func (m *Model) dismissPointerOverlay() {
-	if m == nil {
+	if m == nil || m.overlay == nil {
 		return
 	}
-	switch {
-	case m.nick.open:
-		m.closeNickJump()
-	case m.link.open:
-		m.closeLink()
-	case m.inbox.open:
-		m.closeInbox()
-	case m.list.open:
-		m.closeChannelList()
-	case m.jump.open:
-		m.closeJump()
-	}
+	m.overlay.dismiss(m)
 }
 
 // wheelSidebar pages the roster. direction < 0 shows earlier lines.
@@ -232,24 +204,7 @@ func (m *Model) wheelOverlay(direction int) {
 		m.handleShortcutsScrollKey(key)
 		return
 	}
-	switch {
-	case m.jump.open:
-		wheelList(&m.jump.scroll, len(m.jumpEntries()), m.overlayRowBudget(1), direction)
-	case m.nick.open:
-		wheelList(&m.nick.scroll, len(m.nickEntries()), m.overlayRowBudget(1), direction)
-	case m.link.open:
-		wheelList(&m.link.scroll, len(m.linkMatches()), m.overlayRowBudget(1), direction)
-	case m.inbox.open:
-		wheelList(&m.inbox.scroll, len(m.inboxEntries()), m.overlayRowBudget(0), direction)
-	case m.list.open:
-		rows := m.channelListRows()
-		if len(rows) > channelListRowCap {
-			rows = rows[:channelListRowCap]
-		}
-		visible := m.overlayRowBudget(1) - channelListTableChrome
-		if visible < 1 {
-			visible = 1
-		}
-		wheelList(&m.list.scroll, len(rows), visible, direction)
+	if m.overlay != nil {
+		m.overlay.wheel(m, direction)
 	}
 }

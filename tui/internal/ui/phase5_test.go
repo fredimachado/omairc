@@ -295,7 +295,7 @@ func TestJumpFiltersAndSelectsDesktop(t *testing.T) {
 	if !m.jumpVisible() {
 		t.Fatal("Ctrl+K must open the jump overlay")
 	}
-	m.jump.input.SetValue("#desktop")
+	m.jumpSheet().input.SetValue("#desktop")
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.jumpVisible() {
 		t.Fatal("Enter must dismiss the jump overlay")

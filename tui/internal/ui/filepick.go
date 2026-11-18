@@ -20,7 +20,6 @@ const filePickPlaceholder = "File path"
 
 // filePickState is the Ctrl+Shift+U path prompt.
 type filePickState struct {
-	open  bool
 	input textinput.Model
 }
 
@@ -31,11 +30,7 @@ type FileLinkMsg struct {
 	Message string
 }
 
-func newFilePickState() filePickState {
-	return filePickState{input: newTextInput(defaultStyles(), filePickPlaceholder, overlayFilterPrompt)}
-}
-
-func (m *Model) filePickVisible() bool { return m != nil && m.file.open }
+func (m *Model) filePickVisible() bool { return m.fileSheet() != nil }
 
 // openFilePick opens the path prompt. It does nothing unless the selected
 // server offers a file host, and nothing while find is active.
@@ -44,26 +39,28 @@ func (m *Model) openFilePick() {
 		return
 	}
 	m.saveDraft()
-	m.closeAllOverlays()
-	m.file.open = true
-	m.file.input = newTextInput(m.styles, filePickPlaceholder, overlayFilterPrompt)
-	m.file.input.SetWidth(m.overlayInputWidth())
+	sheet := &filePickState{input: newTextInput(m.styles, filePickPlaceholder, overlayFilterPrompt)}
+	sheet.input.SetWidth(m.overlayInputWidth())
+	m.setOverlay(sheet)
 	m.composer.Blur()
-	_ = m.file.input.Focus()
+	_ = sheet.input.Focus()
 }
 
 func (m *Model) closeFilePick() {
-	if !m.file.open {
+	if m.fileSheet() == nil {
 		return
 	}
-	m.file.open = false
-	m.file.input.Blur()
+	m.clearOverlay()
 	_ = m.composer.Focus()
 	m.loadDraft()
 }
 
 func (m *Model) submitFilePick() {
-	path := strings.TrimSpace(m.file.input.Value())
+	sheet := m.fileSheet()
+	if sheet == nil {
+		return
+	}
+	path := strings.TrimSpace(sheet.input.Value())
 	m.closeFilePick()
 	if path != "" {
 		m.enqueueFilePaths([]string{path})
@@ -71,6 +68,10 @@ func (m *Model) submitFilePick() {
 }
 
 func (m *Model) handleFilePickKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	sheet := m.fileSheet()
+	if sheet == nil {
+		return m, nil
+	}
 	switch key {
 	case "esc", "escape":
 		m.closeFilePick()
@@ -79,9 +80,7 @@ func (m *Model) handleFilePickKey(key string, msg tea.KeyPressMsg) (tea.Model, t
 		m.submitFilePick()
 		return m, nil
 	}
-	var cmd tea.Cmd
-	m.file.input, cmd = m.file.input.Update(msg)
-	return m, cmd
+	return m, sheet.updateInput(msg)
 }
 
 func (m *Model) fileCard(width int) string {
@@ -89,8 +88,12 @@ func (m *Model) fileCard(width int) string {
 }
 
 func (m *Model) fileCardBody(inner int) []string {
+	sheet := m.fileSheet()
+	if sheet == nil {
+		return nil
+	}
 	lines := m.overlaySheetHeader(inner, "File", 0)
-	lines = append(lines, truncateLine(m.file.input.View(), inner))
+	lines = append(lines, truncateLine(sheet.input.View(), inner))
 	return lines
 }
 

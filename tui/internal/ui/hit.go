@@ -213,29 +213,16 @@ func (m *Model) overlayCardRect() (cellRect, bool) {
 // pointerDismissable reports whether a click outside the card closes it.
 // Connect, About, and the shortcuts sheet stay keyboard-owned.
 func (m *Model) pointerDismissable() bool {
-	return m != nil && (m.jump.open || m.nick.open || m.link.open || m.inbox.open || m.list.open)
+	return m != nil && m.overlay != nil && m.overlay.pointerDismissable()
 }
 
-// activeOverlayLines is the open list's content lines, or nil when the open
-// card is not one of the clickable lists.
+// activeOverlayLines is the open sheet's content lines, or nil when the open
+// card has no clickable rows.
 func (m *Model) activeOverlayLines(inner int) []overlayLine {
-	if m == nil {
+	if m == nil || m.overlay == nil {
 		return nil
 	}
-	switch {
-	case m.jump.open:
-		return m.jumpOverlayLines(inner)
-	case m.nick.open:
-		return m.nickOverlayLines(inner)
-	case m.link.open:
-		return m.linkOverlayLines(inner)
-	case m.inbox.open:
-		return m.inboxOverlayLines(inner)
-	case m.list.open:
-		return m.listOverlayLines(inner)
-	default:
-		return nil
-	}
+	return m.overlay.overlayLines(m, inner)
 }
 
 // screenLayout is the clickable geometry for the current model. It is computed

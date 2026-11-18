@@ -259,7 +259,10 @@ func (m *Model) linkMatches() []linkMatch {
 	if m == nil || m.ctrl == nil {
 		return nil
 	}
-	query := strings.ToLower(strings.TrimSpace(m.link.input.Value()))
+	query := ""
+	if sheet := m.linkSheet(); sheet != nil {
+		query = strings.ToLower(strings.TrimSpace(sheet.input.Value()))
+	}
 	var matches []linkMatch
 	if m.ctrl.ConsoleOpen() {
 		rows := m.ctrl.ConsoleText(m.ctrl.FocusedNetworkID())

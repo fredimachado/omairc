@@ -188,27 +188,27 @@ func TestPhase10LinkSheetFilterWrapAndOpen(t *testing.T) {
 		t.Fatalf("linkMatches = %d, want 2", got)
 	}
 
-	m.link.input.SetValue("b.example")
+	m.linkSheet().input.SetValue("b.example")
 	matches := m.linkMatches()
 	if len(matches) != 1 || matches[0].value != "https://b.example/y" {
 		t.Fatalf("filtered linkMatches = %+v, want only the b URL", matches)
 	}
-	m.link.input.SetValue("")
+	m.linkSheet().input.SetValue("")
 	if got := len(m.linkMatches()); got != 2 {
 		t.Fatalf("cleared-filter linkMatches = %d, want 2", got)
 	}
 
-	m.link.selected = 0
+	m.linkSheet().selected = 0
 	m.moveLink(-1)
-	if m.link.selected != 1 {
-		t.Fatalf("moveLink(-1) from 0 = %d, want 1 (wrap)", m.link.selected)
+	if m.linkSheet().selected != 1 {
+		t.Fatalf("moveLink(-1) from 0 = %d, want 1 (wrap)", m.linkSheet().selected)
 	}
 	m.moveLink(1)
-	if m.link.selected != 0 {
-		t.Fatalf("moveLink(1) from 1 = %d, want 0 (wrap)", m.link.selected)
+	if m.linkSheet().selected != 0 {
+		t.Fatalf("moveLink(1) from 1 = %d, want 0 (wrap)", m.linkSheet().selected)
 	}
 
-	m.link.selected = 0
+	m.linkSheet().selected = 0
 	m.suppressExternalOpen = true
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.linkVisible() {
@@ -254,7 +254,7 @@ func TestPhase10LinkSheetInviteJoins(t *testing.T) {
 		t.Fatalf("linkMatches = %+v, want an invite row for #invited", matches)
 	}
 
-	m.link.selected = index
+	m.linkSheet().selected = index
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.linkVisible() {
 		t.Fatal("Enter must close the link sheet")
