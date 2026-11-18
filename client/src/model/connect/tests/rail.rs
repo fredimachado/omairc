@@ -402,3 +402,48 @@ fn a_no_op_select_is_not_a_refusal() {
         "an unknown row is not refused either"
     );
 }
+
+#[test]
+fn discard_of_an_added_network_whose_origin_is_gone_falls_to_the_first_saved() {
+    let (_, mut state) = seeded();
+    state.select("oftc");
+    state.add();
+    state.saved.retain(|profile| profile.network_id != "oftc");
+    state.discard();
+    assert_eq!(state.selected(), "omarchy");
+    assert!(state.is_saved(state.selected()));
+    assert!(!state.dirty());
+}
+
+#[test]
+fn a_dirty_or_added_draft_refuses_a_switch_and_raises_the_notice() {
+    let (_, mut state) = seeded();
+    assert!(state.select("oftc"), "a clean draft moves");
+    assert!(!state.switch_refused());
+
+    state.set_text(ConnectField::Name, "edited");
+    assert!(!state.select("omarchy"));
+    assert!(state.switch_refused(), "a dirty draft refuses");
+    state.discard();
+
+    assert!(state.add());
+    assert!(!state.select("omarchy"));
+    assert!(state.switch_refused(), "an added draft refuses");
+    assert_eq!(state.selected(), "network-1");
+}
+
+#[test]
+fn apply_of_an_added_network_ends_the_added_phase() {
+    let (_, mut state) = seeded();
+    state.select("oftc");
+    assert!(state.add());
+    state.set_text(ConnectField::Host, "irc.libera.example");
+    state.set_text(ConnectField::Nick, "zed");
+    state.apply().expect("complete");
+    assert!(state.is_saved(state.selected()));
+    assert!(!state.dirty());
+    assert!(state.can_add(), "a saved clean network can add again");
+    state.discard();
+    assert_eq!(state.selected(), "network-1", "Discard no longer drops it");
+    assert!(state.is_saved("network-1"));
+}
