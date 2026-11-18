@@ -1330,6 +1330,138 @@ func TestSessionRetryableErrorsStayDedupedAcrossKindsUntilWelcome(t *testing.T) 
 	}
 }
 
+// TestSessionWelcomeClearsRetryMemory.
+// client/src/session/tests/lifecycle.rs (a welcome clears the retry count and the once-per-kind bits).
+func TestSessionWelcomeClearsRetryMemory(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	fixture.connectTLS()
+	fixture.transport.RemoteClose()
+	fixture.fireReconnect()
+	fixture.transport.CompleteConnect()
+	fixture.inject(":server CAP omairc LS :multi-prefix\r\n" +
+		":server 001 omairc :Welcome\r\n")
+	if got := fixture.session.ReconnectAttempt(); got != 0 {
+		t.Fatalf("attempt after welcome = %d, want 0", got)
+	}
+
+	fixture.transport.RemoteClose()
+
+	if len(fixture.handler.errors) != 2 {
+		t.Fatalf("errors = %d, want 2 (the welcome re-arms the once-per-kind report)", len(fixture.handler.errors))
+	}
+	last := fixture.handler.reconnects[len(fixture.handler.reconnects)-1]
+	if last.attempt != 1 {
+		t.Fatalf("attempt = %d, want 1 (the welcome restarts the count)", last.attempt)
+	}
+}
+
+// TestSessionFatalFailureAfterRetryableRequestDoesNotReconnect.
+// client/src/session/tests/lifecycle.rs::fatal_failure_in_the_same_read_as_a_retryable_error_does_not_reconnect.
+func TestSessionFatalFailureAfterRetryableRequestDoesNotReconnect(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	fixture.registerWithWelcome()
+
+	fixture.inject(":server ERROR :bye\r\n:server 464 omairc :Password incorrect\r\n")
+
+	if got := fixture.session.State(); got != StateFailed {
+		t.Fatalf("state = %v, want Failed", got)
+	}
+	if len(fixture.handler.reconnects) != 0 {
+		t.Fatalf("reconnects = %+v, want none", fixture.handler.reconnects)
+	}
+	if len(fixture.handler.errors) != 2 {
+		t.Fatalf("errors = %+v, want two", fixture.handler.errors)
+	}
+	if fixture.handler.errors[0].message != "bye" ||
+		fixture.handler.errors[1].message != "Server password or authentication was rejected" {
+		t.Fatalf("error messages = %q/%q", fixture.handler.errors[0].message, fixture.handler.errors[1].message)
+	}
+
+	fixture.clock.Advance(60 * time.Second)
+	if got := fixture.session.State(); got != StateFailed {
+		t.Fatalf("state after 60s = %v, want Failed", got)
+	}
+	if len(fixture.handler.reconnects) != 0 {
+		t.Fatal("no reconnect may fire after the fatal failure")
+	}
+}
+
+// TestSessionStopAfterRetryableRequestDoesNotReconnect.
+// client/src/session/tests/lifecycle.rs (a stop after a retryable request; connection.rs stop_outranks_later_reconnect_request).
+func TestSessionStopAfterRetryableRequestDoesNotReconnect(t *testing.T) {
+	fixture, held := newHeldShutdownSession(t, sessionTestConfig(sessionTestNetworkID))
+	fixture.registerWithWelcome()
+
+	fixture.inject(":server ERROR :bye\r\n")
+	if len(fixture.handler.reconnects) != 0 {
+		t.Fatal("the reconnect waits for the disconnect, which the held shutdown delays")
+	}
+
+	fixture.session.Stop()
+	held.release()
+
+	if got := fixture.session.State(); got != StateIdle {
+		t.Fatalf("state = %v, want Idle", got)
+	}
+	if len(fixture.handler.reconnects) != 0 {
+		t.Fatalf("reconnects = %+v, want none", fixture.handler.reconnects)
+	}
+	if fixture.clock.Pending() != 0 {
+		t.Fatal("no reconnect timer may be pending after a stop")
+	}
+}
+
+// TestSessionServerErrorWhileStoppingDoesNotReconnect.
+// client/src/session/tests/lifecycle.rs (a server ERROR before the socket closes; connection.rs reconnect_request_does_not_override_a_stop).
+func TestSessionServerErrorWhileStoppingDoesNotReconnect(t *testing.T) {
+	fixture, held := newHeldShutdownSession(t, sessionTestConfig(sessionTestNetworkID))
+	fixture.registerWithWelcome()
+
+	fixture.session.Stop()
+	fixture.inject(":server ERROR :Closing Link: 127.0.0.1 (Quit)\r\n")
+	held.release()
+
+	if got := fixture.session.State(); got != StateIdle {
+		t.Fatalf("state = %v, want Idle", got)
+	}
+	if len(fixture.handler.reconnects) != 0 {
+		t.Fatalf("reconnects = %+v, want none after a stop", fixture.handler.reconnects)
+	}
+	if fixture.clock.Pending() != 0 {
+		t.Fatal("no reconnect timer may be pending after a stop")
+	}
+}
+
+// TestSessionDisconnectAfterStsUpgradeIsNotAnotherUpgrade.
+// client/src/session/tests/sts.rs (the upgrade disconnect reconnects once on TLS; a later drop is decided by the intent alone).
+func TestSessionDisconnectAfterStsUpgradeIsNotAnotherUpgrade(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestPlaintextConfig())
+	fixture.session.Start()
+	fixture.transport.CompleteConnect()
+
+	fixture.inject(":server CAP omairc LS :sts=port=6697,duration=60 multi-prefix\r\n")
+	if !fixture.transport.TLSRequested() || fixture.transport.ConnectedPort() != 6697 {
+		t.Fatalf("the STS disconnect must reconnect on TLS port 6697 at once, got tls=%v port=%d",
+			fixture.transport.TLSRequested(), fixture.transport.ConnectedPort())
+	}
+	fixture.transport.CompleteConnect()
+
+	fixture.transport.RemoteClose()
+
+	if got := fixture.session.State(); got != StateReconnecting {
+		t.Fatalf("state = %v, want Reconnecting", got)
+	}
+	if len(fixture.handler.reconnects) != 1 {
+		t.Fatalf("reconnects = %d, want 1", len(fixture.handler.reconnects))
+	}
+	if got := fixture.transport.ConnectedPort(); got != 6697 {
+		t.Fatalf("port = %d, want 6697 with no extra connect before the reconnect timer", got)
+	}
+	if got := fixture.transport.State(); got != ConnectionDisconnected {
+		t.Fatalf("transport = %v, want Disconnected", got)
+	}
+}
+
 // TestSessionQuitRejectsInvalidReasonWhileRegistered.
 // SessionTest::quitRejectsInvalidReasonWhileRegistered.
 func TestSessionQuitRejectsInvalidReasonWhileRegistered(t *testing.T) {
@@ -1574,6 +1706,50 @@ func reconnectDelays(reconnects []sessionRecordedReconnect) []int {
 		delays[index] = reconnect.delayMs
 	}
 	return delays
+}
+
+// heldShutdownTransport keeps Shutdown from reaching the loopback until release.
+// The loopback disconnects synchronously, so without the hold a stop or a server
+// ERROR cannot land while the socket is still open, which a real socket allows
+// between Shutdown and the disconnect.
+type heldShutdownTransport struct {
+	*LoopbackTransport
+	held      bool
+	requested bool
+}
+
+func (t *heldShutdownTransport) Shutdown() {
+	if t.held {
+		t.requested = true
+		return
+	}
+	t.LoopbackTransport.Shutdown()
+}
+
+// release lets the held shutdown through, if one was requested, and every later
+// Shutdown passes straight to the loopback.
+func (t *heldShutdownTransport) release() {
+	t.held = false
+	if t.requested {
+		t.requested = false
+		t.LoopbackTransport.Shutdown()
+	}
+}
+
+// newHeldShutdownSession mirrors newSessionFixture with a held transport.
+func newHeldShutdownSession(t *testing.T, config SessionConfig) (*sessionFixture, *heldShutdownTransport) {
+	t.Helper()
+	loopback := NewLoopbackTransport()
+	held := &heldShutdownTransport{LoopbackTransport: loopback, held: true}
+	fixture := &sessionFixture{
+		t:         t,
+		transport: loopback,
+		clock:     NewFakeClock(time.Unix(0, 0)),
+	}
+	fixture.session = NewSession(config, held, fixture.clock)
+	fixture.handler = &sessionTestHandler{session: fixture.session}
+	fixture.session.SetHandler(fixture.handler)
+	return fixture, held
 }
 
 func equalInts(left, right []int) bool {
