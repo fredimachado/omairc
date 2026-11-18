@@ -162,6 +162,35 @@ func TestReadMarkerScrolledUpDoesNotSend(t *testing.T) {
 	}
 }
 
+func TestFollowEndFalseBlocksPublishIncludingPendingRestore(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("net", "omairc"))
+	registerNetwork(t, transport, "omairc", "draft/read-marker")
+	c.NoteTranscriptViewport(true, true)
+	key := c.reducer.ConversationKey("net", "#room")
+	c.reducer.EnsureConversation(key, "#room", irc.CauseChannelState)
+	c.SelectConversation("net", "#room")
+	// A pending scroll restore reports followEnd = false to the shell.
+	c.NoteTranscriptViewport(true, false)
+	when := time.Date(2024, 6, 1, 12, 0, 0, 123000000, time.UTC)
+	c.Apply(irc.MessageEvent{
+		Conversation: key,
+		Target:       "#room",
+		Author:       "peer",
+		Body:         "hi",
+		Timestamp:    when,
+		ServerTime:   &when,
+	})
+	c.NoteTranscriptViewport(true, false)
+	if writtenFramesContain(transport, "MARKREAD") {
+		t.Fatalf("followEnd=false must not publish: %v", transport.WrittenFrames())
+	}
+	c.NoteTranscriptViewport(true, true)
+	if countFramesContaining(transport, "MARKREAD #room timestamp=2024-06-01T12:00:00.123Z\r\n") != 1 {
+		t.Fatalf("caught-up viewport must publish once: %v", transport.WrittenFrames())
+	}
+}
+
 func TestReadMarkerLaterTimestampSendsOnceMore(t *testing.T) {
 	c, clock := newController(t)
 	transport := addAndStart(t, c, clock, baseConfig("net", "omairc"))

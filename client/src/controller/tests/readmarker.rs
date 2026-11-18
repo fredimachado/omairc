@@ -206,6 +206,30 @@ fn scrolled_up_does_not_send() {
 }
 
 #[test]
+fn follow_end_false_blocks_publish_including_pending_restore() {
+    let mut fixture = Fixture::seeded();
+    enable_read_marker(&mut fixture);
+    fixture.controller.note_transcript_viewport(true, true);
+    ensure_room(&mut fixture, "#room");
+    fixture.controller.select_conversation(NET, "#room");
+    fixture.clear_frames(NET);
+    // A pending scroll restore reports follow_end = false to the shell.
+    fixture.controller.note_transcript_viewport(true, false);
+    let at = when(2024, 6, 1, 12, 0, 0, 123);
+    deliver_privmsg(&mut fixture, "#room", "peer", "hi", at);
+    assert_eq!(count_containing(&fixture.frames(NET), "MARKREAD"), 0);
+    fixture.controller.note_transcript_viewport(true, false);
+    assert_eq!(count_containing(&fixture.frames(NET), "MARKREAD"), 0);
+    fixture.controller.note_transcript_viewport(true, true);
+    assert_eq!(
+        count_containing(&fixture.frames(NET), "MARKREAD #room timestamp=2024-06-01T12:00:00.123Z\r\n"),
+        1,
+        "frames = {:?}",
+        fixture.frames(NET)
+    );
+}
+
+#[test]
 fn later_timestamp_sends_once_more() {
     let mut fixture = Fixture::seeded();
     enable_read_marker(&mut fixture);

@@ -352,3 +352,38 @@ fn read_marker_reconnect_clears_in_flight_so_same_stamp_retries() {
         fx.frames()
     );
 }
+
+#[test]
+fn one_in_flight_set_a_newer_stamp_waits_then_sends_on_echo() {
+    let fx = fresh();
+    register_with_read_marker(&fx, "draft/read-marker");
+    fx.session.queue_read_marker_set("#omarchy", at(0));
+    fx.session.queue_read_marker_set("#omarchy", at(60));
+    fx.session.queue_read_marker_set("#omarchy", at(120));
+    let first = "MARKREAD #omarchy timestamp=2024-06-01T12:00:00.000Z\r\n";
+    let second = "timestamp=2024-06-01T12:01:00.000Z";
+    let third = "MARKREAD #omarchy timestamp=2024-06-01T12:02:00.000Z\r\n";
+    assert_eq!(count_containing(&fx.frames(), "timestamp="), 1, "one wire line while in flight");
+    assert!(fx.wrote(first), "frames = {:?}", fx.frames());
+    fx.inject(":server MARKREAD #omarchy :timestamp=2024-06-01T12:00:00.000Z\r\n");
+    assert_eq!(count_containing(&fx.frames(), "timestamp="), 2, "{:?}", fx.frames());
+    assert_eq!(count_containing(&fx.frames(), third), 1, "only the newest waits");
+    assert_eq!(count_containing(&fx.frames(), second), 0, "the middle stamp is dropped");
+}
+
+#[test]
+fn queued_slot_holds_only_the_newest_pending() {
+    let fx = fresh();
+    register_with_read_marker(&fx, "draft/read-marker");
+    fx.session.queue_read_marker_set("#omarchy", at(0));
+    fx.session.queue_read_marker_set("#omarchy", at(120));
+    fx.session.queue_read_marker_set("#omarchy", at(60));
+    fx.inject(":server MARKREAD #omarchy :timestamp=2024-06-01T12:00:00.000Z\r\n");
+    assert_eq!(
+        count_containing(&fx.frames(), "MARKREAD #omarchy timestamp=2024-06-01T12:02:00.000Z\r\n"),
+        1,
+        "{:?}",
+        fx.frames()
+    );
+    assert_eq!(count_containing(&fx.frames(), "timestamp=2024-06-01T12:01:00.000Z"), 0);
+}
