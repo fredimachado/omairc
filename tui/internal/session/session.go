@@ -84,7 +84,7 @@ func (s SessionState) String() string {
 
 // ErrorKind classifies a session failure. It mirrors IrcSession::ErrorKind in
 // `client/src/session/session.rs`. The order is significant because
-// reportedRetryErrors packs one dedup bit per kind.
+// connectionLifecycle.reportedRetryErrors packs one dedup bit per kind.
 type ErrorKind int
 
 const (
@@ -296,9 +296,8 @@ type Session struct {
 
 	ctcpReplyClock map[string]time.Time
 
-	pingWatchdog        pingWatchdogState
-	reconnectAttempt    int
-	reportedRetryErrors uint32
+	pingWatchdog pingWatchdogState
+	connection   connectionLifecycle
 
 	registrationSent    bool
 	registrationNick    registrationNickState
@@ -314,9 +313,6 @@ type Session struct {
 
 	capabilityNegotiationEnded bool
 	capabilityListSeen         bool
-
-	expectedDisconnect       bool
-	reconnectAfterDisconnect bool
 
 	sessionState SessionState
 
@@ -542,7 +538,7 @@ func (s *Session) State() SessionState {
 func (s *Session) ReconnectAttempt() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.reconnectAttempt
+	return s.connection.reconnectAttempt
 }
 
 // Capabilities returns the capabilities the server acknowledged.
@@ -695,11 +691,8 @@ func (s *Session) startLocked() {
 		return
 	}
 
-	s.expectedDisconnect = false
-	s.reconnectAfterDisconnect = false
+	s.connection.beginStart()
 	s.stsDuration = nil
-	s.reconnectAttempt = 0
-	s.reportedRetryErrors = 0
 	s.portNumber = s.config.Port
 	s.tlsEnabled = s.config.TLSEnabled
 	s.applyCachedStsLocked()
@@ -714,15 +707,12 @@ func (s *Session) Stop() { s.locked(s.stopLocked) }
 
 func (s *Session) stopLocked() {
 	s.rescheduleStsExpiryLocked()
-	s.expectedDisconnect = true
-	s.reconnectAfterDisconnect = false
+	s.connection.beginStop()
 	s.cancelTimer(&s.reconnectTimer)
 	s.cancelTimer(&s.capabilityTimer)
 	s.cancelTimer(&s.registrationTimer)
 	s.cancelPingWatchdogLocked()
 	s.clearPendingRequestLabelsLocked(true)
-	s.reconnectAttempt = 0
-	s.reportedRetryErrors = 0
 
 	if s.sessionState == StateIdle {
 		return
@@ -1225,24 +1215,21 @@ func (s *Session) encryptedLocked() {
 func (s *Session) Disconnected() { s.locked(s.disconnectedLocked) }
 
 func (s *Session) disconnectedLocked() {
-	if s.shouldFinishStsUpgradeLocked() {
+	outcome := s.connection.onDisconnect(s.sessionState)
+	if outcome == outcomeFinishStsUpgrade {
 		s.resetForConnectionLocked()
 		s.transport.Connect(s.config.Host, s.portNumber, s.tlsEnabled)
 		return
 	}
 	s.rescheduleStsExpiryLocked()
-	if s.reconnectAfterDisconnect {
-		s.reconnectAfterDisconnect = false
+	switch outcome {
+	case outcomeScheduleReconnect:
 		s.scheduleReconnectLocked()
-		return
+	case outcomeSettleIdle:
+		s.setStateLocked(StateIdle)
+	case outcomeFailUnexpected:
+		s.failLocked(ErrorNetwork, "Connection closed by the server", true)
 	}
-	if s.expectedDisconnect {
-		if s.sessionState == StateClosing {
-			s.setStateLocked(StateIdle)
-		}
-		return
-	}
-	s.failLocked(ErrorNetwork, "Connection closed by the server", true)
 }
 
 // BytesReceived feeds raw inbound bytes to the framer. It mirrors the
@@ -1258,7 +1245,7 @@ func (s *Session) Error(message string) {
 }
 
 func (s *Session) errorOccurredLocked(message string) {
-	if s.expectedDisconnect {
+	if s.connection.isStopping() {
 		return
 	}
 	lowered := strings.ToLower(message)
@@ -1754,8 +1741,7 @@ func (s *Session) handleWelcomeLocked(message irc.Message) {
 		s.nickname = assigned
 	}
 
-	s.reconnectAttempt = 0
-	s.reportedRetryErrors = 0
+	s.connection.resetRetries()
 	s.cancelTimer(&s.capabilityTimer)
 	s.cancelTimer(&s.registrationTimer)
 	s.capabilities.AbandonOutstanding()
@@ -1829,11 +1815,6 @@ func (s *Session) beginStsUpgradeLocked(port uint16) {
 		fmt.Sprintf("Upgraded to TLS on port %d", port), s.clock.Now())
 	s.emit(func(handler Handler) { handler.StatusEntry(entry) })
 	s.post(func() { s.transport.Shutdown() })
-}
-
-func (s *Session) shouldFinishStsUpgradeLocked() bool {
-	return s.sessionState == StateStsUpgrading &&
-		!s.expectedDisconnect && !s.reconnectAfterDisconnect
 }
 
 // rescheduleStsExpiryLocked takes the duration, so only the first refresh after
@@ -3024,15 +3005,13 @@ func (s *Session) failLocked(kind ErrorKind, message string, reconnect bool) {
 	s.clearPendingRequestLabelsLocked(true)
 
 	if reconnect {
-		bit := uint32(1) << uint(kind)
-		if s.reportedRetryErrors&bit == 0 {
-			s.reportedRetryErrors |= bit
+		if s.connection.firstReportOf(kind) {
 			networkID := s.config.NetworkID
 			s.emit(func(handler Handler) { handler.ErrorOccurred(networkID, kind, message) })
 		}
 		switch s.transport.State() {
 		case ConnectionConnecting, ConnectionConnected, ConnectionEncrypted, ConnectionClosing:
-			s.reconnectAfterDisconnect = true
+			s.connection.reconnectOnDisconnect()
 			s.post(func() { s.transport.Shutdown() })
 			return
 		}
@@ -3042,7 +3021,7 @@ func (s *Session) failLocked(kind ErrorKind, message string, reconnect bool) {
 
 	networkID := s.config.NetworkID
 	s.emit(func(handler Handler) { handler.ErrorOccurred(networkID, kind, message) })
-	s.expectedDisconnect = true
+	s.connection.endOnDisconnect()
 	s.cancelTimer(&s.reconnectTimer)
 	s.setStateLocked(StateFailed)
 	s.post(func() { s.transport.Shutdown() })
@@ -3057,12 +3036,11 @@ func (s *Session) scheduleReconnectLocked() {
 		return
 	}
 
-	s.reconnectAttempt++
+	attempt := s.connection.countScheduledReconnect()
 	delay := s.reconnectDelayLocked()
 	s.setStateLocked(StateReconnecting)
 	s.armTimer(&s.reconnectTimer, delay, s.beginReconnectAttemptLocked)
 	networkID := s.config.NetworkID
-	attempt := s.reconnectAttempt
 	s.emit(func(handler Handler) { handler.ReconnectScheduled(networkID, delay, attempt) })
 }
 
@@ -3081,7 +3059,7 @@ func (s *Session) reconnectDelayLocked() int {
 	base := max(0, s.config.ReconnectBaseDelayMs)
 	maximum := max(base, s.config.ReconnectMaximumDelayMs)
 	delay := int64(base)
-	for step := 1; step < s.reconnectAttempt && delay < int64(maximum); step++ {
+	for step := 1; step < s.connection.reconnectAttempt && delay < int64(maximum); step++ {
 		doubled := delay * 2
 		if doubled > int64(maximum) {
 			doubled = int64(maximum)
