@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   line, and the member tooltip shows `user@host`, kept current from NAMES, JOIN,
   WHO and CHGHOST. NAMES tokens of the form `@nick!user@host` no longer corrupt
   member nicks.
+- Both clients keep each conversation's unsent composer text across a restart in
+  `drafts.json` beside `scrollplaces.ini` (same file and format for the desktop
+  client and the terminal client). Drafts are written when you switch away, when
+  the window loses focus, and on quit, expire after 7 days, and are removed when
+  emptied. Status drafts, find queries, Up/Down history lines, and anything that
+  looks like a password command (`/msg NickServ IDENTIFY ...`, `/quote PASS ...`)
+  are never written. Only `/me ` lines persist among slash commands.
 - The terminal client persists learned STS policies in the shared `sts` INI
   beside `omairc.conf` (same file and layout as the desktop client), so a
   host upgrade to TLS survives a TUI restart. Expired and cleared policies

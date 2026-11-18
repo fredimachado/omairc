@@ -10,6 +10,7 @@ Send a message lets a user add a local line to the current mock transcript from 
 - `send-empty` leaves the transcript unchanged when the composer is blank or whitespace.
 - `send-action` turns a `/me ` prefix into an action line attributed to `fred`.
 - `send-mirc-colors` keeps mIRC FG/BG when Show mIRC colors / `/pref colors` is on (default). Off keeps the plain body and emphasis, without palette paint. On `--demo-server`, `#omarchy` already seeds a `dax` line with palette `04` around `paint-verify` so proof can toggle without typing a color byte (raw `\x03` is Ctrl+C on a PTY). Screenshots or cell colors after `/pref colors off` / `on`; stripped `text` alone is not enough.
+- `send-draft-restart` keeps an unsent line in a channel or direct message across switching away and a restart. A secret line (`/msg NickServ IDENTIFY ...`, `/quote PASS ...`) never reaches disk.
 
 ## How to get to it (user POV)
 
@@ -17,6 +18,7 @@ Send a message lets a user add a local line to the current mock transcript from 
 - Press `Ctrl+L`, type, and press `Enter`.
 - Type text and click `SEND`.
 - Press `Tab` to complete a nick, or `Up` / `Down` to recall sent lines. Those chords are keyboard.
+- Type a line in a channel and do not send it. Switch to another conversation, quit with `Ctrl+Q`, relaunch, and select the channel again. The composer shows the line.
 
 ## Driving it with control-omairc
 
@@ -59,9 +61,12 @@ compare --before test-artifacts/verify/send-message/after-button.png --after tes
 - **Action line.** Send `/me waves` only after that shot, as its own `send`. Run `control-omairc send --text "/me waves"`. The last line is an italic action: author `fred`, body `waves`. A leftover button draft would be prefixed onto `/me waves` in this line.
 - **Confirm persistence.** Jump to `#omarchy` and back to `#desktop`. Run `control-omairc jump --query "#omarchy"`, `control-omairc wait-title --exact "#omarchy · irc.example · fred - Omairc"`, `control-omairc jump --query "#desktop"`, and `control-omairc wait-title --exact "#desktop - Omairc"`. `#desktop` still shows the three sent lines.
 - **Proof.** Capture the populated transcript after `/me` and again after returning. Run `control-omairc screenshot --feature send-message --name after-send` before the jump away, and `control-omairc screenshot --feature send-message --name after-return` after coming back. Both images show `Hello from verify` in `#desktop`. Run `control-omairc compare --before test-artifacts/verify/send-message/before-send.png --after test-artifacts/verify/send-message/after-send.png` and `control-omairc compare --before test-artifacts/verify/send-message/after-button.png --after test-artifacts/verify/send-message/after-send.png`. Both compares must report a pixel change. The second pair is the button line against the action line. A missed `click-send` leaves the draft, and the later `send` then posts one combined line; that pair is how the miss shows up.
+- **Draft after restart.** Needs a live network, so it is not part of the `desktop-recipe` fence. Launch against a throwaway state dir (`XDG_STATE_HOME`, `XDG_CONFIG_HOME`) with a saved profile, select a channel, type `half typed` (do not press `Enter`), jump to another conversation, quit with `Ctrl+Q`, and relaunch with the same state dir. Select the channel. The composer shows `half typed` with the caret at its end, and `<state>/omairc/drafts.json` holds `"text":"half typed"` under the network id and the lower-cased channel. Type `/msg NickServ IDENTIFY hunter2`, jump away, and read the file again. It holds no `IDENTIFY` and no `hunter2`, and the earlier draft for that channel is gone. A draft that nothing has touched for seven days is gone after the next launch. Status drafts, find queries and `Up` / `Down` history lines are never written.
 
 ## Gotchas
 
+- `--demo-server` is ephemeral and writes no `drafts.json`, so the relaunch step needs a live network. `run send-message` replays only the in-session part (a line left in `#desktop` and found again after a jump); do not add the relaunch to the `desktop-recipe` fence.
+- Drafts are written when the user switches away, when the window loses focus, and on quit, never per keystroke. `/me waves` is kept as a draft; every other `/` line is not. Text that starts with a password verb (`identify`, `pass`, `oper`, ...) is dropped too, by design.
 - `Enter` sends. There is no multiline composer. Do not hold Shift+Enter expecting a newline.
 - Empty or whitespace-only input is ignored. A screenshot of an unchanged transcript is the empty-submit proof.
 - `/me` is a live ACTION. Other catalog verbs are slash-commands. A rejected command such as `/close` on a channel you are in stays in the composer. A successful `/join` or `/query` is consumed before the window switches, so it cannot remain as a draft.
