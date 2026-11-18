@@ -29,37 +29,14 @@ pub enum UnseenLanding {
     End,
 }
 
-/// What the unseen jump does from this view (Qt `jumpArmed` and `jumpToUnseen`).
-/// Nothing while the reader follows the end. A waiting arrival wins over the mark.
-/// Arms or clears the first-unseen row when the message row count changes.
 /// True when a new line landed while the reader was not following the end
 /// (`TranscriptList.detachedArrival`).
 pub fn detached_arrival(previous: usize, new: usize, was_at_end: bool) -> bool {
     !was_at_end && new > previous
 }
 
-pub fn note_row_growth(
-    previous: usize,
-    new: usize,
-    was_at_end: bool,
-    first_unseen: &mut Option<usize>,
-) {
-    if new < previous {
-        if first_unseen.is_some_and(|row| row >= new) {
-            *first_unseen = None;
-        }
-        return;
-    }
-    if new <= previous {
-        return;
-    }
-    if was_at_end {
-        *first_unseen = None;
-    } else if first_unseen.is_none() {
-        *first_unseen = Some(previous);
-    }
-}
-
+/// What the unseen jump does from this view (Qt `jumpArmed` and `jumpToUnseen`).
+/// Nothing while the reader follows the end. A waiting arrival wins over the mark.
 pub fn unseen_landing(
     detached: bool,
     first_unseen: Option<usize>,
@@ -103,15 +80,6 @@ mod tests {
         assert!(detached_arrival(4, 6, false));
         assert!(!detached_arrival(4, 6, true));
         assert!(!detached_arrival(4, 4, false));
-    }
-
-    #[test]
-    fn growth_while_detached_arms_first_unseen() {
-        let mut first = None;
-        note_row_growth(4, 6, false, &mut first);
-        assert_eq!(first, Some(4));
-        note_row_growth(6, 8, true, &mut first);
-        assert_eq!(first, None);
     }
 
     #[test]

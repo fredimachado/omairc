@@ -4,15 +4,9 @@ use chrono::{DateTime, TimeDelta, Utc};
 use gpui::{px, Context, ListOffset, Pixels, Size};
 
 use super::{ConversationLines, TranscriptScrolled, TranscriptView};
+use crate::model::reader_position::ReaderPosition;
 use crate::model::scroll_place::{has_line, resume, Resume, SavedPlace};
 use crate::model::unread;
-
-/// A saved line the transcript waits for. A give-up lands as a conversation with no saved
-/// place does, so it keeps the unread preference the wait started with.
-pub(super) struct PendingRestore {
-    place: SavedPlace,
-    open_at_unread: bool,
-}
 
 /// How long the width must stay still after a change before the burst is over. A drag changes the
 /// width every frame, and its repeated changes wait for this before the rows are measured again.
@@ -34,7 +28,7 @@ impl TranscriptView {
     /// Follow-end for the controller. False while a restore is pending so the
     /// server read marker does not jump past unread backlog on the interim tail.
     pub fn reports_follow_end(&self) -> bool {
-        self.pending_restore.is_none() && self.model.scroll().pinned_to_bottom
+        self.model.position().reports_follow_end()
     }
 
     /// The list's frame is about to lay out at `size`. A width change makes gpui drop every row
@@ -72,7 +66,7 @@ impl TranscriptView {
             self.list_measured = true;
         }
         if self.list_measured && std::mem::take(&mut self.landing) && self.at_end() {
-            self.model.set_pinned_to_bottom(true);
+            self.model.follow_end();
             self.note_scroll_end(cx);
         }
         if self.at_end() != was_at_end {
@@ -103,38 +97,37 @@ impl TranscriptView {
 
     /// Moves the list to the reader's place in the model: the end, or the anchor.
     pub(super) fn project_place(&mut self) {
-        let scroll = self.model.scroll();
-        let top = if scroll.pinned_to_bottom {
-            ListOffset {
+        let top = match self.model.position().anchor() {
+            None => ListOffset {
                 item_ix: self.list_len(),
                 offset_in_item: px(0.),
-            }
-        } else {
-            ListOffset {
-                item_ix: scroll.row,
-                offset_in_item: px(scroll.offset_px as f32),
-            }
+            },
+            Some(anchor) => ListOffset {
+                item_ix: anchor.row,
+                offset_in_item: px(anchor.offset_px as f32),
+            },
         };
         self.list_state.scroll_to(top);
     }
 
     pub fn has_pending_restore(&self) -> bool {
-        self.pending_restore.is_some()
+        self.model.position().restoring().is_some()
     }
 
     /// Drops a pending restore so the next capture saves what is on screen.
     pub fn clear_pending_restore(&mut self) {
-        self.pending_restore = None;
+        self.model.retire_restore();
     }
 
     /// Gives up a pending restore whose history settled without its line, or whose request
     /// never settled. The list lands where a conversation with no saved place lands: on its
     /// unread mark when the wait's preference is on and a mark exists, else at the end.
     pub fn give_up_pending_restore(&mut self, cx: &mut Context<Self>) {
-        let Some(pending) = self.pending_restore.take() else {
+        let Some((_, open_at_unread)) = self.model.position().restoring() else {
             return;
         };
-        self.restore_scroll_place(None, pending.open_at_unread, false);
+        self.model.retire_restore();
+        self.restore_scroll_place(None, open_at_unread, false);
         cx.notify();
     }
 
@@ -153,7 +146,7 @@ impl TranscriptView {
     /// the list so they match where the reader now is. While the rows are not measured the
     /// list moved by heights that are not true, so the place is projected back instead.
     pub fn note_transcript_scroll(&mut self, cx: &mut Context<Self>) {
-        self.pending_restore = None;
+        self.model.retire_restore();
         if self.list_measured {
             self.sync_scroll_from_list();
         } else {
@@ -165,7 +158,7 @@ impl TranscriptView {
     /// Reloads the open conversation. A pending restore whose line arrived is applied.
     pub fn refresh_conversation(&mut self, lines: ConversationLines, cx: &mut Context<Self>) {
         let previous_rows = self.model.rows().len();
-        let was_at_end = self.model.scroll().pinned_to_bottom;
+        let was_at_end = self.model.position().shows_end();
         let place = self.capture_scroll_place();
         self.peers.facts = lines.facts;
         self.self_nick = lines.self_nick.to_owned();
@@ -174,7 +167,12 @@ impl TranscriptView {
         self.model
             .replace_conversation(lines.messages, lines.mark, lines.today);
         let new_rows = self.model.rows().len();
-        unread::note_row_growth(previous_rows, new_rows, was_at_end, &mut self.first_unseen);
+        let position = self
+            .model
+            .position()
+            .clone()
+            .after_row_growth(previous_rows, new_rows);
+        self.model.set_position(position);
         if unread::detached_arrival(previous_rows, new_rows, was_at_end) {
             self.unseen_bounce.restart();
         }
@@ -199,7 +197,7 @@ impl TranscriptView {
     /// Puts the reader back on `place` after the list was reset. A wait stays at the end
     /// until its line is there.
     fn reland(&mut self, place: &SavedPlace, cx: &mut Context<Self>) {
-        if self.pending_restore.is_none() {
+        if !self.has_pending_restore() {
             self.land(resume(Some(place), self.model.rows()));
             self.note_scroll_end(cx);
         } else if has_line(place, self.model.rows()) {
@@ -212,7 +210,7 @@ impl TranscriptView {
     fn sync_scroll_from_list(&mut self) {
         let top = self.list_state.logical_scroll_top();
         if self.at_end() {
-            self.model.set_pinned_to_bottom(true);
+            self.model.follow_end();
         } else {
             let offset_px = f32::from(top.offset_in_item).round() as i32;
             self.model.set_scroll_anchor(top.item_ix, offset_px);
@@ -222,8 +220,8 @@ impl TranscriptView {
     /// The reader's place: the end, or a line and not a divider. Returns a pending place
     /// while waiting.
     pub fn capture_scroll_place(&self) -> SavedPlace {
-        if let Some(pending) = &self.pending_restore {
-            return pending.place.clone();
+        if let Some((place, _)) = self.model.position().restoring() {
+            return place.clone();
         }
         SavedPlace::from_anchor(self.model.scroll(), self.model.rows())
     }
@@ -231,7 +229,7 @@ impl TranscriptView {
     /// Sets the reader's place and moves the list to it.
     pub(super) fn land(&mut self, place: Resume) {
         match place {
-            Resume::End => self.model.set_pinned_to_bottom(true),
+            Resume::End => self.model.follow_end(),
             Resume::Line { row, offset_px } => self.model.set_scroll_anchor(row, offset_px),
         }
         self.project_place();
@@ -247,15 +245,14 @@ impl TranscriptView {
         open_at_unread: bool,
         wait_for_history: bool,
     ) {
-        self.pending_restore = None;
+        self.model.retire_restore();
         self.landing = false;
         if let Some(line @ SavedPlace::Line { .. }) = place {
             if wait_for_history && !has_line(line, self.model.rows()) {
-                self.pending_restore = Some(PendingRestore {
+                self.model.set_position(ReaderPosition::Restoring {
                     place: line.clone(),
                     open_at_unread,
                 });
-                self.model.set_pinned_to_bottom(true);
                 self.reported_at_end = false;
                 return;
             }
