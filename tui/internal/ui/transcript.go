@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1315,6 +1316,32 @@ func (m *Model) messageRow(index int, message controller.MessageSnapshot) string
 // Actions, events, and notices keep their own shape; chat rows carry the
 // time/nick column and a wrapped body.
 func (m *Model) messageRowAt(messages []controller.MessageSnapshot, index int, message controller.MessageSnapshot, nickWidth int) string {
+	row := m.plainMessageRowAt(messages, index, message, nickWidth)
+	if message.Kind == "event" || (message.ReplyPreview == "" && len(message.Reactions) == 0) {
+		return row
+	}
+	return m.decorateReplyRow(row, m.onlyYouPrefix(messages, index, message, nickWidth), message)
+}
+
+// decorateReplyRow hangs a reply's muted "↪ author: text" line above its row and
+// the reaction chips ("👍 2  🎉 1") below it, both in the body column the prefix
+// names. Each is one line, clipped to the column.
+func (m *Model) decorateReplyRow(row, prefix string, message controller.MessageSnapshot) string {
+	if message.ReplyPreview != "" {
+		row = m.clipTranscriptLine(prefix+m.styles.Event.Render(message.ReplyPreview)) + "\n" + row
+	}
+	if len(message.Reactions) > 0 {
+		chips := make([]string, 0, len(message.Reactions))
+		for _, chip := range message.Reactions {
+			chips = append(chips, chip.Emoji+" "+strconv.Itoa(chip.Count))
+		}
+		row += "\n" + m.clipTranscriptLine(prefix+m.styles.Event.Render(strings.Join(chips, "  ")))
+	}
+	return row
+}
+
+// plainMessageRowAt is the row without its reply line or chips.
+func (m *Model) plainMessageRowAt(messages []controller.MessageSnapshot, index int, message controller.MessageSnapshot, nickWidth int) string {
 	if m.findMatchAt(index) {
 		return m.appendOnlyYou(
 			m.clipTranscriptLine(m.styles.FindMatch.Render(m.transcriptLine(message))),

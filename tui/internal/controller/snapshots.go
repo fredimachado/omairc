@@ -38,6 +38,21 @@ type MessageSnapshot struct {
 	Sequence         int64
 	Mentioned        bool
 	OnlyVisibleToYou bool
+	// ReplyTo is the +draft/reply parent msgid, empty when the line is not a
+	// reply. ReplyPreview is the line drawn above it ("↪ author: text", or
+	// "↪ reply" when the parent is not loaded), empty when ReplyTo is.
+	ReplyTo      string
+	ReplyPreview string
+	// Reactions are the chips under a chat line, in first-seen order.
+	Reactions []ReactionSnapshot
+}
+
+// ReactionSnapshot is one reaction chip: the emoji, how many nicks sent it and
+// who they are. It mirrors ReactionChip in client/src/irc/reaction.rs.
+type ReactionSnapshot struct {
+	Emoji string
+	Count int
+	Nicks []string
 }
 
 // MemberSnapshot is one member-panel row of the selected channel. The fields
@@ -210,7 +225,19 @@ func (c *Controller) rebuildMessages() {
 	// the reducer's stored instant read in the clock's zone, matching
 	// MessageListModel::displayTime's toLocalTime.
 	location := c.displayLocation()
+	parents := c.replyParents(conversation.Messages)
 	for _, message := range conversation.Messages {
+		replyPreview := ""
+		if message.ReplyTo != "" {
+			parent, loaded := parents[message.ReplyTo]
+			replyPreview = replyLine(loaded, parent.author, parent.text)
+		}
+		var reactions []ReactionSnapshot
+		if set := conversation.Reactions[message.MsgID.Value]; message.MsgID.Value != "" && set != nil {
+			for _, chip := range set.Chips() {
+				reactions = append(reactions, ReactionSnapshot{Emoji: chip.Emoji, Count: chip.Count, Nicks: chip.Nicks})
+			}
+		}
 		rows = append(rows, MessageSnapshot{
 			Author:           message.Author,
 			Time:             message.Timestamp.In(location),
@@ -221,9 +248,37 @@ func (c *Controller) rebuildMessages() {
 			Sequence:         message.Sequence,
 			Mentioned:        c.reducer.IsTranscriptHighlight(conversation.Key.NetworkID, message.Author, message.Kind, message.Body),
 			OnlyVisibleToYou: message.OnlyVisibleToYou,
+			ReplyTo:          message.ReplyTo,
+			ReplyPreview:     replyPreview,
+			Reactions:        reactions,
 		})
 	}
 	c.messages = rows
+}
+
+type replyParent struct{ author, text string }
+
+// replyParents maps the msgid of each loaded chat line to its author and plain
+// text, so a reply can name its parent. It is empty when nothing is a reply.
+func (c *Controller) replyParents(messages []irc.ReducedMessage) map[string]replyParent {
+	hasReply := false
+	for _, message := range messages {
+		if message.ReplyTo != "" {
+			hasReply = true
+			break
+		}
+	}
+	if !hasReply {
+		return nil
+	}
+	parents := make(map[string]replyParent)
+	for _, message := range messages {
+		if message.MsgID.IsEmpty() || (message.Kind != irc.KindMessage && message.Kind != irc.KindNotice && message.Kind != irc.KindAction) {
+			continue
+		}
+		parents[message.MsgID.Value] = replyParent{author: message.Author, text: irc.PlainIrcText(message.Body)}
+	}
+	return parents
 }
 
 // rebuildMembers recomputes the selected channel's member snapshot. It is

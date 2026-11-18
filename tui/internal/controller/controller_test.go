@@ -9,6 +9,7 @@ package controller
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -435,7 +436,7 @@ func TestSelectedPrivmsgInsertsMessageRow(t *testing.T) {
 		t.Fatalf("appended row = %+v", c.Messages()[rowsAfterJoin])
 	}
 	for index := range before {
-		if before[index] != c.Messages()[index] {
+		if !reflect.DeepEqual(before[index], c.Messages()[index]) {
 			t.Fatalf("existing row %d changed: %+v -> %+v", index, before[index], c.Messages()[index])
 		}
 	}
@@ -1450,5 +1451,37 @@ func TestWhoReplyRebuildsMemberSnapshotOnce(t *testing.T) {
 	}
 	if !alice.Away || alice.Realname != "Alice Example" {
 		t.Fatalf("Alice snapshot = %+v, want away and Alice Example", alice)
+	}
+}
+
+func TestMessagesCarryReplyPreviewAndReactionChips(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("freenode", "omairc"))
+	registerNetwork(t, transport, "omairc")
+	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n")
+	c.SelectConversation("freenode", "#omarchy")
+
+	inject(t, transport, "@msgid=m1 :alice!u@h PRIVMSG #omarchy :ship  it now\r\n")
+	inject(t, transport, "@msgid=m2;+draft/reply=m1 :bob!u@h PRIVMSG #omarchy :agreed\r\n")
+	inject(t, transport, "@msgid=m3;+draft/reply=gone :bob!u@h PRIVMSG #omarchy :late\r\n")
+	inject(t, transport, "@+draft/reply=m2;+draft/react=\U0001F44D :alice!u@h TAGMSG #omarchy\r\n")
+	inject(t, transport, "@+draft/reply=m2;+draft/react=\U0001F44D :carl!u@h TAGMSG #omarchy\r\n")
+
+	byBody := map[string]MessageSnapshot{}
+	for _, message := range c.Messages() {
+		byBody[message.Body] = message
+	}
+	if got := byBody["agreed"].ReplyPreview; got != "↪ alice: ship it now" {
+		t.Fatalf("preview = %q", got)
+	}
+	if got := byBody["late"].ReplyPreview; got != "↪ reply" {
+		t.Fatalf("orphan preview = %q", got)
+	}
+	if got := byBody["ship  it now"].ReplyPreview; got != "" {
+		t.Fatalf("plain preview = %q", got)
+	}
+	chips := byBody["agreed"].Reactions
+	if len(chips) != 1 || chips[0].Emoji != "\U0001F44D" || chips[0].Count != 2 {
+		t.Fatalf("chips = %+v", chips)
 	}
 }
