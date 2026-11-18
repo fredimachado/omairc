@@ -7,7 +7,9 @@
 
 use std::time::Duration;
 
-use crate::controller::channellist::{ListOutcome, CHANNEL_LIST_TIMEOUT_TEXT};
+use crate::controller::channellist::{
+    ChannelListPhase, ListOutcome, ListedChannel, CHANNEL_LIST_TIMEOUT_TEXT,
+};
 
 use super::fixture::{Fixture, OMARCHY};
 
@@ -20,6 +22,57 @@ fn names(fixture: &Fixture) -> Vec<String> {
         .iter()
         .map(|row| row.name.clone())
         .collect()
+}
+
+/// The request's phase for `OMARCHY`. The assertions read it only through these helpers.
+fn phase(fixture: &Fixture) -> &ChannelListPhase {
+    fixture.controller.channel_lists.phase(OMARCHY)
+}
+
+fn loading(fixture: &Fixture) -> bool {
+    phase(fixture).is_loading()
+}
+
+fn complete(fixture: &Fixture) -> bool {
+    phase(fixture).is_complete()
+}
+
+fn error(fixture: &Fixture) -> String {
+    phase(fixture).error().to_owned()
+}
+
+fn drain(fixture: &Fixture) -> bool {
+    match phase(fixture) {
+        ChannelListPhase::Loading {
+            drain_stale_end, ..
+        }
+        | ChannelListPhase::Failed {
+            drain_stale_end, ..
+        } => *drain_stale_end,
+        ChannelListPhase::Idle | ChannelListPhase::Complete { .. } => false,
+    }
+}
+
+fn queued(fixture: &Fixture) -> Option<String> {
+    match phase(fixture) {
+        ChannelListPhase::Loading { queued_mask, .. } => queued_mask.clone(),
+        _ => None,
+    }
+}
+
+fn rows(fixture: &Fixture) -> Vec<ListedChannel> {
+    phase(fixture).rows().to_vec()
+}
+
+fn row_names(fixture: &Fixture) -> Vec<String> {
+    rows(fixture).into_iter().map(|row| row.name).collect()
+}
+
+/// Stages a load that timed out, so its stale end is still to come.
+fn timed_out_load(fixture: &mut Fixture) {
+    fixture.controller.channel_lists.request(OMARCHY, "*", false);
+    fixture.clock.advance(Duration::from_secs(31));
+    fixture.controller.tick();
 }
 
 #[test]
@@ -96,6 +149,48 @@ fn a_list_on_an_unknown_or_unregistered_network_is_not_connected() {
 }
 
 #[test]
+fn a_load_is_never_loading_and_complete() {
+    let mut fixture = Fixture::seeded();
+    fixture.controller.channel_lists.request(OMARCHY, "*", false);
+    assert!(loading(&fixture) && !complete(&fixture), "a started load is loading only");
+
+    fixture.deliver(OMARCHY, ":server 323 fred :End of /LIST");
+    assert!(!loading(&fixture) && complete(&fixture), "323 completes it and it stops loading");
+
+    fixture.controller.channel_lists.request(OMARCHY, "*", true);
+    assert!(loading(&fixture) && !complete(&fixture), "a refresh is loading again, not complete");
+
+    fixture.deliver(OMARCHY, ":server 416 fred LIST :Too many channel matches");
+    assert!(!loading(&fixture) && !complete(&fixture), "a failed load is not complete");
+    assert_eq!(error(&fixture), "Too many channel matches");
+}
+
+#[test]
+fn a_second_mask_while_loading_queues_once_and_the_same_mask_clears_it() {
+    let mut fixture = Fixture::seeded();
+    fixture.controller.channel_lists.request(OMARCHY, "#a", false);
+    fixture.clear_frames(OMARCHY);
+
+    assert_eq!(fixture.controller.list_channels(OMARCHY, "#b"), ListOutcome::Sent);
+    assert_eq!(queued(&fixture).as_deref(), Some("#b"));
+    assert_eq!(fixture.controller.list_channels(OMARCHY, "#c"), ListOutcome::Sent);
+    assert_eq!(
+        queued(&fixture).as_deref(),
+        Some("#c"),
+        "one slot: the latest mask replaces the queued one"
+    );
+    assert!(
+        fixture.frames(OMARCHY).is_empty(),
+        "no second LIST while #a is in flight"
+    );
+
+    fixture.controller.list_channels(OMARCHY, "#A");
+    assert_eq!(queued(&fixture), None, "the in-flight mask, in any case, clears the queue");
+    assert!(loading(&fixture));
+    assert!(fixture.frames(OMARCHY).is_empty());
+}
+
+#[test]
 fn a_pending_mask_starts_the_next_load_when_the_first_ends() {
     let mut fixture = Fixture::seeded();
     fixture.controller.channel_lists.request(OMARCHY, "#a", false);
@@ -123,26 +218,82 @@ fn an_idle_timeout_fails_the_load_and_the_stale_end_is_absorbed() {
     fixture.clock.advance(Duration::from_secs(31));
     fixture.controller.tick();
 
-    let state = fixture
-        .controller
-        .channel_lists
-        .state(OMARCHY)
-        .expect("the request is kept");
-    assert!(!state.loading);
-    assert_eq!(state.error, CHANNEL_LIST_TIMEOUT_TEXT);
-    assert!(state.drain_timed_out_end, "the stale 323 will be drained");
+    assert!(!loading(&fixture) && !complete(&fixture));
+    assert_eq!(error(&fixture), CHANNEL_LIST_TIMEOUT_TEXT);
+    assert!(drain(&fixture), "the stale 323 will be drained");
 
     // The server's late 323 is absorbed, and the next load runs cleanly.
     fixture.deliver(OMARCHY, ":server 323 fred :End of /LIST");
-    assert!(!fixture
-        .controller
-        .channel_lists
-        .state(OMARCHY)
-        .expect("kept")
-        .drain_timed_out_end);
+    assert!(!drain(&fixture));
 
     assert_eq!(fixture.controller.list_channels(OMARCHY, "*"), ListOutcome::Sent);
     assert!(fixture.controller.channel_list().complete);
+}
+
+#[test]
+fn a_stale_end_after_a_timeout_does_not_complete_the_newer_load() {
+    let mut fixture = Fixture::seeded();
+    timed_out_load(&mut fixture);
+    assert!(!loading(&fixture) && drain(&fixture));
+
+    // A newer load starts. It is staged, so the demo does not answer it. The timed-out
+    // load's stale 323 arrives first and is drained: the newer load keeps going.
+    fixture.controller.channel_lists.request(OMARCHY, "#new", false);
+    assert!(drain(&fixture), "the newer load carries the pending drain");
+    fixture.deliver(OMARCHY, ":server 323 fred :End of /LIST");
+    assert!(loading(&fixture) && !complete(&fixture), "the stale end does not complete #new");
+    assert!(!drain(&fixture));
+
+    // The real end of #new completes it, with the row that streamed in.
+    fixture.deliver(OMARCHY, ":server 322 fred #new 3 :new channel");
+    fixture.deliver(OMARCHY, ":server 323 fred :End of /LIST");
+    assert!(complete(&fixture) && !loading(&fixture));
+    assert_eq!(row_names(&fixture), ["#new"]);
+}
+
+#[test]
+fn a_completed_newer_mask_carries_no_drain_flag() {
+    let mut fixture = Fixture::seeded();
+    timed_out_load(&mut fixture);
+
+    fixture.controller.channel_lists.request(OMARCHY, "#x", false);
+    fixture.deliver(OMARCHY, ":server 323 fred :End of /LIST");
+    assert!(loading(&fixture) && !drain(&fixture), "the stale end is drained");
+    fixture.deliver(OMARCHY, ":server 323 fred :End of /LIST");
+    assert!(complete(&fixture) && !drain(&fixture), "the real end completes #x");
+
+    // The next load is not swallowed: its first end completes it.
+    fixture.controller.channel_lists.request(OMARCHY, "#y", false);
+    fixture.deliver(OMARCHY, ":server 323 fred :End of /LIST");
+    assert!(complete(&fixture) && !loading(&fixture));
+}
+
+#[test]
+fn a_failed_load_keeps_its_rows_and_error() {
+    let mut fixture = Fixture::seeded();
+    fixture.controller.channel_lists.request(OMARCHY, "*", false);
+    fixture.deliver(OMARCHY, ":server 322 fred #kept 4 :a kept channel");
+    fixture.clock.advance(Duration::from_secs(31));
+    fixture.controller.tick();
+
+    assert!(!loading(&fixture) && !complete(&fixture));
+    assert_eq!(error(&fixture), CHANNEL_LIST_TIMEOUT_TEXT);
+    assert_eq!(row_names(&fixture), ["#kept"]);
+}
+
+#[test]
+fn a_non_timeout_failure_keeps_a_stale_end_still_to_drain() {
+    // Pinned as it behaves today: a failure that is not a timeout keeps the drain of the
+    // timed-out load it replaced, and the stale end is absorbed by the failed state.
+    let mut fixture = Fixture::seeded();
+    timed_out_load(&mut fixture);
+
+    fixture.controller.channel_lists.request(OMARCHY, "#x", false);
+    fixture.deliver(OMARCHY, ":server 416 fred LIST :Too many channel matches");
+    assert!(!loading(&fixture) && !complete(&fixture) && drain(&fixture));
+
+    fixture.deliver(OMARCHY, ":server 323 fred :End of /LIST");
+    assert!(!drain(&fixture) && !complete(&fixture) && !loading(&fixture));
 }
 
 #[test]
@@ -156,13 +307,8 @@ fn a_zero_idle_timeout_is_floored_to_one_millisecond() {
 
     fixture.clock.advance(Duration::from_millis(1));
     fixture.controller.tick();
-    let state = fixture
-        .controller
-        .channel_lists
-        .state(OMARCHY)
-        .expect("kept");
-    assert!(!state.loading, "the 1 ms floor fired");
-    assert_eq!(state.error, CHANNEL_LIST_TIMEOUT_TEXT);
+    assert!(!loading(&fixture), "the 1 ms floor fired");
+    assert_eq!(error(&fixture), CHANNEL_LIST_TIMEOUT_TEXT);
 }
 
 #[test]
@@ -173,10 +319,7 @@ fn activity_restarts_the_idle_window() {
     fixture.deliver(OMARCHY, ":server 321 fred Channel :Users  Name");
     fixture.clock.advance(Duration::from_secs(20));
     fixture.controller.tick();
-    assert!(
-        fixture.controller.channel_lists.state(OMARCHY).expect("kept").loading,
-        "321 at 20s re-armed the 30s window"
-    );
+    assert!(loading(&fixture), "321 at 20s re-armed the 30s window");
 }
 
 #[test]
@@ -188,11 +331,10 @@ fn a_list_failure_numeric_names_the_error_on_the_overlay() {
 
     fixture.deliver(OMARCHY, ":server 416 fred LIST :Too many channel matches");
 
-    let state = fixture
-        .controller
-        .channel_lists
-        .state(OMARCHY)
-        .expect("kept");
-    assert!(!state.loading);
-    assert_eq!(state.error, "Too many channel matches");
+    assert!(!loading(&fixture));
+    assert_eq!(error(&fixture), "Too many channel matches");
+    assert_eq!(
+        fixture.controller.channel_list().error,
+        "Too many channel matches"
+    );
 }
