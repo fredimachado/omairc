@@ -282,3 +282,58 @@ func TestSessionFailTargetsCanBeAskedAgain(t *testing.T) {
 		t.Fatalf("TARGETS count = %d, want 2", count)
 	}
 }
+
+// Behavior pins for the one-phase-per-target ledger (#467).
+
+func pageSizeOneJoin(fixture *sessionFixture) {
+	fixture.connectTLS()
+	fixture.inject(":server CAP omairc LS :batch chathistory\r\n" +
+		":server CAP omairc ACK :batch chathistory\r\n" +
+		":server 001 omairc :Welcome\r\n" +
+		":server 005 omairc CHATHISTORY=1 :are supported\r\n" +
+		":omairc!u@h JOIN :#omarchy\r\n")
+}
+
+func afterPage(fixture *sessionFixture, ref, msgid string) {
+	fixture.inject(":irc.host BATCH +" + ref + " chathistory #omarchy\r\n" +
+		"@batch=" + ref + ";time=2024-03-09T16:00:01.000Z;msgid=" + msgid + " :bob!u@h PRIVMSG #omarchy :line\r\n" +
+		":irc.host BATCH -" + ref + "\r\n")
+}
+
+func TestSessionAfterPageCapSendsAfterTailAndAFullTailDoesNotChain(t *testing.T) {
+	fixture := newSessionFixture(t, historyConfig())
+	fixture.session.SetHistoryAfterPageCap(2)
+	resumeOmarchy(fixture, time.Date(2024, 3, 9, 16, 0, 0, 620000000, time.UTC))
+	pageSizeOneJoin(fixture)
+	afterPage(fixture, "p1", "m1")
+	afterPage(fixture, "p2", "m2")
+	if count := strings.Count(strings.Join(fixture.frames(), ""), "CHATHISTORY AFTER "); count != 2 {
+		t.Fatalf("AFTER count = %d, frames %q", count, fixture.frames())
+	}
+	if !fixture.wrote("CHATHISTORY LATEST #omarchy msgid=m2 1\r\n") {
+		t.Fatalf("frames = %q", fixture.frames())
+	}
+	sent := len(fixture.frames())
+	// A full page closing the tail is the end of the chain, not a third page.
+	afterPage(fixture, "tail", "m3")
+	if got := fixture.frames(); len(got) != sent {
+		t.Fatalf("the tail chained: %q", fixture.writtenSince(sent))
+	}
+	if fixture.session.HistoryInflightFor("#omarchy") {
+		t.Fatal("the tail must settle")
+	}
+}
+
+func TestSessionEmptyAfterTailDoesNotExhaustBefore(t *testing.T) {
+	fixture := newSessionFixture(t, historyConfig())
+	fixture.session.SetHistoryAfterPageCap(2)
+	resumeOmarchy(fixture, time.Date(2024, 3, 9, 16, 0, 0, 620000000, time.UTC))
+	pageSizeOneJoin(fixture)
+	afterPage(fixture, "p1", "m1")
+	afterPage(fixture, "p2", "m2")
+	fixture.inject(":irc.host BATCH +tail chathistory #omarchy\r\n" +
+		":irc.host BATCH -tail\r\n")
+	if !fixture.session.RequestOlderHistory("#omarchy", "old", time.Time{}) {
+		t.Fatal("an empty tail must not exhaust BEFORE")
+	}
+}
