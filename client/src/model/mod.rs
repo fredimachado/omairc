@@ -24,6 +24,7 @@ pub mod color_palette;
 pub mod nick_pick;
 pub mod prefs;
 pub mod presence;
+pub mod reader_position;
 pub mod scroll_place;
 pub mod shortcuts;
 pub mod sidebar;
