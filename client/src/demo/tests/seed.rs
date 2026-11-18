@@ -11,7 +11,7 @@ use crate::demo::seed::{
 };
 use crate::demo::wire::{
     account_lines, bench_channel_bytes, bench_channel_lines, identity_lines, live_account_lines,
-    names_tokens, presence_lines, registration_lines, rtl_seed_lines, transcript_lines,
+    names_tokens, presence_lines, multiline_seed_lines, registration_lines, rtl_seed_lines, transcript_lines,
     typing_lines, world_lines,
 };
 use crate::irc::parser::parse;
@@ -234,6 +234,24 @@ fn the_rtl_seed_lines_are_one_arabic_and_one_hebrew_privmsg() {
     assert!(!transcript_lines(&OMARCHY_WORLD)
         .iter()
         .any(|line| line.contains("مرحبا") || line.contains("שלום")));
+}
+
+#[test]
+fn the_multiline_seed_is_one_batch_of_three_lines_with_a_mention_on_the_last() {
+    let lines = multiline_seed_lines();
+    assert_eq!(lines.len(), 5);
+    let parsed: Vec<_> = lines.iter().map(|line| parse(line.as_bytes()).unwrap()).collect();
+    assert_eq!(parsed[0].command, "BATCH");
+    assert_eq!(parsed[4].command, "BATCH");
+    let message = crate::irc::multiline::assemble_multiline(&parsed[0], &parsed[1..4])
+        .expect("the seed assembles");
+    assert_eq!(message.text_param(1).matches('\n').count(), 2);
+    assert!(message.text_param(1).ends_with("fred, does that match what you saw?"));
+    assert_eq!(message.msgid(), "ml-demo");
+    // Not part of the parity transcript.
+    assert!(!transcript_lines(&OMARCHY_WORLD)
+        .iter()
+        .any(|line| line.contains("ricing session")));
 }
 
 #[test]

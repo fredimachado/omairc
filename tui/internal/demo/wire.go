@@ -1,6 +1,7 @@
 package demo
 
 import (
+	"os"
 	"sort"
 	"strings"
 
@@ -13,6 +14,35 @@ import (
 // registration burst, channel state, presence, account, transcript, and
 // typing bytes, plus world/transcript injectors. Twin:
 // `client/src/demo/server.rs`.
+
+// MultilineSeedVar, when set to a non-empty value, makes the demo append one live
+// multi-line message (a draft/multiline batch) to #omarchy after the normal seed.
+// Off by default, so the parity seed, its screenshots and its unread counts stay as
+// they are. Twin: `OMAIRC_MULTILINE_SEED` in `client/src/demo/wire.rs`.
+const MultilineSeedVar = "OMAIRC_MULTILINE_SEED"
+
+// multilineSeedEnabled reports whether multilineSeedBytes should be injected.
+func multilineSeedEnabled() bool {
+	return os.Getenv(MultilineSeedVar) != ""
+}
+
+// multilineSeedBytes is one closed draft/multiline batch of three lines from mira
+// into #omarchy, the last of which mentions the operator. It is not part of the
+// Qt/Go parity seed.
+func multilineSeedBytes() []byte {
+	at := kToday + "T10:07:00.000Z"
+	var out []byte
+	for _, text := range []string{
+		"@msgid=ml-demo;time=" + at + " :mira!u@h BATCH +mld draft/multiline #omarchy",
+		"@batch=mld :mira!u@h PRIVMSG #omarchy :Notes from the ricing session:",
+		"@batch=mld :mira!u@h PRIVMSG #omarchy :one theme file, one accent, no fixed palette",
+		"@batch=mld :mira!u@h PRIVMSG #omarchy :fred, does that match what you saw?",
+		":mira!u@h BATCH -mld",
+	} {
+		out = append(out, line(text)...)
+	}
+	return out
+}
 
 // line appends CRLF to text, mirroring the anonymous line helper.
 func line(text string) []byte {

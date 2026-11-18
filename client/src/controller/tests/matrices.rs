@@ -121,6 +121,25 @@ fn a_multiline_echo_of_our_own_message_is_one_row_in_an_open_channel() {
 }
 
 #[test]
+fn the_multiline_demo_seed_lands_as_one_row_with_a_mention() {
+    let mut fixture = Fixture::seeded();
+    fixture.controller.select_conversation(OMARCHY, "#omarchy");
+    let before = super::fixture::bodies(&fixture.controller).len();
+    for line in crate::demo::wire::multiline_seed_lines() {
+        fixture.deliver(OMARCHY, &line);
+    }
+    let rows = super::fixture::bodies(&fixture.controller);
+    assert_eq!(rows.len(), before + 1, "three lines, one row");
+    assert_eq!(
+        rows.last().map(String::as_str),
+        Some(
+            "Notes from the ricing session:\none theme file, one accent, no fixed palette\n\
+             fred, does that match what you saw?"
+        )
+    );
+}
+
+#[test]
 fn a_nickserv_multiline_does_not_open_a_direct_message() {
     let mut fixture = Fixture::seeded();
     fixture.controller.select_conversation(OMARCHY, "#omarchy");
