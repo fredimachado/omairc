@@ -43,6 +43,7 @@ pub(super) fn who_reply(inbound: &Inbound<'_>) -> Vec<Event> {
             nick,
             realname: None,
             server_operator: Some(flags.contains('*')),
+            userhost: Some(format!("{}@{}", message.text_param(2), message.text_param(3))),
         }
         .into(),
     ]
@@ -77,6 +78,7 @@ pub(super) fn whois_operator(inbound: &Inbound<'_>) -> Vec<Event> {
         nick,
         realname: None,
         server_operator: Some(true),
+        userhost: None,
     }
     .into()]
 }

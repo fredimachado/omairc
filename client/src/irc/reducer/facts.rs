@@ -409,6 +409,18 @@ impl Facts {
             .set_realname(normalized_nick, realname);
     }
 
+    pub(super) fn set_presence_userhost(
+        &mut self,
+        network_id: &str,
+        normalized_nick: &str,
+        userhost: &str,
+    ) {
+        self.presence
+            .entry(network_id.to_owned())
+            .or_default()
+            .set_userhost(normalized_nick, userhost);
+    }
+
     pub(super) fn set_presence_operator(
         &mut self,
         network_id: &str,

@@ -2428,3 +2428,83 @@ func TestInviteLineIsNotFoldedByMembershipNoiseSettings(t *testing.T) {
 	}
 	requireTrue(t, "invite line survives Hidden", found)
 }
+
+func namesWire(t *testing.T, reducer *EventReducer, tokens string) {
+	t.Helper()
+	applyWire(t, reducer, ":server 353 omairc = #room :"+tokens)
+	applyWire(t, reducer, ":server 366 omairc #room :End of /NAMES list.")
+}
+
+func TestNamesUserhostReachesMemberView(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	applyWire(t, reducer, ":omairc!me@h JOIN #room")
+	namesWire(t, reducer, "@+alice!a@h.example bob omairc!me@h")
+	room := reducer.ConversationKey(networkA, "#room")
+	alice := memberViewOf(t, reducer, room, "alice")
+	requireString(t, "nick", alice.Nick, "alice")
+	requireString(t, "label", alice.Label, "@alice")
+	requireString(t, "userhost", alice.Userhost, "a@h.example")
+	requireString(t, "bob", memberViewOf(t, reducer, room, "bob").Userhost, "")
+	requireString(t, "self", memberViewOf(t, reducer, room, "omairc").Userhost, "me@h")
+	_, ok := reducer.MemberView(room, "alice!a@h.example")
+	requireFalse(t, "no member named after the token", ok)
+}
+
+func TestJoinSetsUserhost(t *testing.T) {
+	reducer := NewEventReducer()
+	room := roomWithAlice(t, reducer)
+	requireString(t, "userhost", memberViewOf(t, reducer, room, "alice").Userhost, "a@h")
+}
+
+func TestChghostUpdatesMemberUserhost(t *testing.T) {
+	reducer := NewEventReducer()
+	room := roomWithAlice(t, reducer)
+	applyWire(t, reducer, ":Alice!a@h CHGHOST alicia cloak.example")
+	requireString(t, "userhost", memberViewOf(t, reducer, room, "alice").Userhost, "alicia@cloak.example")
+}
+
+func TestWho352SetsUserhostOnTheMember(t *testing.T) {
+	reducer := NewEventReducer()
+	room := roomWithAlice(t, reducer)
+	applyWire(t, reducer, ":server 352 omairc #room u2 host2 server Alice H :0 Alice")
+	requireString(t, "userhost", memberViewOf(t, reducer, room, "alice").Userhost, "u2@host2")
+}
+
+func TestUserhostSurvivesNickChange(t *testing.T) {
+	reducer := NewEventReducer()
+	room := roomWithAlice(t, reducer)
+	applyWire(t, reducer, ":Alice!a@h NICK Alicia")
+	requireString(t, "new nick", memberViewOf(t, reducer, room, "alicia").Userhost, "a@h")
+	requireString(t, "old nick", reducer.NickPresence(networkA, "Alice").Userhost, "")
+}
+
+func TestUserhostForgottenOnQuit(t *testing.T) {
+	reducer := NewEventReducer()
+	roomWithAlice(t, reducer)
+	applyWire(t, reducer, ":Alice!a@h QUIT :gone")
+	requireString(t, "userhost", reducer.NickPresence(networkA, "Alice").Userhost, "")
+}
+
+func TestUserhostFactLeavesTheRealnameAloneAndAddsNoTranscriptLine(t *testing.T) {
+	reducer := NewEventReducer()
+	room := roomWithAlice(t, reducer)
+	applyWire(t, reducer, ":Alice!a@h SETNAME :Alice Lee")
+	before := len(stateOf(t, reducer, room).Messages)
+	applyWire(t, reducer, ":Alice!a@h CHGHOST x y")
+	view := memberViewOf(t, reducer, room, "alice")
+	requireString(t, "realname", view.Realname, "Alice Lee")
+	requireString(t, "userhost", view.Userhost, "x@y")
+	requireInt(t, "messages", len(stateOf(t, reducer, room).Messages), before)
+}
+
+func TestPresenceIsDefaultFalseWhenOnlyUserhostSet(t *testing.T) {
+	var store NetworkPresence
+	store.SetUserhost("fred", "u@h")
+	requireFalse(t, "default", store.Lookup("fred").IsDefault())
+	requireString(t, "userhost", store.Lookup("fred").Userhost, "u@h")
+	store.SetUserhost("fred", "")
+	requireFalse(t, "forgotten", store.Knows("fred"))
+	store.SetUserhost("", "u@h")
+	requireFalse(t, "empty nick ignored", store.Knows(""))
+}

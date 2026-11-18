@@ -40,7 +40,7 @@ pub struct RowState<'a> {
 
 /// The hover lines for a member, in Qt's `memberTip` order: the presence word
 /// (only when away-notify shows it, or for the local user), the real name as
-/// plain text, then the query-header labels. Empty when there is nothing to say.
+/// plain text, `user@host` when known, then the query-header labels. Empty when there is nothing to say.
 pub fn member_tip_lines(member: &MemberView, is_self: bool, away_visible: bool) -> Vec<String> {
     let mut lines = Vec::new();
     if away_visible || is_self {
@@ -49,6 +49,9 @@ pub fn member_tip_lines(member: &MemberView, is_self: bool, away_visible: bool) 
     let realname = plain_irc_text(&member.realname);
     if !realname.is_empty() {
         lines.push(realname);
+    }
+    if !member.userhost.is_empty() {
+        lines.push(member.userhost.clone());
     }
     lines.extend(
         member
@@ -260,6 +263,28 @@ mod tests {
     }
 
     #[test]
+    fn member_tip_lines_include_userhost_after_realname() {
+        let mut ann = member("ann");
+        ann.realname = "Ann Lee".to_owned();
+        ann.userhost = "ann@host.example".to_owned();
+        ann.labels = vec!["unauthenticated".to_owned()];
+        assert_eq!(
+            member_tip_lines(&ann, false, false),
+            vec!["Ann Lee", "ann@host.example", "unauthenticated"]
+        );
+        ann.away = Some(Away::default());
+        assert_eq!(
+            member_tip_lines(&ann, false, true),
+            vec!["away", "Ann Lee", "ann@host.example", "unauthenticated"]
+        );
+        ann.realname.clear();
+        assert_eq!(
+            member_tip_lines(&ann, false, false),
+            vec!["ann@host.example", "unauthenticated"]
+        );
+    }
+
+    #[test]
     fn a_setname_realname_shows_in_the_tooltip_without_a_transcript_line() {
         use crate::irc::event::{ConversationKey, Event, JoinEvent, NickFactsEvent};
         use crate::irc::reducer::EventReducer;
@@ -295,6 +320,7 @@ mod tests {
                 nick: "ann".to_owned(),
                 realname: Some("Ann Lee".to_owned()),
                 server_operator: None,
+                userhost: None,
             }),
             now,
         );

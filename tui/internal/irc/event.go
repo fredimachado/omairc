@@ -328,6 +328,8 @@ type NickFactsEvent struct {
 	Nick           string
 	Realname       *string
 	ServerOperator *bool
+	// Userhost is "user@host"; nil leaves the stored value alone.
+	Userhost *string
 }
 
 func (NickFactsEvent) eventKind() EventKind { return EventNickFacts }

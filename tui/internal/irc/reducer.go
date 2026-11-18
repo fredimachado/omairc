@@ -78,6 +78,9 @@ type MemberView struct {
 	// Realname is the meaningful gecos. Empty when the stored name is blank
 	// or a placeholder.
 	Realname string
+	// Userhost is "user@host" when the server told us, else empty. The member
+	// tooltip shows it.
+	Userhost string
 	// Labels are the query-header labels: account or "unauthenticated", then
 	// "server operator", then "bot".
 	Labels []string
@@ -912,6 +915,7 @@ func (r *EventReducer) MemberView(key ConversationKey, normalizedNick string) (M
 		Color:       facts.Metadata(ColorKey()),
 		Account:     r.DisplayAccount(key.NetworkID, member.DisplayNick),
 		Realname:    DisplayedRealname(facts.Realname, member.DisplayNick),
+		Userhost:    facts.Userhost,
 		Labels:      r.PeerFactLabels(key.NetworkID, member.DisplayNick),
 	}, true
 }
@@ -2181,6 +2185,9 @@ func (r *EventReducer) reduceNickFacts(event NickFactsEvent) {
 	if event.ServerOperator != nil {
 		r.setPresenceOperator(event.NetworkID, normalizedNick, *event.ServerOperator)
 	}
+	if event.Userhost != nil {
+		r.setPresenceUserhost(event.NetworkID, normalizedNick, *event.Userhost)
+	}
 }
 
 // reduceAccount records an account-notify change. It mirrors
@@ -2683,6 +2690,13 @@ func (r *EventReducer) setPresenceAccount(networkID, normalizedNick, account str
 func (r *EventReducer) setPresenceRealname(networkID, normalizedNick, realname string) {
 	presence := r.presence[networkID]
 	presence.SetRealname(normalizedNick, realname)
+	r.presence[networkID] = presence
+}
+
+// setPresenceUserhost stores a nick's user@host.
+func (r *EventReducer) setPresenceUserhost(networkID, normalizedNick, userhost string) {
+	presence := r.presence[networkID]
+	presence.SetUserhost(normalizedNick, userhost)
 	r.presence[networkID] = presence
 }
 

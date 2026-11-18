@@ -43,10 +43,10 @@ func TestUnwantedAdvertisementProducesNoRequest(t *testing.T) {
 
 func TestQuietCapsRequestWhenAdvertised(t *testing.T) {
 	negotiation := NewCapabilityNegotiation(false)
-	negotiation.Advertise(tokens("multi-prefix chghost cap-notify echo-message extended-monitor invite-notify setname"))
+	negotiation.Advertise(tokens("multi-prefix chghost cap-notify echo-message extended-monitor invite-notify setname userhost-in-names"))
 
 	request := negotiation.TakeRequest()
-	assertCapLines(t, request.Lines, "multi-prefix chghost cap-notify echo-message invite-notify setname")
+	assertCapLines(t, request.Lines, "multi-prefix chghost cap-notify echo-message invite-notify setname userhost-in-names")
 	if request.RequestsSasl {
 		t.Fatal("requestsSasl must be false")
 	}
@@ -54,10 +54,10 @@ func TestQuietCapsRequestWhenAdvertised(t *testing.T) {
 		t.Fatal("negotiation must not be settled before the ACK")
 	}
 
-	granted := negotiation.Acknowledge(tokens("multi-prefix chghost cap-notify echo-message invite-notify setname"))
+	granted := negotiation.Acknowledge(tokens("multi-prefix chghost cap-notify echo-message invite-notify setname userhost-in-names"))
 	for _, capability := range []Capability{
 		CapabilityMultiPrefix, CapabilityChghost, CapabilityCapNotify, CapabilityEchoMessage,
-		CapabilityInviteNotify, CapabilitySetName,
+		CapabilityInviteNotify, CapabilitySetName, CapabilityUserhostInNames,
 	} {
 		if !granted.Contains(capability) {
 			t.Fatalf("granted set missing capability %v", capability)
@@ -580,6 +580,19 @@ func TestInviteNotifyIsRequestedWithoutDependencies(t *testing.T) {
 	granted := negotiation.Acknowledge(tokens("invite-notify"))
 	if !granted.Contains(CapabilityInviteNotify) {
 		t.Fatal("invite-notify must be granted")
+	}
+	if !negotiation.Settled() {
+		t.Fatal("negotiation must be settled")
+	}
+}
+
+func TestUserhostInNamesIsRequestedWithoutDependencies(t *testing.T) {
+	negotiation := NewCapabilityNegotiation(false)
+	negotiation.Advertise(tokens("userhost-in-names"))
+	assertCapLines(t, negotiation.TakeRequest().Lines, "userhost-in-names")
+	granted := negotiation.Acknowledge(tokens("userhost-in-names"))
+	if !granted.Contains(CapabilityUserhostInNames) {
+		t.Fatal("userhost-in-names must be granted")
 	}
 	if !negotiation.Settled() {
 		t.Fatal("negotiation must be settled")

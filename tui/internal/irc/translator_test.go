@@ -104,7 +104,9 @@ func TestTranslatesCtcpActionAndDropsOtherCtcp(t *testing.T) {
 
 func TestTranslatesJoinExtendedJoinAccount(t *testing.T) {
 	events := translateLine(t, ":alice!u@h JOIN #room account :Alice Example")
-	requireInt(t, "extended events", len(events), 1)
+	requireInt(t, "extended events", len(events), 2) // the join and its userhost fact
+	_, ok := events[1].(NickFactsEvent)
+	requireTrue(t, "userhost fact", ok)
 	join, ok := events[0].(JoinEvent)
 	requireTrue(t, "extended join", ok)
 	requireString(t, "extended channel", join.Channel, "#room")
@@ -629,4 +631,63 @@ func TestInviteToOtherIsNotKeptForStatus(t *testing.T) {
 	requireTrue(t, "to us, other case", StatusKeepsIncoming(mustParse(t, ":rio!r@host INVITE ME #debian"), "me", "#&"))
 	requireFalse(t, "to bob", StatusKeepsIncoming(mustParse(t, ":rio!r@host INVITE bob #debian"), "me", "#&"))
 	requireTrue(t, "short line keeps old behavior", StatusKeepsIncoming(mustParse(t, "INVITE #debian"), "me", "#&"))
+}
+
+func userhostFacts(events []Event) [][2]string {
+	var facts [][2]string
+	for _, event := range events {
+		if fact, ok := event.(NickFactsEvent); ok && fact.Userhost != nil {
+			facts = append(facts, [2]string{fact.Nick, *fact.Userhost})
+		}
+	}
+	return facts
+}
+
+func requireUserhostFacts(t *testing.T, label string, got [][2]string, want ...[2]string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("%s = %v, want %v", label, got, want)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("%s = %v, want %v", label, got, want)
+		}
+	}
+}
+
+func TestNamesWithUserhostYieldCorrectNicksAndUserhostFacts(t *testing.T) {
+	events := translateLine(t, ":server 353 omairc = #room :@+alice!a@h.example bob!b@h2 carol")
+	names, ok := events[0].(NamesEvent)
+	requireTrue(t, "NamesEvent first", ok)
+	requireInt(t, "names", len(names.Names), 3)
+	requireString(t, "alice", names.Names[0].Nick, "alice")
+	requireString(t, "bob", names.Names[1].Nick, "bob")
+	requireString(t, "carol", names.Names[2].Nick, "carol")
+	if names.Names[0] != parsedName(t, "@+alice") {
+		t.Fatalf("alice = %+v, want the ranks of @+alice", names.Names[0])
+	}
+	requireUserhostFacts(t, "facts", userhostFacts(events),
+		[2]string{"alice", "a@h.example"}, [2]string{"bob", "b@h2"})
+	requireInt(t, "plain names add no event", len(translateLine(t, ":server 353 omairc = #room :@Alice +Bob")), 1)
+}
+
+func TestJoinCarriesThePrefixUserhostAsAFact(t *testing.T) {
+	events := translateLine(t, ":alice!u@h.example JOIN #room")
+	_, ok := events[0].(JoinEvent)
+	requireTrue(t, "join first", ok)
+	requireUserhostFacts(t, "join", userhostFacts(events), [2]string{"alice", "u@h.example"})
+	requireInt(t, "server prefix", len(userhostFacts(translateLine(t, ":server JOIN #room"))), 0)
+}
+
+func TestWho352SetsUserhost(t *testing.T) {
+	events := translateLine(t, ":server 352 omairc #room user host.example server Alice H :0 Alice")
+	requireUserhostFacts(t, "352", userhostFacts(events), [2]string{"Alice", "user@host.example"})
+}
+
+func TestChghostTranslatesToAUserhostFact(t *testing.T) {
+	events := translateLine(t, ":alice!u@h CHGHOST newuser new.host")
+	requireInt(t, "events", len(events), 1)
+	requireUserhostFacts(t, "chghost", userhostFacts(events), [2]string{"alice", "newuser@new.host"})
+	requireInt(t, "one param", len(translateLine(t, ":alice!u@h CHGHOST onlyone")), 0)
+	requireInt(t, "no sender", len(translateLine(t, "CHGHOST a b")), 0)
 }

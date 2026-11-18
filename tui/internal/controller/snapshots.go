@@ -50,8 +50,10 @@ type MemberSnapshot struct {
 	Away    bool
 	Account string
 	Bot     bool
-	// Realname is the meaningful gecos. Labels are the query-header facts.
+	// Realname is the meaningful gecos. Userhost is "user@host" when known.
+	// Labels are the query-header facts.
 	Realname string
+	Userhost string
 	Labels   []string
 }
 
@@ -246,6 +248,7 @@ func (c *Controller) rebuildMembers() {
 			Account:  view.Account,
 			Bot:      view.Bot,
 			Realname: view.Realname,
+			Userhost: view.Userhost,
 			Labels:   view.Labels,
 		})
 	}

@@ -98,8 +98,9 @@ pub fn translate(
         "352" if message.params.len() >= 7 => numerics::who_reply(&inbound),
         "311" if message.params.len() >= 6 => numerics::whois_realname(&inbound),
         "313" if message.params.len() >= 2 => numerics::whois_operator(&inbound),
-        // Members store nick plus ranks. User and host are not modeled.
-        "CHGHOST" => Vec::new(),
+        "CHGHOST" if !inbound.sender.is_empty() && message.params.len() >= 2 => {
+            membership::chghost(&inbound)
+        }
         "METADATA" => numerics::metadata(&inbound, 0),
         "761" => numerics::metadata(&inbound, 1),
         "766" => numerics::key_not_set(&inbound),

@@ -124,6 +124,7 @@ const WANTED: &[Wanted] = &[
     Wanted::new(IrcCapability::ReadMarker, "soju.im/read"),
     Wanted::new(IrcCapability::InviteNotify, "invite-notify"),
     Wanted::new(IrcCapability::SetName, "setname"),
+    Wanted::new(IrcCapability::UserhostInNames, "userhost-in-names"),
 ];
 
 /// Tracks one CAP exchange (`IrcCapabilityNegotiation`). Build one with `new`
@@ -424,19 +425,19 @@ mod tests {
     fn quiet_caps_request_when_advertised() {
         let mut negotiation = IrcCapabilityNegotiation::new(false);
         negotiation.advertise(&tokens(
-            "multi-prefix chghost cap-notify echo-message extended-monitor invite-notify setname",
+            "multi-prefix chghost cap-notify echo-message extended-monitor invite-notify setname userhost-in-names",
         ));
 
         let request = negotiation.take_request();
         assert_cap_lines(
             &request.lines,
-            &["multi-prefix chghost cap-notify echo-message invite-notify setname"],
+            &["multi-prefix chghost cap-notify echo-message invite-notify setname userhost-in-names"],
         );
         assert!(!request.requests_sasl);
         assert!(!negotiation.settled(), "not settled before the ACK");
 
         let granted = negotiation.acknowledge(&tokens(
-            "multi-prefix chghost cap-notify echo-message invite-notify setname",
+            "multi-prefix chghost cap-notify echo-message invite-notify setname userhost-in-names",
         ));
         for capability in [
             IrcCapability::MultiPrefix,
@@ -445,6 +446,7 @@ mod tests {
             IrcCapability::EchoMessage,
             IrcCapability::InviteNotify,
             IrcCapability::SetName,
+            IrcCapability::UserhostInNames,
         ] {
             assert!(
                 granted.contains(capability),
@@ -919,6 +921,16 @@ mod tests {
         assert_cap_lines(&negotiation.take_request().lines, &["invite-notify"]);
         let granted = negotiation.acknowledge(&tokens("invite-notify"));
         assert!(granted.contains(IrcCapability::InviteNotify));
+        assert!(negotiation.settled());
+    }
+
+    #[test]
+    fn userhost_in_names_is_requested_without_dependencies() {
+        let mut negotiation = IrcCapabilityNegotiation::new(false);
+        negotiation.advertise(&tokens("userhost-in-names"));
+        assert_cap_lines(&negotiation.take_request().lines, &["userhost-in-names"]);
+        let granted = negotiation.acknowledge(&tokens("userhost-in-names"));
+        assert!(granted.contains(IrcCapability::UserhostInNames));
         assert!(negotiation.settled());
     }
 

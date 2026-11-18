@@ -97,8 +97,7 @@ fn numeric_and_command_table_yields_the_expected_first_kind() {
 
 #[test]
 fn lines_the_translator_does_not_model_produce_nothing() {
-    // CHGHOST is a no-op, and an unknown numeric has no handler.
-    assert!(translate_line(":alice!u@h CHGHOST new host").is_empty());
+    // An unknown numeric has no handler.
     assert!(translate_line(":server 999 omairc :nope").is_empty());
 }
 

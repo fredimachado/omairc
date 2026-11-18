@@ -231,6 +231,9 @@ impl EventReducer {
         if let Some(operator) = event.server_operator {
             self.facts.set_presence_operator(network, &normalized, operator);
         }
+        if let Some(userhost) = &event.userhost {
+            self.facts.set_presence_userhost(network, &normalized, userhost);
+        }
     }
 
     /// Stores an account-notify change (`reduceAccount`).

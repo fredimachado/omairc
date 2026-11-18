@@ -5,7 +5,8 @@ use super::*;
 #[test]
 fn extended_join_carries_account_and_realname_and_classic_join_does_not() {
     let events = translate_line(":alice!u@h JOIN #room account :Alice Example");
-    assert_eq!(events.len(), 1);
+    assert_eq!(events.len(), 2, "the join and the userhost fact its source carries");
+    assert!(matches!(&events[1], Event::NickFacts(_)));
     match &events[0] {
         Event::Join(join) => {
             assert_eq!(join.channel, "#room");

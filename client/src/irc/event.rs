@@ -471,6 +471,8 @@ pub struct NickFactsEvent {
     pub nick: String,
     pub realname: Option<String>,
     pub server_operator: Option<bool>,
+    /// `user@host`; `None` leaves the stored value alone.
+    pub userhost: Option<String>,
 }
 
 /// An `invite-notify` INVITE addressed to someone else (`InviteEvent`). An invite to
@@ -563,6 +565,7 @@ mod tests {
             nick: "alice".into(),
             realname: None,
             server_operator: Some(true),
+            userhost: None,
         }
         .into();
         assert_eq!(facts.kind(), EventKind::NickFacts);
