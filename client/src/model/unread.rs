@@ -72,6 +72,9 @@ mod tests {
             only_visible_to_you: false,
             mentioned: false,
             origin: crate::irc::world::Origin::Live,
+            reply_to: String::new(),
+            reply_preview: String::new(),
+            reactions: Vec::new(),
         }
     }
 

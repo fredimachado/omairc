@@ -35,9 +35,14 @@ pub struct SeededShell<'a> {
 
 /// Builds the demo shell, binds keys, focuses the composer, and settles one frame.
 pub fn open(cx: &mut TestAppContext) -> SeededShell<'_> {
+    open_themed(cx, Theme::defaults_dark())
+}
+
+/// `open` under a given Omarchy theme, for a proof that holds in light and dark.
+pub fn open_themed(cx: &mut TestAppContext, theme: Theme) -> SeededShell<'_> {
     cx.update(|app| {
         app.set_global(OmaircStyleGlobal {
-            style: Style::new(Theme::defaults_dark(), 1.0),
+            style: Style::new(theme, 1.0),
         });
         bind_input_keys(app);
         bind_shell_keys(app);

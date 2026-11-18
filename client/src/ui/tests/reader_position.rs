@@ -50,6 +50,7 @@ fn show(ui: &mut SeededShell, messages: &[Message], fresh: bool) {
         shell.transcript.update(cx, |t, cx| {
             let lines = ConversationLines {
                 messages,
+                reactions: crate::irc::reaction::no_reactions(),
                 mark: None,
                 facts: HashMap::new(),
                 self_nick: &self_nick,

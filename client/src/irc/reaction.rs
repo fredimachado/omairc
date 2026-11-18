@@ -4,6 +4,9 @@
 //! (`tui/internal/irc/reaction.go`). Pure: nothing here reads a clock, a socket
 //! or the case mapping. The caller hands in the normalized nick.
 
+use std::collections::HashMap;
+use std::sync::OnceLock;
+
 /// The longest react value kept, in bytes. A longer value is not an emoji.
 pub const MAX_REACTION_BYTES: usize = 64;
 
@@ -16,6 +19,12 @@ pub const MAX_REACTION_EMOJIS: usize = 32;
 
 /// How many nicks one emoji keeps. A reaction past it is dropped.
 pub const MAX_REACTION_NICKS: usize = 256;
+
+/// The reactions of a conversation that has none, for a read with nothing selected.
+pub fn no_reactions() -> &'static HashMap<String, ReactionSet> {
+    static NONE: OnceLock<HashMap<String, ReactionSet>> = OnceLock::new();
+    NONE.get_or_init(HashMap::new)
+}
 
 /// Whether `value` may be a react or unreact value: non-empty, at most
 /// `MAX_REACTION_BYTES`, and free of any control character (C0, DEL, C1, and so

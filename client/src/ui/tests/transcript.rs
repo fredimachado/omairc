@@ -218,6 +218,7 @@ fn history_splice_keeps_the_reader_on_the_same_message(cx: &mut gpui::TestAppCon
         shell.transcript.update(cx, |t, _| {
             t.set_conversation(ConversationLines {
                 messages: &base,
+                reactions: crate::irc::reaction::no_reactions(),
                 mark: None,
                 facts: HashMap::new(),
                 self_nick: &self_nick,
@@ -256,6 +257,7 @@ fn history_splice_keeps_the_reader_on_the_same_message(cx: &mut gpui::TestAppCon
             t.refresh_conversation(
                 ConversationLines {
                     messages: &combined,
+                    reactions: crate::irc::reaction::no_reactions(),
                     mark: None,
                     facts: HashMap::new(),
                     self_nick: &self_nick,
@@ -308,6 +310,7 @@ fn history_prepend_keeps_anchor_message(cx: &mut gpui::TestAppContext) {
         shell.transcript.update(cx, |t, _| {
             t.set_conversation(ConversationLines {
                 messages: &tail,
+                reactions: crate::irc::reaction::no_reactions(),
                 mark: None,
                 facts: HashMap::new(),
                 self_nick: &self_nick,
@@ -353,6 +356,7 @@ fn history_prepend_keeps_anchor_message(cx: &mut gpui::TestAppContext) {
             t.refresh_conversation(
                 ConversationLines {
                     messages: &combined,
+                    reactions: crate::irc::reaction::no_reactions(),
                     mark: None,
                     facts: HashMap::new(),
                     self_nick: &self_nick,

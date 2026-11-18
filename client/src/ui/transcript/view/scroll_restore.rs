@@ -165,7 +165,7 @@ impl TranscriptView {
         self.features = lines.features.clone();
         self.typing_peer = lines.typing_peer;
         self.model
-            .replace_conversation(lines.messages, lines.mark, lines.today);
+            .replace_conversation(lines.messages, lines.mark, lines.today, lines.reactions);
         let new_rows = self.model.rows().len();
         let position = self
             .model

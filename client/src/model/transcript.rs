@@ -3,9 +3,12 @@ use super::reader_position::{Anchor, ReaderPosition};
 use super::status::StatusMark;
 use super::text_edit::{snap_grapheme, word_bounds};
 use crate::desktop::locale::short_date;
+use crate::irc::reaction::{ReactionChip, ReactionSet};
 use crate::irc::reducer::zero_time;
 use crate::irc::world::{Message, MessageKind, Origin};
 use chrono::{DateTime, Local, NaiveDate, Utc};
+use super::reply::reply_line;
+use std::collections::HashMap;
 use std::ops::Range;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,6 +49,12 @@ pub struct Row {
     pub mentioned: bool,
     /// Live or replay (`client/src/ui/message_row.rs` `origin` / `replayed`).
     pub origin: Origin,
+    /// The `+draft/reply` parent msgid of a chat line, empty when it is not a reply.
+    pub reply_to: String,
+    /// The line drawn above a reply (`reply_line`), empty when `reply_to` is.
+    pub reply_preview: String,
+    /// The reaction chips under a chat line, in first-seen order.
+    pub reactions: Vec<ReactionChip>,
 }
 
 /// Whether a transcript row draws Qt's "only visible to you" caption.
@@ -252,8 +261,14 @@ impl Transcript {
 
     /// Replaces the rows with a conversation's lines and its "New messages" mark.
     /// `today` is the local calendar day that shapes Today/Yesterday captions.
-    pub fn set_conversation(&mut self, messages: &[Message], mark: Option<i64>, today: NaiveDate) {
-        self.set_rows(rows_from_messages_on(messages, mark, today));
+    pub fn set_conversation(
+        &mut self,
+        messages: &[Message],
+        mark: Option<i64>,
+        today: NaiveDate,
+        reactions: &HashMap<String, ReactionSet>,
+    ) {
+        self.set_rows(rows_with_reactions(messages, mark, today, reactions));
     }
 
     /// Replaces a conversation's rows while keeping scroll and selection when they
@@ -264,10 +279,11 @@ impl Transcript {
         messages: &[Message],
         mark: Option<i64>,
         today: NaiveDate,
+        reactions: &HashMap<String, ReactionSet>,
     ) {
         let position = std::mem::replace(&mut self.position, ReaderPosition::FollowingEnd);
         let selection = self.selection;
-        let rows = rows_from_messages_on(messages, mark, today);
+        let rows = rows_with_reactions(messages, mark, today, reactions);
         self.rows = rows;
         self.measured = vec![false; self.rows.len()];
         self.heights = Fenwick::new(self.rows.len());
@@ -568,8 +584,21 @@ pub fn rows_from_messages_on(
     mark: Option<i64>,
     today: NaiveDate,
 ) -> Vec<Row> {
+    rows_with_reactions(messages, mark, today, &HashMap::new())
+}
+
+/// `rows_from_messages_on` with the conversation's reactions, keyed by msgid, so each chat
+/// line carries its chips. A reply's preview names its parent when the parent is among
+/// `messages`, so it follows the loaded history: it reads `↪ reply` until the parent lands.
+pub fn rows_with_reactions(
+    messages: &[Message],
+    mark: Option<i64>,
+    today: NaiveDate,
+    reactions: &HashMap<String, ReactionSet>,
+) -> Vec<Row> {
     let mut rows: Vec<Row> = Vec::with_capacity(messages.len());
     let mut previous: Option<NaiveDate> = None;
+    let parents = reply_parents(messages);
     for message in messages {
         let date = assigned_day(message, previous, today);
         let day_change = matches!((date, previous), (Some(day), Some(prior)) if day != prior);
@@ -586,10 +615,42 @@ pub fn rows_from_messages_on(
             rows.push(unread_mark_row_for(id));
         }
         let id = rows.len() as u64 + 1;
-        let row = row_for_message(id, message, rows.last());
+        let mut row = row_for_message(id, message, rows.last());
+        if row.kind == RowKind::Message {
+            if let Some((author, text)) = parents.get(message.reply_to.as_str()) {
+                row.reply_preview = reply_line(Some((author, text)));
+            }
+            if let Some(set) = reactions.get(&message.msgid.value) {
+                row.reactions = set.chips();
+            }
+        }
         rows.push(row);
     }
     rows
+}
+
+/// The chat lines a reply can name, by msgid: author and plain text. Empty when nothing
+/// in `messages` is a reply, so a transcript without replies pays nothing.
+fn reply_parents(messages: &[Message]) -> HashMap<&str, (&str, String)> {
+    if messages.iter().all(|message| message.reply_to.is_empty()) {
+        return HashMap::new();
+    }
+    messages
+        .iter()
+        .filter(|message| {
+            !message.msgid.is_empty()
+                && matches!(
+                    message.kind,
+                    MessageKind::Message | MessageKind::Notice | MessageKind::Action
+                )
+        })
+        .map(|message| {
+            (
+                message.msgid.value.as_str(),
+                (message.author.as_str(), format_irc(&message.body).plain),
+            )
+        })
+        .collect()
 }
 
 /// The row for one line, numbered `id`. `previous` is the row above it, which decides
@@ -624,6 +685,9 @@ fn day_separator_row(id: u64, day: NaiveDate, today: NaiveDate) -> Row {
         only_visible_to_you: false,
         mentioned: false,
         origin: Origin::Live,
+        reply_to: String::new(),
+        reply_preview: String::new(),
+        reactions: Vec::new(),
     }
 }
 
@@ -643,6 +707,9 @@ fn unread_mark_row_for(id: u64) -> Row {
         only_visible_to_you: false,
         mentioned: false,
         origin: Origin::Live,
+        reply_to: String::new(),
+        reply_preview: String::new(),
+        reactions: Vec::new(),
     }
 }
 
@@ -677,6 +744,13 @@ fn row_from_chat_line(id: u64, message: &Message, minute: &str, continues: bool)
         only_visible_to_you: message.only_visible_to_you,
         mentioned: message.mentioned,
         origin: message.origin,
+        reply_to: message.reply_to.clone(),
+        reply_preview: if message.reply_to.is_empty() {
+            String::new()
+        } else {
+            reply_line(None)
+        },
+        reactions: Vec::new(),
     }
 }
 
@@ -697,6 +771,9 @@ fn row_from_event(id: u64, caption: &str) -> Row {
         only_visible_to_you: false,
         mentioned: false,
         origin: Origin::Live,
+        reply_to: String::new(),
+        reply_preview: String::new(),
+        reactions: Vec::new(),
     }
 }
 
@@ -717,6 +794,9 @@ pub fn row_from_whois(id: u64, text: &str) -> Row {
         only_visible_to_you: false,
         mentioned: false,
         origin: Origin::Live,
+        reply_to: String::new(),
+        reply_preview: String::new(),
+        reactions: Vec::new(),
     }
 }
 
@@ -736,6 +816,9 @@ pub fn row_from_message(id: u64, author: &str, time: &str, body: &str, continues
         only_visible_to_you: false,
         mentioned: false,
         origin: Origin::Live,
+        reply_to: String::new(),
+        reply_preview: String::new(),
+        reactions: Vec::new(),
     }
 }
 
@@ -1271,6 +1354,64 @@ mod tests {
         );
     }
 
+    fn with_ids(mut message: Message, msgid: &str, reply_to: &str) -> Message {
+        message.msgid = MsgId::new(msgid);
+        message.reply_to = reply_to.to_owned();
+        message
+    }
+
+    fn only_chat(rows: &[Row]) -> Vec<&Row> {
+        rows.iter().filter(|row| row.kind == RowKind::Message).collect()
+    }
+
+    #[test]
+    fn a_reply_names_its_loaded_parent_and_a_missing_one_reads_reply() {
+        let messages = [
+            with_ids(chat("alice", "ship\nit  now", 9, 0, 1), "m1", ""),
+            with_ids(chat("bob", "agreed", 9, 1, 2), "m2", "m1"),
+            with_ids(chat("carol", "late", 9, 2, 3), "m3", "gone"),
+        ];
+        let rows = rows_from_messages(&messages, None);
+        let chat_rows = only_chat(&rows);
+        assert_eq!(chat_rows[0].reply_preview, "");
+        assert_eq!(chat_rows[1].reply_to, "m1");
+        assert_eq!(chat_rows[1].reply_preview, "\u{21AA} alice: ship it now");
+        assert_eq!(chat_rows[2].reply_to, "gone");
+        assert_eq!(chat_rows[2].reply_preview, "\u{21AA} reply");
+
+        // The parent is not loaded yet: the same reply reads `reply` until it lands.
+        let rows = rows_from_messages(&messages[1..], None);
+        assert_eq!(only_chat(&rows)[0].reply_preview, "\u{21AA} reply");
+    }
+
+    #[test]
+    fn a_reply_preview_reads_the_parents_plain_text_and_an_actions_author() {
+        let mut action = with_ids(chat("alice", "waves \u{2}hard\u{2}", 9, 0, 1), "m1", "");
+        action.kind = MessageKind::Action;
+        let reply = with_ids(chat("bob", "hi", 9, 1, 2), "m2", "m1");
+        let rows = rows_from_messages(&[action, reply], None);
+        assert_eq!(only_chat(&rows)[1].reply_preview, "\u{21AA} alice: waves hard");
+    }
+
+    #[test]
+    fn reactions_become_chips_on_the_line_they_name() {
+        let messages = [
+            with_ids(chat("alice", "ship it", 9, 0, 1), "m1", ""),
+            with_ids(chat("bob", "other", 9, 1, 2), "m2", ""),
+        ];
+        let mut set = ReactionSet::default();
+        set.add("\u{1F44D}", "bob", "Bob");
+        set.add("\u{1F44D}", "carol", "carol");
+        let mut all = HashMap::new();
+        all.insert("m1".to_owned(), set);
+        let rows = rows_with_reactions(&messages, None, today(), &all);
+        let chat_rows = only_chat(&rows);
+        assert_eq!(chat_rows[0].reactions.len(), 1);
+        assert_eq!(chat_rows[0].reactions[0].count, 2);
+        assert_eq!(chat_rows[0].reactions[0].nicks, vec!["Bob", "carol"]);
+        assert!(chat_rows[1].reactions.is_empty());
+    }
+
     #[test]
     fn only_visible_to_you_carried_onto_row() {
         let mut private = chat("nick", "psst", 9, 0, 1);
@@ -1306,7 +1447,7 @@ mod tests {
         let mut t = Transcript::new(72);
         t.set_rows(sample_rows());
         select_everything(&mut t);
-        t.set_conversation(&[chat("anna", "fresh", 9, 50, 1)], None, today());
+        t.set_conversation(&[chat("anna", "fresh", 9, 50, 1)], None, today(), &HashMap::new());
         assert!(t.selection().is_none());
         assert!(t.rows().iter().any(|row| row.body.plain == "fresh"));
         assert!(!t.rows().iter().any(|row| row.body.plain == "hello"));
@@ -1319,6 +1460,7 @@ mod tests {
             &[chat("anna", "one", 9, 50, 1), chat("bob", "two", 9, 51, 2)],
             None,
             today(),
+            &HashMap::new(),
         );
         t.begin(Pos { row: 0, offset: 0 });
         t.set_scroll_anchor(0, 4);
@@ -1330,6 +1472,7 @@ mod tests {
             ],
             None,
             today(),
+            &HashMap::new(),
         );
         assert!(t.selection().is_some());
         assert_eq!(t.scroll().row, 0);
@@ -1374,7 +1517,7 @@ mod tests {
             },
             first_unseen: 2,
         });
-        t.replace_conversation(&[chat("anna", "one", 9, 50, 1)], None, today());
+        t.replace_conversation(&[chat("anna", "one", 9, 50, 1)], None, today(), &HashMap::new());
         assert_eq!(
             *t.position(),
             ReaderPosition::CatchingUp {
@@ -1392,10 +1535,10 @@ mod tests {
         let mut t = Transcript::new(72);
         t.set_rows(sample_rows());
         t.set_position(waiting_position());
-        t.replace_conversation(&[chat("anna", "one", 9, 50, 1)], None, today());
+        t.replace_conversation(&[chat("anna", "one", 9, 50, 1)], None, today(), &HashMap::new());
         assert_eq!(*t.position(), waiting_position());
         t.set_scroll_anchor(0, 0);
-        t.replace_conversation(&[], None, today());
+        t.replace_conversation(&[], None, today(), &HashMap::new());
         assert_eq!(*t.position(), ReaderPosition::FollowingEnd);
     }
 

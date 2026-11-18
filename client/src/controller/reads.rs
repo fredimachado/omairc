@@ -14,6 +14,7 @@ use crate::irc::conversation::conversation_id;
 use crate::irc::event::ConversationKey;
 use crate::irc::inbox::InboxItem;
 use crate::irc::presence::NickFacts;
+use crate::irc::reaction::{no_reactions, ReactionSet};
 use crate::irc::reducer::{MemberView, PeerPresence};
 use crate::irc::serverfeatures::IrcServerFeatures;
 use crate::irc::statusentry::StatusEntry;
@@ -155,6 +156,15 @@ impl Controller {
         match self.selected.as_ref().and_then(|key| self.reducer.find(key)) {
             Some(conversation) => &conversation.messages,
             None => &[],
+        }
+    }
+
+    /// The reactions on the selected conversation's lines, keyed by msgid. Empty when
+    /// nothing is selected.
+    pub fn reactions(&self) -> &HashMap<String, ReactionSet> {
+        match self.selected.as_ref().and_then(|key| self.reducer.find(key)) {
+            Some(conversation) => &conversation.reactions,
+            None => no_reactions(),
         }
     }
 

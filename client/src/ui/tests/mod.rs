@@ -7,6 +7,7 @@ mod fixture;
 mod layout;
 mod multiline;
 mod quit;
+mod replies;
 mod reader_position;
 mod scroll_place;
 mod scroll_restore;

@@ -250,6 +250,7 @@ impl Shell {
             .then(|| self.controller.selected_target().to_owned());
             let lines = ConversationLines {
                 messages: self.controller.messages(),
+                reactions: self.controller.reactions(),
                 mark: self.controller.unread_mark(),
                 facts: self.controller.nick_facts(&network_id),
                 self_nick: &self_nick,
@@ -294,6 +295,7 @@ impl Shell {
                 .then(|| self.controller.selected_target().to_owned());
                 let lines = ConversationLines {
                     messages: self.controller.messages(),
+                    reactions: self.controller.reactions(),
                     mark: self.controller.unread_mark(),
                     facts: self.controller.nick_facts(&network_id),
                     self_nick: &self_nick,
