@@ -13,6 +13,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/fredimachado/omairc/tui/internal/connection"
 	"github.com/fredimachado/omairc/tui/internal/controller"
@@ -255,5 +256,124 @@ func TestShortcutsSheetListsTheSearchChord(t *testing.T) {
 	m = press(t, m, ctrlKey('/'))
 	if view := m.View().Content; !strings.Contains(view, "Ctrl+Shift+F") || !strings.Contains(view, "search history") {
 		t.Fatalf("the shortcuts sheet does not list the search chord:\n%s", view)
+	}
+}
+
+// manyZebras fills #help with `count` lines that match "zebra" and #omarchy with
+// one more, so the sheet has more hits than it can show at once.
+func manyZebras(t *testing.T, count int) (*Model, *demo.DemoServer) {
+	t.Helper()
+	m, d := searchDemoModel(t)
+	var lines []string
+	for n := 0; n < count; n++ {
+		lines = append(lines, fmt.Sprintf("@msgid=z%d :kai!u@h PRIVMSG #help :zebra number %d", n, n))
+	}
+	injectOmarchy(d, lines...)
+	// One more in another conversation, which sorts last, and a different one is
+	// on screen, so Enter after End visibly moves.
+	injectOmarchy(d, "@msgid=zlast :dax!u@h PRIVMSG #omarchy :zebra in the omarchy room")
+	m.ctrl.SelectConversation("omarchy", "#ricing")
+	m = press(t, m, ctrlShiftKey('f'))
+	return typeSearch(t, m, "zebra"), d
+}
+
+func TestSearchSheetEndAndHomeSelectTheLastAndFirstHit(t *testing.T) {
+	m, _ := manyZebras(t, 30)
+	hits := m.searchSheet().results.Hits
+	if len(hits) != 31 {
+		t.Fatalf("got %d hits", len(hits))
+	}
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnd})
+	if m.searchSheet().selected != 30 {
+		t.Fatalf("End selected %d, want 30", m.searchSheet().selected)
+	}
+	if m.searchSheet().scroll == 0 {
+		t.Fatal("End must scroll the list so the last row shows")
+	}
+	if view := m.View().Content; !strings.Contains(view, "31 of 31") {
+		t.Fatalf("the last row is not shown:\n%s", view)
+	}
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyHome})
+	if m.searchSheet().selected != 0 || m.searchSheet().scroll != 0 {
+		t.Fatalf("Home selected %d scroll %d, want 0 and 0", m.searchSheet().selected, m.searchSheet().scroll)
+	}
+	// The field's caret did not move: the query is intact.
+	if got := m.searchSheet().input.Value(); got != "zebra" {
+		t.Fatalf("field = %q", got)
+	}
+}
+
+func TestSearchSheetEnterAfterEndOpensTheLastHit(t *testing.T) {
+	m, _ := manyZebras(t, 30)
+	last := m.searchSheet().results.Hits[len(m.searchSheet().results.Hits)-1]
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnd})
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.searchVisible() {
+		t.Fatal("Enter must close the sheet")
+	}
+	if last.Conversation.NormalizedTarget != "#omarchy" {
+		t.Fatalf("the last hit is %+v", last.Conversation)
+	}
+	if got := m.ctrl.SelectedConversationID(); got != irc.ConversationID(last.Conversation) {
+		t.Fatalf("selected %q, want the last hit's conversation", got)
+	}
+}
+
+func TestSearchRowHighlightsTheMatchInTheFindStyle(t *testing.T) {
+	m, d := searchDemoModel(t)
+	injectOmarchy(d, "@msgid=h1 :kai!u@h PRIVMSG #help :a Zebra and a zebra")
+	m = press(t, m, ctrlShiftKey('f'))
+	m = typeSearch(t, m, "zebra")
+	hit := m.searchSheet().results.Hits[0]
+	today := time.Now()
+	for _, selected := range []bool{false, true} {
+		row := m.searchRow(100, selected, hit, today)
+		for _, match := range []string{"Zebra", "zebra"} {
+			if !strings.Contains(row, m.styles.FindMatch.Render(match)) {
+				t.Fatalf("selected=%v: %q is not in the find style:\n%q", selected, match, row)
+			}
+		}
+		if strings.Contains(row, m.styles.FindMatch.Render("a ")) {
+			t.Fatalf("text between the matches must not be highlighted:\n%q", row)
+		}
+		if lipgloss.Width(row) != 100 {
+			t.Fatalf("row width = %d, want 100", lipgloss.Width(row))
+		}
+	}
+}
+
+func TestSearchRowHighlightsTheNickWhenItMatched(t *testing.T) {
+	m, d := searchDemoModel(t)
+	injectOmarchy(d, "@msgid=h2 :kai!u@h PRIVMSG #help :hello there")
+	m = press(t, m, ctrlShiftKey('f'))
+	m = typeSearch(t, m, "kai")
+	row := m.searchRow(100, false, m.searchSheet().results.Hits[0], time.Now())
+	if !strings.Contains(row, m.styles.FindMatch.Render("kai")) {
+		t.Fatalf("the matched nick is not highlighted:\n%q", row)
+	}
+}
+
+func TestSearchRowWithAMatchPastTheClipStillRenders(t *testing.T) {
+	m, _ := searchDemoModel(t)
+	body := "日本語のテキスト日本語のテキスト日本語のテキスト zebra at the very end"
+	query, _ := irc.ParseSearchQuery("zebra")
+	hit, ok := irc.SearchConversation{
+		NetworkID: "omarchy", NetworkName: "irc.example", Label: "#help",
+		Conversation: irc.ConversationKey{NetworkID: "omarchy", NormalizedTarget: "#help"},
+	}.Hit(query, irc.SearchLine{Time: time.Now(), Author: "kai", Kind: "message", Body: body, MsgID: "w1"})
+	if !ok {
+		t.Fatal("no hit")
+	}
+	for width := 0; width <= 120; width += 7 {
+		for _, selected := range []bool{false, true} {
+			row := m.searchRow(width, selected, hit, time.Now())
+			if got := lipgloss.Width(row); width > 0 && got != width {
+				t.Fatalf("width %d: row is %d cells", width, got)
+			}
+		}
+	}
+	// Wide enough for the match: it is highlighted.
+	if row := m.searchRow(160, false, hit, time.Now()); !strings.Contains(row, m.styles.FindMatch.Render("zebra")) {
+		t.Fatalf("an unclipped match must be highlighted:\n%q", row)
 	}
 }

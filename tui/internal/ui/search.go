@@ -7,6 +7,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/fredimachado/omairc/tui/internal/controller"
 )
@@ -212,6 +213,22 @@ func (m *Model) moveSearch(delta int) {
 	m.revealList(&sheet.scroll, sheet.selected, count, searchChromeLines)
 }
 
+// selectSearchRow highlights hit index (clamped to the list), scrolling it into
+// view. Home and End use it; the field's caret keeps Left and Right.
+func (m *Model) selectSearchRow(index int) {
+	sheet := m.searchSheet()
+	if sheet == nil {
+		return
+	}
+	count := len(sheet.results.Hits)
+	if count == 0 {
+		sheet.selected = 0
+		return
+	}
+	sheet.selected = clampInt(index, 0, count-1)
+	m.revealList(&sheet.scroll, sheet.selected, count, searchChromeLines)
+}
+
 // activateSearch opens the selected hit and closes the sheet.
 func (m *Model) activateSearch() {
 	sheet := m.searchSheet()
@@ -247,9 +264,14 @@ func (m *Model) activateSearchHit(hit controller.SearchHit) {
 }
 
 // handleSearchKey folds one key while the sheet is open. Escape and the toggle
-// chord close it; Up/Down walk the hits; Enter opens one; everything else edits
+// chord close it; Up/Down walk the hits, Home and End go to the first and last;
+// Enter opens one; everything else edits
 // the field.
 func (m *Model) handleSearchKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	sheet := m.searchSheet()
+	if sheet == nil {
+		return m, nil
+	}
 	switch key {
 	case "esc", "escape", "ctrl+shift+f":
 		m.closeSearch()
@@ -260,12 +282,14 @@ func (m *Model) handleSearchKey(key string, msg tea.KeyPressMsg) (tea.Model, tea
 	case "down":
 		m.moveSearch(1)
 		return m, nil
+	case "home":
+		m.selectSearchRow(0)
+		return m, nil
+	case "end":
+		m.selectSearchRow(len(sheet.results.Hits) - 1)
+		return m, nil
 	case "enter", "return":
 		m.activateSearch()
-		return m, nil
-	}
-	sheet := m.searchSheet()
-	if sheet == nil {
 		return m, nil
 	}
 	var cmd tea.Cmd
@@ -305,7 +329,7 @@ func (m *Model) searchOverlayLines(inner int) []overlayLine {
 	today := m.searchToday()
 	for index := start; index < end; index++ {
 		lines = append(lines, overlayLine{
-			text: m.overlayToggleRow(inner, index == sheet.selected, searchRowLabel(hits[index], today)),
+			text: m.searchRow(inner, index == sheet.selected, hits[index], today),
 			row:  index,
 		})
 	}
@@ -317,9 +341,50 @@ func (m *Model) searchOverlayLines(inner int) []overlayLine {
 // searchToday is the local day a row from today is told apart by.
 func (m *Model) searchToday() time.Time { return time.Now() }
 
+// searchRow renders one hit as a sheet row: network, conversation, time,
+// author and the line, with the matched nick and text in the find-match style
+// (the one Ctrl+F paints on a transcript row). The segments are styled before
+// the line is fitted, and the fit never splits an escape or a wide character,
+// so a match past the clip is simply cut with the rest of the row.
+func (m *Model) searchRow(inner int, selected bool, hit controller.SearchHit, today time.Time) string {
+	prefix, rowStyle := m.overlayRowChrome(selected)
+	budget := inner - lipgloss.Width(prefix)
+	if budget < 0 {
+		budget = 0
+	}
+	label, marks := searchRowLabel(hit, today)
+	var styled strings.Builder
+	at := 0
+	for _, mark := range marks {
+		if mark[0] < at || mark[1] > len(label) || mark[0] >= mark[1] {
+			continue
+		}
+		styled.WriteString(rowStyle.Render(label[at:mark[0]]))
+		styled.WriteString(m.styles.FindMatch.Render(label[mark[0]:mark[1]]))
+		at = mark[1]
+	}
+	styled.WriteString(rowStyle.Render(label[at:]))
+	return m.overlayFillRow(inner, prefix, rowStyle, ellipsizeLine(styled.String(), budget))
+}
+
 // searchRowLabel is one row's plain text: network, conversation, time, author
-// and the line.
-func searchRowLabel(hit controller.SearchHit, today time.Time) string {
-	return hit.NetworkName + "  " + hit.ConversationLabel + "  " +
-		controller.SearchTimeLabel(hit.Time, today) + "  " + hit.Author + "  " + hit.Text
+// and the line. marks are the byte ranges in it to highlight, in order: the nick
+// when it matched, then the matches in the line.
+func searchRowLabel(hit controller.SearchHit, today time.Time) (string, [][2]int) {
+	var label strings.Builder
+	label.WriteString(hit.NetworkName + "  " + hit.ConversationLabel + "  " +
+		controller.SearchTimeLabel(hit.Time, today) + "  ")
+	var marks [][2]int
+	authorAt := label.Len()
+	label.WriteString(hit.Author)
+	if hit.AuthorMatch {
+		marks = append(marks, [2]int{authorAt, label.Len()})
+	}
+	label.WriteString("  ")
+	bodyAt := label.Len()
+	label.WriteString(hit.Text)
+	for _, match := range hit.Matches {
+		marks = append(marks, [2]int{bodyAt + match.Start, bodyAt + match.End})
+	}
+	return label.String(), marks
 }
