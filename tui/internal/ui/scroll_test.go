@@ -179,8 +179,8 @@ func TestUserScrollReplacesPendingScrollPlace(t *testing.T) {
 	})
 	place := m.ctrl.CurrentScrollPlace()
 	// The visible page here is the last one, so landing on it follows the end.
-	if !place.Known || (place.Row < 0 && !place.Follow) {
-		t.Fatalf("place = %+v, want the visible page, not the unloaded line", place)
+	if !place.Known || !place.Follow {
+		t.Fatalf("place = %+v, want follow-end, not the unloaded line", place)
 	}
 	mapping := irc.NewCaseMapping(irc.KindRfc1459)
 	stored, ok := storage.NewScrollPlaceStore().Place("omarchy", "#omarchy", mapping)
