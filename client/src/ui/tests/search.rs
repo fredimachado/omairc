@@ -17,7 +17,7 @@ use super::fixture::{SeededShell, OMARCHY};
 const DEBOUNCE_AND_A_BIT: Duration = Duration::from_millis(200);
 
 fn open_search(ui: &mut SeededShell) {
-    ui.keys("ctrl-shift-f");
+    ui.keys("secondary-shift-f");
     assert!(search_open(ui), "Ctrl+Shift+F opens the search sheet");
 }
 
@@ -132,14 +132,14 @@ fn escape_closes_the_sheet_and_returns_focus_to_the_composer(cx: &mut gpui::Test
 fn the_chord_toggles_the_sheet_and_connect_blocks_it(cx: &mut gpui::TestAppContext) {
     let mut ui = super::fixture::open(cx);
     open_search(&mut ui);
-    ui.keys("ctrl-shift-f");
+    ui.keys("secondary-shift-f");
     assert!(!search_open(&ui), "the chord closes the sheet it opened");
 
     ui.cx.update(|window, cx| {
         ui.shell.update(cx, |shell, cx| shell.open_connect(window, cx));
     });
     ui.settle();
-    ui.keys("ctrl-shift-f");
+    ui.keys("secondary-shift-f");
     assert!(!search_open(&ui), "Connect holds the keyboard");
 }
 
