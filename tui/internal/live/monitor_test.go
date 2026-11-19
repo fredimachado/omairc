@@ -42,6 +42,30 @@ func statusLineIs(c *Client, text string) bool {
 	return false
 }
 
+func statusLineCount(c *Client, text string) int {
+	count := 0
+	for _, entry := range c.StatusLines() {
+		if entry.Text() == text {
+			count++
+		}
+	}
+	return count
+}
+
+func monitorOnlineInboxCount(c *Client, peer string) int {
+	var items []controller.InboxSnapshot
+	c.Do(func(ctrl *controller.Controller) {
+		items = ctrl.InboxItems()
+	})
+	count := 0
+	for _, item := range items {
+		if item.Kind == "monitorOnline" && item.Actor == peer {
+			count++
+		}
+	}
+	return count
+}
+
 func TestMonitorDirectPresence(t *testing.T) {
 	for _, daemon := range requireLive(t) {
 		useTLS := daemon.UseTLS()
@@ -102,6 +126,11 @@ func TestMonitorDirectPresence(t *testing.T) {
 			t.Fatalf("%s status %s", daemon.Name, offline)
 		}
 
+		// Snapshot before reconnect so an initial-730 online line cannot satisfy the wait.
+		online := peerNick + " is online"
+		onlineStatusBefore := statusLineCount(client, online)
+		onlineInboxBefore := monitorOnlineInboxCount(client, peerNick)
+
 		again := Connect(t, daemon, peerNick, useTLS, Options{})
 		if !again.WaitRegistered() {
 			t.Fatalf("%s peer again: %s", daemon.Name, again.LastError())
@@ -110,27 +139,26 @@ func TestMonitorDirectPresence(t *testing.T) {
 			t.Fatalf("%s peer nick after reconnect = %q, want %q", daemon.Name, again.Nick(), peerNick)
 		}
 
-		online := peerNick + " is online"
 		if !client.WaitUntil(func(c *Client) bool {
-			if !statusLineIs(c, online) {
-				return false
-			}
-			var items []controller.InboxSnapshot
-			c.Do(func(ctrl *controller.Controller) {
-				items = ctrl.InboxItems()
-			})
-			for _, item := range items {
-				if item.Kind == "monitorOnline" && item.Actor == peerNick {
-					return true
-				}
-			}
-			return false
+			return statusLineCount(c, online) > onlineStatusBefore &&
+				monitorOnlineInboxCount(c, peerNick) > onlineInboxBefore
 		}) {
-			t.Fatalf("%s status %s and monitorOnline inbox", daemon.Name, online)
+			t.Fatalf("%s status %s and monitorOnline inbox after reconnect", daemon.Name, online)
 		}
 
-		if got := len(directRowsFor(client, peerNick)); got != 1 {
-			t.Fatalf("%s MONITOR invents no extra DM: got %d rows", daemon.Name, got)
+		var directs []controller.ConversationSnapshot
+		client.Do(func(ctrl *controller.Controller) {
+			for _, row := range ctrl.Conversations() {
+				if row.Direct && row.NetworkID == client.NetworkID {
+					directs = append(directs, row)
+				}
+			}
+		})
+		if len(directs) != 1 {
+			t.Fatalf("%s MONITOR invents no extra DM: got %d rows", daemon.Name, len(directs))
+		}
+		if directs[0].Conversation != peerNick {
+			t.Fatalf("%s sole DM target = %q, want %q", daemon.Name, directs[0].Conversation, peerNick)
 		}
 	}
 }

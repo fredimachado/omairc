@@ -7,7 +7,7 @@ use omairc::irc::inbox::InboxKind;
 use omairc::irc::message::IrcMessage;
 use omairc::live::{live_daemons, unique_channel, unique_nick, LiveClient, LiveClientOptions};
 
-use super::helpers::{direct_rows_for, require_live, wait_names_end};
+use super::helpers::{require_live, wait_names_end};
 
 /// True when a MONITOR numeric's trailing list names `nick` (entry may be
 /// `nick!user@host`; compared case-insensitively).
@@ -26,6 +26,23 @@ fn saw_monitor_reply(incoming: &[IrcMessage], numeric: &str, nick: &str) -> bool
 
 fn status_line_is(client: &LiveClient, text: &str) -> bool {
     client.status_lines().iter().any(|entry| entry.text == text)
+}
+
+fn status_line_count(client: &LiveClient, text: &str) -> usize {
+    client
+        .status_lines()
+        .iter()
+        .filter(|entry| entry.text == text)
+        .count()
+}
+
+fn monitor_online_inbox_count(client: &LiveClient, peer: &str) -> usize {
+    client
+        .controller
+        .inbox_items()
+        .iter()
+        .filter(|item| item.kind == InboxKind::MonitorOnline && item.actor == peer)
+        .count()
 }
 
 #[test]
@@ -94,27 +111,40 @@ fn monitor_direct_presence() {
             daemon.name
         );
 
+        // Snapshot before reconnect so an initial-730 online line cannot satisfy the wait.
+        let online = format!("{peer_nick} is online");
+        let online_status_before = status_line_count(&client, &online);
+        let online_inbox_before = monitor_online_inbox_count(&client, &peer_nick);
+
         let mut again =
             LiveClient::connect(&daemon, &peer_nick, tls, LiveClientOptions::default());
         assert!(again.wait_registered(), "{} peer again", daemon.name);
         assert_eq!(again.nick(), peer_nick, "{} peer nick after reconnect", daemon.name);
 
-        let online = format!("{peer_nick} is online");
         assert!(
             client.wait_until(|client| {
-                status_line_is(client, &online)
-                    && client.controller.inbox_items().iter().any(|item| {
-                        item.kind == InboxKind::MonitorOnline && item.actor == peer_nick
-                    })
+                status_line_count(client, &online) > online_status_before
+                    && monitor_online_inbox_count(client, &peer_nick) > online_inbox_before
             }),
-            "{} status {online} and MonitorOnline inbox",
+            "{} status {online} and MonitorOnline inbox after reconnect",
             daemon.name
         );
 
+        let directs: Vec<_> = client
+            .controller
+            .conversations()
+            .into_iter()
+            .filter(|row| row.direct && row.key.network_id == client.network_id)
+            .collect();
         assert_eq!(
-            direct_rows_for(&client, &peer_nick).len(),
+            directs.len(),
             1,
             "{} MONITOR invents no extra DM",
+            daemon.name
+        );
+        assert_eq!(
+            directs[0].target, peer_nick,
+            "{} sole DM target",
             daemon.name
         );
         drop(again);
