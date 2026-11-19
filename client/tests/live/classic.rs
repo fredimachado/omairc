@@ -4,7 +4,7 @@ use omairc::live::{
 };
 
 use super::helpers::{
-    names_end_count, require_live, saw_channel_mode_key, saw_part, wait_names_end,
+    names_end_count, require_live, saw_channel_mode, saw_part, wait_names_end,
 };
 
 #[test]
@@ -137,7 +137,7 @@ fn join_multiple_channels() {
             &format!("/mode {keyed} +k s3cret")
         ));
         assert!(
-            client.wait_until(|client| saw_channel_mode_key(&client.incoming(), &keyed)),
+            client.wait_until(|client| saw_channel_mode(&client.incoming(), &keyed, 'k')),
             "{} mode +k",
             daemon.name
         );
