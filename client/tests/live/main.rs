@@ -7,6 +7,7 @@ mod channellist;
 mod classic;
 mod harness;
 mod helpers;
+mod history;
 mod invention;
 mod invites;
 mod members;
