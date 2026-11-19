@@ -1,4 +1,5 @@
 use omairc::controller::controller::Controller;
+use omairc::controller::snapshots::ConversationRow;
 use omairc::irc::message::IrcMessage;
 use omairc::irc::wiretext::wire_text;
 use omairc::live::{live_daemons, live_enabled, LiveClient};
@@ -52,7 +53,7 @@ pub fn names_end_count(incoming: &[IrcMessage], channel: &str) -> usize {
         .count()
 }
 
-pub fn saw_channel_mode_key(incoming: &[IrcMessage], channel: &str) -> bool {
+pub fn saw_channel_mode(incoming: &[IrcMessage], channel: &str, mode: char) -> bool {
     incoming.iter().any(|message| {
         if message.command != "MODE" || message.params.len() < 2 {
             return false;
@@ -60,12 +61,33 @@ pub fn saw_channel_mode_key(incoming: &[IrcMessage], channel: &str) -> bool {
         if !wire_text(&message.params[0]).eq_ignore_ascii_case(channel) {
             return false;
         }
-        message
-            .params
-            .iter()
-            .skip(1)
-            .any(|param| wire_text(param).contains('k'))
+        // Only the mode string (params[1]): require `mode` inside a `+` run.
+        let mut adding = false;
+        for character in wire_text(&message.params[1]).chars() {
+            match character {
+                '+' => adding = true,
+                '-' => adding = false,
+                flag if adding && flag == mode => return true,
+                _ => {}
+            }
+        }
+        false
     })
+}
+
+/// Direct-message rows for `nick` under the network's case mapping.
+pub fn direct_rows_for(client: &LiveClient, nick: &str) -> Vec<ConversationRow> {
+    let mapping = client.features().case_mapping();
+    client
+        .controller
+        .conversations()
+        .into_iter()
+        .filter(|row| {
+            row.direct
+                && row.key.network_id == client.network_id
+                && mapping.equals(&row.target, nick)
+        })
+        .collect()
 }
 
 pub fn saw_part(incoming: &[IrcMessage], channel: &str) -> bool {

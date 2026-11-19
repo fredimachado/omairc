@@ -1,7 +1,8 @@
 use omairc::irc::capability::IrcCapability;
+use omairc::irc::command::ComposerSurface;
 use omairc::irc::world::Origin;
 use omairc::live::{
-    live_daemons, unique_channel, unique_nick, LiveClient, LiveClientOptions,
+    live_daemons, message_has_command, unique_channel, unique_nick, LiveClient, LiveClientOptions,
 };
 
 use super::helpers::{channel_has_body, require_live, wait_names_end};
@@ -33,6 +34,67 @@ fn who_snapshot() {
         assert!(
             !omairc::live::message_has_command(&client.incoming(), "354"),
             "{} WHO must be classic 352, not WHOX 354",
+            daemon.name
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires bin/test-live (OMAIRC_LIVE_DAEMONS)"]
+fn self_away_and_back() {
+    require_live();
+    for daemon in live_daemons() {
+        let mut client = LiveClient::connect(
+            &daemon,
+            &unique_nick(daemon.nick_length),
+            daemon.use_tls(),
+            LiveClientOptions::default(),
+        );
+        assert!(client.wait_registered(), "{}", daemon.name);
+        let channel = unique_channel();
+        assert!(client.join_channel(&channel));
+        assert!(wait_names_end(&mut client, &channel));
+        client.select_channel(&channel);
+
+        let own = client.nick();
+        assert!(
+            client.wait_until(|client| {
+                client
+                    .member(&own)
+                    .is_some_and(|member| !member.is_away())
+            }),
+            "{} own row present",
+            daemon.name
+        );
+
+        let reason = format!("gone-{channel}");
+        assert!(client
+            .controller
+            .submit(ComposerSurface::Conversation, &format!("/away {reason}")));
+        assert!(
+            client.wait_until(|client| {
+                message_has_command(&client.incoming(), "306")
+                    && client.controller.self_away()
+                    && client
+                        .member(&own)
+                        .is_some_and(|member| member.is_away())
+            }),
+            "{} /away paints own row",
+            daemon.name
+        );
+
+        assert!(client
+            .controller
+            .submit(ComposerSurface::Conversation, "/back"));
+        assert!(
+            client.wait_until(|client| {
+                message_has_command(&client.incoming(), "305")
+                    && !client.controller.self_away()
+                    && client
+                        .member(&own)
+                        .is_some_and(|member| !member.is_away())
+            }),
+            "{} /back clears own row",
             daemon.name
         );
     }
