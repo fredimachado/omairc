@@ -205,6 +205,7 @@ fn a_line_older_than_the_loaded_transcript_opens_the_conversation_with_a_note(
             kind: "message".to_owned(),
             body: "the walrus was here first".to_owned(),
             msgid: "old-1".to_owned(),
+            reply_to: String::new(),
             only_visible_to_you: false,
         },
     ));

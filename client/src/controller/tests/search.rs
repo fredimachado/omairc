@@ -25,6 +25,7 @@ fn stored(second: i64, author: &str, body: &str, msgid: &str) -> TranscriptLine 
         kind: "message".to_owned(),
         body: body.to_owned(),
         msgid: msgid.to_owned(),
+        reply_to: String::new(),
         only_visible_to_you: false,
     }
 }
