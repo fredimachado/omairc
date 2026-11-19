@@ -114,7 +114,7 @@ func TestJoinMultipleChannels(t *testing.T) {
 		if !client.Submit("/mode " + keyed + " +k s3cret") {
 			t.Fatalf("%s: /mode: %s", daemon.Name, client.LastError())
 		}
-		if !client.WaitUntil(func(c *Client) bool { return sawChannelModeKey(c.Incoming(), keyed) }) {
+		if !client.WaitUntil(func(c *Client) bool { return sawChannelMode(c.Incoming(), keyed, 'k') }) {
 			t.Fatalf("%s mode +k", daemon.Name)
 		}
 		if !client.Submit("/part " + keyed) {
@@ -131,3 +131,4 @@ func TestJoinMultipleChannels(t *testing.T) {
 		}
 	}
 }
+

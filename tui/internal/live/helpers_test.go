@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fredimachado/omairc/tui/internal/controller"
 	"github.com/fredimachado/omairc/tui/internal/irc"
 )
 
@@ -69,18 +70,37 @@ func namesEndCount(incoming []irc.Message, channel string) int {
 	return count
 }
 
-func sawChannelModeKey(incoming []irc.Message, channel string) bool {
+// sawChannelMode reports a MODE line for channel whose params mention mode,
+// matching Rust saw_channel_mode (any param after the channel).
+func sawChannelMode(incoming []irc.Message, channel string, mode rune) bool {
+	needle := string(mode)
 	for _, message := range incoming {
 		if message.Command != "MODE" || len(message.Params) < 2 || !paramIs(message, 0, channel) {
 			continue
 		}
 		for _, param := range message.Params[1:] {
-			if strings.Contains(param, "k") {
+			if strings.Contains(param, needle) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// directRowsFor returns direct-message rows for nick under the network's case
+// mapping, matching Rust direct_rows_for.
+func directRowsFor(c *Client, nick string) []controller.ConversationSnapshot {
+	features := c.Features()
+	mapping := features.CaseMapping()
+	var rows []controller.ConversationSnapshot
+	c.Do(func(ctrl *controller.Controller) {
+		for _, row := range ctrl.Conversations() {
+			if row.Direct && row.NetworkID == c.NetworkID && mapping.Equals(row.Conversation, nick) {
+				rows = append(rows, row)
+			}
+		}
+	})
+	return rows
 }
 
 func sawPart(incoming []irc.Message, channel string) bool {
