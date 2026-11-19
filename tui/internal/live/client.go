@@ -28,6 +28,7 @@ var (
 	nickSeq    atomic.Uint32
 	channelSeq atomic.Uint32
 	networkSeq atomic.Uint32
+	fenceSeq   atomic.Uint32
 )
 
 // UniqueNick returns a nick within the daemon's NICKLEN budget. The `g` lead
@@ -79,6 +80,33 @@ func (r *recorder) messages() []irc.Message {
 	return out
 }
 
+// recordingTransport keeps every line its session wrote, in Write-call order.
+// That matches wire order for writes from one Client.Do turn or the session's
+// own drain; interleaving between concurrent goroutines is unspecified, as it
+// is on the wire. The recorder mutex is not held across the inner Write:
+// NetTransport.Write can call back into the session on error and re-enter Write.
+type recordingTransport struct {
+	session.Transport
+	mu    sync.Mutex
+	lines []string
+}
+
+func (r *recordingTransport) Write(frame []byte) {
+	line := strings.TrimRight(string(frame), "\r\n")
+	r.mu.Lock()
+	r.lines = append(r.lines, line)
+	r.mu.Unlock()
+	r.Transport.Write(frame)
+}
+
+func (r *recordingTransport) sent() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, len(r.lines))
+	copy(out, r.lines)
+	return out
+}
+
 // Client is one controller with one or more live sessions. Every controller
 // read and write goes through Do, which holds the controller lock the way the
 // shell's Update does; session goroutines take the same lock themselves.
@@ -88,6 +116,7 @@ type Client struct {
 	NetworkID  string
 	networks   []string
 	recorders  map[string]*recorder
+	transports map[string]*recordingTransport
 	tlsConfig  *tls.Config
 }
 
@@ -107,6 +136,7 @@ func Connect(t testing.TB, daemon DaemonInfo, nick string, useTLS bool, options 
 		t:          t,
 		Controller: controller.New(),
 		recorders:  make(map[string]*recorder),
+		transports: make(map[string]*recordingTransport),
 		tlsConfig:  &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
 	}
 	t.Cleanup(c.close)
@@ -142,9 +172,10 @@ func (c *Client) start(daemon DaemonInfo, nick string, useTLS bool, options Opti
 	config.AutojoinChannels = options.AutojoinChannels
 	config.CapabilityTimeoutMs = 8000
 
+	transport := &recordingTransport{Transport: session.NewNetTransportWithTLS(c.tlsConfig)}
 	var startErr error
 	c.Do(func(ctrl *controller.Controller) {
-		s, err := ctrl.AddSession(config, session.NewNetTransportWithTLS(c.tlsConfig), nil)
+		s, err := ctrl.AddSession(config, transport, nil)
 		if err != nil {
 			startErr = err
 			return
@@ -152,6 +183,7 @@ func (c *Client) start(daemon DaemonInfo, nick string, useTLS bool, options Opti
 		rec := &recorder{Handler: ctrl}
 		s.SetHandler(rec)
 		c.recorders[networkID] = rec
+		c.transports[networkID] = transport
 		c.networks = append(c.networks, networkID)
 		ctrl.Start(networkID)
 	})
@@ -276,6 +308,103 @@ func (c *Client) WaitRegisteredNetwork(networkID string) bool {
 // WaitFailed waits for the primary session to fail.
 func (c *Client) WaitFailed() bool {
 	return c.waitState(c.NetworkID, session.StateFailed, DefaultTimeout)
+}
+
+// WaitReconnecting waits for the primary session to enter reconnecting.
+func (c *Client) WaitReconnecting() bool {
+	return c.waitState(c.NetworkID, session.StateReconnecting, DefaultTimeout)
+}
+
+// WaitRegisteredAgain waits for the primary session to register again after a
+// forced disconnect, matching Rust wait_registered_again's 40s budget.
+func (c *Client) WaitRegisteredAgain() bool {
+	return c.waitState(c.NetworkID, session.StateRegistered, 40*time.Second)
+}
+
+// SentFor returns every outbound line networkID wrote, CRLF trimmed.
+// Order matches recordingTransport: Write-call order, wire-ordered within one
+// Do turn or session drain; concurrent interleaving is unspecified.
+func (c *Client) SentFor(networkID string) []string {
+	var transport *recordingTransport
+	c.Do(func(*controller.Controller) {
+		transport = c.transports[networkID]
+	})
+	if transport == nil {
+		return nil
+	}
+	return transport.sent()
+}
+
+// Sent returns every outbound line the primary network wrote, CRLF trimmed.
+func (c *Client) Sent() []string {
+	return c.SentFor(c.NetworkID)
+}
+
+// FenceSerial is the fence serial counter's current value (the next serial
+// Fence tries first). Live proofs plant decoy PINGs with it.
+func FenceSerial() uint32 {
+	return fenceSeq.Load()
+}
+
+// Fence writes a PING whose wire token is unused on this network and waits for
+// that token's PONG. The wire token is <token>-<serial> from FenceSerial's
+// counter. While this network's sent log already holds PING :<candidate>, the
+// next serial is taken, so an earlier raw ping (including one planted for the
+// next serial) cannot satisfy the fence.
+func (c *Client) Fence(token string) bool {
+	var wire string
+	for {
+		serial := fenceSeq.Add(1) - 1
+		candidate := fmt.Sprintf("%s-%d", token, serial)
+		ping := "PING :" + candidate
+		taken := false
+		for _, line := range c.Sent() {
+			if line == ping {
+				taken = true
+				break
+			}
+		}
+		if !taken {
+			wire = candidate
+			break
+		}
+	}
+	before := len(c.Incoming())
+	if !c.Session().SendRaw("PING :" + wire) {
+		return false
+	}
+	return c.WaitUntil(func(client *Client) bool {
+		incoming := client.Incoming()
+		if before > len(incoming) {
+			return false
+		}
+		for _, message := range incoming[before:] {
+			if message.Command != "PONG" || len(message.Params) == 0 {
+				continue
+			}
+			if message.Params[len(message.Params)-1] == wire {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+// ForceDisconnect shuts the primary transport down while Registered, so the
+// session takes the unexpected-drop reconnect path. Call it outside Do.
+func (c *Client) ForceDisconnect() bool {
+	if c.State() != session.StateRegistered {
+		return false
+	}
+	var transport *recordingTransport
+	c.Do(func(*controller.Controller) {
+		transport = c.transports[c.NetworkID]
+	})
+	if transport == nil {
+		return false
+	}
+	transport.Shutdown()
+	return true
 }
 
 // WaitMotd waits for the end of MOTD (376) or its absence (422).

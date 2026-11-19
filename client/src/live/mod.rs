@@ -5,9 +5,12 @@
 
 mod client;
 mod env;
+mod record;
 mod wait;
 
-pub use client::{unique_channel, unique_nick, LiveClient, LiveClientOptions};
+pub use client::{
+    fence_serial, unique_channel, unique_nick, LiveClient, LiveClientOptions,
+};
 pub use env::{
     live_cert_pem, live_daemons, live_enabled, live_host, CaseMappingExpect, DaemonInfo,
 };

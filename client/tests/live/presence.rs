@@ -351,15 +351,7 @@ fn chat_history_on_join() {
         .send_to_target(&peer_network, &channel, &seed));
     peer.pump();
     // Prove the seed is in history before the client joins.
-    assert!(peer
-        .controller
-        .session(&peer_network)
-        .expect("session")
-        .send_raw("PING :history-seed"));
-    peer.pump();
-    assert!(peer.wait_until(|peer| {
-        omairc::live::message_has_command(&peer.incoming(), "PONG")
-    }));
+    assert!(peer.fence("history-seed"));
 
     let mut client = LiveClient::connect(
         &daemon,
