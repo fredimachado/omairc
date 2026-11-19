@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -263,75 +264,92 @@ func conversationLogPrependBytes(path string, lines [][]byte) bool {
 	return os.WriteFile(path, buf.Bytes(), 0o600) == nil
 }
 
-// conversationLogReadTail.
-// it scans the file backwards in 4096-byte chunks, parses the newest lines
-// first, filters them through the secret policy, stops at maxLines, and
-// reverses the result so it is oldest first.
+// conversationLogReadTail scans the file backwards in 4096-byte chunks, parses
+// the newest lines first, filters them through the secret policy, stops at
+// maxLines, and reverses the result so it is oldest first.
 func conversationLogReadTail(file *os.File, maxLines int) []irc.TranscriptLine {
 	if maxLines <= 0 {
 		return nil
 	}
+	channelTypes := conversationLogChannelTypes()
+	var lines []irc.TranscriptLine
+	conversationLogReverseLines(context.Background(), file, 4096, func(raw []byte) bool {
+		if parsed, ok := conversationLogAdmittedLine(raw, channelTypes); ok {
+			lines = append(lines, parsed)
+		}
+		return len(lines) < maxLines
+	})
+	for left, right := 0, len(lines)-1; left < right; left, right = left+1, right-1 {
+		lines[left], lines[right] = lines[right], lines[left]
+	}
+	return lines
+}
+
+// conversationLogReverseLines hands every line of file to visit, last line
+// first, reading backward in chunks of chunkSize so a caller that stops early
+// never reads the rest. A line is the bytes between newlines, untrimmed and
+// possibly empty. visit returns false to stop. ctx is checked between chunks
+// and lines, so a long scan stops within one chunk of being cancelled.
+func conversationLogReverseLines(ctx context.Context, file *os.File, chunkSize int64, visit func(raw []byte) bool) {
 	info, err := file.Stat()
 	if err != nil {
-		return nil
+		return
 	}
-	size := info.Size()
-	position := size
+	position := info.Size()
+	// pending is the start of a line whose beginning is in an earlier chunk.
 	var pending []byte
-	var lines []irc.TranscriptLine
-
-	channelTypes := conversationLogChannelTypes()
-	accept := func(raw []byte) bool {
-		raw = bytes.TrimSpace(raw)
-		if len(raw) == 0 {
-			return false
+	for position > 0 {
+		if ctx.Err() != nil {
+			return
 		}
-		parsed, ok := conversationLogParseLine(raw)
-		if !ok {
-			return false
-		}
-		if !irc.AllowsTranscript(parsed.Body, channelTypes) || !irc.AllowsTranscript(parsed.Author, channelTypes) {
-			return false
-		}
-		lines = append(lines, parsed)
-		return len(lines) == maxLines
-	}
-
-	const chunkSize = 4096
-	for position > 0 && len(lines) < maxLines {
 		bytesToRead := position
 		if bytesToRead > chunkSize {
 			bytesToRead = chunkSize
 		}
 		position -= bytesToRead
 		if _, err := file.Seek(position, io.SeekStart); err != nil {
-			break
+			return
 		}
 		chunk := make([]byte, bytesToRead)
 		if _, err := io.ReadFull(file, chunk); err != nil {
-			break
+			return
 		}
 		pending = append(chunk, pending...)
-
-		newline := bytes.LastIndexByte(pending, '\n')
-		for newline >= 0 {
-			raw := pending[newline+1:]
-			pending = pending[:newline]
-			if accept(raw) {
+		end := len(pending)
+		for {
+			newline := bytes.LastIndexByte(pending[:end], '\n')
+			if newline < 0 {
 				break
 			}
-			newline = bytes.LastIndexByte(pending, '\n')
+			if !visit(pending[newline+1:end]) || ctx.Err() != nil {
+				return
+			}
+			end = newline
 		}
+		pending = pending[:end]
 	}
+	// What is left is the file's first line.
+	if ctx.Err() == nil {
+		visit(pending)
+	}
+}
 
-	if position == 0 && len(lines) < maxLines {
-		accept(pending)
+// conversationLogAdmittedLine is the line a log row holds, when it parses and
+// the transcript policy admits it. Every reader of the log goes through it, so
+// nothing the writer would have dropped is ever handed on.
+func conversationLogAdmittedLine(raw []byte, channelTypes string) (irc.TranscriptLine, bool) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return irc.TranscriptLine{}, false
 	}
-
-	for left, right := 0, len(lines)-1; left < right; left, right = left+1, right-1 {
-		lines[left], lines[right] = lines[right], lines[left]
+	parsed, ok := conversationLogParseLine(raw)
+	if !ok {
+		return irc.TranscriptLine{}, false
 	}
-	return lines
+	if !irc.AllowsTranscript(parsed.Body, channelTypes) || !irc.AllowsTranscript(parsed.Author, channelTypes) {
+		return irc.TranscriptLine{}, false
+	}
+	return parsed, true
 }
 
 // conversationLogFileExists reports whether path is an existing regular file.

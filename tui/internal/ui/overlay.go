@@ -6,9 +6,9 @@ import (
 )
 
 // filterOverlay is the one exclusive filter sheet: jump, nick, link, inbox,
-// list, or file. Model.overlay holds at most one, so two sheets cannot be open
-// by construction, and opening one replaces whichever was there (setOverlay).
-// Only the six pointer types in this package implement it. A new sheet must
+// search, list, or file. Model.overlay holds at most one, so two sheets cannot
+// be open by construction, and opening one replaces whichever was there
+// (setOverlay). Only the seven pointer types in this package implement it. A new sheet must
 // implement every method below, so every dispatch (card, key, paste, pointer,
 // resize, restyle) handles it or the package does not compile.
 //
@@ -80,7 +80,12 @@ func (m *Model) overlayInputUpdate(msg tea.Msg) tea.Cmd {
 	if m.overlay == nil {
 		return nil
 	}
-	return m.overlay.updateInput(msg)
+	cmd := m.overlay.updateInput(msg)
+	if m.searchSheet() != nil {
+		// A paste edits the search field, so it restarts the search like a key.
+		cmd = tea.Batch(cmd, m.searchQueryChanged())
+	}
+	return cmd
 }
 
 // Typed accessors: each returns the open sheet when it is that sheet, else nil.
@@ -114,6 +119,14 @@ func (m *Model) inboxSheet() *inboxState {
 		return nil
 	}
 	sheet, _ := m.overlay.(*inboxState)
+	return sheet
+}
+
+func (m *Model) searchSheet() *searchState {
+	if m == nil {
+		return nil
+	}
+	sheet, _ := m.overlay.(*searchState)
 	return sheet
 }
 
@@ -229,6 +242,33 @@ func (s *inboxState) wheel(m *Model, direction int) {
 func (s *inboxState) restyle(textinput.Styles) {}
 func (s *inboxState) setInputWidth(int)        {}
 func (s *inboxState) discard(*Model)           {}
+
+func (s *searchState) card(m *Model, width int) string { return m.searchCard(width) }
+func (s *searchState) handleKey(m *Model, key string, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	return m.handleSearchKey(key, msg)
+}
+
+func (s *searchState) updateInput(msg tea.Msg) tea.Cmd { return filterInputUpdate(&s.input, msg) }
+func (s *searchState) dismiss(m *Model)                { m.closeSearch() }
+func (s *searchState) pointerDismissable() bool        { return true }
+func (s *searchState) overlayLines(m *Model, inner int) []overlayLine {
+	return m.searchOverlayLines(inner)
+}
+func (s *searchState) activateRow(m *Model, index int) {
+	s.selected = index
+	m.activateSearch()
+}
+func (s *searchState) wheel(m *Model, direction int) {
+	wheelList(&s.scroll, len(s.results.Hits), m.overlayRowBudget(searchChromeLines), direction)
+}
+func (s *searchState) restyle(styles textinput.Styles) { s.input.SetStyles(styles) }
+func (s *searchState) setInputWidth(width int)         { s.input.SetWidth(width) }
+
+// discard cancels the running scan when the sheet is closed or replaced.
+func (s *searchState) discard(*Model) {
+	s.stopSearch()
+	s.input.Blur()
+}
 
 func (s *channelListState) card(m *Model, width int) string { return m.channelListCard(width) }
 func (s *channelListState) handleKey(m *Model, key string, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {

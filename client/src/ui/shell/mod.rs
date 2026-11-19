@@ -15,6 +15,7 @@ pub mod modal;
 pub mod net;
 pub mod notifications;
 pub mod readmarker;
+pub mod search;
 pub mod slash;
 pub mod unread;
 pub mod view;
@@ -102,6 +103,9 @@ pub struct Shell {
     /// When the shown conversation's saved place started waiting for history, so a
     /// request that never settles gives the wait up (`notifications.rs`).
     pub restore_wait_since: Option<chrono::DateTime<chrono::Utc>>,
+    /// A calm line the header shows in place of the subtitle after a search jump that could
+    /// not land (`OLDER_THAN_LOADED_NOTE`). Leaving the view clears it.
+    pub search_note: Option<&'static str>,
     pub transcript: Entity<TranscriptView>,
     pub composer: Entity<SingleLineInput>,
     /// The composer's drafts, sent-line history and Tab cycle, per target.
@@ -280,6 +284,7 @@ impl Shell {
             members_scroll: ScrollHandle::new(),
             scrollbar_drag,
             restore_wait_since: None,
+            search_note: None,
             transcript,
             composer,
             composer_state,
@@ -529,6 +534,7 @@ impl Render for Shell {
             .map(|network_id| connection_line(&self.controller, network_id))
             .unwrap_or_default();
         let subtitle = match (&peer, &topic) {
+            _ if self.search_note.is_some() => Subtitle::Plain(self.search_note.unwrap_or_default()),
             (Some(_), _) => Subtitle::Plain(&peer_realname),
             (None, Some((text, hits))) => Subtitle::Topic {
                 text,

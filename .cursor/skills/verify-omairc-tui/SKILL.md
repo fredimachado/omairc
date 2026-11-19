@@ -151,7 +151,7 @@ Key names are case-sensitive Bubble Tea key names, not `xdotool` keysyms.
 Accepted names are `ctrl+q`, `ctrl+c`, `ctrl+l`, `ctrl+slash`, `ctrl+k`,
 `ctrl+``, `ctrl+,`, `ctrl+enter`, `ctrl+tab`, `ctrl+shift+delete`,
 `ctrl+shift+s`, `ctrl+shift+p`, `ctrl+shift+k`, `ctrl+shift+a`,
-`ctrl+shift+o`, `ctrl+shift+m`, `ctrl+home`, `ctrl+end`, `enter` / `Return` /
+`ctrl+shift+f`, `ctrl+shift+o`, `ctrl+shift+m`, `ctrl+home`, `ctrl+end`, `enter` / `Return` /
 `return`, `tab`, `space`, `backspace`, `Escape` / `escape`, `Up` / `Down` /
 `Left` / `Right` / `up` / `down` / `left` / `right`, `Page_Up` / `Page_Down` /
 `page_up` / `page_down`, `shift+Page_Up` / `shift+Page_Down`, `Home` / `End` /

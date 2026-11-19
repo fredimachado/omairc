@@ -222,6 +222,9 @@ func (m *Model) channelTranscriptHeader() []string {
 		return nil
 	}
 	topic := strings.TrimSpace(m.ctrl.PlainIrcText(m.ctrl.Topic()))
+	if m.searchNote != "" {
+		topic = m.searchNote
+	}
 	lines := []string{m.headerBand(m.channelHeaderTitle(name), topic == "")}
 	if topic != "" {
 		lines = append(lines, m.topicHeaderLine(topic))
@@ -246,6 +249,9 @@ func (m *Model) channelHeaderTitle(name string) string {
 // is worth showing. The unseen marker stays on the last content line.
 func (m *Model) queryTranscriptHeader(header controller.PeerHeader) []string {
 	realname := strings.TrimSpace(m.ctrl.PlainIrcText(header.Realname))
+	if m.searchNote != "" {
+		realname = m.searchNote
+	}
 	lines := []string{m.headerBand(m.queryTitleContent(header), realname == "")}
 	if realname != "" {
 		lines = append(lines, m.headerBand(m.styles.MemberAccount.Render(realname), true))

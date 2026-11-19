@@ -575,6 +575,7 @@ func indexOfString(values []string, needle string) int {
 // instead: the walk was a no-op for the header focus, so the typed line stayed
 // in the composer as a draft while the transcript jumped away.
 func (m *Model) switchSelection(apply func()) {
+	m.searchNote = ""
 	if m.find.active {
 		m.leaveFind()
 	}
@@ -867,11 +868,22 @@ func (m *Model) overlaySheetEmpty(text string) string {
 // raised-surface fill that reaches inner. label is plain text; the caller never
 // passes pre-styled text, whose reset would clear the row fill.
 func (m *Model) overlayToggleRow(inner int, selected bool, label string) string {
+	prefix, rowStyle := m.overlayRowChrome(selected)
+	budget := inner - lipgloss.Width(prefix)
+	if budget < 0 {
+		budget = 0
+	}
+	return m.overlayFillRow(inner, prefix, rowStyle, rowStyle.Render(ellipsizeLine(label, budget)))
+}
+
+// overlayRowChrome is the part of a sheet row every list shares: the leading
+// accent bar and [x]/[ ] chip, already rendered, and the style the label takes.
+func (m *Model) overlayRowChrome(selected bool) (prefix string, rowStyle lipgloss.Style) {
 	bar := " "
 	barStyle := m.styles.Divider
 	chip := overlayChipOff
 	chipStyle := m.styles.SheetLabel
-	rowStyle := m.styles.JumpRow
+	rowStyle = m.styles.JumpRow
 	if selected {
 		fill := m.styles.Colors.SurfaceRaised
 		bar = "▌"
@@ -880,12 +892,13 @@ func (m *Model) overlayToggleRow(inner int, selected bool, label string) string 
 		chipStyle = m.styles.SheetToggleOn.Background(fill)
 		rowStyle = m.styles.JumpSelected.Background(fill)
 	}
-	prefix := barStyle.Render(bar) + chipStyle.Render(chip) + rowStyle.Render(" ")
-	budget := inner - lipgloss.Width(prefix)
-	if budget < 0 {
-		budget = 0
-	}
-	line := prefix + rowStyle.Render(ellipsizeLine(label, budget))
+	return barStyle.Render(bar) + chipStyle.Render(chip) + rowStyle.Render(" "), rowStyle
+}
+
+// overlayFillRow joins a row's prefix and its (already fitted) label, clips the
+// line to inner, and pads it with the row fill so it reaches inner.
+func (m *Model) overlayFillRow(inner int, prefix string, rowStyle lipgloss.Style, label string) string {
+	line := prefix + label
 	if inner > 0 && lipgloss.Width(line) > inner {
 		line = ellipsizeLine(line, inner)
 	}

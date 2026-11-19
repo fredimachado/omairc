@@ -21,6 +21,8 @@ pub enum Sheet {
     ChannelOpen,
     /// The `/list` channel directory. Enter or a click joins a channel, and Escape closes it.
     ChannelList,
+    /// The history search (Ctrl+Shift+F).
+    Search,
 }
 
 /// What the chord decision can see. Built by the shell from its state.
@@ -65,6 +67,8 @@ pub enum Chord {
     Link,
     NickSheet,
     Inbox,
+    /// Ctrl+Shift+F: opens the history search, or closes it while it is open.
+    Search,
     MembersToggle,
     MembersFocus,
     ServerListToggle,
@@ -182,6 +186,9 @@ pub fn chord_enabled(chord: Chord, ctx: &ChordContext) -> bool {
         && !sheet_is(Sheet::About)
         && !sheet_is(Sheet::ChannelOpen)
         && (ctx.sheet.is_none() || sheet_is(Sheet::Inbox) || sheet_is(Sheet::ChannelList));
+    // Ctrl+Shift+F: the history search, a toggle like the inbox. Connect and every other
+    // sheet hold the keyboard.
+    let search_live = base_live && (ctx.sheet.is_none() || sheet_is(Sheet::Search));
     match chord {
         // Ctrl+Q always reaches the window close path, including while Shortcuts is open.
         Chord::Quit => true,
@@ -195,6 +202,7 @@ pub fn chord_enabled(chord: Chord, ctx: &ChordContext) -> bool {
         Chord::Jump => jump_live,
         Chord::Link => link_live,
         Chord::Inbox => inbox_live,
+        Chord::Search => search_live,
         Chord::NickSheet => ctx.channel && ctx.joined && on_conversation,
         Chord::MembersToggle | Chord::MembersFocus => ctx.channel && ctx.joined && on_conversation,
         Chord::ServerListToggle => base_live,
@@ -278,7 +286,7 @@ mod tests {
 
     /// Column order for the tables below: no sheet, then each sheet kind, then
     /// Status open with no sheet, then Connect open with no sheet.
-    const COLUMNS: [(Option<Sheet>, bool, bool); 11] = [
+    const COLUMNS: [(Option<Sheet>, bool, bool); 12] = [
         (None, false, false),
         (Some(Sheet::Shortcuts), false, false),
         (Some(Sheet::About), false, false),
@@ -288,41 +296,30 @@ mod tests {
         (Some(Sheet::Nick), false, false),
         (Some(Sheet::ChannelOpen), false, false),
         (Some(Sheet::ChannelList), false, false),
+        (Some(Sheet::Search), false, false),
         (None, true, false),
         (None, false, true),
     ];
 
     /// Live with Connect and Shortcuts closed, on a conversation or on Status.
-    const BASE_LIVE: [bool; 11] = [
-        true, false, true, true, true, true, true, true, true, true, false,
-    ];
+    const BASE_LIVE: [bool; 12] = [ true, false, true, true, true, true, true, true, true, true, true, false ];
     /// `BASE_LIVE` on a conversation only (Status hides channel chords).
-    const CONVERSATION_ONLY: [bool; 11] = [
-        true, false, true, true, true, true, true, true, true, false, false,
-    ];
+    const CONVERSATION_ONLY: [bool; 12] = [ true, false, true, true, true, true, true, true, true, true, false, false ];
     /// Live only while Connect shows and no sheet sits above it.
-    const CONNECT_ONLY: [bool; 11] = [
-        false, false, false, false, false, false, false, false, false, false, true,
-    ];
+    const CONNECT_ONLY: [bool; 12] = [ false, false, false, false, false, false, false, false, false, false, false, true ];
     /// The Connect entry: live with no sheet, on a conversation, on Status, or
     /// under nothing but Connect itself. A sheet above it blocks it.
-    const CONNECT_ENTRY: [bool; 11] = [
-        true, false, false, false, false, false, false, false, false, true, true,
-    ];
+    const CONNECT_ENTRY: [bool; 12] = [ true, false, false, false, false, false, false, false, false, false, true, true ];
     /// Shortcuts opens above Connect, as Qt's overlay does, and toggles itself.
-    const SHORTCUTS: [bool; 11] = [
-        true, true, false, false, false, false, false, false, false, true, true,
-    ];
+    const SHORTCUTS: [bool; 12] = [ true, true, false, false, false, false, false, false, false, false, true, true ];
     /// About opens above Connect too.
-    const ABOUT: [bool; 11] = [
-        true, false, false, false, false, false, false, false, false, true, true,
-    ];
+    const ABOUT: [bool; 12] = [ true, false, false, false, false, false, false, false, false, false, true, true ];
     /// Never live in these contexts.
-    const NOWHERE: [bool; 11] = [false; 11];
+    const NOWHERE: [bool; 12] = [false; 12];
 
     /// Checks one chord against every column, with `setup` applied to the base
     /// context first.
-    fn check(chord: Chord, setup: fn(&mut ChordContext), expected: [bool; 11]) {
+    fn check(chord: Chord, setup: fn(&mut ChordContext), expected: [bool; 12]) {
         for (column, (sheet, status_open, connect_open)) in COLUMNS.iter().enumerate() {
             let mut ctx = ChordContext {
                 sheet: *sheet,
@@ -372,7 +369,7 @@ mod tests {
     }
 
     // Columns: none, Shortcuts, About, Jump, Link, Inbox, Nick, ChannelOpen, ChannelList
-    // Status open, Connect open.
+    // Search, Status open, Connect open.
 
     #[test]
     fn base_live_chords_match_qt_connect_and_shortcuts_gates() {
@@ -400,7 +397,7 @@ mod tests {
 
     #[test]
     fn ctrl_q_stays_live_while_the_shortcuts_sheet_is_open() {
-        const QUIT: [bool; 11] = [true; 11];
+        const QUIT: [bool; 12] = [true; 12];
         check(Chord::Quit, nothing, QUIT);
     }
 
@@ -441,18 +438,48 @@ mod tests {
         check(
             Chord::Jump,
             nothing,
-            [true, false, false, true, false, false, false, false, false, true, false],
+            [true, false, false, true, false, false, false, false, false, false, true, false],
         );
         check(
             Chord::Link,
             nothing,
-            [true, false, false, false, true, false, false, false, false, true, false],
+            [true, false, false, false, true, false, false, false, false, false, true, false],
         );
         check(
             Chord::Inbox,
             nothing,
-            [true, false, false, false, false, true, false, false, true, true, false],
+            [true, false, false, false, false, true, false, false, true, false, true, false],
         );
+    }
+
+    #[test]
+    fn search_toggles_from_none_or_itself_and_waits_for_connect_and_every_other_sheet() {
+        check(
+            Chord::Search,
+            nothing,
+            [true, false, false, false, false, false, false, false, false, true, true, false],
+        );
+        // Over Status it stays live, so a search can start from any view.
+        check(Chord::Search, joined_channel, {
+            [true, false, false, false, false, false, false, false, false, true, true, false]
+        });
+    }
+
+    #[test]
+    fn the_search_sheet_blocks_the_other_toggles_and_keeps_the_rest_of_the_keyboard() {
+        let ctx = ChordContext {
+            sheet: Some(Sheet::Search),
+            channel: true,
+            joined: true,
+            transcript_selection: true,
+            ..ChordContext::default()
+        };
+        for chord in [Chord::Jump, Chord::Link, Chord::Inbox, Chord::About, Chord::Connect] {
+            assert!(!chord_enabled(chord, &ctx), "{chord:?} must wait for Search");
+        }
+        for chord in [Chord::Quit, Chord::Find, Chord::Escape, Chord::Search] {
+            assert!(chord_enabled(chord, &ctx), "{chord:?} stays live over Search");
+        }
     }
 
     #[test]
@@ -505,7 +532,7 @@ mod tests {
 
     #[test]
     fn escape_leaves_find_mode_even_with_no_sheet_and_no_status() {
-        check(Chord::Escape, finding, [true; 11]);
+        check(Chord::Escape, finding, [true; 12]);
     }
 
     #[test]
@@ -521,9 +548,7 @@ mod tests {
 
     #[test]
     fn the_slash_popup_keys_need_an_open_popup_and_no_other_sheet() {
-        const SLASH_POPUP: [bool; 11] = [
-            true, false, false, false, false, false, false, false, false, true, false,
-        ];
+        const SLASH_POPUP: [bool; 12] = [ true, false, false, false, false, false, false, false, false, false, true, false ];
         check(Chord::SlashPopup, slash_popup, SLASH_POPUP);
         check(Chord::SlashDismiss, slash_popup, SLASH_POPUP);
         check(Chord::SlashPopup, nothing, NOWHERE);
@@ -554,7 +579,7 @@ mod tests {
         check(
             Chord::Escape,
             nothing,
-            [false, true, true, true, true, true, true, true, true, true, true],
+            [false, true, true, true, true, true, true, true, true, true, true, true],
         );
     }
 
@@ -742,6 +767,7 @@ mod tests {
             Chord::Link,
             Chord::NickSheet,
             Chord::Inbox,
+            Chord::Search,
             Chord::MembersToggle,
             Chord::MembersFocus,
             Chord::ServerListToggle,

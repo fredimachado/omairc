@@ -10,5 +10,6 @@ pub mod frame;
 pub mod inbox;
 pub mod jump;
 pub mod link;
+pub mod search;
 pub mod nick;
 pub mod shortcuts;

@@ -184,6 +184,7 @@ impl Shell {
             return;
         }
         let previous = std::mem::replace(&mut self.shown, view.clone());
+        self.search_note = None;
         clear_title_mark_if_opened(
             &mut self.title_mark,
             view.status.is_some(),

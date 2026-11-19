@@ -31,6 +31,10 @@ type Controller struct {
 	statusConsole *StatusConsole
 	inbox         *irc.Inbox
 
+	// transcriptRoot is where the on-disk conversation logs live, or "" when
+	// this controller keeps none. The history search reads it.
+	transcriptRoot string
+
 	currentNicks map[string]string
 	lastErrors   map[string]string
 	capabilities map[string]irc.CapabilitySet
@@ -276,6 +280,12 @@ func (c *Controller) Shutdown() {
 // SetConversationLog wires the reducer's transcript log.
 func (c *Controller) SetConversationLog(log irc.ConversationLog) {
 	c.reducer.SetConversationLog(log)
+	// The history search reads the same logs from a worker, so it needs the
+	// root. A log with no root on disk (a test double) leaves it empty.
+	c.transcriptRoot = ""
+	if rooted, ok := log.(interface{ Root() string }); ok {
+		c.transcriptRoot = rooted.Root()
+	}
 }
 
 // SetOpenDirectStore installs the persisted open-direct store, mapping nil to

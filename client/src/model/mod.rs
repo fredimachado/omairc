@@ -27,6 +27,7 @@ pub mod presence;
 pub mod reader_position;
 pub mod reply;
 pub mod scroll_place;
+pub mod search;
 pub mod shortcuts;
 pub mod sidebar;
 pub mod slash;

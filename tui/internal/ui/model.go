@@ -229,6 +229,10 @@ type Model struct {
 	fileActive           *queuedFile
 	slash                slashSession
 
+	// searchNote is the calm line the header shows after a search jump that could
+	// not land. Leaving the conversation clears it.
+	searchNote string
+
 	// Desktop-notification state. notifier is the nil-able desktop
 	// seam (mirroring backend.notifyDesktop); windowActive mirrors win.active
 	// lastNotification mirrors `client/src/ui/shell`'s lastNotification
@@ -676,6 +680,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case FileLinkMsg:
 		m.finishFileLink(msg)
 		return m, nil
+	case searchDebounceMsg:
+		return m, m.handleSearchDebounce(msg)
+	case searchBatchMsg:
+		return m, m.handleSearchBatch(msg)
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	case tea.MouseClickMsg:

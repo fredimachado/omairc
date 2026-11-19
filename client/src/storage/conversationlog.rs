@@ -2,7 +2,9 @@
 
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -101,7 +103,7 @@ impl ConversationLog for FileConversationLog {
     }
 }
 
-fn channel_types() -> String {
+pub(super) fn channel_types() -> String {
     IrcServerFeatures::new().channel_types().to_owned()
 }
 
@@ -256,65 +258,81 @@ fn prepend_bytes(path: &Path, lines: &[Vec<u8>]) -> bool {
     crate::storage::atomicwrite::write_atomic(path, &buffer).is_ok()
 }
 
-fn read_tail_file(mut file: File, max_lines: usize) -> Vec<TranscriptLine> {
-    let size = file.metadata().map(|meta| meta.len()).unwrap_or(0);
+fn read_tail_file(file: File, max_lines: usize) -> Vec<TranscriptLine> {
     let channel_types = channel_types();
-    let mut position = size;
-    let mut pending = Vec::new();
     let mut lines = Vec::new();
-
-    const CHUNK_SIZE: u64 = 4096;
-    while position > 0 && lines.len() < max_lines {
-        let bytes_to_read = position.min(CHUNK_SIZE);
-        position -= bytes_to_read;
-        if file.seek(SeekFrom::Start(position)).is_err() {
-            break;
+    let never = AtomicBool::new(false);
+    reverse_lines(file, TAIL_CHUNK_SIZE, &never, &mut |raw| {
+        if let Some(parsed) = admitted_line(raw, &channel_types) {
+            lines.push(parsed);
         }
-        let mut chunk = vec![0; bytes_to_read as usize];
-        if file.read_exact(&mut chunk).is_err() {
-            break;
+        if lines.len() == max_lines {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
         }
-        let mut combined = chunk;
-        combined.extend_from_slice(&pending);
-        pending = combined;
-
-        while let Some(newline) = pending.iter().rposition(|&byte| byte == b'\n') {
-            let raw = pending[newline + 1..].to_vec();
-            pending.truncate(newline);
-            if accept_tail_line(&raw, &channel_types, &mut lines, max_lines) {
-                break;
-            }
-        }
-    }
-
-    if position == 0 && lines.len() < max_lines {
-        accept_tail_line(&pending, &channel_types, &mut lines, max_lines);
-    }
-
+    });
     lines.reverse();
     lines
 }
 
-fn accept_tail_line(
-    raw: &[u8],
-    channel_types: &str,
-    lines: &mut Vec<TranscriptLine>,
-    max_lines: usize,
-) -> bool {
+const TAIL_CHUNK_SIZE: u64 = 4096;
+
+/// Hands every line of `file` to `visit`, last line first, reading backward in chunks of
+/// `chunk_size` so a caller that stops early never reads the rest. A line is the bytes
+/// between newlines, handed over untrimmed and possibly empty. `cancel` is checked between
+/// chunks and lines, so a long scan stops within one chunk of being asked to.
+pub(super) fn reverse_lines(
+    mut file: File,
+    chunk_size: u64,
+    cancel: &AtomicBool,
+    visit: &mut dyn FnMut(&[u8]) -> ControlFlow<()>,
+) {
+    let mut position = file.metadata().map(|meta| meta.len()).unwrap_or(0);
+    // The start of a line whose beginning is still in an earlier chunk.
+    let mut pending: Vec<u8> = Vec::new();
+    while position > 0 {
+        if cancel.load(Ordering::Relaxed) {
+            return;
+        }
+        let bytes_to_read = position.min(chunk_size);
+        position -= bytes_to_read;
+        if file.seek(SeekFrom::Start(position)).is_err() {
+            return;
+        }
+        let mut chunk = vec![0; bytes_to_read as usize];
+        if file.read_exact(&mut chunk).is_err() {
+            return;
+        }
+        chunk.extend_from_slice(&pending);
+        pending = chunk;
+        let mut end = pending.len();
+        while let Some(newline) = pending[..end].iter().rposition(|&byte| byte == b'\n') {
+            if visit(&pending[newline + 1..end]).is_break() || cancel.load(Ordering::Relaxed) {
+                return;
+            }
+            end = newline;
+        }
+        pending.truncate(end);
+    }
+    // What is left is the file's first line.
+    if !cancel.load(Ordering::Relaxed) {
+        let _ = visit(&pending);
+    }
+}
+
+/// The line a log row holds, when it parses and the transcript policy admits it. The one
+/// filter every reader of the log goes through, so nothing the writer would have dropped is
+/// ever handed on.
+pub(super) fn admitted_line(raw: &[u8], channel_types: &str) -> Option<TranscriptLine> {
     let raw = trim_bytes(raw);
     if raw.is_empty() {
-        return false;
+        return None;
     }
-    let Some(parsed) = parse_line(raw) else {
-        return false;
-    };
-    if !allows_transcript(&parsed.body, channel_types)
-        || !allows_transcript(&parsed.author, channel_types)
-    {
-        return false;
-    }
-    lines.push(parsed);
-    lines.len() == max_lines
+    let parsed = parse_line(raw)?;
+    (allows_transcript(&parsed.body, channel_types)
+        && allows_transcript(&parsed.author, channel_types))
+    .then_some(parsed)
 }
 
 fn file_exists(path: &Path) -> bool {
