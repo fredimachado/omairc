@@ -3,6 +3,7 @@
 
 mod caps;
 mod classic;
+mod harness;
 mod helpers;
 mod invention;
 mod members;
