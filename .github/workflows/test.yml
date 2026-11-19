@@ -124,6 +124,13 @@ jobs:
         with:
           workspaces: client -> target
 
+      # bin/test-live runs the Go live suite (tui/internal/live) after Rust.
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache-dependency-path: tui/go.sum
+
       - name: Run bin/test-live
         env:
           OMAIRC_LIVE_PROFILE: l1
