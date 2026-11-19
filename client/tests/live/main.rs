@@ -10,6 +10,7 @@ mod members;
 mod monitor;
 mod multiline;
 mod presence;
+mod readmarker;
 mod reconnect;
 mod replies;
 mod register;
