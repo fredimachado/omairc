@@ -236,7 +236,10 @@ pub fn run() {
                     // handler; Ctrl+Q reaches the same work through on_app_quit.
                     let close_shell = shell.clone();
                     windowstate::attach(&close_work, &shell, window, cx, move |_, cx| {
-                        close_shell.update(cx, |shell, cx| shell.launch_update_on_close(cx));
+                        close_shell.update(cx, |shell, cx| {
+                            shell.persist_current_draft(cx);
+                            shell.launch_update_on_close(cx);
+                        });
                     });
                     if let Some(server) = ipc {
                         crate::desktop::ipchandler::serve(

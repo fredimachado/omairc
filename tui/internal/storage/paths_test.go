@@ -70,3 +70,17 @@ func TestScrollPlacesPathMatchesDesktopWithoutXDGOverride(t *testing.T) {
 		t.Errorf("ScrollPlacesPath() = %q, want %q", got, want)
 	}
 }
+
+func TestDraftsPathSitsBesideScrollPlaces(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", state)
+	t.Setenv("OMAIRC_DEV_HOME", "")
+	if got, want := DraftsPath(), filepath.Join(state, "omairc", DraftsFile); got != want {
+		t.Errorf("DraftsPath() = %q, want %q", got, want)
+	}
+	dev := t.TempDir()
+	t.Setenv("OMAIRC_DEV_HOME", dev)
+	if got, want := DraftsPath(), filepath.Join(dev, "state", DraftsFile); got != want {
+		t.Errorf("DraftsPath() = %q, want %q", got, want)
+	}
+}

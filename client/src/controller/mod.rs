@@ -19,8 +19,8 @@
 //! `replyrouter` (WHOIS, CTCP, and the user's own `/status` and `/avatar` replies). The
 //! `history` (history batches and self-JOIN), `notify` (mention and monitor arrivals)
 //! and `playback` (bouncer catch-up, Gap 5). The `scrollplace` module records where a
-//! transcript was left. Timers run on the `Clock`
-//! seam, and `pump` runs what they queued on the UI thread. `persistence` loads what the
+//! transcript was left, and `drafts` keeps unsent composer text across a restart. Timers
+//! run on the `Clock` seam, and `pump` runs what they queued on the UI thread. `persistence` loads what the
 //! controller keeps between runs (profiles, preferences, open queries, lists, and each complete
 //! network's session), and saves each change through the stores in `storage/`.
 
@@ -33,6 +33,7 @@ pub mod composertyping;
 pub mod console;
 pub mod controller;
 pub mod demo;
+pub mod drafts;
 pub mod error;
 pub mod fileupload;
 pub mod history;

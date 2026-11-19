@@ -638,6 +638,31 @@ pub fn allows_transcript(text: &str, channel_types: &str) -> bool {
     redact_message("PRIVMSG", &["NickServ", text], channel_types).is_none()
 }
 
+/// Whether an unsent composer draft may be written to disk. It fails closed: true only
+/// when the policy positively clears the text.
+/// A draft that starts with `/` is a command this layer cannot classify, so it is
+/// dropped, except `/me ` (any case, then a space), whose remainder is ordinary message
+/// text. The text, and the `/me` remainder, must pass `allows_transcript` and must draw
+/// no mask from `redact_preview_line` (the near-miss and leading-verb masks), so prose
+/// that starts with a secret verb is dropped too. Do not add spellings here: when in
+/// doubt the answer is false.
+/// Mirrors `DraftMayBePersisted` in `tui/internal/irc/secretpolicy.go`.
+pub fn allows_draft_persistence(text: &str, channel_types: &str) -> bool {
+    let trimmed = text.trim_start();
+    let body = if trimmed.starts_with('/') {
+        match trimmed.as_bytes().get(..4) {
+            Some(head) if head.eq_ignore_ascii_case(b"/me ") => &trimmed[4..],
+            _ => return false,
+        }
+    } else {
+        trimmed
+    };
+    [text, body].into_iter().all(|candidate| {
+        allows_transcript(candidate, channel_types)
+            && redact_preview_line(candidate, channel_types).is_none()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -960,5 +985,41 @@ mod tests {
             redact_preview_line("garbage PASS hunter2", "").as_deref(),
             Some("PASS ***")
         );
+    }
+
+    #[test]
+    fn a_draft_is_persisted_only_when_the_policy_clears_it() {
+        for kept in [
+            "half typed",
+            "  indented prose",
+            "see you at five",
+            "/me waves",
+            "/ME waves",
+            "  /me waves",
+            "> not a command",
+        ] {
+            assert!(allows_draft_persistence(kept, "#&"), "input {kept:?}");
+        }
+        for dropped in [
+            "/msg NickServ IDENTIFY pw",
+            "/ns identify pw",
+            "/quote PASS hunter2",
+            "/oper a b",
+            "/join #a",
+            "/join #a key",
+            "/me",
+            "/mew hi",
+            "/msg alice hi",
+            "/me PASS hunter2",
+            "/me identify hunter2",
+            "PASS hunter2",
+            "IDENTIFY hunter2",
+            "identify pw",
+            "garbage PASS hunter2",
+            "PRIVMSG NickServ :IDENTIFY pw",
+            "oper a b",
+        ] {
+            assert!(!allows_draft_persistence(dropped, "#&"), "input {dropped:?}");
+        }
     }
 }

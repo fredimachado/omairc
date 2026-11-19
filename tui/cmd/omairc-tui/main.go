@@ -319,6 +319,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(os.Stderr, "omairc-tui: %v\n", err)
 		runErr = err
 	}
+	// Ctrl+Q already kept the draft; this covers SIGHUP and a returned error.
+	model.FlushDraft()
 	// Quit order: refresh STS (Stop → StateChanged → notify) while wake is
 	// still open, then close wake. Closing first panics every Ctrl+Q/SIGHUP
 	// with a live session and aborts StopAll after the first network.

@@ -178,6 +178,20 @@ impl ComposerState {
         }
     }
 
+    /// The draft a stash kept for `key`, if any. This is what the shell persists when it
+    /// switches away: never the field's text, which may be a find query or a recalled line.
+    pub fn stored(&self, key: &DraftKey) -> Option<&str> {
+        self.drafts.get(key).map(String::as_str)
+    }
+
+    /// Seeds `key`'s draft from an earlier run. Nothing happens when `text` is empty or
+    /// the draft already has text in memory, which is the user's latest.
+    pub fn preload(&mut self, key: &DraftKey, text: &str) {
+        if !text.is_empty() && !self.drafts.contains_key(key) {
+            self.drafts.insert(key.clone(), text.to_string());
+        }
+    }
+
     /// Whether Up or Down is walking history right now. The slash popup stays
     /// closed meanwhile, even when a recalled line starts with a slash.
     pub fn is_browsing(&self) -> bool {
@@ -485,6 +499,35 @@ mod tests {
         state.stash("draft for anna");
         assert_eq!(state.switch_to(conversation("#omarchy")), "draft for omarchy");
         assert_eq!(state.switch_to(conversation("anna")), "draft for anna");
+    }
+
+    #[test]
+    fn stored_is_what_a_stash_kept_not_what_the_field_shows_now() {
+        let mut state = ComposerState::starting_at(conversation("#omarchy"));
+        state.begin_find("half typed");
+        state.stash("the query");
+        assert_eq!(state.stored(&conversation("#omarchy")), Some("half typed"));
+        assert_eq!(state.stored(&conversation("anna")), None);
+        state.end_find();
+        state.stash("");
+        assert_eq!(state.stored(&conversation("#omarchy")), None, "an empty stash forgets it");
+    }
+
+    #[test]
+    fn a_preloaded_draft_comes_back_and_a_stash_replaces_it() {
+        let mut state = ComposerState::starting_at(conversation("#omarchy"));
+        state.preload(&conversation("anna"), "from disk");
+        state.preload(&conversation("#omarchy"), "");
+        assert_eq!(state.stored(&conversation("#omarchy")), None, "an empty preload is nothing");
+        assert_eq!(state.switch_to(conversation("anna")), "from disk");
+        state.stash("edited");
+        assert_eq!(state.stored(&conversation("anna")), Some("edited"));
+        state.preload(&conversation("anna"), "older disk text");
+        assert_eq!(
+            state.stored(&conversation("anna")),
+            Some("edited"),
+            "a draft already in memory is the user's latest"
+        );
     }
 
     #[test]

@@ -202,6 +202,7 @@ impl Shell {
     /// A line the controller accepted: the composer clears and the line joins its history.
     fn finish_command(&mut self, text: &str, cx: &mut Context<Self>) {
         self.composer_state.record_sent(text);
+        self.forget_current_draft();
         self.composer.update(cx, |c, cx| {
             c.clear();
             cx.notify();
@@ -209,7 +210,7 @@ impl Shell {
     }
 
     /// Replaces the composer's text. The caret goes to the end, as after typing.
-    fn set_composer_text(&self, text: String, cx: &mut Context<Self>) {
+    pub(super) fn set_composer_text(&self, text: String, cx: &mut Context<Self>) {
         self.composer.update(cx, |c, cx| {
             c.set_text(text);
             cx.notify();

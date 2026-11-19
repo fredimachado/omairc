@@ -17,6 +17,7 @@ use crate::session::sts::{MemoryStsStore, StsStore};
 pub mod atomicwrite;
 pub mod conversationlog;
 pub mod credentialstore;
+pub mod drafts;
 pub mod geometry;
 pub mod lists;
 pub mod migrate;

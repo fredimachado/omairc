@@ -45,6 +45,7 @@ use crate::storage::opendirect::OpenDirectStore;
 use crate::storage::preferences::PreferenceStore;
 use crate::storage::profilestore::{Profile, ProfileStore};
 use crate::storage::playbacktime::PlaybackTimeStore;
+use crate::storage::drafts::DraftFile;
 use crate::storage::scrollplace::ScrollPlaceFile;
 use crate::storage::Backing;
 
@@ -56,6 +57,7 @@ use super::channellist::{ChannelListRequests, ChannelListView};
 use super::console::{self, StatusConsole};
 use super::monitorcoordinator::MonitorState;
 use super::replyrouter::ReplyWatches;
+use super::drafts::DraftStore;
 use super::scrollplace::ScrollPlaceStore;
 use super::stores::{HighlightStore, IgnoreStore, MonitorStore, MuteStore};
 use super::transports::TransportFactory;
@@ -105,6 +107,8 @@ pub struct Controller {
     pub(super) autoaway: AutoawayState,
     /// Where each conversation's transcript was left (`scrollplace.rs`).
     pub(super) scroll_places: ScrollPlaceStore,
+    /// Each conversation's unsent composer text (`drafts.rs`).
+    pub(super) drafts: DraftStore,
     /// The WHOIS, CTCP and labeled-reply watches (`replyrouter.rs`).
     pub(super) reply_watches: ReplyWatches,
     /// The `/list` requests, their rows and idle timers (`channellist.rs`), and the
@@ -192,6 +196,7 @@ impl Controller {
         transports: Box<dyn TransportFactory>,
         backing: Backing,
     ) -> Self {
+        let draft_now_ms = clock.now().timestamp_millis();
         let channel_lists = ChannelListRequests::new(Rc::clone(&clock));
         let list = |group: &'static str, key: &'static str| {
             CaseListStore::new(Box::new(IniListBacking::new(backing.clone(), group, key)))
@@ -221,6 +226,7 @@ impl Controller {
             notifications: Vec::new(),
             autoaway: AutoawayState::default(),
             scroll_places: ScrollPlaceStore::new(ScrollPlaceFile::for_settings(&backing)),
+            drafts: DraftStore::new(DraftFile::for_settings(&backing), draft_now_ms),
             reply_watches: ReplyWatches::default(),
             channel_lists,
             channel_view: ChannelListView::default(),

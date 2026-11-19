@@ -76,6 +76,7 @@ type Controller struct {
 	closed              *storage.ClosedConversationStore
 	playbackTimes       *storage.PlaybackTimeStore
 	scrollPlaces        *storage.ScrollPlaceStore
+	drafts              *storage.DraftStore
 	playback            *PlaybackCoordinator
 	openDirectsMotdSeen map[string]bool
 
@@ -176,6 +177,7 @@ func New() *Controller {
 	c.playbackTimes.SetEphemeral(true)
 	c.scrollPlaces = storage.NewScrollPlaceStore()
 	c.scrollPlaces.SetEphemeral(true)
+	c.drafts = storage.NewDraftStore()
 	c.playback = NewPlaybackCoordinator(c.playbackTimes, c.reducer)
 	// New starts ephemeral, like the Qt constructor before the shell opts in
 	// (`client/src/controller/persistence.rs`): no transcript log until asked.
@@ -246,6 +248,10 @@ func (c *Controller) SetEphemeral(ephemeral bool) {
 	c.closed.SetEphemeral(ephemeral)
 	c.playbackTimes.SetEphemeral(ephemeral)
 	c.scrollPlaces.SetEphemeral(ephemeral)
+	c.drafts.SetEphemeral(ephemeral)
+	if !ephemeral {
+		c.drafts.Load(c.now())
+	}
 	c.autoaway.SetEphemeral(ephemeral)
 }
 
