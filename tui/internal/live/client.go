@@ -28,6 +28,7 @@ var (
 	nickSeq    atomic.Uint32
 	channelSeq atomic.Uint32
 	networkSeq atomic.Uint32
+	fenceSeq   atomic.Uint32
 )
 
 // UniqueNick returns a nick within the daemon's NICKLEN budget. The `g` lead
@@ -79,7 +80,11 @@ func (r *recorder) messages() []irc.Message {
 	return out
 }
 
-// recordingTransport keeps every line its session wrote, in order.
+// recordingTransport keeps every line its session wrote, in Write-call order.
+// That matches wire order for writes from one Client.Do turn or the session's
+// own drain; interleaving between concurrent goroutines is unspecified, as it
+// is on the wire. The recorder mutex is not held across the inner Write:
+// NetTransport.Write can call back into the session on error and re-enter Write.
 type recordingTransport struct {
 	session.Transport
 	mu    sync.Mutex
@@ -87,8 +92,9 @@ type recordingTransport struct {
 }
 
 func (r *recordingTransport) Write(frame []byte) {
+	line := strings.TrimRight(string(frame), "\r\n")
 	r.mu.Lock()
-	r.lines = append(r.lines, strings.TrimRight(string(frame), "\r\n"))
+	r.lines = append(r.lines, line)
 	r.mu.Unlock()
 	r.Transport.Write(frame)
 }
@@ -316,18 +322,26 @@ func (c *Client) WaitRegisteredAgain() bool {
 }
 
 // Sent returns every outbound line the primary network wrote, CRLF trimmed.
+// Order matches recordingTransport: Write-call order, wire-ordered within one
+// Do turn or session drain; concurrent interleaving is unspecified.
 func (c *Client) Sent() []string {
-	transport := c.transports[c.NetworkID]
+	var transport *recordingTransport
+	c.Do(func(*controller.Controller) {
+		transport = c.transports[c.NetworkID]
+	})
 	if transport == nil {
 		return nil
 	}
 	return transport.sent()
 }
 
-// Fence writes PING :<token> and waits for the matching PONG.
+// Fence writes PING :<token>-<serial> and waits for that wire token's PONG.
+// The serial is per-process so an earlier pending PONG for token cannot
+// satisfy this call.
 func (c *Client) Fence(token string) bool {
+	wire := fmt.Sprintf("%s-%d", token, fenceSeq.Add(1)-1)
 	before := len(c.Incoming())
-	if !c.Session().SendRaw("PING :" + token) {
+	if !c.Session().SendRaw("PING :" + wire) {
 		return false
 	}
 	return c.WaitUntil(func(client *Client) bool {
@@ -339,7 +353,7 @@ func (c *Client) Fence(token string) bool {
 			if message.Command != "PONG" || len(message.Params) == 0 {
 				continue
 			}
-			if message.Params[len(message.Params)-1] == token {
+			if message.Params[len(message.Params)-1] == wire {
 				return true
 			}
 		}
@@ -353,7 +367,10 @@ func (c *Client) ForceDisconnect() bool {
 	if c.State() != session.StateRegistered {
 		return false
 	}
-	transport := c.transports[c.NetworkID]
+	var transport *recordingTransport
+	c.Do(func(*controller.Controller) {
+		transport = c.transports[c.NetworkID]
+	})
 	if transport == nil {
 		return false
 	}

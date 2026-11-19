@@ -1,4 +1,8 @@
 //! Outbound lines each live session wrote, so a case can count what the client sent.
+//!
+//! The log is the order of `Transport::write` calls. It matches wire order for
+//! writes from one turn (one session drain); interleaving between concurrent
+//! writers is unspecified, as it is on the wire.
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::{Rc, Weak};

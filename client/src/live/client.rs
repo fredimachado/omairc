@@ -25,6 +25,7 @@ use super::wait::{message_has_command, wait_until, DEFAULT_TIMEOUT};
 
 static NICK_SEQ: AtomicU32 = AtomicU32::new(0);
 static CHANNEL_SEQ: AtomicU32 = AtomicU32::new(0);
+static FENCE_SEQ: AtomicU32 = AtomicU32::new(0);
 
 /// Optional knobs for [`LiveClient::connect`].
 #[derive(Clone, Default)]
@@ -284,7 +285,11 @@ impl LiveClient {
         true
     }
 
-    /// Outbound lines the primary network wrote, in write order, CRLF trimmed.
+    /// Outbound lines the primary network wrote, CRLF trimmed.
+    ///
+    /// Order is the order of `Transport::write` calls. It matches wire order
+    /// for writes from one turn (one session drain); interleaving between
+    /// concurrent writers is unspecified, as it is on the wire.
     pub fn sent_lines(&self) -> Vec<String> {
         self.sent
             .borrow()
@@ -293,18 +298,22 @@ impl LiveClient {
             .unwrap_or_default()
     }
 
-    /// Writes `PING :<token>` and waits for the matching `PONG`.
+    /// Writes `PING :<token>-<serial>` and waits for that wire token's `PONG`.
+    ///
+    /// The serial is per-process so an earlier pending `PONG` for `token` cannot
+    /// satisfy this call.
     pub fn fence(&mut self, token: &str) -> bool {
+        let serial = FENCE_SEQ.fetch_add(1, Ordering::Relaxed);
+        let wire = format!("{token}-{serial}");
         let before = self.incoming().len();
-        if !self.session().send_raw(&format!("PING :{token}")) {
+        if !self.session().send_raw(&format!("PING :{wire}")) {
             return false;
         }
-        let token = token.to_owned();
         self.wait_until(|client| {
             client.incoming()[before..].iter().any(|message| {
                 message.command == "PONG"
                     && !message.params.is_empty()
-                    && message.text_param(message.params.len() - 1) == token
+                    && message.text_param(message.params.len() - 1) == wire
             })
         })
     }
