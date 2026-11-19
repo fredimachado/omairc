@@ -4,9 +4,13 @@ use omairc::live::{live_daemons, unique_channel, unique_nick, LiveClient, LiveCl
 
 use super::helpers::{require_live, wait_names_end};
 
+fn is_list_line(line: &str) -> bool {
+    line == "LIST" || line.starts_with("LIST ")
+}
+
 fn list_lines(sent: &[String]) -> Vec<&str> {
     sent.iter()
-        .filter(|line| line.starts_with("LIST "))
+        .filter(|line| is_list_line(line))
         .map(String::as_str)
         .collect()
 }
@@ -96,11 +100,7 @@ fn channel_list_completes_in_order() {
                 daemon.name,
                 view.rows[0].name
             );
-            assert_eq!(
-                view.rows[0].users, 1,
-                "{} leg1 users",
-                daemon.name
-            );
+            assert_eq!(view.rows[0].users, 1, "{} leg1 users", daemon.name);
             assert!(
                 view.rows[0].topic.contains(&topic),
                 "{} leg1 topic={:?} want contains {topic}",
@@ -108,9 +108,19 @@ fn channel_list_completes_in_order() {
                 view.rows[0].topic
             );
         }
+        assert!(
+            client.fence("list-leg1"),
+            "{} leg1 fence",
+            daemon.name
+        );
 
         // Leg 2: a second /list queued behind the first keeps its own end.
+        // controller.submit pumps session events, but live inbound only enters
+        // through hub.drain_ready in LiveClient::pump, so these two submits
+        // cannot start the queued mask before the wait below.
         let sent_at = client.sent_lines().len();
+        let want_second = format!("LIST {second}");
+        let want_first = format!("LIST {first}");
         assert!(
             client
                 .controller
@@ -125,6 +135,17 @@ fn channel_list_completes_in_order() {
             "{} /list {first} queued",
             daemon.name
         );
+        {
+            let sent = client.sent_lines();
+            let mid = list_lines(&sent[sent_at..]);
+            assert_eq!(
+                mid,
+                [want_second.as_str()],
+                "{} leg2 mid LIST before pump {:?}",
+                daemon.name,
+                mid
+            );
+        }
         assert!(
             client.wait_until(|client| {
                 let view = client.controller.channel_list();
@@ -154,17 +175,16 @@ fn channel_list_completes_in_order() {
                 daemon.name,
                 view.rows[0].name
             );
-            assert_eq!(
-                view.rows[0].users, 1,
-                "{} leg2 users",
-                daemon.name
-            );
+            assert_eq!(view.rows[0].users, 1, "{} leg2 users", daemon.name);
         }
+        assert!(
+            client.fence("list-leg2"),
+            "{} leg2 fence",
+            daemon.name
+        );
 
         let sent = client.sent_lines();
         let lists = list_lines(&sent[sent_at..]);
-        let want_second = format!("LIST {second}");
-        let want_first = format!("LIST {first}");
         assert_eq!(
             lists,
             [want_second.as_str(), want_first.as_str()],

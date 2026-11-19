@@ -11,10 +11,14 @@ import (
 
 // Mirrors `client/tests/live/channellist.rs`.
 
+func isListLine(line string) bool {
+	return line == "LIST" || strings.HasPrefix(line, "LIST ")
+}
+
 func listLines(sent []string) []string {
 	var out []string
 	for _, line := range sent {
-		if strings.HasPrefix(line, "LIST ") {
+		if isListLine(line) {
 			out = append(out, line)
 		}
 	}
@@ -74,17 +78,31 @@ func TestChannelListCompletesInOrder(t *testing.T) {
 		if !strings.Contains(view.Rows[0].Topic, topic) {
 			t.Fatalf("%s leg1 topic=%q want contains %s", daemon.Name, view.Rows[0].Topic, topic)
 		}
+		if !client.Fence("list-leg1") {
+			t.Fatalf("%s leg1 fence", daemon.Name)
+		}
 
 		// Leg 2: a second /list queued behind the first keeps its own end.
-		// One lock turn so no 323 can land between the two submits.
+		// One lock turn so no 323 can land between the two submits; assert the
+		// queued mask has not written LIST yet before the turn ends.
 		sentAt := len(client.Sent())
+		wantSecond := "LIST " + second
+		wantFirst := "LIST " + first
 		var sentSecond, sentFirst bool
+		var mid []string
 		client.Do(func(ctrl *controller.Controller) {
 			sentSecond = ctrl.SendMessage("/list " + second)
 			sentFirst = ctrl.SendMessage("/list " + first)
+			transport := client.transports[client.NetworkID]
+			if transport != nil {
+				mid = listLines(transport.sent()[sentAt:])
+			}
 		})
 		if !sentSecond || !sentFirst {
 			t.Fatalf("%s leg2 submits second=%v first=%v err=%s", daemon.Name, sentSecond, sentFirst, client.LastError())
+		}
+		if len(mid) != 1 || mid[0] != wantSecond {
+			t.Fatalf("%s leg2 mid LIST before turn end %v want [%s]", daemon.Name, mid, wantSecond)
 		}
 		if !client.WaitUntil(func(c *Client) bool {
 			var view controller.ChannelListSnapshot
@@ -106,10 +124,11 @@ func TestChannelListCompletesInOrder(t *testing.T) {
 		if view.Rows[0].Users != 1 {
 			t.Fatalf("%s leg2 users=%d", daemon.Name, view.Rows[0].Users)
 		}
+		if !client.Fence("list-leg2") {
+			t.Fatalf("%s leg2 fence", daemon.Name)
+		}
 
 		lists := listLines(client.Sent()[sentAt:])
-		wantSecond := "LIST " + second
-		wantFirst := "LIST " + first
 		if len(lists) != 2 || lists[0] != wantSecond || lists[1] != wantFirst {
 			t.Fatalf("%s leg2 LIST order %v want [%s %s]", daemon.Name, lists, wantSecond, wantFirst)
 		}
