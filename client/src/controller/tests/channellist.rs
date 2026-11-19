@@ -1,6 +1,6 @@
 //! `/list` through the wire over the real demo: the `LIST` frame, the 321, 322 and 323
 //! stream the demo answers, the cache a repeat reuses, the pending mask, and the idle
-//! timeout with its stale end.
+//! timeout with its PING fence and stale end.
 //! `tui/internal/controller/channellist_test.go` and `wiring.go`'s list path. The demo
 //! answers synchronously, so the timeout and pending cases stage a load by hand with
 //! `ChannelListRequests::request` (the state a `LIST` leaves in flight).
@@ -41,16 +41,17 @@ fn error(fixture: &Fixture) -> String {
     phase(fixture).error().to_owned()
 }
 
-fn drain(fixture: &Fixture) -> bool {
+/// The fence whose PONG is still to come, while a stale end may still arrive.
+fn fence(fixture: &Fixture) -> Option<String> {
     match phase(fixture) {
-        ChannelListPhase::Loading {
-            drain_stale_end, ..
-        }
-        | ChannelListPhase::Failed {
-            drain_stale_end, ..
-        } => *drain_stale_end,
-        ChannelListPhase::Idle | ChannelListPhase::Complete { .. } => false,
+        ChannelListPhase::Loading { stale_fence, .. }
+        | ChannelListPhase::Failed { stale_fence, .. } => stale_fence.clone(),
+        ChannelListPhase::Idle | ChannelListPhase::Complete { .. } => None,
     }
+}
+
+fn drain(fixture: &Fixture) -> bool {
+    fence(fixture).is_some()
 }
 
 fn queued(fixture: &Fixture) -> Option<String> {
@@ -68,11 +69,26 @@ fn row_names(fixture: &Fixture) -> Vec<String> {
     rows(fixture).into_iter().map(|row| row.name).collect()
 }
 
-/// Stages a load that timed out, so its stale end is still to come.
+/// The fence token the staged timeouts use. The demo answers a real PING at once, so
+/// these tests stage the timeout by hand and deliver the PONG themselves.
+const FENCE: &str = "omairc-list-staged";
+
+/// Stages a load that timed out with its fence unanswered, so its stale end may still
+/// come.
 fn timed_out_load(fixture: &mut Fixture) {
-    fixture.controller.channel_lists.request(OMARCHY, "*", false);
-    fixture.clock.advance(Duration::from_secs(31));
-    fixture.controller.tick();
+    fixture
+        .controller
+        .channel_lists
+        .request(OMARCHY, "*", false);
+    fixture.controller.channel_lists.fail(
+        OMARCHY,
+        CHANNEL_LIST_TIMEOUT_TEXT,
+        Some(FENCE.to_owned()),
+    );
+}
+
+fn pong(fixture: &mut Fixture, token: &str) {
+    fixture.deliver(OMARCHY, &format!(":server PONG irc.example :{token}"));
 }
 
 #[test]
@@ -212,22 +228,52 @@ fn a_pending_mask_starts_the_next_load_when_the_first_ends() {
 #[test]
 fn an_idle_timeout_fails_the_load_and_the_stale_end_is_absorbed() {
     let mut fixture = Fixture::seeded();
-    fixture.controller.channel_lists.request(OMARCHY, "*", false);
-    fixture.controller.list_channels(OMARCHY, "*");
-
-    fixture.clock.advance(Duration::from_secs(31));
-    fixture.controller.tick();
+    timed_out_load(&mut fixture);
 
     assert!(!loading(&fixture) && !complete(&fixture));
     assert_eq!(error(&fixture), CHANNEL_LIST_TIMEOUT_TEXT);
-    assert!(drain(&fixture), "the stale 323 will be drained");
+    assert!(drain(&fixture), "a 323 before the PONG is the stale one");
 
     // The server's late 323 is absorbed, and the next load runs cleanly.
     fixture.deliver(OMARCHY, ":server 323 fred :End of /LIST");
     assert!(!drain(&fixture));
+    assert_eq!(error(&fixture), CHANNEL_LIST_TIMEOUT_TEXT, "the failed load stays failed");
+    pong(&mut fixture, FENCE);
 
     assert_eq!(fixture.controller.list_channels(OMARCHY, "*"), ListOutcome::Sent);
     assert!(fixture.controller.channel_list().complete);
+}
+
+#[test]
+fn the_fence_pong_ends_the_drain_and_the_next_end_completes() {
+    let mut fixture = Fixture::seeded();
+    timed_out_load(&mut fixture);
+
+    pong(&mut fixture, "omairc-list-other");
+    assert!(drain(&fixture), "another fence's PONG changes nothing");
+    pong(&mut fixture, FENCE);
+    assert!(!drain(&fixture), "no answer to the timed-out LIST can follow its fence");
+
+    fixture.controller.channel_lists.request(OMARCHY, "#new", false);
+    assert!(!drain(&fixture));
+    fixture.deliver(OMARCHY, ":server 323 fred :End of /LIST");
+    assert!(complete(&fixture), "the first 323 after the PONG is the load's own");
+}
+
+#[test]
+fn a_pong_after_the_newer_list_still_hands_the_end_to_it() {
+    // The server answers in order: the fence's PONG comes before the newer LIST's
+    // rows and 323, even when the newer LIST went out before the PONG came back.
+    let mut fixture = Fixture::seeded();
+    timed_out_load(&mut fixture);
+    fixture.controller.channel_lists.request(OMARCHY, "#new", false);
+    assert!(drain(&fixture), "the newer load carries the unanswered fence");
+
+    pong(&mut fixture, FENCE);
+    fixture.deliver(OMARCHY, ":server 322 fred #new 3 :new channel");
+    fixture.deliver(OMARCHY, ":server 323 fred :End of /LIST");
+    assert!(complete(&fixture) && !loading(&fixture));
+    assert_eq!(row_names(&fixture), ["#new"]);
 }
 
 #[test]
@@ -280,12 +326,17 @@ fn a_stale_end_after_a_timeout_does_not_complete_the_newer_load() {
     assert!(!loading(&fixture) && drain(&fixture));
 
     // A newer load starts. It is staged, so the demo does not answer it. The timed-out
-    // load's stale 323 arrives first and is drained: the newer load keeps going.
+    // load's late row and stale 323 arrive before the fence's PONG: the row is dropped,
+    // the 323 is drained, and the newer load keeps going.
     fixture.controller.channel_lists.request(OMARCHY, "#new", false);
     assert!(drain(&fixture), "the newer load carries the pending drain");
+    fixture.deliver(OMARCHY, ":server 322 fred #old 9 :old channel");
     fixture.deliver(OMARCHY, ":server 323 fred :End of /LIST");
     assert!(loading(&fixture) && !complete(&fixture), "the stale end does not complete #new");
     assert!(!drain(&fixture));
+    assert!(rows(&fixture).is_empty(), "the stale row is not #new's");
+    pong(&mut fixture, FENCE);
+    assert!(loading(&fixture), "the late PONG changes nothing");
 
     // The real end of #new completes it, with the row that streamed in.
     fixture.deliver(OMARCHY, ":server 322 fred #new 3 :new channel");
@@ -322,6 +373,7 @@ fn a_failed_load_keeps_its_rows_and_error() {
     assert!(!loading(&fixture) && !complete(&fixture));
     assert_eq!(error(&fixture), CHANNEL_LIST_TIMEOUT_TEXT);
     assert_eq!(row_names(&fixture), ["#kept"]);
+    assert_eq!(fixture.controller.channel_list().error, "", "the overlay was not on this load");
 }
 
 #[test]

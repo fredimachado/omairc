@@ -2,6 +2,7 @@ package controller
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +18,12 @@ import (
 // Each network holds one channelListPhase (loading, complete, or failed; no entry is
 // idle), so a load is never both loading and complete. The idle timer's generation
 // sits beside the phase and identifies the armed callback.
+//
+// A timed-out LIST may still answer late. The timeout writes `PING :omairc-list-N` as
+// a fence: the server answers in order, so a 322 or 323 that arrives before that
+// fence's PONG belongs to the timed-out LIST, and everything after it to a later one.
+// The next load drops those stale rows and drains that stale 323 instead of ending on
+// it, and its own 323 always completes it.
 
 // ChannelListMaxRows is the cap on cached channel-list rows. It mirrors
 // IrcChannelListRequest's use of ChannelListModel::kMaxRows in the C++
@@ -33,6 +40,9 @@ const channelListMinIdleTimeout = time.Millisecond
 // channelListTimeoutText mirrors the fireIdleTimeout text in
 const channelListTimeoutText = "Channel list timed out. Try /list again."
 
+// channelListFencePrefix is the prefix of the PING token a timeout writes as its fence.
+const channelListFencePrefix = "omairc-list-"
+
 // ChannelListRow is one channel-list entry. It mirrors IrcChannelListRow.
 type ChannelListRow struct {
 	Channel string
@@ -44,14 +54,16 @@ type ChannelListRow struct {
 // IrcChannelListRequest::State. The flags are a read-only view derived from the
 // network's phase, not stored separately.
 type ChannelListRequestState struct {
-	Mask             string
-	Rows             []ChannelListRow
-	Complete         bool
-	Loading          bool
-	Error            string
-	PendingMask      string
-	HasPendingMask   bool
-	DrainTimedOutEnd bool
+	Mask           string
+	Rows           []ChannelListRow
+	Complete       bool
+	Loading        bool
+	Error          string
+	PendingMask    string
+	HasPendingMask bool
+	// StaleFence is the PING token of a timed-out load whose PONG has not come back,
+	// or "". While it is set, a 322 or 323 is that load's late answer.
+	StaleFence string
 }
 
 // ChannelListRequestKind is the outcome of ChannelListRequest.Request, mirroring
@@ -84,13 +96,14 @@ type ChannelListFinishResult struct {
 type channelListPhase interface{ channelListPhase() }
 
 // channelListLoading is a load in flight: its mask, the rows streamed so far, at most
-// one queued mask, and whether a timed-out earlier load's stale END is still to come.
+// one queued mask, and the fence of a timed-out earlier load whose PONG is still to
+// come.
 type channelListLoading struct {
 	mask          string
 	rows          []ChannelListRow
 	queuedMask    string
 	hasQueuedMask bool
-	drainStaleEnd bool
+	staleFence    string
 }
 
 // channelListComplete is a finished load. A same-mask request reuses its rows unless
@@ -101,12 +114,12 @@ type channelListComplete struct {
 }
 
 // channelListFailed is a load that ended in error. It keeps the rows it had, and
-// drainStaleEnd is set while a timed-out load's stale END is still to come.
+// staleFence is set while the timed-out load's late END may still come.
 type channelListFailed struct {
-	mask          string
-	rows          []ChannelListRow
-	errorText     string
-	drainStaleEnd bool
+	mask       string
+	rows       []ChannelListRow
+	errorText  string
+	staleFence string
 }
 
 func (*channelListLoading) channelListPhase()  {}
@@ -129,6 +142,10 @@ type ChannelListRequest struct {
 	states      map[string]channelListPhase
 	timers      map[string]channelListTimer
 	generation  uint64
+	// onExpire, when set, runs a fired idle timer in place of failing the load
+	// directly, so the controller can take its lock, write the fence, and fail the
+	// overlay too. It is set once, before any timer is armed.
+	onExpire func(networkID string, gen uint64)
 }
 
 // NewChannelListRequest returns an empty request registry that arms its idle
@@ -152,12 +169,12 @@ func (r *ChannelListRequest) State(networkID string) (ChannelListRequestState, b
 	switch phase := r.states[networkID].(type) {
 	case *channelListLoading:
 		return ChannelListRequestState{
-			Mask:             phase.mask,
-			Rows:             channelListCopyRows(phase.rows),
-			Loading:          true,
-			PendingMask:      phase.queuedMask,
-			HasPendingMask:   phase.hasQueuedMask,
-			DrainTimedOutEnd: phase.drainStaleEnd,
+			Mask:           phase.mask,
+			Rows:           channelListCopyRows(phase.rows),
+			Loading:        true,
+			PendingMask:    phase.queuedMask,
+			HasPendingMask: phase.hasQueuedMask,
+			StaleFence:     phase.staleFence,
 		}, true
 	case *channelListComplete:
 		return ChannelListRequestState{
@@ -167,10 +184,10 @@ func (r *ChannelListRequest) State(networkID string) (ChannelListRequestState, b
 		}, true
 	case *channelListFailed:
 		return ChannelListRequestState{
-			Mask:             phase.mask,
-			Rows:             channelListCopyRows(phase.rows),
-			Error:            phase.errorText,
-			DrainTimedOutEnd: phase.drainStaleEnd,
+			Mask:       phase.mask,
+			Rows:       channelListCopyRows(phase.rows),
+			Error:      phase.errorText,
+			StaleFence: phase.staleFence,
 		}, true
 	default:
 		return ChannelListRequestState{}, false
@@ -197,12 +214,12 @@ func (r *ChannelListRequest) Request(networkID, mask string, refresh bool) Chann
 			return ChannelListCached
 		}
 	}
-	// Only a failed load that timed out hands its stale END to the next load.
-	drain := false
+	// Only a failed load whose fence is unanswered hands it to the next load.
+	fence := ""
 	if failed, ok := r.states[networkID].(*channelListFailed); ok {
-		drain = failed.drainStaleEnd
+		fence = failed.staleFence
 	}
-	r.states[networkID] = &channelListLoading{mask: mask, drainStaleEnd: drain}
+	r.states[networkID] = &channelListLoading{mask: mask, staleFence: fence}
 	r.arm(networkID)
 	return ChannelListStart
 }
@@ -212,30 +229,45 @@ func (r *ChannelListRequest) CancelStart(networkID string) {
 	r.Forget(networkID)
 }
 
-// Row stores one streamed row. It reports whether an existing row was replaced.
-// Empty channels and rows for a network that is not loading are ignored, and a
-// new row is dropped once the cache is at ChannelListMaxRows. It mirrors
-// IrcChannelListRequest::row.
-func (r *ChannelListRequest) Row(networkID string, row ChannelListRow) bool {
+// ChannelListRowOutcome is what a streamed 322 did to the request's rows. It mirrors
+// RowOutcome.
+type ChannelListRowOutcome int
+
+const (
+	// ChannelListRowIgnored: no load, an empty name, a stale row, or the cap.
+	ChannelListRowIgnored ChannelListRowOutcome = iota
+	ChannelListRowAdded
+	// ChannelListRowReplaced: the row replaced the one with the same channel.
+	ChannelListRowReplaced
+)
+
+// Row stores one streamed row. Empty channels and rows for a network that is not
+// loading are ignored, a row before the stale fence's PONG belongs to the timed-out
+// load and is dropped, and a new row is dropped once the cache is at
+// ChannelListMaxRows. It mirrors IrcChannelListRequest::row.
+func (r *ChannelListRequest) Row(networkID string, row ChannelListRow) ChannelListRowOutcome {
 	if row.Channel == "" {
-		return false
+		return ChannelListRowIgnored
 	}
 	loading, ok := r.states[networkID].(*channelListLoading)
 	if !ok {
-		return false
+		return ChannelListRowIgnored
 	}
 	r.arm(networkID)
+	if loading.staleFence != "" {
+		return ChannelListRowIgnored
+	}
 	for index := range loading.rows {
 		if strings.EqualFold(loading.rows[index].Channel, row.Channel) {
 			loading.rows[index] = row
-			return true
+			return ChannelListRowReplaced
 		}
 	}
 	if len(loading.rows) >= ChannelListMaxRows {
-		return false
+		return ChannelListRowIgnored
 	}
 	loading.rows = append(loading.rows, row)
-	return false
+	return ChannelListRowAdded
 }
 
 // Activity re-arms the idle timer for a network that is still loading, mirroring
@@ -247,21 +279,22 @@ func (r *ChannelListRequest) Activity(networkID string) {
 }
 
 // Finish ends a streamed load. It mirrors IrcChannelListRequest::finish. A failed
-// request clears the stale END it is still owed and reports nothing. A load draining a
-// stale END clears the flag, re-arms, and reports nothing. Otherwise the load
-// completes, and a queued mask that differs from its mask is returned to start next.
+// request absorbs the stale END it may still be owed and reports nothing. An END before
+// the stale fence's PONG is the timed-out load's late END: it is drained, the load
+// re-arms and reports nothing. Otherwise the load completes, and a queued mask that
+// differs from its mask is returned to start next.
 func (r *ChannelListRequest) Finish(networkID string) ChannelListFinishResult {
 	switch phase := r.states[networkID].(type) {
 	case *channelListLoading:
-		if phase.drainStaleEnd {
-			phase.drainStaleEnd = false
+		if phase.staleFence != "" {
+			phase.staleFence = ""
 			r.arm(networkID)
 			return ChannelListFinishResult{}
 		}
 		return r.completeLoad(networkID, phase)
 	case *channelListFailed:
 		// The failed load keeps its error and rows. Its stale END is absorbed here.
-		phase.drainStaleEnd = false
+		phase.staleFence = ""
 	}
 	return ChannelListFinishResult{}
 }
@@ -278,22 +311,48 @@ func (r *ChannelListRequest) completeLoad(networkID string, loading *channelList
 }
 
 // Fail ends a load in error. It only applies while loading and reports whether
-// anything changed. The rows it had stay and the queued mask is dropped. A timed-out
-// failure leaves its stale END to drain, and so does a failure of a load that was
-// already draining one. It mirrors IrcChannelListRequest::fail.
-func (r *ChannelListRequest) Fail(networkID, text string, timedOut bool) bool {
+// anything changed. The rows it had stay and the queued mask is dropped. fence is the
+// PING a timeout wrote: until its PONG, the failed load's late END may still come.
+// With fence "", the load keeps the fence it already had. It mirrors
+// IrcChannelListRequest::fail.
+func (r *ChannelListRequest) Fail(networkID, text, fence string) bool {
 	loading, ok := r.states[networkID].(*channelListLoading)
 	if !ok {
 		return false
 	}
 	r.stop(networkID)
+	if fence == "" {
+		fence = loading.staleFence
+	}
 	r.states[networkID] = &channelListFailed{
-		mask:          loading.mask,
-		rows:          loading.rows,
-		errorText:     text,
-		drainStaleEnd: loading.drainStaleEnd || timedOut,
+		mask:       loading.mask,
+		rows:       loading.rows,
+		errorText:  text,
+		staleFence: fence,
 	}
 	return true
+}
+
+// nextFence returns a new fence token for a timed-out load. It mirrors next_fence.
+func (r *ChannelListRequest) nextFence() string {
+	r.generation++
+	return channelListFencePrefix + strconv.FormatUint(r.generation, 10)
+}
+
+// FenceAnswered handles the PONG of a fence: every answer to the timed-out LIST has
+// arrived, so no stale END is still to come. Another token changes nothing. It
+// mirrors fence_answered.
+func (r *ChannelListRequest) FenceAnswered(networkID, token string) {
+	switch phase := r.states[networkID].(type) {
+	case *channelListLoading:
+		if phase.staleFence == token {
+			phase.staleFence = ""
+		}
+	case *channelListFailed:
+		if phase.staleFence == token {
+			phase.staleFence = ""
+		}
+	}
 }
 
 // Forget stops the timer and drops all state for one network, mirroring forget.
@@ -312,25 +371,40 @@ func (r *ChannelListRequest) SetIdleTimeout(d time.Duration) {
 }
 
 // FireIdleTimeout fails the network's current load with the timeout text and reports
-// whether a load was actually failed. It mirrors fireIdleTimeout. The armed timer does
-// not call it: the timer calls fireIdle with its own generation.
+// whether a load was actually failed. No fence is written. It mirrors fireIdleTimeout.
+// The armed timer does not call it: the timer calls expired with its own generation.
 func (r *ChannelListRequest) FireIdleTimeout(networkID string) bool {
 	armed, ok := r.timers[networkID]
 	if !ok {
 		return false
 	}
-	return r.fireIdle(networkID, armed.gen)
+	return r.fireIdle(networkID, armed.gen, "")
 }
 
-// fireIdle is what an armed idle timer runs. It fails the load only while gen is still
-// the network's armed timer, so a callback that fired before a newer arming cannot fail
-// that newer load.
-func (r *ChannelListRequest) fireIdle(networkID string, gen uint64) bool {
+// expired is what an armed idle timer runs: the controller's handler when one is set,
+// otherwise a timeout without a fence.
+func (r *ChannelListRequest) expired(networkID string, gen uint64) {
+	if r.onExpire != nil {
+		r.onExpire(networkID, gen)
+		return
+	}
+	r.fireIdle(networkID, gen, "")
+}
+
+// isArmed reports whether gen is still the network's armed idle timer.
+func (r *ChannelListRequest) isArmed(networkID string, gen uint64) bool {
 	armed, ok := r.timers[networkID]
-	if !ok || armed.gen != gen {
+	return ok && armed.gen == gen
+}
+
+// fireIdle fails the load with the timeout text and fence, only while gen is still the
+// network's armed timer, so a callback that fired before a newer arming cannot fail
+// that newer load.
+func (r *ChannelListRequest) fireIdle(networkID string, gen uint64, fence string) bool {
+	if !r.isArmed(networkID, gen) {
 		return false
 	}
-	return r.Fail(networkID, channelListTimeoutText, true)
+	return r.Fail(networkID, channelListTimeoutText, fence)
 }
 
 // SameChannelListMask reports whether two masks are equal after trimming
@@ -352,7 +426,7 @@ func (r *ChannelListRequest) arm(networkID string) {
 	r.timers[networkID] = channelListTimer{
 		gen: gen,
 		timer: r.clock.AfterFunc(r.idleTimeout, func() {
-			r.fireIdle(networkID, gen)
+			r.expired(networkID, gen)
 		}),
 	}
 }
@@ -452,9 +526,20 @@ func (m *ChannelListModel) BeginLoad(networkID, mask string) {
 }
 
 // AppendRow stores one streamed row unless the cache is at ChannelListMaxRows
-// adding it to the visible set only when it matches the current filter. It
-// mirrors ChannelListModel::appendRow.
-func (m *ChannelListModel) AppendRow(row ChannelListRow) {
+// adding it to the visible set only when it matches the current filter. A replaced
+// row takes the place of the row with the same channel. It mirrors
+// ChannelListModel::appendRow.
+func (m *ChannelListModel) AppendRow(row ChannelListRow, replaced bool) {
+	if replaced {
+		for index := range m.source {
+			if strings.EqualFold(m.source[index].Channel, row.Channel) {
+				m.source[index] = row
+				m.rebuildVisible()
+				return
+			}
+		}
+		return
+	}
 	if len(m.source) >= ChannelListMaxRows {
 		return
 	}

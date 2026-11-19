@@ -21,7 +21,7 @@ func TestChannelListRequestMissing(t *testing.T) {
 	if res := r.Finish("n"); res.Completed || res.HasPending || res.PendingMask != "" {
 		t.Fatalf("Finish(missing) = %+v, want zero", res)
 	}
-	if r.Fail("n", "x", false) {
+	if r.Fail("n", "x", "") {
 		t.Fatal("Fail(missing) = true, want false")
 	}
 	if r.FireIdleTimeout("n") {
@@ -102,14 +102,14 @@ func TestChannelListRequestStateCopiesRows(t *testing.T) {
 
 func TestChannelListRequestRowReplace(t *testing.T) {
 	r := NewChannelListRequest(channelListClock())
-	if r.Row("n", ChannelListRow{Channel: "#a"}) {
-		t.Fatal("Row without a request reported a replace")
+	if r.Row("n", ChannelListRow{Channel: "#a"}) != ChannelListRowIgnored {
+		t.Fatal("Row without a request was stored")
 	}
 	r.Request("n", "*", false)
-	if replaced := r.Row("n", ChannelListRow{Channel: "#Chan", Users: 1}); replaced {
-		t.Fatal("first Row reported a replace")
+	if outcome := r.Row("n", ChannelListRow{Channel: "#Chan", Users: 1}); outcome != ChannelListRowAdded {
+		t.Fatalf("first Row = %v, want added", outcome)
 	}
-	if replaced := r.Row("n", ChannelListRow{Channel: "#chan", Users: 7, Topic: "t"}); !replaced {
+	if outcome := r.Row("n", ChannelListRow{Channel: "#chan", Users: 7, Topic: "t"}); outcome != ChannelListRowReplaced {
 		t.Fatal("case-insensitive duplicate did not replace")
 	}
 	state, _ := r.State("n")
@@ -118,8 +118,8 @@ func TestChannelListRequestRowReplace(t *testing.T) {
 	}
 
 	// An empty channel is ignored.
-	if r.Row("n", ChannelListRow{Users: 3}) {
-		t.Fatal("empty channel reported a replace")
+	if r.Row("n", ChannelListRow{Users: 3}) != ChannelListRowIgnored {
+		t.Fatal("empty channel was stored")
 	}
 	state, _ = r.State("n")
 	if len(state.Rows) != 1 {
@@ -141,15 +141,15 @@ func TestChannelListRequestRowCap(t *testing.T) {
 	for index := 0; index < ChannelListMaxRows; index++ {
 		r.Row("n", ChannelListRow{Channel: fmt.Sprintf("#c%d", index), Users: 1})
 	}
-	if replaced := r.Row("n", ChannelListRow{Channel: "#overflow", Users: 2}); replaced {
-		t.Fatal("overflow row reported a replace")
+	if outcome := r.Row("n", ChannelListRow{Channel: "#overflow", Users: 2}); outcome != ChannelListRowIgnored {
+		t.Fatalf("overflow row = %v, want ignored", outcome)
 	}
 	state, _ := r.State("n")
 	if len(state.Rows) != ChannelListMaxRows {
 		t.Fatalf("row count = %d, want %d", len(state.Rows), ChannelListMaxRows)
 	}
 	// A replace still works at the cap.
-	if replaced := r.Row("n", ChannelListRow{Channel: "#C0", Users: 9}); !replaced {
+	if outcome := r.Row("n", ChannelListRow{Channel: "#C0", Users: 9}); outcome != ChannelListRowReplaced {
 		t.Fatal("replace at cap failed")
 	}
 	state, _ = r.State("n")
@@ -179,8 +179,8 @@ func TestChannelListRequestIdleTimerAndActivity(t *testing.T) {
 	if state.Error != channelListTimeoutText {
 		t.Fatalf("timeout error = %q, want %q", state.Error, channelListTimeoutText)
 	}
-	if !state.DrainTimedOutEnd {
-		t.Fatalf("timeout state = %+v, want drain flag", state)
+	if state.StaleFence != "" {
+		t.Fatalf("timeout state = %+v, want no fence without a controller to write one", state)
 	}
 }
 
@@ -188,7 +188,7 @@ func TestChannelListRequestActivityOnlyWhileLoading(t *testing.T) {
 	clock := channelListClock()
 	r := NewChannelListRequest(clock)
 	r.Request("n", "*", false)
-	r.Fail("n", "boom", false)
+	r.Fail("n", "boom", "")
 	r.Activity("n")
 	if clock.Pending() != 0 {
 		t.Fatalf("Activity re-armed a non-loading request: pending = %d", clock.Pending())
@@ -232,24 +232,32 @@ func TestChannelListRequestFinishPending(t *testing.T) {
 	}
 }
 
+// testFence is the fence token the staged timeouts use.
+const testFence = "omairc-list-staged"
+
 func TestChannelListRequestFinishDrainTimedOutEnd(t *testing.T) {
 	r := NewChannelListRequest(channelListClock())
 	r.Request("n", "*", false)
-	if !r.Fail("n", channelListTimeoutText, true) {
+	if !r.Fail("n", channelListTimeoutText, testFence) {
 		t.Fatal("Fail(timedOut) = false")
 	}
 	state, _ := r.State("n")
-	if state.Loading || state.Complete || !state.DrainTimedOutEnd {
+	if state.Loading || state.Complete || state.StaleFence != testFence {
 		t.Fatalf("state after timeout = %+v", state)
 	}
 
-	// Restarting preserves the drain flag.
+	// Restarting carries the unanswered fence.
 	if kind := r.Request("n", "*", false); kind != ChannelListStart {
 		t.Fatalf("restart = %v, want Start", kind)
 	}
 	state, _ = r.State("n")
-	if !state.Loading || !state.DrainTimedOutEnd {
-		t.Fatalf("state after restart = %+v, want loading with drain", state)
+	if !state.Loading || state.StaleFence != testFence {
+		t.Fatalf("state after restart = %+v, want loading with the fence", state)
+	}
+
+	// A row before the fence's PONG is the timed-out load's and is dropped.
+	if outcome := r.Row("n", ChannelListRow{Channel: "#old"}); outcome != ChannelListRowIgnored {
+		t.Fatalf("stale row = %v, want ignored", outcome)
 	}
 
 	// The first Finish swallows the stale END and keeps loading.
@@ -257,8 +265,8 @@ func TestChannelListRequestFinishDrainTimedOutEnd(t *testing.T) {
 		t.Fatalf("drain Finish = %+v, want zero", res)
 	}
 	state, _ = r.State("n")
-	if !state.Loading || state.DrainTimedOutEnd {
-		t.Fatalf("state after drain = %+v, want loading without drain", state)
+	if !state.Loading || state.StaleFence != "" || len(state.Rows) != 0 {
+		t.Fatalf("state after drain = %+v, want loading without a fence or rows", state)
 	}
 
 	// The next Finish completes.
@@ -270,14 +278,14 @@ func TestChannelListRequestFinishDrainTimedOutEnd(t *testing.T) {
 func TestChannelListRequestFail(t *testing.T) {
 	r := NewChannelListRequest(channelListClock())
 	r.Request("n", "*", false)
-	if !r.Fail("n", "boom", false) {
+	if !r.Fail("n", "boom", "") {
 		t.Fatal("Fail = false, want true")
 	}
 	state, _ := r.State("n")
-	if state.Loading || state.Complete || state.Error != "boom" || state.DrainTimedOutEnd {
+	if state.Loading || state.Complete || state.Error != "boom" || state.StaleFence != "" {
 		t.Fatalf("state after Fail = %+v", state)
 	}
-	if r.Fail("n", "again", false) {
+	if r.Fail("n", "again", "") {
 		t.Fatal("second Fail = true, want false")
 	}
 }
@@ -433,8 +441,8 @@ func TestChannelListModelBeginLoadAndAppend(t *testing.T) {
 	}
 
 	m.SetFilter("rust")
-	m.AppendRow(ChannelListRow{Channel: "#a", Users: 2, Topic: "rust"})
-	m.AppendRow(ChannelListRow{Channel: "#b", Users: 9, Topic: "go"})
+	m.AppendRow(ChannelListRow{Channel: "#a", Users: 2, Topic: "rust"}, false)
+	m.AppendRow(ChannelListRow{Channel: "#b", Users: 9, Topic: "go"}, false)
 	state = m.State()
 	if state.Sources != 2 {
 		t.Fatalf("sources = %d, want 2", state.Sources)
@@ -447,9 +455,9 @@ func TestChannelListModelBeginLoadAndAppend(t *testing.T) {
 func TestChannelListModelAppendStateSorted(t *testing.T) {
 	m := NewChannelListModel()
 	m.BeginLoad("n", "*")
-	m.AppendRow(ChannelListRow{Channel: "#low", Users: 1})
-	m.AppendRow(ChannelListRow{Channel: "#high", Users: 5})
-	m.AppendRow(ChannelListRow{Channel: "#mid", Users: 3})
+	m.AppendRow(ChannelListRow{Channel: "#low", Users: 1}, false)
+	m.AppendRow(ChannelListRow{Channel: "#high", Users: 5}, false)
+	m.AppendRow(ChannelListRow{Channel: "#mid", Users: 3}, false)
 	state := m.State()
 	want := []string{"#high", "#mid", "#low"}
 	for index, channel := range want {
@@ -463,9 +471,9 @@ func TestChannelListModelAppendCap(t *testing.T) {
 	m := NewChannelListModel()
 	m.BeginLoad("n", "*")
 	for index := 0; index < ChannelListMaxRows; index++ {
-		m.AppendRow(ChannelListRow{Channel: fmt.Sprintf("#c%d", index), Users: 1})
+		m.AppendRow(ChannelListRow{Channel: fmt.Sprintf("#c%d", index), Users: 1}, false)
 	}
-	m.AppendRow(ChannelListRow{Channel: "#overflow", Users: 99})
+	m.AppendRow(ChannelListRow{Channel: "#overflow", Users: 99}, false)
 	state := m.State()
 	if state.Sources != ChannelListMaxRows || len(state.Rows) != ChannelListMaxRows {
 		t.Fatalf("sources = %d rows = %d, want %d", state.Sources, len(state.Rows), ChannelListMaxRows)
@@ -545,7 +553,7 @@ func TestChannelListRequestPhasesAreExclusive(t *testing.T) {
 	r.Request("n", "*", true)
 	requireListPhase(t, r, "refreshed", true, false)
 
-	r.Fail("n", "boom", false)
+	r.Fail("n", "boom", "")
 	requireListPhase(t, r, "failed", false, false)
 	state, _ := r.State("n")
 	if state.Error != "boom" {
@@ -587,7 +595,7 @@ func TestChannelListRequestQueuesOneMask(t *testing.T) {
 func TestChannelListRequestCompletedNewerMaskCarriesNoDrain(t *testing.T) {
 	r := NewChannelListRequest(channelListClock())
 	r.Request("n", "*", false)
-	r.Fail("n", channelListTimeoutText, true)
+	r.Fail("n", channelListTimeoutText, testFence)
 
 	r.Request("n", "#x", false)
 	if res := r.Finish("n"); res.Completed {
@@ -597,7 +605,7 @@ func TestChannelListRequestCompletedNewerMaskCarriesNoDrain(t *testing.T) {
 		t.Fatalf("real END did not complete #x: %+v", res)
 	}
 	state, _ := r.State("n")
-	if state.DrainTimedOutEnd || !state.Complete {
+	if state.StaleFence != "" || !state.Complete {
 		t.Fatalf("completed #x = %+v, want complete without a drain flag", state)
 	}
 
@@ -632,13 +640,13 @@ func TestChannelListRequestFailedKeepsRowsAndError(t *testing.T) {
 func TestChannelListRequestNonTimeoutFailKeepsDrain(t *testing.T) {
 	r := NewChannelListRequest(channelListClock())
 	r.Request("n", "*", false)
-	r.Fail("n", channelListTimeoutText, true)
+	r.Fail("n", channelListTimeoutText, testFence)
 	r.Request("n", "#x", false)
-	if !r.Fail("n", "Too many channel matches", false) {
+	if !r.Fail("n", "Too many channel matches", "") {
 		t.Fatal("Fail(non-timeout) = false, want true")
 	}
 	state, _ := r.State("n")
-	if state.Loading || state.Complete || !state.DrainTimedOutEnd {
+	if state.Loading || state.Complete || state.StaleFence != testFence {
 		t.Fatalf("state after non-timeout fail = %+v, want failed with the drain kept", state)
 	}
 
@@ -646,7 +654,7 @@ func TestChannelListRequestNonTimeoutFailKeepsDrain(t *testing.T) {
 		t.Fatalf("END on a failed request completed: %+v", res)
 	}
 	state, _ = r.State("n")
-	if state.Loading || state.Complete || state.DrainTimedOutEnd {
+	if state.Loading || state.Complete || state.StaleFence != "" {
 		t.Fatalf("state after the END = %+v, want failed with no drain", state)
 	}
 }
@@ -704,11 +712,17 @@ func TestChannelListStaleEndAfterTimeoutDoesNotCompleteTheNewerLoad(t *testing.T
 	if !writtenFramesContain(transport, "LIST #new") {
 		t.Fatalf("no LIST #new frame: %v", transport.WrittenFrames())
 	}
-	inject(t, transport, ":server 323 omairc :End of /LIST\r\n")
-	state, _ := c.channelLists.State("freenode")
-	if !state.Loading || state.Complete {
-		t.Fatalf("state after the stale 323 = %+v, want #new still loading", state)
+	if !writtenFramesContain(transport, "PING :omairc-list-") {
+		t.Fatalf("the timeout wrote no fence: %v", transport.WrittenFrames())
 	}
+	// The timed-out LIST's late row and 323 arrive before the fence's PONG.
+	inject(t, transport, ":server 322 omairc #old 9 :old channel\r\n"+
+		":server 323 omairc :End of /LIST\r\n")
+	state, _ := c.channelLists.State("freenode")
+	if !state.Loading || state.Complete || len(state.Rows) != 0 {
+		t.Fatalf("state after the stale 323 = %+v, want #new still loading, with no rows", state)
+	}
+	answerPings(t, transport, 0)
 
 	inject(t, transport, ":server 322 omairc #new 3 :new channel\r\n"+
 		":server 323 omairc :End of /LIST\r\n")
@@ -810,5 +824,27 @@ func TestChannelListStreamsRowsIntoTheOverlay(t *testing.T) {
 	}
 	if woken == 0 {
 		t.Fatal("a streamed row did not wake the shell")
+	}
+}
+
+// TestChannelListRequestFencePongEndsTheDrain pins that only the fence's own PONG ends
+// the drain, and that the first END after it completes the next load.
+func TestChannelListRequestFencePongEndsTheDrain(t *testing.T) {
+	r := NewChannelListRequest(channelListClock())
+	r.Request("n", "*", false)
+	r.Fail("n", channelListTimeoutText, testFence)
+
+	r.FenceAnswered("n", "omairc-list-other")
+	if state, _ := r.State("n"); state.StaleFence != testFence {
+		t.Fatalf("another PONG ended the drain: %+v", state)
+	}
+	r.FenceAnswered("n", testFence)
+	if state, _ := r.State("n"); state.StaleFence != "" {
+		t.Fatalf("the fence's PONG left the drain: %+v", state)
+	}
+
+	r.Request("n", "#new", false)
+	if res := r.Finish("n"); !res.Completed {
+		t.Fatalf("first END after the PONG = %+v, want it to complete #new", res)
 	}
 }

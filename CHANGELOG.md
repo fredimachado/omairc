@@ -38,6 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `/list` recovers after an idle timeout. A timed-out `LIST` whose `323` never
+  came made every later `/list` on that network swallow its own end and time
+  out too. The timeout now sends a `PING` fence: a late `322` or `323` that
+  arrives before its `PONG` belongs to the timed-out request, and the next
+  load's own `323` always completes it. The terminal client's `/list` overlay
+  also shows the timeout instead of staying on "Loading", and streams rows while
+  the load is in flight, as the desktop overlay does.
 - The desktop client restores a saved transcript place once history arrives, and
   no longer saves the "New messages" divider or a day separator as the place.
   Capture anchors on the first restorable row at or below the top of the view.

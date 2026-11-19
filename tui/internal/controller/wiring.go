@@ -236,8 +236,16 @@ func (c *Controller) initSlashSubsystems() {
 	// New() starts ephemeral; keep the runtime from writing until the shell
 	// opts in with SetEphemeral(false).
 	c.autoaway.SetEphemeral(c.ephemeral)
-	c.channelLists = NewChannelListRequest(c.clock)
+	c.channelLists = c.newChannelListRequest()
 	c.channelList = NewChannelListModel()
+}
+
+// newChannelListRequest builds the /list requests on the controller's clock, with
+// their idle timeouts routed through channelListExpired.
+func (c *Controller) newChannelListRequest() *ChannelListRequest {
+	requests := NewChannelListRequest(c.clock)
+	requests.onExpire = c.channelListExpired
+	return requests
 }
 
 // rebindClocks recreates the subsystems that hold a clock, so SetClock lands
@@ -248,7 +256,7 @@ func (c *Controller) initSlashSubsystems() {
 // clear restored /autoaway; idle is re-armed on the new clock when not tripped.
 func (c *Controller) rebindClocks() {
 	if c.channelLists != nil {
-		c.channelLists = NewChannelListRequest(c.clock)
+		c.channelLists = c.newChannelListRequest()
 	}
 	if c.autoaway != nil {
 		prior := c.autoaway
@@ -734,6 +742,7 @@ func (c *Controller) finishChannelList(networkID string) {
 		current := c.ChannelListSnapshot()
 		if current.NetworkID == networkID {
 			c.channelList.Show(networkID, cache.Mask, cache.Rows, true, false, false, "")
+			c.notifyViewChanged()
 		}
 	}
 }
@@ -787,16 +796,45 @@ func (c *Controller) failChannelListFromNumeric(networkID string, message irc.Me
 
 // failChannelList fails the request and the overlay together.
 func (c *Controller) failChannelList(networkID, text string) bool {
-	if !c.channelLists.Fail(networkID, text, false) {
+	if !c.channelLists.Fail(networkID, text, "") {
 		return false
 	}
-	if c.channelList != nil {
-		current := c.ChannelListSnapshot()
-		if current.NetworkID == networkID {
-			c.channelList.Fail(text)
-		}
-	}
+	c.failChannelListOverlay(networkID, text)
 	return true
+}
+
+// failChannelListOverlay fails the overlay when it shows networkID, and wakes the shell.
+func (c *Controller) failChannelListOverlay(networkID, text string) {
+	if c.channelList == nil {
+		return
+	}
+	if c.ChannelListSnapshot().NetworkID == networkID {
+		c.channelList.Fail(text)
+		c.notifyViewChanged()
+	}
+}
+
+// channelListExpired runs one fired idle timer under the controller lock. The stalled
+// load fails with the timeout text, and a PING fence goes out after its LIST, so the
+// next load can tell that load's late answer from its own. It mirrors
+// run_channel_list_expiry.
+func (c *Controller) channelListExpired(networkID string, gen uint64) {
+	c.lock()
+	defer c.unlock()
+	if !c.channelLists.isArmed(networkID, gen) {
+		return
+	}
+	if state, ok := c.channelLists.State(networkID); !ok || !state.Loading {
+		return
+	}
+	fence := c.channelLists.nextFence()
+	s := c.sessionForNetwork(networkID)
+	if s == nil || !s.SendRaw("PING :"+fence) {
+		fence = ""
+	}
+	if c.channelLists.fireIdle(networkID, gen, fence) {
+		c.failChannelListOverlay(networkID, channelListTimeoutText)
+	}
 }
 
 // handleChannelListMessage routes 321/322/323 and the LIST failure numerics.
@@ -814,11 +852,19 @@ func (c *Controller) handleChannelListMessage(networkID string, message irc.Mess
 			if len(message.Params) >= 4 {
 				topic = parameterText(message, 3)
 			}
-			c.channelLists.Row(networkID, ChannelListRow{
+			row := ChannelListRow{
 				Channel: parameterText(message, 1),
 				Users:   users,
 				Topic:   topic,
-			})
+			}
+			outcome := c.channelLists.Row(networkID, row)
+			if outcome != ChannelListRowIgnored && c.channelList != nil {
+				current := c.ChannelListSnapshot()
+				if current.Open && current.NetworkID == networkID && current.Loading {
+					c.channelList.AppendRow(row, outcome == ChannelListRowReplaced)
+					c.notifyViewChanged()
+				}
+			}
 		}
 		return true
 	case "321":
@@ -826,6 +872,16 @@ func (c *Controller) handleChannelListMessage(networkID string, message irc.Mess
 		return true
 	case "323":
 		c.finishChannelList(networkID)
+		return true
+	case "PONG":
+		token := ""
+		if len(message.Params) > 0 {
+			token = parameterText(message, len(message.Params)-1)
+		}
+		if !strings.HasPrefix(token, channelListFencePrefix) {
+			return false
+		}
+		c.channelLists.FenceAnswered(networkID, token)
 		return true
 	}
 	return c.failChannelListFromNumeric(networkID, message)
