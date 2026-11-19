@@ -171,3 +171,22 @@ func TestTranscriptPlaceSitsOnTheComposerAndSkipsTheNewMarker(t *testing.T) {
 		t.Fatal("the composer top edge lost the place after the arrival")
 	}
 }
+
+// TestChannelListFrameTitleMarksStreamingRows pins the /list title while rows stream
+// in: the count shows with a loading mark, and it drops once the load completes.
+func TestChannelListFrameTitleMarksStreamingRows(t *testing.T) {
+	rows := []ChannelListRowView{{Channel: "#a"}, {Channel: "#b"}}
+	cases := []struct {
+		snapshot ChannelListSnapshot
+		want     string
+	}{
+		{ChannelListSnapshot{Loading: true}, "Channels"},
+		{ChannelListSnapshot{Loading: true, Rows: rows}, "Channels 2 · Loading..."},
+		{ChannelListSnapshot{Complete: true, Rows: rows, Mask: "#a*"}, "Channels · #a* 2"},
+	}
+	for _, tc := range cases {
+		if got := channelListFrameTitle(tc.snapshot); got != tc.want {
+			t.Errorf("channelListFrameTitle(%+v) = %q, want %q", tc.snapshot, got, tc.want)
+		}
+	}
+}

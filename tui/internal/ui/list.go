@@ -176,7 +176,8 @@ func (m *Model) channelListSnapshot() ChannelListSnapshot {
 
 // channelListFrameTitle is the card title: "Channels", plus the list mask when
 // one was requested, plus the match count once the reply is no longer the
-// empty loading state.
+// empty loading state. Rows that stream in while the load is in flight keep a
+// loading mark beside the count.
 func channelListFrameTitle(snapshot ChannelListSnapshot) string {
 	title := "Channels"
 	if snapshot.Mask != "" {
@@ -185,7 +186,11 @@ func channelListFrameTitle(snapshot ChannelListSnapshot) string {
 	if snapshot.Loading && len(snapshot.Rows) == 0 {
 		return title
 	}
-	return fmt.Sprintf("%s %d", title, len(snapshot.Rows))
+	title = fmt.Sprintf("%s %d", title, len(snapshot.Rows))
+	if snapshot.Loading {
+		title += " · Loading..."
+	}
+	return title
 }
 
 // channelListCardBody is the /list overlay's content, before the shared frame.
@@ -211,7 +216,7 @@ func (m *Model) listOverlayLines(inner int) []overlayLine {
 	snapshot := m.channelListSnapshot()
 	lines := []overlayLine{{text: truncateLine(sheet.input.View(), inner), row: -1}}
 	switch {
-	case snapshot.Loading:
+	case snapshot.Loading && len(snapshot.Rows) == 0:
 		return append(lines, overlayLine{text: ellipsizeLine(m.styles.Empty.Render("Loading..."), inner), row: -1})
 	case snapshot.Error != "":
 		return append(lines, overlayLine{text: ellipsizeLine(m.styles.StatusErr.Render(snapshot.Error), inner), row: -1})

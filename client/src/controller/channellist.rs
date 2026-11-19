@@ -3,9 +3,12 @@
 //! `LIST mask` goes out as a session write. The server's answer streams back as 321
 //! (start), one 322 per channel, then 323 (end), and the controller folds those into a
 //! per-network request: one phase per network (idle, loading, complete, or failed) that
-//! holds the rows, the mask a second `/list` queued, and the idle timeout. A stale 323
-//! after a timeout is
-//! drained once, so it does not complete the next load. The overlay (`ChannelListView`)
+//! holds the rows, the mask a second `/list` queued, and the idle timeout.
+//! A timed-out `LIST` may still answer late. The timeout writes `PING :omairc-list-N`
+//! as a fence: the server answers in order, so a 322 or 323 that arrives before that
+//! fence's PONG belongs to the timed-out `LIST`, and everything after it to a later
+//! one. The next load drops those stale rows and drains that stale 323 instead of
+//! ending on it, and its own 323 always completes it. The overlay (`ChannelListView`)
 //! shows the rows of the request once it completes, most users first, then by name.
 //! The idle timer runs on the `Clock` seam. As in `autoawayruntime.rs`, a fired timer
 //! queues its network and generation, and `pump` runs the timeout on the UI thread.
@@ -36,6 +39,9 @@ const CHANNEL_LIST_MIN_IDLE_TIMEOUT: Duration = Duration::from_millis(1);
 
 /// The text a timed-out `/list` leaves on the overlay and the request.
 pub const CHANNEL_LIST_TIMEOUT_TEXT: &str = "Channel list timed out. Try /list again.";
+
+/// The prefix of the PING token a timeout writes as its fence.
+const CHANNEL_LIST_FENCE_PREFIX: &str = "omairc-list-";
 
 /// One channel as a `LIST` answer gives it (`ChannelListRow`).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -69,8 +75,9 @@ pub(super) enum ChannelListPhase {
         rows: Vec<ListedChannel>,
         /// At most one queued mask (a different `/list` while loading).
         queued_mask: Option<String>,
-        /// A timed-out earlier load's stale 323 is still to come.
-        drain_stale_end: bool,
+        /// The fence of a timed-out earlier load. Until its PONG, a 322 or 323 is
+        /// that load's late answer, not this one's.
+        stale_fence: Option<String>,
     },
     Complete {
         mask: String,
@@ -80,8 +87,8 @@ pub(super) enum ChannelListPhase {
         mask: String,
         rows: Vec<ListedChannel>,
         error: String,
-        /// The stale 323 of the timed-out load is still to come.
-        drain_stale_end: bool,
+        /// The fence of the timed-out load whose late 323 may still come.
+        stale_fence: Option<String>,
     },
 }
 
@@ -183,21 +190,18 @@ impl ChannelListRequests {
             }
             _ => {}
         }
-        // Only a failed load that timed out hands its stale end to the next load.
-        let drain_stale_end = matches!(
-            self.states.get(network_id),
-            Some(ChannelListPhase::Failed {
-                drain_stale_end: true,
-                ..
-            })
-        );
+        // Only a failed load whose fence is unanswered hands it to the next load.
+        let stale_fence = match self.states.get(network_id) {
+            Some(ChannelListPhase::Failed { stale_fence, .. }) => stale_fence.clone(),
+            _ => None,
+        };
         self.states.insert(
             network_id.to_owned(),
             ChannelListPhase::Loading {
                 mask: mask.to_owned(),
                 rows: Vec::new(),
                 queued_mask: None,
-                drain_stale_end,
+                stale_fence,
             },
         );
         self.arm(network_id);
@@ -210,27 +214,35 @@ impl ChannelListRequests {
     }
 
     /// Stores one streamed 322 row. A row replaces the one that has the same channel
-    /// under case folding. Empty channels and rows outside a load are ignored, and a new
-    /// row past `CHANNEL_LIST_MAX_ROWS` is dropped. Returns whether a row was replaced.
-    fn row(&mut self, network_id: &str, row: ListedChannel) -> bool {
+    /// under case folding. Empty channels and rows outside a load are ignored, a row
+    /// before the stale fence's PONG belongs to the timed-out load and is dropped, and a
+    /// new row past `CHANNEL_LIST_MAX_ROWS` is dropped.
+    fn row(&mut self, network_id: &str, row: ListedChannel) -> RowOutcome {
         if row.name.is_empty() || !self.phase(network_id).is_loading() {
-            return false;
+            return RowOutcome::Ignored;
         }
         self.arm(network_id);
-        let Some(ChannelListPhase::Loading { rows, .. }) = self.states.get_mut(network_id) else {
-            return false;
+        let Some(ChannelListPhase::Loading {
+            rows, stale_fence, ..
+        }) = self.states.get_mut(network_id)
+        else {
+            return RowOutcome::Ignored;
         };
+        if stale_fence.is_some() {
+            return RowOutcome::Ignored;
+        }
         if let Some(index) = rows
             .iter()
             .position(|existing| existing.name.to_lowercase() == row.name.to_lowercase())
         {
             rows[index] = row;
-            return true;
+            return RowOutcome::Replaced;
         }
         if rows.len() < CHANNEL_LIST_MAX_ROWS {
             rows.push(row);
+            return RowOutcome::Added;
         }
-        false
+        RowOutcome::Ignored
     }
 
     /// The server is still streaming (321 or a row): the idle window starts over.
@@ -240,23 +252,16 @@ impl ChannelListRequests {
         }
     }
 
-    /// The 323 end of a load (`Finish`). A stale end after a timeout is drained and the
-    /// load keeps going. Otherwise the load completes, and a pending mask that differs
-    /// from the current one is handed back to start next.
+    /// The 323 end of a load (`Finish`). A 323 before the stale fence's PONG is the
+    /// timed-out load's late end: it is drained and the load keeps going. Otherwise the
+    /// load completes, and a pending mask that differs from the current one is handed
+    /// back to start next.
     fn finish(&mut self, network_id: &str) -> FinishResult {
         let draining = match self.states.get_mut(network_id) {
-            Some(ChannelListPhase::Loading {
-                drain_stale_end, ..
-            }) if *drain_stale_end => {
-                *drain_stale_end = false;
-                true
-            }
-            Some(ChannelListPhase::Loading { .. }) => false,
-            Some(ChannelListPhase::Failed {
-                drain_stale_end, ..
-            }) => {
+            Some(ChannelListPhase::Loading { stale_fence, .. }) => stale_fence.take().is_some(),
+            Some(ChannelListPhase::Failed { stale_fence, .. }) => {
                 // A failed load keeps its error and rows. Its stale end is absorbed here.
-                *drain_stale_end = false;
+                *stale_fence = None;
                 return FinishResult::default();
             }
             None | Some(ChannelListPhase::Idle | ChannelListPhase::Complete { .. }) => {
@@ -295,9 +300,10 @@ impl ChannelListRequests {
     }
 
     /// Fails an in-flight load (`Fail`). Only a loading request can fail. The rows it had
-    /// stay, and a timed-out failure leaves its stale end to drain. Returns whether
-    /// anything changed.
-    fn fail(&mut self, network_id: &str, text: &str, timed_out: bool) -> bool {
+    /// stay. `fence` is the PING a timeout wrote: until its PONG, the failed load's late
+    /// end may still come. Without one, the load keeps the fence it already had.
+    /// Returns whether anything changed.
+    pub(super) fn fail(&mut self, network_id: &str, text: &str, fence: Option<String>) -> bool {
         if !self.phase(network_id).is_loading() {
             return false;
         }
@@ -305,7 +311,7 @@ impl ChannelListRequests {
         let Some(ChannelListPhase::Loading {
             mask,
             rows,
-            drain_stale_end,
+            stale_fence,
             ..
         }) = self.states.remove(network_id)
         else {
@@ -317,10 +323,30 @@ impl ChannelListRequests {
                 mask,
                 rows,
                 error: text.to_owned(),
-                drain_stale_end: drain_stale_end || timed_out,
+                stale_fence: fence.or(stale_fence),
             },
         );
         true
+    }
+
+    /// A new fence token for a timed-out load (`nextFence`).
+    fn next_fence(&mut self) -> String {
+        self.generation += 1;
+        format!("{CHANNEL_LIST_FENCE_PREFIX}{}", self.generation)
+    }
+
+    /// The PONG of a fence: every answer to the timed-out `LIST` has arrived, so no
+    /// stale end is still to come (`FenceAnswered`). Another token changes nothing.
+    fn fence_answered(&mut self, network_id: &str, token: &str) {
+        if let Some(
+            ChannelListPhase::Loading { stale_fence, .. }
+            | ChannelListPhase::Failed { stale_fence, .. },
+        ) = self.states.get_mut(network_id)
+        {
+            if stale_fence.as_deref() == Some(token) {
+                *stale_fence = None;
+            }
+        }
     }
 
     /// Drops the timer and every fact about one network (`Forget`).
@@ -372,6 +398,16 @@ impl ChannelListRequests {
             timer.stop();
         }
     }
+}
+
+/// What a streamed 322 did to the request's rows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RowOutcome {
+    /// The row was not stored: no load, an empty name, a stale row, or the cap.
+    Ignored,
+    Added,
+    /// The row replaced the one with the same channel.
+    Replaced,
 }
 
 /// What a 323 did (`ChannelListRequest::FinishResult`).
@@ -637,7 +673,7 @@ impl Controller {
 
     /// Fails the request and, when the overlay is on this network, the overlay too.
     fn fail_channel_list(&mut self, network_id: &str, text: &str) -> bool {
-        if !self.channel_lists.fail(network_id, text, false) {
+        if !self.channel_lists.fail(network_id, text, None) {
             return false;
         }
         if self.channel_view.network_id == network_id {
@@ -663,12 +699,14 @@ impl Controller {
                         users,
                         topic,
                     };
-                    let replaced = self.channel_lists.row(network_id, row.clone());
-                    if self.channel_view.open
+                    let outcome = self.channel_lists.row(network_id, row.clone());
+                    if outcome != RowOutcome::Ignored
+                        && self.channel_view.open
                         && self.channel_view.network_id == network_id
                         && self.channel_view.loading
                     {
-                        self.channel_view.append_row(row, replaced);
+                        self.channel_view
+                            .append_row(row, outcome == RowOutcome::Replaced);
                     }
                 }
                 true
@@ -679,6 +717,18 @@ impl Controller {
             }
             "323" => {
                 self.finish_channel_list(network_id);
+                true
+            }
+            "PONG" => {
+                let token = message
+                    .params
+                    .last()
+                    .map(|token| wire_text(token))
+                    .unwrap_or_default();
+                if !token.starts_with(CHANNEL_LIST_FENCE_PREFIX) {
+                    return false;
+                }
+                self.channel_lists.fence_answered(network_id, &token);
                 true
             }
             _ => self.fail_channel_list_from_numeric(network_id, message),
@@ -696,12 +746,21 @@ impl Controller {
     }
 
     /// Runs one idle-timeout expiry, if one is due. The stalled load fails with the
-    /// timeout text. Returns whether a timeout ran.
+    /// timeout text, and a PING fence goes out after its `LIST`, so the next load can
+    /// tell that load's late answer from its own. Returns whether a timeout ran.
     pub(super) fn run_channel_list_expiry(&mut self) -> bool {
         let Some(network_id) = self.channel_lists.take_expiry() else {
             return false;
         };
-        if self.channel_lists.fail(&network_id, CHANNEL_LIST_TIMEOUT_TEXT, true)
+        if !self.channel_lists.phase(&network_id).is_loading() {
+            return true;
+        }
+        let token = self.channel_lists.next_fence();
+        let fenced = self
+            .session(&network_id)
+            .is_some_and(|session| session.send_raw(&format!("PING :{token}")));
+        let fence = fenced.then_some(token);
+        if self.channel_lists.fail(&network_id, CHANNEL_LIST_TIMEOUT_TEXT, fence)
             && self.channel_view.network_id == network_id
         {
             self.channel_view.fail(CHANNEL_LIST_TIMEOUT_TEXT);
