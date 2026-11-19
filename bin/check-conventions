@@ -869,6 +869,83 @@ def check_reader_position_single_value():
     return problems
 
 
+# App shortcuts bind as `secondary-<key>` (Ctrl on Linux/Windows, Cmd on macOS).
+# A test that sends `ctrl-<letter>` matches no binding on macOS CI. Named keys
+# (`ctrl-left`, `ctrl-backspace`, ...) are real Ctrl bindings on every platform
+# and stay allowed: only a single letter or digit after the modifiers is wrong.
+CTRL_LETTER_CHORD = re.compile(
+    r"(?<![\w-])ctrl-(?:(?:shift|alt)-)*[a-z0-9](?![\w-])")
+CFG_TEST_MODULE = re.compile(
+    r"^#\[cfg\(test\)\]\s*\n\s*(?:pub(?:\([a-z]+\))?\s+)?mod\s", re.MULTILINE)
+
+
+def _ctrl_chord_scope(posix, source):
+    """The part of a client/src file that is test code, or None."""
+    parts = posix.split("/")
+    if "tests" in parts[:-1] or parts[-1] == "tests.rs":
+        return source
+    match = CFG_TEST_MODULE.search(source)
+    return source[match.start():] if match else None
+
+
+def _ctrl_chord_problems(posix, source):
+    scope = _ctrl_chord_scope(posix, source)
+    if scope is None:
+        return []
+    first = source.count("\n", 0, len(source) - len(scope)) + 1
+    problems = []
+    for offset, line in enumerate(scope.splitlines()):
+        if line.lstrip().startswith("//") or "KeyBinding::new" in line:
+            continue
+        if CTRL_LETTER_CHORD.search(line):
+            problems.append(
+                f"{posix}:{first + offset}: a test keystroke names `ctrl-` plus "
+                f"a letter; app shortcuts bind as `secondary-`, so press "
+                f"`secondary-...` or the chord misses on macOS")
+    return problems
+
+
+def _self_test_ctrl_chord_gate():
+    inline = (
+        "fn f() {}\n#[cfg(test)]\nmod tests {\n"
+        "    fn t() { ui.keys(\"%s\"); }\n}\n")
+    samples = (
+        ("client/src/ui/tests/search.rs", 'ui.keys("ctrl-shift-f");\n', True),
+        ("client/src/ui/tests/drafts.rs", 'ui.keys("ctrl-f");\n', True),
+        ("client/src/ui/tests/x.rs", 'ui.keys("tab ctrl-k enter");\n', True),
+        ("client/src/ui/tests/x.rs", 'ui.keys("ctrl-alt-9");\n', True),
+        ("client/src/ui/tests/x.rs", 'ui.keys("secondary-shift-f");\n', False),
+        ("client/src/ui/tests/x.rs", 'ui.keys("ctrl-left");\n', False),
+        ("client/src/ui/tests/x.rs", 'ui.keys("ctrl-shift-right");\n', False),
+        ("client/src/ui/tests/x.rs", 'ui.keys("ctrl-backspace ctrl-delete");\n', False),
+        ("client/src/ui/tests/x.rs", 'ui.keys("ctrl-home ctrl-end");\n', False),
+        ("client/src/ui/tests/x.rs", 'TempDir::new("ctrl-drafts-ttl");\n', False),
+        ("client/src/ui/tests/x.rs", "// a hard-coded `ctrl-f` misses\n", False),
+        ("client/src/ui/input.rs", 'KeyBinding::new("ctrl-a", A, None),\n', False),
+        ("client/src/ui/input.rs", inline % "ctrl-f", True),
+        ("client/src/ui/input.rs", inline % "ctrl-left", False),
+    )
+    for posix, text, want_problem in samples:
+        got = _ctrl_chord_problems(posix, text)
+        if bool(got) != want_problem:
+            raise AssertionError(
+                f"ctrl chord self-test failed for {posix!r}: "
+                f"problems={got!r}, want_problem={want_problem}")
+
+
+def check_tests_press_secondary_chords():
+    """Tests press `secondary-<letter>`, never `ctrl-<letter>`."""
+    try:
+        _self_test_ctrl_chord_gate()
+    except AssertionError as exc:
+        return [str(exc)]
+
+    problems = []
+    for relative, source in sources("client/src/**/*.rs"):
+        problems.extend(_ctrl_chord_problems(relative.as_posix(), source))
+    return problems
+
+
 GO_TITLE_STRINGS = ("- Omairc", '" Status"')
 GO_TITLE_SOURCE = Path("tui/internal/ui/title.go")
 
@@ -1762,6 +1839,8 @@ CHECKS = (
     ("Go title strings only in title.go", check_go_title_strings),
     ("read-marker SET has one caller", check_read_marker_set_single_caller),
     ("reader position is one value", check_reader_position_single_value),
+    ("tests press secondary chords, not ctrl letters",
+     check_tests_press_secondary_chords),
     ("macOS CI host arch selection", check_macos_ci_arch_selection),
     ("CI packages only on tags and dispatch", check_ci_package_triggers),
     ("macOS CI Bash 3.2 builtins", check_macos_ci_bash32),
