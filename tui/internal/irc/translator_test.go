@@ -66,6 +66,34 @@ func TestTranslatesNoticeUpdatesAccountButProducesNoTranscriptEvent(t *testing.T
 	requireString(t, "account", account.Account, "services")
 }
 
+// TestTranslatesNickTargetedNoticeIntoTheDirect mirrors the desktop notice
+// translator: a NOTICE to us from a person files into that person's direct
+// message, an echoed NOTICE we sent files into the target's, and network,
+// server, and service notices stay on Status only.
+func TestTranslatesNickTargetedNoticeIntoTheDirect(t *testing.T) {
+	sent := translateLine(t, ":omairc!u@h NOTICE alice :heads up")
+	requireInt(t, "echoed notice events", len(sent), 1)
+	echo, ok := sent[0].(NoticeEvent)
+	requireTrue(t, "echoed notice event", ok)
+	requireString(t, "echoed notice conversation", echo.Conversation.NormalizedTarget, "alice")
+	requireString(t, "echoed notice target", echo.Target, "alice")
+
+	for _, line := range []string{
+		":NickServ!NickServ@services.example NOTICE omairc :This nickname is registered",
+		":ChanServ!u@h NOTICE omairc :[#room] welcome",
+		":irc.example NOTICE omairc :*** Looking up your hostname",
+		":irc.example NOTICE * :*** Checking Ident",
+		":alice!u@h NOTICE AUTH :hi",
+		":alice!u@h NOTICE * :hi",
+		":alice!u@h NOTICE omairc :\x01VERSION omairc\x01",
+		"@+draft/channel-context=#room :eve!u@h NOTICE omairc :heads up",
+	} {
+		if events := translateLine(t, line); len(events) != 0 {
+			t.Fatalf("%q produced %d events, want 0 (Status only)", line, len(events))
+		}
+	}
+}
+
 func TestTranslatesPrivmsgChannelAndDirectDisplayTarget(t *testing.T) {
 	events := translateLine(t, ":alice!u@h PRIVMSG #room :hello")
 	requireInt(t, "channel events", len(events), 1)
@@ -477,9 +505,15 @@ func TestChannelContextPrivateLineIsOnlyVisibleToYou(t *testing.T) {
 	requireTrue(t, "notice event", ok)
 	requireTrue(t, "notice only you", noticeEvent.OnlyVisibleToYou)
 	requireString(t, "notice target", noticeEvent.Target, "#room")
-	if events := translateLine(t, ":alice!u@h NOTICE omairc :dm notice"); len(events) != 0 {
-		t.Fatalf("DM NOTICE produced %d events, want 0", len(events))
-	}
+	dmNotice := translateLine(t, ":alice!u@h NOTICE omairc :dm notice")
+	requireInt(t, "DM notice events", len(dmNotice), 1)
+	dm, ok := dmNotice[0].(NoticeEvent)
+	requireTrue(t, "DM notice event", ok)
+	requireString(t, "DM notice author", dm.Author, "alice")
+	requireString(t, "DM notice target", dm.Target, "alice")
+	requireString(t, "DM notice conversation", dm.Conversation.NormalizedTarget, "alice")
+	requireString(t, "DM notice body", dm.Body, "dm notice")
+	requireFalse(t, "DM notice only you", dm.OnlyVisibleToYou)
 
 	batch := HistoryBatch{
 		Target: "#room",

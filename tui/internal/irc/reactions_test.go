@@ -20,11 +20,22 @@ func TestTranslatesReplyTagOnChatNoticeAndAction(t *testing.T) {
 	requireTrue(t, "action event", ok)
 	requireString(t, "action reply to", action.ReplyTo.Value, "parent1")
 
+	// A nick-targeted notice from a person files into their direct message and
+	// keeps the reply target.
 	events = translateLine(t, "@+draft/reply=parent1 :alice!u@h NOTICE omairc :re: that")
-	if len(events) != 0 {
-		// A direct notice produces no transcript event in the TUI, as before.
-		t.Fatalf("notice events = %d", len(events))
-	}
+	requireInt(t, "direct notice events", len(events), 1)
+	notice, ok := events[0].(NoticeEvent)
+	requireTrue(t, "direct notice event", ok)
+	requireString(t, "direct notice conversation", notice.Conversation.NormalizedTarget, "alice")
+	requireString(t, "notice reply to", notice.ReplyTo.Value, "parent1")
+
+	// So does a channel-context notice delivered to you inside a channel.
+	events = translateJoined(t, "@+draft/reply=parent1;+draft/channel-context=#room :bot!u@h NOTICE omairc :re: that", roomMemberLookup())
+	requireInt(t, "channel notice events", len(events), 1)
+	notice, ok = events[0].(NoticeEvent)
+	requireTrue(t, "channel notice event", ok)
+	requireString(t, "channel notice target", notice.Target, "#room")
+	requireString(t, "channel notice reply to", notice.ReplyTo.Value, "parent1")
 
 	events = translateLine(t, ":alice!u@h PRIVMSG #room :hello")
 	requireString(t, "plain reply to", events[0].(MessageEvent).ReplyTo.Value, "")

@@ -78,6 +78,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   edited. Typing into Name on a saved network no longer moved the focus onto
   Host and wrote Name's text into it. Ctrl+N and "+ Add network" land on Name,
   as the desktop does.
+- The terminal client files a NOTICE that a person sends to you into that
+  person's direct message, as the desktop does, and still shows it on Status.
+  Server, network, and service notices (NickServ, ChanServ) stay on Status
+  only.
 - The desktop client restores a saved transcript place once history arrives, and
   no longer saves the "New messages" divider or a day separator as the place.
   Capture anchors on the first restorable row at or below the top of the view.
