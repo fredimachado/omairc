@@ -436,3 +436,14 @@ commit and toolchain produce byte-identical archives.
   workflow. That is intended: changing the shared gate must validate it. Root
   `bin/test` exports `OMAIRC_CONVENTIONS_RAN` so the gate runs the shared
   checks only once.
+- The live-ircd suite lives in `internal/live/`: a harness (`env.go`,
+  `client.go`, `wait.go`) that mirrors `client/src/live/` and drives a real
+  `controller.Controller` over `session.NetTransport`, plus cases that mirror
+  `client/tests/live/` with matching names (`register_plain` →
+  `TestRegisterPlain`). Every file carries `//go:build live`, so `go test
+  ./...` and `tui/bin/test` stay offline. `bin/test-live` runs it after the
+  Rust suite against the same compose fixtures; `tui.yml`'s `live` job runs it
+  alone (`OMAIRC_LIVE_SUITES=go`) because `test.yml` ignores `tui/**`. Without
+  `OMAIRC_LIVE_DAEMONS` a case fails closed; a case that needs one daemon or
+  cap the profile lacks skips. Call controller methods through `Client.Do`,
+  which holds the controller lock as the shell's `Update` does.

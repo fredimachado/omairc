@@ -1,6 +1,11 @@
 #!/usr/bin/env sh
-# Live ircd fixtures (compose) plus the Rust live suite.
+# Live ircd fixtures (compose) plus the Rust and Go live suites.
 # Needs Docker. Keeps tests/live/ compose, certs, and configs.
+#
+# OMAIRC_LIVE_SUITES picks the suites (default "rust go"). The Rust suite needs
+# cargo. The Go suite (tui/internal/live, build tag `live`) runs after Rust when
+# go is on PATH; naming "go" explicitly makes a missing go an error. tui.yml
+# sets OMAIRC_LIVE_SUITES=go so a TUI-only pull request gets live coverage.
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
@@ -19,10 +24,38 @@ if ! docker compose version >/dev/null 2>&1; then
   exit 1
 fi
 
-command -v cargo >/dev/null 2>&1 || {
-  echo "cargo is required to run Rust live tests." >&2
+SUITES="${OMAIRC_LIVE_SUITES:-rust go}"
+RUN_RUST=0
+RUN_GO=0
+for suite in $SUITES; do
+  case "$suite" in
+    rust) RUN_RUST=1 ;;
+    go) RUN_GO=1 ;;
+    *)
+      echo "Unknown live suite $suite (expected rust or go)." >&2
+      exit 1
+      ;;
+  esac
+done
+if [ "$RUN_RUST" -eq 0 ] && [ "$RUN_GO" -eq 0 ]; then
+  echo "OMAIRC_LIVE_SUITES names no suite." >&2
   exit 1
-}
+fi
+
+if [ "$RUN_RUST" -eq 1 ]; then
+  command -v cargo >/dev/null 2>&1 || {
+    echo "cargo is required to run Rust live tests." >&2
+    exit 1
+  }
+fi
+if [ "$RUN_GO" -eq 1 ] && ! command -v go >/dev/null 2>&1; then
+  if [ -n "${OMAIRC_LIVE_SUITES:-}" ]; then
+    echo "go is required to run Go live tests." >&2
+    exit 1
+  fi
+  echo "go is not on PATH; skipping the Go live suite." >&2
+  RUN_GO=0
+fi
 
 compose() {
   docker compose -f "$COMPOSE_FILE" --profile "$PROFILE" "$@"
@@ -173,18 +206,36 @@ fi
 export OMAIRC_LIVE_DAEMONS="$DAEMONS"
 echo "Live daemons: $DAEMONS"
 
-echo "Running Rust live tests (controller + net transport)..."
-set +e
-(
-  cd "$ROOT/client"
-  cargo test --test live --locked -- --ignored --test-threads=1
-)
-rust_status=$?
-set -e
-if [ "$rust_status" -ne 0 ]; then
-  echo "Rust live tests failed; compose logs follow." >&2
-  compose logs >&2 || true
-  exit "$rust_status"
+if [ "$RUN_RUST" -eq 1 ]; then
+  echo "Running Rust live tests (controller + net transport)..."
+  set +e
+  (
+    cd "$ROOT/client"
+    cargo test --test live --locked -- --ignored --test-threads=1
+  )
+  rust_status=$?
+  set -e
+  if [ "$rust_status" -ne 0 ]; then
+    echo "Rust live tests failed; compose logs follow." >&2
+    compose logs >&2 || true
+    exit "$rust_status"
+  fi
+fi
+
+if [ "$RUN_GO" -eq 1 ]; then
+  echo "Running Go live tests (tui controller + net transport)..."
+  set +e
+  (
+    cd "$ROOT/tui"
+    go test -tags live -count=1 -p 1 -v ./internal/live/
+  )
+  go_status=$?
+  set -e
+  if [ "$go_status" -ne 0 ]; then
+    echo "Go live tests failed; compose logs follow." >&2
+    compose logs >&2 || true
+    exit "$go_status"
+  fi
 fi
 
 echo "bin/test-live: ok"

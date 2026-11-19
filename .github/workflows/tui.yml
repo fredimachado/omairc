@@ -24,6 +24,8 @@ on:
       - 'Formula/omairc-tui.rb'
       - 'bucket/omairc-tui.json'
       - '.github/workflows/tui.yml'
+      - 'bin/test-live'
+      - 'tests/live/**'
   push:
     branches:
       - main
@@ -41,6 +43,8 @@ on:
       - 'Formula/omairc-tui.rb'
       - 'bucket/omairc-tui.json'
       - '.github/workflows/tui.yml'
+      - 'bin/test-live'
+      - 'tests/live/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -112,6 +116,27 @@ jobs:
             printf '%s\n' "${archives[@]}" >&2
             exit 1
           fi
+
+  # test.yml ignores tui/**, so a TUI-only pull request would otherwise never
+  # reach the live ircd fixtures. Run only the Go live suite here; test.yml's
+  # live job runs both suites when the desktop side changes.
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache-dependency-path: tui/go.sum
+
+      - name: Run the Go live suite
+        env:
+          OMAIRC_LIVE_PROFILE: l1
+          OMAIRC_LIVE_SUITES: go
+        run: bin/test-live
 
   # Dry-build packaging/tui/PKGBUILD in an Arch container so a PKGBUILD
   # regression fails the pull request instead of release-package.yml's tag

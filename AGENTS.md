@@ -226,9 +226,14 @@ cargo, and lavapipe (`vulkan-swrast`). It drives
 replays every feature fence the same way. `bin/test-install` stages the six
 packager paths from that release binary (binary, desktop file, SVG, bash
 completion, LICENSE, OFL).
-`bin/test-live` needs Docker. It drives Ergo, Solanum, and ngIRCd, then the
-Rust live suite under `tests/live/`. It fails if `docker` or `docker compose`
-is missing.
+`bin/test-live` needs Docker. It starts Ergo, Solanum, and ngIRCd, runs the
+Rust live suite under `client/tests/live/`, then the Go live suite under
+`tui/internal/live/` (build tag `live`) when `go` is on `PATH`. Both suites
+prove the shared contract (conversation causes, server features) on real wire,
+so a live case added to one usually belongs in the other under the same name.
+`OMAIRC_LIVE_SUITES` (`rust`, `go`, or both) picks the suites; `tui.yml` runs
+the Go one so a TUI-only pull request still reaches the fixtures. It fails if
+`docker` or `docker compose` is missing.
 
 For visual changes, inspect the running window and the screenshots under
 `test-artifacts/verify-desktop/`.

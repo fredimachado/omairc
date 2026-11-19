@@ -178,7 +178,8 @@ bin/test-live
 
 `bin/test-desktop` needs Xvfb, Xauthority, xdotool, xinput, ImageMagick,
 cargo, and lavapipe; it drives the Rust release binary through
-`control-omairc-desktop`. `bin/test-live` needs Docker.
+`control-omairc-desktop`. `bin/test-live` needs Docker; it runs the Rust and
+Go live suites against Ergo, Solanum, and ngIRCd.
 
 ## Windows
 
