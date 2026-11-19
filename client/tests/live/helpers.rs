@@ -61,11 +61,17 @@ pub fn saw_channel_mode(incoming: &[IrcMessage], channel: &str, mode: char) -> b
         if !wire_text(&message.params[0]).eq_ignore_ascii_case(channel) {
             return false;
         }
-        message
-            .params
-            .iter()
-            .skip(1)
-            .any(|param| wire_text(param).contains(mode))
+        // Only the mode string (params[1]): require `mode` inside a `+` run.
+        let mut adding = false;
+        for character in wire_text(&message.params[1]).chars() {
+            match character {
+                '+' => adding = true,
+                '-' => adding = false,
+                flag if adding && flag == mode => return true,
+                _ => {}
+            }
+        }
+        false
     })
 }
 

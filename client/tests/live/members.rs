@@ -185,6 +185,9 @@ fn peer_nick_change() {
             "{} DM before-marker",
             daemon.name
         );
+        let before_rows = direct_rows_for(&client, &old_nick);
+        assert_eq!(before_rows.len(), 1, "{} one DM before nick", daemon.name);
+        let before_id = before_rows[0].conversation_id.clone();
 
         assert!(peer
             .controller
@@ -215,7 +218,7 @@ fn peer_nick_change() {
             );
             assert_eq!(old_rows[0].target, new_nick, "{}", daemon.name);
             assert_eq!(
-                old_rows[0].conversation_id, new_rows[0].conversation_id,
+                new_rows[0].conversation_id, before_id,
                 "{} same conversation key",
                 daemon.name
             );
@@ -225,6 +228,11 @@ fn peer_nick_change() {
                 "{} ascii must not keep a DM under {}",
                 daemon.name,
                 old_nick
+            );
+            assert_ne!(
+                new_rows[0].conversation_id, before_id,
+                "{} ascii moves the DM key",
+                daemon.name
             );
         }
 
