@@ -7,6 +7,7 @@ mod classic;
 mod harness;
 mod helpers;
 mod invention;
+mod invites;
 mod members;
 mod monitor;
 mod multiline;
