@@ -28,6 +28,28 @@ SCREENSHOT_GRAB_ATTEMPTS=5
 SCREENSHOT_GRAB_DELAY=0.3
 SCREENSHOT_FLAT_STDDEV=0.005
 SCREENSHOT_FLAT_COLORS=16
+# Under Xvfb + lavapipe a frame reaches X well after the input that caused
+# it. Xvfb's mode has no clock, so gpui ticks at 60 Hz, and for a second
+# after each input it re-renders the whole scene every tick; the client
+# also repaints at least every 200 ms when idle (caret blink, transcript
+# timer). Software rendering falls behind, and a grab right after an
+# action shows the frame from before it: 0.5-0.8 s late is common, over
+# 2 s on a loaded host. screenshot keeps grabbing until the window is
+# quiet: every grab is pixel-identical to one of the SETTLE_HISTORY grabs
+# before it. That lets short cycles through (the caret blink is two
+# frames, the typing dots three, six together) without hiding a typed
+# character, which differs by about as few pixels as the caret.
+# Until a change lands the shot may still be stale, so it needs
+# SETTLE_QUIET_MS of quiet; once one has landed the renderer has caught
+# up, and SETTLE_AFTER_CHANGE_MS is enough to catch a follow-up frame.
+# SETTLE_MAX_MS bounds a window that never goes quiet. A pointer nudge
+# does not help: the client is not missing a repaint, it is behind on
+# them, and motion that changes no hover state draws nothing.
+SCREENSHOT_SETTLE_POLL=0.1
+SCREENSHOT_SETTLE_QUIET_MS=2000
+SCREENSHOT_SETTLE_AFTER_CHANGE_MS=750
+SCREENSHOT_SETTLE_MAX_MS=8000
+SCREENSHOT_SETTLE_HISTORY=6
 # wait-title polls the X11 window name. Cold demo launch can briefly show an
 # unfocused attention preview (author: body - Omairc) until the window is
 # focused and the seed settles; three seconds was flaking full recipe replay.
@@ -1126,6 +1148,7 @@ cmd_key() {
     ctrl+grave) key=Control_L+grave ;;
     ctrl+comma) key=Control_L+comma ;;
     ctrl+shift+slash) key=Control_L+Shift_L+slash ;;
+    ctrl+shift+f) key=Control_L+Shift_L+f ;;
     ctrl+shift+k) key=Control_L+Shift_L+k ;;
     ctrl+shift+m) key=Control_L+Shift_L+m ;;
     ctrl+shift+p) key=Control_L+Shift_L+p ;;
@@ -1337,25 +1360,78 @@ cmd_screenshot() {
   dest="$EVIDENCE_DIR/$feature"
   mkdir -p "$dest"
   path="$dest/$name.png"
+  grab_window_frame "$path"
+  settle_window_frame "$path"
+  echo "$path"
+}
+
+# Grab the window into PATH, retrying a failed or near-solid grab. Dies when
+# the latest grab is still missing or flat.
+grab_window_frame() {
+  _grab_path=$1
   _attempt=1
   while :; do
     # A failed import must not classify the previous PNG as this grab.
-    rm -f -- "$path"
-    if import -display "$DISPLAY" -window "$WINDOW" "$path"; then
-      if ! screenshot_is_near_solid "$path"; then
-        echo "$path"
+    rm -f -- "$_grab_path"
+    if import -display "$DISPLAY" -window "$WINDOW" "$_grab_path"; then
+      if ! screenshot_is_near_solid "$_grab_path"; then
         return 0
       fi
     else
-      rm -f -- "$path"
+      rm -f -- "$_grab_path"
     fi
     [ "$_attempt" -lt "$SCREENSHOT_GRAB_ATTEMPTS" ] || break
     _attempt=$((_attempt + 1))
     sleep "$SCREENSHOT_GRAB_DELAY"
   done
   # Latest grab failed, or it succeeded and is still near-solid.
-  _stats=$(screenshot_metrics "$path")
-  die "screenshot is missing, empty, or still a flat frame: $path${_stats:+ ($_stats)}"
+  _stats=$(screenshot_metrics "$_grab_path")
+  die "screenshot is missing, empty, or still a flat frame: $_grab_path${_stats:+ ($_stats)}"
+}
+
+# Print a digest of the decoded pixels, so identical frames match whatever
+# the PNG encoder did.
+frame_signature() {
+  magick identify -format '%#' "$1" 2>/dev/null || true
+}
+
+# Replace PATH with later grabs until the window is quiet long enough. See
+# SCREENSHOT_SETTLE_* above.
+settle_window_frame() {
+  _settle_path=$1
+  _settle_next="${_settle_path%.png}.settle.png"
+  _settle_history=$(frame_signature "$_settle_path")
+  _settle_start=$(now_ms)
+  _settle_quiet_since=$_settle_start
+  _settle_quiet_ms=$SCREENSHOT_SETTLE_QUIET_MS
+  while :; do
+    _settle_now=$(now_ms)
+    if [ $((_settle_now - _settle_quiet_since)) -ge "$_settle_quiet_ms" ]; then
+      break
+    fi
+    if [ $((_settle_now - _settle_start)) -ge "$SCREENSHOT_SETTLE_MAX_MS" ]; then
+      echo "control-omairc-desktop: $_settle_path still changing after ${SCREENSHOT_SETTLE_MAX_MS}ms; keeping the latest frame" >&2
+      break
+    fi
+    sleep "$SCREENSHOT_SETTLE_POLL"
+    grab_window_frame "$_settle_next"
+    mv -f -- "$_settle_next" "$_settle_path"
+    # An unreadable grab has no signature and counts as a change.
+    _settle_sig=$(frame_signature "$_settle_path")
+    case " $_settle_history " in
+      *" ${_settle_sig:-none} "*) ;;
+      *)
+        _settle_quiet_since=$(now_ms)
+        _settle_quiet_ms=$SCREENSHOT_SETTLE_AFTER_CHANGE_MS
+        ;;
+    esac
+    _settle_history=$(printf '%s %s\n' "$_settle_sig" "$_settle_history" |
+      awk -v keep="$SCREENSHOT_SETTLE_HISTORY" '{
+        n = NF < keep ? NF : keep
+        for (i = 1; i <= n; i++) printf "%s%s", $i, (i < n ? " " : "")
+      }')
+  done
+  rm -f -- "$_settle_next"
 }
 
 remap_verify_path() {
