@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -714,5 +715,100 @@ func TestChannelListStaleEndAfterTimeoutDoesNotCompleteTheNewerLoad(t *testing.T
 	state, _ = c.channelLists.State("freenode")
 	if state.Loading || !state.Complete || state.Mask != "#new" || len(state.Rows) != 1 {
 		t.Fatalf("state after the real end = %+v, want #new complete with one row", state)
+	}
+}
+
+// answerPings plays a server that answers every PING written from frame index from
+// on, in order, and returns the next index to read from.
+func answerPings(t *testing.T, transport *session.LoopbackTransport, from int) int {
+	t.Helper()
+	frames := transport.WrittenFrames()
+	for _, frame := range frames[from:] {
+		line := strings.TrimRight(string(frame), "\r\n")
+		if token, ok := strings.CutPrefix(line, "PING :"); ok {
+			inject(t, transport, ":server PONG irc.example :"+token+"\r\n")
+		}
+	}
+	return len(frames)
+}
+
+// TestChannelListAfterTimeoutCompletesOnItsOwnPromptEnd pins that a timed-out LIST
+// whose 323 never comes does not make later loads swallow their own prompt 323. The
+// server answers every PING it gets, the way a live one does.
+func TestChannelListAfterTimeoutCompletesOnItsOwnPromptEnd(t *testing.T) {
+	c, transport := phase7Setup(t)
+	clock := c.clock.(*session.FakeClock)
+
+	if !c.SendMessage("/list *") {
+		t.Fatal("SendMessage(/list *) = false")
+	}
+	clock.Advance(31 * time.Second)
+	read := answerPings(t, transport, 0)
+
+	for attempt := 1; attempt <= 3; attempt++ {
+		if !c.SendMessage("/list *") {
+			t.Fatalf("attempt %d: SendMessage(/list *) = false", attempt)
+		}
+		read = answerPings(t, transport, read)
+		inject(t, transport, ":server 321 omairc Channel :Users  Name\r\n"+
+			":server 322 omairc #omarchy 12 :cozy\r\n"+
+			":server 323 omairc :End of /LIST\r\n")
+		state, _ := c.channelLists.State("freenode")
+		if state.Loading || !state.Complete {
+			t.Fatalf("attempt %d: request = %+v, want the prompt 323 to complete it", attempt, state)
+		}
+		snapshot := c.ChannelListSnapshot()
+		if snapshot.Loading || !snapshot.Complete || snapshot.Error != "" || len(snapshot.Rows) != 1 {
+			t.Fatalf("attempt %d: overlay = %+v, want complete with one row", attempt, snapshot)
+		}
+	}
+}
+
+// TestChannelListTimeoutFailsTheOverlay pins that the idle timeout leaves "Loading"
+// on the overlay, not only on the request, and wakes the shell.
+func TestChannelListTimeoutFailsTheOverlay(t *testing.T) {
+	c, _ := phase7Setup(t)
+	clock := c.clock.(*session.FakeClock)
+	if !c.SendMessage("/list *") {
+		t.Fatal("SendMessage(/list *) = false")
+	}
+	woken := 0
+	c.OnViewChanged = func() { woken++ }
+
+	clock.Advance(31 * time.Second)
+
+	snapshot := c.ChannelListSnapshot()
+	if snapshot.Loading || snapshot.Complete || snapshot.Error != channelListTimeoutText {
+		t.Fatalf("overlay after timeout = %+v, want the timeout error", snapshot)
+	}
+	if woken == 0 {
+		t.Fatal("the timeout did not wake the shell")
+	}
+}
+
+// TestChannelListStreamsRowsIntoTheOverlay pins that 322 rows show on the overlay
+// while the load is still in flight, the way the desktop overlay streams them.
+func TestChannelListStreamsRowsIntoTheOverlay(t *testing.T) {
+	c, transport := phase7Setup(t)
+	if !c.SendMessage("/list *") {
+		t.Fatal("SendMessage(/list *) = false")
+	}
+	woken := 0
+	c.OnViewChanged = func() { woken++ }
+
+	inject(t, transport, ":server 322 omairc #low 2 :low\r\n"+
+		":server 322 omairc #high 9 :high\r\n"+
+		":server 322 omairc #LOW 5 :low again\r\n")
+
+	snapshot := c.ChannelListSnapshot()
+	if !snapshot.Loading || snapshot.Complete {
+		t.Fatalf("overlay = %+v, want still loading", snapshot)
+	}
+	if len(snapshot.Rows) != 2 || snapshot.Rows[0].Channel != "#high" ||
+		snapshot.Rows[1].Channel != "#LOW" || snapshot.Rows[1].Users != 5 {
+		t.Fatalf("streamed rows = %+v, want #high then the replaced #LOW", snapshot.Rows)
+	}
+	if woken == 0 {
+		t.Fatal("a streamed row did not wake the shell")
 	}
 }

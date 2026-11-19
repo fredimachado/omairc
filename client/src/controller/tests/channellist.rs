@@ -231,6 +231,49 @@ fn an_idle_timeout_fails_the_load_and_the_stale_end_is_absorbed() {
 }
 
 #[test]
+fn a_list_after_a_timeout_completes_on_its_own_prompt_end() {
+    // The timed-out LIST never gets a late 323. The demo answers every later LIST at
+    // once, with its rows and its 323, the way Ergo does.
+    let mut fixture = Fixture::seeded();
+    fixture.controller.list_channels(OMARCHY, "*");
+    fixture.controller.channel_lists.request(OMARCHY, "*", true);
+    fixture.clock.advance(Duration::from_secs(31));
+    fixture.controller.tick();
+    assert_eq!(error(&fixture), CHANNEL_LIST_TIMEOUT_TEXT);
+
+    for attempt in 1..=3 {
+        fixture.clear_frames(OMARCHY);
+        assert_eq!(fixture.controller.list_channels(OMARCHY, "*"), ListOutcome::Sent);
+        assert_eq!(fixture.frames(OMARCHY), ["LIST *\r\n"], "attempt {attempt}");
+        let view = fixture.controller.channel_list();
+        assert!(
+            view.complete && !view.loading && view.error.is_empty(),
+            "attempt {attempt}: the prompt 323 completes the load: {view:?}"
+        );
+        assert!(!view.rows.is_empty(), "attempt {attempt}");
+    }
+}
+
+#[test]
+fn a_timeout_writes_a_ping_fence_and_its_pong_ends_the_drain() {
+    let mut fixture = Fixture::seeded();
+    fixture.controller.channel_lists.request(OMARCHY, "*", false);
+    fixture.clear_frames(OMARCHY);
+    fixture.clock.advance(Duration::from_secs(31));
+    fixture.controller.tick();
+
+    let frames = fixture.frames(OMARCHY);
+    assert_eq!(frames.len(), 1, "one fence: {frames:?}");
+    assert!(
+        frames[0].starts_with("PING :omairc-list-"),
+        "the timeout fences the wire: {frames:?}"
+    );
+    // The demo answers the PING at once, so no stale end can still come.
+    assert!(!drain(&fixture), "the PONG ended the drain");
+    assert_eq!(error(&fixture), CHANNEL_LIST_TIMEOUT_TEXT);
+}
+
+#[test]
 fn a_stale_end_after_a_timeout_does_not_complete_the_newer_load() {
     let mut fixture = Fixture::seeded();
     timed_out_load(&mut fixture);
