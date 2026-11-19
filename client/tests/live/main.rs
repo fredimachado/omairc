@@ -3,6 +3,7 @@
 
 mod caps;
 mod channel;
+mod channellist;
 mod classic;
 mod harness;
 mod helpers;
