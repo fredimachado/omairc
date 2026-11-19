@@ -194,3 +194,45 @@ func TestListOpensOverlayAndJoins(t *testing.T) {
 		t.Fatalf("SelectedTarget = %q after Enter on /list, want #linux", got)
 	}
 }
+
+// TestListReopensWithAnEmptyFilter pins the desktop channel-list sheet, which
+// is built fresh on every /list: a filter typed into a dismissed overlay does
+// not carry into the next one, so `/list #linux` lists #linux instead of
+// "No matches".
+func TestListReopensWithAnEmptyFilter(t *testing.T) {
+	m := seededModel(t)
+	m.composer.Reset()
+	m.composer.SetValue("/list")
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !m.channelListVisible() {
+		t.Fatal("list overlay not open after /list")
+	}
+	for _, r := range "zzz" {
+		m = press(t, m, tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	if got := len(m.ctrl.ChannelListSnapshot().Rows); got != 0 {
+		t.Fatalf("filter zzz left %d rows, want none", got)
+	}
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
+	if m.channelListVisible() {
+		t.Fatal("list overlay stayed open after Escape")
+	}
+
+	m.composer.Reset()
+	m.composer.SetValue("/list #linux")
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !m.channelListVisible() {
+		t.Fatal("list overlay not open after /list #linux")
+	}
+	sheet := m.listSheet()
+	if got := sheet.input.Value(); got != "" {
+		t.Fatalf("reopened filter = %q, want empty", got)
+	}
+	snapshot := m.ctrl.ChannelListSnapshot()
+	if snapshot.Filter != "" {
+		t.Fatalf("controller filter = %q after reopen, want empty", snapshot.Filter)
+	}
+	if len(snapshot.Rows) == 0 || snapshot.Rows[0].Channel != "#linux" {
+		t.Fatalf("reopened rows = %+v, want #linux", snapshot.Rows)
+	}
+}

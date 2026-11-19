@@ -34,13 +34,15 @@ const channelListRowCap = 200
 // channelListVisible reports whether the /list overlay is open.
 func (m *Model) channelListVisible() bool { return m.listSheet() != nil }
 
-// openChannelList shows the overlay with the controller's current filter.
+// openChannelList shows the overlay with an empty filter. The desktop builds
+// its channel-list sheet fresh on every /list, so a filter typed into a
+// dismissed overlay never hides the rows of the next one.
 func (m *Model) openChannelList() {
 	if m.ctrl == nil {
 		return
 	}
+	m.ctrl.SetChannelListFilter("")
 	sheet := &channelListState{input: newTextInput(m.styles, "Filter channels", overlayFilterPrompt)}
-	sheet.input.SetValue(m.ctrl.ChannelListSnapshot().Filter)
 	sheet.input.SetWidth(m.overlayInputWidth())
 	m.setOverlay(sheet)
 	m.composer.Blur()
