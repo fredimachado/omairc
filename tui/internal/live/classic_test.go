@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/fredimachado/omairc/tui/internal/controller"
+	"github.com/fredimachado/omairc/tui/internal/irc"
 )
 
 // Mirrors `client/tests/live/classic.rs`.
@@ -192,7 +193,8 @@ func TestFailedJoinReason(t *testing.T) {
 		client.SelectChannel(channel)
 		if !client.WaitUntil(func(c *Client) bool {
 			for _, message := range c.Messages() {
-				// KindError maps to "event" in MessageSnapshot.
+				// KindError maps to "event" in MessageSnapshot; the reducer
+				// check below distinguishes KindError from KindEvent.
 				if message.Kind == "event" && message.Body == reason {
 					return true
 				}
@@ -200,6 +202,22 @@ func TestFailedJoinReason(t *testing.T) {
 			return false
 		}) {
 			t.Fatalf("%s error line in channel buffer (%s)", daemon.Name, reason)
+		}
+		var sawError bool
+		client.Do(func(ctrl *controller.Controller) {
+			conv := ctrl.Reducer().Find(ctrl.Reducer().ConversationKey(client.NetworkID, channel))
+			if conv == nil {
+				return
+			}
+			for _, message := range conv.Messages {
+				if message.Kind == irc.KindError && message.Body == reason {
+					sawError = true
+					return
+				}
+			}
+		})
+		if !sawError {
+			t.Fatalf("%s reducer KindError for 473 reason (%s)", daemon.Name, reason)
 		}
 	}
 }
