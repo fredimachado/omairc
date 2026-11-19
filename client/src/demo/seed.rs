@@ -21,7 +21,7 @@ pub const YESTERDAY: &str = "2026-09-11";
 /// The CAP LS and CAP ACK list the demo server advertises.
 pub const CAPS: &str = concat!(
     "echo-message message-tags labeled-response away-notify multi-prefix batch ",
-    "draft/metadata-2 server-time account-tag account-notify extended-join",
+    "draft/metadata-2 server-time account-tag account-notify extended-join draft/multiline",
 );
 
 /// The 005 tokens the demo server advertises.

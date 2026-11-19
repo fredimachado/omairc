@@ -376,3 +376,48 @@ fn transcript_mention_flag_follows_the_current_nick() {
     assert!(reducer.is_transcript_highlight(NETWORK_A, "Alice", MessageKind::Message, "hello fred"));
     assert!(!reducer.is_transcript_highlight(NETWORK_A, "fred", MessageKind::Message, "hello fred"), "own line");
 }
+
+// draft/multiline (#478): one assembled message is one event, so a mention on its
+// last line counts and notifies once.
+
+#[test]
+fn a_mention_on_the_last_line_of_a_multiline_message_counts_once() {
+    let mut reducer = EventReducer::new();
+    welcome_omairc(&mut reducer, NETWORK_A);
+    let selected = reducer.conversation_key(NETWORK_A, "#selected");
+    let background = reducer.conversation_key(NETWORK_A, "#background");
+    reducer.mark_selected(&selected);
+
+    fold(
+        &mut reducer,
+        message(&background, "Alice", "first line\nsecond line\nthird line, omairc", "#background"),
+    );
+    let state = state_of(&reducer, &background);
+    assert_eq!(state.unread, 1, "one message is one unread");
+    assert_eq!(state.mentions, 1, "one message is one mention");
+    assert!(reducer.take_mention_arrival().is_some(), "the mention notifies");
+    assert!(reducer.take_mention_arrival().is_none(), "and notifies once");
+    assert!(reducer.take_inbox_arrival().is_some(), "one inbox entry");
+    assert!(reducer.take_inbox_arrival().is_none(), "and one only");
+    assert_eq!(
+        bodies(state_of(&reducer, &background)),
+        vec!["first line\nsecond line\nthird line, omairc"]
+    );
+}
+
+#[test]
+fn the_same_text_as_three_separate_lines_counts_three_times() {
+    // The control: without multiline assembly, each line is its own message.
+    let mut reducer = EventReducer::new();
+    welcome_omairc(&mut reducer, NETWORK_A);
+    let selected = reducer.conversation_key(NETWORK_A, "#selected");
+    let background = reducer.conversation_key(NETWORK_A, "#background");
+    reducer.mark_selected(&selected);
+
+    for line in ["first line", "second line", "third line, omairc"] {
+        fold(&mut reducer, message(&background, "Alice", line, "#background"));
+    }
+    let state = state_of(&reducer, &background);
+    assert_eq!(state.unread, 3);
+    assert_eq!(state.mentions, 1);
+}

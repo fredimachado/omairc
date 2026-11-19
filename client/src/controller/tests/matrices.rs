@@ -86,6 +86,80 @@ fn a_human_privmsg_opens_a_direct_message() {
     assert!(has_conversation(&fixture, OMARCHY, "lena"));
 }
 
+/// One multiline batch from `sender` to `target`, delivered as the server sends it.
+fn deliver_multiline(fixture: &mut Fixture, sender: &str, target: &str, lines: &[&str]) {
+    fixture.deliver(
+        OMARCHY,
+        &format!(":{sender}!u@h BATCH +ml draft/multiline {target}"),
+    );
+    for line in lines {
+        fixture.deliver(
+            OMARCHY,
+            &format!("@batch=ml :{sender}!u@h PRIVMSG {target} :{line}"),
+        );
+    }
+    fixture.deliver(OMARCHY, &format!(":{sender}!u@h BATCH -ml"));
+}
+
+#[test]
+fn a_multiline_echo_of_our_own_message_never_opens_a_missing_direct_message() {
+    // The cases above for `draft/multiline` (#478): the echo is one self-authored message.
+    let mut fixture = Fixture::seeded();
+    fixture.controller.select_conversation(OMARCHY, "#omarchy");
+    deliver_multiline(&mut fixture, "fred", "lena", &["one", "two"]);
+    assert!(!has_conversation(&fixture, OMARCHY, "lena"));
+}
+
+#[test]
+fn a_multiline_echo_of_our_own_message_is_one_row_in_an_open_channel() {
+    let mut fixture = Fixture::seeded();
+    fixture.controller.select_conversation(OMARCHY, "#omarchy");
+    deliver_multiline(&mut fixture, "fred", "#omarchy", &["one", "two"]);
+    let rows = super::fixture::bodies(&fixture.controller);
+    assert_eq!(rows.iter().filter(|body| body.as_str() == "one\ntwo").count(), 1);
+    assert!(!rows.iter().any(|body| body == "one" || body == "two"));
+}
+
+#[test]
+fn the_multiline_demo_seed_lands_as_one_row_with_a_mention() {
+    let mut fixture = Fixture::seeded();
+    fixture.controller.select_conversation(OMARCHY, "#omarchy");
+    let before = super::fixture::bodies(&fixture.controller).len();
+    for line in crate::demo::wire::multiline_seed_lines() {
+        fixture.deliver(OMARCHY, &line);
+    }
+    let rows = super::fixture::bodies(&fixture.controller);
+    assert_eq!(rows.len(), before + 1, "three lines, one row");
+    assert_eq!(
+        rows.last().map(String::as_str),
+        Some(
+            "Notes from the ricing session:\none theme file, one accent, no fixed palette\n\
+             fred, does that match what you saw?"
+        )
+    );
+}
+
+#[test]
+fn a_nickserv_multiline_does_not_open_a_direct_message() {
+    let mut fixture = Fixture::seeded();
+    fixture.controller.select_conversation(OMARCHY, "#omarchy");
+    deliver_multiline(&mut fixture, "NickServ", "fred", &["This nickname", "is registered."]);
+    assert!(!has_conversation(&fixture, OMARCHY, "NickServ"));
+}
+
+#[test]
+fn a_human_multiline_opens_one_direct_message_with_one_row() {
+    let mut fixture = Fixture::seeded();
+    fixture.controller.select_conversation(OMARCHY, "#omarchy");
+    deliver_multiline(&mut fixture, "lena", "fred", &["hey there", "got a minute?"]);
+    assert!(has_conversation(&fixture, OMARCHY, "lena"));
+    fixture.controller.select_conversation(OMARCHY, "lena");
+    assert_eq!(
+        super::fixture::bodies(&fixture.controller),
+        vec!["hey there\ngot a minute?"]
+    );
+}
+
 #[test]
 fn an_invite_to_another_user_raises_no_inbox_row_and_no_status_entry() {
     // The invite rows of the cause matrix: an INVITE never inserts a conversation. Another

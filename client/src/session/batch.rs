@@ -10,11 +10,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::events::{HistoryBatch, HistoryKind, HistoryTarget, SessionEvent};
 use super::history::{HistoryRequestKind, InFlightRequest};
+use super::multiline::MultilineBuffer;
 use super::session::{
     replay_kind_for, Core, HISTORY_BUFFER_CEILING, MAX_IGNORED_BATCHES, MAX_OPEN_BATCHES,
 };
 use crate::irc::capability::IrcCapability;
 use crate::irc::message::IrcMessage;
+use crate::irc::multiline::MULTILINE_TYPE;
 
 /// One batch the session is collecting, or a child of one.
 #[derive(Clone, Debug, Default)]
@@ -35,6 +37,20 @@ pub(crate) struct OpenBatch {
     pub(crate) history_ended: bool,
     /// The CHATHISTORY request this batch answers, captured on open.
     pub(crate) history_request: Option<HistoryRequestKind>,
+    /// The lines of a `draft/multiline` batch, held until it closes.
+    pub(crate) multiline: Option<MultilineBuffer>,
+}
+
+impl OpenBatch {
+    /// Adds one line to the replay this root collects. Playback and LATEST are
+    /// oldest-first. A full buffer keeps the newest lines. Overflow stays
+    /// swallowed, so it cannot surface as live traffic.
+    pub(crate) fn push_collected(&mut self, message: IrcMessage) {
+        if self.collected.lines.len() >= HISTORY_BUFFER_CEILING {
+            self.collected.lines.remove(0);
+        }
+        self.collected.lines.push(message);
+    }
 }
 
 /// The open and ignored batch references of one connection.
@@ -97,8 +113,15 @@ impl Core {
             !solicited && !pending_labeled_response && self.batches.open.len() >= MAX_OPEN_BATCHES;
         let ignored = self.batches.ignored.contains(&reference);
         let parent_ignored = !parent.is_empty() && self.batches.ignored.contains(&parent);
+        // The spec does not nest batches in a multiline one.
+        let parent_multiline = self
+            .batches
+            .open
+            .get(&parent)
+            .is_some_and(|batch| batch.multiline.is_some());
         if ignored
             || parent_ignored
+            || parent_multiline
             || (over_open_cap && self.is_history_batch(&batch_type, &parent))
         {
             self.ignore_batch(&reference);
@@ -128,6 +151,9 @@ impl Core {
             frame.replay_root = parent_root;
         } else if kind.is_some() {
             frame.replay_root = reference.clone();
+        }
+        if batch_type.eq_ignore_ascii_case(MULTILINE_TYPE) {
+            self.open_multiline(&mut frame, message);
         }
         if frame.replay_root == reference {
             frame.kind = kind;
@@ -164,6 +190,11 @@ impl Core {
 
         if !frame.request_label.is_empty() {
             self.finish_request_label(&frame.request_label);
+        }
+
+        if let Some(buffer) = frame.multiline {
+            self.finish_multiline(&frame.replay_root, buffer);
+            return;
         }
 
         let is_root = frame.replay_root == reference;
@@ -236,6 +267,9 @@ impl Core {
         if self.batches.ignored.contains(&batch) {
             return true;
         }
+        if self.capture_multiline(&batch, message) {
+            return true;
+        }
         let Some(found) = self.batches.open.get(&batch) else {
             return false;
         };
@@ -246,12 +280,7 @@ impl Core {
         let Some(root) = self.batches.open.get_mut(&root_key) else {
             return false;
         };
-        // Playback and LATEST are oldest-first. A full buffer keeps the newest
-        // lines. Overflow stays swallowed, so it cannot surface as live traffic.
-        if root.collected.lines.len() >= HISTORY_BUFFER_CEILING {
-            root.collected.lines.remove(0);
-        }
-        root.collected.lines.push(message.clone());
+        root.push_collected(message.clone());
         true
     }
 

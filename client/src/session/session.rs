@@ -705,6 +705,9 @@ impl Core {
     /// Clears everything one connection learned: the framer, batches, history
     /// cursors, negotiated features, SASL and registration progress.
     pub(crate) fn reset_for_connection(&mut self) {
+        // Before the batches go: a multiline batch the connection cut short is
+        // still a message.
+        self.flush_open_multiline();
         self.framer = IrcFramer::new();
         self.batches = BatchLedger::default();
         self.history.reset();

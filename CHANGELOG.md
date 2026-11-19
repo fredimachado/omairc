@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transcript (default on), with `/pref colors` and Connect Preferences →
   Show mIRC colors sharing the desktop `showIrcColors` setting. Formatting
   stays when colors are off. Toggle refreshes lines already on screen.
+- Receive IRCv3 `draft/multiline` batches as one message in both clients: the
+  lines are joined with line breaks (`draft/multiline-concat` pieces with none),
+  take the sender, time and message id from the batch, wrap at the breaks, copy
+  back with their breaks, and notify and count as unread once. A batch nested in
+  CHATHISTORY replays the same way, and a batch that never closes is shown when
+  the connection ends. Sending multi-line messages is not supported (#478).
 
 ### Fixed
 

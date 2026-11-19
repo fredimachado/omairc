@@ -25,6 +25,7 @@ const (
 	CapabilityInviteNotify
 	CapabilitySetName
 	CapabilityUserhostInNames
+	CapabilityMultiline
 )
 
 // CapabilitySet is a bitmask of Capability values. It mirrors IrcCapabilitySet.

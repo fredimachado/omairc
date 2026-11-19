@@ -4,6 +4,7 @@
 
 mod fixture;
 mod layout;
+mod multiline;
 mod quit;
 mod reader_position;
 mod scroll_place;

@@ -938,6 +938,28 @@ mod tests {
     }
 
     #[test]
+    fn a_multiline_row_copies_with_its_breaks() {
+        let mut t = Transcript::new(10);
+        t.set_rows(vec![row_from_message(1, "mira", "09:41", "one\ntwo\nthree", false)]);
+        select_everything(&mut t);
+        assert_eq!(t.copy_text(), "one\ntwo\nthree");
+        t.begin(Pos { row: 0, offset: 2 });
+        t.extend(Pos { row: 0, offset: 9 });
+        assert_eq!(t.copy_text(), "e\ntwo\nt", "a partial selection keeps the breaks too");
+    }
+
+    #[test]
+    fn a_multiline_row_among_others_prefixes_only_its_first_line() {
+        let mut t = Transcript::new(10);
+        t.set_rows(vec![
+            row_from_message(1, "anna", "09:40", "hello", false),
+            row_from_message(2, "mira", "09:41", "one\ntwo", false),
+        ]);
+        select_everything(&mut t);
+        assert_eq!(t.copy_text(), "[09:40] <anna> hello\n[09:41] <mira> one\ntwo");
+    }
+
+    #[test]
     fn reversed_drag() {
         let mut t = Transcript::new(10);
         t.set_rows(sample_rows());

@@ -16,7 +16,7 @@ const (
 
 	// kCaps is the CAP LS/ACK list the demo server advertises.
 	kCaps = "echo-message message-tags labeled-response away-notify multi-prefix batch " +
-		"draft/metadata-2 server-time account-tag account-notify extended-join"
+		"draft/metadata-2 server-time account-tag account-notify extended-join draft/multiline"
 
 	// kIsupport is the 005 token list the demo server advertises.
 	kIsupport = "CHANTYPES=# PREFIX=(qaohv)~&@%+ CHANMODES=bq,k,l,imnpst MONITOR=100"

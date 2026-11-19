@@ -234,6 +234,20 @@ type openBatch struct {
 	// the bool is what distinguishes "we asked" from "no request".
 	historyRequestKind historyRequestKind
 	hasHistoryRequest  bool
+	// multiline holds the lines of a draft/multiline batch until it closes.
+	multiline *multilineBuffer
+}
+
+// pushCollected adds one line to the replay this root collects. Playback and
+// CHATHISTORY LATEST are oldest-first. A full buffer keeps the newest lines.
+// Overflow stays swallowed so it cannot surface as live traffic and move the
+// exclusive PLAY bound past lines never kept.
+func (b *openBatch) pushCollected(message irc.Message) {
+	lines := b.collected.Lines
+	if len(lines) >= kHistoryBufferCeiling {
+		lines = lines[1:]
+	}
+	b.collected.Lines = append(lines, message)
 }
 
 // sessionAction is one deferred unit of work. It either delivers a handler
@@ -1207,6 +1221,8 @@ func (s *Session) encryptedLocked() {
 func (s *Session) Disconnected() { s.locked(s.disconnectedLocked) }
 
 func (s *Session) disconnectedLocked() {
+	// A manual disconnect never resets, so the unclosed message shows here.
+	s.flushOpenMultilineLocked()
 	outcome := s.connection.onDisconnect(s.sessionState)
 	if outcome == outcomeFinishStsUpgrade {
 		s.resetForConnectionLocked()
@@ -2060,7 +2076,10 @@ func (s *Session) handleBatchLocked(message irc.Message) {
 			len(s.openBatches) >= kMaxOpenBatches
 		_, ignored := s.ignoredBatches[reference]
 		_, parentIgnored := s.ignoredBatches[parent]
-		if ignored || (parent != "" && parentIgnored) ||
+		// The spec does not nest batches in a multiline one.
+		parentBatch, parentOpen := s.openBatches[parent]
+		parentMultiline := parentOpen && parentBatch.multiline != nil
+		if ignored || (parent != "" && parentIgnored) || parentMultiline ||
 			(overOpenCap && s.isHistoryBatchLocked(batchType, parent)) {
 			s.ignoreBatchLocked(reference)
 			if hasKind && kind == irc.HistoryChat {
@@ -2087,6 +2106,9 @@ func (s *Session) handleBatchLocked(message irc.Message) {
 			frame.replayRoot = parentRoot
 		} else if hasKind {
 			frame.replayRoot = reference
+		}
+		if strings.EqualFold(batchType, irc.MultilineType) {
+			s.openMultilineLocked(frame, message)
 		}
 		if frame.replayRoot == reference {
 			frame.hasKind = hasKind
@@ -2134,6 +2156,10 @@ func (s *Session) closeBatchLocked(reference string) {
 
 	if frame.requestLabel != "" {
 		s.finishRequestLabelLocked(frame.requestLabel)
+	}
+	if frame.multiline != nil {
+		s.finishMultilineLocked(frame.replayRoot, frame.multiline)
+		return
 	}
 	if frame.replayRoot == reference && frame.hasKind && frame.kind == irc.HistoryTargets {
 		s.historyTargetsPending = false
@@ -2197,6 +2223,9 @@ func (s *Session) captureInBatchLocked(message irc.Message) bool {
 	if _, ignored := s.ignoredBatches[batch]; ignored {
 		return true
 	}
+	if s.captureMultilineLocked(batch, message) {
+		return true
+	}
 	found, ok := s.openBatches[batch]
 	if !ok {
 		return false
@@ -2208,15 +2237,7 @@ func (s *Session) captureInBatchLocked(message irc.Message) bool {
 	if !ok {
 		return false
 	}
-	// Playback and CHATHISTORY LATEST are oldest-first. A full buffer keeps the
-	// newest lines. Overflow stays swallowed so it cannot surface as live
-	// traffic and move the exclusive PLAY bound past lines never kept.
-	lines := root.collected.Lines
-	if len(lines) >= kHistoryBufferCeiling {
-		lines = lines[1:]
-	}
-	lines = append(lines, message)
-	root.collected.Lines = lines
+	root.pushCollected(message)
 	return true
 }
 
@@ -3018,6 +3039,9 @@ func (s *Session) reconnectDelayLocked() int {
 }
 
 func (s *Session) resetForConnectionLocked() {
+	// Before the batches go: a multiline batch the connection cut short is still
+	// a message.
+	s.flushOpenMultilineLocked()
 	s.framer = irc.Framer{}
 	s.openBatches = map[string]*openBatch{}
 	s.ignoredBatches = map[string]struct{}{}

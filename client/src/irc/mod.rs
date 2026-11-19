@@ -26,6 +26,7 @@ pub mod jointarget;
 pub mod listmask;
 pub mod membershipnoise;
 pub mod message;
+pub mod multiline;
 pub mod parser;
 pub mod plaintext;
 pub mod prefixnick;

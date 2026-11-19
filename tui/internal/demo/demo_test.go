@@ -628,3 +628,42 @@ func containsString(values []string, wanted string) bool {
 	}
 	return false
 }
+
+func lastOmarchyBodies(c *controller.Controller) []string {
+	c.SelectConversation("omarchy", "#omarchy")
+	var bodies []string
+	for _, message := range c.Messages() {
+		bodies = append(bodies, message.Body)
+	}
+	return bodies
+}
+
+func TestMultilineSeedIsOffByDefault(t *testing.T) {
+	t.Setenv(MultilineSeedVar, "")
+	c, _ := attachController(t, false)
+	for _, body := range lastOmarchyBodies(c) {
+		if strings.Contains(body, "ricing session") {
+			t.Fatalf("the multiline seed leaked into the parity seed: %q", body)
+		}
+	}
+}
+
+func TestMultilineSeedLandsAsOneRowWithAMention(t *testing.T) {
+	t.Setenv(MultilineSeedVar, "1")
+	c, _ := attachController(t, false)
+	bodies := lastOmarchyBodies(c)
+	want := "Notes from the ricing session:\none theme file, one accent, no fixed palette\n" +
+		"fred, does that match what you saw?"
+	count := 0
+	for _, body := range bodies {
+		if body == want {
+			count++
+		}
+		if body == "fred, does that match what you saw?" {
+			t.Fatalf("the last line arrived as a row of its own")
+		}
+	}
+	if count != 1 {
+		t.Fatalf("rows with the multiline body = %d, want 1, bodies = %q", count, bodies)
+	}
+}

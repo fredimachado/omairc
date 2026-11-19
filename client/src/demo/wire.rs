@@ -53,6 +53,32 @@ pub fn rtl_seed_lines() -> Vec<String> {
     ]
 }
 
+/// When set to a non-empty value, `--demo-server` appends one live multi-line
+/// message (a `draft/multiline` batch) to `#omarchy` after the normal seed. Off by
+/// default, so the parity seed, its screenshots and its unread counts stay as
+/// they are.
+pub const MULTILINE_SEED_VAR: &str = "OMAIRC_MULTILINE_SEED";
+
+/// Whether [`multiline_seed_lines`] should be injected (`OMAIRC_MULTILINE_SEED`
+/// non-empty).
+pub fn multiline_seed_enabled() -> bool {
+    std::env::var(MULTILINE_SEED_VAR).is_ok_and(|value| !value.is_empty())
+}
+
+/// One closed `draft/multiline` batch of three lines from mira into `#omarchy`,
+/// the last of which mentions the operator. Used only when
+/// [`multiline_seed_enabled`] is true; not part of the Qt/Go parity seed.
+pub fn multiline_seed_lines() -> Vec<String> {
+    let at = format!("{TODAY}T10:07:00.000Z");
+    vec![
+        format!("@msgid=ml-demo;time={at} :mira!u@h BATCH +mld draft/multiline #omarchy"),
+        "@batch=mld :mira!u@h PRIVMSG #omarchy :Notes from the ricing session:".to_owned(),
+        "@batch=mld :mira!u@h PRIVMSG #omarchy :one theme file, one accent, no fixed palette".to_owned(),
+        "@batch=mld :mira!u@h PRIVMSG #omarchy :fred, does that match what you saw?".to_owned(),
+        ":mira!u@h BATCH -mld".to_owned(),
+    ]
+}
+
 /// One line as wire bytes, CRLF included (`line`).
 pub fn line(text: &str) -> Vec<u8> {
     let mut out = Vec::with_capacity(text.len() + 2);
