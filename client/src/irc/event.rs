@@ -39,6 +39,7 @@ pub enum EventKind {
     ChannelError,
     NickFacts,
     Invite,
+    Reaction,
 }
 
 /// One translated IRC fact (`Event`). The reducer reads these in order.
@@ -66,6 +67,7 @@ pub enum Event {
     ChannelError(ChannelErrorEvent),
     NickFacts(NickFactsEvent),
     Invite(InviteEvent),
+    Reaction(ReactionEvent),
 }
 
 impl Event {
@@ -95,6 +97,7 @@ impl Event {
             Self::ChannelError(_) => EventKind::ChannelError,
             Self::NickFacts(_) => EventKind::NickFacts,
             Self::Invite(_) => EventKind::Invite,
+            Self::Reaction(_) => EventKind::Reaction,
         }
     }
 }
@@ -134,6 +137,7 @@ event_from_payload!(
     ChannelError(ChannelErrorEvent),
     NickFacts(NickFactsEvent),
     Invite(InviteEvent),
+    Reaction(ReactionEvent),
 );
 
 /// A conversation: a network plus a normalized target (`ConversationKey`). The
@@ -258,6 +262,8 @@ pub struct MessageEvent {
     /// The display target: the channel, or the peer for a direct message.
     pub target: String,
     pub msgid: MsgId,
+    /// The `+draft/reply` parent msgid. Empty when the line is not a reply.
+    pub reply_to: MsgId,
     pub only_visible_to_you: bool,
 }
 
@@ -271,6 +277,8 @@ pub struct NoticeEvent {
     pub server_time: Option<DateTime<Utc>>,
     pub target: String,
     pub msgid: MsgId,
+    /// The `+draft/reply` parent msgid. Empty when the line is not a reply.
+    pub reply_to: MsgId,
     pub only_visible_to_you: bool,
 }
 
@@ -284,6 +292,8 @@ pub struct ActionEvent {
     pub server_time: Option<DateTime<Utc>>,
     pub target: String,
     pub msgid: MsgId,
+    /// The `+draft/reply` parent msgid. Empty when the line is not a reply.
+    pub reply_to: MsgId,
     pub only_visible_to_you: bool,
 }
 
@@ -421,6 +431,19 @@ pub struct TypingEvent {
     pub received_at: DateTime<Utc>,
 }
 
+/// A reaction (`+draft/react`) or its removal (`+draft/unreact`) on one line of a
+/// conversation (`ReactionEvent`). `removed` is false for a react. The reducer
+/// drops it unless the conversation and the target line already exist.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReactionEvent {
+    pub conversation: ConversationKey,
+    pub nick: String,
+    pub target_msgid: MsgId,
+    pub emoji: String,
+    pub removed: bool,
+    pub received_at: DateTime<Utc>,
+}
+
 /// One line inside a replay batch (`ReplayLine`). `server_time` is the parsed
 /// time tag only. `timestamp` falls back to the wall clock, and that fallback
 /// must not advance the bouncer PLAY clock.
@@ -431,6 +454,7 @@ pub struct ReplayLine {
     pub timestamp: DateTime<Utc>,
     pub kind: MessageKindTag,
     pub msgid: MsgId,
+    pub reply_to: MsgId,
     pub server_time: Option<DateTime<Utc>>,
     pub only_visible_to_you: bool,
 }
@@ -582,13 +606,14 @@ mod tests {
 
     #[test]
     fn kind_order_matches_the_go_taxonomy() {
-        // The Go iota order: `EventWelcome` is 0 and `EventInvite` is the last.
+        // The Go iota order: `EventWelcome` is 0 and `EventReaction` is the last.
         assert_eq!(EventKind::Welcome as usize, 0);
         assert_eq!(EventKind::Message as usize, 1);
         assert_eq!(EventKind::SelfAway as usize, 13);
         assert_eq!(EventKind::MemberMetadata as usize, 14);
         assert_eq!(EventKind::NickFacts as usize, 20);
         assert_eq!(EventKind::Invite as usize, 21);
+        assert_eq!(EventKind::Reaction as usize, 22);
     }
 
     #[test]

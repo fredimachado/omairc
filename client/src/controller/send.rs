@@ -171,6 +171,7 @@ impl Controller {
                 server_time: None,
                 target: target.to_owned(),
                 msgid: MsgId::default(),
+                reply_to: MsgId::default(),
                 only_visible_to_you: false,
             }),
             Outgoing::Action => Event::Action(ActionEvent {
@@ -181,6 +182,7 @@ impl Controller {
                 server_time: None,
                 target: target.to_owned(),
                 msgid: MsgId::default(),
+                reply_to: MsgId::default(),
                 only_visible_to_you: false,
             }),
             Outgoing::Notice => Event::Notice(NoticeEvent {
@@ -191,6 +193,7 @@ impl Controller {
                 server_time: None,
                 target: target.to_owned(),
                 msgid: MsgId::default(),
+                reply_to: MsgId::default(),
                 only_visible_to_you: false,
             }),
         };

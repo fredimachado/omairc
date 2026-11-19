@@ -32,6 +32,7 @@ pub mod plaintext;
 pub mod prefixnick;
 pub mod presence;
 pub mod pref;
+pub mod reaction;
 pub mod readmarker;
 pub mod reducer;
 pub mod secretpolicy;

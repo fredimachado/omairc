@@ -271,6 +271,7 @@ mod tests {
             time: at(minute),
             server_time: None,
             msgid: MsgId::default(),
+            reply_to: String::new(),
             origin: Origin::Live,
             mentioned: false,
             collapsible: false,

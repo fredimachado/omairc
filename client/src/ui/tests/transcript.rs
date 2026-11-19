@@ -218,6 +218,7 @@ fn history_splice_keeps_the_reader_on_the_same_message(cx: &mut gpui::TestAppCon
         shell.transcript.update(cx, |t, _| {
             t.set_conversation(ConversationLines {
                 messages: &base,
+                reactions: crate::irc::reaction::no_reactions(),
                 mark: None,
                 facts: HashMap::new(),
                 self_nick: &self_nick,
@@ -256,6 +257,7 @@ fn history_splice_keeps_the_reader_on_the_same_message(cx: &mut gpui::TestAppCon
             t.refresh_conversation(
                 ConversationLines {
                     messages: &combined,
+                    reactions: crate::irc::reaction::no_reactions(),
                     mark: None,
                     facts: HashMap::new(),
                     self_nick: &self_nick,
@@ -308,6 +310,7 @@ fn history_prepend_keeps_anchor_message(cx: &mut gpui::TestAppContext) {
         shell.transcript.update(cx, |t, _| {
             t.set_conversation(ConversationLines {
                 messages: &tail,
+                reactions: crate::irc::reaction::no_reactions(),
                 mark: None,
                 facts: HashMap::new(),
                 self_nick: &self_nick,
@@ -353,6 +356,7 @@ fn history_prepend_keeps_anchor_message(cx: &mut gpui::TestAppContext) {
             t.refresh_conversation(
                 ConversationLines {
                     messages: &combined,
+                    reactions: crate::irc::reaction::no_reactions(),
                     mark: None,
                     facts: HashMap::new(),
                     self_nick: &self_nick,
@@ -458,6 +462,7 @@ fn tagged_chat(author: &str, body: &str, sequence: i64, msgid: &str) -> Message 
         time: Utc.with_ymd_and_hms(2026, 9, 10, 9, 0, 0).unwrap(),
         server_time: None,
         msgid: MsgId::new(msgid),
+        reply_to: String::new(),
         origin: Origin::Live,
         mentioned: false,
         collapsible: false,

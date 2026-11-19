@@ -180,6 +180,17 @@ func classifyViewNotifyUnchecked(event Event, reducer *EventReducer) ViewNotify 
 		return notify
 	case WhoisTranscriptEvent, ChannelErrorEvent, InviteEvent:
 		return ViewNotifyTranscript()
+	case ReactionEvent:
+		// A reaction repaints the transcript only when its line is there to draw
+		// it on.
+		conversation := reducer.Find(e.Conversation)
+		if conversation == nil {
+			return ViewNotifyNone()
+		}
+		if _, held := conversation.MessageIDs[e.TargetMsgID]; !held {
+			return ViewNotifyNone()
+		}
+		return ViewNotifyTranscript()
 	case NickFactsEvent:
 		key := reducer.ConversationKey(e.NetworkID, e.Nick)
 		return ViewNotifyMemberRow(key.NormalizedTarget)

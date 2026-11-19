@@ -95,6 +95,94 @@ fn typing_tagmsg_reads_the_phase_and_ignores_the_rest() {
 }
 
 #[test]
+fn a_reply_tag_names_the_parent_on_chat_notice_and_action() {
+    let events = translate_line("@+draft/reply=parent1 :alice!u@h PRIVMSG #room :agreed");
+    assert_eq!(message_of(&events).reply_to, Id::new("parent1"));
+
+    match translate_line("@+draft/reply=parent1 :alice!u@h PRIVMSG #room :\u{1}ACTION nods\u{1}")
+        .first()
+    {
+        Some(Event::Action(action)) => assert_eq!(action.reply_to, Id::new("parent1")),
+        other => panic!("want ActionEvent, got {other:?}"),
+    }
+    match translate_line("@+draft/reply=parent1 :alice!u@h NOTICE omairc :re: that").first() {
+        Some(Event::Notice(notice)) => assert_eq!(notice.reply_to, Id::new("parent1")),
+        other => panic!("want NoticeEvent, got {other:?}"),
+    }
+
+    let plain = translate_line(":alice!u@h PRIVMSG #room :hello");
+    assert!(message_of(&plain).reply_to.is_empty());
+    let long = format!("@+draft/reply={} :alice!u@h PRIVMSG #room :hello", "m".repeat(129));
+    assert!(
+        message_of(&translate_line(&long)).reply_to.is_empty(),
+        "an overlong reply target is ignored, the line stays"
+    );
+    let empty = translate_line("@+draft/reply= :alice!u@h PRIVMSG #room :hello");
+    assert!(message_of(&empty).reply_to.is_empty());
+}
+
+#[test]
+fn react_tagmsg_becomes_a_reaction_and_unreact_removes_it() {
+    let events = translate_line("@+draft/reply=parent1;+draft/react=👍 :bob!u@h TAGMSG #room");
+    assert_eq!(events.len(), 1);
+    match &events[0] {
+        Event::Reaction(reaction) => {
+            assert_eq!(reaction.nick, "bob");
+            assert_eq!(reaction.emoji, "👍");
+            assert_eq!(reaction.target_msgid, Id::new("parent1"));
+            assert!(!reaction.removed);
+            assert_eq!(reaction.conversation.normalized_target, "#room");
+        }
+        other => panic!("want ReactionEvent, got {other:?}"),
+    }
+
+    match translate_line("@+draft/reply=parent1;+draft/unreact=👍 :bob!u@h TAGMSG #room").first() {
+        Some(Event::Reaction(reaction)) => {
+            assert!(reaction.removed);
+            assert_eq!(reaction.emoji, "👍");
+        }
+        other => panic!("want ReactionEvent, got {other:?}"),
+    }
+
+    // A direct reaction belongs to the sender's conversation, as typing does.
+    match translate_line("@+draft/reply=parent1;+draft/react=🎉 :alice!u@h TAGMSG omairc").first() {
+        Some(Event::Reaction(reaction)) => {
+            assert_eq!(reaction.conversation.normalized_target, "alice");
+        }
+        other => panic!("want ReactionEvent, got {other:?}"),
+    }
+}
+
+#[test]
+fn react_tagmsg_that_is_not_believable_produces_nothing() {
+    let long = format!("@+draft/reply=parent1;+draft/react={} :bob!u@h TAGMSG #room", "a".repeat(65));
+    let exact = format!("@+draft/reply=parent1;+draft/react={} :bob!u@h TAGMSG #room", "a".repeat(64));
+    assert_eq!(translate_line(&exact).len(), 1, "64 bytes is accepted");
+    for line in [
+        // No reply target.
+        "@+draft/react=👍 :bob!u@h TAGMSG #room",
+        // An empty or unusable value.
+        "@+draft/reply=parent1;+draft/react= :bob!u@h TAGMSG #room",
+        "@+draft/reply=parent1;+draft/react=\\n :bob!u@h TAGMSG #room",
+        "@+draft/reply=parent1;+draft/react=\u{7} :bob!u@h TAGMSG #room",
+        "@+draft/reply=parent1;+draft/react=a\u{7f} :bob!u@h TAGMSG #room",
+        "@+draft/reply=parent1;+draft/react=a\u{85} :bob!u@h TAGMSG #room",
+        // Both react and unreact is ambiguous.
+        "@+draft/reply=parent1;+draft/react=👍;+draft/unreact=👍 :bob!u@h TAGMSG #room",
+        // A reply target nobody could have sent.
+        "@+draft/reply=a\\sb;+draft/react=👍 :bob!u@h TAGMSG #room",
+        // No sender.
+        "@+draft/reply=parent1;+draft/react=👍 TAGMSG #room",
+        // Unrelated client tags.
+        "@+draft/reply=parent1 :bob!u@h TAGMSG #room",
+        "@+foo=bar :bob!u@h TAGMSG #room",
+    ] {
+        assert!(translate_line(line).is_empty(), "{line:?} must produce nothing");
+    }
+    assert!(translate_line(&long).is_empty(), "65 bytes is refused");
+}
+
+#[test]
 fn channel_context_private_line_is_only_visible_to_you() {
     let marked = translate_joined(
         "@+draft/channel-context=#room :bot!u@h PRIVMSG omairc :just you",

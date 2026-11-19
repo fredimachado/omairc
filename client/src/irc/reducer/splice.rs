@@ -237,6 +237,7 @@ pub(super) fn splice_history(
             time: line.timestamp,
             server_time: line.server_time,
             msgid: line.msgid.clone(),
+            reply_to: line.reply_to.value.clone(),
             origin: Origin::Replay,
             mentioned: facts.transcript_highlight(&network, &line.author, kind, &line.body),
             collapsible: false,

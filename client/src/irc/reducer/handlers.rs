@@ -5,7 +5,7 @@
 //! `reduceJoin`, `reducePart`, `reduceQuit`, `reduceNick`, `reduceKick`
 //! `reduceTopic`, `reduceNames`, `reduceMode`, `reduceAway`, `reduceSelfAway`
 //! `reduceMemberMetadata`, `reduceAccount`, `reduceTyping`, `reduceWhoisTranscript`
-//! `reduceChannelError`, `reduceNickFacts`, `clearTyping`, `clearTypingEverywhere`
+//! `reduceChannelError`, `reduceReaction`, `reduceNickFacts`, `clearTyping`, `clearTypingEverywhere`
 //! `rekeyTyping`, `pruneExpiredTyping`, `forgetUnseen`) and of
 
 use chrono::{DateTime, Utc};
@@ -14,7 +14,7 @@ use crate::irc::event::{
     AccountEvent, ActionEvent, AwayEvent, ChannelErrorEvent, ConversationKey, Event, InboxArrival,
     InviteEvent, IrcConversationCause, JoinEvent, KickEvent, MemberMetadataEvent, MessageEvent,
     ModeEvent, MsgId, NamesEvent, NickEvent, NickFactsEvent, NoticeEvent, PartEvent, QuitEvent,
-    SelfAwayEvent, TopicEvent, TypingEvent, WelcomeEvent, WhoisTranscriptEvent,
+    ReactionEvent, SelfAwayEvent, TopicEvent, TypingEvent, WelcomeEvent, WhoisTranscriptEvent,
 };
 use crate::irc::inbox::InboxKind;
 use crate::irc::membershipnoise::{join_line, nick_line, part_line, quit_line};
@@ -23,7 +23,7 @@ use crate::irc::typing::{stored_typing_hint, typing_hint_retained};
 use crate::irc::world::MessageKind;
 
 use super::conversations::{start_names_sync, stop_names_sync};
-use super::state::{MemberState, TranscriptAnchor};
+use super::state::{ConversationState, MemberState, TranscriptAnchor};
 use super::transcript::{
     append_error, append_event, append_whois, cap_messages, ChatLine,
 };
@@ -37,6 +37,21 @@ fn display_target<'a>(key: &'a ConversationKey, target: &'a str) -> &'a str {
     } else {
         target
     }
+}
+
+/// Whether the transcript holds a chat line with `msgid`. Join and part lines may
+/// carry one too, but only a chat line draws reactions. Newest first, because a
+/// reaction mostly follows a recent line.
+fn holds_chat_line(conv: &ConversationState, msgid: &MsgId) -> bool {
+    !msgid.is_empty()
+        && conv.message_ids.contains(msgid)
+        && conv.messages.iter().rev().any(|message| {
+            message.msgid == *msgid
+                && matches!(
+                    message.kind,
+                    MessageKind::Message | MessageKind::Notice | MessageKind::Action
+                )
+        })
 }
 
 impl EventReducer {
@@ -66,6 +81,7 @@ impl EventReducer {
             Event::ChannelError(event) => self.reduce_channel_error(event),
             Event::NickFacts(event) => self.reduce_nick_facts(event),
             Event::Invite(event) => self.reduce_invite(event),
+            Event::Reaction(event) => self.reduce_reaction(event),
         }
     }
 
@@ -114,6 +130,7 @@ impl EventReducer {
             server_time: event.server_time,
             kind: MessageKind::Message,
             msgid: &event.msgid,
+            reply_to: &event.reply_to,
             only_visible_to_you: event.only_visible_to_you,
         });
     }
@@ -128,6 +145,7 @@ impl EventReducer {
             server_time: event.server_time,
             kind: MessageKind::Notice,
             msgid: &event.msgid,
+            reply_to: &event.reply_to,
             only_visible_to_you: event.only_visible_to_you,
         });
     }
@@ -142,6 +160,7 @@ impl EventReducer {
             server_time: event.server_time,
             kind: MessageKind::Action,
             msgid: &event.msgid,
+            reply_to: &event.reply_to,
             only_visible_to_you: event.only_visible_to_you,
         });
     }
@@ -372,6 +391,9 @@ impl EventReducer {
                             continue;
                         }
                         existing.message_ids.insert(message.msgid.clone());
+                    }
+                    if let Some(reactions) = moved.reactions.remove(&message.msgid.value) {
+                        existing.reactions.insert(message.msgid.value.clone(), reactions);
                     }
                     let old_sequence = message.sequence;
                     message.sequence = existing.next_sequence;
@@ -612,6 +634,38 @@ impl EventReducer {
         conv.typing
             .retain(|_, existing| typing_hint_retained(existing, event.received_at));
         conv.typing.insert(normalized, hint);
+    }
+
+    /// Adds or removes one nick's reaction on a chat line (`reduceReaction`). A
+    /// reaction is not a line: it never creates a conversation (it takes no
+    /// `IrcConversationCause`, so see `.cursor/skills/conversation-cause`), never
+    /// marks unread, never raises a mention or inbox arrival and is not written to
+    /// the log. One aimed at a conversation or a line the reducer does not hold is
+    /// dropped.
+    fn reduce_reaction(&mut self, event: &ReactionEvent) {
+        let network = event.conversation.network_id.as_str();
+        let normalized = self.facts.normalize(network, &event.nick);
+        let Some(conv) = self.conversations.get_mut(&event.conversation) else {
+            return;
+        };
+        if !holds_chat_line(conv, &event.target_msgid) {
+            return;
+        }
+        let msgid = &event.target_msgid.value;
+        if event.removed {
+            let Some(set) = conv.reactions.get_mut(msgid) else {
+                return;
+            };
+            set.remove(&event.emoji, &normalized);
+            if set.is_empty() {
+                conv.reactions.remove(msgid);
+            }
+        } else {
+            conv.reactions
+                .entry(msgid.clone())
+                .or_default()
+                .add(&event.emoji, &normalized, &event.nick);
+        }
     }
 
     /// Appends a formatted WHOIS block to its conversation (`reduceWhoisTranscript`).

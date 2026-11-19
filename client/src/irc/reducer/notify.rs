@@ -101,6 +101,17 @@ fn classify_unchecked(event: &Event, reducer: &EventReducer) -> Vec<ViewNotify> 
             notify
         }
         Event::WhoisTranscript(_) | Event::ChannelError(_) | Event::Invite(_) => transcript(),
+        // A reaction repaints the transcript only when its line is there to draw it on.
+        Event::Reaction(reaction) => {
+            let held = reducer
+                .find(&reaction.conversation)
+                .is_some_and(|conversation| conversation.message_ids.contains(&reaction.target_msgid));
+            if held {
+                transcript()
+            } else {
+                Vec::new()
+            }
+        }
         Event::NickFacts(facts) => {
             let key = reducer.conversation_key(&facts.network_id, &facts.nick);
             member_row(&key.normalized_target)

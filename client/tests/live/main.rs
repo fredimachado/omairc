@@ -9,5 +9,6 @@ mod members;
 mod multiline;
 mod presence;
 mod reconnect;
+mod replies;
 mod register;
 mod restore;

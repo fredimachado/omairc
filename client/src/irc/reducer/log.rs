@@ -17,6 +17,8 @@ pub struct TranscriptLine {
     pub kind: String,
     pub body: String,
     pub msgid: String,
+    /// The `+draft/reply` parent msgid. Empty when the line is not a reply.
+    pub reply_to: String,
     pub only_visible_to_you: bool,
 }
 

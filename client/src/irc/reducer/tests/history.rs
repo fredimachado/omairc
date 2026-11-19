@@ -609,6 +609,7 @@ fn history_page_cap_tail_keeps_prepended_head_at_max_messages() {
                 time: reducer_timestamp(),
                 server_time: None,
                 msgid: MsgId::new(format!("fill-{index}")),
+                reply_to: String::new(),
                 origin: Origin::Live,
                 mentioned: false,
                 collapsible: false,
@@ -679,6 +680,7 @@ fn hidden_membership_older_page_keeps_history_page_cap_tail() {
         timestamp: reducer_timestamp(),
         kind: MessageKindTag::Event,
         msgid: MsgId::new("join-page"),
+        reply_to: MsgId::default(),
         server_time: None,
         only_visible_to_you: false,
     };

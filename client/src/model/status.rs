@@ -88,6 +88,9 @@ pub fn row_from_status_entry(id: u64, entry: &StatusEntry) -> Row {
         only_visible_to_you: false,
         mentioned: false,
         origin: crate::irc::world::Origin::Live,
+        reply_to: String::new(),
+        reply_preview: String::new(),
+        reactions: Vec::new(),
     }
 }
 

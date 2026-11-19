@@ -211,6 +211,26 @@ fn the_transcript_carries_accounts_times_and_the_seeded_link() {
 }
 
 #[test]
+fn the_omarchy_transcript_seeds_one_reply_and_its_reactions() {
+    let omarchy = transcript_lines(&OMARCHY_WORLD);
+    assert!(omarchy.iter().any(|line| line
+        .starts_with("@msgid=demo-question;time=")
+        && line.contains(":anna!u@h PRIVMSG #omarchy :Morning!")));
+    assert!(omarchy.iter().any(|line| line
+        .starts_with("@msgid=demo-answer;+draft/reply=demo-question;time=")
+        && line.contains(":dax!u@h PRIVMSG #omarchy :Yes.")));
+    let reactions: Vec<&String> = omarchy.iter().filter(|line| line.contains(" TAGMSG ")).collect();
+    assert_eq!(
+        reactions,
+        vec![
+            "@+draft/reply=demo-question;+draft/react=\u{1F44D} :mira!u@h TAGMSG #omarchy",
+            "@+draft/reply=demo-question;+draft/react=\u{1F44D} :sol!u@h TAGMSG #omarchy",
+            "@+draft/reply=demo-answer;+draft/react=\u{1F389} :anna!u@h TAGMSG #omarchy",
+        ]
+    );
+}
+
+#[test]
 fn the_typing_hint_is_for_anna_only() {
     assert_eq!(
         typing_lines(&OMARCHY_WORLD),
@@ -326,11 +346,11 @@ fn a_bench_channel_line_count_is_exact() {
 }
 
 #[test]
-fn the_world_transcript_lines_are_all_chat_or_join() {
+fn the_world_transcript_lines_are_all_chat_join_or_react() {
     for network in [&OMARCHY_WORLD, &OFTC_WORLD] {
         for text in transcript_lines(network) {
             assert!(
-                text.contains(" PRIVMSG ") || text.contains(" JOIN "),
+                text.contains(" PRIVMSG ") || text.contains(" JOIN ") || text.contains(" TAGMSG "),
                 "unexpected transcript line {text:?}"
             );
         }

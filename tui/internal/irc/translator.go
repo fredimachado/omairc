@@ -180,6 +180,7 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 						ServerTime:       serverTime,
 						Target:           delivery.channel,
 						MsgID:            MsgID{Value: ircTagValueOrEmpty(message, "msgid")},
+						ReplyTo:          ircReplyTarget(message),
 						OnlyVisibleToYou: delivery.onlyVisibleToYou,
 					})
 				}
@@ -196,6 +197,7 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 			return events
 		}
 		msgid := MsgID{Value: ircTagValueOrEmpty(message, "msgid")}
+		replyTo := ircReplyTarget(message)
 		const actionPrefix = "\x01ACTION "
 		action := strings.HasPrefix(body, actionPrefix) && strings.HasSuffix(body, "\x01")
 		actionBody := ""
@@ -213,6 +215,7 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 					ServerTime:       serverTime,
 					Target:           delivery.channel,
 					MsgID:            msgid,
+					ReplyTo:          replyTo,
 					OnlyVisibleToYou: delivery.onlyVisibleToYou,
 				})
 			} else {
@@ -224,6 +227,7 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 					ServerTime:       serverTime,
 					Target:           delivery.channel,
 					MsgID:            msgid,
+					ReplyTo:          replyTo,
 					OnlyVisibleToYou: delivery.onlyVisibleToYou,
 				})
 			}
@@ -246,6 +250,7 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 				ServerTime:   serverTime,
 				Target:       displayTarget,
 				MsgID:        msgid,
+				ReplyTo:      replyTo,
 			})
 		} else {
 			events = append(events, MessageEvent{
@@ -256,11 +261,21 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 				ServerTime:   serverTime,
 				Target:       displayTarget,
 				MsgID:        msgid,
+				ReplyTo:      replyTo,
 			})
 		}
 	case command == "TAGMSG" && len(message.Params) != 0:
+		if sender == "" {
+			return events
+		}
+		if ircHasTag(message, "+draft/react") || ircHasTag(message, "+draft/unreact") {
+			if reaction, ok := ircReactionEvent(networkID, currentNick, features, message, sender, timestamp); ok {
+				events = append(events, reaction)
+			}
+			return events
+		}
 		value, ok := ircTagValue(message, "+typing")
-		if !ok || sender == "" {
+		if !ok {
 			return events
 		}
 		phase, ok := TypingPhaseFromTag(value)
@@ -515,6 +530,7 @@ func TranslateHistory(networkID, currentNick string, features ServerFeatures, ba
 					Timestamp:        value.Timestamp,
 					Kind:             MessageKindChat,
 					MsgID:            value.MsgID,
+					ReplyTo:          value.ReplyTo,
 					ServerTime:       serverTime,
 					OnlyVisibleToYou: value.OnlyVisibleToYou,
 				})
@@ -529,6 +545,7 @@ func TranslateHistory(networkID, currentNick string, features ServerFeatures, ba
 					Timestamp:        value.Timestamp,
 					Kind:             MessageKindEmote,
 					MsgID:            value.MsgID,
+					ReplyTo:          value.ReplyTo,
 					ServerTime:       serverTime,
 					OnlyVisibleToYou: value.OnlyVisibleToYou,
 				})
@@ -608,6 +625,64 @@ func ircTagValue(message Message, name string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// ircHasTag reports whether a tag named name is present, with or without a value.
+func ircHasTag(message Message, name string) bool {
+	for _, tag := range message.Tags {
+		if tag.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// ircReplyTarget returns the parent a +draft/reply tag names, or empty when the
+// tag is absent or is not one token. It mirrors reply_target in the Rust translator.
+func ircReplyTarget(message Message) MsgID {
+	value, ok := ircTagValue(message, "+draft/reply")
+	if !ok || !validReplyTarget(value) {
+		return MsgID{}
+	}
+	return MsgID{Value: value}
+}
+
+// ircReactionEvent builds the reaction a TAGMSG carries: exactly one of
+// +draft/react and +draft/unreact with a believable value, aimed at a
+// +draft/reply target. The conversation is only resolved here, as typing does:
+// the reducer decides whether it and the target line exist.
+func ircReactionEvent(networkID, currentNick string, features ServerFeatures, message Message, sender string, timestamp time.Time) (ReactionEvent, bool) {
+	reacted, hasReact := ircTagValue(message, "+draft/react")
+	unreacted, hasUnreact := ircTagValue(message, "+draft/unreact")
+	var emoji string
+	var removed bool
+	switch {
+	case hasReact && !hasUnreact:
+		emoji = reacted
+	case hasUnreact && !hasReact:
+		emoji, removed = unreacted, true
+	default:
+		return ReactionEvent{}, false
+	}
+	if !validReactionValue(emoji) {
+		return ReactionEvent{}, false
+	}
+	target := ircReplyTarget(message)
+	if target.IsEmpty() {
+		return ReactionEvent{}, false
+	}
+	conversation, ok := ConversationFor(networkID, ircParameter(message, 0), message, currentNick, features)
+	if !ok {
+		return ReactionEvent{}, false
+	}
+	return ReactionEvent{
+		Conversation: conversation,
+		Nick:         sender,
+		TargetMsgID:  target,
+		Emoji:        emoji,
+		Removed:      removed,
+		ReceivedAt:   timestamp,
+	}, true
 }
 
 // ircTagValueOrEmpty returns the value of a tag, or "" when it is absent or
@@ -837,6 +912,7 @@ func bouncerQueryReplayLine(batchTarget string, features ServerFeatures, message
 		return ReplayLine{}, false
 	}
 	msgid := MsgID{Value: ircTagValueOrEmpty(message, "msgid")}
+	replyTo := ircReplyTarget(message)
 	const actionPrefix = "\x01ACTION "
 	if strings.HasPrefix(body, actionPrefix) && strings.HasSuffix(body, "\x01") {
 		return ReplayLine{
@@ -845,6 +921,7 @@ func bouncerQueryReplayLine(batchTarget string, features ServerFeatures, message
 			Timestamp:  timestampFor(message, now),
 			Kind:       MessageKindEmote,
 			MsgID:      msgid,
+			ReplyTo:    replyTo,
 			ServerTime: serverTime,
 		}, true
 	}
@@ -854,6 +931,7 @@ func bouncerQueryReplayLine(batchTarget string, features ServerFeatures, message
 		Timestamp:  timestampFor(message, now),
 		Kind:       MessageKindChat,
 		MsgID:      msgid,
+		ReplyTo:    replyTo,
 		ServerTime: serverTime,
 	}, true
 }

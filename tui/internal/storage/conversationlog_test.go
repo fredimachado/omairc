@@ -363,6 +363,40 @@ func TestConversationLogOnlyVisibleToYouRoundTrip(t *testing.T) {
 	}
 }
 
+func TestConversationLogReplyParentRoundTripsUnderReplyTo(t *testing.T) {
+	log := NewConversationLog(t.TempDir())
+	mapping := irc.CaseMapping{}
+	if !log.Append("net", "#room", mapping, irc.TranscriptLine{
+		Kind: "message", Author: "bob", Body: "agreed", MsgID: "m2", ReplyTo: "parent-1",
+	}) {
+		t.Fatal("append reply")
+	}
+	if !log.Append("net", "#room", mapping, irc.TranscriptLine{
+		Kind: "message", Author: "alice", Body: "hello",
+	}) {
+		t.Fatal("append plain line")
+	}
+	lines := log.ReadTail("net", "#room", mapping, 10)
+	if len(lines) != 2 || lines[0].ReplyTo != "parent-1" || lines[1].ReplyTo != "" {
+		t.Fatalf("lines = %+v", lines)
+	}
+	raw, err := os.ReadFile(log.PathFor("net", "#room", mapping))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if !strings.Contains(text, `"replyTo":"parent-1"`) || strings.Count(text, "replyTo") != 1 {
+		t.Fatalf("log = %q, want the key only on the reply", text)
+	}
+}
+
+func TestConversationLogRecordWrittenBeforeRepliesParsesWithNoParent(t *testing.T) {
+	line, ok := conversationLogParseLine([]byte(`{"timestamp":"2026-09-04T00:00:00.000Z","author":"alice","kind":"message","body":"hi","msgid":"m1"}`))
+	if !ok || line.MsgID != "m1" || line.ReplyTo != "" {
+		t.Fatalf("line = %+v ok=%v", line, ok)
+	}
+}
+
 func TestConversationLogUsesTranscriptRootOverride(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("OMAIRC_TRANSCRIPT_ROOT", root)

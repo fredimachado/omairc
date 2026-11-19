@@ -19,6 +19,7 @@ use crate::ui::format_ui::{gpui_text_style, irc_runs_to_gpui, link_underline_run
 use crate::ui::status_row::render_status_row;
 use crate::ui::widgets::avatar::{avatar_disc, AvatarPhotos};
 use crate::ui::widgets::bot_mark::bot_mark;
+use crate::ui::widgets::tooltip::text_tooltip;
 use crate::ui::Handler;
 use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 
@@ -26,6 +27,8 @@ use crate::util::{scaled_px, to_gpui, FONT_FAMILY};
 /// your own author or avatar does nothing.
 pub struct RowCallbacks {
     pub on_nick: Handler<String>,
+    /// A click on a reply line, with the parent's msgid. The view scrolls to it when it is loaded.
+    pub on_reply: Handler<String>,
     pub self_nick: String,
 }
 
@@ -415,6 +418,9 @@ fn render_message_row(
                                     ),
                             )
                         })
+                        .when(!row.reply_preview.is_empty(), |this| {
+                            this.child(reply_line_element(row_ix, row, style, &callbacks.on_reply))
+                        })
                         // The body is Qt's TextEdit, whose line is the font's own height: 1.3 em
                         // which is 17 at 13px (Qt's 26 physical pixels at 150%). StyledText
                         // takes its size from the ancestor text style and TextRun carries none
@@ -435,6 +441,9 @@ fn render_message_row(
                                     selection_color,
                                 }),
                         )
+                        .when(!row.reactions.is_empty(), |this| {
+                            this.child(reaction_chips(row_ix, row, style))
+                        })
                         .when(shows_only_visible_to_you_caption(row), |this| {
                             this.child(
                                 div()
@@ -447,6 +456,83 @@ fn render_message_row(
                         }),
                 ),
         )
+}
+
+/// The colours of the reply line and the reaction chips. Nothing here is a literal: each is
+/// one of the style's derived helpers, so every Omarchy theme, light or dark, gets its own.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct ChipColors {
+    pub ink: crate::model::Color,
+    pub fill: crate::model::Color,
+    pub edge: crate::model::Color,
+}
+
+pub(crate) fn chip_colors(style: &Style) -> ChipColors {
+    ChipColors {
+        ink: style.muted_color(),
+        fill: style.raised_color(),
+        edge: style.divider_color(),
+    }
+}
+
+/// The muted `↪ author: text` line above a reply. A click on it asks the view to scroll to the
+/// parent (`on_reply`); the click stops here so it does not start a transcript selection.
+fn reply_line_element(
+    row_ix: usize,
+    row: &Row,
+    style: &Style,
+    on_reply: &Handler<String>,
+) -> Stateful<Div> {
+    let parent = row.reply_to.clone();
+    let on_reply = on_reply.clone();
+    let chips = chip_colors(style);
+    div()
+        .id(("reply-line", row_ix))
+        .pt(scaled_px(style, 2.))
+        .pb(scaled_px(style, 2.))
+        .min_w_0()
+        .overflow_hidden()
+        .whitespace_nowrap()
+        .text_ellipsis()
+        .text_size(scaled_px(style, 11.))
+        .line_height(scaled_px(style, 15.))
+        .text_color(to_gpui(chips.ink))
+        .font_family(FONT_FAMILY)
+        .cursor_pointer()
+        .debug_selector(|| format!("reply-line-{row_ix}"))
+        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+            cx.stop_propagation();
+            on_reply(parent.clone(), window, cx);
+        })
+        .child(row.reply_preview.clone())
+}
+
+/// The `emoji count` chips under a reacted line. Each is a small raised pill in the muted
+/// ink; hovering one lists the nicks that sent it.
+fn reaction_chips(row_ix: usize, row: &Row, style: &Style) -> Div {
+    let colors = chip_colors(style);
+    div()
+        .pt(scaled_px(style, 4.))
+        .flex()
+        .flex_wrap()
+        .gap(scaled_px(style, 4.))
+        .children(row.reactions.iter().enumerate().map(|(ix, chip)| {
+            div()
+                .id(("reaction-chip", row_ix * 64 + ix))
+                .px(scaled_px(style, 6.))
+                .py(scaled_px(style, 1.))
+                .rounded(scaled_px(style, 8.))
+                .border_1()
+                .border_color(to_gpui(colors.edge))
+                .bg(to_gpui(colors.fill))
+                .text_size(scaled_px(style, 11.))
+                .line_height(scaled_px(style, 15.))
+                .text_color(to_gpui(colors.ink))
+                .font_family(FONT_FAMILY)
+                .debug_selector(|| format!("reaction-chip-{row_ix}-{ix}"))
+                .tooltip(text_tooltip(chip.nicks.clone()))
+                .child(format!("{} {}", chip.emoji, chip.count))
+        }))
 }
 
 fn selection_quads(

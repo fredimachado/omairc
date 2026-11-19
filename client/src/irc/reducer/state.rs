@@ -8,12 +8,13 @@
 //! Transcript rows are `world::Message`, the shape the Go `IrcReducedMessage`
 //! maps to. A row's zero time (Go's `time.Time{}`, which event lines carry) is
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
 
 use crate::irc::event::{ConversationKey, MsgId};
 use crate::irc::presence::Away;
+use crate::irc::reaction::ReactionSet;
 use crate::irc::serverfeatures::IrcPrefixSet;
 use crate::irc::typing::TypingHint;
 use crate::irc::world::Message;
@@ -82,6 +83,9 @@ pub struct ConversationState {
     /// position in `messages`.
     pub trimmed: usize,
     pub message_ids: HashSet<MsgId>,
+    /// The reactions on each chat line, keyed by its msgid. In memory only: a
+    /// line that leaves the transcript takes its entry with it (`forget_msgid`).
+    pub reactions: HashMap<String, ReactionSet>,
     pub splice_epoch: u64,
     pub next_sequence: i64,
     /// Drops an overfull transcript from the tail after a CHATHISTORY older page
@@ -106,11 +110,18 @@ impl ConversationState {
             muted: false,
             trimmed: 0,
             message_ids: HashSet::new(),
+            reactions: HashMap::new(),
             splice_epoch: 0,
             next_sequence: 0,
             history_page_cap_tail: false,
             channel: None,
         }
+    }
+
+    /// Forgets a line's msgid: it no longer dedupes and its reactions go with it.
+    pub fn forget_msgid(&mut self, msgid: &MsgId) {
+        self.message_ids.remove(msgid);
+        self.reactions.remove(&msgid.value);
     }
 
     /// Whether this conversation is a channel (`IsChannel`).

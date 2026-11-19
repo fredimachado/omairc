@@ -17,6 +17,7 @@ mod scroll_restore;
 use scroll_restore::WidthState;
 
 use crate::irc::serverfeatures::IrcServerFeatures;
+use crate::irc::reaction::ReactionSet;
 use crate::irc::world::Message;
 use crate::model::cursor::{page_amount, scroll_target};
 use crate::model::links::{conversation_channel_hits, invite_hit};
@@ -189,7 +190,7 @@ impl TranscriptView {
     pub fn set_conversation(&mut self, lines: ConversationLines) {
         self.landing = false;
         self.model
-            .set_conversation(lines.messages, lines.mark, lines.today);
+            .set_conversation(lines.messages, lines.mark, lines.today, lines.reactions);
         self.peers.facts = lines.facts;
         self.self_nick = lines.self_nick.to_owned();
         self.features = lines.features.clone();
@@ -691,11 +692,24 @@ impl Render for TranscriptView {
         let peers = self.peers.clone();
         let list_state = self.list_state.clone();
         let focus = self.composer_focus.clone();
+        let focus_for_reply = self.composer_focus.clone();
         let on_nick: Handler<String> = {
             let entity = entity.clone();
             Rc::new(move |nick: String, window: &mut Window, app: &mut App| {
                 window.focus(&focus);
                 entity.update(app, |_, cx| cx.emit(NickClicked(nick)));
+            })
+        };
+        // A reply line asks for its parent. A parent that is not loaded is not an error.
+        let on_reply: Handler<String> = {
+            let entity = entity.clone();
+            Rc::new(move |msgid: String, window: &mut Window, app: &mut App| {
+                window.focus(&focus_for_reply);
+                entity.update(app, |view, cx| {
+                    if view.scroll_to_msgid(&msgid, cx) {
+                        cx.notify();
+                    }
+                });
             })
         };
         let self_nick = self.self_nick.clone();
@@ -819,6 +833,7 @@ impl Render for TranscriptView {
                                     layouts: layouts.clone(),
                                     callbacks: &RowCallbacks {
                                         on_nick: on_nick.clone(),
+                                        on_reply: on_reply.clone(),
                                         self_nick: self_nick.clone(),
                                     },
                                 },
@@ -883,6 +898,7 @@ fn link_click(row: &Row, range: &Range<usize>, features: &IrcServerFeatures) -> 
 /// dots end the list, and the local calendar day that shapes Today/Yesterday captions.
 pub struct ConversationLines<'a> {
     pub messages: &'a [Message],
+    pub reactions: &'a HashMap<String, ReactionSet>,
     pub mark: Option<i64>,
     pub facts: HashMap<String, NickFacts>,
     pub self_nick: &'a str,
@@ -916,6 +932,7 @@ mod tests {
             time: Utc.with_ymd_and_hms(2026, 1, 1, 12, 0, 0).unwrap(),
             server_time: None,
             msgid: MsgId::default(),
+            reply_to: String::new(),
             origin: Origin::Live,
             mentioned: false,
             collapsible: false,
@@ -938,6 +955,7 @@ mod tests {
         let features = IrcServerFeatures::new();
         let lines = ConversationLines {
             messages: &messages,
+            reactions: crate::irc::reaction::no_reactions(),
             mark: None,
             facts: HashMap::new(),
             self_nick: "me",
@@ -974,6 +992,7 @@ mod tests {
         let features = IrcServerFeatures::new();
         let empty = ConversationLines {
             messages: &[],
+            reactions: crate::irc::reaction::no_reactions(),
             mark: None,
             facts: HashMap::new(),
             self_nick: "me",
@@ -1020,6 +1039,7 @@ mod tests {
             .collect();
         let arrived = ConversationLines {
             messages: &history,
+            reactions: crate::irc::reaction::no_reactions(),
             mark: None,
             facts: HashMap::new(),
             self_nick: "me",
@@ -1058,6 +1078,7 @@ mod tests {
     fn empty_lines<'a>(features: &'a IrcServerFeatures) -> ConversationLines<'a> {
         ConversationLines {
             messages: &[],
+            reactions: crate::irc::reaction::no_reactions(),
             mark: None,
             facts: HashMap::new(),
             self_nick: "me",
@@ -1120,6 +1141,7 @@ mod tests {
             view.refresh_conversation(
                 ConversationLines {
                     messages: &other,
+                    reactions: crate::irc::reaction::no_reactions(),
                     mark: None,
                     facts: HashMap::new(),
                     self_nick: "me",
@@ -1171,6 +1193,7 @@ mod tests {
                 view.refresh_conversation(
                     ConversationLines {
                         messages: &other,
+                        reactions: crate::irc::reaction::no_reactions(),
                         mark: Some(3),
                         facts: HashMap::new(),
                         self_nick: "me",
@@ -1235,6 +1258,7 @@ mod tests {
             view.refresh_conversation(
                 ConversationLines {
                     messages: &live,
+                    reactions: crate::irc::reaction::no_reactions(),
                     mark: None,
                     facts: HashMap::new(),
                     self_nick: "me",
@@ -1272,6 +1296,7 @@ mod tests {
         transcript.update(cx, |view, cx| {
             view.set_conversation(ConversationLines {
                 messages: &first,
+                reactions: crate::irc::reaction::no_reactions(),
                 mark: None,
                 facts: HashMap::new(),
                 self_nick: "me",
@@ -1285,6 +1310,7 @@ mod tests {
             view.refresh_conversation(
                 ConversationLines {
                     messages: &second,
+                    reactions: crate::irc::reaction::no_reactions(),
                     mark: None,
                     facts: HashMap::new(),
                     self_nick: "me",
@@ -1322,6 +1348,7 @@ mod tests {
     ) -> ConversationLines<'a> {
         ConversationLines {
             messages,
+            reactions: crate::irc::reaction::no_reactions(),
             mark: None,
             facts: HashMap::new(),
             self_nick: "me",
