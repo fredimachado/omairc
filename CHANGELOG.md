@@ -70,6 +70,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The terminal client's `/list` overlay opens with an empty filter, as the
   desktop does, so a filter typed into a dismissed overlay no longer turns the
   next `/list #linux` into "No matches".
+- The terminal client renders Status lines through the IRC formatter, as the
+  desktop does. A MOTD with mIRC colour codes (Ergo's default colour chart) no
+  longer wraps past the Status pane and pushes later lines, such as an invite,
+  off screen. Find and copy read Status lines as plain text.
 - The desktop client restores a saved transcript place once history arrives, and
   no longer saves the "New messages" divider or a day separator as the place.
   Capture anchors on the first restorable row at or below the top of the view.

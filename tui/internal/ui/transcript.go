@@ -88,7 +88,11 @@ func (m *Model) transcriptRowArea() transcriptRows {
 			if m.findMatchAt(index) {
 				style = m.styles.FindMatch
 			}
-			area.append(m.clipTranscriptLine(style.Render(text)))
+			// A Status line keeps the server's IRC formatting, as the desktop
+			// status_row paints its runs. Raw control codes never reach the
+			// terminal: they measure narrower than they render, so a MOTD
+			// colour chart wrapped and pushed the newest lines off screen.
+			area.append(m.clipTranscriptLine(m.renderMessageBody(text, style)))
 		}
 		return area
 	}
@@ -426,7 +430,12 @@ func (m *Model) transcriptRowTexts() []string {
 		return nil
 	}
 	if m.ctrl.ConsoleOpen() {
-		return m.ctrl.ConsoleText(m.ctrl.FocusedNetworkID())
+		lines := m.ctrl.ConsoleText(m.ctrl.FocusedNetworkID())
+		rows := make([]string, 0, len(lines))
+		for _, line := range lines {
+			rows = append(rows, m.ctrl.PlainIrcText(line))
+		}
+		return rows
 	}
 	messages := m.ctrl.Messages()
 	rows := make([]string, 0, len(messages))
