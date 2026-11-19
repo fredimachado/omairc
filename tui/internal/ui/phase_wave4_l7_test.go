@@ -2,6 +2,7 @@ package ui
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -156,13 +157,8 @@ func TestConnectSheetScrollsToTheFocusedField(t *testing.T) {
 	m = resizeModel(t, m, 90, 14)
 
 	// Focus the last text field, which sits near the bottom of the form.
-	target := -1
-	for index, stop := range m.connectStops() {
-		if stop.kind == stopField && connectField(stop.index) == fieldNickServPassword {
-			target = index
-		}
-	}
-	if target < 0 {
+	target := connectStop{kind: stopField, index: int(fieldNickServPassword)}
+	if !slices.Contains(m.connectStops(), target) {
 		t.Fatal("the Connection tab must expose the NickServ password field")
 	}
 	m.sheet.focus = target

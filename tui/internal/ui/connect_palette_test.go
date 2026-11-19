@@ -59,9 +59,9 @@ func TestPreferencesPaletteSpaceCycles(t *testing.T) {
 
 func focusPreferencePalette(t *testing.T, m *Model) {
 	t.Helper()
-	for index, stop := range m.connectStops() {
+	for _, stop := range m.connectStops() {
 		if stop.kind == stopField && prefField(stop.index) == prefPalette {
-			m.sheet.focus = index
+			m.sheet.focus = stop
 			return
 		}
 	}

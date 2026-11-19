@@ -155,9 +155,9 @@ func TestPreferencesColorsEnterWalksPastRow(t *testing.T) {
 
 func focusPreferenceColors(t *testing.T, m *Model) {
 	t.Helper()
-	for index, stop := range m.connectStops() {
+	for _, stop := range m.connectStops() {
 		if stop.kind == stopField && prefField(stop.index) == prefColors {
-			m.sheet.focus = index
+			m.sheet.focus = stop
 			return
 		}
 	}
