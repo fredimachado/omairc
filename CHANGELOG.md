@@ -52,6 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   load's own `323` always completes it. The terminal client's `/list` overlay
   also shows the timeout instead of staying on "Loading", and streams rows while
   the load is in flight, as the desktop overlay does.
+- The terminal client's `/list` overlay opens with an empty filter, as the
+  desktop does, so a filter typed into a dismissed overlay no longer turns the
+  next `/list #linux` into "No matches".
 - The desktop client restores a saved transcript place once history arrives, and
   no longer saves the "New messages" divider or a day separator as the place.
   Capture anchors on the first restorable row at or below the top of the view.
