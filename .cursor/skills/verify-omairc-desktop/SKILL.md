@@ -201,8 +201,11 @@ Named chord verbs wrap the same keysym path as `key` (including the
 
 Chords without a named verb still use `key --key` (same map as the retired Qt
 driver: `ctrl+shift+s`, `ctrl+w`, `ctrl+slash`,
-`ctrl+shift+slash` for About, network walk / collapse, paging, Tab,
-history, `ctrl+q`, …).
+`ctrl+shift+slash` for About, `ctrl+shift+f` for history search, network
+walk / collapse, paging, Tab, history, `ctrl+q`, …). xdotool's own
+`ctrl+shift+*` tokens do not reach gpui shortcuts on Xvfb, so `key`
+rewrites `ctrl+shift+{slash,f,k,m,p,s}` to explicit `Control_L+Shift_L+…`
+keysyms. Add a chord to that rewrite before a fence uses it.
 
 ### Pointer verbs (XI2 via XTEST)
 
@@ -236,6 +239,19 @@ delete it.
 Standards match the feature map: exercise the real window with shortcuts and
 the composer; capture action and result; window title is conversation
 identity; `compare` requires a visible pixel change (AE > 100).
+
+`screenshot` waits for the window to settle before it returns. Under Xvfb +
+lavapipe a frame lands well after the input that caused it. Xvfb's mode has
+no clock, so gpui renders at 60 Hz for a second after each input, and
+software rendering falls behind. A grab right after an action shows the
+frame from before it (0.5–0.8 s late is common, over 2 s on a loaded
+host). The driver keeps grabbing until every new grab is pixel-identical to
+one of the six before it. That passes short cycles such as the caret blink
+and the typing dots, and still counts a single typed character as a change.
+It waits 2 s of quiet when nothing has changed yet, 0.75 s once a change has
+landed, and 8 s at most. After the cap it keeps the latest frame and warns
+on stderr. Do not add `sleep`s or retake shots around `screenshot` in a
+fence. If a shot is still stale, raise `SCREENSHOT_SETTLE_*` in the driver.
 
 ## Cleanup
 
