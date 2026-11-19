@@ -136,7 +136,7 @@ fn find_mode_does_not_overwrite_the_stored_draft(cx: &mut gpui::TestAppContext) 
     let mut ui = on_disk(cx, &dir);
     ui.select("#omarchy");
     type_text(&mut ui, "half typed");
-    ui.keys("ctrl-f");
+    ui.keys("secondary-f");
     type_text(&mut ui, "a query");
     ui.select("#help");
     let text = file_text(&dir);
