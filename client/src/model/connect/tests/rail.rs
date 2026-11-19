@@ -402,3 +402,104 @@ fn a_no_op_select_is_not_a_refusal() {
         "an unknown row is not refused either"
     );
 }
+
+#[test]
+fn discard_of_an_added_network_whose_origin_is_gone_falls_to_the_first_saved() {
+    let (_, mut state) = seeded();
+    state.select("oftc");
+    state.add();
+    state.saved.retain(|profile| profile.network_id != "oftc");
+    state.discard();
+    assert_eq!(state.selected(), "omarchy");
+    assert!(state.is_saved(state.selected()));
+    assert!(!state.dirty());
+}
+
+#[test]
+fn a_dirty_or_added_draft_refuses_a_switch_and_raises_the_notice() {
+    let (_, mut state) = seeded();
+    assert!(state.select("oftc"), "a clean draft moves");
+    assert!(!state.switch_refused());
+
+    state.set_text(ConnectField::Name, "edited");
+    assert!(!state.select("omarchy"));
+    assert!(state.switch_refused(), "a dirty draft refuses");
+    state.discard();
+
+    assert!(state.add());
+    assert!(!state.select("omarchy"));
+    assert!(state.switch_refused(), "an added draft refuses");
+    assert_eq!(state.selected(), "network-1");
+}
+
+#[test]
+fn apply_of_an_added_network_ends_the_added_phase() {
+    let (_, mut state) = seeded();
+    state.select("oftc");
+    assert!(state.add());
+    state.set_text(ConnectField::Host, "irc.libera.example");
+    state.set_text(ConnectField::Nick, "zed");
+    state.apply().expect("complete");
+    assert!(state.is_saved(state.selected()));
+    assert!(!state.dirty());
+    assert!(state.can_add(), "a saved clean network can add again");
+    state.discard();
+    assert_eq!(state.selected(), "network-1", "Discard no longer drops it");
+    assert!(state.is_saved("network-1"));
+}
+
+#[test]
+fn phase_is_clean_dirty_or_added() {
+    let (_, mut state) = seeded();
+    assert_eq!(state.phase(), DraftPhase::Clean);
+    state.set_text(ConnectField::Host, "edited.example");
+    assert_eq!(state.phase(), DraftPhase::Dirty);
+    state.set_text(ConnectField::Host, "irc.example");
+    assert_eq!(state.phase(), DraftPhase::Clean, "reverting the text is clean");
+
+    assert!(state.add());
+    assert_eq!(state.phase(), DraftPhase::Added);
+    state.set_text(ConnectField::Host, "irc.libera.example");
+    assert_eq!(state.phase(), DraftPhase::Added, "typing does not leave Added");
+    state.discard();
+    assert_eq!(state.phase(), DraftPhase::Clean);
+    assert_eq!(state.selected(), "omarchy");
+}
+
+#[test]
+fn the_draft_origin_follows_the_selection_through_every_transition() {
+    let (populated, mut state) = seeded();
+    assert!(state.origin_consistent());
+    state.select("oftc");
+    assert!(state.origin_consistent());
+    assert!(state.add());
+    assert!(state.origin_consistent());
+    state.discard();
+    assert!(state.origin_consistent());
+    state.add();
+    state.set_text(ConnectField::Host, "irc.libera.example");
+    state.set_text(ConnectField::Nick, "zed");
+    state.apply().expect("complete");
+    assert!(state.origin_consistent());
+    state.remove(&populated);
+    assert_eq!(
+        state.remove(&populated),
+        RemoveOutcome::Removed("network-1".into())
+    );
+    assert!(state.origin_consistent());
+
+    let first_run = ConnectState::first_run();
+    assert!(first_run.origin_consistent());
+    assert_eq!(first_run.phase(), DraftPhase::Added);
+    assert!(ConnectState::from_stored(&[stored("a", "irc.a.example", "fred")]).origin_consistent());
+}
+
+#[test]
+fn discarding_the_first_run_draft_keeps_it_and_its_phase() {
+    let mut state = ConnectState::first_run();
+    let id = state.selected().to_owned();
+    state.discard();
+    assert_eq!(state.selected(), id, "there is nothing saved to return to");
+    assert_eq!(state.phase(), DraftPhase::Added);
+    assert!(!state.can_add());
+}

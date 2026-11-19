@@ -360,3 +360,76 @@ func TestCallbacksFire(t *testing.T) {
 		t.Fatal("OnSetupRequiredChanged did not fire when setup cleared")
 	}
 }
+
+func TestDiscardAddedReturnsToAddedFrom(t *testing.T) {
+	conn, _, _ := newFixture(t)
+	conn.SetStoredProfiles([]NetworkProfile{
+		completeProfile("a", "irc.a.example"),
+		completeProfile("b", "irc.b.example"),
+	})
+	conn.Select("b")
+	if !conn.Add() {
+		t.Fatal("Add() = false from a clean stored network")
+	}
+	conn.Select("a")
+	if conn.SelectedNetworkID() == "a" {
+		t.Fatal("Select() moved off an added draft")
+	}
+	conn.Discard()
+	if conn.SelectedNetworkID() != "b" {
+		t.Fatalf("Discard() selected %q, want the network Add ran from (b)", conn.SelectedNetworkID())
+	}
+	if len(conn.Networks()) != 2 {
+		t.Fatalf("Networks() = %+v, want the draft dropped", conn.Networks())
+	}
+}
+
+func TestApplyEndsAddedPhase(t *testing.T) {
+	conn, _, _ := newFixture(t)
+	conn.SetStoredProfiles([]NetworkProfile{completeProfile("a", "irc.a.example")})
+	if !conn.Add() {
+		t.Fatal("Add() = false")
+	}
+	conn.SetHost("irc.b.example")
+	conn.SetNick("omairc")
+	conn.Apply()
+	if conn.addedFrom != "" {
+		t.Fatalf("addedFrom = %q after Apply, want it gone with the added phase", conn.addedFrom)
+	}
+	if conn.Dirty() {
+		t.Fatal("Dirty() = true after Apply stored the draft")
+	}
+	if !conn.RemoveSelected() {
+		t.Fatal("RemoveSelected() = false for the applied network")
+	}
+	if conn.addedFrom != "" {
+		t.Fatalf("addedFrom = %q after RemoveSelected", conn.addedFrom)
+	}
+}
+
+func TestDraftPhase(t *testing.T) {
+	conn, _, _ := newFixture(t)
+	conn.SetStoredProfiles([]NetworkProfile{completeProfile("a", "irc.a.example")})
+	if got := conn.DraftPhase(); got != DraftClean {
+		t.Fatalf("DraftPhase() = %v for a stored network, want clean", got)
+	}
+	conn.SetNick("changed")
+	if got := conn.DraftPhase(); got != DraftDirty {
+		t.Fatalf("DraftPhase() = %v after an edit, want dirty", got)
+	}
+	conn.SetNick("omairc")
+	if got := conn.DraftPhase(); got != DraftClean {
+		t.Fatalf("DraftPhase() = %v after reverting the edit, want clean", got)
+	}
+	if !conn.Add() {
+		t.Fatal("Add() = false")
+	}
+	conn.SetHost("irc.b.example")
+	if got := conn.DraftPhase(); got != DraftAdded {
+		t.Fatalf("DraftPhase() = %v for an added draft, want added", got)
+	}
+	conn.Discard()
+	if got := conn.DraftPhase(); got != DraftClean {
+		t.Fatalf("DraftPhase() = %v after Discard, want clean", got)
+	}
+}

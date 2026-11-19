@@ -255,6 +255,62 @@ fn removing_a_network_deletes_its_current_and_its_obsolete_keys() {
 }
 
 #[test]
+fn a_failed_deletion_stays_owed_after_a_later_write_of_the_new_key() {
+    let ledger = Ledger::default();
+    let mut controller = controller(&ledger);
+    let before = profile("old.example", "fred", "fred");
+    controller.save_profile(
+        before.clone(),
+        SecretEdits {
+            password: typed("hunter2"),
+            nickserv: None,
+        },
+    );
+    let after = profile("new.example", "fred", "fred");
+    ledger
+        .refused_deletes
+        .borrow_mut()
+        .push(key(&before, PURPOSE_PASSWORD));
+    controller.save_profile(after.clone(), SecretEdits::default());
+    assert_eq!(
+        controller
+            .credentials
+            .pending()
+            .slot(LIBERA, PURPOSE_PASSWORD),
+        [key(&before, PURPOSE_PASSWORD)],
+        "the refused delete is owed"
+    );
+
+    // A retyped password is written under the new key while the old key still cannot go.
+    let outcome = controller.save_profile(
+        after.clone(),
+        SecretEdits {
+            password: typed("fresh"),
+            nickserv: None,
+        },
+    );
+
+    assert_eq!(outcome.password, CredentialState::SessionOnly);
+    assert_eq!(
+        read(&controller, &key(&after, PURPOSE_PASSWORD)).as_deref(),
+        Some("fresh")
+    );
+    assert_eq!(
+        controller
+            .credentials
+            .pending()
+            .slot(LIBERA, PURPOSE_PASSWORD),
+        [key(&before, PURPOSE_PASSWORD)],
+        "a later write of the new key does not clear what is still owed"
+    );
+
+    ledger.refused_deletes.borrow_mut().clear();
+    assert_eq!(controller.forget_network(LIBERA), Status::Written);
+    assert_eq!(read(&controller, &key(&before, PURPOSE_PASSWORD)), None);
+    assert!(controller.credentials.pending().network(LIBERA).is_empty());
+}
+
+#[test]
 fn a_failed_move_keeps_the_old_secret_until_a_typed_one_replaces_it() {
     let ledger = Ledger::default();
     let mut controller = controller(&ledger);

@@ -169,6 +169,7 @@ func (c *Connection) SetEphemeral(ephemeral bool) {
 // credential store is installed.
 func (c *Connection) SetStoredProfiles(profiles []NetworkProfile) {
 	wasSetup := c.SetupRequired()
+	c.addedFrom = ""
 	c.stored = cloneProfiles(profiles)
 	c.assignStoredIconColors()
 	c.seedStoredSecrets()
@@ -444,6 +445,32 @@ func (c *Connection) Dirty() bool {
 	return !profilesEqual(c.draft.Normalized(), stored.Normalized())
 }
 
+// DraftPhase is what the selected network's draft is.
+type DraftPhase int
+
+const (
+	// DraftClean is a stored network as it was stored.
+	DraftClean DraftPhase = iota
+	// DraftDirty is a stored network with edits that Apply or Discard settles.
+	DraftDirty
+	// DraftAdded is a network that is not stored yet. addedFrom names where
+	// Discard returns to, and lives only while this phase does.
+	DraftAdded
+)
+
+// DraftPhase reports the selected network's phase. It is derived from the
+// selection and the draft's text, never stored.
+func (c *Connection) DraftPhase() DraftPhase {
+	switch {
+	case !c.isStored(c.selectedNetworkID):
+		return DraftAdded
+	case c.Dirty():
+		return DraftDirty
+	default:
+		return DraftClean
+	}
+}
+
 // SetupRequired reports whether no stored profile is complete.
 func (c *Connection) SetupRequired() bool {
 	for _, profile := range c.stored {
@@ -513,7 +540,6 @@ func (c *Connection) Discard() {
 			if !c.isStored(returnID) {
 				returnID = c.stored[0].NetworkID
 			}
-			c.addedFrom = ""
 			c.selectStored(returnID)
 			return
 		}
@@ -575,6 +601,7 @@ func (c *Connection) RemoveSelected() bool {
 	delete(c.applied, id)
 	delete(c.persistenceMessages, id)
 
+	c.addedFrom = ""
 	c.stored = slices.DeleteFunc(c.stored, func(profile NetworkProfile) bool {
 		return profile.NetworkID == id
 	})
@@ -696,6 +723,7 @@ func (c *Connection) Apply() bool {
 	}
 	c.draft = profile
 	c.selectedNetworkID = profile.NetworkID
+	c.addedFrom = ""
 	c.draftChanged()
 	if wasSetup != c.SetupRequired() {
 		c.setupChanged()
@@ -1409,6 +1437,7 @@ func (c *Connection) selectStored(networkID string) {
 		c.draft = stored
 	}
 	c.selectedNetworkID = networkID
+	c.addedFrom = ""
 	c.draftChanged()
 	c.networksChanged()
 }

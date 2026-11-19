@@ -16,6 +16,7 @@ mod fileupload;
 mod fixture;
 mod inbox;
 mod keychain;
+mod keychain_wait;
 mod left_channel;
 mod lifecycle;
 mod matrices;

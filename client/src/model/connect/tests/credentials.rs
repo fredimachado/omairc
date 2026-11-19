@@ -316,3 +316,26 @@ fn from_stored_marks_saved_secrets_available() {
         "password saved securely; NickServ saved securely"
     );
 }
+
+#[test]
+fn a_refused_keychain_write_leaves_the_held_secret_on_a_clean_draft() {
+    let mut state = ConnectState::from_stored(&[stored("network-1", "irc.libera.chat", "fred")]);
+    state.set_text(ConnectField::ServerPassword, "hunter2");
+    state.apply().expect("complete");
+    state.record_apply(
+        Status::Written,
+        CredentialState::Error("Access is denied.".to_owned()),
+        CredentialState::Missing,
+        false,
+    );
+    assert!(!state.dirty(), "the profile matches what was saved");
+    assert_eq!(
+        state.text(ConnectField::ServerPassword),
+        "hunter2",
+        "the typed secret stays on the draft"
+    );
+    assert_eq!(
+        state.credential_status(),
+        "secure storage error; password is session-only"
+    );
+}
