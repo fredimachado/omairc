@@ -6,6 +6,7 @@ mod classic;
 mod helpers;
 mod invention;
 mod members;
+mod monitor;
 mod multiline;
 mod presence;
 mod reconnect;
