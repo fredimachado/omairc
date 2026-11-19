@@ -5,6 +5,7 @@
 
 mod client;
 mod env;
+mod record;
 mod wait;
 
 pub use client::{unique_channel, unique_nick, LiveClient, LiveClientOptions};

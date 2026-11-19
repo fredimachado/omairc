@@ -20,6 +20,7 @@ use crate::storage::Backing;
 use crate::util::Secret;
 
 use super::env::{live_cert_pem, live_host, DaemonInfo};
+use super::record::{RecordingTransports, SentLog};
 use super::wait::{message_has_command, wait_until, DEFAULT_TIMEOUT};
 
 static NICK_SEQ: AtomicU32 = AtomicU32::new(0);
@@ -60,6 +61,7 @@ pub struct LiveClient {
     pub network_id: String,
     /// Extra sessions started with [`Self::connect_additional`] (disconnected on drop).
     extra_network_ids: Vec<String>,
+    sent: SentLog,
     _clock: Rc<dyn Clock>,
 }
 
@@ -73,7 +75,11 @@ impl LiveClient {
             ..NetOptions::default()
         }));
         let clock: Rc<dyn Clock> = Rc::new(RealClock::new());
-        let transports = Box::new(NetTransports::new(hub.clone()));
+        let sent = SentLog::default();
+        let transports = Box::new(RecordingTransports::new(
+            NetTransports::new(hub.clone()),
+            Rc::clone(&sent),
+        ));
         let backing = match &options.settings_file {
             Some(path) => Backing::Disk(path.clone()),
             None => Backing::Ephemeral,
@@ -95,6 +101,7 @@ impl LiveClient {
             controller,
             network_id,
             extra_network_ids: Vec::new(),
+            sent,
             _clock: clock,
         }
     }
@@ -275,6 +282,31 @@ impl LiveClient {
         self.session().force_transport_shutdown();
         self.pump();
         true
+    }
+
+    /// Outbound lines the primary network wrote, in write order, CRLF trimmed.
+    pub fn sent_lines(&self) -> Vec<String> {
+        self.sent
+            .borrow()
+            .get(&self.network_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Writes `PING :<token>` and waits for the matching `PONG`.
+    pub fn fence(&mut self, token: &str) -> bool {
+        let before = self.incoming().len();
+        if !self.session().send_raw(&format!("PING :{token}")) {
+            return false;
+        }
+        let token = token.to_owned();
+        self.wait_until(|client| {
+            client.incoming()[before..].iter().any(|message| {
+                message.command == "PONG"
+                    && !message.params.is_empty()
+                    && message.text_param(message.params.len() - 1) == token
+            })
+        })
     }
 
     pub fn last_error(&self) -> Option<&str> {
