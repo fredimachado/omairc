@@ -1,13 +1,26 @@
 //! invite-notify delivery: an op-visible muted line in the channel transcript,
 //! never in Status, with no join link and no invented DM (#484).
 
+use std::collections::BTreeSet;
+
 use omairc::irc::capability::IrcCapability;
 use omairc::irc::command::ComposerSurface;
 use omairc::irc::inbox::InboxKind;
 use omairc::irc::world::MessageKind;
 use omairc::live::{live_daemons, unique_channel, unique_nick, LiveClient, LiveClientOptions};
 
-use super::helpers::{direct_rows_for, require_live, wait_names_end};
+use super::helpers::{require_live, wait_names_end};
+
+/// Conversation ids of the observer's direct messages on its primary network.
+fn observer_direct_ids(observer: &LiveClient) -> BTreeSet<String> {
+    observer
+        .controller
+        .conversations()
+        .into_iter()
+        .filter(|row| row.direct && row.key.network_id == observer.network_id)
+        .map(|row| row.conversation_id)
+        .collect()
+}
 
 #[test]
 #[ignore = "requires bin/test-live (OMAIRC_LIVE_DAEMONS)"]
@@ -74,6 +87,8 @@ fn invite_notify_line() {
             daemon.name,
             inviter_nick
         );
+
+        let directs_before = observer_direct_ids(&observer);
 
         assert!(
             inviter.controller.submit(
@@ -152,8 +167,9 @@ fn invite_notify_line() {
             daemon.name
         );
 
-        assert!(
-            direct_rows_for(&observer, &invitee_nick).is_empty(),
+        assert_eq!(
+            observer_direct_ids(&observer),
+            directs_before,
             "{} invite invents no DM",
             daemon.name
         );

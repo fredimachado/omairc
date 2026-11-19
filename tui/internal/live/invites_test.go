@@ -3,6 +3,7 @@
 package live
 
 import (
+	"maps"
 	"strings"
 	"testing"
 
@@ -11,6 +12,20 @@ import (
 )
 
 // Mirrors `client/tests/live/invites.rs`.
+
+// observerDirectIDs returns conversation ids of the observer's direct messages
+// on its primary network.
+func observerDirectIDs(c *Client) map[string]struct{} {
+	ids := make(map[string]struct{})
+	c.Do(func(ctrl *controller.Controller) {
+		for _, row := range ctrl.Conversations() {
+			if row.Direct && row.NetworkID == c.NetworkID {
+				ids[row.ConversationID] = struct{}{}
+			}
+		}
+	})
+	return ids
+}
 
 func TestInviteNotifyLine(t *testing.T) {
 	for _, daemon := range requireLive(t) {
@@ -54,6 +69,8 @@ func TestInviteNotifyLine(t *testing.T) {
 		}) {
 			t.Fatalf("%s member %s", daemon.Name, inviterNick)
 		}
+
+		directsBefore := observerDirectIDs(observer)
 
 		if !inviter.Submit("/invite " + inviteeNick + " " + channel) {
 			t.Fatalf("%s /invite: %s", daemon.Name, inviter.LastError())
@@ -114,8 +131,8 @@ func TestInviteNotifyLine(t *testing.T) {
 			t.Fatalf("%s observer pending_invite is None (no /join link)", daemon.Name)
 		}
 
-		if rows := directRowsFor(observer, inviteeNick); len(rows) != 0 {
-			t.Fatalf("%s invite invents no DM, got %d", daemon.Name, len(rows))
+		if !maps.Equal(observerDirectIDs(observer), directsBefore) {
+			t.Fatalf("%s invite invents no DM", daemon.Name)
 		}
 	}
 }
