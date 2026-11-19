@@ -60,6 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Channel history arrives in order on servers that offer both `chathistory`
+  and `znc.in/playback`, such as Ergo. Both clients sent `ZNC *playback PLAY`
+  as well as `CHATHISTORY`, and Ergo answers a PLAY with `chathistory` batches:
+  the replay on join was taken for the `CHATHISTORY LATEST` answer, and older
+  lines from the PLAY landed below the newest page. CHATHISTORY now owns history
+  when both are offered, so no PLAY is sent there. A bouncer that offers only
+  `znc.in/playback` is unchanged.
 - `/list` recovers after an idle timeout. A timed-out `LIST` whose `323` never
   came made every later `/list` on that network swallow its own end and time
   out too. The timeout now sends a `PING` fence: a late `322` or `323` that

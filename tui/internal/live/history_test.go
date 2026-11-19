@@ -130,7 +130,11 @@ func TestChatHistoryBeforePages(t *testing.T) {
 	}
 	client.SelectChannel(channel)
 
-	latestFrom := total - limit + 1
+	// Ergo keeps our own JOIN in the channel history and counts it in the
+	// LATEST page. Without draft/event-playback it replays that item as a
+	// HistServ PRIVMSG, so the newest limit items are the join and limit-1
+	// seed lines.
+	latestFrom := total - (limit - 1) + 1
 	latestWant := expectedRange(latestFrom, total)
 	if !client.WaitUntil(func(c *Client) bool {
 		return indicesEqual(seedIndices(c, channel), latestWant)
