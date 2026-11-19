@@ -27,6 +27,12 @@ static NICK_SEQ: AtomicU32 = AtomicU32::new(0);
 static CHANNEL_SEQ: AtomicU32 = AtomicU32::new(0);
 static FENCE_SEQ: AtomicU32 = AtomicU32::new(0);
 
+/// The fence serial counter's current value (the next serial `fence` tries first).
+/// Live proofs plant decoy PINGs with it.
+pub fn fence_serial() -> u32 {
+    FENCE_SEQ.load(Ordering::Relaxed)
+}
+
 /// Optional knobs for [`LiveClient::connect`].
 #[derive(Clone, Default)]
 pub struct LiveClientOptions {
@@ -285,26 +291,40 @@ impl LiveClient {
         true
     }
 
-    /// Outbound lines the primary network wrote, CRLF trimmed.
+    /// Outbound lines `network_id` wrote, CRLF trimmed.
     ///
     /// Order is the order of `Transport::write` calls. It matches wire order
     /// for writes from one turn (one session drain); interleaving between
     /// concurrent writers is unspecified, as it is on the wire.
-    pub fn sent_lines(&self) -> Vec<String> {
+    pub fn sent_lines_for(&self, network_id: &str) -> Vec<String> {
         self.sent
             .borrow()
-            .get(&self.network_id)
+            .get(network_id)
             .cloned()
             .unwrap_or_default()
     }
 
-    /// Writes `PING :<token>-<serial>` and waits for that wire token's `PONG`.
+    /// Outbound lines the primary network wrote, CRLF trimmed.
+    pub fn sent_lines(&self) -> Vec<String> {
+        self.sent_lines_for(&self.network_id)
+    }
+
+    /// Writes a `PING` whose wire token is unused on this network and waits for
+    /// that token's `PONG`.
     ///
-    /// The serial is per-process so an earlier pending `PONG` for `token` cannot
-    /// satisfy this call.
+    /// The wire token is `<token>-<serial>` from [`fence_serial`]'s counter.
+    /// While this network's sent log already holds `PING :<candidate>`, the next
+    /// serial is taken, so an earlier raw ping (including one planted for the
+    /// next serial) cannot satisfy the fence.
     pub fn fence(&mut self, token: &str) -> bool {
-        let serial = FENCE_SEQ.fetch_add(1, Ordering::Relaxed);
-        let wire = format!("{token}-{serial}");
+        let wire = loop {
+            let serial = FENCE_SEQ.fetch_add(1, Ordering::Relaxed);
+            let candidate = format!("{token}-{serial}");
+            let ping = format!("PING :{candidate}");
+            if !self.sent_lines().iter().any(|line| line == &ping) {
+                break candidate;
+            }
+        };
         let before = self.incoming().len();
         if !self.session().send_raw(&format!("PING :{wire}")) {
             return false;

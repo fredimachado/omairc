@@ -3,6 +3,7 @@
 package live
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -25,7 +26,7 @@ func TestOutboundLogAndFence(t *testing.T) {
 			}
 		}
 		if nickHits != 1 {
-			t.Fatalf("%s: expected one %s, count %d", daemon.Name, nickLine, nickHits)
+			t.Fatalf("%s: expected one primary NICK, count %d", daemon.Name, nickHits)
 		}
 
 		// Both clients send CAP LS first, then NICK before CAP END.
@@ -42,37 +43,65 @@ func TestOutboundLogAndFence(t *testing.T) {
 				capEndAt = index
 			}
 		}
-		if nickAt < 0 || capEndAt < 0 || nickAt >= capEndAt {
+		if capEndAt < 0 {
+			t.Fatalf("%s: missing CAP END before NICK order check", daemon.Name)
+		}
+		if nickAt < 0 || nickAt >= capEndAt {
 			t.Fatalf("%s: NICK must precede CAP END (nick@%d end@%d)", daemon.Name, nickAt, capEndAt)
 		}
 
 		fenceToken := "fence-" + nick
-		barePing := "PING :" + fenceToken
-		if !client.Session().SendRaw(barePing) {
-			t.Fatalf("%s: send bare %s", daemon.Name, barePing)
+		nextSerial := FenceSerial()
+		decoys := []string{
+			"PING :" + fenceToken,
+			fmt.Sprintf("PING :%s-%d", fenceToken, nextSerial),
+		}
+		for _, decoy := range decoys {
+			if !client.Session().SendRaw(decoy) {
+				t.Fatalf("%s: send decoy PING", daemon.Name)
+			}
 		}
 		if !client.Fence(fenceToken) {
-			t.Fatalf("%s: fence %s timed out", daemon.Name, fenceToken)
+			t.Fatalf("%s: fence timed out", daemon.Name)
 		}
 		sent = client.Sent()
-		bareHits := 0
-		var wirePings []string
 		wirePrefix := "PING :" + fenceToken + "-"
+		var fencePings []string
 		for _, line := range sent {
-			if line == barePing {
-				bareHits++
+			if !strings.HasPrefix(line, wirePrefix) {
+				continue
 			}
-			if strings.HasPrefix(line, wirePrefix) {
-				wirePings = append(wirePings, line)
+			isDecoy := false
+			for _, decoy := range decoys {
+				if line == decoy {
+					isDecoy = true
+					break
+				}
+			}
+			if !isDecoy {
+				fencePings = append(fencePings, line)
 			}
 		}
-		if bareHits != 1 {
-			t.Fatalf("%s: expected one %s, count %d", daemon.Name, barePing, bareHits)
+		if len(fencePings) != 1 {
+			t.Fatalf("%s: expected one fence PING distinct from decoys, count %d",
+				daemon.Name, len(fencePings))
 		}
-		if len(wirePings) != 1 {
-			t.Fatalf("%s: expected one %s*, count %d", daemon.Name, wirePrefix, len(wirePings))
+		for _, decoy := range decoys {
+			found := false
+			for _, line := range sent {
+				if line == decoy {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("%s: missing decoy PING in sent log", daemon.Name)
+			}
+			if fencePings[0] == decoy {
+				t.Fatalf("%s: fence PING matched a decoy", daemon.Name)
+			}
 		}
-		wireToken := strings.TrimPrefix(wirePings[0], "PING :")
+		wireToken := strings.TrimPrefix(fencePings[0], "PING :")
 		foundPong := false
 		for _, message := range client.Incoming() {
 			if message.Command != "PONG" || len(message.Params) == 0 {
@@ -84,7 +113,7 @@ func TestOutboundLogAndFence(t *testing.T) {
 			}
 		}
 		if !foundPong {
-			t.Fatalf("%s: missing PONG for wire token %s", daemon.Name, wireToken)
+			t.Fatalf("%s: missing PONG for fence wire token", daemon.Name)
 		}
 
 		n := len(client.Sent())
@@ -114,8 +143,11 @@ func TestOutboundLogAndFence(t *testing.T) {
 				capIndexes = append(capIndexes, index)
 			}
 		}
-		if len(capIndexes) < 2 || capIndexes[1] < n {
-			t.Fatalf("%s: second CAP LS must be at index >= %d, got %v", daemon.Name, n, capIndexes)
+		if len(capIndexes) != 2 {
+			t.Fatalf("%s: expected exactly two CAP LS lines, count %d", daemon.Name, len(capIndexes))
+		}
+		if capIndexes[1] < n {
+			t.Fatalf("%s: second CAP LS must be at index >= %d, got %d", daemon.Name, n, capIndexes[1])
 		}
 
 		secondNick := UniqueNick(daemon.NickLength)
@@ -124,10 +156,24 @@ func TestOutboundLogAndFence(t *testing.T) {
 			t.Fatalf("%s: second network register: %s", daemon.Name, client.LastError())
 		}
 		secondNickLine := "NICK " + secondNick
+		primarySecond := 0
 		for _, line := range client.Sent() {
 			if line == secondNickLine {
-				t.Fatalf("%s: primary sent log must not contain %s", daemon.Name, secondNickLine)
+				primarySecond++
 			}
+		}
+		if primarySecond != 0 {
+			t.Fatalf("%s: primary sent log must not contain second NICK, count %d",
+				daemon.Name, primarySecond)
+		}
+		secondHits := 0
+		for _, line := range client.SentFor(secondID) {
+			if line == secondNickLine {
+				secondHits++
+			}
+		}
+		if secondHits != 1 {
+			t.Fatalf("%s: second network must record one NICK, count %d", daemon.Name, secondHits)
 		}
 	}
 }

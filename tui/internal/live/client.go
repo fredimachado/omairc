@@ -321,13 +321,13 @@ func (c *Client) WaitRegisteredAgain() bool {
 	return c.waitState(c.NetworkID, session.StateRegistered, 40*time.Second)
 }
 
-// Sent returns every outbound line the primary network wrote, CRLF trimmed.
+// SentFor returns every outbound line networkID wrote, CRLF trimmed.
 // Order matches recordingTransport: Write-call order, wire-ordered within one
 // Do turn or session drain; concurrent interleaving is unspecified.
-func (c *Client) Sent() []string {
+func (c *Client) SentFor(networkID string) []string {
 	var transport *recordingTransport
 	c.Do(func(*controller.Controller) {
-		transport = c.transports[c.NetworkID]
+		transport = c.transports[networkID]
 	})
 	if transport == nil {
 		return nil
@@ -335,11 +335,40 @@ func (c *Client) Sent() []string {
 	return transport.sent()
 }
 
-// Fence writes PING :<token>-<serial> and waits for that wire token's PONG.
-// The serial is per-process so an earlier pending PONG for token cannot
-// satisfy this call.
+// Sent returns every outbound line the primary network wrote, CRLF trimmed.
+func (c *Client) Sent() []string {
+	return c.SentFor(c.NetworkID)
+}
+
+// FenceSerial is the fence serial counter's current value (the next serial
+// Fence tries first). Live proofs plant decoy PINGs with it.
+func FenceSerial() uint32 {
+	return fenceSeq.Load()
+}
+
+// Fence writes a PING whose wire token is unused on this network and waits for
+// that token's PONG. The wire token is <token>-<serial> from FenceSerial's
+// counter. While this network's sent log already holds PING :<candidate>, the
+// next serial is taken, so an earlier raw ping (including one planted for the
+// next serial) cannot satisfy the fence.
 func (c *Client) Fence(token string) bool {
-	wire := fmt.Sprintf("%s-%d", token, fenceSeq.Add(1)-1)
+	var wire string
+	for {
+		serial := fenceSeq.Add(1) - 1
+		candidate := fmt.Sprintf("%s-%d", token, serial)
+		ping := "PING :" + candidate
+		taken := false
+		for _, line := range c.Sent() {
+			if line == ping {
+				taken = true
+				break
+			}
+		}
+		if !taken {
+			wire = candidate
+			break
+		}
+	}
 	before := len(c.Incoming())
 	if !c.Session().SendRaw("PING :" + wire) {
 		return false

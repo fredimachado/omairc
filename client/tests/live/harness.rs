@@ -1,4 +1,6 @@
-use omairc::live::{live_daemons, unique_nick, LiveClient, LiveClientOptions};
+use omairc::live::{
+    fence_serial, live_daemons, unique_nick, LiveClient, LiveClientOptions,
+};
 
 use super::helpers::require_live;
 
@@ -33,7 +35,7 @@ fn outbound_log_and_fence() {
             .count();
         assert_eq!(
             nick_hits, 1,
-            "{}: expected one {nick_line}, count {nick_hits}",
+            "{}: expected one primary NICK, count {nick_hits}",
             daemon.name
         );
 
@@ -44,58 +46,75 @@ fn outbound_log_and_fence() {
             "{}: first sent line must start with CAP LS",
             daemon.name
         );
+        let cap_end_at = sent.iter().position(|line| line == "CAP END");
+        assert!(
+            cap_end_at.is_some(),
+            "{}: missing CAP END before NICK order check",
+            daemon.name
+        );
         let nick_at = sent
             .iter()
             .position(|line| line == &nick_line)
-            .unwrap_or(usize::MAX);
-        let cap_end_at = sent
-            .iter()
-            .position(|line| line == "CAP END")
-            .unwrap_or(usize::MAX);
+            .expect("primary NICK");
         assert!(
-            nick_at < cap_end_at,
-            "{}: NICK must precede CAP END (nick@{nick_at} end@{cap_end_at})",
-            daemon.name
+            nick_at < cap_end_at.unwrap(),
+            "{}: NICK must precede CAP END (nick@{nick_at} end@{})",
+            daemon.name,
+            cap_end_at.unwrap()
         );
 
         let fence_token = format!("fence-{nick}");
-        let bare_ping = format!("PING :{fence_token}");
-        assert!(
-            client
-                .controller
-                .session(&client.network_id)
-                .expect("session")
-                .send_raw(&bare_ping),
-            "{}: send bare {bare_ping}",
-            daemon.name
-        );
+        let next_serial = fence_serial();
+        let decoys = [
+            format!("PING :{fence_token}"),
+            format!("PING :{fence_token}-{next_serial}"),
+        ];
+        for decoy in &decoys {
+            assert!(
+                client
+                    .controller
+                    .session(&client.network_id)
+                    .expect("session")
+                    .send_raw(decoy),
+                "{}: send decoy PING",
+                daemon.name
+            );
+        }
         client.pump();
         assert!(
             client.fence(&fence_token),
-            "{}: fence {fence_token} timed out",
+            "{}: fence timed out",
             daemon.name
         );
         let sent = client.sent_lines();
-        let bare_hits = sent.iter().filter(|line| *line == &bare_ping).count();
-        assert_eq!(
-            bare_hits, 1,
-            "{}: expected one {bare_ping}, count {bare_hits}",
-            daemon.name
-        );
-        let wire_prefix = format!("PING :{fence_token}-");
-        let wire_pings: Vec<_> = sent
+        let fence_pings: Vec<_> = sent
             .iter()
-            .filter(|line| line.starts_with(&wire_prefix))
+            .filter(|line| {
+                line.starts_with(&format!("PING :{fence_token}-"))
+                    && decoys.iter().all(|decoy| decoy != *line)
+            })
             .cloned()
             .collect();
         assert_eq!(
-            wire_pings.len(),
+            fence_pings.len(),
             1,
-            "{}: expected one {wire_prefix}*, count {}",
+            "{}: expected one fence PING distinct from decoys, count {}",
             daemon.name,
-            wire_pings.len()
+            fence_pings.len()
         );
-        let wire_token = wire_pings[0]
+        for decoy in &decoys {
+            assert!(
+                sent.iter().any(|line| line == decoy),
+                "{}: missing decoy PING in sent log",
+                daemon.name
+            );
+            assert!(
+                &fence_pings[0] != decoy,
+                "{}: fence PING matched a decoy",
+                daemon.name
+            );
+        }
+        let wire_token = fence_pings[0]
             .strip_prefix("PING :")
             .expect("wire ping prefix");
         assert!(
@@ -104,7 +123,7 @@ fn outbound_log_and_fence() {
                     && !message.params.is_empty()
                     && message.text_param(message.params.len() - 1) == wire_token
             }),
-            "{}: missing PONG for wire token {wire_token}",
+            "{}: missing PONG for fence wire token",
             daemon.name
         );
 
@@ -135,22 +154,30 @@ fn outbound_log_and_fence() {
             after.len()
         );
         for index in 0..n {
-            assert_eq!(
-                after[index], before[index],
+            assert!(
+                after[index] == before[index],
                 "{}: pre-reconnect prefix mismatch at {index}",
                 daemon.name
             );
         }
-        let second_cap = after
+        let cap_indexes: Vec<_> = after
             .iter()
             .enumerate()
             .filter(|(_, line)| line.starts_with("CAP LS"))
-            .nth(1)
-            .map(|(index, _)| index);
+            .map(|(index, _)| index)
+            .collect();
+        assert_eq!(
+            cap_indexes.len(),
+            2,
+            "{}: expected exactly two CAP LS lines, count {}",
+            daemon.name,
+            cap_indexes.len()
+        );
         assert!(
-            second_cap.is_some_and(|index| index >= n),
-            "{}: second CAP LS must be at index >= {n}, got {second_cap:?}",
-            daemon.name
+            cap_indexes[1] >= n,
+            "{}: second CAP LS must be at index >= {n}, got {}",
+            daemon.name,
+            cap_indexes[1]
         );
 
         let second_nick = unique_nick(daemon.nick_length);
@@ -167,12 +194,24 @@ fn outbound_log_and_fence() {
             client.last_error().unwrap_or("no error")
         );
         let second_nick_line = format!("NICK {second_nick}");
-        assert!(
-            !client
-                .sent_lines()
-                .iter()
-                .any(|line| line == &second_nick_line),
-            "{}: primary sent log must not contain {second_nick_line}",
+        let primary_second = client
+            .sent_lines()
+            .iter()
+            .filter(|line| *line == &second_nick_line)
+            .count();
+        assert_eq!(
+            primary_second, 0,
+            "{}: primary sent log must not contain second NICK, count {primary_second}",
+            daemon.name
+        );
+        let second_hits = client
+            .sent_lines_for(&second_id)
+            .iter()
+            .filter(|line| *line == &second_nick_line)
+            .count();
+        assert_eq!(
+            second_hits, 1,
+            "{}: second network must record one NICK, count {second_hits}",
             daemon.name
         );
     }
