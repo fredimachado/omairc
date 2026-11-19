@@ -85,7 +85,10 @@ const (
 )
 
 // connectStop is one stop in the sheet's ordered focus walk: a network rail
-// row, the Add control, a form field, or a footer button.
+// row, the Add control, a form field, or a footer button. A field's index is
+// its connectField or prefField, and a footer button's is its footerAction, so
+// a stop names the same control however many stops come before it. That
+// matches the desktop's Stop enum in `client/src/model/connect.rs`.
 type connectStop struct {
 	kind  connectStopKind
 	index int
@@ -108,10 +111,13 @@ var footerLabels = map[footerAction]string{
 	footerApply:      "Apply",
 }
 
-// connectSheetState is the sheet's focus, tab, and live text field.
+// connectSheetState is the sheet's focus, tab, and live text field. The focus
+// is the stop itself, not its position: "+ Add network" leaves the walk the
+// moment an edit makes the draft dirty, and a position would then name the
+// next field, so Name's text would show in Host and commit into it.
 type connectSheetState struct {
 	tab         connectTab
-	focus       int
+	focus       connectStop
 	input       textinput.Model
 	armedRemove bool
 }
@@ -151,7 +157,7 @@ func (m *Model) openConnect() {
 	}
 	m.connectOpen = true
 	m.sheet.tab = connectTabConnection
-	m.sheet.focus = 0
+	m.focusFirstStop()
 	m.sheet.armedRemove = false
 	m.composer.Blur()
 	m.syncSheetField()
@@ -183,8 +189,8 @@ func (m *Model) connectStops() []connectStop {
 		for index := 0; index < int(connectFieldCount); index++ {
 			stops = append(stops, connectStop{kind: stopField, index: index})
 		}
-		for index := range m.footerActions() {
-			stops = append(stops, connectStop{kind: stopFooter, index: index})
+		for _, action := range m.footerActions() {
+			stops = append(stops, connectStop{kind: stopFooter, index: int(action)})
 		}
 	case connectTabPreferences:
 		for index := 0; index < int(prefFieldCount); index++ {
@@ -208,20 +214,43 @@ func (m *Model) footerActions() []footerAction {
 	return actions
 }
 
-// clampSheetFocus keeps the focus index inside the current stop list as the
-// list shrinks or grows.
+// clampSheetFocus moves the focus onto a stop that is still in the walk after
+// the list shrank: a footer button that left falls to Apply, anything else to
+// the first stop.
 func (m *Model) clampSheetFocus() {
-	stops := m.connectStops()
-	if len(stops) == 0 {
-		m.sheet.focus = 0
-		return
+	if stop, ok := m.focusedStop(); ok {
+		m.sheet.focus = stop
 	}
-	if m.sheet.focus < 0 {
-		m.sheet.focus = 0
+}
+
+// focusFirstStop puts the focus on the first stop of the current tab.
+func (m *Model) focusFirstStop() {
+	if stops := m.connectStops(); len(stops) > 0 {
+		m.sheet.focus = stops[0]
 	}
-	if m.sheet.focus >= len(stops) {
-		m.sheet.focus = len(stops) - 1
+}
+
+// focusField puts the focus on one Connection field.
+func (m *Model) focusField(field connectField) {
+	m.sheet.focus = connectStop{kind: stopField, index: int(field)}
+}
+
+// focusedStopIndex is the focused stop's position in the walk. A stop that is
+// no longer in the walk resolves as clampSheetFocus says.
+func (m *Model) focusedStopIndex(stops []connectStop) int {
+	for index, stop := range stops {
+		if stop == m.sheet.focus {
+			return index
+		}
 	}
+	if m.sheet.focus.kind == stopFooter {
+		for index, stop := range stops {
+			if stop == (connectStop{kind: stopFooter, index: int(footerApply)}) {
+				return index
+			}
+		}
+	}
+	return 0
 }
 
 func (m *Model) focusedStop() (connectStop, bool) {
@@ -229,11 +258,7 @@ func (m *Model) focusedStop() (connectStop, bool) {
 	if len(stops) == 0 {
 		return connectStop{}, false
 	}
-	index := m.sheet.focus
-	if index < 0 || index >= len(stops) {
-		index = 0
-	}
-	return stops[index], true
+	return stops[m.focusedStopIndex(stops)], true
 }
 
 func (m *Model) stopFocused(stop connectStop) bool {
@@ -242,16 +267,17 @@ func (m *Model) stopFocused(stop connectStop) bool {
 }
 
 // stepSheet commits the live field, moves the focus by delta (wrapping), and
-// loads the next field.
+// loads the next field. The walk is read after the commit, which can add or
+// drop stops, so the step starts from where the focused stop now sits.
 func (m *Model) stepSheet(delta int) {
+	m.commitSheetField()
 	stops := m.connectStops()
 	if len(stops) == 0 {
 		return
 	}
-	m.commitSheetField()
-	index := m.sheet.focus + delta
+	index := m.focusedStopIndex(stops) + delta
 	index = ((index % len(stops)) + len(stops)) % len(stops)
-	m.sheet.focus = index
+	m.sheet.focus = stops[index]
 	m.syncSheetField()
 }
 
@@ -273,13 +299,7 @@ func (m *Model) stepSheetNetwork(delta int) {
 		current = ((current+delta)%len(rows) + len(rows)) % len(rows)
 	}
 	m.conn.Select(rows[current].NetworkID)
-	stops := m.connectStops()
-	for index, stop := range stops {
-		if stop.kind == stopNetwork && stop.index == current {
-			m.sheet.focus = index
-			break
-		}
-	}
+	m.sheet.focus = connectStop{kind: stopNetwork, index: current}
 	m.syncSheetField()
 }
 
@@ -290,7 +310,7 @@ func (m *Model) toggleConnectTab() {
 	} else {
 		m.sheet.tab = connectTabConnection
 	}
-	m.sheet.focus = 0
+	m.focusFirstStop()
 	m.syncSheetField()
 }
 
@@ -309,24 +329,27 @@ func (m *Model) activateConnectStop() {
 		}
 		m.stepSheet(1)
 	case stopAddNetwork:
-		if m.conn.Add() {
-			m.sheet.focus = 0
-		}
-		m.syncSheetField()
+		m.addConnectNetwork()
 	case stopField:
 		m.stepSheet(1)
 	case stopFooter:
-		m.activateFooter(stop.index)
+		m.activateFooter(footerAction(stop.index))
 	}
 }
 
-// activateFooter runs one footer button.
-func (m *Model) activateFooter(index int) {
-	actions := m.footerActions()
-	if index < 0 || index >= len(actions) {
-		return
+// addConnectNetwork is Ctrl+N and Enter on "+ Add network": a new draft with
+// the focus on Name, as the desktop's add() requests Stop::Field(Name).
+func (m *Model) addConnectNetwork() {
+	if m.conn.Add() {
+		m.sheet.tab = connectTabConnection
+		m.focusField(fieldName)
 	}
-	switch actions[index] {
+	m.syncSheetField()
+}
+
+// activateFooter runs one footer button.
+func (m *Model) activateFooter(action footerAction) {
+	switch action {
 	case footerRemove:
 		m.conn.RemoveSelected()
 	case footerDiscard:
@@ -575,10 +598,7 @@ func (m *Model) handleConnectKey(key string, msg tea.KeyPressMsg) (tea.Model, te
 		m.stepSheetNetwork(1)
 		return m, nil
 	case "ctrl+n":
-		if m.conn.Add() {
-			m.sheet.focus = 0
-		}
-		m.syncSheetField()
+		m.addConnectNetwork()
 		return m, nil
 	case "ctrl+shift+delete":
 		m.armRemoveSelected()
@@ -721,8 +741,8 @@ func (m *Model) connectCardContent(inner int) connectCardContent {
 // footerFocused reports whether any footer action holds the sheet focus, so the
 // viewport can treat the action row as the focused one.
 func (m *Model) footerFocused() bool {
-	for index := range m.footerActions() {
-		if m.stopFocused(connectStop{kind: stopFooter, index: index}) {
+	for _, action := range m.footerActions() {
+		if m.stopFocused(connectStop{kind: stopFooter, index: int(action)}) {
 			return true
 		}
 	}
@@ -867,14 +887,14 @@ func (m *Model) secretSet(field connectField) bool {
 func (m *Model) connectFooterLine() string {
 	actions := m.footerActions()
 	parts := make([]string, 0, len(actions))
-	for index, action := range actions {
+	for _, action := range actions {
 		label := footerLabels[action]
 		style := m.styles.SheetButton
 		muted := action == footerApply && m.conn.Problem() != ""
 		if muted {
 			style = m.styles.SheetButtonMuted
 		}
-		if m.stopFocused(connectStop{kind: stopFooter, index: index}) {
+		if m.stopFocused(connectStop{kind: stopFooter, index: int(action)}) {
 			if muted {
 				style = m.styles.SheetButtonMuted.Underline(true)
 			} else {
