@@ -2,6 +2,7 @@
 //! Ignored by default. `bin/test-live` exports `OMAIRC_LIVE_*` and runs
 
 mod caps;
+mod channel;
 mod classic;
 mod helpers;
 mod invention;
