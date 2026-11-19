@@ -1,10 +1,12 @@
 use omairc::irc::command::ComposerSurface;
+use omairc::irc::wiretext::wire_text;
+use omairc::irc::world::MessageKind;
 use omairc::live::{
     live_daemons, unique_channel, unique_nick, LiveClient, LiveClientOptions,
 };
 
 use super::helpers::{
-    names_end_count, require_live, saw_channel_mode, saw_part, wait_names_end,
+    conversation_row, names_end_count, require_live, saw_channel_mode, saw_part, wait_names_end,
 };
 
 #[test]
@@ -156,6 +158,88 @@ fn join_multiple_channels() {
         assert!(
             client.wait_until(|client| names_end_count(&client.incoming(), &keyed) >= 2),
             "{} rejoin",
+            daemon.name
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires bin/test-live (OMAIRC_LIVE_DAEMONS)"]
+fn failed_join_reason() {
+    require_live();
+    for daemon in live_daemons() {
+        let tls = daemon.use_tls();
+        let channel = unique_channel();
+
+        let mut peer = LiveClient::connect(
+            &daemon,
+            &unique_nick(daemon.nick_length),
+            tls,
+            LiveClientOptions::default(),
+        );
+        assert!(peer.wait_registered(), "{} peer", daemon.name);
+        assert!(peer.join_channel(&channel));
+        assert!(wait_names_end(&mut peer, &channel));
+        assert!(peer
+            .controller
+            .session(&peer.network_id)
+            .expect("session")
+            .send_raw(&format!("MODE {channel} +i")));
+        peer.pump();
+        assert!(
+            peer.wait_until(|peer| saw_channel_mode(&peer.incoming(), &channel, 'i')),
+            "{} mode +i",
+            daemon.name
+        );
+
+        let mut client = LiveClient::connect(
+            &daemon,
+            &unique_nick(daemon.nick_length),
+            tls,
+            LiveClientOptions::default(),
+        );
+        assert!(client.wait_registered(), "{}", daemon.name);
+        client.controller.open_status(&client.network_id);
+        assert!(client
+            .controller
+            .submit(ComposerSurface::Status, &format!("/join {channel}")));
+
+        let mut reason = String::new();
+        assert!(
+            client.wait_until(|client| {
+                let mapping = client.features().case_mapping();
+                client.incoming().iter().any(|message| {
+                    if message.command != "473" || message.params.len() < 3 {
+                        return false;
+                    }
+                    if !mapping.equals(&wire_text(&message.params[1]), &channel) {
+                        return false;
+                    }
+                    let body = wire_text(&message.params[2]);
+                    if body.is_empty() {
+                        return false;
+                    }
+                    reason = body;
+                    true
+                })
+            }),
+            "{} 473",
+            daemon.name
+        );
+        assert!(!reason.is_empty(), "{} non-empty 473 reason", daemon.name);
+        assert!(
+            conversation_row(&client.controller, &client.network_id, &channel).is_some(),
+            "{} composer /join opened the row",
+            daemon.name
+        );
+        client.select_channel(&channel);
+        assert!(
+            client.wait_until(|client| {
+                client.messages().iter().any(|message| {
+                    message.kind == MessageKind::Error && message.body == reason
+                })
+            }),
+            "{} error line in channel buffer ({reason})",
             daemon.name
         );
     }
