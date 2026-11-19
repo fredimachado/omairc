@@ -3,9 +3,7 @@ package controller
 import (
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/fredimachado/omairc/tui/internal/irc"
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
@@ -24,16 +22,6 @@ func closedHas(c *Controller, target string) bool {
 	features := c.reducer.ServerFeatures("freenode")
 	mapping := features.CaseMapping()
 	return c.closed.Contains("freenode", target, mapping)
-}
-
-func applyNotice(c *Controller, nick, body string) {
-	c.Apply(irc.NoticeEvent{
-		Conversation: c.reducer.ConversationKey("freenode", nick),
-		Author:       nick,
-		Body:         body,
-		Timestamp:    time.Date(2026, 9, 26, 9, 0, 0, 0, time.UTC),
-		Target:       nick,
-	})
 }
 
 func frameCount(transport *session.LoopbackTransport, needle string) int {
@@ -55,7 +43,7 @@ func TestReopenedDirectIsRememberedAcrossRestart(t *testing.T) {
 	inject(t, transport, ":lena!u@h PRIVMSG omairc :hi\r\n"+
 		":rio!u@h PRIVMSG omairc :\x01ACTION waves\x01\r\n"+
 		":kai!u@h PRIVMSG omairc :once\r\n")
-	applyNotice(c, "nia", "psst")
+	inject(t, transport, ":nia!u@h NOTICE omairc :psst\r\n")
 
 	for _, nick := range []string{"lena", "nia", "rio", "kai"} {
 		if !hasConversation(c, "freenode", nick) {
@@ -80,7 +68,7 @@ func TestReopenedDirectIsRememberedAcrossRestart(t *testing.T) {
 
 	inject(t, transport, ":lena!u@h PRIVMSG omairc :again\r\n"+
 		":rio!u@h PRIVMSG omairc :\x01ACTION waves again\x01\r\n")
-	applyNotice(c, "nia", "again")
+	inject(t, transport, ":nia!u@h NOTICE omairc :again\r\n")
 	for _, nick := range []string{"lena", "nia", "rio"} {
 		if !hasConversation(c, "freenode", nick) {
 			t.Fatalf("live line did not reopen %s", nick)

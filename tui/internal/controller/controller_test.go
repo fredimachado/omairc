@@ -266,6 +266,34 @@ func TestConversationCreateMatrix(t *testing.T) {
 		t.Fatalf("Status console missing the NickServ line")
 	}
 
+	// A service notice never invents, and still reaches the Status console.
+	inject(t, transport, ":NickServ!NickServ@services NOTICE omairc :Please identify.\r\n")
+	if hasConversation(c, "freenode", "NickServ") || hasConversation(c, "freenode", "nickserv") {
+		t.Fatalf("service notice invented: %v", conversationTargets(c))
+	}
+	if !consoleContains(c, "freenode", "Please identify.") {
+		t.Fatalf("Status console missing the NickServ notice")
+	}
+
+	// A self-authored notice never invents.
+	inject(t, transport, ":omairc!u@h NOTICE lena :psst\r\n")
+	if hasConversation(c, "freenode", "lena") {
+		t.Fatalf("InboundSelf notice invented lena: %v", conversationTargets(c))
+	}
+
+	// An inbound human notice is filed into the direct, like the desktop, and
+	// still reaches Status, without stealing the selection.
+	inject(t, transport, ":carol!u@h NOTICE omairc :heads up\r\n")
+	if !hasConversation(c, "freenode", "carol") {
+		t.Fatalf("InboundOther notice did not invent carol: %v", conversationTargets(c))
+	}
+	if !consoleContains(c, "freenode", "heads up") {
+		t.Fatalf("Status console missing carol's notice")
+	}
+	if c.SelectedTarget() != "#omarchy" {
+		t.Fatalf("SelectedTarget = %q after inbound notice", c.SelectedTarget())
+	}
+
 	// An inbound human direct invents without stealing the selection.
 	inject(t, transport, ":alice!u@h PRIVMSG omairc :hi\r\n")
 	if !hasConversation(c, "freenode", "alice") {

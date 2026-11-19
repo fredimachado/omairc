@@ -144,6 +144,64 @@ func nickTargetedChannelDelivery(wireTarget string, message Message, currentNick
 	return channelBufferDelivery{channel: canonical, onlyVisibleToYou: true}, true
 }
 
+// translateNotice files a NOTICE. A channel-context notice from a confirmed
+// member goes to that channel, visible only to you; a nick-targeted notice from
+// a person goes to the direct message, as PRIVMSG does. Channel notices, CTCP
+// replies, network and server notices, and service notices produce no
+// transcript event and stay on Status. It mirrors `notice` in
+// `client/src/irc/translator/messages.rs`.
+func translateNotice(networkID, currentNick string, features ServerFeatures, message Message, sender string, timestamp time.Time, serverTime *time.Time, lookup JoinedMemberChannel) (NoticeEvent, bool) {
+	body := ircParameter(message, 1)
+	if _, ctcp := ParseCtcpRequest(body); ctcp {
+		return NoticeEvent{}, false
+	}
+	wireTarget := ircParameter(message, 0)
+	msgid := MsgID{Value: ircTagValueOrEmpty(message, "msgid")}
+	replyTo := ircReplyTarget(message)
+	if delivery, ok := nickTargetedChannelDelivery(wireTarget, message, currentNick, features, lookup); ok {
+		return NoticeEvent{
+			Conversation:     ircKey(networkID, delivery.channel, features),
+			Author:           sender,
+			Body:             body,
+			Timestamp:        timestamp,
+			ServerTime:       serverTime,
+			Target:           delivery.channel,
+			MsgID:            msgid,
+			ReplyTo:          replyTo,
+			OnlyVisibleToYou: delivery.onlyVisibleToYou,
+		}, true
+	}
+	if features.IsChannel(wireTarget) {
+		return NoticeEvent{}, false
+	}
+	for _, name := range []string{"+draft/channel-context", "draft/channel-context"} {
+		if _, present := ircPresentTagValue(message, name); present {
+			return NoticeEvent{}, false
+		}
+	}
+	conversation, ok := ConversationFor(networkID, wireTarget, message, currentNick, features)
+	if !ok {
+		return NoticeEvent{}, false
+	}
+	displayTarget := wireTarget
+	if !ircSame(features, sender, currentNick) {
+		displayTarget = sender
+	}
+	if ircIsNetworkNoticeTarget(displayTarget) || TargetLooksLikeService(displayTarget, features) {
+		return NoticeEvent{}, false
+	}
+	return NoticeEvent{
+		Conversation: conversation,
+		Author:       sender,
+		Body:         body,
+		Timestamp:    timestamp,
+		ServerTime:   serverTime,
+		Target:       displayTarget,
+		MsgID:        msgid,
+		ReplyTo:      replyTo,
+	}, true
+}
+
 // Translate turns one inbound IRC message into the events the reducer
 // consumes. now is the wall-clock fallback when the IRCv3 time tag is missing
 // or unparseable; it replaces QDateTime::currentDateTimeUtc. It mirrors
@@ -169,21 +227,8 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 
 	if command == "NOTICE" {
 		if len(message.Params) >= 2 {
-			body := ircParameter(message, 1)
-			if _, ctcp := ParseCtcpRequest(body); !ctcp {
-				if delivery, ok := nickTargetedChannelDelivery(ircParameter(message, 0), message, currentNick, features, lookup); ok {
-					events = append(events, NoticeEvent{
-						Conversation:     ircKey(networkID, delivery.channel, features),
-						Author:           sender,
-						Body:             body,
-						Timestamp:        timestamp,
-						ServerTime:       serverTime,
-						Target:           delivery.channel,
-						MsgID:            MsgID{Value: ircTagValueOrEmpty(message, "msgid")},
-						ReplyTo:          ircReplyTarget(message),
-						OnlyVisibleToYou: delivery.onlyVisibleToYou,
-					})
-				}
+			if notice, ok := translateNotice(networkID, currentNick, features, message, sender, timestamp, serverTime, lookup); ok {
+				events = append(events, notice)
 			}
 		}
 		return events
