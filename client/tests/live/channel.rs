@@ -114,6 +114,11 @@ fn peer_channel_changes() {
             "{} members after quit",
             daemon.name
         );
+        assert!(
+            client.controller.channel_joined(),
+            "{} client joined before kick",
+            daemon.name
+        );
 
         assert!(
             op.controller.submit(

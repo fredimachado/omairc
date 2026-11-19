@@ -83,12 +83,17 @@ func TestPeerChannelChanges(t *testing.T) {
 		}) {
 			t.Fatalf("%s leaver gone", daemon.Name)
 		}
+		var joinedBeforeKick bool
 		client.Do(func(ctrl *controller.Controller) {
 			people = ctrl.PeopleCount()
 			memberCount = len(ctrl.Members())
+			joinedBeforeKick = ctrl.ChannelJoined()
 		})
 		if people != 2 || memberCount != 2 {
 			t.Fatalf("%s after quit people=%d members=%d, want 2", daemon.Name, people, memberCount)
+		}
+		if !joinedBeforeKick {
+			t.Fatalf("%s client joined before kick", daemon.Name)
 		}
 
 		if !op.Submit("/kick " + clientNick + " " + reason) {
