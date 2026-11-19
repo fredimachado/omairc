@@ -70,16 +70,22 @@ func namesEndCount(incoming []irc.Message, channel string) int {
 	return count
 }
 
-// sawChannelMode reports a MODE line for channel whose params mention mode,
-// matching Rust saw_channel_mode (any param after the channel).
+// sawChannelMode reports a MODE line for channel whose mode string (Params[1])
+// contains mode inside a `+` run, matching Rust saw_channel_mode. `MODE #c -i`
+// and `MODE #c +o nick` do not count.
 func sawChannelMode(incoming []irc.Message, channel string, mode rune) bool {
-	needle := string(mode)
 	for _, message := range incoming {
 		if message.Command != "MODE" || len(message.Params) < 2 || !paramIs(message, 0, channel) {
 			continue
 		}
-		for _, param := range message.Params[1:] {
-			if strings.Contains(param, needle) {
+		adding := false
+		for _, character := range message.Params[1] {
+			switch {
+			case character == '+':
+				adding = true
+			case character == '-':
+				adding = false
+			case adding && character == mode:
 				return true
 			}
 		}

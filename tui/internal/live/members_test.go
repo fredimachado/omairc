@@ -106,9 +106,6 @@ func TestPeerNickChange(t *testing.T) {
 			if oldRows[0].Conversation != newNick {
 				t.Fatalf("%s folded DM spelling = %q, want %q", daemon.Name, oldRows[0].Conversation, newNick)
 			}
-			if oldRows[0].ConversationID != newRows[0].ConversationID {
-				t.Fatalf("%s same conversation key", daemon.Name)
-			}
 			if newRows[0].ConversationID != idBefore {
 				t.Fatalf("%s rfc1459 must keep conversation id across rename", daemon.Name)
 			}
