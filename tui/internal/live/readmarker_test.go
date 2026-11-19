@@ -57,6 +57,26 @@ func hasReadMarker(c *Client) bool {
 	return c.Session().Capabilities().Contains(irc.CapabilityReadMarker)
 }
 
+// sawPrivmsgBody reports a PRIVMSG carrying body on the wire. Paired with a DM
+// row's unread so a non-selected DM can prove it holds a line without selecting
+// it (selecting would clear unread via markSelected).
+func sawPrivmsgBody(c *Client, body string) bool {
+	for _, message := range c.Incoming() {
+		if !strings.EqualFold(message.Command, "PRIVMSG") || len(message.Params) == 0 {
+			continue
+		}
+		if message.Params[len(message.Params)-1] == body {
+			return true
+		}
+	}
+	return false
+}
+
+func dmUnreadWithBody(c *Client, nick, body string) bool {
+	unread, ok := dmUnread(c, nick)
+	return ok && unread >= 1 && sawPrivmsgBody(c, body)
+}
+
 func TestReadMarkerAcrossSessions(t *testing.T) {
 	// Ergo only: needs SASL, multiclient, and draft/read-marker. Solanum/ngIRCd
 	// have no SASL accounts in the fixture (DaemonInfo.SASL == false).
@@ -87,6 +107,19 @@ func TestReadMarkerAcrossSessions(t *testing.T) {
 		t.Fatalf("%s: other nick = %q, want %q", daemon.Name, got, account)
 	}
 
+	// Own channels first so neither session auto-selects the DM as its first
+	// conversation (claimFirstConversation → markSelected clears unread).
+	readerChannel := UniqueChannel()
+	otherChannel := UniqueChannel()
+	if !reader.JoinChannel(readerChannel) || !waitNamesEnd(reader, readerChannel) {
+		t.Fatalf("%s: reader join %s", daemon.Name, readerChannel)
+	}
+	reader.SelectChannel(readerChannel)
+	if !other.JoinChannel(otherChannel) || !waitNamesEnd(other, otherChannel) {
+		t.Fatalf("%s: other join %s", daemon.Name, otherChannel)
+	}
+	other.SelectChannel(otherChannel)
+
 	other.Do(func(ctrl *controller.Controller) { ctrl.SetWindowActive(false) })
 	reader.Do(func(ctrl *controller.Controller) { ctrl.NoteTranscriptViewport(true, true) })
 
@@ -104,6 +137,9 @@ func TestReadMarkerAcrossSessions(t *testing.T) {
 	})
 	if !sent {
 		t.Fatalf("%s: peer send one", daemon.Name)
+	}
+	if !other.WaitUntil(func(c *Client) bool { return dmUnreadWithBody(c, peerNick, one) }) {
+		t.Fatalf("%s: other DM unread before reader select", daemon.Name)
 	}
 	if !reader.WaitUntil(func(c *Client) bool { return len(directRowsFor(c, peerNick)) > 0 }) {
 		t.Fatalf("%s: reader DM row for %s", daemon.Name, peerNick)
@@ -132,6 +168,7 @@ func TestReadMarkerAcrossSessions(t *testing.T) {
 
 	// Leg 2: B reads, A must not answer with an equal SET.
 	reader.Do(func(ctrl *controller.Controller) { ctrl.SetWindowActive(false) })
+	reader.SelectChannel(readerChannel)
 	two := "marker-two-" + account
 	peer.Do(func(ctrl *controller.Controller) {
 		sent = ctrl.SendToTarget(peer.NetworkID, account, two)
@@ -139,9 +176,10 @@ func TestReadMarkerAcrossSessions(t *testing.T) {
 	if !sent {
 		t.Fatalf("%s: peer send two", daemon.Name)
 	}
-	if !strings.EqualFold(other.SelectedTarget(), peerNick) {
-		other.SelectChannel(peerNick)
+	if !reader.WaitUntil(func(c *Client) bool { return dmUnreadWithBody(c, peerNick, two) }) {
+		t.Fatalf("%s: reader DM unread before other publishes", daemon.Name)
 	}
+	other.SelectChannel(peerNick)
 	if !other.WaitUntil(func(c *Client) bool { return channelHasBody(c, two) }) {
 		t.Fatalf("%s: other saw %s", daemon.Name, two)
 	}
@@ -149,12 +187,20 @@ func TestReadMarkerAcrossSessions(t *testing.T) {
 		ctrl.SetWindowActive(true)
 		ctrl.NoteTranscriptViewport(true, true)
 	})
+	// Wait for other's SET before reader's unread clear (mirrors Rust, where
+	// reader.wait_until only pumps reader and would miss other's GET reply).
+	if !other.WaitUntil(func(c *Client) bool {
+		return len(markreadSets(c.Sent(), peerNick)) == 1
+	}) {
+		t.Fatalf("%s: other SET after activate; markread=%v", daemon.Name, markreadLines(other.Sent(), peerNick))
+	}
 	if !reader.WaitUntil(func(c *Client) bool {
 		unread, ok := dmUnread(c, peerNick)
-		return channelHasBody(c, two) && ok && unread == 0
+		return ok && unread == 0
 	}) {
 		t.Fatalf("%s: reader unread cleared by other SET", daemon.Name)
 	}
+	reader.SelectChannel(peerNick)
 	reader.Do(func(ctrl *controller.Controller) {
 		ctrl.SetWindowActive(true)
 		ctrl.NoteTranscriptViewport(true, true)
@@ -174,7 +220,6 @@ func TestReadMarkerAcrossSessions(t *testing.T) {
 
 	// Leg 3: reconnect writes one GET and no SET.
 	sentBefore := len(reader.Sent())
-	otherIncomingBefore := len(other.Incoming())
 	if !reader.ForceDisconnect() {
 		t.Fatalf("%s: ForceDisconnect", daemon.Name)
 	}
@@ -206,17 +251,15 @@ func TestReadMarkerAcrossSessions(t *testing.T) {
 	if got := markreadGets(after, peerNick); got != 1 {
 		t.Fatalf("%s: one GET after reconnect got %d; markread=%v", daemon.Name, got, markreadLines(after, peerNick))
 	}
+	// I4: no SET after reconnect. That is also the proof the reconnect did not
+	// move B's marker forward (a forward SET would have been written here if A
+	// had anything newer). MARKREAD is consumed before Incoming(), so a
+	// "no MARKREAD in B.Incoming" check can never fail.
 	if got := markreadSets(after, peerNick); len(got) != 0 {
 		t.Fatalf("%s: no SET after reconnect; markread=%v", daemon.Name, markreadLines(after, peerNick))
 	}
 	if !other.Fence("leg3-b") {
 		t.Fatalf("%s: other fence after reconnect", daemon.Name)
-	}
-	otherNew := other.Incoming()[otherIncomingBefore:]
-	for _, message := range otherNew {
-		if strings.EqualFold(message.Command, "MARKREAD") && paramIs(message, 0, peerNick) {
-			t.Fatalf("%s: other must not see a MARKREAD for peer after reconnect", daemon.Name)
-		}
 	}
 	if unread, ok := dmUnread(other, peerNick); !ok || unread != 0 {
 		t.Fatalf("%s: other unread stays cleared (ok=%v unread=%d)", daemon.Name, ok, unread)

@@ -2,10 +2,10 @@
 
 use omairc::irc::capability::IrcCapability;
 use omairc::irc::wiretext::wire_text;
-use omairc::live::{live_daemons, unique_nick, LiveClient, LiveClientOptions};
+use omairc::live::{live_daemons, unique_channel, unique_nick, LiveClient, LiveClientOptions};
 
 use super::helpers::{
-    channel_has_body, direct_rows_for, register_ergo_account, require_live,
+    channel_has_body, direct_rows_for, register_ergo_account, require_live, wait_names_end,
 };
 
 fn markread_gets(lines: &[String], target: &str) -> usize {
@@ -42,6 +42,22 @@ fn has_read_marker(client: &LiveClient) -> bool {
         .expect("session")
         .capabilities()
         .contains(IrcCapability::ReadMarker)
+}
+
+/// Whether a PRIVMSG carrying `body` has arrived on the wire. Used with a DM
+/// row's unread to prove a non-selected DM holds a line without selecting it
+/// (selecting would clear unread via mark_selected).
+fn saw_privmsg_body(client: &LiveClient, body: &str) -> bool {
+    client.incoming().iter().any(|message| {
+        message.command.eq_ignore_ascii_case("PRIVMSG")
+            && !message.params.is_empty()
+            && wire_text(message.params.last().expect("params")) == body
+    })
+}
+
+fn dm_unread_with_body(client: &LiveClient, nick: &str, body: &str) -> bool {
+    saw_privmsg_body(client, body)
+        && dm_unread(client, nick).is_some_and(|unread| unread >= 1)
 }
 
 #[test]
@@ -107,6 +123,33 @@ fn read_marker_across_sessions() {
         daemon.name
     );
 
+    // Own channels first so neither session auto-selects the DM as its first
+    // conversation (claim_first_conversation → mark_selected clears unread).
+    let reader_channel = unique_channel();
+    let other_channel = unique_channel();
+    assert!(
+        reader.join_channel(&reader_channel),
+        "{}: reader join {reader_channel}",
+        daemon.name
+    );
+    assert!(
+        wait_names_end(&mut reader, &reader_channel),
+        "{}: reader names end",
+        daemon.name
+    );
+    reader.select_channel(&reader_channel);
+    assert!(
+        other.join_channel(&other_channel),
+        "{}: other join {other_channel}",
+        daemon.name
+    );
+    assert!(
+        wait_names_end(&mut other, &other_channel),
+        "{}: other names end",
+        daemon.name
+    );
+    other.select_channel(&other_channel);
+
     other.controller.set_window_active(false);
     other.pump();
     reader.controller.note_transcript_viewport(true, true);
@@ -136,6 +179,11 @@ fn read_marker_across_sessions() {
         daemon.name
     );
     peer.pump();
+    assert!(
+        other.wait_until(|client| dm_unread_with_body(client, &peer_nick, &one)),
+        "{}: other DM unread before reader select",
+        daemon.name
+    );
     assert!(
         reader.wait_until(|client| !direct_rows_for(client, &peer_nick).is_empty()),
         "{}: reader DM row for {peer_nick}",
@@ -176,6 +224,7 @@ fn read_marker_across_sessions() {
     // Leg 2: B reads, A must not answer with an equal SET.
     reader.controller.set_window_active(false);
     reader.pump();
+    reader.select_channel(&reader_channel);
     let two = format!("marker-two-{account}");
     assert!(
         peer.controller
@@ -184,13 +233,12 @@ fn read_marker_across_sessions() {
         daemon.name
     );
     peer.pump();
-    if !other
-        .controller
-        .selected_target()
-        .eq_ignore_ascii_case(&peer_nick)
-    {
-        other.select_channel(&peer_nick);
-    }
+    assert!(
+        reader.wait_until(|client| dm_unread_with_body(client, &peer_nick, &two)),
+        "{}: reader DM unread before other publishes",
+        daemon.name
+    );
+    other.select_channel(&peer_nick);
     assert!(
         other.wait_until(|client| channel_has_body(client, &two)),
         "{}: other saw {two}",
@@ -199,13 +247,20 @@ fn read_marker_across_sessions() {
     other.controller.set_window_active(true);
     other.controller.note_transcript_viewport(true, true);
     other.pump();
+    // Wait on other first so its GET reply is pumped and the SET goes out;
+    // reader.wait_until only pumps reader.
     assert!(
-        reader.wait_until(|client| {
-            channel_has_body(client, &two) && dm_unread(client, &peer_nick) == Some(0)
-        }),
+        other.wait_until(|client| markread_sets(&client.sent_lines(), &peer_nick).len() == 1),
+        "{}: other SET after activate; markread={:?}",
+        daemon.name,
+        markread_lines(&other.sent_lines(), &peer_nick)
+    );
+    assert!(
+        reader.wait_until(|client| dm_unread(client, &peer_nick) == Some(0)),
         "{}: reader unread cleared by other SET",
         daemon.name
     );
+    reader.select_channel(&peer_nick);
     reader.controller.set_window_active(true);
     reader.controller.note_transcript_viewport(true, true);
     reader.pump();
@@ -236,7 +291,6 @@ fn read_marker_across_sessions() {
 
     // Leg 3: reconnect writes one GET and no SET.
     let sent_before = reader.sent_lines().len();
-    let other_incoming_before = other.incoming().len();
     assert!(
         reader.force_disconnect(),
         "{}: force_disconnect",
@@ -284,6 +338,10 @@ fn read_marker_across_sessions() {
         daemon.name,
         markread_lines(after, &peer_nick)
     );
+    // I4: no SET after reconnect. That is also the proof the reconnect did not
+    // move B's marker forward (a forward SET would have been written here if A
+    // had anything newer). MARKREAD is consumed before incoming(), so a
+    // "no MARKREAD in B.incoming" check can never fail.
     assert!(
         markread_sets(after, &peer_nick).is_empty(),
         "{}: no SET after reconnect; markread={:?}",
@@ -293,18 +351,6 @@ fn read_marker_across_sessions() {
     assert!(
         other.fence("leg3-b"),
         "{}: other fence after reconnect",
-        daemon.name
-    );
-    let other_new = &other.incoming()[other_incoming_before..];
-    assert!(
-        !other_new.iter().any(|message| {
-            message.command.eq_ignore_ascii_case("MARKREAD")
-                && message
-                    .params
-                    .first()
-                    .is_some_and(|param| wire_text(param).eq_ignore_ascii_case(&peer_nick))
-        }),
-        "{}: other must not see a MARKREAD for peer after reconnect",
         daemon.name
     );
     assert_eq!(
