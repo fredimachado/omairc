@@ -2,7 +2,7 @@ use omairc::controller::controller::Controller;
 use omairc::controller::snapshots::ConversationRow;
 use omairc::irc::message::IrcMessage;
 use omairc::irc::wiretext::wire_text;
-use omairc::live::{live_daemons, live_enabled, LiveClient};
+use omairc::live::{live_daemons, live_enabled, DaemonInfo, LiveClient, LiveClientOptions};
 
 /// Fails closed when someone runs `--ignored` without the compose runner.
 pub fn require_live() {
@@ -106,4 +106,29 @@ pub fn channel_has_body(client: &LiveClient, body: &str) -> bool {
 
 pub fn wait_names_end(client: &mut LiveClient, channel: &str) -> bool {
     client.wait_until(|client| names_end_count(&client.incoming(), channel) >= 1)
+}
+
+/// Registers `nick` on Ergo via a guest NickServ REGISTER, then drops the guest
+/// so the nick is free for SASL. Shared by `sasl_plain` and the read-marker case.
+pub fn register_ergo_account(daemon: &DaemonInfo, nick: &str, password: &str) {
+    let mut guest = LiveClient::connect(
+        daemon,
+        nick,
+        daemon.use_tls(),
+        LiveClientOptions::default(),
+    );
+    assert!(guest.wait_registered());
+    let notices = omairc::live::message_command_count(&guest.incoming(), "NOTICE");
+    let network = guest.network_id.clone();
+    assert!(guest.controller.send_to_target(
+        &network,
+        "NickServ",
+        &format!("REGISTER {password} live@omairc.test")
+    ));
+    guest.pump();
+    assert!(guest.wait_until(|guest| {
+        omairc::live::message_command_count(&guest.incoming(), "NOTICE") > notices
+    }));
+    assert!(conversation_row(&guest.controller, &network, "NickServ").is_none());
+    assert!(no_status_text_contains(&guest, password));
 }

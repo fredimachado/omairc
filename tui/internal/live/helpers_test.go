@@ -9,6 +9,7 @@ import (
 
 	"github.com/fredimachado/omairc/tui/internal/controller"
 	"github.com/fredimachado/omairc/tui/internal/irc"
+	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
 // TestMain points every XDG root at a temporary directory so nothing a live
@@ -139,4 +140,33 @@ func statusTextContains(c *Client, needle string) bool {
 
 func waitNamesEnd(c *Client, channel string) bool {
 	return c.WaitUntil(func(c *Client) bool { return namesEndCount(c.Incoming(), channel) >= 1 })
+}
+
+// registerErgoAccount registers nick on Ergo via a guest NickServ REGISTER,
+// then disconnects so the nick is free for SASL. Shared by the read-marker case.
+func registerErgoAccount(t *testing.T, daemon DaemonInfo, nick, password string) {
+	t.Helper()
+	guest := Connect(t, daemon, nick, daemon.UseTLS(), Options{})
+	if !guest.WaitRegistered() {
+		t.Fatalf("%s: guest register: %s", daemon.Name, guest.LastError())
+	}
+	notices := MessageCommandCount(guest.Incoming(), "NOTICE")
+	var sent bool
+	guest.Do(func(ctrl *controller.Controller) {
+		sent = ctrl.SendToTarget(guest.NetworkID, "NickServ", "REGISTER "+password+" live@omairc.test")
+	})
+	if !sent {
+		t.Fatalf("%s: NickServ REGISTER", daemon.Name)
+	}
+	if !guest.WaitUntil(func(c *Client) bool {
+		return MessageCommandCount(c.Incoming(), "NOTICE") > notices
+	}) {
+		t.Fatalf("%s: NickServ REGISTER reply", daemon.Name)
+	}
+	guest.Do(func(ctrl *controller.Controller) {
+		ctrl.Disconnect(guest.NetworkID)
+	})
+	if !guest.waitState(guest.NetworkID, session.StateIdle, DefaultTimeout) {
+		t.Fatalf("%s: guest disconnect to Idle", daemon.Name)
+	}
 }
