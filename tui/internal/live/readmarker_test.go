@@ -167,8 +167,9 @@ func TestReadMarkerAcrossSessions(t *testing.T) {
 	}
 
 	// Leg 2: B reads, A must not answer with an equal SET.
+	// Keep A's DM selected with the window inactive so a selected-DM server
+	// marker clear is exercised (live selected chat counts unread while unfocused).
 	reader.Do(func(ctrl *controller.Controller) { ctrl.SetWindowActive(false) })
-	reader.SelectChannel(readerChannel)
 	two := "marker-two-" + account
 	peer.Do(func(ctrl *controller.Controller) {
 		sent = ctrl.SendToTarget(peer.NetworkID, account, two)
@@ -176,8 +177,10 @@ func TestReadMarkerAcrossSessions(t *testing.T) {
 	if !sent {
 		t.Fatalf("%s: peer send two", daemon.Name)
 	}
-	if !reader.WaitUntil(func(c *Client) bool { return dmUnreadWithBody(c, peerNick, two) }) {
-		t.Fatalf("%s: reader DM unread before other publishes", daemon.Name)
+	if !reader.WaitUntil(func(c *Client) bool {
+		return strings.EqualFold(c.SelectedTarget(), peerNick) && dmUnreadWithBody(c, peerNick, two)
+	}) {
+		t.Fatalf("%s: reader selected DM unread before other publishes", daemon.Name)
 	}
 	other.SelectChannel(peerNick)
 	if !other.WaitUntil(func(c *Client) bool { return channelHasBody(c, two) }) {
@@ -200,6 +203,8 @@ func TestReadMarkerAcrossSessions(t *testing.T) {
 	}) {
 		t.Fatalf("%s: reader unread cleared by other SET", daemon.Name)
 	}
+	// Off the DM and back while active for the I2 fence (no second GET expected).
+	reader.SelectChannel(readerChannel)
 	reader.SelectChannel(peerNick)
 	reader.Do(func(ctrl *controller.Controller) {
 		ctrl.SetWindowActive(true)
@@ -210,6 +215,9 @@ func TestReadMarkerAcrossSessions(t *testing.T) {
 	}
 	if !other.Fence("leg2-b") {
 		t.Fatalf("%s: other fence after leg 2", daemon.Name)
+	}
+	if got := markreadGets(reader.Sent(), peerNick); got != 1 {
+		t.Fatalf("%s: still one GET before reconnect got %d; markread=%v", daemon.Name, got, markreadLines(reader.Sent(), peerNick))
 	}
 	if got := len(markreadSets(reader.Sent(), peerNick)); got != 1 {
 		t.Fatalf("%s: reader must not SET again at known marker; markread=%v", daemon.Name, markreadLines(reader.Sent(), peerNick))

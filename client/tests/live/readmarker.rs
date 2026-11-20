@@ -222,9 +222,10 @@ fn read_marker_across_sessions() {
     );
 
     // Leg 2: B reads, A must not answer with an equal SET.
+    // Keep A's DM selected with the window inactive so a selected-DM server
+    // marker clear is exercised (live selected chat counts unread while unfocused).
     reader.controller.set_window_active(false);
     reader.pump();
-    reader.select_channel(&reader_channel);
     let two = format!("marker-two-{account}");
     assert!(
         peer.controller
@@ -234,8 +235,14 @@ fn read_marker_across_sessions() {
     );
     peer.pump();
     assert!(
-        reader.wait_until(|client| dm_unread_with_body(client, &peer_nick, &two)),
-        "{}: reader DM unread before other publishes",
+        reader.wait_until(|client| {
+            client
+                .controller
+                .selected_target()
+                .eq_ignore_ascii_case(&peer_nick)
+                && dm_unread_with_body(client, &peer_nick, &two)
+        }),
+        "{}: reader selected DM unread before other publishes",
         daemon.name
     );
     other.select_channel(&peer_nick);
@@ -260,6 +267,8 @@ fn read_marker_across_sessions() {
         "{}: reader unread cleared by other SET",
         daemon.name
     );
+    // Off the DM and back while active for the I2 fence (no second GET expected).
+    reader.select_channel(&reader_channel);
     reader.select_channel(&peer_nick);
     reader.controller.set_window_active(true);
     reader.controller.note_transcript_viewport(true, true);
@@ -273,6 +282,13 @@ fn read_marker_across_sessions() {
         other.fence("leg2-b"),
         "{}: other fence after leg 2",
         daemon.name
+    );
+    assert_eq!(
+        markread_gets(&reader.sent_lines(), &peer_nick),
+        1,
+        "{}: still one GET before reconnect; markread={:?}",
+        daemon.name,
+        markread_lines(&reader.sent_lines(), &peer_nick)
     );
     assert_eq!(
         markread_sets(&reader.sent_lines(), &peer_nick).len(),
