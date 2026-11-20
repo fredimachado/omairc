@@ -163,6 +163,12 @@ func registerErgoAccount(t *testing.T, daemon DaemonInfo, nick, password string)
 	}) {
 		t.Fatalf("%s: NickServ REGISTER reply", daemon.Name)
 	}
+	if guest.HasConversation(guest.NetworkID, "NickServ") {
+		t.Fatalf("%s: NickServ REGISTER opened a NickServ conversation", daemon.Name)
+	}
+	if statusTextContains(guest, password) {
+		t.Fatalf("%s: NickServ REGISTER password reached Status", daemon.Name)
+	}
 	guest.Do(func(ctrl *controller.Controller) {
 		ctrl.Disconnect(guest.NetworkID)
 	})

@@ -3,6 +3,7 @@ use omairc::controller::snapshots::ConversationRow;
 use omairc::irc::message::IrcMessage;
 use omairc::irc::wiretext::wire_text;
 use omairc::live::{live_daemons, live_enabled, DaemonInfo, LiveClient, LiveClientOptions};
+use omairc::session::events::SessionState;
 
 /// Fails closed when someone runs `--ignored` without the compose runner.
 pub fn require_live() {
@@ -108,8 +109,9 @@ pub fn wait_names_end(client: &mut LiveClient, channel: &str) -> bool {
     client.wait_until(|client| names_end_count(&client.incoming(), channel) >= 1)
 }
 
-/// Registers `nick` on Ergo via a guest NickServ REGISTER, then drops the guest
-/// so the nick is free for SASL. Shared by `sasl_plain` and the read-marker case.
+/// Registers `nick` on Ergo via a guest NickServ REGISTER, then disconnects the
+/// guest and waits for Idle so the nick is free for SASL. Shared by `sasl_plain`
+/// and the read-marker case.
 pub fn register_ergo_account(daemon: &DaemonInfo, nick: &str, password: &str) {
     let mut guest = LiveClient::connect(
         daemon,
@@ -131,4 +133,14 @@ pub fn register_ergo_account(daemon: &DaemonInfo, nick: &str, password: &str) {
     }));
     assert!(conversation_row(&guest.controller, &network, "NickServ").is_none());
     assert!(no_status_text_contains(&guest, password));
+    assert!(
+        guest.controller.disconnect(&network),
+        "{}: guest disconnect",
+        daemon.name
+    );
+    assert!(
+        guest.wait_until(|guest| guest.state() == SessionState::Idle),
+        "{}: guest disconnect to Idle",
+        daemon.name
+    );
 }

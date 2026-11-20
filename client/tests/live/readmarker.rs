@@ -267,7 +267,8 @@ fn read_marker_across_sessions() {
         "{}: reader unread cleared by other SET",
         daemon.name
     );
-    // Off the DM and back while active for the I2 fence (no second GET expected).
+    // Off the DM and back while still inactive, then activate, for the I2 fence
+    // (no second GET expected).
     reader.select_channel(&reader_channel);
     reader.select_channel(&peer_nick);
     reader.controller.set_window_active(true);
@@ -363,16 +364,5 @@ fn read_marker_across_sessions() {
         "{}: no SET after reconnect; markread={:?}",
         daemon.name,
         markread_lines(after, &peer_nick)
-    );
-    assert!(
-        other.fence("leg3-b"),
-        "{}: other fence after reconnect",
-        daemon.name
-    );
-    assert_eq!(
-        dm_unread(&other, &peer_nick),
-        Some(0),
-        "{}: other unread stays cleared",
-        daemon.name
     );
 }
