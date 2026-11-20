@@ -2363,6 +2363,10 @@ func (c *Controller) handleCapabilities(networkID string, capabilities irc.Capab
 		c.readMarkerClearAwaitingNetwork(networkID)
 	}
 	c.notifyCapabilitiesChanged()
+	// A CAP DEL chathistory can hand history to ZNC playback mid-session.
+	if s := c.manager.Find(networkID); s != nil && s.State() == session.StateRegistered {
+		c.requestZncPlayback(s)
+	}
 }
 
 // noteKeptReplay drains the replay/remembered-query hand-offs the reducer
@@ -2370,9 +2374,7 @@ func (c *Controller) handleCapabilities(networkID string, capabilities irc.Capab
 // queries the user replied to. It mirrors noteKeptReplay
 // (`client/src/controller/playback.rs`).
 func (c *Controller) noteKeptReplay() {
-	c.playback.NoteKeptReplay(func(networkID string) bool {
-		return c.capabilities[networkID].Contains(irc.CapabilityZncPlayback)
-	})
+	c.playback.NoteKeptReplay(c.zncPlaybackOwnsHistory)
 	// A kept self line means the user replied in that query. Remember it only
 	// when the direct exists; a dropped self-only batch must not.
 	for _, query := range c.reducer.TakeRememberedQueries() {
@@ -2388,7 +2390,22 @@ func (c *Controller) noteKeptReplay() {
 func (c *Controller) notePlaybackClock(networkID string, message irc.Message) {
 	c.playback.NotePlaybackClock(networkID, message,
 		c.currentNicks[networkID],
-		c.capabilities[networkID].Contains(irc.CapabilityZncPlayback))
+		c.zncPlaybackOwnsHistory(networkID))
+}
+
+// chatHistoryCap reports whether the network negotiated chathistory and batch.
+// It mirrors IrcController::chatHistoryCap (`client/src/controller/playback.rs`).
+func (c *Controller) chatHistoryCap(networkID string) bool {
+	caps := c.capabilities[networkID]
+	return caps.Contains(irc.CapabilityChatHistory) && caps.Contains(irc.CapabilityBatch)
+}
+
+// zncPlaybackOwnsHistory reports whether ZNC *playback PLAY fills this
+// network's history. CHATHISTORY owns it when the server offers both: Ergo
+// answers a PLAY with chathistory batches the session cannot tell from its
+// CHATHISTORY answers. It mirrors IrcController::zncPlaybackOwnsHistory.
+func (c *Controller) zncPlaybackOwnsHistory(networkID string) bool {
+	return c.capabilities[networkID].Contains(irc.CapabilityZncPlayback) && !c.chatHistoryCap(networkID)
 }
 
 // persistableDirectTarget reports whether target is a direct message worth
@@ -2589,7 +2606,7 @@ func (c *Controller) requestZncPlayback(s *session.Session) {
 	features := c.reducer.ServerFeatures(networkID)
 	restoredDirects := c.openDirects.Listed(networkID, features.CaseMapping())
 	c.playback.Request(s,
-		c.capabilities[networkID].Contains(irc.CapabilityZncPlayback),
+		c.zncPlaybackOwnsHistory(networkID),
 		c.openDirectsMotdSeen[networkID],
 		restoredDirects,
 		func(target string) bool {
@@ -2604,12 +2621,10 @@ func (c *Controller) requestChatHistoryCatchUp(s *session.Session) {
 		return
 	}
 	networkID := s.NetworkID()
-	caps := c.capabilities[networkID]
-	chatHistory := caps.Contains(irc.CapabilityChatHistory) && caps.Contains(irc.CapabilityBatch)
 	features := c.reducer.ServerFeatures(networkID)
 	c.playback.RequestCatchUp(
 		s,
-		chatHistory,
+		c.chatHistoryCap(networkID),
 		c.openDirectsMotdSeen[networkID],
 		c.openDirects.Listed(networkID, features.CaseMapping()),
 		func(target string) bool {
@@ -2627,7 +2642,7 @@ func (c *Controller) requestChannelPlayback(s *session.Session, channel string) 
 	}
 	networkID := s.NetworkID()
 	c.playback.RequestChannelPlayback(s, channel,
-		c.capabilities[networkID].Contains(irc.CapabilityZncPlayback),
+		c.zncPlaybackOwnsHistory(networkID),
 		c.openDirectsMotdSeen[networkID])
 }
 

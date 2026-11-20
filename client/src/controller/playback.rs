@@ -132,10 +132,10 @@ impl PlaybackCoordinator {
     pub fn note_kept_replay(
         &self,
         reducer: &mut EventReducer,
-        znc_playback_cap: impl Fn(&str) -> bool,
+        znc_owns_history: impl Fn(&str) -> bool,
     ) {
         for line in reducer.take_kept_replay() {
-            if !self.may_note_playback_time(reducer, &line.network_id, &line.target, znc_playback_cap(&line.network_id)) {
+            if !self.may_note_playback_time(reducer, &line.network_id, &line.target, znc_owns_history(&line.network_id)) {
                 continue;
             }
             let mapping = reducer.server_features(&line.network_id).case_mapping();
@@ -154,7 +154,7 @@ impl PlaybackCoordinator {
         network_id: &str,
         message: &IrcMessage,
         current_nick: &str,
-        znc_playback_cap: bool,
+        znc_owns_history: bool,
     ) {
         if network_id.is_empty() || message.command != "PRIVMSG" || message.params.len() < 2 {
             return;
@@ -195,7 +195,7 @@ impl PlaybackCoordinator {
                 return;
             }
         }
-        if !self.may_note_playback_time(reducer, network_id, &display_target, znc_playback_cap) {
+        if !self.may_note_playback_time(reducer, network_id, &display_target, znc_owns_history) {
             return;
         }
         let mapping = features.case_mapping();
@@ -245,11 +245,11 @@ impl PlaybackCoordinator {
         &mut self,
         session: &Session,
         reducer: &EventReducer,
-        znc_playback_cap: bool,
+        znc_owns_history: bool,
         motd_seen: bool,
         restored_directs: &[String],
     ) {
-        if session.state() != SessionState::Registered || !motd_seen || !znc_playback_cap {
+        if session.state() != SessionState::Registered || !motd_seen || !znc_owns_history {
             return;
         }
         let network_id = session.network_id();
@@ -339,7 +339,7 @@ impl PlaybackCoordinator {
             }
         }
         for channel in self.znc_joined_channels.get(&network_id).cloned().unwrap_or_default() {
-            self.request_channel_playback(session, reducer, &channel, znc_playback_cap, motd_seen);
+            self.request_channel_playback(session, reducer, &channel, znc_owns_history, motd_seen);
         }
     }
 
@@ -348,10 +348,10 @@ impl PlaybackCoordinator {
         session: &Session,
         reducer: &EventReducer,
         channel: &str,
-        znc_playback_cap: bool,
+        znc_owns_history: bool,
         motd_seen: bool,
     ) {
-        if channel.is_empty() || session.state() != SessionState::Registered || !motd_seen || !znc_playback_cap {
+        if channel.is_empty() || session.state() != SessionState::Registered || !motd_seen || !znc_owns_history {
             return;
         }
         let network_id = session.network_id();
@@ -692,12 +692,12 @@ impl PlaybackCoordinator {
         reducer: &EventReducer,
         network_id: &str,
         target: &str,
-        znc_playback_cap: bool,
+        znc_owns_history: bool,
     ) -> bool {
         if network_id.is_empty() || target.is_empty() {
             return false;
         }
-        if !znc_playback_cap {
+        if !znc_owns_history {
             return true;
         }
         let normalized = reducer.conversation_key(network_id, target).normalized_target;
@@ -721,10 +721,14 @@ fn list_contains(rows: &[String], target: &str, mapping: crate::irc::casemapping
 }
 
 impl Controller {
-    pub(super) fn znc_playback_cap(&self, network_id: &str) -> bool {
+    /// Whether `ZNC *playback PLAY` fills this network's history. CHATHISTORY owns
+    /// it when the server offers both: Ergo answers a PLAY with `chathistory`
+    /// batches the session cannot tell from its CHATHISTORY answers.
+    pub(super) fn znc_playback_owns_history(&self, network_id: &str) -> bool {
         self.capabilities
             .get(network_id)
             .is_some_and(|caps| caps.contains(crate::irc::capability::IrcCapability::ZncPlayback))
+            && !self.chat_history_cap(network_id)
     }
 
     pub(super) fn chat_history_cap(&self, network_id: &str) -> bool {
@@ -746,7 +750,7 @@ impl Controller {
         self.playback.borrow_mut().request(
             session,
             &self.reducer,
-            self.znc_playback_cap(&network_id),
+            self.znc_playback_owns_history(&network_id),
             self.motd_seen(&network_id),
             &restored,
         );
@@ -774,17 +778,21 @@ impl Controller {
             session,
             &self.reducer,
             channel,
-            self.znc_playback_cap(&network_id),
+            self.znc_playback_owns_history(&network_id),
             self.motd_seen(&network_id),
         );
     }
 
     pub(super) fn note_kept_replay(&mut self) {
-        let caps = self.capabilities.clone();
-        self.playback.borrow().note_kept_replay(&mut self.reducer, |network_id| {
-            caps.get(network_id)
-                .is_some_and(|set| set.contains(crate::irc::capability::IrcCapability::ZncPlayback))
-        });
+        let owns: HashSet<String> = self
+            .capabilities
+            .keys()
+            .filter(|network_id| self.znc_playback_owns_history(network_id))
+            .cloned()
+            .collect();
+        self.playback
+            .borrow()
+            .note_kept_replay(&mut self.reducer, |network_id| owns.contains(network_id));
         for query in self.reducer.take_remembered_queries() {
             let key = self.reducer.conversation_key(&query.network_id, &query.target);
             if self.reducer.find(&key).is_some() {
@@ -800,7 +808,7 @@ impl Controller {
             network_id,
             message,
             &nick,
-            self.znc_playback_cap(network_id),
+            self.znc_playback_owns_history(network_id),
         );
     }
 }

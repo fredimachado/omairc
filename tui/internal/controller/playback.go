@@ -150,9 +150,9 @@ func (p *PlaybackCoordinator) Rekey(networkID, oldTarget, newTarget string) {
 }
 
 // NoteKeptReplay consumes the reducer's kept replay lines and stamps the
-// persisted clocks. zncPlaybackCap(networkID) reports whether the network
-// advertised znc.in/playback. It mirrors noteKeptReplay.
-func (p *PlaybackCoordinator) NoteKeptReplay(zncPlaybackCap func(networkID string) bool) {
+// persisted clocks. zncOwnsHistory(networkID) reports whether ZNC playback
+// fills that network's history. It mirrors noteKeptReplay.
+func (p *PlaybackCoordinator) NoteKeptReplay(zncOwnsHistory func(networkID string) bool) {
 	// PLAY's lower bound is exclusive. Only a replay line that landed, or
 	// matched one already there, may move it. A held, dropped, or never-joined
 	// channel batch stays eligible for the next PLAY.
@@ -160,7 +160,7 @@ func (p *PlaybackCoordinator) NoteKeptReplay(zncPlaybackCap func(networkID strin
 		// A line spliced before this target's first PLAY must not move the
 		// exclusive bound that request is about to send, and must not be
 		// stored for the next attach either.
-		if !p.mayNotePlaybackTime(line.NetworkID, line.Target, zncPlaybackCap(line.NetworkID)) {
+		if !p.mayNotePlaybackTime(line.NetworkID, line.Target, zncOwnsHistory(line.NetworkID)) {
 			continue
 		}
 		features := p.reducer.ServerFeatures(line.NetworkID)
@@ -170,7 +170,7 @@ func (p *PlaybackCoordinator) NoteKeptReplay(zncPlaybackCap func(networkID strin
 
 // NotePlaybackClock records the newest server-time for the message's target so
 // the next attach resumes from it. It mirrors notePlaybackClock.
-func (p *PlaybackCoordinator) NotePlaybackClock(networkID string, message irc.Message, currentNick string, zncPlaybackCap bool) {
+func (p *PlaybackCoordinator) NotePlaybackClock(networkID string, message irc.Message, currentNick string, zncOwnsHistory bool) {
 	if networkID == "" {
 		return
 	}
@@ -217,7 +217,7 @@ func (p *PlaybackCoordinator) NotePlaybackClock(networkID string, message irc.Me
 	// before that request is not stored, or the next attach skips the same
 	// buffer. PLAY * 0 opens every target; a per-target PLAY opens only that
 	// one.
-	if !p.mayNotePlaybackTime(networkID, displayTarget, zncPlaybackCap) {
+	if !p.mayNotePlaybackTime(networkID, displayTarget, zncOwnsHistory) {
 		return
 	}
 	p.times.Note(networkID, displayTarget, when, features.CaseMapping())
@@ -278,7 +278,7 @@ func (p *PlaybackCoordinator) NoteJoinedChannel(networkID, channel string) {
 
 // Request sends the PLAY lines for a freshly registered, MOTD-seen network. It
 // mirrors request.
-func (p *PlaybackCoordinator) Request(s *session.Session, zncPlaybackCap, motdSeen bool,
+func (p *PlaybackCoordinator) Request(s *session.Session, zncOwnsHistory, motdSeen bool,
 	restoredDirects []string, persistableDirect func(target string) bool) {
 	if s == nil || s.State() != session.StateRegistered {
 		return
@@ -289,7 +289,7 @@ func (p *PlaybackCoordinator) Request(s *session.Session, zncPlaybackCap, motdSe
 	if !motdSeen {
 		return
 	}
-	if !zncPlaybackCap {
+	if !zncOwnsHistory {
 		return
 	}
 	sent, hasSent := p.zncPlaybackSent[networkID]
@@ -380,13 +380,13 @@ func (p *PlaybackCoordinator) Request(s *session.Session, zncPlaybackCap, motdSe
 	// playback batch for it has been kept. PLAY * 0 does not cover that retry:
 	// a channel that was not on yet never answered.
 	for _, channel := range p.zncJoinedChannels[networkID] {
-		p.RequestChannelPlayback(s, channel, zncPlaybackCap, motdSeen)
+		p.RequestChannelPlayback(s, channel, zncOwnsHistory, motdSeen)
 	}
 }
 
 // RequestChannelPlayback retries one joined channel's PLAY. It mirrors
 // requestChannelPlayback.
-func (p *PlaybackCoordinator) RequestChannelPlayback(s *session.Session, channel string, zncPlaybackCap, motdSeen bool) {
+func (p *PlaybackCoordinator) RequestChannelPlayback(s *session.Session, channel string, zncOwnsHistory, motdSeen bool) {
 	if s == nil || channel == "" || s.State() != session.StateRegistered {
 		return
 	}
@@ -394,7 +394,7 @@ func (p *PlaybackCoordinator) RequestChannelPlayback(s *session.Session, channel
 	if !motdSeen {
 		return
 	}
-	if !zncPlaybackCap {
+	if !zncOwnsHistory {
 		return
 	}
 	features := p.reducer.ServerFeatures(networkID)
@@ -736,13 +736,13 @@ func (p *PlaybackCoordinator) playbackSnapshotTime(networkID, target string) (ti
 
 // mayNotePlaybackTime reports whether a live line may move the stored clock for
 // networkID/target. It mirrors mayNotePlaybackTime.
-func (p *PlaybackCoordinator) mayNotePlaybackTime(networkID, target string, zncPlaybackCap bool) bool {
+func (p *PlaybackCoordinator) mayNotePlaybackTime(networkID, target string, zncOwnsHistory bool) bool {
 	if networkID == "" || target == "" {
 		return false
 	}
 	// No playback request is coming. A line the user actually saw is the stamp
 	// a later playback-capable attach should resume from.
-	if !zncPlaybackCap {
+	if !zncOwnsHistory {
 		return true
 	}
 	return p.zncPlaybackCovers(networkID,

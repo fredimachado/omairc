@@ -185,6 +185,124 @@ func TestChatHistoryAfterFillsLinesFromWhileAway(t *testing.T) {
 	}
 }
 
+// Ergo offers znc.in/playback and chathistory together. A ZNC *playback PLAY
+// there makes Ergo answer with chathistory batches the session takes for
+// CHATHISTORY answers: the join replay settles LATEST, and the PLAY replay
+// lands its older lines below the newer page. CHATHISTORY owns history when
+// both are offered, so no PLAY is sent and the playback clock keeps moving for
+// it. It mirrors chathistory_owns_history_when_znc_playback_is_also_offered.
+func TestChatHistoryOwnsHistoryWhenZncPlaybackIsAlsoOffered(t *testing.T) {
+	c := New()
+	clock := session.NewFakeClock(time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC))
+	c.SetClock(clock)
+	transport := session.NewLoopbackTransport()
+	config := session.SessionConfig{
+		NetworkID:  "freenode",
+		Host:       "irc.example",
+		Port:       6697,
+		TLSEnabled: true,
+		Nick:       "omairc",
+		Username:   "omairc",
+		Realname:   "Omairc User",
+	}
+	s, err := c.AddSession(config, transport, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stamped := time.Date(2024, 3, 9, 16, 0, 0, 620000000, time.UTC)
+	features := c.reducer.ServerFeatures("freenode")
+	mapping := features.CaseMapping()
+	if !c.playbackTimes.Note("freenode", "#omarchy", stamped, mapping) {
+		t.Fatal("Note")
+	}
+	s.Start()
+	transport.CompleteConnect()
+	transport.InjectBytes([]byte(
+		":server CAP omairc LS :batch chathistory znc.in/playback\r\n" +
+			":server CAP omairc ACK :batch chathistory\r\n" +
+			":server CAP omairc ACK :znc.in/playback\r\n" +
+			":server 001 omairc :Welcome\r\n" +
+			":server 376 omairc :End of MOTD\r\n" +
+			":omairc!u@h JOIN :#omarchy\r\n" +
+			":omairc!u@h JOIN :#fresh\r\n"))
+	frames := transport.WrittenFrames()
+	if !s.Capabilities().Contains(irc.CapabilityZncPlayback) {
+		t.Fatalf("znc.in/playback stays negotiated: %q", frames)
+	}
+	if got := byteFrameCount(frames, "ZNC *playback PLAY"); got != 0 {
+		t.Fatalf("chathistory owns history, sent %d PLAY: %q", got, frames)
+	}
+	if got := byteFrameCount(frames, "CHATHISTORY AFTER #omarchy timestamp=2024-03-09T16:00:00.620Z"); got != 1 {
+		t.Fatalf("channel AFTER count %d: %q", got, frames)
+	}
+	if got := byteFrameCount(frames, "CHATHISTORY LATEST #fresh * "); got != 1 {
+		t.Fatalf("channel LATEST count %d: %q", got, frames)
+	}
+
+	// The AFTER answer: lines kept from a CHATHISTORY batch move the clock
+	// with no live line in the channel.
+	transport.InjectBytes([]byte(
+		":server BATCH +after chathistory #omarchy\r\n" +
+			"@batch=after;time=2024-03-09T17:00:00.000Z;msgid=a1 :bob!u@h PRIVMSG #omarchy :one\r\n" +
+			"@batch=after;time=2024-03-09T17:05:00.500Z;msgid=a2 :bob!u@h PRIVMSG #omarchy :two\r\n" +
+			":server BATCH -after\r\n"))
+	caughtUp := time.Date(2024, 3, 9, 17, 5, 0, 500000000, time.UTC)
+	if got, ok := c.playbackTimes.Noted("freenode", "#omarchy", mapping); !ok || !got.Equal(caughtUp) {
+		t.Fatalf("kept CHATHISTORY lines move the resume clock: got %v ok=%v", got, ok)
+	}
+
+	transport.InjectBytes([]byte("@time=2024-03-10T09:30:00.250Z :alice!u@h PRIVMSG #fresh :hi\r\n"))
+	heard := time.Date(2024, 3, 10, 9, 30, 0, 250000000, time.UTC)
+	if got, ok := c.playbackTimes.Noted("freenode", "#fresh", mapping); !ok || !got.Equal(heard) {
+		t.Fatalf("the CHATHISTORY resume clock still follows live lines: got %v ok=%v", got, ok)
+	}
+}
+
+func TestCapDelChatHistoryHandsHistoryToZncPlayback(t *testing.T) {
+	c := New()
+	clock := session.NewFakeClock(time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC))
+	c.SetClock(clock)
+	transport := session.NewLoopbackTransport()
+	config := session.SessionConfig{
+		NetworkID:  "freenode",
+		Host:       "irc.example",
+		Port:       6697,
+		TLSEnabled: true,
+		Nick:       "omairc",
+		Username:   "omairc",
+		Realname:   "Omairc User",
+	}
+	s, err := c.AddSession(config, transport, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	features := c.reducer.ServerFeatures("freenode")
+	mapping := features.CaseMapping()
+	s.Start()
+	transport.CompleteConnect()
+	transport.InjectBytes([]byte(
+		":server CAP omairc LS :batch chathistory znc.in/playback\r\n" +
+			":server CAP omairc ACK :batch chathistory\r\n" +
+			":server CAP omairc ACK :znc.in/playback\r\n" +
+			":server 001 omairc :Welcome\r\n" +
+			":server 376 omairc :End of MOTD\r\n" +
+			":omairc!u@h JOIN :#omarchy\r\n"))
+	if got := byteFrameCount(transport.WrittenFrames(), "ZNC *playback PLAY"); got != 0 {
+		t.Fatalf("chathistory owns history, sent %d PLAY: %q", got, transport.WrittenFrames())
+	}
+
+	transport.InjectBytes([]byte(":server CAP omairc DEL :chathistory\r\n"))
+	frames := transport.WrittenFrames()
+	if got := byteFrameCount(frames, "ZNC *playback PLAY * 0"); got != 1 {
+		t.Fatalf("ZNC playback owns history after CAP DEL, PLAY count %d: %q", got, frames)
+	}
+	transport.InjectBytes([]byte("@time=2024-03-10T09:30:00.250Z :alice!u@h PRIVMSG #omarchy :hi\r\n"))
+	heard := time.Date(2024, 3, 10, 9, 30, 0, 250000000, time.UTC)
+	if got, ok := c.playbackTimes.Noted("freenode", "#omarchy", mapping); !ok || !got.Equal(heard) {
+		t.Fatalf("the playback clock still moves after CAP DEL: got %v ok=%v", got, ok)
+	}
+}
+
 func TestZncPlaybackWithoutChatHistoryDoesNotCatchUp(t *testing.T) {
 	c := New()
 	clock := session.NewFakeClock(time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC))
