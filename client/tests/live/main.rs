@@ -2,12 +2,18 @@
 //! Ignored by default. `bin/test-live` exports `OMAIRC_LIVE_*` and runs
 
 mod caps;
+mod channel;
+mod channellist;
 mod classic;
+mod harness;
 mod helpers;
 mod invention;
+mod invites;
 mod members;
+mod monitor;
 mod multiline;
 mod presence;
+mod readmarker;
 mod reconnect;
 mod replies;
 mod register;

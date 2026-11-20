@@ -351,15 +351,7 @@ fn chat_history_on_join() {
         .send_to_target(&peer_network, &channel, &seed));
     peer.pump();
     // Prove the seed is in history before the client joins.
-    assert!(peer
-        .controller
-        .session(&peer_network)
-        .expect("session")
-        .send_raw("PING :history-seed"));
-    peer.pump();
-    assert!(peer.wait_until(|peer| {
-        omairc::live::message_has_command(&peer.incoming(), "PONG")
-    }));
+    assert!(peer.fence("history-seed"));
 
     let mut client = LiveClient::connect(
         &daemon,
@@ -413,28 +405,7 @@ fn sasl_plain() {
     };
     let nick = unique_nick(daemon.nick_length);
     let password = "live-secret";
-    {
-        let mut guest = LiveClient::connect(
-            &daemon,
-            &nick,
-            daemon.use_tls(),
-            LiveClientOptions::default(),
-        );
-        assert!(guest.wait_registered());
-        let notices = omairc::live::message_command_count(&guest.incoming(), "NOTICE");
-        let network = guest.network_id.clone();
-        assert!(guest.controller.send_to_target(
-            &network,
-            "NickServ",
-            &format!("REGISTER {password} live@omairc.test")
-        ));
-        guest.pump();
-        assert!(guest.wait_until(|guest| {
-            omairc::live::message_command_count(&guest.incoming(), "NOTICE") > notices
-        }));
-        assert!(super::helpers::conversation_row(&guest.controller, &network, "NickServ").is_none());
-        assert!(super::helpers::no_status_text_contains(&guest, password));
-    }
+    super::helpers::register_ergo_account(&daemon, &nick, password);
     let mut authed = LiveClient::connect(
         &daemon,
         &nick,

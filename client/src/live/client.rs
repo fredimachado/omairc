@@ -20,10 +20,18 @@ use crate::storage::Backing;
 use crate::util::Secret;
 
 use super::env::{live_cert_pem, live_host, DaemonInfo};
+use super::record::{RecordingTransports, SentLog};
 use super::wait::{message_has_command, wait_until, DEFAULT_TIMEOUT};
 
 static NICK_SEQ: AtomicU32 = AtomicU32::new(0);
 static CHANNEL_SEQ: AtomicU32 = AtomicU32::new(0);
+static FENCE_SEQ: AtomicU32 = AtomicU32::new(0);
+
+/// The fence serial counter's current value (the next serial `fence` tries first).
+/// Live proofs plant decoy PINGs with it.
+pub fn fence_serial() -> u32 {
+    FENCE_SEQ.load(Ordering::Relaxed)
+}
 
 /// Optional knobs for [`LiveClient::connect`].
 #[derive(Clone, Default)]
@@ -60,6 +68,7 @@ pub struct LiveClient {
     pub network_id: String,
     /// Extra sessions started with [`Self::connect_additional`] (disconnected on drop).
     extra_network_ids: Vec<String>,
+    sent: SentLog,
     _clock: Rc<dyn Clock>,
 }
 
@@ -73,7 +82,11 @@ impl LiveClient {
             ..NetOptions::default()
         }));
         let clock: Rc<dyn Clock> = Rc::new(RealClock::new());
-        let transports = Box::new(NetTransports::new(hub.clone()));
+        let sent = SentLog::default();
+        let transports = Box::new(RecordingTransports::new(
+            NetTransports::new(hub.clone()),
+            Rc::clone(&sent),
+        ));
         let backing = match &options.settings_file {
             Some(path) => Backing::Disk(path.clone()),
             None => Backing::Ephemeral,
@@ -95,6 +108,7 @@ impl LiveClient {
             controller,
             network_id,
             extra_network_ids: Vec::new(),
+            sent,
             _clock: clock,
         }
     }
@@ -275,6 +289,53 @@ impl LiveClient {
         self.session().force_transport_shutdown();
         self.pump();
         true
+    }
+
+    /// Outbound lines `network_id` wrote, CRLF trimmed.
+    ///
+    /// Order is the order of `Transport::write` calls. It matches wire order
+    /// for writes from one turn (one session drain); interleaving between
+    /// concurrent writers is unspecified, as it is on the wire.
+    pub fn sent_lines_for(&self, network_id: &str) -> Vec<String> {
+        self.sent
+            .borrow()
+            .get(network_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Outbound lines the primary network wrote, CRLF trimmed.
+    pub fn sent_lines(&self) -> Vec<String> {
+        self.sent_lines_for(&self.network_id)
+    }
+
+    /// Writes a `PING` whose wire token is unused on this network and waits for
+    /// that token's `PONG`.
+    ///
+    /// The wire token is `<token>-<serial>` from [`fence_serial`]'s counter.
+    /// While this network's sent log already holds `PING :<candidate>`, the next
+    /// serial is taken, so an earlier raw ping (including one planted for the
+    /// next serial) cannot satisfy the fence.
+    pub fn fence(&mut self, token: &str) -> bool {
+        let wire = loop {
+            let serial = FENCE_SEQ.fetch_add(1, Ordering::Relaxed);
+            let candidate = format!("{token}-{serial}");
+            let ping = format!("PING :{candidate}");
+            if !self.sent_lines().iter().any(|line| line == &ping) {
+                break candidate;
+            }
+        };
+        let before = self.incoming().len();
+        if !self.session().send_raw(&format!("PING :{wire}")) {
+            return false;
+        }
+        self.wait_until(|client| {
+            client.incoming()[before..].iter().any(|message| {
+                message.command == "PONG"
+                    && !message.params.is_empty()
+                    && message.text_param(message.params.len() - 1) == wire
+            })
+        })
     }
 
     pub fn last_error(&self) -> Option<&str> {
