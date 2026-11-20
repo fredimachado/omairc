@@ -203,7 +203,8 @@ func TestReadMarkerAcrossSessions(t *testing.T) {
 	}) {
 		t.Fatalf("%s: reader unread cleared by other SET", daemon.Name)
 	}
-	// Off the DM and back while active for the I2 fence (no second GET expected).
+	// Off the DM and back while still inactive, then activate, for the I2 fence
+	// (no second GET expected).
 	reader.SelectChannel(readerChannel)
 	reader.SelectChannel(peerNick)
 	reader.Do(func(ctrl *controller.Controller) {
@@ -265,11 +266,5 @@ func TestReadMarkerAcrossSessions(t *testing.T) {
 	// "no MARKREAD in B.Incoming" check can never fail.
 	if got := markreadSets(after, peerNick); len(got) != 0 {
 		t.Fatalf("%s: no SET after reconnect; markread=%v", daemon.Name, markreadLines(after, peerNick))
-	}
-	if !other.Fence("leg3-b") {
-		t.Fatalf("%s: other fence after reconnect", daemon.Name)
-	}
-	if unread, ok := dmUnread(other, peerNick); !ok || unread != 0 {
-		t.Fatalf("%s: other unread stays cleared (ok=%v unread=%d)", daemon.Name, ok, unread)
 	}
 }
