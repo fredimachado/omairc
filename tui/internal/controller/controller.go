@@ -2363,6 +2363,10 @@ func (c *Controller) handleCapabilities(networkID string, capabilities irc.Capab
 		c.readMarkerClearAwaitingNetwork(networkID)
 	}
 	c.notifyCapabilitiesChanged()
+	// A CAP DEL chathistory can hand history to ZNC playback mid-session.
+	if s := c.manager.Find(networkID); s != nil && s.State() == session.StateRegistered {
+		c.requestZncPlayback(s)
+	}
 }
 
 // noteKeptReplay drains the replay/remembered-query hand-offs the reducer

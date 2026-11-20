@@ -130,16 +130,26 @@ func TestChatHistoryBeforePages(t *testing.T) {
 	}
 	client.SelectChannel(channel)
 
-	// Ergo keeps our own JOIN in the channel history and counts it in the
-	// LATEST page. Without draft/event-playback it replays that item as a
-	// HistServ PRIVMSG, so the newest limit items are the join and limit-1
-	// seed lines.
-	latestFrom := total - (limit - 1) + 1
-	latestWant := expectedRange(latestFrom, total)
+	// The LATEST page is the newest limit items, in order and ending at
+	// total. A server may keep our own JOIN in the channel history and count
+	// it in that page (Ergo does, replayed as a HistServ PRIVMSG without
+	// draft/event-playback), leaving limit-1 seed lines.
+	latestPages := [][]int{
+		expectedRange(total-limit+1, total),
+		expectedRange(total-(limit-1)+1, total),
+	}
+	isLatestPage := func(got []int) bool {
+		for _, want := range latestPages {
+			if indicesEqual(got, want) {
+				return true
+			}
+		}
+		return false
+	}
 	if !client.WaitUntil(func(c *Client) bool {
-		return indicesEqual(seedIndices(c, channel), latestWant)
+		return isLatestPage(seedIndices(c, channel))
 	}) {
-		t.Fatalf("%s: LATEST page want %v, got %v", daemon.Name, latestWant, seedIndices(client, channel))
+		t.Fatalf("%s: LATEST page want one of %v, got %v", daemon.Name, latestPages, seedIndices(client, channel))
 	}
 	if got := sentHistory(client.Sent(), "LATEST", channel); got != 1 {
 		t.Fatalf("%s: one LATEST for %s; history lines %v", daemon.Name, channel, historySentLines(client.Sent()))

@@ -417,6 +417,28 @@ fn chathistory_owns_history_when_znc_playback_is_also_offered() {
         frames()
     );
 
+    // The AFTER answer: lines kept from a CHATHISTORY batch move the clock
+    // with no live line in the channel.
+    feed(
+        &mut controller,
+        &loopbacks,
+        LIBERA,
+        ":irc.libera.chat BATCH +after chathistory #omarchy\r\n\
+         @batch=after;time=2024-03-09T17:00:00.000Z;msgid=a1 :bob!u@h PRIVMSG #omarchy :one\r\n\
+         @batch=after;time=2024-03-09T17:05:00.500Z;msgid=a2 :bob!u@h PRIVMSG #omarchy :two\r\n\
+         :irc.libera.chat BATCH -after",
+    );
+    let caught_up = Utc.with_ymd_and_hms(2024, 3, 9, 17, 5, 0).unwrap()
+        + chrono::Duration::milliseconds(500);
+    assert_eq!(
+        controller
+            .playback_times
+            .borrow()
+            .noted(LIBERA, "#omarchy", mapping),
+        Some(caught_up),
+        "kept CHATHISTORY lines move the resume clock"
+    );
+
     feed(
         &mut controller,
         &loopbacks,
@@ -432,5 +454,57 @@ fn chathistory_owns_history_when_znc_playback_is_also_offered() {
             .noted(LIBERA, "#fresh", mapping),
         Some(heard),
         "the CHATHISTORY resume clock still follows live lines"
+    );
+}
+
+#[test]
+fn cap_del_chathistory_hands_history_to_znc_playback() {
+    let dir = TempDir::new("cap-del-chathistory");
+    let backing = disk(&dir);
+    let loopbacks = Loopbacks::default();
+    let mut controller = launch(&backing, Box::new(loopbacks.clone()));
+    save(&mut controller, libera(LIBERA));
+    let mapping = controller.reducer.server_features(LIBERA).case_mapping();
+
+    assert!(controller.start(LIBERA));
+    feed(
+        &mut controller,
+        &loopbacks,
+        LIBERA,
+        ":irc.libera.chat CAP fred LS :batch chathistory znc.in/playback\r\n\
+         :irc.libera.chat CAP fred ACK :batch chathistory\r\n\
+         :irc.libera.chat CAP fred ACK :znc.in/playback\r\n\
+         :irc.libera.chat 001 fred :Welcome\r\n\
+         :irc.libera.chat 376 fred :End of MOTD\r\n\
+         :fred!u@h JOIN :#omarchy",
+    );
+    assert_eq!(frame_count(&loopbacks, LIBERA, "ZNC *playback PLAY"), 0);
+
+    feed(
+        &mut controller,
+        &loopbacks,
+        LIBERA,
+        ":irc.libera.chat CAP fred DEL :chathistory",
+    );
+    assert_eq!(
+        frame_count(&loopbacks, LIBERA, "ZNC *playback PLAY * 0"),
+        1,
+        "ZNC playback owns history after CAP DEL"
+    );
+    feed(
+        &mut controller,
+        &loopbacks,
+        LIBERA,
+        "@time=2024-03-10T09:30:00.250Z :alice!u@h PRIVMSG #omarchy :hi",
+    );
+    let heard = Utc.with_ymd_and_hms(2024, 3, 10, 9, 30, 0).unwrap()
+        + chrono::Duration::milliseconds(250);
+    assert_eq!(
+        controller
+            .playback_times
+            .borrow()
+            .noted(LIBERA, "#omarchy", mapping),
+        Some(heard),
+        "the playback clock still moves after CAP DEL"
     );
 }

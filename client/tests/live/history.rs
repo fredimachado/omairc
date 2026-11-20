@@ -131,15 +131,17 @@ fn chat_history_before_pages() {
     );
     client.select_channel(&channel);
 
-    // Ergo keeps our own JOIN in the channel history and counts it in the
-    // LATEST page. Without draft/event-playback it replays that item as a
-    // HistServ PRIVMSG, so the newest `limit` items are the join and
-    // `limit - 1` seed lines.
-    let latest_from = total - (limit - 1) + 1;
-    let latest_want = expected_range(latest_from, total);
+    // The LATEST page is the newest `limit` items, in order and ending at
+    // `total`. A server may keep our own JOIN in the channel history and count
+    // it in that page (Ergo does, replayed as a HistServ PRIVMSG without
+    // draft/event-playback), leaving `limit - 1` seed lines.
+    let latest_pages = [
+        expected_range(total - limit + 1, total),
+        expected_range(total - (limit - 1) + 1, total),
+    ];
     assert!(
-        client.wait_until(|client| seed_indices(client, &channel) == latest_want),
-        "{}: LATEST page want {latest_want:?}, got {:?}; chathistory/znc sent {:?}",
+        client.wait_until(|client| latest_pages.contains(&seed_indices(client, &channel))),
+        "{}: LATEST page want one of {latest_pages:?}, got {:?}; chathistory/znc sent {:?}",
         daemon.name,
         seed_indices(&client, &channel),
         client

@@ -65,8 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as well as `CHATHISTORY`, and Ergo answers a PLAY with `chathistory` batches:
   the replay on join was taken for the `CHATHISTORY LATEST` answer, and older
   lines from the PLAY landed below the newest page. CHATHISTORY now owns history
-  when both are offered, so no PLAY is sent there. A bouncer that offers only
-  `znc.in/playback` is unchanged.
+  when both are offered, so no PLAY is sent there: channels and restored direct
+  messages catch up through CHATHISTORY alone. A bouncer that offers only
+  `znc.in/playback` is unchanged. When a server withdraws `chathistory`
+  mid-session, the TUI now starts ZNC playback as the desktop client does.
 - `/list` recovers after an idle timeout. A timed-out `LIST` whose `323` never
   came made every later `/list` on that network swallow its own end and time
   out too. The timeout now sends a `PING` fence: a late `322` or `323` that
