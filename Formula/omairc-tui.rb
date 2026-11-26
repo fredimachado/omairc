@@ -2,17 +2,17 @@ class OmaircTui < Formula
   desc "Keyboard-first IRC client for the terminal"
   homepage "https://omairc.app/"
   license "MIT"
-  version "1.11.1"
+  version "1.12.0"
 
   on_macos do
     on_arm do
       url "https://github.com/fredimachado/omairc/releases/download/v#{version}/omairc-tui-#{version}-darwin-arm64.tar.gz"
-      sha256 "5ee1a4df5e52fbe9518417ade146bf0f3223e8f6e14cab76a05496fc54b1ddc7"
+      sha256 "4ddc3ee43a12e31ee2e7f247b6eb9b54cf11d05b9259db2b78f8e6bedcb21cd8"
     end
 
     on_intel do
       url "https://github.com/fredimachado/omairc/releases/download/v#{version}/omairc-tui-#{version}-darwin-amd64.tar.gz"
-      sha256 "9af87e3c2b0d9dd7231c685303a426adc6c190af5314212a503e0e44a0b47428"
+      sha256 "dd2dff479441c762d71f7371c50a7d6a3d8c85f274421c96620acd9d211886f4"
     end
   end
 
