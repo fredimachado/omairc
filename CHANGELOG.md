@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-11-26
+
 ### Added
 
 - Request the IRCv3 `invite-notify`, `setname` and `userhost-in-names`
@@ -99,31 +101,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   line. A waiting place does not advance the server read marker. A transcript
   scroll, or a message sent to that conversation, ends the wait; commands such
   as `/pref` and `/whois` and sidebar or member scrollbar drags do not.
+- Loading older history shifts the catch-up row with the prepend, so `Alt+U` and
+  the unseen chip stay on the right line. On the terminal client, a restore that
+  lands inside the last page follows the end (and publishes a read marker) the
+  same way the desktop does, and lines that arrive while a saved place is still
+  pending no longer arm `↓ new`.
+- The terminal client's `↓ new` no longer appears after an older-history page when
+  the view is already caught up. Page Down past the catch-up row keeps the marker
+  while unseen rows remain, and `Alt+U` during an older-page load refreshes the
+  catch-up sequence so a splice cannot restore a stale landing.
+- A channel line filed as only-visible (for example a membership caption) no
+  longer reappears unlabeled in the sender's direct message when CHATHISTORY
+  query replay arrives for that nick. The claim stays while the channel still
+  holds that msgid.
+- Both clients send at most one `MARKREAD` set per target unless the timestamp
+  moves forward, and never set a marker at or older than the latest known one.
+  On reconnect they clear the get dedupe and ask again for the selected DM's
+  marker.
+- A server that accepts TCP but never answers Cap LS no longer hangs forever.
+  Registration times out after 60 seconds with "The server didn't respond" and
+  falls into the normal reconnect backoff.
+- Linux DNS failures that omit a gai code now read as `no such host` again when
+  the host is missing.
+- After a successful reconnect, the sidebar subtitle clears the previous
+  disconnect reason once registration completes, instead of keeping `last_error`
+  over the live state. Desktop and TUI.
+- The terminal client no longer reconnects after a fatal failure that followed a
+  retryable disconnect request, and a server `ERROR` that arrives after a stop,
+  before the socket closes, no longer schedules a reconnect.
+- Sidebar network reorder only moves saved profiles. Status-only and Connect
+  drafts stay put, so moving the last saved network no longer swaps the
+  on-screen list while `networkOrder` on disk stays unchanged. Desktop and TUI.
 - Desktop and TUI write `collapsedNetworks` in sidebar `networkOrder` (not id
   sort), so switching clients no longer rewrites the line. Forgetting a network
   updates the profile group plus `networkOrder` and `collapsedNetworks` in one
   conf write. The TUI also removes a stale `collapsedNetworks=@Invalid()` line
   on an empty save; Settings.Sync still skips identical bytes.
-
 - The desktop client no longer writes `collapsedNetworks=@Invalid()` or a second
   preferences flush when a sidebar network is reordered. Network order and
   collapse state persist separately and only when their value changed; an empty
   collapsed list removes the key instead of storing Qt's empty-list sentinel.
-
 - The terminal client keeps a saved sidebar network order across restarts.
   Startup no longer mirrors the id-sorted profile roster into `networkOrder`,
   and saved networks that have not connected yet stay in the restored order.
-
 - The terminal client no longer writes a random `networkOrder` entry to
   `omairc.conf` on every launch when no network profile is saved. The Connect
   sheet draft keeps a fresh in-memory id for display, but startup no longer
   copies that unsaved id into persisted sidebar order.
-
 - Full-line `#` comments in `omairc.conf` (including with leading whitespace)
   are accepted like `;` comments, so a hand-edited file is no longer treated
   as malformed and saves are not silently refused. Values that contain `#` still
   round-trip unchanged.
-
+- A read-only, malformed main settings file reports that it could not be read
+  again, and a registry import says it was left unchanged.
 - Atomic config and state writes follow symlinked paths to their target file,
   so stow-managed `omairc.conf` (and the shared `sts` cache) keep the symlink
   and persist through the real file. A dangling symlink creates the missing
@@ -157,9 +187,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from this client saves it into the file. A lapsed policy another client saved
   does not replace it. Clearing a host the file does not hold writes nothing
   and does not mark any unsaved policy saved.
-- Ctrl+Q and closing the window on the desktop client stop every session before
-  it exits, as the terminal client does on quit, so each network refreshes its
-  STS expiry. Logout and SIGTERM still exit without it.
+- When an STS CAP advertises a shorter duration than the on-disk policy, both
+  clients set expiry to now plus that duration instead of keeping the longer
+  stored expiry.
+- `Ctrl+Q` on the desktop client runs the same close path as the window close
+  button: it stops every session so each network refreshes its STS expiry,
+  saves geometry and scroll places, and can launch a ready installer update.
+  It also works while the shortcuts overlay is open. Logout and SIGTERM still
+  exit without that path.
 - The `sts` cache keeps only real policies. A group whose name is not a host
   key, or that has no valid port, duration, or expiry, is dropped on the next
   write.
@@ -1084,7 +1119,8 @@ First public release: a simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.11.1...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.12.0...HEAD
+[1.12.0]: https://github.com/fredimachado/omairc/compare/v1.11.1...v1.12.0
 [1.11.1]: https://github.com/fredimachado/omairc/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/fredimachado/omairc/compare/v1.11.0rc2...v1.11.0
 [1.11.0rc2]: https://github.com/fredimachado/omairc/compare/v1.11.0rc1...v1.11.0rc2
